@@ -1514,7 +1514,11 @@ async function settingsOnceSection(browser, base) {
   const wasHub = hubMode;
   hubMode = true;
   settingsDelay = 135;
-  settingsReads = 0;
+  // This page's reads, not the server's. In the full run the main page is still
+  // open and reads settings on its own clock, which the server count took for a
+  // second read by this load.
+  let settingsReads = 0;
+  sp.on("request", r => { if (new URL(r.url()).pathname === "/v1/settings") settingsReads++; });
   try {
     await sp.goto(base, { waitUntil: "domcontentloaded" });
     await sp.waitForTimeout(2500);
@@ -1632,9 +1636,17 @@ async function restartGateSection(browser, base) {
     if (!(await hasCountdown())) fail("the countdown toast stayed gone after something removed it.");
     await gp.waitForTimeout(9500);
     if (!(await hasCountdown())) fail("the countdown toast went away on a timer.");
+    // Every stream back, not only the one `#conn` watches. The hub's own stream
+    // reopens on its own clock, and an event said before it is back is said to
+    // nobody: the "cancelled countdown stayed on screen" flake.
+    const streamsWere = openStreams.filter(r => !r.destroyed).length;
     openStreams.forEach(r => { try { r.destroy(); } catch (e) {} });
     await gp.waitForFunction(() => document.getElementById("conn").classList.contains("live"), null,
       { timeout: 15000 }).catch(() => fail("the stream did not come back."));
+    for (const end = Date.now() + 15000;
+      openStreams.filter(r => !r.destroyed).length < streamsWere && Date.now() < end;) {
+      await gp.waitForTimeout(50);
+    }
     await gp.waitForTimeout(500);
     if (!(await hasCountdown())) fail("the countdown toast went away when the stream reopened.");
     say({ state: "cancelled" });
@@ -2102,11 +2114,95 @@ async function toastStaysSection(browser, base) {
     if (!(await has("new card is on the board"))) {
       fail("an arrival toast was taken down by the poll after it, " + (Date.now() - born) + "ms in.");
     }
-    if (await has("ready card is ready")) fail("a toast for a card no longer waiting was not reaped.");
+    const answered = await tp.evaluate(() => [...document.querySelectorAll("#toasts .toast.answered b")]
+      .some(b => b.textContent === "ready card is ready"));
+    if (!answered) fail("a toast for a card no longer waiting was not marked answered.");
     await tp.waitForTimeout(Math.max(0, 8500 - (Date.now() - born)));
     if (!(await has("new card is on the board"))) fail("an arrival toast went before its 9 seconds.");
     await tp.waitForTimeout(1200);
     if (await has("new card is on the board")) fail("an arrival toast outlived its 9 seconds.");
+    if (errors.length) fail("the toast page threw uncaught errors: " + errors.join(" | "));
+  } finally {
+    await ctx.close();
+  }
+}
+
+// A TOAST LIVES ITS WHOLE LIFE, WHATEVER HAPPENS AROUND IT. Each thing that took
+// one down early, done to a fresh toast, and it is still on screen 5s later:
+// the poll reaping a card that stopped waiting (a held message typed in as the
+// turn ends does that inside a second), a burst past the stack's cap evicting
+// the oldest, a view switch and a dialog opening and closing. Then hovering
+// holds one past its 9 seconds.
+async function toastLivesSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const tp = await ctx.newPage();
+  const errors = [];
+  tp.on("pageerror", e => errors.push(String(e)));
+  const up = title => tp.evaluate(t => [...document.querySelectorAll("#toasts .toast:not(.leaving)")]
+    .some(el => el.querySelector("b").textContent === t), title);
+  const clear = () => tp.evaluate(() => {
+    document.getElementById("toasts").innerHTML = "";
+    if (typeof toastQueue !== "undefined") toastQueue.length = 0;
+  });
+  const stillUpAt5s = async (title, what, born) => {
+    await tp.waitForTimeout(Math.max(0, 5000 - (Date.now() - born)));
+    if (!(await up(title))) fail(what + ": the toast was gone before 5s.");
+  };
+  try {
+    await tp.goto(base, { waitUntil: "domcontentloaded" });
+    await tp.waitForSelector("#stack-list .stackrow", { timeout: 15000 });
+
+    // 1. A card waiting on you that is running again by the next poll.
+    await clear();
+    await tp.evaluate(() => {
+      window.__reaps = 0;
+      const real = reapToasts;
+      window.reapToasts = keys => { window.__reaps++; return real(keys); };
+      // The toast a pending alert raises, keyed by its card. Raised directly: the
+      // alert itself goes to whichever window has focus, and in the full run
+      // another page may.
+      toast("gone9 is ready", "its turn ended", "stack", "gone9", "gone9");
+    });
+    let born = Date.now();
+    await tp.waitForFunction(() => window.__reaps >= 1, null, { timeout: 12000 })
+      .catch(() => fail("no poll reaped toasts, so the answered case was not exercised."));
+    await stillUpAt5s("gone9 is ready", "a card that stopped waiting", born);
+    const marked = await tp.evaluate(() => [...document.querySelectorAll("#toasts .toast")]
+      .some(el => el.classList.contains("answered")));
+    if (!marked) fail("a toast whose card stopped waiting does not say it was answered.");
+
+    // 2. A burst of four with room for three.
+    await clear();
+    born = Date.now();
+    await tp.evaluate(() => { for (let i = 1; i <= 4; i++) toast("burst " + i, "one of four"); });
+    await stillUpAt5s("burst 1", "a burst past the cap", born);
+    await tp.waitForFunction(() => [...document.querySelectorAll("#toasts .toast:not(.leaving) b")]
+      .some(b => b.textContent === "burst 4"), null, { timeout: 8000 })
+      .catch(() => fail("the fourth toast of a burst never got its turn on screen."));
+
+    // 3. A view switch, and a dialog opening and closing.
+    await clear();
+    born = Date.now();
+    await tp.evaluate(() => {
+      toast("through the views", "a view switch and a dialog");
+      switchView("terms");
+      switchView("stack");
+      const d = document.getElementById("toastlog");
+      d.showModal();
+      d.close();
+    });
+    await stillUpAt5s("through the views", "a view switch and a dialog", born);
+
+    // 4. Hovered, it outlives its 9 seconds, and goes once the pointer leaves.
+    await clear();
+    await tp.evaluate(() => toast("held by the pointer", "hover me"));
+    await tp.hover("#toasts .toast");
+    await tp.waitForTimeout(10000);
+    if (!(await up("held by the pointer"))) fail("a hovered toast went while it was being read.");
+    // The life it had left when the pointer arrived, which was nearly all of it.
+    await tp.mouse.move(2, 890);
+    await tp.waitForFunction(() => !document.querySelector("#toasts .toast:not(.leaving)"), null,
+      { timeout: 12000 }).catch(() => fail("a toast the pointer left never went."));
     if (errors.length) fail("the toast page threw uncaught errors: " + errors.join(" | "));
   } finally {
     await ctx.close();
@@ -2311,11 +2407,11 @@ async function popoutTagFlipSection(browser, base) {
     await bp.evaluate(() => { if (window.__flipSolo) window.__flipSolo.close(); window.__flipSolo = null; });
     await bp.evaluate(() => soloHeld.clear());
     await bp.evaluate(async () => openTerm(await api("/v1/tasks/sgg~s1")));
-    await bp.waitForFunction(() => termTask && termTask.id === "sgg~s1", { timeout: 5000 });
+    await bp.waitForFunction(() => termTask && termTask.id === "sgg~s1", null, { timeout: 5000 });
     await standIn("s1");
     let yielded = false;
     try {
-      await bp.waitForFunction(() => !termTask, { timeout: 3000 });
+      await bp.waitForFunction(() => !termTask, null, { timeout: 3000 });
       yielded = true;
     } catch (e) {}
     if (!yielded) {
@@ -3062,7 +3158,7 @@ async function landSection(browser, base) {
     const solo = await ctx.newPage();
     solo.on("pageerror", e => errors.push(String(e)));
     await solo.goto(base + "/#term=s1", { waitUntil: "domcontentloaded" });
-    await solo.waitForFunction(() => typeof soloID !== "undefined" && soloID === "s1", { timeout: 10000 });
+    await solo.waitForFunction(() => typeof soloID !== "undefined" && soloID === "s1", null, { timeout: 10000 });
     await solo.evaluate(() => { toast("land live is ready", "", "stack", null, "land-live"); });
     await clickToast(solo, "land live is ready");
     at = await settle(p, a => a.opened === "land-live");
@@ -3079,7 +3175,7 @@ async function landSection(browser, base) {
 
     // 8. A board opened by a desktop notification with none open.
     await p.goto(base + "/?land=land-live&view=stack", { waitUntil: "domcontentloaded" });
-    await p.waitForFunction(() => typeof openTerm === "function", { timeout: 10000 });
+    await p.waitForFunction(() => typeof openTerm === "function", null, { timeout: 10000 });
     await spyAttach(p);
     at = await settle(p, a => a.view === "terms");
     const left = await p.evaluate(() => location.search);
@@ -3105,7 +3201,7 @@ async function landSection(browser, base) {
     landCard("land-new3", { supervised: false });
     landList = landList.concat(LAND["land-new3"]);
     poke();
-    await p.waitForFunction(() => window.__notes.some(n => n.title === "land new3 is on the board"),
+    await p.waitForFunction(() => window.__notes.some(n => n.title === "land new3 is on the board"), null,
       { timeout: 10000 }).catch(() => fail("no desktop notification for a new card with the board unfocused."));
     await p.evaluate(() => window.__notes.find(n => n.title === "land new3 is on the board").onclick());
     setTimeout(() => { LAND["land-new3"].supervised = true; }, 1000);
@@ -3165,7 +3261,7 @@ async function reselectSection(browser, base) {
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: 15000 });
     await p.evaluate(() => attachTask("land-live"));
-    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live",
+    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live", null,
       { timeout: 10000 });
     await p.waitForTimeout(300);
     // From here on nothing may reach xterm or dial a socket.
@@ -3321,7 +3417,7 @@ async function toastsTopSection(browser, base) {
     const solo = await ctx.newPage();
     solo.on("pageerror", e => errors.push(String(e)));
     await solo.goto(base + "/#term=s1", { waitUntil: "domcontentloaded" });
-    await solo.waitForFunction(() => typeof soloID !== "undefined" && soloID === "s1", { timeout: 10000 });
+    await solo.waitForFunction(() => typeof soloID !== "undefined" && soloID === "s1", null, { timeout: 10000 });
     await solo.evaluate(() => toast("solo toast", "in a popped-out window"));
     await solo.waitForTimeout(400);
     w = await where(solo);
@@ -3434,20 +3530,32 @@ async function sayWhenSection(browser, base) {
         return s ? { text: s.textContent, tip: s.dataset.tip } : null;
       };
       return { turn: one({ held_for: "turn", held_count: 2 }), line: one({ held_for: "line" }),
-        dialog: one({ held_for: "dialog" }), old: one({}) };
+        lines: one({ held_for: "line", held_count: 2, held_seconds: 3723 }),
+        dialog: one({ held_for: "dialog" }), old: one({}),
+        ages: [16, 125, 3603].map(termHeldAge) };
     });
-    if (!chips.turn || chips.turn.text !== "! 2" || !/turn to end/.test(chips.turn.tip) ||
-        /input line/.test(chips.turn.tip)) {
-      fail("a message held for the turn did not draw `! 2` naming the turn: " + JSON.stringify(chips.turn));
+    const want = {
+      turn: "2 messages have been waiting to be delivered to this agent for 1m 30s and are blocked by " +
+        "the session's turn, which has to end first. They go in when the turn ends",
+      line: "1 message has been waiting to be delivered to this agent for 1m 30s and is blocked by " +
+        "input in this terminal. Submit your text to dequeue this message",
+      lines: "2 messages have been waiting to be delivered to this agent for 1h 2m 3s and are blocked by " +
+        "input in this terminal. Submit your text to dequeue these messages",
+      dialog: "1 message has been waiting to be delivered to this agent for 1m 30s and is blocked by " +
+        "a dialog open in this terminal, which typing would answer. Answer the dialog to dequeue this message",
+    };
+    want.old = want.line;
+    for (const k of Object.keys(want)) {
+      if (!chips[k] || chips[k].tip !== want[k]) {
+        fail("the held chip's tip for " + k + " reads " + JSON.stringify(chips[k] && chips[k].tip) +
+          ", wanted " + JSON.stringify(want[k]));
+      }
     }
-    if (!chips.line || chips.line.text !== "!" || !/input line/.test(chips.line.tip)) {
-      fail("a message held by the line did not name the line: " + JSON.stringify(chips.line));
+    if (chips.turn.text !== "! 2" || chips.line.text !== "!") {
+      fail("the held chip does not count: " + JSON.stringify(chips));
     }
-    if (!chips.dialog || !/dialog/.test(chips.dialog.tip)) {
-      fail("a message held by a dialog did not name the dialog: " + JSON.stringify(chips.dialog));
-    }
-    if (!chips.old || !/input line/.test(chips.old.tip)) {
-      fail("a room older than held_for lost the line wording: " + JSON.stringify(chips.old));
+    if (chips.ages.join(",") !== "16s,2m 5s,1h 0m 3s") {
+      fail("the held age is not full h/m/s: " + JSON.stringify(chips.ages));
     }
   } finally {
     await ctx.close();
@@ -3485,7 +3593,7 @@ async function pasteSpinnerSection(browser, base) {
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: 15000 });
     await p.evaluate(() => attachTask("land-live"));
-    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live",
+    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live", null,
       { timeout: 10000 });
     await p.waitForTimeout(300);
     await p.evaluate(() => {
@@ -3770,7 +3878,7 @@ async function pasteBigSection(browser, base) {
     });
   });
   const attach = async p => {
-    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live",
+    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live", null,
       { timeout: 10000 });
     await p.waitForTimeout(300);
   };
@@ -3944,7 +4052,7 @@ async function carryLinkSection(browser, base) {
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: 15000 });
     await p.evaluate(() => attachTask("land-live"));
-    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live",
+    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live", null,
       { timeout: 10000 });
     await p.waitForTimeout(300);
 
@@ -4023,7 +4131,7 @@ async function carryLinkSection(browser, base) {
     if (!loaded.spin || !/loading 5\.0MB/.test(loaded.text)) {
       fail("the load shows no spinner naming its size: " + JSON.stringify(loaded));
     }
-    await p.waitForFunction(() => termSock && termSock.readyState === 1, { timeout: 5000 });
+    await p.waitForFunction(() => termSock && termSock.readyState === 1, null, { timeout: 5000 });
     const landed = await p.evaluate(() => new Promise(done => {
       termSock.onmessage({ data: new TextEncoder().encode("old line\r\n".repeat(1000)).buffer });
       term.write("", () => setTimeout(() => {
@@ -4076,7 +4184,7 @@ async function copySelectSection(browser, base) {
     await p.goto(base, { waitUntil: "domcontentloaded" });
     await p.waitForSelector("#stack-list .stackrow", { timeout: 15000 });
     await p.evaluate(() => attachTask("land-live"));
-    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live",
+    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live", null,
       { timeout: 10000 });
     await p.waitForTimeout(300);
     await p.evaluate(() => {
@@ -4451,6 +4559,342 @@ async function keepaliveSection(browser, base) {
   if (errors.length) fail("the keep-alive page threw: " + errors.join(" | "));
 }
 
+// ── the board skin follows the room-picker scope ────────────────────────
+// THREE SCOPES, THREE SKINS, HELD AT ONCE. The ALL view wears the hub's skin,
+// and each of two rooms wears its own, so scoping ALL -> alpha -> sgg reads
+// three different skins back. Then: a save in one scope reaches only that
+// scope and leaks into no other, switching scope re-applies each
+// independently, and a room attaching does not clobber the ALL skin. A fresh
+// context keeps this test's per-scope localStorage out of the others'.
+// Both rooms live, so all three scopes are pickable.
+async function skinScopeSection(browser, base) {
+  hubMode = true;
+  sggAttached = true;
+  resetSkins();
+  const skinCtx = await browser.newContext();
+  const skin = await skinCtx.newPage();
+  const skinErrors = [];
+  skin.on("pageerror", e => skinErrors.push(String(e)));
+  if (process.env.DEBUG_HEADLESS) {
+    skin.on("console", m => console.error("[skin] " + m.type() + ": " + m.text()));
+  }
+  const dataSkin = () =>
+    skin.evaluate(() => document.documentElement.getAttribute("data-skin"));
+  // wears waits for the board to wear a skin (null is the default) and names
+  // the step that did not, with what it wore instead. Returns whether it did.
+  const wears = (want, what) => skin.waitForFunction(w =>
+    document.documentElement.getAttribute("data-skin") === w, want, { timeout: 15000 })
+    .then(() => true, async () => {
+      fail(what + ": the board wore " + JSON.stringify(await dataSkin()) + ", wanted " +
+        JSON.stringify(want) + ". The mock holds " + JSON.stringify(skinFor));
+      return false;
+    });
+  // THE LOAD'S OWN SETTINGS READS HAVE TO LAND BEFORE A SAVE. The remembered
+  // skin paints at once, so the right skin on screen does not mean the board has
+  // finished reading. A save made then was painted over by a read answered
+  // before it, and the wait for the new skin ran out: the flaky main-flow
+  // timeout. Counted per request, so this waits on the reads, not a clock.
+  // A reload abandons the old page's reads without always saying so, so the set
+  // starts over when the page does.
+  const settingsOut = new Set();
+  const isSettings = r => new URL(r.url()).pathname === "/v1/settings";
+  skin.on("request", r => { if (isSettings(r)) settingsOut.add(r); });
+  skin.on("requestfinished", r => settingsOut.delete(r));
+  skin.on("requestfailed", r => settingsOut.delete(r));
+  skin.on("framenavigated", f => { if (f === skin.mainFrame()) settingsOut.clear(); });
+  const settled = async what => {
+    for (const end = Date.now() + 15000; settingsOut.size && Date.now() < end;) {
+      await skin.waitForTimeout(50);
+    }
+    if (settingsOut.size) fail(what + ": the settings reads never finished.");
+    // One more turn of the page, so the last answer has been painted.
+    await skin.evaluate(() => new Promise(r => setTimeout(r, 0)));
+  };
+  // scopeTo reloads the board into a scope (null for ALL) and waits for the
+  // skin that scope wears to land and the reads behind it to finish.
+  const scopeTo = async (room, want) => {
+    await Promise.all([
+      skin.waitForNavigation({ waitUntil: "domcontentloaded" }),
+      skin.evaluate(r => pickRoom(r), room)
+    ]);
+    const ok = await wears(want, "scoped to " + (room || "ALL"));
+    await settled("scoped to " + (room || "ALL"));
+    // And the board says so itself. Until it has, a room attaching re-reads the
+    // skin, which is the heal, and would read whatever the mock holds by then.
+    await skin.waitForFunction(() => skinHasSettled(), null, { timeout: 15000 })
+      .catch(() => fail("scoped to " + (room || "ALL") + ": the skin never settled."));
+    return ok;
+  };
+  try {
+    // ALL scope: the hub's own skin, not the alphabetically-first room's.
+    await skin.goto(base, { waitUntil: "domcontentloaded" });
+    await wears("noir", "the ALL view on load");
+
+    // Scope to each room in turn: three scopes, three different skins, at once.
+    // The hub holds noir, alpha holds moss, sgg holds ember, and no two agree.
+    await scopeTo("alpha", "moss");
+    await scopeTo("sgg", "ember");
+    const held = { "": skinFor[""], alpha: skinFor.alpha, sgg: skinFor.sgg };
+    const distinct = new Set(Object.values(held));
+    if (distinct.size !== 3) {
+      fail("the three scopes did not hold three different skins at once: " +
+        JSON.stringify(held));
+    }
+    if (held[""] !== "noir" || held.alpha !== "moss" || held.sgg !== "ember") {
+      fail("the three scopes wore the wrong skins: " + JSON.stringify(held));
+    }
+
+    // A skin saved from the ALL view lands on the hub (skinFor[""]) and leaves
+    // both rooms alone. A 409 would have made saveSkin revert the paint.
+    await scopeTo(null, "noir");
+    await skin.evaluate(() => saveSkin("vapor"));
+    await wears("vapor", "a skin saved from the ALL view");
+    if (skinFor[""] !== "vapor") {
+      fail("a skin saved from the ALL view did not reach the hub: skinFor[''] is " +
+        JSON.stringify(skinFor[""]) + ", wanted vapor.");
+    }
+    if (skinFor.alpha !== "moss" || skinFor.sgg !== "ember") {
+      fail("saving the ALL skin leaked into a room: " + JSON.stringify(skinFor));
+    }
+
+    // A skin saved while scoped to alpha lands on alpha alone, and leaves the
+    // hub's ALL skin and sgg's untouched.
+    await scopeTo("alpha", "moss");
+    await skin.evaluate(() => saveSkin("sandstone"));
+    await wears("sandstone", "a skin saved while scoped to alpha");
+    if (skinFor.alpha !== "sandstone") {
+      fail("a skin saved while scoped to alpha did not reach the room: skinFor.alpha is " +
+        JSON.stringify(skinFor.alpha) + ", wanted sandstone.");
+    }
+    if (skinFor[""] !== "vapor" || skinFor.sgg !== "ember") {
+      fail("saving alpha's skin leaked into another scope: " + JSON.stringify(skinFor));
+    }
+
+    // A skin saved while scoped to sgg lands on sgg alone.
+    await scopeTo("sgg", "ember");
+    await skin.evaluate(() => saveSkin("harbour"));
+    await wears(null, "a skin saved while scoped to sgg");
+    if (skinFor.sgg !== "harbour") {
+      fail("a skin saved while scoped to sgg did not reach the room: skinFor.sgg is " +
+        JSON.stringify(skinFor.sgg) + ", wanted harbour.");
+    }
+    if (skinFor[""] !== "vapor" || skinFor.alpha !== "sandstone") {
+      fail("saving sgg's skin leaked into another scope: " + JSON.stringify(skinFor));
+    }
+
+    // Switching scope re-applies each saved skin independently: ALL is vapor,
+    // alpha is sandstone, sgg is the default harbour (drawn by removing the
+    // attribute), and each is read fresh on its own reload.
+    await scopeTo(null, "vapor");
+    await scopeTo("alpha", "sandstone");
+    await Promise.all([
+      skin.waitForNavigation({ waitUntil: "domcontentloaded" }),
+      skin.evaluate(() => pickRoom("sgg"))
+    ]);
+    await wears(null, "scoped back to sgg");
+
+    // Back to ALL: the hub skin is what it was, and a room attaching or
+    // leaving does not change it. This is the bug clint hit on a deploy: a
+    // room connecting swapped his theme to its own skin and its leaving
+    // reverted it, though he never changed scope off ALL.
+    //
+    // To catch it, the answer a re-read WOULD give is moved out from under the
+    // settled skin: skinFor[""] is changed to a different skin, so any re-fetch
+    // of the ALL scope now returns `ember`. A room attaching or detaching must
+    // still leave the applied `vapor` alone, because the skin has settled and
+    // ALL is not the scope of the room that changed. The old code re-read the
+    // skin on every attached-set flip and would repaint to `ember` here.
+    await scopeTo(null, "vapor");
+    const allWas = skinFor[""];
+    skinFor[""] = "ember";
+    // Past loadHubRooms' 2s throttle, so the `rooms` event below actually runs
+    // its body rather than being coalesced away. Then a room leaves and one
+    // attaches: two changes to the attached set, neither of which is the ALL
+    // scope the operator is on, so the settled skin must not move.
+    await skin.waitForTimeout(2200);
+    sggAttached = false;
+    hubStreams.forEach(r => { try { r.write("event: rooms\ndata: {}\n\n"); } catch (e) {} });
+    await skin.waitForTimeout(2200);
+    sggAttached = true;
+    hubStreams.forEach(r => { try { r.write("event: rooms\ndata: {}\n\n"); } catch (e) {} });
+    await skin.waitForTimeout(500);
+    if ((await dataSkin()) !== "vapor") {
+      fail("a room attaching or leaving clobbered the settled ALL skin: it " +
+        "became " + JSON.stringify(await dataSkin()) + ", wanted the applied vapor.");
+    }
+    skinFor[""] = allWas;
+    if (skinErrors.length) {
+      fail("the skin page threw uncaught errors: " + skinErrors.join(" | "));
+    }
+  } finally {
+    await skin.close();
+    await skinCtx.close();
+    hubMode = false;
+    sggAttached = false;
+    resetSkins();
+  }
+}
+
+// ── a persisted skin heals when a room attaches, with no reload ──────────
+// The board loads against a hub that has no room to borrow settings from
+// yet, the window right after a hub restart. The ALL-view `/v1/settings`
+// read is a 409, so the load-time skin read fails and the board is on the
+// default dark. This is exactly what clint saw: a deploy restarts the hub,
+// he reloads before a room is back, and the paper skin never paints. When a
+// room attaches the read succeeds, and the skin must heal there rather than
+// waiting for another manual reload.
+async function skinHealSection(browser, base) {
+  hubMode = true;
+  hubHasRoom = false;
+  sggAttached = false;
+  // The hub wears paper, a light skin, which is the one clint set and did not
+  // see paint. resetSkins in the finally puts the default back.
+  skinFor = { "": "paper", alpha: "moss", sgg: "ember" };
+  const healCtx = await browser.newContext();
+  const heal = await healCtx.newPage();
+  const healErrors = [];
+  heal.on("pageerror", e => healErrors.push(String(e)));
+  if (process.env.DEBUG_HEADLESS) {
+    heal.on("console", m => console.error("[heal] " + m.type() + ": " + m.text()));
+  }
+  try {
+    await heal.goto(base, { waitUntil: "domcontentloaded" });
+    // No room to borrow from: the load-time read 409s and the board is dark.
+    await heal.waitForTimeout(1500);
+    const dark = await heal.evaluate(() =>
+      document.documentElement.getAttribute("data-skin"));
+    if (dark !== null) {
+      fail("with the hub unable to answer settings, the board should be on the " +
+        "default, but data-skin was " + JSON.stringify(dark));
+    }
+    // Past loadHubRooms' 2s throttle, then a room attaches: the read now
+    // succeeds and the skin heals to the hub's paper without a reload.
+    await heal.waitForTimeout(2200);
+    hubHasRoom = true;
+    hubStreams.forEach(r => { try { r.write("event: rooms\ndata: {}\n\n"); } catch (e) {} });
+    await heal.waitForFunction(() =>
+      document.documentElement.getAttribute("data-skin") === "paper", null, { timeout: 15000 });
+    if (healErrors.length) {
+      fail("the skin-heal page threw uncaught errors: " + healErrors.join(" | "));
+    }
+  } finally {
+    await heal.close();
+    await healCtx.close();
+    hubMode = false;
+    hubHasRoom = true;
+    resetSkins();
+  }
+}
+
+// ── the history view paints rows ──────────────────────────────────────
+async function historySection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+  const page = await ctx.newPage();
+  await page.addInitScript(() => {
+    let all = {};
+    try { all = JSON.parse(localStorage.getItem("atrium.skipconfirm") || "{}"); } catch (e) {}
+    all["width-floor"] = true;
+    localStorage.setItem("atrium.skipconfirm", JSON.stringify(all));
+  });
+  try {
+  await page.goto(base, { waitUntil: "domcontentloaded" });
+  await page.waitForSelector("#stack-list .stackrow", { timeout: 15000 });
+  await page.click('.tab[data-view="history"]');
+  await page.waitForSelector("#history-list .row.line", { timeout: 15000 });
+  const histRows = await page.locator("#history-list .row.line").count();
+  if (histRows < 1) fail("the history view painted no rows from /v1/history.");
+
+  // ── a long history scrolls in its own box, filters stay put ───────────
+  // main clips, so a view that is not a scroll box of its own can never show
+  // the rows below the window. Two pages loaded, then checked at desktop and
+  // phone widths.
+  histMany = true;
+  await page.evaluate(() => renderHistory(false));
+  await page.waitForFunction(() =>
+    document.querySelectorAll("#history-list .row.line").length === 100, null,
+    { timeout: 15000 }).catch(() => fail("the history view did not draw the long list."));
+  await page.evaluate(() => moreHistory());
+  await page.waitForFunction(() =>
+    document.querySelectorAll("#history-list .row.line").length === 200, null,
+    { timeout: 15000 }).catch(() => fail("show more did not add the second history page."));
+  for (const vp of [{ width: 1280, height: 800 }, { width: 390, height: 780 }]) {
+    await page.setViewportSize(vp);
+    const sc = await page.evaluate(() => {
+      const list = document.getElementById("history-list");
+      const bar = document.querySelector("#history > .toolbar");
+      list.scrollTop = 0;
+      const before = bar.getBoundingClientRect().top;
+      const tall = { sh: list.scrollHeight, ch: list.clientHeight };
+      list.scrollTop = 600;
+      return Object.assign(tall, {
+        moved: list.scrollTop,
+        barMoved: bar.getBoundingClientRect().top - before,
+        barOnScreen: bar.getBoundingClientRect().bottom <= window.innerHeight
+      });
+    });
+    if (!(sc.sh > sc.ch) || sc.moved <= 0) {
+      fail("the history list does not scroll at " + vp.width + "px: " + JSON.stringify(sc));
+    }
+    if (sc.barMoved !== 0 || !sc.barOnScreen) {
+      fail("the history search bar moved with the list at " + vp.width + "px: " + JSON.stringify(sc));
+    }
+  }
+  await page.setViewportSize({ width: 1280, height: 800 });
+
+  // ── a live repaint keeps the pages and the reader's row ───────────────
+  // A board event repaints the open view. It re-reads both pages rather than
+  // cutting back to one, and a new run on top does not move the row a reader
+  // who has scrolled down is on.
+  const hHeld = await page.evaluate(() => {
+    const list = document.getElementById("history-list");
+    list.scrollTop = 3000;
+    const top = list.getBoundingClientRect().top;
+    const row = [...list.querySelectorAll(".row.line")]
+      .find(r => r.getBoundingClientRect().bottom > top);
+    return { scrollTop: list.scrollTop, id: row.dataset.id,
+      offset: row.getBoundingClientRect().top - top };
+  });
+  histManyLive = true;
+  await page.evaluate(() => repaintLists());
+  await page.waitForFunction(() =>
+    document.querySelector("#history-list .row.line").dataset.id === "hm251", null,
+    { timeout: 15000 }).catch(() => fail("the live history repaint did not draw the new run."));
+  const hLate = await page.evaluate((id) => {
+    const list = document.getElementById("history-list");
+    const row = list.querySelector('.row.line[data-id="' + id + '"]');
+    return { rows: list.querySelectorAll(".row.line").length, scrollTop: list.scrollTop,
+      offset: row ? row.getBoundingClientRect().top - list.getBoundingClientRect().top : null };
+  }, hHeld.id);
+  if (hLate.rows < 200) {
+    fail("a live history repaint cut the list back to one page: " + JSON.stringify(hLate));
+  }
+  if (hLate.scrollTop < hHeld.scrollTop || hLate.offset === null ||
+      Math.abs(hLate.offset - hHeld.offset) > 1) {
+    fail("a live history repaint moved the reader: " + JSON.stringify({ hHeld, hLate }));
+  }
+
+  // ── a new search starts at the top ────────────────────────────────────
+  await page.evaluate(() => renderHistory(false));
+  await page.waitForFunction(() =>
+    document.querySelectorAll("#history-list .row.line").length === 100, null,
+    { timeout: 15000 }).catch(() => fail("a fresh history load did not go back to one page."));
+  const hTop = await page.evaluate(() => document.getElementById("history-list").scrollTop);
+  if (hTop !== 0) fail("a fresh history load kept the old scroll: " + hTop);
+  histMany = false; histManyLive = false;
+  await page.evaluate(() => renderHistory(false));
+  } finally {
+    await ctx.close();
+  }
+}
+
+// Where in this file a throw came from. A bare "Timeout 30000ms exceeded" names
+// no wait, so a failure nobody can run alone could not even be found.
+function threwAt(e) {
+  const at = String((e && e.stack) || "").split("\n")
+    .find(l => /test-board-headless\.js:\d+/.test(l));
+  return at ? " (at " + at.trim().replace(/^at /, "") + ")" : "";
+}
+
 // The stuck section's cards. A launched card a restart resumed onto an idle
 // prompt, one a `/model` was typed into, and one that ended a turn without
 // reporting. The room serves `escalation` only on the last, and only from
@@ -4593,10 +5037,12 @@ async function main() {
       untaggedSort: untaggedSortSection, newCard: newCardSection, themePreview: themePreviewSection, land: landSection, reselect: reselectSection,
       toastsTop: toastsTopSection, sayWhen: sayWhenSection, pasteSpinner: pasteSpinnerSection,
       pasteBig: pasteBigSection, typing: typingSection, alias: aliasSection, copySelect: copySelectSection, busyGuard: busyGuardSection, keepalive: keepaliveSection,
-      stuck: stuckSection, carryLink: carryLinkSection };
+      stuck: stuckSection, carryLink: carryLinkSection,
+      skinScope: skinScopeSection, skinHeal: skinHealSection, toastLives: toastLivesSection,
+      history: historySection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
-    } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e)); }
+    } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
     await browser.close();
     openStreams.forEach(r => { try { r.destroy(); } catch (e) {} });
     await new Promise(r => server.close(r));
@@ -4671,89 +5117,7 @@ async function main() {
     await page.evaluate(() => runRefresh());
 
     // ── the history view paints rows ──────────────────────────────────────
-    await page.click('.tab[data-view="history"]');
-    await page.waitForSelector("#history-list .row.line", { timeout: 15000 });
-    const histRows = await page.locator("#history-list .row.line").count();
-    if (histRows < 1) fail("the history view painted no rows from /v1/history.");
-
-    // ── a long history scrolls in its own box, filters stay put ───────────
-    // main clips, so a view that is not a scroll box of its own can never show
-    // the rows below the window. Two pages loaded, then checked at desktop and
-    // phone widths.
-    histMany = true;
-    await page.evaluate(() => renderHistory(false));
-    await page.waitForFunction(() =>
-      document.querySelectorAll("#history-list .row.line").length === 100,
-      { timeout: 15000 }).catch(() => fail("the history view did not draw the long list."));
-    await page.evaluate(() => moreHistory());
-    await page.waitForFunction(() =>
-      document.querySelectorAll("#history-list .row.line").length === 200,
-      { timeout: 15000 }).catch(() => fail("show more did not add the second history page."));
-    for (const vp of [{ width: 1280, height: 800 }, { width: 390, height: 780 }]) {
-      await page.setViewportSize(vp);
-      const sc = await page.evaluate(() => {
-        const list = document.getElementById("history-list");
-        const bar = document.querySelector("#history > .toolbar");
-        list.scrollTop = 0;
-        const before = bar.getBoundingClientRect().top;
-        const tall = { sh: list.scrollHeight, ch: list.clientHeight };
-        list.scrollTop = 600;
-        return Object.assign(tall, {
-          moved: list.scrollTop,
-          barMoved: bar.getBoundingClientRect().top - before,
-          barOnScreen: bar.getBoundingClientRect().bottom <= window.innerHeight
-        });
-      });
-      if (!(sc.sh > sc.ch) || sc.moved <= 0) {
-        fail("the history list does not scroll at " + vp.width + "px: " + JSON.stringify(sc));
-      }
-      if (sc.barMoved !== 0 || !sc.barOnScreen) {
-        fail("the history search bar moved with the list at " + vp.width + "px: " + JSON.stringify(sc));
-      }
-    }
-    await page.setViewportSize({ width: 1280, height: 800 });
-
-    // ── a live repaint keeps the pages and the reader's row ───────────────
-    // A board event repaints the open view. It re-reads both pages rather than
-    // cutting back to one, and a new run on top does not move the row a reader
-    // who has scrolled down is on.
-    const hHeld = await page.evaluate(() => {
-      const list = document.getElementById("history-list");
-      list.scrollTop = 3000;
-      const top = list.getBoundingClientRect().top;
-      const row = [...list.querySelectorAll(".row.line")]
-        .find(r => r.getBoundingClientRect().bottom > top);
-      return { scrollTop: list.scrollTop, id: row.dataset.id,
-        offset: row.getBoundingClientRect().top - top };
-    });
-    histManyLive = true;
-    await page.evaluate(() => repaintLists());
-    await page.waitForFunction(() =>
-      document.querySelector("#history-list .row.line").dataset.id === "hm251",
-      { timeout: 15000 }).catch(() => fail("the live history repaint did not draw the new run."));
-    const hLate = await page.evaluate((id) => {
-      const list = document.getElementById("history-list");
-      const row = list.querySelector('.row.line[data-id="' + id + '"]');
-      return { rows: list.querySelectorAll(".row.line").length, scrollTop: list.scrollTop,
-        offset: row ? row.getBoundingClientRect().top - list.getBoundingClientRect().top : null };
-    }, hHeld.id);
-    if (hLate.rows < 200) {
-      fail("a live history repaint cut the list back to one page: " + JSON.stringify(hLate));
-    }
-    if (hLate.scrollTop < hHeld.scrollTop || hLate.offset === null ||
-        Math.abs(hLate.offset - hHeld.offset) > 1) {
-      fail("a live history repaint moved the reader: " + JSON.stringify({ hHeld, hLate }));
-    }
-
-    // ── a new search starts at the top ────────────────────────────────────
-    await page.evaluate(() => renderHistory(false));
-    await page.waitForFunction(() =>
-      document.querySelectorAll("#history-list .row.line").length === 100,
-      { timeout: 15000 }).catch(() => fail("a fresh history load did not go back to one page."));
-    const hTop = await page.evaluate(() => document.getElementById("history-list").scrollTop);
-    if (hTop !== 0) fail("a fresh history load kept the old scroll: " + hTop);
-    histMany = false; histManyLive = false;
-    await page.evaluate(() => renderHistory(false));
+    await historySection(browser, base);
 
     // ── changing runners pane goes back to the top ────────────────────────
     // `#runners` is the scroll box, not main. A short window so the page has
@@ -4811,7 +5175,7 @@ async function main() {
         const m = document.getElementById("cardmenu");
         return m && m.classList.contains("on") &&
           [...m.querySelectorAll(":scope > button")].some(b => /^dismiss\b/.test(b.textContent.trim()));
-      }, { timeout: 15000 });
+      }, null, { timeout: 15000 });
     } catch (e) {
       fail("a terminated pinned terminal's right-click menu offered no dismiss " +
         "action, so the operator has no way to remove it.");
@@ -5599,7 +5963,7 @@ async function main() {
       window.__attachAttempts = 0;
     });
     // Wait past the capped backoff for a pending retry to fire and open.
-    await page.waitForFunction(() => window.__attachAttempts > 0, { timeout: 20000 });
+    await page.waitForFunction(() => window.__attachAttempts > 0, null, { timeout: 20000 });
     await page.waitForTimeout(1500);
     const opensAfter = await page.evaluate(() => window.__openTermCount);
     const attemptsAfter = await page.evaluate(() => window.__attachAttempts);
@@ -5837,7 +6201,7 @@ async function main() {
       window.__fakeSolo.postMessage({ type: "solo-claim", task: "s1" });
     });
     // The board heard the claim: the card reads as popped out.
-    await page.waitForFunction(() => poppedOut("s1"), { timeout: 15000 });
+    await page.waitForFunction(() => poppedOut("s1"), null, { timeout: 15000 });
 
     // The window's OWN poll lapses past soloClaimFor without re-claiming, which
     // a reconnect/backoff through a hub restart causes. Simulated by ageing the
@@ -5852,7 +6216,7 @@ async function main() {
     let reheard = false;
     try {
       await page.waitForFunction(
-        () => poppedOut("s1") && (Date.now() - (soloHeld.get("s1") || 0) < 5000),
+        () => poppedOut("s1") && (Date.now() - (soloHeld.get("s1") || 0) < 5000), null,
         { timeout: 15000 });
       reheard = true;
     } catch (e) {}
@@ -5872,7 +6236,7 @@ async function main() {
     await page.evaluate(() => runRefresh());
     let dropped = false;
     try {
-      await page.waitForFunction(() => !poppedOut("s1"), { timeout: 15000 });
+      await page.waitForFunction(() => !poppedOut("s1"), null, { timeout: 15000 });
       dropped = true;
     } catch (e) {}
     if (!dropped) {
@@ -5951,7 +6315,7 @@ async function main() {
         const b = document.getElementById("t-wait");
         return b && !b.hidden && /reconnect/i.test(
           (document.getElementById("t-wait-say") || {}).textContent || "");
-      }, { timeout: 15000 });
+      }, null, { timeout: 15000 });
 
       // And the dead-end modal is NOT up while the hub is a moment from
       // answering. That modal is the bug: a transient restart used to pop it.
@@ -5969,7 +6333,7 @@ async function main() {
       // title carries the card's name once soloFetchCard returns.
       soloMode = "ok";
       await solo.waitForFunction(() =>
-        /solo card/.test(document.title), { timeout: 20000 });
+        /solo card/.test(document.title), null, { timeout: 20000 });
 
       // The reconnecting line comes down, and the dead-end modal never appeared.
       const afterRecover = await solo.evaluate(() => {
@@ -6003,7 +6367,7 @@ async function main() {
         const d = document.getElementById("ask");
         return !!(d && d.open &&
           (document.getElementById("ask-title") || {}).textContent === "nothing to attach to");
-      }, { timeout: 15000 });
+      }, null, { timeout: 15000 });
     } catch (e) {
       fail("a genuine 404 did not show the dead-end 'nothing to attach to' modal: " +
         (e && e.message ? e.message : e));
@@ -6033,12 +6397,12 @@ async function main() {
       await hub.waitForFunction(() => {
         const el = document.getElementById("rooms");
         return el && !el.hidden;
-      }, { timeout: 15000 });
+      }, null, { timeout: 15000 });
       await hub.evaluate(() => openRooms());
       await hub.waitForFunction(() => {
         const m = document.getElementById("rooms-menu");
         return m && !m.hidden;
-      }, { timeout: 15000 });
+      }, null, { timeout: 15000 });
 
       // sgg starts disconnected in the open menu, and its placement is recorded
       // so the live update can be proven not to move it. The row is found by its
@@ -6081,7 +6445,7 @@ async function main() {
         });
         return !!(sgg && sgg.querySelector(".dot.live") &&
           !/disconnect/i.test(sgg.textContent));
-      }, { timeout: 15000 });
+      }, null, { timeout: 15000 });
 
       // The menu held its placement: only the rows changed under the user.
       const after = await hub.evaluate(() => {
@@ -6106,12 +6470,12 @@ async function main() {
       await hub.waitForFunction(() => {
         const tab = document.querySelector('.tab[data-view="audit"]');
         return tab && !tab.hidden;
-      }, { timeout: 15000 });
+      }, null, { timeout: 15000 });
       await hub.evaluate(() => switchView("audit"));
       await hub.waitForFunction(() => {
         const rows = document.querySelectorAll("#audit-list .aud-row");
         return rows.length >= 2;
-      }, { timeout: 15000 });
+      }, null, { timeout: 15000 });
       const audit = await hub.evaluate(() => {
         const rows = [...document.querySelectorAll("#audit-list .aud-row")];
         const first = rows[0];
@@ -6157,7 +6521,7 @@ async function main() {
           const rm = r.querySelector(".aud-room");
           return rm && rm.textContent === "sgg";
         });
-      }, { timeout: 15000 }).catch(() => fail(
+      }, null, { timeout: 15000 }).catch(() => fail(
         "the audit pane did not filter to the sgg room."));
 
       // ── the audit pane filters by kind ────────────────────────────────────
@@ -6170,7 +6534,7 @@ async function main() {
         sel.dispatchEvent(new Event("change"));
       });
       await hub.waitForFunction(() =>
-        document.querySelectorAll("#audit-list .aud-row").length === 4,
+        document.querySelectorAll("#audit-list .aud-row").length === 4, null,
         { timeout: 15000 }).catch(() => fail(
           "clearing the room filter did not restore the full audit feed."));
       await hub.evaluate(() => {
@@ -6182,7 +6546,7 @@ async function main() {
         const rows = [...document.querySelectorAll("#audit-list .aud-row")];
         return rows.length === 1 &&
           rows[0].querySelector(".aud-kind").textContent === "hub-started";
-      }, { timeout: 15000 }).catch(() => fail(
+      }, null, { timeout: 15000 }).catch(() => fail(
         "the audit pane did not filter to the hub-started kind."));
 
       // ── a new event arrives live, no reload ───────────────────────────────
@@ -6195,7 +6559,7 @@ async function main() {
         sel.dispatchEvent(new Event("change"));
       });
       await hub.waitForFunction(() =>
-        document.querySelectorAll("#audit-list .aud-row").length === 4,
+        document.querySelectorAll("#audit-list .aud-row").length === 4, null,
         { timeout: 15000 }).catch(() => fail(
           "clearing the kind filter did not restore the full audit feed."));
       auditLive = true;
@@ -6204,7 +6568,7 @@ async function main() {
         const rows = [...document.querySelectorAll("#audit-list .aud-row")];
         return rows.length === 5 &&
           rows[0].querySelector(".aud-kind").textContent === "session-exit";
-      }, { timeout: 15000 }).catch(() => fail(
+      }, null, { timeout: 15000 }).catch(() => fail(
         "the audit pane did not pick up a live event on the `audit` delta."));
 
       // ── a long feed scrolls in its own box, filters stay put ──────────────
@@ -6214,7 +6578,7 @@ async function main() {
       auditMany = true;
       hubStreams.forEach(r => { try { r.write("event: audit\ndata: {}\n\n"); } catch (e) {} });
       await hub.waitForFunction(() =>
-        document.querySelectorAll("#audit-list .aud-row").length === 150,
+        document.querySelectorAll("#audit-list .aud-row").length === 150, null,
         { timeout: 15000 }).catch(() => fail("the audit pane did not draw the long feed."));
       for (const vp of [{ width: 1280, height: 800 }, { width: 390, height: 780 }]) {
         await hub.setViewportSize(vp);
@@ -6255,7 +6619,7 @@ async function main() {
       auditManyLive = true;
       hubStreams.forEach(r => { try { r.write("event: audit\ndata: {}\n\n"); } catch (e) {} });
       await hub.waitForFunction(() =>
-        document.querySelectorAll("#audit-list .aud-row").length === 151,
+        document.querySelectorAll("#audit-list .aud-row").length === 151, null,
         { timeout: 15000 }).catch(() => fail("the audit pane did not pick up the live line on the long feed."));
       const late = await hub.evaluate((id) => {
         const list = document.getElementById("audit-list");
@@ -6282,197 +6646,10 @@ async function main() {
     }
 
     // ── the board skin follows the room-picker scope ────────────────────────
-    // THREE SCOPES, THREE SKINS, HELD AT ONCE. The ALL view wears the hub's skin,
-    // and each of two rooms wears its own, so scoping ALL -> alpha -> sgg reads
-    // three different skins back. Then: a save in one scope reaches only that
-    // scope and leaks into no other, switching scope re-applies each
-    // independently, and a room attaching does not clobber the ALL skin. A fresh
-    // context keeps this test's per-scope localStorage out of the others'.
-    // Both rooms live, so all three scopes are pickable.
-    hubMode = true;
-    sggAttached = true;
-    resetSkins();
-    const skinCtx = await browser.newContext();
-    const skin = await skinCtx.newPage();
-    const skinErrors = [];
-    skin.on("pageerror", e => skinErrors.push(String(e)));
-    if (process.env.DEBUG_HEADLESS) {
-      skin.on("console", m => console.error("[skin] " + m.type() + ": " + m.text()));
-    }
-    const dataSkin = () =>
-      skin.evaluate(() => document.documentElement.getAttribute("data-skin"));
-    // scopeTo reloads the board into a scope (null for ALL) and waits for the
-    // skin that scope wears to land.
-    const scopeTo = async (room, want) => {
-      await Promise.all([
-        skin.waitForNavigation({ waitUntil: "domcontentloaded" }),
-        skin.evaluate(r => pickRoom(r), room)
-      ]);
-      await skin.waitForFunction(w =>
-        document.documentElement.getAttribute("data-skin") === w, want, { timeout: 15000 });
-    };
-    try {
-      // ALL scope: the hub's own skin, not the alphabetically-first room's.
-      await skin.goto(base, { waitUntil: "domcontentloaded" });
-      await skin.waitForFunction(() =>
-        document.documentElement.getAttribute("data-skin") === "noir", { timeout: 15000 });
-
-      // Scope to each room in turn: three scopes, three different skins, at once.
-      // The hub holds noir, alpha holds moss, sgg holds ember, and no two agree.
-      await scopeTo("alpha", "moss");
-      await scopeTo("sgg", "ember");
-      const held = { "": skinFor[""], alpha: skinFor.alpha, sgg: skinFor.sgg };
-      const distinct = new Set(Object.values(held));
-      if (distinct.size !== 3) {
-        fail("the three scopes did not hold three different skins at once: " +
-          JSON.stringify(held));
-      }
-      if (held[""] !== "noir" || held.alpha !== "moss" || held.sgg !== "ember") {
-        fail("the three scopes wore the wrong skins: " + JSON.stringify(held));
-      }
-
-      // A skin saved from the ALL view lands on the hub (skinFor[""]) and leaves
-      // both rooms alone. A 409 would have made saveSkin revert the paint.
-      await scopeTo(null, "noir");
-      await skin.evaluate(() => saveSkin("vapor"));
-      await skin.waitForFunction(() =>
-        document.documentElement.getAttribute("data-skin") === "vapor", { timeout: 15000 });
-      if (skinFor[""] !== "vapor") {
-        fail("a skin saved from the ALL view did not reach the hub: skinFor[''] is " +
-          JSON.stringify(skinFor[""]) + ", wanted vapor.");
-      }
-      if (skinFor.alpha !== "moss" || skinFor.sgg !== "ember") {
-        fail("saving the ALL skin leaked into a room: " + JSON.stringify(skinFor));
-      }
-
-      // A skin saved while scoped to alpha lands on alpha alone, and leaves the
-      // hub's ALL skin and sgg's untouched.
-      await scopeTo("alpha", "moss");
-      await skin.evaluate(() => saveSkin("sandstone"));
-      await skin.waitForFunction(() =>
-        document.documentElement.getAttribute("data-skin") === "sandstone", { timeout: 15000 });
-      if (skinFor.alpha !== "sandstone") {
-        fail("a skin saved while scoped to alpha did not reach the room: skinFor.alpha is " +
-          JSON.stringify(skinFor.alpha) + ", wanted sandstone.");
-      }
-      if (skinFor[""] !== "vapor" || skinFor.sgg !== "ember") {
-        fail("saving alpha's skin leaked into another scope: " + JSON.stringify(skinFor));
-      }
-
-      // A skin saved while scoped to sgg lands on sgg alone.
-      await scopeTo("sgg", "ember");
-      await skin.evaluate(() => saveSkin("harbour"));
-      await skin.waitForFunction(() =>
-        document.documentElement.getAttribute("data-skin") === null, { timeout: 15000 });
-      if (skinFor.sgg !== "harbour") {
-        fail("a skin saved while scoped to sgg did not reach the room: skinFor.sgg is " +
-          JSON.stringify(skinFor.sgg) + ", wanted harbour.");
-      }
-      if (skinFor[""] !== "vapor" || skinFor.alpha !== "sandstone") {
-        fail("saving sgg's skin leaked into another scope: " + JSON.stringify(skinFor));
-      }
-
-      // Switching scope re-applies each saved skin independently: ALL is vapor,
-      // alpha is sandstone, sgg is the default harbour (drawn by removing the
-      // attribute), and each is read fresh on its own reload.
-      await scopeTo(null, "vapor");
-      await scopeTo("alpha", "sandstone");
-      await Promise.all([
-        skin.waitForNavigation({ waitUntil: "domcontentloaded" }),
-        skin.evaluate(() => pickRoom("sgg"))
-      ]);
-      await skin.waitForFunction(() =>
-        document.documentElement.getAttribute("data-skin") === null, { timeout: 15000 });
-
-      // Back to ALL: the hub skin is what it was, and a room attaching or
-      // leaving does not change it. This is the bug clint hit on a deploy: a
-      // room connecting swapped his theme to its own skin and its leaving
-      // reverted it, though he never changed scope off ALL.
-      //
-      // To catch it, the answer a re-read WOULD give is moved out from under the
-      // settled skin: skinFor[""] is changed to a different skin, so any re-fetch
-      // of the ALL scope now returns `ember`. A room attaching or detaching must
-      // still leave the applied `vapor` alone, because the skin has settled and
-      // ALL is not the scope of the room that changed. The old code re-read the
-      // skin on every attached-set flip and would repaint to `ember` here.
-      await scopeTo(null, "vapor");
-      const allWas = skinFor[""];
-      skinFor[""] = "ember";
-      // Past loadHubRooms' 2s throttle, so the `rooms` event below actually runs
-      // its body rather than being coalesced away. Then a room leaves and one
-      // attaches: two changes to the attached set, neither of which is the ALL
-      // scope the operator is on, so the settled skin must not move.
-      await skin.waitForTimeout(2200);
-      sggAttached = false;
-      hubStreams.forEach(r => { try { r.write("event: rooms\ndata: {}\n\n"); } catch (e) {} });
-      await skin.waitForTimeout(2200);
-      sggAttached = true;
-      hubStreams.forEach(r => { try { r.write("event: rooms\ndata: {}\n\n"); } catch (e) {} });
-      await skin.waitForTimeout(500);
-      if ((await dataSkin()) !== "vapor") {
-        fail("a room attaching or leaving clobbered the settled ALL skin: it " +
-          "became " + JSON.stringify(await dataSkin()) + ", wanted the applied vapor.");
-      }
-      skinFor[""] = allWas;
-      if (skinErrors.length) {
-        fail("the skin page threw uncaught errors: " + skinErrors.join(" | "));
-      }
-    } finally {
-      await skin.close();
-      await skinCtx.close();
-      hubMode = false;
-      sggAttached = false;
-      resetSkins();
-    }
+    await skinScopeSection(browser, base);
 
     // ── a persisted skin heals when a room attaches, with no reload ──────────
-    // The board loads against a hub that has no room to borrow settings from
-    // yet, the window right after a hub restart. The ALL-view `/v1/settings`
-    // read is a 409, so the load-time skin read fails and the board is on the
-    // default dark. This is exactly what clint saw: a deploy restarts the hub,
-    // he reloads before a room is back, and the paper skin never paints. When a
-    // room attaches the read succeeds, and the skin must heal there rather than
-    // waiting for another manual reload.
-    hubMode = true;
-    hubHasRoom = false;
-    sggAttached = false;
-    // The hub wears paper, a light skin, which is the one clint set and did not
-    // see paint. resetSkins in the finally puts the default back.
-    skinFor = { "": "paper", alpha: "moss", sgg: "ember" };
-    const healCtx = await browser.newContext();
-    const heal = await healCtx.newPage();
-    const healErrors = [];
-    heal.on("pageerror", e => healErrors.push(String(e)));
-    if (process.env.DEBUG_HEADLESS) {
-      heal.on("console", m => console.error("[heal] " + m.type() + ": " + m.text()));
-    }
-    try {
-      await heal.goto(base, { waitUntil: "domcontentloaded" });
-      // No room to borrow from: the load-time read 409s and the board is dark.
-      await heal.waitForTimeout(1500);
-      const dark = await heal.evaluate(() =>
-        document.documentElement.getAttribute("data-skin"));
-      if (dark !== null) {
-        fail("with the hub unable to answer settings, the board should be on the " +
-          "default, but data-skin was " + JSON.stringify(dark));
-      }
-      // Past loadHubRooms' 2s throttle, then a room attaches: the read now
-      // succeeds and the skin heals to the hub's paper without a reload.
-      await heal.waitForTimeout(2200);
-      hubHasRoom = true;
-      hubStreams.forEach(r => { try { r.write("event: rooms\ndata: {}\n\n"); } catch (e) {} });
-      await heal.waitForFunction(() =>
-        document.documentElement.getAttribute("data-skin") === "paper", { timeout: 15000 });
-      if (healErrors.length) {
-        fail("the skin-heal page threw uncaught errors: " + healErrors.join(" | "));
-      }
-    } finally {
-      await heal.close();
-      await healCtx.close();
-      hubMode = false;
-      hubHasRoom = true;
-      resetSkins();
-    }
+    await skinHealSection(browser, base);
 
     // ── the global auto button is never blank ────────────────────────────────
     // `#gauto` has no class and no text in the markup, and only a settings read
@@ -6567,6 +6744,10 @@ async function main() {
     try {
       await ga3.goto(base, { waitUntil: "domcontentloaded" });
       await gautoHeals("before the stream reopen", ga3, "approving everything");
+      // The page's stream has to be open before it is cut. Cut before it
+      // reached the server, it was never ended, so it never reopened.
+      await ga3.waitForFunction(() => document.getElementById("conn").classList.contains("live"), null,
+        { timeout: 15000 });
       hubHasRoom = false;
       const reopened = ga3.waitForRequest(r => r.url().includes("/v1/events"), { timeout: 15000 });
       const settingsAfter = reopened.then(() => ga3.waitForResponse(r =>
@@ -6744,6 +6925,8 @@ async function main() {
     await restartStaysSection(browser, base);
     await atriumDownSection(browser, base);
     await toastStaysSection(browser, base);
+    // ── a toast lives its whole life whatever happens around it ────────────
+    await toastLivesSection(browser, base);
     // ── the styled tooltip, and no native title anywhere on the board ───────
     await tooltipSection(browser, base);
     // ── group colours on every surface, and dragging group headings ─────────
@@ -6781,10 +6964,13 @@ async function main() {
     await carryLinkSection(browser, base);
     // ── a second press fires nothing ──────────────────────────────────────
     await busyGuardSection(browser, base);
+    // ── keep-alive chips, the card switch, and the break-even toast ────────
+    await keepaliveSection(browser, base);
     // ── a stuck card wears a mark, and the gear decides whether it rings ───
     await stuckSection(browser, base);
   } catch (e) {
-    fail("the headless run threw: " + (e && e.message ? e.message : e));    if (process.env.DEBUG_HEADLESS) {
+    fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e));
+    if (process.env.DEBUG_HEADLESS) {
       try {
         const diag = await page.evaluate(() => ({
           bodyClass: document.body.className,

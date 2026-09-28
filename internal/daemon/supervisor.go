@@ -900,6 +900,8 @@ var (
 // bare newline) and a carriage return inside a bracketed paste are newlines IN
 // the prompt, not a send: reading them as a submit once opened the gate on a
 // half-written message.
+//
+// Esc Esc clears a Claude prompt, which 	ypedLine.escape follows. See escclear.go.
 func (r *runner) noteOperatorTyped(p []byte) {
 	if len(p) == 0 {
 		return
@@ -1764,6 +1766,9 @@ func (d *Daemon) spawnPTYResume(taskID, cmdName string, args []string, cwd strin
 	// BEFORE `add`, which is the moment an attach can find this runner. A
 	// viewer that arrived between the two would be sent the new terminal's
 	// first bytes and nothing before them, which is the bug being fixed.
+	if t, err := d.st.Get(taskID); err == nil {
+		r.line.escClears = clearsOnEsc(t.Runner)
+	}
 	d.adoptCarryover(r)
 	d.sup.add(r)
 
@@ -1859,7 +1864,13 @@ func (d *Daemon) awaitExit(r *runner) {
 	tail := lastOutput(r.buf.Tail(tailBytes), 12)
 	r.closePTY()
 	d.sup.remove(r.taskID)
-	// The process is gone, so nothing it was doing is still true.
+	// The process is gone, so nothing it was doing is still true. That includes
+	// a message held for its terminal: the retry is dropped now rather than at a
+	// backoff tick hours out, and the message stays queued for a resumed
+	// session's hooks.
+	if d.pending != nil {
+		d.pending.drop(r.taskID)
+	}
 	d.act.forget(r.taskID)
 
 	code := 0

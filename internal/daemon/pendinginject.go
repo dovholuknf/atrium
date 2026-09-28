@@ -136,6 +136,9 @@ func (pi *pendingInjector) hold(taskID string, m pendingMsg) {
 	if run == nil {
 		return
 	}
+	if t, err := pi.d.st.Get(taskID); err != nil || sessionGone(t) {
+		return
+	}
 	pi.mu.Lock()
 	ht := pi.by[taskID]
 	first := ht == nil
@@ -244,8 +247,11 @@ func (pi *pendingInjector) attempt(taskID string) {
 	// A card that has since refused peer typing gives up the retry for PEER text.
 	// The queue and the hooks still deliver it. The operator's own text keeps
 	// retrying.
+	// A card deleted, or finished with no session left, has nothing to type
+	// into, however long this waits. The message stays in the store for the
+	// hooks of a session resumed on that card.
 	t, err := pi.d.st.Get(taskID)
-	if err != nil {
+	if err != nil || sessionGone(t) {
 		pi.drop(taskID)
 		return
 	}
