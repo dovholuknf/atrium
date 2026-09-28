@@ -5,6 +5,24 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **`atrium_say` reaches a card on another room as `name@room`, and it can answer.** See
+  `docs/cross-room-say-design.md`, `docs/test-plan.md` section CD and `docs/backlog-2.md` item 58.
+
+  A bare `name` or `@name` stays in your own room. `name@room` (an alias too, and `room~id`) goes through the
+  sender's room, which keeps the work ledger, and over a new `relay` link connection the room dials to the hub. The
+  hub resolves the name on the target room and posts it there from `you@yourroom`, so it arrives as a peer message:
+  queued, typed only through the gate, never as the operator. The hub holds nothing. A hub or room that is not
+  answering gets the message held on the sender's room (`delivered: "held"`, new table `relay_outbox`, migration
+  0066) and sent on the reaper tick or when the link comes back, for up to 24 hours. A failure after the message may
+  have landed answers `unconfirmed` and holds nothing, so it cannot arrive twice. A room the hub has never heard of,
+  and an old hub, are refused at once. `atrium_peers` takes `rooms: true` and lists other rooms' sessions as
+  `name@room`. `atrium_launch` takes `room`, and a worker launched onto another room sends its silent-stop, long-tool,
+  context-size and report notices back across, addressed to its launcher's card. The stdio `atrium control` now
+  names its sender (it used to be typed as the operator), takes the grammar, lists other rooms and has
+  `atrium_report`, and `scripts/provision-room.ps1` registers it for claude at user scope. HUB-SIDE: the relay, the
+  hub's `atrium_say`, `atrium_peers` and `atrium_launch`, a HUB RESTART. ROOM-SIDE: `/v1/say`, `/tell`,
+  `/v1/peers/rooms`, the outbox and the notices, a ROOM RESTART on every room.
+
 - **A message queued on purpose wears a quiet envelope, and the `!` is kept for one held against its sender.** See
   `docs/backlog-2.md` item 42 and `docs/test-plan.md` section CC.
 

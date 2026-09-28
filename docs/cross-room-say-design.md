@@ -165,7 +165,10 @@ With m1mini's hub link down, the sender sees:
 - The worker's own say to its launcher across rooms marks it reported: `sayAcross` compares the resolved
   `handle@room` (and the address as typed) with `spawned_by`, case-insensitive on the room.
 - The ledger's `ended` notice (`queueNotice`) still needs a local arbiter card and is not carried across rooms by
-  this item. The silent-stop and report notices cover the case clint named.
+  this item. The silent-stop and report notices cover the case clint named. Nor is a remote launcher's verdict on
+  the worker's work item: the ledger's arbiter is a local card, and a tagged id matches none.
+- The work ledger's `say` entry needs both cards local, so a cross-room say is not logged on the worker's item. The
+  sender's room still marks the worker reported.
 - The hub also sees it. The hub proxies the launcher's card list with `context_size` today. A notice reaches the
   launcher's card as an ordinary queued peer message, which is on that card's timeline and so on the hub's board.
 
