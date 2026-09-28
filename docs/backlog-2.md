@@ -43,7 +43,7 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 34 | Every MCP tool call skips atrium's permission gate | bug | DONE 2026-09-28 in dotfiles, uncommitted, live through the hooks symlink |
 | 35 | A card has a name you mention it by, like `@dotfiles` | feature | sa89, started 2026-09-28 |
 | 36 | A finished worker stays up until somebody closes it | bug | not started |
-| 37 | Token and context use on record for every session, shown only in a card's details | feature | sa90, started 2026-09-28 |
+| 37 | Token and context use on record for every session, shown only in a card's details | feature | DONE, sa90 merged. sa94: Claude subagent rows, needs a room restart. Test plan BT5 |
 | 38 | A restart resumes only the cards that were working | feature | waits on 37 |
 | 39 | Keep-alive warms the cards you mark, not every idle card | feature | waits on 37 |
 | 40 | The launch cap counts only `atrium:subagent` cards | bug | sa91, started 2026-09-28 |
@@ -879,6 +879,46 @@ keep-alive round can spend a lot without anything saying so. What is wanted:
   conflicts with this and has to be reconciled.
 - The first use: measure one room restart, cache writes per card before and after, to learn whether a resume misses
   the cache.
+
+Status: built by sa90 and merged. Test plan BT.
+
+Subagents, 2026-09-28 (sa94). clint: "calude subagent - yes. atrium subagent no (as it's a separate thing)" and "as
+long as it doesn't skew/double count". What a card's Claude Code subagents (the Task tool) spend is a row of its own,
+cause `subagent`, written at the same Stop as the turn's row. The room reads `<session>/subagents/agent-*.jsonl`
+beside the transcript (a workflow's agents a level down), which is what Claude Code writes on this machine today, and
+the `isSidechain` lines older Claude Code wrote into the main transcript. Each file has its own cursor, replies are
+kept one per message id, and a reply the turn's row holds is never also a subagent's. An atrium-launched worker is
+its own card with its own rows and is not counted into its launcher. Needs a room restart. Test plan BT5.
+
+Every current Claude model is priced on a usage row: Haiku 4.5 and Sonnet 5 are in `usageOnlyPrices`, from the
+pricing page on 2026-09-28, and not in keep-alive's table, which is also the list of models keep-alive may refresh.
+The details' `turns` counts only the card's own turns, and each cause has its own line, so subagent requests and
+keep-alive refreshes are read apart.
+
+The one known undercount, not fixed. A cursor skips a reply stamped at or before the last reply it already counted.
+So a reply is lost when its line reaches the file AFTER a read that counted a later-stamped reply through the same
+cursor. That read happens 1.5 seconds after a Stop and takes every reply stamped before the Stop, so the lost line
+has to be stamped before the Stop and still be off disk 1.5 seconds after it. It can happen in two places:
+
+- The inline layout (older Claude Code). Every inline subagent in the main transcript shares one cursor, so two
+  subagents running at once can interleave: A's line stamped at t1 lands after the read that counted B's line at
+  t2, later than t1.
+- The first read after a daemon restart. Every subagent file starts from the one time of the last `subagent` row, so
+  a line in file A stamped before the newest reply counted from file B, and not on disk when that row was written,
+  is skipped.
+
+A file of the newer layout is one subagent's conversation, written in order, so its own cursor cannot skip a line.
+Nothing is ever counted twice this way. The miss only undercounts. A fix would be a cursor per inline `agentId` and a
+last-counted time per file on record, kept for when a miss is seen.
+
+Retention, later. clint: "let it grow forever for now but let's plan some way to clean it eventually". The rows are
+kept forever for now. A row is a few hundred bytes, so 21 cards at a few hundred turns a day is on the order of a
+megabyte a month. Options for later, none built:
+
+- Roll rows older than N days into one row per card, day and cause, with the sums kept and the per-turn detail
+  dropped. The totals and the by-cause split in the details stay right.
+- Delete a card's rows when the card sweep removes the card, or some weeks after, for cards nobody reopens.
+- A size cap: past N rows, or N megabytes, roll up or delete the oldest first.
 
 ## 38. A restart resumes only the cards that were working (feature)
 

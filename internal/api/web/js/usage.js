@@ -12,6 +12,7 @@ const USAGE_CAUSES = {
   "restart-wake": "restart wake",
   keepalive: "keep-alive",
   resume: "resume",
+  subagent: "subagent",
   unknown: "unknown",
 };
 
@@ -21,6 +22,19 @@ function usageTokens(n) {
   if (n >= 1e6) return `${(n / 1e6).toFixed(n >= 1e7 ? 0 : 1)}M`;
   if (n >= 1000) return `${Math.round(n / 1000)}k`;
   return String(n);
+}
+
+// Rows that are not a turn of the card's own: a keep-alive refresh fork, and
+// what the card's Claude subagents spent. Counted on their own cause lines,
+// never as turns.
+const USAGE_NOT_TURNS = new Set(["keepalive", "subagent"]);
+
+// What a cause line counts: turns, refreshes, or a subagent's requests.
+function usageCount(cause, t) {
+  const n = (k, one, many) => `${k} ${k === 1 ? one : many}`;
+  if (cause === "keepalive") return n(t.rows || 0, "refresh", "refreshes");
+  if (cause === "subagent") return n(t.replies || 0, "request", "requests");
+  return n(t.rows || 0, "turn", "turns");
 }
 
 function usageMoney(n) {
@@ -49,8 +63,10 @@ async function loadUsage(id) {
   const sum = document.getElementById("d-usage-sum");
   const list = document.getElementById("d-usage-list");
   const note = document.getElementById("d-usage-note");
+  const causeBox = document.getElementById("d-usage-causes");
   sum.textContent = "reading…";
   list.innerHTML = "";
+  causeBox.innerHTML = "";
   note.textContent = "";
   let v;
   try {
@@ -62,11 +78,14 @@ async function loadUsage(id) {
   }
   if (!current || current.id !== id) return;
   const t = v.totals || {};
+  const by = v.by_cause || {};
+  let turns = 0;
+  for (const [c, bt] of Object.entries(by)) if (!USAGE_NOT_TURNS.has(c)) turns += bt.rows || 0;
   const cell = (label, value, tip) =>
     `<span class="usagecell"${tip ? ` data-tip="${esc(tip)}"` : ""}><b>${esc(value)}</b> ${esc(label)}</span>`;
   sum.innerHTML = [
     cell("context now", usageTokens(v.context_now), v.model || ""),
-    cell("turns", String(t.rows || 0)),
+    cell("turns", String(turns), "the card's own turns. keep-alive refreshes and subagents are on their own lines"),
     cell("in", usageTokens(t.input)),
     cell("out", usageTokens(t.output)),
     cell("write 5m", usageTokens(t.cache_write_5m)),
@@ -74,8 +93,13 @@ async function loadUsage(id) {
     cell("read", usageTokens(t.cache_read)),
     cell("est.", usageMoney(t.cost), "priced on the models atrium has prices for; others count as $0"),
   ].join("");
-  const by = v.by_cause || {};
   const causes = Object.keys(by).sort((a, b) => (by[b].cost || 0) - (by[a].cost || 0));
+  causeBox.innerHTML = causes.map(c => {
+    const bt = by[c];
+    return `<span>${esc(USAGE_CAUSES[c] || c)}</span><span>${esc(usageCount(c, bt))}</span>` +
+      `<span>${usageTokens((bt.cache_write_5m || 0) + (bt.cache_write_1h || 0))} written</span>` +
+      `<span>${usageTokens(bt.cache_read)} read</span><span>${usageMoney(bt.cost)}</span>`;
+  }).join("");
   const rows = v.rows || [];
   if (!rows.length) {
     note.textContent = "nothing recorded yet. a row is written when a turn ends.";
@@ -94,7 +118,5 @@ async function loadUsage(id) {
       `<span>${usageTokens(r.cache_read)}</span><span>${usageTokens(r.context)}</span>` +
       `<span>${usageMoney(r.cost)}</span></div>`;
   }).join("");
-  note.textContent = (causes.length
-    ? "by cause: " + causes.map(c => `${USAGE_CAUSES[c] || c} ${usageMoney(by[c].cost)}`).join(", ") + ". "
-    : "") + (t.rows > rows.length ? `the newest ${rows.length} of ${t.rows} turns.` : "");
+  note.textContent = t.rows > rows.length ? `the newest ${rows.length} of ${t.rows} rows.` : "";
 }
