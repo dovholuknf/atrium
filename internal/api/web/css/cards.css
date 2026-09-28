@@ -338,6 +338,9 @@
     animation: pulse 1.4s ease-in-out infinite;
   }
   body.tabhidden .chip.held { animation: none; }
+  /* A message waiting for the turn to end because that is what was asked. The neutral chip, no pulse and no
+     warn colour, because nothing needs the operator. See termHeldChip. */
+  .chip.queued { text-align: center; min-width: 1.4em; }
   /* Published. Danger rather than warn, and the same mark as the header, so a card reachable from outside this
      machine says so in the colour that means it. */
   .chip.shared {
