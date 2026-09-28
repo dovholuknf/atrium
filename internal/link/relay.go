@@ -134,8 +134,9 @@ func (r *Room) Relay(ctx context.Context, req RelayRequest) (RelayAnswer, error)
 	w, err := sayHello(conn, br, hello{Kind: relayKind, Room: r.Name, Session: session})
 	if err != nil {
 		// THE ONE REFUSAL THAT IS NOT WORTH WAITING OUT. An older hub names the
-		// kinds it knows, and this is not one of them.
-		if !w.OK && strings.Contains(w.Error, "a connection is control") {
+		// kinds it knows, and relay is not one of them. A hub that names relay
+		// among them is not older, whatever else it refused.
+		if !w.OK && strings.Contains(w.Error, "a connection is control") && !strings.Contains(w.Error, relayKind) {
 			return ans, ErrRelayOld
 		}
 		return ans, fmt.Errorf("%w: %v", ErrRelayDown, err)
