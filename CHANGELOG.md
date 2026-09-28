@@ -9,12 +9,20 @@ section heading is just "what landed in this iteration."
   `docs/packaging.md` "Provisioning a room over ssh, from the hub" and `docs/test-plan.md` section BU.
 
   `scripts/provision-room.ps1 user@host` finds the hub from its running process, detects the remote OS and arch,
-  puts a matching atrium in the remote home folder, joins the room, installs autostart as that user, waits for the
-  hub to see it, and checks the runners asked for. It is safe to run again, prints one `provision <step> <status>`
-  line per step, and `-Remove` undoes what it did. `atrium room join` gains `--no-run`, which enrols and exits, and
-  `atrium-service.ps1 -Verb room` and `ATRIUM_SERVICE_VERB=room atrium-service.sh` register `atrium room` instead of
-  `atrium daemon`. Proven on claudevm (Windows). Linux and macOS not yet run. `internal/cli/roomrun.go`: no restart,
-  it reaches a machine when this script builds for it.
+  puts a matching atrium in the remote home folder, joins the room over direct, ziti or zrok, starts it, waits for
+  the hub to see it, and checks the runners asked for. It is safe to run again, prints one `provision <step>
+  <status>` line per step, refuses a second room on one machine, and `-Remove` undoes what it did. The binary is the
+  GitHub release by default, and there is none yet, so `-FromCheckout` builds it. The room runs detached with no
+  autostart unless `-Autostart`. `-Install claude,codex` fetches runners from their vendors after a trust warning.
+  Proven on Windows, Linux and macOS, and over ziti with a throwaway network. zrok is proven from the hub machine
+  only.
+
+  Around it: `atrium room join` gains `--no-run`, and `--openziti` reads a `.jwt` file. `atrium room --detach` starts
+  a room in the background and returns once it answers. A ziti JWT is enrolled in process when there is no `ziti`
+  CLI. A hub over zrok writes its share down so `atrium rooms token` can mint a zrok join string.
+  `atrium-service.ps1 -Verb room` and `ATRIUM_SERVICE_VERB=room atrium-service.sh` register `atrium room`, and
+  `atrium-service.sh` leaves lingering off unless `ATRIUM_LINGER=1`. `internal/cli`, `internal/daemon`: HUB RESTART
+  for the zrok share file, and a room gets the rest when this script builds for it.
 
 - **Every Claude card's token use is on record, a row per turn, shown only in the card's details.** See
   `docs/backlog-2.md` item 37 and `docs/test-plan.md` section BT.

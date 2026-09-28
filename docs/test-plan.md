@@ -4173,42 +4173,58 @@ and after the restart, which change the prefix.
 
 ## BU. A machine becomes a room of this hub from one command over ssh
 
-Go test: `TestRoomJoinNoRunSavesAndReturns` in `internal/cli/roomjoin_norun_test.go`. Run the rest from the hub
-machine against a machine you can wipe, reached by `ssh <target>` with a key and no password. The hub has to be
-running with `--link` bound wide and `--link-advertise` set, since a room on another machine cannot dial loopback.
+Go tests: `TestRoomJoinNoRunSavesAndReturns` in `internal/cli/roomjoin_norun_test.go`, and
+`TestRoomsTokenOverZrokReadsTheRunningHubsShare`, `TestRoomJoinReadsAJwtFromAFile` and
+`TestRoomDetachRefusesUnjoinedAndLeavesARunningRoom` in `internal/cli/roomprovision_test.go`. Run the rest from the
+hub machine against machines you can wipe, reached by `ssh <target>` with a key and no password. For a direct hub
+it has to be running with `--link` bound wide and `--link-advertise` set, since a room on another machine cannot
+dial loopback. Until a release exists every run needs `-FromCheckout`.
 
 ### BU1. A fresh machine is provisioned and attaches
 
-1. `pwsh -File scripts\provision-room.ps1 <target> -Runners claude`
+1. `pwsh -File scripts\provision-room.ps1 <target>` with no release published.
+
+**Expected:** `provision fetch fail dovholuknf/atrium has no release yet on GitHub. -FromCheckout ...`, exit 1.
+
+2. `pwsh -File scripts\provision-room.ps1 <target> -FromCheckout -Runners claude`, once each on Windows, Linux and
+   macOS.
 
 **Expected:** one `provision <step> <status> <detail>` line per step, in the order ssh, os, hub, state, build,
-binary, scripts, join, autostart, start, attached, then one `runner:<name>` line each. binary, join, autostart and
-start say `done`. attached names a connection made after the start. The last line is `provision done ok` and the
-exit code is 0, or `provision done fail 5` and exit 5 when a runner is missing. The board shows the new room.
+binary, join, start, attached, then one `runner:<name>` line each. binary, join and start say `done`, start says
+`room --detach, no autostart`, and attached names a connection made after the start. The last line is
+`provision done ok` and exit 0, or `provision done fail 5` and exit 5 when a runner is missing. The board shows the
+new room, and it is still attached a minute after the script ends.
 
-2. On the target, check the install is the user's own.
+3. On the target, check the install is the user's own.
 
-**Expected:** Windows has `~\.atrium\bin\atrium.exe` and a logon task `atrium` with RunLevel Limited running
-`atrium room`. Linux has `~/.local/bin/atrium` and `~/.config/systemd/user/atrium.service` running `atrium room`.
-macOS has the LaunchAgent plist, loaded if someone is logged in at the desktop. Nothing is under Program Files,
-`/usr` or `/Library`.
+**Expected:** `~\.atrium\bin\atrium.exe` or `~/.local/bin/atrium`, the room under `~/.atrium/room`, and no task,
+unit or LaunchAgent. Nothing is under Program Files, `/usr` or `/Library`.
 
 ### BU2. Running it again changes nothing
 
 1. Run the same command again.
 
-**Expected:** binary, join, autostart and start say `ok`. No new join string is minted and the room keeps its
-connection.
+**Expected:** binary, join and start say `ok`. No new join string is minted and the room keeps its connection.
 
 2. Change the build (any commit) and run it again.
 
 **Expected:** binary says `done`, start says `done`, and attached shows a connection time after this run started.
 
+3. Run it again with `-Autostart`. On Linux check `loginctl show-user $USER`.
+
+**Expected:** autostart says `done` and names the task, unit or LaunchAgent. The detached room was stopped first, so
+the service's room is the one attached. Linger is still `no`. `-Linger` would turn it on.
+
 ### BU3. Guards
 
-1. Point it at a machine that already runs an atrium this script did not install.
+1. Point it at a machine that already runs an atrium this script did not install, or that is already a room.
 
-**Expected:** `provision state fail` naming what is there, exit 6, and nothing changed. `-Force` goes ahead.
+**Expected:** `provision state fail one room per machine, and ...` naming what is there, exit 6, and nothing
+changed.
+
+2. Point it at a machine this provisioned, with a different `-Name`.
+
+**Expected:** `provision state fail one room per machine, and this one is already the room <name> ...`, exit 6.
 
 2. Provision a second machine with `-Name` set to a room that has already connected from somewhere else.
 
@@ -4222,6 +4238,52 @@ connection.
 
 1. `pwsh -File scripts\provision-room.ps1 <target> -Remove`, then run it a second time.
 
-**Expected:** the first run stops the room, removes the autostart, the binary, the room's key, its database and
-ledger, the address folder and `~/.atrium/provision`, then removes the room from the hub. Anything that was on the
-target before the first provision is still there. The second run says `provision state skip` and exits 0.
+**Expected:** the first run stops the room, removes any autostart, runners it installed and the PATH entry, the
+binary, the room's key, its database and ledger, the address folder and `~/.atrium/provision`, then removes the room
+from the hub. Anything that was on the target before the first provision is still there. The second run says
+`provision state skip` and exits 0.
+
+2. With two hubs running, run `-Remove` without `-HubAddr` against a room of the other one.
+
+**Expected:** `provision hub fail ... rerun with -HubAddr for that hub`, exit 1, and nothing on the remote changed.
+
+### BU5. Runners on request
+
+1. `-Install claude` on a machine with no claude.
+
+**Expected:** `provision install:claude warn trusting atrium to fetch https://claude.ai/install...` before anything is
+fetched, then `install:claude done <path>`, a `path done` line if `~/.local/bin` was not on PATH, and
+`runner:claude ok <version>`. `-Install codex` does the same from the openai/codex release.
+
+2. `-Install foo`.
+
+**Expected:** `provision install:foo fail no vendor installer this script knows for foo`, exit 5.
+
+### BU6. Overlay hubs
+
+Needs a ziti network you administer (a throwaway `ziti edge quickstart` is enough), and for zrok an account with an
+environment on the hub machine. Run a second, throwaway hub on its own `--addr` and `--atrium-dir` with
+`--transport ziti --atrium-identity <hub.json> --atrium-service atrium-hub`, or `--transport zrok`, and pass its
+`--addr` as `-HubAddr`.
+
+1. Ziti, with no JWT given.
+
+**Expected:** `provision overlay fail ... ziti edge create identity <name> -a atrium-rooms -o <name>.jwt ...`, exit 7.
+
+2. Ziti, with `-ZitiJwtCommand 'ziti edge create identity {name} -a atrium-rooms -o $env:TEMP\{name}.jwt | Out-Null;
+   Get-Content $env:TEMP\{name}.jwt'`, on a remote with no `ziti` CLI. Then on one that has it, with `-ZitiJwt`.
+
+**Expected:** `overlay ok`, `join done ... over ziti, identity enrolled on the remote`, `attached ok`. The remote has
+`~/.atrium/room/identities/<name>.json` and no `.jwt` left anywhere. `-Remove` ends with an `overlay warn` naming the
+identity to delete.
+
+3. zrok, against a remote with no zrok environment.
+
+**Expected:** `provision overlay fail ... run it there yourself: ssh <target> zrok2 enable <your account token>`,
+exit 7. The hub's key folder has `zrok-share` while it runs and not after it is stopped with ctrl-c. A killed hub
+leaves it behind, naming a share that may be gone.
+
+4. zrok, against a remote that has run `zrok2 enable`.
+
+**Expected:** `join done ... over zrok` and `attached ok` within two minutes. Not yet run: no remote had an
+environment.
