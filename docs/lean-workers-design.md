@@ -125,5 +125,9 @@ HUB-SIDE and ROOM-SIDE. The hub sends `lean` and `mcp` on `/v1/launch`, and the 
 an old room launches as today, because the room ignores the fields. A new room with an old hub is lean only for a
 caller that sends `lean: true`. Both are needed, and the room part needs a room restart.
 
-The stdio control server in `internal/cli/control_peers.go` has its own `atrium_launch` and is not changed. Sessions
-use the hub's HTTP one.
+The stdio control server in `internal/cli/control_peers.go` has its own `atrium_launch` and is not changed, on
+purpose. Sessions use the hub's HTTP one, so a launch through the stdio server starts a worker as before. Aligning it
+is a follow-up if that server stays.
+
+The `launched` event's `cmd` is the harness command before the lean flags go on, as it was before this change. The
+lean flags carry the whole settings copy, so the event records `lean` and `mcp` beside `cmd` instead.
