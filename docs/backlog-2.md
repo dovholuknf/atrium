@@ -1302,6 +1302,13 @@ Two fixes:
 
 Related: item 63, the same start onto an existing card.
 
+**Status, 2026-09-28, sa64: built on `claude/unlean-card`, not merged.** Test plan CD. `lean` on `/v1/launch` is now
+absent, true or false, and false wins over the card and takes `atrium:lean` and `atrium:mcp:*` off it, so a restart
+after it is not lean either. The room keeps one tag list per card with no override layer, and a `PATCH` of `tags`
+writes that list, so `leanOptions` already read the edited tags. A test proves a tag edit clears lean. The live card's
+events show starts after its tag edit came up `"lean": false`. The board notes a lean card on `resume` and on
+`restart this session`, and offers `with my full setup` and `restart with my full setup`.
+
 ## 65. A deploy's revert snapshot is named after the hub's build, not the file it copies (bug)
 
 Raised 2026-09-28. `Save-Revert` in `scripts/live/live-common.ps1` names the snapshot after the build the HUB's

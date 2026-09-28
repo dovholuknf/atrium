@@ -440,12 +440,22 @@ async function termSettings(e) {
     // no terminal here to exit and relaunch. The daemon refuses either way, but
     // an item that can only toast a refusal is one the operator should not see.
     t.supervised ? {
-      label: "restart this session", note: "resumes the same conversation",
+      label: "restart this session",
+      note: isLeanCard(t) ? "comes back lean" : "resumes the same conversation",
       help: "Exits this session and immediately resumes the same conversation " +
         "on the same card, for applying changed defaults or clearing a " +
         "`restart to update` nag. The terminal drops for a few seconds while " +
         "it comes back. Nothing is lost: it picks up where it left off.",
       act: () => restartTerm() } : null,
+    // A lean card restarts lean, because the tag is on the card. This takes the
+    // lean tags off first, so the restart and every reopen after it get the
+    // operator's whole setup. See backlog-2 item 64.
+    t.supervised && isLeanCard(t) ? {
+      label: "restart with my full setup", note: "stops being lean",
+      help: "This card was launched lean: no user CLAUDE.md, memory, skills or " +
+        "your own MCP servers. This restarts the same conversation with all of " +
+        "them, and the card stops being lean.",
+      act: () => restartTerm(true) } : null,
     { sep: true },
     // Only meaningful from the window whose size is being remembered. From the
     // board there is no popped-out window to measure.
