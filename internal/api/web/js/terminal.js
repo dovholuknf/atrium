@@ -254,6 +254,49 @@ function wireScrollActs(screen) {
   screen.addEventListener("focusout", () => noteScrollAct("blur"));
 }
 
+// COPY ON SELECT ANSWERS THE POINTER, not the selection.
+//
+// It used to copy on every `onSelectionChange`, and the search addon shows a
+// match by selecting it. So every keystroke in the find bar, every step to the
+// next hit, and every re-search the addon runs on new output while the bar is
+// open overwrote the clipboard with whatever the find box had just matched.
+//
+// So the copy happens on the mouseup that ends a press in the terminal, and
+// only if that press changed the selection: a drag, a double-click word, a
+// triple-click line, a shift-click extend. A click that changes nothing, on the
+// scrollbar with a find match still selected say, copies nothing. A multi-click
+// always copies, since double-clicking the word a find already selected is
+// still asking for it. Mouse events rather than pointer events because only
+// these carry the click count, and they are what xterm itself selects on.
+//
+// The mouseup is on the window because a drag can end outside the pane.
+let copyPress = null;
+
+function selectionKey() {
+  const p = term && term.hasSelection() && term.getSelectionPosition();
+  return p ? `${p.start.x},${p.start.y},${p.end.x},${p.end.y}` : "";
+}
+
+function wireCopyOnSelect(screen) {
+  if (screen.dataset.copyOnSelectWired) return;
+  screen.dataset.copyOnSelectWired = "1";
+  // Capture phase, so the selection is read before xterm's own mousedown
+  // clears or replaces it.
+  screen.addEventListener("mousedown", e => {
+    copyPress = e.button === 0 ? { was: selectionKey(), clicks: e.detail } : null;
+  }, true);
+  window.addEventListener("mouseup", () => {
+    const press = copyPress;
+    copyPress = null;
+    if (!press || !copyOnSelect) return;
+    // After xterm's own mouseup, which is where a drag's selection settles.
+    setTimeout(() => {
+      if (!term || !term.hasSelection()) return;
+      if (press.clicks >= 2 || selectionKey() !== press.was) copySelection(true);
+    }, 0);
+  }, true);
+}
+
 function wireHoverFocus(screen) {
   if (screen.dataset.hoverWired) return;
   screen.dataset.hoverWired = "1";
@@ -653,6 +696,7 @@ function openTerm(task) {
   wireTerminalPaste(screen);
   wireHoverFocus(screen);
   wireScrollActs(screen);
+  wireCopyOnSelect(screen);
   watchScroll(term);
 
   // Copy and paste have to win over the terminal, or selecting text and
@@ -720,6 +764,9 @@ function openTerm(task) {
     if (ctrl && !e.shiftKey && e.code === "KeyA") {
       e.preventDefault();
       term.selectAll();
+      // Not a pointer selection, but one somebody asked for, so copy on select
+      // still copies it. See `wireCopyOnSelect`.
+      if (copyOnSelect) copySelection(true);
       return false;
     }
 
@@ -826,10 +873,6 @@ function openTerm(task) {
       return false;
     }
     return true;
-  });
-
-  term.onSelectionChange(() => {
-    if (copyOnSelect && term.hasSelection()) copySelection(true);
   });
 
   // Fit after the pane has a size, or the first resize is computed against a
