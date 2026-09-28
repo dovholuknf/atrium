@@ -1,6 +1,9 @@
 package store
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 // Lineage is written once. A reopen runs the launch again, and must not
 // rename the parent to whoever pressed the button the second time.
@@ -100,5 +103,58 @@ func TestAHookIsStampedOnce(t *testing.T) {
 	second, _ := s.Get(card.ID)
 	if !second.ToolHookSeenAt.Equal(*first.ToolHookSeenAt) {
 		t.Fatal("a second sighting moved the first")
+	}
+}
+
+// A turn ends when a working card starts waiting. A resume from done, and a
+// prompt that changes no status, are not turns. See 0062_turn_end.
+func TestOnlyAWorkingCardEndsATurn(t *testing.T) {
+	s := openTestStore(t)
+	card, _, _ := s.Register(Observed{WireName: "w", Worktree: "/tmp/w"})
+	for _, st := range []string{StatusDone, StatusNeedsInput} {
+		if err := s.SetStatus(card.ID, st); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.AppendEvent(card.ID, EventPrompted, map[string]any{"text": "/model x"}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.TurnEndedAt(card.ID); got != nil {
+		t.Fatalf("a resume and a slash command recorded a turn end at %s", got)
+	}
+	for _, st := range []string{StatusRunning, StatusNeedsInput} {
+		if err := s.SetStatus(card.ID, st); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got, _ := s.TurnEndedAt(card.ID); got == nil {
+		t.Fatal("a turn that ran recorded no end")
+	}
+}
+
+// A database from before 0062 is seeded from its event log, so a card that
+// really stopped silently before the upgrade still reads stuck after it.
+func TestTheTurnEndIsSeededFromTheEventLog(t *testing.T) {
+	s := openTestStore(t)
+	card, _, _ := s.Register(Observed{WireName: "w", Worktree: "/tmp/w"})
+	for _, st := range []string{StatusRunning, StatusNeedsInput} {
+		if err := s.SetStatus(card.ID, st); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want, _ := s.TurnEndedAt(card.ID)
+	if _, err := s.db.Exec(`DELETE FROM turn_end`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`DELETE FROM schema_migration WHERE name = '0062_turn_end'`); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.migrate(); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.TurnEndedAt(card.ID)
+	// The event is stamped a moment after the status write, so within a second.
+	if err != nil || got == nil || want == nil || got.Sub(*want).Abs() > time.Second {
+		t.Fatalf("seeded turn end %v, want %v (%v)", got, want, err)
 	}
 }

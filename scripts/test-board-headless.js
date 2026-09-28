@@ -477,6 +477,7 @@ const server = http.createServer((req, res) => {
     // list keeps the row while dropping the live flag.
     if (tasksMode === "worn") { sendJSON(res, { tasks: wornTasks }); return; }
     if (tasksMode === "keepalive") { sendJSON(res, { tasks: KA_CARDS }); return; }
+    if (tasksMode === "stuck") { sendJSON(res, { tasks: stuckCards() }); return; }
     if (tasksMode === "loop") {
       sendJSON(res, { tasks: [Object.assign({}, LOOP,
         { supervised: loopListSupervised, pinned: true })] });
@@ -3945,6 +3946,134 @@ async function keepaliveSection(browser, base) {
   if (errors.length) fail("the keep-alive page threw: " + errors.join(" | "));
 }
 
+// The stuck section's cards. A launched card a restart resumed onto an idle
+// prompt, one a `/model` was typed into, and one that ended a turn without
+// reporting. The room serves `escalation` only on the last, and only from
+// `stuckStep` 1. See internal/daemon/a2a.go and docs/test-plan.md BM.
+let stuckStep = 0;
+function stuckCards() {
+  const launched = { supervised: true, tags: ["origin:agent"], spawned_by: "orchestrator" };
+  const cards = [
+    Object.assign({}, T1, launched, { id: "st-resumed", display_title: "resumed idle card" }),
+    Object.assign({}, T1, launched, { id: "st-slash", display_title: "slash command card" }),
+    Object.assign({}, T1, launched, { id: "st-stuck", display_title: "silent worker" }),
+  ];
+  if (stuckStep > 0) {
+    cards[2].escalation = { source: "silent-stop", since: new Date(Date.now() - 3 * 60000).toISOString(),
+      count: stuckStep, minutes: 3, text: "silent worker is STUCK: it stopped without reporting, 3 minutes" };
+  }
+  return cards;
+}
+
+// A STUCK CARD WEARS A MARK, AND THE GEAR DECIDES WHETHER IT RINGS. No mark
+// and no alert on the idle cards. A mark with a styled tooltip on the stuck
+// one, on the stack, the board and the terminal strip, and an alert. "only
+// mark the card" keeps the mark and drops the alert, and "off" drops both.
+async function stuckSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const sp = await ctx.newPage();
+  const errors = [];
+  sp.on("pageerror", e => errors.push(String(e)));
+  const was = tasksMode;
+  tasksMode = "stuck";
+  stuckStep = 0;
+  const stuckToasts = () => sp.evaluate(() => {
+    try {
+      return JSON.parse(localStorage.getItem("atrium.toastlog") || "[]")
+        .filter(t => /is STUCK/.test((t.title || "") + " " + (t.body || ""))).length;
+    } catch (e) { return -1; }
+  });
+  const marks = () => sp.evaluate(() => {
+    const out = {};
+    document.querySelectorAll("#stack-list .stackrow").forEach(r => {
+      const m = r.querySelector(".chip.stuck");
+      out[r.dataset.id] = m ? { tip: m.getAttribute("data-tip") || "", title: m.hasAttribute("title"),
+        warn: m.classList.contains("warn"), svg: !!m.querySelector("svg") } : null;
+    });
+    return out;
+  });
+  const settle = async () => {
+    await sp.evaluate(() => runRefresh());
+    await new Promise(r => setTimeout(r, 400));
+  };
+  try {
+    await sp.goto(base, { waitUntil: "domcontentloaded" });
+    await sp.waitForSelector('#stack-list .stackrow[data-id="st-stuck"]', { state: "attached", timeout: 15000 });
+    await sp.evaluate(() => localStorage.removeItem("atrium.toastlog"));
+    await settle();
+    await settle();
+
+    // The idle cards: nothing on any of them, and nothing rang.
+    let m = await marks();
+    for (const id of ["st-resumed", "st-slash", "st-stuck"]) {
+      if (m[id] !== null) fail("a card the room did not call stuck wears the stuck mark: " + id);
+    }
+    if (await stuckToasts() !== 0) fail("an idle card raised a stuck alert.");
+
+    // Stuck: the mark, in the warn colour, with its own icon and a styled tooltip.
+    stuckStep = 1;
+    await settle();
+    m = await marks();
+    const s = m["st-stuck"];
+    if (!s) fail("a stuck card on the stack has no stuck mark.");
+    else {
+      if (!s.warn || !s.svg) fail("the stuck mark is not a warn-coloured icon: " + JSON.stringify(s));
+      if (s.title) fail("the stuck mark uses a native title, not a styled tooltip.");
+      if (!/stopped without reporting/.test(s.tip) || !/stuck since \S/.test(s.tip)) {
+        fail("the stuck mark's tooltip does not say why and since when: " + JSON.stringify(s.tip));
+      }
+    }
+    if (m["st-resumed"] || m["st-slash"]) fail("the idle cards picked up the mark beside a stuck one.");
+    const elsewhere = await sp.evaluate(cards => {
+      const on = html => { const b = document.createElement("div"); b.innerHTML = html; return !!b.querySelector(".chip.stuck"); };
+      return { board: on(cardHTML(cards[2])), strip: on(termRowChips(cards[2])),
+        boardIdle: on(cardHTML(cards[0])), stripIdle: on(termRowChips(cards[1])) };
+    }, stuckCards());
+    if (!elsewhere.board) fail("a stuck card on the board has no stuck mark.");
+    if (!elsewhere.strip) fail("a stuck card on the terminal strip has no stuck mark.");
+    if (elsewhere.boardIdle || elsewhere.stripIdle) fail("an idle card wears the mark on the board or the strip.");
+    await sp.waitForFunction(() => {
+      try { return JSON.parse(localStorage.getItem("atrium.toastlog") || "[]")
+        .some(t => /is STUCK/.test(t.title || "")); } catch (e) { return false; }
+    }, null, { timeout: 5000 }).catch(() => fail("a stuck card raised no alert."));
+
+    // The setting, in the gear: "alert" by default. "mark" rings nothing more
+    // on the next step and keeps the mark.
+    const def = await sp.evaluate(() => { paintSettings(); return document.getElementById("s-stuck").value; });
+    if (def !== "alert") fail("the stuck setting does not default to alerting: " + def);
+    const before = await stuckToasts();
+    await sp.evaluate(() => {
+      const el = document.getElementById("s-stuck");
+      el.value = "mark";
+      el.dispatchEvent(new Event("change"));
+    });
+    const saved = await sp.evaluate(() => JSON.parse(localStorage.getItem("atrium.sound") || "{}").stuck);
+    if (saved !== "mark") fail("the stuck setting was not saved with the other alert settings: " + saved);
+    stuckStep = 2;
+    await settle();
+    if (await stuckToasts() !== before) fail("\"only mark the card\" still raised a stuck alert.");
+    m = await marks();
+    if (!m["st-stuck"]) fail("\"only mark the card\" took the mark down.");
+
+    // Off: no mark either.
+    await sp.evaluate(() => {
+      const el = document.getElementById("s-stuck");
+      el.value = "off";
+      el.dispatchEvent(new Event("change"));
+    });
+    stuckStep = 3;
+    await settle();
+    m = await marks();
+    if (m["st-stuck"]) fail("stuck alerts off still draws the mark.");
+    if (await stuckToasts() !== before) fail("stuck alerts off still raised an alert.");
+  } finally {
+    await ctx.close();
+    tasksMode = was;
+    stuckStep = 0;
+  }
+  if (errors.length) fail("the stuck page threw: " + errors.join(" | "));
+}
+
 async function main() {
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = "http://127.0.0.1:" + server.address().port;
@@ -3958,7 +4087,8 @@ async function main() {
       groupDrag: groupDragSection, tooltip: tooltipSection, popoutTagFlip: popoutTagFlipSection, idleRate: idleRateSection, foldStill: foldStillSection,
       untaggedSort: untaggedSortSection, newCard: newCardSection, themePreview: themePreviewSection, land: landSection, reselect: reselectSection,
       toastsTop: toastsTopSection, sayWhen: sayWhenSection, pasteSpinner: pasteSpinnerSection,
-      copySelect: copySelectSection, busyGuard: busyGuardSection, keepalive: keepaliveSection };
+      copySelect: copySelectSection, busyGuard: busyGuardSection, keepalive: keepaliveSection,
+      stuck: stuckSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e)); }
@@ -6139,6 +6269,8 @@ async function main() {
     await copySelectSection(browser, base);
     // ── a second press fires nothing ──────────────────────────────────────
     await busyGuardSection(browser, base);
+    // ── a stuck card wears a mark, and the gear decides whether it rings ───
+    await stuckSection(browser, base);
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e));    if (process.env.DEBUG_HEADLESS) {
       try {
