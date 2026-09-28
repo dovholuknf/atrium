@@ -4649,3 +4649,39 @@ shows `! 2`, because the immediate one asked to go in now.
 
 **Expected:** for the first hour the envelope. After it the `!`, with the tip `blocked by the session's turn, which
 it was sent to wait for`. The message still waits for the turn to end.
+
+## CD. A card can stop being lean
+
+CD1 and CD2 need the room built from this change and a room restart (the room decides whether a start is lean). CD3
+needs the hub rebuilt and restarted for the board a hub serves, and the room restart for the room's own board. Go
+tests in `internal/daemon/lean_unlean_test.go` start onto a lean card through `/v1/launch` with a runner that cannot
+be lean, so a lean start is refused and a full one starts. No lean field starts it lean. `lean: false` starts it full
+and takes `atrium:lean` and `atrium:mcp:*` off the card, keeping its other tags. A `PATCH` that drops the tag starts
+it full. A card whose only tag was lean comes out with none. `TestLeanOptionsComeFromTheRequestOrTheCard` and
+`TestWithoutLeanTagsKeepsTheRest` in `internal/daemon/lean_test.go` cover the pieces. See `docs/backlog-2.md` item 64.
+
+### CD1. `lean: false` wins over the card
+
+1. `atrium_launch` a claude worker (lean by default) and let it stop. Its card carries `atrium:lean`.
+2. `POST /v1/launch` with its `task_id`, its `resume` and `"lean": false`.
+
+**Expected:** the `launched` event says `"lean": false`. The session loads the user CLAUDE.md, memory, skills and
+every MCP server. The card's tags no longer carry `atrium:lean` or any `atrium:mcp:` tag, and its other tags stay.
+A restart of the card after that is not lean either.
+
+### CD2. A tag edit clears lean
+
+1. On a stopped lean card, `PATCH /v1/tasks/<id>` with `tags` that leave out `atrium:lean`.
+2. `POST /v1/launch` with its `task_id` and no `lean` field.
+
+**Expected:** the `launched` event says `"lean": false`. The same launch before the edit says `"lean": true`.
+
+### CD3. The board
+
+1. Right-click a stopped lean card on the board, then in the terminals list, and open `resume`.
+2. Open a running lean card's terminal and its menu.
+
+**Expected:** `resume` is noted `lean`, and its submenu has `with my full setup` below `choose…`, which resumes the
+last conversation with the full setup and takes the lean tags off. The terminal menu notes `restart this session` as
+`comes back lean`, and has `restart with my full setup`, which asks, takes the lean tags off and restarts. A card
+that is not lean shows none of this.

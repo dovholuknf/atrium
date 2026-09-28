@@ -199,17 +199,27 @@ async function exitTermNow(t) {
 // `onclose` waits the card out and reattaches when it comes back. See
 // `sessionRestartComing`. The POST resolves only after the relaunch, so a
 // refusal is cleared here rather than left to expire on its own.
-function restartTerm() {
+// `full` takes a lean card's lean tags off before the restart, so it comes back
+// with the operator's whole setup. See isLeanCard in js/card-menu.js.
+function restartTerm(full) {
   if (!termTask) return;
-  return oneAtATime("launch:" + bareId(termTask.id), () => restartTermNow(termTask));
+  return oneAtATime("launch:" + bareId(termTask.id), () => restartTermNow(termTask, full));
 }
 
-async function restartTermNow(t) {
-  if (!await confirmUser(`restart ${t.display_title}?`,
+async function restartTermNow(t, full) {
+  if (!await confirmUser(`restart ${t.display_title}${full ? " with your full setup" : ""}?`,
     "Exits this session and immediately resumes the same conversation on the " +
     "same card. The terminal drops for a few seconds while it comes back." +
     "<br><br>Nothing is lost: it picks up where it left off.",
     "restart it", "restart-session")) return;
+  if (full) {
+    try {
+      await api(`/v1/tasks/${t.id}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tags: unleanTags(t) })
+      });
+    } catch (e) { toast("could not take lean off", e.message); return; }
+  }
   armSessionRestart(t.id);
   try { await api(`/v1/tasks/${t.id}/restart`, { method: "POST" }); }
   catch (e) { clearSessionRestart(t.id); toast("could not restart", e.message); return; }

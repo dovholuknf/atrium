@@ -91,8 +91,20 @@ const leanSystemPrompt = `You are a worker launched by another agent through atr
 // leanOptions says whether a launch is lean and which extra MCP servers it
 // keeps, from the request for a new launch and from the card's tags for a
 // reopen.
+//
+// A request that says `lean: false` wins over the card. A card an agent
+// launched lean can become somebody's own session, and they want their whole
+// setup back (backlog-2 item 64). Absent leaves it to the card, so a reopen, a
+// restart and an unshelve keep what the card was started with.
+//
+// The card's tags are the one list the room keeps for them. A tag edit writes
+// that list, so a card whose tags no longer carry LeanTag starts with the full
+// setup.
 func leanOptions(req LaunchRequest, task *store.Task) (lean bool, mcp []string) {
-	lean = req.Lean
+	if req.Lean != nil && !*req.Lean {
+		return false, nil
+	}
+	lean = req.Lean != nil && *req.Lean
 	mcp = append(mcp, req.MCP...)
 	if task != nil && hasTag(task.Tags, LeanTag) {
 		lean = true
@@ -112,6 +124,20 @@ func leanTags(mcp []string) []string {
 		out = append(out, leanMCPTagPrefix+m)
 	}
 	return out
+}
+
+// withoutLeanTags is tags without LeanTag and the `atrium:mcp:` marks, for a
+// launch that turned lean off. It says whether anything was taken out.
+func withoutLeanTags(tags []string) ([]string, bool) {
+	out := []string{}
+	for _, t := range tags {
+		c := strings.TrimSpace(t)
+		if c == LeanTag || strings.HasPrefix(c, leanMCPTagPrefix) {
+			continue
+		}
+		out = append(out, t)
+	}
+	return out, len(out) != len(tags)
 }
 
 // mergeTags is base with add appended, dropping repeats and keeping order.
