@@ -614,7 +614,18 @@ func (k *keepalive) modelArg(taskID, model string) string {
 
 // forkEnv is the fork's environment: the one a launch builds, minus the card's
 // identity, with atrium's hooks off and the card's 1h cache pin.
-func (k *keepalive) forkEnv(h *store.Harness) []string {
+//
+// THE CARD'S OWN LAUNCH ENV AND EFFORT GO IN TOO, layered as a launch layers
+// them (see launchOptionEnv). A fork without the card's env can reach a
+// different endpoint or account than the card it is warming, and then it warms
+// nothing and bills somebody else. The model is not passed here: the fork names
+// it as `--model`, from the card's last reply.
+func (k *keepalive) forkEnv(h *store.Harness, t *store.Task) ([]string, error) {
+	added, err := launchOptionEnv(h, t.LaunchEnv, "", t.Effort)
+	if err != nil {
+		return nil, err
+	}
+	env := overEnv(h.Env, added)
 	base := make([]string, 0, 64)
 	for _, kv := range k.baseEnv() {
 		if !strings.HasPrefix(strings.ToUpper(kv), "ATRIUM_PERM_GATE=") {
@@ -622,10 +633,18 @@ func (k *keepalive) forkEnv(h *store.Harness) []string {
 		}
 	}
 	extra := map[string]string{"ATRIUM_PERM_GATE": "off"}
-	if _, set := h.Env[keepaliveTTLVar]; !set {
+	if _, set := env[keepaliveTTLVar]; !set {
 		extra[keepaliveTTLVar] = "1h"
 	}
-	return childEnvFrom(base, h.Env, extra)
+	return childEnvFrom(base, env, extra), nil
+}
+
+// forkEffortArgs is the card's launch effort in the shape its harness declares,
+// appended to the fork's command line. Empty when the card was launched on the
+// runner's default. The card's extra args are NOT carried: they were written
+// for an interactive start and a fork is a one-turn print run.
+func forkEffortArgs(h *store.Harness, t *store.Task) ([]string, error) {
+	return withMapped(h, nil, "effort", "level", h.EffortArgs, h.EffortEnv, t.Effort)
 }
 
 // forkArgs is the refresh command line. Kept in one place so the test pins it.
@@ -725,8 +744,22 @@ func (k *keepalive) refresh(ctx context.Context, t *store.Task, v verdict) {
 		return
 	}
 	model := k.modelArg(t.ID, v.reply.Model)
+	// Refused, never forked without them: a fork on the wrong env or effort
+	// writes a cache the card never reads.
+	env, err := k.forkEnv(v.h, t)
+	var effort []string
+	if err == nil {
+		effort, err = forkEffortArgs(v.h, t)
+	}
+	if err != nil {
+		log.Printf("[atrium] keep-alive: not refreshing %s: %v", t.ID, err)
+		k.mu.Lock()
+		k.why[t.ID] = "launch options: " + err.Error()
+		k.mu.Unlock()
+		return
+	}
 	spec := forkSpec{
-		Exe: v.h.Exe(), Args: k.forkArgs(t.ResumeID, model), Dir: t.Worktree, Env: k.forkEnv(v.h),
+		Exe: v.h.Exe(), Args: append(k.forkArgs(t.ResumeID, model), effort...), Dir: t.Worktree, Env: env,
 	}
 	sent := k.now()
 	out, runErr := k.fork(ctx, spec)
