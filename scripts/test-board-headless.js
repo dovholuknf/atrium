@@ -2096,11 +2096,93 @@ async function toastStaysSection(browser, base) {
     if (!(await has("new card is on the board"))) {
       fail("an arrival toast was taken down by the poll after it, " + (Date.now() - born) + "ms in.");
     }
-    if (await has("ready card is ready")) fail("a toast for a card no longer waiting was not reaped.");
+    const answered = await tp.evaluate(() => [...document.querySelectorAll("#toasts .toast.answered b")]
+      .some(b => b.textContent === "ready card is ready"));
+    if (!answered) fail("a toast for a card no longer waiting was not marked answered.");
     await tp.waitForTimeout(Math.max(0, 8500 - (Date.now() - born)));
     if (!(await has("new card is on the board"))) fail("an arrival toast went before its 9 seconds.");
     await tp.waitForTimeout(1200);
     if (await has("new card is on the board")) fail("an arrival toast outlived its 9 seconds.");
+    if (errors.length) fail("the toast page threw uncaught errors: " + errors.join(" | "));
+  } finally {
+    await ctx.close();
+  }
+}
+
+// A TOAST LIVES ITS WHOLE LIFE, WHATEVER HAPPENS AROUND IT. Each thing that took
+// one down early, done to a fresh toast, and it is still on screen 5s later:
+// the poll reaping a card that stopped waiting (a held message typed in as the
+// turn ends does that inside a second), a burst past the stack's cap evicting
+// the oldest, a view switch and a dialog opening and closing. Then hovering
+// holds one past its 9 seconds.
+async function toastLivesSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const tp = await ctx.newPage();
+  const errors = [];
+  tp.on("pageerror", e => errors.push(String(e)));
+  const up = title => tp.evaluate(t => [...document.querySelectorAll("#toasts .toast:not(.leaving)")]
+    .some(el => el.querySelector("b").textContent === t), title);
+  const clear = () => tp.evaluate(() => {
+    document.getElementById("toasts").innerHTML = "";
+    if (typeof toastQueue !== "undefined") toastQueue.length = 0;
+  });
+  const stillUpAt5s = async (title, what, born) => {
+    await tp.waitForTimeout(Math.max(0, 5000 - (Date.now() - born)));
+    if (!(await up(title))) fail(what + ": the toast was gone before 5s.");
+  };
+  try {
+    await tp.goto(base, { waitUntil: "domcontentloaded" });
+    await tp.waitForSelector("#stack-list .stackrow", { timeout: 15000 });
+
+    // 1. A card waiting on you that is running again by the next poll.
+    await clear();
+    await tp.evaluate(() => {
+      window.__reaps = 0;
+      const real = reapToasts;
+      window.reapToasts = keys => { window.__reaps++; return real(keys); };
+      alerting.notify("gone9 is ready", "its turn ended", "stack", "", "gone9", "gone9", "", "",
+        { pending: true });
+    });
+    let born = Date.now();
+    await tp.waitForFunction(() => window.__reaps >= 1, null, { timeout: 12000 })
+      .catch(() => fail("no poll reaped toasts, so the answered case was not exercised."));
+    await stillUpAt5s("gone9 is ready", "a card that stopped waiting", born);
+    const marked = await tp.evaluate(() => [...document.querySelectorAll("#toasts .toast")]
+      .some(el => el.classList.contains("answered")));
+    if (!marked) fail("a toast whose card stopped waiting does not say it was answered.");
+
+    // 2. A burst of four with room for three.
+    await clear();
+    born = Date.now();
+    await tp.evaluate(() => { for (let i = 1; i <= 4; i++) toast("burst " + i, "one of four"); });
+    await stillUpAt5s("burst 1", "a burst past the cap", born);
+    await tp.waitForFunction(() => [...document.querySelectorAll("#toasts .toast:not(.leaving) b")]
+      .some(b => b.textContent === "burst 4"), null, { timeout: 8000 })
+      .catch(() => fail("the fourth toast of a burst never got its turn on screen."));
+
+    // 3. A view switch, and a dialog opening and closing.
+    await clear();
+    born = Date.now();
+    await tp.evaluate(() => {
+      toast("through the views", "a view switch and a dialog");
+      switchView("terms");
+      switchView("stack");
+      const d = document.getElementById("toastlog");
+      d.showModal();
+      d.close();
+    });
+    await stillUpAt5s("through the views", "a view switch and a dialog", born);
+
+    // 4. Hovered, it outlives its 9 seconds, and goes once the pointer leaves.
+    await clear();
+    await tp.evaluate(() => toast("held by the pointer", "hover me"));
+    await tp.hover("#toasts .toast");
+    await tp.waitForTimeout(10000);
+    if (!(await up("held by the pointer"))) fail("a hovered toast went while it was being read.");
+    // The life it had left when the pointer arrived, which was nearly all of it.
+    await tp.mouse.move(2, 890);
+    await tp.waitForFunction(() => !document.querySelector("#toasts .toast:not(.leaving)"), null,
+      { timeout: 12000 }).catch(() => fail("a toast the pointer left never went."));
     if (errors.length) fail("the toast page threw uncaught errors: " + errors.join(" | "));
   } finally {
     await ctx.close();
@@ -4299,7 +4381,7 @@ async function main() {
       untaggedSort: untaggedSortSection, newCard: newCardSection, themePreview: themePreviewSection, land: landSection, reselect: reselectSection,
       toastsTop: toastsTopSection, sayWhen: sayWhenSection, pasteSpinner: pasteSpinnerSection,
       copySelect: copySelectSection, busyGuard: busyGuardSection, keepalive: keepaliveSection,
-      skinScope: skinScopeSection, skinHeal: skinHealSection,
+      skinScope: skinScopeSection, skinHeal: skinHealSection, toastLives: toastLivesSection,
       history: historySection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
@@ -6182,6 +6264,8 @@ async function main() {
     await restartStaysSection(browser, base);
     await atriumDownSection(browser, base);
     await toastStaysSection(browser, base);
+    // ── a toast lives its whole life whatever happens around it ────────────
+    await toastLivesSection(browser, base);
     // ── the styled tooltip, and no native title anywhere on the board ───────
     await tooltipSection(browser, base);
     // ── group colours on every surface, and dragging group headings ─────────
