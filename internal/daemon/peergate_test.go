@@ -14,21 +14,21 @@ func TestUnsentCountTracksTheOperatorsLine(t *testing.T) {
 	check := func(want int) {
 		t.Helper()
 		r.typeMu.Lock()
-		got := r.unsent
+		got := r.line.count()
 		r.typeMu.Unlock()
 		if got != want {
-			t.Fatalf("unsent = %d, want %d", got, want)
+			t.Fatalf("count = %d, want %d", got, want)
 		}
 	}
 
 	r.noteOperatorTyped([]byte("git commit"))
 	check(10)
-	// Two backspaces take two off.
+	// A backspace takes a character, a control-backspace the word before it.
 	r.noteOperatorTyped([]byte{0x7f, 0x08})
-	check(8)
+	check(4)
 	// Backspacing past empty floors at zero rather than going negative.
 	r.noteOperatorTyped([]byte("ab"))
-	check(10)
+	check(6)
 	r.noteOperatorTyped([]byte{0x7f, 0x7f, 0x7f, 0x7f, 0x7f, 0x7f, 0x7f, 0x7f, 0x7f, 0x7f, 0x7f, 0x7f})
 	check(0)
 
