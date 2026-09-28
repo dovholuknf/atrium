@@ -4177,13 +4177,16 @@ and after the restart, which change the prefix.
 Needs the room built from this change and a room restart. `TestUsageCountsSubagentsOnceInTheirOwnRow` in
 `internal/daemon/usage_test.go` covers both transcript layouts, a workflow's agents a level down, dedupe by message
 id, the reconcile against per-file sums, a subagent still working past the Stop, and a restarted daemon.
+`TestUsagePricesEveryCurrentModel` covers a price for every current model, kept out of keep-alive's table.
 
 1. On a Claude card, ask for something that uses the Task tool, for example "use an Explore subagent to list the Go
    packages here". Let the turn end. Open the `token use` fold.
 
 **Expected:** two new rows ending about together: the turn itself (`you`), and one `subagent` row. The subagent row's
 tooltip counts the subagent's requests and names its model. The turn's row does not hold them: its requests are only
-the card's own.
+the card's own. `turns` went up by one, not two. The cause lines under the totals have a `subagent` line counting
+requests, and a `keep-alive` line counting refreshes when the card has any. A subagent on Haiku or Sonnet costs more
+than $0.
 
 2. Reconcile it. The session's transcript is `~/.claude/projects/<project>/<session>.jsonl` and its subagents are
    `<session>/subagents/agent-*.jsonl` (a workflow's a level down). Sum the output tokens of each file's assistant

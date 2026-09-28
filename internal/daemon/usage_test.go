@@ -276,10 +276,10 @@ func TestUsageCountsSubagentsOnceInTheirOwnRow(t *testing.T) {
 		sub.Output != 130 || sub.Input != 8 || sub.LastMessage != "s3" || sub.AfterResume {
 		t.Fatalf("subagent row %+v", sub)
 	}
-	// Each reply priced on its own model: the opus ones, and the unpriced one
-	// at $0.
-	opus := keepalivePrices["claude-opus-5-5"]
-	want := usageCost(&store.SessionUsage{Input: 6, CacheWrite1h: 10100, CacheRead: 7000, Output: 120}, opus)
+	// Each reply priced on its own model, the haiku one on haiku's.
+	opus, haiku := keepalivePrices["claude-opus-5-5"], usageOnlyPrices["claude-haiku-4-5"]
+	want := usageCost(&store.SessionUsage{Input: 6, CacheWrite1h: 10100, CacheRead: 7000, Output: 120}, opus) +
+		usageCost(&store.SessionUsage{Input: 2, CacheWrite5m: 500, Output: 10}, haiku)
 	if math.Abs(sub.Cost-want) > 1e-9 {
 		t.Fatalf("subagent cost %v, want %v", sub.Cost, want)
 	}
@@ -342,6 +342,29 @@ func TestUsageCountsSubagentsOnceInTheirOwnRow(t *testing.T) {
 	}
 	if n := len(f.rowsOf(store.UsageOperator)) + len(f.rowsOf(store.UsageUnknown)); n != 1 {
 		t.Fatalf("%d card rows", n)
+	}
+}
+
+// Every current Claude model has a usage price, and the models keep-alive may
+// not refresh stay out of its table.
+func TestUsagePricesEveryCurrentModel(t *testing.T) {
+	for model, in := range map[string]float64{
+		"claude-fable-5-1": 10, "claude-opus-5-5": 4, "claude-opus-5-5[1m]": 4, "claude-sonnet-5": 2,
+		"claude-haiku-4-5-20251001": 1, "claude-haiku-4-5": 1,
+	} {
+		if p, ok := usagePriceFor(model); !ok || p.In != in {
+			t.Fatalf("%s: %+v %v, want input %v", model, p, ok, in)
+		}
+	}
+	for _, model := range []string{"claude-sonnet-5-5", "claude-haiku-4-5-fast", "gpt-5.5", ""} {
+		if p, ok := usagePriceFor(model); ok {
+			t.Fatalf("%s priced %+v", model, p)
+		}
+	}
+	for _, model := range []string{"claude-sonnet-5", "claude-haiku-4-5-20251001"} {
+		if _, ok := keepalivePriceFor(model); ok {
+			t.Fatalf("%s is in keep-alive's table, so keep-alive would refresh it", model)
+		}
 	}
 }
 

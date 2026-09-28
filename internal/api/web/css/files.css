@@ -180,6 +180,14 @@
     font: var(--fs-xs) var(--mono); color: var(--dim);
   }
   .usagesum .usagecell b { color: var(--head); font-weight: 600; }
+  /* One line per cause, so subagent and keep-alive spend is read apart from the turns. */
+  .usagecauses {
+    display: grid; grid-template-columns: minmax(7em, auto) repeat(4, minmax(5em, auto)); justify-content: start;
+    gap: 0 var(--sp-3); margin-bottom: 6px; font: var(--fs-xs) var(--mono); color: var(--dim);
+  }
+  .usagecauses:empty { display: none; }
+  .usagecauses > span:nth-child(5n+2), .usagecauses > span:nth-child(5n+3), .usagecauses > span:nth-child(5n+4),
+  .usagecauses > span:nth-child(5n) { text-align: right; }
   .usagelist {
     max-height: 240px; overflow-y: auto;
     border: 1px solid var(--stroke-dim); border-radius: var(--r-md);

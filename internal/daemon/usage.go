@@ -55,7 +55,39 @@ import (
 const usageSettle = 1500 * time.Millisecond
 
 // usagePricesVersion names the price table a row's cost was worked out on.
-const usagePricesVersion = keepalivePricesVersion
+const usagePricesVersion = "usageprices-2026-09-28"
+
+// usageOnlyPrices are the models a usage row prices that keep-alive must not
+// refresh, because keepalivePrices is also the list of models keep-alive may
+// refresh. Per million tokens, from
+// https://platform.claude.com/docs/en/about-claude/pricing, fetched 2026-09-28.
+// A 5m write is 1.25 times input, a read 0.1 times, on both.
+var usageOnlyPrices = map[string]keepalivePrice{
+	"claude-haiku-4-5": {In: 1, Cw1h: 2, Cr: 0.10, Out: 5},
+	"claude-sonnet-5":  {In: 2, Cw1h: 4, Cr: 0.20, Out: 10},
+}
+
+// usagePriceFor prices a reply for a usage row: keep-alive's models, then the
+// others. An id matches its name alone or with a date stamp, so Sonnet 5's
+// price is not taken for a Sonnet 5.5.
+func usagePriceFor(model string) (keepalivePrice, bool) {
+	if p, ok := keepalivePriceFor(model); ok {
+		return p, true
+	}
+	m := strings.ToLower(strings.TrimSpace(model))
+	if i := strings.IndexByte(m, '['); i >= 0 {
+		m = m[:i]
+	}
+	for k, p := range usageOnlyPrices {
+		if m == k {
+			return p, true
+		}
+		if date, ok := strings.CutPrefix(m, k+"-"); ok && len(date) == 8 && strings.Trim(date, "0123456789") == "" {
+			return p, true
+		}
+	}
+	return keepalivePrice{}, false
+}
 
 // usageSegment is what is known about a turn when its Stop arrives.
 type usageSegment struct {
@@ -450,7 +482,7 @@ func (s *replySet) row(t *store.Task) *store.SessionUsage {
 		row.CacheRead += one.CacheRead
 		row.CacheWrite5m += w5
 		row.CacheWrite1h += w1
-		if p, ok := keepalivePriceFor(r.Model); ok {
+		if p, ok := usagePriceFor(r.Model); ok {
 			row.Cost += usageCost(one, p)
 			row.Prices = usagePricesVersion
 		}
