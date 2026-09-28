@@ -516,7 +516,7 @@ function reapToasts(liveKeys) {
   document.querySelectorAll("#toasts .toast[data-key]").forEach(el => {
     if (!liveKeys.has(el.dataset.key) && el.answered) el.answered();
   });
-  toastQueue.forEach(el => {
+  toastQueue.slice().forEach(el => {
     if (el.dataset.key && !liveKeys.has(el.dataset.key)) el.dismiss();
   });
   reapNotifications(liveKeys);
