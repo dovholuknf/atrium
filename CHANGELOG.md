@@ -5,6 +5,17 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **One command makes another machine a room of this hub, over ssh and with no admin or sudo.** See
+  `docs/packaging.md` "Provisioning a room over ssh, from the hub" and `docs/test-plan.md` section BU.
+
+  `scripts/provision-room.ps1 user@host` finds the hub from its running process, detects the remote OS and arch,
+  puts a matching atrium in the remote home folder, joins the room, installs autostart as that user, waits for the
+  hub to see it, and checks the runners asked for. It is safe to run again, prints one `provision <step> <status>`
+  line per step, and `-Remove` undoes what it did. `atrium room join` gains `--no-run`, which enrols and exits, and
+  `atrium-service.ps1 -Verb room` and `ATRIUM_SERVICE_VERB=room atrium-service.sh` register `atrium room` instead of
+  `atrium daemon`. Proven on claudevm (Windows). Linux and macOS not yet run. `internal/cli/roomrun.go`: no restart,
+  it reaches a machine when this script builds for it.
+
 - **Every Claude card's token use is on record, a row per turn, shown only in the card's details.** See
   `docs/backlog-2.md` item 37 and `docs/test-plan.md` section BT.
 

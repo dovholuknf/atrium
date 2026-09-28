@@ -4170,3 +4170,58 @@ room only to try it.
 means every restart pays about one full write per card, `written` times the model's write price, and that total is
 the number item 38 decides on. Mixed: compare the models, the 1M variant (`[1m]`), and the Claude Code versions before
 and after the restart, which change the prefix.
+
+## BU. A machine becomes a room of this hub from one command over ssh
+
+Go test: `TestRoomJoinNoRunSavesAndReturns` in `internal/cli/roomjoin_norun_test.go`. Run the rest from the hub
+machine against a machine you can wipe, reached by `ssh <target>` with a key and no password. The hub has to be
+running with `--link` bound wide and `--link-advertise` set, since a room on another machine cannot dial loopback.
+
+### BU1. A fresh machine is provisioned and attaches
+
+1. `pwsh -File scripts\provision-room.ps1 <target> -Runners claude`
+
+**Expected:** one `provision <step> <status> <detail>` line per step, in the order ssh, os, hub, state, build,
+binary, scripts, join, autostart, start, attached, then one `runner:<name>` line each. binary, join, autostart and
+start say `done`. attached names a connection made after the start. The last line is `provision done ok` and the
+exit code is 0, or `provision done fail 5` and exit 5 when a runner is missing. The board shows the new room.
+
+2. On the target, check the install is the user's own.
+
+**Expected:** Windows has `~\.atrium\bin\atrium.exe` and a logon task `atrium` with RunLevel Limited running
+`atrium room`. Linux has `~/.local/bin/atrium` and `~/.config/systemd/user/atrium.service` running `atrium room`.
+macOS has the LaunchAgent plist, loaded if someone is logged in at the desktop. Nothing is under Program Files,
+`/usr` or `/Library`.
+
+### BU2. Running it again changes nothing
+
+1. Run the same command again.
+
+**Expected:** binary, join, autostart and start say `ok`. No new join string is minted and the room keeps its
+connection.
+
+2. Change the build (any commit) and run it again.
+
+**Expected:** binary says `done`, start says `done`, and attached shows a connection time after this run started.
+
+### BU3. Guards
+
+1. Point it at a machine that already runs an atrium this script did not install.
+
+**Expected:** `provision state fail` naming what is there, exit 6, and nothing changed. `-Force` goes ahead.
+
+2. Provision a second machine with `-Name` set to a room that has already connected from somewhere else.
+
+**Expected:** `provision join fail`, exit 4, and the hub's room is untouched.
+
+3. Point it at a host ssh cannot reach, or one that wants a password.
+
+**Expected:** `provision ssh fail` at once with ssh's own reason, exit 2. No prompt waits.
+
+### BU4. -Remove undoes it
+
+1. `pwsh -File scripts\provision-room.ps1 <target> -Remove`, then run it a second time.
+
+**Expected:** the first run stops the room, removes the autostart, the binary, the room's key, its database and
+ledger, the address folder and `~/.atrium/provision`, then removes the room from the hub. Anything that was on the
+target before the first provision is still there. The second run says `provision state skip` and exits 0.
