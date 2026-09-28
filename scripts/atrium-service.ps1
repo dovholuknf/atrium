@@ -84,7 +84,11 @@ param(
     [string] $TaskName = 'atrium',
     [string] $Addr,
     [string] $Http,
-    [string] $LocationFile
+    [string] $LocationFile,
+    # `room` registers `atrium room` instead of `atrium daemon`. See
+    # scripts/atrium-autostart.ps1 and scripts/provision-room.ps1.
+    [ValidateSet('daemon', 'room')]
+    [string] $Verb = 'daemon'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -127,6 +131,7 @@ function Stop-AtriumGracefully {
         # else and gets the caller's arguments instead.
         $stopArgs = @('stop')
         if ($Http) { $stopArgs += @('--url', "http://localhost$Http") }
+        elseif ($Verb -eq 'room') { $stopArgs += @('--url', 'http://127.0.0.1:7781') }
         try {
             & $ExePath @stopArgs 2>&1 | ForEach-Object { Write-Host "  $_" }
         } catch {
@@ -141,7 +146,7 @@ function Stop-AtriumGracefully {
 }
 
 function Invoke-Install {
-    $splat = @{ Db = $Db; TaskName = $TaskName }
+    $splat = @{ Db = $Db; TaskName = $TaskName; Verb = $Verb }
     if ($Exe)          { $splat.Exe = $Exe }
     if ($Addr)         { $splat.Addr = $Addr }
     if ($Http)         { $splat.Http = $Http }
