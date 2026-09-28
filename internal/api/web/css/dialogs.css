@@ -157,6 +157,9 @@
   }
   .toast:hover { border-color: var(--blue); border-left-color: var(--warn); }
   .toast.leaving { animation: toastout .2s ease-in forwards; }
+  /* Answered while it was up: it stays to be read, and says it needs nothing. */
+  .toast.answered { border-left-color: var(--stroke); opacity: .75; }
+  .toast.answered b::after { content: " · answered"; color: var(--dim); font-weight: normal; }
   @keyframes toastin { from { transform: translateY(var(--toast-dy, 14px)); opacity: 0; } }
   @keyframes toastout { to { transform: translateY(8px); opacity: 0; } }
   .toast .body { flex: 1; min-width: 0; }

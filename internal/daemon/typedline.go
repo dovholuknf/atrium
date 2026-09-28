@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 )
@@ -43,6 +44,12 @@ type typedLine struct {
 	// inPaste is inside a bracketed paste, where every byte is text and a
 	// carriage return is a newline rather than Enter.
 	inPaste bool
+	// escClears is a runner whose prompt a second lone Esc clears, which is
+	// Claude Code ("Esc again to clear"), and escAt is when the last lone Esc
+	// landed. A shell reads Esc as a meta prefix and clears nothing, so it never
+	// sets escClears. See `loneEsc`.
+	escClears bool
+	escAt     time.Time
 }
 
 // typedLineCap is how much of the line's text is kept. A long paste is still
@@ -172,16 +179,22 @@ func (l *typedLine) feed(p []byte) (keyed bool) {
 				i += n
 			}
 			keyed = true
+			l.escAt = time.Time{}
 			continue
 		}
 		b := p[i]
 		if b == 0x1b {
+			lone := len(p)-i == 1 || p[i+1] == 0x1b
 			n, key := l.escape(p[i:])
+			if key && !lone {
+				l.escAt = time.Time{}
+			}
 			i += n
 			keyed = keyed || key
 			continue
 		}
 		keyed = true
+		l.escAt = time.Time{}
 		if b < 0x20 || b == 0x7f {
 			l.control(b)
 			i++
@@ -228,7 +241,8 @@ func (l *typedLine) control(b byte) {
 // it on its own account.
 func (l *typedLine) escape(p []byte) (int, bool) {
 	if len(p) == 1 {
-		return 1, true // escape on its own, which edits nothing
+		l.loneEsc()
+		return 1, true
 	}
 	switch p[1] {
 	case '[':
@@ -258,9 +272,24 @@ func (l *typedLine) escape(p []byte) (int, bool) {
 		l.wordDelete()
 		return 2, true
 	case 0x1b:
-		return 1, true // escape pressed, then whatever follows
+		l.loneEsc() // escape pressed, then whatever follows
+		return 1, true
 	}
 	return l.meta(p)
+}
+
+// loneEsc is escape pressed on its own. It edits nothing, except that a second
+// one within `escAgainWithin` clears a Claude prompt, so the line is empty
+// then. A lone Esc used to match nothing, and the gate held messages behind a
+// line Claude Code had already cleared until a control-c. Clearing the
+// scrollback sends no byte and empties no line, so it rightly releases nothing.
+func (l *typedLine) loneEsc() {
+	if l.escClears && !l.escAt.IsZero() && time.Since(l.escAt) < escAgainWithin {
+		l.clear()
+		l.escAt = time.Time{}
+		return
+	}
+	l.escAt = time.Now()
 }
 
 // meta is alt with a key: ESC and the key's own bytes.

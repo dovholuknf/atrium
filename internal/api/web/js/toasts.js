@@ -293,7 +293,7 @@ function toast(title, body, goTo, key, taskFor) {
   // and they cover the screen while doing it. The newest is checked rather
   // than the whole stack, so two alternating messages still both show: the
   // case worth collapsing is a repeat, not a recurrence.
-  const last = host.lastElementChild;
+  const last = toastQueue.length ? toastQueue[toastQueue.length - 1] : host.lastElementChild;
   if (last && !last.classList.contains("leaving") &&
       last.dataset.sig === title + "\0" + (body || "")) {
     last.dataset.n = String(Number(last.dataset.n || 1) + 1);
@@ -316,8 +316,12 @@ function toast(title, body, goTo, key, taskFor) {
   el.querySelector("b").textContent = title;
   el.querySelector(".what").textContent = body || "";
   const dismiss = () => {
+    clearTimeout(timer);
+    const q = toastQueue.indexOf(el);
+    if (q >= 0) { toastQueue.splice(q, 1); return; }
+    if (el.classList.contains("leaving")) return;
     el.classList.add("leaving");
-    setTimeout(() => el.remove(), 200);
+    setTimeout(() => { el.remove(); showQueuedToasts(); }, 200);
   };
   el.addEventListener("click", async e => {
     if (e.target.classList.contains("x")) { dismiss(); return; }
@@ -359,13 +363,38 @@ function toast(title, body, goTo, key, taskFor) {
   // again, and inheriting the first one's remaining second would have the
   // count tick up on a toast that vanishes as you look at it.
   const life = goTo === "perms" ? 30000 : 9000;
-  let timer = setTimeout(dismiss, life);
-  el.again = () => { clearTimeout(timer); timer = setTimeout(dismiss, life); };
+  // The clock starts when it is on screen, not when it was raised, so a toast
+  // that waited its turn still gets its whole life.
+  let timer = 0, end = 0, left = life;
+  let hovered = false;
+  const arm = ms => {
+    clearTimeout(timer);
+    end = Date.now() + ms;
+    if (!hovered) timer = setTimeout(dismiss, ms);
+  };
+  el.again = () => { if (el.born) arm(life); };
+  el.show = () => { el.born = Date.now(); host.appendChild(el); arm(life); };
+  // ANSWERED IS NOT GONE. A card waiting on you that starts running again, or a
+  // request answered from anywhere, used to take its toast down on that poll,
+  // and a held message typed in as the turn ends does that inside a second. It
+  // says so instead, and goes when an ordinary toast would.
+  el.answered = () => {
+    el.classList.add("answered");
+    if (!el.born) return;
+    const by = el.born + 9000 - Date.now();
+    if (Date.now() + by < end) arm(Math.max(0, by));
+  };
+  // HOVERING HOLDS IT. Reading the toast is the one time it must not leave.
+  el.addEventListener("mouseenter", () => {
+    hovered = true;
+    clearTimeout(timer);
+    left = Math.max(0, end - Date.now());
+  });
+  el.addEventListener("mouseleave", () => {
+    hovered = false;
+    if (el.born) arm(Math.max(left, 2000));
+  });
 
-  host.appendChild(el);
-  // After the content is in, so the host is put back on top of whatever is
-  // open at the moment there is something to show.
-  raiseToasts();
   // Never let the stack grow past what fits on screen. Three, not four: the
   // fourth was always half off the bottom on a laptop.
   //
@@ -378,10 +407,45 @@ function toast(title, body, goTo, key, taskFor) {
   // A STICKY TOAST IS NOT COUNTED AND NOT EVICTED. The hub restart gate's two
   // are the only place to act on what they say, so the oldest ordinary toast
   // goes instead.
-  const cap = innerWidth <= PHONE ? 1 : 3;
-  const plain = () => [...host.children].filter(c => !c.classList.contains("sticky"));
-  for (let p = plain(); p.length > cap; p = plain()) p[0].remove();
+  //
+  // A FULL STACK QUEUES, IT DOES NOT EVICT. Taking the oldest down the moment a
+  // fourth arrived made a burst of alerts a blink: each one gone as the next
+  // came in. The newcomer waits for a toast to leave, and every one is in the
+  // toast log meanwhile.
+  //
+  // More up than the cap allows is a window that got narrower, a desktop stack
+  // on a phone-sized screen. That excess goes at once, oldest first, as it did.
+  for (let s = shownToasts(); s.length > toastCap(); s = shownToasts()) s[0].remove();
+  // Room left by a toast taken down some other way goes to the ones waiting.
+  showQueuedToasts();
+  if (shownToasts().length >= toastCap()) {
+    toastQueue.push(el);
+  } else {
+    el.show();
+  }
+  // After the content is in, so the host is put back on top of whatever is
+  // open at the moment there is something to show.
+  raiseToasts();
   return el;
+}
+
+// Toasts raised while the stack was full, oldest first.
+const toastQueue = [];
+
+function toastCap() { return innerWidth <= PHONE ? 1 : 3; }
+
+// The ordinary toasts on screen and staying: not sticky, not on the way out.
+function shownToasts() {
+  const host = document.getElementById("toasts");
+  return host ? [...host.children].filter(c =>
+    !c.classList.contains("sticky") && !c.classList.contains("leaving")) : [];
+}
+
+// Into whatever room there is, oldest waiting first.
+function showQueuedToasts() {
+  if (!toastQueue.length) return;
+  while (toastQueue.length && shownToasts().length < toastCap()) toastQueue.shift().show();
+  raiseToasts();
 }
 
 // Whether a pending request's own row is in front of you right now.
@@ -430,7 +494,10 @@ function focusPerm(id) {
 // answering a request from anywhere retires its toast.
 function reapToasts(liveKeys) {
   document.querySelectorAll("#toasts .toast[data-key]").forEach(el => {
-    if (!liveKeys.has(el.dataset.key) && el.dismiss) el.dismiss();
+    if (!liveKeys.has(el.dataset.key) && el.answered) el.answered();
+  });
+  toastQueue.slice().forEach(el => {
+    if (el.dataset.key && !liveKeys.has(el.dataset.key)) el.dismiss();
   });
   reapNotifications(liveKeys);
 }

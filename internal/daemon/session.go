@@ -328,6 +328,12 @@ func (d *Daemon) onSession(in SessionEvent) error {
 		// Left behind, the last activity would have the card claiming to run a
 		// tool inside a process that has exited.
 		d.act.forget(task.ID)
+		// And a message held for its line. Forgetting the chip was not enough: a
+		// runner that outlives its session kept the retry going, and the next
+		// tick set `held_for: line` again on a card with nobody at that line.
+		if d.pending != nil {
+			d.pending.drop(task.ID)
+		}
 		if err := d.st.AppendEvent(task.ID, store.EventExited, map[string]any{
 			"by": "session hook", "source": in.Source, "reason": in.Reason,
 		}); err != nil {
