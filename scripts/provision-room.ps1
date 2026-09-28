@@ -205,7 +205,12 @@ function Invoke-Remote {
         $full = "`$ErrorActionPreference='Stop'; `$ProgressPreference='SilentlyContinue'`n" +
             "`$A = Join-Path `$HOME '.atrium'; `$Bin = Join-Path `$A 'bin\atrium.exe'`n" +
             "`$P = Join-Path `$A 'provision'; `$M = Join-Path `$P 'manifest.json'`n" +
-            "`$L = Join-Path `$env:LOCALAPPDATA 'atrium'`n" + $script
+            "`$L = Join-Path `$env:LOCALAPPDATA 'atrium'`n" +
+            # PATH FROM THE REGISTRY, so a Path entry this run added is seen by the
+            # room it starts and the runner check, whatever the ssh server's
+            # session inherited.
+            "`$env:Path = (@([Environment]::GetEnvironmentVariable('Path', 'Machine'), " +
+            "[Environment]::GetEnvironmentVariable('Path', 'User')) | Where-Object { `$_ }) -join ';'`n" + $script
         $enc = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($full))
         if ($enc.Length -gt 7800) { throw "remote script too long for cmd.exe ($($enc.Length))" }
         $out = & $Ssh @sshBase $Target "powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand $enc" 2>&1
@@ -808,8 +813,12 @@ if ($state.joinedroom -eq $Name -and $joinedId -eq $hubId) {
         # a native command writes to stderr, here the join's own log, into a
         # terminating error.
         $js = "`$ErrorActionPreference = 'Continue'`n" +
-              "try { & `$Bin room join $(Quote-Ps $token)$zflag --no-run 2>&1; if (`$LASTEXITCODE) { exit `$LASTEXITCODE } } " +
-              "finally { Remove-Item (Join-Path `$P 'enroll.jwt') -Force -ErrorAction SilentlyContinue }"
+              "`$rc = 1`n" +
+              "try { & `$Bin room join $(Quote-Ps $token)$zflag --no-run 2>&1 | ForEach-Object { `"`$_`" }; `$rc = `$LASTEXITCODE } " +
+              "finally { Remove-Item (Join-Path `$P 'enroll.jwt') -Force -ErrorAction SilentlyContinue }`n" +
+              # THE BINARY'S OWN EXIT CODE. Windows PowerShell would otherwise exit 1
+              # for any stderr line, which is where the join logs.
+              "exit `$rc"
     } else {
         $js = ''
         $zflag = ''
