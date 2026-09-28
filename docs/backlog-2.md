@@ -29,7 +29,8 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 20 | Selecting the terminal that is already attached re-renders its whole history | bug | not started |
 | 21 | A card stuck on `running` after a lost Stop gets a "looks idle" badge from its silent terminal | bug | not started |
 | 22 | Copy on select copies every find match (ctrl-shift-f) | bug | DONE, `54fb554` |
-| 23 | sa78: keep idle Claude cards' prompt caches warm, stop at break-even | feature | built on `claude/cache-keepalive`, not deployed, needs a room restart |
+| 23 | sa78: keep idle Claude cards' prompt caches warm, stop at break-even | feature | DONE, merged `a917535`, deployed 2026-09-28 |
+| 24 | The "not replayed here" notice opens or loads the pre-restart history | feature | not started |
 
 ------------
 
@@ -576,6 +577,32 @@ Open:
 - Re-derive the 1/8 budget from the transcripts once more data is in: the resume hazard came from 597 idle
   stretches over 21 days, all Claude Code sessions on this machine, not only board cards.
 - Codex is out: OpenAI caching has no write premium and no client TTL. A separate item if that changes.
+
+## 24. The "not replayed here" notice is a button (feature)
+
+Raised by clint 2026-09-28. An attach whose pre-restart history was cut to the newest 4 MB starts with a grey line
+(`carryReplayNotice`, `internal/daemon/carryover.go:119`): "[atrium] ---- older output from before the restart is not
+replayed here. all of it is under the terminal's cog, history from before the restart ----". Reaching that history
+means knowing where the cog is and which entry it is.
+
+Wanted: the notice is clickable in the terminal, the way file paths already are (`registerLinkProvider` in
+`js/terminal-links.js:48`). Two actions, both on the one line:
+
+- **open** the full pre-restart history in the same viewer the cog's "history from before the restart" entry opens.
+  Small: a link provider that matches the notice text and calls that entry's handler.
+- **load it in**: replay the whole file into this terminal above the live output. xterm cannot insert above its
+  scrollback, so this means a reset and a re-attach that asks the daemon for the full carryover instead of the newest
+  `carryReplayMax` (an attach parameter, for example `?carry=all`). It pays the cost `carryReplayMax` was added to
+  avoid, about 1.4s for a 23 MB file, so say the size on the button and show the paste-style spinner while it lands.
+
+Watch for:
+
+- Match the notice by a marker the daemon controls, not by its English text, or a reworded notice breaks the link.
+  An OSC 8 hyperlink with an `atrium:` scheme around the words is one way. The link provider must refuse that scheme
+  anywhere else in the output, so a program cannot print a fake one.
+- A new attach parameter is a new endpoint for a lent session (`overlay_guest.go` allowlist). A guest must not get
+  `carry=all` unless it already gets the history.
+- The popped-out window takes the same path.
 
 
 ------------
