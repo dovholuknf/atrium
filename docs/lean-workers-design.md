@@ -3,8 +3,9 @@
 A worker started by `atrium_launch` inherits none of its launcher's conversation. Until now it still booted with the
 operator's whole setup: the global `~/.claude/CLAUDE.md`, auto-memory, every user and claude.ai skill, every custom
 agent type, the operator's prompt-time hook reminders and every MCP server in the runner's config. A worker reads
-its `BRIEF.md` and the repo, and needs little else. A lean launch starts it with only that. `atrium_launch` now
-starts every claude worker lean unless the caller passes `lean: false`.
+its `BRIEF.md` and the repo, and needs little else. A lean launch starts it with only that, plus two MCP servers:
+atrium-control to report and mercurius for reviews. `atrium_launch` now starts every claude worker lean unless the
+caller passes `lean: false`.
 
 The code is `internal/daemon/lean.go` on the room and `leanLaunch` in `internal/link/control_mcp.go` on the hub.
 
@@ -17,10 +18,12 @@ Claude Code 2.1.283, model `claude-opus-5-5`. "First request" is the whole input
 |---|---|---|---|
 | sa85 (this brief), interactive, in a worktree | 40,325 | | |
 | `claude -p`, in a worktree | 35,970 | 11,029 | -69% |
-| `claude -p`, gated and reporting, scratch dir | | 10,505 | |
+| `claude -p`, gated and reporting, scratch dir, without mercurius | | 10,505 | |
+| `claude -p`, scratch dir, with mercurius (the default) | | 10,541 | |
 | `claude -p`, in the main checkout (repo CLAUDE.md loads) | 45,358 | 20,498 | -55% |
 
-The interactive number sits ~4k above the `-p` one because the interactive tool set and the prompt-time hooks are
+The worktree and main-checkout rows were measured before mercurius became a default. Keeping it costs 36 tokens on
+the wire, because its six tools are deferred and send only their names. The interactive number sits ~4k above the `-p` one because the interactive tool set and the prompt-time hooks are
 larger. The cut is about the same size in both modes: ~25k tokens a start.
 
 `/context` in print mode is a local command that costs no model call. It gives the breakdown, in thousands of tokens.
@@ -33,7 +36,7 @@ Deferred tools send only their names, so their rows count little on the wire.
 | custom agents | 2.3 | 0 | user source dropped |
 | memory files | 4.5 | 0 | global CLAUDE.md (1.0) with the user source, MEMORY.md (3.5) with auto-memory off |
 | skills | 7.8 | 0 | user and claude.ai-synced skills with the user source, built-ins with `Skill` disallowed |
-| MCP tools (deferred) | 5.2 | 3.4 | mercurius dropped |
+| MCP tools (deferred) | 5.2 | 5.2 | unchanged: atrium-control and mercurius are both kept |
 | system tools (deferred) | 13.1 | 3.0 | disallowed tools |
 | total loaded | 24.1 | 9.7 | |
 
@@ -43,7 +46,7 @@ Each row is one flag over today's worker, as `/context` totals or as the API num
 
 | lever | cuts | worker loses | used |
 |---|---|---|---|
-| `--strict-mcp-config --mcp-config` with atrium-control alone | mercurius, ~1.8k of deferred names, ~100 on the wire | mercurius, unless `mcp: ["mercurius"]` | yes |
+| `--strict-mcp-config --mcp-config` with atrium-control and mercurius | every other server in the config | servers not named in `mcp` | yes. Dropping mercurius too saves 36 tokens. clint asked to keep it |
 | `--setting-sources project,local` | skills 5.8k, agents 2.3k, global CLAUDE.md 1.0k. System tools grow 5.9k, net -3.3k | user hooks, permissions and env, restored by `--settings` below | yes |
 | `--settings <filtered user settings>` | the operator's SessionStart and UserPromptSubmit hooks, status line, output style, attribution text | tab title and state scripts, the filler-guard reminder | yes |
 | `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` | 4.3k: MEMORY.md and its instructions | the operator's memory index | yes |
@@ -70,7 +73,8 @@ In front of the harness's own arguments, so the positional prompt stays last. Th
   events whose output lands in the context, only atrium's own reporters stay (`session --event`, `hook --event`,
   `turn --event`). The Stop hook is added when the operator has none, as `withStopHook` does for a full launch.
 - `--strict-mcp-config --mcp-config <json>`: the servers from the harness's own `--mcp-config` files, cut to
-  `atrium-control` plus the names in `mcp`. A name the config does not hold is refused, with the list it does hold.
+  `atrium-control` and `mercurius` plus the names in `mcp`. A default the config does not hold is left out. A name
+  in `mcp` the config does not hold is refused, with the list it does hold.
 - `--disallowedTools <list>`: see `leanDisallowed`.
 - `--append-system-prompt <rules>`: report with `atrium_report`, never commit on `claude/main` or `main`, never
   restart atrium or deploy unless the brief says to, one-line commit messages with no trailer, Go builds to
@@ -110,10 +114,10 @@ room restart.
   AskUserQuestion and the worktree tools.
 - The status line, the output style, and the operator's SessionStart and UserPromptSubmit hooks: session bootstrap,
   tab title and state, the filler-guard reminder, the layout snapshot.
-- mercurius and any other MCP server, unless named in `mcp`.
+- Every MCP server other than atrium-control and mercurius, unless named in `mcp`.
 
 It keeps the permissions, the env, every PreToolUse, PostToolUse, Stop, SessionEnd, Notification, Subagent and
-PreCompact hook, atrium's reporters, the project's CLAUDE.md and settings, and atrium-control.
+PreCompact hook, atrium's reporters, the project's CLAUDE.md and settings, atrium-control and mercurius.
 
 ## Deploy
 

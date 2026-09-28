@@ -6,15 +6,15 @@ section heading is just "what landed in this iteration."
 ## Unreleased
 
 - **A launched claude worker starts lean: ~25k fewer tokens on its first request.** See
-  `docs/lean-workers-design.md`, `docs/backlog-2.md` item 29 and `docs/test-plan.md` section BO.
+  `docs/lean-workers-design.md`, `docs/backlog-2.md` item 34 and `docs/test-plan.md` section BO.
 
   A worker inherits none of its launcher's conversation, but it booted with the operator's whole setup: the global
   CLAUDE.md, auto-memory, every user and claude.ai skill, every agent type, prompt-time hook reminders and every MCP
   server. Its first request was 40k tokens in a worktree. Now `atrium_launch` starts a claude worker with
   `--setting-sources project,local`, a copy of the user settings that keeps the permissions, env and hooks (less the
-  operator's own SessionStart and UserPromptSubmit hooks, which print into the context), atrium-control as the only
-  MCP server, 22 tools it has no use for disallowed, a short appended system prompt with the worker rules, and
-  auto-memory off. The same `-p` probe drops from 35,970 to 11,029 tokens. `mcp: ["mercurius"]` adds a server from
+  operator's own SessionStart and UserPromptSubmit hooks, which print into the context), atrium-control and mercurius
+  as the only MCP servers, 22 tools it has no use for disallowed, a short appended system prompt with the worker
+  rules, and auto-memory off. The same `-p` probe drops from 35,970 to 11,029 tokens. `mcp: [...]` adds servers from
   the runner's config, and `lean: false` starts a worker as before. The card is tagged `atrium:lean`, so a reopen stays
   lean. HUB-SIDE and ROOM-SIDE: needs both, and a room restart.
 
