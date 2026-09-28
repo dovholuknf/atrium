@@ -4051,3 +4051,48 @@ a delay. It stays up at least about a second, and goes once the runner shows the
 
 **Expected:** an alert `that paste is too big` naming its size and the 4MB limit. Nothing is sent. The terminal
 stays attached. It does not say `detached` or reconnect, which is what a frame over the daemon's limit used to do.
+
+## BR. Clicking into a terminal does not hold a say, and the readout says why one is held
+
+Needs a room built from this change and a room restart. Go tests in `internal/daemon/typedline_test.go` cover every
+terminal report xterm.js sends, word delete by all three keys, the keys the gate cannot follow, and the endpoint.
+The headless section `typing` covers the readout switch, its place above the shortcut strip, what it shows, and that
+it polls nothing while off. See `docs/backlog-2.md` item 33.
+
+### BR1. Focus and clicks are not typing
+
+1. In the gear's settings tick "show the typing gate readout". Attach a Claude card and leave the prompt empty.
+2. Click into the terminal, click out of it, click in again, and click a few places in the output.
+
+**Expected:** the readout, on the line directly above "ctrl-c copies a selection", reads `gate open` and `0 chars`,
+and `last key` does not reset on the clicks. From another session, `atrium_say` the card something. It is typed and
+submitted within a couple of seconds, not held behind "delivers when your input line is clear and idle".
+
+### BR2. The line is text, and a word delete is a word
+
+1. Type `git commit` in the prompt.
+
+**Expected:** the readout shows `line "git commit"`, `10 chars` and `gate closed` with `10 unsent character(s)`.
+
+2. Press ctrl-backspace, then alt-backspace.
+
+**Expected:** after the first the line reads `git `, after the second it is empty. Two seconds later the gate reads
+`open: line empty and quiet`. Do the same with ctrl-w.
+
+### BR3. A key the gate cannot follow holds, and says so
+
+1. On an empty prompt press the up arrow, so a previous prompt comes back.
+
+**Expected:** the gate reads `closed: not sure what is on the line, after an up or down arrow`. A say waits.
+Pressing ctrl-u, or Enter, opens it again.
+
+2. Type `abc`, press the left arrow, then backspace three times.
+
+**Expected:** the gate stays closed on `not sure what is on the line, after a cursor move`, until Enter, ctrl-c or
+ctrl-u.
+
+### BR4. Off costs nothing
+
+1. Untick the setting.
+
+**Expected:** the readout line goes. The browser's network panel shows no more requests to `/typing`.
