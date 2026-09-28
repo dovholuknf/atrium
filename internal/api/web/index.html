@@ -2849,6 +2849,20 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         <span class="hintline" id="d-files-note"></span>
       </div>
     </div>
+    <!-- TOKEN USE ON RECORD. Here and nowhere else: not on the card, not in
+         the terminals list, not in a toast. Folded and fetched when opened, like
+         the files, because it is history and not something a glance needs.
+         See internal/daemon/usage.go. -->
+    <div class="field" id="d-usage-field" hidden>
+      <label class="eyebrow">
+        <span class="foldy" id="d-usage-toggle" onclick="toggleUsage()">token use</span>
+      </label>
+      <div id="d-usage" hidden>
+        <div class="usagesum" id="d-usage-sum"></div>
+        <div class="usagelist" id="d-usage-list"></div>
+        <span class="hintline" id="d-usage-note"></span>
+      </div>
+    </div>
     <!-- A note is for YOU. Sending it is a second, separate act.
 
          This one does not go anywhere until you say. What that buys is
@@ -2953,6 +2967,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/expose2.js"></script>
 <script src="/js/expose3.js"></script>
 <script src="/js/notes-files.js"></script>
+<script src="/js/usage.js"></script>
 <script src="/js/settings-spine.js"></script>
 <script src="/js/themes.js"></script>
 <script src="/js/terminal.js"></script>

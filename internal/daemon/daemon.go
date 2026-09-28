@@ -148,6 +148,9 @@ type Daemon struct {
 	// ka keeps idle Claude cards' prompt caches warm. See keepalive.go.
 	ka *keepalive
 
+	// usage records every Claude card's token use, a row per turn. See usage.go.
+	usage *usageTracker
+
 	// ledgerDirty asks the snapshot writer to rewrite work-ledger.md. One slot,
 	// so any number of changes while a write is under way are one more write.
 	// See ledger.go.
@@ -437,6 +440,9 @@ func New(opts Options) (*Daemon, error) {
 	}
 	api.KeepaliveOf = d.ka.view
 	d.ap.SetKeepalive = d.keepaliveSet
+	// Token use on record, read only by a card's details. See usage.go.
+	d.usage = newUsageTracker(st)
+	d.ap.UsageOf = d.usageFor
 	// Starting a fixture is spawning a process, which the daemon owns.
 	api.StartFixture = d.StartFixtureNow
 	// Which turns are unread, carried across the restart. See seen.go.

@@ -636,6 +636,8 @@ func (d *Daemon) onActivity(in ActivityEvent) string {
 		// needs-input for the rest of the session.
 		d.act.set(taskID, ActivityThinking, "")
 		d.turnResumed(taskID)
+		// What started this turn, for the usage record. See usage.go.
+		d.usage.prompted(taskID, d.promptCause(taskID))
 		// And it saw the turn and answered its questions, unless the prompt
 		// was a peer's message atrium typed in. See seen.go.
 		d.seenPrompted(taskID)
