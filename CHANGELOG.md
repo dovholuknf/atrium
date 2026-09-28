@@ -25,7 +25,8 @@ section heading is just "what landed in this iteration."
   `-c model_reasoning_effort=`. A runner with no mapping refuses, and so does an `ATRIUM_` env key or one given twice.
   The card keeps all four, so a restart comes back the same, and shows them on its model chip, env by name only:
   the values never leave the room. A stale-resume retry now keeps the model too, where it used to fall back to the
-  default. The runner editor gains effort args and model and effort env var names. The hub's `atrium_launch` now
+  default. A keep-alive fork carries the card's launch env and effort too, so it warms the same endpoint and account
+  the card uses. The runner editor gains effort args and model and effort env var names. The hub's `atrium_launch` now
   passes `model` as well, and warns when a room older than this drops the rest. Migration `0065_launch_options`.
   `internal/store`, `internal/daemon`, `internal/cli` launch, `internal/api/web`: ROOM RESTART.
   `internal/link` (`atrium_launch`): HUB RESTART.
