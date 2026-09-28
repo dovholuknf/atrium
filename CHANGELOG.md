@@ -5,6 +5,86 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **One command makes another machine a room of this hub, over ssh and with no admin or sudo.** See
+  `docs/packaging.md` "Provisioning a room over ssh, from the hub" and `docs/test-plan.md` section BU.
+
+  `scripts/provision-room.ps1 user@host` finds the hub from its running process, detects the remote OS and arch,
+  puts a matching atrium in the remote home folder, joins the room, installs autostart as that user, waits for the
+  hub to see it, and checks the runners asked for. It is safe to run again, prints one `provision <step> <status>`
+  line per step, and `-Remove` undoes what it did. `atrium room join` gains `--no-run`, which enrols and exits, and
+  `atrium-service.ps1 -Verb room` and `ATRIUM_SERVICE_VERB=room atrium-service.sh` register `atrium room` instead of
+  `atrium daemon`. Proven on claudevm (Windows). Linux and macOS not yet run. `internal/cli/roomrun.go`: no restart,
+  it reaches a machine when this script builds for it.
+
+- **Every Claude card's token use is on record, a row per turn, shown only in the card's details.** See
+  `docs/backlog-2.md` item 37 and `docs/test-plan.md` section BT.
+
+  At each Stop the room reads the replies the turn wrote to the runner's transcript, with the keep-alive's own reader,
+  one per message id, subagent replies left out, and writes one `session_usage` row: input, output, cache writes at
+  5m and 1h, cache read, the context, and a cost estimate on the models keep-alive has prices for. Each row says what
+  started the turn: `operator`, `say`, `restart-wake`, `keepalive` (from the refresh fork's receipt), `resume`, or
+  `unknown`. The first turn of a resumed runner is flagged whatever started it. Rows have no foreign key, so they
+  outlive the card, and a restarted room counts on from the last row. Before the room ran this, nothing is
+  recorded. The card dialog has a `token use` fold: totals, context now, and the newest 200 turns. Nothing on the
+  card face, the terminals list or a toast. `internal/store` (migration `0063_session_usage`), `internal/daemon`,
+  `internal/api`: ROOM RESTART. `internal/api/web`: HUB RESTART for the board a hub serves, and the room's own board
+  with the room restart. The hub proxies `/v1/tasks/{id}/usage` with no change of its own.
+
+- **The launch cap counts only running workers tagged `atrium:subagent`.** See `docs/test-plan.md` section BR.
+
+  It counted every running supervised card carrying `origin:agent`, which every `atrium_launch` stamps. So one cap of
+  10 covered every orchestrator's launches plus the resident merger, and a launch was refused with seven workers up.
+  Now an orchestrator, the merger or any agent launched without `atrium:subagent` does not use up the cap.
+  `origin:agent` is still stamped on every launch and still marks a doer on the board. `internal/link/control_mcp.go`:
+  HUB RESTART. `internal/api/web/js/terminal-list.js`: comment only.
+
+- **A launched worker's approvals go through atrium's gate, so board-wide auto covers it.** See
+  `docs/auto-mode.md` "A launched worker is gated by default" and `docs/test-plan.md` section BS.
+
+  A worker never runs `atrium join`, so the permission hook let it through and its approvals were Claude Code's own
+  prompts in a terminal nobody watched, while the board-wide switch said nothing would ask. A launch now sets
+  `ATRIUM_PERM_GATE=on` unless the harness row names the variable itself, so `ATRIUM_PERM_GATE=off` on a row opts
+  that runner out. With auto off the worker gates to the operator as a joined session does.
+  `internal/daemon/launch.go`: ROOM RESTART, and it reaches a worker at its next launch.
+
+- **A keep-alive refresh whose ledger row fails to save no longer forks again every minute.** Mercurius finding C1
+  of session s_GqkzdtBKudfM.
+
+  The warm window and the budget come from saved `keepalive_refresh` rows, so a paid fork whose row did not save
+  left the next tick seeing the old expiry. Now the room holds that card's refreshes in memory until the cache the
+  fork may have warmed would expire, a real turn, or a hand on the switch, and the card's keep-alive `why` says so.
+  The design doc says what is built and that skips are not ledger rows. The gear and card-menu text say that a
+  refresh sends one word from a copy of the conversation, the copy is thrown away, and the card's own conversation
+  is never touched. `internal/daemon/keepalive.go`: ROOM RESTART. `internal/api/web/index.html` and
+  `internal/api/web/js/keepalive.js`: ROOM RESTART (the room serves the board). `docs/cache-keepalive-design.md`:
+  doc only.
+
+- **A launched claude worker starts lean: ~25k fewer tokens on its first request.** See
+  `docs/lean-workers-design.md`, `docs/backlog-2.md` item 29 and `docs/test-plan.md` section BP.
+
+  A worker inherits none of its launcher's conversation, but it booted with the operator's whole setup: the global
+  CLAUDE.md, auto-memory, every user and claude.ai skill, every agent type, prompt-time hook reminders and every MCP
+  server. Its first request was 40k tokens in a worktree. Now `atrium_launch` starts a claude worker with
+  `--setting-sources project,local`, a copy of the user settings that keeps the permissions, env and hooks (less the
+  operator's own SessionStart and UserPromptSubmit hooks, which print into the context), atrium-control and mercurius
+  as the only MCP servers, 22 tools it has no use for disallowed, a short appended system prompt with the worker
+  rules, and auto-memory off. The same `-p` probe drops from 35,970 to 11,029 tokens. `mcp: [...]` adds servers from
+  the runner's config, and `lean: false` starts a worker as before. The card is tagged `atrium:lean`, so a reopen stays
+  lean. HUB-SIDE and ROOM-SIDE: needs both, and a room restart.
+
+- **A big paste shows the `pasting` spinner, a dropped block of text pastes, and a paste over 4MB is refused.** See
+  `docs/test-plan.md` section BQ.
+
+  A paste of 256KB or more used to show the spinner for a frame or not at all. `send` holds the main thread about
+  7ms per MB, so the 20ms timer waited behind it, and the frame drains over loopback in tens of milliseconds while the
+  daemon is still writing it to the pty. The first output after the drain ended the box. Now a paste that big puts
+  the box up first, leaves once it has painted, and keeps the box up at least half a second, about a second per MB up
+  to four, before an echo may end it. Input typed while it waits to paint goes after it, and none of it goes if the
+  terminal switches card or reconnects first. A small paste straight after a big one keeps the big one's box. A block
+  of text dropped on the terminal went nowhere and is now a paste. A paste whose frame is over the daemon's 4MB read
+  limit used to close the socket and lose the paste. It is now not sent, and an alert says so. The new headless
+  section `pasteBig` covers every paste gesture, a bracketed runner and a popped-out window. HUB-SIDE.
+
 - **A slash command or a restart no longer makes a launched card read STUCK, and a stuck card wears a mark.** See
   `docs/backlog-2.md` item 25 and `docs/test-plan.md` section BM.
 

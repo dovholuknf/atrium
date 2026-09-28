@@ -145,6 +145,9 @@ type Server struct {
 	// SetKeepalive flips a card's cache keep-alive switch and returns what the
 	// board draws for it. Owned by the daemon. See internal/daemon/keepalive.go.
 	SetKeepalive func(taskID string, on bool) (any, error)
+	// UsageOf is a card's token use on record, for its details. Owned by the
+	// daemon. See internal/daemon/usage.go.
+	UsageOf func(taskID string, limit int) (any, error)
 
 	// Overlays reports how the board can be reached from elsewhere, and turns
 	// those ways on and off. Supplied by the daemon, which owns the child
@@ -504,6 +507,9 @@ func (s *Server) Handler() http.Handler {
 	}
 	if s.SetKeepalive != nil {
 		mux.HandleFunc("POST /v1/tasks/{id}/keepalive", s.setKeepalive)
+	}
+	if s.UsageOf != nil {
+		mux.HandleFunc("GET /v1/tasks/{id}/usage", s.cardUsage)
 	}
 	// What has been said and not yet arrived. A queued message waits for the
 	// session's next tool call or its Stop hook, which can be a while, and a

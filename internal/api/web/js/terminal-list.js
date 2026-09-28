@@ -31,15 +31,16 @@ function termDeviceKey(base) { return termNarrow() ? base + ".mobile" : base; }
 
 // ── hiding the agent-launched doers ──────────────────────────────────────────
 //
-// A DOER IS AN AGENT-LAUNCHED SESSION, and the mark that says so is the same one
-// the launch cap counts: the `origin:agent` tag the hub stamps on every card it
-// starts through the launch API (see internal/link/control_mcp.go, OriginTag).
-// A human's own terminal, or one started from the board's launch dialog, self
-// registers and never carries it. Matched trimmed and case-insensitively,
-// exactly as the daemon's `hasOriginTag` does, so the board and the cap agree on
-// what a doer is rather than keeping a second definition that can drift. A tag,
-// not a dedicated field, because that is the durable structural signal the
-// board actually receives per card and the one the cap already trusts.
+// A DOER IS AN AGENT-LAUNCHED SESSION, and the mark that says so is the
+// `origin:agent` tag the hub stamps on every card it starts through the launch
+// API (see internal/link/control_mcp.go, OriginTag). The launch cap does not
+// count it: the cap counts only running cards tagged `atrium:subagent`
+// (SubagentTag). A human's own terminal, or one started from the board's launch
+// dialog, self registers and never carries it. Matched trimmed and
+// case-insensitively, exactly as the daemon's `hasOriginTag` does, so the board
+// and the hub agree on what a doer is rather than keeping a second definition
+// that can drift. A tag, not a dedicated field, because that is the durable
+// structural signal the board actually receives per card.
 const DOER_TAG = "origin:agent";
 function isDoer(t) {
   return !!(t && Array.isArray(t.tags) &&

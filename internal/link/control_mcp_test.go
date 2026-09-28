@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -192,6 +193,40 @@ func TestLaunchForwardsThemeToTheRoom(t *testing.T) {
 	}
 }
 
+func TestLaunchIsLeanByDefaultAndForwardsTheMCPList(t *testing.T) {
+	type sent struct {
+		Lean bool     `json:"lean"`
+		MCP  []string `json:"mcp"`
+	}
+	var got sent
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = sent{}
+		_ = json.NewDecoder(r.Body).Decode(&got)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": "card1", "wire_name": "kid"})
+	}))
+	defer srv.Close()
+	c := &controlMCP{board: srv.URL, client: srv.Client()}
+	off := false
+	for _, tc := range []struct {
+		name string
+		in   launchInput
+		want sent
+	}{
+		{"default claude", launchInput{Cwd: "/w"}, sent{Lean: true}},
+		{"extra server", launchInput{Cwd: "/w", MCP: []string{"ziti"}}, sent{Lean: true, MCP: []string{"ziti"}}},
+		{"turned off", launchInput{Cwd: "/w", Lean: &off}, sent{}},
+		{"other runner", launchInput{Cwd: "/w", Runner: "codex"}, sent{}},
+	} {
+		if _, _, err := c.launchHandler(context.Background(), ctlReq("a", "beta"), tc.in); err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		if got.Lean != tc.want.Lean || strings.Join(got.MCP, ",") != strings.Join(tc.want.MCP, ",") {
+			t.Errorf("%s: room got %+v, want %+v", tc.name, got, tc.want)
+		}
+	}
+}
+
 // capBoard stands in for the hub's own board when exercising the launch cap. It
 // serves a fixed task list on GET /v1/tasks and records whether a launch was
 // forwarded to POST /v1/launch, so a test can prove a refusal never reached the
@@ -227,7 +262,7 @@ func TestLaunchRefusesAtTheCap(t *testing.T) {
 	for i := 0; i < DefaultLaunchCap; i++ {
 		tasks = append(tasks, map[string]any{
 			"id": string(rune('a' + i)), "status": "working", "supervised": true,
-			"tags": []string{OriginTag},
+			"tags": []string{OriginTag, SubagentTag},
 		})
 	}
 	board := &capBoard{tasks: tasks}
@@ -255,7 +290,7 @@ func TestLaunchProceedsUnderTheCap(t *testing.T) {
 	for i := 0; i < DefaultLaunchCap-1; i++ {
 		tasks = append(tasks, map[string]any{
 			"id": string(rune('a' + i)), "status": "needs-input", "supervised": true,
-			"tags": []string{OriginTag},
+			"tags": []string{OriginTag, SubagentTag},
 		})
 	}
 	board := &capBoard{tasks: tasks}
@@ -298,6 +333,41 @@ func TestLaunchCapCountsOnlyAgentSessions(t *testing.T) {
 	}
 	if !board.launched {
 		t.Fatal("the launch should have been forwarded past the human sessions")
+	}
+}
+
+func TestLaunchCapCountsOnlyRunningSubagents(t *testing.T) {
+	// One slot left, and everything else on the board must not take it: running
+	// origin:agent cards without the subagent tag (orchestrators, the merger), and
+	// subagent cards that are done, dead, shelved or backlog.
+	tasks := []map[string]any{
+		{"id": "orch", "status": "working", "supervised": true, "tags": []string{OriginTag}},
+		{"id": "merger", "status": "needs-input", "supervised": true, "tags": []string{OriginTag}},
+		{"id": "d", "status": "done", "supervised": true, "tags": []string{OriginTag, SubagentTag}},
+		{"id": "x", "status": "dead", "supervised": true, "tags": []string{OriginTag, SubagentTag}},
+		{"id": "s", "status": "shelved", "supervised": true, "tags": []string{OriginTag, SubagentTag}},
+		{"id": "b", "status": "backlog", "supervised": true, "tags": []string{OriginTag, SubagentTag}},
+	}
+	for i := 0; i < DefaultLaunchCap-1; i++ {
+		tasks = append(tasks, map[string]any{
+			"id": string(rune('a' + i)), "status": "working", "supervised": true,
+			"tags": []string{OriginTag, " Atrium:Subagent "},
+		})
+	}
+	board := &capBoard{tasks: tasks}
+	srv := httptest.NewServer(board.handler())
+	defer srv.Close()
+	c := &controlMCP{board: srv.URL, client: srv.Client()}
+
+	if n, err := c.runningForCap(context.Background()); err != nil || n != DefaultLaunchCap-1 {
+		t.Fatalf("runningForCap = %d, %v; want only the %d running subagents", n, err, DefaultLaunchCap-1)
+	}
+	if _, _, err := c.launchHandler(context.Background(), ctlReq("a", "beta"),
+		launchInput{Cwd: "/work/dir"}); err != nil {
+		t.Fatalf("untagged and finished cards must not consume the cap: %v", err)
+	}
+	if !board.launched {
+		t.Fatal("the launch should have been forwarded into the last slot")
 	}
 }
 
@@ -344,7 +414,7 @@ func TestLaunchCapEnvOverride(t *testing.T) {
 	t.Setenv(LaunchCapEnv, "1")
 	// One live supervised session, cap overridden to one, so the next is refused.
 	board := &capBoard{tasks: []map[string]any{
-		{"id": "a", "status": "working", "supervised": true, "tags": []string{OriginTag}},
+		{"id": "a", "status": "working", "supervised": true, "tags": []string{OriginTag, SubagentTag}},
 	}}
 	srv := httptest.NewServer(board.handler())
 	defer srv.Close()
@@ -368,7 +438,7 @@ func TestLaunchReservationStopsTwoLaunchesOvershooting(t *testing.T) {
 	for i := 0; i < DefaultLaunchCap-1; i++ {
 		tasks = append(tasks, map[string]any{
 			"id": string(rune('a' + i)), "status": "working", "supervised": true,
-			"tags": []string{OriginTag},
+			"tags": []string{OriginTag, SubagentTag},
 		})
 	}
 	board := &capBoard{tasks: tasks}
@@ -396,7 +466,7 @@ func TestLaunchReservationLapsesAfterTTL(t *testing.T) {
 	for i := 0; i < DefaultLaunchCap-1; i++ {
 		tasks = append(tasks, map[string]any{
 			"id": string(rune('a' + i)), "status": "working", "supervised": true,
-			"tags": []string{OriginTag},
+			"tags": []string{OriginTag, SubagentTag},
 		})
 	}
 	board := &capBoard{tasks: tasks}

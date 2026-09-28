@@ -110,6 +110,26 @@ So the switch approves what is already queued. Three things about how:
   on your behalf. The board also refreshes at once, so the toasts and notifications they raised are retired on
   the same click rather than shouting for another five seconds about requests that are already approved.
 
+## A launched worker is gated by default
+
+The switch only reaches a request that arrives at atrium's gate. The permission hook sends a request there when
+the session joined atrium or when `ATRIUM_PERM_GATE` says so. A session atrium launched never ran `atrium join`, so
+without help its Bash and edit approvals are Claude Code's own prompts, in a terminal nobody is watching. The
+board-wide switch is on, the worker still asks, and nothing on the board says why.
+
+So a launch sets `ATRIUM_PERM_GATE=on` in the runner's environment. Every tool call the worker makes goes through
+the same chain as a joined session: a queued message, a shelved card, a standing rule, per-session auto,
+board-wide auto, and last the human. With auto off the worker gates to you exactly as a joined session does, so
+this routes approvals without weakening them.
+
+It is a default, not an override. To opt a runner out, set `ATRIUM_PERM_GATE=off` in that runner's environment on
+its harness row. The launch sees the harness named the variable, in any case, and leaves it alone. The cache
+keep-alive's forks always run with the gate off, because a fork is atrium's own request and has nobody to ask.
+
+The dotfiles permission hook (`atrium-perm-hook.ps1`) gates `mcp__*` tools as well. It used to skip them so that
+Mode A's `submit` loop was not gated, and Mode A is gone. So a gated worker's `atrium_say`, `atrium_exit` and every
+other MCP call pass through this chain too, and board-wide auto covers them.
+
 ## What is not built
 
 - **Anything reading the review other than a person.** Feeding it to a model to summarise what changed is
