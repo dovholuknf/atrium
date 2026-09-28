@@ -271,9 +271,6 @@ func EnrollZitiInto(token, name, dir string) (string, string, error) {
 		return "", "", fmt.Errorf("that token expired at %s. ask for a new one", claims.Expires)
 	}
 	exe := lookPath(overlayCommand(OverlayZiti))
-	if exe == "" {
-		return "", "", fmt.Errorf("ziti is not installed, or not on the daemon's PATH")
-	}
 
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", "", err
@@ -281,6 +278,15 @@ func EnrollZitiInto(token, name, dir string) (string, string, error) {
 	base := safeName(name)
 	jwtPath := filepath.Join(dir, base+".jwt")
 	outPath := filepath.Join(dir, base+".json")
+
+	// NO CLI, SO THE SDK. See enrollWithSDK.
+	if exe == "" {
+		log.Printf("[atrium] enrolling a ziti identity as %s, in process: no ziti CLI on PATH", base)
+		if err := enrollWithSDK(token, outPath); err != nil {
+			return "", "", err
+		}
+		return filepath.ToSlash(outPath), "enrolled in process, no ziti CLI on PATH", nil
+	}
 
 	// The token goes to a file, not an argument. An argument is visible to
 	// anything on this machine that can list processes.

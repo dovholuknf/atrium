@@ -18,6 +18,7 @@ require (
 )
 
 require (
+	github.com/Jeffail/gabs v1.4.0 // indirect
 	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/creack/pty v1.1.24 // indirect
