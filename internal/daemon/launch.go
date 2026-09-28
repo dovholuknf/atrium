@@ -890,6 +890,28 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 	if lean {
 		leanEnv(atrium)
 	}
+	// ROUTE A LAUNCHED SESSION'S OWN PERMISSION PROMPTS THROUGH ATRIUM'S GATE.
+	//
+	// A launched runner is a claude session that never ran `atrium join`, so
+	// with the gate unset the permission hook lets it through and its Bash and
+	// edit approvals are claude's OWN prompts, in a terminal nobody is sitting in
+	// front of. The board-wide switch lives in atrium's gate and only reaches
+	// requests that arrive there, so those prompts sit unanswered while "accept
+	// everything" is on and the operator wonders why a session he turned loose
+	// is still asking.
+	//
+	// `on` makes the runner's PreToolUse gate post every tool call to
+	// /permission, where the same chain every joined session runs decides it: a
+	// standing rule, a shelved card, per-session auto and board-wide auto all
+	// apply. With auto off it still gates to the operator exactly as a joined
+	// session does, so this routes the approvals without weakening them.
+	//
+	// A DEFAULT, not an override. The harness's own env wins, so an operator can
+	// set ATRIUM_PERM_GATE=off on a runner that should never gate, and only the
+	// default is supplied here.
+	if gate, ok := permGateDefault(h.Env); ok {
+		atrium["ATRIUM_PERM_GATE"] = gate
+	}
 	env := childEnvFrom(base, h.Env, atrium)
 	d.prepareRunnerSetup(h, cwd, env)
 	via := ""
@@ -1203,6 +1225,24 @@ func inheritedTaint(key string) bool {
 		return true
 	}
 	return false
+}
+
+// permGateDefault is the ATRIUM_PERM_GATE value a launch supplies, and whether
+// to supply one at all.
+//
+// A launched session should route its tool approvals through atrium's gate so
+// the one board-wide switch controls them. `on` is that default. It is skipped
+// only when the harness already names the variable, so an operator who set
+// ATRIUM_PERM_GATE=off on a runner keeps that runner ungated. Matched
+// case-insensitively because it is a shell variable and its name is the only
+// thing that decides which env entry wins.
+func permGateDefault(harnessEnv map[string]string) (string, bool) {
+	for k := range harnessEnv {
+		if strings.EqualFold(k, "ATRIUM_PERM_GATE") {
+			return "", false
+		}
+	}
+	return "on", true
 }
 
 // briefFileName is what a briefing is called in the new session's directory.
