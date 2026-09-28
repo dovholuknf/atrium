@@ -86,7 +86,8 @@ func newKAFix(t *testing.T) *kaFix {
 	}
 	k.hookFile = filepath.Join(dir, "block.json")
 	k.baseEnv = func() []string {
-		return []string{"PATH=/bin", "ATRIUM_TASK_ID=someone-else", "ATRIUM_PERM_GATE=on", "CLAUDECODE=1"}
+		return []string{"PATH=/bin", "ATRIUM_TASK_ID=someone-else", "ATRIUM_PERM_GATE=on", "CLAUDECODE=1",
+			"ATRIUM_DEBUG_INPUTLAG=1"}
 	}
 	k.fork = func(ctx context.Context, spec forkSpec) ([]byte, error) {
 		f.mu.Lock()
@@ -208,7 +209,7 @@ func TestKeepaliveRefreshesAnIdleCardInsideTheMargin(t *testing.T) {
 			t.Fatalf("fork env lacks %s:\n%s", must, env)
 		}
 	}
-	for _, mustNot := range []string{"ATRIUM_TASK_ID=", "ATRIUM_PERM_GATE=on", "CLAUDECODE="} {
+	for _, mustNot := range []string{"ATRIUM_TASK_ID=", "ATRIUM_PERM_GATE=on", "CLAUDECODE=", "ATRIUM_DEBUG_INPUTLAG="} {
 		if strings.Contains(env, mustNot) {
 			t.Fatalf("fork env carries %s:\n%s", mustNot, env)
 		}
