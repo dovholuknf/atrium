@@ -35,6 +35,7 @@ func joinCmd() *cobra.Command {
 		agent    string
 		identity string
 		isolated bool
+		noRun    bool
 		flags    joinFlags
 	)
 	c := &cobra.Command{
@@ -117,6 +118,14 @@ func joinCmd() *cobra.Command {
 			if !strings.EqualFold(name, self) {
 				fmt.Println("  this machine calls itself \"" + self + "\", which the hub shows beside it.")
 			}
+			// ENROL AND STOP, for a provisioner that runs the room from a service
+			// afterwards rather than from the shell that joined. Without it the
+			// join holds the ssh session open for as long as the room lives. See
+			// scripts/provision-room.ps1.
+			if noRun {
+				fmt.Println("  saved. `" + atriumCmd("room") + "` runs it.")
+				return nil
+			}
 			fmt.Println("  starting the room. `" + atriumCmd("room") + "` is all it takes from now on.")
 			fmt.Println()
 			return runRoom(keys, db, human, agent, 0, isolated)
@@ -139,6 +148,8 @@ func joinCmd() *cobra.Command {
 		"reach the hub over an OpenZiti service, with an enrolled identity .json (or a jwt to enroll)")
 	c.Flags().StringVar(&flags.service, "service", "",
 		"the ziti service to dial with --openziti, default \"atrium\"")
+	c.Flags().BoolVar(&noRun, "no-run", false,
+		"join and save, then exit rather than running the room, for a service to run it")
 	isolatedFlag(c, &isolated)
 	acceptUpgradeFlag(c)
 	return c
