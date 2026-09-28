@@ -1,10 +1,16 @@
 package daemon
 
 import (
+	"context"
+	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/coder/websocket"
 
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -33,6 +39,36 @@ func cutSession(t *testing.T, d *Daemon, id string) []byte {
 }
 
 const firstSaved = "saved line 0000000 "
+
+// attachUntil is attachVia that reads until `want` has arrived, or ten seconds.
+// A replay of megabytes under a loaded `go test ./...` can outlast attachVia's
+// quiet window, and the test then reads a short replay as a missing line.
+func attachUntil(t *testing.T, h http.Handler, path, want string) string {
+	t.Helper()
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	c, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(srv.URL, "http")+path, nil)
+	if err != nil {
+		t.Fatalf("could not attach: %v", err)
+	}
+	defer c.CloseNow()
+	c.SetReadLimit(64 << 20)
+	frame, _ := json.Marshal(attachIn{T: "resize", Cols: 120, Rows: 40})
+	if err := c.Write(ctx, websocket.MessageText, frame); err != nil {
+		t.Fatalf("could not send a size: %v", err)
+	}
+	var got strings.Builder
+	for !strings.Contains(got.String(), want) {
+		_, data, err := c.Read(ctx)
+		if err != nil {
+			break
+		}
+		got.Write(data)
+	}
+	return got.String()
+}
 
 func TestTheNoticeCarriesTheBoardsNonceInItsLinks(t *testing.T) {
 	d := testDaemon(t)
@@ -71,7 +107,7 @@ func TestWithoutAUsableNonceTheNoticeHasNoLinks(t *testing.T) {
 func TestCarryAllReplaysEverySavedLine(t *testing.T) {
 	d := testDaemon(t)
 	cutSession(t, d, "cut")
-	got := attachPath(t, d, "/v1/tasks/cut/attach?carry=all&link=n0nce", 120, 40)
+	got := attachUntil(t, d.ap.Handler(), "/v1/tasks/cut/attach?carry=all&link=n0nce", firstSaved)
 	if !strings.Contains(got, firstSaved) {
 		t.Fatal("carry=all left the oldest saved line out")
 	}
@@ -95,7 +131,7 @@ func TestAGuestCannotAskForTheWholeHistory(t *testing.T) {
 func TestAGuestGetsTheNoticeWithoutLinks(t *testing.T) {
 	d := testDaemon(t)
 	cutSession(t, d, "cut")
-	got := attachVia(t, d.guestHandler("cut"), "/v1/tasks/cut/attach?link=n0nce", 120, 40)
+	got := attachUntil(t, d.guestHandler("cut"), "/v1/tasks/cut/attach?link=n0nce", "not replayed here")
 	if !strings.Contains(got, "not replayed here") {
 		t.Fatal("the guest's attach has no notice")
 	}
