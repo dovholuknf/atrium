@@ -1101,7 +1101,8 @@ function termRoomChip(t) {
     >${esc(room)}</span>`;
 }
 
-// A PULSING BANG WHEN A PEER MESSAGE IS WAITING to be typed into this terminal.
+// A PULSING BANG WHEN A PEER MESSAGE IS HELD AGAINST ITS SENDER, and a quiet
+// envelope when it only waits as it was sent to.
 //
 // The room-side gate holds a peer message when the operator's line is dirty or
 // he has just been typing, and retries it on a widening backoff. Until it lands
@@ -1110,17 +1111,27 @@ function termRoomChip(t) {
 // working spinner on the runner mark: that is the session moving, this is a
 // message stuck behind his own line.
 //
+// THE `!` IS FOR SOMETHING IN THE WAY. A message sent `when: "done"`, or to a
+// runner that does not take input mid-turn, waits for the turn to end because
+// that is what was asked, and it wore the warn-coloured `!` for as long as a
+// worker's turn ran. clint: "this 'alerta' is super dumb". The room decides
+// which it is (`held_quiet`, see noteHeld in pendinginject.go) and this only
+// draws it: a quiet hold is `✉` or `✉ 2` in the neutral chip, with no pulse.
+// It turns into the `!` if the turn runs past the room's patience, or if an
+// immediate message is queued behind it.
+//
 // COUPLED TO THE ROOM SIDE. `activity.held_peer` is the live signal a daemon
 // with the injector raises. Against a daemon without it the field is never set
-// and this draws nothing, the same way the multi-pane echo toggle shows nothing
-// until its half ships.
+// and this draws nothing. A room older than `held_quiet` gets the `!` for every
+// hold, as it always did.
 //
 // THE TIP NAMES WHAT IS HOLDING IT, because there are three things and each is
 // cleared by something different: the line (`held_for` "line"), the turn
-// ("turn": the message asked to wait for it, or the runner does not take input
-// mid-turn), or a dialog. Blaming the line for a turn wait told the operator
-// to clear a line that was already empty. A room older than `held_for` gets
-// the line wording it always had. The chip counts, `! 2`, like `? N`.
+// ("turn"), or a dialog. A turn wait names whose rule it is, the sender's
+// (`held_turn` "asked") or the runner's ("runner"), and only that one. Blaming
+// the line for a turn wait told the operator to clear a line that was already
+// empty. A room older than `held_for` gets the line wording it always had. The
+// chip counts, `! 2`, like `? N`.
 //
 // ONE SHAPE FOR EVERY REASON: how many, how long, what blocks them, and what
 // to do. The sender is not in it: the count and the reason are what decide
@@ -1130,17 +1141,37 @@ function termHeldChip(t) {
   if (!a || !a.held_peer) return "";
   const secs = Number(a.held_seconds) || 0;
   const count = Number(a.held_count) || 1;
+  if (a.held_quiet) {
+    const n = count > 1 ? " " + count : "";
+    return `<span class="chip queued" data-tip="${esc(termQueuedTip(count, secs, a.held_turn))}"
+      >&#9993;&#xFE0E;${n}</span>`;
+  }
   const label = count > 1 ? `! ${count}` : "!";
-  return `<span class="chip held" data-tip="${esc(termHeldTip(count, secs, a.held_for))}">${label}</span>`;
+  return `<span class="chip held" data-tip="${esc(termHeldTip(count, secs, a.held_for, a.held_turn))}"
+    >${label}</span>`;
+}
+
+// The quiet mark's tooltip: how many, how long, and the one rule that holds
+// them.
+function termQueuedTip(count, secs, turn) {
+  const one = count === 1;
+  const why = turn === "runner"
+    ? "because this runner does not take input mid-turn"
+    : "sent to arrive when the session's turn ends";
+  return `${count} ${one ? "message" : "messages"} queued for this agent for ${termHeldAge(secs)}, ${why}. ` +
+    `${one ? "It goes" : "They go"} in when the turn ends`;
 }
 
 // The held chip's tooltip, singular or plural throughout.
-function termHeldTip(count, secs, why) {
+function termHeldTip(count, secs, why, turn) {
   const one = count === 1;
   const these = one ? "this message" : "these messages";
+  const theTurn = {
+    asked: `the session's turn, which ${one ? "it" : "the oldest"} was sent to wait for`,
+    runner: "the session's turn, because this runner does not take input mid-turn",
+  }[turn] || "the session's turn, which has to end first";
   const blocked = {
-    turn: ["the session's turn, which has to end first",
-      "They go in when the turn ends", "It goes in when the turn ends"],
+    turn: [theTurn, "They go in when the turn ends", "It goes in when the turn ends"],
     dialog: ["a dialog open in this terminal, which typing would answer",
       "Answer the dialog to dequeue " + these],
   }[why] || ["input in this terminal", "Submit your text to dequeue " + these];

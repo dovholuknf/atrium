@@ -48,7 +48,7 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 39 | Keep-alive warms the cards you mark, not every idle card | feature | waits on 37 |
 | 40 | The launch cap counts only `atrium:subagent` cards | bug | sa91, started 2026-09-28 |
 | 41 | A resident session owes its launcher a report for every prompt, from anybody | bug | not started |
-| 42 | A running card wears the `!` chip for a message held until its turn ends | bug | not started |
+| 42 | A running card wears the `!` chip for a message held until its turn ends | bug | DONE by sa42, merged, needs room and hub restarts |
 | 43 | A worker's finished turn shows "nobody has looked" to clint, although its launcher read the report | bug | not started |
 | 44 | A gear checkbox: no notifications from agent-launched cards, on by default | feature | not started |
 | 45 | Every card shows its context size, a launcher hears once past a threshold | feature | sa87 built it to clint's decision on `claude/context-size`, not merged |
@@ -992,6 +992,13 @@ card needs clint, and the card is working.
 Expected: the `!` is reserved for something that needs the human. A message held for a running card's turn end
 shows as a quiet queued mark in the card's own colour, not the warn colour, and the tooltip keeps its wording.
 Decide whether a `when: done` message held longer than some bound falls back to the next tool call.
+
+**Status, 2026-09-28, sa42: built on `claude/held-chip-intent`, merged.** Test plan CC. A hold is quiet when every
+held message waits for the turn, as its sender asked or because the runner takes no input mid-turn. It wears `✉` or
+`✉ N` in the neutral chip, with no pulse and no alert, and the tip names the one rule that holds it. The `!` stays for
+the line, a dialog, an immediate message queued behind a done one, and a turn wait past an hour. The room decides
+which (`held_quiet`, `held_turn` in `noteHeld`), and the board only draws it. The bound does not change delivery: a
+done message past it still waits for the turn and does not fall back to the next tool call.
 
 ## 43. A worker's finished turn shows "nobody has looked" to clint, although its launcher read the report (bug)
 

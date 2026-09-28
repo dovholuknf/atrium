@@ -5,6 +5,18 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **A message queued on purpose wears a quiet envelope, and the `!` is kept for one held against its sender.** See
+  `docs/backlog-2.md` item 42 and `docs/test-plan.md` section CC.
+
+  A say sent `when: "done"`, or to a runner that takes no input mid-turn, waits for the turn because that is what was
+  asked. It wore the pulsing amber `!` for as long as the turn ran. Now the terminals-list row wears `✉` or `✉ N` in
+  the neutral chip, with no pulse, and the tip names the one rule that holds it: `sent to arrive when the session's
+  turn ends`, or `because this runner does not take input mid-turn`. The `!` stays for the input line, a dialog, an
+  immediate message queued behind a done one, and a turn wait past an hour. The room decides which and serves it as
+  `held_quiet` and `held_turn` on the card's activity. `internal/daemon`: ROOM RESTART. `internal/api/web`: HUB
+  RESTART for the board a hub serves, and the room restart for the room's own board. A new board against an older
+  room shows the `!` as before.
+
 - **A launched runner no longer inherits the room's `ATRIUM_DEBUG_INPUTLAG`.** See `docs/backlog-2.md` item 55 and
   `docs/test-plan.md` section CB.
 
