@@ -256,20 +256,24 @@ func (u *usageTracker) record(t *store.Task, seg usageSegment) (*store.SessionUs
 	} else {
 		row = main.row(t)
 		row.Cause, row.AfterResume = seg.cause, seg.afterResume
-		main.advance()
 		if err := u.st.AddSessionUsage(row); err != nil {
+			// The next read starts again from the last row on record.
+			delete(u.cursor, t.ID)
+			delete(u.subs, t.ID)
 			return nil, err
 		}
+		main.advance()
 	}
 	// A reply is the card's or a subagent's, never both.
 	side.drop(main)
 	if len(side.order) > 0 {
 		sub := side.row(t)
 		sub.Cause = store.UsageSubagent
-		side.advance()
 		if err := u.st.AddSessionUsage(sub); err != nil {
+			delete(u.subs, t.ID)
 			return row, err
 		}
+		side.advance()
 	}
 	return row, nil
 }
