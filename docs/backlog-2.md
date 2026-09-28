@@ -61,6 +61,7 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 52 | A pinned strip with cards from two rooms orders only one room | bug | not started |
 | 53 | `setViewport` and `dropViewport` compute under `r.mu` and apply outside it | bug | not started, never reproduced |
 | 54 | Terminal test suite part 2: `screen.go` against xterm.js | feature | not started |
+| 56 | Every dialog is sleek, one skinned design, starting with card details and the room's edit-agents screen | feature, design first, HIGH | not started |
 
 ------------
 
@@ -1140,6 +1141,23 @@ Raised 2026-09-28 from sa51's review of the terminal-suite HANDOFF. Part 2 was p
 differential test that feeds the same trace fixtures to `screen.go` and to xterm.js and compares the screens, run
 with Playwright after an `npm install`. The plan is in `D:/tmp/handoffs/terminal-suite-HANDOFF.md`, and the scratch
 tools are in `D:/tmp/handoffs/terminal-suite-tw`.
+
+## 56. Every dialog is sleek, one skinned design, starting with card details and the room's edit-agents screen (feature, design first, HIGH)
+
+Raised 2026-09-28 by clint: "i need a backlog to make all dialogs fucking sexy. there is __no__ design given to the
+card details screen, nor to the rooms add agent screen (edit agents) etc. the screens are --fucking gross--... they
+need an overhaul visually to not suck. to be sleek and fucking sexy".
+
+Scope:
+
+- Inventory every dialog, modal and settings panel on the board: card details, rooms > add and edit agents,
+  launch, the gear, permissions, rules, intake, and the rest.
+- One design language across all of them, built on the skins and consistent in every skin: spacing, type scale,
+  headers, field rows, buttons and empty states.
+- The look clint liked is the reference: sa72's restart and blocking modal family (test plan MD, `9d3f676`) and
+  sa87's compact details popup (item 45).
+
+Deliverable 1 is a design with before and after mockups, for clint to approve. Build only after that.
 
 
 ------------
