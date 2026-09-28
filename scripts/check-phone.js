@@ -110,7 +110,7 @@ for (const [caller, why] of [
 // five lines and stood 194px tall, so the cap of three was 582 of an 844 pixel
 // screen, drawn on top of the permissions queue. The queue is the only reason
 // the board is open on a phone at all.
-if (!/const cap = innerWidth <= PHONE \? 1 : 3/.test(html)) {
+if (!/function toastCap\(\) \{ return innerWidth <= PHONE \? 1 : 3; \}/.test(html)) {
   fail("the toast stack is not capped to one at phone width. Three toasts at 390 " +
     "pixels cover 69% of the screen, and what they cover is the queue they are " +
     "telling you about.");

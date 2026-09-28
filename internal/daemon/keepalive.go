@@ -155,6 +155,9 @@ type mainReply struct {
 	// Write5m and Write1h are CacheWrite split by TTL.
 	Write5m, Write1h int64
 	Output           int64
+	// Sidechain is a subagent's reply written inline, as older Claude Code
+	// did. Only scanReplies offers these.
+	Sidechain bool
 }
 
 // Context is the whole prompt the reply was answered on.
@@ -172,6 +175,16 @@ func (r *mainReply) Context() int64 { return r.Input + r.CacheWrite + r.CacheRea
 // The one transcript reader: the keep-alive's last reply and the usage record
 // are both built on it.
 func scanMainReplies(r io.Reader, fn func(*mainReply)) (int64, error) {
+	return scanReplies(r, func(m *mainReply) {
+		if !m.Sidechain {
+			fn(m)
+		}
+	})
+}
+
+// scanReplies is scanMainReplies with the inline subagent replies offered too,
+// marked Sidechain. The usage record counts those as the subagent's.
+func scanReplies(r io.Reader, fn func(*mainReply)) (int64, error) {
 	type usage struct {
 		Input         int64  `json:"input_tokens"`
 		CacheWrite    int64  `json:"cache_creation_input_tokens"`
@@ -197,7 +210,7 @@ func scanMainReplies(r io.Reader, fn func(*mainReply)) (int64, error) {
 				Usage *usage `json:"usage"`
 			} `json:"message"`
 		}
-		if json.Unmarshal(line, &e) != nil || e.Type != "assistant" || e.Sidechain || e.Message.Usage == nil {
+		if json.Unmarshal(line, &e) != nil || e.Type != "assistant" || e.Message.Usage == nil {
 			return
 		}
 		at, err := time.Parse(time.RFC3339Nano, e.Timestamp)
@@ -209,6 +222,7 @@ func scanMainReplies(r io.Reader, fn func(*mainReply)) (int64, error) {
 			MessageID: e.Message.ID, Model: e.Message.Model, At: at, Speed: u.Speed,
 			Input: u.Input, CacheWrite: u.CacheWrite, CacheRead: u.CacheRead,
 			Write5m: u.CacheCreation.FiveMins, Write1h: u.CacheCreation.OneHour, Output: u.Output,
+			Sidechain: e.Sidechain,
 		})
 	}
 	br := bufio.NewReaderSize(r, 1<<20)

@@ -127,7 +127,9 @@ func (c *controlMCP) server() *mcp.Server {
 		Description: "The other sessions on this board: what each is called, what it is doing, " +
 			"where it is working, and how long it has been waiting.\n\n" +
 			"Call this before saying anything to anybody. The handle is what `atrium_say` " +
-			"takes, and a handle read off a card title rather than from here is usually wrong.",
+			"takes, and a handle read off a card title rather than from here is usually wrong. " +
+			"A peer's `alias`, when it has one, is a short name the operator gave it (`sa89`, " +
+			"`dotfiles`), and `atrium_say` takes that too, with or without the `@`.",
 	}, c.peersHandler)
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -320,6 +322,8 @@ type ctlCard struct {
 	ID       string   `json:"id"`
 	Title    string   `json:"display_title"`
 	Wire     string   `json:"wire_name"`
+	Alias    string   `json:"alias"`
+	Created  string   `json:"created_at"`
 	Status   string   `json:"status"`
 	Worktree string   `json:"worktree"`
 	Runner   string   `json:"runner"`
@@ -439,6 +443,9 @@ type peersInput struct {
 
 type peer struct {
 	Handle string `json:"handle"`
+	// Alias is the short name the operator gave it, `sa89` or `dotfiles`.
+	// Accepted anywhere the handle is, with or without the `@`.
+	Alias  string `json:"alias,omitempty"`
 	Card   string `json:"card"`
 	Title  string `json:"title,omitempty"`
 	Status string `json:"status"`
@@ -492,7 +499,7 @@ func (c *controlMCP) peersHandler(ctx context.Context, req *mcp.CallToolRequest,
 			continue
 		}
 		out.Peers = append(out.Peers, peer{
-			Handle: t.Wire, Card: t.ID, Title: t.Title, Status: t.Status,
+			Handle: t.Wire, Alias: t.Alias, Card: t.ID, Title: t.Title, Status: t.Status,
 			Doing: t.Activity.What, Where: t.Worktree,
 			Waiting: t.Wait, Owned: t.Superv,
 			Unseen: t.Seen != nil && t.Seen.Unseen, OpenQuestions: t.Seen.openCount(),
@@ -527,11 +534,34 @@ func (c *controlMCP) resolvePeer(ctx context.Context, room, who string) (id, han
 			return t.ID, t.Wire, nil
 		}
 	}
+	// Then an alias, `sa89` or `@dotfiles`, the name an operator mentions a
+	// card by. Live cards only, newest first, which is what the room's own
+	// resolution does: an ended card keeps its alias as a record but no longer
+	// answers to it. Case and a leading `@` do not matter.
+	if a := strings.ToLower(strings.TrimPrefix(who, "@")); a != "" {
+		var best *ctlCard
+		for i := range body.Tasks {
+			t := &body.Tasks[i]
+			if t.Alias != a || t.Status == "done" || t.Status == "dead" {
+				continue
+			}
+			if best == nil || t.Created > best.Created {
+				best = t
+			}
+		}
+		if best != nil {
+			return best.ID, best.Wire, nil
+		}
+	}
 	// The list of ones that would have worked, which is the whole of the fix for
 	// a wrong handle and is otherwise another tool call away.
 	names := make([]string, 0, len(body.Tasks))
 	for _, t := range body.Tasks {
 		if t.Status == "done" || t.Status == "dead" {
+			continue
+		}
+		if t.Alias != "" {
+			names = append(names, t.Wire+" (@"+t.Alias+")")
 			continue
 		}
 		names = append(names, t.Wire)
@@ -549,7 +579,7 @@ type sayInput struct {
 	// To is a handle from atrium_peers, or a card id. Both are accepted because
 	// both are things the caller has in hand, and refusing the one it happens to
 	// be holding is a puzzle rather than a rule.
-	To string `json:"to" jsonschema:"the handle or card id to say it to"`
+	To string `json:"to" jsonschema:"the handle, alias or card id to say it to"`
 	// Text is what to say, as one agent to another.
 	Text string `json:"text" jsonschema:"what to say, as one agent to another. the recipient is told who you are automatically, so do not announce yourself"`
 	// When is `immediate` (the default) or `done`. See internal/daemon/saywhen.go.

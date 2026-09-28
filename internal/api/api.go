@@ -8,6 +8,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -99,6 +100,10 @@ type Server struct {
 	// TextScrollback is the same history as plain text, for reading in a tab
 	// rather than in a terminal.
 	TextScrollback http.HandlerFunc
+	// TypingState is atrium's model of the operator's input line on a card's
+	// terminal and whether the peer gate is open, for the board's typing
+	// readout.
+	TypingState http.HandlerFunc
 	// DismissAsks takes every outstanding question off a card without telling
 	// the session anything.
 	//
@@ -481,6 +486,11 @@ func (s *Server) Handler() http.Handler {
 	if s.TextScrollback != nil {
 		mux.HandleFunc("GET /v1/tasks/{id}/scrollback/text", s.TextScrollback)
 	}
+	// What atrium thinks is on the operator's line and why a say is held.
+	// Polled by the board only while its typing readout is switched on.
+	if s.TypingState != nil {
+		mux.HandleFunc("GET /v1/tasks/{id}/typing", s.TypingState)
+	}
 	if s.OpenShell != nil {
 		mux.HandleFunc("POST /v1/tasks/{id}/shell", s.OpenShell)
 		mux.HandleFunc("DELETE /v1/tasks/{id}/shell", s.ShutShell)
@@ -861,8 +871,11 @@ func (s *Server) getTask(w http.ResponseWriter, r *http.Request) {
 const autoModeReason = "auto mode was switched on, so this was approved without being asked"
 
 type patchBody struct {
-	Status    *string           `json:"status"`
-	Why       *string           `json:"why"`
+	Status *string `json:"status"`
+	Why    *string `json:"why"`
+	// Alias is the short name to mention the card by, and "" clears it. A
+	// pointer, so leaving it out leaves it alone. See store/alias.go.
+	Alias     *string           `json:"alias"`
 	Rank      *float64          `json:"rank"`
 	Overrides map[string]string `json:"overrides"`
 	// AutoApprove turns auto mode on or off for this session.
@@ -981,6 +994,25 @@ func (s *Server) patchTask(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.Why != nil {
 		if err := s.st.SetWhy(id, *body.Why); err != nil {
+			s.fail(w, err)
+			return
+		}
+	}
+	if body.Alias != nil {
+		// A bad shape is the caller's to fix, and a clash names who holds it,
+		// so neither is a server error.
+		if err := store.ValidAlias(store.NormalizeAlias(*body.Alias)); err != nil {
+			writeErr(w, http.StatusBadRequest, err)
+			return
+		}
+		if err := s.st.SetAlias(id, *body.Alias); err != nil {
+			var taken *store.AliasTakenError
+			if errors.As(err, &taken) {
+				writeJSON(w, http.StatusConflict, map[string]any{
+					"error": err.Error(), "holder": taken.Holder.ID,
+				})
+				return
+			}
 			s.fail(w, err)
 			return
 		}

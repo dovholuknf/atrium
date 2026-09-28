@@ -589,10 +589,20 @@ const HISTORY_PAGE = 100;
 // while somebody was a few pages down cut the list back to a hundred rows and
 // dropped them at the end of it. Anything else is a new list and starts at the
 // top.
+// THE NEWEST RENDER WINS. A board event repaints the open view while a search,
+// a page or another repaint is still fetching, and whichever answer landed last
+// was drawn: an older one cut the list back or threw the reader to the top.
+// How many rows were asked for, so a repaint that supersedes "show more" still
+// draws the page that was asked for.
+let historySeq = 0, historyWant = 0;
+
 async function renderHistory(more, live) {
   const host = document.getElementById("history-list");
   if (!host) return;
-  const pages = live ? Math.max(1, Math.ceil(historyShown / HISTORY_PAGE)) : 1;
+  const seq = ++historySeq;
+  if (more) historyWant = historyShown + HISTORY_PAGE;
+  else if (!live) historyWant = 0;
+  const pages = live ? Math.max(1, Math.ceil(Math.max(historyShown, historyWant) / HISTORY_PAGE)) : 1;
   const from = more ? historyShown : 0;
 
   const q = document.getElementById("h-q").value.trim();
@@ -608,6 +618,7 @@ async function renderHistory(more, live) {
       if (got.length < HISTORY_PAGE) break;
     }
   } catch (e) { return; }
+  if (seq !== historySeq) return;
 
   historyShown = from + rows.length;
   document.getElementById("h-count").textContent = total

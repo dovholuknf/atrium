@@ -3685,18 +3685,22 @@ afterwards.
 
 1. While B works, type half a line into B's terminal and leave it. Repeat BI1.
 
-**Expected:** nothing is typed into your half line. The chip's tip says the message delivers when your input line is
-clear. Clear the line and wait two seconds: the message goes in, mid-turn.
+**Expected:** nothing is typed into your half line. The chip's tip reads "1 message has been waiting to be delivered
+to this agent for 16s and is blocked by input in this terminal. Submit your text to dequeue this message", with the
+age it has. Clear the line and wait two seconds: the message goes in, mid-turn.
 
 2. Get B to raise a permission dialog of its own (not atrium's gate), then repeat BI1.
 
-**Expected:** nothing is typed, and the chip's tip says a dialog is open. Answer the dialog and the message goes in.
+**Expected:** nothing is typed, and the chip's tip says the message is blocked by a dialog open in this terminal and
+to answer the dialog. Answer the dialog and the message goes in.
 
 ### BI5. The chip counts
 
 1. With your line part written as in BI4, have A send B two messages.
 
-**Expected:** the chip reads `! 2`, and its tip names the oldest sender.
+**Expected:** the chip reads `! 2`, and its tip reads "2 messages have been waiting to be delivered to this agent for
+... and are blocked by input in this terminal. Submit your text to dequeue these messages". The age is full hours,
+minutes and seconds with the leading zero units left off: `16s`, `2m 5s`, `1h 0m 3s`. No sender is named.
 
 ### BI6. The board's two buttons
 
@@ -4101,10 +4105,11 @@ review has no row for it.
 ## BT. Token use is on record for every Claude turn, and shown only in a card's details
 
 BT1 to BT3 need the room built from this change and a room restart, and on a hub board the hub rebuilt and
-restarted too, since the hub serves its own copy of the board. Go tests `TestUsage*` and `TestKeepaliveRefreshIsAUsageRow` in
-`internal/daemon/usage_test.go`, and `TestSessionUsage*` in `internal/store/usage_test.go`, cover the row per turn,
-dedupe by message id, subagent replies left out, the turn a blocked Stop continued, counting on from the last row
-after a restart, the resume flag, and the causes. See `docs/backlog-2.md` item 37.
+restarted too, since the hub serves its own copy of the board. Go tests `TestUsage*` and
+`TestKeepaliveRefreshIsAUsageRow` in `internal/daemon/usage_test.go`, and `TestSessionUsage*` in
+`internal/store/usage_test.go`, cover the row per turn, dedupe by message id, subagent replies left out of the turn
+and kept in a row of their own (BT5), the turn a blocked Stop continued, counting on from the last row after a
+restart, the resume flag, and the causes. See `docs/backlog-2.md` item 37.
 
 ### BT1. A turn is one row, with its cause
 
@@ -4151,9 +4156,9 @@ room only to try it.
    SELECT u.task_id, u.cause, u.context,
           u.cache_write_5m + u.cache_write_1h AS written, u.cache_read,
           (SELECT p.context FROM session_usage p WHERE p.task_id = u.task_id AND p.ended_at < u.started_at
-             AND p.cause <> 'keepalive' ORDER BY p.ended_at DESC LIMIT 1) AS context_before,
+             AND p.cause NOT IN ('keepalive', 'subagent') ORDER BY p.ended_at DESC LIMIT 1) AS context_before,
           (SELECT MAX(p.ended_at) FROM session_usage p WHERE p.task_id = u.task_id
-             AND p.ended_at < u.started_at) AS last_warm
+             AND p.ended_at < u.started_at AND p.cause <> 'subagent') AS last_warm
    FROM session_usage u
    WHERE u.after_resume = 1 AND u.started_at > :restart
    ORDER BY u.started_at
@@ -4170,6 +4175,33 @@ room only to try it.
 means every restart pays about one full write per card, `written` times the model's write price, and that total is
 the number item 38 decides on. Mixed: compare the models, the 1M variant (`[1m]`), and the Claude Code versions before
 and after the restart, which change the prefix.
+
+### BT5. A Claude subagent's spend is a row of its own, counted once
+
+Needs the room built from this change and a room restart. `TestUsageCountsSubagentsOnceInTheirOwnRow` in
+`internal/daemon/usage_test.go` covers both transcript layouts, a workflow's agents a level down, dedupe by message
+id, the reconcile against per-file sums, a subagent still working past the Stop, and a restarted daemon.
+`TestUsagePricesEveryCurrentModel` covers a price for every current model, kept out of keep-alive's table.
+
+1. On a Claude card, ask for something that uses the Task tool, for example "use an Explore subagent to list the Go
+   packages here". Let the turn end. Open the `token use` fold.
+
+**Expected:** two new rows ending about together: the turn itself (`you`), and one `subagent` row. The subagent row's
+tooltip counts the subagent's requests and names its model. The turn's row does not hold them: its requests are only
+the card's own. `turns` went up by one, not two. The cause lines under the totals have a `subagent` line counting
+requests, and a `keep-alive` line counting refreshes when the card has any. A subagent on Haiku or Sonnet costs more
+than $0.
+
+2. Reconcile it. The session's transcript is `~/.claude/projects/<project>/<session>.jsonl` and its subagents are
+   `<session>/subagents/agent-*.jsonl` (a workflow's a level down). Sum the output tokens of each file's assistant
+   lines, one per `message.id`.
+
+**Expected:** the card's rows since the prompt add up to the main file's sum, and the `subagent` row to the sum of
+the subagent files over the same time. Nothing is in both.
+
+3. `atrium_launch` a worker from the card and let it run a turn.
+
+**Expected:** the worker's spend is on the worker's own card. The launcher gets no `subagent` row for it.
 
 ## BU. A machine becomes a room of this hub from one command over ssh
 
@@ -4226,9 +4258,164 @@ connection.
 ledger, the address folder and `~/.atrium/provision`, then removes the room from the hub. Anything that was on the
 target before the first provision is still there. The second run says `provision state skip` and exits 0.
 
-## BV. A card past the context threshold wears a mark, its launcher hears once, and its details are a hover away
+## BV. Clicking into a terminal does not hold a say, and the readout says why one is held
 
-BV1 to BV4 need the room built from this change and a room restart, and on a hub board the hub rebuilt and restarted
+Needs a room built from this change and a room restart. Go tests in `internal/daemon/typedline_test.go` cover every
+terminal report xterm.js sends, word delete by all three keys, the keys the gate cannot follow, and the endpoint.
+The headless section `typing` covers the readout switch, its place above the shortcut strip, what it shows, and that
+it polls nothing while off. See `docs/backlog-2.md` item 33.
+
+### BV1. Focus and clicks are not typing
+
+1. In the gear's settings tick "show the typing gate readout". Attach a Claude card and leave the prompt empty.
+2. Click into the terminal, click out of it, click in again, and click a few places in the output.
+
+**Expected:** the readout, on the line directly above "ctrl-c copies a selection", reads `gate open` and `0 chars`,
+and `last key` does not reset on the clicks. From another session, `atrium_say` the card something. It is typed and
+submitted within a couple of seconds, not held behind "delivers when your input line is clear and idle".
+
+### BV2. The line is text, and a word delete is a word
+
+1. Type `git commit` in the prompt.
+
+**Expected:** the readout shows `line "git commit"`, `10 chars` and `gate closed` with `10 unsent character(s)`.
+
+2. Press ctrl-backspace, then alt-backspace.
+
+**Expected:** after the first the line reads `git `, after the second it is empty. Two seconds later the gate reads
+`open: line empty and quiet`. Do the same with ctrl-w.
+
+### BV3. A key the gate cannot follow holds, and says so
+
+1. On an empty prompt press the up arrow, so a previous prompt comes back.
+
+**Expected:** the gate reads `closed: not sure what is on the line, after an up or down arrow`. A say waits.
+Pressing ctrl-u, or Enter, opens it again.
+
+2. Type `abc`, press the left arrow, then backspace three times.
+
+**Expected:** the gate stays closed on `not sure what is on the line, after a cursor move`, until Enter, ctrl-c or
+ctrl-u.
+
+### BV4. Off costs nothing
+
+1. Untick the setting.
+
+**Expected:** the readout line goes. The browser's network panel shows no more requests to `/typing`.
+
+## BW. A card has an alias you mention it by
+
+Needs a room built from this change (it runs migration `0064_task_alias`) and a hub built from it for `atrium_say`
+and `atrium_peers`. Go tests in `internal/store/alias_test.go`, `internal/daemon/alias_test.go` and
+`TestResolvePeerAcceptsAnAlias` in `internal/link/control_mcp_test.go` cover the uniqueness, the refusal, the launch
+default and resolution. The headless section `alias` covers the chip and the menu's PATCH. See `docs/backlog-2.md`
+item 35.
+
+### BW1. A worker starts with its prefix
+
+1. From a session, `atrium_launch` a worker titled `sa99: alias check` with a brief that says to report done.
+
+**Expected:** its card wears an `@sa99` chip. `atrium_peers` from another session lists it with `"alias": "sa99"`.
+`atrium_say` to `@sa99` (and to `sa99`) reaches it.
+
+### BW2. Setting one by hand, and a clash
+
+1. Right click a resident card, such as dotfiles, and choose "alias…". Type `@dotfiles` and press ok.
+
+**Expected:** the card wears `@dotfiles`. `atrium tell dotfiles "ping"` from a session's shell reaches it, and
+`atrium peers` prints `dotfiles-NNNNN @dotfiles`.
+
+2. On a second card choose "alias…" and type `dotfiles`.
+
+**Expected:** a toast "that did not stick" that says `@dotfiles is already the alias of dotfiles-NNNNN (...)`. The
+second card's alias is unchanged.
+
+3. Choose "alias…" on the first card, empty the box and press ok.
+
+**Expected:** the chip goes, and `atrium_say` to `@dotfiles` answers "no session called ..." with the list.
+
+### BW3. An ended card lets go
+
+1. Exit the BW1 worker so its card goes to finished, then launch another worker titled `sa99: again`.
+
+**Expected:** the new card wears `@sa99`, and `atrium_say` to `@sa99` reaches the new one.
+
+## BX. A toast stays for its whole life
+
+Backlog-2 item 26. A toast used to go early three ways. When the card it was about stopped waiting (a held message
+typed in as the turn ends does that inside a second), the next poll took it down. A fourth toast removed the oldest
+at once. Nothing held one under the pointer. Now an answered toast says `· answered` and goes when an ordinary toast
+would. A full stack queues the newcomer until a toast leaves. Hovering holds a toast. The headless
+sections `toastLives` and `toastStays` cover all three.
+
+### BX1. Answered is not gone
+
+1. Have a worker end its turn while you are on the board, with a message held for it (say something to it mid-turn
+   with `when: "done"`).
+
+**Expected:** the `<card> is ready` toast appears. When the held message is typed in and the card runs again, the
+toast stays, dimmed, with `· answered` after its title. It goes about 9 seconds after it appeared.
+
+### BX2. A burst waits its turn
+
+1. In the browser console, run `for (let i = 1; i <= 4; i++) toast("burst " + i, "one of four")`.
+
+**Expected:** three toasts show and `burst 1` stays. About 9 seconds later `burst 1` goes and `burst 4` takes its
+place. At phone width the cap is one, and the same holds: each toast lives its 9 seconds before the next shows.
+
+### BX3. Hovering holds it
+
+1. Raise a toast (BX2 with one), move the pointer onto it, and wait 15 seconds.
+
+**Expected:** it is still there. Move the pointer off it: it goes after the time it had left when you arrived.
+
+### BX4. A view switch and a dialog do not take it
+
+1. Raise a toast, switch to terminals and back, open and close the toast log.
+
+**Expected:** the toast is still there 5 seconds after it appeared.
+
+## BY. A say to a session that has gone, and a line cleared with Esc
+
+Backlog-2 item 27. A say to a card with no session behind it answered `queued`. It was held for the input line and
+the card wore `! 1` blaming that line for hours. A card is gone when it is `done` or `dead` and no process is alive
+for its pid. A say to one now answers `undeliverable` with a note to resume it first, and nothing is queued. A
+message already held when the session ends is dropped from the on-screen retry, so its chip goes. It stays queued
+for the hooks of a session resumed on that card. Separately, Esc Esc on a Claude prompt empties the line, so held
+messages go in; it used to take a control-c. The Go tests in `internal/daemon/nosession_test.go` and
+`escclear_test.go` cover both. They need a room restart.
+
+### BY1. A say to a finished card is refused
+
+1. Take a worker card that reported done and whose session has exited (`done`, no terminal).
+2. From another session, `atrium_say` to it.
+
+**Expected:** the answer says `undeliverable`, and its note says it has no running session, to resume it first and
+say it again. The card wears no `!` chip.
+
+### BY2. A worker that reported done but still runs is still reached
+
+1. Have a worker report done and keep its session open. `atrium_say` to it.
+
+**Expected:** the message is typed in, or queued behind your line as usual. It is not refused.
+
+### BY3. A held message goes when the session ends
+
+1. Type half a line into a worker's terminal. `atrium_say` to it. The card wears `!`.
+2. End the worker's session (`/exit` in its terminal).
+
+**Expected:** the `!` chip goes within a few seconds and does not come back.
+
+### BY4. Esc Esc releases a held message
+
+1. Type half a line into a Claude card's terminal and leave it. `atrium_say` to it: the chip reads `!`.
+2. Press Esc twice in that terminal, so Claude Code clears the line.
+
+**Expected:** within about 2 seconds the message is typed in and sent, and the chip goes. One Esc on its own, or Esc
+in a shell, does not release it.
+## BZ. A card past the context threshold wears a mark, its launcher hears once, and its details are a hover away
+
+BZ1 to BZ4 need the room built from this change and a room restart, and on a hub board the hub rebuilt and restarted
 too. Go tests in `internal/daemon/contextsize_test.go` cover the size read from the transcript, the gear threshold,
 one notice per crossing, a new notice after the card falls back under the line and crosses again, none for a card a
 human started, and none again after a restart. The headless section `contextSize` in
@@ -4236,7 +4423,7 @@ human started, and none again after a restart. The headless section `contextSize
 terminal bar, the two-second hover, the menu's `details`, the drawer, and that nothing reads usage before one of them
 opens. See `docs/backlog-2.md` item 45.
 
-### BV1. The mark, and no number
+### BZ1. The mark, and no number
 
 1. Open the gear. Set `context size to warn at` to a number under a running Claude card's context, for example 20.
 2. Wait up to a minute for the reaper's tick.
@@ -4245,7 +4432,7 @@ opens. See `docs/backlog-2.md` item 45.
 mark names the threshold. No card face, stack row, terminal bar or terminals list shows a context number. A card
 under the line has no mark. `reset to default (150)` puts it back.
 
-### BV2. Two seconds on a card, and the menu's `details`
+### BZ2. Two seconds on a card, and the menu's `details`
 
 1. Rest the pointer on a Claude card for one second, then two.
 2. Move off it. Then right-click the card and pick `details`.
@@ -4256,7 +4443,7 @@ estimate. Numbers shimmer for a moment while they are read. Past the line the nu
 colour. Moving off the card and the panel closes it. From the menu the same panel stays until a click elsewhere or
 escape. Switch the skin in the gear and repeat: the panel wears the new skin.
 
-### BV3. The drawer on the shortcut strip
+### BZ3. The drawer on the shortcut strip
 
 1. Attach a Claude card's terminal. Click `details` at the right end of the `ctrl-c copies a selection…` strip.
 2. Attach another card with the drawer open. Then click the strip's text.
@@ -4264,7 +4451,7 @@ escape. Switch the skin in the gear and repeat: the panel wears the new skin.
 **Expected:** the same panel slides up above the strip, over the bottom of the terminal. The terminal does not
 change size. It follows the terminal to the second card. Clicking the strip again slides it away.
 
-### BV4. The launcher hears once
+### BZ4. The launcher hears once
 
 1. From an orchestrator session, `atrium_launch` a worker. Lower the threshold under the worker's context.
 2. Let two more of the worker's turns end. Restart the room. Let another turn end.

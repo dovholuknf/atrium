@@ -6,7 +6,7 @@ section heading is just "what landed in this iteration."
 ## Unreleased
 
 - **A card past a context threshold wears a mark, its launcher hears once, and a card's details are a hover away.**
-  See `docs/backlog-2.md` item 45 and `docs/test-plan.md` section BV.
+  See `docs/backlog-2.md` item 45 and `docs/test-plan.md` section BZ.
 
   The room reads every live Claude card's context size from its transcript on the reaper's tick, with the
   keep-alive's own reader, and holds it in memory only. Past the gear's threshold (`context threshold`, default 150k)
@@ -18,6 +18,95 @@ section heading is just "what landed in this iteration."
   `details` expando on the terminal's shortcut strip slides it up as a drawer. It reads the card's usage when it
   opens and never otherwise. `internal/daemon`, `internal/store`, `internal/api`: ROOM RESTART. `internal/api/web`:
   HUB RESTART for the board a hub serves, and the room restart for the room's own board.
+- **A card's Claude Code subagents (the Task tool) are on its token-use record, as their own `subagent` rows.** See
+  `docs/backlog-2.md` item 37 and `docs/test-plan.md` section BT5.
+
+  At each Stop the room also reads the session's subagent transcripts, `<session>/subagents/agent-*.jsonl` beside
+  the main one and a workflow's agents a level down, and the `isSidechain` lines older Claude Code wrote inline. What
+  they spent since the last read is one `subagent` row, each file on its own cursor, one per message id, and a reply
+  the card's own row holds is never counted again. Each reply is priced on its own model, so a subagent on another
+  model is not priced as the card's. The main-turn row now does the same. Haiku 4.5 and Sonnet 5 are priced too, in
+  a table of their own so keep-alive still does not refresh them, and every current Claude model has a price. An
+  atrium-launched worker is a card of its own and is not counted into its launcher. In the details fold, `turns`
+  counts only the card's own turns, and each cause has a line of its own: turns, a subagent's requests, keep-alive
+  refreshes, what was written and read, and the cost. No migration. `internal/store`, `internal/daemon`: ROOM
+  RESTART. `internal/api/web` (usage fold): HUB RESTART for a hub's board.
+
+- **A toast stays on screen for its whole life.** See `docs/test-plan.md` section BX (backlog-2 item 26).
+
+  Toasts popped and went within a second, for three reasons. A toast about a card waiting on you was taken down by
+  the next poll once that card ran again, and a held message typed in as the turn ends does that at once. A fourth
+  toast removed the oldest on arrival, so a burst went by in a blink. Nothing held a toast under the pointer. Now
+  an answered toast stays, dimmed and marked `· answered`, and goes when an ordinary toast would. A full stack
+  queues the newcomer until a toast leaves, and a toast's clock starts when it is shown. Hovering
+  pauses its clock, and leaving gives back the time it had. The new headless section `toastLives` covers it and
+  fails on the old code. HUB-SIDE.
+
+- **A say to a card with no session answers `undeliverable`, and a held message goes when the session does.** See
+  `docs/test-plan.md` section BY (backlog-2 item 27).
+
+  A card that is `done` or `dead` with no live process took a say as `queued`, held it for the input line, and wore
+  `! 1` for eleven hours. The session end forgot the chip, but a runner that outlived its session kept the retry
+  going, and the next tick set `held_for: line` again. Now a say to such a card answers `undeliverable` with a note
+  to resume it first, and is not queued, so the resumed session does not get it twice. A worker that reported done
+  but still runs is still reached. A held message is dropped from the on-screen retry when the session ends or the
+  runner exits, so the chip goes, and it stays queued for a resumed session's hooks. ROOM-SIDE, needs a room
+  restart.
+
+- **Esc Esc on a Claude prompt releases held messages.** See `docs/test-plan.md` BY4.
+
+  The gate follows the operator's line from their keystrokes (`typedLine`). Enter, control-c and control-u empty
+  it, and a lone Esc edited nothing, so a line Claude Code cleared on Esc Esc still read as written and held messages
+  until a control-c. Two lone Escs within 2 seconds now empty it on a Claude runner. A shell is left alone, where Esc
+  is a meta prefix. Clearing the scrollback empties no line and still releases nothing. ROOM-SIDE, needs a room
+  restart.
+
+- **The held chip's tooltip says how many, how long, what blocks them and what to do.** For example "2 messages have
+  been waiting to be delivered to this agent for 1h 2m 3s and are blocked by input in this terminal. Submit your
+  text to dequeue these messages". The age is full hours, minutes and seconds. The sender is no longer named. The
+  turn and dialog reasons take the same shape. HUB-SIDE.
+
+- **The full headless run passes.** Backlog-2 item 28.
+
+  It failed 5 runs in 5 on `claude/main`, always on `page.waitForFunction: Timeout 30000ms` in the main flow. A throw
+  now names its line in the file, which found the wait: the skin check saved a skin while the load's own settings
+  reads were still out, and a read answered before the save painted the old skin back. The board now lets a save in
+  flight own the skin. The skin checks, the skin heal and the history checks are sections of their own
+  (`skinScope`, `skinHeal`, `history`) that wait for the reads, not a clock. The keep-alive section is in the full
+  run now. 34 waits passed their timeout as the page function's argument, so they took the 30 second default. They
+  take it as the option now. The other flakes had board races under them: two history renders in flight drew
+  whichever answered last (the newest now wins, and a repaint keeps a "show more" in flight), and a terminal closed
+  before its first frame was still connected. The restart gate check now waits for every stream to reopen, and the
+  settings-once check counts its own page's reads. HUB-SIDE.
+
+- **A card has an alias you mention it by, like `@dotfiles` or `@sa89`.** See `docs/backlog-2.md` item 35 and
+  `docs/test-plan.md` section BW.
+
+  Handles are made up by the board (`dotfiles-41800`) and nobody types them. Now each card can carry a short alias,
+  drawn on the card as an `@name` chip and set from "alias…" in the card menu or the terminal list. `atrium_say`,
+  `atrium tell`, `atrium ask --peer` and `atrium answer` take it wherever they take a handle, with or without the `@`,
+  and `atrium_peers` and `atrium peers` show it. A launched card whose title has a prefix with a digit (`sa89: ...`)
+  starts with that prefix as its alias. Anything else has none until it is set. An alias is unique among live cards:
+  taking one in use is refused and the refusal names the card holding it, and so is an alias equal to another live
+  card's handle, since a handle is matched first. An ended card keeps its alias but no longer answers to it. Schema:
+  migration `0064_task_alias` adds `task.alias`, and tolerates the column already being there. `internal/store`,
+  `internal/daemon`, `internal/api`: ROOM RESTART (runs the migration). `internal/link` (`atrium_say`, `atrium_peers`):
+  HUB RESTART. `internal/cli`: a new binary on the PATH.
+
+- **Clicking into a terminal no longer holds every say to it, and a readout shows what the gate thinks.** See
+  `docs/backlog-2.md` item 33 and `docs/test-plan.md` section BV.
+
+  The typing gate counted every byte the attach socket carried as the operator typing. Claude Code turns on focus
+  reporting, so clicking into or out of a terminal added two characters that nothing took away, and a say to that
+  card sat behind "delivers when your input line is clear and idle" with an empty prompt. Now the room keeps the
+  line's text rather than a count, and only keystrokes move it or the idle clock: focus, SGR, X10 and urxvt mouse
+  reports, device attribute, status, cursor position, mode and window replies, and OSC and DCS answers count
+  nothing. Control-backspace, alt-backspace and control-w delete a word (the rule that deletes least), not one
+  character. A key the room cannot follow, an up arrow, a history search, a yank, a cursor move on a written line,
+  keeps the gate shut until Enter, control-c or control-u. A new setting, "show the typing gate readout", puts a line
+  above the terminal's shortcut strip with the tracked line, its length, the time since the last key and whether the
+  gate is open and why, polled from `GET /v1/tasks/{id}/typing` only while it is on. `internal/daemon`: ROOM
+  RESTART. `internal/api/web`: ROOM RESTART (the room serves the board).
 
 - **One command makes another machine a room of this hub, over ssh and with no admin or sudo.** See
   `docs/packaging.md` "Provisioning a room over ssh, from the hub" and `docs/test-plan.md` section BU.

@@ -134,6 +134,9 @@ func (l *peerLimiter) allow(from string) bool {
 type Peer struct {
 	// Handle is what to address it as, which is the wire name.
 	Handle string `json:"handle"`
+	// Alias is the short name the operator gave it, accepted anywhere Handle
+	// is. Empty when none is set.
+	Alias  string `json:"alias,omitempty"`
 	Title  string `json:"title"`
 	Status string `json:"status"`
 	Runner string `json:"runner,omitempty"`
@@ -261,6 +264,11 @@ func (d *Daemon) resolvePeer(w http.ResponseWriter, from, to, verb string) *stor
 
 	target, err := d.st.GetByWireName(to)
 	if err != nil {
+		// An alias, `sa89` or `@dotfiles`, is what an operator or a prompt
+		// mentions a card by. Tried after the handle, which always wins.
+		target, err = d.st.GetByAlias(to)
+	}
+	if err != nil {
 		// Discovery, rediscovered. A handle that does not resolve answers with
 		// the list rather than with "no", because the next thing the sender
 		// needs is the set of names that would have worked.
@@ -271,6 +279,11 @@ func (d *Daemon) resolvePeer(w http.ResponseWriter, from, to, verb string) *stor
 			"error": "no session called " + to,
 			"peers": list,
 		})
+		return nil
+	}
+	// The same self-check as above, for a session that named itself by alias.
+	if target.WireName == d.st.Qualify(from) {
+		writeJSONErr(w, http.StatusBadRequest, errString("a session cannot "+verb+" itself"))
 		return nil
 	}
 	switch target.Status {
