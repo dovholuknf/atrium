@@ -570,6 +570,41 @@ func TestSayAttachesTheCallerFromTheHeader(t *testing.T) {
 	}
 }
 
+// A card's alias resolves like its handle: live cards only, newest first, with
+// or without the `@`, and the handle and the id still win.
+func TestResolvePeerAcceptsAnAlias(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"tasks": []map[string]any{
+			{"id": "old", "wire_name": "sa89-first", "alias": "sa89", "status": "dead",
+				"created_at": "2026-09-27T10:00:00.000Z"},
+			{"id": "new", "wire_name": "sa89-second", "alias": "sa89", "status": "running",
+				"created_at": "2026-09-28T10:00:00.000Z"},
+			{"id": "dot", "wire_name": "dotfiles-41800", "alias": "dotfiles", "status": "needs-input",
+				"created_at": "2026-09-28T09:00:00.000Z"},
+			{"id": "shadow", "wire_name": "dotfiles", "status": "running",
+				"created_at": "2026-09-28T09:00:00.000Z"},
+		}})
+	}))
+	defer srv.Close()
+	c := &controlMCP{board: srv.URL, client: srv.Client()}
+	for who, want := range map[string]string{
+		"sa89": "new", "@sa89": "new", "@SA89": "new",
+		// A handle is matched first, so a card whose handle is `dotfiles`
+		// answers to that and the alias does not shadow it.
+		"dotfiles": "shadow", "dotfiles-41800": "dot",
+	} {
+		id, _, err := c.resolvePeer(context.Background(), "", who)
+		if err != nil || id != want {
+			t.Errorf("resolvePeer(%q) = %q, %v; want %q", who, id, err, want)
+		}
+	}
+	_, _, err := c.resolvePeer(context.Background(), "", "nobody")
+	if err == nil || !strings.Contains(err.Error(), "(@sa89)") {
+		t.Errorf("a miss does not list the aliases that would have worked: %v", err)
+	}
+}
+
 func TestSayWithNoCallerStillDelivers(t *testing.T) {
 	board := &sayBoard{}
 	srv := httptest.NewServer(board.handler())

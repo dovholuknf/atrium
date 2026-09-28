@@ -124,10 +124,14 @@ type Task struct {
 	// that finished a turn is ready because it did what was asked. Empty means
 	// a turn ended, which is what every card written before this column
 	// existed was.
-	WaitingReason string            `json:"waiting_reason,omitempty"`
-	WireName      string            `json:"wire_name"`
-	Overrides     map[string]string `json:"overrides"`
-	Rank          float64           `json:"rank"`
+	WaitingReason string `json:"waiting_reason,omitempty"`
+	WireName      string `json:"wire_name"`
+	// Alias is the short name the operator mentions this card by, `sa89` or
+	// `dotfiles`, accepted wherever a handle is. Empty until one is set, and
+	// unique among live cards. See alias.go.
+	Alias     string            `json:"alias,omitempty"`
+	Overrides map[string]string `json:"overrides"`
+	Rank      float64           `json:"rank"`
 	// ExternalID ties a card to a session atrium did not start, using the
 	// identifier its owner already uses. ResumeID is what the runner needs to
 	// pick that conversation back up.

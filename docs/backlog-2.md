@@ -32,9 +32,9 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 23 | sa78: keep idle Claude cards' prompt caches warm, stop at break-even | feature | DONE, merged `a917535`, deployed 2026-09-28 |
 | 24 | sa81: the "not replayed here" notice opens or loads the pre-restart history | feature | DONE, `ddbeb9c` `cda7ae5`, the daemon half needs a room restart |
 | 25 | sa80: false STUCK alert after a slash command and a restart; stuck mark on the card; gear setting | bug | DONE, `d4803aa` `42258ef` `2a4ae89`, the fix needs a room restart |
-| 26 | Toasts pop and disappear in the same second | bug | not started |
-| 27 | A say to a session that has gone waits forever, blaming the input line | bug | not started |
-| 28 | The full headless board run fails most of the time on `claude/main` | bug | not started |
+| 26 | Toasts pop and disappear in the same second | bug | DONE by sa83, `c843139`, not merged |
+| 27 | A say to a session that has gone waits forever, blaming the input line | bug | DONE by sa83, `04bad69`, Esc Esc `d1c2454`, chip tip `dc06056`, not merged |
+| 28 | The full headless board run fails most of the time on `claude/main` | bug | DONE by sa83, `39c76dc` `a74c95e` `2d47379`, not merged |
 | 29 | sa85: lean workers, a launched worker starts with only what it needs | feature | DONE, `1043e35` `42b2221` `ac59568` `764e2a8`, the room half needs a room restart |
 | 30 | Peer review on the mercurius protocol, run in an atrium session | design | not started, 2 open questions |
 | 31 | STUCK fires on a worker whose turn ended while it waits on background runs | bug | not started |
@@ -43,7 +43,7 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 34 | Every MCP tool call skips atrium's permission gate | bug | DONE 2026-09-28 in dotfiles, uncommitted, live through the hooks symlink |
 | 35 | A card has a name you mention it by, like `@dotfiles` | feature | sa89, started 2026-09-28 |
 | 36 | A finished worker stays up until somebody closes it | bug | not started |
-| 37 | Token and context use on record for every session, shown only in a card's details | feature | sa90, started 2026-09-28 |
+| 37 | Token and context use on record for every session, shown only in a card's details | feature | DONE, sa90 merged. sa94: Claude subagent rows, needs a room restart. Test plan BT5 |
 | 38 | A restart resumes only the cards that were working | feature | waits on 37 |
 | 39 | Keep-alive warms the cards you mark, not every idle card | feature | waits on 37 |
 | 40 | The launch cap counts only `atrium:subagent` cards | bug | sa91, started 2026-09-28 |
@@ -689,6 +689,12 @@ top-right placement (`placeToasts`, item 18). Reproduce on the live board with t
 Fix: a toast stays its full life unless the user dismisses it or clicks it. Hovering pauses the timer. Headless test:
 raise a toast, then do each thing found above, and it is still on screen after 5s.
 
+Done 2026-09-28 by sa83 (`c843139`). Three causes. `reapToasts` took down a keyed toast the poll after its card
+stopped waiting, which a held message typed in at turn end does inside a second. The cap removed the oldest toast the
+moment a fourth arrived. Nothing held a toast under the pointer. The view switch, dialogs and `placeToasts` were
+checked and take nothing. An answered toast now says so and lives out its 9 seconds, a full stack queues until a
+toast leaves, and hovering pauses the clock. Headless `toastLives`, test plan BX.
+
 ## 27. A say to a session that has gone waits forever, blaming the input line (bug)
 
 Raised 2026-09-26. The orchestrator said something to sa69 after its runner had exited. The answer was `queued`, and
@@ -698,6 +704,15 @@ input line to wait on.
 Expected: a say to a card with no running session answers `undeliverable` with a note (resume it first), or is held
 with `held_for: no session` and says so on the chip. A held message on a card that is deleted or finished does not
 stay forever. Decide whether a held message expires or is dropped when the card's runner ends.
+
+Done 2026-09-28 by sa83 (`04bad69`). The cause: the SessionEnd hook forgot the chip, but a runner that outlived
+its session stayed in the supervisor. The next backoff retry found the gate shut and `noteHeld` set `held_for: line`
+again, aged from the first hold. Chosen: `undeliverable`, with a note to resume first, and nothing queued. A held
+message is dropped from the on-screen retry when the session ends or the runner exits. It stays queued for a resumed
+session's hooks, because the sender was told `queued`. Gone means `done` or `dead` with no live pid, so a worker that
+reported done and still runs is still reached. Also: Esc Esc on a Claude prompt now counts as clearing the line
+(`d1c2454`). A lone Esc matched nothing in the keystroke count, so only control-c released held messages. The chip
+tooltip reads as clint asked (`dc06056`). Test plan BY. ROOM-SIDE apart from the tooltip.
 
 ## 28. The full headless board run fails most of the time on `claude/main` (bug)
 
@@ -709,6 +724,13 @@ history load did not go back to one page".
 
 A check that fails most runs hides real failures. Find the wait that times out, name it, move main-flow checks into
 named sections so each can run alone, and make the flaky waits wait on a condition rather than a clock.
+
+Done 2026-09-28 by sa83 (`39c76dc`, `a74c95e`, `2d47379`). The wait was the skin-scope check's
+`waitForFunction` for `sandstone`. A save raced the load's own settings reads, and a read answered first painted the
+old skin back. A throw now names its line. `skinScope`, `skinHeal` and `history` are sections. 34 waits passed
+`{timeout}` as the arg, so they took the 30s default. Board races fixed under the other flakes: history renders out
+of order, a save in flight losing the skin, a terminal connected after it closed. The restart gate waits for every
+stream to reopen, and settings-once counts its own page's reads.
 
 ## 29. Lean workers: a launched worker starts with only what it needs (feature)
 
@@ -858,6 +880,46 @@ keep-alive round can spend a lot without anything saying so. What is wanted:
 - The first use: measure one room restart, cache writes per card before and after, to learn whether a resume misses
   the cache.
 
+Status: built by sa90 and merged. Test plan BT.
+
+Subagents, 2026-09-28 (sa94). clint: "calude subagent - yes. atrium subagent no (as it's a separate thing)" and "as
+long as it doesn't skew/double count". What a card's Claude Code subagents (the Task tool) spend is a row of its own,
+cause `subagent`, written at the same Stop as the turn's row. The room reads `<session>/subagents/agent-*.jsonl`
+beside the transcript (a workflow's agents a level down), which is what Claude Code writes on this machine today, and
+the `isSidechain` lines older Claude Code wrote into the main transcript. Each file has its own cursor, replies are
+kept one per message id, and a reply the turn's row holds is never also a subagent's. An atrium-launched worker is
+its own card with its own rows and is not counted into its launcher. Needs a room restart. Test plan BT5.
+
+Every current Claude model is priced on a usage row: Haiku 4.5 and Sonnet 5 are in `usageOnlyPrices`, from the
+pricing page on 2026-09-28, and not in keep-alive's table, which is also the list of models keep-alive may refresh.
+The details' `turns` counts only the card's own turns, and each cause has its own line, so subagent requests and
+keep-alive refreshes are read apart.
+
+The one known undercount, not fixed. A cursor skips a reply stamped at or before the last reply it already counted.
+So a reply is lost when its line reaches the file AFTER a read that counted a later-stamped reply through the same
+cursor. That read happens 1.5 seconds after a Stop and takes every reply stamped before the Stop, so the lost line
+has to be stamped before the Stop and still be off disk 1.5 seconds after it. It can happen in two places:
+
+- The inline layout (older Claude Code). Every inline subagent in the main transcript shares one cursor, so two
+  subagents running at once can interleave: A's line stamped at t1 lands after the read that counted B's line at
+  t2, later than t1.
+- The first read after a daemon restart. Every subagent file starts from the one time of the last `subagent` row, so
+  a line in file A stamped before the newest reply counted from file B, and not on disk when that row was written,
+  is skipped.
+
+A file of the newer layout is one subagent's conversation, written in order, so its own cursor cannot skip a line.
+Nothing is ever counted twice this way. The miss only undercounts. A fix would be a cursor per inline `agentId` and a
+last-counted time per file on record, kept for when a miss is seen.
+
+Retention, later. clint: "let it grow forever for now but let's plan some way to clean it eventually". The rows are
+kept forever for now. A row is a few hundred bytes, so 21 cards at a few hundred turns a day is on the order of a
+megabyte a month. Options for later, none built:
+
+- Roll rows older than N days into one row per card, day and cause, with the sums kept and the per-turn detail
+  dropped. The totals and the by-cause split in the details stay right.
+- Delete a card's rows when the card sweep removes the card, or some weeks after, for cards nobody reopens.
+- A size cap: past N rows, or N megabytes, roll up or delete the oldest first.
+
 ## 38. A restart resumes only the cards that were working (feature)
 
 Raised 2026-09-28. A room restart resumes every supervised card. Cards that were mid-turn or have queued prompts need
@@ -955,7 +1017,7 @@ agent-launched card's launcher stay: keyed on the session id and stored, so a re
 re-armed when the card is seen back under the line. The number is in a compact details view, one body in
 `js/peek.js`, reached three ways: two seconds on a card or stack row, `details` on the card menu, and a `details`
 expando on the terminal's shortcut strip that slides a drawer up. It reads item 37's `GET /v1/tasks/{id}/usage`
-when it opens and never otherwise. See `docs/test-plan.md` section BV.
+when it opens and never otherwise. See `docs/test-plan.md` section BZ.
 
 ## 46. Provision a machine as a room over ssh, from one command and later from the board (feature)
 

@@ -809,6 +809,8 @@ async function cardMenu(e, id) {
     // The cache keep-alive for this card. Only on a Claude card, which is the
     // only kind with a switch. See js/keepalive.js.
     typeof keepaliveMenuItem === "function" ? keepaliveMenuItem(t, refresh) : null,
+    // The name to mention this card by. See js/alias.js.
+    typeof aliasMenuItem === "function" ? aliasMenuItem(t) : null,
     // ANSWERED IN THE TERMINAL, which atrium cannot see.
     //
     // Every other way a question comes off a card delivers text to the

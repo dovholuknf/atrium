@@ -284,6 +284,7 @@ func New(opts Options) (*Daemon, error) {
 	d.ap.OlderScrollback = d.handleOlderScrollback
 	d.ap.RawScrollback = d.handleRawScrollback
 	d.ap.TextScrollback = d.handleTextScrollback
+	d.ap.TypingState = d.handleTypingState
 	d.ap.DismissAsks = d.handleDismissAsks
 	d.ap.Message = d.handleMessage
 	d.ap.Report = d.handleReport

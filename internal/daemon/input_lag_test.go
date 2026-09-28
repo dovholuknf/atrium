@@ -26,7 +26,7 @@ func TestOperatorKeystrokeStaysFastDuringPeerInjection(t *testing.T) {
 	// runs the full banner+body, sleep sayThenEnter, Enter, holding pasteMu the
 	// whole time.
 	r.typeMu.Lock()
-	r.midLine, r.unsent = false, 0
+	r.line = typedLine{}
 	r.lastTyped = time.Time{}
 	r.typeMu.Unlock()
 
