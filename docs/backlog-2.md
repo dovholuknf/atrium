@@ -69,6 +69,7 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 60 | The stdio control MCP has sa48's launch fields but no "room is older" warning | housekeeping | not started |
 | 61 | A fake 45s hub echo in the lag log from the idle ping and pong | bug | not started |
 | 62 | A worker that ends its turn without a report reaches its orchestrator every time | bug, HIGH | not started |
+| 63 | Starting onto an existing card goes to the wrong room | bug, HIGH | not started |
 
 ------------
 
@@ -1268,6 +1269,17 @@ card's origin tag (`agentLaunched` reads `origin:agent`, see item 40). Then make
 
 Related: item 36 (a finished worker stays up), and the work ledger, `docs/work-ledger-design.md` and
 `docs/work-ledger-plan.md`.
+
+## 63. Starting onto an existing card goes to the wrong room (bug, HIGH)
+
+Raised 2026-09-28 by clint: "fixed immediately, then fixed in the long run". The board posts `/v1/launch` with
+`task_id` in the body. The hub's `roomFor` (`internal/link/proxy.go:218`) picks the room from the header, the
+query, or a card id in the PATH, and never from the body's `task_id`. With 3 rooms attached, clint's start of
+tlsuv/fix-ci (`01a0e9aa`, on claude-sg4) answered "no card 01a0e9aa... to start onto: sql: no rows".
+
+- Stage 1, now, HUB-SIDE: route a launch that carries a `task_id` to the room that holds that card.
+- Stage 2, the long run: a card id carries its room end to end, so no request that names a card can reach another
+  room.
 
 
 ------------
