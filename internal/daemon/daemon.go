@@ -163,6 +163,10 @@ type Daemon struct {
 	// both pass the "is a runner live" guard before either registers, and both
 	// resume the same conversation. See keyedmutex.go and launch.go.
 	launching *keyedMutex
+	// startedAt is when a launch last put a runner onto a card, keyed by card id,
+	// so a repeat of that launch answers with the card rather than a refusal. See
+	// repeatLaunch in launch.go.
+	startedAt sync.Map
 
 	// closeOnce guards releasing the store, so the shutdown path and a caller's
 	// deferred Close cannot both close the database. See closeDB.
