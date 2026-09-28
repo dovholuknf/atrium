@@ -858,6 +858,10 @@ type ReportWrite struct {
 	// Notice goes to the launcher inside the same transaction, once per
 	// (Source, Key). Nil for a card nobody launched.
 	Notice *NoticeSpec
+	// Relay is the same notice for a launcher on ANOTHER room, held in the
+	// relay outbox in the same transaction, so a crash cannot record the report
+	// and lose the notice either. See relay.go.
+	Relay *RelaySpec
 }
 
 // NoticeSpec is a notice a report queues to whoever hears about the card.
@@ -873,6 +877,8 @@ type ReportResult struct {
 	Duplicate bool
 	// Notice is the notice queued, nil when none was.
 	Notice *LedgerNotice
+	// Relayed is a notice held for a launcher on another room.
+	Relayed bool
 }
 
 // RecordReport writes a report, the card's own fields and the ledger's, in
@@ -937,6 +943,12 @@ func (s *Store) RecordReport(r ReportWrite) (*ReportResult, error) {
 				return err
 			}
 			out.Notice = n
+		}
+		if r.Relay != nil && !out.Duplicate {
+			if err := s.holdRelayOn(tx, *r.Relay); err != nil {
+				return err
+			}
+			out.Relayed = true
 		}
 		return nil
 	})

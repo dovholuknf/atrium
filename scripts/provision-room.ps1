@@ -552,6 +552,20 @@ if [ "$pre_bin" = False ]; then rm -f "$Bin"; fi
 if [ "$pre_bindir" = False ]; then rmdir "$(dirname "$Bin")" 2>/dev/null || true; fi
 '@
     }
+    # THE CONTROL SERVER THIS SCRIPT REGISTERED, first, while claude and the
+    # binary are both still there. Its own call: the clean-up script is near
+    # the length a Windows command line can carry.
+    if ($manifest.mcpadded) {
+        $mr = if ($os -eq 'windows') {
+            "`$ErrorActionPreference = 'Continue'`nif (Get-Command claude -ErrorAction SilentlyContinue) { & claude mcp remove --scope user atrium-control 2>&1 | Out-Null; 'mcp=removed' }"
+        } else {
+            "lp=`$(`"`${SHELL:-/bin/sh}`" -lc 'printf %s `"`$PATH`"' 2>/dev/null); [ -n `"`$lp`" ] && PATH=`"`$lp:`$PATH`"`n" +
+            "if command -v claude >/dev/null 2>&1; then claude mcp remove --scope user atrium-control >/dev/null 2>&1; echo mcp=removed; fi"
+        }
+        $mk = ConvertFrom-KeyValue (Invoke-Remote $mr).Out
+        if ($mk.mcp) { Step 'mcp' 'done' 'removed atrium-control from claude' }
+        else { Step 'mcp' 'skip' 'claude is not there to remove it from' }
+    }
     $rm = Invoke-Remote $rmScript
     if ($rm.Code -ne 0) { Fail 'remove' 3 'the remote clean-up failed' $rm.Out }
     $kv = ConvertFrom-KeyValue $rm.Out
@@ -1159,6 +1173,50 @@ foreach ($runner in @($Runners + $Install | Select-Object -Unique)) {
         }
         'hung'    { Step "runner:$runner" 'fail' "found at $($kv.path), --version did not return in 30s"; $bad++ }
         default   { Step "runner:$runner" 'fail' "found at $($kv.path), --version failed"; $bad++ }
+    }
+}
+
+# ── 11. atrium-control for the room's claude sessions ──────────────────────
+
+# THE STDIO CONTROL SERVER, registered at user scope, so a claude session on
+# this room can call atrium_say, atrium_report and atrium_peers, and answer a
+# card on another room. The hub's own control MCP is loopback only and cannot
+# be reached from here. See docs/cross-room-say-design.md. One registered by
+# somebody else is left alone. Never a failure: the room works without it, its
+# sessions just cannot answer.
+if (@($Runners + $Install) -contains 'claude') {
+    $ms = if ($os -eq 'windows') {
+@'
+$ErrorActionPreference = 'Continue'
+if (-not (Get-Command claude -ErrorAction SilentlyContinue)) { 'mcp=skip claude is not on PATH'; exit 0 }
+$o = & claude mcp get atrium-control 2>&1 | Out-String
+if ($LASTEXITCODE -eq 0) { if ($o -like "*$Bin*") { 'mcp=ok' } else { 'mcp=other' }; exit 0 }
+& claude mcp add --scope user atrium-control -- $Bin control 2>&1 | Out-Null
+if ($LASTEXITCODE -eq 0) { 'mcp=done' } else { 'mcp=fail claude mcp add did not register it' }
+'@
+    } else {
+@'
+lp=$("${SHELL:-/bin/sh}" -lc 'printf %s "$PATH"' 2>/dev/null); [ -n "$lp" ] && PATH="$lp:$PATH"
+command -v claude >/dev/null 2>&1 || { echo "mcp=skip claude is not on PATH"; exit 0; }
+if o=$(claude mcp get atrium-control 2>&1); then
+  case "$o" in *"$Bin"*) echo mcp=ok;; *) echo mcp=other;; esac; exit 0
+fi
+if claude mcp add --scope user atrium-control -- "$Bin" control >/dev/null 2>&1; then echo mcp=done
+else echo "mcp=fail claude mcp add did not register it"; fi
+'@
+    }
+    $kv = ConvertFrom-KeyValue (Invoke-Remote $ms).Out
+    $mcp = ("$($kv.mcp)" -split ' ', 2)
+    switch ($mcp[0]) {
+        'ok'    { Step 'mcp' 'ok' 'atrium-control is registered for claude at user scope' }
+        'done'  {
+            $script:manifest | Add-Member -NotePropertyName mcpadded -NotePropertyValue $true -Force
+            Save-Manifest
+            Step 'mcp' 'done' 'atrium-control registered for claude at user scope'
+        }
+        'other' { Step 'mcp' 'warn' 'an atrium-control server is already registered and runs something else. left as it is' }
+        'skip'  { Step 'mcp' 'skip' $mcp[1] }
+        default { Step 'mcp' 'warn' "$(if ($mcp.Count -gt 1) { $mcp[1] } else { 'could not register atrium-control' }). its sessions cannot answer other rooms" }
     }
 }
 if ($bad -gt 0) { Finish 5 }

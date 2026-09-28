@@ -1180,7 +1180,14 @@ func (p *Proxy) forgetInventory(w http.ResponseWriter, r *http.Request) {
 // proxy's scoping and offline-room behaviour rather than reimplementing it.
 // Optional: a hub that never calls this answers /_hub/mcp with 404.
 func (p *Proxy) SetControl(boardAddr string) {
-	p.control = newControlHandler(loopbackBase(boardAddr), p.hub, p.RecordAudit)
+	c := newControl(loopbackBase(boardAddr), p.hub, p.RecordAudit)
+	p.control = c.handler()
+	// THE SAME TOOLS CARRY A MESSAGE BETWEEN ROOMS, through the same loopback
+	// board, so a relayed message is resolved and delivered exactly the way a
+	// hub-side atrium_say is. See control_relay.go.
+	if p.hub != nil {
+		p.hub.Relay = c.relay
+	}
 }
 
 // serveControl answers the hub-side control MCP server.

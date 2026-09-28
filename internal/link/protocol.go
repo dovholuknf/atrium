@@ -232,7 +232,7 @@ func hearHello(conn net.Conn, br *bufio.Reader) (hello, error) {
 		return h, fmt.Errorf("link version %d, wanted %d", h.V, Version)
 	}
 	switch h.Kind {
-	case "control", "data", "enrol", upgradeKind, announceKind:
+	case "control", "data", "enrol", upgradeKind, announceKind, relayKind:
 	default:
 		_ = writeJSON(conn, welcome{OK: false,
 			Error: "a connection is control, data, enrol, upgrade or announce"})

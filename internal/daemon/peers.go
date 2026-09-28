@@ -326,6 +326,21 @@ func (d *Daemon) handleTell(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// ANOTHER ROOM, `name@room`, relayed through the hub. See relay.go.
+	if name, room, err := SplitAddress(in.To); err == nil {
+		if other := d.otherRoom(room); other != "" {
+			code, body := d.sayAcross(r.Context(), strings.TrimSpace(in.From), name, other, in.Text, in.When)
+			if code < 400 {
+				// The two words `atrium tell` reads, beside the rest.
+				body["typed"] = body["delivered"] == "terminal"
+				body["queued"] = body["delivered"] != "terminal"
+			}
+			writeJSONCode(w, code, body)
+			return
+		}
+		in.To = name
+	}
+
 	from := d.st.Qualify(strings.TrimSpace(in.From))
 	to := d.st.Qualify(strings.TrimSpace(in.To))
 	text := strings.TrimSpace(in.Text)

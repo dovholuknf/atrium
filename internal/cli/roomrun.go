@@ -355,6 +355,10 @@ func runRoom(keys link.Keys, db, human, agent string, restartAfter time.Duration
 			isolated: isolated, upgrades: acceptUpgrades,
 		}, stop),
 	}
+	// MESSAGES TO OTHER ROOMS go through this link, and what is owed goes the
+	// moment it reattaches. See internal/daemon/relay.go.
+	room.OnAttach = d.RelayAttached
+	d.SetRelay(linkRelay{room: room})
 	go func() {
 		if err := room.Run(ctx); err != nil {
 			log.Printf("[link] gave up on the hub: %v", err)

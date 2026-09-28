@@ -62,8 +62,8 @@ atrium_say to=atrium-87300@claude-sg4
    caller's and forwards the say to the SENDER'S room as `POST /v1/say`, so the sender's room records it exactly as
    it records a say from its own stdio server. The route then continues as above. A caller with no
    `X-Atrium-Agent` is refused for cross-room: an unnamed sender would be typed as the operator, which rule 3
-   forbids. A caller with no room header is also refused for cross-room, with a sentence, because there is no
-   sender's room to record it or to answer to.
+   forbids. A caller with no room header keeps today's behaviour exactly (the aggregate list, where `room~id`
+   already reaches any room), because it has no room to be the sender's.
 3. LINK. A new connection kind, `relay`, dialled by the room, the same shape as `announce`: hello, welcome, one
    JSON request, one JSON answer, closed. Ops `say` and `peers`. The hub takes it from an attached room only.
 4. HUB-SIDE delivery. `serveRelay` resolves `name` in the target room through its own loopback board with
@@ -119,8 +119,16 @@ With m1mini's hub link down, the sender sees:
   to the sender as an error with the target's sentence, and nothing is kept. The not-found error lists the live
   handles on that room, as a local one does.
 - Unreachable goes into a ROOM-SIDE outbox on the sender's room, and the answer is `delivered: "held"` with the
-  note above. Unreachable is: no link from this room right now, a link error, the hub saying the target room is not
-  attached, or the target room answering 502 or 503 through the hub.
+  note above. Unreachable means the failure is KNOWN to come before the message reached the target: no link from
+  this room right now, the relay dial or hello failing, the request not written, the hub saying the target room is
+  not attached, or the resolve step (a read) on the target answering 502 or 503.
+- Ambiguous is anything after the message may have reached the target: the message post answering 502, 503 or 504,
+  or the relay answer not arriving after the request was written. The sender is told `delivered: "unconfirmed"`
+  with a note saying it may or may not have arrived, and nothing is held, so a retry cannot deliver it twice. On a
+  drain, an ambiguous say is dropped with an event on the sender's card. An ambiguous automatic notice is kept and
+  tried again, because a launcher told twice is better than a launcher never told.
+- A room this hub has never heard of (not attached and not in its inventory) is a definitive 404 that names the
+  rooms it knows, not a held message, so a typo is said at once rather than held for a day.
 - The outbox is drained on the reaper tick, right after an insert, and when the link reattaches. One drain at a
   time. Rows go oldest first. A row that meets a definitive refusal on drain is dropped with an event on the sender's
   card and a log line, since the sender's turn that asked for it is long gone.
@@ -131,17 +139,23 @@ With m1mini's hub link down, the sender sees:
   EXISTS`:
 
   ```sql
-  relay_outbox (id TEXT PRIMARY KEY, from_task TEXT, from_wire TEXT NOT NULL, to_room TEXT NOT NULL,
-    to_name TEXT NOT NULL, text TEXT NOT NULL, wait_turn INTEGER NOT NULL DEFAULT 0, source TEXT NOT NULL,
-    created_at TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, last_error TEXT NOT NULL DEFAULT '')
+  relay_outbox (id TEXT PRIMARY KEY, from_task TEXT NOT NULL DEFAULT '', from_wire TEXT NOT NULL,
+    to_room TEXT NOT NULL, to_name TEXT NOT NULL, to_card TEXT NOT NULL DEFAULT '', text TEXT NOT NULL,
+    when_word TEXT NOT NULL DEFAULT '', source TEXT NOT NULL, created_at TEXT NOT NULL,
+    attempts INTEGER NOT NULL DEFAULT 0, last_error TEXT NOT NULL DEFAULT '')
   ```
 
-  A sent row is deleted, so the table only ever holds what is owed.
+  A sent row is deleted, so the table only ever holds what is owed. `to_card` is the target's bare card id on its
+  room when it is known, which is always the case for a launcher notice (below), and the drain addresses the card
+  by that id rather than by the handle, so a handle reused later cannot take a notice meant for another card.
 
 ## Notices to a launcher on another room (rule 5)
 
 - `spawned_by` may be `handle@room`. The hub's `atrium_launch` gains an optional `room`: launching into another
-  room records `spawned_by` = `me@myroom` on the new card. A same-room launch is unchanged.
+  room records `spawned_by` = `me@myroom` on the new card, and `spawned_by_id` = `myroom~<my card id>`, resolved
+  by the hub on the caller's room. The room stores a tagged `spawned_by_id` as given (a bare one is still resolved
+  locally, as today). Nothing local can match a tagged id, so `launcherOf` and the ledger's arbiter lookup find
+  nothing and stay local, as they should. A same-room launch is unchanged.
 - `launcherOf` stays local. A new `remoteLauncher(worker)` returns `(name, room)` when `spawned_by` names another
   room and no local card is the launcher.
 - `notifyLauncher` (silent stop, long tool, context size) keeps its `RecordNotice` dedupe and then, for a remote
@@ -197,4 +211,13 @@ stdio server gains `from` on `atrium_say` and an `atrium_report`, so a room's ca
 
 ## Review
 
-Filled in after the mercurius design review.
+Mercurius design review, session `s_H1ILoNvxloBH`, round 1, verdict needs_changes. Both findings folded in.
+
+- C1, an ambiguous 502 or 503 could hold a message the target already queued, and a drain would send it twice.
+  Folded in: only failures known to come before delivery are held. The rest answer `unconfirmed` and hold
+  nothing, except an automatic notice, where a duplicate beats a loss. See "Offline target".
+- C2, a held launcher notice keyed on a handle could reach a later card that reused the handle. Folded in: the
+  cross-room launch records the launcher's tagged card id, and the outbox addresses notices by that id.
+- A1 (advisory), telling an old hub from the refusal sentence is brittle. Kept, narrowed: the room matches only
+  the unknown-kind refusal, which an old hub has sent unchanged since the kind switch existed, and a test pins it.
+  There is no other signal an old hub sends.
