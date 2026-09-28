@@ -127,6 +127,11 @@ type LaunchRequest struct {
 	// board's dialog sends nothing and is recorded as `@human`. See
 	// store.SetLineage.
 	SpawnedBy string `json:"spawned_by,omitempty"`
+	// Lean starts a claude session with only what a worker needs, and MCP names
+	// the servers from the runner's MCP config it keeps beside atrium-control.
+	// Recorded on the card as tags, so a reopen starts it lean again. See lean.go.
+	Lean bool     `json:"lean,omitempty"`
+	MCP  []string `json:"mcp,omitempty"`
 }
 
 // TerminalTemplate wraps a command so it opens in a real terminal window.
@@ -761,7 +766,32 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 	// turn ends are reported even where the operator never installed it. The
 	// marker is on the request for a new launch and on the card for a reopen.
 	agent := hasTag(req.Tags, OriginAgentTag) || agentLaunched(task)
-	args = withStopHook(h, args, agent)
+	lean, leanMCP := leanOptions(req, task)
+	if lean && !isClaude(h) {
+		return nil, fmt.Errorf("%s cannot start lean. lean is a claude launch option", h.Label)
+	}
+	// finishArgs adds the Stop hook, or for a lean launch the whole lean set,
+	// which carries the Stop hook itself.
+	finishArgs := func(a []string) ([]string, error) {
+		if !lean {
+			return withStopHook(h, a, agent), nil
+		}
+		stop := ""
+		if agent {
+			stop = stopHookCommand()
+		}
+		return leanArgs(a, readUserSettings(), stop, leanMCP, os.ReadFile)
+	}
+	if args, err = finishArgs(args); err != nil {
+		return nil, err
+	}
+	if req.Lean {
+		base := req.Tags
+		if len(base) == 0 && task != nil {
+			base = task.Tags
+		}
+		req.Tags = mergeTags(base, leanTags(leanMCP))
+	}
 	prompt := wanted
 
 	title := strings.TrimSpace(req.Title)
@@ -857,6 +887,9 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 	// The cache keep-alive's switch for a new Claude card, from the room default,
 	// and the 1h cache pin when it is on. See keepalive.go.
 	d.keepaliveAtLaunch(task.ID, h, atrium)
+	if lean {
+		leanEnv(atrium)
+	}
 	env := childEnvFrom(base, h.Env, atrium)
 	d.prepareRunnerSetup(h, cwd, env)
 	via := ""
@@ -870,7 +903,12 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 		// start has nothing to fall back to and nothing to retry.
 		var fresh *launchSpec
 		if req.Resume != "" {
-			fresh = &launchSpec{cmd: h.Exe(), args: withStopHook(h, h.Args, agent), cwd: cwd, env: env}
+			freshArgs, err := finishArgs(h.Args)
+			if err != nil {
+				d.launchFailed(task.ID, err.Error())
+				return nil, err
+			}
+			fresh = &launchSpec{cmd: h.Exe(), args: freshArgs, cwd: cwd, env: env}
 		}
 		pid, err := d.spawnPTYResume(task.ID, h.Exe(), args, cwd, env, req.Resume != "", fresh)
 		if err != nil {
@@ -995,6 +1033,7 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 		"harness": h.ID, "cmd": logged, "cwd": cwd, "resume": req.Resume,
 		"via": via, "mode": h.LaunchMode, "prompted": prompt != "", "model": model,
 		"source": source, "external_id": req.ExternalID, "window": req.Window,
+		"lean": lean, "mcp": leanMCP,
 	}); err != nil {
 		return nil, err
 	}
