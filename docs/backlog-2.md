@@ -36,6 +36,9 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 27 | A say to a session that has gone waits forever, blaming the input line | bug | not started |
 | 28 | The full headless board run fails most of the time on `claude/main` | bug | not started |
 | 29 | sa85: lean workers, a launched worker starts with only what it needs | feature | DONE, `1043e35` `42b2221`, the room half needs a room restart |
+| 30 | Peer review on the mercurius protocol, run in an atrium session | design | not started, 2 open questions |
+| 31 | STUCK fires on a worker whose turn ended while it waits on background runs | bug | not started |
+| 32 | A queued say from http-support never produced a backlog entry, and nothing can say why | bug | not started |
 
 ------------
 
@@ -705,6 +708,61 @@ dropped, a filtered copy of the user settings (permissions, env and hooks kept),
 See `docs/lean-workers-design.md` for the numbers and what a lean worker loses, and `docs/test-plan.md` section BP.
 Left: the end-to-end check through `atrium_launch` after a room restart, and the ~5.9k of system tools that
 dropping the user source adds for no reason found yet.
+
+## 30. Peer review on the mercurius protocol, run in an atrium session (design)
+
+Raised 2026-09-28 by clint, brief written by the mercurius `http-support` session and copied to
+`docs/peer-review-brief.md`. A mercurius reviewer is structured, bounded, calibrated and logged per round, but it sees
+only a snapshot and cannot read neighbours or run `go test`. An atrium session has tools and is watchable, but its
+review output is free-form and unrecorded. The brief lists six mercurius pieces to adopt: the JSON output contract, the
+finding budget, calibration from `mercurius.yaml`, the code-review prompt, per-round records with dispositions, and a
+fresh read-only reviewer.
+
+The recommended shape is option A: mercurius adds an `atrium` reviewer beside `codex`, `claude` and `pi`, and owns the
+protocol. Atrium owns the runner. Atrium must provide a non-interactive launch with model, cwd, a read-only tool policy
+and a prompt, a completion signal, the final output as raw text, and a session id to link. Option B, atrium
+re-implements the protocol, duplicates it and drifts. Related: item 16, reviews that remember.
+
+Open:
+
+- Does the reviewer see a worktree pinned at a SHA, or the live tree?
+- Does a failed schema validation get one repair turn in the session, or fail the round as mercurius does today?
+
+The brief cites `prompt.BuildCodeReview` in mercurius `internal/prompt/prompt.go`, which exists only on the uncommitted
+`http-support` branch as of 2026-09-28.
+
+## 31. STUCK fires on a worker whose turn ended while it waits on background runs (bug)
+
+Raised 2026-09-28 by clint, from a screenshot. sa83 ended its turn at 09:55 with five headless runs going in the
+background, and the board marked it STUCK three minutes later: "it stopped without reporting". It was not stuck. It
+reported progress when asked. A turn that ends with background work still running is waiting, not stopped. Find
+whether atrium can see background tasks, from the Stop hook payload or the runner's process tree, and hold the alert
+while they run.
+
+## 32. A queued say from http-support never produced a backlog entry, and nothing can say why (bug)
+
+Raised 2026-09-28 by clint. About 09:22 local, the mercurius `http-support` session wrote a brief and sent a say to
+"the claude/main:atrium session (handle atrium)", asking for a backlog card and a reply with its id. It reported the
+say as queued, because the target was mid-tool-call. No card was filed and no reply went back. Item 30 was filed by
+hand later, after clint pasted the sender's own summary into the atrium session.
+
+What is known:
+
+- The atrium session's handle today is `atrium-87300`, not `atrium`. Whether `atrium` resolved to this card, to another
+  card, or to nothing is not recorded anywhere the receiver can read.
+- The atrium session ran `/clear` between the send and clint's question. If the say arrived before the clear, the
+  model read it and the clear erased it, which is a lost message from the operator's point of view.
+- `atrium_task` events on the receiving card reach back only a few minutes, so they cannot show whether the say was
+  delivered or when.
+
+What is wanted:
+
+- A say's lifecycle on record: sent, the handle it resolved to, queued, delivered, and the channel (terminal, hook, end
+  of turn). Both the sender and the receiver can look it up afterwards.
+- A handle that no longer matches exactly answers with the candidates, as `atrium tell` already does, instead of
+  queuing to a guess.
+- A request that asks for a reply shows as owed on the receiving card until it is answered, so a `/clear` or a compact
+  cannot drop it without a mark.
 
 
 ------------
