@@ -377,7 +377,11 @@ function wireSeg(seg, repaint) {
 // A folder rule rather than a command glob: the glob has to account for the
 // quoting around the path, and `rm -f "C:/x/*"` silently fails against
 // `rm -f "C:/x/y.db"` over the closing quote alone.
-async function allowFolder() {
+// One at a time, so a second press while the first is asking or writing does
+// not write the rules twice. See oneAtATime in js/core.js.
+function allowFolder() { return oneAtATime("rules-write", allowFolderNow); }
+
+async function allowFolderNow() {
   const dir = await askText("allow a folder",
     "Every request that touches anything under this folder stops asking, " +
     "whatever the command and however the path is quoted." +
@@ -421,7 +425,9 @@ async function allowFolder() {
   refresh();
 }
 
-async function dropRule(id) {
+function dropRule(id) { return oneAtATime("rule:" + id, () => dropRuleNow(id)); }
+
+async function dropRuleNow(id) {
   try { await api(`/v1/rules/${id}`, { method: "DELETE" }); } catch (e) { tellUser("atrium", e.message); }
   refresh();
 }
@@ -473,7 +479,9 @@ async function importFile(input) {
   await runImport({ source: "json", rules, include_broad: true });
 }
 
-async function runImport(body) {
+function runImport(body) { return oneAtATime("rules-write", () => runImportNow(body)); }
+
+async function runImportNow(body) {
   try {
     const res = await api("/v1/rules/import", {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body)

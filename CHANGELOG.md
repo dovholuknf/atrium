@@ -14,6 +14,22 @@ section heading is just "what landed in this iteration."
   copies the whole buffer. A popped-out window runs the same code. The new headless section `copySelect` covers it.
   HUB-SIDE.
 
+- **A button that fires a request shows it is working and refuses a second press.** See `docs/test-plan.md` section
+  BK (backlog-2 item 19).
+
+  `launch` on the resume dialog showed nothing while the runner started, so a second click went out and came back as
+  an error on a card the first click had already started. Now `busyWhile` in `js/core.js` is the one guard: the
+  pressed button turns into a spinner and a working label, the other buttons in its row go dim, and a second click,
+  Enter or call is refused until the request answers. A launch that fails keeps its dialog open and says why in it.
+  Flows with no button left to wear it (card menu entries, confirmations) go through `oneAtATime`, keyed by card. It
+  covers launch, resume, restart, unshelve, shelve, terminate, remove, the permission answers, say and note, the
+  approve-everything switch, rules, shares, overlays, dispatch, and every save, remove and run button in the rooms
+  and runners editors and the theme and skin pickers. The headless section `busyGuard` presses each twice.
+
+  The daemon is safe too: a launch onto a card that a launch started in the last 30 seconds, while that runner is
+  still up, answers with the card instead of `already has a runner on it`. HUB-SIDE for the board, the daemon half
+  needs a room restart.
+
 - **Any paste still on its way after 20ms shows the `pasting` spinner.** See `docs/test-plan.md` section BB.
 
   The spinner showed only for a paste of 2KB or more, so a short paste over a slow link sat in a terminal that looked

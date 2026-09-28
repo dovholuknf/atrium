@@ -325,7 +325,10 @@ async function deleteFixture() {
   renderFixtures();
 }
 
-async function startFixtureNow(id, room) {
+// One at a time: see oneAtATime in js/core.js.
+function startFixtureNow(id, room) { return oneAtATime("fixture:" + id, () => startFixtureNowNow(id, room)); }
+
+async function startFixtureNowNow(id, room) {
   if (!await chooseWriteRoom(rowOf(allFixtures, id, room), "fixture")) return;
   try {
     await api(`/v1/fixtures/${id}/start`, { method: "POST" });
@@ -1050,9 +1053,7 @@ function clearResolved(url) {
 async function recogniseLink() {
   const url = document.getElementById("l-url").value.trim();
   const note = document.getElementById("l-link-note");
-  const btn = document.getElementById("l-recognise");
   if (!url) return;
-  btn.disabled = true;
   note.classList.remove("warn");
   note.textContent = "recognising...";
   let got;
@@ -1062,7 +1063,6 @@ async function recogniseLink() {
       body: JSON.stringify({ url })
     });
   } catch (e) {
-    btn.disabled = false;
     note.classList.add("warn");
     // A url nothing matches is a 404 and reads as one. Not a failure: this
     // atrium has no row for that shape yet, and the fix is to write one.
@@ -1071,7 +1071,6 @@ async function recogniseLink() {
       : e.message;
     return;
   }
-  btn.disabled = false;
   launchResolved = got;
 
   // Only over what the recogniser had something to say about. A directory or a
@@ -1202,7 +1201,10 @@ async function loadHarnesses() {
 // Its own window is deliberately not offered: a second flyout under a flyout is
 // a level this menu does not draw, and a terminal already open pops out from
 // the attach entry two rows above.
-async function launchRunnerHere(harnessID, cwd, ontoTask, room) {
+// One at a time: see oneAtATime in js/core.js.
+function launchRunnerHere(harnessID, cwd, ontoTask, room) { return oneAtATime("launch:" + (ontoTask ? bareId(ontoTask) : harnessID + "@" + cwd), () => launchRunnerHereNow(harnessID, cwd, ontoTask, room)); }
+
+async function launchRunnerHereNow(harnessID, cwd, ontoTask, room) {
   // ON THE CARD'S OWN MACHINE. The directory is that machine's, so the launch
   // has to land there whichever room the board happens to be looking at. Empty
   // on a plain daemon and on a scoped board, where the request is already
@@ -1480,8 +1482,14 @@ function syncMore() {
 // no longer running, which is a different query against the same data and is a
 // genuine "again, where I was" rather than a list of occupied rooms.
 
-async function doLaunch() {
+// Through `busyWhile`, so the press shows and a second one, by click or by
+// Enter, is refused while the first is starting. See js/core.js.
+function doLaunch() {
   if (!launchTarget) return;
+  return busyWhile("l-go", launchNow, "starting…");
+}
+
+async function launchNow() {
   const picker = document.getElementById("l-harness");
   const resumeOff = !document.getElementById("l-resume-field").hidden &&
     !document.getElementById("l-resume-on").checked;
@@ -1542,19 +1550,11 @@ async function doLaunch() {
     const want = document.getElementById("l-room").value;
     if (want) headers["X-Atrium-Room"] = want;
   }
-  let task;
-  try {
-    task = await api("/v1/launch", {
-      method: "POST", headers, body: JSON.stringify(body)
-    });
-  } catch (e) {
-    // Close the launch dialog BEFORE the error, so the failure is not a modal
-    // stacked on a modal. The launch did not happen, so the dialog has nothing
-    // left to offer.
-    document.getElementById("launch").close();
-    tellUser("could not start it", e.message);
-    return;
-  }
+  // A refusal throws, and `busyWhile` puts the reason in this dialog with the
+  // form still filled in, rather than closing it and stacking a modal.
+  const task = await api("/v1/launch", {
+    method: "POST", headers, body: JSON.stringify(body)
+  });
   document.getElementById("launch").close();
 
   // Straight to the terminal you just started. Landing on the board instead

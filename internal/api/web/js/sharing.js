@@ -110,7 +110,10 @@ async function paintShareList() {
 // The list is what this is clicked from, and the row it was clicked on is about
 // to be a lie either way, so the list goes first and the toast lands on the
 // board where it can be read.
-async function stopSharingById(id) {
+// One at a time: see oneAtATime in js/core.js.
+function stopSharingById(id) { return oneAtATime("share:" + id, () => stopSharingByIdNow(id)); }
+
+async function stopSharingByIdNow(id) {
   if (askDlg && askDlg.open) askDlg.close();
   try {
     await api(`/v1/tasks/${id}/share`, { method: "DELETE" });
@@ -321,7 +324,10 @@ function shareButtons(list) {
   });
 }
 
-async function runShare(t, mode) {
+// One at a time: see oneAtATime in js/core.js.
+function runShare(t, mode) { return oneAtATime("share:" + t.id, () => runShareNow(t, mode)); }
+
+async function runShareNow(t, mode) {
   shareFor = t.id;
   shareAt = 0;
   shareEnded = false;
@@ -408,7 +414,10 @@ function showShareLink(t, s) {
 // were not about to lose. A reserved address is the opposite. Somebody is
 // holding this link, it survives restarts, and stopping is the one thing that
 // destroys it.
-async function stopSharing(t) {
+// One at a time: see oneAtATime in js/core.js.
+function stopSharing(t) { return oneAtATime("share:" + t.id, () => stopSharingNow(t)); }
+
+async function stopSharingNow(t) {
   if (!await confirmUser("stop sharing, and give up the address?",
     "This card's link stops working and <b>cannot be got back</b>. The address is " +
     "released from your zrok account, and sharing this card again gives a different " +
@@ -434,7 +443,10 @@ async function stopSharing(t) {
 // the card leaves that alone, so the conversation is still resumable from the
 // command line and `forget a conversation…` is the entry that removes it.
 // Saying so here is cheaper than the mistake.
-async function deleteCard(id, t) {
+// One at a time per card: see oneAtATime in js/core.js.
+function deleteCard(id, t) { return oneAtATime("forget:" + id, () => deleteNow(id, t)); }
+
+async function deleteNow(id, t) {
   const running = t.supervised || t.pid > 0;
   // TWO THINGS ARE CALLED THE SESSION, and which one you meant decides what
   // this does.
@@ -715,7 +727,10 @@ function fromTerminal(e) {
   return !!t.closest("#t-screen");
 }
 
-async function killById(id) {
+// One at a time per card: see oneAtATime in js/core.js.
+function killById(id) { return oneAtATime("kill:" + id, () => killNow(id)); }
+
+async function killNow(id) {
   const t = await api(`/v1/tasks/${id}`);
   if (!await confirmUser(`terminate ${t.display_title}?`,
     `Stops pid ${t.pid}. Anything it was part way through is lost. ` +
@@ -737,7 +752,9 @@ async function forgetCurrent() {
 }
 
 // Deleting one card, as opposed to clearing a whole column.
-async function forgetCard(id, title) {
+function forgetCard(id, title) { return oneAtATime("forget:" + id, () => forgetNow(id, title)); }
+
+async function forgetNow(id, title) {
   if (!await confirmUser(`forget ${title}?`,
     "The card and its whole history go. Anything still running is untouched.",
     "forget it")) return;
@@ -748,7 +765,10 @@ async function forgetCard(id, title) {
 
 // Deletes every card in a finished column. Only done and dead offer this; the
 // daemon refuses to sweep a shelved card even when asked.
-async function pruneColumn(status) {
+// One at a time: see oneAtATime in js/core.js.
+function pruneColumn(status) { return oneAtATime("prune:" + status, () => pruneColumnNow(status)); }
+
+async function pruneColumnNow(status) {
   const { tasks } = await api("/v1/tasks");
   const n = (tasks || []).filter(t => t.status === status).length;
   if (!n) return;

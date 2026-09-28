@@ -3606,6 +3606,179 @@ async function copySelectSection(browser, base) {
   tasksMode = was;
 }
 
+// ── a second press fires nothing (backlog-2 item 19) ─────────────────────
+// Every request-firing button goes through `busyWhile` or `oneAtATime` in
+// js/core.js. Each case presses twice (or calls twice) while the first request
+// is held open, and asserts exactly one request reached the wire. The launch
+// dialog also shows its spinner while held, closes on success, and on a refusal
+// stays open with the reason in it and the button live again.
+async function busyGuardSection(browser, base) {
+  const errors = [];
+  const ctx = await browser.newContext();
+  const hits = {};
+  let launchFails = false;
+  const hold = (key, reply, ms) => async route => {
+    hits[key] = (hits[key] || 0) + 1;
+    await new Promise(r => setTimeout(r, ms || 300));
+    await route.fulfill(reply());
+  };
+  const json = body => ({ contentType: "application/json", body: JSON.stringify(body) });
+  await ctx.addInitScript(() => {
+    localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true, "kill-runner": true }));
+  });
+  await ctx.route("**/v1/launch", hold("launch", () => launchFails
+    ? { status: 409, contentType: "application/json", body: JSON.stringify({ error: "the card is busy" }) }
+    : json({ id: "t1", supervised: false })));
+  await ctx.route("**/v1/tasks/*/kill", hold("kill", () => json({})));
+  await ctx.route("**/v1/permissions/*/decide", hold("decide", () => json({})));
+  await ctx.route("**/v1/tasks/*/message", hold("message", () => json({ delivered: "queued", when: "done" })));
+  await ctx.route("**/v1/tasks/*/note/send", hold("note", () => json({ delivered: "queued" })));
+  await ctx.route("**/v1/tasks/*/messages", route => route.fulfill(json({ messages: [] })));
+  await ctx.route("**/v1/settings", route => route.request().method() === "POST"
+    ? hold("settings", () => json({ global_auto: false }))(route) : route.fallback());
+  await ctx.route("**/__busy/*", route =>
+    hold("html:" + route.request().url().split("/__busy/")[1], () => json({}), 100)(route));
+  const once = (key, what) => {
+    if (hits[key] !== 1) fail(what + " sent " + (hits[key] || 0) + " requests for two presses, want 1.");
+  };
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: 15000 });
+
+    // 1. The launch dialog: two clicks and an Enter, one request, a spinner while held.
+    const openIt = () => p.evaluate(() => {
+      launchTarget = { harness: "claude", resume: "conv-1", task_id: "t1" };
+      document.getElementById("l-resume-field").hidden = false;
+      document.getElementById("l-resume-on").checked = true;
+      document.getElementById("launch").showModal();
+    });
+    await openIt();
+    const during = await p.evaluate(() => new Promise(done => {
+      const go = document.getElementById("l-go");
+      go.click();
+      go.click();
+      document.getElementById("l-cwd").dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+      doLaunch();
+      setTimeout(() => done({ busy: go.getAttribute("aria-busy"), disabled: go.disabled,
+        spin: !!go.querySelector(".busy-spin"), label: go.textContent }), 100);
+    }));
+    await p.waitForTimeout(600);
+    once("launch", "the launch dialog's launch button");
+    if (during.busy !== "true" || !during.disabled || !during.spin || !/starting/.test(during.label)) {
+      fail("a held launch did not show it was working: " + JSON.stringify(during));
+    }
+    const after = await p.evaluate(() => ({ open: document.getElementById("launch").open,
+      label: document.getElementById("l-go").textContent, disabled: document.getElementById("l-go").disabled }));
+    if (after.open) fail("a launch that succeeded left its dialog open.");
+    if (after.label !== "launch" || after.disabled) fail("the launch button did not come back: " + JSON.stringify(after));
+
+    // 2. A refused launch keeps the dialog, says why in it, and gives the button back.
+    launchFails = true;
+    await openIt();
+    await p.evaluate(() => document.getElementById("l-go").click());
+    await p.waitForTimeout(600);
+    const refused = await p.evaluate(() => {
+      const why = document.querySelector("#launch .busy-why");
+      return { open: document.getElementById("launch").open, why: why && why.textContent,
+        disabled: document.getElementById("l-go").disabled, label: document.getElementById("l-go").textContent };
+    });
+    if (!refused.open || refused.why !== "the card is busy" || refused.disabled || refused.label !== "launch") {
+      fail("a refused launch did not stay open with the reason and a live button: " + JSON.stringify(refused));
+    }
+    await p.evaluate(() => document.getElementById("launch").close());
+    await p.waitForTimeout(50);
+    if (await p.evaluate(() => !!document.querySelector("#launch .busy-why"))) {
+      fail("the refusal line outlived its dialog, so the next open wears the last failure.");
+    }
+    launchFails = false;
+
+    // 3. The card menu's resume, twice on one card.
+    hits.launch = 0;
+    await p.evaluate(() => Promise.all([
+      resumeNow("t1", { runner: "claude", worktree: "D:/w" }, "", "conv-1"),
+      resumeNow("t1", { runner: "claude", worktree: "D:/w" }, "", "conv-1")
+    ]));
+    once("launch", "resume from the card menu");
+
+    // 4. Terminate, twice on one card.
+    await p.evaluate(() => Promise.all([killById("t1"), killById("t1")]));
+    once("kill", "terminate");
+
+    // 5. A permission card's approve, double clicked, wearing the spinner while held.
+    const perm = await p.evaluate(() => new Promise(done => {
+      const el = permCard({ id: "pq1", tool: "Bash", command: "ls", requested_at: new Date().toISOString() });
+      document.body.appendChild(el);
+      const b = el.querySelector(".actions button");
+      b.click();
+      b.click();
+      setTimeout(() => done({ busy: b.getAttribute("aria-busy") }), 100);
+    }));
+    await p.waitForTimeout(600);
+    once("decide", "a permission card's approve");
+    if (perm.busy !== "true") fail("a permission answer in flight did not show it: " + JSON.stringify(perm));
+
+    // 6. The say box: send pressed twice and Enter once.
+    await p.evaluate(() => {
+      current = { id: "t1", status: "running", note: "" };
+      document.getElementById("d-say").value = "run the tests";
+      const b = document.getElementById("d-say-send");
+      b.click();
+      b.click();
+      sayToCurrent("done");
+    });
+    await p.waitForTimeout(600);
+    once("message", "the say box's send");
+
+    // 7. The note's send it, twice.
+    await p.evaluate(() => {
+      document.getElementById("d-note").value = "three things";
+      return Promise.all([sendNote("done"), sendNote("done")]);
+    });
+    once("note", "the note's send it");
+
+    // 8. The approve-everything switch, turned off twice.
+    await p.evaluate(() => { globalAuto = true; return Promise.all([toggleGlobalAuto(), toggleGlobalAuto()]); });
+    once("settings", "the approve-everything switch");
+
+    // 9. Every save, remove and run button wired in the page, each pressed twice
+    // and let answer before the next, since a held button also holds its row.
+    // The handler is stubbed to one request, so what is counted is the wiring.
+    const wired = await p.evaluate(async () => {
+      const buttons = [...document.querySelectorAll("button[onclick^='busyWhile(this, ']")];
+      const names = [];
+      for (const b of buttons) {
+        const m = /^busyWhile\(this, (\w+)/.exec(b.getAttribute("onclick"));
+        if (!m) continue;
+        names.push(m[1]);
+        window[m[1]] = () => fetch("/__busy/" + m[1], { method: "POST" });
+      }
+      for (const b of buttons) {
+        b.click();
+        b.click();
+        await new Promise(r => setTimeout(r, 200));
+      }
+      return names;
+    });
+    const distinct = [...new Set(wired)];
+    if (distinct.length < 25) fail("only " + distinct.length + " buttons go through busyWhile: " + distinct.join(","));
+    for (const n of ["saveHarness", "saveSource", "saveTheme", "keepTheme", "keepSkin", "deleteHarness",
+      "doDispatch", "saveProvider", "runSourceNow"]) {
+      if (!distinct.includes(n)) fail(n + " does not go through busyWhile.");
+    }
+    for (const n of distinct) {
+      const want = wired.filter(x => x === n).length;
+      if (hits["html:" + n] !== want) {
+        fail(n + " sent " + (hits["html:" + n] || 0) + " requests for " + want + " button(s) pressed twice each.");
+      }
+    }
+  } finally {
+    await ctx.close();
+  }
+  if (errors.length) fail("the busy guard page threw: " + errors.join(" | "));
+}
+
 async function main() {
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = "http://127.0.0.1:" + server.address().port;
@@ -3619,7 +3792,7 @@ async function main() {
       groupDrag: groupDragSection, tooltip: tooltipSection, popoutTagFlip: popoutTagFlipSection, idleRate: idleRateSection, foldStill: foldStillSection,
       untaggedSort: untaggedSortSection, newCard: newCardSection, themePreview: themePreviewSection, land: landSection, reselect: reselectSection,
       toastsTop: toastsTopSection, sayWhen: sayWhenSection, pasteSpinner: pasteSpinnerSection,
-      copySelect: copySelectSection };
+      copySelect: copySelectSection, busyGuard: busyGuardSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e)); }
@@ -5798,6 +5971,8 @@ async function main() {
     await pasteSpinnerSection(browser, base);
     // ── copy on select answers the pointer, not the find bar ───────────────
     await copySelectSection(browser, base);
+    // ── a second press fires nothing ──────────────────────────────────────
+    await busyGuardSection(browser, base);
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e));    if (process.env.DEBUG_HEADLESS) {
       try {

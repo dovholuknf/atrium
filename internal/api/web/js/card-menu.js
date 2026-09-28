@@ -89,9 +89,13 @@ function readyBecause(t) {
 // no process, so `running` would be a card describing something that is not
 // there. It goes to `finished` instead, which is what it is, and can be
 // launched fresh or forgotten from there.
-async function unshelveCard(id) {
-  await patchTask(id, { status: "running" });
-  refresh();
+//
+// Keyed with resume and launch, because it starts the runner too.
+function unshelveCard(id) {
+  return oneAtATime("launch:" + bareId(id), async () => {
+    await patchTask(id, { status: "running" });
+    refresh();
+  });
 }
 
 // Starts a finished card's runner again, onto the same card.
@@ -167,7 +171,10 @@ async function pickSession(id, t) {
 // operation, and nothing atrium holds refers to it except a card's resume id.
 // A card pointing at one that has gone falls back to starting fresh, which is
 // what it did before the conversation existed.
-async function forgetSessions(id, t) {
+// One at a time: see oneAtATime in js/core.js.
+function forgetSessions(id, t) { return oneAtATime("forget:" + id, () => forgetSessionsNow(id, t)); }
+
+async function forgetSessionsNow(id, t) {
   let list = [];
   try {
     list = (await api(`/v1/tasks/${id}/sessions`)).sessions || [];
@@ -209,7 +216,10 @@ async function forgetSessions(id, t) {
 
 // Give a throwaway a permanent directory. The response says whether it moved
 // now or will move after the running session exits.
-async function promoteCard(id, t) {
+// One at a time: see oneAtATime in js/core.js.
+function promoteCard(id, t) { return oneAtATime("promote:" + id, () => promoteCardNow(id, t)); }
+
+async function promoteCardNow(id, t) {
   const to = await askUser({
     title: "keep this work?",
     body: "This directory is temporary and is deleted when the session ends. " +
@@ -236,7 +246,13 @@ async function promoteCard(id, t) {
   refresh();
 }
 
-async function resumeNow(id, t, where, pick) {
+// One at a time per card, so a second resume while the first is starting is
+// refused here. See oneAtATime in js/core.js.
+function resumeNow(id, t, where, pick) {
+  return oneAtATime("launch:" + bareId(id), () => resumeStart(id, t, where, pick));
+}
+
+async function resumeStart(id, t, where, pick) {
   // Which conversation, when the directory has more than one. Returns the
   // card's own resume id without asking when there is nothing to choose
   // between, and null when the choice was cancelled.
@@ -752,7 +768,7 @@ async function cardMenu(e, id) {
       : over ? null
         : t.supervised
           ? { label: "shelve", note: "stops its runner",
-              act: () => patchTask(id, { status: "shelved" }).then(refresh) }
+              act: () => oneAtATime("shelve:" + id, () => patchTask(id, { status: "shelved" }).then(refresh)) }
           : { label: "shelve", note: "atrium does not own this process",
               limited: true,
               tip: "Shelving stops the runner, and atrium can only stop one it " +
