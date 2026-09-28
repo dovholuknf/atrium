@@ -31,6 +31,17 @@ section heading is just "what landed in this iteration."
   question, a dialog, or a background shell still rings as before. Needs a hook binary rebuild and a room restart.
   ROOM-SIDE.
 
+- **The "not replayed here" notice opens or loads the pre-restart history.** See `docs/test-plan.md` section BO.
+
+  An attach that replays only the newest 4 MB of a card's pre-restart history starts with a grey line that sent you
+  to the terminal's cog. Now the line has two links: `open all of it` opens the same viewer as the cog entry, and
+  `load all NMB in here` resets the terminal and re-attaches with `?carry=all`, under the paste spinner, to replay
+  every saved byte. The links are OSC 8 hyperlinks with an `atrium:` scheme, and each carries a nonce the board made
+  for that socket (`?link=`). The board swallows any `atrium:` link without that nonce, so a program that prints one
+  gets plain text. A lent session's guest gets the old line with no links, and a guest asking for `?carry=all` is
+  refused. The popped-out window takes the same path. The daemon half needs a room restart. The board half is
+  HUB-SIDE and is safe on its own: a room that does not know `?link=` sends the old line.
+
 - **Idle Claude cards keep their prompt cache warm, and stop at break-even.** See `docs/cache-keepalive-design.md`
   and `docs/test-plan.md` section BL.
 

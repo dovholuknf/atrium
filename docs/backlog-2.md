@@ -23,14 +23,14 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 14 | Per-card notification log | design | tentative |
 | 15 | Pluggable event sink, what is left | design | stages 1-2 done |
 | 16 | Reviews that remember: a resident reviewer per repo, and a panel that reads once | design, HIGH PRIORITY | not started, clint out of tokens 2026-09-25 |
-| 17 | A Claude subagent finishing tells clint the card is waiting on him | bug | fixed on `claude/subagent-stop`, needs a hook binary rebuild and a room restart. Test plan BN |
+| 17 | A Claude subagent finishing tells clint the card is waiting on him | bug | DONE, merged `29d45f5`, needs a hook binary rebuild and a room restart. Test plan BN |
 | 18 | On the terminals tab, toasts sit top right, not over the input line | feature | DONE, `910b186` |
 | 19 | Launch (and every other submit) shows it is working and refuses a second click | bug | DONE, `eb1603e` board, `50db006` daemon |
 | 20 | Selecting the terminal that is already attached re-renders its whole history | bug | DONE, `cf2fc2b` |
 | 21 | A card stuck on `running` after a lost Stop gets a "looks idle" badge from its silent terminal | bug | not started |
 | 22 | Copy on select copies every find match (ctrl-shift-f) | bug | DONE, `54fb554` |
 | 23 | sa78: keep idle Claude cards' prompt caches warm, stop at break-even | feature | DONE, merged `a917535`, deployed 2026-09-28 |
-| 24 | The "not replayed here" notice opens or loads the pre-restart history | feature | sa81 building |
+| 24 | sa81: the "not replayed here" notice opens or loads the pre-restart history | feature | DONE, `ddbeb9c` `cda7ae5`, the daemon half needs a room restart |
 | 25 | sa80: false STUCK alert after a slash command and a restart; stuck mark on the card; gear setting | bug | DONE, `d4803aa` `42258ef` `2a4ae89`, the fix needs a room restart |
 | 26 | Toasts pop and disappear in the same second | bug | not started |
 | 27 | A say to a session that has gone waits forever, blaming the input line | bug | not started |
@@ -618,6 +618,13 @@ Watch for:
 - A new attach parameter is a new endpoint for a lent session (`overlay_guest.go` allowlist). A guest must not get
   `carry=all` unless it already gets the history.
 - The popped-out window takes the same path.
+
+**Built by sa81 on `claude/carry-notice-link`, 2026-09-28.** The notice is its own frame ahead of the replay, since
+the screen model keeps no links. `open all of it` and `load all NMB in here` are OSC 8 `atrium:carry/...` links with
+a per-socket nonce the board sends as `?link=`. The board drops any `atrium:` link without it at parse time. `load`
+re-attaches with `?carry=all` under the paste spinner. A guest gets the old line, and `?carry=all` from a guest is
+a 403. Test plan BO, headless section `carryLink`, Go tests in `internal/daemon/carry_notice_test.go`. The daemon
+half needs a room restart. The board half is HUB-SIDE and safe alone.
 
 ## 25. A false STUCK alert, a stuck mark on the card, and a setting for it (bug)
 

@@ -115,11 +115,42 @@ const carryCutNotice = "\x1b[38;5;244m" +
 const carryReplayMax = 4 << 20
 
 // carryReplayNotice goes at the top of an attach whose pre-restart history was
-// cut to `carryReplayMax`.
+// cut to `carryReplayMax`, for a viewer that cannot take the links in
+// `carryLinkNotice`: an older board, and a guest.
 const carryReplayNotice = "\x1b[38;5;244m" +
 	"[atrium] ---- older output from before the restart is not replayed here. all of it is " +
 	"under the terminal's cog, history from before the restart ----" +
 	"\x1b[0m\r\n"
+
+// carryLinkNotice is the same line with its two actions as links: open the
+// whole history in the viewer, or re-attach with all of it replayed.
+//
+// OSC 8 HYPERLINKS WITH AN `atrium:` SCHEME, carrying a nonce the board made up
+// for this one attach (`?link=` on the attach url). The board takes an
+// `atrium:` link only with that nonce, so a program that prints one gets text
+// and nothing else: it never sees the nonce, which goes from the browser to the
+// daemon and into this line and nowhere near the pty. Marked by the scheme
+// rather than matched by the words, so rewording the line breaks nothing.
+func carryLinkNotice(nonce string, size int) string {
+	link := func(act, extra, text string) string {
+		return "\x1b]8;;atrium:carry/" + act + "?n=" + nonce + extra + "\x1b\\" + text + "\x1b]8;;\x1b\\"
+	}
+	// The size goes in the load link as well, for the spinner to say.
+	return "\x1b[38;5;244m" +
+		"[atrium] ---- older output from before the restart is not replayed here. " +
+		link("open", "", "open all of it") + " or " +
+		link("load", "&b="+strconv.Itoa(size), "load all "+humanBytes(int64(size))+" in here") + " ----" +
+		"\x1b[0m\r\n"
+}
+
+// carryNotice is the line for an attach that held `held` bytes of history
+// back, with links when the board asked for them with a usable nonce.
+func carryNotice(nonce string, held int) []byte {
+	if nonce != "" && len(nonce) <= 64 && carryNameOK(nonce) {
+		return []byte(carryLinkNotice(nonce, held))
+	}
+	return []byte(carryReplayNotice)
+}
 
 // carryover is one card's retained output and the width it was last composed
 // at.
@@ -499,12 +530,19 @@ func (d *Daemon) adoptCarryover(r *runner) {
 //
 // Bounded by `max`, the size one ring holds, trimmed from the old end, and
 // then by `carryReplayMax`, which is what keeps an attach fast. See there.
-func (r *runner) withCarried(live []byte, cuts []sizeCut, wantCols, max int) ([]byte, []sizeCut, bool) {
+// `all` lifts the second bound, for the notice's "load it in".
+//
+// `held` is the size of the saved file when `carryReplayMax` cut it, and zero
+// otherwise. The caller says so in `carryNotice`, as its own frame ahead of the
+// replay: in the replay it would go through the screen model, which keeps no
+// link.
+func (r *runner) withCarried(live []byte, cuts []sizeCut, wantCols, max int, all bool) (
+	out []byte, joined []sizeCut, trimmed bool, held int) {
 	r.mu.Lock()
 	c := r.carried
 	r.mu.Unlock()
 	if c == nil || len(c.bytes) == 0 || max <= 0 {
-		return live, cuts, false
+		return live, cuts, false, 0
 	}
 	// The reprint is looked for near the END of the saved bytes only. It
 	// repeats what the session said last, so its anchor's last copy sits within
@@ -515,43 +553,45 @@ func (r *runner) withCarried(live []byte, cuts []sizeCut, wantCols, max int) ([]
 	if w := carryReplayMax + 2*len(live); len(old) > w {
 		old = fromLineStart(old[len(old)-w:])
 	}
-	old = old[:reprintCut(old, live)]
+	cut := len(c.bytes) - len(old) + reprintCut(old, live)
+	if all {
+		old = c.bytes[:cut]
+	} else {
+		old = c.bytes[len(c.bytes)-len(old) : cut]
+	}
 	if len(old) == 0 {
-		return live, cuts, false
+		return live, cuts, false, 0
 	}
 	prefix := make([]byte, 0, len(old)+len(carryDivider))
 	prefix = append(prefix, old...)
 	prefix = append(prefix, carryDivider...)
-	trimmed := false
-	if budget := max - len(live); budget <= carryReplayMax && len(prefix) > budget {
+	if budget := max - len(live); (all || budget <= carryReplayMax) && len(prefix) > budget {
 		if budget <= len(carryDivider) {
-			return live, cuts, false
+			return live, cuts, false, 0
 		}
 		prefix = fromLineStart(prefix[len(prefix)-budget:])
 		trimmed = true
-	} else if len(prefix) > carryReplayMax {
+	} else if !all && len(prefix) > carryReplayMax {
 		// Cut by the replay bound, not by the setting, so the setting's notice
-		// would send somebody to raise a number that is not the reason. This
-		// one says where the rest is.
-		kept := fromLineStart(prefix[len(prefix)-carryReplayMax:])
-		prefix = make([]byte, 0, len(carryReplayNotice)+len(kept))
-		prefix = append(prefix, carryReplayNotice...)
-		prefix = append(prefix, kept...)
+		// would send somebody to raise a number that is not the reason. The
+		// caller's notice says where the rest is.
+		prefix = fromLineStart(prefix[len(prefix)-carryReplayMax:])
+		held = len(c.bytes)
 	}
-	out := make([]byte, 0, len(prefix)+len(live))
+	out = make([]byte, 0, len(prefix)+len(live))
 	out = append(out, prefix...)
 	out = append(out, live...)
 
 	// The saved run at its own width, then the live ring's cuts moved past it.
 	// A live ring with no mark at its start gets one at the width it is drawn at.
-	joined := []sizeCut{{0, c.cols, 0}}
+	joined = []sizeCut{{0, c.cols, 0}}
 	if len(cuts) == 0 || cuts[0].at > 0 {
 		joined = append(joined, sizeCut{len(prefix), wantCols, 0})
 	}
 	for _, cut := range cuts {
 		joined = append(joined, sizeCut{cut.at + len(prefix), cut.cols, cut.rows})
 	}
-	return out, joined, trimmed
+	return out, joined, trimmed, held
 }
 
 // reprintCut is where the saved bytes stop being new: the offset in `old` of

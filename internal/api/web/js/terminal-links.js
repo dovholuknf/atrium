@@ -391,6 +391,118 @@ function openTermURL(ev, uri) {
   a.remove();
 }
 
+// ── the "not replayed here" notice's two actions ─────────
+//
+// An attach that held pre-restart history back starts with a grey line whose
+// `open` and `load` are OSC 8 links with an `atrium:` scheme (`carryLinkNotice`
+// in internal/daemon/carryover.go). Each carries a nonce this page made up for
+// the socket and sent as `?link=`. A program can print an `atrium:` link too,
+// but it never sees the nonce, so its link is dropped at parse time and does
+// nothing if clicked.
+
+// This socket's nonce, or "" when the pane attached to something with no
+// history to offer (a shell).
+let carryNonce = "";
+// The card whose next attach asks for all of it, once.
+let carryAllNext = "";
+// The load in flight: the spinner, and the timer that gives up on it.
+let carryLoading = null;
+
+function newCarryNonce() {
+  const a = new Uint8Array(16);
+  crypto.getRandomValues(a);
+  return Array.from(a, b => b.toString(16).padStart(2, "0")).join("");
+}
+
+// `open` or `load` for a link this socket's notice drew, "" for anything else.
+function carryAction(uri) {
+  if (!carryNonce || !/^atrium:/i.test(uri || "")) return "";
+  let u;
+  try { u = new URL(uri); } catch (e) { return ""; }
+  if (u.searchParams.get("n") !== carryNonce) return "";
+  if (u.pathname === "carry/open") return "open";
+  if (u.pathname === "carry/load") return "load";
+  return "";
+}
+
+// THE PARSE-TIME HALF. Runs ahead of xterm's own OSC 8 handler and swallows
+// every link that is not http(s) or this socket's own, so a forged one is plain
+// text. `linkHandler` has to allow non-http schemes for ours to be a link at
+// all, and this keeps every other scheme as unclickable as it was before.
+function useCarryLinks(t) {
+  try {
+    t.parser.registerOscHandler(8, data => {
+      const uri = data.slice(data.indexOf(";") + 1);
+      if (!uri || /^https?:/i.test(uri)) return false;
+      return !carryAction(uri);
+    });
+  } catch (e) {
+    console.warn("the notice's links would not register:", e);
+  }
+}
+
+// THE CLICK-TIME HALF, xterm's `linkHandler` option. The nonce is checked again
+// because a line can outlive the socket that drew it.
+const termLinkHandler = {
+  allowNonHttpProtocols: true,
+  activate: (ev, uri) => {
+    const act = carryAction(uri);
+    if (act) {
+      if (ev && ev.button) return;
+      if (ev) ev.preventDefault();
+      carryAct(act, uri);
+      return;
+    }
+    if (!/^https?:/i.test(uri)) return;
+    // xterm's own answer for a link a program printed, kept as it was.
+    if (!confirm(`Do you want to navigate to ${uri}?\n\nWARNING: This link could potentially be dangerous`)) return;
+    const w = open();
+    if (!w) return;
+    try { w.opener = null; } catch (e) {}
+    w.location.href = uri;
+  }
+};
+
+function carryAct(act, uri) {
+  const t = termTask;
+  if (!t) return;
+  if (act === "open") {
+    openOlderScrollback(t.id);
+    return;
+  }
+  // LOAD IT IN. xterm cannot put bytes above its scrollback, so this is a
+  // reset and a re-attach that asks for all of it. `onopen` does the reset.
+  let n = 0;
+  try { n = Number(new URL(uri).searchParams.get("b")) || 0; } catch (e) {}
+  carryAllNext = t.id;
+  carryLoadBegin(n);
+  connectTerm(t.id);
+}
+
+// The paste spinner's box, saying what is landing.
+function carryLoadBegin(n) {
+  carryLoadEnd();
+  carryLoading = { timer: setTimeout(carryLoadEnd, 60000) };
+  showPasting(n ? "loading " + pasteSize(n) + " of history" : "loading the history");
+}
+
+function carryLoadEnd() {
+  if (!carryLoading) return;
+  clearTimeout(carryLoading.timer);
+  carryLoading = null;
+  pasteEnd();
+}
+
+// Where a load's replay has been parsed, so the spinner can go. The replay is
+// the first big frame. Every frame ahead of it is a short line.
+function carryLoadDone(bytes, done) {
+  if (!carryLoading || bytes.length < 4096) return done;
+  return function () {
+    if (done) done.apply(this, arguments);
+    carryLoadEnd();
+  };
+}
+
 // The colours are the theme's. A hit highlighted in board-blue on a dark green
 // terminal is the same mistake the rest of the chrome just stopped making.
 //
@@ -722,7 +834,16 @@ function connectTerm(taskID) {
   // Absent means the runner, which is what the daemon assumes too, so the
   // parameter is only ever added rather than always sent. That keeps the
   // ordinary URL identical to what it was before shells existed.
-  const kind = termKind === "shell" ? "?kind=shell" : "";
+  let kind = "?kind=shell";
+  carryNonce = "";
+  if (termKind !== "shell") {
+    // A fresh nonce for the notice's links on every socket, and all of the
+    // pre-restart history when its `load` asked for it. See `carryAction`.
+    carryNonce = newCarryNonce();
+    kind = "?link=" + carryNonce;
+    if (carryAllNext === taskID) kind += "&carry=all";
+  }
+  carryAllNext = "";
   // A new socket says what it is attached to for itself. Held over, this would
   // be the previous session's answer applied to this one, and switching from
   // an agent to a card's shell would bracket a paste the shell never asked for.
@@ -822,7 +943,8 @@ function connectTerm(taskID) {
       return;
     }
     pasteSawOutput();
-    writeRunnerOutput(term, new Uint8Array(e.data), lagOnOutput(followScroll));
+    const bytes = new Uint8Array(e.data);
+    writeRunnerOutput(term, bytes, carryLoadDone(bytes, lagOnOutput(followScroll)));
   };
   termSock.onclose = async ev => {
     if (!term) return;
@@ -840,6 +962,7 @@ function connectTerm(taskID) {
     // of yet.
     if (termSock !== sock) return;
     traceCtl({ ev: "sock-close", code: ev ? ev.code : 0, reason: ev ? ev.reason : "" });
+    carryLoadEnd();
 
     // The daemon's own word for what just happened, or an empty string when
     // the close did not come from it at all: a connection that dropped carries
@@ -1504,6 +1627,15 @@ function pasteSawOutput() {
 }
 
 function pasteShow(f) {
+  showPasting("pasting " + pasteSize(f.n));
+}
+
+function pasteSize(n) {
+  return n < 1024 ? n + "B" : n < 1024 * 1024 ? Math.round(n / 1024) + "KB" : (n / 1048576).toFixed(1) + "MB";
+}
+
+// The spinner box itself, which a load of the pre-restart history wears too.
+function showPasting(say) {
   const host = document.getElementById("term-pane");
   if (!host) return;
   let el = document.getElementById("t-pasting");
@@ -1513,8 +1645,7 @@ function pasteShow(f) {
     el.setAttribute("role", "status");
     host.appendChild(el);
   }
-  const kb = f.n < 1024 ? f.n + "B" : f.n < 1024 * 1024 ? Math.round(f.n / 1024) + "KB" : (f.n / 1048576).toFixed(1) + "MB";
-  setHTML(el, `<span class="shspin"></span><span>pasting ${esc(kb)}</span>`);
+  setHTML(el, `<span class="shspin"></span><span>${esc(say)}</span>`);
   el.hidden = false;
   placeToasts();
 }
