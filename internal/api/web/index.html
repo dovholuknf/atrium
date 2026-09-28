@@ -344,9 +344,7 @@ Exports honor whatever filter is applied.">?</span>
             <span id="t-mark"></span>
             <strong id="t-title">nothing attached</strong>
           </span>
-          <span class="chips" id="t-chips"></span>
-          <span class="chips" id="t-ctxsize"></span>
-          <!-- Hidden until the cog asks for it. On the bar rather than in a
+          <span class="chips" id="t-chips"></span>          <!-- Hidden until the cog asks for it. On the bar rather than in a
                dialog because the terminal underneath IS the preview: a theme
                is judged against real output, not against its name. -->
           <!-- Stays up until it is answered. Committing on blur meant the
@@ -509,12 +507,28 @@ Exports honor whatever filter is applied.">?</span>
           </div>
         </div>
         <div id="t-screen"></div>
-        <!-- Keep the shortcut strip to one line, listing keys and actions. -->
-        <div class="term-help">
-          ctrl-c copies a selection, interrupts otherwise &middot;
-          ctrl-v or shift-insert pastes &middot;
-          ctrl-a selects the buffer &middot;
-          shift-enter or ctrl-enter for a newline
+        <!-- The attached card's details, slid up from the shortcut strip. Read
+             only when opened. See js/peek.js. -->
+        <div class="term-foot">
+        <div class="term-drawer" id="t-drawer" aria-hidden="true">
+          <div class="peek-body" id="t-drawer-body"></div>
+        </div>
+        <!-- Keep the shortcut strip to one line, listing keys and actions. The
+             line, or its expando, opens the drawer above it. -->
+        <div class="term-help" onclick="toggleTermDrawer()">
+          <span class="term-help-keys">
+            ctrl-c copies a selection, interrupts otherwise &middot;
+            ctrl-v or shift-insert pastes &middot;
+            ctrl-a selects the buffer &middot;
+            shift-enter or ctrl-enter for a newline
+          </span>
+          <button type="button" class="term-expando" id="t-expando" aria-expanded="false"
+            aria-label="this card's details" data-tip="this card's details"
+            onclick="event.stopPropagation(); toggleTermDrawer()"
+            >details<svg viewBox="0 0 10 10" width="9" height="9" aria-hidden="true" fill="none"
+              stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"
+              ><path d="M2 6.5 5 3.5 8 6.5"/></svg></button>
+        </div>
         </div>
       </section>
     </div>
@@ -2984,6 +2998,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/expose3.js"></script>
 <script src="/js/notes-files.js"></script>
 <script src="/js/usage.js"></script>
+<script src="/js/peek.js"></script>
 <script src="/js/settings-spine.js"></script>
 <script src="/js/themes.js"></script>
 <script src="/js/terminal.js"></script>

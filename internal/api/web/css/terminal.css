@@ -606,12 +606,43 @@
      green pane was the one piece of chrome that had not been told which surface it was on. `--term-fg` is the
      theme's foreground, faded, since this is a footnote and not output. */
   .term-help {
-    padding: 5px 14px; border-top: 1px solid var(--term-line, var(--stroke-dim));
+    display: flex; align-items: center; gap: var(--sp-3);
+    padding: 5px 8px 5px 14px; border-top: 1px solid var(--term-line, var(--stroke-dim));
     font: var(--fs-xs)/1.4 var(--mono); color: var(--term-fg, var(--dimmest));
-    opacity: .55; flex: 0 0 auto;
-    /* One line. It is a reminder of four shortcuts and it was taking three rows off the bottom of the
-       terminal to say them. */
+    cursor: pointer;
+  }
+  /* One line. It is a reminder of four shortcuts and it was taking three rows off the bottom of the terminal
+     to say them. */
+  .term-help-keys {
+    flex: 1 1 auto; min-width: 0; opacity: .55;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  /* The strip and the drawer that slides up off it. The drawer lies OVER the bottom of the terminal rather
+     than pushing it up: a pane that changed height would resize the pty, and a runner reprints at every size
+     it passes through. */
+  .term-foot { position: relative; flex: 0 0 auto; }
+  .term-expando {
+    flex: 0 0 auto; display: inline-flex; align-items: center; gap: 5px;
+    padding: 1px 8px; border: 1px solid transparent; border-radius: var(--r-pill);
+    background: transparent; color: inherit; font: inherit; letter-spacing: .06em; cursor: pointer;
+    opacity: .6; transition: opacity .15s ease, border-color .15s ease, background .15s ease;
+  }
+  .term-expando svg { transition: transform .22s cubic-bezier(.2,.8,.2,1); }
+  .term-help:hover .term-expando, .term-expando:focus-visible { opacity: 1; border-color: currentColor; }
+  .term-expando[aria-expanded="true"] { opacity: 1; background: rgba(var(--teal-rgb),.12); }
+  .term-expando[aria-expanded="true"] svg { transform: rotate(180deg); }
+  .term-drawer {
+    position: absolute; right: 10px; bottom: calc(100% + 8px); z-index: 30;
+    width: min(340px, calc(100% - 20px));
+    opacity: 0; visibility: hidden; transform: translateY(14px);
+    transition: opacity .2s ease, transform .26s cubic-bezier(.2,.8,.2,1), visibility 0s linear .26s;
+  }
+  .term-drawer.open {
+    opacity: 1; visibility: visible; transform: none;
+    transition: opacity .2s ease, transform .26s cubic-bezier(.2,.8,.2,1), visibility 0s;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .term-drawer, .term-drawer.open, .term-expando svg { transition: none; }
   }
   /* A request while attached. The runner is blocked and the terminal shows nothing, so the question has to
      appear where you are looking. */

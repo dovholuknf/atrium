@@ -4225,3 +4225,50 @@ connection.
 **Expected:** the first run stops the room, removes the autostart, the binary, the room's key, its database and
 ledger, the address folder and `~/.atrium/provision`, then removes the room from the hub. Anything that was on the
 target before the first provision is still there. The second run says `provision state skip` and exits 0.
+
+## BV. A card past the context threshold wears a mark, its launcher hears once, and its details are a hover away
+
+BV1 to BV4 need the room built from this change and a room restart, and on a hub board the hub rebuilt and restarted
+too. Go tests in `internal/daemon/contextsize_test.go` cover the size read from the transcript, the gear threshold,
+one notice per crossing, a new notice after the card falls back under the line and crosses again, none for a card a
+human started, and none again after a restart. The headless section `contextSize` in
+`scripts/test-board-headless.js` (`HEADLESS_ONLY=contextSize`) covers the mark, no number on any card face or the
+terminal bar, the two-second hover, the menu's `details`, the drawer, and that nothing reads usage before one of them
+opens. See `docs/backlog-2.md` item 45.
+
+### BV1. The mark, and no number
+
+1. Open the gear. Set `context size to warn at` to a number under a running Claude card's context, for example 20.
+2. Wait up to a minute for the reaper's tick.
+
+**Expected:** that card, on the board and on the stack, wears a small warn-coloured mark with no text. Hovering the
+mark names the threshold. No card face, stack row, terminal bar or terminals list shows a context number. A card
+under the line has no mark. `reset to default (150)` puts it back.
+
+### BV2. Two seconds on a card, and the menu's `details`
+
+1. Rest the pointer on a Claude card for one second, then two.
+2. Move off it. Then right-click the card and pick `details`.
+
+**Expected:** nothing at one second. At two, a small panel beside the card: its name, status and model, the context
+now as a large number over a bar with the threshold marked, and turns, in, out, cache read, cache write and the
+estimate. Numbers shimmer for a moment while they are read. Past the line the number and the bar are in the warn
+colour. Moving off the card and the panel closes it. From the menu the same panel stays until a click elsewhere or
+escape. Switch the skin in the gear and repeat: the panel wears the new skin.
+
+### BV3. The drawer on the shortcut strip
+
+1. Attach a Claude card's terminal. Click `details` at the right end of the `ctrl-c copies a selection…` strip.
+2. Attach another card with the drawer open. Then click the strip's text.
+
+**Expected:** the same panel slides up above the strip, over the bottom of the terminal. The terminal does not
+change size. It follows the terminal to the second card. Clicking the strip again slides it away.
+
+### BV4. The launcher hears once
+
+1. From an orchestrator session, `atrium_launch` a worker. Lower the threshold under the worker's context.
+2. Let two more of the worker's turns end. Restart the room. Let another turn end.
+
+**Expected:** the orchestrator gets one message: `<worker> is at <N>k context. Tell it to report what it has and
+stop, or hand off.` Nothing after the later turns, and nothing after the restart. A card you started yourself, past
+the same line, has the mark and sends nobody anything.
