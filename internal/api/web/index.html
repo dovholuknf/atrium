@@ -508,15 +508,15 @@ Exports honor whatever filter is applied.">?</span>
           </div>
         </div>
         <div id="t-screen"></div>
-        <!-- What atrium thinks is on the input line, and whether a say may be
-             typed in. A debug readout, off unless switched on. See js/typing.js. -->
-        <div class="term-typing" id="t-typing" role="status" hidden></div>
         <!-- The attached card's details, slid up from the shortcut strip. Read
              only when opened. See js/peek.js. -->
         <div class="term-foot">
         <div class="term-drawer" id="t-drawer" aria-hidden="true">
           <div class="peek-body" id="t-drawer-body"></div>
         </div>
+        <!-- What atrium thinks is on the input line, and whether a say may be
+             typed in. A debug readout, off unless switched on. See js/typing.js. -->
+        <div class="term-typing" id="t-typing" role="status" hidden></div>
         <!-- Keep the shortcut strip to one line, listing keys and actions. The
              line, or its expando, opens the drawer above it. -->
         <div class="term-help" onclick="toggleTermDrawer()">
