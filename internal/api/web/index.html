@@ -1419,6 +1419,19 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         arrival extends the wait rather than starting a second one, up to three times the setting, so a steady
         trickle still gets announced.</span>
     </div>
+    <div class="field">
+      <label class="eyebrow" for="s-stuck">stuck agents</label>
+      <div class="picker">
+        <select id="s-stuck">
+          <option value="alert">alert me, and mark the card</option>
+          <option value="mark">only mark the card</option>
+          <option value="off">off</option>
+        </select>
+      </div>
+      <span class="hintline">A card another session launched is stuck when it ended a turn without reporting, or one
+        tool call has run too long. The alert rings on a widening backoff. The mark stays on the card until it moves
+        again.</span>
+    </div>
 
     <div class="field" id="s-skipped-field" hidden>
       <label class="eyebrow">questions you turned off</label>

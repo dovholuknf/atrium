@@ -459,6 +459,7 @@ function stackRow(t) {
       ${t.why ? `<span class="why">${esc(t.why)}</span>` : ""}
     </div>
     <div class="chips">
+      ${stuckMark(t)}
       ${newCardChip(t)}
       ${tagChips(t)}
       ${modelChip(t)}
@@ -552,6 +553,37 @@ function popIcon() {
 
 // Shared with paintStack's filter, and used by stackRow.
 function over(t) { return ["done", "dead"].includes(t.status); }
+
+// A launched card the room says is stuck, one step or more into the backoff.
+// The room clears `escalation` the moment the card moves, which is what takes
+// the mark down. See internal/daemon/a2a.go.
+function isStuck(t) {
+  return !!(t && t.escalation && t.escalation.count > 0 && !over(t));
+}
+
+// THE STUCK MARK, drawn wherever the card is: the stack, the board and the
+// terminal strip. A stopped clock in the warn colour, with the room's own
+// words and the moment it got stuck on hover. The gear's "stuck agents"
+// setting at off takes it down with the alert.
+function stuckMark(t) {
+  if (!isStuck(t) || (typeof alerting !== "undefined" && alerting.get().stuck === "off")) return "";
+  const since = new Date(t.escalation.since);
+  const when = isNaN(since) ? "" : ". stuck since " + (since.toDateString() === new Date().toDateString()
+    ? since.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+    : since.toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" }));
+  const tip = t.escalation.text + when;
+  return `<span class="chip warn icon stuck" aria-label="${esc(tip)}" data-tip="${esc(tip)}"
+    >${stuckIcon()}</span>`;
+}
+
+function stuckIcon() {
+  return `<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"
+    fill="none" stroke="currentColor" stroke-width="1.6"
+    stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="8" cy="8.5" r="6"/><path d="M8 5v3.5"/><path d="M6 1.5h4"/>
+    <path d="M5.5 11.5h5"/>
+  </svg>`;
+}
 
 // Keeping a card where it can be found.
 //
