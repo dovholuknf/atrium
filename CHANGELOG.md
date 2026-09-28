@@ -5,6 +5,20 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **A launch picks its model and thinking effort, and passes extra args and env through.** See
+  `docs/launch-options-design.md`, `docs/test-plan.md` section CA and `docs/backlog-2.md` item 48.
+
+  `atrium_launch`, `atrium launch` (`--effort`, `--arg`, `--env KEY=VALUE`) and the board's launch dialog take
+  `model` and `effort`, which each runner's row maps to its own flag or env var, and `args` and `env`, used as given.
+  Nothing is checked against a list of models or levels. Claude takes `--model` and `--effort`, codex `--model` and
+  `-c model_reasoning_effort=`. A runner with no mapping refuses, and so does an `ATRIUM_` env key or one given twice.
+  The card keeps all four, so a restart comes back the same, and shows them on its model chip, env by name only:
+  the values never leave the room. A stale-resume retry now keeps the model too, where it used to fall back to the
+  default. The runner editor gains effort args and model and effort env var names. The hub's `atrium_launch` now
+  passes `model` as well, and warns when a room older than this drops the rest. Migration `0065_launch_options`.
+  `internal/store`, `internal/daemon`, `internal/cli` launch, `internal/api/web`: ROOM RESTART.
+  `internal/link` (`atrium_launch`): HUB RESTART.
+
 - **A card past a context threshold wears a mark, its launcher hears once, and a card's details are a hover away.**
   See `docs/backlog-2.md` item 45 and `docs/test-plan.md` section BZ.
 

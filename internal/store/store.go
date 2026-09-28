@@ -177,6 +177,18 @@ type Task struct {
 	// what a source is: it is text the operator typed, handed to the runner in
 	// the shape that runner declared.
 	Model string `json:"model,omitempty"`
+	// Effort, LaunchArgs and LaunchEnv are the rest of what this card was
+	// launched with, sticky the same way Model is. See
+	// docs/launch-options-design.md. Effort is text the runner is handed in the
+	// shape its harness row declares, never checked against a list.
+	//
+	// THE ENV VALUES NEVER LEAVE THE ROOM. A restart needs them, so they are
+	// stored, but a token passed as env must not land on a board or a hub, so
+	// the JSON carries the key names only.
+	Effort        string            `json:"effort,omitempty"`
+	LaunchArgs    []string          `json:"launch_args,omitempty"`
+	LaunchEnv     map[string]string `json:"-"`
+	LaunchEnvKeys []string          `json:"launch_env_keys,omitempty"`
 	// LastCols is how wide this card's terminal was when it was last stopped.
 	//
 	// Written at the wind-down, never on the resize itself. A browser sends a
