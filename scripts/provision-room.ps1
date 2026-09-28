@@ -468,7 +468,14 @@ if ($Remove) {
     $rmScript = if ($os -eq 'windows') {
         (($preKeys | ForEach-Object { "`$pre_$_ = `$$($was[$_])" }) -join "`n") + "`n" +
         "`$auto = `$$hadAutostart`n" +
-        "`$installed = @($((@($installed | ForEach-Object { Quote-Ps $_ })) -join ', '))`n" + @'
+        "`$installed = @($((@($installed | ForEach-Object { Quote-Ps $_ })) -join ', '))`n" +
+        "`$pathadded = $(Quote-Ps "$($manifest.pathadded)")`n" + @'
+if ($pathadded -eq 'registry') {
+    $d = Join-Path $HOME '.local\bin'
+    $cur = [Environment]::GetEnvironmentVariable('Path', 'User')
+    [Environment]::SetEnvironmentVariable('Path', ((@($cur -split ';') | Where-Object { $_ -and $_ -ne $d }) -join ';'), 'User')
+    "path=removed ~\.local\bin from the user's Path"
+}
 if (Test-Path $Bin) { try { & $Bin stop --url http://127.0.0.1:7781 2>&1 | Out-Null } catch {} }
 if ($auto -and -not $pre_service -and (Get-ScheduledTask -TaskName atrium -ErrorAction SilentlyContinue)) {
     Stop-ScheduledTask -TaskName atrium -ErrorAction SilentlyContinue
@@ -497,7 +504,15 @@ else {
     } else {
         (($preKeys | ForEach-Object { "pre_$_=$($was[$_])" }) -join "`n") + "`n" +
         "auto=$hadAutostart`n" +
-        "installed=$(Quote-Sh (($installed) -join "`n"))`n" + @'
+        "installed=$(Quote-Sh (($installed) -join "`n"))`n" +
+        "pathadded=$(Quote-Sh "$($manifest.pathadded)")`n" + @'
+case "$pathadded" in "$HOME"/*)
+  if [ -f "$pathadded" ]; then
+    grep -v '# added by atrium provision-room$' "$pathadded" > "$pathadded.atrium-tmp" || true
+    cat "$pathadded.atrium-tmp" > "$pathadded"; rm -f "$pathadded.atrium-tmp"
+    echo "path=removed the line this added to $pathadded"
+  fi;;
+esac
 if [ -x "$Bin" ]; then "$Bin" stop --url http://127.0.0.1:7781 >/dev/null 2>&1 || true; fi
 if [ "$auto" = True ] && [ "$pre_service" = False ] && [ -f "$P/scripts/atrium-service.sh" ]; then
   ATRIUM_EXE="$Bin" ATRIUM_SERVICE_VERB=room bash "$P/scripts/atrium-service.sh" uninstall >/dev/null 2>&1 || true
@@ -529,6 +544,7 @@ if [ "$pre_bindir" = False ]; then rmdir "$(dirname "$Bin")" 2>/dev/null || true
     else { Step 'autostart' 'skip' 'none was installed' }
     $gone = @($rm.Out | Where-Object { $_ -like 'runner=removed *' } | ForEach-Object { $_.Substring(15) })
     if ($gone) { Step 'runners' 'done' "removed $($gone -join ', ')" }
+    if ($kv.path) { Step 'path' 'done' ($kv.path -replace '^removed', 'removed') }
     Step 'files' 'done' $kv.files
 
     # A ROOM HEARD FROM IN THE LAST TWENTY SECONDS IS NOT REMOVED, even forced,
@@ -591,7 +607,8 @@ if (-not $manifest) {
 $manifest.hub = $hubId
 $manifest.transport = $transport
 # Autostart, once installed, stays until -Remove.
-$useAutostart = $Autostart -or [bool] $manifest.autostart
+$hadAutostartBefore = [bool] $manifest.autostart
+$useAutostart = $Autostart -or $hadAutostartBefore
 $manifest.autostart = $useAutostart
 Save-Manifest
 
@@ -801,132 +818,7 @@ if ($state.joinedroom -eq $Name -and $joinedId -eq $hubId) {
     Step 'join' 'done' $detail
 }
 
-# ── 7. run it: in the background, or through autostart ───────────────────────
-
-$startedAt = Get-Date
-if (-not $useAutostart) {
-    $ds = if ($os -eq 'windows') { "`$ErrorActionPreference = 'Continue'`n& `$Bin room --detach 2>&1`nexit `$LASTEXITCODE" } else { "`"`$Bin`" room --detach 2>&1" }
-    $r = Invoke-Remote $ds
-    if ($r.Code -ne 0) { Fail 'start' 3 'the room would not start' $r.Out }
-    $said = ($r.Out -join ' ')
-    if ($said -match 'already answers') { $startWord = 'ok'; Step 'start' 'ok' 'already running, no autostart' }
-    else { $startWord = 'done'; Step 'start' 'done' 'in the background with room --detach, no autostart. it stops at restart or logout' }
-} else {
-    # THE SERVICE SCRIPTS GO OVER FIRST, with LF endings for Unix whatever this
-    # checkout has, because a shell script with a carriage return on every line
-    # does not run.
-    $files = if ($os -eq 'windows') {
-        @(@('scripts/atrium-service.ps1', 'scripts'), @('scripts/atrium-autostart.ps1', 'scripts'))
-    } else {
-        @(@('scripts/atrium-service.sh', 'scripts'), @('packaging/atrium.service', 'packaging'),
-          @('packaging/atrium.plist', 'packaging'))
-    }
-    $stage = Join-Path $work "${os}_$goarch/files"
-    New-Item -ItemType Directory -Force -Path $stage | Out-Null
-    $mk = if ($os -eq 'windows') { "New-Item -ItemType Directory -Force -Path (Join-Path `$P 'scripts') | Out-Null" }
-          else { "mkdir -p `"`$P/scripts`" `"`$P/packaging`"" }
-    $null = Invoke-Remote $mk
-    foreach ($f in $files) {
-        $src = Join-Path $PSScriptRoot "../$($f[0])"
-        if (-not (Test-Path $src)) { Fail 'autostart' 3 "$($f[0]) is not beside this script" }
-        $dst = Join-Path $stage (Split-Path -Leaf $f[0])
-        $text = [IO.File]::ReadAllText($src)
-        if ($os -ne 'windows') { $text = $text -replace "`r`n", "`n" }
-        [IO.File]::WriteAllText($dst, $text)
-        $c = Copy-ToRemote $dst ".atrium/provision/$($f[1])/$(Split-Path -Leaf $f[0])"
-        if ($c.Code -ne 0) { Fail 'autostart' 3 "scp of $($f[0]) failed" $c.Out }
-    }
-
-    if ($os -eq 'windows') {
-        $as = @'
-$t = Get-ScheduledTask -TaskName atrium -ErrorAction SilentlyContinue
-if ($t -and $t.Actions[0].Arguments -like "*$Bin*room --db*") { "autostart=ok" }
-else {
-    $o = & (Join-Path $P 'scripts\atrium-service.ps1') install -Verb room -Exe $Bin *>&1
-    if (-not (Get-ScheduledTask -TaskName atrium -ErrorAction SilentlyContinue)) { $o; exit 1 }
-    "autostart=done"
-}
-$up = $false
-try { $null = Invoke-RestMethod http://127.0.0.1:7781/v1/health -TimeoutSec 3; $up = $true } catch {}
-if ($up) { "start=ok" } else {
-    Start-ScheduledTask -TaskName atrium
-    $deadline = (Get-Date).AddSeconds(30)
-    while (-not $up -and (Get-Date) -lt $deadline) {
-        Start-Sleep -Seconds 1
-        try { $null = Invoke-RestMethod http://127.0.0.1:7781/v1/health -TimeoutSec 2; $up = $true } catch {}
-    }
-    if ($up) { "start=done" } else {
-        $i = Get-ScheduledTaskInfo -TaskName atrium
-        "start=fail the task did not bring the room up, last result 0x$('{0:X}' -f $i.LastTaskResult). an Interactive task needs the user logged in at the machine"
-    }
-}
-'@
-    } else {
-        $as = "LINGER=$(if ($Linger) { '1' } else { '' })`n" + @'
-S="$P/scripts/atrium-service.sh"
-u="$HOME/.config/systemd/user/atrium.service"
-p="$HOME/Library/LaunchAgents/io.github.dovholuknf.atrium.plist"
-if { [ -f "$u" ] && grep -q "^ExecStart=$Bin room" "$u"; } || { [ -f "$p" ] && grep -q "$Bin\" room" "$p"; }; then
-  echo autostart=ok
-else
-  o=$(ATRIUM_EXE="$Bin" ATRIUM_SERVICE_VERB=room ATRIUM_LINGER="$LINGER" bash "$S" install 2>&1) || { echo "$o"; exit 1; }
-  echo autostart=done
-  case "$o" in *"not loaded now"*) echo "start=warn the LaunchAgent loads at the next desktop login, there is no GUI session now";; esac
-fi
-if [ "$(uname -s)" = Linux ]; then
-  if systemctl --user is-active --quiet atrium; then echo start=ok; else
-    systemctl --user start atrium 2>&1 && echo start=done || echo "start=fail systemctl --user start atrium failed"
-  fi
-elif launchctl print "gui/$(id -u)/io.github.dovholuknf.atrium" >/dev/null 2>&1; then echo start=ok
-else echo "start=warn the LaunchAgent is not loaded. it needs a desktop login"
-fi
-'@
-    }
-    $r = Invoke-Remote $as
-    $kv = ConvertFrom-KeyValue $r.Out
-    if ($r.Code -ne 0 -or -not $kv.autostart) { Fail 'autostart' 3 'the service install failed' $r.Out }
-    Step 'autostart' $kv.autostart $(if ($os -eq 'windows') { 'logon task atrium, RunLevel Limited' } elseif ($os -eq 'linux') { 'systemd user unit atrium.service' } else { 'LaunchAgent io.github.dovholuknf.atrium' })
-    $startStatus = ($kv.start -split ' ', 2)
-    $startWord = $startStatus[0]
-    Step 'start' $startWord $(if ($startStatus.Count -gt 1) { $startStatus[1] } else { '' })
-    if ($startWord -eq 'fail') { Finish 3 }
-}
-
-# ── 8. attached to the hub ──────────────────────────────────────────────────
-
-# THE HUB'S OWN CONNECTION LIST, not `rooms ls`, which infers "attached" from
-# the last twenty seconds and would still say so about the room that was just
-# stopped for a new binary. A room started by this run has to show a
-# connection made after it started, and still be there a few seconds later,
-# which is what catches a room that died with the ssh session that started it.
-$needSince = if ($startWord -eq 'done') { $startedAt } else { [datetime]::MinValue }
-function Get-Live {
-    try {
-        $live = Invoke-RestMethod -Uri "http://$HubAddr/_hub/rooms" -TimeoutSec 5
-        $live.rooms | Where-Object { $_.name -eq $Name -and ([datetime] $_.since) -ge $needSince } |
-            Select-Object -First 1
-    } catch { $null }
-}
-$deadline = (Get-Date).AddSeconds($AttachTimeout)
-$seen = $null
-do {
-    $seen = Get-Live
-    if ($seen) { break }
-    Start-Sleep -Seconds 2
-} while ((Get-Date) -lt $deadline)
-if ($seen) {
-    Start-Sleep -Seconds 5
-    $still = Get-Live
-    if (-not $still -or $still.since -ne $seen.since) { $seen = $null; $dropped = $true }
-}
-if (-not $seen) {
-    $why = if ($dropped) { "$Name attached and then went away. it may have died with the ssh session: try -Autostart" }
-           else { "the hub has no live connection from $Name after ${AttachTimeout}s" }
-    Fail 'attached' 4 $why @(Get-HubRoom $Name)
-}
-Step 'attached' 'ok' "$Name on the hub since $(([datetime] $seen.since).ToString('HH:mm:ss')), host $($seen.host), build $($seen.version)"
-
-# ── 9. install the runners asked for ────────────────────────────────────────
+# ── 7. install the runners asked for ────────────────────────────────────────
 
 # Where each runner comes from: its vendor's own published installer or
 # release, nothing else. A runner not listed here is not installed by this.
@@ -1032,6 +924,7 @@ foreach ($runner in $Install) {
     }
     $have = Test-Runner $runner
     if ($have.runner -eq 'ok') { Step "install:$runner" 'ok' "already there at $($have.path)"; continue }
+    if ($have.home) { Step "install:$runner" 'ok' "already there at $($have.home)"; $installedNow = $true; continue }
     # THE TRUST WARNING, before anything is fetched. -Install is the consent,
     # and this says what it was consent to.
     Step "install:$runner" 'warn' ("trusting atrium to fetch $($sources[$runner]) and run it on $Target. " +
@@ -1044,7 +937,193 @@ foreach ($runner in $Install) {
     }
     if ($r.Code -ne 0) { Fail "install:$runner" 5 "the $runner installer failed" $r.Out }
     Step "install:$runner" 'done' ((ConvertFrom-KeyValue $r.Out).path)
+    $installedNow = $true
 }
+
+# ~/.local/bin ON THE USER'S PATH, when -Install put something there and it is
+# not. Both installers land there, and a runner the room cannot find on PATH is
+# not a runner the room can start. Windows gets it in the user's own Path in
+# the registry, Unix gets one marked line in the login profile. No admin, and
+# -Remove takes either back out. A room already running is restarted, because
+# it read its PATH when it started.
+$pathChanged = $false
+if ($installedNow -and -not $script:manifest.pathadded) {
+    $ps = if ($os -eq 'windows') {
+@'
+$d = Join-Path $HOME '.local\bin'
+$cur = [Environment]::GetEnvironmentVariable('Path', 'User')
+if (@($cur -split ';') -contains $d) { 'pathadded=' } else {
+    $new = if ($cur) { "$cur;$d" } else { $d }
+    [Environment]::SetEnvironmentVariable('Path', $new, 'User')
+    'pathadded=registry'
+}
+'@
+    } else {
+@'
+d="$HOME/.local/bin"
+lp=$("${SHELL:-/bin/sh}" -lc 'printf %s "$PATH"' 2>/dev/null)
+case ":$lp:" in *":$d:"*) echo pathadded=; exit 0;; esac
+case "${SHELL##*/}" in
+  zsh) f="$HOME/.zprofile";;
+  bash) if [ -f "$HOME/.bash_profile" ]; then f="$HOME/.bash_profile"; else f="$HOME/.profile"; fi;;
+  *) f="$HOME/.profile";;
+esac
+printf '\n%s\n' 'export PATH="$HOME/.local/bin:$PATH" # added by atrium provision-room' >> "$f"
+echo "pathadded=$f"
+'@
+    }
+    $r = Invoke-Remote $ps
+    $kv = ConvertFrom-KeyValue $r.Out
+    if ($r.Code -ne 0) { Fail 'path' 5 'could not put ~/.local/bin on PATH' $r.Out }
+    if ($kv.pathadded) {
+        $script:manifest | Add-Member -NotePropertyName pathadded -NotePropertyValue $kv.pathadded -Force
+        Save-Manifest
+        $where = if ($kv.pathadded -eq 'registry') { "the user's Path" } else { $kv.pathadded }
+        Step 'path' 'done' "~/.local/bin added to $where"
+        $pathChanged = $true
+    } else {
+        Step 'path' 'ok' '~/.local/bin is already on PATH'
+    }
+}
+# A ROOM STARTED WITH --detach IS STOPPED before autostart takes over, or the
+# service's room would find the ports taken and exit.
+if (($pathChanged -or ($useAutostart -and -not $hadAutostartBefore)) -and -not $binChanged) {
+    $stop = if ($os -eq 'windows') {
+        "`$ErrorActionPreference = 'Continue'; if (Test-Path `$Bin) { & `$Bin stop --url http://127.0.0.1:7781 2>&1 | Out-Null }; Start-Sleep -Seconds 3"
+    } else {
+        "if [ -x `"`$Bin`" ]; then `"`$Bin`" stop --url http://127.0.0.1:7781 >/dev/null 2>&1; sleep 3; fi"
+    }
+    $null = Invoke-Remote $stop
+}
+
+# ── 8. run it: in the background, or through autostart ───────────────────────
+
+$startedAt = Get-Date
+if (-not $useAutostart) {
+    # THROUGH A LOGIN SHELL ON UNIX, so the room gets the PATH a person's
+    # terminal has rather than the bare one a non-interactive ssh command gets,
+    # and so finds the same runners the runner check finds.
+    $ds = if ($os -eq 'windows') { "`$ErrorActionPreference = 'Continue'`n& `$Bin room --detach 2>&1`nexit `$LASTEXITCODE" }
+          else { "`"`${SHELL:-/bin/sh}`" -lc 'exec `"`$0`" room --detach' `"`$Bin`" 2>&1" }
+    $r = Invoke-Remote $ds
+    if ($r.Code -ne 0) { Fail 'start' 3 'the room would not start' $r.Out }
+    $said = ($r.Out -join ' ')
+    if ($said -match 'already answers') { $startWord = 'ok'; Step 'start' 'ok' 'already running, no autostart' }
+    else { $startWord = 'done'; Step 'start' 'done' 'in the background with room --detach, no autostart. it stops at restart or logout' }
+} else {
+    # THE SERVICE SCRIPTS GO OVER FIRST, with LF endings for Unix whatever this
+    # checkout has, because a shell script with a carriage return on every line
+    # does not run.
+    $files = if ($os -eq 'windows') {
+        @(@('scripts/atrium-service.ps1', 'scripts'), @('scripts/atrium-autostart.ps1', 'scripts'))
+    } else {
+        @(@('scripts/atrium-service.sh', 'scripts'), @('packaging/atrium.service', 'packaging'),
+          @('packaging/atrium.plist', 'packaging'))
+    }
+    $stage = Join-Path $work "${os}_$goarch/files"
+    New-Item -ItemType Directory -Force -Path $stage | Out-Null
+    $mk = if ($os -eq 'windows') { "New-Item -ItemType Directory -Force -Path (Join-Path `$P 'scripts') | Out-Null" }
+          else { "mkdir -p `"`$P/scripts`" `"`$P/packaging`"" }
+    $null = Invoke-Remote $mk
+    foreach ($f in $files) {
+        $src = Join-Path $PSScriptRoot "../$($f[0])"
+        if (-not (Test-Path $src)) { Fail 'autostart' 3 "$($f[0]) is not beside this script" }
+        $dst = Join-Path $stage (Split-Path -Leaf $f[0])
+        $text = [IO.File]::ReadAllText($src)
+        if ($os -ne 'windows') { $text = $text -replace "`r`n", "`n" }
+        [IO.File]::WriteAllText($dst, $text)
+        $c = Copy-ToRemote $dst ".atrium/provision/$($f[1])/$(Split-Path -Leaf $f[0])"
+        if ($c.Code -ne 0) { Fail 'autostart' 3 "scp of $($f[0]) failed" $c.Out }
+    }
+
+    if ($os -eq 'windows') {
+        $as = @'
+$t = Get-ScheduledTask -TaskName atrium -ErrorAction SilentlyContinue
+if ($t -and $t.Actions[0].Arguments -like "*$Bin*room --db*") { "autostart=ok" }
+else {
+    $o = & (Join-Path $P 'scripts\atrium-service.ps1') install -Verb room -Exe $Bin *>&1
+    if (-not (Get-ScheduledTask -TaskName atrium -ErrorAction SilentlyContinue)) { $o; exit 1 }
+    "autostart=done"
+}
+$up = $false
+try { $null = Invoke-RestMethod http://127.0.0.1:7781/v1/health -TimeoutSec 3; $up = $true } catch {}
+if ($up) { "start=ok" } else {
+    Start-ScheduledTask -TaskName atrium
+    $deadline = (Get-Date).AddSeconds(30)
+    while (-not $up -and (Get-Date) -lt $deadline) {
+        Start-Sleep -Seconds 1
+        try { $null = Invoke-RestMethod http://127.0.0.1:7781/v1/health -TimeoutSec 2; $up = $true } catch {}
+    }
+    if ($up) { "start=done" } else {
+        $i = Get-ScheduledTaskInfo -TaskName atrium
+        "start=fail the task did not bring the room up, last result 0x$('{0:X}' -f $i.LastTaskResult). an Interactive task needs the user logged in at the machine"
+    }
+}
+'@
+    } else {
+        $as = "LINGER=$(if ($Linger) { '1' } else { '' })`n" + @'
+S="$P/scripts/atrium-service.sh"
+u="$HOME/.config/systemd/user/atrium.service"
+p="$HOME/Library/LaunchAgents/io.github.dovholuknf.atrium.plist"
+if { [ -f "$u" ] && grep -q "^ExecStart=$Bin room" "$u"; } || { [ -f "$p" ] && grep -q "$Bin\" room" "$p"; }; then
+  echo autostart=ok
+else
+  o=$(ATRIUM_EXE="$Bin" ATRIUM_SERVICE_VERB=room ATRIUM_LINGER="$LINGER" bash "$S" install 2>&1) || { echo "$o"; exit 1; }
+  echo autostart=done
+  case "$o" in *"not loaded now"*) echo "start=warn the LaunchAgent loads at the next desktop login, there is no GUI session now";; esac
+fi
+if [ "$(uname -s)" = Linux ]; then
+  if systemctl --user is-active --quiet atrium; then echo start=ok; else
+    systemctl --user start atrium 2>&1 && echo start=done || echo "start=fail systemctl --user start atrium failed"
+  fi
+elif launchctl print "gui/$(id -u)/io.github.dovholuknf.atrium" >/dev/null 2>&1; then echo start=ok
+else echo "start=warn the LaunchAgent is not loaded. it needs a desktop login"
+fi
+'@
+    }
+    $r = Invoke-Remote $as
+    $kv = ConvertFrom-KeyValue $r.Out
+    if ($r.Code -ne 0 -or -not $kv.autostart) { Fail 'autostart' 3 'the service install failed' $r.Out }
+    Step 'autostart' $kv.autostart $(if ($os -eq 'windows') { 'logon task atrium, RunLevel Limited' } elseif ($os -eq 'linux') { 'systemd user unit atrium.service' } else { 'LaunchAgent io.github.dovholuknf.atrium' })
+    $startStatus = ($kv.start -split ' ', 2)
+    $startWord = $startStatus[0]
+    Step 'start' $startWord $(if ($startStatus.Count -gt 1) { $startStatus[1] } else { '' })
+    if ($startWord -eq 'fail') { Finish 3 }
+}
+
+# ── 9. attached to the hub ──────────────────────────────────────────────────
+
+# THE HUB'S OWN CONNECTION LIST, not `rooms ls`, which infers "attached" from
+# the last twenty seconds and would still say so about the room that was just
+# stopped for a new binary. A room started by this run has to show a
+# connection made after it started, and still be there a few seconds later,
+# which is what catches a room that died with the ssh session that started it.
+$needSince = if ($startWord -eq 'done') { $startedAt } else { [datetime]::MinValue }
+function Get-Live {
+    try {
+        $live = Invoke-RestMethod -Uri "http://$HubAddr/_hub/rooms" -TimeoutSec 5
+        $live.rooms | Where-Object { $_.name -eq $Name -and ([datetime] $_.since) -ge $needSince } |
+            Select-Object -First 1
+    } catch { $null }
+}
+$deadline = (Get-Date).AddSeconds($AttachTimeout)
+$seen = $null
+do {
+    $seen = Get-Live
+    if ($seen) { break }
+    Start-Sleep -Seconds 2
+} while ((Get-Date) -lt $deadline)
+if ($seen) {
+    Start-Sleep -Seconds 5
+    $still = Get-Live
+    if (-not $still -or $still.since -ne $seen.since) { $seen = $null; $dropped = $true }
+}
+if (-not $seen) {
+    $why = if ($dropped) { "$Name attached and then went away. it may have died with the ssh session: try -Autostart" }
+           else { "the hub has no live connection from $Name after ${AttachTimeout}s" }
+    Fail 'attached' 4 $why @(Get-HubRoom $Name)
+}
+Step 'attached' 'ok' "$Name on the hub since $(([datetime] $seen.since).ToString('HH:mm:ss')), host $($seen.host), build $($seen.version)"
 
 # ── 10. the runners ─────────────────────────────────────────────────────────
 
