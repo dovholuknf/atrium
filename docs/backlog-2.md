@@ -68,6 +68,7 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 59 | Spike on m1mini: more than one room per machine, and a blocked room that drains | design, spike | not started |
 | 60 | The stdio control MCP has sa48's launch fields but no "room is older" warning | housekeeping | not started |
 | 61 | A fake 45s hub echo in the lag log from the idle ping and pong | bug | not started |
+| 62 | A worker that ends its turn without a report reaches its orchestrator every time | bug, HIGH | not started |
 
 ------------
 
@@ -1235,6 +1236,21 @@ Decide whether it needs the warning or should go away.
 Raised 2026-09-28, from sa55's review of the live logs. The room pings an idle attach every 45s, and the browser's
 pong going up starts the hub's echo clock. So every ping logs a fake echo of about 45000ms, and `hub.err` carries
 about 80 lag lines an hour with the board idle. The hub should not start the echo clock on a pong.
+
+## 62. A worker that ends its turn without a report reaches its orchestrator every time (bug, HIGH)
+
+Raised 2026-09-28 by clint: "we can't have missing messages". A worker that ends its turn without an
+`atrium_report` must reach its orchestrator every time, at once.
+
+Evidence from 2026-09-28. sa48 ended its turn at 15:03 without a report, and the "ended its turn without reporting"
+notice reached the orchestrator. sa42 ended at 19:31:31Z, at needs-input with no report, and no notice reached the
+orchestrator. clint saw it first.
+
+Find out why one fired and the other did not. Candidates: a delay threshold, the launcher link on the card, or the
+card's origin tag (`agentLaunched` reads `origin:agent`, see item 40). Then make the notice certain.
+
+Related: item 36 (a finished worker stays up), and the work ledger, `docs/work-ledger-design.md` and
+`docs/work-ledger-plan.md`.
 
 
 ------------
