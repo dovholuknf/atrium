@@ -5,6 +5,14 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **The launch cap counts only running workers tagged `atrium:subagent`.** See `docs/test-plan.md` section BR.
+
+  It counted every running supervised card carrying `origin:agent`, which every `atrium_launch` stamps. So one cap of
+  10 covered every orchestrator's launches plus the resident merger, and a launch was refused with seven workers up.
+  Now an orchestrator, the merger or any agent launched without `atrium:subagent` does not use up the cap.
+  `origin:agent` is still stamped on every launch and still marks a doer on the board. `internal/link/control_mcp.go`:
+  HUB RESTART. `internal/api/web/js/terminal-list.js`: comment only.
+
 - **A keep-alive refresh whose ledger row fails to save no longer forks again every minute.** Mercurius finding C1
   of session s_GqkzdtBKudfM.
 
