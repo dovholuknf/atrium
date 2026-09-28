@@ -296,6 +296,25 @@ func TestTheRelayKindIsKnown(t *testing.T) {
 	}
 }
 
+// A new hub's refusal of a kind it does not know names relay among the ones it
+// does, so a room never reads a new hub as older than cross-room say.
+func TestANewHubsRefusalNamesTheRelay(t *testing.T) {
+	a, b := net.Pipe()
+	defer a.Close()
+	defer b.Close()
+	go func() { _ = writeJSON(a, hello{V: Version, Kind: "teleport", Room: "x"}) }()
+	var w welcome
+	done := make(chan struct{})
+	go func() { _ = readJSON(bufio.NewReader(a), &w); close(done) }()
+	if _, err := hearHello(b, bufio.NewReader(b)); err == nil {
+		t.Fatal("an unknown kind was accepted")
+	}
+	<-done
+	if !strings.Contains(w.Error, "a connection is control") || !strings.Contains(w.Error, relayKind) {
+		t.Fatalf("refusal = %q, want the kinds listed with relay among them", w.Error)
+	}
+}
+
 // THE HUB-SIDE DOOR. A card on the hub's machine saying `name@room` is
 // forwarded to its OWN room's /v1/say, which keeps the record and relays it.
 func TestAHubSideSayToAnotherRoomGoesThroughTheSendersRoom(t *testing.T) {

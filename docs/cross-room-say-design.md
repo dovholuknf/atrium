@@ -184,7 +184,8 @@ With m1mini's hub link down, the sender sees:
 ## Version skew
 
 - Old hub, new room: the `relay` hello is refused with "a connection is control, data, enrol, upgrade or announce".
-  The room says "the hub is older than cross-room say" and does NOT hold the message, since nothing would ever
+  A new hub's sentence lists relay too, and the room reads a refusal as an old hub only when it does not. The room
+  says "the hub is older than cross-room say" and does NOT hold the message, since nothing would ever
   drain it. A held row that meets an old hub on drain (the hub was downgraded) stays and expires.
 - New hub, old room as sender (hub-side entry): the forward to `/v1/say` gets a 404. The hub falls back to
   delivering directly with `from` = `handle@room`, and the answer's note says the sender's room is older, so its
@@ -228,3 +229,10 @@ Mercurius design review, session `s_H1ILoNvxloBH`, round 1, verdict needs_change
 Round 2, verdict ready_to_build. One advisory, folded in: a dropped held message (expired, refused, or an ambiguous
 say) is a `notified` event on the sender's card with `kind: "relay-dropped"`, `to`, `why` and the text, and a log
 line `gave up on <sender>'s message to <name@room>: <why>`.
+
+Mercurius diff review, session `s_ocCmLXd1z8er`.
+
+- Round 1, needs_changes. C1 (minor), the unknown-kind refusal did not list relay, so the old-hub test leaned on a
+  sentence that was now wrong: folded in, the sentence lists relay and the room's test requires relay to be absent.
+  A1 (advisory), `$Bin` in the provisioning here-strings: rejected, `Invoke-Remote` defines `$Bin` in its prelude on
+  both Windows and Unix, the same as every other remote block in the script uses.
