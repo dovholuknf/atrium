@@ -71,6 +71,7 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 62 | A worker that ends its turn without a report reaches its orchestrator every time | bug, HIGH | not started |
 | 63 | Starting onto an existing card goes to the wrong room | bug, HIGH | not started |
 | 64 | A card cannot stop being lean | bug, HIGH | not started |
+| 65 | A deploy's revert snapshot is named after the hub's build, not the file it copies | bug | not started |
 
 ------------
 
@@ -1300,6 +1301,15 @@ Two fixes:
 - A tag edit that actually clears lean.
 
 Related: item 63, the same start onto an existing card.
+
+## 65. A deploy's revert snapshot is named after the hub's build, not the file it copies (bug)
+
+Raised 2026-09-28. `Save-Revert` in `scripts/live/live-common.ps1` names the snapshot after the build the HUB's
+health reports, not after the binary file it copies. When the room was deployed after the hub, the file holds a
+newer build than the hub runs, so the name lies. On 2026-09-28 the hub-only deploy of `528f598` wrote
+`atrium.revert-f5809905.exe`, which holds `06b87c9`. The real `f5809905` is `atrium.old-20260928155551.exe`.
+
+Fix: label the snapshot with the file's own `atrium version` output, its commit and its board hash.
 
 
 ------------
