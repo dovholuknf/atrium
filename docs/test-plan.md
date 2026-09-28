@@ -4019,3 +4019,35 @@ gate. `/context` lists no custom agents, no skills, and no memory files in a wor
 
 **Expected:** after the restart the BP1 worker is still lean: no skills, no agents, `atrium-control` only. The third
 worker has the operator's whole setup, as before this change.
+
+## BQ. A big paste shows `pasting` too, and one over 4MB is refused
+
+The headless section `pasteBig` covers BQ1 and BQ2 against a socket that holds the main thread and drains the way
+Chromium's does over loopback, with a runner that keeps printing after the drain. It runs ctrl-v, right click, the
+paste box and a dropped block of text at 1MB and 3MB, a bracketed runner, a key typed straight after a big paste,
+a 10MB paste and a popped-out window. Run the rest on a board built from this branch against a throwaway room with
+one card, so a paste into a live card is not the test.
+
+### BQ1. A 1MB paste shows the box at once and keeps it up
+
+1. Attach the card. Copy about 1MB of text and paste it with ctrl-v.
+
+**Expected:** the box with a spinner and `pasting 1.0MB` appears at the top right of the terminal at once, not after
+a delay. It stays up at least about a second, and goes once the runner shows the paste, for example Claude Code's
+`[Pasted text #1 +N lines]`. The paste is still one paste.
+
+2. Do the same with right click, the paste box (right click on a share that has not been granted the clipboard),
+   and by dragging a block of selected text from another window onto the terminal. Repeat in a popped-out window.
+
+**Expected:** the same box every time. The dropped text lands in the runner as a paste. It used to go nowhere.
+
+3. Paste 1MB and press Enter straight after it.
+
+**Expected:** the Enter lands after the paste, not ahead of it.
+
+### BQ2. A paste over 4MB is refused out loud
+
+1. Copy about 10MB of text and paste it with ctrl-v.
+
+**Expected:** an alert `that paste is too big` naming its size and the 4MB limit. Nothing is sent. The terminal
+stays attached. It does not say `detached` or reconnect, which is what a frame over the daemon's limit used to do.
