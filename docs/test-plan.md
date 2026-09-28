@@ -3718,3 +3718,53 @@ clear. Clear the line and wait two seconds: the message goes in, mid-turn.
 
 **Expected:** the hint warns that nothing carries the message at the turn end, and says to send it immediately or
 wire the Stop hook.
+
+## BK. A press shows it is working, and a second press sends nothing
+
+BK, not BJ: sa76 was adding a section in parallel and was likely to take BJ. Run on the board with a finished
+(dead) claude card that has a conversation to resume. The headless section `busyGuard` covers BK1 to BK4 against
+mocked endpoints, and presses every button wired through `busyWhile` twice. The Go test
+`TestASecondLaunchOntoAStartingCardAnswersTheFirst` covers BK5.
+
+### BK1. Launch shows it is working and closes
+
+1. Open the `resume claude code` dialog on the card, the one with `pick up where it left off` ticked.
+2. Press `launch`, then press it again straight away, and press Enter in the directory box.
+
+**Expected:** at the first press the button turns into a spinner and `starting…`, keeps its width, and the button
+beside it (`terminate`, `remove`) goes dim. The later presses do nothing. When the runner is up the dialog closes
+and the terminal opens. One card, one runner.
+
+### BK2. A refused launch keeps the dialog and says why
+
+1. Open the launch dialog on a directory that does not exist, and press `launch`.
+
+**Expected:** the spinner shows, then the button comes back as `launch`, the dialog stays open with the form as you
+left it, and a red line above the buttons says why. Close the dialog and open it again: the line is gone.
+
+### BK3. The card menu, the perms queue and the say box
+
+1. Right click a dead card with a conversation, choose `resume`, and choose it again at once from a second right
+   click.
+2. With a permission waiting, double click `approve once` on its card in the perms queue.
+3. Open a working card, type a message, and press `send` twice (or Enter twice).
+
+**Expected:** one resume starts, with no error for the second. The approve button shows a spinner and `sending…`
+and the request is answered once, with no `too late`. The message is sent once, and the box is empty afterwards.
+
+### BK4. Every save and remove
+
+1. Under rooms, runners, edit a runner and press `save` twice fast. Do the same for a source, a recogniser, a
+   provider, an action, a fixture and a theme.
+2. On a theme preview, press `use it` twice.
+
+**Expected:** each shows a spinner with `saving…` (or `removing…`, or `working…`) and saves once. The other buttons
+in the same row are dim until it answers.
+
+### BK5. The daemon answers a repeat with the first result
+
+1. From a terminal, post the same `/v1/launch` with `task_id` of a dead card twice at once (two `curl` calls in the
+   background, or `atrium launch --onto` twice).
+
+**Expected:** both answer the same card, with no `already has a runner on it`. One runner is behind it. A third post
+made a minute later is refused as before, since that is a launch onto a card that is already running.
