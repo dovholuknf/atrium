@@ -4649,3 +4649,40 @@ shows `! 2`, because the immediate one asked to go in now.
 
 **Expected:** for the first hour the envelope. After it the `!`, with the tip `blocked by the session's turn, which
 it was sent to wait for`. The message still waits for the turn to end.
+
+## CD. A request that names a card goes to the room holding it
+
+CD1 to CD4 need a hub built from this change and a hub restart, with at least two rooms attached. Nothing on the room
+changes. Go tests in `internal/link/cardroute_test.go` cover a launch onto a plain and a tagged card with a wrong
+header, a new launch that still follows the header, `PATCH /v1/tasks/<plain id>` and a per-card verb with a wrong
+header, a tagged path beating a wrong header, the 404 naming the card and the rooms, and `prune` and `pin-order`
+still following the header. See `docs/backlog-2.md` item 63 and `docs/card-room-routing.md`.
+
+### CD1. Start a done card from the ALL view
+
+1. With two or more rooms attached, open a per-machine editor for one room (rooms > runners, say) and close it.
+2. In the ALL view, find a done card that lives on a different room and press start, or resume from its menu.
+
+**Expected:** the runner starts on the card's own room and the card goes to running. No "could not start it" and no
+`sql: no rows`.
+
+### CD2. Drag a card into a group
+
+1. As in CD1, leave a per-machine editor's room behind, then in the ALL view drag a card from another room out of
+   untagged and into a group.
+
+**Expected:** the card stays in the group after the next refresh. No "that did not stick" toast.
+
+### CD3. A card no room holds
+
+1. With the hub's port reachable, run
+   `curl -s -X PATCH -H "X-Atrium-Room: <a room>" -d "{}" http://127.0.0.1:7778/v1/tasks/nosuchcard`.
+
+**Expected:** a 404 with `card nosuchcard was not found on room <a>, room <b>`, naming every attached room. It
+never says `sql`.
+
+### CD4. A header naming the right room still works
+
+1. Scope the board to one room with the picker, and start, rename and message a card on it.
+
+**Expected:** all three work as before. The scoped board still shows the room's own ids, with no `room~` tag.
