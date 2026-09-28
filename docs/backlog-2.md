@@ -54,7 +54,10 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 45 | Every card shows its context size, a launcher hears once past a threshold | feature | sa87 built it, conflicts with 37 |
 | 46 | Provision a machine as a room over ssh, from one command and later from the board | feature | stage 1 sa92, started 2026-09-28 |
 | 47 | A resident session's alias defaults from its name | feature | not started |
-| 48 | `atrium_launch` takes a model and a thinking effort | feature | not started |
+| 48 | `atrium_launch` takes a model and a thinking effort | feature | sa48, started 2026-09-28 |
+| 49 | The orchestrator can appear on every room | design | not started |
+| 50 | Views of agents, beyond groups | design | not started |
+| 51 | Five kept worktrees show 48 commits not matched on `claude/main` | housekeeping | sa51, started 2026-09-28 |
 
 ------------
 
@@ -1055,6 +1058,29 @@ an interviewer for example, costs as much per turn as a full worker.
 Expected: `atrium_launch` takes an optional model and an optional thinking effort (`low`, `medium` or `high`), and
 the runner starts with them. Left out, the runner's defaults hold, as today. The card shows the model and effort it
 runs with.
+
+**Status, 2026-09-28:** sa48, started.
+
+## 49. The orchestrator can appear on every room (design)
+
+Raised 2026-09-28 by clint. A card belongs to one room today, so the orchestrator session is reachable and visible
+only from its own room's view. clint wants to be able to put it on every room: seen in each room's view, and
+addressable from each. Ideate first: what "on every room" means for a card that runs in one place, and what each
+room's view shows of it.
+
+## 50. Views of agents, beyond groups (design)
+
+Raised 2026-09-28 by clint: "i'm starting to want different 'views' of agents more than just groups". Ideate
+first. Examples to explore: saved filters, a view by role, a view by launcher, and workers apart from clint's own
+cards.
+
+## 51. Five kept worktrees show 48 commits not matched on `claude/main` (housekeeping)
+
+Raised 2026-09-28. Five kept worktrees, each on the 09-22 base `02fe769`, show 48 commits that `git cherry` does not
+match on `claude/main`: sa06 reconcile, sa07 board-fixes-2, sa10 launch-garble, sa11 notif-tray and sa12
+terminal-suite. Compare each with `claude/main` and report what, if anything, is missing.
+
+**Status, 2026-09-28:** sa51, started.
 
 
 ------------
