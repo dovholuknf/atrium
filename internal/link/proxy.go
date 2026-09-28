@@ -188,8 +188,8 @@ func (p *Proxy) dial(ctx context.Context, _, _ string) (net.Conn, error) {
 // roomKey carries the chosen room from the rewrite into the dial.
 type roomKey struct{}
 
-// taggedKey carries the room when it came from a `room~id` IN THE PATH, which
-// is the only case where the answer has to be tagged on the way back out. A
+// taggedKey carries the room when it came from a `room~id` in the path or in a
+// launch's `task_id`, the cases where the answer is tagged on the way back out. A
 // board that named its room in a header asked that room directly and wants the
 // room's own ids. See `retagCard`.
 type taggedKey struct{}
@@ -527,11 +527,9 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	// Carried on the context, which is the only thing that reaches the dial.
 	ctx := context.WithValue(r.Context(), roomKey{}, room)
-	// And separately, whether the room was named BY A TAG IN THE PATH, which
-	// decides whether the answer needs one putting back. See `retagCard`.
-	if tagged, _ := splitTag(cardIDIn(r.URL.Path)); tagged != "" {
-		ctx = context.WithValue(ctx, taggedKey{}, tagged)
-	}
+	// Whether the room was named BY A TAG, in the path or a launch's body, which
+	// decides whether the answer needs one putting back, is already on the
+	// context. See `placeCard` and `retagCard`.
 	// A READ THAT A SILENT ROOM HOLDS IS ANSWERED, and not left open. See
 	// `roomReadWait`. The timer only covers the wait for the headers: `rewrite`
 	// stops it the moment they arrive, so a large download is not cut short.

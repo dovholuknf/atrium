@@ -34,14 +34,15 @@ func holds(room string, ids ...string) http.Handler {
 			fmt.Fprintf(w, `{"error":"no card %s to start onto: sql: no rows in result set"}`, id)
 			return
 		}
-		fmt.Fprintf(w, `{"served_by":%q,"path":%q,"task_id":%q}`, room, r.URL.Path, body.TaskID)
+		// `saw_task_id`, not `task_id`, which the hub retags on a tagged answer.
+		fmt.Fprintf(w, `{"served_by":%q,"path":%q,"saw_task_id":%q}`, room, r.URL.Path, body.TaskID)
 	})
 }
 
 type served struct {
 	By     string `json:"served_by"`
 	Path   string `json:"path"`
-	TaskID string `json:"task_id"`
+	TaskID string `json:"saw_task_id"`
 	Error  string `json:"error"`
 }
 
@@ -97,6 +98,40 @@ func TestALaunchWithATaggedCardGoesToItsRoomBare(t *testing.T) {
 	}
 	if got.TaskID != "bcard" {
 		t.Fatalf("the room was given task_id %q, want it bare", got.TaskID)
+	}
+}
+
+// The answer to a launch onto a tagged card names its room, so the board does
+// not end up holding a bare id for a card it listed tagged.
+func TestALaunchOntoATaggedCardAnswersTagged(t *testing.T) {
+	room := func(name string) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			var body struct {
+				TaskID string `json:"task_id"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			fmt.Fprintf(w, `{"id":%q,"supervised":true}`, body.TaskID)
+		})
+	}
+	front, _, done := two(t, room("alpha"), room("beta"))
+	defer done()
+
+	res, err := http.Post(front.URL+"/v1/launch", "application/json",
+		strings.NewReader(`{"harness":"claude","task_id":"beta~bcard"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	var got struct {
+		ID   string `json:"id"`
+		Room string `json:"room"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got.ID != "beta~bcard" || got.Room != "beta" {
+		t.Fatalf("the launch answered id %q room %q, want beta~bcard on beta", got.ID, got.Room)
 	}
 }
 
