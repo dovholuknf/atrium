@@ -3928,7 +3928,7 @@ Type anything into the card: the mark goes when its turn starts.
 BO1 to BO3 need the hub and the room built from this change, and a room restart. Go tests `TestLeanArgs*`,
 `TestLeanSettings*` and `TestLeanOptionsComeFromTheRequestOrTheCard` in `internal/daemon/lean_test.go`, and
 `TestLaunchIsLeanByDefaultAndForwardsTheMCPList` in `internal/link/control_mcp_test.go`, cover the flags, the MCP list
-and the default. See `docs/lean-workers-design.md` and `docs/backlog-2.md` item 29.
+and the default. See `docs/lean-workers-design.md` and `docs/backlog-2.md` item 34.
 
 ### BO1. A default launch is lean
 
@@ -3938,14 +3938,14 @@ and the default. See `docs/lean-workers-design.md` and `docs/backlog-2.md` item 
 
 **Expected:** the report reaches the launcher. The permission history shows its `git status` decided through the
 gate. `/context` lists no custom agents, no skills, and no memory files in a worktree. MCP tools are
-`atrium-control` only. The card carries the tag `atrium:lean`.
+`atrium-control` and `mercurius` only. The card carries the tag `atrium:lean`.
 
-### BO2. Asking for mercurius
+### BO2. Asking for one more server
 
-1. Launch a second worker the same way, with `mcp: ["mercurius"]`.
+1. Launch a second worker the same way, with `mcp` naming one more server from the runner's MCP config.
 
-**Expected:** `/context` lists the `mercurius` tools beside `atrium-control`. The card carries
-`atrium:mcp:mercurius`. A launch with `mcp: ["nosuch"]` is refused, and the error names the servers the runner has.
+**Expected:** `/context` lists that server's tools beside `atrium-control` and `mercurius`. The card carries
+`atrium:mcp:<name>`. A launch with `mcp: ["nosuch"]` is refused, and the error names the servers the runner has.
 
 ### BO3. Lean survives a restart, and can be turned off
 
@@ -3953,5 +3953,5 @@ gate. `/context` lists no custom agents, no skills, and no memory files in a wor
 2. Run `/context` in its terminal again.
 3. Launch a third worker with `lean: false`.
 
-**Expected:** after the restart the BO1 worker is still lean: no skills, no agents, `atrium-control` only. The third
-worker has the operator's whole setup, as before this change.
+**Expected:** after the restart the BO1 worker is still lean: no skills, no agents, `atrium-control` and
+`mercurius` only. The third worker has the operator's whole setup, as before this change.

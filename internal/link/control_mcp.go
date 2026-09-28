@@ -905,8 +905,8 @@ type launchInput struct {
 	// agent-driven launch looks the same as a board-dialog one without this.
 	Theme string `json:"theme,omitempty" jsonschema:"the terminal palette to come up in. empty lets the board colour it from the repo"`
 	// Lean is on unless the caller turns it off. See leanLaunch.
-	Lean *bool    `json:"lean,omitempty" jsonschema:"start a claude worker lean: no user CLAUDE.md, memory, skills, agents or extra MCP servers, only its brief, the repo, atrium's hooks and atrium-control. default true. false starts it with the operator's whole setup"`
-	MCP  []string `json:"mcp,omitempty" jsonschema:"extra MCP servers a lean worker keeps beside atrium-control, by name from the runner's MCP config, e.g. [\"mercurius\"]"`
+	Lean *bool    `json:"lean,omitempty" jsonschema:"start a claude worker lean: no user CLAUDE.md, memory, skills or agents, only its brief, the repo, atrium's hooks and the atrium-control and mercurius MCP servers. default true. false starts it with the operator's whole setup"`
+	MCP  []string `json:"mcp,omitempty" jsonschema:"extra MCP servers a lean worker keeps beside atrium-control and mercurius, by name from the runner's MCP config"`
 }
 
 // leanLaunch is whether an atrium_launch starts lean. On by default for the

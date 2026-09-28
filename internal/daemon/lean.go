@@ -12,7 +12,8 @@ import (
 )
 
 // A LEAN WORKER is a claude session started with only what a worker needs: its
-// brief, the repo, the tools, atrium's hooks and the atrium-control MCP server.
+// brief, the repo, the tools, atrium's hooks and two MCP servers, atrium-control
+// and mercurius.
 //
 // A worker inherits none of its launcher's conversation, yet by default it boots
 // with the operator's whole setup: the global CLAUDE.md, auto-memory, every user
@@ -33,7 +34,7 @@ import (
 //     which print into the context. Atrium's own reporters on those two events
 //     stay. The Stop hook is added when the operator has none.
 //   - `--strict-mcp-config --mcp-config`, the harness's own MCP config cut down
-//     to atrium-control plus whatever the launch named.
+//     to atrium-control and mercurius plus whatever the launch named.
 //   - `--disallowedTools`, the tools a worker has no use for.
 //   - `--append-system-prompt`, the worker rules the dropped CLAUDE.md files
 //     used to carry.
@@ -48,8 +49,20 @@ const LeanTag = "atrium:lean"
 // `atrium:mcp:<name>`.
 const leanMCPTagPrefix = "atrium:mcp:"
 
-// leanControlServer is the one MCP server every lean worker keeps.
-const leanControlServer = "atrium-control"
+// leanDefaultServers are the MCP servers every lean worker keeps when the
+// runner's config has them: atrium-control to report, and mercurius for
+// reviews. One missing from the config is left out, not refused, because
+// nobody asked for it by name.
+var leanDefaultServers = []string{"atrium-control", "mercurius"}
+
+func isLeanDefault(name string) bool {
+	for _, d := range leanDefaultServers {
+		if name == d {
+			return true
+		}
+	}
+	return false
+}
 
 // leanDisallowed are the tools a lean worker is started without. Each is either
 // the orchestrator's job (Agent, Workflow, the cron and remote tools), a thing
@@ -117,7 +130,7 @@ func cleanNames(in []string) []string {
 	var out []string
 	for _, n := range in {
 		n = strings.TrimSpace(n)
-		if n == "" || n == leanControlServer || seen[n] {
+		if n == "" || isLeanDefault(n) || seen[n] {
 			continue
 		}
 		seen[n] = true
@@ -170,11 +183,11 @@ func leanArgs(args []string, userSettings []byte, stopHook string, mcp []string,
 	return append(out, kept...), nil
 }
 
-// leanServers is the `--mcp-config` value for a lean launch: atrium-control and
-// the named extras, taken from the harness's own config files.
+// leanServers is the `--mcp-config` value for a lean launch: the default
+// servers and the named extras, taken from the harness's own config files.
 //
 // A named server that no config holds is REFUSED, the way a model a runner
-// cannot take is: a worker told it has mercurius and started without it finds
+// cannot take is: a worker told it has a server and started without it finds
 // out mid-task.
 func leanServers(configs, extra []string, readFile func(string) ([]byte, error)) (string, error) {
 	all := map[string]json.RawMessage{}
@@ -198,8 +211,10 @@ func leanServers(configs, extra []string, readFile func(string) ([]byte, error))
 		}
 	}
 	keep := map[string]json.RawMessage{}
-	if v, ok := all[leanControlServer]; ok {
-		keep[leanControlServer] = v
+	for _, name := range leanDefaultServers {
+		if v, ok := all[name]; ok {
+			keep[name] = v
+		}
 	}
 	var missing []string
 	for _, name := range extra {
