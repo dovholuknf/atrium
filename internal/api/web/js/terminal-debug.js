@@ -172,9 +172,12 @@ function sendSignal(s) { send({ t: "signal", s }); }
 // The keystrokes are the runner's own, set on its harness, because there is no
 // common answer: a shell takes `exit`, claude takes control-d twice, ollama and
 // codex take it once. Sending the wrong one leaves it running.
-async function exitTerm() {
+function exitTerm() {
   if (!termTask) return;
-  const t = termTask;
+  return oneAtATime("kill:" + termTask.id, () => exitTermNow(termTask));
+}
+
+async function exitTermNow(t) {
   if (!await confirmUser(`ask ${t.display_title} to exit?`,
     "Sends whatever this runner is configured to quit on, then waits. " +
     "If it ignores that, its terminal is closed and the process is stopped." +
@@ -196,9 +199,12 @@ async function exitTerm() {
 // `onclose` waits the card out and reattaches when it comes back. See
 // `sessionRestartComing`. The POST resolves only after the relaunch, so a
 // refusal is cleared here rather than left to expire on its own.
-async function restartTerm() {
+function restartTerm() {
   if (!termTask) return;
-  const t = termTask;
+  return oneAtATime("launch:" + bareId(termTask.id), () => restartTermNow(termTask));
+}
+
+async function restartTermNow(t) {
   if (!await confirmUser(`restart ${t.display_title}?`,
     "Exits this session and immediately resumes the same conversation on the " +
     "same card. The terminal drops for a few seconds while it comes back." +
@@ -424,14 +430,20 @@ async function renderTermPerm() {
       <code>${esc(p.tool)}: ${esc(p.command)}</code>
     </div>
     <div class="actions">
-      <button class="go" onclick="decideFromTerm('${p.id}','approve')">approve once</button>
-      <button class="no" onclick="decideFromTerm('${p.id}','block')">block once</button>
+      <button class="go" onclick="decideFromTerm('${p.id}','approve', this)">approve once</button>
+      <button class="no" onclick="decideFromTerm('${p.id}','block', this)">block once</button>
       <button class="to-perms" onclick="switchView('perms')"
         data-tip="to set a standing rule for this">open in perms</button>
     </div>`;
 }
 
-async function decideFromTerm(id, decision) {
+// One answer per request, shared with the perms card's key. See js/core.js.
+function decideFromTerm(id, decision, btn) {
+  return oneAtATime("decide:" + id, () =>
+    busyWhile(btn, () => decideFromTermNow(id, decision), "sending…"));
+}
+
+async function decideFromTermNow(id, decision) {
   let reason = "";
   if (decision === "block") {
     reason = await askText("why not?", "Handed back to the agent as the reason.", "",

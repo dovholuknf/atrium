@@ -47,25 +47,19 @@ document.getElementById("d-note").addEventListener("input", e => {
 //
 // `when` is "done" for send it, which waits for the turn to end, or
 // "immediate" for the button beside it. See sayToCurrent.
+//
+// Through `busyWhile`, so a second press while the first is posting sends
+// nothing. The buttons go dead only once it has answered and the box is empty,
+// which is after `busyWhile` has put them back. See js/core.js.
 async function sendNote(when = "done") {
   if (!current) return;
   const box = document.getElementById("d-note");
   if (!box.value.trim()) return;
-
-  // Any keystrokes still inside the debounce go first, or the send would post
-  // what was saved rather than what is on screen.
-  clearTimeout(noteTimer);
-  try { await patchTask(current.id, { note: box.value }); }
-  catch (e) { noteState("not saved, so not sent: " + e.message); return; }
-
-  let res;
-  try {
-    res = await api(`/v1/tasks/${current.id}/note/send`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ when })
-    });
-  } catch (e) { noteState("did not send: " + e.message); return; }
-
+  const other = document.getElementById(when === "immediate" ? "d-note-send" : "d-note-now");
+  if (other && other.dataset.busy) return;
+  const btn = document.getElementById(when === "immediate" ? "d-note-now" : "d-note-send");
+  const res = await busyWhile(btn, () => sendNoteNow(current, box, when), "sending…");
+  if (!res) return;
   box.value = "";
   document.getElementById("d-note-send").disabled = true;
   document.getElementById("d-note-now").disabled = true;
@@ -76,12 +70,33 @@ async function sendNote(when = "done") {
   refresh();
 }
 
+// Answers the room's reply, or null when the note did not go.
+async function sendNoteNow(task, box, when) {
+  // Any keystrokes still inside the debounce go first, or the send would post
+  // what was saved rather than what is on screen.
+  clearTimeout(noteTimer);
+  try { await patchTask(task.id, { note: box.value }); }
+  catch (e) { noteState("not saved, so not sent: " + e.message); return null; }
+
+  try {
+    return await api(`/v1/tasks/${task.id}/note/send`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ when })
+    });
+  } catch (e) { noteState("did not send: " + e.message); return null; }
+}
+
+// The buttons go dead after `busyWhile` has put them back, as in sendNote.
 async function clearNote() {
   if (!current) return;
   if (!await confirmUser("clear this note?",
     "What you wrote is thrown away. It has not been sent anywhere.", "clear it")) return;
   clearTimeout(noteTimer);
-  try { await patchTask(current.id, { note: "" }); } catch (e) { noteState(e.message); return; }
+  const task = current;
+  const ok = await busyWhile("d-note-clear", async () => {
+    try { await patchTask(task.id, { note: "" }); return true; } catch (e) { noteState(e.message); return false; }
+  }, "clearing…");
+  if (!ok) return;
   current.note = "";
   document.getElementById("d-note").value = "";
   document.getElementById("d-note-send").disabled = true;
@@ -789,7 +804,10 @@ function actionItems(t) {
   };
 }
 
-async function runCardAction(id, task) {
+// One at a time: see oneAtATime in js/core.js.
+function runCardAction(id, task) { return oneAtATime("action:" + id + ":" + (task && task.id), () => runCardActionNow(id, task)); }
+
+async function runCardActionNow(id, task) {
   // The card dialog passes nothing and means `current`, which is what every
   // call did before actions appeared in menus.
   const on = task || current;
