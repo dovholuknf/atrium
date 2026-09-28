@@ -111,6 +111,14 @@ Lean builds `--settings` from the operator's settings.json and keeps its `effort
 and `--effort` flags are on the command line and override settings in claude, so a lean launch at low effort runs at
 low effort. Lean does not touch extra args or env.
 
+## Keep-alive
+
+A keep-alive fork carries the card's launch env and effort, layered the same way a launch layers them, because a fork
+without the card's env can reach a different endpoint or account than the card it warms (clint, 2026-09-28). The
+model stays the fork's `--model` from the card's last reply. The card's extra args are not carried: they were
+written for an interactive start and a fork is a one-turn print run. A card whose effort its runner cannot take is
+not forked at all, and its keep-alive reason says why.
+
 ## Version skew
 
 The hub's MCP tool may talk to a room older than this change. That room decodes `/v1/launch` into a struct and drops
