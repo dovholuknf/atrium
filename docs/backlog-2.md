@@ -43,7 +43,7 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 34 | Every MCP tool call skips atrium's permission gate | bug | DONE 2026-09-28 in dotfiles, uncommitted, live through the hooks symlink |
 | 35 | A card has a name you mention it by, like `@dotfiles` | feature | sa89, started 2026-09-28 |
 | 36 | A finished worker stays up until somebody closes it | bug | not started |
-| 37 | Token and context use on record for every session, shown only in a card's details | feature | sa90, started 2026-09-28 |
+| 37 | Token and context use on record for every session, shown only in a card's details | feature | DONE, sa90 merged. sa94: Claude subagent rows, needs a room restart. Test plan BT5 |
 | 38 | A restart resumes only the cards that were working | feature | waits on 37 |
 | 39 | Keep-alive warms the cards you mark, not every idle card | feature | waits on 37 |
 | 40 | The launch cap counts only `atrium:subagent` cards | bug | sa91, started 2026-09-28 |
@@ -857,6 +857,25 @@ keep-alive round can spend a lot without anything saying so. What is wanted:
   conflicts with this and has to be reconciled.
 - The first use: measure one room restart, cache writes per card before and after, to learn whether a resume misses
   the cache.
+
+Status: built by sa90 and merged. Test plan BT.
+
+Subagents, 2026-09-28 (sa94). clint: "calude subagent - yes. atrium subagent no (as it's a separate thing)" and "as
+long as it doesn't skew/double count". What a card's Claude Code subagents (the Task tool) spend is a row of its own,
+cause `subagent`, written at the same Stop as the turn's row. The room reads `<session>/subagents/agent-*.jsonl`
+beside the transcript (a workflow's agents a level down), which is what Claude Code writes on this machine today, and
+the `isSidechain` lines older Claude Code wrote into the main transcript. Each file has its own cursor, replies are
+kept one per message id, and a reply the turn's row holds is never also a subagent's. An atrium-launched worker is
+its own card with its own rows and is not counted into its launcher. Needs a room restart. Test plan BT5.
+
+Retention, later. clint: "let it grow forever for now but let's plan some way to clean it eventually". The rows are
+kept forever for now. A row is a few hundred bytes, so 21 cards at a few hundred turns a day is on the order of a
+megabyte a month. Options for later, none built:
+
+- Roll rows older than N days into one row per card, day and cause, with the sums kept and the per-turn detail
+  dropped. The totals and the by-cause split in the details stay right.
+- Delete a card's rows when the card sweep removes the card, or some weeks after, for cards nobody reopens.
+- A size cap: past N rows, or N megabytes, roll up or delete the oldest first.
 
 ## 38. A restart resumes only the cards that were working (feature)
 

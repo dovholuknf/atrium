@@ -12,6 +12,7 @@ const USAGE_CAUSES = {
   "restart-wake": "restart wake",
   keepalive: "keep-alive",
   resume: "resume",
+  subagent: "subagent",
   unknown: "unknown",
 };
 
