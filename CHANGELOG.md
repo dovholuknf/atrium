@@ -6,7 +6,7 @@ section heading is just "what landed in this iteration."
 ## Unreleased
 
 - **Idle Claude cards keep their prompt cache warm, and stop at break-even.** See `docs/cache-keepalive-design.md`
-  and `docs/test-plan.md` section BK.
+  and `docs/test-plan.md` section BL.
 
   A cache write after a gap of more than an hour cost 9.6% of last week's spend, because a card that sits for 61
   minutes rewrites its whole context at twice the input price when it is answered. Now the room refreshes an idle

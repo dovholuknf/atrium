@@ -558,7 +558,7 @@ copy on select on, typing in the find bar and stepping matches leaves the clipbo
 
 Raised by clint 2026-09-27. A cache write after a gap of more than an hour cost $160 of $1,674 last week (9.6%),
 and 37 of the 66 were on contexts of 200k or more. Design: `docs/cache-keepalive-design.md`, Mercurius session
-`s_E1mI65LNulw1`, ready_to_build in round 2. Built on `claude/cache-keepalive`. Test plan section BK.
+`s_E1mI65LNulw1`, ready_to_build in round 2. Built on `claude/cache-keepalive`. Test plan section BL.
 
 What it does: a forked headless resume of an idle card's conversation (`claude -p --resume --fork-session
 --no-session-persistence`, every tool refused by a hook, one turn, no user or project settings) reads the cached
@@ -571,7 +571,7 @@ Open:
 - Deploy needs a room restart.
 - In a hub's ALL view the gear's switch saves like the other room settings (sweep, prune). Check it lands on a
   board with more than one room.
-- BK1, the manual fork probe, must be re-run after a Claude Code upgrade that changes sessions, settings sources,
+- BL1, the manual fork probe, must be re-run after a Claude Code upgrade that changes sessions, settings sources,
   hooks or caching.
 - Re-derive the 1/8 budget from the transcripts once more data is in: the resume hazard came from 597 idle
   stretches over 21 days, all Claude Code sessions on this machine, not only board cards.
