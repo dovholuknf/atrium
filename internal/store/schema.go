@@ -1647,6 +1647,19 @@ var migrations = []struct {
 				GROUP BY task_id`,
 		},
 	},
+	{
+		// A CARD'S ALIAS: the short name the operator mentions it by, `sa89` or
+		// `dotfiles`, where the handle is something the board made up. A column
+		// on `task` because every read of a card wants it and the peer
+		// resolution matches on it. Unique among LIVE cards only, which no
+		// constraint can say, so `SetAlias` checks it. The index is for that
+		// check and for resolution. See alias.go and docs/backlog-2.md item 35.
+		name: "0063_task_alias",
+		stmts: []string{
+			`ALTER TABLE task ADD COLUMN alias TEXT NOT NULL DEFAULT ''`,
+			`CREATE INDEX IF NOT EXISTS task_alias ON task (alias)`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the
