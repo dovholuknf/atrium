@@ -48,12 +48,26 @@ type contextSeen struct {
 type contextSizes struct {
 	mu sync.Mutex
 	m  map[string]contextSeen
+	// judged is the threshold each card was last held against. A changed
+	// threshold is a new look at an unchanged size: a card now under a raised
+	// line is re-armed before it grows past it.
+	judged map[string]int64
 	// transcript finds a card's transcript. api.TranscriptPath, swapped in tests.
 	transcript func(cwd, sessionID string) string
 }
 
 func newContextSizes() *contextSizes {
-	return &contextSizes{m: map[string]contextSeen{}, transcript: api.TranscriptPath}
+	return &contextSizes{m: map[string]contextSeen{}, judged: map[string]int64{}, transcript: api.TranscriptPath}
+}
+
+// judge records the threshold a card is held against, and reports whether it
+// differs from the last one.
+func (c *contextSizes) judge(id string, limit int64) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	was, ok := c.judged[id]
+	c.judged[id] = limit
+	return !ok || was != limit
 }
 
 // contextSizeFor is the board's view of a card's context, or an untyped nil.
@@ -103,6 +117,7 @@ func (c *contextSizes) forgetExcept(live map[string]bool) []string {
 	for id := range c.m {
 		if !live[id] {
 			delete(c.m, id)
+			delete(c.judged, id)
 			gone = append(gone, id)
 		}
 	}
@@ -135,7 +150,8 @@ func (d *Daemon) watchContext() error {
 			continue
 		}
 		live[t.ID] = true
-		if !changed {
+		moved := d.ctx.judge(t.ID, limit)
+		if !changed && !moved {
 			continue
 		}
 		d.publishTask(t.ID)

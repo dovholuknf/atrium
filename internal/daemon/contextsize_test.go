@@ -131,6 +131,25 @@ func TestTheLauncherHearsOncePerCrossing(t *testing.T) {
 	}
 }
 
+// A raised threshold re-arms a card now under it, so a worker that jumps past
+// the new line in one turn is a new crossing.
+func TestARaisedThresholdReArmsTheNotice(t *testing.T) {
+	d := testDaemon(t)
+	launcher, worker := launchedPair(t, d)
+	reply := withTranscript(t, d, worker)
+	reply(160_000)
+	watch(t, d)
+	if err := d.st.SetSetting(api.SettingContextThresholdK, "200"); err != nil {
+		t.Fatal(err)
+	}
+	watch(t, d)
+	reply(210_000)
+	watch(t, d)
+	if n := len(contextNotices(t, d, launcher.ID)); n != 2 {
+		t.Fatalf("launcher has %d context notices after crossing a raised line, want 2", n)
+	}
+}
+
 // A card a human started is marked and nobody is told.
 func TestAHumanCardGetsTheMarkAndNoNotice(t *testing.T) {
 	d := testDaemon(t)
