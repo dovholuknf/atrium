@@ -30,7 +30,7 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 21 | A card stuck on `running` after a lost Stop gets a "looks idle" badge from its silent terminal | bug | not started |
 | 22 | Copy on select copies every find match (ctrl-shift-f) | bug | DONE, `54fb554` |
 | 23 | sa78: keep idle Claude cards' prompt caches warm, stop at break-even | feature | DONE, merged `a917535`, deployed 2026-09-28 |
-| 24 | The "not replayed here" notice opens or loads the pre-restart history | feature | not started |
+| 24 | sa81: the "not replayed here" notice opens or loads the pre-restart history | feature | built on `claude/carry-notice-link`, not merged |
 
 ------------
 
@@ -603,6 +603,13 @@ Watch for:
 - A new attach parameter is a new endpoint for a lent session (`overlay_guest.go` allowlist). A guest must not get
   `carry=all` unless it already gets the history.
 - The popped-out window takes the same path.
+
+**Built by sa81 on `claude/carry-notice-link`, 2026-09-28.** The notice is its own frame ahead of the replay, since
+the screen model keeps no links. `open all of it` and `load all NMB in here` are OSC 8 `atrium:carry/...` links with
+a per-socket nonce the board sends as `?link=`. The board drops any `atrium:` link without it at parse time. `load`
+re-attaches with `?carry=all` under the paste spinner. A guest gets the old line, and `?carry=all` from a guest is
+a 403. Test plan BN, headless section `carryLink`, Go tests in `internal/daemon/carry_notice_test.go`. The daemon
+half needs a room restart. The board half is HUB-SIDE and safe alone.
 
 
 ------------
