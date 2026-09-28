@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -561,7 +562,50 @@ func (d *Daemon) Launch(req LaunchRequest) (*store.Task, error) {
 	}
 	unlock := d.launching.lock(launchKeys(req.TaskID, req.Resume)...)
 	defer unlock()
-	return d.launchLocked(req)
+	if t := d.repeatLaunch(req.TaskID); t != nil {
+		return t, nil
+	}
+	t, err := d.launchLocked(req)
+	if err == nil && req.TaskID != "" {
+		d.startedAt.Store(req.TaskID, time.Now())
+	}
+	return t, err
+}
+
+// repeatWindow is how long after a launch onto a card a second launch onto it
+// counts as the same press arriving twice.
+const repeatWindow = 30 * time.Second
+
+// repeatLaunch answers the card a launch just started, when the same card is
+// asked for again while that runner is still up.
+//
+// A SECOND PRESS IS NOT A SECOND LAUNCH. The resume dialog showed nothing for
+// the settle window, so clint pressed `launch` again. The first press started
+// the runner, and the second waited on the card lock above, then met
+// `ontoRefusal` ("already has a runner on it") and raised an error over a
+// launch that had worked. What the second press asked for is already true, so
+// it gets the first one's answer: the card, with its runner.
+//
+// Only inside the window and only while that runner is live. A launch onto a
+// card whose runner has been up for minutes is a different request made on
+// purpose, and it keeps its refusal. RestartRunner calls launchLocked
+// directly and never comes through here, so a restart is never mistaken for a
+// repeat.
+func (d *Daemon) repeatLaunch(taskID string) *store.Task {
+	if taskID == "" {
+		return nil
+	}
+	at, ok := d.startedAt.Load(taskID)
+	if !ok || time.Since(at.(time.Time)) > repeatWindow || d.sup.get(taskID) == nil {
+		return nil
+	}
+	t, err := d.st.Get(taskID)
+	if err != nil {
+		return nil
+	}
+	log.Printf("[atrium] %s: a second launch arrived while the first was starting, answered with the same card",
+		t.DisplayTitle())
+	return t
 }
 
 func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
