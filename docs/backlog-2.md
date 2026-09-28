@@ -985,6 +985,13 @@ Expected: the `!` is reserved for something that needs the human. A message held
 shows as a quiet queued mark in the card's own colour, not the warn colour, and the tooltip keeps its wording.
 Decide whether a `when: done` message held longer than some bound falls back to the next tool call.
 
+**Status, 2026-09-28, sa42: built on `claude/held-chip-intent`, not merged.** Test plan CA. A hold is quiet when every
+held message waits for the turn, as its sender asked or because the runner takes no input mid-turn. It wears `✉` or
+`✉ N` in the neutral chip, with no pulse and no alert, and the tip names the one rule that holds it. The `!` stays for
+the line, a dialog, an immediate message queued behind a done one, and a turn wait past an hour. The room decides
+which (`held_quiet`, `held_turn` in `noteHeld`), and the board only draws it. The bound does not change delivery: a
+done message past it still waits for the turn and does not fall back to the next tool call.
+
 ## 43. A worker's finished turn shows "nobody has looked" to clint, although its launcher read the report (bug)
 
 Raised by clint 2026-09-28 with a screenshot (`.atrium/incoming/20260928-092324-pasted.png`). sa82's card shows the

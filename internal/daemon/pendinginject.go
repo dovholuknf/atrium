@@ -69,6 +69,10 @@ type pendingMsg struct {
 	body   string // text plus any bracketed-paste markers, what actually types
 	// waitTurn holds it while the runner is mid-turn. See saywhen.go.
 	waitTurn bool
+	// byRunner is a turn wait the runner imposed, because it does not take
+	// input mid-turn, as opposed to one the sender asked for. Read once when
+	// the message is held, for the chip's reason. See HeldTurnRunner.
+	byRunner bool
 }
 
 // heldTell is everything waiting to be typed into one card's terminal, and
@@ -122,6 +126,7 @@ func (d *Daemon) deferPeerInjection(taskID, msgID, from, text string, waitTurn b
 		banner:   banner,
 		body:     body,
 		waitTurn: waitTurn,
+		byRunner: waitTurn && !d.midTurnInputFor(taskID),
 	})
 }
 
@@ -147,7 +152,7 @@ func (pi *pendingInjector) hold(taskID string, m pendingMsg) {
 		pi.by[taskID] = ht
 	}
 	ht.entries = append(ht.entries, m)
-	oldest, count := ht.entries[0], len(ht.entries)
+	oldest := ht.entries[0]
 	if first {
 		// A keystroke on this terminal re-arms the backoff to the front, so an
 		// operator who is back gets an early retry. Cleared in drop.
@@ -158,12 +163,7 @@ func (pi *pendingInjector) hold(taskID string, m pendingMsg) {
 	pi.mu.Unlock()
 	// The live board signal: this card is holding a message. Named by the first
 	// sender, aged from when the first message was held. See activityTracker.
-	who := oldest.from
-	if who == "" {
-		who = "you"
-	}
-	pi.d.act.setHeld(taskID, who, pi.heldFor(taskID, oldest), count)
-	pi.d.publishTask(taskID)
+	pi.noteHeld(taskID, pi.heldFor(taskID, oldest))
 }
 
 // heldFor says which condition is holding a message right now. Checked in the
@@ -179,8 +179,13 @@ func (pi *pendingInjector) heldFor(taskID string, m pendingMsg) string {
 	return HeldForLine
 }
 
-// noteHeld refreshes the board signal after a retry that left messages held,
-// and publishes only when the reason or the count moved.
+// noteHeld sets the board signal when a message is held and after each retry
+// that left messages held, and publishes only when what the board shows moved.
+//
+// THE ONE PLACE THE CHIP'S KIND AND REASON ARE DECIDED. `why` is what holds the
+// oldest message. On a turn wait this adds whose rule it is, and whether the
+// whole hold is intended: every held message waits for the turn, so none is
+// held against its sender. The board draws what this says. See HeldQuiet.
 func (pi *pendingInjector) noteHeld(taskID string, why string) {
 	pi.mu.Lock()
 	ht := pi.by[taskID]
@@ -188,12 +193,25 @@ func (pi *pendingInjector) noteHeld(taskID string, why string) {
 		pi.mu.Unlock()
 		return
 	}
-	who, count := ht.entries[0].from, len(ht.entries)
-	pi.mu.Unlock()
-	if who == "" {
-		who = "you"
+	r := heldPeer{from: ht.entries[0].from, why: why, count: len(ht.entries)}
+	if why == HeldForTurn {
+		r.turn = HeldTurnAsked
+		if ht.entries[0].byRunner {
+			r.turn = HeldTurnRunner
+		}
+		r.intended = true
+		for _, e := range ht.entries {
+			if !e.waitTurn {
+				r.intended = false
+				break
+			}
+		}
 	}
-	if pi.d.act.setHeld(taskID, who, why, count) {
+	pi.mu.Unlock()
+	if r.from == "" {
+		r.from = "you"
+	}
+	if pi.d.act.setHeld(taskID, r) {
 		pi.d.publishTask(taskID)
 	}
 }
