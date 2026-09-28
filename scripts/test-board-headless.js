@@ -478,6 +478,7 @@ const server = http.createServer((req, res) => {
     if (tasksMode === "worn") { sendJSON(res, { tasks: wornTasks }); return; }
     if (tasksMode === "keepalive") { sendJSON(res, { tasks: KA_CARDS }); return; }
     if (tasksMode === "stuck") { sendJSON(res, { tasks: stuckCards() }); return; }
+    if (tasksMode === "ctxsize") { sendJSON(res, { tasks: CTX_CARDS }); return; }
     if (tasksMode === "loop") {
       sendJSON(res, { tasks: [Object.assign({}, LOOP,
         { supervised: loopListSupervised, pinned: true })] });
@@ -4204,6 +4205,110 @@ async function stuckSection(browser, base) {
   if (errors.length) fail("the stuck page threw: " + errors.join(" | "));
 }
 
+// Three Claude cards: one under the context threshold, one past it, and one
+// the room has no size for.
+const CTX_CARDS = [
+  Object.assign({}, T1, { id: "cx-small", display_title: "small context",
+    context_size: { tokens: 90000, warn: false, threshold_k: 150 } }),
+  Object.assign({}, T1, { id: "cx-big", display_title: "big context",
+    context_size: { tokens: 212000, warn: true, threshold_k: 150 } }),
+  Object.assign({}, T1, { id: "cx-none", display_title: "no size yet" }),
+];
+
+// EVERY CLAUDE CARD SHOWS ITS CONTEXT SIZE, and past the gear's threshold in
+// the warn colour: on the stack, on the board card and in the terminal header.
+// The gear holds the threshold, 150k by default, and saves it to the room.
+async function contextSizeSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const sp = await ctx.newPage();
+  const errors = [];
+  sp.on("pageerror", e => errors.push(String(e)));
+  const posts = [];
+  await ctx.route("**/v1/settings", async route => {
+    const r = route.request();
+    if (r.method() === "POST") {
+      const body = JSON.parse(r.postData() || "{}");
+      posts.push(body);
+      await route.fulfill({ json: { context_threshold_k: body.context_threshold_k,
+        context_threshold_k_now: Number(body.context_threshold_k) || 150, context_threshold_k_default: 150,
+        context_threshold_k_min: 10, context_threshold_k_max: 2000 } });
+      return;
+    }
+    await route.fulfill({ json: { context_threshold_k: "", context_threshold_k_now: 150,
+      context_threshold_k_default: 150, context_threshold_k_min: 10, context_threshold_k_max: 2000 } });
+  });
+  const was = tasksMode;
+  tasksMode = "ctxsize";
+  try {
+    await sp.goto(base, { waitUntil: "domcontentloaded" });
+    await sp.waitForSelector('#stack-list .stackrow[data-id="cx-big"]', { state: "attached", timeout: 15000 });
+    await sp.evaluate(() => runRefresh());
+    await new Promise(r => setTimeout(r, 400));
+
+    const got = await sp.evaluate(cards => {
+      const read = root => {
+        const m = root && root.querySelector(".chip.ctxsize");
+        if (!m) return null;
+        const probe = document.createElement("span");
+        probe.style.color = "var(--warn)";
+        document.body.appendChild(probe);
+        const warnColour = getComputedStyle(probe).color;
+        probe.remove();
+        return { text: m.textContent.trim(), warn: m.classList.contains("warn"),
+          warnColour: getComputedStyle(m).color === warnColour, tip: m.getAttribute("data-tip") || "" };
+      };
+      const box = html => { const b = document.createElement("div"); b.innerHTML = html; return b; };
+      const row = id => read(document.querySelector(`#stack-list .stackrow[data-id="${id}"]`));
+      const board = card => {
+        const b = box(cardHTML(card));
+        document.body.appendChild(b);
+        const out = read(b);
+        b.remove();
+        return out;
+      };
+      const paint = typeof paintTermSize === "function" ? paintTermSize : () => {};
+      paint(cards[1]);
+      const header = read(document.getElementById("t-ctxsize"));
+      paint(cards[2]);
+      const headerNone = read(document.getElementById("t-ctxsize"));
+      return { small: row("cx-small"), big: row("cx-big"), none: row("cx-none"),
+        boardBig: board(cards[1]), boardSmall: board(cards[0]), header, headerNone };
+    }, CTX_CARDS);
+    if (!got.small || got.small.text !== "90k") fail("a card under the threshold does not show 90k: " + JSON.stringify(got.small));
+    else if (got.small.warn || got.small.warnColour) fail("a card under the threshold is in the warn colour.");
+    if (!got.big || got.big.text !== "212k") fail("a card past the threshold does not show 212k: " + JSON.stringify(got.big));
+    else {
+      if (!got.big.warn || !got.big.warnColour) fail("a card past the threshold is not in the warn colour: " + JSON.stringify(got.big));
+      if (!/150k/.test(got.big.tip)) fail("the size mark's tooltip does not name the threshold: " + got.big.tip);
+    }
+    if (got.none) fail("a card with no size wears a size mark.");
+    if (!got.boardBig || !got.boardBig.warn || got.boardBig.text !== "212k") fail("the board card has no warned size mark.");
+    if (!got.boardSmall || got.boardSmall.warn) fail("the board card under the threshold is not a quiet size mark.");
+    if (!got.header || got.header.text !== "212k" || !got.header.warn) {
+      fail("the terminal header has no warned size mark: " + JSON.stringify(got.header));
+    }
+    if (got.headerNone) fail("the terminal header kept a size for a card with none.");
+
+    // The gear: 150k by default, and a typed value is saved to the room.
+    const gear = await sp.evaluate(async () => {
+      await loadHousekeeping();
+      const box = document.getElementById("s-ctxk");
+      const before = { placeholder: box.placeholder, value: box.value };
+      box.value = "200";
+      box.dispatchEvent(new Event("change"));
+      return before;
+    });
+    if (gear.placeholder !== "150" || gear.value !== "") fail("the context threshold does not default to 150k: " + JSON.stringify(gear));
+    await sp.waitForFunction(() => !document.getElementById("s-ctxk-reset").hidden, null, { timeout: 5000 })
+      .catch(() => fail("a saved threshold did not offer a reset to the default."));
+    if (!posts.some(p => p.context_threshold_k === "200")) fail("the context threshold was not saved: " + JSON.stringify(posts));
+  } finally {
+    await ctx.close();
+    tasksMode = was;
+  }
+  if (errors.length) fail("the context size page threw: " + errors.join(" | "));
+}
+
 async function main() {
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = "http://127.0.0.1:" + server.address().port;
@@ -4218,7 +4323,7 @@ async function main() {
       untaggedSort: untaggedSortSection, newCard: newCardSection, themePreview: themePreviewSection, land: landSection, reselect: reselectSection,
       toastsTop: toastsTopSection, sayWhen: sayWhenSection, pasteSpinner: pasteSpinnerSection,
       copySelect: copySelectSection, busyGuard: busyGuardSection, keepalive: keepaliveSection,
-      stuck: stuckSection, carryLink: carryLinkSection };
+      stuck: stuckSection, carryLink: carryLinkSection, contextSize: contextSizeSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e)); }
@@ -6403,6 +6508,8 @@ async function main() {
     await busyGuardSection(browser, base);
     // ── a stuck card wears a mark, and the gear decides whether it rings ───
     await stuckSection(browser, base);
+    // ── every card shows its context size, warned past the gear's line ────
+    await contextSizeSection(browser, base);
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e));    if (process.env.DEBUG_HEADLESS) {
       try {

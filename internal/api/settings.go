@@ -82,7 +82,8 @@ func globalAutoView(s *Server) map[string]any {
 		// unreachable by anybody hitting the problem.
 		SettingShellCommand: "shell_command",
 		// The narrowest a runner's terminal goes. Empty means the default.
-		SettingTerminalMinCols: "terminal_min_cols",
+		SettingTerminalMinCols:   "terminal_min_cols",
+		SettingContextThresholdK: "context_threshold_k",
 	} {
 		v, err := s.st.Setting(key)
 		if err != nil {
@@ -111,6 +112,11 @@ func globalAutoView(s *Server) map[string]any {
 	out["terminal_min_cols_default"] = defaultTerminalMinCols
 	out["terminal_min_cols_min"] = minTerminalMinCols
 	out["terminal_min_cols_max"] = maxTerminalMinCols
+	// The context threshold in force, in thousands of tokens, and its bounds.
+	out["context_threshold_k_now"] = contextThresholdK(s.st)
+	out["context_threshold_k_default"] = defaultContextThresholdK
+	out["context_threshold_k_min"] = minContextThresholdK
+	out["context_threshold_k_max"] = maxContextThresholdK
 	// Report total scrollback capacity across live runners and shells.
 	// This is the upper bound if every ring fills, not current memory usage.
 	// Send separate values so the board can format the explanation.
@@ -244,7 +250,8 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		InputLag *bool `json:"input_lag_log"`
 		// The narrowest a runner's terminal goes, in columns. A string like the
 		// scrollback boxes, because empty is a value and means the default.
-		TerminalMinCols *string `json:"terminal_min_cols"`
+		TerminalMinCols   *string `json:"terminal_min_cols"`
+		ContextThresholdK *string `json:"context_threshold_k"`
 		// Whether this room types the unexpected-exit notice. Stored as `on` or
 		// `off`, and read at the next stop, start or delivery.
 		UnexpectedExit *bool `json:"unexpected_exit_wake"`
@@ -529,6 +536,18 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := s.st.SetSetting(SettingTerminalMinCols, v); err != nil {
+			s.fail(w, err)
+			return
+		}
+	}
+
+	if body.ContextThresholdK != nil {
+		v, err := checkContextThresholdK(*body.ContextThresholdK)
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, err)
+			return
+		}
+		if err := s.st.SetSetting(SettingContextThresholdK, v); err != nil {
 			s.fail(w, err)
 			return
 		}

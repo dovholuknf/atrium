@@ -467,6 +467,7 @@ function stackRow(t) {
       ${originChip(t)}
       ${recapChip(t)}
       ${activityChip(t)}
+      ${sizeChip(t)}
       ${contextChip(t)}
       ${seenChips(t)}
       ${dark ? `<span class="chip nocontact">no contact</span>` : ""}

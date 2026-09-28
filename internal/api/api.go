@@ -615,6 +615,10 @@ type view struct {
 	// stretch. Absent on a card with no switch, which is every card that is
 	// not Claude. See docs/cache-keepalive-design.md.
 	Keepalive any `json:"keepalive,omitempty"`
+	// ContextSize is the card's context in tokens, read from its transcript
+	// and never stored, and whether it is past the threshold. Absent on a card
+	// that is not Claude or has no transcript yet. See docs/activity-design.md.
+	ContextSize any `json:"context_size,omitempty"`
 	// AsksOpen is how many questions this card has outstanding.
 	//
 	// `Task.Ask` is the OLDEST of them and is what the row draws. That was the
@@ -700,6 +704,9 @@ func toView(t *store.Task) view {
 	}
 	if KeepaliveOf != nil {
 		v.Keepalive = KeepaliveOf(t.ID)
+	}
+	if ContextSizeOf != nil {
+		v.ContextSize = ContextSizeOf(t.ID)
 	}
 	if t.WaitingSince != nil {
 		v.WaitSeconds = int64(time.Since(*t.WaitingSince).Seconds())

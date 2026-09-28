@@ -1010,6 +1010,7 @@ function termRow(t, deep) {
   // signal that is actually per session.
   const th = themeFor(t);
   const on = termTask && t.id === termTask.id;
+  if (on) paintTermSize(t);
   const wear = termWear(t, on, termCold(t));
   const style = `--tabc:${th.cursor || th.foreground};--tabbg:${th.background}` +
     (wear.style ? ";" + wear.style : "");

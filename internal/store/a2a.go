@@ -113,6 +113,16 @@ func (s *Store) RecordNotice(workerID, source, key string) (bool, error) {
 	return fresh, err
 }
 
+// ForgetNotices drops a worker's claimed notices from one source, so the next
+// sighting of that event is a new notice. For an event that can end and come
+// back, like a card falling back under the context threshold.
+func (s *Store) ForgetNotices(workerID, source string) error {
+	return s.guard(func() error {
+		_, err := s.db.Exec(`DELETE FROM a2a_notice WHERE worker_id = ? AND source = ?`, workerID, source)
+		return err
+	})
+}
+
 // OwesReport reports whether a card has been given something to do since it
 // last told its launcher anything. A card never prompted owes nothing.
 func (t *Task) OwesReport() bool {

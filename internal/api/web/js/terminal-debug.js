@@ -365,6 +365,7 @@ function clearTermPane(switching) {
   paintPaneBg(null);
   document.getElementById("t-title").textContent = "nothing attached";
   document.getElementById("t-chips").innerHTML = "";
+  paintTermSize(null);
   document.getElementById("t-screen").innerHTML = "";
   document.getElementById("term-perm").hidden = true;
 
