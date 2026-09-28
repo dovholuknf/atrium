@@ -5,6 +5,21 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **Clicking into a terminal no longer holds every say to it, and a readout shows what the gate thinks.** See
+  `docs/backlog-2.md` item 33 and `docs/test-plan.md` section BR.
+
+  The typing gate counted every byte the attach socket carried as the operator typing. Claude Code turns on focus
+  reporting, so clicking into or out of a terminal added two characters that nothing took away, and a say to that
+  card sat behind "delivers when your input line is clear and idle" with an empty prompt. Now the room keeps the
+  line's text rather than a count, and only keystrokes move it or the idle clock: focus, SGR, X10 and urxvt mouse
+  reports, device attribute, status, cursor position, mode and window replies, and OSC and DCS answers count
+  nothing. Control-backspace, alt-backspace and control-w delete a word (the rule that deletes least), not one
+  character. A key the room cannot follow, an up arrow, a history search, a yank, a cursor move on a written line,
+  keeps the gate shut until Enter, control-c or control-u. A new setting, "show the typing gate readout", puts a line
+  above the terminal's shortcut strip with the tracked line, its length, the time since the last key and whether the
+  gate is open and why, polled from `GET /v1/tasks/{id}/typing` only while it is on. `internal/daemon`: ROOM
+  RESTART. `internal/api/web`: ROOM RESTART (the room serves the board).
+
 - **A keep-alive refresh whose ledger row fails to save no longer forks again every minute.** Mercurius finding C1
   of session s_GqkzdtBKudfM.
 
