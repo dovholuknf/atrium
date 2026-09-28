@@ -3685,18 +3685,22 @@ afterwards.
 
 1. While B works, type half a line into B's terminal and leave it. Repeat BI1.
 
-**Expected:** nothing is typed into your half line. The chip's tip says the message delivers when your input line is
-clear. Clear the line and wait two seconds: the message goes in, mid-turn.
+**Expected:** nothing is typed into your half line. The chip's tip reads "1 message has been waiting to be delivered
+to this agent for 16s and is blocked by input in this terminal. Submit your text to dequeue this message", with the
+age it has. Clear the line and wait two seconds: the message goes in, mid-turn.
 
 2. Get B to raise a permission dialog of its own (not atrium's gate), then repeat BI1.
 
-**Expected:** nothing is typed, and the chip's tip says a dialog is open. Answer the dialog and the message goes in.
+**Expected:** nothing is typed, and the chip's tip says the message is blocked by a dialog open in this terminal and
+to answer the dialog. Answer the dialog and the message goes in.
 
 ### BI5. The chip counts
 
 1. With your line part written as in BI4, have A send B two messages.
 
-**Expected:** the chip reads `! 2`, and its tip names the oldest sender.
+**Expected:** the chip reads `! 2`, and its tip reads "2 messages have been waiting to be delivered to this agent for
+... and are blocked by input in this terminal. Submit your text to dequeue these messages". The age is full hours,
+minutes and seconds with the leading zero units left off: `16s`, `2m 5s`, `1h 0m 3s`. No sender is named.
 
 ### BI6. The board's two buttons
 
