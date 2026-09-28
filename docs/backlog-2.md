@@ -70,6 +70,7 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 61 | A fake 45s hub echo in the lag log from the idle ping and pong | bug | not started |
 | 62 | A worker that ends its turn without a report reaches its orchestrator every time | bug, HIGH | not started |
 | 63 | Starting onto an existing card goes to the wrong room | bug, HIGH | not started |
+| 64 | A card cannot stop being lean | bug, HIGH | not started |
 
 ------------
 
@@ -1280,6 +1281,25 @@ tlsuv/fix-ci (`01a0e9aa`, on claude-sg4) answered "no card 01a0e9aa... to start 
 - Stage 1, now, HUB-SIDE: route a launch that carries a `task_id` to the room that holds that card.
 - Stage 2, the long run: a card id carries its room end to end, so no request that names a card can reach another
   room.
+
+## 64. A card cannot stop being lean (bug, HIGH)
+
+Raised 2026-09-28 by clint. tlsuv/fix-ci (`01a0e9aa`) was launched lean by the dotfiles agent, and clint wants it
+resumed with his full setup. Nothing gets it there:
+
+- `PATCH /v1/tasks/<id>` with tags that leave out `atrium:lean` changes the tags shown, but a `/v1/launch` with
+  `task_id` still starts it lean.
+- A `/v1/launch` with no `task_id` and `resume=2c8b8620` has the room adopt the same card by its resume id, and it
+  starts lean anyway.
+
+`leanOptions` (`internal/daemon/lean.go:94`) reads the stored tags, not the override.
+
+Two fixes:
+
+- A way to start a card not lean: a launch field that wins over the tags.
+- A tag edit that actually clears lean.
+
+Related: item 63, the same start onto an existing card.
 
 
 ------------
