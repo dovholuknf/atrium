@@ -230,7 +230,7 @@ func (d *Daemon) launcherOf(worker *store.Task) *store.Task {
 func (d *Daemon) notifyLauncher(worker *store.Task, source, key, body string) bool {
 	launcher := d.launcherOf(worker)
 	if launcher == nil {
-		return false
+		return d.notifyRemoteLauncher(worker, source, key, body)
 	}
 	fresh, err := d.st.RecordNotice(worker.ID, source, key)
 	if err != nil {
@@ -250,6 +250,34 @@ func (d *Daemon) notifyLauncher(worker *store.Task, source, key, body string) bo
 		return false
 	}
 	log.Printf("[atrium] told %s that %s: %s (typed %v)", launcher.DisplayTitle(), worker.DisplayTitle(), source, typed)
+	return true
+}
+
+// notifyRemoteLauncher is notifyLauncher for a launcher on another room. The
+// same once-per-event dedupe, then HELD in the relay outbox and sent from
+// there, so a launcher whose room is offline hears it when it is back. See
+// relay.go.
+func (d *Daemon) notifyRemoteLauncher(worker *store.Task, source, key, body string) bool {
+	spec := d.launcherRelay(worker, body)
+	if spec == nil {
+		return false
+	}
+	fresh, err := d.st.RecordNotice(worker.ID, source, key)
+	if err != nil {
+		log.Printf("[atrium] could not record a %s notice for %s: %v", source, worker.DisplayTitle(), err)
+		return false
+	}
+	if !fresh {
+		return false
+	}
+	if _, err := d.holdRelay(worker, spec.FromWire, spec.ToName, spec.ToRoom, spec.ToCard, spec.Text, "",
+		store.RelaySourceNotice); err != nil {
+		log.Printf("[atrium] could not hold a notice to %s@%s about %s: %v", spec.ToName, spec.ToRoom,
+			worker.DisplayTitle(), err)
+		return false
+	}
+	log.Printf("[atrium] told %s@%s that %s: %s (by way of the hub)", spec.ToName, spec.ToRoom,
+		worker.DisplayTitle(), source)
 	return true
 }
 

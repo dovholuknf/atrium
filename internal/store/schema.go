@@ -1723,6 +1723,33 @@ var migrations = []struct {
 			     AND (effort_args IS NULL OR effort_args = '' OR effort_args = '[]')`,
 		},
 	},
+	{
+		// WHAT THIS ROOM OWES ANOTHER ROOM: a message or a launcher notice to a
+		// card there that could not be carried when it was sent, because the
+		// hub or that room was not answering. On the SENDER'S room, because the
+		// hub holds nothing. A sent row is deleted, so the table only ever holds
+		// what is owed. `to_card` is the target's card id on its room when it
+		// is known, which it always is for a launcher notice. See relay.go in
+		// internal/daemon and docs/cross-room-say-design.md.
+		name: "0066_relay_outbox",
+		stmts: []string{
+			`CREATE TABLE IF NOT EXISTS relay_outbox (
+				id         TEXT PRIMARY KEY,
+				from_task  TEXT NOT NULL DEFAULT '',
+				from_wire  TEXT NOT NULL,
+				to_room    TEXT NOT NULL,
+				to_name    TEXT NOT NULL,
+				to_card    TEXT NOT NULL DEFAULT '',
+				text       TEXT NOT NULL,
+				when_word  TEXT NOT NULL DEFAULT '',
+				source     TEXT NOT NULL,
+				created_at TEXT NOT NULL,
+				attempts   INTEGER NOT NULL DEFAULT 0,
+				last_error TEXT NOT NULL DEFAULT ''
+			)`,
+			`CREATE INDEX IF NOT EXISTS relay_outbox_at ON relay_outbox (created_at)`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the

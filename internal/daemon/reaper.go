@@ -197,6 +197,10 @@ func (d *Daemon) reap(ctx context.Context, every time.Duration) {
 		if err := d.watchContext(); err != nil {
 			log.Printf("[atrium] reading context sizes: %v", err)
 		}
+		// What this room owes other rooms, for a hub or a room that was not
+		// answering. Off the tick, since a relay can wait on a slow room. See
+		// relay.go.
+		go d.drainRelays()
 		// Work items whose session is gone with no end recorded. Same tick,
 		// after liveness, for the same reason. See ledger.go.
 		if err := d.sweepLedger(); err != nil {
