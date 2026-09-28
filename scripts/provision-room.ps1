@@ -621,6 +621,7 @@ fi
 '@
     $as = "CHANGED=$([int]$binChanged)`n" + $as
 }
+$startedAt = Get-Date
 $r = Invoke-Remote $as
 $kv = ConvertFrom-KeyValue $r.Out
 if ($r.Code -ne 0 -or -not $kv.autostart) { Fail 'autostart' 3 'the service install failed' $r.Out }
@@ -636,17 +637,26 @@ if ($startWord -eq 'fail') { Finish 3 }
 
 # ── 9. attached to the hub ──────────────────────────────────────────────────
 
+# THE HUB'S OWN CONNECTION LIST, not `rooms ls`, which infers "attached" from
+# the last twenty seconds and would still say so about the room that was just
+# stopped for a new binary. A room started by this run has to show a
+# connection made after it started.
+$needSince = if ($startWord -eq 'done') { $startedAt } else { [datetime]::MinValue }
 $deadline = (Get-Date).AddSeconds($AttachTimeout)
-$line = $null
+$seen = $null
 do {
-    $line = Get-HubRoom $Name
-    if ($line -match '\sattached') { break }
+    try {
+        $live = Invoke-RestMethod -Uri "http://$HubAddr/_hub/rooms" -TimeoutSec 5
+        $seen = $live.rooms | Where-Object { $_.name -eq $Name -and ([datetime] $_.since) -ge $needSince } |
+            Select-Object -First 1
+    } catch { $seen = $null }
+    if ($seen) { break }
     Start-Sleep -Seconds 2
 } while ((Get-Date) -lt $deadline)
-if ($line -notmatch '\sattached') {
-    Fail 'attached' 4 "the hub has not heard from $Name after ${AttachTimeout}s" @($line)
+if (-not $seen) {
+    Fail 'attached' 4 "the hub has no live connection from $Name after ${AttachTimeout}s" @(Get-HubRoom $Name)
 }
-Step 'attached' 'ok' (($line -replace '\s+', ' ').Trim())
+Step 'attached' 'ok' "$Name on the hub since $(([datetime] $seen.since).ToString('HH:mm:ss')), host $($seen.host), build $($seen.version)"
 
 # ── 10. the runners ─────────────────────────────────────────────────────────
 
