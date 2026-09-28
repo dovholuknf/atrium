@@ -5,6 +5,24 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **Idle Claude cards keep their prompt cache warm, and stop at break-even.** See `docs/cache-keepalive-design.md`
+  and `docs/test-plan.md` section BK.
+
+  A cache write after a gap of more than an hour cost 9.6% of last week's spend, because a card that sits for 61
+  minutes rewrites its whole context at twice the input price when it is answered. Now the room refreshes an idle
+  card's cache a few minutes before it expires. The refresh is a forked headless resume of the card's conversation
+  (`claude -p --resume <id> --fork-session --no-session-persistence`) that reads the cached prefix, answers OK and is
+  thrown away. The card's terminal, transcript and conversation are never touched. The fork may not use a tool (a
+  PreToolUse hook refuses every call), takes one turn, loads no user or project settings, and its receipt is
+  checked: a fork that tries a tool stops its card, and one that acts suspends the room. A card stops by itself once
+  its refreshes since it went idle have cost an eighth of one full rewrite, which is the best stop on Opus 5.5 by the
+  resume odds in 21 days of transcripts. It raises a toast (logged) and draws a `❄ cold` chip with the spend in its
+  tooltip. The card's next turn, or switching it back on, starts a fresh budget. Opus 5.5 and Fable 5.1 only, on the
+  1h cache, context of 50k or more. A new Claude card is launched with `CLAUDE_CODE_PROMPT_CACHE_TTL=1h`. The gear's
+  settings hold the default for new cards (on) and the week's refresh spend. Each card has its own switch in its
+  menu. Every refresh is a row in the new `keepalive_refresh` table, priced. Needs a room restart. The hub's event
+  relay tags the new `keepalive` event with its card, which is HUB-SIDE.
+
 - **Copy on select no longer copies what the find bar matches.** See `docs/test-plan.md` section BJ.
 
   The search addon shows a match by selecting it, and copy on select copied every selection change, so each keystroke

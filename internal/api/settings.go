@@ -156,6 +156,9 @@ func globalAutoView(s *Server) map[string]any {
 	// Whether a runner the room's exit interrupted mid-turn is told so when it
 	// comes back. On unless switched off. See docs/unexpected-exit-wake.md.
 	out["unexpected_exit_wake"] = s.st.UnexpectedExitOn()
+	// The cache keep-alive: the default for new Claude cards, whether the room
+	// is suspended, and what refreshes cost this week. See keepalive.go.
+	keepaliveSettingsView(s.st, out)
 	inputLagView(out)
 	return out
 }
@@ -245,6 +248,12 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		// Whether this room types the unexpected-exit notice. Stored as `on` or
 		// `off`, and read at the next stop, start or delivery.
 		UnexpectedExit *bool `json:"unexpected_exit_wake"`
+		// Whether a NEW Claude card starts with the cache keep-alive on. Never
+		// applied to a card that already exists. See keepalive.go.
+		KeepaliveDefault *bool `json:"cache_keepalive_default"`
+		// Clears the room's keep-alive suspension. Only false means anything:
+		// atrium suspends, a person clears.
+		KeepaliveSuspended *bool `json:"cache_keepalive_suspended"`
 	}
 	// Read once and decoded twice: into the struct, which is what the handler
 	// works from, and into a map, which is the only way to notice a field that
@@ -531,6 +540,24 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 			v = "on"
 		}
 		if err := s.st.SetSetting(store.SettingUnexpectedExit, v); err != nil {
+			s.fail(w, err)
+			return
+		}
+	}
+
+	if body.KeepaliveDefault != nil {
+		if err := s.st.SetKeepaliveDefault(*body.KeepaliveDefault); err != nil {
+			s.fail(w, err)
+			return
+		}
+	}
+	if body.KeepaliveSuspended != nil {
+		if *body.KeepaliveSuspended {
+			writeErr(w, http.StatusBadRequest, fmt.Errorf(
+				"keep-alive is suspended by atrium when a refresh looks wrong. it can only be cleared here"))
+			return
+		}
+		if err := s.st.SetKeepaliveSuspended(""); err != nil {
 			s.fail(w, err)
 			return
 		}

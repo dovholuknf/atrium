@@ -778,6 +778,9 @@ async function cardMenu(e, id) {
         "never interrupted, and with this off everything is queued instead.",
       act: () => patchTask(id, { peer_typing: t.peer_typing === false }).then(refresh)
     } : null,
+    // The cache keep-alive for this card. Only on a Claude card, which is the
+    // only kind with a switch. See js/keepalive.js.
+    typeof keepaliveMenuItem === "function" ? keepaliveMenuItem(t, refresh) : null,
     // ANSWERED IN THE TERMINAL, which atrium cannot see.
     //
     // Every other way a question comes off a card delivers text to the

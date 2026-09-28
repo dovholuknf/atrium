@@ -145,6 +145,9 @@ type Daemon struct {
 	// card's session last started. See restartwake.go.
 	wake *wakes
 
+	// ka keeps idle Claude cards' prompt caches warm. See keepalive.go.
+	ka *keepalive
+
 	// ledgerDirty asks the snapshot writer to rewrite work-ledger.md. One slot,
 	// so any number of changes while a write is under way are one more write.
 	// See ledger.go.
@@ -418,6 +421,18 @@ func New(opts Options) (*Daemon, error) {
 	// The after-restart wake waiting on a card.
 	d.loadWakes()
 	api.RestartWakeOf = d.wakeFor
+	// The cache keep-alive: each card's switch and its current idle stretch,
+	// and the per-card switch the board flips. See keepalive.go.
+	d.ka = newKeepalive(st)
+	d.ka.broadcast = d.ap.Broadcast
+	d.ka.window = func(taskID string) int {
+		if t := d.act.telemetry(taskID); t != nil {
+			return t.Window
+		}
+		return 0
+	}
+	api.KeepaliveOf = d.ka.view
+	d.ap.SetKeepalive = d.keepaliveSet
 	// Starting a fixture is spawning a process, which the daemon owns.
 	api.StartFixture = d.StartFixtureNow
 	// Which turns are unread, carried across the restart. See seen.go.
@@ -953,6 +968,9 @@ func (d *Daemon) Run(ctx context.Context) error {
 	// passive board brings nothing back, so it has nothing to type into.
 	if !d.opts.Passive {
 		go d.wakeLoop(ctx)
+		// Idle caches kept warm. A passive board spends nothing on anybody's
+		// behalf. See keepalive.go.
+		go d.ka.loop(ctx)
 	}
 	log.Printf("[atrium] ready. ctrl-c to stop.")
 
