@@ -1,6 +1,6 @@
 # Cross-room `atrium_say` (backlog-2 item 58)
 
-Status: designed, under review. Written by sa58.
+Status: reviewed (mercurius `s_H1ILoNvxloBH`, ready_to_build) and built. Written by sa58.
 
 ## What is true today
 
@@ -221,3 +221,7 @@ Mercurius design review, session `s_H1ILoNvxloBH`, round 1, verdict needs_change
 - A1 (advisory), telling an old hub from the refusal sentence is brittle. Kept, narrowed: the room matches only
   the unknown-kind refusal, which an old hub has sent unchanged since the kind switch existed, and a test pins it.
   There is no other signal an old hub sends.
+
+Round 2, verdict ready_to_build. One advisory, folded in: a dropped held message (expired, refused, or an ambiguous
+say) is a `notified` event on the sender's card with `kind: "relay-dropped"`, `to`, `why` and the text, and a log
+line `gave up on <sender>'s message to <name@room>: <why>`.
