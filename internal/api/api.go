@@ -8,6 +8,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -857,8 +858,11 @@ func (s *Server) getTask(w http.ResponseWriter, r *http.Request) {
 const autoModeReason = "auto mode was switched on, so this was approved without being asked"
 
 type patchBody struct {
-	Status    *string           `json:"status"`
-	Why       *string           `json:"why"`
+	Status *string `json:"status"`
+	Why    *string `json:"why"`
+	// Alias is the short name to mention the card by, and "" clears it. A
+	// pointer, so leaving it out leaves it alone. See store/alias.go.
+	Alias     *string           `json:"alias"`
 	Rank      *float64          `json:"rank"`
 	Overrides map[string]string `json:"overrides"`
 	// AutoApprove turns auto mode on or off for this session.
@@ -977,6 +981,25 @@ func (s *Server) patchTask(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.Why != nil {
 		if err := s.st.SetWhy(id, *body.Why); err != nil {
+			s.fail(w, err)
+			return
+		}
+	}
+	if body.Alias != nil {
+		// A bad shape is the caller's to fix, and a clash names who holds it,
+		// so neither is a server error.
+		if err := store.ValidAlias(store.NormalizeAlias(*body.Alias)); err != nil {
+			writeErr(w, http.StatusBadRequest, err)
+			return
+		}
+		if err := s.st.SetAlias(id, *body.Alias); err != nil {
+			var taken *store.AliasTakenError
+			if errors.As(err, &taken) {
+				writeJSON(w, http.StatusConflict, map[string]any{
+					"error": err.Error(), "holder": taken.Holder.ID,
+				})
+				return
+			}
 			s.fail(w, err)
 			return
 		}

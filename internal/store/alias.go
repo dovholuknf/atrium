@@ -150,7 +150,10 @@ func (s *Store) GetByAlias(alias string) (*Task, error) {
 	}
 	var t *Task
 	err := s.guard(func() error {
-		got, err := s.getBy(`alias = ? AND `+liveClause, alias)
+		// Newest first. `SetAlias` keeps two live cards from holding one, but a
+		// card that ended can be reopened after another took its alias, and
+		// then the one launched most recently is the one being meant.
+		got, err := s.getBy(`alias = ? AND `+liveClause+` ORDER BY created_at DESC`, alias)
 		if err != nil {
 			return err
 		}
