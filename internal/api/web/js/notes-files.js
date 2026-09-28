@@ -864,6 +864,7 @@ async function loadHousekeeping() {
   fillShareAuth(s);
   syncInputLag(s);
   fillMinCols(s);
+  if (typeof paintKeepaliveSettings === "function") paintKeepaliveSettings(s);
 }
 
 // fillShareAuth writes the PUBLIC zrok share's login into the gear dialog.

@@ -1512,6 +1512,13 @@ function connect() {
   es.addEventListener("audit", () => {
     if (typeof onAuditEvent === "function") onAuditEvent();
   });
+  // The cache keep-alive stopped a card or suspended the room, or refreshed one.
+  // The card's chip is redrawn from the next list, and a stop carries a toast.
+  // See js/keepalive.js.
+  es.addEventListener("keepalive", e => {
+    if (typeof onKeepaliveEvent === "function") onKeepaliveEvent(e);
+    refreshSoon();
+  });
   es.addEventListener("going-down", e => {
     let why = "";
     try { why = (JSON.parse(e.data) || {}).why || ""; } catch (err) {}
