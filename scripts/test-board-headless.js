@@ -4917,6 +4917,166 @@ async function phoneViewSection(browser, base) {
   if (errors.length) fail("phoneView: the page threw: " + errors.join(" | "));
 }
 
+// ── u-016: phone upload, header hide, landscape, full screen ─────────────
+async function u016Section(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  landList = [LAND["land-live"]];
+  landPerms = [];
+  const errors = [];
+  const fakeSock = () => {
+    const Real = window.WebSocket;
+    window.__sent = [];
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
+        onopen: null, onclose: null, onmessage: null, onerror: null,
+        send(d) { window.__sent.push(String(d)); }, close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+    window.__fs = 0;
+    Element.prototype.requestFullscreen = function () { window.__fs++; return Promise.resolve(); };
+  };
+  const open = async (ctx) => {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await p.evaluate(() => attachTask("land-live"));
+    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live",
+      null, { timeout: slow(10000) });
+    await p.waitForTimeout(300);
+    return p;
+  };
+  const vis = (p, sel) => p.evaluate(s => {
+    const e = document.querySelector(s);
+    if (!e) return false;
+    const r = e.getBoundingClientRect();
+    return getComputedStyle(e).display !== "none" && r.width > 0 && r.height > 0;
+  }, sel);
+  const rect = (p, sel) => p.evaluate(s => {
+    const r = document.querySelector(s).getBoundingClientRect();
+    return { w: r.width, h: r.height, t: r.top, b: r.bottom, vh: innerHeight, vw: innerWidth };
+  }, sel);
+  const isFull = (p) => p.evaluate(() => document.body.classList.contains("term-full"));
+  try {
+    for (const [name, vp, phone] of [["portrait", { width: 390, height: 844 }, true],
+        ["landscape", { width: 844, height: 390 }, true], ["desktop", { width: 1280, height: 720 }, false]]) {
+      const tag = "u016 " + name + ": ";
+      const ctx = await browser.newContext(phone ? { viewport: vp, hasTouch: true, isMobile: true } : { viewport: vp });
+      await ctx.addInitScript(() => localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true })));
+      await ctx.addInitScript(fakeSock);
+      let uploads = 0;
+      await ctx.route("**/v1/tasks/*/files", route => {
+        if (route.request().method() !== "POST") return route.fallback();
+        uploads++;
+        return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ paths: ["/tmp/x.png"] }) });
+      });
+      const p = await open(ctx);
+
+      if (phone) {
+        const a = await p.evaluate(() => {
+          const b = document.getElementById("t-attach"); const r = b.getBoundingClientRect();
+          const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+          return { w: r.width, h: r.height, shown: r.width > 0, top: !!top && (top === b || b.contains(top)),
+            inView: r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight };
+        });
+        if (!a.shown || a.w < 40 || a.h < 40) fail(tag + "the attach control is missing or under 40px: " + JSON.stringify(a));
+        if (!a.top || !a.inView) fail(tag + "the attach control is covered or off screen: " + JSON.stringify(a));
+        const pick = () => p.setInputFiles("#t-attach-in", [{ name: "a.heic", mimeType: "image/heic", buffer: Buffer.from("x") }]);
+        await pick();
+        await p.waitForTimeout(400);
+        if (uploads !== 1) fail(tag + "a chosen file did not reach the upload endpoint: " + uploads);
+        await pick();
+        await p.waitForTimeout(400);
+        if (uploads !== 2) fail(tag + "the same file twice did not upload twice: " + uploads);
+      }
+
+      if (name === "landscape") {
+        const h = await rect(p, "header");
+        if (h.h > h.vh * 0.2) fail(tag + "the header takes more than 20% of the height: " + JSON.stringify(h));
+        const t = await rect(p, "#term-pane");
+        if (t.h < t.vh * 0.6) fail(tag + "the terminal pane is under 60% of the height: " + JSON.stringify(t));
+      }
+
+      // full screen
+      await p.evaluate(() => document.getElementById("t-full").click());
+      await p.waitForTimeout(400);
+      if (!(await isFull(p))) fail(tag + "the button did not turn full screen on");
+      if (await vis(p, "header")) fail(tag + "the header shows in full screen");
+      if (await vis(p, "#term-list")) fail(tag + "the terminal list shows in full screen");
+      const pr = await rect(p, "#term-pane");
+      if (pr.h < pr.vh - 2 || pr.w < pr.vw - 2) fail(tag + "the pane does not fill the viewport: " + JSON.stringify(pr));
+      if (phone) {
+        if (!(await vis(p, "#t-keys"))) fail(tag + "the key bar is gone in full screen");
+        if ((await p.evaluate(() => window.__fs)) < 1) fail(tag + "requestFullscreen was not called");
+        await p.evaluate(() => document.dispatchEvent(new Event("fullscreenchange")));
+        await p.waitForTimeout(200);
+        if (await isFull(p)) fail(tag + "fullscreenchange did not leave full screen");
+      } else {
+        // desktop: Esc with the terminal focused goes to the runner and does not leave
+        await p.evaluate(() => term.focus());
+        await p.keyboard.press("Escape");
+        if (!(await isFull(p))) fail(tag + "Esc in the focused terminal left full screen");
+        await p.evaluate(() => document.activeElement && document.activeElement.blur());
+        await p.keyboard.press("Escape");
+        await p.waitForTimeout(300);
+        if (await isFull(p)) fail(tag + "Esc outside the terminal did not leave full screen");
+      }
+      // the button both ways
+      await p.evaluate(() => { if (!document.body.classList.contains("term-full")) document.getElementById("t-full").click(); });
+      await p.waitForTimeout(200);
+      await p.evaluate(() => document.getElementById("t-full").click());
+      await p.waitForTimeout(300);
+      if (await isFull(p)) fail(tag + "the button did not leave full screen");
+      if (phone) {
+        await p.evaluate(() => document.getElementById("t-full").click());
+        await p.waitForTimeout(200);
+        await p.evaluate(() => { window.__sent.length = 0; document.querySelector("#t-keys [data-key=esc]").click(); });
+        if (!(await isFull(p))) fail(tag + "one key bar Esc left full screen");
+        if (!(await p.evaluate(() => window.__sent.some(x => /u001b/.test(x)))))
+          fail(tag + "the first key bar Esc did not reach the runner");
+        await p.evaluate(() => document.querySelector("#t-keys [data-key=esc]").click());
+        if (await isFull(p)) fail(tag + "a double key bar Esc did not leave full screen");
+      }
+      if (await p.evaluate(() => Object.keys(localStorage).some(k => /full/i.test(k))))
+        fail(tag + "full screen was saved to localStorage");
+      if (name !== "landscape" && !(await vis(p, "header"))) fail(tag + "the header did not come back");
+
+      // the header hidden on its own, saved per device
+      if (name === "portrait") {
+        const hd = () => vis(p, "header");
+        const ready = () => p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+        await p.evaluate(() => document.getElementById("hdr-hide").click());
+        if (await hd()) fail(tag + "the hide control left the header showing");
+        if (!(await vis(p, "#hdr-show"))) fail(tag + "no way back once the header is hidden");
+        await p.setViewportSize({ width: 844, height: 390 });
+        await p.waitForTimeout(300);
+        if (await hd()) fail(tag + "rotating to landscape brought the header back");
+        await p.setViewportSize({ width: 390, height: 844 });
+        await p.reload({ waitUntil: "domcontentloaded" });
+        await ready();
+        if (await hd()) fail(tag + "a reload brought the header back");
+        await p.evaluate(() => document.getElementById("hdr-show").click());
+        if (!(await hd())) fail(tag + "the handle did not show the header");
+        await p.reload({ waitUntil: "domcontentloaded" });
+        await ready();
+        if (!(await hd())) fail(tag + "the shown header did not stay shown after a reload");
+        await p.setViewportSize({ width: 844, height: 390 });
+        await p.waitForTimeout(300);
+        if (!(await hd())) fail(tag + "landscape auto-collapse overrode a saved shown header");
+      }
+      await ctx.close();
+    }
+  } finally {
+    tasksMode = was;
+  }
+  if (errors.length) fail("u016: the page threw: " + errors.join(" | "));
+}
+
 // ── copy on select answers the pointer, not the find bar ──────────────────
 // Test plan BJ. The search addon shows a match by selecting it, so copy on
 // select used to copy every find keystroke, step and re-search. Typing in the
@@ -8033,7 +8193,7 @@ async function main() {
       history: historySection, contextSize: contextSizeSection, peekEverywhere: peekEverywhereSection, cardRoute: cardRouteSection,
       quietDoer: quietDoerSection, looksIdle: looksIdleSection, notifyOff: notifyOffSection,
       questionsClick: questionsClickSection, walk: walkSection, linkReuse: linkReuseSection,
-      usageCacheReads: usageCacheReadsSection, roomsDash: roomsDashSection, phoneView: phoneViewSection, usagePolish: usagePolishSection, usageLimits: usageLimitsSection, usageGroups: usageGroupsSection,
+      usageCacheReads: usageCacheReadsSection, roomsDash: roomsDashSection, phoneView: phoneViewSection, u016: u016Section, usagePolish: usagePolishSection, usageLimits: usageLimitsSection, usageGroups: usageGroupsSection,
       eventDriven: eventDrivenSection, idleBudget: idleBudgetSection, pollsGone: pollsGoneSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
@@ -9964,6 +10124,7 @@ async function main() {
     await usageCacheReadsSection(browser, base);
     await roomsDashSection(browser, base);
     await phoneViewSection(browser, base);
+    await u016Section(browser, base);
     await eventDrivenSection(browser, base);
     await idleBudgetSection(browser, base);
     await pollsGoneSection(browser, base);
