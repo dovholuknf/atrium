@@ -24,8 +24,15 @@ runner adopted without a spec has only the card. Cwd first, card second, and if 
 ## What "gone" means
 
 - `Stat` on the directory says it does not exist, or
-- it exists and `Lstat` on `<dir>/.git` says it does not exist (a worktree's `.git` is a file, a checkout's is a
-  directory, both count as present). This is what git leaves after it unregisters a worktree it could not delete.
+- it exists, an earlier tick saw a `.git` entry in it, and `Lstat` on `<dir>/.git` now says it does not exist (a
+  worktree's `.git` is a file, a checkout's is a directory, both count as present). This is what git leaves after it
+  unregisters a worktree it could not delete.
+
+A missing `.git` is a TRANSITION, never a state. The daemon keeps `hadGit` per card in memory, set on any tick where
+the `.git` exists. A runner that never had one in its directory (a worker launched in a subdirectory of a repo) can
+only be ended by the directory disappearing. `hadGit` is dropped when the runner leaves the supervisor. A restart
+forgets it, so an empty leftover directory that already lost its `.git` is not caught after a restart until the
+directory itself is deleted. That is acceptable: it costs a missed cleanup, never a live session.
 
 Any other error, a permission failure or a sharing violation, is "not known" and counts as present. Only a definite
 "does not exist" ever counts.
@@ -64,10 +71,8 @@ Nothing is deleted. The resume id, the card and its history stay.
 
 ## False positives considered
 
-- A worker launched in a SUBDIRECTORY of a repository: its cwd has no `.git` of its own. Workers launched by an
-  orchestrator sit at a worktree root, and only `atrium:subagent` cards are considered, but this is a real gap. It is
-  not walked up for a `.git`, because a removed worktree's parent could be inside another checkout and that would turn
-  the check into never firing.
+- A worker launched in a SUBDIRECTORY of a repository: its cwd has no `.git` of its own. Closed by the `hadGit`
+  transition rule above: it never had one, so its absence never counts, and only deleting the directory ends it.
 - A directory replaced by delete and recreate (git checkout of a rebuilt worktree): present again on the next tick,
   guard resets.
 - A network or removable drive that drops: `Stat` returns something other than not-exist on most stacks. If it does

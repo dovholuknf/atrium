@@ -32,6 +32,9 @@ type goneWatch struct {
 	mu sync.Mutex
 	// seen is the path each card read as gone on the last tick.
 	seen map[string]string
+	// hadGit is the cards whose directory held a .git entry on some tick. Only
+	// those can be read as gone by losing it.
+	hadGit map[string]bool
 	// leaving holds the cards already being wound down, so a later tick does not
 	// start a second one for the same runner.
 	leaving map[string]bool
@@ -40,23 +43,32 @@ type goneWatch struct {
 	ask func(r *runner)
 }
 
-// worktreeGone says whether dir is definitely no longer a working checkout.
+// worktreeGone says whether dir is definitely no longer a working checkout, and
+// whether it has a .git entry right now.
 //
 // Only a definite "does not exist" counts. A permission failure or a sharing
 // violation says nothing about whether the directory is there, and ending a
 // session on a guess is the one mistake this cannot afford.
-func worktreeGone(dir string) bool {
+//
+// A MISSING .git IS A TRANSITION, NOT A STATE. A worker launched in a
+// subdirectory of a repository never had one in its own directory, and reading
+// its absence as "unregistered" would wind down a live session. So it counts
+// only when `hadGit` says this runner's directory held one on an earlier tick.
+func worktreeGone(dir string, hadGit bool) (gone, hasGit bool) {
 	if dir == "" {
-		return false
+		return false, false
 	}
 	if _, err := os.Stat(dir); err != nil {
-		return os.IsNotExist(err)
+		return os.IsNotExist(err), false
 	}
 	// A worktree's .git is a file and a checkout's is a directory: either counts.
 	// Neither is what git leaves after unregistering a worktree it could not
 	// finish deleting.
 	_, err := os.Lstat(filepath.Join(dir, ".git"))
-	return err != nil && os.IsNotExist(err)
+	if err == nil {
+		return false, true
+	}
+	return hadGit && os.IsNotExist(err), false
 }
 
 // runnerDir is the directory to ask about: the one the process was launched in,
@@ -76,6 +88,7 @@ func (d *Daemon) reapGoneWorktrees() {
 	if w.seen == nil {
 		w.seen = map[string]string{}
 		w.leaving = map[string]bool{}
+		w.hadGit = map[string]bool{}
 	}
 	w.mu.Unlock()
 
@@ -93,7 +106,11 @@ func (d *Daemon) reapGoneWorktrees() {
 			w.mu.Unlock()
 			continue
 		}
-		if !worktreeGone(dir) {
+		gone, hasGit := worktreeGone(dir, w.hadGit[r.taskID])
+		if hasGit {
+			w.hadGit[r.taskID] = true
+		}
+		if !gone {
 			delete(w.seen, r.taskID)
 			w.mu.Unlock()
 			continue
@@ -131,6 +148,11 @@ func (d *Daemon) reapGoneWorktrees() {
 	for id := range w.seen {
 		if !live[id] {
 			delete(w.seen, id)
+		}
+	}
+	for id := range w.hadGit {
+		if !live[id] {
+			delete(w.hadGit, id)
 		}
 	}
 	w.mu.Unlock()

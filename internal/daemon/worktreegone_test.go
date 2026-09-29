@@ -100,10 +100,38 @@ func TestARemovedWorktreeIsActedOnAtTheSecondTick(t *testing.T) {
 	}
 }
 
-// A directory that is still there but lost its .git is what git leaves behind.
-func TestADirectoryWithNoGitEntryCounts(t *testing.T) {
+// A directory that HAD a .git and lost it is what git leaves behind.
+func TestADirectoryThatHadGitAndLostItIsGoneOnTheSecondTick(t *testing.T) {
+	dir := liveDir(t)
+	g := newGoneRig(t, dir, SubagentTag)
+	g.d.reapGoneWorktrees() // .git seen
+	if err := os.Remove(filepath.Join(dir, ".git")); err != nil {
+		t.Fatal(err)
+	}
+	g.d.reapGoneWorktrees() // first sighting
+	time.Sleep(50 * time.Millisecond)
+	if n := g.asked.Load(); n != 0 {
+		t.Fatalf("asked after one tick (%d)", n)
+	}
+	g.d.reapGoneWorktrees()
+	g.waitAsked(t, 1)
+}
+
+// A worker launched in a subdirectory never had a .git of its own, so the lack
+// of one says nothing. Only the directory disappearing ends it.
+func TestADirectoryThatNeverHadGitIsLeftAloneUntilItIsDeleted(t *testing.T) {
 	dir := t.TempDir()
 	g := newGoneRig(t, dir, SubagentTag)
+	for i := 0; i < 4; i++ {
+		g.d.reapGoneWorktrees()
+	}
+	time.Sleep(50 * time.Millisecond)
+	if n := g.asked.Load(); n != 0 {
+		t.Fatalf("asked %d times about a directory that never had a .git", n)
+	}
+	if err := os.RemoveAll(dir); err != nil {
+		t.Fatal(err)
+	}
 	g.d.reapGoneWorktrees()
 	g.d.reapGoneWorktrees()
 	g.waitAsked(t, 1)
