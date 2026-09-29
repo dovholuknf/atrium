@@ -125,9 +125,9 @@ func TestHubLeavesARequestPendingWhenBoardWideAutoIsOff(t *testing.T) {
 
 	proxy.SetInventory(&remembering{boardAuto: false})
 
-	// A few sweep intervals is long enough that an approver that was going to act
-	// would have. Nothing should have touched the request.
-	time.Sleep(3 * autoSweepEvery)
+	// Long enough that an approver that was going to act would have. Nothing
+	// should have touched the request.
+	time.Sleep(time.Second)
 	if decided, _, _ := g.answered(); decided {
 		t.Fatalf("a request was approved with board-wide auto off")
 	}
