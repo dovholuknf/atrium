@@ -164,7 +164,18 @@ func promptOwes(q querier, s *Store, taskID string, payload []byte) (bool, error
 	if by == "" || by == HumanLauncher {
 		return false, nil
 	}
-	if strings.EqualFold(from, by) || strings.EqualFold(s.Qualify(from), s.Qualify(by)) {
+	if strings.EqualFold(from, by) {
+		return true, nil
+	}
+	// Read through q, never s.Tenant: q may be a transaction holding the pool's
+	// only connection, and that deadlocked the room at startup.
+	var tenant string
+	if err := q.QueryRow(`SELECT value FROM setting WHERE key = ?`, SettingTenant).Scan(&tenant); err != nil &&
+		!errors.Is(err, sql.ErrNoRows) {
+		return false, err
+	}
+	qualify := func(n string) string { return qualifyAs(tenant, n) }
+	if strings.EqualFold(qualify(from), qualify(by)) {
 		return true, nil
 	}
 	if byID != "" {
@@ -173,7 +184,7 @@ func promptOwes(q querier, s *Store, taskID string, payload []byte) (bool, error
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return false, err
 		}
-		if wire.Valid && wire.String != "" && strings.EqualFold(s.Qualify(from), wire.String) {
+		if wire.Valid && wire.String != "" && strings.EqualFold(qualify(from), wire.String) {
 			return true, nil
 		}
 	}

@@ -15,7 +15,7 @@ if (-not (Test-Path $AtriumNew)) { Say "FATAL: no new build at $AtriumNew"; exit
 # Gate: wait for an idle board, count down in a toast clint can click to pause (docs/hub-restart-gate.md).
 # Exit 0 means go (or a hub too old to ask), anything else means leave the hub alone.
 if (-not $WhatIf) {
-  & 'D:\worktrees\claude\atrium\orchestrator\scripts\hub-restart-gate.ps1' | ForEach-Object { Say "gate: $_" }
+  & 'D:\git\github\dovholuknf\atrium\scripts\hub-restart-gate.ps1' | ForEach-Object { Say "gate: $_" }
   if ($LASTEXITCODE -ne 0) { Say 'restart held by the board, nothing changed'; exit 0 }
 } else { Say 'WHATIF: run scripts\hub-restart-gate.ps1 and stop here unless it says go' }
 

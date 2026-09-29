@@ -26,15 +26,20 @@ import (
 // shutdown gives each one.
 const windDownGrace = 10 * time.Second
 
+// goneKey is one card looked at in one directory.
+type goneKey struct{ card, dir string }
+
 // goneWatch is what the reaper remembers between ticks, in memory only. A
 // restart forgets it and costs one more tick.
 type goneWatch struct {
 	mu sync.Mutex
 	// seen is the path each card read as gone on the last tick.
 	seen map[string]string
-	// hadGit is the cards whose directory held a .git entry on some tick. Only
-	// those can be read as gone by losing it.
-	hadGit map[string]bool
+	// hadGit is the card and directory pairs that held a .git entry on some
+	// tick. Only those can be read as gone by losing it. Keyed by directory as
+	// well as card, so a .git seen in one directory never makes another read as
+	// a .git that went away.
+	hadGit map[goneKey]bool
 	// leaving holds the cards already being wound down, so a later tick does not
 	// start a second one for the same runner.
 	leaving map[string]bool
@@ -72,8 +77,12 @@ func worktreeGone(dir string, hadGit bool) (gone, hasGit bool) {
 }
 
 // runnerDir is the directory to ask about: the one the process was launched in,
-// which is exactly the one it holds, else the one the card last reported.
+// which is exactly the one it holds, else the card's worktree, which is the
+// launch directory too because a card never follows the session's cd.
 func runnerDir(r *runner, t *store.Task) string {
+	if r.dir != "" {
+		return r.dir
+	}
 	if r.spec != nil && r.spec.cwd != "" {
 		return r.spec.cwd
 	}
@@ -88,7 +97,7 @@ func (d *Daemon) reapGoneWorktrees() {
 	if w.seen == nil {
 		w.seen = map[string]string{}
 		w.leaving = map[string]bool{}
-		w.hadGit = map[string]bool{}
+		w.hadGit = map[goneKey]bool{}
 	}
 	w.mu.Unlock()
 
@@ -106,9 +115,10 @@ func (d *Daemon) reapGoneWorktrees() {
 			w.mu.Unlock()
 			continue
 		}
-		gone, hasGit := worktreeGone(dir, w.hadGit[r.taskID])
+		key := goneKey{r.taskID, dir}
+		gone, hasGit := worktreeGone(dir, w.hadGit[key])
 		if hasGit {
-			w.hadGit[r.taskID] = true
+			w.hadGit[key] = true
 		}
 		if !gone {
 			delete(w.seen, r.taskID)
@@ -150,9 +160,9 @@ func (d *Daemon) reapGoneWorktrees() {
 			delete(w.seen, id)
 		}
 	}
-	for id := range w.hadGit {
-		if !live[id] {
-			delete(w.hadGit, id)
+	for k := range w.hadGit {
+		if !live[k.card] {
+			delete(w.hadGit, k)
 		}
 	}
 	w.mu.Unlock()

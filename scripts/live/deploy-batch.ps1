@@ -17,10 +17,11 @@ $LiveTag = 'BATCH'
 $LiveLog = Join-Path $Base 'deploy-batch.log'
 
 if (-not (Test-Path $AtriumNew)) { Say "FATAL: no new build at $AtriumNew"; exit 1 }
+if (-not (Test-NewBuildStamped)) { exit 1 }
 if (-not $NoLagLog) { $env:ATRIUM_DEBUG_INPUTLAG = '1' }
 
 # 0. Snapshot the outgoing binary under its build id.
-Save-Revert
+$revert = Save-Revert
 
 # 1. Stop the room gracefully first, so it parks its runners and saves what to reopen.
 Stop-Room
@@ -49,6 +50,32 @@ if (-not $WhatIf) {
   if (-not $ok) {
     Say 'room did not reattach. last lines of room.err:'
     Get-Content (Join-Path $Base 'room.err') -Tail 20 | ForEach-Object { Say "  $_" }
+  }
+}
+
+# 6. The room is healthy only when it answers from its store, now and again after the startup sweep and the reopen.
+#    Reattached is not enough: the link attaches before the sweep, and a frozen store still answers /v1/health.
+if (-not $WhatIf) {
+  $serves = Test-RoomServes
+  Say "room serves ${RoomServes}: $serves"
+  if ($serves) {
+    Start-Sleep -Seconds 30
+    $serves = Test-RoomServes
+    Say "room serves $RoomServes 30s later: $serves"
+  }
+  if (-not $serves) {
+    Say "ROOM IS NOT SERVING. reverting to $revert. last lines of room.err:"
+    Get-Content (Join-Path $Base 'room.err') -Tail 20 | ForEach-Object { Say "  $_" }
+    # A frozen room does not answer the shutdown post either. Stop-Room forces after its 45s.
+    Stop-Room
+    Stop-Hub
+    if (-not (Install-Atrium $revert)) { Say 'FATAL: revert install failed. nothing is running'; exit 1 }
+    Start-Hub
+    $null = Wait-Hub 25
+    $null = Start-Room
+    $null = Wait-Hub 60 1
+    Say "reverted. room serves ${RoomServes}: $(Test-RoomServes)"
+    exit 1
   }
 }
 Say 'batch deploy done.'

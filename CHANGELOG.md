@@ -1,9 +1,41 @@
 # Changelog
 
+**Frozen 2026-09-29.** New entries go in `changelog/<dept>/<yyyy-mm-dd>-<item>.md`, one file each.
+See `changelog/README.md`.
+
 A running log of what's been built. Newest first. No formal version cuts yet (everything is `v0.0.0-dev`); each
 section heading is just "what landed in this iteration."
 
 ## Unreleased
+
+- **Dollar cost is hidden and no longer calculated.** See `docs/backlog-2.md` item 37.
+
+  clint decided the figure is not worth having. A usage row is no longer priced, and no dollar amount is sent to the
+  board or shown on it: the usage tab, the card's details, the peek, keep-alive's tooltips, its settings line and its
+  break-even toast all show tokens or counts only. Token counts are unchanged. The price tables and the stored `cost`
+  columns stay in place and no migration runs. Keep-alive's break-even stop still prices each refresh and works
+  exactly as before, until its time limit replaces it. Only the figure is hidden. The item 37 entry lists every place
+  cost was computed and shown.
+
+- **A batch deploy is healthy only when the room answers from its store.** See `docs/backlog-2.md` item m-002.
+
+  `deploy-batch.ps1` now refuses a build that does not report its commit, asks the room for `/v1/settings` right
+  after it reattaches and again 30 seconds later, and reverts to the snapshot from step 0 when either check fails.
+  The hub reporting the room attached was not enough: a room with a frozen store still attaches.
+
+- **The store's test suite fails on any path from a held connection to the pool.**
+  `TestNothingHoldingTheConnectionReachesThePool` reads `internal/store` and follows calls from every function that
+  holds a `*Tx` or a `querier` to any use of `s.db`. The pool has one connection, so such a path deadlocks the store,
+  which is what took the room down on 2026-09-29. It fails on that tree and passes on this one.
+
+- **The hub no longer panics on a `null` event.** `tagEvent` wrote the room onto the nil map that `null` decodes
+  to, which ended that board's event stream. It now passes the payload through untouched.
+
+- **Turning notifications off holds back permission requests too.** See `docs/backlog-2.md` item 79.
+
+  clint answered item 79's open question: off means notifications in general. A permission request raises no toast,
+  desktop notification or sound while off, and is still listed in the drawer. `NOTIFY_OFF_SILENCES_PERMISSIONS` in
+  `js/notify.js` is now true, and the drawer's tip no longer says permission requests still come through.
 
 - **The screen model's real-session tests no longer read the live scrollback.** See `docs/backlog-2.md` item 93.
 

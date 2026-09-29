@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/api"
@@ -255,28 +256,113 @@ func scanReplies(r io.Reader, fn func(*mainReply)) (int64, error) {
 	}
 }
 
+// lastReplyCap bounds the read cache by count. The oldest entry goes first.
+const lastReplyCap = 400
+
+// lastReplyEntry is what one transcript read found, and where in the file it
+// stopped, so a grown file is read from there and an unchanged one not at all.
+type lastReplyEntry struct {
+	size   int64
+	mtime  time.Time
+	offset int64 // bytes of complete lines scanned, from the start of the file
+	from   int64 // where the scan began, nonzero when the file was over the tail
+	reply  lastReply
+	ttl    time.Duration
+}
+
+// lastReplyCache is readLastReply's memory. It has its own lock and never k.mu,
+// so the list handler's view stays cheap.
+var lastReplyCache = struct {
+	mu    sync.Mutex
+	m     map[string]*lastReplyEntry
+	order []string
+}{m: map[string]*lastReplyEntry{}}
+
+// lastReplyScans counts transcript scans, for tests.
+var lastReplyScans atomic.Int64
+
+func lastReplyLoad(path string) (lastReplyEntry, bool) {
+	lastReplyCache.mu.Lock()
+	defer lastReplyCache.mu.Unlock()
+	e := lastReplyCache.m[path]
+	if e == nil {
+		return lastReplyEntry{}, false
+	}
+	return *e, true
+}
+
+func lastReplyStore(path string, e lastReplyEntry) {
+	c := &lastReplyCache
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if _, ok := c.m[path]; !ok {
+		c.order = append(c.order, path)
+		for len(c.order) > lastReplyCap {
+			delete(c.m, c.order[0])
+			c.order = c.order[1:]
+		}
+	}
+	c.m[path] = &e
+}
+
+func lastReplyDrop(path string) {
+	c := &lastReplyCache
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if _, ok := c.m[path]; !ok {
+		return
+	}
+	delete(c.m, path)
+	for i, p := range c.order {
+		if p == path {
+			c.order = append(c.order[:i], c.order[i+1:]...)
+			break
+		}
+	}
+}
+
 // readLastReply finds the last main-thread assistant reply with usage in a
-// transcript.
+// transcript. The answer is cached per path on the file's size and mtime. A
+// grown file is scanned from the cached offset when the whole file is inside the
+// tail window, where that gives the same answer as a whole read. A file that
+// shrank or whose mtime went back is read whole.
 func readLastReply(path string) (*lastReply, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+	prev, have := lastReplyLoad(path)
+	if have && prev.size == info.Size() && prev.mtime.Equal(info.ModTime()) {
+		r := prev.reply
+		r.TTL = prev.ttl
+		return &r, nil
+	}
+	var (
+		start int64
+		out   *lastReply
+		ttl   time.Duration
+	)
+	switch {
+	case have && info.Size() > prev.size && !info.ModTime().Before(prev.mtime) &&
+		prev.from == 0 && info.Size() <= transcriptTail:
+		start = prev.offset
+		r := prev.reply
+		out, ttl = &r, prev.ttl
+	case info.Size() > transcriptTail:
+		start = info.Size() - transcriptTail
+	}
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
-	info, err := f.Stat()
-	if err != nil {
-		return nil, err
-	}
-	if info.Size() > transcriptTail {
-		if _, err := f.Seek(info.Size()-transcriptTail, io.SeekStart); err != nil {
+	if start > 0 {
+		if _, err := f.Seek(start, io.SeekStart); err != nil {
 			return nil, err
 		}
 	}
-	var (
-		out *lastReply
-		ttl time.Duration
-	)
-	_, err = scanMainReplies(f, func(r *mainReply) {
+	lastReplyScans.Add(1)
+	done, err := scanMainReplies(f, func(r *mainReply) {
 		switch {
 		case r.Write1h > 0:
 			ttl = time.Hour
@@ -286,11 +372,19 @@ func readLastReply(path string) (*lastReply, error) {
 		out = &lastReply{Model: r.Model, At: r.At, Speed: r.Speed, Context: r.Context()}
 	})
 	if err != nil {
+		lastReplyDrop(path)
 		return nil, err
 	}
 	if out == nil {
+		lastReplyDrop(path)
 		return nil, errors.New("no main reply in the transcript")
 	}
+	// Size and mtime are from before the read. A write landing mid-read makes
+	// the next call see a change and scan again, never a stale answer.
+	lastReplyStore(path, lastReplyEntry{
+		size: info.Size(), mtime: info.ModTime(), offset: start + done, from: start,
+		reply: *out, ttl: ttl,
+	})
 	out.TTL = ttl
 	return out, nil
 }
@@ -392,8 +486,8 @@ type keepaliveCardView struct {
 	// too: one miss rewrites the whole context, about eight budgets.
 	Refreshes int     `json:"refreshes"`
 	Missed    int     `json:"missed,omitempty"`
-	Spent     float64 `json:"spent"`
-	Budget    float64 `json:"budget,omitempty"`
+	Spent     float64 `json:"-"`
+	Budget    float64 `json:"-"`
 	// WarmUntil is when the card's cache expires, when atrium knows.
 	WarmUntil *time.Time `json:"warm_until,omitempty"`
 }
@@ -913,11 +1007,11 @@ func (k *keepalive) stop(t *store.Task, state string, v verdict) {
 	}
 	payload := map[string]any{
 		"task_id": t.ID, "title": t.DisplayTitle(), "state": state,
-		"refreshes": v.count, "spent": v.spent, "budget": v.budget,
+		"refreshes": v.count,
 	}
 	if state == store.KeepaliveBreakEven {
-		payload["toast"] = fmt.Sprintf("keep-alive stopped on %s at break-even after %d refreshes, $%.2f",
-			t.DisplayTitle(), v.count, v.spent)
+		payload["toast"] = fmt.Sprintf("keep-alive stopped on %s at break-even after %d refreshes",
+			t.DisplayTitle(), v.count)
 		payload["cold_at"] = v.expiry
 	}
 	k.broadcast("keepalive", payload)

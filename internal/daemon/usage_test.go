@@ -3,7 +3,6 @@ package daemon
 import (
 	"encoding/json"
 	"fmt"
-	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -22,6 +21,20 @@ type usageFix struct {
 	task *store.Task
 	path string
 	base time.Time
+}
+
+// assertNoMoney fails when v, as JSON, carries a cost, price, spend or budget key or a dollar sign.
+func assertNoMoney(t *testing.T, v any) {
+	t.Helper()
+	b, err := json.Marshal(v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, bad := range []string{"cost", "price", "spent", "budget", "usd", "$"} {
+		if strings.Contains(strings.ToLower(string(b)), bad) {
+			t.Fatalf("%q on the wire: %s", bad, b)
+		}
+	}
 }
 
 func newUsageFix(t *testing.T) *usageFix {
@@ -121,9 +134,11 @@ func TestUsageRecordsOneRowPerTurn(t *testing.T) {
 	if row.Context != 10202 || row.Cause != store.UsageOperator || row.AfterResume || row.LastMessage != "m2" {
 		t.Fatalf("row %+v", row)
 	}
-	if row.Cost <= 0 || row.Prices == "" {
-		t.Fatalf("row not priced %+v", row)
+	if row.Cost != 0 || row.Prices != "" {
+		t.Fatalf("row priced, money is not worked out any more: %+v", row)
 	}
+	assertNoMoney(t, row)
+	assertNoMoney(t, usageEvent(row))
 	// A Stop with no new request writes nothing.
 	if again := f.record(f.u.endSegment(f.task.ID, b.Add(20*time.Second))); again != nil {
 		t.Fatalf("an empty turn wrote %+v", again)
@@ -254,7 +269,7 @@ func TestKeepaliveRefreshIsAUsageRow(t *testing.T) {
 		t.Fatalf("rows %d (%v)", len(rows), err)
 	}
 	r := rows[0]
-	if r.Cause != store.UsageKeepalive || r.CacheRead != 297_000 || r.CacheWrite1h != 1_000 || r.Cost <= 0 {
+	if r.Cause != store.UsageKeepalive || r.CacheRead != 297_000 || r.CacheWrite1h != 1_000 || r.Cost != 0 {
 		t.Fatalf("row %+v", r)
 	}
 }
@@ -303,12 +318,8 @@ func TestUsageCountsSubagentsOnceInTheirOwnRow(t *testing.T) {
 		sub.Output != 130 || sub.Input != 8 || sub.LastMessage != "s3" || sub.AfterResume {
 		t.Fatalf("subagent row %+v", sub)
 	}
-	// Each reply priced on its own model, the haiku one on haiku's.
-	opus, haiku := keepalivePrices["claude-opus-5-5"], usageOnlyPrices["claude-haiku-4-5"]
-	want := usageCost(&store.SessionUsage{Input: 6, CacheWrite1h: 10100, CacheRead: 7000, Output: 120}, opus) +
-		usageCost(&store.SessionUsage{Input: 2, CacheWrite5m: 500, Output: 10}, haiku)
-	if math.Abs(sub.Cost-want) > 1e-9 {
-		t.Fatalf("subagent cost %v, want %v", sub.Cost, want)
+	if sub.Cost != 0 {
+		t.Fatalf("subagent row priced: %v", sub.Cost)
 	}
 
 	// Reconciled: every file summed on its own, one per id, is the two rows.
