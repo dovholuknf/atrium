@@ -149,6 +149,55 @@ func (u *usageTracker) emitRow(row *store.SessionUsage) {
 	}
 }
 
+// deptTagPrefix is the tag that files a card under a department.
+const deptTagPrefix = "dept:"
+
+// stamp fills a row's department and director from its card as it is now, so
+// the row keeps them after the card is culled. Best effort: a card that cannot
+// be read files under "".
+func (u *usageTracker) stamp(row *store.SessionUsage) {
+	if u == nil || row == nil {
+		return
+	}
+	t, err := u.st.Get(row.TaskID)
+	if err != nil || t == nil {
+		return
+	}
+	row.Dept, row.Launcher, row.LauncherID = usageGroups(u.st, t)
+}
+
+// usageGroups is where a card's spend files. The department is the value of its
+// `dept:<x>` tag, "" when none. The director is the card itself when tagged
+// atrium:director, else the card that launched it, "" when the operator did.
+// A director is named by its alias, else its handle.
+func usageGroups(st *store.Store, t *store.Task) (dept, launcher, launcherID string) {
+	for _, tag := range t.Tags {
+		tag = strings.TrimSpace(tag)
+		if len(tag) > len(deptTagPrefix) && strings.EqualFold(tag[:len(deptTagPrefix)], deptTagPrefix) {
+			dept = strings.TrimSpace(tag[len(deptTagPrefix):])
+			break
+		}
+	}
+	name := func(c *store.Task) string {
+		if c.Alias != "" {
+			return c.Alias
+		}
+		return c.WireName
+	}
+	if hasTag(t.Tags, DirectorTag) {
+		return dept, name(t), t.ID
+	}
+	if !t.Launched() {
+		return dept, "", ""
+	}
+	if t.SpawnedByID != "" {
+		if p, err := st.Get(t.SpawnedByID); err == nil && p != nil {
+			return dept, name(p), p.ID
+		}
+	}
+	return dept, t.SpawnedBy, t.SpawnedByID
+}
+
 func newUsageTracker(st *store.Store) *usageTracker {
 	return &usageTracker{
 		st:         st,
@@ -313,6 +362,7 @@ func (u *usageTracker) record(t *store.Task, seg usageSegment) (*store.SessionUs
 	} else {
 		row = main.row(t)
 		row.Cause, row.AfterResume = seg.cause, seg.afterResume
+		u.stamp(row)
 		if err := u.st.AddSessionUsage(row); err != nil {
 			// The next read starts again from the last row on record.
 			delete(u.cursor, t.ID)
@@ -327,6 +377,7 @@ func (u *usageTracker) record(t *store.Task, seg usageSegment) (*store.SessionUs
 	if len(side.order) > 0 {
 		sub := side.row(t)
 		sub.Cause = store.UsageSubagent
+		u.stamp(sub)
 		if err := u.st.AddSessionUsage(sub); err != nil {
 			delete(u.subs, t.ID)
 			return row, err

@@ -1821,6 +1821,16 @@ var migrations = []struct {
 			`ALTER TABLE task ADD COLUMN last_rows INTEGER NOT NULL DEFAULT 0`,
 		},
 	},
+	{
+		// Who a turn's spend files under, kept on the row because a culled worker's
+		// card and tags are gone. No default, so rows from before read NULL.
+		name: "0073_usage_grouping",
+		stmts: []string{
+			`ALTER TABLE session_usage ADD COLUMN dept TEXT`,
+			`ALTER TABLE session_usage ADD COLUMN launcher TEXT`,
+			`ALTER TABLE session_usage ADD COLUMN launcher_id TEXT`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the
