@@ -718,6 +718,9 @@ type view struct {
 	// no turn has ever ended on. Durable, unlike Activity. See
 	// docs/seen-design.md.
 	Seen *store.SeenView `json:"seen,omitempty"`
+	// Row is always 1. It tells the board this payload is a whole list row, so a
+	// "task" event can be upserted without a re-fetch. Never omitted.
+	Row int `json:"row"`
 }
 
 // IsSupervised reports whether atrium owns this task's runner. Supplied by the
@@ -764,6 +767,7 @@ var KeepaliveOf func(taskID string) any
 func toView(t *store.Task) view {
 	v := view{
 		Task:         t,
+		Row:          1,
 		DisplayTitle: t.DisplayTitle(),
 		DisplayRepo:  t.DisplayRepo(),
 		IdleSeconds:  int64(time.Since(t.LastActivityAt).Seconds()),
@@ -840,6 +844,28 @@ func (s *Server) withAskCounts(vs []view) []view {
 	return s.withSeen(vs)
 }
 
+// taskEvent builds the row /v1/tasks would return for this one card, with one
+// card's worth of queries. A failed decoration query is swallowed, as in
+// withAskCounts.
+func (s *Server) taskEvent(t *store.Task) view {
+	v := toView(t)
+	if n, err := s.st.RepliesOwedFor(t.ID); err == nil {
+		v.RepliesOwed = n
+	}
+	if n, err := s.st.OpenAskCount(t.ID); err == nil {
+		v.AsksOpen = n
+	}
+	if sn, err := s.st.GetSeen(t.ID); err == nil {
+		v.Seen = sn.View()
+	}
+	return v
+}
+
+// PublishTask broadcasts a "task" event carrying the same row a /v1/tasks
+// list holds for the card, so the board can upsert it without a re-fetch.
+// Every "task" broadcast goes through here.
+func (s *Server) PublishTask(t *store.Task) { s.Broadcast("task", s.taskEvent(t)) }
+
 // withSeen stamps each card's seen state, for the whole list in one query and
 // swallowing a failure for the same reason `withAskCounts` does: it decorates
 // a row that is worth serving without it.
@@ -888,7 +914,7 @@ func (s *Server) markSeen(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if changed {
-		s.Broadcast("task", toView(t))
+		s.PublishTask(t)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"seen": cur.View(), "changed": changed, "stale": !changed && cur.Unseen(),
@@ -922,7 +948,7 @@ func (s *Server) dismissQuestions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if dismissed {
-		s.Broadcast("task", toView(t))
+		s.PublishTask(t)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"dismissed": dismissed, "stale": stale})
 }
@@ -1247,7 +1273,7 @@ func (s *Server) patchTask(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	s.Broadcast("task", toView(t))
+	s.PublishTask(t)
 	out := toView(t)
 	if canceled > 0 {
 		s.Broadcast("permission", map[string]any{"canceled": canceled, "task": id})
@@ -1783,7 +1809,7 @@ func (s *Server) launch(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err)
 		return
 	}
-	s.Broadcast("task", toView(task))
+	s.PublishTask(task)
 	writeJSON(w, http.StatusOK, toView(task))
 }
 
@@ -1853,7 +1879,7 @@ func (s *Server) cullRunner(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if t, err := s.st.Get(r.PathValue("id")); err == nil {
-		s.Broadcast("task", toView(t))
+		s.PublishTask(t)
 	}
 	writeJSON(w, http.StatusOK, res)
 }
@@ -1867,7 +1893,7 @@ func (s *Server) restartRunner(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err)
 		return
 	}
-	s.Broadcast("task", toView(task))
+	s.PublishTask(task)
 	writeJSON(w, http.StatusOK, toView(task))
 }
 
