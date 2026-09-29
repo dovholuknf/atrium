@@ -2324,6 +2324,19 @@ and item 83. Two candidates:
 
 Until then, the five runners above can be asked to leave by their owners with `atrium_exit` (sa21 @runtime, sa80
 @ui, fb01 @fabric, lost-lines and sa82 @terminal), after which each empty directory removes normally. Nothing was
-killed or exited during the diagnosis.
+killed or exited during the diagnosis. The orchestrator sent `atrium_exit` to all five afterwards.
+
+**A second finding, the same family as item 83.** `atrium_say` and `atrium_exit` refuse a `done` card named by its
+alias ("no session called sa21"), and only the `room~id` form works. Reproduced by @runtime on sa32 the same night.
+The cause is `GetByAlias` in `internal/store/alias.go`, which only matches `liveClause` (not `done`, not `dead`,
+not archived). So an alias stops resolving the moment a worker reports done, while its runner is still at the
+prompt and item 83 says a say should reach it. Every resolver built on it (`localTarget`, `resolvePeer`, the MCP
+`resolvePeer` in `internal/link`) inherits that. sa32 found the mirror of it: `GetByWireName` matches ended cards,
+so an exact handle of a dead card is refused as ended even when a live card holds that name as an alias.
+
+The fix belongs in resolution, not in the alias query: an alias resolves to the newest card holding it that is
+live, or else to the newest `done` card whose session is not gone by `sessionGone` (item 83's rule). A dead card's
+alias stays unresolved, so a reused alias still means the live card. Separate from the reaper fix above, and it
+touches the same resolver sa32 (item 32) changed, so it goes after that merge.
 
 ------------
