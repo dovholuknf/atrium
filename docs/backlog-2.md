@@ -60,7 +60,7 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 51 | Five kept worktrees show 48 commits not matched on `claude/main` | housekeeping | DONE, all five safe, deleted 2026-09-28 |
 | 52 | A pinned strip with cards from two rooms orders only one room | bug | DONE by fb04, merged into claude/fabric, needs hub and room restarts. `prune` is item 92 |
 | 53 | `setViewport` and `dropViewport` compute under `r.mu` and apply outside it | bug | by sa53, DONE, reproduced and fixed |
-| 54 | Terminal test suite part 2: `screen.go` against xterm.js | feature | not started |
+| 54 | Terminal test suite part 2: `screen.go` against xterm.js | feature | DONE by sa54, `1938e74`, on claude/main `e45fc2c`. Its two skips became 81 and 82, both done. No part 3 |
 | 55 | Launched runners inherit ATRIUM_DEBUG_INPUTLAG from the room | bug | DONE by sa55, merged, needs a room restart |
 | 56 | Every dialog is sleek, one skinned design, starting with card details and the room's edit-agents screen | feature, design first, HIGH | DONE by sa56, merged `a1ab1c2`, deployed `66717c5` |
 | 57 | The live room leaks memory | bug, HIGH | DONE by sa57, merged `aa74dd5`, deployed `66717c5` |
@@ -1659,6 +1659,10 @@ differences remain as skipped cases: `screen.go` ignores DECSTBM scroll regions,
 cell. Accepted on purpose: cleared rows go to history, `CSI S` files rows into history, no reflow on a width change.
 The bare `CSI H` repaint agrees with xterm.js in both fixtures, so sa74 still owns what to do about it. See
 `docs/changes/54.md`.
+
+**Status 2026-09-29: DONE, `1938e74`, landed on claude/main in terminal batch 1 (`e45fc2c`).** The two skipped
+cases became item 81 (scroll regions) and item 82 (wide characters), and both are done. `TestScreenAgainstXterm`
+now runs with no skips. The three accepted differences are on purpose, so there is no part 3.
 
 ## 55. Launched runners inherit ATRIUM_DEBUG_INPUTLAG from the room (bug)
 
