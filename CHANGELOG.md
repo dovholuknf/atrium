@@ -5,6 +5,13 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **The stdio `atrium_launch` warns when the room is older than launch options.** See `docs/backlog-2.md` item 60.
+
+  The stdio control MCP took `model`, `effort`, `args` and `env` but passed a room's silence on as success. It now
+  returns the same WARNING the hub's control MCP does when the card the room hands back does not carry what was
+  asked for, and reports the model and effort the card runs with. Both paths build the sentence from
+  `link.LaunchOptionsDropped` and `link.LaunchDroppedWarning`, so they cannot drift.
+
 - **One merge-check script and a dedicated merge worktree.** See `docs/backlog-2.md` item 77, parts a and e.
 
   `scripts/merge-check.ps1` runs `go test -p 4 ./...` (with `ATRIUM_LOCATION` and `ATRIUM_DEBUG_INPUTLAG` cleared),
