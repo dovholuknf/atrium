@@ -2799,9 +2799,14 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 
 <!-- Wide: the history in here is commands, and a command that wraps three
      times is not one you can scan down. -->
+<!-- Two columns. On the left what you read and write: why, what it asked, what
+     it said, what you want to say, and what happened. On the right the settings
+     of the card itself, each on its own panel: the runner, its tags, its bell
+     and its mark. `.dlg-cols` in css/dialogs.css. -->
 <dialog id="detail" class="wide">
   <div class="dlg-head">
     <div class="grow">
+      <div class="dlg-eyebrow">card details</div>
       <h2 id="d-title"></h2>
       <div class="chips" id="d-chips"></div>
     </div>
@@ -2810,6 +2815,8 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       data-tip="every field here is written when you leave it, so this only closes">save and close</button>
   </div>
   <div class="dlg-body">
+   <div class="dlg-cols">
+   <div class="dlg-main">
     <div class="field">
       <label class="eyebrow" for="d-why">why am I doing this</label>
       <input type="text" id="d-why" placeholder="what is this for? written once, read later">
@@ -2843,97 +2850,6 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       <label class="eyebrow" for="d-recap">what it says it did</label>
       <textarea id="d-recap" rows="4" spellcheck="false"></textarea>
       <span class="hintline" id="d-recap-when"></span>
-    </div>
-    <!-- What you call this, as opposed to what atrium worked out from the
-         path. Free text: a fixed list would be atrium deciding what kinds of
-         work exist. -->
-    <div class="field">
-      <label class="eyebrow" for="d-tags">tags</label>
-      <input type="text" id="d-tags" spellcheck="false"
-        placeholder="lab, discourse, prs, tangent">
-      <span class="hintline">Comma separated. Group and sort by these, and click one on a
-        card to see only that. Lower cased, so <code>Lab</code> and <code>lab</code> stay one
-        tag.</span>
-      <div id="d-tag-known" class="tagsuggest"></div>
-    </div>
-    <!-- No "move to" here. It is on the card's own menu, one right click from
-         the card itself, which is where you are when you decide a card belongs
-         in another column. A second way to do it from this dialog was a row of
-         six buttons nobody pressed. -->
-    <div class="field">
-      <label class="eyebrow">runner</label>
-      <div class="toolbar" id="d-runner"></div>
-      <span class="hintline" id="d-auto-note"></span>
-    </div>
-    <!-- The tone this card rings with. Stored on the card, like its theme and
-         for the same reason: knowing which agent it was without looking only
-         works if the answer is the same tomorrow and in another browser. -->
-    <div class="field">
-      <label class="eyebrow" for="d-sound">its bell</label>
-      <div class="picker">
-        <select id="d-sound"></select>
-        <button onclick="previewCardSound()" data-tip="hear it">play</button>
-      </div>
-      <span class="hintline">Rings instead of the board's tone whenever this one card wants you, whether
-        that is a permission or the end of a turn. Which agent is the thing you cannot work out with your
-        back turned, so it wins over telling the two kinds apart.</span>
-    </div>
-    <!-- The mark this card wears on a desktop notification. Beside the bell,
-         because it answers the same question in the other sense: one is which
-         agent when you cannot see, the other is which agent when you can. -->
-    <div class="field">
-      <label class="eyebrow" for="d-icon">its mark</label>
-      <div class="picker">
-        <input id="d-icon" maxlength="16" spellcheck="false"
-          placeholder="empty means the atrium mark">
-        <span class="iconpreview" id="d-icon-preview"></span>
-        <!-- A picture instead of a glyph. Hidden input plus a button, because
-             the browser's own file control is the one piece of furniture on
-             this board that cannot be styled at all. -->
-        <input type="file" id="d-icon-file" accept="image/*" hidden
-          onchange="uploadIcon(this)">
-        <button onclick="document.getElementById('d-icon-file').click()"
-          data-tip="png, jpeg, gif, webp or svg">use a picture</button>
-        <button class="no" id="d-icon-clear" onclick="busyWhile(this, clearIcon, 'removing…')" hidden>back to a glyph</button>
-      </div>
-      <span class="hintline">One character, or an emoji. Drawn on desktop notifications from this card.
-        Windows renders it small, so a single bold glyph reads and a word does not.</span>
-    </div>
-    <!-- Getting a file back out. Folded, because most of the time you are not
-         after one, and open when you are.
-
-         This is the only way to reach a file on a machine you are not sitting
-         at, and it works over an overlay for free: the download is the board's
-         own HTTP, so whatever already carries the board carries this. -->
-    <div class="field" id="d-files-field" hidden>
-      <label class="eyebrow">
-        <span class="foldy" id="d-files-toggle" onclick="toggleFiles()">files</span>
-      </label>
-      <div id="d-files" hidden>
-        <div class="filebar">
-          <button id="d-files-up" onclick="filesUp()" aria-label="up one directory" data-tip="up one directory">&#8593;</button>
-          <span class="crumbs" id="d-files-where"></span>
-          <a class="chip go" id="d-files-zip" download hidden></a>
-          <span class="chip no" id="d-files-del" hidden></span>
-        </div>
-        <div class="filelist" id="d-files-list"></div>
-        <span class="hintline" id="d-files-note"></span>
-      </div>
-    </div>
-    <!-- TOKEN USE ON RECORD. Here and nowhere else: not on the card, not in
-         the terminals list, not in a toast. Folded and fetched when opened, like
-         the files, because it is history and not something a glance needs.
-         See internal/daemon/usage.go. -->
-    <div class="field" id="d-usage-field" hidden>
-      <label class="eyebrow">
-        <span class="foldy" id="d-usage-toggle" onclick="toggleUsage()">token use</span>
-      </label>
-      <div id="d-usage" hidden>
-        <div class="usagesum" id="d-usage-sum"></div>
-        <div class="usagecauses" id="d-usage-causes"></div>
-        <div class="usagelist" id="d-usage-list"></div>
-        <span class="hintline" id="d-usage-note"></span>
-      </div>
     </div>
     <!-- A note is for YOU. Sending it is a second, separate act.
 
@@ -2989,6 +2905,42 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       </div>
       <div class="queued" id="d-say-queue"></div>
     </div>
+    <!-- Getting a file back out. Folded, because most of the time you are not
+         after one, and open when you are.
+
+         This is the only way to reach a file on a machine you are not sitting
+         at, and it works over an overlay for free: the download is the board's
+         own HTTP, so whatever already carries the board carries this. -->
+    <div class="field" id="d-files-field" hidden>
+      <label class="eyebrow">
+        <span class="foldy" id="d-files-toggle" onclick="toggleFiles()">files</span>
+      </label>
+      <div id="d-files" hidden>
+        <div class="filebar">
+          <button id="d-files-up" onclick="filesUp()" aria-label="up one directory" data-tip="up one directory">&#8593;</button>
+          <span class="crumbs" id="d-files-where"></span>
+          <a class="chip go" id="d-files-zip" download hidden></a>
+          <span class="chip no" id="d-files-del" hidden></span>
+        </div>
+        <div class="filelist" id="d-files-list"></div>
+        <span class="hintline" id="d-files-note"></span>
+      </div>
+    </div>
+    <!-- TOKEN USE ON RECORD. Here and nowhere else: not on the card, not in
+         the terminals list, not in a toast. Folded and fetched when opened, like
+         the files, because it is history and not something a glance needs.
+         See internal/daemon/usage.go. -->
+    <div class="field" id="d-usage-field" hidden>
+      <label class="eyebrow">
+        <span class="foldy" id="d-usage-toggle" onclick="toggleUsage()">token use</span>
+      </label>
+      <div id="d-usage" hidden>
+        <div class="usagesum" id="d-usage-sum"></div>
+        <div class="usagecauses" id="d-usage-causes"></div>
+        <div class="usagelist" id="d-usage-list"></div>
+        <span class="hintline" id="d-usage-note"></span>
+      </div>
+    </div>
     <div class="field">
       <label class="eyebrow">history</label>
       <!-- Decisions by default. A card that has been open for a day carries
@@ -3004,6 +2956,71 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       <div class="matchcount" id="d-ev-gaps"></div>
       <div class="timeline" id="d-events"></div>
     </div>
+   </div>
+   <aside class="dlg-side">
+    <!-- No "move to" here. It is on the card's own menu, one right click from
+         the card itself, which is where you are when you decide a card belongs
+         in another column. A second way to do it from this dialog was a row of
+         six buttons nobody pressed. -->
+    <section class="dlg-sec">
+    <div class="field">
+      <label class="eyebrow">runner</label>
+      <div class="toolbar" id="d-runner"></div>
+      <span class="hintline" id="d-auto-note"></span>
+    </div>
+    </section>
+    <!-- What you call this, as opposed to what atrium worked out from the
+         path. Free text: a fixed list would be atrium deciding what kinds of
+         work exist. -->
+    <section class="dlg-sec">
+    <div class="field">
+      <label class="eyebrow" for="d-tags">tags</label>
+      <input type="text" id="d-tags" spellcheck="false"
+        placeholder="lab, discourse, prs, tangent">
+      <span class="hintline">Comma separated. Group and sort by these, and click one on a
+        card to see only that. Lower cased, so <code>Lab</code> and <code>lab</code> stay one
+        tag.</span>
+      <div id="d-tag-known" class="tagsuggest"></div>
+    </div>
+    </section>
+    <section class="dlg-sec">
+    <!-- The tone this card rings with. Stored on the card, like its theme and
+         for the same reason: knowing which agent it was without looking only
+         works if the answer is the same tomorrow and in another browser. -->
+    <div class="field">
+      <label class="eyebrow" for="d-sound">its bell</label>
+      <div class="picker">
+        <select id="d-sound"></select>
+        <button onclick="previewCardSound()" data-tip="hear it">play</button>
+      </div>
+      <span class="hintline">Rings instead of the board's tone whenever this one card wants you, whether
+        that is a permission or the end of a turn. Which agent is the thing you cannot work out with your
+        back turned, so it wins over telling the two kinds apart.</span>
+    </div>
+    <!-- The mark this card wears on a desktop notification. Beside the bell,
+         because it answers the same question in the other sense: one is which
+         agent when you cannot see, the other is which agent when you can. -->
+    <div class="field">
+      <label class="eyebrow" for="d-icon">its mark</label>
+      <div class="picker">
+        <input id="d-icon" maxlength="16" spellcheck="false"
+          placeholder="empty means the atrium mark">
+        <span class="iconpreview" id="d-icon-preview"></span>
+        <!-- A picture instead of a glyph. Hidden input plus a button, because
+             the browser's own file control is the one piece of furniture on
+             this board that cannot be styled at all. -->
+        <input type="file" id="d-icon-file" accept="image/*" hidden
+          onchange="uploadIcon(this)">
+        <button onclick="document.getElementById('d-icon-file').click()"
+          data-tip="png, jpeg, gif, webp or svg">use a picture</button>
+        <button class="no" id="d-icon-clear" onclick="busyWhile(this, clearIcon, 'removing…')" hidden>back to a glyph</button>
+      </div>
+      <span class="hintline">One character, or an emoji. Drawn on desktop notifications from this card.
+        Windows renders it small, so a single bold glyph reads and a word does not.</span>
+    </div>
+    </section>
+   </aside>
+   </div>
   </div>
 </dialog>
 
