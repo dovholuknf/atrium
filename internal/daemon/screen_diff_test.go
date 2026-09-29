@@ -119,11 +119,12 @@ func dumpScreen(s *screen) xtermDump {
 		}
 		var tb, mb strings.Builder
 		for _, c := range r[:end] {
-			ch := c.ch
-			if ch == 0 {
-				ch = ' '
+			// The second cell of a wide character is the first one's, not a
+			// character of its own, and the mask has one position per character.
+			if c.ch == contCh {
+				continue
 			}
-			tb.WriteRune(ch)
+			s.emit(&tb, c)
 			if c.sgr != "" {
 				mb.WriteByte('1')
 			} else {
@@ -188,6 +189,7 @@ func TestScreenAgainstXterm(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			s := newScreenSized(c.cols, c.rows)
 			s.applyCuts([]byte(c.data), c.cuts)
+			assertWideInvariant(t, s)
 			diffs := diffDumps(dumpScreen(s), runXterm(t, c))
 
 			if c.skip != "" {

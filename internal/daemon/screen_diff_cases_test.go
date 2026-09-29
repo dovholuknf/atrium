@@ -86,6 +86,24 @@ func traceCases() []traceCase {
 	clear3 := "history1\r\nhistory2\x1b[3J\x1b[2J\x1b[Hafter\r\n"
 	reset := "before\r\n\x1bcafter reset\r\n"
 	region := "\x1b[1;4r" + repeatLines(8, func(i int) string { return fmt.Sprintf("region %d\r\n", i) })
+	// Scroll regions. Rows are numbered so a wrong one is named by its text.
+	fill6 := "r1\r\nr2\r\nr3\r\nr4\r\nr5\r\nr6"
+	regionMid := fill6 + "\x1b[2;4r\x1b[4;1H\r\nnew a\r\nnew b\r\n"
+	regionFooter := "\x1b[1;7r" + repeatLines(12, func(i int) string { return fmt.Sprintf("row %d\r\n", i) }) +
+		"\x1b[8;1Hfooter"
+	regionBad := fill6 + "\x1b[3;3r\x1b[4;2r\x1b[3;99r\x1b[9;12r\x1b[2;1Hx"
+	regionReset := fill6 + "\x1b[2;3r\x1b[r\x1b[5;1H\r\ntail\r\n"
+	regionRI := fill6 + "\x1b[2;4r\x1b[2;1H\x1bMtop\x1b[M\x1b[1;1H\x1bM"
+	regionBelow := fill6 + "\x1b[2;4r\x1b[6;1H\r\nlast\r\n\x1b[1;1H\x1bM"
+	regionST := fill6 + "\x1b[1;4r\x1b[2S\x1b[1T"
+	regionSMid := fill6 + "\x1b[2;5r\x1b[2S\x1b[1T\x1b[S"
+	regionIL := "a1\r\na2\r\na3\r\na4\r\na5\r\na6\r\na7\r\na8\x1b[2;5r\x1b[3;1H\x1b[2Lins\x1b[4;1H\x1b[M\x1b[9L"
+	regionILOut := "a1\r\na2\r\na3\r\na4\r\na5\r\na6\r\na7\r\na8\x1b[2;5r\x1b[7;1H\x1b[Lz\x1b[1;1H\x1b[Mq"
+	regionAlt := fill6 + "\x1b[2;4r\x1b[?1049h\x1b[H\x1b[2Jalt\r\nalt2\x1b[?1049l\x1b[4;1H\r\nafter\r\n"
+	regionRIS := fill6 + "\x1b[2;4r\x1bc" + "a\r\nb\r\nc\r\nd\r\ne\r\nf\r\n"
+	regionResize1 := fill6 + "\x1b[2;4r"
+	regionResize2 := "\x1b[8;1Hlow\r\nx\r\ny\r\n"
+
 	wide := "ab中文cd\r\nあいう\x1b[2D.\r\n"
 	sgrKinds := "\x1b[1mbold\x1b[22m \x1b[3mital\x1b[23m \x1b[4munder\x1b[24m \x1b[7minv\x1b[27m \x1b[38;5;12mc256\x1b[39m \x1b[48;2;1;2;3mbg\x1b[49m plain\r\n"
 	bgErase := "\x1b[44mblue\x1b[K\x1b[m\r\n\x1b[41m\x1b[2Kred line\x1b[m\r\nend"
@@ -125,10 +143,52 @@ func traceCases() []traceCase {
 		{name: "clear screen", cols: 40, rows: 6, data: clear2, accept: clearKeepsHistory},
 		{name: "clear scrollback", cols: 40, rows: 3, data: clear3, accept: clearKeepsHistory},
 		{name: "full reset", cols: 40, rows: 6, data: reset, accept: clearKeepsHistory},
-		{name: "scroll region", cols: 40, rows: 6, data: region,
-			skip: "backlog-2 81: screen.go ignores DECSTBM (CSI top;bottom r), so a runner scrolling inside a region scrolls the whole grid and files rows into history that stayed put"},
-		{name: "wide characters", cols: 40, rows: 6, data: wide,
-			skip: "backlog-2 82: screen.go gives every rune one cell and xterm.js gives CJK two, so a cursor move back over a wide character lands on the wrong column"},
+		{name: "scroll region", cols: 40, rows: 6, data: region},
+		{name: "region below the top discards", cols: 40, rows: 6, data: regionMid},
+		{name: "region with a footer", cols: 40, rows: 8, data: regionFooter},
+		{name: "region ignored when invalid", cols: 40, rows: 6, data: regionBad},
+		{name: "region reset by bare r", cols: 40, rows: 5, data: regionReset},
+		{name: "reverse index at region top", cols: 40, rows: 6, data: regionRI},
+		{name: "index below the region", cols: 40, rows: 6, data: regionBelow},
+		{name: "CSI S and T in a region", cols: 40, rows: 6, data: regionST,
+			accept: map[diffKind]string{
+				diffText:     "CSI S files the rows it scrolls off into history here when the region starts at the top, as a line feed does. xterm.js discards them. The same accepted difference as scroll up and down",
+				diffScrolled: "same reason",
+			}},
+		{name: "CSI S in a region below the top", cols: 40, rows: 6, data: regionSMid},
+		{name: "insert delete lines in a region", cols: 40, rows: 8, data: regionIL},
+		{name: "insert delete lines outside a region", cols: 40, rows: 8, data: regionILOut},
+		{name: "region survives the alt screen", cols: 40, rows: 6, data: regionAlt},
+		{name: "region reset by a full reset", cols: 40, rows: 5, data: regionRIS, accept: clearKeepsHistory},
+		{name: "region reset by a resize", cols: 40, rows: 6, data: regionResize1 + regionResize2,
+			cuts: []sizeCut{{at: len(regionResize1), cols: 40, rows: 8}}},
+		{name: "wide characters", cols: 40, rows: 6, data: wide},
+		{name: "wide overwrite first half", cols: 10, rows: 4, data: "あいう\rx\r\nあいう\r\x1b[2Cx\r\n"},
+		{name: "wide overwrite second half", cols: 10, rows: 4, data: "あいう\x1b[5Dx\r\nあいう\x1b[4Dy\r\n"},
+		{name: "wide over the head of another", cols: 10, rows: 4, data: "aあいb\x1b[1;1H\x1b[2Cう\r\n"},
+		{name: "wide in the last column", cols: 6, rows: 5, data: "abcdeあx\r\nabcdあ\r\nabcdeあいう\r\n"},
+		{name: "wide in the last column over a character", cols: 6, rows: 4, data: "abcdeZ\x1b[1;6Hあx\r\n"},
+		{name: "wide in a two column grid", cols: 2, rows: 4, data: "aあb\r\nあい\r\n"},
+		{name: "wide fills the row", cols: 6, rows: 4, data: "あいうx\r\ny"},
+		{name: "erase line through a wide character", cols: 10, rows: 6,
+			data: "あいう\x1b[4G\x1b[K\r\nあいう\x1b[4G\x1b[1K\r\nあいう\x1b[3G\x1b[K\r\nあいう\x1b[3G\x1b[1K\r\nあいう\x1b[2K"},
+		{name: "erase characters through a wide character", cols: 10, rows: 4, data: "あいう\x1b[2G\x1b[2X\r\nあいう\x1b[3G\x1b[2X\r\n"},
+		{name: "delete characters at a wide seam", cols: 10, rows: 5, data: "あいう\x1b[2G\x1b[P\r\nあいう\x1b[3G\x1b[P\r\nあいう\x1b[2G\x1b[3P\r\nabあ\x1b[1G\x1b[P"},
+		{name: "insert characters at a wide seam", cols: 10, rows: 5, data: "あいう\x1b[2G\x1b[@\r\nあいう\x1b[3G\x1b[@\r\nあいうえお\x1b[3G\x1b[3@\r\nあいうえお\x1b[3G\x1b[@\r\n"},
+		{name: "combining marks", cols: 10, rows: 4, data: "éx\r\nあ́x\r\ńy\r\né̂̃z\r\n"},
+		{name: "combining mark at the last column", cols: 4, rows: 4, data: "abcéx\r\nabあ́x\r\n"},
+		{name: "zwj sequence", cols: 20, rows: 4, data: "a\U0001F468‍\U0001F469‍\U0001F467b\r\n"},
+		{name: "astral emoji", cols: 10, rows: 4, data: "\U0001F600x\x1b[2Dy\r\n\U0001F44D️z\r\n"},
+		{name: "ambiguous width", cols: 10, rows: 4, data: "─α×x\x1b[2Dy\r\n"},
+		{name: "cursor back over wide text", cols: 10, rows: 4, data: "あいう\x1b[6D.\x1b[C.\r\n"},
+		{name: "wide with colour", cols: 10, rows: 4, data: "\x1b[31mあ\x1b[mい\x1b[1D\x1b[32mx\r\n"},
+		{name: "wide characters scroll", cols: 10, rows: 3, data: "あいう\r\nえお\r\nかき\r\nくけ\r\n"},
+		{name: "wide across a width cut", cols: 10, rows: 4, data: "あいう\r\nx\r\n",
+			cuts: []sizeCut{{at: len("あいう\r\n"), cols: 5}},
+			accept: map[diffKind]string{
+				diffText:   "xterm.js reflows the row and screen.go cuts it, the accepted difference of the width shrinks case above",
+				diffCursor: "the reflowed row moves the cursor down a row",
+			}},
 		{name: "attribute kinds", cols: 60, rows: 6, data: sgrKinds},
 		{name: "erase with background", cols: 40, rows: 6, data: bgErase},
 		{name: "carriage return overwrite", cols: 40, rows: 6, data: crOverwrite},
