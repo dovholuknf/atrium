@@ -16,8 +16,6 @@
 
 // ── the drawer and the rail ─────────────────────────────
 
-const dockPollMs = () => Number(window.__walkPollMs) > 0 ? Number(window.__walkPollMs) : 3000;
-
 const dock = {
   tenant: null,     // who is using the drawer
   taskId: "",       // the card it is open on
@@ -88,7 +86,6 @@ async function dockOpen() {
   await dock.tenant.opened(dock);
   await dockLoad();
   drawer.focus({ preventScroll: true });
-  dockSchedule();
 }
 
 function dockClose() {
@@ -104,15 +101,21 @@ function dockClose() {
 }
 function walkClose() { dock.want = ""; dockClose(); }
 
-function dockSchedule() {
-  clearTimeout(dock.timer);
-  if (!dock.open) return;
-  dock.timer = setTimeout(async () => {
-    // Nobody is looking, so nothing is asked. The next tick after the tab returns catches up.
-    if (!document.hidden) await dockLoad();
-    dockSchedule();
-  }, dockPollMs());
+// NO POLL. The list is read again when something says it may have changed: an event for this card (`dockKick`,
+// from `onTaskEvent`), the tab becoming visible, and the 60s resync (`dockResync`). Findings are files an agent
+// writes during a turn and no event says one landed, so the card's own events stand in. A burst is one read.
+const DOCK_KICK_MS = 1000;
+function dockKick(id) {
+  if (!dock.tenant || (id && id !== dock.taskId) || dock.timer) return;
+  dock.timer = setTimeout(() => { dock.timer = 0; dockResync(); }, DOCK_KICK_MS);
 }
+function dockResync() {
+  if (!dock.tenant || document.hidden) return;
+  // A read in flight may have listed the folder before the change: read once more when it lands.
+  if (dock.loading) { dock.again = true; return; }
+  dockLoad();
+}
+document.addEventListener("visibilitychange", () => { if (dock.open) dockResync(); });
 
 // The button carries the progress even while the drawer is shut, so the list is read once when a card attaches.
 async function dockLoadQuiet() {
@@ -134,6 +137,7 @@ async function dockLoad() {
     return;
   }
   dock.loading = false;
+  if (dock.again) { dock.again = false; dockResync(); }
   if (gen !== dock.gen) return;
   const was = dock.cur;
   const wasIdx = dock.items.findIndex(i => i.key === was);
