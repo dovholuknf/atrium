@@ -315,6 +315,11 @@ alone), and codex's startup updater runs in atrium's terminal. The fix for the l
 questions for clint are in the design. `claude/codex-update` (25e48eb) is an old claude/main snapshot with no item
 12 work, and is not this.
 
+**Status, 2026-09-29 (sa12): sections 1 and 2 are built, 3 and 4 wait on clint.** A satisfied update card is
+withdrawn, and a card that left the inbox no longer blocks later releases (`store.ReleaseIntakeKey`, the version
+carried in the card's URL). Tested against a copy of the live database. Codex's startup flag, the auto-update setting
+and the boot check are not built, and no migration was added. `docs/changes/12.md`.
+
 ------------
 
 ### 12a. A resumed card keeps its old pid, and a live card reads done
