@@ -5208,8 +5208,11 @@ const CTX_USAGE = {
     totals: { rows: 7, input: 4100, output: 18200, cache_write_5m: 0, cache_write_1h: 96000, cache_read: 512000,
       cost: 1.84 } },
   "cx-big": { context_now: 212000, model: "claude-opus-5-5",
-    totals: { rows: 41, input: 20400, output: 96100, cache_write_5m: 0, cache_write_1h: 388000,
-      cache_read: 6100000, cost: 7.62 } },
+    totals: { rows: 44, replies: 301, input: 20400, output: 96100, cache_write_5m: 0, cache_write_1h: 388000,
+      cache_read: 6100000, cost: 7.62 },
+    // 41 prompts of the card's own in 287 calls, and a refresh and two subagent rows on top.
+    by_cause: { operator: { rows: 41, replies: 287 }, keepalive: { rows: 2, replies: 2 },
+      subagent: { rows: 1, replies: 12 } } },
 };
 // The same cards pinned, so the terminals list draws a row for each without a
 // live session behind it.
@@ -5329,7 +5332,8 @@ async function contextSizeSection(browser, base) {
     pk = await peekState();
     if (pk) {
       if (pk.id !== "cx-big" || !/212k/.test(pk.text) || !pk.warn) fail("the hover details do not show 212k past the line: " + pk.text);
-      if (!/41/.test(pk.text) || !/\$7\.62/.test(pk.text)) fail("the hover details do not carry the totals: " + pk.text);
+      if (!/41\s*prompts/.test(pk.text) || !/287\s*calls/.test(pk.text) || !/\$7\.62/.test(pk.text)
+        || !/uncached in/.test(pk.text)) fail("the hover details do not carry the totals under their new labels: " + pk.text);
       if (!/warns at 150k/.test(pk.text)) fail("the hover details do not name the threshold: " + pk.text);
       if (pk.pinned) fail("a hover opened the pinned details.");
       if (pk.title) fail("the details use a native title tooltip.");
@@ -5706,6 +5710,90 @@ async function cardRouteSection(browser, base) {
   if (errors.length) fail("the card-route page threw: " + errors.join(" | "));
 }
 
+// ── a card an agent launched is logged and not said ───────────────────────
+// Backlog-2 item 44. `origin:agent` cards raise no toast, no desktop
+// notification and no sound while the gear's box is ticked (the default), and
+// the toast log keeps a line. A permission request from one still notifies,
+// unticking restores, and a card with a tone of its own is heard regardless.
+async function quietDoerSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  const poke = () => openStreams.forEach(r => { try { r.write("event: task\ndata: {}\n\n"); } catch (e) {} });
+  const errors = [];
+  landList = [];
+  landPerms = [];
+  const doer = (id, over) => landCard(id, Object.assign({ tags: ["origin:agent"], supervised: false }, over || {}));
+  for (const focused of [false, true]) {
+    const ctx = await landContext(browser, !focused);
+    try {
+      const p = await ctx.newPage();
+      p.on("pageerror", e => errors.push(String(e)));
+      await p.goto(base, { waitUntil: "domcontentloaded" });
+      await p.waitForFunction(() => typeof alerting !== "undefined", null, { timeout: 15000 });
+      await p.waitForTimeout(1500);
+      const said = title => p.evaluate(t => (window.__notes || []).some(n => n.title === t) ||
+        [...document.querySelectorAll("#toasts .toast")].some(e => e.textContent.includes(t)), title);
+      const logged = title => p.evaluate(t => !!toastLog().find(e => e.title === t), title);
+      const arrive = async (c, title, seen) => {
+        // Toasts cleared first, so an earlier one cannot be read as this one.
+        await p.evaluate(() => document.querySelectorAll("#toasts .toast").forEach(t => t.remove()));
+        landList = landList.concat(c);
+        poke();
+        // The line is there whether it was said or not, so it says the poll ran.
+        await p.waitForFunction(t => toastLog().some(e => e.title === t), title, { timeout: 10000 });
+      };
+      const where = focused ? "focused" : "unfocused";
+
+      const human = landCard("qd-human", { supervised: false });
+      await arrive(human, "qd human is on the board");
+      if (!await said("qd human is on the board")) fail(where + ": a human's card raised nothing.");
+
+      const d1 = doer("qd-doer");
+      await arrive(d1, "qd doer is on the board");
+      if (await said("qd doer is on the board")) fail(where + ": an agent-launched card was announced.");
+      if (!await logged("qd doer is on the board")) fail(where + ": a muted alert left no toast log line.");
+      const logRow = await p.evaluate(() => toastLog().find(e => e.title === "qd doer is on the board"));
+      if (logRow.taskFor !== "qd-doer") fail(where + ": the muted log line does not name its card.");
+
+      landPerms = [{ id: "qd-perm", task_id: "qd-doer", agent: "qd doer", tool: "Bash", command: "ls",
+        requested_at: new Date().toISOString().replace("Z", "") }];
+      poke();
+      await p.evaluate(() => runRefresh());
+      await p.waitForFunction(() => toastLog().some(e => e.title === "qd doer needs permission"), null,
+        { timeout: 10000 }).catch(() => fail(where + ": a permission request from an agent-launched card left no trace."));
+      if (!await said("qd doer needs permission")) fail(where + ": a permission request from an agent-launched card was muted.");
+      landPerms = [];
+
+      await p.evaluate(() => alerting.set({ quietDoers: false }));
+      await arrive(doer("qd-doer2"), "qd doer2 is on the board");
+      if (!await said("qd doer2 is on the board")) fail(where + ": unticking the box did not restore the alert.");
+
+      await p.evaluate(() => alerting.set({ quietDoers: true }));
+      await arrive(doer("qd-doer3", { sound: "chirp" }), "qd doer3 is on the board");
+      if (!await said("qd doer3 is on the board")) fail(where + ": a card with its own tone was muted.");
+
+      // The box itself: ticked by default, and it stores what is clicked.
+      await p.evaluate(() => { localStorage.removeItem("atrium.sound"); });
+      await p.reload({ waitUntil: "domcontentloaded" });
+      await p.waitForFunction(() => typeof paintSettings === "function", null, { timeout: 15000 });
+      const box = await p.evaluate(() => { paintSettings(); return document.getElementById("s-quietdoers").checked; });
+      if (!box) fail(where + ": the gear box is not ticked by default.");
+      await p.evaluate(() => {
+        const b = document.getElementById("s-quietdoers");
+        b.checked = false;
+        b.dispatchEvent(new Event("change"));
+      });
+      if (await p.evaluate(() => alerting.get().quietDoers) !== false) fail(where + ": unticking the box did not store it.");
+      landList = [];
+    } finally {
+      await ctx.close();
+    }
+  }
+  if (errors.length) fail("the quiet doer pages threw: " + errors.join(" | "));
+  landList = []; landPerms = [];
+  tasksMode = was;
+}
+
 async function main() {
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = "http://127.0.0.1:" + server.address().port;
@@ -5722,7 +5810,7 @@ async function main() {
       pasteBig: pasteBigSection, typing: typingSection, alias: aliasSection, copySelect: copySelectSection, busyGuard: busyGuardSection, keepalive: keepaliveSection,
       stuck: stuckSection, carryLink: carryLinkSection,
       skinScope: skinScopeSection, skinHeal: skinHealSection, toastLives: toastLivesSection,
-      history: historySection, contextSize: contextSizeSection, peekEverywhere: peekEverywhereSection, cardRoute: cardRouteSection };
+      history: historySection, contextSize: contextSizeSection, peekEverywhere: peekEverywhereSection, cardRoute: cardRouteSection, quietDoer: quietDoerSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -7632,6 +7720,7 @@ async function main() {
     await themePreviewSection(browser, base);
     // ── a click on an alert lands where the alert is about ─────────────────
     await landSection(browser, base);
+    await quietDoerSection(browser, base);
     await reselectSection(browser, base);
     // ── over a terminal the toasts hang from the top right ─────────────────
     await toastsTopSection(browser, base);
