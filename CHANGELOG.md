@@ -5,6 +5,15 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **A batch deploy is healthy only when the room answers from its store.** See `docs/backlog-2.md` item m-002.
+
+  `deploy-batch.ps1` now refuses a build that does not report its commit, asks the room for `/v1/settings` right
+  after it reattaches and again 30 seconds later, and reverts to the snapshot from step 0 when either check fails.
+  The hub reporting the room attached was not enough: a room with a frozen store still attaches.
+
+- **The hub no longer panics on a `null` event.** `tagEvent` wrote the room onto the nil map that `null` decodes
+  to, which ended that board's event stream. It now passes the payload through untouched.
+
 - **Turning notifications off holds back permission requests too.** See `docs/backlog-2.md` item 79.
 
   clint answered item 79's open question: off means notifications in general. A permission request raises no toast,

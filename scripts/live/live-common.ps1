@@ -26,6 +26,9 @@ $RoomDb       = 'C:\Users\claude\.atrium\atrium.db'
 $HubHealth    = 'http://127.0.0.1:7778/_hub/health'
 $RoomShutdown = 'http://127.0.0.1:7781/v1/shutdown'
 $RoomHealth   = 'http://127.0.0.1:7781/v1/health'
+# A request the room answers from its store. `/v1/health` and the hub's view of the room both answer while the store is
+# frozen, which is how a deadlocked room was reported healthy on 2026-09-29.
+$RoomServes   = 'http://127.0.0.1:7781/v1/settings'
 
 # The exact command lines. The hub's directory flag is --atrium-dir, because `run` also takes the room's --dir.
 $HubArgs = @('run', '--no-room', '--addr', '127.0.0.1:7778', '--link', '0.0.0.0:7779',
@@ -123,6 +126,28 @@ function Save-Revert {
   Invoke-Step "copy $AtriumBin -> $revert (revert snapshot, $label)" { Copy-Item $AtriumBin $revert -Force }
   Get-ChildItem (Join-Path $AtriumBinDir 'atrium.revert-*.exe') | Where-Object FullName -ne $revert |
     ForEach-Object { $f = $_.FullName; Invoke-Step "remove old revert $f" { Remove-Item $f -Force } }
+  return $revert
+}
+
+# Test-NewBuildStamped refuses a build that cannot name its commit. An unstamped build reports only its board hash,
+# which does not change for a Go-only fix, so the deploy log and the next revert snapshot could not tell it from the
+# build it replaced. That is how the snapshot taken on 2026-09-29 09:36 held the deadlocked build.
+function Test-NewBuildStamped([string]$Path = $AtriumNew) {
+  $label = Get-BinLabel $Path
+  if ($label -notmatch '^[0-9a-f]{7}-') {
+    Say "FATAL: $Path does not report a commit ('$label'). build it with -ldflags -X ...cli.Commit=<sha>"
+    return $false
+  }
+  Say "new build is $label"
+  return $true
+}
+
+# Test-RoomServes asks the room for something it reads from its store, $Tries times over a few seconds.
+function Test-RoomServes([int]$Tries = 3) {
+  for ($i = 0; $i -lt $Tries; $i++) {
+    try { Invoke-RestMethod $RoomServes -TimeoutSec 5 | Out-Null; return $true } catch { Start-Sleep -Seconds 1 }
+  }
+  return $false
 }
 
 # Install-Atrium stages the new build and swaps it in with two renames. Returns $true when it is in place.
