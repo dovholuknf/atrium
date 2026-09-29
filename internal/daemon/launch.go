@@ -1061,7 +1061,12 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 	if gate, ok := permGateDefault(h.Env); ok {
 		atrium["ATRIUM_PERM_GATE"] = gate
 	}
-	env := childEnvFrom(base, overEnv(h.Env, addedEnv), atrium)
+	// No fullscreen renderer dialog to eat the first say. See firstrun.go.
+	launchEnv := overEnv(h.Env, addedEnv)
+	if v, ok := classicRendererDefault(h, launchEnv); ok {
+		atrium[classicRendererEnv] = v
+	}
+	env := childEnvFrom(base, launchEnv, atrium)
 	d.prepareRunnerSetup(h, cwd, env)
 	via := ""
 

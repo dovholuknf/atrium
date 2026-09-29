@@ -4829,3 +4829,48 @@ A restart of the card after that is not lean either.
 last conversation with the full setup and takes the lean tags off. The terminal menu notes `restart this session` as
 `comes back lean`, and has `restart with my full setup`, which asks, takes the lean tags off and restarts. A card
 that is not lean shows none of this.
+
+## CG. A launched claude card starts at its prompt, not at a first-run dialog
+
+Needs the room built from this change and a room restart (the room writes the trust and sets the runner's env).
+Nothing on the hub. Go tests in `internal/runnersetup/claudetrust_test.go` trust a new folder and keep every other
+key, trust an existing untrusted entry in place, leave a missing or unreadable `~/.claude.json` alone, never trust
+home or a filesystem root, follow `CLAUDE_CONFIG_DIR` and a legacy `.config.json`, wait for a held lock, take over a
+stale one, give up on one that stays held without writing, and keep every change when claude-style locked writers
+run alongside launches. `internal/daemon/firstrun_test.go` covers the renderer default, and launches a pty runner
+that dumps its environment. See `docs/backlog-2.md` item 67.
+
+### CG1. A folder claude has never seen
+
+1. On a room whose claude has run before, make a new directory (on m1mini, `mkdir ~/first-run-test`) and check
+   `~/.claude.json` has no `projects` entry for it.
+2. `atrium_launch` a claude card there with a prompt, then `atrium_say` it something as soon as it is up.
+
+**Expected:** the room log says `trusted <dir> for claude in <home>/.claude.json`. The terminal opens at claude's
+prompt with no "Accessing workspace" dialog, the prompt runs, and the say arrives as a message. The card never goes
+`failed to start`. `~/.claude.json` now has `projects["<dir>"].hasTrustDialogAccepted: true` (forward slashes on
+Windows), and `~/.claude.json.atrium-last.bak` holds the file as it was.
+
+### CG2. A second launch, and home
+
+1. Launch into the CG1 directory again.
+2. Launch a card into the home directory itself.
+
+**Expected:** neither writes `~/.claude.json` (no `trusted` line in the log). The home launch shows claude's own
+trust dialog, as it always has, because trusting home would trust every folder under it that is not a repository.
+
+### CG3. Live sessions writing the same file
+
+1. With several claude cards running and working, launch three cards into three new directories at once.
+
+**Expected:** all three start at the prompt, and afterwards `~/.claude.json` has all three entries and still has
+every running session's own entries (`lastSessionId` and the like). No `Config lock compromised` in any session.
+
+### CG4. The fullscreen renderer
+
+1. On a machine with a fresh Claude Code (m1mini after a reinstall), launch a claude card and say something at once.
+2. Open the card's terminal, let it produce more than a screen of output and scroll back.
+
+**Expected:** no "Try the new fullscreen renderer?" dialog, and the say arrives as a message. The runner's
+environment has `CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN=1`. The terminal keeps its scrollback. A harness that names
+`CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN` or `CLAUDE_CODE_NO_FLICKER` in its env keeps its own value.
