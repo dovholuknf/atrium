@@ -1106,11 +1106,13 @@ func (s *Store) SetPinned(id string, on bool) error {
 // reorder leaves the bucket in an arrangement nobody chose and nobody can
 // recognise as wrong.
 //
-// Ids that are not pinned, or not there at all, are written anyway and cost
-// nothing: `pin_order` is only ever read within the pinned set, so a stale id
-// in the list is a number on a row that will never be compared. Refusing the
-// whole reorder because one card was unpinned in another tab a moment ago
-// would be the board arguing with itself.
+// PINNED ROWS ONLY. An id that is not pinned, or not there at all, is skipped
+// rather than refused: refusing the whole reorder because one card was unpinned
+// in another tab a moment ago would be the board arguing with itself. Skipped
+// rather than written, because this also writes `rank`, which every view sorts
+// by. A card unpinned between the drag and the drop would otherwise have its
+// ordinary rank overwritten and move in its group. The board pins the dragged
+// card before it posts the order, so the card being dragged is never dropped.
 func (s *Store) SetPinOrder(ids []string) error {
 	return s.guard(func() error {
 		tx, err := s.db.Begin()
@@ -1128,7 +1130,7 @@ func (s *Store) SetPinOrder(ids []string) error {
 		// migration window; nothing reads it any more.
 		for i, id := range ids {
 			if _, err := tx.Exec(
-				`UPDATE task SET pin_order = ?, rank = ? WHERE id = ?`,
+				`UPDATE task SET pin_order = ?, rank = ? WHERE id = ? AND pinned = 1`,
 				i, float64(i), id); err != nil {
 				return err
 			}

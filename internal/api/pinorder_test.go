@@ -25,6 +25,10 @@ func TestPinOrderAcceptsRoomTaggedIDs(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		// The order only lands on pinned cards, and the board pins before it orders.
+		if err := st.SetPinned(task.ID, true); err != nil {
+			t.Fatal(err)
+		}
 		ids = append(ids, task.ID)
 	}
 
