@@ -701,6 +701,10 @@ function openTerm(task) {
   paintPaneBg(themeFor(termTask));
   termFit = new FitAddon.FitAddon();
   term.loadAddon(termFit);
+  // The phone view (t-003b): the key bar, the pinch, and the cursor kept in
+  // view. All of it is a no-op on a desktop. See `termPhone`.
+  syncPhoneView();
+  term.onWriteParsed(phoneKeepSoon);
   term.open(screen);
   // Before anything can write to it, so the trace starts at the first byte.
   traceTerm(term);
@@ -814,7 +818,7 @@ function openTerm(task) {
       return false;
     }
 
-    // NEW CONTEXT, on ctrl-alt-n: the room has the session write HANDOFF.md,
+    // NEW CONTEXT, on ctrl-alt-n: the room has the session write HANDOFF.<name>.md,
     // clears it and tells it to read the file back. Taken here so the runner
     // never sees the keystroke.
     //

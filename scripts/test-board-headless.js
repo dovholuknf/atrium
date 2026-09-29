@@ -4707,6 +4707,174 @@ async function linkTipSection(browser, base) {
   }
 }
 
+// ── a phone view never resizes the pty (t-003b) ───────────────────────────
+// A touch-first device attaches without ever sending a resize, draws the pty's
+// exact grid, zooms by font size, and has a key bar. A desktop is unchanged.
+async function phoneViewSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  landList = [LAND["land-live"]];
+  landPerms = [];
+  const errors = [];
+  const fakeSock = () => {
+    const Real = window.WebSocket;
+    window.__sent = [];
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
+        onopen: null, onclose: null, onmessage: null, onerror: null,
+        send(d) { window.__sent.push(String(d)); }, close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  };
+  const open = async (ctx) => {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await p.evaluate(() => attachTask("land-live"));
+    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live",
+      null, { timeout: slow(10000) });
+    await p.waitForTimeout(300);
+    return p;
+  };
+  const resizes = (p) => p.evaluate(() => window.__sent.filter(x => /"t":"resize"/.test(x)));
+  try {
+    // ── the phone
+    const pctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+    await pctx.addInitScript(() => {
+      localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true }));
+      localStorage.setItem("atrium.termphone", "1");
+    });
+    await pctx.addInitScript(fakeSock);
+    const p = await open(pctx);
+    await p.evaluate(() => termSock.onmessage({ data: '{"t":"size","cols":132,"rows":41}' }));
+    await p.waitForTimeout(300);
+    let n = (await resizes(p)).length;
+    if (n) fail("phoneView: a phone attach sent " + n + " resize frame(s)");
+    const dims = () => p.evaluate(() => ({ cols: term.cols, rows: term.rows, font: term.options.fontSize,
+      sw: document.getElementById("t-screen").scrollWidth, cw: document.getElementById("t-screen").clientWidth }));
+    let d = await dims();
+    if (d.cols !== 132 || d.rows !== 41) fail("phoneView: the grid is not the pty's: " + JSON.stringify(d));
+    if (d.font < 8 || d.font > 14) fail("phoneView: portrait did not open at about 60 columns across: " + JSON.stringify(d));
+    if (d.sw <= d.cw) fail("phoneView: portrait opened as a thumbnail, not zoomed in: " + JSON.stringify(d));
+    if (!(await p.evaluate(() => getComputedStyle(document.getElementById("t-keys")).display !== "none")))
+      fail("phoneView: the key bar is not shown on a phone");
+
+    // a window resize and a keyboard-sized height change send nothing
+    await p.setViewportSize({ width: 390, height: 460 });
+    await p.waitForTimeout(500);
+    await p.setViewportSize({ width: 844, height: 390 });
+    await p.waitForTimeout(500);
+    d = await dims();
+    if (d.sw > d.cw + 20) fail("phoneView: landscape did not fit the whole width: " + JSON.stringify(d));
+    await p.setViewportSize({ width: 390, height: 844 });
+    await p.waitForTimeout(500);
+    n = (await resizes(p)).length;
+    if (n) fail("phoneView: a resize or a keyboard-sized height change sent " + n + " resize frame(s)");
+    d = await dims();
+    if (d.cols !== 132 || d.rows !== 41) fail("phoneView: the grid moved with the window: " + JSON.stringify(d));
+
+    // the pty moving while the phone is attached is followed, locally
+    await p.evaluate(() => termSock.onmessage({ data: '{"t":"size","cols":150,"rows":35}' }));
+    await p.waitForTimeout(300);
+    if ((await resizes(p)).length) fail("phoneView: following a size frame sent a resize");
+    d = await dims();
+    if (d.cols !== 150 || d.rows !== 35) fail("phoneView: a new size frame was not followed: " + JSON.stringify(d));
+
+    // a zoom changes the font, not the grid
+    const before = await dims();
+    await p.evaluate(() => phoneSetFont(term.options.fontSize * 2));
+    d = await dims();
+    if (d.font <= before.font * 1.9) fail("phoneView: zoom did not change the font: " + JSON.stringify([before, d]));
+    if (d.cols !== 150 || d.rows !== 35) fail("phoneView: zoom changed the grid: " + JSON.stringify(d));
+    if (d.sw <= d.cw) fail("phoneView: a zoomed grid does not scroll: " + JSON.stringify(d));
+    if ((await resizes(p)).length) fail("phoneView: a zoom sent a resize");
+
+    // the keys
+    const keys = { esc: "\u001b", up: "\u001b[A", down: "\u001b[B", right: "\u001b[C", left: "\u001b[D",
+      tab: "\t", btab: "\u001b[Z", enter: "\r" };
+    for (const k of Object.keys(keys)) {
+      await p.evaluate(() => { window.__sent.length = 0; });
+      await p.locator('#t-keys button[data-key="' + k + '"]').tap();
+      const got = await p.evaluate(() => window.__sent.slice());
+      const want = JSON.stringify({ t: "in", d: keys[k] });
+      if (!got.includes(want)) fail("phoneView: key " + k + " sent " + JSON.stringify(got) + ", wanted " + want);
+    }
+    await p.evaluate(() => { window.__sent.length = 0; });
+    await p.locator('#t-keys button[data-key="int"]').tap();
+    await p.waitForTimeout(900);
+    if ((await p.evaluate(() => window.__sent.slice())).some(x => /signal/.test(x)))
+      fail("phoneView: a tap on ctrl-c interrupted");
+    const intBtn = p.locator('#t-keys button[data-key="int"]');
+    await intBtn.dispatchEvent("pointerdown");
+    await p.waitForTimeout(800);
+    await intBtn.dispatchEvent("pointerup");
+    const sig = await p.evaluate(() => window.__sent.slice());
+    if (!sig.includes(JSON.stringify({ t: "signal", s: "int" }))) fail("phoneView: ctrl-c sent " + JSON.stringify(sig));
+    const box = await p.locator('#t-keys button[data-key="esc"]').boundingBox();
+    if (box.height < 40) fail("phoneView: a key is under a thumb's 40px: " + box.height);
+    const focus = await p.evaluate(() => { const b = document.querySelector("#t-keys button"); b.dispatchEvent(
+      new PointerEvent("pointerdown", { bubbles: true, cancelable: true })); return 1; });
+    // a link at a non-default zoom still hits
+    await pctx.route("**/files/probe", route => {
+      const paths = JSON.parse(route.request().postData() || "{}").paths || [];
+      const found = paths.filter(x => /\//.test(x)).map(x => ({ path: x, rel: x, size: 1234, dir: false }));
+      route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ found }) });
+    });
+    await p.evaluate(() => { phoneSetFont(14); termSock.onmessage({ data: "\x1b[2J\x1b[Hsee src/alpha.go here\r\n" }); });
+    await p.waitForTimeout(300);
+    const cell = await p.evaluate(() => { const c = term._core._renderService.dimensions.css.cell; return { w: c.w || c.width, h: c.height }; });
+    const sbox = await p.locator("#t-screen .xterm-screen").boundingBox();
+    await p.mouse.move(sbox.x + cell.w * 12, sbox.y + cell.h * 0.5, { steps: 3 });
+    await p.waitForTimeout(900);
+    const tip = await p.evaluate(() => { const t = document.getElementById("tip"); return { on: t.classList.contains("on"), text: t.textContent }; });
+    if (!tip.on || !/alpha/.test(tip.text)) fail("phoneView: a link did not hit at a non-default zoom: " + JSON.stringify(tip));
+
+    // the keyboard covers the prompt: the cursor row is scrolled clear of it, nothing resizes
+    await p.evaluate(() => { termSock.onmessage({ data: "\x1b[2J\x1b[" + term.rows + ";1Hprompt" }); });
+    await p.waitForTimeout(200);
+    const kb = await p.evaluate(() => {
+      const host = document.getElementById("t-screen");
+      const box = host.getBoundingClientRect();
+      const fake = { offsetTop: 0, height: box.bottom - 300, addEventListener() {} };
+      Object.defineProperty(window, "visualViewport", { value: fake, configurable: true });
+      keepCursorInView(host, term);
+      const c = term._core._renderService.dimensions.css.cell;
+      const cur = box.top + parseFloat(getComputedStyle(host).paddingTop) + term.buffer.active.cursorY * c.height - host.scrollTop;
+      return { rowBottom: cur + 2 * c.height, visBottom: fake.offsetTop + fake.height, st: host.scrollTop, sh: host.scrollHeight, ch: host.clientHeight, pad: host.style.paddingBottom, cy: term.buffer.active.cursorY, rows: term.rows, h: c.height };
+    });
+    if (kb.rowBottom > kb.visBottom + 1) fail("phoneView: the cursor row is under the keyboard: " + JSON.stringify(kb));
+    if ((await resizes(p)).length) fail("phoneView: the keyboard case sent a resize");
+    await pctx.close();
+
+    // ── a desktop is unchanged
+    const dctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+    await dctx.addInitScript(() => localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true })));
+    await dctx.addInitScript(fakeSock);
+    const dp = await open(dctx);
+    if (await dp.evaluate(() => termPhone())) fail("phoneView: a desktop counted as a phone");
+    // the override both ways: "desktop" is the phone view, "fit" sends resizes
+    await dp.evaluate(() => localStorage.setItem("atrium.termview.land-live", "desktop"));
+    if (!(await dp.evaluate(() => termPhone()))) fail("phoneView: the desktop-size override did not make the phone view");
+    await dp.evaluate(() => localStorage.removeItem("atrium.termview.land-live"));
+    if (!(await resizes(dp)).length) fail("phoneView: a desktop attach sent no resize");
+    await dp.evaluate(() => { window.__sent.length = 0; });
+    await dp.setViewportSize({ width: 1200, height: 700 });
+    await dp.waitForTimeout(700);
+    if (!(await resizes(dp)).length) fail("phoneView: a desktop window resize sent no resize");
+    if (await dp.evaluate(() => getComputedStyle(document.getElementById("t-keys")).display) !== "none")
+      fail("phoneView: the key bar shows on a desktop");
+    await dctx.close();
+  } finally {
+    tasksMode = was;
+  }
+  if (errors.length) fail("phoneView: the page threw: " + errors.join(" | "));
+}
+
 // ── copy on select answers the pointer, not the find bar ──────────────────
 // Test plan BJ. The search addon shows a match by selecting it, so copy on
 // select used to copy every find keystroke, step and re-search. Typing in the
@@ -7161,7 +7329,7 @@ async function main() {
       history: historySection, contextSize: contextSizeSection, peekEverywhere: peekEverywhereSection, cardRoute: cardRouteSection,
       quietDoer: quietDoerSection, looksIdle: looksIdleSection, notifyOff: notifyOffSection,
       questionsClick: questionsClickSection, walk: walkSection, linkReuse: linkReuseSection,
-      usageCacheReads: usageCacheReadsSection, roomsDash: roomsDashSection };
+      usageCacheReads: usageCacheReadsSection, roomsDash: roomsDashSection, phoneView: phoneViewSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -9090,6 +9258,7 @@ async function main() {
     await linkReuseSection(browser, base);
     await usageCacheReadsSection(browser, base);
     await roomsDashSection(browser, base);
+    await phoneViewSection(browser, base);
     await reselectSection(browser, base);
     // ── over a terminal the toasts hang from the top right ─────────────────
     await toastsTopSection(browser, base);

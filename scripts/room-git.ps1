@@ -141,6 +141,10 @@ function Invoke-Remote {
             # PATH from the registry, so git is found whatever the ssh session inherited.
             "`$env:Path = (@([Environment]::GetEnvironmentVariable('Path', 'Machine'), " +
             "[Environment]::GetEnvironmentVariable('Path', 'User')) | Where-Object { `$_ }) -join ';'`n" +
+            # THE ROOM'S OWN TOOLCHAIN NEXT, when room-toolchain.ps1 recorded one, so this git is the git the room's
+            # workers run. The machine Path alone can put a Cygwin git first, and a worktree that git adds has a
+            # /cygdrive/c/... gitfile that Git for Windows cannot resolve (seen on sg3: `git status` failed in it).
+            "`$e = Join-Path `$HOME '.atrium\toolchain\room-env.ps1'; if (Test-Path `$e) { . `$e }`n" +
             # git's own folder first, because git finds its children on PATH and a Cygwin git exits 127 without it.
             "`$g = (Get-Command git -ErrorAction SilentlyContinue).Source; if (`$g) { `$env:Path = (Split-Path -Parent `$g) + ';' + `$env:Path }`n" + $script
         $enc = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($full))
