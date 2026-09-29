@@ -5208,8 +5208,11 @@ const CTX_USAGE = {
     totals: { rows: 7, input: 4100, output: 18200, cache_write_5m: 0, cache_write_1h: 96000, cache_read: 512000,
       cost: 1.84 } },
   "cx-big": { context_now: 212000, model: "claude-opus-5-5",
-    totals: { rows: 41, input: 20400, output: 96100, cache_write_5m: 0, cache_write_1h: 388000,
-      cache_read: 6100000, cost: 7.62 } },
+    totals: { rows: 44, replies: 301, input: 20400, output: 96100, cache_write_5m: 0, cache_write_1h: 388000,
+      cache_read: 6100000, cost: 7.62 },
+    // 41 prompts of the card's own in 287 calls, and a refresh and two subagent rows on top.
+    by_cause: { operator: { rows: 41, replies: 287 }, keepalive: { rows: 2, replies: 2 },
+      subagent: { rows: 1, replies: 12 } } },
 };
 // The same cards pinned, so the terminals list draws a row for each without a
 // live session behind it.
@@ -5329,7 +5332,8 @@ async function contextSizeSection(browser, base) {
     pk = await peekState();
     if (pk) {
       if (pk.id !== "cx-big" || !/212k/.test(pk.text) || !pk.warn) fail("the hover details do not show 212k past the line: " + pk.text);
-      if (!/41/.test(pk.text) || !/\$7\.62/.test(pk.text)) fail("the hover details do not carry the totals: " + pk.text);
+      if (!/41\s*prompts/.test(pk.text) || !/287\s*calls/.test(pk.text) || !/\$7\.62/.test(pk.text)
+        || !/uncached in/.test(pk.text)) fail("the hover details do not carry the totals under their new labels: " + pk.text);
       if (!/warns at 150k/.test(pk.text)) fail("the hover details do not name the threshold: " + pk.text);
       if (pk.pinned) fail("a hover opened the pinned details.");
       if (pk.title) fail("the details use a native title tooltip.");
