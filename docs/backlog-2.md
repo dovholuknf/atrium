@@ -2164,15 +2164,71 @@ whole package. Owned by @runtime.
 
 Found 2026-09-29 reviewing item 82. A cell carrying combining marks points into `screen.combs`, and every mark
 attached appends a new string there, even one already held. Nothing ever removes an entry: not a clear, not RIS,
-not a row leaving history. So the table fills to `combsMaxKept` (65536) per screen, and past that `combine` drops
-every new mark for as long as the screen lives. A long session in Vietnamese or another heavily accented script
-would replay its later text without its accents. Memory is bounded (65536 entries of at most 32 bytes), so this is
-not a leak, and it did not block item 82.
-
-Fix: intern the strings (a map from mark string to index, so a repeated mark costs nothing), and compact the table
-when history is trimmed or the screen is reset, by walking the live cells and renumbering `ext`. A test attaches
-more than `combsMaxKept` marks across a scrolling screen and checks that the last row still carries its marks.
+not a row leaving history. So the table fills to `combsMaxKept` (65536), and past that `combine` drops every new
+mark. Memory is bounded (65536 entries of at most 32 bytes), so this is not a leak, and it did not block item 82.
 Owned by @terminal. Low priority.
+
+### Design
+
+**How long a screen lives.** Not as long as a session, which the first filing assumed. `screen` is built fresh
+from the ring on every render and thrown away after: `replayCut` (attach replay), `renderHistory` (the text
+scrollback view) and `classifyFrame` (the looks-idle badge, a 64KB tail) each call `newScreenSized`. So the table
+is bounded by what one ring holds, and the ring is `scrollback_mb`, 16MB by default and up to 512MB. That is
+still far past the cap, and the cap bites where it hurts most: the marks dropped are the LAST ones, which is the
+newest text, the part on screen.
+
+**Who reaches it.** A combining mark is at least two bytes of UTF-8, so the cap is about 128KB of marks in a 16MB
+ring. Precomposed Latin (NFC Vietnamese, French) never gets here, since those are single code points of width 1.
+What does get here is any script whose vowel signs are combining: Devanagari, Bengali, Tamil, Thai, where most
+syllables carry one. Also VS16 (U+FE0F) after an emoji, which Claude Code and many CLIs print in status lines, one
+per redraw. A spinner line redrawn every second with a VS16 in it spends one entry per redraw, and a long session
+spends the cap on a spinner before any real text needs it.
+
+**The fix is interning, and only interning.** `screen` gains `combIdx map[string]uint32`. `combine` builds the
+new string (`prev+string(ch)`), looks it up, and only appends when it is new. `ext` is unchanged, `emit` is
+unchanged, and the "entries are never changed once added" rule still holds, so a cell copied into history or the
+alternate screen still means the same thing. What the cap then counts is DISTINCT mark sequences. Real text has a
+few hundred at most (the string is the marks alone, never the base, so every `ka` with a vowel sign `i` shares
+`ि`). The cap becomes something only a hostile or corrupt stream reaches, which is what it is for.
+
+- Keep `combsMaxKept` and `combMax` as they are. With interning, 65536 distinct sequences of up to 32 bytes is
+  about 2MB plus the map, per render, only under hostile input. Past the cap a NEW sequence is still dropped.
+  One that was already interned is still attached, which the current code cannot do.
+- The map is made lazily, on the first mark, so an all-ASCII render allocates nothing new. The ASCII apply
+  benchmark from item 82 (211 allocs per 200 lines) must not move.
+- A render is one goroutine, so there is no lock. Nothing else shares a `screen`.
+
+**Why not compaction.** Renumbering `ext` on a history trim or a reset means walking every live and history cell
+and rebuilding the table. Nothing trims history within one render (`history` only grows, and RIS clears the grid
+but keeps it), so there is no trigger to hang it on, and a render ends before it would matter. It would be a pass
+over up to 16MB of cells to save memory the interned table no longer uses. Rejected.
+
+**Tests.**
+
+- A spinner fixture: one row redrawn 100,000 times with `\r` and a VS16, then a Devanagari line. The table holds
+  2 entries (VS16, and the vowel sign), and the Devanagari line renders with its marks.
+- Past the cap: 65536 distinct sequences (a loop over pairs of combining code points, each pair its own
+  sequence), then an ASCII letter with a mark that was already interned. It keeps the mark, and a NEW sequence
+  after that is dropped. This is the cap still working and interning still answering.
+- The differential cases from item 82 still agree, and the ASCII and CJK apply benchmarks are re-run and
+  reported next to the numbers in `docs/changes/82.md`.
+
+## 87. The looks-idle classifier writes U+FFFD for the second half of a wide character (bug, low)
+
+Found 2026-09-29 merging claude/main (item 21) into claude/terminal (item 82). `classifyFrame` in
+`internal/daemon/idleframe.go` walks `sc.cells` itself and writes every `c.ch`, turning only `0` into a space.
+Item 82 gave a wide character a continuation cell holding `contCh` (-1), and `WriteRune(-1)` writes U+FFFD. So
+every CJK character on screen reaches `classifyScreen` followed by a replacement character. The two branches
+could not see each other, so neither test caught it.
+
+It is low because nothing `classifyScreen` looks for sits in a wide character's second half: the rules are box
+drawing (width 1), the prompt is `>`, the veto strings are ASCII plus `…`. A wrong badge would need a veto string
+split by one. It is still wrong, and the comment at `idleframe.go:88` names items 81 and 82 as open gaps, which
+they no longer are.
+
+Fix: skip `contCh` cells in the loop, the way `writeRow` does, and update that comment. A test puts a CJK
+prompt inside a real idle frame and checks the text handed to `classifyScreen` has no U+FFFD and the frame
+still reads idle. Owned by @terminal, built with item 86 by the same worker.
 
 
 ------------
