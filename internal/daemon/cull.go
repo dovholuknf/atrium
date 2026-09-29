@@ -178,6 +178,13 @@ func (d *Daemon) culled(t *store.Task, res *CullResult) *CullResult {
 	if err := d.st.AcceptMerged(t.ID); err != nil {
 		log.Printf("[atrium] could not close %s as accepted: %v", t.DisplayTitle(), err)
 	}
+	// Off the board too. Not recorded as dead, which would be a death in the
+	// ledger for accepted work: the card keeps its status and its history.
+	if err := d.st.ArchiveCulled(t.ID, "culled: its branch merged and it was asked to leave"); err != nil {
+		log.Printf("[atrium] could not archive %s: %v", t.DisplayTitle(), err)
+	} else {
+		d.ap.Broadcast("task-removed", nil)
+	}
 	return res
 }
 
