@@ -434,7 +434,7 @@ showing it. From clint through @orchestrator, 2026-09-29.
     line inline as edited code. No separate sketch block, and no renames that are not needed.
 37. Plain wording that reads once: what the code does, not a paraphrase of its mechanism.
 38. Assert only what was proven. Unconfirmed reachability or impact is "Is it possible for <condition>, and if so,
-    does <consequence>?", and the fix bullet then starts "Suggested fix, if so:".
+    does <consequence>?", and the fix bullet is then a question too (rule 43).
 39. Look for other paths that would cover the defect anyway, name them in Evidence, and let them decide between
     rule 38's question and an assertion.
 40. Every path named in a bullet is checked against the tree and fixed silently. Never a "Correction:" line.
@@ -443,8 +443,17 @@ showing it. From clint through @orchestrator, 2026-09-29.
 42. Overrides the tone of the others: too much detail reads as "we know better". Certainty only when a test we wrote
     proves it or the code settles it beyond doubt. Otherwise the comment is humble and short, and the humility comes
     from the question form alone ("If <X> happens, it looks like <Y>, which seems bad?"). Never a deference preamble
-    such as "I may be missing something here" (amended by clint). Rule 38's question is one condition and one consequence. Mechanism, the `file:line` trail and
-    covering paths go in Evidence, which clint reads and the PR author does not.
+    such as "I may be missing something here" (amended by clint). Rule 38's question is one condition and one
+    consequence. Mechanism, the `file:line` trail and covering paths go in Evidence, which clint reads and the PR
+    author does not.
+43. "Suggested fix:" only for a problem we know exists, proven by a test we wrote or settled by the code. For an
+    unproven one the fix is a question: "Could we ...?", "What if we ...?", "Should we ...?". An unproven
+    "Suggested fix, if so: add a breaking-change note ..." becomes "Could we add a breaking-change note to the PR body
+    and the release notes: ...?". Refines 38 and 42 (clint, through @orchestrator).
+44. An aborted review deletes everything it produced: the run folder, the report, walk.txt and BRIEF.md, the
+    reviewer-file branch with its seeded notes and any worktree on it, and any `src` worktree @review made. The card
+    is @orchestrator's to delete and a gwt PR worktree is @dotfiles' to remove. Abort is not done: a finished walk
+    keeps everything (clint, through @orchestrator, after ziti-tunnel-sdk-c #1441).
 
 The first second opinions, run by the director on the two reviews already filed (Mercurius, codex gpt-5.5):
 zrok #1277 went from 14 rows to 15. Its new row 04 was the critic's possible gap 1, the ambiguous commit, and one
