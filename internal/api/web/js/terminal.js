@@ -627,6 +627,8 @@ function openTerm(task) {
          >${copyIcon()}</button>${esc(task.worktree || "")}</span>`;
   paintCopyMode();
   paintTermKind();
+  // Whether this card holds findings to walk. See js/walk.js.
+  if (typeof walkProbe === "function") walkProbe(task);
 
   const screen = document.getElementById("t-screen");
   screen.innerHTML = "";

@@ -1,0 +1,153 @@
+/* The walk drawer (js/walk.js, docs/review-tab-design.md). Colours come from the existing tokens only, so every skin
+   wears it with no edit. The four severity properties derive from the channel triples, so a skin that moves
+   --warn-rgb moves every MED chip with it. */
+  :root {
+    --sev-high: rgb(var(--danger-rgb));
+    --sev-med: rgb(var(--warn-rgb));
+    --sev-low: rgb(var(--path-rgb));
+    --sev-nit: var(--dim);
+  }
+
+  /* A row holding the drawer and the ONE terminal. The terminal keeps the flex it always had. */
+  .term-body { flex: 1 1 auto; min-height: 0; min-width: 0; display: flex; }
+  .term-body > #t-screen { flex: 1 1 0; }
+
+  .walk {
+    position: relative; flex: 0 0 auto; width: min(58%, 760px); min-width: 320px;
+    display: flex; flex-direction: column; min-height: 0;
+    container-type: inline-size;
+    background: rgba(var(--shell0-rgb),.92); color: var(--body);
+    border-right: 1px solid var(--stroke-dim); outline: none;
+  }
+  .walk[hidden] { display: none; }
+  .walk-head {
+    display: flex; align-items: center; gap: var(--sp-3); flex: 0 0 auto;
+    padding: var(--vs-2) var(--sp-4); border-bottom: 1px solid var(--stroke-dim);
+    background: linear-gradient(180deg, rgba(var(--shell0-rgb),.92), rgba(var(--shell1-rgb),.92));
+  }
+  .walk-head strong { color: var(--head); font-size: var(--fs-md); white-space: nowrap; }
+  .walk-head .by { font-size: var(--fs-xs); white-space: nowrap; }
+  .walk-body { flex: 1 1 auto; min-height: 0; display: flex; }
+  .walk-grip {
+    all: unset; position: absolute; top: 0; right: -3px; bottom: 0; width: 6px; cursor: col-resize; z-index: 2;
+  }
+  .walk-grip:hover, .walk-grip:focus-visible { background: rgba(var(--teal-rgb),.25); }
+
+  /* Progress: one segment per item, coloured by severity, filled when done. */
+  .walk-bar, .wk-mini { display: inline-flex; gap: 2px; align-items: center; }
+  .walk-bar i, .wk-mini i {
+    display: block; width: 8px; height: 10px; border-radius: 2px;
+    border: 1px solid var(--seg, var(--dim)); background: transparent;
+    transition: background .25s;
+  }
+  .wk-mini { margin-left: var(--sp-2); }
+  .wk-mini i { width: 4px; height: 9px; }
+  .walk-bar i.s-high, .wk-mini i.s-high { --seg: var(--sev-high); }
+  .walk-bar i.s-med, .wk-mini i.s-med { --seg: var(--sev-med); }
+  .walk-bar i.s-low, .wk-mini i.s-low { --seg: var(--sev-low); }
+  .walk-bar i.s-nit, .wk-mini i.s-nit { --seg: var(--sev-nit); }
+  .walk-bar i.done, .wk-mini i.done { background: var(--seg); }
+
+  /* The rail. */
+  .walk-rail {
+    flex: 0 0 auto; width: 15em; max-width: 45%; overflow-y: auto; padding: var(--vs-1) 0;
+    border-right: 1px solid var(--stroke-dim); background: rgba(var(--sink-rgb),.35);
+  }
+  .wk-row {
+    all: unset; box-sizing: border-box; display: flex; align-items: center; gap: var(--sp-2); width: 100%;
+    padding: var(--row-y-sm) var(--sp-3); cursor: pointer; font: var(--fs-sm)/1.2 var(--mono); color: var(--body);
+    white-space: nowrap;
+  }
+  .wk-row:hover { background: var(--lift); }
+  .wk-row.cur { background: var(--lift-strong); box-shadow: inset 2px 0 0 var(--teal); color: var(--head); }
+  .wk-row.brk { border-top: 1px solid var(--stroke-dim); }
+  .wk-row.skipped, .wk-row.posted { opacity: .7; }
+  .wk-g { width: 1.2em; text-align: center; color: var(--teal); }
+  .wk-row.skipped .wk-g { color: var(--dim); }
+  .wk-n { color: var(--dim); }
+  .wk-p { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .wk-lk { color: var(--danger); margin-left: auto; }
+  .wk-new {
+    margin-left: auto; font-size: var(--fs-xxs); padding: 0 var(--sp-2); border-radius: var(--r-pill);
+    background: var(--teal-bg); color: var(--teal); border: 1px solid rgba(var(--teal-rgb),.4);
+  }
+  .wk-lk + .wk-new { margin-left: var(--sp-2); }
+
+  .wk-sev {
+    display: inline-block; padding: 0 var(--sp-2); border-radius: var(--r-pill); font-size: var(--fs-xxs);
+    font-weight: 600; color: var(--sevc, var(--dim)); border: 1px solid var(--sevc, var(--dim));
+    background: color-mix(in srgb, var(--sevc, var(--dim)) 14%, transparent);
+  }
+  .wk-sev.s-high { --sevc: var(--sev-high); }
+  .wk-sev.s-med { --sevc: var(--sev-med); }
+  .wk-sev.s-low { --sevc: var(--sev-low); }
+  .wk-sev.s-nit { --sevc: var(--sev-nit); }
+  /* A leak is an outline in the danger colour, never a fill, so it sits beside a severity chip without
+     shouting over it. */
+  .wk-leakchip {
+    display: inline-block; padding: 0 var(--sp-2); border-radius: var(--r-pill); font-size: var(--fs-xxs);
+    font-weight: 600; color: var(--danger); border: 1px solid var(--danger); background: transparent;
+  }
+
+  /* The finding. */
+  .walk-item { flex: 1 1 auto; min-width: 0; overflow-y: auto; padding: var(--vs-3) var(--sp-4); }
+  .wk-fhead { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; margin-bottom: var(--vs-2); }
+  .wk-num { color: var(--head); font: 600 var(--fs-md) var(--mono); }
+  .wk-where { color: var(--label); font: var(--fs-sm) var(--mono); }
+  .wk-state { font-size: var(--fs-xs); color: var(--teal); }
+  .wk-state.skipped { color: var(--dim); }
+  .wk-warns { margin-bottom: var(--vs-2); }
+  .wk-warn { color: var(--warn); font-size: var(--fs-xs); }
+
+  .wk-code {
+    background: var(--bg-2); border-radius: var(--r-sm); font: var(--fs-sm)/1.45 var(--mono);
+    margin-bottom: var(--vs-3); overflow-x: auto; padding: var(--vs-1) 0;
+  }
+  .wk-l { display: flex; gap: var(--sp-3); padding: 0 var(--sp-3); white-space: pre; }
+  .wk-l.add { background: var(--teal-bg); }
+  .wk-l.at { outline: 1px solid var(--teal); outline-offset: -1px; }
+  .wk-ln { color: var(--dimmest); min-width: 4ch; text-align: right; }
+  .wk-mk { color: var(--teal); min-width: 2ch; }
+  .wk-more {
+    all: unset; display: block; width: 100%; box-sizing: border-box; cursor: pointer; text-align: center;
+    color: var(--dim); font-size: var(--fs-xs); padding: 2px 0;
+  }
+  .wk-more:hover { color: var(--head); }
+
+  .wk-comment {
+    background: var(--card-0); color: var(--head); border-radius: var(--r-sm); padding: var(--vs-2) var(--sp-3);
+    font: var(--fs-sm)/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; margin-bottom: var(--vs-2);
+  }
+  .wk-cl.lab { color: var(--head); font-weight: 600; }
+  .wk-comment code { background: rgba(var(--teal-rgb),.12); border-radius: var(--r-xs); padding: 0 2px; }
+  .wk-cl.flash { animation: wkflash 2s ease-out; background: var(--teal-bg); }
+  @keyframes wkflash { from { background: rgba(var(--teal-rgb),.35); } to { background: transparent; } }
+
+  .wk-ev { color: var(--label); font-size: var(--fs-xs); margin-bottom: var(--vs-3); }
+  .wk-evh { all: unset; cursor: pointer; }
+  .wk-evh span { color: var(--dim); margin-left: var(--sp-2); }
+  .wk-ev pre { font: var(--fs-xs)/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; margin: var(--vs-1) 0 0; }
+
+  .wk-actions { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
+  .wk-edit {
+    width: 100%; box-sizing: border-box; min-height: 14em; background: var(--bg-2); color: var(--head);
+    border: 1px solid var(--stroke-dim); border-radius: var(--r-sm); padding: var(--sp-3);
+    font: var(--fs-sm)/1.5 var(--mono); margin-bottom: var(--vs-2); resize: vertical;
+  }
+  .wk-cmp { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-3); margin-bottom: var(--vs-2); }
+  .wk-cmp pre {
+    background: var(--bg-2); color: var(--head); border-radius: var(--r-sm); padding: var(--sp-3); margin: 0;
+    font: var(--fs-xs)/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere;
+  }
+  .wk-cmph { color: var(--label); font-size: var(--fs-xs); margin-bottom: var(--vs-1); }
+
+  /* Too narrow for three columns: the rail folds to numbers and chips. */
+  @container (max-width: 560px) {
+    .walk-rail { width: 9em; }
+    .wk-p { display: none; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .wk-cl.flash { animation: none; }
+    .walk-bar i, .wk-mini i { transition: none; }
+  }
