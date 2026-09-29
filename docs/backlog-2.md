@@ -2338,6 +2338,9 @@ not a row leaving history. So the table fills to `combsMaxKept` (65536), and pas
 mark. Memory is bounded (65536 entries of at most 32 bytes), so this is not a leak, and it did not block item 82.
 Owned by @terminal. Low priority.
 
+**Status: done on `claude/sa86`.** Built as designed: `combIdx` interns sequences, `combsMaxKept` and `combMax` are
+unchanged, and the ASCII apply benchmark still allocates 211 per 200 lines. Tests are in `screen_comb_test.go`.
+
 ### Design
 
 **How long a screen lives.** Not as long as a session, which the first filing assumed. `screen` is built fresh
@@ -2383,7 +2386,7 @@ over up to 16MB of cells to save memory the interned table no longer uses. Rejec
 - The differential cases from item 82 still agree, and the ASCII and CJK apply benchmarks are re-run and
   reported next to the numbers in `docs/changes/82.md`.
 
-## 87. The looks-idle classifier writes U+FFFD for the second half of a wide character (bug, low)
+## 88. The looks-idle classifier writes U+FFFD for the second half of a wide character (bug, low)
 
 Found 2026-09-29 merging claude/main (item 21) into claude/terminal (item 82). `classifyFrame` in
 `internal/daemon/idleframe.go` walks `sc.cells` itself and writes every `c.ch`, turning only `0` into a space.
@@ -2397,8 +2400,12 @@ split by one. It is still wrong, and the comment at `idleframe.go:88` names item
 they no longer are.
 
 Fix: skip `contCh` cells in the loop, the way `writeRow` does, and update that comment. A test puts a CJK
-prompt inside a real idle frame and checks the text handed to `classifyScreen` has no U+FFFD and the frame
-still reads idle. Owned by @terminal, built with item 86 by the same worker.
+prompt inside a real idle frame and asserts the text handed to `classifyScreen` directly, not only the verdict,
+since the heuristics mask the bug: each wide character appears once, there is no U+FFFD, and the frame still
+reads idle. Owned by @terminal, built with item 86 by the same worker.
+
+**Status: done on `claude/sa86`.** The loop is now `frameText` in `idleframe.go`, which skips `contCh` cells, and the
+stale comment is rewritten. `idleframe_wide_test.go` asserts the text handed to `classifyScreen` directly.
 
 
 ------------
