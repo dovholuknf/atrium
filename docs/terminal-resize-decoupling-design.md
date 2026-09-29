@@ -73,6 +73,10 @@ no scrollback.
 Rows ride along with cols in the same agreed size and the same guard, so a shorter pane no longer forces a repaint
 on everyone unless it is genuinely the shortest.
 
+Since item 74 (`docs/backlog-2.md`), rows no longer apply at once. The inbox ConPTY loses rows on a height change, and
+worst on a flip, so a new agreed height has to hold for half a second before the pty takes it. The width is still
+immediate, at the rows already applied. See `holdHeight` in `internal/daemon/supervisor.go`.
+
 ## What this does NOT solve, said plainly
 
 A phone that is narrower than every desktop on the same session still pulls the pty down to phone width while it is

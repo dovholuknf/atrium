@@ -72,6 +72,9 @@ var taggedFields = map[string][]string{
 	"activity":   {"task_id"},
 	// The cache keep-alive's stops and refreshes. See internal/daemon/keepalive.go.
 	"keepalive": {"task_id"},
+	// A usage row just written. Tagged like the rest, so two rooms' cards that
+	// share an id are never one card. See internal/daemon/usage.go.
+	"usage": {"task_id"},
 }
 
 // feeds is one upstream stream per room, and the clients watching them.

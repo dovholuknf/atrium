@@ -712,6 +712,11 @@ function soloAlert(kind, now, item) {
     ? `${item.tool}: ${(item.command || "").slice(0, 120)}`
     : readyBecause(soloTask || {});
 
+  // A card an agent launched is logged and not said. The mark above stays.
+  if (soloTask && quietDoer(kind, soloTask)) {
+    recordToLog(title, body, "stack", "", soloID);
+    return;
+  }
   alerting.play(kind === "perm" ? "permission" : "waiting", soloTask && soloTask.sound);
   // THIS WINDOW NO LONGER DECIDES THE FORM ON ITS OWN, and that is the fix.
   //

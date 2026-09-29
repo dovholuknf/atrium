@@ -732,6 +732,17 @@ const alerting = (() => {
     // Dropped here rather than in `check`, so those cards are still recorded
     // as seen: they were announced, by the window that owns them.
     fresh = fresh.filter(i => !poppedOut(i.task_id || i.id));
+    // A CARD AN AGENT LAUNCHED IS LOGGED AND NOT SAID. Its launcher already
+    // hears through `notifyLauncher`, so a toast, a sound or a desktop
+    // notification from it is noise. Dropped before `play` and before the count
+    // in the title, so a pile of three with one worker is a pile of two. The log
+    // line stays, because it is the record that the event happened.
+    fresh = fresh.filter(i => {
+      if (!quietDoer(kind, i)) return true;
+      const q = describe(i);
+      recordToLog(q.title, q.body, kind === "permission" ? "perms" : "stack", "", i.task_id || i.id);
+      return false;
+    });
     if (!fresh.length) return;
     const d = describe(fresh[0]);
     // One card's own tone when there is exactly one. A pile has no single
@@ -776,6 +787,19 @@ function whoseNames(items) {
   const names = items.map(i => i.agent || i.display_title || "an agent");
   if (names.length <= 3) return names.join(", ");
   return `${names.slice(0, 3).join(", ")} and ${names.length - 3} more`;
+}
+
+// Whether an alert about this card is to be logged and not said.
+//
+// The gear's "don't notify me about cards an agent launched", ticked by default.
+// `kind` is the alert's kind, and a permission is never muted: it blocks until a
+// human answers, so silence there is a frozen agent. A card with a tone of its
+// own is the per-card override. The board has no per-card on/off for alerts, and
+// choosing a tone for one card is the one way a card says it wants to be heard.
+function quietDoer(kind, item) {
+  if (kind === "permission" || kind === "perm") return false;
+  if (alerting.get().quietDoers === false) return false;
+  return isDoer(item) && !(item.sound && item.sound !== "none");
 }
 
 // A card's own tone, for an alert that is about exactly one card.

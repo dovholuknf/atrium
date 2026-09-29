@@ -130,6 +130,33 @@ func TestUsageRecordsOneRowPerTurn(t *testing.T) {
 	}
 }
 
+// A row written is announced once, with its card id and figures and no message.
+func TestUsageRowWrittenIsBroadcast(t *testing.T) {
+	f := newUsageFix(t)
+	var kinds []string
+	var got map[string]any
+	f.u.broadcast = func(kind string, v any) {
+		kinds = append(kinds, kind)
+		got, _ = v.(map[string]any)
+	}
+	f.u.prompted(f.task.ID, store.UsageOperator)
+	f.line(f.base, "m1", 0, 1000, 9000, 50, false)
+	f.record(f.u.endSegment(f.task.ID, f.base.Add(10*time.Second)))
+	if len(kinds) != 1 || kinds[0] != "usage" {
+		t.Fatalf("events %v, want one usage", kinds)
+	}
+	if got["task_id"] != f.task.ID || got["cache_read"] != int64(9000) || got["cause"] != store.UsageOperator {
+		t.Fatalf("payload %+v", got)
+	}
+	if _, leaked := got["last_message"]; leaked {
+		t.Fatal("the event carries message text")
+	}
+	f.record(f.u.endSegment(f.task.ID, f.base.Add(20*time.Second)))
+	if len(kinds) != 1 {
+		t.Fatalf("an empty turn announced a row: %v", kinds)
+	}
+}
+
 // Replies stamped after the Stop belong to the turn a blocked Stop continued,
 // and the next read counts them once.
 func TestUsageLeavesTheNextTurnForTheNextRow(t *testing.T) {
@@ -350,18 +377,19 @@ func TestUsageCountsSubagentsOnceInTheirOwnRow(t *testing.T) {
 func TestUsagePricesEveryCurrentModel(t *testing.T) {
 	for model, in := range map[string]float64{
 		"claude-fable-5-1": 10, "claude-opus-5-5": 4, "claude-opus-5-5[1m]": 4, "claude-sonnet-5": 2,
+		"claude-sonnet-5-5": 2, "claude-sonnet-5-5[1m]": 2,
 		"claude-haiku-4-5-20251001": 1, "claude-haiku-4-5": 1,
 	} {
 		if p, ok := usagePriceFor(model); !ok || p.In != in {
 			t.Fatalf("%s: %+v %v, want input %v", model, p, ok, in)
 		}
 	}
-	for _, model := range []string{"claude-sonnet-5-5", "claude-haiku-4-5-fast", "gpt-5.5", ""} {
+	for _, model := range []string{"claude-sonnet-5-6", "claude-haiku-4-5-fast", "gpt-5.5", ""} {
 		if p, ok := usagePriceFor(model); ok {
 			t.Fatalf("%s priced %+v", model, p)
 		}
 	}
-	for _, model := range []string{"claude-sonnet-5", "claude-haiku-4-5-20251001"} {
+	for _, model := range []string{"claude-sonnet-5", "claude-sonnet-5-5", "claude-haiku-4-5-20251001"} {
 		if _, ok := keepalivePriceFor(model); ok {
 			t.Fatalf("%s is in keep-alive's table, so keep-alive would refresh it", model)
 		}
