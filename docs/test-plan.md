@@ -4833,3 +4833,35 @@ A restart of the card after that is not lean either.
 last conversation with the full setup and takes the lean tags off. The terminal menu notes `restart this session` as
 `comes back lean`, and has `restart with my full setup`, which asks, takes the lean tags off and restarts. A card
 that is not lean shows none of this.
+
+## CG. A room's memory follows its scrollback, and the loopback board profiles it
+
+Needs the room built from this change and a room restart. Nothing on the hub changes. Go tests cover it:
+`TestARingCostsWhatItHoldsNotItsCeiling`, `TestABoardOfQuietRingsStaysSmall`,
+`TestAGrowingRingHoldsExactlyTheLastBytes` and `TestRaisingAQuietRingAllocatesNothing` in
+`internal/daemon/ring_memory_test.go`, and `TestTheLoopbackBoardServesAHeapProfile`,
+`TestTheBoardHandlerAloneHasNoProfiler` and `TestTheProfilerRefusesAnythingNotPlainlyLocal` in
+`internal/daemon/pprof_test.go`. See `docs/backlog-2.md` item 57.
+
+### CG1. Quiet cards cost what they hold
+
+1. On a throwaway room, set scrollback to 64MB under settings and launch eight cards that print a prompt and wait.
+2. Read the room's private memory: `(Get-Process -Id <pid>).PrivateMemorySize64`, or commit size in Task Manager.
+
+**Expected:** under 100MB. The build before this change reads about 570MB, eight times the setting.
+
+### CG2. A heap profile, from loopback only
+
+1. `go tool pprof -top http://127.0.0.1:<http>/debug/pprof/heap` against the room's `--http` address.
+2. The same path on the agent address, on an overlay share of the board, and through the hub's board.
+
+**Expected:** the first prints a profile, with `ringBuffer.reserve` close to the scrollback the cards hold. Every
+other address answers with the board or a 404, never a profile.
+
+### CG3. The live room after a restart
+
+1. Restart the live room with `scrollback_mb` at 512 and every card reopening.
+2. Watch its private memory for ten minutes.
+
+**Expected:** a few hundred MB, near the size of `~/.atrium/scrollback` plus what the cards print after, not the 7
+to 16GB that 26 cards at 512MB each came to.

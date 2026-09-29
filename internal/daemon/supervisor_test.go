@@ -193,7 +193,7 @@ func TestReadingTheTailDoesNotCopyTheWholeRing(t *testing.T) {
 	// small one and would make this test pass against the bug it exists for.
 	// The case in the report is a runner that lived all day.
 	big := newRing(8<<20, testCols)
-	for big.retained() < len(big.data) {
+	for big.retained() < big.max {
 		big.Write([]byte(content))
 	}
 
