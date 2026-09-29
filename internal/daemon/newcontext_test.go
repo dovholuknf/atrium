@@ -83,7 +83,7 @@ func TestNewContextCapturesClearsAndWakes(t *testing.T) {
 
 	// 1. The capture prompt, and only that.
 	until(t, "the capture prompt", func() bool {
-		return strings.Contains(f.written(), "HANDOFF.md") && strings.HasSuffix(f.written(), "\r")
+		return strings.Contains(f.written(), "HANDOFF.") && strings.HasSuffix(f.written(), "\r")
 	})
 	if got := f.written(); strings.Contains(got, "/clear") || !strings.HasSuffix(got, "\r") {
 		t.Fatalf("the capture prompt was not typed and sent alone: %q", got)
@@ -92,7 +92,7 @@ func TestNewContextCapturesClearsAndWakes(t *testing.T) {
 	// The turn runs. It writes the file, and goes on for a while: /clear must not
 	// be typed into it.
 	d.act.set(id, ActivityThinking, "")
-	if err := os.WriteFile(filepath.Join(dir, "HANDOFF.md"), []byte("state"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, HandoffName(task)), []byte("state"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	time.Sleep(150 * time.Millisecond)
@@ -107,18 +107,18 @@ func TestNewContextCapturesClearsAndWakes(t *testing.T) {
 		t.Fatalf("the card does not show the clear step: %v", d.newContextFor(id))
 	}
 	time.Sleep(60 * time.Millisecond)
-	if strings.Contains(f.written(), "Read HANDOFF.md and continue") {
+	if strings.Contains(f.written(), "Read "+HandoffName(task)+" and continue") {
 		t.Fatalf("the wake was typed before the new session started: %q", f.written())
 	}
 
 	// 3. The new session starts, and the wake follows.
 	d.wake.sawSession(id, time.Now())
 	until(t, "the wake prompt", func() bool {
-		return strings.Contains(f.written(), newContextWake) && strings.HasSuffix(f.written(), "\r")
+		return strings.Contains(f.written(), newContextWake(HandoffName(task))) && strings.HasSuffix(f.written(), "\r")
 	})
 	got := f.written()
-	if !(strings.Index(got, "HANDOFF.md in the current") < strings.Index(got, "/clear") &&
-		strings.Index(got, "/clear") < strings.Index(got, newContextWake)) {
+	if !(strings.Index(got, HandoffName(task)+" in the current") < strings.Index(got, "/clear") &&
+		strings.Index(got, "/clear") < strings.Index(got, newContextWake(HandoffName(task)))) {
 		t.Fatalf("the steps were not typed in order: %q", got)
 	}
 	if !strings.HasSuffix(got, "\r") {
@@ -161,7 +161,7 @@ func TestNewContextStopsWhenTheCaptureTurnNeverEnds(t *testing.T) {
 	if err := d.StartNewContext(task.ID); err != nil {
 		t.Fatal(err)
 	}
-	until(t, "the capture prompt", func() bool { return strings.Contains(f.written(), "HANDOFF.md") })
+	until(t, "the capture prompt", func() bool { return strings.Contains(f.written(), "HANDOFF.") })
 	d.act.set(task.ID, ActivityTool, "Bash")
 	until(t, "the chip to fail", func() bool { return failedWith(d, task.ID) != "" })
 	if strings.Contains(f.written(), "/clear") {
@@ -178,13 +178,13 @@ func TestNewContextDoesNotClearOverAMissingHandoff(t *testing.T) {
 	if err := d.StartNewContext(task.ID); err != nil {
 		t.Fatal(err)
 	}
-	until(t, "the capture prompt", func() bool { return strings.Contains(f.written(), "HANDOFF.md") })
+	until(t, "the capture prompt", func() bool { return strings.Contains(f.written(), "HANDOFF.") })
 	d.act.set(task.ID, ActivityThinking, "")
 	time.Sleep(20 * time.Millisecond)
 	d.act.set(task.ID, ActivityIdle, "")
 
 	until(t, "the chip to fail", func() bool { return failedWith(d, task.ID) != "" })
-	if r := failedWith(d, task.ID); !strings.Contains(r, "HANDOFF.md") || !strings.Contains(r, filepath.ToSlash(dir)) {
+	if r := failedWith(d, task.ID); !strings.Contains(r, HandoffName(task)) || !strings.Contains(r, filepath.ToSlash(dir)) {
 		t.Fatalf("the reason does not name the file and the place: %q", r)
 	}
 	time.Sleep(60 * time.Millisecond)
@@ -198,7 +198,7 @@ func TestNewContextDoesNotTrustAStaleHandoff(t *testing.T) {
 	fastNewContext(t)
 	d := testDaemon(t)
 	task, f, dir := ncCard(t, d)
-	stale := filepath.Join(dir, "HANDOFF.md")
+	stale := filepath.Join(dir, HandoffName(task))
 	if err := os.WriteFile(stale, []byte("old"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -210,7 +210,7 @@ func TestNewContextDoesNotTrustAStaleHandoff(t *testing.T) {
 	if err := d.StartNewContext(task.ID); err != nil {
 		t.Fatal(err)
 	}
-	until(t, "the capture prompt", func() bool { return strings.Contains(f.written(), "HANDOFF.md") })
+	until(t, "the capture prompt", func() bool { return strings.Contains(f.written(), "HANDOFF.") })
 	d.act.set(task.ID, ActivityThinking, "")
 	time.Sleep(20 * time.Millisecond)
 	d.act.set(task.ID, ActivityIdle, "")
@@ -228,9 +228,9 @@ func TestNewContextStopsWhenNoSessionStartsAfterTheClear(t *testing.T) {
 	if err := d.StartNewContext(task.ID); err != nil {
 		t.Fatal(err)
 	}
-	until(t, "the capture prompt", func() bool { return strings.Contains(f.written(), "HANDOFF.md") })
+	until(t, "the capture prompt", func() bool { return strings.Contains(f.written(), "HANDOFF.") })
 	d.act.set(task.ID, ActivityThinking, "")
-	_ = os.WriteFile(filepath.Join(dir, "HANDOFF.md"), []byte("state"), 0o644)
+	_ = os.WriteFile(filepath.Join(dir, HandoffName(task)), []byte("state"), 0o644)
 	time.Sleep(20 * time.Millisecond)
 	d.act.set(task.ID, ActivityIdle, "")
 	until(t, "/clear", func() bool { return strings.Contains(f.written(), "/clear") })
@@ -240,7 +240,7 @@ func TestNewContextStopsWhenNoSessionStartsAfterTheClear(t *testing.T) {
 	if r := failedWith(d, task.ID); !strings.Contains(r, "/clear") {
 		t.Fatalf("the reason does not name the step: %q", r)
 	}
-	if strings.Contains(f.written(), newContextWake) {
+	if strings.Contains(f.written(), newContextWake(HandoffName(task))) {
 		t.Fatalf("woke a session that never started: %q", f.written())
 	}
 }
@@ -255,13 +255,13 @@ func TestNewContextIgnoresASessionStartFromBeforeTheClear(t *testing.T) {
 	if err := d.StartNewContext(task.ID); err != nil {
 		t.Fatal(err)
 	}
-	until(t, "the capture prompt", func() bool { return strings.Contains(f.written(), "HANDOFF.md") })
+	until(t, "the capture prompt", func() bool { return strings.Contains(f.written(), "HANDOFF.") })
 	d.act.set(task.ID, ActivityThinking, "")
-	_ = os.WriteFile(filepath.Join(dir, "HANDOFF.md"), []byte("state"), 0o644)
+	_ = os.WriteFile(filepath.Join(dir, HandoffName(task)), []byte("state"), 0o644)
 	time.Sleep(20 * time.Millisecond)
 	d.act.set(task.ID, ActivityIdle, "")
 	until(t, "the chip to fail", func() bool { return failedWith(d, task.ID) != "" })
-	if strings.Contains(f.written(), newContextWake) {
+	if strings.Contains(f.written(), newContextWake(HandoffName(task))) {
 		t.Fatalf("took an old SessionStart for the new session: %q", f.written())
 	}
 }
@@ -281,7 +281,7 @@ func TestNewContextWaitsOutATurnAlreadyRunning(t *testing.T) {
 		t.Fatalf("typed the capture prompt into a running turn: %q", f.written())
 	}
 	d.act.set(task.ID, ActivityIdle, "")
-	until(t, "the capture prompt", func() bool { return strings.Contains(f.written(), "HANDOFF.md") })
+	until(t, "the capture prompt", func() bool { return strings.Contains(f.written(), "HANDOFF.") })
 }
 
 // The gate every automated write goes through: a part written line is waited out.
@@ -335,12 +335,12 @@ func TestNewContextFailedChipIsDismissedOrReplaced(t *testing.T) {
 	}
 
 	// Run again: replaced, and the prompt is typed again.
-	before := strings.Count(f.written(), "HANDOFF.md")
+	before := strings.Count(f.written(), "HANDOFF.")
 	if err := d.StartNewContext(task.ID); err != nil {
 		t.Fatalf("could not run again over a failed chip: %v", err)
 	}
 	until(t, "the second capture prompt", func() bool {
-		return strings.Count(f.written(), "HANDOFF.md") > before && strings.HasSuffix(f.written(), "\r")
+		return strings.Count(f.written(), "HANDOFF.") > before && strings.HasSuffix(f.written(), "\r")
 	})
 
 	// Dismissed: gone, and the run it belonged to types nothing more.
@@ -376,7 +376,7 @@ func TestNewContextEndpoint(t *testing.T) {
 	if rec := post(task.ID); rec.Code != http.StatusAccepted {
 		t.Fatalf("start answered %d: %s", rec.Code, rec.Body)
 	}
-	until(t, "the capture prompt", func() bool { return strings.Contains(f.written(), "HANDOFF.md") })
+	until(t, "the capture prompt", func() bool { return strings.Contains(f.written(), "HANDOFF.") })
 	if rec := post(task.ID); rec.Code != http.StatusConflict {
 		t.Fatalf("a second start answered %d, not a conflict", rec.Code)
 	}

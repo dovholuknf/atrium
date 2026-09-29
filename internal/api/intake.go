@@ -68,7 +68,7 @@ func (s *Server) intake(w http.ResponseWriter, r *http.Request) {
 		}
 		if isNew {
 			created++
-			s.Broadcast("task", toView(task))
+			s.PublishTask(task)
 		}
 		out = append(out, result{
 			ExternalID: item.ExternalID, TaskID: task.ID, Created: isNew,

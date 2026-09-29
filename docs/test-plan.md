@@ -6251,3 +6251,201 @@ its height changed reports `repaired=0`.
 
 **Expected:** the text is identical both times, and the rows a repaint overwrote are still absent from history, because
 the report measures and does not repair.
+
+## EB. Runners and their console hosts run at above normal
+
+### EB1. The default raises the runner and its console host
+
+1. On Windows, start a throwaway room and launch a card with a pty runner.
+2. In Task Manager or `Get-Process`, read the priority class of the runner and of the `conhost.exe` or
+   `OpenConsole.exe` that is a child of the room.
+3. Start something from inside the runner, such as `pwsh -c Start-Sleep 60`, and read its class.
+
+**Expected:** the runner and the console host are AboveNormal. The program the runner started is Normal.
+
+### EB2. The setting turns it off
+
+1. `POST /api/settings {"runner_priority":"normal"}` and read settings back.
+2. Start another card, and open the shell beside it.
+
+**Expected:** settings read back `normal`. The new runner, its console host and the shell are all Normal. A runner
+started before the change keeps its class. Setting `above_normal` (or an empty string) brings the raise back, and any
+other value is refused with 400.
+
+### EB3. A refused raise does not stop a runner
+
+**Expected:** if the raise fails, the room logs one `could not raise a runner's priority` line and the runner still
+starts. Covered by `TestFailedRaiseDoesNotFailTheSpawn`.
+
+## EC. The card list does not re-read idle transcripts
+
+### EC1. Idle CPU and list latency
+
+On a throwaway room with about 30 Claude cards that have large transcripts:
+
+1. Time `GET /v1/tasks` 20 times and note p50 and p95, then watch the room process's CPU for a minute while the board is
+   open and idle.
+2. Compare with a room built from the commit before t-005.
+3. Expect the list to answer in a small fraction of the earlier time and the idle CPU to be near zero.
+4. Send a turn to one card and confirm its context figure on the board updates on the next poll.
+
+## ED. New context, one handoff file per card
+
+### ED1. Two cards in one directory
+
+1. Launch two supervised cards in the same directory, one with an alias.
+2. Run new context on the first and wait for the capture prompt.
+
+**Expected:** the prompt names `HANDOFF.<alias>.md` (or `HANDOFF.` plus 13 id characters), and the chip says the same.
+
+### ED2. A sibling mid-cycle refuses
+
+1. With the first card mid-cycle, run new context on the second.
+
+**Expected:** refused with a 409 naming the first card. Once the first finishes, the second starts.
+
+### ED3. Another card's file does not count
+
+1. During the first card's capture, create plain `HANDOFF.md` in the directory instead of its own file.
+
+**Expected:** the cycle fails naming the expected file, and `/clear` is not typed.
+
+## EE. Messages are held during a new-context cycle
+
+### EE1. A say during capture
+
+1. Press Ctrl+Alt+N on a card, and while it is capturing, `atrium_say` to it from another session.
+
+**Expected:** the say answers `queued` with the new-context note and is not typed. After the wake prompt is typed
+it is delivered, and never ahead of the wake prompt.
+
+### EE2. A failed cycle
+
+1. Start a cycle on a card whose capture cannot finish, and say something to it meanwhile.
+
+**Expected:** when the chip fails, the held say is delivered.
+
+## EF. A card's change arrives on the event stream as a whole row
+
+### EF1. Counts and seen state ride the event
+Give a card two open questions, a reply owed and a seen mark. Watch `/v1/events` and change the card. The "task" event
+has `asks_open`, `replies_owed`, `seen` and `"row":1`, and matches that card's row in `/v1/tasks`.
+
+### EF2. No list re-fetch
+With the board open and the network tab showing, change a card. The card updates and `/v1/tasks` is not requested.
+
+## EG. A quiet supervised card stays where it is
+
+1. Launch a worker from the board, so atrium supervises it, and give it a prompt that leaves it thinking or waiting
+   without any hook traffic for more than 15 minutes (a long `sleep` in a Bash call works).
+2. Watch the room log and the card for the whole wait.
+
+**Expected:** no "assumed gone: silent for ... and no pid to check" line and no "filed dead with a live runner" line
+for that card. It stays in its column, and its history has no reaper exit.
+
+## EH. The walk drawer
+
+Needs a card whose directory holds a review folder, for example a `pr-<n>-<sha7>` folder with `findings/` and
+`pr.diff`. Work in a COPY: every mark below writes into the finding files.
+
+### EH1. The button and the rail
+
+Attach the card. Expect a `walk` button on the terminal bar with a row of small segments, one per finding. A card
+with no `findings/` folder shows no button. Click it. Expect the drawer beside the terminal, the rail in file
+order with a severity chip per row, a `◆` on every finding with a `Leak:` line, and a rule between severities.
+
+### EH2. The finding
+
+Expect the header (number, severity, path, line), the code from `pr.diff` with the anchored line outlined and
+`more above` and `more below` buttons that grow the context, the comment starting with its label line, and
+Evidence folded to one line. Move to another finding: the context you opened resets. A label whose code differs from
+the diff, or a line the PR did not change, shows a warning.
+
+### EH3. Keys and the Walk line
+
+`j` and `k` move, `g` jumps to the first finding neither posted nor skipped. `s` writes `Walk: skipped <time>` under
+Evidence and fills that segment. `p` asks for a URL (Enter skips it) and writes `Walk: posted <time> <url>`. `u`
+removes the line. Nothing else in the file changes.
+
+### EH4. Asking the walker
+
+`a` types `about 03 share.go:104, ` into the terminal with no Enter and focuses the terminal, so the sentence can be
+finished. `A` types the canned question and submits it. Neither goes through `POST /message`.
+
+### EH5. Editing and a refused write
+
+`e` turns the comment into a text box. Change the file from another window, then save with ctrl-s. Expect no write,
+and a compare of "yours" against "on disk" with "keep mine" and "take theirs". Keep mine writes yours over the new
+disk text and leaves Evidence as it was.
+
+### EH6. The walker changes files
+
+With the drawer open, edit a finding from a terminal. Within about three seconds the changed lines flash for two
+seconds (not at all with reduced motion). Rename the file: the rail keeps its place. Add a file: it appears in order
+with a `new` chip.
+
+### EH7. Copying, opening and finishing
+
+`c` copies the label line and bullets, never Evidence. `o` opens the deep link and `C` copies then opens it. `walk
+done` with a leak neither posted nor skipped asks once, naming the leaks. Confirming types `walk done` into the
+terminal and submits it.
+
+### EH8. Narrow screens
+
+At phone width the drawer stacks above the terminal and the rail scrolls sideways. In a popped-out `#term=` window
+the drawer opens the same way.
+
+## EI. A terminal link reuses its tab
+
+### EI1. Two links in one pull request
+
+1. In a terminal, print two links to the same pull request, for example
+   `https://github.com/openziti/zrok/pull/1277/files#diff-aR165` and `.../pull/1277/files#diff-bR61`.
+2. Click the first, then click the second.
+
+**Expected:** the second click loads into the tab the first opened and brings it forward. No second tab appears.
+
+### EI2. A different pull request, and a non-GitHub link
+
+1. Click a link to a different pull request, then a link to any other site.
+
+**Expected:** each opens its own tab, and clicking either again reuses it.
+
+### EI3. The board's address is not sent
+
+1. Open the developer tools network panel, click a terminal link, and read the request headers of the page it
+   opens, or open a page that echoes them.
+2. In the opened tab, run `window.opener` in the console.
+
+**Expected:** there is no `Referer` naming the board, and `window.opener` is `null`.
+
+## EJ. A slow paste shows a busy mark at once
+
+### EJ1. Text, right click and the paste box
+
+1. Attach to a running Claude Code card that is busy working.
+2. Paste a few lines with ctrl-v, then with right click, then through the paste box.
+
+**Expected:** the "pasting" mark is up the instant you paste, stays up while the runner works, and clears when the
+runner prints its answer. It never clears on the first repaint.
+
+### EJ2. An image
+
+1. Paste a screenshot into the terminal over a slow link.
+
+**Expected:** the mark appears at once and says "uploading" with the file name, then carries on as a paste until the
+runner answers. There is no "uploading" toast.
+
+### EJ3. A runner that never answers
+
+1. Paste into a card whose runner prints nothing.
+
+**Expected:** the mark clears by itself after 20 seconds at the latest.
+
+### EJ4. The timing line
+
+1. Turn on "log terminal input lag" in settings and open the console.
+2. Paste.
+
+**Expected:** one `[inputlag] ... paste (...)` line names each step in milliseconds: clipboard, sent, shown, drained,
+output and cleared.
