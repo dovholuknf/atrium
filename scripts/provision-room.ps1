@@ -1286,8 +1286,11 @@ $startedAt = Get-Date
 if (-not $useAutostart) {
     # THROUGH A LOGIN SHELL ON UNIX, so the room gets the PATH a person's
     # terminal has rather than the bare one a non-interactive ssh command gets,
-    # and so finds the same runners the runner check finds.
-    $ds = if ($os -eq 'windows') { "`$ErrorActionPreference = 'Continue'`n& `$Bin room --detach 2>&1`nexit `$LASTEXITCODE" }
+    # and so finds the same runners the runner check finds. ON WINDOWS the
+    # toolchain's room-env.ps1 goes first when room-toolchain.ps1 wrote one,
+    # since the room and its runners inherit this PATH and the machine Path
+    # alone can put a Cygwin git ahead of Git for Windows.
+    $ds = if ($os -eq 'windows') { "`$ErrorActionPreference = 'Continue'`n`$e = Join-Path `$HOME '.atrium\toolchain\room-env.ps1'; if (Test-Path `$e) { . `$e }`n& `$Bin room --detach 2>&1`nexit `$LASTEXITCODE" }
           else { "`"`${SHELL:-/bin/sh}`" -lc 'exec `"`$0`" room --detach' `"`$Bin`" 2>&1" }
     $r = Invoke-Remote $ds
     if ($r.Code -ne 0) { Fail 'start' 3 'the room would not start' $r.Out }
