@@ -2218,8 +2218,9 @@ async function toastLivesSection(browser, base) {
 
 // THE BOARD'S OWN TOOLTIP, NOT THE BROWSER'S. A native `title` draws a white box
 // in the system font whatever the skin, so every one became a `data-tip` that
-// `#tip` draws. Checked on a toolbar button, a chip on a stack card and a row on
-// the terminals pane, in two skins, and then the rendered board is searched for
+// `#tip` draws. Checked on a toolbar button in two skins. A chip on a stack card
+// and a row on the terminals pane show none under the pointer, since the card's
+// details are its one hover (item 72). Then the rendered board is searched for
 // any `title` left over. `scripts/check-titles.sh` guards the source, this
 // guards what the source draws.
 async function tooltipSection(browser, base) {
@@ -2299,7 +2300,20 @@ async function tooltipSection(browser, base) {
     }
     await tp.evaluate(() => applySkin("harbour"));
 
-    await hover("#stack-list .stackrow [data-tip]", "a chip on a stack card");
+    // On a card the pointer brings up the card's details instead, which carry
+    // what the tooltip said (docs/backlog-2.md item 72, peekEverywhere).
+    const onCard = async (sel, what) => {
+      if (!(await mark(sel))) { fail("no " + what + " with a data-tip to hover (" + sel + ")."); return; }
+      await tp.mouse.move(2, 890);
+      await tp.waitForTimeout(100);
+      await tp.hover("[data-tipprobe]");
+      await tp.waitForTimeout(800);
+      if ((await tipNow()).on) fail("hovering " + what + " brought up its tooltip, not only the card's details.");
+      await tp.mouse.move(700, 890);
+      await tp.evaluate(() => closePeek());
+    };
+    await onCard("#stack-list .stackrow [data-tip]", "a chip on a stack card");
+    await hover("header #gear", "the header's gear button");
     // A scroll that is not the terminal's takes it down.
     await tp.evaluate(() => window.dispatchEvent(new Event("scroll")));
     if ((await tipNow()).on) fail("a scroll left the tooltip up.");
@@ -2323,7 +2337,7 @@ async function tooltipSection(browser, base) {
     await tp.click('.tab[data-view="terms"]');
     await tp.waitForSelector("#term-list .card.tab", { timeout: 15000 });
     await tp.waitForTimeout(300);
-    await hover("#term-list .card.tab [data-tip]", "a row on the terminals pane");
+    await onCard("#term-list .card.tab [data-tip]", "a row on the terminals pane");
     await tp.mouse.move(700, 890);
 
     // NOTHING DRAWN STILL CARRIES A NATIVE TITLE, on any of the main views.
@@ -5199,7 +5213,10 @@ const CTX_USAGE = {
 };
 // The same cards pinned, so the terminals list draws a row for each without a
 // live session behind it.
-const PEEK_CARDS = CTX_CARDS.map(t => Object.assign({}, t, { pinned: true }));
+const PEEK_CARDS = CTX_CARDS.map(t => Object.assign({}, t, { pinned: true },
+  // A name longer than the terminals list draws, and an address, for the popover's head.
+  t.id === "cx-big" ? { display_title: "big context, a name the terminals list cuts short",
+    worktree: "/src/atrium/one-hover", repo: "atrium", branch: "claude/one-hover" } : {}));
 let peekReads = 0;
 
 // PAST THE GEAR'S CONTEXT THRESHOLD, A CARD WEARS A MARK AND NO NUMBER, on the
@@ -5513,6 +5530,93 @@ async function peekEverywhereSection(browser, base) {
       await reset();
       await p.evaluate(() => { document.querySelector("main").style.paddingTop = ""; });
     }
+
+    // ONE HOVER PER CARD. Held on a part of the entry with a tooltip of its own,
+    // on each tab: that tooltip never shows, before the second or after it, and
+    // the popover never shares the screen with one. Its head carries the whole
+    // name, the address, and what the part under the pointer would have said. A
+    // tooltip already up goes when the details open. Off the cards, tooltips
+    // are as they were. See docs/backlog-2.md item 72.
+    const shown = () => p.evaluate(() => ({ tip: document.getElementById("tip").classList.contains("on"),
+      peek: !!document.querySelector(".peek.on") }));
+    const headText = () => p.evaluate(() =>
+      ((document.querySelector(".peek.on .peek-head") || {}).textContent || "").replace(/\s+/g, " "));
+    const norm = s => String(s || "").replace(/\s+/g, " ").trim();
+    const parts = [
+      ["stack", tabs[0][1] + " .wait", tabs[0][1] + " .since"],
+      ["board", tabs[1][1] + " .chips [data-tip]:not([data-tip=''])", ""],
+      ["terms", tabs[2][1] + " .tname", ""],
+    ];
+    for (const [view, sel, next] of parts) {
+      await p.setViewportSize({ width: W, height: H });
+      await p.evaluate(v => document.querySelector(`.tab[data-view="${v}"]`).click(), view);
+      const part = p.locator(sel).first();
+      const ok = await part.waitFor({ state: "visible", timeout: 5000 }).then(() => true)
+        .catch(() => { fail("the " + view + " tab's entry has no part with a tooltip at " + sel); return false; });
+      if (!ok) continue;
+      await new Promise(r => setTimeout(r, 300));
+      await reset();
+      const own = view === "terms";
+      const said = norm(await part.getAttribute("data-tip"));
+      const b = await part.boundingBox();
+      const px = Math.round(b.x + Math.min(b.width / 2, 20)), py = Math.round(b.y + b.height / 2);
+      await p.mouse.move(px, py);
+      let both = false, tipped = false, opened = false;
+      for (const t0 = Date.now(); Date.now() - t0 < 1800;) {
+        const s = await shown();
+        both = both || (s.tip && s.peek);
+        tipped = tipped || s.tip;
+        opened = opened || s.peek;
+        await new Promise(r => setTimeout(r, 40));
+      }
+      if (both) fail("on the " + view + " tab the card's tooltip and its details showed at once.");
+      if (tipped) fail("on the " + view + " tab a tooltip showed on the card under the pointer: " + sel);
+      if (!opened) { fail("on the " + view + " tab a second on " + sel + " did not open the details."); continue; }
+      await p.waitForFunction(() => /212k/.test((document.querySelector(".peek.on") || {}).textContent || ""),
+        null, { timeout: 3000 }).catch(() => {});
+      const head = await headText();
+      const where = await p.evaluate(() => terminalLabel(lastTasks.find(t => t.id === "cx-big")));
+      const whole = PEEK_CARDS.find(t => t.id === "cx-big").display_title;
+      if (!head.includes(whole)) fail("on the " + view + " tab the details' head does not carry the whole name: " + head);
+      if (!where || !head.includes(where)) {
+        fail("on the " + view + " tab the details' head does not carry the address " + where + ": " + head);
+      }
+      if (!own && !head.includes(said)) fail("on the " + view + " tab the details do not say what " + sel + " said: " + head);
+      if (own && (await p.evaluate(() => !!document.querySelector(".peek.on .peek-hint")))) {
+        fail("on the terminals tab the row's name tooltip was said twice in the details: " + head);
+      }
+      const title = await p.evaluate(() => {
+        const el = document.querySelector(".peek.on .peek-title");
+        return el ? el.scrollWidth <= el.clientWidth + 1 : false;
+      });
+      if (!title) fail("on the " + view + " tab the details' name is cut off.");
+      if (next) {
+        // Across the same card to another part: the details stay, and say what that one says.
+        const nb = await p.locator(next).first().boundingBox();
+        const nsaid = norm(await p.locator(next).first().getAttribute("data-tip"));
+        await p.mouse.move(Math.round(nb.x + nb.width / 2), Math.round(nb.y + nb.height / 2), { steps: 4 });
+        await new Promise(r => setTimeout(r, 700));
+        const s = await shown();
+        if (s.tip) fail("on the " + view + " tab a tooltip showed after crossing the card to " + next);
+        if (!s.peek) fail("on the " + view + " tab the details closed crossing their own card to " + next);
+        else if (!(await headText()).includes(nsaid)) {
+          fail("on the " + view + " tab the details did not follow the pointer to what " + next + " says: " + (await headText()));
+        }
+      }
+      // A tooltip that was up, from the keyboard, goes when the details open.
+      await reset();
+      await p.evaluate(s => { showTip(document.querySelector(s)); openPeek("cx-big", document.querySelector(s), "hover"); }, sel);
+      const s2 = await shown();
+      if (s2.tip) fail("on the " + view + " tab a tooltip already up stayed under the details.");
+      await reset();
+    }
+    // Off the cards a tooltip is as it was: half a second on the gear.
+    await p.evaluate(() => document.querySelector('.tab[data-view="stack"]').click());
+    const gear = await p.locator("#gear").boundingBox();
+    await p.mouse.move(Math.round(gear.x + gear.width / 2), Math.round(gear.y + gear.height / 2));
+    await p.waitForFunction(() => document.getElementById("tip").classList.contains("on"), null, { timeout: 2000 })
+      .catch(() => fail("the gear's tooltip no longer shows."));
+    await p.evaluate(() => hideTip());
 
     // The four edges and the four corners, with the pointer really there: it
     // stays inside the screen, below the pointer where there is room and
