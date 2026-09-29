@@ -472,6 +472,15 @@ func New(opts Options) (*Daemon, error) {
 	api.ContextSizeOf = d.contextSizeFor
 	// Token use on record, read only by a card's details. See usage.go.
 	d.usage = newUsageTracker(st)
+	d.usage.broadcast = d.ap.Broadcast
+	// A keep-alive refresh's row is announced the same way as a turn's.
+	d.ka.spent = func(u *store.SessionUsage) error {
+		err := st.AddSessionUsage(u)
+		if err == nil {
+			d.usage.emitRow(u)
+		}
+		return err
+	}
 	d.ap.UsageOf = d.usageFor
 	// Starting a fixture is spawning a process, which the daemon owns.
 	api.StartFixture = d.StartFixtureNow
