@@ -6497,3 +6497,40 @@ reload.
 2. Confirm the desktop's terminal resized to the phone's height, which is the item 74 case this view exists to avoid.
 3. Tap "watch at desktop size". The page reloads and the phone view is back. Resize the desktop window. The pty
    follows the desktop again.
+
+## EM. The board is driven by its event stream
+
+### EM1. An idle board is quiet
+
+1. Open the board with a few running sessions and open the browser's network tab.
+2. Leave it for two minutes with the tab in front.
+
+**Expected:** `/v1/tasks`, `/v1/permissions`, `/v1/shares` and `/v1/health` are each read about once a minute.
+`/v1/waiting` is never read. The cards still move as the sessions work.
+
+### EM2. A card changes without a refetch
+
+1. With the network tab open, type to a session so its card changes state.
+
+**Expected:** the card updates within a second. On a room with r-009, no `/v1/tasks` request goes with it. On an
+older room, at most one every 5s.
+
+### EM3. The terminal list repaints instantly
+
+1. Open the terminals view.
+2. Toggle the tray, then switch the sort between name and activity.
+
+**Expected:** each click repaints at once and makes no request.
+
+### EM4. A hidden tab stays quiet
+
+1. Switch to another browser tab for two minutes, then come back.
+
+**Expected:** no requests while hidden. Coming back reads everything once and the board is current.
+
+### EM5. Permissions still arrive
+
+1. Make a session ask for a permission, with the board on another tab and with a terminal attached.
+
+**Expected:** the badge, the alert, the perms tab and the banner over the attached terminal all show it. Answering it
+from the banner or the perms tab takes it away at once.
