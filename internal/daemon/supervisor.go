@@ -739,6 +739,10 @@ type runner struct {
 	// means `heightHold`. A field so a test can shorten one runner's hold
 	// without touching any other runner's.
 	hold time.Duration
+	// onSized is told the size the pty takes each time a viewer's size moves
+	// it, so the daemon can remember what the room is watched at. Nil for a
+	// shell and in tests that do not care. See `noteRoomSize`.
+	onSized func(cols, rows int)
 	// resized is closed and replaced every time the pty changes size, so
 	// every attach can tell its viewer at once. See `sizeChanged`.
 	resized   chan struct{}
@@ -1312,20 +1316,45 @@ func (r *runner) setViewport(id any, cols, rows int) error {
 	if r.views == nil {
 		r.views = map[any]viewport{}
 	}
+	// THE FIRST VIEWER APPLIES BOTH SIZES AT ONCE. The hold below stops a flip
+	// BETWEEN viewers, and with nobody attached before this one there is nothing
+	// to flip from. Holding the height anyway made a fresh attach two resizes,
+	// each ending in a repaint that filed the same lines twice. Any viewer after
+	// the first, and every later change, still goes through the hold.
+	first := len(r.views) == 0
 	r.views[id] = viewport{cols, rows}
 	agreed := agreedViewport(r.views)
 	r.mu.Unlock()
-	return r.applyViewport(agreed)
+	err := r.applyViewport(agreed, first)
+	if r.onSized != nil {
+		r.onSized(r.buf.CurrentSize())
+	}
+	return err
 }
 
 // applyViewport moves the pty toward the agreed size: the width at once, the
 // height through the hold. Called under resizeMu.
-func (r *runner) applyViewport(agreed viewport) error {
+//
+// `together` skips the hold and moves both in one resize, for the first viewer.
+func (r *runner) applyViewport(agreed viewport, together bool) error {
 	// THE GUARD. A resize to the size the pty is already at is not free: it
 	// raises SIGWINCH and repaints every viewer, which is exactly the churn one
 	// console's drag inflicted on the others. Skip it when nothing moved.
 	curCols, curRows := r.buf.CurrentSize()
 	var err error
+	if together {
+		// A height still waiting from a viewer that has since left is stale.
+		stale := r.pendingRows != 0
+		r.cancelHeld()
+		if agreed.cols != curCols || agreed.rows != curRows {
+			r.buf.SetSize(agreed.cols, agreed.rows)
+			err = r.pty.Resize(agreed.cols, agreed.rows)
+			r.noteResized()
+		} else if stale {
+			r.noteResized()
+		}
+		return err
+	}
 	if agreed.cols != curCols {
 		// Marked BEFORE the resize, so the first byte drawn at the new width is
 		// already on the new side of the mark. The other order leaves a repaint
@@ -1418,6 +1447,9 @@ func (r *runner) applyHeld(gen uint64) {
 		log.Printf("[atrium] resize %s: %v", r.taskID, err)
 	}
 	r.noteResized()
+	if r.onSized != nil {
+		r.onSized(r.buf.CurrentSize())
+	}
 }
 
 // sizeChanged returns a channel that closes the next time the pty changes
@@ -1480,7 +1512,7 @@ func (r *runner) dropViewport(id any) {
 	// Only the binding viewer's departure moves the pty, and the ring merges
 	// the marks when nothing was drawn in between, so a popped window costs no
 	// scrollback. A height it frees waits out the hold like any other.
-	_ = r.applyViewport(agreed)
+	_ = r.applyViewport(agreed, false)
 }
 
 // agreedViewport is the size the pty runs at: the widest viewer's width and
@@ -1791,24 +1823,21 @@ const (
 // up until the carryover stopped being replayed automatically: a width that
 // only exists inside a file nobody reads by default is a width that quietly
 // stops working.
+//
+// The height comes with it now, and a card with no size of its own takes the
+// room's. See `launchSizeFor`.
 func (d *Daemon) launchWidthFor(taskID string) int {
-	if taskID == "" {
-		return launchCols
-	}
-	t, err := d.st.Get(taskID)
-	if err == nil && t.LastCols > 0 {
-		return t.LastCols
-	}
-	return launchCols
+	cols, _ := d.launchSizeFor(taskID)
+	return cols
 }
 
 // sizeAtLaunch puts a freshly opened terminal at the size this card was last
-// looked at, or the launch default.
+// looked at, or the room's, or the launch default.
 //
 // A refusal is not worth failing a launch over: the terminal still works at
 // whatever size it opened with, and the first viewer to attach resizes it.
-func sizeAtLaunch(p pty.Pty, cols int) {
-	if err := p.Resize(cols, launchRows); err != nil {
+func sizeAtLaunch(p pty.Pty, cols, rows int) {
+	if err := p.Resize(cols, rows); err != nil {
 		log.Printf("[atrium] could not set the launch terminal size: %v", err)
 	}
 }
@@ -1914,8 +1943,9 @@ func (d *Daemon) spawnPTYResume(taskID, cmdName string, args []string, cwd strin
 	//
 	// Never under the floor, so a card last looked at on a phone does not
 	// reopen narrow. See `api.SettingTerminalMinCols`.
-	cols := max(d.launchWidthFor(taskID), api.TerminalMinCols(d.st))
-	sizeAtLaunch(p, cols)
+	cols, rows := d.launchSizeFor(taskID)
+	cols = max(cols, api.TerminalMinCols(d.st))
+	sizeAtLaunch(p, cols, rows)
 	c := p.Command(resolved, args...)
 	c.Dir = cwd
 	// ATRIUM MADE THIS TERMINAL, SO ATRIUM SAYS WHAT IT IS.
@@ -1943,9 +1973,10 @@ func (d *Daemon) spawnPTYResume(taskID, cmdName string, args []string, cwd strin
 		// a screen model replaying this buffer builds the wrong sized grid,
 		// and a grid that is too tall keeps rows that should have scrolled
 		// into history until a repaint overwrites them.
-		buf:      newRingSized(api.ScrollbackBytes(d.st), cols, launchRows),
+		buf:      newRingSized(api.ScrollbackBytes(d.st), cols, rows),
 		watchers: map[chan []byte]struct{}{},
 		done:     make(chan struct{}),
+		onSized:  d.noteRoomSize,
 	}
 	// BEFORE `add`, which is the moment an attach can find this runner. A
 	// viewer that arrived between the two would be sent the new terminal's
@@ -2185,8 +2216,9 @@ func (d *Daemon) stopSupervised(grace time.Duration) {
 		if r == nil || r.buf == nil {
 			continue
 		}
-		if err := d.st.SetLastCols(r.taskID, r.buf.CurrentWidth()); err != nil {
-			log.Printf("[atrium] could not record the terminal width for %s: %v", r.taskID, err)
+		cols, rows := r.buf.CurrentSize()
+		if err := d.st.SetLastSize(r.taskID, cols, rows); err != nil {
+			log.Printf("[atrium] could not record the terminal size for %s: %v", r.taskID, err)
 		}
 	}
 }

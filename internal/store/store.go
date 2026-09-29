@@ -204,6 +204,10 @@ type Task struct {
 	// every restart, with hard line breaks a third of the way across. Zero for
 	// a card that has never had a terminal atrium owned.
 	LastCols int `json:"last_cols,omitempty"`
+	// LastRows is how tall it was, written and read the same way. Without it a
+	// reopened terminal came up at the launch height and the first viewer's
+	// height arrived as a second resize. Zero when never recorded.
+	LastRows int `json:"last_rows,omitempty"`
 	// PeerTyping is whether another session may type into this card's
 	// terminal, rather than only queue for it. On by default.
 	//
