@@ -48,6 +48,17 @@ ok (`make` is not installed here). `scripts/check-board.sh` parses fine.
    switch.
 5. Report `done` with the final sha and the review outcome above.
 
+## Cold start notes
+
+- Read BRIEF.md first (rules: no merge/push/deploy, no CHANGELOG/test-plan/CLAUDE.md edits, one-line commits, report
+  with `atrium_report`). `atrium_report` and `atrium_say` are deferred tools: load them with
+  `ToolSearch select:mcp__atrium-control__atrium_report,mcp__atrium-control__atrium_say`.
+- Run tests from the worktree root with `ATRIUM_LOCATION` and `ATRIUM_DEBUG_INPUTLAG` cleared, in pwsh:
+  `Remove-Item Env:ATRIUM_LOCATION,Env:ATRIUM_DEBUG_INPUTLAG -ErrorAction SilentlyContinue; go test ./internal/daemon -run 'LooksIdle|ClassifyFrame' -count=1`.
+- Test helpers used: `testDaemon` (sources_test.go), `newFakePTY` and `newRing` (attach tests), `runningCard` (mine).
+- `gofmt -l internal/daemon` lists attach_dedup_test.go and usage_test.go. Not mine, leave them.
+- Untracked `BRIEF.md` is the launcher's file and is not committed.
+
 ## Traps
 
 - The Bash hook refuses `;` chaining, `>` redirection and python. One command per call.
