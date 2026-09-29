@@ -1593,6 +1593,9 @@ What adopting it costs:
 - Passthrough changes the byte shapes that `screen.go`, `collapseRedraws`, the cursor settle, the typing gate and the
   replay tests were tuned on, all of which were measured against conhost's re-rendered output. So it needs the whole
   terminal test plan run again.
+- Item 81 becomes a prerequisite. The inbox conhost turns a runner's scroll region into plain line feeds and a
+  repaint (seen in the DECSTBM repro), so `screen.go` rarely meets one today. Passthrough hands DECSTBM straight to
+  it.
 
 ### Keeping the rows a no-scroll repaint is about to overwrite
 
