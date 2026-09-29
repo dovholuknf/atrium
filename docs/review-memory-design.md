@@ -39,10 +39,10 @@ says so at the place it changed.
 
 All of this is a change to dotfiles, not to atrium: the `review-panel` skill AND the four personas. The skill alone
 is not enough, because each persona's own method tells it to get the diff itself and read widely, and the steward's
-says "read-heavy is the point" (notes (a)). A conductor that changes and personas that do not keep every duplicated
+says "read-heavy is the point" (notes (a)). A review-manager that changes and personas that do not keep every duplicated
 read.
 
-1. **A digest, built once.** After capturing the diff the conductor writes `review-digest.md` beside it:
+1. **A digest, built once.** After capturing the diff the review-manager writes `review-digest.md` beside it:
    - the changed files and hunks
    - the core files, found as the files the diff's callers and callees live in, with the line ranges that matter
    - every dependency the diff touches, AT THE VERSION `go.mod` (or its equivalent) PINS, with its module-cache path
@@ -57,34 +57,36 @@ read.
    files it names, and open source or dependency files only to verify a finding or to fill a gap the digest leaves,
    saying which gap. Without a digest the persona works as it does today, so a persona run on its own is unchanged.
 2. **Size the panel to the change.** Up to about 150 changed lines, or a backport of a change already reviewed
-   upstream: the steward plus the one specialist the file types call for. Larger: today's rule. The conductor prints
-   which rule picked the panel, so a panel that should have been bigger is visible. This is the skill's default. A
-   review started through the director arrives with the panel already chosen (decision 3), and the skill's existing
+   upstream: the steward plus the one specialist the file types call for. Larger: today's rule. The review-manager
+   prints which rule picked the panel, so a panel that should have been bigger is visible. This is the skill's
+   default. A review started through the director arrives with the panel already chosen (decision 3), and the skill's
+   existing
    rule "if the user named specific agents, use exactly those" is what honours it.
 3. **Batch reads, cap turns.** Each reviewer is told to issue the reads it already knows it needs in ONE turn (parallel
    tool calls), and is given a turn budget of 40, which ends in "report what you have" rather than a hard stop.
-4. **Forks, as a measured experiment only.** A fork shares the conductor's cached prefix, digest included, which is
-   the cheapest possible start. Whether a fork can carry a named persona is not known (notes (e)), so it is tried on
-   one replay and kept only if it wins.
+4. **Forks, as a measured experiment only.** A fork shares the review-manager's cached prefix, digest included, which
+   is the cheapest possible start. Whether a fork can carry a named persona is not known (notes (e)), so it is tried
+   on one replay and kept only if it wins.
 
 **Proving it.** Replay PR #4480 at the same commit with the new skill. Compare the summed cached reads, turns and wall
-time per reviewer against the notes (a) table, AND the conductor's own tokens and wall time, since building the digest
-is new cost on the conductor's side. The original run's conductor cost is read from its parent transcript first, which
-fb05 did not parse (notes (e)). It passes at 40% fewer cached tokens for the whole run, conductor included, with every
-blocking or high finding from the original run found again. A finding lost is a failure whatever the saving. The
-replay records reviewer wall time, conductor wall time and total elapsed time apart, so a saving that only moved work
-into the conductor shows as that.
+time per reviewer against the notes (a) table, AND the review-manager's own tokens and wall time, since building the
+digest is new cost on the review-manager's side. The original run's review-manager cost is read from its parent
+transcript first, which fb05 did not parse (notes (e)). It passes at 40% fewer cached tokens for the whole run,
+review-manager included, with every blocking or high finding from the original run found again. A finding lost is a
+failure whatever the saving. The replay records reviewer wall time, review-manager wall time and total elapsed time
+apart, so a saving that only moved work into the review-manager shows as that.
 
 ## Decision 2: the knowledge is a file, and the director is its only writer
 
 - **The memory is the file.** `personas/<id>/repos/<host>/<org>/<repo>.md` in dotagents, clint's layout (answer 1),
   with `<host>/<org>/<repo>` spelled the way dotagents already spells it, so the steward's openziti/ziti file is
-  `personas/codebase-steward/repos/github/openziti/ziti.md`. It survives every restart and every context clear, and it is reviewed as a git diff.
-- **The director writes it, and nobody else does** (answer 2). Not the conductor, and not the personas. Each
-  reviewer hands back `repo_notes`, the conductor passes them through untouched, and the director applies them.
-  This supersedes both the 09-23 note's "the agent edits it itself" and this design's earlier "the conductor applies
-  them". Three of the four personas have no Write tool anyway, and a reviewer that edits its own memory mid-review is
-  a reviewer doing two jobs.
+  `personas/codebase-steward/repos/github/openziti/ziti.md`. It survives every restart and every context clear, and
+  it is reviewed as a git diff.
+- **The director writes it, and nobody else does** (answer 2). Not the review-manager, and not the personas. Each
+  reviewer hands back `repo_notes`, the review-manager passes them through untouched, and the director applies them.
+  This supersedes both the 09-23 note's "the agent edits it itself" and this design's earlier "the review-manager
+  applies them". Three of the four personas have no Write tool anyway, and a reviewer that edits its own memory
+  mid-review is a reviewer doing two jobs.
 - **There is no resident per repo** (answer 3). The earlier "a resident is a warm cache of the file" and its stage 3
   are gone. Reviewers are subagents, started fresh for every review. The one standing card is the director.
 
@@ -114,7 +116,7 @@ The skill's rule today is "one fenced JSON block, the findings array", so step 6
 way. The FIRST fenced JSON block is the findings array, as now. An optional LATER fenced block whose top level is an
 object with the one key `repo_notes` is the hand-back. Anything else after the findings block is prose, and ignored
 as prose is now. The persona is implied by who handed it back, so it is not a field. A missing block means no notes. A
-block that opens as `repo_notes` and does not parse or does not match the shape is reported by the conductor's
+block that opens as `repo_notes` and does not parse or does not match the shape is reported by the review-manager's
 integrity check (step 6) as that reviewer's error, never silently skipped, and it never invalidates the findings.
 In the file, each entry is one bullet ending `(path:line @ sha)`, which is what the director matches `drop` against
 and what a reviewer checks before relying on it.
@@ -125,13 +127,13 @@ refused the same way. A `drop` whose `match` hits more than one entry drops none
 each `add` against the code only when it contradicts an entry already in the file.
 
 **Notes the reviewers cannot write.** The verify pass (skill step 5) refutes findings after the reviewer has
-finished, so a refuted finding never reaches that reviewer's `repo_notes`. The conductor lists every refuted
+finished, so a refuted finding never reaches that reviewer's `repo_notes`. The review-manager lists every refuted
 `blocking` or `high` with the verifier's reason in its report, and the director turns each into a false-positive
 entry in the file of the persona that raised it, with the verifier's evidence. This is where the parked design's
 `rejected.md` went (see "From the parked design").
 
-**How a reviewer finds its file.** The director's brief to the conductor names each persona's file path and the
-dotagents commit to read it at. The conductor reads each file at that commit and puts it in that reviewer's own
+**How a reviewer finds its file.** The director's brief to the review-manager names each persona's file path and the
+dotagents commit to read it at. The review-manager reads each file at that commit and puts it in that reviewer's own
 prompt. No persona needs the dotagents path, and a lean session is not a problem, because the file travels in the
 prompt rather than through memory loading. Reading at a fixed commit means the director can keep writing other
 branches while the review runs, and the reviewer still reads exactly what its notes will be applied against.
@@ -165,18 +167,27 @@ why, and may name a panel. The director then:
    reason.
 3. **Opens the branch.** `review/<slug>/<target>-<sha7>` in dotagents, from the current tip of `review/main`, with no
    commit yet. That tip is the base commit the reviewers read their files at.
-4. **Launches a conductor.** One worker card per review: title `saNN`, model sonnet, theme active-work, tags
-   `atrium:subagent` and `dept:review`, cwd the target repo's checkout. Its brief says: run the `review-panel` skill on
-   this target with exactly this panel and this sizing line, read each reviewer's file from dotagents at this base
-   commit, write nothing to dotagents, and report to @review with the full report, every `repo_notes` block by
-   persona, and every refuted finding with its reason. Reviewers are that worker's subagents (answer 3). At most three
-   conductors run at once, and a fourth ask waits in the director's queue.
-5. **Reports to the asker and to clint.** When the conductor reports, the director posts the verdict line and the
+4. **Launches a review-manager.** One worker card per review, always, whatever the size (answer 8): title `saNN`,
+   model sonnet, theme active-work, tags `atrium:subagent` and `dept:review`, cwd the target repo's checkout. It is
+   launched LEAN, with nothing at start that the review does not need, and its brief is minimal: the target, the
+   panel and its sizing line, each reviewer's file path and the base commit to read it at, and the report path. It
+   runs the `review-panel` skill with exactly that panel, writes nothing to dotagents, writes its full report to the
+   report path, and reports to @review with the verdict, the findings, every `repo_notes` block by persona, and every
+   refuted finding with its reason. At most three review-managers run at once to start (answer 13), and a fourth ask
+   waits in the director's queue.
+5. **Reports to the asker and to clint.** When the review-manager reports, the director posts the verdict line and the
    findings on its own card, tells the asker the same, and culls the worker. Then it applies the notes (below).
 
-The director conducts through a worker rather than itself because a panel's conductor carries the digest and seven
-agents' output, and the director has to hold the record and every open review across days. A review running inside
-the director would be the context cost this item exists to cut, paid on the one card that cannot cycle freely.
+**The hierarchy** is three levels: the director, then one review-manager per review, and the review-manager spawns
+the reviewer agents as its subagents (answers 3 and 13). The director never spawns a reviewer, and a review-manager
+never writes a reviewer file.
+
+**The full report** is at `D:/worktrees/claude/reviews/<slug>/<target>-<sha7>.md`, never committed (answer 9), since
+dotagents is pushed and a report quotes the code under review. The card carries the verdict and the findings.
+
+The director works through a worker rather than itself because a review-manager carries the digest and seven agents'
+output, and the director has to hold the record and every open review across days. A review running inside the
+director would be the context cost this item exists to cut, paid on the one card that cannot cycle freely.
 
 clint can still run `/review-panel` by hand in any session. That run applies no notes: its report carries the
 `repo_notes` blocks as text, and clint can forward them to @review, which applies them as it would its own.
@@ -192,7 +203,7 @@ main checkout clint syncs from is never touched.
 - **`review/<slug>/<target>-<sha7>`** holds one review's changes, for example
   `review/github-openziti-ziti/pr-4480-3f9c2ab` or `review/github-openziti-channel/a1b2c3d..e4f5a6b-e4f5a6b`. The head
   sha keeps a second review of the same PR after a push on its own branch. The branch gets ONE commit, written when
-  the conductor reports: every applied note for every persona on the panel, plus any refuted-finding entries. Its
+  the review-manager reports: every applied note for every persona on the panel, plus any refuted-finding entries. Its
   subject says the repo, the target and the panel, for example `github/openziti/ziti pr-4480: steward, go-sec, 3 add,
   1 drop`. Refused notes and the sizing call go in the body, since this repo's commits are the record of what a
   review taught.
@@ -202,7 +213,12 @@ main checkout clint syncs from is never touched.
 **When they merge.** A review's branch merges into `review/main` with `--no-ff`, at the first of these:
 
 1. **Before the next review of the same repo starts.** Step 3 above merges every finished branch for that slug first,
-   so the second PR reads what the first one taught. That is the measurement stage 2 exists to make.
+   so the second PR reads what the first one taught, before clint has taken it into `main` (answer 7). That is the
+   measurement stage 2 exists to make. The check on an entry clint has not read is the director's refusal rules and
+   the reviewer that verifies an entry before relying on it. A review inherits only branches that had finished and
+   merged before it launched. Two reviews of one repo running at the same time read the same base and are
+   independent, and their branches meet at merge. The stage 2 measurement runs its two reviews one after the other
+   for that reason.
 2. **When clint asks,** for one branch, one repo, or everything.
 3. **When five finished branches are waiting,** so a merge is never a pile.
 
@@ -241,6 +257,67 @@ caught, and when clint says a kind of change is dangerous. It is removed only wh
 danger entry costs tokens and a missing one costs a bug. It changes through the same branches as every other file,
 so clint reads it as a diff like the rest. Every sizing call, whatever decided it, is in that review's commit body.
 
+### The standing rules: how clint wants a review run and handed back
+
+Distilled 2026-09-29 from clint's PR #369 review session (openziti/tlsuv, the applesec engine). They are the
+director's standing rules for every review, and they are the first entries of `personas/review-director/general.md`,
+written on the seed branch (stage 2, step 5). Until then this section is where they live.
+
+**Testing.** These bind a review-manager whenever the ask offers hardware or asks for repros. Otherwise the skill's
+rule stands: a panel reads, and CI builds.
+
+1. Test on real hardware when it is offered (for example `ssh m1mini`). Build, run the full suite, repeat it, and run
+   ASan and UBSan and the platform leak checker.
+2. Run every repro on three builds: the PR with the new engine, the PR with the existing engine, and main. The result
+   decides the cause: introduced by the PR or already there, engine-specific or shared code. A finding is promoted or
+   demoted on that evidence, and the report says which.
+3. Missing environment details (a controller URL, credentials, which environment is FIPS) are asked for at the start,
+   when the director takes the ask, never at the end of the run.
+4. A failure caused by an external service (an HTTP 429 from a public echo server) is reported separately, and never
+   counted against the PR.
+
+**Leaks are never dropped.**
+
+5. Every leak goes in the findings with its size and stack, even when it sits in a third-party framework. clint:
+   "leaks need to be pointed out, that's a big deal". It is left out of the PR comments only if clint says so. The
+   verify pass may correct a leak's severity, and never removes one.
+
+**The report.**
+
+6. The whole result is one table (the `tabular` skill), sorted by severity, then file, then line.
+7. Every row has a **Cause** column (PR-introduced, pre-existing, or third-party) and a **Test status** column (which
+   existing test covers it, or none, and where a test could be added).
+8. Line numbers come from the PR head, the right-hand side of the diff. A comment must sit on a line the PR adds or
+   changes. When the root cause is in unchanged lines, it is anchored on the nearest changed line that shows it.
+
+**Walking the comments.** This is the director's job, on its own card, after the review-manager has reported. A
+review-manager never walks comments.
+
+9. One comment at a time, in the table's order. The director waits for "next". "Go back" means the previous one is
+   not done.
+10. Each comment is raw markdown, not rendered, and is also written to `c:\temp\a.txt`, overwritten each time. This
+    shape exactly:
+
+    ```
+    src/applesec/context.c line 149: load_ca(ctx, ca, ca_len);
+
+    * LLM review says a bad CA bundle fails open here: the error is ignored and the engine falls back to system trust.
+    * Suggested fix: fail closed when a CA was given but didn't load.
+    * Add a test to tests/http_tests.cpp: malformed CA, GET a public https site, expect failure.
+    ```
+
+    The first line is the file, the line number, and the code on that line. The last bullet is either "Add a test to
+    <file>: <input>, expect <result>" or "No new test needed".
+11. Each bullet is one sentence: no call chains, traces, evidence dumps or line lists. It is worded as "LLM review
+    says", and kept uncertain and human.
+12. A comment never says the author built or ran anything. clint posts these under clint's own name, and did not run
+    the repros.
+13. Nothing is ever posted to GitHub by the director, a review-manager or a reviewer. clint posts.
+
+What this changes elsewhere in the design: the review-manager's report to the director carries the table's columns
+(Cause, Test status, PR-head line) on every finding, so the director can build the table and walk the comments
+without reopening the review. The skill's step 7 report gains those two columns in stage 2, step 1.
+
 ## Which side each part lives on
 
 | Part | Where |
@@ -248,7 +325,7 @@ so clint reads it as a diff like the rest. Every sizing call, whatever decided i
 | the digest, batched reads, turn budget, the `repo_notes` parse, passing notes through | dotfiles, `review-panel` skill and the four personas |
 | the reviewer files and the dangerous-change record | dotagents, `personas/<id>/repos/<host>/<org>/<repo>.md` |
 | picking panels, applying notes, branches and merges | the director, @review, one resident card |
-| each review's conductor | an saNN worker, one per review, culled when it reports |
+| each review's review-manager | an saNN worker, one per review, culled when it reports |
 | proposed guards | the director's report, then clint, then `mercurius.yaml` or `CLAUDE.md` by hand |
 
 Nothing in atrium changes. No migration. The director and its workers are ordinary cards.
@@ -263,8 +340,9 @@ clint undid that attempt on 09-23 and never reviewed it (answer 6). What is take
   same split with git doing the bookkeeping.
 - **"Would a different persona make the same mistake?"** The pack's test for where a wrong finding goes. It decides
   between a reviewer-file false positive and a proposed guard, under the `mercurius.yaml` boundary above.
-- **`rejected.md`, folded in.** The pack had the conductor append refuted findings to a per-persona file. Here they
-  are false-positive entries in that persona's reviewer file, written by the director from the verify pass.
+- **`rejected.md`, folded in.** The pack had its conductor (the role this design calls the review-manager) append
+  refuted findings to a per-persona file. Here they are false-positive entries in that persona's reviewer file,
+  written by the director from the verify pass.
 - **"What is new" is a git fact.** The pack used a `Lessons-reviewed` trailer so no marker file was needed. Here it is
   simpler still: `main..review/main`.
 - **Only the human pushes.** Unchanged, and now also true of `main`: the director stops at `review/main`.
@@ -320,12 +398,13 @@ Every step is a change clint reviews before it is used. None of it is started un
 1. `review-panel` step 1: the digest's fourth part goes. Step 4: each reviewer's prompt gains its own reviewer file,
    read at the base commit a brief names, and the hand-back contract with the `repo_notes` shape. Step 6: the parse
    rule under "The hand-back contract". Step 7: the report ends with every `repo_notes` block by persona, verbatim,
-   and every refuted finding with its verifier's reason. The skill applies nothing.
+   and every refuted finding with its verifier's reason. Every finding carries Cause, Test status and a PR-head line
+   (standing rules 7 and 8), and a leak is never dropped (rule 5). The skill applies nothing.
 2. The four personas: one paragraph each, after the digest paragraph. When the prompt carries your reviewer file,
    check any entry you rely on against the code and hand back what you learned and what you found wrong as
    `repo_notes`. Without one, hand back only what you learned.
 
-**In dotagents (clint's repo, one line):**
+**In dotagents (clint's repo, one line, a worker, uncommitted, answer 10):**
 
 3. `Get-DotagentsRepos` in `scripts/_common.ps1` walks every top-level folder as `<host>/<org>/<repo>`, so it would
    read `personas/<id>/repos` as host `personas`, org `<id>`, repo `repos`. `personas` joins the exclusion list beside
@@ -333,10 +412,12 @@ Every step is a change clint reviews before it is used. None of it is started un
 
 **The director's own setup (after clint approves):**
 
-4. The dotagents worktree at `D:/worktrees/claude/dotagents/review` on a new `review/main` from `main`.
-5. A seed branch `review/director/<date>-seed`: the openziti/ziti reviewer files for the four personas from the parked
-   lessons that are about openziti/ziti, each `@ unverified`, and the first dangerous-change entries, general and
-   openziti/ziti.
+4. The dotagents worktree at `D:/worktrees/claude/dotagents/review` on a new `review/main` from `main`, and the
+   reports folder `D:/worktrees/claude/reviews/`.
+5. A seed branch `review/director/<date>-seed` (answer 11): the openziti/ziti reviewer files for the four personas from
+   the parked lessons that are about openziti/ziti, each `@ unverified`, and the first dangerous-change entries,
+   general and openziti/ziti, and the thirteen standing rules at the top of `general.md`. The seed copies.
+   `~/.claude/agent-memory/` is left exactly as it is (answer 12).
 6. The first two openziti/ziti reviews started through the director, the second after the first's branch merged, and
    the numbers compared.
 
@@ -351,25 +432,11 @@ Mercurius session `s_xT8IKRB82yUj`, closed 2026-09-29, reviewed the design befor
   parse rule is now spelled out under the hand-back contract. The advisory, wall time recorded three ways, is folded
   into "Proving it".
 
-This revision has not been through Mercurius. Decision 3 and stage 2 are new.
+Mercurius session `s_lYUE7G3Jo0Km`, 2026-09-29, reviewed this revision, standing rules included (an earlier
+session, `s_s2p8ZbWgUKUf`, was lost by the server before its round finished).
 
-## Open questions for clint
-
-1. **Does the next review read `review/main` before you take it?** Merge point 1 makes the second PR read what the
-   first taught, before you have read it. Recommended yes, since the director refuses unevidenced notes and every
-   entry is checked by the reviewer that relies on it, and a no means stage 2 cannot measure anything until you merge.
-2. **A worker per review.** Is an saNN conductor per review the right shape, or should small reviews run inside the
-   director? Recommended a worker always, for the context reason under "How a review is started".
-3. **Where the full review reports live.** The director posts the verdict and findings on its card. The full report,
-   with seven agents' output, is not in dotagents, since that is pushed. Recommended a local folder,
-   `D:/worktrees/claude/reviews/<slug>/<target>-<sha7>.md`, never committed. Or is the card enough?
-4. **The `_common.ps1` exclusion.** May a worker make that one-line change in dotagents, uncommitted, or do you?
-5. **The seed.** Seed openziti/ziti from the parked lessons now, marked unverified, or start from empty files and let
-   the first reviews write them?
-6. **Repo facts in user memory.** The lessons that are repo facts stay in `~/.claude/agent-memory/` too. Should a
-   seeded fact leave user memory once it is in a reviewer file, or is user memory left alone?
-7. **Three conductors at once.** Is that the right ceiling?
-8. **A Mercurius round on this revision** before stage 2 is built, or is your read enough?
+- **Round 1, ready_to_build.** No concerns, no questions. Advisory A1: two same-repo reviews running at once read the
+  same pre-merge files. Folded in under merge point 1. clint's read is what decides (answer 14).
 
 ## clint's answers, 2026-09-29
 
@@ -387,3 +454,17 @@ way @merge owns `claude/main`. The design is revised around it before stage 2 st
 5. **Mercurius.** Stays cold. It never reads a reviewer file.
 6. **The parked pack.** clint never reviewed it. This design is the design. The review director reads the parked one
    before stage 2 and takes anything still useful, naming it.
+
+## clint's answers to the revision, 2026-09-29
+
+The eight questions the first revision asked, answered through @orchestrator, numbered on from the first set.
+
+7. **`review/main` first.** Yes. The next review reads `review/main` before clint takes it into `main`.
+8. **A worker per review.** Always, and lean: no unneeded context at start, a lean launch and a minimal brief.
+9. **Reports.** At `D:/worktrees/claude/reviews/<slug>/<target>-<sha7>.md`, never committed.
+10. **The exclusion.** A worker may make the `personas` exclusion in dotagents `scripts/_common.ps1`, uncommitted.
+11. **The seed.** Seed openziti/ziti from the parked lessons. Do not rebuild from empty.
+12. **User memory.** Leave `~/.claude/agent-memory` alone.
+13. **Concurrency and naming.** Three at once to start. The hierarchy is the director, then its per-review
+    subordinates, and those spawn the reviewer agents. "Conductor" is renamed "review-manager" everywhere.
+14. **Mercurius.** One round on the revision, anything useful folded in. clint's read is what decides.
