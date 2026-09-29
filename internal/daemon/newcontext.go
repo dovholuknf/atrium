@@ -508,11 +508,17 @@ func (d *Daemon) runNewContext(taskID string, gen uint64) {
 // after it, so a card is asked to write its handoff without losing its context.
 func (d *Daemon) ncCapture(taskID string, gen uint64, file string) (string, error) {
 	started := time.Now()
+	// NOTHING IS TYPED WHILE THE CARD IS RUNNING (r-022). `ncType` waits for the
+	// card's status to leave running as well as for its activity to go idle. A
+	// cycle armed while the card was running used to type the capture into a turn
+	// that had ended on background work, then take that turn's Stop as the
+	// capture's and fail in seconds with "not updated by the capture turn" (@ui,
+	// twice). With the card between turns when the prompt is typed, the count
+	// taken here is before the capture's own turn and after every other.
 	turns := d.act.turnsBegun(taskID)
 	if err := d.ncType(taskID, gen, newContextLabel, newContextCapture(file), ncTiming.captureEnd); err != nil {
 		return "could not type the capture prompt", err
 	}
-	// Wait for the turn it starts to end.
 	err := d.ncWait(taskID, gen, ncTiming.captureBegin, "the capture prompt to start a turn",
 		func() (bool, error) { return d.act.turnsBegun(taskID) > turns, nil })
 	if err != nil {
@@ -520,7 +526,7 @@ func (d *Daemon) ncCapture(taskID string, gen uint64, file string) (string, erro
 	}
 	quiet := time.Time{}
 	err = d.ncWait(taskID, gen, ncTiming.captureEnd, "the capture turn to end", func() (bool, error) {
-		if d.act.midTurn(taskID) || d.act.onSubagents(taskID) {
+		if d.act.midTurn(taskID) || d.act.onSubagents(taskID) || d.cardRunning(taskID) {
 			quiet = time.Time{}
 			return false, nil
 		}
@@ -536,6 +542,16 @@ func (d *Daemon) ncCapture(taskID string, gen uint64, file string) (string, erro
 		return "nothing cleared", err
 	}
 	return "", nil
+}
+
+// cardRunning is whether the card's own status says a turn is going (r-022). The
+// activity alone is not enough: a turn that ended on background work reads idle
+// while the card stays running, and the next turn starts when that work
+// reports. A capture typed into that gap is merged into the turn that follows,
+// whose Stop then reads as the capture's.
+func (d *Daemon) cardRunning(taskID string) bool {
+	t, err := d.st.Get(taskID)
+	return err == nil && t != nil && t.Status == store.StatusRunning
 }
 
 // ncWait polls cond until it is true, the run is replaced, the terminal goes, or
@@ -590,7 +606,7 @@ func (d *Daemon) ncWait(taskID string, gen uint64, limit time.Duration, what str
 func (d *Daemon) ncType(taskID string, gen uint64, label, text string, limit time.Duration) error {
 	return d.ncWait(taskID, gen, limit, "an empty line and no turn in progress", func() (bool, error) {
 		run := d.sup.get(taskID)
-		if run == nil || d.act.dialogOpen(taskID) || d.act.midTurn(taskID) {
+		if run == nil || d.act.dialogOpen(taskID) || d.act.midTurn(taskID) || d.cardRunning(taskID) {
 			return false, nil
 		}
 		gone := false
@@ -601,7 +617,7 @@ func (d *Daemon) ncType(taskID string, gen uint64, label, text string, limit tim
 				gone = true
 				return false
 			}
-			return !d.act.dialogOpen(taskID) && !d.act.midTurn(taskID) &&
+			return !d.act.dialogOpen(taskID) && !d.act.midTurn(taskID) && !d.cardRunning(taskID) &&
 				d.act.sinceBusy(taskID) >= ncTiming.turnSettle
 		}
 		wrote, err := d.typeLabelledGuarded(run, taskID, label, text, quiet)
