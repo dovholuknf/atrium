@@ -783,22 +783,23 @@ func firstLine(s string) string {
 // neither does, so a crash can lose neither half. Delivery is the queue's own
 // job, after the commit. An arbiter whose card is gone gets nothing, and the
 // item stays where the board shows it.
+//
+// AN ARBITER ON ANOTHER ROOM is not a card here: the lineage records it as
+// `room~id`. Its notice is held in the relay outbox in the same transaction,
+// the way a report's is, and sent from there (item 62). Before, it was logged
+// as having nowhere to go, and a worker whose launcher was on another room
+// ended with nothing reaching the launcher.
 func (s *Store) queueNotice(tx *Tx, w *WorkItem, source, key, body string) (*LedgerNotice, error) {
 	if w.ArbiterID == "" {
 		return nil, nil
 	}
 	if _, err := getByOn(tx, `id = ?`, w.ArbiterID); errors.Is(err, sql.ErrNoRows) {
-		log.Printf("store: %s notice for %s has no arbiter card to go to", source, w.TaskID)
-		return nil, nil
+		return nil, s.relayNotice(tx, w, source, key, body)
 	} else if err != nil {
 		return nil, err
 	}
-	res, err := tx.Exec(`INSERT INTO a2a_notice (worker_id, source, key, created_at) VALUES (?,?,?,?)
-		ON CONFLICT (worker_id, source, key) DO NOTHING`, w.TaskID, source, key, ts(now()))
-	if err != nil {
-		return nil, err
-	}
-	if n, err := res.RowsAffected(); err != nil || n == 0 {
+	fresh, err := claimNotice(tx, w.TaskID, source, key)
+	if err != nil || !fresh {
 		return nil, err
 	}
 	from := orKeep(w.Handle, "atrium")
@@ -820,6 +821,50 @@ func (s *Store) queueNotice(tx *Tx, w *WorkItem, source, key, body string) (*Led
 		}
 	})
 	return n, nil
+}
+
+// claimNotice is the once-per-(worker, source, key) claim, and whether this
+// is the first.
+func claimNotice(tx *Tx, workerID, source, key string) (bool, error) {
+	res, err := tx.Exec(`INSERT INTO a2a_notice (worker_id, source, key, created_at) VALUES (?,?,?,?)
+		ON CONFLICT (worker_id, source, key) DO NOTHING`, workerID, source, key, ts(now()))
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n > 0, err
+}
+
+// relayNotice holds a ledger notice for an arbiter on another room. See
+// queueNotice.
+func (s *Store) relayNotice(tx *Tx, w *WorkItem, source, key, body string) error {
+	worker, err := getByOn(tx, `id = ?`, w.TaskID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	} else if err != nil {
+		return err
+	}
+	var spec *RelaySpec
+	if s.RemoteArbiter != nil {
+		spec = s.RemoteArbiter(worker, body)
+	}
+	if spec == nil {
+		log.Printf("store: %s notice for %s has no arbiter card to go to", source, w.TaskID)
+		return nil
+	}
+	fresh, err := claimNotice(tx, w.TaskID, source, key)
+	if err != nil || !fresh {
+		return err
+	}
+	if err := s.holdRelayOn(tx, *spec); err != nil {
+		return err
+	}
+	tx.afterCommit(func() {
+		if cb := s.OnRelayHeld; cb != nil {
+			cb()
+		}
+	})
+	return nil
 }
 
 // failpoint lets a test fail a change between two of its writes. Nil in a

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -558,5 +559,58 @@ func TestALaunchRecordsItsLauncher(t *testing.T) {
 	}
 	if !agentLaunched(got) || d.launcherOf(got) == nil || d.launcherOf(got).ID != parent.ID {
 		t.Fatal("the worker cannot find its launcher")
+	}
+}
+
+// Item 62, sa42: a worker that ends its FIRST turn without a report is a
+// silent stop. The opening prompt goes on the command line, which recorded no
+// prompt, so the worker owed nothing and its launcher heard nothing. And its
+// session coming up waiting is not a turn ending, so it is not stuck before it
+// has started.
+func TestAFirstTurnWithoutAReportIsASilentStop(t *testing.T) {
+	d := testDaemon(t)
+	parent := peerCard(t, d, "orchestrator")
+	cmd, args := "sh", []string{"-c", "sleep 60", "{prompt}"}
+	if runtime.GOOS == "windows" {
+		cmd, args = "cmd.exe", []string{"/k", "rem", "{prompt}"}
+	}
+	if _, err := d.st.SaveHarness(store.Harness{ID: "prompttest", Label: "prompt test", Enabled: true,
+		Cmd: cmd, LaunchMode: store.LaunchPTY, PromptArgs: args}); err != nil {
+		t.Fatal(err)
+	}
+	task, err := d.Launch(LaunchRequest{Harness: "prompttest", Cwd: t.TempDir(), Prompt: "do item 42",
+		Tags: []string{OriginAgentTag}, SpawnedBy: "orchestrator"})
+	if err != nil {
+		t.Skipf("could not spawn a test runner on this machine: %v", err)
+	}
+	t.Cleanup(func() { _ = d.StopRunner(task.ID) })
+
+	// The session comes up, waiting on the prompt it has not read yet.
+	if err := d.onSession(SessionEvent{Agent: task.WireName, Event: "start", Source: "startup",
+		TaskID: task.ID}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := d.st.Get(task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.OwesReport() {
+		t.Fatal("a worker given an opening prompt owes its launcher nothing")
+	}
+	if ended, _ := d.st.TurnEndedAt(task.ID); ended != nil {
+		t.Fatalf("a session starting recorded a turn end at %v", ended)
+	}
+	if x := d.stuckNow(got, time.Now().Add(time.Hour)); x != nil {
+		t.Fatalf("a worker that has not started its first turn is stuck: %+v", x)
+	}
+
+	// It works the prompt and ends the turn with nothing said.
+	if err := d.st.SetStatus(task.ID, store.StatusRunning); err != nil {
+		t.Fatal(err)
+	}
+	stopTurn(t, d, task.WireName)
+	msgs := pendingFrom(t, d, parent.ID)
+	if len(msgs) != 1 || !strings.Contains(msgs[0].Text, "without reporting") {
+		t.Fatalf("the launcher has %v, want one silent-stop notice", msgs)
 	}
 }
