@@ -1250,6 +1250,18 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 	}); err != nil {
 		return nil, err
 	}
+	// The opening prompt is a prompt. It goes on the command line rather than
+	// through a door that records one, so without this a worker's FIRST turn
+	// owed its launcher nothing, and one that ended it without a report was
+	// never a silent stop (item 62, sa42). Before the settle, so it is on the
+	// card before the runner can have ended a turn on it.
+	if prompt != "" {
+		if err := d.st.AppendEvent(created.ID, store.EventPrompted, map[string]any{
+			"text": prompt, "via": "launch",
+		}); err != nil {
+			return nil, err
+		}
+	}
 
 	// Starting is not running. A command on PATH still falls over on a bad
 	// flag, a missing key or a broken config, and does so within a moment.

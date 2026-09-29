@@ -302,6 +302,37 @@ func TestASilentStopReachesALauncherOnAnotherRoom(t *testing.T) {
 	}
 }
 
+// Item 62. The ledger's `ended` notice reaches a launcher on another room. Its
+// arbiter is `claude-sg4~L1`, which is no card here, and the notice was
+// logged as having nowhere to go.
+func TestAnEndedNoticeReachesALauncherOnAnotherRoom(t *testing.T) {
+	d, f := roomDaemon(t)
+	w := remoteWorker(t, d)
+	f.set(func(RelaySay) (RelayResult, error) { return RelayResult{}, ErrRelayDown })
+	if made, err := d.st.CreateWorkItem(w, store.NewWorkItem{Brief: "item 58"}); err != nil || !made {
+		t.Fatalf("work item: %v %v", made, err)
+	}
+	exit := func() {
+		t.Helper()
+		if err := d.st.AppendEvent(w.ID, store.EventExited, map[string]any{"by": "supervisor", "exit_code": 0}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	exit()
+	settle(d)
+	rows := owed(t, d)
+	if len(rows) != 1 || rows[0].Source != store.RelaySourceNotice || rows[0].ToCard != "L1" ||
+		rows[0].ToRoom != "claude-sg4" || !strings.Contains(rows[0].Text, "ended without a final report") {
+		t.Fatalf("outbox = %+v", rows)
+	}
+	// The same end seen again is not a second notice.
+	exit()
+	settle(d)
+	if n := len(owed(t, d)); n != 1 {
+		t.Fatalf("%d rows owed after the same end twice, want 1", n)
+	}
+}
+
 // RULE 5. A report to a launcher on another room is held in the same
 // transaction as the report, and the worker is told its launcher was told.
 func TestAReportReachesALauncherOnAnotherRoom(t *testing.T) {
