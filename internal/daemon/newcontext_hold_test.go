@@ -51,13 +51,21 @@ func heldNotDelivered(t *testing.T, d *Daemon, id string, f *fakePTY) {
 func finishCycle(t *testing.T, d *Daemon, id, dir string, f *fakePTY) {
 	t.Helper()
 	d.act.set(id, ActivityThinking, "")
-	if err := os.WriteFile(filepath.Join(dir, "HANDOFF.md"), []byte("state"), 0o644); err != nil {
+	task, err := d.st.Get(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The card's own file (item 91): a plain HANDOFF.md no longer counts.
+	if err := os.WriteFile(filepath.Join(dir, HandoffName(task)), []byte("state"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	time.Sleep(60 * time.Millisecond)
 	d.act.set(id, ActivityIdle, "")
 	until(t, "/clear", func() bool { return strings.Contains(f.written(), "/clear") })
 }
+
+// ncWakeMark is the part of the wake prompt that does not depend on the card's handoff file name (item 91).
+const ncWakeMark = "and continue from it."
 
 func TestSayDuringCaptureIsHeldAndDeliveredAfterTheWake(t *testing.T) {
 	fastNewContext(t)
@@ -69,7 +77,7 @@ func TestSayDuringCaptureIsHeldAndDeliveredAfterTheWake(t *testing.T) {
 	if err := d.StartNewContext(id); err != nil {
 		t.Fatal(err)
 	}
-	until(t, "the capture prompt", func() bool { return strings.Contains(f.written(), "HANDOFF.md") })
+	until(t, "the capture prompt", func() bool { return strings.Contains(f.written(), "HANDOFF.") })
 	if !d.holdingMessages(id) {
 		t.Fatal("not holding during capture")
 	}
@@ -81,10 +89,10 @@ func TestSayDuringCaptureIsHeldAndDeliveredAfterTheWake(t *testing.T) {
 
 	finishCycle(t, d, id, dir, f)
 	d.wake.sawSession(id, time.Now())
-	until(t, "the wake prompt", func() bool { return strings.Contains(f.written(), newContextWake) })
+	until(t, "the wake prompt", func() bool { return strings.Contains(f.written(), ncWakeMark) })
 	until(t, "the held say", func() bool { return strings.Contains(f.written(), heldSay) })
 	got := f.written()
-	if strings.Index(got, heldSay) < strings.Index(got, newContextWake) {
+	if strings.Index(got, heldSay) < strings.Index(got, ncWakeMark) {
 		t.Fatalf("the held say went ahead of the wake prompt: %q", got)
 	}
 	if d.holdingMessages(id) {
@@ -102,7 +110,7 @@ func TestSayDuringClearIsHeldAndTellIsQueued(t *testing.T) {
 	if err := d.StartNewContext(id); err != nil {
 		t.Fatal(err)
 	}
-	until(t, "the capture prompt", func() bool { return strings.Contains(f.written(), "HANDOFF.md") })
+	until(t, "the capture prompt", func() bool { return strings.Contains(f.written(), "HANDOFF.") })
 	finishCycle(t, d, id, dir, f)
 
 	out, code := tell(t, d, "alice", "cycler", heldSay)
@@ -114,7 +122,7 @@ func TestSayDuringClearIsHeldAndTellIsQueued(t *testing.T) {
 	d.wake.sawSession(id, time.Now())
 	until(t, "the held say", func() bool { return strings.Contains(f.written(), heldSay) })
 	got := f.written()
-	if strings.Index(got, heldSay) < strings.Index(got, newContextWake) {
+	if strings.Index(got, heldSay) < strings.Index(got, ncWakeMark) {
 		t.Fatalf("the held say went ahead of the wake prompt: %q", got)
 	}
 }
@@ -129,7 +137,7 @@ func TestAFailedCycleReleasesWhatWasHeld(t *testing.T) {
 	if err := d.StartNewContext(id); err != nil {
 		t.Fatal(err)
 	}
-	until(t, "the capture prompt", func() bool { return strings.Contains(f.written(), "HANDOFF.md") })
+	until(t, "the capture prompt", func() bool { return strings.Contains(f.written(), "HANDOFF.") })
 	sayViaMessage(t, d, "alice", id, heldSay)
 	if strings.Contains(f.written(), heldSay) {
 		t.Fatal("typed during capture")
@@ -151,7 +159,7 @@ func TestDismissingACycleReleases(t *testing.T) {
 	if err := d.StartNewContext(id); err != nil {
 		t.Fatal(err)
 	}
-	until(t, "the capture prompt", func() bool { return strings.Contains(f.written(), "HANDOFF.md") })
+	until(t, "the capture prompt", func() bool { return strings.Contains(f.written(), "HANDOFF.") })
 	d.act.set(id, ActivityThinking, "")
 	sayViaMessage(t, d, "alice", id, heldSay)
 	r := httptest.NewRequest(http.MethodDelete, "/v1/tasks/"+id+"/new-context", nil)
@@ -174,9 +182,9 @@ func TestHoldDoesNotStopTheCyclesOwnTyping(t *testing.T) {
 	if err := d.StartNewContext(id); err != nil {
 		t.Fatal(err)
 	}
-	until(t, "the capture prompt", func() bool { return strings.Contains(f.written(), "HANDOFF.md") })
+	until(t, "the capture prompt", func() bool { return strings.Contains(f.written(), "HANDOFF.") })
 	finishCycle(t, d, id, dir, f)
 	d.wake.sawSession(id, time.Now())
-	until(t, "the wake prompt", func() bool { return strings.Contains(f.written(), newContextWake) })
+	until(t, "the wake prompt", func() bool { return strings.Contains(f.written(), ncWakeMark) })
 	until(t, "the chip to go", func() bool { return d.newContextFor(id) == nil })
 }
