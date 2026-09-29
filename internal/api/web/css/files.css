@@ -212,6 +212,12 @@
   .uck-cost { fill: rgba(var(--teal-rgb), .8); }
   .uck-line { fill: none; stroke: rgb(var(--teal-rgb)); stroke-width: 2; vector-effect: non-scaling-stroke; }
   .ucranges button.on { color: var(--head); border-color: rgb(var(--teal-rgb)); }
+  .ucranges button.on i, #uc-cache i { display: inline-block; width: 10px; height: 10px; margin-right: 5px; border-radius: 2px; }
+  .uccacheline { margin-top: 4px; }
+  .uccread { color: var(--dimmest); text-align: right; }
+  .uccauses.withread { grid-template-columns: repeat(4, auto); }
+  .uccauses.withread > span:nth-child(4n+3) { text-align: right; }
+  .uccauses.withread > span:nth-child(4n) { text-align: right; }
   .ucfilter { font: var(--fs-xs) var(--mono); color: var(--dim); }
   .ucfilter button { background: none; border: none; color: var(--dim); cursor: pointer; }
   .ucroom { color: var(--dimmest); }

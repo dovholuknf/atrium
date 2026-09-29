@@ -162,6 +162,8 @@ func globalAutoView(s *Server) map[string]any {
 	// Whether a runner the room's exit interrupted mid-turn is told so when it
 	// comes back. On unless switched off. See docs/unexpected-exit-wake.md.
 	out["unexpected_exit_wake"] = s.st.UnexpectedExitOn()
+	// Whether the usage tab draws cache reads. Off unless switched on.
+	out["usage_cache_reads"] = s.usageCacheReads()
 	// The cache keep-alive: the default for new Claude cards, whether the room
 	// is suspended, and what refreshes cost this week. See keepalive.go.
 	keepaliveSettingsView(s.st, out)
@@ -266,6 +268,8 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		// Whether a NEW Claude card starts with the cache keep-alive on. Never
 		// applied to a card that already exists. See keepalive.go.
 		KeepaliveDefault *bool `json:"cache_keepalive_default"`
+		// Whether the usage tab draws cache reads. Broadcast so other tabs follow.
+		UsageCacheReads *bool `json:"usage_cache_reads"`
 		// Clears the room's keep-alive suspension. Only false means anything:
 		// atrium suspends, a person clears.
 		KeepaliveSuspended *bool `json:"cache_keepalive_suspended"`
@@ -608,6 +612,18 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if body.UsageCacheReads != nil {
+		v := "off"
+		if *body.UsageCacheReads {
+			v = "on"
+		}
+		if err := s.st.SetSetting(SettingUsageCacheReads, v); err != nil {
+			s.fail(w, err)
+			return
+		}
+		s.Broadcast("settings", globalAutoView(s))
+	}
+
 	if body.InputLag != nil {
 		if err := setInputLag(s.st, *body.InputLag); err != nil {
 			s.fail(w, err)
@@ -618,6 +634,14 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 	out := globalAutoView(s)
 	out["drained"] = drained
 	writeJSON(w, http.StatusOK, out)
+}
+
+// SettingUsageCacheReads is `on` when the usage tab draws cache reads. Unset is off.
+const SettingUsageCacheReads = "usage_cache_reads"
+
+func (s *Server) usageCacheReads() bool {
+	v, err := s.st.Setting(SettingUsageCacheReads)
+	return err == nil && strings.TrimSpace(v) == "on"
 }
 
 // shellIsThere reports whether a shell could actually be opened on this
