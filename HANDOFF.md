@@ -75,7 +75,9 @@ var is set:
 
 1. Split ConPTY from Claude Code. The best lever is a NEWER ConPTY: the `Microsoft.Windows.Console.ConPTY` NuGet
    package (conpty.dll plus OpenConsole.exe, what VS Code and WezTerm bundle). Point a repro at it and see whether
-   the full repaints go away. That needs a real trigger first, though.
+   the full repaints go away. That needs a real trigger first, though. On this machine, the Windows Terminal
+   Preview 1.25.1912.0 package holds OpenConsole.exe and OpenConsoleProxy.dll but no conpty.dll, and no VS Code
+   copy of conpty.dll turned up, so it has to come from NuGet.
 2. Get a trigger. The live pattern is a long-running session where a reply or tool line ("Calling X…" turning into
    "Called X") lands while a peer message typed by atrium sits in the prompt, and the new block goes ABOVE a
    9-row bottom region. Try the claude repro with a tool call (an MCP or Bash call) plus a reply, a long
