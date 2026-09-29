@@ -5046,6 +5046,49 @@ async function u016Section(browser, base) {
         fail(tag + "full screen was saved to localStorage");
       if (name !== "landscape" && !(await vis(p, "header"))) fail(tag + "the header did not come back");
 
+      // long presses (u-016b)
+      {
+        const ctxm = await p.evaluate(() => {
+          let pasted = 0;
+          const real = window.pasteIntoTerm;
+          window.pasteIntoTerm = () => { pasted++; };
+          const ev = new MouseEvent("contextmenu", { bubbles: true, cancelable: true });
+          document.querySelector("#t-screen .xterm-screen, #t-screen").dispatchEvent(ev);
+          window.pasteIntoTerm = real;
+          return { prevented: ev.defaultPrevented, pasted };
+        });
+        if (phone && (!ctxm.prevented || ctxm.pasted)) fail(tag + "a long press on the grid was not swallowed, or pasted: " + JSON.stringify(ctxm));
+        if (!phone && (!ctxm.prevented || ctxm.pasted !== 1)) fail(tag + "desktop right click no longer pastes: " + JSON.stringify(ctxm));
+      }
+      if (name === "portrait") {
+        const st = await p.evaluate(() => {
+          const k = document.getElementById("t-keys");
+          const cs = getComputedStyle(k);
+          return { ta: cs.touchAction, us: cs.userSelect };
+        });
+        if (st.ta !== "none" || st.us !== "none") fail(tag + "the key bar does not own its touch: " + JSON.stringify(st));
+        const ints = () => p.evaluate(() => window.__sent.filter(x => /"s":"int"/.test(x)).length);
+        const fire = (type, x, y) => p.evaluate(([t, x, y]) => {
+          const b = document.querySelector("#t-keys [data-key=int]");
+          const r = b.getBoundingClientRect();
+          b.dispatchEvent(new PointerEvent(t, { bubbles: true, cancelable: true, pointerId: 7, pointerType: "touch",
+            clientX: r.left + r.width / 2 + x, clientY: r.top + r.height / 2 + y }));
+        }, [type, x, y]);
+        await p.evaluate(() => { window.__sent.length = 0; });
+        await fire("pointerdown", 0, 0); await p.waitForTimeout(150); await fire("pointerup", 0, 0);
+        await p.waitForTimeout(700);
+        if (await ints()) fail(tag + "a short tap on ^C interrupted");
+        await fire("pointerdown", 0, 0); await p.waitForTimeout(200); await fire("pointermove", 30, 0);
+        await p.waitForTimeout(700); await fire("pointerup", 30, 0);
+        if (await ints()) fail(tag + "a drag past the threshold still interrupted");
+        await fire("pointerdown", 0, 0); await p.waitForTimeout(200); await fire("pointercancel", 0, 0);
+        await p.waitForTimeout(700);
+        if (await ints()) fail(tag + "a cancelled press still interrupted");
+        await fire("pointerdown", 0, 0); await fire("pointermove", 3, 3);
+        await p.waitForTimeout(2000); await fire("pointerup", 0, 0);
+        if ((await ints()) !== 1) fail(tag + "a 2s hold did not interrupt exactly once: " + (await ints()));
+      }
+
       // the header hidden on its own, saved per device
       if (name === "portrait") {
         const hd = () => vis(p, "header");

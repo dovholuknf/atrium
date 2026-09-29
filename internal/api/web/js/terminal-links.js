@@ -2548,16 +2548,33 @@ function wirePhoneKeys() {
   const hold = (e) => e.preventDefault();
   bar.addEventListener("pointerdown", hold);
   bar.addEventListener("mousedown", hold);
-  // ctrl-c interrupts a turn, so a stray tap must not: it needs a long press.
-  let intTimer = 0;
-  const intCancel = () => { clearTimeout(intTimer); intTimer = 0; const b = document.querySelector("#t-keys .hold"); if (b) b.classList.remove("hold"); };
+  // ctrl-c interrupts a turn, so a stray tap must not: it needs a long press. Pointer events with capture, so
+  // the press stays ours if the finger drifts off the key, and it is cancelled by a drag past 10px or by the
+  // browser taking the touch. It fires once at PHONE_INT_HOLD_MS and never again however long it is held.
+  // A short tap does nothing (the click handler below skips `int`).
+  let intTimer = 0, intId = -1, intX = 0, intY = 0;
+  const intCancel = () => {
+    clearTimeout(intTimer); intTimer = 0; intId = -1;
+    const b = document.querySelector("#t-keys .hold"); if (b) b.classList.remove("hold");
+  };
   bar.addEventListener("pointerdown", (e) => {
     const b = e.target.closest("button[data-key=int]");
     if (!b) return;
+    intCancel();
+    intId = e.pointerId; intX = e.clientX; intY = e.clientY;
+    try { b.setPointerCapture(e.pointerId); } catch (err) {}
     b.classList.add("hold");
-    intTimer = setTimeout(() => { intTimer = 0; b.classList.remove("hold"); phoneKey("int"); }, PHONE_INT_HOLD_MS);
+    intTimer = setTimeout(() => { intTimer = 0; intId = -1; b.classList.remove("hold"); phoneKey("int"); }, PHONE_INT_HOLD_MS);
   });
-  for (const ev of ["pointerup", "pointercancel", "pointerleave"]) bar.addEventListener(ev, intCancel);
+  bar.addEventListener("pointermove", (e) => {
+    if (e.pointerId !== intId) return;
+    if (Math.hypot(e.clientX - intX, e.clientY - intY) > 10) intCancel();
+  });
+  for (const ev of ["pointerup", "pointercancel", "lostpointercapture"]) bar.addEventListener(ev, (e) => {
+    if (e.pointerId === intId || ev === "pointercancel") intCancel();
+  });
+  // The browser's own long press on a key (a context menu, a callout) is not what a held key means.
+  bar.addEventListener("contextmenu", (e) => e.preventDefault());
   bar.addEventListener("click", (e) => {
     const b = e.target.closest("button[data-key]");
     if (b && b.dataset.key !== "int") phoneKey(b.dataset.key);
