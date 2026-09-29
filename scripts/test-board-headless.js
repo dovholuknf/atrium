@@ -7244,6 +7244,386 @@ async function linkReuseSection(browser, base) {
   if (errors.length) fail("linkReuse: the page threw: " + errors.join(" | "));
 }
 
+// The usage tab and its cache reads toggle. Off by default: four counted kinds
+// stacked, the cache reads named on one line under the split, five kinds still on
+// the hover. On is the tab as it always was. The choice is the daemon's.
+async function usageCacheReadsSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const sp = await ctx.newPage();
+  const errors = [];
+  sp.on("pageerror", e => errors.push(String(e)));
+  const posts = [];
+  let stored = false;
+  const at = new Date(Math.floor(Date.now() / 900000) * 900000 - 900000).toISOString();
+  const sums = { rows: 2, replies: 9, input: 1000, output: 2000, cache_write_5m: 3000, cache_write_1h: 4000, cache_read: 90000, cost: 0 };
+  await ctx.route("**/v1/usage*", route => route.fulfill({ json: { buckets: [
+    { t: at, total: sums, cards: { "uc-a": sums }, causes: { operator: sums } }] } }));
+  await ctx.route("**/v1/settings", async route => {
+    const r = route.request();
+    if (r.method() === "POST") {
+      const body = JSON.parse(r.postData() || "{}");
+      posts.push(body);
+      if ("usage_cache_reads" in body) stored = body.usage_cache_reads;
+    }
+    await route.fulfill({ json: { usage_cache_reads: stored, board_skin: "harbour", board_skins: SKINS } });
+  });
+  const look = () => sp.evaluate(() => {
+    const kinds = new Set([...document.querySelectorAll('#uc-body .ucchart[data-chart=burn] rect')].map(r => r.getAttribute("class")));
+    const g = document.querySelector('#uc-body .ucchart[data-chart=burn] g[data-t]');
+    return { kinds: [...kinds].sort(), line: /not in these charts/.test(document.getElementById("uc-body").textContent),
+      causes: (document.querySelector("#uc-body .uccauses") || {}).textContent || "",
+      on: document.getElementById("uc-cache").getAttribute("aria-pressed"), hasG: !!g };
+  });
+  try {
+    await sp.goto(base, { waitUntil: "domcontentloaded" });
+    await sp.waitForSelector("#stack-list .stackrow", { state: "attached", timeout: slow(15000) });
+    await sp.evaluate(() => switchView("usage"));
+    await sp.waitForSelector("#uc-body .ucchart[data-chart=burn] rect", { timeout: slow(10000) });
+    let s = await look();
+    if (s.on !== "false") fail("usageCacheReads: the toggle is pressed by default.");
+    if (s.kinds.length !== 4 || s.kinds.includes("uck-read")) fail("usageCacheReads: off should stack four kinds: " + s.kinds);
+    if (!s.line) fail("usageCacheReads: off has no cache reads line.");
+    const txt = await sp.textContent("#uc-body .uccacheline");
+    if (!/cache reads 90k · not in these charts · 90% of input was served from the cache/.test(txt)) fail("usageCacheReads: the line reads " + txt);
+    if (!/9 calls/.test(s.causes)) fail("usageCacheReads: a cause row does not show its calls: " + s.causes);
+    await sp.hover('#uc-body .ucchart[data-chart=burn] g[data-t] rect');
+    const read = await sp.textContent("#uc-body .ucread");
+    if (!/cache read 90k/.test(read) || (read.match(/ · /g) || []).length !== 5) fail("usageCacheReads: the hover does not list five kinds: " + read);
+
+    await sp.click("#uc-cache");
+    await sp.waitForFunction(() => document.getElementById("uc-cache").getAttribute("aria-pressed") === "true", null, { timeout: slow(5000) });
+    s = await look();
+    if (s.kinds.length !== 5) fail("usageCacheReads: on should stack five kinds: " + s.kinds);
+    if (s.line) fail("usageCacheReads: on still has the cache reads line.");
+    if (!posts.some(b => b.usage_cache_reads === true)) fail("usageCacheReads: the daemon was not told: " + JSON.stringify(posts));
+  } finally {
+    await ctx.close();
+  }
+  if (errors.length) fail("usageCacheReads: the page threw: " + errors.join(" | "));
+}
+
+// The rooms dashboard: the room menu's tiles, fed `room-stats` snapshots.
+//
+// Drives `onRoomStats` directly with fixture snapshots, the same function the
+// stream's listener calls, and checks what the tiles say: a band with no data
+// is a dash, the all-rooms tile is the sum of the rooms, the limit bars say
+// `highest seen` and are the highest and never a sum, and the open menu asks
+// for nothing while it repaints. Then that `?demo=rooms` is the only way in:
+// a plain board and a guest page run none of it. ROOMS_DASH_SHOTS=<dir> saves
+// the open menu at desktop and phone width, in the default skin and paper.
+async function roomsDashSection(browser, base) {
+  const skip = () => localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true }));
+  const shots = process.env.ROOMS_DASH_SHOTS || "";
+
+  // ── the preview, then fixture snapshots through onRoomStats ─────────────
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const p = await ctx.newPage();
+  const errors = [];
+  p.on("pageerror", e => errors.push(String(e)));
+  await p.addInitScript(skip);
+  try {
+    await p.goto(base + "/?demo=rooms", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof roomsDemoLive !== "undefined" && roomsDemoLive &&
+      roomsDemoTicks > 0 && !document.getElementById("rooms").hidden, null, { timeout: slow(15000) });
+    const chip = await p.evaluate(() => document.getElementById("rooms-t").textContent);
+    if (chip !== "3/4 rooms") fail("the demo's chip did not read 3/4 rooms: " + chip);
+
+    await p.evaluate(() => openRooms());
+    const drawn = await p.evaluate(() => {
+      const m = document.getElementById("rooms-menu");
+      return {
+        open: !m.hidden,
+        rooms: [...m.querySelectorAll(".rtile[data-room]")].map(t => t.dataset.room),
+        all: m.querySelectorAll(".rtile.all").length,
+        allFirst: !!(m.firstElementChild && m.firstElementChild.classList.contains("all")),
+        off: [...m.querySelectorAll(".rtile-off")].map(b => b.dataset.room + (b.querySelector(".roomx") ? "+x" : "")),
+        sparks: m.querySelectorAll("svg.rd-spark polyline").length,
+        mini: !!m.querySelector('.rtile[data-room="m1mini"] .rd-band.machine .rd-dash'),
+        width: m.getBoundingClientRect().width,
+      };
+    });
+    if (!drawn.open || drawn.rooms.join(",") !== "m1mini,sg3,sg4" || drawn.all !== 1 || !drawn.allFirst) {
+      fail("the demo menu did not draw the all-rooms tile then one tile per live room: " + JSON.stringify(drawn));
+    }
+    if (drawn.off.join(",") !== "lab-pc+x") fail("the disconnected demo room is not below with its x: " + JSON.stringify(drawn.off));
+    if (drawn.sparks < 5) fail("the demo tiles drew " + drawn.sparks + " sparklines, expected at least 5");
+    if (!drawn.mini) fail("m1mini ships no machine band in the demo and its band did not show a dash");
+    if (drawn.width < 500 || drawn.width > 600) fail("the rooms panel is not about 560px wide: " + drawn.width);
+
+    if (shots) {
+      fs.mkdirSync(shots, { recursive: true });
+      await p.waitForTimeout(2300);
+      for (const skin of ["", "paper"]) {
+        await p.evaluate(sk => { applySkin(sk); }, skin);
+        await p.waitForTimeout(250);
+        await p.screenshot({ path: path.join(shots, `rooms-${skin || "default"}-1400.png`) });
+      }
+      await p.setViewportSize({ width: 390, height: 844 });
+      await p.evaluate(() => { const m = document.getElementById("rooms-menu"); m.hidden = true; openRooms(); });
+      for (const skin of ["", "paper"]) {
+        await p.evaluate(sk => { applySkin(sk); }, skin);
+        await p.waitForTimeout(250);
+        await p.screenshot({ path: path.join(shots, `rooms-${skin || "default"}-390.png`) });
+      }
+      const phone = await p.evaluate(() => {
+        const b = document.querySelector('.rtile[data-room="sg3"] .rt-bands');
+        const m = document.getElementById("rooms-menu").getBoundingClientRect();
+        return { cols: getComputedStyle(b).gridTemplateColumns.split(" ").length, right: m.right,
+          sparks: document.querySelectorAll('.rtile[data-room="sg3"] svg.rd-spark').length };
+      });
+      if (phone.cols !== 1 || phone.right > 390 || phone.sparks < 2) {
+        fail("at phone width the tile bands did not stack inside the window with their sparklines: " + JSON.stringify(phone));
+      }
+      await p.setViewportSize({ width: 1400, height: 900 });
+      await p.evaluate(() => { applySkin(""); const m = document.getElementById("rooms-menu"); m.hidden = true; openRooms(); });
+    }
+
+    // The fixture's own ticking stops here, so what is drawn is only what this
+    // test sends. The cards are set the same way the preview sets its own.
+    const reqs = [];
+    p.on("request", r => reqs.push(r.method() + " " + r.url().replace(base, "")));
+    const got = await p.evaluate(() => {
+      clearInterval(roomsDemoTimer);
+      const now = Date.now();
+      const iso = ms => new Date(ms).toISOString();
+      const card = (id, room, status, over) => Object.assign({ id, room, status, display_title: id,
+        last_activity_at: iso(now - 60000) }, over || {});
+      roomsDemoCards = [
+        card("a1", "sg3", "running", { telemetry: { seconds: 30, five_hour: { pct: 64, resets_at: iso(now + 3600e3) },
+          weekly: { pct: 31 } } }),
+        card("a2", "sg3", "running"),
+        card("a3", "sg3", "needs-input"),
+        card("a4", "sg3", "needs-input", { seen: { answered: false, open_questions: ["ok?"] } }),
+        card("a5", "sg3", "done"),
+        card("a6", "sg3", "done", { last_activity_at: iso(now - 30 * 3600e3) }),
+        card("b1", "sg4", "running", { telemetry: { seconds: 60, five_hour: { pct: 82 } } }),
+        card("b2", "sg4", "needs-permission"),
+        // Stale: a report two hours old does not count.
+        card("c1", "m1mini", "running", { telemetry: { seconds: 7200, five_hour: { pct: 99 }, weekly: { pct: 90 } } }),
+      ];
+      const tok = (rate, a, b, c, d) => ({ per_min_5m: rate, series_per_min: Array.from({ length: 60 }, (_, i) => rate + i),
+        series_end: iso(now), last_24h: { in: a, out: b, cache_read: c, cache_write: d } });
+      onRoomStats({ v: 1, room: "sg3", at: iso(now), tokens: tok(41200, 9100000, 1200000, 61000000, 2900000),
+        disk: { path: "D:\\git", free_bytes: 392e9, total_bytes: 512e9, worktrees: 38 },
+        runners: [{ kind: "claude", resolves: true }, { kind: "ollama", resolves: false }],
+        machine: { cpu_pct: 82, mem_used_bytes: 21e9, mem_total_bytes: 32e9, cpu_series_pct: [71, 80, 82] } });
+      // sg4 has shipped nothing but its CPU: tokens and disk are absent.
+      onRoomStats({ v: 1, room: "sg4", at: iso(now), machine: { cpu_pct: 95, cpu_series_pct: [90, 95] } });
+      onRoomStats({ v: 1, room: "m1mini", at: iso(now), tokens: tok(9000, 1000000, 100000, 5000000, 200000) });
+      // A version this board does not know is dropped.
+      onRoomStats({ v: 2, room: "sg3", at: iso(now), tokens: tok(1, 1, 1, 1, 1) });
+      const m = document.getElementById("rooms-menu");
+      const n = sel => { const e = m.querySelector(sel); return e ? Number(e.dataset.n) : null; };
+      const t = name => m.querySelector(`.rtile[data-room="${name}"]`);
+      const lim = (tile, k) => {
+        const row = [...tile.querySelectorAll(".rd-lim")].find(r => r.querySelector(".k").textContent === k);
+        return row ? (row.querySelector(".v") ? row.querySelector(".v").textContent : "dash") : "none";
+      };
+      return {
+        sg3: { run: n('[data-v="r.sg3.run"]'), idle: n('[data-v="r.sg3.idle"]'), need: n('[data-v="r.sg3.need"]'),
+          done: n('[data-v="r.sg3.done"]'), rate: n('[data-v="r.sg3.rate"]'), day: n('[data-v="r.sg3.24h"]'),
+          cache: n('[data-v="r.sg3.cache"]'), five: lim(t("sg3"), "5h"), week: lim(t("sg3"), "week"),
+          seen: /highest seen/.test(t("sg3").textContent), hot: t("sg3").classList.contains("hot"),
+          build: (t("sg3").querySelector(".rd-build") || {}).dataset,
+          off: t("sg3").querySelectorAll(".rd-kinds .off").length },
+        sg4: { tokDash: !!t("sg4").querySelector(".rd-band.tokens > .rd-row .rd-dash"),
+          diskDash: /disk\s*\u2014/.test(t("sg4").querySelector(".rd-band.machine").textContent),
+          hot: t("sg4").classList.contains("hot"), five: lim(t("sg4"), "5h"),
+          build: !!t("sg4").querySelector(".rd-build") },
+        mini: { five: lim(t("m1mini"), "5h"), week: lim(t("m1mini"), "week") },
+        all: { run: n('[data-v="all.run"]'), idle: n('[data-v="all.idle"]'), need: n('[data-v="all.need"]'),
+          done: n('[data-v="all.done"]'), rate: n('[data-v="all.rate"]'), day: n('[data-v="all.24h"]'),
+          cache: n('[data-v="all.cache"]'), five: lim(m.querySelector(".rtile.all"), "5h"),
+          week: lim(m.querySelector(".rtile.all"), "week"), offbuild: n('[data-v="all.offbuild"]'),
+          seen: /highest seen/.test(m.querySelector(".rtile.all").textContent) },
+      };
+    });
+    const want = (label, a, b) => { if (JSON.stringify(a) !== JSON.stringify(b)) fail(`rooms dash: ${label} was ${JSON.stringify(a)}, expected ${JSON.stringify(b)}`); };
+    want("sg3 agents", [got.sg3.run, got.sg3.idle, got.sg3.need, got.sg3.done], [2, 1, 1, 1]);
+    want("sg3 rate", got.sg3.rate, 41200);
+    want("sg3 24h (in + out + cache writes)", got.sg3.day, 9100000 + 1200000 + 2900000);
+    want("sg3 cache reads", got.sg3.cache, 61000000);
+    want("sg3 limits", [got.sg3.five, got.sg3.week], ["64%", "31%"]);
+    if (!got.sg3.seen || !got.all.seen) fail("a limit bar is not labelled highest seen: " + JSON.stringify([got.sg3.seen, got.all.seen]));
+    if (!got.sg3.hot) fail("sg3 has a card asking and its tile does not pulse");
+    if (!got.sg3.build || !/3b578f0/.test(got.sg3.build.tip || "") || !/a91c2de/.test(got.sg3.build.tip || "")) {
+      fail("sg3's not the hub's build chip does not name both builds: " + JSON.stringify(got.sg3.build));
+    }
+    want("sg3 runners not resolving", got.sg3.off, 1);
+    if (!got.sg4.tokDash || !got.sg4.diskDash) fail("sg4's absent tokens and disk did not draw dashes: " + JSON.stringify(got.sg4));
+    if (!got.sg4.hot) fail("sg4 is at 95% cpu and waiting and does not pulse");
+    if (got.sg4.build) fail("sg4 runs the hub's build and wears the not the hub's build chip");
+    want("sg4 5h limit", got.sg4.five, "82%");
+    want("m1mini's stale limits", [got.mini.five, got.mini.week], ["dash", "dash"]);
+    want("all-rooms agents", [got.all.run, got.all.idle, got.all.need, got.all.done], [4, 1, 2, 1]);
+    want("all-rooms rate", got.all.rate, 41200 + 9000);
+    want("all-rooms 24h", got.all.day, 13200000 + 1300000);
+    want("all-rooms cache", got.all.cache, 66000000);
+    want("all-rooms limits (the highest, not a sum)", [got.all.five, got.all.week], ["82%", "31%"]);
+    want("all-rooms rooms not on the hub's build", got.all.offbuild, 1);
+
+    // A number that moved fades from its old value.
+    const fade = await p.evaluate(() => {
+      const s = roomStats.sg3;
+      onRoomStats(Object.assign({}, s, { tokens: Object.assign({}, s.tokens, { per_min_5m: 50000 }) }));
+      const e = document.querySelector('[data-v="r.sg3.rate"]');
+      return { was: e.dataset.was, fading: e.classList.contains("rd-fade"),
+        still: document.querySelector('[data-v="r.sg3.cache"]').classList.contains("rd-fade") };
+    });
+    if (fade.was !== "41k" || !fade.fading || fade.still) fail("the changed rate did not fade from its old value alone: " + JSON.stringify(fade));
+
+    // The open menu asks for nothing while it repaints. The preview's ticking
+    // comes back on for two ticks and nothing leaves the page for the rooms.
+    // The board's own refresh keeps polling beside it, so a fetch is laid at the
+    // dashboard's door only when the dashboard is on its stack, and anything to
+    // the hub's endpoints counts whoever asked.
+    await p.evaluate(() => {
+      window.__rdFetches = [];
+      const was = window.fetch;
+      window.fetch = function (input, init) {
+        const stack = String(new Error().stack || "");
+        if (/rooms-dash|onRoomStats|roomsDemo|roomTileHTML|paintRoomTile/.test(stack)) {
+          window.__rdFetches.push(String((input && input.url) || input));
+        }
+        return was.apply(this, arguments);
+      };
+      roomsDemoTimer = setInterval(roomsDemoTick, 2000);
+    });
+    await p.waitForTimeout(4300);
+    const dashFetches = await p.evaluate(() => window.__rdFetches);
+    const hubReqs = reqs.filter(r => / \/_hub\//.test(r));
+    if (dashFetches.length || hubReqs.length) {
+      fail("the open rooms menu made requests while it repainted: " + dashFetches.concat(hubReqs).join(" | "));
+    }
+    if (await p.evaluate(() => document.getElementById("rooms-menu").hidden)) fail("the rooms menu closed during the repaint");
+    // The demo keeps its choice in this tab and nothing real.
+    const trace = await p.evaluate(() => ({ room: localStorage.getItem("atrium.room") }));
+    if (trace.room) fail("the demo wrote a room into localStorage: " + trace.room);
+    if (errors.length) fail("the rooms demo page threw: " + errors.join(" | "));
+  } finally {
+    await ctx.close();
+  }
+
+  // ── without the query string, none of it runs ───────────────────────────
+  const plain = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const q = await plain.newPage();
+  await q.addInitScript(skip);
+  try {
+    await q.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await q.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await q.waitForTimeout(2300);
+    const st = await q.evaluate(() => ({ demo: ROOMS_DEMO, live: roomsDemoLive, ticks: roomsDemoTicks,
+      timer: roomsDemoTimer, cards: roomsDemoCards.length, chip: document.getElementById("rooms").hidden,
+      stats: Object.keys(roomStats).length }));
+    if (st.demo || st.live || st.ticks || st.timer || st.cards || !st.chip || st.stats) {
+      fail("without ?demo=rooms some demo code ran: " + JSON.stringify(st));
+    }
+  } finally {
+    await plain.close();
+  }
+
+  // ── nor on a guest page, even with it ───────────────────────────────────
+  const guest = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const g = await guest.newPage();
+  await g.addInitScript(skip);
+  await g.route(u => new URL(u).pathname === "/v1/tasks",
+    r => r.fulfill({ status: 403, contentType: "text/plain", body: "this link is one terminal." }));
+  try {
+    await g.goto(base + "/?demo=rooms", { waitUntil: "domcontentloaded" });
+    await g.waitForFunction(() => document.body.classList.contains("guestonly"), null, { timeout: slow(15000) });
+    await g.waitForTimeout(2300);
+    const st = await g.evaluate(() => ({ live: roomsDemoLive, ticks: roomsDemoTicks, timer: roomsDemoTimer,
+      chip: document.getElementById("rooms").hidden }));
+    if (st.live || st.ticks || st.timer || !st.chip) fail("a guest page opened with ?demo=rooms ran the demo: " + JSON.stringify(st));
+  } finally {
+    await guest.close();
+  }
+}
+
+// The usage tab's polish: the too-old line with and without a build, the keep-alive
+// phrase on the cache line, the backfilled label, the fade and the grow on a live
+// event, and reduced motion turning them off.
+async function usagePolishSection(browser, base) {
+  const errors = [];
+  const at = new Date(Math.floor(Date.now() / 900000) * 900000 - 900000).toISOString();
+  const sums = { rows: 2, replies: 9, input: 1000, output: 2000, cache_write_5m: 3000, cache_write_1h: 4000, cache_read: 90000, cost: 0 };
+  const ka = { rows: 3, replies: 3, input: 100, output: 200, cache_write_5m: 0, cache_write_1h: 0, cache_read: 5000, cost: 0 };
+  const bf = { rows: 4, replies: 4, input: 10, output: 20, cache_write_5m: 0, cache_write_1h: 0, cache_read: 50, cost: 0 };
+  const total = { rows: 9, replies: 16, input: 1110, output: 2220, cache_write_5m: 3000, cache_write_1h: 4000, cache_read: 95050, cost: 0 };
+  const run = async (reduced, fn) => {
+    const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, reducedMotion: reduced ? "reduce" : "no-preference" });
+    const sp = await ctx.newPage();
+    sp.on("pageerror", e => errors.push(String(e)));
+    await ctx.route("**/v1/usage*", route => route.fulfill({ json: { buckets: [
+      { t: at, total, cards: { "uc-a": total }, causes: { operator: sums, keepalive: ka, backfill: bf } }] } }));
+    await ctx.route("**/v1/settings", route => route.fulfill({ json: { usage_cache_reads: false, board_skin: "harbour", board_skins: SKINS } }));
+    try {
+      await sp.goto(base, { waitUntil: "domcontentloaded" });
+      await sp.waitForSelector("#stack-list .stackrow", { state: "attached", timeout: slow(15000) });
+      await sp.evaluate(() => switchView("usage"));
+      await sp.waitForSelector("#uc-body .ucchart[data-chart=burn] rect", { timeout: slow(10000) });
+      await sp.waitForTimeout(1500); // the stream opening reloads the tab once
+      await fn(sp);
+    } finally { await ctx.close(); }
+  };
+  await run(false, async sp => {
+    await sp.evaluate(() => { lastTasks = [{ id: "uc-a", keepalive: { refreshes: 2 } }].concat(lastTasks || []); ucPaint(); });
+    const line = await sp.textContent("#uc-body .uccacheline");
+    if (!/keep-alive spent 300 counted and kept 1 card warm/.test(line)) fail("usagePolish: the keep-alive phrase reads " + line);
+    const tip = await sp.getAttribute("#uc-body .uccacheline", "data-tip");
+    if (!tip) fail("usagePolish: the cache line has no hint.");
+    const causes = await sp.textContent("#uc-body .uccauses");
+    if (!/backfilled/.test(causes) || /\bbackfill\b/.test(causes)) fail("usagePolish: the backfill cause reads " + causes);
+    const bt = await sp.evaluate(() => USAGE_TIPS.cause_backfill);
+    if (!/atrium usage backfill/.test(bt)) fail("usagePolish: the backfilled hint is " + bt);
+    // Every number on the tab carries a hint.
+    const bare = await sp.evaluate(() => [...document.querySelectorAll("#uc-body [data-n]")]
+      .filter(e => !e.closest("[data-tip]") && !e.getAttribute("data-tip")).map(e => e.getAttribute("data-n")));
+    if (bare.length) fail("usagePolish: numbers with no data-tip: " + bare);
+    // The too-old line, with a build and without.
+    const old = await sp.evaluate(() => {
+      hubRooms = [{ name: "sg3", version: "2f715b5a9c1d" }]; hubInventory = [];
+      UC.rooms = { sg3: { state: "old", why: "too old to keep usage", buckets: new Map() },
+        sg4: { state: "old", why: "too old to keep usage", buckets: new Map() } };
+      ucPaint();
+      return [...document.querySelectorAll("#uc-body .ucmissing")].map(e => e.textContent);
+    });
+    if (!old.includes("sg3 build 2f715b5 predates usage (needs 39a8da1 or later). Update the room to see its usage here."))
+      fail("usagePolish: the too-old line with a build reads " + JSON.stringify(old));
+    if (!old.includes("sg4 predates usage (needs 39a8da1 or later). Update the room to see its usage here."))
+      fail("usagePolish: the too-old line without a build reads " + JSON.stringify(old));
+    // A live row fades the number that changed and grows a new bar.
+    await sp.evaluate(() => loadUsageTab());
+    await sp.waitForFunction(() => !UC.inflight, null, { timeout: slow(5000) });
+    await sp.waitForSelector("#uc-body .ucchart[data-chart=burn] rect", { timeout: slow(10000) });
+    await sp.evaluate(() => {
+      ucApply({ task_id: "uc-a", ended_at: new Date().toISOString(), input: 500, output: 500, cache_write_5m: 0, cache_write_1h: 0, cache_read: 0 });
+      ucSchedulePaint();
+    });
+    await sp.waitForSelector("#uc-body .ucfade", { state: "attached", timeout: slow(3000) });
+    const anim = await sp.evaluate(() => ({
+      fade: getComputedStyle(document.querySelector("#uc-body .ucfade")).animationName,
+      grow: (document.querySelector("#uc-body g.ucgrow") ? getComputedStyle(document.querySelector("#uc-body g.ucgrow")).animationName : "none") }));
+    if (anim.fade !== "ucfade") fail("usagePolish: a changed number does not fade: " + anim.fade);
+    if (anim.grow !== "ucgrow") fail("usagePolish: a new bar does not grow: " + anim.grow);
+  });
+  await run(true, async sp => {
+    await sp.evaluate(() => loadUsageTab());
+    await sp.waitForFunction(() => !UC.inflight, null, { timeout: slow(5000) });
+    await sp.evaluate(() => {
+      ucApply({ task_id: "uc-a", ended_at: new Date().toISOString(), input: 500, output: 500, cache_write_5m: 0, cache_write_1h: 0, cache_read: 0 });
+      ucSchedulePaint();
+    });
+    await sp.waitForSelector("#uc-body .ucfade", { state: "attached", timeout: slow(3000) });
+    const anim = await sp.evaluate(() => getComputedStyle(document.querySelector("#uc-body .ucfade")).animationName);
+    if (anim !== "none") fail("usagePolish: reduced motion left the fade on: " + anim);
+    const grow = await sp.evaluate(() => [...document.querySelectorAll("#uc-body g.ucgrow")]
+      .map(g => getComputedStyle(g).animationName).filter(n => n !== "none"));
+    if (grow.length) fail("usagePolish: reduced motion left the grow on: " + grow);
+  });
+  if (errors.length) fail("usagePolish: the page threw: " + errors.join(" | "));
+}
+
 async function main() {
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = "http://127.0.0.1:" + server.address().port;
@@ -7263,7 +7643,8 @@ async function main() {
       history: historySection, contextSize: contextSizeSection, peekEverywhere: peekEverywhereSection, cardRoute: cardRouteSection,
       quietDoer: quietDoerSection, looksIdle: looksIdleSection, notifyOff: notifyOffSection,
       questionsClick: questionsClickSection, walk: walkSection, linkReuse: linkReuseSection,
-      phoneView: phoneViewSection, eventDriven: eventDrivenSection, idleBudget: idleBudgetSection };
+      usageCacheReads: usageCacheReadsSection, roomsDash: roomsDashSection, phoneView: phoneViewSection, usagePolish: usagePolishSection,
+      eventDriven: eventDrivenSection, idleBudget: idleBudgetSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -8644,7 +9025,7 @@ async function main() {
       // after the name with no separator, so a word-boundary match on the text
       // would miss the live row once sgg carries a host.
       const before = await hub.evaluate(() => {
-        const btns = [...document.querySelectorAll("#rooms-menu button")];
+        const btns = [...document.querySelectorAll("#rooms-menu button, #rooms-menu .rtile")];
         const sgg = btns.find(b => {
           const s = b.querySelector("strong");
           return s && s.textContent === "sgg";
@@ -8673,7 +9054,7 @@ async function main() {
       await hub.waitForFunction(() => {
         const menu = document.getElementById("rooms-menu");
         if (!menu || menu.hidden) return false;
-        const sgg = [...menu.querySelectorAll("button")].find(b => {
+        const sgg = [...menu.querySelectorAll("button, .rtile")].find(b => {
           const s = b.querySelector("strong");
           return s && s.textContent === "sgg";
         });
@@ -9190,9 +9571,12 @@ async function main() {
     await questionsClickSection(browser, base);
     await walkSection(browser, base);
     await linkReuseSection(browser, base);
+    await usageCacheReadsSection(browser, base);
+    await roomsDashSection(browser, base);
     await phoneViewSection(browser, base);
     await eventDrivenSection(browser, base);
     await idleBudgetSection(browser, base);
+    await usagePolishSection(browser, base);
     await reselectSection(browser, base);
     // ── over a terminal the toasts hang from the top right ─────────────────
     await toastsTopSection(browser, base);

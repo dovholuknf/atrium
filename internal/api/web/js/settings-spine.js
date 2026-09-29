@@ -1693,6 +1693,14 @@ function connect() {
   es.addEventListener("usage", e => {
     if (typeof onUsageEvent === "function") onUsageEvent(e);
   });
+  // A room's numbers for the rooms dashboard: one snapshot, drawn into its tile
+  // in the open room menu. No refresh, since it moves no card. Nothing sends it
+  // yet, and a guest stream never will. See js/rooms-dash.js.
+  es.addEventListener("room-stats", e => {
+    let d;
+    try { d = JSON.parse(e.data); } catch (err) { return; }
+    if (typeof onRoomStats === "function") onRoomStats(d);
+  });
   es.addEventListener("keepalive", e => {
     if (typeof onKeepaliveEvent === "function") onKeepaliveEvent(e);
     tasksSoon();
@@ -1787,6 +1795,7 @@ function connect() {
       globalAutoLeft = s.global_auto_seconds || 0;
       globalAutoRead = true;
       globalAutoStale = false;
+      if (typeof ucHaveSetting === "function") ucHaveSetting(s);
     } catch (err) { return; }
     paintGlobalAuto();
   });
