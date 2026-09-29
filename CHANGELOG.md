@@ -5,6 +5,32 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **The screen's combining-mark table no longer fills with repeats, and the idle badge reads a wide character once.**
+  See `docs/backlog-2.md` items 86 and 88.
+
+  `screen.combine` now interns: a mark sequence already in the table is reused rather than appended again, so a
+  spinner redrawn with a VS16 spends one entry instead of one per redraw, and Devanagari or Thai text no longer
+  fills the 65536 cap and then replays its newest lines without their marks. Past the cap a new sequence is still
+  dropped and an interned one still attaches. The map is made on the first mark, so an all-ASCII screen allocates
+  nothing new.
+
+  `classifyFrame` skipped nothing in the second cell of a wide character, so every CJK character reached
+  `classifyScreen` followed by U+FFFD. It now skips those cells as `writeRow` does, and the stale comment naming
+  items 81 and 82 as open gaps is gone.
+
+- **The notification drawer can turn notifications off.** See `docs/backlog-2.md` item 79.
+
+  A third button in the drawer head, beside clear and close, reads "turn off" or "turn on". Off holds back toasts,
+  desktop notifications and their sound. Held back means recorded: every alert is still listed in the drawer and
+  counted on the bell's badge, and the marks on cards are untouched. Off, the bell is a struck bell and its tip says
+  notifications are off. The choice is kept per browser in `localStorage` (`atrium.notify.off`), so a reload and a
+  popped-out window follow it, and the gear's notifications section shows the same switch. It sits over item 44's
+  filter and over a card's own tone.
+
+  WAITING ON CLINT: permission requests still notify when off, because a session blocks on one until somebody answers.
+  That is one constant, `NOTIFY_OFF_SILENCES_PERMISSIONS` in `js/notify.js`, and flipping it is a one-word change. A
+  timed mute is not built.
+
 - **The headless board run can be given more time on a loaded machine.** See `docs/backlog-2.md` item 85.
 
   Every Playwright timeout in `scripts/test-board-headless.js` goes through `slow()`, which multiplies it by
