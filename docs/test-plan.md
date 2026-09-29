@@ -5509,3 +5509,108 @@ long it waits.
 2. Restart the daemon.
 
 **Expected:** the notice arrives once. A worker that had reported before the restart still owes nothing after it.
+
+## DA. A terminal height flip no longer loses lines (item 74)
+
+Windows only for the harness steps. Clear `ATRIUM_LOCATION` and `ATRIUM_DEBUG_INPUTLAG` first. The scripts are in
+`build.claude/lost-lines/` of the `claude/lost-lines` worktree. Nothing here touches a live room.
+
+### DA1. The hold's rules
+
+1. `go test ./internal/daemon/ -count=1 -run 'Held|Hold|Height|Concurrent|Viewer|Floor|Wake'`
+
+**Expected:** pass. They cover a flip inside the hold, a reattach of the shortest viewer, a height applied once it
+holds, a width change during a held shrink (width at once at the old rows), a superseded timer, the re-tell with no
+resize, the timer's revalidation, every viewer gone, an exited runner, and the real timer.
+
+### DA2. Flips through the inbox ConPTY, without and with the hold
+
+1. Set `ATRIUM_CONPTY_OUT` to a scratch file, `ATRIUM_CONPTY_LOOP=30`, `ATRIUM_CONPTY_RESIZE=flip`,
+   `ATRIUM_CONPTY_FLIP_ROWS=40`, and leave `ATRIUM_CONPTY_DLL` unset.
+2. `go test ./internal/daemon/ -run '^TestConPTYScrollRepro$' -count=1`, then `node check.js <out> 120 50 300`.
+3. Again with `ATRIUM_CONPTY_VIA=runner`, which sends each flip through a runner's viewports.
+
+**Expected:** without the hold, numbered lines are missing (56 to 72 in a recorded run) and `homes.js` shows
+repaints at `wasAtRow=11` with 50 rows on both sides, the live signature. With it, `<out>.sizes` is empty and every
+line is present. `ATRIUM_CONPTY_STREAM=300` in place of the loop gives the same split.
+
+### DA3. A height that holds is still applied
+
+1. Repeat DA2 step 3 with `ATRIUM_CONPTY_FLIP_HOLD=800`.
+
+**Expected:** resizes land, each at least 500 ms after the change, and `check.js --follow` misses about two lines,
+the same as the same run without the hold.
+
+### DA4. OpenConsole ConPTY loses none
+
+1. Repeat DA2 step 2 with `ATRIUM_CONPTY_DLL` naming `conpty.dll` from `Microsoft.Windows.Console.ConPTY`
+   1.24, with `OpenConsole.exe` beside it.
+
+**Expected:** `all present`, with the grid fixed and with `--follow`, and no `\e[H` repaint in the capture.
+
+### DA5. On the board, a reattach does not move the rows
+
+1. On a throwaway room, open one runner's terminal in the board and in a popped-out window that is SHORTER.
+2. Reload the popped-out window a few times while the runner prints.
+
+**Expected:** the taller pane's grid height never changes and no rows go missing from its scrollback. Making the
+popped-out window taller and leaving it there moves the pty's rows after half a second.
+
+## DB. Scroll regions in the terminal replay
+
+### DB1. A region scrolls alone
+
+1. In a runner terminal, run `printf '\e[1;6r'` and then print a dozen lines while the cursor is on row 6, with text
+   pinned on the bottom row.
+2. Attach a second browser tab to the card.
+
+**Expected:** the pinned row is still on the bottom in the new tab, and new lines scroll only above it.
+
+### DB2. Differential
+
+1. Run `go test ./internal/daemon -run 'Screen|Replay|Diff'` with `node` on PATH.
+
+**Expected:** every region case agrees with xterm.js and none is skipped as `backlog-2 81`.
+
+## DC. A wide character takes two columns in the replay
+
+### DC1. Text with wide characters replays in place
+
+1. Start a session and print `printf 'ab中文cd\r\nあいう\033[2D.\r\n'`, then a few lines of ordinary output.
+2. Attach a second board tab, so the replay draws it.
+
+**Expected:** the second tab shows `ab中文cd` and `あい.` exactly as the first does, with nothing shifted a column.
+
+### DC2. A wide character at the edge of the pane
+
+1. Narrow the terminal, then print a wide character starting in its last column.
+
+**Expected:** it wraps to the next row whole in both tabs, and the cursor sits after it.
+
+### DC3. Table drift
+
+1. Run `go test ./internal/daemon -run 'Width|Screen'` with `node` on PATH.
+
+**Expected:** `TestWidthMatchesXterm` and the wide cases of `TestScreenAgainstXterm` pass. After upgrading the vendored
+xterm.js, regenerate with `node internal/daemon/testdata/gen_widths.js go internal/daemon/screen_width_tables.go`.
+
+## DD. The headless board run under load
+
+### DD1. Idle
+
+1. Run `node scripts/test-board-headless.js` on an idle machine.
+
+**Expected:** it passes as before.
+
+### DD2. Loaded
+
+1. Start `go test ./internal/daemon ./internal/store`.
+2. Beside it, run the headless run with `HEADLESS_SLOW=3`.
+
+**Expected:** it passes.
+
+### DD3. A named wait
+
+1. Break the dismiss entry in the card menu locally and run the headless run.
+
+**Expected:** the failure names the menu wait and its budget in milliseconds.
