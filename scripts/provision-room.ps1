@@ -763,6 +763,12 @@ function Invoke-Smoke {
         harness = 'claude'; cwd = $cwd; title = "smoke: $Name"; prompt = $prompt
         tags = @('atrium:smoke'); lean = $true
         model = 'claude-haiku-4-5-20251001'; effort = 'low'
+        # CLAUDE CODE ASKS BEFORE AN MCP TOOL'S FIRST CALL, at a prompt in the
+        # card's own terminal that nobody is watching. Seen on sg3: the card sat
+        # at "Do you want to proceed?" on atrium_say until it was exited. The two
+        # tools are allowed for this card only. The room's own settings are not
+        # touched, and a worker that is not a smoke card still asks.
+        args = @('--allowedTools', 'mcp__atrium-control__atrium_say,mcp__atrium-control__atrium_report')
     }
     # WHO LAUNCHED IT, so the report lands on the caller's card. A launcher on
     # another room is `me@room`, and its card `room~id`.
