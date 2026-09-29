@@ -1128,6 +1128,13 @@ Expected: a card owes its launcher a report only for a prompt the launcher sent 
 monitor woke, does not make it owe one. Test plan AB2 grows a case: a message from a third session, then a silent
 stop, gives the launcher no notice.
 
+**Status, 2026-09-28, sa41: built on `claude/sa41`.** Design in `docs/owed-report-design.md`. The sender was already in
+every `prompted` event as `from_peer`, so `appendEventOn` now decides in one place whether a prompt counts (the launch
+prompt, or a `from_peer` that is the card's launcher) and stamps a new `task.owed_at`. `OwesReport` and `PromptKey`
+read it, so the silent-stop notice and the STUCK mark share one rule. Migration `0068_owed_at`, backfilled from
+`prompted_at`. A monitor-woken turn needs no detection: no door records a prompt for it, so it creates no debt, and a
+debt already open is noticed once per key.
+
 ## 42. A running card wears the `!` chip for a message held until its turn ends (bug)
 
 Raised by clint 2026-09-28 with a screenshot (`.atrium/incoming/20260928-092222-pasted.png`). sa83 was running,
