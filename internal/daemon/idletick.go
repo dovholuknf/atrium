@@ -235,7 +235,7 @@ func (d *Daemon) startIdleHandoff(t *store.Task, idle time.Duration) {
 		return
 	}
 	file := HandoffName(t)
-	gen, ok := d.nctx.begin(t.ID, file)
+	gen, ok := d.nctx.begin(t.ID, file, d.conversationOf(t))
 	if !ok {
 		return
 	}

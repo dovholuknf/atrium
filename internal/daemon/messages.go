@@ -777,11 +777,17 @@ func (d *Daemon) typeThroughGate(run *runner, taskID, from, text string) (bool, 
 // typeLabelledThroughGate is typeThroughGate with the label given whole, for
 // text that is not a peer's but is not the operator's either. See atriumLabel.
 func (d *Daemon) typeLabelledThroughGate(run *runner, taskID, banner, text string) (bool, error) {
+	return d.typeLabelledGuarded(run, taskID, banner, text, nil)
+}
+
+// typeLabelledGuarded is typeLabelledThroughGate with one more check, run under
+// the input lock at the moment of writing. See `runner.injectPeerIf`.
+func (d *Daemon) typeLabelledGuarded(run *runner, taskID, banner, text string, ok func() bool) (bool, error) {
 	payload := text
 	if d.bracketedPasteFor(taskID, false) {
 		payload = "\x1b[200~" + text + "\x1b[201~"
 	}
-	return run.injectPeer(banner, payload)
+	return run.injectPeerIf(banner, payload, ok)
 }
 
 func writeJSONErr(w http.ResponseWriter, code int, err error) {

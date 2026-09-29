@@ -1185,6 +1185,14 @@ func (r *runner) writeOperatorInput(p []byte) error {
 // The banner carries no carriage return (see peerBanner), so nothing can submit
 // before the deliberate Enter below.
 func (r *runner) injectPeer(banner, body string) (bool, error) {
+	return r.injectPeerIf(banner, body, nil)
+}
+
+// injectPeerIf is injectPeer with a further condition, checked under the same
+// locks and right after the gate, so the condition and the write are one step.
+// The new-context cycle asks its quiet check here. A nil `ok` asks nothing more.
+// `ok` must not take injectMu or pasteMu.
+func (r *runner) injectPeerIf(banner, body string, ok func() bool) (bool, error) {
 	r.injectMu.Lock()
 	defer r.injectMu.Unlock()
 	// The input lock, held across the whole paste. Taken before the gate is
@@ -1193,6 +1201,9 @@ func (r *runner) injectPeer(banner, body string) (bool, error) {
 	r.pasteMu.Lock()
 	defer r.pasteMu.Unlock()
 	if !r.peerGateOpen() {
+		return false, nil
+	}
+	if ok != nil && !ok() {
 		return false, nil
 	}
 	// r.Write goes straight to the pty and takes no runner lock. The operator's

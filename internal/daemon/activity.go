@@ -192,6 +192,9 @@ type activityTracker struct {
 	bgWork map[string]bgHold
 	// turns counts turns begun per card. See turnsBegun.
 	turns map[string]int
+	// busyAt is when a turn last began or a prompt last arrived, per card. See
+	// sinceBusy.
+	busyAt map[string]time.Time
 	// looksIdle is each card flagged by the looks-idle watch. See looksidle.go.
 	looksIdle map[string]idleMark
 }
@@ -262,6 +265,7 @@ func newActivityTracker() *activityTracker {
 		background: map[string]int{},
 		bgWork:     map[string]bgHold{},
 		turns:      map[string]int{},
+		busyAt:     map[string]time.Time{},
 		looksIdle:  map[string]idleMark{},
 	}
 }
@@ -440,6 +444,7 @@ func (a *activityTracker) set(taskID, what, tool string) {
 	}
 	if !midTurnState(cur.What) && midTurnState(what) {
 		a.turns[taskID]++
+		a.busyAt[taskID] = a.now()
 	}
 	cur.What, cur.Tool = what, tool
 	// Any hook event is the runner speaking for itself, which settles the guess.
@@ -539,6 +544,28 @@ func (a *activityTracker) turnsBegun(taskID string) int {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return a.turns[taskID]
+}
+
+// promptSeen stamps a prompt arriving. A prompt is the runner taking input, and
+// it can land in a turn already counted, so `set` alone would miss it.
+func (a *activityTracker) promptSeen(taskID string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.busyAt[taskID] = a.now()
+}
+
+// sinceBusy is how long since a turn last began or a prompt last arrived for this
+// card, or a very long time when neither has. What a step that must not type into
+// a prompt the runner is already taking asks, alongside `midTurn`: the hook for a
+// prompt lands a moment after the Enter, and there is a gap before the turn shows.
+func (a *activityTracker) sinceBusy(taskID string) time.Duration {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	at, ok := a.busyAt[taskID]
+	if !ok {
+		return 1 << 62
+	}
+	return a.now().Sub(at)
 }
 
 // addSubagents moves the tally, never below zero.
@@ -768,6 +795,7 @@ func (d *Daemon) onActivity(in ActivityEvent) string {
 		// other half of the needs-input signal: without it a card stays in
 		// needs-input for the rest of the session.
 		d.act.set(taskID, ActivityThinking, "")
+		d.act.promptSeen(taskID)
 		d.turnResumed(taskID)
 		// What started this turn, for the usage record. See usage.go.
 		cause := d.promptCause(taskID)
