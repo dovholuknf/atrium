@@ -5338,3 +5338,118 @@ item. When one is fixed the case fails with "now agree, so drop the skip", and t
   first bytes back ~45000ms` line appears.
 - Type into the same terminal: a `hub <room> echo` line still appears when the hop is over the threshold.
 - `go test ./internal/link -run "Lag|OnlyControl"` passes.
+
+## CS. One merge-check script and a dedicated merge worktree
+
+See `docs/backlog-2.md` item 77, parts a and e. Nothing here is Go: run the scripts.
+
+### CS1. The check in one call
+
+1. From a merge worktree, run `pwsh scripts/merge-check.ps1`.
+
+**Expected:** only failures print, then one summary line such as `merge-check: go 2100 pass, 1 flaky-pass | board ok
+(headless ran, NODE_PATH=...) | skins skipped (board unchanged) | build ok | PASSED`. Exit is 0. A check that did not
+run has no count on the line. A failure prints the failing test's own output and the line ends `FAILED`, exit 1.
+
+### CS2. Playwright is found, or the run fails loudly
+
+1. Run on a machine where no `node_modules` holds Playwright and no `-NodePath` is given.
+2. Run again with `-SkipHeadless`.
+
+**Expected:** the first fails with `playwright not found` and says how to fix it, rather than passing with the
+headless run skipped. The second prints `board ok (no headless)`. With Playwright present but chromium missing, the
+board check fails, since the headless run skipped itself.
+
+### CS3. Known noise is rerun alone
+
+1. Load the machine so `TestRealSessionsKeepTheirText` or an `internal/link` restart-gate test fails inside the run.
+
+**Expected:** each is rerun alone once. Passing alone, it is counted as `flaky-pass` and does not fail the run. Failing
+alone too, it is a real failure. Any other failing test is real at once.
+
+### CS4. Skins run only when the board changed
+
+1. After a merge commit that touches nothing under `internal/api/web/`, run the script. Then run with `-Board`.
+
+**Expected:** the first says `skins skipped (board unchanged)`, the second prints `all N skins agree...`. `-NoBoard`
+skips whatever the diff says, and `-Base <ref>` changes what the diff is taken against (default `HEAD^1`).
+
+### CS5. The merge worktree
+
+1. Run `pwsh scripts/setup-merge-worktree.ps1`, then run it again.
+
+**Expected:** the first creates `D:/worktrees/claude/atrium/merge` on `claude/merge-scratch`, links every CLAUDE.md,
+and installs Playwright and chromium. The second says the worktree is already registered and the install is done, and
+changes nothing. `merge-check.ps1` run from there needs no `-NodePath`.
+
+## CT. The stdio launch warns about an older room
+
+### CT1. A room that applied the options
+
+1. Run `go test ./internal/cli -run TestStdioLaunchWarnsWhenARoomDropsItsOptions`.
+
+**Expected:** it passes. With a room that echoes the options back, the launch result carries the model and effort and
+no WARNING.
+
+### CT2. A room older than launch options
+
+1. Same test, second half: the fake room returns a card with no model, effort, args or env.
+
+**Expected:** the note starts `WARNING: the room is older than launch options, so model, effort, args, env were NOT
+applied`.
+
+## CU. A worker's reported turn counts as seen
+
+### CU1. Checks
+
+1. Launch a worker with `atrium_launch`. Have it `atrium_report` and end its turn. Its card shows no unseen dot, and
+   `atrium_task` shows `unseen` false with `seen_via` `launcher`.
+2. Launch a worker and have it end a turn without reporting. Its card shows the dot and its launcher gets the silent
+   stop notice.
+3. Start a card by hand, have it `atrium_say` to another session and end its turn. The dot shows.
+4. Have a reported worker end its turn with an Open Questions block. The dot is absent and the `? N` chip stays until
+   a person answers.
+
+## CV. No notifications from agent-launched cards
+
+### CV1. Checks
+
+1. Launch a worker from a session so its card carries `origin:agent`. With the board in another window, let the
+   worker finish a turn. No desktop notification, no sound. The card is marked, and the notification log has the line.
+2. Same with the board focused: no toast.
+3. Have the worker hit a permission prompt. It notifies and rings as before.
+4. Untick the box in the gear, repeat step 1. The alert comes back.
+5. Retick it, give the worker card its own tone, repeat step 1. It is heard.
+6. Reload with a cleared `atrium.sound`: the box is ticked.
+
+Automated: `HEADLESS_ONLY=quietDoer` in `scripts/test-board-headless.js`, focused and unfocused.
+
+## CW. Honest token labels, and Sonnet 5.5 priced
+
+### CW1. Checks
+
+1. Open a Claude card's details after a session with a few prompts. The cells read "N prompts", "M calls" (M at least
+   N), "uncached in", "out", "cache write 5m", "cache write 1h", "cache read", "est.". Hover each: the tip says what it
+   counts.
+2. The per-cause lines read "N prompts · M calls", "N refreshes" and "N calls" for a subagent.
+3. Hover a card for a second. The popover shows the same prompts and calls, and the prompts tip names `/clear`.
+4. Run `/clear` in a card and prompt once more. Prompts and cost keep growing from the earlier total, not restart.
+5. On a Sonnet 5.5 card, "est." is above $0 after a turn.
+6. `go test ./internal/daemon -run Usage`, and `HEADLESS_ONLY=contextSize,peekEverywhere node
+   scripts/test-board-headless.js`.
+
+## CX. Real-time token burn and usage charts
+
+### CX1. Checks
+
+1. Open the usage tab on a room with recent Claude turns. The four charts draw, the legend reads "uncached in", "out",
+   "cache read", "cache write 5m", "cache write 1h", and hovering a bar reads out that bucket.
+2. Switch 1h, 6h, 24h and 7d. The axis and bar width change and the tab stays inside its pane.
+3. End a turn on a card while the tab is open. The newest bar and that card's small chart grow within a few seconds.
+4. Click a small chart. The tab narrows to that card, with its own cause table. Clear the chip to come back.
+5. Open a card's details, then usage. A 24h chart shows, and its link opens the tab filtered to the card.
+6. On a hub with two rooms, both drawn, then stop one room. The tab names it and says its usage is not in the charts.
+7. Change the skin. The charts recolour without a reload.
+8. `go test ./internal/store ./internal/api ./internal/daemon -run Usage`, `go test ./internal/link -run UsageEvent`,
+   `HEADLESS_ONLY=usageCharts,contextSize node scripts/test-board-headless.js`, `bash scripts/check-board.sh` and
+   `bash scripts/check-skins.sh`.

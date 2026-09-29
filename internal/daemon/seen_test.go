@@ -1,8 +1,11 @@
 package daemon
 
 import (
+	"bufio"
+	"bytes"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -173,7 +176,7 @@ func TestAPeerTypedPromptIsNotTheOperator(t *testing.T) {
 func TestTypingSeesTheTurn(t *testing.T) {
 	d := testDaemon(t)
 	task := cardFor(t, d, "typist")
-	d.noteTurnForSeen(task.ID, store.TurnQuestions{Known: true})
+	d.noteTurnForSeen(task.ID, store.TurnQuestions{Known: true}, "")
 
 	// A restart loses the in-memory set. loadUnseen puts it back.
 	d.unseen.Delete(task.ID)
@@ -193,4 +196,139 @@ func TestTypingSeesTheTurn(t *testing.T) {
 		time.Sleep(5 * time.Millisecond)
 	}
 	t.Fatal("a keystroke did not see the turn")
+}
+
+// ── a worker whose launcher already got the report (backlog-2 item 43) ─────────
+
+func reportToLauncher(t *testing.T, d *Daemon, worker *store.Task) {
+	t.Helper()
+	if err := d.st.MarkReported(worker.ID); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A worker that reported and then stopped is not waiting on a human, and says
+// its launcher is the reason.
+func TestAReportedWorkersTurnIsSeenByItsLauncher(t *testing.T) {
+	d := testDaemon(t)
+	_, worker := launchedPair(t, d)
+	reportToLauncher(t, d, worker)
+	stopTurn(t, d, "worker")
+
+	s, err := d.st.GetSeen(worker.ID)
+	if err != nil || s == nil || s.TurnEndedAt == nil {
+		t.Fatalf("no turn recorded: %+v %v", s, err)
+	}
+	if s.Unseen() || s.SeenVia != store.SeenLauncher {
+		t.Fatalf("reported turn: unseen %v via %q", s.Unseen(), s.SeenVia)
+	}
+	if _, ok := d.unseen.Load(worker.ID); ok {
+		t.Fatal("the keystroke path thinks a launcher-seen turn is unseen")
+	}
+}
+
+// Stopping without a report is the case the dot exists for, and the launcher is
+// told.
+func TestASilentWorkersTurnIsUnseenAndNoticed(t *testing.T) {
+	d := testDaemon(t)
+	launcher, worker := launchedPair(t, d)
+	stopTurn(t, d, "worker")
+
+	if s, _ := d.st.GetSeen(worker.ID); !s.Unseen() || s.SeenVia != "" {
+		t.Fatalf("a silent stop is not unseen: %+v", s)
+	}
+	if n := len(pendingFrom(t, d, launcher.ID)); n != 1 {
+		t.Fatalf("the launcher has %d notices, want the silent stop", n)
+	}
+}
+
+// A card a human launched keeps the dot whatever it said.
+func TestAHumanLaunchedCardStillWearsTheDot(t *testing.T) {
+	d := testDaemon(t)
+	mine := peerCard(t, d, "mine")
+	prompt(t, d, mine.ID)
+	reportToLauncher(t, d, mine)
+	stopTurn(t, d, "mine")
+	if s, _ := d.st.GetSeen(mine.ID); !s.Unseen() {
+		t.Fatalf("a human card's turn was hidden: %+v", s)
+	}
+}
+
+// The launcher reading a report is not clint answering a question.
+func TestLauncherSeenLeavesQuestionsOpen(t *testing.T) {
+	d := testDaemon(t)
+	_, worker := launchedPair(t, d)
+	reportToLauncher(t, d, worker)
+	raw, _ := json.Marshal(map[string]any{"agent": "worker",
+		"questions": []string{"which base?"}, "questions_block": true, "questions_known": true})
+	rec := httptest.NewRecorder()
+	d.handleStop(rec, httptest.NewRequest(http.MethodPost, "/stop", bytes.NewReader(raw)))
+
+	s, _ := d.st.GetSeen(worker.ID)
+	if s.Unseen() || s.SeenVia != store.SeenLauncher {
+		t.Fatalf("not launcher-seen: %+v", s)
+	}
+	if v := s.View(); v.OpenCount() != 1 || v.AnsweredAt != nil {
+		t.Fatalf("the questions were answered: %+v", v)
+	}
+}
+
+// The seen step publishes a reported worker once, and the card it publishes is
+// already seen, so no reader is shown the dot on the way.
+func TestAReportedWorkersStopPublishesOnce(t *testing.T) {
+	d, _, cancel, _ := startDaemon(t)
+	defer cancel()
+	launcher, worker := launchedPair(t, d)
+	reportToLauncher(t, d, worker)
+
+	resp, err := http.Get("http://" + d.opts.HumanAddr + "/v1/events")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	lines := make(chan string, 64)
+	go func() {
+		sc := bufio.NewScanner(resp.Body)
+		for sc.Scan() {
+			lines <- sc.Text()
+		}
+	}()
+	// The stream is subscribed once a publish of our own comes back down it.
+	deadline := time.Now().Add(3 * time.Second)
+	for ready := false; !ready && time.Now().Before(deadline); {
+		d.publishTask(launcher.ID)
+		select {
+		case l := <-lines:
+			ready = strings.HasPrefix(l, "event: task")
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+	time.Sleep(100 * time.Millisecond)
+	for len(lines) > 0 {
+		<-lines
+	}
+
+	seenStop(t, d, "worker", nil)
+
+	got := 0
+	quiet := time.After(500 * time.Millisecond)
+loop:
+	for {
+		select {
+		case l := <-lines:
+			if strings.HasPrefix(l, "data: ") && strings.Contains(l, worker.ID) {
+				got++
+			}
+		case <-quiet:
+			break loop
+		}
+	}
+	// Two: turnEnded moves the card to needs-input and publishes, and the seen
+	// step publishes once, after the mark, so there is no publish of an unseen turn.
+	if got != 2 {
+		t.Fatalf("the Stop published the worker %d times, want the status move and one seen publish", got)
+	}
+	if v := seenCard(t, d, worker.ID); v == nil || v.Unseen || v.SeenVia != store.SeenLauncher {
+		t.Fatalf("card after the Stop: %+v", v)
+	}
 }
