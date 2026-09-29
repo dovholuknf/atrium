@@ -2227,8 +2227,9 @@ split by one. It is still wrong, and the comment at `idleframe.go:88` names item
 they no longer are.
 
 Fix: skip `contCh` cells in the loop, the way `writeRow` does, and update that comment. A test puts a CJK
-prompt inside a real idle frame and checks the text handed to `classifyScreen` has no U+FFFD and the frame
-still reads idle. Owned by @terminal, built with item 86 by the same worker.
+prompt inside a real idle frame and asserts the text handed to `classifyScreen` directly, not only the verdict,
+since the heuristics mask the bug: each wide character appears once, there is no U+FFFD, and the frame still
+reads idle. Owned by @terminal, built with item 86 by the same worker.
 
 
 ------------
