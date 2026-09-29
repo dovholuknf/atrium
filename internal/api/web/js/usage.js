@@ -29,13 +29,41 @@ function usageTokens(n) {
 // never as turns.
 const USAGE_NOT_TURNS = new Set(["keepalive", "subagent"]);
 
-// What a cause line counts: turns, refreshes, or a subagent's requests.
+// What a cause line counts: prompts and the API calls they took, refreshes, or
+// a subagent's calls. A "prompt" is a row: what lies between two Stop hooks.
 function usageCount(cause, t) {
   const n = (k, one, many) => `${k} ${k === 1 ? one : many}`;
   if (cause === "keepalive") return n(t.rows || 0, "refresh", "refreshes");
-  if (cause === "subagent") return n(t.replies || 0, "request", "requests");
-  return n(t.rows || 0, "turn", "turns");
+  if (cause === "subagent") return n(t.replies || 0, "call", "calls");
+  return `${n(t.rows || 0, "prompt", "prompts")} · ${n(t.replies || 0, "call", "calls")}`;
 }
+
+// The card's own prompts and the API calls they took, over every cause but the
+// keep-alive refreshes and the subagents. Shared with the hover details.
+function usageOwn(by) {
+  let prompts = 0, calls = 0;
+  for (const [c, bt] of Object.entries(by || {})) {
+    if (USAGE_NOT_TURNS.has(c)) continue;
+    prompts += bt.rows || 0;
+    calls += bt.replies || 0;
+  }
+  return { prompts, calls };
+}
+
+const USAGE_TIPS = {
+  prompts: "the card's own prompts: each is one stretch of work between two Stop hooks. keep-alive refreshes and " +
+    "subagents are on their own lines",
+  calls: "API calls (replies) the card's own prompts took. one prompt is usually many calls, one per tool round",
+  input: "input tokens NOT served from the cache, summed over every call. with prompt caching most input is a " +
+    "cache read, so this is small. it is not the card's whole input",
+  output: "tokens the model wrote",
+  write5m: "input tokens written to the 5 minute prompt cache (1.25x the input price)",
+  write1h: "input tokens written to the 1 hour prompt cache (2x the input price)",
+  read: "input tokens read back from the prompt cache (0.1x the input price, less on some models)",
+  cost: "priced on the models atrium has prices for. others count as $0",
+  scope: "covers the whole card: every session it has run, including before a /clear, and keep-alive refreshes " +
+    "and subagents",
+};
 
 function usageMoney(n) {
   return "$" + (Number(n) || 0).toFixed(2);
@@ -79,19 +107,19 @@ async function loadUsage(id) {
   if (!current || current.id !== id) return;
   const t = v.totals || {};
   const by = v.by_cause || {};
-  let turns = 0;
-  for (const [c, bt] of Object.entries(by)) if (!USAGE_NOT_TURNS.has(c)) turns += bt.rows || 0;
+  const own = usageOwn(by);
   const cell = (label, value, tip) =>
     `<span class="usagecell"${tip ? ` data-tip="${esc(tip)}"` : ""}><b>${esc(value)}</b> ${esc(label)}</span>`;
   sum.innerHTML = [
     cell("context now", usageTokens(v.context_now), v.model || ""),
-    cell("turns", String(turns), "the card's own turns. keep-alive refreshes and subagents are on their own lines"),
-    cell("in", usageTokens(t.input)),
-    cell("out", usageTokens(t.output)),
-    cell("write 5m", usageTokens(t.cache_write_5m)),
-    cell("write 1h", usageTokens(t.cache_write_1h)),
-    cell("read", usageTokens(t.cache_read)),
-    cell("est.", usageMoney(t.cost), "priced on the models atrium has prices for; others count as $0"),
+    cell("prompts", String(own.prompts), USAGE_TIPS.prompts),
+    cell("calls", String(own.calls), USAGE_TIPS.calls),
+    cell("uncached in", usageTokens(t.input), USAGE_TIPS.input),
+    cell("out", usageTokens(t.output), USAGE_TIPS.output),
+    cell("cache write 5m", usageTokens(t.cache_write_5m), USAGE_TIPS.write5m),
+    cell("cache write 1h", usageTokens(t.cache_write_1h), USAGE_TIPS.write1h),
+    cell("cache read", usageTokens(t.cache_read), USAGE_TIPS.read),
+    cell("est.", usageMoney(t.cost), USAGE_TIPS.cost),
   ].join("");
   const causes = Object.keys(by).sort((a, b) => (by[b].cost || 0) - (by[a].cost || 0));
   causeBox.innerHTML = causes.map(c => {
@@ -105,11 +133,14 @@ async function loadUsage(id) {
     note.textContent = "nothing recorded yet. a row is written when a turn ends.";
     return;
   }
-  const head = `<div class="urow uhead"><span>ended</span><span>cause</span><span>in</span><span>out</span>` +
-    `<span>write 5m</span><span>write 1h</span><span>read</span><span>context</span><span>est.</span></div>`;
+  const tipped = (label, tip) => `<span data-tip="${esc(tip)}">${esc(label)}</span>`;
+  const head = `<div class="urow uhead"><span>ended</span><span>cause</span>` +
+    tipped("uncached in", USAGE_TIPS.input) + tipped("out", USAGE_TIPS.output) +
+    tipped("cache write 5m", USAGE_TIPS.write5m) + tipped("cache write 1h", USAGE_TIPS.write1h) +
+    tipped("cache read", USAGE_TIPS.read) + `<span>context</span>` + tipped("est.", USAGE_TIPS.cost) + `</div>`;
   list.innerHTML = head + rows.map(r => {
     const cause = (USAGE_CAUSES[r.cause] || r.cause) + (r.after_resume && r.cause !== "resume" ? " · resumed" : "");
-    const tip = `${r.replies} request${r.replies === 1 ? "" : "s"}, ${r.model || "model unknown"}, from ${
+    const tip = `${r.replies} API call${r.replies === 1 ? "" : "s"}, ${r.model || "model unknown"}, from ${
       firstSeen(r.started_at)}`;
     return `<div class="urow${r.after_resume ? " resumed" : ""}" data-tip="${esc(tip)}">` +
       `<span>${esc(firstSeen(r.ended_at))}</span><span>${esc(cause)}</span>` +
