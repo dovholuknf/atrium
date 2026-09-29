@@ -151,6 +151,16 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 		log.Printf("[hub] dropped %d room(s) from when the hub could be its own room", n)
 	}
 
+	// The proxy is built after the two closures below that change what the
+	// `rooms` event carries (a join string spent, a room's cards cleared),
+	// so they reach it through this and skip the nudge until it exists.
+	var proxy *link.Proxy
+	roomsChanged := func() {
+		if proxy != nil {
+			proxy.RoomsChanged()
+		}
+	}
+
 	// SPENDING A SECRET IS WHAT SAYS WHICH ROOM THIS IS, and the store
 	// is the only thing that can answer it. Handed to the transport
 	// rather than reached for, so `internal/link` never learns the hub
@@ -161,6 +171,7 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 			if err != nil {
 				return "", err
 			}
+			roomsChanged()
 			return r.Name, nil
 		})
 	if err != nil {
@@ -251,6 +262,9 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 			})
 		}
 		_, err = store.Announce(r.ID, out)
+		if err == nil {
+			roomsChanged()
+		}
 		return err
 	}
 
@@ -260,7 +274,7 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	if err != nil {
 		return err
 	}
-	proxy := link.NewProxy(h, assets, id, nil)
+	proxy = link.NewProxy(h, assets, id, nil)
 	// THE DURABLE LIST, which is a different question from what is
 	// attached and gets a different endpoint for exactly that reason.
 	proxy.SetInventory(inventory{store: store, hub: h})

@@ -3,8 +3,10 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"net/http"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/dovholuknf/atrium/internal/hubstore"
 	"github.com/dovholuknf/atrium/internal/link"
@@ -105,13 +107,40 @@ func roomLogCmd(prefix string) *cobra.Command {
 }
 
 // hubStoreFlags are the two every one of these needs.
-type hubStoreFlags struct{ dir, db string }
+type hubStoreFlags struct{ dir, db, board string }
+
+// bindBoard adds the one flag `nudge` needs, only on the commands that write.
+func (f *hubStoreFlags) bindBoard(c *cobra.Command, prefix string) {
+	c.Flags().StringVar(&f.board, prefix+"board-addr", "",
+		"where the running hub's board listens, to tell it this changed (default "+defaultBoardAddr()+")")
+}
 
 // bind declares them. `prefix` is `atrium-` under `atrium rooms` and `atrium
 // backups`, where a bare `--dir` would read as the room's.
 func (f *hubStoreFlags) bind(c *cobra.Command, prefix string) {
 	c.Flags().StringVar(&f.dir, prefix+"dir", "", "where this hub keeps its certificates")
 	c.Flags().StringVar(&f.db, prefix+"db", "", "the hub's own store (default: under --"+prefix+"dir)")
+}
+
+// nudge tells a RUNNING hub its store changed under it, so the `rooms` event a
+// board is waiting on goes out now instead of never.
+//
+// These commands write the store from another process, which the hub cannot
+// see, and the event is what replaced the poll that used to notice. So: one
+// POST to the hub's loopback board, no arguments. The hub re-reads its own store
+// and trusts nothing in the request.
+//
+// BEST EFFORT, and silent about it. A hub that is not running has nobody to tell
+// and the change is already durable, which is the case the header above insists
+// must work. A short timeout so a wedged hub cannot hold a command open.
+func (f *hubStoreFlags) nudge() {
+	addr := orDefault(f.board, defaultBoardAddr())
+	client := &http.Client{Timeout: 750 * time.Millisecond}
+	resp, err := client.Post("http://"+addr+"/_hub/nudge", "application/json", nil)
+	if err != nil {
+		return
+	}
+	resp.Body.Close()
 }
 
 func (f *hubStoreFlags) keys() link.Keys { return link.Keys{Dir: orDefault(f.dir, hubDir())} }
@@ -162,6 +191,7 @@ func roomAddCmd(prefix string) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			f.nudge()
 			out := cmd.OutOrStdout()
 			fmt.Fprintln(out)
 			fmt.Fprintf(out, "  added the room %q, reachable over %s.\n", r.Name, r.Transport)
@@ -177,6 +207,7 @@ func roomAddCmd(prefix string) *cobra.Command {
 		},
 	}
 	f.bind(c, prefix)
+	f.bindBoard(c, prefix)
 	c.Flags().StringVar(&port, "link", defaultLinkAddr(), "where rooms dial in")
 	c.Flags().StringVar(&advertise, "link-advertise", "",
 		"the host:port a room dials this hub at (required when --link binds wide)")
@@ -213,11 +244,13 @@ func roomTokenCmd(prefix string) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			f.nudge()
 			fmt.Fprintln(cmd.OutOrStdout(), line)
 			return nil
 		},
 	}
 	f.bind(c, prefix)
+	f.bindBoard(c, prefix)
 	c.Flags().StringVar(&port, "link", defaultLinkAddr(), "where rooms dial in")
 	c.Flags().StringVar(&advertise, "link-advertise", "",
 		"the host:port a room dials this hub at (required when --link binds wide)")
@@ -367,6 +400,7 @@ func roomMarkCmd(prefix string) *cobra.Command {
 			if err := store.Mark(r.ID, !undo); err != nil {
 				return err
 			}
+			f.nudge()
 			if undo {
 				fmt.Fprintf(cmd.OutOrStdout(), "%s is back in ordinary service\n", r.Name)
 			} else {
@@ -378,6 +412,7 @@ func roomMarkCmd(prefix string) *cobra.Command {
 		},
 	}
 	f.bind(c, prefix)
+	f.bindBoard(c, prefix)
 	c.Flags().BoolVar(&undo, "undo", false, "take the mark back off")
 	return c
 }
@@ -456,6 +491,7 @@ func roomRemoveCmd(prefix string) *cobra.Command {
 				if err := store.Force(r.ID, why); err != nil {
 					return err
 				}
+				f.nudge()
 				out := cmd.OutOrStdout()
 				fmt.Fprintf(out, "%s is gone from this hub.\n", r.Name)
 				fmt.Fprintln(out, "that machine still has whatever it had. nothing there was "+
@@ -465,11 +501,13 @@ func roomRemoveCmd(prefix string) *cobra.Command {
 			if err := store.Remove(r.ID, why); err != nil {
 				return err
 			}
+			f.nudge()
 			fmt.Fprintf(cmd.OutOrStdout(), "%s is gone from this hub\n", r.Name)
 			return nil
 		},
 	}
 	f.bind(c, prefix)
+	f.bindBoard(c, prefix)
 	c.Flags().BoolVar(&force, "force", false,
 		"remove a room that is never coming back, without its confirmation")
 	return c
