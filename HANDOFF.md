@@ -65,6 +65,11 @@ a full terminal test-plan rerun. Option 3 (a replay-only repair) only if 2 is re
 
 ### screen.go merge order: sa81 FIRST, then sa82
 
+sa82's design is committed at `874d51d` (item 82 "Design" in backlog-2). It follows xterm 5.5.0 UnicodeV6 widths
+through a generated table with no new dependency, and adds a continuation-cell sentinel. Mercurius session
+`s_v2plA2V8cqDd` round 1 was STARTED 04:09 and is not yet triaged: `mercurius_collect_round`, triage the findings
+to sa82 (it revises the design), then record the notes. sa82 is waiting for the go.
+
 Both workers know the order. sa81 keeps its function shapes stable once it reports. sa82 writes its design (a
 "Design" subsection of item 82 in backlog-2) and atrium_says me the sha. Then I:
 1. run a Mercurius round on sa82's design (a new session, `working_dir` this worktree), and triage it to sa82.
