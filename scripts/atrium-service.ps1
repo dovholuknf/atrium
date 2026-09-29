@@ -97,8 +97,44 @@ $autostart = Join-Path $PSScriptRoot 'atrium-autostart.ps1'
 
 function Say { param([string] $m) Write-Host "atrium: $m" }
 
+# schtasks.exe, NOT THE ScheduledTask CMDLETS. The cmdlets go through CIM, which a
+# session that arrived over ssh is denied ("Cannot connect to CIM server. Access
+# denied", seen on sg3). schtasks.exe does not, so every verb here works over ssh.
+#
+# Continue, because Windows PowerShell with Stop turns the first line a native
+# command writes to stderr, which is how schtasks says "no such task", into a
+# terminating error.
+function Invoke-Schtasks {
+    $ErrorActionPreference = 'Continue'
+    $o = & schtasks.exe @args 2>&1
+    $script:schtasksExit = $LASTEXITCODE
+    $o
+}
+
+# The task as an object, or $null. State, Execute, Arguments, UserId, LogonType,
+# LastRunTime, LastResult and NextRunTime are what the verbs below read.
 function Get-AtriumTask {
-    Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+    param([string] $Name = $TaskName)
+    $x = Invoke-Schtasks /Query /TN $Name /XML
+    if ($script:schtasksExit -ne 0) { return $null }
+    try { $doc = [xml](($x | ForEach-Object { "$_" }) -join "`n") } catch { return $null }
+    $ns = New-Object Xml.XmlNamespaceManager $doc.NameTable
+    $ns.AddNamespace('t', 'http://schemas.microsoft.com/windows/2004/02/mit/task')
+    $node = { param($p) $doc.SelectSingleNode($p, $ns).InnerText }
+    $v = @{}
+    foreach ($l in (Invoke-Schtasks /Query /TN $Name /V /FO LIST)) {
+        if ("$l" -match '^([^:]+):\s*(.*)$') { $v[$Matches[1].Trim()] = $Matches[2].Trim() }
+    }
+    [pscustomobject]@{
+        State       = $v['Status']
+        Execute     = & $node '//t:Exec/t:Command'
+        Arguments   = & $node '//t:Exec/t:Arguments'
+        UserId      = & $node '//t:Principal/t:UserId'
+        LogonType   = & $node '//t:Principal/t:LogonType'
+        LastRunTime = $v['Last Run Time']
+        LastResult  = $v['Last Result']
+        NextRunTime = $v['Next Run Time']
+    }
 }
 
 function Resolve-AtriumExe {
@@ -141,7 +177,7 @@ function Stop-AtriumGracefully {
 
     $task = Get-AtriumTask
     if ($task -and $task.State -eq 'Running') {
-        Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+        $null = Invoke-Schtasks /End /TN $TaskName
     }
 }
 
@@ -175,15 +211,12 @@ function Show-Status {
         return
     }
 
-    $info = Get-ScheduledTaskInfo -TaskName $TaskName
-    $action = $task.Actions | Select-Object -First 1
-
     Say "task      $TaskName"
     Say "state     $($task.State)"
-    Say "runs      $($action.Execute) $($action.Arguments)"
-    Say "as        $($task.Principal.UserId) ($($task.Principal.LogonType))"
-    Say "last run  $($info.LastRunTime)  result 0x$('{0:X}' -f $info.LastTaskResult)"
-    Say "next run  $($info.NextRunTime)"
+    Say "runs      $($task.Execute) $($task.Arguments)"
+    Say "as        $($task.UserId) ($($task.LogonType))"
+    Say "last run  $($task.LastRunTime)  result $($task.LastResult)"
+    Say "next run  $($task.NextRunTime)"
 
     # THE TASK BEING 'Running' IS NOT THE SAME AS ATRIUM BEING UP, which is the
     # reason this section exists at all. The task host reports its own process,
@@ -265,10 +298,9 @@ function Invoke-Selftest {
         foreach ($pass in 1, 2) {
             Step "install (pass $pass)"
             & $PSCommandPath -Action install @common
-            $t = Get-ScheduledTask -TaskName $testTask -ErrorAction SilentlyContinue
-            if (-not $t) { $ok = $false; Write-Host "FAIL: no task after install" }
-            $count = @(Get-ScheduledTask -TaskName $testTask -ErrorAction SilentlyContinue).Count
-            if ($count -ne 1) { $ok = $false; Write-Host "FAIL: $count registrations, expected 1" }
+            # A task name is unique to the scheduler, so one registration is
+            # what there being a task at all means.
+            if (-not (Get-AtriumTask -Name $testTask)) { $ok = $false; Write-Host "FAIL: no task after install" }
         }
 
         Step 'start'
@@ -297,7 +329,7 @@ function Invoke-Selftest {
         foreach ($pass in 1, 2) {
             Step "uninstall (pass $pass)"
             & $PSCommandPath -Action uninstall @common
-            if (Get-ScheduledTask -TaskName $testTask -ErrorAction SilentlyContinue) {
+            if (Get-AtriumTask -Name $testTask) {
                 $ok = $false; Write-Host "FAIL: task still registered after uninstall"
             }
         }
@@ -305,8 +337,9 @@ function Invoke-Selftest {
         # Whatever happened above, leave nothing behind. A selftest that fails
         # halfway and leaves a registered task pointing at a temp directory is
         # worse than no selftest.
-        if (Get-ScheduledTask -TaskName $testTask -ErrorAction SilentlyContinue) {
-            Unregister-ScheduledTask -TaskName $testTask -Confirm:$false
+        if (Get-AtriumTask -Name $testTask) {
+            $null = Invoke-Schtasks /End /TN $testTask
+            $null = Invoke-Schtasks /Delete /TN $testTask /F
         }
         Remove-Item -LiteralPath $testDir -Recurse -Force -ErrorAction SilentlyContinue
     }
@@ -322,14 +355,16 @@ switch ($Action) {
     'remove'    { Invoke-Uninstall }
     'start'     {
         if (-not (Get-AtriumTask)) { throw "no '$TaskName' task. run: .\scripts\atrium-service.ps1 install" }
-        Start-ScheduledTask -TaskName $TaskName
+        $o = Invoke-Schtasks /Run /TN $TaskName
+        if ($script:schtasksExit -ne 0) { throw "could not start '$TaskName': $o" }
         Say "started '$TaskName'."
     }
     'stop'      { Stop-AtriumGracefully -ExePath (Resolve-AtriumExe); Say "stopped '$TaskName'." }
     'restart'   {
         Stop-AtriumGracefully -ExePath (Resolve-AtriumExe)
         Start-Sleep -Seconds 1
-        Start-ScheduledTask -TaskName $TaskName
+        $o = Invoke-Schtasks /Run /TN $TaskName
+        if ($script:schtasksExit -ne 0) { throw "could not start '$TaskName': $o" }
         Say "restarted '$TaskName'."
     }
     'status'    { Show-Status }
