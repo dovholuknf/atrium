@@ -684,7 +684,13 @@
   .peek-head { display: flex; flex-direction: column; gap: 2px; margin-bottom: 12px; min-width: 0; }
   .peek-title {
     font: 600 var(--fs-md)/1.25 var(--sans); color: var(--head);
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    overflow-wrap: anywhere;
+  }
+  .peek-path { font: var(--fs-xs)/1.3 var(--mono); color: var(--dim); overflow-wrap: anywhere; }
+  /* What the chip under the pointer would have said in its own tooltip. */
+  .peek-hint {
+    margin-top: 4px; font-size: var(--fs-sm); line-height: 1.35; color: var(--body);
+    white-space: pre-line; overflow-wrap: anywhere;
   }
   .peek-sub, .peek-scale, .peek-cell span, .peek-num span, .peek-foot {
     font-family: var(--mono); letter-spacing: .08em;

@@ -74,8 +74,10 @@ function showTip(anchor) {
 }
 
 document.addEventListener("pointerover", e => {
-  const a = tipAnchor(e.target);
+  let a = tipAnchor(e.target);
   if (a === tipAt && a) return;
+  // A card's details popover is that card's one hover (js/peek.js).
+  if (a && typeof peekOwnsTip === "function" && peekOwnsTip(a, e)) a = null;
   if (!a) { if (tipAt) hideTip(); return; }
   // Re-read when it fires rather than captured now, so a tooltip whose text
   // was rewritten while you hovered shows what it says at the moment it

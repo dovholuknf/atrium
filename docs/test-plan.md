@@ -4539,6 +4539,22 @@ below. 3 opens it pushed in from the right edge, still under the pointer. It nev
 and never sits over the pointer while there is room for it elsewhere. The menu's `details` opens from where the
 pointer clicked it.
 
+### BZ6. One hover per card
+
+Backlog-2 item 72. Board only, restarts as BZ5. The headless section `peekEverywhere` holds the pointer on a part of
+the entry with its own tooltip on each tab (a stack row's wait number, a board chip, a terminals row's name) and
+checks the tooltip never shows and never shares the screen with the details, that the head carries the whole name,
+the address and what that part said, that it follows the pointer across the card, and that a tooltip already up
+goes when the details open. `tooltip` checks that off the cards tooltips are as before.
+
+1. On the terminals list, rest the pointer on a card's name for two seconds. Then on the stack, on a row's wait
+   number, and on the board, on a chip. With the details open, move across the card to another chip.
+2. Tab to the gear with the keyboard. Rest the pointer on the gear.
+
+**Expected:** 1 shows no tooltip at half a second or ever, only the details at one second, under the pointer. Their
+head has the card's whole name, not cut off, its `repo/worktree:branch` address, and the chip's tooltip text as the
+last line, which changes as the pointer moves to another chip. 2 shows the gear's tooltip as before.
+
 
 ## CA. A launch picks its model and effort, and passes extra args and env
 
