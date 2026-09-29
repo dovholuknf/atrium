@@ -5,6 +5,32 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **The hub's input-lag log no longer reports a fake echo on an idle terminal.** It no longer reports a fake ~45000ms "echo" every 45s on an idle terminal. The hub's echo clock
+  now starts only on a Write that carries a websocket data frame, not on the browser's pong (or any ping or close).
+  A control frame read back from the room, such as its idle ping, no longer closes a clock a keystroke started. A
+  Write with a data frame among control frames, or one that ends inside a frame, still counts as input. The room's own
+  lag timing (`internal/daemon/attach.go`) starts only on an `in` message, never a control frame, so it needed no
+  change.
+
+- **screen.go is checked against xterm.js.** See `docs/backlog-2.md` item 54.
+
+  `TestScreenAgainstXterm` feeds the same bytes, at the same size and with the same width marks, to `screen.go` and
+  to the vendored `internal/api/web/vendor/xterm.js` (run in plain node by `internal/daemon/testdata/xterm_dump.js`),
+  then compares every row, which cells carry an attribute, the cursor, and how many rows scrolled off. Trailing blanks
+  are trimmed on both, and attributes are compared as styled or default because `screen.go` has no colour model. The
+  fixtures are a startup banner, the kitty keyboard push and pop, ctrl-delete, ConPTY's full-width coloured diff
+  lines, the alt screen, bracketed paste, a width change mid stream, a bare `CSI H` repaint over long output (with
+  and without cursor moves), and a set of small single-feature traces. Two real differences were found and are
+  skipped with `backlog-2 NN` markers, and the accepted ones are written next to their fixtures. No `screen.go`
+  behaviour changed. Four size tests go in through the real websocket: the pty takes the attaching viewer's size,
+  a reattach at the same size does not resize, a restarted card follows the pane and not the saved width, and two
+  viewers get the widest width and the shortest height. Test only, nothing to deploy.
+
+- **Viewport changes apply in the order they were computed.** Two viewers resizing at the same moment could leave the pty at a stale size, with the ring's width marks
+  disagreeing with it. `setViewport` and `dropViewport` now hold one resize mutex across working out the agreed
+  size, the change guard, the width mark and the pty resize, so the last computed size is always the last applied.
+  The shell terminal shares the same code and is covered.
+
 - **A deploy's revert snapshot is named after the file it copies.** See `docs/backlog-2.md` item 65.
 
   `Save-Revert` used to name `atrium.revert-<id>.exe` after the build the hub's health reported. When the room had been
