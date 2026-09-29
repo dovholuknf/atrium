@@ -282,6 +282,7 @@ func (d *Daemon) handleAnswer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	d.peerSaid(from, target, body)
+	d.saySettled(from, target)
 
 	// ONLY THE QUESTIONS THIS PEER WAS ASKED. `ask_peer` is per question, so a
 	// peer can only have settled the ones addressed to it. Clearing the card

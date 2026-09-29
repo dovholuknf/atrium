@@ -5,6 +5,132 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **A pinned strip across rooms keeps its order.** See `docs/backlog-2.md` item 52 and
+  `docs/pin-order-rooms-design.md`.
+
+  - `POST /v1/tasks/pin-order` is a hub-side fan-out (`internal/link/pinorder.go`). The hub strips any `room~` tag
+    off each id and posts the same full list to every attached room in parallel, whether or not `X-Atrium-Room` is
+    set. Each room writes `rank = i` for the ids it holds, `i` being the card's place in the whole strip, so the ranks
+    on two rooms interleave in the order the operator dropped.
+  - A room that is not answering never fails or stalls the reply. Each post is bounded at 3 seconds. The answer is
+    `200 {"rooms": [...], "unreached": [{"room", "error"}]}` while at least one room took the list, and `502` only
+    when none did. The board ignores the extra field today.
+  - `SetPinOrder` writes pinned rows only (`WHERE id = ? AND pinned = 1`). It has written `rank` as well as
+    `pin_order` for a while, so a card unpinned in another tab between the drag and the drop had its ordinary rank
+    overwritten and moved in its group. The dragged card is pinned before the order is posted, so it is never
+    dropped.
+  - Not changed: the board, the room API, the schema. `/v1/tasks/prune` has the same shape (one room by header) and
+    is left alone here, to be looked at under its own item.
+  - Stated limit: a card has one rank, so a drag in a scoped view reorders its cards among themselves in the ALL
+    view too. A separate order per view is item 50's question.
+
+- **A room's git, by push and fetch.** See `scripts/room-git.ps1` and `docs/backlog-2.md` item 46.
+
+  - `scripts/room-git.ps1` (new): `init`, `push-base`, `fetch` and `worktree` for a room, all run from the hub's
+    side. The clone on the remote is made by PUSH over the operator's own ssh, so the remote needs no GitHub
+    credential and no route back. `init` adopts a clone that is already there.
+  - `init` puts the clone at `~/git/github/<owner>/<repo>` (Windows `$HOME\git\github\...`), sets
+    `receive.denyCurrentBranch=updateInstead`, adds a git remote named for the room here, pushes `claude/main` to
+    `hub-main` and checks `hub-main` out there. A rerun says `ok`. When git is missing on the remote it names the
+    install and exits 3.
+  - `worktree` makes `claude/<name>` off `hub-main` at `<clone>-worktrees/<name>` on the remote and prints its
+    absolute path, the `cwd` for `atrium_launch room=<room>`. `fetch` brings the room's `claude/*` branches to
+    `refs/remotes/<room>/claude/*` for the Release department to merge. Nothing here merges.
+  - Windows remotes: the remote is `host:C:/path` (an `ssh://` url sends `/C:/...`, which git on Windows does not
+    resolve), and upload-pack and receive-pack go through a small `~\.room-git\git.cmd` that puts git's folder on
+    PATH, since a Cygwin git's children exit 127 without it.
+  - `provision-room.ps1` calls `room-git.ps1 init` last, and `-Repo none` skips it.
+
+- **One command makes a room.** See `docs/backlog-2.md` item 46 and `scripts/provision-room.ps1`.
+
+  - `scripts/provision-room.ps1` builds from the checkout when there is no release and no `-Version`, with a
+    `fetch warn` line. The bare command needs no flags.
+  - New `auth` step: `claude auth status` on the remote. Not signed in is a `warn` carrying
+    `ssh -t <target> claude auth login`. No credential is read or carried.
+  - New `smoke` step, last: a small claude worker launched on the room reports a nonce back. `-NoSmoke`, `-SmokeTo`,
+    `-SmokeCwd`, `-SmokeTimeout`. New exit code 8 when it does not report. It runs in the clone `room-git.ps1 init`
+    made when init succeeded, else in the remote home.
+  - The smoke worker runs on `claude-sonnet-5-5` at low effort, not Haiku. Claude Code's auto mode does not run on
+    Haiku, so a Haiku worker stopped to ask permission for `atrium_say` and nobody answered.
+  - The smoke worker gets `--allowedTools=<list>` as one argument. As two, the variadic flag also swallowed the
+    prompt, and the worker came up at an empty input line. Proven by `-SmokeOnly` against sg3: reported in 9s.
+  - `-SmokeOnly` runs just `auth` and `smoke` against a room this script already provisioned. It stops before
+    anything is written, so it cannot restart a room in use.
+  - `-Repo none` skips the clone again. The checkout path had been held in `$repo`, which PowerShell reads as the
+    same variable as the `-Repo` parameter, so the parameter was always overwritten.
+  - Scheduled task actions go through `schtasks.exe`, so Windows machines that deny CIM over ssh work (binary swap,
+    `-Autostart`, `-Remove`, `atrium-service.ps1`). `atrium-autostart.ps1` registers by XML.
+  - `atrium-service.ps1` no longer runs `atrium stop` against the URL when the named task is not running, which had
+    stopped a live room while a throwaway task was being tested.
+  - The systemd user unit finds runners in `~/.local/bin`: a login-shell ExecStart in the packaged unit, and the
+    login shell's PATH written by `atrium-service.sh`.
+
+- **The headless busyGuard check waits for the refusal line instead of sleeping.** See `docs/backlog-2.md` item 90.
+
+  Closing the launch dialog was followed by a fixed 50ms sleep before checking the refusal line was gone, which
+  failed once under load. It now waits for the line to go, scaled by `HEADLESS_SLOW` like every other wait.
+
+- **Clicking `? N` dismisses the questions.** See `docs/backlog-2.md` item 11.
+
+  The `? N` chip on a board card, a stack row and a terminal strip row takes its own click, so it no longer selects
+  the row or opens the card. The click posts `POST /v1/tasks/{id}/questions/dismiss` naming the `questions_at` the chip
+  was drawn from, and the room answers the set with `answered_via` `dismissed`, leaving the unseen dot alone. Newer
+  questions than the ones shown are refused with `stale`, and the board says so. Nothing is sent to the session. The
+  chip is a button that Enter and Space also work on, and `atrium_task` documents `dismissed`. The `!` and queued
+  chips take their own click too, and do nothing else.
+
+- **A say reaches a `done` card whose terminal is still live.** See `docs/backlog-2.md` item 83.
+
+  A worker that reports `done` keeps running at its prompt so a director can send it review changes, but `atrium_say`
+  answered `undeliverable ... resume it first`. The refusal read the card's column and its recorded pid, and never asked
+  the supervisor, so a pid that was 0 or was not the runner made a live terminal look gone. A `done` or `dead` card is
+  now gone only when its pid is dead AND atrium holds no runner for it whose process is still running and whose session
+  has not ended. A runner that lingers after a SessionEnd hook is still not somebody to talk to, which is decided from
+  the card's newest launch or exit event.
+
+  `atrium tell` and the peer routes answered a flat `409` for any `done` card, and now use the same test, so the doors
+  agree. Delivering does not move the card out of `done`: the column records that the worker reported, and its next
+  report files it again, so a review say is not treated as new work. A `done` card with nothing live still refuses and
+  says to resume it first.
+
+- **A say's lifecycle is on record.** See `docs/backlog-2.md` item 32 and `docs/say-lifecycle-design.md`.
+
+  Every `atrium_say` and `atrium tell` now writes a row (migration `0069_say`) that follows the message: the handle
+  as typed, whether it resolved by handle, alias or card, queued, delivered, and the channel that carried it
+  (terminal, hook or stop). Cross-room says record held, handed and unconfirmed as far as this room can see. The
+  sender reads the say id and `via` in the answer, and either end reads the history with `atrium_task` and `says`,
+  or `GET /v1/tasks/{id}/says`. A name that matches nothing now answers with the candidates it might have meant and
+  queues nothing. `atrium_say` takes `reply: true`, which shows the say as owed on the receiving card
+  (`replies_owed` in the task JSON) until that card says something back, and a compact or a clear stamps the say it
+  may have erased. Rows are swept after 30 days or 2000 rows, and an owed reply lapses after 7 days or when its card
+  ends.
+
+- **The screen's combining-mark table no longer fills with repeats, and the idle badge reads a wide character once.**
+  See `docs/backlog-2.md` items 86 and 88.
+
+  `screen.combine` now interns: a mark sequence already in the table is reused rather than appended again, so a
+  spinner redrawn with a VS16 spends one entry instead of one per redraw, and Devanagari or Thai text no longer
+  fills the 65536 cap and then replays its newest lines without their marks. Past the cap a new sequence is still
+  dropped and an interned one still attaches. The map is made on the first mark, so an all-ASCII screen allocates
+  nothing new.
+
+  `classifyFrame` skipped nothing in the second cell of a wide character, so every CJK character reached
+  `classifyScreen` followed by U+FFFD. It now skips those cells as `writeRow` does, and the stale comment naming
+  items 81 and 82 as open gaps is gone.
+
+- **The notification drawer can turn notifications off.** See `docs/backlog-2.md` item 79.
+
+  A third button in the drawer head, beside clear and close, reads "turn off" or "turn on". Off holds back toasts,
+  desktop notifications and their sound. Held back means recorded: every alert is still listed in the drawer and
+  counted on the bell's badge, and the marks on cards are untouched. Off, the bell is a struck bell and its tip says
+  notifications are off. The choice is kept per browser in `localStorage` (`atrium.notify.off`), so a reload and a
+  popped-out window follow it, and the gear's notifications section shows the same switch. It sits over item 44's
+  filter and over a card's own tone.
+
+  WAITING ON CLINT: permission requests still notify when off, because a session blocks on one until somebody answers.
+  That is one constant, `NOTIFY_OFF_SILENCES_PERMISSIONS` in `js/notify.js`, and flipping it is a one-word change. A
+  timed mute is not built.
+
 - **The headless board run can be given more time on a loaded machine.** See `docs/backlog-2.md` item 85.
 
   Every Playwright timeout in `scripts/test-board-headless.js` goes through `slow()`, which multiplies it by

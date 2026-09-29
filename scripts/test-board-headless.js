@@ -70,6 +70,27 @@ const SEEN = Object.assign({}, T1, {
   seen: { unseen: true, turn_ended_at: "2026-09-23T12:00:00.000Z", answered: false,
     open_questions: ["land sa21 first?", "build the tray?"] }
 });
+// Cards for the `? N` click: two open questions and a held peer message. A
+// dismissed card answers `answered: true` with no questions, the way the room's
+// view does once the set is answered. See `questionsClickSection`.
+const QC_AT = "2026-09-29T09:00:00.000Z";
+const QC_BASE = Object.assign({}, T1, {
+  id: "qc1", display_title: "asking card", supervised: true, pinned: true,
+  seen: { unseen: false, turn_ended_at: QC_AT, questions_at: QC_AT, answered: false,
+    open_questions: ["land sa21 first?", "build the tray?"] },
+  activity: { held_peer: true, held_count: 2, held_seconds: 30, held_for: "line", held_turn: "asked" },
+});
+let qDismissMode = "ok";       // ok | stale | fail
+let qHeldQuiet = false;
+const qDismissed = new Set();
+let qDismissWrites = [];
+function qclickCards() {
+  return [Object.assign({}, QC_BASE, { activity: Object.assign({}, QC_BASE.activity, { held_quiet: qHeldQuiet }) },
+    qDismissed.has("qc1")
+    ? { seen: { unseen: false, turn_ended_at: QC_AT, questions_at: QC_AT, answered: true,
+        answered_via: "dismissed" } }
+    : {})];
+}
 // The card a popped-out (solo) window is opened onto. Supervised, so it reads
 // like a real live session rather than a dead one.
 const SOLO = Object.assign({}, T1, {
@@ -420,6 +441,28 @@ const server = http.createServer((req, res) => {
     });
     return;
   }
+  // A `? N` chip's dismiss. Recorded, answered as the daemon does: the card's
+  // open questions go away unless the mock is told the set was stale.
+  if (url.startsWith("/v1/tasks/") && url.endsWith("/questions/dismiss") && req.method === "POST") {
+    let raw = "";
+    req.on("data", c => { raw += c; });
+    req.on("end", () => {
+      let body = {};
+      try { body = JSON.parse(raw || "{}"); } catch (e) {}
+      const id = url.split("/")[3];
+      qDismissWrites.push({ url, body });
+      if (qDismissMode === "fail") {
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "the store said no" }));
+        return;
+      }
+      if (qDismissMode === "nothing") { sendJSON(res, { dismissed: false, stale: false }); return; }
+      if (qDismissMode === "stale") { sendJSON(res, { dismissed: false, stale: true }); return; }
+      qDismissed.add(id);
+      sendJSON(res, { dismissed: true, stale: false });
+    });
+    return;
+  }
   if (url.startsWith("/v1/tasks/")) {
     const id = url.slice("/v1/tasks/".length);
     // The unpin behind dismiss: togglePin PATCHes the card, and the mutated pin
@@ -474,6 +517,7 @@ const server = http.createServer((req, res) => {
     if (tasksMode === "pinned") { sendJSON(res, { tasks: PIN.pinned ? [PIN] : [] }); return; }
     if (tasksMode === "filed") { sendJSON(res, { tasks: [FILED, LOOSE] }); return; }
     if (tasksMode === "seen") { sendJSON(res, { tasks: [T1, SEEN] }); return; }
+    if (tasksMode === "qclick") { sendJSON(res, { tasks: qclickCards() }); return; }
     if (tasksMode === "land") { sendJSON(res, { tasks: [T1].concat(landList) }); return; }
     // Untagged cards in custom mode, for the sort and the new-card sections.
     if (tasksMode === "untagged") {
@@ -4504,10 +4548,8 @@ async function busyGuardSection(browser, base) {
       fail("a refused launch did not stay open with the reason and a live button: " + JSON.stringify(refused));
     }
     await p.evaluate(() => document.getElementById("launch").close());
-    await p.waitForTimeout(50);
-    if (await p.evaluate(() => !!document.querySelector("#launch .busy-why"))) {
-      fail("the refusal line outlived its dialog, so the next open wears the last failure.");
-    }
+    await p.waitForFunction(() => !document.querySelector("#launch .busy-why"), null, { timeout: slow(2000) })
+      .catch(() => fail("the refusal line outlived its dialog, so the next open wears the last failure."));
     launchFails = false;
 
     // 3. The card menu's resume, twice on one card.
@@ -5858,6 +5900,119 @@ async function quietDoerSection(browser, base) {
   tasksMode = was;
 }
 
+// ── the notification drawer's off switch ──────────────────────────────────
+// Backlog-2 item 79. Off holds back the toast, the desktop notification and the
+// sound, and RECORDS the alert instead: the drawer lists it and the bell's badge
+// counts it. A permission request still notifies. The choice lives in
+// localStorage, so a reload keeps it, and the bell and the aria-labels follow.
+async function notifyOffSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  const poke = () => openStreams.forEach(r => { try { r.write("event: task\ndata: {}\n\n"); } catch (e) {} });
+  const errors = [];
+  landList = [];
+  landPerms = [];
+  for (const focused of [false, true]) {
+    const ctx = await landContext(browser, !focused);
+    const where = focused ? "focused" : "unfocused";
+    try {
+      const p = await ctx.newPage();
+      p.on("pageerror", e => errors.push(String(e)));
+      await p.goto(base, { waitUntil: "domcontentloaded" });
+      await p.waitForFunction(() => typeof alerting !== "undefined" && typeof notifyIsOff === "function", null,
+        { timeout: slow(15000) });
+      await p.waitForTimeout(1500);
+      const said = title => p.evaluate(t => (window.__notes || []).some(n => n.title === t) ||
+        [...document.querySelectorAll("#toasts .toast")].some(e => e.textContent.includes(t)), title);
+      const count = title => p.evaluate(t => toastLog().filter(e => e.title === t).reduce((a, e) => a + (e.n || 1), 0), title);
+      const arrive = async (c, title) => {
+        await p.evaluate(() => document.querySelectorAll("#toasts .toast").forEach(t => t.remove()));
+        landList = landList.concat(c);
+        poke();
+        await p.waitForFunction(t => toastLog().some(e => e.title === t), title, { timeout: slow(10000) })
+          .catch(() => fail(where + ": " + title + " never reached the drawer log."));
+      };
+
+      // Turn it off through the drawer's own button.
+      await p.evaluate(() => { localStorage.removeItem("atrium.notify.off"); localStorage.removeItem("atrium.toastlog");
+        paintNotifyOff(); });
+      await p.evaluate(() => openToastLog());
+      const label = () => p.evaluate(() => ({
+        toggle: document.getElementById("toastlog-toggle").textContent,
+        toggleAria: document.getElementById("toastlog-toggle").getAttribute("aria-label"),
+        toggleTip: document.getElementById("toastlog-toggle").dataset.tip,
+        bell: document.querySelector("#toastlog-open .glyph").textContent,
+        bellAria: document.getElementById("toastlog-open").getAttribute("aria-label"),
+        bellTip: document.getElementById("toastlog-open").dataset.tip
+      }));
+      let l = await label();
+      if (l.toggle !== "turn off" || l.bell !== "\u{1F514}") fail(where + ": the on state paints wrong: " + JSON.stringify(l));
+      await p.click("#toastlog-toggle");
+      l = await label();
+      if (l.toggle !== "turn on") fail(where + ": the toggle did not read turn on: " + JSON.stringify(l));
+      if (l.bell !== "\u{1F515}") fail(where + ": the bell is not struck when off: " + JSON.stringify(l));
+      if (l.bellAria !== "notifications are off. click to see what arrived" || l.bellTip !== l.bellAria) {
+        fail(where + ": the bell's label is wrong: " + JSON.stringify(l));
+      }
+      if (l.toggleAria !== l.toggleTip || !l.toggleAria) fail(where + ": the toggle's aria-label does not follow its tip.");
+      await p.evaluate(() => document.getElementById("toastlog").close());
+
+      // Held back and recorded, once.
+      await arrive(landCard("no-a", { supervised: false }), "no a is on the board");
+      if (await said("no a is on the board")) fail(where + ": off still said an alert.");
+      if (await count("no a is on the board") !== 1) fail(where + ": the held alert was not recorded exactly once.");
+      const badge = await p.evaluate(() => document.querySelector("#toastlog-open .count").textContent);
+      if (!(Number(badge) >= 1)) fail(where + ": the badge did not count a held alert: '" + badge + "'.");
+
+      // A permission request still notifies.
+      landPerms = [{ id: "no-perm", task_id: "no-a", agent: "no a", tool: "Bash", command: "ls",
+        requested_at: new Date().toISOString().replace("Z", "") }];
+      poke();
+      await p.evaluate(() => runRefresh());
+      await p.waitForFunction(() => toastLog().some(e => e.title === "no a needs permission"), null,
+        { timeout: slow(10000) }).catch(() => fail(where + ": a permission request left no trace while off."));
+      if (!await said("no a needs permission")) fail(where + ": off silenced a permission request.");
+      landPerms = [];
+
+      // A failed fixture is held too: no toast, one drawer entry.
+      await p.evaluate(() => document.querySelectorAll("#toasts .toast").forEach(t => t.remove()));
+      openStreams.forEach(r => { try { r.write("event: fixtures-started\ndata: " +
+        JSON.stringify({ started: 0, failed: [{ label: "no-fx" }] }) + "\n\n"); } catch (e) {} });
+      await p.waitForFunction(() => toastLog().some(e => e.title === "1 fixture did not start"), null,
+        { timeout: slow(10000) }).catch(() => fail(where + ": a failed fixture left no drawer entry while off."));
+      if (await said("1 fixture did not start")) fail(where + ": off still said a failed fixture.");
+      if (await count("1 fixture did not start") !== 1) fail(where + ": the failed fixture was not recorded exactly once.");
+
+      // It survives a reload, and the bell is drawn struck at once.
+      await p.reload({ waitUntil: "domcontentloaded" });
+      await p.waitForFunction(() => typeof notifyIsOff === "function", null, { timeout: slow(15000) });
+      await p.waitForFunction(() => document.querySelector("#toastlog-open .glyph").textContent === "\u{1F515}", null,
+        { timeout: slow(5000) }).catch(() => fail(where + ": the struck bell did not survive a reload."));
+      if (!await p.evaluate(() => notifyIsOff())) fail(where + ": the choice did not survive a reload.");
+      // The gear shows the same switch.
+      if (!await p.evaluate(() => { paintSettings(); return document.getElementById("s-notifyoff").checked; })) {
+        fail(where + ": the gear's switch does not show off.");
+      }
+
+      // Back on: alerts say themselves again and the bell is whole.
+      await p.evaluate(() => openToastLog());
+      await p.click("#toastlog-toggle");
+      await p.evaluate(() => document.getElementById("toastlog").close());
+      l = await label();
+      if (l.toggle !== "turn off" || l.bell !== "\u{1F514}") fail(where + ": turning back on did not repaint: " + JSON.stringify(l));
+      await p.waitForTimeout(1500);
+      await arrive(landCard("no-b", { supervised: false }), "no b is on the board");
+      if (!await said("no b is on the board")) fail(where + ": turning back on did not restore the alert.");
+      landList = [];
+    } finally {
+      await ctx.close();
+    }
+  }
+  if (errors.length) fail("the notify-off pages threw: " + errors.join(" | "));
+  landList = []; landPerms = [];
+  tasksMode = was;
+}
+
 // THE USAGE TAB, from a mocked /v1/usage on a hub with two rooms.
 //
 // Both rooms hold a card with the SAME id, and a live `usage` event for one must
@@ -5942,6 +6097,160 @@ async function usageChartsSection(browser, base) {
   if (errors.length) fail("usageCharts: the page threw: " + errors.join(" | "));
 }
 
+// ── clicking `? N` dismisses the questions ────────────────────────────────
+// Backlog-2 item 11. The chip takes its own click on a board card, a stack row
+// and a terminal strip row: one POST naming the set it was drawn from, no row
+// selected, no card opened, and the chip gone after the next poll. A stale
+// answer toasts and leaves the chip, a failed call toasts and leaves it, and the
+// keyboard does what the mouse does. `!` and the queued mark take their own
+// click and do nothing else.
+async function questionsClickSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "qclick";
+  const errors = [];
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const p = await ctx.newPage();
+  p.on("pageerror", e => errors.push(String(e)));
+  const reset = async () => {
+    qDismissed.clear(); qDismissWrites = []; qDismissMode = "ok";
+    await p.evaluate(() => { termTask = null; localStorage.removeItem(TOASTLOG_KEY); return runRefresh(); });
+    await p.waitForSelector('#stack-list .stackrow[data-id="qc1"] .chip.questions',
+      { state: "attached", timeout: slow(15000) });
+    await p.evaluate(() => renderTermList());
+    await p.waitForSelector('#term-list .card.tab[data-id="qc1"] .chip.questions',
+      { state: "attached", timeout: slow(15000) });
+  };
+  const said = () => p.evaluate(() => toastLog().map(e => e.title + " " + e.body).join("|"));
+  // Which of the two lists is in front. Both are drawn, one is hidden.
+  const show = v => p.evaluate(x => switchView(x), v);
+  try {
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof dismissQuestions === "function" && typeof runRefresh === "function", null,
+      { timeout: slow(15000) });
+    // Spies: the row's own handlers, so a click that fell through is counted.
+    await p.evaluate(() => {
+      window.__menus = 0; window.__opens = 0;
+      const menu = window.cardMenu, open = window.openTask;
+      window.cardMenu = function () { window.__menus++; return menu && menu.apply(this, arguments); };
+      window.openTask = function () { window.__opens++; return open && open.apply(this, arguments); };
+    });
+    await p.waitForSelector('#stack-list .stackrow[data-id="qc1"]', { timeout: slow(15000) });
+
+    // The chip's markup: a button, focusable, with the new tooltip ending.
+    await reset();
+    const shape = await p.evaluate(() => {
+      const c = document.querySelector('#stack-list .stackrow[data-id="qc1"] .chip.questions');
+      return { role: c.getAttribute("role"), tab: c.getAttribute("tabindex"), tip: c.getAttribute("data-tip"),
+        at: c.dataset.qat };
+    });
+    if (shape.role !== "button" || shape.tab !== "0") fail("the ? chip is not a focusable button: " + JSON.stringify(shape));
+    if (!/click to dismiss them without replying$/.test(shape.tip)) fail("the ? chip's tooltip ends " + JSON.stringify(shape.tip));
+
+    const surfaces = {
+      "stack row": '#stack-list .stackrow[data-id="qc1"] .chip.questions',
+      "terminal row": '#term-list .card.tab[data-id="qc1"] .chip.questions',
+      "board card": '#qc-host .card[data-id="qc1"] .chip.questions',
+    };
+    for (const [name, sel] of Object.entries(surfaces)) {
+      await reset();
+      // A board card is drawn by the board's own renderer into a host of its own.
+      await p.evaluate(() => {
+        let h = document.getElementById("qc-host");
+        if (!h) { h = document.createElement("div"); h.id = "qc-host"; document.body.appendChild(h); }
+        h.innerHTML = cardHTML(lastTasks.find(t => t.id === "qc1"));
+        window.__menus = 0; window.__opens = 0;
+      });
+      await show(name === "terminal row" ? "terms" : "stack");
+      await p.click(sel);
+      // The list in front is the one repainted by the poll.
+      await p.waitForSelector(name === "terminal row" ? '#term-list .card.tab[data-id="qc1"] .chip.questions'
+        : '#stack-list .stackrow[data-id="qc1"] .chip.questions',
+      { state: "detached", timeout: slow(15000) }).catch(() => fail(name + ": the chip stayed after a dismiss and a poll."));
+      if (qDismissWrites.length !== 1) fail(name + ": " + qDismissWrites.length + " dismiss posts, not one.");
+      const w = qDismissWrites[0];
+      if (w.url !== "/v1/tasks/qc1/questions/dismiss" || w.body.questions_at !== QC_AT) {
+        fail(name + ": the dismiss named " + JSON.stringify(w));
+      }
+      const after = await p.evaluate(() => ({ term: termTask ? termTask.id : null, menus: window.__menus,
+        opens: window.__opens, dialog: !!(typeof detail !== "undefined" && detail.open) }));
+      if (after.term !== null) fail(name + ": the click selected a terminal: " + after.term);
+      if (after.menus || after.opens || after.dialog) fail(name + ": the click reached the card: " + JSON.stringify(after));
+      const toasted = await said();
+      if (!/questions dismissed/.test(toasted) || !/nothing was sent to the session/.test(toasted)) {
+        fail(name + ": no dismissal toast: " + toasted);
+      }
+      // The next poll drew the row without its chip on the strip too.
+      await p.evaluate(() => renderTermList());
+      const strip = await p.evaluate(() => document.querySelectorAll('#term-list .card.tab[data-id="qc1"] .chip.questions').length);
+      if (strip) fail(name + ": the terminal strip still draws the chip after the dismiss.");
+    }
+
+    // The keyboard: Enter and Space both dismiss, and neither selects the row.
+    for (const key of ["Enter", " "]) {
+      await reset();
+      await show("stack");
+      await p.focus('#stack-list .stackrow[data-id="qc1"] .chip.questions');
+      await p.keyboard.press(key === " " ? "Space" : key);
+      await p.waitForSelector('#stack-list .stackrow[data-id="qc1"] .chip.questions',
+        { state: "detached", timeout: slow(15000) }).catch(() => fail("key " + JSON.stringify(key) + " did not dismiss."));
+      if (qDismissWrites.length !== 1) fail("key " + JSON.stringify(key) + " sent " + qDismissWrites.length + " posts.");
+      if (await p.evaluate(() => termTask)) fail("key " + JSON.stringify(key) + " selected a terminal.");
+    }
+
+    // A stale answer says so and leaves the chip.
+    await reset();
+    qDismissMode = "stale";
+    await show("stack");
+    await p.click('#stack-list .stackrow[data-id="qc1"] .chip.questions');
+    await p.waitForFunction(() => toastLog()
+      .some(e => /newer questions arrived, nothing was dismissed/.test(e.title)), null, { timeout: slow(5000) })
+      .catch(() => fail("a stale answer drew no toast."));
+    await p.waitForTimeout(600);
+    if (!await p.$('#stack-list .stackrow[data-id="qc1"] .chip.questions')) fail("a stale answer removed the chip.");
+
+    // Already answered elsewhere: not "dismissed", and nothing was open.
+    await reset();
+    qDismissMode = "nothing";
+    await show("stack");
+    await p.click('#stack-list .stackrow[data-id="qc1"] .chip.questions');
+    await p.waitForFunction(() => toastLog().some(e => /nothing was open to dismiss/.test(e.title)), null,
+      { timeout: slow(5000) }).catch(() => fail("an already-answered card drew no `nothing was open` toast."));
+    if (/questions dismissed/.test(await said())) fail("an already-answered card toasted `questions dismissed`.");
+
+    // A failed call toasts the error and leaves the chip.
+    await reset();
+    qDismissMode = "fail";
+    await show("stack");
+    await p.click('#stack-list .stackrow[data-id="qc1"] .chip.questions');
+    await p.waitForFunction(() => toastLog()
+      .some(e => /the store said no/.test(e.body)), null, { timeout: slow(5000) })
+      .catch(() => fail("a failed dismiss did not toast its error."));
+    await p.waitForTimeout(600);
+    if (!await p.$('#stack-list .stackrow[data-id="qc1"] .chip.questions')) fail("a failed dismiss removed the chip.");
+
+    // `!` and the queued mark take their own click and change nothing else.
+    for (const quiet of [false, true]) {
+      await reset();
+      qHeldQuiet = quiet;
+      await p.evaluate(() => runRefresh());
+      await p.evaluate(() => renderTermList());
+      const sel = '#term-list .card.tab[data-id="qc1"] .chip.' + (quiet ? "queued" : "held");
+      await show("terms");
+      await p.waitForSelector(sel, { timeout: slow(5000) });
+      await p.click(sel);
+      await p.waitForTimeout(300);
+      const term = await p.evaluate(() => termTask ? termTask.id : null);
+      if (term !== null) fail("clicking the " + (quiet ? "queued" : "held") + " chip selected " + term);
+      if (qDismissWrites.length) fail("clicking the held chip posted a dismiss.");
+    }
+  } finally {
+    await ctx.close();
+    qDismissMode = "ok"; qHeldQuiet = false; qDismissed.clear();
+    tasksMode = was;
+  }
+  if (errors.length) fail("questionsClick: the page threw: " + errors.join(" | "));
+}
+
 async function main() {
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = "http://127.0.0.1:" + server.address().port;
@@ -5959,7 +6268,8 @@ async function main() {
       stuck: stuckSection, carryLink: carryLinkSection,
       skinScope: skinScopeSection, skinHeal: skinHealSection, toastLives: toastLivesSection,
       history: historySection, contextSize: contextSizeSection, peekEverywhere: peekEverywhereSection, cardRoute: cardRouteSection,
-      quietDoer: quietDoerSection, usageCharts: usageChartsSection, looksIdle: looksIdleSection };
+      quietDoer: quietDoerSection, usageCharts: usageChartsSection, looksIdle: looksIdleSection, notifyOff: notifyOffSection,
+      questionsClick: questionsClickSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -7882,6 +8192,8 @@ async function main() {
     // ── a click on an alert lands where the alert is about ─────────────────
     await landSection(browser, base);
     await quietDoerSection(browser, base);
+    await notifyOffSection(browser, base);
+    await questionsClickSection(browser, base);
     await reselectSection(browser, base);
     // ── over a terminal the toasts hang from the top right ─────────────────
     await toastsTopSection(browser, base);

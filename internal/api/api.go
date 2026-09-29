@@ -124,6 +124,8 @@ type Server struct {
 	// internal/daemon/relay.go.
 	Say       http.HandlerFunc
 	RoomPeers http.HandlerFunc
+	// TaskSays lists the says a card sent or received, `GET /v1/tasks/{id}/says`.
+	TaskSays http.HandlerFunc
 	// RoomCard and RoomExit read and exit a card on another room by address,
 	// `name@room` or `room~id`, through the same relay.
 	RoomCard http.HandlerFunc
@@ -406,6 +408,7 @@ func (s *Server) Handler() http.Handler {
 	// scanning it, and it is the only place the rest of them exist.
 	mux.HandleFunc("GET /v1/tasks/{id}/asks", s.listAsks)
 	mux.HandleFunc("POST /v1/tasks/{id}/seen", s.markSeen)
+	mux.HandleFunc("POST /v1/tasks/{id}/questions/dismiss", s.dismissQuestions)
 	if s.DismissAsks != nil {
 		mux.HandleFunc("DELETE /v1/tasks/{id}/asks", s.DismissAsks)
 	}
@@ -543,6 +546,9 @@ func (s *Server) Handler() http.Handler {
 	}
 	if s.Say != nil {
 		mux.HandleFunc("POST /v1/say", s.Say)
+	}
+	if s.TaskSays != nil {
+		mux.HandleFunc("GET /v1/tasks/{id}/says", s.TaskSays)
 	}
 	if s.RoomPeers != nil {
 		mux.HandleFunc("GET /v1/peers/rooms", s.RoomPeers)
@@ -704,6 +710,9 @@ type view struct {
 	// `UndeliveredCounts` already does for messages. Absent when it is one or
 	// zero, because the row says that much by drawing the ask or not.
 	AsksOpen int `json:"asks_open,omitempty"`
+	// RepliesOwed is how many says to this card asked for a reply that has not
+	// come. Absent at zero. Task JSON only, no chip. See docs/say-lifecycle-design.md.
+	RepliesOwed int `json:"replies_owed,omitempty"`
 	// Seen is whether the operator has seen this card's latest turn, and the
 	// Open Questions that turn left that nobody has answered. Absent on a card
 	// no turn has ever ended on. Durable, unlike Activity. See
@@ -812,6 +821,13 @@ func toViews(ts []*store.Task) []view {
 // "and two more" is worth serving; a board that answers 500 because a count
 // query failed is not.
 func (s *Server) withAskCounts(vs []view) []view {
+	if owed, err := s.st.RepliesOwed(); err == nil {
+		for i := range vs {
+			if vs[i].Task != nil {
+				vs[i].RepliesOwed = owed[vs[i].Task.ID]
+			}
+		}
+	}
 	counts, err := s.st.OpenAskCounts()
 	if err != nil {
 		return s.withSeen(vs)
@@ -877,6 +893,38 @@ func (s *Server) markSeen(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"seen": cur.View(), "changed": changed, "stale": !changed && cur.Unseen(),
 	})
+}
+
+// dismissQuestions is the operator clicking `? N`: the set they were shown is
+// answered without a reply. `questions_at` names that set, so a stale render
+// cannot dismiss newer questions, and `stale` says that is what happened.
+func (s *Server) dismissQuestions(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	var body struct {
+		QuestionsAt *time.Time `json:"questions_at"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<12)).Decode(&body); err != nil || body.QuestionsAt == nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "questions_at is required and must be a time"})
+		return
+	}
+	t, err := s.st.Get(id)
+	if errors.Is(err, sql.ErrNoRows) {
+		writeErr(w, http.StatusNotFound, NotOnRoom(id, s.Room))
+		return
+	}
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	dismissed, stale, err := s.st.DismissQuestions(t.ID, *body.QuestionsAt)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	if dismissed {
+		s.Broadcast("task", toView(t))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"dismissed": dismissed, "stale": stale})
 }
 
 func (s *Server) listTasks(w http.ResponseWriter, r *http.Request) {
