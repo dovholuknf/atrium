@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -28,8 +29,12 @@ func TestUsageRoomEndpointShapeAndBounds(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if len(got.Buckets) != 1 || got.Buckets[0].Cards[task.ID].Output != 50 || got.Buckets[0].Total.Cost != 0.25 {
+	if len(got.Buckets) != 1 || got.Buckets[0].Cards[task.ID].Output != 50 {
 		t.Fatalf("buckets %+v", got.Buckets)
+	}
+	// A stored cost (older rows have one) is never sent.
+	if body := strings.ToLower(w.Body.String()); strings.Contains(body, "cost") || strings.Contains(body, "$") {
+		t.Fatalf("money in the usage response: %s", w.Body.String())
 	}
 
 	since := time.Now().UTC().Add(-365 * 24 * time.Hour).Format(time.RFC3339)

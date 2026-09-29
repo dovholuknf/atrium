@@ -4368,6 +4368,135 @@ async function carryLinkSection(browser, base) {
   tasksMode = was;
 }
 
+// ── the file-link tip survives a repaint of its row (backlog-2 t-001) ─────
+// xterm drops the link under the pointer when its row is redrawn, which fires
+// `leave` and then `hover` again. The tip used to hide on `leave` and come back
+// after the hover delay. It now stays up across a repaint, and still goes when
+// the pointer really leaves, on a click, or for a different path.
+async function linkTipSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  landList = [LAND["land-live"]];
+  landPerms = [];
+  const errors = [];
+  const ctx = await landContext(browser);
+  await ctx.addInitScript(() => {
+    const Real = window.WebSocket;
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
+        onopen: null, onclose: null, onmessage: null, onerror: null,
+        send() {}, close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  });
+  // Every word asked about is a file, so both paths become links.
+  await ctx.route("**/files/probe", route => {
+    const paths = JSON.parse(route.request().postData() || "{}").paths || [];
+    const found = paths.filter(p => /\//.test(p)).map(p => ({ path: p, rel: p, size: 1234, dir: false }));
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ found }) });
+  });
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await p.evaluate(() => attachTask("land-live"));
+    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live", null,
+      { timeout: slow(10000) });
+    await p.waitForTimeout(300);
+    const row = "see src/alpha.go here";
+    await p.evaluate(row => termSock.onmessage({ data: row + "\r\nsrc/beta.go\r\n" }), row);
+    await p.waitForTimeout(200);
+    // The tip's state, and every time it went on or off.
+    await p.evaluate(() => {
+      window.__tipLog = [];
+      const t = document.getElementById("tip");
+      new MutationObserver(() => window.__tipLog.push(t.classList.contains("on"))).observe(t,
+        { attributes: true, attributeFilter: ["class"] });
+    });
+    const tip = () => p.evaluate(() => {
+      const t = document.getElementById("tip");
+      return { on: t.classList.contains("on"), text: t.textContent };
+    });
+    const box = await p.locator("#t-screen .xterm-screen").boundingBox();
+    const cell = await p.evaluate(() => {
+      const d = term._core._renderService.dimensions.css.cell;
+      return { w: d.width, h: d.height };
+    });
+    const at = (col, r) => [box.x + cell.w * (col + 0.5), box.y + cell.h * (r + 0.5)];
+    const onAlpha = at(8, 0), onBeta = at(3, 1), off = at(40, 5);
+
+    // 1. Hovering brings the tip up after the delay.
+    await p.mouse.move(...off);
+    await p.mouse.move(...onAlpha, { steps: 3 });
+    await p.waitForTimeout(800);
+    let t = await tip();
+    if (!t.on || !/src\/alpha\.go/.test(t.text)) {
+      fail("hovering a path in the terminal did not show its tip, so this proves nothing: " + JSON.stringify(t));
+      return;
+    }
+
+    // 2. A repaint of the hovered row, then the pointer nudged so xterm asks for
+    // the link again. The tip must never go off in between.
+    await p.evaluate(row => { window.__tipLog.length = 0; termSock.onmessage({ data: "\x1b[3A\r" + row + "\r\n" }); }, row);
+    await p.mouse.move(onAlpha[0] + 1, onAlpha[1]);
+    await p.waitForTimeout(700);
+    const log = await p.evaluate(() => window.__tipLog.slice());
+    t = await tip();
+    if (log.includes(false)) fail("the tip went off while its row was repainted: " + JSON.stringify(log));
+    if (!t.on || !/src\/alpha\.go/.test(t.text)) fail("the tip was gone after its row repainted: " + JSON.stringify(t));
+
+    // 3. A different path replaces it at once, not after the delay.
+    await p.mouse.move(...onBeta, { steps: 2 });
+    await p.waitForTimeout(100);
+    t = await tip();
+    if (t.on && /alpha/.test(t.text)) fail("the tip for the old path stayed while the pointer was on another: " +
+      JSON.stringify(t));
+    await p.waitForTimeout(700);
+    t = await tip();
+    if (!t.on || !/src\/beta\.go/.test(t.text)) fail("the other path did not get its own tip: " + JSON.stringify(t));
+
+    // 4. The pointer leaving the link for blank terminal goes after the grace.
+    await p.mouse.move(...off, { steps: 2 });
+    await p.waitForTimeout(500);
+    t = await tip();
+    if (t.on) fail("the tip stayed after the pointer left the path: " + JSON.stringify(t));
+
+    // 5. The pointer leaving the terminal altogether hides at once.
+    await p.mouse.move(...onAlpha, { steps: 2 });
+    await p.waitForTimeout(800);
+    if (!(await tip()).on) fail("the tip did not come back for the second hover, so step 5 proves nothing.");
+    await p.mouse.move(box.x - 20, box.y - 20);
+    await p.waitForTimeout(50);
+    t = await tip();
+    if (t.on) fail("the tip stayed after the pointer left the terminal: " + JSON.stringify(t));
+
+    // 6. A click that opens the file takes it down at once.
+    await p.mouse.move(...onAlpha, { steps: 2 });
+    await p.waitForTimeout(800);
+    await p.mouse.click(...onAlpha);
+    await p.waitForTimeout(50);
+    t = await tip();
+    if (t.on) fail("the tip stayed after the path was clicked: " + JSON.stringify(t));
+
+    // 7. A scroll of the page hides it.
+    await p.mouse.move(...off);
+    await p.mouse.move(...onAlpha, { steps: 2 });
+    await p.waitForTimeout(800);
+    await p.evaluate(() => window.dispatchEvent(new Event("scroll")));
+    t = await tip();
+    if (t.on) fail("a scroll left the path's tip up: " + JSON.stringify(t));
+    if (errors.length) fail("the link tip page threw uncaught errors: " + errors.join(" | "));
+  } finally {
+    tasksMode = was;
+    await ctx.close();
+  }
+}
+
 // ── copy on select answers the pointer, not the find bar ──────────────────
 // Test plan BJ. The search addon shows a match by selecting it, so copy on
 // select used to copy every find keystroke, step and re-search. Typing in the
@@ -4673,7 +4802,7 @@ async function keepaliveSection(browser, base) {
   kaWrites = [];
   kaSettings = {
     cache_keepalive_default: true, cache_keepalive_suspended: "two refreshes in a row on two cards missed the cache",
-    cache_keepalive_week_usd: 1.25, cache_keepalive_week_refreshes: 21,
+    cache_keepalive_week_refreshes: 21,
   };
   try {
     await kp.goto(base, { waitUntil: "domcontentloaded" });
@@ -4698,7 +4827,8 @@ async function keepaliveSection(browser, base) {
     if (sw.dialog !== "settings") fail("the keep-alive switch is not in the gear's settings dialog: " + sw.dialog);
     if (sw.heading !== "cache keep-alive") fail("the keep-alive switch sits under " + JSON.stringify(sw.heading));
     if (!sw.checked) fail("the keep-alive switch is not checked when the default is on.");
-    if (!/21 refreshes, \$1\.25/.test(sw.spend)) fail("the week's spend reads " + JSON.stringify(sw.spend));
+    // Refreshes only: money is not shown anywhere any more (item 37b).
+    if (!/21 refreshes/.test(sw.spend) || /\$/.test(sw.spend)) fail("the week's spend reads " + JSON.stringify(sw.spend));
     if (!sw.suspendedShown || !/missed the cache/.test(sw.why)) {
       fail("a suspended room does not say so: " + JSON.stringify(sw));
     }
@@ -4735,10 +4865,12 @@ async function keepaliveSection(browser, base) {
     if (!by["ka-stop"].stopped || !/cold/.test(by["ka-stop"].text)) {
       fail("a card stopped at break-even does not draw the stopped chip: " + JSON.stringify(by["ka-stop"]));
     }
-    if (!/break-even/.test(by["ka-stop"].tip) || !/5 refreshes, \$0\.30 of a \$0\.30 budget/.test(by["ka-stop"].tip)) {
-      fail("the stopped chip's tooltip does not carry the spend: " + JSON.stringify(by["ka-stop"].tip));
+    // No chip's tooltip carries a dollar figure (item 37b).
+    for (const c of chips) if (/\$/.test(c.tip || "")) fail("a keep-alive chip still shows money: " + JSON.stringify(c));
+    if (!/break-even/.test(by["ka-stop"].tip) || !/5 refreshes/.test(by["ka-stop"].tip)) {
+      fail("the stopped chip's tooltip does not carry the refresh count: " + JSON.stringify(by["ka-stop"].tip));
     }
-    if (!/warm/.test(by["ka-warm"].text) || !/kept warm 3x, \$0\.18 of \$0\.30/.test(by["ka-warm"].tip)) {
+    if (!/warm/.test(by["ka-warm"].text) || !/kept warm 3x/.test(by["ka-warm"].tip)) {
       fail("a card being kept warm does not say so: " + JSON.stringify(by["ka-warm"]));
     }
     // Watched with nothing spent: its own chip, not the warm or the cold one,
@@ -4747,13 +4879,13 @@ async function keepaliveSection(browser, base) {
     if (!q.watching || q.stopped || !/watching/.test(q.text) || /warm|cold/.test(q.text)) {
       fail("a watched card with nothing spent does not draw the watching chip: " + JSON.stringify(q));
     }
-    if (!/not due for a refresh yet/.test(q.tip) || !/warm until /.test(q.tip) || !/\$0\.30 budget/.test(q.tip)) {
+    if (!/not due for a refresh yet/.test(q.tip) || !/warm until /.test(q.tip) || !/break-even budget/.test(q.tip)) {
       fail("the watching chip's tooltip lacks the why, the warm-until or the budget: " + JSON.stringify(q.tip));
     }
     if (by["ka-warm"].watching || by["ka-stop"].watching) fail("the warm or the stopped chip reads as watching.");
     const m = by["ka-miss"];
-    if (!m.stopped || !/missed the cache/.test(m.tip) || !/0 refreshes, 1 miss, \$1\.02 of a \$0\.12 budget/.test(m.tip)) {
-      fail("a card stopped on a miss does not show the miss and its cost: " + JSON.stringify(m));
+    if (!m.stopped || !/missed the cache/.test(m.tip) || !/0 refreshes, 1 miss/.test(m.tip)) {
+      fail("a card stopped on a miss does not show the miss: " + JSON.stringify(m));
     }
     if (by["ka-off"].text) fail("a card with its switch off drew a keep-alive chip.");
     if (by["ka-none"].text) fail("a card with no switch drew a keep-alive chip.");
@@ -5399,7 +5531,7 @@ async function contextSizeSection(browser, base) {
     pk = await peekState();
     if (pk) {
       if (pk.id !== "cx-big" || !/212k/.test(pk.text) || !pk.warn) fail("the hover details do not show 212k past the line: " + pk.text);
-      if (!/41\s*prompts/.test(pk.text) || !/287\s*calls/.test(pk.text) || !/\$7\.62/.test(pk.text)
+      if (!/41\s*prompts/.test(pk.text) || !/287\s*calls/.test(pk.text) || /\$/.test(pk.text)
         || !/uncached in/.test(pk.text)) fail("the hover details do not carry the totals under their new labels: " + pk.text);
       if (!/warns at 150k/.test(pk.text)) fail("the hover details do not name the threshold: " + pk.text);
       if (pk.pinned) fail("a hover opened the pinned details.");
@@ -5556,7 +5688,7 @@ async function peekEverywhereSection(browser, base) {
       await settle();
       let pk = await state();
       if (pk) {
-        if (pk.id !== "cx-big" || !/warns at 150k/.test(pk.text) || !/\$7\.62/.test(pk.text)) {
+        if (pk.id !== "cx-big" || !/warns at 150k/.test(pk.text) || !/41\s*prompts/.test(pk.text) || /\$/.test(pk.text)) {
           fail("the " + view + " tab's details are not the card's body: " + pk.text);
         }
         if (Math.abs(pk.x - (px + 4)) > 2 || pk.y < py + 4 || pk.y > py + 20) {
@@ -5964,14 +6096,14 @@ async function notifyOffSection(browser, base) {
       const badge = await p.evaluate(() => document.querySelector("#toastlog-open .count").textContent);
       if (!(Number(badge) >= 1)) fail(where + ": the badge did not count a held alert: '" + badge + "'.");
 
-      // A permission request still notifies.
+      // A permission request is held too (clint, 2026-09-29), and still recorded.
       landPerms = [{ id: "no-perm", task_id: "no-a", agent: "no a", tool: "Bash", command: "ls",
         requested_at: new Date().toISOString().replace("Z", "") }];
       poke();
       await p.evaluate(() => runRefresh());
       await p.waitForFunction(() => toastLog().some(e => e.title === "no a needs permission"), null,
         { timeout: slow(10000) }).catch(() => fail(where + ": a permission request left no trace while off."));
-      if (!await said("no a needs permission")) fail(where + ": off silenced a permission request.");
+      if (await said("no a needs permission")) fail(where + ": off still said a permission request.");
       landPerms = [];
 
       // A failed fixture is held too: no toast, one drawer entry.
@@ -6000,6 +6132,9 @@ async function notifyOffSection(browser, base) {
       await p.evaluate(() => document.getElementById("toastlog").close());
       l = await label();
       if (l.toggle !== "turn off" || l.bell !== "\u{1F514}") fail(where + ": turning back on did not repaint: " + JSON.stringify(l));
+      if (/permission requests still come through/.test(l.toggleTip)) {
+        fail(where + ": the toggle's tip still promises permission requests come through.");
+      }
       await p.waitForTimeout(1500);
       await arrive(landCard("no-b", { supervised: false }), "no b is on the board");
       if (!await said("no b is on the board")) fail(where + ": turning back on did not restore the alert.");
@@ -6011,90 +6146,6 @@ async function notifyOffSection(browser, base) {
   if (errors.length) fail("the notify-off pages threw: " + errors.join(" | "));
   landList = []; landPerms = [];
   tasksMode = was;
-}
-
-// THE USAGE TAB, from a mocked /v1/usage on a hub with two rooms.
-//
-// Both rooms hold a card with the SAME id, and a live `usage` event for one must
-// grow that room's card and not the other's. A room that will not answer is named.
-async function usageChartsSection(browser, base) {
-  const wasHub = hubMode, wasSgg = sggAttached, wasTasks = tasksMode;
-  hubMode = true;
-  sggAttached = true;
-  soloMode = "ok";
-  tasksMode = "first";
-  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
-  const p = await ctx.newPage();
-  const errors = [];
-  p.on("pageerror", e => errors.push(String(e)));
-  const asked = [];
-  let sggDown = false;
-  const now = Math.floor(Date.now() / 900000) * 900000;
-  const bucket = (t, cardId, tok) => ({
-    t: new Date(t).toISOString(),
-    total: { rows: 1, input: tok, output: tok, cache_write_5m: 0, cache_write_1h: 0, cache_read: tok * 10, cost: 0.5 },
-    cards: { [cardId]: { rows: 1, input: tok, output: tok, cache_write_5m: 0, cache_write_1h: 0, cache_read: tok * 10, cost: 0.5 } },
-    causes: { operator: { rows: 1, input: tok, output: tok, cache_write_5m: 0, cache_write_1h: 0, cache_read: tok * 10, cost: 0.5 } },
-  });
-  await ctx.route(u => new URL(u).pathname === "/v1/usage", route => {
-    const room = route.request().headers()["x-atrium-room"] || "";
-    asked.push(room);
-    if (room === "sgg" && sggDown) { route.fulfill({ status: 503, body: "no" }); return; }
-    route.fulfill({ json: { since: new Date(now - 86400000).toISOString(), until: new Date().toISOString(),
-      bucket: 900, buckets: [bucket(now - 900000, "c1", 1000), bucket(now, "c1", 2000)] } });
-  });
-  const cardCount = () => p.evaluate(() => [...document.querySelectorAll(".ucmini[data-id]")].map(e =>
-    e.dataset.room + "|" + e.dataset.id + "|" + e.querySelector("b").textContent));
-  try {
-    await p.goto(base, { waitUntil: "domcontentloaded" });
-    await p.waitForFunction(() => typeof hubIsHub !== "undefined" && hubIsHub && hubRooms.length === 2, null, { timeout: slow(15000) });
-    await p.evaluate(() => document.querySelector('.tab[data-view="usage"]').click());
-    await p.waitForSelector("#uc-body .ucchart svg rect", { state: "attached", timeout: slow(10000) })
-      .catch(() => fail("usageCharts: the tab drew no chart from the mocked read."));
-    if (!asked.includes("alpha") || !asked.includes("sgg")) fail("usageCharts: each room was not asked for itself: " + asked);
-    const before = await cardCount();
-    if (before.length !== 2 || new Set(before.map(s => s.split("|").slice(0, 2).join("|"))).size !== 2) {
-      fail("usageCharts: the same card id in two rooms is not two entries: " + JSON.stringify(before));
-    }
-    const text = await p.evaluate(() => document.getElementById("uc-body").textContent);
-    for (const label of ["uncached in", "out", "cache read", "cache write 5m", "cache write 1h", "est."]) {
-      if (!text.includes(label)) fail("usageCharts: item 78's label '" + label + "' is missing.");
-    }
-    if (!(await p.evaluate(() => document.querySelector(".uclegend .uctip").dataset.tip === USAGE_TIPS.input))) {
-      fail("usageCharts: the legend does not reuse USAGE_TIPS.");
-    }
-
-    // A live row for alpha's c1 only.
-    const rects = () => p.evaluate(() => document.querySelectorAll(".ucchart[data-chart=burn] g[data-t]").length);
-    hubStreams.forEach(r => r.write("event: usage\ndata: " + JSON.stringify({ room: "alpha", task_id: "alpha~c1",
-      ended_at: new Date().toISOString(), cause: "operator", input: 100, output: 100, cache_write_5m: 0,
-      cache_write_1h: 0, cache_read: 1000, cost: 1.5 }) + "\n\n"));
-    await p.waitForFunction(() => /\$2\.50/.test(document.querySelector('.ucmini[data-room="alpha"] b').textContent),
-      null, { timeout: slow(5000) }).catch(() => fail("usageCharts: a usage event did not grow alpha's card."));
-    const after = await cardCount();
-    const sgg = after.find(s => s.startsWith("sgg|c1|")) || "";
-    if (!/\$1\.00$/.test(sgg)) fail("usageCharts: a usage event for alpha moved sgg's card: " + sgg);
-    if (!await rects()) fail("usageCharts: no bars after the event.");
-
-    // A skin change recolours a chart already drawn.
-    const fill = () => p.evaluate(() => getComputedStyle(document.querySelector(".ucchart .uck-in")).fill);
-    const f1 = await fill();
-    await p.evaluate(() => { document.documentElement.setAttribute("data-skin", "daylight"); });
-    const f2 = await fill();
-    if (f1 === f2) fail("usageCharts: a skin change left the chart's colour as it was: " + f1);
-
-    // A room that does not answer is named, not counted as zero.
-    sggDown = true;
-    await p.evaluate(() => loadUsageTab());
-    await p.waitForSelector(".ucmissing", { timeout: slow(5000) }).catch(() => fail("usageCharts: a silent room was not named."));
-    const missing = await p.evaluate(() => (document.querySelector(".ucmissing") || {}).textContent || "");
-    if (!/sgg/.test(missing)) fail("usageCharts: the missing-room note does not name the room: " + missing);
-    sggDown = false;
-  } finally {
-    await ctx.close();
-    hubMode = wasHub; sggAttached = wasSgg; tasksMode = wasTasks;
-  }
-  if (errors.length) fail("usageCharts: the page threw: " + errors.join(" | "));
 }
 
 // ── clicking `? N` dismisses the questions ────────────────────────────────
@@ -6261,14 +6312,14 @@ async function main() {
     const only = { termWear: termWearSection, bridge: bridgeSection, settingsOnce: settingsOnceSection,
       groupRemove: groupRemoveSection, worn: wornSection, restartGate: restartGateSection, restartStays: restartStaysSection, atriumDown: atriumDownSection,
       toastStays: toastStaysSection, groupColor: groupColorSection,
-      groupDrag: groupDragSection, tooltip: tooltipSection, popoutTagFlip: popoutTagFlipSection, idleRate: idleRateSection, foldStill: foldStillSection,
+      groupDrag: groupDragSection, tooltip: tooltipSection, linkTip: linkTipSection,popoutTagFlip: popoutTagFlipSection, idleRate: idleRateSection, foldStill: foldStillSection,
       untaggedSort: untaggedSortSection, newCard: newCardSection, themePreview: themePreviewSection, land: landSection, reselect: reselectSection,
       toastsTop: toastsTopSection, sayWhen: sayWhenSection, pasteSpinner: pasteSpinnerSection,
       pasteBig: pasteBigSection, typing: typingSection, alias: aliasSection, copySelect: copySelectSection, busyGuard: busyGuardSection, keepalive: keepaliveSection,
       stuck: stuckSection, carryLink: carryLinkSection,
       skinScope: skinScopeSection, skinHeal: skinHealSection, toastLives: toastLivesSection,
       history: historySection, contextSize: contextSizeSection, peekEverywhere: peekEverywhereSection, cardRoute: cardRouteSection,
-      quietDoer: quietDoerSection, usageCharts: usageChartsSection, looksIdle: looksIdleSection, notifyOff: notifyOffSection,
+      quietDoer: quietDoerSection, looksIdle: looksIdleSection, notifyOff: notifyOffSection,
       questionsClick: questionsClickSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);

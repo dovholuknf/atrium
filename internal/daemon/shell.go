@@ -179,6 +179,7 @@ func (d *Daemon) spawnShell(taskID, cmdName string, args []string, cwd string) e
 			"or install that one: %w", cmdName, err)
 	}
 
+	raise := d.beginPTYRaise()
 	p, err := pty.New()
 	if err != nil {
 		return fmt.Errorf("could not open a pseudo terminal: %w", err)
@@ -191,8 +192,8 @@ func (d *Daemon) spawnShell(taskID, cmdName string, args []string, cwd string) e
 	// Which is now the width this CARD was last looked at, so the shell comes
 	// up the size of the window it is about to be drawn in. See
 	// `launchWidthFor`.
-	cols := d.launchWidthFor(taskID)
-	sizeAtLaunch(p, cols)
+	cols, rows := d.launchSizeFor(taskID)
+	sizeAtLaunch(p, cols, rows)
 	c := p.Command(resolved, args...)
 	c.Dir = cwd
 	c.Env = d.shellEnv(taskID)
@@ -200,10 +201,12 @@ func (d *Daemon) spawnShell(taskID, cmdName string, args []string, cwd string) e
 		p.Close()
 		return fmt.Errorf("could not start %s: %w", cmdName, err)
 	}
+	// The operator types into this one too.
+	raise.apply(c.Process.Pid)
 
 	r := &runner{
 		taskID: taskID, pty: p, cmd: c, started: time.Now(),
-		buf:      newRing(api.ScrollbackBytes(d.st), cols),
+		buf:      newRingSized(api.ScrollbackBytes(d.st), cols, rows),
 		watchers: map[chan []byte]struct{}{},
 		done:     make(chan struct{}),
 	}

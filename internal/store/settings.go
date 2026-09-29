@@ -119,6 +119,28 @@ const SettingEventWindowBytes = "event_window_bytes"
 // missing; see ColdOnlyKinds.
 const SettingEventColdKinds = "event_cold_kinds"
 
+// SettingRoomViewport is the last size a viewer agreed on for any runner in this
+// room, written `COLSxROWS`. A fresh card with no size of its own opens at it, so
+// the first viewer finds the terminal already the size it is about to ask for.
+// Not exposed on the settings page: it is a fact the daemon observed, not a choice.
+const SettingRoomViewport = "room_viewport"
+
+// SettingRunnerPriority is the Windows priority class the room gives an interactive runner and
+// the pseudo console host behind it: `above_normal` (the default) or `normal`. Read at each
+// spawn, so it applies to the next runner started and never to one already running. See
+// `daemon/priority_windows.go` for why.
+const SettingRunnerPriority = "runner_priority"
+
+// RunnerPriorityRaised reports whether interactive runners get raised. Anything but an explicit
+// `normal` is yes, and so is a read failure: the raise is the default and a spawn never waits on it.
+func (s *Store) RunnerPriorityRaised() bool {
+	v, err := s.Setting(SettingRunnerPriority)
+	if err != nil {
+		return true
+	}
+	return strings.ToLower(strings.TrimSpace(v)) != "normal"
+}
+
 // Setting reads one value. A key that has never been written reads as empty
 // rather than as an error, so a caller does not have to seed anything.
 func (s *Store) Setting(key string) (string, error) {

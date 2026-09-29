@@ -22,7 +22,7 @@ type UsageSums struct {
 	CacheWrite5m int64   `json:"cache_write_5m"`
 	CacheWrite1h int64   `json:"cache_write_1h"`
 	CacheRead    int64   `json:"cache_read"`
-	Cost         float64 `json:"cost"`
+	Cost         float64 `json:"-"`
 }
 
 func (a *UsageSums) add(b *UsageSums) {
