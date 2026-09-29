@@ -6251,3 +6251,40 @@ its height changed reports `repaired=0`.
 
 **Expected:** the text is identical both times, and the rows a repaint overwrote are still absent from history, because
 the report measures and does not repair.
+
+## EB. Runners and their console hosts run at above normal
+
+### EB1. The default raises the runner and its console host
+
+1. On Windows, start a throwaway room and launch a card with a pty runner.
+2. In Task Manager or `Get-Process`, read the priority class of the runner and of the `conhost.exe` or
+   `OpenConsole.exe` that is a child of the room.
+3. Start something from inside the runner, such as `pwsh -c Start-Sleep 60`, and read its class.
+
+**Expected:** the runner and the console host are AboveNormal. The program the runner started is Normal.
+
+### EB2. The setting turns it off
+
+1. `POST /api/settings {"runner_priority":"normal"}` and read settings back.
+2. Start another card, and open the shell beside it.
+
+**Expected:** settings read back `normal`. The new runner, its console host and the shell are all Normal. A runner
+started before the change keeps its class. Setting `above_normal` (or an empty string) brings the raise back, and any
+other value is refused with 400.
+
+### EB3. A refused raise does not stop a runner
+
+**Expected:** if the raise fails, the room logs one `could not raise a runner's priority` line and the runner still
+starts. Covered by `TestFailedRaiseDoesNotFailTheSpawn`.
+
+## EC. The card list does not re-read idle transcripts
+
+### EC1. Idle CPU and list latency
+
+On a throwaway room with about 30 Claude cards that have large transcripts:
+
+1. Time `GET /v1/tasks` 20 times and note p50 and p95, then watch the room process's CPU for a minute while the board is
+   open and idle.
+2. Compare with a room built from the commit before t-005.
+3. Expect the list to answer in a small fraction of the earlier time and the idle CPU to be near zero.
+4. Send a turn to one card and confirm its context figure on the board updates on the next poll.
