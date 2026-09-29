@@ -5794,6 +5794,90 @@ async function quietDoerSection(browser, base) {
   tasksMode = was;
 }
 
+// THE USAGE TAB, from a mocked /v1/usage on a hub with two rooms.
+//
+// Both rooms hold a card with the SAME id, and a live `usage` event for one must
+// grow that room's card and not the other's. A room that will not answer is named.
+async function usageChartsSection(browser, base) {
+  const wasHub = hubMode, wasSgg = sggAttached, wasTasks = tasksMode;
+  hubMode = true;
+  sggAttached = true;
+  soloMode = "ok";
+  tasksMode = "first";
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const p = await ctx.newPage();
+  const errors = [];
+  p.on("pageerror", e => errors.push(String(e)));
+  const asked = [];
+  let sggDown = false;
+  const now = Math.floor(Date.now() / 900000) * 900000;
+  const bucket = (t, cardId, tok) => ({
+    t: new Date(t).toISOString(),
+    total: { rows: 1, input: tok, output: tok, cache_write_5m: 0, cache_write_1h: 0, cache_read: tok * 10, cost: 0.5 },
+    cards: { [cardId]: { rows: 1, input: tok, output: tok, cache_write_5m: 0, cache_write_1h: 0, cache_read: tok * 10, cost: 0.5 } },
+    causes: { operator: { rows: 1, input: tok, output: tok, cache_write_5m: 0, cache_write_1h: 0, cache_read: tok * 10, cost: 0.5 } },
+  });
+  await ctx.route(u => new URL(u).pathname === "/v1/usage", route => {
+    const room = route.request().headers()["x-atrium-room"] || "";
+    asked.push(room);
+    if (room === "sgg" && sggDown) { route.fulfill({ status: 503, body: "no" }); return; }
+    route.fulfill({ json: { since: new Date(now - 86400000).toISOString(), until: new Date().toISOString(),
+      bucket: 900, buckets: [bucket(now - 900000, "c1", 1000), bucket(now, "c1", 2000)] } });
+  });
+  const cardCount = () => p.evaluate(() => [...document.querySelectorAll(".ucmini[data-id]")].map(e =>
+    e.dataset.room + "|" + e.dataset.id + "|" + e.querySelector("b").textContent));
+  try {
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof hubIsHub !== "undefined" && hubIsHub && hubRooms.length === 2, null, { timeout: 15000 });
+    await p.evaluate(() => document.querySelector('.tab[data-view="usage"]').click());
+    await p.waitForSelector("#uc-body .ucchart svg rect", { state: "attached", timeout: 10000 })
+      .catch(() => fail("usageCharts: the tab drew no chart from the mocked read."));
+    if (!asked.includes("alpha") || !asked.includes("sgg")) fail("usageCharts: each room was not asked for itself: " + asked);
+    const before = await cardCount();
+    if (before.length !== 2 || new Set(before.map(s => s.split("|").slice(0, 2).join("|"))).size !== 2) {
+      fail("usageCharts: the same card id in two rooms is not two entries: " + JSON.stringify(before));
+    }
+    const text = await p.evaluate(() => document.getElementById("uc-body").textContent);
+    for (const label of ["uncached in", "out", "cache read", "cache write 5m", "cache write 1h", "est."]) {
+      if (!text.includes(label)) fail("usageCharts: item 78's label '" + label + "' is missing.");
+    }
+    if (!(await p.evaluate(() => document.querySelector(".uclegend .uctip").dataset.tip === USAGE_TIPS.input))) {
+      fail("usageCharts: the legend does not reuse USAGE_TIPS.");
+    }
+
+    // A live row for alpha's c1 only.
+    const rects = () => p.evaluate(() => document.querySelectorAll(".ucchart[data-chart=burn] g[data-t]").length);
+    hubStreams.forEach(r => r.write("event: usage\ndata: " + JSON.stringify({ room: "alpha", task_id: "alpha~c1",
+      ended_at: new Date().toISOString(), cause: "operator", input: 100, output: 100, cache_write_5m: 0,
+      cache_write_1h: 0, cache_read: 1000, cost: 1.5 }) + "\n\n"));
+    await p.waitForFunction(() => /\$2\.50/.test(document.querySelector('.ucmini[data-room="alpha"] b').textContent),
+      null, { timeout: 5000 }).catch(() => fail("usageCharts: a usage event did not grow alpha's card."));
+    const after = await cardCount();
+    const sgg = after.find(s => s.startsWith("sgg|c1|")) || "";
+    if (!/\$1\.00$/.test(sgg)) fail("usageCharts: a usage event for alpha moved sgg's card: " + sgg);
+    if (!await rects()) fail("usageCharts: no bars after the event.");
+
+    // A skin change recolours a chart already drawn.
+    const fill = () => p.evaluate(() => getComputedStyle(document.querySelector(".ucchart .uck-in")).fill);
+    const f1 = await fill();
+    await p.evaluate(() => { document.documentElement.setAttribute("data-skin", "daylight"); });
+    const f2 = await fill();
+    if (f1 === f2) fail("usageCharts: a skin change left the chart's colour as it was: " + f1);
+
+    // A room that does not answer is named, not counted as zero.
+    sggDown = true;
+    await p.evaluate(() => loadUsageTab());
+    await p.waitForSelector(".ucmissing", { timeout: 5000 }).catch(() => fail("usageCharts: a silent room was not named."));
+    const missing = await p.evaluate(() => (document.querySelector(".ucmissing") || {}).textContent || "");
+    if (!/sgg/.test(missing)) fail("usageCharts: the missing-room note does not name the room: " + missing);
+    sggDown = false;
+  } finally {
+    await ctx.close();
+    hubMode = wasHub; sggAttached = wasSgg; tasksMode = wasTasks;
+  }
+  if (errors.length) fail("usageCharts: the page threw: " + errors.join(" | "));
+}
+
 async function main() {
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = "http://127.0.0.1:" + server.address().port;
@@ -5810,7 +5894,7 @@ async function main() {
       pasteBig: pasteBigSection, typing: typingSection, alias: aliasSection, copySelect: copySelectSection, busyGuard: busyGuardSection, keepalive: keepaliveSection,
       stuck: stuckSection, carryLink: carryLinkSection,
       skinScope: skinScopeSection, skinHeal: skinHealSection, toastLives: toastLivesSection,
-      history: historySection, contextSize: contextSizeSection, peekEverywhere: peekEverywhereSection, cardRoute: cardRouteSection, quietDoer: quietDoerSection };
+      history: historySection, contextSize: contextSizeSection, peekEverywhere: peekEverywhereSection, cardRoute: cardRouteSection, quietDoer: quietDoerSection, usageCharts: usageChartsSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
