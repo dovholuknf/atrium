@@ -5257,3 +5257,28 @@ atrium-control server, not the older stdio CLI one.
 **Expected:** after the first restart the eligible live cards have their defaults (`@saorch`), and clashes carry
 `no alias` chips. After the second the cleared card stays without an alias: the pass is guarded by the setting
 `alias_default_backfill` and does not run again.
+
+## CN. A worker waiting on background runs is not STUCK
+
+### CN1. Background shells hold the alert
+
+1. On a room with the new binary and its Stop hook installed, launch an agent-launched worker.
+2. Tell it to start three `run_in_background` shells that each sleep four minutes, then end its turn without calling
+   `atrium_report`.
+3. Watch the card for five minutes.
+
+**Expected:** the card sits in needs-input with no STUCK, and the launcher gets no "ended its turn without
+reporting" notice.
+
+### CN2. The clock starts at the later stop
+
+1. Let the shells from CN1 finish. The worker wakes, reads them, and stops again.
+2. Leave it saying nothing to its launcher.
+
+**Expected:** the notice and STUCK arrive two minutes after that second stop, not after the first.
+
+### CN3. No background work behaves as before
+
+1. Repeat CN1 with no background shells.
+
+**Expected:** STUCK and the notice arrive as they did before this change.
