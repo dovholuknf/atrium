@@ -6,9 +6,9 @@
 //
 // and prints {"lines":[{"t":"text","s":"0011"}],"baseY":n,"curY":n,"curX":n}.
 // `t` is the row with trailing blanks trimmed. `s` is a mask, one character per
-// character of `t`: 1 where the cell carries any colour or attribute, 0 where
-// it is default. Wide characters take one position, the way translateToString
-// gives them.
+// CELL of `t`: 1 where the cell carries any colour or attribute, 0 where it is
+// default. A wide character and a character with combining marks each take one
+// position, the way translateToString gives them.
 const path = require("path");
 const { Terminal } = require(path.join(__dirname, "..", "..", "api", "web", "vendor", "xterm.js"));
 
@@ -37,9 +37,15 @@ process.stdin.on("end", async () => {
     const text = l.translateToString(true).replace(/ +$/, "");
     let mask = "";
     let pos = 0;
-    for (let x = 0; x < l.length && pos < [...text].length; x++) {
+    const total = [...text].length;
+    for (let x = 0; x < l.length && pos < total; x++) {
       const c = l.getCell(x, cell);
-      if (c.getWidth() === 0) continue;
+      // The second half of a wide character has no characters. A mark that
+      // stands alone in a cell has some, and is a position of its own.
+      if (c.getWidth() === 0 && c.getChars() === "") continue;
+      // A cell holds its character and any combining marks, and text has them
+      // all, so count code points and not cells.
+      pos += Math.max(1, [...c.getChars()].length) - 1;
       const styled =
         c.getFgColorMode() !== 0 || c.getBgColorMode() !== 0 ||
         c.isBold() || c.isDim() || c.isItalic() || c.isUnderline() ||
