@@ -752,7 +752,9 @@ lingering off unless `ATRIUM_LINGER=1`, which `-Linger` passes. The package post
 there five seconds later, then runs each runner's `--version` on the remote.
 
 **Runners.** Report only by default. `-Install claude,codex` fetches from the vendor: `https://claude.ai/install.sh`
-or `install.ps1` for claude, the `openai/codex` GitHub release for codex. It prints a trust warning first. If
+or `install.ps1` for claude. Codex needs its helpers beside it, so with node and npm on the login PATH it runs
+`npm install -g --prefix ~/.local @openai/codex`, and without them it unpacks the whole `codex-package` release into
+`~/.local/share/codex/<version>` with a `codex` wrapper in `~/.local/bin`. It prints a trust warning first. If
 `~/.local/bin` is not on PATH it adds it: the user's Path in the registry on Windows, one marked line in the login
 profile on Unix.
 
