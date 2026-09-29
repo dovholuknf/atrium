@@ -117,7 +117,8 @@ func (d *Daemon) watchLooksIdle(now time.Time) error {
 		if silent < LooksIdleAfter {
 			continue
 		}
-		idle, why := classifyFrame(run.buf.Tail(frameTailBytes))
+		cols, rows := run.buf.CurrentSize()
+		idle, why := classifyFrame(run.buf.Tail(frameTailBytes), cols, rows)
 		if !idle {
 			continue
 		}
