@@ -1388,7 +1388,7 @@ func (c *controlMCP) cullHandler(ctx context.Context, req *mcp.CallToolRequest, 
 		if by == "" {
 			by = "atrium_cull"
 		}
-		if err := c.ask(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(id)+"/hold", room,
+		if err := c.ask(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(id)+"/cull/hold", room,
 			map[string]string{"by": by}, nil); err != nil {
 			var be *boardError
 			if errors.As(err, &be) && be.bare && be.code == http.StatusNotFound {

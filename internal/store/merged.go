@@ -116,9 +116,9 @@ func (s *Store) HoldCull(taskID, by string) error {
 // Absent on a card that is neither marked nor held.
 type MergedView struct {
 	// Into and Branch are what merged into what, and SHA the tip it merged at.
-	Into   string `json:"into,omitempty"`
-	Branch string `json:"branch,omitempty"`
-	SHA    string `json:"sha,omitempty"`
+	Into   string `json:"cull_into,omitempty"`
+	Branch string `json:"merged_branch,omitempty"`
+	SHA    string `json:"merged_sha,omitempty"`
 	// MergedAt is when the room noticed, and CullAt when it will cull. CullAt is
 	// absent once held. CullSeconds is the time left, so a browser whose clock
 	// disagrees with the machine's does not show a cull in the past.
@@ -126,7 +126,7 @@ type MergedView struct {
 	CullAt      *time.Time `json:"cull_at,omitempty"`
 	CullSeconds int64      `json:"cull_seconds,omitempty"`
 	// HeldBy is who kept it. A held card is never culled automatically.
-	HeldBy string `json:"held_by,omitempty"`
+	HeldBy string `json:"cull_held,omitempty"`
 }
 
 func (w *WorkItem) mergedView(at time.Time) *MergedView {

@@ -330,6 +330,7 @@ func New(opts Options) (*Daemon, error) {
 	d.ap.StopRunner = d.StopRunner
 	d.ap.Cull = func(id, into, tip string) (any, error) { return d.CullProved(id, into, tip) }
 	d.ap.HoldCull = d.HoldCull
+	d.ap.Merged = func(into string, branches []string) (any, error) { return d.Merged(into, branches) }
 	d.ap.RestartRunner = d.RestartRunner
 	d.ap.Unshelve = d.Unshelve
 	d.ap.Overlays = d.overlayViews
@@ -868,8 +869,6 @@ func (d *Daemon) Run(ctx context.Context) error {
 	agentMux.HandleFunc("/telemetry", d.handleTelemetry)
 	// A session declaring its work over, which nothing could say before.
 	agentMux.HandleFunc("/finish", d.handleFinish)
-	// A git merge finished somewhere, from the post-merge hook. Best effort.
-	agentMux.HandleFunc("/merged", d.handleMerged)
 	// The other half of finish: a session saying it is stuck and what it needs,
 	// on its card for a human or routed to a named peer.
 	agentMux.HandleFunc("/help", d.handleHelp)

@@ -171,6 +171,10 @@ type Server struct {
 	// it again. A route of its own, and not a flag on cull, because a room that
 	// predates the hold would read `hold=true` as an ordinary cull and cull it.
 	HoldCull func(taskID, by string) error
+	// Merged is the post-merge hook's request: mark the finished workers a merge
+	// into `into` covered, limited to `branches` when given. Human listener only,
+	// never the guest allowlist.
+	Merged func(into string, branches []string) (any, error)
 	// RestartRunner asks a runner to exit, waits for it to be gone, and starts
 	// the same conversation again on the SAME card. Unshelve without the shelve,
 	// for a wedged session or one running an old binary. Supplied by the daemon,
@@ -511,7 +515,10 @@ func (s *Server) Handler() http.Handler {
 		mux.HandleFunc("POST /v1/tasks/{id}/cull", s.cullRunner)
 	}
 	if s.HoldCull != nil {
-		mux.HandleFunc("POST /v1/tasks/{id}/hold", s.holdCull)
+		mux.HandleFunc("POST /v1/tasks/{id}/cull/hold", s.holdCull)
+	}
+	if s.Merged != nil {
+		mux.HandleFunc("POST /v1/merged", s.merged)
 	}
 	if s.RestartRunner != nil {
 		mux.HandleFunc("POST /v1/tasks/{id}/restart", s.restartRunner)
@@ -732,7 +739,8 @@ type view struct {
 	// Merged is the chip's data: the branch this worker's merge covered, when it
 	// will be culled, and who held it. Absent on a card that is neither marked
 	// nor held. Durable. See docs/rnd/merged-cull-design.md.
-	Merged *store.MergedView `json:"merged,omitempty"`
+	// Embedded, so the fields sit flat on the card: cull_at, cull_into, cull_held.
+	*store.MergedView
 	// Row is always 1. It tells the board this payload is a whole list row, so a
 	// "task" event can be upserted without a re-fetch. Never omitted.
 	Row int `json:"row"`
@@ -874,7 +882,7 @@ func (s *Server) taskEvent(t *store.Task) view {
 		v.Seen = sn.View()
 	}
 	if mv, err := s.st.MergedViewFor(t.ID); err == nil {
-		v.Merged = mv
+		v.MergedView = mv
 	}
 	return v
 }
@@ -891,7 +899,7 @@ func (s *Server) withSeen(vs []view) []view {
 	if marks, err := s.st.MergedViews(); err == nil {
 		for i := range vs {
 			if vs[i].Task != nil {
-				vs[i].Merged = marks[vs[i].Task.ID]
+				vs[i].MergedView = marks[vs[i].Task.ID]
 			}
 		}
 	}
@@ -1916,13 +1924,40 @@ func (s *Server) cullRunner(w http.ResponseWriter, r *http.Request) {
 func (s *Server) holdCull(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		By string `json:"by"`
+		// Hold is true to keep the card. Absent means true: the route is named for it.
+		Hold *bool `json:"hold"`
 	}
 	_ = json.NewDecoder(io.LimitReader(r.Body, 1<<12)).Decode(&body)
+	if body.Hold != nil && !*body.Hold {
+		writeErr(w, http.StatusBadRequest, fmt.Errorf("hold=false is not a thing: cull it, or leave it held"))
+		return
+	}
 	if err := s.HoldCull(r.PathValue("id"), body.By); err != nil {
 		writeErr(w, http.StatusConflict, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// merged is `atrium merged`: a merge into a branch happened. 400 only for a
+// body that names no branch. Anything else the room could not do is a 409, and
+// the CLI logs it and exits 0 either way.
+func (s *Server) merged(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Into     string   `json:"into"`
+		Branches []string `json:"branches"`
+	}
+	_ = json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&body)
+	if strings.TrimSpace(body.Into) == "" {
+		writeErr(w, http.StatusBadRequest, fmt.Errorf("no branch named"))
+		return
+	}
+	res, err := s.Merged(body.Into, body.Branches)
+	if err != nil {
+		writeErr(w, http.StatusConflict, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
 }
 
 // restartRunner stops a card's runner and starts the same conversation again on

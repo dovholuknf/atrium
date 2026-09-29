@@ -1,11 +1,8 @@
 package daemon
 
 import (
-	"encoding/json"
 	"fmt"
-	"io"
 	"log"
-	"net/http"
 	"path/filepath"
 	"strings"
 	"time"
@@ -72,38 +69,30 @@ func (d *Daemon) isWorker(t *store.Task) bool {
 	return err == nil && strings.TrimSpace(w.LauncherID) != ""
 }
 
-// MergedResult is what one `merged --into` did.
-type MergedResult struct {
-	Into    string   `json:"into"`
-	Marked  []string `json:"marked,omitempty"`
-	Skipped []string `json:"skipped,omitempty"`
-	Off     bool     `json:"off,omitempty"`
+// MarkedCard is one card a merge marked, and when it will be culled.
+type MarkedCard struct {
+	Card   string    `json:"card"`
+	CullAt time.Time `json:"cull_at"`
 }
 
-// handleMerged is the post-merge hook's request. Always 200.
-func (d *Daemon) handleMerged(w http.ResponseWriter, r *http.Request) {
-	var in struct {
-		Into string `json:"into"`
-	}
-	_ = json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&in)
-	res, err := d.Merged(in.Into)
-	if err != nil {
-		log.Printf("[atrium] merged --into %s: %v", in.Into, err)
-		res = &MergedResult{Into: in.Into}
-	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(res)
+// MergedResult is what one `merged --into` did: `POST /v1/merged` answers it.
+type MergedResult struct {
+	Into    string       `json:"into"`
+	Marked  []MarkedCard `json:"marked"`
+	Skipped []string     `json:"skipped,omitempty"`
+	Off     bool         `json:"off,omitempty"`
 }
 
 // Merged marks the finished workers a merge into `into` covered. The candidates
 // are workers whose launcher's worktree is on `into`, or every worker when
 // `into` is claude/main. Each is checked with the same read Cull makes.
-func (d *Daemon) Merged(into string) (*MergedResult, error) {
+// `branches`, when given, limits it to workers whose branch is one of those.
+func (d *Daemon) Merged(into string, branches []string) (*MergedResult, error) {
 	into = strings.TrimSpace(into)
 	if into == "" {
 		return nil, fmt.Errorf("no branch named")
 	}
-	res := &MergedResult{Into: into}
+	res := &MergedResult{Into: into, Marked: []MarkedCard{}}
 	grace, on := d.mergedGrace()
 	if !on {
 		res.Off = true
@@ -114,65 +103,83 @@ func (d *Daemon) Merged(into string) (*MergedResult, error) {
 		return nil, err
 	}
 	for _, w := range items {
-		if reason := d.markIfMerged(w, into, grace); reason != "" {
+		at, reason := d.markIfMerged(w, into, branches, grace)
+		if reason != "" {
 			res.Skipped = append(res.Skipped, w.TaskID+": "+reason)
 		} else {
-			res.Marked = append(res.Marked, w.TaskID)
+			res.Marked = append(res.Marked, MarkedCard{Card: w.TaskID, CullAt: at})
 		}
 	}
 	if len(res.Marked) > 0 {
+		ids := make([]string, 0, len(res.Marked))
+		for _, m := range res.Marked {
+			ids = append(ids, m.Card)
+		}
 		log.Printf("[atrium] merged into %s: marked %s, to be culled in %s",
-			into, strings.Join(res.Marked, ", "), grace)
+			into, strings.Join(ids, ", "), grace)
 	}
 	return res, nil
 }
 
-// markIfMerged marks one worker and returns "" when it did, or why it did not.
-func (d *Daemon) markIfMerged(w *store.WorkItem, into string, grace time.Duration) string {
+// markIfMerged marks one worker and returns its cull time, or why it did not.
+func (d *Daemon) markIfMerged(w *store.WorkItem, into string, branches []string, grace time.Duration) (time.Time, string) {
+	fail := func(s string) (time.Time, string) { return time.Time{}, s }
 	t, err := d.st.Get(w.TaskID)
 	if err != nil {
-		return "no card"
+		return fail("no card")
 	}
 	if !d.isWorker(t) {
-		return "not a worker"
+		return fail("not a worker")
 	}
 	if w.HeldBy != "" {
-		return "held"
+		return fail("held")
 	}
 	if w.CullAt != nil {
-		return "already marked"
+		return fail("already marked")
 	}
 	if strings.TrimSpace(t.Worktree) == "" {
-		return "no directory"
+		return fail("no directory")
 	}
 	if into != DefaultCullInto && !d.launcherOn(w, into) {
-		return "its launcher is not on " + into
+		return fail("its launcher is not on " + into)
 	}
 	if reason := d.notFinished(t, w); reason != "" {
-		return reason
+		return fail(reason)
 	}
 	plan, err := inspectCull(t.Worktree, into)
 	if err != nil {
-		return err.Error()
+		return fail(err.Error())
+	}
+	if len(branches) > 0 && !containsFold(branches, plan.branch) {
+		return fail("its branch " + plan.branch + " was not among those merged")
 	}
 	if !plan.merged {
-		return "branch " + plan.branch + " is not merged into " + into
+		return fail("branch " + plan.branch + " is not merged into " + into)
 	}
 	sha, err := gitIn(plan.common, "--git-dir="+plan.common, "rev-parse", "--verify", "-q", "refs/heads/"+plan.branch)
 	if err != nil {
-		return err.Error()
+		return fail(err.Error())
 	}
 	at := time.Now().Add(grace)
 	marked, err := d.st.MarkMerged(w.TaskID, into, sha, plan.branch, at)
 	if err != nil {
-		return err.Error()
+		return fail(err.Error())
 	}
 	if !marked {
-		return "not markable"
+		return fail("not markable")
 	}
 	d.publishTask(w.TaskID)
 	d.tellLauncherMerged(t, w, into, sha, at)
-	return ""
+	return at, ""
+}
+
+func containsFold(list []string, s string) bool {
+	for _, x := range list {
+		if strings.EqualFold(strings.TrimSpace(x), s) {
+			return true
+		}
+	}
+	return false
 }
 
 // notFinished is why a worker is not ready to be marked, or "": finished status,
