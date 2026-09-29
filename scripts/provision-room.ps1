@@ -98,7 +98,16 @@
 #   -Autostart adds a logon task `atrium` (RunLevel Limited), a systemd user unit
 #            atrium.service, or a LaunchAgent io.github.dovholuknf.atrium, and
 #            their scripts under ~/.atrium/provision
-#   -Install  adds the runner where its own installer puts it, usually ~/.local
+#   -Install  adds the runner where its own installer puts it, usually ~/.local.
+#            CODEX is installed whole, because it needs codex-code-mode-host and
+#            codex-resources beside it. With node and npm on the login PATH:
+#            `npm install -g --prefix ~/.local @openai/codex`. Without: the whole
+#            codex-package release in ~/.local/share/codex/<version>, with a
+#            `codex` wrapper (a .cmd on Windows) in ~/.local/bin. -Remove deletes
+#            only what the `installed=` lines named.
+#
+# A BARE -SmokeTo (no @) gets `@<this side's room>` from $env:ATRIUM_ROOM, since
+# the remote room cannot find a handle without one. A handle with @ is left alone.
 #
 # The manifest records what was already there before the first run, so -Remove
 # deletes only what this script created and leaves anything older alone.
