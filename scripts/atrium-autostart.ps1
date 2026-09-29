@@ -99,9 +99,36 @@ if (-not (Test-Path -LiteralPath $Exe)) {
     throw "no atrium at $Exe. install it, or pass -Exe with the full path."
 }
 
+# schtasks.exe, NOT THE ScheduledTask CMDLETS. Those go through CIM, and a session
+# that arrived over ssh is denied CIM ("Cannot connect to CIM server. Access
+# denied", seen on sg3). schtasks.exe talks to the task scheduler directly, works
+# in every session, and registers a logon task for your own account without
+# admin. Registration is by XML because the flags cannot say everything the
+# settings below do.
+#
+# Continue, because Windows PowerShell with Stop turns the first line a native
+# command writes to stderr, which is how schtasks says "no such task", into a
+# terminating error.
+function Invoke-Schtasks {
+    $ErrorActionPreference = 'Continue'
+    $o = & schtasks.exe @args 2>&1
+    $script:schtasksExit = $LASTEXITCODE
+    $o
+}
+function Test-TaskExists {
+    $null = Invoke-Schtasks /Query /TN $TaskName
+    $script:schtasksExit -eq 0
+}
+function Get-TaskStatus {
+    $o = Invoke-Schtasks /Query /TN $TaskName /FO LIST
+    ($o | Where-Object { $_ -match '^Status:\s*(.+)$' } | ForEach-Object { $Matches[1].Trim() } | Select-Object -First 1)
+}
+
 if ($Remove) {
-    if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {
-        Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
+    if (Test-TaskExists) {
+        $null = Invoke-Schtasks /End /TN $TaskName
+        $o = Invoke-Schtasks /Delete /TN $TaskName /F
+        if ($script:schtasksExit -ne 0) { throw "could not delete the '$TaskName' task: $o" }
         Write-Host "removed the '$TaskName' task. nothing starts atrium at logon now."
     } else {
         Write-Host "there is no '$TaskName' task to remove."
@@ -167,28 +194,44 @@ if ($Verb -eq 'room') {
 
 $conhost = Join-Path $env:SystemRoot 'System32\conhost.exe'
 if (Test-Path $conhost) {
-    $action = New-ScheduledTaskAction -Execute $conhost `
-        -Argument "--headless `"$Exe`" $daemonArgs"
+    $command = $conhost
+    $argument = "--headless `"$Exe`" $daemonArgs"
 } else {
     Write-Warning "conhost.exe is not on this machine, so the daemon will have a console window."
-    $action = New-ScheduledTaskAction -Execute $Exe -Argument $daemonArgs
+    $command = $Exe
+    $argument = $daemonArgs
 }
 
-$trigger = New-ScheduledTaskTrigger -AtLogOn -User $me
-
-# No time limit: this is meant to run all day. The default is three days, after
-# which the task host stops it and the board vanishes for no visible reason.
-$settings = New-ScheduledTaskSettingsSet `
-    -AllowStartIfOnBatteries `
-    -DontStopIfGoingOnBatteries `
-    -ExecutionTimeLimit ([TimeSpan]::Zero) `
-    -RestartCount 3 `
-    -RestartInterval (New-TimeSpan -Minutes 1) `
-    -StartWhenAvailable
-
-# Interactive, so the daemon runs as you in your own session and can open a
-# pseudo terminal. A task that runs whether or not you are logged on cannot.
-$principal = New-ScheduledTaskPrincipal -UserId $me -LogonType Interactive
+# The task, as XML. What each setting is for:
+#   LogonTrigger for this user   starts when you log in.
+#   ExecutionTimeLimit PT0S      no time limit: this is meant to run all day. The
+#                                default is three days, after which the task host
+#                                stops it and the board vanishes for no visible reason.
+#   RestartOnFailure             three tries a minute apart.
+#   InteractiveToken, Least...   Interactive, so the daemon runs as you in your own
+#                                session and can open a pseudo terminal. A task that
+#                                runs whether or not you are logged on cannot. No
+#                                elevation.
+function Esc { param([string] $s) [Security.SecurityElement]::Escape($s) }
+$taskXml = @"
+<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <Triggers><LogonTrigger><Enabled>true</Enabled><UserId>$(Esc $me)</UserId></LogonTrigger></Triggers>
+  <Principals><Principal id="Author"><UserId>$(Esc $me)</UserId><LogonType>InteractiveToken</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal></Principals>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <AllowHardTerminate>true</AllowHardTerminate>
+    <StartWhenAvailable>true</StartWhenAvailable>
+    <AllowStartOnDemand>true</AllowStartOnDemand>
+    <Enabled>true</Enabled>
+    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+    <RestartOnFailure><Interval>PT1M</Interval><Count>3</Count></RestartOnFailure>
+  </Settings>
+  <Actions Context="Author"><Exec><Command>$(Esc $command)</Command><Arguments>$(Esc $argument)</Arguments></Exec></Actions>
+</Task>
+"@
 
 # STOP THE OLD ONE BEFORE REPLACING IT.
 #
@@ -200,17 +243,23 @@ $principal = New-ScheduledTaskPrincipal -UserId $me -LogonType Interactive
 #
 # The task is stopped, not the process: killing the daemon takes every
 # supervised runner with it, and `atrium stop` is the wind-down that does not.
-if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {
-    $state = (Get-ScheduledTask -TaskName $TaskName).State
-    if ($state -eq 'Running') {
+if (Test-TaskExists) {
+    if ((Get-TaskStatus) -eq 'Running') {
         Write-Host "the existing '$TaskName' task is running. stopping it first."
         Write-Host "  if a daemon is up outside this task, wind it down yourself: atrium stop"
-        Stop-ScheduledTask -TaskName $TaskName
+        $null = Invoke-Schtasks /End /TN $TaskName
     }
 }
 
-Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger `
-    -Settings $settings -Principal $principal -Force | Out-Null
+$xmlFile = Join-Path ([IO.Path]::GetTempPath()) "atrium-task-$([guid]::NewGuid().ToString('N')).xml"
+try {
+    # UTF-16 with a BOM, which is what the XML above declares and what schtasks reads.
+    [IO.File]::WriteAllText($xmlFile, $taskXml, [Text.Encoding]::Unicode)
+    $o = Invoke-Schtasks /Create /TN $TaskName /XML $xmlFile /F
+    if ($script:schtasksExit -ne 0) { throw "schtasks could not register '$TaskName': $o" }
+} finally {
+    Remove-Item -LiteralPath $xmlFile -Force -ErrorAction SilentlyContinue
+}
 
 Write-Host "registered '$TaskName' to start at logon."
 Write-Host "  runs:     $Exe $daemonArgs"
@@ -218,7 +267,7 @@ Write-Host "  as:       $me"
 Write-Host "  database: $Db"
 Write-Host ""
 Write-Host "start it now without logging out:"
-Write-Host "  Start-ScheduledTask -TaskName $TaskName"
+Write-Host "  schtasks /Run /TN $TaskName"
 Write-Host ""
 Write-Host "take it away again:"
 Write-Host "  .\scripts\atrium-autostart.ps1 -Remove"
