@@ -138,6 +138,7 @@ async function loadUsageTab() {
     rooms[r] = { state: x.state, why: x.why || "", buckets: x.series ? ucIngest(x.series, bw) : new Map() };
   }
   UC.rooms = rooms;
+  if (typeof ulLoad === "function") ulLoad(asked);
   const held = UC.pending.splice(0);
   for (const e of held) ucApply(e);
   ucPaint();
@@ -239,7 +240,7 @@ function ucPaint() {
       `Its usage is not in these charts.</div>`;
   }
   if (!series.length) {
-    html += `<div class="empty">${okRooms.length ? "No turn ended in this range." : "Nothing to draw."}</div>`;
+    html += `<div class="empty">${okRooms.length ? "No turn ended in this range." : "Nothing to draw."}</div>` + ulSection();
     body.innerHTML = html;
     ucAfterPaint(body);
     return;
@@ -250,7 +251,7 @@ function ucPaint() {
     `<h4 class="uch">by card <span class="ucnote">top ${UC_TOP_CARDS} by ${UC.cacheReads ? "" : "counted "}tokens, the rest as others. ` +
     `Click one to filter</span></h4>` + ucCards(cardRows, series) +
     `<h4 class="uch">tokens by kind</h4>` + ucSplit(total, causes, cardRows) +
-    `<h4 class="uch">tokens by cause</h4>` + ucCauseTable(causes);
+    `<h4 class="uch">tokens by cause</h4>` + ucCauseTable(causes) + ulSection();
   body.innerHTML = html;
   ucAfterPaint(body);
 }
@@ -315,8 +316,9 @@ function ucBurn(series) {
     }
     bars += `<g data-t="${s.t}">${segs}</g>`;
   }
-  return `<div class="ucchart" data-chart="burn"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" ` +
-    `aria-label="tokens per minute over time">${bars}</svg>` +
+  const band = ulBand(ax, W, H);
+  return `<div class="ucchart" data-chart="burn">${band.label}<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" ` +
+    `aria-label="tokens per minute over time">${band.svg}${bars}</svg>` +
     `<div class="ucaxis"><span>${ucFmtWhen(ax.first)}</span><span data-n="peak" data-tip="${esc(USAGE_TIPS.peak)}">peak ${usageTokens(Math.round(peak))}/min</span>` +
     `<span>${ucFmtWhen(ax.first + (ax.n - 1) * ax.ms)}</span></div>` +
     `<div class="ucread" aria-live="off">hover a bar</div></div>`;
