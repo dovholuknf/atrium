@@ -232,6 +232,7 @@ function markTermDead() {
   if (pane) pane.classList.add("dead");
   const title = document.getElementById("t-title");
   if (title && termTask) title.textContent = termTask.display_title + " (exited)";
+  if (title) title.classList.remove("as-alias");
   // The pid is gone and the runner chip reads as running, so neither belongs.
   const chips = document.getElementById("t-chips");
   if (chips) chips.innerHTML = `<span class="chip warn">exited</span>`;
@@ -374,6 +375,7 @@ function clearTermPane(switching) {
   }
   paintPaneBg(null);
   document.getElementById("t-title").textContent = "nothing attached";
+  document.getElementById("t-title").classList.remove("as-alias", "can-alias");
   document.getElementById("t-chips").innerHTML = "";  document.getElementById("t-screen").innerHTML = "";
   document.getElementById("term-perm").hidden = true;
 

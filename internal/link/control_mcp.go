@@ -206,6 +206,8 @@ func (c *controlMCP) server() *mcp.Server {
 			"takes it and as `atrium_launch` with `room` hands it back.",
 	}, c.taskHandler)
 
+	mcp.AddTool(s, &mcp.Tool{Name: "atrium_alias", Description: aliasToolDesc}, c.aliasHandler)
+
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "atrium_launch",
 		Description: "Start a new agent in a directory, on its own card, supervised by atrium.\n\n" +

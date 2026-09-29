@@ -42,7 +42,9 @@ function windowTitle(task) {
   // unless the address already carries the name, which is the unnamed case.
   const name = String((task && task.display_title) || "").trim();
   const named = name && (!label || !label.toLowerCase().includes(name.toLowerCase()));
-  const lead = named ? (label ? name + " · " + label : name) : label;
+  let lead = named ? (label ? name + " · " + label : name) : label;
+  // An alias leads alt-tab as it leads the bar. See js/alias.js.
+  if (task && task.alias) lead = "@" + task.alias + (lead ? " · " + lead : "");
   return lead ? lead + " - atrium" : "atrium terminal";
 }
 
@@ -632,6 +634,8 @@ async function soloRefresh() {
   // A branch can change under a running session, and the title is the whole
   // product here, so it is re-read rather than fixed at open.
   if (task) { soloTask = task; }
+  // And so can its alias, which is this window's bar name. See js/alias.js.
+  if (task && typeof followTermAlias === "function") followTermAlias([task]);
 
   // THE WATCHDOG. If this window has no terminal and its card has one, attach.
   //

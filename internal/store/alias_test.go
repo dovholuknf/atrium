@@ -144,6 +144,16 @@ func TestDefaultAliasIsTheTitlePrefix(t *testing.T) {
 		"sa89 typing gate":                   "",
 		"":                                   "",
 		": nothing before":                   "",
+		// A resident's name, item 47.
+		"saorch: merger, owns claude/main": "saorch",
+		"Dotfiles: my shell":               "dotfiles",
+		// A branch and a folder, as the board titles a card, is not a name.
+		"main:dotfiles": "",
+		"saorch:merger": "",
+		// A kind of work is not a name either.
+		"fix: the build":  "",
+		"docs: a section": "",
+		"x: one letter":   "",
 	} {
 		if got := DefaultAlias(title); got != want {
 			t.Errorf("DefaultAlias(%q) = %q, want %q", title, got, want)
@@ -167,5 +177,68 @@ func TestTheAliasMigrationToleratesItsColumn(t *testing.T) {
 	}
 	if got, _ := s.Get(c.ID); got.Alias != "kept" {
 		t.Fatalf("the alias did not survive the migration running again: %q", got.Alias)
+	}
+}
+
+// A resident's default is taken when free, and when another live card holds
+// it the card says who, until somebody sets or clears its alias.
+func TestADefaultThatClashesSaysWhy(t *testing.T) {
+	s := openTestStore(t)
+	holder := aliasCard(t, s, "sa84-merger")
+	if err := s.SetAlias(holder.ID, "saorch"); err != nil {
+		t.Fatal(err)
+	}
+	c := aliasCard(t, s, "saorch-2")
+	got, err := s.GiveDefaultAlias(c.ID, "saorch: merger, owns claude/main")
+	if err != nil || got != "" {
+		t.Fatalf("a clashing default was given or failed: %q %v", got, err)
+	}
+	read, _ := s.Get(c.ID)
+	if read.Alias != "" || !strings.Contains(read.AliasNote, "@saorch") ||
+		!strings.Contains(read.AliasNote, holder.ID) {
+		t.Fatalf("the card does not say why it has no alias: %q", read.AliasNote)
+	}
+	if err := s.SetAlias(c.ID, "saorch2"); err != nil {
+		t.Fatal(err)
+	}
+	if read, _ := s.Get(c.ID); read.AliasNote != "" {
+		t.Fatalf("setting an alias left the note: %q", read.AliasNote)
+	}
+
+	free := aliasCard(t, s, "dotfiles-41800")
+	if got, err := s.GiveDefaultAlias(free.ID, "dotfiles: my shell"); err != nil || got != "dotfiles" {
+		t.Fatalf("a free default was not given: %q %v", got, err)
+	}
+	// A card that has one keeps it.
+	if got, _ := s.GiveDefaultAlias(free.ID, "other: name"); got != "" {
+		t.Fatalf("a card with an alias was given another: %q", got)
+	}
+	if read, _ := s.Get(free.ID); read.Alias != "dotfiles" {
+		t.Fatalf("the alias changed: %q", read.Alias)
+	}
+}
+
+// The cards already on the board take their defaults once, and a card the
+// operator cleared afterwards is not handed its default back.
+func TestTheDefaultBackfillRunsOnce(t *testing.T) {
+	s := openTestStore(t)
+	c := aliasCard(t, s, "sa84-merger-owns-claude-main")
+	if err := s.SetOverrides(c.ID, map[string]string{"title": "saorch: merger"}); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := s.BackfillDefaultAliases(); err != nil || n != 1 {
+		t.Fatalf("backfill gave %d, %v", n, err)
+	}
+	if read, _ := s.Get(c.ID); read.Alias != "saorch" {
+		t.Fatalf("the resident did not take its name: %q", read.Alias)
+	}
+	if err := s.SetAlias(c.ID, ""); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := s.BackfillDefaultAliases(); err != nil || n != 0 {
+		t.Fatalf("a second backfill ran: %d, %v", n, err)
+	}
+	if read, _ := s.Get(c.ID); read.Alias != "" {
+		t.Fatalf("a cleared alias came back: %q", read.Alias)
 	}
 }
