@@ -812,7 +812,7 @@ function openTerm(task) {
       return false;
     }
 
-    // NEW CONTEXT, on ctrl-alt-n: the room has the session write HANDOFF.md,
+    // NEW CONTEXT, on ctrl-alt-n: the room has the session write HANDOFF.<name>.md,
     // clears it and tells it to read the file back. Taken here so the runner
     // never sees the keystroke.
     //
