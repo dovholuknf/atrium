@@ -3184,7 +3184,8 @@ and it reverses the toast log's rule that what you were told is a fact about a s
 
 ## t-001. File-link hover tip flickers while the terminal repaints (bug)
 
-Status: not started. Backlog only, nobody builds it yet. Owned by @terminal. First item under the department ids.
+Status: built on `claude/sat-001`. `leave` hides after 150ms and a `hover` on the same path inside the window
+cancels it, in `terminal-links.js` only. Cause confirmed by a headless repro (`linkTip` section). Owned by @terminal.
 
 Hovering a path in an attached terminal while output repaints makes the tip pop, vanish, and pop again. The likely
 cause: xterm drops the link under the pointer whenever its row is redrawn, which fires `leave` (the tip hides), then
