@@ -5397,3 +5397,59 @@ no WARNING.
 
 **Expected:** the note starts `WARNING: the room is older than launch options, so model, effort, args, env were NOT
 applied`.
+
+## CU. A worker's reported turn counts as seen
+
+### CU1. Checks
+
+1. Launch a worker with `atrium_launch`. Have it `atrium_report` and end its turn. Its card shows no unseen dot, and
+   `atrium_task` shows `unseen` false with `seen_via` `launcher`.
+2. Launch a worker and have it end a turn without reporting. Its card shows the dot and its launcher gets the silent
+   stop notice.
+3. Start a card by hand, have it `atrium_say` to another session and end its turn. The dot shows.
+4. Have a reported worker end its turn with an Open Questions block. The dot is absent and the `? N` chip stays until
+   a person answers.
+
+## CV. No notifications from agent-launched cards
+
+### CV1. Checks
+
+1. Launch a worker from a session so its card carries `origin:agent`. With the board in another window, let the
+   worker finish a turn. No desktop notification, no sound. The card is marked, and the notification log has the line.
+2. Same with the board focused: no toast.
+3. Have the worker hit a permission prompt. It notifies and rings as before.
+4. Untick the box in the gear, repeat step 1. The alert comes back.
+5. Retick it, give the worker card its own tone, repeat step 1. It is heard.
+6. Reload with a cleared `atrium.sound`: the box is ticked.
+
+Automated: `HEADLESS_ONLY=quietDoer` in `scripts/test-board-headless.js`, focused and unfocused.
+
+## CW. Honest token labels, and Sonnet 5.5 priced
+
+### CW1. Checks
+
+1. Open a Claude card's details after a session with a few prompts. The cells read "N prompts", "M calls" (M at least
+   N), "uncached in", "out", "cache write 5m", "cache write 1h", "cache read", "est.". Hover each: the tip says what it
+   counts.
+2. The per-cause lines read "N prompts · M calls", "N refreshes" and "N calls" for a subagent.
+3. Hover a card for a second. The popover shows the same prompts and calls, and the prompts tip names `/clear`.
+4. Run `/clear` in a card and prompt once more. Prompts and cost keep growing from the earlier total, not restart.
+5. On a Sonnet 5.5 card, "est." is above $0 after a turn.
+6. `go test ./internal/daemon -run Usage`, and `HEADLESS_ONLY=contextSize,peekEverywhere node
+   scripts/test-board-headless.js`.
+
+## CX. Real-time token burn and usage charts
+
+### CX1. Checks
+
+1. Open the usage tab on a room with recent Claude turns. The four charts draw, the legend reads "uncached in", "out",
+   "cache read", "cache write 5m", "cache write 1h", and hovering a bar reads out that bucket.
+2. Switch 1h, 6h, 24h and 7d. The axis and bar width change and the tab stays inside its pane.
+3. End a turn on a card while the tab is open. The newest bar and that card's small chart grow within a few seconds.
+4. Click a small chart. The tab narrows to that card, with its own cause table. Clear the chip to come back.
+5. Open a card's details, then usage. A 24h chart shows, and its link opens the tab filtered to the card.
+6. On a hub with two rooms, both drawn, then stop one room. The tab names it and says its usage is not in the charts.
+7. Change the skin. The charts recolour without a reload.
+8. `go test ./internal/store ./internal/api ./internal/daemon -run Usage`, `go test ./internal/link -run UsageEvent`,
+   `HEADLESS_ONLY=usageCharts,contextSize node scripts/test-board-headless.js`, `bash scripts/check-board.sh` and
+   `bash scripts/check-skins.sh`.
