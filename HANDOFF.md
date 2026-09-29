@@ -31,17 +31,21 @@ You are @fabric, the Director of Fabric: hub, rooms, cross-room, overlays and pr
 
 - claude/fabric head is **35fa4a1** (merge of fb01), on top of 7e4f85d (the last handoff). Not merged with
   claude/main since the 6601547 rebase.
-- **UNCOMMITTED in this worktree: two smoke fixes in `scripts/provision-room.ps1`** (`Invoke-Smoke`, the `$body`
-  hash). Commit them only after a passing -SmokeOnly run:
+- **0db8437 (on top of b26199b, the previous handoff) is a WIP commit of two UNPROVEN smoke fixes in
+  `scripts/provision-room.ps1`** (`Invoke-Smoke`, the `$body` hash). They were committed only because of the
+  context clear. Prove them with a passing -SmokeOnly run before reporting them, or revert:
   1. The smoke model is `claude-sonnet-5-5` at low effort, not Haiku. Claude Code's auto mode does not run on
      Haiku, so a Haiku card fell back to asking for atrium_say, and nobody answered. fb03 on Sonnet ran in auto
      mode on sg3.
   2. `--allowedTools=<list>` is one argument with `=`. As two arguments the variadic flag also SWALLOWED THE
      PROMPT: the card came up at an empty input line (seen live on the sg3 smoke card's scrollback).
-- A background -SmokeOnly run against sg3 was started BEFORE fix 2, so it will fail with exit 8. Ignore it.
+- A background -SmokeOnly run against sg3 was started BEFORE fix 2, so it fails with exit 8 whatever it says.
+  Ignore it. Its smoke card (01a0eb4c) should be exited by the script. Check it is not still up on sg3.
 - Next: rerun `pwsh -NoProfile -File scripts/provision-room.ps1 sg3 -SmokeOnly -SmokeCwd C:/Users/claude/smoke-fresh-1`
   and read the card live with `Invoke-WebRequest http://127.0.0.1:7778/v1/tasks/sg3~01a0eb4c-f05a-7a79-8ede-aa7ead4f12c9/scrollback/text`.
-  If it passes, commit and add both fixes to `docs/changes/fabric-1-provision.md`.
+  If it passes, record both fixes in `docs/changes/fabric-1-provision.md` and commit that.
+- The orchestrator has already been told "fabric handoff ready" at b26199b. After the new context starts, send
+  it one atrium_report: the new head is 0db8437, and the smoke rerun is the first thing to do.
 - Smoke facts found this session:
   - The hub reuses the smoke card by WIRE NAME (`smoke-sg3`, id 01a0eb4c since 03:54), not by folder.
   - `launch_args` DOES reach the card, so args are not dropped on reuse.
