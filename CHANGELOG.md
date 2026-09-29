@@ -44,6 +44,18 @@ section heading is just "what landed in this iteration."
   room's claude row, the same shape as the hub machine's. Proven on m1mini 2026-09-28: a launched card said to a
   card on claude-sg4 and it arrived. Script only, nothing to restart.
 
+- **A card's details open after a second, under the pointer, on the board, the stack and the terminals list.** See
+  `docs/backlog-2.md` item 69 and `docs/test-plan.md` section BZ5.
+
+  The hover that opens the compact details (item 45) waited two seconds and set the panel beside the card, on
+  whichever side had room, so it jumped left or right of wherever you were looking. It now waits one second and
+  opens with its top left corner just below and right of the pointer. It is pushed in from any edge it would cross,
+  and goes above the pointer when there is no room below. The menu's `details` opens from where the pointer
+  clicked it. The one hover listener in `js/peek.js` already covered the stack rows and the terminals list rows as
+  well as the board cards, and the headless section `peekEverywhere` now holds it on all three, including while the
+  tab redraws under the pointer, and at each edge and corner of the screen. `internal/api/web` only: HUB RESTART
+  for the board a hub serves, the room restart for the room's own board.
+
 - **A card launched lean can be started with the full setup.** See `docs/backlog-2.md` item 64 and
   `docs/test-plan.md` section CF.
 
