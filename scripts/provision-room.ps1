@@ -1548,6 +1548,9 @@ echo "bin=$Bin"
 $clonePath = $null
 if ($Repo -ne 'none') { & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'room-git.ps1') init $Name -Target $Target -Ssh $Ssh @(if ($SshOption) { '-SshOption'; $SshOption -join ',' }) *>&1 | ForEach-Object { Write-Host $_; if ("$_" -match '^room-git cwd ok (.+)$') { $clonePath = $Matches[1].Trim() } }; if ($LASTEXITCODE -ne 0) { $clonePath = $null; Step 'git' 'warn' "room-git init exited $LASTEXITCODE. rerun: room-git.ps1 init $Name -Target $Target" } }
 
+# The permission gate, after the hooks: room-gate.ps1 copies the one dotfiles script and registers it first.
+& pwsh -NoProfile -File (Join-Path $PSScriptRoot 'room-gate.ps1') $Name -Target $Target -Ssh $Ssh @(if ($SshOption) { '-SshOption'; $SshOption -join ',' }) *>&1 | ForEach-Object { Write-Host $_ }; if ($LASTEXITCODE -ne 0) { Step 'gate' 'warn' "room-gate exited $LASTEXITCODE. rerun: room-gate.ps1 $Name -Target $Target" }
+
 $authState = Test-ClaudeAuth
 
 if ($bad -gt 0) { Finish 5 }
