@@ -5,6 +5,17 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **A worker that ends its turn without a report reaches its launcher every time.** See `docs/backlog-2.md` item 62
+  and `docs/test-plan.md` section CG.
+
+  sa42's notice was missed because the opening prompt goes on the command line and recorded no prompt, so a
+  worker's first turn owed nothing. The launch now records it as a `prompted` event, and a session coming up
+  waiting no longer counts as a turn end, so a worker is not stuck before it starts. The context notice now re-arms
+  when a `/clear` starts a new session: the context is read from the session the runner last started, not the
+  resume id, which does not move until the new session's first Stop (sa58: 151k, cleared, 336k with no second
+  notice). The ledger's `ended` notice to a launcher on another room is held in the relay outbox instead of being
+  dropped. `internal/daemon`, `internal/store`: ROOM RESTART.
+
 - **A provisioned room's claude cards get atrium-control, so they can answer another room.** See
   `docs/cross-room-say-design.md` "A room without atrium-control" and `docs/test-plan.md` CE7.
 

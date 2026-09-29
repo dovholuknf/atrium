@@ -544,6 +544,12 @@ type Store struct {
 	// after the transaction has released the connection. See ledger.go.
 	OnLedgerChange func(taskID string)
 	OnLedgerNotice func(n LedgerNotice)
+	// RemoteArbiter is where a ledger notice goes when the arbiter is on
+	// another room: the relay row to hold for it, or nil. Called inside the
+	// transaction, so it must not call back into the store. OnRelayHeld is
+	// called after a row it named commits, to send it. See queueNotice.
+	RemoteArbiter func(worker *Task, text string) *RelaySpec
+	OnRelayHeld   func()
 
 	// hot serves Recent and takes every event synchronously, on the halt path.
 	// cold are write-only durability sinks fed best-effort. See eventsink.go.

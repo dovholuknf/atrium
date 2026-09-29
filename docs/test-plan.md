@@ -4833,3 +4833,37 @@ A restart of the card after that is not lean either.
 last conversation with the full setup and takes the lean tags off. The terminal menu notes `restart this session` as
 `comes back lean`, and has `restart with my full setup`, which asks, takes the lean tags off and restarts. A card
 that is not lean shows none of this.
+
+## CG. A worker's silent stop and context notices reach its launcher every time
+
+Needs the room built from this change and a room restart. Go tests:
+`TestAFirstTurnWithoutAReportIsASilentStop` in `internal/daemon/a2a_test.go` (the opening prompt is recorded, a
+session starting is not a turn end, a first turn ended with no report is noticed), `TestAClearedCardIsANewCrossing`
+in `internal/daemon/contextsize_test.go` (a `/clear` re-arms the context notice before the new session's first turn
+ends) and `TestAnEndedNoticeReachesALauncherOnAnotherRoom` in `internal/daemon/relay_test.go`. See
+`docs/backlog-2.md` item 62.
+
+### CG1. A first turn with no report
+
+1. `atrium_launch` a worker with a brief that says "end your turn without calling atrium_report or atrium_say".
+
+**Expected:** the card's events show a `prompted` event with `"via": "launch"` right after `launched`. As its first
+turn ends, the launcher gets "... ended its turn without reporting ...", at once, not after the watchdog's two
+minutes. While the session is up and has not started the prompt, the card is not STUCK.
+
+### CG2. A cleared worker is told again
+
+1. Set the gear's context threshold low (say 20k), launch a worker, and let it pass the line. The launcher gets one
+   "is at Nk context" notice.
+2. Type `/clear` into the worker, then give it work that takes it past the line again in its first turn.
+
+**Expected:** a second notice arrives while that first turn is still running, naming the new size. Before this
+change nothing came until the turn ended, and the card's size stayed at the old session's figure until then.
+
+### CG3. An ended notice across rooms
+
+1. From a card on claude-sg4, `atrium_launch` a worker on another room, then kill that worker's process before it
+   reports.
+
+**Expected:** the launcher on claude-sg4 gets "... ended without a final report ...". With the hub down, the
+worker's room holds it in its relay outbox and sends it when the hub is back.

@@ -354,6 +354,11 @@ func (d *Daemon) onSession(in SessionEvent) error {
 		// The runner is up and its hooks are posting, which is what an
 		// after-restart wake waits for. See restartwake.go.
 		d.wakeSawSession(task.ID)
+		// The session its context is read from from now on, which after a
+		// `/clear` is not the resume id yet. See contextSizes.started.
+		if d.ctx != nil {
+			d.ctx.started(task.ID, in.Resume)
+		}
 		// A session that has just started is READY, not running.
 		//
 		// SessionStart fires before the session has done anything: it is
