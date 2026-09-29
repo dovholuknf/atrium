@@ -5298,3 +5298,43 @@ reporting" notice.
 1. The same script ends by saving a file that is not a program.
 
 **Expected:** a WARNING line, a snapshot named `atrium.revert-unknown-<timestamp>.exe`, and no error.
+
+## CP. Viewport changes apply in order
+
+### CP1. Two windows resizing at once
+
+- Automated: `go test ./internal/daemon -run TestConcurrentViewport -race` fails on the old code and passes now.
+- Manual: attach two browser windows of different sizes to one card, drag both at once, and check the pty size
+  (`stty size` in the shell) matches the wider window and the shorter height.
+
+## CQ. screen.go against xterm.js, and the pty size over the socket
+
+### CQ1. Run the differential
+
+1. From a checkout with `node` on the PATH, clear `ATRIUM_LOCATION`, `ATRIUM_SHARED_LOCATION` and
+   `ATRIUM_DEBUG_INPUTLAG`, then run `go test ./internal/daemon -run TestScreenAgainstXterm -v`.
+
+**Expected:** every subcase passes except `scroll region` and `wide characters`, which SKIP and print the difference.
+Without node the whole test skips and says so. A skip is a known bug in `screen.go` that is waiting on its own backlog
+item. When one is fixed the case fails with "now agree, so drop the skip", and the marker comes out.
+
+### CQ2. An accepted difference that goes away
+
+1. Read the `accept` map of any fixture. Each entry is a difference `screen.go` has on purpose, with the reason.
+
+**Expected:** if `screen.go` ever starts agreeing with xterm.js there, the test fails and names the entry to delete.
+
+### CQ3. The pty follows the pane
+
+1. Run `go test ./internal/daemon -run "TestTheAttachingViewers|TestReattachingAt|TestARestartedSession|TestASecondViewerSizes" -v`.
+
+**Expected:** all four pass.
+
+## CR. Hub input-lag log stays quiet when idle
+
+### CR1. Idle and typing
+
+- With `hub.err` input-lag logging on and a terminal attached but idle for 5 minutes, no `hub <room> echo: frame up ->
+  first bytes back ~45000ms` line appears.
+- Type into the same terminal: a `hub <room> echo` line still appears when the hop is over the threshold.
+- `go test ./internal/link -run "Lag|OnlyControl"` passes.
