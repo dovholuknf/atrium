@@ -5208,8 +5208,11 @@ const CTX_USAGE = {
     totals: { rows: 7, input: 4100, output: 18200, cache_write_5m: 0, cache_write_1h: 96000, cache_read: 512000,
       cost: 1.84 } },
   "cx-big": { context_now: 212000, model: "claude-opus-5-5",
-    totals: { rows: 41, input: 20400, output: 96100, cache_write_5m: 0, cache_write_1h: 388000,
-      cache_read: 6100000, cost: 7.62 } },
+    totals: { rows: 44, replies: 301, input: 20400, output: 96100, cache_write_5m: 0, cache_write_1h: 388000,
+      cache_read: 6100000, cost: 7.62 },
+    // 41 prompts of the card's own in 287 calls, and a refresh and two subagent rows on top.
+    by_cause: { operator: { rows: 41, replies: 287 }, keepalive: { rows: 2, replies: 2 },
+      subagent: { rows: 1, replies: 12 } } },
 };
 // The same cards pinned, so the terminals list draws a row for each without a
 // live session behind it.
@@ -5329,7 +5332,8 @@ async function contextSizeSection(browser, base) {
     pk = await peekState();
     if (pk) {
       if (pk.id !== "cx-big" || !/212k/.test(pk.text) || !pk.warn) fail("the hover details do not show 212k past the line: " + pk.text);
-      if (!/41/.test(pk.text) || !/\$7\.62/.test(pk.text)) fail("the hover details do not carry the totals: " + pk.text);
+      if (!/41\s*prompts/.test(pk.text) || !/287\s*calls/.test(pk.text) || !/\$7\.62/.test(pk.text)
+        || !/uncached in/.test(pk.text)) fail("the hover details do not carry the totals under their new labels: " + pk.text);
       if (!/warns at 150k/.test(pk.text)) fail("the hover details do not name the threshold: " + pk.text);
       if (pk.pinned) fail("a hover opened the pinned details.");
       if (pk.title) fail("the details use a native title tooltip.");
@@ -5706,6 +5710,174 @@ async function cardRouteSection(browser, base) {
   if (errors.length) fail("the card-route page threw: " + errors.join(" | "));
 }
 
+// ── a card an agent launched is logged and not said ───────────────────────
+// Backlog-2 item 44. `origin:agent` cards raise no toast, no desktop
+// notification and no sound while the gear's box is ticked (the default), and
+// the toast log keeps a line. A permission request from one still notifies,
+// unticking restores, and a card with a tone of its own is heard regardless.
+async function quietDoerSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  const poke = () => openStreams.forEach(r => { try { r.write("event: task\ndata: {}\n\n"); } catch (e) {} });
+  const errors = [];
+  landList = [];
+  landPerms = [];
+  const doer = (id, over) => landCard(id, Object.assign({ tags: ["origin:agent"], supervised: false }, over || {}));
+  for (const focused of [false, true]) {
+    const ctx = await landContext(browser, !focused);
+    try {
+      const p = await ctx.newPage();
+      p.on("pageerror", e => errors.push(String(e)));
+      await p.goto(base, { waitUntil: "domcontentloaded" });
+      await p.waitForFunction(() => typeof alerting !== "undefined", null, { timeout: 15000 });
+      await p.waitForTimeout(1500);
+      const said = title => p.evaluate(t => (window.__notes || []).some(n => n.title === t) ||
+        [...document.querySelectorAll("#toasts .toast")].some(e => e.textContent.includes(t)), title);
+      const logged = title => p.evaluate(t => !!toastLog().find(e => e.title === t), title);
+      const arrive = async (c, title, seen) => {
+        // Toasts cleared first, so an earlier one cannot be read as this one.
+        await p.evaluate(() => document.querySelectorAll("#toasts .toast").forEach(t => t.remove()));
+        landList = landList.concat(c);
+        poke();
+        // The line is there whether it was said or not, so it says the poll ran.
+        await p.waitForFunction(t => toastLog().some(e => e.title === t), title, { timeout: 10000 });
+      };
+      const where = focused ? "focused" : "unfocused";
+
+      const human = landCard("qd-human", { supervised: false });
+      await arrive(human, "qd human is on the board");
+      if (!await said("qd human is on the board")) fail(where + ": a human's card raised nothing.");
+
+      const d1 = doer("qd-doer");
+      await arrive(d1, "qd doer is on the board");
+      if (await said("qd doer is on the board")) fail(where + ": an agent-launched card was announced.");
+      if (!await logged("qd doer is on the board")) fail(where + ": a muted alert left no toast log line.");
+      const logRow = await p.evaluate(() => toastLog().find(e => e.title === "qd doer is on the board"));
+      if (logRow.taskFor !== "qd-doer") fail(where + ": the muted log line does not name its card.");
+
+      landPerms = [{ id: "qd-perm", task_id: "qd-doer", agent: "qd doer", tool: "Bash", command: "ls",
+        requested_at: new Date().toISOString().replace("Z", "") }];
+      poke();
+      await p.evaluate(() => runRefresh());
+      await p.waitForFunction(() => toastLog().some(e => e.title === "qd doer needs permission"), null,
+        { timeout: 10000 }).catch(() => fail(where + ": a permission request from an agent-launched card left no trace."));
+      if (!await said("qd doer needs permission")) fail(where + ": a permission request from an agent-launched card was muted.");
+      landPerms = [];
+
+      await p.evaluate(() => alerting.set({ quietDoers: false }));
+      await arrive(doer("qd-doer2"), "qd doer2 is on the board");
+      if (!await said("qd doer2 is on the board")) fail(where + ": unticking the box did not restore the alert.");
+
+      await p.evaluate(() => alerting.set({ quietDoers: true }));
+      await arrive(doer("qd-doer3", { sound: "chirp" }), "qd doer3 is on the board");
+      if (!await said("qd doer3 is on the board")) fail(where + ": a card with its own tone was muted.");
+
+      // The box itself: ticked by default, and it stores what is clicked.
+      await p.evaluate(() => { localStorage.removeItem("atrium.sound"); });
+      await p.reload({ waitUntil: "domcontentloaded" });
+      await p.waitForFunction(() => typeof paintSettings === "function", null, { timeout: 15000 });
+      const box = await p.evaluate(() => { paintSettings(); return document.getElementById("s-quietdoers").checked; });
+      if (!box) fail(where + ": the gear box is not ticked by default.");
+      await p.evaluate(() => {
+        const b = document.getElementById("s-quietdoers");
+        b.checked = false;
+        b.dispatchEvent(new Event("change"));
+      });
+      if (await p.evaluate(() => alerting.get().quietDoers) !== false) fail(where + ": unticking the box did not store it.");
+      landList = [];
+    } finally {
+      await ctx.close();
+    }
+  }
+  if (errors.length) fail("the quiet doer pages threw: " + errors.join(" | "));
+  landList = []; landPerms = [];
+  tasksMode = was;
+}
+
+// THE USAGE TAB, from a mocked /v1/usage on a hub with two rooms.
+//
+// Both rooms hold a card with the SAME id, and a live `usage` event for one must
+// grow that room's card and not the other's. A room that will not answer is named.
+async function usageChartsSection(browser, base) {
+  const wasHub = hubMode, wasSgg = sggAttached, wasTasks = tasksMode;
+  hubMode = true;
+  sggAttached = true;
+  soloMode = "ok";
+  tasksMode = "first";
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const p = await ctx.newPage();
+  const errors = [];
+  p.on("pageerror", e => errors.push(String(e)));
+  const asked = [];
+  let sggDown = false;
+  const now = Math.floor(Date.now() / 900000) * 900000;
+  const bucket = (t, cardId, tok) => ({
+    t: new Date(t).toISOString(),
+    total: { rows: 1, input: tok, output: tok, cache_write_5m: 0, cache_write_1h: 0, cache_read: tok * 10, cost: 0.5 },
+    cards: { [cardId]: { rows: 1, input: tok, output: tok, cache_write_5m: 0, cache_write_1h: 0, cache_read: tok * 10, cost: 0.5 } },
+    causes: { operator: { rows: 1, input: tok, output: tok, cache_write_5m: 0, cache_write_1h: 0, cache_read: tok * 10, cost: 0.5 } },
+  });
+  await ctx.route(u => new URL(u).pathname === "/v1/usage", route => {
+    const room = route.request().headers()["x-atrium-room"] || "";
+    asked.push(room);
+    if (room === "sgg" && sggDown) { route.fulfill({ status: 503, body: "no" }); return; }
+    route.fulfill({ json: { since: new Date(now - 86400000).toISOString(), until: new Date().toISOString(),
+      bucket: 900, buckets: [bucket(now - 900000, "c1", 1000), bucket(now, "c1", 2000)] } });
+  });
+  const cardCount = () => p.evaluate(() => [...document.querySelectorAll(".ucmini[data-id]")].map(e =>
+    e.dataset.room + "|" + e.dataset.id + "|" + e.querySelector("b").textContent));
+  try {
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof hubIsHub !== "undefined" && hubIsHub && hubRooms.length === 2, null, { timeout: 15000 });
+    await p.evaluate(() => document.querySelector('.tab[data-view="usage"]').click());
+    await p.waitForSelector("#uc-body .ucchart svg rect", { state: "attached", timeout: 10000 })
+      .catch(() => fail("usageCharts: the tab drew no chart from the mocked read."));
+    if (!asked.includes("alpha") || !asked.includes("sgg")) fail("usageCharts: each room was not asked for itself: " + asked);
+    const before = await cardCount();
+    if (before.length !== 2 || new Set(before.map(s => s.split("|").slice(0, 2).join("|"))).size !== 2) {
+      fail("usageCharts: the same card id in two rooms is not two entries: " + JSON.stringify(before));
+    }
+    const text = await p.evaluate(() => document.getElementById("uc-body").textContent);
+    for (const label of ["uncached in", "out", "cache read", "cache write 5m", "cache write 1h", "est."]) {
+      if (!text.includes(label)) fail("usageCharts: item 78's label '" + label + "' is missing.");
+    }
+    if (!(await p.evaluate(() => document.querySelector(".uclegend .uctip").dataset.tip === USAGE_TIPS.input))) {
+      fail("usageCharts: the legend does not reuse USAGE_TIPS.");
+    }
+
+    // A live row for alpha's c1 only.
+    const rects = () => p.evaluate(() => document.querySelectorAll(".ucchart[data-chart=burn] g[data-t]").length);
+    hubStreams.forEach(r => r.write("event: usage\ndata: " + JSON.stringify({ room: "alpha", task_id: "alpha~c1",
+      ended_at: new Date().toISOString(), cause: "operator", input: 100, output: 100, cache_write_5m: 0,
+      cache_write_1h: 0, cache_read: 1000, cost: 1.5 }) + "\n\n"));
+    await p.waitForFunction(() => /\$2\.50/.test(document.querySelector('.ucmini[data-room="alpha"] b').textContent),
+      null, { timeout: 5000 }).catch(() => fail("usageCharts: a usage event did not grow alpha's card."));
+    const after = await cardCount();
+    const sgg = after.find(s => s.startsWith("sgg|c1|")) || "";
+    if (!/\$1\.00$/.test(sgg)) fail("usageCharts: a usage event for alpha moved sgg's card: " + sgg);
+    if (!await rects()) fail("usageCharts: no bars after the event.");
+
+    // A skin change recolours a chart already drawn.
+    const fill = () => p.evaluate(() => getComputedStyle(document.querySelector(".ucchart .uck-in")).fill);
+    const f1 = await fill();
+    await p.evaluate(() => { document.documentElement.setAttribute("data-skin", "daylight"); });
+    const f2 = await fill();
+    if (f1 === f2) fail("usageCharts: a skin change left the chart's colour as it was: " + f1);
+
+    // A room that does not answer is named, not counted as zero.
+    sggDown = true;
+    await p.evaluate(() => loadUsageTab());
+    await p.waitForSelector(".ucmissing", { timeout: 5000 }).catch(() => fail("usageCharts: a silent room was not named."));
+    const missing = await p.evaluate(() => (document.querySelector(".ucmissing") || {}).textContent || "");
+    if (!/sgg/.test(missing)) fail("usageCharts: the missing-room note does not name the room: " + missing);
+    sggDown = false;
+  } finally {
+    await ctx.close();
+    hubMode = wasHub; sggAttached = wasSgg; tasksMode = wasTasks;
+  }
+  if (errors.length) fail("usageCharts: the page threw: " + errors.join(" | "));
+}
+
 async function main() {
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = "http://127.0.0.1:" + server.address().port;
@@ -5722,7 +5894,7 @@ async function main() {
       pasteBig: pasteBigSection, typing: typingSection, alias: aliasSection, copySelect: copySelectSection, busyGuard: busyGuardSection, keepalive: keepaliveSection,
       stuck: stuckSection, carryLink: carryLinkSection,
       skinScope: skinScopeSection, skinHeal: skinHealSection, toastLives: toastLivesSection,
-      history: historySection, contextSize: contextSizeSection, peekEverywhere: peekEverywhereSection, cardRoute: cardRouteSection };
+      history: historySection, contextSize: contextSizeSection, peekEverywhere: peekEverywhereSection, cardRoute: cardRouteSection, quietDoer: quietDoerSection, usageCharts: usageChartsSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -7632,6 +7804,7 @@ async function main() {
     await themePreviewSection(browser, base);
     // ── a click on an alert lands where the alert is about ─────────────────
     await landSection(browser, base);
+    await quietDoerSection(browser, base);
     await reselectSection(browser, base);
     // ── over a terminal the toasts hang from the top right ─────────────────
     await toastsTopSection(browser, base);
