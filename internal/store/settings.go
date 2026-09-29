@@ -34,6 +34,10 @@ const SettingGlobalAuto = "global_auto"
 const (
 	SettingSweepDead  = "sweep_dead_after"
 	SettingPruneAfter = "prune_after"
+	// SettingMergedCullGrace is how long a worker whose branch merged stays
+	// before the room culls it, in seconds. `off` disables the mark and the
+	// cull, and unset means thirty minutes. See daemon/mergedcull.go.
+	SettingMergedCullGrace = "merged_cull_grace"
 )
 
 // SettingReplayMode picks how a card's history is turned back into a terminal.

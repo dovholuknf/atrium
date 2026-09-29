@@ -1821,6 +1821,20 @@ var migrations = []struct {
 			`ALTER TABLE task ADD COLUMN last_rows INTEGER NOT NULL DEFAULT 0`,
 		},
 	},
+	{
+		// The merged-cull mark on a work item: which merge covered it, when the
+		// room will cull it, and who held it. Empty text is "never". See
+		// merged.go and docs/rnd/merged-cull-design.md.
+		name: "0075_work_merged_cull",
+		stmts: []string{
+			`ALTER TABLE work_item ADD COLUMN merged_at     TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE work_item ADD COLUMN merged_into   TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE work_item ADD COLUMN merged_sha    TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE work_item ADD COLUMN merged_branch TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE work_item ADD COLUMN cull_at       TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE work_item ADD COLUMN held_by       TEXT NOT NULL DEFAULT ''`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the
