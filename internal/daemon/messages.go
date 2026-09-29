@@ -438,7 +438,7 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Nobody there to read it. See sessionGone.
-	if t, err := d.st.Get(taskID); err == nil && sessionGone(t) {
+	if t, err := d.st.Get(taskID); err == nil && d.sessionGone(t) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"delivered": "undeliverable", "reachable": ReachNo, "warning": goneNote(t),
