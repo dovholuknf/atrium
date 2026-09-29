@@ -464,6 +464,12 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// inputlagsetting.go.
 	lagOn, lagNamed := p.noteInputLag(r)
 
+	// The strip's order goes to every room, named or not. See pinorder.go.
+	if ids, ok := pinOrderIn(r); ok {
+		p.fanPinOrder(w, r, ids)
+		return
+	}
+
 	room, named := p.roomFor(r)
 	if room == "" {
 		// NO ROOM NAMED AND MORE THAN ONE ATTACHED: the aggregate view.
