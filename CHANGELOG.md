@@ -5,6 +5,32 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **A say reaches a `done` card whose terminal is still live.** See `docs/backlog-2.md` item 83.
+
+  A worker that reports `done` keeps running at its prompt so a director can send it review changes, but `atrium_say`
+  answered `undeliverable ... resume it first`. The refusal read the card's column and its recorded pid, and never asked
+  the supervisor, so a pid that was 0 or was not the runner made a live terminal look gone. A `done` or `dead` card is
+  now gone only when its pid is dead AND atrium holds no runner for it whose process is still running and whose session
+  has not ended. A runner that lingers after a SessionEnd hook is still not somebody to talk to, which is decided from
+  the card's newest launch or exit event.
+
+  `atrium tell` and the peer routes answered a flat `409` for any `done` card, and now use the same test, so the doors
+  agree. Delivering does not move the card out of `done`: the column records that the worker reported, and its next
+  report files it again, so a review say is not treated as new work. A `done` card with nothing live still refuses and
+  says to resume it first.
+
+- **A say's lifecycle is on record.** See `docs/backlog-2.md` item 32 and `docs/say-lifecycle-design.md`.
+
+  Every `atrium_say` and `atrium tell` now writes a row (migration `0069_say`) that follows the message: the handle
+  as typed, whether it resolved by handle, alias or card, queued, delivered, and the channel that carried it
+  (terminal, hook or stop). Cross-room says record held, handed and unconfirmed as far as this room can see. The
+  sender reads the say id and `via` in the answer, and either end reads the history with `atrium_task` and `says`,
+  or `GET /v1/tasks/{id}/says`. A name that matches nothing now answers with the candidates it might have meant and
+  queues nothing. `atrium_say` takes `reply: true`, which shows the say as owed on the receiving card
+  (`replies_owed` in the task JSON) until that card says something back, and a compact or a clear stamps the say it
+  may have erased. Rows are swept after 30 days or 2000 rows, and an owed reply lapses after 7 days or when its card
+  ends.
+
 - **The screen's combining-mark table no longer fills with repeats, and the idle badge reads a wide character once.**
   See `docs/backlog-2.md` items 86 and 88.
 

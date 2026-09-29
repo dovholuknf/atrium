@@ -5653,3 +5653,65 @@ it on from either place repaints the other and the bell.
    looks-idle delay.
 
 **Expected:** the card gets the looks-idle badge as it would with an ASCII prompt.
+
+## DG. A say's lifecycle is on record
+
+### DG1. A miss offers candidates
+
+1. From one session, `atrium_say` to `atrium` while a live card is named `atrium-runtime`.
+
+**Expected:** an error saying `no session called atrium` and `did you mean: atrium-runtime`. Nothing is queued for
+that card. `atrium_task` with `says` on the sender shows an `unresolved` row.
+
+### DG2. Queued, then delivered
+
+1. Say something to a session that is mid-turn, so it queues.
+2. Note the `say` id and `via` in the answer.
+3. Let the target make a tool call.
+4. Read `atrium_task` with `says` on either card.
+
+**Expected:** the row was `queued`, and is now `delivered` with channel `hook`.
+
+### DG3. A reply owed
+
+1. `atrium_say` with `reply: true` to a session.
+2. Read the target's task JSON.
+3. Have the target say something back to the sender.
+
+**Expected:** `replies_owed` is 1 after step 2 and gone after step 3.
+
+### DG4. A clear marks the say
+
+1. Deliver a say with `reply: true`, then `/clear` the target.
+
+**Expected:** the row carries `reset_kind: clear` and is still owed.
+
+### DG5. Cross-room
+
+1. Say to `name@room` with the hub down.
+
+**Expected:** the row is `held`, and becomes `handed` once the hub answers.
+
+## DH. A say reaches a done card that is still running
+
+### DH1. Say to a done card with a live terminal
+
+1. Launch a worker under atrium and let it report `done` with `atrium_report`. Leave it at its prompt.
+2. From another session run `atrium_say` to the worker with a review comment.
+
+**Expected:** the answer is `terminal` or `queued`, never `undeliverable`. The text appears at the worker's prompt. The
+card stays in `done`.
+
+### DH2. `atrium tell` agrees
+
+1. With the same worker, run `atrium tell <handle> "one more thing"`.
+
+**Expected:** it is typed or queued and does not answer that the session has ended.
+
+### DH3. A done card with no runner still refuses
+
+1. Exit the worker so its session ends, or pick a `done` card with no terminal.
+2. Run `atrium_say` and `atrium tell` at it.
+
+**Expected:** `atrium_say` answers `undeliverable` and the note says to resume it first. `atrium tell` answers that the
+session has ended. Nothing is queued.
