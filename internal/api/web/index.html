@@ -2156,10 +2156,11 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
      about to make is a legitimate thing to point a card at. -->
 <dialog id="pickrepo" data-guard>
   <div class="dlg-head">
-    <div class="grow"><h2>pick a repository</h2></div>
+    <div class="grow"><div class="dlg-eyebrow">launch · repository</div><h2>pick a repository</h2></div>
     <button onclick="document.getElementById('pickrepo').close()">close</button>
   </div>
   <div class="dlg-body">
+    <div class="dlg-grid">
     <div class="field">
       <label class="eyebrow" for="pk-provider">provider</label>
       <div class="picker"><select id="pk-provider" onchange="loadPickRepos()"></select></div>
@@ -2169,8 +2170,9 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       <input type="text" id="pk-filter" spellcheck="false" placeholder="type to narrow"
         oninput="paintPickList()">
     </div>
+    </div>
     <div id="pk-list" class="pvrepos"></div>
-    <div class="field">
+    <div class="field dlg-sec">
       <label class="eyebrow">or name one that is not listed</label>
       <div class="picker">
         <input type="text" id="pk-org" spellcheck="false" placeholder="org" list="pk-orgs">
@@ -2189,12 +2191,12 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
      to one question, and the make button lives here where the branch is. -->
 <dialog id="pickwhere" data-guard>
   <div class="dlg-head">
-    <div class="grow"><h2 id="pw-heading">where</h2></div>
+    <div class="grow"><div class="dlg-eyebrow">launch · checkout or worktree</div><h2 id="pw-heading">where</h2></div>
     <button onclick="document.getElementById('pickwhere').close()">close</button>
   </div>
   <div class="dlg-body">
     <div id="pw-list" class="pvrepos"></div>
-    <div class="field" id="pw-make-field" hidden>
+    <div class="field dlg-sec" id="pw-make-field" hidden>
       <label class="eyebrow">make a worktree</label>
       <div class="picker">
         <input type="text" id="pw-branch" spellcheck="false" placeholder="branch name">
@@ -2518,10 +2520,12 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 
 <dialog id="launch" data-guard>
   <div class="dlg-head">
-    <div class="grow"><h2 id="l-heading">start</h2></div>
+    <div class="grow"><div class="dlg-eyebrow">launch</div><h2 id="l-heading">start</h2></div>
     <button onclick="document.getElementById('launch').close()">close</button>
   </div>
   <div class="dlg-body">
+    <section class="dlg-sec">
+    <div class="dlg-sec-h">what and where</div>
     <!-- WHICH MACHINE THIS RUNS ON. Hidden when there is nothing to ask: no
          hub, or one room, or a board already scoped to a room. A card starts
          on a machine and it stays there, so this is asked once, here, and
@@ -2594,6 +2598,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       </label>
       <span class="hintline" id="l-resume-note"></span>
     </div>
+    </section>
 
     <!-- EVERYTHING BELOW IS OPTIONAL AND SAYS SO BY BEING SHUT.
          Ten controls, one of which has to be answered. The other nine were the
@@ -2609,8 +2614,9 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
          behind a closed fold. The state is deliberately not remembered: a form
          that remembers being open is a form that is open.
          See docs/backlog/backlog-2026-09-14-004.md. -->
-    <details id="l-more">
+    <details id="l-more" class="dlg-sec">
       <summary>more</summary>
+    <div class="dlg-grid">
     <!-- Paste a pull request, an issue or a ticket and the rest of this form
          fills itself in. Atrium learns nothing about the system it came from:
          a recogniser is a pattern and a set of templates, and whoever wrote
@@ -2618,7 +2624,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
          This leaves entirely once backlog-2026-09-14-003 gives it its own
          door. Folded until then rather than removed, because nothing else can
          do it yet. -->
-    <div class="field" id="l-link-field">
+    <div class="field span" id="l-link-field">
       <label class="eyebrow" for="l-url">paste a link</label>
       <div class="picker">
         <input type="text" id="l-url" spellcheck="false"
@@ -2676,19 +2682,20 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       <span class="hintline">Free text. Split on commas and never on spaces, so a tag with a space
         in it is one tag.</span>
     </div>
-    <div class="field">
+    <div class="field span">
       <label class="eyebrow" for="l-why">why</label>
       <input type="text" id="l-why" spellcheck="false" placeholder="read this in a week and remember">
     </div>
     <!-- Handed to the runner as its first instruction. Hidden while resuming,
          because that conversation already has one and the daemon refuses
          both. -->
-    <div class="field" id="l-prompt-field">
+    <div class="field span" id="l-prompt-field">
       <label class="eyebrow" for="l-prompt">first instruction</label>
       <textarea id="l-prompt" rows="3" spellcheck="false"
         placeholder="what it should start on. leave empty to start at a bare prompt"></textarea>
       <span class="hintline" id="l-prompt-note">Sent as the runner's opening
         argument. A runner with no way to take one will say so.</span>
+    </div>
     </div>
     </details>
   </div>
@@ -2726,7 +2733,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
      to work on. -->
 <dialog id="dispatch">
   <div class="dlg-head">
-    <div class="grow"><h2 id="dp-heading">send work to another machine</h2></div>
+    <div class="grow"><div class="dlg-eyebrow">dispatch</div><h2 id="dp-heading">send work to another machine</h2></div>
     <button onclick="document.getElementById('dispatch').close()">close</button>
   </div>
   <div class="dlg-body">
@@ -2735,6 +2742,8 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       back down the reply. Nothing dials it. A machine that is switched off collects its queue
       when it comes back.
     </p>
+    <section class="dlg-sec dlg-grid">
+    <div class="dlg-sec-h">where it runs</div>
     <div class="field">
       <label class="eyebrow" for="dp-room">room</label>
       <input type="text" id="dp-room" spellcheck="false" placeholder="the name that machine reports itself under">
@@ -2745,7 +2754,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       <span class="hintline">Named as THAT machine names it. This board's runner list says
         nothing about what is configured over there, so it is typed rather than picked.</span>
     </div>
-    <div class="field">
+    <div class="field span">
       <label class="eyebrow" for="dp-dir">working directory</label>
       <input type="text" id="dp-dir" spellcheck="false" placeholder="leave empty, unless that room has a workspace">
       <span class="hintline" id="dp-dir-note">Atrium does not make the directory. Leave this
@@ -2753,6 +2762,9 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         without a workspace refuses a directory outright, and one that is not there is refused
         before anything starts.</span>
     </div>
+    </section>
+    <section class="dlg-sec">
+    <div class="dlg-sec-h">what it works on</div>
     <div class="field">
       <label class="eyebrow" for="dp-title">title</label>
       <input type="text" id="dp-title" spellcheck="false" placeholder="what to show on the card it makes">
@@ -2762,7 +2774,12 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       <textarea id="dp-prompt" rows="4" spellcheck="false"
         placeholder="what it should start on over there"></textarea>
     </div>
-    <div class="toolbar"><button class="go big" onclick="busyWhile(this, doDispatch, 'queueing…')">queue it</button></div>
+    </section>
+  </div>
+  <div class="dlg-foot">
+    <button onclick="document.getElementById('dispatch').close()">cancel</button>
+    <span class="grow"></span>
+    <button class="go big" onclick="busyWhile(this, doDispatch, 'queueing…')">queue it</button>
   </div>
 </dialog>
 
@@ -2794,6 +2811,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <dialog id="browse">
   <div class="dlg-head">
     <div class="grow">
+      <div class="dlg-eyebrow">launch · directory</div>
       <h2>pick a directory</h2>
       <div class="crumb" id="b-path"></div>
     </div>

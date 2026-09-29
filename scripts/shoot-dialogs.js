@@ -81,7 +81,18 @@ const server = http.createServer((req, res) => {
   if (url === "/v1/sources") return json(res, { sources: [] });
   if (url === "/v1/recognisers") return json(res, { recognisers: [] });
   if (url === "/v1/actions") return json(res, { actions: [{ id: "a1", label: "run the tests", prompt: "run the tests", exit: false }] });
-  if (url === "/v1/providers") return json(res, { providers: [] });
+  if (url === "/v1/providers") return json(res, { providers: [{ name: "github", enabled: true, worktrees: true }] });
+  if (/^\/v1\/providers\/[^/]+\/repos$/.test(url)) return json(res, { orgs: ["dovholuknf", "openziti"], repos: [
+    { org: "dovholuknf", repo: "atrium", path: "D:/git/github/dovholuknf/atrium", present: true },
+    { org: "openziti", repo: "ziti", path: "D:/git/github/openziti/ziti", present: true },
+    { org: "openziti", repo: "zrok", path: "D:/git/github/openziti/zrok", present: false }] });
+  if (/^\/v1\/providers\/[^/]+\/worktrees$/.test(url)) return json(res, { worktrees: [
+    { branch: "claude/sleek-dialogs", path: "D:/worktrees/claude/atrium/sleek-dialogs" },
+    { branch: "claude/main", path: "D:/worktrees/claude/atrium/main" }] });
+  if (url === "/v1/browse") return json(res, { path: "D:/git/github", parent: "D:/git", entries: [
+    { name: "dovholuknf", path: "D:/git/github/dovholuknf" },
+    { name: "openziti", path: "D:/git/github/openziti" },
+    { name: "notes", path: "D:/git/github/notes", repo: true }] });
   if (url === "/v1/dispatch") return json(res, { dispatches: [] });
   if (url === "/v1/history") return json(res, { tasks: [], total: 0 });
   if (url === "/v1/waiting") return json(res, { tasks: [] });
@@ -99,6 +110,12 @@ const SHOTS = {
   detail: () => openTask("t1"),
   harness: async () => { await renderRunners(); await renderFixtures(); await editHarness("claude"); },
   fixture: async () => { await renderRunners(); await renderFixtures(); await editFixture("fx1"); },
+  launch: () => openLaunch(),
+  "launch-more": async () => { await openLaunch(); document.getElementById("l-more").open = true; },
+  pickrepo: () => openPickRepo("l-cwd"),
+  pickwhere: async () => { await openPickRepo("l-cwd"); await openWhere("dovholuknf", "atrium", "D:/git/github/dovholuknf/atrium"); },
+  browse: () => openBrowse(),
+  dispatch: () => openDispatch("lab"),
 };
 
 (async () => {
