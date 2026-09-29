@@ -3551,3 +3551,35 @@ sa98 in the same directory is exposed to the same thing.
 
 Tests: a runner launched in a directory without `.git` whose card's `Worktree` moves to a subdirectory with a `.git`
 and back is not wound down. A runner whose launch directory really is removed still is.
+
+## r-005. A lean launch that can still start subagents (feature)
+
+Status: not started. Owned by @runtime. Approved by clint 2026-09-29.
+
+A lean launch removes the `Agent` tool (`leanDisallowed` in `internal/daemon/lean.go`) and loads none of the
+operator's agent pack. So a lean review-manager cannot start the reviewers it exists to run. @review now launches
+review-managers and walkers with the full setup, which carries every skill, memory and CLAUDE.md the operator has.
+
+Add a way to launch lean and keep `Agent` plus a named list of agents, for example
+`lean_agents: ["codebase-steward", "go-security-reviewer", "functional-tester", "nonfunctional-tester"]` on
+`atrium_launch`, and the review-panel skill. Only the named agents' files are made available. Everything else lean
+drops stays dropped. r-001 edits the same file (it keeps `statusLine` for lean cards), so build the two together or
+one after the other.
+
+## f-004. Two rooms on one machine, to bring one up and migrate (design)
+
+Status: not started. Design first, backlog only. Owned by @fabric. Raised by clint 2026-09-29.
+
+clint, after the t-002 room restart: "we should go back to allowing sg4 to have two rooms so we can bring one up,
+migrate". A room restart today stops every session the room supervises until it comes back. A second room on the
+same machine, started beside the first, would let a new build come up, take cards over one at a time, and let the
+old room go. The same move would carry a room to another machine: "what if i wanted to move to sg3?"
+
+Known hazard, from memory and past incidents: a second room steals the hook pointer and port 7777 unless
+`ATRIUM_LOCATION` is private (`throwaway-room-hijacks-hooks`). Design questions:
+
+1. How a card moves between rooms: its store rows, its conversation (the transcript lives on the machine), and its
+   pty, which cannot move, so the runner resumes in the new room.
+2. How hooks find the right room while two are up.
+3. Whether this replaces the room restart for deploys, and what the board shows during a migration.
+4. Moving to another machine (sg4 to sg3): the worktree and the Claude transcript must travel too.
