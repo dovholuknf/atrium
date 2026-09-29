@@ -39,7 +39,12 @@ func prompt(t *testing.T, d *Daemon, id string) {
 	if err := d.st.SetStatus(id, store.StatusRunning); err != nil {
 		t.Fatal(err)
 	}
-	if err := d.st.AppendEvent(id, store.EventPrompted, map[string]any{"text": "do the thing", "via": "launch"}); err != nil {
+	// As the launch records it: the session that asked is the sender.
+	ev := map[string]any{"text": "do the thing", "via": "launch"}
+	if c, err := d.st.Get(id); err == nil && c.Launched() {
+		ev["from_peer"] = c.SpawnedBy
+	}
+	if err := d.st.AppendEvent(id, store.EventPrompted, ev); err != nil {
 		t.Fatal(err)
 	}
 }
