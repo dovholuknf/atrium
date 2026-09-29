@@ -384,3 +384,12 @@ func (t *Task) Asking() bool { return strings.TrimSpace(t.Ask) != "" }
 // with a peer question behind a human one reads as waiting on you, which is
 // true: you are the one it is waiting on first.
 func (t *Task) AskedAPeer() bool { return t.Asking() && t.AskPeer != "" }
+
+// OpenAskCount is OpenAskCounts for ONE card, for the event that publishes it.
+func (s *Store) OpenAskCount(taskID string) (int, error) {
+	n := 0
+	err := s.guard(func() error {
+		return s.db.QueryRow(`SELECT COUNT(*) FROM ask WHERE answered_at = '' AND task_id = ?`, taskID).Scan(&n)
+	})
+	return n, err
+}

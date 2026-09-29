@@ -328,3 +328,13 @@ func (s *Store) SweepSays() (int, error) {
 	})
 	return n, err
 }
+
+// RepliesOwedFor is RepliesOwed for ONE card, for the event that publishes it.
+func (s *Store) RepliesOwedFor(taskID string) (int, error) {
+	n := 0
+	err := s.guard(func() error {
+		return s.db.QueryRow(`SELECT COUNT(*) FROM say
+			WHERE reply_wanted = 1 AND replied_at = '' AND lapsed = 0 AND to_task = ?`, taskID).Scan(&n)
+	})
+	return n, err
+}
