@@ -189,6 +189,11 @@ type Daemon struct {
 	// usage records every Claude card's token use, a row per turn. See usage.go.
 	usage *usageTracker
 
+	// limitLast is the last limit figure kept per card and kind, so a repeated
+	// statusline post writes nothing. See keepLimitReadings.
+	limitMu   sync.Mutex
+	limitLast map[string]string
+
 	// ledgerDirty asks the snapshot writer to rewrite work-ledger.md. One slot,
 	// so any number of changes while a write is under way are one more write.
 	// See ledger.go.
@@ -506,6 +511,7 @@ func New(opts Options) (*Daemon, error) {
 	d.usage.broadcast = d.ap.Broadcast
 	// A keep-alive refresh's row is announced the same way as a turn's.
 	d.ka.spent = func(u *store.SessionUsage) error {
+		d.usage.stamp(u)
 		err := st.AddSessionUsage(u)
 		if err == nil {
 			d.usage.emitRow(u)

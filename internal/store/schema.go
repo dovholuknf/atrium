@@ -1832,6 +1832,32 @@ var migrations = []struct {
 			`ALTER TABLE task ADD COLUMN parked_at TEXT NOT NULL DEFAULT ''`,
 		},
 	},
+	{
+		// Who a turn's spend files under, kept on the row because a culled worker's
+		// card and tags are gone. No default, so rows from before read NULL.
+		name: "0073_usage_grouping",
+		stmts: []string{
+			`ALTER TABLE session_usage ADD COLUMN dept TEXT`,
+			`ALTER TABLE session_usage ADD COLUMN launcher TEXT`,
+			`ALTER TABLE session_usage ADD COLUMN launcher_id TEXT`,
+		},
+	},
+	{
+		// The room's own record of each card's usage-limit percent, for the usage
+		// tab's first paint. Written only when a figure changes, pruned on the sweep.
+		name: "0074_limit_reading",
+		stmts: []string{
+			`CREATE TABLE IF NOT EXISTS limit_reading (
+				task_id   TEXT NOT NULL,
+				kind      TEXT NOT NULL,
+				pct       INTEGER NOT NULL,
+				resets_at TEXT NOT NULL DEFAULT '',
+				at        TEXT NOT NULL
+			)`,
+			`CREATE INDEX IF NOT EXISTS limit_reading_card ON limit_reading (task_id, kind, at)`,
+			`CREATE INDEX IF NOT EXISTS limit_reading_at ON limit_reading (at)`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the
