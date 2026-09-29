@@ -5,6 +5,19 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **An alias shows on the terminal title bar, comes from a resident's name, and an agent can read and set it with
+  `atrium_alias`.** See `docs/backlog-2.md` item 47 and `docs/test-plan.md` section UA.
+
+  The far-left label of the terminal title bar shows `@alias` as a handle in place of the repo:branch path. The
+  repo:branch and worktree move to its tooltip, and a click on it sets the alias. A card with no alias keeps today's
+  label. The solo window's title leads with `@alias`. The default alias now also comes from a digitless name
+  (`saorch: merger` gives `@saorch`) when a space follows the colon, the name is at least 2 characters and it is not
+  a work kind (`fix`, `docs`, `main`, ...). A rename of a card with no alias gives the default too. A default that
+  clashes leaves the card a `no alias` chip saying who holds it (migration `0067_task_alias_note`, `alias_note` on the
+  card). Live cards get their defaults once, at the next room start. New `atrium_alias` tool on atrium-control reads,
+  sets or clears the alias of your own card or another (not on the older stdio CLI server). ROOM RESTART for the
+  daemon and store, HUB RESTART for the board a hub serves.
+
 - **One action gives a card a fresh context: `new context`, or Ctrl+Alt+N.** See `docs/backlog-2.md` item 66 and
   `docs/test-plan.md` section CG.
 

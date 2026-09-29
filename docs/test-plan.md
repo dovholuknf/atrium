@@ -4885,3 +4885,58 @@ replaces it. Neither failure types anything after the failing step.
 
 **Expected:** the first has no `new context` entry, and `POST /v1/tasks/<id>/new-context` answers 409. The second
 answers 409 and the first run is undisturbed.
+
+## UA. An alias from a resident's name, on the terminal title bar, and `atrium_alias`
+
+Widens section BS (item 35). See `docs/backlog-2.md` item 47. Go tests: `internal/store/alias_test.go` (the default
+from a digitless name, the `workKinds` stoplist, `GiveDefaultAlias` writing `alias_note` on a clash, `SetAlias`
+clearing it, the backfill running once), `internal/api/alias_test.go` (a title override gives the default) and
+`internal/link/control_alias_test.go` (`atrium_alias` read, set, clear, another card, a clash). The headless
+`aliasSection` in `scripts/test-board-headless.js` covers the bar label, its tooltip, the follow on a change, the
+clear, the window title, the bar's click-to-set PATCH and the clash chip; run it alone with
+`HEADLESS_ONLY=alias node scripts/test-board-headless.js`. Run `bash scripts/check-board.sh` after board edits.
+
+### UA1. A default from a resident's name
+
+1. Launch a card titled `saorch: merger for backlog-2`, one titled `sa90: fix the bar`, one titled `docs: tidy up`
+   and one titled `main:dotfiles`.
+
+**Expected:** the first wears `@saorch` and the second `@sa90`. The third and fourth have no alias: `docs` is a work
+kind, not a name, and `main:dotfiles` has no space after the colon. Renaming a card with no alias to `sarev: review`
+gives it `@sarev`, unless the same change sets an alias.
+
+### UA2. A default that clashes
+
+1. With `@saorch` held by a live card, launch a second card titled `saorch: second merger`.
+
+**Expected:** the second card has no alias and wears a `no alias` warn chip. Its tip, and the note on the card menu's
+alias item, say its default is taken and name the card holding `@saorch`. Setting any alias on it clears the chip.
+
+### UA3. The terminal title bar
+
+1. Attach the terminal of a card with an alias, then of a card without one.
+2. On the first, hover the far-left label, then click it and set a new alias. Then clear it.
+
+**Expected:** the first shows `@alias` in the far-left slot, styled as a handle, not the `repo:branch` path. The
+tooltip holds the repo:branch and the worktree. A click opens the alias dialog; the new alias shows on the bar at once
+and on the card, and the solo window's title leads with it. Cleared, the bar goes back to today's repo:branch label,
+and its tooltip says to click it to give the card an alias. A card without an alias shows today's label.
+
+### UA4. `atrium_alias` from an agent
+
+1. From a claude worker, call `atrium_alias` with no arguments, then with `alias: "sa-x"`, then with `clear: true`.
+2. Call it with `card` naming another card, and with an alias another live card already holds.
+
+**Expected:** the first returns the worker's own card, handle, title, alias and any note. The second sets `@sa-x`
+(the card and the bar follow) and returns the old alias as `was`. The third clears it. With `card` it reads or sets
+that card. A taken alias is refused with an error naming the holder, and nothing changes. The tool is on the room's
+atrium-control server, not the older stdio CLI one.
+
+### UA5. The backfill runs once
+
+1. On a room whose live cards predate this change (say `saorch: merger...` with no alias), restart the room.
+2. Clear one of the new aliases and restart the room again.
+
+**Expected:** after the first restart the eligible live cards have their defaults (`@saorch`), and clashes carry
+`no alias` chips. After the second the cleared card stays without an alias: the pass is guarded by the setting
+`alias_default_backfill` and does not run again.
