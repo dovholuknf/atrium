@@ -6209,3 +6209,20 @@ appears on the board once the status line has posted.
 
 **Expected:** a different path replaces the tip at once, blank terminal hides it within about 150 ms, and leaving the
 terminal, the click and the scroll hide it at once.
+
+## DZ. A director is quiet while its workers are out
+
+### DZ1. Director with a live worker
+
+1. Launch a director tagged `atrium:director` from the orchestrator, and have it launch a worker.
+2. Let the director end a turn without reporting to the orchestrator.
+
+**Expected:** no "ended its turn without reporting" notice reaches the orchestrator and the director shows no STUCK
+mark.
+
+### DZ2. Every worker ended
+
+1. Cull the worker, or let it exit.
+2. Let the director end another turn without reporting.
+
+**Expected:** the orchestrator gets exactly one notice, and the director shows STUCK on the usual backoff.
