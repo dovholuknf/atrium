@@ -113,7 +113,7 @@ func newRoot() *cobra.Command {
 	// became one. See docs/one-atrium-plan.md.
 	backups := hubBackupsCmd("atrium-")
 	backups.AddCommand(hubRestoreCmd("atrium-"))
-	root.AddCommand(newRun(), roomCmd(), hubRoomsCmd("rooms", "atrium-"), backups, dbCmd(), ledgerCmd())
+	root.AddCommand(newRun(), roomCmd(), hubRoomsCmd("rooms", "atrium-"), backups, dbCmd(), ledgerCmd(), usageCmd())
 	for _, c := range root.Commands() {
 		switch c.Name() {
 		case "run", "room":

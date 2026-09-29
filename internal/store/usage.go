@@ -53,6 +53,11 @@ type SessionUsage struct {
 	LastMessage  string  `json:"last_message,omitempty"`
 	Cost         float64 `json:"-"`
 	Prices       string  `json:"-"`
+	// Dept, Launcher and LauncherID are who the turn's spend files under, as
+	// they were at the time. See 0073_usage_grouping.
+	Dept       string `json:"-"`
+	Launcher   string `json:"-"`
+	LauncherID string `json:"-"`
 }
 
 // UsageTotals is a card's spend summed.
@@ -84,10 +89,11 @@ func (s *Store) AddSessionUsage(u *SessionUsage) error {
 	return s.guard(func() error {
 		_, err := s.db.Exec(`INSERT INTO session_usage (id, task_id, resume_id, started_at, ended_at, cause,
 			after_resume, model, replies, input, output, cache_write_5m, cache_write_1h, cache_read, context,
-			last_message, cost, prices) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			last_message, cost, prices, dept, launcher, launcher_id)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			u.ID, u.TaskID, u.ResumeID, ts(u.Started), ts(u.Ended), u.Cause, u.AfterResume, u.Model, u.Replies,
 			u.Input, u.Output, u.CacheWrite5m, u.CacheWrite1h, u.CacheRead, u.Context, u.LastMessage, u.Cost,
-			u.Prices)
+			u.Prices, u.Dept, u.Launcher, u.LauncherID)
 		return err
 	})
 }
