@@ -5,6 +5,16 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **The screen model's real-session tests no longer read the live scrollback.** See `docs/backlog-2.md` item 93.
+
+  `screen_real_test.go` used to replay every big file in the live room's own ring, so the full suite failed on
+  whatever the machine did that week. It now runs a frozen corpus in `internal/daemon/testdata/scrollback/` every
+  time, each fixture with its own pinned floor, and keeps the live corpus behind `ATRIUM_REAL_SCROLLBACK` (a
+  directory, or `1` for `<home>/.atrium/scrollback`) as `TestLive...` twins. `TestReplayIsNotQuadratic` is now
+  `TestReplayOutputGrowsLinearly`, since it only ever checked output size, and time moved to
+  `BenchmarkReplayGrowth`. A long reply of 300 numbered lines, streamed through 18 height resizes, must keep
+  every line. It does not reproduce item 74, which needs a build without the height hold.
+
 - **A room's toolchain over ssh.** See `docs/backlog-2.md` item 46 and `scripts/room-toolchain.ps1`.
 
   - `scripts/room-toolchain.ps1` (new) installs go, node and, on Windows, a real Git for Windows and pwsh 7 into the

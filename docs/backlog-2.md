@@ -3086,3 +3086,14 @@ would make the fan-out wrong. Owned by @fabric, and folded into the next worker 
 
 
 ------------
+
+## t-001. File-link hover tip flickers while the terminal repaints (bug)
+
+Status: not started. Backlog only, nobody builds it yet. Owned by @terminal. First item under the department ids.
+
+Hovering a path in an attached terminal while output repaints makes the tip pop, vanish, and pop again. The likely
+cause: xterm drops the link under the pointer whenever its row is redrawn, which fires `leave` (the tip hides), then
+asks for the link again, which fires `hover` (the tip shows). See `internal/api/web/js/terminal-links.js:154`.
+
+The fix: `leave` hides after a grace of about 150ms, and a `hover` on the same path inside that window cancels the
+hide.

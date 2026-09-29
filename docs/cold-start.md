@@ -43,8 +43,7 @@ One that does not gets `git cherry-pick`. `CHANGELOG.md` collides on nearly ever
 
 Verify before any deploy: `bash scripts/check-board.sh`, `bash scripts/check-skins.sh`, `go vet ./...`, and
 `go test` with `ATRIUM_LOCATION` cleared and `ATRIUM_DEBUG_INPUTLAG` unset (a leftover value in the shell fails
-`TestLagConnTimesNothingWhenOff`). `TestRealSessionsKeepTheirText` is known noise. `internal/link` has flaked
-under load; rerun once before believing it.
+`TestLagConnTimesNothingWhenOff`). `internal/link` has flaked under load; rerun once before believing it.
 
 Landing on `origin/main` is clint's: he re-signs `origin/main..claude/main` with his own key, then pushes. I never
 sign and never add a trailer. See memory `commit-no-coauthor-no-sign` for the exact re-sign block.
