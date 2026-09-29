@@ -499,16 +499,18 @@ func resolvePeer(ctx context.Context, who string) (id, handle string, err error)
 			return t.ID, t.Wire, nil
 		}
 	}
-	// Then an alias, live cards only and newest first, the way the room
-	// resolves one. See internal/store/alias.go.
+	// Then an alias, a live card before a done one and the newest first, the way
+	// the room resolves one. A dead card no longer answers. See
+	// internal/store/alias.go.
 	if a := strings.ToLower(strings.TrimPrefix(who, "@")); a != "" {
 		var best *card
 		for i := range body.Tasks {
 			t := &body.Tasks[i]
-			if t.Alias != a || t.Status == "done" || t.Status == "dead" {
+			if t.Alias != a || t.Status == "dead" {
 				continue
 			}
-			if best == nil || t.Created > best.Created {
+			// Live before done, then newest: the room's own order.
+			if best == nil || aliasBeats(t.Status, t.Created, best.Status, best.Created) {
 				best = t
 			}
 		}
@@ -914,6 +916,16 @@ func exitHandler(ctx context.Context, _ *mcp.CallToolRequest, in ExitInput) (
 	out.Asked = true
 	out.Note = exitNote
 	return nil, out, nil
+}
+
+// aliasBeats says whether a card of status `s` created at `c` is the better
+// answer for an alias than the one already chosen (`bs`, `bc`): a live card
+// before a done one, then the newest.
+func aliasBeats(s, c, bs, bc string) bool {
+	if (s == "done") != (bs == "done") {
+		return s != "done"
+	}
+	return c > bc
 }
 
 const exitNote = "asked to leave with its harness's exit keys. the card and its history stay."

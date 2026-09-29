@@ -623,17 +623,19 @@ func (c *controlMCP) resolvePeer(ctx context.Context, room, who string) (id, han
 		}
 	}
 	// Then an alias, `sa89` or `@dotfiles`, the name an operator mentions a
-	// card by. Live cards only, newest first, which is what the room's own
-	// resolution does: an ended card keeps its alias as a record but no longer
-	// answers to it. Case and a leading `@` do not matter.
+	// card by. Live first, then newest, which is what the room's own resolution
+	// does: a done card still answers behind a live one, because a worker that
+	// reported done waits at its prompt. A dead card keeps its alias as a record
+	// and no longer answers. Case and a leading `@` do not matter.
 	if a := strings.ToLower(strings.TrimPrefix(who, "@")); a != "" {
 		var best *ctlCard
 		for i := range body.Tasks {
 			t := &body.Tasks[i]
-			if t.Alias != a || t.Status == "done" || t.Status == "dead" {
+			if t.Alias != a || t.Status == "dead" {
 				continue
 			}
-			if best == nil || t.Created > best.Created {
+			// Live before done, then newest: the room's own order.
+			if best == nil || aliasBeats(t.Status, t.Created, best.Status, best.Created) {
 				best = t
 			}
 		}
@@ -1319,6 +1321,16 @@ func (c *controlMCP) exitHandler(ctx context.Context, req *mcp.CallToolRequest, 
 	out.Asked = true
 	out.Note = "asked to leave with its harness's exit keys. the card and its history stay."
 	return nil, out, nil
+}
+
+// aliasBeats says whether a card of status `s` created at `c` is the better
+// answer for an alias than the one already chosen (`bs`, `bc`): a live card
+// before a done one, then the newest.
+func aliasBeats(s, c, bs, bc string) bool {
+	if (s == "done") != (bs == "done") {
+		return s != "done"
+	}
+	return c > bc
 }
 
 // ── cull ────────────────────────────────────────────────────────────────────────
