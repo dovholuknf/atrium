@@ -2213,7 +2213,7 @@ over up to 16MB of cells to save memory the interned table no longer uses. Rejec
 - The differential cases from item 82 still agree, and the ASCII and CJK apply benchmarks are re-run and
   reported next to the numbers in `docs/changes/82.md`.
 
-## 87. The looks-idle classifier writes U+FFFD for the second half of a wide character (bug, low)
+## 88. The looks-idle classifier writes U+FFFD for the second half of a wide character (bug, low)
 
 Found 2026-09-29 merging claude/main (item 21) into claude/terminal (item 82). `classifyFrame` in
 `internal/daemon/idleframe.go` walks `sc.cells` itself and writes every `c.ch`, turning only `0` into a space.
