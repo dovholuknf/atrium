@@ -192,6 +192,10 @@ func (d *Daemon) reap(ctx context.Context, every time.Duration) {
 		if err := d.watchWorkers(time.Now()); err != nil {
 			log.Printf("[atrium] watching launched sessions: %v", err)
 		}
+		// A running card whose terminal went quiet on an idle prompt. See looksidle.go.
+		if err := d.watchLooksIdle(time.Now()); err != nil {
+			log.Printf("[atrium] watching for idle prompts: %v", err)
+		}
 		// Every Claude card's context size, and the launcher's one notice
 		// when a worker passes the threshold. See contextsize.go.
 		if err := d.watchContext(); err != nil {
