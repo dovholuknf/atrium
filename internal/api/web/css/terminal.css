@@ -613,8 +613,9 @@
      park the textarea at the cursor, which is in view, so a focus has nothing to scroll to. */
   body:not(.term-phone) #t-screen .xterm-helper-textarea { top: 0 !important; left: 0 !important; }
   /* u-017b: the follow chip, shown only while a manual pan has switched the cursor follow off. */
+  .term-body { position: relative; }
   #t-follow {
-    position: absolute; right: 10px; bottom: 10px; z-index: 5; padding: 6px 12px; min-height: 32px;
+    position: absolute; right: 22px; bottom: 8px; z-index: 5; padding: 6px 12px; min-height: 32px;
     border: 1px solid var(--term-line, var(--stroke-dim)); border-radius: var(--r-sm);
     background: var(--term-bg, var(--bg-2)); color: var(--term-fg, var(--dim)); font: var(--fs-md)/1 var(--mono);
     opacity: .9; touch-action: manipulation;
