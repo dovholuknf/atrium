@@ -14,7 +14,8 @@
   copy that sits in the prefix but is not on the room's PATH is adopted: its folder is recorded, nothing is unpacked.
 - Otherwise the official archive is downloaded on the remote and its sha256 is checked against the publisher's own
   list (go.dev `?mode=json`, nodejs.org `SHASUMS256.txt`, the GitHub release digest for PortableGit and pwsh). A
-  mismatch unpacks nothing and exits 4. Installs go under `-Prefix`, default `~/.local/share/atrium-tools/<tool>`.
+  mismatch unpacks nothing and exits 4. The code is read from an `rc=` line the payload prints, because the exit code
+  that arrives over ssh from a Windows remote is not always the one the script exited with. Installs go under `-Prefix`, default `~/.local/share/atrium-tools/<tool>`.
   Versions are `-GoVersion` (default what `go.mod` says), `-NodeVersion v24.21.0`, `-GitVersion 2.56.0` and
   `-PwshVersion 7.6.6`. A directory already at the destination that is not a working install is left alone unless
   `-Force`, and even then it is removed only after the new download has been verified.
@@ -60,6 +61,11 @@ change.
    registered or run on sg3 without touching a real room. Re-register after installing the toolchain: the file is read
    at start, but the action is fixed at registration.
 
+Dot-sourcing `room-env.ps1` by hand needs `powershell -ExecutionPolicy Bypass`, or the new pwsh, because a plain Windows
+PowerShell on a machine with a Restricted policy refuses to run a script file ("running scripts is disabled"). The room
+starts are not affected: provision and the autostart action both run with `-ExecutionPolicy Bypass`, and with Bypass
+a hand check takes the same path the room start does.
+
 A room that is already running keeps the PATH it started with.
 
 ## Test plan
@@ -72,8 +78,8 @@ A room that is already running keeps the PATH it started with.
 - FC2. On sg3 with `local -Check`: go and node are `ok`, git and pwsh are `warn` saying the good copy in
   `~\.local\share\atrium-tools` is not seen by the room and its folder would be recorded.
 - FC3. On a machine with none of them, or with `-Prefix` in a temp folder, run without `-Check`. Each tool is `done`
-  with its sha256 shown as matching, `path` is `done`, and each `<tool>.verify` is `ok`. On Windows a shell that
-  dot-sources `room-env.ps1` finds Git for Windows first in `git --version`, and the user and machine Path values are
+  with its sha256 shown as matching, `path` is `done`, and each `<tool>.verify` is `ok`. On Windows a shell started with
+  `powershell -ExecutionPolicy Bypass` (a Restricted policy refuses the file otherwise) that dot-sources `room-env.ps1` finds Git for Windows first in `git --version`, and the user and machine Path values are
   unchanged.
 - FC4. Run the same command again. Every step is `ok`, `path` is `ok`, nothing is downloaded.
 - FC5. Run with `-TestBadHash` for a tool that would install. The step is `fail`, the exit code is 4, and the prefix

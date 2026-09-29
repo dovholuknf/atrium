@@ -241,13 +241,13 @@ function Tell { param($tools)
 #@install
     $Dest = Join-Path $Prefix $Tool
     if (Test-Path -LiteralPath $Dest) {
-        if (-not $Force) { "err=$Dest is already there and is not a working $Tool. look at it, or rerun with -Force to replace it"; exit 3 }
+        if (-not $Force) { "err=$Dest is already there and is not a working $Tool. look at it, or rerun with -Force to replace it"; "rc=3"; exit 3 }
     }
     $dl = Join-Path $Prefix '.downloads'; New-Item -ItemType Directory -Force -Path $dl | Out-Null
     $f = Join-Path $dl $File
-    try { Invoke-WebRequest -Uri $Url -OutFile $f -UseBasicParsing } catch { "err=download of $Url failed: $($_.Exception.Message)"; exit 3 }
+    try { Invoke-WebRequest -Uri $Url -OutFile $f -UseBasicParsing } catch { "err=download of $Url failed: $($_.Exception.Message)"; "rc=3"; exit 3 }
     $got = (Get-FileHash -LiteralPath $f -Algorithm SHA256).Hash.ToLower()
-    if ($got -ne $Sha) { Remove-Item -LiteralPath $f -Force; "err=sha256 of $File is $got, the publisher says $Sha. nothing was unpacked"; exit 4 }
+    if ($got -ne $Sha) { Remove-Item -LiteralPath $f -Force; "err=sha256 of $File is $got, the publisher says $Sha. nothing was unpacked"; "rc=4"; exit 4 }
     "sha=$got"
     if (Test-Path -LiteralPath $Dest) { Remove-Item -LiteralPath $Dest -Recurse -Force }
     $tmp = "$Dest.tmp"; if (Test-Path -LiteralPath $tmp) { Remove-Item -LiteralPath $tmp -Recurse -Force }
@@ -262,7 +262,7 @@ function Tell { param($tools)
         $src = $tmp
         if ($Strip -eq '1') { $kids = @(Get-ChildItem -LiteralPath $tmp); if ($kids.Count -eq 1 -and $kids[0].PSIsContainer) { $src = $kids[0].FullName } }
         Move-Item -LiteralPath $src -Destination $Dest
-    } catch { "err=could not unpack $File`: $($_.Exception.Message)"; exit 3 }
+    } catch { "err=could not unpack $File`: $($_.Exception.Message)"; "rc=3"; exit 3 }
     finally { if (Test-Path -LiteralPath $tmp) { Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue }; Remove-Item -LiteralPath $f -Force -ErrorAction SilentlyContinue }
     "installed=$Dest"
 #@record
@@ -311,27 +311,27 @@ probe)
 install)
   D="$PREFIX/$TOOL"
   if [ -e "$D" ]; then
-    if [ "$FORCE" = 1 ]; then :; else echo "err=$D is already there and is not a working $TOOL. look at it, or rerun with -Force to replace it"; exit 3; fi
+    if [ "$FORCE" = 1 ]; then :; else echo "err=$D is already there and is not a working $TOOL. look at it, or rerun with -Force to replace it"; echo rc=3; exit 3; fi
   fi
-  mkdir -p "$PREFIX/.downloads" || exit 3
+  mkdir -p "$PREFIX/.downloads" || { echo rc=3; exit 3; }
   F="$PREFIX/.downloads/$FILE"
-  if command -v curl >/dev/null 2>&1; then curl -fsSL --connect-timeout 20 --max-time 600 -o "$F" "$URL" || { echo "err=download of $URL failed"; rm -f "$F"; exit 3; }
-  elif command -v wget >/dev/null 2>&1; then wget -q -O "$F" "$URL" || { echo "err=download of $URL failed"; rm -f "$F"; exit 3; }
-  else echo "err=neither curl nor wget is here to download with"; exit 3; fi
+  if command -v curl >/dev/null 2>&1; then curl -fsSL --connect-timeout 20 --max-time 600 -o "$F" "$URL" || { echo "err=download of $URL failed"; rm -f "$F"; echo rc=3; exit 3; }
+  elif command -v wget >/dev/null 2>&1; then wget -q -O "$F" "$URL" || { echo "err=download of $URL failed"; rm -f "$F"; echo rc=3; exit 3; }
+  else echo "err=neither curl nor wget is here to download with"; echo rc=3; exit 3; fi
   got=$(sha "$F")
-  if [ "$got" != "$SHA" ]; then rm -f "$F"; echo "err=sha256 of $FILE is $got, the publisher says $SHA. nothing was unpacked"; exit 4; fi
+  if [ "$got" != "$SHA" ]; then rm -f "$F"; echo "err=sha256 of $FILE is $got, the publisher says $SHA. nothing was unpacked"; echo rc=4; exit 4; fi
   echo "sha=$got"
   rm -rf "$D"
-  tmp="$D.tmp"; rm -rf "$tmp"; mkdir -p "$tmp" || exit 3
+  tmp="$D.tmp"; rm -rf "$tmp"; mkdir -p "$tmp" || { echo rc=3; exit 3; }
   if tar -xzf "$F" -C "$tmp"; then
     set -- "$tmp"/*
-    if [ $# -eq 1 ] && [ -d "$1" ] && mv "$1" "$D"; then :; else echo "err=$FILE did not unpack to one folder"; rm -rf "$tmp" "$F"; exit 3; fi
-  else echo "err=could not unpack $FILE"; rm -rf "$tmp" "$F"; exit 3; fi
+    if [ $# -eq 1 ] && [ -d "$1" ] && mv "$1" "$D"; then :; else echo "err=$FILE did not unpack to one folder"; rm -rf "$tmp" "$F"; echo rc=3; exit 3; fi
+  else echo "err=could not unpack $FILE"; rm -rf "$tmp" "$F"; echo rc=3; exit 3; fi
   rm -rf "$tmp" "$F"
   echo "installed=$D";;
 record)
-  mkdir -p "$T" || exit 5
-  { printf '%s\n' "$NEWDIRS" | tr ';' '\n'; cat "$PF" 2>/dev/null; } | awk 'NF && !seen[$0]++' > "$PF.tmp" || exit 5
+  mkdir -p "$T" || { echo rc=5; exit 5; }
+  { printf '%s\n' "$NEWDIRS" | tr ';' '\n'; cat "$PF" 2>/dev/null; } | awk 'NF && !seen[$0]++' > "$PF.tmp" || { echo rc=5; exit 5; }
   if cmp -s "$PF.tmp" "$PF" 2>/dev/null; then rm -f "$PF.tmp"; echo pathfile=same; else mv "$PF.tmp" "$PF"; echo pathfile=changed; fi
   { echo '# written by room-toolchain.ps1: what it installed, in front of PATH. Read by the login profile.'
     printf 'export PATH="%s$PATH"\n' "$(awk '{printf "%s:", $0}' "$PF")"; } > "$PS.tmp"
@@ -339,7 +339,7 @@ record)
   f=$(profile)
   if grep -qs 'atrium/toolchain/path.sh' "$f"; then echo hook=same; else
     case "$T" in "$HOME"/*) tl="\$HOME${T#"$HOME"}";; *) tl="$T";; esac
-    printf '\n%s\n' "[ -r \"$tl/path.sh\" ] && . \"$tl/path.sh\" # added by atrium room-toolchain" >> "$f" || exit 5
+    printf '\n%s\n' "[ -r \"$tl/path.sh\" ] && . \"$tl/path.sh\" # added by atrium room-toolchain" >> "$f" || { echo rc=5; exit 5; }
     echo hook=changed; fi
   echo "profile=$f";;
 verify) tell "$NAMES";;
@@ -553,8 +553,11 @@ foreach ($t in $todo) {
     $vars = @{ Tool = $t; Url = $asset.Url; File = $asset.File; Sha = $sha; Kind = $asset.Kind; Strip = $asset.Strip }
     $ir = Invoke-Remote (Get-Payload 'install' $vars)
     $ik = ConvertFrom-KeyValue $ir.Out
-    if ($ir.Code -ne 0) {
-        $code = if ($ir.Code -eq 4) { 4 } else { 3 }
+    # THE payload's own `rc=` LINE, because over ssh the exit code that arrives is not always the one the script exited with
+    # (measured on claudevm: a 4 arrived as something else).
+    $irc = if ($ik.rc) { [int]$ik.rc } else { $ir.Code }
+    if ($ir.Code -ne 0 -or $irc -ne 0) {
+        $code = if ($irc -eq 4) { 4 } else { 3 }
         Step $t 'fail' $(if ($ik.err) { $ik.err } else { "the install on $where exited $($ir.Code)" })
         if (-not $ik.err) { $ir.Out | ForEach-Object { Write-Host "    $_" } }
         Note-Fail $code
