@@ -1368,6 +1368,18 @@ async function refresh(signal) {
         title: `${t.display_title} is on the board`,
         body: t.why || t.worktree || "a new card"
       }));
+      // A RUNNING CARD WHOSE SCREEN SAYS IT FINISHED: the room saw its pty go
+      // quiet on an idle prompt and no turn-end arrive. Worded as a guess. Keyed
+      // on when it was flagged, so a card that wakes and stalls again rings
+      // again. The room takes the flag down itself. See looksidle.go.
+      alerting.check("looksidle", lastTasks
+        .filter(t => t.activity && t.activity.looks_idle && !over(t) && !isWaiting(t))
+        .map(t => Object.assign({}, t, {
+          id: `${t.id}#idle#${t.activity.idle_at}`, task_id: t.id
+        })), t => ({
+        title: `${t.display_title} looks idle`,
+        body: "looks idle (no turn-end received)"
+      }));
       // AN AGENT-LAUNCHED CARD THAT IS STUCK: it stopped without reporting, or
       // one tool call has run too long. The room works out when, on the
       // operator's backoff (1m, 2m, 5m, 10m, 30m, 1h ... 24h), and steps

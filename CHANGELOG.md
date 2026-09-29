@@ -5,6 +5,18 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **One merge-check script and a dedicated merge worktree.** See `docs/backlog-2.md` item 77, parts a and e.
+
+  `scripts/merge-check.ps1` runs `go test -p 4 ./...` (with `ATRIUM_LOCATION` and `ATRIUM_DEBUG_INPUTLAG` cleared),
+  `check-board.sh` with the headless run and `NODE_PATH` preset, `check-skins.sh` when the diff touches
+  `internal/api/web/`, and the build. It prints failures and one summary line with a count per check, so a skipped
+  check is a missing count. Playwright is found from `-NodePath`, `ATRIUM_NODE_PATH`, the merge worktree or any
+  sibling worktree, and a missing one fails unless `-SkipHeadless` says it is meant. Known noise
+  (`TestRealSessionsKeepTheirText`, the link restart-gate tests) is rerun alone once and reported as `flaky-pass`.
+  `-SkipGo`, `-Board`, `-NoBoard`, `-Base` and `-SkipBuild` cut it down.
+  `scripts/setup-merge-worktree.ps1` makes `D:/worktrees/claude/atrium/merge` on `claude/merge-scratch`, links the
+  CLAUDE.md files and installs Playwright and chromium, idempotently, so merges never lock the main checkout.
+
 - **The hub's input-lag log no longer reports a fake echo on an idle terminal.** It no longer reports a fake ~45000ms "echo" every 45s on an idle terminal. The hub's echo clock
   now starts only on a Write that carries a websocket data frame, not on the browser's pong (or any ping or close).
   A control frame read back from the room, such as its idle ping, no longer closes a clock a keystroke started. A
