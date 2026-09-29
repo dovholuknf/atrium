@@ -39,7 +39,7 @@ func prompt(t *testing.T, d *Daemon, id string) {
 	if err := d.st.SetStatus(id, store.StatusRunning); err != nil {
 		t.Fatal(err)
 	}
-	if err := d.st.AppendEvent(id, store.EventPrompted, map[string]any{"text": "do the thing"}); err != nil {
+	if err := d.st.AppendEvent(id, store.EventPrompted, map[string]any{"text": "do the thing", "via": "launch"}); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -354,7 +354,7 @@ func TestASlashCommandAndARestartAreNotASilentStop(t *testing.T) {
 
 	// The slash command: typed and recorded, and the card never leaves the prompt.
 	if err := d.st.AppendEvent(worker.ID, store.EventPrompted,
-		map[string]any{"text": "/model claude-opus-5-5", "via": "terminal"}); err != nil {
+		map[string]any{"text": "/model claude-opus-5-5", "via": "terminal", "from_peer": launcher.WireName}); err != nil {
 		t.Fatal(err)
 	}
 	// The restart: the runner exits and is resumed onto the same idle prompt.

@@ -53,7 +53,7 @@ func TestAPromptOwesAReportAndAReportPaysIt(t *testing.T) {
 	if got.OwesReport() {
 		t.Fatal("a card never prompted owes a report")
 	}
-	if err := s.AppendEvent(card.ID, EventPrompted, map[string]any{"text": "go"}); err != nil {
+	if err := s.AppendEvent(card.ID, EventPrompted, map[string]any{"text": "go", "via": "launch"}); err != nil {
 		t.Fatal(err)
 	}
 	got, _ = s.Get(card.ID)
@@ -116,7 +116,7 @@ func TestOnlyAWorkingCardEndsATurn(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := s.AppendEvent(card.ID, EventPrompted, map[string]any{"text": "/model x"}); err != nil {
+	if err := s.AppendEvent(card.ID, EventPrompted, map[string]any{"text": "/model x", "via": "launch"}); err != nil {
 		t.Fatal(err)
 	}
 	if got, _ := s.TurnEndedAt(card.ID); got != nil {
