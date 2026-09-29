@@ -3,6 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- The board's address is never sent to a site a link opens. `openLinkReused` in js/terminal-links.js
+     cannot use `rel=noreferrer` (it forces a new tab), so the policy is the page's. Nothing in the daemon reads
+     `Referer`, so this costs nothing on the board's own requests. -->
+<meta name="referrer" content="no-referrer">
 <title>atrium</title>
 <!-- The tab's mark, with no href on it. The pixels are drawn at boot by
      `wearTheMark` in js/boot.js, from the same `drawAtriumA` every desktop

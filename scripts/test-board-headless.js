@@ -6173,6 +6173,115 @@ async function questionsClickSection(browser, base) {
   if (errors.length) fail("questionsClick: the page threw: " + errors.join(" | "));
 }
 
+// u-006: a URL clicked in a terminal opens into a NAMED window, one per pull
+// request, so a review walk keeps one tab. window.open is stubbed to record the
+// name, since a real popup is awkward headless.
+async function linkReuseSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  landList = [LAND["land-live"]];
+  landPerms = [];
+  const errors = [];
+  const ctx = await landContext(browser);
+  await ctx.addInitScript(() => {
+    window.__socks = [];
+    const Real = window.WebSocket;
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
+        onopen: null, onclose: null, onmessage: null, onerror: null,
+        send() {}, close() { this.readyState = 3; } };
+      window.__socks.push(s);
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+    window.__opens = [];
+    window.__wins = [];
+    window.open = (url, name) => {
+      window.__opens.push({ url, name });
+      const w = { opener: "board", focused: 0, focus() { this.focused++; } };
+      window.__wins.push(w);
+      return w;
+    };
+  });
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await p.evaluate(() => attachTask("land-live"));
+    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live", null,
+      { timeout: slow(10000) });
+    await p.waitForTimeout(300);
+
+    const urls = [
+      "https://github.com/openziti/zrok/pull/1277/files#diff-aR165",
+      "https://github.com/openziti/zrok/pull/1277/files#diff-bR61",
+      "https://GitHub.com/openziti/zrok/pull/1278/commits",
+      "https://example.com/docs/page?q=1#top"
+    ];
+    // Each on its own row, with a marker in front to click on.
+    await p.evaluate(us => new Promise(done => {
+      const s = window.__socks[window.__socks.length - 1];
+      s.onmessage({ data: new TextEncoder().encode(us.map((u, i) => "L" + i + " " + u + "\r\n").join("")).buffer });
+      term.write("", done);
+    }), urls);
+    const click = async i => {
+      const pt = await p.evaluate(i => {
+        const buf = term.buffer.active;
+        const rect = document.querySelector("#t-screen .xterm-screen").getBoundingClientRect();
+        const cw = rect.width / term.cols, ch = rect.height / term.rows;
+        for (let y = 0; y < term.rows; y++) {
+          const line = buf.getLine(buf.viewportY + y);
+          if (line && line.translateToString(true).startsWith("L" + i + " ")) {
+            return { x: rect.left + 8.5 * cw, y: rect.top + (y + 0.5) * ch };
+          }
+        }
+        return null;
+      }, i);
+      if (!pt) { fail("row L" + i + " is not on screen"); return; }
+      await p.mouse.move(pt.x, pt.y);
+      await p.waitForTimeout(150);
+      await p.mouse.click(pt.x, pt.y);
+      await p.waitForTimeout(150);
+    };
+    for (let i = 0; i < urls.length; i++) await click(i);
+    const got = await p.evaluate(() => ({ opens: window.__opens, wins: window.__wins.map(w => ({ o: w.opener, f: w.focused })) }));
+    const names = got.opens.map(o => o.name);
+    if (got.opens.length !== 4) { fail("expected four window.open calls, got " + JSON.stringify(got.opens)); }
+    else {
+      if (got.opens[0].url !== urls[0] || got.opens[1].url !== urls[1]) fail("the full url was not passed on: " + JSON.stringify(got.opens));
+      if (names[0] !== "atrium-link-github.com/openziti/zrok/pull/1277") fail("PR window name is " + names[0]);
+      if (names[1] !== names[0]) fail("two links in one PR got different names: " + names.slice(0, 2).join(" | "));
+      if (names[2] !== "atrium-link-github.com/openziti/zrok/pull/1278") fail("another PR (mixed-case host) is named " + names[2]);
+      if (names[3] !== "atrium-link-example.com/docs/page") fail("a non-GitHub link is named " + names[3]);
+      if (got.wins.some(w => w.o !== null)) fail("an opened window kept its opener: " + JSON.stringify(got.wins));
+      if (got.wins.some(w => w.f !== 1)) fail("an opened window was not focused: " + JSON.stringify(got.wins));
+    }
+    // Not a web URL, and a blocked popup, both quietly nothing.
+    const odd = await p.evaluate(() => {
+      const before = window.__opens.length;
+      openLinkReused("javascript:alert(1)");
+      openLinkReused("file:///etc/passwd");
+      const refused = window.__opens.length === before;
+      window.open = () => null;
+      let threw = false, r;
+      try { r = openLinkReused("https://example.com/x"); } catch (e) { threw = true; }
+      return { refused, threw, r };
+    });
+    if (!odd.refused) fail("a non-http url was opened.");
+    if (odd.threw || odd.r !== null) fail("a blocked popup threw or returned a window: " + JSON.stringify(odd));
+    const meta = await p.evaluate(() => (document.querySelector('meta[name="referrer"]') || {}).content);
+    if (meta !== "no-referrer") fail("the page carries no no-referrer policy: " + meta);
+  } finally {
+    await ctx.close();
+    tasksMode = was;
+  }
+  if (errors.length) fail("linkReuse: the page threw: " + errors.join(" | "));
+}
+
 async function main() {
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = "http://127.0.0.1:" + server.address().port;
@@ -6191,7 +6300,7 @@ async function main() {
       skinScope: skinScopeSection, skinHeal: skinHealSection, toastLives: toastLivesSection,
       history: historySection, contextSize: contextSizeSection, peekEverywhere: peekEverywhereSection, cardRoute: cardRouteSection,
       quietDoer: quietDoerSection, looksIdle: looksIdleSection, notifyOff: notifyOffSection,
-      questionsClick: questionsClickSection };
+      questionsClick: questionsClickSection, linkReuse: linkReuseSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -8116,6 +8225,7 @@ async function main() {
     await quietDoerSection(browser, base);
     await notifyOffSection(browser, base);
     await questionsClickSection(browser, base);
+    await linkReuseSection(browser, base);
     await reselectSection(browser, base);
     // ── over a terminal the toasts hang from the top right ─────────────────
     await toastsTopSection(browser, base);
