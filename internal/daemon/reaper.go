@@ -186,6 +186,9 @@ func (d *Daemon) reap(ctx context.Context, every time.Duration) {
 			continue
 		}
 		lastErr = ""
+		// A worker whose worktree was removed from under it. Same tick, after
+		// liveness. The wind-down runs off the tick. See worktreegone.go.
+		d.reapGoneWorktrees()
 		// Agent-launched work nobody has heard from. Same tick, after liveness,
 		// so a card the reaper just marked dead is not reported as stuck. See
 		// a2a.go.
@@ -235,6 +238,11 @@ func (d *Daemon) reap(ctx context.Context, every time.Duration) {
 		} else if n > 0 {
 			log.Printf("[atrium] cleared %d settled dispatch item(s)", n)
 			d.ap.Broadcast("dispatch", nil)
+		}
+		if n, err := d.st.SweepSays(); err != nil {
+			log.Printf("[atrium] sweeping the say record: %v", err)
+		} else if n > 0 {
+			log.Printf("[atrium] cleared %d old say record(s)", n)
 		}
 	}
 }

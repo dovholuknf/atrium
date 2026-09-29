@@ -32,6 +32,9 @@ const (
 	// SeenLauncher is a turn an agent-launched worker ended after reporting to
 	// its launcher. Nobody human needs to look at it.
 	SeenLauncher = "launcher"
+	// SeenDismissed is a set of questions the operator clicked away without
+	// replying. It is an answered_via only: a dismissed question is not a read turn.
+	SeenDismissed = "dismissed"
 )
 
 // MaxTurnQuestions bounds how many questions one turn may leave on a card, and
@@ -305,6 +308,42 @@ func (s *Store) MarkAnswered(taskID, via string) (bool, error) {
 		return nil
 	})
 	return changed, err
+}
+
+// DismissQuestions answers the card's open questions without a reply, and
+// leaves seen_at alone: a dismissed question is not a read turn, which is why
+// MarkAnswered is not reused. Reports whether it dismissed, and whether it
+// refused because newer questions arrived than the ones `shown`.
+//
+// `shown` is the questions_at the chip was drawn from, compared as times. A card
+// with nothing open answers false, false rather than an error.
+func (s *Store) DismissQuestions(taskID string, shown time.Time) (dismissed, stale bool, err error) {
+	err = s.guard(func() error {
+		dismissed, stale = false, false
+		// The precondition is IN the UPDATE. A turn end can write newer questions
+		// between a read and this write, and guard does not serialize anything.
+		// The columns are fixed-width UTC text, so comparing them as text is
+		// comparing times.
+		res, err := s.db.Exec(`UPDATE turn_seen SET answered_at = ?, answered_via = ?
+			WHERE task_id = ? AND questions_at != '' AND questions_at <= ?
+			AND (answered_at = '' OR answered_at < questions_at)`,
+			ts(now()), SeenDismissed, taskID, ts(shown))
+		if err != nil {
+			return err
+		}
+		if n, err := res.RowsAffected(); err != nil || n == 1 {
+			dismissed = err == nil
+			return err
+		}
+		// Nothing changed: newer questions than the ones shown, or nothing open.
+		cur, err := s.seenRow(taskID)
+		if err != nil || cur == nil || cur.QuestionsAt == nil {
+			return err
+		}
+		stale = cur.QuestionsAt.After(shown) && cur.Asked() && !cur.Answered()
+		return nil
+	})
+	return dismissed, stale, err
 }
 
 // UnseenCards lists the cards whose latest turn is unseen. Read once at start,

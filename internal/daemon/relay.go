@@ -166,6 +166,8 @@ type sayIn struct {
 	To   string `json:"to"`
 	Text string `json:"text"`
 	When string `json:"when"`
+	// Reply asks for an answer, which stays owed on the receiver until given.
+	Reply bool `json:"reply"`
 }
 
 // handleSay is `POST /v1/say`: a message to a card on this room or another,
@@ -187,21 +189,21 @@ func (d *Daemon) handleSay(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if other := d.otherRoom(room); other != "" {
-		code, body := d.sayAcross(r.Context(), strings.TrimSpace(in.From), name, other, in.Text, in.When)
+		code, body := d.sayAcross(r.Context(), strings.TrimSpace(in.From), name, other, in.Text, in.When, in.Reply)
 		writeJSONCode(w, code, body)
 		return
 	}
-	target := d.localTarget(name)
+	target, via := d.localTargetVia(name)
 	if target == nil {
-		list, _ := d.peers(d.st.Qualify(strings.TrimSpace(in.From)))
-		writeJSONCode(w, http.StatusNotFound, map[string]any{"error": "no session called " + name, "peers": list})
+		d.writeMiss(w, strings.TrimSpace(in.From), name, "say", in.Text, in.When, in.Reply)
 		return
 	}
 	// THE SAME HANDLER, over the same body, so there is one way a local message
 	// is delivered. Its answer gains who it went to.
-	raw, _ := json.Marshal(map[string]string{"text": in.Text, "from": strings.TrimSpace(in.From), "when": in.When})
-	inner, err := http.NewRequestWithContext(r.Context(), http.MethodPost, "/v1/tasks/"+target.ID+"/message",
-		bytes.NewReader(raw))
+	raw, _ := json.Marshal(map[string]any{"text": in.Text, "from": strings.TrimSpace(in.From), "when": in.When,
+		"reply": in.Reply})
+	inner, err := http.NewRequestWithContext(withSayTrace(r.Context(), name, via), http.MethodPost,
+		"/v1/tasks/"+target.ID+"/message", bytes.NewReader(raw))
 	if err != nil {
 		writeJSONErr(w, http.StatusInternalServerError, err)
 		return
@@ -221,20 +223,27 @@ func (d *Daemon) handleSay(w http.ResponseWriter, r *http.Request) {
 
 // localTarget resolves a name on this room: handle, then alias, then card id.
 func (d *Daemon) localTarget(name string) *store.Task {
+	t, _ := d.localTargetVia(name)
+	return t
+}
+
+// localTargetVia is localTarget and how it matched: `handle`, `alias` or `card`.
+// All three are EXACT. A near miss is never resolved to. See saylog.go.
+func (d *Daemon) localTargetVia(name string) (*store.Task, string) {
 	if t, err := d.st.GetByWireName(d.st.Qualify(name)); err == nil {
-		return t
+		return t, "handle"
 	}
 	if t, err := d.st.GetByAlias(name); err == nil {
-		return t
+		return t, "alias"
 	}
 	if t, err := d.st.Get(name); err == nil {
-		return t
+		return t, "card"
 	}
-	return nil
+	return nil, ""
 }
 
 // sayAcross relays one message to `name` on `room`, and answers the sender.
-func (d *Daemon) sayAcross(ctx context.Context, from, name, room, text, when string) (int, map[string]any) {
+func (d *Daemon) sayAcross(ctx context.Context, from, name, room, text, when string, reply bool) (int, map[string]any) {
 	text = strings.TrimSpace(text)
 	to := name + "@" + room
 	switch {
@@ -270,6 +279,10 @@ func (d *Daemon) sayAcross(ctx context.Context, from, name, room, text, when str
 
 	cctx, cancel := context.WithTimeout(ctx, relayWait)
 	defer cancel()
+	// The row, as far as this room can see the say. The other room writes its own
+	// when it lands. See docs/say-lifecycle-design.md.
+	rec := store.Say{FromWire: wire, FromTask: d.senderTask(from), ToInput: to, ToWire: to, Via: "remote",
+		Room: room, Door: "say", When: whenWord(when == WhenDone), ReplyWant: reply}
 	res, err := rl.Say(cctx, RelaySay{From: wire, Room: room, To: name, Text: text, When: when})
 	switch {
 	case errors.Is(err, ErrRelayOld):
@@ -279,14 +292,18 @@ func (d *Daemon) sayAcross(ctx context.Context, from, name, room, text, when str
 		if err != nil {
 			why = err.Error()
 		}
-		if _, herr := d.holdRelay(sender, wire, name, room, "", text, when, store.RelaySourceSay); herr != nil {
+		held, herr := d.holdRelay(sender, wire, name, room, "", text, when, store.RelaySourceSay)
+		if herr != nil {
 			return http.StatusInternalServerError, errBody("could not reach " + room + " (" + why +
 				") and could not hold the message either: " + herr.Error())
 		}
 		d.reportedAcross(sender, to, "")
 		log.Printf("[atrium] %s's message to %s is held: %s", wire, to, why)
+		// Held on this room, and moved on by the drain. See docs/say-lifecycle-design.md.
+		rec.State, rec.RelayID, rec.Note = store.SayHeld, held.ID, "not answering: "+why
 		return http.StatusOK, map[string]any{
 			"delivered": "held", "to": to, "when": whenWord(when == WhenDone),
+			"say": d.recordSay(rec, text), "via": "remote",
 			"note": "the hub or room " + room + " is not answering (" + why + "). held on this room and sent " +
 				"when it answers, for up to 24 hours. nothing is queued on the hub.",
 		}
@@ -296,8 +313,9 @@ func (d *Daemon) sayAcross(ctx context.Context, from, name, room, text, when str
 			why = err.Error()
 		}
 		log.Printf("[atrium] %s's message to %s is unconfirmed: %s", wire, to, why)
+		rec.State, rec.Note = store.SayUnconfirmed, why
 		return http.StatusOK, map[string]any{
-			"delivered": "unconfirmed", "to": to,
+			"delivered": "unconfirmed", "to": to, "say": d.recordSay(rec, text), "via": "remote",
 			"note": "it may or may not have reached " + to + " (" + why + "). it is not held, so it will not " +
 				"arrive twice. ask whether it arrived before sending it again.",
 		}
@@ -315,7 +333,12 @@ func (d *Daemon) sayAcross(ctx context.Context, from, name, room, text, when str
 	}
 	d.reportedAcross(sender, to, res.Card)
 	log.Printf("[atrium] %s told %s something across rooms (%d chars, %s)", wire, to, len(text), res.Delivered)
-	out := map[string]any{"delivered": res.Delivered, "to": to, "card": res.Card, "when": res.When}
+	rec.ToWire, rec.State, rec.Note = to, store.SayHanded, "the hub took it: "+res.Delivered
+	if res.Delivered == "terminal" {
+		rec.State, rec.Channel = store.SayDelivered, store.SayViaTerminal
+	}
+	out := map[string]any{"delivered": res.Delivered, "to": to, "card": res.Card, "when": res.When,
+		"say": d.recordSay(rec, text), "via": "remote"}
 	switch {
 	case res.Warning != "":
 		out["warning"] = res.Warning
@@ -476,6 +499,7 @@ func (d *Daemon) drainOnce() {
 				log.Printf("[atrium] sent a held message to %s@%s but could not clear it: %v", r.ToName, r.ToRoom, err)
 			}
 			log.Printf("[atrium] sent %s's held message to %s@%s (%s)", r.FromWire, r.ToName, r.ToRoom, res.Delivered)
+			_ = d.st.SayRelayed(r.ID, store.SayHanded, "sent after being held: the hub took it: "+res.Delivered)
 		case errors.Is(err, ErrRelayDown), errors.Is(err, ErrRelayOld):
 			// THE HUB, NOT THIS ROW. Every other row would fail the same way, so
 			// the pass stops here and the next kick tries again.
@@ -509,6 +533,7 @@ func (d *Daemon) giveUpRelay(r store.RelayRow, why string) {
 		return
 	}
 	log.Printf("[atrium] gave up on %s's message to %s@%s: %s", r.FromWire, r.ToName, r.ToRoom, why)
+	_ = d.st.SayRelayed(r.ID, store.SayRefused, "given up: "+why)
 	if r.FromTask == "" {
 		return
 	}
