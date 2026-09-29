@@ -94,6 +94,10 @@ must not reach claude/main.
   - check that item 31's hold still works
   Then merge it, and this batch becomes 21 + 41 + the 83/84 filings.
 - @fabric withdrew the sa73 question: nothing needs to be told to @fabric about m1mini tonight.
+- A background merge-check from the old context may still be running, or may have finished, on a tree from before
+  sa21's footer fix. Ignore its result and rerun merge-check after merging sa21 and sa41.
+- sa84 (m1mini) and sa73 (m1mini) have not reported yet. Their reports come to you. Review the diff in the report,
+  and land nothing here.
 - Then: `git rm HANDOFF.md`, `git merge --no-edit claude/main`, fold dry run,
   `pwsh scripts/merge-check.ps1 -Base claude/main -Board`, one atrium_say to `merge`, and one batch report.
 
