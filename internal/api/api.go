@@ -153,6 +153,10 @@ type Server struct {
 	// StopRunner asks a runner to exit the way its harness says to, rather
 	// than killing it. Supplied by the daemon, which owns the terminal.
 	StopRunner func(taskID string) error
+	// Cull asks a merged worker to leave and removes its worktree and branch.
+	// Supplied by the daemon, which owns the terminal and makes every check.
+	// See internal/daemon/cull.go.
+	Cull func(taskID, into string) (any, error)
 	// RestartRunner asks a runner to exit, waits for it to be gone, and starts
 	// the same conversation again on the SAME card. Unshelve without the shelve,
 	// for a wedged session or one running an old binary. Supplied by the daemon,
@@ -487,6 +491,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/tasks/{id}/kill", s.kill)
 	if s.StopRunner != nil {
 		mux.HandleFunc("POST /v1/tasks/{id}/exit", s.exitRunner)
+	}
+	if s.Cull != nil {
+		mux.HandleFunc("POST /v1/tasks/{id}/cull", s.cullRunner)
 	}
 	if s.RestartRunner != nil {
 		mux.HandleFunc("POST /v1/tasks/{id}/restart", s.restartRunner)
@@ -1764,6 +1771,24 @@ func (s *Server) exitRunner(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// cullRunner is atrium_cull on the room. A refusal is a 409 carrying the
+// sentence, because each one is a check that held and says which.
+func (s *Server) cullRunner(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Into string `json:"into"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&body)
+	res, err := s.Cull(r.PathValue("id"), body.Into)
+	if err != nil {
+		writeErr(w, http.StatusConflict, err)
+		return
+	}
+	if t, err := s.st.Get(r.PathValue("id")); err == nil {
+		s.Broadcast("task", toView(t))
+	}
+	writeJSON(w, http.StatusOK, res)
 }
 
 // restartRunner stops a card's runner and starts the same conversation again on
