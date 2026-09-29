@@ -59,7 +59,7 @@ You are @fabric, the Director of Fabric: hub, rooms, cross-room, overlays and pr
 ## Done in the context after that (head 5c3c5f6)
 
 - **Item 16:** Mercurius `s_xT8IKRB82yUj` closed after round 2. C2 (the `repo_notes` parse rule) and A1 fixed, C1
-  deferred (stage 2 waits on clint's questions 1, 2 and 6). Review section in the design, backlog-2 status and index row.
+  deferred (stage 2 waits on clint). Review section in the design, backlog-2 status and index row.
 - **Item 52:** @runtime passed 8b7d11c. fb04 merged, exited, worktree and branch removed. fb05's too. `prune` noted in
   backlog-2 as the same one-room shape, unfixed.
 - **claude/main (bb65176) merged in** at 5c3c5f6, and @merge told it is ready. Item 77b has landed
