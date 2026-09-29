@@ -141,6 +141,7 @@ async function dismissQuestions(id, questionsAt) {
     return;
   }
   if (r && r.stale) toast("newer questions arrived, nothing was dismissed");
+  else if (r && !r.dismissed) toast("nothing was open to dismiss");
   else toast("questions dismissed", "nothing was sent to the session");
   if (typeof refreshSoon === "function") refreshSoon();
 }

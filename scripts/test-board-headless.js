@@ -456,6 +456,7 @@ const server = http.createServer((req, res) => {
         res.end(JSON.stringify({ error: "the store said no" }));
         return;
       }
+      if (qDismissMode === "nothing") { sendJSON(res, { dismissed: false, stale: false }); return; }
       if (qDismissMode === "stale") { sendJSON(res, { dismissed: false, stale: true }); return; }
       qDismissed.add(id);
       sendJSON(res, { dismissed: true, stale: false });
@@ -6208,6 +6209,15 @@ async function questionsClickSection(browser, base) {
       .catch(() => fail("a stale answer drew no toast."));
     await p.waitForTimeout(600);
     if (!await p.$('#stack-list .stackrow[data-id="qc1"] .chip.questions')) fail("a stale answer removed the chip.");
+
+    // Already answered elsewhere: not "dismissed", and nothing was open.
+    await reset();
+    qDismissMode = "nothing";
+    await show("stack");
+    await p.click('#stack-list .stackrow[data-id="qc1"] .chip.questions');
+    await p.waitForFunction(() => toastLog().some(e => /nothing was open to dismiss/.test(e.title)), null,
+      { timeout: slow(5000) }).catch(() => fail("an already-answered card drew no `nothing was open` toast."));
+    if (/questions dismissed/.test(await said())) fail("an already-answered card toasted `questions dismissed`.");
 
     // A failed call toasts the error and leaves the chip.
     await reset();
