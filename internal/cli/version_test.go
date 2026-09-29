@@ -31,6 +31,26 @@ func TestTheVersionLineSurvivesHavingNothingToSay(t *testing.T) {
 	}
 }
 
+// A stamped tree state wins over Go's, in both directions. Go's counts untracked
+// files, so a build that is exactly its commit has to be able to say clean.
+func TestAStampedTreeWinsOverGo(t *testing.T) {
+	before, beforeTree := Commit, Tree
+	t.Cleanup(func() { Commit, Tree = before, beforeTree })
+	Commit = "99e2d8e51ecdd19b4fe6f9048e06b40c7cae6937"
+
+	Tree = "clean"
+	if _, _, dirty := versionInfo(); dirty != "" {
+		t.Fatalf("a tree stamped clean says %q", dirty)
+	}
+	if line := VersionLine(); strings.Contains(line, "modified") {
+		t.Fatalf("a tree stamped clean is modified in the line: %q", line)
+	}
+	Tree = "modified"
+	if _, _, dirty := versionInfo(); dirty != "modified" {
+		t.Fatalf("a tree stamped modified says %q", dirty)
+	}
+}
+
 // A commit is abbreviated in the one-line form. A forty character hash in a log
 // header pushes everything else off the line, and the first twelve identify it.
 func TestALongCommitIsShortenedInTheLine(t *testing.T) {
