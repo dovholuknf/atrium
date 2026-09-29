@@ -97,8 +97,8 @@ const server = http.createServer((req, res) => {
 // Each shot opens one dialog on a freshly loaded board. `open` runs in the page.
 const SHOTS = {
   detail: () => openTask("t1"),
-  harness: () => editHarness("claude"),
-  fixture: () => editFixture("fx1"),
+  harness: async () => { await renderRunners(); await renderFixtures(); await editHarness("claude"); },
+  fixture: async () => { await renderRunners(); await renderFixtures(); await editFixture("fx1"); },
 };
 
 (async () => {

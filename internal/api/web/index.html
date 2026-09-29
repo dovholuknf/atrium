@@ -2210,10 +2210,12 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 
 <dialog id="fixture" data-guard>
   <div class="dlg-head">
-    <div class="grow"><h2 id="f-heading">fixture</h2></div>
+    <div class="grow"><div class="dlg-eyebrow">agents · fixture</div><h2 id="f-heading">fixture</h2></div>
     <button onclick="document.getElementById('fixture').close()">close</button>
   </div>
   <div class="dlg-body">
+    <section class="dlg-sec dlg-grid">
+    <div class="dlg-sec-h">what it runs</div>
     <div class="field">
       <label class="eyebrow" for="f-label">what to call it</label>
       <input type="text" id="f-label" spellcheck="false" placeholder="dotfiles">
@@ -2225,13 +2227,16 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       <span class="hintline">A plain shell is a runner like any other, which is how
         &ldquo;always give me a terminal on this machine&rdquo; is said without a special case.</span>
     </div>
-    <div class="field">
+    <div class="field span">
       <label class="eyebrow" for="f-cwd">working directory</label>
       <div class="picker">
         <input type="text" id="f-cwd" spellcheck="false" placeholder="D:/git/github/you/repo">
         <button onclick="browseInto('f-cwd')">browse</button>
       </div>
     </div>
+    </section>
+    <section class="dlg-sec">
+    <div class="dlg-sec-h">how it starts</div>
     <div class="field">
       <label class="eyebrow" for="f-theme">theme</label>
       <div class="picker">
@@ -2265,8 +2270,9 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         deleted. Turning off &ldquo;starts with atrium&rdquo; keeps the definition without the
         behavior.</span>
     </div>
+    </section>
   </div>
-  <div class="dlg-head" style="border-top:1px solid var(--stroke-dim);border-bottom:none">
+  <div class="dlg-foot">
     <button class="go" onclick="busyWhile(this, saveFixture, 'saving…')">save</button>
     <button class="no" id="f-delete" onclick="busyWhile(this, deleteFixture, 'removing…')">delete</button>
     <span class="grow"></span>
@@ -2342,157 +2348,171 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 
 <dialog id="harness" data-guard>
   <div class="dlg-head">
-    <div class="grow"><h2 id="h-heading">runner</h2></div>
+    <div class="grow"><div class="dlg-eyebrow">agents · runner</div><h2 id="h-heading">runner</h2></div>
     <button onclick="document.getElementById('harness').close()">close</button>
   </div>
   <div class="dlg-body">
-    <div class="field">
-      <label class="eyebrow" for="h-id">id</label>
-      <input type="text" id="h-id" spellcheck="false" placeholder="codex">
-      <span class="hintline">short and lowercase. cannot be changed later.</span>
-    </div>
-    <div class="field">
-      <label class="eyebrow" for="h-label">label</label>
-      <input type="text" id="h-label" spellcheck="false" placeholder="codex cli">
-    </div>
-    <div class="field">
-      <label class="eyebrow" for="h-cmd">command</label>
-      <input type="text" id="h-cmd" spellcheck="false" placeholder="codex">
-    </div>
-    <div class="field">
-      <label class="eyebrow" for="h-args">arguments, one per line</label>
-      <textarea id="h-args" rows="3" spellcheck="false"
-        placeholder="--dangerously-skip-permissions&#10;--model&#10;sonnet"></textarea>
-      <span class="hintline">one per line, not one line. an argument with a space in it stays whole
-        this way.</span>
-    </div>
-    <div class="field">
-      <label class="eyebrow" for="h-resume">resume arguments, one per line</label>
-      <textarea id="h-resume" rows="2" spellcheck="false"
-        placeholder="--resume&#10;{resume}"></textarea>
-      <span class="hintline">used instead of the arguments above when picking a conversation back up.
-        put <code>{resume}</code> where the session id goes.</span>
-    </div>
-    <!-- Opening prompt arguments. Empty means the runner cannot accept a prompt. -->
-    <div class="field">
-      <label class="eyebrow" for="h-prompt">prompt arguments, one per line</label>
-      <textarea id="h-prompt" rows="2" spellcheck="false"
-        placeholder="{prompt}"></textarea>
-      <span class="hintline">appended when a launch supplies an opening prompt. put
-        <code>{prompt}</code> where the text goes. leave empty for a runner that cannot take one.</span>
-    </div>
-    <!-- How this runner is told which model to use. Empty means it cannot be
-         asked for one, which is right for a shell, and a launch that names a
-         model for it is refused rather than started on the default. -->
-    <div class="field">
-      <label class="eyebrow" for="h-model">model arguments, one per line</label>
-      <textarea id="h-model" rows="2" spellcheck="false"
-        placeholder="--model&#10;{model}"></textarea>
-      <span class="hintline">appended when a launch names a model. put <code>{model}</code> where
-        the name goes. leave empty for a runner that has no model.</span>
-    </div>
-    <!-- Thinking effort, the same shape as the model. Empty means a launch that
-         asks for one is refused. -->
-    <div class="field">
-      <label class="eyebrow" for="h-effort">effort arguments, one per line</label>
-      <textarea id="h-effort" rows="2" spellcheck="false"
-        placeholder="--effort&#10;{effort}"></textarea>
-      <span class="hintline">appended when a launch names an effort. put <code>{effort}</code> where
-        the level goes. codex takes <code>-c</code> and <code>model_reasoning_effort={effort}</code>.</span>
-    </div>
-    <div class="field">
-      <label class="eyebrow" for="h-model-env">model and effort by environment</label>
-      <input type="text" id="h-model-env" spellcheck="false" placeholder="model env var, if any">
-      <input type="text" id="h-effort-env" spellcheck="false" placeholder="effort env var, if any">
-      <span class="hintline">for a runner that reads them from a variable instead of a flag. the
-        launch sets the named variable to what was asked for.</span>
-    </div>
-    <div class="field">
-      <label class="eyebrow" for="h-exit">how to exit, one key per line</label>
-      <textarea id="h-exit" rows="2" spellcheck="false"
-        placeholder="ctrl-d&#10;ctrl-d"></textarea>
-      <span class="hintline">Sent in order when you press <b>exit</b> on its terminal, or when the
-        card is shelved. <code>ctrl-c</code>, <code>ctrl-d</code>, <code>ctrl-z</code>,
-        <code>esc</code>, <code>enter</code>, or any text to type. claude wants
-        <code>ctrl-d</code> twice, ollama and codex once, a shell wants <code>exit</code>.</span>
-    </div>
-    <!-- Persist paste support because the startup enable sequence can leave scrollback. -->
-    <div class="field">
-      <label class="check">
-        <input type="checkbox" id="h-bracket">
-        <span>this runner asks for bracketed paste</span>
-      </label>
-      <span class="hintline">tick it for a terminal user interface that turns bracketed paste on for
-        its whole run, which claude and codex both do. a paste is then delivered as one paste rather
-        than as a line per newline, however long the session has been going. leave it off for a
-        shell, and for anything that would print <code>200~</code> on screen instead.</span>
-    </div>
-    <!-- Whether a message may be typed in while the runner is working. Seeded
-         from the runner profile. Off means every message waits for the turn. -->
-    <div class="field">
-      <label class="check">
-        <input type="checkbox" id="h-midturn">
-        <span>this runner takes typed input mid-turn</span>
-      </label>
-      <span class="hintline">tick it for a runner that reads a line typed while it is working at its
-        next step, which claude and codex both do. a message sent <b>immediately</b> is then typed in
-        as soon as the input line is empty, even mid-turn. leave it off and every message to this
-        runner waits for its turn to end.</span>
-    </div>
-    <div class="field">
-      <label class="eyebrow" for="h-cwd">default working directory</label>
-      <div class="picker">
-        <input type="text" id="h-cwd" spellcheck="false" placeholder="leave empty to choose each time">
-        <button onclick="browseInto('h-cwd')">browse</button>
+    <section class="dlg-sec dlg-grid">
+      <div class="dlg-sec-h">what it is</div>
+      <div class="field">
+        <label class="eyebrow" for="h-id">id</label>
+        <input type="text" id="h-id" spellcheck="false" placeholder="codex">
+        <span class="hintline">short and lowercase. cannot be changed later.</span>
       </div>
-    </div>
-    <div class="field">
-      <label class="eyebrow" for="h-prepare">prepare</label>
-      <textarea id="h-prepare" rows="2" spellcheck="false"
-        placeholder="add-clion_tools"></textarea>
-      <span class="hintline">A shell command run before this runner starts, in the same directory.
-        Whatever it leaves in the environment, the runner gets. This is how a shell function that
-        puts a toolchain on <code>PATH</code> reaches an agent started from here. Your profile is
-        loaded, so your own functions are available.</span>
-    </div>
-    <div class="field">
-      <label class="eyebrow" for="h-env">environment, one KEY=value per line</label>
-      <textarea id="h-env" rows="2" spellcheck="false"
-        placeholder="ATRIUM_PERM_GATE=on&#10;NO_COLOR=1"></textarea>
-      <span class="hintline">added to whatever the daemon passes on. atrium already strips the
-        markers of the session it was started from.</span>
-    </div>
-    <div class="field">
-      <label class="eyebrow">launch mode</label>
-      <div class="seg" id="h-mode">
-        <button data-v="window">own terminal window</button>
-        <button class="on" data-v="pty">atrium owns it</button>
+      <div class="field">
+        <label class="eyebrow" for="h-label">label</label>
+        <input type="text" id="h-label" spellcheck="false" placeholder="codex cli">
       </div>
-      <span class="hintline">atrium-owned means you can attach to it in the browser, type into it, and
-        stop it. it also dies when the daemon does, so resuming is how you get it back.</span>
-    </div>
-    <div class="field">
-      <label class="eyebrow" for="h-rules">rule import source</label>
-      <select id="h-rules">
-        <option value="">none, use atrium json</option>
-        <option value="claude">claude code settings.json</option>
-      </select>
-    </div>
-    <div class="field">
-      <label class="eyebrow" for="h-package">npm package</label>
-      <input type="text" id="h-package" spellcheck="false" placeholder="@anthropic-ai/claude-code">
-      <span class="hintline">so atrium can say a newer one is published, just before it starts this
-        runner. read off disk and from the registry, never by running the runner to ask. leave it
-        empty for anything a platform installer put there, which has no version atrium can check.</span>
-    </div>
-    <div class="field">
-      <label class="eyebrow" for="h-notes">notes</label>
-      <input type="text" id="h-notes" spellcheck="false">
-    </div>
-    <div class="toolbar">
-      <button class="go big" onclick="busyWhile(this, saveHarness, 'saving…')">save</button>
-      <button class="no" id="h-delete" onclick="busyWhile(this, deleteHarness, 'removing…')">delete</button>
-    </div>
+      <div class="field">
+        <label class="eyebrow" for="h-cmd">command</label>
+        <input type="text" id="h-cmd" spellcheck="false" placeholder="codex">
+      </div>
+      <div class="field">
+        <label class="eyebrow" for="h-package">npm package</label>
+        <input type="text" id="h-package" spellcheck="false" placeholder="@anthropic-ai/claude-code">
+        <span class="hintline">so atrium can say a newer one is published, just before it starts this
+          runner. read off disk and from the registry, never by running the runner to ask. leave it
+          empty for anything a platform installer put there, which has no version atrium can check.</span>
+      </div>
+      <div class="field span">
+        <label class="eyebrow" for="h-notes">notes</label>
+        <input type="text" id="h-notes" spellcheck="false">
+      </div>
+    </section>
+    <section class="dlg-sec dlg-grid">
+      <div class="dlg-sec-h">how it starts</div>
+      <div class="field">
+        <label class="eyebrow" for="h-args">arguments, one per line</label>
+        <textarea id="h-args" rows="3" spellcheck="false"
+          placeholder="--dangerously-skip-permissions&#10;--model&#10;sonnet"></textarea>
+        <span class="hintline">one per line, not one line. an argument with a space in it stays whole
+          this way.</span>
+      </div>
+      <div class="field">
+        <label class="eyebrow" for="h-resume">resume arguments, one per line</label>
+        <textarea id="h-resume" rows="2" spellcheck="false"
+          placeholder="--resume&#10;{resume}"></textarea>
+        <span class="hintline">used instead of the arguments above when picking a conversation back up.
+          put <code>{resume}</code> where the session id goes.</span>
+      </div>
+      <!-- Opening prompt arguments. Empty means the runner cannot accept a prompt. -->
+      <div class="field">
+        <label class="eyebrow" for="h-prompt">prompt arguments, one per line</label>
+        <textarea id="h-prompt" rows="2" spellcheck="false"
+          placeholder="{prompt}"></textarea>
+        <span class="hintline">appended when a launch supplies an opening prompt. put
+          <code>{prompt}</code> where the text goes. leave empty for a runner that cannot take one.</span>
+      </div>
+      <!-- How this runner is told which model to use. Empty means it cannot be
+           asked for one, which is right for a shell, and a launch that names a
+           model for it is refused rather than started on the default. -->
+      <div class="field">
+        <label class="eyebrow" for="h-model">model arguments, one per line</label>
+        <textarea id="h-model" rows="2" spellcheck="false"
+          placeholder="--model&#10;{model}"></textarea>
+        <span class="hintline">appended when a launch names a model. put <code>{model}</code> where
+          the name goes. leave empty for a runner that has no model.</span>
+      </div>
+      <!-- Thinking effort, the same shape as the model. Empty means a launch that
+           asks for one is refused. -->
+      <div class="field">
+        <label class="eyebrow" for="h-effort">effort arguments, one per line</label>
+        <textarea id="h-effort" rows="2" spellcheck="false"
+          placeholder="--effort&#10;{effort}"></textarea>
+        <span class="hintline">appended when a launch names an effort. put <code>{effort}</code> where
+          the level goes. codex takes <code>-c</code> and <code>model_reasoning_effort={effort}</code>.</span>
+      </div>
+      <div class="field">
+        <label class="eyebrow" for="h-model-env">model and effort by environment</label>
+        <input type="text" id="h-model-env" spellcheck="false" placeholder="model env var, if any">
+        <input type="text" id="h-effort-env" spellcheck="false" placeholder="effort env var, if any">
+        <span class="hintline">for a runner that reads them from a variable instead of a flag. the
+          launch sets the named variable to what was asked for.</span>
+      </div>
+    </section>
+    <section class="dlg-sec dlg-grid">
+      <div class="dlg-sec-h">its terminal</div>
+      <div class="field">
+        <label class="eyebrow">launch mode</label>
+        <div class="seg" id="h-mode">
+          <button data-v="window">own terminal window</button>
+          <button class="on" data-v="pty">atrium owns it</button>
+        </div>
+        <span class="hintline">atrium-owned means you can attach to it in the browser, type into it, and
+          stop it. it also dies when the daemon does, so resuming is how you get it back.</span>
+      </div>
+      <div class="field">
+        <label class="eyebrow" for="h-exit">how to exit, one key per line</label>
+        <textarea id="h-exit" rows="2" spellcheck="false"
+          placeholder="ctrl-d&#10;ctrl-d"></textarea>
+        <span class="hintline">Sent in order when you press <b>exit</b> on its terminal, or when the
+          card is shelved. <code>ctrl-c</code>, <code>ctrl-d</code>, <code>ctrl-z</code>,
+          <code>esc</code>, <code>enter</code>, or any text to type. claude wants
+          <code>ctrl-d</code> twice, ollama and codex once, a shell wants <code>exit</code>.</span>
+      </div>
+      <!-- Persist paste support because the startup enable sequence can leave scrollback. -->
+      <div class="field">
+        <label class="check">
+          <input type="checkbox" id="h-bracket">
+          <span>this runner asks for bracketed paste</span>
+        </label>
+        <span class="hintline">tick it for a terminal user interface that turns bracketed paste on for
+          its whole run, which claude and codex both do. a paste is then delivered as one paste rather
+          than as a line per newline, however long the session has been going. leave it off for a
+          shell, and for anything that would print <code>200~</code> on screen instead.</span>
+      </div>
+      <!-- Whether a message may be typed in while the runner is working. Seeded
+           from the runner profile. Off means every message waits for the turn. -->
+      <div class="field">
+        <label class="check">
+          <input type="checkbox" id="h-midturn">
+          <span>this runner takes typed input mid-turn</span>
+        </label>
+        <span class="hintline">tick it for a runner that reads a line typed while it is working at its
+          next step, which claude and codex both do. a message sent <b>immediately</b> is then typed in
+          as soon as the input line is empty, even mid-turn. leave it off and every message to this
+          runner waits for its turn to end.</span>
+      </div>
+    </section>
+    <section class="dlg-sec dlg-grid">
+      <div class="dlg-sec-h">where and with what</div>
+      <div class="field">
+        <label class="eyebrow" for="h-cwd">default working directory</label>
+        <div class="picker">
+          <input type="text" id="h-cwd" spellcheck="false" placeholder="leave empty to choose each time">
+          <button onclick="browseInto('h-cwd')">browse</button>
+        </div>
+      </div>
+      <div class="field">
+        <label class="eyebrow" for="h-rules">rule import source</label>
+        <select id="h-rules">
+          <option value="">none, use atrium json</option>
+          <option value="claude">claude code settings.json</option>
+        </select>
+      </div>
+      <div class="field">
+        <label class="eyebrow" for="h-prepare">prepare</label>
+        <textarea id="h-prepare" rows="2" spellcheck="false"
+          placeholder="add-clion_tools"></textarea>
+        <span class="hintline">A shell command run before this runner starts, in the same directory.
+          Whatever it leaves in the environment, the runner gets. This is how a shell function that
+          puts a toolchain on <code>PATH</code> reaches an agent started from here. Your profile is
+          loaded, so your own functions are available.</span>
+      </div>
+      <div class="field">
+        <label class="eyebrow" for="h-env">environment, one KEY=value per line</label>
+        <textarea id="h-env" rows="2" spellcheck="false"
+          placeholder="ATRIUM_PERM_GATE=on&#10;NO_COLOR=1"></textarea>
+        <span class="hintline">added to whatever the daemon passes on. atrium already strips the
+          markers of the session it was started from.</span>
+      </div>
+    </section>
+  </div>
+  <div class="dlg-foot">
+    <button class="go big" onclick="busyWhile(this, saveHarness, 'saving…')">save</button>
+    <button class="no" id="h-delete" onclick="busyWhile(this, deleteHarness, 'removing…')">delete</button>
+    <span class="grow"></span>
+    <button onclick="document.getElementById('harness').close()">cancel</button>
   </div>
 </dialog>
 
