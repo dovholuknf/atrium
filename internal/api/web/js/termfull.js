@@ -92,6 +92,8 @@ document.addEventListener("webkitfullscreenchange", onFullscreenChange);
 let termFullEscAt = 0;
 document.addEventListener("keydown", e => {
   if (e.key !== "Escape" || !termFullOn()) return;
+  // An open dialog owns its Esc: closing it must not also leave full screen.
+  if (document.querySelector("dialog[open]")) return;
   const scr = document.getElementById("t-screen");
   if (scr && scr.contains(document.activeElement)) return;
   e.preventDefault();
