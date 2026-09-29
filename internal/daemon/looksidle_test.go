@@ -35,7 +35,7 @@ func TestClassifyFrame(t *testing.T) {
 		{"status line rows under the box", idleFrame + "  ~/repo (main) [22:54] | 5h 1% | wk 26% | ctx 64k\r\n  Checking for updates\r\n", true, frameIdle},
 		{"five rows under the box", idleFrame + "a\r\nb\r\nc\r\nd\r\n", false, frameNoBox},
 		{"hint in a status row", workingFrame + "  status\r\n", false, frameHint},
-		{"no box","building...\r\nstill going\r\nmore\r\nlines\r\n", false, frameNoBox},
+		{"no box", "building...\r\nstill going\r\nmore\r\nlines\r\n", false, frameNoBox},
 		{"box half drawn", "x\r\n" + frameRule + "\r\n❯", false, frameNoBox},
 		{"spinner with no footer hint", "· Ionizing… (5s)\r\n\r\n" + frameRule + "\r\n❯ \r\n" + frameRule + "\r\n  footer\r\n", false, frameSpinner},
 	}
