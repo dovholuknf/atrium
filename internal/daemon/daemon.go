@@ -486,6 +486,7 @@ func New(opts Options) (*Daemon, error) {
 	d.usage.broadcast = d.ap.Broadcast
 	// A keep-alive refresh's row is announced the same way as a turn's.
 	d.ka.spent = func(u *store.SessionUsage) error {
+		d.usage.stamp(u)
 		err := st.AddSessionUsage(u)
 		if err == nil {
 			d.usage.emitRow(u)

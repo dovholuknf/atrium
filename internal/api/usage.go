@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"strconv"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/store"
 )
 
 // roomUsage is the whole room's spend in buckets, for the usage tab. Summed in
@@ -30,7 +32,12 @@ func (s *Server) roomUsage(w http.ResponseWriter, r *http.Request) {
 		}
 		bucket = n
 	}
-	out, err := s.st.UsageBuckets(since, until, bucket, q.Get("card"))
+	group := q.Get("group")
+	if group != "" && group != store.UsageByDept && group != store.UsageByLauncher {
+		http.Error(w, `{"error":"group is dept or launcher"}`, http.StatusBadRequest)
+		return
+	}
+	out, err := s.st.UsageBucketsBy(since, until, bucket, q.Get("card"), group)
 	if err != nil {
 		s.fail(w, err)
 		return
