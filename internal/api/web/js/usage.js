@@ -140,7 +140,7 @@ async function loadUsage(id) {
     tipped("cache read", USAGE_TIPS.read) + `<span>context</span>` + tipped("est.", USAGE_TIPS.cost) + `</div>`;
   list.innerHTML = head + rows.map(r => {
     const cause = (USAGE_CAUSES[r.cause] || r.cause) + (r.after_resume && r.cause !== "resume" ? " · resumed" : "");
-    const tip = `${r.replies} API call${r.replies === 1 ? "" : "s"},${r.model || "model unknown"}, from ${
+    const tip = `${r.replies} API call${r.replies === 1 ? "" : "s"}, ${r.model || "model unknown"}, from ${
       firstSeen(r.started_at)}`;
     return `<div class="urow${r.after_resume ? " resumed" : ""}" data-tip="${esc(tip)}">` +
       `<span>${esc(firstSeen(r.ended_at))}</span><span>${esc(cause)}</span>` +
