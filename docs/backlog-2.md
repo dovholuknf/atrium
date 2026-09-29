@@ -58,7 +58,7 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 49 | The orchestrator can appear on every room | design | @fabric, design reviewed `1ccecf2`, ready to build, 3 questions |
 | 50 | Views of agents, beyond groups | design | not started |
 | 51 | Five kept worktrees show 48 commits not matched on `claude/main` | housekeeping | DONE, all five safe, deleted 2026-09-28 |
-| 52 | A pinned strip with cards from two rooms orders only one room | bug | DONE by fb04, merged into claude/fabric, needs hub and room restarts. `prune` has the same shape, unfixed |
+| 52 | A pinned strip with cards from two rooms orders only one room | bug | DONE by fb04, merged into claude/fabric, needs hub and room restarts. `prune` is item 92 |
 | 53 | `setViewport` and `dropViewport` compute under `r.mu` and apply outside it | bug | by sa53, DONE, reproduced and fixed |
 | 54 | Terminal test suite part 2: `screen.go` against xterm.js | feature | not started |
 | 55 | Launched runners inherit ATRIUM_DEBUG_INPUTLAG from the room | bug | DONE by sa55, merged, needs a room restart |
@@ -87,6 +87,7 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 78 | The details popover's token labels mislead | bug | not started |
 | 79 | The notification drawer can turn notifications off | feature | design filed, queued behind 78, 44 and 43 |
 | 80 | Real-time token burn and usage charts | feature, TONIGHT | design filed, ahead of 43 and 79 |
+| 92 | `/v1/tasks/prune` reaches one room, like pin-order did | bug | not started, @fabric, with the next `internal/link` worker |
 
 ------------
 
@@ -1507,8 +1508,7 @@ whole strip. Hub-side only, no room, board or migration change. The second note 
 
 **Status, 2026-09-29: DONE by fb04, merged into claude/fabric.** Hub fan-out `63ed4e8` (design tests FF4, FF5), plus the
 store now orders pinned rows only, `8b7d11c`, read and passed by @runtime. `docs/changes/fabric-52-pin-order.md`.
-Needs a hub and room restart. Not fixed and the same shape: `/v1/tasks/prune` also names no card in its path, so the
-hub also sends it to one room.
+Needs a hub and room restart. Not fixed and the same shape: `/v1/tasks/prune`, now item 92.
 
 @ui wrote a board-only design first, one post per room with an explicit room header. atrium-87300 chose the hub-side
 one in `docs/pin-order-rooms-design.md` instead, and @ui agreed. Its other finding stands: `nudgeItems` already
@@ -2468,6 +2468,17 @@ reads idle. Owned by @terminal, built with item 86 by the same worker.
 
 **Status: done on `claude/sa86`.** The loop is now `frameText` in `idleframe.go`, which skips `contCh` cells, and the
 stale comment is rewritten. `idleframe_wide_test.go` asserts the text handed to `classifyScreen` directly.
+
+## 92. `/v1/tasks/prune` reaches one room, like pin-order did (bug)
+
+Found 2026-09-29 by fb04 while building item 52. `prune` sits under `/v1/tasks/` and names no card in its path, so
+the hub routes it by the board's `X-Atrium-Room` header (the stale `writeRoom`) to one room at most, the way
+`pin-order` was routed before `internal/link/pinorder.go`. On the all-rooms view a prune reaches whichever room the
+header names, and the others keep what should have gone.
+
+Fix, probably the same shape as item 52: fan it out to every attached room, bounded per room, 200 with `unreached`
+while one room took it. Read what `prune` does to each room first, since a prune that should only reach one room
+would make the fan-out wrong. Owned by @fabric, and folded into the next worker that touches `internal/link`.
 
 
 ------------
