@@ -106,6 +106,10 @@ type screen struct {
 	altRegSet      bool
 	altRegTop      int
 	altRegBot      int
+	// rep is the detector `repairReport` turns on, and is nil for every other
+	// user of the grid, which then pays a nil check and nothing else. It only
+	// watches. See screen_repair.go.
+	rep *repairWatch
 }
 
 // region is the rows a line feed scrolls between, inclusive.
@@ -236,6 +240,9 @@ func (s *screen) scrollDown() {
 // put writes one character at the cursor and advances it.
 func (s *screen) put(ch rune) {
 	w := runeWidth(ch)
+	if s.rep != nil {
+		s.repPut()
+	}
 	if w == 0 {
 		if s.combine(ch) {
 			return
@@ -245,6 +252,9 @@ func (s *screen) put(ch rune) {
 		w = 1
 	}
 	if s.wrapNext {
+		if s.rep != nil {
+			s.rep.cancel("wrap")
+		}
 		s.col = 0
 		s.lineFeed()
 		s.wrapNext = false
@@ -801,16 +811,33 @@ type sizeCut struct{ at, cols, rows int }
 // boundary, so resizing never splits one.
 func (s *screen) applyCuts(b []byte, cuts []sizeCut) {
 	for i := 0; i < len(b); {
+		if s.rep != nil {
+			s.rep.pos = i
+			if s.rep.open && i-s.rep.openAt > repairMaxSpan {
+				s.rep.cancel("too-long")
+			}
+		}
 		for len(cuts) > 0 && cuts[0].at <= i {
-			s.resize(cuts[0].cols)
-			s.resizeRows(cuts[0].rows)
+			s.cutTo(cuts[0])
 			cuts = cuts[1:]
 		}
 		i = s.step(b, i)
 	}
 	for _, c := range cuts {
-		s.resize(c.cols)
-		s.resizeRows(c.rows)
+		s.cutTo(c)
+	}
+}
+
+// cutTo is one size cut, with the detector told either side of it when there is
+// one.
+func (s *screen) cutTo(c sizeCut) {
+	if s.rep != nil {
+		s.repCutStart(c)
+	}
+	s.resize(c.cols)
+	s.resizeRows(c.rows)
+	if s.rep != nil {
+		s.repCutEnd()
 	}
 }
 
@@ -822,6 +849,9 @@ func (s *screen) step(b []byte, i int) int {
 	case c == 0x1b:
 		return s.escape(b, i)
 	case c == '\n':
+		if s.rep != nil {
+			s.repLF()
+		}
 		s.lineFeed()
 	case c == '\r':
 		s.col = 0
@@ -1012,15 +1042,24 @@ func (s *screen) escape(b []byte, i int) int {
 		}
 		return len(b)
 	case '7':
+		if s.rep != nil {
+			s.rep.cancel("edit")
+		}
 		s.savedRow, s.savedCol, s.savedSGR = s.row, s.col, s.attr
 		return i + 1
 	case '8':
+		if s.rep != nil {
+			s.repMove(false)
+		}
 		s.moveTo(s.savedRow, s.savedCol)
 		s.attr = s.savedSGR
 		s.sgr = s.attr.render()
 		return i + 1
 	case 'M':
 		// Reverse index: up one, scrolling the region down at its top.
+		if s.rep != nil {
+			s.rep.cancel("scroll")
+		}
 		if top, _ := s.region(); s.row == top {
 			s.scrollDown()
 		} else if s.row > 0 {
@@ -1029,6 +1068,9 @@ func (s *screen) escape(b []byte, i int) int {
 		return i + 1
 	case 'c':
 		// Full reset. The screen is cleared and what was on it was still seen.
+		if s.rep != nil {
+			s.rep.cancel("reset")
+		}
 		s.eraseDisplay(2)
 		s.resetRegion()
 		s.moveTo(0, 0)
@@ -1089,6 +1131,9 @@ func (s *screen) csi(b []byte, start, i int) int {
 		return def
 	}
 
+	if s.rep != nil {
+		s.repCSI(final, arg(0, 1) == 1 && arg(1, 1) == 1)
+	}
 	switch final {
 	case 'H', 'f':
 		s.moveTo(arg(0, 1)-1, arg(1, 1)-1)
@@ -1325,6 +1370,9 @@ func (s *screen) privateMode(params string, final byte) {
 	for _, p := range strings.Split(params, ";") {
 		switch p {
 		case "1049", "47", "1047":
+			if s.rep != nil {
+				s.rep.cancel("alt-screen")
+			}
 			if final == 'h' {
 				s.toAlt()
 			} else if final == 'l' {
