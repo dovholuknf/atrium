@@ -2344,5 +2344,14 @@ when history is trimmed or the screen is reset, by walking the live cells and re
 more than `combsMaxKept` marks across a scrolling screen and checks that the last row still carries its marks.
 Owned by @terminal. Low priority.
 
+## 90. busyGuard's refusal-line check sleeps a fixed 50ms (bug)
+
+Raised 2026-09-29 by the orchestrator. @merge's full headless run on `db2b33a` failed once under load in
+`busyGuard`: "the refusal line outlived its dialog". The check closed the launch dialog, slept 50ms and then looked,
+so a loaded browser that had not yet run the close handler failed it. It passes alone. Owner @ui.
+
+Status 2026-09-29, done on `claude/ui`. The sleep is now a wait for the line to be gone, with a `slow(2000)` budget
+and the same failure message, so `HEADLESS_SLOW` scales it like every other wait since item 85.
+
 
 ------------

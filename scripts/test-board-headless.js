@@ -4504,10 +4504,8 @@ async function busyGuardSection(browser, base) {
       fail("a refused launch did not stay open with the reason and a live button: " + JSON.stringify(refused));
     }
     await p.evaluate(() => document.getElementById("launch").close());
-    await p.waitForTimeout(50);
-    if (await p.evaluate(() => !!document.querySelector("#launch .busy-why"))) {
-      fail("the refusal line outlived its dialog, so the next open wears the last failure.");
-    }
+    await p.waitForFunction(() => !document.querySelector("#launch .busy-why"), null, { timeout: slow(2000) })
+      .catch(() => fail("the refusal line outlived its dialog, so the next open wears the last failure."));
     launchFails = false;
 
     // 3. The card menu's resume, twice on one card.
