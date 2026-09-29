@@ -227,3 +227,20 @@ that followed, and should be checked against the parked design before stage 2 is
 5. **Mercurius.** Should the Mercurius reviewer ever read a repo's reviewer file? Recommended no: Mercurius judges a
    design cold on purpose.
 6. **The parked pack.** Does anything in `bc58c32:docs/personas-design.md` still stand, or is this the design now?
+
+## clint's answers, 2026-09-29
+
+They add a role the design did not have: a **director of software review**, one resident card that owns reviews the
+way @merge owns `claude/main`. The design is revised around it before stage 2 starts.
+
+1. **Layout.** `personas/<id>/repos/<host>/<org>/<repo>.md`. Reviews run at the same time, so each writes its
+   reviewer-file changes on its own branch, and the review director merges them at points.
+2. **Who edits.** The review director, from each reviewer's `repo_notes`. This replaces "the conductor" and "each
+   persona".
+3. **The resident.** No standing card per repo. Reviewers are subagents. The one standing card is the review
+   director, and that is where clint sees results and reacts.
+4. **Panel size.** 150 lines or a backport stays the default, but it is the review director's call. A small change
+   that is dangerous gets the full panel, and the director remembers which kinds of change are.
+5. **Mercurius.** Stays cold. It never reads a reviewer file.
+6. **The parked pack.** clint never reviewed it. This design is the design. The review director reads the parked one
+   before stage 2 and takes anything still useful, naming it.
