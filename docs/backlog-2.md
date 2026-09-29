@@ -14,7 +14,7 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 5 | One atrium: one binary, Mode A and B out, the hub becomes the atrium | paused | stage 1 DONE `948d557`, deployed, stages 2-7 wait on 13 questions |
 | 6 | Taking a card out of a group | bug | DONE in `b12b323`, deployed |
 | 7 | The held-message `!` chip says the wrong reason | bug | DONE with item 10, `1ff7503` |
-| 8 | Input lag follow-ups | bug | hop split DONE `5d9ba72`: the stall is the runner side, not atrium |
+| 8 | Input lag follow-ups | bug | narrowed to one prefix: hop split `1f49694` (runner side), unsent fix `6bb14e4` |
 | 9 | Eliminate unstyled tooltips | bug | DONE, `069c16b`, deployed, check-titles guards it |
 | 10 | `atrium_say` types immediately by default | feature | DONE, `04c2095`, not deployed. Also covers item 7's reason and count |
 | 11 | Clicking `? N` or a question clears it | bug | not started, 2026-09-25: the click selects the row instead |
@@ -67,7 +67,7 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 58 | `atrium_say` reaches cards on other rooms, `name@room` | feature, HIGH | DONE by sa58, merged, needs hub and room restarts |
 | 59 | Spike on m1mini: more than one room per machine, and a blocked room that drains | design, spike | deep backlog, not started |
 | 60 | The stdio control MCP has sa48's launch fields but no "room is older" warning | housekeeping | not started |
-| 61 | A fake 45s hub echo in the lag log from the idle ping and pong | bug | not started |
+| 61 | A fake 45s hub echo in the lag log from the idle ping and pong | bug | DONE `88fc53d`, on claude/main |
 | 62 | A worker that ends its turn without a report reaches its orchestrator every time | bug, HIGH | DONE by sa62, merged `f22115e`, deployed `66717c5` |
 | 63 | Starting onto an existing card goes to the wrong room | bug, HIGH | not started |
 | 64 | A card cannot stop being lean | bug, HIGH | DONE by sa64, merged, needs room and hub restarts |
@@ -170,6 +170,20 @@ flight. Spikes cluster over ~3s, then 4-10ms.
   Subtract it, or read it before send, so the line only appears when something was really queued.
 - A console filter of `[atrium` hides every `[inputlag]` line, which made the logging look broken. Consider one
   prefix.
+
+**Status 2026-09-29, narrowed to the prefix.** On claude/main:
+
+- The hop split is `1f49694`. The room's echo line now splits `runner` from `atrium` time. It says the stall is
+  the runner side: the runner's own redraw, or Windows not scheduling it, and not atrium. The hub and the room
+  already raise themselves to above normal for the second. The hiccup probe in `docs/input-lag-logging.md` tells
+  the two apart on a given night, and no run of it is on record here. A live sample agrees on the side: on 2026-09-28 at 09:55:19 a 176.6ms echo to card `01a0e80e` was `runner 176.1ms,
+  atrium 0.5ms, ws write 0.5ms`. Nothing in atrium's hops is left to chase. The hub's fake 45s echo that muddied
+  the hub's side was item 61 (`88fc53d`).
+- The unsent-bytes line reading the key's own frame is `6bb14e4`: the board reads the socket backlog before the
+  send.
+- Left: the prefix. `internal/inputlag/inputlag.go` and `js/inputlag.js` still log `[inputlag]`. It is a small
+  naming choice (`[atrium inputlag]` keeps a `[atrium` filter working, at the cost of anyone grepping for the old
+  one), not a bug, so it waits for someone to want it.
 
 ### 9. Eliminate unstyled tooltips
 
@@ -986,7 +1000,13 @@ message is delivered at the turn end it waited for.
 Status: built and on claude/main. The line's text and keystroke-only counting are `118d6e5` (`typedline.go`), the
 Esc Esc port onto it is `d713e5c`, and the readout behind a setting is `2f15ace` (`js/typing.js`, polling
 `GET /v1/tasks/{id}/typing`). `TestASayWhenDoneWaitsForTheTurnToEnd` covers a `when: done` message typed at the turn
-end. The sa85 room log for 09:45 to 09:56 was not read, because it is in the live room.
+end. All three are in the room binary deployed at 22:53 on 2026-09-28 (`66717c5`).
+
+The sa85 incident is confirmed from a copy of the room database and `room.err.20260928-111944`. Three messages from
+the orchestrator: a `when: done` one at 09:03, and immediate ones at 09:45:50 and 09:50:59. sa85 reported done at
+09:45:32. The room log has clint's keystrokes to that card at 09:55:16 to 09:55:19, and all three messages were typed at
+09:55:21 to 09:55:22. The turn end at 09:45 released nothing, so the gate was reading a part-typed line, which is the old
+counter. That build predates `118d6e5`.
 
 ## 34. Every MCP tool call skips atrium's permission gate (bug)
 
