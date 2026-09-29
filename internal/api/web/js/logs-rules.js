@@ -609,7 +609,11 @@ const DEFAULT_PREFS = {
   desktop: true, expiry: 30, debounce: 0,
   // A launched card that is stuck: "alert" rings and marks the card, "mark"
   // only marks it, "off" does neither.
-  stuck: "alert"
+  stuck: "alert",
+  // A card an agent launched (`origin:agent`) raises no toast, desktop
+  // notification or sound. Its marks and its toast log line stay. A permission
+  // request from it still notifies. See `quietDoer` in notify.js.
+  quietDoers: true
 };
 
 function loadPrefs() {

@@ -112,6 +112,7 @@ function paintSettings() {
   document.getElementById("s-expiry").value = String(Number(p.expiry) || 0);
   document.getElementById("s-debounce").value = String(Number(p.debounce) || 0);
   document.getElementById("s-stuck").value = p.stuck || "alert";
+  document.getElementById("s-quietdoers").checked = p.quietDoers !== false;
   document.getElementById("s-cardsize").value = String(uiScale());
   document.getElementById("s-density").value = String(density());
   document.getElementById("s-hoverfocus").checked = hoverFocus;
