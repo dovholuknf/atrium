@@ -48,3 +48,12 @@ It grows with the number of idle cards, and the break-even stop already bounds i
 3. Should a card that has been idle past some age (a day, say) stop being warmed whatever its switch says? The
    break-even stop already ends each idle stretch, so this would only matter for a card that is woken and left again
    and again.
+
+## clint's answers, 2026-09-29
+
+1. **Not as written.** A keep-alive should last 2 to 4 hours at most, only on cards the human has actively used, and
+   never on an `atrium:subagent` card. See `docs/keepalive-policy-design.md`, which replaces this spec.
+2. **Opt-in.** The human enables keep-alive on the cards they want, and even then only while they have been
+   interacting with the card. "Has the human interacted with this card" is a signal worth building on its own, since it
+   may help with subagents too.
+3. **No** separate age cap beyond the 2 to 4 hour limit in answer 1.

@@ -167,3 +167,10 @@ step to shrink, and the live sweep keeps it small afterwards.
    sooner, and the cost of undercutting it is one question asked twice.
 5. **Is the trim marker on the review enough, or does the Permissions pane need a line too?** It shows the newest
    100 rows, so it only reaches trimmed rows on a board with almost no traffic.
+
+## clint's answers, 2026-09-29
+
+1. Unsure, no action now.
+2. to 4. clint asked what trimming is and where the age and replay questions come from. Explained back to him in the
+   runtime terminal. These wait on his answer to that.
+5. The trim marker is enough, to start.
