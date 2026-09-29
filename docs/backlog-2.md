@@ -3337,3 +3337,34 @@ Design questions to settle before any code:
 
 Related, unfiled ideas from the same day: per-question tracking (the parser skips headings, cap 10 to 50, numbered
 answers decrement the count), and "an Open Questions block counts as reported".
+
+## f-003. An inventory of local resources agents can use (design)
+
+Status: not started. Design first, backlog only. Owned by @fabric. Raised by clint 2026-09-29.
+
+In the PR #369 review, the agent learned that `ssh m1mini` exists only because clint said so in the prompt. It
+spent turns finding which tools were on that machine (cmake, ninja and vcpkg were there, but not on the default
+PATH). It never found the FIPS OpenZiti environment: the one controller it found in `~/.ziti/ziti-cli.json` was
+unreachable, and it asked for the URL at the end of the run. Every session rediscovers this, or never learns it.
+
+Atrium should keep an inventory, local to this machine, of what an agent may use:
+
+- machines reachable by ssh: the name, OS and arch, what is installed and where (PATH prefixes, vcpkg root), and
+  what it is good for (macOS or iOS builds, leaks, the Apple frameworks)
+- environments: an OpenZiti network (self-hosted, FIPS or not), the controller URL, and which identity to use
+- anything else clint names: devices, test servers, shared build caches
+
+Design questions:
+
+1. Where it lives. A daemon table beside the harness rows, or a file clint edits by hand. The line in
+   CLAUDE.md holds: atrium may hold the NAME of a command or host that has a credential, never the credential.
+2. How an agent reads it. A tool (`atrium_resources`), a section of the launch brief, or both. A review worker
+   should see it without being told.
+3. Who keeps it current. clint, a probe that checks each machine is reachable and lists its tools, or an agent that
+   proposes an entry after it has used one.
+4. Scope across rooms. A machine reachable from one room may not be reachable from another, so an entry may belong
+   to a room. `sgg` and `sg3` are already rooms, so decide whether a room is itself an inventory entry.
+5. Reservations. Two agents building on m1mini at once collide on `~/pr369`. Does an entry take a lock or a working
+   directory per card?
+
+@review's rules (`CLINT-REVIEW-RULES.md`, rule 1) assume review workers can find hardware like this.
