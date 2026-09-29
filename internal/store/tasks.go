@@ -204,6 +204,15 @@ func (s *Store) Register(obs Observed) (*Task, bool, error) {
 	return task, created, nil
 }
 
+// SetWorktree moves a card to another directory on purpose. Not "following the
+// cd": callers are launch, where atrium or a human chose the directory.
+func (s *Store) SetWorktree(id, worktree string) error {
+	return s.guard(func() error {
+		_, err := s.db.Exec(`UPDATE task SET worktree = ? WHERE id = ?`, worktree, id)
+		return err
+	})
+}
+
 func (s *Store) getBy(where string, args ...any) (*Task, error) {
 	return getByOn(s.db, where, args...)
 }
@@ -215,7 +224,25 @@ func getByOn(q querier, where string, args ...any) (*Task, error) {
 
 // refreshObserved updates only the observed bucket. It never touches
 // overrides, which is what lets a hand-picked title survive a reconnect.
+//
+// A CARD NEVER CHANGES DIRECTORY. `Worktree` is the launch directory and does
+// not follow the session's `cd`: a hook reports the session's live cwd on every
+// tool call, and taking it would make a card wander into whichever subdirectory
+// the session last stood in. The one exception is a card with NO worktree, which
+// takes the first one reported, once. That covers a session atrium did not
+// launch, joined by `atrium join` or found by a hook, which has no launch
+// directory of its own to keep. After that it never moves, except through
+// `SetWorktree` or a claim, which are atrium or a human choosing.
 func (s *Store) refreshObserved(t *Task, obs Observed) error {
+	return s.refreshObservedAt(t, obs, false)
+}
+
+// refreshObservedAt is refreshObserved, with `move` allowing the worktree to
+// be replaced. Only a claim passes it.
+func (s *Store) refreshObservedAt(t *Task, obs Observed, move bool) error {
+	if !move && t.Worktree != "" {
+		obs.Worktree = t.Worktree
+	}
 	n := now()
 	_, err := s.db.Exec(`UPDATE task SET worktree = ?, repo = ?, runner = ?, hostname = ?,
 		pid = ?, wire_name = ?, last_activity_at = ? WHERE id = ?`,
