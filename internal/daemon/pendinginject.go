@@ -286,6 +286,17 @@ func (pi *pendingInjector) attempt(taskID string) {
 			return
 		}
 	}
+	// A card in a new-context cycle holds everything until its wake prompt has
+	// been typed. Reschedule quietly at the same interval: releaseHeld re-arms
+	// the retry to the front when the cycle ends.
+	if pi.d.holdingMessages(taskID) {
+		pi.mu.Lock()
+		if ht := pi.by[taskID]; ht != nil && ht.timer != nil {
+			ht.timer.Reset(backoffSteps[step])
+		}
+		pi.mu.Unlock()
+		return
+	}
 	// A dialog the runner put up itself must not be answered by a peer message's
 	// Enter, exactly as tellByTyping refuses one. This is not the operator's line
 	// being dirty, so it is a silent wait: reschedule at the same interval and do
