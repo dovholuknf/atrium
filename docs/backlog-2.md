@@ -809,6 +809,49 @@ reported progress when asked. A turn that ends with background work still runnin
 whether atrium can see background tasks, from the Stop hook payload or the runner's process tree, and hold the alert
 while they run.
 
+**Status: built on `claude/sa31`, not merged.** Mercurius review of the design (`docs/background-hold-design.md`): round 1
+on this whole file was off target (the reviewer judged it against another design), round 2 on the standalone design
+returned ready to build with one advisory, the post-cap transition, now stated. Changelog and test plan in
+`docs/changes/31.md`.
+
+### Design (sa31)
+
+**The signal is the Stop payload's `background_tasks`.** `atrium turn` already reads it (`internal/cli/turn.go`) and
+counts only `type == subagent`, on purpose, so that a subagent panel does not ring the board. Each entry has
+`type` and `status`. It is the runner's own account of what it is waiting on, it costs nothing, and it is the same
+on Windows and Linux. Nothing new is asked of the OS.
+
+**The process tree is rejected.** Descendants of the runner pid cannot tell a Bash-tool shell running `go test` from
+the MCP servers (atrium control, mercurius) that every claude owns, and the two look alike on Windows, where the
+tool shell is a `bash.exe` or `pwsh.exe` child among other children. A baseline taken at session start would need
+the reaper to walk trees on every tick and would still misread a shell the MCP server itself spawns. The payload
+is an answer, the tree is a guess. If `background_tasks` turns out absent from a Claude Code version, the fallback
+is the existing behaviour, not a tree walk.
+
+**Distinguishing MCP children** is therefore not needed: they never appear in `background_tasks`.
+
+**What counts.** Any task with `status == running` whose type is not `subagent`. Type names belong to Claude Code and
+are not enumerated. This is a NEW count (`background_running` on `/stop`), kept apart from `subagents_running`,
+because subagents keep the card in running and shells must not: a session that left a dev server up and stopped is
+still waiting on the operator, so the card still moves to needs-input.
+
+**Hold.** `stoppedSilently` returns "not silent" while the card's last Stop named running background work. That one
+function feeds both the board escalation and the launcher notice (`stuckNow`, `silentStop`), so both hold.
+
+**When the clock starts.** Claude Code wakes the session when a background task completes, and that wake ends in
+another Stop. That Stop names nothing running, records a new `turn_ended` and replaces the held count, so the clock
+is the LATER turn end with no new signal. If the work ends without a wake, nothing tells atrium, so the hold is
+bounded by `BackgroundHoldMax` (default 2h, `ATRIUM_A2A_BACKGROUND_HOLD`), after which the original turn end is the
+clock and the alert fires. That also bounds a dev server left running on purpose.
+
+**Storage.** In memory in the activity tracker (`bgWork`), replaced by every Stop and dropped on `forget`, like
+`background`. No migration, no event.
+
+**The board.** Unchanged for now: the card shows needs-input as before, with no STUCK. A "waiting on background
+work" badge would need the count to travel on the card, and is left out until asked for.
+
+**Hooks stay safe.** No new failure path: an old hook omits the field and reads as zero, and the Stop answer is untouched.
+
 ## 32. A queued say from http-support never produced a backlog entry, and nothing can say why (bug)
 
 Raised 2026-09-28 by clint. About 09:22 local, the mercurius `http-support` session wrote a brief and sent a say to
@@ -1069,6 +1112,11 @@ leave `atrium_task` and every other reader of `unseen` still saying nobody looke
   `launcher`. One that stops without reporting is unseen and the silent stop notice goes. A human-launched card that
   stops is unseen whatever it said. Questions stay open after a launcher-seen turn. A reported worker's Stop
   publishes the card once, and never with `unseen` true.
+
+**Status, 2026-09-28, sa43: built on `claude/sa43`, not merged.** As designed. `noteTurnForSeen` takes an auto-seen
+via and `launcherSeen` picks `SeenLauncher` for an agent-launched card that owes no report. The board shows no
+`seen_via`, so it is unchanged, and `atrium_task`'s description of `unseen` now names the launcher. A Stop still
+publishes twice in all: the status move to needs-input, then the one seen publish. See `docs/changes/43.md`.
 
 ## 44. A gear checkbox: no notifications from agent-launched cards, on by default (feature)
 
