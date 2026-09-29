@@ -96,6 +96,36 @@ func TestAnUnknownIDDoesNotSinkTheReorder(t *testing.T) {
 	}
 }
 
+// FF6. A CARD UNPINNED BEFORE THE ORDER LANDS KEEPS THE RANK IT HAD. The order
+// writes rank, which every view sorts by, so writing it to a card that is no
+// longer in the strip would move that card in its group.
+func TestAnUnpinnedCardKeepsItsRankWhenTheOrderLands(t *testing.T) {
+	s := open(t)
+	a := pinned(t, s, "still-pinned")
+	b := pinned(t, s, "unpinned-meanwhile")
+	if err := s.SetPinned(b, false); err != nil {
+		t.Fatal(err)
+	}
+	before, err := s.Get(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetPinOrder([]string{b, a}); err != nil {
+		t.Fatal(err)
+	}
+	gotA, _ := s.Get(a)
+	gotB, err := s.Get(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotA.Rank != 1 || gotA.PinOrder != 1 {
+		t.Errorf("the pinned card took rank %v, order %d, wanted 1 and 1", gotA.Rank, gotA.PinOrder)
+	}
+	if gotB.Rank != before.Rank || gotB.PinOrder != before.PinOrder {
+		t.Errorf("the unpinned card went from rank %v/%d to %v/%d", before.Rank, before.PinOrder, gotB.Rank, gotB.PinOrder)
+	}
+}
+
 // Order and pinning are separate facts, and unpinning must not quietly erase
 // where the card sat. Somebody who unpins by accident and pins straight back
 // gets the row where it was rather than at the end of the bucket.
