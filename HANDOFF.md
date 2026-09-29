@@ -28,7 +28,10 @@ In flight:
 - **sa43** (item 43) reported DONE at `2e4443e` on claude/sa43. I reviewed the diff and it is good. NOT merged yet. Its
   diff against claude/ui also shows item 31's code, which is from claude/main (52ca01a) and expected.
 - **sa80** (item 80, usage charts, clint wants it tonight) is RUNNING in D:/worktrees/claude/atrium/sa80, card
-  01a0eb39-9ae9-7def-a47a-d2d40ade9d82. It reports to this card. It goes in the NEXT batch.
+  01a0eb39-9ae9-7def-a47a-d2d40ade9d82. It reports to this card. It goes in the NEXT batch. At the cycle it was at
+  152k context, and I told it to commit, write its own HANDOFF.md and report progress asking for a new context.
+  When that report comes, start the new-context sequence on its card (or ask the orchestrator to), so it boots from
+  its HANDOFF.md.
 
 Batch suite on claude/ui before the sa43 merge: `go test -p 4 ./...` failed only TestRealSessionsKeepTheirText
 (known noise). check-board.sh passed. The headless full run was still going at the cycle (log:
