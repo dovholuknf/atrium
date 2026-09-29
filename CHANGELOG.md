@@ -5,6 +5,108 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **Real-time token burn and usage charts.** New `usage` tab beside history. It draws what every Claude card has spent, from the `session_usage` rows the room
+  already keeps. Nothing new is recorded. A turn shows within about two seconds of ending, and a turn still running
+  shows nothing until it ends.
+- Four hand-drawn inline SVG charts, no library: burn rate stacked by kind (tokens per minute, 1h, 6h, 24h and 7d),
+  per-card small multiples (top 12 by estimated cost plus "others", click one to filter), a split bar of tokens per
+  kind with the total, and cumulative cost with a cost-by-cause table. Labels and tips are item 78's.
+- Colours are skin variables, so a skin change recolours a chart already drawn.
+- `GET /v1/usage?since=&bucket=&card=`: buckets summed in SQL, at most 500 buckets and 30 days back. A width too
+  narrow is widened and reported. Raw tokens per kind plus the stored cost, no per-kind dollars. `card` narrows the
+  read to one card, which the design lacked and the cause table needs.
+- A `usage` event on the room's stream for each row written, with the card, the cause, the tokens and the cost and no
+  message text. The hub tags it with the room and the card id, like other card events.
+- A card's details show a 24h chart in the usage section, with a link to the tab filtered to that card.
+- Across rooms each room is read for itself. Every per-card key is room plus card id, so two rooms holding the same
+  id stay apart, live as well. A room that is not attached, too old or silent is named in the tab, never counted as zero.
+
+- **Honest token labels, and Sonnet 5.5 priced.** The hover details and the card's usage section said "turns" for what is human prompts (or a say, or a wake), and
+  "in" for uncached input only. They now say "prompts" with "calls" (API replies) beside it, "uncached in", "cache
+  read" and "cache write". Every cell has a tip saying exactly what it counts, and the hover's prompts tip says the
+  figures cover the whole card, across `/clear`, and include keep-alive refreshes and subagents in the money.
+- Prompts and calls count the card's own rows only. Keep-alive refreshes and subagents stay on their own cause lines,
+  which now read "N prompts · M calls" and "N calls". The hover used to count every row, refreshes included, as turns.
+- Sonnet 5.5 (`claude-sonnet-5-5`) was in no price table, so a Sonnet 5.5 card, which every worker is, was estimated at
+  $0. It is now in `usageOnlyPrices` at $2 in, $4 for a 1h write, $0.20 read, $10 out. `usagePricesVersion` is
+  `usageprices-2026-09-28b`. Rows already stored keep the cost they were written with. Nothing is recomputed.
+- Prices checked against https://platform.claude.com/docs/en/about-claude/pricing on 2026-09-28: Opus 5.5 (read at
+  0.05x, $0.20), Fable 5.1 (read at 0.025x, $0.25), Sonnet 5, Haiku 4.5 all matched. There is no long-context tier
+  on these models. `keepalivePrices` is unchanged, so keep-alive still refreshes only Opus 5.5 and Fable 5.1.
+
+- **No notifications from agent-launched cards.** The gear has a new box under `notifications`, "don't notify me about cards an agent launched", ticked by default.
+  While it is ticked, an alert about a card tagged `origin:agent` raises no toast, no desktop notification and no
+  sound. The card keeps its marks, and the alert still lands in the notification log, so nothing is lost.
+
+  What is muted: a card arriving, a card that stopped waiting or asked something, and a stuck alert, on the board and
+  in a popped-out window. What is not: a permission request from such a card, and the permission nag, because those
+  block until a human answers. A card given a tone of its own is also heard. The board has no per-card on/off for
+  alerts, and the tone is the only per-card alert setting, so choosing one is what counts as the override.
+
+  The setting lives in the browser beside its siblings (`atrium.sound`, key `quietDoers`), not on the daemon, because
+  volume, expiry and the stuck setting are all per browser. The doer test is `isDoer` from `terminal-list.js`.
+
+- **A worker's reported turn counts as seen.** An agent-launched card whose turn ends after it reported to its launcher no longer wears the unseen dot. The room
+  marks the turn seen with a new via, `launcher`, in the same step that records the turn end. `d.unseen` is never set
+  and the card is published once, after the mark, so no reader is shown the dot on the way. A card that stops without
+  reporting still wears the dot and its launcher still gets the silent stop notice. A human-launched card is unchanged.
+- Questions are not answered by this. Only `seen_at` and `seen_via` change, so a `? N` chip stays.
+- `atrium_task` describes `unseen` as also cleared by a report to the launcher. The board does not show `seen_via`, so
+  it is unchanged.
+
+- **The stdio `atrium_launch` warns when the room is older than launch options.** See `docs/backlog-2.md` item 60.
+
+  The stdio control MCP took `model`, `effort`, `args` and `env` but passed a room's silence on as success. It now
+  returns the same WARNING the hub's control MCP does when the card the room hands back does not carry what was
+  asked for, and reports the model and effort the card runs with. Both paths build the sentence from
+  `link.LaunchOptionsDropped` and `link.LaunchDroppedWarning`, so they cannot drift.
+
+- **One merge-check script and a dedicated merge worktree.** See `docs/backlog-2.md` item 77, parts a and e.
+
+  `scripts/merge-check.ps1` runs `go test -p 4 ./...` (with `ATRIUM_LOCATION` and `ATRIUM_DEBUG_INPUTLAG` cleared),
+  `check-board.sh` with the headless run and `NODE_PATH` preset, `check-skins.sh` when the diff touches
+  `internal/api/web/`, and the build. It prints failures and one summary line with a count per check, so a skipped
+  check is a missing count. Playwright is found from `-NodePath`, `ATRIUM_NODE_PATH`, the merge worktree or any
+  sibling worktree, and a missing one fails unless `-SkipHeadless` says it is meant. Known noise
+  (`TestRealSessionsKeepTheirText`, the link restart-gate tests) is rerun alone once and reported as `flaky-pass`.
+  `-SkipGo`, `-Board`, `-NoBoard`, `-Base` and `-SkipBuild` cut it down.
+  `scripts/setup-merge-worktree.ps1` makes `D:/worktrees/claude/atrium/merge` on `claude/merge-scratch`, links the
+  CLAUDE.md files and installs Playwright and chromium, idempotently, so merges never lock the main checkout.
+
+- **The hub's input-lag log no longer reports a fake echo on an idle terminal.** It no longer reports a fake ~45000ms "echo" every 45s on an idle terminal. The hub's echo clock
+  now starts only on a Write that carries a websocket data frame, not on the browser's pong (or any ping or close).
+  A control frame read back from the room, such as its idle ping, no longer closes a clock a keystroke started. A
+  Write with a data frame among control frames, or one that ends inside a frame, still counts as input. The room's own
+  lag timing (`internal/daemon/attach.go`) starts only on an `in` message, never a control frame, so it needed no
+  change.
+
+- **screen.go is checked against xterm.js.** See `docs/backlog-2.md` item 54.
+
+  `TestScreenAgainstXterm` feeds the same bytes, at the same size and with the same width marks, to `screen.go` and
+  to the vendored `internal/api/web/vendor/xterm.js` (run in plain node by `internal/daemon/testdata/xterm_dump.js`),
+  then compares every row, which cells carry an attribute, the cursor, and how many rows scrolled off. Trailing blanks
+  are trimmed on both, and attributes are compared as styled or default because `screen.go` has no colour model. The
+  fixtures are a startup banner, the kitty keyboard push and pop, ctrl-delete, ConPTY's full-width coloured diff
+  lines, the alt screen, bracketed paste, a width change mid stream, a bare `CSI H` repaint over long output (with
+  and without cursor moves), and a set of small single-feature traces. Two real differences were found and are
+  skipped with `backlog-2 NN` markers, and the accepted ones are written next to their fixtures. No `screen.go`
+  behaviour changed. Four size tests go in through the real websocket: the pty takes the attaching viewer's size,
+  a reattach at the same size does not resize, a restarted card follows the pane and not the saved width, and two
+  viewers get the widest width and the shortest height. Test only, nothing to deploy.
+
+- **Viewport changes apply in the order they were computed.** Two viewers resizing at the same moment could leave the pty at a stale size, with the ring's width marks
+  disagreeing with it. `setViewport` and `dropViewport` now hold one resize mutex across working out the agreed
+  size, the change guard, the width mark and the pty resize, so the last computed size is always the last applied.
+  The shell terminal shares the same code and is covered.
+
+- **A deploy's revert snapshot is named after the file it copies.** See `docs/backlog-2.md` item 65.
+
+  `Save-Revert` used to name `atrium.revert-<id>.exe` after the build the hub's health reported. When the room had been
+  deployed after the hub, the file held a newer build than the hub ran, so the name lied. The snapshot is now named
+  from `atrium version` run on the file itself, `atrium.revert-<commit7>-<board8>.exe`. A file that cannot answer gets
+  `atrium.revert-unknown-<timestamp>.exe` and a warning, and the deploy carries on. `scripts/live/test-save-revert.ps1`
+  proves it against two real binaries in a temp directory.
+
 - **A worker waiting on its own background runs is no longer marked STUCK.** See `docs/backlog-2.md` item 31 and
   `docs/background-hold-design.md`.
 
