@@ -148,15 +148,58 @@ function fileLink(id, range, hit) {
       // a selection is better than opening a file.
       if (term && term.hasSelection && term.hasSelection()) return;
       ev.preventDefault();
+      linkTipHide();
       hideTip();
       openFromTerminal(id, hit);
     },
-    hover: (ev) => tipSoon(() => placeTip(pointerAnchor(ev), hit.dir
-      ? hit.rel + "/\nopens the file browser here"
-      : hit.rel + "  " + bytes(hit.size) + "\nopens in atrium's own editor, in this browser")),
-    leave: () => hideTip()
+    hover: (ev) => {
+      const text = hit.dir
+        ? hit.rel + "/\nopens the file browser here"
+        : hit.rel + "  " + bytes(hit.size) + "\nopens in atrium's own editor, in this browser";
+      const same = linkTip.path === hit.rel;
+      clearTimeout(linkTip.timer);
+      linkTip.timer = 0;
+      // The SAME path asked for again inside the grace is a repaint, not the
+      // pointer moving. Leave whatever is up alone, or let the pending show run.
+      if (same && tipEl.classList.contains("on") && tipEl.textContent === linkTip.text) return;
+      // A different path replaces the old tip at once rather than after the grace.
+      if (!same) hideTip();
+      linkTip.path = hit.rel;
+      linkTip.text = text;
+      tipSoon(() => placeTip(pointerAnchor(ev), text));
+    },
+    leave: () => linkTipLeave()
   };
 }
+
+// THE TIP OUTLIVES A REPAINT OF ITS ROW.
+//
+// xterm drops the link under the pointer whenever its row is redrawn, which
+// fires `leave`, and asks for it again, which fires `hover`. Hiding on `leave`
+// and showing after the hover delay made the tip vanish and come back every
+// time output touched the row. So `leave` waits a beat, and a `hover` on the
+// same path inside it cancels the hide. Other tooltips are untouched.
+const linkTipGrace = 150;
+const linkTip = { path: "", text: "", timer: 0 };
+
+function linkTipLeave() {
+  clearTimeout(linkTip.timer);
+  linkTip.timer = setTimeout(linkTipHide, linkTipGrace);
+}
+
+// Hides now, and forgets the path so the next hover starts from nothing.
+function linkTipHide() {
+  clearTimeout(linkTip.timer);
+  linkTip.timer = 0;
+  // Only if the tip is still ours: a scroll or a click may have hidden it and
+  // something else may have been put up since.
+  if (linkTip.path && (!tipEl.classList.contains("on") || tipEl.textContent === linkTip.text)) hideTip();
+  linkTip.path = "";
+  linkTip.text = "";
+}
+
+// The pointer leaving the terminal is leaving, not a repaint.
+document.getElementById("t-screen").addEventListener("mouseleave", linkTipHide);
 
 // Where a clicked path opens, WHICH IS HERE.
 //
