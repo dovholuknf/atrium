@@ -1596,5 +1596,21 @@ and "in" is uncached input only (48), because with caching almost all input is a
 Relabel: prompts, with API calls next to them, and "uncached in". Check the cost estimate against current pricing,
 and confirm whether the figures cover the card or only the session since its last `/clear`.
 
+## 81. `screen.go` ignores DECSTBM scroll regions (bug)
+
+Found 2026-09-28 by sa54's differential test (item 54). `screen.go` never reads `CSI top;bottom r`, so a runner
+scrolling inside a region scrolls the whole grid and files rows into history that stayed put on a real terminal. In
+the fixture `screen.go` scrolled 3 rows off where xterm.js scrolled 5, with the cursor on row 5 against 3. This
+shows in the attach replay and the text scrollback view whenever a runner uses a scroll region. The case is in
+`internal/daemon/screen_diff_cases_test.go`, skipped as `backlog-2 81` until it agrees, and it fails once it does
+so the skip gets removed. Owned by @terminal.
+
+## 82. `screen.go` gives a wide character one cell (bug)
+
+Found 2026-09-28 by sa54's differential test (item 54). `screen.go` gives every rune one cell, and xterm.js gives
+CJK and other wide characters two. A cursor move back over a wide character lands on the wrong column: `あ.う`
+against `あい.`. A fix needs a continuation cell handled in `render`, `writeRow`, and the erase and insert ops. The
+case is skipped as `backlog-2 82` in `internal/daemon/screen_diff_cases_test.go`. Owned by @terminal.
+
 
 ------------
