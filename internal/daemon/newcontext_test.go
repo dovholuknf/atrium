@@ -82,7 +82,9 @@ func TestNewContextCapturesClearsAndWakes(t *testing.T) {
 	}
 
 	// 1. The capture prompt, and only that.
-	until(t, "the capture prompt", func() bool { return strings.Contains(f.written(), "HANDOFF.md") })
+	until(t, "the capture prompt", func() bool {
+		return strings.Contains(f.written(), "HANDOFF.md") && strings.HasSuffix(f.written(), "\r")
+	})
 	if got := f.written(); strings.Contains(got, "/clear") || !strings.HasSuffix(got, "\r") {
 		t.Fatalf("the capture prompt was not typed and sent alone: %q", got)
 	}
@@ -111,7 +113,9 @@ func TestNewContextCapturesClearsAndWakes(t *testing.T) {
 
 	// 3. The new session starts, and the wake follows.
 	d.wake.sawSession(id, time.Now())
-	until(t, "the wake prompt", func() bool { return strings.Contains(f.written(), newContextWake) })
+	until(t, "the wake prompt", func() bool {
+		return strings.Contains(f.written(), newContextWake) && strings.HasSuffix(f.written(), "\r")
+	})
 	got := f.written()
 	if !(strings.Index(got, "HANDOFF.md in the current") < strings.Index(got, "/clear") &&
 		strings.Index(got, "/clear") < strings.Index(got, newContextWake)) {
@@ -335,7 +339,9 @@ func TestNewContextFailedChipIsDismissedOrReplaced(t *testing.T) {
 	if err := d.StartNewContext(task.ID); err != nil {
 		t.Fatalf("could not run again over a failed chip: %v", err)
 	}
-	until(t, "the second capture prompt", func() bool { return strings.Count(f.written(), "HANDOFF.md") > before })
+	until(t, "the second capture prompt", func() bool {
+		return strings.Count(f.written(), "HANDOFF.md") > before && strings.HasSuffix(f.written(), "\r")
+	})
 
 	// Dismissed: gone, and the run it belonged to types nothing more.
 	req := httptest.NewRequest(http.MethodDelete, "/v1/tasks/"+task.ID+"/new-context", nil)

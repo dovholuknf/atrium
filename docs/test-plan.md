@@ -4829,3 +4829,55 @@ A restart of the card after that is not lean either.
 last conversation with the full setup and takes the lean tags off. The terminal menu notes `restart this session` as
 `comes back lean`, and has `restart with my full setup`, which asks, takes the lean tags off and restarts. A card
 that is not lean shows none of this.
+
+## CG. New context: capture, clear and wake in one action
+
+The room daemon runs the sequence (`internal/daemon/newcontext.go`), not the agent. Go tests in
+`internal/daemon/newcontext_test.go` run it against a fake terminal with the waits shortened: the whole sequence in
+order (capture prompt, wait for the turn to end, `/clear`, wait for the new session, wake prompt) with each step held
+until the one before is over and the chip gone at the end. A capture prompt that starts no turn, a turn that never
+ends, no `HANDOFF.md`, a `HANDOFF.md` older than the run, no SessionStart after `/clear` and a SessionStart from before
+it each fail the chip with a reason and type nothing further. A running turn and an operator's half-typed line are
+waited out. A card with no terminal atrium owns, and a card already running the sequence, are refused (409). A failed
+chip is dismissed (`DELETE`) or replaced by a rerun, and a dismissed run types nothing more. `TestTurnsBegunCountsAFastTurn` covers
+the turn counter in `activity.go`. See `docs/backlog-2.md` item 66. Run `bash scripts/check-board.sh` after board
+edits.
+
+### CG1. The action, from the menu
+
+1. Launch a claude worker from the board and give it some work, so there is something to carry over. Let it go idle.
+2. Right-click its card and choose `new context`.
+
+**Expected:** a chip on the card reads `context 1/3: capture`. The worker is typed a prompt that begins
+`[atrium] new context:` and asks it to commit or stash, write everything to `HANDOFF.md` in its directory and stop.
+When that turn ends the chip reads `context 2/3: clear` and `/clear` is typed, alone and unlabelled. When the new
+session starts it reads `context 3/3: wake` and `Read HANDOFF.md and continue from it.` is typed. The chip is gone
+once that lands, and the worker carries on from `HANDOFF.md`. The card's history shows the prompts as from
+`new-context`.
+
+### CG2. Ctrl+Alt+N
+
+1. Attach the same card's terminal on the board and press Ctrl+Alt+N in it.
+2. Do the same on a keyboard layout that reports AltGr for Ctrl+Alt.
+
+**Expected:** the first behaves as CG1, and the keystroke never reaches the terminal. On the AltGr layout nothing
+starts, so the keystroke goes to the terminal as typed; use the menu.
+
+### CG3. A step that fails
+
+1. Start `new context` and press Escape in the terminal to interrupt the capture turn before it writes `HANDOFF.md`.
+2. Start it again with the SessionStart hook disabled (or a card whose runner has no session hook).
+
+**Expected:** the first ends on a `new context failed` chip whose tip says the capture turn ended without a
+`HANDOFF.md` and that nothing was cleared. The second types `/clear`, waits a minute, and then fails saying no new
+session started, and the wake prompt is not typed. Clicking a failed chip dismisses it. Running `new context` again
+replaces it. Neither failure types anything after the failing step.
+
+### CG4. Where it does not apply
+
+1. Right-click a card whose terminal atrium does not own (a session started by hand outside atrium), and one that is
+   over.
+2. Start `new context` on a card and start it again while the chip is showing.
+
+**Expected:** the first has no `new context` entry, and `POST /v1/tasks/<id>/new-context` answers 409. The second
+answers 409 and the first run is undisturbed.
