@@ -68,10 +68,34 @@ Read BRIEF.md and DIRECTOR.md first. They are the job and the rules. This is the
   (claude/sa84 off hub-main=52ca01a), launched with the orchestrator's yes. The orchestrator's rule for it: NO git
   bundle. The branch comes back through clint's room-git fetch in the morning, and the final report carries the full
   `git diff hub-main..claude/sa84`. Review that diff, then it's clint's fetch that lands it. The same rule most
-  likely applies to sa73 as well (its brief still says bundle). Ask the orchestrator before you scp anything.
+  applies to sa73 too, as the orchestrator confirmed: sa73 may still write ~/sa73.bundle on m1mini, which is
+  harmless, but NOBODY scp's or unbundles it here until clint decides. Its branch comes back through clint's room-git
+  fetch like the others, so review sa73 from the diff in its report, or over ssh read-only
+  (`ssh m1mini "git -C ~/git/wt/sa73 diff hub-main..claude/sa73"`). Ignore the bundle steps in the sa73 entry above.
 
 HANDOFF.md is committed on claude/runtime so it survives the clear. `git rm` it before the @merge request, since it
 must not reach claude/main.
+
+## NEWEST, ahead of anything above (00:25)
+
+- **sa21 reported done at df4d0e6.** The settled capture reads idle, the footer allows up to 4 rows under the bottom
+  rule, and the caveat is in docs/changes/21.md (the capture is pinned at 206x60, and a wrong width fails safe). NEXT:
+  `git merge --no-ff --no-edit claude/sa21` into claude/runtime.
+- **sa41 reported done at 916cec6** (branch claude/sa41, merged with claude/main, targeted tests pass, the full suite
+  not run). It ADDS MIGRATION `0068_owed_at` (a task.owed_at column, backfilled from prompted_at), stamped in
+  `promptOwes` in internal/store/a2a.go. The launch's opening prompt now carries from_peer. The rule: a card owes only
+  for a prompt from its launcher, and an operator prompt no longer owes. Mercurius round 1 said needs_changes (C1,
+  a reopen or resume blamed the launcher). It was fixed, and no second round was run.
+  Review before merging:
+  - check that 0068 is LAST in the slice and tolerates a rerun, and look at the INSERT change in tasks.go
+  - make sure migration 0068 doesn't collide with a migration number on another branch:
+    `git for-each-ref refs/heads/claude` plus `git grep 0068 <branch> -- internal/store/schema.go`
+  - verify it against a COPY of the live db (store CLAUDE.md)
+  - check that item 31's hold still works
+  Then merge it, and this batch becomes 21 + 41 + the 83/84 filings.
+- @fabric withdrew the sa73 question: nothing needs to be told to @fabric about m1mini tonight.
+- Then: `git rm HANDOFF.md`, `git merge --no-edit claude/main`, fold dry run,
+  `pwsh scripts/merge-check.ps1 -Base claude/main -Board`, one atrium_say to `merge`, and one batch report.
 
 ## Queue after these (backlog-2 numbers)
 
