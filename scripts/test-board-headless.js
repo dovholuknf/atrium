@@ -5679,6 +5679,45 @@ async function peekEverywhereSection(browser, base) {
   if (errors.length) fail("the peek page threw: " + errors.join(" | "));
 }
 
+// A running card the room says looks idle (no turn-end arrived). The chip replaces
+// the live one, the spinner stops (no `live` chip, not "working"), and the words are
+// a guess. Drawn from the functions directly: the daemon decides, the board only draws.
+async function looksIdleSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const page = await ctx.newPage();
+  const errors = [];
+  page.on("pageerror", e => errors.push(String(e)));
+  try {
+    await page.goto(base, { waitUntil: "domcontentloaded" });
+    await page.waitForSelector("#stack-list .stackrow", { timeout: 15000 });
+    const got = await page.evaluate(() => {
+      const mk = a => ({ id: "li1", status: "running", supervised: true, activity: a });
+      const box = html => { const d = document.createElement("div"); d.innerHTML = html; return d; };
+      const idle = mk({ what: "thinking", seconds: 900, looks_idle: true, idle_seconds: 31 });
+      const busy = mk({ what: "thinking", seconds: 900 });
+      const c = box(activityChip(idle));
+      const b = box(activityChip(busy));
+      return {
+        idleChip: !!c.querySelector(".chip.warn.looksidle svg"),
+        idleLive: !!c.querySelector(".chip.live"),
+        tip: (c.querySelector(".looksidle") || { getAttribute: () => "" }).getAttribute("data-tip"),
+        idleWorking: workingNow(idle),
+        busyChip: !!b.querySelector(".chip.live.thinking"),
+        busyLooks: !!b.querySelector(".looksidle"),
+        busyWorking: workingNow(busy),
+      };
+    });
+    if (!got.idleChip) fail("looks idle: no warn ring chip drawn.");
+    if (got.idleLive) fail("looks idle: the live spinner chip is still drawn beside it.");
+    if (!/no turn-end from the agent\. its screen has been idle for 31s/.test(got.tip)) fail("looks idle: tooltip was " + got.tip);
+    if (got.idleWorking) fail("looks idle: the card still counts as working.");
+    if (!got.busyChip || got.busyLooks || !got.busyWorking) fail("looks idle: a working card changed: " + JSON.stringify(got));
+    if (errors.length) fail("looks idle: page errors: " + errors.join("; "));
+  } finally {
+    await ctx.close();
+  }
+}
+
 // A write that names a card never carries `writeRoom`, the room of the last
 // editor that was open. With three rooms, a start (`POST /v1/launch` with a
 // `task_id`) and a drag into a group (`PATCH /v1/tasks/<id>`) carried it to the
@@ -6032,8 +6071,8 @@ async function main() {
       pasteBig: pasteBigSection, typing: typingSection, alias: aliasSection, copySelect: copySelectSection, busyGuard: busyGuardSection, keepalive: keepaliveSection,
       stuck: stuckSection, carryLink: carryLinkSection,
       skinScope: skinScopeSection, skinHeal: skinHealSection, toastLives: toastLivesSection,
-      history: historySection, contextSize: contextSizeSection, peekEverywhere: peekEverywhereSection, cardRoute: cardRouteSection, quietDoer: quietDoerSection, usageCharts: usageChartsSection,
-      notifyOff: notifyOffSection };
+      history: historySection, contextSize: contextSizeSection, peekEverywhere: peekEverywhereSection, cardRoute: cardRouteSection,
+      quietDoer: quietDoerSection, usageCharts: usageChartsSection, looksIdle: looksIdleSection, notifyOff: notifyOffSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -7657,6 +7696,8 @@ async function main() {
 
     // ── a write that names a card goes by the card, not writeRoom ──────────
     await cardRouteSection(browser, base);
+    // ── a running card the room says looks idle wears the guess ────────────
+    await looksIdleSection(browser, base);
 
     // ── the global auto button is never blank ────────────────────────────────
     // `#gauto` has no class and no text in the markup, and only a settings read

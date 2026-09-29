@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -126,13 +127,57 @@ func (s *Store) ForgetNotices(workerID, source string) error {
 	})
 }
 
-// OwesReport reports whether a card has been given something to do since it
-// last told its launcher anything. A card never prompted owes nothing.
+// OwesReport reports whether the card's launcher has given it something to do
+// since it last told the launcher anything. A card its launcher never prompted
+// owes nothing, whoever else has.
 func (t *Task) OwesReport() bool {
-	if t.PromptedAt == nil {
+	if t.OwedAt == nil {
 		return false
 	}
-	return t.ReportedAt == nil || t.ReportedAt.Before(*t.PromptedAt)
+	return t.ReportedAt == nil || t.ReportedAt.Before(*t.OwedAt)
+}
+
+// promptOwes decides whether one `prompted` event makes the card owe its
+// launcher a report: a prompt or message whose sender is the launcher. The
+// opening prompt names the session that asked for the launch as its sender, so
+// a reopen by the operator is not counted. The operator, a note, an action, atrium's own wake and a message
+// from any other session do not. Decided here, where the stamp is, so a door
+// written later cannot forget it. See docs/owed-report-design.md.
+func promptOwes(q querier, s *Store, taskID string, payload []byte) (bool, error) {
+	var p struct {
+		FromPeer string `json:"from_peer"`
+	}
+	if err := json.Unmarshal(payload, &p); err != nil {
+		return false, nil
+	}
+	from := strings.TrimSpace(p.FromPeer)
+	if from == "" {
+		return false, nil
+	}
+	var by, byID string
+	if err := q.QueryRow(`SELECT spawned_by, spawned_by_id FROM task WHERE id = ?`, taskID).Scan(&by, &byID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
+		return false, err
+	}
+	if by == "" || by == HumanLauncher {
+		return false, nil
+	}
+	if strings.EqualFold(from, by) || strings.EqualFold(s.Qualify(from), s.Qualify(by)) {
+		return true, nil
+	}
+	if byID != "" {
+		var wire sql.NullString
+		err := q.QueryRow(`SELECT wire_name FROM task WHERE id = ?`, byID).Scan(&wire)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return false, err
+		}
+		if wire.Valid && wire.String != "" && strings.EqualFold(s.Qualify(from), wire.String) {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // TurnEndedAt is when a card last went from working to waiting, or nil when no
@@ -176,8 +221,8 @@ func (t *Task) WaitingSinceOr(def time.Time) time.Time {
 // PromptKey names the prompt that opened a card's current turn, for the
 // silent-stop notice's dedupe key.
 func (t *Task) PromptKey() string {
-	if t.PromptedAt == nil {
+	if t.OwedAt == nil {
 		return ""
 	}
-	return t.PromptedAt.UTC().Format(time.RFC3339Nano)
+	return t.OwedAt.UTC().Format(time.RFC3339Nano)
 }
