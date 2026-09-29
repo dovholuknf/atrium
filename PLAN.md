@@ -83,8 +83,8 @@ worktree, remote worker commits, fetch, merge here.
 ## Proof, in order
 
 1. m1mini (mac arm64): `-Remove`, then the one command from nothing, then a remote worker round trip through FB.
-2. Linux: sg3 once sa75's findings are folded in, or WSL over `ssh localhost`.
-3. Windows: claudevm.
+2. Linux: WSL over `ssh localhost`.
+3. Windows: sg3 (already a room, not signed in, no autostart), then claudevm.
 4. The old x86 Mac mini, when it appears.
 
 Re-provisioning a remote room restarts that room, which is allowed. This machine's room and hub are never touched.
@@ -95,6 +95,13 @@ fb01 and fb02, Sonnet 5.5 at medium effort, in parallel. They touch different fi
 line, which fb02 adds last. fb03 is a prover for Linux, Windows and x86 once both are merged. **Held: nothing is
 launched until after the room restart (atrium-87300, 2026-09-28).**
 
-## Waiting on
+## sa75's sg3 findings (Windows, forwarded by atrium-87300), folded in
 
-sa75's sg3 findings, forwarded by atrium-87300, folded into fb01's brief.
+- sg3 is room `sg3`: binary 03ad918d247b, claude 2.1.284, mcp-config ok, no autostart yet.
+- `claude auth status` answers without a prompt (loggedIn=false on sg3). fb01's `auth` step uses it.
+- A git clone of the private repo fails silently there. That confirms the clone has to be made by push (fb02).
+- Over ssh on Windows, `Get-ScheduledTask` fails with "Cannot connect to CIM server. Access denied".
+  - sa75 fixed the state probe in 5ced807 (claude/provision-sg3). fb01 starts from that commit.
+  - The autostart install, the binary swap and `-Remove` still call the ScheduledTask cmdlets. fb01 moves them to
+    `schtasks.exe`, or tolerates the error and says so.
+  - Proven on sg3, not just claudevm.
