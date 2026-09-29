@@ -138,7 +138,7 @@
          address, a save that failed, a card that just asked for something.
          The badge counts what has arrived since this was last opened. -->
     <button id="toastlog-open" class="icon" onclick="openToastLog()"
-      aria-label="what the board has told you" data-tip="what the board has told you">&#128276;<span class="count"></span></button>
+      aria-label="what the board has told you" data-tip="what the board has told you"><span class="glyph">&#128276;</span><span class="count"></span></button>
     <button id="sound" class="icon" aria-label="sound on. click to mute" data-tip="sound on. click to mute">&#9835;</button>
     <button id="gear" class="icon" aria-label="sound settings" data-tip="sound settings">&#9881;</button>
     <!-- WHICH ROOM, and it is a selector as much as a counter.
@@ -930,6 +930,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <dialog id="toastlog">
   <div class="dlg-head">
     <div class="grow"><div class="dlg-eyebrow">the tray</div><h2>notifications</h2></div>
+    <button id="toastlog-toggle" onclick="setNotifyOff(!notifyIsOff())">turn off</button>
     <button onclick="clearToastLog()">clear</button>
     <button onclick="document.getElementById('toastlog').close()">close</button>
   </div>
@@ -1459,6 +1460,15 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         <button onclick="testNotify()">send a test</button>
       </div>
       <span class="hintline" id="s-notify-hint"></span>
+    </div>
+    <div class="field">
+      <label class="check">
+        <input type="checkbox" id="s-notifyoff" onchange="setNotifyOff(this.checked)">
+        <span>turn notifications off</span>
+      </label>
+      <span class="hintline">The same switch as the one in the notification tray. No toast, sound or desktop
+        notification, and it beats a card's own tone. Everything held back is still listed in the tray. A permission
+        request still notifies. Kept in this browser.</span>
     </div>
     <div class="field">
       <label class="check">
