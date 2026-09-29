@@ -1097,7 +1097,7 @@ function isSelecting() {
 // was ever withheld.
 function keepUpWithSelection() {
   document.addEventListener("selectionchange", () => {
-    if (heldUpdate && !isSelecting() && !isEditing()) refreshSoon();
+    if (heldUpdate && !isSelecting() && !isEditing()) paintSoon();
   });
 }
 
@@ -1115,8 +1115,15 @@ function applyHeld() {
   repaintLists();
 }
 
-function repaintLists(signal) {
+// `fromStore` is a pass that re-read nothing the lists draw from: a task event
+// that carried its whole row, a permission answered, a held repaint let go. The
+// board, the stack, the terminals and the perms queue paint from what is held,
+// so they repaint. The runners page and the history fetch their own and are not
+// drawn from the cards, so a pass like that leaves them alone rather than
+// turning every task event into a round of their requests.
+function repaintLists(signal, fromStore) {
   const view = document.querySelector(".tab.on").dataset.view;
+  if (fromStore && (view === "runners" || view === "history")) return;
   const render = {
     board: renderBoard, stack: renderStack, perms: renderPerms,
     runners: renderRunners, terms: renderTerms,
@@ -1168,7 +1175,7 @@ const REFRESH_DEBOUNCE = 300;
 const REFRESH_MAXWAIT = 1500;
 let refreshTimer = 0;
 let refreshFirst = 0;
-function refreshSoon() {
+function passSoon() {
   const now = Date.now();
   if (!refreshFirst) refreshFirst = now;
   if (refreshTimer) clearTimeout(refreshTimer);
@@ -1177,8 +1184,88 @@ function refreshSoon() {
   refreshTimer = setTimeout(() => {
     refreshTimer = 0;
     refreshFirst = 0;
-    runRefresh();
+    runPass();
   }, wait);
+}
+
+// WHAT THE NEXT PASS HAS TO RE-READ.
+//
+// A pass used to fetch everything, and it ran on every clump of events, so a
+// board with three hundred cards pulled half a megabyte of cards every two or
+// three seconds to learn that one of them had moved. Now each thing the pass
+// reads is fetched only when something said it changed, and a pass with nothing
+// marked repaints from what is held (see js/cards.js) without a request.
+//
+// A flag is taken as its fetch starts and put back if the fetch fails or is
+// aborted, so an event that lands mid-fetch marks it again and the pass that
+// follows reads it again, and a fetch that never finished is retried.
+const want = { tasks: true, perms: true, shares: true, health: true };
+function wantAll() { want.tasks = want.perms = want.shares = want.health = true; }
+
+// Everything, soon. The stream reopening, a room coming or going, and every
+// action on the page that changed something and wants to see the result.
+function refreshSoon() { wantAll(); passSoon(); }
+// Nothing new to read: repaint from what is held.
+function paintSoon() { passSoon(); }
+function permsSoon() { want.perms = true; passSoon(); }
+function healthSoon() { want.health = true; passSoon(); }
+const SETTLING_RECHECK = 5000;
+
+// A TASK EVENT THAT IS NOT A WHOLE ROW, which is every task event until the
+// daemon sends `row: 1`. It says a card changed and not what to, so the list
+// is read again, but no more than once every TASKS_EVERY. Trailing, so the
+// state read is the one after the burst, and single: one timer, and a pass
+// that read the list in the meantime pushes it back rather than being followed
+// by a second read. See `cardRowComplete`.
+const TASKS_EVERY = 5000;
+let tasksTimer = 0;
+function tasksSoon() {
+  if (tasksTimer) return;
+  const fire = () => {
+    const wait = cardsReadAt + TASKS_EVERY - Date.now();
+    if (wait > 0) { tasksTimer = setTimeout(fire, wait); return; }
+    tasksTimer = 0;
+    want.tasks = true;
+    passSoon();
+  };
+  tasksTimer = setTimeout(fire, Math.max(0, cardsReadAt + TASKS_EVERY - Date.now()));
+}
+
+// `task`: a whole row goes into the map and repaints with no request. Anything
+// less is a reason to re-read, throttled. A popped-out window only cares about
+// its own card. See `soloTaskEvent`.
+function onTaskEvent(e) {
+  let d = null;
+  try { d = JSON.parse(e.data); } catch (err) {}
+  if (termOnly()) { soloTaskEvent(d); return; }
+  if (cardRowComplete(d)) { upsertCard(d); paintSoon(); return; }
+  tasksSoon();
+}
+
+// `task-removed`: with an id, that card goes. Without one it was the sweep,
+// which does not say which, so the list is read again.
+function onTaskRemovedEvent(e) {
+  let d = {};
+  try { d = JSON.parse(e.data) || {}; } catch (err) {}
+  if (termOnly()) { soloTaskEvent(d.id ? d : null); return; }
+  if (d.id) { dropCard(d.id); paintSoon(); return; }
+  want.tasks = true;
+  passSoon();
+}
+
+// THE SAFETY RESYNC, the only poll left on the page. Everything else arrives on
+// the event stream. This is for what the stream cannot say: a connection that
+// dropped without closing, a counter that only ticks with the clock. Only while
+// somebody can see the page: a hidden tab reads everything again the moment it
+// is shown instead, which is the first moment it could matter.
+const RESYNC_MS = 60000;
+function startResync() {
+  setInterval(() => {
+    if (document.visibilityState === "visible") runRefresh();
+  }, RESYNC_MS);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") refreshSoon();
+  });
 }
 
 // SINGLE-FLIGHT. One full pass runs at a time. A trigger that lands while a pass
@@ -1215,7 +1302,9 @@ let refreshController = null;
 // Counts passes as they start, so a waiter can ask for one that began after it
 // did. The hub restart cover waits on one. See `onRefreshSettled`.
 let refreshSeq = 0;
-function runRefresh() {
+// A full pass: everything read again. Boot, the safety resync, and the tests.
+function runRefresh() { wantAll(); runPass(); }
+function runPass() {
   if (refreshInFlight) { refreshDirty = true; return; }
   refreshInFlight = true;
   const seq = ++refreshSeq;
@@ -1236,7 +1325,7 @@ function runRefresh() {
     }, RUN_TIMEOUT);
   });
   Promise.race([
-    Promise.resolve(refresh(ctrl && ctrl.signal)).catch(() => {}),
+    Promise.resolve(pass(ctrl && ctrl.signal)).catch(() => {}),
     guard
   ]).finally(() => {
     clearTimeout(watchdog);
@@ -1247,12 +1336,21 @@ function runRefresh() {
       refreshDirty = false;
       const streak = typeof apiFailStreak === "number" ? apiFailStreak : 0;
       const backoff = streak > 0 ? Math.min(5000, 500 * streak) : 0;
-      setTimeout(runRefresh, backoff);
+      setTimeout(runPass, backoff);
     }
   });
 }
 
-async function refresh(signal) {
+// Called straight from the page after an action that changed a card, so the
+// cards are read again and the result shows now rather than when the event
+// that follows it is let through. A control that only changes how the lists
+// are drawn calls `repaintLists` instead, which reads nothing.
+function refresh() {
+  want.tasks = true;
+  return pass();
+}
+
+async function pass(signal) {
   // A popped-out window polls for ONE card. Falling through here meant it ran
   // the board's whole alerting pass, so a window opened onto one session put
   // up desktop notifications for every other one, from a document with no
@@ -1271,11 +1369,10 @@ async function refresh(signal) {
   // and re-stamps its claim every cycle, so a live card stays claimed. A window
   // that truly went away stops answering, so its claim still expires and its card
   // is still freed - the 15s heartbeat semantics are unchanged, only re-heard in
-  // time. The board polls every `POLL_MS` (10s), comfortably under `soloClaimFor`,
-  // so a live window is never dropped between two roll calls. It is a
-  // BroadcastChannel round trip between documents in one browser, well under a
-  // frame (see the note in `boot.js`), so it rides the poll it already pays for
-  // and needs no timer of its own.
+  // time. Passes are no longer on a ten second clock (see `want`), so the claim
+  // between them is kept by the window's own `soloClaimBeat`, every 5s, and this
+  // is the extra ask. It is a BroadcastChannel round trip between documents in
+  // one browser, well under a frame (see the note in `boot.js`), with no request.
   if (soloBus) soloBus.postMessage({ type: "solo-who" });
 
   // A deadline that is running is re-read from the daemon rather than counted
@@ -1290,6 +1387,21 @@ async function refresh(signal) {
   // pass finished while its fetches are still holding sockets.
   const jobs = [];
 
+  // Taken now, put back if the read fails. See `want`.
+  const take = { tasks: want.tasks, perms: want.perms, shares: want.shares, health: want.health };
+  want.tasks = want.perms = want.shares = want.health = false;
+  const cards = take.tasks
+    ? loadCards(signal).catch(() => { want.tasks = true; })
+    : Promise.resolve();
+  // The local queue and every room's, read together because they are drawn
+  // and counted as one. A failed local read keeps what was held.
+  const permsJob = take.perms
+    ? Promise.all([
+        loadPerms(signal).catch(() => { want.perms = true; }),
+        remoteRequests().catch(() => [])
+      ]).then(([, remote]) => { remoteLocal = remote; })
+    : Promise.resolve();
+
   if (isEditing()) {
     // Hold the repaint, but keep the counters, sounds and toasts live: those
     // are what tell you something arrived.
@@ -1300,16 +1412,18 @@ async function refresh(signal) {
     heldUpdate = true;
   } else {
     if (heldUpdate) { heldUpdate = false; showHeld(false); }
-    jobs.push(Promise.resolve(repaintLists(signal)));
+    jobs.push(Promise.all([cards, permsJob])
+      .then(() => repaintLists(signal, !take.tasks && !take.perms)));
   }
 
   // What is lent out, so a card can say so and the menu knows without asking.
-  // Cheap: an in-memory map on the daemon, usually empty.
-  jobs.push(loadShares());
+  // Read at load, on a resync, and after this page starts or stops a share.
+  if (take.shares) jobs.push(loadShares());
 
-  // Waiting and permissions are polled whichever view is open, because the
+  // Waiting and permissions are worked out whichever view is open, because the
   // badges, the title, and the alert all have to work while you are looking at
-  // something else.
+  // something else. Waiting comes from the cards (see `cardsWaiting`), and the
+  // permission queue is read only when a `permission` event or a resync said to.
   // THE NAG COVERS EVERY MACHINE, which is the whole point of the room list
   // being on this board at all. An agent frozen on a cloud instance is frozen
   // for the same reason and costs the same hour, and the alerting loop is what
@@ -1319,14 +1433,13 @@ async function refresh(signal) {
   // Merged into `perms` rather than alerted on separately, so the badge, the
   // window title and the widening nag all count one queue and none of them can
   // learn about rooms later.
-  jobs.push(Promise.all([
-    api("/v1/waiting", { signal }).then(r => r.tasks || []).catch(() => null),
-    api("/v1/permissions", { signal }).then(r => r.permissions || []).catch(() => null),
-    remoteRequests().catch(() => [])
-  ]).then(([waiting, local, remote]) => {
-    // A failed local fetch stays null, so the badge and the title keep saying
-    // what they said rather than dropping to zero. Remote requests are added
-    // to it only when there was something to add them to.
+  jobs.push(Promise.all([cards, permsJob]).then(() => {
+    const waiting = cardsLoaded ? cardsWaiting() : null;
+    const local = permsLoaded ? permsLocal : null;
+    const remote = remoteLocal;
+    // A local queue never read stays null, so the badge and the title keep
+    // saying what they said rather than dropping to zero. Remote requests are
+    // added to it only when there was something to add them to.
     const perms = local ? local.concat(remote) : (remote.length ? remote : null);
     if (waiting) {
       // Avoid a stack badge that duplicates the permissions count. Keep the count
@@ -1361,9 +1474,8 @@ async function refresh(signal) {
     // you are in another window gets the notification. The distinction the
     // code would have had to guess at is one the browser already knows.
     //
-    // From `lastTasks` rather than its own request: every view fetches the
-    // tasks already, and a second copy arriving a moment later is a second
-    // answer to keep in step.
+    // From `lastTasks` rather than its own request: every view paints from the
+    // card map (js/cards.js) and leaves its copy there.
     if (lastTasks && lastTasks.length) {
       alerting.check("arrived", lastTasks.filter(t => !over(t)), t => ({
         title: `${t.display_title} is on the board`,
@@ -1422,19 +1534,26 @@ async function refresh(signal) {
       perms && perms.length);
   }));
 
-  jobs.push(api("/v1/health", { signal }).then(h => {
+  // Health at load, on a resync (which the stream reopening is), and on a
+  // `halted` event. A new build only arrives with a restart, which reopens the
+  // stream, so nothing here needs a clock.
+  if (take.health) jobs.push(api("/v1/health", { signal }).then(h => {
     checkBuild(h.build);
     // Before anything else reads it. A daemon that is still putting sessions
     // back says so here, and the arrival alert re-seeds rather than announcing
     // six terminals you restarted yourself.
     alerting.settling(!!h.settling);
+    // Asked again while it is settling, and only then: settling ends on the
+    // daemon with no event to say so, and the arrival alert stays muted until
+    // this hears it. A few reads after a restart, then nothing.
+    if (h.settling) setTimeout(healthSoon, SETTLING_RECHECK);
     const el = document.getElementById("halted");
     el.style.display = h.halted ? "flex" : "none";
     if (h.halted) {
       document.getElementById("halt-t").innerHTML =
         `agents are parked and will not reconnect until you restart. <code>${esc(h.cause)}</code>`;
     }
-  }).catch(() => {}));
+  }).catch(() => { want.health = true; }));
 
   // Wait for the whole fan-out. The catches above keep a single failed fetch
   // from rejecting the pass, so this settles once every socket this pass opened
@@ -1505,8 +1624,11 @@ function connect() {
     // And the down cover, when nobody said atrium would go. See js/down.js.
     if (typeof onBoardStreamDown === "function") onBoardStreamDown();
   };
-  ["task", "task-removed", "permission", "halted"]
-    .forEach(k => es.addEventListener(k, refreshSoon));
+  // Each event re-reads only what it is about. See `want`.
+  es.addEventListener("task", onTaskEvent);
+  es.addEventListener("task-removed", onTaskRemovedEvent);
+  es.addEventListener("permission", permsSoon);
+  es.addEventListener("halted", healthSoon);
   // A card that has gone takes its remembered placement with it. See
   // `rememberPlace`.
   //
@@ -1553,7 +1675,7 @@ function connect() {
   });
   es.addEventListener("keepalive", e => {
     if (typeof onKeepaliveEvent === "function") onKeepaliveEvent(e);
-    refreshSoon();
+    tasksSoon();
   });
   es.addEventListener("going-down", e => {
     let why = "";
@@ -1624,6 +1746,10 @@ function connect() {
   es.addEventListener("share-progress", e => {
     let d;
     try { d = JSON.parse(e.data) || {}; } catch (err) { return; }
+    // A share finished coming up, from this tab or another: the list of what
+    // is lent is read again. Stopping one has no event yet, so that one is
+    // left to the resync unless this tab stopped it.
+    if (d.step === "done") { want.shares = true; passSoon(); }
     if (shareEnded || !shareFor || d.task_id !== shareFor) return;
     // `done` is ignored on purpose. The POST carries the object the dialog
     // needs, so finishing here would race it and win with less information.
