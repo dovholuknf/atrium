@@ -83,7 +83,13 @@ const server = http.createServer((req, res) => {
   if (/^\/v1\/tasks\/[^/]+$/.test(url)) return json(res, CARD);
   if (url === "/v1/harnesses") return json(res, { harnesses: [HARNESS] });
   if (url === "/v1/fixtures") return json(res, { fixtures: [FIXTURE] });
-  if (url === "/v1/hooks") return json(res, { missing: 0, hooks: [] });
+  if (url === "/v1/hooks") return json(res, { missing: 2, exists: true, path: "C:/Users/claude/.claude/settings.json",
+    hooks: [
+      { hook: "SessionStart", event: "SessionStart", why: "a card knows which conversation it is", installed: true, found: "atrium hook session-start" },
+      { hook: "UserPromptSubmit", event: "UserPromptSubmit", why: "the card says working the moment you send", installed: true, found: "atrium hook prompt" },
+      { hook: "PreToolUse", event: "PreToolUse", why: "permissions come to the board instead of the terminal", installed: false },
+      { hook: "Stop", event: "Stop", why: "the card says done, and the bell rings", installed: true, stale: true, found: "old/atrium hook stop", want: "atrium hook stop" },
+      { hook: "Notification", event: "Notification", why: "a question to you lands on the card", installed: false, optional: true }] });
   if (url === "/v1/sources") return json(res, { sources: [] });
   if (url === "/v1/recognisers") return json(res, { recognisers: [] });
   if (url === "/v1/actions") return json(res, { actions: [{ id: "a1", label: "run the tests", prompt: "run the tests", exit: false }] });
@@ -105,6 +111,8 @@ const server = http.createServer((req, res) => {
   if (url === "/v1/permissions") return json(res, { permissions: [] });
   if (url === "/v1/shares") return json(res, { shares: [] });
   if (url === "/v1/rooms") return json(res, { rooms: [] });
+  if (url === "/v1/rooms/join") return json(res, { address: "http://192.168.1.20:7778", local: "127.0.0.1:7778",
+    heartbeat_seconds: 20, stale_seconds: 90, forget_seconds: 86400 });
   if (url === "/v1/themes") return json(res, { themes: [] });
   if (url === "/v1/health") return json(res, { build: "shots", settling: false, halted: false });
   if (url === "/v1/settings") return json(res, { board_skin: "harbour", board_skins: SKINS, global_auto: false });
@@ -143,6 +151,27 @@ const SHOTS = {
     body: "<b>sa56 every dialog sleek</b> has an agent waiting on it. Moving it to <b>shelved</b> answers it with block.",
     rememberKey: "shots", buttons: [{ label: "cancel", value: null }, { label: "move it to shelved", value: true, style: "go" }] }); },
   review: async () => { await openTask("t1"); await openReview(); },
+  roomjoin: () => openRoomJoin(),
+  hooks: () => openHooks(),
+  "runner-setup": async () => { await renderRunners(); openRunnerSetup("claude"); },
+  steps: () => showHookSteps(),
+  theme: () => openThemeEditor(),
+  toastlog: () => { logNotification("sa56 needs you", "Card details first, or edit agents?", "t1");
+    logNotification("permission", "Bash: bash scripts/check-board.sh"); openToastLog(); },
+  switcher: () => openSwitcher(),
+  sharedlg: () => {
+    SHARE_STEPS = SHARE_STEPS_BY_MODE.public;
+    document.getElementById("share-title").textContent = "sharing sa56 every dialog sleek";
+    sharePaintSteps(2, false);
+    shareButtons([]);
+    document.getElementById("sharedlg").showModal();
+  },
+  "sharedlg-link": () => {
+    SHARE_STEPS = SHARE_STEPS_BY_MODE.public;
+    document.getElementById("share-title").textContent = "sharing sa56 every dialog sleek";
+    document.getElementById("sharedlg").showModal();
+    showShareLink({ id: "t1" }, { mode: "public", address: "https://k3v9q2m7x1.share.zrok.io" });
+  },
 };
 
 (async () => {
