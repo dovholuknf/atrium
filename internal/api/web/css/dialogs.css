@@ -345,10 +345,13 @@
      it is a thing to walk past, and the fields it hides are ones most launches never answer. */
   #l-more > summary {
     display: flex; align-items: center; gap: var(--sp-2); cursor: pointer;
-    font: var(--fs-xs)/1 var(--sans); letter-spacing: .1em; text-transform: uppercase;
-    color: var(--label); padding: var(--sp-2) 0; user-select: none;
+    font: 600 var(--fs-xxs)/1 var(--sans); letter-spacing: .16em; text-transform: uppercase;
+    color: var(--label); padding: 0 0 12px; user-select: none;
   }
   #l-more > summary:hover { color: var(--head); }
+  #l-more[open] > summary { color: var(--chip-accent-text); padding-bottom: 16px; }
+  /* A shut panel is its heading and nothing else, so it is no taller than one. */
+  #l-more.dlg-sec:not([open]) { padding-bottom: 4px; background: transparent; border-style: dashed; }
   #l-more > summary::before {
     content: "\25B8"; display: inline-block; transition: transform .12s; color: var(--dimmest);
   }
@@ -510,11 +513,11 @@
   .dlg-sec > .field:last-child { margin-bottom: 14px; }
   /* A panel of short fields, two to a row, so a form of twenty reads as four groups instead of one long
      column. A field that needs the whole width says `.span`. One column when the dialog is narrow. */
-  .dlg-sec.dlg-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 22px; }
+  .dlg-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 22px; }
   .dlg-grid > .dlg-sec-h, .dlg-grid > .field.span { grid-column: 1 / -1; }
   .dlg-grid > .field { margin-bottom: 18px; }
   .dlg-grid > .field input + input { margin-top: 8px; }
-  @media (max-width: 760px) { .dlg-sec.dlg-grid { grid-template-columns: minmax(0, 1fr); } }
+  @media (max-width: 760px) { .dlg-grid { grid-template-columns: minmax(0, 1fr); } }
   /* A refusal said by busyWhile, when its button sits in the foot: between the body and the foot, in line
      with both. */
   dialog > .busy-why { flex: none; margin: 10px 26px 0; }
@@ -537,6 +540,21 @@
   .dlg-foot button.no {
     color: var(--danger-text); border-color: rgba(var(--danger-rgb),.32); background: rgba(var(--danger-rgb),.07);
   }
+  /* A list to pick one row from, in a picker dialog: rows the height of a field, bordered like one. */
+  dialog .pvrepo {
+    padding: 8px 10px 8px 14px; border-radius: var(--r-md);
+    border: 1px solid rgba(var(--stroke-dim-rgb),.45); background: var(--lift);
+  }
+  dialog .pvrepo:hover { border-color: var(--stroke); }
+  dialog .pvrepo .nm { font-size: var(--fs-md); }
+  /* The directory browser: its folders on one panel, so the list reads as the thing being picked from. */
+  #browse .dlg-body > .toolbar { margin-top: 12px; }
+  #browse .dirlist {
+    padding: 6px; border-radius: var(--r-lg);
+    background: var(--lift); border: 1px solid rgba(var(--stroke-dim-rgb),.45);
+  }
+  #browse .dirlist:empty { display: none; }
+  #browse .dirlegend { margin-top: 12px; }
   /* A tick box reads at the size of what is typed in the fields beside it, not the page's. */
   .dlg-body .check { font-size: var(--fs-md); }
   .field { margin-bottom: 22px; }
