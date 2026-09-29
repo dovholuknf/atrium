@@ -1081,6 +1081,11 @@ default. Ticked, a card with the `origin:agent` tag raises no toast, no desktop 
 marks on the card stay, and so does the toast log entry, so nothing is lost. A permission request from such a card
 still notifies, because it blocks until a human answers. A card's own notification override beats the checkbox.
 
+**Status, 2026-09-28, sa44: built on `claude/sa44`, not merged.** The gear box `quietDoers` (per browser, default
+on) logs and does not say arrivals, waiting and stuck alerts for `origin:agent` cards. Permissions still notify. No
+per-card notification override exists in the board, so a card with its own tone stands in for one. See
+`docs/changes/44.md`.
+
 ## 45. Every card shows its context size, and a launcher hears once past a threshold (feature, sa87)
 
 Raised by clint 2026-09-28. sa87 built it on `claude/context-size` (ee68bc8),
@@ -1621,9 +1626,10 @@ Design (@ui):
   `(task_id, ended_at)` index, bounded (at most 500 buckets, `since` at most 30 days back), so a month of rows is
   never shipped to a browser. The card titles come from the card list the board already has. Buckets carry raw
   summed tokens per kind (uncached in, out, cache read, cache write 5m and 1h) and the stored `cost` summed, and the
-  client divides by bucket width for tokens per minute. For the split chart's per-part dollars the room also
-  groups by model and prices each kind with `usagePriceFor`, returned as `cost_by_kind`, labelled "at current
-  prices" because a stored row keeps only its total. The headline cost stays the stored sum.
+  client divides by bucket width for tokens per minute. No per-kind dollars in the first build: a row sums
+  replies that may come from more than one model and keeps only the last model's name, so repricing its kinds
+  would misattribute money silently. The split chart shows tokens per kind and the stored total cost. Exact
+  per-kind dollars would need item 37 to store more first. (Round 3, C1.)
 - **Live.** When the tracker writes a row (`AddSessionUsage` in `daemon/usage.go` and `keepalive.go`), the room
   broadcasts a `usage` event on the existing SSE stream carrying that one row's figures and card id. The tab adds
   it to the newest bucket without refetching. No polling. **"Real time" means within about two seconds of a turn
@@ -1634,7 +1640,7 @@ Design (@ui):
   2. The same per card: a small multiple per card that spent in the range, sorted by cost, top 12, the rest summed
      as "others". Click one to filter everything to that card.
   3. Split: cache read versus uncached in versus cache write versus out, as one stacked bar for the range, with
-     each part's tokens and cost. This is the chart that says where the money goes.
+     each part's tokens and the range's total cost beside it.
   4. Cost: cumulative estimated dollars over the range, and a table of cost by cause (you, a say, restart wake,
      keep-alive, resume, subagent) so a restart or a keep-alive round shows as the spend it was.
 - **Labels are item 78's.** prompts and calls, uncached in, out, cache read, cache write 5m and 1h, est. The tips in
@@ -1642,7 +1648,8 @@ Design (@ui):
 - **No chart library.** Hand-drawn inline SVG in a new `js/usage-charts.js`, a few hundred lines: a stacked area,
   a bar, a line, axes and a hover readout. No CDN and no vendored library, since the board has to work offline and
   there is no build step. Colours are skin variables (the palette triples), so every skin draws it.
-- **Rooms.** The board already talks to more than one room. The tab asks each attached room and merges the buckets,
+- **Rooms.** The board already talks to more than one room. The tab asks each attached room with an explicit
+  room-scoped read (the `X-Atrium-Room` pattern `loadRoomCfg` uses, not the aggregate fetch) and merges the buckets,
   with the room as a filter, the way the other cross-room views do. A room that does not answer is named as missing
   rather than silently counted as zero. A room too old to have `/v1/usage` says so the same way. **Every per-card
   bucket, filter, live event and the "others" rollup is keyed by room plus card id**, the identity the board already
