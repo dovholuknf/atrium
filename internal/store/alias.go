@@ -124,7 +124,9 @@ func (s *Store) SetAlias(id, alias string) error {
 				return err
 			}
 		}
-		res, err := tx.Exec(`UPDATE task SET alias = ? WHERE id = ?`, alias, id)
+		// Whatever was noted about a default that could not be taken is moot
+		// once somebody sets or clears it.
+		res, err := tx.Exec(`UPDATE task SET alias = ?, alias_note = '' WHERE id = ?`, alias, id)
 		if err != nil {
 			return err
 		}
@@ -163,10 +165,19 @@ func (s *Store) GetByAlias(alias string) (*Task, error) {
 	return t, err
 }
 
-// DefaultAlias is the alias a launched worker starts with: its title's
-// prefix, `sa89` from `sa89: typing gate`, when the title has one. A prefix is
-// the first word, ending at a colon, and it has to carry a digit, so a title
-// that is just a sentence gives none.
+// DefaultAlias is the alias a card starts with, read off its title's prefix:
+// the first word, ending at a colon. Two shapes give one:
+//
+//   - A prefix with a digit, `sa89` from `sa89: typing gate`: a worker's
+//     number (item 35).
+//   - A prefix that is a name, `saorch` from `saorch: merger, owns ...`: what a
+//     resident session was called when it was named (backlog-2 item 47). This
+//     one needs a space after the colon, so a board-made title such as
+//     `main:dotfiles`, a branch and a folder, does not become `@main`. It must
+//     also not be a word a title opens with to say what KIND of work it is
+//     (`fix: ...`, `docs: ...`), which names nobody.
+//
+// A title that is just a sentence gives none.
 func DefaultAlias(title string) string {
 	title = strings.TrimSpace(title)
 	i := strings.IndexAny(title, ": \t")
@@ -174,8 +185,94 @@ func DefaultAlias(title string) string {
 		return ""
 	}
 	a := NormalizeAlias(title[:i])
-	if ValidAlias(a) != nil || !strings.ContainsAny(a, "0123456789") {
+	if ValidAlias(a) != nil {
+		return ""
+	}
+	if strings.ContainsAny(a, "0123456789") {
+		return a
+	}
+	named := len(title) > i+1 && (title[i+1] == ' ' || title[i+1] == '\t')
+	if !named || len(a) < 2 || workKinds[a] {
 		return ""
 	}
 	return a
+}
+
+// workKinds are title prefixes that say what kind of work a card is, not what
+// it is called. `fix: typo` is not a card anybody mentions as `@fix`.
+var workKinds = map[string]bool{
+	"fix": true, "bug": true, "bugfix": true, "hotfix": true, "feat": true, "feature": true,
+	"docs": true, "doc": true, "chore": true, "test": true, "tests": true, "refactor": true,
+	"wip": true, "design": true, "spike": true, "proof": true, "review": true, "draft": true,
+	"todo": true, "note": true, "notes": true, "idea": true, "perf": true, "build": true, "ci": true,
+	"style": true, "revert": true, "release": true, "main": true, "master": true,
+}
+
+// GiveDefaultAlias gives card id the alias its title makes, when it has none
+// yet. See DefaultAlias. A default another live card holds is not taken, and
+// why is written to the card's `alias_note`, so the card can say so rather
+// than just wearing nothing. Returns the alias given, or "".
+//
+// A clash is not an error here: a card starting without its default is fine.
+func (s *Store) GiveDefaultAlias(id, title string) (string, error) {
+	a := DefaultAlias(title)
+	if a == "" {
+		return "", nil
+	}
+	t, err := s.Get(id)
+	if err != nil {
+		return "", err
+	}
+	if t.Alias != "" {
+		return "", nil
+	}
+	err = s.SetAlias(id, a)
+	var taken *AliasTakenError
+	switch {
+	case err == nil:
+		return a, nil
+	case errors.As(err, &taken):
+		return "", s.setAliasNote(id, fmt.Sprintf("no alias: its default is taken. %s", taken.Error()))
+	default:
+		return "", err
+	}
+}
+
+// setAliasNote records why a card wears no alias. SetAlias clears it.
+func (s *Store) setAliasNote(id, note string) error {
+	return s.guard(func() error {
+		_, err := s.db.Exec(`UPDATE task SET alias_note = ? WHERE id = ?`, note, id)
+		return err
+	})
+}
+
+// settingAliasBackfill marks the one pass over the cards already on the board
+// when a resident's name became a default. See BackfillDefaultAliases.
+const settingAliasBackfill = "alias_default_backfill"
+
+// BackfillDefaultAliases gives every live card with no alias the default its
+// title makes, ONCE, so a card whose alias the operator cleared afterwards is
+// not handed it back at the next start. Returns how many took one.
+func (s *Store) BackfillDefaultAliases() (int, error) {
+	if done, err := s.Setting(settingAliasBackfill); err != nil || done != "" {
+		return 0, err
+	}
+	tasks, err := s.List()
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, t := range tasks {
+		if t.Alias != "" || t.Status == StatusDone || t.Status == StatusDead || t.ArchivedAt != nil {
+			continue
+		}
+		a, err := s.GiveDefaultAlias(t.ID, t.DisplayTitle())
+		if err != nil {
+			return n, err
+		}
+		if a != "" {
+			n++
+		}
+	}
+	return n, s.SetSetting(settingAliasBackfill, ts(now()))
 }

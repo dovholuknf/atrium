@@ -203,6 +203,8 @@ func (c *controlMCP) server() *mcp.Server {
 			"repeat them in full rather than referring back.",
 	}, c.taskHandler)
 
+	mcp.AddTool(s, &mcp.Tool{Name: "atrium_alias", Description: aliasToolDesc}, c.aliasHandler)
+
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "atrium_launch",
 		Description: "Start a new agent in a directory, on its own card, supervised by atrium.\n\n" +
