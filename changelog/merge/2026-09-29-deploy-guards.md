@@ -5,3 +5,4 @@
 - The live deploys now pass only when the room `claude-sg4` is attached, by name, as both the hub and the room see
   it, and still attached 30s later. Before, any one attached room passed. Serving but not attached exits 2 and
   reverts nothing. (deploy-guards)
+- `scripts/merge-check.ps1 -NoUI` runs go and the build only, skipping check-board.sh, the headless board and skins. (deploy-guards)
