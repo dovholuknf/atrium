@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -652,6 +653,52 @@ func TestResolvePeerAcceptsAnAlias(t *testing.T) {
 	_, _, err := c.resolvePeer(context.Background(), "", "nobody")
 	if err == nil || !strings.Contains(err.Error(), "(@sa89)") {
 		t.Errorf("a miss does not list the aliases that would have worked: %v", err)
+	}
+}
+
+// A worker that reported done waits at its prompt to be sent back or exited,
+// so its alias still resolves, behind a live card and never past a dead one.
+// atrium_exit takes it by alias too.
+func TestADoneCardAnswersToItsAliasAndCanBeExited(t *testing.T) {
+	var mu sync.Mutex
+	var exited []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if strings.HasSuffix(r.URL.Path, "/exit") {
+			mu.Lock()
+			exited = append(exited, strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/v1/tasks/"), "/exit"))
+			mu.Unlock()
+			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"tasks": []map[string]any{
+			{"id": "d1", "wire_name": "sa21-first", "alias": "sa21", "status": "done",
+				"created_at": "2026-09-28T10:00:00.000Z"},
+			{"id": "live", "wire_name": "sa89-second", "alias": "sa89", "status": "running",
+				"created_at": "2026-09-27T10:00:00.000Z"},
+			{"id": "d2", "wire_name": "sa89-first", "alias": "sa89", "status": "done",
+				"created_at": "2026-09-28T10:00:00.000Z"},
+			{"id": "gone", "wire_name": "sa90-x", "alias": "sa90", "status": "dead",
+				"created_at": "2026-09-28T10:00:00.000Z"},
+		}})
+	}))
+	defer srv.Close()
+	c := &controlMCP{board: srv.URL, client: srv.Client()}
+	for who, want := range map[string]string{"sa21": "d1", "@sa21": "d1", "sa89": "live"} {
+		id, _, err := c.resolvePeer(context.Background(), "", who)
+		if err != nil || id != want {
+			t.Errorf("resolvePeer(%q) = %q, %v, want %q", who, id, err, want)
+		}
+	}
+	if _, _, err := c.resolvePeer(context.Background(), "", "sa90"); err == nil {
+		t.Error("a dead card's alias resolved")
+	}
+	_, out, err := c.exitHandler(context.Background(), ctlReq("orch", ""), exitInput{Card: "@sa21"})
+	if err != nil || !out.Asked || out.Card != "d1" {
+		t.Fatalf("exit by alias of a done card = %+v, %v", out, err)
+	}
+	if len(exited) != 1 || exited[0] != "d1" {
+		t.Fatalf("the room was asked to exit %v", exited)
 	}
 }
 

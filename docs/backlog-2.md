@@ -315,6 +315,11 @@ alone), and codex's startup updater runs in atrium's terminal. The fix for the l
 questions for clint are in the design. `claude/codex-update` (25e48eb) is an old claude/main snapshot with no item
 12 work, and is not this.
 
+**Status, 2026-09-29 (sa12): sections 1 and 2 are built, 3 and 4 wait on clint.** A satisfied update card is
+withdrawn, and a card that left the inbox no longer blocks later releases (`store.ReleaseIntakeKey`, the version
+carried in the card's URL). Tested against a copy of the live database. Codex's startup flag, the auto-update setting
+and the boot check are not built, and no migration was added. `docs/changes/12.md`.
+
 ------------
 
 ### 12a. A resumed card keeps its old pid, and a live card reads done
@@ -2859,6 +2864,13 @@ The fix belongs in resolution, not in the alias query: an alias resolves to the 
 live, or else to the newest `done` card whose session is not gone by `sessionGone` (item 83's rule). A dead card's
 alias stays unresolved, so a reused alias still means the live card. Separate from the reaper fix above, and it
 touches the same resolver sa32 (item 32) changed, so it goes after that merge.
+
+**Fixed on `claude/sa89b`** (item 89b). `GetByAlias` now resolves a `done` card that is not archived, behind any live
+card with the same alias, then newest first. A dead or archived card still does not answer. `sessionGone` is left
+where it already sits in the say path, so a done card with no session left is refused there as ended rather than
+here as unknown. `SetAlias` and `liveClause` are untouched, so a done card still gives its alias up to a new one.
+The same rule is in the two client side resolvers that matched aliases themselves, `resolvePeer` in `internal/link`
+and in `internal/cli`.
 
 ## 91. Two cards in one worktree share one HANDOFF.md, and new-context overwrites the other's (bug, design only)
 

@@ -304,10 +304,117 @@ func (d *Daemon) checkRunnerUpdate(h *store.Harness, blocking bool) {
 			go d.askRegistry(pkg, ch)
 		}
 	}
-	if latest == "" || !newerVersion(latest, installed) {
+	if latest == "" {
 		return
 	}
+	if !newerVersion(latest, installed) {
+		d.withdrawSatisfied(h, installed)
+		return
+	}
+	d.releaseMovedOn(h, latest)
 	d.offerRunnerUpdate(h, installed, latest)
+}
+
+// runnerUpdateSource is the intake source every update card carries.
+const runnerUpdateSource = "runner-update"
+
+// runnerUpdateURL is the link an update card carries, and THE STATE CONTRACT
+// for which version the card last offered.
+//
+// The URL is not only a link. `offeredVersion` reads the version back out of it,
+// because the card's own title is prose and `refreshOffered` writes no event. A
+// tidy of how cards show links, or a source-side rewrite of `url`, would quietly
+// break release detection, so build and parse stay next to each other and
+// nothing else touches the shape. The package goes in as npm writes it, scope and
+// slash included.
+func runnerUpdateURL(pkg, version string) string {
+	return "https://www.npmjs.com/package/" + pkg + "/v/" + version
+}
+
+// offeredVersion reads the version out of a URL `runnerUpdateURL` wrote, and
+// answers empty for any other shape. Split on the LAST `/v/`, since a package
+// name could itself contain one.
+func offeredVersion(pkg, url string) string {
+	rest, ok := strings.CutPrefix(url, "https://www.npmjs.com/package/")
+	if !ok {
+		return ""
+	}
+	i := strings.LastIndex(rest, "/v/")
+	if i < 0 || rest[:i] != pkg {
+		return ""
+	}
+	v := rest[i+len("/v/"):]
+	if v == "" || strings.ContainsAny(v, "/?# ") {
+		return ""
+	}
+	return v
+}
+
+// updateCardsFor lists the inbox's update cards for a package: the keyed one,
+// and legacy ones from before the key dropped the version, whose external id is
+// `<package>@<version>`.
+func (d *Daemon) updateCardsFor(pkg string) (all []*store.Task) {
+	inbox, err := d.st.Offered()
+	if err != nil {
+		log.Printf("[atrium] could not read the inbox for %s updates: %v", pkg, err)
+		return nil
+	}
+	for _, t := range inbox {
+		if t.Source == runnerUpdateSource &&
+			(t.ExternalID == pkg || strings.HasPrefix(t.ExternalID, pkg+"@")) {
+			all = append(all, t)
+		}
+	}
+	return all
+}
+
+// withdrawSatisfied archives every inbox update card for a package whose offer
+// the installed version already meets, because the update happened some other
+// way. Only `backlog` cards: `Offered` lists nothing else, and a started card is
+// theirs. Archived, not deleted, so the history keeps it.
+func (d *Daemon) withdrawSatisfied(h *store.Harness, installed string) {
+	for _, t := range d.updateCardsFor(h.Package) {
+		reason := fmt.Sprintf("%s %s is installed, which is what this card offered", h.ID, installed)
+		if _, err := d.st.WithdrawOffered(t.ID, reason); err != nil {
+			log.Printf("[atrium] could not withdraw the %s update card: %v", h.ID, err)
+		}
+	}
+}
+
+// releaseMovedOn makes room for a fresh card when the keyed one has moved on.
+//
+// Two cases. A legacy-keyed inbox card cannot be refreshed, since its key holds
+// a version and `Offer` will never find it, so it is withdrawn and the fresh card
+// replaces it. A keyed card past `backlog`, or archived, is released when the
+// version it offered is below the new latest. No recorded version counts as
+// older, so it is released at most once. A keyed card still in the inbox is left
+// for `Offer` to rewrite, which is also what happens to a backlog card with no
+// URL: it is rewritten to say installed to latest and gains the new URL.
+func (d *Daemon) releaseMovedOn(h *store.Harness, latest string) {
+	pkg := h.Package
+	for _, t := range d.updateCardsFor(pkg) {
+		if t.ExternalID == pkg {
+			continue
+		}
+		reason := fmt.Sprintf("%s %s is published, and this card predates the key that lets it be rewritten", h.ID, latest)
+		if _, err := d.st.WithdrawOffered(t.ID, reason); err != nil {
+			log.Printf("[atrium] could not withdraw the legacy %s update card: %v", h.ID, err)
+		}
+	}
+	t, err := d.st.ByIntakeKey(store.IntakeKey(runnerUpdateSource, pkg))
+	if err != nil {
+		log.Printf("[atrium] could not look up the %s update card: %v", h.ID, err)
+		return
+	}
+	if t == nil || (t.Status == store.StatusBacklog && t.ArchivedAt == nil) {
+		return
+	}
+	if v := offeredVersion(pkg, t.URL); v != "" && !newerVersion(latest, v) {
+		return
+	}
+	if err := d.st.ReleaseIntakeKey(t.ID); err != nil {
+		log.Printf("[atrium] could not release the %s update card: %v", h.ID, err)
+	}
 }
 
 // askRegistry performs the lookup and releases the claim. Returns the version
@@ -353,8 +460,9 @@ func (d *Daemon) offerRunnerUpdate(h *store.Harness, installed, latest string) {
 		label = h.ID
 	}
 	item := store.IntakeItem{
-		Source:     "runner-update",
+		Source:     runnerUpdateSource,
 		ExternalID: h.Package,
+		URL:        runnerUpdateURL(h.Package, latest),
 		Title:      fmt.Sprintf("%s: %s to %s", label, installed, latest),
 		Why: fmt.Sprintf("a newer %s is published. updating replaces the binary, so "+
 			"the runner has to exit first and any card running it will go dead.", label),
