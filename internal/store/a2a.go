@@ -44,6 +44,56 @@ func (s *Store) SetLineage(id, handle, parentID string) error {
 	})
 }
 
+// SetReportTo keeps the name a launch was told to report to, as given.
+func (s *Store) SetReportTo(id, name string) error {
+	name = strings.TrimSpace(name)
+	return s.guard(func() error {
+		_, err := s.db.Exec(`UPDATE task SET report_to = ? WHERE id = ?`, name, id)
+		return err
+	})
+}
+
+// ReportTo is the name the card was launched to report to, or empty.
+func (s *Store) ReportTo(id string) string {
+	var name string
+	_ = s.guard(func() error {
+		name = ""
+		err := s.db.QueryRow(`SELECT report_to FROM task WHERE id = ?`, id).Scan(&name)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		return err
+	})
+	return name
+}
+
+// SetLauncher points a card at a new launcher, unlike SetLineage, which writes
+// once. Only for a card that reports to a named card, whose launcher is
+// resolved again at each delivery. The handle is qualified as SetLineage does.
+func (s *Store) SetLauncher(id, handle, parentID string) error {
+	handle = strings.TrimSpace(handle)
+	if handle != "" && handle != HumanLauncher && !strings.Contains(handle, "@") {
+		handle = s.Qualify(handle)
+	}
+	return s.guard(func() error {
+		if _, err := s.db.Exec(`UPDATE task SET spawned_by = ?, spawned_by_id = ? WHERE id = ?`,
+			handle, strings.TrimSpace(parentID), id); err != nil {
+			return err
+		}
+		// The work item carries its own copy of the launcher, and its arbiter is
+		// who a report goes to. An arbiter that is still the launcher follows it,
+		// and one somebody handed the work to does not.
+		if _, err := s.db.Exec(`UPDATE work_item SET arbiter_id = ?, arbiter_handle = ?
+			WHERE task_id = ? AND (arbiter_id = launcher_id OR arbiter_id = '')`,
+			strings.TrimSpace(parentID), handle, id); err != nil {
+			return err
+		}
+		_, err := s.db.Exec(`UPDATE work_item SET launcher_id = ?, launcher_handle = ? WHERE task_id = ?`,
+			strings.TrimSpace(parentID), handle, id)
+		return err
+	})
+}
+
 // MarkReported stamps the moment a card said something to its launcher.
 func (s *Store) MarkReported(id string) error {
 	return s.guard(func() error {

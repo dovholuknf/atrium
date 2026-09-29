@@ -232,6 +232,12 @@ func (d *Daemon) launcherOf(worker *store.Task) *store.Task {
 	if worker == nil || !worker.Launched() {
 		return nil
 	}
+	// THE ONE PLACE A DELIVERY FINDS ITS LAUNCHER, so the stored `report_to` is
+	// resolved again here: a report, a stop notice and a context notice all come
+	// through. The stored id below is the fallback. See reportto.go.
+	if t := d.currentLauncher(worker); t != nil {
+		return t
+	}
 	if worker.SpawnedByID != "" {
 		if t, err := d.st.Get(worker.SpawnedByID); err == nil {
 			return t
@@ -335,6 +341,7 @@ func (d *Daemon) peerSaid(from string, target *store.Task, text string) {
 	if !sender.Launched() {
 		return
 	}
+	d.currentLauncher(sender)
 	if sender.SpawnedByID != target.ID && d.st.Qualify(sender.SpawnedBy) != target.WireName {
 		return
 	}
@@ -350,7 +357,7 @@ func (d *Daemon) peerSaid(from string, target *store.Task, text string) {
 // has no Stop hook. Returns whether a notice went.
 func (d *Daemon) silentStop(taskID string) bool {
 	t, err := d.st.Get(taskID)
-	if err != nil || !agentLaunched(t) {
+	if err != nil || !d.reportsToLauncher(t) {
 		return false
 	}
 	ended, ok := d.stoppedSilently(t)
@@ -572,7 +579,7 @@ func (d *Daemon) watchWorkers(now time.Time) error {
 	}
 	live := map[string]bool{}
 	for _, t := range tasks {
-		if !agentLaunched(t) {
+		if !d.reportsToLauncher(t) {
 			continue
 		}
 		live[t.ID] = true
