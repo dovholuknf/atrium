@@ -382,6 +382,12 @@ async function decide(id, decision, forever) {
   // on screen the click looks like it did nothing. That turns one approval
   // into four.
   forgetEdits(id);
+  // Out of the held queue too, so the repaint below does not draw it again
+  // from a list read before it was answered. The `permission` event the
+  // answer raises reads the queue again.
+  permsLocal = permsLocal.filter(p => p.id !== id);
+  remoteLocal = remoteLocal.filter(p => p.id !== id);
+  permsSoon();
   applyHeld();
 }
 
@@ -1258,10 +1264,16 @@ function onTaskRemovedEvent(e) {
 // dropped without closing, a counter that only ticks with the clock. Only while
 // somebody can see the page: a hidden tab reads everything again the moment it
 // is shown instead, which is the first moment it could matter.
-const RESYNC_MS = 60000;
+// Overridable only so a headless test can prove the hidden-tab rule without
+// waiting minutes. A plain board never sets it.
+const RESYNC_MS = (typeof window !== "undefined" && window.__atriumResyncMs) || 60000;
 function startResync() {
   setInterval(() => {
-    if (document.visibilityState === "visible") runRefresh();
+    if (document.visibilityState !== "visible") return;
+    runRefresh();
+    // The room chip too, which used to poll on its own every ten seconds. See
+    // `startRooms`.
+    if (typeof hubIsHub !== "undefined" && hubIsHub) loadHubRooms();
   }, RESYNC_MS);
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") refreshSoon();
@@ -1379,8 +1391,11 @@ async function pass(signal) {
   // down here. It costs one small request while a switch is temporary and
   // nothing at all the rest of the time, and it means the label cannot drift
   // away from the thing that actually decides. A read that failed is retried
-  // here too, so the header does not sit on "unknown" until a reload.
-  if (globalAutoStale || (globalAuto && globalAutoLeft > 0)) loadGlobalAuto();
+  // here too, so the header does not sit on "unknown" until a reload. On a full
+  // pass only (a resync, the stream reopening): a pass that repaints from a
+  // task event is several a second on a busy board. A switch that changes is
+  // said on the `settings` event anyway.
+  if (want.health && (globalAutoStale || (globalAuto && globalAutoLeft > 0))) loadGlobalAuto();
 
   // A pass is done only when everything it started has settled. The jobs are
   // collected and awaited at the end so the single-flight guard cannot call a

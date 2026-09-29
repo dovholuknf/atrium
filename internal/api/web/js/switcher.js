@@ -128,6 +128,10 @@ async function openSwitcher() {
   const q = document.getElementById("sw-q");
   q.value = "";
   document.getElementById("sw-key").textContent = comboName(switchKey());
+  // Painted from the card map (js/cards.js), which the event stream keeps
+  // current, so the list is there in the frame the dialog opens. Only a board
+  // that has never read its cards waits on the one read below.
+  if (cardsLoaded) { swTasks = cardList().filter(t => t.supervised); swLoaded = true; }
   // Painted from what was last fetched, THEN again when the fresh answer
   // lands. The whole promise here is key, letters, Enter, and a list that
   // appears after a round trip is a list you have already typed into.
@@ -136,7 +140,7 @@ async function openSwitcher() {
   q.focus();
   swWatchForTheft();
   let all = null;
-  try { all = (await api("/v1/tasks")).tasks || []; } catch (e) {}
+  try { all = await boardCards(); } catch (e) {}
   // Terminals only. This list is a place to GO, and a card with nothing
   // running is not one: the board and the stack restart a stopped session,
   // with the whole card in front of you, which is where that belongs.
