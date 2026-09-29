@@ -961,9 +961,10 @@ async function dismissNewContext(id) {
 // The menu entry and Ctrl+Alt+N both land here.
 async function newContext(id) {
   try {
-    await api(`/v1/tasks/${encodeURIComponent(id)}/new-context`, { method: "POST" });
+    const r = await api(`/v1/tasks/${encodeURIComponent(id)}/new-context`, { method: "POST" });
+    const file = (r && r.new_context && r.new_context.file) || "its handoff file";
     toast("new context started",
-      "it is asked to write HANDOFF.md, then cleared, then told to read it back");
+      `it is asked to write ${file}, then cleared, then told to read it back`);
   } catch (e) {
     toast("could not start a new context", e.message);
     return;

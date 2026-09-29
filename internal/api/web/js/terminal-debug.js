@@ -354,6 +354,7 @@ function clearTermPane(switching) {
   if (term) { term.dispose(); term = null; }
   termFit = null;
   termTask = null;
+  if (typeof walkReset === "function") walkReset();
   dropThemePreview();
   // Nothing attached, so nothing for the bridge to span.
   placeTabBridge();

@@ -16,6 +16,8 @@
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
+const os = require("os");
+const crypto = require("crypto");
 const { wholeBoard } = require("./board-source.js");
 
 // The board's xterm bundle, served off disk so a real Terminal is built. The
@@ -373,6 +375,68 @@ let stalledCount = 0;
 
 const HTML = wholeBoard();
 
+// The file endpoints the walk drawer uses, answering from a directory per card and the way
+// internal/api/filetext.go does: a write quotes the hash it read, and a stale one is a 409 that hands back what
+// is there now. `walkDirs` is card id -> a TEMPORARY COPY, never a real review folder. See `walkSection`.
+const walkDirs = {};
+const walkHash = b => crypto.createHash("sha256").update(b).digest("hex");
+function walkRoute(req, res, url) {
+  const m = /^\/v1\/tasks\/([^/]+)\/files\/(list|text)$/.exec(url);
+  if (!m || !walkDirs[m[1]]) return false;
+  const dir = walkDirs[m[1]];
+  const rel = new URL(req.url, "http://x").searchParams.get("path") || "";
+  const full = path.resolve(dir, rel);
+  const deny = () => { res.writeHead(403, { "Content-Type": "application/json" }); res.end('{"error":"outside"}'); };
+  if (full !== path.resolve(dir) && !full.startsWith(path.resolve(dir) + path.sep)) { deny(); return true; }
+  if (m[2] === "list") {
+    let ents;
+    try { ents = fs.readdirSync(full, { withFileTypes: true }); } catch (e) { deny(); return true; }
+    const entries = ents.map(d => {
+      const st = fs.statSync(path.join(full, d.name));
+      return { name: d.name, path: rel ? rel.replace(/\/$/, "") + "/" + d.name : d.name, dir: d.isDirectory(),
+        size: d.isDirectory() ? undefined : st.size, mtime: st.mtime.toISOString() };
+    }).sort((a, b) => (a.dir === b.dir ? (a.name < b.name ? -1 : 1) : a.dir ? -1 : 1));
+    sendJSON(res, { path: rel, parent: "", entries });
+    return true;
+  }
+  if (req.method === "PUT") {
+    let raw = "";
+    req.on("data", c => { raw += c; });
+    req.on("end", () => {
+      let body = {};
+      try { body = JSON.parse(raw || "{}"); } catch (e) {}
+      if (!String(body.hash || "").trim()) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end('{"error":"a write has to say what it was based on"}');
+        return;
+      }
+      let cur;
+      try { cur = fs.readFileSync(full); } catch (e) { deny(); return; }
+      if (walkHash(cur) !== body.hash) {
+        res.writeHead(409, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "that file changed while you were editing it. nothing was written.",
+          text: cur.toString("utf8").replace(/\r\n/g, "\n"), hash: walkHash(cur) }));
+        return;
+      }
+      let out = String(body.text || "");
+      if (body.eol === "\r\n") out = out.replace(/\r\n/g, "\n").replace(/\n/g, "\r\n");
+      fs.writeFileSync(full, out);
+      sendJSON(res, { ok: true, hash: walkHash(Buffer.from(out)) });
+    });
+    return true;
+  }
+  let raw;
+  try { raw = fs.readFileSync(full); } catch (e) { deny(); return true; }
+  if (raw.length > (2 << 20)) {
+    res.writeHead(400, { "Content-Type": "application/json" });
+    res.end('{"error":"that file is too large to edit here. download it instead"}');
+    return true;
+  }
+  sendJSON(res, { path: full.replace(/\\/g, "/"), text: raw.toString("utf8").replace(/\r\n/g, "\n"),
+    hash: walkHash(raw), eol: raw.includes("\r\n") ? "\r\n" : "\n" });
+  return true;
+}
+
 function sendJSON(res, obj) {
   const body = JSON.stringify(obj);
   res.writeHead(200, { "Content-Type": "application/json" });
@@ -510,6 +574,7 @@ const server = http.createServer((req, res) => {
     });
     return;
   }
+  if (walkRoute(req, res, url)) return;
   if (url.startsWith("/v1/tasks/")) {
     const id = url.slice("/v1/tasks/".length);
     // The unpin behind dismiss: togglePin PATCHes the card, and the mutated pin
@@ -3803,7 +3868,8 @@ async function pasteSpinnerSection(browser, base) {
       pasteShow = f => { window.__shown++; real(f); };
     });
 
-    // 1. A one-line paste held on the socket for 50ms shows, then goes on the echo.
+    // 1. A one-line paste held on the socket for 50ms shows, and an echo inside
+    // the hold does not take it down (u-007: a busy runner echoes at once).
     const heldGot = await p.evaluate(() => new Promise(done => {
       const vis = () => { const el = document.getElementById("t-pasting"); return !!(el && !el.hidden); };
       pasteEnd();
@@ -3815,6 +3881,9 @@ async function pasteSpinnerSection(browser, base) {
       setTimeout(() => { termSock.bufferedAmount = 0; termSock.onmessage({ data: "one line" }); }, 50);
       setTimeout(() => { got.after = vis(); got.shown = window.__shown; done(got); }, 120);
     }));
+    // Inside the hold the echo is only noted. Held, then gone once it is quiet.
+    if (!heldGot.after) fail("an echo 50ms in took the spinner down inside its hold: " + JSON.stringify(heldGot));
+    heldGot.after = false;
     if (!heldGot.during || heldGot.shown !== 1) {
       fail("a one-line paste held on the socket for 50ms did not show the spinner: " + JSON.stringify(heldGot));
     }
@@ -3823,18 +3892,22 @@ async function pasteSpinnerSection(browser, base) {
     }
     if (heldGot.after) fail("the spinner stayed up after the paste drained and echoed: " + JSON.stringify(heldGot));
 
-    // 2. A paste that drains and echoes inside 20ms never flashes.
+    // 2. A paste that drains and echoes inside 20ms is still drawn, at once, and
+    // is gone once the runner has been quiet since the echo.
     const quick = await p.evaluate(() => new Promise(done => {
       pasteEnd();
       window.__shown = 0;
       termSock.bufferedAmount = 0;
       sendPasteText("x");
+      const got = { now: window.__shown };
       setTimeout(() => termSock.onmessage({ data: "x" }), 5);
-      setTimeout(() => done({ shown: window.__shown, flight: !!pasteFlight }), 150);
+      setTimeout(() => { got.flight = !!pasteFlight; done(got); }, 150);
     }));
-    if (quick.shown || quick.flight) {
-      fail("a paste that landed inside 20ms flashed the spinner: " + JSON.stringify(quick));
+    if (quick.now !== 1 || !quick.flight) {
+      fail("a paste that landed inside 20ms was not drawn at once and held: " + JSON.stringify(quick));
     }
+    await p.waitForFunction(() => !pasteFlight, null, { timeout: 4000 })
+      .catch(() => fail("a paste echoed once and then quiet never cleared"));
 
     // 3. Typed input never shows it: a key, an escape sequence, or a long burst.
     const typed = await p.evaluate(() => new Promise(done => {
@@ -4271,6 +4344,143 @@ async function pasteBigSection(browser, base) {
   tasksMode = was;
 }
 
+// ── a slow paste shows the busy mark at once and keeps it ─────────────────
+// Test plan (u-007). The mock runner does what Claude Code does: it echoes the
+// paste within milliseconds, then works, and prints its real answer late. The
+// box has to be up on the gesture, before any slow step (the clipboard read, the
+// upload), survive the early echo, and go when the runner has said something
+// after the hold. Nothing coming back clears it at the cap.
+async function pasteBusySection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  landList = [LAND["land-live"]];
+  landPerms = [];
+  const errors = [];
+  const ctx = await landContext(browser);
+  await ctx.addInitScript(() => {
+    const Real = window.WebSocket;
+    window.__answerAt = 1000;
+    window.__silent = false;
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
+        onopen: null, onclose: null, onmessage: null, onerror: null,
+        send(str) {
+          let d = "";
+          try { d = JSON.parse(str).d || ""; } catch (e) {}
+          if (window.__silent || d.length < 3) return;
+          // Echo at once, then the real answer late.
+          setTimeout(() => this.onmessage && this.onmessage({ data: "[Pasted text #1]" }), 3);
+          setTimeout(() => this.onmessage && this.onmessage({ data: "the answer" }), window.__answerAt);
+        },
+        close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+    window.__vis = () => { const el = document.getElementById("t-pasting"); return !!(el && !el.hidden); };
+    // Samples the box at given offsets from now, and says what it saw.
+    window.__watch = (gesture, at) => new Promise(done => {
+      pasteEnd();
+      const t0 = performance.now();
+      const seen = {};
+      for (const ms of at) setTimeout(() => { seen[ms] = window.__vis(); }, ms);
+      gesture();
+      seen.sync = window.__vis();
+      seen.text = (document.getElementById("t-pasting") || {}).textContent || "";
+      setTimeout(() => done(seen), Math.max(...at) + 50);
+    });
+  });
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await p.evaluate(() => attachTask("land-live"));
+    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live", null,
+      { timeout: slow(10000) });
+    await p.waitForTimeout(300);
+
+    // What "landed" is: up on the gesture, up through the echo and the wait for
+    // the real answer at 1000ms, gone after it.
+    const expect = (name, seen, textRe) => {
+      if (!seen.sync) fail(name + ": the box was not up on the gesture itself: " + JSON.stringify(seen));
+      if (!seen[100] || !seen[300]) fail(name + ": the early echo took the box down: " + JSON.stringify(seen));
+      if (!seen[700]) fail(name + ": the box went before the runner's real answer: " + JSON.stringify(seen));
+      if (seen[1700]) fail(name + ": the box stayed after the runner answered: " + JSON.stringify(seen));
+      if (textRe && !textRe.test(seen.text)) fail(name + ": the box says the wrong thing: " + JSON.stringify(seen.text));
+    };
+    const at = [100, 300, 700, 1700];
+
+    // 1. ctrl-v, the paste event.
+    expect("ctrl-v", await p.evaluate(a => window.__watch(() => {
+      const dt = new DataTransfer();
+      dt.setData("text/plain", "hello there");
+      document.getElementById("t-screen").dispatchEvent(
+        new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
+    }, a), at), /pasting/);
+
+    // 2. Right click, with a clipboard that takes 300ms to answer: the box is
+    // already up while it is being read.
+    expect("right click", await p.evaluate(a => {
+      Object.defineProperty(navigator, "clipboard", { configurable: true,
+        value: { readText: () => new Promise(r => setTimeout(() => r("clipboard text"), 300)),
+          read: () => Promise.resolve([]) } });
+      return window.__watch(() => {
+        document.getElementById("t-screen").dispatchEvent(
+          new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2 }));
+      }, a);
+    }, at), /clipboard|pasting/);
+
+    // 3. The paste box.
+    expect("paste box", await p.evaluate(a => window.__watch(() => {
+      openPasteBox("");
+      document.getElementById("t-paste-in").value = "from the box";
+      sendPasteBox();
+    }, a), at), /pasting/);
+
+    // 4. An image whose upload is slow to answer, 600ms. The box says what is
+    // landing, and takes the path over as a paste when it arrives.
+    const img = await p.evaluate(a => {
+      const real = window.fetch;
+      window.fetch = (u, o) => /\/files$/.test(String(u))
+        ? new Promise(r => setTimeout(() => r(new Response(JSON.stringify({ paths: ["/tmp/pasted.png"] }),
+          { status: 200, headers: { "Content-Type": "application/json" } })), 600))
+        : real.call(window, u, o);
+      const r = window.__watch(() => {
+        uploadIntoTerm([new File(["png"], "pasted.png", { type: "image/png" })]);
+      }, a);
+      return r.then(seen => { window.fetch = real; return seen; });
+    }, [100, 400, 900, 2100]);
+    if (!img.sync || !/uploading pasted\.png/.test(img.text)) {
+      fail("an image upload did not show the box at once, naming the file: " + JSON.stringify(img));
+    }
+    if (!img[100] || !img[400]) fail("the box went while the upload was still out: " + JSON.stringify(img));
+    if (!img[900]) fail("the box went between the upload answering and the runner answering: " + JSON.stringify(img));
+    if (img[2100]) fail("the box stayed after an uploaded image landed: " + JSON.stringify(img));
+
+    // 5. Nothing comes back: the cap clears it. The clock is moved rather than
+    // waited for, so the poll finds the paste older than the cap.
+    const cap = await p.evaluate(() => new Promise(done => {
+      window.__silent = true;
+      pasteEnd();
+      sendPasteText("nobody answers");
+      const got = { before: window.__vis() };
+      const real = Date.now;
+      Date.now = () => real() + pasteGiveUpMs + 1000;
+      setTimeout(() => { Date.now = real; got.after = window.__vis(); window.__silent = false; done(got); }, 200);
+    }));
+    if (!cap.before) fail("a paste to a silent runner did not show the box: " + JSON.stringify(cap));
+    if (cap.after) fail("a paste to a silent runner was still boxed past the cap: " + JSON.stringify(cap));
+  } finally {
+    await ctx.close();
+  }
+  if (errors.length) fail("the busy paste page threw: " + errors.join(" | "));
+  landList = []; landPerms = [];
+  tasksMode = was;
+}
+
 // ── the not-replayed notice opens or loads the pre-restart history ────────
 // Test plan BO. The daemon draws the notice's `open` and `load` as OSC 8
 // `atrium:` links carrying the nonce this socket sent as `?link=`. Clicking
@@ -4528,6 +4738,174 @@ async function linkTipSection(browser, base) {
     tasksMode = was;
     await ctx.close();
   }
+}
+
+// ── a phone view never resizes the pty (t-003b) ───────────────────────────
+// A touch-first device attaches without ever sending a resize, draws the pty's
+// exact grid, zooms by font size, and has a key bar. A desktop is unchanged.
+async function phoneViewSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  landList = [LAND["land-live"]];
+  landPerms = [];
+  const errors = [];
+  const fakeSock = () => {
+    const Real = window.WebSocket;
+    window.__sent = [];
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
+        onopen: null, onclose: null, onmessage: null, onerror: null,
+        send(d) { window.__sent.push(String(d)); }, close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  };
+  const open = async (ctx) => {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await p.evaluate(() => attachTask("land-live"));
+    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live",
+      null, { timeout: slow(10000) });
+    await p.waitForTimeout(300);
+    return p;
+  };
+  const resizes = (p) => p.evaluate(() => window.__sent.filter(x => /"t":"resize"/.test(x)));
+  try {
+    // ── the phone
+    const pctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+    await pctx.addInitScript(() => {
+      localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true }));
+      localStorage.setItem("atrium.termphone", "1");
+    });
+    await pctx.addInitScript(fakeSock);
+    const p = await open(pctx);
+    await p.evaluate(() => termSock.onmessage({ data: '{"t":"size","cols":132,"rows":41}' }));
+    await p.waitForTimeout(300);
+    let n = (await resizes(p)).length;
+    if (n) fail("phoneView: a phone attach sent " + n + " resize frame(s)");
+    const dims = () => p.evaluate(() => ({ cols: term.cols, rows: term.rows, font: term.options.fontSize,
+      sw: document.getElementById("t-screen").scrollWidth, cw: document.getElementById("t-screen").clientWidth }));
+    let d = await dims();
+    if (d.cols !== 132 || d.rows !== 41) fail("phoneView: the grid is not the pty's: " + JSON.stringify(d));
+    if (d.font < 8 || d.font > 14) fail("phoneView: portrait did not open at about 60 columns across: " + JSON.stringify(d));
+    if (d.sw <= d.cw) fail("phoneView: portrait opened as a thumbnail, not zoomed in: " + JSON.stringify(d));
+    if (!(await p.evaluate(() => getComputedStyle(document.getElementById("t-keys")).display !== "none")))
+      fail("phoneView: the key bar is not shown on a phone");
+
+    // a window resize and a keyboard-sized height change send nothing
+    await p.setViewportSize({ width: 390, height: 460 });
+    await p.waitForTimeout(500);
+    await p.setViewportSize({ width: 844, height: 390 });
+    await p.waitForTimeout(500);
+    d = await dims();
+    if (d.sw > d.cw + 20) fail("phoneView: landscape did not fit the whole width: " + JSON.stringify(d));
+    await p.setViewportSize({ width: 390, height: 844 });
+    await p.waitForTimeout(500);
+    n = (await resizes(p)).length;
+    if (n) fail("phoneView: a resize or a keyboard-sized height change sent " + n + " resize frame(s)");
+    d = await dims();
+    if (d.cols !== 132 || d.rows !== 41) fail("phoneView: the grid moved with the window: " + JSON.stringify(d));
+
+    // the pty moving while the phone is attached is followed, locally
+    await p.evaluate(() => termSock.onmessage({ data: '{"t":"size","cols":150,"rows":35}' }));
+    await p.waitForTimeout(300);
+    if ((await resizes(p)).length) fail("phoneView: following a size frame sent a resize");
+    d = await dims();
+    if (d.cols !== 150 || d.rows !== 35) fail("phoneView: a new size frame was not followed: " + JSON.stringify(d));
+
+    // a zoom changes the font, not the grid
+    const before = await dims();
+    await p.evaluate(() => phoneSetFont(term.options.fontSize * 2));
+    d = await dims();
+    if (d.font <= before.font * 1.9) fail("phoneView: zoom did not change the font: " + JSON.stringify([before, d]));
+    if (d.cols !== 150 || d.rows !== 35) fail("phoneView: zoom changed the grid: " + JSON.stringify(d));
+    if (d.sw <= d.cw) fail("phoneView: a zoomed grid does not scroll: " + JSON.stringify(d));
+    if ((await resizes(p)).length) fail("phoneView: a zoom sent a resize");
+
+    // the keys
+    const keys = { esc: "\u001b", up: "\u001b[A", down: "\u001b[B", right: "\u001b[C", left: "\u001b[D",
+      tab: "\t", btab: "\u001b[Z", enter: "\r" };
+    for (const k of Object.keys(keys)) {
+      await p.evaluate(() => { window.__sent.length = 0; });
+      await p.locator('#t-keys button[data-key="' + k + '"]').tap();
+      const got = await p.evaluate(() => window.__sent.slice());
+      const want = JSON.stringify({ t: "in", d: keys[k] });
+      if (!got.includes(want)) fail("phoneView: key " + k + " sent " + JSON.stringify(got) + ", wanted " + want);
+    }
+    await p.evaluate(() => { window.__sent.length = 0; });
+    await p.locator('#t-keys button[data-key="int"]').tap();
+    await p.waitForTimeout(900);
+    if ((await p.evaluate(() => window.__sent.slice())).some(x => /signal/.test(x)))
+      fail("phoneView: a tap on ctrl-c interrupted");
+    const intBtn = p.locator('#t-keys button[data-key="int"]');
+    await intBtn.dispatchEvent("pointerdown");
+    await p.waitForTimeout(800);
+    await intBtn.dispatchEvent("pointerup");
+    const sig = await p.evaluate(() => window.__sent.slice());
+    if (!sig.includes(JSON.stringify({ t: "signal", s: "int" }))) fail("phoneView: ctrl-c sent " + JSON.stringify(sig));
+    const box = await p.locator('#t-keys button[data-key="esc"]').boundingBox();
+    if (box.height < 40) fail("phoneView: a key is under a thumb's 40px: " + box.height);
+    const focus = await p.evaluate(() => { const b = document.querySelector("#t-keys button"); b.dispatchEvent(
+      new PointerEvent("pointerdown", { bubbles: true, cancelable: true })); return 1; });
+    // a link at a non-default zoom still hits
+    await pctx.route("**/files/probe", route => {
+      const paths = JSON.parse(route.request().postData() || "{}").paths || [];
+      const found = paths.filter(x => /\//.test(x)).map(x => ({ path: x, rel: x, size: 1234, dir: false }));
+      route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ found }) });
+    });
+    await p.evaluate(() => { phoneSetFont(14); termSock.onmessage({ data: "\x1b[2J\x1b[Hsee src/alpha.go here\r\n" }); });
+    await p.waitForTimeout(300);
+    const cell = await p.evaluate(() => { const c = term._core._renderService.dimensions.css.cell; return { w: c.w || c.width, h: c.height }; });
+    const sbox = await p.locator("#t-screen .xterm-screen").boundingBox();
+    await p.mouse.move(sbox.x + cell.w * 12, sbox.y + cell.h * 0.5, { steps: 3 });
+    await p.waitForTimeout(900);
+    const tip = await p.evaluate(() => { const t = document.getElementById("tip"); return { on: t.classList.contains("on"), text: t.textContent }; });
+    if (!tip.on || !/alpha/.test(tip.text)) fail("phoneView: a link did not hit at a non-default zoom: " + JSON.stringify(tip));
+
+    // the keyboard covers the prompt: the cursor row is scrolled clear of it, nothing resizes
+    await p.evaluate(() => { termSock.onmessage({ data: "\x1b[2J\x1b[" + term.rows + ";1Hprompt" }); });
+    await p.waitForTimeout(200);
+    const kb = await p.evaluate(() => {
+      const host = document.getElementById("t-screen");
+      const box = host.getBoundingClientRect();
+      const fake = { offsetTop: 0, height: box.bottom - 300, addEventListener() {} };
+      Object.defineProperty(window, "visualViewport", { value: fake, configurable: true });
+      keepCursorInView(host, term);
+      const c = term._core._renderService.dimensions.css.cell;
+      const cur = box.top + parseFloat(getComputedStyle(host).paddingTop) + term.buffer.active.cursorY * c.height - host.scrollTop;
+      return { rowBottom: cur + 2 * c.height, visBottom: fake.offsetTop + fake.height, st: host.scrollTop, sh: host.scrollHeight, ch: host.clientHeight, pad: host.style.paddingBottom, cy: term.buffer.active.cursorY, rows: term.rows, h: c.height };
+    });
+    if (kb.rowBottom > kb.visBottom + 1) fail("phoneView: the cursor row is under the keyboard: " + JSON.stringify(kb));
+    if ((await resizes(p)).length) fail("phoneView: the keyboard case sent a resize");
+    await pctx.close();
+
+    // ── a desktop is unchanged
+    const dctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+    await dctx.addInitScript(() => localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true })));
+    await dctx.addInitScript(fakeSock);
+    const dp = await open(dctx);
+    if (await dp.evaluate(() => termPhone())) fail("phoneView: a desktop counted as a phone");
+    // the override both ways: "desktop" is the phone view, "fit" sends resizes
+    await dp.evaluate(() => localStorage.setItem("atrium.termview.land-live", "desktop"));
+    if (!(await dp.evaluate(() => termPhone()))) fail("phoneView: the desktop-size override did not make the phone view");
+    await dp.evaluate(() => localStorage.removeItem("atrium.termview.land-live"));
+    if (!(await resizes(dp)).length) fail("phoneView: a desktop attach sent no resize");
+    await dp.evaluate(() => { window.__sent.length = 0; });
+    await dp.setViewportSize({ width: 1200, height: 700 });
+    await dp.waitForTimeout(700);
+    if (!(await resizes(dp)).length) fail("phoneView: a desktop window resize sent no resize");
+    if (await dp.evaluate(() => getComputedStyle(document.getElementById("t-keys")).display) !== "none")
+      fail("phoneView: the key bar shows on a desktop");
+    await dctx.close();
+  } finally {
+    tasksMode = was;
+  }
+  if (errors.length) fail("phoneView: the page threw: " + errors.join(" | "));
 }
 
 // ── copy on select answers the pointer, not the find bar ──────────────────
@@ -6532,6 +6910,340 @@ async function idleBudgetSection(browser, base) {
   }
 }
 
+// ── the walk drawer ───────────────────────────────────────────────────────────
+//
+// Drives the drawer over a TEMPORARY COPY of two real review folders (the mock above serves the copy, and nothing
+// here writes to the originals, which may have a walker in them). Skipped with a message when they are absent.
+// See js/walk.js and docs/review-tab-design.md.
+const WALK_SAMPLES = [
+  { id: "land-walka", dir: "D:/worktrees/claude/reviews/github-openziti-zrok/pr-1277-4f332b8", n: 15 },
+  { id: "land-walkb", dir: "D:/worktrees/claude/reviews/github-openziti-ziti/pr-4397-990aa0c", n: 11 }
+];
+
+async function walkSection(browser, base) {
+  const absent = WALK_SAMPLES.filter(s => !fs.existsSync(path.join(s.dir, "findings")));
+  for (const s of absent) console.log("walk: " + s.dir + " is not on this machine, so that folder is skipped.");
+  const samples = WALK_SAMPLES.filter(s => !absent.includes(s));
+  if (!samples.length) return;
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "atrium-walk-"));
+  for (const s of samples) {
+    const to = path.join(tmp, s.id);
+    fs.mkdirSync(path.join(to, "findings"), { recursive: true });
+    for (const f of fs.readdirSync(path.join(s.dir, "findings"))) {
+      fs.copyFileSync(path.join(s.dir, "findings", f), path.join(to, "findings", f));
+    }
+    if (fs.existsSync(path.join(s.dir, "pr.diff"))) fs.copyFileSync(path.join(s.dir, "pr.diff"), path.join(to, "pr.diff"));
+    walkDirs[s.id] = to;
+  }
+  const was = tasksMode;
+  tasksMode = "land";
+  landList = samples.map(s => landCard(s.id, { supervised: true, worktree: "/walk/" + s.id }));
+  landPerms = [];
+  const errors = [];
+  const ctx = await landContext(browser);
+  await ctx.grantPermissions(["clipboard-read", "clipboard-write"], { origin: base }).catch(() => {});
+  await ctx.addInitScript(() => {
+    window.__walkPollMs = 400;
+    window.__sent = [];
+    window.__links = [];
+    const Real = window.WebSocket;
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", onopen: null, onclose: null, onmessage: null,
+        onerror: null, send(d) { window.__sent.push(d); }, close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+    // window.open is the only thing stubbed, so the real `openLinkReused` (u-006) runs and the test sees the URL
+    // and the window name it chose.
+    window.open = (url, name) => { window.__links.push({ url, name }); return null; };
+  });
+  const S = "#walk-drawer ";
+  try {
+    for (const s of samples) {
+      const p = await ctx.newPage();
+      p.on("pageerror", e => errors.push(String(e)));
+      const dir = walkDirs[s.id];
+      const files = () => fs.readdirSync(path.join(dir, "findings")).sort();
+      const read = n => fs.readFileSync(path.join(dir, "findings", n), "utf8");
+      const write = (n, t) => fs.writeFileSync(path.join(dir, "findings", n), t);
+      const nm = s.id + ": ";
+      await p.goto(base, { waitUntil: "domcontentloaded" });
+      await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+      // The card has to be in the list before it can be attached, or attachTask finds nothing.
+      await p.waitForSelector('#stack-list .stackrow[data-id="' + s.id + '"]', { state: "attached", timeout: slow(15000) });
+      await p.evaluate(id => attachTask(id), s.id);
+      await p.waitForFunction(id => termSock && termSock.readyState === 1 && termTask && termTask.id === id, s.id,
+        { timeout: slow(10000) });
+      await p.waitForSelector("#t-walk:not([hidden])", { timeout: slow(10000) })
+        .catch(() => fail(nm + "no walk button for a card with a findings folder."));
+      await p.click("#t-walk");
+      await p.waitForSelector(S + ".wk-row", { timeout: slow(10000) });
+      const names = files();
+      const orig0 = read(names[0]);
+      // The count is the copy's own: the real folders are live and a walker may add or renumber findings.
+      s.n = names.length;
+      const rows = () => p.$$eval(S + ".wk-row", els => els.map(e => ({
+        n: e.querySelector(".wk-n").textContent, sev: e.querySelector(".wk-sev").textContent,
+        cls: e.className, leak: !!e.querySelector(".wk-lk") })));
+      let r = await rows();
+      if (r.length !== s.n) fail(nm + "the rail has " + r.length + " rows, not " + s.n);
+      if (r.map(x => x.n).join() !== names.map(f => f.split("-")[0]).join()) fail(nm + "the rail is not in file order.");
+      const leaks = names.filter(f => /^Leak:/m.test(read(f))).length;
+      if (r.filter(x => x.leak).length !== leaks) fail(nm + "leak marks " + r.filter(x => x.leak).length + " vs " + leaks);
+      if (!r.every(x => /^(HIGH|MED|LOW|NIT|BLOCKING)/.test(x.sev))) fail(nm + "a severity chip is missing: " + JSON.stringify(r.map(x => x.sev)));
+      const segs = await p.$$eval("#walk-bar i", e => e.length);
+      if (segs !== s.n) fail(nm + "progress has " + segs + " segments, not " + s.n);
+
+      // The code comes from pr.diff, with context around the anchored line.
+      const code = await p.$$eval(S + ".wk-code .wk-l", e => e.length);
+      const at = await p.$$eval(S + ".wk-code .wk-l.at", e => e.length);
+      if (fs.existsSync(path.join(dir, "pr.diff")) && (code < 2 || at !== 1)) fail(nm + "no diff context for finding 1: " + code + " lines, " + at + " anchored.");
+      const label = read(names[0]).split("\n")[1];
+      const shown = await p.textContent(S + ".wk-comment");
+      if (!shown.startsWith(label)) fail(nm + "the comment does not start with its label line.");
+      // Evidence folded to one line, and never inside the comment.
+      if (/Evidence|Cause:/.test(shown)) fail(nm + "the comment shows Evidence.");
+
+      // j k g
+      const cur = async () => (await rows()).findIndex(x => /\bcur\b/.test(x.cls));
+      await p.focus("#walk-drawer");
+      await p.keyboard.press("j");
+      if (await cur() !== 1) fail(nm + "j did not move to the second finding.");
+      await p.keyboard.press("k");
+      if (await cur() !== 0) fail(nm + "k did not move back.");
+
+      // s writes Walk: skipped into the copy, u takes it out again.
+      await p.keyboard.press("s");
+      await p.waitForFunction(() => document.querySelector("#walk-rail .wk-row.cur.skipped"), null, { timeout: slow(5000) })
+        .catch(() => fail(nm + "s did not mark the row skipped."));
+      if (!/^Walk: skipped \d{4}-/m.test(read(names[0]))) fail(nm + "s wrote no Walk: skipped line.");
+      await p.keyboard.press("g");
+      if (await cur() !== 1) fail(nm + "g did not jump to the first unwalked finding.");
+      await p.keyboard.press("k");
+      await p.keyboard.press("u");
+      await p.waitForFunction(() => !document.querySelector("#walk-rail .wk-row.skipped"), null, { timeout: slow(5000) })
+        .catch(() => fail(nm + "u did not clear the mark."));
+      if (/^Walk:/m.test(read(names[0]))) fail(nm + "u left the Walk: line.");
+      if (read(names[0]) !== orig0) fail(nm + "s then u changed more than the Walk line.");
+
+      // p asks for the URL and writes it.
+      await p.keyboard.press("p");
+      await p.waitForSelector("#ask-input", { state: "visible", timeout: slow(5000) });
+      await p.fill("#ask-input", "https://github.com/x/y/pull/1#discussion_r1");
+      await p.keyboard.press("Enter");
+      await p.waitForFunction(() => document.querySelector("#walk-rail .wk-row.cur.posted"), null, { timeout: slow(5000) })
+        .catch(() => fail(nm + "p did not mark the row posted."));
+      if (!/^Walk: posted \S+ https:\/\/github\.com\/x\/y\/pull\/1#discussion_r1$/m.test(read(names[0]))) fail(nm + "p wrote no Walk: posted line: " + read(names[0]).slice(-200));
+      await p.focus("#walk-drawer");
+      await p.keyboard.press("u");
+      await p.waitForFunction(() => !document.querySelector("#walk-rail .wk-row.posted"), null, { timeout: slow(5000) });
+
+      // a types the prefix and no Enter, into the one terminal.
+      await p.evaluate(() => { window.__sent = []; });
+      await p.focus("#walk-drawer");
+      await p.keyboard.press("a");
+      const want = await p.evaluate(() => {
+        const it = dockCurrent();
+        return `about ${it.num} ${it.path.split("/").pop()}:${it.line}, `;
+      });
+      await p.waitForTimeout(200);
+      const sent = (await p.evaluate(() => window.__sent)).map(x => JSON.parse(x)).filter(x => x.t === "in");
+      if (sent.length !== 1 || sent[0].d !== want) fail(nm + "a sent " + JSON.stringify(sent) + ", not exactly " + JSON.stringify(want));
+
+      // C copies the comment part and opens the deep link through openLinkReused.
+      await p.focus("#walk-drawer");
+      await p.keyboard.press("Shift+C");
+      await p.waitForFunction(() => window.__links.length, null, { timeout: slow(5000) })
+        .catch(() => fail(nm + "C opened nothing."));
+      const link = read(names[0]).split("\n")[2];
+      const opened = await p.evaluate(() => window.__links[0]);
+      if (opened.url !== link) fail(nm + "C opened " + opened.url + ", not " + link);
+      if (!/^atrium-link-github\.com\/.+\/pull\/\d+$/.test(opened.name)) fail(nm + "C did not use the PR's named window: " + opened.name);
+      const clip = await p.evaluate(() => navigator.clipboard.readText()).catch(() => null);
+      if (clip !== null) {
+        if (!clip.startsWith(label) || /Evidence/.test(clip)) fail(nm + "the copy is not the comment part.");
+      }
+
+      // e with a stale hash shows the compare, and keep mine wins.
+      await p.focus("#walk-drawer");
+      await p.keyboard.press("e");
+      await p.waitForSelector("#walk-edit-text", { timeout: slow(5000) });
+      const disk = read(names[0]);
+      await p.waitForTimeout(30);
+      write(names[0], disk.replace("\n\nEvidence", "\n* the walker changed this\n\nEvidence"));
+      await p.fill("#walk-edit-text", label + "\n\n* mine only");
+      await p.keyboard.press("Control+s");
+      await p.waitForSelector("#walk-cmp-mine", { timeout: slow(5000) })
+        .catch(async () => fail(nm + "a refused write showed no compare: " + await p.evaluate(() =>
+          JSON.stringify({ pane: document.getElementById("walk-item").innerText.slice(0, 300),
+            editing: !!dock.editing, toasts: toastLog().map(t => t.title + ": " + t.body).slice(-3) }))));
+      if (!/mine only/.test(await p.textContent("#walk-cmp-mine")) || !/the walker changed this/.test(await p.textContent("#walk-cmp-disk"))) {
+        fail(nm + "the compare does not show both sides.");
+      }
+      if (!read(names[0]).includes("the walker changed this")) fail(nm + "a refused write touched the file.");
+      await p.click('#walk-drawer [data-act="keep"]');
+      await p.waitForFunction(() => !document.getElementById("walk-cmp-mine"), null, { timeout: slow(5000) });
+      if (!read(names[0]).includes("* mine only") || read(names[0]).includes("the walker changed this")) fail(nm + "keep mine did not write mine.");
+      if (!read(names[0]).includes("\nEvidence\n")) fail(nm + "an edit lost the Evidence.");
+
+      // An external edit flashes its changed lines, a rename keeps the place, a new file is marked new.
+      await p.evaluate(() => dockSelect(dock.items[2].key));
+      const before = await p.evaluate(() => dockCurrent().key);
+      const third = names[2];
+      await p.waitForTimeout(50)
+      write(third, read(third).replace("\n\nEvidence", "\n* edited elsewhere\n\nEvidence"));
+      await p.waitForSelector(S + ".wk-cl.flash", { timeout: slow(5000) })
+        .catch(() => fail(nm + "an external edit did not flash."));
+      const renamed = third.replace(/^\d+/, "97");
+      fs.renameSync(path.join(dir, "findings", third), path.join(dir, "findings", renamed));
+      await p.waitForFunction(n => dock.items.some(i => i.name === n), renamed, { timeout: slow(5000) });
+      const after = await p.evaluate(() => dockCurrent().key);
+      if (after !== before) fail(nm + "a renamed finding lost its place.");
+      if (await p.$(S + ".wk-new")) fail(nm + "a renamed finding was marked new.");
+      write("98-low-added.go-L1.txt", read(names[3]).replace(/^(.*\n)(\S+ \S+ line )\d+/, "$1$2" + "1").replace("Evidence", "Evidence\nId: added-1"));
+      await p.waitForSelector(S + ".wk-new", { timeout: slow(5000) })
+        .catch(() => fail(nm + "a new finding got no new chip."));
+
+      // walk done asks once when a leak is neither posted nor skipped.
+      await p.evaluate(() => { window.__sent = []; });
+      await p.click(S + ".walk-head .go");
+      if (leaks) {
+        await p.waitForSelector("#ask-actions button", { state: "visible", timeout: slow(5000) });
+        const q = await p.textContent("#ask-body");
+        if (!/leak/.test(q) || !/finish anyway/.test(q)) fail(nm + "walk done asked the wrong thing: " + q);
+        await p.click("#ask-actions button:first-child");
+        await p.waitForTimeout(200);
+        if ((await p.evaluate(() => window.__sent)).length) fail(nm + "walk done sent something after `not yet`.");
+        await p.click(S + ".walk-head .go");
+        await p.waitForSelector("#ask-actions button", { state: "visible", timeout: slow(5000) });
+        await p.click("#ask-actions button:last-child");
+      }
+      await p.waitForTimeout(300);
+      const done = (await p.evaluate(() => window.__sent)).map(x => JSON.parse(x)).filter(x => x.t === "in").map(x => x.d).join("");
+      if (done !== "walk done\r") fail(nm + "walk done typed " + JSON.stringify(done));
+      await p.close();
+    }
+  } finally {
+    await ctx.close();
+    tasksMode = was;
+    landList = [];
+    for (const s of WALK_SAMPLES) delete walkDirs[s.id];
+    try { fs.rmSync(tmp, { recursive: true, force: true }); } catch (e) {}
+  }
+  if (errors.length) fail("walk: the page threw: " + errors.join(" | "));
+}
+
+// u-006: a URL clicked in a terminal opens into a NAMED window, one per pull
+// request, so a review walk keeps one tab. window.open is stubbed to record the
+// name, since a real popup is awkward headless.
+async function linkReuseSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  landList = [LAND["land-live"]];
+  landPerms = [];
+  const errors = [];
+  const ctx = await landContext(browser);
+  await ctx.addInitScript(() => {
+    window.__socks = [];
+    const Real = window.WebSocket;
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
+        onopen: null, onclose: null, onmessage: null, onerror: null,
+        send() {}, close() { this.readyState = 3; } };
+      window.__socks.push(s);
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+    window.__opens = [];
+    window.__wins = [];
+    window.open = (url, name) => {
+      window.__opens.push({ url, name });
+      const w = { opener: "board", focused: 0, focus() { this.focused++; } };
+      window.__wins.push(w);
+      return w;
+    };
+  });
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await p.evaluate(() => attachTask("land-live"));
+    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live", null,
+      { timeout: slow(10000) });
+    await p.waitForTimeout(300);
+
+    const urls = [
+      "https://github.com/openziti/zrok/pull/1277/files#diff-aR165",
+      "https://github.com/openziti/zrok/pull/1277/files#diff-bR61",
+      "https://GitHub.com/openziti/zrok/pull/1278/commits",
+      "https://example.com/docs/page?q=1#top"
+    ];
+    // Each on its own row, with a marker in front to click on.
+    await p.evaluate(us => new Promise(done => {
+      const s = window.__socks[window.__socks.length - 1];
+      s.onmessage({ data: new TextEncoder().encode(us.map((u, i) => "L" + i + " " + u + "\r\n").join("")).buffer });
+      term.write("", done);
+    }), urls);
+    const click = async i => {
+      const pt = await p.evaluate(i => {
+        const buf = term.buffer.active;
+        const rect = document.querySelector("#t-screen .xterm-screen").getBoundingClientRect();
+        const cw = rect.width / term.cols, ch = rect.height / term.rows;
+        for (let y = 0; y < term.rows; y++) {
+          const line = buf.getLine(buf.viewportY + y);
+          if (line && line.translateToString(true).startsWith("L" + i + " ")) {
+            return { x: rect.left + 8.5 * cw, y: rect.top + (y + 0.5) * ch };
+          }
+        }
+        return null;
+      }, i);
+      if (!pt) { fail("row L" + i + " is not on screen"); return; }
+      await p.mouse.move(pt.x, pt.y);
+      await p.waitForTimeout(150);
+      await p.mouse.click(pt.x, pt.y);
+      await p.waitForTimeout(150);
+    };
+    for (let i = 0; i < urls.length; i++) await click(i);
+    const got = await p.evaluate(() => ({ opens: window.__opens, wins: window.__wins.map(w => ({ o: w.opener, f: w.focused })) }));
+    const names = got.opens.map(o => o.name);
+    if (got.opens.length !== 4) { fail("expected four window.open calls, got " + JSON.stringify(got.opens)); }
+    else {
+      if (got.opens[0].url !== urls[0] || got.opens[1].url !== urls[1]) fail("the full url was not passed on: " + JSON.stringify(got.opens));
+      if (names[0] !== "atrium-link-github.com/openziti/zrok/pull/1277") fail("PR window name is " + names[0]);
+      if (names[1] !== names[0]) fail("two links in one PR got different names: " + names.slice(0, 2).join(" | "));
+      if (names[2] !== "atrium-link-github.com/openziti/zrok/pull/1278") fail("another PR (mixed-case host) is named " + names[2]);
+      if (names[3] !== "atrium-link-example.com/docs/page") fail("a non-GitHub link is named " + names[3]);
+      if (got.wins.some(w => w.o !== null)) fail("an opened window kept its opener: " + JSON.stringify(got.wins));
+      if (got.wins.some(w => w.f !== 1)) fail("an opened window was not focused: " + JSON.stringify(got.wins));
+    }
+    // Not a web URL, and a blocked popup, both quietly nothing.
+    const odd = await p.evaluate(() => {
+      const before = window.__opens.length;
+      openLinkReused("javascript:alert(1)");
+      openLinkReused("file:///etc/passwd");
+      const refused = window.__opens.length === before;
+      window.open = () => null;
+      let threw = false, r;
+      try { r = openLinkReused("https://example.com/x"); } catch (e) { threw = true; }
+      return { refused, threw, r };
+    });
+    if (!odd.refused) fail("a non-http url was opened.");
+    if (odd.threw || odd.r !== null) fail("a blocked popup threw or returned a window: " + JSON.stringify(odd));
+    const meta = await p.evaluate(() => (document.querySelector('meta[name="referrer"]') || {}).content);
+    if (meta !== "no-referrer") fail("the page carries no no-referrer policy: " + meta);
+  } finally {
+    await ctx.close();
+    tasksMode = was;
+  }
+  if (errors.length) fail("linkReuse: the page threw: " + errors.join(" | "));
+}
+
 async function main() {
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = "http://127.0.0.1:" + server.address().port;
@@ -6545,12 +7257,13 @@ async function main() {
       groupDrag: groupDragSection, tooltip: tooltipSection, linkTip: linkTipSection,popoutTagFlip: popoutTagFlipSection, idleRate: idleRateSection, foldStill: foldStillSection,
       untaggedSort: untaggedSortSection, newCard: newCardSection, themePreview: themePreviewSection, land: landSection, reselect: reselectSection,
       toastsTop: toastsTopSection, sayWhen: sayWhenSection, pasteSpinner: pasteSpinnerSection,
-      pasteBig: pasteBigSection, typing: typingSection, alias: aliasSection, copySelect: copySelectSection, busyGuard: busyGuardSection, keepalive: keepaliveSection,
+      pasteBig: pasteBigSection, pasteBusy: pasteBusySection, typing: typingSection, alias: aliasSection, copySelect: copySelectSection, busyGuard: busyGuardSection, keepalive: keepaliveSection,
       stuck: stuckSection, carryLink: carryLinkSection,
       skinScope: skinScopeSection, skinHeal: skinHealSection, toastLives: toastLivesSection,
       history: historySection, contextSize: contextSizeSection, peekEverywhere: peekEverywhereSection, cardRoute: cardRouteSection,
       quietDoer: quietDoerSection, looksIdle: looksIdleSection, notifyOff: notifyOffSection,
-      questionsClick: questionsClickSection, eventDriven: eventDrivenSection, idleBudget: idleBudgetSection };
+      questionsClick: questionsClickSection, walk: walkSection, linkReuse: linkReuseSection,
+      phoneView: phoneViewSection, eventDriven: eventDrivenSection, idleBudget: idleBudgetSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -8475,6 +9188,11 @@ async function main() {
     await quietDoerSection(browser, base);
     await notifyOffSection(browser, base);
     await questionsClickSection(browser, base);
+    await walkSection(browser, base);
+    await linkReuseSection(browser, base);
+    await phoneViewSection(browser, base);
+    await eventDrivenSection(browser, base);
+    await idleBudgetSection(browser, base);
     await reselectSection(browser, base);
     // ── over a terminal the toasts hang from the top right ─────────────────
     await toastsTopSection(browser, base);
@@ -8483,6 +9201,7 @@ async function main() {
     // ── any paste still in flight after 20ms shows the spinner ─────────────
     await pasteSpinnerSection(browser, base);
     await pasteBigSection(browser, base);
+    await pasteBusySection(browser, base);
     // ── the typing gate readout, off until switched on ─────────────────────
     await typingSection(browser, base);
     // ── a card wears its alias, and the menu sets it ────────────────────────

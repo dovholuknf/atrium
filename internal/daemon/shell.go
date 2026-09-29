@@ -179,6 +179,7 @@ func (d *Daemon) spawnShell(taskID, cmdName string, args []string, cwd string) e
 			"or install that one: %w", cmdName, err)
 	}
 
+	raise := d.beginPTYRaise()
 	p, err := pty.New()
 	if err != nil {
 		return fmt.Errorf("could not open a pseudo terminal: %w", err)
@@ -200,6 +201,8 @@ func (d *Daemon) spawnShell(taskID, cmdName string, args []string, cwd string) e
 		p.Close()
 		return fmt.Errorf("could not start %s: %w", cmdName, err)
 	}
+	// The operator types into this one too.
+	raise.apply(c.Process.Pid)
 
 	r := &runner{
 		taskID: taskID, pty: p, cmd: c, started: time.Now(),

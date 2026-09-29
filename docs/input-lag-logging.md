@@ -119,5 +119,14 @@ $p = Start-Process build.claude/link.probe.exe '"-test.run=TestProbeSchedulingHi
 Start a second copy with `$p.PriorityClass = 'AboveNormal'` and a different output file. When the normal copy logs
 hiccups and the raised one logs none, the stalls are the machine.
 
+A run on 2026-09-29 logged 571 stalls of 15 to 149ms in 120s at Normal and none at AboveNormal. The hub and the room
+were already raised, but every runner and the `conhost.exe` or `OpenConsole.exe` behind its pty was Normal, so a
+keystroke waited at the runner's redraw. The room now raises each interactive runner, the shell beside a card, and
+their console host at spawn. That is the `runner_priority` room setting: `above_normal` (the default) or `normal`, set
+in the settings API and read at each spawn, so it applies to the next runner and never to one already running. Only
+those processes are raised. Their children are not, and must not be: Windows passes a raised class down only for Idle
+and BelowNormal, so the go test and chrome an agent starts stay Normal and keep the machine busy below the key path.
+Keep-alive forks, sources and recognisers are not interactive ptys and stay Normal.
+
 `TestProbeTwoPairsSideBySide` in `internal/link/latency_test.go` compares two running hub and room pairs. It
 alternates keystrokes between them, so both see the same load at the same moment.

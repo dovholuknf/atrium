@@ -166,6 +166,11 @@ func globalAutoView(s *Server) map[string]any {
 	// is suspended, and what refreshes cost this week. See keepalive.go.
 	keepaliveSettingsView(s.st, out)
 	inputLagView(out)
+	// Reported even when unset, so the setting can be read back as `above_normal`.
+	out["runner_priority"] = "above_normal"
+	if !s.st.RunnerPriorityRaised() {
+		out["runner_priority"] = "normal"
+	}
 	return out
 }
 
@@ -245,6 +250,9 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		// changing it here takes effect on the next attach rather than on a
 		// restart, which is the entire point of it being a setting.
 		ReplayMode *string `json:"replay_mode"`
+		// The Windows priority class of a new runner and its pseudo console host:
+		// `above_normal` or `normal`. See `store.SettingRunnerPriority`.
+		RunnerPriority *string `json:"runner_priority"`
 		// Whether this room logs terminal input lag. Applied at once, with no
 		// restart. See inputlag.go.
 		InputLag *bool `json:"input_lag_log"`
@@ -524,6 +532,24 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := s.st.SetSetting(store.SettingReplayMode, mode); err != nil {
+			s.fail(w, err)
+			return
+		}
+	}
+
+	if body.RunnerPriority != nil {
+		// Refused rather than stored: an unknown class would read as the default and look like it took.
+		v := strings.ToLower(strings.TrimSpace(*body.RunnerPriority))
+		switch v {
+		case "":
+			v = "above_normal"
+		case "above_normal", "normal":
+		default:
+			writeErr(w, http.StatusBadRequest, fmt.Errorf(
+				"no runner priority called %q. the ones there are: above_normal, normal", v))
+			return
+		}
+		if err := s.st.SetSetting(store.SettingRunnerPriority, v); err != nil {
 			s.fail(w, err)
 			return
 		}

@@ -24,10 +24,14 @@ import (
 // before it is over, and types nothing further when a step fails.
 //
 //  1. Type the capture prompt: commit or stash, write everything relevant to
-//     HANDOFF.md in the cwd, and stop.
+//     the card's own handoff file in the cwd (`HandoffName`), and stop.
 //  2. Wait for that turn to end.
 //  3. Type `/clear` and wait for the new session's SessionStart.
-//  4. Type the wake prompt, which reads HANDOFF.md back.
+//  4. Type the wake prompt, which reads that file back.
+//
+// THE FILE NAME IS PER CARD, chosen once when the cycle begins. Two cards can share a
+// directory (the main checkout has two), and one fixed name let one card's capture
+// overwrite the other's, and one card's write satisfy the other's check. Item 91.
 //
 // EVERY WRITE GOES THROUGH THE SAME GATE as a message, a note and an action
 // (`typeLabelledThroughGate`): an empty line, a quiet keyboard, no dialog on
@@ -64,18 +68,42 @@ var newContextLabel = atriumLabel("new context:")
 // ONE LINE. It is typed and submitted like any prompt, and the model gets the
 // whole of it. It says what happens next, so a session that would otherwise
 // carry on working after writing the file knows to stop.
-const newContextCapture = "Your context is about to be cleared. First commit or stash any work in " +
-	"progress. Then write everything a fresh session needs to carry on to HANDOFF.md in the current " +
-	"directory: what you are doing and why, what is done, what is left, decisions made and the reasons, " +
-	"branches, commits and files involved, how to check the work, and anything you were waiting on. " +
-	"When it is written, reply with one line saying so and stop. Do not start anything else. You will " +
-	"be told to read HANDOFF.md back once the context is clear."
+func newContextCapture(file string) string {
+	return "Your context is about to be cleared. First commit or stash any work in " +
+		"progress. Then write everything a fresh session needs to carry on to " + file + " in the current " +
+		"directory: what you are doing and why, what is done, what is left, decisions made and the reasons, " +
+		"branches, commits and files involved, how to check the work, and anything you were waiting on. " +
+		"When it is written, reply with one line saying so and stop. Do not start anything else. You will " +
+		"be told to read " + file + " back once the context is clear."
+}
+
+// HandoffName is the file a card's new-context cycle writes and reads: its alias
+// when it has one, else the first 13 characters of its id. Eight is not enough,
+// two cards here share `01a0ede4`. Exported for the idle parking, which wants the
+// same file.
+func HandoffName(t *store.Task) string {
+	name := store.NormalizeAlias(t.Alias)
+	if name == "" {
+		name = t.ID
+		if len(name) > 13 {
+			name = name[:13]
+		}
+	}
+	name = strings.Map(func(r rune) rune {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '.', r == '_', r == '-':
+			return r
+		}
+		return '-'
+	}, name)
+	return "HANDOFF." + name + ".md"
+}
 
 // newContextClear clears the session.
 const newContextClear = "/clear"
 
 // newContextWake is what the new session is told, and reads the capture back.
-const newContextWake = "Read HANDOFF.md and continue from it."
+func newContextWake(file string) string { return "Read " + file + " and continue from it." }
 
 // ncTiming is how long each step waits, and how often it looks. Variables so a
 // test can run the whole sequence in milliseconds rather than name the thing that
@@ -114,6 +142,7 @@ var ncTiming = struct {
 // newContext is one card's sequence as the board draws it.
 type newContext struct {
 	step   string
+	file   string
 	since  time.Time
 	reason string
 	// gen tells a run whether it is still the card's. A dismiss or a fresh run
@@ -138,14 +167,14 @@ func (n *newContexts) stopAll() { n.stopOnce.Do(func() { close(n.stop) }) }
 
 // begin claims a card for a run and returns its generation, or false when one is
 // already going. A failed chip is not going: running the action again replaces it.
-func (n *newContexts) begin(taskID string) (uint64, bool) {
+func (n *newContexts) begin(taskID, file string) (uint64, bool) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	if cur := n.by[taskID]; cur != nil && cur.step != NewContextFailed {
 		return 0, false
 	}
 	n.gens++
-	n.by[taskID] = &newContext{step: NewContextCapture, since: time.Now(), gen: n.gens}
+	n.by[taskID] = &newContext{step: NewContextCapture, file: file, since: time.Now(), gen: n.gens}
 	return n.gens, true
 }
 
@@ -201,6 +230,20 @@ func (n *newContexts) clear(taskID string) bool {
 	return had
 }
 
+// holding reports whether a card is inside a new-context cycle that has not
+// ended: from `begin` until the wake prompt has been typed. A failed chip is not
+// holding, since nothing is running any more and a held message would be
+// stranded.
+func (n *newContexts) holding(taskID string) bool {
+	if n == nil {
+		return false
+	}
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	cur := n.by[taskID]
+	return cur != nil && cur.step != NewContextFailed
+}
+
 func (n *newContexts) get(taskID string) *newContext {
 	n.mu.Lock()
 	defer n.mu.Unlock()
@@ -227,15 +270,15 @@ func newContextView(c *newContext) map[string]any {
 	n, label := 0, ""
 	switch c.step {
 	case NewContextCapture:
-		n, label = 1, "capturing state to HANDOFF.md"
+		n, label = 1, "capturing state to "+c.file
 	case NewContextClear:
 		n, label = 2, "clearing the context"
 	case NewContextWake:
-		n, label = 3, "waking it to read HANDOFF.md"
+		n, label = 3, "waking it to read "+c.file
 	case NewContextFailed:
 		label = "new context failed"
 	}
-	out := map[string]any{"step": c.step, "n": n, "of": 3, "label": label, "since": c.since}
+	out := map[string]any{"step": c.step, "n": n, "of": 3, "label": label, "file": c.file, "since": c.since}
 	if c.reason != "" {
 		out["reason"] = c.reason
 	}
@@ -243,6 +286,27 @@ func newContextView(c *newContext) map[string]any {
 }
 
 var errNewContextGone = errors.New("superseded")
+
+// holdingMessages is the question every delivery path asks for a card: is it in
+// a new-context cycle. While it is, no message is typed and no hook carries one,
+// because capture would put it in the context about to be cleared and clear
+// would lose it. The cycle's own typing (`ncType`) does not ask.
+func (d *Daemon) holdingMessages(taskID string) bool { return d.nctx.holding(taskID) }
+
+// newContextHoldNote is what a sender is told while a card is held.
+const newContextHoldNote = "queued: this card is starting a new context, and everything for it is held " +
+	"until its wake prompt has been typed."
+
+// releaseHeld is called when a cycle ends any way at all: the wake typed, a
+// failed step, a dismissal. What was held is then delivered by the ordinary
+// paths, so the typist is kicked to try at once rather than at the end of a
+// backoff. It never types ahead of the wake prompt, which has been typed by now.
+func (d *Daemon) releaseHeld(taskID string) {
+	if d.pending != nil {
+		d.pending.reset(taskID)
+	}
+	d.publishTask(taskID)
+}
 
 // StartNewContext begins the sequence on a card and returns at once. The steps
 // run in the background and the card's chip says where they are.
@@ -254,7 +318,12 @@ func (d *Daemon) StartNewContext(taskID string) error {
 	if d.sup.get(taskID) == nil {
 		return errNoTerminal
 	}
-	gen, ok := d.nctx.begin(taskID)
+	// Two cards in one directory are fine, each with its own file. Two cycles at once
+	// in one directory are refused: the typing of both would interleave.
+	if other := d.nctx.sameDirBusy(d, task); other != "" {
+		return &newContextSharedError{other: other}
+	}
+	gen, ok := d.nctx.begin(taskID, HandoffName(task))
 	if !ok {
 		return errNewContextBusy
 	}
@@ -264,8 +333,43 @@ func (d *Daemon) StartNewContext(taskID string) error {
 	return nil
 }
 
+// newContextSharedError refuses a cycle while another card in the same directory
+// is itself mid-cycle.
+type newContextSharedError struct{ other string }
+
+func (e *newContextSharedError) Error() string {
+	return "another card in this directory, " + e.other + ", is mid new-context, so wait for it to finish"
+}
+
+func isSharedErr(err error) bool {
+	var e *newContextSharedError
+	return errors.As(err, &e)
+}
+
+// sameDirBusy names a card, other than task, that shares its directory and has a
+// cycle under way. A failed chip is not under way.
+func (n *newContexts) sameDirBusy(d *Daemon, task *store.Task) string {
+	dir := filepath.ToSlash(strings.TrimSpace(task.Worktree))
+	if dir == "" {
+		return ""
+	}
+	all, err := d.st.List()
+	if err != nil {
+		return ""
+	}
+	for _, o := range all {
+		if o.ID == task.ID || filepath.ToSlash(strings.TrimSpace(o.Worktree)) != dir {
+			continue
+		}
+		if cur := n.get(o.ID); cur != nil && cur.step != NewContextFailed {
+			return o.DisplayTitle()
+		}
+	}
+	return ""
+}
+
 var (
-	errNoTerminal     = errors.New("atrium does not own this session's terminal, so it cannot type into it")
+	errNoTerminal    = errors.New("atrium does not own this session's terminal, so it cannot type into it")
 	errNewContextBusy = errors.New("a new context is already under way on this card")
 )
 
@@ -273,6 +377,11 @@ var (
 // really finished, and a step that cannot leaves the chip failed with a reason
 // and types nothing further.
 func (d *Daemon) runNewContext(taskID string, gen uint64) {
+	// Recorded at begin, so an alias change mid-cycle cannot split the three uses.
+	file := ""
+	if cur := d.nctx.get(taskID); cur != nil {
+		file = cur.file
+	}
 	fail := func(step string, err error) {
 		if errors.Is(err, errNewContextGone) {
 			return
@@ -281,13 +390,14 @@ func (d *Daemon) runNewContext(taskID string, gen uint64) {
 		if d.nctx.fail(taskID, gen, reason) {
 			log.Printf("[atrium] new context on %s stopped, %s", taskID, reason)
 			d.publishTask(taskID)
+			d.releaseHeld(taskID)
 		}
 	}
 	started := time.Now()
 
 	// 1. The capture prompt, typed once the runner is between turns.
 	turns := d.act.turnsBegun(taskID)
-	if err := d.ncType(taskID, gen, newContextLabel, newContextCapture, ncTiming.captureEnd); err != nil {
+	if err := d.ncType(taskID, gen, newContextLabel, newContextCapture(file), ncTiming.captureEnd); err != nil {
 		fail("could not type the capture prompt", err)
 		return
 	}
@@ -315,7 +425,7 @@ func (d *Daemon) runNewContext(taskID string, gen uint64) {
 	}
 	// Not cleared over a handoff that was never written. The clear cannot be
 	// taken back, and the capture is the only thing that makes it safe.
-	if err := d.handoffWritten(taskID, started); err != nil {
+	if err := d.handoffWritten(taskID, file, started); err != nil {
 		fail("nothing cleared", err)
 		return
 	}
@@ -354,13 +464,20 @@ func (d *Daemon) runNewContext(taskID string, gen uint64) {
 		fail("the new session did not settle", err)
 		return
 	}
-	if err := d.ncType(taskID, gen, newContextLabel, newContextWake, ncTiming.typeWait); err != nil {
+	// Only this card's own file will do. A plain HANDOFF.md written meanwhile is
+	// some other card's, which is the bug the per-card name exists to prevent.
+	if err := d.handoffExists(taskID, file); err != nil {
+		fail("the wake was not typed", err)
+		return
+	}
+	if err := d.ncType(taskID, gen, newContextLabel, newContextWake(file), ncTiming.typeWait); err != nil {
 		fail("could not type the wake prompt", err)
 		return
 	}
 	if d.nctx.finish(taskID, gen) {
 		log.Printf("[atrium] new context on %s done", taskID)
 		d.publishTask(taskID)
+		d.releaseHeld(taskID)
 	}
 }
 
@@ -425,32 +542,51 @@ func (d *Daemon) ncType(taskID string, gen uint64, label, text string, limit tim
 	})
 }
 
-// handoffWritten checks the capture left a HANDOFF.md, written since it began.
-//
-// Skipped when the card's directory cannot be read from here, which is a card
-// whose files this daemon has no way to look at, and the sequence then trusts
-// the turn ending as its only signal.
-func (d *Daemon) handoffWritten(taskID string, since time.Time) error {
+// handoffDir is the card's directory, or "" when it cannot be read from here,
+// which is a card whose files this daemon has no way to look at. The sequence
+// then trusts the turn ending as its only signal.
+func (d *Daemon) handoffDir(taskID string) (string, error) {
 	task, err := d.st.Get(taskID)
 	if err != nil {
-		return err
+		return "", err
 	}
 	dir := strings.TrimSpace(task.Worktree)
 	if dir == "" {
-		return nil
+		return "", nil
 	}
 	if info, err := os.Stat(dir); err != nil || !info.IsDir() {
-		return nil
+		return "", nil
 	}
-	path := filepath.Join(dir, "HANDOFF.md")
-	info, err := os.Stat(path)
+	return dir, nil
+}
+
+// handoffExists checks the card's own file is there for the wake to read. A plain
+// HANDOFF.md is never accepted in its place: it is some other card's.
+func (d *Daemon) handoffExists(taskID, file string) error {
+	dir, err := d.handoffDir(taskID)
+	if err != nil || dir == "" {
+		return err
+	}
+	if _, err := os.Stat(filepath.Join(dir, file)); err != nil {
+		return fmt.Errorf("expected %s in %s and it is not there", file, dir)
+	}
+	return nil
+}
+
+// handoffWritten checks the capture left this card's file, written since it began.
+func (d *Daemon) handoffWritten(taskID, file string, since time.Time) error {
+	dir, err := d.handoffDir(taskID)
+	if err != nil || dir == "" {
+		return err
+	}
+	info, err := os.Stat(filepath.Join(dir, file))
 	if err != nil {
-		return fmt.Errorf("the capture turn ended without a HANDOFF.md in %s", dir)
+		return fmt.Errorf("the capture turn ended without %s in %s", file, dir)
 	}
 	// A little slack for file systems that round a modified time down.
 	if info.ModTime().Before(since.Add(-2 * time.Second)) {
-		return fmt.Errorf("HANDOFF.md in %s was not updated by the capture turn, so it is from an "+
-			"earlier session", dir)
+		return fmt.Errorf("%s in %s was not updated by the capture turn, so it is from an "+
+			"earlier session", file, dir)
 	}
 	return nil
 }
@@ -469,10 +605,11 @@ func (d *Daemon) handleNewContext(w http.ResponseWriter, r *http.Request) {
 	case http.MethodDelete:
 		gone := d.nctx.clear(id)
 		d.publishTask(id)
+		d.releaseHeld(id)
 		ncJSON(w, http.StatusOK, map[string]any{"card": id, "cleared": gone})
 	case http.MethodPost:
 		switch err := d.StartNewContext(id); {
-		case errors.Is(err, errNoTerminal), errors.Is(err, errNewContextBusy):
+		case errors.Is(err, errNoTerminal), errors.Is(err, errNewContextBusy), isSharedErr(err):
 			writeJSONErr(w, http.StatusConflict, err)
 		case err != nil:
 			writeJSONErr(w, http.StatusInternalServerError, err)
