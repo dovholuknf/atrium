@@ -212,5 +212,5 @@ func (s *Server) publishCard(id string) {
 	if err != nil {
 		return
 	}
-	s.Broadcast("task", toView(t))
+	s.PublishTask(t)
 }

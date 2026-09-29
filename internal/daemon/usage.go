@@ -135,7 +135,7 @@ type usageTracker struct {
 // and the card id, and no message text. The hub adds the source room.
 func usageEvent(row *store.SessionUsage) map[string]any {
 	return map[string]any{
-		"task_id": row.TaskID, "ended_at": row.Ended, "cause": row.Cause,
+		"task_id": row.TaskID, "ended_at": row.Ended, "cause": row.Cause, "replies": row.Replies,
 		"input": row.Input, "output": row.Output, "cache_write_5m": row.CacheWrite5m,
 		"cache_write_1h": row.CacheWrite1h, "cache_read": row.CacheRead,
 	}

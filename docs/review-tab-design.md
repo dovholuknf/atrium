@@ -731,6 +731,8 @@ Each stage is useful alone, and none ships half of the next.
 
 ### Stage 1: the walk drawer over the folder that exists. This week. @ui.
 
+Status: built (u-005, branch `claude/sau-005`). Left out: context past the hunk into `src/`, and removed diff lines.
+
 The smallest thing clint can use on `pr-zrok-1277` and `pr-ziti-4397` now.
 
 - The drawer in the terms view, opened by a `walk` button on the terminal bar when the attached card has a

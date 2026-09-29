@@ -144,6 +144,7 @@ func (d *Daemon) onSession(in SessionEvent) error {
 	obs := observedFor(in.Agent)
 	obs.Runner = runner
 	obs.PID = in.PID
+	obs.Resume = in.Resume
 	if in.Cwd != "" {
 		obs.Worktree = strings.ReplaceAll(in.Cwd, `\`, "/")
 	}

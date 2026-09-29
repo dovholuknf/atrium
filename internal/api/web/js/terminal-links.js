@@ -418,21 +418,50 @@ function useWebLinks(t) {
 // NOT atrium's file viewer, which is where a clicked PATH goes. A URL is not a
 // file in the card and the daemon has no business being asked about it.
 //
-// `noreferrer` because the board can be published, and the address of a
-// published board is not something to hand to whatever an agent printed a link
-// to. It implies `noopener`, and `noopener` is named as well so that reading
-// the line does not require knowing that.
+// It is opened by `openLinkReused`, which reuses one tab per pull request
+// rather than opening a new one per click.
 function openTermURL(ev, uri) {
   ev.preventDefault();
-  const a = document.createElement("a");
-  a.href = uri;
-  a.target = "_blank";
-  a.rel = "noreferrer noopener";
-  // Attached before it is clicked. A detached anchor is ignored by some
-  // browsers, and the failure is a click that does nothing at all.
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
+  openLinkReused(uri);
+}
+
+// The name of the window a link opens into. One per pull request for
+// github.com/<org>/<repo>/pull/<n> and anything under it, so a walk that clicks
+// a deep link per finding keeps one tab. Anything else is one per origin plus
+// path, with no query and no hash. "" for a URL that is not http or https.
+function linkWindowName(url) {
+  let u;
+  try { u = new URL(url); } catch (e) { return ""; }
+  if (u.protocol !== "http:" && u.protocol !== "https:") return "";
+  const host = u.host.toLowerCase();
+  const pr = u.pathname.match(/^\/([^/]+)\/([^/]+)\/pull\/(\d+)(?:\/|$)/);
+  if (host === "github.com" && pr) return "atrium-link-" + host + "/" + pr[1] + "/" + pr[2] + "/pull/" + pr[3];
+  return "atrium-link-" + host + u.pathname;
+}
+
+// Opens a link into its named window and brings that window forward. Called by
+// the terminal's links and by the review walk's `o` and `C`.
+//
+// `window.open(url, name)` and not `rel=noopener`: Chrome ignores the name and
+// opens a new tab whenever noopener is set. The opener is cut by hand instead,
+// at once, so the page cannot reach back into the board.
+//
+// The referrer is withheld by the page's `<meta name="referrer">` in
+// index.html and not here. The old `rel=noreferrer` did it, because a published
+// board's address is not something to hand to whatever an agent printed a link
+// to, but `noreferrer` implies `noopener` and so brings the new tab back, and
+// `window.open` has no per-call referrer option that avoids it.
+//
+// A popup blocker makes `window.open` return null. That is not an error here.
+function openLinkReused(url) {
+  const name = linkWindowName(url);
+  if (!name) return null;
+  let w = null;
+  try { w = window.open(url, name); } catch (e) { return null; }
+  if (!w) return null;
+  try { w.opener = null; } catch (e) {}
+  try { w.focus(); } catch (e) {}
+  return w;
 }
 
 // ── the "not replayed here" notice's two actions ─────────
@@ -1624,11 +1653,12 @@ function sendInput(text, quiet, pasted) {
   const d = String(text == null ? "" : text);
   if (pasteHeld) { pasteHeld.push([d, quiet, pasted]); return; }
   if (pasted && d.length >= pasteBigAt) { sendBigPaste(d); return; }
+  if (pasted && !quiet) pasteBegin(d.length); // before the send
   send({ t: "in", d });
   if (quiet) return;
-  if (pasted) pasteBegin(d.length);
   if (term) term.scrollToBottom();
   followScrollUntil = Date.now() + followScrollFor;
+  if (pasted) lagPasteMark("sent");
 }
 
 // ── a paste, while it is on its way ─────────────────────
@@ -1649,9 +1679,17 @@ function sendInput(text, quiet, pasted) {
 // good. At the cap it just goes: the bytes left, and waiting longer says nothing.
 
 // Any size. What starts it is where the bytes came from, not how many there are
-// (see `sendInput`). Not drawn until the paste has been in flight this long, so
-// one that lands at once never flashes.
-const pasteShowAfterMs = 20;
+// (see `sendInput`). Drawn AT ONCE. It used to wait 20ms so a paste that landed
+// straight away never flashed, and a busy runner ended it inside that 20ms: it
+// repaints all the time, so the first output after the drain was never the paste
+// landing, and the box was never seen on the pastes that were slow.
+//
+// So it stays up at least `pasteHoldMs`, and output inside that only counts as
+// "the runner echoed". Past the hold the next output ends it, and an echo
+// followed by `pasteQuietMs` of nothing ends it too. A runner that prints an
+// echo and then works silently for a while is the case this is a guess for.
+const pasteHoldMs = 400;
+const pasteQuietMs = 1500;
 const pasteGiveUpMs = 20000;
 
 // A BIG PASTE LANDS LONG AFTER IT DRAINS, and nothing above sees that.
@@ -1709,6 +1747,7 @@ function sendBigPaste(d) {
       return;
     }
     sendFrame(s);
+    lagPasteMark("sent");
     if (pasteFlight === f) f.sent = true;
     if (term) term.scrollToBottom();
     followScrollUntil = Date.now() + followScrollFor;
@@ -1730,32 +1769,52 @@ let pasteFlight = null;
 // small paste right behind a big one would take the box straight down.
 function pasteBegin(n, big) {
   const prev = pasteFlight && pasteFlight.shown && pasteFlight.sock === termSock ? pasteFlight : null;
-  pasteEnd();
+  pasteEnd("", true);
+  lagPasteStart("paste");
   const now = Date.now();
+  // EVERY PASTE HOLDS, not only a big one. See `pasteHoldMs`.
   const f = { sock: termSock, t0: now, n, timer: 0, shown: false, sent: !big,
-    holdUntil: Math.max(big ? now + pasteHoldFor(n) : 0, prev ? prev.holdUntil : 0), echoed: false };
-  const atOnce = big || now < f.holdUntil;
+    holdUntil: Math.max(now + (big ? pasteHoldFor(n) : pasteHoldMs), prev ? prev.holdUntil : 0),
+    echoed: false, lastOut: 0, drained: false };
   pasteFlight = f;
   const tick = () => {
     if (pasteFlight !== f) return;
-    if (termSock !== f.sock || !f.sock || Date.now() - f.t0 > pasteGiveUpMs) { pasteEnd(); return; }
-    if (f.echoed && Date.now() >= f.holdUntil) { pasteEnd(); return; }
-    if (!f.shown && (atOnce || Date.now() - f.t0 >= pasteShowAfterMs)) { f.shown = true; pasteShow(f); }
-    // The first wait is the show delay, so the box is not held to the poll.
-    f.timer = setTimeout(tick, f.shown ? 50 : pasteShowAfterMs);
+    const t = Date.now();
+    if (termSock !== f.sock || !f.sock || t - f.t0 > pasteGiveUpMs) { pasteEnd("the cap"); return; }
+    if (f.sent && !f.drained && f.sock.bufferedAmount === 0) { f.drained = true; lagPasteMark("drained"); }
+    // An echo and then nothing: the runner took it and has no more to say.
+    if (f.echoed && t >= f.holdUntil && t - f.lastOut >= pasteQuietMs) { pasteEnd("quiet"); return; }
+    if (!f.shown) { f.shown = true; pasteShow(f); lagPasteMark("shown"); }
+    f.timer = setTimeout(tick, 50);
   };
   tick();
 }
 
-// Called on every output frame. Ends the paste if its bytes have all left.
-// Read here rather than on the poll, so an echo that lands between two polls
-// is not missed. Inside a big paste's hold it is noted, and the poll ends it
-// when the hold runs out.
+// Called on every output frame. Ends the paste if its bytes have all left and
+// it has been up long enough. Read here rather than on the poll, so output that
+// lands between two polls is not missed. Inside the hold it is only noted, and
+// the poll ends it when the hold runs out.
 function pasteSawOutput() {
   const f = pasteFlight;
   if (!f || !f.sent || !f.sock || f.sock.bufferedAmount !== 0) return;
-  if (Date.now() < f.holdUntil) { f.echoed = true; return; }
-  pasteEnd();
+  lagPasteMark("output");
+  f.lastOut = Date.now();
+  if (f.lastOut < f.holdUntil) { f.echoed = true; return; }
+  pasteEnd("output");
+}
+
+// Reading the clipboard or uploading a file, before there are bytes to send.
+// The box goes up at once, on the gesture, and the paste that follows replaces
+// it without a gap. Capped like a paste, so a clipboard prompt nobody answers
+// cannot leave it up.
+let pasteWaitTimer = 0;
+function pasteWaiting(say, how) {
+  lagPasteStart(how);
+  if (pasteFlight) return;
+  showPasting(say);
+  lagPasteMark("shown");
+  clearTimeout(pasteWaitTimer);
+  pasteWaitTimer = setTimeout(() => pasteEnd("the cap"), pasteGiveUpMs);
 }
 
 function pasteSize(n) {
@@ -1782,9 +1841,13 @@ function showPasting(say) {
   placeToasts();
 }
 
-function pasteEnd() {
+// `handOn` is a paste taking over from a wait or from an older paste: the box
+// stays and so does the timing line, which is one per gesture.
+function pasteEnd(why, handOn) {
   if (pasteFlight) clearTimeout(pasteFlight.timer);
+  clearTimeout(pasteWaitTimer);
   pasteFlight = null;
+  if (!handOn) { lagPasteMark("cleared"); lagPasteDone(why || "the board"); }
   const el = document.getElementById("t-pasting");
   if (el) el.hidden = true;
   placeToasts();
@@ -1823,6 +1886,17 @@ function sendResize() {
   clearTimeout(resizeSettleTimer);
   resizeSettleTimer = 0;
   if (!term) return;
+  // A phone view never takes part in the pty's size. See `termPhone`.
+  //
+  // NOT ONE FRAME, not even one equal to the current size. Any sender enters the
+  // daemon's viewers and `agreedViewport` takes the SHORTEST height, so a phone
+  // that sent once would be a permanent voter and pin the pty down later. Both
+  // send sites (the attach and `sendResizeSettled`) come through here.
+  //
+  // A phone that is the first viewer after a restart therefore sends nothing and
+  // the pty stays at its launch size until a desktop attaches. That is intended.
+  // Do not "fix" it by letting the phone set the first size.
+  if (termPhone()) return;
   send({ t: "resize", cols: Math.max(termFitCols || term.cols, termMinCols()), rows: termFitRows || term.rows });
 }
 
@@ -1892,6 +1966,16 @@ function fitTerm() {
   if (!dims || !(dims.cols > 0) || !(dims.rows > 0)) return;
   termFitCols = dims.cols;
   termFitRows = dims.rows;
+  // A phone draws the pty's exact grid, not what its box fits. See `termPhone`.
+  if (termPhone() && termPtyCols > 0 && termPtyRows > 0) {
+    if (termPtyCols !== term.cols || termPtyRows !== term.rows) {
+      try { term._core._renderService.clear(); } catch (e) {}
+      term.resize(termPtyCols, termPtyRows);
+    }
+    markWide();
+    phoneZoomFit();
+    return;
+  }
   const floor = termMinCols();
   const cols = Math.max(dims.cols, termPtyCols, floor);
   const rows = ptyRowsFor(dims.rows);
@@ -1913,6 +1997,13 @@ function ptyRowsFor(fit) {
 // applyPtySize re-sizes the grid after the daemon said the pty's size moved.
 function applyPtySize() {
   if (!term) return;
+  if (termPhone() && termPtyCols > 0 && termPtyRows > 0) {
+    if (termPtyCols !== term.cols || termPtyRows !== term.rows) term.resize(termPtyCols, termPtyRows);
+    markWide();
+    sizeTermHost();
+    phoneZoomFit();
+    return;
+  }
   const fit = termFitCols || term.cols;
   const cols = Math.max(fit, termPtyCols, termMinCols());
   const rows = ptyRowsFor(termFitRows || term.rows);
@@ -1932,8 +2023,10 @@ function markWide() {
   const host = document.getElementById("t-screen");
   const el = host && host.querySelector(".xterm");
   if (!el || !term) return;
-  const wide = termFitCols > 0 && term.cols > termFitCols;
+  const phone = termPhone();
+  const wide = phone || (termFitCols > 0 && term.cols > termFitCols);
   host.classList.toggle("wide", wide);
+  host.classList.toggle("phone", phone);
   if (!wide) { el.style.width = ""; return; }
   let cell = 0;
   try { cell = term._core._renderService.dimensions.css.cell.width; } catch (e) {}
@@ -2205,3 +2298,281 @@ function focusTerm() {
   term.focus();
 }
 
+
+
+// ── the phone view (t-003b) ──────────────────────────────────────────────────
+//
+// A PHONE IS A VIEWER THAT NEVER TAKES PART IN THE PTY'S SIZE. A pty has one
+// size and every height change on Windows ConPTY ends in a repaint that can
+// lose or duplicate lines in the desktop's terminal. A phone attaching, rotating
+// or opening its keyboard is a height change each time, so on a phone the
+// board sends no `resize` at all (`sendResize`). The daemon only counts a viewer
+// once it sends one, so the pty never moves for a phone, and the `{"t":"size"}`
+// frame still arrives at attach and whenever another window moves it.
+//
+// The grid is then exactly the pty's (`fitTerm`, `applyPtySize`), wider than the
+// screen, and the pane scrolls it. It opens with the grid's width fitted to the
+// screen; a pinch changes xterm's font size, and `#t-screen` scrolls the result.
+// `fontSize` rather than a CSS transform, because a transform breaks xterm's
+// mouse, selection and link coordinates and `markWide` already sizes `.xterm` to
+// the grid in pixels.
+//
+// WHAT COUNTS AS A PHONE, first answer wins: the per-card override
+// (`termViewMode`), then `localStorage["atrium.termphone"]` ("1" on, "0" off,
+// for testing), then `termAutoPhone`: a primary pointer that is coarse AND a
+// window whose shorter side is at most 700px. Not `termNarrow()`, because a
+// narrow DESKTOP window must still size the pty, and never the user agent.
+const TERM_PHONE_KEY = "atrium.termphone";
+const termViewKey = (id) => "atrium.termview." + id;
+
+// The per-terminal override, "desktop" (watch at desktop size, the phone view) or
+// "fit" (fit this screen, which sends resizes and joins the size vote), or "".
+function termViewMode() {
+  try { return localStorage.getItem(termViewKey(termTask && termTask.id)) || ""; } catch (e) { return ""; }
+}
+
+// Touch-first AND narrow, never the user agent. The narrow test uses the shorter
+// side of the window so rotating a phone does not change the answer.
+function termAutoPhone() {
+  const mm = window.matchMedia;
+  return !!(mm && mm.call(window, "(pointer: coarse)").matches &&
+    Math.min(window.innerWidth, window.innerHeight) <= 700);
+}
+
+function termPhone() {
+  const m = termViewMode();
+  if (m === "desktop") return true;
+  if (m === "fit") return false;
+  try {
+    const f = localStorage.getItem(TERM_PHONE_KEY);
+    if (f === "1") return true;
+    if (f === "0") return false;
+  } catch (e) {}
+  return termAutoPhone();
+}
+
+// The one button that changes the mode. "Fit this screen" sends resizes and joins
+// the size vote, which is what brings item 74 back while another window is
+// watching. THE BOARD CANNOT TELL whether another viewer is attached (the attach
+// carries no viewer count), so the warning is always shown and never greyed.
+function toggleTermView() {
+  if (!termTask) return;
+  const to = termPhone() ? "fit" : "desktop";
+  try { localStorage.setItem(termViewKey(termTask.id), to); } catch (e) {}
+  // A reload drops this window's vote on the daemon: a viewer stays counted
+  // until its socket closes.
+  location.reload();
+}
+
+function syncTermViewButton() {
+  const row = document.getElementById("t-view");
+  if (!row) return;
+  const coarse = !!(window.matchMedia && window.matchMedia("(pointer: coarse)").matches);
+  row.hidden = !(coarse || termViewMode());
+  const b = document.getElementById("t-view-btn");
+  if (b) b.textContent = termPhone() ? "fit this screen" : "watch at desktop size";
+}
+
+const PHONE_FONT_MIN = 2;
+const PHONE_INT_HOLD_MS = 600;
+const PHONE_FONT_MAX = 32;
+const termZoomKey = (id) => termDeviceKey("atrium.termzoom." + id);
+
+// The zoom this card was last read at on this phone, or 0 for "fit the width".
+function readPhoneZoom() {
+  try {
+    const v = Number(localStorage.getItem(termZoomKey(termTask && termTask.id)));
+    if (v >= PHONE_FONT_MIN && v <= PHONE_FONT_MAX) return v;
+  } catch (e) {}
+  return 0;
+}
+
+function phoneCellWidth() {
+  try { return term._core._renderService.dimensions.css.cell.width || 0; } catch (e) { return 0; }
+}
+
+// Sets the font and re-lays the grid out. The grid's cols and rows do not change.
+function phoneSetFont(px) {
+  if (!term) return;
+  const size = Math.max(PHONE_FONT_MIN, Math.min(PHONE_FONT_MAX, Math.round(px * 100) / 100));
+  if (size === term.options.fontSize) return;
+  term.options.fontSize = size;
+  markWide();
+  sizeTermHost();
+}
+
+// The font at which the grid's whole width fits the screen, or 0 if unmeasured.
+function phoneFitFont() {
+  const host = document.getElementById("t-screen");
+  const cell = phoneCellWidth();
+  if (!host || !term || !cell || !term.cols) return 0;
+  // `markWide` adds 16px for the vertical scrollbar.
+  const room = host.clientWidth - 16;
+  return room > 0 ? term.options.fontSize * room / (term.cols * cell) : 0;
+}
+
+// The zoom a card opens at: the whole width in landscape, and in portrait about 60
+// columns across (about 11px) rather than a thumbnail of all of them.
+function phoneDefaultFont(fitAll) {
+  const portrait = window.innerHeight > window.innerWidth;
+  if (!portrait || !term || term.cols <= 60) return fitAll;
+  return Math.min(PHONE_FONT_MAX, Math.max(fitAll, fitAll * term.cols / 60));
+}
+
+// Called whenever the grid's size or the pane's box moved. Unless the reader has
+// zoomed this card, keep the grid's width fitted to the screen.
+function phoneZoomFit() {
+  if (!term || !termPhone() || phonePinch) return;
+  const zoom = readPhoneZoom();
+  if (zoom) { phoneSetFont(zoom); return; }
+  // The cell width is not linear in the font (letter spacing is fixed pixels),
+  // and is only known after a layout at that font, so it converges in a few
+  // passes.
+  let all = 0;
+  for (let i = 0; i < 6; i++) {
+    const f = phoneFitFont();
+    if (!f) return;
+    all = f;
+    if (Math.abs(f - term.options.fontSize) < 0.02) break;
+    phoneSetFont(f);
+  }
+  // Fitted to the width. Portrait then opens larger, at about 60 columns across.
+  const want = phoneDefaultFont(all);
+  if (want > all + 0.02) phoneSetFont(want);
+}
+
+// KEEP THE CURSOR ROW, plus one, INSIDE THE VISUAL VIEWPORT. Standalone: it takes
+// the pan container and the terminal and reads nothing else of the board.
+//
+// The on-screen keyboard shrinks `visualViewport` and not the layout, and nothing
+// may resize (a resize moves the pty), so the rows under the keyboard are reached
+// by scrolling the pan container. It gets bottom padding for the part of it the
+// keyboard covers, or the last rows could never scroll clear of it.
+function keepCursorInView(host, t) {
+  if (!host || !t) return;
+  const b = t.buffer.active;
+  if (b.viewportY < b.baseY) return;
+  let cw = 0, ch = 0;
+  try {
+    const d = t._core._renderService.dimensions.css.cell;
+    cw = d.width; ch = d.height;
+  } catch (e) {}
+  if (!cw || !ch) return;
+  const vv = window.visualViewport;
+  const hostBox = host.getBoundingClientRect();
+  const visTop = Math.max(hostBox.top, vv ? vv.offsetTop : 0);
+  const visBottom = Math.min(hostBox.bottom, vv ? vv.offsetTop + vv.height : window.innerHeight);
+  const covered = Math.max(0, hostBox.bottom - visBottom);
+  // Plus the cursor row and the one below it, which the last row needs too.
+  const pad = (covered ? Math.ceil(covered + ch * 2) : 0) + "px";
+  if (host.style.paddingBottom !== pad) host.style.paddingBottom = pad;
+  // The pane's own top padding, then the rows above the cursor.
+  const inner = parseFloat(getComputedStyle(host).paddingTop) || 0;
+  const rowTop = hostBox.top + inner + b.cursorY * ch - host.scrollTop;
+  const rowBottom = rowTop + ch * 2;
+  if (rowBottom > visBottom) host.scrollTop += rowBottom - visBottom;
+  else if (rowTop < visTop) host.scrollTop -= visTop - rowTop;
+  const colLeft = hostBox.left + b.cursorX * cw - host.scrollLeft;
+  if (colLeft + cw > hostBox.right) host.scrollLeft += colLeft + cw - hostBox.right;
+  else if (colLeft < hostBox.left) host.scrollLeft -= hostBox.left - colLeft;
+}
+
+function phoneKeepCursor() {
+  if (!term || !termPhone()) return;
+  keepCursorInView(document.getElementById("t-screen"), term);
+}
+
+let phoneKeepQueued = false;
+function phoneKeepSoon() {
+  if (phoneKeepQueued || !termPhone()) return;
+  phoneKeepQueued = true;
+  requestAnimationFrame(() => { phoneKeepQueued = false; phoneKeepCursor(); });
+}
+
+// Pinch: two fingers change the font by the ratio of their distance, and the
+// point between them stays under the fingers. One finger is left to the browser,
+// which scrolls the nearest scroller (xterm's history, then `#t-screen`).
+let phonePinch = null;
+function wirePhonePinch() {
+  const host = document.getElementById("t-screen");
+  if (!host || host._phonePinch) return;
+  host._phonePinch = true;
+  const dist = (t) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+  host.addEventListener("touchstart", (e) => {
+    if (!termPhone() || !term || e.touches.length !== 2) { phonePinch = null; return; }
+    phonePinch = { d: dist(e.touches) || 1, font: term.options.fontSize };
+  }, { passive: true });
+  host.addEventListener("touchmove", (e) => {
+    if (!phonePinch || e.touches.length !== 2 || !term) return;
+    e.preventDefault();
+    const box = host.getBoundingClientRect();
+    const mx = (e.touches[0].clientX + e.touches[1].clientX) / 2 - box.left;
+    const my = (e.touches[0].clientY + e.touches[1].clientY) / 2 - box.top;
+    const fx = (host.scrollLeft + mx) / (host.scrollWidth || 1);
+    const fy = (host.scrollTop + my) / (host.scrollHeight || 1);
+    phoneSetFont(phonePinch.font * dist(e.touches) / phonePinch.d);
+    host.scrollLeft = fx * host.scrollWidth - mx;
+    host.scrollTop = fy * host.scrollHeight - my;
+  }, { passive: false });
+  const end = (e) => {
+    if (!phonePinch || e.touches.length >= 2) return;
+    phonePinch = null;
+    if (termTask && termTask.id && term) {
+      try { localStorage.setItem(termZoomKey(termTask.id), String(term.options.fontSize)); } catch (err) {}
+    }
+  };
+  host.addEventListener("touchend", end, { passive: true });
+  host.addEventListener("touchcancel", end, { passive: true });
+}
+
+// The key bar. A phone keyboard has no Esc or arrows, and Claude Code's menus
+// (a question with choices, plan approval, /resume, interrupt) need them. Keys go
+// through `sendInput`, the path a typed key takes; ctrl-c is the signal frame.
+function phoneKey(name) {
+  if (!term) return;
+  const app = !!(term.modes && term.modes.applicationCursorKeysMode);
+  const arrow = (c) => (app ? "\x1bO" : "\x1b[") + c;
+  const keys = {
+    esc: "\x1b", up: arrow("A"), down: arrow("B"), right: arrow("C"), left: arrow("D"),
+    tab: "\t", btab: "\x1b[Z", enter: "\r"
+  };
+  if (name === "int") { send({ t: "signal", s: "int" }); return; }
+  if (keys[name] != null) sendInput(keys[name], false);
+}
+
+function wirePhoneKeys() {
+  const bar = document.getElementById("t-keys");
+  if (!bar || bar._wired) return;
+  bar._wired = true;
+  // A tap must not move focus, or the on-screen keyboard opens or closes.
+  const hold = (e) => e.preventDefault();
+  bar.addEventListener("pointerdown", hold);
+  bar.addEventListener("mousedown", hold);
+  // ctrl-c interrupts a turn, so a stray tap must not: it needs a long press.
+  let intTimer = 0;
+  const intCancel = () => { clearTimeout(intTimer); intTimer = 0; const b = document.querySelector("#t-keys .hold"); if (b) b.classList.remove("hold"); };
+  bar.addEventListener("pointerdown", (e) => {
+    const b = e.target.closest("button[data-key=int]");
+    if (!b) return;
+    b.classList.add("hold");
+    intTimer = setTimeout(() => { intTimer = 0; b.classList.remove("hold"); phoneKey("int"); }, PHONE_INT_HOLD_MS);
+  });
+  for (const ev of ["pointerup", "pointercancel", "pointerleave"]) bar.addEventListener(ev, intCancel);
+  bar.addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-key]");
+    if (b && b.dataset.key !== "int") phoneKey(b.dataset.key);
+  });
+}
+
+function syncPhoneView() {
+  document.body.classList.toggle("term-phone", termPhone());
+  syncTermViewButton();
+  if (window.visualViewport && !window._phoneVV) {
+    window._phoneVV = true;
+    window.visualViewport.addEventListener("resize", phoneKeepSoon);
+    window.visualViewport.addEventListener("scroll", phoneKeepSoon);
+  }
+  wirePhoneKeys();
+  wirePhonePinch();
+  if (term) { markWide(); phoneZoomFit(); sizeTermHost(); }
+}
