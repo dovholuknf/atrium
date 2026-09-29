@@ -59,7 +59,7 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 50 | Views of agents, beyond groups | design | not started |
 | 51 | Five kept worktrees show 48 commits not matched on `claude/main` | housekeeping | DONE, all five safe, deleted 2026-09-28 |
 | 52 | A pinned strip with cards from two rooms orders only one room | bug | not started |
-| 53 | `setViewport` and `dropViewport` compute under `r.mu` and apply outside it | bug | not started, never reproduced |
+| 53 | `setViewport` and `dropViewport` compute under `r.mu` and apply outside it | bug | by sa53, DONE, reproduced and fixed |
 | 54 | Terminal test suite part 2: `screen.go` against xterm.js | feature | not started |
 | 55 | Launched runners inherit ATRIUM_DEBUG_INPUTLAG from the room | bug | DONE by sa55, merged, needs a room restart |
 | 56 | Every dialog is sleek, one skinned design, starting with card details and the room's edit-agents screen | feature, design first, HIGH | DONE by sa56, merged `a1ab1c2`, deployed `66717c5` |
@@ -1193,6 +1193,10 @@ pins.
 Raised 2026-09-28 from sa51's review of the terminal-suite HANDOFF. Both work out the new viewport while holding
 `r.mu` and apply it after letting go, so two resizes close together could apply in the wrong order. Never
 reproduced. See `D:/tmp/handoffs/terminal-suite-HANDOFF.md`.
+
+Done by sa53. It did reproduce, with a fake pty that yields in `Resize`: without the fix the pty ended a column off
+the ring's mark in most runs. A new `runner.resizeMu` is held across compute, guard, mark and resize in both
+functions. The shell shares the `runner` type, so it is covered. Nothing else resizes a live runner.
 
 ## 54. Terminal test suite part 2: `screen.go` against xterm.js (feature)
 
