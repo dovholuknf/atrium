@@ -55,8 +55,8 @@ claude/terminal head is `dfbc8c8`. It merged claude/main `216c23c`. Not yet on c
 ## Next
 
 1. Wait for clint's answer on the fixtures and on item 74. Nothing is running and no worker is up.
-2. Queue left from BRIEF.md: 54 (terminal suite part 2, `screen.go` against xterm.js) is not started. Ask the
-   orchestrator before launching.
+2. The BRIEF.md queue is empty. 54 landed as `1938e74` (claude/main `e45fc2c`), and its follow-ups 81 and 82 are
+   done, so there is no part 3.
 
 ## How to check the work
 
