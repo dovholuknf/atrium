@@ -447,9 +447,13 @@ showing it. From clint through @orchestrator, 2026-09-29.
     consequence. Mechanism, the `file:line` trail and covering paths go in Evidence, which clint reads and the PR
     author does not.
 43. "Suggested fix:" only for a problem we know exists, proven by a test we wrote or settled by the code. For an
-    unproven one the fix is a question: "Could we ...?", "What if we ...?", "Should we ...?". #1441 item 01's
+    unproven one the fix is a question: "Could we ...?", "What if we ...?", "Should we ...?". An unproven
     "Suggested fix, if so: add a breaking-change note ..." becomes "Could we add a breaking-change note to the PR body
     and the release notes: ...?". Refines 38 and 42 (clint, through @orchestrator).
+44. An aborted review deletes everything it produced: the run folder, the report, walk.txt and BRIEF.md, the
+    reviewer-file branch with its seeded notes and any worktree on it, and any `src` worktree @review made. The card
+    is @orchestrator's to delete and a gwt PR worktree is @dotfiles' to remove. Abort is not done: a finished walk
+    keeps everything (clint, through @orchestrator, after ziti-tunnel-sdk-c #1441).
 
 The first second opinions, run by the director on the two reviews already filed (Mercurius, codex gpt-5.5):
 zrok #1277 went from 14 rows to 15. Its new row 04 was the critic's possible gap 1, the ambiguous commit, and one
