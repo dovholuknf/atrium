@@ -29,8 +29,8 @@ this file. My handle is `terminal-director-of-pty-to-xterm-and-sc`. The orchestr
   81 (sa81, `f645161`), 74 option 1, the 0.5s height hold (sa74, `387ccd5`), 82 wide cells (sa82, `8e0e68f`), and
   `bed0d36` (cursor_refit_test waits out the hold). Worktrees and branches for sa74, sa81, sa82 are removed.
 - Batch 3, items 86 + 88 (sa86, `8fe9f09`, plus my comment fix `79056b4`), handed to @merge at claude/terminal
-  `e77918d`. Mercurius `s_qf7b9mnicqAi` (closed): ready_to_build, advisory A1 adopted. sa86 is exited.
-  WHEN @merge LANDS IT: remove the sa86 worktree (D:/worktrees/claude/atrium/sa86) and branch claude/sa86.
+  `e77918d`. Mercurius `s_qf7b9mnicqAi` (closed): ready_to_build, advisory A1 adopted. LANDED on claude/main at
+  `bb65176` (section DF). sa86 is exited and its worktree and branch are removed. No worker is running.
 
 ## Open questions, with the orchestrator
 
