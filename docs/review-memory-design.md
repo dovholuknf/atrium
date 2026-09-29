@@ -186,7 +186,7 @@ why, and may name a panel. The director then:
    findings on its own card, tells the asker the same, and applies the notes (below). It does NOT cull the worker.
 6. **Hands the walk to the review-manager.** The review-manager stays up as that PR's walker, under the same
    `pr-<repo>-<number>` name, in the PR's worktree or tree. The director tells clint which card to walk on, and hands
-   the manager the walk rules (9 to 24, 26 and 27) and the findings folder it edits in place. For the board's review
+   the manager the walk rules (9 to 24, 26 and 27, 31 to 33) and the findings folder it edits in place. For the board's review
    tab (`docs/review-tab-design.md`), the brief also says that a `Walk:` line in Evidence is state the board writes
    and the walker keeps, and that the board may edit a finding, so the walker re-reads a file before every edit.
    `pr.diff` is always in the run folder (skill step 7). The manager held the
@@ -378,7 +378,9 @@ are in `general.md` on dotagents branch `claude/review/director/2026-09-29-walk-
 **Naming.**
 
 25. A review-manager is titled and aliased `pr-<repo>-<number>` (`pr-ziti-4397`, `pr-zrok-1277`), never `saNN`, and
-    every report names it that way.
+    every report names it that way. Any other worker is named exactly its item id, never with an `sa` prefix: title
+    `<id>: <what>`, alias `<id>` (`r-004`, `t-001`, `74b`), and its worktree and branch use the same id
+    (`claude/r-007`).
 
 **Rating and reach.** From the PR #369 session recap, read again afterwards. They are in `general.md` at dotagents
 `a5f82ee`, on the same branch.
@@ -406,6 +408,43 @@ are in `general.md` on dotagents branch `claude/review/director/2026-09-29-walk-
     asks for a review, and named in the report. Skill step 8 is the procedure. `general.md` lists the room's runners
     and what each is chosen for.
 30. Every review-manager and walker is tagged `atrium:subagent`, `dept:review`, `review` and `pr`.
+
+**The walk's shape.** From clint through @orchestrator, 2026-09-29. In `general.md` on the walk-rules branch.
+
+31. Each walk keeps `walk.txt` in the run directory: one line per finding with the file name, a state (`open`, `done`,
+    `skipped`, `deferred`) and a short note. The walker creates it at the start and updates it after each answer.
+32. The PR URL appears once, at the top of the walk, never inside an item. This amends rule 28 for walker messages
+    only: finding files and reports still start with it.
+33. An item's header is the severity, file and line, then a colon. Under it, indented, goes the code line with the
+    deep link on the same line:
+
+    ```
+    HIGH router/posture/mfa.go line 156:
+         deadline := MfaExpiresAt(check.GetMfa(), state) https://github.com/openziti/ziti/pull/4397/files#diff-...R156
+    ```
+34. "LLM review says" appears at most once per item, as a lead-in line above the bullets. It is never repeated on each
+    bullet, and each bullet is a plain statement.
+
+**Right the first time.** clint took six rounds to refine pr-ziti-4397's item 01 by hand, so these bind where findings
+are written (the panel and the review-manager, skill step 7), and the walker re-checks each item against them before
+showing it. From clint through @orchestrator, 2026-09-29.
+
+35. Anchor on the line that is wrong, not a neighbour (item 01 moved from 156, which computes one value, to 157).
+36. The suggested fix is one concrete change, never "X, or Y". When it is small, the bullet gives the exact changed
+    line inline as edited code. No separate sketch block, and no renames that are not needed.
+37. Plain wording that reads once: what the code does, not a paraphrase of its mechanism.
+38. Assert only what was proven. Unconfirmed reachability or impact is "Is it possible for <condition>, and if so,
+    does <consequence>?", and the fix bullet then starts "Suggested fix, if so:".
+39. Look for other paths that would cover the defect anyway, name them in Evidence, and let them decide between
+    rule 38's question and an assertion.
+40. Every path named in a bullet is checked against the tree and fixed silently. Never a "Correction:" line.
+41. Rule 33 again: the deep link sits on the same line as the indented code. The finding file keeps the link on its
+    third line, which the board reads, and the walker moves it beside the code when it shows the item.
+42. Overrides the tone of the others: too much detail reads as "we know better". Certainty only when a test we wrote
+    proves it or the code settles it beyond doubt. Otherwise the comment is humble and short, and the humility comes
+    from the question form alone ("If <X> happens, it looks like <Y>, which seems bad?"). Never a deference preamble
+    such as "I may be missing something here" (amended by clint). Rule 38's question is one condition and one consequence. Mechanism, the `file:line` trail and
+    covering paths go in Evidence, which clint reads and the PR author does not.
 
 The first second opinions, run by the director on the two reviews already filed (Mercurius, codex gpt-5.5):
 zrok #1277 went from 14 rows to 15. Its new row 04 was the critic's possible gap 1, the ambiguous commit, and one

@@ -6143,3 +6143,111 @@ cost chart and no `$`. The by-card ranking is by tokens.
 1. Fetch `/v1/usage`, `/v1/tasks/<id>/usage` and `/v1/settings`.
 
 **Expected:** no `cost`, `prices`, `spent`, `budget` or `usd` key in any of them.
+
+## DV. A fresh card opens at the size it is watched at
+
+### DV1. Recorded room viewport
+
+1. Attach a browser pane to any running card and note its size, say 177 by 48. Detach.
+2. Launch a new card whose runner prints more than a screen of numbered lines, then attach to it.
+3. Open the card's `/scrollback/text`.
+
+**Expected:** the new card's terminal is already the pane's size when you attach, and every numbered line appears
+exactly once.
+
+### DV2. Room that never had a viewer
+
+1. On a room with an empty `room_viewport` setting, launch the same card and attach.
+
+**Expected:** the terminal opens at 120 by 30, the attach resizes it once with both sizes, and no height change
+follows half a second later. If conhost still shifts its repaint on that one resize, that is item 74's and not this
+change's.
+
+### DV3. Second viewer
+
+1. With one viewer attached, attach a second at a different height.
+
+**Expected:** the width follows at once and the height waits half a second, as before.
+
+## DW. A lean worker has the operator's status line
+
+1. With a `statusLine` in `~/.claude/settings.json`, launch a lean worker (`atrium_launch`, lean left at its default).
+2. Look at the bottom of its terminal.
+
+**Expected:** the status line shows, the same as in a session you started yourself, and the card's context size
+appears on the board once the status line has posted.
+
+## DX. A card stays where it was launched
+
+### DX1. A cd does not move the card
+
+1. Launch a subagent card in a directory with no `.git` that has a subdirectory holding a repository.
+2. In the session, `cd` into the repository, run a command that needs permission, then `cd` back and run another.
+3. Read the card's worktree on the board.
+
+**Expected:** it is still the launch directory, and the card is not wound down.
+
+### DX2. A removed launch directory still ends the worker
+
+1. Launch a subagent card, then remove its launch directory from outside.
+
+**Expected:** after two reaper ticks the runner is asked to leave.
+
+## DY. The file-link tip stays up across a repaint
+
+### DY1. Repaint under the pointer
+
+1. Attach a terminal on a card with a directory and print a line that names a file in it.
+2. Hover the path until its tip shows, then have the runner repaint that row while the pointer stays put.
+
+**Expected:** the tip stays on screen the whole time. It does not vanish and come back.
+
+### DY2. It still hides when it should
+
+1. With the tip up, move the pointer onto a different path, then onto blank terminal, then out of the terminal.
+2. Hover again and click the path, then hover again and scroll the page.
+
+**Expected:** a different path replaces the tip at once, blank terminal hides it within about 150 ms, and leaving the
+terminal, the click and the scroll hide it at once.
+
+## DZ. A director is quiet while its workers are out
+
+### DZ1. Director with a live worker
+
+1. Launch a director tagged `atrium:director` from the orchestrator, and have it launch a worker.
+2. Let the director end a turn without reporting to the orchestrator.
+
+**Expected:** no "ended its turn without reporting" notice reaches the orchestrator and the director shows no STUCK
+mark.
+
+### DZ2. Every worker ended
+
+1. Cull the worker, or let it exit.
+2. Let the director end another turn without reporting.
+
+**Expected:** the orchestrator gets exactly one notice, and the director shows STUCK on the usual backoff.
+
+## EA. The repair report
+
+### EA1. Read the report on a live card
+
+1. Pick a card that has run for a while, and open `/v1/tasks/<id>/scrollback/text?repair=report` in a tab. Use
+   `&kind=shell` for the card's shell.
+2. Read the last line. `repaired=N` is how many repaints overwrote rows that a repair would have kept, and `added=N` is
+   how many rows that is. Note both, and read them again a day later: the totals are cumulative over the ring, so two
+   readings compare at a glance.
+3. For each `repaired` line, `k` is how many rows the repaint started below the top of the screen. A line with a `cut`
+   other than `-` sits at a height change, and `added` there is `k` minus the rows the resize already filed.
+4. Treat a `repaired` line as a possible false positive when the ring around its `offset` shows Claude collapsing a
+   block or a tool's output shrinking. The rule cannot tell those apart when the rows match.
+
+**Expected:** a header, one line per candidate and a `totals` line, with no `[atrium]` banner. A card that has never had
+its height changed reports `repaired=0`.
+
+### EA2. Nothing else changed
+
+1. Open `/v1/tasks/<id>/scrollback/text` without the parameter, before and after step 1.
+2. Reload the pane so it reattaches.
+
+**Expected:** the text is identical both times, and the rows a repaint overwrote are still absent from history, because
+the report measures and does not repair.
