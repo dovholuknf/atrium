@@ -5,6 +5,17 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **`atrium_task` and `atrium_exit` reach a card on another room.** See `docs/backlog-2.md` item 68,
+  `docs/test-plan.md` section CJ and `docs/cross-room-say-design.md`.
+
+  Both took only a name or card id on the caller's own room, so an orchestrator that launched with `room:` could not
+  watch or end what it launched. They now take `name@room`, `alias@room` and `room~id`, resolved as `atrium_say`
+  resolves them, and answer a card on another room named across (`room~id`, `name@room`), which is what
+  `atrium_launch` with `room` returns. HUB-SIDE tools ask the target room over the hub's board. The stdio
+  `atrium control` asks its room's new `GET /v1/peers/card` and `POST /v1/peers/exit`, which ask the hub through
+  the new relay ops `card` and `exit`. Needs a HUB RESTART, and a ROOM RESTART for a room's own sessions. A room on
+  an older hub, and a stdio server on an older room, say which side is older.
+
 - **A worker that ends its turn without a report reaches its launcher every time.** See `docs/backlog-2.md` item 62
   and `docs/test-plan.md` section CI.
 

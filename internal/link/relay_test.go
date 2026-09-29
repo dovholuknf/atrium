@@ -29,6 +29,8 @@ type relayRoom struct {
 	sayAnswer map[string]any
 	// launched is the body of the last POST /v1/launch.
 	launched map[string]any
+	// exited is the card ids asked to exit.
+	exited []string
 }
 
 func (f *relayRoom) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -50,6 +52,10 @@ func (f *relayRoom) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		http.NotFound(w, r)
+	case strings.HasPrefix(r.URL.Path, "/v1/tasks/") && strings.HasSuffix(r.URL.Path, "/exit") &&
+		r.Method == http.MethodPost:
+		f.exited = append(f.exited, strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/v1/tasks/"), "/exit"))
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
 	case r.URL.Path == "/v1/launch" && r.Method == http.MethodPost:
 		_ = json.NewDecoder(r.Body).Decode(&f.launched)
 		_ = json.NewEncoder(w).Encode(map[string]any{"id": "kid", "wire_name": "kid", "status": "running"})
@@ -83,6 +89,12 @@ func (f *relayRoom) messages() []map[string]string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]map[string]string(nil), f.got...)
+}
+
+func (f *relayRoom) exits() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.exited...)
 }
 
 func (f *relayRoom) says() []map[string]string {
@@ -472,5 +484,137 @@ func TestHubSidePeersListOtherRoomsWhenAsked(t *testing.T) {
 		if p.Room != "" {
 			t.Fatalf("without rooms, no other room's peer should be listed: %+v", out.Peers)
 		}
+	}
+}
+
+// ITEM 68 over the relay. A room reads and exits a card on another room
+// through its hub, by handle, alias or bare id, and gets it named across.
+func TestARelayReadsAndExitsACardOnAnotherRoom(t *testing.T) {
+	x := newRelayPair(t)
+	defer x.stop()
+
+	ans, err := x.miniR.Relay(relayCtx(t), RelayRequest{Op: RelayCard, Room: "sg4", To: "@orch"})
+	if err != nil || !ans.OK || ans.Task == nil || ans.Task.Card != "sg4~s1" ||
+		ans.Task.Handle != "atrium-87300@sg4" || ans.Task.Status != "needs-input" {
+		t.Fatalf("card = %+v (task %+v), %v", ans, ans.Task, err)
+	}
+	ans, err = x.miniR.Relay(relayCtx(t), RelayRequest{Op: RelayExit, Room: "sg4", To: "s1"})
+	if err != nil || !ans.OK || ans.Card != "sg4~s1" || ans.To != "atrium-87300@sg4" {
+		t.Fatalf("exit = %+v, %v", ans, err)
+	}
+	if got := x.sg4.exits(); len(got) != 1 || got[0] != "s1" {
+		t.Fatalf("sg4 exits = %v", got)
+	}
+	// Its own room is refused, an unknown name lists who is there, and an
+	// unknown room is named.
+	if ans, _ = x.miniR.Relay(relayCtx(t), RelayRequest{Op: RelayExit, Room: "M1MINI", To: "sa1"}); ans.OK ||
+		ans.Code != http.StatusBadRequest {
+		t.Fatalf("own room = %+v", ans)
+	}
+	if ans, _ = x.miniR.Relay(relayCtx(t), RelayRequest{Op: RelayExit, Room: "sg4", To: "nobody"}); ans.OK ||
+		ans.Code != http.StatusNotFound || !strings.Contains(ans.Error, "atrium-87300") {
+		t.Fatalf("unknown name = %+v", ans)
+	}
+	if ans, _ = x.miniR.Relay(relayCtx(t), RelayRequest{Op: RelayCard, Room: "atlantis", To: "x"}); ans.OK ||
+		!strings.Contains(ans.Error, "atlantis") {
+		t.Fatalf("unknown room = %+v", ans)
+	}
+	if len(x.mini.exits()) != 0 || len(x.sg4.exits()) != 1 {
+		t.Fatal("a refused exit reached a room")
+	}
+}
+
+// ITEM 68. atrium_exit takes a card on another room the way atrium_say does,
+// as `name@room`, `alias@room` or `room~id`, and asks that room, not the
+// caller's.
+func TestAHubSideExitReachesACardOnAnotherRoom(t *testing.T) {
+	x := newRelayPair(t)
+	defer x.stop()
+
+	for _, card := range []string{"atrium-87300@sg4", "orch@sg4", "@orch@SG4", "sg4~s1"} {
+		_, out, err := x.control.exitHandler(relayCtx(t), ctlReq("sa1", "m1mini"), exitInput{Card: card})
+		if err != nil {
+			t.Fatalf("exit %q: %v", card, err)
+		}
+		if !out.Asked || !strings.EqualFold(out.Card, "sg4~s1") || !strings.EqualFold(out.Handle, "atrium-87300@sg4") {
+			t.Fatalf("exit %q = %+v, want sg4~s1 named across", card, out)
+		}
+	}
+	if got := x.sg4.exits(); len(got) != 4 || got[0] != "s1" || got[3] != "s1" {
+		t.Fatalf("sg4 was asked to exit %v, want s1 four times", got)
+	}
+	if got := x.mini.exits(); len(got) != 0 {
+		t.Fatalf("m1mini was asked to exit %v", got)
+	}
+}
+
+// A bare name and the caller's own room stay home, and a room the hub has
+// never heard of is refused by name rather than asked.
+func TestAHubSideExitStaysHomeAndRefusesAnUnknownRoom(t *testing.T) {
+	x := newRelayPair(t)
+	defer x.stop()
+
+	_, out, err := x.control.exitHandler(relayCtx(t), ctlReq("other", "m1mini"), exitInput{Card: "sa1@m1mini"})
+	if err != nil || out.Card != "m1" || out.Handle != "sa1" {
+		t.Fatalf("exit on own room = %+v, %v", out, err)
+	}
+	if got := x.mini.exits(); len(got) != 1 || got[0] != "m1" {
+		t.Fatalf("m1mini exits = %v", got)
+	}
+	_, _, err = x.control.exitHandler(relayCtx(t), ctlReq("sa1", "m1mini"), exitInput{Card: "x@atlantis"})
+	if err == nil || !strings.Contains(err.Error(), "atlantis") {
+		t.Fatalf("err = %v, want a refusal naming atlantis", err)
+	}
+	if len(x.sg4.exits()) != 0 {
+		t.Fatal("an unknown room's exit reached sg4")
+	}
+}
+
+// atrium_task reads a card on another room the same way.
+func TestAHubSideTaskReadsACardOnAnotherRoom(t *testing.T) {
+	x := newRelayPair(t)
+	defer x.stop()
+
+	for _, card := range []string{"atrium-87300@sg4", "orch@sg4", "sg4~s1"} {
+		_, out, err := x.control.taskHandler(relayCtx(t), ctlReq("sa1", "m1mini"), taskInput{Card: card})
+		if err != nil {
+			t.Fatalf("task %q: %v", card, err)
+		}
+		if out.Card != "sg4~s1" || out.Handle != "atrium-87300@sg4" || out.Status != "needs-input" {
+			t.Fatalf("task %q = %+v", card, out)
+		}
+	}
+	// Empty is still the caller's own card, on its own room.
+	_, out, err := x.control.taskHandler(relayCtx(t), ctlReq("sa1", "m1mini"), taskInput{})
+	if err != nil || out.Card != "m1" || out.Handle != "sa1" {
+		t.Fatalf("own task = %+v, %v", out, err)
+	}
+}
+
+// What atrium_launch with `room` hands back is what atrium_task and atrium_exit
+// then take, card and handle both.
+func TestACardLaunchedOnAnotherRoomCanBeReadAndExited(t *testing.T) {
+	x := newRelayPair(t)
+	defer x.stop()
+
+	_, launched, err := x.control.launchHandler(relayCtx(t), ctlReq("sa1", "m1mini"), launchInput{Cwd: "/w", Room: "sg4"})
+	if err != nil {
+		t.Fatalf("launch: %v", err)
+	}
+	x.sg4.mu.Lock()
+	x.sg4.tasks = append(x.sg4.tasks, map[string]any{"id": "kid", "wire_name": "kid", "status": "running"})
+	x.sg4.mu.Unlock()
+	for _, card := range []string{launched.Card, launched.Handle} {
+		_, task, err := x.control.taskHandler(relayCtx(t), ctlReq("sa1", "m1mini"), taskInput{Card: card})
+		if err != nil || task.Card != launched.Card {
+			t.Fatalf("task %q = %+v, %v", card, task, err)
+		}
+		_, out, err := x.control.exitHandler(relayCtx(t), ctlReq("sa1", "m1mini"), exitInput{Card: card})
+		if err != nil || out.Card != launched.Card || out.Handle != launched.Handle {
+			t.Fatalf("exit %q = %+v, %v", card, out, err)
+		}
+	}
+	if got := x.sg4.exits(); len(got) != 2 || got[0] != "kid" {
+		t.Fatalf("sg4 exits = %v", got)
 	}
 }

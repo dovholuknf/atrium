@@ -44,6 +44,36 @@ func (l linkRelay) Peers(ctx context.Context, all bool) ([]daemon.RemotePeer, st
 	return out, ans.Warning, nil
 }
 
+func (l linkRelay) Card(ctx context.Context, room, to string, events bool) (daemon.RelayResult, error) {
+	return l.reach(ctx, link.RelayRequest{Op: link.RelayCard, Room: room, To: to, Events: events})
+}
+
+func (l linkRelay) Exit(ctx context.Context, room, to string) (daemon.RelayResult, error) {
+	return l.reach(ctx, link.RelayRequest{Op: link.RelayExit, Room: room, To: to})
+}
+
+// reach relays one card or exit request, and carries the card back.
+func (l linkRelay) reach(ctx context.Context, req link.RelayRequest) (daemon.RelayResult, error) {
+	ans, err := l.room.Relay(ctx, req)
+	if err != nil {
+		return daemon.RelayResult{}, relayErr(err)
+	}
+	res := daemon.RelayResult{
+		OK: ans.OK, Code: ans.Code, Error: ans.Error, Unreachable: ans.Unreachable, Unconfirmed: ans.Unconfirmed,
+		To: ans.To, Card: ans.Card,
+	}
+	if t := ans.Task; t != nil {
+		res.Task = &daemon.RemoteTask{
+			Card: t.Card, Handle: t.Handle, Title: t.Title, Status: t.Status, Doing: t.Doing, Where: t.Where,
+			Why: t.Why, Idle: t.Idle, Waiting: t.Waiting, Owned: t.Owned,
+		}
+		for _, e := range t.Events {
+			res.Task.Events = append(res.Task.Events, daemon.RemoteEvent{At: e.At, Kind: e.Kind})
+		}
+	}
+	return res, nil
+}
+
 // relayErr maps the link's three failures onto the daemon's, keeping the
 // link's sentence.
 func relayErr(err error) error {

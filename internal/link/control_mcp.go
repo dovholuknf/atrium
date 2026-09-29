@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -200,7 +201,9 @@ func (c *controlMCP) server() *mcp.Server {
 			"that turn's Open Questions they have not answered yet (`open_questions`, `answered`). " +
 			"Leave `card` empty to ask about your own card. Before telling the human your " +
 			"questions are still open, check this: if `unseen` is true they never read them, so " +
-			"repeat them in full rather than referring back.",
+			"repeat them in full rather than referring back.\n\n" +
+			"A card on ANOTHER ROOM is `name@room`, `alias@room` or `room~id`, as `atrium_say` " +
+			"takes it and as `atrium_launch` with `room` hands it back.",
 	}, c.taskHandler)
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -230,7 +233,7 @@ func (c *controlMCP) server() *mcp.Server {
 			"`env` extra environment, passed as given for anything the two fields do not cover. " +
 			"Empty means the runner's default. The card keeps all four, so a restart comes back " +
 			"the same, and shows them in its details (env by name only).\n\n" +
-			"Returns the card id. Use it with `atrium_task` and `atrium_say`.",
+			"Returns the card id. Use it with `atrium_task`, `atrium_say` and `atrium_exit`, on another room too.",
 	}, c.launchHandler)
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -240,7 +243,9 @@ func (c *controlMCP) server() *mcp.Server {
 			"the runner shuts itself down and writes whatever it writes on the way out. Its " +
 			"card and its whole history stay on the board.\n\n" +
 			"Say something first if the work is not finished. A session asked to leave mid-task " +
-			"leaves mid-task.",
+			"leaves mid-task.\n\n" +
+			"A card on ANOTHER ROOM is `name@room`, `alias@room` or `room~id`, as `atrium_say` " +
+			"takes it and as `atrium_launch` with `room` hands it back.",
 	}, c.exitHandler)
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -637,6 +642,46 @@ func (c *controlMCP) resolvePeer(ctx context.Context, room, who string) (id, han
 		who, strings.Join(names, ", "))
 }
 
+// resolveCard finds a card the way atrium_say finds one, on this room or on
+// another: `name`, `alias`, `name@room`, `alias@room` or `room~id`. `scope` is
+// the room to ask about that card, which is the caller's own unless the address
+// named another. A card on another room comes back named across, `room~id` and
+// `handle@room`, so what one tool hands back another takes. See item 68 in
+// docs/backlog-2.md.
+//
+// A caller with no room is the aggregate view, where a bare name still means
+// the aggregate list and a named room is asked directly.
+func (c *controlMCP) resolveCard(ctx context.Context, room, who string) (scope, id, handle string, err error) {
+	name, target, err := SplitAddress(who)
+	if err != nil {
+		return "", "", "", err
+	}
+	other := otherRoom(target, room)
+	if other == "" {
+		id, handle, err = c.resolvePeer(ctx, room, name)
+		return room, id, handle, err
+	}
+	if ans, ok := c.reachable(ctx, other); !ok {
+		return "", "", "", errors.New(ans.Error)
+	}
+	if id, handle, err = c.resolvePeer(ctx, other, name); err != nil {
+		return "", "", "", err
+	}
+	return other, id, handle, nil
+}
+
+// namedFrom is a card's id and handle as a caller on `room` names it: bare on
+// its own room, `room~id` and `handle@room` from anywhere else.
+func namedFrom(room, scope, id, handle string) (string, string) {
+	if scope == "" || equalFold(scope, room) {
+		return id, handle
+	}
+	if handle != "" {
+		handle += "@" + scope
+	}
+	return tagFor(scope, id), handle
+}
+
 // ── say ────────────────────────────────────────────────────────────────────────
 
 type sayInput struct {
@@ -792,7 +837,7 @@ func (c *controlMCP) reportHandler(ctx context.Context, req *mcp.CallToolRequest
 type taskInput struct {
 	// Card is optional so a session can ask about itself, which is the
 	// orchestrator's question: has the operator read my last turn.
-	Card string `json:"card,omitempty" jsonschema:"a card id or a handle. empty means your own card"`
+	Card string `json:"card,omitempty" jsonschema:"a card id, handle or alias, name@room or room~id for a card on another room. empty means your own card"`
 	// Events includes the recent history, which is what a card DID rather than
 	// where it is now.
 	Events bool `json:"events,omitempty" jsonschema:"include recent events"`
@@ -828,49 +873,66 @@ func (c *controlMCP) taskHandler(ctx context.Context, req *mcp.CallToolRequest, 
 	out := taskOutput{}
 	room := roomOf(req)
 	who := strings.TrimSpace(in.Card)
+	scope, id := room, ""
+	var err error
 	if who == "" {
 		if who = agentOf(req); who == "" {
 			return nil, out, fmt.Errorf("say which card. this session is not on the board, " +
 				"so it has no card of its own to default to")
 		}
+		// Your own handle is on your own room, whatever it looks like.
+		id, _, err = c.resolvePeer(ctx, room, who)
+	} else {
+		scope, id, _, err = c.resolveCard(ctx, room, who)
 	}
-	id, _, err := c.resolvePeer(ctx, room, who)
 	if err != nil {
 		return nil, out, err
 	}
-	var t ctlCard
-	if err := c.ask(ctx, http.MethodGet, "/v1/tasks/"+url.PathEscape(id), room, nil, &t); err != nil {
+	t, events, err := c.readCard(ctx, scope, id, in.Events)
+	if err != nil {
 		return nil, out, err
 	}
-	out.Card, out.Handle, out.Title = t.ID, t.Wire, t.Title
+	out.Card, out.Handle = namedFrom(room, scope, t.ID, t.Wire)
+	out.Title = t.Title
 	out.Status, out.Doing, out.Where, out.Why = t.Status, t.Activity.What, t.Worktree, t.Why
 	out.Idle, out.Waiting, out.Owned = t.Idle, t.Wait, t.Superv
 	out.Seen = t.Seen
-
-	if in.Events {
-		var body struct {
-			Events []struct {
-				At   string `json:"at"`
-				Kind string `json:"kind"`
-			} `json:"events"`
-		}
-		if err := c.ask(ctx, http.MethodGet,
-			"/v1/tasks/"+url.PathEscape(id)+"/events", room, nil, &body); err == nil {
-			// The tail, because the useful end of a history is the recent one and a
-			// card that has been up for days has hundreds.
-			from := 0
-			if len(body.Events) > 20 {
-				from = len(body.Events) - 20
-			}
-			for _, e := range body.Events[from:] {
-				out.Events = append(out.Events, taskEvent{At: e.At, Kind: e.Kind})
-			}
-		}
-	}
+	out.Events = events
 	out.Note = "status and events only. atrium does not record what a session printed, so this " +
 		"cannot tell you what it said or thinks. `seen` says whether the operator has seen its " +
 		"last turn and answered that turn's Open Questions."
 	return nil, out, nil
+}
+
+// readCard reads one card on `scope`, and its recent events when asked.
+func (c *controlMCP) readCard(ctx context.Context, scope, id string, withEvents bool) (ctlCard, []taskEvent, error) {
+	var t ctlCard
+	if err := c.ask(ctx, http.MethodGet, "/v1/tasks/"+url.PathEscape(id), scope, nil, &t); err != nil {
+		return t, nil, err
+	}
+	if !withEvents {
+		return t, nil, nil
+	}
+	var body struct {
+		Events []struct {
+			At   string `json:"at"`
+			Kind string `json:"kind"`
+		} `json:"events"`
+	}
+	var events []taskEvent
+	if err := c.ask(ctx, http.MethodGet,
+		"/v1/tasks/"+url.PathEscape(id)+"/events", scope, nil, &body); err == nil {
+		// The tail, because the useful end of a history is the recent one and a
+		// card that has been up for days has hundreds.
+		from := 0
+		if len(body.Events) > 20 {
+			from = len(body.Events) - 20
+		}
+		for _, e := range body.Events[from:] {
+			events = append(events, taskEvent{At: e.At, Kind: e.Kind})
+		}
+	}
+	return t, events, nil
 }
 
 // ── launch ──────────────────────────────────────────────────────────────────────
@@ -1200,7 +1262,7 @@ func launchOptionsDropped(in launchInput, t ctlCard) []string {
 // ── exit ────────────────────────────────────────────────────────────────────────
 
 type exitInput struct {
-	Card string `json:"card" jsonschema:"a card id or a handle"`
+	Card string `json:"card" jsonschema:"a card id, handle or alias. name@room or room~id for a card on another room"`
 }
 
 type exitOutput struct {
@@ -1215,13 +1277,13 @@ func (c *controlMCP) exitHandler(ctx context.Context, req *mcp.CallToolRequest, 
 
 	out := exitOutput{}
 	room := roomOf(req)
-	id, handle, err := c.resolvePeer(ctx, room, in.Card)
+	scope, id, handle, err := c.resolveCard(ctx, room, in.Card)
 	if err != nil {
 		return nil, out, err
 	}
-	out.Card, out.Handle = id, handle
+	out.Card, out.Handle = namedFrom(room, scope, id, handle)
 	if err := c.ask(ctx, http.MethodPost,
-		"/v1/tasks/"+url.PathEscape(id)+"/exit", room, nil, nil); err != nil {
+		"/v1/tasks/"+url.PathEscape(id)+"/exit", scope, nil, nil); err != nil {
 		return nil, out, err
 	}
 	out.Asked = true

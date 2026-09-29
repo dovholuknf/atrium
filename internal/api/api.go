@@ -124,6 +124,10 @@ type Server struct {
 	// internal/daemon/relay.go.
 	Say       http.HandlerFunc
 	RoomPeers http.HandlerFunc
+	// RoomCard and RoomExit read and exit a card on another room by address,
+	// `name@room` or `room~id`, through the same relay.
+	RoomCard http.HandlerFunc
+	RoomExit http.HandlerFunc
 	// Report is a session on a card reporting to whoever launched it: the
 	// hub's `atrium_report`. Owned by the daemon, which owns the launcher's
 	// queue. See internal/daemon/finish.go.
@@ -535,6 +539,12 @@ func (s *Server) Handler() http.Handler {
 	}
 	if s.RoomPeers != nil {
 		mux.HandleFunc("GET /v1/peers/rooms", s.RoomPeers)
+	}
+	if s.RoomCard != nil {
+		mux.HandleFunc("GET /v1/peers/card", s.RoomCard)
+	}
+	if s.RoomExit != nil {
+		mux.HandleFunc("POST /v1/peers/exit", s.RoomExit)
 	}
 	if s.Report != nil {
 		mux.HandleFunc("POST /v1/tasks/{id}/report", s.Report)
