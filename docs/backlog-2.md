@@ -18,7 +18,7 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 9 | Eliminate unstyled tooltips | bug | DONE, `069c16b`, deployed, check-titles guards it |
 | 10 | `atrium_say` types immediately by default | feature | DONE, `04c2095`, not deployed. Also covers item 7's reason and count |
 | 11 | Clicking `? N` or a question clears it | bug | not started, 2026-09-25: the click selects the row instead |
-| 12 | Keep codex up to date | feature | not started |
+| 12 | Keep codex up to date | feature | card built in `2017744`. Designed, `docs/codex-update-design.md`, waits on clint (4 questions) |
 | 13 | Housekeeping asked, not answered | housekeeping | waiting on clint |
 | 14 | Per-card notification log | design | tentative |
 | 15 | Pluggable event sink, what is left | design | stages 1-2 done |
@@ -302,6 +302,18 @@ package metadata and the published one with one HTTP request.
 - **Codex updating itself inside a launch** should not look like a hang. Either the setting keeps it current so this
   never happens, or the launch passes whatever flag codex has to skip its own startup update.
 - Check what `runnerupdate.go` already does for codex before building: its header names `codex --version`.
+
+**Status, 2026-09-29: reconciled and designed, not built.** `docs/codex-update-design.md`, by @runtime. The update
+card was already built before this item was filed: `runnerupdate.go` in 2017744 (2026-09-15) checks any row with a
+`package`, and migration `0052_harness_package` gave codex `@openai/codex`. `InstalledVersion` became shared in
+dceb738. On a copy of the live database, card `01a0d368` ("codex: 0.154.0 to 0.156.1") was offered 2026-09-24 12:33Z.
+The sighting was codex's own updater, which reinstalled codex at 12:58Z inside sa44's codex probe (`01a0d37e`). The
+design fixes what that showed: a satisfied card is never withdrawn (that card, and two claude cards from 2026-09-14),
+a card that left the inbox blocks every later release (the intake key is unique and `Offer` leaves a started card
+alone), and codex's startup updater runs in atrium's terminal. The fix for the last one is
+`-c check_for_update_on_startup=false` on the seeded row. The auto-update setting is per runner row. Four open
+questions for clint are in the design. `claude/codex-update` (25e48eb) is an old claude/main snapshot with no item
+12 work, and is not this.
 
 ------------
 
