@@ -177,6 +177,8 @@ type activityTracker struct {
 	// background is how many subagents each card's last Stop said were still
 	// running. See turnPaused.
 	background map[string]int
+	// turns counts turns begun per card. See turnsBegun.
+	turns map[string]int
 }
 
 // heldPeer is a queued injection waiting on the operator's line to clear, on
@@ -243,6 +245,7 @@ func newActivityTracker() *activityTracker {
 		held:  map[string]heldPeer{},
 
 		background: map[string]int{},
+		turns:      map[string]int{},
 	}
 }
 
@@ -413,6 +416,9 @@ func (a *activityTracker) set(taskID, what, tool string) {
 	if cur.What != what || cur.Tool != tool {
 		cur.Since = a.now()
 	}
+	if !midTurnState(cur.What) && midTurnState(what) {
+		a.turns[taskID]++
+	}
 	cur.What, cur.Tool = what, tool
 	// ANYTHING HAPPENING MEANS THE DIALOG HAS GONE.
 	//
@@ -488,11 +494,27 @@ func (a *activityTracker) midTurn(taskID string) bool {
 	if cur == nil {
 		return false
 	}
-	switch cur.What {
+	return midTurnState(cur.What)
+}
+
+// midTurnState is whether an activity is one a turn is in.
+func midTurnState(what string) bool {
+	switch what {
 	case ActivityThinking, ActivityTool, ActivityCompacting:
 		return true
 	}
 	return false
+}
+
+// turnsBegun is how many times this card has gone from not working to working
+// since the daemon started. A caller that types a prompt and must know whether
+// a turn began reads it before and after, which sees a turn that was over
+// between two polls. Never reset: a session ending forgets the activity, not
+// this.
+func (a *activityTracker) turnsBegun(taskID string) int {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.turns[taskID]
 }
 
 // addSubagents moves the tally, never below zero.

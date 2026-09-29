@@ -777,6 +777,7 @@ function cardHTML(t) {
       ${t.restart_wake ? `<span class="chip"
         data-tip="${esc("typed in once after the next restart brings this runner back: " + t.restart_wake.text)}"
         >wake queued</span>` : ""}
+      ${newContextChip(t)}
       ${typeof keepaliveChip === "function" ? keepaliveChip(t) : ""}
       ${stuckMark(t)}
       ${sharedCards.has(t.id) ? `<span class="chip shared"
@@ -910,6 +911,48 @@ async function paintMoreAsks(id, open) {
 //
 // The count comes back rather than being assumed, because the card may have
 // been asked something else between the menu being drawn and the click.
+// ── new context ─────────────────────────────────────────
+// Capture, clear and wake, run by the room. The card's `new_context` says which
+// step it is on, or why it stopped. See internal/daemon/newcontext.go.
+
+// One chip while a step runs, gone when the wake prompt lands. A step that
+// stopped leaves a red one with the reason, and clicking it takes it off.
+function newContextChip(t) {
+  const n = t.new_context;
+  if (!n) return "";
+  if (n.step === "failed") {
+    return `<span class="chip warn" data-tip="${esc("new context stopped, and nothing further was typed. " +
+      (n.reason || "") + ". click to dismiss this, or run new context again")}"
+      onclick="event.stopPropagation();dismissNewContext('${t.id}')"
+      >new context failed</span>`;
+  }
+  return `<span class="chip" data-tip="${esc("new context, step " + n.n + " of " + n.of + ": " + n.label)}"
+    >context ${n.n}/${n.of}: ${esc(n.step)}</span>`;
+}
+
+async function dismissNewContext(id) {
+  try {
+    await api(`/v1/tasks/${encodeURIComponent(id)}/new-context`, { method: "DELETE" });
+  } catch (e) {
+    toast("could not dismiss", e.message);
+    return;
+  }
+  refresh();
+}
+
+// The menu entry and Ctrl+Alt+N both land here.
+async function newContext(id) {
+  try {
+    await api(`/v1/tasks/${encodeURIComponent(id)}/new-context`, { method: "POST" });
+    toast("new context started",
+      "it is asked to write HANDOFF.md, then cleared, then told to read it back");
+  } catch (e) {
+    toast("could not start a new context", e.message);
+    return;
+  }
+  refresh();
+}
+
 async function dismissAsks(id) {
   try {
     const r = await api(`/v1/tasks/${encodeURIComponent(id)}/asks`, { method: "DELETE" });
