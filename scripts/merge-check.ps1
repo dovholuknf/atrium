@@ -39,20 +39,6 @@ $ErrorActionPreference = 'Continue'
 $repo = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
 Set-Location -LiteralPath $repo
 
-# clint types on this machine while a check runs. go test and the headless suite (chrome-headless-shell) are started
-# by this process, and a Windows child inherits its parent's priority class, so lowering this one lowers them all.
-try { (Get-Process -Id $PID).PriorityClass = 'BelowNormal' } catch { [Console]::Error.WriteLine("merge-check: could not lower priority: $_") }
-
-# One full suite at a time, machine wide. A second check waits here rather than doubling the load. The mutex is
-# released when this process exits, however it exits.
-$suiteLock = New-Object System.Threading.Mutex($false, 'Global\atrium-merge-check')
-$held = $false
-try { $held = $suiteLock.WaitOne(0) } catch [System.Threading.AbandonedMutexException] { $held = $true }
-if (-not $held) {
-  [Console]::Error.WriteLine('merge-check: another merge-check is running, waiting for it to finish')
-  try { [void]$suiteLock.WaitOne() } catch [System.Threading.AbandonedMutexException] { }
-}
-
 # The link restart-gate tests are timing tests: every Test func in internal/link/restartgate*_test.go is known noise.
 $gateTests = @(Get-ChildItem -Path (Join-Path $repo 'internal/link') -Filter 'restartgate*_test.go' -ErrorAction SilentlyContinue |
     ForEach-Object { Select-String -LiteralPath $_.FullName -Pattern '^func (Test\w+)\(' } |
