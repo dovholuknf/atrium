@@ -374,21 +374,50 @@ function useWebLinks(t) {
 // NOT atrium's file viewer, which is where a clicked PATH goes. A URL is not a
 // file in the card and the daemon has no business being asked about it.
 //
-// `noreferrer` because the board can be published, and the address of a
-// published board is not something to hand to whatever an agent printed a link
-// to. It implies `noopener`, and `noopener` is named as well so that reading
-// the line does not require knowing that.
+// It is opened by `openLinkReused`, which reuses one tab per pull request
+// rather than opening a new one per click.
 function openTermURL(ev, uri) {
   ev.preventDefault();
-  const a = document.createElement("a");
-  a.href = uri;
-  a.target = "_blank";
-  a.rel = "noreferrer noopener";
-  // Attached before it is clicked. A detached anchor is ignored by some
-  // browsers, and the failure is a click that does nothing at all.
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
+  openLinkReused(uri);
+}
+
+// The name of the window a link opens into. One per pull request for
+// github.com/<org>/<repo>/pull/<n> and anything under it, so a walk that clicks
+// a deep link per finding keeps one tab. Anything else is one per origin plus
+// path, with no query and no hash. "" for a URL that is not http or https.
+function linkWindowName(url) {
+  let u;
+  try { u = new URL(url); } catch (e) { return ""; }
+  if (u.protocol !== "http:" && u.protocol !== "https:") return "";
+  const host = u.host.toLowerCase();
+  const pr = u.pathname.match(/^\/([^/]+)\/([^/]+)\/pull\/(\d+)(?:\/|$)/);
+  if (host === "github.com" && pr) return "atrium-link-" + host + "/" + pr[1] + "/" + pr[2] + "/pull/" + pr[3];
+  return "atrium-link-" + host + u.pathname;
+}
+
+// Opens a link into its named window and brings that window forward. Called by
+// the terminal's links and by the review walk's `o` and `C`.
+//
+// `window.open(url, name)` and not `rel=noopener`: Chrome ignores the name and
+// opens a new tab whenever noopener is set. The opener is cut by hand instead,
+// at once, so the page cannot reach back into the board.
+//
+// The referrer is withheld by the page's `<meta name="referrer">` in
+// index.html and not here. The old `rel=noreferrer` did it, because a published
+// board's address is not something to hand to whatever an agent printed a link
+// to, but `noreferrer` implies `noopener` and so brings the new tab back, and
+// `window.open` has no per-call referrer option that avoids it.
+//
+// A popup blocker makes `window.open` return null. That is not an error here.
+function openLinkReused(url) {
+  const name = linkWindowName(url);
+  if (!name) return null;
+  let w = null;
+  try { w = window.open(url, name); } catch (e) { return null; }
+  if (!w) return null;
+  try { w.opener = null; } catch (e) {}
+  try { w.focus(); } catch (e) {}
+  return w;
 }
 
 // ── the "not replayed here" notice's two actions ─────────

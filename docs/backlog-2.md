@@ -3499,7 +3499,7 @@ Design questions:
 
 ## u-006. A link clicked in a terminal reuses its tab instead of opening a new one (bug)
 
-Status: worker sau-006 launched 2026-09-29. Owned by @ui, although the file is @terminal's, because @terminal was at
+Status: built 2026-09-29 on `claude/sau-006`, headless section `linkReuse`, not yet merged. Owned by @ui, although the file is @terminal's, because @terminal was at
 its worker cap. Raised by clint 2026-09-29.
 
 `openTermURL` (`internal/api/web/js/terminal-links.js:381`) clicks an anchor with `target="_blank"`, so every link
