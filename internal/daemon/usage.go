@@ -55,7 +55,7 @@ import (
 const usageSettle = 1500 * time.Millisecond
 
 // usagePricesVersion names the price table a row's cost was worked out on.
-const usagePricesVersion = "usageprices-2026-09-28"
+const usagePricesVersion = "usageprices-2026-09-28b"
 
 // usageOnlyPrices are the models a usage row prices that keep-alive must not
 // refresh, because keepalivePrices is also the list of models keep-alive may
@@ -65,6 +65,9 @@ const usagePricesVersion = "usageprices-2026-09-28"
 var usageOnlyPrices = map[string]keepalivePrice{
 	"claude-haiku-4-5": {In: 1, Cw1h: 2, Cr: 0.10, Out: 5},
 	"claude-sonnet-5":  {In: 2, Cw1h: 4, Cr: 0.20, Out: 10},
+	// Sonnet 5.5 costs what Sonnet 5 does, and is its own key because the
+	// matcher below does not take one model's price for the other's.
+	"claude-sonnet-5-5": {In: 2, Cw1h: 4, Cr: 0.20, Out: 10},
 }
 
 // usagePriceFor prices a reply for a usage row: keep-alive's models, then the
@@ -122,6 +125,28 @@ type usageTracker struct {
 	readMu sync.Mutex
 	cursor map[string]*usageCursor
 	subs   map[string]*subagentCursors
+
+	// broadcast tells the board a row was written. Nil in tests and until the
+	// daemon wires it. See emitRow.
+	broadcast func(kind string, v any)
+}
+
+// usageEvent is one written row as the `usage` event carries it: the figures
+// and the card id, and no message text. The hub adds the source room.
+func usageEvent(row *store.SessionUsage) map[string]any {
+	return map[string]any{
+		"task_id": row.TaskID, "ended_at": row.Ended, "cause": row.Cause,
+		"input": row.Input, "output": row.Output, "cache_write_5m": row.CacheWrite5m,
+		"cache_write_1h": row.CacheWrite1h, "cache_read": row.CacheRead, "cost": row.Cost,
+	}
+}
+
+// emitRow pushes a row that was just written, best effort like everything else
+// on this path: the row is on record whether or not anybody hears of it.
+func (u *usageTracker) emitRow(row *store.SessionUsage) {
+	if u != nil && u.broadcast != nil && row != nil {
+		u.broadcast("usage", usageEvent(row))
+	}
 }
 
 func newUsageTracker(st *store.Store) *usageTracker {
@@ -295,6 +320,7 @@ func (u *usageTracker) record(t *store.Task, seg usageSegment) (*store.SessionUs
 			return nil, err
 		}
 		main.advance()
+		u.emitRow(row)
 	}
 	// A reply is the card's or a subagent's, never both.
 	side.drop(main)
@@ -306,6 +332,7 @@ func (u *usageTracker) record(t *store.Task, seg usageSegment) (*store.SessionUs
 			return row, err
 		}
 		side.advance()
+		u.emitRow(sub)
 	}
 	return row, nil
 }

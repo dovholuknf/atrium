@@ -279,6 +279,7 @@
   body.solo .term-pane { border: none; border-radius: 0; }
   /* Detach would leave a window with nothing in it, and closing the window is the same gesture with fewer
      steps. Pop out would open a window from a window. */
+  body.solo main > #usage { display: none; }
   body.solo #t-popout { display: none; }
   /* Answering the request here works. Going to the perms tab does not, because this window has no perms tab,
      and a button that does nothing is worse than one that is not there. Approve once and block once are both

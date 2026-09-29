@@ -112,6 +112,7 @@ function paintSettings() {
   document.getElementById("s-expiry").value = String(Number(p.expiry) || 0);
   document.getElementById("s-debounce").value = String(Number(p.debounce) || 0);
   document.getElementById("s-stuck").value = p.stuck || "alert";
+  document.getElementById("s-quietdoers").checked = p.quietDoers !== false;
   document.getElementById("s-cardsize").value = String(uiScale());
   document.getElementById("s-density").value = String(density());
   document.getElementById("s-hoverfocus").checked = hoverFocus;
@@ -1473,6 +1474,9 @@ function connect() {
     // to an open pane by `onAuditEvent`, so a closed one pays nothing. See
     // js/audit.js.
     if (typeof onAuditEvent === "function") onAuditEvent();
+    // Rows written while the stream was down were never announced, so an open
+    // usage tab reads again.
+    if (typeof onUsageStreamOpen === "function") onUsageStreamOpen();
     // A hub restart cover comes down on the stream coming back, and a pause is
     // re-read. See js/hubrestart.js.
     if (typeof onHubStreamOpen === "function") onHubStreamOpen();
@@ -1529,6 +1533,12 @@ function connect() {
   // The cache keep-alive stopped a card or suspended the room, or refreshed one.
   // The card's chip is redrawn from the next list, and a stop carries a toast.
   // See js/keepalive.js.
+  // A usage row was written: one turn's spend. Added to the newest bucket of the
+  // usage tab without a refetch, and only ever drawn when that tab is open. No
+  // refreshSoon: a row moves no card. See js/usage-charts.js.
+  es.addEventListener("usage", e => {
+    if (typeof onUsageEvent === "function") onUsageEvent(e);
+  });
   es.addEventListener("keepalive", e => {
     if (typeof onKeepaliveEvent === "function") onKeepaliveEvent(e);
     refreshSoon();
