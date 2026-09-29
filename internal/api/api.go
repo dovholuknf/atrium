@@ -188,6 +188,10 @@ type Server struct {
 	// ArchiveWorkers is the one-time tidy of done worker cards. Human listener
 	// only. `dryRun` changes nothing and lists what would go.
 	ArchiveWorkers func(dryRun bool) (any, error)
+	// MergeProof is the proof half of a cross-room cull: is `ref` (a fetched
+	// `<room>/claude/<id>`) contained in `into`, in the repository of `dir`.
+	// Answers `{into, ref, tip, merged}`. Human listener only.
+	MergeProof func(dir, ref, into string) (any, error)
 	// RestartRunner asks a runner to exit, waits for it to be gone, and starts
 	// the same conversation again on the SAME card. Unshelve without the shelve,
 	// for a wedged session or one running an old binary. Supplied by the daemon,
@@ -543,6 +547,9 @@ func (s *Server) Handler() http.Handler {
 	}
 	if s.ArchiveWorkers != nil {
 		mux.HandleFunc("POST /v1/tasks/archive-workers", s.archiveWorkers)
+	}
+	if s.MergeProof != nil {
+		mux.HandleFunc("POST /v1/merge-proof", s.mergeProof)
 	}
 	if s.RestartRunner != nil {
 		mux.HandleFunc("POST /v1/tasks/{id}/restart", s.restartRunner)
@@ -2015,6 +2022,23 @@ func (s *Server) merged(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	res, err := s.Merged(body.Into, body.Branches)
+	if err != nil {
+		writeErr(w, http.StatusConflict, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
+// mergeProof answers `{into, ref, tip, merged}` for `{dir, ref, into}`. A refusal
+// is a 409 carrying the reason, since the caller is another part of atrium.
+func (s *Server) mergeProof(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Dir  string `json:"dir"`
+		Ref  string `json:"ref"`
+		Into string `json:"into"`
+	}
+	_ = json.NewDecoder(io.LimitReader(r.Body, 1<<12)).Decode(&body)
+	res, err := s.MergeProof(body.Dir, body.Ref, body.Into)
 	if err != nil {
 		writeErr(w, http.StatusConflict, err)
 		return

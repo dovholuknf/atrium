@@ -991,6 +991,10 @@ const reportLine = "When you finish, get blocked, or need an answer, call atrium
 // cap its workers share.
 const SubagentTag = "atrium:subagent"
 
+// DirectorTag is what a launch asks for to be left alone by the merged-cull and
+// not to count against the launch cap: an orchestrator, not a worker.
+const DirectorTag = "atrium:director"
+
 // hasOriginTag reports whether a card carries the agent-launch marker.
 func hasOriginTag(tags []string) bool { return hasTag(tags, OriginTag) }
 
@@ -1211,6 +1215,12 @@ func (c *controlMCP) launchHandler(ctx context.Context, req *mcp.CallToolRequest
 	// launch is told apart from a human's hand-started session. The cap counts
 	// SubagentTag instead, which the caller supplies in its own tags.
 	tags := append(append([]string{}, in.Tags...), OriginTag)
+	// A launch from an agent is a WORKER unless the caller says it is a director:
+	// the merged-cull only ever touches workers, so the default has to be the
+	// one that can be culled and the exception has to be asked for.
+	if !hasTag(in.Tags, DirectorTag) && !hasTag(in.Tags, SubagentTag) {
+		tags = append(tags, SubagentTag)
+	}
 	// WHO IS LAUNCHING, from the caller's own identity header, so the room can
 	// record the lineage and route the worker's reports back. See
 	// docs/a2a-reliability-design.md.
@@ -1353,6 +1363,7 @@ type cullInput struct {
 	Card string `json:"card" jsonschema:"the worker to cull: a card id, handle or alias"`
 	Into string `json:"into,omitempty" jsonschema:"the branch its branch must be merged into. default claude/main"`
 	Hold bool   `json:"hold,omitempty" jsonschema:"keep the worker instead of culling it: cancels the automatic cull for good"`
+	Tip  string `json:"tip,omitempty" jsonschema:"a merge proof made elsewhere: the commit the area branch was checked to contain. the room culls only if its worktree is on exactly it"`
 }
 
 type cullOutput struct {
@@ -1408,7 +1419,7 @@ func (c *controlMCP) cullHandler(ctx context.Context, req *mcp.CallToolRequest, 
 	long := &controlMCP{board: c.board, client: &http.Client{Timeout: cullTimeout, Transport: c.client.Transport}}
 	var res cullOutput
 	err = long.ask(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(id)+"/cull", room,
-		map[string]string{"into": strings.TrimSpace(in.Into)}, &res)
+		map[string]string{"into": strings.TrimSpace(in.Into), "tip": strings.TrimSpace(in.Tip)}, &res)
 	if err != nil {
 		var be *boardError
 		if errors.As(err, &be) && be.bare && be.code == http.StatusNotFound {
