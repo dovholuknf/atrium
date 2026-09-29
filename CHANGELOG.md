@@ -5,6 +5,15 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **Dollar cost is hidden and no longer calculated.** See `docs/backlog-2.md` item 37.
+
+  clint decided the figure is not worth having. A usage row is no longer priced, and no dollar amount is sent to the
+  board or shown on it: the usage tab, the card's details, the peek, keep-alive's tooltips, its settings line and its
+  break-even toast all show tokens or counts only. Token counts are unchanged. The price tables and the stored `cost`
+  columns stay in place and no migration runs. Keep-alive's break-even stop still prices each refresh and works
+  exactly as before, until its time limit replaces it. Only the figure is hidden. The item 37 entry lists every place
+  cost was computed and shown.
+
 - **A batch deploy is healthy only when the room answers from its store.** See `docs/backlog-2.md` item m-002.
 
   `deploy-batch.ps1` now refuses a build that does not report its commit, asks the room for `/v1/settings` right
