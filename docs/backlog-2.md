@@ -3184,7 +3184,8 @@ and it reverses the toast log's rule that what you were told is a fact about a s
 
 ## t-001. File-link hover tip flickers while the terminal repaints (bug)
 
-Status: not started. Backlog only, nobody builds it yet. Owned by @terminal. First item under the department ids.
+Status: built on `claude/sat-001`. `leave` hides after 150ms and a `hover` on the same path inside the window
+cancels it, in `terminal-links.js` only. Cause confirmed by a headless repro (`linkTip` section). Owned by @terminal.
 
 Hovering a path in an attached terminal while output repaints makes the tip pop, vanish, and pop again. The likely
 cause: xterm drops the link under the pointer whenever its row is redrawn, which fires `leave` (the tip hides), then
@@ -3497,10 +3498,26 @@ Design questions:
 3. Whether posting to GitHub is ever in scope, and if so, behind what confirmation.
 4. How it relates to u-004 (answering Open Questions from the board): both turn a chat walk into a list you act on.
 
-## r-004. The worktree-gone reaper ended a live worker after it changed directory (bug, HIGH)
+## u-006. A link clicked in a terminal reuses its tab instead of opening a new one (bug)
 
-Status: diagnosed 2026-09-29 by @runtime, not fixed. Owned by @runtime. No worker launched, and none will be without
-clint.
+Status: built 2026-09-29 on `claude/sau-006`, headless section `linkReuse`, not yet merged. Owned by @ui, although the file is @terminal's, because @terminal was at
+its worker cap. Raised by clint 2026-09-29.
+
+`openTermURL` (`internal/api/web/js/terminal-links.js:381`) clicks an anchor with `target="_blank"`, so every link
+opens a new tab. During a review walk clint clicks one GitHub deep link per finding and ends up with dozens.
+
+Fix: open into a NAMED window. One name per pull request for `github.com/<org>/<repo>/pull/<n>/...` (for example
+`atrium-link-github.com/openziti/zrok/pull/1277`), and one per origin plus path for anything else. Chrome ignores the
+name and always opens a new window when `noopener` is set, so this is `window.open(url, name)` with the returned
+window's `opener` set to null at once, rather than `rel=noopener`. The referrer must stay withheld, which `noreferrer`
+used to do, because the address of a published board is not to be handed to whatever an agent printed. The review
+tab's `o` and `C` keys (u-005, sau-005) use the same helper.
+
+ The worktree-gone reaper ended a live worker after it changed directory (bug, HIGH)
+
+Status: fixed on branch `claude/sar-004` (2026-09-29), not yet merged. Three parts: a card's `Worktree` never follows
+the session's cd (an empty one is filled once), every runner keeps its launch directory for `runnerDir`, and `hadGit`
+is keyed by card and directory. Owned by @runtime.
 
 **What happened.** sa96 (`01a0ede6-10f6`, a review-manager by @review, launched in
 `D:/worktrees/claude/reviews/github-openziti-ziti/pr-4397-990aa0c`) was ended 90 seconds in. Nobody asked it to
@@ -3551,3 +3568,60 @@ sa98 in the same directory is exposed to the same thing.
 
 Tests: a runner launched in a directory without `.git` whose card's `Worktree` moves to a subdirectory with a `.git`
 and back is not wound down. A runner whose launch directory really is removed still is.
+
+## r-005. A lean launch that can still start subagents (feature)
+
+Status: not started. Owned by @runtime. Approved by clint 2026-09-29.
+
+A lean launch removes the `Agent` tool (`leanDisallowed` in `internal/daemon/lean.go`) and loads none of the
+operator's agent pack. So a lean review-manager cannot start the reviewers it exists to run. @review now launches
+review-managers and walkers with the full setup, which carries every skill, memory and CLAUDE.md the operator has.
+
+Add a way to launch lean and keep `Agent` plus a named list of agents, for example
+`lean_agents: ["codebase-steward", "go-security-reviewer", "functional-tester", "nonfunctional-tester"]` on
+`atrium_launch`, and the review-panel skill. Only the named agents' files are made available. Everything else lean
+drops stays dropped. r-001 edits the same file (it keeps `statusLine` for lean cards), so build the two together or
+one after the other.
+
+## f-004. Two rooms on one machine, to bring one up and migrate (design)
+
+Status: not started. Design first, backlog only. Owned by @fabric. Raised by clint 2026-09-29.
+
+clint, after the t-002 room restart: "we should go back to allowing sg4 to have two rooms so we can bring one up,
+migrate". A room restart today stops every session the room supervises until it comes back. A second room on the
+same machine, started beside the first, would let a new build come up, take cards over one at a time, and let the
+old room go. The same move would carry a room to another machine: "what if i wanted to move to sg3?"
+
+Known hazard, from memory and past incidents: a second room steals the hook pointer and port 7777 unless
+`ATRIUM_LOCATION` is private (`throwaway-room-hijacks-hooks`). Design questions:
+
+1. How a card moves between rooms: its store rows, its conversation (the transcript lives on the machine), and its
+   pty, which cannot move, so the runner resumes in the new room.
+2. How hooks find the right room while two are up.
+3. Whether this replaces the room restart for deploys, and what the board shows during a migration.
+4. Moving to another machine (sg4 to sg3): the worktree and the Claude transcript must travel too.
+
+## r-006. A card owns what it created, and closing it cleans up (feature)
+
+Status: not started. Design first. Owned by @runtime, with @ui for the board side. Raised by clint 2026-09-29.
+
+clint: "pr reviews need atrium to clean them up. leftover worktrees, etc all need cleanup. is that an atrium task or
+an agent that still needs to do that?" Today an agent does it, by hand, when it remembers: the orchestrator's rule is
+"merged and accepted means exit the worker and remove its worktree and branch", and @review removes a walker's source
+worktree after culling it. Left behind today: dozens of `claude/*` worktrees and branches (`notes/merge.txt` lists 38
+branch deletes, 23 merged dirty worktrees and 99 unmerged branches), review source trees in `D:/tmp` and under
+`D:/worktrees/claude/reviews/`, and throwaway directories.
+
+It should be atrium's job, because atrium already knows which card was launched where:
+
+- A card records what it created: its worktree and branch (from `scripts/new-worktree.ps1` or a role's recipe), and
+  any extra directories a launch names (a PR head tarball, a `src/` worktree).
+- Closing a card (archive, or "walk done" for a PR walker) offers the cleanup with a preview: remove the worktree when
+  it is clean and its branch is merged, and list what is dirty or unmerged instead of deleting it. Nothing is removed
+  without that preview, and nothing unmerged is removed without an explicit yes.
+- The board has one "leftovers" list: worktrees, branches and directories whose card is gone, for the backlog that
+  exists today.
+- A review keeps its report folder. Only the code trees go.
+
+Relates to r-003 (a role's working-directory recipe is where a worktree comes from), r-004 (a card's directory is
+fixed at launch, so it is a stable key), and u-005 stage 2 (a PR's walker and trees belong to the PR).

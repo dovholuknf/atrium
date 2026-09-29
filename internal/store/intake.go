@@ -438,7 +438,9 @@ func (s *Store) Claim(taskID string, obs Observed) (*Task, error) {
 		if obs.Runner == "" {
 			obs.Runner = t.Runner
 		}
-		if err := s.refreshObserved(t, obs); err != nil {
+		// A claim is atrium starting the card, so the directory it started in
+		// replaces the suggested one. That is not following a cd.
+		if err := s.refreshObservedAt(t, obs, true); err != nil {
 			return err
 		}
 		out = t

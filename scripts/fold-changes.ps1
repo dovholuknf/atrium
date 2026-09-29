@@ -1,11 +1,14 @@
 <#
 .SYNOPSIS
-  Fold every docs/changes/<item>.md into CHANGELOG.md and docs/test-plan.md, then git rm it.
+  Fold every docs/changes/<item>.md into docs/test-plan.md, then git rm it.
 
 .DESCRIPTION
-  Each change file has two sections, "## Changelog" and "## Test plan", in that order. The changelog body goes to
-  the top of "## Unreleased" in CHANGELOG.md (newest first). The test-plan body has @LETTER@ placeholders, which are
-  replaced with the next free test-plan letter, and is appended to docs/test-plan.md. See docs/changes/README.md.
+  Each change file has one required section, "## Test plan". Its body has @LETTER@ placeholders, which are replaced
+  with the next free test-plan letter, and is appended to docs/test-plan.md. See docs/changes/README.md.
+
+  CHANGELOG.md is frozen and this script never writes it. An older file may still carry a "## Changelog" section.
+  That section is moved, as it stands, into changelog/<dept>/<yyyy-mm-dd>-<item>.md. The dept comes from the item's
+  prefix (u ui, t terminal, r runtime, f fabric, m merge), or from -Dept when the item has none of those.
 
   The next letter is the one after the highest heading letter in docs/test-plan.md. Letters run A..Z, AA..AZ, BA and
   so on. A heading whose letter is more than 26 steps past the running highest one in file order is treated as an
@@ -17,6 +20,9 @@
 .PARAMETER Item
   Fold only docs/changes/<Item>.md.
 
+.PARAMETER Dept
+  The dept for a leftover changelog section whose item id has no department prefix: the branch's director.
+
 .PARAMETER Root
   Repository root. Defaults to the parent of this script's directory.
 #>
@@ -24,6 +30,8 @@
 param(
     [switch]$DryRun,
     [string]$Item,
+    [ValidateSet('ui', 'terminal', 'runtime', 'fabric', 'review', 'rnd', 'merge')]
+    [string]$Dept,
     [string]$Root = (Split-Path -Parent $PSScriptRoot)
 )
 $ErrorActionPreference = 'Stop'
@@ -46,9 +54,18 @@ function ConvertTo-Letters([int]$n) {
     $s
 }
 
+function Get-Trimmed([string[]]$lines) {
+    $l = @($lines)
+    while ($l.Count -gt 0 -and $l[0].Trim() -eq '') { $l = @($l | Select-Object -Skip 1) }
+    while ($l.Count -gt 0 -and $l[-1].Trim() -eq '') { $l = @($l | Select-Object -SkipLast 1) }
+    , $l
+}
+
+$prefixDept = @{ u = 'ui'; t = 'terminal'; r = 'runtime'; f = 'fabric'; m = 'merge' }
+
 $changesDir = Join-Path $Root 'docs/changes'
-$changelog = Join-Path $Root 'CHANGELOG.md'
 $testplan = Join-Path $Root 'docs/test-plan.md'
+$today = Get-Date -Format 'yyyy-MM-dd'
 
 if (-not (Test-Path $changesDir)) { Write-Host 'nothing pending (no docs/changes)'; exit 0 }
 $files = @(Get-ChildItem $changesDir -Filter '*.md' | Where-Object { $_.Name -ne 'README.md' } | Sort-Object Name)
@@ -64,29 +81,34 @@ foreach ($f in $files) {
     $lines = @(Get-Content $f.FullName)
     $ci = [array]::IndexOf($lines, '## Changelog')
     $ti = [array]::IndexOf($lines, '## Test plan')
-    if ($ci -lt 0) { Fail "$($f.Name): no '## Changelog' line" }
     if ($ti -lt 0) { Fail "$($f.Name): no '## Test plan' line" }
-    if ($ti -lt $ci) { Fail "$($f.Name): '## Test plan' comes before '## Changelog'" }
-    $cl = @($lines[($ci + 1)..($ti - 1)])
-    $tp = @($lines[($ti + 1)..($lines.Count - 1)])
-    while ($cl.Count -gt 0 -and $cl[0].Trim() -eq '') { $cl = @($cl | Select-Object -Skip 1) }
-    while ($cl.Count -gt 0 -and $cl[-1].Trim() -eq '') { $cl = @($cl | Select-Object -SkipLast 1) }
-    while ($tp.Count -gt 0 -and $tp[0].Trim() -eq '') { $tp = @($tp | Select-Object -Skip 1) }
-    while ($tp.Count -gt 0 -and $tp[-1].Trim() -eq '') { $tp = @($tp | Select-Object -SkipLast 1) }
-    if ($cl.Count -eq 0) { Fail "$($f.Name): the Changelog section is empty" }
+    $cl = @()
+    if ($ci -ge 0) {
+        # A leftover section runs from its heading to the other one, or to the end of the file.
+        $end = if ($ti -gt $ci) { $ti - 1 } else { $lines.Count - 1 }
+        if ($end -gt $ci) { $cl = Get-Trimmed $lines[($ci + 1)..$end] }
+        if ($cl.Count -eq 0) { Fail "$($f.Name): the Changelog section is empty, delete the heading" }
+        if ($cl -join "`n" -match '@LETTER@') { Fail "$($f.Name): @LETTER@ appears in the changelog section" }
+    }
+    $tpEnd = if ($ci -gt $ti) { $ci - 1 } else { $lines.Count - 1 }
+    $tp = @()
+    if ($tpEnd -gt $ti) { $tp = Get-Trimmed $lines[($ti + 1)..$tpEnd] }
     if ($tp.Count -eq 0) { Fail "$($f.Name): the Test plan section is empty" }
-    if ($cl[0] -notmatch '^- \*\*') { Fail "$($f.Name): the changelog entry must start with '- **Title.**'" }
     if ($tp[0] -notmatch '^## @LETTER@\.? \S') { Fail "$($f.Name): the test plan must start with '## @LETTER@ Title'" }
     $joined = $tp -join "`n"
     if ($joined -match '(?m)^#{2,3} (?!@LETTER@)[A-Z]{1,3}\d*\. ') { Fail "$($f.Name): a heading carries a hard-coded letter" }
-    if ($cl -join "`n" -match '@LETTER@') { Fail "$($f.Name): @LETTER@ appears in the changelog section" }
-    $parsed += [pscustomobject]@{ File = $f; Changelog = $cl; TestPlan = $tp }
-}
 
-# The changelog anchor.
-$clLines = [System.Collections.Generic.List[string]]@(Get-Content $changelog)
-$ui = $clLines.IndexOf('## Unreleased')
-if ($ui -lt 0) { Fail "CHANGELOG.md has no '## Unreleased' line" }
+    $entryPath = $null
+    if ($cl.Count -gt 0) {
+        $d = $null
+        if ($f.BaseName -match '^([a-z])-\d') { $d = $prefixDept[$Matches[1]] }
+        if (-not $d) { $d = $Dept }
+        if (-not $d) { Fail "$($f.Name): has a Changelog section and no dept prefix, pass -Dept <the branch's director>" }
+        $entryPath = "changelog/$d/$today-$($f.BaseName).md"
+        if (Test-Path (Join-Path $Root $entryPath)) { Fail "$($f.Name): $entryPath already exists" }
+    }
+    $parsed += [pscustomobject]@{ File = $f; Changelog = $cl; TestPlan = $tp; EntryPath = $entryPath }
+}
 
 # The next free letter.
 $tpLines = [System.Collections.Generic.List[string]]@(Get-Content $testplan)
@@ -102,26 +124,32 @@ if ($max -eq 0) { Fail 'found no lettered sections in docs/test-plan.md' }
 Write-Host "highest letter in use: $(ConvertTo-Letters $max)"
 
 $next = $max
-# Newest first: fold in file order, each one going above the last, so a later item ends up on top.
-$insertAt = $ui + 1
-while ($insertAt -lt $clLines.Count -and $clLines[$insertAt].Trim() -eq '') { $insertAt++ }
 foreach ($p in $parsed) {
     $next++
     $letter = ConvertTo-Letters $next
     $tp = @($p.TestPlan | ForEach-Object { $_ -replace '@LETTER@', $letter })
-    $entry = @($p.Changelog) + ''
-    $clLines.InsertRange($insertAt, [string[]]$entry)
     $tpLines.Add('')
     $tpLines.AddRange([string[]]$tp)
-    Write-Host "$($p.File.Name): changelog entry to the top of Unreleased, test plan as section $letter"
+    Write-Host "$($p.File.Name): test plan as section $letter"
+    if ($p.EntryPath) {
+        Write-Host "$($p.File.Name): leftover changelog section to $($p.EntryPath)"
+        if ($p.Changelog.Count -gt 5) { Write-Warning "$($p.EntryPath) is $($p.Changelog.Count) lines, the rule is 1 to 5" }
+    }
 }
 
 if ($DryRun) { Write-Host 'dry run: nothing written, nothing removed'; exit 0 }
 
 $enc = New-Object System.Text.UTF8Encoding($false)
-[System.IO.File]::WriteAllText($changelog, (($clLines -join "`n") + "`n"), $enc)
 [System.IO.File]::WriteAllText($testplan, (($tpLines -join "`n") + "`n"), $enc)
 foreach ($p in $parsed) {
+    if ($p.EntryPath) {
+        $full = Join-Path $Root $p.EntryPath
+        New-Item -ItemType Directory -Force (Split-Path -Parent $full) | Out-Null
+        [System.IO.File]::WriteAllText($full, (($p.Changelog -join "`n") + "`n"), $enc)
+        git -C $Root add -- $p.EntryPath
+        if ($LASTEXITCODE -ne 0) { Fail "git add failed for $($p.EntryPath)" }
+        Write-Host "wrote $($p.EntryPath)"
+    }
     git -C $Root rm -q -f -- "docs/changes/$($p.File.Name)"
     if ($LASTEXITCODE -ne 0) { Fail "git rm failed for $($p.File.Name)" }
     Write-Host "removed docs/changes/$($p.File.Name)"

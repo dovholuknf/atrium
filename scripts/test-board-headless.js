@@ -4433,6 +4433,135 @@ async function carryLinkSection(browser, base) {
   tasksMode = was;
 }
 
+// ── the file-link tip survives a repaint of its row (backlog-2 t-001) ─────
+// xterm drops the link under the pointer when its row is redrawn, which fires
+// `leave` and then `hover` again. The tip used to hide on `leave` and come back
+// after the hover delay. It now stays up across a repaint, and still goes when
+// the pointer really leaves, on a click, or for a different path.
+async function linkTipSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  landList = [LAND["land-live"]];
+  landPerms = [];
+  const errors = [];
+  const ctx = await landContext(browser);
+  await ctx.addInitScript(() => {
+    const Real = window.WebSocket;
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
+        onopen: null, onclose: null, onmessage: null, onerror: null,
+        send() {}, close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  });
+  // Every word asked about is a file, so both paths become links.
+  await ctx.route("**/files/probe", route => {
+    const paths = JSON.parse(route.request().postData() || "{}").paths || [];
+    const found = paths.filter(p => /\//.test(p)).map(p => ({ path: p, rel: p, size: 1234, dir: false }));
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ found }) });
+  });
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await p.evaluate(() => attachTask("land-live"));
+    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live", null,
+      { timeout: slow(10000) });
+    await p.waitForTimeout(300);
+    const row = "see src/alpha.go here";
+    await p.evaluate(row => termSock.onmessage({ data: row + "\r\nsrc/beta.go\r\n" }), row);
+    await p.waitForTimeout(200);
+    // The tip's state, and every time it went on or off.
+    await p.evaluate(() => {
+      window.__tipLog = [];
+      const t = document.getElementById("tip");
+      new MutationObserver(() => window.__tipLog.push(t.classList.contains("on"))).observe(t,
+        { attributes: true, attributeFilter: ["class"] });
+    });
+    const tip = () => p.evaluate(() => {
+      const t = document.getElementById("tip");
+      return { on: t.classList.contains("on"), text: t.textContent };
+    });
+    const box = await p.locator("#t-screen .xterm-screen").boundingBox();
+    const cell = await p.evaluate(() => {
+      const d = term._core._renderService.dimensions.css.cell;
+      return { w: d.width, h: d.height };
+    });
+    const at = (col, r) => [box.x + cell.w * (col + 0.5), box.y + cell.h * (r + 0.5)];
+    const onAlpha = at(8, 0), onBeta = at(3, 1), off = at(40, 5);
+
+    // 1. Hovering brings the tip up after the delay.
+    await p.mouse.move(...off);
+    await p.mouse.move(...onAlpha, { steps: 3 });
+    await p.waitForTimeout(800);
+    let t = await tip();
+    if (!t.on || !/src\/alpha\.go/.test(t.text)) {
+      fail("hovering a path in the terminal did not show its tip, so this proves nothing: " + JSON.stringify(t));
+      return;
+    }
+
+    // 2. A repaint of the hovered row, then the pointer nudged so xterm asks for
+    // the link again. The tip must never go off in between.
+    await p.evaluate(row => { window.__tipLog.length = 0; termSock.onmessage({ data: "\x1b[3A\r" + row + "\r\n" }); }, row);
+    await p.mouse.move(onAlpha[0] + 1, onAlpha[1]);
+    await p.waitForTimeout(700);
+    const log = await p.evaluate(() => window.__tipLog.slice());
+    t = await tip();
+    if (log.includes(false)) fail("the tip went off while its row was repainted: " + JSON.stringify(log));
+    if (!t.on || !/src\/alpha\.go/.test(t.text)) fail("the tip was gone after its row repainted: " + JSON.stringify(t));
+
+    // 3. A different path replaces it at once, not after the delay.
+    await p.mouse.move(...onBeta, { steps: 2 });
+    await p.waitForTimeout(100);
+    t = await tip();
+    if (t.on && /alpha/.test(t.text)) fail("the tip for the old path stayed while the pointer was on another: " +
+      JSON.stringify(t));
+    await p.waitForTimeout(700);
+    t = await tip();
+    if (!t.on || !/src\/beta\.go/.test(t.text)) fail("the other path did not get its own tip: " + JSON.stringify(t));
+
+    // 4. The pointer leaving the link for blank terminal goes after the grace.
+    await p.mouse.move(...off, { steps: 2 });
+    await p.waitForTimeout(500);
+    t = await tip();
+    if (t.on) fail("the tip stayed after the pointer left the path: " + JSON.stringify(t));
+
+    // 5. The pointer leaving the terminal altogether hides at once.
+    await p.mouse.move(...onAlpha, { steps: 2 });
+    await p.waitForTimeout(800);
+    if (!(await tip()).on) fail("the tip did not come back for the second hover, so step 5 proves nothing.");
+    await p.mouse.move(box.x - 20, box.y - 20);
+    await p.waitForTimeout(50);
+    t = await tip();
+    if (t.on) fail("the tip stayed after the pointer left the terminal: " + JSON.stringify(t));
+
+    // 6. A click that opens the file takes it down at once.
+    await p.mouse.move(...onAlpha, { steps: 2 });
+    await p.waitForTimeout(800);
+    await p.mouse.click(...onAlpha);
+    await p.waitForTimeout(50);
+    t = await tip();
+    if (t.on) fail("the tip stayed after the path was clicked: " + JSON.stringify(t));
+
+    // 7. A scroll of the page hides it.
+    await p.mouse.move(...off);
+    await p.mouse.move(...onAlpha, { steps: 2 });
+    await p.waitForTimeout(800);
+    await p.evaluate(() => window.dispatchEvent(new Event("scroll")));
+    t = await tip();
+    if (t.on) fail("a scroll left the path's tip up: " + JSON.stringify(t));
+    if (errors.length) fail("the link tip page threw uncaught errors: " + errors.join(" | "));
+  } finally {
+    tasksMode = was;
+    await ctx.close();
+  }
+}
+
 // ── copy on select answers the pointer, not the find bar ──────────────────
 // Test plan BJ. The search addon shows a match by selecting it, so copy on
 // select used to copy every find keystroke, step and re-search. Typing in the
@@ -6283,8 +6412,9 @@ async function walkSection(browser, base) {
       return s;
     };
     Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
-    // The real helper is sau-006's (terminal-links.js). Stubbed so the test sees what the keys asked to open.
-    window.__stubLink = true;
+    // window.open is the only thing stubbed, so the real `openLinkReused` (u-006) runs and the test sees the URL
+    // and the window name it chose.
+    window.open = (url, name) => { window.__links.push({ url, name }); return null; };
   });
   const S = "#walk-drawer ";
   try {
@@ -6298,9 +6428,6 @@ async function walkSection(browser, base) {
       const nm = s.id + ": ";
       await p.goto(base, { waitUntil: "domcontentloaded" });
       await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
-      await p.evaluate(() => {
-        window.openLinkReused = u => { window.__links.push(u); };
-      });
       // The card has to be in the list before it can be attached, or attachTask finds nothing.
       await p.waitForSelector('#stack-list .stackrow[data-id="' + s.id + '"]', { state: "attached", timeout: slow(15000) });
       await p.evaluate(id => attachTask(id), s.id);
@@ -6389,7 +6516,8 @@ async function walkSection(browser, base) {
         .catch(() => fail(nm + "C opened nothing."));
       const link = read(names[0]).split("\n")[2];
       const opened = await p.evaluate(() => window.__links[0]);
-      if (opened !== link) fail(nm + "C opened " + opened + ", not " + link);
+      if (opened.url !== link) fail(nm + "C opened " + opened.url + ", not " + link);
+      if (!/^atrium-link-github\.com\/.+\/pull\/\d+$/.test(opened.name)) fail(nm + "C did not use the PR's named window: " + opened.name);
       const clip = await p.evaluate(() => navigator.clipboard.readText()).catch(() => null);
       if (clip !== null) {
         if (!clip.startsWith(label) || /Evidence/.test(clip)) fail(nm + "the copy is not the comment part.");
@@ -6464,6 +6592,115 @@ async function walkSection(browser, base) {
   if (errors.length) fail("walk: the page threw: " + errors.join(" | "));
 }
 
+// u-006: a URL clicked in a terminal opens into a NAMED window, one per pull
+// request, so a review walk keeps one tab. window.open is stubbed to record the
+// name, since a real popup is awkward headless.
+async function linkReuseSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  landList = [LAND["land-live"]];
+  landPerms = [];
+  const errors = [];
+  const ctx = await landContext(browser);
+  await ctx.addInitScript(() => {
+    window.__socks = [];
+    const Real = window.WebSocket;
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
+        onopen: null, onclose: null, onmessage: null, onerror: null,
+        send() {}, close() { this.readyState = 3; } };
+      window.__socks.push(s);
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+    window.__opens = [];
+    window.__wins = [];
+    window.open = (url, name) => {
+      window.__opens.push({ url, name });
+      const w = { opener: "board", focused: 0, focus() { this.focused++; } };
+      window.__wins.push(w);
+      return w;
+    };
+  });
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await p.evaluate(() => attachTask("land-live"));
+    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live", null,
+      { timeout: slow(10000) });
+    await p.waitForTimeout(300);
+
+    const urls = [
+      "https://github.com/openziti/zrok/pull/1277/files#diff-aR165",
+      "https://github.com/openziti/zrok/pull/1277/files#diff-bR61",
+      "https://GitHub.com/openziti/zrok/pull/1278/commits",
+      "https://example.com/docs/page?q=1#top"
+    ];
+    // Each on its own row, with a marker in front to click on.
+    await p.evaluate(us => new Promise(done => {
+      const s = window.__socks[window.__socks.length - 1];
+      s.onmessage({ data: new TextEncoder().encode(us.map((u, i) => "L" + i + " " + u + "\r\n").join("")).buffer });
+      term.write("", done);
+    }), urls);
+    const click = async i => {
+      const pt = await p.evaluate(i => {
+        const buf = term.buffer.active;
+        const rect = document.querySelector("#t-screen .xterm-screen").getBoundingClientRect();
+        const cw = rect.width / term.cols, ch = rect.height / term.rows;
+        for (let y = 0; y < term.rows; y++) {
+          const line = buf.getLine(buf.viewportY + y);
+          if (line && line.translateToString(true).startsWith("L" + i + " ")) {
+            return { x: rect.left + 8.5 * cw, y: rect.top + (y + 0.5) * ch };
+          }
+        }
+        return null;
+      }, i);
+      if (!pt) { fail("row L" + i + " is not on screen"); return; }
+      await p.mouse.move(pt.x, pt.y);
+      await p.waitForTimeout(150);
+      await p.mouse.click(pt.x, pt.y);
+      await p.waitForTimeout(150);
+    };
+    for (let i = 0; i < urls.length; i++) await click(i);
+    const got = await p.evaluate(() => ({ opens: window.__opens, wins: window.__wins.map(w => ({ o: w.opener, f: w.focused })) }));
+    const names = got.opens.map(o => o.name);
+    if (got.opens.length !== 4) { fail("expected four window.open calls, got " + JSON.stringify(got.opens)); }
+    else {
+      if (got.opens[0].url !== urls[0] || got.opens[1].url !== urls[1]) fail("the full url was not passed on: " + JSON.stringify(got.opens));
+      if (names[0] !== "atrium-link-github.com/openziti/zrok/pull/1277") fail("PR window name is " + names[0]);
+      if (names[1] !== names[0]) fail("two links in one PR got different names: " + names.slice(0, 2).join(" | "));
+      if (names[2] !== "atrium-link-github.com/openziti/zrok/pull/1278") fail("another PR (mixed-case host) is named " + names[2]);
+      if (names[3] !== "atrium-link-example.com/docs/page") fail("a non-GitHub link is named " + names[3]);
+      if (got.wins.some(w => w.o !== null)) fail("an opened window kept its opener: " + JSON.stringify(got.wins));
+      if (got.wins.some(w => w.f !== 1)) fail("an opened window was not focused: " + JSON.stringify(got.wins));
+    }
+    // Not a web URL, and a blocked popup, both quietly nothing.
+    const odd = await p.evaluate(() => {
+      const before = window.__opens.length;
+      openLinkReused("javascript:alert(1)");
+      openLinkReused("file:///etc/passwd");
+      const refused = window.__opens.length === before;
+      window.open = () => null;
+      let threw = false, r;
+      try { r = openLinkReused("https://example.com/x"); } catch (e) { threw = true; }
+      return { refused, threw, r };
+    });
+    if (!odd.refused) fail("a non-http url was opened.");
+    if (odd.threw || odd.r !== null) fail("a blocked popup threw or returned a window: " + JSON.stringify(odd));
+    const meta = await p.evaluate(() => (document.querySelector('meta[name="referrer"]') || {}).content);
+    if (meta !== "no-referrer") fail("the page carries no no-referrer policy: " + meta);
+  } finally {
+    await ctx.close();
+    tasksMode = was;
+  }
+  if (errors.length) fail("linkReuse: the page threw: " + errors.join(" | "));
+}
+
 async function main() {
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = "http://127.0.0.1:" + server.address().port;
@@ -6474,7 +6711,7 @@ async function main() {
     const only = { termWear: termWearSection, bridge: bridgeSection, settingsOnce: settingsOnceSection,
       groupRemove: groupRemoveSection, worn: wornSection, restartGate: restartGateSection, restartStays: restartStaysSection, atriumDown: atriumDownSection,
       toastStays: toastStaysSection, groupColor: groupColorSection,
-      groupDrag: groupDragSection, tooltip: tooltipSection, popoutTagFlip: popoutTagFlipSection, idleRate: idleRateSection, foldStill: foldStillSection,
+      groupDrag: groupDragSection, tooltip: tooltipSection, linkTip: linkTipSection,popoutTagFlip: popoutTagFlipSection, idleRate: idleRateSection, foldStill: foldStillSection,
       untaggedSort: untaggedSortSection, newCard: newCardSection, themePreview: themePreviewSection, land: landSection, reselect: reselectSection,
       toastsTop: toastsTopSection, sayWhen: sayWhenSection, pasteSpinner: pasteSpinnerSection,
       pasteBig: pasteBigSection, typing: typingSection, alias: aliasSection, copySelect: copySelectSection, busyGuard: busyGuardSection, keepalive: keepaliveSection,
@@ -6482,7 +6719,7 @@ async function main() {
       skinScope: skinScopeSection, skinHeal: skinHealSection, toastLives: toastLivesSection,
       history: historySection, contextSize: contextSizeSection, peekEverywhere: peekEverywhereSection, cardRoute: cardRouteSection,
       quietDoer: quietDoerSection, looksIdle: looksIdleSection, notifyOff: notifyOffSection,
-      questionsClick: questionsClickSection, walk: walkSection };
+      questionsClick: questionsClickSection, walk: walkSection, linkReuse: linkReuseSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -8408,6 +8645,7 @@ async function main() {
     await notifyOffSection(browser, base);
     await questionsClickSection(browser, base);
     await walkSection(browser, base);
+    await linkReuseSection(browser, base);
     await reselectSection(browser, base);
     // ── over a terminal the toasts hang from the top right ─────────────────
     await toastsTopSection(browser, base);
