@@ -5338,3 +5338,62 @@ item. When one is fixed the case fails with "now agree, so drop the skip", and t
   first bytes back ~45000ms` line appears.
 - Type into the same terminal: a `hub <room> echo` line still appears when the hop is over the threshold.
 - `go test ./internal/link -run "Lag|OnlyControl"` passes.
+
+## CS. One merge-check script and a dedicated merge worktree
+
+See `docs/backlog-2.md` item 77, parts a and e. Nothing here is Go: run the scripts.
+
+### CS1. The check in one call
+
+1. From a merge worktree, run `pwsh scripts/merge-check.ps1`.
+
+**Expected:** only failures print, then one summary line such as `merge-check: go 2100 pass, 1 flaky-pass | board ok
+(headless ran, NODE_PATH=...) | skins skipped (board unchanged) | build ok | PASSED`. Exit is 0. A check that did not
+run has no count on the line. A failure prints the failing test's own output and the line ends `FAILED`, exit 1.
+
+### CS2. Playwright is found, or the run fails loudly
+
+1. Run on a machine where no `node_modules` holds Playwright and no `-NodePath` is given.
+2. Run again with `-SkipHeadless`.
+
+**Expected:** the first fails with `playwright not found` and says how to fix it, rather than passing with the
+headless run skipped. The second prints `board ok (no headless)`. With Playwright present but chromium missing, the
+board check fails, since the headless run skipped itself.
+
+### CS3. Known noise is rerun alone
+
+1. Load the machine so `TestRealSessionsKeepTheirText` or an `internal/link` restart-gate test fails inside the run.
+
+**Expected:** each is rerun alone once. Passing alone, it is counted as `flaky-pass` and does not fail the run. Failing
+alone too, it is a real failure. Any other failing test is real at once.
+
+### CS4. Skins run only when the board changed
+
+1. After a merge commit that touches nothing under `internal/api/web/`, run the script. Then run with `-Board`.
+
+**Expected:** the first says `skins skipped (board unchanged)`, the second prints `all N skins agree...`. `-NoBoard`
+skips whatever the diff says, and `-Base <ref>` changes what the diff is taken against (default `HEAD^1`).
+
+### CS5. The merge worktree
+
+1. Run `pwsh scripts/setup-merge-worktree.ps1`, then run it again.
+
+**Expected:** the first creates `D:/worktrees/claude/atrium/merge` on `claude/merge-scratch`, links every CLAUDE.md,
+and installs Playwright and chromium. The second says the worktree is already registered and the install is done, and
+changes nothing. `merge-check.ps1` run from there needs no `-NodePath`.
+
+## CT. The stdio launch warns about an older room
+
+### CT1. A room that applied the options
+
+1. Run `go test ./internal/cli -run TestStdioLaunchWarnsWhenARoomDropsItsOptions`.
+
+**Expected:** it passes. With a room that echoes the options back, the launch result carries the model and effort and
+no WARNING.
+
+### CT2. A room older than launch options
+
+1. Same test, second half: the fake room returns a card with no model, effort, args or env.
+
+**Expected:** the note starts `WARNING: the room is older than launch options, so model, effort, args, env were NOT
+applied`.

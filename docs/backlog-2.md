@@ -1353,6 +1353,11 @@ Raised 2026-09-28. The old stdio control MCP (`internal/cli/control_peers.go`) t
 env fields for item 48, but not the warning the hub's control MCP gives when the room is older than the change.
 Decide whether it needs the warning or should go away.
 
+Status, 2026-09-28, sa60: fixed on `claude/sa60`. The stdio MCP is live: `atrium control` registers `atrium_launch`
+through `addPeerTools`, so it needed the warning rather than removal. The check now lives in `link.LaunchOptionsDropped`
+and `link.LaunchDroppedWarning`, used by both MCPs, and the stdio result reports the model and effort. See
+`docs/changes/60.md`.
+
 ## 61. A fake 45s hub echo in the lag log from the idle ping and pong (bug)
 
 Raised 2026-09-28, from sa55's review of the live logs. The room pings an idle attach every 45s, and the browser's
@@ -1589,6 +1594,8 @@ Order: a, c, f, then b, e, g. Owned by @merge.
 Status: b, c and g documented on claude/sa77b, not merged. Layout is `docs/changes/<item>.md`, folded by
 `scripts/fold-changes.ps1`.
 
+Status: a and e built on claude/sa77a, not merged. `scripts/merge-check.ps1` and `scripts/setup-merge-worktree.ps1`.
+
 ## 78. The details popover's token labels mislead (bug)
 
 Raised 2026-09-28 by clint on @fabric's popover: "2 turns, 48 in, 12k out" looked wrong. Checked against the
@@ -1606,6 +1613,12 @@ the fixture `screen.go` scrolled 3 rows off where xterm.js scrolled 5, with the 
 shows in the attach replay and the text scrollback view whenever a runner uses a scroll region. The case is in
 `internal/daemon/screen_diff_cases_test.go`, skipped as `backlog-2 81` until it agrees, and it fails once it does
 so the skip gets removed. Owned by @terminal.
+
+**Done by sa81 on `claude/sa81`.** `screen.go` now keeps a scroll region per buffer and follows xterm.js: line feed,
+RI, `CSI S/T/L/M` act inside it, rows leave to history only when the region starts at the top, an invalid one is
+ignored, and RIS, a resize and the alt screen reset it. The skip is gone and thirteen differential cases cover each
+rule. The text replay (`textAtRows`) now writes the region back before the cursor. `collapseRedraws` needed no change.
+DECOM is not implemented, since nothing here uses it.
 
 ## 82. `screen.go` gives a wide character one cell (bug)
 
