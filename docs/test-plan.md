@@ -5282,3 +5282,19 @@ reporting" notice.
 1. Repeat CN1 with no background shells.
 
 **Expected:** STUCK and the notice arrive as they did before this change.
+
+## CO. Revert snapshot name matches the file
+
+### CO1. Two different binaries
+
+1. Run `pwsh scripts/live/test-save-revert.ps1 -A <older exe> -B <newer exe>` with two binaries that report different
+   `atrium version` output.
+
+**Expected:** every line says PASS. Each snapshot is named `atrium.revert-<commit7>-<board8>.exe` from its own file's
+`atrium version`, and only one snapshot remains after each save.
+
+### CO2. A file that cannot answer
+
+1. The same script ends by saving a file that is not a program.
+
+**Expected:** a WARNING line, a snapshot named `atrium.revert-unknown-<timestamp>.exe`, and no error.
