@@ -1667,6 +1667,8 @@ Recommendation 1 below, stated exactly. The hold is `heightHold`, 500 ms, twice 
    flip that came back. If it equals `pendingRows`, do nothing, so the hold keeps counting from when that value was
    first seen. Otherwise set `pendingRows` to it, bump `pendingGen`, and restart the timer for the full hold. A new
    value always restarts it.
+3. The re-tell. Whenever a held height is cancelled or superseded, here or when the timer fires, call `noteResized`
+   with no `SetSize` and no `Resize`, so every attach re-reads `CurrentSize` and tells its viewer the applied size.
 
 **The timer firing.** Take `resizeMu`, then in order:
 1. A `pendingGen` that is not the one it was started with means a later change superseded it. Return.
@@ -1675,10 +1677,16 @@ Recommendation 1 below, stated exactly. The hold is `heightHold`, 500 ms, twice 
    is what the last viewer leaving already means.
 4. Apply only if `agreedViewport(views).rows` still equals `pendingRows` AND differs from `appliedRows`. Then
    `SetSize(agreed.cols, pendingRows)`, then `Resize`, then `noteResized`, keeping mark before resize. A `Resize`
-   error is logged, as `attach.go` does now. Anything else clears `pendingRows` without resizing.
+   error is logged, as `attach.go` does now. Anything else clears `pendingRows` without resizing, and re-tells.
 
 **What viewers see during the hold.** `CurrentSize` reports the APPLIED size, never the agreed one, so `tellSize`, the
 ring's marks and the replay all agree with the pty. A viewer is told the new height only when it is applied.
+
+**The re-tell cannot start a refit loop.** Each attach sends a `size` frame only when `CurrentSize` differs from
+what it last told that socket (`attach.go:479`), so a re-tell with nothing changed sends no frame. A frame at the same
+size would be harmless anyway. `takeTermSize` (`terminal.js:65`) only stores the size and calls `applyPtySize`, which
+resizes xterm only when the grid differs (`terminal-links.js:1875`) and never sends a `resize` back. Only a fit
+(`onTermResize`) sends one.
 
 **Growing waits too.** The transient in the live room was a reattach of the shortest viewer, and that GROWS first
 and shrinks back (the list above), so an immediate grow would let the very flip this exists to stop through. A
@@ -1692,7 +1700,8 @@ new height. It is one viewer and one resize, against a flip that costs every vie
 **Tests.** Rows flipped 50, 40, 50 inside the hold: zero `Resize` calls. Held past it: one, at the new height. A width
 change during a pending shrink: one `Resize` at the new width and the OLD rows, then the shrink when the hold ends.
 Every viewer gone before the timer fires, and `r.done` closed before it fires: zero. `CurrentSize` read during the
-hold: the applied size. Then the harness `flip` runs through the real code path.
+hold: the applied size. A hold cancelled by the height coming back, and one superseded by a new height: `sizeChanged`
+wakes with no `Resize`. Then the harness `flip` runs through the real code path.
 
 ### Recommendation
 
