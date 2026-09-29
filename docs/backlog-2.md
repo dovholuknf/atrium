@@ -1627,6 +1627,10 @@ CJK and other wide characters two. A cursor move back over a wide character land
 against `あい.`. A fix needs a continuation cell handled in `render`, `writeRow`, and the erase and insert ops. The
 case is skipped as `backlog-2 82` in `internal/daemon/screen_diff_cases_test.go`. Owned by @terminal.
 
+Status: built on claude/sa82, not merged. `screen.go` gives a wide character a head and a continuation cell, widths
+come from a table generated from the vendored xterm.js, and the skip is gone. Differential cases cover each op,
+all agreeing with xterm.js apart from one accepted reflow difference. See `docs/changes/82.md`.
+
 ### Design
 
 Written against `screen.go` before sa81 (DECSTBM) merges. Sa81 lands first and this lands second, so the cell ops
@@ -1649,7 +1653,9 @@ over a few hundred ranges.
   attach to the cell before them and take no cell. VS16 does not widen its base, again as V6.
 - A ZWJ emoji sequence is therefore several width 1 emoji with joiners attached, which is what xterm shows. No
   grapheme segmentation, so no `rivo/uniseg`.
-- A zero width code point with no base (column 0, after an erase) is dropped.
+- A zero width code point with nothing to attach to (column 0, or after another loose mark) is NOT dropped: xterm
+  gives it a cell of its own that moves the cursor one column. The differential settled this, and `put` does the
+  same. It attaches to a blank cell like any other.
 - C0 and DEL stay in `step`, unchanged.
 
 **The cell model.** `cell` is `{ch rune, sgr string}`, 24 bytes. It becomes `{ch rune, ext uint32, sgr string}`, still
@@ -1672,8 +1678,9 @@ the differential and takes xterm's answer where they differ.
   writing on a head blanks its continuation, and a width 2 write whose second cell lands on the head of another wide
   character blanks that one's continuation. Blanked cells are the plain `blank` value.
 - A wide character at the last column wraps early. `put` sees `col == cols-1` with width 2, wraps first and writes on
-  the next row. The abandoned last-column cell is left as it was, to be confirmed. In a one column grid the character
-  is dropped.
+  the next row. The differential settled the abandoned last-column cell: xterm BLANKS it, wearing the colour being
+  written, so a character already there is gone. xterm clamps a terminal to two columns, so the one column guard is
+  only a guard.
 - A cursor landing on a continuation (`CUB`, `CHA`, `CUP`, backspace, restore, tab) stays there. The next write
   repairs through `clearHalf`. Nothing snaps the cursor to the head.
 - Erase (`EL`, `ED`, `ECH`): the blanked span widens to whole characters. A span starting on a continuation blanks
