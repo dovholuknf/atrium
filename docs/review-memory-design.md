@@ -421,6 +421,29 @@ Every step is a change clint reviews before it is used. None of it is started un
 6. The first two openziti/ziti reviews started through the director, the second after the first's branch merged, and
    the numbers compared.
 
+### Stage 2, as built (2026-09-29)
+
+Steps 1 to 5 are built by the director itself, with no workers, and everything is uncommitted for clint. Step 6 waits
+for clint to pick the first PR.
+
+- **dotfiles**, worktree `D:/worktrees/claude/dotfiles/review-stage2`, branch `claude/review-stage2` from the same
+  base as sa16 (`dd58560`). It carries sa16's stage 1 diff applied unchanged, with stage 2 on top, so it reads as
+  stage 1 plus stage 2 and sa16's worktree is untouched. `claude/skills/review-panel/SKILL.md` and the four personas
+  in `claude/agents/`.
+- **dotagents**, worktree `D:/worktrees/claude/dotagents/review`, branch `review/director/2026-09-29-seed` from
+  `review/main`, which sits at dotagents `main` (`4c1b5b7`). `scripts/_common.ps1` (the exclusion), and six new
+  files under `personas/`: the four openziti/ziti reviewer files, and the director's `general.md` and openziti/ziti
+  danger file.
+- **Reports folder** `D:/worktrees/claude/reviews/`, empty.
+
+Two things the build found that the stage 2 steps above did not say:
+
+- **The finding schema gained two fields,** `third_party` and `test_status`, and `line` is defined as the PR head's
+  line. Cause is derived from `third_party` and the existing `preexisting`, so no field duplicates another.
+- **A reviewer reads its file at a commit, and the seed is not committed yet.** The first review through the
+  director needs the seed committed on its branch and merged into `review/main`, so there is a commit to read at.
+  That commit waits for clint's word.
+
 ## Review
 
 Mercurius session `s_xT8IKRB82yUj`, closed 2026-09-29, reviewed the design before this revision.
