@@ -6101,3 +6101,19 @@ A card under 40% is worth reading and does not gate anything.
 1. Run `go test ./internal/daemon/ -run '^$' -bench ReplayGrowth`.
 
 **Expected:** ns/op roughly doubles from 1x to 2x to 4x.
+
+## DT. Off holds back permission requests
+
+### DT1. A permission request while off
+
+1. Open the notification drawer and press "turn off".
+2. Have a session ask for permission.
+
+**Expected:** no toast, no desktop notification and no sound. The drawer lists "<agent> needs permission" and the
+bell's badge counts it. The perms tab still shows the request.
+
+### DT2. Back on
+
+1. Press "turn on" in the drawer.
+
+**Expected:** the next permission request toasts and sounds as before.

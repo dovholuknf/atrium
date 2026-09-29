@@ -5,6 +5,12 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **Turning notifications off holds back permission requests too.** See `docs/backlog-2.md` item 79.
+
+  clint answered item 79's open question: off means notifications in general. A permission request raises no toast,
+  desktop notification or sound while off, and is still listed in the drawer. `NOTIFY_OFF_SILENCES_PERMISSIONS` in
+  `js/notify.js` is now true, and the drawer's tip no longer says permission requests still come through.
+
 - **The screen model's real-session tests no longer read the live scrollback.** See `docs/backlog-2.md` item 93.
 
   `screen_real_test.go` used to replay every big file in the live room's own ring, so the full suite failed on
