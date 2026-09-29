@@ -208,6 +208,63 @@ click marks them answered or only seen, and do the same for `! N`.
 the terminal instead. The chip must take its own click (stopPropagation) and clear, without selecting the row. The
 wasted repaint that selecting caused is item 20.
 
+**Design, 2026-09-29 (@ui).**
+
+Two different things wear a count, and they need different answers.
+
+- **`? N` is a turn's Open Questions** (`seenChips` in `js/seen.js`, drawn by `board.js`, `stack.js` and
+  `termRowChips` in `terminal-list.js`). It clears only when `turn_seen.answered_at` is set, and today only a
+  prompt, a message or `atrium finish` sets that. Typing the answer in the terminal is invisible to atrium, which is
+  the way clint actually answers, so the chip stays up.
+- **`! N` is a peer message held behind the operator's line or a turn** (`termHeldChip`). It is not a question.
+  "Clearing" it could mean dropping a message or forcing it in past the gate, and both lose something.
+
+What gets built:
+
+1. **Clicking `? N` dismisses the questions.** Dismiss, not "seen": seen is the dot's business and does not take
+   `?` off. The chip's markup gets `onclick="event.stopPropagation();dismissQuestions(id)"` inside `seenChips`,
+   so all three places it is drawn change at once and none of them selects its row or opens its card. It also gets
+   `role="button"`, `tabindex="0"` and an Enter/Space handler, the same way the other clickable chips work.
+2. **One new route: `POST /v1/tasks/{id}/questions/dismiss`, body `{"questions_at": "<the value the chip was
+   drawn from>"}`.** Shaped like `POST /v1/tasks/{id}/seen` and for the same reason: the click names the set it
+   was shown, so a stale render cannot dismiss a newer set. It calls a new store function,
+   `DismissQuestions(taskID, shownQuestionsAt)`, which sets `answered_at` and `answered_via = "dismissed"` only when
+   the stored `questions_at` is not later than the shown one (compared as times, as `MarkSeen` compares its turn), and leaves `seen_at` alone. `MarkAnswered` is not reused because
+   it also marks the turn seen, and a dismissed question is not a read turn. It answers
+   `{"dismissed": true|false, "stale": true|false}` and publishes the card. `stale` means newer questions arrived
+   since the chip was drawn: nothing changes, and the board toasts "newer questions arrived, nothing was dismissed"
+   and repaints so the new chip shows. A missing or unparseable `questions_at` is a 400. An unknown card is a 404.
+   A card with nothing open answers `dismissed: false, stale: false` rather than an error. A `room~id` goes through
+   the hub's generic task proxy like `/asks` does (`internal/link/fanout_test.go`), so it needs no hub change.
+3. **What an agent sees.** `atrium_task`'s `seen.answered` becomes true and `answered_via` reads `dismissed`, so a
+   launcher can tell "clint dismissed it" from "clint replied". `internal/link/control_mcp.go` already passes
+   `answered_via` through. The tool description needs one clause about `dismissed`.
+4. **Feedback.** The chip comes off when the card is repainted, which `refreshSoon()` asks for after the call, the
+   same helper `reportSeen` uses. A
+   toast says "questions dismissed, nothing was sent to the session", matching `dismissAsks`. A failed call leaves
+   the chip and toasts the error. No confirm, because clint asked for one click. The tooltip, which already lists
+   the questions, ends "click to dismiss them without replying" rather than only "clears when you reply to it".
+5. **`! N` and `✉ N` take their own click too, and do nothing else yet.** `event.stopPropagation()` so the row is
+   not selected. What a click should DO to a held message is an open question for clint (below).
+
+Not in scope: the unseen dot (it already clears on dwell), the `asked you` state chip on stack rows (it is the ask
+field, which the card menu's "dismiss questions" already clears), and item 20's repaint.
+
+Headless section `questionsClick`: a terminal row, a stack row and a board card each with `seen.answered: false`
+and two questions. Clicking the chip must not change `termTask` or open the card dialog, must send exactly one
+`POST /v1/tasks/<id>/questions/dismiss` carrying the card's `questions_at`, and the chip must be gone after the
+next poll. A mocked `stale: true` answer must toast and leave the chip. A click on `!` must not change `termTask`.
+Go: store tests that `DismissQuestions` sets answered and leaves seen, and that an older `questions_at` changes
+nothing. An api test for the route, including the 400.
+
+Review: Mercurius round 1 (s_ajiZDcEq7DfD) found that dismissing without naming the set shown lets a stale render
+dismiss newer questions (C1, folded as the `questions_at` precondition and `stale`). Its advisory, use
+`refreshSoon`, is folded too.
+
+Open question for clint: what should clicking `!` on a held message do? Recommendation: nothing yet beyond not
+selecting the row, because the tooltip already says what clears it and both obvious actions (send it now past
+the gate, or drop it) lose something.
+
 ### 12. Keep codex up to date
 
 **Raised 2026-09-24.** Not started.
@@ -1400,6 +1457,44 @@ room, so a pinned strip that holds cards from two rooms saves the order of only 
 Also, unverified and a design question for clint: in any sort other than manual, the board has no way to reorder
 pins.
 
+**Design, 2026-09-29 (@ui).**
+
+Where it goes wrong. Only the terminal strip's pinned drop (`wireTermDrag` in `js/terminal-list.js`, the bucket's
+`ondrop` that calls `/v1/tasks/pin-order`) writes the order as one list. The board and the stack move a pin with
+`nudgeCard`, a `PATCH /v1/tasks/<id>` of one rank, which is card-routed and already right. `pin-order` is in
+`notCards` (`internal/link/cardroute.go`, `namesACard` in `js/rooms.js`), so on the all-rooms view the board's
+fetch wrapper stamps it with `writeRoom`, the stale room of whichever editor was last open. With no `writeRoom`
+the hub answers `needsARoom`. Either way one room at most gets the list, and it ranks its own cards `0..n` as if
+the others were not there.
+
+Why a per-room list is enough. `SetPinOrder` writes `rank = i` for each id at its index `i` and ignores ids it
+does not hold. The strip and the board merge pins across rooms with `byRank`. So if every room gets the WHOLE
+list, each ranks its own cards by their GLOBAL position, the ranks never collide, and the merged sort reproduces
+the order that was dropped.
+
+What gets built, board only, no Go change:
+
+1. In the strip's pinned `ondrop`, after the `patchTask(id, { pinned: true })`, work out the rooms present in the
+   bucket from the tagged ids (`roomOf`). No room (one daemon, or one room with bare ids): one call as today,
+   unchanged. One or more rooms: one `POST /v1/tasks/pin-order` per room, each carrying the whole bare list and
+   an explicit `X-Atrium-Room: <room>` header. The wrapper already lets an explicit header win (`AN EXPLICIT ROOM
+   WINS` in `js/rooms.js`), and the hub's `roomFor` reads the header ahead of everything else.
+2. Sent together with `Promise.allSettled`. A room that fails is named in one toast ("that order did not stick on
+   <room>: <error>"), and the rooms that succeeded keep theirs. It cannot be one transaction across machines,
+   and the next drag rewrites every position anyway. An offline room is where this fails, which the toast says.
+3. A helper, `pinOrderCalls(taggedIds)`, returns the `[{room, ids}]` list so it can be tested without a drop.
+
+The second question. `nudgeItems` offers "move it up or down" for any pinned card under ANY sort (`handList`
+returns the pinned bucket before it looks at the sort), so pins can be reordered in every sort from the card
+menu. The worker confirms that in the headless run. Whether dragging a pin should also work in the non-manual
+sorts is not asked here.
+
+Headless section `pinOrderRooms`: an all-rooms board with pinned cards `a~p1`, `b~q1`, `a~p2` (card ids are
+unique across rooms, as real ones are). Dragging `a~p2` to the top must send exactly two `pin-order` posts, one
+with `X-Atrium-Room: a` and one with `b`, each with the body `{"ids":["p2","p1","q1"]}`. With the mock answering
+the new ranks back, the strip must draw `a~p2, a~p1, b~q1`. One room refusing must toast its name. A single-room board must still send one post with no
+header. The nudge check: under the default sort, "move it up" on a pinned card sends one PATCH with a rank.
+
 ## 53. `setViewport` and `dropViewport` compute under `r.mu` and apply outside it (bug)
 
 Raised 2026-09-28 from sa51's review of the terminal-suite HANDOFF. Both work out the new viewport while holding
@@ -2008,6 +2103,11 @@ Review: Mercurius round 1 (s_12NjmPjbUY9e) found the permission question left fo
 built-no, flippable) and no record-only path for held-back alerts (C2, folded as the `logNotification` rule). Its
 advisory, an `aria-label` that follows the state, is folded too.
 
+Status 2026-09-29 (branch `claude/sa79`): built as written. `notifyHeld` in `js/notify.js` gates both `play` and
+`notify`, and the off path calls `logNotification` once per alert. The permission question is still waiting on clint,
+held in `NOTIFY_OFF_SILENCES_PERMISSIONS`. The bell glyph moved into its own `.glyph` span so it can be repainted
+without touching the badge. Headless section `notifyOff`. No timed mute.
+
 ## 80. Real-time token burn and usage charts (feature)
 
 Raised 2026-09-28 by clint, wanted tonight. Item 37 already records every Claude turn's spend, with its cause, in
@@ -2267,15 +2367,78 @@ once a room running fa2b2cc or later shows no full-write refresh for a day.
 
 Found 2026-09-29 reviewing item 82. A cell carrying combining marks points into `screen.combs`, and every mark
 attached appends a new string there, even one already held. Nothing ever removes an entry: not a clear, not RIS,
-not a row leaving history. So the table fills to `combsMaxKept` (65536) per screen, and past that `combine` drops
-every new mark for as long as the screen lives. A long session in Vietnamese or another heavily accented script
-would replay its later text without its accents. Memory is bounded (65536 entries of at most 32 bytes), so this is
-not a leak, and it did not block item 82.
-
-Fix: intern the strings (a map from mark string to index, so a repeated mark costs nothing), and compact the table
-when history is trimmed or the screen is reset, by walking the live cells and renumbering `ext`. A test attaches
-more than `combsMaxKept` marks across a scrolling screen and checks that the last row still carries its marks.
+not a row leaving history. So the table fills to `combsMaxKept` (65536), and past that `combine` drops every new
+mark. Memory is bounded (65536 entries of at most 32 bytes), so this is not a leak, and it did not block item 82.
 Owned by @terminal. Low priority.
+
+**Status: done on `claude/sa86`.** Built as designed: `combIdx` interns sequences, `combsMaxKept` and `combMax` are
+unchanged, and the ASCII apply benchmark still allocates 211 per 200 lines. Tests are in `screen_comb_test.go`.
+
+### Design
+
+**How long a screen lives.** Not as long as a session, which the first filing assumed. `screen` is built fresh
+from the ring on every render and thrown away after: `replayCut` (attach replay), `renderHistory` (the text
+scrollback view) and `classifyFrame` (the looks-idle badge, a 64KB tail) each call `newScreenSized`. So the table
+is bounded by what one ring holds, and the ring is `scrollback_mb`, 16MB by default and up to 512MB. That is
+still far past the cap, and the cap bites where it hurts most: the marks dropped are the LAST ones, which is the
+newest text, the part on screen.
+
+**Who reaches it.** A combining mark is at least two bytes of UTF-8, so the cap is about 128KB of marks in a 16MB
+ring. Precomposed Latin (NFC Vietnamese, French) never gets here, since those are single code points of width 1.
+What does get here is any script whose vowel signs are combining: Devanagari, Bengali, Tamil, Thai, where most
+syllables carry one. Also VS16 (U+FE0F) after an emoji, which Claude Code and many CLIs print in status lines, one
+per redraw. A spinner line redrawn every second with a VS16 in it spends one entry per redraw, and a long session
+spends the cap on a spinner before any real text needs it.
+
+**The fix is interning, and only interning.** `screen` gains `combIdx map[string]uint32`. `combine` builds the
+new string (`prev+string(ch)`), looks it up, and only appends when it is new. `ext` is unchanged, `emit` is
+unchanged, and the "entries are never changed once added" rule still holds, so a cell copied into history or the
+alternate screen still means the same thing. What the cap then counts is DISTINCT mark sequences. Real text has a
+few hundred at most (the string is the marks alone, never the base, so every `ka` with a vowel sign `i` shares
+`ि`). The cap becomes something only a hostile or corrupt stream reaches, which is what it is for.
+
+- Keep `combsMaxKept` and `combMax` as they are. With interning, 65536 distinct sequences of up to 32 bytes is
+  about 2MB plus the map, per render, only under hostile input. Past the cap a NEW sequence is still dropped.
+  One that was already interned is still attached, which the current code cannot do.
+- The map is made lazily, on the first mark, so an all-ASCII render allocates nothing new. The ASCII apply
+  benchmark from item 82 (211 allocs per 200 lines) must not move.
+- A render is one goroutine, so there is no lock. Nothing else shares a `screen`.
+
+**Why not compaction.** Renumbering `ext` on a history trim or a reset means walking every live and history cell
+and rebuilding the table. Nothing trims history within one render (`history` only grows, and RIS clears the grid
+but keeps it), so there is no trigger to hang it on, and a render ends before it would matter. It would be a pass
+over up to 16MB of cells to save memory the interned table no longer uses. Rejected.
+
+**Tests.**
+
+- A spinner fixture: one row redrawn 100,000 times with `\r` and a VS16, then a Devanagari line. The table holds
+  2 entries (VS16, and the vowel sign), and the Devanagari line renders with its marks.
+- Past the cap: 65536 distinct sequences (a loop over pairs of combining code points, each pair its own
+  sequence), then an ASCII letter with a mark that was already interned. It keeps the mark, and a NEW sequence
+  after that is dropped. This is the cap still working and interning still answering.
+- The differential cases from item 82 still agree, and the ASCII and CJK apply benchmarks are re-run and
+  reported next to the numbers in `docs/changes/82.md`.
+
+## 88. The looks-idle classifier writes U+FFFD for the second half of a wide character (bug, low)
+
+Found 2026-09-29 merging claude/main (item 21) into claude/terminal (item 82). `classifyFrame` in
+`internal/daemon/idleframe.go` walks `sc.cells` itself and writes every `c.ch`, turning only `0` into a space.
+Item 82 gave a wide character a continuation cell holding `contCh` (-1), and `WriteRune(-1)` writes U+FFFD. So
+every CJK character on screen reaches `classifyScreen` followed by a replacement character. The two branches
+could not see each other, so neither test caught it.
+
+It is low because nothing `classifyScreen` looks for sits in a wide character's second half: the rules are box
+drawing (width 1), the prompt is `>`, the veto strings are ASCII plus `…`. A wrong badge would need a veto string
+split by one. It is still wrong, and the comment at `idleframe.go:88` names items 81 and 82 as open gaps, which
+they no longer are.
+
+Fix: skip `contCh` cells in the loop, the way `writeRow` does, and update that comment. A test puts a CJK
+prompt inside a real idle frame and asserts the text handed to `classifyScreen` directly, not only the verdict,
+since the heuristics mask the bug: each wide character appears once, there is no U+FFFD, and the frame still
+reads idle. Owned by @terminal, built with item 86 by the same worker.
+
+**Status: done on `claude/sa86`.** The loop is now `frameText` in `idleframe.go`, which skips `contCh` cells, and the
+stale comment is rewritten. `idleframe_wide_test.go` asserts the text handed to `classifyScreen` directly.
 
 ## 89. A finished worker's runner outlives its worktree and locks the directory (bug)
 
