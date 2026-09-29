@@ -22,7 +22,7 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 13 | Housekeeping asked, not answered | housekeeping | waiting on clint |
 | 14 | Per-card notification log | design | tentative |
 | 15 | Pluggable event sink, what is left | design | stages 1-2 done |
-| 16 | Reviews that remember: a resident reviewer per repo, and a panel that reads once | design, HIGH PRIORITY | not started, clint out of tokens 2026-09-25 |
+| 16 | Reviews that remember: a resident reviewer per repo, and a panel that reads once | design, HIGH PRIORITY | designed, `docs/review-memory-design.md`. Stage 1 buildable, stage 2 waits on clint (3 questions) |
 | 17 | A Claude subagent finishing tells clint the card is waiting on him | bug | DONE, merged `29d45f5`, needs a hook binary rebuild and a room restart. Test plan BN |
 | 18 | On the terminals tab, toasts sit top right, not over the input line | feature | DONE, `910b186` |
 | 19 | Launch (and every other submit) shows it is working and refuses a second click | bug | DONE, `eb1603e` board, `50db006` daemon |
@@ -52,13 +52,13 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 43 | A worker's finished turn shows "nobody has looked" to clint, although its launcher read the report | bug | not started |
 | 44 | A gear checkbox: no notifications from agent-launched cards, on by default | feature | not started |
 | 45 | Every card shows its context size, a launcher hears once past a threshold | feature | sa87 built it to clint's decision on `claude/context-size`, not merged |
-| 46 | Provision a machine as a room over ssh, from one command and later from the board | feature | stage 1 sa92, started 2026-09-28 |
+| 46 | Provision a machine as a room over ssh, from one command and later from the board | feature | stage 1 DONE, `35fa4a1` `5145bad`, fb03 toolchain waits on a fetch. Stage 2 not started, 4 questions |
 | 47 | A resident session's alias defaults from its name, can be read and set, and heads the terminal title bar | feature, HIGH | DONE by sa47, merged `5b3d9e5`, deployed `66717c5` |
 | 48 | `atrium_launch` takes a model and a thinking effort | feature | DONE by sa48, merged, needs room and hub restarts |
-| 49 | The orchestrator can appear on every room | design | deep backlog, not started |
+| 49 | The orchestrator can appear on every room | design | @fabric, design reviewed `1ccecf2`, ready to build, 3 questions |
 | 50 | Views of agents, beyond groups | design | not started |
 | 51 | Five kept worktrees show 48 commits not matched on `claude/main` | housekeeping | DONE, all five safe, deleted 2026-09-28 |
-| 52 | A pinned strip with cards from two rooms orders only one room | bug | not started |
+| 52 | A pinned strip with cards from two rooms orders only one room | bug | DONE by fb04, merged into claude/fabric, needs hub and room restarts. `prune` has the same shape, unfixed |
 | 53 | `setViewport` and `dropViewport` compute under `r.mu` and apply outside it | bug | by sa53, DONE, reproduced and fixed |
 | 54 | Terminal test suite part 2: `screen.go` against xterm.js | feature | not started |
 | 55 | Launched runners inherit ATRIUM_DEBUG_INPUTLAG from the room | bug | DONE by sa55, merged, needs a room restart |
@@ -81,7 +81,7 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 72 | One hover on a card, not two | feature | DONE by sa72, merged `66717c5`, deployed `66717c5` |
 | 73 | A keep-alive fork carries the card's launch args, so lean cards can warm | feature | not started |
 | 74 | A long reply loses lines in the middle on the board's terminal | bug | sa74: inbox ConPTY on a row change. Height hold built, not merged. OpenConsole choice with clint |
-| 75 | sg3 as a room, and machine bootstrap reuses the operator's shared folder under `localai` | feature | sa75, parked. Provision script merged `c3dc597` |
+| 75 | sg3 as a room, and machine bootstrap reuses the operator's shared folder under `localai` | feature | sg3 room works (`35fa4a1` `5145bad`), provision script merged `c3dc597`. CIM for workers and the `localai` account not started, 4 questions |
 | 76 | A worktree helper that links every CLAUDE.md, so workers get project rules | bug, HIGH, FIRST | not started, @merge |
 | 77 | A merge pipeline that does not conflict or rerun | feature, HIGH | not started, @merge, after 76 |
 | 78 | The details popover's token labels mislead | bug | not started |
@@ -223,6 +223,68 @@ click marks them answered or only seen, and do the same for `! N`.
 the terminal instead. The chip must take its own click (stopPropagation) and clear, without selecting the row. The
 wasted repaint that selecting caused is item 20.
 
+**Design, 2026-09-29 (@ui).**
+
+Two different things wear a count, and they need different answers.
+
+- **`? N` is a turn's Open Questions** (`seenChips` in `js/seen.js`, drawn by `board.js`, `stack.js` and
+  `termRowChips` in `terminal-list.js`). It clears only when `turn_seen.answered_at` is set, and today only a
+  prompt, a message or `atrium finish` sets that. Typing the answer in the terminal is invisible to atrium, which is
+  the way clint actually answers, so the chip stays up.
+- **`! N` is a peer message held behind the operator's line or a turn** (`termHeldChip`). It is not a question.
+  "Clearing" it could mean dropping a message or forcing it in past the gate, and both lose something.
+
+What gets built:
+
+1. **Clicking `? N` dismisses the questions.** Dismiss, not "seen": seen is the dot's business and does not take
+   `?` off. The chip's markup gets `onclick="event.stopPropagation();dismissQuestions(id)"` inside `seenChips`,
+   so all three places it is drawn change at once and none of them selects its row or opens its card. It also gets
+   `role="button"`, `tabindex="0"` and an Enter/Space handler, the same way the other clickable chips work.
+2. **One new route: `POST /v1/tasks/{id}/questions/dismiss`, body `{"questions_at": "<the value the chip was
+   drawn from>"}`.** Shaped like `POST /v1/tasks/{id}/seen` and for the same reason: the click names the set it
+   was shown, so a stale render cannot dismiss a newer set. It calls a new store function,
+   `DismissQuestions(taskID, shownQuestionsAt)`, which sets `answered_at` and `answered_via = "dismissed"` only when
+   the stored `questions_at` is not later than the shown one (compared as times, as `MarkSeen` compares its turn), and leaves `seen_at` alone. `MarkAnswered` is not reused because
+   it also marks the turn seen, and a dismissed question is not a read turn. It answers
+   `{"dismissed": true|false, "stale": true|false}` and publishes the card. `stale` means newer questions arrived
+   since the chip was drawn: nothing changes, and the board toasts "newer questions arrived, nothing was dismissed"
+   and repaints so the new chip shows. A missing or unparseable `questions_at` is a 400. An unknown card is a 404.
+   A card with nothing open answers `dismissed: false, stale: false` rather than an error. A `room~id` goes through
+   the hub's generic task proxy like `/asks` does (`internal/link/fanout_test.go`), so it needs no hub change.
+3. **What an agent sees.** `atrium_task`'s `seen.answered` becomes true and `answered_via` reads `dismissed`, so a
+   launcher can tell "clint dismissed it" from "clint replied". `internal/link/control_mcp.go` already passes
+   `answered_via` through. The tool description needs one clause about `dismissed`.
+4. **Feedback.** The chip comes off when the card is repainted, which `refreshSoon()` asks for after the call, the
+   same helper `reportSeen` uses. A
+   toast says "questions dismissed, nothing was sent to the session", matching `dismissAsks`. A failed call leaves
+   the chip and toasts the error. No confirm, because clint asked for one click. The tooltip, which already lists
+   the questions, ends "click to dismiss them without replying" rather than only "clears when you reply to it".
+5. **`! N` and `✉ N` take their own click too, and do nothing else yet.** `event.stopPropagation()` so the row is
+   not selected. What a click should DO to a held message is an open question for clint (below).
+
+Not in scope: the unseen dot (it already clears on dwell), the `asked you` state chip on stack rows (it is the ask
+field, which the card menu's "dismiss questions" already clears), and item 20's repaint.
+
+Headless section `questionsClick`: a terminal row, a stack row and a board card each with `seen.answered: false`
+and two questions. Clicking the chip must not change `termTask` or open the card dialog, must send exactly one
+`POST /v1/tasks/<id>/questions/dismiss` carrying the card's `questions_at`, and the chip must be gone after the
+next poll. A mocked `stale: true` answer must toast and leave the chip. A click on `!` must not change `termTask`.
+Go: store tests that `DismissQuestions` sets answered and leaves seen, and that an older `questions_at` changes
+nothing. An api test for the route, including the 400.
+
+Review: Mercurius round 1 (s_ajiZDcEq7DfD) found that dismissing without naming the set shown lets a stale render
+dismiss newer questions (C1, folded as the `questions_at` precondition and `stale`). Its advisory, use
+`refreshSoon`, is folded too.
+
+Open question for clint: what should clicking `!` on a held message do? Recommendation: nothing yet beyond not
+selecting the row, because the tooltip already says what clears it and both obvious actions (send it now past
+the gate, or drop it) lose something.
+
+**Status 2026-09-29 (branch claude/sa11).** Built as designed. `DismissQuestions` in `internal/store/seen.go`, the
+route in `internal/api/api.go`, the chip and `dismissQuestions` in `js/seen.js`, `stopPropagation` on the held chips,
+the `dismissed` clause in `atrium_task`, and headless section `questionsClick`. Changelog and test plan are in
+`docs/changes/11.md`. The `!` click question above is still open.
+
 ### 12. Keep codex up to date
 
 **Raised 2026-09-24.** Not started.
@@ -271,7 +333,7 @@ Accepted and on `claude/main` but NOT deployed: the process registry design doc 
 ## 14. Per-card notification log
 
 **Raised 2026-09-21. TENTATIVE - clint floated it, unsure it is worth it ("not sure about that one but maybe").**
-Not started.
+Not started. Reconciled and designed 2026-09-29 by @ui, owner @ui, waiting on clint's Open Questions below.
 
 ### The idea
 
@@ -281,6 +343,85 @@ a transient toast (and toasts have been vanishing too fast to read), so a human 
 happened. The board has a global notification history (the bell). This item is a PER-CARD view of that: open a card
 and see the notifications it has raised, newest first, so "what has this session been trying to tell me" is
 answerable after the fact rather than only in the moment.
+
+### Reconciled 2026-09-29, against what is built
+
+Most of this exists. What is left is one view and one gap.
+
+What the board already keeps:
+
+- **The toast log** (`js/toast-log.js`, the bell). Every toast, every desktop notification (`logNotification`), every
+  alert item 44 mutes for an agent-launched card, and every alert item 79 holds back while notifications are off,
+  lands there. Each entry carries `taskFor`, the card a click lands on. It is per browser, in localStorage, capped at
+  200 entries across the whole board, and clearing it clears everything. That is on purpose: its header says what
+  you were told is a fact about a screen, not about the work.
+- **The card's timeline** (the details dialog, `#d-events`, `timelineHTML`). The daemon's own event log for the card:
+  permissions asked and answered, status changes, and `notified` events for uploads, file and terminal opens, the
+  restart wake, the unexpected-exit wake and a dropped cross-room message. It is durable and the same in every
+  browser.
+- **The held-message chips** (`!` and `✉` on a terminal row), for a peer message waiting at the gate.
+
+So the idea's examples split. A permission asked is already in the timeline. A going-down and a held peer message
+are in the toast log when they toasted, and a held one also wears a chip while it waits. "The daemon already records
+`notified` events per card" is true but those are not the notifications: none of them is what the board said to you.
+
+What is missing:
+
+1. **A per-card cut of the toast log.** The data is there, keyed by `taskFor`, and nothing shows one card's entries.
+2. **A pile belongs to no card.** "3 agents need permission" and "2 agents are ready" are logged with `taskFor`
+   empty, because a click on them lands on a tab, not a card. So a card that only ever alerted as part of a pile has
+   nothing in its cut, and those are the busy moments this item is about.
+
+### Design (board only, no daemon or store change)
+
+- **A section in the details dialog**, "what the board told you", under the timeline and collapsed when empty. It
+  lists this browser's toast log entries for the card, newest first, with the same row the tray draws (time, title,
+  repeat count, body, copy). A row does what the tray's row does, through `landOnAlert`. Matched with `sameCard`, so
+  `room~id` and a bare id are one card.
+- **It says whose record it is**: "in this browser. the card's timeline above is the room's record". Two tabs on two
+  machines see different lists, and that is the toast log's rule, not a bug in this view.
+- **A pile records its members, on every path that writes the log** (Mercurius round 1 C1, C2). An entry gains an
+  optional `tasks`, the bare ids of the cards a pile covers. The card cut matches `taskFor` or `tasks`. The tray is
+  unchanged. `tasks` is threaded through every function between a pile and the log, because which one writes it
+  depends on where the focus was:
+  - `notify` takes it (in `opts`, beside `pending`) and hands it on in all four of its cases: `logNotification` when
+    notifications are held (item 79) and when the desktop takes it, `toast` when this window is focused or nothing can
+    reach you, and the `win-toast` message when another atrium window is focused. The `win-toast` receiver passes it
+    to `toast`.
+  - `toast`'s wrapper in `toast-log.js` and `logNotification` pass it to `recordToLog`. The real toast ignores it.
+  - Every call that raises a pile passes it: `announce` for a pile of fresh items, AND the first-pass permission branch
+    in `check`, which raises "N agents need permission" on a page load without going through `announce`. The rule is
+    that any alert whose title counts several cards names them.
+  - The per-item lines `announce` already writes for an agent-launched card (item 44's `quietDoer`) carry `taskFor`
+    and need nothing.
+- **A repeat needs the same members** (C3). The repeat rule bumps the last entry when title and body match. For an
+  entry with `tasks`, the sorted `tasks` is part of the signature, so "2 agents are ready" for two different pairs
+  is two lines and each card's cut shows only its own.
+- **No filter in the tray.** The tray is "what did I miss", across the board. A card filter there is the same list
+  as the dialog section, reached from the wrong end.
+- **The cap is Open Question 3's answer, 200 until then.** A card's cut is thin for a card that is old, and the dialog
+  says so when the oldest kept entry is newer than the card: "older entries have rolled out of this browser's log".
+
+Headless: a section `cardToastLog`. Seed the log with entries for two cards, a pile naming both and one naming a
+third, open each card's details and check what each lists, that a `room~id` entry matches its bare card, that the
+rolled-out line appears only when it should, and that a row click calls `landOnAlert` with the entry's fields. Then
+drive real piles through `notify` in each focus case (focused, held by item 79, desktop, another window by a stubbed
+`win-toast`) and through a page load with two permissions already pending, and check each entry names both cards.
+Two same-text piles of different pairs are two entries.
+
+Mercurius round 1 (session s_5rBGJK0xqSTF, needs_changes) is folded above: C1 and C2 are the propagation rule and
+the first-pass branch, C3 is the repeat signature, A1 was the cap stated two ways. Q1 is Open Question 1.
+
+### Open Questions for clint
+
+1. **Build it, or close it?** It is about 80 lines of board code and one headless section, with nothing on the daemon.
+   Recommendation: build it, since the pile gap means the busiest moments are the ones nobody can look up per card.
+2. **Per browser is the right home?** A daemon-side record of what was said would follow you to another machine, but
+   it would be a second event log that records who was looking, which the toast log was written to avoid.
+   Recommendation: per browser.
+3. **Is 200 across the board enough?** At a busy hour that is less than a day. Options: keep 200, raise it (the
+   entries are small, 1000 is well under 1 MB of localStorage), or keep the last N per card. Recommendation: raise
+   it to 1000 and say what rolled out.
 
 ### Why it might not be worth it
 
@@ -489,6 +630,10 @@ The event sink makes this smaller either way: move the bulk (`output` and old au
 offsite, and the primary database plateaus low enough that shrinking it stops mattering.
 
 ## 16. Reviews that remember (HIGH PRIORITY)
+
+**Status 2026-09-29:** designed in `docs/review-memory-design.md`, reviewed by Mercurius over two rounds. Stage 1 (read
+once, panel sized to the change, the #4480 replay) is buildable now. Stage 2 (reviewer files) waits on clint's open
+questions 1, 2 and 6 in that design.
 
 Raised by clint 2026-09-25 during a `review-panel` run on openziti/ziti PR #4480 (a v2.0.x backport). Four
 reviewers (go-security-reviewer, codebase-steward, functional-tester, nonfunctional-tester) each ran for 5.5 minutes
@@ -945,6 +1090,10 @@ work" badge would need the count to travel on the card, and is left out until as
 
 ## 32. A queued say from http-support never produced a backlog entry, and nothing can say why (bug)
 
+**Status: built on `claude/sa32`, migration `0069_say`.** Lifecycle row, candidates on a miss, and `reply: true` owed
+replies are done. Cross-room delivery receipts need a say id on the relay request (link and hub, not changed).
+Design: `docs/say-lifecycle-design.md`.
+
 Raised 2026-09-28 by clint. About 09:22 local, the mercurius `http-support` session wrote a brief and sent a say to
 "the claude/main:atrium session (handle atrium)", asking for a backlog card and a reply with its id. It reported the
 say as queued, because the target was mid-tool-call. No card was filed and no reply went back. Item 30 was filed by
@@ -1314,6 +1463,43 @@ Still open under this item:
   agents, configure one?", offering the `-Install` above. Not built: it needs the hub to know a room's runners and to
   run this script over ssh, which is the stage 2 dialog itself.
 
+**Status, 2026-09-29, @fabric (fb01, fb02, fb03): stage 1 is one command, and a room's work comes back by git.**
+Done:
+
+- **No flags needed.** With no release and no `-Version`, the script builds from the checkout with a `fetch warn`
+  (`35fa4a1`). The release path is unchanged and still fails with its reason, since there are no releases.
+- **Signed-in check and smoke test.** An `auth` step names `ssh -t <target> claude auth login` when claude is not
+  signed in, and a `smoke` step launches a worker that reports a nonce back, with exit 8 when it does not, and
+  `-SmokeOnly` for a room already in use. Proven against sg3, reported in 9 seconds (`35fa4a1`).
+- **No CIM.** Scheduled task actions go through `schtasks.exe` and autostart registers by XML, so a Windows machine
+  that denies CIM over ssh works (`35fa4a1`).
+- **systemd PATH, the second bullet above: built, not proven.** A login-shell `ExecStart` in the packaged unit, and
+  the login shell's PATH written by `atrium-service.sh` (`35fa4a1`). No Linux machine we may test on has run it.
+- **Git both ways.** `scripts/room-git.ps1` `init`, `push-base`, `fetch` and `worktree`: the remote clone is made
+  by push, so the remote needs no GitHub credential, and `provision-room.ps1` runs `init` last (`5145bad`). `push-base`
+  and `fetch` reach a remote, so under the hooks they are clint's to run.
+- **Toolchain: built, not merged.** fb03 installs a room's toolchain under `~/.atrium/toolchain` with a checked hash,
+  and a `room-env.ps1` the room is started through. Proven on claudevm, head `9bce8ad` on `claude/fb03-toolchain` in
+  sg3's clone. It comes here when clint runs `room-git.ps1 fetch sg3`.
+
+Left:
+
+- Autostart as the default (the first bullet above), unchanged.
+- Proving the systemd PATH ("Linux autostart", step 5 of `docs/changes/fabric-1-provision.md`) on a Linux machine
+  that is not a live room.
+- Proving `-Autostart` starting on a Windows room, and the binary swap's `schtasks /End` on a live task. Both only on
+  claudevm, never on a real room.
+- The provision start hook for fb03's `room-env.ps1`, on top of the XML registration, once fb03 is here.
+- Stage 2, the board half. Not started.
+
+Open questions for clint:
+
+1. Should `-Autostart` become the default, and on Windows is it a logon task or the detached room?
+2. Which Linux machine may the Linux autostart test run on? sg4-wsl is a live room and is ruled out.
+3. Should provision write `permissions.allow` for `mcp__atrium-control__*`? Likely no: the smoke worker passes with
+   `--allowedTools=` alone.
+4. When does stage 2 start, and does it wait on item 75's account question?
+
 ## 47. A resident session's alias defaults from its name (feature)
 
 Raised 2026-09-28 by clint. Item 35 gives a card an alias by default only from a title prefix that holds a digit,
@@ -1358,6 +1544,11 @@ addressable from each. Ideate first: what "on every room" means for a card that 
 room's view shows of it.
 
 **Status, 2026-09-28: deep backlog, not started.** Moved there by clint.
+
+**Status, 2026-09-29: design reviewed, ready to build.** `docs/everywhere-card-design.md`: a tag
+`atrium:everywhere`, a hub index of tagged cards, bare names that miss locally fall through to it for say, tell and
+task, and a scoped view that shows those cards with a room chip. Mercurius round 1 was `ready_to_build`, its one
+advisory folded in as FE10. Building waits on clint's three open questions in the doc. The board's part is @ui's.
 
 ## 50. Views of agents, beyond groups (design)
 
@@ -1421,6 +1612,21 @@ room, so a pinned strip that holds cards from two rooms saves the order of only 
 
 Also, unverified and a design question for clint: in any sort other than manual, the board has no way to reorder
 pins.
+
+**Status, 2026-09-29: diagnosed, design written, moved from @ui to @fabric.** `docs/pin-order-rooms-design.md`. The
+order carries no card in its path, so the hub routes it by the board's stale `writeRoom` header to one room. Fix:
+the hub posts the whole list to every attached room, so each writes its own cards' ranks at their position in the
+whole strip. Hub-side only, no room, board or migration change. The second note stays a question for clint and
+@ui.
+
+**Status, 2026-09-29: DONE by fb04, merged into claude/fabric.** Hub fan-out `63ed4e8` (design tests FF4, FF5), plus the
+store now orders pinned rows only, `8b7d11c`, read and passed by @runtime. `docs/changes/fabric-52-pin-order.md`.
+Needs a hub and room restart. Not fixed and the same shape: `/v1/tasks/prune` also names no card in its path, so the
+hub also sends it to one room.
+
+@ui wrote a board-only design first, one post per room with an explicit room header. atrium-87300 chose the hub-side
+one in `docs/pin-order-rooms-design.md` instead, and @ui agreed. Its other finding stands: `nudgeItems` already
+offers "move it up or down" for a pinned card under every sort, from the card menu.
 
 ## 53. `setViewport` and `dropViewport` compute under `r.mu` and apply outside it (bug)
 
@@ -1538,6 +1744,11 @@ The goal is to move work between rooms, so that a room restart kills nothing.
 
 **Status, 2026-09-28: deep backlog, not started.** clint: "seems dumb. deep backlog".
 
+**Status, 2026-09-29: designed, not built.** `docs/multi-room-design.md`, by @fabric. Recommends sibling rooms and a
+room that stops accepting new work before a restart, and NOT the drain to a sibling, because resident sessions never
+drain. The goal (a restart kills nothing) goes to a new item: a holder process per runner that outlives the room.
+Mercurius review: ready_to_build on round 1, one advisory folded in. Waiting on clint's four open questions.
+
 ## 60. The stdio control MCP has sa48's launch fields but no "room is older" warning (housekeeping)
 
 Raised 2026-09-28. The old stdio control MCP (`internal/cli/control_peers.go`) took sa48's model, effort, args and
@@ -1610,6 +1821,15 @@ tlsuv/fix-ci (`01a0e9aa`, on claude-sg4) answered "no card 01a0e9aa... to start 
 - Stage 1, now, HUB-SIDE: route a launch that carries a `task_id` to the room that holds that card.
 - Stage 2, the long run: a card id carries its room end to end, so no request that names a card can reach another
   room.
+
+**Status, 2026-09-28: DONE, both stages in claude/main.**
+
+- Stage 1 is 0cbbaa2. The hub routes any request that names a card, path or body, plain or tagged.
+- Stage 2 is 8deea51, with CHANGELOG and test plan CD5 and CD6 in 479c9d7. The board sends tagged ids and never
+  routes a card write by header, the launch answer is retagged, and the room's not-found names the card and the
+  room.
+- Design in `docs/card-room-routing.md`.
+- Follow-up nobody has asked for: tagged ids in scoped views, and ids minted with their room.
 
 ## 64. A card cannot stop being lean (bug, HIGH)
 
@@ -2076,6 +2296,31 @@ clint, 2026-09-28: bootstrapping a machine should reuse a shared folder for the 
 should be `localai`, not `claude`. Today sg3 runs as `claude` in `C:\Users\claude`. Fold both into the provisioning
 script before the next machine is added.
 
+**Status, 2026-09-29, @fabric: sg3 is a working room, and the account half has not started.** Done:
+
+- sg3 is attached, and its `provision-room` fix is merged. The smoke step now proves a room end to end, and did on
+  sg3 (`35fa4a1`, see item 46).
+- The CIM denial no longer breaks provisioning: every scheduled task action goes through `schtasks.exe` (`35fa4a1`).
+- Work on sg3 comes back by git: `room-git.ps1` (`5145bad`). fb03 was built and committed there, so the path is used.
+
+Left:
+
+- **CIM inside the room.** The scripts avoid it, but a worker in the sg3 room that reads uptime, services or
+  scheduled tasks through CIM still gets access denied. Which account and session type the room runs in has not
+  been checked.
+- **The `localai` account and the shared operator folder.** Not built. Creating an account needs admin, which
+  provisioning avoids today on purpose.
+
+Open questions for clint:
+
+1. What is the shared folder? A path on each machine (for example under `C:\Users\Public` or `/Users/Shared`), an
+   SMB share, or a folder synced from here, and what goes in it: the repo clones, the toolchain, runner config?
+2. Does `localai` replace `claude` on sg3, which means moving a live room, or only apply to machines added from now
+   on?
+3. May provisioning create the account and so need admin, or does the operator make `localai` by hand first and
+   provisioning start from there?
+4. Should the room run so that CIM works for its workers, or is a worker that needs CIM told to go without?
+
 ## 76. A worktree helper that links every CLAUDE.md, so workers get project rules (bug, HIGH, FIRST)
 
 Approved by clint 2026-09-28, first after the restart. `git worktree add` gives a worker none of the 8 CLAUDE.md files:
@@ -2168,6 +2413,11 @@ above.
 Review: Mercurius round 1 (s_12NjmPjbUY9e) found the permission question left formally open (C1, closed above as
 built-no, flippable) and no record-only path for held-back alerts (C2, folded as the `logNotification` rule). Its
 advisory, an `aria-label` that follows the state, is folded too.
+
+Status 2026-09-29 (branch `claude/sa79`): built as written. `notifyHeld` in `js/notify.js` gates both `play` and
+`notify`, and the off path calls `logNotification` once per alert. The permission question is still waiting on clint,
+held in `NOTIFY_OFF_SILENCES_PERMISSIONS`. The bell glyph moved into its own `.glyph` span so it can be repainted
+without touching the badge. Headless section `notifyOff`. No timed mute.
 
 ## 80. Real-time token burn and usage charts (feature)
 
@@ -2380,6 +2630,9 @@ The refusal reads the card's status and not the runner. Expected: a say to a car
 delivered whatever column the card is in. A `done` card with no runner still refuses, and says so. Item 41 is about
 which prompts make a card owe a report, not the card's state after one, so this is separate. Owned by @runtime.
 
+Status: fixed on `claude/sa83`. `sessionGone` is now a daemon method that also asks the supervisor, and `atrium tell`
+uses it. See `docs/changes/83.md`.
+
 ## 84. Two `nosession` tests fail on macOS and Linux (bug)
 
 Found 2026-09-28 on m1mini (macOS arm64, `hub-main` 52ca01a). `TestASayToAGoneSessionIsUndeliverable` and
@@ -2394,6 +2647,32 @@ Fix, test only: give `cardFor` a PID that is guaranteed dead. Prefer a helper th
 returns its pid, over a large constant. Then grep the `_test.go` files for other `PID: 1` style assumptions.
 `processAlive` is right and does not change. Verified on m1mini with pid 2147483000: both pass, and so does the
 whole package. Owned by @runtime.
+
+## 87. Two keep-alive refreshes rewrote the whole context (bug)
+
+Found 2026-09-29 by @runtime writing the item 39 spec (`docs/keepalive-marked-spec.md`), from `keepalive_refresh` and
+`session_usage` on a COPY of the live database. Of 60 refreshes, two wrote most of the context and read almost none of
+it, which is the rewrite keep-alive exists to avoid, and cost $1.78 of the $5.34 keep-alive spent in all:
+
+| Card | At (UTC) | Context | Read | Written | Cost | ttl_left_s |
+| --- | --- | --- | --- | --- | --- | --- |
+| `01a0e960-fc85` inputlag-env-leak | 2026-09-28 20:13:00 | 123,752 | 0 | 127,952 | $1.02 | 266 |
+| `01a0e8f0-ecda` tlsuv sch-credentials | 2026-09-28 21:03:28 | 99,886 | 10,259 | 94,346 | $0.76 | 222 |
+
+Both are `atrium:lean` cards, launched and resumed with `--mcp-config ~/.atrium/mcp.json --strict-mcp-config`. Every
+refresh that hit was on a card that is not lean. A lean card runs with its own tool list, MCP config and system
+prompt, and the fork carries none of them, so its prefix differs from the first token (read 0) or right after the
+system prompt (read 10k). The TTL was not the cause: both had about four minutes left.
+
+**Diagnosis: already fixed by item 70**, fa2b2cc (2026-09-29 01:19Z). `decide` in `internal/daemon/keepalive.go` skips
+a card tagged `atrium:lean` ("lean card: a refresh cannot rebuild its prompt"), and its comment cites the $1.02 row
+above. Lean is decided by the same tag at launch (`lean.go`), so a lean card cannot lack it. On the copy there is no
+refresh on a lean-tagged card after the fix. Item 73 (sa73, on m1mini) is the step after this: a fork that carries a
+lean card's prompt, so those cards can be warmed rather than skipped.
+
+The other four refreshes recorded as `miss` read the whole context and wrote 3k to 8k for $0.04 to $0.09 each. They
+were effectively warm, and are only labelled `miss` by the outcome rule item 70 also changed. No worker needed. Close
+once a room running fa2b2cc or later shows no full-write refresh for a day.
 
 ## 86. `screen.go`'s combining-mark table only grows (bug, low)
 
@@ -2586,8 +2865,143 @@ floor.
 
 **Cost.** Small, half a day. Most of it is the capture and clint's look at the files, not the code.
 
-**Status: ready to build.** Mercurius `s_5q0QKZVeAa30`: round 1 needs_changes (two majors, fixed), round 2
-ready_to_build, both advisories adopted. Slot approved by the orchestrator as sa93.
+**Status: built by sa93 (`642675a`), merged into `claude/terminal`, NOT landed.** The three fixtures are
+uncommitted, so a clean checkout fails the frozen tests. It waits on clint's sign-off (below) before it can go to
+`claude/main`. Mercurius `s_5q0QKZVeAa30`: round 1 needs_changes (two majors, fixed), round 2 ready_to_build.
+
+What changed from the design in the build:
+
+- **The fixtures are 67 to 112KB**, so they sample every 20th eligible word (`fixtureStride`). Live keeps 500.
+  `session-reply` measured 87% and is pinned at 82. `session-tools` measured 70% and is pinned at 65. That is under
+  80, so its six misses were read by hand: fused pseudo-words, an OSC title, a spinner fragment, and a hook line a
+  repaint replaced. It carries 123 `Kneading` frames for the spinner test.
+- **The lost-lines capture did not reproduce item 74.** 300 of 300 lines survived through 18 height resizes during
+  the stream, on a build with the height hold (`387ccd5`). That is consistent with the hold working, but it is not
+  proof. So the "target" test that would be unskipped by the 74 fix passed already. It now runs unskipped as
+  `TestLongReplyThroughResizesKeepsEveryLine`, a guard that the renderer keeps every line of a long reply. A capture
+  that really loses lines needs a build without the hold. That is the job of whoever builds item 74's option 3
+  report or repair, and it is not in this item.
+- **The live growth test replays one specimen**, the first file over 400KB by name, as the old test did. Over every
+  live file, seven of about forty exceed 4x on the half-file comparison because of where the ring cut them.
+
+**For clint, before the fixtures are committed.** The machine's home path in the OSC window title was replaced with
+`claude.exe`. What is left: the statusline's account usage (`5h 64% | wk 36% | ctx ... | tx ...`), the header
+line's `Claude Code v2.1.284 / Sonnet 5.5 / Claude Team`, the capture directory `D:\cap\atrium`, and a throwaway
+card id. No credential, email or user path.
+
+## 89. A finished worker's runner outlives its worktree and locks the directory (bug)
+
+Reported 2026-09-29 by the orchestrator: every ended worker left its worktree directory "used by another process"
+after git had unregistered it (sa21, sa80, fb01, lost-lines, sa82). The suspect was a leftover child (a shell, node,
+or the conpty host) whose cwd was that directory.
+
+**Diagnosis, read-only, 2026-09-29 ~01:15 local.** It is not a leftover child. It is the worker's own runner, which
+never exited. Each directory's holder was found by reading every process's current directory out of its PEB:
+
+| Worktree | Holder | Parent | Started (UTC) | Card | Last event |
+| --- | --- | --- | --- | --- | --- |
+| lost-lines | `claude.exe` 56032 | room `atrium.exe` 43988 | 02:54 (resume) | `01a0eac2` | `done` report 04:23 |
+| sa21 | `claude.exe` 16812 | room `atrium.exe` 43988 | 03:14 | `01a0eb28` | `done` report 04:06 |
+| sa80 | `claude.exe` 47888 | room `atrium.exe` 43988 | 03:33 | `01a0eb39` | `done` report 04:00 |
+| fb01-provision | `claude.exe` 47516 | room `atrium.exe` 43988 | 03:39 | `01a0eb29` | `done` report 04:06 |
+| sa82 | `claude.exe` 57404 | room `atrium.exe` 43988 | 04:06 | `01a0eb57` | `done` report 04:23 |
+
+Every holder is a full session (about 350MB each, 1.8GB in all, no child processes, responding) and a direct child
+of the room daemon. On every card `supervised` is true, which is `d.sup.get(id) != nil`, so the supervisor still
+owns each runner and could stop it. None of the five has an `exited` event after its `done` report, and none was
+culled. The worktrees went by hand: `git worktree remove --force` unregisters the worktree and deletes its files,
+then fails on the directory the runner is sitting in. That is the "Permission denied" and the empty directory.
+
+Why nothing ended them:
+
+- **`done` keeps the runner on purpose.** A done report moves the card to `done` and the session sits at its prompt,
+  so a director can send it back (sa21 went `done` to `needs-input` twice for review) and item 83 lets a say reach it.
+- **The reaper never looks at a done card.** `reapOnce` checks running and the needs-* columns, and
+  `reviveOwnedDead` only `dead` ones. A `done` card with a live runner is in neither list. Its stored `pid` is 0
+  (a supervised card's pid is not the observed one), so a pid check would not have answered either.
+- **`atrium_cull` does the right thing and was not used.** It calls `StopRunner` and `waitRunnerGone` before
+  `git worktree remove`, because "on Windows a directory in use cannot be removed". Removing the worktree before
+  `atrium_exit` is the path that locks it. DIRECTOR.md says "exit the worker and remove its worktree", and the
+  order in that sentence is the whole fix for the manual path.
+
+**What the supervisor or reaper should do.** Not end a runner for being `done`, which would break the review loop
+and item 83. Two candidates:
+
+1. **A supervised runner whose worktree is gone is ended.** On the reaper tick, for each `d.sup.all()` runner whose
+   card has a worktree recorded: if that directory no longer exists, or exists with no `.git` entry (git has
+   unregistered it), `windDown` the runner with its harness's exit keys, and record `exited` with `by: reaper`,
+   `detected: its worktree was removed`. The resume id stays, so nothing is lost. This is exactly the case in the
+   table and has no false positive worth worrying about: a session in a directory with no repository has no work
+   left to do. Only `atrium:subagent` cards, so a human's own terminal in a scratch directory is never touched.
+   Small, owned by @runtime, one targeted test with a temp worktree.
+2. **A `done` card's runner idle past a limit is parked.** The memory case: five idle sessions held 1.8GB. This is
+   the item 38 question (Open Question 1 in `docs/restart-idle-spec.md`: parking saves processes and memory, and no
+   tokens), so it waits on clint's answer there rather than being decided here.
+
+Until then, the five runners above can be asked to leave by their owners with `atrium_exit` (sa21 @runtime, sa80
+@ui, fb01 @fabric, lost-lines and sa82 @terminal), after which each empty directory removes normally. Nothing was
+killed or exited during the diagnosis. The orchestrator sent `atrium_exit` to all five afterwards.
+
+**A second finding, the same family as item 83.** `atrium_say` and `atrium_exit` refuse a `done` card named by its
+alias ("no session called sa21"), and only the `room~id` form works. Reproduced by @runtime on sa32 the same night.
+The cause is `GetByAlias` in `internal/store/alias.go`, which only matches `liveClause` (not `done`, not `dead`,
+not archived). So an alias stops resolving the moment a worker reports done, while its runner is still at the
+prompt and item 83 says a say should reach it. Every resolver built on it (`localTarget`, `resolvePeer`, the MCP
+`resolvePeer` in `internal/link`) inherits that. sa32 found the mirror of it: `GetByWireName` matches ended cards,
+so an exact handle of a dead card is refused as ended even when a live card holds that name as an alias.
+
+The fix belongs in resolution, not in the alias query: an alias resolves to the newest card holding it that is
+live, or else to the newest `done` card whose session is not gone by `sessionGone` (item 83's rule). A dead card's
+alias stays unresolved, so a reused alias still means the live card. Separate from the reaper fix above, and it
+touches the same resolver sa32 (item 32) changed, so it goes after that merge.
+
+## 91. Two cards in one worktree share one HANDOFF.md, and new-context overwrites the other's (bug, design only)
+
+Reported 2026-09-29 by the orchestrator. @merge and @orchestrator both run in the main checkout
+(`D:/git/github/dovholuknf/atrium`), and at about 01:15 local one card's new-context capture overwrote the
+other's HANDOFF.md. The file is a fixed name in the card's directory at every step of `newcontext.go`: the capture
+prompt says "HANDOFF.md in the current directory", the wake prompt says "Read HANDOFF.md", and `handoffWritten`
+checks `filepath.Join(task.Worktree, "HANDOFF.md")`.
+
+Two harms, and the second is why nothing noticed the first:
+
+- **The overwrite.** A handoff not yet read back, or one a human is keeping, is replaced by another card's.
+- **The check passes for the wrong card.** `handoffWritten` only asks whether the file was modified since the
+  capture began. A capture on card A that wrote nothing still passes when card B wrote the file in that window,
+  and card A then wakes into card B's state and carries on as B. A card in two places is the worst outcome here.
+
+Options:
+
+1. **A per-card file name.** `HANDOFF.<alias or first 8 of the card id>.md`, in the capture prompt, the wake prompt
+   and `handoffWritten`, the same three places. Two cards in one directory can then never touch each other's
+   file, and the check is about the right file by construction. The cost: every habit and script that says
+   `HANDOFF.md` (DIRECTOR.md's "git rm HANDOFF.md", the orchestrator's touch-after-POST workaround, briefs) has to
+   learn the pattern. Using the per-card name always, rather than only when a directory is shared, keeps one rule.
+   A `.gitignore` line for `HANDOFF.*.md` would also stop a handoff reaching a merge by accident, which is the
+   thing every director currently removes by hand.
+2. **Refuse new-context when another live card shares the directory.** Small, and it would have prevented this
+   one. But the two cards that share a directory are the orchestrator and the merger, which are the long-lived
+   sessions that most need cycling, so the refusal lands on exactly the cards it should serve. It could refuse
+   only while the OTHER card's own new-context is in flight, which closes the concurrent case but not an
+   overwrite of a handoff written earlier and not yet read.
+3. **The handoff outside the worktree,** in the room's state directory keyed by card (`~/.atrium/handoff/<id>.md`),
+   with the absolute path in both prompts. Per-card by construction and never in git. But a human can no longer
+   find it next to the work, and a runner on another room writes to that room's disk, which the board then has to
+   serve.
+
+**Recommendation: option 1, with option 2's narrow form as a guard.** The name removes the collision, and refusing
+only while another card sharing the directory is mid-sequence costs nothing and covers a card whose runner ignores
+the name it was given. A migration is not needed: the name is derived, not stored. Owned by @runtime
+(`internal/daemon/newcontext.go`). The open question for clint is option 1's cost to existing habits: whether the
+fixed name `HANDOFF.md` is worth keeping for the single-card case humans are used to.
+## 90. busyGuard's refusal-line check sleeps a fixed 50ms (bug)
+
+Raised 2026-09-29 by the orchestrator. @merge's full headless run on `db2b33a` failed once under load in
+`busyGuard`: "the refusal line outlived its dialog". The check closed the launch dialog, slept 50ms and then looked,
+so a loaded browser that had not yet run the close handler failed it. It passes alone. Owner @ui.
+
+Status 2026-09-29, done on `claude/ui`. The sleep is now a wait for the line to be gone, with a `slow(2000)` budget
+and the same failure message, so `HEADLESS_SLOW` scales it like every other wait since item 85.
 
 
 ------------

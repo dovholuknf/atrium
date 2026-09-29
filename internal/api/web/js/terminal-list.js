@@ -1138,12 +1138,12 @@ function termHeldChip(t) {
   const count = Number(a.held_count) || 1;
   if (a.held_quiet) {
     const n = count > 1 ? " " + count : "";
-    return `<span class="chip queued" data-tip="${esc(termQueuedTip(count, secs, a.held_turn))}"
-      >&#9993;&#xFE0E;${n}</span>`;
+    return `<span class="chip queued" onclick="event.stopPropagation()"
+      data-tip="${esc(termQueuedTip(count, secs, a.held_turn))}">&#9993;&#xFE0E;${n}</span>`;
   }
   const label = count > 1 ? `! ${count}` : "!";
-  return `<span class="chip held" data-tip="${esc(termHeldTip(count, secs, a.held_for, a.held_turn))}"
-    >${label}</span>`;
+  return `<span class="chip held" onclick="event.stopPropagation()"
+    data-tip="${esc(termHeldTip(count, secs, a.held_for, a.held_turn))}">${label}</span>`;
 }
 
 // The quiet mark's tooltip: how many, how long, and the one rule that holds

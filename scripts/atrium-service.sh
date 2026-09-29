@@ -127,8 +127,27 @@ linux_install() {
         # %h is systemd's own expansion for the user's home, so the written
         # unit stays correct if the home directory is ever a different path
         # inside a container or on a network mount.
+        #
+        # THE LOGIN SHELL'S PATH IS WRITTEN INTO THE UNIT. A user unit gets
+        # systemd's bare PATH, with no ~/.local/bin, where claude and codex
+        # install, so a runner there was "not found". The PATH is read from the
+        # login shell now, at install time, so a runner installed before this
+        # is found. % is doubled because systemd reads it as a specifier.
+        # Installing again refreshes it.
+        lp="$("${SHELL:-/bin/sh}" -lc 'printf %s "$PATH"' 2>/dev/null || true)"
+        lp="${lp//%/%%}"
+        tmp_unit="$(mktemp)"
         sed -e "s#^ExecStart=.*#ExecStart=$exe $verb_run --db $db $extra_args#" \
-            "$here/packaging/atrium.service" > "$linux_unit_dir/$UNIT"
+            "$here/packaging/atrium.service" > "$tmp_unit"
+        : > "$linux_unit_dir/$UNIT"
+        while IFS= read -r line; do
+            case "$line" in
+                ExecStart=*)
+                    if [ -n "$lp" ]; then printf 'Environment="PATH=%s"\n' "$lp" >> "$linux_unit_dir/$UNIT"; fi ;;
+            esac
+            printf '%s\n' "$line" >> "$linux_unit_dir/$UNIT"
+        done < "$tmp_unit"
+        rm -f "$tmp_unit"
         say "wrote $linux_unit_dir/$UNIT"
     fi
 
