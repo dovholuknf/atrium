@@ -1201,6 +1201,13 @@ differential test that feeds the same trace fixtures to `screen.go` and to xterm
 with Playwright after an `npm install`. The plan is in `D:/tmp/handoffs/terminal-suite-HANDOFF.md`, and the scratch
 tools are in `D:/tmp/handoffs/terminal-suite-tw`.
 
+Done by sa54, as a Go test that shells out to node rather than Playwright (`screen_diff_test.go`,
+`screen_diff_cases_test.go`, `testdata/xterm_dump.js`) plus four socket size tests (`attach_size_test.go`). Two real
+differences remain as skipped cases: `screen.go` ignores DECSTBM scroll regions, and it gives wide (CJK) characters one
+cell. Accepted on purpose: cleared rows go to history, `CSI S` files rows into history, no reflow on a width change.
+The bare `CSI H` repaint agrees with xterm.js in both fixtures, so sa74 still owns what to do about it. See
+`docs/changes/54.md`.
+
 ## 55. Launched runners inherit ATRIUM_DEBUG_INPUTLAG from the room (bug)
 
 Raised 2026-09-28. The live scripts `start-atrium-room.ps1`, `start-atrium-hub.ps1` and `deploy-batch.ps1` set
