@@ -461,6 +461,42 @@ func TestLaunchStampsTheOriginTag(t *testing.T) {
 	}
 }
 
+// A launch from an agent is a worker unless it asks to be a director, so the
+// merged-cull can tell the two apart.
+func TestLaunchTagsAWorkerUnlessADirectorIsAsked(t *testing.T) {
+	var gotTags []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/v1/tasks" {
+			_ = json.NewEncoder(w).Encode(map[string]any{"tasks": []map[string]any{}})
+			return
+		}
+		var body struct {
+			Tags []string `json:"tags"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		gotTags = body.Tags
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": "new", "wire_name": "kid"})
+	}))
+	defer srv.Close()
+	c := &controlMCP{board: srv.URL, client: srv.Client()}
+
+	if _, _, err := c.launchHandler(context.Background(), ctlReq("a", "beta"),
+		launchInput{Cwd: "/work/dir"}); err != nil {
+		t.Fatal(err)
+	}
+	if !hasTag(gotTags, SubagentTag) || hasTag(gotTags, DirectorTag) {
+		t.Errorf("plain launch tags = %v, want the subagent tag", gotTags)
+	}
+	if _, _, err := c.launchHandler(context.Background(), ctlReq("a", "beta"),
+		launchInput{Cwd: "/work/dir", Tags: []string{DirectorTag}}); err != nil {
+		t.Fatal(err)
+	}
+	if hasTag(gotTags, SubagentTag) || !hasTag(gotTags, DirectorTag) {
+		t.Errorf("director launch tags = %v, want no subagent tag", gotTags)
+	}
+}
+
 func TestLaunchCapEnvOverride(t *testing.T) {
 	t.Setenv(LaunchCapEnv, "1")
 	// One live supervised session, cap overridden to one, so the next is refused.

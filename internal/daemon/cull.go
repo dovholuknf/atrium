@@ -26,10 +26,12 @@ import (
 // worker. A worker's own done report means it thinks it is finished, and a
 // worker that culled itself would remove the worktree its reviewer has not read
 // yet. So the tool is the acceptance, and the room adds the one check it can
-// make on its own: the branch is merged. A timer or a hook on the merge was the
-// other candidate, and it was turned down because a merge is not an acceptance.
-// A branch can land and still be sent back, and the worker is the cheapest
-// place to make the fix while its conversation is still warm.
+// make on its own: the branch is merged. A merge is not an acceptance: a branch
+// can land and still be sent back, and the worker is the cheapest place to make
+// the fix while its conversation is still warm. A hook on the merge was first
+// turned down for that reason, and then built with a grace period in which to send
+// the work back: a merge only MARKS a worker, and the sweep calls this when the
+// time comes, with every check re-run. See mergedcull.go.
 //
 // WHAT IT WILL NOT DO, each checked here on the room rather than trusted from
 // the caller:

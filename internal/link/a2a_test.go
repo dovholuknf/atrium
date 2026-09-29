@@ -15,6 +15,12 @@ import (
 // docs/a2a-reliability-design.md.
 
 // The room recognises an agent launch by the same string the hub stamps.
+func TestTheDirectorTagIsTheOneTheRoomReads(t *testing.T) {
+	if DirectorTag != daemon.DirectorTag || SubagentTag != daemon.SubagentTag {
+		t.Fatalf("hub says %q/%q, room reads %q/%q", DirectorTag, SubagentTag, daemon.DirectorTag, daemon.SubagentTag)
+	}
+}
+
 func TestTheOriginTagIsTheOneTheRoomReads(t *testing.T) {
 	if OriginTag != daemon.OriginAgentTag {
 		t.Fatalf("hub stamps %q, room reads %q", OriginTag, daemon.OriginAgentTag)
