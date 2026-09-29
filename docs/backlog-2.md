@@ -14,7 +14,7 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 5 | One atrium: one binary, Mode A and B out, the hub becomes the atrium | paused | stage 1 DONE `948d557`, deployed, stages 2-7 wait on 13 questions |
 | 6 | Taking a card out of a group | bug | DONE in `b12b323`, deployed |
 | 7 | The held-message `!` chip says the wrong reason | bug | DONE with item 10, `1ff7503` |
-| 8 | Input lag follow-ups | bug | hop split DONE `5d9ba72`: the stall is the runner side, not atrium |
+| 8 | Input lag follow-ups | bug | narrowed to one prefix: hop split `1f49694` (runner side), unsent fix `6bb14e4` |
 | 9 | Eliminate unstyled tooltips | bug | DONE, `069c16b`, deployed, check-titles guards it |
 | 10 | `atrium_say` types immediately by default | feature | DONE, `04c2095`, not deployed. Also covers item 7's reason and count |
 | 11 | Clicking `? N` or a question clears it | bug | not started, 2026-09-25: the click selects the row instead |
@@ -67,7 +67,7 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 58 | `atrium_say` reaches cards on other rooms, `name@room` | feature, HIGH | DONE by sa58, merged, needs hub and room restarts |
 | 59 | Spike on m1mini: more than one room per machine, and a blocked room that drains | design, spike | deep backlog, not started |
 | 60 | The stdio control MCP has sa48's launch fields but no "room is older" warning | housekeeping | not started |
-| 61 | A fake 45s hub echo in the lag log from the idle ping and pong | bug | not started |
+| 61 | A fake 45s hub echo in the lag log from the idle ping and pong | bug | DONE `88fc53d`, on claude/main |
 | 62 | A worker that ends its turn without a report reaches its orchestrator every time | bug, HIGH | DONE by sa62, merged `f22115e`, deployed `66717c5` |
 | 63 | Starting onto an existing card goes to the wrong room | bug, HIGH | not started |
 | 64 | A card cannot stop being lean | bug, HIGH | DONE by sa64, merged, needs room and hub restarts |
@@ -172,6 +172,21 @@ flight. Spikes cluster over ~3s, then 4-10ms.
 - A console filter of `[atrium` hides every `[inputlag]` line, which made the logging look broken. Consider one
   prefix.
 
+**Status 2026-09-29, narrowed to the prefix.** On claude/main:
+
+- The hop split is `1f49694`. The room's echo line now splits `runner` from `atrium` time. It says the stall is
+  the runner side: the runner's own redraw, or Windows not scheduling it, and not atrium. The hub and the room
+  already raise themselves to above normal for the second. The hiccup probe in `docs/input-lag-logging.md` tells
+  the two apart on a given night, and no run of it is on record here. A live sample agrees on the side: on
+  2026-09-28 at 09:55:19 a 176.6ms echo to card `01a0e80e` was `runner 176.1ms, atrium 0.5ms, ws write 0.5ms`.
+  Nothing in atrium's hops is left to chase. The hub's fake 45s echo that muddied the hub's side was item 61
+  (`88fc53d`).
+- The unsent-bytes line reading the key's own frame is `6bb14e4`: the board reads the socket backlog before the
+  send.
+- Left: the prefix. `internal/inputlag/inputlag.go` and `js/inputlag.js` still log `[inputlag]`. It is a small
+  naming choice (`[atrium inputlag]` keeps a `[atrium` filter working, at the cost of anyone grepping for the old
+  one), not a bug, so it waits for someone to want it.
+
 ### 9. Eliminate unstyled tooltips
 
 **Raised 2026-09-24.** The `!` chip uses a native `title` tooltip: plain white box, system font, no theme. Find
@@ -266,6 +281,11 @@ Open question for clint: what should clicking `!` on a held message do? Recommen
 selecting the row, because the tooltip already says what clears it and both obvious actions (send it now past
 the gate, or drop it) lose something.
 
+**Status 2026-09-29 (branch claude/sa11).** Built as designed. `DismissQuestions` in `internal/store/seen.go`, the
+route in `internal/api/api.go`, the chip and `dismissQuestions` in `js/seen.js`, `stopPropagation` on the held chips,
+the `dismissed` clause in `atrium_task`, and headless section `questionsClick`. Changelog and test plan are in
+`docs/changes/11.md`. The `!` click question above is still open.
+
 ### 12. Keep codex up to date
 
 **Raised 2026-09-24.** Not started.
@@ -314,7 +334,7 @@ Accepted and on `claude/main` but NOT deployed: the process registry design doc 
 ## 14. Per-card notification log
 
 **Raised 2026-09-21. TENTATIVE - clint floated it, unsure it is worth it ("not sure about that one but maybe").**
-Not started.
+Not started. Reconciled and designed 2026-09-29 by @ui, owner @ui, waiting on clint's Open Questions below.
 
 ### The idea
 
@@ -324,6 +344,85 @@ a transient toast (and toasts have been vanishing too fast to read), so a human 
 happened. The board has a global notification history (the bell). This item is a PER-CARD view of that: open a card
 and see the notifications it has raised, newest first, so "what has this session been trying to tell me" is
 answerable after the fact rather than only in the moment.
+
+### Reconciled 2026-09-29, against what is built
+
+Most of this exists. What is left is one view and one gap.
+
+What the board already keeps:
+
+- **The toast log** (`js/toast-log.js`, the bell). Every toast, every desktop notification (`logNotification`), every
+  alert item 44 mutes for an agent-launched card, and every alert item 79 holds back while notifications are off,
+  lands there. Each entry carries `taskFor`, the card a click lands on. It is per browser, in localStorage, capped at
+  200 entries across the whole board, and clearing it clears everything. That is on purpose: its header says what
+  you were told is a fact about a screen, not about the work.
+- **The card's timeline** (the details dialog, `#d-events`, `timelineHTML`). The daemon's own event log for the card:
+  permissions asked and answered, status changes, and `notified` events for uploads, file and terminal opens, the
+  restart wake, the unexpected-exit wake and a dropped cross-room message. It is durable and the same in every
+  browser.
+- **The held-message chips** (`!` and `✉` on a terminal row), for a peer message waiting at the gate.
+
+So the idea's examples split. A permission asked is already in the timeline. A going-down and a held peer message
+are in the toast log when they toasted, and a held one also wears a chip while it waits. "The daemon already records
+`notified` events per card" is true but those are not the notifications: none of them is what the board said to you.
+
+What is missing:
+
+1. **A per-card cut of the toast log.** The data is there, keyed by `taskFor`, and nothing shows one card's entries.
+2. **A pile belongs to no card.** "3 agents need permission" and "2 agents are ready" are logged with `taskFor`
+   empty, because a click on them lands on a tab, not a card. So a card that only ever alerted as part of a pile has
+   nothing in its cut, and those are the busy moments this item is about.
+
+### Design (board only, no daemon or store change)
+
+- **A section in the details dialog**, "what the board told you", under the timeline and collapsed when empty. It
+  lists this browser's toast log entries for the card, newest first, with the same row the tray draws (time, title,
+  repeat count, body, copy). A row does what the tray's row does, through `landOnAlert`. Matched with `sameCard`, so
+  `room~id` and a bare id are one card.
+- **It says whose record it is**: "in this browser. the card's timeline above is the room's record". Two tabs on two
+  machines see different lists, and that is the toast log's rule, not a bug in this view.
+- **A pile records its members, on every path that writes the log** (Mercurius round 1 C1, C2). An entry gains an
+  optional `tasks`, the bare ids of the cards a pile covers. The card cut matches `taskFor` or `tasks`. The tray is
+  unchanged. `tasks` is threaded through every function between a pile and the log, because which one writes it
+  depends on where the focus was:
+  - `notify` takes it (in `opts`, beside `pending`) and hands it on in all four of its cases: `logNotification` when
+    notifications are held (item 79) and when the desktop takes it, `toast` when this window is focused or nothing can
+    reach you, and the `win-toast` message when another atrium window is focused. The `win-toast` receiver passes it
+    to `toast`.
+  - `toast`'s wrapper in `toast-log.js` and `logNotification` pass it to `recordToLog`. The real toast ignores it.
+  - Every call that raises a pile passes it: `announce` for a pile of fresh items, AND the first-pass permission branch
+    in `check`, which raises "N agents need permission" on a page load without going through `announce`. The rule is
+    that any alert whose title counts several cards names them.
+  - The per-item lines `announce` already writes for an agent-launched card (item 44's `quietDoer`) carry `taskFor`
+    and need nothing.
+- **A repeat needs the same members** (C3). The repeat rule bumps the last entry when title and body match. For an
+  entry with `tasks`, the sorted `tasks` is part of the signature, so "2 agents are ready" for two different pairs
+  is two lines and each card's cut shows only its own.
+- **No filter in the tray.** The tray is "what did I miss", across the board. A card filter there is the same list
+  as the dialog section, reached from the wrong end.
+- **The cap is Open Question 3's answer, 200 until then.** A card's cut is thin for a card that is old, and the dialog
+  says so when the oldest kept entry is newer than the card: "older entries have rolled out of this browser's log".
+
+Headless: a section `cardToastLog`. Seed the log with entries for two cards, a pile naming both and one naming a
+third, open each card's details and check what each lists, that a `room~id` entry matches its bare card, that the
+rolled-out line appears only when it should, and that a row click calls `landOnAlert` with the entry's fields. Then
+drive real piles through `notify` in each focus case (focused, held by item 79, desktop, another window by a stubbed
+`win-toast`) and through a page load with two permissions already pending, and check each entry names both cards.
+Two same-text piles of different pairs are two entries.
+
+Mercurius round 1 (session s_5rBGJK0xqSTF, needs_changes) is folded above: C1 and C2 are the propagation rule and
+the first-pass branch, C3 is the repeat signature, A1 was the cap stated two ways. Q1 is Open Question 1.
+
+### Open Questions for clint
+
+1. **Build it, or close it?** It is about 80 lines of board code and one headless section, with nothing on the daemon.
+   Recommendation: build it, since the pile gap means the busiest moments are the ones nobody can look up per card.
+2. **Per browser is the right home?** A daemon-side record of what was said would follow you to another machine, but
+   it would be a second event log that records who was looking, which the toast log was written to avoid.
+   Recommendation: per browser.
+3. **Is 200 across the board enough?** At a busy hour that is less than a day. Options: keep 200, raise it (the
+   entries are small, 1000 is well under 1 MB of localStorage), or keep the last N per card. Recommendation: raise
+   it to 1000 and say what rolled out.
 
 ### Why it might not be worth it
 
@@ -336,24 +435,31 @@ filtering the existing history by card is enough. clint has not committed to bui
 
 ## 15. Pluggable event sink: get the audit trail out of the primary database
 
-**Raised 2026-09-18.** Stages 1 and 2 done. The offsite sink and a live swap are left.
+**Raised 2026-09-18.** Stages 1 and 2 done. Stage 3 (the permission table) is designed in
+`docs/event-sink-stage3-design.md`, not built. The offsite sink and a live swap are left after that.
 
 ### Status
 
-Done:
+Done (reconciled against `claude/main` 2026-09-29. Every sha below is an ancestor of it except `02fe769`):
 
-- **Stage 1** (in `02fe769`, landed 2026-09-18): the `EventSink` seam, the `db` hot sink, the rolling-JSONL `file`
-  cold sink, the `event_sink` setting, the opt-in per-card hot window `event_window_bytes`, `rolled_off` on a
-  card's event feed, and incremental auto_vacuum for fresh databases.
-- **Stage 2, routing** (`1e03180`): `event_cold_kinds` names kinds that go to the cold sinks only. Off by default.
+- **Stage 1** (2026-09-18): the `EventSink` seam (`8bf4083`), the rolling-JSONL `file` cold sink and
+  `event_sink=db,file` (`1959d8a`), the opt-in per-card hot window `event_window_bytes` (`ede2f4b`), plus
+  `rolled_off` on a card's event feed and incremental auto_vacuum for fresh databases with the `vacuumLoop` timer.
+  The whole of it also went out in the squashed `02fe769` (2026-09-21), which is on a separate line of history.
+- **Stage 2, routing** (`1f075a3`): `event_cold_kinds` names kinds that go to the cold sinks only. Off by default.
   The card's detail dialog says which kinds and whether older events rolled off.
-- **Stage 2, compact** (`1070cbf`): `atrium2 db compact --in <db> --out <db> [--window-bytes N] [--drop-kinds
+- **Stage 2, compact** (`1c26346`): `atrium2 db compact --in <db> --out <db> [--window-bytes N] [--drop-kinds
   k,...]`, an offline `VACUUM INTO` copy switched to incremental auto_vacuum.
+- **Stage 2, docs** (`950f518`): the measurement, the decisions, the changelog and the test plan.
+
+This section used to give `1e03180` and `1070cbf` for the two stage 2 commits. Those are pre-rebase copies with the
+same subjects, and neither is on `claude/main`.
 
 Left:
 
+- **Stage 3, the permission table** (designed, see above). It is now the largest thing in the file (see the
+  measurement) and nothing trims it.
 - The `offsite` sink.
-- The permission table, which is now the largest thing in the file (see the measurement). Nothing trims it.
 - Swapping a compacted copy into place. Today that is a manual step with the room stopped.
 - Turning a bound on by default, with a documented value.
 
@@ -993,6 +1099,10 @@ work" badge would need the count to travel on the card, and is left out until as
 
 ## 32. A queued say from http-support never produced a backlog entry, and nothing can say why (bug)
 
+**Status: built on `claude/sa32`, migration `0069_say`.** Lifecycle row, candidates on a miss, and `reply: true` owed
+replies are done. Cross-room delivery receipts need a say id on the relay request (link and hub, not changed).
+Design: `docs/say-lifecycle-design.md`.
+
 Raised 2026-09-28 by clint. About 09:22 local, the mercurius `http-support` session wrote a brief and sent a say to
 "the claude/main:atrium session (handle atrium)", asking for a backlog card and a reply with its id. It reported the
 say as queued, because the target was mid-tool-call. No card was filed and no reply went back. Item 30 was filed by
@@ -1045,6 +1155,17 @@ about 09:55. Then all three went in mid-turn and sat in Claude Code's own queue,
 minutes. clint typing and pressing Enter zeroes the count, which fits. The room log for card
 `01a0e80e-b80b-7b81-874b-0d1dde930bba` between 09:45 and 09:56 can confirm it. Also check that a `when: done`
 message is delivered at the turn end it waited for.
+
+Status: built and on claude/main. The line's text and keystroke-only counting are `118d6e5` (`typedline.go`), the
+Esc Esc port onto it is `d713e5c`, and the readout behind a setting is `2f15ace` (`js/typing.js`, polling
+`GET /v1/tasks/{id}/typing`). `TestASayWhenDoneWaitsForTheTurnToEnd` covers a `when: done` message typed at the turn
+end. All three are in the room binary deployed at 22:53 on 2026-09-28 (`66717c5`).
+
+The sa85 incident is confirmed from a copy of the room database and `room.err.20260928-111944`. Three messages from
+the orchestrator: a `when: done` one at 09:03, and immediate ones at 09:45:50 and 09:50:59. sa85 reported done at
+09:45:32. The room log has clint's keystrokes to that card at 09:55:16 to 09:55:19, and all three messages were
+typed at 09:55:21 to 09:55:22. The turn end at 09:45 released nothing, so the gate was reading a part-typed line,
+which is the old counter. That build predates `118d6e5`.
 
 ## 34. Every MCP tool call skips atrium's permission gate (bug)
 
@@ -1854,9 +1975,9 @@ clint confirmed the loss happened at the first screen update after the long repl
 little. The table's tail was still on the live 50-row screen, and a bare `\e[H` repaint overwrote it. Find what
 emitted that repaint (Claude Code, or ConPTY in the room) and why. Also test the reattach seam.
 
-Status: diagnosed by sa74 on `claude/lost-lines`. Recommendation 1, the height hold, is built there after two
-Mercurius rounds and approved by @terminal, not merged. Option 2 (OpenConsole ConPTY) goes to clint, and the
-replay-only repair is not built.
+Status: diagnosed by sa74. Recommendation 1, the height hold, is on claude/main (`387ccd5`, batch 2). Option 2
+(OpenConsole ConPTY) and option 3 (replay-only repair) are both designed below and wait on clint's pick. See "2 or
+3, for clint" at the end of this item.
 
 ### What dropped the lines
 
@@ -2031,7 +2152,146 @@ wakes with no `Resize`. Then the harness `flip` runs through the real code path.
 3. **Replay-only repair only if 2 is refused.** The live version is not worth its cost and risk next to 2.
 
 Repro, captures and scripts: `HANDOFF.md` on `claude/lost-lines`, `build.claude/lost-lines/` and
-`build.claude/conpty/` in that worktree (not committed).
+`build.claude/conpty/` in that worktree (not committed). That worktree has since been removed, so the captures are
+gone. The harness itself is committed: `conpty_harness_repro_test.go`, `conpty_scroll_repro_test.go` and
+`conpty_claude_repro_test.go` in `internal/daemon`.
+
+### Option 3, the replay-only repair, designed
+
+Written 2026-09-29 by @terminal so clint can weigh it against option 2. Nothing here is built.
+
+**What it repairs, exactly.** The grid that replays a ring (`screen.applyCuts`, reached through `replayCut`) gets the
+rows a no-scroll repaint overwrote back into its history. That grid is behind three things:
+- every attach in the default `screen` replay mode, which is a new pane, a reload, a pop-out and a reattach
+  (`attach.go`, the `default:` arm),
+- `GET /v1/tasks/{id}/scrollback/text` in `screen` mode, which is how clint copies a reply out,
+- the pre-restart bytes joined onto an attach by `runner.withCarried`, because they go through the same grid.
+
+**What it does not repair.** The pane that was watching when the repaint arrived. Its xterm.js already overwrote the
+rows, and nothing on the replay side reaches it. The operator has to reattach, and a reload does that. It also does
+not repair `raw` replay mode, where xterm.js is the only emulator. The "older scrollback" tab needs nothing: it is
+`flatten`, which keeps every line ever written, so those rows were never lost there.
+
+**Where it hooks in.** Only `replayCut` turns it on, through a field on `screen` (`keepShifted`). `idleframe.go` and
+every other `newScreenSized` caller leave it off and pay nothing.
+
+**The candidate.** A `CSI H` or `CSI f` whose target is row 1, column 1 (bare, `1;1`, or `;`), on the normal buffer
+and not the alternate one, with no DECSTBM region set, and with `fixedRows` true. A guessed height is skipped,
+because the rule compares whole screens and a guessed screen is not one. Skipped too: a candidate while one is
+already open, and the grid's first screenful (nothing is in history and the grid has never been full).
+
+**A candidate at a height change is NOT skipped.** This changes the strict-match rule above, which skipped any
+candidate with a height change at its byte (Mercurius `s_ijoTH04DNGvl` round 1, C1). With the height hold in, a real
+height change held past half a second is the loss that is left, so skipping those would make the report read clean
+exactly when lines are still going. A candidate is AT A CUT when a row cut from `applyCuts` falls between the last
+printable character or line feed before the `\e[H` and the `\e[H` itself. conhost's own
+`\e[46;3H\e[?25h\e[?2026h\e[?2026l\e[?25l` ahead of the repaint is cursor moves and modes, so it does not separate
+them. For those:
+- `applyCuts` snapshots the grid and notes the history length just BEFORE `resizeRows`, and keeps the number of rows
+  `fitRows` filed off the top (`gone`). The candidate compares against that pre-cut snapshot, not the fitted grid.
+- `k` is found the same way, with M from the NEW height, since that is the repaint's height.
+- Rows 1 to `gone` of the snapshot are already in history, put there by `fitRows`. Only snapshot rows gone+1 to `k`
+  are spliced in, after them. A `k` of `gone` or less adds nothing, and the report says the resize already filed
+  them.
+- A grow has `gone` 0. A taller repaint whose row 1 is older than anything on the snapshot finds no `k` and adds
+  nothing, which is the safe side.
+- A second cut before the repaint completes still cancels it, reported as such.
+
+**Opening one.** Copy the grid's rows into a snapshot buffer held on the screen and reused, and note the history
+length. The copy is rows times cols cells, about 10,000 for 206x50, and candidates are about 70 in 2.7 MB of ring.
+
+**Following it.** Each line feed while the candidate is open records the row just finished as text, SGR stripped
+and trailing blanks trimmed. That is the repaint's row `n`. Recording at the line feed rather than at the end is
+what keeps it right when the last row's `\r\n` scrolls the grid, as a 50-row repaint of `\e[K\r\n` rows does.
+Printable text, `\r`, `CSI K` and SGR are the only things allowed while it is open. One exception: once exactly
+`rows - 1` rows are recorded, the next cursor move CLOSES the candidate instead of cancelling it, and the row the
+cursor was on is recorded as the last one first (see "Closing one"). Anything else cancels it without a word:
+another cursor move, `CSI J`, insert or delete lines, a scroll, DECSTBM, the alternate screen, a size cut
+from `applyCuts` after the `\e[H` (a cut just before it is the case below), or more than 64 KB consumed since it
+opened.
+
+**Closing one.** Complete at `rows` line feeds, or at `rows - 1` line feeds followed by a cursor move, which is how a
+repaint that does not end in `\r\n` finishes. Then the strict-match rule above, with the recorded rows against the
+snapshot: the smallest `k` from 1 to rows-1 where repaint rows 1 to M equal snapshot rows k+1 to k+M, M at least
+max(6, rows/4), and at least 4 of the matched rows non-blank and pairwise distinct. Exactly one passing `k` or
+nothing. On a match, what is spliced depends on the candidate:
+- Not at a cut: snapshot rows 1 to `k`, at the history length noted on open.
+- At a cut: only snapshot rows gone+1 to `k`, at the pre-cut history length plus `gone`, which is right after the
+  rows `fitRows` filed. A `k` of `gone` or less adds nothing and reports `resize-filed`.
+Either way they sit ahead of anything the repaint's own last line feed scrolled off.
+
+**Text, not SGR, is compared.** conhost re-renders its buffer, so a row's colours can come back as different bytes
+for the same look. Comparing text is what makes a real shift match, and the distinct-rows rule is what stops blank
+rows and box borders matching at the wrong `k`.
+
+**A diagnostic first, in the same change.** `GET /v1/tasks/{id}/scrollback/text?repair=report` returns the
+replay with one line per candidate instead of the text. It is the only way to know how often this still happens now
+that the height hold is in. Without it option 3 is built blind. Tab-separated, one header line, these columns:
+- `offset`, the byte of the `\e[H` in the replayed bytes,
+- `rows` and `cols`, the grid's size at the candidate, and `cut`, the rows before a cut it sits at or `-`,
+- `outcome`: `repaired`, `resize-filed` (k was `gone` or less), `no-match`, `ambiguous` (more than one k),
+  `cancelled`, or `incomplete` (the ring ended inside it),
+- `k`, and `added`, the rows spliced into history, both 0 when nothing was,
+- `why`, what cancelled it or which condition failed, empty otherwise.
+The last line totals each outcome and the rows added, so two readings a day apart compare at a glance.
+`repair=report` always renders in `screen` mode whatever `mode` says, and ignores `ansi` and `collapse`. It takes
+its bytes and its cuts from ONE `ReplayCuts` call, so every cut's offset is in the stream it is compared against.
+`collapse=0` swaps in `Snapshot()`, which is the same stream today (both are `from(retainedStart())`, and nothing
+collapses any more), but it is taken under a second lock, and a ring that wraps between the two moves the offsets.
+The repair itself only ever runs inside `replayCut`, which is handed bytes and cuts together, so this is a rule for
+the report alone. It replaces the `[atrium] ... mode` banner as well: the body is the report and nothing else. The
+totals line starts with `totals` and uses the same tabs, `outcome=count` pairs then `added=N`. `?kind=shell` works
+as it does today, so a card's shell can be reported on too.
+
+Reviewed by Mercurius `s_ijoTH04DNGvl`: five rounds, one major finding in each of the first four (a repaint at a
+height cut was skipped, a cursor move both cancelled and closed a repaint, two splice rules for a cut, and cut
+offsets across two locks), each fixed above. Round 5 is ready_to_build, and its one advisory is the `kind` line.
+
+**Tests.**
+- Unit, in `screen_test.go`: a 10-row grid, 10 numbered lines, then `\e[H` and 10 rows `\e[K\r\n` starting from
+  old row 4. History gains rows 1 to 3 in order. The same with the last row not ending in `\r\n`.
+- The false positives, each must add nothing: a repaint identical to the screen (`k` 0), a repaint of mostly blank
+  rows and one border, a real collapse where rows moved up because content was removed (asserted as a named, known
+  duplicate, since the rule cannot tell it apart when the rows match), two `k` values passing, a second cut inside a
+  repaint, a repaint under DECSTBM, and one on the alternate screen.
+- At a cut: rows 50 to 40 with conhost's repaint shifted by 12 adds 2 rows (the grid filed 10), shifted by 10 adds 0
+  and reports `resize-filed`, and a grow from 40 to 50 adds 0.
+- A fixture from the committed harness. `TestConPTYScrollRepro` drives rows 50, 40, 50 through the inbox ConPTY with
+  Claude-shaped frames. Capture its host-side bytes once into `testdata/`, and assert the replay keeps every
+  numbered line the child wrote, where today it loses 49 to 72 of 300. This is the test that says it works.
+- `HEADLESS_ONLY` needs nothing new: the board is not touched.
+
+**Cost.** One worker. About 200 lines in `screen.go` with the cut case, about 50 for the report, about 350 of
+tests. No new binary, no setting, nothing shipped, nothing packaging has to learn. It runs only on replay, so it
+adds nothing to the output path. A wrong call puts a duplicate line into history, never removes one. It becomes
+dead code on the day option 2 lands, and removing it is deleting one field and its code.
+
+### 2 or 3, for clint
+
+What the height hold (`387ccd5`) already stopped: the coalesced flips, which were the big losses (10, 25 and 26 rows).
+What is left: a height change held past half a second, such as a shorter pop-out or phone that stays attached, costs
+about a row for each row changed. How often that happens now is not known, which is why option 3 starts with the
+report.
+
+| | Option 2, OpenConsole ConPTY | Option 3, replay-only repair |
+| --- | --- | --- |
+| Fixes the pane that was watching | yes | no, a reload repairs it |
+| Fixes attach replay and `/scrollback/text` | yes | yes, in `screen` mode |
+| Fixes `raw` replay mode | yes | no |
+| Where it acts | at the source, conhost is gone | after the fact, on replay only |
+| Wrong answers | none known: 0 lost, no `\e[H` repaint, over 30 to 62 resizes a run | a duplicate line in history, never a lost one |
+| New things shipped | conpty.dll and OpenConsole.exe per arch, about 1.2 MB, MIT notice | nothing |
+| New code | own create, resize and close through conpty.dll (about 100 lines, in the harness), answering `\e[c` and `\e[1t` for a runner with no viewer, the setting, the fallback | about 250 lines in `screen.go` and the report |
+| Retesting | the whole terminal test plan: passthrough changes the byte shapes `screen.go`, the cursor settle, the typing gate and the replay tests were tuned on | its own tests only |
+| Packaging | every install path in `docs/packaging.md` has to carry two more files | none |
+| Prerequisites | item 81 (DECSTBM in `screen.go`), now on claude/main | none |
+| Size | two or three workers, one of them in packaging, plus a full plan run | one worker |
+| Afterwards | the root cause is gone | dead code once 2 lands |
+
+**@terminal's recommendation.** Build option 3's report on its own first, which is a day's work at most, and read it
+on the live room for a few days. If it shows almost nothing, the height hold was enough and neither option is worth
+its cost yet. If it shows real losses, option 2 is the fix. Option 3's repair is worth building only if option 2 is
+refused, or as a stopgap while option 2 is built, because it cannot fix the pane clint was copying from.
 
 ## 75. sg3 as a room, and machine bootstrap reuses the operator's shared folder under `localai` (feature)
 
@@ -2378,6 +2638,9 @@ The refusal reads the card's status and not the runner. Expected: a say to a car
 delivered whatever column the card is in. A `done` card with no runner still refuses, and says so. Item 41 is about
 which prompts make a card owe a report, not the card's state after one, so this is separate. Owned by @runtime.
 
+Status: fixed on `claude/sa83`. `sessionGone` is now a daemon method that also asks the supervisor, and `atrium tell`
+uses it. See `docs/changes/83.md`.
+
 ## 84. Two `nosession` tests fail on macOS and Linux (bug)
 
 Found 2026-09-28 on m1mini (macOS arm64, `hub-main` 52ca01a). `TestASayToAGoneSessionIsUndeliverable` and
@@ -2392,6 +2655,32 @@ Fix, test only: give `cardFor` a PID that is guaranteed dead. Prefer a helper th
 returns its pid, over a large constant. Then grep the `_test.go` files for other `PID: 1` style assumptions.
 `processAlive` is right and does not change. Verified on m1mini with pid 2147483000: both pass, and so does the
 whole package. Owned by @runtime.
+
+## 87. Two keep-alive refreshes rewrote the whole context (bug)
+
+Found 2026-09-29 by @runtime writing the item 39 spec (`docs/keepalive-marked-spec.md`), from `keepalive_refresh` and
+`session_usage` on a COPY of the live database. Of 60 refreshes, two wrote most of the context and read almost none of
+it, which is the rewrite keep-alive exists to avoid, and cost $1.78 of the $5.34 keep-alive spent in all:
+
+| Card | At (UTC) | Context | Read | Written | Cost | ttl_left_s |
+| --- | --- | --- | --- | --- | --- | --- |
+| `01a0e960-fc85` inputlag-env-leak | 2026-09-28 20:13:00 | 123,752 | 0 | 127,952 | $1.02 | 266 |
+| `01a0e8f0-ecda` tlsuv sch-credentials | 2026-09-28 21:03:28 | 99,886 | 10,259 | 94,346 | $0.76 | 222 |
+
+Both are `atrium:lean` cards, launched and resumed with `--mcp-config ~/.atrium/mcp.json --strict-mcp-config`. Every
+refresh that hit was on a card that is not lean. A lean card runs with its own tool list, MCP config and system
+prompt, and the fork carries none of them, so its prefix differs from the first token (read 0) or right after the
+system prompt (read 10k). The TTL was not the cause: both had about four minutes left.
+
+**Diagnosis: already fixed by item 70**, fa2b2cc (2026-09-29 01:19Z). `decide` in `internal/daemon/keepalive.go` skips
+a card tagged `atrium:lean` ("lean card: a refresh cannot rebuild its prompt"), and its comment cites the $1.02 row
+above. Lean is decided by the same tag at launch (`lean.go`), so a lean card cannot lack it. On the copy there is no
+refresh on a lean-tagged card after the fix. Item 73 (sa73, on m1mini) is the step after this: a fork that carries a
+lean card's prompt, so those cards can be warmed rather than skipped.
+
+The other four refreshes recorded as `miss` read the whole context and wrote 3k to 8k for $0.04 to $0.09 each. They
+were effectively warm, and are only labelled `miss` by the outcome rule item 70 also changed. No worker needed. Close
+once a room running fa2b2cc or later shows no full-write refresh for a day.
 
 ## 86. `screen.go`'s combining-mark table only grows (bug, low)
 
@@ -2469,6 +2758,120 @@ reads idle. Owned by @terminal, built with item 86 by the same worker.
 
 **Status: done on `claude/sa86`.** The loop is now `frameText` in `idleframe.go`, which skips `contCh` cells, and the
 stale comment is rewritten. `idleframe_wide_test.go` asserts the text handed to `classifyScreen` directly.
+
+## 89. A finished worker's runner outlives its worktree and locks the directory (bug)
+
+Reported 2026-09-29 by the orchestrator: every ended worker left its worktree directory "used by another process"
+after git had unregistered it (sa21, sa80, fb01, lost-lines, sa82). The suspect was a leftover child (a shell, node,
+or the conpty host) whose cwd was that directory.
+
+**Diagnosis, read-only, 2026-09-29 ~01:15 local.** It is not a leftover child. It is the worker's own runner, which
+never exited. Each directory's holder was found by reading every process's current directory out of its PEB:
+
+| Worktree | Holder | Parent | Started (UTC) | Card | Last event |
+| --- | --- | --- | --- | --- | --- |
+| lost-lines | `claude.exe` 56032 | room `atrium.exe` 43988 | 02:54 (resume) | `01a0eac2` | `done` report 04:23 |
+| sa21 | `claude.exe` 16812 | room `atrium.exe` 43988 | 03:14 | `01a0eb28` | `done` report 04:06 |
+| sa80 | `claude.exe` 47888 | room `atrium.exe` 43988 | 03:33 | `01a0eb39` | `done` report 04:00 |
+| fb01-provision | `claude.exe` 47516 | room `atrium.exe` 43988 | 03:39 | `01a0eb29` | `done` report 04:06 |
+| sa82 | `claude.exe` 57404 | room `atrium.exe` 43988 | 04:06 | `01a0eb57` | `done` report 04:23 |
+
+Every holder is a full session (about 350MB each, 1.8GB in all, no child processes, responding) and a direct child
+of the room daemon. On every card `supervised` is true, which is `d.sup.get(id) != nil`, so the supervisor still
+owns each runner and could stop it. None of the five has an `exited` event after its `done` report, and none was
+culled. The worktrees went by hand: `git worktree remove --force` unregisters the worktree and deletes its files,
+then fails on the directory the runner is sitting in. That is the "Permission denied" and the empty directory.
+
+Why nothing ended them:
+
+- **`done` keeps the runner on purpose.** A done report moves the card to `done` and the session sits at its prompt,
+  so a director can send it back (sa21 went `done` to `needs-input` twice for review) and item 83 lets a say reach it.
+- **The reaper never looks at a done card.** `reapOnce` checks running and the needs-* columns, and
+  `reviveOwnedDead` only `dead` ones. A `done` card with a live runner is in neither list. Its stored `pid` is 0
+  (a supervised card's pid is not the observed one), so a pid check would not have answered either.
+- **`atrium_cull` does the right thing and was not used.** It calls `StopRunner` and `waitRunnerGone` before
+  `git worktree remove`, because "on Windows a directory in use cannot be removed". Removing the worktree before
+  `atrium_exit` is the path that locks it. DIRECTOR.md says "exit the worker and remove its worktree", and the
+  order in that sentence is the whole fix for the manual path.
+
+**What the supervisor or reaper should do.** Not end a runner for being `done`, which would break the review loop
+and item 83. Two candidates:
+
+1. **A supervised runner whose worktree is gone is ended.** On the reaper tick, for each `d.sup.all()` runner whose
+   card has a worktree recorded: if that directory no longer exists, or exists with no `.git` entry (git has
+   unregistered it), `windDown` the runner with its harness's exit keys, and record `exited` with `by: reaper`,
+   `detected: its worktree was removed`. The resume id stays, so nothing is lost. This is exactly the case in the
+   table and has no false positive worth worrying about: a session in a directory with no repository has no work
+   left to do. Only `atrium:subagent` cards, so a human's own terminal in a scratch directory is never touched.
+   Small, owned by @runtime, one targeted test with a temp worktree.
+2. **A `done` card's runner idle past a limit is parked.** The memory case: five idle sessions held 1.8GB. This is
+   the item 38 question (Open Question 1 in `docs/restart-idle-spec.md`: parking saves processes and memory, and no
+   tokens), so it waits on clint's answer there rather than being decided here.
+
+Until then, the five runners above can be asked to leave by their owners with `atrium_exit` (sa21 @runtime, sa80
+@ui, fb01 @fabric, lost-lines and sa82 @terminal), after which each empty directory removes normally. Nothing was
+killed or exited during the diagnosis. The orchestrator sent `atrium_exit` to all five afterwards.
+
+**A second finding, the same family as item 83.** `atrium_say` and `atrium_exit` refuse a `done` card named by its
+alias ("no session called sa21"), and only the `room~id` form works. Reproduced by @runtime on sa32 the same night.
+The cause is `GetByAlias` in `internal/store/alias.go`, which only matches `liveClause` (not `done`, not `dead`,
+not archived). So an alias stops resolving the moment a worker reports done, while its runner is still at the
+prompt and item 83 says a say should reach it. Every resolver built on it (`localTarget`, `resolvePeer`, the MCP
+`resolvePeer` in `internal/link`) inherits that. sa32 found the mirror of it: `GetByWireName` matches ended cards,
+so an exact handle of a dead card is refused as ended even when a live card holds that name as an alias.
+
+The fix belongs in resolution, not in the alias query: an alias resolves to the newest card holding it that is
+live, or else to the newest `done` card whose session is not gone by `sessionGone` (item 83's rule). A dead card's
+alias stays unresolved, so a reused alias still means the live card. Separate from the reaper fix above, and it
+touches the same resolver sa32 (item 32) changed, so it goes after that merge.
+
+## 91. Two cards in one worktree share one HANDOFF.md, and new-context overwrites the other's (bug, design only)
+
+Reported 2026-09-29 by the orchestrator. @merge and @orchestrator both run in the main checkout
+(`D:/git/github/dovholuknf/atrium`), and at about 01:15 local one card's new-context capture overwrote the
+other's HANDOFF.md. The file is a fixed name in the card's directory at every step of `newcontext.go`: the capture
+prompt says "HANDOFF.md in the current directory", the wake prompt says "Read HANDOFF.md", and `handoffWritten`
+checks `filepath.Join(task.Worktree, "HANDOFF.md")`.
+
+Two harms, and the second is why nothing noticed the first:
+
+- **The overwrite.** A handoff not yet read back, or one a human is keeping, is replaced by another card's.
+- **The check passes for the wrong card.** `handoffWritten` only asks whether the file was modified since the
+  capture began. A capture on card A that wrote nothing still passes when card B wrote the file in that window,
+  and card A then wakes into card B's state and carries on as B. A card in two places is the worst outcome here.
+
+Options:
+
+1. **A per-card file name.** `HANDOFF.<alias or first 8 of the card id>.md`, in the capture prompt, the wake prompt
+   and `handoffWritten`, the same three places. Two cards in one directory can then never touch each other's
+   file, and the check is about the right file by construction. The cost: every habit and script that says
+   `HANDOFF.md` (DIRECTOR.md's "git rm HANDOFF.md", the orchestrator's touch-after-POST workaround, briefs) has to
+   learn the pattern. Using the per-card name always, rather than only when a directory is shared, keeps one rule.
+   A `.gitignore` line for `HANDOFF.*.md` would also stop a handoff reaching a merge by accident, which is the
+   thing every director currently removes by hand.
+2. **Refuse new-context when another live card shares the directory.** Small, and it would have prevented this
+   one. But the two cards that share a directory are the orchestrator and the merger, which are the long-lived
+   sessions that most need cycling, so the refusal lands on exactly the cards it should serve. It could refuse
+   only while the OTHER card's own new-context is in flight, which closes the concurrent case but not an
+   overwrite of a handoff written earlier and not yet read.
+3. **The handoff outside the worktree,** in the room's state directory keyed by card (`~/.atrium/handoff/<id>.md`),
+   with the absolute path in both prompts. Per-card by construction and never in git. But a human can no longer
+   find it next to the work, and a runner on another room writes to that room's disk, which the board then has to
+   serve.
+
+**Recommendation: option 1, with option 2's narrow form as a guard.** The name removes the collision, and refusing
+only while another card sharing the directory is mid-sequence costs nothing and covers a card whose runner ignores
+the name it was given. A migration is not needed: the name is derived, not stored. Owned by @runtime
+(`internal/daemon/newcontext.go`). The open question for clint is option 1's cost to existing habits: whether the
+fixed name `HANDOFF.md` is worth keeping for the single-card case humans are used to.
+## 90. busyGuard's refusal-line check sleeps a fixed 50ms (bug)
+
+Raised 2026-09-29 by the orchestrator. @merge's full headless run on `db2b33a` failed once under load in
+`busyGuard`: "the refusal line outlived its dialog". The check closed the launch dialog, slept 50ms and then looked,
+so a loaded browser that had not yet run the close handler failed it. It passes alone. Owner @ui.
+
+Status 2026-09-29, done on `claude/ui`. The sleep is now a wait for the line to be gone, with a `slow(2000)` budget
+and the same failure message, so `HEADLESS_SLOW` scales it like every other wait since item 85.
 
 ## 92. `/v1/tasks/prune` reaches one room, like pin-order did (bug)
 

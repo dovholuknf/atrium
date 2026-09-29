@@ -197,6 +197,10 @@ type Daemon struct {
 	// See clearLocation.
 	clearOnce sync.Once
 
+	// gone is what the reaper remembers about worktrees that have vanished. See
+	// worktreegone.go.
+	gone goneWatch
+
 	mu          sync.Mutex
 	agentServer *http.Server
 }
@@ -303,6 +307,7 @@ func New(opts Options) (*Daemon, error) {
 	d.ap.DismissAsks = d.handleDismissAsks
 	d.ap.Message = d.handleMessage
 	d.ap.Say = d.handleSay
+	d.ap.TaskSays = d.handleTaskSays
 	d.ap.RoomPeers = d.handleRoomPeers
 	d.ap.RoomCard = d.handleRoomCard
 	d.ap.RoomExit = d.handleRoomExit

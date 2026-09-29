@@ -77,7 +77,7 @@ func (f *usageFix) lineTo(path, model string, at time.Time, id string, w5, w1, r
 		"type": "assistant", "timestamp": at.Format(time.RFC3339Nano), "isSidechain": sidechain,
 		"message": map[string]any{"id": id, "model": model, "usage": map[string]any{
 			"input_tokens": 2, "cache_creation_input_tokens": w5 + w1, "cache_read_input_tokens": read,
-			"output_tokens": out,
+			"output_tokens":  out,
 			"cache_creation": map[string]any{"ephemeral_5m_input_tokens": w5, "ephemeral_1h_input_tokens": w1},
 		}},
 	})
