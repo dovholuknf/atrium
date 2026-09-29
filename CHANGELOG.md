@@ -5,6 +5,21 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **A launched claude card starts at its prompt, not at a first-run dialog.** See `docs/backlog-2.md` item 67,
+  `docs/runner-setup-design.md` and `docs/test-plan.md` section CH.
+
+  A launch into a folder claude had never seen stopped at its trust dialog, whose highlighted answer is "No, exit",
+  so the first say killed the card as `failed to start`. On a remote room every worktree is new. Before a claude
+  launch the room now marks the launch folder, and only that folder, trusted in claude's `~/.claude.json`
+  (`CLAUDE_CONFIG_DIR` honoured), under claude's own lock on that file (`~/.claude.json.lock`, the one every running
+  session takes), re-reading it under the lock and renaming a new file into place, so no session's write is lost.
+  Home and a filesystem root are never written, and a missing or unreadable file is left alone. A supervised claude
+  also starts with `CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN=1`, which keeps it on the classic renderer and stops the
+  "Try the new fullscreen renderer?" dialog: the alternate screen has no scrollback for the board to keep. A harness
+  env naming either renderer variable wins. Both are fixed at the source rather than by holding typed input,
+  because nothing always signals that claude reached its prompt: an untrusted folder runs no hooks. Same on Windows
+  and macOS. `internal/runnersetup`, `internal/daemon`: ROOM RESTART.
+
 - **One action gives a card a fresh context: `new context`, or Ctrl+Alt+N.** See `docs/backlog-2.md` item 66 and
   `docs/test-plan.md` section CG.
 
