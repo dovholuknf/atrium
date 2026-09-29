@@ -1047,9 +1047,12 @@ The fix is in the room, not the board. The dot is `seen.unseen`, worked out in `
 leave `atrium_task` and every other reader of `unseen` still saying nobody looked.
 
 - **Where.** The Stop path in `internal/daemon/messages.go` that lets a turn end already calls `silentStop` and then
-  `noteTurnForSeen`. Right after `noteTurnForSeen`, a card that is `agentLaunched` and does NOT owe a report
-  (`!t.OwesReport()`, so `reported_at` is at or after `prompted_at`) is marked seen with a new via, `SeenLauncher`
-  (`"launcher"`), through `MarkSeen(taskID, SeenLauncher, nil)`. The in-memory `d.unseen` entry goes with it.
+  `noteTurnForSeen`. A card that is `agentLaunched` and does NOT owe a report (`!t.OwesReport()`, so `reported_at`
+  is at or after `prompted_at`) is marked seen with a new via, `SeenLauncher` (`"launcher"`). NOT as a second step
+  after `noteTurnForSeen`: that function stores `d.unseen` and publishes the card, so the board would see the dot
+  for a moment on exactly the turns this hides, and could notify on it. Instead `noteTurnForSeen` takes an
+  auto-seen via, records the turn end, marks it seen, leaves `d.unseen` clear, and publishes ONCE at the end.
+  (Mercurius round 1, concern C1.)
 - **What counts as reported.** Exactly what already sets `reported_at`: `peerSaid` (an `atrium_report` or an
   `atrium_say` to the launcher) and the relay's cross-room equivalent. A notice atrium wrote about the worker
   (`notifyLauncher`) is not a report and does not count, the same rule `silentStop` uses. So a silent stop still wears
@@ -1064,7 +1067,8 @@ leave `atrium_task` and every other reader of `unseen` still saying nobody looke
   (if it shows `seen_via`) reads `launcher` as "its launcher got the report".
 - **Tests.** `internal/daemon/seen_test.go`: an agent-launched card that reports then stops is not unseen, via is
   `launcher`. One that stops without reporting is unseen and the silent stop notice goes. A human-launched card that
-  stops is unseen whatever it said. Questions stay open after a launcher-seen turn.
+  stops is unseen whatever it said. Questions stay open after a launcher-seen turn. A reported worker's Stop
+  publishes the card once, and never with `unseen` true.
 
 ## 44. A gear checkbox: no notifications from agent-launched cards, on by default (feature)
 
