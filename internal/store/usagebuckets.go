@@ -53,8 +53,9 @@ type UsageSeries struct {
 
 // UsageBuckets sums rows ended in [since, until) into buckets of the given
 // width. The range is held to UsageMaxBack, and a width too narrow to stay
-// within UsageMaxBuckets is widened, the width used being reported back.
-func (s *Store) UsageBuckets(since, until time.Time, bucketSecs int) (*UsageSeries, error) {
+// within UsageMaxBuckets is widened, the width used being reported back. A card
+// id narrows it to that card, so the board can show one card's causes.
+func (s *Store) UsageBuckets(since, until time.Time, bucketSecs int, card string) (*UsageSeries, error) {
 	until = until.UTC()
 	if until.IsZero() {
 		until = now()
@@ -79,9 +80,9 @@ func (s *Store) UsageBuckets(since, until time.Time, bucketSecs int) (*UsageSeri
 		rows, err := s.db.Query(`SELECT (CAST(strftime('%s', ended_at) AS INTEGER) - ?) / ? AS b, task_id, cause,
 			COUNT(*), COALESCE(SUM(input), 0), COALESCE(SUM(output), 0), COALESCE(SUM(cache_write_5m), 0),
 			COALESCE(SUM(cache_write_1h), 0), COALESCE(SUM(cache_read), 0), COALESCE(SUM(cost), 0)
-			FROM session_usage WHERE ended_at >= ? AND ended_at < ?
+			FROM session_usage WHERE ended_at >= ? AND ended_at < ? AND (? = '' OR task_id = ?)
 			GROUP BY b, task_id, cause ORDER BY b`,
-			since.Unix(), bucketSecs, ts(since), ts(until))
+			since.Unix(), bucketSecs, ts(since), ts(until), card, card)
 		if err != nil {
 			return err
 		}

@@ -30,7 +30,7 @@ func (s *Server) roomUsage(w http.ResponseWriter, r *http.Request) {
 		}
 		bucket = n
 	}
-	out, err := s.st.UsageBuckets(since, until, bucket)
+	out, err := s.st.UsageBuckets(since, until, bucket, q.Get("card"))
 	if err != nil {
 		s.fail(w, err)
 		return
