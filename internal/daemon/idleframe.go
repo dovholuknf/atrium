@@ -29,6 +29,9 @@ const (
 	// frameRuleMin is how many rule runes make a line a rule. The real ones span
 	// the terminal, so this is far under any width Claude Code draws at.
 	frameRuleMin = 20
+	// frameFooterRows is how many rows may sit under the bottom rule: the hint
+	// line, and a custom status line's rows above it.
+	frameFooterRows = 4
 )
 
 // frameTailBytes is how much of the ring is rendered to find the last screen.
@@ -95,12 +98,22 @@ func classifyScreen(text string) (bool, string) {
 			return false, frameSpinner
 		}
 	}
-	if !isRule(lines[n-2]) {
+	// The bottom rule is the last rule on screen, with the footer under it. A
+	// custom status line makes that footer several rows, so allow up to
+	// frameFooterRows of them, none of which the veto above found working.
+	bottom := -1
+	for i := n - 2; i >= 0 && i >= n-1-frameFooterRows; i-- {
+		if isRule(lines[i]) {
+			bottom = i
+			break
+		}
+	}
+	if bottom < 0 {
 		return false, frameNoBox
 	}
 	// Up from the bottom rule to the top one: the prompt, which may wrap.
 	top := -1
-	for i := n - 3; i >= 0 && i >= n-10; i-- {
+	for i := bottom - 1; i >= 0 && i >= bottom-8; i-- {
 		if isRule(lines[i]) {
 			top = i
 			break
@@ -109,7 +122,7 @@ func classifyScreen(text string) (bool, string) {
 	if top < 0 {
 		return false, frameOpenBox
 	}
-	if top+1 >= n-2 || !strings.HasPrefix(strings.TrimSpace(lines[top+1]), framePrompt) {
+	if top+1 >= bottom || !strings.HasPrefix(strings.TrimSpace(lines[top+1]), framePrompt) {
 		return false, frameNoBox
 	}
 	return true, frameIdle
