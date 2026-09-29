@@ -722,6 +722,13 @@ type runner struct {
 	// the pty gets the widest width and the shortest height of them, because
 	// a shared terminal has one size and several windows.
 	views map[any]viewport
+	// resizeMu is held across the whole of a viewport change: record the
+	// viewer, compute the agreed size, the guard, the mark and the pty resize.
+	// Without it two viewers computing A then B could apply B then A, leaving
+	// the pty and the ring's marks at a stale size. Lock order is resizeMu then
+	// mu, never the other way. Nothing else takes it, and a Resize on a pty is
+	// a quick call, so it is never held across anything that waits on a peer.
+	resizeMu sync.Mutex
 	// resized is closed and replaced every time the pty changes size, so
 	// every attach can tell its viewer at once. See `sizeChanged`.
 	resized   chan struct{}
@@ -1263,6 +1270,8 @@ func (r *runner) setViewport(id any, cols, rows int) error {
 	if cols <= 0 || rows <= 0 {
 		return nil
 	}
+r.resizeMu.Lock()
+defer r.resizeMu.Unlock()
 	r.mu.Lock()
 	if r.views == nil {
 		r.views = map[any]viewport{}
@@ -1310,6 +1319,8 @@ func (r *runner) noteResized() {
 // dropViewport forgets a viewer that has detached, and lets the pty follow the
 // viewers left only when the viewer that left was the binding one.
 func (r *runner) dropViewport(id any) {
+r.resizeMu.Lock()
+defer r.resizeMu.Unlock()
 	r.mu.Lock()
 	if r.views == nil {
 		r.mu.Unlock()
