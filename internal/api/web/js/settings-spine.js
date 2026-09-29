@@ -1656,9 +1656,13 @@ function connect() {
       (bad.length <= 3
         ? bad.map(f => f.label).join(", ")
         : bad.slice(0, 3).map(f => f.label).join(", ") + ` and ${bad.length - 3} more`);
-    alerting.play("permission");
+    // Held with the rest while notifications are off (item 79). `play` exempts a
+    // permission kind and the toast skips `notify`, so both are gated here, and
+    // the `notify` between them records the one drawer entry.
+    const held = notifyHeld("runners");
+    if (!held) alerting.play("permission");
     alerting.notify(title, body, "runners", "", "fixtures", "", "");
-    toast(title, body + ". the rooms tab says why", "runners");
+    if (!held) toast(title, body + ". the rooms tab says why", "runners");
   });
   // Atrium is asking a registry whether a newer runner is published, and a
   // launch is waiting on the answer.
