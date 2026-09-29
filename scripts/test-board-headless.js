@@ -5654,11 +5654,6 @@ async function peekEverywhereSection(browser, base) {
   if (errors.length) fail("the peek page threw: " + errors.join(" | "));
 }
 
-// A write that names a card never carries `writeRoom`, the room of the last
-// editor that was open. With three rooms, a start (`POST /v1/launch` with a
-// `task_id`) and a drag into a group (`PATCH /v1/tasks/<id>`) carried it to the
-// wrong room and came back "sql: no rows". See docs/backlog-2.md item 63 and
-// docs/card-room-routing.md. A write that names no card still carries it.
 // A running card the room says looks idle (no turn-end arrived). The chip replaces
 // the live one, the spinner stops (no `live` chip, not "working"), and the words are
 // a guess. Drawn from the functions directly: the daemon decides, the board only draws.
@@ -5698,6 +5693,11 @@ async function looksIdleSection(browser, base) {
   }
 }
 
+// A write that names a card never carries `writeRoom`, the room of the last
+// editor that was open. With three rooms, a start (`POST /v1/launch` with a
+// `task_id`) and a drag into a group (`PATCH /v1/tasks/<id>`) carried it to the
+// wrong room and came back "sql: no rows". See docs/backlog-2.md item 63 and
+// docs/card-room-routing.md. A write that names no card still carries it.
 async function cardRouteSection(browser, base) {
   hubMode = true;
   sggAttached = true;
@@ -5933,8 +5933,8 @@ async function main() {
       pasteBig: pasteBigSection, typing: typingSection, alias: aliasSection, copySelect: copySelectSection, busyGuard: busyGuardSection, keepalive: keepaliveSection,
       stuck: stuckSection, carryLink: carryLinkSection,
       skinScope: skinScopeSection, skinHeal: skinHealSection, toastLives: toastLivesSection,
-      history: historySection, contextSize: contextSizeSection, peekEverywhere: peekEverywhereSection, cardRoute: cardRouteSection, quietDoer: quietDoerSection, usageCharts: usageChartsSection,
-      looksIdle: looksIdleSection };
+      history: historySection, contextSize: contextSizeSection, peekEverywhere: peekEverywhereSection, cardRoute: cardRouteSection,
+      quietDoer: quietDoerSection, usageCharts: usageChartsSection, looksIdle: looksIdleSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -7548,6 +7548,8 @@ async function main() {
 
     // ── a write that names a card goes by the card, not writeRoom ──────────
     await cardRouteSection(browser, base);
+    // ── a running card the room says looks idle wears the guess ────────────
+    await looksIdleSection(browser, base);
 
     // ── the global auto button is never blank ────────────────────────────────
     // `#gauto` has no class and no text in the markup, and only a settings read
