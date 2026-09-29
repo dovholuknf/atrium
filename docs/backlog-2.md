@@ -1745,6 +1745,11 @@ Review: Mercurius round 1 (s_12NjmPjbUY9e) found the permission question left fo
 built-no, flippable) and no record-only path for held-back alerts (C2, folded as the `logNotification` rule). Its
 advisory, an `aria-label` that follows the state, is folded too.
 
+Status 2026-09-29 (branch `claude/sa79`): built as written. `notifyHeld` in `js/notify.js` gates both `play` and
+`notify`, and the off path calls `logNotification` once per alert. The permission question is still waiting on clint,
+held in `NOTIFY_OFF_SILENCES_PERMISSIONS`. The bell glyph moved into its own `.glyph` span so it can be repainted
+without touching the badge. Headless section `notifyOff`. No timed mute.
+
 ## 80. Real-time token burn and usage charts (feature)
 
 Raised 2026-09-28 by clint, wanted tonight. Item 37 already records every Claude turn's spend, with its cause, in
