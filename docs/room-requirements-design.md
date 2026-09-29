@@ -238,7 +238,12 @@ f-004's.
 4. codex as a smoke case in provision. @fabric, after f-007 lands.
 5. `POST /v1/preflight` with its three questions and the fixed key table, from inside the room. @runtime, with
    @rnd's section 4.
-6. `survives` and `runner_auth` rows, once 5 exists and @rnd's spikes have results. @fabric.
+   Items 1 and 5 were built as r-018 at 2c67bca. The shapes are in its `docs/changes/r-018.md`. The hub route for
+   `/v1/preflight` is fabric's, in f-010.
+6. `survives` and `runner_auth` rows, once 5 exists and @rnd's spikes have results. @fabric. `--started-by` is not
+   passed on to a `--detach` or restart child, so a registration (logon task, systemd unit, LaunchAgent) must start
+   `atrium room --started-by <kind>` in the foreground, which the existing registrations already do with `room
+   --db`. They gain the flag here.
 7. The gate as `apply`, once f-006 ships. @runtime for the hook, @fabric for the check.
 8. `atrium.requirements.yaml` committed at atrium's root, which is the file in section 2.1.
 
