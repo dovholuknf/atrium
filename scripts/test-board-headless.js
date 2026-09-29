@@ -6846,6 +6846,64 @@ async function linkReuseSection(browser, base) {
   if (errors.length) fail("linkReuse: the page threw: " + errors.join(" | "));
 }
 
+// The usage tab and its cache reads toggle. Off by default: four counted kinds
+// stacked, the cache reads named on one line under the split, five kinds still on
+// the hover. On is the tab as it always was. The choice is the daemon's.
+async function usageCacheReadsSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const sp = await ctx.newPage();
+  const errors = [];
+  sp.on("pageerror", e => errors.push(String(e)));
+  const posts = [];
+  let stored = false;
+  const at = new Date(Math.floor(Date.now() / 900000) * 900000 - 900000).toISOString();
+  const sums = { rows: 2, replies: 9, input: 1000, output: 2000, cache_write_5m: 3000, cache_write_1h: 4000, cache_read: 90000, cost: 0 };
+  await ctx.route("**/v1/usage*", route => route.fulfill({ json: { buckets: [
+    { t: at, total: sums, cards: { "uc-a": sums }, causes: { operator: sums } }] } }));
+  await ctx.route("**/v1/settings", async route => {
+    const r = route.request();
+    if (r.method() === "POST") {
+      const body = JSON.parse(r.postData() || "{}");
+      posts.push(body);
+      if ("usage_cache_reads" in body) stored = body.usage_cache_reads;
+    }
+    await route.fulfill({ json: { usage_cache_reads: stored, board_skin: "harbour", board_skins: SKINS } });
+  });
+  const look = () => sp.evaluate(() => {
+    const kinds = new Set([...document.querySelectorAll('#uc-body .ucchart[data-chart=burn] rect')].map(r => r.getAttribute("class")));
+    const g = document.querySelector('#uc-body .ucchart[data-chart=burn] g[data-t]');
+    return { kinds: [...kinds].sort(), line: /not in these charts/.test(document.getElementById("uc-body").textContent),
+      causes: (document.querySelector("#uc-body .uccauses") || {}).textContent || "",
+      on: document.getElementById("uc-cache").getAttribute("aria-pressed"), hasG: !!g };
+  });
+  try {
+    await sp.goto(base, { waitUntil: "domcontentloaded" });
+    await sp.waitForSelector("#stack-list .stackrow", { state: "attached", timeout: slow(15000) });
+    await sp.evaluate(() => switchView("usage"));
+    await sp.waitForSelector("#uc-body .ucchart[data-chart=burn] rect", { timeout: slow(10000) });
+    let s = await look();
+    if (s.on !== "false") fail("usageCacheReads: the toggle is pressed by default.");
+    if (s.kinds.length !== 4 || s.kinds.includes("uck-read")) fail("usageCacheReads: off should stack four kinds: " + s.kinds);
+    if (!s.line) fail("usageCacheReads: off has no cache reads line.");
+    const txt = await sp.textContent("#uc-body .uccacheline");
+    if (!/cache reads 90k · not in these charts · 90% of input was served from the cache/.test(txt)) fail("usageCacheReads: the line reads " + txt);
+    if (!/9 calls/.test(s.causes)) fail("usageCacheReads: a cause row does not show its calls: " + s.causes);
+    await sp.hover('#uc-body .ucchart[data-chart=burn] g[data-t] rect');
+    const read = await sp.textContent("#uc-body .ucread");
+    if (!/cache read 90k/.test(read) || (read.match(/ · /g) || []).length !== 5) fail("usageCacheReads: the hover does not list five kinds: " + read);
+
+    await sp.click("#uc-cache");
+    await sp.waitForFunction(() => document.getElementById("uc-cache").getAttribute("aria-pressed") === "true", null, { timeout: slow(5000) });
+    s = await look();
+    if (s.kinds.length !== 5) fail("usageCacheReads: on should stack five kinds: " + s.kinds);
+    if (s.line) fail("usageCacheReads: on still has the cache reads line.");
+    if (!posts.some(b => b.usage_cache_reads === true)) fail("usageCacheReads: the daemon was not told: " + JSON.stringify(posts));
+  } finally {
+    await ctx.close();
+  }
+  if (errors.length) fail("usageCacheReads: the page threw: " + errors.join(" | "));
+}
+
 async function main() {
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = "http://127.0.0.1:" + server.address().port;
@@ -6864,7 +6922,8 @@ async function main() {
       skinScope: skinScopeSection, skinHeal: skinHealSection, toastLives: toastLivesSection,
       history: historySection, contextSize: contextSizeSection, peekEverywhere: peekEverywhereSection, cardRoute: cardRouteSection,
       quietDoer: quietDoerSection, looksIdle: looksIdleSection, notifyOff: notifyOffSection,
-      questionsClick: questionsClickSection, walk: walkSection, linkReuse: linkReuseSection };
+      questionsClick: questionsClickSection, walk: walkSection, linkReuse: linkReuseSection,
+      usageCacheReads: usageCacheReadsSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -8791,6 +8850,7 @@ async function main() {
     await questionsClickSection(browser, base);
     await walkSection(browser, base);
     await linkReuseSection(browser, base);
+    await usageCacheReadsSection(browser, base);
     await reselectSection(browser, base);
     // ── over a terminal the toasts hang from the top right ─────────────────
     await toastsTopSection(browser, base);
