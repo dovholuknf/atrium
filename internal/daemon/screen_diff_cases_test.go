@@ -86,6 +86,24 @@ func traceCases() []traceCase {
 	clear3 := "history1\r\nhistory2\x1b[3J\x1b[2J\x1b[Hafter\r\n"
 	reset := "before\r\n\x1bcafter reset\r\n"
 	region := "\x1b[1;4r" + repeatLines(8, func(i int) string { return fmt.Sprintf("region %d\r\n", i) })
+	// Scroll regions. Rows are numbered so a wrong one is named by its text.
+	fill6 := "r1\r\nr2\r\nr3\r\nr4\r\nr5\r\nr6"
+	regionMid := fill6 + "\x1b[2;4r\x1b[4;1H\r\nnew a\r\nnew b\r\n"
+	regionFooter := "\x1b[1;7r" + repeatLines(12, func(i int) string { return fmt.Sprintf("row %d\r\n", i) }) +
+		"\x1b[8;1Hfooter"
+	regionBad := fill6 + "\x1b[3;3r\x1b[4;2r\x1b[3;99r\x1b[9;12r\x1b[2;1Hx"
+	regionReset := fill6 + "\x1b[2;3r\x1b[r\x1b[5;1H\r\ntail\r\n"
+	regionRI := fill6 + "\x1b[2;4r\x1b[2;1H\x1bMtop\x1b[M\x1b[1;1H\x1bM"
+	regionBelow := fill6 + "\x1b[2;4r\x1b[6;1H\r\nlast\r\n\x1b[1;1H\x1bM"
+	regionST := fill6 + "\x1b[1;4r\x1b[2S\x1b[1T"
+	regionSMid := fill6 + "\x1b[2;5r\x1b[2S\x1b[1T\x1b[S"
+	regionIL := "a1\r\na2\r\na3\r\na4\r\na5\r\na6\r\na7\r\na8\x1b[2;5r\x1b[3;1H\x1b[2Lins\x1b[4;1H\x1b[M\x1b[9L"
+	regionILOut := "a1\r\na2\r\na3\r\na4\r\na5\r\na6\r\na7\r\na8\x1b[2;5r\x1b[7;1H\x1b[Lz\x1b[1;1H\x1b[Mq"
+	regionAlt := fill6 + "\x1b[2;4r\x1b[?1049h\x1b[H\x1b[2Jalt\r\nalt2\x1b[?1049l\x1b[4;1H\r\nafter\r\n"
+	regionRIS := fill6 + "\x1b[2;4r\x1bc" + "a\r\nb\r\nc\r\nd\r\ne\r\nf\r\n"
+	regionResize1 := fill6 + "\x1b[2;4r"
+	regionResize2 := "\x1b[8;1Hlow\r\nx\r\ny\r\n"
+
 	wide := "ab中文cd\r\nあいう\x1b[2D.\r\n"
 	sgrKinds := "\x1b[1mbold\x1b[22m \x1b[3mital\x1b[23m \x1b[4munder\x1b[24m \x1b[7minv\x1b[27m \x1b[38;5;12mc256\x1b[39m \x1b[48;2;1;2;3mbg\x1b[49m plain\r\n"
 	bgErase := "\x1b[44mblue\x1b[K\x1b[m\r\n\x1b[41m\x1b[2Kred line\x1b[m\r\nend"
@@ -125,8 +143,25 @@ func traceCases() []traceCase {
 		{name: "clear screen", cols: 40, rows: 6, data: clear2, accept: clearKeepsHistory},
 		{name: "clear scrollback", cols: 40, rows: 3, data: clear3, accept: clearKeepsHistory},
 		{name: "full reset", cols: 40, rows: 6, data: reset, accept: clearKeepsHistory},
-		{name: "scroll region", cols: 40, rows: 6, data: region,
-			skip: "backlog-2 81: screen.go ignores DECSTBM (CSI top;bottom r), so a runner scrolling inside a region scrolls the whole grid and files rows into history that stayed put"},
+		{name: "scroll region", cols: 40, rows: 6, data: region},
+		{name: "region below the top discards", cols: 40, rows: 6, data: regionMid},
+		{name: "region with a footer", cols: 40, rows: 8, data: regionFooter},
+		{name: "region ignored when invalid", cols: 40, rows: 6, data: regionBad},
+		{name: "region reset by bare r", cols: 40, rows: 5, data: regionReset},
+		{name: "reverse index at region top", cols: 40, rows: 6, data: regionRI},
+		{name: "index below the region", cols: 40, rows: 6, data: regionBelow},
+		{name: "CSI S and T in a region", cols: 40, rows: 6, data: regionST,
+			accept: map[diffKind]string{
+				diffText:     "CSI S files the rows it scrolls off into history here when the region starts at the top, as a line feed does. xterm.js discards them. The same accepted difference as scroll up and down",
+				diffScrolled: "same reason",
+			}},
+		{name: "CSI S in a region below the top", cols: 40, rows: 6, data: regionSMid},
+		{name: "insert delete lines in a region", cols: 40, rows: 8, data: regionIL},
+		{name: "insert delete lines outside a region", cols: 40, rows: 8, data: regionILOut},
+		{name: "region survives the alt screen", cols: 40, rows: 6, data: regionAlt},
+		{name: "region reset by a full reset", cols: 40, rows: 5, data: regionRIS, accept: clearKeepsHistory},
+		{name: "region reset by a resize", cols: 40, rows: 6, data: regionResize1 + regionResize2,
+			cuts: []sizeCut{{at: len(regionResize1), cols: 40, rows: 8}}},
 		{name: "wide characters", cols: 40, rows: 6, data: wide,
 			skip: "backlog-2 82: screen.go gives every rune one cell and xterm.js gives CJK two, so a cursor move back over a wide character lands on the wrong column"},
 		{name: "attribute kinds", cols: 60, rows: 6, data: sgrKinds},
