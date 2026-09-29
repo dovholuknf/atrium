@@ -3195,7 +3195,11 @@ hide.
 
 ## t-002. A fresh launch's scrollback starts with several broken copies of the banner and the first prompt (bug)
 
-Status: diagnosed 2026-09-29, not built. Owned by @terminal. No worker until clint approves.
+Status: steps 1 and 2 built by sat-002 (`addfb4a`), merged into claude/terminal. Step 3 stays with item 74. The
+fresh-card tests pass, but the old code did not reproduce the duplicates with a pwsh child either, because plain
+numbered lines do not set off conhost's shifted repaint the way Claude Code's redrawing does. So the real-runner test is
+a guard, and the proof is the fake-pty tests (one resize with both sizes, none when the size already matches). See
+`docs/changes/t-002.md`.
 
 Reported by clint on `sa-compete` (card `01a0eddd`, a fresh lean launch). Screenshot:
 `.atrium/incoming/20260929-115257-pasted.png`. The top of the scrollback holds half-drawn copies of the Claude Code
