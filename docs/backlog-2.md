@@ -1339,6 +1339,46 @@ Raised 2026-09-28 by clint: "i'm starting to want different 'views' of agents mo
 first. Examples to explore: saved filters, a view by role, a view by launcher, and workers apart from clint's own
 cards.
 
+Spec (@ui, 2026-09-29), not built, for clint to answer before anything is:
+
+What exists today. The board groups by project, recency, window, tag or hand-made groups, or by a free expression
+kept in this browser (`grouper` in `js/board.js`). The terminal list can hide doers (`origin:agent`) apart from
+agents. The room picker narrows to one room. Each of those is its own switch in its own place, and none of them is
+remembered as a set.
+
+The gap is that a "view" is three answers given together: which cards, grouped how, sorted how. Today you rebuild
+the set by hand each time you change your mind about what you are looking at.
+
+- **A view is a named preset.** It holds a filter, a grouping mode and a sort, and picking one sets all three. A
+  picker sits beside the grouping control. Changing any of the three by hand leaves the view marked "edited" rather
+  than silently rewriting it, and "save" writes the change back.
+- **Filters come from a fixed menu, not from code.** Started by me or by an agent (`origin:agent`), has tag, in room,
+  in status, launched by. A free expression stays where it is, in grouping only, because of the rule `compiled` in
+  `js/board.js` writes down: an expression may be stored where it was typed. A fixed menu is what keeps the door open
+  to views that follow you to another browser.
+- **Two new grouping modes, for the examples clint named.** *By role* groups by a tag prefix, `dept:` by default, so
+  `dept:ui` and `dept:runtime` are the groups and a card with no such tag falls back to its project, the way window
+  mode does. *By launcher* groups a worker under the card that launched it. That needs the launcher on the card as
+  the board reads it. It is in the ledger today (`LauncherID` on `WorkItem` in `internal/store/ledger.go`) and not
+  on the task JSON, so this one mode costs a small API change owned with @runtime.
+- **Built-in views, so it is useful on day one.** "Mine" (not `origin:agent`, by project), "workers" (only
+  `origin:agent`, by launcher), "by role" (all, by `dept:` prefix), "needs me" (needs-input or needs-permission,
+  by recency). They can be edited but not deleted, and a "reset" puts one back.
+- **One active view for the board, stack and terminals tabs,** since the question "what am I looking at" does not
+  change when the tab does. Per browser, in `localStorage`, like grouping.
+- **Not in the first build.** A launcher tree (orchestrator, then director, then worker, nested), views shared
+  between browsers, and a view per tab.
+
+Open questions for clint:
+
+1. Are the four built-ins the right four? Recommendation: yes, with "workers" and "mine" as the pair that answers
+   "workers apart from my own cards".
+2. By launcher: one level (a worker under its launcher), or the whole tree? Recommendation: one level first. The
+   tree is the same data drawn nested, and it is worth seeing one level in use before deciding.
+3. One view across the board, stack and terminals tabs, or one each? Recommendation: one.
+4. Per browser, or following you to other browsers? Recommendation: per browser now. Since filters are a fixed menu,
+   moving them to the daemon later is a settings key and not a security question.
+
 ## 51. Five kept worktrees show 48 commits not matched on `claude/main` (housekeeping)
 
 Raised 2026-09-28. Five kept worktrees, each on the 09-22 base `02fe769`, show 48 commits that `git cherry` does not
@@ -1633,6 +1673,19 @@ left or right and lands haphazardly.
 From sa66's open points, 2026-09-28. Item 66 put "new context" on the card menu only, not on the terminal list's
 `termMenu`. Ctrl+Alt+N works in an attached terminal. clint: "end of backlog unsure if it's useful".
 
+Spec (@ui, 2026-09-29), not built. The build is small: `termMenu` in `js/terminal-list.js` gets the same entry the card
+menu has (`card-menu.js`, "new context", note "commit, hand off, clear"), calling the same `newContext(id)`, under the
+same guard (supervised, and not already mid-cycle). No daemon change. The progress chip it drives is already on the
+card and the tab.
+
+The question is only whether it is worth a line on that menu. For: the terminals tab is where you watch a session's
+context fill, and Ctrl+Alt+N there is not always reachable (some layouts send Ctrl+Alt for AltGr, which is why the
+card menu has it). Against: the card menu already has it, one right-click away, and every entry on `termMenu` makes
+the others slower to find.
+
+Open question for clint: add it, or close 71? Recommendation: add it, since it is the one place the operator is
+already looking when a context is full, and it costs one entry and no new code path.
+
 ## 70. Keep-alive is invisible until it has spent something, and one card overspent its budget (feature and bug)
 
 Raised 2026-09-28 by clint: "i still don't see any icons indicating cache is warming or that cachewarming has
@@ -1747,21 +1800,33 @@ Design (@ui), small on purpose:
 - **What it mutes.** Toasts, desktop notifications and the sound that goes with them, everything `notify` in
   `js/notify.js` would pop. The drawer keeps logging every entry and the bell's badge keeps counting, so nothing is
   lost and opening the drawer shows what was held back. The marks on cards are untouched.
-- **Permission requests still notify.** A permission blocks a session until a human answers, the same exception item
-  44 makes. The button's tip says so. Open for clint below.
+- **Held back means recorded, not dropped.** Today the drawer is filled by `toast` (through the toast-log wrapper)
+  and by the one explicit `logNotification` call on the desktop branch. Off skips both `toast` and
+  `showNotification`, so the off path calls `logNotification` itself, once per alert, and plays no sound. Without that
+  the switch would mute everything and silently empty the drawer it promises to fill.
+- **Permission requests still notify. Built that way, waiting on clint.** A permission blocks a session until a
+  human answers, the same exception item 44 makes, so off lets them through the normal `notify` path. The choice is
+  ONE named constant in `js/notify.js` (off silences permissions: false), so flipping it is one line.
+  `docs/changes/79.md` names it as waiting on clint. The button's tip says permissions still come through.
 - **Per browser, in `localStorage`** (`atrium.notify.off`), like the sound mute (`atrium.sound`). A phone and a desk
   want different answers, and the daemon has no notion of which browser is which. Every window of one browser shares
   it, and a popped-out window follows the board.
 - **The bell shows it.** Off, the bell is drawn as a struck bell (U+1F515) with the tip "notifications are off. click
-  to see what arrived", and the badge still counts. On, it is the bell it is today.
+  to see what arrived", and the badge still counts. On, it is the bell it is today. The toggle button and the bell
+  carry the same text as their `aria-label`, repainted with the state.
 - **Item 44.** 44 is a filter on WHICH cards notify (not agent-launched ones). 79 is a master switch over all of
   them. Off beats everything, including a card's own per-card override, because it is the operator saying stop now.
   On, 44's filter and per-card overrides apply as they do today. The gear's notifications section shows the same
   switch, so the two are found in one place.
 - **Not built.** A timed mute ("for an hour") is the obvious next step and is left out until asked for.
 
-Open question for clint: should "off" silence permission requests too? The recommendation is no, since a session
-blocks on one until somebody answers, and a muted board is the likeliest place to forget one.
+Open question for clint: should "off" silence permission requests too? The build says no, since a session blocks on
+one until somebody answers, and a muted board is the likeliest place to forget one. Flipping it is the one constant
+above.
+
+Review: Mercurius round 1 (s_12NjmPjbUY9e) found the permission question left formally open (C1, closed above as
+built-no, flippable) and no record-only path for held-back alerts (C2, folded as the `logNotification` rule). Its
+advisory, an `aria-label` that follows the state, is folded too.
 
 ## 80. Real-time token burn and usage charts (feature)
 
@@ -1837,6 +1902,11 @@ Fix: every Playwright timeout in the script goes through one scale, read from an
 default), so a loaded machine can be given more time without editing the file. Each wait in the dismiss block, and
 any other wait whose failure names only the symptom, says which wait ran out and how long it had. Owner @ui, queued
 behind item 80.
+
+Status 2026-09-29, done on `claude/ui`. `HEADLESS_SLOW` scales all 191 timeouts, not the sleeps. The dismiss block
+names its three waits, and its menu wait opens the menu again if a render closed it, which is the likelier flake
+than a slow browser. A full run with `HEADLESS_SLOW=3` beside `go test` passed. Other sections still fail on the
+symptom only when a wait runs out, and get the same treatment when one is caught flaking.
 
 ## 81. `screen.go` ignores DECSTBM scroll regions (bug)
 
