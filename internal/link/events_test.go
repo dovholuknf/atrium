@@ -427,6 +427,17 @@ func TestGoingDownStaysOffTheMergedBoard(t *testing.T) {
 	}
 }
 
+// A usage row forwarded by the hub names its room and its card the way the hub's
+// lists do, so two rooms' cards with one id are two cards.
+func TestUsageEventIsTaggedWithItsRoom(t *testing.T) {
+	data := []byte(`{"task_id":"c1","output":5}`)
+	a := fields(t, tagEvent(Event{Room: "sg4", Kind: "usage", Data: data}))
+	b := fields(t, tagEvent(Event{Room: "sg5", Kind: "usage", Data: data}))
+	if a["task_id"] != "sg4~c1" || a["room"] != "sg4" || b["task_id"] != "sg5~c1" || b["room"] != "sg5" {
+		t.Fatalf("usage events came out %v and %v", a, b)
+	}
+}
+
 // A room's own tagging table has to agree with the list one, because the board
 // builds a url from whichever it saw last.
 func TestEventTaggingMatchesTheListTagging(t *testing.T) {
