@@ -392,8 +392,8 @@ type keepaliveCardView struct {
 	// too: one miss rewrites the whole context, about eight budgets.
 	Refreshes int     `json:"refreshes"`
 	Missed    int     `json:"missed,omitempty"`
-	Spent     float64 `json:"spent"`
-	Budget    float64 `json:"budget,omitempty"`
+	Spent     float64 `json:"-"`
+	Budget    float64 `json:"-"`
 	// WarmUntil is when the card's cache expires, when atrium knows.
 	WarmUntil *time.Time `json:"warm_until,omitempty"`
 }
@@ -913,11 +913,11 @@ func (k *keepalive) stop(t *store.Task, state string, v verdict) {
 	}
 	payload := map[string]any{
 		"task_id": t.ID, "title": t.DisplayTitle(), "state": state,
-		"refreshes": v.count, "spent": v.spent, "budget": v.budget,
+		"refreshes": v.count,
 	}
 	if state == store.KeepaliveBreakEven {
-		payload["toast"] = fmt.Sprintf("keep-alive stopped on %s at break-even after %d refreshes, $%.2f",
-			t.DisplayTitle(), v.count, v.spent)
+		payload["toast"] = fmt.Sprintf("keep-alive stopped on %s at break-even after %d refreshes",
+			t.DisplayTitle(), v.count)
 		payload["cold_at"] = v.expiry
 	}
 	k.broadcast("keepalive", payload)
