@@ -49,7 +49,7 @@ the finding on screen is one keystroke.
  atrium tell   ├─>│ pick the panel  ├─>│ digest, panel,     ├─>│ at the ask:       ├─>│ verdict, progress.   │
  inbox item    │  │ and 2nd opinion │  │ verify, step 7     │  │ agrees, disputes, │  │ rail | finding |     │
  + second-     │  │ launch a worker │  │ files. then STAYS  │  │ re-rates, adds.   │  │ walker. comment,     │
-   opinion pick│  └────────┬────────┘  │ as the walker      │  └─────────┬─────────┘  │ edit, skip, posted   │
+   opinion pick│  └────────┬────────┘  │ as the walker      │  └─────────┬─────────┘  │ edit, done, defer    │
  ──────────────┘           │           └─────────┬──────────┘            │            └──────────┬───────────┘
                            │  settles every      │   the review folder   │                       │
                            └─ dispute before ────┴─> <run>/findings/*.txt <┴───────────────────────┘
@@ -108,7 +108,8 @@ dialog, "ask @review" on an offered card, and `+ ask` in the `prs` index) shows 
   each runner and its model), and `none`. Mercurius is listed as "Mercurius · <its reviewer>", read from the
   reviewer the repo's `mercurius.yaml` names when the board can see one, otherwise just "Mercurius".
 - **The default** is the last choice for that repo, then a board-wide default setting (`review_second_opinion`),
-  then Mercurius. Open question 11.
+  then Mercurius (decided, question 11). @review may override it for one review, and says why in its reply to the
+  ask.
 - **What is sent** is one more line in the ask's text, `second opinion: codex (runner, gpt-5.5)`. @review reads it as
   it reads a named panel. From `atrium tell review`, the same words in the text do the same thing, and an ask that
   names none gets the default.
@@ -144,6 +145,45 @@ Everything the tab shows about a finding is in that file: severity, path, line, 
 the GitHub anchor, cause, test status, traced or run, who raised it, the verify verdict, and a `Leak:` line when it
 is one. The run folder's name gives the head's short sha (`pr-1277-4f332b8`) and its parent gives the repo
 (`github-openziti-zrok`). This is why stage 1 needs no store and no new endpoint (section 6).
+
+**The walk shape, clint's of 2026-09-29.** How an item is SHOWN in a walk, in chat or in the tab, differs from the
+file above in two ways, and the tab follows the walk shape:
+
+```
+openziti/zrok #1277  https://github.com/openziti/zrok/pull/1277           <- once, at the top of the walk
+
+MED controller/share.go line 165:                                         <- severity, file, line, then a colon
+    committed = true    https://github.com/openziti/zrok/pull/1277/files#diff-a5528f...beR165
+                                                                          <- the code, indented, deep link beside it
+* LLM review says ...
+* Suggested fix: ...
+* Add a test to `controller/share_compensation_test.go`: ..., expect ...
+```
+
+- **The PR URL shows once,** at the top of the walk, never inside an item. The tab puts it in the drawer's header. The
+  file's first line still carries it, because a finding file read on its own has to say which PR it is about, and
+  the tab reads it from there and does not repeat it in the item.
+- **The item header is severity, file and line, then a colon.** The code on that line goes on the next line,
+  indented, with the deep link on that same line. The tab shows exactly this, and `c` and `comment` copy exactly
+  this (the header, the indented code line with its link, and the bullets), so what clint pastes is what clint saw.
+- Until step 7 writes files in this shape, the tab builds it from the old one: the label line splits at the `:`
+  after `line N` into the header and the code, and the link comes from line 3.
+
+**The walk keeps `walk.txt`,** in the run folder beside `findings/`, one line per finding with its state:
+
+```
+01-medium-api.go-L61.txt               done      2026-09-29T15:02Z  https://github.com/.../pull/1277#discussion_r1234
+02-medium-session.go-L72.txt           done      2026-09-29T15:06Z
+03-medium-share.go-L104.txt            open
+04-medium-share.go-L165.txt            deferred  2026-09-29T15:11Z
+05-medium-share_compensation_test.go-L180.txt  skipped  2026-09-29T15:12Z
+```
+
+The four states are `open`, `done` (commented on GitHub), `skipped` and `deferred` (come back to it). The walker
+writes it during a chat walk, and the tab writes the same file, through the same hash precondition. When the walker
+renumbers or re-anchors a finding it renames that finding's line too, since it is the one renaming the file. A
+finding with no line is `open`, so a review that predates `walk.txt` starts with every item open. Section 2.4 says
+why this is one file rather than a line in each finding.
 
 Three small additions to step 7, owned by @review in dotfiles, make the tab exact rather than inferred. None is a
 blocker for stage 1.
@@ -184,7 +224,8 @@ will walk.
 
 **@review settles every dispute and re-rate before the walk.** It reads the code, then keeps, changes or drops the
 finding, and writes what it decided and why. A finding it cannot settle is left for clint, marked, and is the first
-thing the walk shows (open question 12). An added finding goes into its sorted place in the table and the file names
+thing the walk shows, and it never holds the walk (decided, question 12). An added finding goes into its severity
+place in the table with the model chip, never a separate group (decided, question 13), and the file names
 after it are renumbered, rule 14's rule applied before the list is fixed rather than during the walk.
 
 **Where it is written:** two lines in the finding's Evidence, by the review-manager and by @review, so the verdict
@@ -211,7 +252,8 @@ endpoints (`GET /v1/tasks/{id}/files/list`, `GET` and `PUT /v1/tasks/{id}/files/
 In the tab, clint drives the list and the walker drives the reasoning:
 
 - clint moves through the rail with `j` and `k`. Order is the table's order and never changes under clint (rule 14).
-- clint edits, skips, copies and marks posted on the board. Each writes the finding's own file.
+- clint edits, copies, and marks done, skipped or deferred on the board. An edit writes the finding's own file, and a
+  mark writes its line in `walk.txt`.
 - clint asks the walker about the finding on screen with `a`. The question arrives in the walker's terminal already
   naming the finding, and the answer comes back in the terminal beside it.
 - The walker edits the same files when clint asks it to rewrite, re-rate or re-anchor. The tab sees the file change
@@ -228,8 +270,9 @@ land on the line: `https://github.com/<org>/<repo>/pull/<n>/files#diff-<sha256 o
 is the lowercase hex SHA-256 of the file's path in the repo and `R` means the right-hand, head side of the diff.
 
 So the tab's primary action, **comment** (`Enter` or the `comment` button), does both halves at once: it copies the
-comment part (label line and bullets, never Evidence) to the clipboard as raw markdown, AND opens that link in a new
-tab. clint is then one click on the line's `+` and one paste away from a posted comment, comes back, and presses `p`.
+item in the walk shape (header, indented code line with its link, and bullets, never Evidence) to the clipboard as
+raw markdown, AND opens that link in a new tab. clint is then one click on the line's `+` and one paste away from a
+posted comment, comes back, and presses `d` for done.
 `c` (copy only) and `o` (open only) stay for the cases where one half is wanted.
 
 Stage 1 reads the link from the finding file's third line, where step 7 already writes it. Stage 2 computes it (the
@@ -241,12 +284,14 @@ question 5, and section 5 lays out the options.
 
 ### 1.6 Closing out
 
-A PR's walk is done when every finding is posted or skipped, and no dispute is left unsettled. The tab says so ("14 of 14: 11 posted, 3 skipped") and
+A PR's walk is done when every finding is done or skipped, none is deferred, and no dispute is left unsettled. The tab
+says so ("14 of 14: 11 done, 3 skipped") and
 offers "tell the walker we are done", which types `walk done` into the walker's terminal. From there the existing
 brief runs: the walker lists the files it changed and reports `done` to @review, @review applies the `repo_notes`,
 and culls the worker.
 
-The PR stays in the tab after its walker is gone. Its findings are still files, so the walk state is still there,
+The PR stays in the tab after its walker is gone. Its findings and `walk.txt` are still files, so the walk state is
+still there,
 and "reopen the walk" asks @review to launch a new walker on the same run folder. The PR leaves the tab's default
 view when GitHub says it is merged or closed (stage 2), or when clint archives it.
 
@@ -281,10 +326,11 @@ button says `walk`. Open question 1.
 ┌─ atrium ── stack  board  terminals  history  prs ●2  usage  rooms  perms ──────────────────────────────────────────┐
 │                                                                                                                    │
 │ ◂ openziti/zrok #1277  share creation rollback compensation; better ziti errors         pr-zrok-1277 ● thinking    │
-│   head 4f332b8 ✓ current   NO BLOCKERS   ▰▰▰▰▰▱▱▱▱▱▱▱▱▱▱  5 of 15   3 posted · 2 skipped      [walk done]  [⋯]     │
+│   https://github.com/openziti/zrok/pull/1277  ⧉                                                                    │
+│   head 4f332b8 ✓ current   NO BLOCKERS   ▰▰▰▰▰▱▱▱▱▱▱▱▱▱▱  5 of 15   3 done · 1 deferred · 1 skipped [walk done][⋯] │
 │   second opinion  Mercurius · codex gpt-5.5   12 agree · 1 disputed · 1 re-rated · 1 added · all settled           │
 ├───────────────────────────┬──────────────────────────────────────────────────────┬─────────────────────────────────┤
-│ FINDINGS    table order   │ 03 · MED · controller/share.go · line 104   ⧉ open   │ pr-zrok-1277                    │
+│ FINDINGS    table order   │ 03 of 15 · at the head, from pr.diff                 │ pr-zrok-1277                    │
 │                           │ ──────────────────────────────────────────────────── │                                 │
 │ ✓ 01 MED api.go:61      ≡ │    98 │   }                                          │ > about 03 share.go:104, do we  │
 │ ✓ 02 MED session.go:72  ≡ │    99 │                                              │   care? do we know?             │
@@ -297,12 +343,13 @@ button says `walk`. Open question 1.
 │   09 LOW share.go:348 ◆ ≡ │   106 │                                              │   successful create, and        │
 │   10 LOW share.go:352   + │          ⋯ 3 more above  ·  3 more below ⋯           │   postgres users only see ...   │
 │   11 LOW zitiComp…:29 ◆ ≡ │ ──────────────────────────────────────────────────── │                                 │
-│   12 LOW zitiComp…:55 ◆ ≡ │ MED controller/share.go line 104: comp.run()         │                                 │
-│   13 LOW zitiComp…:58   ≡ │                                                      │                                 │
-│   14 LOW zitiComp…:61   ≡ │ * LLM review says the compensation runs before the   │                                 │
-│   15 NIT share_c…:171   ≡ │   deferred `trx.Rollback()`, so the Ziti deletes     │                                 │
+│   12 LOW zitiComp…:55 ◆ ≡ │ MED controller/share.go line 104:                    │                                 │
+│   13 LOW zitiComp…:58   ≡ │     comp.run()   …/pull/1277/files#diff-a552…R104 ⧉  │                                 │
+│   14 LOW zitiComp…:61   ≡ │                                                      │                                 │
+│   15 NIT share_c…:171   ≡ │ * LLM review says the compensation runs before the   │                                 │
+│                           │   deferred `trx.Rollback()`, so the Ziti deletes     │                                 │
 │                           │   hold the open sqlite transaction.                  │                                 │
-│ ◆ leak   ✓ posted         │ * Suggested fix: roll back explicitly before         │                                 │
+│ ◆ leak  ✓ done  ↷ deferred│ * Suggested fix: roll back explicitly before         │                                 │
 │ ─ skipped                 │   `compensation.run`, or register this defer first.  │                                 │
 │ ≡ agrees  ≠ disputes      │ * Add a test to `controller/share_compensation_      │                                 │
 │ ⇅ re-rated  + added       │   test.go`: a held delete, expect a concurrent store │                                 │
@@ -316,7 +363,7 @@ button says `walk`. Open question 1.
 │                           │ ▸ Evidence  PR-introduced · no test · traced         │                                 │
 │                           │                                                      │                                 │
 │                           │ [⏎ comment]  [a ask]  [e edit]  [c copy]  [o open]   │                                 │
-│                           │ [p posted]  [s skip]                                 │ ❯ _                             │
+│                           │ [d done]  [f defer]  [s skip]                        │ ❯ _                             │
 └───────────────────────────┴──────────────────────────────────────────────────────┴─────────────────────────────────┘
 ```
 
@@ -327,8 +374,9 @@ Left to right, which is the order attention moves in:
   opinion's verdict (`≡` agrees, `≠` disputes, `⇅` re-rated, `+` added by it, section 1.3). A horizontal rule
   separates severities, so "where do the lows start" is visible without reading. The sort control is shown and
   fixed to "table order". It exists to say what the order IS, not to change it (rule 14, open question 4).
-- **The finding.** A header with the number, severity, path and line, and `⧉ open` for the deep link. Under it the
-  code at the PR head with the diff's context, then the comment exactly as it will be pasted, then the second
+- **The finding.** The code at the PR head with the diff's context, then the item in the walk shape exactly as it
+  will be pasted (section 1.2: the header ending in a colon, the code indented under it with the deep link on the
+  same line, then the bullets), then the second
   opinion, then Evidence folded to one line. The second opinion is shown unfolded whenever it is anything but
   `agrees`: the model that gave it (runner and model, and "via Mercurius" when it came through a round), its one
   sentence, and on the next line how @review settled it. An unsettled one shows `⚑ left for clint` in warn instead of
@@ -337,10 +385,12 @@ Left to right, which is the order attention moves in:
 - **The walker.** The card's own terminal, the same pane the terms view always shows, narrowed. Attached, typed into,
   scrolled back exactly as it is anywhere else.
 
-The header carries the PR's identity and the facts that decide what to do next: whether the head is current, how far
-the walk has got, and on its own line which model gave the second opinion and how its verdicts came out. The progress bar is one segment per finding, coloured by severity, filled when the
-finding is posted or skipped, so fourteen findings with the two highs done looks different from fourteen with the
-nits done.
+The header carries the PR's identity, its URL (the one place in the walk it appears), and the facts that decide what
+to do next: whether the head is current, how far the walk has got, and on its own line which model gave the second
+opinion and how its verdicts came out. The progress bar is one segment per finding, coloured by severity, filled when
+the finding is done or skipped and half filled when deferred, so fourteen findings with the two highs done looks
+different from fourteen with the nits done. An unsettled dispute is the first item the drawer opens on, marked
+`⚑ left for clint`, whatever its number, and it never holds the walk.
 
 ### 2.3 The code at the head, with diff context
 
@@ -363,29 +413,32 @@ marked `▸` and outlined.
 
 ### 2.4 The comment and its actions
 
-The comment is the top part of the finding's file, everything above `Evidence`, rendered as raw markdown in a mono
-face with inline code tinted. Not rendered to HTML, because what clint needs to see is what GitHub will receive, and
+The comment is the item in the walk shape, built from the top part of the finding's file (everything above
+`Evidence`, less the PR URL on its first line), rendered as raw markdown in a mono face with inline code tinted. Not
+rendered to HTML, because what clint needs to see is what GitHub will receive, and
 rule 22's backticks are part of that (rule 10: "shows the comment as raw markdown").
 
 | Key | Action | What it writes |
 |---|---|---|
-| `Enter` | **Comment**, the primary action. Copies the comment part to the clipboard AND opens the deep link to its head line (section 1.5), so clint clicks the line's `+` and pastes. | Nothing. |
+| `Enter` | **Comment**, the primary action. Copies the item to the clipboard AND opens the deep link to its head line (section 1.5), so clint clicks the line's `+` and pastes. | Nothing. |
 | `a` | **Ask the walker.** Types `about 03 share.go:104, ` into the walker's input, WITHOUT Enter, and focuses the terminal, so clint finishes the sentence. `A` asks the canned "do we care? do we know?" (rule 23) and submits. | Nothing. It is a keystroke into clint's own terminal. |
 | `e` | **Edit.** The comment turns into a text area in place. Save writes the file through `PUT files/text` with the hash it read. | The comment part of the file. Evidence is kept as it was. |
-| `c` | **Copy** only: the comment part to the clipboard, exactly. | Nothing. |
+| `c` | **Copy** only: the item to the clipboard, exactly. | Nothing. |
 | `o` | **Open** only: the deep link in a new tab, from the file's third line in stage 1, computed in stage 2. | Nothing. |
-| `p` | **Mark posted.** Asks once for the comment's GitHub URL, optional, Enter to skip. | A `Walk: posted <time> <url>` line in Evidence. |
-| `s` | **Skip.** No argument, no confirm (rule 16). | A `Walk: skipped <time>` line in Evidence. |
-| `u` | **Undo** the last `p` or `s` on this finding. | Removes the `Walk:` line. |
+| `d` | **Done**: commented on GitHub. Asks once for the comment's URL, optional, Enter to skip. | The finding's line in `walk.txt`: `done <time> [url]`. |
+| `f` | **Defer**: come back to it. The walk is not done while any item is deferred. | `deferred <time>` |
+| `s` | **Skip.** No argument, no confirm (rule 16). | `skipped <time>` |
+| `u` | **Undo** the last mark on this finding. | `open` |
 | `j` `k` | Next and previous finding. | Nothing. |
-| `g` | Jump to the first finding that is neither posted nor skipped. | Nothing. |
+| `g` | Jump to the first finding that is open or deferred. | Nothing. |
 
-**Why walk state is a line in the file.** Posted and skipped have to be seen by the walker as much as by the board,
-because the walker is the one clint says "next" to in the chat walk, and the one that renumbers files when a finding
-is inserted (rule 14). State in the store would be keyed by something the walker renames, and would be invisible to
-the walker unless it called an API. A `Walk:` line in Evidence travels with the finding through a rename, is read by
-the walker when it reads the file, and is below `Evidence`, so it is never copied into a comment. The walker brief
-gains one line saying so.
+**Why walk state is one file, `walk.txt`.** The states have to be seen by the walker as much as by the board, because
+the walker is the one clint says "next" to in the chat walk, and the one that renumbers files when a finding is
+inserted (rule 14). State in the store would be keyed by something the walker renames, and would be invisible to the
+walker unless it called an API. One plain file of one line per finding is the walk in a form both can read at a
+glance: the walker prints it as the walk list, the tab reads it as the rail's state glyphs, and neither ever has to
+open fourteen files to know where the walk stands. It also keeps the finding files as the review's output, with no
+bookkeeping mixed in. The walker renames a line when it renames a file, and the walker brief says so.
 
 **Ask is a keystroke, not a message.** `POST /v1/tasks/{id}/message` types and then presses Enter, and goes through
 `typeThroughGate`, which refuses a part-written line. That is right for a message from elsewhere and wrong here. `a`
@@ -411,8 +464,8 @@ A leak is a finding with a `Leak:` line in Evidence (step 7 writes one for every
 LOW leak still reads as a leak.
 
 What the tab refuses to do is the lesson from PR #369 (rule 5 and 15): there is no filter that hides leaks, the
-progress bar counts them, and "walk done" with a leak neither posted nor skipped asks once, "`10` and `11` are leaks
-and are not posted, finish anyway?". Rule 5 lets clint leave a leak out of the comments. It does not let the tab do
+progress bar counts them, and "walk done" with a leak neither done nor skipped asks once, "`10` and `11` are leaks
+and are not done, finish anyway?". Rule 5 lets clint leave a leak out of the comments. It does not let the tab do
 it for clint.
 
 ### 2.6 A head that moved
@@ -591,7 +644,7 @@ Stage 1 adds nothing. It uses:
 |---|---|
 | `GET /v1/tasks/{id}/files/list?path=findings` | is this card a walker, and what changed (mtime) |
 | `GET /v1/tasks/{id}/files/text?path=findings/<file>` | one finding, with its hash |
-| `PUT /v1/tasks/{id}/files/text` | edit, posted, skipped, undo, all with the hash precondition |
+| `PUT /v1/tasks/{id}/files/text` | edit a finding, and write `walk.txt` for done, deferred, skipped and undo, all with the hash precondition |
 | `GET /v1/tasks/{id}/files/text?path=pr.diff` | the diff, when it is under the 2 MiB text cap |
 
 A diff over 2 MiB is shown as the label line only in stage 1, with the reason. Stage 2 serves hunks instead.
@@ -603,7 +656,7 @@ Stage 2 adds, all on the human listener, none on the agent listener except the o
 | `GET /v1/prs` | the index: every row, its counts and walk progress read from its folder, its walker's liveness |
 | `GET /v1/prs/{id}` | one PR: the row, every finding parsed (label, comment, evidence fields, walk state, key), and per finding the hunk at its line |
 | `PUT /v1/prs/{id}/findings/{key}` | write one finding's text, with the hash precondition, resolved through `safepath` against `run_dir` |
-| `POST /v1/prs/{id}/findings/{key}/walk` | `{"state":"posted","url":"..."}`, `skipped`, or `open`. Writes the `Walk:` line |
+| `POST /v1/prs/{id}/findings/{key}/walk` | `{"state":"done","url":"..."}`, `deferred`, `skipped`, or `open`. Writes that finding's line in `walk.txt` |
 | `POST /v1/prs/{id}/check` | run the head check now |
 | `POST /v1/prs/{id}/walker` | set or clear `walker_task`. Also on the agent listener, for @review |
 | `POST /v1/prs/{id}/archive` | set or clear `archived_at` |
@@ -632,7 +685,7 @@ What they share, and so what is built once in stage 1 and reused:
 | Part | Walk | Open Questions |
 |---|---|---|
 | The drawer beside the terminal | findings | questions |
-| The rail: fixed order, current item, `j`/`k`, per-item state glyph | open, posted, skipped | open, answered, skipped |
+| The rail: fixed order, current item, `j`/`k`, per-item state glyph | open, done, deferred, skipped | open, answered, skipped |
 | Ask the agent about this item (`a`, typed into the terminal, no Enter) | "about 03 share.go:104, " | "about question 3, " |
 | Progress on the tab button and in the nav count | findings walked | questions answered |
 | The alerting path for "waiting on you" | a walker with unwalked findings | a card with open questions |
@@ -660,8 +713,8 @@ GitHub. The options, from least to most:
 
 | | What atrium does | What clint does | What it costs | What can go wrong |
 |---|---|---|---|---|
-| A | Nothing. Copy, open, mark posted (stage 1) | Paste each comment on the line and submit | Nothing more | Nothing new. A pasted comment lands on the wrong line if the head moved, which section 2.6 shows first |
-| B | A, plus reads the PR's review comments back (`gh api .../pulls/<n>/comments`, read only) and marks a finding posted when a comment on that line starts with its label line | Paste and submit | One more read-only named command | A comment clint reworded on GitHub is not matched, and stays unmarked for clint to press `p` |
+| A | Nothing. Copy, open, mark done (stage 1) | Paste each comment on the line and submit | Nothing more | Nothing new. A pasted comment lands on the wrong line if the head moved, which section 2.6 shows first |
+| B | A, plus reads the PR's review comments back (`gh api .../pulls/<n>/comments`, read only) and marks a finding done when a comment on that line starts with its header line | Paste and submit | One more read-only named command | A comment clint reworded on GitHub is not matched, and stays unmarked for clint to press `d` |
 | C | Creates a PENDING review on GitHub (`gh api -X POST .../pulls/<n>/reviews` with no `event`), one comment per finding clint selected, under clint's own `gh` login | Opens the PR, reads the pending comments, edits any, and presses "Submit review" | A write command, a confirm that lists every comment and line, and a record of what was sent | A pending review is visible only to clint until submitted, so a bad batch is deleted with one click. Line numbers must be right at the moment of the call, which is why this waits on stage 2's head check |
 | D | Submits the review | Nothing | Everything in C, plus the review goes out without a human reading it on GitHub | Comments under clint's name that clint did not read in place. Rule 12 exists because the words have to be clint's |
 
@@ -682,21 +735,22 @@ The smallest thing clint can use on `pr-zrok-1277` and `pr-ziti-4397` now.
 
 - The drawer in the terms view, opened by a `walk` button on the terminal bar when the attached card has a
   `findings/` folder. Rail, finding, code from `pr.diff` when present, comment, Evidence folded, leak marks.
-- `Enter` (comment: copy and open), `a`, `A`, `e`, `c`, `o`, `p`, `s`, `u`, `j`, `k`, `g`. Edit with the
+- `Enter` (comment: copy and open), `a`, `A`, `e`, `c`, `o`, `d`, `f`, `s`, `u`, `j`, `k`, `g`. Edit with the
   hash-refused compare.
 - The second-opinion marks, the verdict and settlement lines, and the `+ <model>` chip, read from the `Second
   opinion` and `Settled by @review` lines in Evidence. A review that ran none shows nothing extra.
-- Walk state as the `Walk:` line. The progress bar on the drawer header and the `walk` button.
+- Walk state read from and written to `walk.txt`. The progress bar on the drawer header and the `walk` button.
 - The three-second mtime poll, the flash, `new` and renamed-in-place handling.
 - Severity and leak tokens as in 2.8. The phone layout as in 2.9.
 - No Go. No migration. Board files only (`js/walk.js`, `css/walk.css`, markup in `index.html`), and the existing file
   endpoints. `scripts/check-board.sh` and `check-skins.sh`, and a headless section driving the drawer over a copy of
   the zrok sample folder.
 
-Needed alongside, from @review, and not atrium code: the walker brief gains two lines (the `Walk:` line is state
-the board writes and the walker should respect, and the board may edit a finding, so re-read before editing), and
-step 7 copies `pr.diff` into the run folder. Without the second the drawer still works, with the label line in place
-of a diff. The second-opinion pass (section 1.3) is also @review's: the review-manager runs the chosen model on the
+Needed alongside, from @review, and not atrium code: the walker brief gains three lines (keep `walk.txt`, one line
+per finding, and rename a line when renaming its file. The board writes `walk.txt` too and may edit a finding, so
+re-read before editing. Show each item in the walk shape, with the PR URL once at the top), and step 7 copies
+`pr.diff` into the run folder. Without `pr.diff` the drawer still works, with the one code line in place of a diff.
+The second-opinion pass (section 1.3) is also @review's: the review-manager runs the chosen model on the
 findings, writes the `Second opinion` lines, and @review writes `Settled by @review` before the walk. The drawer shows
 those lines as soon as they exist, so it does not wait on a picker.
 
@@ -711,7 +765,7 @@ those lines as soon as they exist, so it does not wait on a picker.
 
 The two directors' parts meet at the API table in 3.4, which is the contract, so they can be built in parallel.
 
-### Stage 3: the doors in, and posted without pressing `p`. @runtime and @ui.
+### Stage 3: the doors in, and done without pressing `d`. @runtime and @ui.
 
 - `deliver_to` on recognisers (1.1), and the "ask @review" button in the launch dialog and on an offered card. @runtime
   for the column and `POST /v1/recognise`, @ui for the button.
@@ -752,18 +806,17 @@ block. The docked walker is atrium's own.
 
 1. **The name.** `prs` in the nav and `walk` on the terminal bar, because "review" is already auto mode's word on a
    card. Or call the view `reviews` and rename auto mode's record to `audit`?
-2. **Walk state in the finding file.** A `Walk: posted <time> <url>` line under Evidence is visible to the walker and
-   survives renumbering. The cost is that the finding files are no longer only the review's output. Acceptable, or
-   should state live in the store keyed by the stage 2 `Id:`?
+2. **Decided (clint, 2026-09-29): `walk.txt`,** one line per finding with `open`, `done`, `skipped` or `deferred`,
+   in the run folder. Section 1.2.
 3. **`a` types without Enter.** clint finishes the sentence. Or should `a` open a small box in the drawer and send the
    question whole, so the terminal's line is never touched?
 4. **The rail's order is fixed** to the table's order (rule 14). Is there ever a case for sorting by something else
    in the tab, such as leaks first, or is a fixed order the point?
-5. **Posting.** A (never, today), B (read comments back and mark posted), C (a pending review clint submits), or D.
+5. **Posting.** A (never, today), B (read comments back and mark done), C (a pending review clint submits), or D.
    The recommendation is A now, B in stage 3, C on request.
 6. **Gone findings after a moved head.** Shown struck through and left for clint. Or skipped automatically with the
    reason "the line is gone at <sha>"?
-7. **Walk done with an unposted leak** asks once. Or should it refuse until each leak is posted or skipped by hand?
+7. **Walk done with an unposted leak** asks once. Or should it refuse until each leak is done or skipped by hand?
 8. **The inbox door.** Should a `review-requested=@me` source fill the inbox automatically, or is a PR only reviewed
    when clint or a session asks?
 9. **The nav count.** `prs ●N` counts PRs with a live walker and unwalked findings, and rides the alerting path. Should
@@ -771,9 +824,9 @@ block. The docked walker is atrium's own.
 10. **Reopening a walk.** When a walker is gone, "reopen" asks @review for a new one on the same folder, with the
     findings already partly walked. Is that the right owner, or should the board launch the walker itself from a
     stored brief template?
-11. **The default second opinion.** The last choice for that repo, then a board-wide setting, then Mercurius. Or
-    should @review pick it per review from its dangerous-change record, the way it picks the panel?
-12. **A dispute @review cannot settle.** Left for clint, marked, and shown first in the walk. Or should it hold the
-    walk (no walker launched) until clint rules on it?
-13. **Findings the second opinion adds.** Sorted into their place and marked. Or kept in a separate group at the end,
-    so the panel's list stays exactly what the panel found?
+11. **Decided: the default second opinion** is the chain, last choice for that repo, then the board setting, then
+    Mercurius. @review may override it per review and says why in its reply to the ask.
+12. **Decided: a dispute @review cannot settle** is shown first in the walk, marked "left for clint". It never holds
+    the walk.
+13. **Decided: findings the second opinion adds** are sorted into their severity place, with the model chip. There is
+    no separate group.
