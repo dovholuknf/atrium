@@ -335,24 +335,31 @@ filtering the existing history by card is enough. clint has not committed to bui
 
 ## 15. Pluggable event sink: get the audit trail out of the primary database
 
-**Raised 2026-09-18.** Stages 1 and 2 done. The offsite sink and a live swap are left.
+**Raised 2026-09-18.** Stages 1 and 2 done. Stage 3 (the permission table) is designed in
+`docs/event-sink-stage3-design.md`, not built. The offsite sink and a live swap are left after that.
 
 ### Status
 
-Done:
+Done (reconciled against `claude/main` 2026-09-29. Every sha below is an ancestor of it except `02fe769`):
 
-- **Stage 1** (in `02fe769`, landed 2026-09-18): the `EventSink` seam, the `db` hot sink, the rolling-JSONL `file`
-  cold sink, the `event_sink` setting, the opt-in per-card hot window `event_window_bytes`, `rolled_off` on a
-  card's event feed, and incremental auto_vacuum for fresh databases.
-- **Stage 2, routing** (`1e03180`): `event_cold_kinds` names kinds that go to the cold sinks only. Off by default.
+- **Stage 1** (2026-09-18): the `EventSink` seam (`8bf4083`), the rolling-JSONL `file` cold sink and
+  `event_sink=db,file` (`1959d8a`), the opt-in per-card hot window `event_window_bytes` (`ede2f4b`), plus
+  `rolled_off` on a card's event feed and incremental auto_vacuum for fresh databases with the `vacuumLoop` timer.
+  The whole of it also went out in the squashed `02fe769` (2026-09-21), which is on a separate line of history.
+- **Stage 2, routing** (`1f075a3`): `event_cold_kinds` names kinds that go to the cold sinks only. Off by default.
   The card's detail dialog says which kinds and whether older events rolled off.
-- **Stage 2, compact** (`1070cbf`): `atrium2 db compact --in <db> --out <db> [--window-bytes N] [--drop-kinds
+- **Stage 2, compact** (`1c26346`): `atrium2 db compact --in <db> --out <db> [--window-bytes N] [--drop-kinds
   k,...]`, an offline `VACUUM INTO` copy switched to incremental auto_vacuum.
+- **Stage 2, docs** (`950f518`): the measurement, the decisions, the changelog and the test plan.
+
+This section used to give `1e03180` and `1070cbf` for the two stage 2 commits. Those are pre-rebase copies with the
+same subjects, and neither is on `claude/main`.
 
 Left:
 
+- **Stage 3, the permission table** (designed, see above). It is now the largest thing in the file (see the
+  measurement) and nothing trims it.
 - The `offsite` sink.
-- The permission table, which is now the largest thing in the file (see the measurement). Nothing trims it.
 - Swapping a compacted copy into place. Today that is a manual step with the room stopped.
 - Turning a bound on by default, with a documented value.
 
