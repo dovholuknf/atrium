@@ -339,8 +339,14 @@ func (d *Daemon) silentStop(taskID string) bool {
 }
 
 // stoppedSilently reports whether a card is waiting after a turn that ran
-// since its last prompt and said nothing to its launcher, and when that turn
-// ended.
+// since its launcher's last prompt and said nothing to its launcher, and when
+// that turn ended.
+//
+// THE PROMPT HAS TO BE THE LAUNCHER'S. A message from another session, or a
+// turn the session's own monitor woke, creates no debt, so a resident session
+// whose workers report to it is not stuck for hearing from them. The board's
+// STUCK mark reads this too, on purpose: one definition of owing. See
+// docs/owed-report-design.md.
 //
 // A TURN HAS TO HAVE RUN. Owing a report is not enough: a built-in slash
 // command such as `/model` is a prompt that starts no turn, and a card a
@@ -353,7 +359,7 @@ func (d *Daemon) stoppedSilently(t *store.Task) (time.Time, bool) {
 		return time.Time{}, false
 	}
 	ended, err := d.st.TurnEndedAt(t.ID)
-	if err != nil || ended == nil || ended.Before(*t.PromptedAt) {
+	if err != nil || ended == nil || ended.Before(*t.OwedAt) {
 		return time.Time{}, false
 	}
 	// A turn that ended on background work is waiting, not stopped. Each of
