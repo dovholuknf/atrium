@@ -5077,6 +5077,131 @@ async function u016Section(browser, base) {
   if (errors.length) fail("u016: the page threw: " + errors.join(" | "));
 }
 
+// ── focusing a phone terminal does not bounce or hide it (u-017) ──────────
+// On a phone, tapping the terminal focused xterm's helper textarea, which sat at the grid's top-left; the
+// browser scrolled the pane there, the cursor keep scrolled back, every frame. Headless Chromium does not
+// scroll a focused element into view the way iOS does, so the scroll is simulated (`browserFocusScroll`)
+// on focus and on every viewport change. Portrait and landscape, a keyboard-sized height, output for 2s.
+async function phoneFocusSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  landList = [LAND["land-live"]];
+  landPerms = [];
+  const errors = [];
+  const fakeSock = () => {
+    const Real = window.WebSocket;
+    window.__sent = [];
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
+        onopen: null, onclose: null, onmessage: null, onerror: null,
+        send(d) { window.__sent.push(String(d)); }, close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  };
+  try {
+    for (const c of [{ name: "portrait", w: 390, h: 844, kb: 460 }, { name: "landscape", w: 844, h: 390, kb: 390 }]) {
+      const tag = "phoneFocus " + c.name + ": ";
+      const ctx = await browser.newContext({ viewport: { width: c.w, height: c.h }, hasTouch: true, isMobile: true });
+      await ctx.addInitScript(() => {
+        localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true }));
+        localStorage.setItem("atrium.termphone", "1");
+      });
+      await ctx.addInitScript(fakeSock);
+      const p = await ctx.newPage();
+      p.on("pageerror", e => errors.push(String(e)));
+      await p.goto(base, { waitUntil: "domcontentloaded" });
+      await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+      await p.evaluate(() => attachTask("land-live"));
+      await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live",
+        null, { timeout: slow(10000) });
+      await p.evaluate(() => termSock.onmessage({ data: '{"t":"size","cols":132,"rows":41}' }));
+      await p.waitForTimeout(300);
+      // the browser's scroll-into-view: bring the focused textarea inside the pane, and the pane inside the page
+      await p.evaluate(() => {
+        window.__bfs = () => {
+          const ta = term.textarea, host = document.getElementById("t-screen");
+          const t = ta.getBoundingClientRect(), h = host.getBoundingClientRect();
+          if (t.top < h.top) host.scrollTop -= h.top - t.top;
+          else if (t.bottom > h.bottom) host.scrollTop += t.bottom - h.bottom;
+          if (t.left < h.left) host.scrollLeft -= h.left - t.left;
+          else if (t.right > h.right) host.scrollLeft += t.right - h.right;
+        };
+        term.textarea.addEventListener("focus", window.__bfs);
+      });
+      // a prompt near the top, so the cursor only moves down while output streams
+      await p.evaluate(() => termSock.onmessage({ data: "\x1b[2J\x1b[8;1Hprompt" }));
+      await p.waitForTimeout(200);
+      const box = await p.locator("#t-screen").boundingBox();
+      await p.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 3);
+      await p.evaluate(() => term.focus());
+      await p.setViewportSize({ width: c.w, height: c.kb });
+      await p.evaluate(() => { window.__bfs(); });
+      await p.evaluate(() => {
+        window.__samples = [];
+        const t0 = performance.now();
+        const host = document.getElementById("t-screen");
+        const tick = () => {
+          const vv = window.visualViewport;
+          window.__samples.push({ t: performance.now() - t0, sy: window.scrollY,
+            se: document.scrollingElement.scrollTop, vt: vv ? vv.offsetTop : 0, pan: host.scrollTop,
+            cy: term.buffer.active.cursorY });
+          if (performance.now() - t0 < 2200) requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+        let n = 0;
+        const feed = setInterval(() => {
+          termSock.onmessage({ data: "line " + (n++) + "\r\n" });
+          if (n === 20) { term.blur(); term.focus(); window.__bfs(); }
+          if (n >= 30) clearInterval(feed);
+        }, 60);
+      });
+      await p.waitForTimeout(2500);
+      const r = await p.evaluate(() => {
+        const host = document.getElementById("t-screen");
+        const vv = window.visualViewport;
+        const hb = host.getBoundingClientRect();
+        const ch = term._core._renderService.dimensions.css.cell.height;
+        const rowTop = hb.top + (parseFloat(getComputedStyle(host).paddingTop) || 0) +
+          term.buffer.active.cursorY * ch - host.scrollTop;
+        return { samples: window.__samples, rowTop, rowBottom: rowTop + ch, vvTop: vv.offsetTop,
+          vvBottom: vv.offsetTop + vv.height, cy: term.buffer.active.cursorY };
+      });
+      const S = r.samples;
+      const late = S.filter(s => s.t > 300);
+      const page = Math.max(...S.map(s => Math.max(Math.abs(s.sy), Math.abs(s.se), Math.abs(s.vt))));
+      let flips = 0, moves = 0, last = null, dir = 0;
+      for (const s of late) {
+        if (last !== null && s.pan !== last) {
+          moves++;
+          const d = s.pan > last ? 1 : -1;
+          if (dir && d !== dir) flips++;
+          dir = d;
+        }
+        last = s.pan;
+      }
+      // downward-only: any decrease at all is a bounce, since the cursor never moved up
+      let ups = 0;
+      for (let i = 1; i < late.length; i++) if (late[i].pan < late[i - 1].pan - 0.5) ups++;
+      console.log("phoneFocus " + c.name + ": frames=" + S.length + " pageMax=" + page + " panMoves=" + moves +
+        " flips=" + flips + " ups=" + ups + " cursorRow=" + r.cy);
+      if (S.length < 20) fail(tag + "too few frames sampled: " + S.length);
+      if (page > 0) fail(tag + "the page itself scrolled (max " + page + ")");
+      if (ups || flips) fail(tag + "the pan bounced: " + ups + " upward moves, " + flips + " direction flips");
+      if (r.rowTop < r.vvTop - 1 || r.rowBottom > r.vvBottom + 1)
+        fail(tag + "the cursor row is outside the visual viewport: " + JSON.stringify({ rowTop: r.rowTop,
+          rowBottom: r.rowBottom, vvTop: r.vvTop, vvBottom: r.vvBottom }));
+      await ctx.close();
+    }
+  } finally {
+    tasksMode = was;
+  }
+  if (errors.length) fail("phoneFocus: the page threw: " + errors.join(" | "));
+}
+
 // ── copy on select answers the pointer, not the find bar ──────────────────
 // Test plan BJ. The search addon shows a match by selecting it, so copy on
 // select used to copy every find keystroke, step and re-search. Typing in the
@@ -8193,7 +8318,7 @@ async function main() {
       history: historySection, contextSize: contextSizeSection, peekEverywhere: peekEverywhereSection, cardRoute: cardRouteSection,
       quietDoer: quietDoerSection, looksIdle: looksIdleSection, notifyOff: notifyOffSection,
       questionsClick: questionsClickSection, walk: walkSection, linkReuse: linkReuseSection,
-      usageCacheReads: usageCacheReadsSection, roomsDash: roomsDashSection, phoneView: phoneViewSection, u016: u016Section, usagePolish: usagePolishSection, usageLimits: usageLimitsSection, usageGroups: usageGroupsSection,
+      usageCacheReads: usageCacheReadsSection, roomsDash: roomsDashSection, phoneView: phoneViewSection, u016: u016Section, phoneFocus: phoneFocusSection, usagePolish: usagePolishSection, usageLimits: usageLimitsSection, usageGroups: usageGroupsSection,
       eventDriven: eventDrivenSection, idleBudget: idleBudgetSection, pollsGone: pollsGoneSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
@@ -10125,6 +10250,7 @@ async function main() {
     await roomsDashSection(browser, base);
     await phoneViewSection(browser, base);
     await u016Section(browser, base);
+    await phoneFocusSection(browser, base);
     await eventDrivenSection(browser, base);
     await idleBudgetSection(browser, base);
     await pollsGoneSection(browser, base);
