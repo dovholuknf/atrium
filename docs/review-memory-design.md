@@ -183,7 +183,10 @@ why, and may name a panel. The director then:
    findings on its own card, tells the asker the same, and applies the notes (below). It does NOT cull the worker.
 6. **Hands the walk to the review-manager.** The review-manager stays up as that PR's walker, under the same
    `pr-<repo>-<number>` name, in the PR's worktree or tree. The director tells clint which card to walk on, and hands
-   the manager the walk rules (9 to 24, 26 and 27) and the findings folder it edits in place. The manager held the
+   the manager the walk rules (9 to 24, 26 and 27) and the findings folder it edits in place. For the board's review
+   tab (`docs/review-tab-design.md`), the brief also says that a `Walk:` line in Evidence is state the board writes
+   and the walker keeps, and that the board may edit a finding, so the walker re-reads a file before every edit.
+   `pr.diff` is always in the run folder (skill step 7). The manager held the
    repo at the head, the evidence and the repros, so it can re-check a line, dig in or rewrite a comment on the spot,
    which clint found far more useful than a walk on the director's card. The director culls it only after clint says
    the walk is done (clint, 2026-09-29).
