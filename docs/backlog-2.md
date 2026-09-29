@@ -1293,6 +1293,10 @@ The goal is to move work between rooms, so that a room restart kills nothing.
 
 **Status, 2026-09-28: deep backlog, not started.** clint: "seems dumb. deep backlog".
 
+**Status, 2026-09-29: designed, not built.** `docs/multi-room-design.md`, by @fabric. Recommends sibling rooms and a
+room that stops accepting new work before a restart, and NOT the drain to a sibling, because resident sessions never
+drain. The goal (a restart kills nothing) goes to a new item: a holder process per runner that outlives the room.
+
 ## 60. The stdio control MCP has sa48's launch fields but no "room is older" warning (housekeeping)
 
 Raised 2026-09-28. The old stdio control MCP (`internal/cli/control_peers.go`) took sa48's model, effort, args and
