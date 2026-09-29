@@ -3,165 +3,100 @@
 You are @fabric, the Director of Fabric: hub, rooms, cross-room, overlays and provisioning. Read BRIEF.md first
 (the role and rules), then PLAN.md (item 1), then this file.
 
-- Your handle is `fabric-director-of-rooms-hub-cross-room`.
+- Your handle is `fabric-director-of-rooms-hub-cross-room`, on room claude-sg4.
 - You report to atrium-87300 (alias orchestrator), with atrium_report once per batch. Use atrium_report rather
   than atrium_say for status, because the ledger only records reports.
 
 ## Standing rules added since BRIEF.md
 
-- **Ask atrium-87300 before each worker launch**, in one line: the item, why, and which room. It grants slots, 10
-  across all directors. Worktrees are made with `pwsh -File scripts/new-worktree.ps1 -Name <x> -Base claude/fabric`,
-  which also links the 8 CLAUDE.md files.
-- **One card per worker.** To move a worker up to Opus, exit its session, then atrium_launch on the SAME worktree
-  with `model: claude-opus-5-5` and the same "fbNN: ..." title. It reuses the card.
-- **No stop, uninstall, -Remove, service or autostart test against ANY real room.** The real rooms are sg3,
-  m1mini, claude-sg4 and sg4-wsl. Those tests run on claudevm only (`ssh claudevm`, Windows, not signed in to
-  claude).
-- **No remote room restart while any card on it has a live session**, clint's included (check atrium_peers with
-  rooms=true). Tell atrium-87300 first, every time. Never touch this machine's room or hub. No deploys, no push to
-  origin.
-- **A throwaway card is thrown away when its room restarts.**
+- **Ask atrium-87300 before each worker launch**, in one line: the item, why, and which room.
+- **One card per worker.** To move a worker up to Opus, exit it and atrium_launch on the SAME worktree with the
+  same title.
+- **No stop, uninstall, -Remove, service or autostart test against ANY real room** (sg3, m1mini, claude-sg4,
+  sg4-wsl). Those run on claudevm only (`ssh claudevm`, Windows, not signed in to claude).
+- **No remote room restart while any card on it has a live session**, clint's included (atrium_peers rooms=true).
+  Tell atrium-87300 first, every time. Never touch this machine's room or hub. No deploys, no push to origin.
 - **@merge (card 01a0eb20) is the only writer of claude/main.** Merge workers into claude/fabric, merge claude/main
-  in, resolve conflicts, then tell @merge the branch is ready.
+  in, then tell @merge the branch is ready.
 - **Nobody edits CHANGELOG.md or docs/test-plan.md** until item 77b lands. Each item writes
-  `docs/changes/<item>.md` with "Changelog" and "Test plan" sections. Test-plan letters are FA (provision), FB
-  (room-git) and FC (toolchain).
-- **Past about 150k context**, write HANDOFF.md and ask atrium-87300 for a new context.
-- When a design needs review, run a Mercurius round before building.
-- Unsigned commits made on the remote rooms are fine: clint re-signs everything before the push.
-- The Bash hook refuses `;` chains, `>` and `2>&1`. Do ssh work through PowerShell.
-- For multi-line remote scripts on Windows, use `powershell -EncodedCommand`. `-Command -` on stdin breaks
-  multi-line blocks.
+  `docs/changes/<item>.md`. Test-plan letters: FA (provision), FB (room-git), FC (toolchain).
+- Past about 150k context, write HANDOFF.md and ask atrium-87300 for a new context.
+- The Bash hook refuses `;` chains, `>`, `2>&1`, `find` and `git -C`. Do ssh work through PowerShell.
+- **No git command may reach a remote** (hook). `git push`, `fetch` and therefore `room-git.ps1 push-base` and
+  `fetch` are clint's to run. `room-git.ps1 worktree` and `init`'s remote git init work, since they are plain ssh.
+- For multi-line remote scripts on Windows, use `powershell -EncodedCommand`.
+- The local `scp` on PATH is a broken Cygwin build. Use `C:\Windows\System32\OpenSSH\scp.exe`.
 
-## Item 1: setting up a room takes one command
+## Branch state
 
-Goal (clint): one command takes a bare ssh machine to a room that runs claude workers and whose work merges here.
-Tonight's goal (orchestrator): m1mini and sg3 can each build atrium and run go test from a push-seeded clone, so
-workers can be sent there. Tell atrium-87300 the moment one is fully ready.
+- claude/fabric head is **35fa4a1** (merge of fb01), on top of 7e4f85d (the last handoff). Not merged with
+  claude/main since the 6601547 rebase.
+- **UNCOMMITTED in this worktree: two smoke fixes in `scripts/provision-room.ps1`** (`Invoke-Smoke`, the `$body`
+  hash). Commit them only after a passing -SmokeOnly run:
+  1. The smoke model is `claude-sonnet-5-5` at low effort, not Haiku. Claude Code's auto mode does not run on
+     Haiku, so a Haiku card fell back to asking for atrium_say, and nobody answered. fb03 on Sonnet ran in auto
+     mode on sg3.
+  2. `--allowedTools=<list>` is one argument with `=`. As two arguments the variadic flag also SWALLOWED THE
+     PROMPT: the card came up at an empty input line (seen live on the sg3 smoke card's scrollback).
+- A background -SmokeOnly run against sg3 was started BEFORE fix 2, so it will fail with exit 8. Ignore it.
+- Next: rerun `pwsh -NoProfile -File scripts/provision-room.ps1 sg3 -SmokeOnly -SmokeCwd C:/Users/claude/smoke-fresh-1`
+  and read the card live with `Invoke-WebRequest http://127.0.0.1:7778/v1/tasks/sg3~01a0eb4c-f05a-7a79-8ede-aa7ead4f12c9/scrollback/text`.
+  If it passes, commit and add both fixes to `docs/changes/fabric-1-provision.md`.
+- Smoke facts found this session:
+  - The hub reuses the smoke card by WIRE NAME (`smoke-sg3`, id 01a0eb4c since 03:54), not by folder.
+  - `launch_args` DOES reach the card, so args are not dropped on reuse.
+  - atrium_report sets `recap` (control_mcp.go reportHandler, then /v1/tasks/{id}/report), which is what smoke
+    polls, so the poll is right.
+  - Cards on sg3 show no activity on the board (last_activity stuck at launch time). The hooks may not fire
+    there, and sg3's `~/.claude/settings.json` has no hooks. Worth a look, not yet diagnosed.
 
-### Branch state
+## fb01: DONE, merged (35fa4a1). Clean-up NOT done
 
-- claude/fabric head is **5145bad**. It is rebased onto the re-signed claude/main 6601547 and has not been merged
-  with claude/main since.
-- Commits:
-  - 08294e1 and 4e14465: PLAN.md
-  - 903e9e6: backlog-2 item 63 marked DONE (stages 0cbbaa2, 8deea51 and 479c9d7; follow-up noted)
-  - 5145bad: merge of fb02
-- PLAN.md is committed. This HANDOFF.md is committed with this handoff.
+- 872dc96 on claude/fb01-provision. Card 01a0eb29 is still up at 150k context and was told to stop.
+- To do: atrium_exit it, then `git worktree remove D:/worktrees/claude/atrium/fb01-provision` and
+  `git branch -d claude/fb01-provision`.
+- Unproven from fb01: systemd PATH (no Linux box), the Sch /End of a live task, -Autostart start on sg3.
 
-### fb02: DONE, merged (5145bad)
+## fb03: RUNNING ON sg3, waiting for claudevm runs
 
-- `scripts/room-git.ps1` has four subcommands: `init <room> -Target <ssh>`, `push-base <room> [-From claude/main]`,
-  `fetch <room>` and `worktree <room> <name>`.
-- Proven on m1mini and sg3.
-- The provision hook is `[string] $Repo = 'atrium'` plus one line before the final `if ($bad -gt 0)`.
-- Docs are in `docs/changes/fabric-1-room-git.md`, `docs/packaging.md` and `docs/remote-launch.md` section 6.
-- Git remotes added to this repo's shared config:
-  - `m1mini` = `ssh://m1mini/Users/claude/git/github/dovholuknf/atrium`
-  - `sg3` = `sg3:C:/Users/claude/git/github/dovholuknf/atrium`
-- sg3 has fb02's wrapper `C:\Users\claude\.room-git\git.cmd` (it puts Cygwin git on PATH), which
-  uploadpack and receivepack use. Do not remove it.
-- Remote worktrees go to `<clone>-worktrees/<name>`.
-- Still open: a cmd.exe default ssh shell is untested, there has been no Linux run, and the manifest lookup of the
-  ssh target is missing.
-- The worktree and branch are removed.
+- Card sg3~01a0eb52, alias fb03@sg3, Sonnet 5.5 medium.
+- Worktree on sg3: `C:/Users/claude/git/github/dovholuknf/atrium-worktrees/fb03-toolchain`, branch
+  claude/fb03-toolchain off hub-main 18b9015 (an older claude/main). Head **f6bf357**.
+- `_ref/` there holds reference copies and is excluded in the clone's info/exclude. fb03 rewrote its worktree's
+  `.git` file from a /cygdrive path to `C:/...`.
+- A copy of its script for running from here is in the scratchpad
+  `...\scratchpad\fb03\scripts\room-toolchain.ps1` (with go.mod beside it). If that is gone, scp it again.
+- **Proven from here:** `-Check` against m1mini and sg3 both give done ok, exit 0, as fb03 predicted. The results
+  have been sent to it.
+- **Still to run** (claudevm is Windows): `room-toolchain.ps1 claudevm -Check`, then a full run twice (expect all ok
+  the second time), then `-TestBadHash` (expect exit 4). After the install, in a shell on claudevm, dot-source
+  `~\.atrium\toolchain\room-env.ps1` and run `git --version; pwsh --version; go version`. Send fb03 any failure
+  output. fb03 is holding at f6bf357 with nothing outstanding.
+- Design: the PATH record is `~/.atrium/toolchain/path.txt`. Windows gets `room-env.ps1`, which the room start must
+  dot-source. The one-line hook for provision's Windows start step, and for the autostart action, is in its
+  `docs/changes/fabric-1-toolchain.md`. Add those hooks when merging, not before. There is no -Restart.
+- **Its branch comes back only when clint runs `pwsh -File scripts/room-git.ps1 fetch sg3`.** Then review
+  `sg3/claude/fb03-toolchain`, merge it into claude/fabric, add the provision hook, exit fb03, and remove the sg3
+  worktree.
 
-### fb01: RUNNING on Opus
+## Rooms
 
-- Card 01a0eb29, worktree `D:/worktrees/claude/atrium/fb01-provision`, branch `claude/fb01-provision`.
-- The first session's work is in f293ece, 9dbe1bf and 0c79f2e:
-  - binary builds from the checkout by default (proven on claudevm)
-  - `auth` step using `claude auth status` JSON `loggedIn` (proven)
-  - schtasks instead of CIM (proven on claudevm, and the helpers on sg3)
-  - systemd PATH (written, NOT proven: there is no Linux box but WSL, and WSL is ours)
-  - `smoke` step (written, NEVER run)
-  - docs in `docs/changes/fabric-1-provision.md`
-  - the Stop-AtriumGracefully guard (stop only when the named task is Running)
-- The second session was told to:
-  - review the diff
-  - rebase onto claude/fabric, resolving fb02's hook
-  - run git init before smoke, with the smoke cwd defaulting to the clone
-  - add `-SmokeOnly`
-  - prove smoke on sg3 without stopping the room: same binary, or `-Binary`
-  - delete HANDOFF.md from its branch at the end
-- **It is told to HOLD everything against sg3 until I say go**, because of the sg3 restart below.
-- When it reports: review, merge into claude/fabric, exit it, and remove the worktree and branch.
+- **sg3:** restarted once at 23:47:55 with PATH = `atrium-tools\git\cmd;atrium-tools\pwsh;Machine;User`.
+  `go test ./internal/daemon` passes there in that PATH form. The claudeconf symlink test still fails there
+  (ssh session symlink policy). Live cards on sg3: fb03, and the smoke card whenever a smoke runs.
+- **m1mini:** restart SKIPPED tonight on the orchestrator's call, because it would end clint's card
+  m1mini~01a0eb2b. Leave that card alone. runtime's sa73 also runs there. The restart is on the morning list for
+  clint. `.zprofile` already has the PATH line.
 
-### sg3 (Windows, room `sg3`, no admin)
+## Waiting on clint (in the morning report via atrium-87300)
 
-- **INCIDENT at 23:31.** fb01's service-uninstall test stopped the real sg3 room, and clint's throwaway agent
-  sg3~01a0eb2c was thrown away when I restarted the room at 23:32 (`~\.atrium\bin\atrium.exe room --detach` over
-  ssh, PATH Machine;User). The orchestrator put it in the morning report.
-- Installed:
-  - go 1.26.2 at `C:\Users\claude\go-sdk\go\bin` (by clint's agent), on the user Path
-  - node v24.21.0 at `C:\Users\claude\node-sdk\node-v24.21.0-win-x64` (I added it to the user Path)
-  - PortableGit 2.56.0 and pwsh 7.6.6 (by me, sha256 checked) under
-    `C:\Users\claude\.local\share\atrium-tools\{git,pwsh}`, NOT on any Path yet
-- Clone: `C:\Users\claude\git\github\dovholuknf\atrium` on hub-main, with a repo-local git identity of dovholuknf
-  and `46322585+dovholuknf@users.noreply.github.com`.
-- `go build ./...` passes.
-- First `go test ./...`: 14 failures across 4 packages, all traced to the machine:
-  - 7 Cull tests (Cygwin git)
-  - 3 CaptureEnv tests (need pwsh 7)
-  - claudeconf TestInstallWritesThroughASymlink ("untrusted mount point", Windows symlink policy in ssh sessions)
-  - the known-flaky link test
-- With `atrium-tools\git\cmd` and `atrium-tools\pwsh` FIRST on PATH, internal/daemon passes completely. Only the
-  symlink test still fails.
-- **The catch:** Windows puts the machine Path (which has c:\work\tools\cygwin\bin) before the user Path, so user
-  entries cannot win. The room has to be STARTED with the tools prepended.
-- **APPROVED, NOT YET DONE** (see "Waiting on" 1): restart the sg3 room once, with
-  PATH = `atrium-tools\git\cmd;atrium-tools\pwsh;Machine;User`. Before doing it:
-  - check atrium_peers rooms=true for live sg3 cards
-  - start it through `powershell -EncodedCommand`, setting `$env:Path` and then `& $HOME\.atrium\bin\atrium.exe
-    room --detach`
-  - confirm on `http://127.0.0.1:7778/_hub/rooms`
-  - then tell fb01 "go", and tell the orchestrator sg3 is ready, with the test result
-- Durable fix, for a later toolchain worker: on Windows, provision's Invoke-Remote PATH and atrium-autostart put
-  user tools first.
+1. `room-git.ps1 fetch sg3`, to bring fb03 back.
+2. The m1mini room restart, for the .zprofile PATH.
+3. Any `push-base`. room-git is operator-only under the hooks.
+4. Whether provision should write `permissions.allow` for `mcp__atrium-control__*` into a room's settings.json.
+   Only needed if Sonnet plus `--allowedTools=` does not fix the smoke card.
 
-### m1mini (mac arm64, room `m1mini`, no sudo)
+## Then
 
-- clint's agent m1mini~01a0eb2b installed go 1.26.2 at `~/.local/opt/go` and node v24.21.0 at
-  `~/.local/opt/node`, plus Playwright chromium.
-- It put PATH in `~/.zshrc`. I added the same line to `~/.zprofile`, marked `# added by atrium room-toolchain`,
-  since the room starts with `zsh -lc`. `zsh -lc 'go version'` gives 1.26.2.
-- go build passes. go test fails 2 tests in internal/daemon deterministically: TestASayToAGoneSessionIsUndeliverable
-  and TestAHeldMessageOnAnEndedSessionIsDropped. These are likely product bugs.
-- That agent is investigating them for the orchestrator (`~/atrium-m1mini-findings.md`).
-- **Hands off m1mini**: do not exit that agent and do not restart the room until it has reported to atrium-87300.
-  After that, the room restart (to pick up the .zprofile PATH) needs no live cards and a heads-up to atrium-87300.
-- Its clone has a repo-local git identity set.
-
-### fb03: ON HOLD, not launched
-
-- Worktree `D:/worktrees/claude/atrium/fb03-toolchain` (branch claude/fb03-toolchain, still at 4e14465, unused).
-- Its brief is drafted in the scratchpad (`...\scratchpad\fb03.md`), which may be gone.
-- When the room agents' steps are known, write `scripts/room-toolchain.ps1` from them:
-  - go and node tarballs or zips under the home dir
-  - PortableGit and pwsh on Windows
-  - on Windows, the room is started with the tools prepended
-  - on mac and linux, a marked profile line
-  - a restart of the remote room under the rules
-- It needs the orchestrator's OK before launch. Rebase its branch onto claude/fabric first, or recreate it.
-
-### Queue after item 1
-
-backlog-2 item 63 is DONE (nothing to do). Nothing else is queued for fabric yet.
-
-## How to check
-
-- `git log --oneline claude/main..claude/fabric`
-- Parse-check PowerShell with `pwsh -NoProfile -File scripts/check-powershell.ps1`
-- Hub rooms: `Invoke-RestMethod http://127.0.0.1:7778/_hub/rooms`
-- Remote test in sg3's clone: see the encoded-command pattern above, with ATRIUM_LOCATION and ATRIUM_DEBUG_INPUTLAG
-  cleared.
-
-## Waiting on
-
-1. **APPROVED** by atrium-87300, just before the context clear: restart the sg3 room once, detached, with
-   atrium-tools prepended, since it has no live cards. It has NOT been done yet: do it first, after checking
-   atrium_peers. Report when it is back up and `go test ./internal/daemon` passes there, run in the ROOM's PATH
-   form. The durable prepend goes into room-toolchain.ps1.
-2. fb01's report.
-3. The m1mini agent's report to atrium-87300, then the m1mini room restart.
-4. When everything is merged, merge claude/main into claude/fabric and tell @merge it is ready.
+When fb03 and the smoke fixes are in, merge claude/main into claude/fabric, parse-check
+(`pwsh -NoProfile -File scripts/check-powershell.ps1`), and tell @merge it is ready.
