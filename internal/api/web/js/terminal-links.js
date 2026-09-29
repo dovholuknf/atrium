@@ -148,15 +148,59 @@ function fileLink(id, range, hit) {
       // a selection is better than opening a file.
       if (term && term.hasSelection && term.hasSelection()) return;
       ev.preventDefault();
+      linkTipHide();
       hideTip();
       openFromTerminal(id, hit);
     },
-    hover: (ev) => tipSoon(() => placeTip(pointerAnchor(ev), hit.dir
-      ? hit.rel + "/\nopens the file browser here"
-      : hit.rel + "  " + bytes(hit.size) + "\nopens in atrium's own editor, in this browser")),
-    leave: () => hideTip()
+    hover: (ev) => {
+      const text = hit.dir
+        ? hit.rel + "/\nopens the file browser here"
+        : hit.rel + "  " + bytes(hit.size) + "\nopens in atrium's own editor, in this browser";
+      const same = linkTip.path === hit.rel;
+      clearTimeout(linkTip.timer);
+      linkTip.timer = 0;
+      // The SAME path asked for again inside the grace is a repaint, not the
+      // pointer moving. A tip already up is left alone. One not up yet starts
+      // its delay again below, which only a pointer move sets off.
+      if (same && tipEl.classList.contains("on") && tipEl.textContent === linkTip.text) return;
+      // A different path replaces the old tip at once rather than after the grace.
+      if (!same) hideTip();
+      linkTip.path = hit.rel;
+      linkTip.text = text;
+      tipSoon(() => placeTip(pointerAnchor(ev), text));
+    },
+    leave: () => linkTipLeave()
   };
 }
+
+// THE TIP OUTLIVES A REPAINT OF ITS ROW.
+//
+// xterm drops the link under the pointer whenever its row is redrawn, which
+// fires `leave`, and asks for it again, which fires `hover`. Hiding on `leave`
+// and showing after the hover delay made the tip vanish and come back every
+// time output touched the row. So `leave` waits a beat, and a `hover` on the
+// same path inside it cancels the hide. Other tooltips are untouched.
+const linkTipGrace = 150;
+const linkTip = { path: "", text: "", timer: 0 };
+
+function linkTipLeave() {
+  clearTimeout(linkTip.timer);
+  linkTip.timer = setTimeout(linkTipHide, linkTipGrace);
+}
+
+// Hides now, and forgets the path so the next hover starts from nothing.
+function linkTipHide() {
+  clearTimeout(linkTip.timer);
+  linkTip.timer = 0;
+  // Only if the tip is still ours: a scroll or a click may have hidden it and
+  // something else may have been put up since.
+  if (linkTip.path && (!tipEl.classList.contains("on") || tipEl.textContent === linkTip.text)) hideTip();
+  linkTip.path = "";
+  linkTip.text = "";
+}
+
+// The pointer leaving the terminal is leaving, not a repaint.
+document.getElementById("t-screen").addEventListener("mouseleave", linkTipHide);
 
 // Where a clicked path opens, WHICH IS HERE.
 //
@@ -374,21 +418,50 @@ function useWebLinks(t) {
 // NOT atrium's file viewer, which is where a clicked PATH goes. A URL is not a
 // file in the card and the daemon has no business being asked about it.
 //
-// `noreferrer` because the board can be published, and the address of a
-// published board is not something to hand to whatever an agent printed a link
-// to. It implies `noopener`, and `noopener` is named as well so that reading
-// the line does not require knowing that.
+// It is opened by `openLinkReused`, which reuses one tab per pull request
+// rather than opening a new one per click.
 function openTermURL(ev, uri) {
   ev.preventDefault();
-  const a = document.createElement("a");
-  a.href = uri;
-  a.target = "_blank";
-  a.rel = "noreferrer noopener";
-  // Attached before it is clicked. A detached anchor is ignored by some
-  // browsers, and the failure is a click that does nothing at all.
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
+  openLinkReused(uri);
+}
+
+// The name of the window a link opens into. One per pull request for
+// github.com/<org>/<repo>/pull/<n> and anything under it, so a walk that clicks
+// a deep link per finding keeps one tab. Anything else is one per origin plus
+// path, with no query and no hash. "" for a URL that is not http or https.
+function linkWindowName(url) {
+  let u;
+  try { u = new URL(url); } catch (e) { return ""; }
+  if (u.protocol !== "http:" && u.protocol !== "https:") return "";
+  const host = u.host.toLowerCase();
+  const pr = u.pathname.match(/^\/([^/]+)\/([^/]+)\/pull\/(\d+)(?:\/|$)/);
+  if (host === "github.com" && pr) return "atrium-link-" + host + "/" + pr[1] + "/" + pr[2] + "/pull/" + pr[3];
+  return "atrium-link-" + host + u.pathname;
+}
+
+// Opens a link into its named window and brings that window forward. Called by
+// the terminal's links and by the review walk's `o` and `C`.
+//
+// `window.open(url, name)` and not `rel=noopener`: Chrome ignores the name and
+// opens a new tab whenever noopener is set. The opener is cut by hand instead,
+// at once, so the page cannot reach back into the board.
+//
+// The referrer is withheld by the page's `<meta name="referrer">` in
+// index.html and not here. The old `rel=noreferrer` did it, because a published
+// board's address is not something to hand to whatever an agent printed a link
+// to, but `noreferrer` implies `noopener` and so brings the new tab back, and
+// `window.open` has no per-call referrer option that avoids it.
+//
+// A popup blocker makes `window.open` return null. That is not an error here.
+function openLinkReused(url) {
+  const name = linkWindowName(url);
+  if (!name) return null;
+  let w = null;
+  try { w = window.open(url, name); } catch (e) { return null; }
+  if (!w) return null;
+  try { w.opener = null; } catch (e) {}
+  try { w.focus(); } catch (e) {}
+  return w;
 }
 
 // ── the "not replayed here" notice's two actions ─────────

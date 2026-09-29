@@ -40,7 +40,8 @@ Thumbs.db
 # that ARE meant to be checked in, and a file nobody can see in `git status` is
 # a file nobody knows is not committed.
 /walkthrough
-docs/backlog
+# Only the old dated local backlog files. docs/backlog/<dept>/<id>.md is tracked.
+/docs/backlog/backlog-*.md
 
 # Notes comparing atrium to another tool. Local only, on purpose: they name a
 # third party, quote its documentation, and say where it is ahead of us. That is
