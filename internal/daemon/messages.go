@@ -403,6 +403,9 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 		From string `json:"from"`
 		// When is `immediate` (the default) or `done`. See saywhen.go.
 		When string `json:"when"`
+		// Reply is a sender asking for an answer, not just a delivery. The
+		// receiving card shows it owed until it answers. See saylog.go.
+		Reply bool `json:"reply"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&body); err != nil {
 		writeJSONErr(w, http.StatusBadRequest, err)
@@ -437,13 +440,29 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// The say's record, for a message from a session. See saylog.go.
+	trace, traced := sayTraceFrom(r.Context())
+	var rec store.Say
+	target, terr := d.st.Get(taskID)
+	if terr == nil && from != "" {
+		rec = sayRecordFor(from, target, trace, traced, "say", whenWord(waitTurn), body.Reply)
+	}
+
 	// Nobody there to read it. See sessionGone.
 	if t, err := d.st.Get(taskID); err == nil && d.sessionGone(t) {
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{
+		out := map[string]any{
 			"delivered": "undeliverable", "reachable": ReachNo, "warning": goneNote(t),
 			"when": whenWord(waitTurn),
-		})
+		}
+		if from != "" {
+			rec.State, rec.Note, rec.ReplyWant = store.SayRefused, "the session is gone: "+goneNote(t), false
+			if id := d.recordSay(rec, body.Text); id != "" {
+				out["say"] = id
+			}
+			out["via"] = rec.Via
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(out)
 		return
 	}
 
@@ -498,8 +517,17 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 				d.seenAnswered(taskID, store.SeenMessage)
 			}
 			d.publishTask(taskID)
+			out := map[string]any{"delivered": "terminal", "when": whenWord(waitTurn)}
+			if from != "" && terr == nil {
+				rec.State, rec.Channel = store.SayDelivered, store.SayViaTerminal
+				if id := d.recordSay(rec, body.Text); id != "" {
+					out["say"] = id
+				}
+				out["via"] = rec.Via
+				d.saySettled(from, target)
+			}
 			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]any{"delivered": "terminal", "when": whenWord(waitTurn)})
+			_ = json.NewEncoder(w).Encode(out)
 			return
 		}
 		// A part written line or a keystroke in the last two seconds: nothing
@@ -554,6 +582,14 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 	// because the card may be relaunched under atrium, but the sender hears
 	// the truth and what to do instead. See docs/a2a-reliability-design.md.
 	out := map[string]any{"delivered": "queued", "id": m.ID, "when": whenWord(waitTurn)}
+	if from != "" && terr == nil {
+		rec.State, rec.MessageID = store.SayQueued, m.ID
+		if id := d.recordSay(rec, body.Text); id != "" {
+			out["say"] = id
+		}
+		out["via"] = rec.Via
+		d.saySettled(from, target)
+	}
 	if target, err := d.st.Get(taskID); err == nil {
 		d.peerSaid(from, target, body.Text)
 		reach, why := d.reachability(target)

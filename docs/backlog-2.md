@@ -930,6 +930,10 @@ work" badge would need the count to travel on the card, and is left out until as
 
 ## 32. A queued say from http-support never produced a backlog entry, and nothing can say why (bug)
 
+**Status: built on `claude/sa32`, migration `0069_say`.** Lifecycle row, candidates on a miss, and `reply: true` owed
+replies are done. Cross-room delivery receipts need a say id on the relay request (link and hub, not changed).
+Design: `docs/say-lifecycle-design.md`.
+
 Raised 2026-09-28 by clint. About 09:22 local, the mercurius `http-support` session wrote a brief and sent a say to
 "the claude/main:atrium session (handle atrium)", asking for a backlog card and a reply with its id. It reported the
 say as queued, because the target was mid-tool-call. No card was filed and no reply went back. Item 30 was filed by

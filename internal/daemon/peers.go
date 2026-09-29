@@ -248,6 +248,12 @@ func checkPeerText(w http.ResponseWriter, text, nothing string) bool {
 // `verb` is what the caller is trying to do, so the refusal reads as the thing
 // that was refused rather than as a generic message failure.
 func (d *Daemon) resolvePeer(w http.ResponseWriter, from, to, verb string) *store.Task {
+	return d.resolvePeerSay(w, from, to, verb, "", "", false)
+}
+
+// resolvePeerSay is resolvePeer for a caller with words to record. A miss on a
+// tell is written to the say record; the other verbs write no row (text is "").
+func (d *Daemon) resolvePeerSay(w http.ResponseWriter, from, to, verb, text, when string, reply bool) *store.Task {
 	switch {
 	case from == "":
 		writeJSONErr(w, http.StatusBadRequest, errString("say which session is sending"))
@@ -272,13 +278,7 @@ func (d *Daemon) resolvePeer(w http.ResponseWriter, from, to, verb string) *stor
 		// Discovery, rediscovered. A handle that does not resolve answers with
 		// the list rather than with "no", because the next thing the sender
 		// needs is the set of names that would have worked.
-		list, _ := d.peers(from)
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusNotFound)
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"error": "no session called " + to,
-			"peers": list,
-		})
+		d.writeMiss(w, from, to, verb, text, when, reply)
 		return nil
 	}
 	// The same self-check as above, for a session that named itself by alias.
@@ -316,6 +316,8 @@ func (d *Daemon) handleTell(w http.ResponseWriter, r *http.Request) {
 		Text string `json:"text"`
 		// When is `immediate` (the default) or `done`. See saywhen.go.
 		When string `json:"when"`
+		// Reply is true when the sender needs an answer, not just a delivery.
+		Reply bool `json:"reply"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&in); err != nil {
 		writeJSONErr(w, http.StatusBadRequest, err)
@@ -330,7 +332,7 @@ func (d *Daemon) handleTell(w http.ResponseWriter, r *http.Request) {
 	// ANOTHER ROOM, `name@room`, relayed through the hub. See relay.go.
 	if name, room, err := SplitAddress(in.To); err == nil {
 		if other := d.otherRoom(room); other != "" {
-			code, body := d.sayAcross(r.Context(), strings.TrimSpace(in.From), name, other, in.Text, in.When)
+			code, body := d.sayAcross(r.Context(), strings.TrimSpace(in.From), name, other, in.Text, in.When, in.Reply)
 			if code < 400 {
 				// The two words `atrium tell` reads, beside the rest.
 				body["typed"] = body["delivered"] == "terminal"
@@ -349,7 +351,7 @@ func (d *Daemon) handleTell(w http.ResponseWriter, r *http.Request) {
 	if !checkPeerText(w, text, "there is nothing to say") {
 		return
 	}
-	target := d.resolvePeer(w, from, to, "tell")
+	target := d.resolvePeerSay(w, from, to, "tell", text, in.When, in.Reply)
 	if target == nil {
 		return
 	}
@@ -380,11 +382,12 @@ func (d *Daemon) handleTell(w http.ResponseWriter, r *http.Request) {
 	// message that is typed is written to the timeline instead so the traffic
 	// is still auditable. Both, and the agent would receive it twice.
 	waitTurn := d.waitsForTurn(target.ID, when)
-	typed, err := d.deliverPeerWhen(target, from, text, waitTurn)
+	typed, msgID, err := d.deliverPeerWhenID(target, from, text, waitTurn)
 	if err != nil {
 		writeJSONErr(w, http.StatusInternalServerError, err)
 		return
 	}
+	d.recordTell(from, target, text, in.When, in.Reply, typed, msgID)
 	d.peerSaid(from, target, text)
 	log.Printf("[atrium] %s told %s something (%d chars, typed %v, waits for the turn %v)",
 		from, to, len(text), typed, waitTurn)
@@ -443,9 +446,16 @@ func (d *Daemon) deliverPeer(target *store.Task, from, text string) (bool, error
 
 // deliverPeerWhen is deliverPeer with the turn rule already resolved.
 func (d *Daemon) deliverPeerWhen(target *store.Task, from, text string, waitTurn bool) (bool, error) {
+	typed, _, err := d.deliverPeerWhenID(target, from, text, waitTurn)
+	return typed, err
+}
+
+// deliverPeerWhenID is deliverPeerWhen that also says which queue row carries
+// the words when they were not typed, so a say can be recorded against it.
+func (d *Daemon) deliverPeerWhenID(target *store.Task, from, text string, waitTurn bool) (bool, string, error) {
 	if typed, _ := d.tellByTyping(target, from, text, waitTurn); typed {
 		d.publishTask(target.ID)
-		return true, nil
+		return true, "", nil
 	}
 	var (
 		m   *store.Message
@@ -457,11 +467,11 @@ func (d *Daemon) deliverPeerWhen(target *store.Task, from, text string, waitTurn
 		m, err = d.st.QueueFromPeer(target.ID, text, from)
 	}
 	if err != nil {
-		return false, err
+		return false, "", err
 	}
 	d.publishTask(target.ID)
 	d.deferPeerInjection(target.ID, m.ID, from, text, waitTurn)
-	return false, nil
+	return false, m.ID, nil
 }
 
 // peerBanner marks a typed message as coming from another session.
