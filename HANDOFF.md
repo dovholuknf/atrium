@@ -76,6 +76,17 @@ provision done ok
 Rerun: `binary ok`, `join ok`, `autostart ok`, `start ok`, `mcp ok`. `-Remove` ended `provision hub done removed
 claudevm` and `provision done ok`, and `schtasks /Query /TN atrium` then found nothing.
 
+## Waiting on
+
+- @fabric: whether to restart the sg3 room (stopped by my test, see INCIDENT), and permission for a first smoke
+  launch on m1mini or sg3.
+- Standing rule: no stopping actions on m1mini or sg3 (no -Remove, no new binary, no autostart takeover).
+  claudevm is the test machine. Check atrium_peers rooms=true before any restart of a remote room.
+- Files: scripts/provision-room.ps1, scripts/atrium-autostart.ps1, scripts/atrium-service.ps1,
+  scripts/atrium-service.sh, packaging/atrium.service.
+- Check the work: `pwsh -NoProfile -File scripts/check-powershell.ps1`, then the provision command against
+  claudevm.
+
 ## Next steps
 
 1. Get sg3's room back (see incident), then fix `Stop-AtriumGracefully` or avoid `uninstall` in tests.
