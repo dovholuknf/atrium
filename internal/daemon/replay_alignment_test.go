@@ -91,7 +91,9 @@ func gridText(s *screen) string {
 	for i, r := range s.cells {
 		line := make([]rune, 0, len(r))
 		for _, c := range r {
-			line = append(line, c.ch)
+			if c.ch != contCh {
+				line = append(line, c.ch)
+			}
 		}
 		b.WriteString(strings.TrimRight(string(line), " \x00"))
 		if i < len(s.cells)-1 {

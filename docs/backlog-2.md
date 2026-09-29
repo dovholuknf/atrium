@@ -1953,5 +1953,102 @@ CJK and other wide characters two. A cursor move back over a wide character land
 against `あい.`. A fix needs a continuation cell handled in `render`, `writeRow`, and the erase and insert ops. The
 case is skipped as `backlog-2 82` in `internal/daemon/screen_diff_cases_test.go`. Owned by @terminal.
 
+Status: built on claude/sa82, not merged. `screen.go` gives a wide character a head and a continuation cell, widths
+come from a table generated from the vendored xterm.js, and the skip is gone. Differential cases cover each op,
+all agreeing with xterm.js apart from one accepted reflow difference. See `docs/changes/82.md`.
+
+### Design
+
+Written against `screen.go` before sa81 (DECSTBM) merges. Sa81 lands first and this lands second, so the cell ops
+below are named by what they touch, not by line.
+
+**How width is decided.** The board loads `@xterm/xterm` 5.5.0 (`internal/api/web/vendor/VERSIONS.md`) and
+`index.html` loads no unicode addon, so xterm runs its DEFAULT provider, `UnicodeV6`, and that is the table to match.
+It is not what `golang.org/x/text/width` (in `go.mod`, indirect only, Unicode 15 based) or `go-runewidth` say. The
+visible difference is that V6 gives every astral emoji (U+1F300 and up) width 1, and only U+20000..U+2FFFD and
+U+30000..U+3FFFD width 2 above the BMP, so a grinning face is ONE cell on the board today. Matching a newer table
+would leave the replay one column off per emoji, which is this bug in the other direction. No new dependency: a
+generated table, `screen_width.go`, holding the BMP wide ranges, the zero width (combining) ranges and the two astral
+wide ranges, produced by `testdata/gen_widths.js` from the vendored `xterm.js` (`UnicodeService.wcwidth`). A parity
+test runs the same node script over every code point 0..0x10FFFF and compares with the Go function, so an xterm
+upgrade, or a unicode11 addon, fails a test instead of drifting. Lookup is a `< 0x7f` fast path, then a binary search
+over a few hundred ranges.
+
+- Ambiguous width is 1. V6 has no ambiguous class.
+- Combining marks, ZWJ (U+200D), variation selectors (FE00..FE0F) and other zero width code points are width 0. They
+  attach to the cell before them and take no cell. VS16 does not widen its base, again as V6.
+- A ZWJ emoji sequence is therefore several width 1 emoji with joiners attached, which is what xterm shows. No
+  grapheme segmentation, so no `rivo/uniseg`.
+- A zero width code point with nothing to attach to (column 0, or after another loose mark) is NOT dropped: xterm
+  gives it a cell of its own that moves the cursor one column. The differential settled this, and `put` does the
+  same. It attaches to a blank cell like any other.
+- C0 and DEL stay in `step`, unchanged.
+
+**The cell model.** `cell` is `{ch rune, sgr string}`, 24 bytes. It becomes `{ch rune, ext uint32, sgr string}`, still
+24 bytes, since the rune leaves 4 bytes of padding.
+
+- `ch == contCh` (a negative sentinel) marks the second cell of a wide character. It carries the head's `sgr`, so
+  per cell colour ops stay per cell.
+- `ext` is an index into `screen.combs []string` (0 means none) holding the marks appended to that cell. Marks are
+  rare, so the table stays tiny and rows stay flat and copyable. It lives as long as the screen, which is as long as
+  any row that refers to it, history included.
+- Every wide head is followed by exactly one `contCh`, and every `contCh` follows a wide head. The ops below keep
+  that true, and the differential asserts it after every case.
+
+**Per op.** Where I say "as xterm" from memory of its `InputHandler` and `eraseInBufferLine`, phase 2 confirms it in
+the differential and takes xterm's answer where they differ.
+
+- `put`: width 0 appends to the previous cell (the head, when the previous is a continuation) via `combs`, moves
+  nothing and leaves `wrapNext` alone. Width 1 writes one cell. Width 2 writes head and continuation and advances
+  two. Before writing, `clearHalf` repairs what is overwritten: writing on a continuation blanks the head before it,
+  writing on a head blanks its continuation, and a width 2 write whose second cell lands on the head of another wide
+  character blanks that one's continuation. Blanked cells are the plain `blank` value.
+- A wide character at the last column wraps early. `put` sees `col == cols-1` with width 2, wraps first and writes on
+  the next row. The differential settled the abandoned last-column cell: xterm BLANKS it, wearing the colour being
+  written, so a character already there is gone. xterm clamps a terminal to two columns, so the one column guard is
+  only a guard.
+- A cursor landing on a continuation (`CUB`, `CHA`, `CUP`, backspace, restore, tab) stays there. The next write
+  repairs through `clearHalf`. Nothing snaps the cursor to the head.
+- Erase (`EL`, `ED`, `ECH`): the blanked span widens to whole characters. A span starting on a continuation blanks
+  the head before it, and one ending on a head blanks the continuation after it. `ED` goes through `EL` plus
+  whole-row blanks, so it inherits this.
+- `ICH` and `DCH`: after the shift, a continuation left first in the moved run, or a head left last with its
+  continuation shifted off, is blanked. That is `clearHalf` at the two seams.
+- `IL`, `DL`, `CSI S` and `CSI T`: move whole rows, so a wide character and its continuation always move together.
+  No change. Under sa81's regions that still holds, since a region chooses WHICH rows move and never cuts a row.
+  Nothing there reads columns, and there is no left and right margin mode (DECLRMM) to cut one. Sa81's row copies
+  must stay row copies, and if they ever copy a column span this design needs another pass.
+- `resize` narrower: a cut between head and continuation blanks the orphan head. Widening pads blanks. History rows
+  keep the width and cells they had. `fitRows` and `applyCuts` move rows, never cells, so they are unchanged. The alt
+  screen is `[]cell` too and gets the same cut.
+- `rowIsBlank` counts a continuation as not blank, which is safe because one only follows a non-blank head.
+
+**Output.** `render` and `writeRow` skip `contCh` cells and write the head rune once, followed by its `ext` marks. The
+end-trim loop trims only blanks, so a wide character in the last two cells is kept. `textWithCursor` needs no change:
+`s.col` is already a cell column, `CUF` in cells is what the terminal executes after painting the rune in two of
+them, and the relative move stays right. `textAtRows` ends in an absolute `CSI row;col H` in cells, correct for the
+same reason. The scrollback view and the replay therefore emit each wide rune once and let the attaching xterm give
+it two columns.
+
+**Cost.** Memory: nothing per cell, 24 bytes as now. Time: `put` gains one comparison on the ASCII path, a binary
+search on other runes, and two neighbour reads for `clearHalf`. Replay parse cost is dominated by `decodeRune`, which
+allocates through `[]rune(string(...))` for every non ASCII rune, so a CJK heavy ring pays it per character. Worth
+replacing with `utf8.DecodeRune` while here. It is a small change outside the cell model, and I will measure both
+with a benchmark added in phase 2.
+
+**Tests.**
+
+- `TestWidthMatchesXterm` (node, every code point, skips without node) and `TestWidthTable` (no node: 2 for a
+  hiragana letter, 1 for an astral emoji, 0 for a combining acute and for U+200D, 2 for U+20000).
+- No node: wide put and overwrite of each half, wide at the last column, wide in a one column grid, a mark on a wide
+  head, each erase and `ICH`/`DCH` seam, `resize` across a wide character, and the head and continuation invariant
+  after each. `render` and `writeRow` emit the rune once, and `textWithCursor` lands on the right column after wide
+  text.
+- Differential, the `backlog-2 82` skip removed: the existing case, overwrite the first half, overwrite the second
+  half, wide at the last column, `EL` 0, 1 and 2 through a wide character, `ECH`, `DCH` and `ICH` at a seam, a
+  combining mark after ASCII and after a wide character, a ZWJ sequence, an astral emoji (width 1, the V6 result) and
+  an ambiguous character. Each agrees with xterm.js or carries an `accept` with the reason. `dumpScreen` learns to
+  skip continuations and carry marks, and asserts the invariant.
+
 
 ------------
