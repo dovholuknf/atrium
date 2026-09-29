@@ -60,14 +60,9 @@ const USAGE_TIPS = {
   write5m: "input tokens written to the 5 minute prompt cache (1.25x the input price)",
   write1h: "input tokens written to the 1 hour prompt cache (2x the input price)",
   read: "input tokens read back from the prompt cache (0.1x the input price, less on some models)",
-  cost: "priced on the models atrium has prices for. others count as $0",
   scope: "covers the whole card: every session it has run, including before a /clear, and keep-alive refreshes " +
     "and subagents",
 };
-
-function usageMoney(n) {
-  return "$" + (Number(n) || 0).toFixed(2);
-}
 
 // Offered on a card that has a Claude conversation behind it. Folded shut on
 // every open, like the files.
@@ -120,14 +115,15 @@ async function loadUsage(id) {
     cell("cache write 5m", usageTokens(t.cache_write_5m), USAGE_TIPS.write5m),
     cell("cache write 1h", usageTokens(t.cache_write_1h), USAGE_TIPS.write1h),
     cell("cache read", usageTokens(t.cache_read), USAGE_TIPS.read),
-    cell("est.", usageMoney(t.cost), USAGE_TIPS.cost),
   ].join("");
-  const causes = Object.keys(by).sort((a, b) => (by[b].cost || 0) - (by[a].cost || 0));
+  const tokensOf = s => (s.input || 0) + (s.output || 0) + (s.cache_write_5m || 0) + (s.cache_write_1h || 0) +
+    (s.cache_read || 0);
+  const causes = Object.keys(by).sort((a, b) => tokensOf(by[b]) - tokensOf(by[a]));
   causeBox.innerHTML = causes.map(c => {
     const bt = by[c];
     return `<span>${esc(USAGE_CAUSES[c] || c)}</span><span>${esc(usageCount(c, bt))}</span>` +
       `<span>${usageTokens((bt.cache_write_5m || 0) + (bt.cache_write_1h || 0))} written</span>` +
-      `<span>${usageTokens(bt.cache_read)} read</span><span>${usageMoney(bt.cost)}</span>`;
+      `<span>${usageTokens(bt.cache_read)} read</span>`;
   }).join("");
   const rows = v.rows || [];
   if (!rows.length) {
@@ -138,7 +134,7 @@ async function loadUsage(id) {
   const head = `<div class="urow uhead"><span>ended</span><span>cause</span>` +
     tipped("uncached in", USAGE_TIPS.input) + tipped("out", USAGE_TIPS.output) +
     tipped("cache write 5m", USAGE_TIPS.write5m) + tipped("cache write 1h", USAGE_TIPS.write1h) +
-    tipped("cache read", USAGE_TIPS.read) + `<span>context</span>` + tipped("est.", USAGE_TIPS.cost) + `</div>`;
+    tipped("cache read", USAGE_TIPS.read) + `<span>context</span></div>`;
   list.innerHTML = head + rows.map(r => {
     const cause = (USAGE_CAUSES[r.cause] || r.cause) + (r.after_resume && r.cause !== "resume" ? " · resumed" : "");
     const tip = `${r.replies} API call${r.replies === 1 ? "" : "s"}, ${r.model || "model unknown"}, from ${
@@ -147,8 +143,7 @@ async function loadUsage(id) {
       `<span>${esc(firstSeen(r.ended_at))}</span><span>${esc(cause)}</span>` +
       `<span>${usageTokens(r.input)}</span><span>${usageTokens(r.output)}</span>` +
       `<span>${usageTokens(r.cache_write_5m)}</span><span>${usageTokens(r.cache_write_1h)}</span>` +
-      `<span>${usageTokens(r.cache_read)}</span><span>${usageTokens(r.context)}</span>` +
-      `<span>${usageMoney(r.cost)}</span></div>`;
+      `<span>${usageTokens(r.cache_read)}</span><span>${usageTokens(r.context)}</span></div>`;
   }).join("");
   note.textContent = t.rows > rows.length ? `the newest ${rows.length} of ${t.rows} rows.` : "";
 }
