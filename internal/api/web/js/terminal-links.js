@@ -2254,10 +2254,11 @@ function focusTerm() {
 // mouse, selection and link coordinates and `markWide` already sizes `.xterm` to
 // the grid in pixels.
 //
-// WHAT COUNTS AS A PHONE: a touch-first device, `(pointer: coarse)` with no fine
-// pointer anywhere (`(any-pointer: fine)` false). Not `termNarrow()`: a narrow
-// DESKTOP window must still size the pty. `localStorage["atrium.termphone"]` of
-// "1" forces the phone view on and "0" forces it off, for testing.
+// WHAT COUNTS AS A PHONE, first answer wins: the per-card override
+// (`termViewMode`), then `localStorage["atrium.termphone"]` ("1" on, "0" off,
+// for testing), then `termAutoPhone`: a primary pointer that is coarse AND a
+// window whose shorter side is at most 700px. Not `termNarrow()`, because a
+// narrow DESKTOP window must still size the pty, and never the user agent.
 const TERM_PHONE_KEY = "atrium.termphone";
 const termViewKey = (id) => "atrium.termview." + id;
 
