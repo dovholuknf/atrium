@@ -177,6 +177,25 @@ func (s *Store) MergedViews() (map[string]*MergedView, error) {
 	return out, err
 }
 
+// ArchiveCulled takes a culled card off the board and says why in its event
+// log. The status is left alone: recording a culled worker as dead would put a
+// death in the ledger for work that was accepted. The card and its history stay.
+func (s *Store) ArchiveCulled(taskID, why string) error {
+	return s.guard(func() error {
+		res, err := s.db.Exec(`UPDATE task SET archived_at = ? WHERE id = ? AND archived_at = ''`,
+			ts(now()), taskID)
+		if err != nil {
+			return err
+		}
+		if n, err := res.RowsAffected(); err != nil || n == 0 {
+			return err
+		}
+		return s.appendEvent(taskID, EventNotified, map[string]any{
+			"by": "atrium", "detected": why, "archived": true,
+		})
+	})
+}
+
 // DueCulls lists the items whose cull time has come.
 func (s *Store) DueCulls(at time.Time) ([]*WorkItem, error) {
 	var out []*WorkItem
