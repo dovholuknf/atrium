@@ -34,12 +34,14 @@ const UC = {
   inflight: 0,
   pending: [],     // events that arrived while a load was in flight
   paintTimer: 0,
+  cacheReads: false, // the daemon setting usage_cache_reads: cache reads drawn in the charts
+  cacheKnown: false, // whether the daemon has been asked once
 };
 
 function ucKey(room, id) { return room + "|" + id; }
 
 function ucSums() {
-  return { rows: 0, input: 0, output: 0, cache_write_5m: 0, cache_write_1h: 0, cache_read: 0, cost: 0 };
+  return { rows: 0, replies: 0, input: 0, output: 0, cache_write_5m: 0, cache_write_1h: 0, cache_read: 0, cost: 0 };
 }
 
 function ucAdd(a, b) {
@@ -50,6 +52,18 @@ function ucAdd(a, b) {
 function ucTokens(s) {
   return UC_KINDS.reduce((n, k) => n + (Number(s && s[k[0]]) || 0), 0);
 }
+
+// Counted tokens: uncached in, out and both cache writes. Cache reads are reported
+// apart. The one place the rule lives; the rooms dashboard calls it too.
+function ucCounted(s) {
+  return UC_KINDS.reduce((n, k) => k[0] === "cache_read" ? n : n + (Number(s && s[k[0]]) || 0), 0);
+}
+
+// What the charts add up: counted tokens, or all five kinds with the toggle on.
+function ucShown(s) { return UC.cacheReads ? ucTokens(s) : ucCounted(s); }
+
+// The kinds a chart stacks.
+function ucKindsShown() { return UC.cacheReads ? UC_KINDS : UC_KINDS.filter(k => k[0] !== "cache_read"); }
 
 function ucTitle(room, id) {
   const t = (typeof lastTasks !== "undefined" ? lastTasks : []).find(x =>
@@ -105,6 +119,7 @@ async function loadUsageTab() {
   UC.bw = bw;
   UC.since = Math.floor((Date.now() - span * 1000) / 1000) * 1000;
   const { ask, absent } = ucTargets();
+  ucAskSetting();
   const seq = ++UC.loading;
   UC.inflight++;
   const rooms = {};
@@ -176,6 +191,8 @@ function ucPaint() {
   const body = document.getElementById("uc-body");
   if (!body) return;
   for (const b of document.querySelectorAll("#uc-ranges button")) b.classList.toggle("on", b.dataset.range === UC.range);
+  const cr = document.getElementById("uc-cache");
+  if (cr) { cr.classList.toggle("on", UC.cacheReads); cr.setAttribute("aria-pressed", String(UC.cacheReads)); }
   ucPaintChips();
   const names = Object.keys(UC.rooms);
   const okRooms = names.filter(n => UC.rooms[n].state === "ok");
@@ -193,7 +210,7 @@ function ucPaint() {
         let c = cardRows.get(k);
         if (!c) cardRows.set(k, c = { room: n, id, sums: ucSums(), per: new Map() });
         ucAdd(c.sums, s);
-        c.per.set(t, (c.per.get(t) || 0) + ucTokens(s));
+        c.per.set(t, (c.per.get(t) || 0) + ucShown(s));
       }
       for (const [c, s] of Object.entries(b.causes)) ucAdd(causes[c] || (causes[c] = ucSums()), s);
     }
@@ -213,9 +230,9 @@ function ucPaint() {
     return;
   }
   html += ucLegend();
-  html += `<h4 class="uch">burn rate <span class="ucnote">tokens per minute, stacked by kind</span></h4>` +
+  html += `<h4 class="uch">burn rate <span class="ucnote">${UC.cacheReads ? "" : "counted "}tokens per minute, stacked by kind</span></h4>` +
     ucBurn(series) +
-    `<h4 class="uch">by card <span class="ucnote">top ${UC_TOP_CARDS} by tokens, the rest as others. ` +
+    `<h4 class="uch">by card <span class="ucnote">top ${UC_TOP_CARDS} by ${UC.cacheReads ? "" : "counted "}tokens, the rest as others. ` +
     `Click one to filter</span></h4>` + ucCards(cardRows, series) +
     `<h4 class="uch">tokens by kind</h4>` + ucSplit(total) +
     `<h4 class="uch">tokens by cause</h4>` + ucCauseTable(causes);
@@ -266,7 +283,7 @@ function ucBurn(series) {
   const per = UC.bw / 60;
   const byT = new Map(series.map(s => [s.t, s]));
   let peak = 1;
-  for (const s of series) peak = Math.max(peak, ucTokens(s.total) / per);
+  for (const s of series) peak = Math.max(peak, ucShown(s.total) / per);
   const W = 600, H = 150, bw = W / ax.n;
   let bars = "";
   for (let i = 0; i < ax.n; i++) {
@@ -274,7 +291,7 @@ function ucBurn(series) {
     if (!s) continue;
     let y = H;
     let segs = "";
-    for (const k of UC_KINDS) {
+    for (const k of ucKindsShown()) {
       const h = (Number(s.total[k[0]]) || 0) / per / peak * (H - 4);
       if (h <= 0) continue;
       y -= h;
@@ -291,7 +308,7 @@ function ucBurn(series) {
 
 function ucCards(cardRows, series) {
   const ax = ucAxis(series);
-  const rows = [...cardRows.values()].sort((a, b) => ucTokens(b.sums) - ucTokens(a.sums));
+  const rows = [...cardRows.values()].sort((a, b) => ucShown(b.sums) - ucShown(a.sums));
   const top = rows.slice(0, UC_TOP_CARDS);
   const rest = rows.slice(UC_TOP_CARDS);
   let peak = 0;
@@ -301,12 +318,12 @@ function ucCards(cardRows, series) {
     peak = Math.max(peak, m);
     return { label, room, id, per, cost, other };
   };
-  const cells = top.map(c => cell(ucTitle(c.room, c.id), c.room, c.id, c.per, ucTokens(c.sums), false));
+  const cells = top.map(c => cell(ucTitle(c.room, c.id), c.room, c.id, c.per, ucShown(c.sums), false));
   if (rest.length) {
     const per = new Map();
     let cost = 0;
     for (const c of rest) {
-      cost += ucTokens(c.sums);
+      cost += ucShown(c.sums);
       for (const [t, v] of c.per) per.set(t, (per.get(t) || 0) + v);
     }
     cells.push(cell(`${rest.length} others`, "", "", per, cost, true));
@@ -333,21 +350,30 @@ function ucCards(cardRows, series) {
 }
 
 function ucSplit(total) {
-  const sum = ucTokens(total) || 1;
+  const sum = ucShown(total) || 1;
   let bar = "", legend = "";
-  for (const k of UC_KINDS) {
+  for (const k of ucKindsShown()) {
     const v = Number(total[k[0]]) || 0;
     if (v > 0) bar += `<span class="${k[3]}" style="width:${(v / sum * 100).toFixed(2)}%" data-tip="${k[1]}: ${usageTokens(v)}"></span>`;
     legend += `<span class="uctip" data-tip="${esc(USAGE_TIPS[k[2]])}"><i class="${k[3]}"></i>${k[1]} <b>${usageTokens(v)}</b></span>`;
   }
-  return `<div class="ucsplit">${bar}</div><div class="uclegend">${legend}</div>`;
+  let line = "";
+  if (!UC.cacheReads) {
+    const read = Number(total.cache_read) || 0;
+    const all = read + ucCounted(total);
+    const pct = all ? Math.round(read / all * 100) : 0;
+    line = `<div class="uclegend uccacheline">cache reads ${usageTokens(read)} · not in these charts · ${pct}% of input was served from the cache</div>`;
+  }
+  return `<div class="ucsplit">${bar}</div><div class="uclegend">${legend}</div>${line}`;
 }
 
 function ucCauseTable(causes) {
-  const rows = Object.entries(causes).sort((a, b) => ucTokens(b[1]) - ucTokens(a[1]));
+  const rows = Object.entries(causes).sort((a, b) => ucShown(b[1]) - ucShown(a[1]));
   if (!rows.length) return "";
-  return `<div class="uccauses">` + rows.map(([c, s]) =>
-    `<span>${esc(USAGE_CAUSES[c] || c)}</span><span>${esc(usageCount(c, s))}</span><span>${usageTokens(ucTokens(s))}</span>`).join("") + `</div>`;
+  const dim = !UC.cacheReads;
+  return `<div class="uccauses${dim ? " withread" : ""}">` + rows.map(([c, s]) =>
+    `<span>${esc(USAGE_CAUSES[c] || c)}</span><span>${esc(usageCount(c, s))}</span><span>${usageTokens(ucShown(s))}</span>` +
+    (dim ? `<span class="uccread" data-tip="${esc(USAGE_TIPS.read)}">${usageTokens(s.cache_read)} cache read</span>` : "")).join("") + `</div>`;
 }
 
 // ---- the card's own small chart, in its details ----
@@ -365,14 +391,14 @@ async function paintCardUsageChart(t) {
   const first = Math.floor(since / 900000) * 900000;
   const n = 97;
   let peak = 1;
-  for (const b of m.values()) peak = Math.max(peak, ucTokens(b.total));
+  for (const b of m.values()) peak = Math.max(peak, ucShown(b.total));
   const W = 300, H = 40, bw = W / n;
   let bars = "";
   for (const b of m.values()) {
     const i = Math.round((b.t - first) / 900000);
     if (i < 0 || i >= n) continue;
     let y = H;
-    for (const k of UC_KINDS) {
+    for (const k of ucKindsShown()) {
       const h = (Number(b.total[k[0]]) || 0) / peak * (H - 2);
       if (h <= 0) continue;
       y -= h;
@@ -393,10 +419,39 @@ async function paintCardUsageChart(t) {
   };
 }
 
+// ---- the cache reads toggle: a daemon setting, asked for once and told by the settings event ----
+
+function ucHaveSetting(s) {
+  if (!s || typeof s.usage_cache_reads !== "boolean") return;
+  UC.cacheKnown = true;
+  if (s.usage_cache_reads === UC.cacheReads) return;
+  UC.cacheReads = s.usage_cache_reads;
+  if (typeof isViewing === "function" && isViewing("usage")) ucPaint();
+}
+
+async function ucAskSetting() {
+  if (UC.cacheKnown) return;
+  UC.cacheKnown = true;
+  try { ucHaveSetting(await api("/v1/settings")); } catch (e) { /* stays off */ }
+}
+
+async function ucSetCacheReads(on) {
+  UC.cacheReads = on;
+  ucPaint();
+  try {
+    ucHaveSetting(await api("/v1/settings", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ usage_cache_reads: on }),
+    }));
+  } catch (e) { /* shown here anyway, and the daemon is asked again on the next open */ UC.cacheKnown = false; }
+}
+
 // ---- wiring, by delegation ----
 
 document.addEventListener("click", ev => {
   const rb = ev.target.closest && ev.target.closest("#uc-ranges button");
+  const cb = ev.target.closest && ev.target.closest("#uc-cache");
+  if (cb) { ucSetCacheReads(!UC.cacheReads); return; }
   if (rb) { UC.range = rb.dataset.range; loadUsageTab(); return; }
   if (ev.target.closest && ev.target.closest("#uc-card [data-clear]")) { UC.card = null; loadUsageTab(); return; }
   const mini = ev.target.closest && ev.target.closest(".ucmini[data-id]");
@@ -412,7 +467,7 @@ document.addEventListener("mousemove", ev => {
   if (!g) return;
   const chart = g.closest(".ucchart");
   const t = Number(g.dataset.t);
-  const nodes = [...UC_KINDS];
+  const nodes = [...UC_KINDS]; // all five, whatever the toggle says
   let b = null;
   for (const n of Object.keys(UC.rooms)) {
     const x = UC.rooms[n].buckets && UC.rooms[n].buckets.get(t);

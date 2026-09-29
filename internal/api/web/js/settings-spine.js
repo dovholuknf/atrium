@@ -1641,6 +1641,7 @@ function connect() {
       globalAutoLeft = s.global_auto_seconds || 0;
       globalAutoRead = true;
       globalAutoStale = false;
+      if (typeof ucHaveSetting === "function") ucHaveSetting(s);
     } catch (err) { return; }
     paintGlobalAuto();
   });
