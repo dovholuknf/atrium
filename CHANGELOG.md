@@ -5,6 +5,14 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **A worktree helper that links every CLAUDE.md.** See `docs/backlog-2.md` item 76.
+
+  `git worktree add` gave a worker none of the CLAUDE.md files, which are untracked symlinks present only in the main
+  checkout, so workers ran without the project's rules. `scripts/new-worktree.ps1 -Name <name>` makes the worktree at
+  `<Root>/<name>` on branch `claude/<name>` off `-Base` (default `claude/main`), then symlinks each CLAUDE.md the
+  main checkout holds at the same relative path and target. It exits non-zero if the path or branch exists, a link
+  cannot be made, or `CLAUDE.md` is absent in the result, and prints each link and a final count.
+
 - **One hover per card: the details, not the details and a tooltip.** See `docs/backlog-2.md` item 72 and
   `docs/test-plan.md` section BZ6.
 
