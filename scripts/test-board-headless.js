@@ -5964,14 +5964,14 @@ async function notifyOffSection(browser, base) {
       const badge = await p.evaluate(() => document.querySelector("#toastlog-open .count").textContent);
       if (!(Number(badge) >= 1)) fail(where + ": the badge did not count a held alert: '" + badge + "'.");
 
-      // A permission request still notifies.
+      // A permission request is held too (clint, 2026-09-29), and still recorded.
       landPerms = [{ id: "no-perm", task_id: "no-a", agent: "no a", tool: "Bash", command: "ls",
         requested_at: new Date().toISOString().replace("Z", "") }];
       poke();
       await p.evaluate(() => runRefresh());
       await p.waitForFunction(() => toastLog().some(e => e.title === "no a needs permission"), null,
         { timeout: slow(10000) }).catch(() => fail(where + ": a permission request left no trace while off."));
-      if (!await said("no a needs permission")) fail(where + ": off silenced a permission request.");
+      if (await said("no a needs permission")) fail(where + ": off still said a permission request.");
       landPerms = [];
 
       // A failed fixture is held too: no toast, one drawer entry.
@@ -6000,6 +6000,9 @@ async function notifyOffSection(browser, base) {
       await p.evaluate(() => document.getElementById("toastlog").close());
       l = await label();
       if (l.toggle !== "turn off" || l.bell !== "\u{1F514}") fail(where + ": turning back on did not repaint: " + JSON.stringify(l));
+      if (/permission requests still come through/.test(l.toggleTip)) {
+        fail(where + ": the toggle's tip still promises permission requests come through.");
+      }
       await p.waitForTimeout(1500);
       await arrive(landCard("no-b", { supervised: false }), "no b is on the board");
       if (!await said("no b is on the board")) fail(where + ": turning back on did not restore the alert.");
