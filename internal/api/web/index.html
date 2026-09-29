@@ -779,11 +779,11 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
      down and becomes five paragraphs. -->
 <dialog id="hooks" class="wide">
   <div class="dlg-head">
-    <div class="grow"><h2>claude code hooks</h2></div>
+    <div class="grow"><div class="dlg-eyebrow">agents · hooks</div><h2>claude code hooks</h2></div>
     <button onclick="document.getElementById('hooks').close()">close</button>
   </div>
   <div class="dlg-body">
-    <p class="hintline" style="margin:0 0 12px">
+    <p class="hintline dlg-lead">
       What atrium knows about a session it learns from these. Without them a card says
       <b>running</b> whether the session is grinding through a build or sitting at a prompt.
       They cover every claude on this machine, not only the ones atrium starts.
@@ -797,11 +797,11 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
      a button. Filled by renderRunnerSetup. -->
 <dialog id="runner-setup" class="wide">
   <div class="dlg-head">
-    <div class="grow"><h2 id="runner-setup-title">runner setup</h2></div>
+    <div class="grow"><div class="dlg-eyebrow">agents · runner setup</div><h2 id="runner-setup-title">runner setup</h2></div>
     <button onclick="document.getElementById('runner-setup').close()">close</button>
   </div>
   <div class="dlg-body">
-    <p class="hintline" style="margin:0 0 12px">
+    <p class="hintline dlg-lead">
       What this runner needs before it works in the folders atrium launches it in. A <b>fix</b>
       button edits the runner's own config and keeps a copy of the old file. A command is for you
       to run: atrium never holds a runner's key or token.
@@ -815,16 +815,16 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
      reassemble before you can trust it. -->
 <dialog id="steps" class="wide">
   <div class="dlg-head">
-    <div class="grow"><h2>wire these yourself</h2></div>
+    <div class="grow"><div class="dlg-eyebrow">agents · hooks by hand</div><h2>wire these yourself</h2></div>
     <button onclick="document.getElementById('steps').close()">close</button>
   </div>
   <div class="dlg-body">
-    <p class="hintline" style="margin:0 0 4px">
+    <p class="hintline dlg-lead" style="margin-bottom:4px">
       Run these. Each one writes its entry into
       <span class="copypath"><code id="steps-path"></code><button id="steps-copy"
         data-tip="copy this path">copy</button></span>
     </p>
-    <p class="hintline" style="margin:0 0 16px">
+    <p class="hintline dlg-lead">
       Same edit the buttons make, and the same care: a copy of the old file is kept first, anything
       already registered under that hook is left alone, and a settings file that will not parse is
       refused rather than rewritten. The board re-reads that file every few seconds, so the count
@@ -907,7 +907,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 
 <dialog id="toastlog">
   <div class="dlg-head">
-    <div class="grow"><h2>notifications</h2></div>
+    <div class="grow"><div class="dlg-eyebrow">the tray</div><h2>notifications</h2></div>
     <button onclick="clearToastLog()">clear</button>
     <button onclick="document.getElementById('toastlog').close()">close</button>
   </div>
@@ -941,13 +941,13 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
      the response either way. -->
 <dialog id="sharedlg">
   <div class="dlg-head">
-    <div class="grow"><h2 id="share-title"></h2></div>
+    <div class="grow"><div class="dlg-eyebrow">share</div><h2 id="share-title"></h2></div>
   </div>
   <div class="dlg-body">
     <div id="share-steps" class="shsteps"></div>
     <div id="share-out"></div>
-    <div class="toolbar" id="share-actions"></div>
   </div>
+  <div class="dlg-foot" id="share-actions"></div>
 </dialog>
 
 <div id="tip"></div>
@@ -1829,16 +1829,18 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
      is a text generator, and closing it without copying loses nothing. -->
 <dialog id="roomjoin" class="wide">
   <div class="dlg-head">
-    <div class="grow"><h2>add a room</h2></div>
+    <div class="grow"><div class="dlg-eyebrow">rooms</div><h2>add a room</h2></div>
     <button onclick="document.getElementById('roomjoin').close()">close</button>
   </div>
   <div class="dlg-body">
-    <p class="hintline" style="margin:0 0 12px">
+    <p class="hintline dlg-lead">
       A room is a machine running its own atrium that tells this one what is on it. You add one by
       running a command <b>there</b>, not by filling in a form here. Nothing is created by this
       dialog: the room appears in the list the first time it checks in, and disappears again when
       it stops.
     </p>
+    <section class="dlg-sec">
+    <div class="dlg-sec-h">how it gets here</div>
     <div class="field">
       <label class="eyebrow" for="rj-reach">how that machine reaches this one</label>
       <div class="picker"><select id="rj-reach" onchange="roomCommand()"></select></div>
@@ -1856,6 +1858,9 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       <input type="text" id="rj-hub" spellcheck="false" oninput="roomCommand()">
       <span class="hintline" id="rj-hub-hint"></span>
     </div>
+    </section>
+    <section class="dlg-sec dlg-grid">
+    <div class="dlg-sec-h">how it shows up here</div>
     <div class="field">
       <label class="eyebrow" for="rj-name">what to call it here</label>
       <input type="text" id="rj-name" spellcheck="false" oninput="roomCommand()"
@@ -1871,6 +1876,8 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         that made it, so attaching to a runner over there means opening that board. This is the
         link on the room's row, and without it the row has nowhere to send you.</span>
     </div>
+    </section>
+    <section class="dlg-sec dlg-cmd">
     <div class="field">
       <label class="eyebrow">run this over there</label>
       <div class="copyrow">
@@ -1879,6 +1886,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       </div>
       <span class="hintline" id="rj-beat"></span>
     </div>
+    </section>
   </div>
 </dialog>
 
@@ -2335,11 +2343,11 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
      import that lands somewhere you cannot then open is half a feature. -->
 <dialog id="theme" class="wide" data-guard>
   <div class="dlg-head">
-    <div class="grow"><h2>terminal themes</h2></div>
+    <div class="grow"><div class="dlg-eyebrow">terminal</div><h2>terminal themes</h2></div>
     <button onclick="document.getElementById('theme').close()">close</button>
   </div>
   <div class="dlg-body">
-    <div class="field">
+    <div class="field dlg-sec">
       <label class="eyebrow" for="th-import">bring one from windows terminal</label>
       <textarea id="th-import" spellcheck="false" rows="4"
         placeholder='{"name": "Campbell", "background": "#0C0C0C", ... }'></textarea>
@@ -2356,7 +2364,8 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         <b>purple</b> and atrium moves it to the right slot for you.</span>
     </div>
 
-    <h3 class="s-section">edit</h3>
+    <section class="dlg-sec">
+    <div class="dlg-sec-h">edit</div>
     <div class="field">
       <div class="picker">
         <select id="th-pick" onchange="editTheme(this.value)"></select>
@@ -2381,6 +2390,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       <span class="hintline">The attached terminal follows this as you type, so a real session is
         the preview whenever there is one. This block is what there is when there is not.</span>
     </div>
+    </section>
   </div>
   <div class="dlg-foot">
     <button class="go" onclick="busyWhile(this, saveTheme, 'saving…')">save</button>
@@ -2778,7 +2788,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
     <button onclick="document.getElementById('dispatch').close()">close</button>
   </div>
   <div class="dlg-body">
-    <p class="hintline" style="margin:0 0 12px">
+    <p class="hintline dlg-lead">
       This sits here until that machine checks in, which is every twenty seconds, and rides
       back down the reply. Nothing dials it. A machine that is switched off collects its queue
       when it comes back.
