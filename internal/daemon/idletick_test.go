@@ -120,7 +120,7 @@ func TestIdleParkRule(t *testing.T) {
 			d.act.setBackground(c.ID, 2)
 		}, false},
 		{"mid new-context",store.StatusNeedsInput, func(d *Daemon, c *store.Task) {
-			d.nctx.begin(c.ID, "HANDOFF.x.md")
+			d.nctx.begin(c.ID, "HANDOFF.x.md", "")
 		}, false},
 	}
 	for i, c := range cases {
