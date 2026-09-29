@@ -675,6 +675,13 @@ func (s *Store) setStatusOn(q querier, id, status, reason string) error {
 		status, waiting, ts(n), archived, why, id); err != nil {
 		return err
 	}
+	// A new turn on a card marked for the merged cull takes the mark off: the
+	// launcher sent it back, and the next merge marks it again. See merged.go.
+	if status == StatusRunning {
+		if _, err := clearMarkOn(q, id); err != nil {
+			return err
+		}
+	}
 	// A turn ends when a working card starts waiting on its prompt. A resume
 	// comes up from done or dead and a slash command changes nothing, so
 	// neither lands here. See 0062_turn_end.

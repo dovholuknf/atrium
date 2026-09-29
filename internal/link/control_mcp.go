@@ -264,7 +264,11 @@ func (c *controlMCP) server() *mcp.Server {
 			"atrium:subagent or its branch is not merged. A worktree with uncommitted changes is " +
 			"kept, and so is its branch, and the answer says why. The worker is still asked to " +
 			"leave in that case, which frees its launch-cap slot. Nothing is forced: git removes " +
-			"the worktree only when it agrees it is clean. The card and its history stay.",
+			"the worktree only when it agrees it is clean. The card and its history stay.\n\n" +
+				"YOU USUALLY DO NOT NEED TO CALL THIS. When a worker's branch merges, its room marks it " +
+				"and culls it after a grace period (30 minutes by default) unless it has a new turn or " +
+				"is held, and tells its launcher once. `hold=true` keeps a worker for good: the mark is " +
+				"dropped and nothing marks it again, only an explicit cull removes it.",
 	}, c.cullHandler)
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -1343,6 +1347,7 @@ const cullTimeout = 60 * time.Second
 type cullInput struct {
 	Card string `json:"card" jsonschema:"the worker to cull: a card id, handle or alias"`
 	Into string `json:"into,omitempty" jsonschema:"the branch its branch must be merged into. default claude/main"`
+	Hold bool   `json:"hold,omitempty" jsonschema:"keep the worker instead of culling it: cancels the automatic cull for good"`
 }
 
 type cullOutput struct {
@@ -1375,6 +1380,25 @@ func (c *controlMCP) cullHandler(ctx context.Context, req *mcp.CallToolRequest, 
 		if myID, _, err := c.resolvePeer(ctx, room, me); err == nil && myID == id {
 			return nil, out, fmt.Errorf("a worker cannot cull itself. whoever accepts the work culls it")
 		}
+	}
+	if in.Hold {
+		// A route of its own, so a room that predates the hold answers 404
+		// rather than reading the flag as an ordinary cull.
+		by := agentOf(req)
+		if by == "" {
+			by = "atrium_cull"
+		}
+		if err := c.ask(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(id)+"/hold", room,
+			map[string]string{"by": by}, nil); err != nil {
+			var be *boardError
+			if errors.As(err, &be) && be.bare && be.code == http.StatusNotFound {
+				return nil, out, fmt.Errorf("that room is older than the merged-cull hold. nothing was culled " +
+					"and nothing was held. update the room")
+			}
+			return nil, out, err
+		}
+		out.Note = "held. it will not be culled automatically, only by an explicit atrium_cull."
+		return nil, out, nil
 	}
 	long := &controlMCP{board: c.board, client: &http.Client{Timeout: cullTimeout, Transport: c.client.Transport}}
 	var res cullOutput

@@ -87,6 +87,10 @@ type Daemon struct {
 	st   *store.Store
 	ap   *api.Server
 
+	// mergedCulling is set while the sweep is culling due workers, so a slow
+	// exit is not started twice by the next tick. See mergedcull.go.
+	mergedCulling atomic.Bool
+
 	// perms holds the hook connections parked on a permission answer. See
 	// permwait.go.
 	perms *permWait
@@ -324,7 +328,8 @@ func New(opts Options) (*Daemon, error) {
 	d.ap.Shutdown = d.handleShutdown
 	d.ap.Shelve = d.Shelve
 	d.ap.StopRunner = d.StopRunner
-	d.ap.Cull = func(id, into string) (any, error) { return d.Cull(id, into) }
+	d.ap.Cull = func(id, into, tip string) (any, error) { return d.CullProved(id, into, tip) }
+	d.ap.HoldCull = d.HoldCull
 	d.ap.RestartRunner = d.RestartRunner
 	d.ap.Unshelve = d.Unshelve
 	d.ap.Overlays = d.overlayViews
@@ -863,6 +868,8 @@ func (d *Daemon) Run(ctx context.Context) error {
 	agentMux.HandleFunc("/telemetry", d.handleTelemetry)
 	// A session declaring its work over, which nothing could say before.
 	agentMux.HandleFunc("/finish", d.handleFinish)
+	// A git merge finished somewhere, from the post-merge hook. Best effort.
+	agentMux.HandleFunc("/merged", d.handleMerged)
 	// The other half of finish: a session saying it is stuck and what it needs,
 	// on its card for a human or routed to a named peer.
 	agentMux.HandleFunc("/help", d.handleHelp)
