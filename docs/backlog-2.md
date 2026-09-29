@@ -2514,28 +2514,64 @@ review a megabyte of escapes. Instead:
   loader reads `.scrollback` and `.scrollback.gz`. The existing precedent is `testdata/frame-*.bin`, real frames of
   64KB each.
 - **One file is a lost-lines repro** (item 74's shape: a long reply, then a repaint while the pane is scrolled).
-  It gets its own measured floor, so a fix or a regression in 74 moves a number the suite can see.
+  The long reply is scripted as numbered lines, `L0001` to `L0300`, each followed by a fixed tail, so what was
+  lost is counted directly rather than sampled. It is not held to a floor measured from today's renderer, which
+  would bless the bug. See the assertions below.
 - **Clint signs off on the files before they are committed**, because committing them publishes them. The
   worker's report lists each file, its size, and how it was produced.
 - A `testdata/scrollback/README.md` says how each file was made, so it can be recaptured when claude-code's
   output changes.
 
-**The assertions get stronger, not just quieter.** With fixed bytes the numbers are deterministic, so each
-fixture pins its own floor: its measured survival percentage, less 5 points to allow for a legitimate renderer
-change. The global 40% floor and the minimum of ten sampled words stay only in the live mode, where they belong.
-`TestReplayIsNotQuadratic` needs 400KB. It builds that by concatenating the largest fixture four times, so it
-always runs instead of skipping on a small machine. `TestRealSpinnersCollapse` has at least one fixture with over
-50 spinner frames, so it can no longer pass by finding nothing to check.
+**The assertions get stronger, not just quieter.** With fixed bytes the numbers are deterministic.
+
+- **The two ordinary fixtures** each pin their own floor: the measured survival percentage, less 5 points to
+  allow for a legitimate renderer change, and never below the old 40%. A capture that measures under 80% is not
+  pinned. It is read by hand first, the way `01a080db` was, because an ordinary scripted session should sit at 80
+  to 100.
+- **The lost-lines fixture gets two tests, and neither is derived from today's number.**
+  `TestLostLinesFixtureKeepsEveryLine` asserts all 300 numbered lines are in the transcript, in order. It is the
+  target, and until item 74 lands it opens with `t.Skip("item 74 open: ...")` naming the backlog section. The fix
+  for 74 removes the skip in the same commit, so the suite shows the fix landing. `TestLostLinesFixtureRenders`
+  runs today. It asserts that the lines before the long reply and after the repaint are there, which the bug does
+  not touch, and it logs how many of the 300 survived. So the fixture is exercised and its number is visible
+  without being a bar anyone has to clear.
+- The global 40% floor and the minimum of ten sampled words stay only in the live mode, where they belong.
+- `TestRealSpinnersCollapse` has at least one fixture with over 50 spinner frames, and it fails if no fixture
+  reaches 50, so it can no longer pass by finding nothing to check.
+
+**Growth, and what the old quadratic test really checked.** `TestReplayIsNotQuadratic` compares the size of the
+output for half the input against the whole. That catches output blowing up. It cannot catch a renderer that is
+quadratic in time and still produces linear output, which is the hazard its comment names. So the design is
+honest about both:
+
+- The size check is renamed `TestReplayOutputGrowsLinearly` and says what it checks. It builds its input by
+  concatenating the largest fixture four times, then compares 2x against 4x, so it always runs.
+- Time goes in `BenchmarkReplayGrowth`, with sub-benchmarks at 1x, 2x and 4x of that same input, for manual
+  comparison. It is not a test, because a timing ratio under a loaded full suite is the kind of flake this item
+  exists to remove. The live twin logs the wall time per file next to its byte counts, so a hang shows up there.
+- A counted-work assertion (cells written per input byte) would be the deterministic answer, but `renderHistory`
+  has no counter today and adding one to a hot path for a test is out of scope. It is named, not built.
 
 **Shape of the change.** `realScrollbacks(t)` becomes two helpers: `fixtureScrollbacks(t)` reads `testdata`, never
 skips, and fails if the directory is empty, and `liveScrollbacks(t)` reads the env var and skips when it is unset.
 Each test body becomes a function over `(name, raw, floor)`. It is called by a fixture test and by a `Live`
-twin, for example `TestRealSessionsKeepTheirText` and `TestLiveSessionsKeepTheirText`. The frozen tests keep the
-old names because the merge tooling knows them. Then `TestRealSessionsKeepTheirText` comes out of `$Flaky` in
+twin. The final set:
+
+| Frozen, always run | Live, behind `ATRIUM_REAL_SCROLLBACK` |
+| --- | --- |
+| `TestEveryRealSessionReplays` | `TestLiveEverySessionReplays` |
+| `TestRealSessionsKeepTheirText` | `TestLiveSessionsKeepTheirText` |
+| `TestReplayOutputGrowsLinearly` | `TestLiveReplayOutputGrowsLinearly` |
+| `TestRealSpinnersCollapse` | `TestLiveSpinnersCollapse` |
+| `TestLostLinesFixtureRenders` | |
+| `TestLostLinesFixtureKeepsEveryLine` (skipped until 74) | |
+
+Plus `BenchmarkReplayGrowth`. `TestRealSessionsKeepTheirText` keeps its name because merge tooling matches it.
+`TestReplayIsNotQuadratic` is renamed, because the old name claims something it never checked. Then `TestRealSessionsKeepTheirText` comes out of `$Flaky` in
 `scripts/merge-check.ps1`, and out of the "known noise" lines in `DIRECTOR.md` and `docs/cold-start.md`. The
 first is @merge's file, so @merge is told and does that edit.
 
-**Tests.** The four frozen tests pass on this machine and on a machine with no `~/.atrium`, and the suite no
+**Tests.** The frozen tests pass (the 74 target skips, by name) on this machine and on a machine with no `~/.atrium`, and the suite no
 longer reads outside the repo. Check that with `ATRIUM_REAL_SCROLLBACK` unset and the live directory renamed
 aside on a copy, or with `HOME`/`USERPROFILE` pointed at an empty dir. With the variable set, the live twins run
 and report the same per-file lines as today. A fixture test that fails prints the fixture name and its pinned
