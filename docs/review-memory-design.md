@@ -422,6 +422,8 @@ are in `general.md` on dotagents branch `claude/review/director/2026-09-29-walk-
     HIGH router/posture/mfa.go line 156:
          deadline := MfaExpiresAt(check.GetMfa(), state) https://github.com/openziti/ziti/pull/4397/files#diff-...R156
     ```
+34. "LLM review says" appears at most once per item, as a lead-in line above the bullets. It is never repeated on each
+    bullet, and each bullet is a plain statement.
 
 The first second opinions, run by the director on the two reviews already filed (Mercurius, codex gpt-5.5):
 zrok #1277 went from 14 rows to 15. Its new row 04 was the critic's possible gap 1, the ambiguous commit, and one
