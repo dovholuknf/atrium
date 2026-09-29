@@ -2012,7 +2012,12 @@ its bytes and its cuts from ONE `ReplayCuts` call, so every cut's offset is in t
 collapses any more), but it is taken under a second lock, and a ring that wraps between the two moves the offsets.
 The repair itself only ever runs inside `replayCut`, which is handed bytes and cuts together, so this is a rule for
 the report alone. It replaces the `[atrium] ... mode` banner as well: the body is the report and nothing else. The
-totals line starts with `totals` and uses the same tabs, `outcome=count` pairs then `added=N`.
+totals line starts with `totals` and uses the same tabs, `outcome=count` pairs then `added=N`. `?kind=shell` works
+as it does today, so a card's shell can be reported on too.
+
+Reviewed by Mercurius `s_ijoTH04DNGvl`: five rounds, one major finding in each of the first four (a repaint at a
+height cut was skipped, a cursor move both cancelled and closed a repaint, two splice rules for a cut, and cut
+offsets across two locks), each fixed above. Round 5 is ready_to_build, and its one advisory is the `kind` line.
 
 **Tests.**
 - Unit, in `screen_test.go`: a 10-row grid, 10 numbered lines, then `\e[H` and 10 rows `\e[K\r\n` starting from
