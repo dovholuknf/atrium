@@ -835,7 +835,7 @@ func (d *Daemon) publishTask(id string) {
 	if err != nil {
 		return
 	}
-	d.ap.Broadcast("task", t)
+	d.ap.PublishTask(t)
 }
 
 // Run serves both listeners until ctx is canceled or a listener fails.
