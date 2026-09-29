@@ -5,6 +5,23 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **An alias reaches a card that reported done.** See `docs/backlog-2.md` item 89.
+
+  `atrium_say` and `atrium_exit` refused a `done` card named by its alias ("no session called sa21"), though a worker
+  that reports done still sits at its prompt waiting to be sent back or exited. An alias now resolves to a `done` card
+  that is not archived, behind any live card holding the same alias, then newest first. A dead or archived card still
+  does not answer. `SetAlias` is unchanged, so a done card still gives its alias up to a new worker. The two client
+  side resolvers in `internal/link` and `internal/cli` follow the same order.
+
+- **A runner update card withdraws when satisfied, and a card that left the inbox no longer blocks later releases.**
+  See `docs/codex-update-design.md` sections 1 and 2, and `docs/backlog-2.md` item 12.
+
+  When the installed runner is already at the version an inbox update card offered, the card is archived with an event
+  saying why. That includes the older cards keyed by package and version. A card somebody started is left alone. When
+  the update card has been started, finished or dismissed and a newer release is published, its key is released and a
+  fresh card is offered. The version a card offered is carried in its URL,
+  `https://www.npmjs.com/package/<package>/v/<version>`. Codex's own startup updater and an auto-update setting are not part of this.
+
 - **A keep-alive fork carries the card's launch args, so lean cards can warm.** See `docs/backlog-2.md` item 73 and
   `docs/keepalive-fork-args-design.md`.
 
