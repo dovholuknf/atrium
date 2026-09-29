@@ -5,6 +5,56 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **The headless board run can be given more time on a loaded machine.** See `docs/backlog-2.md` item 85.
+
+  Every Playwright timeout in `scripts/test-board-headless.js` goes through `slow()`, which multiplies it by
+  `HEADLESS_SLOW` (1 when unset), so a loaded machine can be given more time without editing the script. Sleeps are
+  not scaled, because a sleep that proves something stays put has to keep its length. The terminated-terminal dismiss
+  check says which of its three waits ran out and for how long, instead of throwing out of the run with no name, and
+  its menu wait opens the menu again if a render closed it rather than waiting out the whole budget.
+
+- **A wide character takes two columns in the replay.** See `docs/backlog-2.md` item 82.
+
+  `screen.go`, the terminal model behind the attach replay and the text scrollback view, gave every character one
+  cell, and the board gives CJK and fullwidth forms two. A cursor move back over a wide character landed a column
+  off, and every later write on that row followed it, so a replay showed garbled text. A wide character now holds
+  two cells, a wide character that does not fit at the end of a row wraps early, and overwriting or erasing half of
+  one blanks the other half, all as xterm.js does. Combining marks attach to the cell before them and take no
+  column. Text is emitted once per character.
+
+  Widths come from `screen_width_tables.go`, generated from the vendored xterm.js by `testdata/gen_widths.js`. The
+  board loads no unicode addon, so this is xterm's V6 table: an astral emoji is one cell, not two. A test compares
+  every code point against the vendored xterm.js, so upgrading it means regenerating the table. Malformed UTF-8 now
+  costs one byte per replacement character where it used to eat three.
+
+- **The terminal model honours scroll regions.** See `docs/backlog-2.md` item 81.
+
+  `screen.go` ignored `CSI top;bottom r`, so a runner that scrolled inside a region scrolled the whole grid and filed
+  rows into history that had stayed put. It now follows xterm.js. A line feed at the region's bottom, RI at its top
+  and `CSI S`, `T`, `L` and `M` act inside it, and IL and DL do nothing with the cursor outside. Rows leave to history
+  only when the region starts at the top of the screen. An invalid region is ignored, and RIS, a resize and the alt
+  screen reset it. The attach replay writes the region back ahead of the cursor, so a session pinned above a footer
+  keeps scrolling only its own rows after an attach.
+
+- **A new terminal height waits half a second before the pty takes it, so a passing flip cannot eat lines.** See
+  `docs/backlog-2.md` item 74.
+
+  A long reply lost 10 rows from its middle. The inbox ConPTY (conhost 10.0.26100) answers a change in the pty's row
+  count with a bare `\e[H` full-screen repaint, and two changes close together (50, 40, 50) are often painted once,
+  as a same-height repaint shifted up, so the rows it filed into its own history are overwritten downstream and never
+  reach anybody's scrollback. The shortest viewer reattaching while another is attached is exactly that flip, because
+  its old socket is dropped before its new one says how big it is. atrium's ring, replay and the board's xterm.js pass
+  the bytes faithfully.
+
+  So `setViewport` and `dropViewport` now apply a width at once, at the rows already applied, and a height only once
+  it has held for 500 ms, growing or shrinking. A height that comes back before then never reaches the pty. When the
+  timer fires the viewers are read again, and nothing is applied after the runner exits or once every viewer has
+  gone. A cancelled or superseded height re-tells the viewers the applied size without resizing. Until a height is
+  applied, the pty, the ring's marks and the `size` frame all report the applied one. A real height change still
+  costs about two lines, as before. OpenConsole ConPTY 1.24, which loses nothing, is the fix at the source and is not
+  adopted yet. Test-only harnesses under `internal/daemon/conpty_*_repro_test.go` open a pseudo console through either
+  one, and are skipped unless their environment variables are set.
+
 - **A card owes its launcher a report only for a prompt its launcher sent.** See `docs/owed-report-design.md` and
   `docs/backlog-2.md` item 41.
 
