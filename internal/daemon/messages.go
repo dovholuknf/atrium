@@ -436,6 +436,11 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	taskID := r.PathValue("id")
 	from := strings.TrimSpace(body.From)
+	// A card that reports to a named card has its launcher resolved again before
+	// this message can make it owe a report. See reportto.go.
+	if from != "" {
+		d.refreshLauncher(taskID)
+	}
 	waitTurn := d.waitsForTurn(taskID, when)
 
 	// A message from a session is peer traffic whichever door it came in by, so

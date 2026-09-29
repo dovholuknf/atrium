@@ -1833,6 +1833,17 @@ var migrations = []struct {
 		},
 	},
 	{
+		// WHO A CARD REPORTS TO, AS NAMED. `report_to` is the handle, alias or card
+		// id a launch was told to report to, kept as given beside the resolved
+		// launcher in spawned_by and spawned_by_id. Every delivery to the launcher
+		// resolves it again, so a director relaunched under the same alias is still
+		// reached. Empty on every card that reports to whoever launched it.
+		name: "0072_task_report_to",
+		stmts: []string{
+			`ALTER TABLE task ADD COLUMN report_to TEXT NOT NULL DEFAULT ''`,
+		},
+	},
+	{
 		// Who a turn's spend files under, kept on the row because a culled worker's
 		// card and tags are gone. No default, so rows from before read NULL.
 		name: "0073_usage_grouping",
