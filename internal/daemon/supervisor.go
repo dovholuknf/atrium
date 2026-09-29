@@ -985,9 +985,9 @@ var (
 // bare newline) and a carriage return inside a bracketed paste are newlines IN
 // the prompt, not a send: reading them as a submit once opened the gate on a
 // half-written message.
-func (r *runner) noteOperatorTyped(p []byte) {
+func (r *runner) noteOperatorTyped(p []byte) bool {
 	if len(p) == 0 {
-		return
+		return false
 	}
 	// typeMu, not r.mu: a human keystroke's bookkeeping must never wait behind a
 	// peer injection or output fanout. See the runner struct's typeMu note.
@@ -998,7 +998,7 @@ func (r *runner) noteOperatorTyped(p []byte) {
 	}
 	r.typeMu.Unlock()
 	if !keyed {
-		return
+		return false
 	}
 	// Outside typeMu, and last, so the reset a deferred message does cannot
 	// deadlock against the lock this just held. A keystroke means the operator
@@ -1011,6 +1011,7 @@ func (r *runner) noteOperatorTyped(p []byte) {
 	if w := r.wake.Load(); w != nil {
 		(*w)("keystroke")
 	}
+	return true
 }
 
 // peerQuiet is how long after the operator's last keystroke a terminal is
@@ -1184,6 +1185,14 @@ func (r *runner) writeOperatorInput(p []byte) error {
 // The banner carries no carriage return (see peerBanner), so nothing can submit
 // before the deliberate Enter below.
 func (r *runner) injectPeer(banner, body string) (bool, error) {
+	return r.injectPeerIf(banner, body, nil)
+}
+
+// injectPeerIf is injectPeer with a further condition, checked under the same
+// locks and right after the gate, so the condition and the write are one step.
+// The new-context cycle asks its quiet check here. A nil `ok` asks nothing more.
+// `ok` must not take injectMu or pasteMu.
+func (r *runner) injectPeerIf(banner, body string, ok func() bool) (bool, error) {
 	r.injectMu.Lock()
 	defer r.injectMu.Unlock()
 	// The input lock, held across the whole paste. Taken before the gate is
@@ -1192,6 +1201,9 @@ func (r *runner) injectPeer(banner, body string) (bool, error) {
 	r.pasteMu.Lock()
 	defer r.pasteMu.Unlock()
 	if !r.peerGateOpen() {
+		return false, nil
+	}
+	if ok != nil && !ok() {
 		return false, nil
 	}
 	// r.Write goes straight to the pty and takes no runner lock. The operator's
@@ -2167,7 +2179,7 @@ func (d *Daemon) awaitExit(r *runner) {
 
 	// A card put down by hand stays where it was put.
 	if t, err := d.st.Get(r.taskID); err == nil &&
-		t.Status != store.StatusShelved && t.Status != store.StatusDone {
+		t.Status != store.StatusShelved && t.Status != store.StatusDone && !isParked(t) {
 		if err := d.st.SetStatus(r.taskID, store.StatusDead); err != nil {
 			log.Printf("[atrium] status after exit for %s: %v", r.taskID, err)
 		}

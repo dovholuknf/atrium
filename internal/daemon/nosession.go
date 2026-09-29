@@ -34,6 +34,10 @@ import (
 // ends a session writes an `exited` event, so that is the record consulted, not
 // the card's column.
 func (d *Daemon) sessionGone(t *store.Task) bool {
+	// A parked card is asleep, not gone: it can be woken, and the answer differs.
+	if isParked(t) {
+		return false
+	}
 	if t.Status != store.StatusDone && t.Status != store.StatusDead {
 		return false
 	}

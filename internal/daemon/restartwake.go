@@ -67,6 +67,8 @@ type wakes struct {
 	// memory on purpose: the question is whether the runner that is up NOW has
 	// started, and no earlier process can answer that.
 	sessionAt map[string]time.Time
+	// convAt is the conversation id that SessionStart carried. In memory, like it.
+	convAt map[string]string
 
 	// deliver serializes a delivery attempt against a queue or a clear on the
 	// same wake, so a wake replaced mid-attempt is never typed as well as the
@@ -76,7 +78,7 @@ type wakes struct {
 }
 
 func newWakes() *wakes {
-	return &wakes{by: map[string]*store.RestartWake{}, sessionAt: map[string]time.Time{}}
+	return &wakes{by: map[string]*store.RestartWake{}, sessionAt: map[string]time.Time{}, convAt: map[string]string{}}
 }
 
 func (wk *wakes) put(w *store.RestartWake) {
@@ -120,6 +122,24 @@ func (wk *wakes) sawSession(taskID string, at time.Time) {
 	wk.sessionAt[taskID] = at
 }
 
+// sawConversation keeps the conversation id of the card's latest SessionStart. An
+// empty id is not recorded: a hook that could not say leaves the last one.
+func (wk *wakes) sawConversation(taskID, conv string) {
+	if conv == "" {
+		return
+	}
+	wk.mu.Lock()
+	defer wk.mu.Unlock()
+	wk.convAt[taskID] = conv
+}
+
+// conversation is the id the card's latest SessionStart reported, or "".
+func (wk *wakes) conversation(taskID string) string {
+	wk.mu.Lock()
+	defer wk.mu.Unlock()
+	return wk.convAt[taskID]
+}
+
 func (wk *wakes) sessionStarted(taskID string) (time.Time, bool) {
 	wk.mu.Lock()
 	defer wk.mu.Unlock()
@@ -143,9 +163,16 @@ func (d *Daemon) loadWakes() {
 }
 
 // wakeSawSession records a SessionStart for a card. Called from onSession.
-func (d *Daemon) wakeSawSession(taskID string) {
+//
+// `conv` is the conversation id the hook reported. A new one is the proof a failed
+// new-context chip waits for: see `newContexts.sessionStarted`.
+func (d *Daemon) wakeSawSession(taskID, conv string) {
 	if d.wake != nil {
 		d.wake.sawSession(taskID, time.Now())
+		d.wake.sawConversation(taskID, conv)
+	}
+	if d.nctx.sessionStarted(taskID, conv) {
+		d.publishTask(taskID)
 	}
 }
 
