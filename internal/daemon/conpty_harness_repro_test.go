@@ -85,7 +85,8 @@ func openHarnessPTY(dll string, cols, rows int, args []string, dir string, env [
 	if err != nil {
 		return nil, err
 	}
-	if err := attrs.Update(0x20016, unsafe.Pointer(hpc), unsafe.Sizeof(hpc)); err != nil {
+	// The attribute's value IS the handle, so its bits go in as the pointer.
+	if err := attrs.Update(0x20016, *(*unsafe.Pointer)(unsafe.Pointer(&hpc)), unsafe.Sizeof(hpc)); err != nil {
 		return nil, err
 	}
 	si := &windows.StartupInfoEx{ProcThreadAttributeList: attrs.List()}
