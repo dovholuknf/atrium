@@ -5929,3 +5929,16 @@ Every room refusing: 502.
 with both.
 
 **Expected:** the pinned one takes its new rank and the unpinned one keeps the rank it had.
+
+## DN. A finished worker's runner does not outlive its worktree
+
+1. Launch a worker with the `atrium:subagent` tag in a `git worktree add`ed directory and let it report done. The card
+   is `done` and the runner is still up.
+2. Run `git worktree remove --force <dir>`. It may print "Permission denied" for the directory.
+3. Within about a minute the room logs `its worktree ... was removed, asking the runner to leave` and the runner
+   exits. The card stays `done` and its details show a `notified` event from the reaper.
+4. The empty directory now removes normally.
+5. Control: a `done` worker whose worktree is intact, and a card without `atrium:subagent` in a removed directory,
+   both keep their runners.
+6. Control: a worker launched in a SUBDIRECTORY of a repository (no `.git` in its own directory) keeps its runner
+   across several minutes. Deleting that directory then ends it within about a minute.
