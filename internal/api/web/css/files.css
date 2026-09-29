@@ -182,19 +182,19 @@
   .usagesum .usagecell b { color: var(--head); font-weight: 600; }
   /* One line per cause, so subagent and keep-alive spend is read apart from the turns. */
   .usagecauses {
-    display: grid; grid-template-columns: minmax(7em, auto) repeat(4, minmax(5em, auto)); justify-content: start;
+    display: grid; grid-template-columns: minmax(7em, auto) repeat(3, minmax(5em, auto)); justify-content: start;
     gap: 0 var(--sp-3); margin-bottom: 6px; font: var(--fs-xs) var(--mono); color: var(--dim);
   }
   .usagecauses:empty { display: none; }
-  .usagecauses > span:nth-child(5n+2), .usagecauses > span:nth-child(5n+3), .usagecauses > span:nth-child(5n+4),
-  .usagecauses > span:nth-child(5n) { text-align: right; }
+  .usagecauses > span:nth-child(4n+2), .usagecauses > span:nth-child(4n+3),
+  .usagecauses > span:nth-child(4n) { text-align: right; }
   .usagelist {
     max-height: 240px; overflow-y: auto;
     border: 1px solid var(--stroke-dim); border-radius: var(--r-md);
   }
   .usagelist:empty { display: none; }
   .usagelist .urow {
-    display: grid; grid-template-columns: minmax(9em, 1.4fr) minmax(7em, 1.2fr) repeat(7, minmax(3.5em, 1fr));
+    display: grid; grid-template-columns: minmax(9em, 1.4fr) minmax(7em, 1.2fr) repeat(6, minmax(3.5em, 1fr));
     gap: var(--sp-2); padding: var(--row-y-xs) 10px;
     font: var(--fs-xs) var(--mono); border-bottom: 1px solid var(--stroke-dim);
   }
