@@ -253,4 +253,21 @@
     font: var(--fs-xs) var(--mono); color: var(--dim);
   }
   .uccauses > span:nth-child(3n) { text-align: right; }
+  /* The limits: a ucsplit with one filled segment per row, the projection under it. See js/usage-limits.js. */
+  .ullimits { display: grid; grid-template-columns: auto minmax(90px, 220px) auto auto 1fr; gap: 2px var(--sp-3); align-items: center; font: var(--fs-xs) var(--mono); color: var(--dim); }
+  .ulrow { display: contents; }
+  .ulrow .ucsplit { height: 10px; margin: 0; background: var(--lift); }
+  .ulfill { background: rgba(var(--teal-rgb), .8); }
+  .ulrow .ulpct { color: var(--head); text-align: right; font-weight: 600; }
+  .ulk { color: var(--head); }
+  .ulfrom { color: var(--dimmest); }
+  .ulproj { grid-column: 2 / -1; color: var(--dim); margin-bottom: 4px; }
+  .ulproj.ulwarn { color: rgb(var(--warn-rgb)); }
+  .ulproj.uldanger { color: rgb(var(--danger-rgb)); }
+  .ulflame { margin-left: var(--sp-3); }
+  .ucchart { position: relative; }
+  .ulband { fill: var(--teal-bg); }
+  .ulbandedge { stroke: rgba(var(--teal-rgb), .45); stroke-width: 1; vector-effect: non-scaling-stroke; }
+  .ulbandlab { position: absolute; top: 2px; transform: translateX(4px); font: var(--fs-xs) var(--mono); color: var(--teal); pointer-events: none; }
+  @media (max-width: 600px) { .ullimits { grid-template-columns: auto 1fr auto; } .ulreset, .ulfrom { grid-column: 2 / -1; } }
 

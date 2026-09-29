@@ -7543,6 +7543,143 @@ async function roomsDashSection(browser, base) {
 // The usage tab's polish: the too-old line with and without a build, the keep-alive
 // phrase on the cache line, the backfilled label, the fade and the grow on a live
 // event, and reduced motion turning them off.
+// The usage tab's limits: the bars, the 5h band, and the flameout. See js/usage-limits.js.
+async function usageLimitsSection(browser, base) {
+  const errors = [];
+  const at = new Date(Math.floor(Date.now() / 900000) * 900000 - 900000).toISOString();
+  const total = { rows: 2, replies: 9, input: 1000, output: 2000, cache_write_5m: 3000, cache_write_1h: 4000, cache_read: 90000, cost: 0 };
+  const iso = ms => new Date(Date.now() + ms).toISOString();
+  const MIN = 60000, HOUR = 3600000;
+  const run = async (limits, fn) => {
+    const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+    const sp = await ctx.newPage();
+    sp.on("pageerror", e => errors.push(String(e)));
+    const asked = [];
+    await ctx.route("**/v1/usage*", route => route.fulfill({ json: { buckets: [
+      { t: at, total, cards: { "uc-a": total }, causes: { operator: total } }] } }));
+    await ctx.route("**/v1/usage/limits*", route => { asked.push(route.request().url()); return limits(route); });
+    await ctx.route("**/v1/settings", route => route.fulfill({ json: { usage_cache_reads: false, board_skin: "harbour", board_skins: SKINS } }));
+    try {
+      await sp.goto(base, { waitUntil: "domcontentloaded" });
+      await sp.waitForSelector("#stack-list .stackrow", { state: "attached", timeout: slow(15000) });
+      await sp.evaluate(() => switchView("usage"));
+      await sp.waitForSelector("#uc-body .ucchart[data-chart=burn] rect", { timeout: slow(10000) });
+      await sp.waitForSelector("#uc-body #ul-limits", { timeout: slow(5000) });
+      await sp.waitForTimeout(1500); // the stream opening reloads the tab once
+      await fn(sp, asked);
+    } finally { await ctx.close(); }
+  };
+  const rowsText = sp => sp.evaluate(() => [...document.querySelectorAll("#ul-limits .ulrow")].map(r => ({
+    kind: r.dataset.kind, none: r.classList.contains("ulnone"), text: r.textContent, proj: (r.querySelector(".ulproj") || {}).textContent || "",
+    cls: (r.querySelector(".ulproj") || { className: "" }).className, tip: (r.querySelector(".ulproj") || { dataset: {} }).dataset.tip || "",
+    fill: (r.querySelector(".ulfill") || { style: {} }).style.width })));
+  // Readings from the room, in the shape internal/api/limits.go answers.
+  const reading = (agoMin, card, kind, pct, resetsInMs) => ({ at: iso(-agoMin * MIN), card, kind, pct,
+    ...(resetsInMs == null ? {} : { resets_at: iso(resetsInMs) }) });
+  const answer = readings => route => route.fulfill({ json: { readings } });
+  // The rows are drawn from what the page holds; a scenario sets that and repaints.
+  const set = (sp, rs) => sp.evaluate(rs => {
+    UL.readings = []; UL.last.clear(); UL.html = "";
+    for (const r of rs) ulAdd({ at: Date.now() - r.agoMin * 60000, room: "", card: r.card, kind: r.kind, pct: r.pct, reset: Date.now() + r.resetMs });
+    ucPaint();
+  }, rs);
+  const line = (n, pct, agoFirst, agoLast, resetMs) => {
+    const out = [];
+    for (let i = 0; i < n; i++) out.push({ agoMin: agoFirst + (agoLast - agoFirst) * i / (n - 1), card: "c1", kind: "five_hour", pct: Math.round(pct[0] + (pct[1] - pct[0]) * i / (n - 1)), resetMs });
+    return out;
+  };
+  const five = async sp => (await rowsText(sp)).find(x => x.kind === "five_hour");
+
+  // The bar, the card, the dash, and the band at 6h+ and not at 1h.
+  await run(answer([reading(3, "sa-orch", "five_hour", 64, 156 * MIN), reading(8, "u-005", "weekly", 31, 3 * 24 * HOUR)]), async (sp, asked) => {
+    if (!asked.some(u => /since=/.test(u))) fail("usageLimits: the readings were not asked for: " + asked);
+    const rows = await rowsText(sp);
+    const f = rows.find(r => r.kind === "five_hour"), week = rows.find(r => r.kind === "weekly");
+    if (!f || f.none || f.fill !== "64%" || !/64%/.test(f.text) || !/sa-orch/.test(f.text) || !/3m ago/.test(f.text) || !/resets .*\(in 2h 36m\)/.test(f.text))
+      fail("usageLimits: the 5h row reads " + JSON.stringify(f));
+    if (!week || week.none || !/31%/.test(week.text) || !/u-005/.test(week.text)) fail("usageLimits: the week row reads " + JSON.stringify(week));
+    const band = await sp.evaluate(() => ({ n: document.querySelectorAll("#uc-body .ulband").length, label: (document.querySelector("#uc-body .ulbandlab") || {}).textContent,
+      fill: document.querySelector("#uc-body .ulband") ? getComputedStyle(document.querySelector("#uc-body .ulband")).fill : "" }));
+    if (band.n !== 1 || band.label !== "5h window") fail("usageLimits: the 24h chart has no 5h band: " + JSON.stringify(band));
+    if (!/rgba?\(/.test(band.fill)) fail("usageLimits: the band has no fill: " + band.fill);
+    await sp.evaluate(() => { UC.range = "1h"; loadUsageTab(); });
+    await sp.waitForFunction(() => !UC.inflight && document.querySelector("#uc-body .ucchart"), null, { timeout: slow(5000) });
+    if (await sp.evaluate(() => document.querySelectorAll("#uc-body .ulband, #uc-body .ulbandlab").length)) fail("usageLimits: the 1h chart has a 5h band.");
+    await sp.evaluate(() => { UC.range = "6h"; loadUsageTab(); });
+    await sp.waitForFunction(() => !UC.inflight && document.querySelector("#uc-body .ulband"), null, { timeout: slow(5000) });
+  });
+
+  // Nothing recent is a dash on both rows, never a zero.
+  await run(answer([reading(90, "old", "five_hour", 50, 60 * MIN)]), async sp => {
+    const rows = await rowsText(sp);
+    if (rows.length !== 2 || !rows.every(r => r.none && /–/.test(r.text) && !/0%/.test(r.text))) fail("usageLimits: nothing recent should be two dashes: " + JSON.stringify(rows));
+    if (await sp.evaluate(() => document.querySelectorAll("#uc-body .ulband").length)) fail("usageLimits: a band with no recent reading.");
+  });
+
+  // Two reset times are two accounts and two rows, never summed or blended. The projections run on this page.
+  await run(answer([reading(3, "a1", "five_hour", 64, 156 * MIN), reading(4, "b1", "five_hour", 20, 250 * MIN)]), async sp => {
+    const rows = (await rowsText(sp)).filter(r => r.kind === "five_hour");
+    if (rows.length !== 2 || rows[0].fill !== "64%" || rows[1].fill !== "20%") fail("usageLimits: two resets should give two rows: " + JSON.stringify(rows));
+    if (await sp.evaluate(() => document.querySelectorAll("#uc-body .ulband").length) !== 2) fail("usageLimits: two windows should draw two bands.");
+
+    // Warn: 100% lands before the reset.
+    await set(sp, line(6, [40, 60], 60, 3, 156 * MIN));
+    let r = await five(sp);
+    if (!/at this pace: 100% at \d\d:\d\d, .* before the reset/.test(r.proj) || !/flameout before reset/.test(r.proj) || !/ulwarn/.test(r.cls) || /uldanger/.test(r.cls))
+      fail("usageLimits: warn line reads " + JSON.stringify(r));
+    if (!/it does not see the future/.test(r.tip) || !/spend outside atrium/.test(r.tip)) fail("usageLimits: the honesty text is missing: " + r.tip);
+    // Danger: within 30 minutes.
+    await set(sp, line(6, [65, 95], 60, 3, 156 * MIN));
+    r = await five(sp);
+    if (!/flameout before reset/.test(r.proj) || !/uldanger/.test(r.cls)) fail("usageLimits: danger line reads " + JSON.stringify(r));
+    // Not this window: slow, so 100% would land after the reset.
+    await set(sp, line(6, [45, 50], 60, 3, 120 * MIN));
+    r = await five(sp);
+    if (!/not this window/.test(r.proj) || /flameout/.test(r.proj) || /ulwarn|uldanger/.test(r.cls)) fail("usageLimits: not-this-window reads " + JSON.stringify(r));
+    // A flat pace projects nothing.
+    await set(sp, line(5, [50, 50], 40, 3, 156 * MIN));
+    r = await five(sp);
+    if (r.proj !== "no pace to project") fail("usageLimits: a flat pace reads " + JSON.stringify(r));
+    // Scattered readings say rough.
+    await set(sp, [[60, 30], [50, 55], [40, 35], [30, 70], [20, 45], [3, 80]].map(([m, p]) => ({ agoMin: m, card: "c1", kind: "five_hour", pct: p, resetMs: 156 * MIN })));
+    r = await five(sp);
+    if (!/rough/.test(r.proj)) fail("usageLimits: scattered readings should say rough: " + JSON.stringify(r));
+    // Too few readings: the token-burn fallback, marked as such. Every minute of the range holds 1000 counted tokens.
+    await sp.evaluate(() => {
+      UC.range = "6h"; UC.bw = 60; UC.since = Date.now() - 3 * 3600000;
+      const b = new Map();
+      for (let t = Math.floor(UC.since / 60000) * 60000; t <= Date.now(); t += 60000)
+        b.set(t, { t, total: Object.assign(ucSums(), { input: 1000 }), cards: {}, causes: {} });
+      UC.rooms = { "": { state: "ok", why: "", buckets: b } };
+    });
+    await set(sp, [{ agoMin: 40, card: "c1", kind: "five_hour", pct: 50, resetMs: 240 * MIN }, { agoMin: 2, card: "c1", kind: "five_hour", pct: 60, resetMs: 240 * MIN }]);
+    r = await five(sp);
+    if (!/\(estimated from token burn\)/.test(r.proj) || !/flameout before reset/.test(r.proj) || !/can only undercount/.test(r.tip))
+      fail("usageLimits: the fallback reads " + JSON.stringify(r));
+    // One reading has nothing to project.
+    await set(sp, [{ agoMin: 2, card: "c1", kind: "five_hour", pct: 60, resetMs: 240 * MIN }]);
+    r = await five(sp);
+    if (r.proj !== "no pace to project") fail("usageLimits: one reading reads " + JSON.stringify(r));
+    // Nothing notifies.
+    if (await sp.evaluate(() => document.querySelectorAll(".toast").length)) fail("usageLimits: the flameout raised a toast.");
+  });
+
+  // An older room answers 404: live telemetry only, and nothing says it is an error.
+  await run(route => route.fulfill({ status: 404, body: "404 page not found" }), async sp => {
+    let rows = await rowsText(sp);
+    if (!rows.every(r => r.none)) fail("usageLimits: a 404 should leave dashes: " + JSON.stringify(rows));
+    if (await sp.evaluate(() => document.querySelectorAll("#uc-body .ucmissing").length)) fail("usageLimits: a 404 from limits showed a message.");
+    await sp.evaluate(() => {
+      lastTasks = [{ id: "live-1", display_title: "livecard", status: "running", telemetry: { seconds: 5, five_hour: { pct: 42, resets_at: new Date(Date.now() + 2 * 3600000).toISOString() } } }];
+      ulOnCards();
+    });
+    rows = await rowsText(sp);
+    const f = rows.find(r => r.kind === "five_hour");
+    if (!f || f.none || f.fill !== "42%" || !/livecard/.test(f.text)) fail("usageLimits: live telemetry did not draw after a 404: " + JSON.stringify(rows));
+  });
+  if (errors.length) fail("usageLimits: the page threw: " + errors.join(" | "));
+}
+
 async function usagePolishSection(browser, base) {
   const errors = [];
   const at = new Date(Math.floor(Date.now() / 900000) * 900000 - 900000).toISOString();
@@ -7643,7 +7780,7 @@ async function main() {
       history: historySection, contextSize: contextSizeSection, peekEverywhere: peekEverywhereSection, cardRoute: cardRouteSection,
       quietDoer: quietDoerSection, looksIdle: looksIdleSection, notifyOff: notifyOffSection,
       questionsClick: questionsClickSection, walk: walkSection, linkReuse: linkReuseSection,
-      usageCacheReads: usageCacheReadsSection, roomsDash: roomsDashSection, phoneView: phoneViewSection, usagePolish: usagePolishSection,
+      usageCacheReads: usageCacheReadsSection, roomsDash: roomsDashSection, phoneView: phoneViewSection, usagePolish: usagePolishSection, usageLimits: usageLimitsSection,
       eventDriven: eventDrivenSection, idleBudget: idleBudgetSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
@@ -9577,6 +9714,7 @@ async function main() {
     await eventDrivenSection(browser, base);
     await idleBudgetSection(browser, base);
     await usagePolishSection(browser, base);
+    await usageLimitsSection(browser, base);
     await reselectSection(browser, base);
     // ── over a terminal the toasts hang from the top right ─────────────────
     await toastsTopSection(browser, base);
