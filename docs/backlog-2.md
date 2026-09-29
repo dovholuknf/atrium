@@ -3184,7 +3184,8 @@ and it reverses the toast log's rule that what you were told is a fact about a s
 
 ## t-001. File-link hover tip flickers while the terminal repaints (bug)
 
-Status: not started. Backlog only, nobody builds it yet. Owned by @terminal. First item under the department ids.
+Status: built on `claude/sat-001`. `leave` hides after 150ms and a `hover` on the same path inside the window
+cancels it, in `terminal-links.js` only. Cause confirmed by a headless repro (`linkTip` section). Owned by @terminal.
 
 Hovering a path in an attached terminal while output repaints makes the tip pop, vanish, and pop again. The likely
 cause: xterm drops the link under the pointer whenever its row is redrawn, which fires `leave` (the tip hides), then
@@ -3514,8 +3515,9 @@ tab's `o` and `C` keys (u-005, sau-005) use the same helper.
 
  The worktree-gone reaper ended a live worker after it changed directory (bug, HIGH)
 
-Status: diagnosed 2026-09-29 by @runtime, not fixed. Owned by @runtime. No worker launched, and none will be without
-clint.
+Status: fixed on branch `claude/sar-004` (2026-09-29), not yet merged. Three parts: a card's `Worktree` never follows
+the session's cd (an empty one is filled once), every runner keeps its launch directory for `runnerDir`, and `hadGit`
+is keyed by card and directory. Owned by @runtime.
 
 **What happened.** sa96 (`01a0ede6-10f6`, a review-manager by @review, launched in
 `D:/worktrees/claude/reviews/github-openziti-ziti/pr-4397-990aa0c`) was ended 90 seconds in. Nobody asked it to

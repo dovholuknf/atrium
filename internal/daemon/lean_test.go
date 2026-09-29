@@ -158,10 +158,12 @@ func TestLeanSettingsKeepsGateAndHooksAndDropsWhatPrintsIntoContext(t *testing.T
 	if err := json.Unmarshal([]byte(raw), &doc); err != nil {
 		t.Fatal(err)
 	}
-	for _, gone := range []string{"statusLine", "outputStyle"} {
-		if _, ok := doc[gone]; ok {
-			t.Fatalf("%s should be dropped: %s", gone, raw)
-		}
+	if _, ok := doc["outputStyle"]; ok {
+		t.Fatalf("outputStyle should be dropped: %s", raw)
+	}
+	// The status line stays (r-001): it costs no tokens and posts context figures.
+	if got := string(doc["statusLine"]); got != `{"type":"command","command":"bash status.sh"}` {
+		t.Fatalf("statusLine should be kept as given, got %q in %s", got, raw)
 	}
 	for _, kept := range []string{`"_ATRIUM_PERM_GATE":"on"`, `"Bash(ls:*)"`, `"commit":""`,
 		"perm-hook.ps1", "hook --event tool-start", "session --event start", `"timeout":8`} {

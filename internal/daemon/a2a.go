@@ -95,6 +95,31 @@ func hasTag(tags []string, want string) bool {
 	return false
 }
 
+// DirectorTag marks a resident session that launches workers and waits on them.
+const DirectorTag = "atrium:director"
+
+// hasOutstandingWorker reports whether any card launched by this one is still
+// around: a live runner in any status, `done` at its prompt included. A culled
+// or dead worker is not outstanding.
+func (d *Daemon) hasOutstandingWorker(launcherID string) bool {
+	ids, err := d.st.WorkerIDs(launcherID)
+	if err != nil {
+		return false
+	}
+	for _, id := range ids {
+		if d.workerOutstanding(id) {
+			return true
+		}
+	}
+	return false
+}
+
+// workerOutstanding is the one place that says what still counts as a worker
+// being around. A parked worker will count here once parking exists.
+func (d *Daemon) workerOutstanding(id string) bool {
+	return d.sup.get(id) != nil
+}
+
 // agentLaunched reports whether a card was started by `atrium_launch`.
 func agentLaunched(t *store.Task) bool { return t != nil && hasTag(t.Tags, OriginAgentTag) }
 
@@ -354,8 +379,17 @@ func (d *Daemon) silentStop(taskID string) bool {
 // behind it. Both read stuck when this asked only for a prompt newer than the
 // last report, and the restart made it ring again from one minute. The turn's
 // end is also the clock, so a restart does not restart the backoff.
+//
+// A RESIDENT DIRECTOR IS NOT SILENT WHILE ITS WORKERS ARE OUTSTANDING. Its
+// next report is due when its batch is done, not after every worker message
+// that wakes it, so ringing its launcher each time it ends a turn waiting is
+// noise. Once every worker has ended it works as for any card. See
+// docs/keepalive-policy-design.md section 7.
 func (d *Daemon) stoppedSilently(t *store.Task) (time.Time, bool) {
 	if t.Status != store.StatusNeedsInput || !t.OwesReport() {
+		return time.Time{}, false
+	}
+	if hasTag(t.Tags, DirectorTag) && d.hasOutstandingWorker(t.ID) {
 		return time.Time{}, false
 	}
 	ended, err := d.st.TurnEndedAt(t.ID)
