@@ -1614,5 +1614,17 @@ CJK and other wide characters two. A cursor move back over a wide character land
 against `あい.`. A fix needs a continuation cell handled in `render`, `writeRow`, and the erase and insert ops. The
 case is skipped as `backlog-2 82` in `internal/daemon/screen_diff_cases_test.go`. Owned by @terminal.
 
+## 83. `atrium_say` refuses a card in `done` while its terminal is still alive (bug)
+
+Found 2026-09-28 by @runtime reviewing sa21. `atrium_report` with status `done` moves the worker's card to `done`,
+and the session keeps running at its prompt, as the brief asked, so the director can send review changes. The review
+`atrium_say` then answered `undeliverable`: "has no running session (it is done). resume it first". `atrium_task` on
+the same card said `atrium_owns_terminal: true` and `doing: idle`. The only way through was a board PATCH moving the
+card back to `needs-input` by hand.
+
+The refusal reads the card's status and not the runner. Expected: a say to a card whose terminal atrium owns is
+delivered whatever column the card is in. A `done` card with no runner still refuses, and says so. Item 41 is about
+which prompts make a card owe a report, not the card's state after one, so this is separate. Owned by @runtime.
+
 
 ------------
