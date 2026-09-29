@@ -819,3 +819,11 @@ scoop install atrium
 
 That last pair is the real test of the release shape. If the archive layout or the checksum file is wrong, this
 is where it shows, and it shows to you rather than to a stranger.
+
+### The toolchain for a room
+
+A room needs go, node and, on Windows, a real Git for Windows and pwsh 7 before a worker there can build atrium and
+run `go test`. `scripts/room-toolchain.ps1 <user@host|local> [-Check]` installs them into the remote home over ssh,
+with no admin, checks each download against the publisher sha256, and records the folders to put in front of PATH.
+It changes nothing that is already good enough and never restarts a room. See `docs/changes/fabric-1-toolchain.md`
+for how a rooms start reads the record, including the one change `provision-room.ps1` needs on Windows.
