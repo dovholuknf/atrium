@@ -27,7 +27,10 @@ as "notes (a)" to "notes (e)".
 
 ## Decision 1: read once, in the skill
 
-All of this is a change to `review-panel` in dotfiles, not to atrium.
+All of this is a change to dotfiles, not to atrium: the `review-panel` skill AND the four personas. The skill alone
+is not enough, because each persona's own method tells it to get the diff itself and read widely, and the steward's
+says "read-heavy is the point" (notes (a)). A conductor that changes and personas that do not keep every duplicated
+read.
 
 1. **A digest, built once.** After capturing the diff the conductor writes `review-digest.md` beside it:
    - the changed files and hunks
@@ -37,6 +40,11 @@ All of this is a change to `review-panel` in dotfiles, not to atrium.
 
    Each reviewer gets the digest in its prompt, is told not to re-open the diff, and opens source only to verify a
    finding or follow a lead the digest does not cover. The pinned version ends the two-versions problem outright.
+
+   **Each persona gains one conditional paragraph at the top of its method:** when the prompt carries a
+   `review-digest.md`, that digest IS the review snapshot. Do not recapture or re-open the diff, start from the core
+   files it names, and open source or dependency files only to verify a finding or to fill a gap the digest leaves,
+   saying which gap. Without a digest the persona works as it does today, so a persona run on its own is unchanged.
 2. **Size the panel to the change.** Up to about 150 changed lines, or a backport of a change already reviewed
    upstream: the steward plus the one specialist the file types call for. Larger: today's rule. The conductor prints
    which rule picked the panel, so a panel that should have been bigger is visible.
@@ -47,8 +55,10 @@ All of this is a change to `review-panel` in dotfiles, not to atrium.
    one replay and kept only if it wins.
 
 **Proving it.** Replay PR #4480 at the same commit with the new skill. Compare the summed cached reads, turns and wall
-time per reviewer against the notes (a) table. It passes at 40% fewer cached tokens for the panel, with every blocking
-or high finding from the original run found again. A finding lost is a failure whatever the saving.
+time per reviewer against the notes (a) table, AND the conductor's own tokens and wall time, since building the digest
+is new cost on the conductor's side. The original run's conductor cost is read from its parent transcript first, which
+fb05 did not parse (notes (e)). It passes at 40% fewer cached tokens for the whole run, conductor included, with every
+blocking or high finding from the original run found again. A finding lost is a failure whatever the saving.
 
 ## Decision 2: the knowledge is a file, and a resident session is only a cache of it
 
@@ -76,7 +86,23 @@ first time anybody trips on it.
 **Who writes it: the conductor, from what the reviewers hand back.** Each reviewer's report gains a `repo_notes`
 block: entries to add, and entries it found wrong. The conductor applies them, one edit per persona file, and leaves
 them uncommitted in dotagents for clint's diff review. Three of the four personas have no Write tool, and a reviewer
-that edits its own memory mid-review is a reviewer doing two jobs (open question 2).
+that edits its own memory mid-review is a reviewer doing two jobs. If clint agrees (open question 2), this SUPERSEDES
+the 09-23 note's "the agent edits it itself".
+
+**The hand-back contract.** A second fenced JSON block, after the findings array and never inside it, so the findings
+schema the skill already checks is untouched:
+
+```json
+{"repo_notes": {
+  "add":  [{"text": "...", "evidence": "path:line", "commit": "<sha it was true at>"}],
+  "drop": [{"match": "<the entry's text, or its first line>", "why": "what the code at <sha> says instead"}]
+}}
+```
+
+The persona is implied by who handed it back, so it is not a field. A missing block means no notes. A block that does
+not parse is reported by the conductor's integrity check (step 6) as that reviewer's error, never silently skipped.
+In the file, each entry is one bullet ending `(path:line @ sha)`, which is what the conductor matches `drop` against
+and what a reviewer checks before relying on it.
 
 **How a reviewer finds its file.** The conductor reads the repo's remote, derives `<host>/<org>/<repo>`, and puts the
 file in the digest. No persona needs the dotagents path, and a lean session is not a problem, because the file travels
@@ -101,9 +127,13 @@ Nothing in atrium changes for either decision. No migration.
 ## Staging
 
 1. Decision 1, then the PR #4480 replay, measured. This alone may be enough for most PRs, which is item 16's third open
-   question, and the replay answers it.
+   question, and the replay answers it. **Buildable now:** it needs none of the open questions answered except 4,
+   which has a stated default.
 2. Reviewer files on one repo (openziti/ziti), with `repo_notes` and the conductor applying them. Measure the second
-   PR on that repo against the first.
+   PR on that repo against the first. **Not buildable until clint answers questions 1, 2 and 6.** They decide where the
+   files are made, who may write them, and whether the 09-23 direction still holds, and a wrong answer there fails
+   silently. The recommended answers become this design's decisions when he gives them, and the design is revised
+   before stage 2 starts.
 3. Only if 2 shows the files work and the panel is still slow: a resident card for that repo.
 
 ## Not read, and worth knowing
