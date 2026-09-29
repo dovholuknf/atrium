@@ -32,6 +32,9 @@ const (
 	// SeenLauncher is a turn an agent-launched worker ended after reporting to
 	// its launcher. Nobody human needs to look at it.
 	SeenLauncher = "launcher"
+	// SeenDismissed is a set of questions the operator clicked away without
+	// replying. It is an answered_via only: a dismissed question is not a read turn.
+	SeenDismissed = "dismissed"
 )
 
 // MaxTurnQuestions bounds how many questions one turn may leave on a card, and
@@ -305,6 +308,34 @@ func (s *Store) MarkAnswered(taskID, via string) (bool, error) {
 		return nil
 	})
 	return changed, err
+}
+
+// DismissQuestions answers the card's open questions without a reply, and
+// leaves seen_at alone: a dismissed question is not a read turn, which is why
+// MarkAnswered is not reused. Reports whether it dismissed, and whether it
+// refused because newer questions arrived than the ones `shown`.
+//
+// `shown` is the questions_at the chip was drawn from, compared as times. A card
+// with nothing open answers false, false rather than an error.
+func (s *Store) DismissQuestions(taskID string, shown time.Time) (dismissed, stale bool, err error) {
+	err = s.guard(func() error {
+		dismissed, stale = false, false
+		cur, err := s.seenRow(taskID)
+		if err != nil || cur == nil || !cur.Asked() || cur.Answered() {
+			return err
+		}
+		if cur.QuestionsAt.After(shown) {
+			stale = true
+			return nil
+		}
+		if _, err := s.db.Exec(`UPDATE turn_seen SET answered_at = ?, answered_via = ? WHERE task_id = ?`,
+			ts(now()), SeenDismissed, taskID); err != nil {
+			return err
+		}
+		dismissed = true
+		return nil
+	})
+	return dismissed, stale, err
 }
 
 // UnseenCards lists the cards whose latest turn is unseen. Read once at start,
