@@ -283,6 +283,72 @@ func (s *Store) refreshOffered(t *Task, item IntakeItem) error {
 	return nil
 }
 
+// ByIntakeKey is the card carrying a deduplication key, or nil when none does.
+func (s *Store) ByIntakeKey(key string) (*Task, error) {
+	if key == "" {
+		return nil, nil
+	}
+	var t *Task
+	err := s.guard(func() error {
+		t = nil
+		got, err := s.getBy(`intake_key = ?`, key)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		t = got
+		return nil
+	})
+	return t, err
+}
+
+// ReleaseIntakeKey stops one card holding its deduplication key, so the next
+// `Offer` of the same item inserts a fresh card.
+//
+// `Offer` deliberately never re-offers work that has moved on, and a runner
+// update is the case where the work is new every release. This is the one way
+// to say so, and it touches exactly one card: the title, history and source stay
+// where they were, and an empty key is already "not keyed".
+func (s *Store) ReleaseIntakeKey(taskID string) error {
+	return s.guard(func() error {
+		_, err := s.db.Exec(`UPDATE task SET intake_key = '' WHERE id = ?`, taskID)
+		return err
+	})
+}
+
+// WithdrawOffered archives a card that is still in the inbox because what it
+// offered has been overtaken, records why, and releases its key.
+//
+// Only a `backlog` card that is not already archived: a card somebody started is
+// theirs. The key is released in the same write, because a withdrawn card still
+// holding it would be found by the next `Offer`, refreshed while archived, and
+// the next release would never reach the inbox. Returns whether it acted.
+func (s *Store) WithdrawOffered(taskID, reason string) (bool, error) {
+	var done bool
+	err := s.guard(func() error {
+		done = false
+		t, err := s.getBy(`id = ?`, taskID)
+		if err != nil {
+			return err
+		}
+		if t.Status != StatusBacklog || t.ArchivedAt != nil {
+			return nil
+		}
+		n := now()
+		if _, err := s.db.Exec(`UPDATE task SET archived_at = ?, intake_key = '', last_activity_at = ?
+			WHERE id = ?`, ts(n), ts(n), taskID); err != nil {
+			return err
+		}
+		done = true
+		return s.appendEvent(taskID, EventStatusChanged, map[string]any{
+			"from": StatusBacklog, "to": StatusBacklog, "withdrawn": true, "reason": reason,
+		})
+	})
+	return done, err
+}
+
 // orKeep prefers what arrived and falls back to what is already there.
 func orKeep(incoming, have string) string {
 	if strings.TrimSpace(incoming) == "" {
