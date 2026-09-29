@@ -1719,5 +1719,17 @@ show that card's cause table otherwise. A card filter reads that one card from i
 in a card's details, and the `usage` event are in. Not done: watching a turn spend while it runs, and any per-kind
 dollars. Charts were drawn in a headless run against mocks only, not yet looked at against a live room.
 
+## 85. The headless board run flakes under load (bug)
+
+Raised 2026-09-29 by the orchestrator. On m1mini the terminated-terminal dismiss check in
+`scripts/test-board-headless.js` failed while `go test` ran beside it, and passed on an idle rerun. Its waits are
+fixed at 15000ms, and a wait that runs out there either throws out of the run as "the headless run threw" or fails with
+a message that does not say which wait it was.
+
+Fix: every Playwright timeout in the script goes through one scale, read from an environment variable (a factor, 1 by
+default), so a loaded machine can be given more time without editing the file. Each wait in the dismiss block, and
+any other wait whose failure names only the symptom, says which wait ran out and how long it had. Owner @ui, queued
+behind item 80.
+
 
 ------------
