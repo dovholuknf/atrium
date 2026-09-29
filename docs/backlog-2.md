@@ -85,6 +85,8 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 76 | A worktree helper that links every CLAUDE.md, so workers get project rules | bug, HIGH, FIRST | not started, @merge |
 | 77 | A merge pipeline that does not conflict or rerun | feature, HIGH | not started, @merge, after 76 |
 | 78 | The details popover's token labels mislead | bug | not started |
+| 79 | The notification drawer can turn notifications off | feature | design filed, queued behind 78, 44 and 43 |
+| 80 | Real-time token burn and usage charts | feature, TONIGHT | design filed, ahead of 43 and 79 |
 
 ------------
 
@@ -1081,6 +1083,36 @@ attention the work does not need.
 Expected: on a card launched by an agent, a turn that ends with a report or a message to the launcher counts as
 seen. A turn that ends silently still shows the dot, alongside the stuck mark from item 25.
 
+### Design, 2026-09-28 (@ui)
+
+The fix is in the room, not the board. The dot is `seen.unseen`, worked out in `internal/store/seen.go` from
+`turn_seen.turn_ended_at` against `seen_at`. The board only draws it (`js/seen.js`). Hiding it on the board would
+leave `atrium_task` and every other reader of `unseen` still saying nobody looked.
+
+- **Where.** The Stop path in `internal/daemon/messages.go` that lets a turn end already calls `silentStop` and then
+  `noteTurnForSeen`. A card that is `agentLaunched` and does NOT owe a report (`!t.OwesReport()`, so `reported_at`
+  is at or after `prompted_at`) is marked seen with a new via, `SeenLauncher` (`"launcher"`). NOT as a second step
+  after `noteTurnForSeen`: that function stores `d.unseen` and publishes the card, so the board would see the dot
+  for a moment on exactly the turns this hides, and could notify on it. Instead `noteTurnForSeen` takes an
+  auto-seen via, records the turn end, marks it seen, leaves `d.unseen` clear, and publishes ONCE at the end.
+  (Mercurius round 1, concern C1.)
+- **What counts as reported.** Exactly what already sets `reported_at`: `peerSaid` (an `atrium_report` or an
+  `atrium_say` to the launcher) and the relay's cross-room equivalent. A notice atrium wrote about the worker
+  (`notifyLauncher`) is not a report and does not count, the same rule `silentStop` uses. So a silent stop still wears
+  the dot, and the two marks can never disagree: a card is either silent (dot, and its launcher is told) or it
+  reported (no dot).
+- **Questions are not answered.** `MarkSeen` touches only `seen_at`, never `answered_at`. A worker whose last turn
+  asked clint Open Questions keeps its `? N` chip. The launcher reading the report is not an answer from clint.
+- **A report to a launcher that is gone.** `reported_at` is set when the sender spoke, not when the launcher read it,
+  and the launcher's card may have exited. Counted as seen anyway: the worker did its part, and the launcher going
+  away is the launcher's card's problem, shown on that card. Open for the review.
+- **The board.** The dot's tooltip is unchanged, since it is no longer shown in this case. The details' seen line
+  (if it shows `seen_via`) reads `launcher` as "its launcher got the report".
+- **Tests.** `internal/daemon/seen_test.go`: an agent-launched card that reports then stops is not unseen, via is
+  `launcher`. One that stops without reporting is unseen and the silent stop notice goes. A human-launched card that
+  stops is unseen whatever it said. Questions stay open after a launcher-seen turn. A reported worker's Stop
+  publishes the card once, and never with `unseen` true.
+
 ## 44. A gear checkbox: no notifications from agent-launched cards, on by default (feature)
 
 Raised by clint 2026-09-28: "I don't need notifications from them." A worker an agent launched reports to its
@@ -1091,6 +1123,11 @@ Expected: a checkbox under `notifications` in the gear, "don't notify me about c
 default. Ticked, a card with the `origin:agent` tag raises no toast, no desktop notification and no sound. Its
 marks on the card stay, and so does the toast log entry, so nothing is lost. A permission request from such a card
 still notifies, because it blocks until a human answers. A card's own notification override beats the checkbox.
+
+**Status, 2026-09-28, sa44: built on `claude/sa44`, not merged.** The gear box `quietDoers` (per browser, default
+on) logs and does not say arrivals, waiting and stuck alerts for `origin:agent` cards. Permissions still notify. No
+per-card notification override exists in the board, so a card with its own tone stands in for one. See
+`docs/changes/44.md`.
 
 ## 45. Every card shows its context size, and a launcher hears once past a threshold (feature, sa87)
 
@@ -1580,6 +1617,96 @@ and "in" is uncached input only (48), because with caching almost all input is a
 
 Relabel: prompts, with API calls next to them, and "uncached in". Check the cost estimate against current pricing,
 and confirm whether the figures cover the card or only the session since its last `/clear`.
+
+Status 2026-09-28, done on `claude/sa78`. Both popovers (`peek.js` and the details in `usage.js`) now say "prompts" with
+"calls" beside it, "uncached in", "cache read" and "cache write", each with a tip saying what it counts. Sonnet 5.5 was
+missing from the usage price table and priced at $0, so it is added at $2/$10 with the same cache multipliers, checked
+against the pricing page. Rows already stored keep their old cost. The figures cover the whole card, across `/clear`.
+
+## 79. The notification drawer can turn notifications off (feature)
+
+Raised 2026-09-28 by clint: "when i click the notification bell icon to pull the drawer, give me a 'disable
+notification' option along with clear and close".
+
+Design (@ui), small on purpose:
+
+- **Where.** A third button in the drawer head (`#toastlog` in `index.html`), beside clear and close: "turn off"
+  while on, "turn on" while off.
+- **What it mutes.** Toasts, desktop notifications and the sound that goes with them, everything `notify` in
+  `js/notify.js` would pop. The drawer keeps logging every entry and the bell's badge keeps counting, so nothing is
+  lost and opening the drawer shows what was held back. The marks on cards are untouched.
+- **Permission requests still notify.** A permission blocks a session until a human answers, the same exception item
+  44 makes. The button's tip says so. Open for clint below.
+- **Per browser, in `localStorage`** (`atrium.notify.off`), like the sound mute (`atrium.sound`). A phone and a desk
+  want different answers, and the daemon has no notion of which browser is which. Every window of one browser shares
+  it, and a popped-out window follows the board.
+- **The bell shows it.** Off, the bell is drawn as a struck bell (U+1F515) with the tip "notifications are off. click
+  to see what arrived", and the badge still counts. On, it is the bell it is today.
+- **Item 44.** 44 is a filter on WHICH cards notify (not agent-launched ones). 79 is a master switch over all of
+  them. Off beats everything, including a card's own per-card override, because it is the operator saying stop now.
+  On, 44's filter and per-card overrides apply as they do today. The gear's notifications section shows the same
+  switch, so the two are found in one place.
+- **Not built.** A timed mute ("for an hour") is the obvious next step and is left out until asked for.
+
+Open question for clint: should "off" silence permission requests too? The recommendation is no, since a session
+blocks on one until somebody answers, and a muted board is the likeliest place to forget one.
+
+## 80. Real-time token burn and usage charts (feature)
+
+Raised 2026-09-28 by clint, wanted tonight. Item 37 already records every Claude turn's spend, with its cause, in
+`session_usage` (`internal/store/usage.go`, migration `0063_session_usage`): one row per turn, keep-alive refresh and
+subagent read, with `ended_at`, `cause`, `model`, `replies`, `input`, `output`, both cache writes, `cache_read`,
+`context` and `cost`. Today it is served per card only, on `GET /v1/tasks/{id}/usage`, and drawn only in a card's
+details. This item charts it. Nothing new is recorded.
+
+Design (@ui):
+
+- **Where.** A `usage` tab beside `history`, its own view. Never on the card face, the terminals list or a toast,
+  which is item 37's rule. A card's details gain a small per-card chart above its rows and a link that opens the tab
+  filtered to that card.
+- **The API.** One new read endpoint on a room, `GET /v1/usage?since=<rfc3339>&bucket=<seconds>`, answering buckets
+  of summed rows: per bucket the board total, and per card and per cause. Summed in SQL over the existing
+  `(task_id, ended_at)` index, bounded (at most 500 buckets, `since` at most 30 days back), so a month of rows is
+  never shipped to a browser. The card titles come from the card list the board already has. Buckets carry raw
+  summed tokens per kind (uncached in, out, cache read, cache write 5m and 1h) and the stored `cost` summed, and the
+  client divides by bucket width for tokens per minute. No per-kind dollars in the first build: a row sums
+  replies that may come from more than one model and keeps only the last model's name, so repricing its kinds
+  would misattribute money silently. The split chart shows tokens per kind and the stored total cost. Exact
+  per-kind dollars would need item 37 to store more first. (Round 3, C1.)
+- **Live.** When the tracker writes a row (`AddSessionUsage` in `daemon/usage.go` and `keepalive.go`), the room
+  broadcasts a `usage` event on the existing SSE stream carrying that one row's figures and card id. The tab adds
+  it to the newest bucket without refetching. No polling. **"Real time" means within about two seconds of a turn
+  ending**, because a row is written at the Stop hook. A turn still running shows nothing until it ends. Tailing
+  transcripts mid-turn is left out on purpose (Open question below).
+- **Charts.**
+  1. Burn rate over time: tokens per minute, stacked by kind, for the whole board. Range picker 1h, 6h, 24h, 7d.
+  2. The same per card: a small multiple per card that spent in the range, sorted by cost, top 12, the rest summed
+     as "others". Click one to filter everything to that card.
+  3. Split: cache read versus uncached in versus cache write versus out, as one stacked bar for the range, with
+     each part's tokens and the range's total cost beside it.
+  4. Cost: cumulative estimated dollars over the range, and a table of cost by cause (you, a say, restart wake,
+     keep-alive, resume, subagent) so a restart or a keep-alive round shows as the spend it was.
+- **Labels are item 78's.** prompts and calls, uncached in, out, cache read, cache write 5m and 1h, est. The tips in
+  `USAGE_TIPS` (`js/usage.js`) are reused, not rewritten.
+- **No chart library.** Hand-drawn inline SVG in a new `js/usage-charts.js`, a few hundred lines: a stacked area,
+  a bar, a line, axes and a hover readout. No CDN and no vendored library, since the board has to work offline and
+  there is no build step. Colours are skin variables (the palette triples), so every skin draws it.
+- **Rooms.** The board already talks to more than one room. The tab asks each attached room with an explicit
+  room-scoped read (the `X-Atrium-Room` pattern `loadRoomCfg` uses, not the aggregate fetch) and merges the buckets,
+  with the room as a filter, the way the other cross-room views do. A room that does not answer is named as missing
+  rather than silently counted as zero. A room too old to have `/v1/usage` says so the same way. **Every per-card
+  bucket, filter, live event and the "others" rollup is keyed by room plus card id**, the identity the board already
+  uses for cards from two rooms (`rowOf(list, id, room)` in `js/rooms.js`), never by id or title alone, so two
+  rooms' cards are never merged. (Mercurius round 1, concern C1.) A `usage` event that reaches the board by way of
+  the hub carries its source room the way the hub's other forwarded card events do, and a room's own stream uses
+  the local room key. The headless test includes two rooms with the same card id spending live. (Round 2, C2.)
+- **Tests.** Store: bucket sums match row sums, bounds hold. API: shape and bounds. Headless: the tab renders from a
+  mocked `/v1/usage`, a mocked `usage` SSE event grows the newest bucket, the labels are 78's, and a skin change
+  recolours it.
+
+Open question for clint: is burn at turn end enough, or does "real time" mean watching a turn spend while it runs?
+That needs the room to tail every running transcript, which is a bigger and riskier change. Built at turn end first.
+Top 12 cards plus "others" is the first cut, easy to change.
 
 
 ------------
