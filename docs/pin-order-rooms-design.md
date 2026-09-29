@@ -38,8 +38,18 @@ A drag in a pinned strip that holds cards from two rooms saves the order on one 
 - A room that is not attached is skipped. Its cards are drawn as `remembered` and keep their old rank until it is
   back and the strip is dragged again.
 
-Nothing changes on the room side and nothing changes on the board. The board keeps sending bare ids, the room's
-handler keeps its untag safety net, and no migration is needed.
+Nothing changes on the board. The board keeps sending bare ids, the room's handler keeps its untag safety net, and
+no migration is needed.
+
+### One store line, found by @ui's review of its own design
+
+Mercurius `s_ajiZDcEq7DfD` round 2 (in the ui worktree) found a hole that both designs inherit. `SetPinOrder`'s
+comment says an id that is no longer pinned costs nothing, because `pin_order` is only read within the pinned set.
+That stopped being true when it began writing `rank` too: a card unpinned in another tab between the drag and the
+drop has its ordinary rank overwritten, and moves in its group. The fix is the predicate `WHERE id = ? AND pinned =
+1`, the comment rewritten to say why, and a test for a card unpinned before the order lands. It is a store change,
+so it is its own commit for @runtime to read. The board pins the dragged card before it posts the order, so the
+predicate does not drop the card being dragged.
 
 ### One limit, stated rather than fixed
 
@@ -57,7 +67,7 @@ a new field per view, which is item 50's question (views), not this bug's.
 | Part | Side |
 |---|---|
 | intercepting `POST /v1/tasks/pin-order`, untagging, the fan, the answer | HUB-SIDE (`internal/link`, a new `pinorder.go` beside `mincolssetting.go`) |
-| nothing | ROOM-SIDE |
+| `SetPinOrder` writes pinned rows only | ROOM-SIDE (`internal/store/tasks.go`, @runtime reads it) |
 | nothing, unless @ui wants to show `unreached` | UI (@ui) |
 
 ## Also checked
@@ -80,3 +90,5 @@ to clint and @ui, and is not part of this fix.
   take it. A room holding none of the ids changes nothing.
 - FF5 (unit): one room answers and one never does (a handler that blocks past the bound). The reply is 200 inside
   the bound plus a margin, with the hung room in `unreached`. With every room hung or refusing, it is 502.
+- FF6 (unit, `internal/store`): pin two cards, unpin one, then `SetPinOrder` with both. The pinned one takes its
+  new rank and the unpinned one keeps the rank it had.
