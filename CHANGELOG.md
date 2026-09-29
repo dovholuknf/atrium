@@ -5,6 +5,18 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **One hover per card: the details, not the details and a tooltip.** See `docs/backlog-2.md` item 72 and
+  `docs/test-plan.md` section BZ6.
+
+  Resting on a terminals row showed its tooltip beside the card and the details off to the side, two boxes with no
+  clear tie to the card. Under a mouse pointer nothing on a card on the board, the stack or the terminals list shows
+  its own tooltip now. The details open after a second, under the pointer, and their head carries the whole name,
+  uncut, the `repo/worktree:branch` address, and what the chip under the pointer would have said, following the
+  pointer across the card. Nothing shows before the second: a tooltip at half a second swapped for another box at
+  one was the flicker this removes. A tooltip already up goes when the details open. Keyboard focus and a long press
+  show tooltips as before, and nothing off the cards changes. `internal/api/web` only: HUB RESTART for the board a hub
+  serves, the room restart for the room's own board.
+
 - **A launched claude card starts at its prompt, not at a first-run dialog.** See `docs/backlog-2.md` item 67,
   `docs/runner-setup-design.md` and `docs/test-plan.md` section CH.
 
