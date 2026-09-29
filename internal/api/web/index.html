@@ -53,6 +53,7 @@
 <link rel="stylesheet" href="/css/files.css">
 <link rel="stylesheet" href="/css/rows.css">
 <link rel="stylesheet" href="/css/terminal.css">
+<link rel="stylesheet" href="/css/walk.css">
 <link rel="stylesheet" href="/css/dialogs.css">
 <link rel="stylesheet" href="/css/phone.css">
 <link rel="stylesheet" href="/css/themes.css">
@@ -384,6 +385,10 @@ Exports honor whatever filter is applied.">?</span>
             data-tip="ctrl-c copies when text is selected, so send an interrupt explicitly">ctrl-c</button>
           <button id="t-popout" onclick="popOutTerm()"
             data-tip="open this terminal in its own window, so alt-tab reaches it">pop out</button>
+          <!-- Only when the card's directory holds a findings folder. The bar is the progress: one segment per
+               finding. -->
+          <button id="t-walk" hidden onclick="toggleWalk()"
+            data-tip="walk this card's findings beside the terminal"><span>walk</span><span class="wk-mini" id="t-walk-bar"></span></button>
           <button id="t-files" class="icon" onclick="openTermFiles()"
             aria-label="the files in this session's directory, on the machine running it" data-tip="the files in this session's directory, on the machine running it">&#128193;</button>
           <button class="no" onclick="exitTerm()"
@@ -508,7 +513,30 @@ Exports honor whatever filter is applied.">?</span>
             <button onclick="closePasteBox()" aria-label="close (escape)" data-tip="close (escape)">&times;</button>
           </div>
         </div>
-        <div id="t-screen"></div>
+        <!-- The walk drawer sits BESIDE the one terminal and never replaces it: a second xterm on a card is the
+             re-entry that spun the board. `.term-body` is only a row to hold both. See js/walk.js. -->
+        <div class="term-body">
+          <aside id="walk-drawer" class="walk" hidden tabindex="-1" aria-label="walk the findings">
+            <div class="walk-head">
+              <strong id="walk-title"></strong>
+              <span class="by" id="walk-note"></span>
+              <span class="walk-bar" id="walk-bar"></span>
+              <span class="by" id="walk-count"></span>
+              <span class="grow"></span>
+              <button type="button" class="go" onclick="walkDone()"
+                data-tip="type walk done into the walker and submit it">walk done</button>
+              <button type="button" class="icon" onclick="walkClose()"
+                aria-label="close the walk" data-tip="close the walk">&times;</button>
+            </div>
+            <div class="walk-body">
+              <nav id="walk-rail" class="walk-rail" role="listbox" aria-label="findings"></nav>
+              <section id="walk-item" class="walk-item"></section>
+            </div>
+            <button type="button" class="walk-grip" aria-label="resize the walk drawer"
+              data-tip="drag to resize" onpointerdown="walkGripDown(event)"></button>
+          </aside>
+          <div id="t-screen"></div>
+        </div>
         <!-- The attached card's details, slid up from the shortcut strip. Read
              only when opened. See js/peek.js. -->
         <div class="term-foot">
@@ -3199,6 +3227,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/seen.js"></script>
 <script src="/js/newcard.js"></script>
 <script src="/js/terminal-links.js"></script>
+<script src="/js/walk.js"></script>
 <script src="/js/terminal-debug.js"></script>
 <script src="/js/inputlag.js"></script>
 <script src="/js/typing.js"></script>
