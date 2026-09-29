@@ -135,8 +135,11 @@ param(
     # The smoke card, last: a small claude worker on the room that reports back.
     # -SmokeTo is who it atrium_says "smoke ok <room> <nonce>" to, default the
     # card running this script when there is one. -SmokeCwd is where on the
-    # remote it runs, default the remote home.
+    # remote it runs, default the clone room-git.ps1 made, else the remote home.
+    # -SmokeOnly runs only auth and smoke against a room already provisioned,
+    # and changes nothing on it, so it is safe against a room in use.
     [switch] $NoSmoke,
+    [switch] $SmokeOnly,
     [string] $SmokeTo,
     [string] $SmokeCwd,
     [int] $SmokeTimeout = 180
@@ -144,9 +147,10 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
-$repo = Split-Path -Parent $PSScriptRoot
-$inCheckout = Test-Path (Join-Path $repo 'go.mod')
-$work = if ($inCheckout) { Join-Path $repo 'build.claude/provision' } else { Join-Path ([IO.Path]::GetTempPath()) 'atrium-provision' }
+if ($SmokeOnly -and ($Remove -or $NoSmoke)) { Write-Host 'provision args fail -SmokeOnly goes with neither -Remove nor -NoSmoke'; exit 1 }
+$checkout = Split-Path -Parent $PSScriptRoot
+$inCheckout = Test-Path (Join-Path $checkout 'go.mod')
+$work = if ($inCheckout) { Join-Path $checkout 'build.claude/provision' } else { Join-Path ([IO.Path]::GetTempPath()) 'atrium-provision' }
 
 # `pwsh -File` hands `-Runners claude,codex` over as one string, so commas split.
 function Split-List { param($v) @($v | ForEach-Object { "$_" -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ }) }
@@ -641,6 +645,172 @@ if [ "$pre_bindir" = False ]; then rmdir "$(dirname "$Bin")" 2>/dev/null || true
     Finish 0
 }
 
+# ── 12 and 13, the last two steps ───────────────────────────────────────────
+
+# DEFINED HERE, AHEAD OF STEP 4, so -SmokeOnly can run them against a room that
+# is already provisioned without reaching the steps between, any of which can
+# restart it. They are called at the end of the file in a full run.
+
+# 12. is claude signed in
+#
+# `claude auth status` ANSWERS WITHOUT A PROMPT, in JSON, and says loggedIn. It
+# is run the way the room runs claude: through a login shell on Unix.
+#
+# NEVER A FAILURE. A room that is not signed in still works, it only needs a
+# person. So this says the exact command and goes on. It never carries, copies
+# or reads a credential: the answer is read from the CLI, and the sign-in is
+# done by clint, at a terminal, with their own browser.
+function Test-ClaudeAuth {
+    $authState = 'na'
+    if (@($Runners + $Install) -contains 'claude') {
+        $as = if ($os -eq 'windows') {
+@'
+$c = Get-Command claude -ErrorAction SilentlyContinue | Select-Object -First 1
+if (-not $c) { 'auth=missing'; exit 0 }
+$job = Start-Job { param($n) & $n auth status 2>&1 | Out-String } -ArgumentList $c.Source
+if (Wait-Job $job -Timeout 30) { 'json=' + [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes((Receive-Job $job | Out-String))) }
+else { Stop-Job $job; 'auth=hung' }
+'@
+        } else {
+@'
+sh_=${SHELL:-/bin/sh}
+if [ -z "$("$sh_" -lc 'command -v claude' 2>/dev/null)" ]; then echo auth=missing; exit 0; fi
+o=$("$sh_" -lc 'claude auth status' </dev/null 2>&1)
+echo "json=$(printf '%s' "$o" | base64 | tr -d '\n')"
+'@
+        }
+        $kv = ConvertFrom-KeyValue (Invoke-Remote $as).Out
+        $text = if ($kv.json) { try { [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($kv.json)) } catch { '' } } else { '' }
+        $j = try { $text | ConvertFrom-Json } catch { $null }
+        if ($kv.auth -eq 'missing') {
+            $authState = 'unknown'
+            Step 'auth' 'skip' 'claude is not on PATH there, so there is nothing to check'
+        } elseif ($kv.auth -eq 'hung') {
+            $authState = 'unknown'
+            Step 'auth' 'warn' 'claude auth status did not answer in 30s, so whether it is signed in is not known'
+        } elseif ($j -and $null -ne $j.loggedIn) {
+            if ($j.loggedIn) {
+                $authState = 'ok'
+                $who = @($j.email, $j.orgName | Where-Object { $_ }) -join ', '
+                Step 'auth' 'ok' "signed in with $($j.authMethod)$(if ($who) { ", $who" })"
+            } else {
+                $authState = 'no'
+                $sshCmd = (@($Ssh) + $SshOption + @('-t', $Target)) -join ' '
+                Step 'auth' 'warn' "claude on $Name is not signed in. the room works and needs you once: run `"$sshCmd claude auth login`" and follow the URL it prints"
+                Write-Host "    why that one: it is the CLI's own sign-in. it prints a URL to open in any browser, here, and takes the code back,"
+                Write-Host "    so it needs no browser on $Name and this never handles the credential. 'claude setup-token' would hand you a token to store, which is a credential to carry."
+            }
+        } else {
+            $authState = 'unknown'
+            $first = ($text -split "`n" | Where-Object { $_.Trim() } | Select-Object -First 1)
+            Step 'auth' 'warn' "claude auth status did not answer with JSON, so whether it is signed in is not known. it said: $first"
+        }
+    }
+    $authState
+}
+
+# 13. smoke: a claude worker on the room that talks back
+#
+# THE PROOF THE ROOM CAN DO ITS JOB. It starts a small, lean claude card on the
+# new room through the hub, gives it a nonce, and reads the card back from the
+# hub until its report holds that nonce. The script decides pass or fail from
+# what it reads itself, never from what anybody says. The card is then exited
+# and checked to have left.
+#
+# ATRIUM-CONTROL CALLS ONLY. A permission prompt on the smoke card would go to
+# the human board and stall it, so the prompt asks for no gated tool.
+#
+# Skipped when there is nothing it could prove: -NoSmoke, claude not a runner
+# here, or claude not signed in (which auth already said, with the command).
+function Invoke-Smoke {
+    param([string] $authState)
+    function Get-SmokeCwd {
+        if ($SmokeCwd) { return $SmokeCwd }
+        # THE CLONE room-git.ps1 init made, when it made one, so the worker
+        # proves the room in a repository. Otherwise the remote home, which
+        # exists on every machine.
+        if ($script:clonePath) { return $script:clonePath }
+        $hs = if ($os -eq 'windows') { '"home=$HOME"' } else { 'echo "home=$HOME"' }
+        (ConvertFrom-KeyValue (Invoke-Remote $hs).Out).home
+    }
+
+    $smokeWhy = $null
+    if ($NoSmoke) { $smokeWhy = '-NoSmoke' }
+    elseif (@($Runners + $Install) -notcontains 'claude') { $smokeWhy = 'claude is not a runner for this room' }
+    elseif ($authState -eq 'no') { $smokeWhy = "claude is not signed in on $Name, so a worker there cannot answer. sign in, then rerun" }
+    elseif ($authState -ne 'ok') { $smokeWhy = 'whether claude is signed in is not known, so the smoke card would only guess' }
+    if ($smokeWhy) {
+        Step 'smoke' 'skip' $smokeWhy
+        Finish 0
+    }
+
+    $nonce = -join ((1..8) | ForEach-Object { '{0:x}' -f (Get-Random -Maximum 16) })
+    $me = $env:ATRIUM_AGENT_NAME; $myRoom = $env:ATRIUM_ROOM; $myCard = $env:ATRIUM_TASK_ID
+    $to = $SmokeTo
+    if (-not $to -and $me -and $myRoom) { $to = "$me@$myRoom" }
+    $cwd = Get-SmokeCwd
+    if (-not $cwd) { Step 'smoke' 'fail' "could not resolve a folder on $Name to run in. pass -SmokeCwd"; Finish 8 }
+
+    $said = "smoke ok $Name $nonce"
+    $prompt = "This is an automated smoke test of the room $Name. Do exactly these steps and nothing else. " +
+        "Use only the atrium-control tools: no Bash, no file reads, no edits.`n"
+    $n = 1
+    if ($to) { $prompt += "$n. Call atrium_say to $to with the text: $said`n"; $n++ }
+    $prompt += "$n. Call atrium_report with status done, the summary: $said, and no_commit: smoke test, no work.`n" +
+        "Then stop. When you finish, get blocked, or need an answer, call atrium_report (or atrium_say your launcher) before you end your turn."
+    $body = [ordered]@{
+        harness = 'claude'; cwd = $cwd; title = "smoke: $Name"; prompt = $prompt
+        tags = @('atrium:smoke'); lean = $true
+        model = 'claude-haiku-4-5-20251001'; effort = 'low'
+    }
+    # WHO LAUNCHED IT, so the report lands on the caller's card. A launcher on
+    # another room is `me@room`, and its card `room~id`.
+    if ($me -and $myRoom) { $body.spawned_by = "$me@$myRoom" }
+    if ($myRoom -and $myCard) { $body.spawned_by_id = "$myRoom~$myCard" }
+
+    $hdr = @{ 'X-Atrium-Room' = $Name }
+    $card = $null
+    $smokeErr = $null
+    try {
+        $card = Invoke-RestMethod -Method Post -Uri "http://$HubAddr/v1/launch" -Headers $hdr `
+            -ContentType 'application/json' -Body ($body | ConvertTo-Json -Depth 5) -TimeoutSec 60
+    } catch { $smokeErr = "the hub would not launch it: $($_.Exception.Message)" }
+    if ($card -and -not $card.id) { $smokeErr = 'the hub answered the launch with no card'; $card = $null }
+
+    $reported = $false
+    if ($card) {
+        $id = $card.id
+        $t0 = Get-Date
+        while (((Get-Date) - $t0).TotalSeconds -lt $SmokeTimeout) {
+            Start-Sleep -Seconds 3
+            try {
+                $t = Invoke-RestMethod -Uri "http://$HubAddr/v1/tasks/$id" -Headers $hdr -TimeoutSec 10
+                if ("$($t.recap)" -like "*$nonce*") { $reported = $true; break }
+            } catch { }
+        }
+        $took = [int]((Get-Date) - $t0).TotalSeconds
+        # EXITED WHATEVER HAPPENED, so a smoke card never lingers on the room.
+        try { Invoke-RestMethod -Method Post -Uri "http://$HubAddr/v1/tasks/$id/exit" -Headers $hdr -TimeoutSec 15 | Out-Null } catch { }
+        $left = $false
+        $t1 = Get-Date
+        while (((Get-Date) - $t1).TotalSeconds -lt 30) {
+            try {
+                $t = Invoke-RestMethod -Uri "http://$HubAddr/v1/tasks/$id" -Headers $hdr -TimeoutSec 10
+                if (-not $t.supervised) { $left = $true; break }
+            } catch { }
+            Start-Sleep -Seconds 2
+        }
+        $leftWord = if ($left) { 'and it exited' } else { 'but it did not leave within 30s, so exit it yourself' }
+        if ($reported) {
+            Step 'smoke' 'ok' "a claude worker on $Name reported $nonce in ${took}s, $leftWord$(if ($to) { ", and said it to $to" })"
+            if (-not $left) { Step 'smoke' 'warn' "card $id is still running on $Name" }
+        } else {
+            $smokeErr = "the smoke card $id did not report $nonce in ${SmokeTimeout}s ($leftWord). look at it on the board, it is on $Name"
+        }
+    }
+    if ($smokeErr) { Step 'smoke' 'fail' $smokeErr; Finish 8 }
+}
+
 # ── 4. one room per machine ─────────────────────────────────────────────────
 
 if (-not $Name) {
@@ -658,6 +828,16 @@ if (-not $manifest) {
 } elseif ($manifest.name -ne $Name -or ($joinedId -and $joinedId -ne $hubId)) {
     $was = if ($joinedId) { "$($manifest.name) of $joinedId" } else { $manifest.name }
     Fail 'state' 6 "one room per machine, and this one is already the room $was. -Remove it first to make it $Name of $hubId"
+}
+
+# -SMOKEONLY STOPS HERE, before anything is written. Everything above only
+# reads, and every step below could restart the room: a new binary, a join, an
+# autostart. So a room that is in use can be smoke tested and nothing else.
+if ($SmokeOnly) {
+    if (-not $manifest) { Fail 'state' 6 "-SmokeOnly is for a room this script provisioned, and $Target has no manifest" }
+    Step 'state' 'ok' "provisioned before as $($manifest.name). -SmokeOnly, so nothing on it is changed"
+    Invoke-Smoke (Test-ClaudeAuth)
+    Finish 0
 }
 
 if (-not $manifest) {
@@ -743,12 +923,12 @@ function Build-Checkout {
     $outDir = Join-Path $work "${os}_$goarch"
     New-Item -ItemType Directory -Force -Path $outDir | Out-Null
     $Binary = Join-Path $outDir "atrium$ext"
-    $ver = (git -C $repo describe --tags --exact-match 2>$null)
+    $ver = (git -C $checkout describe --tags --exact-match 2>$null)
     if (-not $ver) { $ver = 'dev' }
-    $commit = (git -C $repo rev-parse HEAD 2>$null)
+    $commit = (git -C $checkout rev-parse HEAD 2>$null)
     $env:CGO_ENABLED = '0'; $env:GOOS = $os; $env:GOARCH = $goarch
     try {
-        $b = & go -C $repo build -trimpath -ldflags "-s -w -X github.com/dovholuknf/atrium/internal/cli.Version=$ver -X github.com/dovholuknf/atrium/internal/cli.Commit=$commit" -o $Binary ./cmd/atrium 2>&1
+        $b = & go -C $checkout build -trimpath -ldflags "-s -w -X github.com/dovholuknf/atrium/internal/cli.Version=$ver -X github.com/dovholuknf/atrium/internal/cli.Commit=$commit" -o $Binary ./cmd/atrium 2>&1
         $bc = $LASTEXITCODE
     } finally {
         Remove-Item Env:CGO_ENABLED, Env:GOOS, Env:GOARCH -ErrorAction SilentlyContinue
@@ -1351,158 +1531,9 @@ echo "bin=$Bin"
 $clonePath = $null
 if ($Repo -ne 'none') { & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'room-git.ps1') init $Name -Target $Target -Ssh $Ssh @(if ($SshOption) { '-SshOption'; $SshOption -join ',' }) *>&1 | ForEach-Object { Write-Host $_; if ("$_" -match '^room-git cwd ok (.+)$') { $clonePath = $Matches[1].Trim() } }; if ($LASTEXITCODE -ne 0) { $clonePath = $null; Step 'git' 'warn' "room-git init exited $LASTEXITCODE. rerun: room-git.ps1 init $Name -Target $Target" } }
 
-# ── 12. is claude signed in ─────────────────────────────────────────────────
-
-# `claude auth status` ANSWERS WITHOUT A PROMPT, in JSON, and says loggedIn. It
-# is run the way the room runs claude: through a login shell on Unix.
-#
-# NEVER A FAILURE. A room that is not signed in still works, it only needs a
-# person. So this says the exact command and goes on. It never carries, copies
-# or reads a credential: the answer is read from the CLI, and the sign-in is
-# done by clint, at a terminal, with their own browser.
-$authState = 'na'
-if (@($Runners + $Install) -contains 'claude') {
-    $as = if ($os -eq 'windows') {
-@'
-$c = Get-Command claude -ErrorAction SilentlyContinue | Select-Object -First 1
-if (-not $c) { 'auth=missing'; exit 0 }
-$job = Start-Job { param($n) & $n auth status 2>&1 | Out-String } -ArgumentList $c.Source
-if (Wait-Job $job -Timeout 30) { 'json=' + [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes((Receive-Job $job | Out-String))) }
-else { Stop-Job $job; 'auth=hung' }
-'@
-    } else {
-@'
-sh_=${SHELL:-/bin/sh}
-if [ -z "$("$sh_" -lc 'command -v claude' 2>/dev/null)" ]; then echo auth=missing; exit 0; fi
-o=$("$sh_" -lc 'claude auth status' </dev/null 2>&1)
-echo "json=$(printf '%s' "$o" | base64 | tr -d '\n')"
-'@
-    }
-    $kv = ConvertFrom-KeyValue (Invoke-Remote $as).Out
-    $text = if ($kv.json) { try { [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($kv.json)) } catch { '' } } else { '' }
-    $j = try { $text | ConvertFrom-Json } catch { $null }
-    if ($kv.auth -eq 'missing') {
-        $authState = 'unknown'
-        Step 'auth' 'skip' 'claude is not on PATH there, so there is nothing to check'
-    } elseif ($kv.auth -eq 'hung') {
-        $authState = 'unknown'
-        Step 'auth' 'warn' 'claude auth status did not answer in 30s, so whether it is signed in is not known'
-    } elseif ($j -and $null -ne $j.loggedIn) {
-        if ($j.loggedIn) {
-            $authState = 'ok'
-            $who = @($j.email, $j.orgName | Where-Object { $_ }) -join ', '
-            Step 'auth' 'ok' "signed in with $($j.authMethod)$(if ($who) { ", $who" })"
-        } else {
-            $authState = 'no'
-            $sshCmd = (@($Ssh) + $SshOption + @('-t', $Target)) -join ' '
-            Step 'auth' 'warn' "claude on $Name is not signed in. the room works and needs you once: run `"$sshCmd claude auth login`" and follow the URL it prints"
-            Write-Host "    why that one: it is the CLI's own sign-in. it prints a URL to open in any browser, here, and takes the code back,"
-            Write-Host "    so it needs no browser on $Name and this never handles the credential. 'claude setup-token' would hand you a token to store, which is a credential to carry."
-        }
-    } else {
-        $authState = 'unknown'
-        $first = ($text -split "`n" | Where-Object { $_.Trim() } | Select-Object -First 1)
-        Step 'auth' 'warn' "claude auth status did not answer with JSON, so whether it is signed in is not known. it said: $first"
-    }
-}
+$authState = Test-ClaudeAuth
 
 if ($bad -gt 0) { Finish 5 }
 
-# ── 13. smoke: a claude worker on the room that talks back ───────────────────
-
-# THE PROOF THE ROOM CAN DO ITS JOB. It starts a small, lean claude card on the
-# new room through the hub, gives it a nonce, and reads the card back from the
-# hub until its report holds that nonce. The script decides pass or fail from
-# what it reads itself, never from what anybody says. The card is then exited
-# and checked to have left.
-#
-# ATRIUM-CONTROL CALLS ONLY. A permission prompt on the smoke card would go to
-# the human board and stall it, so the prompt asks for no gated tool.
-#
-# Skipped when there is nothing it could prove: -NoSmoke, claude not a runner
-# here, or claude not signed in (which auth already said, with the command).
-function Get-SmokeCwd {
-    if ($SmokeCwd) { return $SmokeCwd }
-    # HOOK FOR THE CLONE. When room-git.ps1 makes a clone on the remote, its
-    # path becomes the default here, so the worker proves it in a repository.
-    # Until then it is the remote home, which exists on every machine.
-    $hs = if ($os -eq 'windows') { '"home=$HOME"' } else { 'echo "home=$HOME"' }
-    (ConvertFrom-KeyValue (Invoke-Remote $hs).Out).home
-}
-
-$smokeWhy = $null
-if ($NoSmoke) { $smokeWhy = '-NoSmoke' }
-elseif (@($Runners + $Install) -notcontains 'claude') { $smokeWhy = 'claude is not a runner for this room' }
-elseif ($authState -eq 'no') { $smokeWhy = "claude is not signed in on $Name, so a worker there cannot answer. sign in, then rerun" }
-elseif ($authState -ne 'ok') { $smokeWhy = 'whether claude is signed in is not known, so the smoke card would only guess' }
-if ($smokeWhy) {
-    Step 'smoke' 'skip' $smokeWhy
-    Finish 0
-}
-
-$nonce = -join ((1..8) | ForEach-Object { '{0:x}' -f (Get-Random -Maximum 16) })
-$me = $env:ATRIUM_AGENT_NAME; $myRoom = $env:ATRIUM_ROOM; $myCard = $env:ATRIUM_TASK_ID
-$to = $SmokeTo
-if (-not $to -and $me -and $myRoom) { $to = "$me@$myRoom" }
-$cwd = Get-SmokeCwd
-if (-not $cwd) { Step 'smoke' 'fail' "could not resolve a folder on $Name to run in. pass -SmokeCwd"; Finish 8 }
-
-$said = "smoke ok $Name $nonce"
-$prompt = "This is an automated smoke test of the room $Name. Do exactly these steps and nothing else. " +
-    "Use only the atrium-control tools: no Bash, no file reads, no edits.`n"
-$n = 1
-if ($to) { $prompt += "$n. Call atrium_say to $to with the text: $said`n"; $n++ }
-$prompt += "$n. Call atrium_report with status done, the summary: $said, and no_commit: smoke test, no work.`n" +
-    "Then stop. When you finish, get blocked, or need an answer, call atrium_report (or atrium_say your launcher) before you end your turn."
-$body = [ordered]@{
-    harness = 'claude'; cwd = $cwd; title = "smoke: $Name"; prompt = $prompt
-    tags = @('atrium:smoke'); lean = $true
-    model = 'claude-haiku-4-5-20251001'; effort = 'low'
-}
-# WHO LAUNCHED IT, so the report lands on the caller's card. A launcher on
-# another room is `me@room`, and its card `room~id`.
-if ($me -and $myRoom) { $body.spawned_by = "$me@$myRoom" }
-if ($myRoom -and $myCard) { $body.spawned_by_id = "$myRoom~$myCard" }
-
-$hdr = @{ 'X-Atrium-Room' = $Name }
-$card = $null
-$smokeErr = $null
-try {
-    $card = Invoke-RestMethod -Method Post -Uri "http://$HubAddr/v1/launch" -Headers $hdr `
-        -ContentType 'application/json' -Body ($body | ConvertTo-Json -Depth 5) -TimeoutSec 60
-} catch { $smokeErr = "the hub would not launch it: $($_.Exception.Message)" }
-if ($card -and -not $card.id) { $smokeErr = 'the hub answered the launch with no card'; $card = $null }
-
-$reported = $false
-if ($card) {
-    $id = $card.id
-    $t0 = Get-Date
-    while (((Get-Date) - $t0).TotalSeconds -lt $SmokeTimeout) {
-        Start-Sleep -Seconds 3
-        try {
-            $t = Invoke-RestMethod -Uri "http://$HubAddr/v1/tasks/$id" -Headers $hdr -TimeoutSec 10
-            if ("$($t.recap)" -like "*$nonce*") { $reported = $true; break }
-        } catch { }
-    }
-    $took = [int]((Get-Date) - $t0).TotalSeconds
-    # EXITED WHATEVER HAPPENED, so a smoke card never lingers on the room.
-    try { Invoke-RestMethod -Method Post -Uri "http://$HubAddr/v1/tasks/$id/exit" -Headers $hdr -TimeoutSec 15 | Out-Null } catch { }
-    $left = $false
-    $t1 = Get-Date
-    while (((Get-Date) - $t1).TotalSeconds -lt 30) {
-        try {
-            $t = Invoke-RestMethod -Uri "http://$HubAddr/v1/tasks/$id" -Headers $hdr -TimeoutSec 10
-            if (-not $t.supervised) { $left = $true; break }
-        } catch { }
-        Start-Sleep -Seconds 2
-    }
-    $leftWord = if ($left) { 'and it exited' } else { 'but it did not leave within 30s, so exit it yourself' }
-    if ($reported) {
-        Step 'smoke' 'ok' "a claude worker on $Name reported $nonce in ${took}s, $leftWord$(if ($to) { ", and said it to $to" })"
-        if (-not $left) { Step 'smoke' 'warn' "card $id is still running on $Name" }
-    } else {
-        $smokeErr = "the smoke card $id did not report $nonce in ${SmokeTimeout}s ($leftWord). look at it on the board, it is on $Name"
-    }
-}
-if ($smokeErr) { Step 'smoke' 'fail' $smokeErr; Finish 8 }
+Invoke-Smoke $authState
 Finish 0
