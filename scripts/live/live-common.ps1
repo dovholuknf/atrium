@@ -16,7 +16,7 @@
 
 $AtriumBin    = 'C:\Users\claude\.atrium\bin\atrium.exe'
 $AtriumBinDir = Split-Path $AtriumBin
-$AtriumNew    = 'D:\worktrees\claude\atrium\orchestrator\build.claude\atrium.exe'
+$AtriumNew    = 'D:\git\github\dovholuknf\atrium\build.claude\atrium.exe'
 # A different build to deploy, for a -WhatIf rehearsal from another worktree.
 if ($env:ATRIUM_NEW_BUILD) { $AtriumNew = $env:ATRIUM_NEW_BUILD }
 $Base         = 'C:\Users\claude\.atrium2'
