@@ -3501,7 +3501,22 @@ Design questions:
 3. Whether posting to GitHub is ever in scope, and if so, behind what confirmation.
 4. How it relates to u-004 (answering Open Questions from the board): both turn a chat walk into a list you act on.
 
-## r-004. The worktree-gone reaper ended a live worker after it changed directory (bug, HIGH)
+## u-006. A link clicked in a terminal reuses its tab instead of opening a new one (bug)
+
+Status: built 2026-09-29 on `claude/sau-006`, headless section `linkReuse`, not yet merged. Owned by @ui, although the file is @terminal's, because @terminal was at
+its worker cap. Raised by clint 2026-09-29.
+
+`openTermURL` (`internal/api/web/js/terminal-links.js:381`) clicks an anchor with `target="_blank"`, so every link
+opens a new tab. During a review walk clint clicks one GitHub deep link per finding and ends up with dozens.
+
+Fix: open into a NAMED window. One name per pull request for `github.com/<org>/<repo>/pull/<n>/...` (for example
+`atrium-link-github.com/openziti/zrok/pull/1277`), and one per origin plus path for anything else. Chrome ignores the
+name and always opens a new window when `noopener` is set, so this is `window.open(url, name)` with the returned
+window's `opener` set to null at once, rather than `rel=noopener`. The referrer must stay withheld, which `noreferrer`
+used to do, because the address of a published board is not to be handed to whatever an agent printed. The review
+tab's `o` and `C` keys (u-005, sau-005) use the same helper.
+
+ The worktree-gone reaper ended a live worker after it changed directory (bug, HIGH)
 
 Status: fixed on branch `claude/sar-004` (2026-09-29), not yet merged. Three parts: a card's `Worktree` never follows
 the session's cd (an empty one is filled once), every runner keeps its launch directory for `runnerDir`, and `hadGit`
