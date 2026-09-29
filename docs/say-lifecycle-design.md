@@ -238,6 +238,8 @@ Whether it is worth the interruption is clint's call, so it is written down and 
 > option is one queued message at the next `SessionStart`: "you were asked for a reply by X at T and have not sent one,
 > here is the preview". It would repair the incident at the cost of atrium speaking to a session unprompted. Left off
 > until asked for.
+>
+> **clint, 2026-09-29: yes.** Better still if a hook can block the compaction until the reply is sent. To be designed.
 
 The board does not draw a chip either. The count is in the JSON, and drawing it is a separate change to a file this one
 does not need to touch.

@@ -183,3 +183,11 @@ Sections 1 and 2 do not wait on any of these.
 4. **Archive the two 2026-09-14/15 claude cards and the stale codex card by hand now,** or let section 1 do it at the
    next launch of each runner? Recommendation: let section 1 do it, since that exercises it. Changes no code either
    way.
+
+## clint's answers, 2026-09-29
+
+1. Suppressing codex's own updater "seems like a good idea", not settled. Section 3 is not built yet.
+2. **The runner row controls whether that runner auto-updates.** That is the per-row answer, and it is off by default.
+3. **Check nightly, whatever the boot.** A registry lookup costs no tokens, so the check runs once a night for every
+   row with auto-update on, instead of per boot.
+4. Not settled either way. Section 1 has landed (ea67105) and withdraws the stale cards on each runner's next launch.
