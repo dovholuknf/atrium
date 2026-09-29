@@ -378,7 +378,9 @@ are in `general.md` on dotagents branch `claude/review/director/2026-09-29-walk-
 **Naming.**
 
 25. A review-manager is titled and aliased `pr-<repo>-<number>` (`pr-ziti-4397`, `pr-zrok-1277`), never `saNN`, and
-    every report names it that way.
+    every report names it that way. Any other worker is named exactly its item id, never with an `sa` prefix: title
+    `<id>: <what>`, alias `<id>` (`r-004`, `t-001`, `74b`), and its worktree and branch use the same id
+    (`claude/r-007`).
 
 **Rating and reach.** From the PR #369 session recap, read again afterwards. They are in `general.md` at dotagents
 `a5f82ee`, on the same branch.
