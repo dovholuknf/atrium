@@ -888,8 +888,8 @@ func (c *controlMCP) taskHandler(ctx context.Context, req *mcp.CallToolRequest, 
 	if err != nil {
 		return nil, out, err
 	}
-	var t ctlCard
-	if err := c.ask(ctx, http.MethodGet, "/v1/tasks/"+url.PathEscape(id), scope, nil, &t); err != nil {
+	t, events, err := c.readCard(ctx, scope, id, in.Events)
+	if err != nil {
 		return nil, out, err
 	}
 	out.Card, out.Handle = namedFrom(room, scope, t.ID, t.Wire)
@@ -897,31 +897,42 @@ func (c *controlMCP) taskHandler(ctx context.Context, req *mcp.CallToolRequest, 
 	out.Status, out.Doing, out.Where, out.Why = t.Status, t.Activity.What, t.Worktree, t.Why
 	out.Idle, out.Waiting, out.Owned = t.Idle, t.Wait, t.Superv
 	out.Seen = t.Seen
-
-	if in.Events {
-		var body struct {
-			Events []struct {
-				At   string `json:"at"`
-				Kind string `json:"kind"`
-			} `json:"events"`
-		}
-		if err := c.ask(ctx, http.MethodGet,
-			"/v1/tasks/"+url.PathEscape(id)+"/events", scope, nil, &body); err == nil {
-			// The tail, because the useful end of a history is the recent one and a
-			// card that has been up for days has hundreds.
-			from := 0
-			if len(body.Events) > 20 {
-				from = len(body.Events) - 20
-			}
-			for _, e := range body.Events[from:] {
-				out.Events = append(out.Events, taskEvent{At: e.At, Kind: e.Kind})
-			}
-		}
-	}
+	out.Events = events
 	out.Note = "status and events only. atrium does not record what a session printed, so this " +
 		"cannot tell you what it said or thinks. `seen` says whether the operator has seen its " +
 		"last turn and answered that turn's Open Questions."
 	return nil, out, nil
+}
+
+// readCard reads one card on `scope`, and its recent events when asked.
+func (c *controlMCP) readCard(ctx context.Context, scope, id string, withEvents bool) (ctlCard, []taskEvent, error) {
+	var t ctlCard
+	if err := c.ask(ctx, http.MethodGet, "/v1/tasks/"+url.PathEscape(id), scope, nil, &t); err != nil {
+		return t, nil, err
+	}
+	if !withEvents {
+		return t, nil, nil
+	}
+	var body struct {
+		Events []struct {
+			At   string `json:"at"`
+			Kind string `json:"kind"`
+		} `json:"events"`
+	}
+	var events []taskEvent
+	if err := c.ask(ctx, http.MethodGet,
+		"/v1/tasks/"+url.PathEscape(id)+"/events", scope, nil, &body); err == nil {
+		// The tail, because the useful end of a history is the recent one and a
+		// card that has been up for days has hundreds.
+		from := 0
+		if len(body.Events) > 20 {
+			from = len(body.Events) - 20
+		}
+		for _, e := range body.Events[from:] {
+			events = append(events, taskEvent{At: e.At, Kind: e.Kind})
+		}
+	}
+	return t, events, nil
 }
 
 // ── launch ──────────────────────────────────────────────────────────────────────

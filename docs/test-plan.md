@@ -4829,3 +4829,44 @@ A restart of the card after that is not lean either.
 last conversation with the full setup and takes the lean tags off. The terminal menu notes `restart this session` as
 `comes back lean`, and has `restart with my full setup`, which asks, takes the lean tags off and restarts. A card
 that is not lean shows none of this.
+
+## CG. `atrium_task` and `atrium_exit` reach a card on another room
+
+CG1 needs the hub built from this change and a HUB RESTART. CG2 and CG3 need the hub and the calling room built from
+it (HUB RESTART and ROOM RESTART), and a restart of the calling session so its stdio `atrium control` is the new one.
+Room m1mini is any second room. Go tests: the hub-side tools in `internal/link/relay_test.go` (exit by handle,
+alias, `@alias@ROOM` and `room~id`, own room local, an unknown room refused, task across rooms and on its own card,
+and a card from `atrium_launch` with `room` read and exited by its returned card and handle), the relay ops `card`
+and `exit` in the same file, the room endpoints in `internal/daemon/relay_test.go` (read and exit through the hub,
+own room answered local, a refusal and an old hub passed back, no hub), and the stdio tools in
+`internal/cli/control_relay_test.go` (across, local, a refusal, and an older room). See `docs/backlog-2.md` item 68
+and `docs/cross-room-say-design.md` "Reading and exiting a card on another room".
+
+### CG1. The orchestrator watches and ends what it launched on another room
+
+1. From a session on the hub's own room, `atrium_launch` a throwaway worker with `room: m1mini`. Note `card`
+   (`m1mini~<id>`) and `handle` (`name@m1mini`).
+2. `atrium_task` with that `card`, then with that `handle`, then with its alias as `alias@m1mini`, `events: true`.
+3. `atrium_exit` with the `card`.
+
+**Expected:** every `atrium_task` answers the same card, `card` = `m1mini~<id>` and `handle` = `name@m1mini`, with its
+status and events. The exit answers `asked: true` with the same names, and the card on m1mini shows the session
+leaving while its card and history stay. No hand-made `POST /v1/tasks/m1mini~<id>/exit` is needed.
+
+### CG2. A session on m1mini reads and exits a card on the hub's room
+
+1. On m1mini, from a session with the stdio `atrium control`, `atrium_task` with `<name>@<hub's room>` of a live
+   throwaway card there.
+2. `atrium_exit` it the same way.
+
+**Expected:** the task answers with `card` = `<hub's room>~<id>` and `handle` = `<name>@<hub's room>`. The exit
+answers `asked: true` and the session on the hub's room leaves.
+
+### CG3. Local names, typos and skew
+
+1. `atrium_task` with a bare name, then `name@<own room>`, then `nobody@m1mini`, then `x@atlantis`.
+2. With an older hub and this room, `atrium_exit` with `name@m1mini` from the stdio tool.
+
+**Expected:** the first two read the card on your own room and never touch the hub. `nobody` is refused listing the
+live handles on m1mini. `atlantis` is refused naming the rooms the hub knows. Step 2 says the hub is older than
+reaching a card on another room.

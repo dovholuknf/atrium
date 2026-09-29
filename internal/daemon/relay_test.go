@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync"
 	"testing"
@@ -21,6 +23,9 @@ type fakeRelay struct {
 	got    []RelaySay
 	answer func(RelaySay) (RelayResult, error)
 	peers  []RemotePeer
+	// reaches is every Card and Exit asked, and reach answers them.
+	reaches []RelaySay
+	reach   func(RelaySay) (RelayResult, error)
 }
 
 func (f *fakeRelay) Say(_ context.Context, s RelaySay) (RelayResult, error) {
@@ -37,6 +42,35 @@ func (f *fakeRelay) Say(_ context.Context, s RelaySay) (RelayResult, error) {
 
 func (f *fakeRelay) Peers(_ context.Context, _ bool) ([]RemotePeer, string, error) {
 	return f.peers, "", nil
+}
+
+// Card and Exit record the request as a RelaySay with Text "card" or "exit",
+// and answer reach when it is set.
+func (f *fakeRelay) Card(_ context.Context, room, to string, events bool) (RelayResult, error) {
+	return f.reached(RelaySay{Room: room, To: to, Text: "card", When: fmt.Sprint(events)})
+}
+
+func (f *fakeRelay) Exit(_ context.Context, room, to string) (RelayResult, error) {
+	return f.reached(RelaySay{Room: room, To: to, Text: "exit"})
+}
+
+func (f *fakeRelay) reached(s RelaySay) (RelayResult, error) {
+	f.mu.Lock()
+	f.reaches = append(f.reaches, s)
+	reach := f.reach
+	f.mu.Unlock()
+	if reach != nil {
+		return reach(s)
+	}
+	card, handle := s.Room+"~L1", s.To+"@"+s.Room
+	return RelayResult{OK: true, To: handle, Card: card,
+		Task: &RemoteTask{Card: card, Handle: handle, Status: "working"}}, nil
+}
+
+func (f *fakeRelay) reachedAll() []RelaySay {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]RelaySay(nil), f.reaches...)
 }
 
 func (f *fakeRelay) says() []RelaySay {
@@ -441,5 +475,105 @@ func TestRoomPeersComeFromTheHub(t *testing.T) {
 	_ = json.Unmarshal(rec.Body.Bytes(), &out)
 	if rec.Code != 200 || len(out.Peers) != 1 || out.Peers[0].Room != "claude-sg4" {
 		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func roomCard(d *Daemon, to string, events bool) (int, map[string]any) {
+	path := "/v1/peers/card?to=" + url.QueryEscape(to)
+	if events {
+		path += "&events=1"
+	}
+	rec := httptest.NewRecorder()
+	d.handleRoomCard(rec, httptest.NewRequest(http.MethodGet, path, nil))
+	var out map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &out)
+	return rec.Code, out
+}
+
+func roomExit(d *Daemon, to string) (int, map[string]any) {
+	raw, _ := json.Marshal(map[string]string{"to": to})
+	rec := httptest.NewRecorder()
+	d.handleRoomExit(rec, httptest.NewRequest(http.MethodPost, "/v1/peers/exit", bytes.NewReader(raw)))
+	var out map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &out)
+	return rec.Code, out
+}
+
+// ITEM 68, ROOM SIDE. A card on another room is read and exited through the
+// hub, by `name@room` or `room~id`, and comes back named across.
+func TestACardOnAnotherRoomIsReadAndExitedThroughTheHub(t *testing.T) {
+	d, f := roomDaemon(t)
+
+	code, out := roomCard(d, "orch@claude-sg4", true)
+	task, _ := out["task"].(map[string]any)
+	if code != http.StatusOK || task == nil || task["card"] != "claude-sg4~L1" || task["handle"] != "orch@claude-sg4" {
+		t.Fatalf("card: %d %+v", code, out)
+	}
+	code, out = roomExit(d, "claude-sg4~01ABC")
+	if code != http.StatusOK || out["asked"] != true || out["card"] != "claude-sg4~L1" {
+		t.Fatalf("exit: %d %+v", code, out)
+	}
+	got := f.reachedAll()
+	if len(got) != 2 || got[0] != (RelaySay{Room: "claude-sg4", To: "orch", Text: "card", When: "true"}) ||
+		got[1] != (RelaySay{Room: "claude-sg4", To: "01ABC", Text: "exit"}) {
+		t.Fatalf("hub asked %+v", got)
+	}
+}
+
+// This room's own name, and no room at all, are answered as local, and the
+// hub is not asked.
+func TestACardOnThisRoomIsAnsweredLocal(t *testing.T) {
+	d, f := roomDaemon(t)
+	for _, to := range []string{"sa1@M1MINI", "m1mini~01ABC", "sa1"} {
+		code, out := roomCard(d, to, false)
+		if code != http.StatusOK || out["local"] == nil || out["local"] == "" {
+			t.Fatalf("card %q: %d %+v", to, code, out)
+		}
+		if code, out = roomExit(d, to); code != http.StatusOK || out["local"] == nil {
+			t.Fatalf("exit %q: %d %+v", to, code, out)
+		}
+	}
+	if len(f.reachedAll()) != 0 {
+		t.Fatal("a card on this room went to the hub")
+	}
+}
+
+// A refusal from the far side is passed back in its words with its code. A hub
+// older than this is told apart from one that simply refused.
+func TestACardAcrossRoomsPassesRefusalsBack(t *testing.T) {
+	d, f := roomDaemon(t)
+	f.mu.Lock()
+	f.reach = func(RelaySay) (RelayResult, error) {
+		return RelayResult{Code: http.StatusNotFound, Error: "no session called \"nobody\". these would have worked: orch"}, nil
+	}
+	f.mu.Unlock()
+	code, out := roomExit(d, "nobody@claude-sg4")
+	if code != http.StatusNotFound || !strings.Contains(fmt.Sprint(out["error"]), "orch") {
+		t.Fatalf("refusal: %d %+v", code, out)
+	}
+	f.mu.Lock()
+	f.reach = func(RelaySay) (RelayResult, error) {
+		return RelayResult{Code: http.StatusBadRequest, Error: "this hub does not know the relay op \"exit\""}, nil
+	}
+	f.mu.Unlock()
+	code, out = roomExit(d, "orch@claude-sg4")
+	if code != http.StatusBadGateway || !strings.Contains(fmt.Sprint(out["error"]), "hub is older") {
+		t.Fatalf("old hub: %d %+v", code, out)
+	}
+	f.mu.Lock()
+	f.reach = func(RelaySay) (RelayResult, error) { return RelayResult{}, ErrRelayDown }
+	f.mu.Unlock()
+	if code, _ = roomCard(d, "orch@claude-sg4", false); code != http.StatusBadGateway {
+		t.Fatalf("hub down: %d", code)
+	}
+}
+
+// A room with no hub says so rather than pretending the card is not there.
+func TestACardAcrossRoomsWithNoHubIsRefused(t *testing.T) {
+	d := testDaemon(t)
+	d.opts.Room = "m1mini"
+	code, out := roomCard(d, "orch@claude-sg4", false)
+	if code != http.StatusServiceUnavailable || !strings.Contains(fmt.Sprint(out["error"]), "not a room linked") {
+		t.Fatalf("%d %+v", code, out)
 	}
 }

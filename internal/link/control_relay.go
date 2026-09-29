@@ -38,6 +38,19 @@ func (c *controlMCP) relay(ctx context.Context, from string, req RelayRequest) R
 			return ans
 		}
 		return c.deliverAcross(ctx, target, req.To, sender+"@"+from, req.Text, req.When)
+	case RelayCard, RelayExit:
+		target := strings.TrimSpace(req.Room)
+		if target == "" || equalFold(target, from) {
+			return RelayAnswer{Code: http.StatusBadRequest,
+				Error: "the relay reaches a card on another room. this one names the room it came from"}
+		}
+		if ans, ok := c.reachable(ctx, target); !ok {
+			return ans
+		}
+		if req.Op == RelayExit {
+			return c.exitAcross(ctx, target, req.To)
+		}
+		return c.cardAcross(ctx, target, req.To, req.Events)
 	case RelayPeers:
 		peers, quiet := c.peersElsewhere(ctx, from, req.All)
 		ans := RelayAnswer{OK: true, Peers: peers}
@@ -113,6 +126,40 @@ func (c *controlMCP) deliverAcross(ctx context.Context, room, to, fromWire, text
 	}
 	return RelayAnswer{OK: true, Delivered: res.Delivered, When: res.When, Warning: res.Warning,
 		To: handle + "@" + room, Card: tagFor(room, id)}
+}
+
+// cardAcross reads `to` on `room`, named across, for a room's atrium_task.
+func (c *controlMCP) cardAcross(ctx context.Context, room, to string, withEvents bool) RelayAnswer {
+	id, _, err := c.resolvePeer(ctx, room, to)
+	if err != nil {
+		return refusal(err)
+	}
+	t, events, err := c.readCard(ctx, room, id, withEvents)
+	if err != nil {
+		return refusal(err)
+	}
+	card, handle := namedFrom("", room, t.ID, t.Wire)
+	task := &RelayTask{Card: card, Handle: handle, Title: t.Title, Status: t.Status, Doing: t.Activity.What,
+		Where: t.Worktree, Why: t.Why, Idle: t.Idle, Waiting: t.Wait, Owned: t.Superv}
+	for _, e := range events {
+		task.Events = append(task.Events, RelayEvent{At: e.At, Kind: e.Kind})
+	}
+	return RelayAnswer{OK: true, To: handle, Card: card, Task: task}
+}
+
+// exitAcross asks `to` on `room` to leave, for a room's atrium_exit. Asking
+// twice asks the same session to leave twice, which is harmless, so a failure
+// here is just what it is and nothing is held.
+func (c *controlMCP) exitAcross(ctx context.Context, room, to string) RelayAnswer {
+	id, handle, err := c.resolvePeer(ctx, room, to)
+	if err != nil {
+		return refusal(err)
+	}
+	if err := c.ask(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(id)+"/exit", room, nil, nil); err != nil {
+		return refusal(err)
+	}
+	card, wire := namedFrom("", room, id, handle)
+	return RelayAnswer{OK: true, To: wire, Card: card}
 }
 
 // refusal turns a failed call into an answer. A 502, 503 or 504 is a room that

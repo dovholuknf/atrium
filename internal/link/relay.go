@@ -43,6 +43,11 @@ const relayWait = 3 * controlTimeout
 const (
 	RelaySay   = "say"
 	RelayPeers = "peers"
+	// RelayCard reads one card on another room, and RelayExit asks one to
+	// leave. What atrium_task and atrium_exit do across rooms. See item 68 in
+	// docs/backlog-2.md.
+	RelayCard = "card"
+	RelayExit = "exit"
 )
 
 // RelayRequest is what a room asks its hub to carry.
@@ -59,6 +64,8 @@ type RelayRequest struct {
 	When string `json:"when,omitempty"`
 	// All includes cards with no session, for `peers`.
 	All bool `json:"all,omitempty"`
+	// Events includes the card's recent events, for `card`.
+	Events bool `json:"events,omitempty"`
 }
 
 // RelayAnswer is the hub's answer.
@@ -81,6 +88,30 @@ type RelayAnswer struct {
 	To    string      `json:"to,omitempty"`
 	Card  string      `json:"card,omitempty"`
 	Peers []RelayPeer `json:"peers,omitempty"`
+	// Task is the card `card` read, named across.
+	Task *RelayTask `json:"task,omitempty"`
+}
+
+// RelayTask is one card on another room, as atrium_task reports it. Card is
+// `room~id` and Handle `name@room`.
+type RelayTask struct {
+	Card    string       `json:"card"`
+	Handle  string       `json:"handle,omitempty"`
+	Title   string       `json:"title,omitempty"`
+	Status  string       `json:"status"`
+	Doing   string       `json:"doing,omitempty"`
+	Where   string       `json:"where,omitempty"`
+	Why     string       `json:"why,omitempty"`
+	Idle    int          `json:"idle_seconds,omitempty"`
+	Waiting int          `json:"waiting_seconds,omitempty"`
+	Owned   bool         `json:"atrium_owns_terminal"`
+	Events  []RelayEvent `json:"events,omitempty"`
+}
+
+// RelayEvent is one event on a RelayTask.
+type RelayEvent struct {
+	At   string `json:"at"`
+	Kind string `json:"kind"`
 }
 
 // RelayPeer is one session on another room.
