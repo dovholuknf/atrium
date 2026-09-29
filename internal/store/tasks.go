@@ -384,6 +384,7 @@ func (s *Store) insertTask(t *Task) error {
 		// No effort and no extras. The launch writes them with
 		// `SetLaunchOptions` once the runner is up.
 		"", "[]", "{}",
+		// Nothing to say about an alias nobody has tried to give it yet.
 		"",
 		// And nothing owed to a launcher yet.
 		"")
