@@ -441,7 +441,8 @@ func TestKeepaliveStopsAtBreakEvenWithOneToast(t *testing.T) {
 		t.Fatalf("state = %s, want %s", f.state(), store.KeepaliveBreakEven)
 	}
 	toasts := f.toasts()
-	if len(toasts) != 1 || !strings.Contains(toasts[0], "break-even after 5 refreshes, $0.30") {
+	if len(toasts) != 1 || !strings.Contains(toasts[0], "break-even after 5 refreshes") ||
+		strings.Contains(toasts[0], "$") {
 		t.Fatalf("toasts = %q", toasts)
 	}
 	f.tick()
@@ -453,6 +454,8 @@ func TestKeepaliveStopsAtBreakEvenWithOneToast(t *testing.T) {
 	if v == nil || v.Refreshes != 5 || v.Spent < 0.299 || v.Budget < 0.299 {
 		t.Fatalf("view = %+v", v)
 	}
+	// The stop still runs on the priced budget, but no dollar figure leaves the daemon.
+	assertNoMoney(t, v)
 }
 
 // Four spent still leaves room for the fifth.

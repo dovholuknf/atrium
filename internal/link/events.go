@@ -488,7 +488,9 @@ func tagEvent(e Event) []byte {
 		return e.Data
 	}
 	var obj map[string]any
-	if err := json.Unmarshal(e.Data, &obj); err != nil {
+	// `null` unmarshals without error into a nil map, and writing to that
+	// panicked the stream. It is not an object either.
+	if err := json.Unmarshal(e.Data, &obj); err != nil || obj == nil {
 		// Not an object. Passed through unchanged rather than dropped: an
 		// event the hub does not understand is still an event the board might.
 		return e.Data
