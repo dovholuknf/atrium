@@ -699,6 +699,10 @@ function openTerm(task) {
   paintPaneBg(themeFor(termTask));
   termFit = new FitAddon.FitAddon();
   term.loadAddon(termFit);
+  // The phone view (t-003b): the key bar, the pinch, and the cursor kept in
+  // view. All of it is a no-op on a desktop. See `termPhone`.
+  syncPhoneView();
+  term.onWriteParsed(phoneKeepSoon);
   term.open(screen);
   // Before anything can write to it, so the trace starts at the first byte.
   traceTerm(term);

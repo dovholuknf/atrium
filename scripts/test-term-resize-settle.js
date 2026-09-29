@@ -38,6 +38,7 @@ const src = lift("function sendResize(", "\n}") + "\n" +
 // time, `advance` runs everything due.
 const harness = new Function(`
   let now = 0, seq = 0;
+  function termPhone() { return false; }
   const timers = new Map();
   function setTimeout(fn, ms) { const id = ++seq; timers.set(id, { at: now + ms, fn }); return id; }
   function clearTimeout(id) { timers.delete(id); }
@@ -121,6 +122,8 @@ const wide = new Function(`
   let termFitRows = 0, termPtyRows = 0;
   let floor = 0, noted = 0;
   function sizeTermHost() {}
+  function termPhone() { return false; }
+  function phoneZoomFit() {}
   function termMinCols() { return floor; }
   function noteUnderFloor() { noted++; }
   function clearTimeout() {}
