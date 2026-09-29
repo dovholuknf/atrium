@@ -620,6 +620,10 @@ BUILT (r-007 stages 1 and 3): option 2 in `stoppedSilently`, counting live runne
 
 BUILT (r-007 stage 3), sections 1, 4 and 5 minus the restart-time snapshot: the human touch stamping, `parkCard`,
 `unpark`, the say gate and `wake`, in `internal/daemon/park.go` and `internal/store/park.go`. Tests in `park_test.go`.
+BUILT (r-007 stage 4): `internal/daemon/idlepark.go` answers who is subject and holds the orchestrator's own rule, the
+tag `atrium:orchestrator` and no other card with a live runner (parked, fixtures and shells do not count). The tick
+that asks it is stage 5.
+
 Not built: the keep-alive rule reading `human_at`, the restart snapshot, and the stamps for a plain operator message
 (covered by the resume stamp), an action and enabling keep-alive.
 
