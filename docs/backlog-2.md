@@ -1535,5 +1535,10 @@ and "in" is uncached input only (48), because with caching almost all input is a
 Relabel: prompts, with API calls next to them, and "uncached in". Check the cost estimate against current pricing,
 and confirm whether the figures cover the card or only the session since its last `/clear`.
 
+Status 2026-09-28, done on `claude/sa78`. Both popovers (`peek.js` and the details in `usage.js`) now say "prompts" with
+"calls" beside it, "uncached in", "cache read" and "cache write", each with a tip saying what it counts. Sonnet 5.5 was
+missing from the usage price table and priced at $0, so it is added at $2/$10 with the same cache multipliers, checked
+against the pricing page. Rows already stored keep their old cost. The figures cover the whole card, across `/clear`.
+
 
 ------------
