@@ -615,6 +615,9 @@ Two rules go with it, whichever option is picked:
   so a wait on clint that was reported never rings. Only an unreported wait does, and under option 2 only once its
   workers have ended.
 
+BUILT (r-007 stage 1): option 2 in `stoppedSilently`, counting live runners. Parked workers and the parked-card rule
+wait for the parking machinery (`workerOutstanding` in `a2a.go` is where they go).
+
 Tests: `TestDirectorWithLiveWorkerNotSilent`, `TestDirectorWithParkedWorkerNotSilent`,
 `TestDirectorAllWorkersEndedIsSilent` (one notice, on the usual backoff), `TestWorkerSilentStopUnchanged`,
 `TestParkedCardNeverSilent`, and `TestStuckMarkMatchesNotice` for each of those.
