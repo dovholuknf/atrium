@@ -119,7 +119,7 @@ func TestIdleParkRule(t *testing.T) {
 		{"subagents as the last Stop reported", store.StatusNeedsInput, func(d *Daemon, c *store.Task) {
 			d.act.setBackground(c.ID, 2)
 		}, false},
-		{"mid new-context",store.StatusNeedsInput, func(d *Daemon, c *store.Task) {
+		{"mid new-context", store.StatusNeedsInput, func(d *Daemon, c *store.Task) {
 			d.nctx.begin(c.ID, "HANDOFF.x.md", "")
 		}, false},
 	}
