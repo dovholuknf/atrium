@@ -207,6 +207,19 @@ func (s *Store) DueCulls(at time.Time) ([]*WorkItem, error) {
 	return out, err
 }
 
+// MergeCandidates lists the items a merge could cover: not yet closed, and not
+// marked or held. `reported` counts, which OpenWorkItems leaves out because it
+// belongs to the sweep for work that never reported.
+func (s *Store) MergeCandidates() ([]*WorkItem, error) {
+	var out []*WorkItem
+	err := s.guard(func() error {
+		var err error
+		out, err = listWorkItemsOn(s.db, `state IN `+openStatesSQL+` AND held_by = '' AND cull_at = ''`)
+		return err
+	})
+	return out, err
+}
+
 // AcceptMerged closes an item as accepted after its merged worker was culled:
 // the first code to reach WorkAccepted. The mark goes with it.
 func (s *Store) AcceptMerged(taskID string) error {

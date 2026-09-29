@@ -98,7 +98,7 @@ func (d *Daemon) Merged(into string, branches []string) (*MergedResult, error) {
 		res.Off = true
 		return res, nil
 	}
-	items, err := d.st.OpenWorkItems()
+	items, err := d.st.MergeCandidates()
 	if err != nil {
 		return nil, err
 	}
