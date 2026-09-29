@@ -39,8 +39,12 @@ claude/main in before the next handover.
 | Worker | Card | Branch, worktree | Item and state |
 | --- | --- | --- | --- |
 | sa74 | 01a0eac2 | claude/lost-lines, D:/worktrees/claude/atrium/lost-lines | 74: BUILDING option 1, the height hold |
-| sa81 | 01a0eb55 | claude/sa81, D:/worktrees/claude/atrium/sa81 | 81: DECSTBM scroll regions in screen.go, building |
-| sa82 | 01a0eb57 | claude/sa82, D:/worktrees/claude/atrium/sa82 | 82: wide cells. Design phase ONLY |
+| sa81 | 01a0eb55 | claude/sa81, D:/worktrees/claude/atrium/sa81 | 81: DONE f645161, merged here, exited |
+| sa82 | 01a0eb57 | claude/sa82, D:/worktrees/claude/atrium/sa82 | 82: wide cells, BUILDING phase 2 on claude/terminal |
+
+claude/terminal also carries claude/main up to at least `2ca5636` (it came in through sa81's branch). When a
+worker reports done: diff it against claude/main, review it against its design, `git merge --no-ff --no-edit
+<sha>`, run its targeted tests here with the three ATRIUM_ env vars cleared, then `atrium_exit` it.
 
 ### Item 74 (sa74)
 
