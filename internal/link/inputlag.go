@@ -61,8 +61,45 @@ func (c *lagConn) Write(b []byte) (int, error) {
 	if d := time.Since(t0); inputlag.Over(d) {
 		inputlag.Logf("hub %s up: write toward the room took %s (%d bytes)", c.room, inputlag.Ms(d), n)
 	}
-	c.up.CompareAndSwap(0, t0.UnixNano())
+	if !onlyControl(b) {
+		c.up.CompareAndSwap(0, t0.UnixNano())
+	}
 	return n, err
+}
+
+// onlyControl reports whether b is nothing but whole websocket control frames
+// (close 0x8, ping 0x9, pong 0xA), masked or not.
+//
+// The room pings an idle attach every 45s and the browser's pong goes up
+// through here. Timed as input, the next bytes back are the next ping, so every
+// ping logged a fake 45000ms echo. Only a keystroke is worth timing.
+//
+// A Write holding a data frame anywhere in it counts as input, and so does one
+// that ends inside a frame or does not parse: the cost of a wrong "input" is one
+// stray line, the cost of a wrong "control" is a real keystroke going untimed,
+// which is the thing this log exists to catch. An empty write is not input.
+func onlyControl(b []byte) bool {
+	if len(b) == 0 {
+		return true
+	}
+	for len(b) > 0 {
+		if len(b) < 2 || b[0]&0x08 == 0 {
+			return false
+		}
+		l := int(b[1] & 0x7f)
+		if l > 125 { // a control frame is never longer than that
+			return false
+		}
+		hdr := 2
+		if b[1]&0x80 != 0 {
+			hdr += 4
+		}
+		if len(b) < hdr+l {
+			return false
+		}
+		b = b[hdr+l:]
+	}
+	return true
 }
 
 func (c *lagConn) Read(b []byte) (int, error) {
@@ -78,6 +115,11 @@ func (c *lagConn) Read(b []byte) (int, error) {
 		return n, err
 	}
 	if !inputlag.On() {
+		return n, err
+	}
+	// A ping or close from the room is not the answer to a keystroke, so it
+	// leaves the clock running for the bytes that are.
+	if onlyControl(b[:n]) {
 		return n, err
 	}
 	if at := c.up.Swap(0); at != 0 {
