@@ -1772,6 +1772,47 @@ var migrations = []struct {
 			`UPDATE task SET owed_at = prompted_at WHERE owed_at = '' AND prompted_at != ''`,
 		},
 	},
+	{
+		// A SAY'S LIFECYCLE ON RECORD: sent, the handle it resolved to, queued,
+		// delivered and by which channel, and a reply asked for that is still
+		// owed. Separate from `owed_at`, which is a report owed to a launcher.
+		// See docs/say-lifecycle-design.md.
+		name: "0069_say",
+		stmts: []string{
+			`CREATE TABLE IF NOT EXISTS say (
+				id           TEXT PRIMARY KEY,
+				from_task    TEXT NOT NULL DEFAULT '',
+				from_wire    TEXT NOT NULL,
+				to_task      TEXT NOT NULL DEFAULT '',
+				to_wire      TEXT NOT NULL DEFAULT '',
+				to_input     TEXT NOT NULL,
+				via          TEXT NOT NULL,
+				room         TEXT NOT NULL DEFAULT '',
+				door         TEXT NOT NULL,
+				preview      TEXT NOT NULL,
+				chars        INTEGER NOT NULL,
+				when_word    TEXT NOT NULL DEFAULT '',
+				state        TEXT NOT NULL CHECK (state IN
+					('sent','queued','delivered','held','handed','unconfirmed','refused','unresolved')),
+				channel      TEXT NOT NULL DEFAULT '',
+				message_id   TEXT NOT NULL DEFAULT '',
+				relay_id     TEXT NOT NULL DEFAULT '',
+				note         TEXT NOT NULL DEFAULT '',
+				reply_wanted INTEGER NOT NULL DEFAULT 0,
+				replied_at   TEXT NOT NULL DEFAULT '',
+				lapsed       INTEGER NOT NULL DEFAULT 0,
+				reset_at     TEXT NOT NULL DEFAULT '',
+				reset_kind   TEXT NOT NULL DEFAULT '',
+				sent_at      TEXT NOT NULL,
+				queued_at    TEXT NOT NULL DEFAULT '',
+				delivered_at TEXT NOT NULL DEFAULT ''
+			)`,
+			`CREATE INDEX IF NOT EXISTS say_to ON say (to_task, sent_at)`,
+			`CREATE INDEX IF NOT EXISTS say_from ON say (from_task, sent_at)`,
+			`CREATE INDEX IF NOT EXISTS say_message ON say (message_id)`,
+			`CREATE INDEX IF NOT EXISTS say_relay ON say (relay_id)`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the

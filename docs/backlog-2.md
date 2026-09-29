@@ -987,6 +987,10 @@ work" badge would need the count to travel on the card, and is left out until as
 
 ## 32. A queued say from http-support never produced a backlog entry, and nothing can say why (bug)
 
+**Status: built on `claude/sa32`, migration `0069_say`.** Lifecycle row, candidates on a miss, and `reply: true` owed
+replies are done. Cross-room delivery receipts need a say id on the relay request (link and hub, not changed).
+Design: `docs/say-lifecycle-design.md`.
+
 Raised 2026-09-28 by clint. About 09:22 local, the mercurius `http-support` session wrote a brief and sent a say to
 "the claude/main:atrium session (handle atrium)", asking for a backlog card and a reply with its id. It reported the
 say as queued, because the target was mid-tool-call. No card was filed and no reply went back. Item 30 was filed by
@@ -2315,6 +2319,9 @@ The refusal reads the card's status and not the runner. Expected: a say to a car
 delivered whatever column the card is in. A `done` card with no runner still refuses, and says so. Item 41 is about
 which prompts make a card owe a report, not the card's state after one, so this is separate. Owned by @runtime.
 
+Status: fixed on `claude/sa83`. `sessionGone` is now a daemon method that also asks the supervisor, and `atrium tell`
+uses it. See `docs/changes/83.md`.
+
 ## 84. Two `nosession` tests fail on macOS and Linux (bug)
 
 Found 2026-09-28 on m1mini (macOS arm64, `hub-main` 52ca01a). `TestASayToAGoneSessionIsUndeliverable` and
@@ -2329,6 +2336,32 @@ Fix, test only: give `cardFor` a PID that is guaranteed dead. Prefer a helper th
 returns its pid, over a large constant. Then grep the `_test.go` files for other `PID: 1` style assumptions.
 `processAlive` is right and does not change. Verified on m1mini with pid 2147483000: both pass, and so does the
 whole package. Owned by @runtime.
+
+## 87. Two keep-alive refreshes rewrote the whole context (bug)
+
+Found 2026-09-29 by @runtime writing the item 39 spec (`docs/keepalive-marked-spec.md`), from `keepalive_refresh` and
+`session_usage` on a COPY of the live database. Of 60 refreshes, two wrote most of the context and read almost none of
+it, which is the rewrite keep-alive exists to avoid, and cost $1.78 of the $5.34 keep-alive spent in all:
+
+| Card | At (UTC) | Context | Read | Written | Cost | ttl_left_s |
+| --- | --- | --- | --- | --- | --- | --- |
+| `01a0e960-fc85` inputlag-env-leak | 2026-09-28 20:13:00 | 123,752 | 0 | 127,952 | $1.02 | 266 |
+| `01a0e8f0-ecda` tlsuv sch-credentials | 2026-09-28 21:03:28 | 99,886 | 10,259 | 94,346 | $0.76 | 222 |
+
+Both are `atrium:lean` cards, launched and resumed with `--mcp-config ~/.atrium/mcp.json --strict-mcp-config`. Every
+refresh that hit was on a card that is not lean. A lean card runs with its own tool list, MCP config and system
+prompt, and the fork carries none of them, so its prefix differs from the first token (read 0) or right after the
+system prompt (read 10k). The TTL was not the cause: both had about four minutes left.
+
+**Diagnosis: already fixed by item 70**, fa2b2cc (2026-09-29 01:19Z). `decide` in `internal/daemon/keepalive.go` skips
+a card tagged `atrium:lean` ("lean card: a refresh cannot rebuild its prompt"), and its comment cites the $1.02 row
+above. Lean is decided by the same tag at launch (`lean.go`), so a lean card cannot lack it. On the copy there is no
+refresh on a lean-tagged card after the fix. Item 73 (sa73, on m1mini) is the step after this: a fork that carries a
+lean card's prompt, so those cards can be warmed rather than skipped.
+
+The other four refreshes recorded as `miss` read the whole context and wrote 3k to 8k for $0.04 to $0.09 each. They
+were effectively warm, and are only labelled `miss` by the outcome rule item 70 also changed. No worker needed. Close
+once a room running fa2b2cc or later shows no full-write refresh for a day.
 
 ## 86. `screen.go`'s combining-mark table only grows (bug, low)
 
@@ -2407,5 +2440,110 @@ reads idle. Owned by @terminal, built with item 86 by the same worker.
 **Status: done on `claude/sa86`.** The loop is now `frameText` in `idleframe.go`, which skips `contCh` cells, and the
 stale comment is rewritten. `idleframe_wide_test.go` asserts the text handed to `classifyScreen` directly.
 
+## 89. A finished worker's runner outlives its worktree and locks the directory (bug)
+
+Reported 2026-09-29 by the orchestrator: every ended worker left its worktree directory "used by another process"
+after git had unregistered it (sa21, sa80, fb01, lost-lines, sa82). The suspect was a leftover child (a shell, node,
+or the conpty host) whose cwd was that directory.
+
+**Diagnosis, read-only, 2026-09-29 ~01:15 local.** It is not a leftover child. It is the worker's own runner, which
+never exited. Each directory's holder was found by reading every process's current directory out of its PEB:
+
+| Worktree | Holder | Parent | Started (UTC) | Card | Last event |
+| --- | --- | --- | --- | --- | --- |
+| lost-lines | `claude.exe` 56032 | room `atrium.exe` 43988 | 02:54 (resume) | `01a0eac2` | `done` report 04:23 |
+| sa21 | `claude.exe` 16812 | room `atrium.exe` 43988 | 03:14 | `01a0eb28` | `done` report 04:06 |
+| sa80 | `claude.exe` 47888 | room `atrium.exe` 43988 | 03:33 | `01a0eb39` | `done` report 04:00 |
+| fb01-provision | `claude.exe` 47516 | room `atrium.exe` 43988 | 03:39 | `01a0eb29` | `done` report 04:06 |
+| sa82 | `claude.exe` 57404 | room `atrium.exe` 43988 | 04:06 | `01a0eb57` | `done` report 04:23 |
+
+Every holder is a full session (about 350MB each, 1.8GB in all, no child processes, responding) and a direct child
+of the room daemon. On every card `supervised` is true, which is `d.sup.get(id) != nil`, so the supervisor still
+owns each runner and could stop it. None of the five has an `exited` event after its `done` report, and none was
+culled. The worktrees went by hand: `git worktree remove --force` unregisters the worktree and deletes its files,
+then fails on the directory the runner is sitting in. That is the "Permission denied" and the empty directory.
+
+Why nothing ended them:
+
+- **`done` keeps the runner on purpose.** A done report moves the card to `done` and the session sits at its prompt,
+  so a director can send it back (sa21 went `done` to `needs-input` twice for review) and item 83 lets a say reach it.
+- **The reaper never looks at a done card.** `reapOnce` checks running and the needs-* columns, and
+  `reviveOwnedDead` only `dead` ones. A `done` card with a live runner is in neither list. Its stored `pid` is 0
+  (a supervised card's pid is not the observed one), so a pid check would not have answered either.
+- **`atrium_cull` does the right thing and was not used.** It calls `StopRunner` and `waitRunnerGone` before
+  `git worktree remove`, because "on Windows a directory in use cannot be removed". Removing the worktree before
+  `atrium_exit` is the path that locks it. DIRECTOR.md says "exit the worker and remove its worktree", and the
+  order in that sentence is the whole fix for the manual path.
+
+**What the supervisor or reaper should do.** Not end a runner for being `done`, which would break the review loop
+and item 83. Two candidates:
+
+1. **A supervised runner whose worktree is gone is ended.** On the reaper tick, for each `d.sup.all()` runner whose
+   card has a worktree recorded: if that directory no longer exists, or exists with no `.git` entry (git has
+   unregistered it), `windDown` the runner with its harness's exit keys, and record `exited` with `by: reaper`,
+   `detected: its worktree was removed`. The resume id stays, so nothing is lost. This is exactly the case in the
+   table and has no false positive worth worrying about: a session in a directory with no repository has no work
+   left to do. Only `atrium:subagent` cards, so a human's own terminal in a scratch directory is never touched.
+   Small, owned by @runtime, one targeted test with a temp worktree.
+2. **A `done` card's runner idle past a limit is parked.** The memory case: five idle sessions held 1.8GB. This is
+   the item 38 question (Open Question 1 in `docs/restart-idle-spec.md`: parking saves processes and memory, and no
+   tokens), so it waits on clint's answer there rather than being decided here.
+
+Until then, the five runners above can be asked to leave by their owners with `atrium_exit` (sa21 @runtime, sa80
+@ui, fb01 @fabric, lost-lines and sa82 @terminal), after which each empty directory removes normally. Nothing was
+killed or exited during the diagnosis. The orchestrator sent `atrium_exit` to all five afterwards.
+
+**A second finding, the same family as item 83.** `atrium_say` and `atrium_exit` refuse a `done` card named by its
+alias ("no session called sa21"), and only the `room~id` form works. Reproduced by @runtime on sa32 the same night.
+The cause is `GetByAlias` in `internal/store/alias.go`, which only matches `liveClause` (not `done`, not `dead`,
+not archived). So an alias stops resolving the moment a worker reports done, while its runner is still at the
+prompt and item 83 says a say should reach it. Every resolver built on it (`localTarget`, `resolvePeer`, the MCP
+`resolvePeer` in `internal/link`) inherits that. sa32 found the mirror of it: `GetByWireName` matches ended cards,
+so an exact handle of a dead card is refused as ended even when a live card holds that name as an alias.
+
+The fix belongs in resolution, not in the alias query: an alias resolves to the newest card holding it that is
+live, or else to the newest `done` card whose session is not gone by `sessionGone` (item 83's rule). A dead card's
+alias stays unresolved, so a reused alias still means the live card. Separate from the reaper fix above, and it
+touches the same resolver sa32 (item 32) changed, so it goes after that merge.
+
+## 91. Two cards in one worktree share one HANDOFF.md, and new-context overwrites the other's (bug, design only)
+
+Reported 2026-09-29 by the orchestrator. @merge and @orchestrator both run in the main checkout
+(`D:/git/github/dovholuknf/atrium`), and at about 01:15 local one card's new-context capture overwrote the
+other's HANDOFF.md. The file is a fixed name in the card's directory at every step of `newcontext.go`: the capture
+prompt says "HANDOFF.md in the current directory", the wake prompt says "Read HANDOFF.md", and `handoffWritten`
+checks `filepath.Join(task.Worktree, "HANDOFF.md")`.
+
+Two harms, and the second is why nothing noticed the first:
+
+- **The overwrite.** A handoff not yet read back, or one a human is keeping, is replaced by another card's.
+- **The check passes for the wrong card.** `handoffWritten` only asks whether the file was modified since the
+  capture began. A capture on card A that wrote nothing still passes when card B wrote the file in that window,
+  and card A then wakes into card B's state and carries on as B. A card in two places is the worst outcome here.
+
+Options:
+
+1. **A per-card file name.** `HANDOFF.<alias or first 8 of the card id>.md`, in the capture prompt, the wake prompt
+   and `handoffWritten`, the same three places. Two cards in one directory can then never touch each other's
+   file, and the check is about the right file by construction. The cost: every habit and script that says
+   `HANDOFF.md` (DIRECTOR.md's "git rm HANDOFF.md", the orchestrator's touch-after-POST workaround, briefs) has to
+   learn the pattern. Using the per-card name always, rather than only when a directory is shared, keeps one rule.
+   A `.gitignore` line for `HANDOFF.*.md` would also stop a handoff reaching a merge by accident, which is the
+   thing every director currently removes by hand.
+2. **Refuse new-context when another live card shares the directory.** Small, and it would have prevented this
+   one. But the two cards that share a directory are the orchestrator and the merger, which are the long-lived
+   sessions that most need cycling, so the refusal lands on exactly the cards it should serve. It could refuse
+   only while the OTHER card's own new-context is in flight, which closes the concurrent case but not an
+   overwrite of a handoff written earlier and not yet read.
+3. **The handoff outside the worktree,** in the room's state directory keyed by card (`~/.atrium/handoff/<id>.md`),
+   with the absolute path in both prompts. Per-card by construction and never in git. But a human can no longer
+   find it next to the work, and a runner on another room writes to that room's disk, which the board then has to
+   serve.
+
+**Recommendation: option 1, with option 2's narrow form as a guard.** The name removes the collision, and refusing
+only while another card sharing the directory is mid-sequence costs nothing and covers a card whose runner ignores
+the name it was given. A migration is not needed: the name is derived, not stored. Owned by @runtime
+(`internal/daemon/newcontext.go`). The open question for clint is option 1's cost to existing habits: whether the
+fixed name `HANDOFF.md` is worth keeping for the single-card case humans are used to.
 
 ------------
