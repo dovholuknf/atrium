@@ -169,3 +169,11 @@ func (d *Daemon) sweepAfter() (time.Duration, bool) {
 	}
 	return secs, true
 }
+
+// pruneLimitReadings deletes limit readings past their keep: 8 hours for the
+// five-hour limit, 7 days for the weekly. On the sweep timer and never on the
+// telemetry path.
+func (d *Daemon) pruneLimitReadings() error {
+	_, err := d.st.PruneLimitReadings(time.Now().UTC())
+	return err
+}
