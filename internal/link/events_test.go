@@ -456,3 +456,12 @@ func TestEventTaggingMatchesTheListTagging(t *testing.T) {
 		t.Fatalf("a payload with no ids was mangled: %v", plain)
 	}
 }
+
+// A `null` payload decodes into a nil map without an error. Writing the room
+// onto it panicked the stream, eleven times on the live hub.
+func TestANullEventPassesThroughUntagged(t *testing.T) {
+	e := Event{Room: "sg4", Kind: "settings", Data: []byte(`null`)}
+	if got := string(tagEvent(e)); got != "null" {
+		t.Fatalf("a null payload came out %q", got)
+	}
+}

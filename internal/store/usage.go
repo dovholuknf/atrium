@@ -51,8 +51,8 @@ type SessionUsage struct {
 	CacheRead    int64   `json:"cache_read"`
 	Context      int64   `json:"context"`
 	LastMessage  string  `json:"last_message,omitempty"`
-	Cost         float64 `json:"cost"`
-	Prices       string  `json:"prices,omitempty"`
+	Cost         float64 `json:"-"`
+	Prices       string  `json:"-"`
 }
 
 // UsageTotals is a card's spend summed.
@@ -64,7 +64,7 @@ type UsageTotals struct {
 	CacheWrite5m int64   `json:"cache_write_5m"`
 	CacheWrite1h int64   `json:"cache_write_1h"`
 	CacheRead    int64   `json:"cache_read"`
-	Cost         float64 `json:"cost"`
+	Cost         float64 `json:"-"`
 }
 
 // AddSessionUsage writes one row. The id is filled in when empty.

@@ -137,7 +137,7 @@ func usageEvent(row *store.SessionUsage) map[string]any {
 	return map[string]any{
 		"task_id": row.TaskID, "ended_at": row.Ended, "cause": row.Cause,
 		"input": row.Input, "output": row.Output, "cache_write_5m": row.CacheWrite5m,
-		"cache_write_1h": row.CacheWrite1h, "cache_read": row.CacheRead, "cost": row.Cost,
+		"cache_write_1h": row.CacheWrite1h, "cache_read": row.CacheRead,
 	}
 }
 
@@ -509,10 +509,11 @@ func (s *replySet) row(t *store.Task) *store.SessionUsage {
 		row.CacheRead += one.CacheRead
 		row.CacheWrite5m += w5
 		row.CacheWrite1h += w1
-		if p, ok := usagePriceFor(r.Model); ok {
-			row.Cost += usageCost(one, p)
-			row.Prices = usagePricesVersion
-		}
+		// Money is not worked out any more (item 37b). To bring it back:
+		//   if p, ok := usagePriceFor(r.Model); ok {
+		//       row.Cost += usageCost(one, p); row.Prices = usagePricesVersion }
+		// and drop the `json:"-"` on the Cost fields in the store.
+		_ = one
 	}
 	return row
 }
@@ -530,7 +531,7 @@ func usageOfRefresh(r *store.KeepaliveRefresh) *store.SessionUsage {
 	return &store.SessionUsage{
 		TaskID: r.TaskID, ResumeID: r.ResumeID, Started: r.At, Ended: r.At, Cause: store.UsageKeepalive,
 		Model: r.Model, Replies: 1, Input: r.Input, Output: r.Output, CacheWrite1h: r.CacheWrite,
-		CacheRead: r.CacheRead, Context: r.Context, Cost: r.Cost, Prices: r.Prices,
+		CacheRead: r.CacheRead, Context: r.Context,
 	}
 }
 
