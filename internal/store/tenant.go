@@ -87,7 +87,13 @@ func NormalizeTenant(in string) string {
 // collide with, and renaming every card on a board that will never federate
 // would be a migration for no benefit.
 func (s *Store) Qualify(name string) string {
-	t := s.Tenant()
+	return qualifyAs(s.Tenant(), name)
+}
+
+// qualifyAs is Qualify with the tenant already read. Inside a transaction the
+// tenant has to be read through that transaction: the pool holds one
+// connection, the transaction has it, and s.Tenant would wait for it forever.
+func qualifyAs(t, name string) string {
 	if t == "" || name == "" {
 		return name
 	}
