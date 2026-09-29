@@ -3566,4 +3566,8 @@ resumes at once, and a peer's say gets `parked` and needs `wake=true`. A directo
 its HANDOFF.md before the waking message.
 
 Depends on item 91 (a per-card handoff file name) and on sections 1, 4 and 5 of the same design, which are not built
-either. Open questions 6 to 9 in that file are for clint.
+either. Open questions 6 to 10 in that file are for clint.
+
+Also in the section: the "ended its turn without reporting" notice rings the orchestrator several times an hour for
+directors idle by design. Proposed: `stoppedSilently` stays quiet for an `atrium:director` while any of its workers
+is live or parked, and never fires for a parked card. This part stands alone and can be built first.
