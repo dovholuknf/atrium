@@ -1253,9 +1253,14 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 	// never a silent stop (item 62, sa42). Before the settle, so it is on the
 	// card before the runner can have ended a turn on it.
 	if prompt != "" {
-		if err := d.st.AppendEvent(created.ID, store.EventPrompted, map[string]any{
-			"text": prompt, "via": "launch",
-		}); err != nil {
+		// `from_peer` is whoever asked for this launch, which is what decides
+		// whether the prompt is owed to a launcher. A reopen by the operator
+		// asks as nobody. See store.promptOwes.
+		ev := map[string]any{"text": prompt, "via": "launch"}
+		if by := strings.TrimSpace(req.SpawnedBy); by != "" && by != store.HumanLauncher {
+			ev["from_peer"] = by
+		}
+		if err := d.st.AppendEvent(created.ID, store.EventPrompted, ev); err != nil {
 			return nil, err
 		}
 	}

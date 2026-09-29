@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/api"
@@ -100,6 +101,8 @@ type Daemon struct {
 	// many times it has. In memory, like the activity it is derived from: a
 	// restart recomputes it on the next tick. See a2a.go.
 	esc escalations
+	// looksIdleFired counts every looks-idle firing since start. See looksidle.go.
+	looksIdleFired atomic.Int64
 
 	// settle is how long this daemon still calls an arriving card part of its
 	// own restart rather than news. See settling.go.
