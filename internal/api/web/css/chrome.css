@@ -251,6 +251,7 @@
   main > #runners,
   main > #audit,
   main > #history,
+  main > #usage,
   main > #terms { flex: 1 1 auto; min-height: 0; }
   /* The ones that can be taller than the window scroll themselves. The board scrolls per lane and the terminal
      never scrolls, so neither is here. */
@@ -268,9 +269,12 @@
      under them. A view left out of both lists above is as tall as its rows, and main clips the rest. A new
      top-level view goes in one of them. */
   main > #audit,
-  main > #history { display: flex; flex-direction: column; overflow: hidden; }
+  main > #history,
+  main > #usage { display: flex; flex-direction: column; overflow: hidden; }
   #audit > *,
-  #history > * { flex: 0 0 auto; }
+  #history > *,
+  #usage > * { flex: 0 0 auto; }
+  #usage > #uc-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; padding-right: 12px; }
   #audit > #audit-list,
   #history > #history-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; }
   /* ── scrollbars ─────────────────────────────────────── */

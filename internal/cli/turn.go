@@ -115,6 +115,23 @@ func runningSubagents(tasks []backgroundTask) int {
 	return n
 }
 
+// runningOther counts the running background tasks that are not subagents.
+//
+// These do not keep the card in running: a shell may be a dev server, and a
+// session that left one up and stopped is waiting on you. They only hold the
+// daemon's STUCK alert, because a worker that ended its turn on five test runs
+// is waiting on them and not silent. The type names are Claude Code's and not
+// listed here, so anything running that is not a subagent counts.
+func runningOther(tasks []backgroundTask) int {
+	n := 0
+	for _, t := range tasks {
+		if !strings.EqualFold(t.Type, "subagent") && strings.EqualFold(t.Status, "running") {
+			n++
+		}
+	}
+	return n
+}
+
 // keepGoing is what a Stop hook says when it has nothing to say: NOTHING.
 //
 // Empty output with exit 0 is the documented way to let a turn end. This used
@@ -224,6 +241,8 @@ func turnEnded(hubURL, event, name, runner string) string {
 		"stop_hook_active": in.StopHookActive,
 		// How many of its subagents are still working. See BackgroundTasks.
 		"subagents_running": runningSubagents(in.BackgroundTasks),
+		// Shells and headless runs the turn left going. See runningOther.
+		"background_running": runningOther(in.BackgroundTasks),
 	})
 	if err != nil {
 		return keepGoing

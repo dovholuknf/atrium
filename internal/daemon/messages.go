@@ -180,6 +180,10 @@ func (d *Daemon) handleStop(w http.ResponseWriter, r *http.Request) {
 		// turn ended. Zero from a hook older than the field, which is the old
 		// behaviour. See turnPaused.
 		SubagentsRunning int `json:"subagents_running,omitempty"`
+		// How many other background tasks (shells, headless runs) were still
+		// running. Unlike subagents these do not hold the card in running, but
+		// they do hold the silent-stop alert. See stoppedSilently.
+		BackgroundRunning int `json:"background_running,omitempty"`
 	}
 	w.Header().Set("Content-Type", "application/json")
 	// Nothing to say. The subcommand turns this into empty output, which is
@@ -234,6 +238,7 @@ func (d *Daemon) handleStop(w http.ResponseWriter, r *http.Request) {
 	// Unless its subagents are still working, in which case the session is
 	// waiting on them and not on the operator. See turnPaused.
 	d.act.setBackground(task.ID, in.SubagentsRunning)
+	d.act.setBackgroundWork(task.ID, in.BackgroundRunning)
 	// What the turn spent, read off its transcript once it settles. Every Stop
 	// ends a row, the one a message is about to continue included. See usage.go.
 	spent := *task
@@ -277,7 +282,7 @@ func (d *Daemon) handleStop(w http.ResponseWriter, r *http.Request) {
 		// And it is a turn the operator has not seen. See seen.go.
 		d.noteTurnForSeen(task.ID, store.TurnQuestions{
 			Known: in.QuestionsKnown, Block: in.QuestionsBlock, List: in.Questions,
-		})
+		}, d.launcherSeen(task.ID))
 		nothing()
 		return
 	}
@@ -321,6 +326,8 @@ func (d *Daemon) turnEnded(taskID string) { d.turnEndedBecause(taskID, "") }
 // Both landed in `ready` and read identically, so a question asked two minutes
 // ago sorted below twenty sessions that had merely finished overnight.
 func (d *Daemon) turnEndedBecause(taskID, reason string) {
+	// The late Stop a looks-idle guess was waiting for.
+	d.looksIdleGone(taskID, "", "hook turn-end")
 	// A peer message that waited out the turn retries about two seconds from
 	// now, not at whatever interval its wait had reached. See peerMustWait.
 	if d.pending != nil {

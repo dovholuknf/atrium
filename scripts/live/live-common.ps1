@@ -93,13 +93,34 @@ function Wait-Hub([int]$Seconds = 25, [int]$Rooms = 0) {
   return $null
 }
 
-# Save-Revert keeps one copy of the outgoing binary under its build id, for going back.
+# Get-BinLabel names a binary by what the FILE says it is, from `atrium version`: its commit (7 characters) and its
+# board hash (8). Returns '' when the file cannot answer: it will not run, it is an old build with no `version`, or it
+# reports no board hash. Never ask the hub. The hub reports the build it RUNS, and the file on disk can be newer when
+# the room was deployed after the hub.
+function Get-BinLabel([string]$Path) {
+  $commit = ''; $board = ''
+  try {
+    foreach ($line in (& $Path version 2>$null)) {
+      if ($line -match '^commit\s+([0-9a-f]{7,})') { $commit = $Matches[1].Substring(0, 7) }
+      elseif ($line -match '^board\s+([0-9a-f]{8,})') { $board = $Matches[1].Substring(0, 8) }
+    }
+  } catch { return '' }
+  if (-not $board) { return '' }
+  if ($commit) { return "$commit-$board" }
+  return $board
+}
+
+# Save-Revert keeps one copy of the outgoing binary under its own identity, for going back. A file that cannot say
+# what it is gets unknown-<timestamp> and a warning, since a wrong name is worse than a plain one and a snapshot that
+# cannot be labelled must not fail the deploy.
 function Save-Revert {
-  $cur = ''
-  try { $cur = (Invoke-RestMethod $HubHealth -TimeoutSec 4).build } catch {}
-  if (-not $cur) { $cur = 'unknown' }
-  $revert = Join-Path $AtriumBinDir "atrium.revert-$($cur.Substring(0, [Math]::Min(8, $cur.Length))).exe"
-  Invoke-Step "copy $AtriumBin -> $revert (revert snapshot of build $cur)" { Copy-Item $AtriumBin $revert -Force }
+  $label = Get-BinLabel $AtriumBin
+  if (-not $label) {
+    $label = "unknown-$(Get-Date -Format yyyyMMddHHmmss)"
+    Say "WARNING: $AtriumBin did not answer 'atrium version'. revert snapshot is named $label"
+  }
+  $revert = Join-Path $AtriumBinDir "atrium.revert-$label.exe"
+  Invoke-Step "copy $AtriumBin -> $revert (revert snapshot, $label)" { Copy-Item $AtriumBin $revert -Force }
   Get-ChildItem (Join-Path $AtriumBinDir 'atrium.revert-*.exe') | Where-Object FullName -ne $revert |
     ForEach-Object { $f = $_.FullName; Invoke-Step "remove old revert $f" { Remove-Item $f -Force } }
 }

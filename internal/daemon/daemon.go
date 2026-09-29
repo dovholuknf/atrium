@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/api"
@@ -100,6 +101,8 @@ type Daemon struct {
 	// many times it has. In memory, like the activity it is derived from: a
 	// restart recomputes it on the next tick. See a2a.go.
 	esc escalations
+	// looksIdleFired counts every looks-idle firing since start. See looksidle.go.
+	looksIdleFired atomic.Int64
 
 	// settle is how long this daemon still calls an arriving card part of its
 	// own restart rather than news. See settling.go.
@@ -469,6 +472,15 @@ func New(opts Options) (*Daemon, error) {
 	api.ContextSizeOf = d.contextSizeFor
 	// Token use on record, read only by a card's details. See usage.go.
 	d.usage = newUsageTracker(st)
+	d.usage.broadcast = d.ap.Broadcast
+	// A keep-alive refresh's row is announced the same way as a turn's.
+	d.ka.spent = func(u *store.SessionUsage) error {
+		err := st.AddSessionUsage(u)
+		if err == nil {
+			d.usage.emitRow(u)
+		}
+		return err
+	}
 	d.ap.UsageOf = d.usageFor
 	// Starting a fixture is spawning a process, which the daemon owns.
 	api.StartFixture = d.StartFixtureNow

@@ -148,6 +148,16 @@ type Activity struct {
 	// `!`, which is kept for a message held against what its sender asked for.
 	// Decided here and not on the board, so there is one rule. See heldPeer.quiet.
 	HeldQuiet bool `json:"held_quiet,omitempty"`
+	// LooksIdle says the card reads running but its terminal has gone quiet on an
+	// idle prompt, so the turn-end never arrived. A guess, drawn as one.
+	// IdleSeconds is how long the pty had been silent when it was decided. IN
+	// MEMORY like the rest, cleared by any hook event, output or keystroke. See
+	// looksidle.go.
+	LooksIdle   bool  `json:"looks_idle,omitempty"`
+	IdleSeconds int64 `json:"idle_seconds,omitempty"`
+	// IdleAt is when it was flagged, which keys the board's alert so each firing
+	// rings once.
+	IdleAt time.Time `json:"idle_at,omitzero"`
 	// Since is when this state began, so a card can say how long a tool has
 	// been going.
 	Since time.Time `json:"since"`
@@ -177,8 +187,13 @@ type activityTracker struct {
 	// background is how many subagents each card's last Stop said were still
 	// running. See turnPaused.
 	background map[string]int
+	// bgWork is the non-subagent background tasks each card's last Stop said were
+	// running. See stoppedSilently.
+	bgWork map[string]bgHold
 	// turns counts turns begun per card. See turnsBegun.
 	turns map[string]int
+	// looksIdle is each card flagged by the looks-idle watch. See looksidle.go.
+	looksIdle map[string]idleMark
 }
 
 // heldPeer is a queued injection waiting on the operator's line to clear, on
@@ -245,7 +260,9 @@ func newActivityTracker() *activityTracker {
 		held:  map[string]heldPeer{},
 
 		background: map[string]int{},
+		bgWork:     map[string]bgHold{},
 		turns:      map[string]int{},
+		looksIdle:  map[string]idleMark{},
 	}
 }
 
@@ -278,6 +295,11 @@ func (a *activityTracker) onSubagents(taskID string) bool {
 func (a *activityTracker) get(taskID string) *Activity {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	return a.withLooksIdle(taskID, a.getLocked(taskID))
+}
+
+// getLocked is get with the lock held and no looks-idle mark attached.
+func (a *activityTracker) getLocked(taskID string) *Activity {
 	// A held peer message rides along whatever the running-process activity is
 	// doing, and outlives its staleness. Computed first so it can be attached to
 	// a fresh, a stale, or an absent activity all the same. See withHeld.
@@ -420,6 +442,8 @@ func (a *activityTracker) set(taskID, what, tool string) {
 		a.turns[taskID]++
 	}
 	cur.What, cur.Tool = what, tool
+	// Any hook event is the runner speaking for itself, which settles the guess.
+	delete(a.looksIdle, taskID)
 	// ANYTHING HAPPENING MEANS THE DIALOG HAS GONE.
 	//
 	// There is no hook for a prompt being dismissed, so the flag is cleared by
@@ -602,6 +626,41 @@ func (a *activityTracker) forget(taskID string) {
 	delete(a.tel, taskID)
 	delete(a.held, taskID)
 	delete(a.background, taskID)
+	delete(a.looksIdle, taskID)
+	delete(a.bgWork, taskID)
+}
+
+// bgHold is what a card's last Stop said about background work that is not a
+// subagent: shells and the like. In memory on purpose, like everything here.
+type bgHold struct {
+	n     int
+	since time.Time
+}
+
+// setBackgroundWork records how many non-subagent background tasks the last Stop
+// left running. Every Stop replaces it, so the Stop that follows the last task's
+// completion (which wakes the session) puts it back to zero.
+func (a *activityTracker) setBackgroundWork(taskID string, n int) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if n > 0 {
+		a.bgWork[taskID] = bgHold{n: n, since: a.now()}
+	} else {
+		delete(a.bgWork, taskID)
+	}
+}
+
+// backgroundWork reports how many background tasks the card's last Stop left
+// running, and since when. Zero once BackgroundHoldMax has passed, so a dev
+// server left up on purpose holds the alert for a while and not forever.
+func (a *activityTracker) backgroundWork(taskID string) (int, time.Time) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	h, ok := a.bgWork[taskID]
+	if !ok || a.now().Sub(h.since) >= BackgroundHoldMax {
+		return 0, time.Time{}
+	}
+	return h.n, h.since
 }
 
 // ActivityEvent is what a hook posts to /activity.
@@ -671,6 +730,10 @@ func (d *Daemon) onActivity(in ActivityEvent) string {
 		}
 		taskID = t.ID
 	}
+
+	// The runner spoke for itself, which settles a looks-idle guess. Logged here
+	// because `set` clears it silently.
+	d.looksIdleGone(taskID, in.Agent, "hook "+in.Event)
 
 	switch in.Event {
 	case "tool-start":

@@ -346,6 +346,67 @@ function roomHue(name) {
   return hues[h % hues.length];
 }
 
+// ── the master switch (item 79) ─────────────────────────
+//
+// WAITING ON CLINT: whether "off" silences permission requests too. Built as
+// no, because a session blocks on one until somebody answers and a muted board
+// is the likeliest place to forget one. Flipping it is this one word.
+const NOTIFY_OFF_SILENCES_PERMISSIONS = false;
+const NOTIFY_OFF_KEY = "atrium.notify.off";
+
+// Read from storage on every ask rather than held in a variable, so every
+// window of this browser, popped-out ones included, follows a change with no
+// message between them.
+function notifyIsOff() {
+  try { return localStorage.getItem(NOTIFY_OFF_KEY) === "1"; } catch (e) { return false; }
+}
+
+function setNotifyOff(off) {
+  try {
+    if (off) localStorage.setItem(NOTIFY_OFF_KEY, "1");
+    else localStorage.removeItem(NOTIFY_OFF_KEY);
+  } catch (e) {}
+  paintNotifyOff();
+}
+
+// Whether this alert is held back. A permission request is let through unless
+// the constant above says otherwise. `goTo` is how `notify` tells one apart.
+function notifyHeld(goTo) {
+  if (!notifyIsOff()) return false;
+  if (goTo === "perms" && !NOTIFY_OFF_SILENCES_PERMISSIONS) return false;
+  return true;
+}
+
+// The bell, the drawer's toggle and the gear's checkbox, all repainted from the
+// one stored answer. The tip and the aria-label are the same text.
+function paintNotifyOff() {
+  const off = notifyIsOff();
+  const bell = document.getElementById("toastlog-open");
+  if (bell) {
+    const g = bell.querySelector(".glyph");
+    if (g) g.textContent = off ? "\u{1F515}" : "\u{1F514}";
+    const tip = off ? "notifications are off. click to see what arrived" : "what the board has told you";
+    bell.dataset.tip = tip;
+    bell.setAttribute("aria-label", tip);
+    bell.classList.toggle("off", off);
+  }
+  const t = document.getElementById("toastlog-toggle");
+  if (t) {
+    t.textContent = off ? "turn on" : "turn off";
+    const tip = off
+      ? "notifications are off. turn them back on"
+      : "hold back toasts, desktop notifications and sound. what arrives is still listed here" +
+        (NOTIFY_OFF_SILENCES_PERMISSIONS ? "" : ". permission requests still come through");
+    t.dataset.tip = tip;
+    t.setAttribute("aria-label", tip);
+  }
+  const c = document.getElementById("s-notifyoff");
+  if (c) c.checked = off;
+}
+// Another window of this browser flipped it.
+window.addEventListener("storage", e => { if (e.key === NOTIFY_OFF_KEY) paintNotifyOff(); });
+addEventListener("DOMContentLoaded", paintNotifyOff);
+
 const alerting = (() => {
   let ctx = null;
   let prefs = loadPrefs();
@@ -442,6 +503,7 @@ const alerting = (() => {
   // fact you cannot get any other way while your back is turned.
   function play(kind, sound) {
     if (prefs.muted) return;
+    if (notifyHeld(kind === "permission" ? "perms" : "")) return;
     preview(sound || (kind === "permission" ? prefs.perm : prefs.input));
   }
 
@@ -470,6 +532,15 @@ const alerting = (() => {
     // is the only document that can be looked at instead of this one. Decides
     // WHO RAISES the alert. Where it lands is the rest of this function.
     if (taskFor && poppedOut(taskFor)) return;
+
+    // THE MASTER SWITCH (item 79), over item 44's filter and over a card's own
+    // tone. HELD BACK MEANS RECORDED: no toast, no desktop notification and no
+    // sound, but the drawer and the bell's badge still get the entry, once.
+    if (notifyHeld(goTo)) {
+      logNotification(title, body, goTo, permId || (opts.pending ? subject : "") || null,
+        taskFor || artFor || null);
+      return;
+    }
 
     // THE KEY IS WHAT RETIRES IT, so only a pending item gets one. `reapToasts`
     // takes down every keyed toast whose key is not waiting or pending, in the
@@ -658,7 +729,7 @@ const alerting = (() => {
     // PERMISSIONS STILL RING. An agent that comes back up already blocked is
     // frozen right now, and that is the one thing during a restart worth being
     // interrupted for.
-    if (settlingNow && (kind === "arrived" || kind === "waiting")) {
+    if (settlingNow && (kind === "arrived" || kind === "waiting" || kind === "looksidle")) {
       known[kind] = ids;
       return;
     }
@@ -732,6 +803,17 @@ const alerting = (() => {
     // Dropped here rather than in `check`, so those cards are still recorded
     // as seen: they were announced, by the window that owns them.
     fresh = fresh.filter(i => !poppedOut(i.task_id || i.id));
+    // A CARD AN AGENT LAUNCHED IS LOGGED AND NOT SAID. Its launcher already
+    // hears through `notifyLauncher`, so a toast, a sound or a desktop
+    // notification from it is noise. Dropped before `play` and before the count
+    // in the title, so a pile of three with one worker is a pile of two. The log
+    // line stays, because it is the record that the event happened.
+    fresh = fresh.filter(i => {
+      if (!quietDoer(kind, i)) return true;
+      const q = describe(i);
+      recordToLog(q.title, q.body, kind === "permission" ? "perms" : "stack", "", i.task_id || i.id);
+      return false;
+    });
     if (!fresh.length) return;
     const d = describe(fresh[0]);
     // One card's own tone when there is exactly one. A pile has no single
@@ -745,6 +827,7 @@ const alerting = (() => {
         permission: "agents need permission",
         arrived: "new agents on the board",
         stuck: "launched agents are stuck",
+        looksidle: "agents look idle (no turn-end received)",
       }[kind] || "agents are ready"}`
       : d.title;
     // A pile names who, since the count alone does not, and the names are the
@@ -776,6 +859,19 @@ function whoseNames(items) {
   const names = items.map(i => i.agent || i.display_title || "an agent");
   if (names.length <= 3) return names.join(", ");
   return `${names.slice(0, 3).join(", ")} and ${names.length - 3} more`;
+}
+
+// Whether an alert about this card is to be logged and not said.
+//
+// The gear's "don't notify me about cards an agent launched", ticked by default.
+// `kind` is the alert's kind, and a permission is never muted: it blocks until a
+// human answers, so silence there is a frozen agent. A card with a tone of its
+// own is the per-card override. The board has no per-card on/off for alerts, and
+// choosing a tone for one card is the one way a card says it wants to be heard.
+function quietDoer(kind, item) {
+  if (kind === "permission" || kind === "perm") return false;
+  if (alerting.get().quietDoers === false) return false;
+  return isDoer(item) && !(item.sound && item.sound !== "none");
 }
 
 // A card's own tone, for an alert that is about exactly one card.

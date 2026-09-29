@@ -146,7 +146,7 @@ function toggleHideAgents() {
 // (a done or dead card can still carry a `thinking` that outlived its status).
 function workingNow(t) {
   const a = t && t.activity;
-  return !!(a && a.what && a.what !== "idle" &&
+  return !!(a && a.what && a.what !== "idle" && !a.looks_idle &&
     !isWaiting(t) && t.status !== "shelved" && !staleActivity(t));
 }
 

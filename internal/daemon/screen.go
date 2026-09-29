@@ -3,6 +3,7 @@ package daemon
 import (
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -28,12 +29,30 @@ const screenMaxRows = 400
 
 // cell holds a character and its SGR sequence. Preserve colour sequences
 // verbatim because replay does not need to interpret individual attributes.
+//
+// A wide character takes two cells the way it does on the board: the character
+// in the first, and `contCh` in the second. `ext` indexes screen.combs, the
+// zero width marks that follow the character, and is zero when there are none.
+// Both fit in the padding after the rune, so a cell is no bigger for them.
 type cell struct {
 	ch  rune
+	ext uint32
 	sgr string
 }
 
+// contCh is the second cell of a wide character. It is never written out: the
+// character in the cell before it stands for both.
+const contCh rune = -1
+
 var blank = cell{ch: ' '}
+
+// combMax bounds what combining marks may cost: how many bytes one cell keeps,
+// and how many distinct strings a screen holds. A stream of nothing but marks is
+// corrupt, not a very accented word.
+const (
+	combMax      = 32
+	combsMaxKept = 1 << 16
+)
 
 // screen is a grid, a cursor, and the lines that have scrolled off it.
 type screen struct {
@@ -47,6 +66,14 @@ type screen struct {
 	wrapNext bool
 	// history is everything that has scrolled off the top, oldest first.
 	history [][]cell
+	// combs holds the marks cells refer to through `ext`, one-based. Entries are
+	// never changed once added, so a cell copied to another row keeps meaning
+	// the same thing.
+	combs []string
+	// combIdx maps a mark sequence to its `ext`, so a sequence already held is
+	// reused rather than appended again. Made on the first mark, so an all-ASCII
+	// screen allocates nothing for it.
+	combIdx map[string]uint32
 	// attr is the SGR state `sgr` is rendered from. Held apart from the
 	// string because an attribute is set and cleared independently of the
 	// others, and a string can only be appended to.
@@ -68,6 +95,47 @@ type screen struct {
 	altCells [][]cell
 	altRow   int
 	altCol   int
+	// regSet is whether DECSTBM has narrowed the scroll region, and regTop and
+	// regBot are its rows, zero based and inclusive. Unset, the region is the
+	// whole grid, which is why it is not stored as numbers alone: the grid's
+	// height can change under a guessed size, and "the whole grid" follows it.
+	// Each buffer has its own, so the normal screen's is parked while the
+	// alternate one is up.
+	regSet         bool
+	regTop, regBot int
+	altRegSet      bool
+	altRegTop      int
+	altRegBot      int
+}
+
+// region is the rows a line feed scrolls between, inclusive.
+func (s *screen) region() (top, bot int) {
+	if !s.regSet {
+		return 0, len(s.cells) - 1
+	}
+	return s.regTop, minInt(s.regBot, len(s.cells)-1)
+}
+
+// resetRegion puts the region back to the whole grid.
+func (s *screen) resetRegion() { s.regSet = false }
+
+// setRegion is `CSI top;bottom r`, 1-based and inclusive. It follows xterm.js:
+// a missing or zero bottom, or one past the last row, means the last row, and a
+// region of fewer than two rows is ignored WITHOUT homing the cursor. A valid
+// one homes it.
+func (s *screen) setRegion(top, bottom int) {
+	if top < 1 {
+		top = 1
+	}
+	if bottom < 1 || bottom > s.rows {
+		bottom = s.rows
+	}
+	if bottom <= top {
+		return
+	}
+	s.regSet = true
+	s.regTop, s.regBot = top-1, bottom-1
+	s.moveTo(0, 0)
 }
 
 func newScreen(cols int) *screen { return newScreenSized(cols, 0) }
@@ -145,26 +213,56 @@ func (s *screen) grow(toRow int) {
 	s.rows = len(s.cells)
 }
 
-// scroll moves the grid up one row and saves the top row in history.
+// scroll moves the region up one row. The row leaving the top is filed in
+// history only when the region starts at the screen's top, which is xterm.js's
+// rule: rows scrolled out of a region that starts lower were never above the
+// fold and are discarded. The alternate screen has no scrollback, by definition.
 func (s *screen) scroll() {
-	if s.alt {
-		// The alternate screen has no scrollback, by definition. A full-screen
-		// program scrolling its own view is not producing history.
-		copy(s.cells, s.cells[1:])
-		s.cells[len(s.cells)-1] = blankRow(s.cols)
-		return
+	top, bot := s.region()
+	if top == 0 && !s.alt {
+		s.history = append(s.history, s.cells[0])
 	}
-	s.history = append(s.history, s.cells[0])
-	copy(s.cells, s.cells[1:])
-	s.cells[len(s.cells)-1] = blankRow(s.cols)
+	copy(s.cells[top:bot], s.cells[top+1:bot+1])
+	s.cells[bot] = blankRow(s.cols)
+}
+
+// scrollDown moves the region down one row, dropping its bottom row.
+func (s *screen) scrollDown() {
+	top, bot := s.region()
+	copy(s.cells[top+1:bot+1], s.cells[top:bot])
+	s.cells[top] = blankRow(s.cols)
 }
 
 // put writes one character at the cursor and advances it.
 func (s *screen) put(ch rune) {
+	w := runeWidth(ch)
+	if w == 0 {
+		if s.combine(ch) {
+			return
+		}
+		// A mark with nothing to attach to stands in a cell of its own, as it
+		// does in xterm.js, and moves the cursor like any other character.
+		w = 1
+	}
 	if s.wrapNext {
 		s.col = 0
 		s.lineFeed()
 		s.wrapNext = false
+	}
+	// A wide character that does not fit in what is left of the row goes to the
+	// next one whole. In a grid one column wide it fits nowhere and is dropped.
+	if w == 2 && s.col >= s.cols-1 {
+		if s.cols < 2 {
+			return
+		}
+		// The cell it gave up is blanked, wearing the colour being written.
+		s.grow(s.row)
+		if s.row < len(s.cells) && s.col < len(s.cells[s.row]) {
+			s.clearHalves(s.cells[s.row], s.col, 1)
+			s.cells[s.row][s.col] = cell{ch: ' ', sgr: s.sgr}
+		}
+		s.col = 0
+		s.lineFeed()
 	}
 	s.grow(s.row)
 	if s.row >= len(s.cells) {
@@ -173,23 +271,140 @@ func (s *screen) put(ch rune) {
 	if s.col >= s.cols {
 		s.col = s.cols - 1
 	}
-	s.cells[s.row][s.col] = cell{ch: ch, sgr: s.sgr}
-	if s.col == s.cols-1 {
+	r := s.cells[s.row]
+	s.clearHalves(r, s.col, w)
+	r[s.col] = cell{ch: ch, sgr: s.sgr}
+	if w == 2 {
+		r[s.col+1] = cell{ch: contCh, sgr: s.sgr}
+	}
+	if s.col+w >= s.cols {
 		// Deferred, not taken. See `wrapNext`.
+		s.col = s.cols - 1
 		s.wrapNext = true
 		return
 	}
-	s.col++
+	s.col += w
+}
+
+// clearHalves blanks the other half of any wide character that writing `w`
+// cells at `at` breaks: the character before, when `at` is its second cell, and
+// the one after, when its second cell is the first one left over. The blank
+// wears the colour being written, as xterm.js has it.
+func (s *screen) clearHalves(r []cell, at, w int) {
+	gap := cell{ch: ' ', sgr: s.sgr}
+	if at > 0 && r[at].ch == contCh {
+		r[at-1] = gap
+	}
+	if end := at + w; end < len(r) && r[end].ch == contCh {
+		r[end] = gap
+	}
+}
+
+// combine attaches a zero width character to the cell before the cursor, and
+// says whether it did. It takes no cell and no motion. There is nothing to
+// attach to at the start of a row or after another loose mark, and the caller
+// gives the mark a cell then. A mark past the bounds is dropped and still
+// counts as attached, since a stream of them is corrupt and giving each a cell
+// would be the wrong way to be generous.
+func (s *screen) combine(ch rune) bool {
+	col := s.col - 1
+	if s.wrapNext {
+		col = s.col
+	}
+	if col < 0 || s.row >= len(s.cells) || col >= len(s.cells[s.row]) {
+		return false
+	}
+	r := s.cells[s.row]
+	if r[col].ch == contCh && col > 0 {
+		col--
+	}
+	c := &r[col]
+	if c.ch == contCh || runeWidth(c.ch) == 0 && c.ch != 0 {
+		return false
+	}
+	prev := ""
+	if c.ext > 0 {
+		prev = s.combs[c.ext-1]
+	}
+	if len(prev)+utf8.RuneLen(ch) > combMax {
+		return true
+	}
+	seq := prev + string(ch)
+	if ext, ok := s.combIdx[seq]; ok {
+		c.ext = ext
+		return true
+	}
+	if len(s.combs) >= combsMaxKept {
+		return true
+	}
+	if s.combIdx == nil {
+		s.combIdx = make(map[string]uint32)
+	}
+	s.combs = append(s.combs, seq)
+	c.ext = uint32(len(s.combs))
+	s.combIdx[seq] = c.ext
+	return true
+}
+
+// blankSpan blanks r[from:to] the way an erase does, and widens it to whole
+// characters: half of a wide one is not left standing.
+func blankSpan(r []cell, from, to int) {
+	if to > len(r) {
+		to = len(r)
+	}
+	if from >= to {
+		return
+	}
+	if from > 0 && r[from].ch == contCh {
+		r[from-1] = blank
+	}
+	if to < len(r) && r[to].ch == contCh {
+		r[to] = blank
+	}
+	for i := from; i < to; i++ {
+		r[i] = blank
+	}
+}
+
+// repairRow blanks every half of a wide character left without its other half,
+// after an op that moved cells sideways or cut the row.
+func repairRow(r []cell) {
+	for i := range r {
+		switch {
+		case r[i].ch == contCh:
+			if i == 0 || r[i-1].ch < 0 || runeWidth(r[i-1].ch) != 2 {
+				r[i] = blank
+			}
+		case r[i].ch > 0x7f && runeWidth(r[i].ch) == 2:
+			if i+1 >= len(r) || r[i+1].ch != contCh {
+				r[i] = blank
+			}
+		}
+	}
+}
+
+// emit writes the character in a cell and the marks after it.
+func (s *screen) emit(b *strings.Builder, c cell) {
+	ch := c.ch
+	if ch == 0 {
+		ch = ' '
+	}
+	b.WriteRune(ch)
+	if c.ext > 0 {
+		b.WriteString(s.combs[c.ext-1])
+	}
 }
 
 func (s *screen) lineFeed() {
 	s.wrapNext = false
-	if s.row >= s.rows-1 {
+	// Only the region's bottom row scrolls. Below the region a line feed moves
+	// down until the last row and stops there.
+	_, bot := s.region()
+	if s.row == bot {
 		s.scroll()
-		s.row = s.rows - 1
-		return
+	} else if s.row < s.rows-1 {
+		s.row++
 	}
-	s.row++
 }
 
 func (s *screen) moveTo(row, col int) {
@@ -221,9 +436,7 @@ func (s *screen) eraseLine(mode int) {
 	case 2:
 		from, to = 0, s.cols
 	}
-	for i := from; i < to && i < len(r); i++ {
-		r[i] = blank
-	}
+	blankSpan(r, from, to)
 }
 
 // eraseDisplay handles CSI J. For full-screen clears (2 and 3), preserve
@@ -256,23 +469,36 @@ func (s *screen) eraseDisplay(mode int) {
 }
 
 // insertLines is `CSI L`, and deleteLines is `CSI M`. Both move the lines below
-// the cursor, which is how an application opens or closes a gap in a list.
+// the cursor, which is how an application opens or closes a gap in a list. They
+// act inside the scroll region and do nothing with the cursor outside it.
 func (s *screen) insertLines(n int) {
 	s.grow(s.row)
+	top, bot := s.region()
+	if s.row < top || s.row > bot {
+		return
+	}
+	n = minInt(n, bot-s.row+1)
 	for k := 0; k < n; k++ {
-		copy(s.cells[s.row+1:], s.cells[s.row:])
+		copy(s.cells[s.row+1:bot+1], s.cells[s.row:bot])
 		s.cells[s.row] = blankRow(s.cols)
 	}
+	s.col, s.wrapNext = 0, false
 }
 
 func (s *screen) deleteLines(n int) {
 	s.grow(s.row)
+	top, bot := s.region()
+	if s.row < top || s.row > bot {
+		return
+	}
+	n = minInt(n, bot-s.row+1)
 	for k := 0; k < n; k++ {
 		// The line leaving is not history: it is being removed from a view the
 		// application is rearranging, and it was never below the fold.
-		copy(s.cells[s.row:], s.cells[s.row+1:])
-		s.cells[len(s.cells)-1] = blankRow(s.cols)
+		copy(s.cells[s.row:bot], s.cells[s.row+1:bot+1])
+		s.cells[bot] = blankRow(s.cols)
 	}
+	s.col, s.wrapNext = 0, false
 }
 
 func rowIsBlank(r []cell) bool {
@@ -293,6 +519,8 @@ func (s *screen) toAlt() {
 	s.alt = true
 	s.altCells = s.cells
 	s.altRow, s.altCol = s.row, s.col
+	s.altRegSet, s.altRegTop, s.altRegBot = s.regSet, s.regTop, s.regBot
+	s.resetRegion()
 	s.cells = make([][]cell, s.rows)
 	for i := range s.cells {
 		s.cells[i] = blankRow(s.cols)
@@ -308,6 +536,7 @@ func (s *screen) fromAlt() {
 	s.cells = s.altCells
 	s.rows = len(s.cells)
 	s.row, s.col = s.altRow, s.altCol
+	s.regSet, s.regTop, s.regBot = s.altRegSet, s.altRegTop, s.altRegBot
 	s.altCells = nil
 }
 
@@ -395,14 +624,20 @@ func (s *screen) textAtRows() string {
 		} else {
 			blanks = 0
 		}
-		writeRow(&b, r, &cur)
+		s.writeRow(&b, r, &cur)
 		b.WriteString("\r\n")
 	}
 	for i, r := range s.cells {
-		writeRow(&b, r, &cur)
+		s.writeRow(&b, r, &cur)
 		if i < len(s.cells)-1 {
 			b.WriteString("\r\n")
 		}
+	}
+	// The scroll region goes back before the cursor does, since setting one homes
+	// the cursor. A session that scrolls inside a region keeps doing it after the
+	// attach, and a terminal without the region would scroll its whole screen.
+	if s.regSet {
+		b.WriteString("\x1b[" + strconv.Itoa(s.regTop+1) + ";" + strconv.Itoa(s.regBot+1) + "r")
 	}
 	b.WriteString("\x1b[" + strconv.Itoa(s.row+1) + ";" + strconv.Itoa(s.col+1) + "H")
 	return b.String()
@@ -410,13 +645,16 @@ func (s *screen) textAtRows() string {
 
 // writeRow writes one row, trailing blanks dropped, with its colour reset at
 // the end the way `render` does.
-func writeRow(b *strings.Builder, r []cell, cur *string) {
+func (s *screen) writeRow(b *strings.Builder, r []cell, cur *string) {
 	end := len(r)
 	for end > 0 && (r[end-1].ch == ' ' || r[end-1].ch == 0) {
 		end--
 	}
 	for j := 0; j < end; j++ {
 		c := r[j]
+		if c.ch == contCh {
+			continue
+		}
 		if c.sgr != *cur {
 			if c.sgr == "" {
 				b.WriteString("\x1b[m")
@@ -425,11 +663,7 @@ func writeRow(b *strings.Builder, r []cell, cur *string) {
 			}
 			*cur = c.sgr
 		}
-		ch := c.ch
-		if ch == 0 {
-			ch = ' '
-		}
-		b.WriteRune(ch)
+		s.emit(b, c)
 	}
 	if *cur != "" {
 		b.WriteString("\x1b[m")
@@ -512,6 +746,9 @@ func (s *screen) render() (body string, curLine, total int, ok bool) {
 		}
 		for j := 0; j < end; j++ {
 			c := r[j]
+			if c.ch == contCh {
+				continue
+			}
 			if c.sgr != cur {
 				if c.sgr == "" {
 					b.WriteString("\x1b[m")
@@ -520,11 +757,7 @@ func (s *screen) render() (body string, curLine, total int, ok bool) {
 				}
 				cur = c.sgr
 			}
-			ch := c.ch
-			if ch == 0 {
-				ch = ' '
-			}
-			b.WriteRune(ch)
+			s.emit(&b, c)
 		}
 		if cur != "" {
 			b.WriteString("\x1b[m")
@@ -628,6 +861,8 @@ func (s *screen) resize(cols int) {
 		for i, r := range rows {
 			if len(r) > cols {
 				rows[i] = r[:cols:cols]
+				// A cut can leave a wide character's first half at the edge.
+				repairRow(rows[i])
 				continue
 			}
 			for len(r) < cols {
@@ -670,6 +905,9 @@ func (s *screen) resizeRows(rows int) {
 	if rows == s.rows {
 		return
 	}
+	// A terminal resets the region when its height changes.
+	s.resetRegion()
+	s.altRegSet = false
 	if s.alt {
 		s.cells, _ = s.fitRows(s.cells, &s.row, rows, false)
 		s.altCells, _ = s.fitRows(s.altCells, &s.altRow, rows, true)
@@ -723,11 +961,13 @@ func decodeRune(b []byte) (rune, int) {
 	if b[0] < 0x80 {
 		return rune(b[0]), 1
 	}
-	r := []rune(string(b[:min(len(b), 4)]))
-	if len(r) == 0 {
-		return ' ', 1
+	r, n := utf8.DecodeRune(b)
+	if r == utf8.RuneError && n <= 1 {
+		// A byte that starts nothing, or a sequence cut short: one replacement
+		// character for one byte, and the bytes after it are still read.
+		return utf8.RuneError, 1
 	}
-	return r[0], len(string(r[0]))
+	return r, n
 }
 
 func min(a, b int) int {
@@ -780,17 +1020,17 @@ func (s *screen) escape(b []byte, i int) int {
 		s.sgr = s.attr.render()
 		return i + 1
 	case 'M':
-		// Reverse index: up one, scrolling the screen down at the top.
-		if s.row == 0 {
-			copy(s.cells[1:], s.cells)
-			s.cells[0] = blankRow(s.cols)
-		} else {
+		// Reverse index: up one, scrolling the region down at its top.
+		if top, _ := s.region(); s.row == top {
+			s.scrollDown()
+		} else if s.row > 0 {
 			s.row--
 		}
 		return i + 1
 	case 'c':
 		// Full reset. The screen is cleared and what was on it was still seen.
 		s.eraseDisplay(2)
+		s.resetRegion()
 		s.moveTo(0, 0)
 		s.attr = sgrState{}
 		s.sgr = ""
@@ -886,6 +1126,7 @@ func (s *screen) csi(b []byte, start, i int) int {
 			for j := maxInt(s.col, len(r)-k); j < len(r); j++ {
 				r[j] = blank
 			}
+			repairRow(r)
 		}
 	case '@':
 		// Insert blanks, pushing the rest of the line right.
@@ -897,22 +1138,22 @@ func (s *screen) csi(b []byte, start, i int) int {
 			for j := s.col; j < minInt(s.col+k, len(r)); j++ {
 				r[j] = blank
 			}
+			repairRow(r)
 		}
 	case 'X':
 		// Erase characters in place.
 		s.grow(s.row)
 		r := s.cells[s.row]
-		for j := s.col; j < minInt(s.col+arg(0, 1), len(r)); j++ {
-			r[j] = blank
-		}
+		blankSpan(r, s.col, minInt(s.col+arg(0, 1), len(r)))
+	case 'r':
+		s.setRegion(arg(0, 1), arg(1, 0))
 	case 'S':
-		for k := 0; k < arg(0, 1); k++ {
+		for k := 0; k < minInt(arg(0, 1), s.rows); k++ {
 			s.scroll()
 		}
 	case 'T':
-		for k := 0; k < arg(0, 1); k++ {
-			copy(s.cells[1:], s.cells)
-			s.cells[0] = blankRow(s.cols)
+		for k := 0; k < minInt(arg(0, 1), s.rows); k++ {
+			s.scrollDown()
 		}
 	case 'm':
 		s.setSGR(string(b[start:i-1]) + "m")
