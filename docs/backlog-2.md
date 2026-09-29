@@ -1952,6 +1952,23 @@ and not the alternate one, with no DECSTBM region set, and with `fixedRows` true
 because the rule compares whole screens and a guessed screen is not one. Skipped too: a candidate while one is
 already open, and the grid's first screenful (nothing is in history and the grid has never been full).
 
+**A candidate at a height change is NOT skipped.** This changes the strict-match rule above, which skipped any
+candidate with a height change at its byte (Mercurius `s_ijoTH04DNGvl` round 1, C1). With the height hold in, a real
+height change held past half a second is the loss that is left, so skipping those would make the report read clean
+exactly when lines are still going. A candidate is AT A CUT when a row cut from `applyCuts` falls between the last
+printable character or line feed before the `\e[H` and the `\e[H` itself. conhost's own
+`\e[46;3H\e[?25h\e[?2026h\e[?2026l\e[?25l` ahead of the repaint is cursor moves and modes, so it does not separate
+them. For those:
+- `applyCuts` snapshots the grid and notes the history length just BEFORE `resizeRows`, and keeps the number of rows
+  `fitRows` filed off the top (`gone`). The candidate compares against that pre-cut snapshot, not the fitted grid.
+- `k` is found the same way, with M from the NEW height, since that is the repaint's height.
+- Rows 1 to `gone` of the snapshot are already in history, put there by `fitRows`. Only snapshot rows gone+1 to `k`
+  are spliced in, after them. A `k` of `gone` or less adds nothing, and the report says the resize already filed
+  them.
+- A grow has `gone` 0. A taller repaint whose row 1 is older than anything on the snapshot finds no `k` and adds
+  nothing, which is the safe side.
+- A second cut before the repaint completes still cancels it, reported as such.
+
 **Opening one.** Copy the grid's rows into a snapshot buffer held on the screen and reused, and note the history
 length. The copy is rows times cols cells, about 10,000 for 206x50, and candidates are about 70 in 2.7 MB of ring.
 
@@ -1960,7 +1977,8 @@ and trailing blanks trimmed. That is the repaint's row `n`. Recording at the lin
 what keeps it right when the last row's `\r\n` scrolls the grid, as a 50-row repaint of `\e[K\r\n` rows does.
 Printable text, `\r`, `CSI K` and SGR are the only things allowed while it is open. Anything else cancels it without
 a word: another cursor move, `CSI J`, insert or delete lines, a scroll, DECSTBM, the alternate screen, a size cut
-from `applyCuts`, or more than 64 KB consumed since it opened.
+from `applyCuts` after the `\e[H` (a cut just before it is the case below), or more than 64 KB consumed since it
+opened.
 
 **Closing one.** Complete at `rows` line feeds, or at `rows - 1` line feeds followed by a cursor move, which is how a
 repaint that does not end in `\r\n` finishes. Then the strict-match rule above, with the recorded rows against the
@@ -1974,26 +1992,34 @@ for the same look. Comparing text is what makes a real shift match, and the dist
 rows and box borders matching at the wrong `k`.
 
 **A diagnostic first, in the same change.** `GET /v1/tasks/{id}/scrollback/text?repair=report` returns the
-replay with one line per candidate instead of the text: its byte offset, whether it completed, the `k` it matched,
-or why not. It is the only way to know how often this still happens now that the height hold is in. Without it
-option 3 is built blind.
+replay with one line per candidate instead of the text. It is the only way to know how often this still happens now
+that the height hold is in. Without it option 3 is built blind. Tab-separated, one header line, these columns:
+- `offset`, the byte of the `\e[H` in the replayed bytes,
+- `rows` and `cols`, the grid's size at the candidate, and `cut`, the rows before a cut it sits at or `-`,
+- `outcome`: `repaired`, `resize-filed` (k was `gone` or less), `no-match`, `ambiguous` (more than one k),
+  `cancelled`, or `incomplete` (the ring ended inside it),
+- `k`, and `added`, the rows spliced into history, both 0 when nothing was,
+- `why`, what cancelled it or which condition failed, empty otherwise.
+The last line totals each outcome and the rows added, so two readings a day apart compare at a glance.
 
 **Tests.**
 - Unit, in `screen_test.go`: a 10-row grid, 10 numbered lines, then `\e[H` and 10 rows `\e[K\r\n` starting from
   old row 4. History gains rows 1 to 3 in order. The same with the last row not ending in `\r\n`.
 - The false positives, each must add nothing: a repaint identical to the screen (`k` 0), a repaint of mostly blank
   rows and one border, a real collapse where rows moved up because content was removed (asserted as a named, known
-  duplicate, since the rule cannot tell it apart when the rows match), two `k` values passing, a repaint cut by a
-  size cut, a repaint under DECSTBM, and one on the alternate screen.
+  duplicate, since the rule cannot tell it apart when the rows match), two `k` values passing, a second cut inside a
+  repaint, a repaint under DECSTBM, and one on the alternate screen.
+- At a cut: rows 50 to 40 with conhost's repaint shifted by 12 adds 2 rows (the grid filed 10), shifted by 10 adds 0
+  and reports `resize-filed`, and a grow from 40 to 50 adds 0.
 - A fixture from the committed harness. `TestConPTYScrollRepro` drives rows 50, 40, 50 through the inbox ConPTY with
   Claude-shaped frames. Capture its host-side bytes once into `testdata/`, and assert the replay keeps every
   numbered line the child wrote, where today it loses 49 to 72 of 300. This is the test that says it works.
 - `HEADLESS_ONLY` needs nothing new: the board is not touched.
 
-**Cost.** One worker. About 150 lines in `screen.go`, about 40 for the report, about 300 of tests. No new binary, no
-setting, nothing shipped, nothing packaging has to learn. It runs only on replay, so it adds nothing to the output
-path. A wrong call puts a duplicate line into history, never removes one. It becomes dead code on the day option 2
-lands, and removing it is deleting one field and one function.
+**Cost.** One worker. About 200 lines in `screen.go` with the cut case, about 50 for the report, about 350 of
+tests. No new binary, no setting, nothing shipped, nothing packaging has to learn. It runs only on replay, so it
+adds nothing to the output path. A wrong call puts a duplicate line into history, never removes one. It becomes
+dead code on the day option 2 lands, and removing it is deleting one field and its code.
 
 ### 2 or 3, for clint
 
@@ -2010,7 +2036,7 @@ report.
 | Where it acts | at the source, conhost is gone | after the fact, on replay only |
 | Wrong answers | none known: 0 lost, no `\e[H` repaint, over 30 to 62 resizes a run | a duplicate line in history, never a lost one |
 | New things shipped | conpty.dll and OpenConsole.exe per arch, about 1.2 MB, MIT notice | nothing |
-| New code | own create, resize and close through conpty.dll (about 100 lines, in the harness), answering `\e[c` and `\e[1t` for a runner with no viewer, the setting, the fallback | about 190 lines in `screen.go` and the report |
+| New code | own create, resize and close through conpty.dll (about 100 lines, in the harness), answering `\e[c` and `\e[1t` for a runner with no viewer, the setting, the fallback | about 250 lines in `screen.go` and the report |
 | Retesting | the whole terminal test plan: passthrough changes the byte shapes `screen.go`, the cursor settle, the typing gate and the replay tests were tuned on | its own tests only |
 | Packaging | every install path in `docs/packaging.md` has to carry two more files | none |
 | Prerequisites | item 81 (DECSTBM in `screen.go`), now on claude/main | none |
