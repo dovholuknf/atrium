@@ -185,6 +185,9 @@ type Server struct {
 	// into `into` covered, limited to `branches` when given. Human listener only,
 	// never the guest allowlist.
 	Merged func(into string, branches []string) (any, error)
+	// ArchiveWorkers is the one-time tidy of done worker cards. Human listener
+	// only. `dryRun` changes nothing and lists what would go.
+	ArchiveWorkers func(dryRun bool) (any, error)
 	// RestartRunner asks a runner to exit, waits for it to be gone, and starts
 	// the same conversation again on the SAME card. Unshelve without the shelve,
 	// for a wedged session or one running an old binary. Supplied by the daemon,
@@ -537,6 +540,9 @@ func (s *Server) Handler() http.Handler {
 	}
 	if s.Merged != nil {
 		mux.HandleFunc("POST /v1/merged", s.merged)
+	}
+	if s.ArchiveWorkers != nil {
+		mux.HandleFunc("POST /v1/tasks/archive-workers", s.archiveWorkers)
 	}
 	if s.RestartRunner != nil {
 		mux.HandleFunc("POST /v1/tasks/{id}/restart", s.restartRunner)
@@ -2009,6 +2015,20 @@ func (s *Server) merged(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	res, err := s.Merged(body.Into, body.Branches)
+	if err != nil {
+		writeErr(w, http.StatusConflict, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
+// archiveWorkers is `atrium archive-workers`. Body `{dry_run}`.
+func (s *Server) archiveWorkers(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		DryRun bool `json:"dry_run"`
+	}
+	_ = json.NewDecoder(io.LimitReader(r.Body, 1<<12)).Decode(&body)
+	res, err := s.ArchiveWorkers(body.DryRun)
 	if err != nil {
 		writeErr(w, http.StatusConflict, err)
 		return

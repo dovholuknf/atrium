@@ -356,6 +356,7 @@ func New(opts Options) (*Daemon, error) {
 	d.ap.Cull = func(id, into, tip string) (any, error) { return d.CullProved(id, into, tip) }
 	d.ap.HoldCull = d.HoldCull
 	d.ap.Merged = func(into string, branches []string) (any, error) { return d.Merged(into, branches) }
+	d.ap.ArchiveWorkers = func(dryRun bool) (any, error) { return d.ArchiveWorkers(dryRun) }
 	d.ap.RestartRunner = d.RestartRunner
 	d.ap.Unshelve = d.Unshelve
 	d.ap.Overlays = d.overlayViews
