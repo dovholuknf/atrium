@@ -32,7 +32,10 @@ func TestClassifyFrame(t *testing.T) {
 		{"idle after an earlier working frame", workingFrame + idleFrame, true, frameIdle},
 		{"working footer", workingFrame, false, frameHint},
 		{"working after an idle one", idleFrame + workingFrame, false, frameHint},
-		{"no box", "building...\r\nstill going\r\nmore\r\nlines\r\n", false, frameNoBox},
+		{"status line rows under the box", idleFrame + "  ~/repo (main) [22:54] | 5h 1% | wk 26% | ctx 64k\r\n  Checking for updates\r\n", true, frameIdle},
+		{"five rows under the box", idleFrame + "a\r\nb\r\nc\r\nd\r\n", false, frameNoBox},
+		{"hint in a status row", workingFrame + "  status\r\n", false, frameHint},
+		{"no box","building...\r\nstill going\r\nmore\r\nlines\r\n", false, frameNoBox},
 		{"box half drawn", "x\r\n" + frameRule + "\r\n❯", false, frameNoBox},
 		{"spinner with no footer hint", "· Ionizing… (5s)\r\n\r\n" + frameRule + "\r\n❯ \r\n" + frameRule + "\r\n  footer\r\n", false, frameSpinner},
 	}
@@ -55,6 +58,20 @@ func TestClassifyFrameOnRealCaptures(t *testing.T) {
 		if idle, why := classifyFrame(b, 120, 40); idle || why != frameHint {
 			t.Errorf("%s: got %v/%s, wanted working via %s", f, idle, why, frameHint)
 		}
+	}
+}
+
+// A settled prompt, taken from a session idle for over an hour. Its custom status
+// line puts several rows under the bottom rule, and it must still read idle.
+func TestClassifyFrameOnARealSettledPromptWithAStatusLine(t *testing.T) {
+	b, err := os.ReadFile("testdata/frame-settled-statusline.bin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The session was 206 columns wide, unlike the other captures. Read at the
+	// wrong width its rules wrap and it reads as no box, which fails safe.
+	if idle, why := classifyFrame(b, 206, 60); !idle {
+		t.Errorf("wanted idle, got %s", why)
 	}
 }
 
