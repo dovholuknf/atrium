@@ -5,6 +5,20 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **`atrium_cull` retires a finished worker: it leaves, and its worktree and branch are removed.** See
+  `docs/backlog-2.md` item 36 and `docs/test-plan.md` section CL.
+
+  Merged workers sat idle at needs-input holding launch-cap slots until somebody exited them and removed their
+  worktrees by hand, and on 2026-09-28 that refused a launch. The trigger is a control tool rather than a hook on the
+  merge, because a merge is not an acceptance: calling `atrium_cull` IS the acceptance, made by the orchestrator or
+  the merger acting for it, and a worker cannot cull itself. The room then checks on its own that the card is tagged
+  `atrium:subagent` and that its branch is merged into `claude/main` (or `into`), and refuses the whole cull
+  otherwise. It asks the runner to leave, waits for it to be gone, and removes the worktree only when git reports it
+  clean apart from atrium's own `BRIEF.md`, with `git worktree remove` unforced. The branch is deleted only after its
+  worktree is gone and it still reads as merged. The main checkout, main, master and the target branch are never
+  touched. Uncommitted work keeps the worktree and the branch, and the answer says why. New
+  `POST /v1/tasks/<id>/cull`. `internal/daemon`: ROOM RESTART. `internal/link`: HUB RESTART.
+
 - **Every card keep-alive watches wears a chip, and lean cards are no longer forked into a full rewrite.** See
   `docs/backlog-2.md` item 70, `docs/cache-keepalive-design.md` and `docs/test-plan.md` BL7.
 

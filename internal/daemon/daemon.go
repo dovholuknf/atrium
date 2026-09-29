@@ -310,6 +310,7 @@ func New(opts Options) (*Daemon, error) {
 	d.ap.Shutdown = d.handleShutdown
 	d.ap.Shelve = d.Shelve
 	d.ap.StopRunner = d.StopRunner
+	d.ap.Cull = func(id, into string) (any, error) { return d.Cull(id, into) }
 	d.ap.RestartRunner = d.RestartRunner
 	d.ap.Unshelve = d.Unshelve
 	d.ap.Overlays = d.overlayViews

@@ -886,6 +886,18 @@ sa88 sat idle at needs-input after their branches were merged, and filled the la
 not start. When the merger lands a worker's branch and the work is accepted, the worker is asked to leave and its
 worktree and branch are removed.
 
+Status: built by sa36 as the `atrium_cull <card>` control tool, merged, not deployed. Test plan CL.
+
+Why a tool and not a trigger on the merge. A merge is not an acceptance: a branch can land and still be sent back, and
+the worker is the cheapest place to fix it while its conversation is warm. So calling `atrium_cull` is the acceptance,
+made by the orchestrator or the merger acting for it, and a worker cannot cull itself. The room adds what it can check
+on its own and refuses the whole cull otherwise: the card is tagged `atrium:subagent`, and its branch is merged into
+`claude/main` (or `into`). It then asks the runner to leave and waits for it, removes the worktree only when git
+reports it clean apart from atrium's own `BRIEF.md` (`git worktree remove`, never `--force`), and deletes the branch
+only once the worktree is gone and it still reads as merged. The main checkout, main, master and the target branch are
+never touched. A worktree with uncommitted changes is kept with its branch, the worker still leaves, and the answer
+says why. `internal/daemon/cull.go` has the whole reasoning.
+
 ## 37. Token and context use on record for every session, shown only in a card's details (feature)
 
 Raised 2026-09-28 by clint: "i definitely want to keep track of claude sessions and token use and context use and
