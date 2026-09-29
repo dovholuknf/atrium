@@ -798,6 +798,14 @@ type runner struct {
 	// an attach's echo line can split the runner's time from atrium's. Only
 	// written while input-lag logging is on. See inputlag.go.
 	lagRead atomic.Int64
+	// lastOut is when the pty last handed over output, in unix nanoseconds. Read
+	// by the looks-idle watch (looksidle.go) and nothing else. One atomic store
+	// per chunk, outside r.mu.
+	lastOut atomic.Int64
+	// wake is called on the next output or operator keystroke, and is nil unless
+	// the card is flagged as looking idle, so both paths pay one atomic load.
+	// See looksidle.go.
+	wake atomic.Pointer[func(cause string)]
 	// injectMu serializes peer injections against each other, so two peers do
 	// not interleave their banners and bodies into the pty. It is DELIBERATELY
 	// NOT `r.mu`: `injectPeer` holds it across the sayThenEnter pause, and if
@@ -974,6 +982,9 @@ func (r *runner) noteOperatorTyped(p []byte) {
 	// is one atomic load on the common path. See `pendingInjector`.
 	if h := r.onKey.Load(); h != nil {
 		(*h)()
+	}
+	if w := r.wake.Load(); w != nil {
+		(*w)("keystroke")
 	}
 }
 
@@ -1465,6 +1476,10 @@ func (r *runner) deliverOutput(chunk []byte) {
 	_, _ = r.buf.Write(chunk)
 	r.fanoutLocked(chunk)
 	r.mu.Unlock()
+	r.lastOut.Store(time.Now().UnixNano())
+	if w := r.wake.Load(); w != nil {
+		(*w)("output")
+	}
 	r.lagFanout(t0, len(chunk))
 }
 
