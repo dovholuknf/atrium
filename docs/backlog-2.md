@@ -1357,6 +1357,15 @@ tlsuv/fix-ci (`01a0e9aa`, on claude-sg4) answered "no card 01a0e9aa... to start 
 - Stage 2, the long run: a card id carries its room end to end, so no request that names a card can reach another
   room.
 
+**Status, 2026-09-28: DONE, both stages in claude/main.**
+
+- Stage 1 is 0cbbaa2. The hub routes any request that names a card, path or body, plain or tagged.
+- Stage 2 is 8deea51, with CHANGELOG and test plan CD5 and CD6 in 479c9d7. The board sends tagged ids and never
+  routes a card write by header, the launch answer is retagged, and the room's not-found names the card and the
+  room.
+- Design in `docs/card-room-routing.md`.
+- Follow-up nobody has asked for: tagged ids in scoped views, and ids minted with their room.
+
 ## 64. A card cannot stop being lean (bug, HIGH)
 
 Raised 2026-09-28 by clint. tlsuv/fix-ci (`01a0e9aa`) was launched lean by the dotfiles agent, and clint wants it
