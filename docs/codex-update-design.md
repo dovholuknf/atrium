@@ -1,6 +1,6 @@
 # Keeping codex up to date (backlog-2 item 12)
 
-Design only. Nothing here is built. Written 2026-09-29 by @runtime.
+Written 2026-09-29 by @runtime. Sections 1 and 2 are built (sa12). Sections 3 and 4 are design only.
 
 **What is decided and what waits.** Sections 1 and 2 fix bugs and are decided: they can be built now. Sections 3
 and 4 are written as the recommended answers to the open questions at the end, and are NOT built until clint answers.
@@ -72,6 +72,13 @@ saying why ("codex 0.156.1 is installed, which is what this card offered"). That
 the package plus a version: they are matched by source and by `external_id` starting with the package and `@`.
 
 Only `backlog` cards. A card somebody started is theirs, which is the rule `Offer` already keeps.
+
+A backlog card with no recorded version (the pre-change codex card `01a0d368`, no URL) follows the same two rules and
+nothing special. Installed equal to latest: withdrawn. A newer latest: it is REWRITTEN in place by `Offer` to "codex:
+<installed> to <latest>" with the new URL, not withdrawn and re-offered. It is still in the inbox and keyed by the
+package, so a rewrite is what every later release does to it anyway, and it keeps its place and any prompt edit. Only a
+legacy card, whose key holds a version so `Offer` can never find it, is withdrawn and replaced by a fresh one. Every
+withdrawal also releases the card's key, since an archived card still holding it would be refreshed unseen.
 
 Archived, not deleted, so the history keeps it and the sweep deletes it on its normal timer.
 

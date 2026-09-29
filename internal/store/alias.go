@@ -144,7 +144,13 @@ func (s *Store) SetAlias(id, alias string) error {
 	return nil
 }
 
-// GetByAlias returns the live card holding alias. A leading `@` is accepted.
+// GetByAlias returns the card an alias means. A leading `@` is accepted.
+//
+// RESOLVING IS NOT HOLDING. A `done` card no longer holds its alias, so a new
+// worker can take it, but a worker that reported done still sits at its prompt
+// waiting to be sent back or exited, and the operator still calls it by that
+// name. So a done card that is not archived answers to it, behind any live card
+// with the same alias. A dead or archived card never does.
 func (s *Store) GetByAlias(alias string) (*Task, error) {
 	alias = NormalizeAlias(alias)
 	if alias == "" {
@@ -152,10 +158,13 @@ func (s *Store) GetByAlias(alias string) (*Task, error) {
 	}
 	var t *Task
 	err := s.guard(func() error {
-		// Newest first. `SetAlias` keeps two live cards from holding one, but a
-		// card that ended can be reopened after another took its alias, and
-		// then the one launched most recently is the one being meant.
-		got, err := s.getBy(`alias = ? AND `+liveClause+` ORDER BY created_at DESC`, alias)
+		// One query, live first, then newest. A `SetAlias` keeps two live cards
+		// from holding one, but a card that ended can be reopened after another
+		// took its alias, and then the one launched most recently is the one
+		// being meant. A done fallback lookup would be two round trips for the
+		// same ordering.
+		got, err := s.getBy(`alias = ? AND status != '`+StatusDead+`' AND archived_at = '' `+
+			`ORDER BY (status = '`+StatusDone+`'), created_at DESC`, alias)
 		if err != nil {
 			return err
 		}

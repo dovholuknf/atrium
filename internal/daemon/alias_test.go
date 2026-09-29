@@ -5,6 +5,9 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/dovholuknf/atrium/internal/store"
 )
 
 // A card's alias is accepted wherever a handle is. See store/alias.go and
@@ -31,6 +34,53 @@ func TestTellAcceptsAnAlias(t *testing.T) {
 	}
 	if len(pending) != 3 {
 		t.Fatalf("%d of 3 messages sent by alias arrived", len(pending))
+	}
+}
+
+// A worker that reported done and sits at its prompt is reached by its alias,
+// and lands on that card. A live card with the same alias is preferred. An
+// archived one is a miss again.
+func TestSayReachesADoneCardByAlias(t *testing.T) {
+	d := testDaemon(t)
+	peerCard(t, d, "alice")
+	bob := peerCard(t, d, "sa89-old")
+	_, f := typedRunner(t, d, bob.ID)
+	if err := d.st.SetAlias(bob.ID, "sa89"); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.st.SetStatus(bob.ID, store.StatusDone); err != nil {
+		t.Fatal(err)
+	}
+	out, code := tell(t, d, "alice", "@sa89", "one more thing")
+	if code != http.StatusOK {
+		t.Fatalf("a say to a done card by alias answered %d: %v", code, out)
+	}
+	// A done card with a live terminal is typed into, not queued.
+	if !strings.Contains(f.written(), "one more thing") {
+		t.Fatalf("the message did not land on the done card: %q (answer %v)", f.written(), out)
+	}
+	if got, via := d.localTargetVia("sa89"); got == nil || got.ID != bob.ID || via != "alias" {
+		t.Fatalf("localTargetVia = %v, %q", got, via)
+	}
+
+	// A live card that took the alias after wins.
+	fresh := peerCard(t, d, "sa89-new")
+	if err := d.st.SetAlias(fresh.ID, "sa89"); err != nil {
+		t.Fatal(err)
+	}
+	if got := d.localTarget("sa89"); got == nil || got.ID != fresh.ID {
+		t.Fatalf("a live card did not win the alias: %v", got)
+	}
+
+	// Archived, it answers to nothing.
+	if err := d.st.SetStatus(fresh.ID, store.StatusDone); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := d.st.Archive(-time.Minute, store.StatusDone); err != nil || n != 2 {
+		t.Fatalf("archived %d, %v", n, err)
+	}
+	if got := d.localTarget("sa89"); got != nil {
+		t.Fatalf("an archived card still answered to its alias: %v", got.ID)
 	}
 }
 
