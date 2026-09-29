@@ -160,7 +160,8 @@ function fileLink(id, range, hit) {
       clearTimeout(linkTip.timer);
       linkTip.timer = 0;
       // The SAME path asked for again inside the grace is a repaint, not the
-      // pointer moving. Leave whatever is up alone, or let the pending show run.
+      // pointer moving. A tip already up is left alone. One not up yet starts
+      // its delay again below, which only a pointer move sets off.
       if (same && tipEl.classList.contains("on") && tipEl.textContent === linkTip.text) return;
       // A different path replaces the old tip at once rather than after the grace.
       if (!same) hideTip();
