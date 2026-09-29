@@ -710,9 +710,24 @@ pwsh -File scripts\provision-room.ps1 user@host -Remove
 `--atrium-service` from its process. `-HubAddr` picks one when more than one hub is running.
 
 **The binary.** By default it fetches the GitHub release of dovholuknf/atrium for the remote's OS and arch and checks
-it against the release's `checksums.txt`. There are no releases yet, so this stops with `provision fetch fail` and
-the reason. `-FromCheckout` builds from the checkout (`CGO_ENABLED=0`, into `build.claude/provision/`). The binary
-goes to `~\.atrium\bin` on Windows or `~/.local/bin` elsewhere.
+it against the release's `checksums.txt`. With no release, no `-Version` and the script in a checkout, it prints
+`provision fetch warn` and builds from the checkout instead, so the bare command needs no flags. `-FromCheckout` is
+the explicit form (`CGO_ENABLED=0`, into `build.claude/provision/`). A `-Version` that does not exist still fails. The
+binary goes to `~\.atrium\bin` on Windows or `~/.local/bin` elsewhere.
+
+**Auth and smoke.** After the runner checks, `auth` runs `claude auth status` on the remote and reads `loggedIn`. Not
+signed in is a `warn` naming `ssh -t <target> claude auth login`, which prints a URL and so works over ssh. The
+script never reads or carries a credential, and the room is fine without it. `smoke` is last: it launches a small
+claude worker on the room through the hub (`-SmokeCwd`, `-SmokeTo`, `-SmokeTimeout` 180), waits for its report to
+carry a nonce, exits the card and confirms it left. It runs in the clone `room-git.ps1 init` made, or the remote home
+when there is none. It is skipped when auth warned or with `-NoSmoke`, and a smoke that does not report is exit 8.
+`-SmokeOnly` runs just `auth` and `smoke` against a room already provisioned. It stops before anything is written,
+so it is the one form that is safe against a room in use.
+
+**Windows without CIM.** Over ssh some Windows machines deny CIM, so every scheduled task action goes through
+`schtasks.exe` (query by XML, `/End`, `/Run`, `/Delete`, and `/Create` from an XML file, which needs no admin for the
+user's own logon task). **Linux PATH.** The user unit's ExecStart runs through a login shell, and
+`atrium-service.sh` writes the login shell's PATH into the unit, so a runner in `~/.local/bin` is found.
 
 **The join.** It mints a join string with `atrium rooms add` and `atrium rooms token`, and the remote spends it with
 `atrium room join <string> --no-run`, which enrols and exits.
