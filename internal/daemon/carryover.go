@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -397,6 +398,21 @@ func (d *Daemon) handleTextScrollback(w http.ResponseWriter, r *http.Request) {
 	widths := make([]int, 0, len(cuts))
 	for _, c := range cuts {
 		widths = append(widths, c.cols)
+	}
+	// `?repair=report` IS A DIAGNOSTIC AND NOT A REPAIR. It lists the repaints that
+	// overwrote rows above them (item 74, option 3) and says what a repair WOULD
+	// add: `repaired` means "would be repaired" and `added` is the rows that would
+	// be spliced. Nothing is spliced, and history, attach replay and this endpoint
+	// without the parameter are what they were. It takes its bytes and its cuts from
+	// the ONE `ReplayCuts` call above, so every cut's offset is in the stream it is
+	// compared against, which is why it sits before `collapse=0` swaps the bytes
+	// under a second lock. Always screen mode, and no banner: the body is the report.
+	if r.URL.Query().Get("repair") == "report" {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Header().Set("Content-Disposition", "inline")
+		w.Header().Set("Cache-Control", "no-store")
+		_, _ = io.WriteString(w, formatRepairReport(repairReport(backlog, cuts, rows)))
+		return
 	}
 	if r.URL.Query().Get("collapse") == "0" {
 		backlog = run.buf.Snapshot()
