@@ -3097,3 +3097,18 @@ asks for the link again, which fires `hover` (the tip shows). See `internal/api/
 
 The fix: `leave` hides after a grace of about 150ms, and a `hover` on the same path inside that window cancels the
 hide.
+
+## r-001. Lean launches drop `statusLine` (bug, HIGH)
+
+Status: not started. Owned by @runtime. clint wants it next.
+
+Lean launches drop `statusLine` (`internal/daemon/lean.go:281-289`, test `lean_test.go:161`). Keep it for every lean
+card, directors and subagents alike. It costs no model tokens, and it posts context figures to atrium
+(`docs/statusline-telemetry.md`), which clint values most right now.
+
+## m-001. Evaluate every test for efficacy (chore)
+
+Status: not started. Backlog only. Owned by @merge (release and quality). Raised by clint 2026-09-29.
+
+Go through every test and record what it proves, which are redundant, slow or flaky, and which test nothing real.
+Report a table with a keep, fix or delete recommendation per test. Delete nothing without clint's answer.
