@@ -1709,5 +1709,20 @@ The refusal reads the card's status and not the runner. Expected: a say to a car
 delivered whatever column the card is in. A `done` card with no runner still refuses, and says so. Item 41 is about
 which prompts make a card owe a report, not the card's state after one, so this is separate. Owned by @runtime.
 
+## 84. Two `nosession` tests fail on macOS and Linux (bug)
+
+Found 2026-09-28 on m1mini (macOS arm64, `hub-main` 52ca01a). `TestASayToAGoneSessionIsUndeliverable` and
+`TestAHeldMessageOnAnEndedSessionIsDropped` (`internal/daemon/nosession_test.go`) fail every time there.
+
+The cause is the fixture. `cardFor` (`internal/daemon/help_test.go:34`) registers every test card with `PID: 1`, and
+`sessionGone` (`nosession.go`) calls a card gone only when `!processAlive(pid)`. On Windows nothing is PID 1, so the
+card reads gone. On macOS and Linux PID 1 is launchd or init. `Signal(0)` from a non-root user returns `EPERM`, which
+`alive_other.go` counts as alive on purpose, so the card never goes. Linux CI would fail the same way.
+
+Fix, test only: give `cardFor` a PID that is guaranteed dead. Prefer a helper that starts and reaps a short child and
+returns its pid, over a large constant. Then grep the `_test.go` files for other `PID: 1` style assumptions.
+`processAlive` is right and does not change. Verified on m1mini with pid 2147483000: both pass, and so does the
+whole package. Owned by @runtime.
+
 
 ------------
