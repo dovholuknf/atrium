@@ -1964,6 +1964,12 @@ fork does not carry the card's launch args, so lean cards (item 29) cannot be wa
 restart does, with the card's model, effort, args and lean flag. First confirm with sa70's notes on
 `claude/keepalive-visible` exactly which args a lean card's cache depends on.
 
+Status: built by sa73 on `claude/sa73`. That branch was gone, so the args were settled from the code, `git show
+dc3c3a2` and the probes in `docs/cache-keepalive-design.md` (design: `docs/keepalive-fork-args-design.md`). The fork
+builds the card's restart argv with `runnerArgsWith` and `leanArgs`, keeps only the system prompt, tool and MCP flags
+(`keepFlags`), and sets the lean memory env. Settings, permission modes and the prompt are dropped. The `lean card`
+skip is removed. Not yet seen live: the first real lean refresh is test-plan step 1, and a miss stops the card.
+
 ## 74. A long reply loses lines in the middle on the board's terminal (bug)
 
 Raised 2026-09-28 by clint. A long reply from the orchestrator (a wide table, then several sections) lost 12 to 20
