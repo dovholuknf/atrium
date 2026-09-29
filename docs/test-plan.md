@@ -6226,3 +6226,28 @@ mark.
 2. Let the director end another turn without reporting.
 
 **Expected:** the orchestrator gets exactly one notice, and the director shows STUCK on the usual backoff.
+
+## EA. The repair report
+
+### EA1. Read the report on a live card
+
+1. Pick a card that has run for a while, and open `/v1/tasks/<id>/scrollback/text?repair=report` in a tab. Use
+   `&kind=shell` for the card's shell.
+2. Read the last line. `repaired=N` is how many repaints overwrote rows that a repair would have kept, and `added=N` is
+   how many rows that is. Note both, and read them again a day later: the totals are cumulative over the ring, so two
+   readings compare at a glance.
+3. For each `repaired` line, `k` is how many rows the repaint started below the top of the screen. A line with a `cut`
+   other than `-` sits at a height change, and `added` there is `k` minus the rows the resize already filed.
+4. Treat a `repaired` line as a possible false positive when the ring around its `offset` shows Claude collapsing a
+   block or a tool's output shrinking. The rule cannot tell those apart when the rows match.
+
+**Expected:** a header, one line per candidate and a `totals` line, with no `[atrium]` banner. A card that has never had
+its height changed reports `repaired=0`.
+
+### EA2. Nothing else changed
+
+1. Open `/v1/tasks/<id>/scrollback/text` without the parameter, before and after step 1.
+2. Reload the pane so it reattaches.
+
+**Expected:** the text is identical both times, and the rows a repaint overwrote are still absent from history, because
+the report measures and does not repair.
