@@ -3217,3 +3217,63 @@ A smoke start of the new build against a copy of the live database would not hav
 needs a launched worker ending under a launched launcher. The regression test for it is
 `TestPromptInsideATransactionDoesNotDeadlock`. m-001 (evaluate every test) should list which live scenarios have
 no test at all, starting with that one.
+
+## u-001. A mobile styling pass over the whole board (feature, HIGH)
+
+Status: not started. Owned by @ui. Raised by clint 2026-09-29. One of the first things clint wants.
+
+Go over every screen of the board on a phone: the card list, the terminal strip and tray, an attached terminal,
+the permission and question prompts, the launch dialog, settings, and the runners page. Restyle what does not fit,
+and confirm each screen works by touch, not only that it renders. The remote case matters most: the board reached
+over an overlay from a phone, approving and answering without a keyboard.
+
+Run it with a high-capability agent (Opus 5.5, high effort), not a Sonnet worker. It is judgement across many
+screens rather than one mechanical change. Report per screen what changed and what was confirmed by hand, with
+headless cases for the layouts that can be checked at a phone viewport.
+
+## f-002. Room-owned git: one integration checkout per repo, a worktree per card, a merge queue (feature)
+
+Status: not started. Backlog only. Owned by @fabric. Raised 2026-09-29.
+
+Today every worker makes its own worktree and one session merges into a shared checkout by hand, which is where
+switched branches, colliding commits and stale builds come from. Move that into the room, not the hub: one
+integration checkout per repository guarded by a lock, a worktree atrium makes for each card it launches, and a
+merge queue that lands a card's branch on the integration branch in order, running the checks before each merge.
+The hub stays out of it, since the checkouts live on the room's machine.
+
+## u-002. A grey pinned row survives `hide inactive agents` (bug)
+
+Status: not started. Backlog only. Owned by @ui. Raised by clint 2026-09-29 with a screenshot.
+
+With `hide inactive: agents (9)` lit, the pinned `zrok2 on OpenZiti 2 (docker cluster)` row
+(`github/openziti/zrok:zrok2-openziti2`) still shows, drawn grey, with a `? 2` badge. `63a6421` made pins hide like
+any other row, and the live build `abc3cf9` contains it, so this is not a missing deploy.
+
+`sessionHiddenBy` (`internal/api/web/js/terminal-list.js:178`) keeps a row only when it is the attached terminal,
+and hides an agent on `termCold`, the same predicate `termRow` greys on. A row that is grey and shown means one of:
+
+- it is the attached terminal (`termTask`), which is kept on purpose, but then it should not be drawn grey
+- it is greyed by something other than `termCold`, so the grey and the hide have drifted apart again
+- it is a subagent (`isDoer`), which answers to the subagents toggle, and that toggle is off in the screenshot
+- the browser runs a stale board (service worker cache)
+
+The `? 2` suggests two questions still pending for a session that has gone (`orphans.go`). Find which branch it is,
+then make a grey row and a hidden row one answer again. Add a headless case for the branch that was missed.
+
+## u-003. Board-wide auto still rings "needs permission" for a request it approves (bug)
+
+Status: not started. Backlog only. Owned by @ui. Raised by clint 2026-09-29 with a screenshot.
+
+At 10:41 the tray logged `apple-secure-transport-engine needs permission` with a raw JSON body
+(`SubagentHandback: {"message":"{\"verdict\":...`). clint went to the card and found no question. The room's history
+shows the request approved by `global-auto` at 10:41:15, so nothing was ever waiting on him.
+
+The cause is the seam `internal/link/autoapprove.go` describes: board-wide auto is enforced by the HUB, which polls
+each room's `GET /v1/permissions` and decides what is pending. So every request sits pending in the room for up to
+one poll. The board reads the same list, and `alerting.check("permission", ...)`
+(`internal/api/web/js/settings-spine.js:1408`) rings on whatever it sees there, before the hub answers.
+
+The fix belongs on the board: while board-wide auto is on, a pending request is one the hub is about to answer, so do
+not ring or nag for it. Hold the alert for one poll, or skip it when the switch is on, whichever `alerting` makes
+simpler. The same check sits in `solo.js:709`. Secondary: a body that is a JSON payload should show something
+readable, such as the tool name and the first field, rather than escaped JSON cut at 120 characters.
