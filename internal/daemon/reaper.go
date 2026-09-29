@@ -193,6 +193,9 @@ func (d *Daemon) reap(ctx context.Context, every time.Duration) {
 		// A worker whose worktree was removed from under it. Same tick, after
 		// liveness. The wind-down runs off the tick. See worktreegone.go.
 		d.reapGoneWorktrees()
+		// A card idle past `idle_park_after` is parked, a director after writing
+		// its handoff. Off the tick's path: it starts goroutines. See idletick.go.
+		d.parkIdle(time.Now())
 		// Agent-launched work nobody has heard from. Same tick, after liveness,
 		// so a card the reaper just marked dead is not reported as stuck. See
 		// a2a.go.

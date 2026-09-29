@@ -393,40 +393,12 @@ func (d *Daemon) runNewContext(taskID string, gen uint64) {
 			d.releaseHeld(taskID)
 		}
 	}
-	started := time.Now()
 
-	// 1. The capture prompt, typed once the runner is between turns.
-	turns := d.act.turnsBegun(taskID)
-	if err := d.ncType(taskID, gen, newContextLabel, newContextCapture(file), ncTiming.captureEnd); err != nil {
-		fail("could not type the capture prompt", err)
-		return
-	}
-	// 2. Wait for the turn it starts to end.
-	err := d.ncWait(taskID, gen, ncTiming.captureBegin, "the capture prompt to start a turn",
-		func() (bool, error) { return d.act.turnsBegun(taskID) > turns, nil })
-	if err != nil {
-		fail("the capture prompt did nothing", err)
-		return
-	}
-	quiet := time.Time{}
-	err = d.ncWait(taskID, gen, ncTiming.captureEnd, "the capture turn to end", func() (bool, error) {
-		if d.act.midTurn(taskID) || d.act.onSubagents(taskID) {
-			quiet = time.Time{}
-			return false, nil
-		}
-		if quiet.IsZero() {
-			quiet = time.Now()
-		}
-		return time.Since(quiet) >= ncTiming.turnSettle, nil
-	})
-	if err != nil {
-		fail("the capture did not finish", err)
-		return
-	}
-	// Not cleared over a handoff that was never written. The clear cannot be
-	// taken back, and the capture is the only thing that makes it safe.
-	if err := d.handoffWritten(taskID, file, started); err != nil {
-		fail("nothing cleared", err)
+	// 1 and 2. The capture prompt, the turn it starts, and the file it wrote. Not
+	// cleared over a handoff that was never written: the clear cannot be taken
+	// back, and the capture is the only thing that makes it safe.
+	if step, err := d.ncCapture(taskID, gen, file); err != nil {
+		fail(step, err)
 		return
 	}
 
@@ -441,7 +413,7 @@ func (d *Daemon) runNewContext(taskID string, gen uint64) {
 		fail("could not type /clear", err)
 		return
 	}
-	err = d.ncWait(taskID, gen, ncTiming.clearWait, "a new session to start after /clear (is the session hook installed?)",
+	err := d.ncWait(taskID, gen, ncTiming.clearWait, "a new session to start after /clear (is the session hook installed?)",
 		func() (bool, error) {
 			at, ok := d.wake.sessionStarted(taskID)
 			return ok && at.After(before) && !at.Before(typedAt), nil
@@ -479,6 +451,42 @@ func (d *Daemon) runNewContext(taskID string, gen uint64) {
 		d.publishTask(taskID)
 		d.releaseHeld(taskID)
 	}
+}
+
+// ncCapture is the capture half of the sequence: the prompt typed between turns,
+// the turn it starts waited out, and the card's own file checked. It returns the
+// step that stopped it and why. The idle parking runs this alone, with no clear
+// after it, so a card is asked to write its handoff without losing its context.
+func (d *Daemon) ncCapture(taskID string, gen uint64, file string) (string, error) {
+	started := time.Now()
+	turns := d.act.turnsBegun(taskID)
+	if err := d.ncType(taskID, gen, newContextLabel, newContextCapture(file), ncTiming.captureEnd); err != nil {
+		return "could not type the capture prompt", err
+	}
+	// Wait for the turn it starts to end.
+	err := d.ncWait(taskID, gen, ncTiming.captureBegin, "the capture prompt to start a turn",
+		func() (bool, error) { return d.act.turnsBegun(taskID) > turns, nil })
+	if err != nil {
+		return "the capture prompt did nothing", err
+	}
+	quiet := time.Time{}
+	err = d.ncWait(taskID, gen, ncTiming.captureEnd, "the capture turn to end", func() (bool, error) {
+		if d.act.midTurn(taskID) || d.act.onSubagents(taskID) {
+			quiet = time.Time{}
+			return false, nil
+		}
+		if quiet.IsZero() {
+			quiet = time.Now()
+		}
+		return time.Since(quiet) >= ncTiming.turnSettle, nil
+	})
+	if err != nil {
+		return "the capture did not finish", err
+	}
+	if err := d.handoffWritten(taskID, file, started); err != nil {
+		return "nothing cleared", err
+	}
+	return "", nil
 }
 
 // ncWait polls cond until it is true, the run is replaced, the terminal goes, or
