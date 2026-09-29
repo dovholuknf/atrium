@@ -318,7 +318,7 @@ Accepted and on `claude/main` but NOT deployed: the process registry design doc 
 ## 14. Per-card notification log
 
 **Raised 2026-09-21. TENTATIVE - clint floated it, unsure it is worth it ("not sure about that one but maybe").**
-Not started.
+Not started. Reconciled and designed 2026-09-29 by @ui, owner @ui, waiting on clint's Open Questions below.
 
 ### The idea
 
@@ -328,6 +328,66 @@ a transient toast (and toasts have been vanishing too fast to read), so a human 
 happened. The board has a global notification history (the bell). This item is a PER-CARD view of that: open a card
 and see the notifications it has raised, newest first, so "what has this session been trying to tell me" is
 answerable after the fact rather than only in the moment.
+
+### Reconciled 2026-09-29, against what is built
+
+Most of this exists. What is left is one view and one gap.
+
+What the board already keeps:
+
+- **The toast log** (`js/toast-log.js`, the bell). Every toast, every desktop notification (`logNotification`), every
+  alert item 44 mutes for an agent-launched card, and every alert item 79 holds back while notifications are off,
+  lands there. Each entry carries `taskFor`, the card a click lands on. It is per browser, in localStorage, capped at
+  200 entries across the whole board, and clearing it clears everything. That is on purpose: its header says what
+  you were told is a fact about a screen, not about the work.
+- **The card's timeline** (the details dialog, `#d-events`, `timelineHTML`). The daemon's own event log for the card:
+  permissions asked and answered, status changes, and `notified` events for uploads, file and terminal opens, the
+  restart wake, the unexpected-exit wake and a dropped cross-room message. It is durable and the same in every
+  browser.
+- **The held-message chips** (`!` and `✉` on a terminal row), for a peer message waiting at the gate.
+
+So the idea's examples split. A permission asked is already in the timeline. A going-down and a held peer message
+are in the toast log when they toasted, and a held one also wears a chip while it waits. "The daemon already records
+`notified` events per card" is true but those are not the notifications: none of them is what the board said to you.
+
+What is missing:
+
+1. **A per-card cut of the toast log.** The data is there, keyed by `taskFor`, and nothing shows one card's entries.
+2. **A pile belongs to no card.** "3 agents need permission" and "2 agents are ready" are logged with `taskFor`
+   empty, because a click on them lands on a tab, not a card. So a card that only ever alerted as part of a pile has
+   nothing in its cut, and those are the busy moments this item is about.
+
+### Design (board only, no daemon or store change)
+
+- **A section in the details dialog**, "what the board told you", under the timeline and collapsed when empty. It
+  lists this browser's toast log entries for the card, newest first, with the same row the tray draws (time, title,
+  repeat count, body, copy). A row does what the tray's row does, through `landOnAlert`. Matched with `sameCard`, so
+  `room~id` and a bare id are one card.
+- **It says whose record it is**: "in this browser. the card's timeline above is the room's record". Two tabs on two
+  machines see different lists, and that is the toast log's rule, not a bug in this view.
+- **A pile records its members.** `recordToLog` takes an optional list of card ids, stored as `tasks` on the entry, and
+  `announce` passes the ids of a pile. The card cut matches `taskFor` or `tasks`. The tray is unchanged. A repeat
+  still bumps the last entry only when the signature matches, so a pile of different cards stays its own line.
+- **No filter in the tray.** The tray is "what did I miss", across the board. A card filter there is the same list
+  as the dialog section, reached from the wrong end.
+- **The cap stays 200.** A card's cut is thin for a card that is old, and the dialog says so when the oldest kept
+  entry is newer than the card: "older entries have rolled out of this browser's log". Raising the cap or keeping one
+  per card is Open Question 3.
+
+Headless: a section `cardToastLog`. Seed the log with entries for two cards, a pile naming both and one naming a
+third, open each card's details and check what each lists, that a `room~id` entry matches its bare card, that the
+rolled-out line appears only when it should, and that a row click calls `landOnAlert` with the entry's fields.
+
+### Open Questions for clint
+
+1. **Build it, or close it?** It is about 80 lines of board code and one headless section, with nothing on the daemon.
+   Recommendation: build it, since the pile gap means the busiest moments are the ones nobody can look up per card.
+2. **Per browser is the right home?** A daemon-side record of what was said would follow you to another machine, but
+   it would be a second event log that records who was looking, which the toast log was written to avoid.
+   Recommendation: per browser.
+3. **Is 200 across the board enough?** At a busy hour that is less than a day. Options: keep 200, raise it (the
+   entries are small, 1000 is well under 1 MB of localStorage), or keep the last N per card. Recommendation: raise
+   it to 1000 and say what rolled out.
 
 ### Why it might not be worth it
 
