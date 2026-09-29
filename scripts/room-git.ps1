@@ -73,6 +73,8 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
+# UTF-8 without a BOM for what is piped to ssh. See provision-room.ps1.
+$OutputEncoding = [Text.UTF8Encoding]::new($false)
 # `pwsh -File` hands `-SshOption -o,Port=2222` over as one string, so commas split.
 $SshOption = @($SshOption | ForEach-Object { "$_" -split ',' } | Where-Object { $_ })
 

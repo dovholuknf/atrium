@@ -101,6 +101,8 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
+# UTF-8 without a BOM for what is piped to ssh. See provision-room.ps1.
+$OutputEncoding = [Text.UTF8Encoding]::new($false)
 # `pwsh -File` hands `-Tools go,node` and `-SshOption -o,Port=2222` over as one string, so commas split.
 function Split-List { param($v) @($v | ForEach-Object { "$_" -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ }) }
 $Tools = Split-List $Tools
