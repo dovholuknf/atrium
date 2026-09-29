@@ -5,6 +5,19 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **A room's memory is its scrollback, not 512MB per card.** See `docs/backlog-2.md` item 57 and
+  `docs/test-plan.md` section CG.
+
+  Every runner and shell allocated its whole scrollback ring at spawn, and the live room has `scrollback_mb` at 512,
+  so each card committed 512MB whether it printed a megabyte or a prompt. 26 cards reopening after a restart came to
+  13GB private for about 190MB of scrollback on disk, which is the 7 to 16GB the room held and the 1.2GB bursts when
+  two cards launched. The ring now grows as output arrives, doubling, and wraps only once it reaches the setting.
+  Raising the setting allocates nothing for a ring that has not wrapped. On a throwaway room, eight quiet cards at
+  64MB went from 571MB private to 58MB, and nine cards at 512MB with one holding 17MB came to 123MB. The room also
+  serves Go's profiler at `/debug/pprof/` on its loopback `--http` listener, and only there: not on the agent
+  listener, an overlay share, the hub link or a lent card, not when `--http` is not loopback, and not to a request
+  whose Host is not loopback or that says it was forwarded. ROOM RESTART.
+
 - **A provisioned room's claude cards get atrium-control, so they can answer another room.** See
   `docs/cross-room-say-design.md` "A room without atrium-control" and `docs/test-plan.md` CE7.
 

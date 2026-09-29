@@ -63,7 +63,7 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 54 | Terminal test suite part 2: `screen.go` against xterm.js | feature | not started |
 | 55 | Launched runners inherit ATRIUM_DEBUG_INPUTLAG from the room | bug | DONE by sa55, merged, needs a room restart |
 | 56 | Every dialog is sleek, one skinned design, starting with card details and the room's edit-agents screen | feature, design first, HIGH | not started |
-| 57 | The live room leaks memory | bug, HIGH | not started |
+| 57 | The live room leaks memory | bug, HIGH | DONE by sa57 on `claude/room-memory`, not merged, needs a room restart |
 | 58 | `atrium_say` reaches cards on other rooms, `name@room` | feature, HIGH | DONE by sa58, merged, needs hub and room restarts |
 | 59 | Spike on m1mini: more than one room per machine, and a blocked room that drains | design, spike | deep backlog, not started |
 | 60 | The stdio control MCP has sa48's launch fields but no "room is older" warning | housekeeping | not started |
@@ -1217,6 +1217,15 @@ After the room-only deploy of `06b87c9` at 15:55:54 on 2026-09-28, the new room 
 memory at +6 minutes and 13.2GB at +7 minutes. It then stayed flat at 13.6GB private and a 3.3GB working set for a
 minute. So most of it is allocated at startup, probably while reopening the saved cards and their scrollback, and
 it is not a slow leak. The hub reported rooms=3 and the room answered ok, not halted.
+
+**Status 2026-09-28: DONE by sa57 on `claude/room-memory`, not merged, needs a room restart.** The cause was the
+scrollback ring. `newRingSized` did `make([]byte, scrollback_mb)` for every runner and shell at spawn, and the live
+room has `scrollback_mb` at 512. So 26 cards reopening came to 13GB committed, for about 190MB of scrollback on disk.
+Private memory counts the commit and the working set counts only the pages written, which is why the two differed by
+10GB. A throwaway room on the old build, eight idle cards at 64MB, held 571MB private, and its heap profile put 512MB
+of 517MB in `newRingSized` for rings holding 303 bytes each. The ring now grows as output arrives and wraps at the
+setting. The same room reads 58MB. The room also serves `/debug/pprof/` on its loopback `--http` listener only. See
+`docs/test-plan.md` CG.
 
 ## 58. `atrium_say` reaches cards on other rooms, `name@room` (feature, HIGH)
 
