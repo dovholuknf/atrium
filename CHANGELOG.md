@@ -5,6 +5,31 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **A room's toolchain over ssh.** See `docs/backlog-2.md` item 46 and `scripts/room-toolchain.ps1`.
+
+  - `scripts/room-toolchain.ps1` (new) installs go, node and, on Windows, a real Git for Windows and pwsh 7 into the
+    remote user's home, over ssh, with no admin, no sudo and no package manager: `pwsh -File
+    scripts\room-toolchain.ps1 <user@host>`. pwsh here, `sh -s` on macOS and Linux, Windows PowerShell 5.1 by a
+    gzipped `-EncodedCommand` on Windows. One `room-toolchain <step> <ok|done|skip|warn|fail> <detail>` line per
+    step, exit codes 0 to 5 in the script header.
+  - A good-enough tool, looked for the way the room will see it, makes its step `ok` and nothing is installed. Good
+    enough: go at least what `go.mod` needs, node the same major as `-NodeVersion` or newer, Git for Windows 2.39 or
+    newer (a Cygwin or MSYS git does not count), pwsh the same major as `-PwshVersion` or newer. A good copy in the
+    prefix but not on the room's PATH is adopted by recording its folder.
+  - Otherwise the official archive is downloaded on the remote and its sha256 checked against the publisher's own
+    list. A mismatch unpacks nothing and exits 4. Installs go under `-Prefix`, default
+    `~/.local/share/atrium-tools/<tool>`. A directory already there that is not a working install is left alone
+    unless `-Force`, and even then removed only after the new download is verified.
+  - PATH is recorded in `~/.atrium/toolchain/path.txt`. On macOS and Linux one marked line in the login profile reads
+    `~/.atrium/toolchain/path.sh`. On Windows the user and machine Path are never touched: the room is started
+    through `~\.atrium\toolchain\room-env.ps1`, which `provision-room.ps1`'s start step now dot-sources when it
+    exists.
+  - `-Check` reports every step and writes nothing. `local` as the target runs on this machine. The script never
+    restarts a room, and prints `restart warn` when a room is running after a change.
+  - Not done: the `-Autostart` logon task still starts the room with the logon environment. When `room-env.ps1`
+    exists at registration, its action should dot-source it first. The Linux systemd unit gets the tools when
+    `atrium-service.sh install` runs after the toolchain.
+
 - **An alias reaches a card that reported done.** See `docs/backlog-2.md` item 89.
 
   `atrium_say` and `atrium_exit` refused a `done` card named by its alias ("no session called sa21"), though a worker
