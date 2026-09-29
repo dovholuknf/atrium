@@ -755,3 +755,15 @@
   .term-list .card.on.bare .title .tpath { color: var(--dim); opacity: 1; }
   /* An exited row that keeps its theme needs no rule of its own: `.cold`'s fade in notify.css, over the worn
      row, is the pale, still-tinted look. A wash of `--shell-0` laid over it instead darkened it on a light skin. */
+
+  /* The "clear the line" notice. Top-right of the grid, away from the prompt at the bottom-left, and out of flow so
+     it never changes the grid or triggers a fit. It takes no pointer events, so it cannot take a click or focus
+     from the terminal. On a phone `.term-body` ends above the key bar, so it is above it by construction. */
+  .term-body { position: relative; }
+  .heldline {
+    position: absolute; top: 6px; right: 14px; z-index: 5; max-width: calc(100% - 28px);
+    pointer-events: none; padding: 4px 10px;
+    border: 1px solid var(--warn-stroke); border-radius: var(--r-sm);
+    background: linear-gradient(var(--warn-bg), var(--warn-bg)), var(--bg-1); color: var(--head);
+    font: var(--fs-xs)/1.3 var(--mono);
+  }
