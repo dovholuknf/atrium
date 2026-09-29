@@ -52,13 +52,13 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 43 | A worker's finished turn shows "nobody has looked" to clint, although its launcher read the report | bug | not started |
 | 44 | A gear checkbox: no notifications from agent-launched cards, on by default | feature | not started |
 | 45 | Every card shows its context size, a launcher hears once past a threshold | feature | sa87 built it to clint's decision on `claude/context-size`, not merged |
-| 46 | Provision a machine as a room over ssh, from one command and later from the board | feature | stage 1 sa92, started 2026-09-28 |
+| 46 | Provision a machine as a room over ssh, from one command and later from the board | feature | stage 1 DONE, `35fa4a1` `5145bad`, fb03 toolchain waits on a fetch. Stage 2 not started, 4 questions |
 | 47 | A resident session's alias defaults from its name, can be read and set, and heads the terminal title bar | feature, HIGH | DONE by sa47, merged `5b3d9e5`, deployed `66717c5` |
 | 48 | `atrium_launch` takes a model and a thinking effort | feature | DONE by sa48, merged, needs room and hub restarts |
-| 49 | The orchestrator can appear on every room | design | deep backlog, not started |
+| 49 | The orchestrator can appear on every room | design | @fabric, design reviewed `1ccecf2`, ready to build, 3 questions |
 | 50 | Views of agents, beyond groups | design | not started |
 | 51 | Five kept worktrees show 48 commits not matched on `claude/main` | housekeeping | DONE, all five safe, deleted 2026-09-28 |
-| 52 | A pinned strip with cards from two rooms orders only one room | bug | not started |
+| 52 | A pinned strip with cards from two rooms orders only one room | bug | @fabric, design `8e4accb`, fb04 building |
 | 53 | `setViewport` and `dropViewport` compute under `r.mu` and apply outside it | bug | not started, never reproduced |
 | 54 | Terminal test suite part 2: `screen.go` against xterm.js | feature | not started |
 | 55 | Launched runners inherit ATRIUM_DEBUG_INPUTLAG from the room | bug | DONE by sa55, merged, needs a room restart |
@@ -81,7 +81,7 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 72 | One hover on a card, not two | feature | DONE by sa72, merged `66717c5`, deployed `66717c5` |
 | 73 | A keep-alive fork carries the card's launch args, so lean cards can warm | feature | not started |
 | 74 | A long reply loses lines in the middle on the board's terminal | bug | sa74, paused at `ba761d6` (old SHA), rebase onto `66717c5` |
-| 75 | sg3 as a room, and machine bootstrap reuses the operator's shared folder under `localai` | feature | sa75, parked. Provision script merged `c3dc597` |
+| 75 | sg3 as a room, and machine bootstrap reuses the operator's shared folder under `localai` | feature | sg3 room works (`35fa4a1` `5145bad`). CIM for workers and the `localai` account not started, 4 questions |
 | 76 | A worktree helper that links every CLAUDE.md, so workers get project rules | bug, HIGH, FIRST | not started, @merge |
 | 77 | A merge pipeline that does not conflict or rerun | feature, HIGH | not started, @merge, after 76 |
 | 78 | The details popover's token labels mislead | bug | not started |
@@ -1120,6 +1120,42 @@ Still open under this item:
   agents, configure one?", offering the `-Install` above. Not built: it needs the hub to know a room's runners and to
   run this script over ssh, which is the stage 2 dialog itself.
 
+**Status, 2026-09-29, @fabric (fb01, fb02, fb03): stage 1 is one command, and a room's work comes back by git.**
+Done:
+
+- **No flags needed.** With no release and no `-Version`, the script builds from the checkout with a `fetch warn`
+  (`35fa4a1`). The release path is unchanged and still fails with its reason, since there are no releases.
+- **Signed-in check and smoke test.** An `auth` step names `ssh -t <target> claude auth login` when claude is not
+  signed in, and a `smoke` step launches a worker that reports a nonce back, with exit 8 when it does not, and
+  `-SmokeOnly` for a room already in use. Proven against sg3, reported in 9 seconds (`35fa4a1`).
+- **No CIM.** Scheduled task actions go through `schtasks.exe` and autostart registers by XML, so a Windows machine
+  that denies CIM over ssh works (`35fa4a1`).
+- **systemd PATH, the second bullet above: built, not proven.** A login-shell `ExecStart` in the packaged unit, and
+  the login shell's PATH written by `atrium-service.sh` (`35fa4a1`). No Linux machine we may test on has run it.
+- **Git both ways.** `scripts/room-git.ps1` `init`, `push-base`, `fetch` and `worktree`: the remote clone is made
+  by push, so the remote needs no GitHub credential, and `provision-room.ps1` runs `init` last (`5145bad`). `push-base`
+  and `fetch` reach a remote, so under the hooks they are clint's to run.
+- **Toolchain: built, not merged.** fb03 installs a room's toolchain under `~/.atrium/toolchain` with a checked hash,
+  and a `room-env.ps1` the room is started through. Proven on claudevm, head `9bce8ad` on `claude/fb03-toolchain` in
+  sg3's clone. It comes here when clint runs `room-git.ps1 fetch sg3`.
+
+Left:
+
+- Autostart as the default (the first bullet above), unchanged.
+- Proving the systemd PATH (test FA5) on a Linux machine that is not a live room.
+- Proving `-Autostart` starting on a Windows room, and the binary swap's `schtasks /End` on a live task. Both only on
+  claudevm, never on a real room.
+- The provision start hook for fb03's `room-env.ps1`, on top of the XML registration, once fb03 is here.
+- Stage 2, the board half. Not started.
+
+Open questions for clint:
+
+1. Should `-Autostart` become the default, and on Windows is it a logon task or the detached room?
+2. Which Linux machine may FA5 run on? sg4-wsl is a live room and is ruled out.
+3. Should provision write `permissions.allow` for `mcp__atrium-control__*`? Likely no: the smoke worker passes with
+   `--allowedTools=` alone.
+4. When does stage 2 start, and does it wait on item 75's account question?
+
 ## 47. A resident session's alias defaults from its name (feature)
 
 Raised 2026-09-28 by clint. Item 35 gives a card an alias by default only from a title prefix that holds a digit,
@@ -1516,6 +1552,31 @@ fails there. Find out which account and session type the room runs in, and wheth
 clint, 2026-09-28: bootstrapping a machine should reuse a shared folder for the main operator, and the account
 should be `localai`, not `claude`. Today sg3 runs as `claude` in `C:\Users\claude`. Fold both into the provisioning
 script before the next machine is added.
+
+**Status, 2026-09-29, @fabric: sg3 is a working room, and the account half has not started.** Done:
+
+- sg3 is attached, and its `provision-room` fix is merged. The smoke step now proves a room end to end, and did on
+  sg3 (`35fa4a1`, see item 46).
+- The CIM denial no longer breaks provisioning: every scheduled task action goes through `schtasks.exe` (`35fa4a1`).
+- Work on sg3 comes back by git: `room-git.ps1` (`5145bad`). fb03 was built and committed there, so the path is used.
+
+Left:
+
+- **CIM inside the room.** The scripts avoid it, but a worker in the sg3 room that reads uptime, services or
+  scheduled tasks through CIM still gets access denied. Which account and session type the room runs in has not
+  been checked.
+- **The `localai` account and the shared operator folder.** Not built. Creating an account needs admin, which
+  provisioning avoids today on purpose.
+
+Open questions for clint:
+
+1. What is the shared folder? A path on each machine (for example under `C:\Users\Public` or `/Users/Shared`), an
+   SMB share, or a folder synced from here, and what goes in it: the repo clones, the toolchain, runner config?
+2. Does `localai` replace `claude` on sg3, which means moving a live room, or only apply to machines added from now
+   on?
+3. May provisioning create the account and so need admin, or does the operator make `localai` by hand first and
+   provisioning start from there?
+4. Should the room run so that CIM works for its workers, or is a worker that needs CIM told to go without?
 
 ## 76. A worktree helper that links every CLAUDE.md, so workers get project rules (bug, HIGH, FIRST)
 
