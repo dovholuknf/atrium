@@ -58,7 +58,9 @@ read.
 time per reviewer against the notes (a) table, AND the conductor's own tokens and wall time, since building the digest
 is new cost on the conductor's side. The original run's conductor cost is read from its parent transcript first, which
 fb05 did not parse (notes (e)). It passes at 40% fewer cached tokens for the whole run, conductor included, with every
-blocking or high finding from the original run found again. A finding lost is a failure whatever the saving.
+blocking or high finding from the original run found again. A finding lost is a failure whatever the saving. The
+replay records reviewer wall time, conductor wall time and total elapsed time apart, so a saving that only moved work
+into the conductor shows as that.
 
 ## Decision 2: the knowledge is a file, and a resident session is only a cache of it
 
@@ -99,8 +101,12 @@ schema the skill already checks is untouched:
 }}
 ```
 
-The persona is implied by who handed it back, so it is not a field. A missing block means no notes. A block that does
-not parse is reported by the conductor's integrity check (step 6) as that reviewer's error, never silently skipped.
+The skill's rule today is "one fenced JSON block, the findings array", so step 6 changes with it, in exactly this
+way. The FIRST fenced JSON block is the findings array, as now. An optional LATER fenced block whose top level is an
+object with the one key `repo_notes` is the hand-back. Anything else after the findings block is prose, and ignored
+as prose is now. The persona is implied by who handed it back, so it is not a field. A missing block means no notes. A
+block that opens as `repo_notes` and does not parse or does not match the shape is reported by the conductor's
+integrity check (step 6) as that reviewer's error, never silently skipped, and it never invalidates the findings.
 In the file, each entry is one bullet ending `(path:line @ sha)`, which is what the conductor matches `drop` against
 and what a reviewer checks before relying on it.
 
@@ -135,6 +141,19 @@ Nothing in atrium changes for either decision. No migration.
    silently. The recommended answers become this design's decisions when he gives them, and the design is revised
    before stage 2 starts.
 3. Only if 2 shows the files work and the panel is still slow: a resident card for that repo.
+
+## Review
+
+Mercurius session `s_xT8IKRB82yUj`, closed 2026-09-29.
+
+- **Round 1, needs_changes.** Three concerns and an advisory, all fixed at `b502849`: the personas change too, the
+  `repo_notes` contract, and stage 2 gated on clint.
+- **Round 2, needs_changes, stage 1 judged buildable.** C1 (stage 2 is not buildable) deferred, because that is the
+  gate on clint the design already states. C2 (a second JSON block breaks the skill's one-block rule) fixed: the step 6
+  parse rule is now spelled out under the hand-back contract. The advisory, wall time recorded three ways, is folded
+  into "Proving it".
+
+No round 3. What is left is clint's answers, not a design gap.
 
 ## Not read, and worth knowing
 
