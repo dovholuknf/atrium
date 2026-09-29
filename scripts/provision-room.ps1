@@ -18,8 +18,19 @@
 #
 # WHERE THE BINARY COMES FROM. By default the release on GitHub
 # (dovholuknf/atrium) that matches the remote, checked against the release's
-# checksums.txt. There are no releases yet, so today that fails and says so.
-# `-FromCheckout` builds one from this checkout instead, which is the dev path.
+# checksums.txt. When there is no release (today there is none), no -Version was
+# given and the script sits in a checkout, it prints a `fetch warn` line and
+# builds from the checkout instead, so the one command needs no flags.
+# `-FromCheckout` is the explicit form. A named -Version that is missing fails.
+#
+# THE LAST TWO STEPS. `auth` runs `claude auth status` on the remote (through a
+# login shell on Unix) and reads its JSON `loggedIn`. Not signed in is a `warn`
+# carrying the command the operator runs once, `ssh -t <target> claude auth
+# login`, which prints a URL and so works over ssh. It never reads or carries a
+# credential, and it is not a failure. `smoke` then launches a small claude
+# worker on the room through the hub (`-SmokeCwd`, `-SmokeTo`, `-SmokeTimeout`
+# 180), waits for its report to hold a nonce, exits the card and confirms it
+# left. It is skipped when auth warned, or with `-NoSmoke`.
 #
 # NO AUTOSTART BY DEFAULT. The room is started in the background with
 # `atrium room --detach` and runs until the machine restarts or the user logs
@@ -44,6 +55,7 @@
 #   5  installed and attached, but a runner is missing, does not start, or would not install
 #   6  refused: the remote is already a room, or runs an atrium this script did not install
 #   7  the overlay needs a credential only the operator can give: see the fail line
+#   8  installed and attached, but the smoke card did not report
 #
 # CREDENTIALS FOLLOW THE OVERLAYS RULE: atrium names the command that holds a
 # credential and never holds somebody else's.
