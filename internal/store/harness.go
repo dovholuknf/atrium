@@ -172,9 +172,9 @@ func DefaultHarnesses() []Harness {
 			// the prompt, and `resume_args` replaces `args` by design.
 			ID: "codex", Label: "codex", Enabled: false, Cmd: "codex",
 			LaunchMode: LaunchPTY, Sort: 20, ExitKeys: []string{"ctrl-d"},
-			ResumeArgs:     []string{"resume", "{resume}"},
-			PromptArgs:     []string{"{prompt}"},
-			ModelArgs:      []string{"--model", "{model}"},
+			ResumeArgs: []string{"resume", "{resume}"},
+			PromptArgs: []string{"{prompt}"},
+			ModelArgs:  []string{"--model", "{model}"},
 			// A config override, because codex has no effort flag. The key is
 			// in codex-cli 0.156.1.
 			EffortArgs:     []string{"-c", "model_reasoning_effort={effort}"},

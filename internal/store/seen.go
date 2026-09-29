@@ -87,11 +87,11 @@ type SeenView struct {
 	Unseen      bool       `json:"unseen"`
 	// OpenQuestions is absent once answered, so a reader never has to compare
 	// two timestamps to know whether a list is still owed.
-	OpenQuestions   []string   `json:"open_questions,omitempty"`
+	OpenQuestions     []string   `json:"open_questions,omitempty"`
 	QuestionsUnparsed bool       `json:"questions_unparsed,omitempty"`
-	QuestionsAt     *time.Time `json:"questions_at,omitempty"`
-	AnsweredAt      *time.Time `json:"answered_at,omitempty"`
-	AnsweredVia     string     `json:"answered_via,omitempty"`
+	QuestionsAt       *time.Time `json:"questions_at,omitempty"`
+	AnsweredAt        *time.Time `json:"answered_at,omitempty"`
+	AnsweredVia       string     `json:"answered_via,omitempty"`
 	// Answered is absent when no turn ever asked anything, because false there
 	// would read as a question still owed.
 	Answered *bool `json:"answered,omitempty"`
@@ -145,9 +145,9 @@ const seenColumns = `task_id, turn_ended_at, seen_at, seen_via, questions, quest
 
 func scanSeen(sc interface{ Scan(...any) error }) (*Seen, error) {
 	var (
-		s                                   Seen
-		ended, seen, qs, qat, ans           string
-		unparsed                            int
+		s                         Seen
+		ended, seen, qs, qat, ans string
+		unparsed                  int
 	)
 	if err := sc.Scan(&s.TaskID, &ended, &seen, &s.SeenVia, &qs, &unparsed,
 		&qat, &ans, &s.AnsweredVia); err != nil {
