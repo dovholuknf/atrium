@@ -16,7 +16,10 @@ const (
 // per kind: a row keeps only its last model's name, so repricing its kinds
 // would misattribute money.
 type UsageSums struct {
-	Rows         int     `json:"rows"`
+	Rows int `json:"rows"`
+	// Replies is how many model calls the rows made, summed from each row's
+	// `replies`. The usage tab's "calls" (r-012).
+	Replies      int64   `json:"replies"`
 	Input        int64   `json:"input"`
 	Output       int64   `json:"output"`
 	CacheWrite5m int64   `json:"cache_write_5m"`
@@ -27,6 +30,7 @@ type UsageSums struct {
 
 func (a *UsageSums) add(b *UsageSums) {
 	a.Rows += b.Rows
+	a.Replies += b.Replies
 	a.Input += b.Input
 	a.Output += b.Output
 	a.CacheWrite5m += b.CacheWrite5m
@@ -78,7 +82,7 @@ func (s *Store) UsageBuckets(since, until time.Time, bucketSecs int, card string
 	err := s.guard(func() error {
 		out.Buckets = []*UsageBucket{}
 		rows, err := s.db.Query(`SELECT (CAST(strftime('%s', ended_at) AS INTEGER) - ?) / ? AS b, task_id, cause,
-			COUNT(*), COALESCE(SUM(input), 0), COALESCE(SUM(output), 0), COALESCE(SUM(cache_write_5m), 0),
+			COUNT(*), COALESCE(SUM(replies), 0), COALESCE(SUM(input), 0), COALESCE(SUM(output), 0), COALESCE(SUM(cache_write_5m), 0),
 			COALESCE(SUM(cache_write_1h), 0), COALESCE(SUM(cache_read), 0), COALESCE(SUM(cost), 0)
 			FROM session_usage WHERE ended_at >= ? AND ended_at < ? AND (? = '' OR task_id = ?)
 			GROUP BY b, task_id, cause ORDER BY b`,
@@ -95,7 +99,7 @@ func (s *Store) UsageBuckets(since, until time.Time, bucketSecs int, card string
 				task, cause string
 				g           UsageSums
 			)
-			if err := rows.Scan(&idx, &task, &cause, &g.Rows, &g.Input, &g.Output, &g.CacheWrite5m,
+			if err := rows.Scan(&idx, &task, &cause, &g.Rows, &g.Replies, &g.Input, &g.Output, &g.CacheWrite5m,
 				&g.CacheWrite1h, &g.CacheRead, &g.Cost); err != nil {
 				return err
 			}

@@ -139,6 +139,11 @@ func TestUsageRecordsOneRowPerTurn(t *testing.T) {
 	}
 	assertNoMoney(t, row)
 	assertNoMoney(t, usageEvent(row))
+	// The live event carries the row's calls, so rows that arrive between reads
+	// count on the usage tab too (r-012).
+	if got, ok := usageEvent(row)["replies"].(int); !ok || got != row.Replies {
+		t.Fatalf("usage event replies %v, want %d", usageEvent(row)["replies"], row.Replies)
+	}
 	// A Stop with no new request writes nothing.
 	if again := f.record(f.u.endSegment(f.task.ID, b.Add(20*time.Second))); again != nil {
 		t.Fatalf("an empty turn wrote %+v", again)
