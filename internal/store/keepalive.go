@@ -66,7 +66,7 @@ type KeepaliveRefresh struct {
 	CacheWrite  int64     `json:"cache_write"`
 	Input       int64     `json:"input"`
 	Output      int64     `json:"output"`
-	Cost        float64   `json:"cost"`
+	Cost        float64   `json:"-"`
 	Prices      string    `json:"prices"`
 }
 

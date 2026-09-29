@@ -286,6 +286,10 @@ route in `internal/api/api.go`, the chip and `dismissQuestions` in `js/seen.js`,
 the `dismissed` clause in `atrium_task`, and headless section `questionsClick`. Changelog and test plan are in
 `docs/changes/11.md`. The `!` click question above is still open.
 
+**clint, 2026-09-29, answering the `!` question:** "it doesn't work". Instead, hovering a `?` or `!` chip opens the
+details popover at once, not on its one second timer, and the popover shows the open questions and the held
+messages with a way to discard them there. Filed as item 94. The click-to-dismiss on `?` stays until 94 replaces it.
+
 ### 12. Keep codex up to date
 
 **Raised 2026-09-24.** Not started.
@@ -351,7 +355,12 @@ Accepted and on `claude/main` but NOT deployed: the process registry design doc 
 ## 14. Per-card notification log
 
 **Raised 2026-09-21. TENTATIVE - clint floated it, unsure it is worth it ("not sure about that one but maybe").**
-Not started. Reconciled and designed 2026-09-29 by @ui, owner @ui, waiting on clint's Open Questions below.
+Not started. Reconciled and designed 2026-09-29 by @ui, owner @ui.
+
+**clint, 2026-09-29:** build it ("lets try it"). Per browser for now: he would like it to follow him between
+browsers only if that is easy, and it is not (a new table, a route and a stream for what was said), so that is item 96
+in the deep backlog. The cap stays 200: "we have too many toast entries as it is", and a better way to say an agent
+is working or ready is item 95.
 
 ### The idea
 
@@ -1286,17 +1295,48 @@ megabyte a month. Options for later, none built:
 - Delete a card's rows when the card sweep removes the card, or some weeks after, for cards nobody reopens.
 - A size cap: past N rows, or N megabytes, roll up or delete the oldest first.
 
+Dollar cost hidden and no longer calculated, 2026-09-29 (sa37b). clint: "Who cares, the cost is stupid. Remove it
+entirely for now, but just hide it and don't calculate it. Maybe we'll bring it back some day, though I doubt it."
+Tokens (input, output, cache read, cache written, context) stay everywhere. Kept reachable, not deleted: the price
+tables, `usageCost`, the `cost` and `prices` columns. No migration. New usage rows write `cost` 0 and `prices` empty,
+old rows keep what they had, and nothing reads a stored usage cost any more. Where money was computed or shown, to
+bring it back:
+
+- Computed, `internal/daemon/usage.go` `replySet.row`: the `usagePriceFor` + `usageCost` call, now a comment. Also
+  `usageOfRefresh`, which copied the refresh receipt's cost and price version onto its usage row.
+- Sent, dropped by `json:"-"` on the Go field, so a stored value is never sent: `store.SessionUsage.Cost` and
+  `.Prices`, `UsageTotals.Cost`, `UsageSums.Cost` (the room usage buckets), `KeepaliveRefresh.Cost`, and the card
+  view's `keepaliveCardView.Spent` and `.Budget`. Removed outright: the `cost` key of the `usage` SSE event
+  (`usageEvent`), the `spent` and `budget` keys of the `keepalive` event payload, `cache_keepalive_week_usd` in the
+  settings payload (`internal/api/keepalive.go`), and the `$` in the break-even toast (`stop` in `keepalive.go`).
+- Shown, board: `js/usage.js` (the `est.` cell, the cost column of the cause lines and the turn rows, `usageMoney`,
+  `USAGE_TIPS.cost`), `js/usage-charts.js` (the `est.` totals, the cumulative cost chart, the cost by cause table, the
+  per-card ranking, the hover line), `js/peek.js` (the `est.` cell), `js/keepalive.js` (`keepaliveMoney`, the chip
+  tooltips, the settings line). The per-card ranking and per-card mini charts now use total tokens. The two CSS grids
+  in `css/files.css` lost a column each. The MCP tools and the CLI never showed money.
+- NOT removed, on purpose: keep-alive's break-even stop. `decide` still prices each refresh (`receiptCost`, written to
+  `keepalive_refresh.cost`) and stops a card when its refreshes reach an eighth of a rewrite (`budgetFor`). The budget
+  was not moved to tokens: the two are not equivalent, because a refresh's price mixes cache read, cache write and
+  output. sa39 replaces it with a time limit. Only the figure is hidden. The wording "an eighth of one rewrite" in
+  help text is a ratio, not money, and stays.
+
 ## 38. A restart resumes only the cards that were working (feature)
 
 Raised 2026-09-28. A room restart resumes every supervised card. Cards that were mid-turn or have queued prompts need
 that. An idle card could stay parked until the operator attaches or types. Decide after item 37 shows what a resume
 costs.
 
+Design: `docs/keepalive-policy-design.md` (sa39, unreviewed draft) replaces `docs/restart-idle-spec.md`. Parked is a
+`parked_at` flag decided before the wind-down, a peer's say answers `parked` and resumes only on `wake=true`.
+
 ## 39. Keep-alive warms the cards you mark, not every idle card (feature)
 
 Raised 2026-09-28. Keep-alive (item 23) refreshes every idle Claude card on the 1-hour cache, 5 minutes before
 expiry, until break-even. With about 21 cards that is about 21 full-context cache reads an hour, including cards
 nobody returns to. Decide after item 37 shows what keep-alive spends.
+
+Design: `docs/keepalive-policy-design.md` (sa39, unreviewed draft) replaces this item's spec. Opt-in, off by default, never
+`atrium:subagent`, warmed only within 3 hours of a human's last use, no dollar budget.
 
 ## 40. The launch cap counts only `atrium:subagent` cards (bug)
 
@@ -1417,6 +1457,9 @@ still notifies, because it blocks until a human answers. A card's own notificati
 on) logs and does not say arrivals, waiting and stuck alerts for `origin:agent` cards. Permissions still notify. No
 per-card notification override exists in the board, so a card with its own tone stands in for one. See
 `docs/changes/44.md`.
+
+**clint, 2026-09-29:** a card given its own tone counting as the override is right: "if i override it that's up to
+me". Closed.
 
 ## 45. Every card shows its context size, and a launcher hears once past a threshold (feature, sa87)
 
@@ -1631,6 +1674,19 @@ Open questions for clint:
 3. One view across the board, stack and terminals tabs, or one each? Recommendation: one.
 4. Per browser, or following you to other browsers? Recommendation: per browser now. Since filters are a fixed menu,
    moving them to the daemon later is a settings key and not a security question.
+
+**clint, 2026-09-29, answers:**
+
+1. Try the four built-ins and see how they feel.
+2. One level first.
+3. One view across the three tabs, as a TRIAL. **Decision record, so it can be unwound:** the choice lives in one
+   named constant in the views code (one view for all tabs versus one per tab), and the stored views are keyed so
+   either answer reads the same data. If clint complains, flipping it is one line plus a test, not a redesign.
+4. Synced. He uses a phone and a laptop and wants the same views on both. So views are a daemon setting, which the
+   fixed-menu filters make safe (they are data, not code, unlike the grouping expression). The active view stays per
+   browser, since a phone and a laptop can look at different things at once.
+
+Ready to build.
 
 ## 51. Five kept worktrees show 48 commits not matched on `claude/main` (housekeeping)
 
@@ -1976,6 +2032,12 @@ the others slower to find.
 
 Open question for clint: add it, or close 71? Recommendation: add it, since it is the one place the operator is
 already looking when a context is full, and it costs one entry and no new code path.
+
+**clint, 2026-09-29:** right click in a terminal is paste, which he uses constantly, so a menu there conflicts. Left
+Shift plus right click works for him. So: Shift+right click in the attached terminal (`terminal.js` lets it fall
+through to the browser's own menu today) opens the terminal's menu for that card, with "new context" on it. Plain
+right click stays paste. The row menu on the terminal list gets the entry too, since right click on a row is not
+paste. Ready to build.
 
 ## 70. Keep-alive is invisible until it has spent something, and one card overspent its budget (feature and bug)
 
@@ -2469,6 +2531,9 @@ Status 2026-09-29 (branch `claude/sa79`): built as written. `notifyHeld` in `js/
 held in `NOTIFY_OFF_SILENCES_PERMISSIONS`. The bell glyph moved into its own `.glyph` span so it can be repainted
 without touching the badge. Headless section `notifyOff`. No timed mute.
 
+**clint, 2026-09-29:** off silences permission requests too: "it's notifications in general". The constant flips to
+true, the tips lose "permission requests still come through", and they are still recorded in the drawer.
+
 ## 80. Real-time token burn and usage charts (feature)
 
 Raised 2026-09-28 by clint, wanted tonight. Item 37 already records every Claude turn's spend, with its cause, in
@@ -2531,6 +2596,8 @@ have, an optional `card` id, because a bucket carries causes only for the whole 
 show that card's cause table otherwise. A card filter reads that one card from its own room. The tab, the small chart
 in a card's details, and the `usage` event are in. Not done: watching a turn spend while it runs, and any per-kind
 dollars. Charts were drawn in a headless run against mocks only, not yet looked at against a live room.
+
+**clint, 2026-09-29:** turn end is "far more than enough". Top 12 plus "others" stays. Both questions closed.
 
 ## 85. The headless board run flakes under load (bug)
 
@@ -3083,6 +3150,34 @@ header names, and the others keep what should have gone.
 Fix, probably the same shape as item 52: fan it out to every attached room, bounded per room, 200 with `unreached`
 while one room took it. Read what `prune` does to each room first, since a prune that should only reach one room
 would make the fan-out wrong. Owned by @fabric, and folded into the next worker that touches `internal/link`.
+## 94. Hovering a `?` or `!` chip opens the details popover at once, and the popover can discard them (feature)
+
+Raised 2026-09-29 by clint, answering item 11's `!` question: "if i hover over it pop the popup menu and put the ! or
+? into the card that pops up with the usage info and i can discard it from the popup however if i hover over one of
+the ? or ! chips, pop it immediately (not on the 1s timer)".
+
+- **Hover on a chip opens the popover now.** The details popover (`js/peek.js`, item 69's one second hold) opens
+  without its timer when the pointer is on a `? N`, `! N` or `✉ N` chip, wherever the chip is drawn (board, stack,
+  terminals). Hover anywhere else on the card keeps the timer.
+- **The popover shows them.** The card's open questions, listed in full, with "dismiss" (item 11's route, carrying
+  the `questions_at` it was drawn from). The card's held peer messages, each with its sender and text and "discard",
+  which drops that one message, and says so in the toast log.
+- **Owner @ui.** Discarding a held message needs a route if none exists. Check `DismissAsks` and the queued-message
+  routes first, and bring @runtime in for any store function.
+- Design first, with a Mercurius round, since "discard" loses a peer's message on purpose.
+
+## 95. A better signal than toasts that an agent is working or ready (design)
+
+Raised 2026-09-29 by clint: "we have too many toast entries as it is. we need some better way of telling me an agent
+is working or ready. the working spinner tends to be what i focus on most of the time anyway". Design first: what
+replaces a "ready" toast, whether the spinner and a ready mark on the row carry it, and which toasts go away. Owner
+@ui.
+
+## 96. The toast log follows you between browsers (feature, deep backlog)
+
+Raised 2026-09-29 by clint on item 14: moving from the laptop to the phone, he would expect what he was told to still
+be there, but only if it is easy. It is not: it needs a daemon table, a route and a stream for what the board said,
+and it reverses the toast log's rule that what you were told is a fact about a screen. Deep backlog. Owner @ui.
 
 
 ------------
@@ -3164,3 +3259,200 @@ Status: not started. Backlog only. Owned by @merge (release and quality). Raised
 
 Go through every test and record what it proves, which are redundant, slow or flaky, and which test nothing real.
 Report a table with a keep, fix or delete recommendation per test. Delete nothing without clint's answer.
+
+## r-002. The permission hook waits forever on a frozen room (bug, HIGH)
+
+Status: done 2026-09-29, in the dotfiles hook (uncommitted there). Owned by @runtime. Filed 2026-09-29 after the
+room deadlock (fixed by `abc3cf9`).
+
+Built as the liveness probe. `/gate` reads the store, so the hook now asks it of EVERY session, forced and wired
+ones included, with a 3 second deadline (`ATRIUM_PERM_PROBE_TIMEOUT` overrides it). No answer means fail open. The
+`/permission` POST keeps no deadline, since a human may take minutes. The window left open is a store freezing
+between the probe and the POST, which costs one tool call per session rather than all of them.
+
+The hook's default address also moved from `http://localhost:7777` to `http://127.0.0.1:7777`. On this machine
+`localhost` tries `::1` first and costs about 2 seconds a request, because the room binds IPv4 only. That was 2 to 4
+seconds on every gated tool call, and it would have left the 3 second probe 1 second of margin.
+
+`atrium-perm-hook.ps1` POSTs `/permission` with no client timeout (line 195). A room that accepts TCP but never
+answers holds every gated tool call in every session, and the fail-open `catch` never fires. The script lives in
+the dotfiles repo (`claude/hooks/atrium-perm-hook.ps1`), not here. The fix needs a design decision, since a human
+may take minutes to answer: a short connect-and-first-byte deadline (the room acknowledges it received the
+question) with the long wait after it, or a liveness probe before the POST. Either way a frozen room has to fail
+open within seconds.
+
+## m-002. A deploy is healthy only when the room answers (bug, HIGH)
+
+Status: done 2026-09-29 (`29ddd74`). Owned by @merge. Filed 2026-09-29 after the room deadlock.
+
+`deploy-batch.ps1` refuses a build that does not report its commit, checks `/v1/settings` on the room right after it
+reattaches and 30 seconds later, and reverts to the step 0 snapshot on failure. The revert path has not run for
+real, since that needs a frozen room. The class of bug behind the outage is also locked out at test time now:
+`TestNothingHoldingTheConnectionReachesThePool` in `internal/store/txpool_test.go` reads the package source and
+fails on any path from a `*Tx` or `querier` to `s.db`. It fails on the tree that deadlocked.
+
+`scripts/live/deploy-batch.ps1` reported `room reattached: True` for a room that was frozen, because the link
+attaches before the startup ledger sweep runs. The health check has to be a request the room itself serves, such as
+`GET http://127.0.0.1:7781/v1/settings`, answered within a few seconds and checked again about 30 seconds later,
+after the sweep and the reopen. On failure the script reverts to the snapshot it took in step 0 and says so.
+
+A smoke start of the new build against a copy of the live database would not have caught this deadlock: the bug
+needs a launched worker ending under a launched launcher. The regression test for it is
+`TestPromptInsideATransactionDoesNotDeadlock`. m-001 (evaluate every test) should list which live scenarios have
+no test at all, starting with that one.
+
+## u-001. A mobile styling pass over the whole board (feature, HIGH)
+
+Status: not started. Owned by @ui. Raised by clint 2026-09-29. One of the first things clint wants.
+
+Go over every screen of the board on a phone: the card list, the terminal strip and tray, an attached terminal,
+the permission and question prompts, the launch dialog, settings, and the runners page. Restyle what does not fit,
+and confirm each screen works by touch, not only that it renders. The remote case matters most: the board reached
+over an overlay from a phone, approving and answering without a keyboard.
+
+Run it with a high-capability agent (Opus 5.5, high effort), not a Sonnet worker. It is judgement across many
+screens rather than one mechanical change. Report per screen what changed and what was confirmed by hand, with
+headless cases for the layouts that can be checked at a phone viewport.
+
+## f-002. Room-owned git: one integration checkout per repo, a worktree per card, a merge queue (feature)
+
+Status: not started. Backlog only. Owned by @fabric. Raised 2026-09-29.
+
+Today every worker makes its own worktree and one session merges into a shared checkout by hand, which is where
+switched branches, colliding commits and stale builds come from. Move that into the room, not the hub: one
+integration checkout per repository guarded by a lock, a worktree atrium makes for each card it launches, and a
+merge queue that lands a card's branch on the integration branch in order, running the checks before each merge.
+The hub stays out of it, since the checkouts live on the room's machine.
+
+## u-002. A grey pinned row survives `hide inactive agents` (bug)
+
+Status: not started. Backlog only. Owned by @ui. Raised by clint 2026-09-29 with a screenshot.
+
+With `hide inactive: agents (9)` lit, the pinned `zrok2 on OpenZiti 2 (docker cluster)` row
+(`github/openziti/zrok:zrok2-openziti2`) still shows, drawn grey, with a `? 2` badge. `63a6421` made pins hide like
+any other row, and the live build `abc3cf9` contains it, so this is not a missing deploy.
+
+`sessionHiddenBy` (`internal/api/web/js/terminal-list.js:178`) keeps a row only when it is the attached terminal,
+and hides an agent on `termCold`, the same predicate `termRow` greys on. A row that is grey and shown means one of:
+
+- it is the attached terminal (`termTask`), which is kept on purpose, but then it should not be drawn grey
+- it is greyed by something other than `termCold`, so the grey and the hide have drifted apart again
+- it is a subagent (`isDoer`), which answers to the subagents toggle, and that toggle is off in the screenshot
+- the browser runs a stale board (service worker cache)
+
+The `? 2` suggests two questions still pending for a session that has gone (`orphans.go`). Find which branch it is,
+then make a grey row and a hidden row one answer again. Add a headless case for the branch that was missed.
+
+## u-003. Board-wide auto still rings "needs permission" for a request it approves (bug)
+
+Status: not started. Backlog only. Owned by @ui. Raised by clint 2026-09-29 with a screenshot.
+
+At 10:41 the tray logged `apple-secure-transport-engine needs permission` with a raw JSON body
+(`SubagentHandback: {"message":"{\"verdict\":...`). clint went to the card and found no question. The room's history
+shows the request approved by `global-auto` at 10:41:15, so nothing was ever waiting on him.
+
+The cause is the seam `internal/link/autoapprove.go` describes: board-wide auto is enforced by the HUB, which polls
+each room's `GET /v1/permissions` and decides what is pending. So every request sits pending in the room for up to
+one poll. The board reads the same list, and `alerting.check("permission", ...)`
+(`internal/api/web/js/settings-spine.js:1408`) rings on whatever it sees there, before the hub answers.
+
+The fix belongs on the board: while board-wide auto is on, a pending request is one the hub is about to answer, so do
+not ring or nag for it. Hold the alert for one poll, or skip it when the switch is on, whichever `alerting` makes
+simpler. The same check sits in `solo.js:709`. Secondary: a body that is a JSON payload should show something
+readable, such as the tool name and the first field, rather than escaped JSON cut at 120 characters.
+
+## u-004. Answer an agent's Open Questions from the board (design)
+
+Status: not started. Design first, backlog only. Owned by @ui. Raised by clint 2026-09-29.
+
+An agent that ends a turn with an `Open Questions:` block is running an interview, and today the board only counts
+it: the `? N` badge (`internal/api/web/js/seen.js`, parsed and stored by `internal/store/seen.go`). To answer, clint
+reads the questions in the terminal scrollback and types numbered replies by hand, and loses track of which ones are
+still open.
+
+What clint wants:
+
+- a notification, "@atrium has asked you 7 questions", naming the card
+- clicking the `? 7` badge opens the card on its questions, one per row, each with its own answer field
+- an "answer @atrium" action that sends the answers back as one numbered reply, as if typed
+
+Design questions to settle before any code:
+
+1. Where the question text comes from. `seen.go` already parses the block for the count. Does it keep the text, and
+   what happens to a question that spans several lines or bullets?
+2. How the reply is delivered: typed into the terminal like a message (the card is the human's own), and what the
+   reply looks like so the agent reads it as clint answering, including questions left blank.
+3. Partial answers: does answering 3 of 7 leave the badge at 4, and does `answered` in `atrium_task` agree with it?
+4. Choice questions: a question whose options are listed could render as buttons, like the Mode A `{choices}` picker.
+5. The notification rides the existing alerting path (`alerting.check`), and has to respect the same focus and mute
+   rules as a permission alert.
+
+Related, unfiled ideas from the same day: per-question tracking (the parser skips headings, cap 10 to 50, numbered
+answers decrement the count), and "an Open Questions block counts as reported".
+
+## f-003. An inventory of local resources agents can use (design)
+
+Status: not started. Design first, backlog only, LOW. Owned by @fabric. Raised by clint 2026-09-29.
+
+Scope, per clint: a lookup, for when an agent asks "what build machines do we have". Nothing depends on it, and no
+review rule waits on it.
+
+In the PR #369 review, the agent learned that `ssh m1mini` exists only because clint said so in the prompt. It
+spent turns finding which tools were on that machine (cmake, ninja and vcpkg were there, but not on the default
+PATH). It never found the FIPS OpenZiti environment: the one controller it found in `~/.ziti/ziti-cli.json` was
+unreachable, and it asked for the URL at the end of the run. Every session rediscovers this, or never learns it.
+
+Atrium should keep an inventory, local to this machine, of what an agent may use:
+
+- machines reachable by ssh: the name, OS and arch, what is installed and where (PATH prefixes, vcpkg root), and
+  what it is good for (macOS or iOS builds, leaks, the Apple frameworks)
+- environments: an OpenZiti network (self-hosted, FIPS or not), the controller URL, and which identity to use
+- anything else clint names: devices, test servers, shared build caches
+
+Design questions:
+
+1. Where it lives. A daemon table beside the harness rows, or a file clint edits by hand. The line in
+   CLAUDE.md holds: atrium may hold the NAME of a command or host that has a credential, never the credential.
+2. How an agent reads it. A tool (`atrium_resources`), a section of the launch brief, or both. A review worker
+   should see it without being told.
+3. Who keeps it current. clint, a probe that checks each machine is reachable and lists its tools, or an agent that
+   proposes an entry after it has used one.
+4. Scope across rooms. A machine reachable from one room may not be reachable from another, so an entry may belong
+   to a room. `sgg` and `sg3` are already rooms, so decide whether a room is itself an inventory entry.
+5. Reservations. Two agents building on m1mini at once collide on `~/pr369`. Does an entry take a lock or a working
+   directory per card?
+
+## r-003. Roles: a director anyone can define, share and launch (design)
+
+Status: not started. Design first, backlog only. Owned by @runtime, with @ui for the board side. Raised by clint
+2026-09-29.
+
+clint: "atrium would be powerful if people are able to customize it to do things they want, like the review panel
+and the director of review." Today @review, @merge and the five code-area directors are built from pieces atrium
+already has: a launch brief, tags (`atrium:director`, `dept:<name>`, `directors`), a model, a theme, a working
+directory, and a `DIRECTOR.md` of shared rules copied into each worktree by hand. None of that is a thing atrium
+knows about. The orchestrator writes each one from memory, nobody else can define one, and nothing can be shared or
+installed.
+
+The smallest step is a **role**: a named template holding the brief, the shared rules, tags, model, effort, theme,
+lean or not, extra MCP servers, the working-directory recipe (a worktree off which branch, under which root), the
+alias, and who the role reports to. It is stored as a file, so a role can be copied, reviewed and shared.
+`atrium launch --role review`, `atrium_launch` with `role`, and a board button all start one, and the card records
+which role and which version it came from.
+
+Design questions:
+
+1. The file format and where it lives. `docs/scm-design.md` (outbound) already plans atrium's configuration as files
+   a repository can hold, with a per-field rule for what may leave the machine. A role should be the first such file,
+   not a second format.
+2. Resident or on demand. A director is resident, and a review-manager is launched per job and culled. Is that one
+   field, and does atrium enforce "one live card per resident role"?
+3. Hierarchy. A role names the role it reports to and the roles it may launch, and the launch cap can count per
+   role. @review, then a review-manager, then the reviewers, is the first chain to express.
+4. What stays out: a role never holds a credential (the CLAUDE.md rule about naming a command, never holding a
+   secret), and it never changes the permission chain.
+5. Sharing. A role pack in a git repo, installed by path or URL, as a template to copy, never code that runs.
+6. Migrating the existing directors onto roles, as the proof.
+
+sa-compete (`docs/competitors.md`) compares how other tools do extension. Read its extensibility section before
+designing this.

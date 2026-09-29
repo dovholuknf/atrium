@@ -6101,3 +6101,45 @@ A card under 40% is worth reading and does not gate anything.
 1. Run `go test ./internal/daemon/ -run '^$' -bench ReplayGrowth`.
 
 **Expected:** ns/op roughly doubles from 1x to 2x to 4x.
+
+## DT. Off holds back permission requests
+
+### DT1. A permission request while off
+
+1. Open the notification drawer and press "turn off".
+2. Have a session ask for permission.
+
+**Expected:** no toast, no desktop notification and no sound. The drawer lists "<agent> needs permission" and the
+bell's badge counts it. The perms tab still shows the request.
+
+### DT2. Back on
+
+1. Press "turn on" in the drawer.
+
+**Expected:** the next permission request toasts and sounds as before.
+
+## DU. No dollar figure anywhere
+
+### DU1. Usage shows tokens only
+
+1. Open a Claude card's details and unfold its usage.
+2. Open the usage tab and pick each range.
+3. Open the card's peek.
+
+**Expected:** every figure is a token count or a turn count. There is no `est.` cell, no cost column, no cumulative
+cost chart and no `$`. The by-card ranking is by tokens.
+
+### DU2. Keep-alive shows counts only
+
+1. Turn keep-alive on for an idle card and let it refresh.
+2. Hover the warm chip, then open settings, cache keep-alive.
+3. Let a card reach break-even.
+
+**Expected:** the tooltips and the settings line give refresh counts and no money. The break-even toast reads
+`keep-alive stopped on <card> at break-even after N refreshes`. The card still stops.
+
+### DU3. The wire carries no money
+
+1. Fetch `/v1/usage`, `/v1/tasks/<id>/usage` and `/v1/settings`.
+
+**Expected:** no `cost`, `prices`, `spent`, `budget` or `usd` key in any of them.
