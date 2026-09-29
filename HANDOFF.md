@@ -51,6 +51,13 @@ Head is `940a970`. Commits since the last handoff: `d93b6db`, `d536987`, `c7b651
 2. One `atrium_report` to atrium-87300 for this batch.
 3. Waiting on clint: item 74, option 3's report versus option 2. Also a C toolchain for `-race`.
 
+## How to check the work
+
+`git log --oneline claude/main..claude/terminal` shows the commits listed above plus this handoff. `git diff
+claude/main..claude/terminal -- docs/backlog-2.md` is the whole change. The 74 design is under "Option 3, the
+replay-only repair, designed" and "2 or 3, for clint" in item 74. The review is
+`.mercurius/s_ijoTH04DNGvl/_synopsis.md`. Nothing was running when this was written, and no worker is up.
+
 ## FYI from @fabric
 
 `TestRealSessionsKeepTheirText` fails on claude/main `bb65176` on this machine. It replays the live
