@@ -12,15 +12,15 @@ import (
 // framework runs on two runners rather than one.
 //
 // Claude's folder trust (`hasTrustDialogAccepted` in `~/.claude.json`) is not
-// checked. Claude walks up from the folder with a bound atrium could not confirm
-// from the shipped binary, and every running session rewrites that file, so a
-// check could be wrong and a fix would race. See the design's open questions.
+// checked from the board, and is written at launch for the launch folder only,
+// under claude's own lock on that file. See claudetrust.go.
 var Claude = &Adapter{
 	ID: "claude", Label: "claude code", Cmds: []string{"claude"}, Package: "@anthropic-ai/claude-code",
 	Checks: []Check{
 		{ID: "auth", Label: "signed in", Run: claudeAuthCheck},
 		{ID: "hooks", Label: "atrium hooks", Run: claudeHooksCheck, Apply: claudeHooksApply},
 	},
+	Launch: claudeLaunch,
 }
 
 func claudeAuthCheck(env Env) Result {

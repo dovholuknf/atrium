@@ -78,6 +78,7 @@ make.
 | --- | --- | --- | --- |
 | trusts the workspace | gemini | apply | the operator already chose the folder by making it a provider root |
 | trust at launch | gemini | apply, automatic | the operator chose the folder by launching into it |
+| trust at launch | claude | apply, automatic | the same. never home or a root, and only under claude's own lock |
 | a `DO_NOT_TRUST` rule | gemini | explain | somebody said no. atrium never overrides a no |
 | trusted-folders file invalid | gemini | explain | gemini refuses it too. only a person can say what was meant |
 | signed in | gemini, claude | explain | atrium never holds a credential. it may only name the command |
@@ -181,9 +182,45 @@ from, the same way editing a runner does.
    credential is in the keychain. Explains `claude` and `/login`.
 2. `hooks`: hooks wired. The same report as the hooks dialog, and the same install behind the fix.
 
-Claude's own folder trust (`hasTrustDialogAccepted` in `~/.claude.json`) is not checked. Claude walks up from the
-folder with a bound atrium could not confirm from the shipped binary, and that file is rewritten by every running
-claude session, so a check could be wrong and a fix could race. It is listed under open questions.
+3. Launch: trusts the launch folder, as below.
+
+**Claude folder trust at launch** (backlog-2 item 67). Measured from the shipped binary, 2.1.284:
+
+- Trust is `projects[<path>].hasTrustDialogAccepted: true` in the global config, `~/.claude.json`.
+  `CLAUDE_CONFIG_DIR` moves it, and a legacy `<config dir>/.config.json` wins when it exists. The key is the absolute
+  path, forward slashes on Windows.
+- Claude walks up from the cwd to the git root looking for a trusted entry, and outside a git repository all the
+  way to the filesystem root.
+- Every claude session writes that file under a proper-lockfile lock, a directory at `~/.claude.json.lock`, stale
+  after ten seconds. Under the lock it re-reads the file and merges its change into `projects`.
+- The dialog's highlighted answer is "No, exit", so the first Enter typed into a launched card ended it.
+
+So before a claude launch atrium takes the same lock, re-reads the file, sets `hasTrustDialogAccepted` on the
+launch folder's entry (and on its real path when a symlink is in the way, which on macOS is every temp directory),
+and renames a new file into place, keeping both backups. A session writing afterwards reads the entry back and keeps
+it, and one writing at the same moment waits on the lock. The lock is waited for up to five seconds, then the launch
+goes ahead without the write and claude's dialog is the fallback.
+
+Only the folder atrium was asked to launch in, which the operator or the launching agent already chose. Never home
+or a filesystem root, because the walk would extend that trust to every folder under it that is not a repository.
+Never a file that is missing (a claude that has never run is not signed in either, and a file atrium made up would
+lack everything claude's first run writes) or one that does not parse. `CLAUDE_CODE_SANDBOXED` also skips the
+dialog and was rejected: it trusts every folder the session ever moves to, and changes how project permission rules
+are gated.
+
+There is still no board check for claude trust. The launch write makes one unnecessary for launched cards.
+
+**The fullscreen renderer.** A fresh Claude Code offers "Try the new fullscreen renderer?", and a fresh install
+may start on that renderer. It draws on the alternate screen, which has no scrollback, and atrium's board keeps a
+supervised terminal's scrollback in xterm.js. So a pty claude launch gets `CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN=1`,
+which claude reads ahead of its settings and its rollout flags, and with which it never offers the dialog. An
+environment variable rather than `tui: "default"` in `settings.json`, because it writes nothing shared. A harness
+env naming it or `CLAUDE_CODE_NO_FLICKER` wins, and a window launch is left alone. See `internal/daemon/firstrun.go`.
+
+**Why not hold typed input instead.** A hold until the runner reaches its prompt needs a signal that it did, and
+none always comes: a claude in an untrusted folder runs no hooks, and one started without a prompt posts nothing
+until it is typed into. A hold would wait forever or time out into the same dialog. Fixing each dialog where it
+starts works the same on Windows and macOS.
 
 ## How to add the next runner
 
@@ -215,8 +252,9 @@ Eight steps. The board, the API, the hub merge and the launch hook need no chang
    up, and the prompt it replaces is one nobody is watching. Say if it should be opt-in.
 2. **Worktrees trusted at launch are never pruned.** A rule for a deleted worktree matches nothing and costs one line.
    Pruning means atrium deleting entries, which this design never does. Leaving them is the default.
-3. **Claude folder trust.** Worth a read-only check once the parent-walk bound is confirmed. Never a fix while
-   `~/.claude.json` is shared with live sessions.
+3. **Claude folder trust.** Written at launch since backlog-2 item 67, under claude's own lock (see above). A board
+   check for it is still not built. Launch-time trust is on for every claude row, and like gemini's, entries for
+   deleted worktrees are never pruned.
 4. **Gemini hooks.** Gemini 0.60 has a hooks system in `settings.json`. A gemini hooks target in `claudeconf` would
    turn the `n/a` into a real check with a fix. Not built here.
 5. **Codex adapter.** Its hooks check is one line on top of the existing codex target, and its hook trust is an

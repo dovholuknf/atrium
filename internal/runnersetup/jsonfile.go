@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 // Reading and writing a runner's own JSON config.
@@ -88,9 +89,23 @@ func writeJSONFile(path string, obj map[string]json.RawMessage, raw []byte) (App
 		os.Remove(tmpName)
 		return Applied{}, err
 	}
-	if err := os.Rename(tmpName, target); err != nil {
+	if err := renameRetrying(tmpName, target); err != nil {
 		os.Remove(tmpName)
 		return Applied{}, err
 	}
 	return res, nil
+}
+
+// renameRetrying replaces target with tmp. Windows refuses the replace while
+// another process has the target open without delete sharing, which a runner
+// reading its own config does for a moment, so a refusal is tried again.
+func renameRetrying(tmp, target string) error {
+	var err error
+	for i := 0; i < 10; i++ {
+		if err = os.Rename(tmp, target); err == nil {
+			return nil
+		}
+		time.Sleep(time.Duration(i+1) * 20 * time.Millisecond)
+	}
+	return err
 }
