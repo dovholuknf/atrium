@@ -34,7 +34,7 @@ func (s *Server) setKeepalive(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if t, err := s.st.Get(id); err == nil {
-		s.Broadcast("task", toView(t))
+		s.PublishTask(t)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"task_id": id, "keepalive": view})
 }

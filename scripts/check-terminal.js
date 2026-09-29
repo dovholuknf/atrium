@@ -382,7 +382,12 @@ if (/WebLinksAddon/.test(html)) {
       fail("a clicked URL is routed through a file endpoint. It is not a file in the " +
         "card, and the daemon has no business being asked about it.");
     }
-    if (!/noreferrer/.test(body)) {
+    // The referrer is withheld page-wide, since `rel=noreferrer` would force a
+    // new tab and defeat openLinkReused.
+    if (!/openLinkReused\(/.test(body)) {
+      fail("openTermURL does not go through openLinkReused, so every click opens a new tab.");
+    }
+    if (!/<meta name="referrer" content="no-referrer">/.test(html)) {
       fail("a URL opened from the terminal carries a referrer. A published board's " +
         "address is not something to hand to whatever an agent printed a link to.");
     }

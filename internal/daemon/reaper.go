@@ -109,6 +109,15 @@ func (d *Daemon) reapOnce() error {
 		return err
 	}
 	for _, t := range tasks {
+		// A RUNNER ATRIUM SUPERVISES IS ALIVE BY DEFINITION (r-011). Atrium holds
+		// its pseudo terminal, and the supervisor drops the entry only in
+		// `awaitExit`, which files the exit itself. So neither a stored pid (which
+		// may be a hook's report of some other process, or 0) nor silence is asked
+		// about it. Asking silence first is what filed a live supervised card dead
+		// one tick before `reviveOwnedDead` brought it back.
+		if d.sup.get(t.ID) != nil {
+			continue
+		}
 		// No pid to ask about, so fall back to silence. A card waiting on a
 		// human is exempt: it is quiet because nobody has answered it, and
 		// marking it dead would discard the question.
