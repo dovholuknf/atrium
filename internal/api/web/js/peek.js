@@ -1,7 +1,8 @@
 // A card's details, small. Context now, against the gear's threshold, and the
 // token totals on record, in one compact view reached three ways:
 //
-//   - holding the pointer on a card, or its stack row, for two seconds
+//   - holding the pointer for a second on a card, on the board, the stack or
+//     the terminals list. It opens under the pointer, not beside the card
 //   - "details" on the card's menu
 //   - the expando on the terminal's shortcut strip, which slides it up as a
 //     drawer for the attached card
@@ -11,7 +12,7 @@
 // and the board's list carries only the warn flag. See js/usage.js for the
 // full table in the details dialog, and internal/daemon/usage.go.
 
-const PEEK_HOVER_MS = 2000;
+const PEEK_HOVER_MS = 1000;
 // How long the pointer may be off both the card and the popover before a
 // hover-opened one goes. Enough to cross the gap between them.
 const PEEK_GRACE_MS = 260;
@@ -134,21 +135,26 @@ function peekPop() {
   return peekEl;
 }
 
-// Beside the card, on whichever side has room, and never off the screen. The
-// anchor is the card's element, or a point for a menu opened somewhere with no
-// card drawn under it.
-function peekPlace(anchor) {
+// Where the pointer last was, in the viewport. The popover opens from here.
+let peekPointer = null;
+document.addEventListener("pointermove", e => {
+  if (!e.pointerType || e.pointerType === "mouse") peekPointer = { x: e.clientX, y: e.clientY };
+}, { passive: true, capture: true });
+
+// Under the pointer `at`: its top left corner just below and right of it,
+// pushed in from any edge it would cross, and above the pointer when there is
+// no room below. With no pointer known (a menu opened from the keyboard) it
+// goes under the anchor, the card's element or a point.
+function peekPlace(anchor, at) {
   const el = peekPop();
-  const r = anchor.getBoundingClientRect ? anchor.getBoundingClientRect()
-    : { left: anchor.x, right: anchor.x, top: anchor.y, bottom: anchor.y };
-  const w = el.offsetWidth, h = el.offsetHeight, pad = 8, gap = 10;
-  let x = r.right + gap, y = r.top;
-  if (x + w > innerWidth - pad) x = r.left - w - gap;
-  if (x < pad) {
-    // No room either side: under it, or over it.
-    x = Math.min(Math.max(r.left, pad), innerWidth - w - pad);
-    y = r.bottom + gap + h > innerHeight - pad ? r.top - h - gap : r.bottom + gap;
+  if (!at) {
+    const r = anchor.getBoundingClientRect ? anchor.getBoundingClientRect() : null;
+    at = r ? { x: r.left, y: r.bottom } : { x: anchor.x, y: anchor.y };
   }
+  const w = el.offsetWidth, h = el.offsetHeight, pad = 8, gap = 12;
+  let x = at.x + 4, y = at.y + gap;
+  if (y + h > innerHeight - pad) y = at.y - h - gap;
+  x = Math.min(Math.max(x, pad), Math.max(pad, innerWidth - w - pad));
   y = Math.min(Math.max(y, pad), Math.max(pad, innerHeight - h - pad));
   el.style.left = Math.round(x) + "px";
   el.style.top = Math.round(y) + "px";
@@ -163,8 +169,11 @@ function openPeek(id, anchor, mode) {
   el.dataset.id = id;
   el.classList.toggle("pinned", peekMode === "menu");
   const box = el.querySelector(".peek-body");
+  // Measured where the pointer was when it opened, and again from the same
+  // point when the numbers land and it grows.
+  const at = peekPointer;
   const replace = () => {
-    if (anchor && (anchor.isConnected || !anchor.getBoundingClientRect)) peekPlace(anchor);
+    if (seq === peekSeq && anchor) peekPlace(anchor, at);
   };
   peekFill(box, id, () => seq === peekSeq && peekFor === id).then(replace);
   replace();
@@ -184,11 +193,13 @@ function peekCloseSoon() {
   peekCloseTimer = setTimeout(closePeek, PEEK_GRACE_MS);
 }
 
-// ── two seconds on a card ───────────────────────────────────────────────────
+// ── a second on a card ──────────────────────────────────────────────────────
 //
-// Keyed on the card id, not the element: the board redraws its cards on every
-// event, and a busy agent redraws its own several times a second, so the
-// element under a still pointer is replaced long before two seconds are up.
+// One listener for every tab: a board card, a stack row and a row on the
+// terminals list all carry `data-id`. Keyed on the card id, not the element:
+// the board redraws its cards on every event, and a busy agent redraws its own
+// several times a second, so the element under a still pointer is replaced
+// long before the second is up.
 
 let peekHoverId = null, peekHoverEl = null, peekHoverTimer = null;
 
