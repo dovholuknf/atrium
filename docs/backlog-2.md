@@ -3584,3 +3584,28 @@ Known hazard, from memory and past incidents: a second room steals the hook poin
 2. How hooks find the right room while two are up.
 3. Whether this replaces the room restart for deploys, and what the board shows during a migration.
 4. Moving to another machine (sg4 to sg3): the worktree and the Claude transcript must travel too.
+
+## r-006. A card owns what it created, and closing it cleans up (feature)
+
+Status: not started. Design first. Owned by @runtime, with @ui for the board side. Raised by clint 2026-09-29.
+
+clint: "pr reviews need atrium to clean them up. leftover worktrees, etc all need cleanup. is that an atrium task or
+an agent that still needs to do that?" Today an agent does it, by hand, when it remembers: the orchestrator's rule is
+"merged and accepted means exit the worker and remove its worktree and branch", and @review removes a walker's source
+worktree after culling it. Left behind today: dozens of `claude/*` worktrees and branches (`notes/merge.txt` lists 38
+branch deletes, 23 merged dirty worktrees and 99 unmerged branches), review source trees in `D:/tmp` and under
+`D:/worktrees/claude/reviews/`, and throwaway directories.
+
+It should be atrium's job, because atrium already knows which card was launched where:
+
+- A card records what it created: its worktree and branch (from `scripts/new-worktree.ps1` or a role's recipe), and
+  any extra directories a launch names (a PR head tarball, a `src/` worktree).
+- Closing a card (archive, or "walk done" for a PR walker) offers the cleanup with a preview: remove the worktree when
+  it is clean and its branch is merged, and list what is dirty or unmerged instead of deleting it. Nothing is removed
+  without that preview, and nothing unmerged is removed without an explicit yes.
+- The board has one "leftovers" list: worktrees, branches and directories whose card is gone, for the backlog that
+  exists today.
+- A review keeps its report folder. Only the code trees go.
+
+Relates to r-003 (a role's working-directory recipe is where a worktree comes from), r-004 (a card's directory is
+fixed at launch, so it is a stable key), and u-005 stage 2 (a PR's walker and trees belong to the PR).

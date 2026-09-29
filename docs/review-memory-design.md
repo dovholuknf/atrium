@@ -171,7 +171,10 @@ why, and may name a panel. The director then:
    `pr-<repo>-<number>` (`pr-ziti-4397`, `pr-zrok-1277`), never `saNN`, and named that way in every report (clint),
    model sonnet, theme active-work, tags `atrium:subagent`, `dept:review`, `review` and `pr`, cwd the target repo's
    checkout. It is
-   launched LEAN, with nothing at start that the review does not need, and its brief is minimal: the target, the
+   launched `lean:false` until r-005 exists (filed on claude/main at 5f75d30: a lean launch that keeps the Agent tool
+   and a named list of reviewer agents), because a lean launch today has no Agent tool and a review-manager spawns
+   its reviewers (settled through @orchestrator, 2026-09-29). A walker is the same card, launched the same way. Its
+   brief is minimal: the target, the
    panel and its sizing line, each reviewer's file path and the base commit to read it at, the repo's known consumers
    from its review-director file with their checkouts (standing rule 27), the second-opinion setting (rule 29,
    Mercurius unless clint named a model), and the report path. It
@@ -183,10 +186,13 @@ why, and may name a panel. The director then:
    findings on its own card, tells the asker the same, and applies the notes (below). It does NOT cull the worker.
 6. **Hands the walk to the review-manager.** The review-manager stays up as that PR's walker, under the same
    `pr-<repo>-<number>` name, in the PR's worktree or tree. The director tells clint which card to walk on, and hands
-   the manager the walk rules (9 to 24, 26 and 27) and the findings folder it edits in place. The manager held the
+   the manager the walk rules (9 to 24, 26 and 27) and the findings folder it edits in place. For the board's review
+   tab (`docs/review-tab-design.md`), the brief also says that a `Walk:` line in Evidence is state the board writes
+   and the walker keeps, and that the board may edit a finding, so the walker re-reads a file before every edit.
+   `pr.diff` is always in the run folder (skill step 7). The manager held the
    repo at the head, the evidence and the repros, so it can re-check a line, dig in or rewrite a comment on the spot,
    which clint found far more useful than a walk on the director's card. The director culls it only after clint says
-   the walk is done (clint, 2026-09-29).
+   the walk is done (clint, 2026-09-29). A walker reporting `done` is not that: the cull waits for clint's own word.
 
 **The hierarchy** is three levels: the director, then one review-manager per review, and the review-manager spawns
 the reviewer agents as its subagents (answers 3 and 13). The director never spawns a reviewer, and a review-manager
@@ -422,7 +428,7 @@ consumer's `grep` hits for the changed symbols, read at a named commit and never
 | the digest, batched reads, turn budget, the `repo_notes` parse, passing notes through | dotfiles, `review-panel` skill and the four personas |
 | the reviewer files and the dangerous-change record | dotagents, `personas/<id>/repos/<host>/<org>/<repo>.md` |
 | picking panels, applying notes, branches and merges | the director, @review, one resident card |
-| each review's review-manager | a `pr-<repo>-<number>` worker, one per review, culled when it reports |
+| each review's review-manager | a `pr-<repo>-<number>` worker, one per review, culled only after clint says its walk is done |
 | proposed guards | the director's report, then clint, then `mercurius.yaml` or `CLAUDE.md` by hand |
 
 Nothing in atrium changes. No migration. The director and its workers are ordinary cards.
@@ -584,6 +590,7 @@ The eight questions the first revision asked, answered through @orchestrator, nu
 
 7. **`claude/review/main` first.** Yes. The next review reads `claude/review/main` before clint takes it into `main`.
 8. **A worker per review.** Always, and lean: no unneeded context at start, a lean launch and a minimal brief.
+   Superseded in part: the launch is `lean:false` until r-005 exists, since a lean launch has no Agent tool (step 4).
 9. **Reports.** At `D:/worktrees/claude/reviews/<slug>/<target>-<sha7>.md`, never committed.
 10. **The exclusion.** A worker may make the `personas` exclusion in dotagents `scripts/_common.ps1`, uncommitted.
 11. **The seed.** Seed openziti/ziti from the parked lessons. Do not rebuild from empty.
