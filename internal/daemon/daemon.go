@@ -94,6 +94,11 @@ type Daemon struct {
 	// sup holds the runners atrium owns, when a harness launches in pty mode.
 	sup *supervisor
 
+	// humanTouched is when each card's human touch was last written, so a run
+	// of keystrokes costs one map lookup each and one store write a minute. See
+	// humanTouch in park.go.
+	humanTouched sync.Map
+
 	// roomView is the last size a viewer agreed on for any runner, loaded from
 	// the store on first use. See roomsize.go.
 	roomMu     sync.Mutex

@@ -91,16 +91,7 @@ func (d *Daemon) RestartRunner(taskID string) (*store.Task, error) {
 	// checks the id against what is on disk and drops it when the conversation is
 	// gone, so a session whose history was cleared starts fresh in the right
 	// place rather than dying on a stale resume.
-	req := LaunchRequest{
-		Harness: fresh.Runner,
-		Cwd:     fresh.Worktree,
-		TaskID:  taskID,
-		Resume:  d.reopenResume(fresh),
-		Model:   fresh.Model,
-		Effort:  fresh.Effort,
-		Args:    fresh.LaunchArgs,
-		Env:     fresh.LaunchEnv,
-	}
+	req := d.reopenRequest(fresh)
 	// launchLocked, not Launch: this call already holds the launch lock for this
 	// card and resume, and Launch would try to take it again.
 	started, err := d.launchLocked(req)
