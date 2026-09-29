@@ -3340,7 +3340,10 @@ answers decrement the count), and "an Open Questions block counts as reported".
 
 ## f-003. An inventory of local resources agents can use (design)
 
-Status: not started. Design first, backlog only. Owned by @fabric. Raised by clint 2026-09-29.
+Status: not started. Design first, backlog only, LOW. Owned by @fabric. Raised by clint 2026-09-29.
+
+Scope, per clint: a lookup, for when an agent asks "what build machines do we have". Nothing depends on it, and no
+review rule waits on it.
 
 In the PR #369 review, the agent learned that `ssh m1mini` exists only because clint said so in the prompt. It
 spent turns finding which tools were on that machine (cmake, ninja and vcpkg were there, but not on the default
@@ -3366,5 +3369,3 @@ Design questions:
    to a room. `sgg` and `sg3` are already rooms, so decide whether a room is itself an inventory entry.
 5. Reservations. Two agents building on m1mini at once collide on `~/pr369`. Does an entry take a lock or a working
    directory per card?
-
-@review's rules (`CLINT-REVIEW-RULES.md`, rule 1) assume review workers can find hardware like this.
