@@ -81,6 +81,18 @@ func (d *Daemon) saySettled(from string, target *store.Task) {
 	}
 }
 
+// recordTell records a `tell` that reached a resolved local card, typed or queued.
+func (d *Daemon) recordTell(from string, target *store.Task, text, when string, reply, typed bool, msgID string) {
+	rec := sayRecordFor(from, target, sayTrace{}, false, "tell", when, reply)
+	if typed {
+		rec.State, rec.Channel = store.SayDelivered, store.SayViaTerminal
+	} else {
+		rec.State, rec.MessageID = store.SayQueued, msgID
+	}
+	d.recordSay(rec, text)
+	d.saySettled(from, target)
+}
+
 // sayLapsed gives up on replies owed to a card that has ended.
 func (d *Daemon) sayLapsed(taskID string) {
 	if err := d.st.LapseSaysFor(taskID); err != nil {
@@ -158,7 +170,7 @@ func missSentence(name string, cands []string) string {
 func (d *Daemon) writeMiss(w http.ResponseWriter, from, name, door, text, when string, reply bool) {
 	cands := d.candidatesFor(name, d.st.Qualify(from))
 	list, _ := d.peers(d.st.Qualify(from))
-	if from != "" {
+	if from != "" && text != "" {
 		note := "no card matched"
 		if len(cands) > 0 {
 			note += ". offered: " + strings.Join(cands, ", ")

@@ -98,8 +98,13 @@ the say. A typed say's full text is in the `prompted` event, as it is today.
 A row is written at the moment it is placed, so the first state it can be seen in is `queued` or `delivered`. Sent
 time is `sent_at`. `queued` -> `delivered`, or one of the ends that are not delivery:
 
-`lapsed` is NOT a state. It is a flag beside the state, set on a reply asked for that will never be answered (the
-receiver ended, or seven days passed). A lapsed row is kept for history and no longer counted as owed.
+The `sent` state is never written: the row is born in the state the say has already reached, and the CHECK still
+allows `sent` for a later use. Only `say` and `tell` write rows. `ask` and `answer` write none: an `answer` only
+settles the replies owed to the asker.
+
+`lapsed` is NOT a state. It is a column (0 or 1) beside the state, set on a reply asked for that will never be answered
+(the receiver ended, or seven days passed). A lapsed row is kept for history and no longer counted as owed. `relay_id`
+is a column too, the `relay_outbox` row a cross-room say is held under.
 
 | State | Meaning |
 | --- | --- |
