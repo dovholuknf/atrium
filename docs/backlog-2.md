@@ -3566,3 +3566,60 @@ sa98 in the same directory is exposed to the same thing.
 
 Tests: a runner launched in a directory without `.git` whose card's `Worktree` moves to a subdirectory with a `.git`
 and back is not wound down. A runner whose launch directory really is removed still is.
+
+## r-005. A lean launch that can still start subagents (feature)
+
+Status: not started. Owned by @runtime. Approved by clint 2026-09-29.
+
+A lean launch removes the `Agent` tool (`leanDisallowed` in `internal/daemon/lean.go`) and loads none of the
+operator's agent pack. So a lean review-manager cannot start the reviewers it exists to run. @review now launches
+review-managers and walkers with the full setup, which carries every skill, memory and CLAUDE.md the operator has.
+
+Add a way to launch lean and keep `Agent` plus a named list of agents, for example
+`lean_agents: ["codebase-steward", "go-security-reviewer", "functional-tester", "nonfunctional-tester"]` on
+`atrium_launch`, and the review-panel skill. Only the named agents' files are made available. Everything else lean
+drops stays dropped. r-001 edits the same file (it keeps `statusLine` for lean cards), so build the two together or
+one after the other.
+
+## f-004. Two rooms on one machine, to bring one up and migrate (design)
+
+Status: not started. Design first, backlog only. Owned by @fabric. Raised by clint 2026-09-29.
+
+clint, after the t-002 room restart: "we should go back to allowing sg4 to have two rooms so we can bring one up,
+migrate". A room restart today stops every session the room supervises until it comes back. A second room on the
+same machine, started beside the first, would let a new build come up, take cards over one at a time, and let the
+old room go. The same move would carry a room to another machine: "what if i wanted to move to sg3?"
+
+Known hazard, from memory and past incidents: a second room steals the hook pointer and port 7777 unless
+`ATRIUM_LOCATION` is private (`throwaway-room-hijacks-hooks`). Design questions:
+
+1. How a card moves between rooms: its store rows, its conversation (the transcript lives on the machine), and its
+   pty, which cannot move, so the runner resumes in the new room.
+2. How hooks find the right room while two are up.
+3. Whether this replaces the room restart for deploys, and what the board shows during a migration.
+4. Moving to another machine (sg4 to sg3): the worktree and the Claude transcript must travel too.
+
+## r-006. A card owns what it created, and closing it cleans up (feature)
+
+Status: not started. Design first. Owned by @runtime, with @ui for the board side. Raised by clint 2026-09-29.
+
+clint: "pr reviews need atrium to clean them up. leftover worktrees, etc all need cleanup. is that an atrium task or
+an agent that still needs to do that?" Today an agent does it, by hand, when it remembers: the orchestrator's rule is
+"merged and accepted means exit the worker and remove its worktree and branch", and @review removes a walker's source
+worktree after culling it. Left behind today: dozens of `claude/*` worktrees and branches (`notes/merge.txt` lists 38
+branch deletes, 23 merged dirty worktrees and 99 unmerged branches), review source trees in `D:/tmp` and under
+`D:/worktrees/claude/reviews/`, and throwaway directories.
+
+It should be atrium's job, because atrium already knows which card was launched where:
+
+- A card records what it created: its worktree and branch (from `scripts/new-worktree.ps1` or a role's recipe), and
+  any extra directories a launch names (a PR head tarball, a `src/` worktree).
+- Closing a card (archive, or "walk done" for a PR walker) offers the cleanup with a preview: remove the worktree when
+  it is clean and its branch is merged, and list what is dirty or unmerged instead of deleting it. Nothing is removed
+  without that preview, and nothing unmerged is removed without an explicit yes.
+- The board has one "leftovers" list: worktrees, branches and directories whose card is gone, for the backlog that
+  exists today.
+- A review keeps its report folder. Only the code trees go.
+
+Relates to r-003 (a role's working-directory recipe is where a worktree comes from), r-004 (a card's directory is
+fixed at launch, so it is a stable key), and u-005 stage 2 (a PR's walker and trees belong to the PR).
