@@ -551,6 +551,11 @@ func (k *keepalive) decide(t *store.Task, card *store.KeepaliveCard) verdict {
 	if err != nil || !isClaude(h) {
 		return skip("not a Claude card")
 	}
+	// A parked card has no process and its cache is meant to go cold. Refreshing
+	// it would pay to keep warm what the park chose to let go.
+	if isParked(t) {
+		return skip("parked")
+	}
 	if strings.TrimSpace(t.ResumeID) == "" || strings.TrimSpace(t.Worktree) == "" {
 		return skip("no session id yet")
 	}

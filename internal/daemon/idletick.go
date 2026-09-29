@@ -136,6 +136,11 @@ func (d *Daemon) idleParkEligible(t *store.Task, wakes map[string]bool) bool {
 	if d.holdingMessages(id) || d.act.midTurn(id) || d.act.dialogOpen(id) || d.act.onSubagents(id) {
 		return false
 	}
+	// Work the last Stop said is still running: shells and the like. Subagents
+	// are onSubagents above. A session waiting on either is not idle.
+	if n, _ := d.act.backgroundWork(id); n > 0 {
+		return false
+	}
 	if perms, err := d.st.PendingForTask(id); err != nil || len(perms) > 0 {
 		return false
 	}

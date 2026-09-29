@@ -624,11 +624,11 @@ BUILT (r-007 stage 4): `internal/daemon/idlepark.go` answers who is subject and 
 tag `atrium:orchestrator` and no other card with a live runner (parked, fixtures and shells do not count). The tick
 that asks it is stage 5.
 
-BUILT (r-007 stage 5, partly): `internal/daemon/idletick.go` is the reaper tick, the idle clock, the director's
+BUILT (r-007 stage 5): `internal/daemon/idletick.go` is the reaper tick, the idle clock, the director's
 handoff through item 66's capture (`ncCapture`) and `HandoffName`, the park, and the handoff wake queued in `unpark`.
-The setting is `idle_park_after` (`internal/store/idlepark.go`, exposed in the settings API). Left: the review's four
-changes (background work blocks parking, a family say wakes, keep-alive skips a parked card, the parked answer names
-`wake=true`). See HANDOFF.md.
+The setting is `idle_park_after` (`internal/store/idlepark.go`, exposed in the settings API). The review's four changes are in:
+background work blocks parking, a family say (`fromFamily`, on `launcher_id`) wakes, keep-alive skips a parked card,
+and the parked answer names `wake=true`.
 
 Not built: the keep-alive rule reading `human_at`, the restart snapshot, and the stamps for a plain operator message
 (covered by the resume stamp), an action and enabling keep-alive.
