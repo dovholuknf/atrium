@@ -207,9 +207,15 @@ atrium room --hub http://desktop:7778 --name cdaws --no-launch
   document is arranged around.
 - **Telling a room to stop something.** The hub does not dial a room, so it cannot reach in.
 
-## 6. Open: how work gets BACK
+## 6. How work gets BACK
 
-**Nothing has answered this, and it has to be decided before the feature is usable.** Sending work is half a
+**Answered for code: branches come back by fetch, run from this side.** `scripts/room-git.ps1` (not the binary)
+makes the room's clone by push, makes a worktree there for a launch, and `fetch <room>` brings the room's `claude/*`
+branches here as `<room>/claude/*`, where the Release department merges them. Nothing on the room pushes, so the
+room needs no credential and no route back. What follows is the original question, kept for what it says about the
+recap, which is still open.
+
+Sending work is half a
 loop. Right now a session on cdaws finishes and the result is: a card on cdaws's board, in a directory on cdaws,
 with a recap in cdaws's database. The hub sees the card go `done` in a check-in summary, and that is all.
 
