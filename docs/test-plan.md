@@ -5381,3 +5381,19 @@ skips whatever the diff says, and `-Base <ref>` changes what the diff is taken a
 **Expected:** the first creates `D:/worktrees/claude/atrium/merge` on `claude/merge-scratch`, links every CLAUDE.md,
 and installs Playwright and chromium. The second says the worktree is already registered and the install is done, and
 changes nothing. `merge-check.ps1` run from there needs no `-NodePath`.
+
+## CT. The stdio launch warns about an older room
+
+### CT1. A room that applied the options
+
+1. Run `go test ./internal/cli -run TestStdioLaunchWarnsWhenARoomDropsItsOptions`.
+
+**Expected:** it passes. With a room that echoes the options back, the launch result carries the model and effort and
+no WARNING.
+
+### CT2. A room older than launch options
+
+1. Same test, second half: the fake room returns a card with no model, effort, args or env.
+
+**Expected:** the note starts `WARNING: the room is older than launch options, so model, effort, args, env were NOT
+applied`.

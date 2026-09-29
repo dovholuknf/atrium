@@ -1429,6 +1429,11 @@ Raised 2026-09-28. The old stdio control MCP (`internal/cli/control_peers.go`) t
 env fields for item 48, but not the warning the hub's control MCP gives when the room is older than the change.
 Decide whether it needs the warning or should go away.
 
+Status, 2026-09-28, sa60: fixed on `claude/sa60`. The stdio MCP is live: `atrium control` registers `atrium_launch`
+through `addPeerTools`, so it needed the warning rather than removal. The check now lives in `link.LaunchOptionsDropped`
+and `link.LaunchDroppedWarning`, used by both MCPs, and the stdio result reports the model and effort. See
+`docs/changes/60.md`.
+
 ## 61. A fake 45s hub echo in the lag log from the idle ping and pong (bug)
 
 Raised 2026-09-28, from sa55's review of the live logs. The room pings an idle attach every 45s, and the browser's
