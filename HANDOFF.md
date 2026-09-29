@@ -67,8 +67,12 @@ a full terminal test-plan rerun. Option 3 (a replay-only repair) only if 2 is re
 
 sa82's design is committed at `874d51d` (item 82 "Design" in backlog-2). It follows xterm 5.5.0 UnicodeV6 widths
 through a generated table with no new dependency, and adds a continuation-cell sentinel. Mercurius session
-`s_v2plA2V8cqDd` round 1 was STARTED 04:09 and is not yet triaged: `mercurius_collect_round`, triage the findings
-to sa82 (it revises the design), then record the notes. sa82 is waiting for the go.
+`s_v2plA2V8cqDd` (closed): ready_to_build with no concerns. A1 (a wide character in the last column) is deferred to
+the differential.
+
+UPDATE 04:11: sa81 is DONE (`f645161`), reviewed, merged into claude/terminal, targeted tests pass here, and it
+has exited (remove its worktree and branch after @merge). sa82 has its GO: it merges claude/terminal into
+claude/sa82 and builds phase 2. Now running: sa74 and sa82 only.
 
 Both workers know the order. sa81 keeps its function shapes stable once it reports. sa82 writes its design (a
 "Design" subsection of item 82 in backlog-2) and atrium_says me the sha. Then I:
