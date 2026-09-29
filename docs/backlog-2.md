@@ -3277,3 +3277,32 @@ The fix belongs on the board: while board-wide auto is on, a pending request is 
 not ring or nag for it. Hold the alert for one poll, or skip it when the switch is on, whichever `alerting` makes
 simpler. The same check sits in `solo.js:709`. Secondary: a body that is a JSON payload should show something
 readable, such as the tool name and the first field, rather than escaped JSON cut at 120 characters.
+
+## u-004. Answer an agent's Open Questions from the board (design)
+
+Status: not started. Design first, backlog only. Owned by @ui. Raised by clint 2026-09-29.
+
+An agent that ends a turn with an `Open Questions:` block is running an interview, and today the board only counts
+it: the `? N` badge (`internal/api/web/js/seen.js`, parsed and stored by `internal/store/seen.go`). To answer, clint
+reads the questions in the terminal scrollback and types numbered replies by hand, and loses track of which ones are
+still open.
+
+What clint wants:
+
+- a notification, "@atrium has asked you 7 questions", naming the card
+- clicking the `? 7` badge opens the card on its questions, one per row, each with its own answer field
+- an "answer @atrium" action that sends the answers back as one numbered reply, as if typed
+
+Design questions to settle before any code:
+
+1. Where the question text comes from. `seen.go` already parses the block for the count. Does it keep the text, and
+   what happens to a question that spans several lines or bullets?
+2. How the reply is delivered: typed into the terminal like a message (the card is the human's own), and what the
+   reply looks like so the agent reads it as clint answering, including questions left blank.
+3. Partial answers: does answering 3 of 7 leave the badge at 4, and does `answered` in `atrium_task` agree with it?
+4. Choice questions: a question whose options are listed could render as buttons, like the Mode A `{choices}` picker.
+5. The notification rides the existing alerting path (`alerting.check`), and has to respect the same focus and mute
+   rules as a permission alert.
+
+Related, unfiled ideas from the same day: per-question tracking (the parser skips headings, cap 10 to 50, numbered
+answers decrement the count), and "an Open Questions block counts as reported".
