@@ -1305,6 +1305,10 @@ Raised 2026-09-28, from sa55's review of the live logs. The room pings an idle a
 pong going up starts the hub's echo clock. So every ping logs a fake echo of about 45000ms, and `hub.err` carries
 about 80 lag lines an hour with the board idle. The hub should not start the echo clock on a pong.
 
+Status: fixed on `claude/sa61`. `lagConn.Write` starts the clock only when the Write holds a data frame, and a
+control frame read back no longer closes it. The room's own timing starts only on an `in` message, so it was never
+affected. See `docs/changes/61.md`.
+
 ## 62. A worker that ends its turn without a report reaches its orchestrator every time (bug, HIGH)
 
 Raised 2026-09-28 by clint: "we can't have missing messages". A worker that ends its turn without an
