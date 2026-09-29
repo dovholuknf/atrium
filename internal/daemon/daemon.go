@@ -882,6 +882,9 @@ func (d *Daemon) Run(ctx context.Context) error {
 			agentLn.Close()
 			return fmt.Errorf("human listener: %w", err)
 		}
+		// The profiler, on this listener only and only when it is loopback.
+		// See pprof.go.
+		humanSrv.Handler = withProfiling(humanSrv.Handler, humanLn)
 	}
 
 	// `addressOf`, not concatenation. An address that already names a host,
