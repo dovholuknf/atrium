@@ -2893,9 +2893,11 @@ What changed from the design in the build:
   live file, seven of about forty exceed 4x on the half-file comparison because of where the ring cut them.
 
 **For clint, before the fixtures are committed.** The machine's home path in the OSC window title was replaced with
-`claude.exe`. What is left: the statusline's account usage (`5h 64% | wk 36% | ctx ... | tx ...`), the header
-line's `Claude Code v2.1.284 / Sonnet 5.5 / Claude Team`, the capture directory `D:\cap\atrium`, and a throwaway
-card id. No credential, email or user path.
+`claude.exe`. The statusline's account usage (the `5h` and `wk` percentages and the reset time) was zeroed by
+@terminal at the orchestrator's call, and every rendered frame of all three files was checked to show `00%`. The
+floors did not move. What is left: the header line's `Claude Code v2.1.284 / Sonnet 5.5 / Claude Team`, the capture
+directory `D:\cap\atrium`, the session's own `ctx` and `tx` counts, the reset countdown's minute digit where it was
+repainted alone, and a throwaway card id. No credential, email or user path.
 
 ## 89. A finished worker's runner outlives its worktree and locks the directory (bug)
 

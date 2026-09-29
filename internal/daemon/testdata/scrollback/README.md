@@ -20,6 +20,11 @@ public. Every file was captured on a throwaway room from scripted work on atrium
    way down, and that file is the capture.
 6. Replace the OSC window title `C:\Users\<user>\.local\bin\claude.exe` with `claude.exe`, the one place a home
    directory got in. Grep the result for `Users`, `@`, `token`, host names and the operator's name.
+7. Zero the account usage in the statusline, digit for digit so no byte moves: the `5h` percentage and its
+   `(1h27m)` reset time, and the `wk` percentage, wherever they are written whole (escapes between the words are
+   allowed, and the digits inside escapes are left alone). Then render every synchronized frame and check that
+   neither percentage is ever anything but `00%`. Single-digit repaints of the reset countdown's minutes survive
+   that (`0h02m`), which is a countdown and not usage. `ctx` and `tx` are this session's own counts and stay.
 
 | File | Prompt |
 | --- | --- |
