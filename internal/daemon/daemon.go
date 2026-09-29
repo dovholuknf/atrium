@@ -613,6 +613,8 @@ func (d *Daemon) onHalt(cause error) {
 		_ = srv.Shutdown(ctx)
 	}
 	d.ap.Broadcast("halted", map[string]string{"cause": fmt.Sprint(cause)})
+	// And as `health`, the event the board reads instead of polling /v1/health.
+	d.publishHealth()
 }
 
 // observedFor builds the observed bucket from what the wire name tells us.
@@ -979,6 +981,8 @@ func (d *Daemon) Run(ctx context.Context) error {
 		// settling.go, and note this opens BEFORE the goroutine: a window that
 		// started inside it would race the first fixture.
 		d.settle.begin()
+		// Say so on the stream, and say again when the window closes. See health.go.
+		go d.watchSettle(ctx)
 		// Terminals that come up with the daemon, and then the ones that were
 		// simply open when it stopped. In the background, so a runner that is
 		// slow to start cannot delay the board answering: a board that is not
