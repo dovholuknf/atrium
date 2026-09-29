@@ -365,18 +365,37 @@ What is missing:
   `room~id` and a bare id are one card.
 - **It says whose record it is**: "in this browser. the card's timeline above is the room's record". Two tabs on two
   machines see different lists, and that is the toast log's rule, not a bug in this view.
-- **A pile records its members.** `recordToLog` takes an optional list of card ids, stored as `tasks` on the entry, and
-  `announce` passes the ids of a pile. The card cut matches `taskFor` or `tasks`. The tray is unchanged. A repeat
-  still bumps the last entry only when the signature matches, so a pile of different cards stays its own line.
+- **A pile records its members, on every path that writes the log** (Mercurius round 1 C1, C2). An entry gains an
+  optional `tasks`, the bare ids of the cards a pile covers. The card cut matches `taskFor` or `tasks`. The tray is
+  unchanged. `tasks` is threaded through every function between a pile and the log, because which one writes it
+  depends on where the focus was:
+  - `notify` takes it (in `opts`, beside `pending`) and hands it on in all four of its cases: `logNotification` when
+    notifications are held (item 79) and when the desktop takes it, `toast` when this window is focused or nothing can
+    reach you, and the `win-toast` message when another atrium window is focused. The `win-toast` receiver passes it
+    to `toast`.
+  - `toast`'s wrapper in `toast-log.js` and `logNotification` pass it to `recordToLog`. The real toast ignores it.
+  - Every call that raises a pile passes it: `announce` for a pile of fresh items, AND the first-pass permission branch
+    in `check`, which raises "N agents need permission" on a page load without going through `announce`. The rule is
+    that any alert whose title counts several cards names them.
+  - The per-item lines `announce` already writes for an agent-launched card (item 44's `quietDoer`) carry `taskFor`
+    and need nothing.
+- **A repeat needs the same members** (C3). The repeat rule bumps the last entry when title and body match. For an
+  entry with `tasks`, the sorted `tasks` is part of the signature, so "2 agents are ready" for two different pairs
+  is two lines and each card's cut shows only its own.
 - **No filter in the tray.** The tray is "what did I miss", across the board. A card filter there is the same list
   as the dialog section, reached from the wrong end.
-- **The cap stays 200.** A card's cut is thin for a card that is old, and the dialog says so when the oldest kept
-  entry is newer than the card: "older entries have rolled out of this browser's log". Raising the cap or keeping one
-  per card is Open Question 3.
+- **The cap is Open Question 3's answer, 200 until then.** A card's cut is thin for a card that is old, and the dialog
+  says so when the oldest kept entry is newer than the card: "older entries have rolled out of this browser's log".
 
 Headless: a section `cardToastLog`. Seed the log with entries for two cards, a pile naming both and one naming a
 third, open each card's details and check what each lists, that a `room~id` entry matches its bare card, that the
-rolled-out line appears only when it should, and that a row click calls `landOnAlert` with the entry's fields.
+rolled-out line appears only when it should, and that a row click calls `landOnAlert` with the entry's fields. Then
+drive real piles through `notify` in each focus case (focused, held by item 79, desktop, another window by a stubbed
+`win-toast`) and through a page load with two permissions already pending, and check each entry names both cards.
+Two same-text piles of different pairs are two entries.
+
+Mercurius round 1 (session s_5rBGJK0xqSTF, needs_changes) is folded above: C1 and C2 are the propagation rule and
+the first-pass branch, C3 is the repeat signature, A1 was the cap stated two ways. Q1 is Open Question 1.
 
 ### Open Questions for clint
 
