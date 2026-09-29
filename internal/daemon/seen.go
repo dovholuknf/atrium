@@ -44,13 +44,38 @@ func (d *Daemon) loadUnseen() {
 //
 // Called only on the path where the Stop hook lets the turn end. A Stop that
 // delivers a message sends the model back to work, so that turn is not over.
-func (d *Daemon) noteTurnForSeen(taskID string, q store.TurnQuestions) {
+//
+// `autoVia` is empty for a turn somebody should look at. When set, the turn is
+// recorded and marked seen in the same call, `d.unseen` is never set, and the
+// card is published once. A second step after the fact would publish the dot for
+// a moment on exactly the turns it hides. Only seen_at and seen_via change, so
+// the card's questions stay open.
+func (d *Daemon) noteTurnForSeen(taskID string, q store.TurnQuestions, autoVia string) {
 	if err := d.st.NoteTurnEnded(taskID, q); err != nil {
 		log.Printf("[atrium] could not record a turn ending on %s: %v", taskID, err)
 		return
 	}
-	d.unseen.Store(taskID, true)
+	if autoVia != "" {
+		d.unseen.Delete(taskID)
+		if _, err := d.st.MarkSeen(taskID, autoVia, nil); err != nil {
+			log.Printf("[atrium] could not record %s seeing %s: %v", autoVia, taskID, err)
+			d.unseen.Store(taskID, true)
+		}
+	} else {
+		d.unseen.Store(taskID, true)
+	}
 	d.publishTask(taskID)
+}
+
+// launcherSeen is the auto-seen via for a turn ending on this card: the
+// launcher when an agent launched it and it no longer owes a report, since the
+// report is what its launcher was waiting to read. Empty otherwise.
+func (d *Daemon) launcherSeen(taskID string) string {
+	t, err := d.st.Get(taskID)
+	if err != nil || !agentLaunched(t) || t.OwesReport() {
+		return ""
+	}
+	return store.SeenLauncher
 }
 
 // seenPrompted is a prompt submitted to this card. The operator's answers the
