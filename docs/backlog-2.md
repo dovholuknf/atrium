@@ -86,6 +86,7 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 77 | A merge pipeline that does not conflict or rerun | feature, HIGH | not started, @merge, after 76 |
 | 78 | The details popover's token labels mislead | bug | not started |
 | 79 | The notification drawer can turn notifications off | feature | design filed, queued behind 78, 44 and 43 |
+| 80 | Real-time token burn and usage charts | feature, TONIGHT | design filed, ahead of 43 and 79 |
 
 ------------
 
@@ -1594,6 +1595,52 @@ Design (@ui), small on purpose:
 
 Open question for clint: should "off" silence permission requests too? The recommendation is no, since a session
 blocks on one until somebody answers, and a muted board is the likeliest place to forget one.
+
+## 80. Real-time token burn and usage charts (feature)
+
+Raised 2026-09-28 by clint, wanted tonight. Item 37 already records every Claude turn's spend, with its cause, in
+`session_usage` (`internal/store/usage.go`, migration `0063_session_usage`): one row per turn, keep-alive refresh and
+subagent read, with `ended_at`, `cause`, `model`, `replies`, `input`, `output`, both cache writes, `cache_read`,
+`context` and `cost`. Today it is served per card only, on `GET /v1/tasks/{id}/usage`, and drawn only in a card's
+details. This item charts it. Nothing new is recorded.
+
+Design (@ui):
+
+- **Where.** A `usage` tab beside `history`, its own view. Never on the card face, the terminals list or a toast,
+  which is item 37's rule. A card's details gain a small per-card chart above its rows and a link that opens the tab
+  filtered to that card.
+- **The API.** One new read endpoint on a room, `GET /v1/usage?since=<rfc3339>&bucket=<seconds>`, answering buckets
+  of summed rows: per bucket the board total, and per card and per cause. Summed in SQL over the existing
+  `(task_id, ended_at)` index, bounded (at most 500 buckets, `since` at most 30 days back), so a month of rows is
+  never shipped to a browser. The card titles come from the card list the board already has.
+- **Live.** When the tracker writes a row (`AddSessionUsage` in `daemon/usage.go` and `keepalive.go`), the room
+  broadcasts a `usage` event on the existing SSE stream carrying that one row's figures and card id. The tab adds
+  it to the newest bucket without refetching. No polling. **"Real time" means within about two seconds of a turn
+  ending**, because a row is written at the Stop hook. A turn still running shows nothing until it ends. Tailing
+  transcripts mid-turn is left out on purpose (Open question below).
+- **Charts.**
+  1. Burn rate over time: tokens per minute, stacked by kind, for the whole board. Range picker 1h, 6h, 24h, 7d.
+  2. The same per card: a small multiple per card that spent in the range, sorted by cost, top 12, the rest summed
+     as "others". Click one to filter everything to that card.
+  3. Split: cache read versus uncached in versus cache write versus out, as one stacked bar for the range, with
+     each part's tokens and cost. This is the chart that says where the money goes.
+  4. Cost: cumulative estimated dollars over the range, and a table of cost by cause (you, a say, restart wake,
+     keep-alive, resume, subagent) so a restart or a keep-alive round shows as the spend it was.
+- **Labels are item 78's.** prompts and calls, uncached in, out, cache read, cache write 5m and 1h, est. The tips in
+  `USAGE_TIPS` (`js/usage.js`) are reused, not rewritten.
+- **No chart library.** Hand-drawn inline SVG in a new `js/usage-charts.js`, a few hundred lines: a stacked area,
+  a bar, a line, axes and a hover readout. No CDN and no vendored library, since the board has to work offline and
+  there is no build step. Colours are skin variables (the palette triples), so every skin draws it.
+- **Rooms.** The board already talks to more than one room. The tab asks each attached room and merges the buckets,
+  with the room as a filter, the way the other cross-room views do. A room that does not answer is named as missing
+  rather than silently counted as zero. A room too old to have `/v1/usage` says so the same way.
+- **Tests.** Store: bucket sums match row sums, bounds hold. API: shape and bounds. Headless: the tab renders from a
+  mocked `/v1/usage`, a mocked `usage` SSE event grows the newest bucket, the labels are 78's, and a skin change
+  recolours it.
+
+Open questions for clint: (1) Is burn at turn end enough, or does "real time" mean watching a turn spend while it
+runs? That needs the room to tail every running transcript, which is a bigger and riskier change. (2) Top 12 cards
+per chart, or all of them?
 
 
 ------------
