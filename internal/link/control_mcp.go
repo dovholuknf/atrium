@@ -197,7 +197,8 @@ func (c *controlMCP) server() *mcp.Server {
 			"and every status it moved through, never its output, so `needs-input` here means " +
 			"it stopped and not what it said. To learn what it thinks, ask it, and have it " +
 			"answer with `atrium_say`.\n\n" +
-			"`seen` says whether the HUMAN has seen the card's last turn (`unseen`) and which of " +
+			"`seen` says whether the HUMAN has seen the card's last turn (`unseen`, which a report " +
+				"to the launcher of an agent-launched card also clears, `seen_via` `launcher`) and which of " +
 			"that turn's Open Questions they have not answered yet (`open_questions`, `answered`). " +
 			"Leave `card` empty to ask about your own card. Before telling the human your " +
 			"questions are still open, check this: if `unseen` is true they never read them, so " +

@@ -5,6 +5,55 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **Real-time token burn and usage charts.** New `usage` tab beside history. It draws what every Claude card has spent, from the `session_usage` rows the room
+  already keeps. Nothing new is recorded. A turn shows within about two seconds of ending, and a turn still running
+  shows nothing until it ends.
+- Four hand-drawn inline SVG charts, no library: burn rate stacked by kind (tokens per minute, 1h, 6h, 24h and 7d),
+  per-card small multiples (top 12 by estimated cost plus "others", click one to filter), a split bar of tokens per
+  kind with the total, and cumulative cost with a cost-by-cause table. Labels and tips are item 78's.
+- Colours are skin variables, so a skin change recolours a chart already drawn.
+- `GET /v1/usage?since=&bucket=&card=`: buckets summed in SQL, at most 500 buckets and 30 days back. A width too
+  narrow is widened and reported. Raw tokens per kind plus the stored cost, no per-kind dollars. `card` narrows the
+  read to one card, which the design lacked and the cause table needs.
+- A `usage` event on the room's stream for each row written, with the card, the cause, the tokens and the cost and no
+  message text. The hub tags it with the room and the card id, like other card events.
+- A card's details show a 24h chart in the usage section, with a link to the tab filtered to that card.
+- Across rooms each room is read for itself. Every per-card key is room plus card id, so two rooms holding the same
+  id stay apart, live as well. A room that is not attached, too old or silent is named in the tab, never counted as zero.
+
+- **Honest token labels, and Sonnet 5.5 priced.** The hover details and the card's usage section said "turns" for what is human prompts (or a say, or a wake), and
+  "in" for uncached input only. They now say "prompts" with "calls" (API replies) beside it, "uncached in", "cache
+  read" and "cache write". Every cell has a tip saying exactly what it counts, and the hover's prompts tip says the
+  figures cover the whole card, across `/clear`, and include keep-alive refreshes and subagents in the money.
+- Prompts and calls count the card's own rows only. Keep-alive refreshes and subagents stay on their own cause lines,
+  which now read "N prompts · M calls" and "N calls". The hover used to count every row, refreshes included, as turns.
+- Sonnet 5.5 (`claude-sonnet-5-5`) was in no price table, so a Sonnet 5.5 card, which every worker is, was estimated at
+  $0. It is now in `usageOnlyPrices` at $2 in, $4 for a 1h write, $0.20 read, $10 out. `usagePricesVersion` is
+  `usageprices-2026-09-28b`. Rows already stored keep the cost they were written with. Nothing is recomputed.
+- Prices checked against https://platform.claude.com/docs/en/about-claude/pricing on 2026-09-28: Opus 5.5 (read at
+  0.05x, $0.20), Fable 5.1 (read at 0.025x, $0.25), Sonnet 5, Haiku 4.5 all matched. There is no long-context tier
+  on these models. `keepalivePrices` is unchanged, so keep-alive still refreshes only Opus 5.5 and Fable 5.1.
+
+- **No notifications from agent-launched cards.** The gear has a new box under `notifications`, "don't notify me about cards an agent launched", ticked by default.
+  While it is ticked, an alert about a card tagged `origin:agent` raises no toast, no desktop notification and no
+  sound. The card keeps its marks, and the alert still lands in the notification log, so nothing is lost.
+
+  What is muted: a card arriving, a card that stopped waiting or asked something, and a stuck alert, on the board and
+  in a popped-out window. What is not: a permission request from such a card, and the permission nag, because those
+  block until a human answers. A card given a tone of its own is also heard. The board has no per-card on/off for
+  alerts, and the tone is the only per-card alert setting, so choosing one is what counts as the override.
+
+  The setting lives in the browser beside its siblings (`atrium.sound`, key `quietDoers`), not on the daemon, because
+  volume, expiry and the stuck setting are all per browser. The doer test is `isDoer` from `terminal-list.js`.
+
+- **A worker's reported turn counts as seen.** An agent-launched card whose turn ends after it reported to its launcher no longer wears the unseen dot. The room
+  marks the turn seen with a new via, `launcher`, in the same step that records the turn end. `d.unseen` is never set
+  and the card is published once, after the mark, so no reader is shown the dot on the way. A card that stops without
+  reporting still wears the dot and its launcher still gets the silent stop notice. A human-launched card is unchanged.
+- Questions are not answered by this. Only `seen_at` and `seen_via` change, so a `? N` chip stays.
+- `atrium_task` describes `unseen` as also cleared by a report to the launcher. The board does not show `seen_via`, so
+  it is unchanged.
+
 - **The stdio `atrium_launch` warns when the room is older than launch options.** See `docs/backlog-2.md` item 60.
 
   The stdio control MCP took `model`, `effort`, `args` and `env` but passed a room's silence on as success. It now

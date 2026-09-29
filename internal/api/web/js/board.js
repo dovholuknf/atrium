@@ -341,7 +341,7 @@ function firstSeen(iso) {
 
 const isWaiting = (t) => t.status === "needs-input" || t.status === "needs-permission";
 
-const VIEWS = ["board", "stack", "perms", "runners", "terms", "history", "audit"];
+const VIEWS = ["board", "stack", "perms", "runners", "terms", "history", "usage", "audit"];
 
 // BACK AND FORWARD, over the board's own moves.
 //
@@ -429,6 +429,9 @@ function switchView(name) {
   // go looking for, and a query against a table that only grows has no
   // business running every few seconds while you are reading something else.
   if (name === "history") renderHistory(false);
+  // Read when you go there, like history. It is kept current by `usage` events
+  // while it is open. See js/usage-charts.js.
+  if (name === "usage" && typeof loadUsageTab === "function") loadUsageTab();
   // A command box built while this view was hidden measured as zero, exactly
   // as a detached one does, so it is sized on the way in rather than only on
   // the way past a poll.

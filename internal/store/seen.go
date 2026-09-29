@@ -29,6 +29,9 @@ const (
 	SeenTyped   = "typed"
 	SeenPrompt  = "prompt"
 	SeenMessage = "message"
+	// SeenLauncher is a turn an agent-launched worker ended after reporting to
+	// its launcher. Nobody human needs to look at it.
+	SeenLauncher = "launcher"
 )
 
 // MaxTurnQuestions bounds how many questions one turn may leave on a card, and

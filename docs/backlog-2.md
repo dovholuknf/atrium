@@ -80,11 +80,13 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 71 | "New context" on the terminals tab's right-click menu | feature | end of backlog, clint unsure it is useful |
 | 72 | One hover on a card, not two | feature | DONE by sa72, merged `66717c5`, deployed `66717c5` |
 | 73 | A keep-alive fork carries the card's launch args, so lean cards can warm | feature | not started |
-| 74 | A long reply loses lines in the middle on the board's terminal | bug | sa74, paused at `ba761d6` (old SHA), rebase onto `66717c5` |
+| 74 | A long reply loses lines in the middle on the board's terminal | bug | sa74: inbox ConPTY on a row change. Height hold built, not merged. OpenConsole choice with clint |
 | 75 | sg3 as a room, and machine bootstrap reuses the operator's shared folder under `localai` | feature | sa75, parked. Provision script merged `c3dc597` |
 | 76 | A worktree helper that links every CLAUDE.md, so workers get project rules | bug, HIGH, FIRST | not started, @merge |
 | 77 | A merge pipeline that does not conflict or rerun | feature, HIGH | not started, @merge, after 76 |
 | 78 | The details popover's token labels mislead | bug | not started |
+| 79 | The notification drawer can turn notifications off | feature | design filed, queued behind 78, 44 and 43 |
+| 80 | Real-time token burn and usage charts | feature, TONIGHT | design filed, ahead of 43 and 79 |
 
 ------------
 
@@ -1081,6 +1083,41 @@ attention the work does not need.
 Expected: on a card launched by an agent, a turn that ends with a report or a message to the launcher counts as
 seen. A turn that ends silently still shows the dot, alongside the stuck mark from item 25.
 
+### Design, 2026-09-28 (@ui)
+
+The fix is in the room, not the board. The dot is `seen.unseen`, worked out in `internal/store/seen.go` from
+`turn_seen.turn_ended_at` against `seen_at`. The board only draws it (`js/seen.js`). Hiding it on the board would
+leave `atrium_task` and every other reader of `unseen` still saying nobody looked.
+
+- **Where.** The Stop path in `internal/daemon/messages.go` that lets a turn end already calls `silentStop` and then
+  `noteTurnForSeen`. A card that is `agentLaunched` and does NOT owe a report (`!t.OwesReport()`, so `reported_at`
+  is at or after `prompted_at`) is marked seen with a new via, `SeenLauncher` (`"launcher"`). NOT as a second step
+  after `noteTurnForSeen`: that function stores `d.unseen` and publishes the card, so the board would see the dot
+  for a moment on exactly the turns this hides, and could notify on it. Instead `noteTurnForSeen` takes an
+  auto-seen via, records the turn end, marks it seen, leaves `d.unseen` clear, and publishes ONCE at the end.
+  (Mercurius round 1, concern C1.)
+- **What counts as reported.** Exactly what already sets `reported_at`: `peerSaid` (an `atrium_report` or an
+  `atrium_say` to the launcher) and the relay's cross-room equivalent. A notice atrium wrote about the worker
+  (`notifyLauncher`) is not a report and does not count, the same rule `silentStop` uses. So a silent stop still wears
+  the dot, and the two marks can never disagree: a card is either silent (dot, and its launcher is told) or it
+  reported (no dot).
+- **Questions are not answered.** `MarkSeen` touches only `seen_at`, never `answered_at`. A worker whose last turn
+  asked clint Open Questions keeps its `? N` chip. The launcher reading the report is not an answer from clint.
+- **A report to a launcher that is gone.** `reported_at` is set when the sender spoke, not when the launcher read it,
+  and the launcher's card may have exited. Counted as seen anyway: the worker did its part, and the launcher going
+  away is the launcher's card's problem, shown on that card. Open for the review.
+- **The board.** The dot's tooltip is unchanged, since it is no longer shown in this case. The details' seen line
+  (if it shows `seen_via`) reads `launcher` as "its launcher got the report".
+- **Tests.** `internal/daemon/seen_test.go`: an agent-launched card that reports then stops is not unseen, via is
+  `launcher`. One that stops without reporting is unseen and the silent stop notice goes. A human-launched card that
+  stops is unseen whatever it said. Questions stay open after a launcher-seen turn. A reported worker's Stop
+  publishes the card once, and never with `unseen` true.
+
+**Status, 2026-09-28, sa43: built on `claude/sa43`, not merged.** As designed. `noteTurnForSeen` takes an auto-seen
+via and `launcherSeen` picks `SeenLauncher` for an agent-launched card that owes no report. The board shows no
+`seen_via`, so it is unchanged, and `atrium_task`'s description of `unseen` now names the launcher. A Stop still
+publishes twice in all: the status move to needs-input, then the one seen publish. See `docs/changes/43.md`.
+
 ## 44. A gear checkbox: no notifications from agent-launched cards, on by default (feature)
 
 Raised by clint 2026-09-28: "I don't need notifications from them." A worker an agent launched reports to its
@@ -1091,6 +1128,11 @@ Expected: a checkbox under `notifications` in the gear, "don't notify me about c
 default. Ticked, a card with the `origin:agent` tag raises no toast, no desktop notification and no sound. Its
 marks on the card stay, and so does the toast log entry, so nothing is lost. A permission request from such a card
 still notifies, because it blocks until a human answers. A card's own notification override beats the checkbox.
+
+**Status, 2026-09-28, sa44: built on `claude/sa44`, not merged.** The gear box `quietDoers` (per browser, default
+on) logs and does not say arrivals, waiting and stuck alerts for `origin:agent` cards. Permissions still notify. No
+per-card notification override exists in the board, so a card with its own tone stands in for one. See
+`docs/changes/44.md`.
 
 ## 45. Every card shows its context size, and a launcher hears once past a threshold (feature, sa87)
 
@@ -1543,8 +1585,184 @@ clint confirmed the loss happened at the first screen update after the long repl
 little. The table's tail was still on the live 50-row screen, and a bare `\e[H` repaint overwrote it. Find what
 emitted that repaint (Claude Code, or ConPTY in the room) and why. Also test the reattach seam.
 
-Status: sa74 paused at `ba761d6`. That SHA is from before the 66717c5 re-sign: rebase `claude/lost-lines` onto
-`66717c5` before any merge (map in `D:/tmp/resign-map.txt`).
+Status: diagnosed by sa74 on `claude/lost-lines`. Recommendation 1, the height hold, is built there after two
+Mercurius rounds and approved by @terminal, not merged. Option 2 (OpenConsole ConPTY) goes to clint, and the
+replay-only repair is not built.
+
+### What dropped the lines
+
+**Not atrium's ring, replay or board.** The orchestrator's uncollapsed ring (`/scrollback/raw?collapse=0`, 2,723,702
+bytes, pty 206x50) holds the whole reply. At byte 2460305 the pseudo console emits
+`\e[46;3H\e[?25h\e[?2026h\e[?2026l\e[?25l\e[H` and then all 50 rows, each ending `\e[K\r\n`, with no line feed
+ahead of them. Row 1 of that repaint had been row 11 of the screen just before, so rows 1 to 10 (the table's tail,
+Merging, Waiting, Running) are overwritten in place and never reach history. The board's own xterm.js fed those
+bytes at a fixed 206x50 loses exactly those rows. The same ring has about 70 bare-home repaints, and 9 of them shifted
+the screen: 2, 2, 25, 26, 3, 3, 2, 3 and 10 rows lost.
+
+**The inbox ConPTY's resize path, set off by a change in the pty's row count.** Tested through a throwaway pseudo
+console on `conhost.exe` 10.0.26100 (the one the room uses), always with a control that feeds the child's own bytes
+straight to xterm.js, which never lost a line:
+
+| What the child and the host did | Lines lost through inbox ConPTY |
+| --- | --- |
+| Plain and Claude-shaped scrolling (parked cursor, erase and insert, full-width rows, sync output, DECSTBM) | 0 |
+| A child process on the console (git bash, cmd, pwsh), focus reports `\e[O` and `\e[I` | 0, and no repaint |
+| A resize to the same size | 0, one bare `\e[H` repaint each |
+| Columns 120 and 121 alternating | 0 |
+| Rows 50 and 49 alternating, under Claude-shaped frames | 18 of 300 |
+| Rows 50 to 40 and back, under Claude-shaped frames | 49 to 72 of 300 |
+| Rows 50 to 40 and back, under a steady stream | 100 of 300 |
+
+A single row change gives one bare `\e[H` repaint at the new height. conhost files the top rows into its own history,
+which is never sent, and the repaint overwrites them downstream. Two changes close together (50 to 40 to 50) are
+often painted ONCE: a single 50-row repaint, 50 rows before and after, whose row 1 had been row 11. That is the live
+2460305 byte for byte, and it explains why the new reply fits the freed rows exactly.
+
+**Claude Code is not implicated.** Claude 2.1.284 (classic renderer) in a bare 206x50 pty with no resizes produced no
+full repaint at all over 4 runs, including a turn taller than the screen and messages typed mid-turn.
+
+What changed the rows at 21:19:59 is not recorded. atrium logs no resizes, and a mark laid and undone with nothing
+written between merges away. But the live ring's own repaints show the pty at 47, 48, 50 and 51 rows at different
+points of the session. The agreed height is the SHORTEST attached viewer's (`agreedViewport`).
+
+Checked in the code, what can and cannot move the rows for a moment:
+- **One viewer's refit that ends at the same size cannot.** `onTermResize` skips when the pane's pixels did not move
+  (`terminal-links.js:2096`), sends only when the fitted size changed (`:2120`), and waits for it to hold 250 ms
+  before sending what it is by then (`:1914`). The daemon drops a frame at the size the pty already has
+  (`supervisor.go:1286`). A wobble held longer than 250 ms does send both sizes.
+- **A reattach cannot shrink the rows through its own viewer.** Both sockets carry the same pane's `termFitRows`, and
+  a new terminal fits before it connects (`terminal.js:926` then `:930`), so its first frame is never a default size.
+- **A reattach of the SHORTEST viewer, with another viewer attached, grows the rows and shrinks them back.** Viewers
+  are keyed by socket (`attach.go:285`, `:380`). The board closes the old socket first (`terminal-links.js:833`), the
+  daemon drops it as soon as its reader sees the close (the deferred `dropViewport`), and the new socket's size lands
+  only after `onopen` (`terminal-links.js:908`). In that gap the agreed height is the next shortest viewer's. With a
+  single viewer nothing moves, because the last viewer leaving never resizes (`supervisor.go:1350`).
+- **A shorter viewer that attaches for a while (a popped-out window, a phone, a second pane) shrinks the rows**, and
+  grows them back when it leaves.
+
+### OpenConsole ConPTY is the fix at the source
+
+`Microsoft.Windows.Console.ConPTY` 1.24.260710001 (conpty.dll plus OpenConsole.exe, MIT) through the same harness:
+**0 lines lost in every row above, and no `\e[H` repaint at all**, over 30 to 62 resizes a run. It passes the child's
+VT through, so a line feed arrives as a line feed.
+
+What adopting it costs:
+- Two binaries per architecture shipped beside atrium (x64 about 1.2 MB together).
+- go-pty calls kernel32's `CreatePseudoConsole`, so atrium needs its own create, resize and close through
+  conpty.dll. `internal/daemon/conpty_harness_repro_test.go` does it in about 100 lines, with the inbox call kept
+  as the fallback.
+- At start OpenConsole queries the terminal (`\e[c` and `\e[1t`). A runner with no viewer attached needs atrium to
+  answer, or the host waits for a timeout.
+- Passthrough changes the byte shapes that `screen.go`, `collapseRedraws`, the cursor settle, the typing gate and the
+  replay tests were tuned on, all of which were measured against conhost's re-rendered output. So it needs the whole
+  terminal test plan run again.
+- Item 81 becomes a prerequisite. The inbox conhost turns a runner's scroll region into plain line feeds and a
+  repaint (seen in the DECSTBM repro), so `screen.go` rarely meets one today. Passthrough hands DECSTBM straight to
+  it.
+- Where the binaries are looked for: the directory the setting names, else the one beside `atrium.exe`. conpty.dll is
+  loaded by full path only, never by bare name, and OpenConsole.exe must exist beside it, checked before use, because
+  conpty.dll quietly starts the System32 conhost when it is missing (to be confirmed against its source when built).
+  Anything else goes to the inbox kernel32 `CreatePseudoConsole`, logged once with the reason: the setting off, either
+  file missing, a load or export failure, or a create through conpty.dll that fails.
+
+### Keeping the rows a no-scroll repaint is about to overwrite
+
+Both options detect the same thing and differ only in where they act.
+
+**The strict-match rule.** A candidate is a bare `\e[H` (or `\e[1;1H`) that starts a repaint of the full current
+height, meaning as many rows written, each ending in an erase and a line feed, before the next cursor move. There
+must be no height change at that byte in the ring's marks, since a resize repaint to a new height is the height
+model's business. Buffer the repaint until it is complete. Find the smallest `k` from 1 to rows-1 such that repaint
+rows 1 to M equal screen rows k+1 to k+M exactly, where M is at least max(6, rows/4), and at least 4 of those rows are
+non-blank and pairwise distinct. On a match, rows 1 to k go to history before the repaint is applied. No match, or
+more than one `k` passing, means do nothing.
+
+**False positives.** The rule can only ever ADD rows to history, never remove one. So a wrong call puts a duplicate or
+stale line in the scrollback, and a missed call leaves the loss as it is today. The ways it goes wrong:
+- Content that legitimately moved up: Claude collapsing a block, a tool's output shrinking, a reprint after `/clear`
+  or a compaction. Those files rows the runner deliberately removed.
+- Repeated rows (blanks, separators, box borders) aligning at the wrong `k`. The distinct non-blank rows are there
+  to stop it.
+- A repaint split across reads, which has to be held until it is whole, so the buffer needs a byte and time cap.
+
+**Replay only, in `screen.go`.** The grid model already exists there. Detection costs O(rows squared) per candidate,
+and candidates are rare (about 70 in 2.7 MB), so the cost is negligible. It repairs `/scrollback/text`, every attach
+replay, and the carryover after a restart, and viewers see nothing new live. It does NOT repair a pane that was
+watching when it happened, which is clint's case, until that pane reattaches.
+
+**Live, on the fan-out path.** One screen model per runner fed every output byte (an O(bytes) VT parse on the hot path,
+about 50x206 cells a runner), and the matching repaint held back so that `\e[<rows>;1H` plus `k` line feeds can go
+ahead of it to every viewer. It repairs the pane clint was copying from. It costs parse CPU on all output of all
+runners, latency on every repaint that is held, and a wrong call is shown to every viewer at once. It also becomes
+dead code the day the ConPTY is swapped.
+
+### The height hold, as a state rule
+
+Recommendation 1 below, stated exactly. The hold is `heightHold`, 500 ms, twice the board's own 250 ms settle.
+
+**State.** On the runner, beside `views`:
+- `views` is updated at once on every frame and every detach, as it is today.
+- The applied size is what the pty is at. It is `buf.CurrentSize()`, which only the apply steps below move, so it
+  needs no new field. `appliedRows` below means its rows.
+- `pendingRows` is a height waiting to be applied, 0 for none. `pendingGen` counts every change to it, and
+  `pendingTimer` is the one timer.
+
+**`setViewport` and `dropViewport`**, under `resizeMu` as item 53 made them, after updating `views` and computing
+`agreed`. `dropViewport` keeps its two early returns first: after `r.done`, and when no viewer is left.
+1. Width is immediate. If `agreed.cols` differs from the applied width, `SetSize(agreed.cols, appliedRows)`, then
+   `Resize(agreed.cols, appliedRows)`, then `noteResized`. The CURRENT APPLIED rows, never `agreed.rows`, or a width
+   change would carry the new height past the hold.
+2. Height is held. If `agreed.rows` equals `appliedRows`, stop the timer and clear `pendingRows`, which cancels a
+   flip that came back. If it equals `pendingRows`, do nothing, so the hold keeps counting from when that value was
+   first seen. Otherwise set `pendingRows` to it, bump `pendingGen`, and restart the timer for the full hold. A new
+   value always restarts it.
+3. The re-tell. Whenever a held height is cancelled or superseded, here or when the timer fires, call `noteResized`
+   with no `SetSize` and no `Resize`, so every attach re-reads `CurrentSize` and tells its viewer the applied size.
+
+**The timer firing.** Take `resizeMu`, then in order:
+1. A `pendingGen` that is not the one it was started with means a later change superseded it. Return.
+2. After `r.done`, clear `pendingRows` and return. A dead terminal is never resized, as in `dropViewport`.
+3. Re-read `views` under `r.mu`. No viewers left means cancel: clear `pendingRows` and keep the applied size, which
+   is what the last viewer leaving already means.
+4. Apply only if `agreedViewport(views).rows` still equals `pendingRows` AND differs from `appliedRows`. Then
+   `SetSize(agreed.cols, pendingRows)`, then `Resize`, then `noteResized`, keeping mark before resize. A `Resize`
+   error is logged, as `attach.go` does now. Anything else clears `pendingRows` without resizing, and re-tells.
+
+**What viewers see during the hold.** `CurrentSize` reports the APPLIED size, never the agreed one, so `tellSize`, the
+ring's marks and the replay all agree with the pty. A viewer is told the new height only when it is applied.
+
+**The re-tell cannot start a refit loop.** Each attach sends a `size` frame only when `CurrentSize` differs from
+what it last told that socket (`attach.go:479`), so a re-tell with nothing changed sends no frame. A frame at the same
+size would be harmless anyway. `takeTermSize` (`terminal.js:65`) only stores the size and calls `applyPtySize`, which
+resizes xterm only when the grid differs (`terminal-links.js:1875`) and never sends a `resize` back. Only a fit
+(`onTermResize`) sends one.
+
+**Growing waits too.** The transient in the live room was a reattach of the shortest viewer, and that GROWS first
+and shrinks back (the list above), so an immediate grow would let the very flip this exists to stop through. A
+taller pane held at the old height only shows empty space under the grid for half a second, which costs nothing.
+One rule for both directions is also the simpler one to test.
+
+**The cost, named.** A viewer that really is shorter waits half a second while the pty paints more rows than its
+grid has. That viewer can garble its bottom rows, and scroll a few into its own scrollback, until the repaint at the
+new height. It is one viewer and one resize, against a flip that costs every viewer's history.
+
+**Tests.** Rows flipped 50, 40, 50 inside the hold: zero `Resize` calls. Held past it: one, at the new height. A width
+change during a pending shrink: one `Resize` at the new width and the OLD rows, then the shrink when the hold ends.
+Every viewer gone before the timer fires, and `r.done` closed before it fires: zero. `CurrentSize` read during the
+hold: the applied size. A hold cancelled by the height coming back, and one superseded by a new height: `sizeChanged`
+wakes with no `Resize`. Then the harness `flip` runs through the real code path.
+
+### Recommendation
+
+1. **Now, small: stop transient row changes reaching the pty,** by the state rule above. That removes the coalesced
+   flips, which are the big losses (10, 25, 26 rows). A deliberate height change still costs about a row per row
+   changed, and the width stays immediate. Testable with the harness above.
+2. **The real fix: OpenConsole ConPTY**, behind a setting with inbox as the fallback, gated on the whole terminal test
+   plan.
+3. **Replay-only repair only if 2 is refused.** The live version is not worth its cost and risk next to 2.
+
+Repro, captures and scripts: `HANDOFF.md` on `claude/lost-lines`, `build.claude/lost-lines/` and
+`build.claude/conpty/` in that worktree (not committed).
 
 ## 75. sg3 as a room, and machine bootstrap reuses the operator's shared folder under `localai` (feature)
 
@@ -1604,6 +1822,114 @@ and "in" is uncached input only (48), because with caching almost all input is a
 
 Relabel: prompts, with API calls next to them, and "uncached in". Check the cost estimate against current pricing,
 and confirm whether the figures cover the card or only the session since its last `/clear`.
+
+Status 2026-09-28, done on `claude/sa78`. Both popovers (`peek.js` and the details in `usage.js`) now say "prompts" with
+"calls" beside it, "uncached in", "cache read" and "cache write", each with a tip saying what it counts. Sonnet 5.5 was
+missing from the usage price table and priced at $0, so it is added at $2/$10 with the same cache multipliers, checked
+against the pricing page. Rows already stored keep their old cost. The figures cover the whole card, across `/clear`.
+
+## 79. The notification drawer can turn notifications off (feature)
+
+Raised 2026-09-28 by clint: "when i click the notification bell icon to pull the drawer, give me a 'disable
+notification' option along with clear and close".
+
+Design (@ui), small on purpose:
+
+- **Where.** A third button in the drawer head (`#toastlog` in `index.html`), beside clear and close: "turn off"
+  while on, "turn on" while off.
+- **What it mutes.** Toasts, desktop notifications and the sound that goes with them, everything `notify` in
+  `js/notify.js` would pop. The drawer keeps logging every entry and the bell's badge keeps counting, so nothing is
+  lost and opening the drawer shows what was held back. The marks on cards are untouched.
+- **Permission requests still notify.** A permission blocks a session until a human answers, the same exception item
+  44 makes. The button's tip says so. Open for clint below.
+- **Per browser, in `localStorage`** (`atrium.notify.off`), like the sound mute (`atrium.sound`). A phone and a desk
+  want different answers, and the daemon has no notion of which browser is which. Every window of one browser shares
+  it, and a popped-out window follows the board.
+- **The bell shows it.** Off, the bell is drawn as a struck bell (U+1F515) with the tip "notifications are off. click
+  to see what arrived", and the badge still counts. On, it is the bell it is today.
+- **Item 44.** 44 is a filter on WHICH cards notify (not agent-launched ones). 79 is a master switch over all of
+  them. Off beats everything, including a card's own per-card override, because it is the operator saying stop now.
+  On, 44's filter and per-card overrides apply as they do today. The gear's notifications section shows the same
+  switch, so the two are found in one place.
+- **Not built.** A timed mute ("for an hour") is the obvious next step and is left out until asked for.
+
+Open question for clint: should "off" silence permission requests too? The recommendation is no, since a session
+blocks on one until somebody answers, and a muted board is the likeliest place to forget one.
+
+## 80. Real-time token burn and usage charts (feature)
+
+Raised 2026-09-28 by clint, wanted tonight. Item 37 already records every Claude turn's spend, with its cause, in
+`session_usage` (`internal/store/usage.go`, migration `0063_session_usage`): one row per turn, keep-alive refresh and
+subagent read, with `ended_at`, `cause`, `model`, `replies`, `input`, `output`, both cache writes, `cache_read`,
+`context` and `cost`. Today it is served per card only, on `GET /v1/tasks/{id}/usage`, and drawn only in a card's
+details. This item charts it. Nothing new is recorded.
+
+Design (@ui):
+
+- **Where.** A `usage` tab beside `history`, its own view. Never on the card face, the terminals list or a toast,
+  which is item 37's rule. A card's details gain a small per-card chart above its rows and a link that opens the tab
+  filtered to that card.
+- **The API.** One new read endpoint on a room, `GET /v1/usage?since=<rfc3339>&bucket=<seconds>`, answering buckets
+  of summed rows: per bucket the board total, and per card and per cause. Summed in SQL over the existing
+  `(task_id, ended_at)` index, bounded (at most 500 buckets, `since` at most 30 days back), so a month of rows is
+  never shipped to a browser. The card titles come from the card list the board already has. Buckets carry raw
+  summed tokens per kind (uncached in, out, cache read, cache write 5m and 1h) and the stored `cost` summed, and the
+  client divides by bucket width for tokens per minute. No per-kind dollars in the first build: a row sums
+  replies that may come from more than one model and keeps only the last model's name, so repricing its kinds
+  would misattribute money silently. The split chart shows tokens per kind and the stored total cost. Exact
+  per-kind dollars would need item 37 to store more first. (Round 3, C1.)
+- **Live.** When the tracker writes a row (`AddSessionUsage` in `daemon/usage.go` and `keepalive.go`), the room
+  broadcasts a `usage` event on the existing SSE stream carrying that one row's figures and card id. The tab adds
+  it to the newest bucket without refetching. No polling. **"Real time" means within about two seconds of a turn
+  ending**, because a row is written at the Stop hook. A turn still running shows nothing until it ends. Tailing
+  transcripts mid-turn is left out on purpose (Open question below).
+- **Charts.**
+  1. Burn rate over time: tokens per minute, stacked by kind, for the whole board. Range picker 1h, 6h, 24h, 7d.
+  2. The same per card: a small multiple per card that spent in the range, sorted by cost, top 12, the rest summed
+     as "others". Click one to filter everything to that card.
+  3. Split: cache read versus uncached in versus cache write versus out, as one stacked bar for the range, with
+     each part's tokens and the range's total cost beside it.
+  4. Cost: cumulative estimated dollars over the range, and a table of cost by cause (you, a say, restart wake,
+     keep-alive, resume, subagent) so a restart or a keep-alive round shows as the spend it was.
+- **Labels are item 78's.** prompts and calls, uncached in, out, cache read, cache write 5m and 1h, est. The tips in
+  `USAGE_TIPS` (`js/usage.js`) are reused, not rewritten.
+- **No chart library.** Hand-drawn inline SVG in a new `js/usage-charts.js`, a few hundred lines: a stacked area,
+  a bar, a line, axes and a hover readout. No CDN and no vendored library, since the board has to work offline and
+  there is no build step. Colours are skin variables (the palette triples), so every skin draws it.
+- **Rooms.** The board already talks to more than one room. The tab asks each attached room with an explicit
+  room-scoped read (the `X-Atrium-Room` pattern `loadRoomCfg` uses, not the aggregate fetch) and merges the buckets,
+  with the room as a filter, the way the other cross-room views do. A room that does not answer is named as missing
+  rather than silently counted as zero. A room too old to have `/v1/usage` says so the same way. **Every per-card
+  bucket, filter, live event and the "others" rollup is keyed by room plus card id**, the identity the board already
+  uses for cards from two rooms (`rowOf(list, id, room)` in `js/rooms.js`), never by id or title alone, so two
+  rooms' cards are never merged. (Mercurius round 1, concern C1.) A `usage` event that reaches the board by way of
+  the hub carries its source room the way the hub's other forwarded card events do, and a room's own stream uses
+  the local room key. The headless test includes two rooms with the same card id spending live. (Round 2, C2.)
+- **Tests.** Store: bucket sums match row sums, bounds hold. API: shape and bounds. Headless: the tab renders from a
+  mocked `/v1/usage`, a mocked `usage` SSE event grows the newest bucket, the labels are 78's, and a skin change
+  recolours it.
+
+Open question for clint: is burn at turn end enough, or does "real time" mean watching a turn spend while it runs?
+That needs the room to tail every running transcript, which is a bigger and riskier change. Built at turn end first.
+Top 12 cards plus "others" is the first cut, easy to change.
+
+Status (branch `claude/sa80`): built as written, at turn end. `GET /v1/usage` takes one addition the design did not
+have, an optional `card` id, because a bucket carries causes only for the whole board and a card-filtered tab could not
+show that card's cause table otherwise. A card filter reads that one card from its own room. The tab, the small chart
+in a card's details, and the `usage` event are in. Not done: watching a turn spend while it runs, and any per-kind
+dollars. Charts were drawn in a headless run against mocks only, not yet looked at against a live room.
+
+## 85. The headless board run flakes under load (bug)
+
+Raised 2026-09-29 by the orchestrator. On m1mini the terminated-terminal dismiss check in
+`scripts/test-board-headless.js` failed while `go test` ran beside it, and passed on an idle rerun. Its waits are
+fixed at 15000ms, and a wait that runs out there either throws out of the run as "the headless run threw" or fails with
+a message that does not say which wait it was.
+
+Fix: every Playwright timeout in the script goes through one scale, read from an environment variable (a factor, 1 by
+default), so a loaded machine can be given more time without editing the file. Each wait in the dismiss block, and
+any other wait whose failure names only the symptom, says which wait ran out and how long it had. Owner @ui, queued
+behind item 80.
 
 ## 81. `screen.go` ignores DECSTBM scroll regions (bug)
 

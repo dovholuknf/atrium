@@ -15,8 +15,9 @@ func TestANarrowViewerIsHeldAtTheFloor(t *testing.T) {
 
 	attachAs(t, d, "floored", 60, 30)
 
+	// The width only. The height waits out the hold, see `height_hold_test.go`.
 	sizes := f.resized()
-	if len(sizes) == 0 || sizes[len(sizes)-1] != (viewport{120, 30}) {
+	if len(sizes) == 0 || sizes[len(sizes)-1].cols != 120 {
 		t.Fatalf("a 60 column viewer sized the pty to %+v, wanted the 120 floor", sizes)
 	}
 }
@@ -55,7 +56,7 @@ func TestAShellIgnoresTheFloor(t *testing.T) {
 	attachPath(t, d, "/v1/tasks/shell-floor/attach?kind=shell", 60, 30)
 
 	sizes := f.resized()
-	if len(sizes) == 0 || sizes[len(sizes)-1] != (viewport{60, 30}) {
+	if len(sizes) == 0 || sizes[len(sizes)-1].cols != 60 {
 		t.Fatalf("a shell was sized to %+v, wanted the viewer's 60 columns", sizes)
 	}
 }
