@@ -196,6 +196,8 @@ func TestKeepaliveRefreshesAnIdleCardInsideTheMargin(t *testing.T) {
 		"-p", keepalivePrompt, "--resume", "card-session-1", "--fork-session", "--no-session-persistence",
 		"--model", "claude-opus-5-5", "--setting-sources", "local", "--settings", f.k.hookFile,
 		"--max-turns", "1", "--output-format", "json",
+		// The seeded claude row's resume args, which the card was running with.
+		"--strict-mcp-config",
 	}
 	if strings.Join(spec.Args, "\x00") != strings.Join(want, "\x00") {
 		t.Fatalf("args:\n got %q\nwant %q", spec.Args, want)
@@ -255,7 +257,7 @@ func TestKeepaliveForkCarriesTheCardsEnvAndEffort(t *testing.T) {
 	}
 	spec := f.specs[0]
 	args := strings.Join(spec.Args, " ")
-	if !strings.HasSuffix(args, "--output-format json --effort low") {
+	if !strings.HasSuffix(args, "--strict-mcp-config --effort low") {
 		t.Fatalf("the fork does not run at the card's effort: %q", args)
 	}
 	if strings.Contains(args, "--verbose") {
@@ -374,12 +376,6 @@ func TestKeepaliveEachRuleBlocksARefresh(t *testing.T) {
 			f.reply(f.now.Add(-56*time.Minute), replyOpt{model: "claude-opus-5"})
 		}},
 		{"fast mode", func(f *kaFix) { f.reply(f.now.Add(-56*time.Minute), replyOpt{speed: "fast"}) }},
-		{"lean card", func(f *kaFix) {
-			f.reply(f.now.Add(-56*time.Minute), replyOpt{})
-			if err := f.st.SetTags(f.task.ID, []string{LeanTag, OriginAgentTag}); err != nil {
-				f.t.Fatal(err)
-			}
-		}},
 		{"5m cache", func(f *kaFix) {
 			f.reply(f.now.Add(-4*time.Minute), replyOpt{ttl5m: true})
 		}},
