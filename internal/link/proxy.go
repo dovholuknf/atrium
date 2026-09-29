@@ -680,6 +680,9 @@ func (p *Proxy) rewrite(res *http.Response) error {
 	if err := p.rewriteHealth(res); err != nil {
 		return err
 	}
+	if err := p.rewriteOldRoom(res); err != nil {
+		return err
+	}
 	return p.retagCard(res)
 }
 

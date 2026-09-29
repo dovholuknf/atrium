@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net"
 	"net/http"
 	"strings"
@@ -31,6 +32,18 @@ type relayRoom struct {
 	launched map[string]any
 	// exited is the card ids asked to exit.
 	exited []string
+	// posts is every POST body a cull route received, keyed by path, verbatim.
+	// noCull is a room older than the cull, answering those routes bare 404.
+	posts  map[string][]string
+	noCull bool
+	// preflights counts GET /v1/preflight.
+	preflights int
+}
+
+func (f *relayRoom) posted(path string) []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.posts[path]...)
 }
 
 func (f *relayRoom) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -55,6 +68,18 @@ func (f *relayRoom) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case strings.HasPrefix(r.URL.Path, "/v1/tasks/") && strings.HasSuffix(r.URL.Path, "/exit") &&
 		r.Method == http.MethodPost:
 		f.exited = append(f.exited, strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/v1/tasks/"), "/exit"))
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
+	case r.Method == http.MethodPost && !f.noCull && (r.URL.Path == "/v1/merged" ||
+		strings.HasSuffix(r.URL.Path, "/cull") || strings.HasSuffix(r.URL.Path, "/cull/hold")):
+		raw, _ := io.ReadAll(r.Body)
+		if f.posts == nil {
+			f.posts = map[string][]string{}
+		}
+		f.posts[r.URL.Path] = append(f.posts[r.URL.Path], string(raw))
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "marked": []any{}, "exited": true,
+			"worktree_removed": true, "branch_deleted": true})
+	case r.URL.Path == "/v1/preflight":
+		f.preflights++
 		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
 	case r.URL.Path == "/v1/launch" && r.Method == http.MethodPost:
 		_ = json.NewDecoder(r.Body).Decode(&f.launched)
@@ -142,7 +167,7 @@ func newRelayPair(t *testing.T) *relayPair {
 		{"id": "s2", "wire_name": "gone", "status": "done"},
 	}}
 	room := func(name string, h http.Handler) *Room {
-		r := &Room{Name: name, Dial: plain{addr: hubLn.Addr().String()}, Handler: h,
+		r := &Room{Name: name, Version: "b-" + name, Dial: plain{addr: hubLn.Addr().String()}, Handler: h,
 			T: Timings{Beat: 200 * time.Millisecond, Warm: 1, Backoff: 50 * time.Millisecond}}
 		go func() { _ = r.Run(ctx) }()
 		return r
