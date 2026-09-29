@@ -2273,4 +2273,57 @@ when history is trimmed or the screen is reset, by walking the live cells and re
 more than `combsMaxKept` marks across a scrolling screen and checks that the last row still carries its marks.
 Owned by @terminal. Low priority.
 
+## 89. A finished worker's runner outlives its worktree and locks the directory (bug)
+
+Reported 2026-09-29 by the orchestrator: every ended worker left its worktree directory "used by another process"
+after git had unregistered it (sa21, sa80, fb01, lost-lines, sa82). The suspect was a leftover child (a shell, node,
+or the conpty host) whose cwd was that directory.
+
+**Diagnosis, read-only, 2026-09-29 ~01:15 local.** It is not a leftover child. It is the worker's own runner, which
+never exited. Each directory's holder was found by reading every process's current directory out of its PEB:
+
+| Worktree | Holder | Parent | Started (UTC) | Card | Last event |
+| --- | --- | --- | --- | --- | --- |
+| lost-lines | `claude.exe` 56032 | room `atrium.exe` 43988 | 02:54 (resume) | `01a0eac2` | `done` report 04:23 |
+| sa21 | `claude.exe` 16812 | room `atrium.exe` 43988 | 03:14 | `01a0eb28` | `done` report 04:06 |
+| sa80 | `claude.exe` 47888 | room `atrium.exe` 43988 | 03:33 | `01a0eb39` | `done` report 04:00 |
+| fb01-provision | `claude.exe` 47516 | room `atrium.exe` 43988 | 03:39 | `01a0eb29` | `done` report 04:06 |
+| sa82 | `claude.exe` 57404 | room `atrium.exe` 43988 | 04:06 | `01a0eb57` | `done` report 04:23 |
+
+Every holder is a full session (about 350MB each, 1.8GB in all, no child processes, responding) and a direct child
+of the room daemon. On every card `supervised` is true, which is `d.sup.get(id) != nil`, so the supervisor still
+owns each runner and could stop it. None of the five has an `exited` event after its `done` report, and none was
+culled. The worktrees went by hand: `git worktree remove --force` unregisters the worktree and deletes its files,
+then fails on the directory the runner is sitting in. That is the "Permission denied" and the empty directory.
+
+Why nothing ended them:
+
+- **`done` keeps the runner on purpose.** A done report moves the card to `done` and the session sits at its prompt,
+  so a director can send it back (sa21 went `done` to `needs-input` twice for review) and item 83 lets a say reach it.
+- **The reaper never looks at a done card.** `reapOnce` checks running and the needs-* columns, and
+  `reviveOwnedDead` only `dead` ones. A `done` card with a live runner is in neither list. Its stored `pid` is 0
+  (a supervised card's pid is not the observed one), so a pid check would not have answered either.
+- **`atrium_cull` does the right thing and was not used.** It calls `StopRunner` and `waitRunnerGone` before
+  `git worktree remove`, because "on Windows a directory in use cannot be removed". Removing the worktree before
+  `atrium_exit` is the path that locks it. DIRECTOR.md says "exit the worker and remove its worktree", and the
+  order in that sentence is the whole fix for the manual path.
+
+**What the supervisor or reaper should do.** Not end a runner for being `done`, which would break the review loop
+and item 83. Two candidates:
+
+1. **A supervised runner whose worktree is gone is ended.** On the reaper tick, for each `d.sup.all()` runner whose
+   card has a worktree recorded: if that directory no longer exists, or exists with no `.git` entry (git has
+   unregistered it), `windDown` the runner with its harness's exit keys, and record `exited` with `by: reaper`,
+   `detected: its worktree was removed`. The resume id stays, so nothing is lost. This is exactly the case in the
+   table and has no false positive worth worrying about: a session in a directory with no repository has no work
+   left to do. Only `atrium:subagent` cards, so a human's own terminal in a scratch directory is never touched.
+   Small, owned by @runtime, one targeted test with a temp worktree.
+2. **A `done` card's runner idle past a limit is parked.** The memory case: five idle sessions held 1.8GB. This is
+   the item 38 question (Open Question 1 in `docs/restart-idle-spec.md`: parking saves processes and memory, and no
+   tokens), so it waits on clint's answer there rather than being decided here.
+
+Until then, the five runners above can be asked to leave by their owners with `atrium_exit` (sa21 @runtime, sa80
+@ui, fb01 @fabric, lost-lines and sa82 @terminal), after which each empty directory removes normally. Nothing was
+killed or exited during the diagnosis.
+
 ------------
