@@ -1193,6 +1193,12 @@ room, so a pinned strip that holds cards from two rooms saves the order of only 
 Also, unverified and a design question for clint: in any sort other than manual, the board has no way to reorder
 pins.
 
+**Status, 2026-09-29: diagnosed, design written, moved from @ui to @fabric.** `docs/pin-order-rooms-design.md`. The
+order carries no card in its path, so the hub routes it by the board's stale `writeRoom` header to one room. Fix:
+the hub posts the whole list to every attached room, so each writes its own cards' ranks at their position in the
+whole strip. Hub-side only, no room, board or migration change. The second note stays a question for clint and
+@ui.
+
 ## 53. `setViewport` and `dropViewport` compute under `r.mu` and apply outside it (bug)
 
 Raised 2026-09-28 from sa51's review of the terminal-suite HANDOFF. Both work out the new viewport while holding
