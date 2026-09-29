@@ -104,6 +104,7 @@ func TestAGuestSeesOneCardAndNoMore(t *testing.T) {
 	for _, path := range []string{
 		"/v1/tasks",
 		"/v1/events",
+		"/v1/room/stats",
 		"/v1/permissions",
 		"/v1/settings",
 		"/v1/browse",

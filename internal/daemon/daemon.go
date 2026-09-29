@@ -1022,6 +1022,8 @@ func (d *Daemon) Run(ctx context.Context) error {
 	// Free liveness: ask the operating system whether each runner still
 	// exists, rather than asking the runner.
 	go d.reap(ctx, ReapEvery)
+	// The room's own stats, pushed to the board. See roomstats.go.
+	d.startRoomStats(ctx)
 	// Handing the space a prune or an event roll-off freed back to disk, a
 	// bounded batch at a time while the room stays live. A no-op on an older
 	// database not in incremental auto_vacuum mode. See vacuum.go.
