@@ -1295,17 +1295,48 @@ megabyte a month. Options for later, none built:
 - Delete a card's rows when the card sweep removes the card, or some weeks after, for cards nobody reopens.
 - A size cap: past N rows, or N megabytes, roll up or delete the oldest first.
 
+Dollar cost hidden and no longer calculated, 2026-09-29 (sa37b). clint: "Who cares, the cost is stupid. Remove it
+entirely for now, but just hide it and don't calculate it. Maybe we'll bring it back some day, though I doubt it."
+Tokens (input, output, cache read, cache written, context) stay everywhere. Kept reachable, not deleted: the price
+tables, `usageCost`, the `cost` and `prices` columns. No migration. New usage rows write `cost` 0 and `prices` empty,
+old rows keep what they had, and nothing reads a stored usage cost any more. Where money was computed or shown, to
+bring it back:
+
+- Computed, `internal/daemon/usage.go` `replySet.row`: the `usagePriceFor` + `usageCost` call, now a comment. Also
+  `usageOfRefresh`, which copied the refresh receipt's cost and price version onto its usage row.
+- Sent, dropped by `json:"-"` on the Go field, so a stored value is never sent: `store.SessionUsage.Cost` and
+  `.Prices`, `UsageTotals.Cost`, `UsageSums.Cost` (the room usage buckets), `KeepaliveRefresh.Cost`, and the card
+  view's `keepaliveCardView.Spent` and `.Budget`. Removed outright: the `cost` key of the `usage` SSE event
+  (`usageEvent`), the `spent` and `budget` keys of the `keepalive` event payload, `cache_keepalive_week_usd` in the
+  settings payload (`internal/api/keepalive.go`), and the `$` in the break-even toast (`stop` in `keepalive.go`).
+- Shown, board: `js/usage.js` (the `est.` cell, the cost column of the cause lines and the turn rows, `usageMoney`,
+  `USAGE_TIPS.cost`), `js/usage-charts.js` (the `est.` totals, the cumulative cost chart, the cost by cause table, the
+  per-card ranking, the hover line), `js/peek.js` (the `est.` cell), `js/keepalive.js` (`keepaliveMoney`, the chip
+  tooltips, the settings line). The per-card ranking and per-card mini charts now use total tokens. The two CSS grids
+  in `css/files.css` lost a column each. The MCP tools and the CLI never showed money.
+- NOT removed, on purpose: keep-alive's break-even stop. `decide` still prices each refresh (`receiptCost`, written to
+  `keepalive_refresh.cost`) and stops a card when its refreshes reach an eighth of a rewrite (`budgetFor`). The budget
+  was not moved to tokens: the two are not equivalent, because a refresh's price mixes cache read, cache write and
+  output. sa39 replaces it with a time limit. Only the figure is hidden. The wording "an eighth of one rewrite" in
+  help text is a ratio, not money, and stays.
+
 ## 38. A restart resumes only the cards that were working (feature)
 
 Raised 2026-09-28. A room restart resumes every supervised card. Cards that were mid-turn or have queued prompts need
 that. An idle card could stay parked until the operator attaches or types. Decide after item 37 shows what a resume
 costs.
 
+Design: `docs/keepalive-policy-design.md` (sa39, unreviewed draft) replaces `docs/restart-idle-spec.md`. Parked is a
+`parked_at` flag decided before the wind-down, a peer's say answers `parked` and resumes only on `wake=true`.
+
 ## 39. Keep-alive warms the cards you mark, not every idle card (feature)
 
 Raised 2026-09-28. Keep-alive (item 23) refreshes every idle Claude card on the 1-hour cache, 5 minutes before
 expiry, until break-even. With about 21 cards that is about 21 full-context cache reads an hour, including cards
 nobody returns to. Decide after item 37 shows what keep-alive spends.
+
+Design: `docs/keepalive-policy-design.md` (sa39, unreviewed draft) replaces this item's spec. Opt-in, off by default, never
+`atrium:subagent`, warmed only within 3 hours of a human's last use, no dollar budget.
 
 ## 40. The launch cap counts only `atrium:subagent` cards (bug)
 

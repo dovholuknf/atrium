@@ -13,10 +13,6 @@ const KEEPALIVE_STOPPED = {
   "stopped:acted": "keep-alive stopped: a refresh tried to use a tool. turn it back on by hand",
 };
 
-function keepaliveMoney(n) {
-  return "$" + (Number(n) || 0).toFixed(2);
-}
-
 // The daemon's last skip reason, in words for the watching chip's tooltip. A
 // reason not listed here is shown as the daemon wrote it.
 const KEEPALIVE_WHY = {
@@ -38,17 +34,17 @@ function keepaliveTime(at) {
 //   - watching: the switch is on and nothing has been refreshed yet. The
 //     tooltip says why not, and until when the cache is warm.
 //   - warm: it has refreshed this card in its current idle stretch.
-//   - cold: it stopped, and the tooltip says why and what that cost.
+//   - cold: it stopped, and the tooltip says why and how many refreshes it took.
 // A card with the switch off, or with no switch, draws nothing.
 function keepaliveChip(t) {
   const k = t.keepalive;
   if (!k || over(t)) return "";
   if (KEEPALIVE_STOPPED[k.state]) {
     const parts = [KEEPALIVE_STOPPED[k.state]];
-    if (k.refreshes || k.missed || k.spent) {
+    if (k.refreshes || k.missed) {
       parts.push(`${k.refreshes} refresh${k.refreshes === 1 ? "" : "es"}` +
         (k.missed ? `, ${k.missed} miss${k.missed === 1 ? "" : "es"}` : "") +
-        `, ${keepaliveMoney(k.spent)}` + (k.budget ? ` of a ${keepaliveMoney(k.budget)} budget` : ""));
+        "");
     }
     if (k.missed) parts.push("a miss writes the whole context again, about eight times the budget");
     if (k.warm_until) parts.push("cache went cold at " + keepaliveTime(k.warm_until));
@@ -59,7 +55,7 @@ function keepaliveChip(t) {
   }
   if (k.state === "on" && k.refreshes > 0) {
     return `<span class="chip keepalive" data-tip="${esc(
-      `kept warm ${k.refreshes}x, ${keepaliveMoney(k.spent)} of ${keepaliveMoney(k.budget)}` +
+      `kept warm ${k.refreshes}x` +
       (k.warm_until ? ". warm until " + keepaliveTime(k.warm_until) : ""))}"
       >&#10052; warm</span>`;
   }
@@ -70,7 +66,7 @@ function keepaliveChip(t) {
       parts.push((new Date(k.warm_until) > new Date() ? "warm until " : "cache went cold at ") +
         keepaliveTime(k.warm_until));
     }
-    if (k.budget) parts.push("refreshes about 5 minutes before expiry, up to a " + keepaliveMoney(k.budget) + " budget");
+    parts.push("refreshes about 5 minutes before expiry, until it reaches its break-even budget");
     return `<span class="chip keepalive watching" data-why="${esc(why)}"
       data-tip="${esc(parts.join(". "))}">&#9678; watching</span>`;
   }
@@ -117,7 +113,7 @@ function paintKeepaliveSettings(s) {
   if (spend) {
     const n = s.cache_keepalive_week_refreshes || 0;
     spend.textContent = n
-      ? `last 7 days: ${n} refresh${n === 1 ? "" : "es"}, ${keepaliveMoney(s.cache_keepalive_week_usd)}`
+      ? `last 7 days: ${n} refresh${n === 1 ? "" : "es"}`
       : "last 7 days: no refreshes";
   }
   const sus = document.getElementById("s-keepalive-suspended");
