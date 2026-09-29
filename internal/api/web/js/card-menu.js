@@ -633,7 +633,7 @@ async function cardMenu(e, id) {
 
   const items = [
     // The compact details: context now and the token totals. The same view a
-    // two-second hover opens. See js/peek.js.
+    // one-second hover opens. See js/peek.js.
     {
       label: "details",
       act: () => openPeek(id, anchor && anchor.isConnected ? anchor
