@@ -333,7 +333,7 @@ func TestIdleHandoffBeforeCold(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, HandoffName(task)), []byte("state"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	d.act.set(task.ID, ActivityIdle, "")
+	ncTurnEnds(d, task.ID)
 	until(t, "the capture to finish", func() bool {
 		m := d.idle.get(task.ID)
 		return m != nil && m.written
