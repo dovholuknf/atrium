@@ -265,6 +265,11 @@ Open question for clint: what should clicking `!` on a held message do? Recommen
 selecting the row, because the tooltip already says what clears it and both obvious actions (send it now past
 the gate, or drop it) lose something.
 
+**Status 2026-09-29 (branch claude/sa11).** Built as designed. `DismissQuestions` in `internal/store/seen.go`, the
+route in `internal/api/api.go`, the chip and `dismissQuestions` in `js/seen.js`, `stopPropagation` on the held chips,
+the `dismissed` clause in `atrium_task`, and headless section `questionsClick`. Changelog and test plan are in
+`docs/changes/11.md`. The `!` click question above is still open.
+
 ### 12. Keep codex up to date
 
 **Raised 2026-09-24.** Not started.
