@@ -1006,7 +1006,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
      the volume slider. -->
 <dialog id="settings" class="wide">
   <div class="dlg-head">
-    <div class="grow"><h2>settings</h2></div>
+    <div class="grow"><div class="dlg-eyebrow">the gear</div><h2>settings</h2></div>
     <button onclick="document.getElementById('settings').close()">close</button>
   </div>
   <div class="dlg-body">
@@ -1589,11 +1589,11 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
      No guard: every field here writes as it changes, the same as settings. -->
 <dialog id="roomcfg">
   <div class="dlg-head">
-    <div class="grow"><h2 id="rc-heading">room</h2></div>
+    <div class="grow"><div class="dlg-eyebrow">room settings</div><h2 id="rc-heading">room</h2></div>
     <button onclick="closeRoomCfg()">close</button>
   </div>
   <div class="dlg-body">
-    <div class="field" id="rc-facts-field">
+    <div class="field dlg-sec" id="rc-facts-field">
       <table class="kv" id="rc-facts"></table>
       <div class="picker"><button id="rc-mark" onclick="busyWhile(this, markFromCog)" hidden></button></div>
       <span class="hintline" id="rc-state"></span>
@@ -1605,6 +1605,8 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         until it is back. What is shown above is what it last said.</span>
     </div>
 
+    <section class="dlg-sec">
+    <div class="dlg-sec-h">files and pastes</div>
     <!-- The one setting that starts a process nobody named. Off until it is
          filled in: guessing an editor means atrium picks a program to run on
          your machine, and a wrong guess is a process you did not want. -->
@@ -1650,6 +1652,10 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         of what you type here, so keep one.</span>
     </div>
 
+    </section>
+
+    <section class="dlg-sec">
+    <div class="dlg-sec-h">what it lets in</div>
     <!-- Where the launch dialog's directory picker may look.
          It used to be the whole machine, which is right for a picker on
          loopback and wrong the moment the board is published: a share
@@ -1688,6 +1694,10 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         <b id="s-shared-loc-now"></b></span>
     </div>
 
+    </section>
+
+    <section class="dlg-sec">
+    <div class="dlg-sec-h">terminals</div>
     <!-- WHICH SHELL A PANE OPENS.
          Documented, carried by the config export, and settable nowhere until
          now: the only routes were editing the database or importing a config.
@@ -1749,6 +1759,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         saying so, typed when its line is empty. A session that queued its own restart wake gets that
         instead. A session that had finished its turn gets nothing. On by default.</span>
     </div>
+    </section>
   </div>
 </dialog>
 

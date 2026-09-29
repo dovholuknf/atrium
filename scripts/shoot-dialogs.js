@@ -116,6 +116,19 @@ const SHOTS = {
   pickwhere: async () => { await openPickRepo("l-cwd"); await openWhere("dovholuknf", "atrium", "D:/git/github/dovholuknf/atrium"); },
   browse: () => openBrowse(),
   dispatch: () => openDispatch("lab"),
+  // The gear paints the mocked settings, which name harbour, so the skin being shot is put back after.
+  settings: async () => {
+    document.getElementById("gear").click();
+    await new Promise(r => setTimeout(r, 400));
+    applySkin(window.shootSkin);
+  },
+  "settings-notify": async () => {
+    document.getElementById("gear").click();
+    showSettingsPane("notifications");
+    await new Promise(r => setTimeout(r, 400));
+    applySkin(window.shootSkin);
+  },
+  roomcfg: () => openRoomCog(""),
 };
 
 (async () => {
@@ -132,7 +145,7 @@ const SHOTS = {
       if (process.env.SHOOT_DEBUG) await p.addInitScript(() => { window.SHOOT_DEBUG = true; });
       await p.goto(base, { waitUntil: "domcontentloaded" });
       await p.waitForTimeout(900);
-      await p.evaluate(s => applySkin(s), skin);
+      await p.evaluate(s => { window.shootSkin = s; applySkin(s); }, skin);
       await p.evaluate(`(${SHOTS[name].toString()})()`).catch(e => errs.push(String(e)));
       await p.waitForTimeout(600);
       // A dialog focuses its first control, and a focused button shows its tooltip over the shot.
