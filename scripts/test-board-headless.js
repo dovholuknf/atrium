@@ -3133,6 +3133,11 @@ async function themePreviewSection(browser, base) {
     // Detaching ends a preview.
     await p.evaluate(() => { pickTheme(); previewTheme("dracula"); });
     await p.evaluate(() => clearTermPane(false));
+    // The repaint rides a queued refresh (dropThemePreview), which under load outlasts read()'s 400ms.
+    await p.waitForFunction(a => {
+      const row = document.querySelector('#term-list .card.tab[data-id="tp-a"]');
+      return row && getComputedStyle(row).backgroundColor === a;
+    }, saved.a, { timeout: slow(5000) }).catch(() => {});
     r = await read();
     if (r.a !== saved.a || !r.wrap) fail("after detaching mid-preview the row is " + r.a + ", picker hidden " + r.wrap);
     if (await p.evaluate(() => themePreview)) fail("detaching left a preview held.");
@@ -4188,12 +4193,14 @@ async function pasteBigSection(browser, base) {
       window.__frames = [];
       const vis = () => { const el = document.getElementById("t-pasting"); return !!(el && !el.hidden); };
       const seen = [];
+      let frame = 0, firstFrame = -1;
       const t0 = performance.now();
       const loop = () => {
         const t = performance.now() - t0;
-        if (vis()) seen.push(t);
+        if (vis()) { seen.push(t); if (firstFrame < 0) firstFrame = frame; }
+        frame++;
         if (t < 1500) { requestAnimationFrame(loop); return; }
-        done({ first: seen.length ? Math.round(seen[0]) : -1,
+        done({ first: seen.length ? Math.round(seen[0]) : -1, firstFrame,
           span: seen.length ? Math.round(seen[seen.length - 1] - seen[0]) : 0,
           sizes: window.__frames.map(f => f.length), heads: window.__frames.map(f => f.slice(0, 32)),
           text: (document.getElementById("t-pasting") || {}).textContent || "" });
@@ -4214,9 +4221,11 @@ async function pasteBigSection(browser, base) {
       fail(name + ": the paste did not leave as one frame of " + want + " bytes or more: " + JSON.stringify(got.sizes));
       return;
     }
-    if (got.first < 0 || got.first > 50 || got.span < 300) {
+    // "Within a frame" counted in frames: the gesture itself blocks the thread for a 3MB string, so the first
+    // frame after it lands late under load, and the spinner being on that frame is the claim.
+    if (got.first < 0 || (got.first > 50 && got.firstFrame > 1) || got.span < 300) {
       fail(name + ": a big paste did not paint the spinner within a frame and hold it 300ms: " +
-        JSON.stringify({ first: got.first, span: got.span }));
+        JSON.stringify({ first: got.first, firstFrame: got.firstFrame, span: got.span }));
     }
   };
   try {
@@ -5152,10 +5161,14 @@ async function busyGuardSection(browser, base) {
         names.push(m[1]);
         window[m[1]] = () => fetch("/__busy/" + m[1], { method: "POST" });
       }
+      // Until nothing is held, not a fixed 200ms: a button outside a footer holds its whole dialog, and a
+      // request slower than the wait under load made the next button's click a refusal.
+      const held = () => document.querySelector("button[data-busy]");
       for (const b of buttons) {
         b.click();
         b.click();
         await new Promise(r => setTimeout(r, 200));
+        for (let i = 0; held() && i < 100; i++) await new Promise(r => setTimeout(r, 50));
       }
       return names;
     });
