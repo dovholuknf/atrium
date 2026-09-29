@@ -1986,8 +1986,11 @@ opened.
 repaint that does not end in `\r\n` finishes. Then the strict-match rule above, with the recorded rows against the
 snapshot: the smallest `k` from 1 to rows-1 where repaint rows 1 to M equal snapshot rows k+1 to k+M, M at least
 max(6, rows/4), and at least 4 of the matched rows non-blank and pairwise distinct. Exactly one passing `k` or
-nothing. On a match, snapshot rows 1 to `k` are spliced into history at the length noted on open, so they sit ahead
-of anything the repaint's own last line feed scrolled off.
+nothing. On a match, what is spliced depends on the candidate:
+- Not at a cut: snapshot rows 1 to `k`, at the history length noted on open.
+- At a cut: only snapshot rows gone+1 to `k`, at the pre-cut history length plus `gone`, which is right after the
+  rows `fitRows` filed. A `k` of `gone` or less adds nothing and reports `resize-filed`.
+Either way they sit ahead of anything the repaint's own last line feed scrolled off.
 
 **Text, not SGR, is compared.** conhost re-renders its buffer, so a row's colours can come back as different bytes
 for the same look. Comparing text is what makes a real shift match, and the distinct-rows rule is what stops blank
@@ -2004,7 +2007,8 @@ that the height hold is in. Without it option 3 is built blind. Tab-separated, o
 - `why`, what cancelled it or which condition failed, empty otherwise.
 The last line totals each outcome and the rows added, so two readings a day apart compare at a glance.
 `repair=report` always renders in `screen` mode whatever `mode` says, ignores `ansi`, and reads whichever bytes
-`collapse` selects, the same as the text it replaces.
+`collapse` selects, the same as the text it replaces. It replaces the `[atrium] ... mode` banner as well: the
+body is the report and nothing else.
 
 **Tests.**
 - Unit, in `screen_test.go`: a 10-row grid, 10 numbered lines, then `\e[H` and 10 rows `\e[K\r\n` starting from
