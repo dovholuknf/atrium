@@ -386,7 +386,7 @@ if (Test-Path $rj) {
     $j = Get-Content $rj -Raw | ConvertFrom-Json
     "joinedroom=$($j.room)"; "joinedhub=$($j.hub)"; "joinedtransport=$($j.transport)"; "joinedservice=$($j.service)"
 }
-$t = Get-ScheduledTask -TaskName atrium -ErrorAction SilentlyContinue
+$t = try { Get-ScheduledTask -TaskName atrium -ErrorAction Stop } catch { $null }
 if ($t) { "service=$($t.Actions[0].Execute) $($t.Actions[0].Arguments)" }
 if (Test-Path $M) { "manifest=$((Get-Content $M -Raw) -replace '\r?\n', ' ')" }
 "zrokenv=$(Test-Path (Join-Path $HOME '.zrok2\environment.json'))"
