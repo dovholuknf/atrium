@@ -58,7 +58,7 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 49 | The orchestrator can appear on every room | design | @fabric, design reviewed `1ccecf2`, ready to build, 3 questions |
 | 50 | Views of agents, beyond groups | design | not started |
 | 51 | Five kept worktrees show 48 commits not matched on `claude/main` | housekeeping | DONE, all five safe, deleted 2026-09-28 |
-| 52 | A pinned strip with cards from two rooms orders only one room | bug | @fabric, design `8e4accb`, fb04 building |
+| 52 | A pinned strip with cards from two rooms orders only one room | bug | DONE by fb04, merged into claude/fabric, needs hub and room restarts. `prune` has the same shape, unfixed |
 | 53 | `setViewport` and `dropViewport` compute under `r.mu` and apply outside it | bug | not started, never reproduced |
 | 54 | Terminal test suite part 2: `screen.go` against xterm.js | feature | not started |
 | 55 | Launched runners inherit ATRIUM_DEBUG_INPUTLAG from the room | bug | DONE by sa55, merged, needs a room restart |
@@ -1238,6 +1238,11 @@ order carries no card in its path, so the hub routes it by the board's stale `wr
 the hub posts the whole list to every attached room, so each writes its own cards' ranks at their position in the
 whole strip. Hub-side only, no room, board or migration change. The second note stays a question for clint and
 @ui.
+
+**Status, 2026-09-29: DONE by fb04, merged into claude/fabric.** Hub fan-out `63ed4e8` (test plan FF4, FF5), plus the
+store now orders pinned rows only, `8b7d11c`, read and passed by @runtime. `docs/changes/fabric-52-pin-order.md`.
+Needs a hub and room restart. Not fixed and the same shape: `/v1/tasks/prune` also names no card in its path, so the
+hub also sends it to one room.
 
 ## 53. `setViewport` and `dropViewport` compute under `r.mu` and apply outside it (bug)
 
