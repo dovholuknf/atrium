@@ -515,6 +515,23 @@ Exports honor whatever filter is applied.">?</span>
         <div class="term-drawer" id="t-drawer" aria-hidden="true">
           <div class="peek-body" id="t-drawer-body"></div>
         </div>
+        <!-- The phone's keys: a phone keyboard has no Esc or arrows. Shown only on a touch-first
+             device. See `termPhone` in js/terminal-links.js. -->
+        <div class="term-keys" id="t-keys" role="toolbar" aria-label="terminal keys">
+          <button type="button" tabindex="-1" data-key="esc">Esc</button>
+          <button type="button" tabindex="-1" data-key="left" aria-label="left">&larr;</button>
+          <button type="button" tabindex="-1" data-key="down" aria-label="down">&darr;</button>
+          <button type="button" tabindex="-1" data-key="up" aria-label="up">&uarr;</button>
+          <button type="button" tabindex="-1" data-key="right" aria-label="right">&rarr;</button>
+          <button type="button" tabindex="-1" data-key="tab">Tab</button>
+          <button type="button" tabindex="-1" data-key="btab" aria-label="shift tab">&#8676;</button>
+          <button type="button" tabindex="-1" data-key="enter" aria-label="enter">&crarr;</button>
+          <button type="button" tabindex="-1" data-key="int" aria-label="ctrl c, hold to interrupt">^C</button>
+        </div>
+        <div class="term-view" id="t-view" hidden>
+          <button type="button" id="t-view-btn" tabindex="-1" onclick="toggleTermView()">fit this screen</button>
+          <span>fit this screen resizes the terminal for every window watching it</span>
+        </div>
         <!-- What atrium thinks is on the input line, and whether a say may be
              typed in. A debug readout, off unless switched on. See js/typing.js. -->
         <div class="term-typing" id="t-typing" role="status" hidden></div>
