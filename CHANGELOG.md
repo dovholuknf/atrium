@@ -5,6 +5,17 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **Each item ships its own changelog and test-plan entry, and the merger folds them in.** See `docs/backlog-2.md`
+  item 77 (b, c and g).
+
+  A branch no longer edits `CHANGELOG.md` or `docs/test-plan.md`, which caused almost every merge conflict and let
+  several workers pick the same letter. It adds `docs/changes/<item>.md` with a `## Changelog` and a `## Test plan`
+  section, the test plan lettered `@LETTER@`. `scripts/fold-changes.ps1` (`-DryRun`, `-Item <n>`) puts each entry at
+  the top of Unreleased, picks the next free letter itself, appends the section to `docs/test-plan.md` and `git rm`s
+  the file, and refuses a malformed file before writing anything. `docs/changes/README.md` says what to write and
+  records the worker rules 77c (merge `claude/main` and pass targeted checks before reporting) and 77g (one report
+  per batch from the merger). This entry was written the old direct way, since the fold is not on main yet.
+
 - **A worktree helper that links every CLAUDE.md.** See `docs/backlog-2.md` item 76.
 
   `git worktree add` gave a worker none of the CLAUDE.md files, which are untracked symlinks present only in the main
