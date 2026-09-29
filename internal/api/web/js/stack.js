@@ -469,6 +469,7 @@ function stackRow(t) {
       ${activityChip(t)}
       ${ctxWarnMark(t)}
       ${contextChip(t)}
+      ${newContextChip(t)}
       ${seenChips(t)}
       ${dark ? `<span class="chip nocontact">no contact</span>` : ""}
       ${t.auto_approve ? `<span class="chip auto">auto</span>` : ""}

@@ -149,6 +149,10 @@ type Daemon struct {
 	// card's session last started. See restartwake.go.
 	wake *wakes
 
+	// nctx holds the new-context sequences under way and the failed ones nobody
+	// has dismissed. In memory. See newcontext.go.
+	nctx *newContexts
+
 	// ka keeps idle Claude cards' prompt caches warm. See keepalive.go.
 	ka *keepalive
 
@@ -253,6 +257,7 @@ func New(opts Options) (*Daemon, error) {
 	}
 	d.pending = newPendingInjector(d)
 	d.wake = newWakes()
+	d.nctx = newNewContexts()
 	// Input-lag logging as the gear last left it, so a room that restarts keeps
 	// timing if it was timing. The variable still wins. See internal/inputlag.
 	api.ApplyInputLag(st)
@@ -296,6 +301,7 @@ func New(opts Options) (*Daemon, error) {
 	d.ap.RoomPeers = d.handleRoomPeers
 	d.ap.Report = d.handleReport
 	d.ap.RestartWake = d.handleRestartWake
+	d.ap.NewContext = d.handleNewContext
 	d.ap.SendNote = d.handleSendNote
 	d.ap.Shutdown = d.handleShutdown
 	d.ap.Shelve = d.Shelve
@@ -440,6 +446,7 @@ func New(opts Options) (*Daemon, error) {
 	// The after-restart wake waiting on a card.
 	d.loadWakes()
 	api.RestartWakeOf = d.wakeFor
+	api.NewContextOf = d.newContextFor
 	// The cache keep-alive: each card's switch and its current idle stretch,
 	// and the per-card switch the board flips. See keepalive.go.
 	d.ka = newKeepalive(st)
@@ -1083,6 +1090,8 @@ func (d *Daemon) shutdown(servers ...*http.Server) {
 	if d.pending != nil {
 		d.pending.stopAll()
 	}
+	// And any new-context sequence: its terminal is about to close under it.
+	d.nctx.stopAll()
 
 	// Which runners were mid-turn, read before they are stopped: a runner that
 	// exits files its card dead or done. See unexpectedexit.go.
