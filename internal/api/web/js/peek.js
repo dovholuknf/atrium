@@ -51,8 +51,16 @@ function peekBody(t, v) {
   const title = (t && (t.display_title || t.title)) || "this card";
   const model = v && !(v instanceof Error) && v.model ? v.model : "";
   const sub = [t && t.status, model].filter(Boolean).join(" · ");
+  // The whole name and the repo/worktree:branch address, what a terminals row
+  // said in its own tooltip. That tooltip gives way to this (see peekOwnsTip),
+  // so what it said is here, unclipped.
+  const where = t && typeof terminalLabel === "function" ? terminalLabel(t) : "";
+  const cold = t && typeof termCold === "function" && termCold(t)
+    ? "this one has exited. click it to start it again here" : "";
   const head = `<div class="peek-head"><span class="peek-title">${esc(title)}</span>` +
-    (sub ? `<span class="peek-sub">${esc(sub)}</span>` : "") + `</div>`;
+    (where && where !== title ? `<span class="peek-path">${esc(where)}</span>` : "") +
+    (sub ? `<span class="peek-sub">${esc(sub)}</span>` : "") +
+    (cold ? `<span class="peek-path">${esc(cold)}</span>` : "") + `</div>`;
   if (!peekReadable(t)) {
     return head + `<div class="peek-none">${t && t.offline
       ? "that machine is not answering, so nothing here can be read."
@@ -162,6 +170,8 @@ function peekPlace(anchor, at) {
 
 function openPeek(id, anchor, mode) {
   const el = peekPop();
+  // One box over a card at a time: a tooltip already up goes.
+  if (typeof hideTip === "function") hideTip();
   clearTimeout(peekCloseTimer);
   const seq = ++peekSeq;
   peekFor = id;
@@ -172,9 +182,12 @@ function openPeek(id, anchor, mode) {
   // Measured where the pointer was when it opened, and again from the same
   // point when the numbers land and it grows.
   const at = peekPointer;
-  const replace = () => {
-    if (seq === peekSeq && anchor) peekPlace(anchor, at);
+  const replace = peekReplace = () => {
+    if (seq !== peekSeq) return;
+    peekPaintHint();
+    if (anchor) peekPlace(anchor, at);
   };
+  peekHint = peekMode === "hover" ? peekTipUnder(id) : "";
   peekFill(box, id, () => seq === peekSeq && peekFor === id).then(replace);
   replace();
   el.classList.add("on");
@@ -214,14 +227,69 @@ function peekHoverCard(target) {
   return target && target.closest ? target.closest(".card[data-id], .stackrow[data-id]") : null;
 }
 
+// ONE HOVER PER CARD. Under a mouse pointer nothing on a card shows its own
+// tooltip: the popover is the card's one hover, and it carries what they said.
+// A terminals row's tooltip on its name and address is the head's full name and
+// address line. A chip or control's tooltip is the head's last line, read from
+// whatever is under the pointer when it opens and as the pointer moves over the
+// card. A tooltip at half a second that a different box replaces at one, in a
+// different place, was the two boxes this is here to stop, so before the second
+// nothing shows. Asked by the tooltip's pointerover in js/tooltips.js. Keyboard
+// focus and a long press are not asked, and show the tooltip as ever.
+function peekOwnsTip(a, e) {
+  if (e && e.pointerType && e.pointerType !== "mouse") return false;
+  return !!peekHoverCard(a);
+}
+
+// A card's own tooltip, which the head already says in full.
+function peekCardTip(a, card) {
+  return a === card || !!(a.matches && a.matches(".tname, .tpath"));
+}
+
+// What the chip or control under the pointer would have said, when it is on
+// card `id`.
+function peekTipUnder(id) {
+  if (!peekPointer || typeof tipAnchor !== "function") return "";
+  const a = tipAnchor(document.elementFromPoint(peekPointer.x, peekPointer.y));
+  const card = a && peekHoverCard(a);
+  if (!card || card.dataset.id !== id || peekCardTip(a, card)) return "";
+  return a.dataset.tip;
+}
+
+// Kept on the head across the body's redraws, which rebuild it.
+let peekHint = "";
+// Paints the hint and measures the popover again from where it opened, since a
+// hint line can make it taller. Set by openPeek.
+let peekReplace = () => {};
+function peekPaintHint() {
+  const head = peekEl && peekEl.querySelector(".peek-head");
+  if (!head) return;
+  let s = head.querySelector(".peek-hint");
+  if (!peekHint) { if (s) s.remove(); return; }
+  if (!s) {
+    s = document.createElement("span");
+    s.className = "peek-hint";
+    head.appendChild(s);
+  }
+  s.textContent = peekHint;
+}
+
 document.addEventListener("pointerover", e => {
   if (e.pointerType && e.pointerType !== "mouse") return;
+  // Over comes before move, so the pointer is taken here too.
+  peekPointer = { x: e.clientX, y: e.clientY };
   if (peekEl && peekEl.contains(e.target)) { clearTimeout(peekCloseTimer); return; }
   const card = peekHoverCard(e.target);
   const id = card ? card.dataset.id : null;
   if (id && id === peekHoverId) {
     peekHoverEl = card;
-    if (peekFor === id) clearTimeout(peekCloseTimer);
+    if (peekFor === id) {
+      clearTimeout(peekCloseTimer);
+      if (peekMode === "hover") {
+        const hint = peekTipUnder(id);
+        if (hint !== peekHint) { peekHint = hint; peekReplace(); }
+      }
+    }
     return;
   }
   clearTimeout(peekHoverTimer);
