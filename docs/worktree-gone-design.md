@@ -16,11 +16,12 @@ repository has nothing left to do.
 ## Which path
 
 The runner's launch cwd (`r.spec.cwd`) when the runner has a spec, else the card's `Worktree`.
+The runner's launch directory (`r.dir`, set on every launch) when it has one, else the resume spec's cwd, else the
+card's `Worktree`.
 
-The cwd is the directory the process holds, so it is exactly the lock that blocks the removal. `Worktree` is what a
-session last reported through its hooks, which can drift (a session that `cd`s, a resume that reports late). But a
-runner adopted without a spec has only the card. Cwd first, card second, and if neither is known nothing is checked.
-
+The launch directory is what the process holds, so it is exactly the lock that blocks the removal. The card's
+`Worktree` is the same directory, because a card never follows the session's `cd`. A runner adopted without either
+falls to the card, and if none is known nothing is checked. A `.git` seen is remembered per card AND directory.
 ## What "gone" means
 
 - `Stat` on the directory says it does not exist, or
