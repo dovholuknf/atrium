@@ -1616,7 +1616,11 @@ Design (@ui):
 - **The API.** One new read endpoint on a room, `GET /v1/usage?since=<rfc3339>&bucket=<seconds>`, answering buckets
   of summed rows: per bucket the board total, and per card and per cause. Summed in SQL over the existing
   `(task_id, ended_at)` index, bounded (at most 500 buckets, `since` at most 30 days back), so a month of rows is
-  never shipped to a browser. The card titles come from the card list the board already has.
+  never shipped to a browser. The card titles come from the card list the board already has. Buckets carry raw
+  summed tokens per kind (uncached in, out, cache read, cache write 5m and 1h) and the stored `cost` summed, and the
+  client divides by bucket width for tokens per minute. For the split chart's per-part dollars the room also
+  groups by model and prices each kind with `usagePriceFor`, returned as `cost_by_kind`, labelled "at current
+  prices" because a stored row keeps only its total. The headline cost stays the stored sum.
 - **Live.** When the tracker writes a row (`AddSessionUsage` in `daemon/usage.go` and `keepalive.go`), the room
   broadcasts a `usage` event on the existing SSE stream carrying that one row's figures and card id. The tab adds
   it to the newest bucket without refetching. No polling. **"Real time" means within about two seconds of a turn
@@ -1640,7 +1644,9 @@ Design (@ui):
   rather than silently counted as zero. A room too old to have `/v1/usage` says so the same way. **Every per-card
   bucket, filter, live event and the "others" rollup is keyed by room plus card id**, the identity the board already
   uses for cards from two rooms (`rowOf(list, id, room)` in `js/rooms.js`), never by id or title alone, so two
-  rooms' cards are never merged. (Mercurius round 1, concern C1.)
+  rooms' cards are never merged. (Mercurius round 1, concern C1.) A `usage` event that reaches the board by way of
+  the hub carries its source room the way the hub's other forwarded card events do, and a room's own stream uses
+  the local room key. The headless test includes two rooms with the same card id spending live. (Round 2, C2.)
 - **Tests.** Store: bucket sums match row sums, bounds hold. API: shape and bounds. Headless: the tab renders from a
   mocked `/v1/usage`, a mocked `usage` SSE event grows the newest bucket, the labels are 78's, and a skin change
   recolours it.
