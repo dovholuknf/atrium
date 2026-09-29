@@ -642,7 +642,9 @@ async function walkCopy(text, said) {
 
 function walkOpenLink(it) {
   if (!it.link) { toast("no link", "the third line of this file is not a link"); return; }
-  window.open(it.link, "_blank", "noopener");
+  // The one way this board opens a link into a reused tab (u-006, defined in terminal-links.js). Not a
+  // window.open of our own.
+  openLinkReused(it.link);
 }
 
 async function walkPosted(it) {
