@@ -1526,6 +1526,8 @@ workers picked the same test-plan letter. Decided with clint:
 
 Order: a, c, f, then b, e, g. Owned by @merge.
 
+Status: a and e built on claude/sa77a, not merged. `scripts/merge-check.ps1` and `scripts/setup-merge-worktree.ps1`.
+
 ## 78. The details popover's token labels mislead (bug)
 
 Raised 2026-09-28 by clint on @fabric's popover: "2 turns, 48 in, 12k out" looked wrong. Checked against the
