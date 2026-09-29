@@ -30,7 +30,8 @@
 # credential, and it is not a failure. `smoke` then launches a small claude
 # worker on the room through the hub (`-SmokeCwd`, `-SmokeTo`, `-SmokeTimeout`
 # 180), waits for its report to hold a nonce, exits the card and confirms it
-# left. It is skipped when auth warned, or with `-NoSmoke`.
+# left. It is skipped when auth warned, or with `-NoSmoke`. `-SmokeOnly` runs
+# just these two against a room already provisioned, and changes nothing on it.
 #
 # NO AUTOSTART BY DEFAULT. The room is started in the background with
 # `atrium room --detach` and runs until the machine restarts or the user logs

@@ -719,8 +719,10 @@ binary goes to `~\.atrium\bin` on Windows or `~/.local/bin` elsewhere.
 signed in is a `warn` naming `ssh -t <target> claude auth login`, which prints a URL and so works over ssh. The
 script never reads or carries a credential, and the room is fine without it. `smoke` is last: it launches a small
 claude worker on the room through the hub (`-SmokeCwd`, `-SmokeTo`, `-SmokeTimeout` 180), waits for its report to
-carry a nonce, exits the card and confirms it left. It is skipped when auth warned or with `-NoSmoke`, and a smoke
-that does not report is exit 8.
+carry a nonce, exits the card and confirms it left. It runs in the clone `room-git.ps1 init` made, or the remote home
+when there is none. It is skipped when auth warned or with `-NoSmoke`, and a smoke that does not report is exit 8.
+`-SmokeOnly` runs just `auth` and `smoke` against a room already provisioned. It stops before anything is written,
+so it is the one form that is safe against a room in use.
 
 **Windows without CIM.** Over ssh some Windows machines deny CIM, so every scheduled task action goes through
 `schtasks.exe` (query by XML, `/End`, `/Run`, `/Delete`, and `/Create` from an XML file, which needs no admin for the
