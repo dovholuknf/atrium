@@ -348,10 +348,11 @@
     color: var(--danger-text);
   }
   .chip.shared::before { content: "\26D4 "; }
-  /* The cache keep-alive: warm while atrium is keeping it so, and muted once it
-     stopped. See js/keepalive.js. */
+  /* The cache keep-alive: dotted and plain while it only watches, warm while atrium is keeping it so, and
+     muted once it stopped. See js/keepalive.js. */
   .chip.keepalive { border: 1px solid var(--chip-accent-stroke); color: var(--chip-accent-text); }
   .chip.keepalive.stopped { border-style: dashed; opacity: .85; }
+  .chip.keepalive.watching { border-style: dotted; color: var(--label); }
   .chip.attach {
     background: var(--chip-accent); border: 1px solid var(--chip-accent-stroke);
     color: var(--chip-accent-text); cursor: pointer;

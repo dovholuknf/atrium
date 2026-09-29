@@ -3836,7 +3836,8 @@ design rests on how Claude Code behaves today, not on a contract.
    ```
 
 **Expected:** `num_turns` is 1, `permission_denials` is empty and `result` is `OK`. `cache_read_input_tokens` is at
-least 90% of the card's context and `cache_creation_input_tokens` is under 5% of it. No new transcript appears
+least 90% of the card's context. `cache_creation_input_tokens` is the card's tail, its last reply and the prompt, a
+few thousand tokens and not the whole context. No new transcript appears
 under `~/.claude/projects/<the card's directory>/`, and the card's own transcript does not grow. A user hook that
 logs session starts, if you have one, writes nothing. Write the result down in this section: the date, the Claude
 Code version, the model, the context, the two token counts and pass or fail.
@@ -3846,7 +3847,8 @@ Code version, the model, the context, the two token counts and pass or fail.
 1. On a card launched after the restart, check that its menu shows `keep its cache warm` switched on.
 2. Leave it idle, turn ended, for 56 minutes.
 
-**Expected:** a few minutes before the hour, the card grows a `❄ warm` chip. Its tooltip reads
+**Expected:** from its first turn the card wears a dotted `◎ watching` chip (BL7). A few minutes before the hour it
+turns into a `❄ warm` chip. Its tooltip reads
 `kept warm 1x, $0.0x of $0.xx` and when the cache is warm until. The card's terminal shows nothing new and its
 transcript does not grow. The gear's settings show one refresh in the last 7 days.
 
@@ -3857,7 +3859,7 @@ transcript does not grow. The gear's settings show one refresh in the last 7 day
 **Expected:** at the sixth expiry the card is not refreshed. A toast says
 `keep-alive stopped on <card> at break-even after 5 refreshes, $0.xx`, and it is in the toast log. The chip turns
 to a dashed `❄ cold`, and its tooltip gives the refreshes, the spend against the budget and when the cache went
-cold. Answer the card: the chip goes, and the next idle stretch starts a fresh budget.
+cold. Answer the card: the chip turns back to `◎ watching`, and the next idle stretch starts a fresh budget.
 
 ### BL4. The board switch sets the default for new cards only
 
@@ -3871,7 +3873,7 @@ and the older card's is unchanged. Tick it again afterwards.
 
 1. On a card that stopped at break-even (BL3), switch `keep its cache warm` on in its menu.
 
-**Expected:** the chip goes and the card is kept warm again with a fresh budget.
+**Expected:** the chip turns to `◎ watching` and the card is kept warm again with a fresh budget.
 
 2. Switch it off, then answer the card and leave it idle for an hour.
 
@@ -3882,6 +3884,35 @@ and the older card's is unchanged. Tick it again afterwards.
 1. Open the menu of a shell or codex card.
 
 **Expected:** there is no `keep its cache warm` entry and no keep-alive chip.
+
+### BL7. Every watched card says so: watching, warm or stopped
+
+`docs/backlog-2.md` item 70. The headless section `keepalive` covers it with a card of each kind.
+`TestKeepaliveMissShowsInTheView` and the `lean card` case of `TestKeepaliveEachRuleBlocksARefresh` in
+`internal/daemon/keepalive_test.go` cover steps 3 and 4. Needs a room restart first for steps 3 and 4 (the daemon's
+view and the lean skip). The chip is board-only.
+
+1. With the keep-alive default on, look at a Claude card that is working, one idle for a few minutes, and one
+   switched off in its menu.
+
+**Expected:** the working and the idle card each wear a dotted `◎ watching` chip, plain in colour, unlike the
+accent `❄ warm` and the dashed `❄ cold`. Hover the idle one: `keep-alive is watching this card. idle, and not due
+for a refresh yet. warm until <time>. refreshes about 5 minutes before expiry, up to a $0.xx budget`. The working
+one says `working, so there is nothing to refresh`. The switched-off card and a shell card wear no chip.
+
+2. Look at a Claude card whose context is under 50k.
+
+**Expected:** `◎ watching`, and its tooltip says the context is too small to be worth keeping warm.
+
+3. Launch a lean worker (`atrium_launch` with `lean: true`) and leave it idle for 56 minutes.
+
+**Expected:** it is not refreshed, and no `keepalive_refresh` row is written for it. Its chip stays `◎ watching`
+and its tooltip reads `lean card: a refresh cannot rebuild its prompt`.
+
+4. On a card that stopped on a miss (`stopped:miss`), hover its `❄ cold` chip.
+
+**Expected:** `keep-alive stopped: a refresh missed the cache. 0 refreshes, 1 miss, $x.xx of a $0.xx budget. a miss
+writes the whole context again, about eight times the budget. cache went cold at <time>. ...`.
 
 ## BM. A stuck card wears a mark, and a slash command or a restart does not make one stuck
 
