@@ -152,6 +152,15 @@ type LaunchRequest struct {
 	// it, so its next reopen is not lean either.
 	Lean *bool    `json:"lean,omitempty"`
 	MCP  []string `json:"mcp,omitempty"`
+	// ReportTo is who this card's reports go to: a handle, alias or card id on
+	// this room, resolved as `atrium_say` resolves one. The card's launcher is
+	// set to that card, and the name is kept as given and resolved again at each
+	// delivery. An unknown name refuses the launch. See reportto.go.
+	//
+	// THE BOARD AND THE CLI ONLY. A launch carrying the agent marker is refused
+	// for sending it, so no session can point another card's reports at a third
+	// party. It sets the launcher and nothing else: no tag, room or permission.
+	ReportTo string `json:"report_to,omitempty"`
 }
 
 // TerminalTemplate wraps a command so it opens in a real terminal window.
@@ -689,6 +698,11 @@ func (d *Daemon) Launch(req LaunchRequest) (*store.Task, error) {
 	t, err := d.launchLocked(req)
 	if err == nil && req.TaskID != "" {
 		d.startedAt.Store(req.TaskID, time.Now())
+		// A runner started onto a parked card is the card waking up, whoever
+		// pressed what. `unpark` itself calls launchLocked, so it never comes here.
+		if _, uerr := d.st.Unpark(req.TaskID, "launch"); uerr != nil {
+			log.Printf("[atrium] could not clear the parked mark on %s: %v", req.TaskID, uerr)
+		}
 	}
 	return t, err
 }
@@ -745,6 +759,16 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 	d.checkRunnerUpdate(h, req.Interactive)
 	if err := d.resumeIsFree(req.Resume); err != nil {
 		return nil, err
+	}
+	// Resolved before anything exists, so an unknown name costs nothing. Its card
+	// becomes the launcher as if it had called `atrium_launch` itself.
+	reportTo := strings.TrimSpace(req.ReportTo)
+	var reportCard *store.Task
+	if reportTo != "" {
+		if reportCard, err = d.resolveReportTo(req, reportTo); err != nil {
+			return nil, err
+		}
+		req.SpawnedBy, req.SpawnedByID = reportCard.WireName, reportCard.ID
 	}
 
 	// The card exists before the process does, and its name is what the runner
@@ -905,7 +929,10 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 	// An agent-launched claude session gets the Stop hook for itself, so its
 	// turn ends are reported even where the operator never installed it. The
 	// marker is on the request for a new launch and on the card for a reopen.
-	agent := hasTag(req.Tags, OriginAgentTag) || agentLaunched(task)
+	// A card told who to report to gets the Stop hook too, so its silent stops
+	// are seen, and still does NOT get the agent marker.
+	agent := hasTag(req.Tags, OriginAgentTag) || agentLaunched(task) || reportTo != "" ||
+		(task != nil && d.reportsToLauncher(task))
 	lean, leanMCP := leanOptions(req, task)
 	if lean && !isClaude(h) {
 		return nil, fmt.Errorf("%s cannot start lean. lean is a claude launch option", h.Label)
@@ -1176,6 +1203,15 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 	// alone, so a reopen cannot rename it. The parent's card is looked up here
 	// on a best-effort basis, and a handle that resolves to nothing still names
 	// it. See docs/a2a-reliability-design.md.
+	// The name is kept only on a card with no launcher yet, which is the one
+	// SetLineage below will write. A reopen names nothing new.
+	reportedTo := ""
+	if reportCard != nil && created.SpawnedBy == "" && created.SpawnedByID == "" {
+		if err := d.st.SetReportTo(created.ID, reportTo); err != nil {
+			return nil, err
+		}
+		reportedTo = reportCard.ID
+	}
 	if by := strings.TrimSpace(req.SpawnedBy); by != "" {
 		parentID := ""
 		if by != store.HumanLauncher {
@@ -1211,7 +1247,7 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 	// card does not put it on the ledger after the fact. The board's own
 	// dialog gets none: clint did not ask for a queue of verdicts. See
 	// internal/store/ledger.go.
-	if req.Resume == "" && hasTag(req.Tags, OriginAgentTag) {
+	if req.Resume == "" && (hasTag(req.Tags, OriginAgentTag) || reportTo != "") {
 		if t, err := d.st.Get(created.ID); err == nil {
 			if _, err := d.st.CreateWorkItem(t, store.NewWorkItem{
 				Brief: briefHead(req.Brief, req.Prompt), BriefPath: briefPath,
@@ -1252,6 +1288,8 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 		// `cmd` carries the effort and extra args already. The env is keys
 		// only, because its values never leave the room's database.
 		"effort": effort, "env_keys": sortedKeys(extraEnv),
+		// What was named and the card it resolved to at launch. See reportto.go.
+		"report_to": reportTo, "report_to_id": reportedTo,
 	}); err != nil {
 		return nil, err
 	}

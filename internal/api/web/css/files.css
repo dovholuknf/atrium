@@ -212,6 +212,18 @@
   .uck-cost { fill: rgba(var(--teal-rgb), .8); }
   .uck-line { fill: none; stroke: rgb(var(--teal-rgb)); stroke-width: 2; vector-effect: non-scaling-stroke; }
   .ucranges button.on { color: var(--head); border-color: rgb(var(--teal-rgb)); }
+  .ucranges button.on i, #uc-cache i { display: inline-block; width: 10px; height: 10px; margin-right: 5px; border-radius: 2px; }
+  .uccacheline { margin-top: 4px; }
+  /* A live change: the number fades in from dim over 300ms, a new burn bar grows from the axis over 200ms. */
+  @keyframes ucfade { from { opacity: .25; } to { opacity: 1; } }
+  @keyframes ucgrow { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+  .ucfade { animation: ucfade 300ms ease-out; }
+  .ucchart g.ucgrow { transform-box: fill-box; transform-origin: 50% 100%; animation: ucgrow 200ms ease-out; }
+  @media (prefers-reduced-motion: reduce) { .ucfade, .ucchart g.ucgrow { animation: none; } }
+  .uccread { color: var(--dimmest); text-align: right; }
+  .uccauses.withread { grid-template-columns: repeat(4, auto); }
+  .uccauses.withread > span:nth-child(4n+3) { text-align: right; }
+  .uccauses.withread > span:nth-child(4n) { text-align: right; }
   .ucfilter { font: var(--fs-xs) var(--mono); color: var(--dim); }
   .ucfilter button { background: none; border: none; color: var(--dim); cursor: pointer; }
   .ucroom { color: var(--dimmest); }

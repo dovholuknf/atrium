@@ -735,6 +735,12 @@ Status: built (u-005, branch `claude/sau-005`). Left out: context past the hunk 
 
 The smallest thing clint can use on `pr-zrok-1277` and `pr-ziti-4397` now.
 
+**Stage 1 sees only walkers whose card directory IS the run folder,** which is how @review launches its own. A PR
+card clint starts from gwt runs in the PR worktree, and its run folder stays under `reviews_root` (@review's
+`docs/review-pr-start-design.md`, reviewed 2026-09-29: a worktree is removed when its work is done, and the review
+would go with it). The board's file endpoints answer 403 outside a card's own directory, so that walk first
+appears in stage 2, which indexes `reviews_root` and links the walker by `walker_task`.
+
 - The drawer in the terms view, opened by a `walk` button on the terminal bar when the attached card has a
   `findings/` folder. Rail, finding, code from `pr.diff` when present, comment, Evidence folded, leak marks.
 - `Enter` (comment: copy and open), `a`, `A`, `e`, `c`, `o`, `d`, `f`, `s`, `u`, `j`, `k`, `g`. Edit with the

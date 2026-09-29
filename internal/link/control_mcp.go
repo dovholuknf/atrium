@@ -265,10 +265,10 @@ func (c *controlMCP) server() *mcp.Server {
 			"kept, and so is its branch, and the answer says why. The worker is still asked to " +
 			"leave in that case, which frees its launch-cap slot. Nothing is forced: git removes " +
 			"the worktree only when it agrees it is clean. The card and its history stay.\n\n" +
-				"YOU USUALLY DO NOT NEED TO CALL THIS. When a worker's branch merges, its room marks it " +
-				"and culls it after a grace period (30 minutes by default) unless it has a new turn or " +
-				"is held, and tells its launcher once. `hold=true` keeps a worker for good: the mark is " +
-				"dropped and nothing marks it again, only an explicit cull removes it.",
+			"YOU USUALLY DO NOT NEED TO CALL THIS. When a worker's branch merges, its room marks it " +
+			"and culls it after a grace period (30 minutes by default) unless it has a new turn or " +
+			"is held, and tells its launcher once. `hold=true` keeps a worker for good: the mark is " +
+			"dropped and nothing marks it again, only an explicit cull removes it.",
 	}, c.cullHandler)
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -718,6 +718,8 @@ type sayInput struct {
 	Text string `json:"text" jsonschema:"what to say, as one agent to another. the recipient is told who you are automatically, so do not announce yourself"`
 	// When is `immediate` (the default) or `done`. See internal/daemon/saywhen.go.
 	When string `json:"when,omitempty" jsonschema:"immediate (the default): typed as soon as the line is empty, even mid-turn. done: wait for that session's turn to end"`
+	// Wake resumes a parked card so this reaches it.
+	Wake bool `json:"wake,omitempty" jsonschema:"true to resume a PARKED session (idle, no process) and deliver this. it costs a cold start, so leave it off unless the message is worth it. without it a say to a parked session is refused and nothing is queued"`
 }
 
 type sayOutput struct {
@@ -774,9 +776,12 @@ func (c *controlMCP) sayHandler(ctx context.Context, req *mcp.CallToolRequest, i
 		Warning   string `json:"warning"`
 		When      string `json:"when"`
 	}
-	body := map[string]string{"text": in.Text, "from": from}
+	body := map[string]any{"text": in.Text, "from": from}
 	if w := strings.TrimSpace(in.When); w != "" {
 		body["when"] = w
+	}
+	if in.Wake {
+		body["wake"] = true
 	}
 	if err := c.ask(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(id)+"/message", room,
 		body, &res); err != nil {

@@ -115,9 +115,14 @@ func (d *Daemon) hasOutstandingWorker(launcherID string) bool {
 }
 
 // workerOutstanding is the one place that says what still counts as a worker
-// being around. A parked worker will count here once parking exists.
+// being around. A parked worker counts: it is idle, not finished, and its
+// launcher is still waiting on it.
 func (d *Daemon) workerOutstanding(id string) bool {
-	return d.sup.get(id) != nil
+	if d.sup.get(id) != nil {
+		return true
+	}
+	t, err := d.st.Get(id)
+	return err == nil && isParked(t)
 }
 
 // agentLaunched reports whether a card was started by `atrium_launch`.
@@ -232,6 +237,12 @@ func (d *Daemon) launcherOf(worker *store.Task) *store.Task {
 	if worker == nil || !worker.Launched() {
 		return nil
 	}
+	// THE ONE PLACE A DELIVERY FINDS ITS LAUNCHER, so the stored `report_to` is
+	// resolved again here: a report, a stop notice and a context notice all come
+	// through. The stored id below is the fallback. See reportto.go.
+	if t := d.currentLauncher(worker); t != nil {
+		return t
+	}
 	if worker.SpawnedByID != "" {
 		if t, err := d.st.Get(worker.SpawnedByID); err == nil {
 			return t
@@ -335,6 +346,7 @@ func (d *Daemon) peerSaid(from string, target *store.Task, text string) {
 	if !sender.Launched() {
 		return
 	}
+	d.currentLauncher(sender)
 	if sender.SpawnedByID != target.ID && d.st.Qualify(sender.SpawnedBy) != target.WireName {
 		return
 	}
@@ -350,7 +362,7 @@ func (d *Daemon) peerSaid(from string, target *store.Task, text string) {
 // has no Stop hook. Returns whether a notice went.
 func (d *Daemon) silentStop(taskID string) bool {
 	t, err := d.st.Get(taskID)
-	if err != nil || !agentLaunched(t) {
+	if err != nil || !d.reportsToLauncher(t) {
 		return false
 	}
 	ended, ok := d.stoppedSilently(t)
@@ -387,6 +399,11 @@ func (d *Daemon) silentStop(taskID string) bool {
 // docs/keepalive-policy-design.md section 7.
 func (d *Daemon) stoppedSilently(t *store.Task) (time.Time, bool) {
 	if t.Status != store.StatusNeedsInput || !t.OwesReport() {
+		return time.Time{}, false
+	}
+	// A PARKED CARD IS NEVER SILENT: it was put down on purpose, with no process
+	// to have stopped.
+	if isParked(t) {
 		return time.Time{}, false
 	}
 	if hasTag(t.Tags, DirectorTag) && d.hasOutstandingWorker(t.ID) {
@@ -572,7 +589,7 @@ func (d *Daemon) watchWorkers(now time.Time) error {
 	}
 	live := map[string]bool{}
 	for _, t := range tasks {
-		if !agentLaunched(t) {
+		if !d.reportsToLauncher(t) {
 			continue
 		}
 		live[t.ID] = true

@@ -48,16 +48,10 @@ loadThemes().then(() => { if (termTask) previewTheme(termTask.theme || ""); });
 // for it, because the whole question there is whether to draw a board at all.
 guestKnown = askIfGuest().then(word => { guestWord = word; return word; });
 
-// HOW OFTEN THE PAGE ASKS AGAIN, when nothing has told it to.
-//
-// The poll is the backstop, not the mechanism. Everything that changes arrives
-// on the event stream and repaints as it lands, so this is here for what the
-// stream cannot say: a connection that dropped without closing, a counter that
-// only ticks with the clock, a daemon that came back while the tab was buried.
-//
-// Declared above the boot block that reads it, since `const` throws until its
-// own line has run. See the temporal dead zone note at the top of this file.
-const POLL_MS = 10000;
+// HOW OFTEN THE PAGE ASKS AGAIN, when nothing has told it to: once a minute,
+// and only while the tab can be seen. Everything that changes arrives on the
+// event stream and repaints as it lands. See `startResync` and `want` in
+// js/settings-spine.js.
 
 // WHICH ROOM, BEFORE ANYTHING IS ASKED FOR.
 //
@@ -81,9 +75,9 @@ startRooms().then(() => {
     setInterval(soloClaimBeat, soloBeatMs);
     bootTerminalOnly().then(() => {
       connect();
-      // Through the single-flight guard, so a poll cannot start a second solo
-      // fan-out over one already running while the wire is slow. See runRefresh.
-      setInterval(runRefresh, POLL_MS);
+      // The safety resync, through the single-flight guard, so it cannot start a
+      // second solo fan-out over one already running. See `startResync`.
+      startResync();
     });
   } else {
     bootBoard();
@@ -143,7 +137,7 @@ async function bootBoard() {
       history.replaceState(navState(), "");
     }
   }, soloRollCall);
-  setInterval(runRefresh, POLL_MS);
+  startResync();
   // Every other way this page goes away: a manual reload, a close, a
   // navigation. `pagehide` rather than `unload`, which a browser is free to
   // skip when it freezes a page into the back/forward cache.

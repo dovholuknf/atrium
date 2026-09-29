@@ -118,6 +118,10 @@ func (d *Daemon) reapOnce() error {
 		if d.sup.get(t.ID) != nil {
 			continue
 		}
+		// A parked card has no process by design, and its pid is a stale hint.
+		if isParked(t) {
+			continue
+		}
 		// No pid to ask about, so fall back to silence. A card waiting on a
 		// human is exempt: it is quiet because nobody has answered it, and
 		// marking it dead would discard the question.
@@ -198,6 +202,9 @@ func (d *Daemon) reap(ctx context.Context, every time.Duration) {
 		// A worker whose worktree was removed from under it. Same tick, after
 		// liveness. The wind-down runs off the tick. See worktreegone.go.
 		d.reapGoneWorktrees()
+		// A card idle past `idle_park_after` is parked, a director after writing
+		// its handoff. Off the tick's path: it starts goroutines. See idletick.go.
+		d.parkIdle(time.Now())
 		// Agent-launched work nobody has heard from. Same tick, after liveness,
 		// so a card the reaper just marked dead is not reported as stuck. See
 		// a2a.go.
@@ -241,6 +248,10 @@ func (d *Daemon) reap(ctx context.Context, every time.Duration) {
 		// tick and no second timer: it is the same question the two sweeps
 		// above ask, about a file instead of a row. See `carryover.go`.
 		d.sweepCarryover()
+		// And the limit readings kept for the usage tab past their keep.
+		if err := d.pruneLimitReadings(); err != nil {
+			log.Printf("[atrium] pruning limit readings: %v", err)
+		}
 		// And settled items from the dispatch queue, which is the same job for
 		// a different table. Only settled ones: an item nobody has collected is
 		// a promise, and it ages out through its lease rather than through

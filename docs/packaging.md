@@ -752,7 +752,9 @@ lingering off unless `ATRIUM_LINGER=1`, which `-Linger` passes. The package post
 there five seconds later, then runs each runner's `--version` on the remote.
 
 **Runners.** Report only by default. `-Install claude,codex` fetches from the vendor: `https://claude.ai/install.sh`
-or `install.ps1` for claude, the `openai/codex` GitHub release for codex. It prints a trust warning first. If
+or `install.ps1` for claude. Codex needs its helpers beside it, so with node and npm on the login PATH it runs
+`npm install -g --prefix ~/.local @openai/codex`, and without them it unpacks the whole `codex-package` release into
+`~/.local/share/codex/<version>` with a `codex` wrapper in `~/.local/bin`. It prints a trust warning first. If
 `~/.local/bin` is not on PATH it adds it: the user's Path in the registry on Windows, one marked line in the login
 profile on Unix.
 
@@ -767,6 +769,16 @@ Then `push-base <room>` refreshes `hub-main`, `worktree <room> <name>` makes `cl
 the path for `atrium_launch room=<room>`, and `fetch <room>` brings the room's `claude/*` branches back to
 `<room>/claude/*` for the Release department to merge. The atrium binary does no git. See `docs/remote-launch.md`
 section 6.
+
+**The permission gate.** The gate that puts a worker's tool calls on the board as permission prompts is not one of
+atrium's hooks. It is the operator's dotfiles script `~/.claude/hooks/atrium-perm-hook.ps1`, so a room has the badge and
+the session open and close and no prompts until it is there. After the hooks step provision runs
+`scripts/room-gate.ps1 <room>`, which reads that one script from the operator's machine (it is not in this repository),
+copies it to the room when its SHA-256 differs, and registers it FIRST in the room's PreToolUse group with matcher
+`""`, timeout 86400, after a `settings.json.atrium-<stamp>.bak`. The hook command uses the absolute pwsh found on the
+room, since the gate runs under pwsh, and a room with none is told to run `room-toolchain.ps1`. It then probes the
+room's listener on 7777 and reads the runner row for an `ATRIUM_PERM_GATE=off`. `-Check` writes nothing. Atrium's own
+gate (backlog f-006) replaces this step.
 
 ssh runs with `BatchMode=yes` and whatever the operator's ssh config and agent say. The script holds no key. The join
 string is single-use, good for an hour, and not stored. `~/.atrium/provision/manifest.json` records what was on the

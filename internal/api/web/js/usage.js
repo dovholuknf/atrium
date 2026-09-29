@@ -13,6 +13,7 @@ const USAGE_CAUSES = {
   keepalive: "keep-alive",
   resume: "resume",
   subagent: "subagent",
+  backfill: "backfilled",
   unknown: "unknown",
 };
 
@@ -60,6 +61,13 @@ const USAGE_TIPS = {
   write5m: "input tokens written to the 5 minute prompt cache (1.25x the input price)",
   write1h: "input tokens written to the 1 hour prompt cache (2x the input price)",
   read: "input tokens read back from the prompt cache (0.1x the input price, less on some models)",
+  cause_backfill: "turns recorded afterwards from the session's transcript, by `atrium usage backfill`",
+  cause_keepalive: "refreshes that keep the card's cache warm while it is idle",
+  peak: "the busiest bucket in the range, in tokens per minute, from the room's recorded turns",
+  cardTotal: "this card's tokens in the range, from the room's recorded turns",
+  causeCount: "prompts and API calls (or refreshes) recorded in the range for this cause",
+  causeCounted: "counted tokens in the range for this cause: uncached in, out and cache writes. cache reads are the dim column",
+  causeAll: "all five kinds of tokens in the range for this cause, cache reads included",
   scope: "covers the whole card: every session it has run, including before a /clear, and keep-alive refreshes " +
     "and subagents",
 };

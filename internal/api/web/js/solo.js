@@ -625,11 +625,22 @@ async function soloRefresh() {
   // sub-15s timer, which keeps beating no matter how long this poll is stuck.
   // One source only, so a card is claimed once per beat and never twice.
 
-  const [task, waiting, perms] = await Promise.all([
-    api("/v1/tasks/" + encodeURIComponent(soloID)).catch(() => null),
-    api("/v1/waiting").then(r => r.tasks || []).catch(() => null),
-    api("/v1/permissions").then(r => r.permissions || []).catch(() => null)
+  // Only what an event marked, the same rule as the board's pass (see `want`).
+  // The card comes from a `task` event that carried its whole row when there
+  // was one, and is read only when the event did not. Whether it is waiting on
+  // you is worked out from the card, as the board works it out from its map.
+  const take = { tasks: want.tasks, perms: want.perms, health: want.health };
+  want.tasks = want.perms = want.health = false;
+  const [task, perms] = await Promise.all([
+    take.tasks
+      ? api("/v1/tasks/" + encodeURIComponent(soloID)).catch(() => { want.tasks = true; return null; })
+      : Promise.resolve(soloRow),
+    take.perms
+      ? loadPerms().catch(() => { want.perms = true; return null; })
+      : Promise.resolve(permsLoaded ? permsLocal : null)
   ]);
+  if (task) soloRow = task;
+  const waiting = task ? [task].filter(waitingRow) : null;
 
   // A branch can change under a running session, and the title is the whole
   // product here, so it is re-read rather than fixed at open.
@@ -672,7 +683,7 @@ async function soloRefresh() {
 
   // A halted daemon is a fact about this terminal too: the session behind it
   // is parked and nothing said so.
-  api("/v1/health").then(h => {
+  if (take.health) api("/v1/health").then(h => {
     checkBuild(h.build);
     const el = document.getElementById("halted");
     el.style.display = h.halted ? "flex" : "none";
@@ -680,7 +691,7 @@ async function soloRefresh() {
       document.getElementById("halt-t").innerHTML =
         `agents are parked and will not reconnect until you restart. <code>${esc(h.cause)}</code>`;
     }
-  }).catch(() => {});
+  }).catch(() => { want.health = true; });
 }
 
 // Rings once on the way in, and only on the way in.
@@ -1004,3 +1015,13 @@ document.querySelectorAll("dialog").forEach(d => {
   });
 });
 
+
+// A `task` or `task-removed` event in a popped-out window. Only its own card
+// matters. A whole row is taken as it is; anything else re-reads the card,
+// throttled like the board's list. See `onTaskEvent`.
+let soloRow = null;
+function soloTaskEvent(d) {
+  if (d && d.id && soloID && !sameCard(d.id, soloID)) return;
+  if (cardRowComplete(d)) { soloRow = d; paintSoon(); return; }
+  tasksSoon();
+}

@@ -96,6 +96,13 @@ type Proxy struct {
 func NewProxy(hub *Hub, board fs.FS, boardID string, room func() string) *Proxy {
 	p := &Proxy{hub: hub, board: board, boardID: boardID, room: room}
 	p.feeds = newFeeds(p)
+	// A ROOM'S STREAM COMING UP is when the board-wide approver sweeps that room.
+	// See autoapprove.go.
+	p.feeds.connected = func(room string) {
+		if ap := p.autoApprover(); ap != nil {
+			ap.sweepRoomIfOn(context.Background(), room)
+		}
+	}
 	p.restart = newRestartGate(func(state map[string]any) {
 		data, err := json.Marshal(state)
 		if err != nil {
@@ -991,6 +998,12 @@ func (p *Proxy) SetInventory(s Inventory) {
 	ap.start()
 }
 
+func (p *Proxy) autoApprover() *autoApprover {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.approver
+}
+
 func (p *Proxy) inventory() Inventory {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -1054,22 +1067,16 @@ func (p *Proxy) startsNothing(w http.ResponseWriter, r *http.Request) bool {
 // grouping, and it is drawn there rather than baked in, because the same list
 // is also the answer to "what exists" and that question has no groups in it.
 func (p *Proxy) serveInventory(w http.ResponseWriter, _ *http.Request) {
-	stock := p.inventory()
-	if stock == nil {
-		// A hub with nothing written down says so rather than pretending its
-		// connection list is an inventory. The board draws the difference.
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"durable": false, "rooms": p.hub.Rooms(),
-		})
-		return
-	}
-	rooms, err := stock.Known()
+	// Built by `inventoryView`, the same function the `rooms` event uses. A hub
+	// with nothing written down says so (`durable` false) rather than pretending
+	// its connection list is an inventory. The board draws the difference.
+	rooms, durable, err := p.inventoryView()
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		fmt.Fprintf(w, `{"error":%q}`, err.Error())
 		return
 	}
-	_ = json.NewEncoder(w).Encode(map[string]any{"durable": true, "rooms": rooms})
+	_ = json.NewEncoder(w).Encode(map[string]any{"durable": durable, "rooms": rooms})
 }
 
 // changeInventory marks a room for deletion, or takes the mark back off.
@@ -1106,6 +1113,9 @@ func (p *Proxy) changeInventory(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, `{"error":%q}`, err.Error())
 		return
 	}
+	// The rooms tab draws the mark, and a board scoped to one room hears this
+	// too. See `feeds.roomsChanged`.
+	p.feeds.roomsChanged()
 	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
 }
 
@@ -1162,6 +1172,7 @@ func (p *Proxy) forgetInventory(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, `{"error":%q}`, err.Error())
 		return
 	}
+	p.feeds.roomsChanged()
 	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
 }
 
@@ -1207,6 +1218,30 @@ func (p *Proxy) serveControl(w http.ResponseWriter, r *http.Request) {
 	p.control.ServeHTTP(w, r)
 }
 
+// serveNudge is a CLI in another process saying it just wrote the hub's store.
+//
+// `atrium rooms token`, `rm --force` and the rest open the database file
+// themselves, so this process cannot know they ran. It takes NO ARGUMENTS and
+// trusts nothing in the request: the hub re-reads its own store and decides
+// whether a board has anything new. That is what makes it safe to leave open to
+// anything on this machine, and it is loopback only anyway, like the control
+// server. A hub that is down never hears it, which costs nothing: a board
+// reconnecting fetches the lists.
+func (p *Proxy) serveNudge(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		fmt.Fprintf(w, `{"error":%q}`, "that has to be a POST")
+		return
+	}
+	if !loopbackRemote(r.RemoteAddr) {
+		w.WriteHeader(http.StatusForbidden)
+		fmt.Fprintf(w, `{"error":%q}`, "only the machine the hub runs on can tell it its store changed")
+		return
+	}
+	p.feeds.roomsChanged()
+	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
+}
+
 // serveHubAPI answers the few things only the hub knows.
 func (p *Proxy) serveHubAPI(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
@@ -1224,7 +1259,9 @@ func (p *Proxy) serveHubAPI(w http.ResponseWriter, r *http.Request) {
 		// the picker, in the groups, and in the count of things wanting
 		// attention. The inventory is a different question and has its own
 		// endpoint.
-		_ = json.NewEncoder(w).Encode(map[string]any{"rooms": p.hub.Rooms()})
+		_ = json.NewEncoder(w).Encode(map[string]any{"rooms": p.attachedView()})
+	case "nudge":
+		p.serveNudge(w, r)
 	case "inventory":
 		p.serveInventory(w, r)
 	case "inventory/mark":

@@ -79,6 +79,12 @@ type Options struct {
 	// that every supervised terminal on the machine pays for. Empty is the
 	// default and is the embed. See api.Server.BoardDir.
 	BoardDir string
+	// StartedBy is the `--started-by <kind>:<nonce>` a supervisor gave this
+	// process. KEPT IN MEMORY ONLY: never exported to the environment and never
+	// passed to anything this process spawns, so no child of a supervised room
+	// can claim to be one. `POST /v1/preflight` reports it. Empty when nothing
+	// supervised the start.
+	StartedBy string
 }
 
 // Daemon owns the store and both listeners.
@@ -97,6 +103,17 @@ type Daemon struct {
 
 	// sup holds the runners atrium owns, when a harness launches in pty mode.
 	sup *supervisor
+
+	// humanTouched is when each card's human touch was last written, so a run
+	// of keystrokes costs one map lookup each and one store write a minute. See
+	// humanTouch in park.go.
+	humanTouched sync.Map
+	// decideWho is who is deciding a permission while the decide route resolves
+	// it: permission id to decider. Held only for the call. See decideBy.
+	decideWho sync.Map
+	// idle is what the idle parking tick remembers between ticks: a handoff under
+	// way, and the idle clock a handoff turn must not move. See idletick.go.
+	idle idleParks
 
 	// roomView is the last size a viewer agreed on for any runner, loaded from
 	// the store on first use. See roomsize.go.
@@ -175,6 +192,11 @@ type Daemon struct {
 
 	// usage records every Claude card's token use, a row per turn. See usage.go.
 	usage *usageTracker
+
+	// limitLast is the last limit figure kept per card and kind, so a repeated
+	// statusline post writes nothing. See keepLimitReadings.
+	limitMu   sync.Mutex
+	limitLast map[string]string
 
 	// ledgerDirty asks the snapshot writer to rewrite work-ledger.md. One slot,
 	// so any number of changes while a write is under way are one more write.
@@ -298,6 +320,7 @@ func New(opts Options) (*Daemon, error) {
 	st.OnRelayHeld = d.kickRelays
 	d.ap.BoardDir = opts.BoardDir
 	d.ap.Decide = d.decide
+	d.ap.DecideBy = d.decideBy
 	d.ap.Room = opts.Room
 	d.ap.Launch = d.launchFromJSON
 	d.ap.Kill = d.Kill
@@ -324,8 +347,10 @@ func New(opts Options) (*Daemon, error) {
 	d.ap.Report = d.handleReport
 	d.ap.RestartWake = d.handleRestartWake
 	d.ap.NewContext = d.handleNewContext
+	d.ap.Resume = d.handleResume
 	d.ap.SendNote = d.handleSendNote
 	d.ap.Shutdown = d.handleShutdown
+	d.ap.Preflight = d.handlePreflight
 	d.ap.Shelve = d.Shelve
 	d.ap.StopRunner = d.StopRunner
 	d.ap.Cull = func(id, into, tip string) (any, error) { return d.CullProved(id, into, tip) }
@@ -492,6 +517,7 @@ func New(opts Options) (*Daemon, error) {
 	d.usage.broadcast = d.ap.Broadcast
 	// A keep-alive refresh's row is announced the same way as a turn's.
 	d.ka.spent = func(u *store.SessionUsage) error {
+		d.usage.stamp(u)
 		err := st.AddSessionUsage(u)
 		if err == nil {
 			d.usage.emitRow(u)
@@ -524,6 +550,33 @@ func (d *Daemon) launchFromJSON(body []byte) (*store.Task, error) {
 // without signalling the reply channel the hook is waiting on would leave that
 // runner hanging.
 func (d *Daemon) decide(permID, decision, reason, command string) (*store.Permission, error) {
+	return d.decideBy(permID, decision, reason, command, "")
+}
+
+// DecidedByHubAuto is the one decider a caller of the decide route may name:
+// the hub's board-wide auto switch (r-020). Everything else a caller sends is
+// refused, so no caller can forge a rule's name or another decider.
+const DecidedByHubAuto = "global-auto"
+
+// decideBy is decide with the decider named. "" is the operator by hand, as
+// always. `by` is stashed for the permission, and whichever path records the
+// decision (the parked agent's, or the fallback below) reads it back, so both
+// record the same decider.
+func (d *Daemon) decideBy(permID, decision, reason, command, by string) (*store.Permission, error) {
+	if by != "" {
+		d.decideWho.Store(permID, by)
+		defer d.decideWho.Delete(permID)
+	}
+	p, err := d.decideInner(permID, decision, reason, command)
+	// A person answering is the human touch. A rule or auto mode answering is
+	// not, and never comes through here with DecidedBySelf.
+	if err == nil && p != nil && p.DecidedBy == store.DecidedBySelf {
+		d.humanTouch(p.TaskID, ViaPermission)
+	}
+	return p, err
+}
+
+func (d *Daemon) decideInner(permID, decision, reason, command string) (*store.Permission, error) {
 	if command != "" {
 		// Record the rewrite before releasing the agent, so the audit log shows
 		// what actually ran rather than what was asked for.
@@ -538,13 +591,24 @@ func (d *Daemon) decide(permID, decision, reason, command string) (*store.Permis
 	// Nothing is blocked on it: the agent gave up, or the daemon restarted
 	// while the request was pending. Record the decision anyway so the queue
 	// does not keep showing it.
-	p, err := d.st.DecidePermission(permID, decision, reason)
+	p, err := d.st.DecidePermissionBy(permID, decision, reason, d.decidedBy(permID))
 	if err != nil {
 		return nil, err
 	}
 	d.publishTask(p.TaskID)
 	d.ap.Broadcast("permission", p)
 	return p, nil
+}
+
+// decidedBy is who is deciding this permission right now: the decider stashed by
+// decideBy, else the operator by hand.
+func (d *Daemon) decidedBy(permID string) string {
+	if v, ok := d.decideWho.Load(permID); ok {
+		if by, _ := v.(string); by != "" {
+			return by
+		}
+	}
+	return store.DecidedBySelf
 }
 
 // Store exposes the store.
@@ -619,6 +683,8 @@ func (d *Daemon) onHalt(cause error) {
 		_ = srv.Shutdown(ctx)
 	}
 	d.ap.Broadcast("halted", map[string]string{"cause": fmt.Sprint(cause)})
+	// And as `health`, the event the board reads instead of polling /v1/health.
+	d.publishHealth()
 }
 
 // observedFor builds the observed bucket from what the wire name tells us.
@@ -823,7 +889,7 @@ func (d *Daemon) CancelPending(taskID, reason string) (int, error) {
 }
 
 func (d *Daemon) onPermDecided(permID, decision, reason string) {
-	p, err := d.st.DecidePermission(permID, decision, reason)
+	p, err := d.st.DecidePermissionBy(permID, decision, reason, d.decidedBy(permID))
 	if err != nil {
 		log.Printf("[atrium] decide %s: %v", permID, err)
 		return
@@ -964,6 +1030,8 @@ func (d *Daemon) Run(ctx context.Context) error {
 	// Free liveness: ask the operating system whether each runner still
 	// exists, rather than asking the runner.
 	go d.reap(ctx, ReapEvery)
+	// The room's own stats, pushed to the board. See roomstats.go.
+	d.startRoomStats(ctx)
 	// Handing the space a prune or an event roll-off freed back to disk, a
 	// bounded batch at a time while the room stays live. A no-op on an older
 	// database not in incremental auto_vacuum mode. See vacuum.go.
@@ -985,6 +1053,8 @@ func (d *Daemon) Run(ctx context.Context) error {
 		// settling.go, and note this opens BEFORE the goroutine: a window that
 		// started inside it would race the first fixture.
 		d.settle.begin()
+		// Say so on the stream, and say again when the window closes. See health.go.
+		go d.watchSettle(ctx)
 		// Terminals that come up with the daemon, and then the ones that were
 		// simply open when it stopped. In the background, so a runner that is
 		// slow to start cannot delay the board answering: a board that is not
