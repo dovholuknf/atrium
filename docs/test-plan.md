@@ -5614,3 +5614,42 @@ xterm.js, regenerate with `node internal/daemon/testdata/gen_widths.js go intern
 1. Break the dismiss entry in the card menu locally and run the headless run.
 
 **Expected:** the failure names the menu wait and its budget in milliseconds.
+
+## DE. The notification drawer's off switch
+
+### DE1. Off holds back and records
+
+1. Open the notification drawer from the bell and click "turn off".
+2. Let a card finish a turn so it goes ready, with the board focused and again with it in the background.
+
+**Expected:** no toast, no desktop notification and no sound. Open the drawer: the entry is listed once, and the
+bell's badge counted it. The bell is a struck bell whose tip reads "notifications are off. click to see what arrived".
+
+### DE2. A permission request still comes through
+
+1. With notifications off, have a session ask for a permission.
+
+**Expected:** the toast, sound and desktop notification all appear as normal.
+
+### DE3. It survives a reload and shows in the gear
+
+1. Reload the board, and open the gear's notifications section.
+
+**Expected:** the bell is still struck, the drawer button reads "turn on", and the gear's switch is ticked. Turning
+it on from either place repaints the other and the bell.
+
+## DF. Marks and wide characters on a replayed terminal and the idle badge
+
+### DF1. A redrawn emoji spinner does not eat the marks after it
+
+1. In a supervised card, print a line redrawn many thousands of times with `\r` and a trailing U+FE0F.
+2. Print a line of Devanagari with vowel signs, then detach and attach the card.
+
+**Expected:** the Devanagari line replays with its vowel signs intact.
+
+### DF2. A CJK prompt at an idle Claude Code prompt
+
+1. In a supervised Claude card, type a Japanese or Chinese line at the prompt and leave it, silent, past the
+   looks-idle delay.
+
+**Expected:** the card gets the looks-idle badge as it would with an ASCII prompt.
