@@ -197,6 +197,10 @@ type Daemon struct {
 	// See clearLocation.
 	clearOnce sync.Once
 
+	// gone is what the reaper remembers about worktrees that have vanished. See
+	// worktreegone.go.
+	gone goneWatch
+
 	mu          sync.Mutex
 	agentServer *http.Server
 }
