@@ -180,6 +180,10 @@ func (d *Daemon) handleStop(w http.ResponseWriter, r *http.Request) {
 		// turn ended. Zero from a hook older than the field, which is the old
 		// behaviour. See turnPaused.
 		SubagentsRunning int `json:"subagents_running,omitempty"`
+		// How many other background tasks (shells, headless runs) were still
+		// running. Unlike subagents these do not hold the card in running, but
+		// they do hold the silent-stop alert. See stoppedSilently.
+		BackgroundRunning int `json:"background_running,omitempty"`
 	}
 	w.Header().Set("Content-Type", "application/json")
 	// Nothing to say. The subcommand turns this into empty output, which is
@@ -234,6 +238,7 @@ func (d *Daemon) handleStop(w http.ResponseWriter, r *http.Request) {
 	// Unless its subagents are still working, in which case the session is
 	// waiting on them and not on the operator. See turnPaused.
 	d.act.setBackground(task.ID, in.SubagentsRunning)
+	d.act.setBackgroundWork(task.ID, in.BackgroundRunning)
 	// What the turn spent, read off its transcript once it settles. Every Stop
 	// ends a row, the one a message is about to continue included. See usage.go.
 	spent := *task
