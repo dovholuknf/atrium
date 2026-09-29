@@ -615,8 +615,23 @@ Two rules go with it, whichever option is picked:
   so a wait on clint that was reported never rings. Only an unreported wait does, and under option 2 only once its
   workers have ended.
 
-BUILT (r-007 stage 1): option 2 in `stoppedSilently`, counting live runners. Parked workers and the parked-card rule
-wait for the parking machinery (`workerOutstanding` in `a2a.go` is where they go).
+BUILT (r-007 stages 1 and 3): option 2 in `stoppedSilently`, counting live runners and parked workers
+(`workerOutstanding` in `a2a.go`), and a parked card is never silently stopped.
+
+BUILT (r-007 stage 3), sections 1, 4 and 5 minus the restart-time snapshot: the human touch stamping, `parkCard`,
+`unpark`, the say gate and `wake`, in `internal/daemon/park.go` and `internal/store/park.go`. Tests in `park_test.go`.
+BUILT (r-007 stage 4): `internal/daemon/idlepark.go` answers who is subject and holds the orchestrator's own rule, the
+tag `atrium:orchestrator` and no other card with a live runner (parked, fixtures and shells do not count). The tick
+that asks it is stage 5.
+
+BUILT (r-007 stage 5): `internal/daemon/idletick.go` is the reaper tick, the idle clock, the director's
+handoff through item 66's capture (`ncCapture`) and `HandoffName`, the park, and the handoff wake queued in `unpark`.
+The setting is `idle_park_after` (`internal/store/idlepark.go`, exposed in the settings API). The review's four changes are in:
+background work blocks parking, a family say (`fromFamily`, on `launcher_id`) wakes, keep-alive skips a parked card,
+and the parked answer names `wake=true`.
+
+Not built: the keep-alive rule reading `human_at`, the restart snapshot, and the stamps for a plain operator message
+(covered by the resume stamp), an action and enabling keep-alive.
 
 Tests: `TestDirectorWithLiveWorkerNotSilent`, `TestDirectorWithParkedWorkerNotSilent`,
 `TestDirectorAllWorkersEndedIsSilent` (one notice, on the usual backoff), `TestWorkerSilentStopUnchanged`,

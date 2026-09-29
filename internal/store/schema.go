@@ -1821,6 +1821,17 @@ var migrations = []struct {
 			`ALTER TABLE task ADD COLUMN last_rows INTEGER NOT NULL DEFAULT 0`,
 		},
 	},
+	{
+		// The last moment a person did something to a card and what they did, and
+		// when a card was parked: no process, status kept. Empty means never. See
+		// docs/keepalive-policy-design.md sections 1, 4 and 7.
+		name: "0071_human_at_parked_at",
+		stmts: []string{
+			`ALTER TABLE task ADD COLUMN human_at TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE task ADD COLUMN human_via TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE task ADD COLUMN parked_at TEXT NOT NULL DEFAULT ''`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the

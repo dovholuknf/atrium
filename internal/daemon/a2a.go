@@ -115,9 +115,14 @@ func (d *Daemon) hasOutstandingWorker(launcherID string) bool {
 }
 
 // workerOutstanding is the one place that says what still counts as a worker
-// being around. A parked worker will count here once parking exists.
+// being around. A parked worker counts: it is idle, not finished, and its
+// launcher is still waiting on it.
 func (d *Daemon) workerOutstanding(id string) bool {
-	return d.sup.get(id) != nil
+	if d.sup.get(id) != nil {
+		return true
+	}
+	t, err := d.st.Get(id)
+	return err == nil && isParked(t)
 }
 
 // agentLaunched reports whether a card was started by `atrium_launch`.
@@ -387,6 +392,11 @@ func (d *Daemon) silentStop(taskID string) bool {
 // docs/keepalive-policy-design.md section 7.
 func (d *Daemon) stoppedSilently(t *store.Task) (time.Time, bool) {
 	if t.Status != store.StatusNeedsInput || !t.OwesReport() {
+		return time.Time{}, false
+	}
+	// A PARKED CARD IS NEVER SILENT: it was put down on purpose, with no process
+	// to have stopped.
+	if isParked(t) {
 		return time.Time{}, false
 	}
 	if hasTag(t.Tags, DirectorTag) && d.hasOutstandingWorker(t.ID) {

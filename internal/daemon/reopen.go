@@ -149,28 +149,8 @@ func (d *Daemon) reopenSaved() {
 		if i > 0 {
 			time.Sleep(reopenGap)
 		}
-		req := LaunchRequest{
-			Harness: t.Runner,
-			Cwd:     t.Worktree,
-			TaskID:  t.ID,
-			Resume:  d.reopenResume(t),
-			// THE MODEL COMES BACK TOO, and this is the line the whole
-			// durable side of that feature exists for.
-			//
-			// This rebuilds a launch out of the card, so anything not named
-			// here reverts to the runner's default. A session started on one
-			// model and reopened without it would move back on the next
-			// restart, silently, which is the failure choosing a model was
-			// meant to solve arriving through a different door.
-			//
-			// `Launch` falls back to the card's own value anyway, so this is
-			// belt and braces. It is written out because the fallback is in
-			// another file and a future edit there would take this with it
-			// without anybody noticing.
-			Model: t.Model,
-			// The effort and the extras, for the same reason.
-			Effort: t.Effort, Args: t.LaunchArgs, Env: t.LaunchEnv,
-		}
+		// The card is the launch spec, model and extras included. See reopenRequest.
+		req := d.reopenRequest(t)
 		_, err := d.Launch(req)
 		// Back, or never coming. Both end the wait on this card: a worktree
 		// that has gone would otherwise keep the board quiet until the
@@ -224,6 +204,10 @@ func (d *Daemon) reopenWanted() []*store.Task {
 		// agent's behalf in the permission chain, so a reopened runner would
 		// sit blocked behind a card nobody is looking at.
 		if t.Status == store.StatusShelved {
+			continue
+		}
+		// Parked is put down the same way: it wakes when something asks it to.
+		if isParked(t) {
 			continue
 		}
 		// Do not reopen throwaways. Their directories may be gone or awaiting
