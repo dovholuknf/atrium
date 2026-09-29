@@ -5715,3 +5715,217 @@ card stays in `done`.
 
 **Expected:** `atrium_say` answers `undeliverable` and the note says to resume it first. `atrium tell` answers that the
 session has ended. Nothing is queued.
+
+## DI. Clicking `? N` dismisses the questions
+
+### DI1. Dismiss from each place
+
+1. Have a session end a turn with an Open Questions block of two items.
+2. Click the `? 2` chip on its stack row, then repeat for a board card and the terminals strip.
+
+**Expected:** the row is not selected and the card does not open. A "questions dismissed" toast says nothing was sent
+to the session, and the chip is gone after the next repaint. The unseen dot, if it was showing, is still there.
+
+### DI2. Keyboard
+
+1. Tab to the `? N` chip and press Enter. Repeat with Space on another card.
+
+**Expected:** each dismisses its questions the same as a click.
+
+### DI3. Newer questions are not dismissed
+
+1. Open the board, then let the session end another turn with new questions before you click the old chip.
+
+**Expected:** the toast says newer questions arrived and nothing was dismissed, and the new chip shows.
+
+### DI4. What an agent sees
+
+1. After a dismiss, call `atrium_task` on the card.
+
+**Expected:** `seen.answered` is true and `answered_via` is `dismissed`.
+
+### DI5. Held message chips
+
+1. Click a `!` chip and a queued mark on a terminal row.
+
+**Expected:** the row is not selected and nothing else changes.
+
+## DJ. busyGuard under load
+
+### DJ1. The refusal line check beside a Go suite
+
+1. Run `go test -p 4 ./...` and, beside it, `HEADLESS_ONLY=busyGuard node scripts/test-board-headless.js`.
+
+**Expected:** busyGuard passes. If the line really outlived its dialog it still fails with "the refusal line
+outlived its dialog".
+
+## DK. One command makes a room
+
+### DK1. A bare machine, no flags
+
+On a bare machine reachable by ssh, run `pwsh -File scripts\provision-room.ps1 <target>` with no flags.
+
+**Expected:** it builds from the checkout with a `fetch warn`, and every step ends `ok` or `done`, including
+`smoke ok`.
+
+### DK2. Run it again
+
+**Expected:** every step is `ok` and nothing is restarted.
+
+### DK3. Not signed in
+
+On a machine where claude is not signed in, run it.
+
+**Expected:** `auth` is a `warn` with the `ssh -t <target> claude auth login` command, `smoke` is `skip`, and the exit
+code is 0. After signing in, a rerun passes smoke.
+
+### DK4. Windows that denies CIM
+
+On a Windows machine that denies CIM over ssh, run with `-Autostart`, rerun, then `-Remove`.
+
+**Expected:** no CIM error appears and `schtasks /Query /TN atrium` finds nothing after.
+
+### DK5. Linux autostart
+
+On Linux with `-Autostart`, read `systemctl --user show atrium -p Environment`.
+
+**Expected:** it carries the login shell's PATH and a runner in `~/.local/bin` starts.
+
+### DK6. Remove
+
+Run `-Remove`.
+
+**Expected:** the room's row leaves the hub and the manifest's additions are gone.
+
+### DK7. Smoke only, against a room in use
+
+Against a room already provisioned and in use, run `-SmokeOnly`.
+
+**Expected:** only `ssh`, `os`, `hub`, `state`, `auth` and `smoke` lines appear, and the room's `attached` time on the
+hub is unchanged after.
+
+### DK8. Smoke timeout
+
+With `-SmokeTimeout 5` on a slow room, run it.
+
+**Expected:** smoke fails with exit 8 and the card is still exited.
+
+### DK9. The smoke worker is not stuck on a question
+
+During a smoke, read the card's scrollback on the board.
+
+**Expected:** the prompt is in the input and was sent, and no permission question for `atrium_say` or
+`atrium_report` appears.
+
+## DL. A remote room's work comes back by git
+
+Needs a room reachable over ssh (`m1mini`, `sg3`) and a local `claude/main`.
+
+### DL1. init
+
+Run `pwsh scripts/room-git.ps1 init <room>`, then run it again.
+
+**Expected:** steps `ssh`, `git`, `repo`, `remote`, `push-base`, `checkout` and `done ok`. `git remote get-url <room>`
+here shows the remote. The clone's `hub-main` is checked out and equals `claude/main`. The second run says `ok` on
+every step.
+
+### DL2. init adopts
+
+On a room whose clone already exists (a `git init` with a pushed `hub-main`), run `init`.
+
+**Expected:** it does not reinit or overwrite it, sets `updateInstead` if it was missing, and ends `done ok`.
+
+### DL3. No git
+
+On a remote with git off PATH, run `init`.
+
+**Expected:** it prints the install for that OS (`xcode-select --install`, the distro package,
+`winget install --id Git.Git -e`) and exits 3.
+
+### DL4. worktree
+
+Run `worktree <room> fb-proof` twice.
+
+**Expected:** `cwd ok <absolute path>`, then `ok` with the same path. `atrium_launch room=<room> cwd=<that path>`
+starts there.
+
+### DL5. Work comes back
+
+Commit in that remote worktree over ssh, then `fetch <room>` twice.
+
+**Expected:** `<room>/claude/fb-proof` appears here as `new`, and `git log <room>/claude/fb-proof` shows the commit.
+The second fetch says `ok`.
+
+### DL6. push-base moves the work tree
+
+Make a local change on a throwaway branch and `push-base <room> -From <branch>`. Push back with the default.
+
+**Expected:** the remote `hub-main` and its work tree move each time.
+
+### DL7. A dirty clone refuses
+
+Edit a tracked file in the clone, then `push-base`. Restore the file, then `push-base` again.
+
+**Expected:** the first fails with exit 5, says the work tree is not clean, and changes nothing. The second works.
+
+### DL8. Windows
+
+Steps 1, 4 and 5 on a Windows room, whose sshd default shell is PowerShell.
+
+**Expected:** the remote url is `host:C:/...` and `remote.<room>.receivepack` names `~\.room-git\git.cmd`.
+
+### DL9. Clean-up
+
+Remove the proof branch and worktree on the remote (`git worktree remove`, `git branch -D`), and the
+`refs/remotes/<room>/claude/fb-proof` ref here.
+
+**Expected:** nothing of the proof is left on either side.
+
+### DL10. Provision
+
+Run `provision-room.ps1 <target>`, then again with `-Repo none`.
+
+**Expected:** the first ends with the `room-git init` steps, and the second skips them.
+
+## DM. A pinned strip across rooms
+
+### DM1. Two rooms, one strip
+
+Two rooms attached, pin one card on each and one more on the first. In the ALL view drag the second room's card to
+the top, then reload.
+
+**Expected:** it is still at the top, and the other two are in the order they were dropped in.
+
+### DM2. One room hung
+
+The same, with the second room hung (attached, not answering).
+
+**Expected:** the drop answers within about 3 seconds with no toast, the first room's cards take their new order, and
+`unreached` names the second room.
+
+### DM3. A scoped view
+
+In a scoped view of one room, reorder its pins.
+
+**Expected:** that room's order is saved, the other room's cards are untouched.
+
+### DM4. The fan reaches every room (unit)
+
+`internal/link`, `TestThePinOrderReachesEveryRoomWhole`.
+
+**Expected:** the fan posts the full untagged list to every attached room, with or without a room header, and answers
+200.
+
+### DM5. A hung room does not stall it (unit)
+
+`TestAHungRoomDoesNotStallThePinOrder`, `TestPinOrderIs502WhenNoRoomTakesIt`.
+
+**Expected:** one room answers and one never does: 200 inside the bound plus a margin, the hung room in `unreached`.
+Every room refusing: 502.
+
+### DM6. An unpinned card keeps its rank (unit)
+
+`internal/store`, `TestAnUnpinnedCardKeepsItsRankWhenTheOrderLands`. Pin two cards, unpin one, then `SetPinOrder`
+with both.
+
+**Expected:** the pinned one takes its new rank and the unpinned one keeps the rank it had.
