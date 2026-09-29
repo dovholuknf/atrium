@@ -1936,6 +1936,7 @@ func (d *Daemon) spawnPTYResume(taskID, cmdName string, args []string, cwd strin
 	}
 	resolved, args = viaShellIfScript(resolved, args)
 
+	raise := d.beginPTYRaise()
 	p, err := pty.New()
 	if err != nil {
 		return 0, fmt.Errorf("could not open a pseudo terminal: %w", err)
@@ -1968,6 +1969,7 @@ func (d *Daemon) spawnPTYResume(taskID, cmdName string, args []string, cwd strin
 		p.Close()
 		return 0, fmt.Errorf("could not start %s: %w", cmdName, err)
 	}
+	raise.apply(c.Process.Pid)
 
 	r := &runner{
 		taskID: taskID, pty: p, cmd: c, started: time.Now(),
