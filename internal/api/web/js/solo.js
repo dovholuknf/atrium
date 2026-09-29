@@ -1004,3 +1004,11 @@ document.querySelectorAll("dialog").forEach(d => {
   });
 });
 
+
+// A `task` or `task-removed` event in a popped-out window. Only its own card
+// matters. A whole row is taken as it is; anything else re-reads the card,
+// throttled like the board's list. See `onTaskEvent`.
+function soloTaskEvent(d) {
+  if (d && d.id && soloID && !sameCard(d.id, soloID)) return;
+  tasksSoon();
+}
