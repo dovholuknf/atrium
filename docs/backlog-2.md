@@ -286,6 +286,10 @@ route in `internal/api/api.go`, the chip and `dismissQuestions` in `js/seen.js`,
 the `dismissed` clause in `atrium_task`, and headless section `questionsClick`. Changelog and test plan are in
 `docs/changes/11.md`. The `!` click question above is still open.
 
+**clint, 2026-09-29, answering the `!` question:** "it doesn't work". Instead, hovering a `?` or `!` chip opens the
+details popover at once, not on its one second timer, and the popover shows the open questions and the held
+messages with a way to discard them there. Filed as item 94. The click-to-dismiss on `?` stays until 94 replaces it.
+
 ### 12. Keep codex up to date
 
 **Raised 2026-09-24.** Not started.
@@ -351,7 +355,12 @@ Accepted and on `claude/main` but NOT deployed: the process registry design doc 
 ## 14. Per-card notification log
 
 **Raised 2026-09-21. TENTATIVE - clint floated it, unsure it is worth it ("not sure about that one but maybe").**
-Not started. Reconciled and designed 2026-09-29 by @ui, owner @ui, waiting on clint's Open Questions below.
+Not started. Reconciled and designed 2026-09-29 by @ui, owner @ui.
+
+**clint, 2026-09-29:** build it ("lets try it"). Per browser for now: he would like it to follow him between
+browsers only if that is easy, and it is not (a new table, a route and a stream for what was said), so that is item 96
+in the deep backlog. The cap stays 200: "we have too many toast entries as it is", and a better way to say an agent
+is working or ready is item 95.
 
 ### The idea
 
@@ -1418,6 +1427,9 @@ on) logs and does not say arrivals, waiting and stuck alerts for `origin:agent` 
 per-card notification override exists in the board, so a card with its own tone stands in for one. See
 `docs/changes/44.md`.
 
+**clint, 2026-09-29:** a card given its own tone counting as the override is right: "if i override it that's up to
+me". Closed.
+
 ## 45. Every card shows its context size, and a launcher hears once past a threshold (feature, sa87)
 
 Raised by clint 2026-09-28. sa87 built it on `claude/context-size` (ee68bc8),
@@ -1631,6 +1643,19 @@ Open questions for clint:
 3. One view across the board, stack and terminals tabs, or one each? Recommendation: one.
 4. Per browser, or following you to other browsers? Recommendation: per browser now. Since filters are a fixed menu,
    moving them to the daemon later is a settings key and not a security question.
+
+**clint, 2026-09-29, answers:**
+
+1. Try the four built-ins and see how they feel.
+2. One level first.
+3. One view across the three tabs, as a TRIAL. **Decision record, so it can be unwound:** the choice lives in one
+   named constant in the views code (one view for all tabs versus one per tab), and the stored views are keyed so
+   either answer reads the same data. If clint complains, flipping it is one line plus a test, not a redesign.
+4. Synced. He uses a phone and a laptop and wants the same views on both. So views are a daemon setting, which the
+   fixed-menu filters make safe (they are data, not code, unlike the grouping expression). The active view stays per
+   browser, since a phone and a laptop can look at different things at once.
+
+Ready to build.
 
 ## 51. Five kept worktrees show 48 commits not matched on `claude/main` (housekeeping)
 
@@ -1976,6 +2001,12 @@ the others slower to find.
 
 Open question for clint: add it, or close 71? Recommendation: add it, since it is the one place the operator is
 already looking when a context is full, and it costs one entry and no new code path.
+
+**clint, 2026-09-29:** right click in a terminal is paste, which he uses constantly, so a menu there conflicts. Left
+Shift plus right click works for him. So: Shift+right click in the attached terminal (`terminal.js` lets it fall
+through to the browser's own menu today) opens the terminal's menu for that card, with "new context" on it. Plain
+right click stays paste. The row menu on the terminal list gets the entry too, since right click on a row is not
+paste. Ready to build.
 
 ## 70. Keep-alive is invisible until it has spent something, and one card overspent its budget (feature and bug)
 
@@ -2469,6 +2500,9 @@ Status 2026-09-29 (branch `claude/sa79`): built as written. `notifyHeld` in `js/
 held in `NOTIFY_OFF_SILENCES_PERMISSIONS`. The bell glyph moved into its own `.glyph` span so it can be repainted
 without touching the badge. Headless section `notifyOff`. No timed mute.
 
+**clint, 2026-09-29:** off silences permission requests too: "it's notifications in general". The constant flips to
+true, the tips lose "permission requests still come through", and they are still recorded in the drawer.
+
 ## 80. Real-time token burn and usage charts (feature)
 
 Raised 2026-09-28 by clint, wanted tonight. Item 37 already records every Claude turn's spend, with its cause, in
@@ -2531,6 +2565,8 @@ have, an optional `card` id, because a bucket carries causes only for the whole 
 show that card's cause table otherwise. A card filter reads that one card from its own room. The tab, the small chart
 in a card's details, and the `usage` event are in. Not done: watching a turn spend while it runs, and any per-kind
 dollars. Charts were drawn in a headless run against mocks only, not yet looked at against a live room.
+
+**clint, 2026-09-29:** turn end is "far more than enough". Top 12 plus "others" stays. Both questions closed.
 
 ## 85. The headless board run flakes under load (bug)
 
@@ -3083,6 +3119,34 @@ header names, and the others keep what should have gone.
 Fix, probably the same shape as item 52: fan it out to every attached room, bounded per room, 200 with `unreached`
 while one room took it. Read what `prune` does to each room first, since a prune that should only reach one room
 would make the fan-out wrong. Owned by @fabric, and folded into the next worker that touches `internal/link`.
+## 94. Hovering a `?` or `!` chip opens the details popover at once, and the popover can discard them (feature)
+
+Raised 2026-09-29 by clint, answering item 11's `!` question: "if i hover over it pop the popup menu and put the ! or
+? into the card that pops up with the usage info and i can discard it from the popup however if i hover over one of
+the ? or ! chips, pop it immediately (not on the 1s timer)".
+
+- **Hover on a chip opens the popover now.** The details popover (`js/peek.js`, item 69's one second hold) opens
+  without its timer when the pointer is on a `? N`, `! N` or `✉ N` chip, wherever the chip is drawn (board, stack,
+  terminals). Hover anywhere else on the card keeps the timer.
+- **The popover shows them.** The card's open questions, listed in full, with "dismiss" (item 11's route, carrying
+  the `questions_at` it was drawn from). The card's held peer messages, each with its sender and text and "discard",
+  which drops that one message, and says so in the toast log.
+- **Owner @ui.** Discarding a held message needs a route if none exists. Check `DismissAsks` and the queued-message
+  routes first, and bring @runtime in for any store function.
+- Design first, with a Mercurius round, since "discard" loses a peer's message on purpose.
+
+## 95. A better signal than toasts that an agent is working or ready (design)
+
+Raised 2026-09-29 by clint: "we have too many toast entries as it is. we need some better way of telling me an agent
+is working or ready. the working spinner tends to be what i focus on most of the time anyway". Design first: what
+replaces a "ready" toast, whether the spinner and a ready mark on the row carry it, and which toasts go away. Owner
+@ui.
+
+## 96. The toast log follows you between browsers (feature, deep backlog)
+
+Raised 2026-09-29 by clint on item 14: moving from the laptop to the phone, he would expect what he was told to still
+be there, but only if it is easy. It is not: it needs a daemon table, a route and a stream for what the board said,
+and it reverses the toast log's rule that what you were told is a fact about a screen. Deep backlog. Owner @ui.
 
 
 ------------
