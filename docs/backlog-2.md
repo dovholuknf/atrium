@@ -1256,6 +1256,46 @@ Raised 2026-09-28 by clint: "i'm starting to want different 'views' of agents mo
 first. Examples to explore: saved filters, a view by role, a view by launcher, and workers apart from clint's own
 cards.
 
+Spec (@ui, 2026-09-29), not built, for clint to answer before anything is:
+
+What exists today. The board groups by project, recency, window, tag or hand-made groups, or by a free expression
+kept in this browser (`grouper` in `js/board.js`). The terminal list can hide doers (`origin:agent`) apart from
+agents. The room picker narrows to one room. Each of those is its own switch in its own place, and none of them is
+remembered as a set.
+
+The gap is that a "view" is three answers given together: which cards, grouped how, sorted how. Today you rebuild
+the set by hand each time you change your mind about what you are looking at.
+
+- **A view is a named preset.** It holds a filter, a grouping mode and a sort, and picking one sets all three. A
+  picker sits beside the grouping control. Changing any of the three by hand leaves the view marked "edited" rather
+  than silently rewriting it, and "save" writes the change back.
+- **Filters come from a fixed menu, not from code.** Started by me or by an agent (`origin:agent`), has tag, in room,
+  in status, launched by. A free expression stays where it is, in grouping only, because of the rule `compiled` in
+  `js/board.js` writes down: an expression may be stored where it was typed. A fixed menu is what keeps the door open
+  to views that follow you to another browser.
+- **Two new grouping modes, for the examples clint named.** *By role* groups by a tag prefix, `dept:` by default, so
+  `dept:ui` and `dept:runtime` are the groups and a card with no such tag falls back to its project, the way window
+  mode does. *By launcher* groups a worker under the card that launched it. That needs the launcher on the card as
+  the board reads it. It is in the ledger today (`LauncherID` on `WorkItem` in `internal/store/ledger.go`) and not
+  on the task JSON, so this one mode costs a small API change owned with @runtime.
+- **Built-in views, so it is useful on day one.** "Mine" (not `origin:agent`, by project), "workers" (only
+  `origin:agent`, by launcher), "by role" (all, by `dept:` prefix), "needs me" (needs-input or needs-permission,
+  by recency). They can be edited but not deleted, and a "reset" puts one back.
+- **One active view for the board, stack and terminals tabs,** since the question "what am I looking at" does not
+  change when the tab does. Per browser, in `localStorage`, like grouping.
+- **Not in the first build.** A launcher tree (orchestrator, then director, then worker, nested), views shared
+  between browsers, and a view per tab.
+
+Open questions for clint:
+
+1. Are the four built-ins the right four? Recommendation: yes, with "workers" and "mine" as the pair that answers
+   "workers apart from my own cards".
+2. By launcher: one level (a worker under its launcher), or the whole tree? Recommendation: one level first. The
+   tree is the same data drawn nested, and it is worth seeing one level in use before deciding.
+3. One view across the board, stack and terminals tabs, or one each? Recommendation: one.
+4. Per browser, or following you to other browsers? Recommendation: per browser now. Since filters are a fixed menu,
+   moving them to the daemon later is a settings key and not a security question.
+
 ## 51. Five kept worktrees show 48 commits not matched on `claude/main` (housekeeping)
 
 Raised 2026-09-28. Five kept worktrees, each on the 09-22 base `02fe769`, show 48 commits that `git cherry` does not
@@ -1549,6 +1589,19 @@ left or right and lands haphazardly.
 
 From sa66's open points, 2026-09-28. Item 66 put "new context" on the card menu only, not on the terminal list's
 `termMenu`. Ctrl+Alt+N works in an attached terminal. clint: "end of backlog unsure if it's useful".
+
+Spec (@ui, 2026-09-29), not built. The build is small: `termMenu` in `js/terminal-list.js` gets the same entry the card
+menu has (`card-menu.js`, "new context", note "commit, hand off, clear"), calling the same `newContext(id)`, under the
+same guard (supervised, and not already mid-cycle). No daemon change. The progress chip it drives is already on the
+card and the tab.
+
+The question is only whether it is worth a line on that menu. For: the terminals tab is where you watch a session's
+context fill, and Ctrl+Alt+N there is not always reachable (some layouts send Ctrl+Alt for AltGr, which is why the
+card menu has it). Against: the card menu already has it, one right-click away, and every entry on `termMenu` makes
+the others slower to find.
+
+Open question for clint: add it, or close 71? Recommendation: add it, since it is the one place the operator is
+already looking when a context is full, and it costs one entry and no new code path.
 
 ## 70. Keep-alive is invisible until it has spent something, and one card overspent its budget (feature and bug)
 
