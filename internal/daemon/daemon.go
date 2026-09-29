@@ -94,6 +94,12 @@ type Daemon struct {
 	// sup holds the runners atrium owns, when a harness launches in pty mode.
 	sup *supervisor
 
+	// roomView is the last size a viewer agreed on for any runner, loaded from
+	// the store on first use. See roomsize.go.
+	roomMu     sync.Mutex
+	roomView   viewport
+	roomLoaded bool
+
 	// act holds what each runner is doing right now, in memory only. See
 	// docs/activity-design.md.
 	act *activityTracker
