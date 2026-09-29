@@ -23,9 +23,9 @@ You are @fabric, the Director of Fabric: hub, rooms, cross-room, overlays and pr
   Tell atrium-87300 first, every time. Never touch this machine's room or hub. No deploys, no push to origin.
 - **@merge (card 01a0eb20) is the only writer of claude/main.** Merge workers into claude/fabric, merge claude/main
   in, then tell @merge the branch is ready.
-- **Nobody edits CHANGELOG.md or docs/test-plan.md** until item 77b lands. Each item writes
-  `docs/changes/<item>.md`. Test-plan letters: FA (provision), FB (room-git), FC (toolchain), FD (item 59), FE
-  (item 49), FF (item 52). The next free one is FG.
+- **Nobody edits CHANGELOG.md or docs/test-plan.md.** 77b landed: each item writes `docs/changes/<item>.md` in the
+  format of `docs/changes/README.md` (`## @LETTER@.`, no fixed letter), and the merger folds it. fb03's
+  `fabric-1-toolchain.md` will need converting the same way when it arrives.
 - Past about 150k context, write HANDOFF.md and ask atrium-87300 for a new context.
 - The Bash hook refuses `;` chains (even `do :; done`), `>`, `>>`, `2>&1`, `find`, `git -C`/`--git-dir` and
   `git -c`. A `cd` in Bash does NOT persist (the cwd resets), so run tests in another worktree with
@@ -39,11 +39,7 @@ You are @fabric, the Director of Fabric: hub, rooms, cross-room, overlays and pr
 
 ## Branch state
 
-- claude/fabric head: this handoff commit, on top of b502849 (item 16 round 1 fixes). Not merged with claude/main
-  since the 6601547 rebase.
-- **When claude/main is merged in:** backlog-2 item 52 conflicts, because @ui's item 52 design went to claude/main
-  at bb65176 (claude/ui baee190). Take OUR section wholesale, or replace @ui's text with a pointer to
-  `docs/pin-order-rooms-design.md`. @ui agreed and will not touch 52 again.
+- claude/fabric head: the handoff commit on top of 5c3c5f6, which merged claude/main bb65176. @merge told it is ready.
 
 ## Done this context
 
@@ -59,23 +55,22 @@ You are @fabric, the Director of Fabric: hub, rooms, cross-room, overlays and pr
   files in dotagents with a resident card as a cache of them. Mercurius `s_xT8IKRB82yUj` round 1 was needs_changes,
   all 3 concerns plus an advisory fixed at b502849 and recorded in the notes.
 
+## Done in the context after that (head 5c3c5f6)
+
+- **Item 16:** Mercurius `s_xT8IKRB82yUj` closed after round 2. C2 (the `repo_notes` parse rule) and A1 fixed, C1
+  deferred (stage 2 waits on clint's questions 1, 2 and 6). Review section in the design, backlog-2 status and index row.
+- **Item 52:** @runtime passed 8b7d11c. fb04 merged, exited, worktree and branch removed. fb05's too. `prune` noted in
+  backlog-2 as the same one-room shape, unfixed.
+- **claude/main (bb65176) merged in** at 5c3c5f6, and @merge told it is ready. Item 77b has landed
+  (`docs/changes/README.md`): our three change files are rewritten to its `@LETTER@` format and pass
+  `fold-changes.ps1 -DryRun`. Fixed test-plan letters (FA, FB...) are gone, so do not hand out letters any more.
+- `go test ./...` passes except `internal/daemon` `TestRealSessionsKeepTheirText`, which replays live scrollback and
+  fails the same on claude/main alone. @terminal told.
+- A dead session's cwd gets `.claude/agent-log.txt` written on exit, which is what kept the fb01 and fb04 folders.
+
 ## In flight
 
-1. **Item 16, Mercurius round 2** of `s_xT8IKRB82yUj` was started 05:17Z on b502849. Collect it
-   (`mercurius_collect_round`, round 2), fold in, record notes, close the session. Then add a Review section to
-   `docs/review-memory-design.md` and a status line under `## 16.` in backlog-2 (line 474), update the index table row
-   for 16, commit, atrium_report. The design's artifacts, if a round 3 is needed: the design, the notes, and in
-   `D:/git/github/dovholuknf/dotfiles/claude/` `skills/review-panel/SKILL.md`, `agents/codebase-steward.md`,
-   `agents/go-security-reviewer.md`, plus `D:/git/github/dovholuknf/atrium/docs/far-backlog.md`.
-2. **fb04 (item 52), card 01a0eb8d, DONE at 930fe2e** on `claude/fb04-pin-order`, worktree
-   `D:/worktrees/claude/atrium/fb04-pin-order`. Diff reviewed and good. The targeted tests passed when re-run by
-   @fabric in that worktree. Commits: 63ed4e8 hub fan-out (FF4, FF5), **8b7d11c store predicate (the @runtime
-   commit)**, 920c3c5 `docs/changes/fabric-52-pin-order.md`, 930fe2e an api test that now pins first. NEXT: ask
-   @runtime (handle from atrium_peers, or ask atrium-87300) to read 8b7d11c. Once they are OK, merge
-   claude/fb04-pin-order into claude/fabric, exit fb04, remove its worktree and branch, and atrium_report. fb04 noted
-   `/v1/tasks/prune` has the same one-room shape: unfixed, worth a backlog line.
-3. **fb05 (item 16 reading), card 01a0eb90:** merged and asked to exit. Remove
-   `D:/worktrees/claude/atrium/fb05-review-memory` and branch `claude/fb05-review-memory` once its session is gone.
+Nothing on this card. fb03 below is the only open worker.
 
 ## fb03: ACCEPTED, waiting on clint's fetch
 
@@ -86,7 +81,6 @@ You are @fabric, the Director of Fabric: hub, rooms, cross-room, overlays and pr
 - **When clint runs `pwsh -File scripts/room-git.ps1 fetch sg3`:** review `sg3/claude/fb03-toolchain`, merge it into
   claude/fabric, add the provision Windows start hook from its `docs/changes/fabric-1-toolchain.md` (dot-source
   room-env.ps1 before `& $Bin room --detach`, the `$ds` line in section 8), exit fb03, remove the sg3 worktree.
-- An empty folder `D:/worktrees/claude/atrium/fb01-provision` may still be there. Delete it when it lets go.
 
 ## Waiting on clint (in the morning report via atrium-87300)
 
@@ -98,5 +92,5 @@ You are @fabric, the Director of Fabric: hub, rooms, cross-room, overlays and pr
 
 ## Then
 
-When fb03 is in and fb04 is merged, merge claude/main into claude/fabric (mind item 52, above), parse-check
+When fb03 is in, merge claude/main into claude/fabric again, parse-check
 (`pwsh -NoProfile -File scripts/check-powershell.ps1`), run `go test ./...`, and tell @merge it is ready.
