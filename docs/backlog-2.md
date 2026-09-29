@@ -2472,5 +2472,78 @@ reads idle. Owned by @terminal, built with item 86 by the same worker.
 **Status: done on `claude/sa86`.** The loop is now `frameText` in `idleframe.go`, which skips `contCh` cells, and the
 stale comment is rewritten. `idleframe_wide_test.go` asserts the text handed to `classifyScreen` directly.
 
+## 93. The screen model's real-session tests read the live scrollback, so every full suite fails on machine data (bug)
+
+Filed 2026-09-29 by the orchestrator, from @fabric's note. `internal/daemon/screen_real_test.go` has four tests
+(`TestEveryRealSessionReplays`, `TestRealSessionsKeepTheirText`, `TestReplayIsNotQuadratic`,
+`TestRealSpinnersCollapse`). All four replay every `.scrollback` over 200KB in the hardcoded directory
+`C:/Users/claude/.atrium/scrollback`, which is the live room's own ring. So the corpus is whatever this machine did
+this week. It is about 215MB today and the largest file is 35MB. It grows with every session, and a new card can
+fail the suite without a line of code changing. sa74's card `01a0eac2` is full of lost-lines repros and keeps 26%
+of its sampled words, under the 40% floor. Every merger has to rerun it alone and write it off, and
+`scripts/merge-check.ps1` carries it in `$Flaky` as load noise, which it is not. On any other machine all four skip,
+so CI checks nothing.
+
+Owned by @terminal.
+
+**The fix.** Split the one corpus into two, and let each answer a different question.
+
+1. **A frozen corpus in `internal/daemon/testdata/scrollback/`, run every time.** A few captures, fixed bytes, and
+   numbers that never move. This is the regression suite.
+2. **The live corpus, run on purpose.** Keep the same four tests, but only when `ATRIUM_REAL_SCROLLBACK` is set.
+   Its value is a directory, or `1` for `<home>/.atrium/scrollback` from `os.UserHomeDir`, which also removes the
+   hardcoded user. Use it to ask "does the renderer survive what this machine has emitted lately", before a
+   screen.go change or when chasing item 74. Unset, the tests skip with a message that names the variable.
+
+**An env var, not a build tag.** A build tag keeps the file out of `go vet` and out of the compile on every normal
+run, so it rots unseen. With an env var the code compiles every time and costs one `Getenv`. It is also how the
+other live-data tests already gate: `ATRIUM_LIVE_COPY` in `internal/store` and `ATRIUM_CARRY_LIVE` in
+`carry_join_test.go`.
+
+**What goes in the fixtures. This is the part that needs care.** The repository is public on GitHub, and a live
+scrollback is a transcript. It holds the operator's prompts, file contents, paths, and anything a tool printed.
+Nothing is copied from `~/.atrium/scrollback` into `testdata`, so no scrubbing pass is needed and nobody has to
+review a megabyte of escapes. Instead:
+
+- **Capture on a throwaway room** (own `ATRIUM_LOCATION`, ports and dirs, per the brief) from a runner doing
+  scripted work on atrium's own public source. Read a few files, run `go vet`, write a long reply, and sit through
+  a spinner. That produces what the tests need, which is claude-code's real repaint behaviour: synchronized
+  output, cursor-home redraws, `\r` spinner frames, a long reply past one screen, and a row change. The content is
+  public by construction.
+- **Three files, each under 1MB and about 2MB together**, gzipped in the repo if the total is over 1MB. The
+  loader reads `.scrollback` and `.scrollback.gz`. The existing precedent is `testdata/frame-*.bin`, real frames of
+  64KB each.
+- **One file is a lost-lines repro** (item 74's shape: a long reply, then a repaint while the pane is scrolled).
+  It gets its own measured floor, so a fix or a regression in 74 moves a number the suite can see.
+- **Clint signs off on the files before they are committed**, because committing them publishes them. The
+  worker's report lists each file, its size, and how it was produced.
+- A `testdata/scrollback/README.md` says how each file was made, so it can be recaptured when claude-code's
+  output changes.
+
+**The assertions get stronger, not just quieter.** With fixed bytes the numbers are deterministic, so each
+fixture pins its own floor: its measured survival percentage, less 5 points to allow for a legitimate renderer
+change. The global 40% floor and the minimum of ten sampled words stay only in the live mode, where they belong.
+`TestReplayIsNotQuadratic` needs 400KB. It builds that by concatenating the largest fixture four times, so it
+always runs instead of skipping on a small machine. `TestRealSpinnersCollapse` has at least one fixture with over
+50 spinner frames, so it can no longer pass by finding nothing to check.
+
+**Shape of the change.** `realScrollbacks(t)` becomes two helpers: `fixtureScrollbacks(t)` reads `testdata`, never
+skips, and fails if the directory is empty, and `liveScrollbacks(t)` reads the env var and skips when it is unset.
+Each test body becomes a function over `(name, raw, floor)`. It is called by a fixture test and by a `Live`
+twin, for example `TestRealSessionsKeepTheirText` and `TestLiveSessionsKeepTheirText`. The frozen tests keep the
+old names because the merge tooling knows them. Then `TestRealSessionsKeepTheirText` comes out of `$Flaky` in
+`scripts/merge-check.ps1`, and out of the "known noise" lines in `DIRECTOR.md` and `docs/cold-start.md`. The
+first is @merge's file, so @merge is told and does that edit.
+
+**Tests.** The four frozen tests pass on this machine and on a machine with no `~/.atrium`, and the suite no
+longer reads outside the repo. Check that with `ATRIUM_REAL_SCROLLBACK` unset and the live directory renamed
+aside on a copy, or with `HOME`/`USERPROFILE` pointed at an empty dir. With the variable set, the live twins run
+and report the same per-file lines as today. A fixture test that fails prints the fixture name and its pinned
+floor.
+
+**Cost.** Small, half a day. Most of it is the capture and clint's look at the files, not the code.
+
+**Status: designed, not started.** Waiting on a slot from the orchestrator.
+
 
 ------------
