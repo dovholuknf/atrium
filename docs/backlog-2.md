@@ -1637,14 +1637,17 @@ Design (@ui):
   there is no build step. Colours are skin variables (the palette triples), so every skin draws it.
 - **Rooms.** The board already talks to more than one room. The tab asks each attached room and merges the buckets,
   with the room as a filter, the way the other cross-room views do. A room that does not answer is named as missing
-  rather than silently counted as zero. A room too old to have `/v1/usage` says so the same way.
+  rather than silently counted as zero. A room too old to have `/v1/usage` says so the same way. **Every per-card
+  bucket, filter, live event and the "others" rollup is keyed by room plus card id**, the identity the board already
+  uses for cards from two rooms (`rowOf(list, id, room)` in `js/rooms.js`), never by id or title alone, so two
+  rooms' cards are never merged. (Mercurius round 1, concern C1.)
 - **Tests.** Store: bucket sums match row sums, bounds hold. API: shape and bounds. Headless: the tab renders from a
   mocked `/v1/usage`, a mocked `usage` SSE event grows the newest bucket, the labels are 78's, and a skin change
   recolours it.
 
-Open questions for clint: (1) Is burn at turn end enough, or does "real time" mean watching a turn spend while it
-runs? That needs the room to tail every running transcript, which is a bigger and riskier change. (2) Top 12 cards
-per chart, or all of them?
+Open question for clint: is burn at turn end enough, or does "real time" mean watching a turn spend while it runs?
+That needs the room to tail every running transcript, which is a bigger and riskier change. Built at turn end first.
+Top 12 cards plus "others" is the first cut, easy to change.
 
 
 ------------
