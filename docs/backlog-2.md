@@ -80,7 +80,7 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 71 | "New context" on the terminals tab's right-click menu | feature | end of backlog, clint unsure it is useful |
 | 72 | One hover on a card, not two | feature | DONE by sa72, merged `66717c5`, deployed `66717c5` |
 | 73 | A keep-alive fork carries the card's launch args, so lean cards can warm | feature | not started |
-| 74 | A long reply loses lines in the middle on the board's terminal | bug | sa74, paused at `ba761d6` (old SHA), rebase onto `66717c5` |
+| 74 | A long reply loses lines in the middle on the board's terminal | bug | diagnosed by sa74: inbox ConPTY on a row change. Fix choice with clint |
 | 75 | sg3 as a room, and machine bootstrap reuses the operator's shared folder under `localai` | feature | sa75, parked. Provision script merged `c3dc597` |
 | 76 | A worktree helper that links every CLAUDE.md, so workers get project rules | bug, HIGH, FIRST | not started, @merge |
 | 77 | A merge pipeline that does not conflict or rerun | feature, HIGH | not started, @merge, after 76 |
@@ -1478,8 +1478,105 @@ clint confirmed the loss happened at the first screen update after the long repl
 little. The table's tail was still on the live 50-row screen, and a bare `\e[H` repaint overwrote it. Find what
 emitted that repaint (Claude Code, or ConPTY in the room) and why. Also test the reattach seam.
 
-Status: sa74 paused at `ba761d6`. That SHA is from before the 66717c5 re-sign: rebase `claude/lost-lines` onto
-`66717c5` before any merge (map in `D:/tmp/resign-map.txt`).
+Status: diagnosed by sa74 on `claude/lost-lines`, not fixed. The choice below goes to clint.
+
+### What dropped the lines
+
+**Not atrium's ring, replay or board.** The orchestrator's uncollapsed ring (`/scrollback/raw?collapse=0`, 2,723,702
+bytes, pty 206x50) holds the whole reply. At byte 2460305 the pseudo console emits
+`\e[46;3H\e[?25h\e[?2026h\e[?2026l\e[?25l\e[H` and then all 50 rows, each ending `\e[K\r\n`, with no line feed
+ahead of them. Row 1 of that repaint had been row 11 of the screen just before, so rows 1 to 10 (the table's tail,
+Merging, Waiting, Running) are overwritten in place and never reach history. The board's own xterm.js fed those
+bytes at a fixed 206x50 loses exactly those rows. The same ring has about 70 bare-home repaints, and 9 of them shifted
+the screen: 2, 2, 25, 26, 3, 3, 2, 3 and 10 rows lost.
+
+**The inbox ConPTY's resize path, set off by a change in the pty's row count.** Tested through a throwaway pseudo
+console on `conhost.exe` 10.0.26100 (the one the room uses), always with a control that feeds the child's own bytes
+straight to xterm.js, which never lost a line:
+
+| What the child and the host did | Lines lost through inbox ConPTY |
+| --- | --- |
+| Plain and Claude-shaped scrolling (parked cursor, erase and insert, full-width rows, sync output, DECSTBM) | 0 |
+| A child process on the console (git bash, cmd, pwsh), focus reports `\e[O` and `\e[I` | 0, and no repaint |
+| A resize to the same size | 0, one bare `\e[H` repaint each |
+| Columns 120 and 121 alternating | 0 |
+| Rows 50 and 49 alternating, under Claude-shaped frames | 18 of 300 |
+| Rows 50 to 40 and back, under Claude-shaped frames | 49 to 72 of 300 |
+| Rows 50 to 40 and back, under a steady stream | 100 of 300 |
+
+A single row change gives one bare `\e[H` repaint at the new height. conhost files the top rows into its own history,
+which is never sent, and the repaint overwrites them downstream. Two changes close together (50 to 40 to 50) are
+often painted ONCE: a single 50-row repaint, 50 rows before and after, whose row 1 had been row 11. That is the live
+2460305 byte for byte, and it explains why the new reply fits the freed rows exactly.
+
+**Claude Code is not implicated.** Claude 2.1.284 (classic renderer) in a bare 206x50 pty with no resizes produced no
+full repaint at all over 4 runs, including a turn taller than the screen and messages typed mid-turn.
+
+What changed the rows at 21:19:59 is not recorded. atrium logs no resizes, and a mark laid and undone with nothing
+written between merges away. But the live ring's own repaints show the pty at 47, 48, 50 and 51 rows at different
+points of the session. The agreed height is the SHORTEST attached viewer's (`agreedViewport`), and the board sends a
+new height whenever its fit does: a reattach, a focus change, a scrollbar appearing, a second window.
+
+### OpenConsole ConPTY is the fix at the source
+
+`Microsoft.Windows.Console.ConPTY` 1.24.260710001 (conpty.dll plus OpenConsole.exe, MIT) through the same harness:
+**0 lines lost in every row above, and no `\e[H` repaint at all**, over 30 to 62 resizes a run. It passes the child's
+VT through, so a line feed arrives as a line feed.
+
+What adopting it costs:
+- Two binaries per architecture shipped beside atrium (x64 about 1.2 MB together).
+- go-pty calls kernel32's `CreatePseudoConsole`, so atrium needs its own create, resize and close through
+  conpty.dll. `internal/daemon/conpty_harness_repro_test.go` does it in about 100 lines, with the inbox call kept
+  as the fallback.
+- At start OpenConsole queries the terminal (`\e[c` and `\e[1t`). A runner with no viewer attached needs atrium to
+  answer, or the host waits for a timeout.
+- Passthrough changes the byte shapes that `screen.go`, `collapseRedraws`, the cursor settle, the typing gate and the
+  replay tests were tuned on, all of which were measured against conhost's re-rendered output. So it needs the whole
+  terminal test plan run again.
+
+### Keeping the rows a no-scroll repaint is about to overwrite
+
+Both options detect the same thing and differ only in where they act.
+
+**The strict-match rule.** A candidate is a bare `\e[H` (or `\e[1;1H`) that starts a repaint of the full current
+height, meaning as many rows written, each ending in an erase and a line feed, before the next cursor move. There
+must be no height change at that byte in the ring's marks, since a resize repaint to a new height is the height
+model's business. Buffer the repaint until it is complete. Find the smallest `k` from 1 to rows-1 such that repaint
+rows 1 to M equal screen rows k+1 to k+M exactly, where M is at least max(6, rows/4), and at least 4 of those rows are
+non-blank and pairwise distinct. On a match, rows 1 to k go to history before the repaint is applied. No match, or
+more than one `k` passing, means do nothing.
+
+**False positives.** The rule can only ever ADD rows to history, never remove one. So a wrong call puts a duplicate or
+stale line in the scrollback, and a missed call leaves the loss as it is today. The ways it goes wrong:
+- Content that legitimately moved up: Claude collapsing a block, a tool's output shrinking, a reprint after `/clear`
+  or a compaction. Those files rows the runner deliberately removed.
+- Repeated rows (blanks, separators, box borders) aligning at the wrong `k`. The distinct non-blank rows are there
+  to stop it.
+- A repaint split across reads, which has to be held until it is whole, so the buffer needs a byte and time cap.
+
+**Replay only, in `screen.go`.** The grid model already exists there. Detection costs O(rows squared) per candidate,
+and candidates are rare (about 70 in 2.7 MB), so the cost is negligible. It repairs `/scrollback/text`, every attach
+replay, and the carryover after a restart, and viewers see nothing new live. It does NOT repair a pane that was
+watching when it happened, which is clint's case, until that pane reattaches.
+
+**Live, on the fan-out path.** One screen model per runner fed every output byte (an O(bytes) VT parse on the hot path,
+about 50x206 cells a runner), and the matching repaint held back so that `\e[<rows>;1H` plus `k` line feeds can go
+ahead of it to every viewer. It repairs the pane clint was copying from. It costs parse CPU on all output of all
+runners, latency on every repaint that is held, and a wrong call is shown to every viewer at once. It also becomes
+dead code the day the ConPTY is swapped.
+
+### Recommendation
+
+1. **Now, small: stop transient row changes reaching the pty.** In `setViewport` and `dropViewport`, apply a new
+   agreed HEIGHT only once it has held for about half a second, so a reattach, a refit or a passing viewer never
+   flips the rows. That removes the coalesced flips, which are the big losses (10, 25, 26 rows). A deliberate height
+   change still costs about a row per row changed, and the width stays immediate. Testable with the harness above.
+2. **The real fix: OpenConsole ConPTY**, behind a setting with inbox as the fallback, gated on the whole terminal test
+   plan.
+3. **Replay-only repair only if 2 is refused.** The live version is not worth its cost and risk next to 2.
+
+Repro, captures and scripts: `HANDOFF.md` on `claude/lost-lines`, `build.claude/lost-lines/` and
+`build.claude/conpty/` in that worktree (not committed).
 
 ## 75. sg3 as a room, and machine bootstrap reuses the operator's shared folder under `localai` (feature)
 

@@ -4,15 +4,18 @@ package daemon
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"os/exec"
 	"strings"
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/aymanbagabas/go-pty"
 )
+
+type killer struct{ p *harnessPTY }
+
+func (k killer) Kill() error { k.p.Kill(); return nil }
 
 // scratch repro for backlog-2 item 74. not for commit.
 func TestConPTYClaudeRepro(t *testing.T) {
@@ -24,15 +27,6 @@ func TestConPTYClaudeRepro(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p, err := pty.New()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer p.Close()
-	_ = p.Resize(206, 50)
-	c := p.Command(exe, "--model", "haiku", "--strict-mcp-config",
-		"--settings", `{"disableAllHooks":true}`)
-	c.Dir = os.Getenv("ATRIUM_CLAUDE_DIR")
 	var env []string
 	for _, kv := range os.Environ() {
 		if strings.HasPrefix(strings.ToUpper(kv), "ATRIUM") || strings.HasPrefix(strings.ToUpper(kv), "CLAUDE_CODE_") ||
@@ -41,10 +35,16 @@ func TestConPTYClaudeRepro(t *testing.T) {
 		}
 		env = append(env, kv)
 	}
-	c.Env = declareATerminal(append(env, "CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN=1"))
-	if err := c.Start(); err != nil {
+	env = declareATerminal(append(env, "CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN=1"))
+	// ATRIUM_CONPTY_DLL names a conpty.dll to use instead of the inbox one
+	p, err := openHarnessPTY(os.Getenv("ATRIUM_CONPTY_DLL"), 206, 50,
+		[]string{exe, "--model", "haiku", "--strict-mcp-config", "--settings", `{"disableAllHooks":true}`},
+		os.Getenv("ATRIUM_CLAUDE_DIR"), env)
+	if err != nil {
 		t.Fatal(err)
 	}
+	defer p.Close()
+	c := struct{ Process interface{ Kill() error } }{killer{p}}
 	var mu sync.Mutex
 	var got []byte
 	go func() {
@@ -98,6 +98,19 @@ func TestConPTYClaudeRepro(t *testing.T) {
 		pr, marker, _ := strings.Cut(step, "=>")
 		at := len(snap())
 		say(pr)
+		// what atrium_say does mid-turn: text, a pause, Enter, while claude is
+		// still streaming. Claude shows it as a queued message above the prompt.
+		if ty := os.Getenv("ATRIUM_CLAUDE_TYPE"); ty != "" {
+			var after, every, times int
+			fmt.Sscan(os.Getenv("ATRIUM_CLAUDE_TYPE_AFTER"), &after)
+			fmt.Sscan(os.Getenv("ATRIUM_CLAUDE_TYPE_EVERY"), &every)
+			fmt.Sscan(os.Getenv("ATRIUM_CLAUDE_TYPE_TIMES"), &times)
+			time.Sleep(time.Duration(after) * time.Millisecond)
+			for i := 0; i < max(times, 1); i++ {
+				say(fmt.Sprintf("[atrium] tester says: %s (%d)", ty, i+1))
+				time.Sleep(time.Duration(every) * time.Millisecond)
+			}
+		}
 		waitFor(marker, at, 180*time.Second)
 		settle()
 	}
