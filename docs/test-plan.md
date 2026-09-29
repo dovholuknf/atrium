@@ -6143,3 +6143,28 @@ cost chart and no `$`. The by-card ranking is by tokens.
 1. Fetch `/v1/usage`, `/v1/tasks/<id>/usage` and `/v1/settings`.
 
 **Expected:** no `cost`, `prices`, `spent`, `budget` or `usd` key in any of them.
+
+## DV. A fresh card opens at the size it is watched at
+
+### DV1. Recorded room viewport
+
+1. Attach a browser pane to any running card and note its size, say 177 by 48. Detach.
+2. Launch a new card whose runner prints more than a screen of numbered lines, then attach to it.
+3. Open the card's `/scrollback/text`.
+
+**Expected:** the new card's terminal is already the pane's size when you attach, and every numbered line appears
+exactly once.
+
+### DV2. Room that never had a viewer
+
+1. On a room with an empty `room_viewport` setting, launch the same card and attach.
+
+**Expected:** the terminal opens at 120 by 30, the attach resizes it once with both sizes, and no height change
+follows half a second later. If conhost still shifts its repaint on that one resize, that is item 74's and not this
+change's.
+
+### DV3. Second viewer
+
+1. With one viewer attached, attach a second at a different height.
+
+**Expected:** the width follows at once and the height waits half a second, as before.
