@@ -129,7 +129,10 @@ type Task struct {
 	// Alias is the short name the operator mentions this card by, `sa89` or
 	// `dotfiles`, accepted wherever a handle is. Empty until one is set, and
 	// unique among live cards. See alias.go.
-	Alias     string            `json:"alias,omitempty"`
+	Alias string `json:"alias,omitempty"`
+	// AliasNote says why a card wears no alias when its default was held by
+	// another live card. Empty otherwise. See GiveDefaultAlias.
+	AliasNote string            `json:"alias_note,omitempty"`
 	Overrides map[string]string `json:"overrides"`
 	Rank      float64           `json:"rank"`
 	// ExternalID ties a card to a session atrium did not start, using the

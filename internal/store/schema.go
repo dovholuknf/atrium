@@ -1750,6 +1750,16 @@ var migrations = []struct {
 			`CREATE INDEX IF NOT EXISTS relay_outbox_at ON relay_outbox (created_at)`,
 		},
 	},
+	{
+		// WHY A CARD WEARS NO ALIAS, when its default was already held by a
+		// live card: `@saorch is already the alias of ...`. Written when the
+		// default is refused, cleared by any SetAlias. See alias.go and
+		// docs/backlog-2.md item 47.
+		name: "0067_task_alias_note",
+		stmts: []string{
+			`ALTER TABLE task ADD COLUMN alias_note TEXT NOT NULL DEFAULT ''`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the

@@ -1603,6 +1603,8 @@ async function renderTermList() {
   // board, or not at all.
   lastTasks = all;
   newCardNote(all);
+  // The bar's alias, when it changed under the open terminal. See js/alias.js.
+  if (typeof followTermAlias === "function") followTermAlias(all);
 
   // Terminals, AND the pinned bucket whether or not it is running.
   //
