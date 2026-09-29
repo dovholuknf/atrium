@@ -1184,6 +1184,14 @@ func (s *Server) patchTask(w http.ResponseWriter, r *http.Request) {
 			s.fail(w, err)
 			return
 		}
+		// A card renamed `saorch: ...` and wearing no alias takes `@saorch`,
+		// the way a launch titled so would have. See store.GiveDefaultAlias.
+		if title, ok := body.Overrides["title"]; ok && body.Alias == nil {
+			if _, err := s.st.GiveDefaultAlias(id, title); err != nil {
+				s.fail(w, err)
+				return
+			}
+		}
 	}
 	t, err := s.st.Get(id)
 	if err != nil {

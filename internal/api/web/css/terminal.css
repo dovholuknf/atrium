@@ -398,6 +398,15 @@
     color: var(--head); font-size: var(--fs-lg);
     min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
+  /* A card's alias in the name's slot, drawn as a handle rather than a title: monospace, the `@` dimmed, a
+     tinted pill, so `@saorch` does not read as one more path. The label is a button for it. See js/alias.js. */
+  .term-bar strong.as-alias {
+    font-family: 'Cascadia Mono', ui-monospace, monospace; font-weight: 600;
+    color: var(--blue); background: var(--chip); border: 1px solid var(--stroke-dim);
+    border-radius: 999px; padding: 1px 10px; cursor: pointer;
+  }
+  .term-bar strong.as-alias .at { color: var(--dim); }
+  .term-bar strong.can-alias { cursor: pointer; }
   /* An exited runner. The scrollback stays readable, since it carries the exit and the resume id, but the
      pane stops looking like a live session. */
   .term-pane.dead { border-color: var(--stroke-dim); opacity: .72; }

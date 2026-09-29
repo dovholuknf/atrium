@@ -1000,6 +1000,13 @@ func (d *Daemon) Run(ctx context.Context) error {
 	} else if n > 0 {
 		log.Printf("[atrium] named %d card(s) from their repository and branch", n)
 	}
+	// Resident sessions named before a name became a default alias: saorch
+	// takes `@saorch`. Once, ever. See store.BackfillDefaultAliases.
+	if n, err := d.st.BackfillDefaultAliases(); err != nil {
+		log.Printf("[atrium] could not give cards their default aliases: %v", err)
+	} else if n > 0 {
+		log.Printf("[atrium] gave %d card(s) the alias their name makes", n)
+	}
 	// The work ledger: the one-time backfill, the items no exit path reached,
 	// and the snapshot beside the database. See ledger.go.
 	d.startLedger()

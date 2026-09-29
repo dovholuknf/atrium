@@ -487,6 +487,21 @@ async function termSettings(e) {
   showMenu(e, items);
 }
 
+// The bar's name. See the note where `openTerm` calls it. A card with an alias
+// wears that in this slot instead, and `followTermAlias` repaints it when the
+// alias changes under an open terminal. See js/alias.js.
+function paintTermTitle(task) {
+  const solo = document.body.classList.contains("solo");
+  const label = terminalLabel(task) || task.display_title;
+  const named = String(task.display_title || "").trim();
+  const titleEl = document.getElementById("t-title");
+  titleEl.textContent = solo && named ? named : label;
+  titleEl.dataset.tip = solo && named && named !== label
+    ? label + " · " + (task.worktree || "")
+    : (task.worktree || "");
+  if (typeof paintTermAlias === "function") paintTermAlias(task, titleEl, label);
+}
+
 function openTerm(task) {
   if (typeof Terminal === "undefined") {
     tellUser("atrium", "the terminal library did not load");
@@ -583,14 +598,7 @@ function openTerm(task) {
   // window that led with the address could not be tied back to it. In solo the
   // header is the name and the address moves to the tooltip. The board's own
   // bar keeps the address, since there the card and the list already name it.
-  const solo = document.body.classList.contains("solo");
-  const label = terminalLabel(task) || task.display_title;
-  const named = String(task.display_title || "").trim();
-  const titleEl = document.getElementById("t-title");
-  titleEl.textContent = solo && named ? named : label;
-  titleEl.dataset.tip = solo && named && named !== label
-    ? label + " · " + (task.worktree || "")
-    : (task.worktree || "");
+  paintTermTitle(task);
   // The runner as its mark, in front of the name, the way a card carries it.
   // A `claude` pill among the chips said the same thing in the place the eye
   // goes last, and read as one more fact rather than as whose terminal this is.

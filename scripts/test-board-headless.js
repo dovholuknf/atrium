@@ -3892,6 +3892,56 @@ async function aliasSection(browser, base) {
     await ap.evaluate(() => window.__aliasDone);
     const w = aliasWrites.find(x => x.id === "t1");
     if (!w || w.body.alias !== "@dotfiles") fail("setting an alias did not PATCH it: " + JSON.stringify(aliasWrites));
+
+    // A default another card holds: a `no alias` chip saying who, and the menu
+    // says it too. Backlog-2 item 47.
+    const clash = await ap.evaluate(t1 => {
+      const box = document.createElement("div");
+      const note = "no alias: its default is taken. @saorch is already the alias of sa84, card c9";
+      box.innerHTML = cardHTML(Object.assign({}, t1, { id: "al3", alias_note: note }));
+      const chip = [...box.querySelectorAll(".chip")].find(c => c.textContent.trim() === "no alias");
+      const item = aliasMenuItem(Object.assign({}, t1, { id: "al3", alias_note: note }));
+      return { tip: chip ? chip.getAttribute("data-tip") : "", help: item.help, note: item.note };
+    }, T1);
+    if (!/@saorch is already the alias of sa84/.test(clash.tip)) fail("a clashing default does not say why on the card: " + JSON.stringify(clash));
+    if (!/@saorch/.test(clash.help) || clash.note !== "taken") fail("the alias menu does not say why there is none: " + JSON.stringify(clash));
+
+    // THE TERMINAL BAR. An alias takes the far-left slot as `@saorch`, drawn as
+    // a handle, with the repo and branch in the tooltip. None keeps the label.
+    // It follows an alias changed under it, and a click on it sets one.
+    const bar = await ap.evaluate(t1 => {
+      const t = Object.assign({}, t1, { id: "t1", worktree: "D:/git/github/dovholuknf/atrium",
+        repo: "atrium", branch: "claude/main", display_title: "saorch: merger" });
+      const el = document.getElementById("t-title");
+      termTask = Object.assign({}, t);
+      paintTermTitle(termTask);
+      const plain = { text: el.textContent, handle: el.classList.contains("as-alias"), tip: el.dataset.tip };
+      followTermAlias([Object.assign({}, t, { alias: "saorch" })]);
+      const aliased = { text: el.textContent, handle: el.classList.contains("as-alias"), tip: el.dataset.tip,
+        at: !!el.querySelector(".at") };
+      followTermAlias([Object.assign({}, t, { alias: "" })]);
+      const cleared = { text: el.textContent, handle: el.classList.contains("as-alias") };
+      followTermAlias([Object.assign({}, t, { alias: "saorch" })]);
+      return { plain, aliased, cleared, label: terminalLabel(t), win: windowTitle(termTask) };
+    }, T1);
+    if (bar.plain.text !== bar.label || bar.plain.handle) fail("a card with no alias does not keep today's bar label: " + JSON.stringify(bar));
+    if (!/click to give it an alias/.test(bar.plain.tip || "")) fail("the bar label does not offer an alias: " + JSON.stringify(bar.plain));
+    if (bar.aliased.text !== "@saorch" || !bar.aliased.handle || !bar.aliased.at) fail("the bar does not wear the alias as a handle: " + JSON.stringify(bar.aliased));
+    if (!(bar.aliased.tip || "").includes("github/dovholuknf/atrium:claude/main")) fail("the repo and branch are not in the alias's tooltip: " + bar.aliased.tip);
+    if (bar.cleared.text !== bar.label || bar.cleared.handle) fail("clearing the alias did not put the label back: " + JSON.stringify(bar.cleared));
+    if (!/^@saorch · /.test(bar.win)) fail("a popped-out window's title does not lead with the alias: " + bar.win);
+
+    aliasWrites = [];
+    await ap.evaluate(() => document.getElementById("t-title").click());
+    await ap.waitForSelector("#ask[open] #ask-input", { timeout: 5000 });
+    const pre = await ap.inputValue("#ask-input");
+    if (pre !== "saorch") fail("the bar's alias dialog did not start from the alias: " + pre);
+    await ap.fill("#ask-input", "@orch");
+    await ap.click("#ask-actions button.go, #ask-actions button:last-child");
+    await ap.waitForFunction(() => !document.querySelector("#ask[open]"), null, { timeout: 5000 });
+    for (let i = 0; i < 50 && !aliasWrites.length; i++) await ap.waitForTimeout(50);
+    const bw = aliasWrites.find(x => x.id === "t1");
+    if (!bw || bw.body.alias !== "@orch") fail("setting the alias from the bar did not PATCH it: " + JSON.stringify(aliasWrites));
   } finally {
     await ctx.close();
   }
