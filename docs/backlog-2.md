@@ -1515,7 +1515,17 @@ Left:
   that is not a live room.
 - Proving `-Autostart` starting on a Windows room, and the binary swap's `schtasks /End` on a live task. Both only on
   claudevm, never on a real room.
-- The provision start hook for fb03's `room-env.ps1`, on top of the XML registration, once fb03 is here.
+- fb03 is merged, and provision's Windows start step dot-sources `~\.atrium\toolchain\room-env.ps1` when it exists.
+  Left: the `-Autostart` logon task's action should do the same when that file exists at registration, as an
+  `-EncodedCommand` for `powershell.exe -ExecutionPolicy Bypass`, on top of the XML registration. Proven only on
+  claudevm.
+- **The smoke card falls back to the remote home, which item 67 never trusts.** Found 2026-09-29 rebuilding m1mini
+  with `-Repo none`: with no clone, `smoke` runs in `~`, `tooWideToTrust` refuses to trust home on purpose, and the
+  card sits at the trust dialog until the 180s timeout (exit 8). `-SmokeOnly -SmokeCwd /Users/claude/xroom-test`
+  passed in 6s. Fix: default the smoke cwd to a folder the script makes, such as `~/.atrium/smoke`, never `~`.
+- **sg3 has no `room-env.ps1`,** so its room and a plain ssh shell still find the Cygwin git first. The toolchain's
+  Git for Windows is under `~\.local\share\atrium-tools\git`. Running `room-toolchain.ps1 sg3` writes the file, and
+  the next room start picks it up. That start is a restart of a live room, so it waits for a quiet window.
 - Stage 2, the board half. Not started.
 
 Open questions for clint:
