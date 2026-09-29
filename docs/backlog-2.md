@@ -3201,6 +3201,14 @@ numbered lines do not set off conhost's shifted repaint the way Claude Code's re
 a guard, and the proof is the fake-pty tests (one resize with both sizes, none when the size already matches). See
 `docs/changes/t-002.md`.
 
+**A second report is the same bug, arriving late.** clint's `@rnd` (card `01a0ee0a`, launched about 12:40 on the live
+room, before t-002 was deployed), screenshot `.atrium/incoming/20260929-125328-pasted.png`, shows a banner and a
+repeated reply line between two turns, not only at the top. Its ring has exactly two widths, 120 then 177, at 48 rows.
+The line before the extra banner is wrapped at 120 and its copy after is wrapped at 177. So the session ran unwatched
+at the launch default from its start, and the "mid-session" copy is the FIRST viewer attaching minutes later. That
+first attach resized the terminal, which is steps 1 and 2 exactly. No new item. What stays open is still step 3: a
+real size change later (a pane of another size, a wider second viewer) repaints the same way.
+
 Reported by clint on `sa-compete` (card `01a0eddd`, a fresh lean launch). Screenshot:
 `.atrium/incoming/20260929-115257-pasted.png`. The top of the scrollback holds half-drawn copies of the Claude Code
 banner and the BRIEF.md prompt twice, once wrapped at about 120 columns and once at the pane's width.
