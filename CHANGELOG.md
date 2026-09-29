@@ -5,6 +5,20 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **Every dialog on the board is drawn in one design.** See `docs/backlog-2.md` item 56 and `docs/test-plan.md`
+  section CM.
+
+  The dialogs were a column of fields with no hierarchy, and card details and the runner editor were the worst of
+  it. They now share one set of parts in `css/dialogs.css`, built from the restart card and the compact details
+  popup. The parts are a head with an eyebrow above the title and a quiet close, a body that is the only part that
+  scrolls, lifted panels with their own heading, a two-column field grid, and a foot pinned under the body for the
+  actions. Card details is two columns, with what you read and write on the left and the runner, tags and bell on
+  the right. The runner, fixture, launch, recogniser, source, provider, action, dispatch, add a room, room settings
+  and themes dialogs are grouped into panels. The dialogs that used a second head as a footer now have a real foot.
+  The gear's pane list is a panel, and each pane is titled. The pickers, the tray, share, hooks and the confirmation
+  dialog take the same frame. It is look and layout only: every field, id and handler is the same, and each skin
+  still sets only the palette. `scripts/shoot-dialogs.js` draws every dialog headless against a mocked daemon.
+
 - **`atrium_cull` retires a finished worker: it leaves, and its worktree and branch are removed.** See
   `docs/backlog-2.md` item 36 and `docs/test-plan.md` section CL.
 
