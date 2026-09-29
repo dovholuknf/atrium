@@ -305,6 +305,7 @@ func (d *Daemon) onSession(in SessionEvent) error {
 		// dead card is untouched and nothing is dragged back out of a column
 		// somebody put it in.
 		d.turnResumed(task.ID)
+		d.sayReset(task.ID, "compact")
 		// Set compacting after turnResumed, which sets thinking and would overwrite
 		// it. See ActivityCompacting for how it clears without a completion hook.
 		d.act.set(task.ID, ActivityCompacting, "")
@@ -321,6 +322,9 @@ func (d *Daemon) onSession(in SessionEvent) error {
 		// Checked here as well as in the hook because the daemon cannot assume
 		// which version of the hook binary is installed.
 		if !EndsTheSession(in.Reason) {
+			if in.Reason == "clear" {
+				d.sayReset(task.ID, "clear")
+			}
 			log.Printf("[atrium] %s is %sing rather than ending, so its card stays",
 				in.Agent, in.Reason)
 			break
@@ -345,6 +349,7 @@ func (d *Daemon) onSession(in SessionEvent) error {
 				return err
 			}
 		}
+		d.sayLapsed(task.ID)
 	default:
 		if err := d.st.AppendEvent(task.ID, store.EventLaunched, map[string]any{
 			"by": "session hook", "source": in.Source, "pid": in.PID,

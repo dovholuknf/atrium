@@ -354,9 +354,15 @@ type SayInput struct {
 	Text string `json:"text" jsonschema:"what to say, as one agent to another. the recipient is told who you are automatically, so do not announce yourself"`
 	// When is `immediate` (the default) or `done`. See internal/daemon/saywhen.go.
 	When string `json:"when,omitempty" jsonschema:"immediate (the default): typed as soon as the line is empty, even mid-turn. done: wait for that session's turn to end"`
+	// Reply marks the say as needing an answer, so it shows as owed on the receiving card.
+	Reply bool `json:"reply,omitempty" jsonschema:"true when you need an answer, not just a delivery. it shows as owed on that session until it says something back"`
 }
 
 type SayOutput struct {
+	// Say is this say's id, for looking it up afterwards through atrium_task with says.
+	Say string `json:"say,omitempty"`
+	// Via is how the name resolved: handle, alias or card.
+	Via string `json:"via,omitempty"`
 	// Delivered is `terminal` or `queued`. Two different promises, and the
 	// caller has to know which one was made: typed has already landed, queued
 	// has not and will not until that session next reaches a hook.
@@ -378,9 +384,12 @@ func sayHandler(ctx context.Context, _ *mcp.CallToolRequest, in SayInput) (
 	// with. It used to send nobody, which the room reads as the operator, so a
 	// peer's words were typed as though the human had typed them.
 	me := strings.TrimSpace(os.Getenv("ATRIUM_AGENT_NAME"))
-	body := map[string]string{"text": in.Text, "from": me, "to": in.To}
+	body := map[string]any{"text": in.Text, "from": me, "to": in.To}
 	if w := strings.TrimSpace(in.When); w != "" {
 		body["when"] = w
+	}
+	if in.Reply {
+		body["reply"] = true
 	}
 
 	// BY ADDRESS, so `name@room` reaches another room through this room's link
@@ -392,6 +401,8 @@ func sayHandler(ctx context.Context, _ *mcp.CallToolRequest, in SayInput) (
 		When      string `json:"when"`
 		Warning   string `json:"warning"`
 		Note      string `json:"note"`
+		Say       string `json:"say"`
+		Via       string `json:"via"`
 	}
 	err := ask(ctx, http.MethodPost, "/v1/say", body, &res)
 	if olderRoom(err) {
@@ -410,6 +421,7 @@ func sayHandler(ctx context.Context, _ *mcp.CallToolRequest, in SayInput) (
 		return nil, out, err
 	}
 	out.Delivered, out.To, out.Card, out.When = res.Delivered, res.To, res.Card, res.When
+	out.Say, out.Via = res.Say, res.Via
 	if res.Note != "" {
 		out.Note = res.Note
 	}
@@ -681,6 +693,24 @@ type TaskInput struct {
 	// Events includes the recent history, which is what a card DID rather than
 	// where it is now.
 	Events bool `json:"events,omitempty" jsonschema:"include recent events"`
+	// Says includes the says this card sent and received, and what became of each.
+	Says bool `json:"says,omitempty" jsonschema:"include the says this card sent and received, with their state, channel and whether a reply is owed"`
+}
+
+// TaskSay is one say on a card, from its own side.
+type TaskSay struct {
+	ID          string `json:"id"`
+	Direction   string `json:"direction"`
+	Other       string `json:"other"`
+	Via         string `json:"via,omitempty"`
+	State       string `json:"state"`
+	Channel     string `json:"channel,omitempty"`
+	SentAt      string `json:"sent_at"`
+	DeliveredAt string `json:"delivered_at,omitempty"`
+	Preview     string `json:"preview,omitempty"`
+	ReplyWanted bool   `json:"reply_wanted,omitempty"`
+	RepliedAt   string `json:"replied_at,omitempty"`
+	ResetKind   string `json:"reset_kind,omitempty"`
 }
 
 type TaskEvent struct {
@@ -700,6 +730,7 @@ type TaskOutput struct {
 	Waiting int         `json:"waiting_seconds,omitempty"`
 	Owned   bool        `json:"atrium_owns_terminal"`
 	Events  []TaskEvent `json:"events,omitempty"`
+	Says    []TaskSay   `json:"says,omitempty"`
 	Note    string      `json:"note,omitempty"`
 }
 
@@ -758,6 +789,42 @@ func taskHandler(ctx context.Context, _ *mcp.CallToolRequest, in TaskInput) (
 			}
 			for _, e := range body.Events[from:] {
 				out.Events = append(out.Events, TaskEvent{At: e.At, Kind: e.Kind})
+			}
+		}
+	}
+	if in.Says {
+		var body struct {
+			Says []struct {
+				ID          string `json:"id"`
+				FromTask    string `json:"from_task"`
+				FromWire    string `json:"from"`
+				ToWire      string `json:"to"`
+				ToInput     string `json:"to_input"`
+				Via         string `json:"via"`
+				State       string `json:"state"`
+				Channel     string `json:"channel"`
+				SentAt      string `json:"sent_at"`
+				DeliveredAt string `json:"delivered_at"`
+				Preview     string `json:"preview"`
+				ReplyWant   bool   `json:"reply_wanted"`
+				RepliedAt   string `json:"replied_at"`
+				ResetKind   string `json:"reset_kind"`
+			} `json:"says"`
+		}
+		if err := ask(ctx, http.MethodGet, "/v1/tasks/"+url.PathEscape(id)+"/says", nil, &body); err == nil {
+			for _, s := range body.Says {
+				ts := TaskSay{ID: s.ID, Via: s.Via, State: s.State, Channel: s.Channel, SentAt: s.SentAt,
+					DeliveredAt: s.DeliveredAt, Preview: s.Preview, ReplyWanted: s.ReplyWant,
+					RepliedAt: s.RepliedAt, ResetKind: s.ResetKind}
+				if s.FromTask == id {
+					ts.Direction, ts.Other = "sent", s.ToWire
+					if ts.Other == "" {
+						ts.Other = s.ToInput
+					}
+				} else {
+					ts.Direction, ts.Other = "received", s.FromWire
+				}
+				out.Says = append(out.Says, ts)
 			}
 		}
 	}

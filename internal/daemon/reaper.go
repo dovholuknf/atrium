@@ -236,5 +236,10 @@ func (d *Daemon) reap(ctx context.Context, every time.Duration) {
 			log.Printf("[atrium] cleared %d settled dispatch item(s)", n)
 			d.ap.Broadcast("dispatch", nil)
 		}
+		if n, err := d.st.SweepSays(); err != nil {
+			log.Printf("[atrium] sweeping the say record: %v", err)
+		} else if n > 0 {
+			log.Printf("[atrium] cleared %d old say record(s)", n)
+		}
 	}
 }
