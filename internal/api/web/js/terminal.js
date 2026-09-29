@@ -804,6 +804,21 @@ function openTerm(task) {
       return false;
     }
 
+    // NEW CONTEXT, on ctrl-alt-n: the room has the session write HANDOFF.md,
+    // clears it and tells it to read the file back. Taken here so the runner
+    // never sees the keystroke.
+    //
+    // Some layouts send ctrl+alt for AltGr, and AltGr+n is a letter someone
+    // meant to type, so an AltGr press is left alone. `getModifierState` says
+    // which one it was on the browsers that can tell. The card's menu has the
+    // same action and works whatever the layout does.
+    if (e.ctrlKey && e.altKey && !e.shiftKey && !e.metaKey && e.code === "KeyN" &&
+        !(e.getModifierState && e.getModifierState("AltGraph"))) {
+      e.preventDefault();
+      newContext(task.id);
+      return false;
+    }
+
     // PASTE IS NOT PREVENTED HERE, and that is the whole fix.
     //
     // `preventDefault` on ctrl-v suppresses the browser's own `paste` event,

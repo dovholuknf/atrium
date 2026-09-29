@@ -5,6 +5,21 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **One action gives a card a fresh context: `new context`, or Ctrl+Alt+N.** See `docs/backlog-2.md` item 66 and
+  `docs/test-plan.md` section CG.
+
+  The room daemon runs the sequence, not the agent, for a card whose terminal atrium owns. It types a fixed capture
+  prompt (commit or stash, write everything a fresh session needs to `HANDOFF.md`, stop), waits for that turn to end,
+  checks `HANDOFF.md` was written, types `/clear`, waits for the new session's SessionStart, then types `Read
+  HANDOFF.md and continue from it.` Each step is a chip on the card (`context 1/3` to `3/3`), gone when the wake
+  lands. A step that times out leaves a `new context failed` chip with the reason and types nothing further; click it
+  to dismiss it, or run the action again. Typing goes through the same gate as `POST /v1/tasks/<id>/message`.
+  New `POST|GET|DELETE /v1/tasks/<id>/new-context`, a `new_context` field on the card, and a turn counter in
+  `activity.go` so a turn shorter than the poll is still seen. The card's right-click menu has `new context`, and the
+  board catches Ctrl+Alt+N in an attached terminal before xterm does (not on a layout that reports AltGr for it).
+  `internal/daemon`: ROOM RESTART. `internal/api/web`: HUB RESTART for the board a hub serves, and the room restart
+  for the room's own board. Chips are held in memory, so a room restart drops them.
+
 - **A provisioned room's claude cards get atrium-control, so they can answer another room.** See
   `docs/cross-room-say-design.md` "A room without atrium-control" and `docs/test-plan.md` CE7.
 
