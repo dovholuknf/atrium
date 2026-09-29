@@ -134,8 +134,8 @@ The first column is what `provision-room.ps1` writes today, and it does not chan
 **Ports.** Each instance takes a block of ten, above the first room's block, recorded in the provision manifest so a
 rerun reuses them. The first room keeps its ports. `provision-room.ps1` names 7781 and 7778 in about ten places (the
 health probe, every `atrium stop --url`, the port-free wait), so `-Instance` means routing all of them through one
-variable first, which is a refactor worth doing on its own. Choosing by probing for a free port was rejected: a port that is
-free now and taken after a reboot moves the room, and every hook and bookmark with it.
+variable first, which is a refactor worth doing on its own. Choosing by probing for a free port was rejected: a port
+that is free now and taken after a reboot moves the room, and every hook and bookmark with it.
 
 **The first room is the machine's room.** Only it writes the shared address file, so a claude session somebody opens
 by hand on that machine reports to the first room. A sibling sees only the sessions it launched. That is what
