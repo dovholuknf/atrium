@@ -634,6 +634,8 @@ Tokens only: no dollar figure is worked out.">?</span>
       </span>
       <select id="uc-room" hidden></select>
       <span class="ucfilter" id="uc-card" hidden></span>
+      <span class="grow"></span>
+      <span class="ucranges"><button id="uc-cache" aria-pressed="false" data-tip="Draw cache reads in the charts. Off, they are counted apart, since they are most of the input and swamp the rest"><i class="uck-read"></i>cache reads</button></span>
     </div>
     <div id="uc-body"></div>
   </div>
@@ -3218,6 +3220,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 
 <script src="/js/core.js"></script>
 <script src="/js/rooms.js"></script>
+<script src="/js/rooms-dash.js"></script>
 <script src="/js/audit.js"></script>
 <script src="/js/board.js"></script>
 <script src="/js/cards.js"></script>

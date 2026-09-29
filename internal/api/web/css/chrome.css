@@ -131,7 +131,10 @@
      is a stacking context, so a menu inside it cannot be lifted above the page. */
   .rooms-menu {
     position: fixed; z-index: 90; min-width: 19rem;
-    display: flex; flex-direction: column; padding: var(--sp-2);
+    /* A panel of room tiles rather than a list of names, so it is sized like one, and never wider than the
+       window. It scrolls inside itself: openRooms sets its height from the chip down. */
+    width: min(36rem, calc(100vw - 16px)); overflow-y: auto; overscroll-behavior: contain;
+    display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-2);
     border: 1px solid var(--stroke); border-radius: var(--r-md);
     /* --shell-0 and not --bg-1, which is the page. A popover wants the panel colour, and it is the same one
        #cardmenu uses so the two look like the same kind of thing. An undefined token here resolves to
@@ -190,6 +193,132 @@
   }
   .rooms-menu button:hover .roomcog { opacity: .85; }
   .rooms-menu button .roomcog:hover { opacity: 1; color: var(--teal); background: var(--chip); }
+
+  /* ── the room tiles, from js/rooms-dash.js ──────────────────────────────────────────────────────────────
+     One tile per room, three bands side by side, stacked at phone width. Every colour is a skin variable, so a
+     light skin gets light tiles without a rule of its own. */
+  .rtile {
+    display: flex; flex-direction: column; gap: var(--sp-2);
+    padding: var(--sp-3); border-radius: var(--r-md); cursor: pointer; text-align: left;
+    border: 1px solid var(--stroke-dim); background: var(--card-1); color: var(--body);
+    transition: border-color .15s, background .15s;
+  }
+  .rtile:hover { border-color: var(--stroke); background: var(--card-0); }
+  .rtile:focus-visible { outline: 2px solid var(--teal); outline-offset: 1px; }
+  .rtile.on { border-color: var(--teal); box-shadow: inset 0 0 0 1px var(--teal-bg); }
+  .rtile.all { background: var(--shell-1); }
+  .rtile .rt-head { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; }
+  .rtile .rt-head > * { flex: none; }
+  .rtile .rt-head strong { font: 600 var(--fs-lg)/1.2 var(--mono); color: var(--head); }
+  .rtile.on .rt-head strong { color: var(--teal); }
+  /* The meta gives way first, with an ellipsis, so the badges and the cog stay on the one line. */
+  .rtile .rt-head > .rt-meta {
+    flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font: 500 var(--fs-sm)/1.2 var(--mono); color: var(--dim);
+  }
+  .rtile .rt-head .grow { display: none; }
+  .rtile .rt-head .chip { font-size: var(--fs-xs); }
+  .rtile .dot { width: 8px; height: 8px; flex: none; border-radius: 50%; }
+  .rtile .dot.live { background: var(--teal); box-shadow: 0 0 8px var(--teal); }
+  .rtile .dot.ghost { background: transparent; border: 1px solid var(--dim); }
+  .rtile .roomcog {
+    flex: none; width: 1.5rem; height: 1.5rem; display: flex; align-items: center; justify-content: center;
+    border-radius: var(--r-sm); font: 600 var(--fs-lg)/1 var(--mono); color: var(--dim); opacity: .6;
+    transition: opacity .12s, background .12s, color .12s;
+  }
+  .rtile:hover .roomcog { opacity: .9; }
+  .rtile .roomcog:hover { opacity: 1; color: var(--teal); background: var(--chip); }
+
+  .rt-bands { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-2); }
+  .rd-band {
+    display: flex; flex-direction: column; gap: 3px; min-width: 0;
+    padding: var(--sp-2) var(--sp-3); border-radius: var(--r-sm);
+    background: var(--bg-2); border: 1px solid var(--hairline);
+    font: 500 var(--fs-sm)/1.35 var(--mono); color: var(--body); text-align: left;
+  }
+  .rd-h { font: 600 var(--fs-xxs)/1.4 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--label); }
+  .rd-sub { font: 500 var(--fs-xxs)/1.4 var(--mono); color: var(--dim); margin-top: 3px; }
+  .rd-row { display: flex; align-items: baseline; gap: var(--sp-3); flex-wrap: wrap; min-width: 0; }
+  .rd-row b { font-weight: 600; color: var(--head); font-variant-numeric: tabular-nums; }
+  .rd-row b.rd-big { font-size: var(--fs-md); }
+  .rd-dim { color: var(--dim); }
+  .rd-dim span { color: var(--label); }
+  .rd-dash { color: var(--dimmest); }
+  .rd-warn, .rd-warn b { color: var(--warn); }
+  .rd-rate { flex-wrap: nowrap; align-items: center; }
+  .rd-rate > span { flex: none; }
+
+  /* Needs you is the one number that asks for a person, so it wears the waiting colour and is a control. */
+  .rd-need b { color: var(--dim); }
+  .rd-need.on { color: var(--warn); cursor: pointer; border-radius: var(--r-xs); padding: 0 3px; margin: 0 -3px; }
+  .rd-need.on b { color: var(--warn); }
+  .rd-need.on:hover { background: var(--warn-bg); }
+  .rd-kinds { gap: var(--sp-2); color: var(--label); font-size: var(--fs-xs); }
+  .rd-kinds i { font-style: normal; color: var(--dimmest); }
+  .rd-kinds .off { color: var(--dimmest); text-decoration: line-through; }
+
+  /* Sparklines: a polyline and a faint fill under it, stretched to the band, the stroke kept at one width. */
+  .rd-spark { flex: 1 1 auto; min-width: 2.5rem; height: 1.25rem; display: block; overflow: visible; }
+  .rd-spark.none { height: 1px; background: var(--hairline); align-self: center; }
+  .rd-spark polyline { fill: none; stroke-width: 1.5; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
+  .rd-spark .area { stroke: none; opacity: .14; }
+  .rd-spark.tok polyline { stroke: var(--teal); }
+  .rd-spark.tok .area { fill: var(--teal); }
+  .rd-spark.cpu polyline { stroke: var(--blue); }
+  .rd-spark.cpu .area { fill: var(--blue); }
+  .rd-rate.hot .rd-spark.cpu polyline { stroke: var(--danger); }
+  .rd-rate.hot .rd-spark.cpu .area { fill: var(--danger); }
+  .rd-rate.hot b { color: var(--danger-text); }
+
+  /* The limit bars. What a card last said, labelled so, coloured by how close it is to the line. */
+  .rd-limits { display: flex; flex-direction: column; gap: 2px; }
+  .rd-lim { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-xs); }
+  .rd-lim .k { flex: none; width: 2.6em; color: var(--label); }
+  .rd-lim .v { flex: none; min-width: 2.6em; text-align: right; color: var(--head); font-variant-numeric: tabular-nums; }
+  .rd-bar { flex: 1; height: 5px; border-radius: var(--r-pill); background: var(--chip); overflow: hidden; }
+  .rd-bar i { display: block; height: 100%; border-radius: inherit; background: var(--teal); transition: width .4s ease; }
+  .rd-lim.warm .rd-bar i { background: var(--warn); }
+  .rd-lim.hot .rd-bar i { background: var(--danger); }
+  .rd-lim.hot .v { color: var(--danger-text); }
+
+  /* A number that changed fades in over its old value, which fades out on top of it. */
+  .rd-fade { position: relative; animation: rd-in .7s ease-out; }
+  .rd-fade::after {
+    content: attr(data-was); position: absolute; left: 0; top: 0; white-space: nowrap;
+    pointer-events: none; animation: rd-out .7s ease-out forwards;
+  }
+  @keyframes rd-in { from { opacity: .15; } to { opacity: 1; } }
+  @keyframes rd-out { from { opacity: .8; } to { opacity: 0; visibility: hidden; } }
+
+  /* A slow pulse on a tile with somebody waiting or a CPU past 90%. Slow enough to be seen from across the
+     desk and never read as an alarm. */
+  .rtile.hot { animation: rd-pulse 2.8s ease-in-out infinite; }
+  @keyframes rd-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(var(--warn-rgb), 0); border-color: var(--stroke-dim); }
+    50% { box-shadow: 0 0 0 3px rgba(var(--warn-rgb), .18); border-color: var(--warn-stroke); }
+  }
+  .rtile.hot.on { animation-name: rd-pulse-on; }
+  @keyframes rd-pulse-on {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(var(--warn-rgb), 0); }
+    50% { box-shadow: 0 0 0 3px rgba(var(--warn-rgb), .18); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .rtile.hot { animation: none; border-color: var(--warn-stroke); }
+    .rd-fade, .rd-fade::after { animation: none; }
+    .rd-fade::after { content: none; }
+    .rd-bar i { transition: none; }
+  }
+
+  /* The disconnected rooms, below the tiles and dimmed, one line each with their `x`. */
+  .rtile-offs { display: flex; flex-direction: column; border-top: 1px solid var(--hairline); padding-top: var(--sp-2); }
+  .rooms-menu button.rtile-off { opacity: .8; }
+
+  /* Phone: one tile per row, the bands stacked, the sparklines kept. */
+  @media (max-width: 640px) {
+    .rt-bands { grid-template-columns: minmax(0, 1fr); }
+    .rd-band { flex-direction: column; }
+    .rd-spark { min-width: 5rem; }
+  }
 
   /* WHICH MACHINE THESE ARE ON, said once above them instead of on every row.
      A runner, a fixture, a source, a recogniser and an action all belong to one machine, so looking at several

@@ -38,6 +38,22 @@
 // choice stored on the hub would have them fighting over it.
 const ROOM_KEY = "atrium.room";
 
+// THE ROOMS DASHBOARD PREVIEW, `?demo=rooms` and nothing else. The query flag
+// is read once, here, so every branch below agrees on it from the first request
+// this page makes. It makes a plain daemon pretend to be a hub with four made-up
+// rooms and feeds the dropdown fixture `room-stats` snapshots. See
+// js/rooms-dash.js.
+//
+// NO TRACE WITHOUT IT. The demo's chosen room lives in sessionStorage under its
+// own key, never in ROOM_KEY, and no request carries a room while it is on, so
+// dropping the query string puts the board back exactly as it was.
+//
+// `roomsDemoLive` is set only once the page is known to be a board, never on a
+// guest page or a popped-out terminal. See `startRooms`.
+const ROOMS_DEMO = /(?:^|&)demo=rooms(?:&|$)/.test(location.search.slice(1));
+const ROOMS_DEMO_KEY = "atrium.demo.room";
+let roomsDemoLive = false;
+
 // hubRooms is what is attached right now, and hubIsHub says whether to believe
 // it. Both are read by the header chip and by the launch dialog.
 let hubRooms = [];
@@ -51,6 +67,9 @@ let attachedRoomKey = null;
 
 // roomNow is the chosen room, or empty for all of them.
 function roomNow() {
+  if (ROOMS_DEMO) {
+    try { return sessionStorage.getItem(ROOMS_DEMO_KEY) || ""; } catch (e) { return ""; }
+  }
   try { return localStorage.getItem(ROOM_KEY) || ""; } catch (e) { return ""; }
 }
 
@@ -70,6 +89,16 @@ function pickRoom(name) {
     // somebody else's screen. See the head of index.html.
     sessionStorage.setItem("atrium.switching", name || "all rooms");
   } catch (e) {}
+  // The demo's rooms are made up, so choosing one is remembered for this tab
+  // only and forgets nothing real. The reload keeps `?demo=rooms`.
+  if (ROOMS_DEMO) {
+    try {
+      if (name) sessionStorage.setItem(ROOMS_DEMO_KEY, name);
+      else sessionStorage.removeItem(ROOMS_DEMO_KEY);
+    } catch (e) {}
+    location.reload();
+    return;
+  }
   try {
     if (name) localStorage.setItem(ROOM_KEY, name);
     else localStorage.removeItem(ROOM_KEY);
@@ -162,35 +191,17 @@ function paintRooms() {
 // would read one way open and another way reopened.
 function roomPickerRows() {
   const room = roomNow();
-  const rows = [
-    `<button class="${room ? "" : "on"}" onclick="pickRoom('')">
-       <span class="dot ghost"></span>
-       <strong>all rooms</strong></button>`
-  ];
-  for (const r of hubRooms) {
-    const name = esc(r.name);
-    const q = name.replace(/'/g, "&#39;");
-    // A COG TO THAT ROOM'S OWN SETTINGS, on the live rows. `openRoomCog` is the
-    // rooms-tab's own opener: it scopes `/v1/settings` reads and writes to this
-    // room (board_skin, board auth and the rest) the same way selecting the room
-    // does, so this is the quick way into one room's settings without switching
-    // the whole board to it. A span and not a nested button, and it stops the
-    // click, for the same reasons the reject `x` below is drawn that way: a
-    // button inside a button is not markup a browser honours, and settling on a
-    // room's cog must never also be choosing to look at that room.
-    rows.push(`<button class="${room === r.name ? "on" : ""}"
-      onclick="pickRoom('${q}')">
-        <span class="dot live"></span>
-        <strong>${name}</strong>${r.host
-          ? `<span class="meta">${esc(r.host)}</span>` : ""}
-        <span class="roomcog" aria-label="settings for ${name}" data-tip="settings for ${name}"
-          onclick="event.stopPropagation();openRoomCog('${q}')">&#9881;</span></button>`);
-  }
+  // THE TILES COME FROM rooms-dash.js, which knows nothing about this menu, so
+  // the same tile can sit on a rooms page later. The all-rooms tile goes first
+  // because it is the board-wide total and the way back from a scope.
+  const rows = [allRoomsTileHTML(hubRooms, room === "")];
+  for (const r of hubRooms) rows.push(roomTileHTML(r, roomStats[r.name], room === r.name));
   // Rooms that dialled in before and are not attached now. Listed after the live
   // ones and dimmed, because the board handles an offline room by showing what it
   // last said, so switching to one is a real thing to do. A room that has never
   // connected stays out: it has nothing to show and belongs on the rooms tab.
   // The currently scoped room is drawn by the block below, so it is skipped here.
+  const off = [];
   for (const r of hubInventory) {
     if (r.attached || !r.first_seen || r.transport === "local") continue;
     if (r.name === room) continue;
@@ -202,7 +213,7 @@ function roomPickerRows() {
     // hub. It is a plain element rather than a nested button, because a button
     // inside a button is not markup a browser will honour, and it stops the
     // click so choosing to forget a room is never also choosing to look at it.
-    rows.push(`<button class="cold"
+    off.push(`<button class="cold rtile-off" data-room="${name}"
       onclick="pickRoom('${q}')">
         <span class="dot"></span>
         <strong>${name}</strong>
@@ -214,11 +225,12 @@ function roomPickerRows() {
   // A room that was chosen and has since gone. Kept in the list so there is
   // something to click your way out of.
   if (room && !hubRooms.some(r => r.name === room)) {
-    rows.push(`<button class="on cold">
+    off.push(`<button class="on cold rtile-off" data-room="${esc(room)}">
       <span class="dot"></span>
       <strong>${esc(room)}</strong>
       <span class="meta">not attached</span></button>`);
   }
+  if (off.length) rows.push(`<div class="rtile-offs">${off.join("")}</div>`);
   if (!hubRooms.length) {
     rows.push(`<div class="none">no room is attached. the hub serves this board
       and holds nothing, so until a room connects there is nothing to show.</div>`);
@@ -238,6 +250,8 @@ function openRooms() {
   // long room name cannot push it off the edge of a narrow window.
   const at = document.getElementById("rooms").getBoundingClientRect();
   menu.style.top = (at.bottom + 8) + "px";
+  // The tiles can be taller than a phone, so the panel scrolls inside itself.
+  menu.style.maxHeight = Math.max(160, window.innerHeight - at.bottom - 16) + "px";
   menu.style.left = Math.max(8, Math.min(at.right - menu.offsetWidth,
     window.innerWidth - menu.offsetWidth - 8)) + "px";
 }
@@ -689,6 +703,7 @@ async function rejectRoom(name) {
     "Removes it from this hub's room list. Nothing on that machine changes. If it is still " +
     "running atrium, it reappears when it reconnects. Use this to clear a stale or duplicate room.",
     "forget it")) return;
+  if (roomsDemoLive) { roomsDemoForget(name); hubRead = 0; await loadHubRooms(); return; }
   try {
     const got = await plainFetch("/_hub/inventory/forget", {
       method: "POST", headers: { "Content-Type": "application/json" },
@@ -833,7 +848,8 @@ window.fetch = function (input, init) {
   const url = (input && input.url) ? input.url : String(input);
   const cardScoped = namesACard(url, init);
   const write = how !== "GET" && how !== "HEAD";
-  const room = roomNow() || (write && !cardScoped ? writeRoom : "");
+  // The demo's rooms do not exist, so nothing is routed to one.
+  const room = ROOMS_DEMO ? "" : roomNow() || (write && !cardScoped ? writeRoom : "");
   if (!room) return plainFetch(input, init);
   // A Request object carries its own headers, so it is rebuilt rather than
   // having an init merged onto it, which fetch ignores for most fields.
@@ -854,7 +870,7 @@ window.fetch = function (input, init) {
 
 const PlainSocket = window.WebSocket;
 window.WebSocket = function (url, protocols) {
-  const room = roomNow();
+  const room = ROOMS_DEMO ? "" : roomNow();
   let u = String(url);
   if (room && u.indexOf("atrium_room=") < 0) {
     u += (u.indexOf("?") < 0 ? "?" : "&") + "atrium_room=" + encodeURIComponent(room);
@@ -871,7 +887,7 @@ window.WebSocket.prototype = PlainSocket.prototype;
 // A PATH RATHER THAN THE HEADER ABOVE, because `EventSource` sets no headers.
 // That is the whole reason the hub has three spellings of this endpoint.
 function eventsURL() {
-  if (!hubIsHub) return "/v1/events";
+  if (!hubIsHub || roomsDemoLive) return "/v1/events";
   const room = roomNow();
   return room ? "/v1/events/room/" + encodeURIComponent(room) : "/v1/events/hub";
 }
@@ -968,6 +984,8 @@ async function loadHubRooms() {
   // identical requests on the wire and disagree about the answer.
   if (Date.now() - hubRead < 2000) return hubIsHub;
   hubRead = Date.now();
+  // The preview's pretend hub answers from memory and asks nothing.
+  if (roomsDemoLive) return roomsDemoHub();
   let got;
   try {
     // Through the shared cap, not a raw plainFetch: a flapping room asks this on
@@ -1041,6 +1059,14 @@ async function loadHubRooms() {
 // because `eventsURL` cannot answer until the probe has.
 async function startRooms() {
   nameTheSwitch();
+  // THE PREVIEW RUNS ON A BOARD ONLY. A lent session's guest page and a
+  // popped-out terminal never get `room-stats`, so they never get the fixture
+  // that stands in for it either. Asked here because boot has already started
+  // the guest question by the time this runs.
+  if (ROOMS_DEMO && !(typeof termOnly === "function" && termOnly()) && !(await guestKnown)) {
+    roomsDemoLive = true;
+    roomsDemoStart();
+  }
   if (!await loadHubRooms()) return;
   // NO POLL OF ITS OWN. The merged stream says `rooms` the moment membership
   // changes. A board scoped to one room is not on that stream, so its counter is
