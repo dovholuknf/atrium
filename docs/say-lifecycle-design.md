@@ -29,7 +29,8 @@ So a typed say has no id at all, and a queued one has an id the sender is given 
 **How a handle resolves.** `handleSay` calls `localTarget`, and `handleTell` calls `resolvePeer`. Both are EXACT:
 
 1. the wire name, qualified with this machine's tenant (`Store.GetByWireName`). It matches a card in ANY status.
-2. an alias (`Store.GetByAlias`), live cards only, newest first.
+2. an alias (`Store.GetByAlias`): a live card first, else a `done` card that is not archived, newest first within
+   each. A dead or archived card never answers. `sessionGone` then decides whether a done one can be reached.
 3. a card id (`localTarget` only).
 
 There is no prefix, no case-insensitive, no fuzzy step, and there should not be. `atrium` therefore resolved either to

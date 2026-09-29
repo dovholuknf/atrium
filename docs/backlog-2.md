@@ -2860,6 +2860,13 @@ live, or else to the newest `done` card whose session is not gone by `sessionGon
 alias stays unresolved, so a reused alias still means the live card. Separate from the reaper fix above, and it
 touches the same resolver sa32 (item 32) changed, so it goes after that merge.
 
+**Fixed on `claude/sa89b`** (item 89b). `GetByAlias` now resolves a `done` card that is not archived, behind any live
+card with the same alias, then newest first. A dead or archived card still does not answer. `sessionGone` is left
+where it already sits in the say path, so a done card with no session left is refused there as ended rather than
+here as unknown. `SetAlias` and `liveClause` are untouched, so a done card still gives its alias up to a new one.
+The same rule is in the two client side resolvers that matched aliases themselves, `resolvePeer` in `internal/link`
+and in `internal/cli`.
+
 ## 91. Two cards in one worktree share one HANDOFF.md, and new-context overwrites the other's (bug, design only)
 
 Reported 2026-09-29 by the orchestrator. @merge and @orchestrator both run in the main checkout
