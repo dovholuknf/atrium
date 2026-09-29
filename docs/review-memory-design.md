@@ -167,7 +167,8 @@ why, and may name a panel. The director then:
    reason.
 3. **Opens the branch.** `claude/review/<slug>/<target>-<sha7>` in dotagents, from the current tip of
    `claude/review/main`, with no commit yet. That tip is the base commit the reviewers read their files at.
-4. **Launches a review-manager.** One worker card per review, always, whatever the size (answer 8): title `saNN`,
+4. **Launches a review-manager.** One worker card per review, always, whatever the size (answer 8): title and alias
+   `pr-<repo>-<number>` (`pr-ziti-4397`, `pr-zrok-1277`), never `saNN`, and named that way in every report (clint),
    model sonnet, theme active-work, tags `atrium:subagent` and `dept:review`, cwd the target repo's checkout. It is
    launched LEAN, with nothing at start that the review does not need, and its brief is minimal: the target, the
    panel and its sizing line, each reviewer's file path and the base commit to read it at, and the report path. It
@@ -350,6 +351,11 @@ are in `general.md` on dotagents branch `claude/review/director/2026-09-29-walk-
 24. clint's wording decides. If clint picks a name that does not exist yet, the director says so once, then writes the
     comment that way.
 
+**Naming.**
+
+25. A review-manager is titled and aliased `pr-<repo>-<number>` (`pr-ziti-4397`, `pr-zrok-1277`), never `saNN`, and
+    every report names it that way.
+
 What this changes elsewhere in the design: the review-manager's report to the director carries the table's columns
 (Cause, Test status, PR-head line) on every finding, so the director can build the table and walk the comments
 without reopening the review. The skill's step 7 report gains those two columns in stage 2, step 1.
@@ -361,7 +367,7 @@ without reopening the review. The skill's step 7 report gains those two columns 
 | the digest, batched reads, turn budget, the `repo_notes` parse, passing notes through | dotfiles, `review-panel` skill and the four personas |
 | the reviewer files and the dangerous-change record | dotagents, `personas/<id>/repos/<host>/<org>/<repo>.md` |
 | picking panels, applying notes, branches and merges | the director, @review, one resident card |
-| each review's review-manager | an saNN worker, one per review, culled when it reports |
+| each review's review-manager | a `pr-<repo>-<number>` worker, one per review, culled when it reports |
 | proposed guards | the director's report, then clint, then `mercurius.yaml` or `CLAUDE.md` by hand |
 
 Nothing in atrium changes. No migration. The director and its workers are ordinary cards.
