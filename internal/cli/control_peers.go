@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/daemon"
+	"github.com/dovholuknf/atrium/internal/link"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -236,7 +237,13 @@ type card struct {
 	Idle     int    `json:"idle_seconds"`
 	Wait     int    `json:"wait_seconds"`
 	Superv   bool   `json:"supervised"`
-	Activity struct {
+	// What the room says the launch applied. Empty from a room older than
+	// launch options, which is how launchHandler notices.
+	Model         string   `json:"model"`
+	Effort        string   `json:"effort"`
+	LaunchArgs    []string `json:"launch_args"`
+	LaunchEnvKeys []string `json:"launch_env_keys"`
+	Activity      struct {
 		What string `json:"what"`
 	} `json:"activity"`
 }
@@ -563,6 +570,9 @@ type LaunchOutput struct {
 	// already reads rather than only in a message it will forget.
 	Brief string `json:"brief,omitempty"`
 	Note  string `json:"note,omitempty"`
+	// What the room ran it with, so a caller sees that the model it asked for took.
+	Model  string `json:"model,omitempty"`
+	Effort string `json:"effort,omitempty"`
 }
 
 // briefFile is what a briefing is called in the new session's directory.
@@ -657,6 +667,10 @@ func launchHandler(ctx context.Context, _ *mcp.CallToolRequest, in LaunchInput) 
 	}
 	out.Note = "started. its permission requests go to the human on their board, so it will " +
 		"stop at the first gated command unless somebody is watching."
+	out.Model, out.Effort = t.Model, t.Effort
+	// A room older than launch options drops the fields without a word.
+	out.Note = link.LaunchDroppedWarning(link.LaunchOptionsDropped(in.Model, in.Effort, in.Args, in.Env,
+		t.Model, t.Effort, t.LaunchArgs, t.LaunchEnvKeys)) + out.Note
 	return nil, out, nil
 }
 
