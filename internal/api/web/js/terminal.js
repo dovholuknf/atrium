@@ -976,6 +976,7 @@ function wireTerminalPaste(screen) {
 
     e.preventDefault();
     e.stopPropagation();
+    lagPasteStart("paste event");
     // A guest has no file endpoint, so a pasted picture is offered nothing and
     // falls through to the text below it. Pasting TEXT is the terminal, which
     // is the one thing this link does share.
@@ -1047,13 +1048,20 @@ function sendPasteText(text) {
 // paste box, which needs no permission at all.
 async function pasteIntoTerm() {
   const mine = ++pasteAttempt;
+  // At once, before the clipboard read, which is the slow step on a share.
+  pasteWaiting("reading the clipboard", "right click");
   const got = await Promise.race([
     clipboardIntoTerm(mine),
     new Promise(r => setTimeout(
       () => r({ why: "the browser has not been told whether this page may read the clipboard" }),
       pasteWaitMs)),
   ]);
-  if (got.ok) return;
+  if (got.ok) {
+    // Nothing on the clipboard to send: the wait box has nothing to wait for.
+    if (!pasteFlight) pasteEnd("nothing to paste");
+    return;
+  }
+  pasteEnd("the paste box");
   openPasteBox(got.why);
 }
 
@@ -1084,6 +1092,7 @@ async function clipboardIntoTerm(mine) {
   } catch (e) { /* text is still worth trying */ }
   try {
     const text = await navigator.clipboard.readText();
+    lagPasteMark("clipboard");
     if (mine !== pasteAttempt) return { ok: true };
     if (text) sendPasteText(text);
     return { ok: true };
@@ -1226,19 +1235,20 @@ async function uploadIntoTerm(files) {
   const form = new FormData();
   for (const f of files) form.append("file", f, f.name);
 
-  // Taken back when the answer arrives. `uploading` and `in the working
-  // directory` are the same event twice, and the first one is only worth
-  // saying while it is still true.
-  const saying = toast("uploading", files.length === 1 ? files[0].name : files.length + " files");
+  // The paste box rather than a toast, so an upload that is slow to answer wears
+  // the same mark as every other paste. The path that comes back is sent as a
+  // paste, which takes the box over without a gap.
+  pasteWaiting("uploading " + (files.length === 1 ? files[0].name : files.length + " files"), "upload");
+  lagPasteMark("upload start");
   let res;
   try {
     res = await api(`/v1/tasks/${termTask.id}/files`, { method: "POST", body: form });
   } catch (e) {
-    if (saying) saying.dismiss();
+    pasteEnd("the upload failing");
     toast("that did not go up", e.message);
     return;
   }
-  if (saying) saying.dismiss();
+  lagPasteMark("upload end");
 
   // Spliced into the stream and NOT submitted.
   //
@@ -1253,6 +1263,7 @@ async function uploadIntoTerm(files) {
   // when they mean "look at this", and it is not what they say.
   const pre = preambleOf(await pasteSettings());
   if (paths) sendInput(pre + paths + " ", false, true);
+  else pasteEnd("no path back");
   toast(pastePrefs && pastePrefs.paste_keep === "scrap"
     ? "in the scratch folder" : "in the working directory", paths);
 }
