@@ -834,6 +834,14 @@ async function cardMenu(e, id) {
         "never interrupted, and with this off everything is queued instead.",
       act: () => patchTask(id, { peer_typing: t.peer_typing === false }).then(refresh)
     } : null,
+    // A parked card has no process. Resume starts it on the conversation it had.
+    t.parked_at ? {
+      label: "resume", note: "parked, no process",
+      help: "This card was parked after sitting idle, so nothing is running. " +
+        "Starting it again resumes the same conversation, and its prompt cache " +
+        "is probably cold, so the first turn runs on a full context.",
+      act: () => resumeParked(id)
+    } : null,
     // Cycle the context: the room has it write HANDOFF.md, clears it, and tells
     // it to read the file back. Ctrl+Alt+N in an attached terminal does the same,
     // and this is the one that always works, because some layouts send Ctrl+Alt

@@ -272,6 +272,17 @@ func (d *Daemon) finish(task *store.Task, in FinishRequest) (map[string]any, int
 		// outbox inside the same transaction. See relay.go.
 		write.Relay = d.launcherRelay(task, reportBody(task, in.Status, sha, unverified, recap))
 	}
+	// A REPORT TO A PARKED LAUNCHER RESUMES IT, as if wake=true: the launcher is
+	// the one who has to act on it, and a report nobody reads is the failure
+	// parking must not cause. The notice itself is queued by the ledger and typed
+	// or carried by a hook like any other, so it is never typed here. See park.go.
+	if write.Notice != nil {
+		if launcher, err := d.st.Get(write.Notice.ToID); err == nil && isParked(launcher) {
+			if err := d.unpark(launcher.ID, "report"); err != nil {
+				log.Printf("[atrium] could not resume %s for a report: %v", launcher.DisplayTitle(), err)
+			}
+		}
+	}
 	res, err := d.st.RecordReport(write)
 	if err != nil {
 		return nil, http.StatusInternalServerError, err

@@ -714,6 +714,8 @@ type sayInput struct {
 	Text string `json:"text" jsonschema:"what to say, as one agent to another. the recipient is told who you are automatically, so do not announce yourself"`
 	// When is `immediate` (the default) or `done`. See internal/daemon/saywhen.go.
 	When string `json:"when,omitempty" jsonschema:"immediate (the default): typed as soon as the line is empty, even mid-turn. done: wait for that session's turn to end"`
+	// Wake resumes a parked card so this reaches it.
+	Wake bool `json:"wake,omitempty" jsonschema:"true to resume a PARKED session (idle, no process) and deliver this. it costs a cold start, so leave it off unless the message is worth it. without it a say to a parked session is refused and nothing is queued"`
 }
 
 type sayOutput struct {
@@ -770,9 +772,12 @@ func (c *controlMCP) sayHandler(ctx context.Context, req *mcp.CallToolRequest, i
 		Warning   string `json:"warning"`
 		When      string `json:"when"`
 	}
-	body := map[string]string{"text": in.Text, "from": from}
+	body := map[string]any{"text": in.Text, "from": from}
 	if w := strings.TrimSpace(in.When); w != "" {
 		body["when"] = w
+	}
+	if in.Wake {
+		body["wake"] = true
 	}
 	if err := c.ask(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(id)+"/message", room,
 		body, &res); err != nil {

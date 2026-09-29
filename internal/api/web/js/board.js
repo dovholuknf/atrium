@@ -795,7 +795,7 @@ function cardHTML(t) {
       ${t.restart_wake ? `<span class="chip"
         data-tip="${esc("typed in once after the next restart brings this runner back: " + t.restart_wake.text)}"
         >wake queued</span>` : ""}
-      ${newContextChip(t)}
+      ${newContextChip(t)}${parkedChip(t)}
       ${typeof keepaliveChip === "function" ? keepaliveChip(t) : ""}
       ${stuckMark(t)}
       ${sharedCards.has(t.id) ? `<span class="chip shared"
@@ -946,6 +946,25 @@ function newContextChip(t) {
   }
   return `<span class="chip" data-tip="${esc("new context, step " + n.n + " of " + n.of + ": " + n.label)}"
     >context ${n.n}/${n.of}: ${esc(n.step)}</span>`;
+}
+
+// A parked card: idle, no process, waking on the first key or a say with wake.
+function parkedChip(t) {
+  if (!t.parked_at) return "";
+  return `<span class="chip" data-tip="${esc("parked: idle with no process since " +
+    new Date(t.parked_at).toLocaleTimeString() + ". press a key in its terminal, or use resume")}"
+    >parked</span>`;
+}
+
+async function resumeParked(id) {
+  try {
+    await api(`/v1/tasks/${encodeURIComponent(id)}/resume`, { method: "POST" });
+    toast("resuming", "it is starting again on the same conversation");
+  } catch (e) {
+    toast("could not resume", e.message);
+    return;
+  }
+  refresh();
 }
 
 async function dismissNewContext(id) {

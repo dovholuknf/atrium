@@ -142,6 +142,8 @@ type Server struct {
 	// takes its chip off. Owned by the daemon, which owns the terminal. See
 	// internal/daemon/newcontext.go.
 	NewContext http.HandlerFunc
+	// Resume wakes a parked card. Supplied by the daemon. See daemon/park.go.
+	Resume http.HandlerFunc
 	// SendNote turns a card's note into one message and clears it. Owned by
 	// the daemon, which owns delivery.
 	SendNote http.HandlerFunc
@@ -569,6 +571,9 @@ func (s *Server) Handler() http.Handler {
 	}
 	if s.NewContext != nil {
 		mux.HandleFunc("POST /v1/tasks/{id}/new-context", s.NewContext)
+		if s.Resume != nil {
+			mux.HandleFunc("POST /v1/tasks/{id}/resume", s.Resume)
+		}
 		mux.HandleFunc("GET /v1/tasks/{id}/new-context", s.NewContext)
 		mux.HandleFunc("DELETE /v1/tasks/{id}/new-context", s.NewContext)
 	}
