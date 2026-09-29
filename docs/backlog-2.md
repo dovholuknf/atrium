@@ -2050,5 +2050,19 @@ with a benchmark added in phase 2.
   an ambiguous character. Each agrees with xterm.js or carries an `accept` with the reason. `dumpScreen` learns to
   skip continuations and carry marks, and asserts the invariant.
 
+## 86. `screen.go`'s combining-mark table only grows (bug, low)
+
+Found 2026-09-29 reviewing item 82. A cell carrying combining marks points into `screen.combs`, and every mark
+attached appends a new string there, even one already held. Nothing ever removes an entry: not a clear, not RIS,
+not a row leaving history. So the table fills to `combsMaxKept` (65536) per screen, and past that `combine` drops
+every new mark for as long as the screen lives. A long session in Vietnamese or another heavily accented script
+would replay its later text without its accents. Memory is bounded (65536 entries of at most 32 bytes), so this is
+not a leak, and it did not block item 82.
+
+Fix: intern the strings (a map from mark string to index, so a repeated mark costs nothing), and compact the table
+when history is trimmed or the screen is reset, by walking the live cells and renumbering `ext`. A test attaches
+more than `combsMaxKept` marks across a scrolling screen and checks that the last row still carries its marks.
+Owned by @terminal. Low priority.
+
 
 ------------
