@@ -59,6 +59,10 @@ var (
 	// stuck. It cannot tell a hung process from a long build, so it reports and
 	// never kills anything.
 	LongToolAfter = envDuration("ATRIUM_A2A_LONG_TOOL", 20*time.Minute)
+	// BackgroundHoldMax is how long background work named by a Stop holds the
+	// silent-stop alert. A build finishes and wakes the session well inside it.
+	// A dev server left running never does, and must not hide a real stop forever.
+	BackgroundHoldMax = envDuration("ATRIUM_A2A_BACKGROUND_HOLD", 2*time.Hour)
 )
 
 // EscalationBackoff is when the board is told again about a worker that is
@@ -335,8 +339,14 @@ func (d *Daemon) silentStop(taskID string) bool {
 }
 
 // stoppedSilently reports whether a card is waiting after a turn that ran
-// since its last prompt and said nothing to its launcher, and when that turn
-// ended.
+// since its launcher's last prompt and said nothing to its launcher, and when
+// that turn ended.
+//
+// THE PROMPT HAS TO BE THE LAUNCHER'S. A message from another session, or a
+// turn the session's own monitor woke, creates no debt, so a resident session
+// whose workers report to it is not stuck for hearing from them. The board's
+// STUCK mark reads this too, on purpose: one definition of owing. See
+// docs/owed-report-design.md.
 //
 // A TURN HAS TO HAVE RUN. Owing a report is not enough: a built-in slash
 // command such as `/model` is a prompt that starts no turn, and a card a
@@ -349,7 +359,13 @@ func (d *Daemon) stoppedSilently(t *store.Task) (time.Time, bool) {
 		return time.Time{}, false
 	}
 	ended, err := d.st.TurnEndedAt(t.ID)
-	if err != nil || ended == nil || ended.Before(*t.PromptedAt) {
+	if err != nil || ended == nil || ended.Before(*t.OwedAt) {
+		return time.Time{}, false
+	}
+	// A turn that ended on background work is waiting, not stopped. Each of
+	// those tasks wakes the session when it finishes, and the Stop after that is
+	// a new turn end that carries the clock forward. See BackgroundHoldMax.
+	if n, _ := d.act.backgroundWork(t.ID); n > 0 {
 		return time.Time{}, false
 	}
 	return *ended, true

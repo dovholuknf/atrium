@@ -92,6 +92,7 @@
       <div class="tab" data-view="terms">terminals<span class="count zero" id="c-term"
            data-tip="terminals atrium is supervising"></span></div>
       <div class="tab" data-view="history">history</div>
+      <div class="tab" data-view="usage">usage</div>
       <!-- Put machine configuration and the permissions audit after the daily work views.
            Called `rooms` because a room is the machine, and everything under this tab is a
            fact about one: its runners, its fixtures, its sources, its recognisers, its
@@ -137,7 +138,7 @@
          address, a save that failed, a card that just asked for something.
          The badge counts what has arrived since this was last opened. -->
     <button id="toastlog-open" class="icon" onclick="openToastLog()"
-      aria-label="what the board has told you" data-tip="what the board has told you">&#128276;<span class="count"></span></button>
+      aria-label="what the board has told you" data-tip="what the board has told you"><span class="glyph">&#128276;</span><span class="count"></span></button>
     <button id="sound" class="icon" aria-label="sound on. click to mute" data-tip="sound on. click to mute">&#9835;</button>
     <button id="gear" class="icon" aria-label="sound settings" data-tip="sound settings">&#9881;</button>
     <!-- WHICH ROOM, and it is a selector as much as a counter.
@@ -567,6 +568,27 @@ The useful cut is which ones left an account of themselves. A session that finis
     <div id="history-list"></div>
   </div>
 
+  <!-- What the room has spent, charted. The rows are item 37's and nothing new is recorded: the room sums
+       them into buckets and this draws them. Never on a card face. js/usage-charts.js draws into these. -->
+  <div id="usage" hidden>
+    <div class="col-head" style="margin:0 0 10px">
+      <span>token burn</span>
+      <span class="help" tabindex="0" data-tip="What every Claude card has spent, from the rows the room already keeps for each turn. A turn shows here within about two seconds of ending. A turn still running shows nothing until it ends.
+
+Costs are estimates from the stored per-turn cost, so they are one total and not split by kind.">?</span>
+      <span class="grow"></span>
+      <span class="by" id="uc-count"></span>
+    </div>
+    <div class="toolbar" style="margin-bottom:12px">
+      <span class="ucranges" id="uc-ranges">
+        <button data-range="1h">1h</button><button data-range="6h">6h</button><button data-range="24h">24h</button><button data-range="7d">7d</button>
+      </span>
+      <select id="uc-room" hidden></select>
+      <span class="ucfilter" id="uc-card" hidden></span>
+    </div>
+    <div id="uc-body"></div>
+  </div>
+
   <!-- The operational feed. What happened to atrium, as opposed to what one
        card did: a room attaching or detaching, the hub starting, a launch
        refused by the cap, the board put on a share. Read-only, newest first,
@@ -908,6 +930,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <dialog id="toastlog">
   <div class="dlg-head">
     <div class="grow"><div class="dlg-eyebrow">the tray</div><h2>notifications</h2></div>
+    <button id="toastlog-toggle" onclick="setNotifyOff(!notifyIsOff())">turn off</button>
     <button onclick="clearToastLog()">clear</button>
     <button onclick="document.getElementById('toastlog').close()">close</button>
   </div>
@@ -1437,6 +1460,24 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         <button onclick="testNotify()">send a test</button>
       </div>
       <span class="hintline" id="s-notify-hint"></span>
+    </div>
+    <div class="field">
+      <label class="check">
+        <input type="checkbox" id="s-notifyoff" onchange="setNotifyOff(this.checked)">
+        <span>turn notifications off</span>
+      </label>
+      <span class="hintline">The same switch as the one in the notification tray. No toast, sound or desktop
+        notification, and it beats a card's own tone. Everything held back is still listed in the tray. A permission
+        request still notifies. Kept in this browser.</span>
+    </div>
+    <div class="field">
+      <label class="check">
+        <input type="checkbox" id="s-quietdoers" onchange="alerting.set({ quietDoers: this.checked })">
+        <span>don't notify me about cards an agent launched</span>
+      </label>
+      <span class="hintline">No toast, sound or desktop notification for a card tagged
+        <code>origin:agent</code>. Its marks and its line in the notification log stay. A permission request from
+        it still notifies, and so does a card you gave a tone of its own.</span>
     </div>
     <div class="field">
       <label class="eyebrow" for="s-expiry">notifications disappear after</label>
@@ -3024,6 +3065,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         <span class="foldy" id="d-usage-toggle" onclick="toggleUsage()">token use</span>
       </label>
       <div id="d-usage" hidden>
+        <div class="ucdetail" id="d-usage-chart"></div>
         <div class="usagesum" id="d-usage-sum"></div>
         <div class="usagecauses" id="d-usage-causes"></div>
         <div class="usagelist" id="d-usage-list"></div>
@@ -3147,6 +3189,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/expose3.js"></script>
 <script src="/js/notes-files.js"></script>
 <script src="/js/usage.js"></script>
+<script src="/js/usage-charts.js"></script>
 <script src="/js/peek.js"></script>
 <script src="/js/settings-spine.js"></script>
 <script src="/js/themes.js"></script>

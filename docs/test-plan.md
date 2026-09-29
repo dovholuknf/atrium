@@ -5257,3 +5257,399 @@ atrium-control server, not the older stdio CLI one.
 **Expected:** after the first restart the eligible live cards have their defaults (`@saorch`), and clashes carry
 `no alias` chips. After the second the cleared card stays without an alias: the pass is guarded by the setting
 `alias_default_backfill` and does not run again.
+
+## CN. A worker waiting on background runs is not STUCK
+
+### CN1. Background shells hold the alert
+
+1. On a room with the new binary and its Stop hook installed, launch an agent-launched worker.
+2. Tell it to start three `run_in_background` shells that each sleep four minutes, then end its turn without calling
+   `atrium_report`.
+3. Watch the card for five minutes.
+
+**Expected:** the card sits in needs-input with no STUCK, and the launcher gets no "ended its turn without
+reporting" notice.
+
+### CN2. The clock starts at the later stop
+
+1. Let the shells from CN1 finish. The worker wakes, reads them, and stops again.
+2. Leave it saying nothing to its launcher.
+
+**Expected:** the notice and STUCK arrive two minutes after that second stop, not after the first.
+
+### CN3. No background work behaves as before
+
+1. Repeat CN1 with no background shells.
+
+**Expected:** STUCK and the notice arrive as they did before this change.
+
+## CO. Revert snapshot name matches the file
+
+### CO1. Two different binaries
+
+1. Run `pwsh scripts/live/test-save-revert.ps1 -A <older exe> -B <newer exe>` with two binaries that report different
+   `atrium version` output.
+
+**Expected:** every line says PASS. Each snapshot is named `atrium.revert-<commit7>-<board8>.exe` from its own file's
+`atrium version`, and only one snapshot remains after each save.
+
+### CO2. A file that cannot answer
+
+1. The same script ends by saving a file that is not a program.
+
+**Expected:** a WARNING line, a snapshot named `atrium.revert-unknown-<timestamp>.exe`, and no error.
+
+## CP. Viewport changes apply in order
+
+### CP1. Two windows resizing at once
+
+- Automated: `go test ./internal/daemon -run TestConcurrentViewport -race` fails on the old code and passes now.
+- Manual: attach two browser windows of different sizes to one card, drag both at once, and check the pty size
+  (`stty size` in the shell) matches the wider window and the shorter height.
+
+## CQ. screen.go against xterm.js, and the pty size over the socket
+
+### CQ1. Run the differential
+
+1. From a checkout with `node` on the PATH, clear `ATRIUM_LOCATION`, `ATRIUM_SHARED_LOCATION` and
+   `ATRIUM_DEBUG_INPUTLAG`, then run `go test ./internal/daemon -run TestScreenAgainstXterm -v`.
+
+**Expected:** every subcase passes except `scroll region` and `wide characters`, which SKIP and print the difference.
+Without node the whole test skips and says so. A skip is a known bug in `screen.go` that is waiting on its own backlog
+item. When one is fixed the case fails with "now agree, so drop the skip", and the marker comes out.
+
+### CQ2. An accepted difference that goes away
+
+1. Read the `accept` map of any fixture. Each entry is a difference `screen.go` has on purpose, with the reason.
+
+**Expected:** if `screen.go` ever starts agreeing with xterm.js there, the test fails and names the entry to delete.
+
+### CQ3. The pty follows the pane
+
+1. Run `go test ./internal/daemon -run "TestTheAttachingViewers|TestReattachingAt|TestARestartedSession|TestASecondViewerSizes" -v`.
+
+**Expected:** all four pass.
+
+## CR. Hub input-lag log stays quiet when idle
+
+### CR1. Idle and typing
+
+- With `hub.err` input-lag logging on and a terminal attached but idle for 5 minutes, no `hub <room> echo: frame up ->
+  first bytes back ~45000ms` line appears.
+- Type into the same terminal: a `hub <room> echo` line still appears when the hop is over the threshold.
+- `go test ./internal/link -run "Lag|OnlyControl"` passes.
+
+## CS. One merge-check script and a dedicated merge worktree
+
+See `docs/backlog-2.md` item 77, parts a and e. Nothing here is Go: run the scripts.
+
+### CS1. The check in one call
+
+1. From a merge worktree, run `pwsh scripts/merge-check.ps1`.
+
+**Expected:** only failures print, then one summary line such as `merge-check: go 2100 pass, 1 flaky-pass | board ok
+(headless ran, NODE_PATH=...) | skins skipped (board unchanged) | build ok | PASSED`. Exit is 0. A check that did not
+run has no count on the line. A failure prints the failing test's own output and the line ends `FAILED`, exit 1.
+
+### CS2. Playwright is found, or the run fails loudly
+
+1. Run on a machine where no `node_modules` holds Playwright and no `-NodePath` is given.
+2. Run again with `-SkipHeadless`.
+
+**Expected:** the first fails with `playwright not found` and says how to fix it, rather than passing with the
+headless run skipped. The second prints `board ok (no headless)`. With Playwright present but chromium missing, the
+board check fails, since the headless run skipped itself.
+
+### CS3. Known noise is rerun alone
+
+1. Load the machine so `TestRealSessionsKeepTheirText` or an `internal/link` restart-gate test fails inside the run.
+
+**Expected:** each is rerun alone once. Passing alone, it is counted as `flaky-pass` and does not fail the run. Failing
+alone too, it is a real failure. Any other failing test is real at once.
+
+### CS4. Skins run only when the board changed
+
+1. After a merge commit that touches nothing under `internal/api/web/`, run the script. Then run with `-Board`.
+
+**Expected:** the first says `skins skipped (board unchanged)`, the second prints `all N skins agree...`. `-NoBoard`
+skips whatever the diff says, and `-Base <ref>` changes what the diff is taken against (default `HEAD^1`).
+
+### CS5. The merge worktree
+
+1. Run `pwsh scripts/setup-merge-worktree.ps1`, then run it again.
+
+**Expected:** the first creates `D:/worktrees/claude/atrium/merge` on `claude/merge-scratch`, links every CLAUDE.md,
+and installs Playwright and chromium. The second says the worktree is already registered and the install is done, and
+changes nothing. `merge-check.ps1` run from there needs no `-NodePath`.
+
+## CT. The stdio launch warns about an older room
+
+### CT1. A room that applied the options
+
+1. Run `go test ./internal/cli -run TestStdioLaunchWarnsWhenARoomDropsItsOptions`.
+
+**Expected:** it passes. With a room that echoes the options back, the launch result carries the model and effort and
+no WARNING.
+
+### CT2. A room older than launch options
+
+1. Same test, second half: the fake room returns a card with no model, effort, args or env.
+
+**Expected:** the note starts `WARNING: the room is older than launch options, so model, effort, args, env were NOT
+applied`.
+
+## CU. A worker's reported turn counts as seen
+
+### CU1. Checks
+
+1. Launch a worker with `atrium_launch`. Have it `atrium_report` and end its turn. Its card shows no unseen dot, and
+   `atrium_task` shows `unseen` false with `seen_via` `launcher`.
+2. Launch a worker and have it end a turn without reporting. Its card shows the dot and its launcher gets the silent
+   stop notice.
+3. Start a card by hand, have it `atrium_say` to another session and end its turn. The dot shows.
+4. Have a reported worker end its turn with an Open Questions block. The dot is absent and the `? N` chip stays until
+   a person answers.
+
+## CV. No notifications from agent-launched cards
+
+### CV1. Checks
+
+1. Launch a worker from a session so its card carries `origin:agent`. With the board in another window, let the
+   worker finish a turn. No desktop notification, no sound. The card is marked, and the notification log has the line.
+2. Same with the board focused: no toast.
+3. Have the worker hit a permission prompt. It notifies and rings as before.
+4. Untick the box in the gear, repeat step 1. The alert comes back.
+5. Retick it, give the worker card its own tone, repeat step 1. It is heard.
+6. Reload with a cleared `atrium.sound`: the box is ticked.
+
+Automated: `HEADLESS_ONLY=quietDoer` in `scripts/test-board-headless.js`, focused and unfocused.
+
+## CW. Honest token labels, and Sonnet 5.5 priced
+
+### CW1. Checks
+
+1. Open a Claude card's details after a session with a few prompts. The cells read "N prompts", "M calls" (M at least
+   N), "uncached in", "out", "cache write 5m", "cache write 1h", "cache read", "est.". Hover each: the tip says what it
+   counts.
+2. The per-cause lines read "N prompts · M calls", "N refreshes" and "N calls" for a subagent.
+3. Hover a card for a second. The popover shows the same prompts and calls, and the prompts tip names `/clear`.
+4. Run `/clear` in a card and prompt once more. Prompts and cost keep growing from the earlier total, not restart.
+5. On a Sonnet 5.5 card, "est." is above $0 after a turn.
+6. `go test ./internal/daemon -run Usage`, and `HEADLESS_ONLY=contextSize,peekEverywhere node
+   scripts/test-board-headless.js`.
+
+## CX. Real-time token burn and usage charts
+
+### CX1. Checks
+
+1. Open the usage tab on a room with recent Claude turns. The four charts draw, the legend reads "uncached in", "out",
+   "cache read", "cache write 5m", "cache write 1h", and hovering a bar reads out that bucket.
+2. Switch 1h, 6h, 24h and 7d. The axis and bar width change and the tab stays inside its pane.
+3. End a turn on a card while the tab is open. The newest bar and that card's small chart grow within a few seconds.
+4. Click a small chart. The tab narrows to that card, with its own cause table. Clear the chip to come back.
+5. Open a card's details, then usage. A 24h chart shows, and its link opens the tab filtered to the card.
+6. On a hub with two rooms, both drawn, then stop one room. The tab names it and says its usage is not in the charts.
+7. Change the skin. The charts recolour without a reload.
+8. `go test ./internal/store ./internal/api ./internal/daemon -run Usage`, `go test ./internal/link -run UsageEvent`,
+   `HEADLESS_ONLY=usageCharts,contextSize node scripts/test-board-headless.js`, `bash scripts/check-board.sh` and
+   `bash scripts/check-skins.sh`.
+
+## CY. A lost Stop looks idle
+
+### CY1. The badge
+
+1. Start a Claude card under atrium and give it a prompt that runs for a few seconds.
+2. Stop the daemon's view of its Stop hook: remove the `Stop` entry from `~/.claude/settings.json`, and start a new card.
+3. Let the turn finish and leave the terminal alone.
+
+**Expected:** within 25 to 45 seconds the card's live chip is replaced by a hollow ring in the warn colour, the
+terminal strip's runner mark stops animating, an alert reads "looks idle (no turn-end received)", and the room log
+has a `looks idle:` line naming the frame reason `idle_prompt`. The card stays in `running`.
+
+### CY2. It clears
+
+1. With a card wearing the badge, press a key in its terminal.
+2. Repeat, this time letting the runner draw (send it a prompt from another window).
+
+**Expected:** the ring is gone as soon as the key or the output lands, and the log has `looks idle cleared:` with the
+cause. A card whose Stop hook then arrives settles in `needs-input` as normal.
+
+### CY3. A long silent command is not idle
+
+1. Ask a Claude card to run `sleep 120` and leave it alone.
+
+**Expected:** no badge appears while the spinner line is up, however long the pty is silent.
+
+## CZ. A card owes its launcher a report only for a prompt its launcher sent
+
+### CZ1. A message from a third session, then a silent stop
+
+1. Launch a worker from session A with a prompt. Have it report to A with `atrium_report`.
+2. From a third session B, `atrium_say` the worker a message. Let the worker end its turn saying nothing.
+
+**Expected:** A gets no `ended its turn without reporting` notice, and the worker's card shows no STUCK mark however
+long it waits.
+
+### CZ2. The launcher's own message
+
+1. With the worker from the previous step waiting, `atrium_say` it a message from A. Let its turn end saying nothing.
+
+**Expected:** A gets one silent-stop notice, and the card shows STUCK after the usual wait.
+
+### CZ3. A turn the session's own monitor wakes
+
+1. Have a worker that has reported start a background task or monitor, then wait.
+2. Let the task's events wake it three times, each turn ending with nothing said to A.
+
+**Expected:** A hears nothing. Had the worker not reported, A would hear once, not once per wake.
+
+### CZ4. A restart keeps the debt
+
+1. Launch a worker with a prompt and stop its turn silently before the notice delay passes.
+2. Restart the daemon.
+
+**Expected:** the notice arrives once. A worker that had reported before the restart still owes nothing after it.
+
+## DA. A terminal height flip no longer loses lines (item 74)
+
+Windows only for the harness steps. Clear `ATRIUM_LOCATION` and `ATRIUM_DEBUG_INPUTLAG` first. The scripts are in
+`build.claude/lost-lines/` of the `claude/lost-lines` worktree. Nothing here touches a live room.
+
+### DA1. The hold's rules
+
+1. `go test ./internal/daemon/ -count=1 -run 'Held|Hold|Height|Concurrent|Viewer|Floor|Wake'`
+
+**Expected:** pass. They cover a flip inside the hold, a reattach of the shortest viewer, a height applied once it
+holds, a width change during a held shrink (width at once at the old rows), a superseded timer, the re-tell with no
+resize, the timer's revalidation, every viewer gone, an exited runner, and the real timer.
+
+### DA2. Flips through the inbox ConPTY, without and with the hold
+
+1. Set `ATRIUM_CONPTY_OUT` to a scratch file, `ATRIUM_CONPTY_LOOP=30`, `ATRIUM_CONPTY_RESIZE=flip`,
+   `ATRIUM_CONPTY_FLIP_ROWS=40`, and leave `ATRIUM_CONPTY_DLL` unset.
+2. `go test ./internal/daemon/ -run '^TestConPTYScrollRepro$' -count=1`, then `node check.js <out> 120 50 300`.
+3. Again with `ATRIUM_CONPTY_VIA=runner`, which sends each flip through a runner's viewports.
+
+**Expected:** without the hold, numbered lines are missing (56 to 72 in a recorded run) and `homes.js` shows
+repaints at `wasAtRow=11` with 50 rows on both sides, the live signature. With it, `<out>.sizes` is empty and every
+line is present. `ATRIUM_CONPTY_STREAM=300` in place of the loop gives the same split.
+
+### DA3. A height that holds is still applied
+
+1. Repeat DA2 step 3 with `ATRIUM_CONPTY_FLIP_HOLD=800`.
+
+**Expected:** resizes land, each at least 500 ms after the change, and `check.js --follow` misses about two lines,
+the same as the same run without the hold.
+
+### DA4. OpenConsole ConPTY loses none
+
+1. Repeat DA2 step 2 with `ATRIUM_CONPTY_DLL` naming `conpty.dll` from `Microsoft.Windows.Console.ConPTY`
+   1.24, with `OpenConsole.exe` beside it.
+
+**Expected:** `all present`, with the grid fixed and with `--follow`, and no `\e[H` repaint in the capture.
+
+### DA5. On the board, a reattach does not move the rows
+
+1. On a throwaway room, open one runner's terminal in the board and in a popped-out window that is SHORTER.
+2. Reload the popped-out window a few times while the runner prints.
+
+**Expected:** the taller pane's grid height never changes and no rows go missing from its scrollback. Making the
+popped-out window taller and leaving it there moves the pty's rows after half a second.
+
+## DB. Scroll regions in the terminal replay
+
+### DB1. A region scrolls alone
+
+1. In a runner terminal, run `printf '\e[1;6r'` and then print a dozen lines while the cursor is on row 6, with text
+   pinned on the bottom row.
+2. Attach a second browser tab to the card.
+
+**Expected:** the pinned row is still on the bottom in the new tab, and new lines scroll only above it.
+
+### DB2. Differential
+
+1. Run `go test ./internal/daemon -run 'Screen|Replay|Diff'` with `node` on PATH.
+
+**Expected:** every region case agrees with xterm.js and none is skipped as `backlog-2 81`.
+
+## DC. A wide character takes two columns in the replay
+
+### DC1. Text with wide characters replays in place
+
+1. Start a session and print `printf 'ab中文cd\r\nあいう\033[2D.\r\n'`, then a few lines of ordinary output.
+2. Attach a second board tab, so the replay draws it.
+
+**Expected:** the second tab shows `ab中文cd` and `あい.` exactly as the first does, with nothing shifted a column.
+
+### DC2. A wide character at the edge of the pane
+
+1. Narrow the terminal, then print a wide character starting in its last column.
+
+**Expected:** it wraps to the next row whole in both tabs, and the cursor sits after it.
+
+### DC3. Table drift
+
+1. Run `go test ./internal/daemon -run 'Width|Screen'` with `node` on PATH.
+
+**Expected:** `TestWidthMatchesXterm` and the wide cases of `TestScreenAgainstXterm` pass. After upgrading the vendored
+xterm.js, regenerate with `node internal/daemon/testdata/gen_widths.js go internal/daemon/screen_width_tables.go`.
+
+## DD. The headless board run under load
+
+### DD1. Idle
+
+1. Run `node scripts/test-board-headless.js` on an idle machine.
+
+**Expected:** it passes as before.
+
+### DD2. Loaded
+
+1. Start `go test ./internal/daemon ./internal/store`.
+2. Beside it, run the headless run with `HEADLESS_SLOW=3`.
+
+**Expected:** it passes.
+
+### DD3. A named wait
+
+1. Break the dismiss entry in the card menu locally and run the headless run.
+
+**Expected:** the failure names the menu wait and its budget in milliseconds.
+
+## DE. The notification drawer's off switch
+
+### DE1. Off holds back and records
+
+1. Open the notification drawer from the bell and click "turn off".
+2. Let a card finish a turn so it goes ready, with the board focused and again with it in the background.
+
+**Expected:** no toast, no desktop notification and no sound. Open the drawer: the entry is listed once, and the
+bell's badge counted it. The bell is a struck bell whose tip reads "notifications are off. click to see what arrived".
+
+### DE2. A permission request still comes through
+
+1. With notifications off, have a session ask for a permission.
+
+**Expected:** the toast, sound and desktop notification all appear as normal.
+
+### DE3. It survives a reload and shows in the gear
+
+1. Reload the board, and open the gear's notifications section.
+
+**Expected:** the bell is still struck, the drawer button reads "turn on", and the gear's switch is ticked. Turning
+it on from either place repaints the other and the bell.
+
+## DF. Marks and wide characters on a replayed terminal and the idle badge
+
+### DF1. A redrawn emoji spinner does not eat the marks after it
+
+1. In a supervised card, print a line redrawn many thousands of times with `\r` and a trailing U+FE0F.
+2. Print a line of Devanagari with vowel signs, then detach and attach the card.
+
+**Expected:** the Devanagari line replays with its vowel signs intact.
+
+### DF2. A CJK prompt at an idle Claude Code prompt
+
+1. In a supervised Claude card, type a Japanese or Chinese line at the prompt and leave it, silent, past the
+   looks-idle delay.
+
+**Expected:** the card gets the looks-idle badge as it would with an ASCII prompt.

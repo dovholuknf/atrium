@@ -59,7 +59,7 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 50 | Views of agents, beyond groups | design | not started |
 | 51 | Five kept worktrees show 48 commits not matched on `claude/main` | housekeeping | DONE, all five safe, deleted 2026-09-28 |
 | 52 | A pinned strip with cards from two rooms orders only one room | bug | DONE by fb04, merged into claude/fabric, needs hub and room restarts. `prune` has the same shape, unfixed |
-| 53 | `setViewport` and `dropViewport` compute under `r.mu` and apply outside it | bug | not started, never reproduced |
+| 53 | `setViewport` and `dropViewport` compute under `r.mu` and apply outside it | bug | by sa53, DONE, reproduced and fixed |
 | 54 | Terminal test suite part 2: `screen.go` against xterm.js | feature | not started |
 | 55 | Launched runners inherit ATRIUM_DEBUG_INPUTLAG from the room | bug | DONE by sa55, merged, needs a room restart |
 | 56 | Every dialog is sleek, one skinned design, starting with card details and the room's edit-agents screen | feature, design first, HIGH | DONE by sa56, merged `a1ab1c2`, deployed `66717c5` |
@@ -80,11 +80,13 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 71 | "New context" on the terminals tab's right-click menu | feature | end of backlog, clint unsure it is useful |
 | 72 | One hover on a card, not two | feature | DONE by sa72, merged `66717c5`, deployed `66717c5` |
 | 73 | A keep-alive fork carries the card's launch args, so lean cards can warm | feature | not started |
-| 74 | A long reply loses lines in the middle on the board's terminal | bug | sa74, paused at `ba761d6` (old SHA), rebase onto `66717c5` |
-| 75 | sg3 as a room, and machine bootstrap reuses the operator's shared folder under `localai` | feature | sg3 room works (`35fa4a1` `5145bad`). CIM for workers and the `localai` account not started, 4 questions |
+| 74 | A long reply loses lines in the middle on the board's terminal | bug | sa74: inbox ConPTY on a row change. Height hold built, not merged. OpenConsole choice with clint |
+| 75 | sg3 as a room, and machine bootstrap reuses the operator's shared folder under `localai` | feature | sg3 room works (`35fa4a1` `5145bad`), provision script merged `c3dc597`. CIM for workers and the `localai` account not started, 4 questions |
 | 76 | A worktree helper that links every CLAUDE.md, so workers get project rules | bug, HIGH, FIRST | not started, @merge |
 | 77 | A merge pipeline that does not conflict or rerun | feature, HIGH | not started, @merge, after 76 |
 | 78 | The details popover's token labels mislead | bug | not started |
+| 79 | The notification drawer can turn notifications off | feature | design filed, queued behind 78, 44 and 43 |
+| 80 | Real-time token burn and usage charts | feature, TONIGHT | design filed, ahead of 43 and 79 |
 
 ------------
 
@@ -205,6 +207,63 @@ click marks them answered or only seen, and do the same for `! N`.
 (`.atrium/incoming/20260925-141307-pasted.png`). It did not clear. The click fell through to the row and selected
 the terminal instead. The chip must take its own click (stopPropagation) and clear, without selecting the row. The
 wasted repaint that selecting caused is item 20.
+
+**Design, 2026-09-29 (@ui).**
+
+Two different things wear a count, and they need different answers.
+
+- **`? N` is a turn's Open Questions** (`seenChips` in `js/seen.js`, drawn by `board.js`, `stack.js` and
+  `termRowChips` in `terminal-list.js`). It clears only when `turn_seen.answered_at` is set, and today only a
+  prompt, a message or `atrium finish` sets that. Typing the answer in the terminal is invisible to atrium, which is
+  the way clint actually answers, so the chip stays up.
+- **`! N` is a peer message held behind the operator's line or a turn** (`termHeldChip`). It is not a question.
+  "Clearing" it could mean dropping a message or forcing it in past the gate, and both lose something.
+
+What gets built:
+
+1. **Clicking `? N` dismisses the questions.** Dismiss, not "seen": seen is the dot's business and does not take
+   `?` off. The chip's markup gets `onclick="event.stopPropagation();dismissQuestions(id)"` inside `seenChips`,
+   so all three places it is drawn change at once and none of them selects its row or opens its card. It also gets
+   `role="button"`, `tabindex="0"` and an Enter/Space handler, the same way the other clickable chips work.
+2. **One new route: `POST /v1/tasks/{id}/questions/dismiss`, body `{"questions_at": "<the value the chip was
+   drawn from>"}`.** Shaped like `POST /v1/tasks/{id}/seen` and for the same reason: the click names the set it
+   was shown, so a stale render cannot dismiss a newer set. It calls a new store function,
+   `DismissQuestions(taskID, shownQuestionsAt)`, which sets `answered_at` and `answered_via = "dismissed"` only when
+   the stored `questions_at` is not later than the shown one (compared as times, as `MarkSeen` compares its turn), and leaves `seen_at` alone. `MarkAnswered` is not reused because
+   it also marks the turn seen, and a dismissed question is not a read turn. It answers
+   `{"dismissed": true|false, "stale": true|false}` and publishes the card. `stale` means newer questions arrived
+   since the chip was drawn: nothing changes, and the board toasts "newer questions arrived, nothing was dismissed"
+   and repaints so the new chip shows. A missing or unparseable `questions_at` is a 400. An unknown card is a 404.
+   A card with nothing open answers `dismissed: false, stale: false` rather than an error. A `room~id` goes through
+   the hub's generic task proxy like `/asks` does (`internal/link/fanout_test.go`), so it needs no hub change.
+3. **What an agent sees.** `atrium_task`'s `seen.answered` becomes true and `answered_via` reads `dismissed`, so a
+   launcher can tell "clint dismissed it" from "clint replied". `internal/link/control_mcp.go` already passes
+   `answered_via` through. The tool description needs one clause about `dismissed`.
+4. **Feedback.** The chip comes off when the card is repainted, which `refreshSoon()` asks for after the call, the
+   same helper `reportSeen` uses. A
+   toast says "questions dismissed, nothing was sent to the session", matching `dismissAsks`. A failed call leaves
+   the chip and toasts the error. No confirm, because clint asked for one click. The tooltip, which already lists
+   the questions, ends "click to dismiss them without replying" rather than only "clears when you reply to it".
+5. **`! N` and `✉ N` take their own click too, and do nothing else yet.** `event.stopPropagation()` so the row is
+   not selected. What a click should DO to a held message is an open question for clint (below).
+
+Not in scope: the unseen dot (it already clears on dwell), the `asked you` state chip on stack rows (it is the ask
+field, which the card menu's "dismiss questions" already clears), and item 20's repaint.
+
+Headless section `questionsClick`: a terminal row, a stack row and a board card each with `seen.answered: false`
+and two questions. Clicking the chip must not change `termTask` or open the card dialog, must send exactly one
+`POST /v1/tasks/<id>/questions/dismiss` carrying the card's `questions_at`, and the chip must be gone after the
+next poll. A mocked `stale: true` answer must toast and leave the chip. A click on `!` must not change `termTask`.
+Go: store tests that `DismissQuestions` sets answered and leaves seen, and that an older `questions_at` changes
+nothing. An api test for the route, including the 400.
+
+Review: Mercurius round 1 (s_ajiZDcEq7DfD) found that dismissing without naming the set shown lets a stale render
+dismiss newer questions (C1, folded as the `questions_at` precondition and `stale`). Its advisory, use
+`refreshSoon`, is folded too.
+
+Open question for clint: what should clicking `!` on a held message do? Recommendation: nothing yet beyond not
+selecting the row, because the tooltip already says what clears it and both obvious actions (send it now past
+the gate, or drop it) lose something.
 
 ### 12. Keep codex up to date
 
@@ -610,6 +669,82 @@ Find out why the existing silent-stop check behind the stuck alerts (`settings-s
 fire here. It may read hook timing only, not pty output. And find why this Stop was lost: check the room log for the
 card around 15:45 on 2026-09-25 (missing, failed, or overwritten by a late fire-and-forget `/activity` post).
 
+### Findings (sa21, 2026-09-28)
+
+**Why the existing check did not fire.** `stuckNow` (`internal/daemon/a2a.go`) is a hook-timing check, never a pty
+check, and it has three gaps that each cover this card. It only walks AGENT-LAUNCHED cards (`agentLaunched`), and this
+card was started from the board. Its silent-stop case needs the card already in `needs-input` and owing a report,
+and this card read `running`. Its stuck-tool case needs `toolSince`, a tool call running 20 minutes, and this card
+read `thinking`. So a `running` card with a lost Stop is invisible to it by construction, and the board's "stuck"
+list (`settings-spine.js`, `isStuck`) only renders what `stuckNow` serves.
+
+**Why the Stop was lost: not provable from the log.** `room.err.20260926-083926` (the file spanning 2026-09-25 after
+09:12) has no line at all between 13:00 and 17:00: the room logs nothing for a hook that succeeds, and nothing for
+one that never arrived. The only mention of the card is its restart at 18:50. What the code does allow, most likely
+first: (1) an out-of-order `/activity` post. `handleActivity` answers and then runs `go d.onActivity(in)`, so two
+posts a few milliseconds apart race. A `tool-start` (PreToolUse) processed AFTER the `turn-end` calls `turnResumed`,
+which moves `needs-input` back to `running` and sets the activity, and the following `tool-end` leaves `thinking`.
+That is exactly `running` plus `thinking` with a finished terminal, and needs no lost hook. (2) The Stop hook process
+never ran or timed out. (3) A late `prompt` event. Only (1) can be pinned by logging, so the firing log below
+records the last activity event's kind and age, and a later pass can order `/activity` posts by a sequence stamp
+if the log shows (1).
+
+### Design
+
+**Signal, all of it required.** The card is `running`. The runner is Claude (`t.Runner`, scoped to claude: codex has
+no idle signature I could confirm, so it is never flagged). It is supervised, so atrium owns the pty. The activity is
+mid-turn (`midTurn`, read past the staleness cutoff, since a lost Stop is exactly the case that outlives it). It has
+no subagents from its last Stop (`onSubagents`) and no dialog. The pty has produced no output for `LooksIdleAfter`
+(25s, `ATRIUM_LOOKS_IDLE`). And the last frame reads idle.
+
+**Silence threshold.** 25s. Claude Code redraws its spinner about once a second while it works, so 25s is more than
+20 missed redraws. The check rides the reaper's 20s tick, so a firing lands 25 to 45s after the turn ended. A
+dedicated faster timer was rejected: the badge is a hint, and a second ticker is a second thing to stop at shutdown.
+
+**Idle signature from the last frame (claude only).** Read `buf.Tail(8KB)`, strip escapes with the existing `ansi`
+regexp, and take the text from the LAST input-box top border (`╭`). Idle when that box has its bottom border (`╰`)
+after it and neither the box's footer nor the non-empty line just above the box contains `to interrupt` (the working
+spinner line reads `... esc to interrupt` and sits directly above the box). No box at all, or an interrupt hint in
+the last frame, means not idle, so a long silent Bash under a live spinner, a dialog, and a half drawn screen all
+stay unflagged. It fails toward not flagging: a missed badge costs what the board costs today. The strings are
+Claude Code's and can change, so they are constants in one file (`idleframe.go`) with tests that pin them.
+
+**How the pty is read.** Two additions to `supervisor.go`, nothing restructured. `runner.lastOut` is an atomic unix
+nano stamped in `deliverOutput` (one atomic store, outside `r.mu`), read by `lastOutputAt()`. The frame is
+`r.buf.Tail`, an existing bounded read. For clearing, `runner.wake` is an `atomic.Pointer[func()]`, nil unless the
+card is flagged, so the byte path and the keystroke path each pay one atomic load, the same shape as `onKey`. It is
+called after `r.mu` is released in `deliverOutput` and after a real keystroke in `noteOperatorTyped`.
+
+**The badge is activity, never status.** `Activity` gains `looks_idle` and `idle_seconds`, held in the activity
+tracker's own map, in memory. `get` attaches them (including past the staleness cutoff). `set` (any hook event: tool,
+prompt, idle) clears them, so a late Stop settles the card exactly as it does today. `forget` clears them. The stored
+status is never touched, so nothing here can move a card between columns.
+
+**Board.** `activityChip` draws, for `looks_idle`, a warn coloured chip with a hollow ring with a gap and no
+animation, in place of the live chip, with the tooltip "no turn-end from the agent. its screen has been idle for
+Ns." `workingNow` returns false for it, which stops the terminal strip's runner mark and the activity sort from
+claiming work. Any activity push replaces `t.activity`, so clearing needs no board state.
+
+**Alert.** Wording "looks idle (no turn-end received)", a guess and worded as one. It rides the existing `waiting`
+alert kind (so the gear's waiting setting governs it), keyed by card id plus the time it was flagged, so it rings once
+per firing and a card that wakes and stalls again rings again.
+
+**Logging.** Every firing logs one line: `[atrium] looks idle: <wire> <card> silent 31s, activity thinking for 12m,
+last event tool-end 12m ago`. Every clearing logs `looks idle cleared: <wire> by output|keystroke|hook after 40s`.
+A firing cleared within the same minute by output says the frame check is too eager.
+
+**Review.** Mercurius session `s_jGsDlA3ObWch`, round 1, verdict `ready_to_build`, no concerns. Two advisories, both
+taken: tests pin a working frame and an idle frame, and the firing log names the classifier reason (`frame=`).
+
+**Built** on `claude/sa21`: `idleframe.go` (signature), `looksidle.go` (watch, flag, clear, log), a `lastOut` stamp and a
+`wake` hook in `supervisor.go`, `Activity.looks_idle`, the board chip, `workingNow`, and the `looksidle` alert.
+Not verified: the signature strings against a real Claude Code screen (the fixtures are hand-written frames), and the
+headless board section `looksIdle`, because playwright is not installed on this machine.
+
+**Not done.** No migration. No change to the permission chain, `/activity`, or the hooks. No status change. No
+codex. `stuckNow` is untouched because sa31 is in a2a.go: the new watch is its own function in a new file, called
+from the reaper next to `watchWorkers` in one line.
+
 ## 22. Copy on select copies every find match (bug)
 
 Raised by clint 2026-09-25: with copy on select on, the terminal find bar (ctrl-shift-f) copies to the clipboard. It
@@ -810,6 +945,49 @@ background, and the board marked it STUCK three minutes later: "it stopped witho
 reported progress when asked. A turn that ends with background work still running is waiting, not stopped. Find
 whether atrium can see background tasks, from the Stop hook payload or the runner's process tree, and hold the alert
 while they run.
+
+**Status: built on `claude/sa31`, not merged.** Mercurius review of the design (`docs/background-hold-design.md`): round 1
+on this whole file was off target (the reviewer judged it against another design), round 2 on the standalone design
+returned ready to build with one advisory, the post-cap transition, now stated. Changelog and test plan in
+`docs/changes/31.md`.
+
+### Design (sa31)
+
+**The signal is the Stop payload's `background_tasks`.** `atrium turn` already reads it (`internal/cli/turn.go`) and
+counts only `type == subagent`, on purpose, so that a subagent panel does not ring the board. Each entry has
+`type` and `status`. It is the runner's own account of what it is waiting on, it costs nothing, and it is the same
+on Windows and Linux. Nothing new is asked of the OS.
+
+**The process tree is rejected.** Descendants of the runner pid cannot tell a Bash-tool shell running `go test` from
+the MCP servers (atrium control, mercurius) that every claude owns, and the two look alike on Windows, where the
+tool shell is a `bash.exe` or `pwsh.exe` child among other children. A baseline taken at session start would need
+the reaper to walk trees on every tick and would still misread a shell the MCP server itself spawns. The payload
+is an answer, the tree is a guess. If `background_tasks` turns out absent from a Claude Code version, the fallback
+is the existing behaviour, not a tree walk.
+
+**Distinguishing MCP children** is therefore not needed: they never appear in `background_tasks`.
+
+**What counts.** Any task with `status == running` whose type is not `subagent`. Type names belong to Claude Code and
+are not enumerated. This is a NEW count (`background_running` on `/stop`), kept apart from `subagents_running`,
+because subagents keep the card in running and shells must not: a session that left a dev server up and stopped is
+still waiting on the operator, so the card still moves to needs-input.
+
+**Hold.** `stoppedSilently` returns "not silent" while the card's last Stop named running background work. That one
+function feeds both the board escalation and the launcher notice (`stuckNow`, `silentStop`), so both hold.
+
+**When the clock starts.** Claude Code wakes the session when a background task completes, and that wake ends in
+another Stop. That Stop names nothing running, records a new `turn_ended` and replaces the held count, so the clock
+is the LATER turn end with no new signal. If the work ends without a wake, nothing tells atrium, so the hold is
+bounded by `BackgroundHoldMax` (default 2h, `ATRIUM_A2A_BACKGROUND_HOLD`), after which the original turn end is the
+clock and the alert fires. That also bounds a dev server left running on purpose.
+
+**Storage.** In memory in the activity tracker (`bgWork`), replaced by every Stop and dropped on `forget`, like
+`background`. No migration, no event.
+
+**The board.** Unchanged for now: the card shows needs-input as before, with no STUCK. A "waiting on background
+work" badge would need the count to travel on the card, and is left out until asked for.
+
+**Hooks stay safe.** No new failure path: an old hook omits the field and reads as zero, and the Stop answer is untouched.
 
 ## 32. A queued say from http-support never produced a backlog entry, and nothing can say why (bug)
 
@@ -1013,6 +1191,13 @@ Expected: a card owes its launcher a report only for a prompt the launcher sent 
 monitor woke, does not make it owe one. Test plan AB2 grows a case: a message from a third session, then a silent
 stop, gives the launcher no notice.
 
+**Status, 2026-09-28, sa41: built on `claude/sa41`.** Design in `docs/owed-report-design.md`. The sender was already in
+every `prompted` event as `from_peer`, so `appendEventOn` now decides in one place whether a prompt counts (the launch
+prompt, or a `from_peer` that is the card's launcher) and stamps a new `task.owed_at`. `OwesReport` and `PromptKey`
+read it, so the silent-stop notice and the STUCK mark share one rule. Migration `0068_owed_at`, backfilled from
+`prompted_at`. A monitor-woken turn needs no detection: no door records a prompt for it, so it creates no debt, and a
+debt already open is noticed once per key.
+
 ## 42. A running card wears the `!` chip for a message held until its turn ends (bug)
 
 Raised by clint 2026-09-28 with a screenshot (`.atrium/incoming/20260928-092222-pasted.png`). sa83 was running,
@@ -1042,6 +1227,41 @@ attention the work does not need.
 Expected: on a card launched by an agent, a turn that ends with a report or a message to the launcher counts as
 seen. A turn that ends silently still shows the dot, alongside the stuck mark from item 25.
 
+### Design, 2026-09-28 (@ui)
+
+The fix is in the room, not the board. The dot is `seen.unseen`, worked out in `internal/store/seen.go` from
+`turn_seen.turn_ended_at` against `seen_at`. The board only draws it (`js/seen.js`). Hiding it on the board would
+leave `atrium_task` and every other reader of `unseen` still saying nobody looked.
+
+- **Where.** The Stop path in `internal/daemon/messages.go` that lets a turn end already calls `silentStop` and then
+  `noteTurnForSeen`. A card that is `agentLaunched` and does NOT owe a report (`!t.OwesReport()`, so `reported_at`
+  is at or after `prompted_at`) is marked seen with a new via, `SeenLauncher` (`"launcher"`). NOT as a second step
+  after `noteTurnForSeen`: that function stores `d.unseen` and publishes the card, so the board would see the dot
+  for a moment on exactly the turns this hides, and could notify on it. Instead `noteTurnForSeen` takes an
+  auto-seen via, records the turn end, marks it seen, leaves `d.unseen` clear, and publishes ONCE at the end.
+  (Mercurius round 1, concern C1.)
+- **What counts as reported.** Exactly what already sets `reported_at`: `peerSaid` (an `atrium_report` or an
+  `atrium_say` to the launcher) and the relay's cross-room equivalent. A notice atrium wrote about the worker
+  (`notifyLauncher`) is not a report and does not count, the same rule `silentStop` uses. So a silent stop still wears
+  the dot, and the two marks can never disagree: a card is either silent (dot, and its launcher is told) or it
+  reported (no dot).
+- **Questions are not answered.** `MarkSeen` touches only `seen_at`, never `answered_at`. A worker whose last turn
+  asked clint Open Questions keeps its `? N` chip. The launcher reading the report is not an answer from clint.
+- **A report to a launcher that is gone.** `reported_at` is set when the sender spoke, not when the launcher read it,
+  and the launcher's card may have exited. Counted as seen anyway: the worker did its part, and the launcher going
+  away is the launcher's card's problem, shown on that card. Open for the review.
+- **The board.** The dot's tooltip is unchanged, since it is no longer shown in this case. The details' seen line
+  (if it shows `seen_via`) reads `launcher` as "its launcher got the report".
+- **Tests.** `internal/daemon/seen_test.go`: an agent-launched card that reports then stops is not unseen, via is
+  `launcher`. One that stops without reporting is unseen and the silent stop notice goes. A human-launched card that
+  stops is unseen whatever it said. Questions stay open after a launcher-seen turn. A reported worker's Stop
+  publishes the card once, and never with `unseen` true.
+
+**Status, 2026-09-28, sa43: built on `claude/sa43`, not merged.** As designed. `noteTurnForSeen` takes an auto-seen
+via and `launcherSeen` picks `SeenLauncher` for an agent-launched card that owes no report. The board shows no
+`seen_via`, so it is unchanged, and `atrium_task`'s description of `unseen` now names the launcher. A Stop still
+publishes twice in all: the status move to needs-input, then the one seen publish. See `docs/changes/43.md`.
+
 ## 44. A gear checkbox: no notifications from agent-launched cards, on by default (feature)
 
 Raised by clint 2026-09-28: "I don't need notifications from them." A worker an agent launched reports to its
@@ -1052,6 +1272,11 @@ Expected: a checkbox under `notifications` in the gear, "don't notify me about c
 default. Ticked, a card with the `origin:agent` tag raises no toast, no desktop notification and no sound. Its
 marks on the card stay, and so does the toast log entry, so nothing is lost. A permission request from such a card
 still notifies, because it blocks until a human answers. A card's own notification override beats the checkbox.
+
+**Status, 2026-09-28, sa44: built on `claude/sa44`, not merged.** The gear box `quietDoers` (per browser, default
+on) logs and does not say arrivals, waiting and stuck alerts for `origin:agent` cards. Permissions still notify. No
+per-card notification override exists in the board, so a card with its own tone stands in for one. See
+`docs/changes/44.md`.
 
 ## 45. Every card shows its context size, and a launcher hears once past a threshold (feature, sa87)
 
@@ -1146,7 +1371,8 @@ Done:
 Left:
 
 - Autostart as the default (the first bullet above), unchanged.
-- Proving the systemd PATH (test FA5) on a Linux machine that is not a live room.
+- Proving the systemd PATH ("Linux autostart", step 5 of `docs/changes/fabric-1-provision.md`) on a Linux machine
+  that is not a live room.
 - Proving `-Autostart` starting on a Windows room, and the binary swap's `schtasks /End` on a live task. Both only on
   claudevm, never on a real room.
 - The provision start hook for fb03's `room-env.ps1`, on top of the XML registration, once fb03 is here.
@@ -1155,7 +1381,7 @@ Left:
 Open questions for clint:
 
 1. Should `-Autostart` become the default, and on Windows is it a logon task or the detached room?
-2. Which Linux machine may FA5 run on? sg4-wsl is a live room and is ruled out.
+2. Which Linux machine may the Linux autostart test run on? sg4-wsl is a live room and is ruled out.
 3. Should provision write `permissions.allow` for `mcp__atrium-control__*`? Likely no: the smoke worker passes with
    `--allowedTools=` alone.
 4. When does stage 2 start, and does it wait on item 75's account question?
@@ -1216,6 +1442,46 @@ Raised 2026-09-28 by clint: "i'm starting to want different 'views' of agents mo
 first. Examples to explore: saved filters, a view by role, a view by launcher, and workers apart from clint's own
 cards.
 
+Spec (@ui, 2026-09-29), not built, for clint to answer before anything is:
+
+What exists today. The board groups by project, recency, window, tag or hand-made groups, or by a free expression
+kept in this browser (`grouper` in `js/board.js`). The terminal list can hide doers (`origin:agent`) apart from
+agents. The room picker narrows to one room. Each of those is its own switch in its own place, and none of them is
+remembered as a set.
+
+The gap is that a "view" is three answers given together: which cards, grouped how, sorted how. Today you rebuild
+the set by hand each time you change your mind about what you are looking at.
+
+- **A view is a named preset.** It holds a filter, a grouping mode and a sort, and picking one sets all three. A
+  picker sits beside the grouping control. Changing any of the three by hand leaves the view marked "edited" rather
+  than silently rewriting it, and "save" writes the change back.
+- **Filters come from a fixed menu, not from code.** Started by me or by an agent (`origin:agent`), has tag, in room,
+  in status, launched by. A free expression stays where it is, in grouping only, because of the rule `compiled` in
+  `js/board.js` writes down: an expression may be stored where it was typed. A fixed menu is what keeps the door open
+  to views that follow you to another browser.
+- **Two new grouping modes, for the examples clint named.** *By role* groups by a tag prefix, `dept:` by default, so
+  `dept:ui` and `dept:runtime` are the groups and a card with no such tag falls back to its project, the way window
+  mode does. *By launcher* groups a worker under the card that launched it. That needs the launcher on the card as
+  the board reads it. It is in the ledger today (`LauncherID` on `WorkItem` in `internal/store/ledger.go`) and not
+  on the task JSON, so this one mode costs a small API change owned with @runtime.
+- **Built-in views, so it is useful on day one.** "Mine" (not `origin:agent`, by project), "workers" (only
+  `origin:agent`, by launcher), "by role" (all, by `dept:` prefix), "needs me" (needs-input or needs-permission,
+  by recency). They can be edited but not deleted, and a "reset" puts one back.
+- **One active view for the board, stack and terminals tabs,** since the question "what am I looking at" does not
+  change when the tab does. Per browser, in `localStorage`, like grouping.
+- **Not in the first build.** A launcher tree (orchestrator, then director, then worker, nested), views shared
+  between browsers, and a view per tab.
+
+Open questions for clint:
+
+1. Are the four built-ins the right four? Recommendation: yes, with "workers" and "mine" as the pair that answers
+   "workers apart from my own cards".
+2. By launcher: one level (a worker under its launcher), or the whole tree? Recommendation: one level first. The
+   tree is the same data drawn nested, and it is worth seeing one level in use before deciding.
+3. One view across the board, stack and terminals tabs, or one each? Recommendation: one.
+4. Per browser, or following you to other browsers? Recommendation: per browser now. Since filters are a fixed menu,
+   moving them to the daemon later is a settings key and not a security question.
+
 ## 51. Five kept worktrees show 48 commits not matched on `claude/main` (housekeeping)
 
 Raised 2026-09-28. Five kept worktrees, each on the 09-22 base `02fe769`, show 48 commits that `git cherry` does not
@@ -1239,10 +1505,14 @@ the hub posts the whole list to every attached room, so each writes its own card
 whole strip. Hub-side only, no room, board or migration change. The second note stays a question for clint and
 @ui.
 
-**Status, 2026-09-29: DONE by fb04, merged into claude/fabric.** Hub fan-out `63ed4e8` (test plan FF4, FF5), plus the
+**Status, 2026-09-29: DONE by fb04, merged into claude/fabric.** Hub fan-out `63ed4e8` (design tests FF4, FF5), plus the
 store now orders pinned rows only, `8b7d11c`, read and passed by @runtime. `docs/changes/fabric-52-pin-order.md`.
 Needs a hub and room restart. Not fixed and the same shape: `/v1/tasks/prune` also names no card in its path, so the
 hub also sends it to one room.
+
+@ui wrote a board-only design first, one post per room with an explicit room header. atrium-87300 chose the hub-side
+one in `docs/pin-order-rooms-design.md` instead, and @ui agreed. Its other finding stands: `nudgeItems` already
+offers "move it up or down" for a pinned card under every sort, from the card menu.
 
 ## 53. `setViewport` and `dropViewport` compute under `r.mu` and apply outside it (bug)
 
@@ -1250,12 +1520,23 @@ Raised 2026-09-28 from sa51's review of the terminal-suite HANDOFF. Both work ou
 `r.mu` and apply it after letting go, so two resizes close together could apply in the wrong order. Never
 reproduced. See `D:/tmp/handoffs/terminal-suite-HANDOFF.md`.
 
+Done by sa53. It did reproduce, with a fake pty that yields in `Resize`: without the fix the pty ended a column off
+the ring's mark in most runs. A new `runner.resizeMu` is held across compute, guard, mark and resize in both
+functions. The shell shares the `runner` type, so it is covered. Nothing else resizes a live runner.
+
 ## 54. Terminal test suite part 2: `screen.go` against xterm.js (feature)
 
 Raised 2026-09-28 from sa51's review of the terminal-suite HANDOFF. Part 2 was planned and never started: a
 differential test that feeds the same trace fixtures to `screen.go` and to xterm.js and compares the screens, run
 with Playwright after an `npm install`. The plan is in `D:/tmp/handoffs/terminal-suite-HANDOFF.md`, and the scratch
 tools are in `D:/tmp/handoffs/terminal-suite-tw`.
+
+Done by sa54, as a Go test that shells out to node rather than Playwright (`screen_diff_test.go`,
+`screen_diff_cases_test.go`, `testdata/xterm_dump.js`) plus four socket size tests (`attach_size_test.go`). Two real
+differences remain as skipped cases: `screen.go` ignores DECSTBM scroll regions, and it gives wide (CJK) characters one
+cell. Accepted on purpose: cleared rows go to history, `CSI S` files rows into history, no reflow on a width change.
+The bare `CSI H` repaint agrees with xterm.js in both fixtures, so sa74 still owns what to do about it. See
+`docs/changes/54.md`.
 
 ## 55. Launched runners inherit ATRIUM_DEBUG_INPUTLAG from the room (bug)
 
@@ -1360,11 +1641,20 @@ Raised 2026-09-28. The old stdio control MCP (`internal/cli/control_peers.go`) t
 env fields for item 48, but not the warning the hub's control MCP gives when the room is older than the change.
 Decide whether it needs the warning or should go away.
 
+Status, 2026-09-28, sa60: fixed on `claude/sa60`. The stdio MCP is live: `atrium control` registers `atrium_launch`
+through `addPeerTools`, so it needed the warning rather than removal. The check now lives in `link.LaunchOptionsDropped`
+and `link.LaunchDroppedWarning`, used by both MCPs, and the stdio result reports the model and effort. See
+`docs/changes/60.md`.
+
 ## 61. A fake 45s hub echo in the lag log from the idle ping and pong (bug)
 
 Raised 2026-09-28, from sa55's review of the live logs. The room pings an idle attach every 45s, and the browser's
 pong going up starts the hub's echo clock. So every ping logs a fake echo of about 45000ms, and `hub.err` carries
 about 80 lag lines an hour with the board idle. The hub should not start the echo clock on a pong.
+
+Status: fixed on `claude/sa61`. `lagConn.Write` starts the clock only when the Write holds a data frame, and a
+control frame read back no longer closes it. The room's own timing starts only on an `in` message, so it was never
+affected. See `docs/changes/61.md`.
 
 ## 62. A worker that ends its turn without a report reaches its orchestrator every time (bug, HIGH)
 
@@ -1465,6 +1755,8 @@ newer build than the hub runs, so the name lies. On 2026-09-28 the hub-only depl
 
 Fix: label the snapshot with the file's own `atrium version` output, its commit and its board hash.
 
+Status: fixed on claude/sa65, not merged.
+
 ## 66. New context: capture state, clear, and wake, from one click or one key (feature)
 
 Raised 2026-09-28 by clint. Cycling a long session is done by hand today: tell it to commit and write HANDOFF.md,
@@ -1513,6 +1805,19 @@ left or right and lands haphazardly.
 From sa66's open points, 2026-09-28. Item 66 put "new context" on the card menu only, not on the terminal list's
 `termMenu`. Ctrl+Alt+N works in an attached terminal. clint: "end of backlog unsure if it's useful".
 
+Spec (@ui, 2026-09-29), not built. The build is small: `termMenu` in `js/terminal-list.js` gets the same entry the card
+menu has (`card-menu.js`, "new context", note "commit, hand off, clear"), calling the same `newContext(id)`, under the
+same guard (supervised, and not already mid-cycle). No daemon change. The progress chip it drives is already on the
+card and the tab.
+
+The question is only whether it is worth a line on that menu. For: the terminals tab is where you watch a session's
+context fill, and Ctrl+Alt+N there is not always reachable (some layouts send Ctrl+Alt for AltGr, which is why the
+card menu has it). Against: the card menu already has it, one right-click away, and every entry on `termMenu` makes
+the others slower to find.
+
+Open question for clint: add it, or close 71? Recommendation: add it, since it is the one place the operator is
+already looking when a context is full, and it costs one entry and no new code path.
+
 ## 70. Keep-alive is invisible until it has spent something, and one card overspent its budget (feature and bug)
 
 Raised 2026-09-28 by clint: "i still don't see any icons indicating cache is warming or that cachewarming has
@@ -1548,8 +1853,184 @@ clint confirmed the loss happened at the first screen update after the long repl
 little. The table's tail was still on the live 50-row screen, and a bare `\e[H` repaint overwrote it. Find what
 emitted that repaint (Claude Code, or ConPTY in the room) and why. Also test the reattach seam.
 
-Status: sa74 paused at `ba761d6`. That SHA is from before the 66717c5 re-sign: rebase `claude/lost-lines` onto
-`66717c5` before any merge (map in `D:/tmp/resign-map.txt`).
+Status: diagnosed by sa74 on `claude/lost-lines`. Recommendation 1, the height hold, is built there after two
+Mercurius rounds and approved by @terminal, not merged. Option 2 (OpenConsole ConPTY) goes to clint, and the
+replay-only repair is not built.
+
+### What dropped the lines
+
+**Not atrium's ring, replay or board.** The orchestrator's uncollapsed ring (`/scrollback/raw?collapse=0`, 2,723,702
+bytes, pty 206x50) holds the whole reply. At byte 2460305 the pseudo console emits
+`\e[46;3H\e[?25h\e[?2026h\e[?2026l\e[?25l\e[H` and then all 50 rows, each ending `\e[K\r\n`, with no line feed
+ahead of them. Row 1 of that repaint had been row 11 of the screen just before, so rows 1 to 10 (the table's tail,
+Merging, Waiting, Running) are overwritten in place and never reach history. The board's own xterm.js fed those
+bytes at a fixed 206x50 loses exactly those rows. The same ring has about 70 bare-home repaints, and 9 of them shifted
+the screen: 2, 2, 25, 26, 3, 3, 2, 3 and 10 rows lost.
+
+**The inbox ConPTY's resize path, set off by a change in the pty's row count.** Tested through a throwaway pseudo
+console on `conhost.exe` 10.0.26100 (the one the room uses), always with a control that feeds the child's own bytes
+straight to xterm.js, which never lost a line:
+
+| What the child and the host did | Lines lost through inbox ConPTY |
+| --- | --- |
+| Plain and Claude-shaped scrolling (parked cursor, erase and insert, full-width rows, sync output, DECSTBM) | 0 |
+| A child process on the console (git bash, cmd, pwsh), focus reports `\e[O` and `\e[I` | 0, and no repaint |
+| A resize to the same size | 0, one bare `\e[H` repaint each |
+| Columns 120 and 121 alternating | 0 |
+| Rows 50 and 49 alternating, under Claude-shaped frames | 18 of 300 |
+| Rows 50 to 40 and back, under Claude-shaped frames | 49 to 72 of 300 |
+| Rows 50 to 40 and back, under a steady stream | 100 of 300 |
+
+A single row change gives one bare `\e[H` repaint at the new height. conhost files the top rows into its own history,
+which is never sent, and the repaint overwrites them downstream. Two changes close together (50 to 40 to 50) are
+often painted ONCE: a single 50-row repaint, 50 rows before and after, whose row 1 had been row 11. That is the live
+2460305 byte for byte, and it explains why the new reply fits the freed rows exactly.
+
+**Claude Code is not implicated.** Claude 2.1.284 (classic renderer) in a bare 206x50 pty with no resizes produced no
+full repaint at all over 4 runs, including a turn taller than the screen and messages typed mid-turn.
+
+What changed the rows at 21:19:59 is not recorded. atrium logs no resizes, and a mark laid and undone with nothing
+written between merges away. But the live ring's own repaints show the pty at 47, 48, 50 and 51 rows at different
+points of the session. The agreed height is the SHORTEST attached viewer's (`agreedViewport`).
+
+Checked in the code, what can and cannot move the rows for a moment:
+- **One viewer's refit that ends at the same size cannot.** `onTermResize` skips when the pane's pixels did not move
+  (`terminal-links.js:2096`), sends only when the fitted size changed (`:2120`), and waits for it to hold 250 ms
+  before sending what it is by then (`:1914`). The daemon drops a frame at the size the pty already has
+  (`supervisor.go:1286`). A wobble held longer than 250 ms does send both sizes.
+- **A reattach cannot shrink the rows through its own viewer.** Both sockets carry the same pane's `termFitRows`, and
+  a new terminal fits before it connects (`terminal.js:926` then `:930`), so its first frame is never a default size.
+- **A reattach of the SHORTEST viewer, with another viewer attached, grows the rows and shrinks them back.** Viewers
+  are keyed by socket (`attach.go:285`, `:380`). The board closes the old socket first (`terminal-links.js:833`), the
+  daemon drops it as soon as its reader sees the close (the deferred `dropViewport`), and the new socket's size lands
+  only after `onopen` (`terminal-links.js:908`). In that gap the agreed height is the next shortest viewer's. With a
+  single viewer nothing moves, because the last viewer leaving never resizes (`supervisor.go:1350`).
+- **A shorter viewer that attaches for a while (a popped-out window, a phone, a second pane) shrinks the rows**, and
+  grows them back when it leaves.
+
+### OpenConsole ConPTY is the fix at the source
+
+`Microsoft.Windows.Console.ConPTY` 1.24.260710001 (conpty.dll plus OpenConsole.exe, MIT) through the same harness:
+**0 lines lost in every row above, and no `\e[H` repaint at all**, over 30 to 62 resizes a run. It passes the child's
+VT through, so a line feed arrives as a line feed.
+
+What adopting it costs:
+- Two binaries per architecture shipped beside atrium (x64 about 1.2 MB together).
+- go-pty calls kernel32's `CreatePseudoConsole`, so atrium needs its own create, resize and close through
+  conpty.dll. `internal/daemon/conpty_harness_repro_test.go` does it in about 100 lines, with the inbox call kept
+  as the fallback.
+- At start OpenConsole queries the terminal (`\e[c` and `\e[1t`). A runner with no viewer attached needs atrium to
+  answer, or the host waits for a timeout.
+- Passthrough changes the byte shapes that `screen.go`, `collapseRedraws`, the cursor settle, the typing gate and the
+  replay tests were tuned on, all of which were measured against conhost's re-rendered output. So it needs the whole
+  terminal test plan run again.
+- Item 81 becomes a prerequisite. The inbox conhost turns a runner's scroll region into plain line feeds and a
+  repaint (seen in the DECSTBM repro), so `screen.go` rarely meets one today. Passthrough hands DECSTBM straight to
+  it.
+- Where the binaries are looked for: the directory the setting names, else the one beside `atrium.exe`. conpty.dll is
+  loaded by full path only, never by bare name, and OpenConsole.exe must exist beside it, checked before use, because
+  conpty.dll quietly starts the System32 conhost when it is missing (to be confirmed against its source when built).
+  Anything else goes to the inbox kernel32 `CreatePseudoConsole`, logged once with the reason: the setting off, either
+  file missing, a load or export failure, or a create through conpty.dll that fails.
+
+### Keeping the rows a no-scroll repaint is about to overwrite
+
+Both options detect the same thing and differ only in where they act.
+
+**The strict-match rule.** A candidate is a bare `\e[H` (or `\e[1;1H`) that starts a repaint of the full current
+height, meaning as many rows written, each ending in an erase and a line feed, before the next cursor move. There
+must be no height change at that byte in the ring's marks, since a resize repaint to a new height is the height
+model's business. Buffer the repaint until it is complete. Find the smallest `k` from 1 to rows-1 such that repaint
+rows 1 to M equal screen rows k+1 to k+M exactly, where M is at least max(6, rows/4), and at least 4 of those rows are
+non-blank and pairwise distinct. On a match, rows 1 to k go to history before the repaint is applied. No match, or
+more than one `k` passing, means do nothing.
+
+**False positives.** The rule can only ever ADD rows to history, never remove one. So a wrong call puts a duplicate or
+stale line in the scrollback, and a missed call leaves the loss as it is today. The ways it goes wrong:
+- Content that legitimately moved up: Claude collapsing a block, a tool's output shrinking, a reprint after `/clear`
+  or a compaction. Those files rows the runner deliberately removed.
+- Repeated rows (blanks, separators, box borders) aligning at the wrong `k`. The distinct non-blank rows are there
+  to stop it.
+- A repaint split across reads, which has to be held until it is whole, so the buffer needs a byte and time cap.
+
+**Replay only, in `screen.go`.** The grid model already exists there. Detection costs O(rows squared) per candidate,
+and candidates are rare (about 70 in 2.7 MB), so the cost is negligible. It repairs `/scrollback/text`, every attach
+replay, and the carryover after a restart, and viewers see nothing new live. It does NOT repair a pane that was
+watching when it happened, which is clint's case, until that pane reattaches.
+
+**Live, on the fan-out path.** One screen model per runner fed every output byte (an O(bytes) VT parse on the hot path,
+about 50x206 cells a runner), and the matching repaint held back so that `\e[<rows>;1H` plus `k` line feeds can go
+ahead of it to every viewer. It repairs the pane clint was copying from. It costs parse CPU on all output of all
+runners, latency on every repaint that is held, and a wrong call is shown to every viewer at once. It also becomes
+dead code the day the ConPTY is swapped.
+
+### The height hold, as a state rule
+
+Recommendation 1 below, stated exactly. The hold is `heightHold`, 500 ms, twice the board's own 250 ms settle.
+
+**State.** On the runner, beside `views`:
+- `views` is updated at once on every frame and every detach, as it is today.
+- The applied size is what the pty is at. It is `buf.CurrentSize()`, which only the apply steps below move, so it
+  needs no new field. `appliedRows` below means its rows.
+- `pendingRows` is a height waiting to be applied, 0 for none. `pendingGen` counts every change to it, and
+  `pendingTimer` is the one timer.
+
+**`setViewport` and `dropViewport`**, under `resizeMu` as item 53 made them, after updating `views` and computing
+`agreed`. `dropViewport` keeps its two early returns first: after `r.done`, and when no viewer is left.
+1. Width is immediate. If `agreed.cols` differs from the applied width, `SetSize(agreed.cols, appliedRows)`, then
+   `Resize(agreed.cols, appliedRows)`, then `noteResized`. The CURRENT APPLIED rows, never `agreed.rows`, or a width
+   change would carry the new height past the hold.
+2. Height is held. If `agreed.rows` equals `appliedRows`, stop the timer and clear `pendingRows`, which cancels a
+   flip that came back. If it equals `pendingRows`, do nothing, so the hold keeps counting from when that value was
+   first seen. Otherwise set `pendingRows` to it, bump `pendingGen`, and restart the timer for the full hold. A new
+   value always restarts it.
+3. The re-tell. Whenever a held height is cancelled or superseded, here or when the timer fires, call `noteResized`
+   with no `SetSize` and no `Resize`, so every attach re-reads `CurrentSize` and tells its viewer the applied size.
+
+**The timer firing.** Take `resizeMu`, then in order:
+1. A `pendingGen` that is not the one it was started with means a later change superseded it. Return.
+2. After `r.done`, clear `pendingRows` and return. A dead terminal is never resized, as in `dropViewport`.
+3. Re-read `views` under `r.mu`. No viewers left means cancel: clear `pendingRows` and keep the applied size, which
+   is what the last viewer leaving already means.
+4. Apply only if `agreedViewport(views).rows` still equals `pendingRows` AND differs from `appliedRows`. Then
+   `SetSize(agreed.cols, pendingRows)`, then `Resize`, then `noteResized`, keeping mark before resize. A `Resize`
+   error is logged, as `attach.go` does now. Anything else clears `pendingRows` without resizing, and re-tells.
+
+**What viewers see during the hold.** `CurrentSize` reports the APPLIED size, never the agreed one, so `tellSize`, the
+ring's marks and the replay all agree with the pty. A viewer is told the new height only when it is applied.
+
+**The re-tell cannot start a refit loop.** Each attach sends a `size` frame only when `CurrentSize` differs from
+what it last told that socket (`attach.go:479`), so a re-tell with nothing changed sends no frame. A frame at the same
+size would be harmless anyway. `takeTermSize` (`terminal.js:65`) only stores the size and calls `applyPtySize`, which
+resizes xterm only when the grid differs (`terminal-links.js:1875`) and never sends a `resize` back. Only a fit
+(`onTermResize`) sends one.
+
+**Growing waits too.** The transient in the live room was a reattach of the shortest viewer, and that GROWS first
+and shrinks back (the list above), so an immediate grow would let the very flip this exists to stop through. A
+taller pane held at the old height only shows empty space under the grid for half a second, which costs nothing.
+One rule for both directions is also the simpler one to test.
+
+**The cost, named.** A viewer that really is shorter waits half a second while the pty paints more rows than its
+grid has. That viewer can garble its bottom rows, and scroll a few into its own scrollback, until the repaint at the
+new height. It is one viewer and one resize, against a flip that costs every viewer's history.
+
+**Tests.** Rows flipped 50, 40, 50 inside the hold: zero `Resize` calls. Held past it: one, at the new height. A width
+change during a pending shrink: one `Resize` at the new width and the OLD rows, then the shrink when the hold ends.
+Every viewer gone before the timer fires, and `r.done` closed before it fires: zero. `CurrentSize` read during the
+hold: the applied size. A hold cancelled by the height coming back, and one superseded by a new height: `sizeChanged`
+wakes with no `Resize`. Then the harness `flip` runs through the real code path.
+
+### Recommendation
+
+1. **Now, small: stop transient row changes reaching the pty,** by the state rule above. That removes the coalesced
+   flips, which are the big losses (10, 25, 26 rows). A deliberate height change still costs about a row per row
+   changed, and the width stays immediate. Testable with the harness above.
+2. **The real fix: OpenConsole ConPTY**, behind a setting with inbox as the fallback, gated on the whole terminal test
+   plan.
+3. **Replay-only repair only if 2 is refused.** The live version is not worth its cost and risk next to 2.
+
+Repro, captures and scripts: `HANDOFF.md` on `claude/lost-lines`, `build.claude/lost-lines/` and
+`build.claude/conpty/` in that worktree (not committed).
 
 ## 75. sg3 as a room, and machine bootstrap reuses the operator's shared folder under `localai` (feature)
 
@@ -1621,6 +2102,11 @@ workers picked the same test-plan letter. Decided with clint:
 
 Order: a, c, f, then b, e, g. Owned by @merge.
 
+Status: b, c and g documented on claude/sa77b, not merged. Layout is `docs/changes/<item>.md`, folded by
+`scripts/fold-changes.ps1`.
+
+Status: a and e built on claude/sa77a, not merged. `scripts/merge-check.ps1` and `scripts/setup-merge-worktree.ps1`.
+
 ## 78. The details popover's token labels mislead (bug)
 
 Raised 2026-09-28 by clint on @fabric's popover: "2 turns, 48 in, 12k out" looked wrong. Checked against the
@@ -1629,6 +2115,359 @@ and "in" is uncached input only (48), because with caching almost all input is a
 
 Relabel: prompts, with API calls next to them, and "uncached in". Check the cost estimate against current pricing,
 and confirm whether the figures cover the card or only the session since its last `/clear`.
+
+Status 2026-09-28, done on `claude/sa78`. Both popovers (`peek.js` and the details in `usage.js`) now say "prompts" with
+"calls" beside it, "uncached in", "cache read" and "cache write", each with a tip saying what it counts. Sonnet 5.5 was
+missing from the usage price table and priced at $0, so it is added at $2/$10 with the same cache multipliers, checked
+against the pricing page. Rows already stored keep their old cost. The figures cover the whole card, across `/clear`.
+
+## 79. The notification drawer can turn notifications off (feature)
+
+Raised 2026-09-28 by clint: "when i click the notification bell icon to pull the drawer, give me a 'disable
+notification' option along with clear and close".
+
+Design (@ui), small on purpose:
+
+- **Where.** A third button in the drawer head (`#toastlog` in `index.html`), beside clear and close: "turn off"
+  while on, "turn on" while off.
+- **What it mutes.** Toasts, desktop notifications and the sound that goes with them, everything `notify` in
+  `js/notify.js` would pop. The drawer keeps logging every entry and the bell's badge keeps counting, so nothing is
+  lost and opening the drawer shows what was held back. The marks on cards are untouched.
+- **Held back means recorded, not dropped.** Today the drawer is filled by `toast` (through the toast-log wrapper)
+  and by the one explicit `logNotification` call on the desktop branch. Off skips both `toast` and
+  `showNotification`, so the off path calls `logNotification` itself, once per alert, and plays no sound. Without that
+  the switch would mute everything and silently empty the drawer it promises to fill.
+- **Permission requests still notify. Built that way, waiting on clint.** A permission blocks a session until a
+  human answers, the same exception item 44 makes, so off lets them through the normal `notify` path. The choice is
+  ONE named constant in `js/notify.js` (off silences permissions: false), so flipping it is one line.
+  `docs/changes/79.md` names it as waiting on clint. The button's tip says permissions still come through.
+- **Per browser, in `localStorage`** (`atrium.notify.off`), like the sound mute (`atrium.sound`). A phone and a desk
+  want different answers, and the daemon has no notion of which browser is which. Every window of one browser shares
+  it, and a popped-out window follows the board.
+- **The bell shows it.** Off, the bell is drawn as a struck bell (U+1F515) with the tip "notifications are off. click
+  to see what arrived", and the badge still counts. On, it is the bell it is today. The toggle button and the bell
+  carry the same text as their `aria-label`, repainted with the state.
+- **Item 44.** 44 is a filter on WHICH cards notify (not agent-launched ones). 79 is a master switch over all of
+  them. Off beats everything, including a card's own per-card override, because it is the operator saying stop now.
+  On, 44's filter and per-card overrides apply as they do today. The gear's notifications section shows the same
+  switch, so the two are found in one place.
+- **Not built.** A timed mute ("for an hour") is the obvious next step and is left out until asked for.
+
+Open question for clint: should "off" silence permission requests too? The build says no, since a session blocks on
+one until somebody answers, and a muted board is the likeliest place to forget one. Flipping it is the one constant
+above.
+
+Review: Mercurius round 1 (s_12NjmPjbUY9e) found the permission question left formally open (C1, closed above as
+built-no, flippable) and no record-only path for held-back alerts (C2, folded as the `logNotification` rule). Its
+advisory, an `aria-label` that follows the state, is folded too.
+
+Status 2026-09-29 (branch `claude/sa79`): built as written. `notifyHeld` in `js/notify.js` gates both `play` and
+`notify`, and the off path calls `logNotification` once per alert. The permission question is still waiting on clint,
+held in `NOTIFY_OFF_SILENCES_PERMISSIONS`. The bell glyph moved into its own `.glyph` span so it can be repainted
+without touching the badge. Headless section `notifyOff`. No timed mute.
+
+## 80. Real-time token burn and usage charts (feature)
+
+Raised 2026-09-28 by clint, wanted tonight. Item 37 already records every Claude turn's spend, with its cause, in
+`session_usage` (`internal/store/usage.go`, migration `0063_session_usage`): one row per turn, keep-alive refresh and
+subagent read, with `ended_at`, `cause`, `model`, `replies`, `input`, `output`, both cache writes, `cache_read`,
+`context` and `cost`. Today it is served per card only, on `GET /v1/tasks/{id}/usage`, and drawn only in a card's
+details. This item charts it. Nothing new is recorded.
+
+Design (@ui):
+
+- **Where.** A `usage` tab beside `history`, its own view. Never on the card face, the terminals list or a toast,
+  which is item 37's rule. A card's details gain a small per-card chart above its rows and a link that opens the tab
+  filtered to that card.
+- **The API.** One new read endpoint on a room, `GET /v1/usage?since=<rfc3339>&bucket=<seconds>`, answering buckets
+  of summed rows: per bucket the board total, and per card and per cause. Summed in SQL over the existing
+  `(task_id, ended_at)` index, bounded (at most 500 buckets, `since` at most 30 days back), so a month of rows is
+  never shipped to a browser. The card titles come from the card list the board already has. Buckets carry raw
+  summed tokens per kind (uncached in, out, cache read, cache write 5m and 1h) and the stored `cost` summed, and the
+  client divides by bucket width for tokens per minute. No per-kind dollars in the first build: a row sums
+  replies that may come from more than one model and keeps only the last model's name, so repricing its kinds
+  would misattribute money silently. The split chart shows tokens per kind and the stored total cost. Exact
+  per-kind dollars would need item 37 to store more first. (Round 3, C1.)
+- **Live.** When the tracker writes a row (`AddSessionUsage` in `daemon/usage.go` and `keepalive.go`), the room
+  broadcasts a `usage` event on the existing SSE stream carrying that one row's figures and card id. The tab adds
+  it to the newest bucket without refetching. No polling. **"Real time" means within about two seconds of a turn
+  ending**, because a row is written at the Stop hook. A turn still running shows nothing until it ends. Tailing
+  transcripts mid-turn is left out on purpose (Open question below).
+- **Charts.**
+  1. Burn rate over time: tokens per minute, stacked by kind, for the whole board. Range picker 1h, 6h, 24h, 7d.
+  2. The same per card: a small multiple per card that spent in the range, sorted by cost, top 12, the rest summed
+     as "others". Click one to filter everything to that card.
+  3. Split: cache read versus uncached in versus cache write versus out, as one stacked bar for the range, with
+     each part's tokens and the range's total cost beside it.
+  4. Cost: cumulative estimated dollars over the range, and a table of cost by cause (you, a say, restart wake,
+     keep-alive, resume, subagent) so a restart or a keep-alive round shows as the spend it was.
+- **Labels are item 78's.** prompts and calls, uncached in, out, cache read, cache write 5m and 1h, est. The tips in
+  `USAGE_TIPS` (`js/usage.js`) are reused, not rewritten.
+- **No chart library.** Hand-drawn inline SVG in a new `js/usage-charts.js`, a few hundred lines: a stacked area,
+  a bar, a line, axes and a hover readout. No CDN and no vendored library, since the board has to work offline and
+  there is no build step. Colours are skin variables (the palette triples), so every skin draws it.
+- **Rooms.** The board already talks to more than one room. The tab asks each attached room with an explicit
+  room-scoped read (the `X-Atrium-Room` pattern `loadRoomCfg` uses, not the aggregate fetch) and merges the buckets,
+  with the room as a filter, the way the other cross-room views do. A room that does not answer is named as missing
+  rather than silently counted as zero. A room too old to have `/v1/usage` says so the same way. **Every per-card
+  bucket, filter, live event and the "others" rollup is keyed by room plus card id**, the identity the board already
+  uses for cards from two rooms (`rowOf(list, id, room)` in `js/rooms.js`), never by id or title alone, so two
+  rooms' cards are never merged. (Mercurius round 1, concern C1.) A `usage` event that reaches the board by way of
+  the hub carries its source room the way the hub's other forwarded card events do, and a room's own stream uses
+  the local room key. The headless test includes two rooms with the same card id spending live. (Round 2, C2.)
+- **Tests.** Store: bucket sums match row sums, bounds hold. API: shape and bounds. Headless: the tab renders from a
+  mocked `/v1/usage`, a mocked `usage` SSE event grows the newest bucket, the labels are 78's, and a skin change
+  recolours it.
+
+Open question for clint: is burn at turn end enough, or does "real time" mean watching a turn spend while it runs?
+That needs the room to tail every running transcript, which is a bigger and riskier change. Built at turn end first.
+Top 12 cards plus "others" is the first cut, easy to change.
+
+Status (branch `claude/sa80`): built as written, at turn end. `GET /v1/usage` takes one addition the design did not
+have, an optional `card` id, because a bucket carries causes only for the whole board and a card-filtered tab could not
+show that card's cause table otherwise. A card filter reads that one card from its own room. The tab, the small chart
+in a card's details, and the `usage` event are in. Not done: watching a turn spend while it runs, and any per-kind
+dollars. Charts were drawn in a headless run against mocks only, not yet looked at against a live room.
+
+## 85. The headless board run flakes under load (bug)
+
+Raised 2026-09-29 by the orchestrator. On m1mini the terminated-terminal dismiss check in
+`scripts/test-board-headless.js` failed while `go test` ran beside it, and passed on an idle rerun. Its waits are
+fixed at 15000ms, and a wait that runs out there either throws out of the run as "the headless run threw" or fails with
+a message that does not say which wait it was.
+
+Fix: every Playwright timeout in the script goes through one scale, read from an environment variable (a factor, 1 by
+default), so a loaded machine can be given more time without editing the file. Each wait in the dismiss block, and
+any other wait whose failure names only the symptom, says which wait ran out and how long it had. Owner @ui, queued
+behind item 80.
+
+Status 2026-09-29, done on `claude/ui`. `HEADLESS_SLOW` scales all 191 timeouts, not the sleeps. The dismiss block
+names its three waits, and its menu wait opens the menu again if a render closed it, which is the likelier flake
+than a slow browser. A full run with `HEADLESS_SLOW=3` beside `go test` passed. Other sections still fail on the
+symptom only when a wait runs out, and get the same treatment when one is caught flaking.
+
+## 81. `screen.go` ignores DECSTBM scroll regions (bug)
+
+Found 2026-09-28 by sa54's differential test (item 54). `screen.go` never reads `CSI top;bottom r`, so a runner
+scrolling inside a region scrolls the whole grid and files rows into history that stayed put on a real terminal. In
+the fixture `screen.go` scrolled 3 rows off where xterm.js scrolled 5, with the cursor on row 5 against 3. This
+shows in the attach replay and the text scrollback view whenever a runner uses a scroll region. The case is in
+`internal/daemon/screen_diff_cases_test.go`, skipped as `backlog-2 81` until it agrees, and it fails once it does
+so the skip gets removed. Owned by @terminal.
+
+**Done by sa81 on `claude/sa81`.** `screen.go` now keeps a scroll region per buffer and follows xterm.js: line feed,
+RI, `CSI S/T/L/M` act inside it, rows leave to history only when the region starts at the top, an invalid one is
+ignored, and RIS, a resize and the alt screen reset it. The skip is gone and thirteen differential cases cover each
+rule. The text replay (`textAtRows`) now writes the region back before the cursor. `collapseRedraws` needed no change.
+DECOM is not implemented, since nothing here uses it.
+
+## 82. `screen.go` gives a wide character one cell (bug)
+
+Found 2026-09-28 by sa54's differential test (item 54). `screen.go` gives every rune one cell, and xterm.js gives
+CJK and other wide characters two. A cursor move back over a wide character lands on the wrong column: `あ.う`
+against `あい.`. A fix needs a continuation cell handled in `render`, `writeRow`, and the erase and insert ops. The
+case is skipped as `backlog-2 82` in `internal/daemon/screen_diff_cases_test.go`. Owned by @terminal.
+
+Status: built by sa82, merged into claude/terminal. `screen.go` gives a wide character a head and a continuation cell, widths
+come from a table generated from the vendored xterm.js, and the skip is gone. Differential cases cover each op,
+all agreeing with xterm.js apart from one accepted reflow difference. See `docs/changes/82.md`.
+
+### Design
+
+Written against `screen.go` before sa81 (DECSTBM) merges. Sa81 lands first and this lands second, so the cell ops
+below are named by what they touch, not by line.
+
+**How width is decided.** The board loads `@xterm/xterm` 5.5.0 (`internal/api/web/vendor/VERSIONS.md`) and
+`index.html` loads no unicode addon, so xterm runs its DEFAULT provider, `UnicodeV6`, and that is the table to match.
+It is not what `golang.org/x/text/width` (in `go.mod`, indirect only, Unicode 15 based) or `go-runewidth` say. The
+visible difference is that V6 gives every astral emoji (U+1F300 and up) width 1, and only U+20000..U+2FFFD and
+U+30000..U+3FFFD width 2 above the BMP, so a grinning face is ONE cell on the board today. Matching a newer table
+would leave the replay one column off per emoji, which is this bug in the other direction. No new dependency: a
+generated table, `screen_width.go`, holding the BMP wide ranges, the zero width (combining) ranges and the two astral
+wide ranges, produced by `testdata/gen_widths.js` from the vendored `xterm.js` (`UnicodeService.wcwidth`). A parity
+test runs the same node script over every code point 0..0x10FFFF and compares with the Go function, so an xterm
+upgrade, or a unicode11 addon, fails a test instead of drifting. Lookup is a `< 0x7f` fast path, then a binary search
+over a few hundred ranges.
+
+- Ambiguous width is 1. V6 has no ambiguous class.
+- Combining marks, ZWJ (U+200D), variation selectors (FE00..FE0F) and other zero width code points are width 0. They
+  attach to the cell before them and take no cell. VS16 does not widen its base, again as V6.
+- A ZWJ emoji sequence is therefore several width 1 emoji with joiners attached, which is what xterm shows. No
+  grapheme segmentation, so no `rivo/uniseg`.
+- A zero width code point with nothing to attach to (column 0, or after another loose mark) is NOT dropped: xterm
+  gives it a cell of its own that moves the cursor one column. The differential settled this, and `put` does the
+  same. It attaches to a blank cell like any other.
+- C0 and DEL stay in `step`, unchanged.
+
+**The cell model.** `cell` is `{ch rune, sgr string}`, 24 bytes. It becomes `{ch rune, ext uint32, sgr string}`, still
+24 bytes, since the rune leaves 4 bytes of padding.
+
+- `ch == contCh` (a negative sentinel) marks the second cell of a wide character. It carries the head's `sgr`, so
+  per cell colour ops stay per cell.
+- `ext` is an index into `screen.combs []string` (0 means none) holding the marks appended to that cell. Marks are
+  rare, so the table stays tiny and rows stay flat and copyable. It lives as long as the screen, which is as long as
+  any row that refers to it, history included.
+- Every wide head is followed by exactly one `contCh`, and every `contCh` follows a wide head. The ops below keep
+  that true, and the differential asserts it after every case.
+
+**Per op.** Where I say "as xterm" from memory of its `InputHandler` and `eraseInBufferLine`, phase 2 confirms it in
+the differential and takes xterm's answer where they differ.
+
+- `put`: width 0 appends to the previous cell (the head, when the previous is a continuation) via `combs`, moves
+  nothing and leaves `wrapNext` alone. Width 1 writes one cell. Width 2 writes head and continuation and advances
+  two. Before writing, `clearHalf` repairs what is overwritten: writing on a continuation blanks the head before it,
+  writing on a head blanks its continuation, and a width 2 write whose second cell lands on the head of another wide
+  character blanks that one's continuation. Blanked cells are the plain `blank` value.
+- A wide character at the last column wraps early. `put` sees `col == cols-1` with width 2, wraps first and writes on
+  the next row. The differential settled the abandoned last-column cell: xterm BLANKS it, wearing the colour being
+  written, so a character already there is gone. xterm clamps a terminal to two columns, so the one column guard is
+  only a guard.
+- A cursor landing on a continuation (`CUB`, `CHA`, `CUP`, backspace, restore, tab) stays there. The next write
+  repairs through `clearHalf`. Nothing snaps the cursor to the head.
+- Erase (`EL`, `ED`, `ECH`): the blanked span widens to whole characters. A span starting on a continuation blanks
+  the head before it, and one ending on a head blanks the continuation after it. `ED` goes through `EL` plus
+  whole-row blanks, so it inherits this.
+- `ICH` and `DCH`: after the shift, a continuation left first in the moved run, or a head left last with its
+  continuation shifted off, is blanked. That is `clearHalf` at the two seams.
+- `IL`, `DL`, `CSI S` and `CSI T`: move whole rows, so a wide character and its continuation always move together.
+  No change. Under sa81's regions that still holds, since a region chooses WHICH rows move and never cuts a row.
+  Nothing there reads columns, and there is no left and right margin mode (DECLRMM) to cut one. Sa81's row copies
+  must stay row copies, and if they ever copy a column span this design needs another pass.
+- `resize` narrower: a cut between head and continuation blanks the orphan head. Widening pads blanks. History rows
+  keep the width and cells they had. `fitRows` and `applyCuts` move rows, never cells, so they are unchanged. The alt
+  screen is `[]cell` too and gets the same cut.
+- `rowIsBlank` counts a continuation as not blank, which is safe because one only follows a non-blank head.
+
+**Output.** `render` and `writeRow` skip `contCh` cells and write the head rune once, followed by its `ext` marks. The
+end-trim loop trims only blanks, so a wide character in the last two cells is kept. `textWithCursor` needs no change:
+`s.col` is already a cell column, `CUF` in cells is what the terminal executes after painting the rune in two of
+them, and the relative move stays right. `textAtRows` ends in an absolute `CSI row;col H` in cells, correct for the
+same reason. The scrollback view and the replay therefore emit each wide rune once and let the attaching xterm give
+it two columns.
+
+**Cost.** Memory: nothing per cell, 24 bytes as now. Time: `put` gains one comparison on the ASCII path, a binary
+search on other runes, and two neighbour reads for `clearHalf`. Replay parse cost is dominated by `decodeRune`, which
+allocates through `[]rune(string(...))` for every non ASCII rune, so a CJK heavy ring pays it per character. Worth
+replacing with `utf8.DecodeRune` while here. It is a small change outside the cell model, and I will measure both
+with a benchmark added in phase 2.
+
+**Tests.**
+
+- `TestWidthMatchesXterm` (node, every code point, skips without node) and `TestWidthTable` (no node: 2 for a
+  hiragana letter, 1 for an astral emoji, 0 for a combining acute and for U+200D, 2 for U+20000).
+- No node: wide put and overwrite of each half, wide at the last column, wide in a one column grid, a mark on a wide
+  head, each erase and `ICH`/`DCH` seam, `resize` across a wide character, and the head and continuation invariant
+  after each. `render` and `writeRow` emit the rune once, and `textWithCursor` lands on the right column after wide
+  text.
+- Differential, the `backlog-2 82` skip removed: the existing case, overwrite the first half, overwrite the second
+  half, wide at the last column, `EL` 0, 1 and 2 through a wide character, `ECH`, `DCH` and `ICH` at a seam, a
+  combining mark after ASCII and after a wide character, a ZWJ sequence, an astral emoji (width 1, the V6 result) and
+  an ambiguous character. Each agrees with xterm.js or carries an `accept` with the reason. `dumpScreen` learns to
+  skip continuations and carry marks, and asserts the invariant.
+
+## 83. `atrium_say` refuses a card in `done` while its terminal is still alive (bug)
+
+Found 2026-09-28 by @runtime reviewing sa21. `atrium_report` with status `done` moves the worker's card to `done`,
+and the session keeps running at its prompt, as the brief asked, so the director can send review changes. The review
+`atrium_say` then answered `undeliverable`: "has no running session (it is done). resume it first". `atrium_task` on
+the same card said `atrium_owns_terminal: true` and `doing: idle`. The only way through was a board PATCH moving the
+card back to `needs-input` by hand.
+
+The refusal reads the card's status and not the runner. Expected: a say to a card whose terminal atrium owns is
+delivered whatever column the card is in. A `done` card with no runner still refuses, and says so. Item 41 is about
+which prompts make a card owe a report, not the card's state after one, so this is separate. Owned by @runtime.
+
+## 84. Two `nosession` tests fail on macOS and Linux (bug)
+
+Found 2026-09-28 on m1mini (macOS arm64, `hub-main` 52ca01a). `TestASayToAGoneSessionIsUndeliverable` and
+`TestAHeldMessageOnAnEndedSessionIsDropped` (`internal/daemon/nosession_test.go`) fail every time there.
+
+The cause is the fixture. `cardFor` (`internal/daemon/help_test.go:34`) registers every test card with `PID: 1`, and
+`sessionGone` (`nosession.go`) calls a card gone only when `!processAlive(pid)`. On Windows nothing is PID 1, so the
+card reads gone. On macOS and Linux PID 1 is launchd or init. `Signal(0)` from a non-root user returns `EPERM`, which
+`alive_other.go` counts as alive on purpose, so the card never goes. Linux CI would fail the same way.
+
+Fix, test only: give `cardFor` a PID that is guaranteed dead. Prefer a helper that starts and reaps a short child and
+returns its pid, over a large constant. Then grep the `_test.go` files for other `PID: 1` style assumptions.
+`processAlive` is right and does not change. Verified on m1mini with pid 2147483000: both pass, and so does the
+whole package. Owned by @runtime.
+
+## 86. `screen.go`'s combining-mark table only grows (bug, low)
+
+Found 2026-09-29 reviewing item 82. A cell carrying combining marks points into `screen.combs`, and every mark
+attached appends a new string there, even one already held. Nothing ever removes an entry: not a clear, not RIS,
+not a row leaving history. So the table fills to `combsMaxKept` (65536), and past that `combine` drops every new
+mark. Memory is bounded (65536 entries of at most 32 bytes), so this is not a leak, and it did not block item 82.
+Owned by @terminal. Low priority.
+
+**Status: done on `claude/sa86`.** Built as designed: `combIdx` interns sequences, `combsMaxKept` and `combMax` are
+unchanged, and the ASCII apply benchmark still allocates 211 per 200 lines. Tests are in `screen_comb_test.go`.
+
+### Design
+
+**How long a screen lives.** Not as long as a session, which the first filing assumed. `screen` is built fresh
+from the ring on every render and thrown away after: `replayCut` (attach replay), `renderHistory` (the text
+scrollback view) and `classifyFrame` (the looks-idle badge, a 64KB tail) each call `newScreenSized`. So the table
+is bounded by what one ring holds, and the ring is `scrollback_mb`, 16MB by default and up to 512MB. That is
+still far past the cap, and the cap bites where it hurts most: the marks dropped are the LAST ones, which is the
+newest text, the part on screen.
+
+**Who reaches it.** A combining mark is at least two bytes of UTF-8, so the cap is about 128KB of marks in a 16MB
+ring. Precomposed Latin (NFC Vietnamese, French) never gets here, since those are single code points of width 1.
+What does get here is any script whose vowel signs are combining: Devanagari, Bengali, Tamil, Thai, where most
+syllables carry one. Also VS16 (U+FE0F) after an emoji, which Claude Code and many CLIs print in status lines, one
+per redraw. A spinner line redrawn every second with a VS16 in it spends one entry per redraw, and a long session
+spends the cap on a spinner before any real text needs it.
+
+**The fix is interning, and only interning.** `screen` gains `combIdx map[string]uint32`. `combine` builds the
+new string (`prev+string(ch)`), looks it up, and only appends when it is new. `ext` is unchanged, `emit` is
+unchanged, and the "entries are never changed once added" rule still holds, so a cell copied into history or the
+alternate screen still means the same thing. What the cap then counts is DISTINCT mark sequences. Real text has a
+few hundred at most (the string is the marks alone, never the base, so every `ka` with a vowel sign `i` shares
+`ि`). The cap becomes something only a hostile or corrupt stream reaches, which is what it is for.
+
+- Keep `combsMaxKept` and `combMax` as they are. With interning, 65536 distinct sequences of up to 32 bytes is
+  about 2MB plus the map, per render, only under hostile input. Past the cap a NEW sequence is still dropped.
+  One that was already interned is still attached, which the current code cannot do.
+- The map is made lazily, on the first mark, so an all-ASCII render allocates nothing new. The ASCII apply
+  benchmark from item 82 (211 allocs per 200 lines) must not move.
+- A render is one goroutine, so there is no lock. Nothing else shares a `screen`.
+
+**Why not compaction.** Renumbering `ext` on a history trim or a reset means walking every live and history cell
+and rebuilding the table. Nothing trims history within one render (`history` only grows, and RIS clears the grid
+but keeps it), so there is no trigger to hang it on, and a render ends before it would matter. It would be a pass
+over up to 16MB of cells to save memory the interned table no longer uses. Rejected.
+
+**Tests.**
+
+- A spinner fixture: one row redrawn 100,000 times with `\r` and a VS16, then a Devanagari line. The table holds
+  2 entries (VS16, and the vowel sign), and the Devanagari line renders with its marks.
+- Past the cap: 65536 distinct sequences (a loop over pairs of combining code points, each pair its own
+  sequence), then an ASCII letter with a mark that was already interned. It keeps the mark, and a NEW sequence
+  after that is dropped. This is the cap still working and interning still answering.
+- The differential cases from item 82 still agree, and the ASCII and CJK apply benchmarks are re-run and
+  reported next to the numbers in `docs/changes/82.md`.
+
+## 88. The looks-idle classifier writes U+FFFD for the second half of a wide character (bug, low)
+
+Found 2026-09-29 merging claude/main (item 21) into claude/terminal (item 82). `classifyFrame` in
+`internal/daemon/idleframe.go` walks `sc.cells` itself and writes every `c.ch`, turning only `0` into a space.
+Item 82 gave a wide character a continuation cell holding `contCh` (-1), and `WriteRune(-1)` writes U+FFFD. So
+every CJK character on screen reaches `classifyScreen` followed by a replacement character. The two branches
+could not see each other, so neither test caught it.
+
+It is low because nothing `classifyScreen` looks for sits in a wide character's second half: the rules are box
+drawing (width 1), the prompt is `>`, the veto strings are ASCII plus `…`. A wrong badge would need a veto string
+split by one. It is still wrong, and the comment at `idleframe.go:88` names items 81 and 82 as open gaps, which
+they no longer are.
+
+Fix: skip `contCh` cells in the loop, the way `writeRow` does, and update that comment. A test puts a CJK
+prompt inside a real idle frame and asserts the text handed to `classifyScreen` directly, not only the verdict,
+since the heuristics mask the bug: each wide character appears once, there is no U+FFFD, and the frame still
+reads idle. Owned by @terminal, built with item 86 by the same worker.
+
+**Status: done on `claude/sa86`.** The loop is now `frameText` in `idleframe.go`, which skips `contCh` cells, and the
+stale comment is rewritten. `idleframe_wide_test.go` asserts the text handed to `classifyScreen` directly.
 
 
 ------------

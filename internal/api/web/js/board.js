@@ -341,7 +341,7 @@ function firstSeen(iso) {
 
 const isWaiting = (t) => t.status === "needs-input" || t.status === "needs-permission";
 
-const VIEWS = ["board", "stack", "perms", "runners", "terms", "history", "audit"];
+const VIEWS = ["board", "stack", "perms", "runners", "terms", "history", "usage", "audit"];
 
 // BACK AND FORWARD, over the board's own moves.
 //
@@ -429,6 +429,9 @@ function switchView(name) {
   // go looking for, and a query against a table that only grows has no
   // business running every few seconds while you are reading something else.
   if (name === "history") renderHistory(false);
+  // Read when you go there, like history. It is kept current by `usage` events
+  // while it is open. See js/usage-charts.js.
+  if (name === "usage" && typeof loadUsageTab === "function") loadUsageTab();
   // A command box built while this view was hidden measured as zero, exactly
   // as a detached one does, so it is sized on the way in rather than only on
   // the way past a poll.
@@ -504,6 +507,7 @@ function activityChip(t) {
   // outlasts the status change that filed the card, so this is a second line
   // of defence rather than the fix: whatever put a live session in `done` is
   // the bug, and this stops it looking like a feature.
+  if (a && a.looks_idle && !isWaiting(t) && t.status !== "shelved" && !staleActivity(t)) return looksIdleChip(a);
   if (!a || !a.what || isWaiting(t) || t.status === "shelved" || staleActivity(t)) return "";
   const label = a.what === "tool"
     ? (a.tool ? `running ${esc(a.tool)}` : "running a tool")
@@ -529,6 +533,20 @@ function activityChip(t) {
       `nothing says when a compaction ends, so this clears on the next thing the session does."`
     : "";
   return `<span class="chip live ${esc(a.what)}"${why}>${label}${age}</span>${sub}`;
+}
+
+// THE CARD READS RUNNING BUT ITS SCREEN HAS GONE QUIET ON AN IDLE PROMPT: the
+// turn-end hook never arrived. Drawn in place of the live chip, so the spinner
+// STOPS (a board that keeps animating claims work it cannot see), as a hollow
+// ring with a gap in the warn colour. The daemon says it, from the pty, and takes
+// it down on any output, keystroke or hook, so there is no board state to clear.
+// See internal/daemon/looksidle.go.
+function looksIdleChip(a) {
+  const tip = `no turn-end from the agent. its screen has been idle for ${ago(a.idle_seconds || 0)}.`;
+  return `<span class="chip warn icon looksidle" aria-label="${esc(tip)}" data-tip="${esc(tip)}"
+    ><svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" fill="none"
+    stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+    <path d="M8 2.5a5.5 5.5 0 1 0 5.5 5.5" stroke-dasharray="26 8"/></svg></span>`;
 }
 
 // Stop the live marks while the tab is not on screen.

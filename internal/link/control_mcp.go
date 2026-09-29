@@ -197,7 +197,8 @@ func (c *controlMCP) server() *mcp.Server {
 			"and every status it moved through, never its output, so `needs-input` here means " +
 			"it stopped and not what it said. To learn what it thinks, ask it, and have it " +
 			"answer with `atrium_say`.\n\n" +
-			"`seen` says whether the HUMAN has seen the card's last turn (`unseen`) and which of " +
+			"`seen` says whether the HUMAN has seen the card's last turn (`unseen`, which a report " +
+				"to the launcher of an agent-launched card also clears, `seen_via` `launcher`) and which of " +
 			"that turn's Open Questions they have not answered yet (`open_questions`, `answered`). " +
 			"Leave `card` empty to ask about your own card. Before telling the human your " +
 			"questions are still open, check this: if `unseen` is true they never read them, so " +
@@ -1241,39 +1242,50 @@ func (c *controlMCP) launchHandler(ctx context.Context, req *mcp.CallToolRequest
 	out.Watch = c.board + "/#term=" + url.PathEscape(t.ID)
 	out.Note = "started. its permission requests go to the human on their board, so it will " +
 		"stop at the first gated command unless somebody is watching."
-	if missed := launchOptionsDropped(in, t); len(missed) > 0 {
-		// A room older than launch options drops the fields without a word.
-		// The session is running, and exiting it is the caller's call.
-		verb := " were"
-		if len(missed) == 1 {
-			verb = " was"
-		}
-		out.Note = "WARNING: the room is older than launch options, so " + strings.Join(missed, ", ") +
-			verb + " NOT applied and the session is running on the runner's defaults. " + out.Note
-	}
+	// A room older than launch options drops the fields without a word.
+	out.Note = LaunchDroppedWarning(LaunchOptionsDropped(in.Model, in.Effort, in.Args, in.Env,
+		t.Model, t.Effort, t.LaunchArgs, t.LaunchEnvKeys)) + out.Note
 	return nil, out, nil
 }
 
-// launchOptionsDropped names the launch options that were asked for and that
+// LaunchOptionsDropped names the launch options that were asked for and that
 // the card the room handed back does not carry, which is how an older room
 // that ignored them shows. See docs/launch-options-design.md "Version skew".
-func launchOptionsDropped(in launchInput, t ctlCard) []string {
+// Shared with the stdio control MCP in internal/cli, so the two cannot drift.
+func LaunchOptionsDropped(model, effort string, args []string, env map[string]string,
+	gotModel, gotEffort string, gotArgs, gotEnvKeys []string) []string {
+
 	var missed []string
 	// Model has been on /v1/launch since 0047, so only a very old room drops
 	// it, and it is checked the same way for completeness.
-	if strings.TrimSpace(in.Model) != "" && t.Model == "" {
+	if strings.TrimSpace(model) != "" && gotModel == "" {
 		missed = append(missed, "model")
 	}
-	if strings.TrimSpace(in.Effort) != "" && t.Effort == "" {
+	if strings.TrimSpace(effort) != "" && gotEffort == "" {
 		missed = append(missed, "effort")
 	}
-	if len(in.Args) > 0 && len(t.LaunchArgs) == 0 {
+	if len(args) > 0 && len(gotArgs) == 0 {
 		missed = append(missed, "args")
 	}
-	if len(in.Env) > 0 && len(t.LaunchEnvKeys) == 0 {
+	if len(env) > 0 && len(gotEnvKeys) == 0 {
 		missed = append(missed, "env")
 	}
 	return missed
+}
+
+// LaunchDroppedWarning is the sentence put ahead of the note when a room
+// dropped launch options, empty when it dropped none. The session is running,
+// and exiting it is the caller's call.
+func LaunchDroppedWarning(missed []string) string {
+	if len(missed) == 0 {
+		return ""
+	}
+	verb := " were"
+	if len(missed) == 1 {
+		verb = " was"
+	}
+	return "WARNING: the room is older than launch options, so " + strings.Join(missed, ", ") +
+		verb + " NOT applied and the session is running on the runner's defaults. "
 }
 
 // ── exit ────────────────────────────────────────────────────────────────────────

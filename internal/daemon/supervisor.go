@@ -722,6 +722,23 @@ type runner struct {
 	// the pty gets the widest width and the shortest height of them, because
 	// a shared terminal has one size and several windows.
 	views map[any]viewport
+	// resizeMu is held across the whole of a viewport change: record the
+	// viewer, compute the agreed size, the guard, the mark and the pty resize.
+	// Without it two viewers computing A then B could apply B then A, leaving
+	// the pty and the ring's marks at a stale size. Lock order is resizeMu then
+	// mu, never the other way. Nothing else takes it, and a Resize on a pty is
+	// a quick call, so it is never held across anything that waits on a peer.
+	resizeMu sync.Mutex
+	// pendingRows is an agreed height waiting out the hold, 0 for none, and
+	// pendingGen counts every change to it so a superseded timer knows. All
+	// three are guarded by resizeMu. See `holdHeight`.
+	pendingRows  int
+	pendingGen   uint64
+	pendingTimer *time.Timer
+	// hold is how long a new height must hold before the pty takes it. Zero
+	// means `heightHold`. A field so a test can shorten one runner's hold
+	// without touching any other runner's.
+	hold time.Duration
 	// resized is closed and replaced every time the pty changes size, so
 	// every attach can tell its viewer at once. See `sizeChanged`.
 	resized   chan struct{}
@@ -798,6 +815,14 @@ type runner struct {
 	// an attach's echo line can split the runner's time from atrium's. Only
 	// written while input-lag logging is on. See inputlag.go.
 	lagRead atomic.Int64
+	// lastOut is when the pty last handed over output, in unix nanoseconds. Read
+	// by the looks-idle watch (looksidle.go) and nothing else. One atomic store
+	// per chunk, outside r.mu.
+	lastOut atomic.Int64
+	// wake is called on the next output or operator keystroke, and is nil unless
+	// the card is flagged as looking idle, so both paths pay one atomic load.
+	// See looksidle.go.
+	wake atomic.Pointer[func(cause string)]
 	// injectMu serializes peer injections against each other, so two peers do
 	// not interleave their banners and bodies into the pty. It is DELIBERATELY
 	// NOT `r.mu`: `injectPeer` holds it across the sayThenEnter pause, and if
@@ -974,6 +999,9 @@ func (r *runner) noteOperatorTyped(p []byte) {
 	// is one atomic load on the common path. See `pendingInjector`.
 	if h := r.onKey.Load(); h != nil {
 		(*h)()
+	}
+	if w := r.wake.Load(); w != nil {
+		(*w)("keystroke")
 	}
 }
 
@@ -1251,7 +1279,22 @@ func (r *runner) promptWasPeer(at time.Time) bool {
 // the current width drags freely and touches nobody. An attach or detach that
 // does not change the agreed size lays no mark and repaints no one. See
 // `docs/terminal-resize-decoupling-design.md`.
+//
+// A NEW HEIGHT HAS TO HOLD FOR HALF A SECOND FIRST. The inbox ConPTY answers a
+// row change with a bare `ESC [ H` repaint that files the top rows into its own
+// history, which is never sent, and two changes close together (50, 40, 50)
+// are often painted once, as a same-height repaint shifted up. Downstream that
+// overwrites rows in place and they never reach anybody's scrollback: ten
+// lines of a reply were lost that way. The shortest viewer reattaching while
+// another is attached is exactly that flip, because its old socket is dropped
+// before its new one says how big it is. So the width is applied at once, and
+// a height only once it has held for `heightHold`. See `holdHeight`, and
+// `docs/backlog-2.md` item 74.
 type viewport struct{ cols, rows int }
+
+// heightHold is how long a new agreed height must hold before the pty takes
+// it. Twice the board's own 250 ms settle, and far longer than a reattach.
+const heightHold = 500 * time.Millisecond
 
 // setViewport records one viewer's size and applies the agreed one, but only
 // when it changed.
@@ -1263,6 +1306,8 @@ func (r *runner) setViewport(id any, cols, rows int) error {
 	if cols <= 0 || rows <= 0 {
 		return nil
 	}
+	r.resizeMu.Lock()
+	defer r.resizeMu.Unlock()
 	r.mu.Lock()
 	if r.views == nil {
 		r.views = map[any]viewport{}
@@ -1270,20 +1315,109 @@ func (r *runner) setViewport(id any, cols, rows int) error {
 	r.views[id] = viewport{cols, rows}
 	agreed := agreedViewport(r.views)
 	r.mu.Unlock()
+	return r.applyViewport(agreed)
+}
+
+// applyViewport moves the pty toward the agreed size: the width at once, the
+// height through the hold. Called under resizeMu.
+func (r *runner) applyViewport(agreed viewport) error {
 	// THE GUARD. A resize to the size the pty is already at is not free: it
 	// raises SIGWINCH and repaints every viewer, which is exactly the churn one
 	// console's drag inflicted on the others. Skip it when nothing moved.
 	curCols, curRows := r.buf.CurrentSize()
-	if agreed.cols == curCols && agreed.rows == curRows {
-		return nil
+	var err error
+	if agreed.cols != curCols {
+		// Marked BEFORE the resize, so the first byte drawn at the new width is
+		// already on the new side of the mark. The other order leaves a repaint
+		// filed under the width it replaced, which is the whole bug.
+		//
+		// At the rows ALREADY APPLIED, never the agreed ones, or a width change
+		// would carry a new height straight past the hold.
+		r.buf.SetSize(agreed.cols, curRows)
+		err = r.pty.Resize(agreed.cols, curRows)
+		r.noteResized()
 	}
-	// Marked BEFORE the resize, so the first byte drawn at the new width is
-	// already on the new side of the mark. The other order leaves a repaint
-	// filed under the width it replaced, which is the whole bug.
-	r.buf.SetSize(agreed.cols, agreed.rows)
-	err := r.pty.Resize(agreed.cols, agreed.rows)
-	r.noteResized()
+	r.holdHeight(agreed.rows, curRows)
 	return err
+}
+
+// holdHeight starts, keeps, restarts or cancels the wait before a new height
+// is applied. Called under resizeMu.
+//
+// While a height waits, `CurrentSize` still reports the APPLIED one, so the
+// viewers, the ring's marks and the replay all agree with the pty.
+func (r *runner) holdHeight(want, applied int) {
+	switch {
+	case want == applied:
+		// The flip came back before the hold ran out: nothing to apply.
+		if r.pendingRows != 0 {
+			r.cancelHeld()
+			r.noteResized()
+		}
+	case want == r.pendingRows:
+		// Still the value already waiting, so it keeps counting from when it
+		// was first seen.
+	default:
+		superseded := r.pendingRows != 0
+		r.cancelHeld()
+		r.pendingRows = want
+		gen := r.pendingGen
+		hold := r.hold
+		if hold <= 0 {
+			hold = heightHold
+		}
+		r.pendingTimer = time.AfterFunc(hold, func() { r.applyHeld(gen) })
+		if superseded {
+			r.noteResized()
+		}
+	}
+}
+
+// cancelHeld forgets a waiting height. The generation moves too, so a timer
+// that already fired and is waiting on resizeMu finds itself stale.
+func (r *runner) cancelHeld() {
+	if r.pendingTimer != nil {
+		r.pendingTimer.Stop()
+		r.pendingTimer = nil
+	}
+	r.pendingRows = 0
+	r.pendingGen++
+}
+
+// applyHeld is the hold running out. The viewers are read again rather than
+// trusted, because the timer was set by a state that may have gone.
+//
+// A cancel here RE-TELLS, with no resize, so no viewer can stay out of step
+// with the size the pty is really at. Each attach sends a frame only when the
+// size differs from what it last told, so a re-tell costs nothing on the wire.
+func (r *runner) applyHeld(gen uint64) {
+	r.resizeMu.Lock()
+	defer r.resizeMu.Unlock()
+	if gen != r.pendingGen {
+		return
+	}
+	pending := r.pendingRows
+	r.cancelHeld()
+	// Never a dead terminal, for the reason `dropViewport` gives.
+	select {
+	case <-r.done:
+		return
+	default:
+	}
+	r.mu.Lock()
+	agreed := agreedViewport(r.views)
+	left := len(r.views)
+	r.mu.Unlock()
+	_, curRows := r.buf.CurrentSize()
+	if left == 0 || agreed.rows != pending || agreed.rows == curRows {
+		r.noteResized()
+		return
+	}
+	r.buf.SetSize(agreed.cols, pending)
+	if err := r.pty.Resize(agreed.cols, pending); err != nil {
+		log.Printf("[atrium] resize %s: %v", r.taskID, err)
+	}
+	r.noteResized()
 }
 
 // sizeChanged returns a channel that closes the next time the pty changes
@@ -1310,6 +1444,8 @@ func (r *runner) noteResized() {
 // dropViewport forgets a viewer that has detached, and lets the pty follow the
 // viewers left only when the viewer that left was the binding one.
 func (r *runner) dropViewport(id any) {
+	r.resizeMu.Lock()
+	defer r.resizeMu.Unlock()
 	r.mu.Lock()
 	if r.views == nil {
 		r.mu.Unlock()
@@ -1343,14 +1479,8 @@ func (r *runner) dropViewport(id any) {
 	// agreed size unchanged, so nothing resizes and no other viewer is churned.
 	// Only the binding viewer's departure moves the pty, and the ring merges
 	// the marks when nothing was drawn in between, so a popped window costs no
-	// scrollback.
-	curCols, curRows := r.buf.CurrentSize()
-	if agreed.cols == curCols && agreed.rows == curRows {
-		return
-	}
-	r.buf.SetSize(agreed.cols, agreed.rows)
-	_ = r.pty.Resize(agreed.cols, agreed.rows)
-	r.noteResized()
+	// scrollback. A height it frees waits out the hold like any other.
+	_ = r.applyViewport(agreed)
 }
 
 // agreedViewport is the size the pty runs at: the widest viewer's width and
@@ -1465,6 +1595,10 @@ func (r *runner) deliverOutput(chunk []byte) {
 	_, _ = r.buf.Write(chunk)
 	r.fanoutLocked(chunk)
 	r.mu.Unlock()
+	r.lastOut.Store(time.Now().UnixNano())
+	if w := r.wake.Load(); w != nil {
+		(*w)("output")
+	}
 	r.lagFanout(t0, len(chunk))
 }
 

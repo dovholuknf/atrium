@@ -112,6 +112,7 @@ function paintSettings() {
   document.getElementById("s-expiry").value = String(Number(p.expiry) || 0);
   document.getElementById("s-debounce").value = String(Number(p.debounce) || 0);
   document.getElementById("s-stuck").value = p.stuck || "alert";
+  document.getElementById("s-quietdoers").checked = p.quietDoers !== false;
   document.getElementById("s-cardsize").value = String(uiScale());
   document.getElementById("s-density").value = String(density());
   document.getElementById("s-hoverfocus").checked = hoverFocus;
@@ -1368,6 +1369,18 @@ async function refresh(signal) {
         title: `${t.display_title} is on the board`,
         body: t.why || t.worktree || "a new card"
       }));
+      // A RUNNING CARD WHOSE SCREEN SAYS IT FINISHED: the room saw its pty go
+      // quiet on an idle prompt and no turn-end arrive. Worded as a guess. Keyed
+      // on when it was flagged, so a card that wakes and stalls again rings
+      // again. The room takes the flag down itself. See looksidle.go.
+      alerting.check("looksidle", lastTasks
+        .filter(t => t.activity && t.activity.looks_idle && !over(t) && !isWaiting(t))
+        .map(t => Object.assign({}, t, {
+          id: `${t.id}#idle#${t.activity.idle_at}`, task_id: t.id
+        })), t => ({
+        title: `${t.display_title} looks idle`,
+        body: "looks idle (no turn-end received)"
+      }));
       // AN AGENT-LAUNCHED CARD THAT IS STUCK: it stopped without reporting, or
       // one tool call has run too long. The room works out when, on the
       // operator's backoff (1m, 2m, 5m, 10m, 30m, 1h ... 24h), and steps
@@ -1473,6 +1486,9 @@ function connect() {
     // to an open pane by `onAuditEvent`, so a closed one pays nothing. See
     // js/audit.js.
     if (typeof onAuditEvent === "function") onAuditEvent();
+    // Rows written while the stream was down were never announced, so an open
+    // usage tab reads again.
+    if (typeof onUsageStreamOpen === "function") onUsageStreamOpen();
     // A hub restart cover comes down on the stream coming back, and a pause is
     // re-read. See js/hubrestart.js.
     if (typeof onHubStreamOpen === "function") onHubStreamOpen();
@@ -1529,6 +1545,12 @@ function connect() {
   // The cache keep-alive stopped a card or suspended the room, or refreshed one.
   // The card's chip is redrawn from the next list, and a stop carries a toast.
   // See js/keepalive.js.
+  // A usage row was written: one turn's spend. Added to the newest bucket of the
+  // usage tab without a refetch, and only ever drawn when that tab is open. No
+  // refreshSoon: a row moves no card. See js/usage-charts.js.
+  es.addEventListener("usage", e => {
+    if (typeof onUsageEvent === "function") onUsageEvent(e);
+  });
   es.addEventListener("keepalive", e => {
     if (typeof onKeepaliveEvent === "function") onKeepaliveEvent(e);
     refreshSoon();
@@ -1646,9 +1668,13 @@ function connect() {
       (bad.length <= 3
         ? bad.map(f => f.label).join(", ")
         : bad.slice(0, 3).map(f => f.label).join(", ") + ` and ${bad.length - 3} more`);
-    alerting.play("permission");
+    // Held with the rest while notifications are off (item 79). `play` exempts a
+    // permission kind and the toast skips `notify`, so both are gated here, and
+    // the `notify` between them records the one drawer entry.
+    const held = notifyHeld("runners");
+    if (!held) alerting.play("permission");
     alerting.notify(title, body, "runners", "", "fixtures", "", "");
-    toast(title, body + ". the rooms tab says why", "runners");
+    if (!held) toast(title, body + ". the rooms tab says why", "runners");
   });
   // Atrium is asking a registry whether a newer runner is published, and a
   // launch is waiting on the answer.
