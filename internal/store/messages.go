@@ -145,6 +145,11 @@ func (s *Store) MarkDelivered(taskID, via string, ids []string) error {
 				return err
 			}
 		}
+		// The say record, when this message was one. Every delivery path comes
+		// through here. See say.go.
+		if err := markSaysDelivered(s.db, via, ids); err != nil {
+			return err
+		}
 		return s.appendEvent(taskID, EventPrompted, map[string]any{
 			"delivered": len(ids), "via": via,
 		})
