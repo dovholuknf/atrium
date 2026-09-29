@@ -2506,4 +2506,44 @@ live, or else to the newest `done` card whose session is not gone by `sessionGon
 alias stays unresolved, so a reused alias still means the live card. Separate from the reaper fix above, and it
 touches the same resolver sa32 (item 32) changed, so it goes after that merge.
 
+## 91. Two cards in one worktree share one HANDOFF.md, and new-context overwrites the other's (bug, design only)
+
+Reported 2026-09-29 by the orchestrator. @merge and @orchestrator both run in the main checkout
+(`D:/git/github/dovholuknf/atrium`), and at about 01:15 local one card's new-context capture overwrote the
+other's HANDOFF.md. The file is a fixed name in the card's directory at every step of `newcontext.go`: the capture
+prompt says "HANDOFF.md in the current directory", the wake prompt says "Read HANDOFF.md", and `handoffWritten`
+checks `filepath.Join(task.Worktree, "HANDOFF.md")`.
+
+Two harms, and the second is why nothing noticed the first:
+
+- **The overwrite.** A handoff not yet read back, or one a human is keeping, is replaced by another card's.
+- **The check passes for the wrong card.** `handoffWritten` only asks whether the file was modified since the
+  capture began. A capture on card A that wrote nothing still passes when card B wrote the file in that window,
+  and card A then wakes into card B's state and carries on as B. A card in two places is the worst outcome here.
+
+Options:
+
+1. **A per-card file name.** `HANDOFF.<alias or first 8 of the card id>.md`, in the capture prompt, the wake prompt
+   and `handoffWritten`, the same three places. Two cards in one directory can then never touch each other's
+   file, and the check is about the right file by construction. The cost: every habit and script that says
+   `HANDOFF.md` (DIRECTOR.md's "git rm HANDOFF.md", the orchestrator's touch-after-POST workaround, briefs) has to
+   learn the pattern. Using the per-card name always, rather than only when a directory is shared, keeps one rule.
+   A `.gitignore` line for `HANDOFF.*.md` would also stop a handoff reaching a merge by accident, which is the
+   thing every director currently removes by hand.
+2. **Refuse new-context when another live card shares the directory.** Small, and it would have prevented this
+   one. But the two cards that share a directory are the orchestrator and the merger, which are the long-lived
+   sessions that most need cycling, so the refusal lands on exactly the cards it should serve. It could refuse
+   only while the OTHER card's own new-context is in flight, which closes the concurrent case but not an
+   overwrite of a handoff written earlier and not yet read.
+3. **The handoff outside the worktree,** in the room's state directory keyed by card (`~/.atrium/handoff/<id>.md`),
+   with the absolute path in both prompts. Per-card by construction and never in git. But a human can no longer
+   find it next to the work, and a runner on another room writes to that room's disk, which the board then has to
+   serve.
+
+**Recommendation: option 1, with option 2's narrow form as a guard.** The name removes the collision, and refusing
+only while another card sharing the directory is mid-sequence costs nothing and covers a card whose runner ignores
+the name it was given. A migration is not needed: the name is derived, not stored. Owned by @runtime
+(`internal/daemon/newcontext.go`). The open question for clint is option 1's cost to existing habits: whether the
+fixed name `HANDOFF.md` is worth keeping for the single-card case humans are used to.
+
 ------------
