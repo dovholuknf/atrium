@@ -6360,6 +6360,90 @@ async function usageCacheReadsSection(browser, base) {
   if (errors.length) fail("usageCacheReads: the page threw: " + errors.join(" | "));
 }
 
+// The usage tab's polish: the too-old line with and without a build, the keep-alive
+// phrase on the cache line, the backfilled label, the fade and the grow on a live
+// event, and reduced motion turning them off.
+async function usagePolishSection(browser, base) {
+  const errors = [];
+  const at = new Date(Math.floor(Date.now() / 900000) * 900000 - 900000).toISOString();
+  const sums = { rows: 2, replies: 9, input: 1000, output: 2000, cache_write_5m: 3000, cache_write_1h: 4000, cache_read: 90000, cost: 0 };
+  const ka = { rows: 3, replies: 3, input: 100, output: 200, cache_write_5m: 0, cache_write_1h: 0, cache_read: 5000, cost: 0 };
+  const bf = { rows: 4, replies: 4, input: 10, output: 20, cache_write_5m: 0, cache_write_1h: 0, cache_read: 50, cost: 0 };
+  const total = { rows: 9, replies: 16, input: 1110, output: 2220, cache_write_5m: 3000, cache_write_1h: 4000, cache_read: 95050, cost: 0 };
+  const run = async (reduced, fn) => {
+    const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, reducedMotion: reduced ? "reduce" : "no-preference" });
+    const sp = await ctx.newPage();
+    sp.on("pageerror", e => errors.push(String(e)));
+    await ctx.route("**/v1/usage*", route => route.fulfill({ json: { buckets: [
+      { t: at, total, cards: { "uc-a": total }, causes: { operator: sums, keepalive: ka, backfill: bf } }] } }));
+    await ctx.route("**/v1/settings", route => route.fulfill({ json: { usage_cache_reads: false, board_skin: "harbour", board_skins: SKINS } }));
+    try {
+      await sp.goto(base, { waitUntil: "domcontentloaded" });
+      await sp.waitForSelector("#stack-list .stackrow", { state: "attached", timeout: slow(15000) });
+      await sp.evaluate(() => switchView("usage"));
+      await sp.waitForSelector("#uc-body .ucchart[data-chart=burn] rect", { timeout: slow(10000) });
+      await sp.waitForTimeout(1500); // the stream opening reloads the tab once
+      await fn(sp);
+    } finally { await ctx.close(); }
+  };
+  await run(false, async sp => {
+    await sp.evaluate(() => { lastTasks = [{ id: "uc-a", keepalive: { refreshes: 2 } }].concat(lastTasks || []); ucPaint(); });
+    const line = await sp.textContent("#uc-body .uccacheline");
+    if (!/keep-alive spent 300 counted and kept 1 card warm/.test(line)) fail("usagePolish: the keep-alive phrase reads " + line);
+    const tip = await sp.getAttribute("#uc-body .uccacheline", "data-tip");
+    if (!tip) fail("usagePolish: the cache line has no hint.");
+    const causes = await sp.textContent("#uc-body .uccauses");
+    if (!/backfilled/.test(causes) || /\bbackfill\b/.test(causes)) fail("usagePolish: the backfill cause reads " + causes);
+    const bt = await sp.evaluate(() => USAGE_TIPS.cause_backfill);
+    if (!/atrium usage backfill/.test(bt)) fail("usagePolish: the backfilled hint is " + bt);
+    // Every number on the tab carries a hint.
+    const bare = await sp.evaluate(() => [...document.querySelectorAll("#uc-body [data-n]")]
+      .filter(e => !e.closest("[data-tip]") && !e.getAttribute("data-tip")).map(e => e.getAttribute("data-n")));
+    if (bare.length) fail("usagePolish: numbers with no data-tip: " + bare);
+    // The too-old line, with a build and without.
+    const old = await sp.evaluate(() => {
+      hubRooms = [{ name: "sg3", version: "2f715b5a9c1d" }]; hubInventory = [];
+      UC.rooms = { sg3: { state: "old", why: "too old to keep usage", buckets: new Map() },
+        sg4: { state: "old", why: "too old to keep usage", buckets: new Map() } };
+      ucPaint();
+      return [...document.querySelectorAll("#uc-body .ucmissing")].map(e => e.textContent);
+    });
+    if (!old.includes("sg3 build 2f715b5 predates usage (needs 39a8da1 or later). Update the room to see its usage here."))
+      fail("usagePolish: the too-old line with a build reads " + JSON.stringify(old));
+    if (!old.includes("sg4 predates usage (needs 39a8da1 or later). Update the room to see its usage here."))
+      fail("usagePolish: the too-old line without a build reads " + JSON.stringify(old));
+    // A live row fades the number that changed and grows a new bar.
+    await sp.evaluate(() => loadUsageTab());
+    await sp.waitForFunction(() => !UC.inflight, null, { timeout: slow(5000) });
+    await sp.waitForSelector("#uc-body .ucchart[data-chart=burn] rect", { timeout: slow(10000) });
+    await sp.evaluate(() => {
+      ucApply({ task_id: "uc-a", ended_at: new Date().toISOString(), input: 500, output: 500, cache_write_5m: 0, cache_write_1h: 0, cache_read: 0 });
+      ucSchedulePaint();
+    });
+    await sp.waitForSelector("#uc-body .ucfade", { state: "attached", timeout: slow(3000) });
+    const anim = await sp.evaluate(() => ({
+      fade: getComputedStyle(document.querySelector("#uc-body .ucfade")).animationName,
+      grow: (document.querySelector("#uc-body g.ucgrow") ? getComputedStyle(document.querySelector("#uc-body g.ucgrow")).animationName : "none") }));
+    if (anim.fade !== "ucfade") fail("usagePolish: a changed number does not fade: " + anim.fade);
+    if (anim.grow !== "ucgrow") fail("usagePolish: a new bar does not grow: " + anim.grow);
+  });
+  await run(true, async sp => {
+    await sp.evaluate(() => loadUsageTab());
+    await sp.waitForFunction(() => !UC.inflight, null, { timeout: slow(5000) });
+    await sp.evaluate(() => {
+      ucApply({ task_id: "uc-a", ended_at: new Date().toISOString(), input: 500, output: 500, cache_write_5m: 0, cache_write_1h: 0, cache_read: 0 });
+      ucSchedulePaint();
+    });
+    await sp.waitForSelector("#uc-body .ucfade", { state: "attached", timeout: slow(3000) });
+    const anim = await sp.evaluate(() => getComputedStyle(document.querySelector("#uc-body .ucfade")).animationName);
+    if (anim !== "none") fail("usagePolish: reduced motion left the fade on: " + anim);
+    const grow = await sp.evaluate(() => [...document.querySelectorAll("#uc-body g.ucgrow")]
+      .map(g => getComputedStyle(g).animationName).filter(n => n !== "none"));
+    if (grow.length) fail("usagePolish: reduced motion left the grow on: " + grow);
+  });
+  if (errors.length) fail("usagePolish: the page threw: " + errors.join(" | "));
+}
+
 async function main() {
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = "http://127.0.0.1:" + server.address().port;
@@ -6378,7 +6462,7 @@ async function main() {
       skinScope: skinScopeSection, skinHeal: skinHealSection, toastLives: toastLivesSection,
       history: historySection, contextSize: contextSizeSection, peekEverywhere: peekEverywhereSection, cardRoute: cardRouteSection,
       quietDoer: quietDoerSection, looksIdle: looksIdleSection, notifyOff: notifyOffSection,
-      questionsClick: questionsClickSection, usageCacheReads: usageCacheReadsSection };
+      questionsClick: questionsClickSection, usageCacheReads: usageCacheReadsSection, usagePolish: usagePolishSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -8303,6 +8387,8 @@ async function main() {
     await quietDoerSection(browser, base);
     await notifyOffSection(browser, base);
     await questionsClickSection(browser, base);
+    await usageCacheReadsSection(browser, base);
+    await usagePolishSection(browser, base);
     await reselectSection(browser, base);
     // ── over a terminal the toasts hang from the top right ─────────────────
     await toastsTopSection(browser, base);
