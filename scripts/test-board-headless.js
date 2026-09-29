@@ -5876,6 +5876,15 @@ async function notifyOffSection(browser, base) {
       if (!await said("no a needs permission")) fail(where + ": off silenced a permission request.");
       landPerms = [];
 
+      // A failed fixture is held too: no toast, one drawer entry.
+      await p.evaluate(() => document.querySelectorAll("#toasts .toast").forEach(t => t.remove()));
+      openStreams.forEach(r => { try { r.write("event: fixtures-started\ndata: " +
+        JSON.stringify({ started: 0, failed: [{ label: "no-fx" }] }) + "\n\n"); } catch (e) {} });
+      await p.waitForFunction(() => toastLog().some(e => e.title === "1 fixture did not start"), null,
+        { timeout: slow(10000) }).catch(() => fail(where + ": a failed fixture left no drawer entry while off."));
+      if (await said("1 fixture did not start")) fail(where + ": off still said a failed fixture.");
+      if (await count("1 fixture did not start") !== 1) fail(where + ": the failed fixture was not recorded exactly once.");
+
       // It survives a reload, and the bell is drawn struck at once.
       await p.reload({ waitUntil: "domcontentloaded" });
       await p.waitForFunction(() => typeof notifyIsOff === "function", null, { timeout: slow(15000) });
