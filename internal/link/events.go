@@ -45,6 +45,19 @@ import (
 // changed since. That is why a dropped hub costs one re-fetch per tab and
 // nothing else, and it is the reason the board has always looked self-healing.
 //
+// ONE KIND BENDS THAT, ON PURPOSE: `rooms`. Its delta is "the rooms changed",
+// and the cheapest honest way to say what they changed to is the new set: the
+// sorted names and `only` as it always carried, plus `attached` (exactly what
+// `/_hub/rooms` answers), and `inventory` and `durable` (exactly what
+// `/_hub/inventory` answers). The board used to hear "something changed" and
+// fetch both lists, and a board scoped to one room did not hear it at all, which
+// is what the ten second backstop poll in rooms.js was for. Carrying the lists
+// removes both. It is bounded: one row per room and no per-card data, so it stays
+// a few hundred bytes a room, and every other kind is still a delta. Built by the
+// same functions the endpoints use, so the event and the endpoints cannot drift.
+// A board that reads only `rooms` keeps working, and a missed one still heals the
+// way every missed event does, by the re-fetch on reconnect.
+//
 // Nothing is replayed and nothing is buffered for a client that is not there.
 // A missed event is not a problem because the re-fetch on reconnect is the
 // recovery, and it is a better recovery than a replay buffer because it also
@@ -86,11 +99,27 @@ type feeds struct {
 	pumps map[string]context.CancelFunc
 	stop  context.CancelFunc
 
-	// wake shortcuts the reconciler's tick when a client arrives, so a board
-	// scoped to a room nobody was watching does not wait out a second of
-	// silence before its stream starts.
+	// wake is the reconciler's shortcut when a client arrives, so a board scoped
+	// to a room nobody was watching starts its stream at once.
 	wake chan struct{}
+
+	// nudge is `roomsChanged`: something a board draws about a room moved that is
+	// not the set of attached names (a mark, a forget, a join string, a
+	// `cleared_at`). A buffered channel of one with a non-blocking send, the same
+	// shape as the hub's own hook, so a burst is one wake.
+	nudge chan struct{}
+
+	// connected is told each time a pump's stream to a room comes up, first
+	// connection and every reconnect. It is where the auto approver sweeps a room
+	// for anything the stream could not have told it, and it is a func so the
+	// feed does not learn what an approver is. Nil in a test that wants none.
+	connected func(room string)
 }
+
+// roomsSettle is how long a change waits for company before `rooms` is built. A
+// burst of marks is one event rather than five, and it is well under what anybody
+// can see.
+const roomsSettle = 50 * time.Millisecond
 
 // sub is one connected board.
 type sub struct {
@@ -107,7 +136,17 @@ func (s *sub) shut() { s.once.Do(func() { close(s.ch) }) }
 func newFeeds(p *Proxy) *feeds {
 	return &feeds{
 		p: p, subs: map[*sub]struct{}{}, pumps: map[string]context.CancelFunc{},
-		wake: make(chan struct{}, 1),
+		wake: make(chan struct{}, 1), nudge: make(chan struct{}, 1),
+	}
+}
+
+// roomsChanged asks the reconciler to look at what a board draws about rooms.
+// Called from every place that changes it, and cheap to call: coalesced, and it
+// emits only when the payload actually differs from the last one sent.
+func (f *feeds) roomsChanged() {
+	select {
+	case f.nudge <- struct{}{}:
+	default:
 	}
 }
 
@@ -157,15 +196,20 @@ func (f *feeds) drop(s *sub) {
 
 // reconcile keeps one pump running per attached room.
 //
-// A TICKER RATHER THAN A CALLBACK FROM THE HUB. Rooms attach and detach on
-// their own schedule and the hub has no listener list, so this asks. A second
-// of lag before a newly attached room's events appear is invisible next to the
-// board's own re-fetch.
+// WOKEN, NEVER TICKED. It waits on three things: the hub's change hook (a room
+// attached or went), a client arriving, and `roomsChanged` (something a board
+// draws about a room moved). There used to be a one second ticker here that read
+// the hub's memory to find out whether anything had changed, and the hook makes
+// it pointless: a newly attached room's pump starts on the attach, not up to a
+// second after it.
 func (f *feeds) reconcile(ctx context.Context) {
-	t := time.NewTicker(time.Second)
-	defer t.Stop()
 	defer f.closeAll()
+	// last is the fingerprint of the `rooms` payload most recently sent, and empty
+	// until the first, which is always sent: it is how a stream that just opened
+	// learns the set without a fetch.
 	last := ""
+	var settle <-chan time.Time
+	first := true
 	for {
 		rooms := f.p.hub.Rooms()
 		names := make([]string, 0, len(rooms))
@@ -201,23 +245,42 @@ func (f *feeds) reconcile(ctx context.Context) {
 		}
 		f.mu.Unlock()
 
-		// MEMBERSHIP IS ITSELF AN EVENT. The board draws a room counter and it
-		// has to change when a room comes or goes, without a poll.
-		if now := strings.Join(names, ","); now != last {
-			last = now
-			payload, _ := json.Marshal(map[string]any{
-				"rooms": names, "only": f.p.hub.Only(),
-			})
-			f.emit(Event{Kind: "rooms", Data: payload})
+		// MEMBERSHIP IS ITSELF AN EVENT, and so is anything else the rooms tab
+		// draws. The first pass says it at once. After that a change starts a
+		// short settle, so five marks in a row are one event, and what is sent is
+		// decided by the fingerprint, not by the fact that somebody knocked.
+		if first {
+			first = false
+			f.sayRooms(&last)
 		}
 
 		select {
 		case <-ctx.Done():
 			return
+		case <-settle:
+			settle = nil
+			f.sayRooms(&last)
+			continue
 		case <-f.wake:
-		case <-t.C:
+		case <-f.p.hub.Changes():
+		case <-f.nudge:
+		}
+		if settle == nil {
+			settle = time.After(roomsSettle)
 		}
 	}
+}
+
+// sayRooms builds the `rooms` payload and sends it when it differs from the last
+// one sent. Through `broadcast`, because `emit` skips a board scoped to one room
+// for an event with no room, and the rooms are every window's news.
+func (f *feeds) sayRooms(last *string) {
+	payload, fp := f.p.roomsPayload()
+	if fp == *last {
+		return
+	}
+	*last = fp
+	f.broadcast(Event{Kind: "rooms", Data: payload})
 }
 
 // wanted reports whether anybody is listening for a room. One subscriber
@@ -295,6 +358,12 @@ func (f *feeds) read(ctx context.Context, room string) {
 	// Bounded per line, so a room cannot make the hub allocate without limit.
 	// An event payload is a card or a permission, never megabytes.
 	br := bufio.NewReaderSize(res.Body, 64<<10)
+	// THE STREAM IS UP, which is the moment deltas start and the moment a delta
+	// could have been missed before it: first connection, a room reattaching, a
+	// dropped link coming back. Off this goroutine, since it can be a request.
+	if f.connected != nil {
+		go f.connected(room)
+	}
 	kind, data := "message", []byte(nil)
 	for {
 		line, err := readLine(br, 1<<20)
@@ -397,6 +466,18 @@ func (f *feeds) emit(e Event) {
 // `emit` would skip a room-scoped board for an event with no room, and a hub
 // restart is every window's news, the popped-out ones included. A slow client
 // is dropped the same way `emit` drops one.
+//
+// ── guests ───────────────────────────────────────────────
+//
+// `rooms` now carries the room list and the inventory, and r-010's `room-stats`
+// will carry per-room numbers, so neither may reach a lent session. There is no
+// guest filter here because there is no guest to filter: a guest is served by the
+// ROOM daemon's guest listener (`guestHandler` in internal/daemon/overlay_guest.go),
+// an allowlist that names `/v1/events` as refused and has no `/_hub/` at all, and
+// it wraps that room's own board, not this hub's. Nothing a guest can dial ends
+// at `serveEvents`. If a hub ever serves a guest listener, the filter goes HERE,
+// skipping those subscribers for `rooms` and `room-stats`, before that listener
+// exists rather than after.
 func (f *feeds) broadcast(e Event) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

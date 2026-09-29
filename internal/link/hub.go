@@ -80,6 +80,30 @@ type Hub struct {
 	// means it offers nothing, which is the default until `Offers` is called.
 	// See `upgrade.go`.
 	builds []Build
+
+	// changed is the one hook the event feed waits on: a room attached, or a room
+	// went. A buffered channel of ONE with a non-blocking send, so a burst
+	// coalesces into a single wake and a wake is never lost. Nobody is required to
+	// be listening: a hub with no board open leaves the token sitting there, and
+	// the next reconciler starts by looking at the truth anyway.
+	changed chan struct{}
+}
+
+// Changes is the channel that fires when the set of attached rooms may have
+// changed, from attach and from `forget`, which every eviction path goes through
+// (hung up, missed beats, listener stopped, record gone).
+//
+// A WAKE, NOT A DELTA. It says "look again", never what changed, because the
+// reader has to compare against what it last saw in any case, and a channel of
+// one cannot carry a list.
+func (h *Hub) Changes() <-chan struct{} { return h.changed }
+
+// changedNow tells whoever is listening, without ever waiting for them.
+func (h *Hub) changedNow() {
+	select {
+	case h.changed <- struct{}{}:
+	default:
+	}
 }
 
 // Offers tells rooms what binaries this hub has.
@@ -104,8 +128,11 @@ type attached struct {
 	name    string
 	version string
 	host    string
-	session string
-	since   time.Time
+	// os and arch are what the room said it runs on, in its hello. Observed, and
+	// they ride the `rooms` event so the board can say which build a machine wants.
+	os, arch string
+	session  string
+	since    time.Time
 	// key identifies the credential this room attached with, so a reconnect
 	// can be told from somebody else claiming the same name. Empty on a
 	// transport that carries no key of its own, where the network has already
@@ -130,7 +157,7 @@ type attached struct {
 
 // NewHub makes an empty hub.
 func NewHub(t Timings) *Hub {
-	return &Hub{T: t.fill(), rooms: map[string]*attached{}}
+	return &Hub{T: t.fill(), rooms: map[string]*attached{}, changed: make(chan struct{}, 1)}
 }
 
 // Serve accepts connections until the listener closes.
@@ -257,6 +284,7 @@ func (h *Hub) control(ctx context.Context, name string, hi hello, conn net.Conn,
 	session := newSession()
 	a := &attached{
 		name: name, version: hi.Version, host: hi.Host, session: session,
+		os: hi.OS, arch: hi.Arch,
 		since: time.Now(), control: conn,
 		// Room for a burst plus the terminals a board is likely to hold open.
 		idle:     make(chan net.Conn, 64),
@@ -296,6 +324,10 @@ func (h *Hub) control(ctx context.Context, name string, hi hello, conn net.Conn,
 	}
 	h.rooms[keyOf(name)] = a
 	h.mu.Unlock()
+	// A RECONNECT WITH A NEW VERSION COMES THROUGH HERE TOO, which is why this is
+	// the one place attach fires from: the fingerprint downstream decides whether
+	// anything a board draws actually moved.
+	h.changedNow()
 
 	// ONCE, HERE, not in `Attaching`, which is asked again every heartbeat. A
 	// reconnect comes through this path too and is worth a line: a hub restart
@@ -446,6 +478,9 @@ func (h *Hub) forget(name string, a *attached, why string) {
 		removed = true
 	}
 	h.mu.Unlock()
+	if removed {
+		h.changedNow()
+	}
 	if removed && h.OnDetach != nil {
 		h.OnDetach(name, why)
 	}
@@ -576,6 +611,8 @@ type Attached struct {
 	Since   time.Time `json:"since"`
 	Idle    int       `json:"idle"`
 	Beat    time.Time `json:"last_beat"`
+	OS      string    `json:"os,omitempty"`
+	Arch    string    `json:"arch,omitempty"`
 }
 
 // Rooms lists what is attached, for the hub's own status endpoint.
@@ -590,6 +627,7 @@ func (h *Hub) Rooms() []Attached {
 		out = append(out, Attached{
 			Name: a.name, Version: a.version, Host: a.host,
 			Since: a.since, Idle: len(a.idle), Beat: beat,
+			OS: a.os, Arch: a.arch,
 		})
 	}
 	return out
