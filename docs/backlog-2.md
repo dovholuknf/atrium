@@ -2084,6 +2084,9 @@ Status: diagnosed by sa74. Recommendation 1, the height hold, is on claude/main 
 (OpenConsole ConPTY) and option 3 (replay-only repair) are both designed below and wait on clint's pick. See "2 or
 3, for clint" at the end of this item.
 
+Status, 2026-09-29, sa74b: the report is built (`?repair=report`, `docs/changes/74b.md`) and the repair is not. It
+measures and splices nothing. Read it on the live room for a few days before choosing between option 2 and option 3.
+
 ### What dropped the lines
 
 **Not atrium's ring, replay or board.** The orchestrator's uncollapsed ring (`/scrollback/raw?collapse=0`, 2,723,702
@@ -3184,7 +3187,8 @@ and it reverses the toast log's rule that what you were told is a fact about a s
 
 ## t-001. File-link hover tip flickers while the terminal repaints (bug)
 
-Status: not started. Backlog only, nobody builds it yet. Owned by @terminal. First item under the department ids.
+Status: built on `claude/sat-001`. `leave` hides after 150ms and a `hover` on the same path inside the window
+cancels it, in `terminal-links.js` only. Cause confirmed by a headless repro (`linkTip` section). Owned by @terminal.
 
 Hovering a path in an attached terminal while output repaints makes the tip pop, vanish, and pop again. The likely
 cause: xterm drops the link under the pointer whenever its row is redrawn, which fires `leave` (the tip hides), then
@@ -3609,23 +3613,3 @@ It should be atrium's job, because atrium already knows which card was launched 
 
 Relates to r-003 (a role's working-directory recipe is where a worktree comes from), r-004 (a card's directory is
 fixed at launch, so it is a stable key), and u-005 stage 2 (a PR's walker and trees belong to the PR).
-
-## r-007. Park a card that has been idle for hours, directors included (design)
-
-Status: designed, not built, not reviewed. Owned by @runtime. Raised by clint 2026-09-29: "do we need to keep
-directors online all the time? they should shut down after a couple hours if they are not working." The design is
-section 7 of `docs/keepalive-policy-design.md`, "Parking a card that has gone idle".
-
-In short: a subject card with no turn running, no pending question, no queued message or wake, and no live worker of
-its own is parked after `idle_park_after` (default 2 hours, a setting). It is parked the same way as at a restart
-(section 4): status and resume id kept, no process. A director writes its handoff first. Agent cards are subject.
-clint's own cards, including the orchestrator card, are exempt unless tagged `atrium:park-idle`. A say from clint
-resumes at once, and a peer's say gets `parked` and needs `wake=true`. A director resumes with a queued prompt to read
-its HANDOFF.md before the waking message.
-
-Depends on item 91 (a per-card handoff file name) and on sections 1, 4 and 5 of the same design, which are not built
-either. Open questions 6 to 10 in that file are for clint.
-
-Also in the section: the "ended its turn without reporting" notice rings the orchestrator several times an hour for
-directors idle by design. Proposed: `stoppedSilently` stays quiet for an `atrium:director` while any of its workers
-is live or parked, and never fires for a parked card. This part stands alone and can be built first.

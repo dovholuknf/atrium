@@ -499,6 +499,30 @@ func (s *Store) OpenWorkItems() ([]*WorkItem, error) {
 	return out, err
 }
 
+// WorkerIDs lists the cards whose work item names this card as its launcher,
+// whatever state the item is in. Whether a worker is still around is the
+// caller's question, since only the daemon knows about runners.
+func (s *Store) WorkerIDs(launcherID string) ([]string, error) {
+	var out []string
+	err := s.guard(func() error {
+		rows, err := s.db.Query(`SELECT task_id FROM work_item WHERE launcher_id = ? ORDER BY task_id`,
+			launcherID)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var id string
+			if err := rows.Scan(&id); err != nil {
+				return err
+			}
+			out = append(out, id)
+		}
+		return rows.Err()
+	})
+	return out, err
+}
+
 // ── the log ─────────────────────────────────────────────────────────────────────
 
 // logRow is one row to write.
