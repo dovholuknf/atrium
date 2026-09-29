@@ -5245,6 +5245,119 @@ async function phoneFocusSection(browser, base) {
   if (errors.length) fail("phoneFocus: the page threw: " + errors.join(" | "));
 }
 
+// ── a manual pan on a phone wins over the cursor follow (u-017b) ──────────
+// Panning sideways used to be snapped back by "the pan follows the cursor". Now: while a touch is down and
+// after the reader pans by hand, output never moves the pane; typing or the follow chip brings the cursor back.
+async function phonePanSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  landList = [LAND["land-live"]];
+  landPerms = [];
+  const errors = [];
+  const fakeSock = () => {
+    const Real = window.WebSocket;
+    window.__sent = [];
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
+        onopen: null, onclose: null, onmessage: null, onerror: null,
+        send(d) { window.__sent.push(String(d)); }, close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  };
+  try {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+    await ctx.addInitScript(() => {
+      localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true }));
+      localStorage.setItem("atrium.termphone", "1");
+    });
+    await ctx.addInitScript(fakeSock);
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e.stack||e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await p.evaluate(() => attachTask("land-live"));
+    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live",
+      null, { timeout: slow(10000) });
+    await p.evaluate(() => termSock.onmessage({ data: '{"t":"size","cols":132,"rows":41}' }));
+    await p.waitForTimeout(300);
+    await p.evaluate(() => {
+      window.__bfs = () => {
+        const ta = term.textarea, host = document.getElementById("t-screen");
+        const t = ta.getBoundingClientRect(), h = host.getBoundingClientRect();
+        if (t.left < h.left) host.scrollLeft -= h.left - t.left;
+        else if (t.right > h.right) host.scrollLeft += t.right - h.right;
+      };
+      term.textarea.addEventListener("focus", window.__bfs);
+      termSock.onmessage({ data: "\x1b[2J\x1b[8;1Hprompt" });
+    });
+    await p.waitForTimeout(200);
+    const box = await p.locator("#t-screen").boundingBox();
+    await p.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 3);
+    await p.evaluate(() => term.focus());
+    await p.waitForTimeout(200);
+    const st = () => p.evaluate(() => {
+      const host = document.getElementById("t-screen"), hb = host.getBoundingClientRect();
+      const cw = term._core._renderService.dimensions.css.cell.width;
+      const left = hb.left + term.buffer.active.cursorX * cw - host.scrollLeft;
+      return { sl: host.scrollLeft, sw: host.scrollWidth, cw: host.clientWidth, cx: term.buffer.active.cursorX,
+        inView: left >= hb.left - 1 && left + cw <= hb.right + 1, chip: !document.getElementById("t-follow").hidden };
+    });
+    const swipe = (to) => p.evaluate((to) => new Promise(res => {
+      const host = document.getElementById("t-screen");
+      host.dispatchEvent(new TouchEvent("touchstart", { bubbles: true }));
+      host.scrollLeft = to;
+      requestAnimationFrame(() => requestAnimationFrame(() => { host.dispatchEvent(new TouchEvent("touchend", { bubbles: true })); res(); }));
+    }), to);
+
+    let s = await st();
+    if (s.sw <= s.cw + 50) fail("phonePan: the grid does not scroll sideways: " + JSON.stringify(s));
+    if (s.chip) fail("phonePan: the follow chip shows before any manual pan");
+    // 1. pan by hand, then 5s of output that moves the cursor right and down
+    await swipe(200);
+    s = await st();
+    if (Math.abs(s.sl - 200) > 2 || !s.chip) fail("phonePan: the manual pan did not hold or the chip is missing: " + JSON.stringify(s));
+    await p.evaluate(() => {
+      window.__sl = [];
+      const host = document.getElementById("t-screen"), t0 = performance.now();
+      const tick = () => { window.__sl.push(host.scrollLeft); if (performance.now() - t0 < 5200) requestAnimationFrame(tick); };
+      requestAnimationFrame(tick);
+      let n = 0;
+      const feed = setInterval(() => {
+        termSock.onmessage({ data: "x".repeat(6) + " " + n + "\r\n" + " ".repeat((n * 7) % 120) + "y" });
+        if (n === 25) { term.blur(); term.focus(); window.__bfs(); }
+        if (++n >= 50) clearInterval(feed);
+      }, 100);
+    });
+    await p.waitForTimeout(5400);
+    const sl = await p.evaluate(() => window.__sl);
+    const dev = Math.max(...sl.map(x => Math.abs(x - 200)));
+    console.log("phonePan: frames=" + sl.length + " maxDeviation=" + dev);
+    if (dev > 2) fail("phonePan: output moved a manual pan by " + dev + "px");
+    if (!(await st()).chip) fail("phonePan: the follow chip went away without input");
+    // 2. typing brings the cursor back
+    await p.evaluate(() => sendInput("a", false));
+    await p.waitForTimeout(300);
+    s = await st();
+    if (!s.inView || s.chip) fail("phonePan: typing did not follow the cursor: " + JSON.stringify(s));
+    // 3. pan away again; the chip does the same
+    await swipe(0);
+    s = await st();
+    if (!s.chip || s.inView) fail("phonePan: a second manual pan did not hold: " + JSON.stringify(s));
+    await p.locator("#t-follow").tap();
+    await p.waitForTimeout(300);
+    s = await st();
+    if (!s.inView || s.chip) fail("phonePan: the follow chip did not follow the cursor: " + JSON.stringify(s));
+    await ctx.close();
+  } finally {
+    tasksMode = was;
+  }
+  if (errors.length) fail("phonePan: the page threw: " + errors.join(" | "));
+}
+
 // ── copy on select answers the pointer, not the find bar ──────────────────
 // Test plan BJ. The search addon shows a match by selecting it, so copy on
 // select used to copy every find keystroke, step and re-search. Typing in the
@@ -8361,7 +8474,7 @@ async function main() {
       history: historySection, contextSize: contextSizeSection, peekEverywhere: peekEverywhereSection, cardRoute: cardRouteSection,
       quietDoer: quietDoerSection, looksIdle: looksIdleSection, notifyOff: notifyOffSection,
       questionsClick: questionsClickSection, walk: walkSection, linkReuse: linkReuseSection,
-      usageCacheReads: usageCacheReadsSection, roomsDash: roomsDashSection, phoneView: phoneViewSection, u016: u016Section, phoneFocus: phoneFocusSection, usagePolish: usagePolishSection, usageLimits: usageLimitsSection, usageGroups: usageGroupsSection,
+      usageCacheReads: usageCacheReadsSection, roomsDash: roomsDashSection, phoneView: phoneViewSection, u016: u016Section, phoneFocus: phoneFocusSection, phonePan: phonePanSection, usagePolish: usagePolishSection, usageLimits: usageLimitsSection, usageGroups: usageGroupsSection,
       eventDriven: eventDrivenSection, idleBudget: idleBudgetSection, pollsGone: pollsGoneSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
@@ -10294,6 +10407,7 @@ async function main() {
     await phoneViewSection(browser, base);
     await u016Section(browser, base);
     await phoneFocusSection(browser, base);
+    await phonePanSection(browser, base);
     await eventDrivenSection(browser, base);
     await idleBudgetSection(browser, base);
     await pollsGoneSection(browser, base);
