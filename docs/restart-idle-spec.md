@@ -57,3 +57,14 @@ being kept warm, and warming does not argue for resuming.
    message? The shape above says all three.
 4. Two rows priced at $0.00 (cards `01a0c906` and `01a0771d`, 290k and 150k written) mean a model the price table
    does not know. Worth a look under item 37, whatever is decided here.
+
+## clint's answers, 2026-09-29
+
+1. **It is about tokens**: keep-alive refreshes that keep a cache warm while nobody is at the terminal. A card clint
+   has not looked at all day should sit idle and cold. Item 38 folds into the keep-alive policy spike with item 39
+   (`docs/keepalive-policy-design.md`, reviewed with Mercurius), which decides what stays warm and what parks.
+2. **A say may wake a parked card.** One design worth weighing: the say answers "parked" first, and the sender
+   confirms to resume it.
+3. **Yes**: `running`, `needs-permission`, and cards with a queued message or a pending restart wake count as working.
+4. **Drop cost.** Stop calculating and showing dollar figures for now. It may come back one day, and probably will
+   not. The price table's unknown models are moot.
