@@ -670,6 +670,14 @@ per firing and a card that wakes and stalls again rings again.
 last event tool-end 12m ago`. Every clearing logs `looks idle cleared: <wire> by output|keystroke|hook after 40s`.
 A firing cleared within the same minute by output says the frame check is too eager.
 
+**Review.** Mercurius session `s_jGsDlA3ObWch`, round 1, verdict `ready_to_build`, no concerns. Two advisories, both
+taken: tests pin a working frame and an idle frame, and the firing log names the classifier reason (`frame=`).
+
+**Built** on `claude/sa21`: `idleframe.go` (signature), `looksidle.go` (watch, flag, clear, log), a `lastOut` stamp and a
+`wake` hook in `supervisor.go`, `Activity.looks_idle`, the board chip, `workingNow`, and the `looksidle` alert.
+Not verified: the signature strings against a real Claude Code screen (the fixtures are hand-written frames), and the
+headless board section `looksIdle`, because playwright is not installed on this machine.
+
 **Not done.** No migration. No change to the permission chain, `/activity`, or the hooks. No status change. No
 codex. `stuckNow` is untouched because sa31 is in a2a.go: the new watch is its own function in a new file, called
 from the reaper next to `watchWorkers` in one line.

@@ -321,6 +321,8 @@ func (d *Daemon) turnEnded(taskID string) { d.turnEndedBecause(taskID, "") }
 // Both landed in `ready` and read identically, so a question asked two minutes
 // ago sorted below twenty sessions that had merely finished overnight.
 func (d *Daemon) turnEndedBecause(taskID, reason string) {
+	// The late Stop a looks-idle guess was waiting for.
+	d.looksIdleGone(taskID, "", "hook turn-end")
 	// A peer message that waited out the turn retries about two seconds from
 	// now, not at whatever interval its wait had reached. See peerMustWait.
 	if d.pending != nil {
