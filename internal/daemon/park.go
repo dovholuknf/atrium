@@ -1,11 +1,15 @@
 package daemon
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"log"
+	"net/http"
 	"sync/atomic"
 	"time"
 
+	"github.com/coder/websocket"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -174,6 +178,79 @@ func (d *Daemon) sayGate(t *store.Task) string {
 		return sayGone
 	}
 	return sayOK
+}
+
+// attachParked is an attach to a card with no process. The socket is accepted so
+// the board can show it, and NOTHING RESUMES until a real key arrives: focus
+// reports, clicks and terminal answers are not keys, which is what
+// `typedLine.feed` decides, and a card opened to look at must stay asleep.
+//
+// The first key resumes it. That frame is held, written to the runner once it is
+// up, and the socket closes as a restart so the board reattaches to the runner
+// the ordinary way rather than this function growing a second copy of attach.
+func (d *Daemon) attachParked(w http.ResponseWriter, r *http.Request, t *store.Task) {
+	c, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
+	if err != nil {
+		log.Printf("[atrium] attach parked %s: %v", t.ID, err)
+		return
+	}
+	defer c.CloseNow()
+	c.SetReadLimit(4 << 20)
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Minute)
+	defer cancel()
+
+	_ = c.Write(ctx, websocket.MessageBinary, []byte("\r\n\x1b[38;5;244m[atrium] "+t.DisplayTitle()+
+		" is parked: idle, no process. press any key to resume it.\x1b[0m\r\n"))
+
+	var line typedLine
+	for {
+		typ, data, err := c.Read(ctx)
+		if err != nil {
+			return
+		}
+		if typ != websocket.MessageText {
+			continue
+		}
+		var in attachIn
+		if json.Unmarshal(data, &in) != nil || in.T != "in" || !line.feed([]byte(in.D)) {
+			continue
+		}
+		_ = c.Write(ctx, websocket.MessageBinary, []byte("\x1b[38;5;244m[atrium] resuming...\x1b[0m\r\n"))
+		if err := d.unpark(t.ID, ViaTyped); err != nil {
+			_ = c.Write(ctx, websocket.MessageBinary, []byte("\x1b[31m[atrium] "+err.Error()+"\x1b[0m\r\n"))
+			continue
+		}
+		if run := d.sup.get(t.ID); run != nil {
+			_ = run.writeOperatorInput([]byte(in.D))
+		}
+		c.Close(websocket.StatusNormalClosure, "restarting")
+		return
+	}
+}
+
+// handleResume is `POST /v1/tasks/{id}/resume`: the board's Resume entry. A card
+// that is not parked answers ok and does nothing, so a double press is harmless.
+func (d *Daemon) handleResume(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if _, err := d.st.Get(id); err != nil {
+		writeJSONErr(w, http.StatusNotFound, err)
+		return
+	}
+	if err := d.unpark(id, ViaResume); err != nil {
+		writeJSONErr(w, http.StatusInternalServerError, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"ok":true}`))
+}
+
+// wakeVia is what woke a parked card by a say: the operator's own channel has no
+// sender, a session does.
+func wakeVia(from string) string {
+	if from == "" {
+		return ViaMessage
+	}
+	return "say"
 }
 
 // parkedNote is what the sender of a say to a parked card is told, with nothing

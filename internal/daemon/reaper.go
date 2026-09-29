@@ -109,6 +109,10 @@ func (d *Daemon) reapOnce() error {
 		return err
 	}
 	for _, t := range tasks {
+		// A parked card has no process by design, and its pid is a stale hint.
+		if isParked(t) {
+			continue
+		}
 		// No pid to ask about, so fall back to silence. A card waiting on a
 		// human is exempt: it is quiet because nobody has answered it, and
 		// marking it dead would discard the question.

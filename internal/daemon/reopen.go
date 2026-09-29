@@ -206,6 +206,10 @@ func (d *Daemon) reopenWanted() []*store.Task {
 		if t.Status == store.StatusShelved {
 			continue
 		}
+		// Parked is put down the same way: it wakes when something asks it to.
+		if isParked(t) {
+			continue
+		}
 		// Do not reopen throwaways. Their directories may be gone or awaiting
 		// startup cleanup, so directory existence alone does not make reopening safe.
 		if t.Throwaway {

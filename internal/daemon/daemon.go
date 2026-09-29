@@ -325,6 +325,7 @@ func New(opts Options) (*Daemon, error) {
 	d.ap.Report = d.handleReport
 	d.ap.RestartWake = d.handleRestartWake
 	d.ap.NewContext = d.handleNewContext
+	d.ap.Resume = d.handleResume
 	d.ap.SendNote = d.handleSendNote
 	d.ap.Shutdown = d.handleShutdown
 	d.ap.Shelve = d.Shelve
@@ -523,6 +524,16 @@ func (d *Daemon) launchFromJSON(body []byte) (*store.Task, error) {
 // without signalling the reply channel the hook is waiting on would leave that
 // runner hanging.
 func (d *Daemon) decide(permID, decision, reason, command string) (*store.Permission, error) {
+	p, err := d.decideInner(permID, decision, reason, command)
+	// A person answering is the human touch. A rule or auto mode answering is
+	// not, and never comes through here with DecidedBySelf.
+	if err == nil && p != nil && p.DecidedBy == store.DecidedBySelf {
+		d.humanTouch(p.TaskID, ViaPermission)
+	}
+	return p, err
+}
+
+func (d *Daemon) decideInner(permID, decision, reason, command string) (*store.Permission, error) {
 	if command != "" {
 		// Record the rewrite before releasing the agent, so the audit log shows
 		// what actually ran rather than what was asked for.

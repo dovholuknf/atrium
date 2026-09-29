@@ -413,6 +413,10 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 		// Reply is a sender asking for an answer, not just a delivery. The
 		// receiving card shows it owed until it answers. See saylog.go.
 		Reply bool `json:"reply"`
+		// Wake asks for a parked card to be resumed so this can be delivered.
+		// Without it a say to a parked card is refused with nothing queued. The
+		// operator's own say (no `from`) wakes it regardless.
+		Wake bool `json:"wake"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&body); err != nil {
 		writeJSONErr(w, http.StatusBadRequest, err)
@@ -455,8 +459,42 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 		rec = sayRecordFor(from, target, trace, traced, "say", whenWord(waitTurn), body.Reply)
 	}
 
+	// PARKED comes before gone, see sayGate. The operator, or wake=true, resumes
+	// the card and the text goes through the queue below, never typed. Anyone else
+	// is refused with nothing queued.
+	woke := false
+	gate := sayOK
+	var gated *store.Task
+	if t, err := d.st.Get(taskID); err == nil {
+		gated = t
+		gate = d.sayGate(t)
+	}
+	if gate == sayParked && (from == "" || body.Wake) {
+		if err := d.unpark(taskID, wakeVia(from)); err != nil {
+			writeJSONErr(w, http.StatusInternalServerError, err)
+			return
+		}
+		woke, gate = true, sayOK
+	}
+	if gate == sayParked {
+		out := map[string]any{
+			"delivered": "parked", "reachable": "parked", "warning": parkedNote(gated),
+			"when": whenWord(waitTurn),
+		}
+		if from != "" {
+			rec.State, rec.Note, rec.ReplyWant = store.SayRefused, "parked", false
+			if id := d.recordSay(rec, body.Text); id != "" {
+				out["say"] = id
+			}
+			out["via"] = rec.Via
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(out)
+		return
+	}
+
 	// Nobody there to read it. See sessionGone.
-	if t, err := d.st.Get(taskID); err == nil && d.sessionGone(t) {
+	if t, err := d.st.Get(taskID); err == nil && gate == sayGone {
 		out := map[string]any{
 			"delivered": "undeliverable", "reachable": ReachNo, "warning": goneNote(t),
 			"when": whenWord(waitTurn),
@@ -504,8 +542,11 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 	//
 	// NOT WHILE THE CARD IS IN A NEW-CONTEXT CYCLE: held in the queue below, and
 	// delivered after the wake prompt.
+	//
+	// NOR RIGHT AFTER A WAKE: the woken card gets its text through the ordinary
+	// queued path, whose hook delivery lands after the session has started.
 	holding := d.holdingMessages(taskID)
-	if run := d.sup.get(taskID); run != nil && !holding && !d.act.dialogOpen(taskID) && !d.turnHolds(taskID, waitTurn) {
+	if run := d.sup.get(taskID); run != nil && !holding && !woke && !d.act.dialogOpen(taskID) && !d.turnHolds(taskID, waitTurn) {
 		wrote, err := d.typeThroughGate(run, taskID, from, body.Text)
 		if err != nil {
 			writeJSONErr(w, http.StatusInternalServerError, err)
