@@ -100,7 +100,16 @@ func TestALiveRefitRestoresTheCursorOnlyWhenThePtyMoves(t *testing.T) {
 
 	// The small viewer binds the pty at 140x20.
 	small := attachKeptOpen(t, wsURL, 140, 20)
-	time.Sleep(300 * time.Millisecond)
+	// The height waits out the hold (item 74), so wait for the pty to take it.
+	// Otherwise it lands after the large viewer's replay and buries the cursor.
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if s := f.resized(); len(s) > 0 && s[len(s)-1] == (viewport{140, 20}) {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	time.Sleep(100 * time.Millisecond)
 
 	// The large viewer attaches. Its initial replay restores the cursor, which is
 	// the attach fix working: this is the baseline the re-fit is measured against.

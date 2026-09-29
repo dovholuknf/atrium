@@ -58,12 +58,42 @@ func TestReplayKeepsTheSessionsRows(t *testing.T) {
 	}
 }
 
+// A REPLAY OF A SESSION THAT SCROLLS INSIDE A REGION has to leave the region on
+// the attaching terminal too. The chat pane above a pinned footer is the shape:
+// the footer's rows never move, and the next line feed scrolls only the rows
+// above it. A replay that drew the rows right and dropped the region let the
+// next line feed scroll the whole screen, footer included.
+func TestReplayKeepsTheScrollRegion(t *testing.T) {
+	const cols, rows = 40, 8
+	session := "\x1b[1;6r" + strings.Repeat("chat\r\n", 3) + "\x1b[8;1Hfooter\x1b[6;1Hlast chat"
+	next := "\r\nmore one\r\nmore two\r\n"
+
+	want := newScreenSized(cols, rows)
+	want.apply([]byte(session + next))
+
+	got := newScreenSized(cols, rows)
+	got.apply(Replay([]byte(session), "screen", cols, rows))
+	got.apply([]byte(next))
+
+	if w, g := gridText(want), gridText(got); w != g {
+		t.Fatalf("the region did not survive the replay.\nsession:\n%s\nattached:\n%s", w, g)
+	}
+	if !strings.Contains(gridText(got), "footer") {
+		t.Fatalf("the footer scrolled with the chat:\n%s", gridText(got))
+	}
+	if got.row != want.row || got.col != want.col {
+		t.Fatalf("cursor at %d,%d, the session's is at %d,%d", got.row, got.col, want.row, want.col)
+	}
+}
+
 func gridText(s *screen) string {
 	var b strings.Builder
 	for i, r := range s.cells {
 		line := make([]rune, 0, len(r))
 		for _, c := range r {
-			line = append(line, c.ch)
+			if c.ch != contCh {
+				line = append(line, c.ch)
+			}
 		}
 		b.WriteString(strings.TrimRight(string(line), " \x00"))
 		if i < len(s.cells)-1 {
