@@ -2119,12 +2119,26 @@ async function toastStaysSection(browser, base) {
       // And a card waiting on you, which is answered.
       alerting.notify("ready card is ready", "its turn ended", "stack", "", "ready9", "ready9", "", "",
         { pending: true });
+      // The poll after it, asked for now rather than waited on. Waiting for the
+      // board's own timer let a loaded machine deliver that poll 9s in, when the
+      // toast's own 9 seconds, which no test budget scales, were nearly spent,
+      // and all three checks below failed on timing alone (item 85).
+      refresh();
     });
     const has = title => tp.evaluate(t => [...document.querySelectorAll("#toasts .toast:not(.leaving)")]
       .some(el => el.querySelector("b").textContent === t), title);
     const born = Date.now();
     await tp.waitForFunction(() => window.__reaps >= 1, null, { timeout: slow(12000) })
-      .catch(() => fail("no poll reaped toasts, so the test did not exercise the bug."));
+      .catch(() => fail("no poll reaped toasts, so the test did not exercise the bug (waited " + slow(12000) +
+        "ms for reapToasts after a forced refresh)."));
+    // The checks below are about a 9 second life. A reap that took most of it to
+    // arrive cannot tell a toast reaped early from one that expired, so say that
+    // rather than report three failures that are one slow poll.
+    const reapedAt = Date.now() - born;
+    if (reapedAt > 6000) {
+      fail("toastStays: the forced poll took " + reapedAt + "ms to reap, too late to judge a 9s toast.");
+      return;
+    }
     await tp.waitForTimeout(400);
     if (!(await has("new card is on the board"))) {
       fail("an arrival toast was taken down by the poll after it, " + (Date.now() - born) + "ms in.");
@@ -2177,6 +2191,9 @@ async function toastLivesSection(browser, base) {
       // alert itself goes to whichever window has focus, and in the full run
       // another page may.
       toast("gone9 is ready", "its turn ended", "stack", "gone9", "gone9");
+      // The reaping poll, now rather than on the board's timer, which a loaded
+      // machine can push past the 5s this checks at. See toastStaysSection.
+      refresh();
     });
     let born = Date.now();
     await tp.waitForFunction(() => window.__reaps >= 1, null, { timeout: slow(12000) })
