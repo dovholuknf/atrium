@@ -3503,8 +3503,9 @@ Design questions:
 
 ## r-004. The worktree-gone reaper ended a live worker after it changed directory (bug, HIGH)
 
-Status: diagnosed 2026-09-29 by @runtime, not fixed. Owned by @runtime. No worker launched, and none will be without
-clint.
+Status: fixed on branch `claude/sar-004` (2026-09-29), not yet merged. Three parts: a card's `Worktree` never follows
+the session's cd (an empty one is filled once), every runner keeps its launch directory for `runnerDir`, and `hadGit`
+is keyed by card and directory. Owned by @runtime.
 
 **What happened.** sa96 (`01a0ede6-10f6`, a review-manager by @review, launched in
 `D:/worktrees/claude/reviews/github-openziti-ziti/pr-4397-990aa0c`) was ended 90 seconds in. Nobody asked it to
