@@ -177,6 +177,9 @@ type activityTracker struct {
 	// background is how many subagents each card's last Stop said were still
 	// running. See turnPaused.
 	background map[string]int
+	// bgWork is the non-subagent background tasks each card's last Stop said were
+	// running. See stoppedSilently.
+	bgWork map[string]bgHold
 	// turns counts turns begun per card. See turnsBegun.
 	turns map[string]int
 }
@@ -245,6 +248,7 @@ func newActivityTracker() *activityTracker {
 		held:  map[string]heldPeer{},
 
 		background: map[string]int{},
+		bgWork:     map[string]bgHold{},
 		turns:      map[string]int{},
 	}
 }
@@ -602,6 +606,40 @@ func (a *activityTracker) forget(taskID string) {
 	delete(a.tel, taskID)
 	delete(a.held, taskID)
 	delete(a.background, taskID)
+	delete(a.bgWork, taskID)
+}
+
+// bgHold is what a card's last Stop said about background work that is not a
+// subagent: shells and the like. In memory on purpose, like everything here.
+type bgHold struct {
+	n     int
+	since time.Time
+}
+
+// setBackgroundWork records how many non-subagent background tasks the last Stop
+// left running. Every Stop replaces it, so the Stop that follows the last task's
+// completion (which wakes the session) puts it back to zero.
+func (a *activityTracker) setBackgroundWork(taskID string, n int) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if n > 0 {
+		a.bgWork[taskID] = bgHold{n: n, since: a.now()}
+	} else {
+		delete(a.bgWork, taskID)
+	}
+}
+
+// backgroundWork reports how many background tasks the card's last Stop left
+// running, and since when. Zero once BackgroundHoldMax has passed, so a dev
+// server left up on purpose holds the alert for a while and not forever.
+func (a *activityTracker) backgroundWork(taskID string) (int, time.Time) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	h, ok := a.bgWork[taskID]
+	if !ok || a.now().Sub(h.since) >= BackgroundHoldMax {
+		return 0, time.Time{}
+	}
+	return h.n, h.since
 }
 
 // ActivityEvent is what a hook posts to /activity.

@@ -59,6 +59,10 @@ var (
 	// stuck. It cannot tell a hung process from a long build, so it reports and
 	// never kills anything.
 	LongToolAfter = envDuration("ATRIUM_A2A_LONG_TOOL", 20*time.Minute)
+	// BackgroundHoldMax is how long background work named by a Stop holds the
+	// silent-stop alert. A build finishes and wakes the session well inside it.
+	// A dev server left running never does, and must not hide a real stop forever.
+	BackgroundHoldMax = envDuration("ATRIUM_A2A_BACKGROUND_HOLD", 2*time.Hour)
 )
 
 // EscalationBackoff is when the board is told again about a worker that is
@@ -350,6 +354,12 @@ func (d *Daemon) stoppedSilently(t *store.Task) (time.Time, bool) {
 	}
 	ended, err := d.st.TurnEndedAt(t.ID)
 	if err != nil || ended == nil || ended.Before(*t.PromptedAt) {
+		return time.Time{}, false
+	}
+	// A turn that ended on background work is waiting, not stopped. Each of
+	// those tasks wakes the session when it finishes, and the Stop after that is
+	// a new turn end that carries the clock forward. See BackgroundHoldMax.
+	if n, _ := d.act.backgroundWork(t.ID); n > 0 {
 		return time.Time{}, false
 	}
 	return *ended, true

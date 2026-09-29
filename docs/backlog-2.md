@@ -807,6 +807,11 @@ reported progress when asked. A turn that ends with background work still runnin
 whether atrium can see background tasks, from the Stop hook payload or the runner's process tree, and hold the alert
 while they run.
 
+**Status: built on `claude/sa31`, not merged.** Mercurius review of the design (`docs/changes/31-design.md`): round 1
+on this whole file was off target (the reviewer judged it against another design), round 2 on the standalone design
+returned ready to build with one advisory, the post-cap transition, now stated. Changelog and test plan in
+`docs/changes/31.md`.
+
 ### Design (sa31)
 
 **The signal is the Stop payload's `background_tasks`.** `atrium turn` already reads it (`internal/cli/turn.go`) and
