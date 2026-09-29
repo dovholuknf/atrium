@@ -207,6 +207,9 @@ func (d *Daemon) handleStop(w http.ResponseWriter, r *http.Request) {
 	if in.Cwd != "" {
 		obs.Worktree = strings.ReplaceAll(in.Cwd, `\`, "/")
 	}
+	// Which conversation this is, so a report with no pid knows whether the pid
+	// on file is its own (r-011).
+	obs.Resume = in.Resume
 	task, _, err := d.st.Register(obs)
 	if err != nil {
 		nothing()
