@@ -1,4 +1,4 @@
-# HANDOFF: @runtime director, claude/runtime, 2026-09-29 ~00:55
+# HANDOFF: @runtime director, claude/runtime, 2026-09-29 ~00:55 (confirmed current at the capture)
 
 Read BRIEF.md and DIRECTOR.md first. They are the job and the rules. This is the state. `git rm` this file before
 the next @merge request, because it must not reach claude/main.
