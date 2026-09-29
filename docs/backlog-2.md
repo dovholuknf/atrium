@@ -85,6 +85,7 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 76 | A worktree helper that links every CLAUDE.md, so workers get project rules | bug, HIGH, FIRST | not started, @merge |
 | 77 | A merge pipeline that does not conflict or rerun | feature, HIGH | not started, @merge, after 76 |
 | 78 | The details popover's token labels mislead | bug | not started |
+| 79 | The notification drawer can turn notifications off | feature | design filed, queued behind 78, 44 and 43 |
 
 ------------
 
@@ -1560,6 +1561,34 @@ and "in" is uncached input only (48), because with caching almost all input is a
 
 Relabel: prompts, with API calls next to them, and "uncached in". Check the cost estimate against current pricing,
 and confirm whether the figures cover the card or only the session since its last `/clear`.
+
+## 79. The notification drawer can turn notifications off (feature)
+
+Raised 2026-09-28 by clint: "when i click the notification bell icon to pull the drawer, give me a 'disable
+notification' option along with clear and close".
+
+Design (@ui), small on purpose:
+
+- **Where.** A third button in the drawer head (`#toastlog` in `index.html`), beside clear and close: "turn off"
+  while on, "turn on" while off.
+- **What it mutes.** Toasts, desktop notifications and the sound that goes with them, everything `notify` in
+  `js/notify.js` would pop. The drawer keeps logging every entry and the bell's badge keeps counting, so nothing is
+  lost and opening the drawer shows what was held back. The marks on cards are untouched.
+- **Permission requests still notify.** A permission blocks a session until a human answers, the same exception item
+  44 makes. The button's tip says so. Open for clint below.
+- **Per browser, in `localStorage`** (`atrium.notify.off`), like the sound mute (`atrium.sound`). A phone and a desk
+  want different answers, and the daemon has no notion of which browser is which. Every window of one browser shares
+  it, and a popped-out window follows the board.
+- **The bell shows it.** Off, the bell is drawn as a struck bell (U+1F515) with the tip "notifications are off. click
+  to see what arrived", and the badge still counts. On, it is the bell it is today.
+- **Item 44.** 44 is a filter on WHICH cards notify (not agent-launched ones). 79 is a master switch over all of
+  them. Off beats everything, including a card's own per-card override, because it is the operator saying stop now.
+  On, 44's filter and per-card overrides apply as they do today. The gear's notifications section shows the same
+  switch, so the two are found in one place.
+- **Not built.** A timed mute ("for an hour") is the obvious next step and is left out until asked for.
+
+Open question for clint: should "off" silence permission requests too? The recommendation is no, since a session
+blocks on one until somebody answers, and a muted board is the likeliest place to forget one.
 
 
 ------------
