@@ -6226,3 +6226,65 @@ mark.
 2. Let the director end another turn without reporting.
 
 **Expected:** the orchestrator gets exactly one notice, and the director shows STUCK on the usual backoff.
+
+## EA. The repair report
+
+### EA1. Read the report on a live card
+
+1. Pick a card that has run for a while, and open `/v1/tasks/<id>/scrollback/text?repair=report` in a tab. Use
+   `&kind=shell` for the card's shell.
+2. Read the last line. `repaired=N` is how many repaints overwrote rows that a repair would have kept, and `added=N` is
+   how many rows that is. Note both, and read them again a day later: the totals are cumulative over the ring, so two
+   readings compare at a glance.
+3. For each `repaired` line, `k` is how many rows the repaint started below the top of the screen. A line with a `cut`
+   other than `-` sits at a height change, and `added` there is `k` minus the rows the resize already filed.
+4. Treat a `repaired` line as a possible false positive when the ring around its `offset` shows Claude collapsing a
+   block or a tool's output shrinking. The rule cannot tell those apart when the rows match.
+
+**Expected:** a header, one line per candidate and a `totals` line, with no `[atrium]` banner. A card that has never had
+its height changed reports `repaired=0`.
+
+### EA2. Nothing else changed
+
+1. Open `/v1/tasks/<id>/scrollback/text` without the parameter, before and after step 1.
+2. Reload the pane so it reattaches.
+
+**Expected:** the text is identical both times, and the rows a repaint overwrote are still absent from history, because
+the report measures and does not repair.
+
+## EB. Runners and their console hosts run at above normal
+
+### EB1. The default raises the runner and its console host
+
+1. On Windows, start a throwaway room and launch a card with a pty runner.
+2. In Task Manager or `Get-Process`, read the priority class of the runner and of the `conhost.exe` or
+   `OpenConsole.exe` that is a child of the room.
+3. Start something from inside the runner, such as `pwsh -c Start-Sleep 60`, and read its class.
+
+**Expected:** the runner and the console host are AboveNormal. The program the runner started is Normal.
+
+### EB2. The setting turns it off
+
+1. `POST /api/settings {"runner_priority":"normal"}` and read settings back.
+2. Start another card, and open the shell beside it.
+
+**Expected:** settings read back `normal`. The new runner, its console host and the shell are all Normal. A runner
+started before the change keeps its class. Setting `above_normal` (or an empty string) brings the raise back, and any
+other value is refused with 400.
+
+### EB3. A refused raise does not stop a runner
+
+**Expected:** if the raise fails, the room logs one `could not raise a runner's priority` line and the runner still
+starts. Covered by `TestFailedRaiseDoesNotFailTheSpawn`.
+
+## EC. The card list does not re-read idle transcripts
+
+### EC1. Idle CPU and list latency
+
+On a throwaway room with about 30 Claude cards that have large transcripts:
+
+1. Time `GET /v1/tasks` 20 times and note p50 and p95, then watch the room process's CPU for a minute while the board is
+   open and idle.
+2. Compare with a room built from the commit before t-005.
+3. Expect the list to answer in a small fraction of the earlier time and the idle CPU to be near zero.
+4. Send a turn to one card and confirm its context figure on the board updates on the next poll.
