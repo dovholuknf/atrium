@@ -243,6 +243,14 @@ func (s *Store) refreshObservedAt(t *Task, obs Observed, move bool) error {
 	if !move && t.Worktree != "" {
 		obs.Worktree = t.Worktree
 	}
+	// A REPORT WITH NO PID KEEPS THE PID ON FILE (r-011). Several hooks build an
+	// observation with no pid at all (the message and Stop path, a permission hook
+	// that sent none), and writing their 0 erased the pid the session hook had
+	// recorded, which left the reaper nothing to check but silence. A new,
+	// nonzero pid still replaces it, since a restarted session is a new process.
+	if obs.PID == 0 {
+		obs.PID = t.PID
+	}
 	n := now()
 	_, err := s.db.Exec(`UPDATE task SET worktree = ?, repo = ?, runner = ?, hostname = ?,
 		pid = ?, wire_name = ?, last_activity_at = ? WHERE id = ?`,
