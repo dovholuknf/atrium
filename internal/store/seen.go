@@ -320,19 +320,27 @@ func (s *Store) MarkAnswered(taskID, via string) (bool, error) {
 func (s *Store) DismissQuestions(taskID string, shown time.Time) (dismissed, stale bool, err error) {
 	err = s.guard(func() error {
 		dismissed, stale = false, false
+		// The precondition is IN the UPDATE. A turn end can write newer questions
+		// between a read and this write, and guard does not serialize anything.
+		// The columns are fixed-width UTC text, so comparing them as text is
+		// comparing times.
+		res, err := s.db.Exec(`UPDATE turn_seen SET answered_at = ?, answered_via = ?
+			WHERE task_id = ? AND questions_at != '' AND questions_at <= ?
+			AND (answered_at = '' OR answered_at < questions_at)`,
+			ts(now()), SeenDismissed, taskID, ts(shown))
+		if err != nil {
+			return err
+		}
+		if n, err := res.RowsAffected(); err != nil || n == 1 {
+			dismissed = err == nil
+			return err
+		}
+		// Nothing changed: newer questions than the ones shown, or nothing open.
 		cur, err := s.seenRow(taskID)
-		if err != nil || cur == nil || !cur.Asked() || cur.Answered() {
+		if err != nil || cur == nil || cur.QuestionsAt == nil {
 			return err
 		}
-		if cur.QuestionsAt.After(shown) {
-			stale = true
-			return nil
-		}
-		if _, err := s.db.Exec(`UPDATE turn_seen SET answered_at = ?, answered_via = ? WHERE task_id = ?`,
-			ts(now()), SeenDismissed, taskID); err != nil {
-			return err
-		}
-		dismissed = true
+		stale = cur.QuestionsAt.After(shown) && cur.Asked() && !cur.Answered()
 		return nil
 	})
 	return dismissed, stale, err
