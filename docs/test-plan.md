@@ -4779,12 +4779,16 @@ hub is back.
 ### CE7. Provisioning registers atrium-control
 
 1. `pwsh -File scripts\provision-room.ps1 user@m1mini` (again, on an already provisioned machine).
-2. On m1mini, `claude mcp list`.
-3. `-Remove`, then `claude mcp list` again.
+2. On m1mini, read `~/.atrium/mcp.json` and the room's claude runner row (`GET /v1/harnesses` on the room).
+3. From the hub machine, `atrium_launch` a card on m1mini and have it `atrium_say` a card here.
+4. Run step 1 again, then `-Remove` and read step 2 again.
 
-**Expected:** a `provision mcp done` line the first time (or `ok` when it was already there), and
-`atrium-control` in the list, running `<atrium> control`. After `-Remove` it is gone. One somebody else registered
-is left alone with a `warn` line.
+**Expected:** a `provision mcp done` line the first time, and `ok` on the second run. `mcp.json` holds
+`atrium-control`, a `stdio` server running `<atrium> control`, and both `args` and `resume_args` of the claude row
+carry `--mcp-config /Users/<user>/.atrium/mcp.json` beside `--strict-mcp-config`. The launched card has
+`atrium_say`, and its message arrives here. After `-Remove` the file is gone if the script wrote it. An
+`atrium-control` somebody else put in the file, or another `--mcp-config` already on the row, is left alone with a
+`warn` line.
 
 ### CE8. Skew
 

@@ -199,9 +199,15 @@ With m1mini's hub link down, the sender sees:
 
 m1mini today: no atrium-control, so its sessions cannot call `atrium_say` or `atrium_report` at all. They can still
 be reached (a relayed message is queued and carried by the hooks), and `atrium tell` works if the binary is on PATH.
-The fix is provisioning: `scripts/provision-room.ps1` (item 46) registers the stdio server at user scope with
-`claude mcp add --scope user atrium-control -- <atrium> control`, idempotently, and `-Remove` takes it off. The
-stdio server gains `from` on `atrium_say` and an `atrium_report`, so a room's cards can answer and report.
+The fix is provisioning: `scripts/provision-room.ps1` (item 46) writes the stdio server, `<atrium> control`, into
+`~/.atrium/mcp.json` on the room, and puts `--mcp-config <that file>` on the room's claude runner row, idempotently.
+`-Remove` deletes the file when the script wrote it. The stdio server gains `from` on `atrium_say` and an
+`atrium_report`, so a room's cards can answer and report.
+
+A file the runner row names, not `claude mcp add --scope user`. The claude row passes `--strict-mcp-config`, so a
+launched session loads only the servers an `--mcp-config` file lists and never a user-scope one. Registering at
+user scope was tried first on m1mini on 2026-09-28: `claude mcp list` showed atrium-control connected, and a
+launched card still had no `atrium_say`. This mirrors the hub machine's own row and `~/.atrium/mcp.json`.
 
 ## Which side each part lives on
 
