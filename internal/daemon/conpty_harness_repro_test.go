@@ -35,6 +35,21 @@ func (h *harnessPTY) Wait() {
 }
 func (h *harnessPTY) Kill() { _ = windows.TerminateProcess(h.proc, 1) }
 
+// harnessViaPTY is a runner's pty whose resizes land on a harness pseudo
+// console, marked at the byte they happened at. Everything else is the fake's.
+type harnessViaPTY struct {
+	*fakePTY
+	p    *harnessPTY
+	mark func(cols, rows int)
+	n    *int
+}
+
+func (h *harnessViaPTY) Resize(cols, rows int) error {
+	h.mark(cols, rows)
+	*h.n++
+	return h.p.Resize(cols, rows)
+}
+
 func openHarnessPTY(dll string, cols, rows int, args []string, dir string, env []string) (*harnessPTY, error) {
 	create := func(size windows.Coord, in, out windows.Handle, hpc *windows.Handle) error {
 		return windows.CreatePseudoConsole(size, in, out, 0, hpc)

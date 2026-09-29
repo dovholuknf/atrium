@@ -268,7 +268,40 @@ func TestConPTYScrollRepro(t *testing.T) {
 	defer func() { _ = os.WriteFile(out+".sizes", []byte(strings.Join(marks, "\n")), 0o644) }()
 	stop := make(chan struct{})
 	resizes := 0
-	if mode := os.Getenv("ATRIUM_CONPTY_RESIZE"); mode != "" {
+	// ATRIUM_CONPTY_VIA=runner sends each flip through a runner's viewports,
+	// the way a second viewer passing through does, so the height hold decides
+	// what reaches the pseudo console. Only resizes that really land are
+	// marked and counted.
+	var via *runner
+	if os.Getenv("ATRIUM_CONPTY_VIA") == "runner" {
+		f := newFakePTY()
+		defer f.Close()
+		via = &runner{
+			taskID:   "harness",
+			pty:      &harnessViaPTY{fakePTY: f, p: p, mark: mark, n: &resizes},
+			buf:      newRingSized(1<<16, 120, 50),
+			watchers: map[chan []byte]struct{}{},
+			done:     make(chan struct{}),
+		}
+		_ = via.setViewport("main", 120, 50)
+	}
+	if mode := os.Getenv("ATRIUM_CONPTY_RESIZE"); mode != "" && via != nil {
+		go func() {
+			time.Sleep(time.Second)
+			for {
+				select {
+				case <-stop:
+					return
+				case <-time.After(150 * time.Millisecond):
+				}
+				_ = via.setViewport("flip", 120, flipRows)
+				if flipHold > 0 {
+					time.Sleep(time.Duration(flipHold) * time.Millisecond)
+				}
+				via.dropViewport("flip")
+			}
+		}()
+	} else if mode != "" {
 		go func() {
 			time.Sleep(time.Second)
 			for {
@@ -315,6 +348,11 @@ func TestConPTYScrollRepro(t *testing.T) {
 	}
 	_ = c.Wait()
 	close(stop)
+	if via != nil {
+		// Taken so the count is read after the last resize that landed.
+		via.resizeMu.Lock()
+		via.resizeMu.Unlock()
+	}
 	t.Logf("resizes %d", resizes)
 	time.Sleep(500 * time.Millisecond)
 	p.Close()

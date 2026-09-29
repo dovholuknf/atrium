@@ -80,7 +80,7 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 71 | "New context" on the terminals tab's right-click menu | feature | end of backlog, clint unsure it is useful |
 | 72 | One hover on a card, not two | feature | DONE by sa72, merged `66717c5`, deployed `66717c5` |
 | 73 | A keep-alive fork carries the card's launch args, so lean cards can warm | feature | not started |
-| 74 | A long reply loses lines in the middle on the board's terminal | bug | diagnosed by sa74: inbox ConPTY on a row change. Fix choice with clint |
+| 74 | A long reply loses lines in the middle on the board's terminal | bug | sa74: inbox ConPTY on a row change. Height hold built, not merged. OpenConsole choice with clint |
 | 75 | sg3 as a room, and machine bootstrap reuses the operator's shared folder under `localai` | feature | sa75, parked. Provision script merged `c3dc597` |
 | 76 | A worktree helper that links every CLAUDE.md, so workers get project rules | bug, HIGH, FIRST | not started, @merge |
 | 77 | A merge pipeline that does not conflict or rerun | feature, HIGH | not started, @merge, after 76 |
@@ -1538,7 +1538,9 @@ clint confirmed the loss happened at the first screen update after the long repl
 little. The table's tail was still on the live 50-row screen, and a bare `\e[H` repaint overwrote it. Find what
 emitted that repaint (Claude Code, or ConPTY in the room) and why. Also test the reattach seam.
 
-Status: diagnosed by sa74 on `claude/lost-lines`, not fixed. The choice below goes to clint.
+Status: diagnosed by sa74 on `claude/lost-lines`. Recommendation 1, the height hold, is built there after two
+Mercurius rounds and approved by @terminal, not merged. Option 2 (OpenConsole ConPTY) goes to clint, and the
+replay-only repair is not built.
 
 ### What dropped the lines
 
