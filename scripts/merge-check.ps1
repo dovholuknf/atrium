@@ -12,8 +12,8 @@
 
   A check that did not run prints no count, so a skipped one is a missing entry rather than silence.
 
-  Known load noise, rerun ALONE once and reported as flaky-pass when they then pass: TestRealSessionsKeepTheirText
-  and the link restart-gate tests (TestTheGate*). Anything else failing is real. Exit is non-zero on any real failure.
+  Known load noise, rerun ALONE once and reported as flaky-pass when they then pass: the link restart-gate tests
+  (TestTheGate*). Anything else failing is real. Exit is non-zero on any real failure.
 
   Playwright is found, in order: -NodePath, $env:ATRIUM_NODE_PATH, $env:NODE_PATH, the merge worktree, this
   checkout, any sibling worktree, D:/tmp. See scripts/setup-merge-worktree.ps1.
@@ -32,7 +32,7 @@ param(
   [switch]$SkipBuild,
   [string]$WorktreeRoot = 'D:/worktrees/claude/atrium',
   # Tests known to fail under `go test ./...` load and pass alone. Regexes on the top-level test name.
-  [string[]]$Flaky = @('^TestRealSessionsKeepTheirText$')
+  [string[]]$Flaky = @()
 )
 
 $ErrorActionPreference = 'Continue'

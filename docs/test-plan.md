@@ -6077,3 +6077,27 @@ On claudevm, never a real room, after the toolchain has written `room-env.ps1`, 
 `-Autostart`, then read the room's `git --version` from a card on it.
 
 **Expected:** `start done`, and the card's git is Git for Windows from the toolchain, not a Cygwin git.
+
+## DS. The screen model against real sessions, frozen and live
+
+### DS1. Frozen corpus
+
+1. Unset `ATRIUM_REAL_SCROLLBACK`.
+2. Run `go test ./internal/daemon/ -run 'Real|LostLines|LongReply|ReplayOutput' -v`.
+
+**Expected:** every frozen test passes and each fixture logs its survival percentage beside its floor.
+`TestLongReplyThroughResizesKeepsEveryLine` finds all 300 lines, and nothing outside the repository is read.
+
+### DS2. Live corpus
+
+1. Set `ATRIUM_REAL_SCROLLBACK=1`.
+2. Run `go test ./internal/daemon/ -run 'Live' -v`.
+
+**Expected:** each `TestLive...` twin runs over this machine's scrollback and logs a line per file, with wall time.
+A card under 40% is worth reading and does not gate anything.
+
+### DS3. Growth
+
+1. Run `go test ./internal/daemon/ -run '^$' -bench ReplayGrowth`.
+
+**Expected:** ns/op roughly doubles from 1x to 2x to 4x.
