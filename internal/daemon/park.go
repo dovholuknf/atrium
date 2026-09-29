@@ -148,6 +148,9 @@ func (d *Daemon) unpark(taskID, via string) error {
 		}
 		d.startedAt.Store(taskID, time.Now())
 	}
+	// A card that took a handoff is told to read it, and this is queued BEFORE the
+	// caller queues whatever woke it, so the message follows the wake prompt.
+	d.queueHandoffWake(taskID)
 	if _, err := d.st.Unpark(taskID, via); err != nil {
 		return err
 	}
