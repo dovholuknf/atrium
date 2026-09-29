@@ -7,7 +7,12 @@
 - New `auth` step: `claude auth status` on the remote. Not signed in is a `warn` carrying
   `ssh -t <target> claude auth login`. No credential is read or carried.
 - New `smoke` step, last: a small claude worker launched on the room reports a nonce back. `-NoSmoke`, `-SmokeTo`,
-  `-SmokeCwd`, `-SmokeTimeout`. New exit code 8 when it does not report.
+  `-SmokeCwd`, `-SmokeTimeout`. New exit code 8 when it does not report. It runs in the clone `room-git.ps1 init`
+  made when init succeeded, else in the remote home.
+- `-SmokeOnly` runs just `auth` and `smoke` against a room this script already provisioned. It stops before
+  anything is written, so it cannot restart a room in use.
+- `-Repo none` skips the clone again. The checkout path had been held in `$repo`, which PowerShell reads as the
+  same variable as the `-Repo` parameter, so the parameter was always overwritten.
 - Scheduled task actions go through `schtasks.exe`, so Windows machines that deny CIM over ssh work (binary swap,
   `-Autostart`, `-Remove`, `atrium-service.ps1`). `atrium-autostart.ps1` registers by XML.
 - `atrium-service.ps1` no longer runs `atrium stop` against the URL when the named task is not running, which had
@@ -29,4 +34,6 @@
 - FA5. On Linux with `-Autostart`, `systemctl --user show atrium -p Environment` carries the login shell's PATH and
   a runner in `~/.local/bin` starts.
 - FA6. Run `-Remove`. The room's row leaves the hub and the manifest's additions are gone.
-- FA7. With `-SmokeTimeout 5` on a slow room, smoke fails with exit 8 and the card is still exited.
+- FA7. Against a room already provisioned and in use, run `-SmokeOnly`. Only `ssh`, `os`, `hub`, `state`, `auth`
+  and `smoke` lines appear, and the room's `attached` time on the hub is unchanged after.
+- FA8. With `-SmokeTimeout 5` on a slow room, smoke fails with exit 8 and the card is still exited.
