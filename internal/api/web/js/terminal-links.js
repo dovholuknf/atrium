@@ -2507,6 +2507,13 @@ function phoneSyncTextarea() {
 // by hand, so the cursor follow is off until `phoneFollow` (typing, the key bar, a paste, or the follow chip).
 let phoneTouching = false, phoneManual = false, phoneManualPos = null;
 
+// The pane opened another card or detached: the pan state belongs to the card it was made on.
+function phoneManualReset() {
+  phoneTouching = false; phoneManual = false; phoneManualPos = null;
+  phoneOwn = { l: 0, t: 0 }; phoneKeepKey = "";
+  phoneFollowChip(false);
+}
+
 function phoneFollowChip(on) {
   const c = document.getElementById("t-follow");
   if (c) c.hidden = !on;
@@ -2522,8 +2529,11 @@ function phoneFollow() {
 
 // The reader moved the pane. A scroll that is exactly where this code left it is its own echo.
 function phoneManualScroll(host) {
-  if (!termPhone() || !phoneTouching) return;
+  if (!termPhone()) return;
   if (host.scrollLeft === phoneOwn.l && host.scrollTop === phoneOwn.t) return;
+  // Once the pan is manual EVERY scroll that is not our echo updates the remembered spot, touching or not:
+  // a fling keeps scrolling after touchend, and a focus must restore where it ended, not where it began.
+  if (!phoneTouching && !phoneManual) return;
   phoneManual = true;
   phoneManualPos = { l: host.scrollLeft, t: host.scrollTop };
   phoneFollowChip(true);
@@ -2540,7 +2550,9 @@ function wirePhonePan() {
   host.addEventListener("scroll", () => phoneManualScroll(host), { passive: true });
   // a wheel or trackpad (the desktop-size override on a laptop) is a reader panning too
   host.addEventListener("wheel", () => { phoneTouching = true; requestAnimationFrame(() => { phoneManualScroll(host); phoneTouching = false; }); }, { passive: true });
-  const pane = document.getElementById("term-pane");
+  // In .term-body, whose bottom is the screen's, so the chip rides just above the phone key bar (and in full
+  // screen) without a measurement.
+  const pane = host.parentElement;
   if (pane && !document.getElementById("t-follow")) {
     const c = document.createElement("button");
     c.id = "t-follow"; c.type = "button"; c.hidden = true; c.textContent = "follow";
