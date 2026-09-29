@@ -1569,6 +1569,9 @@ workers picked the same test-plan letter. Decided with clint:
 
 Order: a, c, f, then b, e, g. Owned by @merge.
 
+Status: b, c and g documented on claude/sa77b, not merged. Layout is `docs/changes/<item>.md`, folded by
+`scripts/fold-changes.ps1`.
+
 ## 78. The details popover's token labels mislead (bug)
 
 Raised 2026-09-28 by clint on @fabric's popover: "2 turns, 48 in, 12k out" looked wrong. Checked against the
