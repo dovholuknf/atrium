@@ -509,6 +509,11 @@ type Observed struct {
 	Runner   string `json:"runner"`
 	Hostname string `json:"hostname"`
 	PID      int    `json:"pid"`
+	// Resume is the conversation the report came from, when the hook says. It is
+	// not stored from here (SetResumeID does that) and not in the created event.
+	// It only lets a report with no pid tell whether the pid on file belongs to
+	// its own session (r-011).
+	Resume string `json:"-"`
 }
 
 // Event is one entry in a task's history.
