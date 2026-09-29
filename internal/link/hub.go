@@ -355,13 +355,20 @@ func (h *Hub) control(ctx context.Context, name string, hi hello, conn net.Conn,
 	}
 
 	log.Printf("[hub] room %q attached from %s", name, conn.RemoteAddr())
+	// Bounded, because a newer connection's `old.close` waits on `wmu` while it
+	// holds `h.mu`, and a room that stopped reading must not freeze every attach.
+	_ = conn.SetWriteDeadline(time.Now().Add(handshakeWait))
 	err := writeJSON(conn, welcome{
 		OK: true, Session: session, Warm: h.T.Warm, Caches: h.Cached != nil,
 	})
+	_ = conn.SetWriteDeadline(time.Time{})
 	welcomed = true
 	a.wmu.Unlock()
 	if err != nil {
+		// Forgotten as well as closed. Nothing watches a room that was never
+		// welcomed, so it would otherwise stay listed until it reconnected.
 		a.close(err.Error())
+		h.forget(name, a, err.Error())
 		return
 	}
 
