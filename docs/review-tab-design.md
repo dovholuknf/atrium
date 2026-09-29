@@ -43,18 +43,20 @@ the finding on screen is one keystroke.
 ## 1. The standing workflow, end to end
 
 ```
-  PR URL or ask            @review                 pr-<repo>-<n>            clint on the board
- ───────────────┐   ┌──────────────────┐   ┌──────────────────────┐   ┌────────────────────────────┐
- paste on board │   │ resolve target   │   │ review-manager:      │   │ prs tab: the PR, verdict,  │
- atrium tell    ├──>│ pick the panel   ├──>│ digest, panel,       ├──>│ progress. open it:         │
- inbox item     │   │ launch a worker  │   │ verify, step 7 files │   │ rail | finding | walker    │
- ───────────────┘   └──────────────────┘   │ then STAYS as walker │   │ edit, skip, copy, posted   │
-                                           └──────────┬───────────┘   └─────────────┬──────────────┘
-                                                      │   the review folder:        │
-                                                      └──> <run>/findings/*.txt <───┘ both read and write it
-                                                                                    │
-                                                           clint posts on GitHub <──┘  (by hand, today)
-                                                                                    │
+  PR URL or ask          @review               pr-<repo>-<n>          second opinion       clint on the board
+ ──────────────┐  ┌─────────────────┐  ┌────────────────────┐  ┌───────────────────┐  ┌──────────────────────┐
+ paste on board│  │ resolve target  │  │ review-manager:    │  │ the model picked  │  │ prs tab: the PR,     │
+ atrium tell   ├─>│ pick the panel  ├─>│ digest, panel,     ├─>│ at the ask:       ├─>│ verdict, progress.   │
+ inbox item    │  │ and 2nd opinion │  │ verify, step 7     │  │ agrees, disputes, │  │ rail | finding |     │
+ + second-     │  │ launch a worker │  │ files. then STAYS  │  │ re-rates, adds.   │  │ walker. comment,     │
+   opinion pick│  └────────┬────────┘  │ as the walker      │  └─────────┬─────────┘  │ edit, skip, posted   │
+ ──────────────┘           │           └─────────┬──────────┘            │            └──────────┬───────────┘
+                           │  settles every      │   the review folder   │                       │
+                           └─ dispute before ────┴─> <run>/findings/*.txt <┴───────────────────────┘
+                              the walk starts                                everyone reads, three write
+                                                                                                   │
+                                                          clint posts on GitHub, by hand, today <──┘
+                                                                                                   │
                                         "walk done" ─> walker reports, @review applies notes, culls it
 ```
 
@@ -79,6 +81,38 @@ There are four doors, and all four end in the same place: an ask to @review nami
 
 The design rule is that door 1 and door 3 do not invent a new route. They produce the same message door 2 sends, to
 the same card, so @review's intake stays one path it already handles.
+
+**The ask carries the second-opinion choice** (section 1.3). Every board door that sends an ask (the recogniser
+dialog, "ask @review" on an offered card, and `+ ask` in the `prs` index) shows the same small form:
+
+```
+┌─ ask @review ───────────────────────────────────────────────────────────────────┐
+│ https://github.com/openziti/zrok/pull/1277                                      │
+│ openziti/zrok #1277 · share creation rollback compensation                      │
+│                                                                                 │
+│ Panel           [ @review decides ▾ ]                                           │
+│ Second opinion  [ Mercurius · codex gpt-5.5          ▾ ]   last used for zrok  │
+│                 ┌─────────────────────────────────────────┐                     │
+│                 │ ● Mercurius · codex gpt-5.5             │  from mercurius.yaml│
+│                 │ ○ codex (runner) · gpt-5.5              │  a harness row      │
+│                 │ ○ gemini (runner) · gemini-3-pro        │  a harness row      │
+│                 │ ○ claude opus (runner)                  │  a harness row      │
+│                 │ ○ none                                  │                     │
+│                 └─────────────────────────────────────────┘                     │
+│ Why (optional)  [ the author asked for a security look                        ] │
+│                                                    [ cancel ]  [ ask @review ]  │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+- **The options** are Mercurius, every enabled harness row on the board (`GET /v1/harnesses`, which already names
+  each runner and its model), and `none`. Mercurius is listed as "Mercurius · <its reviewer>", read from the
+  reviewer the repo's `mercurius.yaml` names when the board can see one, otherwise just "Mercurius".
+- **The default** is the last choice for that repo, then a board-wide default setting (`review_second_opinion`),
+  then Mercurius. Open question 11.
+- **What is sent** is one more line in the ask's text, `second opinion: codex (runner, gpt-5.5)`. @review reads it as
+  it reads a named panel. From `atrium tell review`, the same words in the text do the same thing, and an ask that
+  names none gets the default.
+- Stage 1 has no board door, so the picker is stage 3 with the doors. Until then clint names the model in the ask.
 
 ### 1.2 The review
 
@@ -123,10 +157,50 @@ blocker for stage 1.
   survives a re-anchor that moved the line but not the code. That fallback is a stage 1 display heuristic and never a
   durable identity: two findings on repeated code in one file collide on it. Stage 2 prefers `Id:` whenever it is
   present, and uses the file name only as the last tie-breaker for keeping the rail's place.
-- **A `review.json` beside the findings** with the full head and base shas, the verdict line, and the panel. Until
-  then the tab reads the short sha from the folder name and shows no verdict in stage 1.
+- **A `review.json` beside the findings** with the full head and base shas, the verdict line, the panel, and the
+  second opinion's runner and model. Until then the tab reads the short sha from the folder name and shows no
+  verdict in stage 1.
 
-### 1.3 The walk
+### 1.3 The second opinion, and @review settling it
+
+After the Claude panel's findings are distilled into the files, a DIFFERENT model re-evaluates them, and @review
+settles every disagreement before the walk starts. A panel of one model family agrees with itself in ways a second
+family does not, and the PR #369 walk spent its turns on ratings that moved twice. Catching that before clint sees
+the list is cheaper than catching it in the walk.
+
+**Which model is a per-review choice,** made at the ask (section 1.1): Mercurius (a round with whatever reviewer the
+repo's `mercurius.yaml` names), or a runner directly (codex, gemini, or any harness row), or none. The review-manager
+runs it on the finished findings folder and the diff, never on the panel's raw output, so it judges exactly what clint
+will walk.
+
+**Per finding it answers one of four things:**
+
+| Verdict | Meaning | Rail mark |
+|---|---|---|
+| agrees | the finding holds as written, at its severity | `≡` |
+| disputes | it does not hold, with one sentence saying why | `≠` |
+| re-rates | it holds at a different severity, `MED → LOW`, with why | `⇅` |
+| added | a finding the panel missed, written in the same shape, sorted into its place | `+` |
+
+**@review settles every dispute and re-rate before the walk.** It reads the code, then keeps, changes or drops the
+finding, and writes what it decided and why. A finding it cannot settle is left for clint, marked, and is the first
+thing the walk shows (open question 12). An added finding goes into its sorted place in the table and the file names
+after it are renumbered, rule 14's rule applied before the list is fixed rather than during the walk.
+
+**Where it is written:** two lines in the finding's Evidence, by the review-manager and by @review, so the verdict
+travels with the finding like every other fact:
+
+```
+Second opinion (Mercurius, codex gpt-5.5): disputes. The commit check at share.go:161 returns before this defer runs.
+Settled by @review: kept at MED. The defer runs on every return path, the early return at :161 included.
+```
+
+An added finding carries `Second opinion (codex gpt-5.5): added.` and its `Raised by:` names that model. The model is
+always named in full, runner and model both, because "the second opinion said so" is worth nothing without knowing
+which one said it. `review.json` repeats the choice once for the whole review, so the index can show it without
+opening every file.
+
+### 1.4 The walk
 
 The review-manager does not leave when the review is written. It stays up as the WALKER (the orchestrator's change of
 2026-09-29), with the brief at `<run>/BRIEF.md`, and clint walks the findings on its card. The walker's cwd is the
@@ -147,16 +221,27 @@ The chat walk in `BRIEF.md` still works unchanged for a session with no board op
 drive the same files, and the rules bind both: rule 9's "wait for next" becomes the rail, rule 16's "accept a skip"
 becomes a key.
 
-### 1.4 Posting
+### 1.5 Posting
 
-clint posts, under clint's own name (rule 13). The tab makes that as short as possible without atrium touching
-GitHub: `c` copies the comment part (label line and bullets, never Evidence) as raw markdown, and `o` opens the
-finding's deep link, which is already in the file and lands on the exact head line in the Files tab. clint pastes,
-comments, comes back, presses `p`. Section 5 lays out whether atrium should ever go further.
+clint posts, under clint's own name (rule 13). GitHub has no URL that opens a comment box. The most a link can do is
+land on the line: `https://github.com/<org>/<repo>/pull/<n>/files#diff-<sha256 of the path>R<line>`, where the anchor
+is the lowercase hex SHA-256 of the file's path in the repo and `R` means the right-hand, head side of the diff.
 
-### 1.5 Closing out
+So the tab's primary action, **comment** (`Enter` or the `comment` button), does both halves at once: it copies the
+comment part (label line and bullets, never Evidence) to the clipboard as raw markdown, AND opens that link in a new
+tab. clint is then one click on the line's `+` and one paste away from a posted comment, comes back, and presses `p`.
+`c` (copy only) and `o` (open only) stay for the cases where one half is wanted.
 
-A PR's walk is done when every finding is posted or skipped. The tab says so ("14 of 14: 11 posted, 3 skipped") and
+Stage 1 reads the link from the finding file's third line, where step 7 already writes it. Stage 2 computes it (the
+path's SHA-256 and the line), so a re-anchored finding opens its NEW line rather than the one the file was written
+with, and a file with no link line still gets one.
+
+Posting through the GitHub API is the alternative that removes the paste. Whether atrium ever does it stays open
+question 5, and section 5 lays out the options.
+
+### 1.6 Closing out
+
+A PR's walk is done when every finding is posted or skipped, and no dispute is left unsettled. The tab says so ("14 of 14: 11 posted, 3 skipped") and
 offers "tell the walker we are done", which types `walk done` into the walker's terminal. From there the existing
 brief runs: the walker lists the files it changed and reports `done` to @review, @review applies the `repo_notes`,
 and culls the worker.
@@ -195,54 +280,65 @@ button says `walk`. Open question 1.
 ```
 ┌─ atrium ── stack  board  terminals  history  prs ●2  usage  rooms  perms ──────────────────────────────────────────┐
 │                                                                                                                    │
-│ ◂ openziti/zrok #1277  share creation rollback compensation; better ziti errors        pr-zrok-1277 ● thinking    │
-│   head 4f332b8 ✓ current   NO BLOCKERS   ▰▰▰▰▰▱▱▱▱▱▱▱▱▱  5 of 14   3 posted · 2 skipped      [walk done]  [⋯]      │
+│ ◂ openziti/zrok #1277  share creation rollback compensation; better ziti errors         pr-zrok-1277 ● thinking    │
+│   head 4f332b8 ✓ current   NO BLOCKERS   ▰▰▰▰▰▱▱▱▱▱▱▱▱▱▱  5 of 15   3 posted · 2 skipped      [walk done]  [⋯]     │
+│   second opinion  Mercurius · codex gpt-5.5   12 agree · 1 disputed · 1 re-rated · 1 added · all settled           │
 ├───────────────────────────┬──────────────────────────────────────────────────────┬─────────────────────────────────┤
-│ FINDINGS          sev ▾   │ 03 · MED · controller/share.go · line 104     ⧉ open │ pr-zrok-1277                    │
+│ FINDINGS    table order   │ 03 · MED · controller/share.go · line 104   ⧉ open   │ pr-zrok-1277                    │
 │                           │ ──────────────────────────────────────────────────── │                                 │
-│ ✓ 01 MED api.go:61        │    98 │   }                                          │ > about 03 share.go:104, do we  │
-│ ✓ 02 MED session.go:72    │    99 │                                              │   care? do we know?             │
-│ ▸ 03 MED share.go:104     │   100 │   var committed bool                         │                                 │
-│   04 MED share.go:165  ◆  │ + 101 │   comp := newZitiCompensation()              │ ● Traced, not run. Who it hits: │
-│   05 MED share_comp…:180  │ + 102 │   defer func() {                             │   any share create that fails   │
-│   06 MED zitiComp…:44  ◆  │ + 103 │     if committed { return }                  │   after the first Ziti create,  │
-│ ─ 07 LOW resource.go:91   │ +▸104 │     comp.run()                               │   on sqlite, while Ziti is      │
-│   08 LOW resource.go:202  │ + 105 │   }()                                        │   slow. Who it does not: a      │
-│   09 LOW share.go:348  ◆  │   106 │                                              │   successful create, and        │
-│   10 LOW zitiComp…:29  ◆  │          ⋯ 3 more above  ·  3 more below ⋯           │   postgres users only see ...   │
-│   11 LOW zitiComp…:55  ◆  │ ──────────────────────────────────────────────────── │                                 │
-│   12 LOW zitiComp…:58     │ MED controller/share.go line 104: comp.run()         │                                 │
-│   13 LOW zitiComp…:61     │                                                      │                                 │
-│   14 NIT share_comp…:171  │ * LLM review says the compensation runs before the   │                                 │
-│                           │   deferred `trx.Rollback()`, so the Ziti deletes     │                                 │
-│ ◆ leak   ✓ posted         │   hold the open sqlite transaction.                  │                                 │
-│ ─ skipped                 │ * Suggested fix: roll back explicitly before         │                                 │
-│                           │   `compensation.run`, or register this defer first.  │                                 │
-│                           │ * Add a test to `controller/share_compensation_      │                                 │
-│                           │   test.go`: a held delete, expect a concurrent store │                                 │
+│ ✓ 01 MED api.go:61      ≡ │    98 │   }                                          │ > about 03 share.go:104, do we  │
+│ ✓ 02 MED session.go:72  ≡ │    99 │                                              │   care? do we know?             │
+│ ▸ 03 MED share.go:104   ≠ │   100 │   var committed bool                         │                                 │
+│   04 MED share.go:165 ◆ ≡ │ + 101 │   comp := newZitiCompensation()              │ ● Traced, not run. Who it hits: │
+│   05 MED share_c…:180   ≡ │ + 102 │   defer func() {                             │   any share create that fails   │
+│   06 MED zitiComp…:44 ◆ ≡ │ + 103 │     if committed { return }                  │   after the first Ziti create,  │
+│ ─ 07 LOW resource.go:91 ⇅ │ +▸104 │     comp.run()                               │   on sqlite, while Ziti is      │
+│   08 LOW resource…:202  ≡ │ + 105 │   }()                                        │   slow. Who it does not: a      │
+│   09 LOW share.go:348 ◆ ≡ │   106 │                                              │   successful create, and        │
+│   10 LOW share.go:352   + │          ⋯ 3 more above  ·  3 more below ⋯           │   postgres users only see ...   │
+│   11 LOW zitiComp…:29 ◆ ≡ │ ──────────────────────────────────────────────────── │                                 │
+│   12 LOW zitiComp…:55 ◆ ≡ │ MED controller/share.go line 104: comp.run()         │                                 │
+│   13 LOW zitiComp…:58   ≡ │                                                      │                                 │
+│   14 LOW zitiComp…:61   ≡ │ * LLM review says the compensation runs before the   │                                 │
+│   15 NIT share_c…:171   ≡ │   deferred `trx.Rollback()`, so the Ziti deletes     │                                 │
+│                           │   hold the open sqlite transaction.                  │                                 │
+│ ◆ leak   ✓ posted         │ * Suggested fix: roll back explicitly before         │                                 │
+│ ─ skipped                 │   `compensation.run`, or register this defer first.  │                                 │
+│ ≡ agrees  ≠ disputes      │ * Add a test to `controller/share_compensation_      │                                 │
+│ ⇅ re-rated  + added       │   test.go`: a held delete, expect a concurrent store │                                 │
 │                           │   call to complete.                                  │                                 │
+│                           │                                                      │                                 │
+│                           │ ≠ codex gpt-5.5 via Mercurius: disputes. The commit  │                                 │
+│                           │   check at :161 returns before this defer runs.      │                                 │
+│                           │ ✓ @review: kept at MED. The defer runs on every      │                                 │
+│                           │   return path, the early return at :161 included.    │                                 │
 │                           │                                                      │                                 │
 │                           │ ▸ Evidence  PR-introduced · no test · traced         │                                 │
 │                           │                                                      │                                 │
-│                           │ [a ask]  [e edit]  [c copy]  [o open]  [p posted]  [s skip]                            │
-│                           │                                                      │ ❯ _                             │
+│                           │ [⏎ comment]  [a ask]  [e edit]  [c copy]  [o open]   │                                 │
+│                           │ [p posted]  [s skip]                                 │ ❯ _                             │
 └───────────────────────────┴──────────────────────────────────────────────────────┴─────────────────────────────────┘
 ```
 
 Left to right, which is the order attention moves in:
 
 - **The rail.** Every finding, in file-name order, which is the table's order (rule 10). Each row is the number,
-  a severity chip, the short path and the line, and two marks: `◆` for a leak, and a state glyph. A horizontal rule
+  a severity chip, the short path and the line, and three marks: `◆` for a leak, a state glyph, and the second
+  opinion's verdict (`≡` agrees, `≠` disputes, `⇅` re-rated, `+` added by it, section 1.3). A horizontal rule
   separates severities, so "where do the lows start" is visible without reading. The sort control is shown and
   fixed to "table order". It exists to say what the order IS, not to change it (rule 14, open question 4).
 - **The finding.** A header with the number, severity, path and line, and `⧉ open` for the deep link. Under it the
-  code at the PR head with the diff's context, then the comment exactly as it will be pasted, then Evidence folded to
-  one line.
+  code at the PR head with the diff's context, then the comment exactly as it will be pasted, then the second
+  opinion, then Evidence folded to one line. The second opinion is shown unfolded whenever it is anything but
+  `agrees`: the model that gave it (runner and model, and "via Mercurius" when it came through a round), its one
+  sentence, and on the next line how @review settled it. An unsettled one shows `⚑ left for clint` in warn instead of
+  the settlement. A finding the second opinion added wears a `+ codex gpt-5.5` chip beside its severity, so nobody
+  reads it as the panel's.
 - **The walker.** The card's own terminal, the same pane the terms view always shows, narrowed. Attached, typed into,
   scrolled back exactly as it is anywhere else.
 
-The header carries the PR's identity and the two facts that decide what to do next: whether the head is current,
-and how far the walk has got. The progress bar is one segment per finding, coloured by severity, filled when the
+The header carries the PR's identity and the facts that decide what to do next: whether the head is current, how far
+the walk has got, and on its own line which model gave the second opinion and how its verdicts came out. The progress bar is one segment per finding, coloured by severity, filled when the
 finding is posted or skipped, so fourteen findings with the two highs done looks different from fourteen with the
 nits done.
 
@@ -273,10 +369,11 @@ rule 22's backticks are part of that (rule 10: "shows the comment as raw markdow
 
 | Key | Action | What it writes |
 |---|---|---|
+| `Enter` | **Comment**, the primary action. Copies the comment part to the clipboard AND opens the deep link to its head line (section 1.5), so clint clicks the line's `+` and pastes. | Nothing. |
 | `a` | **Ask the walker.** Types `about 03 share.go:104, ` into the walker's input, WITHOUT Enter, and focuses the terminal, so clint finishes the sentence. `A` asks the canned "do we care? do we know?" (rule 23) and submits. | Nothing. It is a keystroke into clint's own terminal. |
 | `e` | **Edit.** The comment turns into a text area in place. Save writes the file through `PUT files/text` with the hash it read. | The comment part of the file. Evidence is kept as it was. |
-| `c` | **Copy** the comment part to the clipboard, exactly. | Nothing. |
-| `o` | **Open** the deep link from the file's third line in a new tab. `C` does copy then open, which is the whole posting motion. | Nothing. |
+| `c` | **Copy** only: the comment part to the clipboard, exactly. | Nothing. |
+| `o` | **Open** only: the deep link in a new tab, from the file's third line in stage 1, computed in stage 2. | Nothing. |
 | `p` | **Mark posted.** Asks once for the comment's GitHub URL, optional, Enter to skip. | A `Walk: posted <time> <url>` line in Evidence. |
 | `s` | **Skip.** No argument, no confirm (rule 16). | A `Walk: skipped <time>` line in Evidence. |
 | `u` | **Undo** the last `p` or `s` on this finding. | Removes the `Walk:` line. |
@@ -351,9 +448,11 @@ question once the numbers agree and clint's screen still does not.
 │                                                                                                                  │
 │  openziti/ziti #4397   router posture: enforce MFA expiry on OIDC     CHANGES REQUESTED   ● pr-ziti-4397 idle    │
 │  990aa0c ⚠ moved       1 high · 8 med · 1 low · 2 nit · 1 leak         ▰▰▱▱▱▱▱▱▱▱▱▱  2 of 12        2h ago        │
+│                        2nd: gemini (runner) gemini-3-pro · 1 disputed, ⚑ 1 left for clint                        │
 │  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────  │
 │  openziti/zrok #1277   share creation rollback compensation           NO BLOCKERS         ● pr-zrok-1277 working │
 │  4f332b8 ✓             6 med · 6 low · 1 nit · 5 leaks                  ▰▰▰▰▰▱▱▱▱▱▱▱▱▱  5 of 14      12m ago      │
+│                        2nd: Mercurius · codex gpt-5.5 · 1 disputed, 1 re-rated, 1 added, all settled             │
 │  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────  │
 │  openziti/tlsuv #369   apple secure transport engine                  walked 24 of 29     ○ no walker [reopen]   │
 │  656c175 ⚠ moved       ...                                            ▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▱▱▱  16h ago                │
@@ -583,7 +682,10 @@ The smallest thing clint can use on `pr-zrok-1277` and `pr-ziti-4397` now.
 
 - The drawer in the terms view, opened by a `walk` button on the terminal bar when the attached card has a
   `findings/` folder. Rail, finding, code from `pr.diff` when present, comment, Evidence folded, leak marks.
-- `a`, `A`, `e`, `c`, `o`, `C`, `p`, `s`, `u`, `j`, `k`, `g`. Edit with the hash-refused compare.
+- `Enter` (comment: copy and open), `a`, `A`, `e`, `c`, `o`, `p`, `s`, `u`, `j`, `k`, `g`. Edit with the
+  hash-refused compare.
+- The second-opinion marks, the verdict and settlement lines, and the `+ <model>` chip, read from the `Second
+  opinion` and `Settled by @review` lines in Evidence. A review that ran none shows nothing extra.
 - Walk state as the `Walk:` line. The progress bar on the drawer header and the `walk` button.
 - The three-second mtime poll, the flash, `new` and renamed-in-place handling.
 - Severity and leak tokens as in 2.8. The phone layout as in 2.9.
@@ -594,7 +696,9 @@ The smallest thing clint can use on `pr-zrok-1277` and `pr-ziti-4397` now.
 Needed alongside, from @review, and not atrium code: the walker brief gains two lines (the `Walk:` line is state
 the board writes and the walker should respect, and the board may edit a finding, so re-read before editing), and
 step 7 copies `pr.diff` into the run folder. Without the second the drawer still works, with the label line in place
-of a diff.
+of a diff. The second-opinion pass (section 1.3) is also @review's: the review-manager runs the chosen model on the
+findings, writes the `Second opinion` lines, and @review writes `Settled by @review` before the walk. The drawer shows
+those lines as soon as they exist, so it does not wait on a picker.
 
 ### Stage 2: PRs as rows, the index, and the moved head. @runtime, then @ui.
 
@@ -611,6 +715,8 @@ The two directors' parts meet at the API table in 3.4, which is the contract, so
 
 - `deliver_to` on recognisers (1.1), and the "ask @review" button in the launch dialog and on an offered card. @runtime
   for the column and `POST /v1/recognise`, @ui for the button.
+- The ask form of section 1.1, with the panel and the second-opinion picker over `GET /v1/harnesses` plus
+  Mercurius, and the `review_second_opinion` setting. @ui for the form, @runtime for the setting.
 - A worked source row in `scripts/` for `gh search prs --review-requested=@me`. Configuration, not code.
 - Option B from section 5: the read-only comment match. @runtime.
 - The SSE `pr` event replacing the poll. @runtime, then @ui.
@@ -665,3 +771,9 @@ block. The docked walker is atrium's own.
 10. **Reopening a walk.** When a walker is gone, "reopen" asks @review for a new one on the same folder, with the
     findings already partly walked. Is that the right owner, or should the board launch the walker itself from a
     stored brief template?
+11. **The default second opinion.** The last choice for that repo, then a board-wide setting, then Mercurius. Or
+    should @review pick it per review from its dangerous-change record, the way it picks the panel?
+12. **A dispute @review cannot settle.** Left for clint, marked, and shown first in the walk. Or should it hold the
+    walk (no walker launched) until clint rules on it?
+13. **Findings the second opinion adds.** Sorted into their place and marked. Or kept in a separate group at the end,
+    so the panel's list stays exactly what the panel found?
