@@ -44,7 +44,7 @@ function region(start, stopBefore) {
   return page.slice(at, stop);
 }
 
-const src = region("const REFRESH_DEBOUNCE", "async function refresh(signal)");
+const src = region("const REFRESH_DEBOUNCE", "async function pass(signal)");
 
 // A virtual clock, so a three-second flap storm runs instantly and the test can
 // say exactly when each timer fires.
@@ -88,7 +88,7 @@ const harness = new Function("hooks", `
   // so a pass can be held "in flight".
   let starts = 0;
   let pending = null;
-  function refresh(signal) {
+  function pass(signal) {
     starts++;
     if (hooks.autoSettle) return Promise.resolve();
     return new Promise(res => { pending = res; });

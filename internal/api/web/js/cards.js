@@ -24,13 +24,21 @@ let cardsLoaded = false;
 // the last pull was. See `tasksSoon`.
 let cardsReadAt = 0;
 
-async function loadCards(signal) {
-  const { tasks } = await api("/v1/tasks", { signal });
-  const next = new Map();
-  (tasks || []).forEach(t => { if (t && t.id) next.set(t.id, t); });
-  cardRows = next;
-  cardsLoaded = true;
-  cardsReadAt = Date.now();
+// One read at a time. A view drawn at boot and the first pass both want the
+// list before either has it, and two copies of half a megabyte arriving a
+// moment apart is the cost this file exists to remove.
+let cardsLoading = null;
+function loadCards(signal) {
+  if (cardsLoading) return cardsLoading;
+  cardsLoading = (async () => {
+    const { tasks } = await api("/v1/tasks", { signal });
+    const next = new Map();
+    (tasks || []).forEach(t => { if (t && t.id) next.set(t.id, t); });
+    cardRows = next;
+    cardsLoaded = true;
+    cardsReadAt = Date.now();
+  })().finally(() => { cardsLoading = null; });
+  return cardsLoading;
 }
 
 function cardList() {
@@ -62,10 +70,12 @@ function dropCard(id) {
 // adopted session with none can be watched and not answered), not archived,
 // oldest wait first. A card from a room that is not answering is left out, as
 // the hub's fan-out of `/v1/waiting` left it out.
+function waitingRow(t) {
+  return (t.status === "needs-input" || t.status === "needs-permission") &&
+    !!t.wire_name && !t.archived_at && !t.offline;
+}
 function cardsWaiting() {
-  return cardList()
-    .filter(t => (t.status === "needs-input" || t.status === "needs-permission") &&
-      t.wire_name && !t.archived_at && !t.offline)
+  return cardList().filter(waitingRow)
     .sort((a, b) => String(a.waiting_since || "").localeCompare(String(b.waiting_since || "")));
 }
 
@@ -84,3 +94,11 @@ async function loadPerms(signal) {
 }
 // Every room's waiting requests, read with the local queue. See `remoteRequests`.
 let remoteLocal = [];
+
+// What a view paints from. The map, and on the one occasion it has never been
+// read (a view drawn before the first pass lands) the list is read first. A
+// read that fails throws, the way the view's own fetch used to.
+async function boardCards(signal) {
+  if (!cardsLoaded) await loadCards(signal);
+  return cardList();
+}

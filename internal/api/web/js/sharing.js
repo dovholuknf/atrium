@@ -769,7 +769,7 @@ async function forgetNow(id, title) {
 function pruneColumn(status) { return oneAtATime("prune:" + status, () => pruneColumnNow(status)); }
 
 async function pruneColumnNow(status) {
-  const { tasks } = await api("/v1/tasks");
+  const tasks = await boardCards();
   const n = (tasks || []).filter(t => t.status === status).length;
   if (!n) return;
   const ok = await confirmUser(
