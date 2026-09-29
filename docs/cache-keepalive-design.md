@@ -181,6 +181,12 @@ The prefix is exact, so the fork must reproduce everything that is part of the c
 - **Fast mode.** A header in the cache key. A card whose last main reply has `usage.speed: "fast"` is skipped.
 - **Environment.** The card's own environment, with `ATRIUM_PERM_GATE=off` so the fork's hooks do not reach atrium
   and do not appear as a second session on the board.
+- **Launch args.** The fork does not carry the card's launch args. A card launched lean (tag `atrium:lean`, see
+  `docs/lean-workers-design.md`) runs with its own `--disallowedTools`, `--mcp-config`, `--append-system-prompt`
+  and setting sources, so its tool list and system prompt are not the fork's, and the prefix differs from the first
+  token. **Lean cards are skipped** as `skipped: lean card`. Found 2026-09-28 (backlog-2 item 70): the only two
+  real misses in the ledger were the two lean cards. sa55's read 0 of 123,752 and wrote 127,952 at the 1h price,
+  $1.02 against a $0.12 budget. The other read 10,259 of 99,886.
 
 ### Reading the receipt
 
@@ -196,12 +202,21 @@ classified in this order, and the first match wins:
    turns it back on. The room is not suspended: the safety net did its job.
 3. **`failed`**: a non-zero exit, a timeout (120 s), no usage, or `subtype` other than `success`. Not counted as a
    refresh. See "Failure handling".
-4. **`warmed`**: `cache_read_input_tokens` at least 90% of the card's context C and `cache_creation_input_tokens`
-   under 5% of C.
+4. **`warmed`**: `cache_read_input_tokens` at least 90% of the card's context C. There is no write threshold. The
+   first version also asked for `cache_creation_input_tokens` under 5% of C, but a fork always writes its own tail
+   (the card's last reply and the prompt), and on 2026-09-28 two forks that read 99.99% (54,772 of 54,774, and
+   154,894 of 154,896) wrote 6.4% and 5.006% and were stopped as misses.
 5. **`miss`**: anything else.
 
 Only `warmed` extends the card's warm window. Every outcome that reached the API (all but a `failed` with no
 usage) is priced into the budget, because it was paid for whatever it achieved.
+
+**The budget cannot stop a miss.** The check before a fork prices it as a read of C, which is what a warm fork
+costs. A miss writes all of C at the 1h price instead, which is eight budgets by the stop rule's own arithmetic,
+and nothing before the request can tell the two apart. What bounds it is that one miss stops the card, and two on
+two cards suspend the room. So a card whose prefix the fork cannot rebuild must be skipped before it is forked
+(lean cards, above). The card's view counts misses (`missed`) apart from warmed refreshes (`refreshes`), so the
+tooltip on a card stopped by a miss says what the spend bought.
 
 ### Which session a receipt belongs to
 
@@ -439,8 +454,10 @@ clint's requirements, which override the first brief:
   `skipped: <why>` names in this doc are those reasons, and they are gone after a restart. If a fork's row fails to
   save, the daemon holds that card's refreshes in memory until the cache the fork may have warmed would expire, or
   until the card takes a real turn, and the card shows why.
-  Persisted, because the point is to see what it cost over a week. The card tooltip shows the current idle stretch
-  (`kept warm 3x, $0.18 of $0.30`). The settings cog shows the week's refresh spend next to the switch, and the
+  Persisted, because the point is to see what it cost over a week. Every card with the switch on wears a chip:
+  a dotted `◎ watching` while nothing has been refreshed yet, with the last skip reason and the warm-until time in
+  its tooltip, `❄ warm` once it has been, and a dashed `❄ cold` once it stopped. The warm tooltip shows the current
+  idle stretch (`kept warm 3x, $0.18 of $0.30`). The settings cog shows the week's refresh spend next to the switch, and the
   suspension with its reason and a button to clear it when there is one.
 - Nothing from the conversation is in the ledger: no prompt text, no reply text. The fork's reply is discarded.
 
@@ -492,4 +509,4 @@ whole change is a room restart, not a hub-only deploy.
   text, the toast in the toast log.
 - Test-plan section for the manual run on a real card, which is also build step 1. Its result is written down in
   the test plan: the command, the card's runner and launch mode, the model, the context, `cache_read_input_tokens`,
-  `cache_creation_input_tokens`, and pass or fail against the 90% read and 5% write thresholds.
+  `cache_creation_input_tokens`, and pass or fail against the 90% read threshold.

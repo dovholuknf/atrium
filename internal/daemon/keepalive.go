@@ -63,10 +63,11 @@ const (
 	// went idle may reach this fraction of one full 1h rehydration of its
 	// context. 1/8 fits the resume data best across models.
 	keepaliveBudgetFraction = 0.125
-	// keepaliveWarmRead and keepaliveWarmWrite are the receipt thresholds, as
-	// fractions of the card's context.
-	keepaliveWarmRead  = 0.90
-	keepaliveWarmWrite = 0.05
+	// keepaliveWarmRead is the receipt threshold, as a fraction of the card's
+	// context. There is no write threshold: a fork always writes its own tail,
+	// the card's last reply and the prompt, and on a 55k card that tail alone
+	// passed the old 5% while the fork read 99.99%.
+	keepaliveWarmRead = 0.90
 )
 
 // keepalivePrompt is what the fork is asked. The words do not matter to the
@@ -330,8 +331,7 @@ func classifyReceipt(r *forkReceipt, runErr error, ctx int64) string {
 	if runErr != nil || r == nil || r.Usage == nil || r.Subtype != "success" {
 		return outcomeFailed
 	}
-	if ctx > 0 && float64(r.Usage.CacheRead) >= keepaliveWarmRead*float64(ctx) &&
-		float64(r.Usage.CacheWrite) < keepaliveWarmWrite*float64(ctx) {
+	if ctx > 0 && float64(r.Usage.CacheRead) >= keepaliveWarmRead*float64(ctx) {
 		return outcomeWarmed
 	}
 	return outcomeMiss
@@ -387,8 +387,11 @@ type keepaliveCardView struct {
 	// Why is the reason a card cannot be warmed, for the greyed switch, or the
 	// last skip reason while it is on.
 	Why string `json:"why,omitempty"`
-	// Refreshes, Spent and Budget describe the current idle stretch.
+	// Refreshes, Missed, Spent and Budget describe the current idle stretch.
+	// Refreshes counts the warmed ones and Missed the misses, which are in Spent
+	// too: one miss rewrites the whole context, about eight budgets.
 	Refreshes int     `json:"refreshes"`
+	Missed    int     `json:"missed,omitempty"`
 	Spent     float64 `json:"spent"`
 	Budget    float64 `json:"budget,omitempty"`
 	// WarmUntil is when the card's cache expires, when atrium knows.
@@ -509,7 +512,7 @@ type verdict struct {
 // reply, because a refresh made before a hand re-enable still refreshed the
 // cache.
 func (k *keepalive) stretchState(taskID string, card *store.KeepaliveCard, r *lastReply) (
-	anchor time.Time, rows []*store.KeepaliveRefresh, spent float64, count int, expiry time.Time) {
+	anchor time.Time, rows []*store.KeepaliveRefresh, spent float64, count, missed int, expiry time.Time) {
 	anchor = r.At
 	// Only a switch turned ON moves the anchor. A stop is stamped too, and the
 	// stopped card's tooltip wants the spend that led to the stop.
@@ -527,11 +530,14 @@ func (k *keepalive) stretchState(taskID string, card *store.KeepaliveCard, r *la
 		}
 		rows = append(rows, row)
 		spent += row.Cost
-		if row.Outcome == outcomeWarmed {
+		switch row.Outcome {
+		case outcomeWarmed:
 			count++
+		case outcomeMiss:
+			missed++
 		}
 	}
-	return anchor, rows, spent, count, warm.Add(r.TTL)
+	return anchor, rows, spent, count, missed, warm.Add(r.TTL)
 }
 
 // decide applies the design's seven rules to one card. It reads, and writes
@@ -544,6 +550,13 @@ func (k *keepalive) decide(t *store.Task, card *store.KeepaliveCard) verdict {
 	h, err := k.st.Harness(t.Runner)
 	if err != nil || !isClaude(h) {
 		return skip("not a Claude card")
+	}
+	// A lean card runs with its own tool list, MCP config and system prompt
+	// (see lean.go). A fork carries none of them, so its prefix differs from the
+	// first token and it rewrites the whole context: sa55's card paid $1.02
+	// against a $0.12 budget for one such fork.
+	if hasTag(t.Tags, LeanTag) {
+		return skip("lean card: a refresh cannot rebuild its prompt")
 	}
 	if strings.TrimSpace(t.ResumeID) == "" || strings.TrimSpace(t.Worktree) == "" {
 		return skip("no session id yet")
@@ -578,7 +591,7 @@ func (k *keepalive) decide(t *store.Task, card *store.KeepaliveCard) verdict {
 	if localHasHooks(t.Worktree) {
 		return skip("local hooks")
 	}
-	anchor, rows, spent, count, expiry := k.stretchState(t.ID, card, r)
+	anchor, rows, spent, count, _, expiry := k.stretchState(t.ID, card, r)
 	now := k.now()
 	if !now.Before(expiry) {
 		return skip("cache already cold")
@@ -897,8 +910,8 @@ func (k *keepalive) view(taskID string) any {
 	if err != nil {
 		return out
 	}
-	_, _, spent, count, expiry := k.stretchState(taskID, card, r)
-	out.Spent, out.Refreshes = spent, count
+	_, _, spent, count, missed, expiry := k.stretchState(taskID, card, r)
+	out.Spent, out.Refreshes, out.Missed = spent, count, missed
 	if p, ok := keepalivePriceFor(r.Model); ok {
 		out.Budget = budgetFor(r.Context, p)
 	}
