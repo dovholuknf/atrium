@@ -1574,8 +1574,22 @@ full repaint at all over 4 runs, including a turn taller than the screen and mes
 
 What changed the rows at 21:19:59 is not recorded. atrium logs no resizes, and a mark laid and undone with nothing
 written between merges away. But the live ring's own repaints show the pty at 47, 48, 50 and 51 rows at different
-points of the session. The agreed height is the SHORTEST attached viewer's (`agreedViewport`), and the board sends a
-new height whenever its fit does: a reattach, a focus change, a scrollbar appearing, a second window.
+points of the session. The agreed height is the SHORTEST attached viewer's (`agreedViewport`).
+
+Checked in the code, what can and cannot move the rows for a moment:
+- **One viewer's refit that ends at the same size cannot.** `onTermResize` skips when the pane's pixels did not move
+  (`terminal-links.js:2096`), sends only when the fitted size changed (`:2120`), and waits for it to hold 250 ms
+  before sending what it is by then (`:1914`). The daemon drops a frame at the size the pty already has
+  (`supervisor.go:1286`). A wobble held longer than 250 ms does send both sizes.
+- **A reattach cannot shrink the rows through its own viewer.** Both sockets carry the same pane's `termFitRows`, and
+  a new terminal fits before it connects (`terminal.js:926` then `:930`), so its first frame is never a default size.
+- **A reattach of the SHORTEST viewer, with another viewer attached, grows the rows and shrinks them back.** Viewers
+  are keyed by socket (`attach.go:285`, `:380`). The board closes the old socket first (`terminal-links.js:833`), the
+  daemon drops it as soon as its reader sees the close (the deferred `dropViewport`), and the new socket's size lands
+  only after `onopen` (`terminal-links.js:908`). In that gap the agreed height is the next shortest viewer's. With a
+  single viewer nothing moves, because the last viewer leaving never resizes (`supervisor.go:1350`).
+- **A shorter viewer that attaches for a while (a popped-out window, a phone, a second pane) shrinks the rows**, and
+  grows them back when it leaves.
 
 ### OpenConsole ConPTY is the fix at the source
 
@@ -1596,6 +1610,11 @@ What adopting it costs:
 - Item 81 becomes a prerequisite. The inbox conhost turns a runner's scroll region into plain line feeds and a
   repaint (seen in the DECSTBM repro), so `screen.go` rarely meets one today. Passthrough hands DECSTBM straight to
   it.
+- Where the binaries are looked for: the directory the setting names, else the one beside `atrium.exe`. conpty.dll is
+  loaded by full path only, never by bare name, and OpenConsole.exe must exist beside it, checked before use, because
+  conpty.dll quietly starts the System32 conhost when it is missing (to be confirmed against its source when built).
+  Anything else goes to the inbox kernel32 `CreatePseudoConsole`, logged once with the reason: the setting off, either
+  file missing, a load or export failure, or a create through conpty.dll that fails.
 
 ### Keeping the rows a no-scroll repaint is about to overwrite
 
@@ -1628,12 +1647,58 @@ ahead of it to every viewer. It repairs the pane clint was copying from. It cost
 runners, latency on every repaint that is held, and a wrong call is shown to every viewer at once. It also becomes
 dead code the day the ConPTY is swapped.
 
+### The height hold, as a state rule
+
+Recommendation 1 below, stated exactly. The hold is `heightHold`, 500 ms, twice the board's own 250 ms settle.
+
+**State.** On the runner, beside `views`:
+- `views` is updated at once on every frame and every detach, as it is today.
+- The applied size is what the pty is at. It is `buf.CurrentSize()`, which only the apply steps below move, so it
+  needs no new field. `appliedRows` below means its rows.
+- `pendingRows` is a height waiting to be applied, 0 for none. `pendingGen` counts every change to it, and
+  `pendingTimer` is the one timer.
+
+**`setViewport` and `dropViewport`**, under `resizeMu` as item 53 made them, after updating `views` and computing
+`agreed`. `dropViewport` keeps its two early returns first: after `r.done`, and when no viewer is left.
+1. Width is immediate. If `agreed.cols` differs from the applied width, `SetSize(agreed.cols, appliedRows)`, then
+   `Resize(agreed.cols, appliedRows)`, then `noteResized`. The CURRENT APPLIED rows, never `agreed.rows`, or a width
+   change would carry the new height past the hold.
+2. Height is held. If `agreed.rows` equals `appliedRows`, stop the timer and clear `pendingRows`, which cancels a
+   flip that came back. If it equals `pendingRows`, do nothing, so the hold keeps counting from when that value was
+   first seen. Otherwise set `pendingRows` to it, bump `pendingGen`, and restart the timer for the full hold. A new
+   value always restarts it.
+
+**The timer firing.** Take `resizeMu`, then in order:
+1. A `pendingGen` that is not the one it was started with means a later change superseded it. Return.
+2. After `r.done`, clear `pendingRows` and return. A dead terminal is never resized, as in `dropViewport`.
+3. Re-read `views` under `r.mu`. No viewers left means cancel: clear `pendingRows` and keep the applied size, which
+   is what the last viewer leaving already means.
+4. Apply only if `agreedViewport(views).rows` still equals `pendingRows` AND differs from `appliedRows`. Then
+   `SetSize(agreed.cols, pendingRows)`, then `Resize`, then `noteResized`, keeping mark before resize. A `Resize`
+   error is logged, as `attach.go` does now. Anything else clears `pendingRows` without resizing.
+
+**What viewers see during the hold.** `CurrentSize` reports the APPLIED size, never the agreed one, so `tellSize`, the
+ring's marks and the replay all agree with the pty. A viewer is told the new height only when it is applied.
+
+**Growing waits too.** The transient in the live room was a reattach of the shortest viewer, and that GROWS first
+and shrinks back (the list above), so an immediate grow would let the very flip this exists to stop through. A
+taller pane held at the old height only shows empty space under the grid for half a second, which costs nothing.
+One rule for both directions is also the simpler one to test.
+
+**The cost, named.** A viewer that really is shorter waits half a second while the pty paints more rows than its
+grid has. That viewer can garble its bottom rows, and scroll a few into its own scrollback, until the repaint at the
+new height. It is one viewer and one resize, against a flip that costs every viewer's history.
+
+**Tests.** Rows flipped 50, 40, 50 inside the hold: zero `Resize` calls. Held past it: one, at the new height. A width
+change during a pending shrink: one `Resize` at the new width and the OLD rows, then the shrink when the hold ends.
+Every viewer gone before the timer fires, and `r.done` closed before it fires: zero. `CurrentSize` read during the
+hold: the applied size. Then the harness `flip` runs through the real code path.
+
 ### Recommendation
 
-1. **Now, small: stop transient row changes reaching the pty.** In `setViewport` and `dropViewport`, apply a new
-   agreed HEIGHT only once it has held for about half a second, so a reattach, a refit or a passing viewer never
-   flips the rows. That removes the coalesced flips, which are the big losses (10, 25, 26 rows). A deliberate height
-   change still costs about a row per row changed, and the width stays immediate. Testable with the harness above.
+1. **Now, small: stop transient row changes reaching the pty,** by the state rule above. That removes the coalesced
+   flips, which are the big losses (10, 25, 26 rows). A deliberate height change still costs about a row per row
+   changed, and the width stays immediate. Testable with the harness above.
 2. **The real fix: OpenConsole ConPTY**, behind a setting with inbox as the fallback, gated on the whole terminal test
    plan.
 3. **Replay-only repair only if 2 is refused.** The live version is not worth its cost and risk next to 2.
