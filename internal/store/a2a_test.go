@@ -53,7 +53,10 @@ func TestAPromptOwesAReportAndAReportPaysIt(t *testing.T) {
 	if got.OwesReport() {
 		t.Fatal("a card never prompted owes a report")
 	}
-	if err := s.AppendEvent(card.ID, EventPrompted, map[string]any{"text": "go"}); err != nil {
+	if err := s.SetLineage(card.ID, "boss", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AppendEvent(card.ID, EventPrompted, map[string]any{"text": "go", "from_peer": "boss"}); err != nil {
 		t.Fatal(err)
 	}
 	got, _ = s.Get(card.ID)
