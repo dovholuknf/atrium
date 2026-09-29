@@ -5,6 +5,20 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **A worker whose worktree was removed is asked to leave.** The reaper now asks a supervised `atrium:subagent`
+  runner to leave when its directory has gone: the directory does not exist, or it held a `.git` entry on an earlier
+  tick and no longer does, which is what git leaves after it unregisters a worktree it could not fully delete. A
+  directory that never had a `.git` (a worker launched in a subdirectory of a repo) is ended only by being deleted.
+  A restart forgets what had a `.git`, so an already-empty leftover is caught only once the directory itself goes.
+  It has to read that way on two consecutive ticks (about 40 seconds), so a directory mid-creation or one odd stat
+  never ends a session. The runner's launch cwd is checked, since that is the directory its process holds, falling
+  back to the card's worktree. Being `done` is still never the reason a runner is ended. Shells, fixtures and cards
+  without `atrium:subagent` are never looked at. One `notified` event (`by: reaper`, `detected: its worktree was
+  removed`, `path`) is recorded before the ask, then the ordinary wind-down runs off the tick. A `done` card stays
+  `done`. A `running` or `needs-input` card ends `dead`. The resume id stays and nothing is deleted. Fixes the five
+  worktrees left "used by another process" after `git worktree remove --force`. Design:
+  `docs/worktree-gone-design.md`. Code: `internal/daemon/worktreegone.go`.
+
 - **A pinned strip across rooms keeps its order.** See `docs/backlog-2.md` item 52 and
   `docs/pin-order-rooms-design.md`.
 
