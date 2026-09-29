@@ -174,6 +174,11 @@ A room can be marked **not accepting**. Nothing else about it changes.
   room is busy, with no 90 second cap, and restart the moment it is empty. The board shows the room as `draining`
   with the busy cards named. `force` still interrupts. The flag turns itself off when the restarted room comes up,
   unless it was set with `--keep`.
+- **What counts as busy.** A card whose runner is mid-turn, read off the activity badge
+  (`docs/activity-design.md`). Nothing else. A fixture is judged the same way: a shell fixture has no turns and
+  never holds a drain open, and a claude fixture holds it only while it is mid-turn, like any card. A fixture
+  starting during a drain does not add to the wait unless it starts a turn, and it is parked and restarted with the
+  room as it is today.
 
 It is still a restart. Resident sessions are parked and resumed. What it buys is that no worker is cut off mid-turn,
 without anybody having to watch for the moment they all stop.
@@ -257,3 +262,11 @@ If step 1 fails, C is POSIX only, as `docs/charon.md` already says, and the Wind
 - Two processes serving one room name. The hub refuses it and should go on refusing.
 - Choosing a room for a launch automatically by load. The launch dialog asks when there is more than one room, and
   that stays.
+
+## Review
+
+Mercurius design review, session `s_AUQNaSEQ3M5Y`, round 1, verdict ready_to_build, no concerns or questions.
+
+- A1 (advisory), a fixture starting during a drain could keep an `until_idle` restart waiting. Folded in: busy
+  means mid-turn on the activity badge and nothing else, so a shell fixture never holds a drain open and a claude
+  fixture holds it only while it is mid-turn. See "What counts as busy" under "Draining in place".
