@@ -12,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aymanbagabas/go-pty"
 	"golang.org/x/sys/windows"
 )
 
@@ -225,17 +224,15 @@ func TestConPTYScrollRepro(t *testing.T) {
 		t.Skip("set ATRIUM_CONPTY_OUT")
 	}
 	exe, _ := os.Executable()
-	p, err := pty.New()
+	// ATRIUM_CONPTY_DLL names a conpty.dll to use instead of the inbox one
+	p, err := openHarnessPTY(os.Getenv("ATRIUM_CONPTY_DLL"), 120, 50,
+		[]string{exe, "-test.run=^TestConPTYScrollChild$", "-test.count=1"}, "",
+		append(os.Environ(), "ATRIUM_CONPTY_CHILD=1"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer p.Close()
-	_ = p.Resize(120, 50)
-	c := p.Command(exe, "-test.run=^TestConPTYScrollChild$", "-test.count=1")
-	c.Env = append(os.Environ(), "ATRIUM_CONPTY_CHILD=1")
-	if err := c.Start(); err != nil {
-		t.Fatal(err)
-	}
+	c := struct{ Wait func() error }{func() error { p.Wait(); return nil }}
 	var got []byte
 	var mu sync.Mutex
 	done := make(chan struct{})
@@ -285,6 +282,21 @@ func TestConPTYScrollRepro(t *testing.T) {
 					_, _ = p.Write([]byte("\x1b[O"))
 					time.Sleep(20 * time.Millisecond)
 					_, _ = p.Write([]byte("\x1b[I"))
+					resizes++
+					continue
+				}
+				if mode == "alt" || mode == "altc" {
+					// one single-step change per tick, alternating
+					c, r := 120, 50
+					if resizes%2 == 0 {
+						if mode == "alt" {
+							r = flipRows
+						} else {
+							c = 121
+						}
+					}
+					mark(c, r)
+					_ = p.Resize(c, r)
 					resizes++
 					continue
 				}
