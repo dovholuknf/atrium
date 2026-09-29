@@ -36,7 +36,16 @@ Type=simple
 # you run it by hand, and the symptom is a board that has lost every card. This
 # is the exact confusion the Windows script exists to end, recorded there at
 # length.
-ExecStart=/usr/bin/atrium daemon --db %h/.atrium/atrium.db
+#
+# THROUGH A LOGIN SHELL, so the daemon and every runner it starts get the PATH a
+# terminal has. A user unit gets systemd's own bare PATH, which has no
+# ~/.local/bin, where claude and codex install, so a runner there was "not found".
+# $$ is systemd's spelling of a literal $, so ${SHELL:-/bin/sh} reaches the shell
+# unexpanded. `exec` keeps atrium as the main process, so KillMode and the
+# stop below still address it and not a wrapper.
+# scripts/atrium-service.sh does not use this form: it writes a plain ExecStart
+# and Environment=PATH= with the login shell's PATH as it is at install time.
+ExecStart=/bin/sh -c 'exec "$${SHELL:-/bin/sh}" -lc "exec /usr/bin/atrium daemon --db %h/.atrium/atrium.db"'
 
 # Restarted, but not into a crash loop. A daemon that halts on a storage failure
 # does so on purpose and will halt again in three seconds, so the interval is
