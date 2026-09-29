@@ -24,6 +24,14 @@ const { wholeBoard } = require("./board-source.js");
 // and open a socket rather than bail on a missing library.
 const WEB_ROOT = path.join(__dirname, "..", "internal", "api", "web");
 
+// Every Playwright timeout here goes through slow(). A loaded machine, a
+// `go test` beside this run say, can take longer than the budgets below, which
+// were set on an idle one. HEADLESS_SLOW=3 gives every wait three times as long
+// without editing the file. Sleeps are not scaled: a sleep that proves something
+// stays put has to keep its length.
+const SLOW = Number(process.env.HEADLESS_SLOW) > 0 ? Number(process.env.HEADLESS_SLOW) : 1;
+const slow = ms => Math.round(ms * SLOW);
+
 // Playwright is a devDependency (see package.json) and CI may run without it.
 let chromium;
 try {
@@ -737,7 +745,7 @@ async function wornSection(browser, base) {
   const was = tasksMode;
   try {
     await wp.goto(base, { waitUntil: "domcontentloaded" });
-    await wp.waitForSelector("#stack-list .stackrow", { timeout: 15000 });
+    await wp.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
 
     // The setting sits in the gear's board pane, beside the other view settings.
     const inBoardPane = await wp.evaluate(() => {
@@ -774,10 +782,10 @@ async function wornSection(browser, base) {
       await wp.evaluate(async () => { runRefresh(); await renderTermList(); });
       await wp.waitForFunction(n => document.querySelectorAll('#stack-list .stackrow[data-id^="w-"]').length >= n &&
         document.querySelectorAll('#term-list .card.tab[data-id^="w-"]').length >= n,
-        wornTasks.length, { timeout: 15000 });
+        wornTasks.length, { timeout: slow(15000) });
       await wp.click('.tab[data-view="board"]');
       await wp.waitForFunction(n =>
-        document.querySelectorAll('.card:not(.tab)[data-id^="w-"]').length >= n, wornTasks.length, { timeout: 15000 });
+        document.querySelectorAll('.card:not(.tab)[data-id^="w-"]').length >= n, wornTasks.length, { timeout: slow(15000) });
       await wp.click('.tab[data-view="stack"]');
     };
 
@@ -878,7 +886,7 @@ async function wornSection(browser, base) {
       await wp.click('.tab[data-view="' + v + '"]');
       await wp.waitForTimeout(300);
     }
-    await wp.waitForFunction(() => !document.querySelector(".worn"), null, { timeout: 15000 }).catch(async () => {
+    await wp.waitForFunction(() => !document.querySelector(".worn"), null, { timeout: slow(15000) }).catch(async () => {
       const left = await wp.evaluate(() => document.querySelectorAll(".worn").length);
       fail("turning card colours back off left " + left + " cards worn.");
     });
@@ -913,7 +921,7 @@ async function termWearSection(browser, base) {
       dead("tw-dead", "dracula"), dead("tw-deadlight", "active-light")];
     tasksMode = "worn";
     await wp.goto(base, { waitUntil: "domcontentloaded" });
-    await wp.waitForSelector("#stack-list .stackrow", { timeout: 15000 });
+    await wp.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await wp.click('.tab[data-view="terms"]');
 
     // Defaults, as the gear shows them: selected on, the other two off.
@@ -1061,7 +1069,7 @@ async function bridgeSection(browser, base) {
     await bp.waitForTimeout(900);
     await bp.click('.tab[data-view="terms"]');
     await bp.waitForSelector('#term-list .tnest[data-group="active"] .card.tab[data-id="filed1"]',
-      { state: "attached", timeout: 15000 });
+      { state: "attached", timeout: slow(15000) });
     // Two ways a row is drawn: in the skin's colours with its theme on the
     // selected row alone, and with every row worn, which frames the selected one.
     for (const [skin, idle] of [["noir", false], ["noir", true], ["daylight", false], ["daylight", true]]) {
@@ -1176,7 +1184,7 @@ async function groupRemoveSection(browser, base) {
     await gp.waitForTimeout(900);
     await gp.click('.tab[data-view="terms"]');
     await gp.waitForSelector('#term-list .tnest[data-group="active"] .card.tab[data-id="filed1"]',
-      { state: "attached", timeout: 15000 });
+      { state: "attached", timeout: slow(15000) });
     const heads = () => gp.evaluate(() =>
       [...document.querySelectorAll("#term-list .tgroup .tgname")].map(e => e.textContent.trim()));
     const remove = async name => {
@@ -1268,7 +1276,7 @@ async function groupColorSection(browser, base) {
     await cp.goto(base, { waitUntil: "domcontentloaded" });
     await cp.waitForTimeout(900);
     await cp.click('.tab[data-view="terms"]');
-    await cp.waitForSelector('#term-list .tgroup[data-ghead="active"]', { timeout: 15000 });
+    await cp.waitForSelector('#term-list .tgroup[data-ghead="active"]', { timeout: slow(15000) });
     await recolor(cp, 140);
     // A hidden view repaints when it is shown, so each is visited.
     for (const skin of ["harbour", "daylight", "website"]) {
@@ -1291,8 +1299,8 @@ async function groupColorSection(browser, base) {
       }
     }
     await cp.reload({ waitUntil: "domcontentloaded" });
-    await cp.waitForSelector('#term-list .tgroup[data-ghead="active"]', { state: "attached", timeout: 15000 });
-    await cp.waitForSelector('.stackgroup[data-morph-key="stack:active"]', { state: "attached", timeout: 15000 });
+    await cp.waitForSelector('#term-list .tgroup[data-ghead="active"]', { state: "attached", timeout: slow(15000) });
+    await cp.waitForSelector('.stackgroup[data-morph-key="stack:active"]', { state: "attached", timeout: slow(15000) });
     const after = await hues(cp);
     if (after.term !== "140" || after.stack !== "140") fail("a group colour did not survive a reload: " + JSON.stringify(after));
 
@@ -1301,7 +1309,7 @@ async function groupColorSection(browser, base) {
     const cp2 = await ctx.newPage();
     cp2.on("pageerror", e => errors.push(String(e)));
     await cp2.goto(base, { waitUntil: "domcontentloaded" });
-    await cp2.waitForSelector('#term-list .tgroup[data-ghead="active"]', { state: "attached", timeout: 15000 });
+    await cp2.waitForSelector('#term-list .tgroup[data-ghead="active"]', { state: "attached", timeout: slow(15000) });
     await cp2.waitForTimeout(600);
     await cp.click('.tab[data-view="terms"]');
     await cp.waitForTimeout(300);
@@ -1349,7 +1357,7 @@ async function groupDragSection(browser, base) {
     await dp.goto(base, { waitUntil: "domcontentloaded" });
     await dp.waitForTimeout(900);
     await dp.click('.tab[data-view="terms"]');
-    await dp.waitForSelector('#term-list .tgroup[data-ghead="spare"]', { timeout: 15000 });
+    await dp.waitForSelector('#term-list .tgroup[data-ghead="spare"]', { timeout: slow(15000) });
 
     // A heading dragged above another moves the whole group and writes the order.
     await dp.locator('#term-list .tgroup[data-ghead="spare"]').dragTo(
@@ -1402,7 +1410,7 @@ async function groupDragSection(browser, base) {
     // The same, from the card's menu.
     await dp.locator('#term-list .tnest[data-group="active"] .card.tab[data-id="filed1"]').click({ button: "right" });
     const out = dp.locator("#cardmenu button", { hasText: "out of active" });
-    await out.waitFor({ timeout: 5000 }).catch(() => {});
+    await out.waitFor({ timeout: slow(5000) }).catch(() => {});
     if (!(await out.count())) fail("a card in a group has no `out of` entry on its menu.");
     else {
       await out.click();
@@ -1440,7 +1448,7 @@ async function websiteSkinSection(browser, base) {
   wp.on("pageerror", e => errors.push(String(e)));
   try {
     await wp.goto(base, { waitUntil: "domcontentloaded" });
-    await wp.waitForSelector("button.go.newagent", { state: "visible", timeout: 15000 });
+    await wp.waitForSelector("button.go.newagent", { state: "visible", timeout: slow(15000) });
     // Buttons carry `transition: all`, so a colour read straight after a skin
     // change is partway there.
     const look = skin => wp.evaluate(async skin => {
@@ -1568,7 +1576,7 @@ async function restartGateSection(browser, base) {
   try {
     await gp.goto(base, { waitUntil: "domcontentloaded" });
     await gp.waitForFunction(() => typeof hubIsHub !== "undefined" && hubIsHub &&
-      document.getElementById("conn").classList.contains("live"), null, { timeout: 15000 });
+      document.getElementById("conn").classList.contains("live"), null, { timeout: slow(15000) });
 
     // Input is reported, and throttled.
     await gp.mouse.click(700, 450);
@@ -1579,7 +1587,7 @@ async function restartGateSection(browser, base) {
 
     // The countdown shows and counts.
     say({ state: "countdown", seconds: 5 });
-    await gp.waitForFunction(() => !!document.querySelector(".toast.hubgate"), null, { timeout: 5000 })
+    await gp.waitForFunction(() => !!document.querySelector(".toast.hubgate"), null, { timeout: slow(5000) })
       .catch(() => fail("a countdown from the hub drew no toast."));
     const first = await countdownText();
     if (!/atrium restarts in [45]s/.test(first)) {
@@ -1604,7 +1612,7 @@ async function restartGateSection(browser, base) {
     await gp.waitForFunction(() => {
       const el = document.querySelector(".toast.hubgate");
       return el && /restart on hold/.test(el.textContent);
-    }, null, { timeout: 5000 }).catch(() => fail("a pause from the hub drew no paused toast."));
+    }, null, { timeout: slow(5000) }).catch(() => fail("a pause from the hub drew no paused toast."));
     await gp.evaluate(() => { for (let i = 0; i < 5; i++) toast("filler " + i, "pushing the stack"); });
     await gp.waitForTimeout(100);
     if (!(await gp.$(".toast.hubgate .hubgate-act"))) fail("the paused toast was pushed off the stack.");
@@ -1622,7 +1630,7 @@ async function restartGateSection(browser, base) {
     await late.waitForFunction(() => {
       const el = document.querySelector(".toast.hubgate");
       return el && /restart on hold/.test(el.textContent);
-    }, null, { timeout: 15000 }).catch(() => fail("a board opened during a pause did not show it."));
+    }, null, { timeout: slow(15000) }).catch(() => fail("a board opened during a pause did not show it."));
     await late.close();
     gatePaused = false;
 
@@ -1631,7 +1639,7 @@ async function restartGateSection(browser, base) {
     const hasCountdown = () => gp.evaluate(() =>
       [...document.querySelectorAll(".toast.hubgate")].some(el => /atrium restarts in/.test(el.textContent)));
     say({ state: "countdown", seconds: 3 });
-    await gp.waitForFunction(() => !!document.querySelector(".toast.hubgate"), null, { timeout: 5000 })
+    await gp.waitForFunction(() => !!document.querySelector(".toast.hubgate"), null, { timeout: slow(5000) })
       .catch(() => fail("the second countdown drew no toast."));
     await gp.evaluate(() => { for (let i = 0; i < 5; i++) toast("filler " + i, "pushing the stack"); });
     await gp.waitForTimeout(100);
@@ -1649,7 +1657,7 @@ async function restartGateSection(browser, base) {
     const streamsWere = openStreams.filter(r => !r.destroyed).length;
     openStreams.forEach(r => { try { r.destroy(); } catch (e) {} });
     await gp.waitForFunction(() => document.getElementById("conn").classList.contains("live"), null,
-      { timeout: 15000 }).catch(() => fail("the stream did not come back."));
+      { timeout: slow(15000) }).catch(() => fail("the stream did not come back."));
     for (const end = Date.now() + 15000;
       openStreams.filter(r => !r.destroyed).length < streamsWere && Date.now() < end;) {
       await gp.waitForTimeout(50);
@@ -1657,13 +1665,13 @@ async function restartGateSection(browser, base) {
     await gp.waitForTimeout(500);
     if (!(await hasCountdown())) fail("the countdown toast went away when the stream reopened.");
     say({ state: "cancelled" });
-    await gp.waitForFunction(() => !document.querySelector(".toast.hubgate"), null, { timeout: 5000 })
+    await gp.waitForFunction(() => !document.querySelector(".toast.hubgate"), null, { timeout: slow(5000) })
       .catch(() => fail("a cancelled countdown stayed on screen."));
 
     // On a phone the cap is one, and a paused toast is on top of it, not in it.
     await gp.setViewportSize({ width: 400, height: 800 });
     say({ state: "paused" });
-    await gp.waitForFunction(() => !!document.querySelector(".toast.hubgate"), null, { timeout: 5000 })
+    await gp.waitForFunction(() => !!document.querySelector(".toast.hubgate"), null, { timeout: slow(5000) })
       .catch(() => fail("a pause on a phone drew no toast."));
     await gp.evaluate(() => { for (let i = 0; i < 3; i++) toast("phone filler " + i, "pushing the stack"); });
     await gp.waitForTimeout(100);
@@ -1675,7 +1683,7 @@ async function restartGateSection(browser, base) {
       fail("on a phone the stack was " + JSON.stringify(phone) + ", not the paused toast and one other.");
     }
     say({ state: "resumed" });
-    await gp.waitForFunction(() => !document.querySelector(".toast.hubgate"), null, { timeout: 5000 })
+    await gp.waitForFunction(() => !document.querySelector(".toast.hubgate"), null, { timeout: slow(5000) })
       .catch(() => fail("a resume did not take the paused toast down."));
     await gp.setViewportSize({ width: 1400, height: 900 });
 
@@ -1686,7 +1694,7 @@ async function restartGateSection(browser, base) {
     await mid.waitForFunction(() => {
       const el = document.querySelector(".toast.hubgate");
       return el && /atrium restarts in (29|30)s/.test(el.textContent);
-    }, null, { timeout: 15000 }).catch(() => fail("a board opened during a countdown did not show it."));
+    }, null, { timeout: slow(15000) }).catch(() => fail("a board opened during a countdown did not show it."));
     await mid.close();
     gateCountdownLeft = 0;
 
@@ -1698,7 +1706,7 @@ async function restartGateSection(browser, base) {
 
     // Restarting: a modal that Escape and closing every dialog both leave up.
     say({ state: "restarting" });
-    await gp.waitForFunction(() => document.getElementById("hubrestart").open, null, { timeout: 5000 })
+    await gp.waitForFunction(() => document.getElementById("hubrestart").open, null, { timeout: slow(5000) })
       .catch(() => fail("the hub restarting drew no modal."));
     // It says how long it has been, and it wears the skin: its card is the
     // palette's own card colour, whatever skin is on.
@@ -1731,7 +1739,7 @@ async function restartGateSection(browser, base) {
     // new name and the modal clears. See restartStaysSection for the old hub.
     gateBoot = "boot-a2";
     openStreams.forEach(r => { try { r.destroy(); } catch (e) {} });
-    await gp.waitForFunction(() => !document.getElementById("hubrestart").open, null, { timeout: 15000 })
+    await gp.waitForFunction(() => !document.getElementById("hubrestart").open, null, { timeout: slow(15000) })
       .catch(() => fail("the restarting modal did not clear when the stream came back."));
     if (errors.length) fail("the restart gate page threw uncaught errors: " + errors.join(" | "));
   } finally {
@@ -1766,7 +1774,7 @@ async function restartStaysSection(browser, base) {
   const drop = () => openStreams.splice(0).forEach(r => { try { r.destroy(); } catch (e) {} });
   const coverUp = () => gp.evaluate(() => document.getElementById("hubrestart").open);
   const live = () => gp.waitForFunction(() => document.getElementById("conn").classList.contains("live"),
-    null, { timeout: 15000 });
+    null, { timeout: slow(15000) });
   // What is on screen each frame, as runs: `t` a gate toast, `c` the cover, `-`
   // neither. A `-` anywhere but at the very end is a gap.
   const watch = () => gp.evaluate(() => {
@@ -1789,18 +1797,18 @@ async function restartStaysSection(browser, base) {
   try {
     await gp.goto(base, { waitUntil: "domcontentloaded" });
     await gp.waitForFunction(() => typeof hubIsHub !== "undefined" && hubIsHub &&
-      document.getElementById("conn").classList.contains("live"), null, { timeout: 15000 });
+      document.getElementById("conn").classList.contains("live"), null, { timeout: slow(15000) });
     await gp.waitForTimeout(500);
 
     // Countdown to cover, with no frame between them.
     say({ state: "countdown", seconds: 1 });
-    await gp.waitForFunction(() => !!document.querySelector(".toast.hubgate"), null, { timeout: 5000 })
+    await gp.waitForFunction(() => !!document.querySelector(".toast.hubgate"), null, { timeout: slow(5000) })
       .catch(() => fail("a countdown drew no toast."));
     await watch();
     await gp.waitForTimeout(1500);
     if (!(await gp.$(".toast.hubgate"))) fail("the countdown toast went at 0 before the hub said restarting.");
     say({ state: "restarting" });
-    await gp.waitForFunction(() => document.getElementById("hubrestart").open, null, { timeout: 5000 })
+    await gp.waitForFunction(() => document.getElementById("hubrestart").open, null, { timeout: slow(5000) })
       .catch(() => fail("restarting drew no cover."));
     if (await gaps()) fail("between the countdown and the cover a frame showed neither: " + (await seen()));
 
@@ -1834,7 +1842,7 @@ async function restartStaysSection(browser, base) {
     gateBoot = "boot-b";
     hubAway = false;
     await live().catch(() => fail("the stream did not come back from the new hub."));
-    await gp.waitForFunction(() => !document.getElementById("hubrestart").open, null, { timeout: 10000 })
+    await gp.waitForFunction(() => !document.getElementById("hubrestart").open, null, { timeout: slow(10000) })
       .catch(() => fail("the cover did not clear once the new hub answered."));
     if ((await seen()) !== "tc-") fail("from the countdown to the new hub the screen went " + (await seen()) +
       ", not countdown, cover, clear.");
@@ -1846,12 +1854,12 @@ async function restartStaysSection(browser, base) {
     say({ state: "countdown", seconds: 1 });
     await gp.waitForTimeout(1300);
     say({ state: "restarting" });
-    await gp.waitForFunction(() => document.getElementById("hubrestart").open, null, { timeout: 5000 })
+    await gp.waitForFunction(() => document.getElementById("hubrestart").open, null, { timeout: slow(5000) })
       .catch(() => fail("the second restarting drew no cover."));
     hubAway = true;
     drop();
     await gp.waitForTimeout(1500);
-    const reloaded = gp.waitForEvent("domcontentloaded", { timeout: 20000 });
+    const reloaded = gp.waitForEvent("domcontentloaded", { timeout: slow(20000) });
     gateBoot = "boot-c";
     healthBuild = "test2";
     hubAway = false;
@@ -1860,7 +1868,7 @@ async function restartStaysSection(browser, base) {
       sawCoverWithReload = await gp.evaluate(() => document.getElementById("hubrestart").open);
     }).catch(() => fail("a new build after the restart did not reload the board."));
     if (!sawCoverWithReload) fail("the board reloaded onto the new build with the cover down.");
-    await gp.waitForFunction(() => !document.getElementById("hubrestart").open, null, { timeout: 15000 })
+    await gp.waitForFunction(() => !document.getElementById("hubrestart").open, null, { timeout: slow(15000) })
       .catch(() => fail("the cover did not clear after the reload settled."));
 
     // A window that missed `restarting` (its stream was reconnecting when the
@@ -1869,7 +1877,7 @@ async function restartStaysSection(browser, base) {
     await live().catch(() => fail("the reloaded board never went live."));
     await gp.waitForTimeout(500);
     say({ state: "countdown", seconds: 1 });
-    await gp.waitForFunction(() => !!document.querySelector(".toast.hubgate"), null, { timeout: 5000 })
+    await gp.waitForFunction(() => !!document.querySelector(".toast.hubgate"), null, { timeout: slow(5000) })
       .catch(() => fail("the reloaded board drew no countdown."));
     await watch();
     await gp.waitForTimeout(1300);
@@ -1879,7 +1887,7 @@ async function restartStaysSection(browser, base) {
     if (!(await gp.$(".toast.hubgate"))) fail("a countdown that ran out went while the hub was away.");
     gateBoot = "boot-d";
     hubAway = false;
-    await gp.waitForFunction(() => window.__seen.endsWith("c-"), null, { timeout: 15000 })
+    await gp.waitForFunction(() => window.__seen.endsWith("c-"), null, { timeout: slow(15000) })
       .catch(() => {});
     if ((await seen()) !== "tc-") fail("over a missed restarting the screen went " + (await seen()) +
       ", not countdown, cover, clear.");
@@ -1910,7 +1918,7 @@ async function atriumDownSection(browser, base) {
   const drop = () => openStreams.splice(0).forEach(r => { try { r.destroy(); } catch (e) {} });
   const downUp = () => dp.evaluate(() => { const d = document.getElementById("atriumdown"); return !!(d && d.open); });
   const live = () => dp.waitForFunction(() => document.getElementById("conn").classList.contains("live"),
-    null, { timeout: 15000 });
+    null, { timeout: slow(15000) });
   // Whether the down cover opened at any frame since this was called.
   const watchDown = () => dp.evaluate(() => {
     window.__downSeen = false;
@@ -1923,7 +1931,7 @@ async function atriumDownSection(browser, base) {
   try {
     await dp.goto(base, { waitUntil: "domcontentloaded" });
     await dp.waitForFunction(() => typeof hubIsHub !== "undefined" && hubIsHub &&
-      document.getElementById("conn").classList.contains("live"), null, { timeout: 15000 });
+      document.getElementById("conn").classList.contains("live"), null, { timeout: slow(15000) });
     await dp.waitForTimeout(500);
 
     // A blip is not atrium being down.
@@ -1938,7 +1946,7 @@ async function atriumDownSection(browser, base) {
     drop();
     await dp.waitForTimeout(3000);
     if (await downUp()) fail("the down cover went up before five seconds.");
-    await dp.waitForFunction(() => document.getElementById("atriumdown").open, null, { timeout: 8000 })
+    await dp.waitForFunction(() => document.getElementById("atriumdown").open, null, { timeout: slow(8000) })
       .catch(() => fail("atrium stopping with nothing said put no down cover up."));
     await dp.waitForTimeout(1200);
     const card = await dp.evaluate(() => ({
@@ -1960,7 +1968,7 @@ async function atriumDownSection(browser, base) {
 
     // Atrium answers: the cover comes down on its own.
     hubAway = false;
-    await dp.waitForFunction(() => !document.getElementById("atriumdown").open, null, { timeout: 15000 })
+    await dp.waitForFunction(() => !document.getElementById("atriumdown").open, null, { timeout: slow(15000) })
       .catch(() => fail("the down cover did not come down once atrium answered."));
     await live().catch(() => fail("the stream did not come back after atrium did."));
 
@@ -1974,7 +1982,7 @@ async function atriumDownSection(browser, base) {
     say({ state: "countdown", seconds: 1 });
     await dp.waitForTimeout(1300);
     say({ state: "restarting" });
-    await dp.waitForFunction(() => document.getElementById("hubrestart").open, null, { timeout: 5000 })
+    await dp.waitForFunction(() => document.getElementById("hubrestart").open, null, { timeout: slow(5000) })
       .catch(() => fail("restarting drew no restart cover."));
     hubAway = true;
     drop();
@@ -1982,7 +1990,7 @@ async function atriumDownSection(browser, base) {
     if (await dp.evaluate(() => window.__downSeen)) fail("a planned restart put the down cover up.");
     gateBoot = "boot-b";
     hubAway = false;
-    await dp.waitForFunction(() => !document.getElementById("hubrestart").open, null, { timeout: 15000 })
+    await dp.waitForFunction(() => !document.getElementById("hubrestart").open, null, { timeout: slow(15000) })
       .catch(() => fail("the restart cover did not clear on the new hub."));
     if (await dp.evaluate(() => window.__downSeen)) fail("the down cover showed as the planned restart ended.");
     await dp.evaluate(() => cancelAnimationFrame(window.__downWatch));
@@ -2001,17 +2009,17 @@ async function atriumDownSection(browser, base) {
     const ready = await sp.waitForFunction(async () => {
       if (!navigator.serviceWorker || !navigator.serviceWorker.controller) return false;
       return !!(await caches.match("/down.html"));
-    }, null, { timeout: 15000, polling: 250 }).then(() => true, () => false);
+    }, null, { timeout: slow(15000), polling: 250 }).then(() => true, () => false);
     if (!ready) {
       fail("the service worker did not take the page and keep down.html.");
     } else {
       await sp.waitForFunction(() => document.getElementById("conn").classList.contains("live"), null,
-        { timeout: 15000 }).catch(() => {});
+        { timeout: slow(15000) }).catch(() => {});
       const card0 = await sp.evaluate(() =>
         getComputedStyle(document.documentElement).getPropertyValue("--card-0").trim());
       hubAway = true;
       drop();
-      await sp.reload({ waitUntil: "load", timeout: 15000 })
+      await sp.reload({ waitUntil: "load", timeout: slow(15000) })
         .catch(e => fail("a reload with atrium down did not load a page: " + e.message));
       const down = await sp.evaluate(() => ({
         title: document.title,
@@ -2030,24 +2038,24 @@ async function atriumDownSection(browser, base) {
       if (!/^down for \d+s$/.test(clock)) fail("down.html's clock said " + JSON.stringify(clock));
       // Atrium comes back: the page reloads onto the board by itself.
       hubAway = false;
-      await sp.waitForFunction(() => !!document.getElementById("hubrestart"), null, { timeout: 15000 })
+      await sp.waitForFunction(() => !!document.getElementById("hubrestart"), null, { timeout: slow(15000) })
         .catch(() => fail("down.html did not reload onto the board once atrium answered."));
-      await sp.waitForFunction(() => !document.getElementById("atriumdown").open, null, { timeout: 15000 })
+      await sp.waitForFunction(() => !document.getElementById("atriumdown").open, null, { timeout: slow(15000) })
         .catch(() => fail("the board came back from down.html with the down cover stuck up."));
 
       // A share in front of a stopped atrium answers 502: the same page.
       page502 = true;
-      await sp.reload({ waitUntil: "load", timeout: 15000 }).catch(() => {});
+      await sp.reload({ waitUntil: "load", timeout: slow(15000) }).catch(() => {});
       const title = await sp.evaluate(() => document.title).catch(() => "");
       if (title !== "atrium is not running") fail("a 502 on reload showed " + JSON.stringify(title) + ", not down.html.");
       page502 = false;
-      await sp.waitForFunction(() => !!document.getElementById("hubrestart"), null, { timeout: 15000 })
+      await sp.waitForFunction(() => !!document.getElementById("hubrestart"), null, { timeout: slow(15000) })
         .catch(() => fail("down.html over a 502 did not reload onto the board once the page answered."));
 
       // A reload during a PLANNED restart says restarting, not down, and the
       // board it reloads onto puts the restart cover back until the new hub.
       await sp.waitForFunction(() => document.getElementById("conn").classList.contains("live"), null,
-        { timeout: 15000 }).catch(() => fail("the board after down.html never went live."));
+        { timeout: slow(15000) }).catch(() => fail("the board after down.html never went live."));
       await sp.waitForTimeout(500);
       const say = state => {
         const line = "event: hub-restart\ndata: " + JSON.stringify(state) + "\n\n";
@@ -2056,11 +2064,11 @@ async function atriumDownSection(browser, base) {
       say({ state: "countdown", seconds: 1 });
       await sp.waitForTimeout(1300);
       say({ state: "restarting" });
-      await sp.waitForFunction(() => document.getElementById("hubrestart").open, null, { timeout: 5000 })
+      await sp.waitForFunction(() => document.getElementById("hubrestart").open, null, { timeout: slow(5000) })
         .catch(() => fail("restarting drew no restart cover before the reload."));
       hubAway = true;
       drop();
-      await sp.reload({ waitUntil: "load", timeout: 15000 }).catch(() => {});
+      await sp.reload({ waitUntil: "load", timeout: slow(15000) }).catch(() => {});
       const planned = await sp.evaluate(() => ({
         title: document.title, text: document.body.textContent.replace(/\s+/g, " ")
       })).catch(() => ({ title: "", text: "" }));
@@ -2072,10 +2080,10 @@ async function atriumDownSection(browser, base) {
       const back = await sp.waitForFunction(() => {
         const d = document.getElementById("hubrestart");
         return d && d.open;
-      }, null, { timeout: 15000, polling: 50 }).then(() => true, () => false);
+      }, null, { timeout: slow(15000), polling: 50 }).then(() => true, () => false);
       if (!back) fail("the board after a restart-time reload did not put the restart cover back.");
       await sp.waitForFunction(() => !document.getElementById("hubrestart").open &&
-        !document.getElementById("atriumdown").open, null, { timeout: 15000 })
+        !document.getElementById("atriumdown").open, null, { timeout: slow(15000) })
         .catch(() => fail("the restart cover did not clear after the restart-time reload."));
     }
     if (errors.length) fail("the atrium-down pages threw: " + errors.join(" | "));
@@ -2100,7 +2108,7 @@ async function toastStaysSection(browser, base) {
   tp.on("pageerror", e => errors.push(String(e)));
   try {
     await tp.goto(base, { waitUntil: "domcontentloaded" });
-    await tp.waitForSelector("#stack-list .stackrow", { timeout: 15000 });
+    await tp.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await tp.evaluate(() => {
       window.__reaps = 0;
       const real = reapToasts;
@@ -2115,7 +2123,7 @@ async function toastStaysSection(browser, base) {
     const has = title => tp.evaluate(t => [...document.querySelectorAll("#toasts .toast:not(.leaving)")]
       .some(el => el.querySelector("b").textContent === t), title);
     const born = Date.now();
-    await tp.waitForFunction(() => window.__reaps >= 1, null, { timeout: 12000 })
+    await tp.waitForFunction(() => window.__reaps >= 1, null, { timeout: slow(12000) })
       .catch(() => fail("no poll reaped toasts, so the test did not exercise the bug."));
     await tp.waitForTimeout(400);
     if (!(await has("new card is on the board"))) {
@@ -2157,7 +2165,7 @@ async function toastLivesSection(browser, base) {
   };
   try {
     await tp.goto(base, { waitUntil: "domcontentloaded" });
-    await tp.waitForSelector("#stack-list .stackrow", { timeout: 15000 });
+    await tp.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
 
     // 1. A card waiting on you that is running again by the next poll.
     await clear();
@@ -2171,7 +2179,7 @@ async function toastLivesSection(browser, base) {
       toast("gone9 is ready", "its turn ended", "stack", "gone9", "gone9");
     });
     let born = Date.now();
-    await tp.waitForFunction(() => window.__reaps >= 1, null, { timeout: 12000 })
+    await tp.waitForFunction(() => window.__reaps >= 1, null, { timeout: slow(12000) })
       .catch(() => fail("no poll reaped toasts, so the answered case was not exercised."));
     await stillUpAt5s("gone9 is ready", "a card that stopped waiting", born);
     const marked = await tp.evaluate(() => [...document.querySelectorAll("#toasts .toast")]
@@ -2184,7 +2192,7 @@ async function toastLivesSection(browser, base) {
     await tp.evaluate(() => { for (let i = 1; i <= 4; i++) toast("burst " + i, "one of four"); });
     await stillUpAt5s("burst 1", "a burst past the cap", born);
     await tp.waitForFunction(() => [...document.querySelectorAll("#toasts .toast:not(.leaving) b")]
-      .some(b => b.textContent === "burst 4"), null, { timeout: 8000 })
+      .some(b => b.textContent === "burst 4"), null, { timeout: slow(8000) })
       .catch(() => fail("the fourth toast of a burst never got its turn on screen."));
 
     // 3. A view switch, and a dialog opening and closing.
@@ -2209,7 +2217,7 @@ async function toastLivesSection(browser, base) {
     // The life it had left when the pointer arrived, which was nearly all of it.
     await tp.mouse.move(2, 890);
     await tp.waitForFunction(() => !document.querySelector("#toasts .toast:not(.leaving)"), null,
-      { timeout: 12000 }).catch(() => fail("a toast the pointer left never went."));
+      { timeout: slow(12000) }).catch(() => fail("a toast the pointer left never went."));
     if (errors.length) fail("the toast page threw uncaught errors: " + errors.join(" | "));
   } finally {
     await ctx.close();
@@ -2281,7 +2289,7 @@ async function tooltipSection(browser, base) {
   tasksMode = "filed";
   try {
     await tp.goto(base, { waitUntil: "domcontentloaded" });
-    await tp.waitForSelector("#stack-list .stackrow", { timeout: 15000 });
+    await tp.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await tp.waitForTimeout(500);
 
     for (const skin of ["harbour", "daylight"]) {
@@ -2335,7 +2343,7 @@ async function tooltipSection(browser, base) {
     await tp.evaluate(() => document.activeElement.blur());
 
     await tp.click('.tab[data-view="terms"]');
-    await tp.waitForSelector("#term-list .card.tab", { timeout: 15000 });
+    await tp.waitForSelector("#term-list .card.tab", { timeout: slow(15000) });
     await tp.waitForTimeout(300);
     await onCard("#term-list .card.tab [data-tip]", "a row on the terminals pane");
     await tp.mouse.move(700, 890);
@@ -2428,11 +2436,11 @@ async function popoutTagFlipSection(browser, base) {
     await bp.evaluate(() => { if (window.__flipSolo) window.__flipSolo.close(); window.__flipSolo = null; });
     await bp.evaluate(() => soloHeld.clear());
     await bp.evaluate(async () => openTerm(await api("/v1/tasks/sgg~s1")));
-    await bp.waitForFunction(() => termTask && termTask.id === "sgg~s1", null, { timeout: 5000 });
+    await bp.waitForFunction(() => termTask && termTask.id === "sgg~s1", null, { timeout: slow(5000) });
     await standIn("s1");
     let yielded = false;
     try {
-      await bp.waitForFunction(() => !termTask, null, { timeout: 3000 });
+      await bp.waitForFunction(() => !termTask, null, { timeout: slow(3000) });
       yielded = true;
     } catch (e) {}
     if (!yielded) {
@@ -2593,7 +2601,7 @@ async function foldStillSection(browser, base) {
   try {
     const a = await open("a");
     const b = await open("b");
-    await a.waitForSelector('details.cardgroup[data-fold="proj:untagged"]', { state: "attached", timeout: 10000 });
+    await a.waitForSelector('details.cardgroup[data-fold="proj:untagged"]', { state: "attached", timeout: slow(10000) });
     // Open it by hand, the way a click on its summary does.
     await a.evaluate(() => { document.querySelector('details.cardgroup[data-fold="proj:untagged"]').open = true; });
     // A live board: a card changes and the stream says so, every second, so
@@ -2690,7 +2698,7 @@ async function untaggedSortSection(browser, base) {
     const p = await ctx.newPage();
     p.on("pageerror", e => errors.push(String(e)));
     await p.goto(base, { waitUntil: "domcontentloaded" });
-    await p.waitForSelector("#stack-list .stackrow", { timeout: 15000 });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     const byName = "u-disc,u-night,u-sa65,u-sa67";
     const byActivity = "u-sa65,u-night,u-sa67,u-disc";
     // Name.
@@ -2749,7 +2757,7 @@ async function newCardSection(browser, base) {
     const p = await ctx.newPage();
     p.on("pageerror", e => errors.push(String(e)));
     await p.goto(base, { waitUntil: "domcontentloaded" });
-    await p.waitForSelector("#stack-list .stackrow", { timeout: 15000 });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await p.waitForTimeout(800);
     let m = await marks(p);
     if (m.arrived.length) fail("a first load marked cards that were already there as new: " + m.arrived.join(","));
@@ -2757,7 +2765,7 @@ async function newCardSection(browser, base) {
     // A card arrives.
     untaggedExtra = [NEWC];
     poke();
-    await p.waitForSelector('#stack-list .stackrow.arrived.glow[data-id="u-new"]', { timeout: 10000 })
+    await p.waitForSelector('#stack-list .stackrow.arrived.glow[data-id="u-new"]', { timeout: slow(10000) })
       .catch(() => fail("a new card on the stack did not pulse."));
     const anim = await p.evaluate(() => {
       const el = document.querySelector('#stack-list .stackrow[data-id="u-new"]');
@@ -2775,7 +2783,7 @@ async function newCardSection(browser, base) {
     for (const [v, sel] of [["board", '.card.arrived[data-id="u-new"] .chip.arrived'],
       ["terms", '#term-list .card.tab.arrived[data-id="u-new"] .chip.arrived']]) {
       await p.click('.tab[data-view="' + v + '"]');
-      await p.waitForSelector(sel, { state: "attached", timeout: 8000 })
+      await p.waitForSelector(sel, { state: "attached", timeout: slow(8000) })
         .catch(() => fail("the new card has no `new` chip on the " + v + "."));
     }
     await p.click('.tab[data-view="stack"]');
@@ -2794,7 +2802,7 @@ async function newCardSection(browser, base) {
     // A reload: nothing pulses. The card nobody has looked at keeps its chip,
     // and no other card gets one.
     await p.reload({ waitUntil: "domcontentloaded" });
-    await p.waitForSelector("#stack-list .stackrow", { timeout: 15000 });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await p.waitForTimeout(1200);
     m = await marks(p);
     if (m.glow.length) fail("a reload pulsed " + m.glow.join(","));
@@ -2830,7 +2838,7 @@ async function newCardSection(browser, base) {
     await p.waitForTimeout(2000);
     untaggedEmpty = false;
     poke();
-    await p.waitForSelector("#stack-list .stackrow", { timeout: 15000 });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await p.waitForTimeout(1500);
     m = await marks(p);
     if (m.arrived.length) fail("a reload during a hub restart marked " + m.arrived.join(","));
@@ -2847,11 +2855,11 @@ async function newCardSection(browser, base) {
   try {
     const p = await rctx.newPage();
     await p.goto(base, { waitUntil: "domcontentloaded" });
-    await p.waitForSelector("#stack-list .stackrow", { timeout: 15000 });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await p.waitForTimeout(800);
     untaggedExtra = [NEWC];
     poke();
-    await p.waitForSelector('#stack-list .stackrow.arrived[data-id="u-new"] .chip.arrived', { timeout: 10000 })
+    await p.waitForSelector('#stack-list .stackrow.arrived[data-id="u-new"] .chip.arrived', { timeout: slow(10000) })
       .catch(() => fail("under reduced motion the new card has no chip."));
     const anim = await p.evaluate(() => {
       const el = document.querySelector('#stack-list .stackrow[data-id="u-new"]');
@@ -2893,9 +2901,9 @@ async function themePreviewSection(browser, base) {
     wornTasks = [live("tp-a", "nord"), live("tp-b", "atrium")];
     tasksMode = "worn";
     await p.goto(base, { waitUntil: "domcontentloaded" });
-    await p.waitForSelector("#stack-list .stackrow", { timeout: 15000 });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await p.click('.tab[data-view="terms"]');
-    await p.waitForSelector('#term-list .card.tab[data-id="tp-a"]', { state: "attached", timeout: 15000 });
+    await p.waitForSelector('#term-list .card.tab[data-id="tp-a"]', { state: "attached", timeout: slow(15000) });
     // Let the view switch finish. `switchView` clears `on` from every `.tab`,
     // the rows included, and a late one would unselect the stand-in attach.
     await p.waitForTimeout(1000);
@@ -2995,9 +3003,9 @@ async function themePreviewSection(browser, base) {
       fail("use it did not save the theme once: " + patches.join(" | "));
     }
     await p.reload({ waitUntil: "domcontentloaded" });
-    await p.waitForSelector("#stack-list .stackrow", { timeout: 15000 });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await p.click('.tab[data-view="terms"]');
-    await p.waitForSelector('#term-list .card.tab[data-id="tp-a"]', { state: "attached", timeout: 15000 });
+    await p.waitForSelector('#term-list .card.tab[data-id="tp-a"]', { state: "attached", timeout: slow(15000) });
     // Let the view switch finish. `switchView` clears `on` from every `.tab`,
     // the rows included, and a late one would unselect the stand-in attach.
     await p.waitForTimeout(1000);
@@ -3091,7 +3099,7 @@ async function landSection(browser, base) {
     p.on("pageerror", e => errors.push(String(e)));
     if (process.env.DEBUG_HEADLESS) p.on("console", m => console.error("[land] " + m.text()));
     await p.goto(base, { waitUntil: "domcontentloaded" });
-    await p.waitForSelector("#stack-list .stackrow", { timeout: 15000 });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await p.waitForTimeout(1200);
     await spyAttach(p);
 
@@ -3099,7 +3107,7 @@ async function landSection(browser, base) {
     landCard("land-new", { supervised: false });
     landList = landList.concat(LAND["land-new"]);
     poke();
-    await p.waitForSelector('#toasts .toast:has-text("land new is on the board")', { timeout: 10000 });
+    await p.waitForSelector('#toasts .toast:has-text("land new is on the board")', { timeout: slow(10000) });
     await clickToast(p, "land new is on the board");
     setTimeout(() => { LAND["land-new"].supervised = true; }, 1500);
     let at = await settle(p, a => a.opened === "land-new");
@@ -3179,7 +3187,7 @@ async function landSection(browser, base) {
     const solo = await ctx.newPage();
     solo.on("pageerror", e => errors.push(String(e)));
     await solo.goto(base + "/#term=s1", { waitUntil: "domcontentloaded" });
-    await solo.waitForFunction(() => typeof soloID !== "undefined" && soloID === "s1", null, { timeout: 10000 });
+    await solo.waitForFunction(() => typeof soloID !== "undefined" && soloID === "s1", null, { timeout: slow(10000) });
     await solo.evaluate(() => { toast("land live is ready", "", "stack", null, "land-live"); });
     await clickToast(solo, "land live is ready");
     at = await settle(p, a => a.opened === "land-live");
@@ -3196,7 +3204,7 @@ async function landSection(browser, base) {
 
     // 8. A board opened by a desktop notification with none open.
     await p.goto(base + "/?land=land-live&view=stack", { waitUntil: "domcontentloaded" });
-    await p.waitForFunction(() => typeof openTerm === "function", null, { timeout: 10000 });
+    await p.waitForFunction(() => typeof openTerm === "function", null, { timeout: slow(10000) });
     await spyAttach(p);
     at = await settle(p, a => a.view === "terms");
     const left = await p.evaluate(() => location.search);
@@ -3216,14 +3224,14 @@ async function landSection(browser, base) {
     const p = await ctx.newPage();
     p.on("pageerror", e => errors.push(String(e)));
     await p.goto(base, { waitUntil: "domcontentloaded" });
-    await p.waitForSelector("#stack-list .stackrow", { timeout: 15000 });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await p.waitForTimeout(1200);
     await spyAttach(p);
     landCard("land-new3", { supervised: false });
     landList = landList.concat(LAND["land-new3"]);
     poke();
     await p.waitForFunction(() => window.__notes.some(n => n.title === "land new3 is on the board"), null,
-      { timeout: 10000 }).catch(() => fail("no desktop notification for a new card with the board unfocused."));
+      { timeout: slow(10000) }).catch(() => fail("no desktop notification for a new card with the board unfocused."));
     await p.evaluate(() => window.__notes.find(n => n.title === "land new3 is on the board").onclick());
     setTimeout(() => { LAND["land-new3"].supervised = true; }, 1000);
     const at = await settle(p, a => a.opened === "land-new3");
@@ -3280,10 +3288,10 @@ async function reselectSection(browser, base) {
     const p = await ctx.newPage();
     p.on("pageerror", e => errors.push(String(e)));
     await p.goto(base, { waitUntil: "domcontentloaded" });
-    await p.waitForSelector("#stack-list .stackrow", { timeout: 15000 });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await p.evaluate(() => attachTask("land-live"));
     await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live", null,
-      { timeout: 10000 });
+      { timeout: slow(10000) });
     await p.waitForTimeout(300);
     // From here on nothing may reach xterm or dial a socket.
     await p.evaluate(() => {
@@ -3303,7 +3311,7 @@ async function reselectSection(browser, base) {
           ". A second select of a live card must focus it, not open a socket or replay history.");
       }
     };
-    await p.waitForSelector('#term-list .card.tab[data-id="land-live"]', { timeout: 10000 });
+    await p.waitForSelector('#term-list .card.tab[data-id="land-live"]', { timeout: slow(10000) });
     await p.click('#term-list .card.tab[data-id="land-live"]');
     await check("its row");
     await p.evaluate(() => landOnAlert("land-live"));
@@ -3357,7 +3365,7 @@ async function toastsTopSection(browser, base) {
     const p = await ctx.newPage();
     p.on("pageerror", e => errors.push(String(e)));
     await p.goto(base, { waitUntil: "domcontentloaded" });
-    await p.waitForSelector("#stack-list .stackrow", { timeout: 15000 });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await p.evaluate(() => {
       switchView("stack");
       document.getElementById("toasts").innerHTML = "";
@@ -3438,7 +3446,7 @@ async function toastsTopSection(browser, base) {
     const solo = await ctx.newPage();
     solo.on("pageerror", e => errors.push(String(e)));
     await solo.goto(base + "/#term=s1", { waitUntil: "domcontentloaded" });
-    await solo.waitForFunction(() => typeof soloID !== "undefined" && soloID === "s1", null, { timeout: 10000 });
+    await solo.waitForFunction(() => typeof soloID !== "undefined" && soloID === "s1", null, { timeout: slow(10000) });
     await solo.evaluate(() => toast("solo toast", "in a popped-out window"));
     await solo.waitForTimeout(400);
     w = await where(solo);
@@ -3479,7 +3487,7 @@ async function sayWhenSection(browser, base) {
     const p = await ctx.newPage();
     p.on("pageerror", e => errors.push(String(e)));
     await p.goto(base, { waitUntil: "domcontentloaded" });
-    await p.waitForSelector("#stack-list .stackrow", { timeout: 15000 });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
 
     // The buttons sit beside send, in the same toolbar, and wear a styled tip.
     const layout = await p.evaluate(() => {
@@ -3691,10 +3699,10 @@ async function pasteSpinnerSection(browser, base) {
     const p = await ctx.newPage();
     p.on("pageerror", e => errors.push(String(e)));
     await p.goto(base, { waitUntil: "domcontentloaded" });
-    await p.waitForSelector("#stack-list .stackrow", { timeout: 15000 });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await p.evaluate(() => attachTask("land-live"));
     await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live", null,
-      { timeout: 10000 });
+      { timeout: slow(10000) });
     await p.waitForTimeout(300);
     await p.evaluate(() => {
       const real = pasteShow;
@@ -3789,10 +3797,10 @@ async function typingSection(browser, base) {
     const p = await ctx.newPage();
     p.on("pageerror", e => errors.push(String(e)));
     await p.goto(base, { waitUntil: "domcontentloaded" });
-    await p.waitForSelector("#stack-list .stackrow", { timeout: 15000 });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await p.evaluate(() => attachTask("land-live"));
     await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live",
-      { timeout: 10000 });
+      { timeout: slow(10000) });
     await p.waitForTimeout(1200);
 
     const off = await p.evaluate(() => {
@@ -3817,7 +3825,7 @@ async function typingSection(browser, base) {
     typingAnswer = { line: "git st\nsecond", count: 13, since_ms: 400, open: false,
       reason: "13 unsent character(s) on the line" };
     await p.waitForFunction(() => /git st/.test((document.getElementById("t-typing") || {}).textContent || ""),
-      null, { timeout: 5000 }).catch(() => {});
+      null, { timeout: slow(5000) }).catch(() => {});
     const on = await p.evaluate(() => {
       const el = document.getElementById("t-typing");
       const help = document.querySelector(".term-help");
@@ -3839,7 +3847,7 @@ async function typingSection(browser, base) {
     // It follows the endpoint: the gate opening shows on the next poll.
     typingAnswer = { line: "", count: 0, since_ms: 5000, open: true, reason: "line empty and quiet" };
     await p.waitForFunction(() => /gate open/.test((document.getElementById("t-typing") || {}).textContent || ""),
-      null, { timeout: 5000 }).catch(() => {});
+      null, { timeout: slow(5000) }).catch(() => {});
     const opened = await p.evaluate(() => {
       const el = document.getElementById("t-typing");
       return { text: el.textContent, open: el.classList.contains("open") };
@@ -3877,7 +3885,7 @@ async function aliasSection(browser, base) {
   try {
     await ap.goto(base, { waitUntil: "domcontentloaded" });
     await ap.waitForFunction(() => typeof cardHTML === "function" && typeof aliasMenuItem === "function",
-      null, { timeout: 15000 });
+      null, { timeout: slow(15000) });
     const got = await ap.evaluate(t1 => {
       const draw = t => { const box = document.createElement("div"); box.innerHTML = cardHTML(t); return box; };
       const withAlias = draw(Object.assign({}, t1, { id: "al1", alias: "sa89" }));
@@ -3900,7 +3908,7 @@ async function aliasSection(browser, base) {
     // Setting it PATCHes the card with what was typed, `@` and all: the room
     // normalizes it.
     await ap.evaluate(() => { window.__aliasDone = setTaskAlias("t1", ""); });
-    await ap.waitForSelector("#ask[open] #ask-input", { timeout: 5000 });
+    await ap.waitForSelector("#ask[open] #ask-input", { timeout: slow(5000) });
     await ap.fill("#ask-input", "@dotfiles");
     await ap.click("#ask-actions button.go, #ask-actions button:last-child");
     await ap.evaluate(() => window.__aliasDone);
@@ -3947,12 +3955,12 @@ async function aliasSection(browser, base) {
 
     aliasWrites = [];
     await ap.evaluate(() => document.getElementById("t-title").click());
-    await ap.waitForSelector("#ask[open] #ask-input", { timeout: 5000 });
+    await ap.waitForSelector("#ask[open] #ask-input", { timeout: slow(5000) });
     const pre = await ap.inputValue("#ask-input");
     if (pre !== "saorch") fail("the bar's alias dialog did not start from the alias: " + pre);
     await ap.fill("#ask-input", "@orch");
     await ap.click("#ask-actions button.go, #ask-actions button:last-child");
-    await ap.waitForFunction(() => !document.querySelector("#ask[open]"), null, { timeout: 5000 });
+    await ap.waitForFunction(() => !document.querySelector("#ask[open]"), null, { timeout: slow(5000) });
     for (let i = 0; i < 50 && !aliasWrites.length; i++) await ap.waitForTimeout(50);
     const bw = aliasWrites.find(x => x.id === "t1");
     if (!bw || bw.body.alias !== "@orch") fail("setting the alias from the bar did not PATCH it: " + JSON.stringify(aliasWrites));
@@ -4029,7 +4037,7 @@ async function pasteBigSection(browser, base) {
   });
   const attach = async p => {
     await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live", null,
-      { timeout: 10000 });
+      { timeout: slow(10000) });
     await p.waitForTimeout(300);
   };
   const MB = 1048576;
@@ -4048,7 +4056,7 @@ async function pasteBigSection(browser, base) {
     const p = await ctx.newPage();
     p.on("pageerror", e => errors.push(String(e)));
     await p.goto(base, { waitUntil: "domcontentloaded" });
-    await p.waitForSelector("#stack-list .stackrow", { timeout: 15000 });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await p.evaluate(() => attachTask("land-live"));
     await attach(p);
 
@@ -4200,10 +4208,10 @@ async function carryLinkSection(browser, base) {
     const p = await ctx.newPage();
     p.on("pageerror", e => errors.push(String(e)));
     await p.goto(base, { waitUntil: "domcontentloaded" });
-    await p.waitForSelector("#stack-list .stackrow", { timeout: 15000 });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await p.evaluate(() => attachTask("land-live"));
     await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live", null,
-      { timeout: 10000 });
+      { timeout: slow(10000) });
     await p.waitForTimeout(300);
 
     // The notice the way the daemon writes it, then three forgeries a program
@@ -4281,7 +4289,7 @@ async function carryLinkSection(browser, base) {
     if (!loaded.spin || !/loading 5\.0MB/.test(loaded.text)) {
       fail("the load shows no spinner naming its size: " + JSON.stringify(loaded));
     }
-    await p.waitForFunction(() => termSock && termSock.readyState === 1, null, { timeout: 5000 });
+    await p.waitForFunction(() => termSock && termSock.readyState === 1, null, { timeout: slow(5000) });
     const landed = await p.evaluate(() => new Promise(done => {
       termSock.onmessage({ data: new TextEncoder().encode("old line\r\n".repeat(1000)).buffer });
       term.write("", () => setTimeout(() => {
@@ -4332,10 +4340,10 @@ async function copySelectSection(browser, base) {
     const p = await ctx.newPage();
     p.on("pageerror", e => errors.push(String(e)));
     await p.goto(base, { waitUntil: "domcontentloaded" });
-    await p.waitForSelector("#stack-list .stackrow", { timeout: 15000 });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     await p.evaluate(() => attachTask("land-live"));
     await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live", null,
-      { timeout: 10000 });
+      { timeout: slow(10000) });
     await p.waitForTimeout(300);
     await p.evaluate(() => {
       copyOnSelect = true;
@@ -4436,7 +4444,7 @@ async function busyGuardSection(browser, base) {
     const p = await ctx.newPage();
     p.on("pageerror", e => errors.push(String(e)));
     await p.goto(base, { waitUntil: "domcontentloaded" });
-    await p.waitForSelector("#stack-list .stackrow", { timeout: 15000 });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
 
     // 1. The launch dialog: two clicks and an Enter, one request, a spinner while held.
     const openIt = () => p.evaluate(() => {
@@ -4611,7 +4619,7 @@ async function keepaliveSection(browser, base) {
   try {
     await kp.goto(base, { waitUntil: "domcontentloaded" });
     await kp.waitForFunction(() => typeof paintKeepaliveSettings === "function" &&
-      typeof loadHousekeeping === "function", null, { timeout: 15000 });
+      typeof loadHousekeeping === "function", null, { timeout: slow(15000) });
     await kp.evaluate(() => loadHousekeeping());
 
     // The board switch: in the gear's settings, under its own heading, checked
@@ -4642,7 +4650,7 @@ async function keepaliveSection(browser, base) {
       el.checked = false;
       el.dispatchEvent(new Event("change"));
     });
-    await kp.waitForFunction(() => true, null, { timeout: 500 }).catch(() => {});
+    await kp.waitForFunction(() => true, null, { timeout: slow(500) }).catch(() => {});
     await new Promise(r => setTimeout(r, 300));
     const saved = kaWrites.find(w => w.url === "/v1/settings" && "cache_keepalive_default" in w.body);
     if (!saved || saved.body.cache_keepalive_default !== false || Object.keys(saved.body).length !== 1) {
@@ -4721,7 +4729,7 @@ async function keepaliveSection(browser, base) {
     await kp.waitForFunction(() => {
       try { return JSON.parse(localStorage.getItem("atrium.toastlog") || "[]")
         .some(t => /break-even after 5 refreshes/.test(t.body || "")); } catch (e) { return false; }
-    }, null, { timeout: 5000 }).catch(() => fail("a break-even stop on the stream did not reach the toast log."));
+    }, null, { timeout: slow(5000) }).catch(() => fail("a break-even stop on the stream did not reach the toast log."));
   } finally {
     await ctx.close();
     tasksMode = was;
@@ -4754,7 +4762,7 @@ async function skinScopeSection(browser, base) {
   // wears waits for the board to wear a skin (null is the default) and names
   // the step that did not, with what it wore instead. Returns whether it did.
   const wears = (want, what) => skin.waitForFunction(w =>
-    document.documentElement.getAttribute("data-skin") === w, want, { timeout: 15000 })
+    document.documentElement.getAttribute("data-skin") === w, want, { timeout: slow(15000) })
     .then(() => true, async () => {
       fail(what + ": the board wore " + JSON.stringify(await dataSkin()) + ", wanted " +
         JSON.stringify(want) + ". The mock holds " + JSON.stringify(skinFor));
@@ -4792,7 +4800,7 @@ async function skinScopeSection(browser, base) {
     await settled("scoped to " + (room || "ALL"));
     // And the board says so itself. Until it has, a room attaching re-reads the
     // skin, which is the heal, and would read whatever the mock holds by then.
-    await skin.waitForFunction(() => skinHasSettled(), null, { timeout: 15000 })
+    await skin.waitForFunction(() => skinHasSettled(), null, { timeout: slow(15000) })
       .catch(() => fail("scoped to " + (room || "ALL") + ": the skin never settled."));
     return ok;
   };
@@ -4944,7 +4952,7 @@ async function skinHealSection(browser, base) {
     hubHasRoom = true;
     hubStreams.forEach(r => { try { r.write("event: rooms\ndata: {}\n\n"); } catch (e) {} });
     await heal.waitForFunction(() =>
-      document.documentElement.getAttribute("data-skin") === "paper", null, { timeout: 15000 });
+      document.documentElement.getAttribute("data-skin") === "paper", null, { timeout: slow(15000) });
     if (healErrors.length) {
       fail("the skin-heal page threw uncaught errors: " + healErrors.join(" | "));
     }
@@ -4969,9 +4977,9 @@ async function historySection(browser, base) {
   });
   try {
   await page.goto(base, { waitUntil: "domcontentloaded" });
-  await page.waitForSelector("#stack-list .stackrow", { timeout: 15000 });
+  await page.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
   await page.click('.tab[data-view="history"]');
-  await page.waitForSelector("#history-list .row.line", { timeout: 15000 });
+  await page.waitForSelector("#history-list .row.line", { timeout: slow(15000) });
   const histRows = await page.locator("#history-list .row.line").count();
   if (histRows < 1) fail("the history view painted no rows from /v1/history.");
 
@@ -4983,11 +4991,11 @@ async function historySection(browser, base) {
   await page.evaluate(() => renderHistory(false));
   await page.waitForFunction(() =>
     document.querySelectorAll("#history-list .row.line").length === 100, null,
-    { timeout: 15000 }).catch(() => fail("the history view did not draw the long list."));
+    { timeout: slow(15000) }).catch(() => fail("the history view did not draw the long list."));
   await page.evaluate(() => moreHistory());
   await page.waitForFunction(() =>
     document.querySelectorAll("#history-list .row.line").length === 200, null,
-    { timeout: 15000 }).catch(() => fail("show more did not add the second history page."));
+    { timeout: slow(15000) }).catch(() => fail("show more did not add the second history page."));
   for (const vp of [{ width: 1280, height: 800 }, { width: 390, height: 780 }]) {
     await page.setViewportSize(vp);
     const sc = await page.evaluate(() => {
@@ -5029,7 +5037,7 @@ async function historySection(browser, base) {
   await page.evaluate(() => repaintLists());
   await page.waitForFunction(() =>
     document.querySelector("#history-list .row.line").dataset.id === "hm251", null,
-    { timeout: 15000 }).catch(() => fail("the live history repaint did not draw the new run."));
+    { timeout: slow(15000) }).catch(() => fail("the live history repaint did not draw the new run."));
   const hLate = await page.evaluate((id) => {
     const list = document.getElementById("history-list");
     const row = list.querySelector('.row.line[data-id="' + id + '"]');
@@ -5048,7 +5056,7 @@ async function historySection(browser, base) {
   await page.evaluate(() => renderHistory(false));
   await page.waitForFunction(() =>
     document.querySelectorAll("#history-list .row.line").length === 100, null,
-    { timeout: 15000 }).catch(() => fail("a fresh history load did not go back to one page."));
+    { timeout: slow(15000) }).catch(() => fail("a fresh history load did not go back to one page."));
   const hTop = await page.evaluate(() => document.getElementById("history-list").scrollTop);
   if (hTop !== 0) fail("a fresh history load kept the old scroll: " + hTop);
   histMany = false; histManyLive = false;
@@ -5118,7 +5126,7 @@ async function stuckSection(browser, base) {
   };
   try {
     await sp.goto(base, { waitUntil: "domcontentloaded" });
-    await sp.waitForSelector('#stack-list .stackrow[data-id="st-stuck"]', { state: "attached", timeout: 15000 });
+    await sp.waitForSelector('#stack-list .stackrow[data-id="st-stuck"]', { state: "attached", timeout: slow(15000) });
     await sp.evaluate(() => localStorage.removeItem("atrium.toastlog"));
     await settle();
     await settle();
@@ -5155,7 +5163,7 @@ async function stuckSection(browser, base) {
     await sp.waitForFunction(() => {
       try { return JSON.parse(localStorage.getItem("atrium.toastlog") || "[]")
         .some(t => /is STUCK/.test(t.title || "")); } catch (e) { return false; }
-    }, null, { timeout: 5000 }).catch(() => fail("a stuck card raised no alert."));
+    }, null, { timeout: slow(5000) }).catch(() => fail("a stuck card raised no alert."));
 
     // The setting, in the gear: "alert" by default. "mark" rings nothing more
     // on the next step and keeps the mark.
@@ -5271,7 +5279,7 @@ async function contextSizeSection(browser, base) {
   tasksMode = "ctxsize";
   try {
     await sp.goto(base, { waitUntil: "domcontentloaded" });
-    await sp.waitForSelector('#stack-list .stackrow[data-id="cx-big"]', { state: "attached", timeout: 15000 });
+    await sp.waitForSelector('#stack-list .stackrow[data-id="cx-big"]', { state: "attached", timeout: slow(15000) });
     await sp.evaluate(() => runRefresh());
     await new Promise(r => setTimeout(r, 400));
     // CTX_SKIN=noir draws it all in another skin, for the screenshots.
@@ -5326,9 +5334,9 @@ async function contextSizeSection(browser, base) {
     let pk = await peekState();
     if (pk && pk.on) fail("the details opened after half a second of hover, not one.");
     await sp.waitForFunction(() => { const p = document.querySelector(".peek"); return p && p.classList.contains("on"); },
-      null, { timeout: 4000 }).catch(() => fail("a second on a card did not open its details."));
+      null, { timeout: slow(4000) }).catch(() => fail("a second on a card did not open its details."));
     await sp.waitForFunction(() => /212k/.test((document.querySelector(".peek") || {}).textContent || ""),
-      null, { timeout: 4000 }).catch(() => {});
+      null, { timeout: slow(4000) }).catch(() => {});
     pk = await peekState();
     if (pk) {
       if (pk.id !== "cx-big" || !/212k/.test(pk.text) || !pk.warn) fail("the hover details do not show 212k past the line: " + pk.text);
@@ -5343,17 +5351,17 @@ async function contextSizeSection(browser, base) {
     await shoot("hover-" + (await sp.evaluate(() => document.documentElement.getAttribute("data-skin") || "harbour")));
     // Off the card and off the popover: it goes.
     await sp.mouse.move(1390, 890);
-    await sp.waitForFunction(() => !document.querySelector(".peek.on"), null, { timeout: 3000 })
+    await sp.waitForFunction(() => !document.querySelector(".peek.on"), null, { timeout: slow(3000) })
       .catch(() => fail("the hover details stayed after the pointer left."));
 
     // The menu's "details": the same view, pinned until a click elsewhere.
     await sp.click('#stack-list .stackrow[data-id="cx-small"]', { button: "right" });
     const item = sp.locator("#cardmenu button", { hasText: /^details$/ }).first();
-    await item.waitFor({ state: "visible", timeout: 5000 }).catch(() => fail("the card menu has no details entry."));
+    await item.waitFor({ state: "visible", timeout: slow(5000) }).catch(() => fail("the card menu has no details entry."));
     if (await item.count()) {
       await item.click();
       await sp.waitForFunction(() => /90k/.test((document.querySelector(".peek.on") || {}).textContent || ""),
-        null, { timeout: 4000 }).catch(() => fail("the menu's details did not open on 90k."));
+        null, { timeout: slow(4000) }).catch(() => fail("the menu's details did not open on 90k."));
       pk = await peekState();
       if (pk && (!pk.pinned || pk.warn)) fail("the menu's details are not pinned, or warn under the line: " + JSON.stringify(pk));
       await sp.mouse.move(1390, 890);
@@ -5369,12 +5377,12 @@ async function contextSizeSection(browser, base) {
     await new Promise(r => setTimeout(r, 500));
     // Attached, as far as the strip is concerned: no socket in a mocked room.
     await sp.evaluate(card => { termTask = card; }, CTX_CARDS[1]);
-    await sp.waitForSelector("#t-expando", { state: "visible", timeout: 5000 })
+    await sp.waitForSelector("#t-expando", { state: "visible", timeout: slow(5000) })
       .catch(() => fail("the shortcut strip has no details expando."));
     const reads = usageReads.length;
     await sp.click("#t-expando").catch(e => fail("the expando could not be clicked: " + e.message));
     await sp.waitForFunction(() => /212k/.test(document.getElementById("t-drawer-body").textContent),
-      null, { timeout: 4000 }).catch(() => fail("the drawer did not open on the attached card's details."));
+      null, { timeout: slow(4000) }).catch(() => fail("the drawer did not open on the attached card's details."));
     await new Promise(r => setTimeout(r, 400));
     const dr = await sp.evaluate(() => {
       const d = document.getElementById("t-drawer"), help = document.querySelector(".term-help");
@@ -5402,7 +5410,7 @@ async function contextSizeSection(browser, base) {
       return before;
     });
     if (gear.placeholder !== "150" || gear.value !== "") fail("the context threshold does not default to 150k: " + JSON.stringify(gear));
-    await sp.waitForFunction(() => !document.getElementById("s-ctxk-reset").hidden, null, { timeout: 5000 })
+    await sp.waitForFunction(() => !document.getElementById("s-ctxk-reset").hidden, null, { timeout: slow(5000) })
       .catch(() => fail("a saved threshold did not offer a reset to the default."));
     if (!posts.some(p => p.context_threshold_k === "200")) fail("the context threshold was not saved: " + JSON.stringify(posts));
   } finally {
@@ -5456,11 +5464,11 @@ async function peekEverywhereSection(browser, base) {
   tasksMode = "peek";
   try {
     await p.goto(base, { waitUntil: "domcontentloaded" });
-    await p.waitForSelector(tabs[0][1], { state: "attached", timeout: 15000 });
+    await p.waitForSelector(tabs[0][1], { state: "attached", timeout: slow(15000) });
     for (const [view, sel] of tabs) {
       await p.setViewportSize({ width: W, height: H });
       await p.evaluate(v => document.querySelector(`.tab[data-view="${v}"]`).click(), view);
-      const ok = await p.waitForSelector(sel, { state: "visible", timeout: 5000 }).then(() => true)
+      const ok = await p.waitForSelector(sel, { state: "visible", timeout: slow(5000) }).then(() => true)
         .catch(() => { fail("the " + view + " tab draws no entry for the card."); return false; });
       if (!ok) continue;
       await new Promise(r => setTimeout(r, 300));
@@ -5480,7 +5488,7 @@ async function peekEverywhereSection(browser, base) {
       await new Promise(r => setTimeout(r, 500));
       if (await state()) fail("on the " + view + " tab the details opened after half a second, not one.");
       await p.waitForFunction(() => /212k/.test((document.querySelector(".peek.on") || {}).textContent || ""),
-        null, { timeout: 3000 }).catch(() => fail("a second on the card on the " + view + " tab did not open its details."));
+        null, { timeout: slow(3000) }).catch(() => fail("a second on the card on the " + view + " tab did not open its details."));
       const redrawn = await p.evaluate(s => {
         clearInterval(window.peekRedraw);
         return !document.querySelector(s).dataset.peekOld;
@@ -5499,7 +5507,7 @@ async function peekEverywhereSection(browser, base) {
       }
       // Off the card and off the popover, it goes.
       await p.mouse.move(W / 2, 3);
-      await p.waitForFunction(() => !document.querySelector(".peek.on"), null, { timeout: 3000 })
+      await p.waitForFunction(() => !document.querySelector(".peek.on"), null, { timeout: slow(3000) })
         .catch(() => fail("on the " + view + " tab the details stayed after the pointer left."));
 
       // The entry's right end near the bottom of the screen: the page pushed
@@ -5521,7 +5529,7 @@ async function peekEverywhereSection(browser, base) {
       if (!hit) fail("the " + view + " tab's entry is not under the pointer near the bottom of the screen.");
       await p.mouse.move(cx, cy);
       await p.waitForFunction(() => /212k/.test((document.querySelector(".peek.on") || {}).textContent || ""),
-        null, { timeout: 3000 }).catch(() => fail("a second near the bottom of the " + view + " tab's entry did not open its details."));
+        null, { timeout: slow(3000) }).catch(() => fail("a second near the bottom of the " + view + " tab's entry did not open its details."));
       await settle();
       pk = await state();
       if (pk) {
@@ -5555,7 +5563,7 @@ async function peekEverywhereSection(browser, base) {
       await p.setViewportSize({ width: W, height: H });
       await p.evaluate(v => document.querySelector(`.tab[data-view="${v}"]`).click(), view);
       const part = p.locator(sel).first();
-      const ok = await part.waitFor({ state: "visible", timeout: 5000 }).then(() => true)
+      const ok = await part.waitFor({ state: "visible", timeout: slow(5000) }).then(() => true)
         .catch(() => { fail("the " + view + " tab's entry has no part with a tooltip at " + sel); return false; });
       if (!ok) continue;
       await new Promise(r => setTimeout(r, 300));
@@ -5577,7 +5585,7 @@ async function peekEverywhereSection(browser, base) {
       if (tipped) fail("on the " + view + " tab a tooltip showed on the card under the pointer: " + sel);
       if (!opened) { fail("on the " + view + " tab a second on " + sel + " did not open the details."); continue; }
       await p.waitForFunction(() => /212k/.test((document.querySelector(".peek.on") || {}).textContent || ""),
-        null, { timeout: 3000 }).catch(() => {});
+        null, { timeout: slow(3000) }).catch(() => {});
       const head = await headText();
       const where = await p.evaluate(() => terminalLabel(lastTasks.find(t => t.id === "cx-big")));
       const whole = PEEK_CARDS.find(t => t.id === "cx-big").display_title;
@@ -5618,7 +5626,7 @@ async function peekEverywhereSection(browser, base) {
     await p.evaluate(() => document.querySelector('.tab[data-view="stack"]').click());
     const gear = await p.locator("#gear").boundingBox();
     await p.mouse.move(Math.round(gear.x + gear.width / 2), Math.round(gear.y + gear.height / 2));
-    await p.waitForFunction(() => document.getElementById("tip").classList.contains("on"), null, { timeout: 2000 })
+    await p.waitForFunction(() => document.getElementById("tip").classList.contains("on"), null, { timeout: slow(2000) })
       .catch(() => fail("the gear's tooltip no longer shows."));
     await p.evaluate(() => hideTip());
 
@@ -5627,7 +5635,7 @@ async function peekEverywhereSection(browser, base) {
     // above it where there is not, and never under it.
     await p.setViewportSize({ width: W, height: H });
     await p.evaluate(() => document.querySelector('.tab[data-view="stack"]').click());
-    await p.waitForSelector(tabs[0][1], { state: "visible", timeout: 5000 });
+    await p.waitForSelector(tabs[0][1], { state: "visible", timeout: slow(5000) });
     const spots = [
       ["top left", 2, 2], ["top", W / 2, 2], ["top right", W - 2, 2], ["right", W - 2, H / 2],
       ["bottom right", W - 2, H - 2], ["bottom", W / 2, H - 2], ["bottom left", 2, H - 2], ["left", 2, H / 2],
@@ -5637,7 +5645,7 @@ async function peekEverywhereSection(browser, base) {
       await p.mouse.move(x, y);
       await p.evaluate(sel => openPeek("cx-big", document.querySelector(sel), "hover"), tabs[0][1]);
       await p.waitForFunction(() => /212k/.test((document.querySelector(".peek.on") || {}).textContent || ""),
-        null, { timeout: 3000 }).catch(() => {});
+        null, { timeout: slow(3000) }).catch(() => {});
       await settle();
       const pk = await state();
       if (!pk) { fail("the details did not open with the pointer at the " + name); continue; }
@@ -5675,7 +5683,7 @@ async function cardRouteSection(browser, base) {
   });
   try {
     await page.goto(base, { waitUntil: "domcontentloaded" });
-    await page.waitForFunction(() => typeof namesACard === "function", null, { timeout: 15000 });
+    await page.waitForFunction(() => typeof namesACard === "function", null, { timeout: slow(15000) });
     await page.evaluate(async () => {
       writeRoom = "sgg";
       const post = (u, method, body) => fetch(u, { method, headers: { "Content-Type": "application/json" },
@@ -5729,7 +5737,7 @@ async function quietDoerSection(browser, base) {
       const p = await ctx.newPage();
       p.on("pageerror", e => errors.push(String(e)));
       await p.goto(base, { waitUntil: "domcontentloaded" });
-      await p.waitForFunction(() => typeof alerting !== "undefined", null, { timeout: 15000 });
+      await p.waitForFunction(() => typeof alerting !== "undefined", null, { timeout: slow(15000) });
       await p.waitForTimeout(1500);
       const said = title => p.evaluate(t => (window.__notes || []).some(n => n.title === t) ||
         [...document.querySelectorAll("#toasts .toast")].some(e => e.textContent.includes(t)), title);
@@ -5740,7 +5748,7 @@ async function quietDoerSection(browser, base) {
         landList = landList.concat(c);
         poke();
         // The line is there whether it was said or not, so it says the poll ran.
-        await p.waitForFunction(t => toastLog().some(e => e.title === t), title, { timeout: 10000 });
+        await p.waitForFunction(t => toastLog().some(e => e.title === t), title, { timeout: slow(10000) });
       };
       const where = focused ? "focused" : "unfocused";
 
@@ -5760,7 +5768,7 @@ async function quietDoerSection(browser, base) {
       poke();
       await p.evaluate(() => runRefresh());
       await p.waitForFunction(() => toastLog().some(e => e.title === "qd doer needs permission"), null,
-        { timeout: 10000 }).catch(() => fail(where + ": a permission request from an agent-launched card left no trace."));
+        { timeout: slow(10000) }).catch(() => fail(where + ": a permission request from an agent-launched card left no trace."));
       if (!await said("qd doer needs permission")) fail(where + ": a permission request from an agent-launched card was muted.");
       landPerms = [];
 
@@ -5775,7 +5783,7 @@ async function quietDoerSection(browser, base) {
       // The box itself: ticked by default, and it stores what is clicked.
       await p.evaluate(() => { localStorage.removeItem("atrium.sound"); });
       await p.reload({ waitUntil: "domcontentloaded" });
-      await p.waitForFunction(() => typeof paintSettings === "function", null, { timeout: 15000 });
+      await p.waitForFunction(() => typeof paintSettings === "function", null, { timeout: slow(15000) });
       const box = await p.evaluate(() => { paintSettings(); return document.getElementById("s-quietdoers").checked; });
       if (!box) fail(where + ": the gear box is not ticked by default.");
       await p.evaluate(() => {
@@ -5828,9 +5836,9 @@ async function usageChartsSection(browser, base) {
     e.dataset.room + "|" + e.dataset.id + "|" + e.querySelector("b").textContent));
   try {
     await p.goto(base, { waitUntil: "domcontentloaded" });
-    await p.waitForFunction(() => typeof hubIsHub !== "undefined" && hubIsHub && hubRooms.length === 2, null, { timeout: 15000 });
+    await p.waitForFunction(() => typeof hubIsHub !== "undefined" && hubIsHub && hubRooms.length === 2, null, { timeout: slow(15000) });
     await p.evaluate(() => document.querySelector('.tab[data-view="usage"]').click());
-    await p.waitForSelector("#uc-body .ucchart svg rect", { state: "attached", timeout: 10000 })
+    await p.waitForSelector("#uc-body .ucchart svg rect", { state: "attached", timeout: slow(10000) })
       .catch(() => fail("usageCharts: the tab drew no chart from the mocked read."));
     if (!asked.includes("alpha") || !asked.includes("sgg")) fail("usageCharts: each room was not asked for itself: " + asked);
     const before = await cardCount();
@@ -5851,7 +5859,7 @@ async function usageChartsSection(browser, base) {
       ended_at: new Date().toISOString(), cause: "operator", input: 100, output: 100, cache_write_5m: 0,
       cache_write_1h: 0, cache_read: 1000, cost: 1.5 }) + "\n\n"));
     await p.waitForFunction(() => /\$2\.50/.test(document.querySelector('.ucmini[data-room="alpha"] b').textContent),
-      null, { timeout: 5000 }).catch(() => fail("usageCharts: a usage event did not grow alpha's card."));
+      null, { timeout: slow(5000) }).catch(() => fail("usageCharts: a usage event did not grow alpha's card."));
     const after = await cardCount();
     const sgg = after.find(s => s.startsWith("sgg|c1|")) || "";
     if (!/\$1\.00$/.test(sgg)) fail("usageCharts: a usage event for alpha moved sgg's card: " + sgg);
@@ -5867,7 +5875,7 @@ async function usageChartsSection(browser, base) {
     // A room that does not answer is named, not counted as zero.
     sggDown = true;
     await p.evaluate(() => loadUsageTab());
-    await p.waitForSelector(".ucmissing", { timeout: 5000 }).catch(() => fail("usageCharts: a silent room was not named."));
+    await p.waitForSelector(".ucmissing", { timeout: slow(5000) }).catch(() => fail("usageCharts: a silent room was not named."));
     const missing = await p.evaluate(() => (document.querySelector(".ucmissing") || {}).textContent || "");
     if (!/sgg/.test(missing)) fail("usageCharts: the missing-room note does not name the room: " + missing);
     sggDown = false;
@@ -5931,7 +5939,7 @@ async function main() {
 
     // ── the task list paints (not blank) ──────────────────────────────────
     // The board opens on the stack view, which paints from /v1/tasks.
-    await page.waitForSelector("#stack-list .stackrow", { timeout: 15000 });
+    await page.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
     const firstId = await page.getAttribute("#stack-list .stackrow", "data-id");
     if (firstId !== "t1") {
       fail("the stack painted a row with data-id " + firstId + ", not the card " +
@@ -5951,7 +5959,7 @@ async function main() {
     tasksMode = "seen";
     await page.evaluate(() => runRefresh());
     await page.waitForSelector('#stack-list .stackrow[data-id="seen1"] .chip.unseen',
-      { state: "attached", timeout: 15000 });
+      { state: "attached", timeout: slow(15000) });
     const seenMarks = await page.evaluate(async () => {
       await renderTermList();
       const row = document.querySelector('#stack-list .stackrow[data-id="seen1"]');
@@ -6011,7 +6019,8 @@ async function main() {
     // Attached, not visible: the terminals view is hidden while the test sits on
     // another tab, and this is about what the strip draws, not whether it shows.
     await page.waitForSelector('#term-list .card.tab[data-id="pin1"].cold',
-      { state: "attached", timeout: 15000 });
+      { state: "attached", timeout: slow(15000) })
+      .catch(() => { throw new Error("dismiss: waited " + slow(15000) + "ms for the cold pin1 row in the strip"); });
 
     // Right-click it. The menu must carry a dismiss entry: a dead terminal's
     // right-click is never allowed to be a dead end.
@@ -6026,14 +6035,22 @@ async function main() {
         .some(b => /^dismiss\b/.test(b.textContent.trim()));
     });
     try {
+      // A render landing between the right-click and this check can close the
+      // menu on a loaded machine, so a closed menu is opened again rather than
+      // waited on for the whole budget.
       await page.waitForFunction(() => {
         const m = document.getElementById("cardmenu");
-        return m && m.classList.contains("on") &&
-          [...m.querySelectorAll(":scope > button")].some(b => /^dismiss\b/.test(b.textContent.trim()));
-      }, null, { timeout: 15000 });
+        if (!m || !m.classList.contains("on")) {
+          const el = document.querySelector('#term-list .card.tab[data-id="pin1"]');
+          if (el) el.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, clientX: 40, clientY: 40 }));
+          return false;
+        }
+        return [...m.querySelectorAll(":scope > button")].some(b => /^dismiss\b/.test(b.textContent.trim()));
+      }, null, { timeout: slow(15000), polling: 250 });
     } catch (e) {
       fail("a terminated pinned terminal's right-click menu offered no dismiss " +
-        "action, so the operator has no way to remove it.");
+        "action, so the operator has no way to remove it (waited " + slow(15000) +
+        "ms for #cardmenu to open with a dismiss button, HEADLESS_SLOW scales it).");
     }
 
     // Press dismiss and let the unpin PATCH land, then render the poll the
@@ -6041,7 +6058,8 @@ async function main() {
     if (await hasDismiss()) {
       const patched = page.waitForResponse(r =>
         r.url().endsWith("/v1/tasks/pin1") && r.request().method() === "PATCH",
-        { timeout: 15000 });
+        { timeout: slow(15000) })
+        .catch(() => { throw new Error("dismiss: waited " + slow(15000) + "ms for the unpin PATCH on pin1"); });
       await page.evaluate(() => {
         const b = [...document.getElementById("cardmenu").querySelectorAll(":scope > button")]
           .find(x => /^dismiss\b/.test(x.textContent.trim()));
@@ -6079,7 +6097,7 @@ async function main() {
       renderTermList();
     });
     await page.waitForSelector('#term-list .tnest[data-group="active"] .card.tab[data-id="filed1"]',
-      { state: "attached", timeout: 15000 }).catch(() => {});
+      { state: "attached", timeout: slow(15000) }).catch(() => {});
     const filedState = () => page.evaluate(() => {
       const nest = document.querySelector('#term-list .tnest[data-group="active"]');
       const head = nest && nest.previousElementSibling;
@@ -6177,7 +6195,7 @@ async function main() {
       await renderTermList();
     });
     await page.waitForSelector('#term-list .card.tab[data-id="subwork"]',
-      { state: "attached", timeout: 15000 });
+      { state: "attached", timeout: slow(15000) });
     const hDef = await hideState();
     if (hDef.subMode !== "on" || hDef.agentMode !== "none") {
       fail("the hide defaults are not subagents-on / agents-off when unset: " +
@@ -6557,7 +6575,7 @@ async function main() {
     await page.click('.tab[data-view="terms"]');
     await page.evaluate(() => renderTermList());
     await page.waitForSelector('#term-list .card.tab[data-id="pin1"]',
-      { state: "visible", timeout: 15000 });
+      { state: "visible", timeout: slow(15000) });
     const phoneTerm = await page.evaluate(() => {
       const vw = window.innerWidth;
       const list = document.getElementById("term-list");
@@ -6695,13 +6713,13 @@ async function main() {
     await page.setViewportSize({ width: 1280, height: 800 });
     tasksMode = "first";
     await page.click('.tab[data-view="stack"]');
-    await page.waitForSelector('#stack-list .stackrow', { timeout: 15000 });
+    await page.waitForSelector('#stack-list .stackrow', { timeout: slow(15000) });
 
     // ── a hung fetch does not blank the board, and a later refresh repaints ─
     // Back on the stack, make /v1/tasks hang, then drive one refresh through the
     // single-flight guard. The pass wedges on the hung fetch.
     await page.click('.tab[data-view="stack"]');
-    await page.waitForSelector('#stack-list .stackrow[data-id="t1"]', { timeout: 15000 });
+    await page.waitForSelector('#stack-list .stackrow[data-id="t1"]', { timeout: slow(15000) });
     tasksMode = "hang";
     await page.evaluate(() => runRefresh());
 
@@ -6730,7 +6748,7 @@ async function main() {
         console.error("[hang " + (i * 500) + "ms] " + JSON.stringify(st));
       }
     }
-    await page.waitForSelector('#stack-list .stackrow[data-id="t2"]', { timeout: 15000 });
+    await page.waitForSelector('#stack-list .stackrow[data-id="t2"]', { timeout: slow(15000) });
 
     if (consoleErrors.length) {
       fail("the page threw uncaught errors: " + consoleErrors.join(" | "));
@@ -6818,7 +6836,7 @@ async function main() {
       window.__attachAttempts = 0;
     });
     // Wait past the capped backoff for a pending retry to fire and open.
-    await page.waitForFunction(() => window.__attachAttempts > 0, null, { timeout: 20000 });
+    await page.waitForFunction(() => window.__attachAttempts > 0, null, { timeout: slow(20000) });
     await page.waitForTimeout(1500);
     const opensAfter = await page.evaluate(() => window.__openTermCount);
     const attemptsAfter = await page.evaluate(() => window.__attachAttempts);
@@ -6839,7 +6857,7 @@ async function main() {
     tasksMode = "first";
     loopListSupervised = false;
     await page.click('.tab[data-view="stack"]');
-    await page.waitForSelector('#stack-list .stackrow', { timeout: 15000 });
+    await page.waitForSelector('#stack-list .stackrow', { timeout: slow(15000) });
 
     // ── the terminal fills the pane down to the footer, no dead band ────────
     // THE BUG THIS SECTION EXISTS FOR. xterm draws whole rows, so the grid is
@@ -6978,7 +6996,7 @@ async function main() {
         try { clearTermPane = () => {}; } catch (e) {}
         openTerm(t);
       });
-      await floorPage.waitForSelector("#ask[open]", { timeout: 5000 }).catch(() => {});
+      await floorPage.waitForSelector("#ask[open]", { timeout: slow(5000) }).catch(() => {});
       const seen = await floorPage.evaluate(() => ({
         open: document.getElementById("ask").open,
         body: document.getElementById("ask-body").textContent,
@@ -7056,7 +7074,7 @@ async function main() {
       window.__fakeSolo.postMessage({ type: "solo-claim", task: "s1" });
     });
     // The board heard the claim: the card reads as popped out.
-    await page.waitForFunction(() => poppedOut("s1"), null, { timeout: 15000 });
+    await page.waitForFunction(() => poppedOut("s1"), null, { timeout: slow(15000) });
 
     // The window's OWN poll lapses past soloClaimFor without re-claiming, which
     // a reconnect/backoff through a hub restart causes. Simulated by ageing the
@@ -7072,7 +7090,7 @@ async function main() {
     try {
       await page.waitForFunction(
         () => poppedOut("s1") && (Date.now() - (soloHeld.get("s1") || 0) < 5000), null,
-        { timeout: 15000 });
+        { timeout: slow(15000) });
       reheard = true;
     } catch (e) {}
     if (!reheard) {
@@ -7091,7 +7109,7 @@ async function main() {
     await page.evaluate(() => runRefresh());
     let dropped = false;
     try {
-      await page.waitForFunction(() => !poppedOut("s1"), null, { timeout: 15000 });
+      await page.waitForFunction(() => !poppedOut("s1"), null, { timeout: slow(15000) });
       dropped = true;
     } catch (e) {}
     if (!dropped) {
@@ -7170,7 +7188,7 @@ async function main() {
         const b = document.getElementById("t-wait");
         return b && !b.hidden && /reconnect/i.test(
           (document.getElementById("t-wait-say") || {}).textContent || "");
-      }, null, { timeout: 15000 });
+      }, null, { timeout: slow(15000) });
 
       // And the dead-end modal is NOT up while the hub is a moment from
       // answering. That modal is the bug: a transient restart used to pop it.
@@ -7188,7 +7206,7 @@ async function main() {
       // title carries the card's name once soloFetchCard returns.
       soloMode = "ok";
       await solo.waitForFunction(() =>
-        /solo card/.test(document.title), null, { timeout: 20000 });
+        /solo card/.test(document.title), null, { timeout: slow(20000) });
 
       // The reconnecting line comes down, and the dead-end modal never appeared.
       const afterRecover = await solo.evaluate(() => {
@@ -7222,7 +7240,7 @@ async function main() {
         const d = document.getElementById("ask");
         return !!(d && d.open &&
           (document.getElementById("ask-title") || {}).textContent === "nothing to attach to");
-      }, null, { timeout: 15000 });
+      }, null, { timeout: slow(15000) });
     } catch (e) {
       fail("a genuine 404 did not show the dead-end 'nothing to attach to' modal: " +
         (e && e.message ? e.message : e));
@@ -7252,12 +7270,12 @@ async function main() {
       await hub.waitForFunction(() => {
         const el = document.getElementById("rooms");
         return el && !el.hidden;
-      }, null, { timeout: 15000 });
+      }, null, { timeout: slow(15000) });
       await hub.evaluate(() => openRooms());
       await hub.waitForFunction(() => {
         const m = document.getElementById("rooms-menu");
         return m && !m.hidden;
-      }, null, { timeout: 15000 });
+      }, null, { timeout: slow(15000) });
 
       // sgg starts disconnected in the open menu, and its placement is recorded
       // so the live update can be proven not to move it. The row is found by its
@@ -7300,7 +7318,7 @@ async function main() {
         });
         return !!(sgg && sgg.querySelector(".dot.live") &&
           !/disconnect/i.test(sgg.textContent));
-      }, null, { timeout: 15000 });
+      }, null, { timeout: slow(15000) });
 
       // The menu held its placement: only the rows changed under the user.
       const after = await hub.evaluate(() => {
@@ -7325,12 +7343,12 @@ async function main() {
       await hub.waitForFunction(() => {
         const tab = document.querySelector('.tab[data-view="audit"]');
         return tab && !tab.hidden;
-      }, null, { timeout: 15000 });
+      }, null, { timeout: slow(15000) });
       await hub.evaluate(() => switchView("audit"));
       await hub.waitForFunction(() => {
         const rows = document.querySelectorAll("#audit-list .aud-row");
         return rows.length >= 2;
-      }, null, { timeout: 15000 });
+      }, null, { timeout: slow(15000) });
       const audit = await hub.evaluate(() => {
         const rows = [...document.querySelectorAll("#audit-list .aud-row")];
         const first = rows[0];
@@ -7376,7 +7394,7 @@ async function main() {
           const rm = r.querySelector(".aud-room");
           return rm && rm.textContent === "sgg";
         });
-      }, null, { timeout: 15000 }).catch(() => fail(
+      }, null, { timeout: slow(15000) }).catch(() => fail(
         "the audit pane did not filter to the sgg room."));
 
       // ── the audit pane filters by kind ────────────────────────────────────
@@ -7390,7 +7408,7 @@ async function main() {
       });
       await hub.waitForFunction(() =>
         document.querySelectorAll("#audit-list .aud-row").length === 4, null,
-        { timeout: 15000 }).catch(() => fail(
+        { timeout: slow(15000) }).catch(() => fail(
           "clearing the room filter did not restore the full audit feed."));
       await hub.evaluate(() => {
         const sel = document.getElementById("audit-kind");
@@ -7401,7 +7419,7 @@ async function main() {
         const rows = [...document.querySelectorAll("#audit-list .aud-row")];
         return rows.length === 1 &&
           rows[0].querySelector(".aud-kind").textContent === "hub-started";
-      }, null, { timeout: 15000 }).catch(() => fail(
+      }, null, { timeout: slow(15000) }).catch(() => fail(
         "the audit pane did not filter to the hub-started kind."));
 
       // ── a new event arrives live, no reload ───────────────────────────────
@@ -7415,7 +7433,7 @@ async function main() {
       });
       await hub.waitForFunction(() =>
         document.querySelectorAll("#audit-list .aud-row").length === 4, null,
-        { timeout: 15000 }).catch(() => fail(
+        { timeout: slow(15000) }).catch(() => fail(
           "clearing the kind filter did not restore the full audit feed."));
       auditLive = true;
       hubStreams.forEach(r => { try { r.write("event: audit\ndata: {}\n\n"); } catch (e) {} });
@@ -7423,7 +7441,7 @@ async function main() {
         const rows = [...document.querySelectorAll("#audit-list .aud-row")];
         return rows.length === 5 &&
           rows[0].querySelector(".aud-kind").textContent === "session-exit";
-      }, null, { timeout: 15000 }).catch(() => fail(
+      }, null, { timeout: slow(15000) }).catch(() => fail(
         "the audit pane did not pick up a live event on the `audit` delta."));
 
       // ── a long feed scrolls in its own box, filters stay put ──────────────
@@ -7434,7 +7452,7 @@ async function main() {
       hubStreams.forEach(r => { try { r.write("event: audit\ndata: {}\n\n"); } catch (e) {} });
       await hub.waitForFunction(() =>
         document.querySelectorAll("#audit-list .aud-row").length === 150, null,
-        { timeout: 15000 }).catch(() => fail("the audit pane did not draw the long feed."));
+        { timeout: slow(15000) }).catch(() => fail("the audit pane did not draw the long feed."));
       for (const vp of [{ width: 1280, height: 800 }, { width: 390, height: 780 }]) {
         await hub.setViewportSize(vp);
         const sc = await hub.evaluate(() => {
@@ -7475,7 +7493,7 @@ async function main() {
       hubStreams.forEach(r => { try { r.write("event: audit\ndata: {}\n\n"); } catch (e) {} });
       await hub.waitForFunction(() =>
         document.querySelectorAll("#audit-list .aud-row").length === 151, null,
-        { timeout: 15000 }).catch(() => fail("the audit pane did not pick up the live line on the long feed."));
+        { timeout: slow(15000) }).catch(() => fail("the audit pane did not pick up the live line on the long feed."));
       const late = await hub.evaluate((id) => {
         const list = document.getElementById("audit-list");
         const row = list.querySelector('.aud-row[data-id="' + id + '"]');
@@ -7534,7 +7552,7 @@ async function main() {
           const b = document.getElementById("gauto");
           return b && b.textContent.trim() === w &&
             !b.classList.contains("unknown") && !b.classList.contains("stale");
-        }, want, { timeout: 15000 });
+        }, want, { timeout: slow(15000) });
       } catch (e) {
         fail(what + ": #gauto did not heal to " + JSON.stringify(want) + " once settings answered, it is " +
           JSON.stringify(await gautoPaint(pg)));
@@ -7605,11 +7623,11 @@ async function main() {
       // The page's stream has to be open before it is cut. Cut before it
       // reached the server, it was never ended, so it never reopened.
       await ga3.waitForFunction(() => document.getElementById("conn").classList.contains("live"), null,
-        { timeout: 15000 });
+        { timeout: slow(15000) });
       hubHasRoom = false;
-      const reopened = ga3.waitForRequest(r => r.url().includes("/v1/events"), { timeout: 15000 });
+      const reopened = ga3.waitForRequest(r => r.url().includes("/v1/events"), { timeout: slow(15000) });
       const settingsAfter = reopened.then(() => ga3.waitForResponse(r =>
-        r.url().split("?")[0].endsWith("/v1/settings") && r.status() === 409, { timeout: 15000 }));
+        r.url().split("?")[0].endsWith("/v1/settings") && r.status() === 409, { timeout: slow(15000) }));
       openStreams.splice(0).forEach(r => { try { r.end(); } catch (e) {} });
       hubStreams.splice(0);
       await settingsAfter;
@@ -7658,12 +7676,12 @@ async function main() {
     const checked = (list, id, want) => sw.waitForFunction(([l, i, w]) => {
       const b = document.querySelector(`#${l} .chip.toggle[data-id="${i}"]`);
       return b && b.getAttribute("aria-checked") === w;
-    }, [list, id, want], { timeout: 15000 });
+    }, [list, id, want], { timeout: slow(15000) });
     const wrote = (path, method) => sw.waitForResponse(r =>
-      r.url().split("?")[0].endsWith(path) && r.request().method() === method, { timeout: 15000 });
+      r.url().split("?")[0].endsWith(path) && r.request().method() === method, { timeout: slow(15000) });
     // A refusal is told the way the page tells every error: the ask dialog.
     const toldAndClosed = async (words) => {
-      await sw.waitForSelector("#ask[open]", { timeout: 15000 });
+      await sw.waitForSelector("#ask[open]", { timeout: slow(15000) });
       const said = await sw.evaluate(() => document.getElementById("ask").textContent);
       if (!said.includes(words)) {
         fail("a refused switch did not show the refusal; the dialog said " + JSON.stringify(said.trim()));
@@ -7683,9 +7701,9 @@ async function main() {
     };
     try {
       await sw.goto(base, { waitUntil: "domcontentloaded" });
-      await sw.waitForSelector("#stack-list .stackrow", { timeout: 15000 });
+      await sw.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
       await sw.evaluate(() => goRunners("runners"));
-      await sw.waitForSelector('#harness-list .chip.toggle[data-id="hoff"]', { timeout: 15000 });
+      await sw.waitForSelector('#harness-list .chip.toggle[data-id="hoff"]', { timeout: slow(15000) });
 
       const buttons = await sw.evaluate(() =>
         [...document.querySelectorAll("#harness-list button, #fixture-list button")]
@@ -7731,7 +7749,7 @@ async function main() {
 
       // Fixtures: the same box, and a key press flips it.
       await sw.evaluate(() => goRunners("fixtures"));
-      await sw.waitForSelector('#fixture-list .chip.toggle[data-id="foff"]', { timeout: 15000 });
+      await sw.waitForSelector('#fixture-list .chip.toggle[data-id="foff"]', { timeout: slow(15000) });
       sameBox("fixtures", await pill("fixture-list", "fon"), await pill("fixture-list", "foff"));
       put = wrote("/v1/fixtures/foff", "PUT");
       await sw.focus('#fixture-list .chip.toggle[data-id="foff"]');
