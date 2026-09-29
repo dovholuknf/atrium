@@ -606,6 +606,74 @@ Find out why the existing silent-stop check behind the stuck alerts (`settings-s
 fire here. It may read hook timing only, not pty output. And find why this Stop was lost: check the room log for the
 card around 15:45 on 2026-09-25 (missing, failed, or overwritten by a late fire-and-forget `/activity` post).
 
+### Findings (sa21, 2026-09-28)
+
+**Why the existing check did not fire.** `stuckNow` (`internal/daemon/a2a.go`) is a hook-timing check, never a pty
+check, and it has three gaps that each cover this card. It only walks AGENT-LAUNCHED cards (`agentLaunched`), and this
+card was started from the board. Its silent-stop case needs the card already in `needs-input` and owing a report,
+and this card read `running`. Its stuck-tool case needs `toolSince`, a tool call running 20 minutes, and this card
+read `thinking`. So a `running` card with a lost Stop is invisible to it by construction, and the board's "stuck"
+list (`settings-spine.js`, `isStuck`) only renders what `stuckNow` serves.
+
+**Why the Stop was lost: not provable from the log.** `room.err.20260926-083926` (the file spanning 2026-09-25 after
+09:12) has no line at all between 13:00 and 17:00: the room logs nothing for a hook that succeeds, and nothing for
+one that never arrived. The only mention of the card is its restart at 18:50. What the code does allow, most likely
+first: (1) an out-of-order `/activity` post. `handleActivity` answers and then runs `go d.onActivity(in)`, so two
+posts a few milliseconds apart race. A `tool-start` (PreToolUse) processed AFTER the `turn-end` calls `turnResumed`,
+which moves `needs-input` back to `running` and sets the activity, and the following `tool-end` leaves `thinking`.
+That is exactly `running` plus `thinking` with a finished terminal, and needs no lost hook. (2) The Stop hook process
+never ran or timed out. (3) A late `prompt` event. Only (1) can be pinned by logging, so the firing log below
+records the last activity event's kind and age, and a later pass can order `/activity` posts by a sequence stamp
+if the log shows (1).
+
+### Design
+
+**Signal, all of it required.** The card is `running`. The runner is Claude (`t.Runner`, scoped to claude: codex has
+no idle signature I could confirm, so it is never flagged). It is supervised, so atrium owns the pty. The activity is
+mid-turn (`midTurn`, read past the staleness cutoff, since a lost Stop is exactly the case that outlives it). It has
+no subagents from its last Stop (`onSubagents`) and no dialog. The pty has produced no output for `LooksIdleAfter`
+(25s, `ATRIUM_LOOKS_IDLE`). And the last frame reads idle.
+
+**Silence threshold.** 25s. Claude Code redraws its spinner about once a second while it works, so 25s is more than
+20 missed redraws. The check rides the reaper's 20s tick, so a firing lands 25 to 45s after the turn ended. A
+dedicated faster timer was rejected: the badge is a hint, and a second ticker is a second thing to stop at shutdown.
+
+**Idle signature from the last frame (claude only).** Read `buf.Tail(8KB)`, strip escapes with the existing `ansi`
+regexp, and take the text from the LAST input-box top border (`╭`). Idle when that box has its bottom border (`╰`)
+after it and neither the box's footer nor the non-empty line just above the box contains `to interrupt` (the working
+spinner line reads `... esc to interrupt` and sits directly above the box). No box at all, or an interrupt hint in
+the last frame, means not idle, so a long silent Bash under a live spinner, a dialog, and a half drawn screen all
+stay unflagged. It fails toward not flagging: a missed badge costs what the board costs today. The strings are
+Claude Code's and can change, so they are constants in one file (`idleframe.go`) with tests that pin them.
+
+**How the pty is read.** Two additions to `supervisor.go`, nothing restructured. `runner.lastOut` is an atomic unix
+nano stamped in `deliverOutput` (one atomic store, outside `r.mu`), read by `lastOutputAt()`. The frame is
+`r.buf.Tail`, an existing bounded read. For clearing, `runner.wake` is an `atomic.Pointer[func()]`, nil unless the
+card is flagged, so the byte path and the keystroke path each pay one atomic load, the same shape as `onKey`. It is
+called after `r.mu` is released in `deliverOutput` and after a real keystroke in `noteOperatorTyped`.
+
+**The badge is activity, never status.** `Activity` gains `looks_idle` and `idle_seconds`, held in the activity
+tracker's own map, in memory. `get` attaches them (including past the staleness cutoff). `set` (any hook event: tool,
+prompt, idle) clears them, so a late Stop settles the card exactly as it does today. `forget` clears them. The stored
+status is never touched, so nothing here can move a card between columns.
+
+**Board.** `activityChip` draws, for `looks_idle`, a warn coloured chip with a hollow ring with a gap and no
+animation, in place of the live chip, with the tooltip "no turn-end from the agent. its screen has been idle for
+Ns." `workingNow` returns false for it, which stops the terminal strip's runner mark and the activity sort from
+claiming work. Any activity push replaces `t.activity`, so clearing needs no board state.
+
+**Alert.** Wording "looks idle (no turn-end received)", a guess and worded as one. It rides the existing `waiting`
+alert kind (so the gear's waiting setting governs it), keyed by card id plus the time it was flagged, so it rings once
+per firing and a card that wakes and stalls again rings again.
+
+**Logging.** Every firing logs one line: `[atrium] looks idle: <wire> <card> silent 31s, activity thinking for 12m,
+last event tool-end 12m ago`. Every clearing logs `looks idle cleared: <wire> by output|keystroke|hook after 40s`.
+A firing cleared within the same minute by output says the frame check is too eager.
+
+**Not done.** No migration. No change to the permission chain, `/activity`, or the hooks. No status change. No
+codex. `stuckNow` is untouched because sa31 is in a2a.go: the new watch is its own function in a new file, called
+from the reaper next to `watchWorkers` in one line.
+
 ## 22. Copy on select copies every find match (bug)
 
 Raised by clint 2026-09-25: with copy on select on, the terminal find bar (ctrl-shift-f) copies to the clipboard. It
