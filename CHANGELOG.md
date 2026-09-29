@@ -5,6 +5,14 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **A deploy's revert snapshot is named after the file it copies.** See `docs/backlog-2.md` item 65.
+
+  `Save-Revert` used to name `atrium.revert-<id>.exe` after the build the hub's health reported. When the room had been
+  deployed after the hub, the file held a newer build than the hub ran, so the name lied. The snapshot is now named
+  from `atrium version` run on the file itself, `atrium.revert-<commit7>-<board8>.exe`. A file that cannot answer gets
+  `atrium.revert-unknown-<timestamp>.exe` and a warning, and the deploy carries on. `scripts/live/test-save-revert.ps1`
+  proves it against two real binaries in a temp directory.
+
 - **A worker waiting on its own background runs is no longer marked STUCK.** See `docs/backlog-2.md` item 31 and
   `docs/background-hold-design.md`.
 
