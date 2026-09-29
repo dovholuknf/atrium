@@ -181,10 +181,11 @@ The prefix is exact, so the fork must reproduce everything that is part of the c
 - **Fast mode.** A header in the cache key. A card whose last main reply has `usage.speed: "fast"` is skipped.
 - **Environment.** The card's own environment, with `ATRIUM_PERM_GATE=off` so the fork's hooks do not reach atrium
   and do not appear as a second session on the board.
-- **Launch args.** The fork does not carry the card's launch args. A card launched lean (tag `atrium:lean`, see
-  `docs/lean-workers-design.md`) runs with its own `--disallowedTools`, `--mcp-config`, `--append-system-prompt`
-  and setting sources, so its tool list and system prompt are not the fork's, and the prefix differs from the first
-  token. **Lean cards are skipped** as `skipped: lean card`. Found 2026-09-28 (backlog-2 item 70): the only two
+- **Launch args.** Carried since item 73, filtered to the flags that shape the request. See
+  `docs/keepalive-fork-args-design.md`. Before that a card launched lean (tag `atrium:lean`, see
+  `docs/lean-workers-design.md`) ran with its own `--disallowedTools`, `--mcp-config`, `--append-system-prompt`
+  and setting sources that the fork lacked, so the prefix differed from the first token and lean cards were skipped
+  as `skipped: lean card`. Found 2026-09-28 (backlog-2 item 70): the only two
   real misses in the ledger were the two lean cards. sa55's read 0 of 123,752 and wrote 127,952 at the 1h price,
   $1.02 against a $0.12 budget. The other read 10,259 of 99,886.
 
