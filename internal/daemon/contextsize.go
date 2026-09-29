@@ -205,7 +205,7 @@ func (d *Daemon) watchContext() error {
 			continue
 		}
 		d.publishTask(t.ID)
-		if !agentLaunched(t) {
+		if !d.reportsToLauncher(t) {
 			continue
 		}
 		if tokens < limit {
