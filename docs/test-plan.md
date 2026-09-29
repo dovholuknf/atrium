@@ -6168,3 +6168,44 @@ change's.
 1. With one viewer attached, attach a second at a different height.
 
 **Expected:** the width follows at once and the height waits half a second, as before.
+
+## DW. A lean worker has the operator's status line
+
+1. With a `statusLine` in `~/.claude/settings.json`, launch a lean worker (`atrium_launch`, lean left at its default).
+2. Look at the bottom of its terminal.
+
+**Expected:** the status line shows, the same as in a session you started yourself, and the card's context size
+appears on the board once the status line has posted.
+
+## DX. A card stays where it was launched
+
+### DX1. A cd does not move the card
+
+1. Launch a subagent card in a directory with no `.git` that has a subdirectory holding a repository.
+2. In the session, `cd` into the repository, run a command that needs permission, then `cd` back and run another.
+3. Read the card's worktree on the board.
+
+**Expected:** it is still the launch directory, and the card is not wound down.
+
+### DX2. A removed launch directory still ends the worker
+
+1. Launch a subagent card, then remove its launch directory from outside.
+
+**Expected:** after two reaper ticks the runner is asked to leave.
+
+## DY. The file-link tip stays up across a repaint
+
+### DY1. Repaint under the pointer
+
+1. Attach a terminal on a card with a directory and print a line that names a file in it.
+2. Hover the path until its tip shows, then have the runner repaint that row while the pointer stays put.
+
+**Expected:** the tip stays on screen the whole time. It does not vanish and come back.
+
+### DY2. It still hides when it should
+
+1. With the tip up, move the pointer onto a different path, then onto blank terminal, then out of the terminal.
+2. Hover again and click the path, then hover again and scroll the page.
+
+**Expected:** a different path replaces the tip at once, blank terminal hides it within about 150 ms, and leaving the
+terminal, the click and the scroll hide it at once.
