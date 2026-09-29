@@ -3367,7 +3367,8 @@ readable, such as the tool name and the first field, rather than escaped JSON cu
 
 ## u-004. Answer an agent's Open Questions from the board (design)
 
-Status: not started. Design first, backlog only. Owned by @ui. Raised by clint 2026-09-29.
+Status: not started. Design first, backlog only. Owned by @ui. Raised by clint 2026-09-29. Shares the walk drawer
+and rail with u-005: see `docs/review-tab-design.md` section 4.
 
 An agent that ends a turn with an `Open Questions:` block is running an interview, and today the board only counts
 it: the `? N` badge (`internal/api/web/js/seen.js`, parsed and stored by `internal/store/seen.go`). To answer, clint
@@ -3463,8 +3464,8 @@ designing this.
 
 ## u-005. Pull request reviews as a native thing on the board (design)
 
-Status: not started. Design first, backlog only. Owned by @ui, with @review as the first user. Raised by clint
-2026-09-29.
+Status: designed, awaiting clint's approval: `docs/review-tab-design.md`. Owned by @ui, with @review as the first
+user. Raised by clint 2026-09-29.
 
 Today a review is files: a report table and one `.txt` per finding under `D:/worktrees/claude/reviews/`, walked one
 comment at a time on @review's card while clint copies each into GitHub by hand. clint: "atrium needs to support
