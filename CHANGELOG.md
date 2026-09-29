@@ -5,6 +5,35 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **A card owes its launcher a report only for a prompt its launcher sent.** See `docs/owed-report-design.md` and
+  `docs/backlog-2.md` item 41.
+
+  A launched card used to owe its launcher a report for every prompt from anybody, so a resident session such as a
+  merger, whose prompts come from its own workers, rang the orchestrator with `ended its turn without reporting` for
+  each one. Now only the opening prompt and a message from the launcher make a card owe. The operator, a note, an
+  action, atrium's own wake and a message from any other session do not, and neither does a turn the session's own
+  background task or monitor woke, which has no atrium prompt behind it. The board's STUCK mark reads the same rule.
+
+  The debt is stored in a new `task.owed_at` column (migration `0068_owed_at`, backfilled from `prompted_at` so a debt
+  open at upgrade stays open), so a daemon restart neither forgives it nor repeats a notice.
+
+- **A card stuck on `running` after a lost Stop gets a "looks idle" badge.** See `docs/backlog-2.md` item 21.
+
+  A `running` Claude card whose pty has been silent for 25 seconds (`ATRIUM_LOOKS_IDLE`) and whose last frame is an
+  empty input box with no spinner line now wears a warn coloured hollow ring in place of the live chip, with the
+  tooltip "no turn-end from the agent. its screen has been idle for Ns.", and raises an alert worded "looks idle (no
+  turn-end received)". It is an activity badge and never a status: nothing is stored and no card moves column. Any pty
+  output, keystroke or hook event takes it down, so a late Stop settles the card as normal. Every firing and every
+  clearing is logged with the frame classifier's reason. Claude runners only.
+
+  Caveat, what "idle frame" means. The daemon's own screen renderer draws the last 64KB of the terminal at the size it
+  was composed at, and only the live grid is read. It is idle when the last rows are a `❯` prompt between two full
+  width rules with up to four footer rows under the bottom rule (the hint line, and a custom status line), and no
+  row in the last twelve says "interrupt" or holds a spinner (`…` with a `(`). Anything else, including a screen
+  that cannot be read as a box, is working, so the badge fails toward not showing. It is checked against captures of
+  a real session (`internal/daemon/testdata/frame-*.bin`) and is tied to Claude Code's current strings.
+  A terminal composed at a width the ring did not record wraps the rules and reads as working.
+
 - **Real-time token burn and usage charts.** New `usage` tab beside history. It draws what every Claude card has spent, from the `session_usage` rows the room
   already keeps. Nothing new is recorded. A turn shows within about two seconds of ending, and a turn still running
   shows nothing until it ends.

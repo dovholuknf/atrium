@@ -141,7 +141,7 @@ func (pi *pendingInjector) hold(taskID string, m pendingMsg) {
 	if run == nil {
 		return
 	}
-	if t, err := pi.d.st.Get(taskID); err != nil || sessionGone(t) {
+	if t, err := pi.d.st.Get(taskID); err != nil || pi.d.sessionGone(t) {
 		return
 	}
 	pi.mu.Lock()
@@ -269,7 +269,7 @@ func (pi *pendingInjector) attempt(taskID string) {
 	// into, however long this waits. The message stays in the store for the
 	// hooks of a session resumed on that card.
 	t, err := pi.d.st.Get(taskID)
-	if err != nil || sessionGone(t) {
+	if err != nil || pi.d.sessionGone(t) {
 		pi.drop(taskID)
 		return
 	}
