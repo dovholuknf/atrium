@@ -5858,6 +5858,119 @@ async function quietDoerSection(browser, base) {
   tasksMode = was;
 }
 
+// ── the notification drawer's off switch ──────────────────────────────────
+// Backlog-2 item 79. Off holds back the toast, the desktop notification and the
+// sound, and RECORDS the alert instead: the drawer lists it and the bell's badge
+// counts it. A permission request still notifies. The choice lives in
+// localStorage, so a reload keeps it, and the bell and the aria-labels follow.
+async function notifyOffSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  const poke = () => openStreams.forEach(r => { try { r.write("event: task\ndata: {}\n\n"); } catch (e) {} });
+  const errors = [];
+  landList = [];
+  landPerms = [];
+  for (const focused of [false, true]) {
+    const ctx = await landContext(browser, !focused);
+    const where = focused ? "focused" : "unfocused";
+    try {
+      const p = await ctx.newPage();
+      p.on("pageerror", e => errors.push(String(e)));
+      await p.goto(base, { waitUntil: "domcontentloaded" });
+      await p.waitForFunction(() => typeof alerting !== "undefined" && typeof notifyIsOff === "function", null,
+        { timeout: slow(15000) });
+      await p.waitForTimeout(1500);
+      const said = title => p.evaluate(t => (window.__notes || []).some(n => n.title === t) ||
+        [...document.querySelectorAll("#toasts .toast")].some(e => e.textContent.includes(t)), title);
+      const count = title => p.evaluate(t => toastLog().filter(e => e.title === t).reduce((a, e) => a + (e.n || 1), 0), title);
+      const arrive = async (c, title) => {
+        await p.evaluate(() => document.querySelectorAll("#toasts .toast").forEach(t => t.remove()));
+        landList = landList.concat(c);
+        poke();
+        await p.waitForFunction(t => toastLog().some(e => e.title === t), title, { timeout: slow(10000) })
+          .catch(() => fail(where + ": " + title + " never reached the drawer log."));
+      };
+
+      // Turn it off through the drawer's own button.
+      await p.evaluate(() => { localStorage.removeItem("atrium.notify.off"); localStorage.removeItem("atrium.toastlog");
+        paintNotifyOff(); });
+      await p.evaluate(() => openToastLog());
+      const label = () => p.evaluate(() => ({
+        toggle: document.getElementById("toastlog-toggle").textContent,
+        toggleAria: document.getElementById("toastlog-toggle").getAttribute("aria-label"),
+        toggleTip: document.getElementById("toastlog-toggle").dataset.tip,
+        bell: document.querySelector("#toastlog-open .glyph").textContent,
+        bellAria: document.getElementById("toastlog-open").getAttribute("aria-label"),
+        bellTip: document.getElementById("toastlog-open").dataset.tip
+      }));
+      let l = await label();
+      if (l.toggle !== "turn off" || l.bell !== "\u{1F514}") fail(where + ": the on state paints wrong: " + JSON.stringify(l));
+      await p.click("#toastlog-toggle");
+      l = await label();
+      if (l.toggle !== "turn on") fail(where + ": the toggle did not read turn on: " + JSON.stringify(l));
+      if (l.bell !== "\u{1F515}") fail(where + ": the bell is not struck when off: " + JSON.stringify(l));
+      if (l.bellAria !== "notifications are off. click to see what arrived" || l.bellTip !== l.bellAria) {
+        fail(where + ": the bell's label is wrong: " + JSON.stringify(l));
+      }
+      if (l.toggleAria !== l.toggleTip || !l.toggleAria) fail(where + ": the toggle's aria-label does not follow its tip.");
+      await p.evaluate(() => document.getElementById("toastlog").close());
+
+      // Held back and recorded, once.
+      await arrive(landCard("no-a", { supervised: false }), "no a is on the board");
+      if (await said("no a is on the board")) fail(where + ": off still said an alert.");
+      if (await count("no a is on the board") !== 1) fail(where + ": the held alert was not recorded exactly once.");
+      const badge = await p.evaluate(() => document.querySelector("#toastlog-open .count").textContent);
+      if (!(Number(badge) >= 1)) fail(where + ": the badge did not count a held alert: '" + badge + "'.");
+
+      // A permission request still notifies.
+      landPerms = [{ id: "no-perm", task_id: "no-a", agent: "no a", tool: "Bash", command: "ls",
+        requested_at: new Date().toISOString().replace("Z", "") }];
+      poke();
+      await p.evaluate(() => runRefresh());
+      await p.waitForFunction(() => toastLog().some(e => e.title === "no a needs permission"), null,
+        { timeout: slow(10000) }).catch(() => fail(where + ": a permission request left no trace while off."));
+      if (!await said("no a needs permission")) fail(where + ": off silenced a permission request.");
+      landPerms = [];
+
+      // A failed fixture is held too: no toast, one drawer entry.
+      await p.evaluate(() => document.querySelectorAll("#toasts .toast").forEach(t => t.remove()));
+      openStreams.forEach(r => { try { r.write("event: fixtures-started\ndata: " +
+        JSON.stringify({ started: 0, failed: [{ label: "no-fx" }] }) + "\n\n"); } catch (e) {} });
+      await p.waitForFunction(() => toastLog().some(e => e.title === "1 fixture did not start"), null,
+        { timeout: slow(10000) }).catch(() => fail(where + ": a failed fixture left no drawer entry while off."));
+      if (await said("1 fixture did not start")) fail(where + ": off still said a failed fixture.");
+      if (await count("1 fixture did not start") !== 1) fail(where + ": the failed fixture was not recorded exactly once.");
+
+      // It survives a reload, and the bell is drawn struck at once.
+      await p.reload({ waitUntil: "domcontentloaded" });
+      await p.waitForFunction(() => typeof notifyIsOff === "function", null, { timeout: slow(15000) });
+      await p.waitForFunction(() => document.querySelector("#toastlog-open .glyph").textContent === "\u{1F515}", null,
+        { timeout: slow(5000) }).catch(() => fail(where + ": the struck bell did not survive a reload."));
+      if (!await p.evaluate(() => notifyIsOff())) fail(where + ": the choice did not survive a reload.");
+      // The gear shows the same switch.
+      if (!await p.evaluate(() => { paintSettings(); return document.getElementById("s-notifyoff").checked; })) {
+        fail(where + ": the gear's switch does not show off.");
+      }
+
+      // Back on: alerts say themselves again and the bell is whole.
+      await p.evaluate(() => openToastLog());
+      await p.click("#toastlog-toggle");
+      await p.evaluate(() => document.getElementById("toastlog").close());
+      l = await label();
+      if (l.toggle !== "turn off" || l.bell !== "\u{1F514}") fail(where + ": turning back on did not repaint: " + JSON.stringify(l));
+      await p.waitForTimeout(1500);
+      await arrive(landCard("no-b", { supervised: false }), "no b is on the board");
+      if (!await said("no b is on the board")) fail(where + ": turning back on did not restore the alert.");
+      landList = [];
+    } finally {
+      await ctx.close();
+    }
+  }
+  if (errors.length) fail("the notify-off pages threw: " + errors.join(" | "));
+  landList = []; landPerms = [];
+  tasksMode = was;
+}
+
 // THE USAGE TAB, from a mocked /v1/usage on a hub with two rooms.
 //
 // Both rooms hold a card with the SAME id, and a live `usage` event for one must
@@ -5959,7 +6072,7 @@ async function main() {
       stuck: stuckSection, carryLink: carryLinkSection,
       skinScope: skinScopeSection, skinHeal: skinHealSection, toastLives: toastLivesSection,
       history: historySection, contextSize: contextSizeSection, peekEverywhere: peekEverywhereSection, cardRoute: cardRouteSection,
-      quietDoer: quietDoerSection, usageCharts: usageChartsSection, looksIdle: looksIdleSection };
+      quietDoer: quietDoerSection, usageCharts: usageChartsSection, looksIdle: looksIdleSection, notifyOff: notifyOffSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -7882,6 +7995,7 @@ async function main() {
     // ── a click on an alert lands where the alert is about ─────────────────
     await landSection(browser, base);
     await quietDoerSection(browser, base);
+    await notifyOffSection(browser, base);
     await reselectSection(browser, base);
     // ── over a terminal the toasts hang from the top right ─────────────────
     await toastsTopSection(browser, base);
