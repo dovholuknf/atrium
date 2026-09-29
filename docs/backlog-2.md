@@ -2084,6 +2084,9 @@ Status: diagnosed by sa74. Recommendation 1, the height hold, is on claude/main 
 (OpenConsole ConPTY) and option 3 (replay-only repair) are both designed below and wait on clint's pick. See "2 or
 3, for clint" at the end of this item.
 
+Status, 2026-09-29, sa74b: the report is built (`?repair=report`, `docs/changes/74b.md`) and the repair is not. It
+measures and splices nothing. Read it on the live room for a few days before choosing between option 2 and option 3.
+
 ### What dropped the lines
 
 **Not atrium's ring, replay or board.** The orchestrator's uncollapsed ring (`/scrollback/raw?collapse=0`, 2,723,702
