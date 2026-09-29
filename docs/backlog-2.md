@@ -42,7 +42,7 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 33 | Watching a terminal holds every message to it, word deletes miscount, a gate debug readout | bug | sa89, started 2026-09-28 |
 | 34 | Every MCP tool call skips atrium's permission gate | bug | DONE 2026-09-28 in dotfiles, uncommitted, live through the hooks symlink |
 | 35 | A card has a name you mention it by, like `@dotfiles` | feature | sa89, started 2026-09-28 |
-| 36 | A finished worker stays up until somebody closes it | bug | sa36, started 2026-09-28 |
+| 36 | A finished worker stays up until somebody closes it | bug | DONE by sa36, merged `c3dc597`, deployed `66717c5` |
 | 37 | Token and context use on record for every session, shown only in a card's details | feature | DONE, sa90 merged. sa94: Claude subagent rows, needs a room restart. Test plan BT5 |
 | 38 | A restart resumes only the cards that were working | feature | waits on 37 |
 | 39 | Keep-alive warms the cards you mark, not every idle card | feature | waits on 37 |
@@ -53,7 +53,7 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 44 | A gear checkbox: no notifications from agent-launched cards, on by default | feature | not started |
 | 45 | Every card shows its context size, a launcher hears once past a threshold | feature | sa87 built it to clint's decision on `claude/context-size`, not merged |
 | 46 | Provision a machine as a room over ssh, from one command and later from the board | feature | stage 1 sa92, started 2026-09-28 |
-| 47 | A resident session's alias defaults from its name, can be read and set, and heads the terminal title bar | feature, HIGH | sa47, started 2026-09-28 |
+| 47 | A resident session's alias defaults from its name, can be read and set, and heads the terminal title bar | feature, HIGH | DONE by sa47, merged `5b3d9e5`, deployed `66717c5` |
 | 48 | `atrium_launch` takes a model and a thinking effort | feature | DONE by sa48, merged, needs room and hub restarts |
 | 49 | The orchestrator can appear on every room | design | deep backlog, not started |
 | 50 | Views of agents, beyond groups | design | not started |
@@ -62,22 +62,29 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 53 | `setViewport` and `dropViewport` compute under `r.mu` and apply outside it | bug | not started, never reproduced |
 | 54 | Terminal test suite part 2: `screen.go` against xterm.js | feature | not started |
 | 55 | Launched runners inherit ATRIUM_DEBUG_INPUTLAG from the room | bug | DONE by sa55, merged, needs a room restart |
-| 56 | Every dialog is sleek, one skinned design, starting with card details and the room's edit-agents screen | feature, design first, HIGH | not started |
-| 57 | The live room leaks memory | bug, HIGH | DONE by sa57, merged, needs a room restart |
+| 56 | Every dialog is sleek, one skinned design, starting with card details and the room's edit-agents screen | feature, design first, HIGH | DONE by sa56, merged `a1ab1c2`, deployed `66717c5` |
+| 57 | The live room leaks memory | bug, HIGH | DONE by sa57, merged `aa74dd5`, deployed `66717c5` |
 | 58 | `atrium_say` reaches cards on other rooms, `name@room` | feature, HIGH | DONE by sa58, merged, needs hub and room restarts |
 | 59 | Spike on m1mini: more than one room per machine, and a blocked room that drains | design, spike | deep backlog, not started |
 | 60 | The stdio control MCP has sa48's launch fields but no "room is older" warning | housekeeping | not started |
 | 61 | A fake 45s hub echo in the lag log from the idle ping and pong | bug | not started |
-| 62 | A worker that ends its turn without a report reaches its orchestrator every time | bug, HIGH | not started |
+| 62 | A worker that ends its turn without a report reaches its orchestrator every time | bug, HIGH | DONE by sa62, merged `f22115e`, deployed `66717c5` |
 | 63 | Starting onto an existing card goes to the wrong room | bug, HIGH | not started |
 | 64 | A card cannot stop being lean | bug, HIGH | DONE by sa64, merged, needs room and hub restarts |
 | 65 | A deploy's revert snapshot is named after the hub's build, not the file it copies | bug | not started |
-| 66 | New context: capture state, clear, and wake, from one click or one key | feature | DONE by sa66, merged `916c95a`, needs room and hub restarts |
-| 67 | A first-run dialog eats a launched card's first prompt | bug, HIGH | sa67, started 2026-09-28 |
-| 68 | `atrium_exit` and `atrium_task` do not take a card on another room | bug | sa68, started 2026-09-28 |
-| 69 | The details popover opens in one second, under the pointer, on the terminals and stack tabs too | feature | sa69, started 2026-09-28 |
-| 70 | Keep-alive is invisible until it has spent something, and one card overspent its budget | feature, bug | sa70, started 2026-09-28 |
+| 66 | New context: capture state, clear, and wake, from one click or one key | feature | DONE by sa66, merged `b4af8ed`, deployed `66717c5` |
+| 67 | A first-run dialog eats a launched card's first prompt | bug, HIGH | DONE by sa67, merged `421ce3c`, deployed `66717c5` |
+| 68 | `atrium_exit` and `atrium_task` do not take a card on another room | bug | DONE by sa68, merged `3cbbaad`, deployed `66717c5` |
+| 69 | The details popover opens in one second, under the pointer, on the terminals and stack tabs too | feature | DONE by sa69, merged `1e2b702`, deployed `66717c5` |
+| 70 | Keep-alive is invisible until it has spent something, and one card overspent its budget | feature, bug | DONE by sa70, merged `dc3c3a2`, deployed `66717c5` |
 | 71 | "New context" on the terminals tab's right-click menu | feature | end of backlog, clint unsure it is useful |
+| 72 | One hover on a card, not two | feature | DONE by sa72, merged `66717c5`, deployed `66717c5` |
+| 73 | A keep-alive fork carries the card's launch args, so lean cards can warm | feature | not started |
+| 74 | A long reply loses lines in the middle on the board's terminal | bug | sa74, paused at `ba761d6` (old SHA), rebase onto `66717c5` |
+| 75 | sg3 as a room, and machine bootstrap reuses the operator's shared folder under `localai` | feature | sa75, parked. Provision script merged `c3dc597` |
+| 76 | A worktree helper that links every CLAUDE.md, so workers get project rules | bug, HIGH, FIRST | not started, @merge |
+| 77 | A merge pipeline that does not conflict or rerun | feature, HIGH | not started, @merge, after 76 |
+| 78 | The details popover's token labels mislead | bug | not started |
 
 ------------
 
@@ -1448,6 +1455,83 @@ STOPPED". Keep-alive is on (default true, 52 refreshes and $4.99 this week), but
 - **Overspend.** sa55's card (`01a0e960`) reads `stopped:miss` with `refreshes: 0`, `spent: 1.02` and
   `budget: 0.12`. Spend past eight times the budget with no refresh counted. Find what was charged to it and why the
   budget did not stop it, and whether the refresh count is dropped on a miss.
+
+## 72. One hover on a card, not two (feature)
+
+Built by sa72 (`5f95056` on its branch, old SHA), merged and deployed in `66717c5`. Filed here so the row has a
+section. Test plan BZ6.
+
+## 73. A keep-alive fork carries the card's launch args, so lean cards can warm (feature)
+
+From sa70's open points, 2026-09-28. Keep-alive refreshes an idle card's prompt cache with a forked resume, and the
+fork does not carry the card's launch args, so lean cards (item 29) cannot be warmed. Make the fork start the way a
+restart does, with the card's model, effort, args and lean flag. First confirm with sa70's notes on
+`claude/keepalive-visible` exactly which args a lean card's cache depends on.
+
+## 74. A long reply loses lines in the middle on the board's terminal (bug)
+
+Raised 2026-09-28 by clint. A long reply from the orchestrator (a wide table, then several sections) lost 12 to 20
+lines from the middle when copied out of the board's scrollback. The full spec is sa74's BRIEF.md in
+`D:/worktrees/claude/atrium/lost-lines`.
+
+clint confirmed the loss happened at the first screen update after the long reply, while he was scrolled up a
+little. The table's tail was still on the live 50-row screen, and a bare `\e[H` repaint overwrote it. Find what
+emitted that repaint (Claude Code, or ConPTY in the room) and why. Also test the reattach seam.
+
+Status: sa74 paused at `ba761d6`. That SHA is from before the 66717c5 re-sign: rebase `claude/lost-lines` onto
+`66717c5` before any merge (map in `D:/tmp/resign-map.txt`).
+
+## 75. sg3 as a room, and machine bootstrap reuses the operator's shared folder under `localai` (feature)
+
+sa75 made sg3 a room of this hub. Its `provision-room` fix (`5ced807`, old SHA) is merged. A smoke card on sg3
+(2026-09-28) ran Claude and reported system stats, so Claude is signed in there. Found by that card: CIM and WMI are
+access denied inside the sg3 room's session, so any worker that reads uptime, services or scheduled tasks through CIM
+fails there. Find out which account and session type the room runs in, and whether provisioning should give it more.
+
+clint, 2026-09-28: bootstrapping a machine should reuse a shared folder for the main operator, and the account
+should be `localai`, not `claude`. Today sg3 runs as `claude` in `C:\Users\claude`. Fold both into the provisioning
+script before the next machine is added.
+
+## 76. A worktree helper that links every CLAUDE.md, so workers get project rules (bug, HIGH, FIRST)
+
+Approved by clint 2026-09-28, first after the restart. `git worktree add` gives a worker none of the 8 CLAUDE.md files:
+they are untracked symlinks into dotagents, present in the main checkout only. So every worker launched so far ran
+without the project's rules.
+
+Build a helper (pwsh, in `scripts/`) that creates the worktree and branch off `claude/main`, then links every
+CLAUDE.md the main checkout has, at the same relative paths, and fails loudly if any link cannot be made. Every
+brief uses it from then on. Owned by Release and Quality (@merge). A worker's first check is that `CLAUDE.md`
+exists in its worktree.
+
+## 77. A merge pipeline that does not conflict or rerun (feature, HIGH)
+
+Raised 2026-09-28 by clint: "it always seems super slow". saorch timed its last four merges at about 20 to 25
+minutes, mostly `go test` (3 to 5 minutes each), about 1 minute of conflict resolution each, and about 5 minutes of
+reruns and calls refused by hooks. Almost every conflict was `CHANGELOG.md` and `docs/test-plan.md`, and several
+workers picked the same test-plan letter. Decided with clint:
+
+- **a. One merge-check script.** `go test ./...`, `check-board.sh` with the headless run and `NODE_PATH` preset, and
+  `check-skins.sh` when the board changed, in one call. It prints only failures and a pass count per check, so a
+  skipped check shows as a missing count instead of silence.
+- **b. Each item ships its own changelog and test-plan entry** as its own file, named by item number. The merger folds
+  them in. Nobody edits `CHANGELOG.md` or `docs/test-plan.md` on a branch, and nobody picks a letter.
+- **c. A worker merges `claude/main` into its branch and passes its targeted checks before it reports done.**
+- **d. One full suite per batch,** not per branch. Bisect only on failure. clint evaluates this 2026-09-29 morning.
+- **e. A dedicated merge worktree** with Playwright installed, so merges never lock the main checkout.
+- **f. `git commit --no-edit --cleanup=strip`** on merges, so no `# Conflicts:` lines land in merge bodies. 33 merges
+  in `66717c5` carry them.
+- **g. One report per batch** to the orchestrator. clint: "try it and we'll see".
+
+Order: a, c, f, then b, e, g. Owned by @merge.
+
+## 78. The details popover's token labels mislead (bug)
+
+Raised 2026-09-28 by clint on @fabric's popover: "2 turns, 48 in, 12k out" looked wrong. Checked against the
+transcript: every number is exact. The labels are the problem. "turns" is human prompts (2, across 24 API calls),
+and "in" is uncached input only (48), because with caching almost all input is a cache read.
+
+Relabel: prompts, with API calls next to them, and "uncached in". Check the cost estimate against current pricing,
+and confirm whether the figures cover the card or only the session since its last `/clear`.
 
 
 ------------
