@@ -46,7 +46,9 @@ relevant flags from it. No second copy of the launch logic:
 3. `keepAliveCarried` filters the result to an allowlist: `--append-system-prompt`, `--system-prompt`,
    `--append-system-prompt-file`, `--system-prompt-file`, `--disallowedTools`, `--disallowed-tools`, `--tools`,
    `--mcp-config`, `--strict-mcp-config`, `--agents`, `--plugin-dir`. A flag's values are kept with it (a variadic
-   flag takes the tokens up to the next flag, and `--flag=value` is one token).
+   flag takes the tokens up to the next flag, and `--flag=value` is one token). Arity is not encoded per flag:
+   `--strict-mcp-config` is the only boolean and a bare token after it could only be a prompt, which step 1 never
+   passes.
 
 The fork's env gets `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` when the card is lean, from the same `leanEnv` a launch uses.
 The card's own env, effort and the 1h pin are unchanged.

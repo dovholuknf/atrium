@@ -551,13 +551,6 @@ func (k *keepalive) decide(t *store.Task, card *store.KeepaliveCard) verdict {
 	if err != nil || !isClaude(h) {
 		return skip("not a Claude card")
 	}
-	// A lean card runs with its own tool list, MCP config and system prompt
-	// (see lean.go). A fork carries none of them, so its prefix differs from the
-	// first token and it rewrites the whole context: sa55's card paid $1.02
-	// against a $0.12 budget for one such fork.
-	if hasTag(t.Tags, LeanTag) {
-		return skip("lean card: a refresh cannot rebuild its prompt")
-	}
 	if strings.TrimSpace(t.ResumeID) == "" || strings.TrimSpace(t.Worktree) == "" {
 		return skip("no session id yet")
 	}
@@ -646,6 +639,10 @@ func (k *keepalive) forkEnv(h *store.Harness, t *store.Task) ([]string, error) {
 		}
 	}
 	extra := map[string]string{"ATRIUM_PERM_GATE": "off"}
+	// The memory section of the system prompt is in the cache key.
+	if lean, _ := leanOptions(LaunchRequest{}, t); lean {
+		leanEnv(extra)
+	}
 	if _, set := env[keepaliveTTLVar]; !set {
 		extra[keepaliveTTLVar] = "1h"
 	}
@@ -654,10 +651,56 @@ func (k *keepalive) forkEnv(h *store.Harness, t *store.Task) ([]string, error) {
 
 // forkEffortArgs is the card's launch effort in the shape its harness declares,
 // appended to the fork's command line. Empty when the card was launched on the
-// runner's default. The card's extra args are NOT carried: they were written
-// for an interactive start and a fork is a one-turn print run.
+// runner's default. The card's extra args are carried by forkCardArgs, filtered.
 func forkEffortArgs(h *store.Harness, t *store.Task) ([]string, error) {
 	return withMapped(h, nil, "effort", "level", h.EffortArgs, h.EffortEnv, t.Effort)
+}
+
+// forkCarried are the launch flags that shape the cached request, which is the
+// system prompt and the tool list. Everything else in a card's launch is dropped
+// from a fork on purpose: see docs/keepalive-fork-args-design.md.
+var forkCarried = map[string]bool{
+	"--append-system-prompt": true, "--system-prompt": true,
+	"--append-system-prompt-file": true, "--system-prompt-file": true,
+	"--disallowedtools": true, "--disallowed-tools": true, "--tools": true,
+	"--mcp-config": true, "--strict-mcp-config": true,
+	"--agents": true, "--plugin-dir": true,
+}
+
+// keepFlags keeps the allowlisted flags of args with their values. A flag's values
+// are the tokens up to the next flag, and `--flag=value` is one token. An unknown
+// flag is dropped along with its values, and a bare token before any flag (a
+// prompt) is dropped.
+func keepFlags(args []string) []string {
+	var out []string
+	keeping := false
+	for _, a := range args {
+		if strings.HasPrefix(a, "-") && a != "-" {
+			name, _, _ := strings.Cut(a, "=")
+			keeping = forkCarried[strings.ToLower(name)]
+		}
+		if keeping {
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
+// forkCardArgs is the card's restart command line, cut down to what the cache
+// depends on. It is built by the code a restart uses: the harness's resume args,
+// the card's stored extra args, and for a lean card the lean set. Model and effort
+// are left to the fork, which names its own.
+func forkCardArgs(h *store.Harness, t *store.Task) ([]string, error) {
+	args, _, err := runnerArgsWith(h, t.ResumeID, "", launchOptions{Args: t.LaunchArgs})
+	if err != nil {
+		return nil, err
+	}
+	if lean, mcp := leanOptions(LaunchRequest{}, t); lean {
+		if args, err = leanArgs(args, readUserSettings(), "", mcp, os.ReadFile); err != nil {
+			return nil, err
+		}
+	}
+	return keepFlags(args), nil
 }
 
 // forkArgs is the refresh command line. Kept in one place so the test pins it.
@@ -760,9 +803,12 @@ func (k *keepalive) refresh(ctx context.Context, t *store.Task, v verdict) {
 	// Refused, never forked without them: a fork on the wrong env or effort
 	// writes a cache the card never reads.
 	env, err := k.forkEnv(v.h, t)
-	var effort []string
+	var effort, carried []string
 	if err == nil {
 		effort, err = forkEffortArgs(v.h, t)
+	}
+	if err == nil {
+		carried, err = forkCardArgs(v.h, t)
 	}
 	if err != nil {
 		log.Printf("[atrium] keep-alive: not refreshing %s: %v", t.ID, err)
@@ -772,7 +818,8 @@ func (k *keepalive) refresh(ctx context.Context, t *store.Task, v verdict) {
 		return
 	}
 	spec := forkSpec{
-		Exe: v.h.Exe(), Args: append(k.forkArgs(t.ResumeID, model), effort...), Dir: t.Worktree, Env: env,
+		Exe: v.h.Exe(), Dir: t.Worktree, Env: env,
+		Args: append(append(k.forkArgs(t.ResumeID, model), carried...), effort...),
 	}
 	sent := k.now()
 	out, runErr := k.fork(ctx, spec)
