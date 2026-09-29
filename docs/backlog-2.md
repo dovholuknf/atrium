@@ -3176,3 +3176,28 @@ Status: not started. Backlog only. Owned by @merge (release and quality). Raised
 
 Go through every test and record what it proves, which are redundant, slow or flaky, and which test nothing real.
 Report a table with a keep, fix or delete recommendation per test. Delete nothing without clint's answer.
+
+## r-002. The permission hook waits forever on a frozen room (bug, HIGH)
+
+Status: not started. Owned by @runtime. Filed 2026-09-29 after the room deadlock (fixed by `abc3cf9`).
+
+`atrium-perm-hook.ps1` POSTs `/permission` with no client timeout (line 195). A room that accepts TCP but never
+answers holds every gated tool call in every session, and the fail-open `catch` never fires. The script lives in
+the dotfiles repo (`claude/hooks/atrium-perm-hook.ps1`), not here. The fix needs a design decision, since a human
+may take minutes to answer: a short connect-and-first-byte deadline (the room acknowledges it received the
+question) with the long wait after it, or a liveness probe before the POST. Either way a frozen room has to fail
+open within seconds.
+
+## m-002. A deploy is healthy only when the room answers (bug, HIGH)
+
+Status: not started. Owned by @merge. Filed 2026-09-29 after the room deadlock.
+
+`scripts/live/deploy-batch.ps1` reported `room reattached: True` for a room that was frozen, because the link
+attaches before the startup ledger sweep runs. The health check has to be a request the room itself serves, such as
+`GET http://127.0.0.1:7781/v1/settings`, answered within a few seconds and checked again about 30 seconds later,
+after the sweep and the reopen. On failure the script reverts to the snapshot it took in step 0 and says so.
+
+A smoke start of the new build against a copy of the live database would not have caught this deadlock: the bug
+needs a launched worker ending under a launched launcher. The regression test for it is
+`TestPromptInsideATransactionDoesNotDeadlock`. m-001 (evaluate every test) should list which live scenarios have
+no test at all, starting with that one.
