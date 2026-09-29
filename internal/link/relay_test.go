@@ -487,6 +487,43 @@ func TestHubSidePeersListOtherRoomsWhenAsked(t *testing.T) {
 	}
 }
 
+// ITEM 68 over the relay. A room reads and exits a card on another room
+// through its hub, by handle, alias or bare id, and gets it named across.
+func TestARelayReadsAndExitsACardOnAnotherRoom(t *testing.T) {
+	x := newRelayPair(t)
+	defer x.stop()
+
+	ans, err := x.miniR.Relay(relayCtx(t), RelayRequest{Op: RelayCard, Room: "sg4", To: "@orch"})
+	if err != nil || !ans.OK || ans.Task == nil || ans.Task.Card != "sg4~s1" ||
+		ans.Task.Handle != "atrium-87300@sg4" || ans.Task.Status != "needs-input" {
+		t.Fatalf("card = %+v (task %+v), %v", ans, ans.Task, err)
+	}
+	ans, err = x.miniR.Relay(relayCtx(t), RelayRequest{Op: RelayExit, Room: "sg4", To: "s1"})
+	if err != nil || !ans.OK || ans.Card != "sg4~s1" || ans.To != "atrium-87300@sg4" {
+		t.Fatalf("exit = %+v, %v", ans, err)
+	}
+	if got := x.sg4.exits(); len(got) != 1 || got[0] != "s1" {
+		t.Fatalf("sg4 exits = %v", got)
+	}
+	// Its own room is refused, an unknown name lists who is there, and an
+	// unknown room is named.
+	if ans, _ = x.miniR.Relay(relayCtx(t), RelayRequest{Op: RelayExit, Room: "M1MINI", To: "sa1"}); ans.OK ||
+		ans.Code != http.StatusBadRequest {
+		t.Fatalf("own room = %+v", ans)
+	}
+	if ans, _ = x.miniR.Relay(relayCtx(t), RelayRequest{Op: RelayExit, Room: "sg4", To: "nobody"}); ans.OK ||
+		ans.Code != http.StatusNotFound || !strings.Contains(ans.Error, "atrium-87300") {
+		t.Fatalf("unknown name = %+v", ans)
+	}
+	if ans, _ = x.miniR.Relay(relayCtx(t), RelayRequest{Op: RelayCard, Room: "atlantis", To: "x"}); ans.OK ||
+		!strings.Contains(ans.Error, "atlantis") {
+		t.Fatalf("unknown room = %+v", ans)
+	}
+	if len(x.mini.exits()) != 0 || len(x.sg4.exits()) != 1 {
+		t.Fatal("a refused exit reached a room")
+	}
+}
+
 // ITEM 68. atrium_exit takes a card on another room the way atrium_say does,
 // as `name@room`, `alias@room` or `room~id`, and asks that room, not the
 // caller's.
