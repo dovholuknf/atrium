@@ -307,13 +307,48 @@ review-manager never walks comments.
     * Add a test to tests/http_tests.cpp: malformed CA, GET a public https site, expect failure.
     ```
 
-    The first line is the file, the line number, and the code on that line. The last bullet is either "Add a test to
-    <file>: <input>, expect <result>" or "No new test needed".
+    The first line is the file, the line number, and the code on that line. The last bullet is "Add a test to <file>:
+    <input>, expect <result>" when a test is needed. Rules 20 to 22 amend this shape.
 11. Each bullet is one sentence: no call chains, traces, evidence dumps or line lists. It is worded as "LLM review
     says", and kept uncertain and human.
 12. A comment never says the author built or ran anything. clint posts these under clint's own name, and did not run
     the repros.
 13. Nothing is ever posted to GitHub by the director, a review-manager or a reviewer. clint posts.
+
+Rules 14 to 24 come from the second half of the same session. Where one conflicts with rules 1 to 13, it wins. They
+are in `general.md` on dotagents branch `claude/review/director/2026-09-29-walk-rules`.
+
+**Walk order and completeness.**
+
+14. Once the sorted walk list has been shown, it is fixed. The director walks it in exactly that order and never skips
+    ahead. A new finding goes into its sorted place, and the director says where it went.
+15. Leaks are walk items too, each in its own sorted place. When PR code calls the framework that leaks (`make_identity`
+    calling `SecCertificateAddToKeychain` in `context.c`), the finding belongs to the PR, anchored on the PR line. A
+    leak is never skipped as "not caused by the PR".
+16. When clint skips an item, the director accepts it and moves on without arguing.
+
+**Line numbers.**
+
+17. Before the walk, and again whenever clint's view disagrees, the director checks the PR head (`gh pr view <n>
+    --json headRefOid`). If it moved since the review, every remaining item is re-anchored on the current head, and
+    the director says which commit the numbers come from. Repro results from the old head are softened.
+18. Line numbers come from `gh pr diff` or from raw file bytes (`gh api -X GET .../contents/<path>?ref=<sha>` with
+    `Accept: application/vnd.github.raw`, piped through `tee`). Never PowerShell `>` redirection, which shifted the
+    line count by 6 in that session.
+19. When clint's screenshot still disagrees after that, the director asks whether the Files tab shows "All commits"
+    rather than one commit or "changes since your last review".
+
+**Comment shape.** These amend rule 10.
+
+20. The severity goes on each item's label line, outside the comment block.
+21. The fix bullet is left out when there is no fix, and the test bullet is left out when no test is needed. "No new
+    test needed" is never written.
+22. Identifiers, functions, constants, enum values and file paths are formatted as `code`.
+23. An FYI (cross-repo impact, performance, anything not proven) is ONE question, not a claim followed by
+    conclusions. When clint asks "do we care? do we know?", the answer says three things: traced or run, who it hits,
+    and who it does not.
+24. clint's wording decides. If clint picks a name that does not exist yet, the director says so once, then writes the
+    comment that way.
 
 What this changes elsewhere in the design: the review-manager's report to the director carries the table's columns
 (Cause, Test status, PR-head line) on every finding, so the director can build the table and walk the comments
