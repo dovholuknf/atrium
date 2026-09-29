@@ -23,6 +23,19 @@
 # builds from the checkout instead, so the one command needs no flags.
 # `-FromCheckout` is the explicit form. A named -Version that is missing fails.
 #
+# -RESTART [-Yes] [-Force] stops the room and starts it again the way it was
+# started: `room --detach` for a detached room, the platform's own verb for a
+# logon task, systemd user unit or LaunchAgent. It prints the plan and changes
+# nothing unless -Yes. It refuses (exit 9) while a card is mid-turn or waiting on
+# a permission, and names it, unless -Force. Idle live cards are listed as parked
+# and resumed and do not block. It refuses (exit 10) when the supervisor has the
+# room switched off. The stop is `atrium stop` and a wait of up to 40s for the
+# room's ports (default 7781 and 7777, or `ports` in the manifest) to close, never
+# a kill, and a failed wait is a failure. The start is pinned to the state
+# directory the join used (`statedir` in the manifest, backfilled by looking for
+# room.json), so it comes back as the same room. Nothing is registered, enabled
+# or disabled. Step lines: restart-mode, restart-cards, stop, start, attach.
+#
 # THE LAST TWO STEPS. `auth` runs `claude auth status` on the remote (through a
 # login shell on Unix) and reads its JSON `loggedIn`. Not signed in is a `warn`
 # carrying the command the operator runs once, `ssh -t <target> claude auth
@@ -57,6 +70,13 @@
 #   6  refused: the remote is already a room, or runs an atrium this script did not install
 #   7  the overlay needs a credential only the operator can give: see the fail line
 #   8  installed and attached, but the smoke card did not report
+#   9  -Restart refused: a card is mid-turn or waiting on a permission, or the
+#      cards could not be read. -Force goes ahead. Nothing was stopped
+#  10  -Restart refused: the room's supervisor has it switched off (a sticky
+#      stop), which a start would not undo. `service start` is the fix. Nothing
+#      was stopped
+#  (-Restart also uses 3 for a stop or start that did not work, 4 for a room
+#  that did not come back attached, and 6 for a machine this did not provision)
 #
 # CREDENTIALS FOLLOW THE OVERLAYS RULE: atrium names the command that holds a
 # credential and never holds somebody else's.
@@ -78,7 +98,16 @@
 #   -Autostart adds a logon task `atrium` (RunLevel Limited), a systemd user unit
 #            atrium.service, or a LaunchAgent io.github.dovholuknf.atrium, and
 #            their scripts under ~/.atrium/provision
-#   -Install  adds the runner where its own installer puts it, usually ~/.local
+#   -Install  adds the runner where its own installer puts it, usually ~/.local.
+#            CODEX is installed whole, because it needs codex-code-mode-host and
+#            codex-resources beside it. With node and npm on the login PATH:
+#            `npm install -g --prefix ~/.local @openai/codex`. Without: the whole
+#            codex-package release in ~/.local/share/codex/<version>, with a
+#            `codex` wrapper (a .cmd on Windows) in ~/.local/bin. -Remove deletes
+#            only what the `installed=` lines named.
+#
+# A BARE -SmokeTo (no @) gets `@<this side's room>` from $env:ATRIUM_ROOM, since
+# the remote room cannot find a handle without one. A handle with @ is left alone.
 #
 # The manifest records what was already there before the first run, so -Remove
 # deletes only what this script created and leaves anything older alone.
@@ -95,6 +124,11 @@ param(
     [string[]] $Install = @(),
     # Undo everything a previous run did, on the remote and on the hub.
     [switch] $Remove,
+    # Stop the room tidily and start it again, the way it was started. Prints the
+    # plan and changes nothing unless -Yes. -Force goes ahead over live cards.
+    [switch] $Restart,
+    [switch] $Yes,
+    [switch] $Force,
 
     # Build the binary from this checkout instead of fetching a release.
     [switch] $FromCheckout,
@@ -149,6 +183,10 @@ param(
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 if ($SmokeOnly -and ($Remove -or $NoSmoke)) { Write-Host 'provision args fail -SmokeOnly goes with neither -Remove nor -NoSmoke'; exit 1 }
+if ($Restart -and ($Remove -or $SmokeOnly -or $Autostart -or $Install.Count -or $Binary -or $FromCheckout -or $Version)) {
+    Write-Host 'provision args fail -Restart changes nothing but the running room, so it goes with none of -Remove, -SmokeOnly, -Autostart, -Install, -Binary, -FromCheckout, -Version'; exit 1
+}
+if (($Yes -or $Force) -and -not $Restart) { Write-Host 'provision args fail -Yes and -Force belong to -Restart'; exit 1 }
 $checkout = Split-Path -Parent $PSScriptRoot
 $inCheckout = Test-Path (Join-Path $checkout 'go.mod')
 $work = if ($inCheckout) { Join-Path $checkout 'build.claude/provision' } else { Join-Path ([IO.Path]::GetTempPath()) 'atrium-provision' }
@@ -250,7 +288,20 @@ function Invoke-Remote {
             "`$env:Path = (@([Environment]::GetEnvironmentVariable('Path', 'Machine'), " +
             "[Environment]::GetEnvironmentVariable('Path', 'User')) | Where-Object { `$_ }) -join ';'`n" + $script
         $enc = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($full))
-        if ($enc.Length -gt 7800) { throw "remote script too long for cmd.exe ($($enc.Length))" }
+        if ($enc.Length -gt 7800) {
+            # TOO LONG FOR cmd.exe'S LINE, so the script goes deflated and a short
+            # loader inflates it and runs it. Base64 of UTF-8 deflate is a fraction
+            # of base64 of UTF-16, so the codex installer fits.
+            $ms = New-Object IO.MemoryStream
+            $ds = New-Object IO.Compression.DeflateStream($ms, [IO.Compression.CompressionMode]::Compress, $true)
+            $bytes = [Text.Encoding]::UTF8.GetBytes($full)
+            $ds.Write($bytes, 0, $bytes.Length); $ds.Dispose()
+            $loader = "`$m = New-Object IO.MemoryStream(,[Convert]::FromBase64String('$([Convert]::ToBase64String($ms.ToArray()))')); " +
+                "`$r = New-Object IO.StreamReader((New-Object IO.Compression.DeflateStream(`$m, [IO.Compression.CompressionMode]::Decompress)), [Text.Encoding]::UTF8); " +
+                "Invoke-Expression `$r.ReadToEnd()"
+            $enc = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($loader))
+            if ($enc.Length -gt 7800) { throw "remote script too long for cmd.exe ($($enc.Length))" }
+        }
         $out = & $Ssh @sshBase $Target "powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand $enc" 2>&1
     } else {
         $full = "A=`"`$HOME/.atrium`"; Bin=`"`$HOME/.local/bin/atrium`"`n" +
@@ -490,6 +541,67 @@ function Save-Manifest {
     }
     $r = Invoke-Remote $s
     if ($r.Code -ne 0) { Fail 'state' 3 'could not write the manifest' $r.Out }
+}
+
+# WHERE THE ROOM KEEPS ITS STATE, which is where `room join` wrote room.json:
+# $WORKTREE_ROOT/hub when WORKTREE_ROOT is set, else ~/.atrium (StateDir in
+# internal/daemon/daemon.go). A start whose environment differs from the join's
+# finds no room.json and does not come back as that room, so a restart has to
+# say which one to use. Get-StateDirs asks the remote which candidates hold a
+# room.json, and what WORKTREE_ROOT a login shell there would give.
+function Get-StateDirs {
+    $ps = if ($os -eq 'windows') {
+@'
+$w = $env:WORKTREE_ROOT
+if (-not $w) { $w = [Environment]::GetEnvironmentVariable('WORKTREE_ROOT', 'User') }
+if (-not $w) { $w = [Environment]::GetEnvironmentVariable('WORKTREE_ROOT', 'Machine') }
+$c = @{ a = $A }; if ($w) { $c.w = Join-Path $w 'hub' }
+"wtr=$w"
+foreach ($k in $c.Keys) {
+    $j = Join-Path $c[$k] 'room\room.json'
+    "dir_$k=$($c[$k])"; "has_$k=$(Test-Path $j)"
+    if (Test-Path $j) { "room_$k=$((Get-Content $j -Raw | ConvertFrom-Json).room)" }
+}
+'@
+    } else {
+@'
+w=$("${SHELL:-/bin/sh}" -lc 'printf %s "$WORKTREE_ROOT"' </dev/null 2>/dev/null)
+echo "wtr=$w"
+probe() {
+  echo "dir_$1=$2"
+  if [ -f "$2/room/room.json" ]; then
+    echo "has_$1=True"; echo "room_$1=$(sed -n 's/.*"room": *"\([^"]*\)".*/\1/p' "$2/room/room.json" | head -1)"
+  else echo "has_$1=False"; fi
+}
+probe a "$A"
+if [ -n "$w" ]; then probe w "$w/hub"; fi
+'@
+    }
+    ConvertFrom-KeyValue (Invoke-Remote $ps).Out
+}
+
+# Resolve-StateDir picks the one to pin. The manifest's own record wins when it
+# still holds room.json. Otherwise the one directory that does. Two, or none,
+# is not guessed at.
+function Resolve-StateDir {
+    param($sd)
+    $found = @('a', 'w' | Where-Object { $sd["has_$_"] -eq 'True' } | ForEach-Object { $sd["dir_$_"] })
+    $rec = $script:manifest.statedir
+    if ($rec -and ($found | Where-Object { $_ -eq $rec })) { return [pscustomobject]@{ Dir = $rec; Why = $null } }
+    if ($found.Count -eq 1) { return [pscustomobject]@{ Dir = $found[0]; Why = $null } }
+    if ($found.Count -eq 0) { return [pscustomobject]@{ Dir = $null; Why = 'no room.json under ~/.atrium or under WORKTREE_ROOT/hub' } }
+    [pscustomobject]@{ Dir = $null; Why = "room.json is under both $($found -join ' and '), so which one the room uses is not known" }
+}
+
+# Set-ManifestStateDir records the resolved state directory at join time, and
+# backfills a manifest written before it existed. Never a failure.
+function Set-ManifestStateDir {
+    if ($script:manifest.statedir) { return }
+    $r = Resolve-StateDir (Get-StateDirs)
+    if ($r.Dir) {
+        $script:manifest | Add-Member -NotePropertyName statedir -NotePropertyValue $r.Dir -Force
+        Save-Manifest
+    }
 }
 
 # ── -Remove ─────────────────────────────────────────────────────────────────
@@ -748,6 +860,9 @@ function Invoke-Smoke {
     $nonce = -join ((1..8) | ForEach-Object { '{0:x}' -f (Get-Random -Maximum 16) })
     $me = $env:ATRIUM_AGENT_NAME; $myRoom = $env:ATRIUM_ROOM; $myCard = $env:ATRIUM_TASK_ID
     $to = $SmokeTo
+    # A BARE HANDLE IS NOT FOUND FROM THE OTHER ROOM: the smoke worker runs on the
+    # remote, and only `name@room` reaches back across the hub to this side.
+    if ($to -and $to -notmatch '@' -and $myRoom) { $to = "$to@$myRoom" }
     if (-not $to -and $me -and $myRoom) { $to = "$me@$myRoom" }
     $cwd = Get-SmokeCwd
     if (-not $cwd) { Step 'smoke' 'fail' "could not resolve a folder on $Name to run in. pass -SmokeCwd"; Finish 8 }
@@ -851,6 +966,254 @@ if ($SmokeOnly) {
     if (-not $manifest) { Fail 'state' 6 "-SmokeOnly is for a room this script provisioned, and $Target has no manifest" }
     Step 'state' 'ok' "provisioned before as $($manifest.name). -SmokeOnly, so nothing on it is changed"
     Invoke-Smoke (Test-ClaudeAuth)
+    Finish 0
+}
+
+# ── -Restart ────────────────────────────────────────────────────────────────
+#
+# STOP, THEN START, NEVER A KILL. `atrium stop` winds the room down (supervised
+# runners get ten seconds), and a bare kill would take every runner's pseudo
+# terminal with it. Nothing is stopped without -Yes: without it this prints what
+# it would do and exits 0 having changed nothing. It never registers, enables
+# or disables anything, so a supervised room is started by the verb its own
+# supervisor has, and a detached one the way provision starts one.
+#
+#   restart-mode   how the room was started, and the state directory it pins
+#   restart-cards  the live cards, and which of them block
+#   stop           atrium stop, then the room's ports closing
+#   start          the same way it was started
+#   attach         the hub shows it again under the same name, runner rows intact
+if ($Restart) {
+    if (-not $manifest) { Fail 'state' 6 "-Restart is for a room this script provisioned, and $Target has no manifest" }
+    Step 'state' 'ok' "provisioned before as $($manifest.name)"
+    $ports = if ($manifest.ports) { @($manifest.ports) } else { @(7781, 7777) }
+    $hdr = @{ 'X-Atrium-Room' = $Name }
+
+    # -- mode: the registration says how the room is started, and whether it is
+    # a STICKY stop (registered but switched off, which a start would not undo).
+    $ms = if ($os -eq 'windows') {
+@'
+$x = Sch /Query /TN atrium /XML
+if ($LASTEXITCODE -eq 0) {
+    'reg=task-logon'
+    if (($x | Out-String) -match '<Enabled>false</Enabled>') { 'sticky=True' }
+}
+'@
+    } else {
+@'
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+if [ -f "$HOME/.config/systemd/user/atrium.service" ]; then
+  echo reg=systemd-user
+  if [ "$(systemctl --user is-enabled atrium 2>/dev/null)" = disabled ]; then echo sticky=True; fi
+fi
+if [ -f "$HOME/Library/LaunchAgents/io.github.dovholuknf.atrium.plist" ]; then
+  echo reg=launchagent
+  if launchctl print-disabled "gui/$(id -u)" 2>/dev/null | grep -Eq '"io.github.dovholuknf.atrium" => (disabled|true)'; then echo sticky=True; fi
+fi
+'@
+    }
+    $mk = ConvertFrom-KeyValue (Invoke-Remote $ms).Out
+    $kind = if ($mk.reg) { $mk.reg } else { 'detached' }
+    if ($kind -eq 'detached' -and $manifest.autostart -eq $true) {
+        Fail 'restart-mode' 3 'the manifest says autostart was installed, and the registration is not there any more. rerun with -Autostart to register it again, this never does'
+    }
+
+    # -- the state directory the room was joined with, pinned for the start.
+    $sd = Get-StateDirs
+    if ($sd.room_a -and $sd.room_a -ne $Name -and -not $sd.has_w) { Fail 'restart-mode' 6 "room.json under $($sd.dir_a) says $($sd.room_a), and the manifest says $Name" }
+    $pin = Resolve-StateDir $sd
+    if (-not $pin.Dir) { Fail 'restart-mode' 3 "cannot tell which state directory the room uses: $($pin.Why)" }
+    $wtrValue = $null
+    $normA = ($sd.dir_a -replace '\\', '/').TrimEnd('/')
+    $normP = ($pin.Dir -replace '\\', '/').TrimEnd('/')
+    if ($normP -ine $normA) {
+        if ($normP -match '^(.+)/hub$') { $wtrValue = $pin.Dir.Substring(0, $pin.Dir.Length - 4) }
+        else { Fail 'restart-mode' 3 "the state directory is $($pin.Dir), which is neither ~/.atrium nor WORKTREE_ROOT/hub, so it cannot be pinned" }
+    }
+    $pinSays = if ($wtrValue) { "state $($pin.Dir), started with WORKTREE_ROOT=$wtrValue" } else { "state $($pin.Dir), started with WORKTREE_ROOT cleared" }
+    if ($mk.sticky) {
+        Step 'restart-mode' 'fail' "$kind, and it is switched off, so it stays down until it is switched on: run `"$(if ($os -eq 'windows') { 'atrium-service.ps1 start' } else { 'atrium-service.sh start' })`" on $Target (service start). $pinSays"
+        Finish 10
+    }
+    Step 'restart-mode' 'ok' "$kind, $pinSays"
+
+    # -- cards: which are live, and which would be lost mid-thought.
+    $cards = $null
+    try {
+        $tr = Invoke-RestMethod -Uri "http://$HubAddr/v1/tasks" -Headers $hdr -TimeoutSec 15
+        $cards = @(@($tr) + @($tr.tasks) | Where-Object { $_ -and $_.id -and $_.status })
+    } catch { }
+    $blocking = @()
+    if ($null -eq $cards) {
+        Step 'restart-cards' 'warn' "the hub would not list the cards of $Name, so whether any is mid-turn is not known"
+        if (-not $Force) { Step 'restart-cards' 'fail' 'refusing without -Force'; Finish 9 }
+    } else {
+        $live = @($cards | Where-Object { $_.supervised -eq $true -and $_.status -notin @('done', 'dead', 'shelved', 'backlog') })
+        $blocking = @($live | Where-Object { $_.status -eq 'needs-permission' -or ($_.status -eq 'running' -and [int64] $_.idle_seconds -lt 60) })
+        $parked = @($live | Where-Object { $blocking -notcontains $_ })
+        $name1 = { param($c) "$($c.id) `"$($c.display_title)`" ($($c.status))" }
+        $detail = "$($live.Count) live"
+        if ($blocking) { $detail += ", mid-turn or waiting on a permission: $((@($blocking | ForEach-Object { & $name1 $_ })) -join '; ')" }
+        if ($parked) { $detail += ", will be parked and resumed: $((@($parked | ForEach-Object { & $name1 $_ })) -join '; ')" }
+        if ($blocking -and -not $Force) { Step 'restart-cards' 'fail' "$detail. wait, or -Force"; Finish 9 }
+        Step 'restart-cards' $(if ($blocking) { 'warn' } else { 'ok' }) $(if ($blocking) { "$detail. -Force given" } else { $detail })
+    }
+    # The runner rows as they stand, to compare once it is back.
+    $rowsBefore = $null
+    try {
+        $hr = Invoke-RestMethod -Uri "http://$HubAddr/v1/harnesses" -Headers $hdr -TimeoutSec 10
+        $rowsBefore = @(@($hr) + @($hr.harnesses) | Where-Object { $_ -and $_.id } | ForEach-Object { "$($_.id)" } | Sort-Object)
+    } catch { }
+
+    $portsText = $ports -join ', '
+    $startSays = switch -Wildcard ($kind) {
+        'detached'     { 'room --detach, through a login shell, pinned to the state above' }
+        'task-logon'   { 'schtasks /Run /TN atrium, once the task reads Ready or Queued' }
+        'systemd-user' { 'systemctl --user start atrium' }
+        'launchagent'  { 'launchctl kickstart gui/<uid>/io.github.dovholuknf.atrium' }
+    }
+    if (-not $Yes) {
+        Step 'stop' 'skip' "would run atrium stop, then wait up to 40s for ports $portsText to close. never a kill"
+        Step 'start' 'skip' "would start it with $startSays"
+        Step 'attach' 'skip' "would wait up to ${AttachTimeout}s for $Name on the hub, and compare its runner rows$(if ($rowsBefore) { " ($($rowsBefore -join ', '))" })"
+        Step 'restart' 'ok' 'plan only. nothing was changed. add -Yes to do it'
+        Finish 0
+    }
+
+    # -- stop.
+    $sp = $(if ($os -eq 'windows') { "`$ports = @($($ports -join ', '))`n" } else { "ports='$($ports -join ' ')'`n" }) + $(if ($os -eq 'windows') {
+@'
+$ErrorActionPreference = 'Continue'
+if (Test-Path $Bin) { & $Bin stop --url http://127.0.0.1:7781 2>&1 | Out-Null }
+$end = (Get-Date).AddSeconds(40)
+do {
+    $open = @($ports | Where-Object { try { $c = New-Object Net.Sockets.TcpClient; $c.Connect('127.0.0.1', $_); $c.Close(); $true } catch { $false } })
+    if (-not $open) { break }
+    Start-Sleep -Seconds 1
+} while ((Get-Date) -lt $end)
+if ($open) { "open=$($open -join ',')"; exit 1 }
+'closed=1'
+'@
+    } else {
+@'
+if [ -x "$Bin" ]; then "$Bin" stop --url http://127.0.0.1:7781 >/dev/null 2>&1; fi
+n=0
+while :; do
+  open=""
+  for p in $ports; do curl -s -m 2 -o /dev/null "http://127.0.0.1:$p/"; if [ $? -ne 7 ]; then open="$open $p"; fi; done
+  if [ -z "$open" ]; then break; fi
+  n=$((n+1)); if [ $n -ge 40 ]; then break; fi
+  sleep 1
+done
+if [ -n "$open" ]; then echo "open=$open"; exit 1; fi
+echo closed=1
+'@
+    })
+    $r = Invoke-Remote $sp
+    $ok = (ConvertFrom-KeyValue $r.Out).closed
+    if (-not $ok) { Fail 'stop' 3 "the room's ports $portsText did not all close in 40s. it was not killed: look at ~/.atrium/room/room.log, then stop it by hand" $r.Out }
+    Step 'stop' 'done' "atrium stop, ports $portsText closed"
+
+    # A TASK STILL READING Running IGNORES /Run (IgnoreNew), so wait for it.
+    if ($kind -eq 'task-logon') {
+        $tw = @'
+$end = (Get-Date).AddSeconds(30)
+do {
+    $s = (Sch /Query /TN atrium /V /FO LIST | Where-Object { "$_" -match '^Status:\s*(.+)$' } | ForEach-Object { $Matches[1].Trim() } | Select-Object -First 1)
+    if ($s -ne 'Running') { break }
+    Start-Sleep -Seconds 1
+} while ((Get-Date) -lt $end)
+"task=$s"
+'@
+        $tk = (ConvertFrom-KeyValue (Invoke-Remote $tw).Out).task
+        if ($tk -eq 'Running') { Fail 'stop' 3 'the ports closed, but the task still reads Running after 30s, so a /Run would be ignored. it was not killed' }
+    }
+
+    # -- start.
+    $beforeStart = Get-Date
+    $needSince = $beforeStart
+    switch ($kind) {
+        'detached' {
+            $pinW = if ($wtrValue) { $wtrValue } else { '' }
+            # TODO: pass --state-dir instead of the environment once `atrium room` has it (@runtime).
+            $ds = if ($os -eq 'windows') {
+                "`$ErrorActionPreference = 'Continue'`n`$e = Join-Path `$HOME '.atrium\toolchain\room-env.ps1'; if (Test-Path `$e) { . `$e }`n" +
+                $(if ($pinW) { "`$env:WORKTREE_ROOT = $(Quote-Ps $pinW)`n" } else { "Remove-Item Env:WORKTREE_ROOT -ErrorAction SilentlyContinue`n" }) +
+                "& `$Bin room --detach 2>&1`nexit `$LASTEXITCODE"
+            } else {
+                "`"`${SHELL:-/bin/sh}`" -lc 'if [ -n `"`$1`" ]; then WORKTREE_ROOT=`"`$1`"; export WORKTREE_ROOT; else unset WORKTREE_ROOT; fi; exec `"`$0`" room --detach' `"`$Bin`" $(Quote-Sh $pinW) 2>&1"
+            }
+            $r = Invoke-Remote $ds
+            if ($r.Code -ne 0) { Fail 'start' 3 'the room would not start' $r.Out }
+            Step 'start' 'done' 'room --detach, in the background, pinned to the same state directory'
+        }
+        'task-logon' {
+            $st = @'
+$null = Sch /Run /TN atrium
+$up = $false
+$end = (Get-Date).AddSeconds(30)
+while (-not $up -and (Get-Date) -lt $end) {
+    Start-Sleep -Seconds 1
+    try { $null = Invoke-RestMethod http://127.0.0.1:7781/v1/health -TimeoutSec 2; $up = $true } catch {}
+}
+if ($up) { 'start=done' } else { 'start=fail the task did not bring the room up in 30s. an Interactive task needs the user logged in at the machine' }
+'@
+            $kv = ConvertFrom-KeyValue (Invoke-Remote $st).Out
+            $w = ($kv.start -split ' ', 2)
+            if ($w[0] -ne 'done') { Fail 'start' 3 $(if ($w.Count -gt 1) { $w[1] } else { 'the task did not start' }) }
+            Step 'start' 'done' 'schtasks /Run /TN atrium'
+        }
+        default {
+            $vs = if ($kind -eq 'systemd-user') {
+                "export XDG_RUNTIME_DIR=`"`${XDG_RUNTIME_DIR:-/run/user/`$(id -u)}`"`nsystemctl --user start atrium 2>&1"
+            } else {
+                "launchctl kickstart `"gui/`$(id -u)/io.github.dovholuknf.atrium`" 2>&1"
+            }
+            $r = Invoke-Remote $vs
+            if ($r.Code -ne 0) { Fail 'start' 3 "the supervisor would not start the room ($kind)" $r.Out }
+            Step 'start' 'done' $startSays
+        }
+    }
+
+    # -- attach, under the same name, and the runner rows still there.
+    function Get-LiveNow {
+        try {
+            $live = Invoke-RestMethod -Uri "http://$HubAddr/_hub/rooms" -TimeoutSec 5
+            $live.rooms | Where-Object { $_.name -eq $Name -and ([datetime] $_.since) -ge $needSince } | Select-Object -First 1
+        } catch { $null }
+    }
+    $deadline = (Get-Date).AddSeconds($AttachTimeout)
+    $seen = $null
+    do {
+        $seen = Get-LiveNow
+        if ($seen) { break }
+        Start-Sleep -Seconds 2
+    } while ((Get-Date) -lt $deadline)
+    if ($seen) {
+        Start-Sleep -Seconds 5
+        $still = Get-LiveNow
+        if (-not $still -or $still.since -ne $seen.since) { $seen = $null }
+    }
+    if (-not $seen) { Fail 'attach' 4 "the hub has no lasting connection from $Name after ${AttachTimeout}s" @(Get-HubRoom $Name) }
+    $rowsNote = 'runner rows not compared'
+    if ($null -ne $rowsBefore) {
+        $rowsAfter = $null
+        try {
+            $hr = Invoke-RestMethod -Uri "http://$HubAddr/v1/harnesses" -Headers $hdr -TimeoutSec 10
+            $rowsAfter = @(@($hr) + @($hr.harnesses) | Where-Object { $_ -and $_.id } | ForEach-Object { "$($_.id)" } | Sort-Object)
+        } catch { }
+        $lost = @($rowsBefore | Where-Object { $rowsAfter -notcontains $_ })
+        if ($null -eq $rowsAfter) { $rowsNote = 'runner rows could not be read after the restart' }
+        elseif ($lost) { Fail 'attach' 4 "$Name is back, but the runner rows $($lost -join ', ') are gone" }
+        else { $rowsNote = "runner rows intact ($($rowsAfter -join ', '))" }
+    }
+    Step 'attach' 'ok' "$Name on the hub since $(([datetime] $seen.since).ToString('HH:mm:ss')), host $($seen.host), build $($seen.version). $rowsNote"
+    # THE ONE WRITE, and only after a restart that worked: the state directory
+    # this resolved, for a manifest that did not have it.
+    if (-not $manifest.statedir) {
+        $manifest | Add-Member -NotePropertyName statedir -NotePropertyValue $pin.Dir -Force
+        Save-Manifest
+    }
     Finish 0
 }
 
@@ -1101,6 +1464,8 @@ if ($state.joinedroom -eq $Name -and $joinedId -eq $hubId) {
     if ($transport -eq 'ziti') { $detail += ", identity enrolled on the remote" }
     Step 'join' 'done' $detail
 }
+# WHERE THE JOIN WROTE room.json, kept for -Restart (see Get-StateDirs).
+Set-ManifestStateDir
 
 # ── 7. install the runners asked for ────────────────────────────────────────
 
@@ -1113,7 +1478,11 @@ $triple = switch ("$os/$goarch") {
 }
 $sources = @{
     claude = if ($os -eq 'windows') { 'https://claude.ai/install.ps1' } else { 'https://claude.ai/install.sh' }
-    codex  = "https://github.com/openai/codex/releases/latest/download/codex-$triple$(if ($os -eq 'windows') { '.exe' } else { '.tar.gz' })"
+    # THE PACKAGE, NOT THE BARE BINARY. codex-<triple> is the one executable, and
+    # codex needs codex-code-mode-host beside it, plus codex-resources and
+    # codex-path. codex-package-<triple>.tar.gz holds all of them in the layout
+    # codex looks for (bin/, codex-resources/, codex-path/).
+    codex  = "https://github.com/openai/codex/releases/latest/download/codex-package-$triple.tar.gz"
 }
 function Get-InstallScript {
     param([string] $runner)
@@ -1128,13 +1497,49 @@ if (-not (Test-Path `$b)) { `$o; exit 1 }
 if (-not `$preb) { "installed=`$b" }; if (-not `$pres -and (Test-Path `$s)) { "installed=`$s" }
 "path=`$b"
 "@ }
-            'codex' { return @"
-`$d = Join-Path `$HOME '.local\bin'; New-Item -ItemType Directory -Force `$d | Out-Null
-`$b = Join-Path `$d 'codex.exe'; `$preb = Test-Path `$b
-Invoke-WebRequest '$url' -OutFile `$b -UseBasicParsing
-if (-not `$preb) { "installed=`$b" }
-"path=`$b"
-"@ }
+            # CODEX NEEDS ITS HELPERS BESIDE IT (see $sources). With node and npm
+            # on the PATH, npm's own package puts them where they belong, in the
+            # user's own folder (the prefix is ~\.local\bin, so the shims land on
+            # the PATH this script already manages). Without, the whole package
+            # goes to ~\.local\share\codex\<version> and codex.cmd in ~\.local\bin
+            # calls into it. A .cmd and not a copy of codex.exe, because codex
+            # finds its resources relative to where its own exe really is.
+            'codex' { return ((@'
+$ErrorActionPreference = 'Continue'; $ProgressPreference = 'SilentlyContinue'
+$d = Join-Path $HOME '.local\bin'; New-Item -ItemType Directory -Force $d | Out-Null
+$b = Join-Path $d 'codex.cmd'; $preb = Test-Path $b
+$shims = @('codex', 'codex.cmd', 'codex.ps1') | ForEach-Object { Join-Path $d $_ }
+$pre = @{}; foreach ($s in $shims) { $pre[$s] = Test-Path $s }
+if ((Get-Command node -ErrorAction SilentlyContinue) -and (Get-Command npm -ErrorAction SilentlyContinue)) {
+    $nm = Join-Path $d 'node_modules'; $prem = Test-Path $nm
+    $o = & npm install -g --prefix $d '@openai/codex' 2>&1 | Out-String
+    if (-not (Test-Path $b)) { $o; 'npm finished but codex.cmd is not there'; exit 1 }
+    foreach ($s in $shims) { if (-not $pre[$s] -and (Test-Path $s)) { "installed=$s" } }
+    if (-not $prem) { "installed=$nm" } else { "installed=$(Join-Path $nm '@openai\codex')" }
+    "path=$b"; 'via=npm'; exit 0
+}
+$share = Join-Path $HOME '.local\share\codex'; $pres = Test-Path $share
+$t = Join-Path $env:TEMP ('codex-' + [guid]::NewGuid().ToString('N')); New-Item -ItemType Directory -Force $t | Out-Null
+$tgz = "$t.tgz"
+try {
+    Invoke-WebRequest '__URL__' -OutFile $tgz -UseBasicParsing
+    $o = & tar -xzf $tgz -C $t 2>&1 | Out-String
+    if (-not (Test-Path (Join-Path $t 'bin\codex.exe'))) { $o; 'the package had no bin\codex.exe'; exit 1 }
+    $v = try { (Get-Content (Join-Path $t 'codex-package.json') -Raw | ConvertFrom-Json).version } catch { $null }
+    if (-not $v) { $v = 'latest' }
+    New-Item -ItemType Directory -Force $share | Out-Null
+    $dest = Join-Path $share $v; $predest = Test-Path $dest
+    if (-not $predest) { Move-Item $t $dest }
+} finally {
+    Remove-Item $tgz -Force -ErrorAction SilentlyContinue
+    if (Test-Path $t) { Remove-Item $t -Recurse -Force -ErrorAction SilentlyContinue }
+}
+$exe = Join-Path $dest 'bin\codex.exe'
+Set-Content -Path $b -Encoding ASCII -Value @('@echo off', ('"' + $exe + '" %*'))
+if (-not $preb) { "installed=$b" }
+if (-not $pres) { "installed=$share" } elseif (-not $predest) { "installed=$dest" }
+"path=$b"; 'via=package'
+'@) -replace '__URL__', $url) }
         }
     } else {
         switch ($runner) {
@@ -1147,17 +1552,42 @@ if [ `$preb = 0 ]; then echo "installed=`$b"; fi
 if [ `$pres = 0 ] && [ -e "`$s" ]; then echo "installed=`$s"; fi
 echo "path=`$b"
 "@ }
-            'codex' { return @"
-d="`$HOME/.local/bin"; b="`$d/codex"; mkdir -p "`$d"
-if [ -e "`$b" ]; then preb=1; else preb=0; fi
-t=`$(mktemp -d)
-if command -v curl >/dev/null 2>&1; then curl -fsSL '$url' | tar -xz -C "`$t" || exit 1; else wget -qO- '$url' | tar -xz -C "`$t" || exit 1; fi
-f=`$(ls "`$t" | grep '^codex' | head -1)
-[ -n "`$f" ] || { echo "the archive had no codex binary"; exit 1; }
-mv -f "`$t/`$f" "`$b" && chmod +x "`$b"; rm -rf "`$t"
-if [ `$preb = 0 ]; then echo "installed=`$b"; fi
-echo "path=`$b"
-"@ }
+            # CODEX NEEDS ITS HELPERS BESIDE IT (see $sources). With node and npm
+            # on a login shell's PATH, npm installs @openai/codex into ~/.local,
+            # the user's own prefix, never sudo and never the system one. Without,
+            # the whole release package goes to ~/.local/share/codex/<version>
+            # and ~/.local/bin/codex is a two-line wrapper that execs into it: a
+            # wrapper and not a symlink, because codex finds its resources
+            # relative to where its own executable really is. HOME comes from the
+            # environment, so a test can point it at a throwaway folder.
+            'codex' { return (@'
+d="$HOME/.local/bin"; b="$d/codex"; mkdir -p "$d"
+if [ -e "$b" ] || [ -L "$b" ]; then preb=1; else preb=0; fi
+sh_=${SHELL:-/bin/sh}
+if "$sh_" -lc 'command -v node && command -v npm' </dev/null >/dev/null 2>&1; then
+  nm="$HOME/.local/lib/node_modules/@openai/codex"
+  if [ -e "$nm" ]; then pren=1; else pren=0; fi
+  o=$("$sh_" -lc 'npm install -g --prefix "$HOME/.local" @openai/codex' </dev/null 2>&1) || { echo "$o"; exit 1; }
+  if [ ! -e "$b" ]; then echo "$o"; echo "npm finished but $b is not there"; exit 1; fi
+  if [ $preb = 0 ]; then echo "installed=$b"; fi
+  if [ $pren = 0 ]; then echo "installed=$nm"; fi
+  echo "path=$b"; echo "via=npm"; exit 0
+fi
+share="$HOME/.local/share/codex"
+if [ -e "$share" ]; then pres=1; else pres=0; fi
+t=$(mktemp -d)
+if command -v curl >/dev/null 2>&1; then curl -fsSL '__URL__' | tar -xz -C "$t" || { rm -rf "$t"; exit 1; }
+else wget -qO- '__URL__' | tar -xz -C "$t" || { rm -rf "$t"; exit 1; }; fi
+if [ ! -x "$t/bin/codex" ]; then echo "the package had no bin/codex"; rm -rf "$t"; exit 1; fi
+v=$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' "$t/codex-package.json" 2>/dev/null | head -1)
+[ -n "$v" ] || v=latest
+mkdir -p "$share"
+if [ -d "$share/$v" ]; then predest=1; rm -rf "$t"; else predest=0; chmod 755 "$t"; mv "$t" "$share/$v" || exit 1; fi
+printf '#!/bin/sh\nexec "%s" "$@"\n' "$share/$v/bin/codex" > "$b.tmp" && chmod +x "$b.tmp" && mv -f "$b.tmp" "$b" || exit 1
+if [ $preb = 0 ]; then echo "installed=$b"; fi
+if [ $pres = 0 ]; then echo "installed=$share"; elif [ $predest = 0 ]; then echo "installed=$share/$v"; fi
+echo "path=$b"; echo "via=package"
+'@ -replace '__URL__', $url) }
         }
     }
     $null
@@ -1173,8 +1603,10 @@ function Test-Runner {
 `$c = Get-Command '$runner' -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
 if (-not `$c) { `$c = Get-Command '$runner' -ErrorAction SilentlyContinue | Select-Object -First 1 }
 if (-not `$c) {
-    `$h = Join-Path `$HOME '.local\bin\$runner.exe'
-    if (Test-Path `$h) { "home=`$h" }
+    foreach (`$x in '.exe', '.cmd') {
+        `$h = Join-Path `$HOME ".local\bin\$runner`$x"
+        if (Test-Path `$h) { "home=`$h"; break }
+    }
     'runner=missing'; exit 0
 }
 "path=`$(`$c.Source)"
@@ -1211,7 +1643,8 @@ foreach ($runner in $Install) {
     if ($have.home) { Step "install:$runner" 'ok' "already there at $($have.home)"; $installedNow = $true; continue }
     # THE TRUST WARNING, before anything is fetched. -Install is the consent,
     # and this says what it was consent to.
-    Step "install:$runner" 'warn' ("trusting atrium to fetch $($sources[$runner]) and run it on $Target. " +
+    $via = if ($runner -eq 'codex') { "(or, when node and npm are there, npm's @openai/codex into ~/.local) " } else { '' }
+    Step "install:$runner" 'warn' ("trusting atrium to fetch $($sources[$runner]) $via" + "and run it on $Target. " +
         "if you do not trust that, install $runner yourself and leave -Install off")
     $r = Invoke-Remote (Get-InstallScript $runner)
     $got = @($r.Out | Where-Object { $_ -like 'installed=*' } | ForEach-Object { $_.Substring(10) })
