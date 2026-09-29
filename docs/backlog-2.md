@@ -1438,6 +1438,8 @@ newer build than the hub runs, so the name lies. On 2026-09-28 the hub-only depl
 
 Fix: label the snapshot with the file's own `atrium version` output, its commit and its board hash.
 
+Status: fixed on claude/sa65, not merged.
+
 ## 66. New context: capture state, clear, and wake, from one click or one key (feature)
 
 Raised 2026-09-28 by clint. Cycling a long session is done by hand today: tell it to commit and write HANDOFF.md,
