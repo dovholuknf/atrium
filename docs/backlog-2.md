@@ -1905,6 +1905,12 @@ the runner's `~/.claude.json` (only for a cwd atrium was asked to launch in), an
 dialogs, or hold typed input until the runner reaches its prompt. The fullscreen renderer must be declined: atrium
 renders in xterm.js and an alternate screen loses the board's scrollback.
 
+**Status, 2026-09-29: fixed in cbb4ee9, but m1mini's room does not run it yet.** Two more cards died this way on
+m1mini: sa73 (card `01a0eb3e`, launched 03:38Z) and sa84 (card `01a0eb58`, launched 04:07Z). Each sat on the trust
+dialog, and each exited (exit 1) 0.6 s after the orchestrator's 04:33Z status check was typed in. Neither started a
+conversation (no `~/.claude/projects` dir, "no session id yet"), neither committed anything, and `~/.claude.json`
+has no trust entry for either worktree. The cause is item 84's note: the room binary there predates the fix.
+
 ## 68. atrium_exit and atrium_task do not take a card on another room (bug)
 
 Found 2026-09-28 by saorch. `atrium_say` takes `name@room`, but `atrium_exit` and `atrium_task` take neither
@@ -2655,6 +2661,17 @@ returns its pid, over a large constant. Then grep the `_test.go` files for other
 `processAlive` is right and does not change. Verified on m1mini with pid 2147483000: both pass, and so does the
 whole package. Owned by @runtime.
 
+**Status, 2026-09-29: unstarted, and waiting on clint's m1mini rebuild and restart.** The first worker (sa84, card
+`01a0eb58` on m1mini) died on the folder-trust dialog before doing anything (item 67). That happened although 67 is
+fixed, because **m1mini's room runs an old build**. The room process (`atrium room --http 127.0.0.1:7781`, started
+2026-09-28 20:44:10 -0400) runs `~/.local/bin/atrium`, mtime 20:44:08. Its `atrium version` says commit `aa7a5de`
+(17:30 -0400), board `c5940e03fb8f171e`. The item 67 fix is `cbb4ee9` (21:11 -0400), which is not an ancestor of
+`aa7a5de`. m1mini's source clone is at `hub-main` 52ca01a, which does contain `cbb4ee9`, but the room was never
+rebuilt and restarted from it. Relaunching on the old room would need a trust grant written into `~/.claude.json`
+there, which the orchestrator ruled out. So: rebuild the room from 52ca01a or later, restart it, then relaunch sa84.
+Its worktree `/Users/claude/git/wt/sa84` and brief are still in place. Nothing needs fetching: `claude/sa84` equals
+52ca01a.
+
 ## 87. Two keep-alive refreshes rewrote the whole context (bug)
 
 Found 2026-09-29 by @runtime writing the item 39 spec (`docs/keepalive-marked-spec.md`), from `keepalive_refresh` and
@@ -2674,7 +2691,7 @@ system prompt (read 10k). The TTL was not the cause: both had about four minutes
 **Diagnosis: already fixed by item 70**, fa2b2cc (2026-09-29 01:19Z). `decide` in `internal/daemon/keepalive.go` skips
 a card tagged `atrium:lean` ("lean card: a refresh cannot rebuild its prompt"), and its comment cites the $1.02 row
 above. Lean is decided by the same tag at launch (`lean.go`), so a lean card cannot lack it. On the copy there is no
-refresh on a lean-tagged card after the fix. Item 73 (sa73, on m1mini) is the step after this: a fork that carries a
+refresh on a lean-tagged card after the fix. Item 73 (sa73, relaunched locally 2026-09-29) is the step after this: a fork that carries a
 lean card's prompt, so those cards can be warmed rather than skipped.
 
 The other four refreshes recorded as `miss` read the whole context and wrote 3k to 8k for $0.04 to $0.09 each. They
