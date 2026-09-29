@@ -580,6 +580,7 @@ func (s *Server) Handler() http.Handler {
 	}
 	mux.HandleFunc("GET /v1/usage", s.roomUsage)
 	mux.HandleFunc("GET /v1/usage/limits", s.roomLimits)
+	mux.HandleFunc("GET /v1/usage/items", s.roomUsageItems)
 	// What has been said and not yet arrived. A queued message waits for the
 	// session's next tool call or its Stop hook, which can be a while, and a
 	// board that does not show the queue makes that look like nothing
