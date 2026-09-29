@@ -22,7 +22,7 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 13 | Housekeeping asked, not answered | housekeeping | waiting on clint |
 | 14 | Per-card notification log | design | tentative |
 | 15 | Pluggable event sink, what is left | design | stages 1-2 done |
-| 16 | Reviews that remember: a resident reviewer per repo, and a panel that reads once | design, HIGH PRIORITY | designed, `docs/review-memory-design.md`. Stage 1 buildable, stage 2 waits on clint (3 questions) |
+| 16 | Reviews that remember: a resident reviewer per repo, and a panel that reads once | design, HIGH PRIORITY | designed, `docs/review-memory-design.md`. Stage 1 held for clint's yes (dotfiles), stage 2 waits on 3 questions |
 | 17 | A Claude subagent finishing tells clint the card is waiting on him | bug | DONE, merged `29d45f5`, needs a hook binary rebuild and a room restart. Test plan BN |
 | 18 | On the terminals tab, toasts sit top right, not over the input line | feature | DONE, `910b186` |
 | 19 | Launch (and every other submit) shows it is working and refuses a second click | bug | DONE, `eb1603e` board, `50db006` daemon |
@@ -58,7 +58,7 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 49 | The orchestrator can appear on every room | design | @fabric, design reviewed `1ccecf2`, ready to build, 3 questions |
 | 50 | Views of agents, beyond groups | design | not started |
 | 51 | Five kept worktrees show 48 commits not matched on `claude/main` | housekeeping | DONE, all five safe, deleted 2026-09-28 |
-| 52 | A pinned strip with cards from two rooms orders only one room | bug | DONE by fb04, merged into claude/fabric, needs hub and room restarts. `prune` has the same shape, unfixed |
+| 52 | A pinned strip with cards from two rooms orders only one room | bug | DONE by fb04, merged into claude/fabric, needs hub and room restarts. `prune` is item 92 |
 | 53 | `setViewport` and `dropViewport` compute under `r.mu` and apply outside it | bug | by sa53, DONE, reproduced and fixed |
 | 54 | Terminal test suite part 2: `screen.go` against xterm.js | feature | not started |
 | 55 | Launched runners inherit ATRIUM_DEBUG_INPUTLAG from the room | bug | DONE by sa55, merged, needs a room restart |
@@ -87,6 +87,7 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 78 | The details popover's token labels mislead | bug | not started |
 | 79 | The notification drawer can turn notifications off | feature | design filed, queued behind 78, 44 and 43 |
 | 80 | Real-time token burn and usage charts | feature, TONIGHT | design filed, ahead of 43 and 79 |
+| 92 | `/v1/tasks/prune` reaches one room, like pin-order did | bug | not started, @fabric, with the next `internal/link` worker |
 
 ------------
 
@@ -639,8 +640,9 @@ offsite, and the primary database plateaus low enough that shrinking it stops ma
 ## 16. Reviews that remember (HIGH PRIORITY)
 
 **Status 2026-09-29:** designed in `docs/review-memory-design.md`, reviewed by Mercurius over two rounds. Stage 1 (read
-once, panel sized to the change, the #4480 replay) is buildable now. Stage 2 (reviewer files) waits on clint's open
-questions 1, 2 and 6 in that design.
+once, panel sized to the change, the #4480 replay) is buildable, and HELD for clint, because it changes his
+dotfiles skill and personas. The design's "Stage 1, file by file" section lists the eight edits and the one-line
+yes. The replay (about 17M tokens) is a separate yes. Stage 2 (reviewer files) waits on his open questions 1, 2 and 6.
 
 Raised by clint 2026-09-25 during a `review-panel` run on openziti/ziti PR #4480 (a v2.0.x backport). Four
 reviewers (go-security-reviewer, codebase-steward, functional-tester, nonfunctional-tester) each ran for 5.5 minutes
@@ -1628,8 +1630,7 @@ whole strip. Hub-side only, no room, board or migration change. The second note 
 
 **Status, 2026-09-29: DONE by fb04, merged into claude/fabric.** Hub fan-out `63ed4e8` (design tests FF4, FF5), plus the
 store now orders pinned rows only, `8b7d11c`, read and passed by @runtime. `docs/changes/fabric-52-pin-order.md`.
-Needs a hub and room restart. Not fixed and the same shape: `/v1/tasks/prune` also names no card in its path, so the
-hub also sends it to one room.
+Needs a hub and room restart. Not fixed and the same shape: `/v1/tasks/prune`, now item 92.
 
 @ui wrote a board-only design first, one post per room with an explicit room header. atrium-87300 chose the hub-side
 one in `docs/pin-order-rooms-design.md` instead, and @ui agreed. Its other finding stands: `nudgeItems` already
@@ -2871,6 +2872,17 @@ so a loaded browser that had not yet run the close handler failed it. It passes 
 
 Status 2026-09-29, done on `claude/ui`. The sleep is now a wait for the line to be gone, with a `slow(2000)` budget
 and the same failure message, so `HEADLESS_SLOW` scales it like every other wait since item 85.
+
+## 92. `/v1/tasks/prune` reaches one room, like pin-order did (bug)
+
+Found 2026-09-29 by fb04 while building item 52. `prune` sits under `/v1/tasks/` and names no card in its path, so
+the hub routes it by the board's `X-Atrium-Room` header (the stale `writeRoom`) to one room at most, the way
+`pin-order` was routed before `internal/link/pinorder.go`. On the all-rooms view a prune reaches whichever room the
+header names, and the others keep what should have gone.
+
+Fix, probably the same shape as item 52: fan it out to every attached room, bounded per room, 200 with `unreached`
+while one room took it. Read what `prune` does to each room first, since a prune that should only reach one room
+would make the fan-out wrong. Owned by @fabric, and folded into the next worker that touches `internal/link`.
 
 
 ------------
