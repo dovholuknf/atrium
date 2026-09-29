@@ -59,7 +59,7 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 50 | Views of agents, beyond groups | design | not started |
 | 51 | Five kept worktrees show 48 commits not matched on `claude/main` | housekeeping | DONE, all five safe, deleted 2026-09-28 |
 | 52 | A pinned strip with cards from two rooms orders only one room | bug | not started |
-| 53 | `setViewport` and `dropViewport` compute under `r.mu` and apply outside it | bug | not started, never reproduced |
+| 53 | `setViewport` and `dropViewport` compute under `r.mu` and apply outside it | bug | by sa53, DONE, reproduced and fixed |
 | 54 | Terminal test suite part 2: `screen.go` against xterm.js | feature | not started |
 | 55 | Launched runners inherit ATRIUM_DEBUG_INPUTLAG from the room | bug | DONE by sa55, merged, needs a room restart |
 | 56 | Every dialog is sleek, one skinned design, starting with card details and the room's edit-agents screen | feature, design first, HIGH | DONE by sa56, merged `a1ab1c2`, deployed `66717c5` |
@@ -1279,12 +1279,23 @@ Raised 2026-09-28 from sa51's review of the terminal-suite HANDOFF. Both work ou
 `r.mu` and apply it after letting go, so two resizes close together could apply in the wrong order. Never
 reproduced. See `D:/tmp/handoffs/terminal-suite-HANDOFF.md`.
 
+Done by sa53. It did reproduce, with a fake pty that yields in `Resize`: without the fix the pty ended a column off
+the ring's mark in most runs. A new `runner.resizeMu` is held across compute, guard, mark and resize in both
+functions. The shell shares the `runner` type, so it is covered. Nothing else resizes a live runner.
+
 ## 54. Terminal test suite part 2: `screen.go` against xterm.js (feature)
 
 Raised 2026-09-28 from sa51's review of the terminal-suite HANDOFF. Part 2 was planned and never started: a
 differential test that feeds the same trace fixtures to `screen.go` and to xterm.js and compares the screens, run
 with Playwright after an `npm install`. The plan is in `D:/tmp/handoffs/terminal-suite-HANDOFF.md`, and the scratch
 tools are in `D:/tmp/handoffs/terminal-suite-tw`.
+
+Done by sa54, as a Go test that shells out to node rather than Playwright (`screen_diff_test.go`,
+`screen_diff_cases_test.go`, `testdata/xterm_dump.js`) plus four socket size tests (`attach_size_test.go`). Two real
+differences remain as skipped cases: `screen.go` ignores DECSTBM scroll regions, and it gives wide (CJK) characters one
+cell. Accepted on purpose: cleared rows go to history, `CSI S` files rows into history, no reflow on a width change.
+The bare `CSI H` repaint agrees with xterm.js in both fixtures, so sa74 still owns what to do about it. See
+`docs/changes/54.md`.
 
 ## 55. Launched runners inherit ATRIUM_DEBUG_INPUTLAG from the room (bug)
 
@@ -1384,11 +1395,20 @@ Raised 2026-09-28. The old stdio control MCP (`internal/cli/control_peers.go`) t
 env fields for item 48, but not the warning the hub's control MCP gives when the room is older than the change.
 Decide whether it needs the warning or should go away.
 
+Status, 2026-09-28, sa60: fixed on `claude/sa60`. The stdio MCP is live: `atrium control` registers `atrium_launch`
+through `addPeerTools`, so it needed the warning rather than removal. The check now lives in `link.LaunchOptionsDropped`
+and `link.LaunchDroppedWarning`, used by both MCPs, and the stdio result reports the model and effort. See
+`docs/changes/60.md`.
+
 ## 61. A fake 45s hub echo in the lag log from the idle ping and pong (bug)
 
 Raised 2026-09-28, from sa55's review of the live logs. The room pings an idle attach every 45s, and the browser's
 pong going up starts the hub's echo clock. So every ping logs a fake echo of about 45000ms, and `hub.err` carries
 about 80 lag lines an hour with the board idle. The hub should not start the echo clock on a pong.
+
+Status: fixed on `claude/sa61`. `lagConn.Write` starts the clock only when the Write holds a data frame, and a
+control frame read back no longer closes it. The room's own timing starts only on an `in` message, so it was never
+affected. See `docs/changes/61.md`.
 
 ## 62. A worker that ends its turn without a report reaches its orchestrator every time (bug, HIGH)
 
@@ -1479,6 +1499,8 @@ newer build than the hub runs, so the name lies. On 2026-09-28 the hub-only depl
 `atrium.revert-f5809905.exe`, which holds `06b87c9`. The real `f5809905` is `atrium.old-20260928155551.exe`.
 
 Fix: label the snapshot with the file's own `atrium version` output, its commit and its board hash.
+
+Status: fixed on claude/sa65, not merged.
 
 ## 66. New context: capture state, clear, and wake, from one click or one key (feature)
 
@@ -1614,6 +1636,8 @@ Order: a, c, f, then b, e, g. Owned by @merge.
 Status: b, c and g documented on claude/sa77b, not merged. Layout is `docs/changes/<item>.md`, folded by
 `scripts/fold-changes.ps1`.
 
+Status: a and e built on claude/sa77a, not merged. `scripts/merge-check.ps1` and `scripts/setup-merge-worktree.ps1`.
+
 ## 78. The details popover's token labels mislead (bug)
 
 Raised 2026-09-28 by clint on @fabric's popover: "2 turns, 48 in, 12k out" looked wrong. Checked against the
@@ -1747,6 +1771,22 @@ Status 2026-09-29, done on `claude/ui`. `HEADLESS_SLOW` scales all 191 timeouts,
 names its three waits, and its menu wait opens the menu again if a render closed it, which is the likelier flake
 than a slow browser. A full run with `HEADLESS_SLOW=3` beside `go test` passed. Other sections still fail on the
 symptom only when a wait runs out, and get the same treatment when one is caught flaking.
+
+## 81. `screen.go` ignores DECSTBM scroll regions (bug)
+
+Found 2026-09-28 by sa54's differential test (item 54). `screen.go` never reads `CSI top;bottom r`, so a runner
+scrolling inside a region scrolls the whole grid and files rows into history that stayed put on a real terminal. In
+the fixture `screen.go` scrolled 3 rows off where xterm.js scrolled 5, with the cursor on row 5 against 3. This
+shows in the attach replay and the text scrollback view whenever a runner uses a scroll region. The case is in
+`internal/daemon/screen_diff_cases_test.go`, skipped as `backlog-2 81` until it agrees, and it fails once it does
+so the skip gets removed. Owned by @terminal.
+
+## 82. `screen.go` gives a wide character one cell (bug)
+
+Found 2026-09-28 by sa54's differential test (item 54). `screen.go` gives every rune one cell, and xterm.js gives
+CJK and other wide characters two. A cursor move back over a wide character lands on the wrong column: `あ.う`
+against `あい.`. A fix needs a continuation cell handled in `render`, `writeRow`, and the erase and insert ops. The
+case is skipped as `backlog-2 82` in `internal/daemon/screen_diff_cases_test.go`. Owned by @terminal.
 
 
 ------------
