@@ -1270,8 +1270,8 @@ func (r *runner) setViewport(id any, cols, rows int) error {
 	if cols <= 0 || rows <= 0 {
 		return nil
 	}
-r.resizeMu.Lock()
-defer r.resizeMu.Unlock()
+	r.resizeMu.Lock()
+	defer r.resizeMu.Unlock()
 	r.mu.Lock()
 	if r.views == nil {
 		r.views = map[any]viewport{}
@@ -1319,8 +1319,8 @@ func (r *runner) noteResized() {
 // dropViewport forgets a viewer that has detached, and lets the pty follow the
 // viewers left only when the viewer that left was the binding one.
 func (r *runner) dropViewport(id any) {
-r.resizeMu.Lock()
-defer r.resizeMu.Unlock()
+	r.resizeMu.Lock()
+	defer r.resizeMu.Unlock()
 	r.mu.Lock()
 	if r.views == nil {
 		r.mu.Unlock()
