@@ -132,6 +132,10 @@ type Server struct {
 	// runner is back after a restart. Owned by the daemon, which owns the
 	// terminal. See internal/daemon/restartwake.go.
 	RestartWake http.HandlerFunc
+	// NewContext starts a card's capture, clear and wake sequence, reads it or
+	// takes its chip off. Owned by the daemon, which owns the terminal. See
+	// internal/daemon/newcontext.go.
+	NewContext http.HandlerFunc
 	// SendNote turns a card's note into one message and clears it. Owned by
 	// the daemon, which owns delivery.
 	SendNote http.HandlerFunc
@@ -540,6 +544,11 @@ func (s *Server) Handler() http.Handler {
 		mux.HandleFunc("GET /v1/tasks/{id}/restart-wake", s.RestartWake)
 		mux.HandleFunc("DELETE /v1/tasks/{id}/restart-wake", s.RestartWake)
 	}
+	if s.NewContext != nil {
+		mux.HandleFunc("POST /v1/tasks/{id}/new-context", s.NewContext)
+		mux.HandleFunc("GET /v1/tasks/{id}/new-context", s.NewContext)
+		mux.HandleFunc("DELETE /v1/tasks/{id}/new-context", s.NewContext)
+	}
 	if s.SetKeepalive != nil {
 		mux.HandleFunc("POST /v1/tasks/{id}/keepalive", s.setKeepalive)
 	}
@@ -652,6 +661,10 @@ type view struct {
 	// is back after a restart. Absent when there is none. See
 	// docs/restart-wake.md.
 	RestartWake any `json:"restart_wake,omitempty"`
+	// NewContext is the card's capture, clear and wake sequence: the step it is
+	// on, or why it stopped. Absent when none is under way. See
+	// internal/daemon/newcontext.go.
+	NewContext any `json:"new_context,omitempty"`
 	// Keepalive is the card's cache keep-alive switch and its current idle
 	// stretch. Absent on a card with no switch, which is every card that is
 	// not Claude. See docs/cache-keepalive-design.md.
@@ -713,6 +726,10 @@ var EscalationOf func(taskID string) any
 // daemon, which mirrors the store's rows in memory so this is no query per card.
 var RestartWakeOf func(taskID string) any
 
+// NewContextOf returns a card's new-context sequence, or nil. Supplied by the
+// daemon, which holds it in memory.
+var NewContextOf func(taskID string) any
+
 // KeepaliveOf returns a card's cache keep-alive view, or nil. Supplied by the
 // daemon.
 var KeepaliveOf func(taskID string) any
@@ -742,6 +759,9 @@ func toView(t *store.Task) view {
 	}
 	if RestartWakeOf != nil {
 		v.RestartWake = RestartWakeOf(t.ID)
+	}
+	if NewContextOf != nil {
+		v.NewContext = NewContextOf(t.ID)
 	}
 	if KeepaliveOf != nil {
 		v.Keepalive = KeepaliveOf(t.ID)

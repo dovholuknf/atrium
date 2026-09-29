@@ -834,6 +834,20 @@ async function cardMenu(e, id) {
         "never interrupted, and with this off everything is queued instead.",
       act: () => patchTask(id, { peer_typing: t.peer_typing === false }).then(refresh)
     } : null,
+    // Cycle the context: the room has it write HANDOFF.md, clears it, and tells
+    // it to read the file back. Ctrl+Alt+N in an attached terminal does the same,
+    // and this is the one that always works, because some layouts send Ctrl+Alt
+    // for AltGr. Only where atrium owns the terminal, since the room types the
+    // steps.
+    t.supervised && !over ? {
+      label: "new context", note: "commit, hand off, clear",
+      help: "Asks the session to commit or stash and write everything relevant to " +
+        "HANDOFF.md, waits for that turn to end, clears the context, and then " +
+        "tells it to read the file and continue. The room types each step. A " +
+        "step that times out stops there and says why on the card. Ctrl+Alt+N " +
+        "in its terminal does the same.",
+      act: () => newContext(id)
+    } : null,
     // The cache keep-alive for this card. Only on a Claude card, which is the
     // only kind with a switch. See js/keepalive.js.
     typeof keepaliveMenuItem === "function" ? keepaliveMenuItem(t, refresh) : null,
