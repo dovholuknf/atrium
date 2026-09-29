@@ -836,7 +836,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 
 <dialog id="ask">
   <div class="dlg-head">
-    <div class="grow"><h2 id="ask-title"></h2></div>
+    <div class="grow"><div class="dlg-eyebrow">atrium asks</div><h2 id="ask-title"></h2></div>
   </div>
   <div class="dlg-body">
     <div id="ask-body" class="asktext"></div>
@@ -862,8 +862,8 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         <span>do not ask me again</span>
       </label>
     </div>
-    <div class="toolbar" id="ask-actions"></div>
   </div>
+  <div class="dlg-foot" id="ask-actions"></div>
 </dialog>
 
 <!-- GO THERE NOW.
@@ -1771,46 +1771,49 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
      it keeps edits only on save. -->
 <dialog id="action" data-guard>
   <div class="dlg-head">
-    <div class="grow"><h2 id="a-heading">action</h2></div>
+    <div class="grow"><div class="dlg-eyebrow">agents · action</div><h2 id="a-heading">action</h2></div>
     <button onclick="document.getElementById('action').close()">close</button>
   </div>
   <div class="dlg-body">
-    <div class="field">
-      <label class="eyebrow" for="a-label">what goes on the button</label>
-      <input type="text" id="a-label" spellcheck="false" placeholder="run the tests">
-    </div>
-    <div class="field">
-      <label class="eyebrow" for="a-prompt">what it says</label>
-      <textarea id="a-prompt" rows="5" spellcheck="false"
-        placeholder="Run the test suite and tell me what failed, if anything."></textarea>
-      <span class="hintline">Sent as text, exactly as typed. Write it as an instruction to the
-        agent, not as a note to yourself.</span>
-    </div>
-    <div class="field">
-      <label class="eyebrow" for="a-after">afterwards</label>
-      <div class="picker">
-        <select id="a-after">
-          <option value="keep">keep the session running</option>
-          <option value="exit">ask the runner to quit</option>
-        </select>
+    <section class="dlg-sec dlg-grid">
+      <div class="dlg-sec-h">the button</div>
+      <div class="field">
+        <label class="eyebrow" for="a-label">what goes on the button</label>
+        <input type="text" id="a-label" spellcheck="false" placeholder="run the tests">
       </div>
-      <span class="hintline">Quitting sends the harness's own exit keys a moment after the prompt.
-        Best effort: a runner that ignores them stays up, having been told to wrap up.</span>
-    </div>
-    <div class="field">
-      <label class="eyebrow" for="a-tag">only on cards tagged</label>
-      <input type="text" id="a-tag" spellcheck="false" placeholder="any (leave empty)">
-      <span class="hintline">One tag. Empty offers it on every card.</span>
-    </div>
-    <div class="field">
-      <label class="eyebrow" for="a-runner">only for runner</label>
-      <div class="picker"><select id="a-runner"></select></div>
-    </div>
-    <div class="field">
-      <label class="check"><input type="checkbox" id="a-enabled"> offer it</label>
-    </div>
+      <div class="field">
+        <label class="eyebrow" for="a-runner">only for runner</label>
+        <div class="picker"><select id="a-runner"></select></div>
+      </div>
+      <div class="field span">
+        <label class="eyebrow" for="a-prompt">what it says</label>
+        <textarea id="a-prompt" rows="5" spellcheck="false"
+          placeholder="Run the test suite and tell me what failed, if anything."></textarea>
+        <span class="hintline">Sent as text, exactly as typed. Write it as an instruction to the
+          agent, not as a note to yourself.</span>
+      </div>
+      <div class="field">
+        <label class="eyebrow" for="a-after">afterwards</label>
+        <div class="picker">
+          <select id="a-after">
+            <option value="keep">keep the session running</option>
+            <option value="exit">ask the runner to quit</option>
+          </select>
+        </div>
+        <span class="hintline">Quitting sends the harness's own exit keys a moment after the prompt.
+          Best effort: a runner that ignores them stays up, having been told to wrap up.</span>
+      </div>
+      <div class="field">
+        <label class="eyebrow" for="a-tag">only on cards tagged</label>
+        <input type="text" id="a-tag" spellcheck="false" placeholder="any (leave empty)">
+        <span class="hintline">One tag. Empty offers it on every card.</span>
+      </div>
+      <div class="field span">
+        <label class="check"><input type="checkbox" id="a-enabled"> offer it</label>
+      </div>
+    </section>
   </div>
-  <div class="dlg-head" style="border-top:1px solid var(--stroke-dim);border-bottom:none">
+  <div class="dlg-foot">
     <button class="go" onclick="busyWhile(this, saveAction, 'saving…')">save</button>
     <button class="no" id="a-delete" onclick="busyWhile(this, deleteAction, 'removing…')">delete</button>
     <span class="grow"></span>
@@ -1881,57 +1884,63 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 
 <dialog id="source" data-guard>
   <div class="dlg-head">
-    <div class="grow"><h2 id="s-heading">source</h2></div>
+    <div class="grow"><div class="dlg-eyebrow">agents · source</div><h2 id="s-heading">source</h2></div>
     <button onclick="document.getElementById('source').close()">close</button>
   </div>
   <div class="dlg-body">
-    <div class="field">
-      <label class="eyebrow" for="s-id">id</label>
-      <input type="text" id="s-id" spellcheck="false" placeholder="assigned-issues">
-      <span class="hintline">Used in the log when it says something. Cannot be changed later.</span>
-    </div>
-    <div class="field">
-      <label class="eyebrow" for="s-label">what to call it</label>
-      <input type="text" id="s-label" spellcheck="false" placeholder="issues assigned to me">
-    </div>
-    <div class="field">
-      <label class="eyebrow" for="s-cmd">command</label>
-      <input type="text" id="s-cmd" spellcheck="false" placeholder="pwsh">
-      <span class="hintline">Runs as whoever started the daemon, with the daemon's environment.
-        As trusted as a runner. Put the credential in the tool, never here.</span>
-    </div>
-    <div class="field">
-      <label class="eyebrow" for="s-args">arguments</label>
-      <textarea id="s-args" rows="3" spellcheck="false"
-        placeholder="-NoProfile&#10;-File&#10;D:/git/github/you/atrium/scripts/sources/github-assigned.ps1"></textarea>
-      <span class="hintline">One per line, never split by atrium. A path with a space in it is
-        one line and stays one argument.</span>
-    </div>
-    <div class="field">
-      <label class="eyebrow" for="s-cwd">working directory</label>
-      <div class="picker">
-        <input type="text" id="s-cwd" spellcheck="false" placeholder="optional">
-        <button onclick="browseInto('s-cwd')">browse</button>
+    <section class="dlg-sec dlg-grid">
+      <div class="dlg-sec-h">what it runs</div>
+      <div class="field">
+        <label class="eyebrow" for="s-id">id</label>
+        <input type="text" id="s-id" spellcheck="false" placeholder="assigned-issues">
+        <span class="hintline">Used in the log when it says something. Cannot be changed later.</span>
       </div>
-    </div>
-    <div class="field">
-      <label class="eyebrow" for="s-interval">how often, in seconds</label>
-      <input type="number" id="s-interval" min="30" step="30" value="900">
-      <span class="hintline">There is no good default. A review request is stale in an hour, a
-        CI failure is worth knowing in five minutes, and a queue somebody is paid to watch does
-        not want a second watcher. Thirty seconds is the floor.</span>
-    </div>
-    <div class="field">
-      <label class="check"><input type="checkbox" id="s-enabled"> run it on the timer</label>
-      <span class="hintline">Off keeps the definition without the behavior. You can still run
-        it by hand, which is how to test one before turning it on.</span>
-    </div>
-    <div class="field" id="s-status-field" hidden>
-      <label class="eyebrow">last run</label>
-      <div class="hintline" id="s-status"></div>
-    </div>
+      <div class="field">
+        <label class="eyebrow" for="s-label">what to call it</label>
+        <input type="text" id="s-label" spellcheck="false" placeholder="issues assigned to me">
+      </div>
+      <div class="field">
+        <label class="eyebrow" for="s-cmd">command</label>
+        <input type="text" id="s-cmd" spellcheck="false" placeholder="pwsh">
+        <span class="hintline">Runs as whoever started the daemon, with the daemon's environment.
+          As trusted as a runner. Put the credential in the tool, never here.</span>
+      </div>
+      <div class="field">
+        <label class="eyebrow" for="s-cwd">working directory</label>
+        <div class="picker">
+          <input type="text" id="s-cwd" spellcheck="false" placeholder="optional">
+          <button onclick="browseInto('s-cwd')">browse</button>
+        </div>
+      </div>
+      <div class="field span">
+        <label class="eyebrow" for="s-args">arguments</label>
+        <textarea id="s-args" rows="3" spellcheck="false"
+          placeholder="-NoProfile&#10;-File&#10;D:/git/github/you/atrium/scripts/sources/github-assigned.ps1"></textarea>
+        <span class="hintline">One per line, never split by atrium. A path with a space in it is
+          one line and stays one argument.</span>
+      </div>
+    </section>
+    <section class="dlg-sec">
+      <div class="dlg-sec-h">when it runs</div>
+      <div class="field">
+        <label class="eyebrow" for="s-interval">how often, in seconds</label>
+        <input type="number" id="s-interval" min="30" step="30" value="900">
+        <span class="hintline">There is no good default. A review request is stale in an hour, a
+          CI failure is worth knowing in five minutes, and a queue somebody is paid to watch does
+          not want a second watcher. Thirty seconds is the floor.</span>
+      </div>
+      <div class="field">
+        <label class="check"><input type="checkbox" id="s-enabled"> run it on the timer</label>
+        <span class="hintline">Off keeps the definition without the behavior. You can still run
+          it by hand, which is how to test one before turning it on.</span>
+      </div>
+      <div class="field" id="s-status-field" hidden>
+        <label class="eyebrow">last run</label>
+        <div class="hintline" id="s-status"></div>
+      </div>
+    </section>
   </div>
-  <div class="dlg-head" style="border-top:1px solid var(--stroke-dim);border-bottom:none">
+  <div class="dlg-foot">
     <button class="go" onclick="busyWhile(this, saveSource, 'saving…')">save</button>
     <button id="s-run" onclick="busyWhile(this, runSourceNow)">run it now</button>
     <button class="no" id="s-delete" onclick="busyWhile(this, deleteSource, 'removing…')">delete</button>
@@ -1945,126 +1954,138 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
      knowledge of whatever system the url came from. -->
 <dialog id="recogniser" data-guard>
   <div class="dlg-head">
-    <div class="grow"><h2 id="r-heading">recogniser</h2></div>
+    <div class="grow"><div class="dlg-eyebrow">agents · recogniser</div><h2 id="r-heading">recogniser</h2></div>
     <button onclick="document.getElementById('recogniser').close()">close</button>
   </div>
   <div class="dlg-body">
-    <div class="field">
-      <label class="eyebrow" for="r-id">id</label>
-      <input type="text" id="r-id" spellcheck="false" placeholder="github-pull-request">
-      <span class="hintline">Used in the log and in an export. Cannot be changed later.</span>
-    </div>
-    <div class="field">
-      <label class="eyebrow" for="r-label">what to call this kind of thing</label>
-      <input type="text" id="r-label" spellcheck="false" placeholder="github pull request">
-      <span class="hintline">Shown when a url matches, so you can tell which row answered.</span>
-    </div>
-    <div class="field">
-      <label class="eyebrow" for="r-pattern">pattern</label>
-      <input type="text" id="r-pattern" spellcheck="false"
-        placeholder="^https?://(?P&lt;host&gt;github\.com)/(?P&lt;org&gt;[^/]+)/(?P&lt;repo&gt;[^/]+)/pull/(?P&lt;num&gt;\d+)">
-      <span class="hintline">A Go regular expression with named groups. The names become the
-        variables every template below reads. <code>host</code>, <code>org</code> and
-        <code>repo</code> also go onto the card as themselves, which is how two forks of one
-        repository stop landing in the same pile. Refused if it does not compile.</span>
-    </div>
-    <div class="field">
-      <label class="eyebrow" for="r-rank">rank</label>
-      <input type="number" id="r-rank" step="10" value="100">
-      <span class="hintline">Lowest first, and this is the dispatch rather than decoration.
-        A pull request url also matches a generic &ldquo;any repository&rdquo; pattern, so the
-        specific row has to be asked first. Leave the shrug at the bottom: a url that matches
-        nothing specific is still worth a dialog.</span>
-    </div>
-    <div class="field">
-      <label class="eyebrow" for="r-cwd">working directory</label>
-      <input type="text" id="r-cwd" spellcheck="false" placeholder="d:/worktrees/{org}/{repo}/pr-{num}">
-      <span class="hintline">A template. ATRIUM NEVER CREATES IT: where it is not there, the
-        dialog says so and you make it with whatever makes worktrees here.</span>
-    </div>
-    <div class="field">
-      <label class="eyebrow" for="r-title">title</label>
-      <input type="text" id="r-title" spellcheck="false" placeholder="{org}/{repo}#{num} {title}">
-    </div>
-    <div class="field">
-      <label class="eyebrow" for="r-prompt">first instruction</label>
-      <textarea id="r-prompt" rows="3" spellcheck="false"
-        placeholder="review the pull request at {url}"></textarea>
-      <span class="hintline">The one field a newline belongs in, so an issue body can be dropped
-        into it whole.</span>
-    </div>
-    <div class="field">
-      <label class="eyebrow" for="r-tags">tags</label>
-      <input type="text" id="r-tags" spellcheck="false" placeholder="pull-request,{repo}">
-      <span class="hintline">A template, comma separated.</span>
-    </div>
-    <div class="field">
-      <label class="eyebrow" for="r-branch">branch</label>
-      <input type="text" id="r-branch" spellcheck="false" placeholder="{branch}">
-      <span class="hintline">Recorded on the card. A url rarely says which branch, so this is
-        usually something the fetch command below worked out.</span>
-    </div>
-    <div class="field">
-      <label class="eyebrow" for="r-window">window</label>
-      <input type="text" id="r-window" spellcheck="false" placeholder="pull-requests">
-      <span class="hintline">Which pile the card lands in, and what the board groups by.</span>
-    </div>
-    <div class="field">
-      <label class="eyebrow" for="r-theme">theme</label>
-      <input type="text" id="r-theme" spellcheck="false" placeholder="optional">
-    </div>
-    <div class="field">
-      <label class="eyebrow" for="r-kind">what to call the source</label>
-      <input type="text" id="r-kind" spellcheck="false" placeholder="github">
-      <span class="hintline">Recorded as where the work came from and drawn as a badge. Atrium
-        never interprets it.</span>
-    </div>
-    <div class="field">
-      <label class="eyebrow" for="r-fetch">fetch command</label>
-      <input type="text" id="r-fetch" spellcheck="false" placeholder="gh">
-      <span class="hintline">OPTIONAL, and this is the whole extensibility story. The pattern
-        gives you an issue number; turning that into a title needs an authenticated call, and
-        atrium does not make one. It runs this and reads a json object of facts off stdout,
-        which every template above can then read. Put the credential in the tool: gh already has
-        a token, in the keyring it already uses. There is nowhere here to put one.</span>
-    </div>
-    <div class="field">
-      <label class="eyebrow" for="r-fetch-args">fetch arguments</label>
-      <textarea id="r-fetch-args" rows="3" spellcheck="false"
-        placeholder="pr&#10;view&#10;{num}&#10;--repo&#10;{org}/{repo}&#10;--json&#10;title,headRefName"></textarea>
-      <span class="hintline">One per line, templated the same way, never split by atrium. A value
-        with a space in it stays one argument.</span>
-    </div>
-    <div class="field">
-      <label class="eyebrow" for="r-fetch-cwd">fetch working directory</label>
-      <div class="picker">
-        <input type="text" id="r-fetch-cwd" spellcheck="false" placeholder="optional">
-        <button onclick="browseInto('r-fetch-cwd')">browse</button>
+    <section class="dlg-sec dlg-grid">
+      <div class="dlg-sec-h">what it matches</div>
+      <div class="field">
+        <label class="eyebrow" for="r-id">id</label>
+        <input type="text" id="r-id" spellcheck="false" placeholder="github-pull-request">
+        <span class="hintline">Used in the log and in an export. Cannot be changed later.</span>
       </div>
-    </div>
-    <div class="field">
-      <label class="check"><input type="checkbox" id="r-enabled"> ask this row when a url is pasted</label>
-      <span class="hintline">Off keeps the row without the behaviour.</span>
-    </div>
-    <div class="field" id="r-status-field" hidden>
-      <label class="eyebrow">last fetch</label>
-      <div class="hintline" id="r-status"></div>
-    </div>
-    <!-- The loop this feature is actually used in: paste, look, adjust a
-         template, paste again. It asks the SAVED table, so a more specific row
-         above this one answering instead is a thing you find out here. -->
-    <div class="field">
-      <label class="eyebrow" for="r-try">try a url</label>
-      <div class="picker">
-        <input type="text" id="r-try" spellcheck="false" placeholder="paste one and see what it resolves to">
-        <button onclick="busyWhile(this, tryRecogniser)">try it</button>
+      <div class="field">
+        <label class="eyebrow" for="r-label">what to call this kind of thing</label>
+        <input type="text" id="r-label" spellcheck="false" placeholder="github pull request">
+        <span class="hintline">Shown when a url matches, so you can tell which row answered.</span>
       </div>
-      <span class="hintline">Asks the whole table as it is saved, and names the row that
-        answered. Save your edits first.</span>
-      <pre class="hintline" id="r-try-out" hidden style="white-space:pre-wrap"></pre>
-    </div>
+      <div class="field span">
+        <label class="eyebrow" for="r-pattern">pattern</label>
+        <input type="text" id="r-pattern" spellcheck="false"
+          placeholder="^https?://(?P&lt;host&gt;github\.com)/(?P&lt;org&gt;[^/]+)/(?P&lt;repo&gt;[^/]+)/pull/(?P&lt;num&gt;\d+)">
+        <span class="hintline">A Go regular expression with named groups. The names become the
+          variables every template below reads. <code>host</code>, <code>org</code> and
+          <code>repo</code> also go onto the card as themselves, which is how two forks of one
+          repository stop landing in the same pile. Refused if it does not compile.</span>
+      </div>
+      <div class="field">
+        <label class="eyebrow" for="r-rank">rank</label>
+        <input type="number" id="r-rank" step="10" value="100">
+        <span class="hintline">Lowest first, and this is the dispatch rather than decoration.
+          A pull request url also matches a generic &ldquo;any repository&rdquo; pattern, so the
+          specific row has to be asked first. Leave the shrug at the bottom: a url that matches
+          nothing specific is still worth a dialog.</span>
+      </div>
+      <div class="field">
+        <label class="check"><input type="checkbox" id="r-enabled"> ask this row when a url is pasted</label>
+        <span class="hintline">Off keeps the row without the behaviour.</span>
+      </div>
+    </section>
+    <section class="dlg-sec dlg-grid">
+      <div class="dlg-sec-h">the card it makes</div>
+      <div class="field span">
+        <label class="eyebrow" for="r-cwd">working directory</label>
+        <input type="text" id="r-cwd" spellcheck="false" placeholder="d:/worktrees/{org}/{repo}/pr-{num}">
+        <span class="hintline">A template. ATRIUM NEVER CREATES IT: where it is not there, the
+          dialog says so and you make it with whatever makes worktrees here.</span>
+      </div>
+      <div class="field">
+        <label class="eyebrow" for="r-title">title</label>
+        <input type="text" id="r-title" spellcheck="false" placeholder="{org}/{repo}#{num} {title}">
+      </div>
+      <div class="field">
+        <label class="eyebrow" for="r-tags">tags</label>
+        <input type="text" id="r-tags" spellcheck="false" placeholder="pull-request,{repo}">
+        <span class="hintline">A template, comma separated.</span>
+      </div>
+      <div class="field">
+        <label class="eyebrow" for="r-branch">branch</label>
+        <input type="text" id="r-branch" spellcheck="false" placeholder="{branch}">
+        <span class="hintline">Recorded on the card. A url rarely says which branch, so this is
+          usually something the fetch command below worked out.</span>
+      </div>
+      <div class="field">
+        <label class="eyebrow" for="r-window">window</label>
+        <input type="text" id="r-window" spellcheck="false" placeholder="pull-requests">
+        <span class="hintline">Which pile the card lands in, and what the board groups by.</span>
+      </div>
+      <div class="field">
+        <label class="eyebrow" for="r-theme">theme</label>
+        <input type="text" id="r-theme" spellcheck="false" placeholder="optional">
+      </div>
+      <div class="field">
+        <label class="eyebrow" for="r-kind">what to call the source</label>
+        <input type="text" id="r-kind" spellcheck="false" placeholder="github">
+        <span class="hintline">Recorded as where the work came from and drawn as a badge. Atrium
+          never interprets it.</span>
+      </div>
+      <div class="field span">
+        <label class="eyebrow" for="r-prompt">first instruction</label>
+        <textarea id="r-prompt" rows="3" spellcheck="false"
+          placeholder="review the pull request at {url}"></textarea>
+        <span class="hintline">The one field a newline belongs in, so an issue body can be dropped
+          into it whole.</span>
+      </div>
+    </section>
+    <section class="dlg-sec dlg-grid">
+      <div class="dlg-sec-h">fetching facts</div>
+      <div class="field span">
+        <label class="eyebrow" for="r-fetch">fetch command</label>
+        <input type="text" id="r-fetch" spellcheck="false" placeholder="gh">
+        <span class="hintline">OPTIONAL, and this is the whole extensibility story. The pattern
+          gives you an issue number; turning that into a title needs an authenticated call, and
+          atrium does not make one. It runs this and reads a json object of facts off stdout,
+          which every template above can then read. Put the credential in the tool: gh already has
+          a token, in the keyring it already uses. There is nowhere here to put one.</span>
+      </div>
+      <div class="field">
+        <label class="eyebrow" for="r-fetch-args">fetch arguments</label>
+        <textarea id="r-fetch-args" rows="3" spellcheck="false"
+          placeholder="pr&#10;view&#10;{num}&#10;--repo&#10;{org}/{repo}&#10;--json&#10;title,headRefName"></textarea>
+        <span class="hintline">One per line, templated the same way, never split by atrium. A value
+          with a space in it stays one argument.</span>
+      </div>
+      <div class="field">
+        <label class="eyebrow" for="r-fetch-cwd">fetch working directory</label>
+        <div class="picker">
+          <input type="text" id="r-fetch-cwd" spellcheck="false" placeholder="optional">
+          <button onclick="browseInto('r-fetch-cwd')">browse</button>
+        </div>
+      </div>
+    </section>
+    <section class="dlg-sec">
+      <div class="dlg-sec-h">try it</div>
+      <div class="field" id="r-status-field" hidden>
+        <label class="eyebrow">last fetch</label>
+        <div class="hintline" id="r-status"></div>
+      </div>
+      <!-- The loop this feature is actually used in: paste, look, adjust a
+           template, paste again. It asks the SAVED table, so a more specific row
+           above this one answering instead is a thing you find out here. -->
+      <div class="field">
+        <label class="eyebrow" for="r-try">try a url</label>
+        <div class="picker">
+          <input type="text" id="r-try" spellcheck="false" placeholder="paste one and see what it resolves to">
+          <button onclick="busyWhile(this, tryRecogniser)">try it</button>
+        </div>
+        <span class="hintline">Asks the whole table as it is saved, and names the row that
+          answered. Save your edits first.</span>
+        <pre class="hintline" id="r-try-out" hidden style="white-space:pre-wrap"></pre>
+      </div>
+    </section>
   </div>
-  <div class="dlg-head" style="border-top:1px solid var(--stroke-dim);border-bottom:none">
+  <div class="dlg-foot">
     <button class="go" onclick="busyWhile(this, saveRecogniser, 'saving…')">save</button>
     <button class="no" id="r-delete" onclick="busyWhile(this, deleteRecogniser, 'removing…')">delete</button>
     <span class="grow"></span>
@@ -2074,85 +2095,94 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 
 <dialog id="provider" data-guard>
   <div class="dlg-head">
-    <div class="grow"><h2 id="pv-heading">provider</h2></div>
+    <div class="grow"><div class="dlg-eyebrow">agents · provider</div><h2 id="pv-heading">provider</h2></div>
     <button onclick="document.getElementById('provider').close()">close</button>
   </div>
   <div class="dlg-body">
-    <div class="field">
-      <label class="eyebrow" for="pv-name">name</label>
-      <input type="text" id="pv-name" spellcheck="false" placeholder="github">
-      <span class="hintline" id="pv-name-said">Whatever you want to call it. This is the name
-        everything else refers to it by, so it cannot be changed once saved: a rename would
-        silently orphan anything holding the old one.</span>
-    </div>
-    <div class="field">
-      <label class="eyebrow" for="pv-kind">type</label>
-      <div class="picker"><select id="pv-kind"><option value="git">git</option></select></div>
-      <span class="hintline">Only git so far. It is a field rather than an assumption, so another
-        kind is a new option here rather than a new feature.</span>
-    </div>
-    <div class="field">
-      <label class="eyebrow" for="pv-root">root folder</label>
-      <div class="picker">
-        <input type="text" id="pv-root" spellcheck="false" placeholder="d:/git/github">
-        <button onclick="browseInto('pv-root')">browse</button>
+    <section class="dlg-sec dlg-grid">
+      <div class="dlg-sec-h">where the repositories are</div>
+      <div class="field">
+        <label class="eyebrow" for="pv-name">name</label>
+        <input type="text" id="pv-name" spellcheck="false" placeholder="github">
+        <span class="hintline" id="pv-name-said">Whatever you want to call it. This is the name
+          everything else refers to it by, so it cannot be changed once saved: a rename would
+          silently orphan anything holding the old one.</span>
       </div>
-      <span class="hintline">The directory your orgs live under, so a repository is
-        <code>root/org/repo</code>. One sitting straight under the root with no org above it works
-        too. A root that is not there yet saves fine, because a drive can be unplugged, and atrium
-        never creates it: a typo would become a directory and then look like an empty provider.</span>
-    </div>
-    <div class="field">
-      <label class="check"><input type="checkbox" id="pv-worktrees" onchange="paintProviderForm()">
-        worktree support</label>
-      <span class="hintline">Gives this provider a folder to put worktrees in, and a make button
-        on every repository. <b>It cannot be turned off while that folder holds anything</b>, since
-        that would leave checkouts on disk with nothing describing them.</span>
-    </div>
-    <div class="field" id="pv-wt-field" hidden>
-      <label class="eyebrow" for="pv-worktree-root">worktree folder</label>
-      <div class="picker">
-        <input type="text" id="pv-worktree-root" spellcheck="false" placeholder="d:/worktrees/github">
-        <button onclick="browseInto('pv-worktree-root')">browse</button>
-        <button onclick="busyWhile(this, checkWorktreeRoot)">check</button>
+      <div class="field">
+        <label class="eyebrow" for="pv-kind">type</label>
+        <div class="picker"><select id="pv-kind"><option value="git">git</option></select></div>
+        <span class="hintline">Only git so far. It is a field rather than an assumption, so another
+          kind is a new option here rather than a new feature.</span>
       </div>
-      <span class="hintline">Worktrees land at <code>folder/org/repo/branch</code>. The check
-        button asks whether it is empty enough to turn the toggle off, without saving anything.</span>
-      <pre class="hintline" id="pv-blockers" hidden style="white-space:pre-wrap"></pre>
-    </div>
-    <div class="field">
-      <label class="eyebrow" for="pv-host">host</label>
-      <input type="text" id="pv-host" spellcheck="false" placeholder="github.com">
-      <span class="hintline">Optional, and it is how an org and a repo turn back into a url.
-        Empty means this provider is local only, which is a real arrangement.</span>
-    </div>
-    <div class="field">
-      <label class="eyebrow" for="pv-exclude">never adopt</label>
-      <textarea id="pv-exclude" rows="3" spellcheck="false"
-        placeholder="archive&#10;.trash&#10;mirrors/*"></textarea>
-      <span class="hintline">One glob per line, matched against the path under the root. Keeps a
-        read-only mirror from burning the limit and filling the picker. This is
-        &ldquo;never adopt these&rdquo;, where <b>hide</b> on a row is &ldquo;I adopted this and
-        do not want it&rdquo;.</span>
-    </div>
-    <div class="field">
-      <label class="eyebrow" for="pv-max">how many to adopt at most</label>
-      <input type="number" id="pv-max" step="50" placeholder="400">
-      <span class="hintline">Empty is 400 and the ceiling is 2000. Per provider, because one root
-        holding five repositories beside one holding four hundred is the ordinary case.</span>
-    </div>
-    <div class="field">
-      <label class="check"><input type="checkbox" id="pv-enabled"> use this provider</label>
-      <span class="hintline">Off keeps every row and contributes nothing to the picker. It is what
-        to do about a drive that is not plugged in, rather than deleting the provider and throwing
-        away everything you typed.</span>
-    </div>
-    <div class="field" id="pv-scan-field" hidden>
-      <label class="eyebrow">last look</label>
-      <div class="hintline" id="pv-scan"></div>
-    </div>
+      <div class="field span">
+        <label class="eyebrow" for="pv-root">root folder</label>
+        <div class="picker">
+          <input type="text" id="pv-root" spellcheck="false" placeholder="d:/git/github">
+          <button onclick="browseInto('pv-root')">browse</button>
+        </div>
+        <span class="hintline">The directory your orgs live under, so a repository is
+          <code>root/org/repo</code>. One sitting straight under the root with no org above it works
+          too. A root that is not there yet saves fine, because a drive can be unplugged, and atrium
+          never creates it: a typo would become a directory and then look like an empty provider.</span>
+      </div>
+      <div class="field">
+        <label class="eyebrow" for="pv-host">host</label>
+        <input type="text" id="pv-host" spellcheck="false" placeholder="github.com">
+        <span class="hintline">Optional, and it is how an org and a repo turn back into a url.
+          Empty means this provider is local only, which is a real arrangement.</span>
+      </div>
+      <div class="field">
+        <label class="eyebrow" for="pv-max">how many to adopt at most</label>
+        <input type="number" id="pv-max" step="50" placeholder="400">
+        <span class="hintline">Empty is 400 and the ceiling is 2000. Per provider, because one root
+          holding five repositories beside one holding four hundred is the ordinary case.</span>
+      </div>
+    </section>
+    <section class="dlg-sec">
+      <div class="dlg-sec-h">worktrees</div>
+      <div class="field">
+        <label class="check"><input type="checkbox" id="pv-worktrees" onchange="paintProviderForm()">
+          worktree support</label>
+        <span class="hintline">Gives this provider a folder to put worktrees in, and a make button
+          on every repository. <b>It cannot be turned off while that folder holds anything</b>, since
+          that would leave checkouts on disk with nothing describing them.</span>
+      </div>
+      <div class="field" id="pv-wt-field" hidden>
+        <label class="eyebrow" for="pv-worktree-root">worktree folder</label>
+        <div class="picker">
+          <input type="text" id="pv-worktree-root" spellcheck="false" placeholder="d:/worktrees/github">
+          <button onclick="browseInto('pv-worktree-root')">browse</button>
+          <button onclick="busyWhile(this, checkWorktreeRoot)">check</button>
+        </div>
+        <span class="hintline">Worktrees land at <code>folder/org/repo/branch</code>. The check
+          button asks whether it is empty enough to turn the toggle off, without saving anything.</span>
+        <pre class="hintline" id="pv-blockers" hidden style="white-space:pre-wrap"></pre>
+      </div>
+    </section>
+    <section class="dlg-sec">
+      <div class="dlg-sec-h">what it adopts</div>
+      <div class="field">
+        <label class="eyebrow" for="pv-exclude">never adopt</label>
+        <textarea id="pv-exclude" rows="3" spellcheck="false"
+          placeholder="archive&#10;.trash&#10;mirrors/*"></textarea>
+        <span class="hintline">One glob per line, matched against the path under the root. Keeps a
+          read-only mirror from burning the limit and filling the picker. This is
+          &ldquo;never adopt these&rdquo;, where <b>hide</b> on a row is &ldquo;I adopted this and
+          do not want it&rdquo;.</span>
+      </div>
+      <div class="field">
+        <label class="check"><input type="checkbox" id="pv-enabled"> use this provider</label>
+        <span class="hintline">Off keeps every row and contributes nothing to the picker. It is what
+          to do about a drive that is not plugged in, rather than deleting the provider and throwing
+          away everything you typed.</span>
+      </div>
+      <div class="field" id="pv-scan-field" hidden>
+        <label class="eyebrow">last look</label>
+        <div class="hintline" id="pv-scan"></div>
+      </div>
+    </section>
   </div>
-  <div class="dlg-head" style="border-top:1px solid var(--stroke-dim);border-bottom:none">
+  <div class="dlg-foot">
     <button class="go" onclick="busyWhile(this, saveProvider, 'saving…')">save</button>
     <button id="pv-discover" onclick="busyWhile(this, discoverNow)">look again</button>
     <button class="no" id="pv-delete" onclick="busyWhile(this, deleteProvider, 'removing…')">delete</button>
@@ -2352,7 +2382,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         the preview whenever there is one. This block is what there is when there is not.</span>
     </div>
   </div>
-  <div class="dlg-head" style="border-top:1px solid var(--stroke-dim);border-bottom:none">
+  <div class="dlg-foot">
     <button class="go" onclick="busyWhile(this, saveTheme, 'saving…')">save</button>
     <span class="grow"></span>
     <button onclick="document.getElementById('theme').close()">cancel</button>
@@ -3079,7 +3109,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <!-- Wide for the same reason as the card's history: these rows are commands. -->
 <dialog id="review" class="wide">
   <div class="dlg-head">
-    <div class="grow"><h2 id="rev-title">what it did</h2></div>
+    <div class="grow"><div class="dlg-eyebrow">card review</div><h2 id="rev-title">what it did</h2></div>
     <button onclick="document.getElementById('review').close()">close</button>
   </div>
   <div class="dlg-body" id="rev-body"></div>

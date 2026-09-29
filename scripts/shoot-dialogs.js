@@ -72,7 +72,13 @@ const server = http.createServer((req, res) => {
   if (/^\/v1\/tasks\/[^/]+\/usage$/.test(url)) return json(res, { context_now: 90000, model: "claude-opus-5-5",
     totals: { rows: 7, input: 4100, output: 18200, cache_write_5m: 0, cache_write_1h: 96000, cache_read: 512000, cost: 1.84 } });
   if (/^\/v1\/tasks\/[^/]+\/messages$/.test(url)) return json(res, { messages: [] });
-  if (/^\/v1\/tasks\/[^/]+\/review$/.test(url)) return json(res, { events: EVENTS });
+  if (/^\/v1\/tasks\/[^/]+\/review$/.test(url)) return json(res, { total: 14, unattended: 3, blocked: 1, groups: [
+    { tool: "Bash", count: 9, unattended: 3, blocked: 1, entries: [
+      { decision: "approve", repeats: 4, command: "bash scripts/check-board.sh", unattended: true },
+      { decision: "approve", repeats: 1, command: "git status", by: "you" },
+      { decision: "block", repeats: 1, command: "git push --force", by: "you" }] },
+    { tool: "Edit", count: 5, unattended: 0, blocked: 0, entries: [
+      { decision: "approve", repeats: 5, command: "internal/api/web/css/dialogs.css", by: "you" }] }] });
   if (/^\/v1\/tasks\/[^/]+\/asks$/.test(url)) return json(res, { asks: [] });
   if (/^\/v1\/tasks\/[^/]+$/.test(url)) return json(res, CARD);
   if (url === "/v1/harnesses") return json(res, { harnesses: [HARNESS] });
@@ -129,6 +135,14 @@ const SHOTS = {
     applySkin(window.shootSkin);
   },
   roomcfg: () => openRoomCog(""),
+  action: () => editAction("a1"),
+  source: () => editSource(""),
+  recogniser: () => editRecogniser(""),
+  provider: async () => { await openPickRepo("l-cwd"); document.getElementById("pickrepo").close(); editProvider("github"); },
+  ask: () => { askUser({ title: "this is holding 1 request",
+    body: "<b>sa56 every dialog sleek</b> has an agent waiting on it. Moving it to <b>shelved</b> answers it with block.",
+    rememberKey: "shots", buttons: [{ label: "cancel", value: null }, { label: "move it to shelved", value: true, style: "go" }] }); },
+  review: async () => { await openTask("t1"); await openReview(); },
 };
 
 (async () => {

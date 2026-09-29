@@ -37,7 +37,10 @@
     word-break: normal; overflow-wrap: anywhere;
   }
   .asktext b { color: var(--head); font-weight: 600; }
-  dialog#ask .toolbar { justify-content: flex-end; margin-top: 4px; }
+  /* The answers are the foot, to the right, the affirmative last: the restart card's order. */
+  dialog#ask .dlg-foot { justify-content: flex-end; gap: var(--sp-2); }
+  dialog#ask .dlg-body { padding-bottom: 8px; }
+  #recogniser { width: min(1000px, 96vw); }
 
   /* Above everything. A tooltip is always about something and is drawn against
      it, and sharing a layer with the card menu hid the explanation behind the
