@@ -999,8 +999,14 @@ async function loadHubRooms() {
     paintRooms();
     return false;
   }
+  return applyHubRooms(got.rooms || [], null);
+}
+
+// Paints the room set. `inv` is the durable inventory when the `rooms` event carried it, and null when it has to be
+// fetched. Everything `loadHubRooms` did after its read lives here so the event paints the same way a fetch does.
+async function applyHubRooms(rooms, inv) {
   hubIsHub = true;
-  hubRooms = (got.rooms || []).slice().sort((a, b) =>
+  hubRooms = rooms.slice().sort((a, b) =>
     String(a.name).localeCompare(String(b.name)));
   // A room attaching or detaching flips every card's id between `room~id` and
   // bare when the count crosses 1<->2, which the alerter would otherwise read as
@@ -1045,7 +1051,8 @@ async function loadHubRooms() {
   // here rather than only when the rooms tab is open, or the counter would
   // report nothing missing until somebody went looking for it, which is the
   // opposite of what a counter is for.
-  await loadInventory();
+  if (inv) hubInventory = inv.slice().sort((a, b) => String(a.name).localeCompare(String(b.name)));
+  else await loadInventory();
   paintRooms();
   // The audit tab is hub-only too, and this is where "is this a hub" is decided.
   if (typeof paintAuditTab === "function") paintAuditTab();
@@ -1053,6 +1060,14 @@ async function loadHubRooms() {
   // just attached keeps reading "disconnected" in a menu the user left open.
   refreshRoomsMenu();
   return true;
+}
+
+// The `rooms` event (f-008) carries `attached`, `inventory` and `durable`, built by the same functions as the two
+// endpoints. Paints from it with no request. Without `attached` (an older hub) or without `inventory` (a store that
+// could not be read) it fetches as it always did.
+function paintHubRoomsEvent(d) {
+  if (!d || !Array.isArray(d.attached)) return loadHubRooms();
+  return applyHubRooms(d.attached, Array.isArray(d.inventory) ? d.inventory : null);
 }
 
 // startRooms wires the chip up. Called once, before the event stream opens,

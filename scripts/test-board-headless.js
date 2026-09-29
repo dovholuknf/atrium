@@ -6910,6 +6910,133 @@ async function idleBudgetSection(browser, base) {
   }
 }
 
+// ── the last polls are gone (u-009b) ─────────────────────────────────────────
+//
+// The walk drawer's 3s read of the findings folder, the `rooms` event's follow-up fetch, and the settling
+// re-check of /v1/health. Each is now told by an event, and this proves none of them asks on a clock.
+async function pollsGoneSection(browser, base) {
+  const was = tasksMode, wasB = mockBroadcast, wasHub = hubMode, wasSgg = sggAttached;
+  const id = "land-pgone";
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "atrium-pgone-"));
+  fs.mkdirSync(path.join(dir, "findings"));
+  fs.writeFileSync(path.join(dir, "findings", "01-high-a.go-L10.txt"),
+    "HIGH a.go line 10: something\n\na comment\n\nEvidence\nx\n");
+  walkDirs[id] = dir;
+  tasksMode = "land";
+  mockBroadcast = false;
+  landList = [landCard(id, { supervised: true, worktree: "/walk/" + id })];
+  landPerms = [];
+  const errors = [];
+  try {
+    // (a) The walk drawer open for longer than the old 3s: no repeated request. An event for the card reads it.
+    const ctx = await landContext(browser);
+    const counts = countRequests(ctx);
+    await ctx.addInitScript(() => {
+      const Real = window.WebSocket;
+      window.WebSocket = function (url, protocols) {
+        if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+        const s = { url, readyState: 0, binaryType: "arraybuffer", onopen: null, onclose: null, onmessage: null,
+          onerror: null, send() {}, close() { this.readyState = 3; } };
+        setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+        return s;
+      };
+      Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+    });
+    try {
+      const p = await ctx.newPage();
+      p.on("pageerror", e => errors.push(String(e)));
+      await p.goto(base, { waitUntil: "domcontentloaded" });
+      await p.waitForSelector('#stack-list .stackrow[data-id="' + id + '"]', { state: "attached", timeout: slow(15000) });
+      await p.evaluate(x => attachTask(x), id);
+      await p.waitForSelector("#t-walk:not([hidden])", { timeout: slow(10000) });
+      await p.click("#t-walk");
+      await p.waitForSelector("#walk-drawer .wk-row", { timeout: slow(10000) });
+      await p.waitForTimeout(500);
+      const listed = () => (counts.get("/v1/tasks/" + id + "/files/list") || 0);
+      const n0 = listed();
+      await p.waitForTimeout(7000);
+      if (listed() !== n0) fail("pollsGone: the open walk drawer read the folder " + (listed() - n0) + " times in 7s with no event");
+      fs.writeFileSync(path.join(dir, "findings", "02-low-b.go-L2.txt"), "LOW b.go line 2: other\n\nanother\n\nEvidence\ny\n");
+      mockSay("task", JSON.stringify({ id }));
+      await p.waitForFunction(() => dock.items.length === 2, null, { timeout: slow(5000) })
+        .catch(() => fail("pollsGone: an event for the card did not make the drawer read the folder again"));
+    } finally {
+      await ctx.close();
+    }
+
+    // (b) `rooms` with a payload paints with no fetch, and without `attached` still fetches.
+    hubMode = true;
+    sggAttached = false;
+    const ctx2 = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+    const c2 = countRequests(ctx2);
+    try {
+      const p = await ctx2.newPage();
+      p.on("pageerror", e => errors.push(String(e)));
+      await p.goto(base, { waitUntil: "domcontentloaded" });
+      await p.waitForFunction(() => typeof hubRooms !== "undefined" && hubRooms.length === 1, null, { timeout: slow(15000) });
+      await p.waitForTimeout(2500);
+      c2.clear();
+      const inv = [Object.assign({ transport: "direct", attached: true, first_seen: "2026-09-19T06:00:00Z" }, ALPHA),
+        Object.assign({ transport: "direct", attached: true, first_seen: "2026-09-19T06:00:00Z" }, SGG)];
+      hubStreams.forEach(r => { try { r.write("event: rooms\ndata: " + JSON.stringify({
+        rooms: ["alpha", "sgg"], attached: [ALPHA, SGG], inventory: inv, durable: true }) + "\n\n"); } catch (e) {} });
+      await p.waitForFunction(() => hubRooms.length === 2, null, { timeout: slow(5000) })
+        .catch(() => fail("pollsGone: a rooms event with a payload did not paint the second room"));
+      await p.waitForTimeout(700);
+      if (c2.get("/_hub/rooms") || c2.get("/_hub/inventory")) {
+        fail("pollsGone: a rooms event with a payload still fetched: " + topCounts(c2));
+      }
+      await p.waitForTimeout(2500);
+      c2.clear();
+      hubStreams.forEach(r => { try { r.write("event: rooms\ndata: {}\n\n"); } catch (e) {} });
+      await p.waitForTimeout(1200);
+      if (!c2.get("/_hub/rooms")) fail("pollsGone: a rooms event without `attached` did not fall back to fetching");
+    } finally {
+      await ctx2.close();
+      hubMode = wasHub;
+      sggAttached = wasSgg;
+    }
+
+    // (c) `health`: halted shows the halt, settling then clear ends it, and nothing re-reads /v1/health.
+    mockBroadcast = false;
+    const ctx3 = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+    const c3 = countRequests(ctx3);
+    try {
+      const p = await ctx3.newPage();
+      p.on("pageerror", e => errors.push(String(e)));
+      await p.goto(base, { waitUntil: "domcontentloaded" });
+      await p.waitForSelector("#stack-list .stackrow", { state: "attached", timeout: slow(15000) });
+      await p.waitForTimeout(2500);
+      c3.clear();
+      const say = h => mockSay("health", JSON.stringify(h));
+      const halt = () => p.evaluate(() => { const e = document.getElementById("halted");
+        return e.style.display === "flex" ? e.textContent : ""; });
+      say({ halted: true, settling: false, cause: "disk full" });
+      await p.waitForFunction(() => document.getElementById("halted").style.display === "flex", null, { timeout: slow(5000) })
+        .catch(() => fail("pollsGone: a health event with halted showed no halt"));
+      if (!/disk full/.test(await halt())) fail("pollsGone: the halt did not say why");
+      say({ halted: false, settling: true });
+      await p.waitForFunction(() => document.getElementById("halted").style.display === "none", null, { timeout: slow(5000) })
+        .catch(() => fail("pollsGone: a health event without halted left the halt up"));
+      await p.waitForTimeout(6500);
+      say({ halted: false, settling: false });
+      await p.waitForTimeout(500);
+      if (c3.get("/v1/health")) fail("pollsGone: /v1/health was read " + c3.get("/v1/health") + " times while events said it all");
+    } finally {
+      await ctx3.close();
+    }
+  } finally {
+    tasksMode = was;
+    mockBroadcast = wasB;
+    hubMode = wasHub;
+    landList = [];
+    delete walkDirs[id];
+    try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e) {}
+  }
+  if (errors.length) fail("pollsGone: the page threw: " + errors.join(" | "));
+  console.log("pollsGone: ok");
+}
+
 // ── the walk drawer ───────────────────────────────────────────────────────────
 //
 // Drives the drawer over a TEMPORARY COPY of two real review folders (the mock above serves the copy, and nothing
@@ -6943,7 +7070,6 @@ async function walkSection(browser, base) {
   const ctx = await landContext(browser);
   await ctx.grantPermissions(["clipboard-read", "clipboard-write"], { origin: base }).catch(() => {});
   await ctx.addInitScript(() => {
-    window.__walkPollMs = 400;
     window.__sent = [];
     window.__links = [];
     const Real = window.WebSocket;
@@ -7094,15 +7220,19 @@ async function walkSection(browser, base) {
       const third = names[2];
       await p.waitForTimeout(50)
       write(third, read(third).replace("\n\nEvidence", "\n* edited elsewhere\n\nEvidence"));
+      // No poll: an event for the card is what makes the drawer read the folder again.
+      mockSay("task", JSON.stringify({ id: s.id }));
       await p.waitForSelector(S + ".wk-cl.flash", { timeout: slow(5000) })
         .catch(() => fail(nm + "an external edit did not flash."));
       const renamed = third.replace(/^\d+/, "97");
       fs.renameSync(path.join(dir, "findings", third), path.join(dir, "findings", renamed));
+      mockSay("task", JSON.stringify({ id: s.id }));
       await p.waitForFunction(n => dock.items.some(i => i.name === n), renamed, { timeout: slow(5000) });
       const after = await p.evaluate(() => dockCurrent().key);
       if (after !== before) fail(nm + "a renamed finding lost its place.");
       if (await p.$(S + ".wk-new")) fail(nm + "a renamed finding was marked new.");
       write("98-low-added.go-L1.txt", read(names[3]).replace(/^(.*\n)(\S+ \S+ line )\d+/, "$1$2" + "1").replace("Evidence", "Evidence\nId: added-1"));
+      mockSay("task", JSON.stringify({ id: s.id }));
       await p.waitForSelector(S + ".wk-new", { timeout: slow(5000) })
         .catch(() => fail(nm + "a new finding got no new chip."));
 
@@ -7891,7 +8021,7 @@ async function main() {
       quietDoer: quietDoerSection, looksIdle: looksIdleSection, notifyOff: notifyOffSection,
       questionsClick: questionsClickSection, walk: walkSection, linkReuse: linkReuseSection,
       usageCacheReads: usageCacheReadsSection, roomsDash: roomsDashSection, phoneView: phoneViewSection, usagePolish: usagePolishSection, usageLimits: usageLimitsSection, usageGroups: usageGroupsSection,
-      eventDriven: eventDrivenSection, idleBudget: idleBudgetSection };
+      eventDriven: eventDrivenSection, idleBudget: idleBudgetSection, pollsGone: pollsGoneSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -9823,6 +9953,7 @@ async function main() {
     await phoneViewSection(browser, base);
     await eventDrivenSection(browser, base);
     await idleBudgetSection(browser, base);
+    await pollsGoneSection(browser, base);
     await usagePolishSection(browser, base);
     await usageLimitsSection(browser, base);
     await usageGroupsSection(browser, base);

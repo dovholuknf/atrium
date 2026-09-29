@@ -1215,7 +1215,26 @@ function refreshSoon() { wantAll(); passSoon(); }
 function paintSoon() { passSoon(); }
 function permsSoon() { want.perms = true; passSoon(); }
 function healthSoon() { want.health = true; passSoon(); }
-const SETTLING_RECHECK = 5000;
+
+// What `/v1/health` says, applied. Also what the `health` event says (r-017): it is sent on a halt, when the
+// settle window opens and once when it closes, so nothing re-reads while settling. It carries no build.
+function applyHealth(h) {
+  // Before anything else reads it. A daemon that is still putting sessions back says so here, and the arrival
+  // alert re-seeds rather than announcing six terminals you restarted yourself.
+  alerting.settling(!!h.settling);
+  const el = document.getElementById("halted");
+  el.style.display = h.halted ? "flex" : "none";
+  if (h.halted) {
+    document.getElementById("halt-t").innerHTML =
+      `agents are parked and will not reconnect until you restart. <code>${esc(h.cause)}</code>`;
+  }
+}
+function onHealthEvent(e) {
+  let h = null;
+  try { h = JSON.parse(e.data); } catch (err) {}
+  if (!h || typeof h !== "object") { healthSoon(); return; }
+  applyHealth(h);
+}
 
 // A TASK EVENT THAT IS NOT A WHOLE ROW, which is every task event until the
 // daemon sends `row: 1`. It says a card changed and not what to, so the list
@@ -1243,6 +1262,7 @@ function tasksSoon() {
 function onTaskEvent(e) {
   let d = null;
   try { d = JSON.parse(e.data); } catch (err) {}
+  if (typeof dockKick === "function") dockKick(d && d.id);
   if (termOnly()) { soloTaskEvent(d); return; }
   if (cardRowComplete(d)) { upsertCard(d); paintSoon(); return; }
   tasksSoon();
@@ -1274,6 +1294,7 @@ function startResync() {
     // The room chip too, which used to poll on its own every ten seconds. See
     // `startRooms`.
     if (typeof hubIsHub !== "undefined" && hubIsHub) loadHubRooms();
+    if (typeof dockResync === "function") dockResync();
   }, RESYNC_MS);
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") refreshSoon();
@@ -1559,20 +1580,7 @@ async function pass(signal) {
   // stream, so nothing here needs a clock.
   if (take.health) jobs.push(api("/v1/health", { signal }).then(h => {
     checkBuild(h.build);
-    // Before anything else reads it. A daemon that is still putting sessions
-    // back says so here, and the arrival alert re-seeds rather than announcing
-    // six terminals you restarted yourself.
-    alerting.settling(!!h.settling);
-    // Asked again while it is settling, and only then: settling ends on the
-    // daemon with no event to say so, and the arrival alert stays muted until
-    // this hears it. A few reads after a restart, then nothing.
-    if (h.settling) setTimeout(healthSoon, SETTLING_RECHECK);
-    const el = document.getElementById("halted");
-    el.style.display = h.halted ? "flex" : "none";
-    if (h.halted) {
-      document.getElementById("halt-t").innerHTML =
-        `agents are parked and will not reconnect until you restart. <code>${esc(h.cause)}</code>`;
-    }
+    applyHealth(h);
   }).catch(() => { want.health = true; }));
 
   // Wait for the whole fan-out. The catches above keep a single failed fetch
@@ -1649,6 +1657,7 @@ function connect() {
   es.addEventListener("task-removed", onTaskRemovedEvent);
   es.addEventListener("permission", permsSoon);
   es.addEventListener("halted", healthSoon);
+  es.addEventListener("health", onHealthEvent);
   // A card that has gone takes its remembered placement with it. See
   // `rememberPlace`.
   //
@@ -1729,7 +1738,9 @@ function connect() {
   // The event says WHICH rooms, and `loadHubRooms` is asked anyway rather than
   // trusting it: the chip draws a host and an uptime the event does not carry,
   // and one source of truth is worth one request.
-  es.addEventListener("rooms", () => {
+  es.addEventListener("rooms", e => {
+    let d = null;
+    try { d = JSON.parse(e.data); } catch (err) {}
     // RE-SEED THE ALERT BASELINE BEFORE THE REFRESH RUNS, not after. A room
     // attaching or detaching churns the whole card set: the incoming room's
     // idle cards enter the aggregate as new ids, and the count crossing 1<->2
@@ -1741,7 +1752,8 @@ function connect() {
     // not stable and reseeding is exactly right. Guarded like loadHubRooms, in
     // case notify.js is absent.
     if (typeof alerting !== "undefined" && alerting.reseed) alerting.reseed();
-    loadHubRooms();
+    // Paints from the payload, and fetches only when it has no `attached` (an older hub).
+    paintHubRoomsEvent(d);
     // The cards belong to the rooms that are gone or newly here.
     refreshSoon();
   });
