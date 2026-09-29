@@ -95,3 +95,19 @@ claudevm` and `provision done ok`, and `schtasks /Query /TN atrium` then found n
 3. Prove the systemd PATH on WSL.
 4. Write the header comment, docs/packaging.md and docs/changes/fabric-1-provision.md.
 5. Report to @fabric with the step lines.
+
+## Update after @fabric's answer (commit 9dbe1bf has docs and the guard fix)
+
+- Item 6 docs done. `Stop-AtriumGracefully` now runs `atrium stop` only when the named task is Running.
+- sg3's room was restarted by @fabric and is attached. The incident threw away a throwaway card. Do not repeat it.
+- NO smoke on m1mini until @fabric clears it: it is about to restart that room for its toolchain PATH.
+- NO WSL. WSL on this machine is the room sg4-wsl and is not ours. Item 4 needs a different Linux box.
+
+## Still unproven
+
+1. Item 4 systemd PATH: needs a Linux run with `-Autostart`, then `systemctl --user show atrium -p Environment`,
+   a runner in `~/.local/bin`, and `systemd-analyze verify` on the unit.
+2. Item 5 smoke: never run. Needs a signed-in room and @fabric's clearance (m1mini after its restart, or claudevm
+   once clint signs it in with `ssh -t claudevm claude auth login`). Unverified: `/v1/launch` body, card `recap`,
+   exit then `supervised` false, `done` from a non-agent-launched card.
+3. The binary swap's `Sch /End` on a live task, and `-Autostart` start on sg3.
