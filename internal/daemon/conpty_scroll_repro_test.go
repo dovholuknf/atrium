@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -43,6 +44,49 @@ func TestConPTYScrollChild(t *testing.T) {
 	}
 	for i := 1; i <= 80; i++ {
 		w(fmt.Sprintf("base %03d\r\n", i))
+	}
+	if s := os.Getenv("ATRIUM_CONPTY_STREAM"); s != "" {
+		// a steady scroll for the parent to resize under
+		var n int
+		fmt.Sscan(s, &n)
+		for i := 1; i <= n; i++ {
+			w(fmt.Sprintf("new %02d\r\n", i))
+			time.Sleep(3 * time.Millisecond)
+		}
+		time.Sleep(600 * time.Millisecond)
+		return
+	}
+	if s := os.Getenv("ATRIUM_CONPTY_LOOP"); s != "" {
+		// claude-shaped frames, over and over: the cursor parked on the prompt,
+		// erase the 7-row bottom block from there, write "Called" plus 10 new
+		// numbered lines, redraw the block, park again. Spinner ticks between.
+		var loops int
+		fmt.Sscan(s, &loops)
+		block := func() string {
+			return "  Calling tool… (ctrl+o)" + eol + dyn("x")
+		}
+		w(block() + "\x1b[2A\r\x1b[2C")
+		k := 0
+		for l := 0; l < loops; l++ {
+			for tick := 0; tick < 4; tick++ {
+				time.Sleep(15 * time.Millisecond)
+				w(fmt.Sprintf("\x1b[?2026h\x1b[s\x1b[3A\r* spinner %d\x1b[K\x1b[u\x1b[?2026l", tick))
+			}
+			var b strings.Builder
+			b.WriteString("\x1b[?2026h\r")
+			for i := 0; i < 4; i++ {
+				b.WriteString("\x1b[2K\x1b[1A")
+			}
+			b.WriteString("\x1b[2K\r\x1b[J  Called tool (ctrl+o)" + eol + eol)
+			for i := 0; i < 10; i++ {
+				k++
+				b.WriteString(fmt.Sprintf("new %02d%s", k, eol))
+			}
+			b.WriteString(eol + block() + "\x1b[2A\r\x1b[2C\x1b[?2026l")
+			w(b.String())
+		}
+		time.Sleep(600 * time.Millisecond)
+		return
 	}
 	park := os.Getenv("ATRIUM_CONPTY_PARK") != ""
 	lead := os.Getenv("ATRIUM_CONPTY_LEAD") != ""
@@ -127,6 +171,37 @@ func TestConPTYScrollChild(t *testing.T) {
 		r.WriteString("\x1b[48;3H\x1b[?2026l")
 		frame = r.String()
 	}
+	// a hook or a Bash tool call: a child process on the same console, its
+	// output to a pipe, started just before (or after) the frame
+	var kid *exec.Cmd
+	spawn := func() {
+		if cl := os.Getenv("ATRIUM_CONPTY_SPAWN"); cl != "" {
+			parts := strings.Fields(cl)
+			kid = exec.Command(parts[0], parts[1:]...)
+			kid.Stdout, kid.Stderr = io.Discard, io.Discard
+			_ = kid.Start()
+		}
+	}
+	after := os.Getenv("ATRIUM_CONPTY_SPAWN_AFTER") != ""
+	if !after {
+		spawn()
+		if ms := os.Getenv("ATRIUM_CONPTY_SPAWN_MS"); ms != "" {
+			var d int
+			fmt.Sscan(ms, &d)
+			time.Sleep(time.Duration(d) * time.Millisecond)
+		}
+	}
+	defer func() {
+		if kid != nil {
+			_ = kid.Wait()
+		}
+	}()
+	defer func() {
+		if after {
+			spawn()
+			time.Sleep(600 * time.Millisecond)
+		}
+	}()
 	switch os.Getenv("ATRIUM_CONPTY_SPLIT") {
 	case "sync":
 		// BSU, the frame, and ESU as three writes, a moment apart
@@ -162,19 +237,73 @@ func TestConPTYScrollRepro(t *testing.T) {
 		t.Fatal(err)
 	}
 	var got []byte
+	var mu sync.Mutex
 	done := make(chan struct{})
 	go func() {
 		buf := make([]byte, 8192)
 		for {
 			n, err := p.Read(buf)
+			mu.Lock()
 			got = append(got, buf[:n]...)
+			mu.Unlock()
 			if err != nil {
 				close(done)
 				return
 			}
 		}
 	}()
+	// what an attach, a refit or a second viewer does: setViewport -> Resize.
+	// Each one is recorded at the byte offset it happened at, so a replay can
+	// resize its grid at the same point the board's would have.
+	flipRows, flipHold := 49, 0
+	if s := os.Getenv("ATRIUM_CONPTY_FLIP_ROWS"); s != "" {
+		fmt.Sscan(s, &flipRows)
+	}
+	if s := os.Getenv("ATRIUM_CONPTY_FLIP_HOLD"); s != "" {
+		fmt.Sscan(s, &flipHold)
+	}
+	var marks []string
+	mark := func(cols, rows int) {
+		mu.Lock()
+		marks = append(marks, fmt.Sprintf("%d %d %d", len(got), cols, rows))
+		mu.Unlock()
+	}
+	defer func() { _ = os.WriteFile(out+".sizes", []byte(strings.Join(marks, "\n")), 0o644) }()
+	stop := make(chan struct{})
+	resizes := 0
+	if mode := os.Getenv("ATRIUM_CONPTY_RESIZE"); mode != "" {
+		go func() {
+			time.Sleep(time.Second)
+			for {
+				select {
+				case <-stop:
+					return
+				case <-time.After(150 * time.Millisecond):
+				}
+				if mode == "focus" {
+					// what xterm sends on blur and focus, forwarded by the board
+					_, _ = p.Write([]byte("\x1b[O"))
+					time.Sleep(20 * time.Millisecond)
+					_, _ = p.Write([]byte("\x1b[I"))
+					resizes++
+					continue
+				}
+				if mode == "flip" {
+					mark(120, flipRows)
+					_ = p.Resize(120, flipRows)
+					if flipHold > 0 {
+						time.Sleep(time.Duration(flipHold) * time.Millisecond)
+					}
+				}
+				mark(120, 50)
+				_ = p.Resize(120, 50)
+				resizes++
+			}
+		}()
+	}
 	_ = c.Wait()
+	close(stop)
+	t.Logf("resizes %d", resizes)
 	time.Sleep(500 * time.Millisecond)
 	p.Close()
 	select {
