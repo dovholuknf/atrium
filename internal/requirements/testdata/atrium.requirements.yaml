@@ -1,0 +1,34 @@
+# atrium.requirements.yaml: what a room needs to take atrium's work
+version: 1
+
+atrium: { min: 7eb1555 }     # the room's build has item 67's trust fix. an ancestor check on the hub side
+
+git:
+  base: claude/main          # what hub-main mirrors, pushed from the hub side
+  mirror: hub-main           # the branch the room's clone has checked out. nobody commits on it
+  clone: "{home}/git/github/{owner}/{repo}"
+  worktrees: "{clone}-worktrees"
+  fresh: true                # hub-main must equal base on the hub side before a launch
+
+toolchain:
+  go:   { from: go.mod }                      # >= what go.mod says
+  node: { min: "24" }
+  git:  { min: "2.39", windows: git-for-windows }   # a Cygwin or MSYS git counts as missing
+  pwsh: { min: "7", os: [windows] }
+
+runners:
+  claude:
+    hooks: atrium            # the ten atrium hooks, everything but Stop
+    gate: required           # the permission gate, first in PreToolUse
+    mcp: [atrium-control]    # on the runner row's --mcp-config
+    smoke: true
+  codex:
+    helpers: [codex-code-mode-host]
+    smoke: true
+
+room:                        # @rnd's slot, room-autostart-design section 4
+  survives: none             # none | logoff | reboot. atrium asks for reboot once the spikes land
+  runner_auth: [claude, codex]   # atrium-87300: codex joins once its smoke passes. it did, f-005 m1mini row 10
+
+env: {}                      # names the runner must see. values only when they are not secrets
+services: []                 # names from the inventory (f-003), never a URL. nothing for atrium
