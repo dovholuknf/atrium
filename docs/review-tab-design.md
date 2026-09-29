@@ -120,7 +120,9 @@ blocker for stage 1.
 - **An `Id:` line in Evidence,** a short random id written once. A finding's file name changes when it is renumbered
   (rule 14) or re-anchored (rule 17), and the id is what lets the tab keep its place and its history across both.
   Until then the tab keys a finding by its path plus the code text on its label line, which survives renumbering and
-  survives a re-anchor that moved the line but not the code.
+  survives a re-anchor that moved the line but not the code. That fallback is a stage 1 display heuristic and never a
+  durable identity: two findings on repeated code in one file collide on it. Stage 2 prefers `Id:` whenever it is
+  present, and uses the file name only as the last tie-breaker for keeping the rail's place.
 - **A `review.json` beside the findings** with the full head and base shas, the verdict line, and the panel. Until
   then the tab reads the short sha from the folder name and shows no verdict in stage 1.
 
@@ -179,7 +181,8 @@ view with its own terminal would be a second xterm, a second websocket and a sec
 card. A drawer beside the one terminal that already exists gets the docked walker for free, keeps every guard
 `openTerm` has, and means a popped-out `#term=` window gets the drawer too.
 
-A card is a walker when its directory holds a `findings/` folder of `NN-<sev>-*-L<n>.txt` files. The board asks the
+A card is a walker when its directory holds a `findings/` folder of `NN-<sev>-*-L<n>.txt` files, with the severity
+matched case-insensitively (the samples write `medium`, the label line writes `MED`). The board asks the
 daemon (`files/list?path=findings`) when a card is attached, rather than guessing from the title, and a tab button
 `review` appears on the terminal bar. Stage 2 replaces the probe with the card's link to its PR row (section 3.3).
 
