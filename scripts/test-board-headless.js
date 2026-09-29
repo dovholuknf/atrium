@@ -443,6 +443,53 @@ function sendJSON(res, obj) {
   res.end(body);
 }
 
+// What `/v1/tasks` answers right now: the list, or "hang" or "down". A
+// function so the change watcher below can ask without it counting as a read.
+function mockTasks(reading) {
+  if (tasksMode === "hang") return "hang";  // never answer
+  // The pinned-cold strip: the terminated card while its pin holds it, and an
+  // empty list once dismiss has unpinned it.
+  if (tasksMode === "pinned") { return PIN.pinned ? [PIN] : []; }
+  if (tasksMode === "filed") { return [FILED, LOOSE]; }
+  if (tasksMode === "seen") { return [T1, SEEN]; }
+  if (tasksMode === "qclick") { return qclickCards(); }
+  if (tasksMode === "land") { return [T1].concat(landList); }
+  // Untagged cards in custom mode, for the sort and the new-card sections.
+  if (tasksMode === "untagged") {
+    if (untaggedDown) return "down";
+    if (untaggedEmpty) { return []; }
+    const list = [FILED].concat(UNTAGGED_CARDS, untaggedExtra);
+    return untaggedTag
+      ? list.map(t => Object.assign({}, t, { id: untaggedTag + "~" + t.id })) : list;
+  }
+  // The hide strip: an alive idle subagent, an alive working subagent, a dead
+  // (cold, pinned) subagent, an alive agent and a dead (cold, pinned) agent.
+  if (tasksMode === "doers") {
+    return [SUBLIVE, SUBWORK, SUBDEAD, AGLIVE, AGDEAD];
+  }
+  // The attach-loop repro. The cached LIST lags the live card: it carries the
+  // loop card WITHOUT `supervised` (so a render finds the pane stale and tears
+  // it down) while the single-card poll above still says supervised (so the
+  // watchdog attaches again). `loopListSupervised` flips to the recovered
+  // state, where the list agrees the card is attachable and nothing tears it
+  // down. Pinned so the row is present either way, the way a real lagging
+  // list keeps the row while dropping the live flag.
+  if (tasksMode === "worn") { return wornTasks; }
+  if (tasksMode === "keepalive") { return KA_CARDS; }
+  if (tasksMode === "stuck") { return stuckCards(); }
+  if (tasksMode === "ctxsize") { return CTX_CARDS; }
+  if (tasksMode === "peek") {
+    // Idle a second longer on every read, so a refresh redraws the entries.
+    if (reading) peekReads++;
+    return PEEK_CARDS.map(t => Object.assign({}, t, { idle_seconds: 30 + peekReads }));
+  }
+  if (tasksMode === "loop") {
+    return [Object.assign({}, LOOP,
+      { supervised: loopListSupervised, pinned: true })];
+  }
+  return [tasksMode === "second" ? T2 : T1];
+}
+
 const server = http.createServer((req, res) => {
   const url = req.url.split("?")[0];
 
@@ -576,51 +623,10 @@ const server = http.createServer((req, res) => {
     return;
   }
   if (url === "/v1/tasks") {
-    if (tasksMode === "hang") { hungResponses.push(res); return; }  // never answer
-    // The pinned-cold strip: the terminated card while its pin holds it, and an
-    // empty list once dismiss has unpinned it.
-    if (tasksMode === "pinned") { sendJSON(res, { tasks: PIN.pinned ? [PIN] : [] }); return; }
-    if (tasksMode === "filed") { sendJSON(res, { tasks: [FILED, LOOSE] }); return; }
-    if (tasksMode === "seen") { sendJSON(res, { tasks: [T1, SEEN] }); return; }
-    if (tasksMode === "qclick") { sendJSON(res, { tasks: qclickCards() }); return; }
-    if (tasksMode === "land") { sendJSON(res, { tasks: [T1].concat(landList) }); return; }
-    // Untagged cards in custom mode, for the sort and the new-card sections.
-    if (tasksMode === "untagged") {
-      if (untaggedDown) { res.writeHead(503); res.end("{}"); return; }
-      if (untaggedEmpty) { sendJSON(res, { tasks: [] }); return; }
-      const list = [FILED].concat(UNTAGGED_CARDS, untaggedExtra);
-      sendJSON(res, { tasks: untaggedTag
-        ? list.map(t => Object.assign({}, t, { id: untaggedTag + "~" + t.id })) : list });
-      return;
-    }
-    // The hide strip: an alive idle subagent, an alive working subagent, a dead
-    // (cold, pinned) subagent, an alive agent and a dead (cold, pinned) agent.
-    if (tasksMode === "doers") {
-      sendJSON(res, { tasks: [SUBLIVE, SUBWORK, SUBDEAD, AGLIVE, AGDEAD] }); return;
-    }
-    // The attach-loop repro. The cached LIST lags the live card: it carries the
-    // loop card WITHOUT `supervised` (so a render finds the pane stale and tears
-    // it down) while the single-card poll above still says supervised (so the
-    // watchdog attaches again). `loopListSupervised` flips to the recovered
-    // state, where the list agrees the card is attachable and nothing tears it
-    // down. Pinned so the row is present either way, the way a real lagging
-    // list keeps the row while dropping the live flag.
-    if (tasksMode === "worn") { sendJSON(res, { tasks: wornTasks }); return; }
-    if (tasksMode === "keepalive") { sendJSON(res, { tasks: KA_CARDS }); return; }
-    if (tasksMode === "stuck") { sendJSON(res, { tasks: stuckCards() }); return; }
-    if (tasksMode === "ctxsize") { sendJSON(res, { tasks: CTX_CARDS }); return; }
-    if (tasksMode === "peek") {
-      // Idle a second longer on every read, so a refresh redraws the entries.
-      peekReads++;
-      sendJSON(res, { tasks: PEEK_CARDS.map(t => Object.assign({}, t, { idle_seconds: 30 + peekReads })) });
-      return;
-    }
-    if (tasksMode === "loop") {
-      sendJSON(res, { tasks: [Object.assign({}, LOOP,
-        { supervised: loopListSupervised, pinned: true })] });
-      return;
-    }
-    sendJSON(res, { tasks: [tasksMode === "second" ? T2 : T1] });
+    const got = mockTasks(true);
+    if (got === "hang") { hungResponses.push(res); return; }
+    if (got === "down") { res.writeHead(503); res.end("{}"); return; }
+    sendJSON(res, { tasks: got });
     return;
   }
   // The runners page. Everything it reads besides runners and fixtures is empty.
@@ -648,7 +654,7 @@ const server = http.createServer((req, res) => {
     sendJSON(res, { tasks: all.slice(offset, offset + limit), total: all.length });
     return;
   }
-  if (url === "/v1/waiting") { sendJSON(res, { tasks: [] }); return; }
+  if (url === "/v1/waiting") { waitingReads++; sendJSON(res, { tasks: [] }); return; }
   if (url === "/v1/permissions") { sendJSON(res, { permissions: tasksMode === "land" ? landPerms : [] }); return; }
   if (url === "/v1/shares") { sendJSON(res, { shares: [] }); return; }
   if (url === "/v1/rooms") { sendJSON(res, { rooms: [] }); return; }
@@ -777,6 +783,33 @@ const server = http.createServer((req, res) => {
   res.writeHead(404); res.end("");
 });
 
+// THE MOCK BROADCASTS ITS CHANGES, the way the daemon does.
+//
+// The board no longer re-reads the cards on a clock: it reads them at load, on
+// a resync, and when the stream says something changed. Every change on a real
+// daemon is broadcast, so a mock whose answer changes without saying so is a
+// daemon that does not exist. This watches what `/v1/tasks` and
+// `/v1/permissions` would answer and, when either moves, says so on every open
+// stream: a sweep `task-removed` (no id, so the board reads the list again) or a
+// `permission`. `mockBroadcast` is off in the sections that count requests
+// against a stream the test drives itself.
+let mockBroadcast = true;
+// Counted so `eventDriven` can prove the board never asks for it.
+let waitingReads = 0;
+let mockSaid = { tasks: "", perms: "" };
+function mockFingerprint(v) { try { return JSON.stringify(v); } catch (e) { return String(v); } }
+function mockSay(kind, data) {
+  openStreams.forEach(r => { try { r.write("event: " + kind + "\ndata: " + data + "\n\n"); } catch (e) {} });
+}
+const mockWatch = setInterval(() => {
+  const tasks = mockFingerprint(mockTasks(false));
+  const perms = mockFingerprint(tasksMode === "land" ? landPerms : []);
+  if (mockBroadcast && mockSaid.tasks && tasks !== mockSaid.tasks) mockSay("task-removed", "{}");
+  if (mockBroadcast && mockSaid.perms && perms !== mockSaid.perms) mockSay("permission", "{}");
+  mockSaid = { tasks, perms };
+}, 200);
+mockWatch.unref();
+
 let bad = 0;
 function fail(msg) { console.error("FAIL: " + msg); bad++; }
 
@@ -888,7 +921,7 @@ async function wornSection(browser, base) {
       return out;
     });
     const paintAll = async () => {
-      await wp.evaluate(async () => { runRefresh(); await renderTermList(); });
+      await wp.evaluate(async () => { runRefresh(); await loadCards().catch(() => {}).then(renderTermList); });
       await wp.waitForFunction(n => document.querySelectorAll('#stack-list .stackrow[data-id^="w-"]').length >= n &&
         document.querySelectorAll('#term-list .card.tab[data-id^="w-"]').length >= n,
         wornTasks.length, { timeout: slow(15000) });
@@ -934,9 +967,9 @@ async function wornSection(browser, base) {
     if (stored !== "1") fail("turning card colours on did not store it in this browser (got " + stored + ").");
     await paintAll();
     // Attach one, so the list has an `.on` card to tell apart.
-    await wp.evaluate(async () => { termTask = { id: "w-dracula" }; await renderTermList(); });
+    await wp.evaluate(async () => { termTask = { id: "w-dracula" }; await loadCards().catch(() => {}).then(renderTermList); });
     const rows = await wp.evaluate(measureWorn);
-    await wp.evaluate(async () => { termTask = null; await renderTermList(); });
+    await wp.evaluate(async () => { termTask = null; await loadCards().catch(() => {}).then(renderTermList); });
 
     const seen = { "terminals list": new Set(), stack: new Set(), board: new Set() };
     const low = [];
@@ -976,7 +1009,7 @@ async function wornSection(browser, base) {
     // Phone width: the same list, still worn.
     await wp.setViewportSize({ width: 390, height: 780 });
     await wp.click('.tab[data-view="terms"]');
-    await wp.evaluate(() => renderTermList());
+    await wp.evaluate(() => loadCards().catch(() => {}).then(renderTermList));
     const phone = await wp.evaluate(() => {
       const cards = [...document.querySelectorAll('#term-list .card.tab.worn[data-id^="w-"]')];
       const vis = cards.filter(c => c.getBoundingClientRect().width > 0);
@@ -1047,7 +1080,7 @@ async function termWearSection(browser, base) {
 
     const read = () => wp.evaluate(async () => {
       termTask = { id: "tw-atrium" };
-      await renderTermList();
+      await loadCards().catch(() => {}).then(renderTermList);
       const out = {};
       for (const el of document.querySelectorAll('#term-list .card.tab[data-id^="tw-"]')) {
         const s = getComputedStyle(el), a = getComputedStyle(el, "::after");
@@ -1132,7 +1165,7 @@ async function termWearSection(browser, base) {
       for (const skin of ["midnight", "daylight", "paper", "noir"]) {
         await wp.evaluate(s => applySkin(s), skin);
         for (const on of [true, false]) {
-          await wp.evaluate(v => { toggleTermWear("exited", v); termTask = { id: "tw-atrium" }; renderTermList(); }, on);
+          await wp.evaluate(v => { toggleTermWear("exited", v); termTask = { id: "tw-atrium" }; loadCards().catch(() => {}).then(renderTermList); }, on);
           await wp.waitForTimeout(400);
           await wp.locator("#term-list").screenshot({
             path: require("path").join(process.env.TERMWEAR_SHOTS, skin + "-exited-" + (on ? "on" : "off") + ".png")
@@ -1188,7 +1221,7 @@ async function bridgeSection(browser, base) {
         termTask = { id: "filed1" };
         // Stand-in for an attached terminal. The bridge only asks that there is one.
         term = term || { stub: true };
-        await renderTermList();
+        await loadCards().catch(() => {}).then(renderTermList);
         await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
         placeTabBridge();
         const pe = document.getElementById("term-pane"), ps = getComputedStyle(pe);
@@ -1932,7 +1965,7 @@ async function restartStaysSection(browser, base) {
     // pane redrawing, a refresh, every dialog being closed.
     await gp.evaluate(async () => {
       switchView("terms");
-      if (typeof renderTerms === "function") await renderTerms();
+      if (typeof renderTerms === "function") await loadCards().catch(() => {}).then(renderTerms);
       switchView("stack");
       refreshSoon();
       await closeOpenDialogs();
@@ -3044,13 +3077,13 @@ async function themePreviewSection(browser, base) {
     const attach = id => p.evaluate(async id => {
       termTask = lastTasks.find(t => t.id === id);
       term = { options: {}, dispose() {} };
-      await renderTermList();
+      await loadCards().catch(() => {}).then(renderTermList);
       await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
       placeTabBridge();
     }, id);
     const read = () => p.evaluate(async () => {
       await new Promise(r => setTimeout(r, 400));
-      await renderStack();
+      await loadCards().catch(() => {}).then(renderStack);
       const row = id => document.querySelector('#term-list .card.tab[data-id="' + id + '"]');
       const a = row("tp-a"), b = row("tp-b");
       const bridge = [...document.querySelectorAll("#term-layout .tabbridge")].find(x => !x.hidden);
@@ -6545,7 +6578,7 @@ async function questionsClickSection(browser, base) {
     await p.evaluate(() => { termTask = null; localStorage.removeItem(TOASTLOG_KEY); return runRefresh(); });
     await p.waitForSelector('#stack-list .stackrow[data-id="qc1"] .chip.questions',
       { state: "attached", timeout: slow(15000) });
-    await p.evaluate(() => renderTermList());
+    await p.evaluate(() => loadCards().catch(() => {}).then(renderTermList));
     await p.waitForSelector('#term-list .card.tab[data-id="qc1"] .chip.questions',
       { state: "attached", timeout: slow(15000) });
   };
@@ -6609,7 +6642,7 @@ async function questionsClickSection(browser, base) {
         fail(name + ": no dismissal toast: " + toasted);
       }
       // The next poll drew the row without its chip on the strip too.
-      await p.evaluate(() => renderTermList());
+      await p.evaluate(() => loadCards().catch(() => {}).then(renderTermList));
       const strip = await p.evaluate(() => document.querySelectorAll('#term-list .card.tab[data-id="qc1"] .chip.questions').length);
       if (strip) fail(name + ": the terminal strip still draws the chip after the dismiss.");
     }
@@ -6662,7 +6695,7 @@ async function questionsClickSection(browser, base) {
       await reset();
       qHeldQuiet = quiet;
       await p.evaluate(() => runRefresh());
-      await p.evaluate(() => renderTermList());
+      await p.evaluate(() => loadCards().catch(() => {}).then(renderTermList));
       const sel = '#term-list .card.tab[data-id="qc1"] .chip.' + (quiet ? "queued" : "held");
       await show("terms");
       await p.waitForSelector(sel, { timeout: slow(5000) });
@@ -6678,6 +6711,203 @@ async function questionsClickSection(browser, base) {
     tasksMode = was;
   }
   if (errors.length) fail("questionsClick: the page threw: " + errors.join(" | "));
+}
+
+// ── the board is driven by its event stream, not by polling ─────────────────
+//
+// u-009. The board keeps one copy of the cards (js/cards.js) and paints every
+// view from it. A `task` event carrying the whole row (`row: 1`) replaces that
+// card with no request. One without it (an older room) pulls `/v1/tasks` at
+// most once every 5s. A click that only changes how the list is drawn paints
+// in the frame it was made in. `/v1/waiting` is worked out from the cards and
+// never asked for. And the one clock left, the resync, stays quiet while the
+// tab is hidden.
+function countRequests(ctx) {
+  const counts = new Map();
+  ctx.on("request", r => {
+    const u = new URL(r.url());
+    if (u.pathname.startsWith("/vendor/") || u.pathname === "/" || u.pathname.startsWith("/v1/events")) return;
+    counts.set(u.pathname, (counts.get(u.pathname) || 0) + 1);
+    if (process.env.DEBUG_COUNTS) console.log("  req " + (Date.now() % 100000) + " " + u.pathname);
+  });
+  return counts;
+}
+function sumCounts(counts) { return [...counts.values()].reduce((a, b) => a + b, 0); }
+function topCounts(counts) {
+  return [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([k, n]) => n + " " + k).join(", ");
+}
+
+async function eventDrivenSection(browser, base) {
+  const was = tasksMode, wasB = mockBroadcast;
+  tasksMode = "untagged";
+  mockBroadcast = false;
+  waitingReads = 0;
+  const secs = +(process.env.EVENT_DRIVEN_SECONDS || 30);
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const counts = countRequests(ctx);
+  const errors = [];
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.click('.tab[data-view="terms"]');
+    await p.waitForSelector('#term-list .card.tab[data-id="u-sa67"]', { state: "attached", timeout: slow(15000) });
+    await p.waitForTimeout(1500);
+    const card = UNTAGGED_CARDS[0];
+
+    // (a) An older room: task events with no `row`. One every half second for
+    // the whole window, so a board that pulled per clump would pull every 1.5s.
+    counts.clear();
+    for (let i = 0; i < secs * 2; i++) {
+      mockSay("task", JSON.stringify({ id: card.id, status: "running" }));
+      await p.waitForTimeout(500);
+    }
+    const partial = counts.get("/v1/tasks") || 0;
+    console.log("eventDriven: " + secs + "s of task events without row: " + partial + " /v1/tasks");
+    // Once every 5s over a window of secs is floor(secs / 5) + 1: one at each
+    // end of the window can both fall inside it.
+    if (partial > Math.floor(secs / 5) + 1) {
+      fail("task events without a whole row pulled /v1/tasks " + partial + " times in " + secs +
+        "s, more than once every 5s: " + topCounts(counts));
+    }
+    if (partial < 1) fail("task events without a whole row never pulled /v1/tasks, so an older room's change is never drawn");
+
+    // (a) The same stream carrying whole rows. Each one repaints the card from
+    // the event, so the title below changes with no request at all. A quiet
+    // gap first, so the trailing pull the last partial event queued lands
+    // before the count starts.
+    await p.waitForTimeout(6000);
+    counts.clear();
+    for (let i = 0; i < secs * 2; i++) {
+      mockSay("task", JSON.stringify(Object.assign({}, card, { row: 1, display_title: "sa67 stages " + i })));
+      await p.waitForTimeout(500);
+    }
+    const whole = counts.get("/v1/tasks") || 0;
+    console.log("eventDriven: " + secs + "s of task events with row: 1: " + whole + " /v1/tasks");
+    // The 60s resync may land inside the window, once.
+    if (whole > 1) {
+      fail("task events carrying the whole row still pulled /v1/tasks " + whole + " times in " + secs + "s");
+    }
+    const title = await p.evaluate(() => {
+      const row = document.querySelector('#term-list .card.tab[data-id="u-sa67"]');
+      return row ? row.textContent : "";
+    });
+    if (!title.includes("sa67 stages " + (secs * 2 - 1))) {
+      fail("a task event with the whole row did not repaint the card from the event: " + JSON.stringify(title.slice(0, 120)));
+    }
+
+    // (b) The tray and the sort paint in the frame they were clicked in, and
+    // ask for nothing.
+    counts.clear();
+    const clicks = await p.evaluate(() => {
+      const strip = () => document.getElementById("terms").innerHTML;
+      const oneFrame = (act, read) => new Promise(done => {
+        const before = read();
+        act();
+        requestAnimationFrame(() => done(read() !== before));
+      });
+      return (async () => ({
+        sort: await oneFrame(() => toggleTermSort(), strip),
+        sortBack: await oneFrame(() => toggleTermSort(), strip),
+        tray: await oneFrame(() => toggleTermTray(), strip),
+        trayBack: await oneFrame(() => toggleTermTray(), strip),
+      }))();
+    });
+    await p.waitForTimeout(500);
+    if (!clicks.sort || !clicks.sortBack) fail("the terminal sort did not repaint within one frame: " + JSON.stringify(clicks));
+    if (!clicks.tray || !clicks.trayBack) fail("the tray toggle did not repaint within one frame: " + JSON.stringify(clicks));
+    if (sumCounts(counts)) fail("a tray or sort click made requests: " + topCounts(counts));
+
+    // (c) Waiting is worked out, never asked for. Counted over the whole
+    // section, boot included.
+    if (waitingReads) {
+      fail("the board fetched /v1/waiting " + waitingReads + " times. it is worked out from the cards now.");
+    }
+    if (errors.length) fail("the event-driven page threw: " + errors.join(" | "));
+  } finally {
+    await ctx.close();
+    tasksMode = was;
+    mockBroadcast = wasB;
+  }
+
+  // (d) A hidden tab does no resync, and a visible one does. The resync is
+  // shortened to 1.5s so this takes seconds, the only thing the test changes.
+  const ctx2 = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const counts2 = countRequests(ctx2);
+  await ctx2.addInitScript(() => {
+    window.__atriumResyncMs = 1500;
+    window.__hide = false;
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true, get: () => (window.__hide ? "hidden" : "visible")
+    });
+  });
+  try {
+    const p = await ctx2.newPage();
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await p.waitForTimeout(1000);
+    counts2.clear();
+    await p.waitForTimeout(5000);
+    const shown = counts2.get("/v1/tasks") || 0;
+    await p.evaluate(() => { window.__hide = true; });
+    await p.waitForTimeout(500);
+    counts2.clear();
+    await p.waitForTimeout(6000);
+    const hidden = sumCounts(counts2);
+    console.log("eventDriven: resync at 1.5s, visible 5s: " + shown + " /v1/tasks, hidden 6s: " + hidden + " requests");
+    if (shown < 2) fail("a visible tab did not resync: " + shown + " /v1/tasks in 5s with a 1.5s resync");
+    if (hidden) fail("a hidden tab still resynced: " + topCounts(counts2));
+  } finally {
+    await ctx2.close();
+  }
+}
+
+// ── an idle board stays inside a request budget ─────────────────────────────
+//
+// The standing rule: the board is driven by events, and the one poll allowed
+// is the visible-tab resync at 60s or more. So a whole board left alone for a
+// minute, with a steady trickle of task events carrying whole rows, makes
+// about one resync's worth of requests and nothing else.
+//
+// IDLE_BUDGET, and why: one resync reads /v1/tasks, /v1/permissions,
+// /v1/rooms (the remote queue), /v1/shares and /v1/health, which is 5. A 60s
+// window not aligned with the resync clock can hold two of them, so 10, plus 2
+// for what a page may do on its own in that minute (the global auto re-read).
+// Before u-009 the same minute was well over a hundred: every clump of events
+// ran the whole fan-out, and a 10s poll ran it again.
+const IDLE_BUDGET = 12;
+async function idleBudgetSection(browser, base) {
+  const was = tasksMode, wasB = mockBroadcast;
+  tasksMode = "untagged";
+  mockBroadcast = false;
+  const secs = +(process.env.IDLE_BUDGET_SECONDS || 60);
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const counts = countRequests(ctx);
+  try {
+    const p = await ctx.newPage();
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow, #term-list .card.tab",
+      { state: "attached", timeout: slow(15000) });
+    await p.waitForTimeout(3000);
+    counts.clear();
+    for (let i = 0; i < secs; i++) {
+      const c = UNTAGGED_CARDS[i % UNTAGGED_CARDS.length];
+      mockSay("task", JSON.stringify(Object.assign({}, c, { row: 1, idle_seconds: i })));
+      await p.waitForTimeout(1000);
+    }
+    const total = sumCounts(counts);
+    const perMin = total * 60 / secs;
+    console.log("idleBudget: " + total + " requests in " + secs + "s (" + perMin.toFixed(1) +
+      "/min, budget " + IDLE_BUDGET + "): " + topCounts(counts));
+    if (perMin > IDLE_BUDGET) {
+      fail("an idle board made " + perMin.toFixed(1) + " requests a minute, over the budget of " +
+        IDLE_BUDGET + ": " + topCounts(counts));
+    }
+  } finally {
+    await ctx.close();
+    tasksMode = was;
+    mockBroadcast = wasB;
+  }
 }
 
 // ── the walk drawer ───────────────────────────────────────────────────────────
@@ -7033,7 +7263,7 @@ async function main() {
       history: historySection, contextSize: contextSizeSection, peekEverywhere: peekEverywhereSection, cardRoute: cardRouteSection,
       quietDoer: quietDoerSection, looksIdle: looksIdleSection, notifyOff: notifyOffSection,
       questionsClick: questionsClickSection, walk: walkSection, linkReuse: linkReuseSection,
-      phoneView: phoneViewSection };
+      phoneView: phoneViewSection, eventDriven: eventDrivenSection, idleBudget: idleBudgetSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -7092,7 +7322,7 @@ async function main() {
     await page.waitForSelector('#stack-list .stackrow[data-id="seen1"] .chip.unseen',
       { state: "attached", timeout: slow(15000) });
     const seenMarks = await page.evaluate(async () => {
-      await renderTermList();
+      await loadCards().catch(() => {}).then(renderTermList);
       const row = document.querySelector('#stack-list .stackrow[data-id="seen1"]');
       const plain = document.querySelector('#stack-list .stackrow[data-id="t1"]');
       const tab = document.querySelector('#term-list .card.tab[data-id="seen1"]');
@@ -7146,7 +7376,7 @@ async function main() {
     // about the tab that reveals it.
     tasksMode = "pinned";
     resetPin();
-    await page.evaluate(() => renderTermList());
+    await page.evaluate(() => loadCards().catch(() => {}).then(renderTermList));
     // Attached, not visible: the terminals view is hidden while the test sits on
     // another tab, and this is about what the strip draws, not whether it shows.
     await page.waitForSelector('#term-list .card.tab[data-id="pin1"].cold',
@@ -7197,7 +7427,7 @@ async function main() {
         b.click();
       });
       await patched;
-      await page.evaluate(() => renderTermList());
+      await page.evaluate(() => loadCards().catch(() => {}).then(renderTermList));
       const gone = await page.evaluate(() =>
         !document.querySelector('#term-list .card.tab[data-id="pin1"]'));
       if (!gone) {
@@ -7205,7 +7435,7 @@ async function main() {
       }
       // A further render, the next poll, keeps it gone: the pin that held it is
       // cleared, not the row hidden once.
-      await page.evaluate(() => renderTermList());
+      await page.evaluate(() => loadCards().catch(() => {}).then(renderTermList));
       const back = await page.evaluate(() =>
         !!document.querySelector('#term-list .card.tab[data-id="pin1"]'));
       if (back) {
@@ -7225,7 +7455,7 @@ async function main() {
     await page.evaluate(() => {
       localStorage.setItem("atrium.grouping",
         JSON.stringify({ on: true, mode: "custom", groups: ["active"] }));
-      renderTermList();
+      loadCards().catch(() => {}).then(renderTermList);
     });
     await page.waitForSelector('#term-list .tnest[data-group="active"] .card.tab[data-id="filed1"]',
       { state: "attached", timeout: slow(15000) }).catch(() => {});
@@ -7323,7 +7553,7 @@ async function main() {
         localStorage.removeItem(termDeviceKey("atrium.hidesubagents"));
         localStorage.removeItem(termDeviceKey("atrium.hideagents"));
       } catch (e) {}
-      await renderTermList();
+      await loadCards().catch(() => {}).then(renderTermList);
     });
     await page.waitForSelector('#term-list .card.tab[data-id="subwork"]',
       { state: "attached", timeout: slow(15000) });
@@ -7361,7 +7591,7 @@ async function main() {
     // two segments rather than two loose buttons.
     await page.evaluate(async () => {
       setHideSubagents("none"); setHideAgents("none");
-      await renderTermList();
+      await loadCards().catch(() => {}).then(renderTermList);
     });
     const hNone = await hideState();
     if (!hNone.idleSub || !hNone.workingSub || !hNone.deadSub ||
@@ -7399,7 +7629,7 @@ async function main() {
     // stay (the agents toggle is off). The subagents segment lights with its
     // hidden count of 2; the agents segment stays unlit. Independence on one side,
     // plus the idle-subagent-hides-but-idle-agent-stays proof.
-    await page.evaluate(async () => { setHideSubagents("on"); await renderTermList(); });
+    await page.evaluate(async () => { setHideSubagents("on"); await loadCards().catch(() => {}).then(renderTermList); });
     const hSub = await hideState();
     if (hSub.idleSub) {
       fail("the subagents toggle left an idle subagent in the strip: an unpinned " +
@@ -7432,7 +7662,7 @@ async function main() {
     // the working subagent still stays, and both inactive subagents stay hidden.
     // No grey agent row is left. Both segments are lit at once, which
     // agent|shell (one-of-two) cannot do.
-    await page.evaluate(async () => { setHideAgents("on"); await renderTermList(); });
+    await page.evaluate(async () => { setHideAgents("on"); await loadCards().catch(() => {}).then(renderTermList); });
     const hBoth = await hideState();
     if (hBoth.idleSub || hBoth.deadSub) {
       fail("with both toggles on an inactive subagent survived: " + JSON.stringify(hBoth));
@@ -7466,12 +7696,12 @@ async function main() {
     const byAge = await page.evaluate(async () => {
       const prev = localStorage.getItem(GROUPING_KEY);
       localStorage.setItem(GROUPING_KEY, JSON.stringify({ on: true, mode: "recency", by: "" }));
-      await renderTermList();
+      await loadCards().catch(() => {}).then(renderTermList);
       const counts = [...document.querySelectorAll(
         "#term-list .tgroup:not(.pinnedhead) .tgcount")].map(c => c.textContent.trim());
       if (prev === null) localStorage.removeItem(GROUPING_KEY);
       else localStorage.setItem(GROUPING_KEY, prev);
-      await renderTermList();
+      await loadCards().catch(() => {}).then(renderTermList);
       return counts;
     });
     if (byAge.join() !== "2/3") {
@@ -7483,7 +7713,7 @@ async function main() {
     // subagents side back off restores the idle subagent while the agents toggle
     // stays lit. So the agents toggle held its state across the subagents toggle
     // flipping, which is the two-keys-persist-independently proof.
-    await page.evaluate(async () => { toggleHideSubagents(); await renderTermList(); });
+    await page.evaluate(async () => { toggleHideSubagents(); await loadCards().catch(() => {}).then(renderTermList); });
     const hAgent = await hideState();
     if (!hAgent.idleSub || !hAgent.workingSub || !hAgent.deadSub) {
       fail("turning the subagents toggle off did not restore the subagent rows: " +
@@ -7503,7 +7733,7 @@ async function main() {
     }
 
     // Both off again: every row comes back, so hiding is a view, not a deletion.
-    await page.evaluate(async () => { toggleHideAgents(); await renderTermList(); });
+    await page.evaluate(async () => { toggleHideAgents(); await loadCards().catch(() => {}).then(renderTermList); });
     const hBack = await hideState();
     if (!hBack.idleSub || !hBack.workingSub || !hBack.deadSub ||
         !hBack.liveAgent || !hBack.deadAgent ||
@@ -7524,7 +7754,7 @@ async function main() {
       localStorage.removeItem(termDeviceKey("atrium.termtray"));
       localStorage.removeItem(termDeviceKey("atrium.hidesubagents"));
       localStorage.removeItem(termDeviceKey("atrium.hideagents"));
-      await renderTermList();
+      await loadCards().catch(() => {}).then(renderTermList);
     });
     const trayShut = await page.evaluate(() => {
       const tray = document.querySelector("#term-list .termtray");
@@ -7609,7 +7839,7 @@ async function main() {
     const trayKept = await page.evaluate(async () => {
       const host = document.getElementById("term-list");
       host.innerHTML = ""; host.__paintedFrom = null;
-      await renderTermList();
+      await loadCards().catch(() => {}).then(renderTermList);
       return document.querySelector("#term-list .termtray").classList.contains("open");
     });
     if (!trayKept) fail("the tray did not come back open from its stored state.");
@@ -7619,7 +7849,7 @@ async function main() {
     const plus = await page.evaluate(async () => {
       const prev = localStorage.getItem(GROUPING_KEY);
       localStorage.setItem(GROUPING_KEY, JSON.stringify({ on: true, mode: "custom", by: "" }));
-      await renderTermList();
+      await loadCards().catch(() => {}).then(renderTermList);
       const seg = document.getElementById("term-group");
       const btn = seg && seg.querySelector(".groupplus");
       const out = btn ? {
@@ -7629,7 +7859,7 @@ async function main() {
       } : { found: false };
       if (prev === null) localStorage.removeItem(GROUPING_KEY);
       else localStorage.setItem(GROUPING_KEY, prev);
-      await renderTermList();
+      await loadCards().catch(() => {}).then(renderTermList);
       return out;
     });
     if (!plus.found || !plus.full) {
@@ -7645,7 +7875,7 @@ async function main() {
     const under = await page.evaluate(async () => {
       const host = document.getElementById("term-list");
       host.style.maxHeight = "220px";
-      await renderTermList();
+      await loadCards().catch(() => {}).then(renderTermList);
       const scroll = host.querySelector(".termscroll");
       scroll.scrollTop = scroll.scrollHeight;
       const tray = host.querySelector(".termtray").getBoundingClientRect();
@@ -7673,7 +7903,7 @@ async function main() {
       };
       setTermListMode("full");
       localStorage.removeItem(termDeviceKey("atrium.termtray"));
-      await renderTermList();
+      await loadCards().catch(() => {}).then(renderTermList);
       return out;
     });
     if (mini.toggle || mini.body || !mini.widen) {
@@ -7704,7 +7934,7 @@ async function main() {
     tasksMode = "pinned";
     resetPin();
     await page.click('.tab[data-view="terms"]');
-    await page.evaluate(() => renderTermList());
+    await page.evaluate(() => loadCards().catch(() => {}).then(renderTermList));
     await page.waitForSelector('#term-list .card.tab[data-id="pin1"]',
       { state: "visible", timeout: slow(15000) });
     const phoneTerm = await page.evaluate(() => {
@@ -7760,7 +7990,7 @@ async function main() {
       paintPaneBg({ background: "#101828", foreground: "#e6e6e6", cursor: "#4ea1ff" }));
     const decoupled = await page.evaluate(async () => {
       localStorage.removeItem(termDeviceKey("atrium.termtray"));
-      await renderTermList();
+      await loadCards().catch(() => {}).then(renderTermList);
       const layout = document.getElementById("term-layout");
       const paneH = () => document.getElementById("term-pane").getBoundingClientRect().height;
       const drop = document.querySelector("#term-list .termdrop");
@@ -8961,6 +9191,8 @@ async function main() {
     await walkSection(browser, base);
     await linkReuseSection(browser, base);
     await phoneViewSection(browser, base);
+    await eventDrivenSection(browser, base);
+    await idleBudgetSection(browser, base);
     await reselectSection(browser, base);
     // ── over a terminal the toasts hang from the top right ─────────────────
     await toastsTopSection(browser, base);

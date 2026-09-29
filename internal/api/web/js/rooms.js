@@ -933,7 +933,7 @@ async function landOnATerminal() {
   if (typeof isViewing === "function" && !isViewing("terms")) return;
   if (typeof termTask !== "undefined" && termTask) return;
   let tasks = [];
-  try { tasks = (await api("/v1/tasks")).tasks || []; } catch (e) { return; }
+  try { tasks = await boardCards(); } catch (e) { return; }
   const live = tasks
     .filter(t => t.supervised && !t.archived_at)
     .sort((a, b) => String(b.last_activity_at || "").localeCompare(String(a.last_activity_at || "")));
@@ -1042,10 +1042,9 @@ async function loadHubRooms() {
 async function startRooms() {
   nameTheSwitch();
   if (!await loadHubRooms()) return;
-  // A BACKSTOP POLL, and it is not the primary signal. The merged stream says
-  // `rooms` the moment membership changes, but a board scoped to one room is
-  // not on that stream, so this is what keeps its counter honest.
-  setInterval(loadHubRooms, 10000);
+  // NO POLL OF ITS OWN. The merged stream says `rooms` the moment membership
+  // changes. A board scoped to one room is not on that stream, so its counter is
+  // read again by the safety resync (see `startResync`), once a minute.
   document.addEventListener("click", e => {
     const menu = document.getElementById("rooms-menu");
     if (!menu || menu.hidden) return;

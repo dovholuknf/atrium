@@ -180,7 +180,7 @@ function pillCounts(segID, counts) {
 
 async function renderStack(signal) {
   let everything;
-  try { everything = (await api("/v1/tasks", { signal })).tasks || []; } catch (e) { return; }
+  try { everything = await boardCards(signal); } catch (e) { return; }
   // SPLIT ONCE, HERE. Everything the rest of this file counts, filters, sorts
   // and searches is work on a machine that is answering, so every number on
   // the page is live only without anybody remembering to filter for it. The
@@ -1003,8 +1003,10 @@ async function renderPerms() {
   // do with it. The seconds are comparable because each was measured by the
   // daemon that owns the clock the request was recorded against.
   const [permissions, remote] = await Promise.all([
-    api("/v1/permissions").then(r => r.permissions || []),
-    remoteRequests()
+    // From what the pass holds (js/cards.js), read on a `permission` event.
+    // Only a tab opened before the first read asks for itself.
+    permsLoaded ? permsLocal : loadPerms(),
+    permsLoaded ? remoteLocal : remoteRequests()
   ]);
   const list = permissions.concat(remote).sort((a, b) =>
     (Date.parse(a.requested_at) || 0) - (Date.parse(b.requested_at) || 0));

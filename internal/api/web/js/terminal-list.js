@@ -1590,7 +1590,7 @@ async function renderTermList() {
   // finding a second place to call it from.
   applyTermList();
   let all = [];
-  try { all = (await api("/v1/tasks")).tasks || []; } catch (e) { return; }
+  try { all = await boardCards(); } catch (e) { return; }
   // The header's count, from the list that just loaded. The terminals view is
   // the one you are most likely to be on while something is working, and it is
   // the view that does not call `renderBoard`.
