@@ -1081,6 +1081,11 @@ default. Ticked, a card with the `origin:agent` tag raises no toast, no desktop 
 marks on the card stay, and so does the toast log entry, so nothing is lost. A permission request from such a card
 still notifies, because it blocks until a human answers. A card's own notification override beats the checkbox.
 
+**Status, 2026-09-28, sa44: built on `claude/sa44`, not merged.** The gear box `quietDoers` (per browser, default
+on) logs and does not say arrivals, waiting and stuck alerts for `origin:agent` cards. Permissions still notify. No
+per-card notification override exists in the board, so a card with its own tone stands in for one. See
+`docs/changes/44.md`.
+
 ## 45. Every card shows its context size, and a launcher hears once past a threshold (feature, sa87)
 
 Raised by clint 2026-09-28. sa87 built it on `claude/context-size` (ee68bc8),

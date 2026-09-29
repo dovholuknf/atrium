@@ -1439,6 +1439,15 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
       <span class="hintline" id="s-notify-hint"></span>
     </div>
     <div class="field">
+      <label class="check">
+        <input type="checkbox" id="s-quietdoers" onchange="alerting.set({ quietDoers: this.checked })">
+        <span>don't notify me about cards an agent launched</span>
+      </label>
+      <span class="hintline">No toast, sound or desktop notification for a card tagged
+        <code>origin:agent</code>. Its marks and its line in the notification log stay. A permission request from
+        it still notifies, and so does a card you gave a tone of its own.</span>
+    </div>
+    <div class="field">
       <label class="eyebrow" for="s-expiry">notifications disappear after</label>
       <div class="picker">
         <select id="s-expiry">
