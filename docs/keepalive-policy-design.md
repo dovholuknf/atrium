@@ -581,6 +581,44 @@ follows." The waking message follows it through the ordinary queued path, never 
 conversation, and the wake prompt is what makes that survivable. The orchestrator card gets the same treatment once
 it is opted in.
 
+### The silent-stop notice for a resident director
+
+Raised by the orchestrator 2026-09-29: "ended its turn without reporting" reaches it several times an hour for
+directors that are idle by design, waiting on their workers or on clint.
+
+**Why it rings.** A director is agent-launched (the orchestrator launched it), so `silentStop` and the board's STUCK
+mark both apply (`a2a.go`, `stoppedSilently`). Item 41 made a resident owe its launcher a report for every prompt,
+from anybody. So when a worker's report wakes the director and the director merges, relaunches or simply waits and
+ends its turn, the turn "ran since the last prompt and said nothing to the launcher", and the orchestrator is told.
+That is right for a worker and wrong for a director whose next report is due when its batch is done, not after every
+worker message.
+
+**Two options:**
+
+1. Skip the notice, and the STUCK mark, for every `atrium:director` card. Simplest. The cost: a director that really
+   stalls on something the orchestrator asked for is never flagged, and it is the orchestrator's only signal for that.
+2. **Skip it while the director has outstanding workers.** A worker is outstanding while it has a live runner or is
+   parked (`parked_at` set), whatever its status. That includes a `done` worker at its prompt awaiting review or
+   merge. A culled or dead worker is not outstanding. Once every worker has ended, a director that still has not
+   reported gets the one notice, which is exactly the case worth hearing about: its batch is done and it said nothing.
+
+**Recommendation: option 2**, in `stoppedSilently` itself, so the notice and the STUCK mark keep one definition of
+owing (the reason that function's comment gives). Counting a parked worker as outstanding matters with idle parking:
+otherwise every worker parking at the 2 hour mark would end the suppression and ring its director once, which is the
+same noise on a slower clock.
+
+Two rules go with it, whichever option is picked:
+
+- **A parked card is never silently stopped.** It has no process and its status is kept, so a parked `needs-input`
+  director would otherwise read STUCK on every watchdog tick. `stoppedSilently` returns false for `parked_at` set.
+- **A report still clears the debt as today.** A director that reports "waiting on clint" owes nothing afterwards,
+  so a wait on clint that was reported never rings. Only an unreported wait does, and under option 2 only once its
+  workers have ended.
+
+Tests: `TestDirectorWithLiveWorkerNotSilent`, `TestDirectorWithParkedWorkerNotSilent`,
+`TestDirectorAllWorkersEndedIsSilent` (one notice, on the usual backoff), `TestWorkerSilentStopUnchanged`,
+`TestParkedCardNeverSilent`, and `TestStuckMarkMatchesNotice` for each of those.
+
 ### Tests, for the builder
 
 - `TestIdleParkRule`: a table over status, pending permission, open question, queued message, pending wake and a live
@@ -640,3 +678,7 @@ Section 7, idle parking (r-007):
    answer the launcher asked for, and a worker refused with `parked` has no second report to send.
 9. **Item 91 first?** Parking takes handoffs unattended, and the orchestrator and @merge share one `HANDOFF.md`.
    Recommend building item 91's per-card file name before this section.
+10. **The silent-stop notice for directors: skip it for every director, or only while its workers are outstanding?**
+    Recommend only while outstanding (live or parked workers). Skipping it always removes the orchestrator's only
+    signal that a director finished a batch and said nothing. This part does not need idle parking, and it can be
+    built on its own first, since it is the noise reaching the orchestrator today.
