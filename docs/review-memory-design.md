@@ -441,9 +441,9 @@ showing it. From clint through @orchestrator, 2026-09-29.
 41. Rule 33 again: the deep link sits on the same line as the indented code. The finding file keeps the link on its
     third line, which the board reads, and the walker moves it beside the code when it shows the item.
 42. Overrides the tone of the others: too much detail reads as "we know better". Certainty only when a test we wrote
-    proves it or the code settles it beyond doubt. Otherwise the comment is humble and short, from the author's side
-    ("I may be missing something here, you know this code better than I do, but if <X> happens, it looks like <Y>,
-    which seems bad?"). Rule 38's question is one condition and one consequence. Mechanism, the `file:line` trail and
+    proves it or the code settles it beyond doubt. Otherwise the comment is humble and short, and the humility comes
+    from the question form alone ("If <X> happens, it looks like <Y>, which seems bad?"). Never a deference preamble
+    such as "I may be missing something here" (amended by clint). Rule 38's question is one condition and one consequence. Mechanism, the `file:line` trail and
     covering paths go in Evidence, which clint reads and the PR author does not.
 
 The first second opinions, run by the director on the two reviews already filed (Mercurius, codex gpt-5.5):
