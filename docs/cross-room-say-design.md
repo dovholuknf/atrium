@@ -181,6 +181,25 @@ With m1mini's hub link down, the sender sees:
 - Room-side (stdio `atrium_peers`, `rooms: true`) asks the room's new `GET /v1/peers/rooms`, which asks the hub
   through the relay op `peers`. The hub answers from the same aggregate list, minus the asking room.
 
+## Reading and exiting a card on another room (item 68)
+
+`atrium_task` and `atrium_exit` take the same addresses as `atrium_say`: `name@room`, `alias@room` and `room~id`.
+A bare name, or the caller's own room, stays local. A card on another room comes back named across, card
+`room~id` and handle `name@room`, which is what `atrium_launch` with `room` returns, so the three tools hand each
+other the same names.
+
+- Hub-side: the tools resolve the name on the target room over the hub's own board, scoped with `X-Atrium-Room`,
+  and ask that room's `GET /v1/tasks/<id>` or `POST /v1/tasks/<id>/exit`. A room the hub has never heard of is
+  refused naming the rooms it knows. Nothing goes through the caller's room, because neither tool writes anything
+  the caller's room keeps.
+- Room-side (stdio): the tools ask the room's new `GET /v1/peers/card?to=<address>` and `POST /v1/peers/exit`
+  (`{"to": <address>}`), which ask the hub through the relay ops `card` and `exit`. The hub answers exactly as its
+  own tools do. An address that names the room itself is answered `{"local": name}`, and the tool reads it here
+  the old way. Nothing is held: a read is worth nothing later, and an exit is asked again by whoever wants it.
+- Skew: a new room on an old hub gets `this hub does not know the relay op`, which the room words as "the hub is
+  older than reaching a card on another room". A new stdio on an old room gets a bare 404 from `/v1/peers/*`, and
+  then finds its own room's name here and refuses any other with "this room is older".
+
 ## Version skew
 
 - Old hub, new room: the `relay` hello is refused with "a connection is control, data, enrol, upgrade or announce".
@@ -213,9 +232,9 @@ launched card still had no `atrium_say`. This mirrors the hub machine's own row 
 
 | Part | Side |
 |---|---|
-| Grammar parse for `/_hub/mcp`, forward of a cross-room say to the sender's room, `serveRelay` (say, peers), `atrium_peers rooms`, `atrium_launch room` | HUB-SIDE |
-| Grammar parse, `POST /v1/say`, `/tell` grammar, `GET /v1/peers/rooms`, outbox and drain, remote launcher notices, report into the outbox, cross-room `peerSaid` | ROOM-SIDE |
-| stdio `atrium control`: `from`, `atrium_report`, grammar, `rooms` | ROOM-SIDE (runs on the room's machine) |
+| Grammar parse for `/_hub/mcp`, forward of a cross-room say to the sender's room, `serveRelay` (say, peers, card, exit), `atrium_peers rooms`, `atrium_launch room`, `atrium_task` and `atrium_exit` by address | HUB-SIDE |
+| Grammar parse, `POST /v1/say`, `/tell` grammar, `GET /v1/peers/rooms`, `GET /v1/peers/card`, `POST /v1/peers/exit`, outbox and drain, remote launcher notices, report into the outbox, cross-room `peerSaid` | ROOM-SIDE |
+| stdio `atrium control`: `from`, `atrium_report`, grammar, `rooms`, `atrium_task` and `atrium_exit` by address | ROOM-SIDE (runs on the room's machine) |
 | `relay` connection kind, `Room.Relay` client, `Room.OnAttach` | link, both |
 | provisioning registers atrium-control | script |
 

@@ -113,7 +113,7 @@ func addPeerTools(s *mcp.Server) {
 			"Its permission requests go to the HUMAN, on their board, so an agent started here " +
 			"and left alone stops at the first gated command. Say who asked for it and why, " +
 			"because whoever finds the card later will want to know.\n\n" +
-			"Returns the card id. Use it with `atrium_task` and `atrium_say`.",
+			"Returns the card id. Use it with `atrium_task`, `atrium_say` and `atrium_exit`.",
 	}, launchHandler)
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -123,7 +123,9 @@ func addPeerTools(s *mcp.Server) {
 			"This does NOT return what the session printed. Atrium records that a session ran " +
 			"and every status it moved through, never its output, so `needs-input` here means " +
 			"it stopped and not what it said. To learn what it thinks, ask it, and have it " +
-			"answer with `atrium_say`.",
+			"answer with `atrium_say`.\n\n" +
+			"A card on ANOTHER ROOM is `name@room`, `alias@room` or `room~id`, as `atrium_say` " +
+			"takes it, asked of this room's hub.",
 	}, taskHandler)
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -133,7 +135,9 @@ func addPeerTools(s *mcp.Server) {
 			"the runner shuts itself down and writes whatever it writes on the way out. Its " +
 			"card and its whole history stay on the board.\n\n" +
 			"Say something first if the work is not finished. A session asked to leave mid-task " +
-			"leaves mid-task.",
+			"leaves mid-task.\n\n" +
+			"A card on ANOTHER ROOM is `name@room`, `alias@room` or `room~id`, as `atrium_say` " +
+			"takes it, asked of this room's hub.",
 	}, exitHandler)
 }
 
@@ -659,7 +663,7 @@ func launchHandler(ctx context.Context, _ *mcp.CallToolRequest, in LaunchInput) 
 // ── one card ────────────────────────────────────────────────────────────────
 
 type TaskInput struct {
-	Card string `json:"card" jsonschema:"a card id or a handle"`
+	Card string `json:"card" jsonschema:"a card id, handle or alias. name@room or room~id for a card on another room"`
 	// Events includes the recent history, which is what a card DID rather than
 	// where it is now.
 	Events bool `json:"events,omitempty" jsonschema:"include recent events"`
@@ -689,7 +693,29 @@ func taskHandler(ctx context.Context, _ *mcp.CallToolRequest, in TaskInput) (
 	*mcp.CallToolResult, TaskOutput, error) {
 
 	out := TaskOutput{}
-	id, _, err := resolvePeer(ctx, in.Card)
+	who := strings.TrimSpace(in.Card)
+	if isAcross(who) {
+		// ANOTHER ROOM, by way of this room's hub. See item 68 in
+		// docs/backlog-2.md.
+		path := "/v1/peers/card?to=" + url.QueryEscape(who)
+		if in.Events {
+			path += "&events=1"
+		}
+		var res struct {
+			Local string      `json:"local"`
+			Task  *TaskOutput `json:"task"`
+		}
+		err := ask(ctx, http.MethodGet, path, nil, &res)
+		if who, err = localAfterAll(who, res.Local, err); err != nil {
+			return nil, out, err
+		}
+		if who == "" && res.Task != nil {
+			out = *res.Task
+			out.Note = taskNote
+			return nil, out, nil
+		}
+	}
+	id, _, err := resolvePeer(ctx, who)
 	if err != nil {
 		return nil, out, err
 	}
@@ -721,15 +747,47 @@ func taskHandler(ctx context.Context, _ *mcp.CallToolRequest, in TaskInput) (
 			}
 		}
 	}
-	out.Note = "status and events only. atrium does not record what a session printed, so this " +
-		"cannot tell you what it said or thinks."
+	out.Note = taskNote
 	return nil, out, nil
+}
+
+const taskNote = "status and events only. atrium does not record what a session printed, so this " +
+	"cannot tell you what it said or thinks."
+
+// isAcross is whether an address names a room at all, `name@room` or
+// `room~id`. The room decides whether that room is itself.
+func isAcross(who string) bool {
+	_, room, err := daemon.SplitAddress(who)
+	return err == nil && room != ""
+}
+
+// localAfterAll reads the room's answer to an address that named a room. It
+// answers the name to find on this room when the address named this room
+// after all, and empty when the room reached the card elsewhere.
+//
+// A room older than this has no such endpoint. Its own room name is still
+// this room, and any other it cannot reach.
+func localAfterAll(who, local string, err error) (string, error) {
+	if olderRoom(err) {
+		name, room, perr := daemon.SplitAddress(who)
+		if perr != nil {
+			return "", perr
+		}
+		if strings.EqualFold(room, strings.TrimSpace(os.Getenv("ATRIUM_ROOM"))) {
+			return name, nil
+		}
+		return "", fmt.Errorf("this room is older than reaching a card on another room, so it cannot reach %s", who)
+	}
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(local), nil
 }
 
 // ── exit ────────────────────────────────────────────────────────────────────
 
 type ExitInput struct {
-	Card string `json:"card" jsonschema:"a card id or a handle"`
+	Card string `json:"card" jsonschema:"a card id, handle or alias. name@room or room~id for a card on another room"`
 }
 
 type ExitOutput struct {
@@ -743,7 +801,27 @@ func exitHandler(ctx context.Context, _ *mcp.CallToolRequest, in ExitInput) (
 	*mcp.CallToolResult, ExitOutput, error) {
 
 	out := ExitOutput{}
-	id, handle, err := resolvePeer(ctx, in.Card)
+	who := strings.TrimSpace(in.Card)
+	if isAcross(who) {
+		// ANOTHER ROOM, by way of this room's hub. See item 68 in
+		// docs/backlog-2.md.
+		var res struct {
+			Local  string `json:"local"`
+			Card   string `json:"card"`
+			Handle string `json:"handle"`
+			Asked  bool   `json:"asked"`
+		}
+		err := ask(ctx, http.MethodPost, "/v1/peers/exit", map[string]string{"to": who}, &res)
+		if who, err = localAfterAll(who, res.Local, err); err != nil {
+			return nil, out, err
+		}
+		if who == "" {
+			out.Card, out.Handle, out.Asked = res.Card, res.Handle, res.Asked
+			out.Note = exitNote
+			return nil, out, nil
+		}
+	}
+	id, handle, err := resolvePeer(ctx, who)
 	if err != nil {
 		return nil, out, err
 	}
@@ -753,6 +831,8 @@ func exitHandler(ctx context.Context, _ *mcp.CallToolRequest, in ExitInput) (
 		return nil, out, err
 	}
 	out.Asked = true
-	out.Note = "asked to leave with its harness's exit keys. the card and its history stay."
+	out.Note = exitNote
 	return nil, out, nil
 }
+
+const exitNote = "asked to leave with its harness's exit keys. the card and its history stay."

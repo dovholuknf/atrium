@@ -46,6 +46,10 @@ const relayWait = 45 * time.Second
 type Relay interface {
 	Say(ctx context.Context, s RelaySay) (RelayResult, error)
 	Peers(ctx context.Context, all bool) ([]RemotePeer, string, error)
+	// Card reads `to` on `room`, and Exit asks it to leave. The result's Task
+	// is the card, and To and Card name it across.
+	Card(ctx context.Context, room, to string, events bool) (RelayResult, error)
+	Exit(ctx context.Context, room, to string) (RelayResult, error)
 }
 
 // RelaySay is one message for another room. From is the sender's handle here,
@@ -67,6 +71,28 @@ type RelayResult struct {
 	Warning     string
 	To          string
 	Card        string
+	Task        *RemoteTask
+}
+
+// RemoteTask is one card on another room, as atrium_task reports it.
+type RemoteTask struct {
+	Card    string        `json:"card"`
+	Handle  string        `json:"handle,omitempty"`
+	Title   string        `json:"title,omitempty"`
+	Status  string        `json:"status"`
+	Doing   string        `json:"doing,omitempty"`
+	Where   string        `json:"where,omitempty"`
+	Why     string        `json:"why,omitempty"`
+	Idle    int           `json:"idle_seconds,omitempty"`
+	Waiting int           `json:"waiting_seconds,omitempty"`
+	Owned   bool          `json:"atrium_owns_terminal"`
+	Events  []RemoteEvent `json:"events,omitempty"`
+}
+
+// RemoteEvent is one event on a RemoteTask.
+type RemoteEvent struct {
+	At   string `json:"at"`
+	Kind string `json:"kind"`
 }
 
 // RemotePeer is a session on another room, handle `name@room`.
@@ -522,6 +548,88 @@ func (d *Daemon) handleRoomPeers(w http.ResponseWriter, r *http.Request) {
 		body["note"] = note
 	}
 	writeJSONCode(w, http.StatusOK, body)
+}
+
+// ── one card on another room ────────────────────────────────────────────────
+
+// handleRoomCard is `GET /v1/peers/card?to=<address>`: one card on another
+// room, asked of the hub, for atrium_task. `events=1` adds its recent events.
+// An address on this room answers `{"local": name}`, and the caller reads the
+// card here the way it always has. See item 68 in docs/backlog-2.md.
+func (d *Daemon) handleRoomCard(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	events := q.Get("events") != "" && q.Get("events") != "0"
+	d.acrossRoom(w, r.Context(), q.Get("to"), func(ctx context.Context, rl Relay, name, room string) (RelayResult, error) {
+		return rl.Card(ctx, room, name, events)
+	}, func(res RelayResult) map[string]any {
+		return map[string]any{"task": res.Task}
+	})
+}
+
+// handleRoomExit is `POST /v1/peers/exit` with `{"to": <address>}`: ask a card
+// on another room to leave, through the hub, for atrium_exit. An address on
+// this room answers `{"local": name}`, as handleRoomCard does.
+func (d *Daemon) handleRoomExit(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		To string `json:"to"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&in); err != nil {
+		writeJSONErr(w, http.StatusBadRequest, err)
+		return
+	}
+	d.acrossRoom(w, r.Context(), in.To, func(ctx context.Context, rl Relay, name, room string) (RelayResult, error) {
+		return rl.Exit(ctx, room, name)
+	}, func(res RelayResult) map[string]any {
+		return map[string]any{"asked": true, "card": res.Card, "handle": res.To}
+	})
+}
+
+// acrossRoom is the part the two share: split the address, answer a local one
+// as local, relay the rest and turn the hub's answer into this room's.
+func (d *Daemon) acrossRoom(w http.ResponseWriter, ctx context.Context, to string,
+	ask func(context.Context, Relay, string, string) (RelayResult, error), ok func(RelayResult) map[string]any) {
+
+	name, room, err := SplitAddress(to)
+	if err != nil {
+		writeJSONErr(w, http.StatusBadRequest, err)
+		return
+	}
+	other := d.otherRoom(room)
+	if other == "" {
+		writeJSONCode(w, http.StatusOK, map[string]any{"local": name})
+		return
+	}
+	rl := d.relay()
+	if rl == nil {
+		writeJSONCode(w, http.StatusServiceUnavailable, errBody("this atrium is not a room linked to a hub, so it "+
+			"cannot reach room "+other))
+		return
+	}
+	cctx, cancel := context.WithTimeout(ctx, relayWait)
+	defer cancel()
+	res, err := ask(cctx, rl, name, other)
+	switch {
+	case errors.Is(err, ErrRelayUnconfirmed):
+		writeJSONCode(w, http.StatusGatewayTimeout, errBody(err.Error()+". it may have gone through: look "+
+			"before asking again"))
+		return
+	case err != nil:
+		writeJSONCode(w, http.StatusBadGateway, errBody(err.Error()))
+		return
+	case !res.OK && strings.Contains(res.Error, "does not know the relay op"):
+		// A HUB OLDER THAN THIS. It carries a say, not this.
+		writeJSONCode(w, http.StatusBadGateway, errBody("the hub is older than reaching a card on another "+
+			"room, so it cannot carry this. update the hub"))
+		return
+	case !res.OK:
+		code := res.Code
+		if code < 400 {
+			code = http.StatusBadGateway
+		}
+		writeJSONCode(w, code, errBody(res.Error))
+		return
+	}
+	writeJSONCode(w, http.StatusOK, ok(res))
 }
 
 // ── small helpers ───────────────────────────────────────────────────────────
