@@ -1165,6 +1165,11 @@ room's view shows of it.
 
 **Status, 2026-09-28: deep backlog, not started.** Moved there by clint.
 
+**Status, 2026-09-29: design reviewed, ready to build.** `docs/everywhere-card-design.md`: a tag
+`atrium:everywhere`, a hub index of tagged cards, bare names that miss locally fall through to it for say, tell and
+task, and a scoped view that shows those cards with a room chip. Mercurius round 1 was `ready_to_build`, its one
+advisory folded in as FE10. Building waits on clint's three open questions in the doc. The board's part is @ui's.
+
 ## 50. Views of agents, beyond groups (design)
 
 Raised 2026-09-28 by clint: "i'm starting to want different 'views' of agents more than just groups". Ideate
