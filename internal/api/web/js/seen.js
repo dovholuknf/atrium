@@ -35,9 +35,16 @@ function seenChips(t) {
   if (s.answered === false && (qs.length || s.questions_unparsed)) {
     const tip = qs.length
       ? "its last turn asked you:\n" + qs.map((q, i) => (i + 1) + ". " + q).join("\n") +
-        "\n\nclears when you reply to it"
-      : "its last turn asked you questions atrium could not read. clears when you reply to it";
-    out += `<span class="chip warn questions" data-tip="${esc(tip)}"
+        "\n\nclears when you reply to it, or click to dismiss them without replying"
+      : "its last turn asked you questions atrium could not read. clears when you reply to it, " +
+        "or click to dismiss them without replying";
+    // Takes its own click so the row underneath is never selected and the card
+    // never opens. The set it was drawn from rides along, so a stale render
+    // cannot dismiss newer questions.
+    out += `<span class="chip warn questions" role="button" tabindex="0" data-tip="${esc(tip)}"
+      data-id="${esc(t.id)}" data-qat="${esc(s.questions_at || "")}"
+      onclick="event.stopPropagation();dismissQuestionsChip(this)"
+      onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();event.stopPropagation();dismissQuestionsChip(this)}"
       >?${qs.length ? " " + qs.length : ""}</span>`;
   }
   return out;
@@ -112,6 +119,29 @@ async function reportSeen(id, turnEndedAt) {
     seenReported.delete(id + "@" + turnEndedAt);
     return;
   }
+  if (typeof refreshSoon === "function") refreshSoon();
+}
+
+function dismissQuestionsChip(el) {
+  return dismissQuestions(el.dataset.id, el.dataset.qat);
+}
+
+// Answer a card's shown questions without replying. Nothing is sent to the
+// session. A failed call leaves the chip, which is the safe way to be wrong.
+async function dismissQuestions(id, questionsAt) {
+  let r;
+  try {
+    r = await api(`/v1/tasks/${encodeURIComponent(id)}/questions/dismiss`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ questions_at: questionsAt }),
+    });
+  } catch (e) {
+    toast("could not dismiss the questions", e.message);
+    return;
+  }
+  if (r && r.stale) toast("newer questions arrived, nothing was dismissed");
+  else toast("questions dismissed", "nothing was sent to the session");
   if (typeof refreshSoon === "function") refreshSoon();
 }
 

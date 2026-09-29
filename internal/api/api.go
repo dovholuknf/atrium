@@ -406,6 +406,7 @@ func (s *Server) Handler() http.Handler {
 	// scanning it, and it is the only place the rest of them exist.
 	mux.HandleFunc("GET /v1/tasks/{id}/asks", s.listAsks)
 	mux.HandleFunc("POST /v1/tasks/{id}/seen", s.markSeen)
+	mux.HandleFunc("POST /v1/tasks/{id}/questions/dismiss", s.dismissQuestions)
 	if s.DismissAsks != nil {
 		mux.HandleFunc("DELETE /v1/tasks/{id}/asks", s.DismissAsks)
 	}
@@ -877,6 +878,38 @@ func (s *Server) markSeen(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"seen": cur.View(), "changed": changed, "stale": !changed && cur.Unseen(),
 	})
+}
+
+// dismissQuestions is the operator clicking `? N`: the set they were shown is
+// answered without a reply. `questions_at` names that set, so a stale render
+// cannot dismiss newer questions, and `stale` says that is what happened.
+func (s *Server) dismissQuestions(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	var body struct {
+		QuestionsAt *time.Time `json:"questions_at"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<12)).Decode(&body); err != nil || body.QuestionsAt == nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "questions_at is required and must be a time"})
+		return
+	}
+	t, err := s.st.Get(id)
+	if errors.Is(err, sql.ErrNoRows) {
+		writeErr(w, http.StatusNotFound, NotOnRoom(id, s.Room))
+		return
+	}
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	dismissed, stale, err := s.st.DismissQuestions(t.ID, *body.QuestionsAt)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	if dismissed {
+		s.Broadcast("task", toView(t))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"dismissed": dismissed, "stale": stale})
 }
 
 func (s *Server) listTasks(w http.ResponseWriter, r *http.Request) {

@@ -70,6 +70,27 @@ const SEEN = Object.assign({}, T1, {
   seen: { unseen: true, turn_ended_at: "2026-09-23T12:00:00.000Z", answered: false,
     open_questions: ["land sa21 first?", "build the tray?"] }
 });
+// Cards for the `? N` click: two open questions and a held peer message. A
+// dismissed card answers `answered: true` with no questions, the way the room's
+// view does once the set is answered. See `questionsClickSection`.
+const QC_AT = "2026-09-29T09:00:00.000Z";
+const QC_BASE = Object.assign({}, T1, {
+  id: "qc1", display_title: "asking card", supervised: true, pinned: true,
+  seen: { unseen: false, turn_ended_at: QC_AT, questions_at: QC_AT, answered: false,
+    open_questions: ["land sa21 first?", "build the tray?"] },
+  activity: { held_peer: true, held_count: 2, held_seconds: 30, held_for: "line", held_turn: "asked" },
+});
+let qDismissMode = "ok";       // ok | stale | fail
+let qHeldQuiet = false;
+const qDismissed = new Set();
+let qDismissWrites = [];
+function qclickCards() {
+  return [Object.assign({}, QC_BASE, { activity: Object.assign({}, QC_BASE.activity, { held_quiet: qHeldQuiet }) },
+    qDismissed.has("qc1")
+    ? { seen: { unseen: false, turn_ended_at: QC_AT, questions_at: QC_AT, answered: true,
+        answered_via: "dismissed" } }
+    : {})];
+}
 // The card a popped-out (solo) window is opened onto. Supervised, so it reads
 // like a real live session rather than a dead one.
 const SOLO = Object.assign({}, T1, {
@@ -420,6 +441,27 @@ const server = http.createServer((req, res) => {
     });
     return;
   }
+  // A `? N` chip's dismiss. Recorded, answered as the daemon does: the card's
+  // open questions go away unless the mock is told the set was stale.
+  if (url.startsWith("/v1/tasks/") && url.endsWith("/questions/dismiss") && req.method === "POST") {
+    let raw = "";
+    req.on("data", c => { raw += c; });
+    req.on("end", () => {
+      let body = {};
+      try { body = JSON.parse(raw || "{}"); } catch (e) {}
+      const id = url.split("/")[3];
+      qDismissWrites.push({ url, body });
+      if (qDismissMode === "fail") {
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "the store said no" }));
+        return;
+      }
+      if (qDismissMode === "stale") { sendJSON(res, { dismissed: false, stale: true }); return; }
+      qDismissed.add(id);
+      sendJSON(res, { dismissed: true, stale: false });
+    });
+    return;
+  }
   if (url.startsWith("/v1/tasks/")) {
     const id = url.slice("/v1/tasks/".length);
     // The unpin behind dismiss: togglePin PATCHes the card, and the mutated pin
@@ -474,6 +516,7 @@ const server = http.createServer((req, res) => {
     if (tasksMode === "pinned") { sendJSON(res, { tasks: PIN.pinned ? [PIN] : [] }); return; }
     if (tasksMode === "filed") { sendJSON(res, { tasks: [FILED, LOOSE] }); return; }
     if (tasksMode === "seen") { sendJSON(res, { tasks: [T1, SEEN] }); return; }
+    if (tasksMode === "qclick") { sendJSON(res, { tasks: qclickCards() }); return; }
     if (tasksMode === "land") { sendJSON(res, { tasks: [T1].concat(landList) }); return; }
     // Untagged cards in custom mode, for the sort and the new-card sections.
     if (tasksMode === "untagged") {
@@ -6055,6 +6098,151 @@ async function usageChartsSection(browser, base) {
   if (errors.length) fail("usageCharts: the page threw: " + errors.join(" | "));
 }
 
+// ── clicking `? N` dismisses the questions ────────────────────────────────
+// Backlog-2 item 11. The chip takes its own click on a board card, a stack row
+// and a terminal strip row: one POST naming the set it was drawn from, no row
+// selected, no card opened, and the chip gone after the next poll. A stale
+// answer toasts and leaves the chip, a failed call toasts and leaves it, and the
+// keyboard does what the mouse does. `!` and the queued mark take their own
+// click and do nothing else.
+async function questionsClickSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "qclick";
+  const errors = [];
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const p = await ctx.newPage();
+  p.on("pageerror", e => errors.push(String(e)));
+  const reset = async () => {
+    qDismissed.clear(); qDismissWrites = []; qDismissMode = "ok";
+    await p.evaluate(() => { termTask = null; localStorage.removeItem(TOASTLOG_KEY); return runRefresh(); });
+    await p.waitForSelector('#stack-list .stackrow[data-id="qc1"] .chip.questions',
+      { state: "attached", timeout: slow(15000) });
+    await p.evaluate(() => renderTermList());
+    await p.waitForSelector('#term-list .card.tab[data-id="qc1"] .chip.questions',
+      { state: "attached", timeout: slow(15000) });
+  };
+  const said = () => p.evaluate(() => toastLog().map(e => e.title + " " + e.body).join("|"));
+  // Which of the two lists is in front. Both are drawn, one is hidden.
+  const show = v => p.evaluate(x => switchView(x), v);
+  try {
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof dismissQuestions === "function" && typeof runRefresh === "function", null,
+      { timeout: slow(15000) });
+    // Spies: the row's own handlers, so a click that fell through is counted.
+    await p.evaluate(() => {
+      window.__menus = 0; window.__opens = 0;
+      const menu = window.cardMenu, open = window.openTask;
+      window.cardMenu = function () { window.__menus++; return menu && menu.apply(this, arguments); };
+      window.openTask = function () { window.__opens++; return open && open.apply(this, arguments); };
+    });
+    await p.waitForSelector('#stack-list .stackrow[data-id="qc1"]', { timeout: slow(15000) });
+
+    // The chip's markup: a button, focusable, with the new tooltip ending.
+    await reset();
+    const shape = await p.evaluate(() => {
+      const c = document.querySelector('#stack-list .stackrow[data-id="qc1"] .chip.questions');
+      return { role: c.getAttribute("role"), tab: c.getAttribute("tabindex"), tip: c.getAttribute("data-tip"),
+        at: c.dataset.qat };
+    });
+    if (shape.role !== "button" || shape.tab !== "0") fail("the ? chip is not a focusable button: " + JSON.stringify(shape));
+    if (!/click to dismiss them without replying$/.test(shape.tip)) fail("the ? chip's tooltip ends " + JSON.stringify(shape.tip));
+
+    const surfaces = {
+      "stack row": '#stack-list .stackrow[data-id="qc1"] .chip.questions',
+      "terminal row": '#term-list .card.tab[data-id="qc1"] .chip.questions',
+      "board card": '#qc-host .card[data-id="qc1"] .chip.questions',
+    };
+    for (const [name, sel] of Object.entries(surfaces)) {
+      await reset();
+      // A board card is drawn by the board's own renderer into a host of its own.
+      await p.evaluate(() => {
+        let h = document.getElementById("qc-host");
+        if (!h) { h = document.createElement("div"); h.id = "qc-host"; document.body.appendChild(h); }
+        h.innerHTML = cardHTML(lastTasks.find(t => t.id === "qc1"));
+        window.__menus = 0; window.__opens = 0;
+      });
+      await show(name === "terminal row" ? "terms" : "stack");
+      await p.click(sel);
+      // The list in front is the one repainted by the poll.
+      await p.waitForSelector(name === "terminal row" ? '#term-list .card.tab[data-id="qc1"] .chip.questions'
+        : '#stack-list .stackrow[data-id="qc1"] .chip.questions',
+      { state: "detached", timeout: slow(15000) }).catch(() => fail(name + ": the chip stayed after a dismiss and a poll."));
+      if (qDismissWrites.length !== 1) fail(name + ": " + qDismissWrites.length + " dismiss posts, not one.");
+      const w = qDismissWrites[0];
+      if (w.url !== "/v1/tasks/qc1/questions/dismiss" || w.body.questions_at !== QC_AT) {
+        fail(name + ": the dismiss named " + JSON.stringify(w));
+      }
+      const after = await p.evaluate(() => ({ term: termTask ? termTask.id : null, menus: window.__menus,
+        opens: window.__opens, dialog: !!(typeof detail !== "undefined" && detail.open) }));
+      if (after.term !== null) fail(name + ": the click selected a terminal: " + after.term);
+      if (after.menus || after.opens || after.dialog) fail(name + ": the click reached the card: " + JSON.stringify(after));
+      const toasted = await said();
+      if (!/questions dismissed/.test(toasted) || !/nothing was sent to the session/.test(toasted)) {
+        fail(name + ": no dismissal toast: " + toasted);
+      }
+      // The next poll drew the row without its chip on the strip too.
+      await p.evaluate(() => renderTermList());
+      const strip = await p.evaluate(() => document.querySelectorAll('#term-list .card.tab[data-id="qc1"] .chip.questions').length);
+      if (strip) fail(name + ": the terminal strip still draws the chip after the dismiss.");
+    }
+
+    // The keyboard: Enter and Space both dismiss, and neither selects the row.
+    for (const key of ["Enter", " "]) {
+      await reset();
+      await show("stack");
+      await p.focus('#stack-list .stackrow[data-id="qc1"] .chip.questions');
+      await p.keyboard.press(key === " " ? "Space" : key);
+      await p.waitForSelector('#stack-list .stackrow[data-id="qc1"] .chip.questions',
+        { state: "detached", timeout: slow(15000) }).catch(() => fail("key " + JSON.stringify(key) + " did not dismiss."));
+      if (qDismissWrites.length !== 1) fail("key " + JSON.stringify(key) + " sent " + qDismissWrites.length + " posts.");
+      if (await p.evaluate(() => termTask)) fail("key " + JSON.stringify(key) + " selected a terminal.");
+    }
+
+    // A stale answer says so and leaves the chip.
+    await reset();
+    qDismissMode = "stale";
+    await show("stack");
+    await p.click('#stack-list .stackrow[data-id="qc1"] .chip.questions');
+    await p.waitForFunction(() => toastLog()
+      .some(e => /newer questions arrived, nothing was dismissed/.test(e.title)), null, { timeout: slow(5000) })
+      .catch(() => fail("a stale answer drew no toast."));
+    await p.waitForTimeout(600);
+    if (!await p.$('#stack-list .stackrow[data-id="qc1"] .chip.questions')) fail("a stale answer removed the chip.");
+
+    // A failed call toasts the error and leaves the chip.
+    await reset();
+    qDismissMode = "fail";
+    await show("stack");
+    await p.click('#stack-list .stackrow[data-id="qc1"] .chip.questions');
+    await p.waitForFunction(() => toastLog()
+      .some(e => /the store said no/.test(e.body)), null, { timeout: slow(5000) })
+      .catch(() => fail("a failed dismiss did not toast its error."));
+    await p.waitForTimeout(600);
+    if (!await p.$('#stack-list .stackrow[data-id="qc1"] .chip.questions')) fail("a failed dismiss removed the chip.");
+
+    // `!` and the queued mark take their own click and change nothing else.
+    for (const quiet of [false, true]) {
+      await reset();
+      qHeldQuiet = quiet;
+      await p.evaluate(() => runRefresh());
+      await p.evaluate(() => renderTermList());
+      const sel = '#term-list .card.tab[data-id="qc1"] .chip.' + (quiet ? "queued" : "held");
+      await show("terms");
+      await p.waitForSelector(sel, { timeout: slow(5000) });
+      await p.click(sel);
+      await p.waitForTimeout(300);
+      const term = await p.evaluate(() => termTask ? termTask.id : null);
+      if (term !== null) fail("clicking the " + (quiet ? "queued" : "held") + " chip selected " + term);
+      if (qDismissWrites.length) fail("clicking the held chip posted a dismiss.");
+    }
+  } finally {
+    await ctx.close();
+    qDismissMode = "ok"; qHeldQuiet = false; qDismissed.clear();
+    tasksMode = was;
+  }
+  if (errors.length) fail("questionsClick: the page threw: " + errors.join(" | "));
+}
+
 async function main() {
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = "http://127.0.0.1:" + server.address().port;
@@ -6072,7 +6260,8 @@ async function main() {
       stuck: stuckSection, carryLink: carryLinkSection,
       skinScope: skinScopeSection, skinHeal: skinHealSection, toastLives: toastLivesSection,
       history: historySection, contextSize: contextSizeSection, peekEverywhere: peekEverywhereSection, cardRoute: cardRouteSection,
-      quietDoer: quietDoerSection, usageCharts: usageChartsSection, looksIdle: looksIdleSection, notifyOff: notifyOffSection };
+      quietDoer: quietDoerSection, usageCharts: usageChartsSection, looksIdle: looksIdleSection, notifyOff: notifyOffSection,
+      questionsClick: questionsClickSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -7996,6 +8185,7 @@ async function main() {
     await landSection(browser, base);
     await quietDoerSection(browser, base);
     await notifyOffSection(browser, base);
+    await questionsClickSection(browser, base);
     await reselectSection(browser, base);
     // ── over a terminal the toasts hang from the top right ─────────────────
     await toastsTopSection(browser, base);
