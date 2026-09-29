@@ -508,6 +508,17 @@
     color: var(--chip-accent-text);
   }
   .dlg-sec > .field:last-child { margin-bottom: 14px; }
+  /* A panel of short fields, two to a row, so a form of twenty reads as four groups instead of one long
+     column. A field that needs the whole width says `.span`. One column when the dialog is narrow. */
+  .dlg-sec.dlg-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 22px; }
+  .dlg-grid > .dlg-sec-h, .dlg-grid > .field.span { grid-column: 1 / -1; }
+  .dlg-grid > .field { margin-bottom: 18px; }
+  .dlg-grid > .field input + input { margin-top: 8px; }
+  @media (max-width: 760px) { .dlg-sec.dlg-grid { grid-template-columns: minmax(0, 1fr); } }
+  /* A refusal said by busyWhile, when its button sits in the foot: between the body and the foot, in line
+     with both. */
+  dialog > .busy-why { flex: none; margin: 10px 26px 0; }
+  #harness { width: min(1000px, 96vw); }
   /* Two columns: what you read and write on the left, the settings of the thing on the right. One column when
      the window is too narrow for both. */
   .dlg-cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 340px); gap: 22px; align-items: start; }
@@ -522,6 +533,12 @@
     padding: 14px 26px; border-top: 1px solid rgba(var(--stroke-dim-rgb),.55);
     background: rgba(var(--sink-rgb),.35);
   }
+  /* A delete in the foot says it ends something before it is hovered, as the card's own do. */
+  .dlg-foot button.no {
+    color: var(--danger-text); border-color: rgba(var(--danger-rgb),.32); background: rgba(var(--danger-rgb),.07);
+  }
+  /* A tick box reads at the size of what is typed in the fields beside it, not the page's. */
+  .dlg-body .check { font-size: var(--fs-md); }
   .field { margin-bottom: 22px; }
   label.eyebrow {
     display: block; font: 600 var(--fs-xxs)/1 var(--sans); letter-spacing: .14em;
