@@ -802,6 +802,7 @@ function walkApplyWidth() {
   if (!d) return;
   let w = 0;
   try { w = Number(localStorage.getItem("atrium.walk.w")) || 0; } catch (e) {}
+  if (window.matchMedia("(max-width: 900px)").matches) w = 0;
   d.style.width = w ? w + "px" : "";
 }
 
