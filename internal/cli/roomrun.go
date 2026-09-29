@@ -136,7 +136,7 @@ func joinCmd() *cobra.Command {
 			}
 			fmt.Println("  starting the room. `" + atriumCmd("room") + "` is all it takes from now on.")
 			fmt.Println()
-			return runRoom(keys, db, human, agent, 0, isolated)
+			return runRoom(keys, db, human, agent, 0, isolated, "")
 		},
 	}
 	c.Flags().StringVar(&dir, "dir", "", "where this room keeps its certificate")
@@ -188,8 +188,15 @@ func isolatedFlag(c *cobra.Command, isolated *bool) {
 			"second room that must not take over the machine's hooks")
 }
 
+// startedByFlag registers --started-by on a command that runs a daemon.
+func startedByFlag(c *cobra.Command, v *string) {
+	c.Flags().StringVar(v, "started-by", "",
+		"<kind>:<nonce> a supervisor gives the process it starts. Kept in memory and reported by "+
+			"POST /v1/preflight. Never put in the environment or handed to a child")
+}
+
 func roomCmd() *cobra.Command {
-	var dir, db, human, agent string
+	var dir, db, human, agent, startedBy string
 	var isolated, detach bool
 	c := &cobra.Command{
 		Use:   "room",
@@ -207,7 +214,7 @@ func roomCmd() *cobra.Command {
 					isolated: isolated, upgrades: acceptUpgrades,
 				})
 			}
-			err := runRoom(keys, db, human, agent, restartAfter, isolated)
+			err := runRoom(keys, db, human, agent, restartAfter, isolated, startedBy)
 			// A restarted room that fails to come back has nobody reading its
 			// output, so the reason goes in restart.log too. See restartLog.
 			if err != nil && restartAfter > 0 {
@@ -221,6 +228,7 @@ func roomCmd() *cobra.Command {
 	c.Flags().StringVar(&human, "http", defaultRoomHTTP(), "the room's own board, for when the hub is down")
 	c.Flags().StringVar(&agent, "agent", defaultRoomAgent(), "where this room's agents report")
 	isolatedFlag(c, &isolated)
+	startedByFlag(c, &startedBy)
 	c.Flags().BoolVar(&detach, "detach", false,
 		"start the room in the background, logging to room.log beside --dir, and return once it answers")
 	// Hidden: how a hub-triggered restart re-invokes this room detached. It waits
@@ -253,7 +261,7 @@ func askToStop() {
 }
 
 // runRoom starts the daemon and attaches it to the hub.
-func runRoom(keys link.Keys, db, human, agent string, restartAfter time.Duration, isolated bool) error {
+func runRoom(keys link.Keys, db, human, agent string, restartAfter time.Duration, isolated bool, startedBy string) error {
 	// A HUB-TRIGGERED RESTART GOT HERE DETACHED, and the old room may still hold
 	// the ports. Wait for it to let go before anything tries to bind, or the new
 	// room fails to listen and exits, which looks like the restart doing nothing.
@@ -309,6 +317,11 @@ func runRoom(keys link.Keys, db, human, agent string, restartAfter time.Duration
 		// every session this room launches carries ATRIUM_ROOM and its HTTP
 		// control MCP registration can name this room to the hub.
 		Room: saved.Room,
+		// In memory only. It is reported by /v1/preflight and by nothing else:
+		// not exported, and not carried into a restart or a detached start,
+		// because those are children of this process and must not claim to be
+		// the supervisor's.
+		StartedBy: startedBy,
 	})
 	if err != nil {
 		return err

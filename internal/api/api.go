@@ -30,6 +30,10 @@ type Server struct {
 	// Room is the name this daemon is known by on a hub, or empty. It only
 	// words a not-found. See NotOnRoom.
 	Room string
+	// Preflight answers what this room process can see and run, by fixed key.
+	// Human listener only. See internal/daemon/preflight.go for why a body may
+	// never name a command.
+	Preflight http.HandlerFunc
 	// Decide resolves a permission. This must go through the daemon rather
 	// than straight to the store, because the agent is blocked on an in-memory
 	// reply channel that only the daemon can signal. Writing the decision without
@@ -478,6 +482,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /v1/providers/{name}/repos", s.saveProviderRepo)
 	mux.HandleFunc("DELETE /v1/providers/{name}/repos", s.forgetProviderRepo)
 	mux.HandleFunc("GET /v1/browse", s.browse)
+	if s.Preflight != nil {
+		mux.HandleFunc("POST /v1/preflight", s.Preflight)
+	}
 	if s.Shutdown != nil {
 		mux.HandleFunc("POST /v1/shutdown", s.Shutdown)
 	}

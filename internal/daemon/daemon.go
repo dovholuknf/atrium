@@ -79,6 +79,12 @@ type Options struct {
 	// that every supervised terminal on the machine pays for. Empty is the
 	// default and is the embed. See api.Server.BoardDir.
 	BoardDir string
+	// StartedBy is the `--started-by <kind>:<nonce>` a supervisor gave this
+	// process. KEPT IN MEMORY ONLY: never exported to the environment and never
+	// passed to anything this process spawns, so no child of a supervised room
+	// can claim to be one. `POST /v1/preflight` reports it. Empty when nothing
+	// supervised the start.
+	StartedBy string
 }
 
 // Daemon owns the store and both listeners.
@@ -335,6 +341,7 @@ func New(opts Options) (*Daemon, error) {
 	d.ap.Resume = d.handleResume
 	d.ap.SendNote = d.handleSendNote
 	d.ap.Shutdown = d.handleShutdown
+	d.ap.Preflight = d.handlePreflight
 	d.ap.Shelve = d.Shelve
 	d.ap.StopRunner = d.StopRunner
 	d.ap.Cull = func(id, into string) (any, error) { return d.Cull(id, into) }

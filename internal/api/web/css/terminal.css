@@ -573,6 +573,28 @@
   /* The pty is wider than this pane, because another viewer is wider. `markWide` sizes `.xterm` to the grid
      and the pane scrolls it sideways, rather than the pty shrinking for every other window. */
   #t-screen.wide { overflow-x: auto; overflow-y: hidden; }
+  /* The phone view: the grid is the pty's, both ways wider than the screen, so the pane scrolls both. Two
+     fingers are the pinch (`wirePhonePinch`), so the browser's own pinch-zoom is off. */
+  #t-screen.phone { overflow: auto; justify-content: flex-start; touch-action: pan-x pan-y; }
+  .term-keys { display: none; }
+  body.term-phone .term-keys {
+    display: flex; gap: 4px; padding: 4px 6px;
+    border-top: 1px solid var(--term-line, var(--stroke-dim));
+  }
+  .term-keys button {
+    flex: 1 1 0; min-width: 0; min-height: 40px; padding: 0 2px;
+    border: 1px solid var(--term-line, var(--stroke-dim)); border-radius: var(--r-sm);
+    background: transparent; color: var(--term-fg, var(--dim)); font: var(--fs-md)/1 var(--mono);
+    touch-action: manipulation; user-select: none; -webkit-user-select: none;
+  }
+  .term-view { padding: 3px 8px; font: var(--fs-xs)/1.4 var(--mono); color: var(--term-fg, var(--dimmest)); }
+  .term-view span { opacity: .55; margin-left: 8px; }
+  .term-view button {
+    all: unset; cursor: pointer; padding: 3px 9px; border: 1px solid var(--term-line, var(--stroke-dim));
+    border-radius: var(--r-sm);
+  }
+  .term-keys button.hold { background: rgba(255,255,255,.25); }
+  .term-keys button:active { background: rgba(255,255,255,.12); }
   /* Why a terminal jumped to the bottom whenever it was focused. xterm parks a 20x20 textarea at the cursor
      to receive keystrokes, so an input method draws its candidates in the right place, and the cursor is at
      the bottom. A browser scrolls a focused element into view, so every path that focused that textarea took
