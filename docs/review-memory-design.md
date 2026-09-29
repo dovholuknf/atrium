@@ -186,7 +186,7 @@ why, and may name a panel. The director then:
    findings on its own card, tells the asker the same, and applies the notes (below). It does NOT cull the worker.
 6. **Hands the walk to the review-manager.** The review-manager stays up as that PR's walker, under the same
    `pr-<repo>-<number>` name, in the PR's worktree or tree. The director tells clint which card to walk on, and hands
-   the manager the walk rules (9 to 24, 26 and 27) and the findings folder it edits in place. For the board's review
+   the manager the walk rules (9 to 24, 26 and 27, 31 to 33) and the findings folder it edits in place. For the board's review
    tab (`docs/review-tab-design.md`), the brief also says that a `Walk:` line in Evidence is state the board writes
    and the walker keeps, and that the board may edit a finding, so the walker re-reads a file before every edit.
    `pr.diff` is always in the run folder (skill step 7). The manager held the
@@ -408,6 +408,20 @@ are in `general.md` on dotagents branch `claude/review/director/2026-09-29-walk-
     asks for a review, and named in the report. Skill step 8 is the procedure. `general.md` lists the room's runners
     and what each is chosen for.
 30. Every review-manager and walker is tagged `atrium:subagent`, `dept:review`, `review` and `pr`.
+
+**The walk's shape.** From clint through @orchestrator, 2026-09-29. In `general.md` on the walk-rules branch.
+
+31. Each walk keeps `walk.txt` in the run directory: one line per finding with the file name, a state (`open`, `done`,
+    `skipped`, `deferred`) and a short note. The walker creates it at the start and updates it after each answer.
+32. The PR URL appears once, at the top of the walk, never inside an item. This amends rule 28 for walker messages
+    only: finding files and reports still start with it.
+33. An item's header is the severity, file and line, then a colon. Under it, indented, goes the code line with the
+    deep link on the same line:
+
+    ```
+    HIGH router/posture/mfa.go line 156:
+         deadline := MfaExpiresAt(check.GetMfa(), state) https://github.com/openziti/ziti/pull/4397/files#diff-...R156
+    ```
 
 The first second opinions, run by the director on the two reviews already filed (Mercurius, codex gpt-5.5):
 zrok #1277 went from 14 rows to 15. Its new row 04 was the critic's possible gap 1, the ambiguous commit, and one
