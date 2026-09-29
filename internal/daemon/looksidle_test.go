@@ -1,19 +1,24 @@
 package daemon
 
 import (
+	"bytes"
+	"os"
 	"testing"
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
-// Frames as Claude Code draws them, cut down to what the classifier reads. One
-// working, one idle, so a Claude Code change to either string fails here.
+// Frames laid out as Claude Code draws them (rules, prompt, footer), cut down to
+// what the classifier reads. The idle one is written by hand from the real
+// strings, since no captured tail was taken at a settled prompt. The two real
+// captures are in testdata and are tested below.
 const (
-	workingFrame = "\x1b[2K✻ Thinking… (12s · ↓ 1.2k tokens · esc to interrupt)\r\n\r\n" +
-		"╭──────────────╮\r\n│ >            │\r\n╰──────────────╯\r\n  ? for shortcuts\r\n"
-	idleFrame = "\x1b[2K\r\n" +
-		"╭──────────────╮\r\n│ >            │\r\n╰──────────────╯\r\n  ? for shortcuts\r\n"
+	frameRule    = "────────────────────────────────────────────────────────────────"
+	workingFrame = "\x1b[H\x1b[2J· Ionizing… (12s · ↓ 1.2k tokens)\r\n\r\n" + frameRule + "\r\n❯ \r\n" + frameRule +
+		"\r\n  ⏵⏵ auto mode on (shift+tab to cycle) · esc to interrupt · ← for agents\r\n"
+	idleFrame = "\x1b[H\x1b[2J✻ Crunched for 1m 0s\r\n\r\n" + frameRule + "\r\n❯ \r\n" + frameRule +
+		"\r\n  ⏵⏵ auto mode on (shift+tab to cycle) · ← for agents\r\n"
 )
 
 func TestClassifyFrame(t *testing.T) {
@@ -25,16 +30,48 @@ func TestClassifyFrame(t *testing.T) {
 	}{
 		{"idle prompt", idleFrame, true, frameIdle},
 		{"idle after an earlier working frame", workingFrame + idleFrame, true, frameIdle},
-		{"spinner above the box", workingFrame, false, frameHint},
+		{"working footer", workingFrame, false, frameHint},
 		{"working after an idle one", idleFrame + workingFrame, false, frameHint},
-		{"no box", "building...\r\nstill going\r\n", false, frameNoBox},
-		{"box half drawn", "╭──────────────╮\r\n│ >", false, frameOpenBox},
+		{"no box", "building...\r\nstill going\r\nmore\r\nlines\r\n", false, frameNoBox},
+		{"box half drawn", "x\r\n" + frameRule + "\r\n❯", false, frameNoBox},
+		{"spinner with no footer hint", "· Ionizing… (5s)\r\n\r\n" + frameRule + "\r\n❯ \r\n" + frameRule + "\r\n  footer\r\n", false, frameSpinner},
 	}
 	for _, c := range cases {
-		idle, why := classifyFrame([]byte(c.frame))
+		idle, why := classifyFrame([]byte(c.frame), 80, 40)
 		if idle != c.idle || why != c.why {
 			t.Errorf("%s: got %v/%s, wanted %v/%s", c.name, idle, why, c.idle, c.why)
 		}
+	}
+}
+
+// Real captures from Claude Code, 64KB raw tails. Both are mid-turn: one is the
+// turn ending under its Stop hooks, one is inside a tool. Neither may read idle.
+func TestClassifyFrameOnRealCaptures(t *testing.T) {
+	for _, f := range []string{"frame-turn-ending.bin", "frame-mid-tool.bin"} {
+		b, err := os.ReadFile("testdata/" + f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if idle, why := classifyFrame(b, 120, 40); idle || why != frameHint {
+			t.Errorf("%s: got %v/%s, wanted working via %s", f, idle, why, frameHint)
+		}
+	}
+}
+
+// The same real capture with its working markers scrubbed is what an idle screen
+// looks like, and must read idle. Guards the layout half of the signature against
+// the real bytes, where the hand-written frame guards it only against itself.
+func TestClassifyFrameOnARealCaptureMadeIdle(t *testing.T) {
+	b, err := os.ReadFile("testdata/frame-mid-tool.bin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// What a settled turn would draw over it, cursor addressed like the real thing:
+	// the tool line and spinner become a summary, and the footer loses its hint.
+	b = append(bytes.Clone(b), "\x1b[16;1H\x1b[2K\x1b[19;1H\x1b[2K✻ Crunched for 10m 1s"+
+		"\x1b[24;1H\x1b[2K  ⏵⏵ auto mode on (shift+tab to cycle) · ← for agents"...)
+	if idle, why := classifyFrame(b, 120, 40); !idle {
+		t.Errorf("wanted idle, got %s", why)
 	}
 }
 
