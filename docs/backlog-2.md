@@ -2006,9 +2006,13 @@ that the height hold is in. Without it option 3 is built blind. Tab-separated, o
 - `k`, and `added`, the rows spliced into history, both 0 when nothing was,
 - `why`, what cancelled it or which condition failed, empty otherwise.
 The last line totals each outcome and the rows added, so two readings a day apart compare at a glance.
-`repair=report` always renders in `screen` mode whatever `mode` says, ignores `ansi`, and reads whichever bytes
-`collapse` selects, the same as the text it replaces. It replaces the `[atrium] ... mode` banner as well: the
-body is the report and nothing else.
+`repair=report` always renders in `screen` mode whatever `mode` says, and ignores `ansi` and `collapse`. It takes
+its bytes and its cuts from ONE `ReplayCuts` call, so every cut's offset is in the stream it is compared against.
+`collapse=0` swaps in `Snapshot()`, which is the same stream today (both are `from(retainedStart())`, and nothing
+collapses any more), but it is taken under a second lock, and a ring that wraps between the two moves the offsets.
+The repair itself only ever runs inside `replayCut`, which is handed bytes and cuts together, so this is a rule for
+the report alone. It replaces the `[atrium] ... mode` banner as well: the body is the report and nothing else. The
+totals line starts with `totals` and uses the same tabs, `outcome=count` pairs then `added=N`.
 
 **Tests.**
 - Unit, in `screen_test.go`: a 10-row grid, 10 numbered lines, then `\e[H` and 10 rows `\e[K\r\n` starting from
