@@ -390,6 +390,8 @@ echo "checkout=done from $b"
     if ($r.Code -ne 0) { Fail 'checkout' 4 "hub-main could not be checked out at $clone" $r.Out }
     $kv = ConvertFrom-KeyValue $r.Out
     if ($kv.checkout -eq 'ok') { Step 'checkout' 'ok' 'hub-main' } else { Step 'checkout' 'done' "hub-main ($($kv.checkout))" }
+    # The clone, on its own line, so provision can run its smoke card there.
+    Step 'cwd' 'ok' $clone
 }
 
 # ── fetch ───────────────────────────────────────────────────────────────────

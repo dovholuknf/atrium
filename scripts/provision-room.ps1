@@ -118,7 +118,16 @@ param(
     [string] $Repo = 'atrium',
 
     # How long to wait for the room to show as attached on the hub, in seconds.
-    [int] $AttachTimeout = 60
+    [int] $AttachTimeout = 60,
+
+    # The smoke card, last: a small claude worker on the room that reports back.
+    # -SmokeTo is who it atrium_says "smoke ok <room> <nonce>" to, default the
+    # card running this script when there is one. -SmokeCwd is where on the
+    # remote it runs, default the remote home.
+    [switch] $NoSmoke,
+    [string] $SmokeTo,
+    [string] $SmokeCwd,
+    [int] $SmokeTimeout = 180
 )
 
 $ErrorActionPreference = 'Stop'
@@ -202,10 +211,19 @@ function ConvertFrom-KeyValue {
 #
 # UNIX GETS THE SCRIPT ON STDIN to `sh -s`, so nothing in it passes through the
 # login shell's quoting either, and nothing in it is on a command line.
+#
+# WINDOWS SCRIPTS GET Sch AND Get-AT, because the ScheduledTask cmdlets go
+# through CIM and a session that arrived over ssh is denied it ("Cannot connect
+# to CIM server. Access denied", seen on sg3). schtasks.exe does not. Get-AT is
+# what the atrium logon task runs, or nothing.
+$winHelpers = @'
+function Sch { $ErrorActionPreference = 'Continue'; & schtasks.exe @args 2>&1 }
+function Get-AT { $x = Sch /Query /TN atrium /XML; if ($LASTEXITCODE -eq 0) { $e = ([xml](($x | ForEach-Object { "$_" }) -join "`n")).Task.Actions.Exec; "$($e.Command) $($e.Arguments)".Trim() } }
+'@
 function Invoke-Remote {
     param([string] $script)
     if ($script:remoteOS -eq 'windows') {
-        $full = "`$ErrorActionPreference='Stop'; `$ProgressPreference='SilentlyContinue'`n" +
+        $full = "`$ErrorActionPreference='Stop'; `$ProgressPreference='SilentlyContinue'`n$(if ($script -match '\b(Sch|Get-AT)\b') { $winHelpers })`n" +
             "`$A = Join-Path `$HOME '.atrium'; `$Bin = Join-Path `$A 'bin\atrium.exe'`n" +
             "`$P = Join-Path `$A 'provision'; `$M = Join-Path `$P 'manifest.json'`n" +
             "`$L = Join-Path `$env:LOCALAPPDATA 'atrium'`n" +
@@ -389,8 +407,8 @@ if (Test-Path $rj) {
     $j = Get-Content $rj -Raw | ConvertFrom-Json
     "joinedroom=$($j.room)"; "joinedhub=$($j.hub)"; "joinedtransport=$($j.transport)"; "joinedservice=$($j.service)"
 }
-$t = try { Get-ScheduledTask -TaskName atrium -ErrorAction Stop } catch { $null }
-if ($t) { "service=$($t.Actions[0].Execute) $($t.Actions[0].Arguments)" }
+$svc = Get-AT
+if ($svc) { "service=$svc" }
 if (Test-Path $M) { "manifest=$((Get-Content $M -Raw) -replace '\r?\n', ' ')" }
 "zrokenv=$(Test-Path (Join-Path $HOME '.zrok2\environment.json'))"
 foreach ($port in 7781, 7778) {
@@ -494,11 +512,6 @@ if ($pathadded -eq 'registry') {
     "path=removed ~\.local\bin from the user's Path"
 }
 if (Test-Path $Bin) { try { & $Bin stop --url http://127.0.0.1:7781 2>&1 | Out-Null } catch {} }
-if ($auto -and -not $pre_service -and (Get-ScheduledTask -TaskName atrium -ErrorAction SilentlyContinue)) {
-    Stop-ScheduledTask -TaskName atrium -ErrorAction SilentlyContinue
-    Unregister-ScheduledTask -TaskName atrium -Confirm:$false
-    "service=removed"
-}
 $deadline = (Get-Date).AddSeconds(20)
 while ((Get-Process atrium -ErrorAction SilentlyContinue | Where-Object Path -eq $Bin) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 500 }
 Get-Process atrium -ErrorAction SilentlyContinue | Where-Object Path -eq $Bin | Stop-Process -Force
@@ -575,8 +588,17 @@ if [ "$pre_bindir" = False ]; then rmdir "$(dirname "$Bin")" 2>/dev/null || true
               else { "rm -f `"`$A/mcp.json`"`necho mcp=removed" }
         $mk = ConvertFrom-KeyValue (Invoke-Remote $mf).Out
         if ($mk.mcp) { Step 'mcp' 'done' 'removed the mcp.json this script wrote' }
-    }    $rm = Invoke-Remote $rmScript
+    }
+    # THE LOGON TASK, its own call, because the clean-up script below is near the
+    # length a Windows command line can carry.
+    $svcGone = $false
+    if ($os -eq 'windows' -and $hadAutostart -and -not $was['service']) {
+        $sr = Invoke-Remote "if (Get-AT) { `$null = Sch /End /TN atrium; `$null = Sch /Delete /TN atrium /F; 'service=removed' }"
+        $svcGone = [bool] (ConvertFrom-KeyValue $sr.Out).service
+    }
+    $rm = Invoke-Remote $rmScript
     if ($rm.Code -ne 0) { Fail 'remove' 3 'the remote clean-up failed' $rm.Out }
+    if ($svcGone) { $rm.Out += 'service=removed' }
     $kv = ConvertFrom-KeyValue $rm.Out
     if ($kv.service) { Step 'autostart' 'done' 'removed' }
     elseif ($hadAutostart) { Step 'autostart' 'skip' 'it was there before this script' }
@@ -666,6 +688,12 @@ function Get-Release {
     } catch {
         $code = $_.Exception.Response.StatusCode.value__
         if ($code -eq 404) {
+            # NO RELEASE, AND A CHECKOUT AROUND THE SCRIPT: build from it, so the
+            # one command needs no flags. A named -Version is never swapped for it.
+            if ($inCheckout -and -not $Version) {
+                Step 'fetch' 'warn' 'dovholuknf/atrium has no release on GitHub, so this builds atrium from the checkout the script is in'
+                return $null
+            }
             $which = if ($Version) { "no release called $Version" } else { 'no release yet' }
             Fail 'fetch' 1 "dovholuknf/atrium has $which on GitHub. -FromCheckout builds the binary from this checkout instead"
         }
@@ -698,9 +726,7 @@ function Get-Release {
     $bin
 }
 
-if ($Binary) {
-    if (-not (Test-Path -LiteralPath $Binary)) { Fail 'build' 1 "no binary at $Binary" }
-} elseif ($FromCheckout) {
+function Build-Checkout {
     if (-not $inCheckout) { Fail 'build' 1 '-FromCheckout needs an atrium checkout around this script' }
     $outDir = Join-Path $work "${os}_$goarch"
     New-Item -ItemType Directory -Force -Path $outDir | Out-Null
@@ -716,11 +742,20 @@ if ($Binary) {
         Remove-Item Env:CGO_ENABLED, Env:GOOS, Env:GOARCH -ErrorAction SilentlyContinue
     }
     if ($bc -ne 0) { Fail 'build' 1 "go build for $os/$goarch failed" $b }
+    $Binary
+}
+
+$built = $false
+if ($Binary) {
+    if (-not (Test-Path -LiteralPath $Binary)) { Fail 'build' 1 "no binary at $Binary" }
+} elseif ($FromCheckout) {
+    $Binary = Build-Checkout; $built = $true
 } else {
     $Binary = Get-Release
+    if (-not $Binary) { $Binary = Build-Checkout; $built = $true }
 }
 $sha = (Get-FileHash -LiteralPath $Binary -Algorithm SHA256).Hash.ToLower()
-if ($FromCheckout -or $PSBoundParameters.ContainsKey('Binary')) { Step 'build' 'ok' "$os/$goarch $($sha.Substring(0, 12))" }
+if ($built -or $PSBoundParameters.ContainsKey('Binary')) { Step 'build' 'ok' "$os/$goarch $($sha.Substring(0, 12))" }
 
 $binChanged = $false
 if ($state.binsha -eq $sha) {
@@ -735,7 +770,7 @@ if ($state.binsha -eq $sha) {
 @'
 if (Test-Path $Bin) {
     try { & $Bin stop --url http://127.0.0.1:7781 2>&1 | Out-Null } catch {}
-    Stop-ScheduledTask -TaskName atrium -ErrorAction SilentlyContinue
+    $null = Sch /End /TN atrium
     $deadline = (Get-Date).AddSeconds(20)
     while ((Get-Process atrium -ErrorAction SilentlyContinue | Where-Object Path -eq $Bin) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 500 }
     Get-Process atrium -ErrorAction SilentlyContinue | Where-Object Path -eq $Bin | Stop-Process -Force
@@ -1081,25 +1116,25 @@ if (-not $useAutostart) {
 
     if ($os -eq 'windows') {
         $as = @'
-$t = Get-ScheduledTask -TaskName atrium -ErrorAction SilentlyContinue
-if ($t -and $t.Actions[0].Arguments -like "*$Bin*room --db*") { "autostart=ok" }
+$svc = Get-AT
+if ($svc -and $svc -like "*$Bin*room --db*") { "autostart=ok" }
 else {
     $o = & (Join-Path $P 'scripts\atrium-service.ps1') install -Verb room -Exe $Bin *>&1
-    if (-not (Get-ScheduledTask -TaskName atrium -ErrorAction SilentlyContinue)) { $o; exit 1 }
+    if (-not (Get-AT)) { $o; exit 1 }
     "autostart=done"
 }
 $up = $false
 try { $null = Invoke-RestMethod http://127.0.0.1:7781/v1/health -TimeoutSec 3; $up = $true } catch {}
 if ($up) { "start=ok" } else {
-    Start-ScheduledTask -TaskName atrium
+    $null = Sch /Run /TN atrium
     $deadline = (Get-Date).AddSeconds(30)
     while (-not $up -and (Get-Date) -lt $deadline) {
         Start-Sleep -Seconds 1
         try { $null = Invoke-RestMethod http://127.0.0.1:7781/v1/health -TimeoutSec 2; $up = $true } catch {}
     }
     if ($up) { "start=done" } else {
-        $i = Get-ScheduledTaskInfo -TaskName atrium
-        "start=fail the task did not bring the room up, last result 0x$('{0:X}' -f $i.LastTaskResult). an Interactive task needs the user logged in at the machine"
+        $lr = (Sch /Query /TN atrium /V /FO LIST | Where-Object { "$_" -match '^Last Result:\s*(.+)$' } | ForEach-Object { $Matches[1].Trim() } | Select-Object -First 1)
+        "start=fail the task did not bring the room up, last result $lr. an Interactive task needs the user logged in at the machine"
     }
 }
 '@
@@ -1299,6 +1334,163 @@ echo "bin=$Bin"
         default   { Step 'mcp' 'warn' "wrote $mcpPath, but could not set the claude runner row. its sessions cannot answer other rooms" }
     }
 }
-if ($Repo -ne 'none') { & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'room-git.ps1') init $Name -Target $Target -Ssh $Ssh @(if ($SshOption) { '-SshOption'; $SshOption -join ',' }) | ForEach-Object { Write-Host $_ }; if ($LASTEXITCODE -ne 0) { Step 'git' 'warn' "room-git init exited $LASTEXITCODE. rerun: room-git.ps1 init $Name -Target $Target" } }
+# The clone, made by room-git.ps1 init. Its `room-git cwd ok <path>` line is
+# where the smoke card below runs, when init succeeded.
+$clonePath = $null
+if ($Repo -ne 'none') { & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'room-git.ps1') init $Name -Target $Target -Ssh $Ssh @(if ($SshOption) { '-SshOption'; $SshOption -join ',' }) *>&1 | ForEach-Object { Write-Host $_; if ("$_" -match '^room-git cwd ok (.+)$') { $clonePath = $Matches[1].Trim() } }; if ($LASTEXITCODE -ne 0) { $clonePath = $null; Step 'git' 'warn' "room-git init exited $LASTEXITCODE. rerun: room-git.ps1 init $Name -Target $Target" } }
+
+# ── 12. is claude signed in ─────────────────────────────────────────────────
+
+# `claude auth status` ANSWERS WITHOUT A PROMPT, in JSON, and says loggedIn. It
+# is run the way the room runs claude: through a login shell on Unix.
+#
+# NEVER A FAILURE. A room that is not signed in still works, it only needs a
+# person. So this says the exact command and goes on. It never carries, copies
+# or reads a credential: the answer is read from the CLI, and the sign-in is
+# done by clint, at a terminal, with their own browser.
+$authState = 'na'
+if (@($Runners + $Install) -contains 'claude') {
+    $as = if ($os -eq 'windows') {
+@'
+$c = Get-Command claude -ErrorAction SilentlyContinue | Select-Object -First 1
+if (-not $c) { 'auth=missing'; exit 0 }
+$job = Start-Job { param($n) & $n auth status 2>&1 | Out-String } -ArgumentList $c.Source
+if (Wait-Job $job -Timeout 30) { 'json=' + [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes((Receive-Job $job | Out-String))) }
+else { Stop-Job $job; 'auth=hung' }
+'@
+    } else {
+@'
+sh_=${SHELL:-/bin/sh}
+if [ -z "$("$sh_" -lc 'command -v claude' 2>/dev/null)" ]; then echo auth=missing; exit 0; fi
+o=$("$sh_" -lc 'claude auth status' </dev/null 2>&1)
+echo "json=$(printf '%s' "$o" | base64 | tr -d '\n')"
+'@
+    }
+    $kv = ConvertFrom-KeyValue (Invoke-Remote $as).Out
+    $text = if ($kv.json) { try { [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($kv.json)) } catch { '' } } else { '' }
+    $j = try { $text | ConvertFrom-Json } catch { $null }
+    if ($kv.auth -eq 'missing') {
+        $authState = 'unknown'
+        Step 'auth' 'skip' 'claude is not on PATH there, so there is nothing to check'
+    } elseif ($kv.auth -eq 'hung') {
+        $authState = 'unknown'
+        Step 'auth' 'warn' 'claude auth status did not answer in 30s, so whether it is signed in is not known'
+    } elseif ($j -and $null -ne $j.loggedIn) {
+        if ($j.loggedIn) {
+            $authState = 'ok'
+            $who = @($j.email, $j.orgName | Where-Object { $_ }) -join ', '
+            Step 'auth' 'ok' "signed in with $($j.authMethod)$(if ($who) { ", $who" })"
+        } else {
+            $authState = 'no'
+            $sshCmd = (@($Ssh) + $SshOption + @('-t', $Target)) -join ' '
+            Step 'auth' 'warn' "claude on $Name is not signed in. the room works and needs you once: run `"$sshCmd claude auth login`" and follow the URL it prints"
+            Write-Host "    why that one: it is the CLI's own sign-in. it prints a URL to open in any browser, here, and takes the code back,"
+            Write-Host "    so it needs no browser on $Name and this never handles the credential. 'claude setup-token' would hand you a token to store, which is a credential to carry."
+        }
+    } else {
+        $authState = 'unknown'
+        $first = ($text -split "`n" | Where-Object { $_.Trim() } | Select-Object -First 1)
+        Step 'auth' 'warn' "claude auth status did not answer with JSON, so whether it is signed in is not known. it said: $first"
+    }
+}
+
 if ($bad -gt 0) { Finish 5 }
+
+# ── 13. smoke: a claude worker on the room that talks back ───────────────────
+
+# THE PROOF THE ROOM CAN DO ITS JOB. It starts a small, lean claude card on the
+# new room through the hub, gives it a nonce, and reads the card back from the
+# hub until its report holds that nonce. The script decides pass or fail from
+# what it reads itself, never from what anybody says. The card is then exited
+# and checked to have left.
+#
+# ATRIUM-CONTROL CALLS ONLY. A permission prompt on the smoke card would go to
+# the human board and stall it, so the prompt asks for no gated tool.
+#
+# Skipped when there is nothing it could prove: -NoSmoke, claude not a runner
+# here, or claude not signed in (which auth already said, with the command).
+function Get-SmokeCwd {
+    if ($SmokeCwd) { return $SmokeCwd }
+    # HOOK FOR THE CLONE. When room-git.ps1 makes a clone on the remote, its
+    # path becomes the default here, so the worker proves it in a repository.
+    # Until then it is the remote home, which exists on every machine.
+    $hs = if ($os -eq 'windows') { '"home=$HOME"' } else { 'echo "home=$HOME"' }
+    (ConvertFrom-KeyValue (Invoke-Remote $hs).Out).home
+}
+
+$smokeWhy = $null
+if ($NoSmoke) { $smokeWhy = '-NoSmoke' }
+elseif (@($Runners + $Install) -notcontains 'claude') { $smokeWhy = 'claude is not a runner for this room' }
+elseif ($authState -eq 'no') { $smokeWhy = "claude is not signed in on $Name, so a worker there cannot answer. sign in, then rerun" }
+elseif ($authState -ne 'ok') { $smokeWhy = 'whether claude is signed in is not known, so the smoke card would only guess' }
+if ($smokeWhy) {
+    Step 'smoke' 'skip' $smokeWhy
+    Finish 0
+}
+
+$nonce = -join ((1..8) | ForEach-Object { '{0:x}' -f (Get-Random -Maximum 16) })
+$me = $env:ATRIUM_AGENT_NAME; $myRoom = $env:ATRIUM_ROOM; $myCard = $env:ATRIUM_TASK_ID
+$to = $SmokeTo
+if (-not $to -and $me -and $myRoom) { $to = "$me@$myRoom" }
+$cwd = Get-SmokeCwd
+if (-not $cwd) { Step 'smoke' 'fail' "could not resolve a folder on $Name to run in. pass -SmokeCwd"; Finish 8 }
+
+$said = "smoke ok $Name $nonce"
+$prompt = "This is an automated smoke test of the room $Name. Do exactly these steps and nothing else. " +
+    "Use only the atrium-control tools: no Bash, no file reads, no edits.`n"
+$n = 1
+if ($to) { $prompt += "$n. Call atrium_say to $to with the text: $said`n"; $n++ }
+$prompt += "$n. Call atrium_report with status done, the summary: $said, and no_commit: smoke test, no work.`n" +
+    "Then stop. When you finish, get blocked, or need an answer, call atrium_report (or atrium_say your launcher) before you end your turn."
+$body = [ordered]@{
+    harness = 'claude'; cwd = $cwd; title = "smoke: $Name"; prompt = $prompt
+    tags = @('atrium:smoke'); lean = $true
+    model = 'claude-haiku-4-5-20251001'; effort = 'low'
+}
+# WHO LAUNCHED IT, so the report lands on the caller's card. A launcher on
+# another room is `me@room`, and its card `room~id`.
+if ($me -and $myRoom) { $body.spawned_by = "$me@$myRoom" }
+if ($myRoom -and $myCard) { $body.spawned_by_id = "$myRoom~$myCard" }
+
+$hdr = @{ 'X-Atrium-Room' = $Name }
+$card = $null
+$smokeErr = $null
+try {
+    $card = Invoke-RestMethod -Method Post -Uri "http://$HubAddr/v1/launch" -Headers $hdr `
+        -ContentType 'application/json' -Body ($body | ConvertTo-Json -Depth 5) -TimeoutSec 60
+} catch { $smokeErr = "the hub would not launch it: $($_.Exception.Message)" }
+if ($card -and -not $card.id) { $smokeErr = 'the hub answered the launch with no card'; $card = $null }
+
+$reported = $false
+if ($card) {
+    $id = $card.id
+    $t0 = Get-Date
+    while (((Get-Date) - $t0).TotalSeconds -lt $SmokeTimeout) {
+        Start-Sleep -Seconds 3
+        try {
+            $t = Invoke-RestMethod -Uri "http://$HubAddr/v1/tasks/$id" -Headers $hdr -TimeoutSec 10
+            if ("$($t.recap)" -like "*$nonce*") { $reported = $true; break }
+        } catch { }
+    }
+    $took = [int]((Get-Date) - $t0).TotalSeconds
+    # EXITED WHATEVER HAPPENED, so a smoke card never lingers on the room.
+    try { Invoke-RestMethod -Method Post -Uri "http://$HubAddr/v1/tasks/$id/exit" -Headers $hdr -TimeoutSec 15 | Out-Null } catch { }
+    $left = $false
+    $t1 = Get-Date
+    while (((Get-Date) - $t1).TotalSeconds -lt 30) {
+        try {
+            $t = Invoke-RestMethod -Uri "http://$HubAddr/v1/tasks/$id" -Headers $hdr -TimeoutSec 10
+            if (-not $t.supervised) { $left = $true; break }
+        } catch { }
+        Start-Sleep -Seconds 2
+    }
+    $leftWord = if ($left) { 'and it exited' } else { 'but it did not leave within 30s, so exit it yourself' }
+    if ($reported) {
+        Step 'smoke' 'ok' "a claude worker on $Name reported $nonce in ${took}s, $leftWord$(if ($to) { ", and said it to $to" })"
+        if (-not $left) { Step 'smoke' 'warn' "card $id is still running on $Name" }
+    } else {
+        $smokeErr = "the smoke card $id did not report $nonce in ${SmokeTimeout}s ($leftWord). look at it on the board, it is on $Name"
+    }
+}
+if ($smokeErr) { Step 'smoke' 'fail' $smokeErr; Finish 8 }
 Finish 0
