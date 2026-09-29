@@ -1,51 +1,62 @@
 # HANDOFF: @terminal, director of the terminal path (claude/terminal)
 
-Written 2026-09-29 at the 144k context line. Re-read `BRIEF.md` and `DIRECTOR.md` in this worktree first, then
-this file. My handle is `terminal-director-of-pty-to-xterm-and-sc`. The orchestrator is `atrium-87300` (alias
-`orchestrator`) and the merger is `merge` (card 01a0eb20).
+Written 2026-09-29 about 05:40 UTC at the 150k context line. Re-read `BRIEF.md` and `DIRECTOR.md` in this worktree
+first, then this file. My handle is `terminal-director-of-pty-to-xterm-and-sc`. The orchestrator is `atrium-87300`
+(alias `orchestrator`) and the merger is `merge` (card 01a0eb20).
 
 ## Rules that changed since DIRECTOR.md was written
 
 - ASK the orchestrator before EVERY worker launch, in one line: the item, a one-line reason, and the room.
 - A design goes into backlog-2, then a Mercurius round (`mercurius_open_session` with `working_dir` this worktree,
-  then `mercurius_start_review_round`) before anything is built. Artifact names must be plain file names (no
-  spaces or colons). The `mercurius` CLI is not on PATH: wait on `.mercurius/<session>/status.json` with a
-  background pwsh loop (see the old `waitmerc.ps1` below).
-- Exit a worker BY CARD ID once it is merged into claude/terminal. By alias the exit fails on a `done` card, and a
-  runner left alive holds its worktree dir (item 89). Remove its worktree and branch after @merge lands it.
-- Directors do not write feature code. Test and comment fixes after a merge are fine.
+  then `mercurius_start_review_round`) before anything is built. Artifact names must be plain file names. Wait on a
+  round with `pwsh -File <scratchpad>/waitmerc.ps1 -Status <.mercurius/<session>/status.json> -Round N` in the
+  background. The session `state` stays `active`, so the script keys on `round_count` and `active_round`.
+- Exit a worker BY CARD ID once it is merged into claude/terminal. Remove its worktree and branch after @merge
+  lands it.
+- Directors do not write feature code. Test and comment fixes after a merge are fine, and so are backlog-2 edits.
 - `docs/changes/<item>.md` follows `docs/changes/README.md`. Nobody edits `CHANGELOG.md` or `docs/test-plan.md`.
-- No gcc here, so `go test -race` cannot run. Do not believe a worker that says it did.
-- Hooks: no `;` chaining and no `>` in Bash, no `git -C` and no `git checkout` (use `git restore`, `git switch`).
-  Put multi-step git across worktrees in a .ps1 under the scratchpad.
-- Backlog numbers are shared across directors. Ask the orchestrator for the next free one. 87 and 89 are taken
-  (@runtime), and the next free was 89 when last asked, so check again before filing.
-- Leave the gofmt issue (three test files from other departments) with @merge.
+- No gcc here, so `go test -race` cannot run.
+- Hooks: no `;` chaining, no `>` (use `tee`), no `cd x && y`, no `git -C`, no `git checkout`. `go build` must write
+  to a `build.claude/` (`go build -C <dir> -o build.claude/ .` from PowerShell works for a scratch tool).
+- Backlog numbers are shared across directors. Ask the orchestrator for the next free one.
+- DO NOT touch `D:/worktrees/claude/atrium/sa89`. It is @runtime's item 89 worker (card 01a0eb97), not item 33.
+- Reading the live room is fine (logs, a COPY of the DB). Never write, restart or call anything on it.
 
-## Done and landed
+## This context's work, all on claude/terminal, docs only, nothing handed to @merge yet
 
-- Batch 1 (items 53, 54, 61) on claude/main at `e45fc2c`.
-- Batch 2 on claude/main (`cbefcb1` merged claude/terminal, folded in `db2b33a`, sections DA to DD):
-  81 (sa81, `f645161`), 74 option 1, the 0.5s height hold (sa74, `387ccd5`), 82 wide cells (sa82, `8e0e68f`), and
-  `bed0d36` (cursor_refit_test waits out the hold). Worktrees and branches for sa74, sa81, sa82 are removed.
-- Batch 3, items 86 + 88 (sa86, `8fe9f09`, plus my comment fix `79056b4`), handed to @merge at claude/terminal
-  `e77918d`. Mercurius `s_qf7b9mnicqAi` (closed): ready_to_build, advisory A1 adopted. LANDED on claude/main at
-  `bb65176` (section DF). sa86 is exited and its worktree and branch are removed. No worker is running.
+Head is `940a970`. Commits since the last handoff: `d93b6db`, `d536987`, `c7b6511`, `054af15`, `8e42a86`,
+`f3303ec`, `061bd1a`, `940a970`, all `docs/backlog-2.md`.
 
-## Open questions, with the orchestrator
+- **Item 33** is fully built on claude/main: `118d6e5` (typedline, keystrokes only), `d713e5c` (Esc Esc port),
+  `2f15ace` (readout), and `TestASayWhenDoneWaitsForTheTurnToEnd` covers `when: done`. All in the deployed room
+  binary `66717c5`. The sa85 incident is confirmed from a DB copy plus `~/.atrium2/room.err.20260928-111944`: three
+  messages (09:03 `when: done`, 09:45:50, 09:50:59) were all typed at 09:55:21, 2s after clint's keystrokes, and the
+  09:45 turn end released nothing. That is the old counter, and the build predates `118d6e5`. Status is in item 33.
+- **Item 8** is narrowed to the `[inputlag]` prefix naming only. The hop split is `1f49694` (runner side), and the
+  unsent-bytes fix is `6bb14e4`. The table row had a stale pre-resign SHA `5d9ba72`, now corrected.
+- **Item 61** table row is marked DONE `88fc53d`.
+- **Item 74 option 3** (replay-only repair) is designed in item 74 beside option 2, with a cost table ("2 or 3, for
+  clint"). The status line now says the height hold is on claude/main (`387ccd5`). Mercurius `s_ijoTH04DNGvl`,
+  CLOSED: rounds 1 to 4 were each needs_changes with one major, all fixed. Round 5 is **ready_to_build** and its
+  advisory is adopted. Nothing is left to collect.
+- **The recommendation for clint** (accepted by the orchestrator, who carries it to him): build option 3's
+  diagnostic report alone first (`/scrollback/text?repair=report`, a day at most) and read it on the live room for a
+  few days. Almost nothing means the height hold was enough. Real losses mean option 2 (OpenConsole ConPTY) is the
+  fix. Option 3's repair only if 2 is refused, or as a stopgap, since it cannot fix the pane that was watching.
 
-- Item 74 option 2: ship OpenConsole ConPTY behind a setting. Parked for clint. Option 3 only if 2 is refused.
-- A C toolchain so `-race` can run.
+## Next
 
-## Next: item 33
+1. Hand claude/terminal to @merge: `git rm HANDOFF.md` in a commit first, then one `atrium_say` to `merge` with the
+   branch, the head sha, and "docs only (backlog-2 items 8, 33, 61, 74), no suite needed, or run it if you want".
+2. One `atrium_report` to atrium-87300 for this batch.
+3. Waiting on clint: item 74, option 3's report versus option 2. Also a C toolchain for `-race`.
 
-Watching a terminal holds every message to it, word deletes miscount, and a gate debug readout. An old sa89
-started it on 2026-09-28. First reconcile what already landed on claude/main, with SHAs (`git log claude/main
---grep` for 33 and sa89, and read item 33 in `docs/backlog-2.md`). Then design what is left into item 33,
-run a Mercurius round, and ask the orchestrator for a slot.
+## FYI from @fabric
 
-Scratchpads: old `C:/Users/claude/AppData/Local/Temp/claude/D--worktrees-claude-atrium-terminal/075e4391-05a2-4d3f-a248-c6f697238fe1/scratchpad`
-(suite.ps1 runs `go test -p 4 ./...` into suite.log, waitmerc.ps1). This context's
-`.../4f9cc759-941c-4fbb-8461-5f818f4af33f/scratchpad` (bench.ps1 compares benchmarks old against new, cleanup.ps1).
+`TestRealSessionsKeepTheirText` fails on claude/main `bb65176` on this machine. It replays the live
+`~/.atrium/scrollback`, and session `01a0eac2-73a` keeps only 26% of sampled words. That card is sa74, whose
+scrollback is full of the lost-lines flip repros, so a low score there is expected. Known noise per DIRECTOR.md, but
+it will keep flipping as the corpus grows. A floor or file-selection change is a candidate item. Not filed.
 
-`git rm` this HANDOFF.md in a commit before handing the branch to @merge again.
+Scratchpad for this context: `C:/Users/claude/AppData/Local/Temp/claude/D--worktrees-claude-atrium-terminal/47c4cb02-0c4f-4de1-8b5e-636cc3ac6187/scratchpad`
+(`waitmerc.ps1`, `q/` is a read-only sqlite query tool with a DB copy in `q/db`, which can be deleted).
