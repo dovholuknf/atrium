@@ -55,7 +55,7 @@ import (
 const usageSettle = 1500 * time.Millisecond
 
 // usagePricesVersion names the price table a row's cost was worked out on.
-const usagePricesVersion = "usageprices-2026-09-28"
+const usagePricesVersion = "usageprices-2026-09-28b"
 
 // usageOnlyPrices are the models a usage row prices that keep-alive must not
 // refresh, because keepalivePrices is also the list of models keep-alive may
@@ -65,6 +65,9 @@ const usagePricesVersion = "usageprices-2026-09-28"
 var usageOnlyPrices = map[string]keepalivePrice{
 	"claude-haiku-4-5": {In: 1, Cw1h: 2, Cr: 0.10, Out: 5},
 	"claude-sonnet-5":  {In: 2, Cw1h: 4, Cr: 0.20, Out: 10},
+	// Sonnet 5.5 costs what Sonnet 5 does, and is its own key because the
+	// matcher below does not take one model's price for the other's.
+	"claude-sonnet-5-5": {In: 2, Cw1h: 4, Cr: 0.20, Out: 10},
 }
 
 // usagePriceFor prices a reply for a usage row: keep-alive's models, then the
