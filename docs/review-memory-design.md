@@ -178,7 +178,13 @@ why, and may name a panel. The director then:
    refuted finding with its reason. At most three review-managers run at once to start (answer 13), and a fourth ask
    waits in the director's queue.
 5. **Reports to the asker and to clint.** When the review-manager reports, the director posts the verdict line and the
-   findings on its own card, tells the asker the same, and culls the worker. Then it applies the notes (below).
+   findings on its own card, tells the asker the same, and applies the notes (below). It does NOT cull the worker.
+6. **Hands the walk to the review-manager.** The review-manager stays up as that PR's walker, under the same
+   `pr-<repo>-<number>` name, in the PR's worktree or tree. The director tells clint which card to walk on, and hands
+   the manager the walk rules (9 to 24, 26 and 27) and the findings folder it edits in place. The manager held the
+   repo at the head, the evidence and the repros, so it can re-check a line, dig in or rewrite a comment on the spot,
+   which clint found far more useful than a walk on the director's card. The director culls it only after clint says
+   the walk is done (clint, 2026-09-29).
 
 **The hierarchy** is three levels: the director, then one review-manager per review, and the review-manager spawns
 the reviewer agents as its subagents (answers 3 and 13). The director never spawns a reviewer, and a review-manager
@@ -296,8 +302,9 @@ rule stands: a panel reads, and CI builds.
 8. Line numbers come from the PR head, the right-hand side of the diff. A comment must sit on a line the PR adds or
    changes. When the root cause is in unchanged lines, it is anchored on the nearest changed line that shows it.
 
-**Walking the comments.** This is the director's job, on its own card, after the review-manager has reported. A
-review-manager never walks comments.
+**Walking the comments.** The review-manager does this, on its own card, after it has reported, and stays up for it
+(launch step 6). The director hands it these rules and says which card to walk on. Where a rule below says "the
+director", during a walk it means the walker.
 
 9. One comment at a time, in the table's order. The director waits for "next". "Go back" means the previous one is
    not done.
