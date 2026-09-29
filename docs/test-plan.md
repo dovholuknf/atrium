@@ -5453,3 +5453,59 @@ Automated: `HEADLESS_ONLY=quietDoer` in `scripts/test-board-headless.js`, focuse
 8. `go test ./internal/store ./internal/api ./internal/daemon -run Usage`, `go test ./internal/link -run UsageEvent`,
    `HEADLESS_ONLY=usageCharts,contextSize node scripts/test-board-headless.js`, `bash scripts/check-board.sh` and
    `bash scripts/check-skins.sh`.
+
+## CY. A lost Stop looks idle
+
+### CY1. The badge
+
+1. Start a Claude card under atrium and give it a prompt that runs for a few seconds.
+2. Stop the daemon's view of its Stop hook: remove the `Stop` entry from `~/.claude/settings.json`, and start a new card.
+3. Let the turn finish and leave the terminal alone.
+
+**Expected:** within 25 to 45 seconds the card's live chip is replaced by a hollow ring in the warn colour, the
+terminal strip's runner mark stops animating, an alert reads "looks idle (no turn-end received)", and the room log
+has a `looks idle:` line naming the frame reason `idle_prompt`. The card stays in `running`.
+
+### CY2. It clears
+
+1. With a card wearing the badge, press a key in its terminal.
+2. Repeat, this time letting the runner draw (send it a prompt from another window).
+
+**Expected:** the ring is gone as soon as the key or the output lands, and the log has `looks idle cleared:` with the
+cause. A card whose Stop hook then arrives settles in `needs-input` as normal.
+
+### CY3. A long silent command is not idle
+
+1. Ask a Claude card to run `sleep 120` and leave it alone.
+
+**Expected:** no badge appears while the spinner line is up, however long the pty is silent.
+
+## CZ. A card owes its launcher a report only for a prompt its launcher sent
+
+### CZ1. A message from a third session, then a silent stop
+
+1. Launch a worker from session A with a prompt. Have it report to A with `atrium_report`.
+2. From a third session B, `atrium_say` the worker a message. Let the worker end its turn saying nothing.
+
+**Expected:** A gets no `ended its turn without reporting` notice, and the worker's card shows no STUCK mark however
+long it waits.
+
+### CZ2. The launcher's own message
+
+1. With the worker from the previous step waiting, `atrium_say` it a message from A. Let its turn end saying nothing.
+
+**Expected:** A gets one silent-stop notice, and the card shows STUCK after the usual wait.
+
+### CZ3. A turn the session's own monitor wakes
+
+1. Have a worker that has reported start a background task or monitor, then wait.
+2. Let the task's events wake it three times, each turn ending with nothing said to A.
+
+**Expected:** A hears nothing. Had the worker not reported, A would hear once, not once per wake.
+
+### CZ4. A restart keeps the debt
+
+1. Launch a worker with a prompt and stop its turn silently before the notice delay passes.
+2. Restart the daemon.
+
+**Expected:** the notice arrives once. A worker that had reported before the restart still owes nothing after it.
