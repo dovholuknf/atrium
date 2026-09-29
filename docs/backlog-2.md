@@ -1498,7 +1498,10 @@ Left:
   that is not a live room.
 - Proving `-Autostart` starting on a Windows room, and the binary swap's `schtasks /End` on a live task. Both only on
   claudevm, never on a real room.
-- The provision start hook for fb03's `room-env.ps1`, on top of the XML registration, once fb03 is here.
+- fb03 is merged, and provision's Windows start step dot-sources `~\.atrium\toolchain\room-env.ps1` when it exists.
+  Left: the `-Autostart` logon task's action should do the same when that file exists at registration, as an
+  `-EncodedCommand` for `powershell.exe -ExecutionPolicy Bypass`, on top of the XML registration. Proven only on
+  claudevm.
 - Stage 2, the board half. Not started.
 
 Open questions for clint:
