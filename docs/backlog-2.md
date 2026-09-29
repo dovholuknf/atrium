@@ -1614,6 +1614,12 @@ shows in the attach replay and the text scrollback view whenever a runner uses a
 `internal/daemon/screen_diff_cases_test.go`, skipped as `backlog-2 81` until it agrees, and it fails once it does
 so the skip gets removed. Owned by @terminal.
 
+**Done by sa81 on `claude/sa81`.** `screen.go` now keeps a scroll region per buffer and follows xterm.js: line feed,
+RI, `CSI S/T/L/M` act inside it, rows leave to history only when the region starts at the top, an invalid one is
+ignored, and RIS, a resize and the alt screen reset it. The skip is gone and thirteen differential cases cover each
+rule. The text replay (`textAtRows`) now writes the region back before the cursor. `collapseRedraws` needed no change.
+DECOM is not implemented, since nothing here uses it.
+
 ## 82. `screen.go` gives a wide character one cell (bug)
 
 Found 2026-09-28 by sa54's differential test (item 54). `screen.go` gives every rune one cell, and xterm.js gives
