@@ -374,6 +374,12 @@ func TestKeepaliveEachRuleBlocksARefresh(t *testing.T) {
 			f.reply(f.now.Add(-56*time.Minute), replyOpt{model: "claude-opus-5"})
 		}},
 		{"fast mode", func(f *kaFix) { f.reply(f.now.Add(-56*time.Minute), replyOpt{speed: "fast"}) }},
+		{"lean card", func(f *kaFix) {
+			f.reply(f.now.Add(-56*time.Minute), replyOpt{})
+			if err := f.st.SetTags(f.task.ID, []string{LeanTag, OriginAgentTag}); err != nil {
+				f.t.Fatal(err)
+			}
+		}},
 		{"5m cache", func(f *kaFix) {
 			f.reply(f.now.Add(-4*time.Minute), replyOpt{ttl5m: true})
 		}},
@@ -533,12 +539,50 @@ func TestKeepaliveClassifiesReceiptsInOrder(t *testing.T) {
 		{"not success", parse(receipt(1, 0, "error_during_execution", 297_000, 1_000)), nil, outcomeFailed},
 		{"warmed", parse(receipt(1, 0, "success", 297_000, 1_000)), nil, outcomeWarmed},
 		{"read too little", parse(receipt(1, 0, "success", 200_000, 1_000)), nil, outcomeMiss},
-		{"wrote too much", parse(receipt(1, 0, "success", 290_000, 60_000)), nil, outcomeMiss},
+		{"read all and wrote its tail", parse(receipt(1, 0, "success", 297_000, 60_000)), nil, outcomeWarmed},
 	}
 	for _, c := range cases {
 		if got := classifyReceipt(c.r, c.err, 300_000); got != c.want {
 			t.Errorf("%s: got %s, want %s", c.name, got, c.want)
 		}
+	}
+	// Receipts from the live ledger (2026-09-28). The first two read 99.99% and
+	// were scored misses by the old 5% write rule. The last two are the lean cards'.
+	live := []struct {
+		ctx, read, write int64
+		want             string
+	}{
+		{54_774, 54_772, 3_507, outcomeWarmed},
+		{154_896, 154_894, 7_755, outcomeWarmed},
+		{123_752, 0, 127_952, outcomeMiss},
+		{99_886, 10_259, 94_346, outcomeMiss},
+	}
+	for _, c := range live {
+		if got := classifyReceipt(parse(receipt(1, 0, "success", c.read, c.write)), nil, c.ctx); got != c.want {
+			t.Errorf("ctx %d read %d write %d: got %s, want %s", c.ctx, c.read, c.write, got, c.want)
+		}
+	}
+}
+
+// A miss is counted and priced: the card's tooltip shows the miss and the
+// whole rewrite it cost, not "0 refreshes" beside $1.02. sa55's card.
+func TestKeepaliveMissShowsInTheView(t *testing.T) {
+	f := newKAFix(t)
+	f.answer = func() ([]byte, error) { return receipt(1, 0, "success", 0, 127_952), nil }
+	f.reply(f.now.Add(-56*time.Minute), replyOpt{ctx: 123_752})
+	f.tick()
+	if f.state() != store.KeepaliveMiss {
+		t.Fatalf("state = %s", f.state())
+	}
+	v, _ := f.k.view(f.task.ID).(*keepaliveCardView)
+	if v == nil || v.Refreshes != 0 || v.Missed != 1 || v.Spent < 1.02 || v.Budget > 0.124 {
+		t.Fatalf("view = %+v", v)
+	}
+	// Stopped, it forks no more, whatever the spend.
+	f.now = f.now.Add(time.Minute)
+	f.tick()
+	if f.forks() != 1 {
+		t.Fatalf("forks = %d after a miss, want 1", f.forks())
 	}
 }
 

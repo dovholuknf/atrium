@@ -4516,8 +4516,15 @@ const KA_CARDS = [
     state: "on", state_at: "2026-09-27T10:00:00Z", refreshes: 3, spent: 0.18, budget: 0.3,
     warm_until: "2026-09-27T19:00:00Z" } }),
   Object.assign({}, T1, { id: "ka-quiet", display_title: "quiet card", keepalive: {
-    state: "on", state_at: "2026-09-27T10:00:00Z", refreshes: 0, spent: 0, budget: 0.3 } }),
+    state: "on", state_at: "2026-09-27T10:00:00Z", why: "not due", refreshes: 0, spent: 0, budget: 0.3,
+    warm_until: "2099-01-01T12:00:00Z" } }),
   Object.assign({}, T1, { id: "ka-none", display_title: "shell card", runner: "shell" }),
+  // sa55's card: one refresh missed the cache and rewrote the whole context.
+  Object.assign({}, T1, { id: "ka-miss", display_title: "missed card", keepalive: {
+    state: "stopped:miss", state_at: "2026-09-28T20:13:07Z", refreshes: 0, missed: 1, spent: 1.02,
+    budget: 0.12, warm_until: "2026-09-28T20:17:26Z" } }),
+  Object.assign({}, T1, { id: "ka-off", display_title: "off card", keepalive: {
+    state: "off", state_at: "2026-09-27T10:00:00Z", refreshes: 0, spent: 0 } }),
 ];
 
 // THE CACHE KEEP-ALIVE ON THE BOARD. The switch in the gear's settings sets the
@@ -4591,7 +4598,7 @@ async function keepaliveSection(browser, base) {
       box.innerHTML = cardHTML(t);
       const c = box.querySelector(".chip.keepalive");
       return { id: t.id, text: c ? c.textContent.trim() : "", stopped: c ? c.classList.contains("stopped") : false,
-        tip: c ? c.getAttribute("data-tip") : "" };
+        watching: c ? c.classList.contains("watching") : false, tip: c ? c.getAttribute("data-tip") : "" };
     }), KA_CARDS);
     const by = Object.fromEntries(chips.map(c => [c.id, c]));
     if (!by["ka-stop"].stopped || !/cold/.test(by["ka-stop"].text)) {
@@ -4603,7 +4610,21 @@ async function keepaliveSection(browser, base) {
     if (!/warm/.test(by["ka-warm"].text) || !/kept warm 3x, \$0\.18 of \$0\.30/.test(by["ka-warm"].tip)) {
       fail("a card being kept warm does not say so: " + JSON.stringify(by["ka-warm"]));
     }
-    if (by["ka-quiet"].text) fail("a card with nothing spent drew a keep-alive chip.");
+    // Watched with nothing spent: its own chip, not the warm or the cold one,
+    // with the reason and the warm-until time in the tooltip.
+    const q = by["ka-quiet"];
+    if (!q.watching || q.stopped || !/watching/.test(q.text) || /warm|cold/.test(q.text)) {
+      fail("a watched card with nothing spent does not draw the watching chip: " + JSON.stringify(q));
+    }
+    if (!/not due for a refresh yet/.test(q.tip) || !/warm until /.test(q.tip) || !/\$0\.30 budget/.test(q.tip)) {
+      fail("the watching chip's tooltip lacks the why, the warm-until or the budget: " + JSON.stringify(q.tip));
+    }
+    if (by["ka-warm"].watching || by["ka-stop"].watching) fail("the warm or the stopped chip reads as watching.");
+    const m = by["ka-miss"];
+    if (!m.stopped || !/missed the cache/.test(m.tip) || !/0 refreshes, 1 miss, \$1\.02 of a \$0\.12 budget/.test(m.tip)) {
+      fail("a card stopped on a miss does not show the miss and its cost: " + JSON.stringify(m));
+    }
+    if (by["ka-off"].text) fail("a card with its switch off drew a keep-alive chip.");
     if (by["ka-none"].text) fail("a card with no switch drew a keep-alive chip.");
 
     // The card menu's switch: offered on a Claude card, reads its state, and
