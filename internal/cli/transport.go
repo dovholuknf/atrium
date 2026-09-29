@@ -123,7 +123,7 @@ func openHub(kind string, keys link.Keys, linkAddr, advertise, service string,
 				clearZrokShare(keys)
 				z.Release()
 			},
-			says:    "a private zrok share",
+			says: "a private zrok share",
 		}, nil
 	}
 	return nil, fmt.Errorf("no transport called %q. one of: %s",

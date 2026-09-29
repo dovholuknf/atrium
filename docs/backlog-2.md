@@ -2369,7 +2369,7 @@ CLAUDE.md the main checkout has, at the same relative paths, and fails loudly if
 brief uses it from then on. Owned by Release and Quality (@merge). A worker's first check is that `CLAUDE.md`
 exists in its worktree.
 
-Status: built on claude/sa76, not merged. `scripts/new-worktree.ps1 -Name <name>`.
+Status: merged. `scripts/new-worktree.ps1 -Name <name>`.
 
 ## 77. A merge pipeline that does not conflict or rerun (feature, HIGH)
 
@@ -2392,10 +2392,9 @@ workers picked the same test-plan letter. Decided with clint:
 
 Order: a, c, f, then b, e, g. Owned by @merge.
 
-Status: b, c and g documented on claude/sa77b, not merged. Layout is `docs/changes/<item>.md`, folded by
-`scripts/fold-changes.ps1`.
+Status: b, c and g merged. Layout is `docs/changes/<item>.md`, folded by `scripts/fold-changes.ps1`.
 
-Status: a and e built on claude/sa77a, not merged. `scripts/merge-check.ps1` and `scripts/setup-merge-worktree.ps1`.
+Status: a and e merged. `scripts/merge-check.ps1` and `scripts/setup-merge-worktree.ps1`.
 
 ## 78. The details popover's token labels mislead (bug)
 

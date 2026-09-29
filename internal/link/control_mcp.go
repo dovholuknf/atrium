@@ -198,9 +198,9 @@ func (c *controlMCP) server() *mcp.Server {
 			"it stopped and not what it said. To learn what it thinks, ask it, and have it " +
 			"answer with `atrium_say`.\n\n" +
 			"`seen` says whether the HUMAN has seen the card's last turn (`unseen`, which a report " +
-				"to the launcher of an agent-launched card also clears, `seen_via` `launcher`) and which of " +
+			"to the launcher of an agent-launched card also clears, `seen_via` `launcher`) and which of " +
 			"that turn's Open Questions they have not answered yet (`open_questions`, `answered`, and " +
-				"`answered_via` is `dismissed` when the operator dismissed the questions without replying). " +
+			"`answered_via` is `dismissed` when the operator dismissed the questions without replying). " +
 			"Leave `card` empty to ask about your own card. Before telling the human your " +
 			"questions are still open, check this: if `unseen` is true they never read them, so " +
 			"repeat them in full rather than referring back.\n\n" +
