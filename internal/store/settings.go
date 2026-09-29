@@ -119,6 +119,12 @@ const SettingEventWindowBytes = "event_window_bytes"
 // missing; see ColdOnlyKinds.
 const SettingEventColdKinds = "event_cold_kinds"
 
+// SettingRoomViewport is the last size a viewer agreed on for any runner in this
+// room, written `COLSxROWS`. A fresh card with no size of its own opens at it, so
+// the first viewer finds the terminal already the size it is about to ask for.
+// Not exposed on the settings page: it is a fact the daemon observed, not a choice.
+const SettingRoomViewport = "room_viewport"
+
 // Setting reads one value. A key that has never been written reads as empty
 // rather than as an error, so a caller does not have to seed anything.
 func (s *Store) Setting(key string) (string, error) {
