@@ -482,6 +482,162 @@ already have (`keepalive_test.go`'s fake fork and clock, `reopen_test.go`'s `sav
 11. Restart the room again with the card still parked. It stays parked and is not launched.
 12. Kill the daemon uncleanly. It comes back as it does today, with nothing parked.
 
+## 7. Parking a card that has gone idle (r-007)
+
+Added 2026-09-29 by @runtime. clint: "do we need to keep directors online all the time? they should shut down after a
+couple hours if they are not working." Unreviewed, like the rest of this draft.
+
+Section 4 parks an idle card only at a restart. This parks it on a clock, with no restart, by the same mechanism, so
+a card parked either way is one kind of thing: `parked_at` set, status kept, resume id kept, no process, and woken by
+the triggers in section 4's table and the say rules in section 5.
+
+### When a card is parked
+
+The reaper tick (`reaper.go`, the same one that runs `reapGoneWorktrees`) asks, for every card in the supervisor's
+`runners` map:
+
+```
+park  if  idle_park_after is on
+      and the card is subject (see "Who is subject")
+      and its status is needs-input or done         (not running, not needs-permission)
+      and it has no pending permission request
+      and it has no open question from a report (status question or blocked, not yet answered)
+      and it has no queued message and no pending restart wake
+      and none of its own workers has a live runner (below)
+      and it has been idle for idle_park_after
+```
+
+**Idle since** is the latest of: the card's last turn end, its last prompt, and `human_at` (section 1). A turn atrium
+started itself for the handoff (below) does not move it, or the handoff would reset the clock it exists for.
+
+**Its own workers** are the cards whose `work_item.launcher_id` is this card (`store/ledger.go`). Any one of them with a
+live runner, in any status, keeps the launcher up. That includes a worker that reported `done` and sits at its prompt
+awaiting review (item 83). Such a worker is itself subject and parks on the same clock, and then its launcher is free
+to park. So a director and its idle workers wind down together, workers first, and none is parked while a worker it is
+waiting on is still working.
+
+**The setting.** `idle_park_after`, in seconds, daemon-wide, in the gear beside keep-alive. Default 7200 (2 hours).
+`off` disables the whole section. A floor of 30 minutes, so a mistyped value cannot park a card between two of its
+own turns.
+
+### Who is subject
+
+- **Agent cards are subject.** `origin:agent` is on every card an agent launched, directors and subagents alike.
+- **clint's own cards are exempt unless he opts in.** A card with no `origin:agent` (the board's launch dialog, a
+  joined session, a fixture) is never parked on the clock. It opts in with the tag `atrium:park-idle`, set from the
+  card menu. The restart rule in section 4 still applies to it, as today.
+- **The orchestrator card is one of clint's.** `atrium-87300` has no `origin:agent` (its tags are `orchestrators`),
+  so it is exempt by this rule until clint tags it `atrium:park-idle`. That is the opt-in, and question 7 asks him.
+- **Pinned is not exempt by itself.** A pin is about where a card sits on the board, not about keeping a process up.
+- **Never:** a fixture, a shell, a card with a lent session in use, a throwaway card.
+
+### The handoff, first, for a director
+
+A card tagged `atrium:director`, or opted in with `atrium:park-idle`, writes its handoff before it is parked. A
+subagent does not: its brief and its branch are its state, and it has reported.
+
+It reuses item 66's capture step (`newcontext.go`): the capture prompt, `handoffWritten`, and its timeout. Parking
+waits for the capture to finish. A capture that times out parks anyway and records that on the card, because a card
+that cannot write its handoff is still using a process nobody is using.
+
+**When to take it: before the cache goes cold.** A capture turn run at the 2 hour mark reads a context whose 1 hour
+cache has expired, so it writes the whole context again, 150k to 270k tokens by item 38's table, for every director,
+every time. The same turn run at 50 minutes of idle reads the cache warm, for a few thousand tokens. So the capture
+runs at `idle_park_after` minus 70 minutes, or at 50 minutes idle, whichever is later, and the park follows at
+`idle_park_after` with no second turn. If the card does anything in between, its idle clock restarts and so does
+this. This is question 6.
+
+**It depends on item 91.** The orchestrator and @merge share one directory, and today's fixed name `HANDOFF.md` means
+one card's capture overwrites the other's, and `handoffWritten` can pass on the other card's write. A clock that takes
+handoffs unattended makes that likely rather than rare. Item 91's option 1 (a per-card file name) has to land first.
+
+### Parking it
+
+The same three steps as section 4, run on one card instead of at a shutdown:
+
+1. Snapshot the status, before the wind-down (section 4's hazard: `awaitExit` files the card `dead` otherwise).
+2. Wind the runner down with its exit keys (`windDown`, as the worktree-gone reaper does). Claude records
+   `prompt_input_exit`.
+3. `parkCard`: restore the snapshot status, set `parked_at`, and write one `status-changed` event with
+   `{"parked": true, "was": <status>, "by": "idle", "idle_for": <seconds>}`. No toast and no chime, the parked mark
+   on the card, as in section 4.
+
+### Waking it
+
+Section 5's rules, unchanged, with one addition for reports:
+
+- **A say from clint** (a board message with no `from`, a key in its terminal, Resume, an action) resumes it at once.
+- **A peer's say** gets section 5's `parked` answer, nothing queued, and needs `wake=true`.
+- **A report owed to it** (`atrium_report` from one of its own workers) resumes it at once, as if `wake=true` were
+  set. A report is an answer the launcher asked for. Refusing it would strand the worker, which cannot report again,
+  and it is the case this design most often meets, since a director is parked only after its workers are. This is
+  question 8.
+
+**A director comes back with its HANDOFF.md read.** `unpark` resumes the conversation by its resume id, the way
+section 4 does, so the session has its own history. Before the waking message is delivered, `unpark` queues item 66's
+wake prompt for any card that took a handoff: "You were parked after N hours idle. Read HANDOFF.md, then act on what
+follows." The waking message follows it through the ordinary queued path, never typed (the peer bus rule, section
+5). If the resume id no longer resumes, the fresh-start fallback `spawnPTYResume` already has starts a new
+conversation, and the wake prompt is what makes that survivable. The orchestrator card gets the same treatment once
+it is opted in.
+
+### The silent-stop notice for a resident director
+
+Raised by the orchestrator 2026-09-29: "ended its turn without reporting" reaches it several times an hour for
+directors that are idle by design, waiting on their workers or on clint.
+
+**Why it rings.** A director is agent-launched (the orchestrator launched it), so `silentStop` and the board's STUCK
+mark both apply (`a2a.go`, `stoppedSilently`). Item 41 made a resident owe its launcher a report for every prompt,
+from anybody. So when a worker's report wakes the director and the director merges, relaunches or simply waits and
+ends its turn, the turn "ran since the last prompt and said nothing to the launcher", and the orchestrator is told.
+That is right for a worker and wrong for a director whose next report is due when its batch is done, not after every
+worker message.
+
+**Two options:**
+
+1. Skip the notice, and the STUCK mark, for every `atrium:director` card. Simplest. The cost: a director that really
+   stalls on something the orchestrator asked for is never flagged, and it is the orchestrator's only signal for that.
+2. **Skip it while the director has outstanding workers.** A worker is outstanding while it has a live runner or is
+   parked (`parked_at` set), whatever its status. That includes a `done` worker at its prompt awaiting review or
+   merge. A culled or dead worker is not outstanding. Once every worker has ended, a director that still has not
+   reported gets the one notice, which is exactly the case worth hearing about: its batch is done and it said nothing.
+
+**Recommendation: option 2**, in `stoppedSilently` itself, so the notice and the STUCK mark keep one definition of
+owing (the reason that function's comment gives). Counting a parked worker as outstanding matters with idle parking:
+otherwise every worker parking at the 2 hour mark would end the suppression and ring its director once, which is the
+same noise on a slower clock.
+
+Two rules go with it, whichever option is picked:
+
+- **A parked card is never silently stopped.** It has no process and its status is kept, so a parked `needs-input`
+  director would otherwise read STUCK on every watchdog tick. `stoppedSilently` returns false for `parked_at` set.
+- **A report still clears the debt as today.** A director that reports "waiting on clint" owes nothing afterwards,
+  so a wait on clint that was reported never rings. Only an unreported wait does, and under option 2 only once its
+  workers have ended.
+
+Tests: `TestDirectorWithLiveWorkerNotSilent`, `TestDirectorWithParkedWorkerNotSilent`,
+`TestDirectorAllWorkersEndedIsSilent` (one notice, on the usual backoff), `TestWorkerSilentStopUnchanged`,
+`TestParkedCardNeverSilent`, and `TestStuckMarkMatchesNotice` for each of those.
+
+### Tests, for the builder
+
+- `TestIdleParkRule`: a table over status, pending permission, open question, queued message, pending wake and a live
+  worker. Parks only on the all-clear.
+- `TestIdleClockIgnoresHandoffTurn`: the capture turn does not move idle-since.
+- `TestIdleParkWorkersFirst`: a director with a done worker at its prompt is not parked, the worker parks, then the
+  director does.
+- `TestIdleParkExemptsOperatorCards`: no `origin:agent` and no `atrium:park-idle`, never parked. With the tag, parked.
+- `TestIdleParkSetting`: off parks nothing, under the floor is clamped, the default is 2 hours.
+- `TestIdleHandoffBeforeCold`: the capture runs at 50 minutes idle, the park at 2 hours, one capture.
+- `TestIdleHandoffTimeoutStillParks`: recorded on the card.
+- `TestIdleParkKeepsStatus`: a `done` card is parked as `done`, not `dead`.
+- `TestReportWakesParkedLauncher`: a worker's `atrium_report` resumes it and is delivered, with no `wake`.
+- `TestUnparkQueuesHandoffWake`: the wake prompt is queued ahead of the message, and neither is typed.
+
+Test plan: leave a director idle past the setting with no workers. Its handoff is written near 50 minutes, it is
+parked at 2 hours with the mark, and `atrium_peers` shows it parked. Say to it from a peer: `parked`. Say from the
+board: it resumes, reads HANDOFF.md, then answers.
+
 ## Order of building
 
 The order is meant to keep every step shippable and to keep the keep-alive rule safe first.
@@ -508,3 +664,22 @@ needs care. The board half is HUB-SIDE and safe alone, the daemon half needs a r
    rows before it is settled, which this design did not run.
 4. **Is 3 hours right?** It is the middle of your range. 2 hours saves one refresh per touch, 4 hours buys one more.
 5. **Should the operator's say to a parked card resume with no confirmation?** Recommend yes. A peer's needs one.
+
+Section 7, idle parking (r-007). Decided by the orchestrator 2026-09-29, without clint: 6 yes, 8 yes, 9 yes. Asked of
+clint: 7, and whether to build. 10 is open.
+
+6. **Take a director's handoff at 50 minutes idle, while its cache is warm, and park it at 2 hours?** Recommend yes. A
+   handoff taken at the 2 hour mark rewrites each director's whole context on a cold cache, 150k to 270k tokens every
+   time. The cost of taking it early is a handoff up to 70 minutes older than the park, which a director that does
+   nothing in that time does not notice.
+7. **Opt the orchestrator card in?** It is one of your cards by the rule (no `origin:agent`), so it is exempt until you
+   tag it `atrium:park-idle`. Recommend yes, since the orchestrator asked for it. Any other card of yours stays up
+   unless you tag it.
+8. **Should a worker's `atrium_report` wake a parked launcher with no `wake=true`?** Recommend yes. A report is an
+   answer the launcher asked for, and a worker refused with `parked` has no second report to send.
+9. **Item 91 first?** Parking takes handoffs unattended, and the orchestrator and @merge share one `HANDOFF.md`.
+   Recommend building item 91's per-card file name before this section.
+10. **The silent-stop notice for directors: skip it for every director, or only while its workers are outstanding?**
+    Recommend only while outstanding (live or parked workers). Skipping it always removes the orchestrator's only
+    signal that a director finished a batch and said nothing. This part does not need idle parking, and it can be
+    built on its own first, since it is the noise reaching the orchestrator today.
