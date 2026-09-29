@@ -161,7 +161,11 @@ function Resolve-AtriumExe {
 function Stop-AtriumGracefully {
     param([string] $ExePath)
 
-    if ($ExePath -and (Test-Path -LiteralPath $ExePath)) {
+    # `atrium stop` names a daemon by URL, not by task. A task that is not
+    # running is not what is listening there, and stopping the URL anyway
+    # stopped a real room while a throwaway task was being tested.
+    $running = Get-AtriumTask
+    if ($ExePath -and (Test-Path -LiteralPath $ExePath) -and $running -and $running.State -eq 'Running') {
         # NOT $args: that is an automatic variable inside a function and
         # assigning to it works right up until somebody splats it somewhere
         # else and gets the caller's arguments instead.
