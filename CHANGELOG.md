@@ -5,6 +5,15 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **A provisioned room's claude cards get atrium-control, so they can answer another room.** See
+  `docs/cross-room-say-design.md` "A room without atrium-control" and `docs/test-plan.md` CE7.
+
+  `scripts/provision-room.ps1` registered `atrium control` with `claude mcp add --scope user`. The claude runner
+  row passes `--strict-mcp-config`, so a launched session never loaded it, and an m1mini card had no `atrium_say`.
+  The script now writes the stdio server into `~/.atrium/mcp.json` on the room and puts `--mcp-config` on the
+  room's claude row, the same shape as the hub machine's. Proven on m1mini 2026-09-28: a launched card said to a
+  card on claude-sg4 and it arrived. Script only, nothing to restart.
+
 - **A card launched lean can be started with the full setup.** See `docs/backlog-2.md` item 64 and
   `docs/test-plan.md` section CF.
 
