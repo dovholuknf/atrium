@@ -4482,8 +4482,8 @@ too. Go tests in `internal/daemon/contextsize_test.go` cover the size read from 
 one notice per crossing, a new notice after the card falls back under the line and crosses again, none for a card a
 human started, and none again after a restart. The headless section `contextSize` in
 `scripts/test-board-headless.js` (`HEADLESS_ONLY=contextSize`) covers the mark, no number on any card face or the
-terminal bar, the two-second hover, the menu's `details`, the drawer, and that nothing reads usage before one of them
-opens. See `docs/backlog-2.md` item 45.
+terminal bar, the one-second hover, the menu's `details`, the drawer, and that nothing reads usage before one of them
+opens. See `docs/backlog-2.md` item 45. BZ5 is item 69.
 
 ### BZ1. The mark, and no number
 
@@ -4494,12 +4494,12 @@ opens. See `docs/backlog-2.md` item 45.
 mark names the threshold. No card face, stack row, terminal bar or terminals list shows a context number. A card
 under the line has no mark. `reset to default (150)` puts it back.
 
-### BZ2. Two seconds on a card, and the menu's `details`
+### BZ2. A second on a card, and the menu's `details`
 
-1. Rest the pointer on a Claude card for one second, then two.
+1. Rest the pointer on a Claude card for half a second, then one.
 2. Move off it. Then right-click the card and pick `details`.
 
-**Expected:** nothing at one second. At two, a small panel beside the card: its name, status and model, the context
+**Expected:** nothing at half a second. At one, a small panel just below and right of the pointer: its name, status and model, the context
 now as a large number over a bar with the threshold marked, and turns, in, out, cache read, cache write and the
 estimate. Numbers shimmer for a moment while they are read. Past the line the number and the bar are in the warn
 colour. Moving off the card and the panel closes it. From the menu the same panel stays until a click elsewhere or
@@ -4521,6 +4521,23 @@ change size. It follows the terminal to the second card. Clicking the strip agai
 **Expected:** the orchestrator gets one message: `<worker> is at <N>k context. Tell it to report what it has and
 stop, or hand off.` Nothing after the later turns, and nothing after the restart. A card you started yourself, past
 the same line, has the mark and sends nobody anything.
+
+### BZ5. On every tab, under the pointer
+
+Backlog-2 item 69. Board only: the board rebuilt, and the hub restarted for a hub board. The headless section `peekEverywhere`
+(`HEADLESS_ONLY=peekEverywhere`) holds the pointer on the same card's entry on the stack, the board and the
+terminals list while the tab redraws, and opens it with the pointer at each edge and corner of the screen.
+
+1. Pin a Claude card so it has a row on the terminals list. Rest the pointer on its entry for a second on the stack,
+   then the board, then the terminals list.
+2. On each tab, rest it again on an entry low on the screen, near its right end. Shrink the window if none is low.
+3. Rest it on a stack row at the far right of the window.
+
+**Expected:** 1 opens the same panel on all three tabs, its top left corner just below and right of the pointer
+wherever on the entry the pointer is, never beside the card. 2 opens it above the pointer, since there is no room
+below. 3 opens it pushed in from the right edge, still under the pointer. It never crosses an edge of the window
+and never sits over the pointer while there is room for it elsewhere. The menu's `details` opens from where the
+pointer clicked it.
 
 
 ## CA. A launch picks its model and effort, and passes extra args and env

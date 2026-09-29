@@ -492,6 +492,12 @@ const server = http.createServer((req, res) => {
     if (tasksMode === "keepalive") { sendJSON(res, { tasks: KA_CARDS }); return; }
     if (tasksMode === "stuck") { sendJSON(res, { tasks: stuckCards() }); return; }
     if (tasksMode === "ctxsize") { sendJSON(res, { tasks: CTX_CARDS }); return; }
+    if (tasksMode === "peek") {
+      // Idle a second longer on every read, so a refresh redraws the entries.
+      peekReads++;
+      sendJSON(res, { tasks: PEEK_CARDS.map(t => Object.assign({}, t, { idle_seconds: 30 + peekReads })) });
+      return;
+    }
     if (tasksMode === "loop") {
       sendJSON(res, { tasks: [Object.assign({}, LOOP,
         { supervised: loopListSupervised, pinned: true })] });
@@ -5120,10 +5126,14 @@ const CTX_USAGE = {
     totals: { rows: 41, input: 20400, output: 96100, cache_write_5m: 0, cache_write_1h: 388000,
       cache_read: 6100000, cost: 7.62 } },
 };
+// The same cards pinned, so the terminals list draws a row for each without a
+// live session behind it.
+const PEEK_CARDS = CTX_CARDS.map(t => Object.assign({}, t, { pinned: true }));
+let peekReads = 0;
 
 // PAST THE GEAR'S CONTEXT THRESHOLD, A CARD WEARS A MARK AND NO NUMBER, on the
 // stack and the board. The number is in its details, one compact view reached
-// three ways: two seconds on the card, "details" on its menu, and the expando
+// three ways: a second on the card, "details" on its menu, and the expando
 // on the terminal's shortcut strip, which slides it up as a drawer. The details
 // read the card's usage when they open and never before. The gear holds the
 // threshold, 150k by default, and saves it to the room.
@@ -5219,13 +5229,13 @@ async function contextSizeSection(browser, base) {
     if (got.barSlot || got.barNumber) fail("the terminal bar still carries the context number.");
     if (usageReads.length) fail("the board read a card's usage before anything was opened: " + usageReads.join(","));
 
-    // Two seconds on a stack row opens the details, and not one second.
+    // A second on a stack row opens the details, and not half a second.
     await sp.hover('#stack-list .stackrow[data-id="cx-big"] .title, #stack-list .stackrow[data-id="cx-big"]');
-    await new Promise(r => setTimeout(r, 1000));
+    await new Promise(r => setTimeout(r, 500));
     let pk = await peekState();
-    if (pk && pk.on) fail("the details opened after one second of hover, not two.");
+    if (pk && pk.on) fail("the details opened after half a second of hover, not one.");
     await sp.waitForFunction(() => { const p = document.querySelector(".peek"); return p && p.classList.contains("on"); },
-      null, { timeout: 4000 }).catch(() => fail("two seconds on a card did not open its details."));
+      null, { timeout: 4000 }).catch(() => fail("a second on a card did not open its details."));
     await sp.waitForFunction(() => /212k/.test((document.querySelector(".peek") || {}).textContent || ""),
       null, { timeout: 4000 }).catch(() => {});
     pk = await peekState();
@@ -5310,6 +5320,161 @@ async function contextSizeSection(browser, base) {
   if (errors.length) fail("the context size page threw: " + errors.join(" | "));
 }
 
+// A SECOND ON A CARD OPENS ITS DETAILS ON EVERY TAB, UNDER THE POINTER. The
+// board, the stack and the terminals list share the one hover in js/peek.js
+// and the one body. The popover opens from where the pointer is, not beside
+// the card: just below and right of it, pushed in from any edge it would
+// cross, and above the pointer when there is no room below. See
+// docs/backlog-2.md item 69.
+async function peekEverywhereSection(browser, base) {
+  const W = 1400, H = 900;
+  const ctx = await browser.newContext({ viewport: { width: W, height: H } });
+  const p = await ctx.newPage();
+  const errors = [];
+  p.on("pageerror", e => errors.push(String(e)));
+  await ctx.route("**/v1/tasks/*/usage*", route => {
+    const id = decodeURIComponent(route.request().url().split("/v1/tasks/")[1].split("/")[0]);
+    route.fulfill({ json: CTX_USAGE[id] || { context_now: 0, totals: {}, rows: [] } });
+  });
+  const state = () => p.evaluate(() => {
+    const el = document.querySelector(".peek");
+    if (!el || !el.classList.contains("on")) return null;
+    const r = el.getBoundingClientRect();
+    return { id: el.dataset.id, text: el.textContent.replace(/\s+/g, " ").trim(),
+      x: r.left, y: r.top, r: r.right, b: r.bottom, vw: innerWidth, vh: innerHeight };
+  });
+  // Wherever it opened, it is on the screen and not over the pointer.
+  const onScreen = (pk, px, py, what) => {
+    if (pk.x < 8 - 0.5 || pk.y < 8 - 0.5 || pk.r > pk.vw - 8 + 0.5 || pk.b > pk.vh - 8 + 0.5) {
+      fail(what + ": the details cross the edge of the screen: " + JSON.stringify(pk));
+    }
+    if (px >= pk.x && px <= pk.r && py >= pk.y && py <= pk.b) fail(what + ": the details open over the pointer.");
+  };
+  const settle = () => new Promise(r => setTimeout(r, 450));
+  const reset = async () => {
+    await p.mouse.move(W / 2, 3);
+    await p.evaluate(() => closePeek());
+  };
+  const tabs = [
+    ["stack", '#stack-list .stackrow[data-id="cx-big"]'],
+    ["board", '#board .card[data-id="cx-big"]'],
+    ["terms", '#term-list .card.tab[data-id="cx-big"]'],
+  ];
+  const was = tasksMode;
+  tasksMode = "peek";
+  try {
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector(tabs[0][1], { state: "attached", timeout: 15000 });
+    for (const [view, sel] of tabs) {
+      await p.setViewportSize({ width: W, height: H });
+      await p.evaluate(v => document.querySelector(`.tab[data-view="${v}"]`).click(), view);
+      const ok = await p.waitForSelector(sel, { state: "visible", timeout: 5000 }).then(() => true)
+        .catch(() => { fail("the " + view + " tab draws no entry for the card."); return false; });
+      if (!ok) continue;
+      await new Promise(r => setTimeout(r, 300));
+      await reset();
+
+      // Held still on the entry: nothing at half a second, the details at one,
+      // their top left corner just below and right of the pointer.
+      const box = await p.locator(sel).boundingBox();
+      const px = Math.round(box.x + Math.min(40, box.width / 2)), py = Math.round(box.y + box.height / 2);
+      // The room redraws the tab while the pointer is held there, the way a
+      // busy one does: the entry under it is replaced several times over.
+      await p.evaluate(s => {
+        document.querySelector(s).dataset.peekOld = "1";
+        window.peekRedraw = setInterval(() => runRefresh(), 120);
+      }, sel);
+      await p.mouse.move(px, py);
+      await new Promise(r => setTimeout(r, 500));
+      if (await state()) fail("on the " + view + " tab the details opened after half a second, not one.");
+      await p.waitForFunction(() => /212k/.test((document.querySelector(".peek.on") || {}).textContent || ""),
+        null, { timeout: 3000 }).catch(() => fail("a second on the card on the " + view + " tab did not open its details."));
+      const redrawn = await p.evaluate(s => {
+        clearInterval(window.peekRedraw);
+        return !document.querySelector(s).dataset.peekOld;
+      }, sel);
+      if (process.env.DEBUG_HEADLESS) console.log(view + " entry redrawn under the pointer: " + redrawn);
+      await settle();
+      let pk = await state();
+      if (pk) {
+        if (pk.id !== "cx-big" || !/warns at 150k/.test(pk.text) || !/\$7\.62/.test(pk.text)) {
+          fail("the " + view + " tab's details are not the card's body: " + pk.text);
+        }
+        if (Math.abs(pk.x - (px + 4)) > 2 || pk.y < py + 4 || pk.y > py + 20) {
+          fail("on the " + view + " tab the details did not open under the pointer at " + px + "," + py + ": " + JSON.stringify(pk));
+        }
+        onScreen(pk, px, py, view);
+      }
+      // Off the card and off the popover, it goes.
+      await p.mouse.move(W / 2, 3);
+      await p.waitForFunction(() => !document.querySelector(".peek.on"), null, { timeout: 3000 })
+        .catch(() => fail("on the " + view + " tab the details stayed after the pointer left."));
+
+      // The entry's right end near the bottom of the screen: the page pushed
+      // down so the entry sits low with room above it, and the screen cut to
+      // just below it. No room below, so above the pointer, and pushed in
+      // from the right edge where the entry reaches it.
+      await reset();
+      await p.evaluate(() => { document.querySelector("main").style.paddingTop = "420px"; });
+      await new Promise(r => setTimeout(r, 200));
+      const low = await p.locator(sel).boundingBox();
+      await p.setViewportSize({ width: W, height: Math.ceil(low.y + low.height + 40) });
+      await new Promise(r => setTimeout(r, 300));
+      const cut = await p.locator(sel).boundingBox();
+      const cx = Math.round(cut.x + cut.width - 3), cy = Math.round(cut.y + cut.height / 2);
+      const hit = await p.evaluate(([x, y, s]) => {
+        const e = document.elementFromPoint(x, y);
+        return !!(e && e.closest(s));
+      }, [cx, cy, sel]);
+      if (!hit) fail("the " + view + " tab's entry is not under the pointer near the bottom of the screen.");
+      await p.mouse.move(cx, cy);
+      await p.waitForFunction(() => /212k/.test((document.querySelector(".peek.on") || {}).textContent || ""),
+        null, { timeout: 3000 }).catch(() => fail("a second near the bottom of the " + view + " tab's entry did not open its details."));
+      await settle();
+      pk = await state();
+      if (pk) {
+        if (pk.b > cy) fail("at the bottom of the " + view + " tab the details did not flip above the pointer: " + JSON.stringify(pk));
+        if (cx + 4 + (pk.r - pk.x) > W - 8 && Math.abs(pk.r - (W - 8)) > 1) {
+          fail("at the right end of the " + view + " tab's entry the details are not pushed in from the edge: " + JSON.stringify(pk));
+        }
+        onScreen(pk, cx, cy, view + " near the bottom");
+      }
+      await reset();
+      await p.evaluate(() => { document.querySelector("main").style.paddingTop = ""; });
+    }
+
+    // The four edges and the four corners, with the pointer really there: it
+    // stays inside the screen, below the pointer where there is room and
+    // above it where there is not, and never under it.
+    await p.setViewportSize({ width: W, height: H });
+    await p.evaluate(() => document.querySelector('.tab[data-view="stack"]').click());
+    await p.waitForSelector(tabs[0][1], { state: "visible", timeout: 5000 });
+    const spots = [
+      ["top left", 2, 2], ["top", W / 2, 2], ["top right", W - 2, 2], ["right", W - 2, H / 2],
+      ["bottom right", W - 2, H - 2], ["bottom", W / 2, H - 2], ["bottom left", 2, H - 2], ["left", 2, H / 2],
+    ];
+    for (const [name, x, y] of spots) {
+      await reset();
+      await p.mouse.move(x, y);
+      await p.evaluate(sel => openPeek("cx-big", document.querySelector(sel), "hover"), tabs[0][1]);
+      await p.waitForFunction(() => /212k/.test((document.querySelector(".peek.on") || {}).textContent || ""),
+        null, { timeout: 3000 }).catch(() => {});
+      await settle();
+      const pk = await state();
+      if (!pk) { fail("the details did not open with the pointer at the " + name); continue; }
+      onScreen(pk, x, y, "pointer at the " + name);
+      if (y > H / 2 && pk.b > y) fail("with the pointer at the " + name + " the details are not above it: " + JSON.stringify(pk));
+      if (y < H / 2 && pk.y < y) fail("with the pointer at the " + name + " the details are not below it: " + JSON.stringify(pk));
+      if (x < W / 2 && Math.abs(pk.x - 8) > 1) fail("with the pointer at the " + name + " the details are not at the left edge: " + JSON.stringify(pk));
+      if (x > W / 2 + 1 && Math.abs(pk.r - (W - 8)) > 1) fail("with the pointer at the " + name + " the details are not pushed in from the right: " + JSON.stringify(pk));
+    }
+  } finally {
+    await ctx.close();
+    tasksMode = was;
+  }
+  if (errors.length) fail("the peek page threw: " + errors.join(" | "));
+}
+
 // A write that names a card never carries `writeRoom`, the room of the last
 // editor that was open. With three rooms, a start (`POST /v1/launch` with a
 // `task_id`) and a drag into a group (`PATCH /v1/tasks/<id>`) carried it to the
@@ -5382,7 +5547,7 @@ async function main() {
       pasteBig: pasteBigSection, typing: typingSection, alias: aliasSection, copySelect: copySelectSection, busyGuard: busyGuardSection, keepalive: keepaliveSection,
       stuck: stuckSection, carryLink: carryLinkSection,
       skinScope: skinScopeSection, skinHeal: skinHealSection, toastLives: toastLivesSection,
-      history: historySection, contextSize: contextSizeSection, cardRoute: cardRouteSection };
+      history: historySection, contextSize: contextSizeSection, peekEverywhere: peekEverywhereSection, cardRoute: cardRouteSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -7316,6 +7481,7 @@ async function main() {
     await stuckSection(browser, base);
     // ── every card shows its context size, warned past the gear's line ────
     await contextSizeSection(browser, base);
+    await peekEverywhereSection(browser, base);
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e));
     if (process.env.DEBUG_HEADLESS) {
