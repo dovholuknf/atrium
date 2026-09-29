@@ -1640,21 +1640,33 @@ Design (@ui), small on purpose:
 - **What it mutes.** Toasts, desktop notifications and the sound that goes with them, everything `notify` in
   `js/notify.js` would pop. The drawer keeps logging every entry and the bell's badge keeps counting, so nothing is
   lost and opening the drawer shows what was held back. The marks on cards are untouched.
-- **Permission requests still notify.** A permission blocks a session until a human answers, the same exception item
-  44 makes. The button's tip says so. Open for clint below.
+- **Held back means recorded, not dropped.** Today the drawer is filled by `toast` (through the toast-log wrapper)
+  and by the one explicit `logNotification` call on the desktop branch. Off skips both `toast` and
+  `showNotification`, so the off path calls `logNotification` itself, once per alert, and plays no sound. Without that
+  the switch would mute everything and silently empty the drawer it promises to fill.
+- **Permission requests still notify. Built that way, waiting on clint.** A permission blocks a session until a
+  human answers, the same exception item 44 makes, so off lets them through the normal `notify` path. The choice is
+  ONE named constant in `js/notify.js` (off silences permissions: false), so flipping it is one line.
+  `docs/changes/79.md` names it as waiting on clint. The button's tip says permissions still come through.
 - **Per browser, in `localStorage`** (`atrium.notify.off`), like the sound mute (`atrium.sound`). A phone and a desk
   want different answers, and the daemon has no notion of which browser is which. Every window of one browser shares
   it, and a popped-out window follows the board.
 - **The bell shows it.** Off, the bell is drawn as a struck bell (U+1F515) with the tip "notifications are off. click
-  to see what arrived", and the badge still counts. On, it is the bell it is today.
+  to see what arrived", and the badge still counts. On, it is the bell it is today. The toggle button and the bell
+  carry the same text as their `aria-label`, repainted with the state.
 - **Item 44.** 44 is a filter on WHICH cards notify (not agent-launched ones). 79 is a master switch over all of
   them. Off beats everything, including a card's own per-card override, because it is the operator saying stop now.
   On, 44's filter and per-card overrides apply as they do today. The gear's notifications section shows the same
   switch, so the two are found in one place.
 - **Not built.** A timed mute ("for an hour") is the obvious next step and is left out until asked for.
 
-Open question for clint: should "off" silence permission requests too? The recommendation is no, since a session
-blocks on one until somebody answers, and a muted board is the likeliest place to forget one.
+Open question for clint: should "off" silence permission requests too? The build says no, since a session blocks on
+one until somebody answers, and a muted board is the likeliest place to forget one. Flipping it is the one constant
+above.
+
+Review: Mercurius round 1 (s_12NjmPjbUY9e) found the permission question left formally open (C1, closed above as
+built-no, flippable) and no record-only path for held-back alerts (C2, folded as the `logNotification` rule). Its
+advisory, an `aria-label` that follows the state, is folded too.
 
 ## 80. Real-time token burn and usage charts (feature)
 
