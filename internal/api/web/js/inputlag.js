@@ -117,6 +117,39 @@ function lagFinish(s) {
   }
 }
 
+// ── a paste, step by step ───────────────────────────────
+//
+// One line per paste when the log is on, so a report of "the paste was slow"
+// says WHICH step was: the clipboard read, the upload, the send, the socket
+// draining, the runner's first output, or the box itself. Each step is a
+// `performance.now()` stamp and nothing more, and every hook is one boolean
+// test when the log is off.
+//
+//   [inputlag] 12:00:00.123 paste (paste event) 812ms, cleared by output:
+//     event 0, clipboard 3.1, sent 4.0, shown 4.2, drained 9.5, output 11.0, cleared 812.4
+let lagPaste = null;
+
+function lagPasteStart(how) {
+  if (!lagOn || lagPaste) return;
+  lagPaste = { how, t0: performance.now(), marks: [] };
+}
+
+// A step's name stamps once, the first time only: the first output after the
+// drain is the interesting one, not the fortieth.
+function lagPasteMark(name) {
+  if (!lagPaste || lagPaste.marks.some(m => m[0] === name)) return;
+  lagPaste.marks.push([name, performance.now() - lagPaste.t0]);
+}
+
+function lagPasteDone(why) {
+  const s = lagPaste;
+  if (!s) return;
+  lagPaste = null;
+  const total = performance.now() - s.t0;
+  const steps = s.marks.map(m => `${m[0]} ${m[1].toFixed(1)}`).join(", ");
+  console.info(`[inputlag] ${lagClock()} paste (${s.how}) ${total.toFixed(0)}ms, cleared by ${why}: ${steps}`);
+}
+
 function lagPercentile(sorted, p) {
   return sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * p))];
 }
@@ -178,6 +211,7 @@ function lagStop() {
   clearInterval(lagTimer);
   lagTimer = 0;
   lagPending = null;
+  lagPaste = null;
   lagSamples = [];
   lagStalls = [];
 }
