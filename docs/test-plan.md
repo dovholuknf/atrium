@@ -5967,3 +5967,49 @@ atrium's `--settings` file. It has no `--dangerously-skip-permissions` and no le
 2. Wait for a refresh to come due.
 
 **Expected:** no fork runs and the card's chip says why, starting `launch options:`.
+
+## DP. Runner update cards withdraw and re-offer
+
+### DP1. A satisfied card is withdrawn
+
+1. With an update card for a runner in the inbox, update that runner outside atrium.
+2. Launch that runner.
+
+**Expected:** the update card leaves the inbox and shows in the archive, with an event saying the installed version is
+what the card offered.
+
+### DP2. A started card does not block the next release
+
+1. Start an update card, so it is past the inbox.
+2. When a release newer than the one it offered is published, launch that runner.
+
+**Expected:** a fresh update card appears in the inbox. The started card keeps its title and history.
+
+### DP3. A started card at the current release is not repeated
+
+1. Start an update card and launch the runner again before any newer release exists.
+
+**Expected:** no second card appears.
+
+## DQ. An alias reaches a card that reported done
+
+### DQ1. Say and exit by alias
+
+1. Launch a worker with the alias `sa89x` and have it report done, leaving its terminal open.
+2. `atrium_say` to `sa89x`, then `atrium_exit` to `sa89x`.
+
+**Expected:** both are accepted and land on that card, not "no session called sa89x".
+
+### DQ2. A live card wins
+
+1. Launch a second worker and give it the alias `sa89x` while the first is still done.
+2. `atrium_say` to `sa89x`.
+
+**Expected:** the message goes to the live worker.
+
+### DQ3. Dead and archived do not answer
+
+1. Exit the second worker so its card is dead, then archive the first.
+2. `atrium_say` to `sa89x`.
+
+**Expected:** "no session called sa89x".
