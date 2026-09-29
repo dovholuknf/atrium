@@ -2517,7 +2517,12 @@ review a megabyte of escapes. Instead:
   The long reply is scripted as numbered lines, `L0001` to `L0300`, each followed by a fixed tail, so what was
   lost is counted directly rather than sampled. It is not held to a floor measured from today's renderer, which
   would bless the bug. See the assertions below.
+- **The throwaway room, and each rule here has bitten before.** `ATRIUM_LOCATION` is a private dir and
+  `ATRIUM_SHARED=-`. Without that it takes 7777 and hijacks every live session's hooks. It starts from a fresh
+  empty database and never a copy of the live one, which would resume live conversations through fixtures. Stop
+  only the throwaway process, by its own pid.
 - **Clint signs off on the files before they are committed**, because committing them publishes them. The
+  fixture files stay uncommitted in the worker's tree until he does. The test split is committed on its own. The
   worker's report lists each file, its size, and how it was produced.
 - A `testdata/scrollback/README.md` says how each file was made, so it can be recaptured when claude-code's
   output changes.
@@ -2527,7 +2532,8 @@ review a megabyte of escapes. Instead:
 - **The two ordinary fixtures** each pin their own floor: the measured survival percentage, less 5 points to
   allow for a legitimate renderer change, and never below the old 40%. A capture that measures under 80% is not
   pinned. It is read by hand first, the way `01a080db` was, because an ordinary scripted session should sit at 80
-  to 100.
+  to 100. The floors live in a small table in `screen_real_test.go` beside the fixture cases, keyed by file
+  name, so recapturing a fixture and re-pinning it is one diff.
 - **The lost-lines fixture gets two tests, and neither is derived from today's number.**
   `TestLostLinesFixtureKeepsEveryLine` asserts all 300 numbered lines are in the transcript, in order. It is the
   target, and until item 74 lands it opens with `t.Skip("item 74 open: ...")` naming the backlog section. The fix
@@ -2545,7 +2551,8 @@ quadratic in time and still produces linear output, which is the hazard its comm
 honest about both:
 
 - The size check is renamed `TestReplayOutputGrowsLinearly` and says what it checks. It builds its input by
-  concatenating the largest fixture four times, then compares 2x against 4x, so it always runs.
+  concatenating the largest fixture four times (selected by size explicitly, while every other test walks the
+  fixtures sorted by name, so logs do not depend on directory order), then compares 2x against 4x, so it always runs.
 - Time goes in `BenchmarkReplayGrowth`, with sub-benchmarks at 1x, 2x and 4x of that same input, for manual
   comparison. It is not a test, because a timing ratio under a loaded full suite is the kind of flake this item
   exists to remove. The live twin logs the wall time per file next to its byte counts, so a hang shows up there.
@@ -2579,7 +2586,8 @@ floor.
 
 **Cost.** Small, half a day. Most of it is the capture and clint's look at the files, not the code.
 
-**Status: designed, not started.** Waiting on a slot from the orchestrator.
+**Status: ready to build.** Mercurius `s_5q0QKZVeAa30`: round 1 needs_changes (two majors, fixed), round 2
+ready_to_build, both advisories adopted. Slot approved by the orchestrator as sa93.
 
 
 ------------
