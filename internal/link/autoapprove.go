@@ -90,6 +90,12 @@ import (
 // and the review reads the same word.
 const hubAutoReason = "board-wide auto mode: approved by the hub without asking, and recorded"
 
+// hubAutoBy is who the room records as having decided. Without it the room files
+// the decision under "you", which says a person clicked. The room accepts exactly
+// this value and answers 400 to any other non-empty one, and an older room ignores
+// the field and records "you" as it always did.
+const hubAutoBy = "global-auto"
+
 // decidedKeep is how long an id stays on the decided list. Long past the moment a
 // sweep and an event for one request could both be in flight, and short enough
 // that the list is never anything but a handful.
@@ -378,7 +384,7 @@ func (a *autoApprover) approve(ctx context.Context, room, id string) bool {
 	rctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	payload, err := json.Marshal(map[string]any{
-		"decision": "approve", "reason": hubAutoReason,
+		"decision": "approve", "reason": hubAutoReason, "by": hubAutoBy,
 	})
 	if err != nil {
 		return true
