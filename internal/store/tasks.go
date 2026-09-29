@@ -243,13 +243,23 @@ func (s *Store) refreshObservedAt(t *Task, obs Observed, move bool) error {
 	if !move && t.Worktree != "" {
 		obs.Worktree = t.Worktree
 	}
-	// A REPORT WITH NO PID KEEPS THE PID ON FILE (r-011). Several hooks build an
-	// observation with no pid at all (the message and Stop path, a permission hook
-	// that sent none), and writing their 0 erased the pid the session hook had
-	// recorded, which left the reaper nothing to check but silence. A new,
-	// nonzero pid still replaces it, since a restarted session is a new process.
+	// A REPORT WITH NO PID KEEPS THE PID ON FILE, FROM THE SAME SESSION (r-011).
+	// Several hooks build an observation with no pid at all (the message and Stop
+	// path, a permission hook that sent none), and writing their 0 erased the pid
+	// the session hook had recorded, which left the reaper nothing to check but
+	// silence. A new, nonzero pid still replaces it, since a restarted session is a
+	// new process.
+	//
+	// BUT NOT ACROSS SESSIONS. A report naming a DIFFERENT conversation than the
+	// card's comes from a new process whose pid is not known yet, so the old pid
+	// is dropped (0, and silence applies) rather than kept. Kept, an unsupervised
+	// card would have the reaper ask about the old, dead process and file a live
+	// session dead. A report that names no conversation is taken as the same one.
 	if obs.PID == 0 {
-		obs.PID = t.PID
+		sameSession := obs.Resume == "" || t.ResumeID == "" || obs.Resume == t.ResumeID
+		if sameSession {
+			obs.PID = t.PID
+		}
 	}
 	n := now()
 	_, err := s.db.Exec(`UPDATE task SET worktree = ?, repo = ?, runner = ?, hostname = ?,
