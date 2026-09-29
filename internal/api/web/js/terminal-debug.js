@@ -428,11 +428,10 @@ function forgetTerm() {
 async function renderTermPerm() {
   const host = document.getElementById("term-perm");
   if (!termTask) { host.hidden = true; return; }
-  let mine = [];
-  try {
-    mine = ((await api("/v1/permissions")).permissions || [])
-      .filter(p => p.task_id === termTask.id);
-  } catch (e) { return; }
+  // The queue the refresh pass holds (js/cards.js), read again on every
+  // `permission` event. It used to be fetched here a moment after the pass
+  // fetched the same list.
+  const mine = permsLocal.filter(p => p.task_id === termTask.id);
   if (!mine.length) { host.hidden = true; host.innerHTML = ""; return; }
   const p = mine[0];
   host.hidden = false;
@@ -468,6 +467,8 @@ async function decideFromTermNow(id, decision) {
       body: JSON.stringify({ decision, reason })
     });
   } catch (e) { toast("too late", e.message); }
+  permsLocal = permsLocal.filter(p => p.id !== id);
+  permsSoon();
   renderTermPerm();
 }
 

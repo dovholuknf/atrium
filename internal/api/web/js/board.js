@@ -457,7 +457,7 @@ function switchView(name) {
   // And a place to come back to. Not while going back, or pressing back would
   // record the arrival and leave forward pointing at where you just were.
   if (!navApplying) navPush();
-  refresh();
+  repaintLists();
 }
 
 // Where you are, read off the page rather than off the last thing that was
@@ -1049,7 +1049,7 @@ function groupingPrefs() {
 function setGrouping(patch) {
   const next = Object.assign(groupingPrefs(), patch);
   localStorage.setItem(GROUPING_KEY, JSON.stringify(next));
-  refresh();
+  repaintLists();
 }
 
 // A SECOND WINDOW FOLLOWS. The grouping, its order and every group's colour are
@@ -1599,7 +1599,7 @@ addEventListener("toggle", e => {
   // with everything shut is rows of nothing taking a fifth of the board.
   // Waiting for the next poll means reading a freshly opened group in a narrow
   // column for five seconds.
-  refresh();
+  repaintLists();
 }, true);
 
 // The last set of cards either view drew, so something built on demand can
@@ -1675,7 +1675,7 @@ function localWire(name) {
 }
 
 async function renderBoard(signal) {
-  const { tasks } = await api("/v1/tasks", { signal });
+  const tasks = await boardCards(signal);
   // SPLIT ONCE, HERE, AND NOT AT EVERY PLACE THAT COUNTS SOMETHING.
   //
   // Everything below this line works on cards from rooms that are answering,
@@ -1882,7 +1882,7 @@ function setBoardSort(v) {
   if (!BOARD_SORTS[v]) return;
   localStorage.setItem(BOARD_SORT_KEY, v);
   paintBoardSort();
-  refresh();
+  repaintLists();
 }
 
 function paintBoardSort() {
