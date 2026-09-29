@@ -33,6 +33,7 @@ The pseudo terminal is 206x50, and the tests replay at 120 columns, the width th
 
 Redo the steps for whichever file, then re-pin its floor in `pinnedFloors` in `screen_real_test.go`: the measured
 percentage less 5, never below 40. A capture under 80% is read by hand before it is pinned. `lostlines` has no floor.
-Its two tests count the numbered lines directly.
+Its two tests count the numbered lines directly, and all 300 must survive. It was captured on a build with the
+height hold (`387ccd5`) and does not reproduce item 74's loss.
 
 Recapture when claude-code's output changes shape.

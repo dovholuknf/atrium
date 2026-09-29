@@ -233,7 +233,7 @@ func TestLiveEverySessionReplays(t *testing.T) {
 	}
 }
 
-// survival samples every five hundredth eligible word the session printed and
+// survival samples every stride-th eligible word the session printed and
 // reports how many came through the renderer. sampled is the sample size.
 func survival(raw []byte, stride int) (found, sampled int) {
 	out := plain(string(renderHistory(raw, 120)))
@@ -454,9 +454,9 @@ func TestLiveSpinnersCollapse(t *testing.T) {
 // THE LOST-LINES FIXTURE, item 74 in docs/backlog-2.md.
 //
 // `lostlines` is a capture of a reply scripted as `L0001 ...` to `L0300`, each
-// with a fixed tail, followed by a repaint while the pane was scrolled. What was
-// lost is COUNTED, not sampled, and it is not held to a floor measured from
-// today's renderer, which would bless the bug.
+// with a fixed tail, streamed through height resizes and followed by a repaint.
+// What was lost is COUNTED, not sampled, rather than held to a floor measured
+// from today's renderer.
 
 const (
 	lostFixture = "lostlines"
@@ -466,25 +466,38 @@ const (
 	lostCount   = 300
 )
 
-// lostSurvivors counts the numbered lines in the transcript, and whether the
-// ones that survived are in order.
+// lostSurvivors counts the numbered lines of the REPLY in the transcript, and
+// whether the ones that survived are in order.
+//
+// THE PROMPT NAMES THE FIRST AND LAST LINE TOO ("L0001 lostlines-tail to L0300
+// lostlines-tail"), and it sits above the reply, so a first match is the prompt's
+// for those two. The reply starts at the L0001 just before the first L0002, and
+// every line is looked for after that point, in reply order. A line out of place
+// is found by a plain search from the start but not by the ordered one.
 func lostSurvivors(t testing.TB) (kept int, inOrder bool, text string) {
 	t.Helper()
 	text = plain(string(renderHistory(fixtureNamed(t, lostFixture), 120)))
-	inOrder = true
-	last := -1
-	for i := 1; i <= lostCount; i++ {
-		at := strings.Index(text, fmt.Sprintf("L%04d %s", i, lostTail))
-		if at < 0 {
-			continue
+	line := func(i int) string { return fmt.Sprintf("L%04d %s", i, lostTail) }
+
+	start := 0
+	if at2 := strings.Index(text, line(2)); at2 >= 0 {
+		start = at2
+		if at1 := strings.LastIndex(text[:at2], line(1)); at1 >= 0 {
+			start = at1
 		}
-		kept++
-		if at < last {
-			inOrder = false
-		}
-		last = at
 	}
-	return
+	anywhere := 0
+	pos := start
+	for i := 1; i <= lostCount; i++ {
+		if strings.Contains(text[start:], line(i)) {
+			anywhere++
+		}
+		if at := strings.Index(text[pos:], line(i)); at >= 0 {
+			kept++
+			pos += at + len(line(i))
+		}
+	}
+	return kept, kept == anywhere, text
 }
 
 // TestLostLinesFixtureRenders runs today. The lines before the long reply and
@@ -501,10 +514,14 @@ func TestLostLinesFixtureRenders(t *testing.T) {
 	t.Logf("%s  %d of %d numbered lines survived", lostFixture, kept, lostCount)
 }
 
-// TestLostLinesFixtureKeepsEveryLine is the target. The fix for item 74 removes
-// the skip in the same commit, so the suite shows the fix landing.
-func TestLostLinesFixtureKeepsEveryLine(t *testing.T) {
-	t.Skip("item 74 open: a repaint over a scrolled pane drops lines, see docs/backlog-2.md item 74")
+// EVERY LINE OF A LONG REPLY SURVIVES A STREAM OF RESIZES.
+//
+// This was meant to be item 74's target, skipped until the fix. It is not: the
+// capture was made on a build with the height hold (387ccd5), and 18 height
+// resizes during the stream lost nothing, so the bytes already hold all 300.
+// That makes it a guard on the renderer, run every time. A capture that really
+// loses lines needs a build without the hold, and belongs to item 74.
+func TestLongReplyThroughResizesKeepsEveryLine(t *testing.T) {
 	kept, inOrder, _ := lostSurvivors(t)
 	if kept != lostCount || !inOrder {
 		t.Errorf("%s: %d of %d numbered lines survived, in order: %v", lostFixture, kept, lostCount, inOrder)

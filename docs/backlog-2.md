@@ -2886,7 +2886,7 @@ What changed from the design in the build:
 - **The lost-lines capture did not reproduce item 74.** 300 of 300 lines survived through 18 height resizes during
   the stream, on a build with the height hold (`387ccd5`). That is consistent with the hold working, but it is not
   proof. So the "target" test that would be unskipped by the 74 fix passed already. It now runs unskipped as
-  `TestLongReplyThroughResizesKeepsEveryLine`, a guard that the renderer keeps every line of a long reply. A capture
+  `TestLongReplyThroughResizesKeepsEveryLine` (a test fix by @terminal after the merge), a guard that the renderer keeps every line of a long reply. A capture
   that really loses lines needs a build without the hold. That is the job of whoever builds item 74's option 3
   report or repair, and it is not in this item.
 - **The live growth test replays one specimen**, the first file over 400KB by name, as the old test did. Over every
