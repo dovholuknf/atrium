@@ -770,7 +770,11 @@ func (d *Daemon) onActivity(in ActivityEvent) string {
 		d.act.set(taskID, ActivityThinking, "")
 		d.turnResumed(taskID)
 		// What started this turn, for the usage record. See usage.go.
-		d.usage.prompted(taskID, d.promptCause(taskID))
+		cause := d.promptCause(taskID)
+		d.usage.prompted(taskID, cause)
+		if cause == store.UsageOperator {
+			d.humanTouch(taskID, ViaPrompt)
+		}
 		// And it saw the turn and answered its questions, unless the prompt
 		// was a peer's message atrium typed in. See seen.go.
 		d.seenPrompted(taskID)

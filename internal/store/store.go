@@ -308,6 +308,14 @@ type Task struct {
 	// OwedAt is the last prompt that made this card owe its launcher a report:
 	// its opening prompt or a message from the launcher. See promptOwes.
 	OwedAt *time.Time `json:"owed_at,omitempty"`
+	// HumanAt is the last moment a person did something to this card and
+	// HumanVia what they did (typed, prompt, permission, message, action,
+	// enable, resume). Never a machine. Stamped by the daemon's humanTouch.
+	HumanAt  *time.Time `json:"human_at,omitempty"`
+	HumanVia string     `json:"human_via,omitempty"`
+	// ParkedAt is when the card was parked: no process, status and resume id
+	// kept. Nil means not parked.
+	ParkedAt *time.Time `json:"parked_at,omitempty"`
 	// Theme names the terminal palette this session uses. Held on the card so
 	// it survives a restart and follows the session into another browser,
 	// which is the point of coloring terminals: telling them apart at a

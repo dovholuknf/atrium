@@ -235,6 +235,11 @@ func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, s
 	} else {
 		run = d.sup.get(taskID)
 		if run == nil {
+			// A parked card has no runner and is looked at anyway. See attachParked.
+			if t, err := d.st.Get(taskID); err == nil && isParked(t) {
+				d.attachParked(w, r, t)
+				return
+			}
 			// Being explicit beats an empty terminal. A window mode runner owns
 			// its own terminal and there is nothing here to show.
 			http.Error(w, "nothing to attach to: this task has no runner atrium owns. "+
@@ -329,7 +334,11 @@ func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, s
 				// also reach `Write`, so counting bytes there would have
 				// atrium reading its own typing as the person being busy.
 				// See `runner.noteOperatorTyped`.
-				run.noteOperatorTyped([]byte(in.D))
+				if run.noteOperatorTyped([]byte(in.D)) && !shell {
+					// A person at a real key: the human touch that keeps an
+					// idle card up. See park.go.
+					d.humanTouch(taskID, ViaTyped)
+				}
 				// Typing into it is looking at it. One map lookup when the
 				// turn is already seen. A shell is another screen, and the
 				// turn's text is not on it. See seen.go.

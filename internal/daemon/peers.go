@@ -146,6 +146,9 @@ type Peer struct {
 	// Why is what the operator said this card is for. The one field that says
 	// what a session is DOING rather than where it is.
 	Why string `json:"why,omitempty"`
+	// Parked is true when the card is idle with no process. A say to it is refused
+	// unless it asks to wake it. See park.go.
+	Parked bool `json:"parked,omitempty"`
 	// Waiting is how many messages are queued for it and undelivered. A peer
 	// with a pile already waiting is one to leave alone.
 	Waiting int `json:"waiting,omitempty"`
@@ -254,6 +257,13 @@ func (d *Daemon) resolvePeer(w http.ResponseWriter, from, to, verb string) *stor
 // resolvePeerSay is resolvePeer for a caller with words to record. A miss on a
 // tell is written to the say record; the other verbs write no row (text is "").
 func (d *Daemon) resolvePeerSay(w http.ResponseWriter, from, to, verb, text, when string, reply bool) *store.Task {
+	return d.resolvePeerSayWake(w, from, to, verb, text, when, reply, false)
+}
+
+// resolvePeerSayWake is resolvePeerSay for a sender that may ask a parked card to
+// be resumed. The target returned is the row AS FOUND, still marked parked when
+// this woke it, which is how the caller knows not to type.
+func (d *Daemon) resolvePeerSayWake(w http.ResponseWriter, from, to, verb, text, when string, reply, wake bool) *store.Task {
 	switch {
 	case from == "":
 		writeJSONErr(w, http.StatusBadRequest, errString("say which session is sending"))
@@ -288,9 +298,26 @@ func (d *Daemon) resolvePeerSay(w http.ResponseWriter, from, to, verb, text, whe
 	}
 	// The same test the message endpoint uses, so `atrium tell` and `atrium_say`
 	// agree: a done card whose terminal is still live is somebody to talk to.
-	if d.sessionGone(target) {
+	gate := d.sayGate(target)
+	if gate == sayGone {
 		writeJSONErr(w, http.StatusConflict, fmt.Errorf(
 			"%s has ended, so nothing would read this", to))
+		return nil
+	}
+	if gate == sayParked && !wake && d.fromFamily(from, target) {
+		wake = true
+	}
+	if gate == sayParked && !wake {
+		// Nothing queued: waking is a cold turn and the sender should choose it.
+		if text != "" {
+			rec := sayRecordFor(from, target, sayTrace{}, false, verb, when, reply)
+			rec.State, rec.Note, rec.ReplyWant = store.SayRefused, "parked", false
+			d.recordSay(rec, text)
+		}
+		writeJSONCode(w, http.StatusOK, map[string]any{
+			"queued": false, "typed": false, "delivered": "parked", "reachable": "parked",
+			"to": to, "note": parkedNote(target),
+		})
 		return nil
 	}
 
@@ -299,6 +326,12 @@ func (d *Daemon) resolvePeerSay(w http.ResponseWriter, from, to, verb, text, whe
 			"%s has sent %d messages in the last minute, which is the limit",
 			from, peerSendsPerMinute))
 		return nil
+	}
+	if gate == sayParked {
+		if err := d.unpark(target.ID, wakeVia(from)); err != nil {
+			writeJSONErr(w, http.StatusInternalServerError, err)
+			return nil
+		}
 	}
 	return target
 }
@@ -318,6 +351,8 @@ func (d *Daemon) handleTell(w http.ResponseWriter, r *http.Request) {
 		When string `json:"when"`
 		// Reply is true when the sender needs an answer, not just a delivery.
 		Reply bool `json:"reply"`
+		// Wake resumes a parked target so this can be delivered. See park.go.
+		Wake bool `json:"wake"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&in); err != nil {
 		writeJSONErr(w, http.StatusBadRequest, err)
@@ -351,7 +386,7 @@ func (d *Daemon) handleTell(w http.ResponseWriter, r *http.Request) {
 	if !checkPeerText(w, text, "there is nothing to say") {
 		return
 	}
-	target := d.resolvePeerSay(w, from, to, "tell", text, in.When, in.Reply)
+	target := d.resolvePeerSayWake(w, from, to, "tell", text, in.When, in.Reply, in.Wake)
 	if target == nil {
 		return
 	}
@@ -456,7 +491,12 @@ func (d *Daemon) deliverPeerWhen(target *store.Task, from, text string, waitTurn
 // deliverPeerWhenID is deliverPeerWhen that also says which queue row carries
 // the words when they were not typed, so a say can be recorded against it.
 func (d *Daemon) deliverPeerWhenID(target *store.Task, from, text string, waitTurn bool) (bool, string, error) {
-	if typed, _ := d.tellByTyping(target, from, text, waitTurn); typed {
+	// A target still marked parked here was woken by this very say: it is queued
+	// and carried by the ordinary path, never typed into a session that has only
+	// just started.
+	if isParked(target) {
+		// fall through to the queue
+	} else if typed, _ := d.tellByTyping(target, from, text, waitTurn); typed {
 		d.publishTask(target.ID)
 		return true, "", nil
 	}

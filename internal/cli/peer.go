@@ -65,6 +65,7 @@ func newPeers() *cobra.Command {
 
 func newTell() *cobra.Command {
 	var name, hubURL, when string
+	var wake bool
 	c := &cobra.Command{
 		Use:   "tell <handle or @alias> <message>",
 		Short: "Say something to another session.",
@@ -85,13 +86,15 @@ func newTell() *cobra.Command {
 			if strings.TrimSpace(text) == "" {
 				text = pipedRecap()
 			}
-			return tellPeer(cmd.OutOrStdout(), hubURL, name, to, text, when)
+			return tellPeer(cmd.OutOrStdout(), hubURL, name, to, text, when, wake)
 		}),
 	}
 	c.Flags().StringVar(&name, "name", "", "what this session calls itself")
 	c.Flags().StringVar(&hubURL, "url", "", "atrium agent address")
 	c.Flags().StringVar(&when, "when", "",
 		"immediate (the default): typed as soon as the line is empty, even mid-turn. done: wait for the turn to end")
+	c.Flags().BoolVar(&wake, "wake", false,
+		"resume the target if it is parked (idle, no process) and deliver this. a cold start, so use it on purpose")
 	return c
 }
 
@@ -335,11 +338,13 @@ func shortAge(sec int64) string {
 
 // peerAnswer is what every endpoint on this bus answers with.
 type peerAnswer struct {
-	Queued   bool      `json:"queued"`
-	Answered bool      `json:"answered"`
-	Note     string    `json:"note"`
-	Error    string    `json:"error"`
-	Peers    []peerRow `json:"peers"`
+	Queued bool `json:"queued"`
+	// Delivered is "parked" when the target is parked and nothing was sent.
+	Delivered string    `json:"delivered"`
+	Answered  bool      `json:"answered"`
+	Note      string    `json:"note"`
+	Error     string    `json:"error"`
+	Peers     []peerRow `json:"peers"`
 }
 
 // sendToPeer posts one session's words to another and reports the refusal in
@@ -348,7 +353,7 @@ type peerAnswer struct {
 // `verb` is what the caller was trying to do, so a handle that does not
 // resolve offers the list under the right heading rather than under a generic
 // one.
-func sendToPeer(out io.Writer, hubURL, name, to, text, route, verb, when string) (*peerAnswer, error) {
+func sendToPeer(out io.Writer, hubURL, name, to, text, route, verb, when string, wake bool) (*peerAnswer, error) {
 	from := whoAmI(name)
 	if from == "" {
 		return nil, fmt.Errorf("could not work out which session this is. pass --name")
@@ -357,9 +362,12 @@ func sendToPeer(out io.Writer, hubURL, name, to, text, route, verb, when string)
 		return nil, fmt.Errorf("there is nothing to say. put the message after the handle")
 	}
 
-	fields := map[string]string{"from": from, "to": to, "text": text}
+	fields := map[string]any{"from": from, "to": to, "text": text}
 	if when != "" {
 		fields["when"] = when
+	}
+	if wake {
+		fields["wake"] = true
 	}
 	body, err := json.Marshal(fields)
 	if err != nil {
@@ -397,10 +405,15 @@ func sendToPeer(out io.Writer, hubURL, name, to, text, route, verb, when string)
 	return &answer, nil
 }
 
-func tellPeer(out io.Writer, hubURL, name, to, text, when string) error {
-	answer, err := sendToPeer(out, hubURL, name, to, text, "/tell", "tell", when)
+func tellPeer(out io.Writer, hubURL, name, to, text, when string, wake bool) error {
+	answer, err := sendToPeer(out, hubURL, name, to, text, "/tell", "tell", when, wake)
 	if err != nil {
 		return err
+	}
+	if answer.Delivered == "parked" {
+		fmt.Fprintf(out, "not sent to %s.\n", to)
+		fmt.Fprintf(out, "  %s\n", answer.Note)
+		return nil
 	}
 	fmt.Fprintf(out, "told %s.\n", to)
 	if answer.Note != "" {
@@ -410,7 +423,7 @@ func tellPeer(out io.Writer, hubURL, name, to, text, when string) error {
 }
 
 func answerPeer(out io.Writer, hubURL, name, to, text string) error {
-	answer, err := sendToPeer(out, hubURL, name, to, text, "/answer", "answer", "")
+	answer, err := sendToPeer(out, hubURL, name, to, text, "/answer", "answer", "", false)
 	if err != nil {
 		return err
 	}

@@ -165,6 +165,16 @@ func globalAutoView(s *Server) map[string]any {
 	// The cache keep-alive: the default for new Claude cards, whether the room
 	// is suspended, and what refreshes cost this week. See keepalive.go.
 	keepaliveSettingsView(s.st, out)
+	// Idle parking: as stored, and what is in force. See store/idlepark.go.
+	stored, _ := s.st.Setting(store.SettingIdleParkAfter)
+	out["idle_park_after"] = stored
+	if d, on := s.st.IdleParkAfter(); on {
+		out["idle_park_after_now"] = int64(d / time.Second)
+	} else {
+		out["idle_park_after_now"] = "off"
+	}
+	out["idle_park_after_default"] = int64(store.DefaultIdleParkAfter / time.Second)
+	out["idle_park_after_min"] = int64(store.MinIdleParkAfter / time.Second)
 	inputLagView(out)
 	// Reported even when unset, so the setting can be read back as `above_normal`.
 	out["runner_priority"] = "above_normal"
@@ -269,6 +279,8 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		// Clears the room's keep-alive suspension. Only false means anything:
 		// atrium suspends, a person clears.
 		KeepaliveSuspended *bool `json:"cache_keepalive_suspended"`
+		// How long a card sits idle before it is parked: seconds, or off.
+		IdleParkAfter *string `json:"idle_park_after"`
 	}
 	// Read once and decoded twice: into the struct, which is what the handler
 	// works from, and into a map, which is the only way to notice a field that
@@ -574,6 +586,18 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := s.st.SetSetting(SettingContextThresholdK, v); err != nil {
+			s.fail(w, err)
+			return
+		}
+	}
+
+	if body.IdleParkAfter != nil {
+		v, err := store.CheckIdleParkAfter(*body.IdleParkAfter)
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, err)
+			return
+		}
+		if err := s.st.SetSetting(store.SettingIdleParkAfter, v); err != nil {
 			s.fail(w, err)
 			return
 		}

@@ -118,6 +118,10 @@ func (d *Daemon) reapOnce() error {
 		if d.sup.get(t.ID) != nil {
 			continue
 		}
+		// A parked card has no process by design, and its pid is a stale hint.
+		if isParked(t) {
+			continue
+		}
 		// No pid to ask about, so fall back to silence. A card waiting on a
 		// human is exempt: it is quiet because nobody has answered it, and
 		// marking it dead would discard the question.
@@ -198,6 +202,9 @@ func (d *Daemon) reap(ctx context.Context, every time.Duration) {
 		// A worker whose worktree was removed from under it. Same tick, after
 		// liveness. The wind-down runs off the tick. See worktreegone.go.
 		d.reapGoneWorktrees()
+		// A card idle past `idle_park_after` is parked, a director after writing
+		// its handoff. Off the tick's path: it starts goroutines. See idletick.go.
+		d.parkIdle(time.Now())
 		// Agent-launched work nobody has heard from. Same tick, after liveness,
 		// so a card the reaper just marked dead is not reported as stuck. See
 		// a2a.go.
