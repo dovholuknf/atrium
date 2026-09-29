@@ -171,7 +171,8 @@ why, and may name a panel. The director then:
    `pr-<repo>-<number>` (`pr-ziti-4397`, `pr-zrok-1277`), never `saNN`, and named that way in every report (clint),
    model sonnet, theme active-work, tags `atrium:subagent` and `dept:review`, cwd the target repo's checkout. It is
    launched LEAN, with nothing at start that the review does not need, and its brief is minimal: the target, the
-   panel and its sizing line, each reviewer's file path and the base commit to read it at, and the report path. It
+   panel and its sizing line, each reviewer's file path and the base commit to read it at, the repo's known consumers
+   from its review-director file with their checkouts (standing rule 27), and the report path. It
    runs the `review-panel` skill with exactly that panel, writes nothing to dotagents, writes its full report to the
    report path and one file per finding to `<run>/findings/` (skill step 7, standing rule 10), and reports to @review with the verdict, the findings, every `repo_notes` block by persona, and every
    refuted finding with its reason. At most three review-managers run at once to start (answer 13), and a fourth ask
@@ -253,6 +254,9 @@ what taught it. For example:
 - a change to control-plane or mesh hello headers -> full panel + network-expert (the budget is set by the oldest
   supported peer, parked codebase-steward lesson project_ziti_handshake_header_budget)
 ```
+
+A repo's file also holds a `## Known consumers` section when other repos build on it: each consumer and its local
+checkout, which a brief passes on so the digest can grep them (standing rule 27). tlsuv's is the first.
 
 An entry is added when a small panel missed something that a later panel, the verify pass, clint or production
 caught, and when clint says a kind of change is dangerous. It is removed only when clint says so, since a stale
@@ -361,12 +365,26 @@ are in `general.md` on dotagents branch `claude/review/director/2026-09-29-walk-
 25. A review-manager is titled and aliased `pr-<repo>-<number>` (`pr-ziti-4397`, `pr-zrok-1277`), never `saNN`, and
     every report names it that way.
 
+**Rating and reach.** From the PR #369 session recap, read again afterwards. They are in `general.md` at dotagents
+`a5f82ee`, on the same branch.
+
+26. Before a finding is rated MED or higher, three questions are answered: who actually hits it, how likely it is, and
+    whether it is opt-in. The answers go in the finding's Evidence, on an `Exposure:` line. In PR #369 the panel's
+    ratings drifted both ways and clint argued several of them: the keychain leak went up to HIGH, and the loopback
+    race and the unchecked dup went down.
+27. When the repo has known consumers, each one is grepped for the symbols the change touches, as a standard skill
+    step. That turns a vague fit finding into a stated impact. A repo's consumers are listed in its review-director
+    reviewer file under `## Known consumers`, with the local checkout to grep. For tlsuv: ziti-sdk-c,
+    ziti-tunnel-sdk-c and ziti-sdk-nodejs.
+
 What this changes elsewhere in the design: the review-manager's report to the director carries the table's columns
 (Cause, Test status, PR-head line) on every finding, so the director can build the table and walk the comments
 without reopening the review. The skill's step 7 produces all of it: one table sorted by severity, file and line, with
 Cause, Test status, lines read at the current head, leaks as rows with sizes, and a `Finding file` column naming
 `<run>/findings/NN-<sev>-<file>-L<line>.txt` (dotfiles `af3f5a1` on `claude/review-stage2`). Nobody hand-writes the
-files afterwards.
+files afterwards. Rules 26 and 27 are dotfiles `0cbb9ed`: every finding at medium and above carries an `exposure`
+answer and step 6 re-rates on it, and when a brief names known consumers the digest gains a fourth part with each
+consumer's `grep` hits for the changed symbols, read at a named commit and never built.
 
 ## Which side each part lives on
 
