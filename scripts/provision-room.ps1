@@ -114,6 +114,9 @@ param(
     [string] $LinkAdvertise,
     [string] $HubAddr,
 
+    # 'none' skips the git clone that room-git.ps1 makes by push. Anything else makes it.
+    [string] $Repo = 'atrium',
+
     # How long to wait for the room to show as attached on the hub, in seconds.
     [int] $AttachTimeout = 60
 )
@@ -1296,5 +1299,6 @@ echo "bin=$Bin"
         default   { Step 'mcp' 'warn' "wrote $mcpPath, but could not set the claude runner row. its sessions cannot answer other rooms" }
     }
 }
+if ($Repo -ne 'none') { & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'room-git.ps1') init $Name -Target $Target -Ssh $Ssh @(if ($SshOption) { '-SshOption'; $SshOption -join ',' }) | ForEach-Object { Write-Host $_ }; if ($LASTEXITCODE -ne 0) { Step 'git' 'warn' "room-git init exited $LASTEXITCODE. rerun: room-git.ps1 init $Name -Target $Target" } }
 if ($bad -gt 0) { Finish 5 }
 Finish 0
