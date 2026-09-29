@@ -702,6 +702,10 @@ type runner struct {
 	// a dead card and a terminal that never appeared. Knowing the launch asked
 	// for a resume is what lets that be retried as a fresh start.
 	resumed bool
+	// dir is the directory the process was started in, for every launch. It is
+	// the one directory the process holds, so it is what the worktree-gone
+	// reaper asks about. Never the session's live cwd.
+	dir string
 	// spec is what to run to try again, without the resume. Empty when there
 	// is nothing to fall back to.
 	spec *launchSpec
@@ -1932,6 +1936,7 @@ func (d *Daemon) spawnPTYResume(taskID, cmdName string, args []string, cwd strin
 	}
 	resolved, args = viaShellIfScript(resolved, args)
 
+	raise := d.beginPTYRaise()
 	p, err := pty.New()
 	if err != nil {
 		return 0, fmt.Errorf("could not open a pseudo terminal: %w", err)
@@ -1964,10 +1969,12 @@ func (d *Daemon) spawnPTYResume(taskID, cmdName string, args []string, cwd strin
 		p.Close()
 		return 0, fmt.Errorf("could not start %s: %w", cmdName, err)
 	}
+	raise.apply(c.Process.Pid)
 
 	r := &runner{
 		taskID: taskID, pty: p, cmd: c, started: time.Now(),
 		resumed: resumed,
+		dir:     cwd,
 		spec:    fresh,
 		// The same height the pty was just opened at. Guessing it later means
 		// a screen model replaying this buffer builds the wrong sized grid,
