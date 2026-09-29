@@ -115,6 +115,17 @@ var borrowed = map[string]bool{
 	"/v1/overlays/zrok/account": true,
 }
 
+// PER-ROOM ROUTES ARE DELIBERATELY IN NEITHER TABLE ABOVE.
+//
+// `/v1/preflight`, `/v1/merged` (the mark) and a card's `/cull` and `/cull/hold`
+// are answers about ONE machine: whether this room can run a repository's
+// requirements, and which of its workers a merge covered. Merging four rooms'
+// preflights would say a repository is ready when only one of them is, and
+// borrowing the first room's would answer for a machine nobody named. So they
+// are answered by the one room in `X-Atrium-Room`, and with several attached and
+// none named they fall through to `needsARoom`, which asks. Not being a row here
+// is what makes that true, so do not add one. See cullroute_test.go.
+
 // firstRoom is a room to borrow an answer from, chosen the same way every time
 // so two requests in one page load cannot disagree.
 func (p *Proxy) firstRoom() string {

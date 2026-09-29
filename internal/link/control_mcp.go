@@ -1346,8 +1346,9 @@ func aliasBeats(s, c, bs, bc string) bool {
 const cullTimeout = 60 * time.Second
 
 type cullInput struct {
-	Card string `json:"card" jsonschema:"the worker to cull: a card id, handle or alias"`
+	Card string `json:"card" jsonschema:"the worker to cull: a card id, handle or alias. name@room or room~id for a card on another room"`
 	Into string `json:"into,omitempty" jsonschema:"the branch its branch must be merged into. default claude/main"`
+	Tip  string `json:"tip,omitempty" jsonschema:"a merge proof made where the area branch lives: the commit it was checked to contain. the room culls only if its worktree is on it"`
 }
 
 type cullOutput struct {
@@ -1371,25 +1372,30 @@ func (c *controlMCP) cullHandler(ctx context.Context, req *mcp.CallToolRequest, 
 
 	out := cullOutput{}
 	room := roomOf(req)
-	id, handle, err := c.resolvePeer(ctx, room, in.Card)
+	scope, id, handle, err := c.resolveCard(ctx, room, in.Card)
 	if err != nil {
 		return nil, out, err
 	}
-	out.Card, out.Handle = id, handle
-	if me := agentOf(req); me != "" {
+	out.Card, out.Handle = namedFrom(room, scope, id, handle)
+	// Only a card on the caller's own room can be the caller.
+	if me := agentOf(req); me != "" && equalFold(scope, room) {
 		if myID, _, err := c.resolvePeer(ctx, room, me); err == nil && myID == id {
 			return nil, out, fmt.Errorf("a worker cannot cull itself. whoever accepts the work culls it")
 		}
 	}
 	long := &controlMCP{board: c.board, client: &http.Client{Timeout: cullTimeout, Transport: c.client.Transport}}
 	var res cullOutput
-	err = long.ask(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(id)+"/cull", room,
-		map[string]string{"into": strings.TrimSpace(in.Into)}, &res)
+	// `tip` is a merge proof made on the machine the area branch is on. It goes to
+	// the room as it came, flat beside `into`: the hub never makes or checks one.
+	body := map[string]string{"into": strings.TrimSpace(in.Into)}
+	if tip := strings.TrimSpace(in.Tip); tip != "" {
+		body["tip"] = tip
+	}
+	err = long.ask(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(id)+"/cull", scope, body, &res)
 	if err != nil {
 		var be *boardError
 		if errors.As(err, &be) && be.bare && be.code == http.StatusNotFound {
-			return nil, out, fmt.Errorf("that room is older than atrium_cull. exit the worker with " +
-				"atrium_exit and remove its worktree by hand")
+			return nil, out, errors.New(predatesCull(scope, c.hub.buildOf(scope)))
 		}
 		return nil, out, err
 	}
