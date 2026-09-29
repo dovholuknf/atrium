@@ -292,11 +292,13 @@ Cost: medium. Needs: a table, a runner in `internal/daemon` beside `sources.go`,
 the launch brief: a brief template selected by tag and by runner, so `tags: dept:review` launches with the review
 director's brief and skill list and a plain worker does not. The metadata caveat is the part to keep: the card's
 attributes can be written by anyone, so the brief must quote them. Cost: small if the brief store exists, and
-`docs/launch-options-design.md` and `docs/lean-workers-design.md` suggest it is close. Not verified against the code.
+`docs/launch-options-design.md` and `docs/lean-workers-design.md` suggest it is close. Checked against the code on
+2026-09-29: a launch carries a `brief` that is written to `BRIEF.md` per launch, and there is no template store keyed
+on tags, so this is part of a role (`docs/competitors.md` section 3.4) and not a small standalone change.
 
 ### 3. A pack: a directory that carries an extension
 
-See `docs/competitors.md` section 4 for the recommendation. The bb part is the manifest-in-the-directory shape, the
+See `docs/competitors.md` section 3.4 for the recommendation. The bb part is the manifest-in-the-directory shape, the
 collection manifest, the semver-over-tags source with a recorded commit, and the moved-tag refusal.
 
 ### 4. A test kit
@@ -344,7 +346,10 @@ they are text.
   existence of `marketplace.ts` suggest part of it is live.
 - **Workflow replay and the concurrency-limit counting logic.** Read at overview level. The QuickJS runtime itself is
   traced to its import.
-- **Whether `sessionPermissionGrants` persist.** Only the in-memory attachment was traced.
+- **Whether `sessionPermissionGrants` persist.** Closed 2026-09-29: they do not, as far as the code shows. The array
+  is created empty with the thread attachment (`plugins/provider-claude-code/src/bridge/bridge.ts:930`), appended to
+  in memory (`:2502`), and the name appears in no other file. Whether the attachment survives a bridge restart was
+  not traced.
 - **Safe mode** (`getPluginSafeMode`) and what it disables.
 - **The Codex, Pi and ACP bridges.** Only the Claude bridge was read.
 - **The 513 open issues.** A count, not read. Where bb hurts in practice is unknown.
