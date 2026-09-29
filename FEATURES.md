@@ -349,8 +349,9 @@ on `claude/main` and is not yet on `main`. Whether a build is deployed on a give
   `docs/how-atrium-works.md`. Landed 2026-09-03 (`da73670`), unique names on 2026-09-21 (`6d5df49`).
 
 - **Sessions reach atrium through one control MCP server on the hub.**
-  `/_hub/mcp` serves `atrium_status`, `atrium_peers`, `atrium_say`, `atrium_task`, `atrium_exit`, `atrium_launch`
-  and `restart_atrium`. `atrium_say` carries the caller's identity. `atrium_launch` can write a `BRIEF.md`, set a
+  `/_hub/mcp` serves `atrium_status`, `atrium_peers`, `atrium_say`, `atrium_task`, `atrium_exit`, `atrium_cull`,
+  `atrium_launch` and `restart_atrium`. `atrium_cull` retires a merged, accepted worker and removes its worktree and
+  branch (backlog-2 item 36). `atrium_say` carries the caller's identity. `atrium_launch` can write a `BRIEF.md`, set a
   terminal theme, and is capped at 10 concurrent agent-launched sessions. Loopback only. Docs:
   `docs/agent-messaging.md`, `docs/reload-design.md`. Landed 2026-09-18 (`d192062`, `85204e5`, `09b3fee`), cap
   on 2026-09-19 (`da0866b`).

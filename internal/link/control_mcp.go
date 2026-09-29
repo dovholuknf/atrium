@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -242,6 +243,21 @@ func (c *controlMCP) server() *mcp.Server {
 			"Say something first if the work is not finished. A session asked to leave mid-task " +
 			"leaves mid-task.",
 	}, c.exitHandler)
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name: "atrium_cull",
+		Description: "Retire a finished worker whose work you have ACCEPTED: ask it to leave, then " +
+			"remove its worktree and delete its branch.\n\n" +
+			"CALLING THIS IS THE ACCEPTANCE. Call it once the worker's branch is merged into " +
+			"claude/main (or `into`) and you, the orchestrator or the merger acting for it, are " +
+			"done with the work. Not before: a culled worker cannot be sent back to fix anything. " +
+			"A worker cannot cull itself.\n\n" +
+			"THE ROOM CHECKS, and refuses the whole cull when the card is not tagged " +
+			"atrium:subagent or its branch is not merged. A worktree with uncommitted changes is " +
+			"kept, and so is its branch, and the answer says why. The worker is still asked to " +
+			"leave in that case, which frees its launch-cap slot. Nothing is forced: git removes " +
+			"the worktree only when it agrees it is clean. The card and its history stay.",
+	}, c.cullHandler)
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "restart_atrium",
@@ -1227,6 +1243,71 @@ func (c *controlMCP) exitHandler(ctx context.Context, req *mcp.CallToolRequest, 
 	out.Asked = true
 	out.Note = "asked to leave with its harness's exit keys. the card and its history stay."
 	return nil, out, nil
+}
+
+// ── cull ────────────────────────────────────────────────────────────────────────
+
+// cullTimeout bounds atrium_cull's one call to the room. Longer than
+// controlTimeout, because the room waits out the worker's exit and then runs git
+// before it answers.
+const cullTimeout = 60 * time.Second
+
+type cullInput struct {
+	Card string `json:"card" jsonschema:"the worker to cull: a card id, handle or alias"`
+	Into string `json:"into,omitempty" jsonschema:"the branch its branch must be merged into. default claude/main"`
+}
+
+type cullOutput struct {
+	Card            string `json:"card"`
+	Handle          string `json:"handle,omitempty"`
+	Exited          bool   `json:"exited"`
+	Branch          string `json:"branch,omitempty"`
+	Into            string `json:"into,omitempty"`
+	Worktree        string `json:"worktree,omitempty"`
+	WorktreeRemoved bool   `json:"worktree_removed"`
+	BranchDeleted   bool   `json:"branch_deleted"`
+	Kept            string `json:"kept,omitempty"`
+	Note            string `json:"note,omitempty"`
+}
+
+// cullHandler forwards a cull to the room, which makes every check. The one
+// check made here is the caller not being the card, because only the hub reads
+// who is calling: a worker's own done is not the acceptance.
+func (c *controlMCP) cullHandler(ctx context.Context, req *mcp.CallToolRequest, in cullInput) (
+	*mcp.CallToolResult, cullOutput, error) {
+
+	out := cullOutput{}
+	room := roomOf(req)
+	id, handle, err := c.resolvePeer(ctx, room, in.Card)
+	if err != nil {
+		return nil, out, err
+	}
+	out.Card, out.Handle = id, handle
+	if me := agentOf(req); me != "" {
+		if myID, _, err := c.resolvePeer(ctx, room, me); err == nil && myID == id {
+			return nil, out, fmt.Errorf("a worker cannot cull itself. whoever accepts the work culls it")
+		}
+	}
+	long := &controlMCP{board: c.board, client: &http.Client{Timeout: cullTimeout, Transport: c.client.Transport}}
+	var res cullOutput
+	err = long.ask(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(id)+"/cull", room,
+		map[string]string{"into": strings.TrimSpace(in.Into)}, &res)
+	if err != nil {
+		var be *boardError
+		if errors.As(err, &be) && be.bare && be.code == http.StatusNotFound {
+			return nil, out, fmt.Errorf("that room is older than atrium_cull. exit the worker with " +
+				"atrium_exit and remove its worktree by hand")
+		}
+		return nil, out, err
+	}
+	res.Card, res.Handle = out.Card, out.Handle
+	switch {
+	case res.WorktreeRemoved && res.BranchDeleted:
+		res.Note = "culled: asked to leave, worktree removed, branch deleted. the card and its history stay."
+	default:
+		res.Note = "not everything was removed. see kept, which says why."
+	}
+	return nil, res, nil
 }
 
 // ── restart ──────────────────────────────────────────────────────────────────────
