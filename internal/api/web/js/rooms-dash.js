@@ -141,7 +141,7 @@ function highestSeen(cards, key) {
 
 // Tokens that cost: in, out and cache writes. Cache reads are shown apart,
 // because they are most of every total and would drown the rest.
-function billedTokens(o) {
+function counted(o) {
   return o ? (o.in || 0) + (o.out || 0) + (o.cache_write || 0) : 0;
 }
 
@@ -245,7 +245,7 @@ function tokensBand(key, tok, cards) {
       <span><b class="rd-big" data-v="${key}.rate" data-n="${tok.per_min_5m || 0}">${fmtShort(tok.per_min_5m)}</b>/min</span>
       ${sparkSVG(tok.series_per_min, "tok")}</div>
     <div class="rd-row" data-tip="the last 24 hours: ${tip}">
-      <span>24h <b data-v="${key}.24h" data-n="${billedTokens(tok.last_24h)}">${tok.last_24h ? fmtShort(billedTokens(tok.last_24h)) : "&mdash;"}</b></span>
+      <span>24h <b data-v="${key}.24h" data-n="${counted(tok.last_24h)}">${tok.last_24h ? fmtShort(counted(tok.last_24h)) : "&mdash;"}</b></span>
       <span class="rd-dim">cache <span data-v="${key}.cache" data-n="${(tok.last_24h || {}).cache_read || 0}">${tok.last_24h ? fmtShort(tok.last_24h.cache_read) : "&mdash;"}</span></span></div>`;
   return `<div class="rd-band tokens"><div class="rd-h">tokens</div>${body}${limitBars(cards)}</div>`;
 }
