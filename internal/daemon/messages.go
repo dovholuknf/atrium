@@ -282,7 +282,7 @@ func (d *Daemon) handleStop(w http.ResponseWriter, r *http.Request) {
 		// And it is a turn the operator has not seen. See seen.go.
 		d.noteTurnForSeen(task.ID, store.TurnQuestions{
 			Known: in.QuestionsKnown, Block: in.QuestionsBlock, List: in.Questions,
-		})
+		}, d.launcherSeen(task.ID))
 		nothing()
 		return
 	}

@@ -202,4 +202,43 @@
   .usagelist .urow > span:nth-child(n+3) { text-align: right; }
   .usagelist .uhead { color: var(--dimmest); position: sticky; top: 0; background: var(--card-1); }
   .usagelist .urow.resumed { background: var(--lift); }
+  /* ── the usage tab's charts ─────────────────────────── */
+  /* Fills come from the palette triples, so a skin change recolours a chart already drawn. See js/usage-charts.js. */
+  .uck-in { fill: rgb(var(--warn-rgb)); background: rgb(var(--warn-rgb)); }
+  .uck-out { fill: rgb(var(--danger-rgb)); background: rgb(var(--danger-rgb)); }
+  .uck-read { fill: rgb(var(--teal-rgb)); background: rgb(var(--teal-rgb)); }
+  .uck-w5 { fill: rgb(var(--path-rgb)); background: rgb(var(--path-rgb)); }
+  .uck-w1 { fill: rgb(var(--stroke-rgb)); background: rgb(var(--stroke-rgb)); }
+  .uck-cost { fill: rgba(var(--teal-rgb), .8); }
+  .uck-line { fill: none; stroke: rgb(var(--teal-rgb)); stroke-width: 2; vector-effect: non-scaling-stroke; }
+  .ucranges button.on { color: var(--head); border-color: rgb(var(--teal-rgb)); }
+  .ucfilter { font: var(--fs-xs) var(--mono); color: var(--dim); }
+  .ucfilter button { background: none; border: none; color: var(--dim); cursor: pointer; }
+  .ucroom { color: var(--dimmest); }
+  .ucmissing {
+    margin-bottom: 8px; padding: 6px 10px; font: var(--fs-xs) var(--mono); color: var(--dim);
+    border: 1px solid rgba(var(--warn-rgb), .5); border-radius: var(--r-md);
+  }
+  .uch { margin: 16px 0 6px; font-size: var(--fs-sm); color: var(--head); font-weight: 600; }
+  .ucnote { font: var(--fs-xs) var(--mono); color: var(--dimmest); font-weight: 400; }
+  .uclegend { display: flex; flex-wrap: wrap; gap: var(--sp-2) var(--sp-3); font: var(--fs-xs) var(--mono); color: var(--dim); }
+  .uclegend i { display: inline-block; width: 10px; height: 10px; margin-right: 5px; border-radius: 2px; }
+  .ucchart svg { display: block; width: 100%; height: 150px; border-bottom: 1px solid var(--stroke-dim); }
+  .ucdetail svg { display: block; width: 100%; height: 40px; }
+  .ucaxis { display: flex; justify-content: space-between; font: var(--fs-xs) var(--mono); color: var(--dimmest); }
+  .ucread { min-height: 1.4em; font: var(--fs-xs) var(--mono); color: var(--dim); }
+  .ucchart g[data-t]:hover { opacity: .75; }
+  .ucminis { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: var(--sp-3); }
+  .ucmini { padding: 6px 8px; border: 1px solid var(--stroke-dim); border-radius: var(--r-md); cursor: pointer; }
+  .ucmini.other { cursor: default; }
+  .ucmini:hover:not(.other) { background: var(--lift); }
+  .ucmini svg { display: block; width: 100%; height: 40px; }
+  .ucminit { display: flex; justify-content: space-between; gap: var(--sp-2); font: var(--fs-xs) var(--mono); color: var(--dim); }
+  .ucminit .uctitle { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ucsplit { display: flex; height: 18px; border-radius: var(--r-md); overflow: hidden; margin-bottom: 6px; }
+  .uccauses {
+    display: grid; grid-template-columns: repeat(3, auto); justify-content: start; gap: 0 var(--sp-3);
+    font: var(--fs-xs) var(--mono); color: var(--dim);
+  }
+  .uccauses > span:nth-child(3n) { text-align: right; }
 
