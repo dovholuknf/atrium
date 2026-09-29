@@ -5085,3 +5085,43 @@ other address answers with the board or a 404, never a profile.
 
 **Expected:** a few hundred MB, near the size of `~/.atrium/scrollback` plus what the cards print after, not the 7
 to 16GB that 26 cards at 512MB each came to.
+
+## CL. Culling a finished worker
+
+`atrium_cull <card>` asks a merged, accepted worker to leave, then removes its worktree and deletes its branch. The
+room makes every check (`internal/daemon/cull.go`). Go tests in `internal/daemon/cull_test.go` run it against real
+git repositories in a temp directory: a merged worker clean but for `BRIEF.md` loses its worktree and branch, and a
+supervised one is asked to leave first. An unmerged branch, a card without `atrium:subagent`, the main checkout and a
+live session atrium does not own are each refused with nothing touched. A worktree with an uncommitted file keeps the
+worktree and the branch and names the file. `internal/link/control_cull_test.go` covers the hub: the call reaches the
+room with `into`, a worker culling itself is refused before the room is asked, and a room older than the endpoint is
+named. See `docs/backlog-2.md` item 36. Needs a ROOM RESTART and a HUB RESTART.
+
+### CL1. A merged worker goes
+
+1. Launch a worker with `tags: ["atrium:subagent"]` on its own worktree and branch off `claude/main`. Let it commit
+   and report done.
+2. Merge its branch into `claude/main`.
+3. From the orchestrator, call `atrium_cull` with the worker's handle.
+
+**Expected:** the answer has `exited`, `worktree_removed` and `branch_deleted` all true. The worker's terminal
+closes, its card moves to done and keeps its history, its worktree directory is gone, `git worktree list` no longer
+shows it and its branch is gone from the repository. `atrium_status` shows one fewer running worker, so a launch
+refused at the cap goes through.
+
+### CL2. What it refuses
+
+1. Call `atrium_cull` on a worker whose branch is not merged.
+2. Call it on the orchestrator's own card, or any card without `atrium:subagent`.
+3. From the worker, call `atrium_cull` on itself.
+
+**Expected:** each is refused with a sentence saying which check held, and nothing happens: the worker keeps
+running, and its worktree and branch are untouched.
+
+### CL3. Uncommitted work is kept
+
+1. Merge a worker's branch, then leave a new file or an edit in its worktree without committing it.
+2. Call `atrium_cull` on it.
+
+**Expected:** the worker is asked to leave (`exited` true), and `kept` says the worktree has uncommitted changes and
+names them. The worktree, the change and the branch are all still there.

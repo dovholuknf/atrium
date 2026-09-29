@@ -57,8 +57,10 @@ number. Cold start reads it first.
 
 ## 6. Cull validated doers (only if clint validated them)
 
-Only after clint has said the work is good, recycle idle validated doers with `atrium_exit` to free launch slots
-(cap is 10 concurrent). Never cull a doer whose work clint has not confirmed.
+Only after clint has said the work is good, retire each validated doer whose branch is merged with `atrium_cull
+<handle>`. It exits the doer, removes its worktree and deletes its branch, which frees its launch slot (cap is 10
+concurrent) and ends the hand cleanup. The room refuses an unmerged branch and keeps a dirty worktree, and says so.
+Never cull a doer whose work clint has not confirmed.
 
 ## 7. Improve the runbook from what this wave taught
 

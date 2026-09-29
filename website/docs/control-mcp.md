@@ -50,6 +50,7 @@ going to use. Put the entry above in that file.
 | `atrium_task` | One card: its status, what its runner is doing, its recent events, and whether you saw its last turn. |
 | `atrium_launch` | Start a new agent in a directory, on its own card, supervised by atrium. |
 | `atrium_exit` | Ask a session to finish and leave. Asked, not killed. |
+| `atrium_cull` | Retire a worker whose merged work you accepted: it leaves, its worktree and branch are removed. |
 | `restart_atrium` | Wind a room down and bring it straight back on the same database. |
 
 ### Talking, not typing
@@ -75,6 +76,17 @@ own card, it outlives the session that started it, and you can watch it, type in
 
 A session another session launched should end every turn with `atrium_report` or `atrium_say` to its launcher. A
 turn that ends with neither is a silent stop, and the launcher is told, then your board.
+
+### Culling a finished worker
+
+`atrium_cull` is how a worker's slot comes back once its work is done. Calling it is the acceptance, so call it after
+the worker's branch is merged into `claude/main` and you are finished with the work, never before. A worker cannot
+cull itself.
+
+- **The room checks.** A card not tagged `atrium:subagent`, or one whose branch is not merged, is refused whole.
+- **It asks, then removes.** The worker is asked to leave, then its worktree is removed and its branch deleted.
+- **Uncommitted work is kept.** A dirty worktree stays with its branch, and `kept` says why. The worker still leaves.
+- **Nothing is forced.** Git removes the worktree only when it agrees it is clean. The card and its history stay.
 
 ### Seen
 
