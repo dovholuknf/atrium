@@ -11,6 +11,11 @@ section heading is just "what landed in this iteration."
   after it reattaches and again 30 seconds later, and reverts to the snapshot from step 0 when either check fails.
   The hub reporting the room attached was not enough: a room with a frozen store still attaches.
 
+- **The store's test suite fails on any path from a held connection to the pool.**
+  `TestNothingHoldingTheConnectionReachesThePool` reads `internal/store` and follows calls from every function that
+  holds a `*Tx` or a `querier` to any use of `s.db`. The pool has one connection, so such a path deadlocks the store,
+  which is what took the room down on 2026-09-29. It fails on that tree and passes on this one.
+
 - **The hub no longer panics on a `null` event.** `tagEvent` wrote the room onto the nil map that `null` decodes
   to, which ended that board's event stream. It now passes the payload through untouched.
 

@@ -3179,7 +3179,17 @@ Report a table with a keep, fix or delete recommendation per test. Delete nothin
 
 ## r-002. The permission hook waits forever on a frozen room (bug, HIGH)
 
-Status: not started. Owned by @runtime. Filed 2026-09-29 after the room deadlock (fixed by `abc3cf9`).
+Status: done 2026-09-29, in the dotfiles hook (uncommitted there). Owned by @runtime. Filed 2026-09-29 after the
+room deadlock (fixed by `abc3cf9`).
+
+Built as the liveness probe. `/gate` reads the store, so the hook now asks it of EVERY session, forced and wired
+ones included, with a 3 second deadline (`ATRIUM_PERM_PROBE_TIMEOUT` overrides it). No answer means fail open. The
+`/permission` POST keeps no deadline, since a human may take minutes. The window left open is a store freezing
+between the probe and the POST, which costs one tool call per session rather than all of them.
+
+The hook's default address also moved from `http://localhost:7777` to `http://127.0.0.1:7777`. On this machine
+`localhost` tries `::1` first and costs about 2 seconds a request, because the room binds IPv4 only. That was 2 to 4
+seconds on every gated tool call, and it would have left the 3 second probe 1 second of margin.
 
 `atrium-perm-hook.ps1` POSTs `/permission` with no client timeout (line 195). A room that accepts TCP but never
 answers holds every gated tool call in every session, and the fail-open `catch` never fires. The script lives in
@@ -3190,7 +3200,13 @@ open within seconds.
 
 ## m-002. A deploy is healthy only when the room answers (bug, HIGH)
 
-Status: not started. Owned by @merge. Filed 2026-09-29 after the room deadlock.
+Status: done 2026-09-29 (`29ddd74`). Owned by @merge. Filed 2026-09-29 after the room deadlock.
+
+`deploy-batch.ps1` refuses a build that does not report its commit, checks `/v1/settings` on the room right after it
+reattaches and 30 seconds later, and reverts to the step 0 snapshot on failure. The revert path has not run for
+real, since that needs a frozen room. The class of bug behind the outage is also locked out at test time now:
+`TestNothingHoldingTheConnectionReachesThePool` in `internal/store/txpool_test.go` reads the package source and
+fails on any path from a `*Tx` or `querier` to `s.db`. It fails on the tree that deadlocked.
 
 `scripts/live/deploy-batch.ps1` reported `room reattached: True` for a room that was frozen, because the link
 attaches before the startup ledger sweep runs. The health check has to be a request the room itself serves, such as
