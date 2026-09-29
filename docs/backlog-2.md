@@ -1731,5 +1731,10 @@ default), so a loaded machine can be given more time without editing the file. E
 any other wait whose failure names only the symptom, says which wait ran out and how long it had. Owner @ui, queued
 behind item 80.
 
+Status 2026-09-29, done on `claude/ui`. `HEADLESS_SLOW` scales all 191 timeouts, not the sleeps. The dismiss block
+names its three waits, and its menu wait opens the menu again if a render closed it, which is the likelier flake
+than a slow browser. A full run with `HEADLESS_SLOW=3` beside `go test` passed. Other sections still fail on the
+symptom only when a wait runs out, and get the same treatment when one is caught flaking.
+
 
 ------------
