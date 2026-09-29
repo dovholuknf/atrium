@@ -16,6 +16,8 @@
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
+const os = require("os");
+const crypto = require("crypto");
 const { wholeBoard } = require("./board-source.js");
 
 // The board's xterm bundle, served off disk so a real Terminal is built. The
@@ -373,6 +375,68 @@ let stalledCount = 0;
 
 const HTML = wholeBoard();
 
+// The file endpoints the walk drawer uses, answering from a directory per card and the way
+// internal/api/filetext.go does: a write quotes the hash it read, and a stale one is a 409 that hands back what
+// is there now. `walkDirs` is card id -> a TEMPORARY COPY, never a real review folder. See `walkSection`.
+const walkDirs = {};
+const walkHash = b => crypto.createHash("sha256").update(b).digest("hex");
+function walkRoute(req, res, url) {
+  const m = /^\/v1\/tasks\/([^/]+)\/files\/(list|text)$/.exec(url);
+  if (!m || !walkDirs[m[1]]) return false;
+  const dir = walkDirs[m[1]];
+  const rel = new URL(req.url, "http://x").searchParams.get("path") || "";
+  const full = path.resolve(dir, rel);
+  const deny = () => { res.writeHead(403, { "Content-Type": "application/json" }); res.end('{"error":"outside"}'); };
+  if (full !== path.resolve(dir) && !full.startsWith(path.resolve(dir) + path.sep)) { deny(); return true; }
+  if (m[2] === "list") {
+    let ents;
+    try { ents = fs.readdirSync(full, { withFileTypes: true }); } catch (e) { deny(); return true; }
+    const entries = ents.map(d => {
+      const st = fs.statSync(path.join(full, d.name));
+      return { name: d.name, path: rel ? rel.replace(/\/$/, "") + "/" + d.name : d.name, dir: d.isDirectory(),
+        size: d.isDirectory() ? undefined : st.size, mtime: st.mtime.toISOString() };
+    }).sort((a, b) => (a.dir === b.dir ? (a.name < b.name ? -1 : 1) : a.dir ? -1 : 1));
+    sendJSON(res, { path: rel, parent: "", entries });
+    return true;
+  }
+  if (req.method === "PUT") {
+    let raw = "";
+    req.on("data", c => { raw += c; });
+    req.on("end", () => {
+      let body = {};
+      try { body = JSON.parse(raw || "{}"); } catch (e) {}
+      if (!String(body.hash || "").trim()) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end('{"error":"a write has to say what it was based on"}');
+        return;
+      }
+      let cur;
+      try { cur = fs.readFileSync(full); } catch (e) { deny(); return; }
+      if (walkHash(cur) !== body.hash) {
+        res.writeHead(409, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "that file changed while you were editing it. nothing was written.",
+          text: cur.toString("utf8").replace(/\r\n/g, "\n"), hash: walkHash(cur) }));
+        return;
+      }
+      let out = String(body.text || "");
+      if (body.eol === "\r\n") out = out.replace(/\r\n/g, "\n").replace(/\n/g, "\r\n");
+      fs.writeFileSync(full, out);
+      sendJSON(res, { ok: true, hash: walkHash(Buffer.from(out)) });
+    });
+    return true;
+  }
+  let raw;
+  try { raw = fs.readFileSync(full); } catch (e) { deny(); return true; }
+  if (raw.length > (2 << 20)) {
+    res.writeHead(400, { "Content-Type": "application/json" });
+    res.end('{"error":"that file is too large to edit here. download it instead"}');
+    return true;
+  }
+  sendJSON(res, { path: full.replace(/\\/g, "/"), text: raw.toString("utf8").replace(/\r\n/g, "\n"),
+    hash: walkHash(raw), eol: raw.includes("\r\n") ? "\r\n" : "\n" });
+  return true;
+}
+
 function sendJSON(res, obj) {
   const body = JSON.stringify(obj);
   res.writeHead(200, { "Content-Type": "application/json" });
@@ -463,6 +527,7 @@ const server = http.createServer((req, res) => {
     });
     return;
   }
+  if (walkRoute(req, res, url)) return;
   if (url.startsWith("/v1/tasks/")) {
     const id = url.slice("/v1/tasks/".length);
     // The unpin behind dismiss: togglePin PATCHes the card, and the mutated pin
@@ -6173,6 +6238,232 @@ async function questionsClickSection(browser, base) {
   if (errors.length) fail("questionsClick: the page threw: " + errors.join(" | "));
 }
 
+// ── the walk drawer ───────────────────────────────────────────────────────────
+//
+// Drives the drawer over a TEMPORARY COPY of two real review folders (the mock above serves the copy, and nothing
+// here writes to the originals, which may have a walker in them). Skipped with a message when they are absent.
+// See js/walk.js and docs/review-tab-design.md.
+const WALK_SAMPLES = [
+  { id: "land-walka", dir: "D:/worktrees/claude/reviews/github-openziti-zrok/pr-1277-4f332b8", n: 15 },
+  { id: "land-walkb", dir: "D:/worktrees/claude/reviews/github-openziti-ziti/pr-4397-990aa0c", n: 11 }
+];
+
+async function walkSection(browser, base) {
+  const absent = WALK_SAMPLES.filter(s => !fs.existsSync(path.join(s.dir, "findings")));
+  for (const s of absent) console.log("walk: " + s.dir + " is not on this machine, so that folder is skipped.");
+  const samples = WALK_SAMPLES.filter(s => !absent.includes(s));
+  if (!samples.length) return;
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "atrium-walk-"));
+  for (const s of samples) {
+    const to = path.join(tmp, s.id);
+    fs.mkdirSync(path.join(to, "findings"), { recursive: true });
+    for (const f of fs.readdirSync(path.join(s.dir, "findings"))) {
+      fs.copyFileSync(path.join(s.dir, "findings", f), path.join(to, "findings", f));
+    }
+    if (fs.existsSync(path.join(s.dir, "pr.diff"))) fs.copyFileSync(path.join(s.dir, "pr.diff"), path.join(to, "pr.diff"));
+    walkDirs[s.id] = to;
+  }
+  const was = tasksMode;
+  tasksMode = "land";
+  landList = samples.map(s => landCard(s.id, { supervised: true, worktree: "/walk/" + s.id }));
+  landPerms = [];
+  const errors = [];
+  const ctx = await landContext(browser);
+  await ctx.grantPermissions(["clipboard-read", "clipboard-write"], { origin: base }).catch(() => {});
+  await ctx.addInitScript(() => {
+    window.__walkPollMs = 400;
+    window.__sent = [];
+    window.__links = [];
+    const Real = window.WebSocket;
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", onopen: null, onclose: null, onmessage: null,
+        onerror: null, send(d) { window.__sent.push(d); }, close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+    // The real helper is sau-006's (terminal-links.js). Stubbed so the test sees what the keys asked to open.
+    window.__stubLink = true;
+  });
+  const S = "#walk-drawer ";
+  try {
+    for (const s of samples) {
+      const p = await ctx.newPage();
+      p.on("pageerror", e => errors.push(String(e)));
+      const dir = walkDirs[s.id];
+      const files = () => fs.readdirSync(path.join(dir, "findings")).sort();
+      const read = n => fs.readFileSync(path.join(dir, "findings", n), "utf8");
+      const write = (n, t) => fs.writeFileSync(path.join(dir, "findings", n), t);
+      const nm = s.id + ": ";
+      await p.goto(base, { waitUntil: "domcontentloaded" });
+      await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+      await p.evaluate(() => {
+        window.openLinkReused = u => { window.__links.push(u); };
+      });
+      // The card has to be in the list before it can be attached, or attachTask finds nothing.
+      await p.waitForSelector('#stack-list .stackrow[data-id="' + s.id + '"]', { state: "attached", timeout: slow(15000) });
+      await p.evaluate(id => attachTask(id), s.id);
+      await p.waitForFunction(id => termSock && termSock.readyState === 1 && termTask && termTask.id === id, s.id,
+        { timeout: slow(10000) });
+      await p.waitForSelector("#t-walk:not([hidden])", { timeout: slow(10000) })
+        .catch(() => fail(nm + "no walk button for a card with a findings folder."));
+      await p.click("#t-walk");
+      await p.waitForSelector(S + ".wk-row", { timeout: slow(10000) });
+      const names = files();
+      const orig0 = read(names[0]);
+      // The count is the copy's own: the real folders are live and a walker may add or renumber findings.
+      s.n = names.length;
+      const rows = () => p.$$eval(S + ".wk-row", els => els.map(e => ({
+        n: e.querySelector(".wk-n").textContent, sev: e.querySelector(".wk-sev").textContent,
+        cls: e.className, leak: !!e.querySelector(".wk-lk") })));
+      let r = await rows();
+      if (r.length !== s.n) fail(nm + "the rail has " + r.length + " rows, not " + s.n);
+      if (r.map(x => x.n).join() !== names.map(f => f.split("-")[0]).join()) fail(nm + "the rail is not in file order.");
+      const leaks = names.filter(f => /^Leak:/m.test(read(f))).length;
+      if (r.filter(x => x.leak).length !== leaks) fail(nm + "leak marks " + r.filter(x => x.leak).length + " vs " + leaks);
+      if (!r.every(x => /^(HIGH|MED|LOW|NIT|BLOCKING)/.test(x.sev))) fail(nm + "a severity chip is missing: " + JSON.stringify(r.map(x => x.sev)));
+      const segs = await p.$$eval("#walk-bar i", e => e.length);
+      if (segs !== s.n) fail(nm + "progress has " + segs + " segments, not " + s.n);
+
+      // The code comes from pr.diff, with context around the anchored line.
+      const code = await p.$$eval(S + ".wk-code .wk-l", e => e.length);
+      const at = await p.$$eval(S + ".wk-code .wk-l.at", e => e.length);
+      if (fs.existsSync(path.join(dir, "pr.diff")) && (code < 2 || at !== 1)) fail(nm + "no diff context for finding 1: " + code + " lines, " + at + " anchored.");
+      const label = read(names[0]).split("\n")[1];
+      const shown = await p.textContent(S + ".wk-comment");
+      if (!shown.startsWith(label)) fail(nm + "the comment does not start with its label line.");
+      // Evidence folded to one line, and never inside the comment.
+      if (/Evidence|Cause:/.test(shown)) fail(nm + "the comment shows Evidence.");
+
+      // j k g
+      const cur = async () => (await rows()).findIndex(x => /\bcur\b/.test(x.cls));
+      await p.focus("#walk-drawer");
+      await p.keyboard.press("j");
+      if (await cur() !== 1) fail(nm + "j did not move to the second finding.");
+      await p.keyboard.press("k");
+      if (await cur() !== 0) fail(nm + "k did not move back.");
+
+      // s writes Walk: skipped into the copy, u takes it out again.
+      await p.keyboard.press("s");
+      await p.waitForFunction(() => document.querySelector("#walk-rail .wk-row.cur.skipped"), null, { timeout: slow(5000) })
+        .catch(() => fail(nm + "s did not mark the row skipped."));
+      if (!/^Walk: skipped \d{4}-/m.test(read(names[0]))) fail(nm + "s wrote no Walk: skipped line.");
+      await p.keyboard.press("g");
+      if (await cur() !== 1) fail(nm + "g did not jump to the first unwalked finding.");
+      await p.keyboard.press("k");
+      await p.keyboard.press("u");
+      await p.waitForFunction(() => !document.querySelector("#walk-rail .wk-row.skipped"), null, { timeout: slow(5000) })
+        .catch(() => fail(nm + "u did not clear the mark."));
+      if (/^Walk:/m.test(read(names[0]))) fail(nm + "u left the Walk: line.");
+      if (read(names[0]) !== orig0) fail(nm + "s then u changed more than the Walk line.");
+
+      // p asks for the URL and writes it.
+      await p.keyboard.press("p");
+      await p.waitForSelector("#ask-input", { state: "visible", timeout: slow(5000) });
+      await p.fill("#ask-input", "https://github.com/x/y/pull/1#discussion_r1");
+      await p.keyboard.press("Enter");
+      await p.waitForFunction(() => document.querySelector("#walk-rail .wk-row.cur.posted"), null, { timeout: slow(5000) })
+        .catch(() => fail(nm + "p did not mark the row posted."));
+      if (!/^Walk: posted \S+ https:\/\/github\.com\/x\/y\/pull\/1#discussion_r1$/m.test(read(names[0]))) fail(nm + "p wrote no Walk: posted line: " + read(names[0]).slice(-200));
+      await p.focus("#walk-drawer");
+      await p.keyboard.press("u");
+      await p.waitForFunction(() => !document.querySelector("#walk-rail .wk-row.posted"), null, { timeout: slow(5000) });
+
+      // a types the prefix and no Enter, into the one terminal.
+      await p.evaluate(() => { window.__sent = []; });
+      await p.focus("#walk-drawer");
+      await p.keyboard.press("a");
+      const want = await p.evaluate(() => {
+        const it = dockCurrent();
+        return `about ${it.num} ${it.path.split("/").pop()}:${it.line}, `;
+      });
+      await p.waitForTimeout(200);
+      const sent = (await p.evaluate(() => window.__sent)).map(x => JSON.parse(x)).filter(x => x.t === "in");
+      if (sent.length !== 1 || sent[0].d !== want) fail(nm + "a sent " + JSON.stringify(sent) + ", not exactly " + JSON.stringify(want));
+
+      // C copies the comment part and opens the deep link through openLinkReused.
+      await p.focus("#walk-drawer");
+      await p.keyboard.press("Shift+C");
+      await p.waitForFunction(() => window.__links.length, null, { timeout: slow(5000) })
+        .catch(() => fail(nm + "C opened nothing."));
+      const link = read(names[0]).split("\n")[2];
+      const opened = await p.evaluate(() => window.__links[0]);
+      if (opened !== link) fail(nm + "C opened " + opened + ", not " + link);
+      const clip = await p.evaluate(() => navigator.clipboard.readText()).catch(() => null);
+      if (clip !== null) {
+        if (!clip.startsWith(label) || /Evidence/.test(clip)) fail(nm + "the copy is not the comment part.");
+      }
+
+      // e with a stale hash shows the compare, and keep mine wins.
+      await p.focus("#walk-drawer");
+      await p.keyboard.press("e");
+      await p.waitForSelector("#walk-edit-text", { timeout: slow(5000) });
+      const disk = read(names[0]);
+      await p.waitForTimeout(30);
+      write(names[0], disk.replace("\n\nEvidence", "\n* the walker changed this\n\nEvidence"));
+      await p.fill("#walk-edit-text", label + "\n\n* mine only");
+      await p.keyboard.press("Control+s");
+      await p.waitForSelector("#walk-cmp-mine", { timeout: slow(5000) })
+        .catch(async () => fail(nm + "a refused write showed no compare: " + await p.evaluate(() =>
+          JSON.stringify({ pane: document.getElementById("walk-item").innerText.slice(0, 300),
+            editing: !!dock.editing, toasts: toastLog().map(t => t.title + ": " + t.body).slice(-3) }))));
+      if (!/mine only/.test(await p.textContent("#walk-cmp-mine")) || !/the walker changed this/.test(await p.textContent("#walk-cmp-disk"))) {
+        fail(nm + "the compare does not show both sides.");
+      }
+      if (!read(names[0]).includes("the walker changed this")) fail(nm + "a refused write touched the file.");
+      await p.click('#walk-drawer [data-act="keep"]');
+      await p.waitForFunction(() => !document.getElementById("walk-cmp-mine"), null, { timeout: slow(5000) });
+      if (!read(names[0]).includes("* mine only") || read(names[0]).includes("the walker changed this")) fail(nm + "keep mine did not write mine.");
+      if (!read(names[0]).includes("\nEvidence\n")) fail(nm + "an edit lost the Evidence.");
+
+      // An external edit flashes its changed lines, a rename keeps the place, a new file is marked new.
+      await p.evaluate(() => dockSelect(dock.items[2].key));
+      const before = await p.evaluate(() => dockCurrent().key);
+      const third = names[2];
+      await p.waitForTimeout(50)
+      write(third, read(third).replace("\n\nEvidence", "\n* edited elsewhere\n\nEvidence"));
+      await p.waitForSelector(S + ".wk-cl.flash", { timeout: slow(5000) })
+        .catch(() => fail(nm + "an external edit did not flash."));
+      const renamed = third.replace(/^\d+/, "97");
+      fs.renameSync(path.join(dir, "findings", third), path.join(dir, "findings", renamed));
+      await p.waitForFunction(n => dock.items.some(i => i.name === n), renamed, { timeout: slow(5000) });
+      const after = await p.evaluate(() => dockCurrent().key);
+      if (after !== before) fail(nm + "a renamed finding lost its place.");
+      if (await p.$(S + ".wk-new")) fail(nm + "a renamed finding was marked new.");
+      write("98-low-added.go-L1.txt", read(names[3]).replace(/^(.*\n)(\S+ \S+ line )\d+/, "$1$2" + "1").replace("Evidence", "Evidence\nId: added-1"));
+      await p.waitForSelector(S + ".wk-new", { timeout: slow(5000) })
+        .catch(() => fail(nm + "a new finding got no new chip."));
+
+      // walk done asks once when a leak is neither posted nor skipped.
+      await p.evaluate(() => { window.__sent = []; });
+      await p.click(S + ".walk-head .go");
+      if (leaks) {
+        await p.waitForSelector("#ask-actions button", { state: "visible", timeout: slow(5000) });
+        const q = await p.textContent("#ask-body");
+        if (!/leak/.test(q) || !/finish anyway/.test(q)) fail(nm + "walk done asked the wrong thing: " + q);
+        await p.click("#ask-actions button:first-child");
+        await p.waitForTimeout(200);
+        if ((await p.evaluate(() => window.__sent)).length) fail(nm + "walk done sent something after `not yet`.");
+        await p.click(S + ".walk-head .go");
+        await p.waitForSelector("#ask-actions button", { state: "visible", timeout: slow(5000) });
+        await p.click("#ask-actions button:last-child");
+      }
+      await p.waitForTimeout(300);
+      const done = (await p.evaluate(() => window.__sent)).map(x => JSON.parse(x)).filter(x => x.t === "in").map(x => x.d).join("");
+      if (done !== "walk done\r") fail(nm + "walk done typed " + JSON.stringify(done));
+      await p.close();
+    }
+  } finally {
+    await ctx.close();
+    tasksMode = was;
+    landList = [];
+    for (const s of WALK_SAMPLES) delete walkDirs[s.id];
+    try { fs.rmSync(tmp, { recursive: true, force: true }); } catch (e) {}
+  }
+  if (errors.length) fail("walk: the page threw: " + errors.join(" | "));
+}
+
 async function main() {
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = "http://127.0.0.1:" + server.address().port;
@@ -6191,7 +6482,7 @@ async function main() {
       skinScope: skinScopeSection, skinHeal: skinHealSection, toastLives: toastLivesSection,
       history: historySection, contextSize: contextSizeSection, peekEverywhere: peekEverywhereSection, cardRoute: cardRouteSection,
       quietDoer: quietDoerSection, looksIdle: looksIdleSection, notifyOff: notifyOffSection,
-      questionsClick: questionsClickSection };
+      questionsClick: questionsClickSection, walk: walkSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -8116,6 +8407,7 @@ async function main() {
     await quietDoerSection(browser, base);
     await notifyOffSection(browser, base);
     await questionsClickSection(browser, base);
+    await walkSection(browser, base);
     await reselectSection(browser, base);
     // ── over a terminal the toasts hang from the top right ─────────────────
     await toastsTopSection(browser, base);
