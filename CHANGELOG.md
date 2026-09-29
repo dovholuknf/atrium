@@ -5,6 +5,17 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **A keep-alive fork carries the card's launch args, so lean cards can warm.** See `docs/backlog-2.md` item 73 and
+  `docs/keepalive-fork-args-design.md`.
+
+  The refresh fork now starts the way a restart does. It builds the card's restart command line with the same code
+  (the runner's resume args, the card's stored extra args, and for a lean card the lean set), then keeps only the
+  flags that shape the cached request: the system prompt, the tool list and the MCP config. The settings, the
+  permission modes, added directories and the prompt are dropped on purpose, so the fork still runs atrium's
+  block-all hook for one turn. A lean fork also sets `CLAUDE_CODE_DISABLE_AUTO_MEMORY`. The `lean card` skip is gone.
+  A card whose launch args cannot be rebuilt is refused with the reason on the card, and a fork that still misses
+  the cache stops the card as before.
+
 - **A worker whose worktree was removed is asked to leave.** The reaper now asks a supervised `atrium:subagent`
   runner to leave when its directory has gone: the directory does not exist, or it held a `.git` entry on an earlier
   tick and no longer does, which is what git leaves after it unregisters a worktree it could not fully delete. A

@@ -5942,3 +5942,28 @@ with both.
    both keep their runners.
 6. Control: a worker launched in a SUBDIRECTORY of a repository (no `.git` in its own directory) keeps its runner
    across several minutes. Deleting that directory then ends it within about a minute.
+
+## DO. A lean card is kept warm
+
+### DO1. A lean card refreshes
+
+1. Launch a lean worker (`lean` on `atrium_launch`) with keep-alive on and let it reach 50k tokens of context.
+2. Leave it idle until the switch shows a refresh is due, about five minutes before its cache expires.
+
+**Expected:** the card's chip shows a warmed refresh with a cache read near its whole context, not a `miss`, and
+the card is not stopped.
+
+### DO2. The fork carries no settings or permission mode
+
+1. Launch a lean card with `--dangerously-skip-permissions` in its extra args.
+2. Let a refresh run and read the fork's command line in the daemon log or a process list.
+
+**Expected:** the fork has the lean `--append-system-prompt`, `--disallowedTools` and `--mcp-config`, and has only
+atrium's `--settings` file. It has no `--dangerously-skip-permissions` and no lean `--setting-sources`.
+
+### DO3. A card that cannot be rebuilt is refused
+
+1. Start a lean card that names an MCP server, then remove that server from the runner's MCP config.
+2. Wait for a refresh to come due.
+
+**Expected:** no fork runs and the card's chip says why, starting `launch options:`.
