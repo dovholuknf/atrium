@@ -729,7 +729,7 @@ const alerting = (() => {
     // PERMISSIONS STILL RING. An agent that comes back up already blocked is
     // frozen right now, and that is the one thing during a restart worth being
     // interrupted for.
-    if (settlingNow && (kind === "arrived" || kind === "waiting")) {
+    if (settlingNow && (kind === "arrived" || kind === "waiting" || kind === "looksidle")) {
       known[kind] = ids;
       return;
     }
@@ -827,6 +827,7 @@ const alerting = (() => {
         permission: "agents need permission",
         arrived: "new agents on the board",
         stuck: "launched agents are stuck",
+        looksidle: "agents look idle (no turn-end received)",
       }[kind] || "agents are ready"}`
       : d.title;
     // A pile names who, since the count alone does not, and the names are the
