@@ -2,6 +2,14 @@
 
 Design only. Nothing here is built. Written 2026-09-29 by @runtime.
 
+**What is decided and what waits.** Sections 1 and 2 fix bugs and are decided: they can be built now. Sections 3
+and 4 are written as the recommended answers to the open questions at the end, and are NOT built until clint answers.
+Each open question says which part of the body it changes. A "no" removes that part and nothing else depends on it.
+
+Mercurius: round 1 (s_A8w3s9a6GtA0) asked which parts were decided, and that is now marked. Round 2
+(s_cTMD6Gs7OLsF) found sections 1 and 2 buildable. Its one remaining question is whether 3 and 4 are in scope, which is
+what clint's questions decide. Both advisories are folded into the tests.
+
 ## What was asked
 
 Item 12 (raised 2026-09-24): a codex session stopped at start to update itself (`Updating Codex via npm install -g
@@ -81,9 +89,13 @@ needed, which matters because `refreshOffered` writes none. The check reads the 
 exactly that shape, which atrium wrote itself. A card without one (every card from before this) counts as older, so
 it is released at most once.
 
+The URL is part of the runner-update state contract, not only a link. The code that builds and parses it says so in a
+comment, so a later tidy of how cards show links cannot quietly break release detection. The package goes into the
+path as npm writes it, `@openai/codex` with its slash, and the parser splits on the last `/v/`.
+
 No migration. The column and index exist, and `''` is already "not keyed".
 
-### 3. Codex does not update itself inside a launch (fixes C, item 12's third ask)
+### 3. Codex does not update itself inside a launch (fixes C, item 12's third ask). Waits on question 1
 
 Codex takes config overrides as `-c key=value`, which the codex row already uses for effort. `check_for_update_on_startup`
 is a top-level config key (present in codex-cli 0.156.1's `ConfigToml`). The seeded codex row gets
@@ -99,7 +111,7 @@ only).
 Consequence: with the flag, codex never updates or offers to, so atrium's card is the only way anybody hears. That is
 why A and B come first.
 
-### 4. The auto-update setting (item 12's second ask)
+### 4. The auto-update setting (item 12's second ask). Waits on questions 2 and 3
 
 Per runner row, not per codex: the mechanism is generic and claude has a package too. It is kept in the settings table
 as `runner_auto_update`, a JSON map of runner id to true, so no migration is needed. Off for every row by default.
@@ -113,6 +125,10 @@ When the check finds a newer version for a row with auto-update on:
   launch is never held for an install. Since the check runs before the spawn, "after" means the next check. So in
   practice auto-update happens at the first background check with nothing running, which is a fixture at boot, a
   queued launch, or a peer's launch.
+- **A check at boot, only for rows with auto-update on** (question 3). One registry request per such row per daemon
+  start, through the same `checkRunnerUpdate` with `blocking` false, so a room that seldom launches that runner still
+  gets updated. Rows with auto-update off are never checked at boot. If clint answers no, this bullet goes, and
+  auto-update waits for a background launch as above.
 - **The install is `npm install -g <package>`, bounded.** Started with `hideWindow`, three minutes at most, output
   bounded while read (the sources rule), never retried within one check.
 - **Recorded on the card.** The update card is filed (or refreshed) first, and the result lands on it as an event
@@ -131,6 +147,9 @@ When the check finds a newer version for a row with auto-update on:
 ## Tests
 
 - Store: `ReleaseIntakeKey` clears one key, and a second `Offer` with that key then inserts.
+- The offered-version URL round-trips for `@openai/codex` (a scoped package with a slash) and for an unscoped one,
+  and a URL of any other shape reads as no version.
+- A backlog update card refreshed from one offered version to a newer one reads back the newer version from its URL.
 - Daemon, with a fake registry (the existing `updateRegistry` seam) and a fake installed version:
   - installed equal to latest archives a backlog update card, including a legacy-keyed one
   - a started card at an older offered version is released and a new card is offered
@@ -143,13 +162,17 @@ When the check finds a newer version for a row with auto-update on:
 
 ## Open questions for clint
 
-1. **Suppress codex's own updater (3) on the seeded row?** Recommendation: yes. It is what made item 12 look like a
-   hang, and it is an item 67 style trap for typed input. The cost is that codex never updates without atrium's card
-   or the setting.
-2. **Auto-update per runner row, or codex only?** Recommendation: per row, off everywhere. Nothing in it is
-   codex-specific.
-3. **Is "the next background check with nothing running" soon enough for auto-update?** On a room that seldom
-   launches codex it may never come. The alternative is a check at boot for rows with auto-update on, which is one
-   registry request per such row per boot. Recommendation: add the boot check, only for rows with auto-update on.
-4. **Archive the two 2026-09-14/15 claude cards and the stale codex card now,** or let rule 1 do it at the next
-   launch? Recommendation: let rule 1 do it, since that exercises it.
+Sections 1 and 2 do not wait on any of these.
+
+1. **Suppress codex's own updater on the seeded row?** Decides section 3. Recommendation: yes. It is what made item
+   12 look like a hang, and it is an item 67 style trap for typed input. The cost is that codex never updates without
+   atrium's card or the setting. A no removes section 3 and its migration.
+2. **Auto-update per runner row, or codex only?** Decides section 4's scope. Recommendation: per row, off everywhere,
+   since nothing in it is codex-specific. Codex only would key the same setting on the codex row and hide the switch
+   on the others. A no to auto-update altogether removes section 4.
+3. **Check at boot for rows with auto-update on?** Decides section 4's last bullet. On a room that seldom launches
+   codex, "the next background check with nothing running" may never come. Recommendation: yes, one registry
+   request per such row per boot. A no removes that bullet.
+4. **Archive the two 2026-09-14/15 claude cards and the stale codex card by hand now,** or let section 1 do it at the
+   next launch of each runner? Recommendation: let section 1 do it, since that exercises it. Changes no code either
+   way.
