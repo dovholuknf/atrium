@@ -22,7 +22,7 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 13 | Housekeeping asked, not answered | housekeeping | waiting on clint |
 | 14 | Per-card notification log | design | tentative |
 | 15 | Pluggable event sink, what is left | design | stages 1-2 done |
-| 16 | Reviews that remember: a resident reviewer per repo, and a panel that reads once | design, HIGH PRIORITY | not started, clint out of tokens 2026-09-25 |
+| 16 | Reviews that remember: a resident reviewer per repo, and a panel that reads once | design, HIGH PRIORITY | designed, `docs/review-memory-design.md`. Stage 1 buildable, stage 2 waits on clint (3 questions) |
 | 17 | A Claude subagent finishing tells clint the card is waiting on him | bug | DONE, merged `29d45f5`, needs a hook binary rebuild and a room restart. Test plan BN |
 | 18 | On the terminals tab, toasts sit top right, not over the input line | feature | DONE, `910b186` |
 | 19 | Launch (and every other submit) shows it is working and refuses a second click | bug | DONE, `eb1603e` board, `50db006` daemon |
@@ -52,13 +52,13 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 43 | A worker's finished turn shows "nobody has looked" to clint, although its launcher read the report | bug | not started |
 | 44 | A gear checkbox: no notifications from agent-launched cards, on by default | feature | not started |
 | 45 | Every card shows its context size, a launcher hears once past a threshold | feature | sa87 built it to clint's decision on `claude/context-size`, not merged |
-| 46 | Provision a machine as a room over ssh, from one command and later from the board | feature | stage 1 sa92, started 2026-09-28 |
+| 46 | Provision a machine as a room over ssh, from one command and later from the board | feature | stage 1 DONE, `35fa4a1` `5145bad`, fb03 toolchain waits on a fetch. Stage 2 not started, 4 questions |
 | 47 | A resident session's alias defaults from its name, can be read and set, and heads the terminal title bar | feature, HIGH | DONE by sa47, merged `5b3d9e5`, deployed `66717c5` |
 | 48 | `atrium_launch` takes a model and a thinking effort | feature | DONE by sa48, merged, needs room and hub restarts |
-| 49 | The orchestrator can appear on every room | design | deep backlog, not started |
+| 49 | The orchestrator can appear on every room | design | @fabric, design reviewed `1ccecf2`, ready to build, 3 questions |
 | 50 | Views of agents, beyond groups | design | not started |
 | 51 | Five kept worktrees show 48 commits not matched on `claude/main` | housekeeping | DONE, all five safe, deleted 2026-09-28 |
-| 52 | A pinned strip with cards from two rooms orders only one room | bug | not started |
+| 52 | A pinned strip with cards from two rooms orders only one room | bug | DONE by fb04, merged into claude/fabric, needs hub and room restarts. `prune` has the same shape, unfixed |
 | 53 | `setViewport` and `dropViewport` compute under `r.mu` and apply outside it | bug | by sa53, DONE, reproduced and fixed |
 | 54 | Terminal test suite part 2: `screen.go` against xterm.js | feature | not started |
 | 55 | Launched runners inherit ATRIUM_DEBUG_INPUTLAG from the room | bug | DONE by sa55, merged, needs a room restart |
@@ -81,7 +81,7 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 72 | One hover on a card, not two | feature | DONE by sa72, merged `66717c5`, deployed `66717c5` |
 | 73 | A keep-alive fork carries the card's launch args, so lean cards can warm | feature | not started |
 | 74 | A long reply loses lines in the middle on the board's terminal | bug | sa74: inbox ConPTY on a row change. Height hold built, not merged. OpenConsole choice with clint |
-| 75 | sg3 as a room, and machine bootstrap reuses the operator's shared folder under `localai` | feature | sa75, parked. Provision script merged `c3dc597` |
+| 75 | sg3 as a room, and machine bootstrap reuses the operator's shared folder under `localai` | feature | sg3 room works (`35fa4a1` `5145bad`), provision script merged `c3dc597`. CIM for workers and the `localai` account not started, 4 questions |
 | 76 | A worktree helper that links every CLAUDE.md, so workers get project rules | bug, HIGH, FIRST | not started, @merge |
 | 77 | A merge pipeline that does not conflict or rerun | feature, HIGH | not started, @merge, after 76 |
 | 78 | The details popover's token labels mislead | bug | not started |
@@ -630,6 +630,10 @@ The event sink makes this smaller either way: move the bulk (`output` and old au
 offsite, and the primary database plateaus low enough that shrinking it stops mattering.
 
 ## 16. Reviews that remember (HIGH PRIORITY)
+
+**Status 2026-09-29:** designed in `docs/review-memory-design.md`, reviewed by Mercurius over two rounds. Stage 1 (read
+once, panel sized to the change, the #4480 replay) is buildable now. Stage 2 (reviewer files) waits on clint's open
+questions 1, 2 and 6 in that design.
 
 Raised by clint 2026-09-25 during a `review-panel` run on openziti/ziti PR #4480 (a v2.0.x backport). Four
 reviewers (go-security-reviewer, codebase-steward, functional-tester, nonfunctional-tester) each ran for 5.5 minutes
@@ -1459,6 +1463,43 @@ Still open under this item:
   agents, configure one?", offering the `-Install` above. Not built: it needs the hub to know a room's runners and to
   run this script over ssh, which is the stage 2 dialog itself.
 
+**Status, 2026-09-29, @fabric (fb01, fb02, fb03): stage 1 is one command, and a room's work comes back by git.**
+Done:
+
+- **No flags needed.** With no release and no `-Version`, the script builds from the checkout with a `fetch warn`
+  (`35fa4a1`). The release path is unchanged and still fails with its reason, since there are no releases.
+- **Signed-in check and smoke test.** An `auth` step names `ssh -t <target> claude auth login` when claude is not
+  signed in, and a `smoke` step launches a worker that reports a nonce back, with exit 8 when it does not, and
+  `-SmokeOnly` for a room already in use. Proven against sg3, reported in 9 seconds (`35fa4a1`).
+- **No CIM.** Scheduled task actions go through `schtasks.exe` and autostart registers by XML, so a Windows machine
+  that denies CIM over ssh works (`35fa4a1`).
+- **systemd PATH, the second bullet above: built, not proven.** A login-shell `ExecStart` in the packaged unit, and
+  the login shell's PATH written by `atrium-service.sh` (`35fa4a1`). No Linux machine we may test on has run it.
+- **Git both ways.** `scripts/room-git.ps1` `init`, `push-base`, `fetch` and `worktree`: the remote clone is made
+  by push, so the remote needs no GitHub credential, and `provision-room.ps1` runs `init` last (`5145bad`). `push-base`
+  and `fetch` reach a remote, so under the hooks they are clint's to run.
+- **Toolchain: built, not merged.** fb03 installs a room's toolchain under `~/.atrium/toolchain` with a checked hash,
+  and a `room-env.ps1` the room is started through. Proven on claudevm, head `9bce8ad` on `claude/fb03-toolchain` in
+  sg3's clone. It comes here when clint runs `room-git.ps1 fetch sg3`.
+
+Left:
+
+- Autostart as the default (the first bullet above), unchanged.
+- Proving the systemd PATH ("Linux autostart", step 5 of `docs/changes/fabric-1-provision.md`) on a Linux machine
+  that is not a live room.
+- Proving `-Autostart` starting on a Windows room, and the binary swap's `schtasks /End` on a live task. Both only on
+  claudevm, never on a real room.
+- The provision start hook for fb03's `room-env.ps1`, on top of the XML registration, once fb03 is here.
+- Stage 2, the board half. Not started.
+
+Open questions for clint:
+
+1. Should `-Autostart` become the default, and on Windows is it a logon task or the detached room?
+2. Which Linux machine may the Linux autostart test run on? sg4-wsl is a live room and is ruled out.
+3. Should provision write `permissions.allow` for `mcp__atrium-control__*`? Likely no: the smoke worker passes with
+   `--allowedTools=` alone.
+4. When does stage 2 start, and does it wait on item 75's account question?
+
 ## 47. A resident session's alias defaults from its name (feature)
 
 Raised 2026-09-28 by clint. Item 35 gives a card an alias by default only from a title prefix that holds a digit,
@@ -1503,6 +1544,11 @@ addressable from each. Ideate first: what "on every room" means for a card that 
 room's view shows of it.
 
 **Status, 2026-09-28: deep backlog, not started.** Moved there by clint.
+
+**Status, 2026-09-29: design reviewed, ready to build.** `docs/everywhere-card-design.md`: a tag
+`atrium:everywhere`, a hub index of tagged cards, bare names that miss locally fall through to it for say, tell and
+task, and a scoped view that shows those cards with a room chip. Mercurius round 1 was `ready_to_build`, its one
+advisory folded in as FE10. Building waits on clint's three open questions in the doc. The board's part is @ui's.
 
 ## 50. Views of agents, beyond groups (design)
 
@@ -1567,43 +1613,20 @@ room, so a pinned strip that holds cards from two rooms saves the order of only 
 Also, unverified and a design question for clint: in any sort other than manual, the board has no way to reorder
 pins.
 
-**Design, 2026-09-29 (@ui).**
+**Status, 2026-09-29: diagnosed, design written, moved from @ui to @fabric.** `docs/pin-order-rooms-design.md`. The
+order carries no card in its path, so the hub routes it by the board's stale `writeRoom` header to one room. Fix:
+the hub posts the whole list to every attached room, so each writes its own cards' ranks at their position in the
+whole strip. Hub-side only, no room, board or migration change. The second note stays a question for clint and
+@ui.
 
-Where it goes wrong. Only the terminal strip's pinned drop (`wireTermDrag` in `js/terminal-list.js`, the bucket's
-`ondrop` that calls `/v1/tasks/pin-order`) writes the order as one list. The board and the stack move a pin with
-`nudgeCard`, a `PATCH /v1/tasks/<id>` of one rank, which is card-routed and already right. `pin-order` is in
-`notCards` (`internal/link/cardroute.go`, `namesACard` in `js/rooms.js`), so on the all-rooms view the board's
-fetch wrapper stamps it with `writeRoom`, the stale room of whichever editor was last open. With no `writeRoom`
-the hub answers `needsARoom`. Either way one room at most gets the list, and it ranks its own cards `0..n` as if
-the others were not there.
+**Status, 2026-09-29: DONE by fb04, merged into claude/fabric.** Hub fan-out `63ed4e8` (design tests FF4, FF5), plus the
+store now orders pinned rows only, `8b7d11c`, read and passed by @runtime. `docs/changes/fabric-52-pin-order.md`.
+Needs a hub and room restart. Not fixed and the same shape: `/v1/tasks/prune` also names no card in its path, so the
+hub also sends it to one room.
 
-Why a per-room list is enough. `SetPinOrder` writes `rank = i` for each id at its index `i` and ignores ids it
-does not hold. The strip and the board merge pins across rooms with `byRank`. So if every room gets the WHOLE
-list, each ranks its own cards by their GLOBAL position, the ranks never collide, and the merged sort reproduces
-the order that was dropped.
-
-What gets built, board only, no Go change:
-
-1. In the strip's pinned `ondrop`, after the `patchTask(id, { pinned: true })`, work out the rooms present in the
-   bucket from the tagged ids (`roomOf`). No room (one daemon, or one room with bare ids): one call as today,
-   unchanged. One or more rooms: one `POST /v1/tasks/pin-order` per room, each carrying the whole bare list and
-   an explicit `X-Atrium-Room: <room>` header. The wrapper already lets an explicit header win (`AN EXPLICIT ROOM
-   WINS` in `js/rooms.js`), and the hub's `roomFor` reads the header ahead of everything else.
-2. Sent together with `Promise.allSettled`. A room that fails is named in one toast ("that order did not stick on
-   <room>: <error>"), and the rooms that succeeded keep theirs. It cannot be one transaction across machines,
-   and the next drag rewrites every position anyway. An offline room is where this fails, which the toast says.
-3. A helper, `pinOrderCalls(taggedIds)`, returns the `[{room, ids}]` list so it can be tested without a drop.
-
-The second question. `nudgeItems` offers "move it up or down" for any pinned card under ANY sort (`handList`
-returns the pinned bucket before it looks at the sort), so pins can be reordered in every sort from the card
-menu. The worker confirms that in the headless run. Whether dragging a pin should also work in the non-manual
-sorts is not asked here.
-
-Headless section `pinOrderRooms`: an all-rooms board with pinned cards `a~p1`, `b~q1`, `a~p2` (card ids are
-unique across rooms, as real ones are). Dragging `a~p2` to the top must send exactly two `pin-order` posts, one
-with `X-Atrium-Room: a` and one with `b`, each with the body `{"ids":["p2","p1","q1"]}`. With the mock answering
-the new ranks back, the strip must draw `a~p2, a~p1, b~q1`. One room refusing must toast its name. A single-room board must still send one post with no
-header. The nudge check: under the default sort, "move it up" on a pinned card sends one PATCH with a rank.
+@ui wrote a board-only design first, one post per room with an explicit room header. atrium-87300 chose the hub-side
+one in `docs/pin-order-rooms-design.md` instead, and @ui agreed. Its other finding stands: `nudgeItems` already
+offers "move it up or down" for a pinned card under every sort, from the card menu.
 
 ## 53. `setViewport` and `dropViewport` compute under `r.mu` and apply outside it (bug)
 
@@ -1721,6 +1744,11 @@ The goal is to move work between rooms, so that a room restart kills nothing.
 
 **Status, 2026-09-28: deep backlog, not started.** clint: "seems dumb. deep backlog".
 
+**Status, 2026-09-29: designed, not built.** `docs/multi-room-design.md`, by @fabric. Recommends sibling rooms and a
+room that stops accepting new work before a restart, and NOT the drain to a sibling, because resident sessions never
+drain. The goal (a restart kills nothing) goes to a new item: a holder process per runner that outlives the room.
+Mercurius review: ready_to_build on round 1, one advisory folded in. Waiting on clint's four open questions.
+
 ## 60. The stdio control MCP has sa48's launch fields but no "room is older" warning (housekeeping)
 
 Raised 2026-09-28. The old stdio control MCP (`internal/cli/control_peers.go`) took sa48's model, effort, args and
@@ -1793,6 +1821,15 @@ tlsuv/fix-ci (`01a0e9aa`, on claude-sg4) answered "no card 01a0e9aa... to start 
 - Stage 1, now, HUB-SIDE: route a launch that carries a `task_id` to the room that holds that card.
 - Stage 2, the long run: a card id carries its room end to end, so no request that names a card can reach another
   room.
+
+**Status, 2026-09-28: DONE, both stages in claude/main.**
+
+- Stage 1 is 0cbbaa2. The hub routes any request that names a card, path or body, plain or tagged.
+- Stage 2 is 8deea51, with CHANGELOG and test plan CD5 and CD6 in 479c9d7. The board sends tagged ids and never
+  routes a card write by header, the launch answer is retagged, and the room's not-found names the card and the
+  room.
+- Design in `docs/card-room-routing.md`.
+- Follow-up nobody has asked for: tagged ids in scoped views, and ids minted with their room.
 
 ## 64. A card cannot stop being lean (bug, HIGH)
 
@@ -2258,6 +2295,31 @@ fails there. Find out which account and session type the room runs in, and wheth
 clint, 2026-09-28: bootstrapping a machine should reuse a shared folder for the main operator, and the account
 should be `localai`, not `claude`. Today sg3 runs as `claude` in `C:\Users\claude`. Fold both into the provisioning
 script before the next machine is added.
+
+**Status, 2026-09-29, @fabric: sg3 is a working room, and the account half has not started.** Done:
+
+- sg3 is attached, and its `provision-room` fix is merged. The smoke step now proves a room end to end, and did on
+  sg3 (`35fa4a1`, see item 46).
+- The CIM denial no longer breaks provisioning: every scheduled task action goes through `schtasks.exe` (`35fa4a1`).
+- Work on sg3 comes back by git: `room-git.ps1` (`5145bad`). fb03 was built and committed there, so the path is used.
+
+Left:
+
+- **CIM inside the room.** The scripts avoid it, but a worker in the sg3 room that reads uptime, services or
+  scheduled tasks through CIM still gets access denied. Which account and session type the room runs in has not
+  been checked.
+- **The `localai` account and the shared operator folder.** Not built. Creating an account needs admin, which
+  provisioning avoids today on purpose.
+
+Open questions for clint:
+
+1. What is the shared folder? A path on each machine (for example under `C:\Users\Public` or `/Users/Shared`), an
+   SMB share, or a folder synced from here, and what goes in it: the repo clones, the toolchain, runner config?
+2. Does `localai` replace `claude` on sg3, which means moving a live room, or only apply to machines added from now
+   on?
+3. May provisioning create the account and so need admin, or does the operator make `localai` by hand first and
+   provisioning start from there?
+4. Should the room run so that CIM works for its workers, or is a worker that needs CIM told to go without?
 
 ## 76. A worktree helper that links every CLAUDE.md, so workers get project rules (bug, HIGH, FIRST)
 
