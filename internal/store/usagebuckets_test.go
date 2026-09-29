@@ -5,6 +5,46 @@ import (
 	"time"
 )
 
+// r-012: a bucket's replies, in the total and per card and per cause, are the
+// sum of the rows it came from. The usage tab reads them as "calls".
+func TestUsageBucketsSumReplies(t *testing.T) {
+	s := openTestStore(t)
+	a, _, err := s.Register(Observed{WireName: "ra", Worktree: "/ra"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _, err := s.Register(Observed{WireName: "rb", Worktree: "/rb"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	until := time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC)
+	since := until.Add(-time.Hour)
+	rows := []*SessionUsage{
+		{TaskID: a.ID, Ended: since.Add(5 * time.Second), Cause: UsageOperator, Replies: 3, Input: 1},
+		{TaskID: a.ID, Ended: since.Add(20 * time.Second), Cause: UsageKeepalive, Replies: 1, Input: 1},
+		{TaskID: b.ID, Ended: since.Add(40 * time.Second), Cause: UsageOperator, Replies: 7, Input: 1},
+	}
+	for _, r := range rows {
+		if err := s.AddSessionUsage(r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := s.UsageBuckets(since, until, 60, "")
+	if err != nil || len(got.Buckets) != 1 {
+		t.Fatalf("buckets %+v (%v)", got, err)
+	}
+	bk := got.Buckets[0]
+	if bk.Total.Replies != 11 {
+		t.Fatalf("total replies %d, want 11", bk.Total.Replies)
+	}
+	if bk.Cards[a.ID].Replies != 4 || bk.Cards[b.ID].Replies != 7 {
+		t.Fatalf("per-card replies %d and %d, want 4 and 7", bk.Cards[a.ID].Replies, bk.Cards[b.ID].Replies)
+	}
+	if bk.Causes[UsageOperator].Replies != 10 || bk.Causes[UsageKeepalive].Replies != 1 {
+		t.Fatalf("per-cause replies %+v", bk.Causes)
+	}
+}
+
 // Bucket sums match the row sums, per card and per cause, and the bounds hold.
 func TestUsageBucketsSumRows(t *testing.T) {
 	s := openTestStore(t)
