@@ -140,5 +140,6 @@ panel runs.
    --report-to`) that sets the card's launcher in the ledger. Then `atrium_report`, the silent-stop notice and
    owed-report tracking (r-001's area, item 41) all reach @review. It is an @runtime item. Until it exists, the
    prompt's `atrium_say` line stays.
-3. `wake=true` on `atrium_say` arrives with r-007. Before the prompt ships ahead of r-007, @dotfiles should check
-   that the tool ignores a parameter it does not know yet, and does not refuse the call.
+3. `wake=true` on `atrium_say` arrives with r-007. Today the tool refuses the call (`unexpected additional properties
+   ["wake"]`) and the hello is lost, so gwt ships the prompt without `, with wake=true` and keeps the 10-minute line.
+   When r-007 ships `wake`, @review tells @dotfiles and the words go back in.
