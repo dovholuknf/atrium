@@ -566,7 +566,13 @@ if [ "$pre_bindir" = False ]; then rmdir "$(dirname "$Bin")" 2>/dev/null || true
         if ($mk.mcp) { Step 'mcp' 'done' 'removed atrium-control from claude' }
         else { Step 'mcp' 'skip' 'claude is not there to remove it from' }
     }
-    $rm = Invoke-Remote $rmScript
+    # THE MCP CONFIG FILE this script wrote, when there was none before it.
+    if ($manifest.mcpfile) {
+        $mf = if ($os -eq 'windows') { "Remove-Item -Force (Join-Path `$A 'mcp.json') -ErrorAction SilentlyContinue`n'mcp=removed'" }
+              else { "rm -f `"`$A/mcp.json`"`necho mcp=removed" }
+        $mk = ConvertFrom-KeyValue (Invoke-Remote $mf).Out
+        if ($mk.mcp) { Step 'mcp' 'done' 'removed the mcp.json this script wrote' }
+    }    $rm = Invoke-Remote $rmScript
     if ($rm.Code -ne 0) { Fail 'remove' 3 'the remote clean-up failed' $rm.Out }
     $kv = ConvertFrom-KeyValue $rm.Out
     if ($kv.service) { Step 'autostart' 'done' 'removed' }
@@ -1178,45 +1184,116 @@ foreach ($runner in @($Runners + $Install | Select-Object -Unique)) {
 
 # ── 11. atrium-control for the room's claude sessions ──────────────────────
 
-# THE STDIO CONTROL SERVER, registered at user scope, so a claude session on
-# this room can call atrium_say, atrium_report and atrium_peers, and answer a
-# card on another room. The hub's own control MCP is loopback only and cannot
-# be reached from here. See docs/cross-room-say-design.md. One registered by
-# somebody else is left alone. Never a failure: the room works without it, its
-# sessions just cannot answer.
+# THE STDIO CONTROL SERVER, in an MCP config file the room's claude runner row
+# names, so a claude session on this room can call atrium_say, atrium_report and
+# atrium_peers, and answer a card on another room. The hub's own control MCP is
+# loopback only and cannot be reached from here. See
+# docs/cross-room-say-design.md.
+#
+# A FILE THE RUNNER ROW NAMES, NOT `claude mcp add --scope user`. The claude row
+# passes --strict-mcp-config, so a launched session reads ONLY the servers an
+# --mcp-config file lists, and a user-scope server is never loaded. Strict stays:
+# the user scope holds servers that prompt for authentication, and a prompt
+# blocks a supervised launch. This mirrors the hub machine's own row and
+# ~/.atrium/mcp.json. A lean launch cuts the same file down, so it keeps
+# atrium-control too.
+#
+# One registered by somebody else is left alone. Never a failure: the room works
+# without it, its sessions just cannot answer.
 if (@($Runners + $Install) -contains 'claude') {
     $ms = if ($os -eq 'windows') {
 @'
-$ErrorActionPreference = 'Continue'
-if (-not (Get-Command claude -ErrorAction SilentlyContinue)) { 'mcp=skip claude is not on PATH'; exit 0 }
-$o = & claude mcp get atrium-control 2>&1 | Out-String
-if ($LASTEXITCODE -eq 0) { if ($o -like "*$Bin*") { 'mcp=ok' } else { 'mcp=other' }; exit 0 }
-& claude mcp add --scope user atrium-control -- $Bin control 2>&1 | Out-Null
-if ($LASTEXITCODE -eq 0) { 'mcp=done' } else { 'mcp=fail claude mcp add did not register it' }
+"home=$HOME"
+"bin=$Bin"
+$f = Join-Path $A 'mcp.json'
+if (Test-Path $f) { 'file=' + [Convert]::ToBase64String([IO.File]::ReadAllBytes($f)) }
 '@
     } else {
 @'
-lp=$("${SHELL:-/bin/sh}" -lc 'printf %s "$PATH"' 2>/dev/null); [ -n "$lp" ] && PATH="$lp:$PATH"
-command -v claude >/dev/null 2>&1 || { echo "mcp=skip claude is not on PATH"; exit 0; }
-if o=$(claude mcp get atrium-control 2>&1); then
-  case "$o" in *"$Bin"*) echo mcp=ok;; *) echo mcp=other;; esac; exit 0
-fi
-if claude mcp add --scope user atrium-control -- "$Bin" control >/dev/null 2>&1; then echo mcp=done
-else echo "mcp=fail claude mcp add did not register it"; fi
+echo "home=$HOME"
+echo "bin=$Bin"
+[ -f "$A/mcp.json" ] && echo "file=$(base64 < "$A/mcp.json" | tr -d '\n')"
 '@
     }
     $kv = ConvertFrom-KeyValue (Invoke-Remote $ms).Out
-    $mcp = ("$($kv.mcp)" -split ' ', 2)
-    switch ($mcp[0]) {
-        'ok'    { Step 'mcp' 'ok' 'atrium-control is registered for claude at user scope' }
-        'done'  {
-            $script:manifest | Add-Member -NotePropertyName mcpadded -NotePropertyValue $true -Force
-            Save-Manifest
-            Step 'mcp' 'done' 'atrium-control registered for claude at user scope'
+    $sep = if ($os -eq 'windows') { '\' } else { '/' }
+    $mcpPath = ("$($kv.home)" + $sep + '.atrium' + $sep + 'mcp.json')
+    if ($os -eq 'windows') { $mcpPath = $mcpPath -replace '\\', '/' }
+    $want = [ordered]@{ type = 'stdio'; command = "$($kv.bin)"; args = @('control') }
+    $doc = $null
+    if ($kv.file) {
+        try { $doc = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($kv.file)) | ConvertFrom-Json -AsHashtable }
+        catch { $doc = $null }
+    }
+    $fileWord = $null
+    if ($kv.file -and -not $doc) {
+        $fileWord = 'bad'
+    } else {
+        if (-not $doc) { $doc = [ordered]@{} }
+        if (-not $doc.Contains('mcpServers')) { $doc['mcpServers'] = [ordered]@{} }
+        $have = $doc['mcpServers']['atrium-control']
+        if ($have -and "$($have.command)" -eq "$($kv.bin)") { $fileWord = 'ok' }
+        elseif ($have) { $fileWord = 'other' }
+        else {
+            if (-not $doc.Contains('_comment')) {
+                $doc['_comment'] = 'The MCP servers an atrium-launched claude session gets. Named by an ABSOLUTE path ' +
+                    'in the claude runner row, which passes --strict-mcp-config --mcp-config <this file>. Written by ' +
+                    'scripts/provision-room.ps1.'
+            }
+            $doc['mcpServers']['atrium-control'] = $want
+            $tmp = Join-Path $work 'mcp.json'
+            New-Item -ItemType Directory -Force (Split-Path $tmp) | Out-Null
+            [IO.File]::WriteAllText($tmp, ($doc | ConvertTo-Json -Depth 8))
+            $c = Copy-ToRemote $tmp '.atrium/mcp.json'
+            if ($c.Code -ne 0) { $fileWord = 'fail' }
+            else {
+                $fileWord = 'done'
+                if (-not $kv.file) {
+                    $script:manifest | Add-Member -NotePropertyName mcpfile -NotePropertyValue $true -Force
+                    Save-Manifest
+                }
+            }
         }
-        'other' { Step 'mcp' 'warn' 'an atrium-control server is already registered and runs something else. left as it is' }
-        'skip'  { Step 'mcp' 'skip' $mcp[1] }
-        default { Step 'mcp' 'warn' "$(if ($mcp.Count -gt 1) { $mcp[1] } else { 'could not register atrium-control' }). its sessions cannot answer other rooms" }
+    }
+
+    # THE RUNNER ROW, through the hub, because the hub is this machine and a
+    # PowerShell here can edit JSON on any remote without jq or python there.
+    $rowWord = 'skip'
+    if ($fileWord -in @('ok', 'done')) {
+        try {
+            $hdr = @{ 'X-Atrium-Room' = $Name }
+            $rows = Invoke-RestMethod -Uri "http://$HubAddr/v1/harnesses" -Headers $hdr -TimeoutSec 10
+            $row = @($rows) + @($rows.harnesses) | Where-Object { $_ -and $_.id -eq 'claude' } | Select-Object -First 1
+            if (-not $row) { $rowWord = 'norow' }
+            else {
+                $args0 = @($row.args | Where-Object { $_ -ne $null })
+                $i = [Array]::IndexOf($args0, '--mcp-config')
+                if ($i -ge 0 -and $i + 1 -lt $args0.Count -and $args0[$i + 1] -eq $mcpPath) { $rowWord = 'ok' }
+                elseif ($i -ge 0) { $rowWord = 'otherrow' }
+                else {
+                    $row.args = @('--mcp-config', $mcpPath) + $args0
+                    $res0 = @($row.resume_args | Where-Object { $_ -ne $null })
+                    if ([Array]::IndexOf($res0, '--mcp-config') -lt 0) { $row.resume_args = $res0 + @('--mcp-config', $mcpPath) }
+                    $body = $row | ConvertTo-Json -Depth 8
+                    Invoke-RestMethod -Method Put -Uri "http://$HubAddr/v1/harnesses/claude" -Headers $hdr `
+                        -ContentType 'application/json' -Body $body -TimeoutSec 10 | Out-Null
+                    $rowWord = 'done'
+                }
+            }
+        } catch { $rowWord = 'fail' }
+    }
+
+    switch ("$fileWord/$rowWord") {
+        'ok/ok'   { Step 'mcp' 'ok' "atrium-control is in $mcpPath and the claude runner row names it" }
+        { $_ -in 'done/done', 'done/ok', 'ok/done' } {
+            Step 'mcp' 'done' "atrium-control in $mcpPath, named by the claude runner row with --mcp-config"
+        }
+        { $_ -like 'other/*' } { Step 'mcp' 'warn' "$mcpPath already has an atrium-control that runs something else. left as it is" }
+        { $_ -like 'bad/*' }   { Step 'mcp' 'warn' "$mcpPath is not JSON. left as it is. its sessions cannot answer other rooms" }
+        { $_ -like 'fail/*' }  { Step 'mcp' 'warn' "could not copy $mcpPath. its sessions cannot answer other rooms" }
+        { $_ -like '*/norow' } { Step 'mcp' 'warn' "wrote $mcpPath, but the room has no claude runner row to name it" }
+        { $_ -like '*/otherrow' } { Step 'mcp' 'warn' "wrote $mcpPath, but the claude runner row already names another --mcp-config. left as it is" }
+        default   { Step 'mcp' 'warn' "wrote $mcpPath, but could not set the claude runner row. its sessions cannot answer other rooms" }
     }
 }
 if ($bad -gt 0) { Finish 5 }
