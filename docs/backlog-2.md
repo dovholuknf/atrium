@@ -3499,8 +3499,9 @@ Design questions:
 
 ## r-004. The worktree-gone reaper ended a live worker after it changed directory (bug, HIGH)
 
-Status: diagnosed 2026-09-29 by @runtime, not fixed. Owned by @runtime. No worker launched, and none will be without
-clint.
+Status: fixed on branch `claude/sar-004` (2026-09-29), not yet merged. Three parts: a card's `Worktree` never follows
+the session's cd (an empty one is filled once), every runner keeps its launch directory for `runnerDir`, and `hadGit`
+is keyed by card and directory. Owned by @runtime.
 
 **What happened.** sa96 (`01a0ede6-10f6`, a review-manager by @review, launched in
 `D:/worktrees/claude/reviews/github-openziti-ziti/pr-4397-990aa0c`) was ended 90 seconds in. Nobody asked it to
@@ -3608,3 +3609,23 @@ It should be atrium's job, because atrium already knows which card was launched 
 
 Relates to r-003 (a role's working-directory recipe is where a worktree comes from), r-004 (a card's directory is
 fixed at launch, so it is a stable key), and u-005 stage 2 (a PR's walker and trees belong to the PR).
+
+## r-007. Park a card that has been idle for hours, directors included (design)
+
+Status: designed, not built, not reviewed. Owned by @runtime. Raised by clint 2026-09-29: "do we need to keep
+directors online all the time? they should shut down after a couple hours if they are not working." The design is
+section 7 of `docs/keepalive-policy-design.md`, "Parking a card that has gone idle".
+
+In short: a subject card with no turn running, no pending question, no queued message or wake, and no live worker of
+its own is parked after `idle_park_after` (default 2 hours, a setting). It is parked the same way as at a restart
+(section 4): status and resume id kept, no process. A director writes its handoff first. Agent cards are subject.
+clint's own cards, including the orchestrator card, are exempt unless tagged `atrium:park-idle`. A say from clint
+resumes at once, and a peer's say gets `parked` and needs `wake=true`. A director resumes with a queued prompt to read
+its HANDOFF.md before the waking message.
+
+Depends on item 91 (a per-card handoff file name) and on sections 1, 4 and 5 of the same design, which are not built
+either. Open questions 6 to 10 in that file are for clint.
+
+Also in the section: the "ended its turn without reporting" notice rings the orchestrator several times an hour for
+directors idle by design. Proposed: `stoppedSilently` stays quiet for an `atrium:director` while any of its workers
+is live or parked, and never fires for a parked card. This part stands alone and can be built first.

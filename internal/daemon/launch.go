@@ -976,6 +976,14 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 			return nil, err
 		}
 		task = t
+	case filepath.ToSlash(cwd) != task.Worktree:
+		// Launching a card somewhere else is a choice, not a cd, so it is the
+		// one time a card that already has a directory is moved. The Register
+		// after the spawn only refreshes pid and runner.
+		if err := d.st.SetWorktree(task.ID, filepath.ToSlash(cwd)); err != nil {
+			return nil, err
+		}
+		task.Worktree = filepath.ToSlash(cwd)
 	}
 
 	// Mark the card before spawning so even an immediate exit cleans up its
