@@ -55,9 +55,19 @@ func classifyFrame(tail []byte, cols, rows int) (bool, string) {
 	sc.apply(tail)
 	// The live grid only. History is rows that scrolled or were cleared away,
 	// and an old working frame there must not veto the one on screen.
+	return classifyScreen(frameText(sc))
+}
+
+// frameText is the live grid as text, one line per row. The second cell of a wide
+// character holds contCh and is skipped, as writeRow does, so the character
+// appears once.
+func frameText(sc *screen) string {
 	var b strings.Builder
 	for _, r := range sc.cells {
 		for _, c := range r {
+			if c.ch == contCh {
+				continue
+			}
 			if c.ch == 0 {
 				c.ch = ' '
 			}
@@ -65,7 +75,7 @@ func classifyFrame(tail []byte, cols, rows int) (bool, string) {
 		}
 		b.WriteByte('\n')
 	}
-	return classifyScreen(b.String())
+	return b.String()
 }
 
 func isRule(ln string) bool {
@@ -85,9 +95,8 @@ func classifyScreen(text string) (bool, string) {
 		return false, frameNoBox
 	}
 	// A hint or a spinner ANYWHERE in the last rows says working. This is wider
-	// than where they are drawn on purpose: screen.go has two known gaps (backlog-2
-	// 81, scroll regions, and 82, wide characters) that can leave a row where it
-	// was not, and a misplaced working row must still veto. Claude Code uses
+	// than where they are drawn on purpose: a screen rebuilt from a 64KB tail can
+	// leave a row where it was not, and a misplaced working row must still veto. Claude Code uses
 	// neither, and the silence the caller requires is the other guard, since a
 	// running turn redraws its spinner every second.
 	for i := n - 1; i >= 0 && i >= n-12; i-- {

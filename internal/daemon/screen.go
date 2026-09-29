@@ -70,6 +70,10 @@ type screen struct {
 	// never changed once added, so a cell copied to another row keeps meaning
 	// the same thing.
 	combs []string
+	// combIdx maps a mark sequence to its `ext`, so a sequence already held is
+	// reused rather than appended again. Made on the first mark, so an all-ASCII
+	// screen allocates nothing for it.
+	combIdx map[string]uint32
 	// attr is the SGR state `sgr` is rendered from. Held apart from the
 	// string because an attribute is set and cleared independently of the
 	// others, and a string can only be appended to.
@@ -322,11 +326,23 @@ func (s *screen) combine(ch rune) bool {
 	if c.ext > 0 {
 		prev = s.combs[c.ext-1]
 	}
-	if len(prev)+utf8.RuneLen(ch) > combMax || len(s.combs) >= combsMaxKept {
+	if len(prev)+utf8.RuneLen(ch) > combMax {
 		return true
 	}
-	s.combs = append(s.combs, prev+string(ch))
+	seq := prev + string(ch)
+	if ext, ok := s.combIdx[seq]; ok {
+		c.ext = ext
+		return true
+	}
+	if len(s.combs) >= combsMaxKept {
+		return true
+	}
+	if s.combIdx == nil {
+		s.combIdx = make(map[string]uint32)
+	}
+	s.combs = append(s.combs, seq)
 	c.ext = uint32(len(s.combs))
+	s.combIdx[seq] = c.ext
 	return true
 }
 
