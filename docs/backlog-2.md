@@ -3092,7 +3092,7 @@ here as unknown. `SetAlias` and `liveClause` are untouched, so a done card still
 The same rule is in the two client side resolvers that matched aliases themselves, `resolvePeer` in `internal/link`
 and in `internal/cli`.
 
-## 91. Two cards in one worktree share one HANDOFF.md, and new-context overwrites the other's (bug, design only)
+## 91. Two cards in one worktree share one HANDOFF.md, and new-context overwrites the other's (bug, built on branch claude/91)
 
 Reported 2026-09-29 by the orchestrator. @merge and @orchestrator both run in the main checkout
 (`D:/git/github/dovholuknf/atrium`), and at about 01:15 local one card's new-context capture overwrote the
