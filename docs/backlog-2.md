@@ -14,7 +14,7 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 5 | One atrium: one binary, Mode A and B out, the hub becomes the atrium | paused | stage 1 DONE `948d557`, deployed, stages 2-7 wait on 13 questions |
 | 6 | Taking a card out of a group | bug | DONE in `b12b323`, deployed |
 | 7 | The held-message `!` chip says the wrong reason | bug | DONE with item 10, `1ff7503` |
-| 8 | Input lag follow-ups | bug | hop split DONE `5d9ba72`: the stall is the runner side, not atrium |
+| 8 | Input lag follow-ups | bug | narrowed to one prefix: hop split `1f49694` (runner side), unsent fix `6bb14e4` |
 | 9 | Eliminate unstyled tooltips | bug | DONE, `069c16b`, deployed, check-titles guards it |
 | 10 | `atrium_say` types immediately by default | feature | DONE, `04c2095`, not deployed. Also covers item 7's reason and count |
 | 11 | Clicking `? N` or a question clears it | bug | not started, 2026-09-25: the click selects the row instead |
@@ -67,7 +67,7 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 58 | `atrium_say` reaches cards on other rooms, `name@room` | feature, HIGH | DONE by sa58, merged, needs hub and room restarts |
 | 59 | Spike on m1mini: more than one room per machine, and a blocked room that drains | design, spike | deep backlog, not started |
 | 60 | The stdio control MCP has sa48's launch fields but no "room is older" warning | housekeeping | not started |
-| 61 | A fake 45s hub echo in the lag log from the idle ping and pong | bug | not started |
+| 61 | A fake 45s hub echo in the lag log from the idle ping and pong | bug | DONE `88fc53d`, on claude/main |
 | 62 | A worker that ends its turn without a report reaches its orchestrator every time | bug, HIGH | DONE by sa62, merged `f22115e`, deployed `66717c5` |
 | 63 | Starting onto an existing card goes to the wrong room | bug, HIGH | not started |
 | 64 | A card cannot stop being lean | bug, HIGH | DONE by sa64, merged, needs room and hub restarts |
@@ -170,6 +170,21 @@ flight. Spikes cluster over ~3s, then 4-10ms.
   Subtract it, or read it before send, so the line only appears when something was really queued.
 - A console filter of `[atrium` hides every `[inputlag]` line, which made the logging look broken. Consider one
   prefix.
+
+**Status 2026-09-29, narrowed to the prefix.** On claude/main:
+
+- The hop split is `1f49694`. The room's echo line now splits `runner` from `atrium` time. It says the stall is
+  the runner side: the runner's own redraw, or Windows not scheduling it, and not atrium. The hub and the room
+  already raise themselves to above normal for the second. The hiccup probe in `docs/input-lag-logging.md` tells
+  the two apart on a given night, and no run of it is on record here. A live sample agrees on the side: on
+  2026-09-28 at 09:55:19 a 176.6ms echo to card `01a0e80e` was `runner 176.1ms, atrium 0.5ms, ws write 0.5ms`.
+  Nothing in atrium's hops is left to chase. The hub's fake 45s echo that muddied the hub's side was item 61
+  (`88fc53d`).
+- The unsent-bytes line reading the key's own frame is `6bb14e4`: the board reads the socket backlog before the
+  send.
+- Left: the prefix. `internal/inputlag/inputlag.go` and `js/inputlag.js` still log `[inputlag]`. It is a small
+  naming choice (`[atrium inputlag]` keeps a `[atrium` filter working, at the cost of anyone grepping for the old
+  one), not a bug, so it waits for someone to want it.
 
 ### 9. Eliminate unstyled tooltips
 
@@ -1128,6 +1143,17 @@ minutes. clint typing and pressing Enter zeroes the count, which fits. The room 
 `01a0e80e-b80b-7b81-874b-0d1dde930bba` between 09:45 and 09:56 can confirm it. Also check that a `when: done`
 message is delivered at the turn end it waited for.
 
+Status: built and on claude/main. The line's text and keystroke-only counting are `118d6e5` (`typedline.go`), the
+Esc Esc port onto it is `d713e5c`, and the readout behind a setting is `2f15ace` (`js/typing.js`, polling
+`GET /v1/tasks/{id}/typing`). `TestASayWhenDoneWaitsForTheTurnToEnd` covers a `when: done` message typed at the turn
+end. All three are in the room binary deployed at 22:53 on 2026-09-28 (`66717c5`).
+
+The sa85 incident is confirmed from a copy of the room database and `room.err.20260928-111944`. Three messages from
+the orchestrator: a `when: done` one at 09:03, and immediate ones at 09:45:50 and 09:50:59. sa85 reported done at
+09:45:32. The room log has clint's keystrokes to that card at 09:55:16 to 09:55:19, and all three messages were
+typed at 09:55:21 to 09:55:22. The turn end at 09:45 released nothing, so the gate was reading a part-typed line,
+which is the old counter. That build predates `118d6e5`.
+
 ## 34. Every MCP tool call skips atrium's permission gate (bug)
 
 Raised 2026-09-28. The dotfiles `atrium-perm-hook.ps1` exits early for every `mcp__*` tool, which was there so Mode A's
@@ -1904,9 +1930,9 @@ clint confirmed the loss happened at the first screen update after the long repl
 little. The table's tail was still on the live 50-row screen, and a bare `\e[H` repaint overwrote it. Find what
 emitted that repaint (Claude Code, or ConPTY in the room) and why. Also test the reattach seam.
 
-Status: diagnosed by sa74 on `claude/lost-lines`. Recommendation 1, the height hold, is built there after two
-Mercurius rounds and approved by @terminal, not merged. Option 2 (OpenConsole ConPTY) goes to clint, and the
-replay-only repair is not built.
+Status: diagnosed by sa74. Recommendation 1, the height hold, is on claude/main (`387ccd5`, batch 2). Option 2
+(OpenConsole ConPTY) and option 3 (replay-only repair) are both designed below and wait on clint's pick. See "2 or
+3, for clint" at the end of this item.
 
 ### What dropped the lines
 
@@ -2081,7 +2107,146 @@ wakes with no `Resize`. Then the harness `flip` runs through the real code path.
 3. **Replay-only repair only if 2 is refused.** The live version is not worth its cost and risk next to 2.
 
 Repro, captures and scripts: `HANDOFF.md` on `claude/lost-lines`, `build.claude/lost-lines/` and
-`build.claude/conpty/` in that worktree (not committed).
+`build.claude/conpty/` in that worktree (not committed). That worktree has since been removed, so the captures are
+gone. The harness itself is committed: `conpty_harness_repro_test.go`, `conpty_scroll_repro_test.go` and
+`conpty_claude_repro_test.go` in `internal/daemon`.
+
+### Option 3, the replay-only repair, designed
+
+Written 2026-09-29 by @terminal so clint can weigh it against option 2. Nothing here is built.
+
+**What it repairs, exactly.** The grid that replays a ring (`screen.applyCuts`, reached through `replayCut`) gets the
+rows a no-scroll repaint overwrote back into its history. That grid is behind three things:
+- every attach in the default `screen` replay mode, which is a new pane, a reload, a pop-out and a reattach
+  (`attach.go`, the `default:` arm),
+- `GET /v1/tasks/{id}/scrollback/text` in `screen` mode, which is how clint copies a reply out,
+- the pre-restart bytes joined onto an attach by `runner.withCarried`, because they go through the same grid.
+
+**What it does not repair.** The pane that was watching when the repaint arrived. Its xterm.js already overwrote the
+rows, and nothing on the replay side reaches it. The operator has to reattach, and a reload does that. It also does
+not repair `raw` replay mode, where xterm.js is the only emulator. The "older scrollback" tab needs nothing: it is
+`flatten`, which keeps every line ever written, so those rows were never lost there.
+
+**Where it hooks in.** Only `replayCut` turns it on, through a field on `screen` (`keepShifted`). `idleframe.go` and
+every other `newScreenSized` caller leave it off and pay nothing.
+
+**The candidate.** A `CSI H` or `CSI f` whose target is row 1, column 1 (bare, `1;1`, or `;`), on the normal buffer
+and not the alternate one, with no DECSTBM region set, and with `fixedRows` true. A guessed height is skipped,
+because the rule compares whole screens and a guessed screen is not one. Skipped too: a candidate while one is
+already open, and the grid's first screenful (nothing is in history and the grid has never been full).
+
+**A candidate at a height change is NOT skipped.** This changes the strict-match rule above, which skipped any
+candidate with a height change at its byte (Mercurius `s_ijoTH04DNGvl` round 1, C1). With the height hold in, a real
+height change held past half a second is the loss that is left, so skipping those would make the report read clean
+exactly when lines are still going. A candidate is AT A CUT when a row cut from `applyCuts` falls between the last
+printable character or line feed before the `\e[H` and the `\e[H` itself. conhost's own
+`\e[46;3H\e[?25h\e[?2026h\e[?2026l\e[?25l` ahead of the repaint is cursor moves and modes, so it does not separate
+them. For those:
+- `applyCuts` snapshots the grid and notes the history length just BEFORE `resizeRows`, and keeps the number of rows
+  `fitRows` filed off the top (`gone`). The candidate compares against that pre-cut snapshot, not the fitted grid.
+- `k` is found the same way, with M from the NEW height, since that is the repaint's height.
+- Rows 1 to `gone` of the snapshot are already in history, put there by `fitRows`. Only snapshot rows gone+1 to `k`
+  are spliced in, after them. A `k` of `gone` or less adds nothing, and the report says the resize already filed
+  them.
+- A grow has `gone` 0. A taller repaint whose row 1 is older than anything on the snapshot finds no `k` and adds
+  nothing, which is the safe side.
+- A second cut before the repaint completes still cancels it, reported as such.
+
+**Opening one.** Copy the grid's rows into a snapshot buffer held on the screen and reused, and note the history
+length. The copy is rows times cols cells, about 10,000 for 206x50, and candidates are about 70 in 2.7 MB of ring.
+
+**Following it.** Each line feed while the candidate is open records the row just finished as text, SGR stripped
+and trailing blanks trimmed. That is the repaint's row `n`. Recording at the line feed rather than at the end is
+what keeps it right when the last row's `\r\n` scrolls the grid, as a 50-row repaint of `\e[K\r\n` rows does.
+Printable text, `\r`, `CSI K` and SGR are the only things allowed while it is open. One exception: once exactly
+`rows - 1` rows are recorded, the next cursor move CLOSES the candidate instead of cancelling it, and the row the
+cursor was on is recorded as the last one first (see "Closing one"). Anything else cancels it without a word:
+another cursor move, `CSI J`, insert or delete lines, a scroll, DECSTBM, the alternate screen, a size cut
+from `applyCuts` after the `\e[H` (a cut just before it is the case below), or more than 64 KB consumed since it
+opened.
+
+**Closing one.** Complete at `rows` line feeds, or at `rows - 1` line feeds followed by a cursor move, which is how a
+repaint that does not end in `\r\n` finishes. Then the strict-match rule above, with the recorded rows against the
+snapshot: the smallest `k` from 1 to rows-1 where repaint rows 1 to M equal snapshot rows k+1 to k+M, M at least
+max(6, rows/4), and at least 4 of the matched rows non-blank and pairwise distinct. Exactly one passing `k` or
+nothing. On a match, what is spliced depends on the candidate:
+- Not at a cut: snapshot rows 1 to `k`, at the history length noted on open.
+- At a cut: only snapshot rows gone+1 to `k`, at the pre-cut history length plus `gone`, which is right after the
+  rows `fitRows` filed. A `k` of `gone` or less adds nothing and reports `resize-filed`.
+Either way they sit ahead of anything the repaint's own last line feed scrolled off.
+
+**Text, not SGR, is compared.** conhost re-renders its buffer, so a row's colours can come back as different bytes
+for the same look. Comparing text is what makes a real shift match, and the distinct-rows rule is what stops blank
+rows and box borders matching at the wrong `k`.
+
+**A diagnostic first, in the same change.** `GET /v1/tasks/{id}/scrollback/text?repair=report` returns the
+replay with one line per candidate instead of the text. It is the only way to know how often this still happens now
+that the height hold is in. Without it option 3 is built blind. Tab-separated, one header line, these columns:
+- `offset`, the byte of the `\e[H` in the replayed bytes,
+- `rows` and `cols`, the grid's size at the candidate, and `cut`, the rows before a cut it sits at or `-`,
+- `outcome`: `repaired`, `resize-filed` (k was `gone` or less), `no-match`, `ambiguous` (more than one k),
+  `cancelled`, or `incomplete` (the ring ended inside it),
+- `k`, and `added`, the rows spliced into history, both 0 when nothing was,
+- `why`, what cancelled it or which condition failed, empty otherwise.
+The last line totals each outcome and the rows added, so two readings a day apart compare at a glance.
+`repair=report` always renders in `screen` mode whatever `mode` says, and ignores `ansi` and `collapse`. It takes
+its bytes and its cuts from ONE `ReplayCuts` call, so every cut's offset is in the stream it is compared against.
+`collapse=0` swaps in `Snapshot()`, which is the same stream today (both are `from(retainedStart())`, and nothing
+collapses any more), but it is taken under a second lock, and a ring that wraps between the two moves the offsets.
+The repair itself only ever runs inside `replayCut`, which is handed bytes and cuts together, so this is a rule for
+the report alone. It replaces the `[atrium] ... mode` banner as well: the body is the report and nothing else. The
+totals line starts with `totals` and uses the same tabs, `outcome=count` pairs then `added=N`. `?kind=shell` works
+as it does today, so a card's shell can be reported on too.
+
+Reviewed by Mercurius `s_ijoTH04DNGvl`: five rounds, one major finding in each of the first four (a repaint at a
+height cut was skipped, a cursor move both cancelled and closed a repaint, two splice rules for a cut, and cut
+offsets across two locks), each fixed above. Round 5 is ready_to_build, and its one advisory is the `kind` line.
+
+**Tests.**
+- Unit, in `screen_test.go`: a 10-row grid, 10 numbered lines, then `\e[H` and 10 rows `\e[K\r\n` starting from
+  old row 4. History gains rows 1 to 3 in order. The same with the last row not ending in `\r\n`.
+- The false positives, each must add nothing: a repaint identical to the screen (`k` 0), a repaint of mostly blank
+  rows and one border, a real collapse where rows moved up because content was removed (asserted as a named, known
+  duplicate, since the rule cannot tell it apart when the rows match), two `k` values passing, a second cut inside a
+  repaint, a repaint under DECSTBM, and one on the alternate screen.
+- At a cut: rows 50 to 40 with conhost's repaint shifted by 12 adds 2 rows (the grid filed 10), shifted by 10 adds 0
+  and reports `resize-filed`, and a grow from 40 to 50 adds 0.
+- A fixture from the committed harness. `TestConPTYScrollRepro` drives rows 50, 40, 50 through the inbox ConPTY with
+  Claude-shaped frames. Capture its host-side bytes once into `testdata/`, and assert the replay keeps every
+  numbered line the child wrote, where today it loses 49 to 72 of 300. This is the test that says it works.
+- `HEADLESS_ONLY` needs nothing new: the board is not touched.
+
+**Cost.** One worker. About 200 lines in `screen.go` with the cut case, about 50 for the report, about 350 of
+tests. No new binary, no setting, nothing shipped, nothing packaging has to learn. It runs only on replay, so it
+adds nothing to the output path. A wrong call puts a duplicate line into history, never removes one. It becomes
+dead code on the day option 2 lands, and removing it is deleting one field and its code.
+
+### 2 or 3, for clint
+
+What the height hold (`387ccd5`) already stopped: the coalesced flips, which were the big losses (10, 25 and 26 rows).
+What is left: a height change held past half a second, such as a shorter pop-out or phone that stays attached, costs
+about a row for each row changed. How often that happens now is not known, which is why option 3 starts with the
+report.
+
+| | Option 2, OpenConsole ConPTY | Option 3, replay-only repair |
+| --- | --- | --- |
+| Fixes the pane that was watching | yes | no, a reload repairs it |
+| Fixes attach replay and `/scrollback/text` | yes | yes, in `screen` mode |
+| Fixes `raw` replay mode | yes | no |
+| Where it acts | at the source, conhost is gone | after the fact, on replay only |
+| Wrong answers | none known: 0 lost, no `\e[H` repaint, over 30 to 62 resizes a run | a duplicate line in history, never a lost one |
+| New things shipped | conpty.dll and OpenConsole.exe per arch, about 1.2 MB, MIT notice | nothing |
+| New code | own create, resize and close through conpty.dll (about 100 lines, in the harness), answering `\e[c` and `\e[1t` for a runner with no viewer, the setting, the fallback | about 250 lines in `screen.go` and the report |
+| Retesting | the whole terminal test plan: passthrough changes the byte shapes `screen.go`, the cursor settle, the typing gate and the replay tests were tuned on | its own tests only |
+| Packaging | every install path in `docs/packaging.md` has to carry two more files | none |
+| Prerequisites | item 81 (DECSTBM in `screen.go`), now on claude/main | none |
+| Size | two or three workers, one of them in packaging, plus a full plan run | one worker |
+| Afterwards | the root cause is gone | dead code once 2 lands |
+
+**@terminal's recommendation.** Build option 3's report on its own first, which is a day's work at most, and read it
+on the live room for a few days. If it shows almost nothing, the height hold was enough and neither option is worth
+its cost yet. If it shows real losses, option 2 is the fix. Option 3's repair is worth building only if option 2 is
+refused, or as a stopgap while option 2 is built, because it cannot fix the pane clint was copying from.
 
 ## 75. sg3 as a room, and machine bootstrap reuses the operator's shared folder under `localai` (feature)
 
