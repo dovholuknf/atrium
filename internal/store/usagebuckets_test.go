@@ -35,9 +35,13 @@ func TestUsageBucketsSumRows(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	got, err := s.UsageBuckets(since, until, 60)
+	got, err := s.UsageBuckets(since, until, 60, "")
 	if err != nil {
 		t.Fatal(err)
+	}
+	only, err := s.UsageBuckets(since, until, 60, b.ID)
+	if err != nil || len(only.Buckets) != 1 || only.Buckets[0].Total.Input != 4 || len(only.Buckets[0].Cards) != 1 {
+		t.Fatalf("one card's read %+v (%v)", only.Buckets, err)
 	}
 	if len(got.Buckets) != 2 {
 		t.Fatalf("buckets %d, want 2", len(got.Buckets))
@@ -64,7 +68,7 @@ func TestUsageBucketsSumRows(t *testing.T) {
 func TestUsageBucketsBounds(t *testing.T) {
 	s := openTestStore(t)
 	until := time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC)
-	got, err := s.UsageBuckets(until.Add(-90*24*time.Hour), until, 1)
+	got, err := s.UsageBuckets(until.Add(-90*24*time.Hour), until, 1, "")
 	if err != nil {
 		t.Fatal(err)
 	}
