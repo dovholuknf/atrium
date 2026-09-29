@@ -98,9 +98,7 @@ function peekBody(t, v) {
       ${cell("out", usageTokens(tot.output), USAGE_TIPS.output)}
       ${cell("cache read", usageTokens(tot.cache_read), USAGE_TIPS.read)}
       ${cell("cache write", usageTokens((tot.cache_write_5m || 0) + (tot.cache_write_1h || 0)),
-        "5m and 1h cache writes together. " + USAGE_TIPS.write5m + ". " + USAGE_TIPS.write1h)}
-      ${cell("est.", usageMoney(tot.cost), USAGE_TIPS.cost)}
-    </div>` + peekFoot(t);
+        "5m and 1h cache writes together. " + USAGE_TIPS.write5m + ". " + USAGE_TIPS.write1h)}    </div>` + peekFoot(t);
 }
 
 function peekFoot(t) {

@@ -14,7 +14,7 @@ const taskColumns = `id, title, why, repo, worktree, runner, hostname, pid, stat
 	created_at, last_activity_at, waiting_since, wire_name, overrides, rank,
 	external_id, resume_id, branch, window_name, gated, auto_approve, tags, pinned, theme, sound,
 	archived_at, source, url, prompt, intake_key, auto_until, recap, recap_at, note, waiting_reason,
-	icon, priority, priority_at, org, host, ask, ask_at, ask_peer, last_cols, peer_typing,
+	icon, priority, priority_at, org, host, ask, ask_at, ask_peer, last_cols, last_rows, peer_typing,
 	model, throwaway, promote_to, pin_order, spawned_by, spawned_by_id, reported_at, report_sha,
 	report_unverified, tool_hook_seen_at, stop_hook_seen_at, prompted_at, alias,
 	effort, launch_args, launch_env, alias_note, owed_at`
@@ -51,7 +51,7 @@ func scanTask(sc interface{ Scan(...any) error }) (*Task, error) {
 		&tags, &pinned, &t.Theme, &t.Sound, &archived, &t.Source, &t.URL,
 		&t.Prompt, &t.IntakeKey, &autoUntil, &t.Recap, &recapAt, &t.Note,
 		&t.WaitingReason, &t.Icon, &t.Priority, &priorityAt, &t.Org, &t.Host,
-		&t.Ask, &askAt, &t.AskPeer, &t.LastCols, &peerTyping, &t.Model,
+		&t.Ask, &askAt, &t.AskPeer, &t.LastCols, &t.LastRows, &peerTyping, &t.Model,
 		&throwaway, &t.PromoteTo, &t.PinOrder, &t.SpawnedBy, &t.SpawnedByID,
 		&reportedAt, &t.ReportSHA, &unverified, &toolSeen, &stopSeen, &promptedAt, &t.Alias,
 		&t.Effort, &launchArgs, &launchEnv, &t.AliasNote, &owedAt); err != nil {
@@ -352,15 +352,15 @@ func (s *Store) insertTask(t *Task) error {
 	// it has run, and neither has an opinion at the moment one is created.
 	_, err := s.db.Exec(`INSERT INTO task (`+taskColumns+`)
 		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,
-			?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		t.ID, t.Title, t.Why, t.Repo, t.Worktree, t.Runner, t.Hostname, t.PID, t.Status,
 		ts(t.CreatedAt), ts(t.LastActivityAt), nil, nullable(t.WireName), overrides, t.Rank,
 		t.ExternalID, t.ResumeID, t.Branch, t.WindowName, 0, 0, tags, 0, t.Theme, "", "",
 		t.Source, t.URL, t.Prompt, t.IntakeKey, "", "", "", "", "", "", "", "",
 		t.Org, t.Host, "", "", "",
 		// A new card has never had a terminal, so nothing says how wide it
-		// was. `launchWidthFor` reads zero as "no opinion".
-		0,
+		// was or how tall. `launchSizeFor` reads zero as "no opinion".
+		0, 0,
 		// Peers may type into it. The column defaults the same way for every
 		// card that existed before it did.
 		1,
@@ -825,6 +825,18 @@ func (s *Store) SetPeerTyping(id string, on bool) error {
 			v = 1
 		}
 		_, err := s.db.Exec(`UPDATE task SET peer_typing = ? WHERE id = ?`, v, id)
+		return err
+	})
+}
+
+// SetLastSize records both sides of a card's terminal at once. Either being zero
+// or less is ignored for the same reason as SetLastCols.
+func (s *Store) SetLastSize(id string, cols, rows int) error {
+	if cols <= 0 || rows <= 0 {
+		return nil
+	}
+	return s.guard(func() error {
+		_, err := s.db.Exec(`UPDATE task SET last_cols = ?, last_rows = ? WHERE id = ?`, cols, rows, id)
 		return err
 	})
 }

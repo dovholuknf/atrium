@@ -1813,6 +1813,14 @@ var migrations = []struct {
 			`CREATE INDEX IF NOT EXISTS say_relay ON say (relay_id)`,
 		},
 	},
+	{
+		// How tall a card's terminal was when it was last stopped, beside
+		// last_cols. Zero for a card that has never recorded one.
+		name: "0070_task_last_rows",
+		stmts: []string{
+			`ALTER TABLE task ADD COLUMN last_rows INTEGER NOT NULL DEFAULT 0`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the
