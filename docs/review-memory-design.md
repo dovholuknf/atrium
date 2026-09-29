@@ -173,7 +173,7 @@ why, and may name a panel. The director then:
    launched LEAN, with nothing at start that the review does not need, and its brief is minimal: the target, the
    panel and its sizing line, each reviewer's file path and the base commit to read it at, and the report path. It
    runs the `review-panel` skill with exactly that panel, writes nothing to dotagents, writes its full report to the
-   report path, and reports to @review with the verdict, the findings, every `repo_notes` block by persona, and every
+   report path and one file per finding to `<run>/findings/` (skill step 7, standing rule 10), and reports to @review with the verdict, the findings, every `repo_notes` block by persona, and every
    refuted finding with its reason. At most three review-managers run at once to start (answer 13), and a fourth ask
    waits in the director's queue.
 5. **Reports to the asker and to clint.** When the review-manager reports, the director posts the verdict line and the
@@ -297,19 +297,24 @@ review-manager never walks comments.
 
 9. One comment at a time, in the table's order. The director waits for "next". "Go back" means the previous one is
    not done.
-10. Each comment is raw markdown, not rendered, and is also written to `c:\temp\a.txt`, overwritten each time. This
-    shape exactly:
+10. Every finding, leaks, pre-existing and third-party ones included, has its own plain text file, written by the
+    review itself (review-panel step 7), never by hand afterwards: `<run>/findings/NN-<sev>-<file>-L<line>.txt`,
+    where `NN` is the report table's order, so sorting by name gives the walk. The comment is at the top, then an
+    `Evidence` part (cause, test status, traced or run). The report's table names each row's file. During a walk the
+    director shows the comment as raw markdown with its file path, and edits the file in place when the comment
+    changes. Nothing is written to `c:\temp`, which clint's own sessions use. The comment's shape, as clint writes it:
 
     ```
-    src/applesec/context.c line 149: load_ca(ctx, ca, ca_len);
+    MED src/applesec/context.c line 149: load_ca(ctx, ca, ca_len);
 
     * LLM review says a bad CA bundle fails open here: the error is ignored and the engine falls back to system trust.
     * Suggested fix: fail closed when a CA was given but didn't load.
-    * Add a test to tests/http_tests.cpp: malformed CA, GET a public https site, expect failure.
+    * Add a test to `tests/http_tests.cpp`: malformed CA, GET a public https site, expect failure.
     ```
 
-    The first line is the file, the line number, and the code on that line. The last bullet is "Add a test to <file>:
-    <input>, expect <result>" when a test is needed. Rules 20 to 22 amend this shape.
+    The label line is the severity (`BLOCKING`, `HIGH`, `MED`, `LOW`, `NIT`), the file, the line number, and the code
+    on that line. The last bullet is "Add a test to <file>: <input>, expect <result>" when a test is needed. Rules 20
+    to 22 amend this shape.
 11. Each bullet is one sentence: no call chains, traces, evidence dumps or line lists. It is worded as "LLM review
     says", and kept uncertain and human.
 12. A comment never says the author built or ran anything. clint posts these under clint's own name, and did not run
@@ -341,7 +346,7 @@ are in `general.md` on dotagents branch `claude/review/director/2026-09-29-walk-
 
 **Comment shape.** These amend rule 10.
 
-20. The severity goes on each item's label line, outside the comment block.
+20. The severity goes on each item's label line, its first line, as clint writes it: `MED <file> line N: <code>`.
 21. The fix bullet is left out when there is no fix, and the test bullet is left out when no test is needed. "No new
     test needed" is never written.
 22. Identifiers, functions, constants, enum values and file paths are formatted as `code`.
@@ -358,7 +363,10 @@ are in `general.md` on dotagents branch `claude/review/director/2026-09-29-walk-
 
 What this changes elsewhere in the design: the review-manager's report to the director carries the table's columns
 (Cause, Test status, PR-head line) on every finding, so the director can build the table and walk the comments
-without reopening the review. The skill's step 7 report gains those two columns in stage 2, step 1.
+without reopening the review. The skill's step 7 produces all of it: one table sorted by severity, file and line, with
+Cause, Test status, lines read at the current head, leaks as rows with sizes, and a `Finding file` column naming
+`<run>/findings/NN-<sev>-<file>-L<line>.txt` (dotfiles `af3f5a1` on `claude/review-stage2`). Nobody hand-writes the
+files afterwards.
 
 ## Which side each part lives on
 
