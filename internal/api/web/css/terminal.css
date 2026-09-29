@@ -604,7 +604,10 @@
      answer is to stop the element being somewhere that needs scrolling.
      Pinned to the top-left of the terminal, which is always in view. The cost is that an input method
      composes at the corner instead of at the cursor, which is all the original position bought. */
-  #t-screen .xterm-helper-textarea { top: 0 !important; left: 0 !important; }
+  /* u-017: not on a phone (`body.term-phone`). There the grid is panned to the cursor, so its top-left corner
+     is off screen and a focus scroll dragged the pane back to the top: the bounce. xterm's own inline top/left
+     park the textarea at the cursor, which is in view, so a focus has nothing to scroll to. */
+  body:not(.term-phone) #t-screen .xterm-helper-textarea { top: 0 !important; left: 0 !important; }
   .term-list .card .chip { white-space: nowrap; }
 
   /* Never set a width here. Color only. The fit addon works out how many columns fit by measuring the
