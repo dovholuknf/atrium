@@ -348,10 +348,11 @@ function roomHue(name) {
 
 // ── the master switch (item 79) ─────────────────────────
 //
-// WAITING ON CLINT: whether "off" silences permission requests too. Built as
-// no, because a session blocks on one until somebody answers and a muted board
-// is the likeliest place to forget one. Flipping it is this one word.
-const NOTIFY_OFF_SILENCES_PERMISSIONS = false;
+// "Off" silences permission requests too. Built first as no, since a session
+// blocks on one until somebody answers, and clint turned it: "it's
+// notifications in general" (2026-09-29). They are still listed in the drawer.
+// Flipping it back is this one word.
+const NOTIFY_OFF_SILENCES_PERMISSIONS = true;
 const NOTIFY_OFF_KEY = "atrium.notify.off";
 
 // Read from storage on every ask rather than held in a variable, so every
@@ -369,8 +370,8 @@ function setNotifyOff(off) {
   paintNotifyOff();
 }
 
-// Whether this alert is held back. A permission request is let through unless
-// the constant above says otherwise. `goTo` is how `notify` tells one apart.
+// Whether this alert is held back. A permission request is held too while the
+// constant above says so. `goTo` is how `notify` tells one apart.
 function notifyHeld(goTo) {
   if (!notifyIsOff()) return false;
   if (goTo === "perms" && !NOTIFY_OFF_SILENCES_PERMISSIONS) return false;
