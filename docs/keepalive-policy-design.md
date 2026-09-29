@@ -665,7 +665,8 @@ needs care. The board half is HUB-SIDE and safe alone, the daemon half needs a r
 4. **Is 3 hours right?** It is the middle of your range. 2 hours saves one refresh per touch, 4 hours buys one more.
 5. **Should the operator's say to a parked card resume with no confirmation?** Recommend yes. A peer's needs one.
 
-Section 7, idle parking (r-007):
+Section 7, idle parking (r-007). Decided by the orchestrator 2026-09-29, without clint: 6 yes, 8 yes, 9 yes. Asked of
+clint: 7, and whether to build. 10 is open.
 
 6. **Take a director's handoff at 50 minutes idle, while its cache is warm, and park it at 2 hours?** Recommend yes. A
    handoff taken at the 2 hour mark rewrites each director's whole context on a cold cache, 150k to 270k tokens every
