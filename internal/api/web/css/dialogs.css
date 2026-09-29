@@ -410,12 +410,23 @@
     button.newagent::before { content: "+"; font-size: var(--fs-2xl); }
   }
 
-  /* ── detail dialog ──────────────────────────────────── */
+  /* ── the dialog family ──────────────────────────────────
+     Every dialog wears the wait card's clothes (`.waitcard` above): the teal-to-blue rule along the top edge,
+     a soft teal glow falling from it, the card gradient under that, and the board blurred behind. The rule is
+     a background layer rather than a `::before`, because a modal dialog scrolls itself when it is taller than
+     the window and a pseudo element would scroll away with the content.
+
+     Inside, one set of parts: an eyebrow saying what kind of thing this is, a headline, a quiet row of facts;
+     fields as a label, the control and a dim line of help; sections as panels on a lifted surface; and the
+     actions in a foot. All palette, so every skin draws it, the light ones included. */
   dialog {
     padding: 0; width: min(720px, 94vw); color: var(--body);
-    background: linear-gradient(180deg, var(--card-0), var(--card-1));
-    border: 1px solid var(--stroke); border-radius: var(--r-lg);
-    box-shadow: var(--shadow-dialog);
+    background:
+      linear-gradient(90deg, var(--teal), var(--blue)) top / 100% 3px no-repeat,
+      radial-gradient(ellipse 70% 220px at 50% 0%, rgba(var(--teal-rgb),.09), transparent 75%),
+      linear-gradient(180deg, var(--card-0), var(--card-1));
+    border: 1px solid rgba(var(--stroke-rgb),.7); border-radius: var(--r-lg);
+    box-shadow: var(--shadow-dialog), inset 0 1px 0 var(--hairline);
     /* Pinned, not centred. A browser centres a dialog on its own size, so one
        whose content changes height moves: the settings panes are five
        different heights, and switching between them slid the window up and
@@ -429,7 +440,17 @@
   /* For rows read down as a table, or content that is commands. A wrapped
      command has to be reassembled before it can be trusted. */
   dialog.wide { width: min(1280px, 96vw); }
-  dialog::backdrop { background: rgba(var(--sink-rgb),.74); backdrop-filter: blur(3px); }
+  dialog::backdrop { background: rgba(var(--sink-rgb),.66); backdrop-filter: blur(6px) saturate(120%); }
+  /* Opacity only. A dialog is pinned so it does not move under the pointer (above), and an entrance that
+     slid it would be the one movement left. */
+  dialog[open] { animation: dlg-in .18s ease-out; }
+  /* A column, so a head, a body and a foot share the dialog's height and only the body scrolls. As a block,
+     a tall body pushed the dialog past its own max-height and the head scrolled away with it. */
+  dialog[open]:not(.waitcard) { display: flex; flex-direction: column; }
+  dialog[open] > .dlg-head, dialog[open] > .dlg-foot { flex: none; }
+  dialog[open] > .dlg-body { min-height: 0; }
+  @keyframes dlg-in { from { opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { dialog[open] { animation: none; } }
   /* The tray does not blur the board. Every other dialog here is something you
      came to do, so hiding what is behind it is the point. This one lists
      things that happened to the board, and reading it against a blur means
@@ -454,39 +475,85 @@
   .copypath { display: inline-flex; align-items: center; gap: 6px; }
   .copypath button { padding: 2px 8px; font-size: var(--fs-xxs); }
   .dlg-head {
-    padding: 18px 22px 15px; border-bottom: 1px solid var(--stroke-dim);
+    padding: 24px 26px 18px; border-bottom: 1px solid rgba(var(--stroke-dim-rgb),.55);
     display: flex; align-items: flex-start; gap: var(--sp-4);
   }
-  .dlg-head h2 { margin: 0 0 8px; font-size: var(--fs-xl); color: var(--head); font-weight: 600; }
+  .dlg-head h2 {
+    margin: 0 0 8px; font: 600 var(--fs-2xl)/1.25 var(--sans); color: var(--head); letter-spacing: -.01em;
+  }
+  .dlg-head h2:last-child { margin-bottom: 0; }
+  .dlg-head > .grow { min-width: 0; }
+  /* What kind of thing the dialog is about, above what it is called. The wait card's eyebrow. */
+  .dlg-eyebrow {
+    font: 600 var(--fs-xxs)/1 var(--sans); letter-spacing: .16em; text-transform: uppercase;
+    color: var(--chip-accent-text); margin-bottom: 9px;
+  }
+  /* A close in the corner is a way out, not an action, so it is drawn quiet and lights on hover. */
+  .dlg-head > button:not(.go):not(.no) {
+    background: transparent; border-color: rgba(var(--stroke-dim-rgb),.7); color: var(--label);
+    font-size: var(--fs-base); padding: 7px 13px;
+  }
+  .dlg-head > button:not(.go):not(.no):hover { color: var(--head); border-color: var(--stroke); background: var(--lift); }
   /* Tall enough that a form with a dozen fields rarely needs scrolling. The
      head and foot are fixed, so this is the only part that moves. */
-  .dlg-body { padding: 20px 22px; max-height: 78vh; overflow-y: auto; }
+  .dlg-body { padding: 22px 26px 24px; max-height: 78vh; overflow-y: auto; }
+  /* A group of fields that belong together, on a lifted panel with its own small heading. */
+  .dlg-sec {
+    padding: 16px 18px 4px; margin-bottom: 16px; border-radius: var(--r-lg);
+    background: var(--lift); border: 1px solid rgba(var(--stroke-dim-rgb),.45);
+  }
+  .dlg-sec > .dlg-sec-h {
+    display: flex; align-items: center; gap: var(--sp-2); margin: 0 0 14px;
+    font: 600 var(--fs-xxs)/1 var(--sans); letter-spacing: .16em; text-transform: uppercase;
+    color: var(--chip-accent-text);
+  }
+  .dlg-sec > .field:last-child { margin-bottom: 14px; }
+  /* Two columns: what you read and write on the left, the settings of the thing on the right. One column when
+     the window is too narrow for both. */
+  .dlg-cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 340px); gap: 22px; align-items: start; }
+  .dlg-side { position: sticky; top: 0; }
+  @media (max-width: 960px) { .dlg-cols { grid-template-columns: minmax(0, 1fr); } .dlg-side { position: static; } }
   /* The action, pinned below the scrolling part.
      A form with an optional half is taller than the window the moment that half is opened, and the button that
      starts the thing was then under ten fields nobody filled in: the way to launch was to scroll past
      everything you had already decided not to answer. Outside `.dlg-body`, so it does not scroll with it. */
   .dlg-foot {
     display: flex; align-items: center; gap: var(--sp-4);
-    padding: 14px 22px; border-top: 1px solid var(--stroke-dim);
-    background: var(--shell-0);
+    padding: 14px 26px; border-top: 1px solid rgba(var(--stroke-dim-rgb),.55);
+    background: rgba(var(--sink-rgb),.35);
   }
-  .field { margin-bottom: 20px; }
+  .field { margin-bottom: 22px; }
   label.eyebrow {
-    display: block; font: 600 var(--fs-xxs)/1 var(--sans); letter-spacing: .16em;
-    text-transform: uppercase; color: var(--label); margin-bottom: 8px;
+    display: block; font: 600 var(--fs-xxs)/1 var(--sans); letter-spacing: .14em;
+    text-transform: uppercase; color: var(--label); margin-bottom: 9px;
   }
+  /* Help under a field is read once. Dimmer and smaller than what it explains, and held to a readable
+     measure rather than run the width of a wide dialog. */
+  dialog .hintline { font-size: var(--fs-xs); line-height: 1.55; max-width: 76ch; }
+  dialog .toolbar { gap: var(--sp-2); }
+  /* Buttons in a dialog are a step smaller than the board's, so a row of five reads as one set. */
+  /* `:where` keeps these at the weight of a bare `button`, so every smaller button with its own class (a
+     hint, a segment, a copy) still wins. */
+  :where(dialog .dlg-body, dialog .dlg-foot, dialog .dlg-head) button {
+    font-size: var(--fs-base); padding: 8px 14px; border-radius: var(--r-md);
+  }
+  :where(dialog) button.go:not(:hover) { box-shadow: inset 0 1px 0 var(--lift); }
   /* Every field in a dialog gets the same treatment. Left out, a textarea or a
      select falls through to the browser default, which on a dark page is a
      small white box at whatever width the rows attribute implied. */
   input[type=text],
   input[type=password],
   input[type=number],
+  .dlg-body input:not([type]),
   .dlg-body textarea,
   .dlg-body select {
     font: var(--fs-md)/1.5 var(--sans); color: var(--head); width: 100%;
-    background: rgba(var(--sink-rgb),.6); border: 1px solid var(--stroke-dim);
-    border-radius: var(--r-md); padding: 10px 12px; transition: border-color .14s;
+    background: rgba(var(--sink-rgb),.55); border: 1px solid rgba(var(--stroke-dim-rgb),.8);
+    border-radius: var(--r-md); padding: 9px 12px; transition: border-color .14s, box-shadow .14s;
   }
+  input[type=text]:hover,
+  .dlg-body textarea:hover,
+  .dlg-body select:hover { border-color: var(--stroke); }
   .dlg-body textarea {
     font-family: var(--mono); font-size: var(--fs-base); min-height: 84px;
     resize: vertical; display: block;
@@ -511,8 +578,9 @@
     padding: 6px 8px; border-radius: var(--r-sm);
   }
   input[type=text]:focus,
+  .dlg-body input:not([type]):focus,
   .dlg-body textarea:focus,
-  .dlg-body select:focus { outline: none; border-color: var(--blue); }
+  .dlg-body select:focus { outline: none; border-color: var(--teal); box-shadow: 0 0 0 3px rgba(var(--teal-rgb),.14); }
   input[type=text]::placeholder,
   .dlg-body textarea::placeholder { color: var(--dimmest); }
   /* No scrollbar rules here. A dialog once carried its own copy with a
@@ -570,4 +638,42 @@
     .evr { grid-template-columns: 66px 56px minmax(0, 1fr); }
     .evr .c-tool, .evr .c-by { display: none; }
   }
+
+  /* ── card details (#detail) ─────────────────────────────
+     The dialog clint opens most. The head says whose card it is and wears its facts as quiet chips. The left
+     column is the conversation with the card, the right its settings, each on a panel. */
+  #detail .dlg-head { padding-bottom: 20px; }
+  #detail .dlg-head h2 { font-size: var(--fs-3xl); margin-bottom: 12px; }
+  #d-chips .chip {
+    background: var(--lift); border-color: rgba(var(--stroke-dim-rgb),.6); color: var(--body);
+    font-size: var(--fs-xs); padding: 3px 9px;
+  }
+  #d-chips .chip.accent {
+    background: var(--chip-accent); border-color: var(--chip-accent-stroke); color: var(--chip-accent-text);
+  }
+  /* The question it is stopped on, as a callout in the warning colour rather than a form field. */
+  #detail .askfield {
+    border: 1px solid var(--warn-stroke); border-left: 3px solid var(--warn); border-radius: var(--r-lg);
+    background: var(--warn-bg-soft); padding: 14px 16px 12px;
+  }
+  #detail .askfield label.eyebrow { color: var(--warn); }
+  #detail .askfield textarea { background: rgba(var(--sink-rgb),.35); border-color: var(--warn-stroke); }
+  #detail .askfield .hintline { margin-top: 8px; }
+  #detail .dlg-sec label.eyebrow { color: var(--chip-accent-text); letter-spacing: .16em; }
+  /* The runner's buttons as a two-up grid of equal buttons, so six of them read as a set of controls rather
+     than a line that wrapped. A sentence in place of a button takes the whole row. */
+  #d-runner { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 0; }
+  #d-runner > button {
+    width: 100%; padding: 9px 8px; font-size: var(--fs-sm);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  /* The two that end something say so before they are hovered. */
+  #d-runner > button.no {
+    color: var(--danger-text); border-color: rgba(var(--danger-rgb),.32); background: rgba(var(--danger-rgb),.07);
+  }
+  #d-runner > .hintline { grid-column: 1 / -1; margin-top: 0; }
+  #d-auto-note:empty { display: none; }
+  #detail .dlg-side .picker { flex-wrap: wrap; }
+  #detail .dlg-side .picker > select, #detail .dlg-side .picker > input { flex: 1 1 120px; min-width: 0; }
+  #detail .timeline { background: rgba(var(--sink-rgb),.3); border-color: rgba(var(--stroke-dim-rgb),.55); }
 
