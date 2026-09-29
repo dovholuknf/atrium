@@ -6862,3 +6862,41 @@ JSON, or a list over 64 keys, answers 400.
 
 **Expected:** the approval is listed as decided by global auto and counted as unattended, not as yours. A decide
 request naming any other `by` answers 400.
+
+## FA. Rooms dashboard preview
+
+### FA1. Tiles in the demo
+
+1. Open the board with `?demo=rooms` and click the rooms chip.
+
+**Expected:** a panel opens with an all-rooms tile on top, three connected room tiles and one dimmed disconnected room
+with an `x`. Numbers and sparklines change every couple of seconds. One room shows a dash for its machine band.
+
+### FA2. Picking and phone width
+
+1. Click a tile, then reopen the menu and use the cog on a tile.
+2. Narrow the window to 390px.
+
+**Expected:** the click focuses the board on that room and the cog opens its settings. Tiles stack in one column.
+
+### FA3. Off by default
+
+1. Open the board without `?demo=rooms`.
+
+**Expected:** no demo rooms and no stats are generated, and the menu behaves as before.
+
+## FB. The usage tab counts cache reads only when asked
+
+### FB1. Checks
+
+- `go test ./internal/api -run UsageCacheReads`: default false, round trip.
+- `HEADLESS_ONLY=usageCacheReads node scripts/test-board-headless.js`: default off (four kinds, the line, five on hover), toggle on (five kinds, line gone), the setting posted, a cause row shows calls.
+- By hand: open the usage tab, press `cache reads`, reload and open a second tab; both follow the setting.
+
+## FC. Usage tab polish: the too-old line, keep-alive, hints and motion
+
+### FC1. Checks
+
+- `HEADLESS_ONLY=usagePolish,usageCacheReads node scripts/test-board-headless.js`: the too-old line with and without a build, the keep-alive phrase, `backfilled`, every number hinted, fade and grow on a live row, animations off under reduced motion.
+- `bash scripts/check-board.sh`, `bash scripts/check-skins.sh`.
+- By hand: on a hub with an old room, open the usage tab and read the line; with a card kept warm, read the cache reads line and hover it.
