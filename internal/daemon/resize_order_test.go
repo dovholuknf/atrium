@@ -36,6 +36,8 @@ func TestConcurrentViewportChangesLeavePtyRingAndViewersAgreeing(t *testing.T) {
 			buf:      newRing(1<<16, 80),
 			watchers: map[chan []byte]struct{}{},
 			done:     make(chan struct{}),
+			// Short, so the heights still waiting settle in the loop below.
+			hold: time.Millisecond,
 		}
 		var wg sync.WaitGroup
 		for g := 0; g < 8; g++ {
@@ -55,6 +57,16 @@ func TestConcurrentViewportChangesLeavePtyRingAndViewersAgreeing(t *testing.T) {
 			}(g)
 		}
 		wg.Wait()
+		// The last height may still be waiting out the hold.
+		for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); {
+			r.resizeMu.Lock()
+			waiting := r.pendingRows != 0
+			r.resizeMu.Unlock()
+			if !waiting {
+				break
+			}
+			time.Sleep(time.Millisecond)
+		}
 
 		want := agreedViewport(r.views)
 		sizes := f.resized()

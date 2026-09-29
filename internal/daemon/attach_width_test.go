@@ -181,10 +181,11 @@ func TestAttachingWideReplaysNarrowOutputWithoutANote(t *testing.T) {
 	if strings.Contains(got, "columns wide") || strings.Contains(got, "resized while it ran") {
 		t.Fatalf("emitted the width note that was removed: %q", got)
 	}
-	// And the terminal was told the size the viewer asked for, so the runner
-	// is already repainting into the space the drop left.
+	// And the terminal was told the width the viewer asked for, so the runner
+	// is already repainting into the space the drop left. The height waits
+	// out the hold, which `height_hold_test.go` covers.
 	sizes := f.resized()
-	if len(sizes) == 0 || sizes[len(sizes)-1] != (viewport{200, 50}) {
+	if len(sizes) == 0 || sizes[len(sizes)-1].cols != 200 {
 		t.Fatalf("the terminal was not resized for this viewer: %+v", sizes)
 	}
 }
