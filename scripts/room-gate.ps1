@@ -66,6 +66,8 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
+# UTF-8 without a BOM for what is piped to ssh. See provision-room.ps1.
+$OutputEncoding = [Text.UTF8Encoding]::new($false)
 $SshOption = @($SshOption | ForEach-Object { "$_" -split ',' } | Where-Object { $_ })
 
 function Step {
