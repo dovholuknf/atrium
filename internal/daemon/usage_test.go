@@ -350,18 +350,19 @@ func TestUsageCountsSubagentsOnceInTheirOwnRow(t *testing.T) {
 func TestUsagePricesEveryCurrentModel(t *testing.T) {
 	for model, in := range map[string]float64{
 		"claude-fable-5-1": 10, "claude-opus-5-5": 4, "claude-opus-5-5[1m]": 4, "claude-sonnet-5": 2,
+		"claude-sonnet-5-5": 2, "claude-sonnet-5-5[1m]": 2,
 		"claude-haiku-4-5-20251001": 1, "claude-haiku-4-5": 1,
 	} {
 		if p, ok := usagePriceFor(model); !ok || p.In != in {
 			t.Fatalf("%s: %+v %v, want input %v", model, p, ok, in)
 		}
 	}
-	for _, model := range []string{"claude-sonnet-5-5", "claude-haiku-4-5-fast", "gpt-5.5", ""} {
+	for _, model := range []string{"claude-sonnet-5-6", "claude-haiku-4-5-fast", "gpt-5.5", ""} {
 		if p, ok := usagePriceFor(model); ok {
 			t.Fatalf("%s priced %+v", model, p)
 		}
 	}
-	for _, model := range []string{"claude-sonnet-5", "claude-haiku-4-5-20251001"} {
+	for _, model := range []string{"claude-sonnet-5", "claude-sonnet-5-5", "claude-haiku-4-5-20251001"} {
 		if _, ok := keepalivePriceFor(model); ok {
 			t.Fatalf("%s is in keep-alive's table, so keep-alive would refresh it", model)
 		}
