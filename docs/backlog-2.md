@@ -983,6 +983,11 @@ minutes. clint typing and pressing Enter zeroes the count, which fits. The room 
 `01a0e80e-b80b-7b81-874b-0d1dde930bba` between 09:45 and 09:56 can confirm it. Also check that a `when: done`
 message is delivered at the turn end it waited for.
 
+Status: built and on claude/main. The line's text and keystroke-only counting are `118d6e5` (`typedline.go`), the
+Esc Esc port onto it is `d713e5c`, and the readout behind a setting is `2f15ace` (`js/typing.js`, polling
+`GET /v1/tasks/{id}/typing`). `TestASayWhenDoneWaitsForTheTurnToEnd` covers a `when: done` message typed at the turn
+end. The sa85 room log for 09:45 to 09:56 was not read, because it is in the live room.
+
 ## 34. Every MCP tool call skips atrium's permission gate (bug)
 
 Raised 2026-09-28. The dotfiles `atrium-perm-hook.ps1` exits early for every `mcp__*` tool, which was there so Mode A's
