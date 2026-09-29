@@ -666,8 +666,11 @@ async function keepTheme() {
     return;
   }
   termTask.theme = name;
-  // Saved, so the card's own theme answers now. The repaint reads the lists
-  // back from the daemon, which has the new name.
+  // Saved, so the card's own theme answers now. The lists paint from the card
+  // map, which the daemon's `task` event may not have reached yet, so the saved
+  // name goes into the map here rather than waiting on it.
+  const card = cardRows.get(termTask.id);
+  if (card) card.theme = name;
   themePreview = null;
   repaintWearers();
   toast("theme set", name || "back to the project's own");

@@ -165,9 +165,21 @@ func globalAutoView(s *Server) map[string]any {
 	// Whether a runner the room's exit interrupted mid-turn is told so when it
 	// comes back. On unless switched off. See docs/unexpected-exit-wake.md.
 	out["unexpected_exit_wake"] = s.st.UnexpectedExitOn()
+	// Whether the usage tab draws cache reads. Off unless switched on.
+	out["usage_cache_reads"] = s.usageCacheReads()
 	// The cache keep-alive: the default for new Claude cards, whether the room
 	// is suspended, and what refreshes cost this week. See keepalive.go.
 	keepaliveSettingsView(s.st, out)
+	// Idle parking: as stored, and what is in force. See store/idlepark.go.
+	stored, _ := s.st.Setting(store.SettingIdleParkAfter)
+	out["idle_park_after"] = stored
+	if d, on := s.st.IdleParkAfter(); on {
+		out["idle_park_after_now"] = int64(d / time.Second)
+	} else {
+		out["idle_park_after_now"] = "off"
+	}
+	out["idle_park_after_default"] = int64(store.DefaultIdleParkAfter / time.Second)
+	out["idle_park_after_min"] = int64(store.MinIdleParkAfter / time.Second)
 	inputLagView(out)
 	// Reported even when unset, so the setting can be read back as `above_normal`.
 	out["runner_priority"] = "above_normal"
@@ -271,9 +283,13 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		// Whether a NEW Claude card starts with the cache keep-alive on. Never
 		// applied to a card that already exists. See keepalive.go.
 		KeepaliveDefault *bool `json:"cache_keepalive_default"`
+		// Whether the usage tab draws cache reads. Broadcast so other tabs follow.
+		UsageCacheReads *bool `json:"usage_cache_reads"`
 		// Clears the room's keep-alive suspension. Only false means anything:
 		// atrium suspends, a person clears.
 		KeepaliveSuspended *bool `json:"cache_keepalive_suspended"`
+		// How long a card sits idle before it is parked: seconds, or off.
+		IdleParkAfter *string `json:"idle_park_after"`
 	}
 	// Read once and decoded twice: into the struct, which is what the handler
 	// works from, and into a map, which is the only way to notice a field that
@@ -585,6 +601,18 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if body.IdleParkAfter != nil {
+		v, err := store.CheckIdleParkAfter(*body.IdleParkAfter)
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, err)
+			return
+		}
+		if err := s.st.SetSetting(store.SettingIdleParkAfter, v); err != nil {
+			s.fail(w, err)
+			return
+		}
+	}
+
 	if body.UnexpectedExit != nil {
 		v := "off"
 		if *body.UnexpectedExit {
@@ -614,6 +642,18 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if body.UsageCacheReads != nil {
+		v := "off"
+		if *body.UsageCacheReads {
+			v = "on"
+		}
+		if err := s.st.SetSetting(SettingUsageCacheReads, v); err != nil {
+			s.fail(w, err)
+			return
+		}
+		s.Broadcast("settings", globalAutoView(s))
+	}
+
 	if body.InputLag != nil {
 		if err := setInputLag(s.st, *body.InputLag); err != nil {
 			s.fail(w, err)
@@ -624,6 +664,14 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 	out := globalAutoView(s)
 	out["drained"] = drained
 	writeJSON(w, http.StatusOK, out)
+}
+
+// SettingUsageCacheReads is `on` when the usage tab draws cache reads. Unset is off.
+const SettingUsageCacheReads = "usage_cache_reads"
+
+func (s *Server) usageCacheReads() bool {
+	v, err := s.st.Setting(SettingUsageCacheReads)
+	return err == nil && strings.TrimSpace(v) == "on"
 }
 
 // shellIsThere reports whether a shell could actually be opened on this

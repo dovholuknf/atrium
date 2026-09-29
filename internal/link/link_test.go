@@ -176,11 +176,21 @@ func TestAStreamArrivesBeforeItEnds(t *testing.T) {
 	}
 	defer res.Body.Close()
 
+	// A room-scoped stream now hears `rooms` too, which can come ahead of the
+	// room's own first event. Read until "first" shows up rather than assuming it
+	// is the first thing on the wire.
 	got := make(chan string, 1)
 	go func() {
-		buf := make([]byte, 64)
-		n, _ := res.Body.Read(buf)
-		got <- string(buf[:n])
+		var all string
+		buf := make([]byte, 4096)
+		for !strings.Contains(all, "first") {
+			n, err := res.Body.Read(buf)
+			all += string(buf[:n])
+			if err != nil {
+				break
+			}
+		}
+		got <- all
 	}()
 	select {
 	case s := <-got:

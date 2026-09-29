@@ -286,10 +286,26 @@ async function loadGlobalAuto() {
     globalAutoRead = true;
     globalAutoStale = false;
     if (typeof applyResolvedSkin === "function") applyResolvedSkin(s);
+    globalAutoRetryMs = 0;
   } catch (e) {
     globalAutoStale = true;
+    globalAutoRetry();
   }
   paintGlobalAuto();
+}
+
+// A failed read retries on its own backoff, 2s doubling to 30s, only while it
+// is stale. It used to ride the 10s poll, and the board no longer polls. One
+// timer at a time.
+let globalAutoRetryMs = 0;
+let globalAutoRetryTimer = null;
+function globalAutoRetry() {
+  if (globalAutoRetryTimer) return;
+  globalAutoRetryMs = Math.min(globalAutoRetryMs ? globalAutoRetryMs * 2 : 2000, 30000);
+  globalAutoRetryTimer = setTimeout(() => {
+    globalAutoRetryTimer = null;
+    if (globalAutoStale) loadGlobalAuto();
+  }, globalAutoRetryMs);
 }
 
 // Turning it ON asks; turning it off never does. The confirmation is not

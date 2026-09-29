@@ -6497,3 +6497,406 @@ reload.
 2. Confirm the desktop's terminal resized to the phone's height, which is the item 74 case this view exists to avoid.
 3. Tap "watch at desktop size". The page reloads and the phone view is back. Resize the desktop window. The pty
    follows the desktop again.
+
+## EM. The board is driven by its event stream
+
+### EM1. An idle board is quiet
+
+1. Open the board with a few running sessions and open the browser's network tab.
+2. Leave it for two minutes with the tab in front.
+
+**Expected:** `/v1/tasks`, `/v1/permissions`, `/v1/shares` and `/v1/health` are each read about once a minute.
+`/v1/waiting` is never read. The cards still move as the sessions work.
+
+### EM2. A card changes without a refetch
+
+1. With the network tab open, type to a session so its card changes state.
+
+**Expected:** the card updates within a second. On a room with r-009, no `/v1/tasks` request goes with it. On an
+older room, at most one every 5s.
+
+### EM3. The terminal list repaints instantly
+
+1. Open the terminals view.
+2. Toggle the tray, then switch the sort between name and activity.
+
+**Expected:** each click repaints at once and makes no request.
+
+### EM4. A hidden tab stays quiet
+
+1. Switch to another browser tab for two minutes, then come back.
+
+**Expected:** no requests while hidden. Coming back reads everything once and the board is current.
+
+### EM5. Permissions still arrive
+
+1. Make a session ask for a permission, with the board on another tab and with a terminal attached.
+
+**Expected:** the badge, the alert, the perms tab and the banner over the attached terminal all show it. Answering it
+from the banner or the perms tab takes it away at once.
+
+## EN. Provisioning: codex install, qualified -SmokeTo, -Restart
+
+### EN1 codex install keeps its helpers
+
+1. On a Unix remote with node and npm on the login PATH, run `-Install codex`. Expect `codex --version` to answer
+   from a login shell and `installed=` lines naming only the npm module and shim.
+2. On a remote without node, run it again. Expect `~/.local/share/codex/<version>/bin/codex-code-mode-host` beside
+   `codex`, and `~/.local/bin/codex` a wrapper that runs.
+3. Rerun either. Expect no `installed=` lines. Then `-Remove` and check only what was listed is gone.
+4. Repeat on a Windows remote (`codex.cmd --version`).
+
+### EN2 bare -SmokeTo
+
+1. With `ATRIUM_ROOM=lab` set, run with `-SmokeTo fabric`. Expect the smoke card to say back to `fabric@lab`.
+2. With `-SmokeTo fabric@other`, expect it left alone.
+
+### EN3 -Restart
+
+1. `-Restart` alone prints the plan and changes nothing, exit 0.
+2. With a card in needs-permission, `-Restart -Yes` exits 9 naming the card. With `-Force` it proceeds.
+3. After `schtasks /Change /DISABLE` on the autostart task, `-Restart -Yes` exits 10.
+4. A clean `-Restart -Yes` stops with `atrium stop`, waits for the ports to close, starts, and the room shows on
+   the hub again with the same runner rows.
+
+## EO. Hub events: a room-scoped board hears rooms attach
+
+### EO1 A room-scoped board sees a room attach (needs u-009)
+
+1. Open the board scoped to one room. Attach a second room to the hub.
+2. The room count and the rooms tab update at once, not after the old 10s wait.
+
+### EO2 Auto with no board open
+
+1. Turn board-wide auto on, close every board, and raise a permission in a session.
+2. It is approved within a second. In the room's review the decision reads `global-auto`, not `you`.
+3. With the board closed and auto on, the hub's request count to a room stays flat while idle.
+4. Turn auto off with no board open: no stream to any room remains.
+
+### EO3 CLI nudge
+
+1. With a board open, run `atrium rooms mark <name>` in a terminal. The board shows the mark without a reload.
+
+## EP. The permission gate on a room
+
+### EP1. Check writes nothing
+
+1. Run `pwsh -File scripts/room-gate.ps1 <room> -Check` against a room with no gate.
+
+**Expected:** `copy todo` and `register todo` lines, `reach ok`, `done ok`. The room's `~/.claude` is unchanged.
+
+### EP2. Install, and rerun
+
+1. Run `room-gate.ps1 <room>`, then run it again.
+
+**Expected:** the first run says `copy done` and `register done` and names a `settings.json.atrium-<stamp>.bak`. The
+second says `ok` for both and writes no new backup. The gate is the FIRST entry of the `""` PreToolUse group, ahead of
+`atrium hook --event tool-start`, and every other entry is still there.
+
+### EP3. A launched card asks
+
+1. Launch a non-lean claude card on the room with a prompt to run `git status --short`.
+
+**Expected:** the card shows needs-permission on the board with that command, and runs it once approved.
+
+## EQ. A parked card sleeps until somebody wants it
+
+### EQ1. Resume from the board
+
+1. Have a card parked (nothing parks one on its own yet, so park it through the store in a rig).
+2. Open its terminal.
+
+**Expected:** the card shows the parked mark and the terminal prints "press any key to resume it". Nothing resumes
+until a real key is pressed, and clicking or focusing the terminal does not count. The card's menu has Resume, which
+resumes it at once.
+
+### EQ2. A say to a parked card
+
+1. From another session, `atrium_say` to the parked card.
+2. Say it again with `wake=true`, or `atrium tell --wake`.
+3. Type a say in the board's message box, with no sender.
+
+**Expected:** the first answers `parked` and queues nothing. The second resumes the card and the text arrives through
+the queue, never typed. The board's own say resumes it at once. `atrium_peers` marks the card parked.
+
+### EQ3. A report wakes its launcher
+
+1. Park a launcher whose worker is still going, then have the worker `atrium finish` with a recap.
+
+**Expected:** the launcher resumes and receives the report notice. A director whose only worker is parked shows no
+STUCK mark and raises no silent-stop notice.
+
+## ER. The orchestrator parks only when nothing else runs
+
+### ER1. Tag and condition
+
+1. Put the tag `atrium:orchestrator` on the orchestrator card (nothing does this for you).
+2. With another card's runner live, leave the orchestrator idle past `idle_park_after`.
+3. Park or end every other card, leaving fixtures and shells alone.
+
+**Expected:** the orchestrator is not parked while any other card has a live runner, and is parked once the last one
+parks or ends. A fixture terminal or a shell beside a card does not hold it up. (Needs stage 5's idle tick.)
+
+## ES. An idle card is parked, a director after its handoff
+
+### ES1. A director left alone
+
+1. Set `idle_park_after` to 1800 in the settings, or leave the default. Leave a director with no workers idle.
+2. Watch its directory.
+
+**Expected:** near 50 minutes idle (the later of that and `idle_park_after` minus 70 minutes) it types the capture
+prompt once and writes `HANDOFF.<name>.md`. At `idle_park_after` it is parked with the mark, keeping its status. The
+handoff turn does not restart the idle clock. `atrium_peers` shows it parked.
+
+### ES2. Waking it
+
+1. Say to it from a peer, then from the board.
+
+**Expected:** the peer's say answers `parked`. The board's say resumes it, and its first message tells it to read its
+handoff file, ahead of the text you sent.
+
+### ES3. What keeps a card up
+
+1. Give a card a live worker, a queued message, or an open question.
+
+**Expected:** it is not parked. The same holds while its last Stop reported background work (a shell still running) or
+subagents still out. A card tagged neither `origin:agent` nor `atrium:park-idle` is never parked.
+Setting `idle_park_after` to `off` parks nothing.
+
+### ES4. Family wakes a parked card
+
+1. Park a worker. Say to it from its launcher, then from an unrelated session.
+2. Park a launcher. Say to it from one of its workers.
+
+**Expected:** the launcher's say and the worker's say resume the parked card and are delivered queued, never typed. The
+unrelated session is answered `parked` with "this card is parked, send again with wake=true to resume it", and nothing
+is queued.
+
+### ES5. Keep-alive and a parked card
+
+1. Turn keep-alive on for a card with a warm cache, then park it inside the refresh margin.
+
+**Expected:** no refresh fork runs for it, and the card's keep-alive reason reads "parked".
+
+## ET. A room pushes its own stats
+
+### ET1. The first paint
+
+1. Open `http://<board>/v1/room/stats` on a running room.
+2. It answers JSON with `v` 1, `room`, `at`, `tokens`, `process`, `disk` and `runners`, and no `machine`.
+3. Ask the agent port for the same path. It is not there.
+
+### ET2. The push
+
+1. Watch `/v1/events` with `curl -N`.
+2. A `room-stats` event arrives about every 10 seconds, and its `at` moves.
+3. Open a lent session link and ask it for `/v1/events` and `/v1/room/stats`. Both are refused.
+
+## EU. report_to on launch
+
+### EU1. Launch a card that reports to another
+1. With a session aliased `review` running, run `atrium launch --report-to review --cwd <dir>`.
+2. The new card shows `review` as its launcher, and carries no `origin:agent` tag.
+3. Have it run `atrium_report`. The report arrives at `review`.
+
+### EU2. An unknown name refuses
+1. Run `atrium launch --report-to nobody`. It is refused with the handles that would have worked.
+2. No card was created.
+
+### EU3. A relaunched target is still reached
+1. Relaunch the `review` session, so its alias moves to a new card.
+2. Have the launched card report again. The report reaches the new card.
+
+## EV. The usage tab's room side
+
+### EV1. Grouping by department and director
+
+1. Launch a worker from a card tagged `atrium:director`, tag the worker `dept:ui`, and let it finish a turn.
+2. Ask `GET /v1/usage?group=dept` and `GET /v1/usage?group=launcher` on the board port.
+
+**Expected:** each bucket has `groups`, the worker's spend under `ui` and under the director's alias. An operator's
+card is under "" and rows from before the restart are under `@before`. Without `group` the answer has no `groups`.
+
+### EV2. Limit readings
+
+1. With a statusline reporting limits, let a card post the same figures for a few minutes, then a changed one.
+2. Ask `GET /v1/usage/limits?since=<an hour ago, RFC 3339>` on the board port.
+
+**Expected:** one reading per change, each with `at`, `card`, `kind`, `pct` and `resets_at`, and none for the repeats.
+Five-hour readings older than 8 hours and weekly ones older than 7 days are gone after the next sweep.
+
+### EV3. Tokens per accepted item
+
+1. Accept a worker's item in the work ledger, after the worker has spent a few turns.
+2. Ask `GET /v1/usage/items?since=<a day ago, RFC 3339>` on the board port.
+
+**Expected:** the item is listed with `counted` equal to the card's input, output and cache writes, `cache_read` apart,
+`cards` and `split` of 1. An accepted item whose card has no usage rows adds to `unlinked` instead.
+
+### EV4. Backfill
+
+1. Run `atrium usage backfill --since 7d --dry-run`.
+2. Run `atrium usage backfill --since 7d`, then run it again.
+
+**Expected:** the dry run writes nothing and reports the rows it would add. The real run adds them with cause
+`backfill` and says the department and director are the card's as it is now. The second run reports 0 rows.
+
+## EW. A new-context cycle and its failed chip
+
+### EW1. A message queued as the capture ends
+
+1. Run new context on a card. While it is capturing, say to it from a peer, then let the capture turn end.
+
+**Expected:** `/clear` is typed alone, a new session starts, the wake prompt is typed, and only then the peer's message.
+
+### EW2. A turn during the wake
+
+1. Run new context. After `/clear`, start a turn in the card by hand before the wake goes in, and keep it going for
+   more than two minutes.
+
+**Expected:** the chip stays on the wake step and the wake is typed once the turn ends. It fails only when no gap opens
+in fifteen minutes.
+
+### EW3. The failed chip
+
+1. Make a cycle fail (for example, a capture that writes no file). Have a peer message start a turn in the card.
+2. Then run `/clear` by hand so a new session starts.
+3. Repeat the failure and dismiss the chip. Repeat it and run new context again.
+
+**Expected:** the chip survives the turn. It clears when the new session starts, on the dismissal, and on the rerun. The
+failure reason is in the card's history each time.
+
+## EX. Health arrives on the event stream
+
+1. Open the board's event stream (`curl -N http://127.0.0.1:<board port>/v1/events`) and restart a room.
+
+**Expected:** a `health` event with `"settling":true` shortly after the room comes back, and one more with
+`"settling":false` once its cards are back, with no poll of `/v1/health` needed to see either.
+
+## EY. Room preflight and the requirements parser
+
+### EY1. Preflight answers by key
+
+1. On a room, `POST /v1/preflight` on the board address with `{"tools":["go","git"],"runner_auth":["claude"],
+   "env_present":["PATH","NOPE_NOT_SET"]}`.
+
+**Expected:** each tool answers `ok`, `path`, `output`. `claude` runs `claude auth status`. `env_present` is
+`{"PATH":true,"NOPE_NOT_SET":false}` and carries no value. `pid` is the room's, `started_by` is empty.
+
+### EY2. A body cannot name a command
+
+1. Post `{"tools":["curl","rm -rf /"]}`.
+
+**Expected:** `curl` answers `unknown key, resolved at <path>` and nothing runs. The other is `not found`.
+
+### EY3. Only the board listener
+
+1. Post the same body to the agent listener (`:7777`) at `/v1/preflight`.
+
+**Expected:** not 200, and nothing runs.
+
+### EY4. started-by
+
+1. Start a room with `--started-by systemd-user:abc`, then post `{}` to preflight.
+2. Check the room's environment and a runner it launches.
+
+**Expected:** `started_by` is `systemd-user:abc`. The value appears in neither environment.
+
+### EY5. requirements
+
+1. `atrium requirements atrium.requirements.yaml --json` on a file copied from the design.
+2. Add an unknown key, then `clone: /home/me/x`, then `env: { X: ghp_abcdefghijklmnopqrstuvwxyz0123456789 }`.
+
+**Expected:** the first prints normalized JSON. Each of the others exits 1 with the key and line.
+
+**Reference for `scripts/room-check.ps1` (the shapes are exact).**
+
+`atrium requirements <file> --json` prints one object, indented two spaces, exit 0. Keys always present:
+`version` (number, always 1), `toolchain` (object name to tool), `runners` (object name to runner), `room`
+(object), `env` (object name to entry), `services` (array of string). Keys present only when the file has
+the section: `atrium` (`{min: string}`, a 7 to 40 char lowercase hex sha) and `git`.
+
+- `git`: `base`, `mirror`, `clone`, `worktrees` (strings, templates left unresolved) and `fresh` (bool).
+  Defaults when absent: mirror `hub-main`, clone `{home}/git/github/{owner}/{repo}`, worktrees
+  `{clone}-worktrees`, fresh `false`. `base` is required.
+- `toolchain.<name>`: `from`, `min`, `windows` (strings) and `os` (array of `windows|linux|darwin`), each
+  omitted when not given. `min` stays text, so `2.30` is `"2.30"`.
+- `runners.<name>`: `hooks` (`"atrium"`), `gate` (`"required"`), `mcp` (array), `helpers` (array), each
+  omitted when not given, and `smoke` (bool, always present).
+- `room`: `survives` (`none|logoff|reboot`, default `none`) and `runner_auth` (array, `[]` when absent).
+- `env.<NAME>`: `required` (bool, always present) and `value` (string, omitted unless a plain value was given).
+
+Refusals write one line per problem to stderr, in file order, print nothing to stdout, and exit 1:
+
+```
+atrium.requirements.yaml:LINE: dotted.key.path: reason
+```
+
+- Absolute path (`/x`, `\x`, `~/x`, `C:\x`) in any value: `atrium.requirements.yaml:2: git.clone: "/home/me/x"
+  is an absolute path. the file describes a project and is read on machines that are not this one, so use
+  {home}, {owner}, {repo} or {clone}`
+- Secret-looking value (known token prefixes, PEM header, URL with a password, long mixed token):
+  `atrium.requirements.yaml:3: env.X: looks like a secret. the file names what a room needs and never carries a
+  credential. name the variable under env and set it on the room`
+- Plain value on a secret-named variable (name contains secret, token, passw, credential, apikey, privatekey,
+  auth): `env.API_TOKEN: API_TOKEN reads as a secret, so it cannot have a value in this file. write ...`
+- Unknown key: `LINE: runners.claude.smok: unknown key. known keys here: hooks, gate, mcp, helpers, smoke`.
+- A missing or unreadable file and a YAML syntax error also exit 1, with a single line on stderr.
+
+`POST /v1/preflight` answers 200 with (`ok` is true only when the command exited 0):
+
+```json
+{"tools": {"<key>": {"ok": bool, "path": "", "output": "", "error": ""}},
+ "runner_auth": {"<key>": {"ok": bool, "path": "", "output": "", "error": ""}},
+ "env_present": {"<NAME>": bool}, "pid": 0, "started_by": ""}
+```
+
+`error` is `""`, `not found`, `timeout`, `unknown key, resolved at <path>`, or the exit error text.
+`output` is at most 4096 bytes. Every map is present, `{}` when its list was not asked for. A body that is not
+JSON, or a list over 64 keys, answers 400.
+
+## EZ. A hub auto approval reads as unattended
+
+1. Turn on the hub's board-wide auto switch, and let a card on a room make a gated tool call.
+2. Open that card's auto-mode review.
+
+**Expected:** the approval is listed as decided by global auto and counted as unattended, not as yours. A decide
+request naming any other `by` answers 400.
+
+## FA. Rooms dashboard preview
+
+### FA1. Tiles in the demo
+
+1. Open the board with `?demo=rooms` and click the rooms chip.
+
+**Expected:** a panel opens with an all-rooms tile on top, three connected room tiles and one dimmed disconnected room
+with an `x`. Numbers and sparklines change every couple of seconds. One room shows a dash for its machine band.
+
+### FA2. Picking and phone width
+
+1. Click a tile, then reopen the menu and use the cog on a tile.
+2. Narrow the window to 390px.
+
+**Expected:** the click focuses the board on that room and the cog opens its settings. Tiles stack in one column.
+
+### FA3. Off by default
+
+1. Open the board without `?demo=rooms`.
+
+**Expected:** no demo rooms and no stats are generated, and the menu behaves as before.
+
+## FB. The usage tab counts cache reads only when asked
+
+### FB1. Checks
+
+- `go test ./internal/api -run UsageCacheReads`: default false, round trip.
+- `HEADLESS_ONLY=usageCacheReads node scripts/test-board-headless.js`: default off (four kinds, the line, five on hover), toggle on (five kinds, line gone), the setting posted, a cause row shows calls.
+- By hand: open the usage tab, press `cache reads`, reload and open a second tab; both follow the setting.
+
+## FC. Usage tab polish: the too-old line, keep-alive, hints and motion
+
+### FC1. Checks
+
+- `HEADLESS_ONLY=usagePolish,usageCacheReads node scripts/test-board-headless.js`: the too-old line with and without a build, the keep-alive phrase, `backfilled`, every number hinted, fade and grow on a live row, animations off under reduced motion.
+- `bash scripts/check-board.sh`, `bash scripts/check-skins.sh`.
+- By hand: on a hub with an old room, open the usage tab and read the line; with a card kept warm, read the cache reads line and hover it.

@@ -443,6 +443,53 @@ function sendJSON(res, obj) {
   res.end(body);
 }
 
+// What `/v1/tasks` answers right now: the list, or "hang" or "down". A
+// function so the change watcher below can ask without it counting as a read.
+function mockTasks(reading) {
+  if (tasksMode === "hang") return "hang";  // never answer
+  // The pinned-cold strip: the terminated card while its pin holds it, and an
+  // empty list once dismiss has unpinned it.
+  if (tasksMode === "pinned") { return PIN.pinned ? [PIN] : []; }
+  if (tasksMode === "filed") { return [FILED, LOOSE]; }
+  if (tasksMode === "seen") { return [T1, SEEN]; }
+  if (tasksMode === "qclick") { return qclickCards(); }
+  if (tasksMode === "land") { return [T1].concat(landList); }
+  // Untagged cards in custom mode, for the sort and the new-card sections.
+  if (tasksMode === "untagged") {
+    if (untaggedDown) return "down";
+    if (untaggedEmpty) { return []; }
+    const list = [FILED].concat(UNTAGGED_CARDS, untaggedExtra);
+    return untaggedTag
+      ? list.map(t => Object.assign({}, t, { id: untaggedTag + "~" + t.id })) : list;
+  }
+  // The hide strip: an alive idle subagent, an alive working subagent, a dead
+  // (cold, pinned) subagent, an alive agent and a dead (cold, pinned) agent.
+  if (tasksMode === "doers") {
+    return [SUBLIVE, SUBWORK, SUBDEAD, AGLIVE, AGDEAD];
+  }
+  // The attach-loop repro. The cached LIST lags the live card: it carries the
+  // loop card WITHOUT `supervised` (so a render finds the pane stale and tears
+  // it down) while the single-card poll above still says supervised (so the
+  // watchdog attaches again). `loopListSupervised` flips to the recovered
+  // state, where the list agrees the card is attachable and nothing tears it
+  // down. Pinned so the row is present either way, the way a real lagging
+  // list keeps the row while dropping the live flag.
+  if (tasksMode === "worn") { return wornTasks; }
+  if (tasksMode === "keepalive") { return KA_CARDS; }
+  if (tasksMode === "stuck") { return stuckCards(); }
+  if (tasksMode === "ctxsize") { return CTX_CARDS; }
+  if (tasksMode === "peek") {
+    // Idle a second longer on every read, so a refresh redraws the entries.
+    if (reading) peekReads++;
+    return PEEK_CARDS.map(t => Object.assign({}, t, { idle_seconds: 30 + peekReads }));
+  }
+  if (tasksMode === "loop") {
+    return [Object.assign({}, LOOP,
+      { supervised: loopListSupervised, pinned: true })];
+  }
+  return [tasksMode === "second" ? T2 : T1];
+}
+
 const server = http.createServer((req, res) => {
   const url = req.url.split("?")[0];
 
@@ -576,51 +623,10 @@ const server = http.createServer((req, res) => {
     return;
   }
   if (url === "/v1/tasks") {
-    if (tasksMode === "hang") { hungResponses.push(res); return; }  // never answer
-    // The pinned-cold strip: the terminated card while its pin holds it, and an
-    // empty list once dismiss has unpinned it.
-    if (tasksMode === "pinned") { sendJSON(res, { tasks: PIN.pinned ? [PIN] : [] }); return; }
-    if (tasksMode === "filed") { sendJSON(res, { tasks: [FILED, LOOSE] }); return; }
-    if (tasksMode === "seen") { sendJSON(res, { tasks: [T1, SEEN] }); return; }
-    if (tasksMode === "qclick") { sendJSON(res, { tasks: qclickCards() }); return; }
-    if (tasksMode === "land") { sendJSON(res, { tasks: [T1].concat(landList) }); return; }
-    // Untagged cards in custom mode, for the sort and the new-card sections.
-    if (tasksMode === "untagged") {
-      if (untaggedDown) { res.writeHead(503); res.end("{}"); return; }
-      if (untaggedEmpty) { sendJSON(res, { tasks: [] }); return; }
-      const list = [FILED].concat(UNTAGGED_CARDS, untaggedExtra);
-      sendJSON(res, { tasks: untaggedTag
-        ? list.map(t => Object.assign({}, t, { id: untaggedTag + "~" + t.id })) : list });
-      return;
-    }
-    // The hide strip: an alive idle subagent, an alive working subagent, a dead
-    // (cold, pinned) subagent, an alive agent and a dead (cold, pinned) agent.
-    if (tasksMode === "doers") {
-      sendJSON(res, { tasks: [SUBLIVE, SUBWORK, SUBDEAD, AGLIVE, AGDEAD] }); return;
-    }
-    // The attach-loop repro. The cached LIST lags the live card: it carries the
-    // loop card WITHOUT `supervised` (so a render finds the pane stale and tears
-    // it down) while the single-card poll above still says supervised (so the
-    // watchdog attaches again). `loopListSupervised` flips to the recovered
-    // state, where the list agrees the card is attachable and nothing tears it
-    // down. Pinned so the row is present either way, the way a real lagging
-    // list keeps the row while dropping the live flag.
-    if (tasksMode === "worn") { sendJSON(res, { tasks: wornTasks }); return; }
-    if (tasksMode === "keepalive") { sendJSON(res, { tasks: KA_CARDS }); return; }
-    if (tasksMode === "stuck") { sendJSON(res, { tasks: stuckCards() }); return; }
-    if (tasksMode === "ctxsize") { sendJSON(res, { tasks: CTX_CARDS }); return; }
-    if (tasksMode === "peek") {
-      // Idle a second longer on every read, so a refresh redraws the entries.
-      peekReads++;
-      sendJSON(res, { tasks: PEEK_CARDS.map(t => Object.assign({}, t, { idle_seconds: 30 + peekReads })) });
-      return;
-    }
-    if (tasksMode === "loop") {
-      sendJSON(res, { tasks: [Object.assign({}, LOOP,
-        { supervised: loopListSupervised, pinned: true })] });
-      return;
-    }
-    sendJSON(res, { tasks: [tasksMode === "second" ? T2 : T1] });
+    const got = mockTasks(true);
+    if (got === "hang") { hungResponses.push(res); return; }
+    if (got === "down") { res.writeHead(503); res.end("{}"); return; }
+    sendJSON(res, { tasks: got });
     return;
   }
   // The runners page. Everything it reads besides runners and fixtures is empty.
@@ -648,7 +654,7 @@ const server = http.createServer((req, res) => {
     sendJSON(res, { tasks: all.slice(offset, offset + limit), total: all.length });
     return;
   }
-  if (url === "/v1/waiting") { sendJSON(res, { tasks: [] }); return; }
+  if (url === "/v1/waiting") { waitingReads++; sendJSON(res, { tasks: [] }); return; }
   if (url === "/v1/permissions") { sendJSON(res, { permissions: tasksMode === "land" ? landPerms : [] }); return; }
   if (url === "/v1/shares") { sendJSON(res, { shares: [] }); return; }
   if (url === "/v1/rooms") { sendJSON(res, { rooms: [] }); return; }
@@ -777,6 +783,33 @@ const server = http.createServer((req, res) => {
   res.writeHead(404); res.end("");
 });
 
+// THE MOCK BROADCASTS ITS CHANGES, the way the daemon does.
+//
+// The board no longer re-reads the cards on a clock: it reads them at load, on
+// a resync, and when the stream says something changed. Every change on a real
+// daemon is broadcast, so a mock whose answer changes without saying so is a
+// daemon that does not exist. This watches what `/v1/tasks` and
+// `/v1/permissions` would answer and, when either moves, says so on every open
+// stream: a sweep `task-removed` (no id, so the board reads the list again) or a
+// `permission`. `mockBroadcast` is off in the sections that count requests
+// against a stream the test drives itself.
+let mockBroadcast = true;
+// Counted so `eventDriven` can prove the board never asks for it.
+let waitingReads = 0;
+let mockSaid = { tasks: "", perms: "" };
+function mockFingerprint(v) { try { return JSON.stringify(v); } catch (e) { return String(v); } }
+function mockSay(kind, data) {
+  openStreams.forEach(r => { try { r.write("event: " + kind + "\ndata: " + data + "\n\n"); } catch (e) {} });
+}
+const mockWatch = setInterval(() => {
+  const tasks = mockFingerprint(mockTasks(false));
+  const perms = mockFingerprint(tasksMode === "land" ? landPerms : []);
+  if (mockBroadcast && mockSaid.tasks && tasks !== mockSaid.tasks) mockSay("task-removed", "{}");
+  if (mockBroadcast && mockSaid.perms && perms !== mockSaid.perms) mockSay("permission", "{}");
+  mockSaid = { tasks, perms };
+}, 200);
+mockWatch.unref();
+
 let bad = 0;
 function fail(msg) { console.error("FAIL: " + msg); bad++; }
 
@@ -888,7 +921,7 @@ async function wornSection(browser, base) {
       return out;
     });
     const paintAll = async () => {
-      await wp.evaluate(async () => { runRefresh(); await renderTermList(); });
+      await wp.evaluate(async () => { runRefresh(); await loadCards().catch(() => {}).then(renderTermList); });
       await wp.waitForFunction(n => document.querySelectorAll('#stack-list .stackrow[data-id^="w-"]').length >= n &&
         document.querySelectorAll('#term-list .card.tab[data-id^="w-"]').length >= n,
         wornTasks.length, { timeout: slow(15000) });
@@ -934,9 +967,9 @@ async function wornSection(browser, base) {
     if (stored !== "1") fail("turning card colours on did not store it in this browser (got " + stored + ").");
     await paintAll();
     // Attach one, so the list has an `.on` card to tell apart.
-    await wp.evaluate(async () => { termTask = { id: "w-dracula" }; await renderTermList(); });
+    await wp.evaluate(async () => { termTask = { id: "w-dracula" }; await loadCards().catch(() => {}).then(renderTermList); });
     const rows = await wp.evaluate(measureWorn);
-    await wp.evaluate(async () => { termTask = null; await renderTermList(); });
+    await wp.evaluate(async () => { termTask = null; await loadCards().catch(() => {}).then(renderTermList); });
 
     const seen = { "terminals list": new Set(), stack: new Set(), board: new Set() };
     const low = [];
@@ -976,7 +1009,7 @@ async function wornSection(browser, base) {
     // Phone width: the same list, still worn.
     await wp.setViewportSize({ width: 390, height: 780 });
     await wp.click('.tab[data-view="terms"]');
-    await wp.evaluate(() => renderTermList());
+    await wp.evaluate(() => loadCards().catch(() => {}).then(renderTermList));
     const phone = await wp.evaluate(() => {
       const cards = [...document.querySelectorAll('#term-list .card.tab.worn[data-id^="w-"]')];
       const vis = cards.filter(c => c.getBoundingClientRect().width > 0);
@@ -1047,7 +1080,7 @@ async function termWearSection(browser, base) {
 
     const read = () => wp.evaluate(async () => {
       termTask = { id: "tw-atrium" };
-      await renderTermList();
+      await loadCards().catch(() => {}).then(renderTermList);
       const out = {};
       for (const el of document.querySelectorAll('#term-list .card.tab[data-id^="tw-"]')) {
         const s = getComputedStyle(el), a = getComputedStyle(el, "::after");
@@ -1132,7 +1165,7 @@ async function termWearSection(browser, base) {
       for (const skin of ["midnight", "daylight", "paper", "noir"]) {
         await wp.evaluate(s => applySkin(s), skin);
         for (const on of [true, false]) {
-          await wp.evaluate(v => { toggleTermWear("exited", v); termTask = { id: "tw-atrium" }; renderTermList(); }, on);
+          await wp.evaluate(v => { toggleTermWear("exited", v); termTask = { id: "tw-atrium" }; loadCards().catch(() => {}).then(renderTermList); }, on);
           await wp.waitForTimeout(400);
           await wp.locator("#term-list").screenshot({
             path: require("path").join(process.env.TERMWEAR_SHOTS, skin + "-exited-" + (on ? "on" : "off") + ".png")
@@ -1188,7 +1221,7 @@ async function bridgeSection(browser, base) {
         termTask = { id: "filed1" };
         // Stand-in for an attached terminal. The bridge only asks that there is one.
         term = term || { stub: true };
-        await renderTermList();
+        await loadCards().catch(() => {}).then(renderTermList);
         await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
         placeTabBridge();
         const pe = document.getElementById("term-pane"), ps = getComputedStyle(pe);
@@ -1932,7 +1965,7 @@ async function restartStaysSection(browser, base) {
     // pane redrawing, a refresh, every dialog being closed.
     await gp.evaluate(async () => {
       switchView("terms");
-      if (typeof renderTerms === "function") await renderTerms();
+      if (typeof renderTerms === "function") await loadCards().catch(() => {}).then(renderTerms);
       switchView("stack");
       refreshSoon();
       await closeOpenDialogs();
@@ -3044,13 +3077,13 @@ async function themePreviewSection(browser, base) {
     const attach = id => p.evaluate(async id => {
       termTask = lastTasks.find(t => t.id === id);
       term = { options: {}, dispose() {} };
-      await renderTermList();
+      await loadCards().catch(() => {}).then(renderTermList);
       await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
       placeTabBridge();
     }, id);
     const read = () => p.evaluate(async () => {
       await new Promise(r => setTimeout(r, 400));
-      await renderStack();
+      await loadCards().catch(() => {}).then(renderStack);
       const row = id => document.querySelector('#term-list .card.tab[data-id="' + id + '"]');
       const a = row("tp-a"), b = row("tp-b");
       const bridge = [...document.querySelectorAll("#term-layout .tabbridge")].find(x => !x.hidden);
@@ -6545,7 +6578,7 @@ async function questionsClickSection(browser, base) {
     await p.evaluate(() => { termTask = null; localStorage.removeItem(TOASTLOG_KEY); return runRefresh(); });
     await p.waitForSelector('#stack-list .stackrow[data-id="qc1"] .chip.questions',
       { state: "attached", timeout: slow(15000) });
-    await p.evaluate(() => renderTermList());
+    await p.evaluate(() => loadCards().catch(() => {}).then(renderTermList));
     await p.waitForSelector('#term-list .card.tab[data-id="qc1"] .chip.questions',
       { state: "attached", timeout: slow(15000) });
   };
@@ -6609,7 +6642,7 @@ async function questionsClickSection(browser, base) {
         fail(name + ": no dismissal toast: " + toasted);
       }
       // The next poll drew the row without its chip on the strip too.
-      await p.evaluate(() => renderTermList());
+      await p.evaluate(() => loadCards().catch(() => {}).then(renderTermList));
       const strip = await p.evaluate(() => document.querySelectorAll('#term-list .card.tab[data-id="qc1"] .chip.questions').length);
       if (strip) fail(name + ": the terminal strip still draws the chip after the dismiss.");
     }
@@ -6662,7 +6695,7 @@ async function questionsClickSection(browser, base) {
       await reset();
       qHeldQuiet = quiet;
       await p.evaluate(() => runRefresh());
-      await p.evaluate(() => renderTermList());
+      await p.evaluate(() => loadCards().catch(() => {}).then(renderTermList));
       const sel = '#term-list .card.tab[data-id="qc1"] .chip.' + (quiet ? "queued" : "held");
       await show("terms");
       await p.waitForSelector(sel, { timeout: slow(5000) });
@@ -6678,6 +6711,203 @@ async function questionsClickSection(browser, base) {
     tasksMode = was;
   }
   if (errors.length) fail("questionsClick: the page threw: " + errors.join(" | "));
+}
+
+// ── the board is driven by its event stream, not by polling ─────────────────
+//
+// u-009. The board keeps one copy of the cards (js/cards.js) and paints every
+// view from it. A `task` event carrying the whole row (`row: 1`) replaces that
+// card with no request. One without it (an older room) pulls `/v1/tasks` at
+// most once every 5s. A click that only changes how the list is drawn paints
+// in the frame it was made in. `/v1/waiting` is worked out from the cards and
+// never asked for. And the one clock left, the resync, stays quiet while the
+// tab is hidden.
+function countRequests(ctx) {
+  const counts = new Map();
+  ctx.on("request", r => {
+    const u = new URL(r.url());
+    if (u.pathname.startsWith("/vendor/") || u.pathname === "/" || u.pathname.startsWith("/v1/events")) return;
+    counts.set(u.pathname, (counts.get(u.pathname) || 0) + 1);
+    if (process.env.DEBUG_COUNTS) console.log("  req " + (Date.now() % 100000) + " " + u.pathname);
+  });
+  return counts;
+}
+function sumCounts(counts) { return [...counts.values()].reduce((a, b) => a + b, 0); }
+function topCounts(counts) {
+  return [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([k, n]) => n + " " + k).join(", ");
+}
+
+async function eventDrivenSection(browser, base) {
+  const was = tasksMode, wasB = mockBroadcast;
+  tasksMode = "untagged";
+  mockBroadcast = false;
+  waitingReads = 0;
+  const secs = +(process.env.EVENT_DRIVEN_SECONDS || 30);
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const counts = countRequests(ctx);
+  const errors = [];
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.click('.tab[data-view="terms"]');
+    await p.waitForSelector('#term-list .card.tab[data-id="u-sa67"]', { state: "attached", timeout: slow(15000) });
+    await p.waitForTimeout(1500);
+    const card = UNTAGGED_CARDS[0];
+
+    // (a) An older room: task events with no `row`. One every half second for
+    // the whole window, so a board that pulled per clump would pull every 1.5s.
+    counts.clear();
+    for (let i = 0; i < secs * 2; i++) {
+      mockSay("task", JSON.stringify({ id: card.id, status: "running" }));
+      await p.waitForTimeout(500);
+    }
+    const partial = counts.get("/v1/tasks") || 0;
+    console.log("eventDriven: " + secs + "s of task events without row: " + partial + " /v1/tasks");
+    // Once every 5s over a window of secs is floor(secs / 5) + 1: one at each
+    // end of the window can both fall inside it.
+    if (partial > Math.floor(secs / 5) + 1) {
+      fail("task events without a whole row pulled /v1/tasks " + partial + " times in " + secs +
+        "s, more than once every 5s: " + topCounts(counts));
+    }
+    if (partial < 1) fail("task events without a whole row never pulled /v1/tasks, so an older room's change is never drawn");
+
+    // (a) The same stream carrying whole rows. Each one repaints the card from
+    // the event, so the title below changes with no request at all. A quiet
+    // gap first, so the trailing pull the last partial event queued lands
+    // before the count starts.
+    await p.waitForTimeout(6000);
+    counts.clear();
+    for (let i = 0; i < secs * 2; i++) {
+      mockSay("task", JSON.stringify(Object.assign({}, card, { row: 1, display_title: "sa67 stages " + i })));
+      await p.waitForTimeout(500);
+    }
+    const whole = counts.get("/v1/tasks") || 0;
+    console.log("eventDriven: " + secs + "s of task events with row: 1: " + whole + " /v1/tasks");
+    // The 60s resync may land inside the window, once.
+    if (whole > 1) {
+      fail("task events carrying the whole row still pulled /v1/tasks " + whole + " times in " + secs + "s");
+    }
+    const title = await p.evaluate(() => {
+      const row = document.querySelector('#term-list .card.tab[data-id="u-sa67"]');
+      return row ? row.textContent : "";
+    });
+    if (!title.includes("sa67 stages " + (secs * 2 - 1))) {
+      fail("a task event with the whole row did not repaint the card from the event: " + JSON.stringify(title.slice(0, 120)));
+    }
+
+    // (b) The tray and the sort paint in the frame they were clicked in, and
+    // ask for nothing.
+    counts.clear();
+    const clicks = await p.evaluate(() => {
+      const strip = () => document.getElementById("terms").innerHTML;
+      const oneFrame = (act, read) => new Promise(done => {
+        const before = read();
+        act();
+        requestAnimationFrame(() => done(read() !== before));
+      });
+      return (async () => ({
+        sort: await oneFrame(() => toggleTermSort(), strip),
+        sortBack: await oneFrame(() => toggleTermSort(), strip),
+        tray: await oneFrame(() => toggleTermTray(), strip),
+        trayBack: await oneFrame(() => toggleTermTray(), strip),
+      }))();
+    });
+    await p.waitForTimeout(500);
+    if (!clicks.sort || !clicks.sortBack) fail("the terminal sort did not repaint within one frame: " + JSON.stringify(clicks));
+    if (!clicks.tray || !clicks.trayBack) fail("the tray toggle did not repaint within one frame: " + JSON.stringify(clicks));
+    if (sumCounts(counts)) fail("a tray or sort click made requests: " + topCounts(counts));
+
+    // (c) Waiting is worked out, never asked for. Counted over the whole
+    // section, boot included.
+    if (waitingReads) {
+      fail("the board fetched /v1/waiting " + waitingReads + " times. it is worked out from the cards now.");
+    }
+    if (errors.length) fail("the event-driven page threw: " + errors.join(" | "));
+  } finally {
+    await ctx.close();
+    tasksMode = was;
+    mockBroadcast = wasB;
+  }
+
+  // (d) A hidden tab does no resync, and a visible one does. The resync is
+  // shortened to 1.5s so this takes seconds, the only thing the test changes.
+  const ctx2 = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const counts2 = countRequests(ctx2);
+  await ctx2.addInitScript(() => {
+    window.__atriumResyncMs = 1500;
+    window.__hide = false;
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true, get: () => (window.__hide ? "hidden" : "visible")
+    });
+  });
+  try {
+    const p = await ctx2.newPage();
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await p.waitForTimeout(1000);
+    counts2.clear();
+    await p.waitForTimeout(5000);
+    const shown = counts2.get("/v1/tasks") || 0;
+    await p.evaluate(() => { window.__hide = true; });
+    await p.waitForTimeout(500);
+    counts2.clear();
+    await p.waitForTimeout(6000);
+    const hidden = sumCounts(counts2);
+    console.log("eventDriven: resync at 1.5s, visible 5s: " + shown + " /v1/tasks, hidden 6s: " + hidden + " requests");
+    if (shown < 2) fail("a visible tab did not resync: " + shown + " /v1/tasks in 5s with a 1.5s resync");
+    if (hidden) fail("a hidden tab still resynced: " + topCounts(counts2));
+  } finally {
+    await ctx2.close();
+  }
+}
+
+// ── an idle board stays inside a request budget ─────────────────────────────
+//
+// The standing rule: the board is driven by events, and the one poll allowed
+// is the visible-tab resync at 60s or more. So a whole board left alone for a
+// minute, with a steady trickle of task events carrying whole rows, makes
+// about one resync's worth of requests and nothing else.
+//
+// IDLE_BUDGET, and why: one resync reads /v1/tasks, /v1/permissions,
+// /v1/rooms (the remote queue), /v1/shares and /v1/health, which is 5. A 60s
+// window not aligned with the resync clock can hold two of them, so 10, plus 2
+// for what a page may do on its own in that minute (the global auto re-read).
+// Before u-009 the same minute was well over a hundred: every clump of events
+// ran the whole fan-out, and a 10s poll ran it again.
+const IDLE_BUDGET = 12;
+async function idleBudgetSection(browser, base) {
+  const was = tasksMode, wasB = mockBroadcast;
+  tasksMode = "untagged";
+  mockBroadcast = false;
+  const secs = +(process.env.IDLE_BUDGET_SECONDS || 60);
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const counts = countRequests(ctx);
+  try {
+    const p = await ctx.newPage();
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow, #term-list .card.tab",
+      { state: "attached", timeout: slow(15000) });
+    await p.waitForTimeout(3000);
+    counts.clear();
+    for (let i = 0; i < secs; i++) {
+      const c = UNTAGGED_CARDS[i % UNTAGGED_CARDS.length];
+      mockSay("task", JSON.stringify(Object.assign({}, c, { row: 1, idle_seconds: i })));
+      await p.waitForTimeout(1000);
+    }
+    const total = sumCounts(counts);
+    const perMin = total * 60 / secs;
+    console.log("idleBudget: " + total + " requests in " + secs + "s (" + perMin.toFixed(1) +
+      "/min, budget " + IDLE_BUDGET + "): " + topCounts(counts));
+    if (perMin > IDLE_BUDGET) {
+      fail("an idle board made " + perMin.toFixed(1) + " requests a minute, over the budget of " +
+        IDLE_BUDGET + ": " + topCounts(counts));
+    }
+  } finally {
+    await ctx.close();
+    tasksMode = was;
+    mockBroadcast = wasB;
+  }
 }
 
 // ── the walk drawer ───────────────────────────────────────────────────────────
@@ -7014,6 +7244,386 @@ async function linkReuseSection(browser, base) {
   if (errors.length) fail("linkReuse: the page threw: " + errors.join(" | "));
 }
 
+// The usage tab and its cache reads toggle. Off by default: four counted kinds
+// stacked, the cache reads named on one line under the split, five kinds still on
+// the hover. On is the tab as it always was. The choice is the daemon's.
+async function usageCacheReadsSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const sp = await ctx.newPage();
+  const errors = [];
+  sp.on("pageerror", e => errors.push(String(e)));
+  const posts = [];
+  let stored = false;
+  const at = new Date(Math.floor(Date.now() / 900000) * 900000 - 900000).toISOString();
+  const sums = { rows: 2, replies: 9, input: 1000, output: 2000, cache_write_5m: 3000, cache_write_1h: 4000, cache_read: 90000, cost: 0 };
+  await ctx.route("**/v1/usage*", route => route.fulfill({ json: { buckets: [
+    { t: at, total: sums, cards: { "uc-a": sums }, causes: { operator: sums } }] } }));
+  await ctx.route("**/v1/settings", async route => {
+    const r = route.request();
+    if (r.method() === "POST") {
+      const body = JSON.parse(r.postData() || "{}");
+      posts.push(body);
+      if ("usage_cache_reads" in body) stored = body.usage_cache_reads;
+    }
+    await route.fulfill({ json: { usage_cache_reads: stored, board_skin: "harbour", board_skins: SKINS } });
+  });
+  const look = () => sp.evaluate(() => {
+    const kinds = new Set([...document.querySelectorAll('#uc-body .ucchart[data-chart=burn] rect')].map(r => r.getAttribute("class")));
+    const g = document.querySelector('#uc-body .ucchart[data-chart=burn] g[data-t]');
+    return { kinds: [...kinds].sort(), line: /not in these charts/.test(document.getElementById("uc-body").textContent),
+      causes: (document.querySelector("#uc-body .uccauses") || {}).textContent || "",
+      on: document.getElementById("uc-cache").getAttribute("aria-pressed"), hasG: !!g };
+  });
+  try {
+    await sp.goto(base, { waitUntil: "domcontentloaded" });
+    await sp.waitForSelector("#stack-list .stackrow", { state: "attached", timeout: slow(15000) });
+    await sp.evaluate(() => switchView("usage"));
+    await sp.waitForSelector("#uc-body .ucchart[data-chart=burn] rect", { timeout: slow(10000) });
+    let s = await look();
+    if (s.on !== "false") fail("usageCacheReads: the toggle is pressed by default.");
+    if (s.kinds.length !== 4 || s.kinds.includes("uck-read")) fail("usageCacheReads: off should stack four kinds: " + s.kinds);
+    if (!s.line) fail("usageCacheReads: off has no cache reads line.");
+    const txt = await sp.textContent("#uc-body .uccacheline");
+    if (!/cache reads 90k · not in these charts · 90% of input was served from the cache/.test(txt)) fail("usageCacheReads: the line reads " + txt);
+    if (!/9 calls/.test(s.causes)) fail("usageCacheReads: a cause row does not show its calls: " + s.causes);
+    await sp.hover('#uc-body .ucchart[data-chart=burn] g[data-t] rect');
+    const read = await sp.textContent("#uc-body .ucread");
+    if (!/cache read 90k/.test(read) || (read.match(/ · /g) || []).length !== 5) fail("usageCacheReads: the hover does not list five kinds: " + read);
+
+    await sp.click("#uc-cache");
+    await sp.waitForFunction(() => document.getElementById("uc-cache").getAttribute("aria-pressed") === "true", null, { timeout: slow(5000) });
+    s = await look();
+    if (s.kinds.length !== 5) fail("usageCacheReads: on should stack five kinds: " + s.kinds);
+    if (s.line) fail("usageCacheReads: on still has the cache reads line.");
+    if (!posts.some(b => b.usage_cache_reads === true)) fail("usageCacheReads: the daemon was not told: " + JSON.stringify(posts));
+  } finally {
+    await ctx.close();
+  }
+  if (errors.length) fail("usageCacheReads: the page threw: " + errors.join(" | "));
+}
+
+// The rooms dashboard: the room menu's tiles, fed `room-stats` snapshots.
+//
+// Drives `onRoomStats` directly with fixture snapshots, the same function the
+// stream's listener calls, and checks what the tiles say: a band with no data
+// is a dash, the all-rooms tile is the sum of the rooms, the limit bars say
+// `highest seen` and are the highest and never a sum, and the open menu asks
+// for nothing while it repaints. Then that `?demo=rooms` is the only way in:
+// a plain board and a guest page run none of it. ROOMS_DASH_SHOTS=<dir> saves
+// the open menu at desktop and phone width, in the default skin and paper.
+async function roomsDashSection(browser, base) {
+  const skip = () => localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true }));
+  const shots = process.env.ROOMS_DASH_SHOTS || "";
+
+  // ── the preview, then fixture snapshots through onRoomStats ─────────────
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const p = await ctx.newPage();
+  const errors = [];
+  p.on("pageerror", e => errors.push(String(e)));
+  await p.addInitScript(skip);
+  try {
+    await p.goto(base + "/?demo=rooms", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof roomsDemoLive !== "undefined" && roomsDemoLive &&
+      roomsDemoTicks > 0 && !document.getElementById("rooms").hidden, null, { timeout: slow(15000) });
+    const chip = await p.evaluate(() => document.getElementById("rooms-t").textContent);
+    if (chip !== "3/4 rooms") fail("the demo's chip did not read 3/4 rooms: " + chip);
+
+    await p.evaluate(() => openRooms());
+    const drawn = await p.evaluate(() => {
+      const m = document.getElementById("rooms-menu");
+      return {
+        open: !m.hidden,
+        rooms: [...m.querySelectorAll(".rtile[data-room]")].map(t => t.dataset.room),
+        all: m.querySelectorAll(".rtile.all").length,
+        allFirst: !!(m.firstElementChild && m.firstElementChild.classList.contains("all")),
+        off: [...m.querySelectorAll(".rtile-off")].map(b => b.dataset.room + (b.querySelector(".roomx") ? "+x" : "")),
+        sparks: m.querySelectorAll("svg.rd-spark polyline").length,
+        mini: !!m.querySelector('.rtile[data-room="m1mini"] .rd-band.machine .rd-dash'),
+        width: m.getBoundingClientRect().width,
+      };
+    });
+    if (!drawn.open || drawn.rooms.join(",") !== "m1mini,sg3,sg4" || drawn.all !== 1 || !drawn.allFirst) {
+      fail("the demo menu did not draw the all-rooms tile then one tile per live room: " + JSON.stringify(drawn));
+    }
+    if (drawn.off.join(",") !== "lab-pc+x") fail("the disconnected demo room is not below with its x: " + JSON.stringify(drawn.off));
+    if (drawn.sparks < 5) fail("the demo tiles drew " + drawn.sparks + " sparklines, expected at least 5");
+    if (!drawn.mini) fail("m1mini ships no machine band in the demo and its band did not show a dash");
+    if (drawn.width < 500 || drawn.width > 600) fail("the rooms panel is not about 560px wide: " + drawn.width);
+
+    if (shots) {
+      fs.mkdirSync(shots, { recursive: true });
+      await p.waitForTimeout(2300);
+      for (const skin of ["", "paper"]) {
+        await p.evaluate(sk => { applySkin(sk); }, skin);
+        await p.waitForTimeout(250);
+        await p.screenshot({ path: path.join(shots, `rooms-${skin || "default"}-1400.png`) });
+      }
+      await p.setViewportSize({ width: 390, height: 844 });
+      await p.evaluate(() => { const m = document.getElementById("rooms-menu"); m.hidden = true; openRooms(); });
+      for (const skin of ["", "paper"]) {
+        await p.evaluate(sk => { applySkin(sk); }, skin);
+        await p.waitForTimeout(250);
+        await p.screenshot({ path: path.join(shots, `rooms-${skin || "default"}-390.png`) });
+      }
+      const phone = await p.evaluate(() => {
+        const b = document.querySelector('.rtile[data-room="sg3"] .rt-bands');
+        const m = document.getElementById("rooms-menu").getBoundingClientRect();
+        return { cols: getComputedStyle(b).gridTemplateColumns.split(" ").length, right: m.right,
+          sparks: document.querySelectorAll('.rtile[data-room="sg3"] svg.rd-spark').length };
+      });
+      if (phone.cols !== 1 || phone.right > 390 || phone.sparks < 2) {
+        fail("at phone width the tile bands did not stack inside the window with their sparklines: " + JSON.stringify(phone));
+      }
+      await p.setViewportSize({ width: 1400, height: 900 });
+      await p.evaluate(() => { applySkin(""); const m = document.getElementById("rooms-menu"); m.hidden = true; openRooms(); });
+    }
+
+    // The fixture's own ticking stops here, so what is drawn is only what this
+    // test sends. The cards are set the same way the preview sets its own.
+    const reqs = [];
+    p.on("request", r => reqs.push(r.method() + " " + r.url().replace(base, "")));
+    const got = await p.evaluate(() => {
+      clearInterval(roomsDemoTimer);
+      const now = Date.now();
+      const iso = ms => new Date(ms).toISOString();
+      const card = (id, room, status, over) => Object.assign({ id, room, status, display_title: id,
+        last_activity_at: iso(now - 60000) }, over || {});
+      roomsDemoCards = [
+        card("a1", "sg3", "running", { telemetry: { seconds: 30, five_hour: { pct: 64, resets_at: iso(now + 3600e3) },
+          weekly: { pct: 31 } } }),
+        card("a2", "sg3", "running"),
+        card("a3", "sg3", "needs-input"),
+        card("a4", "sg3", "needs-input", { seen: { answered: false, open_questions: ["ok?"] } }),
+        card("a5", "sg3", "done"),
+        card("a6", "sg3", "done", { last_activity_at: iso(now - 30 * 3600e3) }),
+        card("b1", "sg4", "running", { telemetry: { seconds: 60, five_hour: { pct: 82 } } }),
+        card("b2", "sg4", "needs-permission"),
+        // Stale: a report two hours old does not count.
+        card("c1", "m1mini", "running", { telemetry: { seconds: 7200, five_hour: { pct: 99 }, weekly: { pct: 90 } } }),
+      ];
+      const tok = (rate, a, b, c, d) => ({ per_min_5m: rate, series_per_min: Array.from({ length: 60 }, (_, i) => rate + i),
+        series_end: iso(now), last_24h: { in: a, out: b, cache_read: c, cache_write: d } });
+      onRoomStats({ v: 1, room: "sg3", at: iso(now), tokens: tok(41200, 9100000, 1200000, 61000000, 2900000),
+        disk: { path: "D:\\git", free_bytes: 392e9, total_bytes: 512e9, worktrees: 38 },
+        runners: [{ kind: "claude", resolves: true }, { kind: "ollama", resolves: false }],
+        machine: { cpu_pct: 82, mem_used_bytes: 21e9, mem_total_bytes: 32e9, cpu_series_pct: [71, 80, 82] } });
+      // sg4 has shipped nothing but its CPU: tokens and disk are absent.
+      onRoomStats({ v: 1, room: "sg4", at: iso(now), machine: { cpu_pct: 95, cpu_series_pct: [90, 95] } });
+      onRoomStats({ v: 1, room: "m1mini", at: iso(now), tokens: tok(9000, 1000000, 100000, 5000000, 200000) });
+      // A version this board does not know is dropped.
+      onRoomStats({ v: 2, room: "sg3", at: iso(now), tokens: tok(1, 1, 1, 1, 1) });
+      const m = document.getElementById("rooms-menu");
+      const n = sel => { const e = m.querySelector(sel); return e ? Number(e.dataset.n) : null; };
+      const t = name => m.querySelector(`.rtile[data-room="${name}"]`);
+      const lim = (tile, k) => {
+        const row = [...tile.querySelectorAll(".rd-lim")].find(r => r.querySelector(".k").textContent === k);
+        return row ? (row.querySelector(".v") ? row.querySelector(".v").textContent : "dash") : "none";
+      };
+      return {
+        sg3: { run: n('[data-v="r.sg3.run"]'), idle: n('[data-v="r.sg3.idle"]'), need: n('[data-v="r.sg3.need"]'),
+          done: n('[data-v="r.sg3.done"]'), rate: n('[data-v="r.sg3.rate"]'), day: n('[data-v="r.sg3.24h"]'),
+          cache: n('[data-v="r.sg3.cache"]'), five: lim(t("sg3"), "5h"), week: lim(t("sg3"), "week"),
+          seen: /highest seen/.test(t("sg3").textContent), hot: t("sg3").classList.contains("hot"),
+          build: (t("sg3").querySelector(".rd-build") || {}).dataset,
+          off: t("sg3").querySelectorAll(".rd-kinds .off").length },
+        sg4: { tokDash: !!t("sg4").querySelector(".rd-band.tokens > .rd-row .rd-dash"),
+          diskDash: /disk\s*\u2014/.test(t("sg4").querySelector(".rd-band.machine").textContent),
+          hot: t("sg4").classList.contains("hot"), five: lim(t("sg4"), "5h"),
+          build: !!t("sg4").querySelector(".rd-build") },
+        mini: { five: lim(t("m1mini"), "5h"), week: lim(t("m1mini"), "week") },
+        all: { run: n('[data-v="all.run"]'), idle: n('[data-v="all.idle"]'), need: n('[data-v="all.need"]'),
+          done: n('[data-v="all.done"]'), rate: n('[data-v="all.rate"]'), day: n('[data-v="all.24h"]'),
+          cache: n('[data-v="all.cache"]'), five: lim(m.querySelector(".rtile.all"), "5h"),
+          week: lim(m.querySelector(".rtile.all"), "week"), offbuild: n('[data-v="all.offbuild"]'),
+          seen: /highest seen/.test(m.querySelector(".rtile.all").textContent) },
+      };
+    });
+    const want = (label, a, b) => { if (JSON.stringify(a) !== JSON.stringify(b)) fail(`rooms dash: ${label} was ${JSON.stringify(a)}, expected ${JSON.stringify(b)}`); };
+    want("sg3 agents", [got.sg3.run, got.sg3.idle, got.sg3.need, got.sg3.done], [2, 1, 1, 1]);
+    want("sg3 rate", got.sg3.rate, 41200);
+    want("sg3 24h (in + out + cache writes)", got.sg3.day, 9100000 + 1200000 + 2900000);
+    want("sg3 cache reads", got.sg3.cache, 61000000);
+    want("sg3 limits", [got.sg3.five, got.sg3.week], ["64%", "31%"]);
+    if (!got.sg3.seen || !got.all.seen) fail("a limit bar is not labelled highest seen: " + JSON.stringify([got.sg3.seen, got.all.seen]));
+    if (!got.sg3.hot) fail("sg3 has a card asking and its tile does not pulse");
+    if (!got.sg3.build || !/3b578f0/.test(got.sg3.build.tip || "") || !/a91c2de/.test(got.sg3.build.tip || "")) {
+      fail("sg3's not the hub's build chip does not name both builds: " + JSON.stringify(got.sg3.build));
+    }
+    want("sg3 runners not resolving", got.sg3.off, 1);
+    if (!got.sg4.tokDash || !got.sg4.diskDash) fail("sg4's absent tokens and disk did not draw dashes: " + JSON.stringify(got.sg4));
+    if (!got.sg4.hot) fail("sg4 is at 95% cpu and waiting and does not pulse");
+    if (got.sg4.build) fail("sg4 runs the hub's build and wears the not the hub's build chip");
+    want("sg4 5h limit", got.sg4.five, "82%");
+    want("m1mini's stale limits", [got.mini.five, got.mini.week], ["dash", "dash"]);
+    want("all-rooms agents", [got.all.run, got.all.idle, got.all.need, got.all.done], [4, 1, 2, 1]);
+    want("all-rooms rate", got.all.rate, 41200 + 9000);
+    want("all-rooms 24h", got.all.day, 13200000 + 1300000);
+    want("all-rooms cache", got.all.cache, 66000000);
+    want("all-rooms limits (the highest, not a sum)", [got.all.five, got.all.week], ["82%", "31%"]);
+    want("all-rooms rooms not on the hub's build", got.all.offbuild, 1);
+
+    // A number that moved fades from its old value.
+    const fade = await p.evaluate(() => {
+      const s = roomStats.sg3;
+      onRoomStats(Object.assign({}, s, { tokens: Object.assign({}, s.tokens, { per_min_5m: 50000 }) }));
+      const e = document.querySelector('[data-v="r.sg3.rate"]');
+      return { was: e.dataset.was, fading: e.classList.contains("rd-fade"),
+        still: document.querySelector('[data-v="r.sg3.cache"]').classList.contains("rd-fade") };
+    });
+    if (fade.was !== "41k" || !fade.fading || fade.still) fail("the changed rate did not fade from its old value alone: " + JSON.stringify(fade));
+
+    // The open menu asks for nothing while it repaints. The preview's ticking
+    // comes back on for two ticks and nothing leaves the page for the rooms.
+    // The board's own refresh keeps polling beside it, so a fetch is laid at the
+    // dashboard's door only when the dashboard is on its stack, and anything to
+    // the hub's endpoints counts whoever asked.
+    await p.evaluate(() => {
+      window.__rdFetches = [];
+      const was = window.fetch;
+      window.fetch = function (input, init) {
+        const stack = String(new Error().stack || "");
+        if (/rooms-dash|onRoomStats|roomsDemo|roomTileHTML|paintRoomTile/.test(stack)) {
+          window.__rdFetches.push(String((input && input.url) || input));
+        }
+        return was.apply(this, arguments);
+      };
+      roomsDemoTimer = setInterval(roomsDemoTick, 2000);
+    });
+    await p.waitForTimeout(4300);
+    const dashFetches = await p.evaluate(() => window.__rdFetches);
+    const hubReqs = reqs.filter(r => / \/_hub\//.test(r));
+    if (dashFetches.length || hubReqs.length) {
+      fail("the open rooms menu made requests while it repainted: " + dashFetches.concat(hubReqs).join(" | "));
+    }
+    if (await p.evaluate(() => document.getElementById("rooms-menu").hidden)) fail("the rooms menu closed during the repaint");
+    // The demo keeps its choice in this tab and nothing real.
+    const trace = await p.evaluate(() => ({ room: localStorage.getItem("atrium.room") }));
+    if (trace.room) fail("the demo wrote a room into localStorage: " + trace.room);
+    if (errors.length) fail("the rooms demo page threw: " + errors.join(" | "));
+  } finally {
+    await ctx.close();
+  }
+
+  // ── without the query string, none of it runs ───────────────────────────
+  const plain = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const q = await plain.newPage();
+  await q.addInitScript(skip);
+  try {
+    await q.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await q.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await q.waitForTimeout(2300);
+    const st = await q.evaluate(() => ({ demo: ROOMS_DEMO, live: roomsDemoLive, ticks: roomsDemoTicks,
+      timer: roomsDemoTimer, cards: roomsDemoCards.length, chip: document.getElementById("rooms").hidden,
+      stats: Object.keys(roomStats).length }));
+    if (st.demo || st.live || st.ticks || st.timer || st.cards || !st.chip || st.stats) {
+      fail("without ?demo=rooms some demo code ran: " + JSON.stringify(st));
+    }
+  } finally {
+    await plain.close();
+  }
+
+  // ── nor on a guest page, even with it ───────────────────────────────────
+  const guest = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const g = await guest.newPage();
+  await g.addInitScript(skip);
+  await g.route(u => new URL(u).pathname === "/v1/tasks",
+    r => r.fulfill({ status: 403, contentType: "text/plain", body: "this link is one terminal." }));
+  try {
+    await g.goto(base + "/?demo=rooms", { waitUntil: "domcontentloaded" });
+    await g.waitForFunction(() => document.body.classList.contains("guestonly"), null, { timeout: slow(15000) });
+    await g.waitForTimeout(2300);
+    const st = await g.evaluate(() => ({ live: roomsDemoLive, ticks: roomsDemoTicks, timer: roomsDemoTimer,
+      chip: document.getElementById("rooms").hidden }));
+    if (st.live || st.ticks || st.timer || !st.chip) fail("a guest page opened with ?demo=rooms ran the demo: " + JSON.stringify(st));
+  } finally {
+    await guest.close();
+  }
+}
+
+// The usage tab's polish: the too-old line with and without a build, the keep-alive
+// phrase on the cache line, the backfilled label, the fade and the grow on a live
+// event, and reduced motion turning them off.
+async function usagePolishSection(browser, base) {
+  const errors = [];
+  const at = new Date(Math.floor(Date.now() / 900000) * 900000 - 900000).toISOString();
+  const sums = { rows: 2, replies: 9, input: 1000, output: 2000, cache_write_5m: 3000, cache_write_1h: 4000, cache_read: 90000, cost: 0 };
+  const ka = { rows: 3, replies: 3, input: 100, output: 200, cache_write_5m: 0, cache_write_1h: 0, cache_read: 5000, cost: 0 };
+  const bf = { rows: 4, replies: 4, input: 10, output: 20, cache_write_5m: 0, cache_write_1h: 0, cache_read: 50, cost: 0 };
+  const total = { rows: 9, replies: 16, input: 1110, output: 2220, cache_write_5m: 3000, cache_write_1h: 4000, cache_read: 95050, cost: 0 };
+  const run = async (reduced, fn) => {
+    const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, reducedMotion: reduced ? "reduce" : "no-preference" });
+    const sp = await ctx.newPage();
+    sp.on("pageerror", e => errors.push(String(e)));
+    await ctx.route("**/v1/usage*", route => route.fulfill({ json: { buckets: [
+      { t: at, total, cards: { "uc-a": total }, causes: { operator: sums, keepalive: ka, backfill: bf } }] } }));
+    await ctx.route("**/v1/settings", route => route.fulfill({ json: { usage_cache_reads: false, board_skin: "harbour", board_skins: SKINS } }));
+    try {
+      await sp.goto(base, { waitUntil: "domcontentloaded" });
+      await sp.waitForSelector("#stack-list .stackrow", { state: "attached", timeout: slow(15000) });
+      await sp.evaluate(() => switchView("usage"));
+      await sp.waitForSelector("#uc-body .ucchart[data-chart=burn] rect", { timeout: slow(10000) });
+      await sp.waitForTimeout(1500); // the stream opening reloads the tab once
+      await fn(sp);
+    } finally { await ctx.close(); }
+  };
+  await run(false, async sp => {
+    await sp.evaluate(() => { lastTasks = [{ id: "uc-a", keepalive: { refreshes: 2 } }].concat(lastTasks || []); ucPaint(); });
+    const line = await sp.textContent("#uc-body .uccacheline");
+    if (!/keep-alive spent 300 counted and kept 1 card warm/.test(line)) fail("usagePolish: the keep-alive phrase reads " + line);
+    const tip = await sp.getAttribute("#uc-body .uccacheline", "data-tip");
+    if (!tip) fail("usagePolish: the cache line has no hint.");
+    const causes = await sp.textContent("#uc-body .uccauses");
+    if (!/backfilled/.test(causes) || /\bbackfill\b/.test(causes)) fail("usagePolish: the backfill cause reads " + causes);
+    const bt = await sp.evaluate(() => USAGE_TIPS.cause_backfill);
+    if (!/atrium usage backfill/.test(bt)) fail("usagePolish: the backfilled hint is " + bt);
+    // Every number on the tab carries a hint.
+    const bare = await sp.evaluate(() => [...document.querySelectorAll("#uc-body [data-n]")]
+      .filter(e => !e.closest("[data-tip]") && !e.getAttribute("data-tip")).map(e => e.getAttribute("data-n")));
+    if (bare.length) fail("usagePolish: numbers with no data-tip: " + bare);
+    // The too-old line, with a build and without.
+    const old = await sp.evaluate(() => {
+      hubRooms = [{ name: "sg3", version: "2f715b5a9c1d" }]; hubInventory = [];
+      UC.rooms = { sg3: { state: "old", why: "too old to keep usage", buckets: new Map() },
+        sg4: { state: "old", why: "too old to keep usage", buckets: new Map() } };
+      ucPaint();
+      return [...document.querySelectorAll("#uc-body .ucmissing")].map(e => e.textContent);
+    });
+    if (!old.includes("sg3 build 2f715b5 predates usage (needs 39a8da1 or later). Update the room to see its usage here."))
+      fail("usagePolish: the too-old line with a build reads " + JSON.stringify(old));
+    if (!old.includes("sg4 predates usage (needs 39a8da1 or later). Update the room to see its usage here."))
+      fail("usagePolish: the too-old line without a build reads " + JSON.stringify(old));
+    // A live row fades the number that changed and grows a new bar.
+    await sp.evaluate(() => loadUsageTab());
+    await sp.waitForFunction(() => !UC.inflight, null, { timeout: slow(5000) });
+    await sp.waitForSelector("#uc-body .ucchart[data-chart=burn] rect", { timeout: slow(10000) });
+    await sp.evaluate(() => {
+      ucApply({ task_id: "uc-a", ended_at: new Date().toISOString(), input: 500, output: 500, cache_write_5m: 0, cache_write_1h: 0, cache_read: 0 });
+      ucSchedulePaint();
+    });
+    await sp.waitForSelector("#uc-body .ucfade", { state: "attached", timeout: slow(3000) });
+    const anim = await sp.evaluate(() => ({
+      fade: getComputedStyle(document.querySelector("#uc-body .ucfade")).animationName,
+      grow: (document.querySelector("#uc-body g.ucgrow") ? getComputedStyle(document.querySelector("#uc-body g.ucgrow")).animationName : "none") }));
+    if (anim.fade !== "ucfade") fail("usagePolish: a changed number does not fade: " + anim.fade);
+    if (anim.grow !== "ucgrow") fail("usagePolish: a new bar does not grow: " + anim.grow);
+  });
+  await run(true, async sp => {
+    await sp.evaluate(() => loadUsageTab());
+    await sp.waitForFunction(() => !UC.inflight, null, { timeout: slow(5000) });
+    await sp.evaluate(() => {
+      ucApply({ task_id: "uc-a", ended_at: new Date().toISOString(), input: 500, output: 500, cache_write_5m: 0, cache_write_1h: 0, cache_read: 0 });
+      ucSchedulePaint();
+    });
+    await sp.waitForSelector("#uc-body .ucfade", { state: "attached", timeout: slow(3000) });
+    const anim = await sp.evaluate(() => getComputedStyle(document.querySelector("#uc-body .ucfade")).animationName);
+    if (anim !== "none") fail("usagePolish: reduced motion left the fade on: " + anim);
+    const grow = await sp.evaluate(() => [...document.querySelectorAll("#uc-body g.ucgrow")]
+      .map(g => getComputedStyle(g).animationName).filter(n => n !== "none"));
+    if (grow.length) fail("usagePolish: reduced motion left the grow on: " + grow);
+  });
+  if (errors.length) fail("usagePolish: the page threw: " + errors.join(" | "));
+}
+
 async function main() {
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = "http://127.0.0.1:" + server.address().port;
@@ -7033,7 +7643,8 @@ async function main() {
       history: historySection, contextSize: contextSizeSection, peekEverywhere: peekEverywhereSection, cardRoute: cardRouteSection,
       quietDoer: quietDoerSection, looksIdle: looksIdleSection, notifyOff: notifyOffSection,
       questionsClick: questionsClickSection, walk: walkSection, linkReuse: linkReuseSection,
-      phoneView: phoneViewSection };
+      usageCacheReads: usageCacheReadsSection, roomsDash: roomsDashSection, phoneView: phoneViewSection, usagePolish: usagePolishSection,
+      eventDriven: eventDrivenSection, idleBudget: idleBudgetSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -7092,7 +7703,7 @@ async function main() {
     await page.waitForSelector('#stack-list .stackrow[data-id="seen1"] .chip.unseen',
       { state: "attached", timeout: slow(15000) });
     const seenMarks = await page.evaluate(async () => {
-      await renderTermList();
+      await loadCards().catch(() => {}).then(renderTermList);
       const row = document.querySelector('#stack-list .stackrow[data-id="seen1"]');
       const plain = document.querySelector('#stack-list .stackrow[data-id="t1"]');
       const tab = document.querySelector('#term-list .card.tab[data-id="seen1"]');
@@ -7146,7 +7757,7 @@ async function main() {
     // about the tab that reveals it.
     tasksMode = "pinned";
     resetPin();
-    await page.evaluate(() => renderTermList());
+    await page.evaluate(() => loadCards().catch(() => {}).then(renderTermList));
     // Attached, not visible: the terminals view is hidden while the test sits on
     // another tab, and this is about what the strip draws, not whether it shows.
     await page.waitForSelector('#term-list .card.tab[data-id="pin1"].cold',
@@ -7197,7 +7808,7 @@ async function main() {
         b.click();
       });
       await patched;
-      await page.evaluate(() => renderTermList());
+      await page.evaluate(() => loadCards().catch(() => {}).then(renderTermList));
       const gone = await page.evaluate(() =>
         !document.querySelector('#term-list .card.tab[data-id="pin1"]'));
       if (!gone) {
@@ -7205,7 +7816,7 @@ async function main() {
       }
       // A further render, the next poll, keeps it gone: the pin that held it is
       // cleared, not the row hidden once.
-      await page.evaluate(() => renderTermList());
+      await page.evaluate(() => loadCards().catch(() => {}).then(renderTermList));
       const back = await page.evaluate(() =>
         !!document.querySelector('#term-list .card.tab[data-id="pin1"]'));
       if (back) {
@@ -7225,7 +7836,7 @@ async function main() {
     await page.evaluate(() => {
       localStorage.setItem("atrium.grouping",
         JSON.stringify({ on: true, mode: "custom", groups: ["active"] }));
-      renderTermList();
+      loadCards().catch(() => {}).then(renderTermList);
     });
     await page.waitForSelector('#term-list .tnest[data-group="active"] .card.tab[data-id="filed1"]',
       { state: "attached", timeout: slow(15000) }).catch(() => {});
@@ -7323,7 +7934,7 @@ async function main() {
         localStorage.removeItem(termDeviceKey("atrium.hidesubagents"));
         localStorage.removeItem(termDeviceKey("atrium.hideagents"));
       } catch (e) {}
-      await renderTermList();
+      await loadCards().catch(() => {}).then(renderTermList);
     });
     await page.waitForSelector('#term-list .card.tab[data-id="subwork"]',
       { state: "attached", timeout: slow(15000) });
@@ -7361,7 +7972,7 @@ async function main() {
     // two segments rather than two loose buttons.
     await page.evaluate(async () => {
       setHideSubagents("none"); setHideAgents("none");
-      await renderTermList();
+      await loadCards().catch(() => {}).then(renderTermList);
     });
     const hNone = await hideState();
     if (!hNone.idleSub || !hNone.workingSub || !hNone.deadSub ||
@@ -7399,7 +8010,7 @@ async function main() {
     // stay (the agents toggle is off). The subagents segment lights with its
     // hidden count of 2; the agents segment stays unlit. Independence on one side,
     // plus the idle-subagent-hides-but-idle-agent-stays proof.
-    await page.evaluate(async () => { setHideSubagents("on"); await renderTermList(); });
+    await page.evaluate(async () => { setHideSubagents("on"); await loadCards().catch(() => {}).then(renderTermList); });
     const hSub = await hideState();
     if (hSub.idleSub) {
       fail("the subagents toggle left an idle subagent in the strip: an unpinned " +
@@ -7432,7 +8043,7 @@ async function main() {
     // the working subagent still stays, and both inactive subagents stay hidden.
     // No grey agent row is left. Both segments are lit at once, which
     // agent|shell (one-of-two) cannot do.
-    await page.evaluate(async () => { setHideAgents("on"); await renderTermList(); });
+    await page.evaluate(async () => { setHideAgents("on"); await loadCards().catch(() => {}).then(renderTermList); });
     const hBoth = await hideState();
     if (hBoth.idleSub || hBoth.deadSub) {
       fail("with both toggles on an inactive subagent survived: " + JSON.stringify(hBoth));
@@ -7466,12 +8077,12 @@ async function main() {
     const byAge = await page.evaluate(async () => {
       const prev = localStorage.getItem(GROUPING_KEY);
       localStorage.setItem(GROUPING_KEY, JSON.stringify({ on: true, mode: "recency", by: "" }));
-      await renderTermList();
+      await loadCards().catch(() => {}).then(renderTermList);
       const counts = [...document.querySelectorAll(
         "#term-list .tgroup:not(.pinnedhead) .tgcount")].map(c => c.textContent.trim());
       if (prev === null) localStorage.removeItem(GROUPING_KEY);
       else localStorage.setItem(GROUPING_KEY, prev);
-      await renderTermList();
+      await loadCards().catch(() => {}).then(renderTermList);
       return counts;
     });
     if (byAge.join() !== "2/3") {
@@ -7483,7 +8094,7 @@ async function main() {
     // subagents side back off restores the idle subagent while the agents toggle
     // stays lit. So the agents toggle held its state across the subagents toggle
     // flipping, which is the two-keys-persist-independently proof.
-    await page.evaluate(async () => { toggleHideSubagents(); await renderTermList(); });
+    await page.evaluate(async () => { toggleHideSubagents(); await loadCards().catch(() => {}).then(renderTermList); });
     const hAgent = await hideState();
     if (!hAgent.idleSub || !hAgent.workingSub || !hAgent.deadSub) {
       fail("turning the subagents toggle off did not restore the subagent rows: " +
@@ -7503,7 +8114,7 @@ async function main() {
     }
 
     // Both off again: every row comes back, so hiding is a view, not a deletion.
-    await page.evaluate(async () => { toggleHideAgents(); await renderTermList(); });
+    await page.evaluate(async () => { toggleHideAgents(); await loadCards().catch(() => {}).then(renderTermList); });
     const hBack = await hideState();
     if (!hBack.idleSub || !hBack.workingSub || !hBack.deadSub ||
         !hBack.liveAgent || !hBack.deadAgent ||
@@ -7524,7 +8135,7 @@ async function main() {
       localStorage.removeItem(termDeviceKey("atrium.termtray"));
       localStorage.removeItem(termDeviceKey("atrium.hidesubagents"));
       localStorage.removeItem(termDeviceKey("atrium.hideagents"));
-      await renderTermList();
+      await loadCards().catch(() => {}).then(renderTermList);
     });
     const trayShut = await page.evaluate(() => {
       const tray = document.querySelector("#term-list .termtray");
@@ -7609,7 +8220,7 @@ async function main() {
     const trayKept = await page.evaluate(async () => {
       const host = document.getElementById("term-list");
       host.innerHTML = ""; host.__paintedFrom = null;
-      await renderTermList();
+      await loadCards().catch(() => {}).then(renderTermList);
       return document.querySelector("#term-list .termtray").classList.contains("open");
     });
     if (!trayKept) fail("the tray did not come back open from its stored state.");
@@ -7619,7 +8230,7 @@ async function main() {
     const plus = await page.evaluate(async () => {
       const prev = localStorage.getItem(GROUPING_KEY);
       localStorage.setItem(GROUPING_KEY, JSON.stringify({ on: true, mode: "custom", by: "" }));
-      await renderTermList();
+      await loadCards().catch(() => {}).then(renderTermList);
       const seg = document.getElementById("term-group");
       const btn = seg && seg.querySelector(".groupplus");
       const out = btn ? {
@@ -7629,7 +8240,7 @@ async function main() {
       } : { found: false };
       if (prev === null) localStorage.removeItem(GROUPING_KEY);
       else localStorage.setItem(GROUPING_KEY, prev);
-      await renderTermList();
+      await loadCards().catch(() => {}).then(renderTermList);
       return out;
     });
     if (!plus.found || !plus.full) {
@@ -7645,7 +8256,7 @@ async function main() {
     const under = await page.evaluate(async () => {
       const host = document.getElementById("term-list");
       host.style.maxHeight = "220px";
-      await renderTermList();
+      await loadCards().catch(() => {}).then(renderTermList);
       const scroll = host.querySelector(".termscroll");
       scroll.scrollTop = scroll.scrollHeight;
       const tray = host.querySelector(".termtray").getBoundingClientRect();
@@ -7673,7 +8284,7 @@ async function main() {
       };
       setTermListMode("full");
       localStorage.removeItem(termDeviceKey("atrium.termtray"));
-      await renderTermList();
+      await loadCards().catch(() => {}).then(renderTermList);
       return out;
     });
     if (mini.toggle || mini.body || !mini.widen) {
@@ -7704,7 +8315,7 @@ async function main() {
     tasksMode = "pinned";
     resetPin();
     await page.click('.tab[data-view="terms"]');
-    await page.evaluate(() => renderTermList());
+    await page.evaluate(() => loadCards().catch(() => {}).then(renderTermList));
     await page.waitForSelector('#term-list .card.tab[data-id="pin1"]',
       { state: "visible", timeout: slow(15000) });
     const phoneTerm = await page.evaluate(() => {
@@ -7760,7 +8371,7 @@ async function main() {
       paintPaneBg({ background: "#101828", foreground: "#e6e6e6", cursor: "#4ea1ff" }));
     const decoupled = await page.evaluate(async () => {
       localStorage.removeItem(termDeviceKey("atrium.termtray"));
-      await renderTermList();
+      await loadCards().catch(() => {}).then(renderTermList);
       const layout = document.getElementById("term-layout");
       const paneH = () => document.getElementById("term-pane").getBoundingClientRect().height;
       const drop = document.querySelector("#term-list .termdrop");
@@ -8414,7 +9025,7 @@ async function main() {
       // after the name with no separator, so a word-boundary match on the text
       // would miss the live row once sgg carries a host.
       const before = await hub.evaluate(() => {
-        const btns = [...document.querySelectorAll("#rooms-menu button")];
+        const btns = [...document.querySelectorAll("#rooms-menu button, #rooms-menu .rtile")];
         const sgg = btns.find(b => {
           const s = b.querySelector("strong");
           return s && s.textContent === "sgg";
@@ -8443,7 +9054,7 @@ async function main() {
       await hub.waitForFunction(() => {
         const menu = document.getElementById("rooms-menu");
         if (!menu || menu.hidden) return false;
-        const sgg = [...menu.querySelectorAll("button")].find(b => {
+        const sgg = [...menu.querySelectorAll("button, .rtile")].find(b => {
           const s = b.querySelector("strong");
           return s && s.textContent === "sgg";
         });
@@ -8960,7 +9571,12 @@ async function main() {
     await questionsClickSection(browser, base);
     await walkSection(browser, base);
     await linkReuseSection(browser, base);
+    await usageCacheReadsSection(browser, base);
+    await roomsDashSection(browser, base);
     await phoneViewSection(browser, base);
+    await eventDrivenSection(browser, base);
+    await idleBudgetSection(browser, base);
+    await usagePolishSection(browser, base);
     await reselectSection(browser, base);
     // ── over a terminal the toasts hang from the top right ─────────────────
     await toastsTopSection(browser, base);

@@ -1822,6 +1822,54 @@ var migrations = []struct {
 		},
 	},
 	{
+		// The last moment a person did something to a card and what they did, and
+		// when a card was parked: no process, status kept. Empty means never. See
+		// docs/keepalive-policy-design.md sections 1, 4 and 7.
+		name: "0071_human_at_parked_at",
+		stmts: []string{
+			`ALTER TABLE task ADD COLUMN human_at TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE task ADD COLUMN human_via TEXT NOT NULL DEFAULT ''`,
+			`ALTER TABLE task ADD COLUMN parked_at TEXT NOT NULL DEFAULT ''`,
+		},
+	},
+	{
+		// WHO A CARD REPORTS TO, AS NAMED. `report_to` is the handle, alias or card
+		// id a launch was told to report to, kept as given beside the resolved
+		// launcher in spawned_by and spawned_by_id. Every delivery to the launcher
+		// resolves it again, so a director relaunched under the same alias is still
+		// reached. Empty on every card that reports to whoever launched it.
+		name: "0072_task_report_to",
+		stmts: []string{
+			`ALTER TABLE task ADD COLUMN report_to TEXT NOT NULL DEFAULT ''`,
+		},
+	},
+	{
+		// Who a turn's spend files under, kept on the row because a culled worker's
+		// card and tags are gone. No default, so rows from before read NULL.
+		name: "0073_usage_grouping",
+		stmts: []string{
+			`ALTER TABLE session_usage ADD COLUMN dept TEXT`,
+			`ALTER TABLE session_usage ADD COLUMN launcher TEXT`,
+			`ALTER TABLE session_usage ADD COLUMN launcher_id TEXT`,
+		},
+	},
+	{
+		// The room's own record of each card's usage-limit percent, for the usage
+		// tab's first paint. Written only when a figure changes, pruned on the sweep.
+		name: "0074_limit_reading",
+		stmts: []string{
+			`CREATE TABLE IF NOT EXISTS limit_reading (
+				task_id   TEXT NOT NULL,
+				kind      TEXT NOT NULL,
+				pct       INTEGER NOT NULL,
+				resets_at TEXT NOT NULL DEFAULT '',
+				at        TEXT NOT NULL
+			)`,
+			`CREATE INDEX IF NOT EXISTS limit_reading_card ON limit_reading (task_id, kind, at)`,
+			`CREATE INDEX IF NOT EXISTS limit_reading_at ON limit_reading (at)`,
+		},
+	},
+	{
 		// The merged-cull mark on a work item: which merge covered it, when the
 		// room will cull it, and who held it. Empty text is "never". See
 		// merged.go and docs/rnd/merged-cull-design.md.

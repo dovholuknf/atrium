@@ -108,12 +108,12 @@ func newRoot() *cobra.Command {
 	root.AddCommand(newDaemon(),
 		newJoin(), newLeave(), newStop(), newLaunch(), newPreview(), newHook(), newSession(), newTurn(),
 		newName(), newFinish(), newPeers(), newTell(), newControl(), newVersion(), newAsk(),
-		newAnswer(), newOpen(), newDispatch(), newReplayCmd(), newMerged())
+		newAnswer(), newOpen(), newDispatch(), newReplayCmd(), newRequirements(), newMerged())
 	// The atrium and its rooms, which were `atrium2` until the two binaries
 	// became one. See docs/one-atrium-plan.md.
 	backups := hubBackupsCmd("atrium-")
 	backups.AddCommand(hubRestoreCmd("atrium-"))
-	root.AddCommand(newRun(), roomCmd(), hubRoomsCmd("rooms", "atrium-"), backups, dbCmd(), ledgerCmd())
+	root.AddCommand(newRun(), roomCmd(), hubRoomsCmd("rooms", "atrium-"), backups, dbCmd(), ledgerCmd(), usageCmd())
 	for _, c := range root.Commands() {
 		switch c.Name() {
 		case "run", "room":
@@ -143,7 +143,7 @@ func quietUsage(c *cobra.Command) {
 // ── daemon ──────────────────────────────────────────────────────────────────
 
 func newDaemon() *cobra.Command {
-	var agentAddr, humanAddr, dbPath, shutdownToken, locationFile, boardDir string
+	var agentAddr, humanAddr, dbPath, shutdownToken, locationFile, boardDir, startedBy string
 	var timeoutSec int
 	c := &cobra.Command{
 		Use:   "daemon",
@@ -160,9 +160,11 @@ func newDaemon() *cobra.Command {
 				ShutdownToken: shutdownToken,
 				LocationFile:  locationFile,
 				BoardDir:      boardDir,
+				StartedBy:     startedBy,
 			})
 		},
 	}
+	startedByFlag(c, &startedBy)
 	c.Flags().StringVar(&agentAddr, "addr", ":7777", "agent-facing listen address")
 	c.Flags().StringVar(&humanAddr, "http", ":7778", "human-facing listen address (API and board)")
 	c.Flags().StringVar(&dbPath, "db", "", "sqlite path (default: alongside the rest of atrium's state)")

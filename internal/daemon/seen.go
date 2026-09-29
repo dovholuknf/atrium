@@ -72,7 +72,7 @@ func (d *Daemon) noteTurnForSeen(taskID string, q store.TurnQuestions, autoVia s
 // report is what its launcher was waiting to read. Empty otherwise.
 func (d *Daemon) launcherSeen(taskID string) string {
 	t, err := d.st.Get(taskID)
-	if err != nil || !agentLaunched(t) || t.OwesReport() {
+	if err != nil || !d.reportsToLauncher(t) || t.OwesReport() {
 		return ""
 	}
 	return store.SeenLauncher

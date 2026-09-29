@@ -2,11 +2,14 @@ package daemon
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/store"
 )
 
 // How much context a session has burned, and how close its account is to a
@@ -216,7 +219,42 @@ func (d *Daemon) onTelemetry(in TelemetryEvent) string {
 	// card" mean "card nobody has looked at", and the whole point of that sort
 	// is to find the session that stopped.
 	d.act.setTelemetry(taskID, t)
+	d.keepLimitReadings(taskID, t)
 	return taskID
+}
+
+// keepLimitReadings writes a card's usage-limit figures to the room's record
+// when one differs from the last kept for that card and kind. The last figure
+// is remembered here so an unchanged statusline costs a map read, not a query.
+// Best effort. Pruning is not done here, it is on the sweep.
+func (d *Daemon) keepLimitReadings(taskID string, t Telemetry) {
+	for _, l := range []struct {
+		kind string
+		lim  *Limit
+	}{{store.LimitFiveHour, t.FiveHour}, {store.LimitWeekly, t.Weekly}} {
+		if l.lim == nil {
+			continue
+		}
+		r := store.LimitReading{Card: taskID, Kind: l.kind, Pct: l.lim.Pct, ResetsAt: l.lim.ResetsAt}
+		key := taskID + "/" + l.kind
+		sig := fmt.Sprintf("%d/%d", r.Pct, r.ResetsAt.UnixMilli())
+		d.limitMu.Lock()
+		same := d.limitLast[key] == sig
+		d.limitMu.Unlock()
+		if same {
+			continue
+		}
+		if _, err := d.st.AddLimitReading(r); err != nil {
+			log.Printf("[atrium] could not keep a limit reading for %s: %v", taskID, err)
+			continue
+		}
+		d.limitMu.Lock()
+		if d.limitLast == nil {
+			d.limitLast = map[string]string{}
+		}
+		d.limitLast[key] = sig
+		d.limitMu.Unlock()
+	}
 }
 
 // telemetryKey is what the floor debounces on: whatever the caller used to

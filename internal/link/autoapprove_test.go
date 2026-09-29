@@ -31,6 +31,7 @@ type gate struct {
 	decided  bool
 	decision string
 	reason   string
+	by       string
 }
 
 func (g *gate) handler() http.Handler {
@@ -47,11 +48,11 @@ func (g *gate) handler() http.Handler {
 				fmt.Fprint(w, `{"permissions":[]}`)
 			}
 		case r.URL.Path == "/v1/permissions/p1/decide" && r.Method == http.MethodPost:
-			var body struct{ Decision, Reason string }
+			var body struct{ Decision, Reason, By string }
 			_ = json.NewDecoder(r.Body).Decode(&body)
 			g.mu.Lock()
 			g.decided = true
-			g.decision, g.reason = body.Decision, body.Reason
+			g.decision, g.reason, g.by = body.Decision, body.Reason, body.By
 			g.mu.Unlock()
 			fmt.Fprint(w, `{"ok":true}`)
 		default:
@@ -111,6 +112,14 @@ func TestHubApprovesAPendingRequestWhenBoardWideAutoIsOn(t *testing.T) {
 	if decision != "approve" {
 		t.Fatalf("the hub decided %q, wanted approve", decision)
 	}
+	// Recorded under its own name, never "you". The body carries `by` and nothing
+	// else identifying the caller.
+	g.mu.Lock()
+	by := g.by
+	g.mu.Unlock()
+	if by != "global-auto" {
+		t.Errorf("the decide body carried by=%q, wanted global-auto", by)
+	}
 	if reason != hubAutoReason {
 		t.Errorf("the request was approved with reason %q, wanted the board-wide one", reason)
 	}
@@ -125,9 +134,9 @@ func TestHubLeavesARequestPendingWhenBoardWideAutoIsOff(t *testing.T) {
 
 	proxy.SetInventory(&remembering{boardAuto: false})
 
-	// A few sweep intervals is long enough that an approver that was going to act
-	// would have. Nothing should have touched the request.
-	time.Sleep(3 * autoSweepEvery)
+	// Long enough that an approver that was going to act would have. Nothing
+	// should have touched the request.
+	time.Sleep(time.Second)
 	if decided, _, _ := g.answered(); decided {
 		t.Fatalf("a request was approved with board-wide auto off")
 	}

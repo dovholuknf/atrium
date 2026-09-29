@@ -35,7 +35,7 @@ type launchOpts struct {
 	// What the caller already knows about the work. See `LaunchRequest`:
 	// atrium derives none of it, and every one is optional.
 	repo, org, host, branch, window, theme string
-	ifRunning                              string
+	ifRunning, reportTo                    string
 	tags                                   []string
 	quiet                                  bool
 }
@@ -96,6 +96,9 @@ func newLaunch() *cobra.Command {
 	c.Flags().StringVar(&o.ifRunning, "if-running", "",
 		"what to do when this directory already has a card: skip to hand it back and "+
 			"start nothing, adopt to continue it. empty starts another one")
+	c.Flags().StringVar(&o.reportTo, "report-to", "",
+		"who this card reports to: a handle, alias or card id on this room, such as review. its reports "+
+			"and silent-stop notices go there. an unknown name refuses the launch")
 	c.Flags().BoolVar(&o.quiet, "quiet", false, "print only the card id")
 	c.Flags().StringVar(&o.boardURL, "url", "",
 		"atrium board address (default: $ATRIUM_BOARD_URL or localhost:7778)")
@@ -170,6 +173,7 @@ func launchAgent(o launchOpts) error {
 		"window":      o.window,
 		"theme":       o.theme,
 		"if_running":  o.ifRunning,
+		"report_to":   o.reportTo,
 	})
 	if err != nil {
 		return err
