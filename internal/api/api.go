@@ -187,6 +187,10 @@ type Server struct {
 	// UsageOf is a card's token use on record, for its details. Owned by the
 	// daemon. See internal/daemon/usage.go.
 	UsageOf func(taskID string, limit int) (any, error)
+	// RoomStats is the last `room-stats` snapshot the sampler pushed, as JSON,
+	// or nil before the first. Does no work of its own. Owned by the daemon.
+	// See internal/roomstats.
+	RoomStats func() []byte
 
 	// Overlays reports how the board can be reached from elsewhere, and turns
 	// those ways on and off. Supplied by the daemon, which owns the child
@@ -328,6 +332,7 @@ func (s *Server) Broadcast(kind string, payload any) { s.bus.publish(kind, paylo
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/health", s.health)
+	mux.HandleFunc("GET /v1/room/stats", s.roomStats)
 	mux.HandleFunc("GET /v1/settings", s.getSettings)
 	mux.HandleFunc("POST /v1/settings", s.setSettings)
 	mux.HandleFunc("GET /v1/fixtures", s.getFixtures)
@@ -648,6 +653,22 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 		body["settling"] = true
 	}
 	writeJSON(w, http.StatusOK, body)
+}
+
+// roomStats is the first paint of the rooms dashboard: exactly the last
+// `room-stats` event, never sampled here.
+func (s *Server) roomStats(w http.ResponseWriter, r *http.Request) {
+	var b []byte
+	if s.RoomStats != nil {
+		b = s.RoomStats()
+	}
+	if b == nil {
+		writeErr(w, http.StatusServiceUnavailable, fmt.Errorf("no room stats sampled yet"))
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Write(b)
 }
 
 // view is a task shaped for a client: observed values already resolved against
