@@ -469,7 +469,7 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 		gated = t
 		gate = d.sayGate(t)
 	}
-	if gate == sayParked && (from == "" || body.Wake) {
+	if gate == sayParked && (from == "" || body.Wake || d.fromFamily(from, gated)) {
 		if err := d.unpark(taskID, wakeVia(from)); err != nil {
 			writeJSONErr(w, http.StatusInternalServerError, err)
 			return

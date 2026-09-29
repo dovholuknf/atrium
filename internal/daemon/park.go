@@ -247,6 +247,38 @@ func (d *Daemon) handleResume(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(`{"ok":true}`))
 }
 
+// fromFamily is whether a say's sender is the target's launcher or one of the
+// target's own workers (work_item.launcher_id, so a report_to child counts too).
+// Such a sender is the one the parked card is waiting on or working for, so its
+// say resumes the card as if wake=true. Anyone else still gets `parked`.
+func (d *Daemon) fromFamily(from string, target *store.Task) bool {
+	if from == "" || target == nil {
+		return false
+	}
+	sender, err := d.st.GetByWireName(from)
+	if err != nil {
+		if sender, err = d.st.GetByWireName(d.st.Qualify(from)); err != nil {
+			if sender, err = d.st.GetByAlias(from); err != nil {
+				return false
+			}
+		}
+	}
+	if w, err := d.st.WorkItem(target.ID); err == nil && w.LauncherID == sender.ID {
+		return true
+	}
+	if w, err := d.st.WorkItem(sender.ID); err == nil && w.LauncherID == target.ID {
+		return true
+	}
+	// A card launched with lineage but no work item yet is family the same way.
+	if l := d.launcherOf(target); l != nil && l.ID == sender.ID {
+		return true
+	}
+	if l := d.launcherOf(sender); l != nil && l.ID == target.ID {
+		return true
+	}
+	return false
+}
+
 // wakeVia is what woke a parked card by a say: the operator's own channel has no
 // sender, a session does.
 func wakeVia(from string) string {
@@ -263,7 +295,7 @@ func parkedNote(t *store.Task) string {
 	if t.ParkedAt != nil {
 		since = " since " + t.ParkedAt.Local().Format("15:04")
 	}
-	return fmt.Sprintf("not sent: %s is parked (idle%s, no process). Its cache is probably cold, so waking it "+
-		"runs a turn on a full context. Say it again with wake=true to resume it and deliver this.",
+	return fmt.Sprintf("not sent: this card is parked, send again with wake=true to resume it. %s is idle%s "+
+		"with no process, and its cache is probably cold, so waking it runs a turn on a full context.",
 		t.WireName, since)
 }

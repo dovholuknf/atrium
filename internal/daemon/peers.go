@@ -304,6 +304,9 @@ func (d *Daemon) resolvePeerSayWake(w http.ResponseWriter, from, to, verb, text,
 			"%s has ended, so nothing would read this", to))
 		return nil
 	}
+	if gate == sayParked && !wake && d.fromFamily(from, target) {
+		wake = true
+	}
 	if gate == sayParked && !wake {
 		// Nothing queued: waking is a cold turn and the sender should choose it.
 		if text != "" {
