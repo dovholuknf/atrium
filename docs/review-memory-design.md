@@ -142,6 +142,60 @@ Nothing in atrium changes for either decision. No migration.
    before stage 2 starts.
 3. Only if 2 shows the files work and the panel is still slow: a resident card for that repo.
 
+## Stage 1, file by file, for clint
+
+Everything below is in `D:/git/github/dovholuknf/dotfiles/claude/`, your repo. By the standing rule for dotfiles it
+is left uncommitted for your diff review, and nothing here touches atrium. Nothing is built yet. The worker (fb06)
+was held so this is your call. The replay that proves it costs about 17M tokens, and it is a separate yes.
+
+**`skills/review-panel/SKILL.md`**
+
+1. **Step 1, "Determine the review target".** A new last bullet: after capturing the diff, write
+   `review-digest.md` beside it, built once by the conductor. Its four parts are the list in decision 1: the changed
+   files and hunks, the core files with the line ranges that matter (the files the diff's callers and callees live
+   in), every dependency the diff touches at the version `go.mod` or its equivalent pins with its module-cache path,
+   and the repo's reviewer file when stage 2 has made one.
+2. **Step 2, "Select the relevant agents".** A new paragraph ahead of the default mapping: up to about 150 changed
+   lines, or a backport of a change already reviewed upstream, the panel is `codebase-steward` plus the ONE
+   specialist the file types call for. Larger changes use the mapping as it is. Open question 4 is this line, and
+   150 is the stated default.
+3. **Step 3, "Report the panel".** The one-line print gains which sizing rule picked the panel (`small: steward +
+   go-security-reviewer` or `full mapping`), so a panel that should have been bigger shows.
+4. **Step 4, "Dispatch in parallel".** The bullet "the captured diff text and its range" becomes "the digest, and the
+   diff range". The bullet "read whatever surrounding files or dependency source they need, NOT just the diff" is
+   replaced with the digest rule: the digest is the snapshot, do not re-open the diff, open source only to verify a
+   finding or fill a gap the digest leaves and name the gap. Two new bullets: issue the reads you already know you
+   need in ONE turn as parallel tool calls, and a budget of 40 turns, after which you report what you have.
+5. **Step 6, "Merge and triage".** Nothing in stage 1. The `repo_notes` parse rule under decision 2 goes in with
+   stage 2.
+
+**`agents/codebase-steward.md`**
+
+6. **"Mandatory method", step 1 ("Get the diff").** A conditional in front of it: when the prompt carries a
+   `review-digest.md`, that is the snapshot, so skip this step and start step 3 from the core files it names.
+   Without one, step 1 stands as it is.
+7. **"Operating notes", the "Read-heavy is the point" bullet.** It gains one sentence: with a digest, the neighbour
+   files and dependency source it already quotes count as read, and opening them again is the waste this change
+   removes. The failure it guards against, reviewing only the diff, is unchanged.
+
+**`agents/go-security-reviewer.md`, `agents/functional-tester.md`, `agents/nonfunctional-tester.md`**
+
+8. **The same conditional paragraph in each.** In the two testers it goes after "Operational constraints", and in
+   the security reviewer ahead of "When you find an issue". The text is the paragraph in decision 1: the digest is
+   the snapshot, do not recapture or re-open the diff, start from its core files, open source or dependency files
+   only to verify a finding or to fill a gap the digest leaves and say which gap. Without a digest each persona is
+   unchanged, so running one on its own behaves as it does today.
+
+**Not in stage 1:** the `memory: user` sections, the reviewer files, `repo_notes`, and any fork. Forks are tried only
+inside the replay, on one reviewer, and kept only if they win (decision 1, item 4).
+
+**Then the replay.** PR #4480 at the original commit, the numbers compared with notes (a) as "Proving it" says. It
+passes at 40% fewer cached tokens for the whole run, conductor included, with every blocking or high finding found
+again.
+
+**To say yes in one line:** "item 16 stage 1: build it" (fb06 writes items 1 to 8, uncommitted in dotfiles), and
+separately "and run the replay". Either can be a no, and the second only makes sense after the first.
+
 ## Review
 
 Mercurius session `s_xT8IKRB82yUj`, closed 2026-09-29.

@@ -22,7 +22,7 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 13 | Housekeeping asked, not answered | housekeeping | waiting on clint |
 | 14 | Per-card notification log | design | tentative |
 | 15 | Pluggable event sink, what is left | design | stages 1-2 done |
-| 16 | Reviews that remember: a resident reviewer per repo, and a panel that reads once | design, HIGH PRIORITY | designed, `docs/review-memory-design.md`. Stage 1 buildable, stage 2 waits on clint (3 questions) |
+| 16 | Reviews that remember: a resident reviewer per repo, and a panel that reads once | design, HIGH PRIORITY | designed, `docs/review-memory-design.md`. Stage 1 held for clint's yes (dotfiles), stage 2 waits on 3 questions |
 | 17 | A Claude subagent finishing tells clint the card is waiting on him | bug | DONE, merged `29d45f5`, needs a hook binary rebuild and a room restart. Test plan BN |
 | 18 | On the terminals tab, toasts sit top right, not over the input line | feature | DONE, `910b186` |
 | 19 | Launch (and every other submit) shows it is working and refuses a second click | bug | DONE, `eb1603e` board, `50db006` daemon |
@@ -534,8 +534,9 @@ offsite, and the primary database plateaus low enough that shrinking it stops ma
 ## 16. Reviews that remember (HIGH PRIORITY)
 
 **Status 2026-09-29:** designed in `docs/review-memory-design.md`, reviewed by Mercurius over two rounds. Stage 1 (read
-once, panel sized to the change, the #4480 replay) is buildable now. Stage 2 (reviewer files) waits on clint's open
-questions 1, 2 and 6 in that design.
+once, panel sized to the change, the #4480 replay) is buildable, and HELD for clint, because it changes his
+dotfiles skill and personas. The design's "Stage 1, file by file" section lists the eight edits and the one-line
+yes. The replay (about 17M tokens) is a separate yes. Stage 2 (reviewer files) waits on his open questions 1, 2 and 6.
 
 Raised by clint 2026-09-25 during a `review-panel` run on openziti/ziti PR #4480 (a v2.0.x backport). Four
 reviewers (go-security-reviewer, codebase-steward, functional-tester, nonfunctional-tester) each ran for 5.5 minutes
