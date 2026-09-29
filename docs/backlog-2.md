@@ -1113,6 +1113,11 @@ leave `atrium_task` and every other reader of `unseen` still saying nobody looke
   stops is unseen whatever it said. Questions stay open after a launcher-seen turn. A reported worker's Stop
   publishes the card once, and never with `unseen` true.
 
+**Status, 2026-09-28, sa43: built on `claude/sa43`, not merged.** As designed. `noteTurnForSeen` takes an auto-seen
+via and `launcherSeen` picks `SeenLauncher` for an agent-launched card that owes no report. The board shows no
+`seen_via`, so it is unchanged, and `atrium_task`'s description of `unseen` now names the launcher. A Stop still
+publishes twice in all: the status move to needs-input, then the one seen publish. See `docs/changes/43.md`.
+
 ## 44. A gear checkbox: no notifications from agent-launched cards, on by default (feature)
 
 Raised by clint 2026-09-28: "I don't need notifications from them." A worker an agent launched reports to its
