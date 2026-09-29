@@ -1038,6 +1038,32 @@ attention the work does not need.
 Expected: on a card launched by an agent, a turn that ends with a report or a message to the launcher counts as
 seen. A turn that ends silently still shows the dot, alongside the stuck mark from item 25.
 
+### Design, 2026-09-28 (@ui)
+
+The fix is in the room, not the board. The dot is `seen.unseen`, worked out in `internal/store/seen.go` from
+`turn_seen.turn_ended_at` against `seen_at`. The board only draws it (`js/seen.js`). Hiding it on the board would
+leave `atrium_task` and every other reader of `unseen` still saying nobody looked.
+
+- **Where.** The Stop path in `internal/daemon/messages.go` that lets a turn end already calls `silentStop` and then
+  `noteTurnForSeen`. Right after `noteTurnForSeen`, a card that is `agentLaunched` and does NOT owe a report
+  (`!t.OwesReport()`, so `reported_at` is at or after `prompted_at`) is marked seen with a new via, `SeenLauncher`
+  (`"launcher"`), through `MarkSeen(taskID, SeenLauncher, nil)`. The in-memory `d.unseen` entry goes with it.
+- **What counts as reported.** Exactly what already sets `reported_at`: `peerSaid` (an `atrium_report` or an
+  `atrium_say` to the launcher) and the relay's cross-room equivalent. A notice atrium wrote about the worker
+  (`notifyLauncher`) is not a report and does not count, the same rule `silentStop` uses. So a silent stop still wears
+  the dot, and the two marks can never disagree: a card is either silent (dot, and its launcher is told) or it
+  reported (no dot).
+- **Questions are not answered.** `MarkSeen` touches only `seen_at`, never `answered_at`. A worker whose last turn
+  asked clint Open Questions keeps its `? N` chip. The launcher reading the report is not an answer from clint.
+- **A report to a launcher that is gone.** `reported_at` is set when the sender spoke, not when the launcher read it,
+  and the launcher's card may have exited. Counted as seen anyway: the worker did its part, and the launcher going
+  away is the launcher's card's problem, shown on that card. Open for the review.
+- **The board.** The dot's tooltip is unchanged, since it is no longer shown in this case. The details' seen line
+  (if it shows `seen_via`) reads `launcher` as "its launcher got the report".
+- **Tests.** `internal/daemon/seen_test.go`: an agent-launched card that reports then stops is not unseen, via is
+  `launcher`. One that stops without reporting is unseen and the silent stop notice goes. A human-launched card that
+  stops is unseen whatever it said. Questions stay open after a launcher-seen turn.
+
 ## 44. A gear checkbox: no notifications from agent-launched cards, on by default (feature)
 
 Raised by clint 2026-09-28: "I don't need notifications from them." A worker an agent launched reports to its
