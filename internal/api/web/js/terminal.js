@@ -703,7 +703,6 @@ function openTerm(task) {
   // view. All of it is a no-op on a desktop. See `termPhone`.
   syncPhoneView();
   term.onWriteParsed(phoneKeepSoon);
-  term.onData(phoneKeepSoon);
   term.open(screen);
   // Before anything can write to it, so the trace starts at the first byte.
   traceTerm(term);
