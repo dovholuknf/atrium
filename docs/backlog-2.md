@@ -80,7 +80,7 @@ larger designs. Inside each group, the item closest to landing comes first.
 | 71 | "New context" on the terminals tab's right-click menu | feature | end of backlog, clint unsure it is useful |
 | 72 | One hover on a card, not two | feature | DONE by sa72, merged `66717c5`, deployed `66717c5` |
 | 73 | A keep-alive fork carries the card's launch args, so lean cards can warm | feature | not started |
-| 74 | A long reply loses lines in the middle on the board's terminal | bug | sa74, paused at `ba761d6` (old SHA), rebase onto `66717c5` |
+| 74 | A long reply loses lines in the middle on the board's terminal | bug | sa74: inbox ConPTY on a row change. Height hold built, not merged. OpenConsole choice with clint |
 | 75 | sg3 as a room, and machine bootstrap reuses the operator's shared folder under `localai` | feature | sa75, parked. Provision script merged `c3dc597` |
 | 76 | A worktree helper that links every CLAUDE.md, so workers get project rules | bug, HIGH, FIRST | not started, @merge |
 | 77 | A merge pipeline that does not conflict or rerun | feature, HIGH | not started, @merge, after 76 |
@@ -1343,6 +1343,46 @@ Raised 2026-09-28 by clint: "i'm starting to want different 'views' of agents mo
 first. Examples to explore: saved filters, a view by role, a view by launcher, and workers apart from clint's own
 cards.
 
+Spec (@ui, 2026-09-29), not built, for clint to answer before anything is:
+
+What exists today. The board groups by project, recency, window, tag or hand-made groups, or by a free expression
+kept in this browser (`grouper` in `js/board.js`). The terminal list can hide doers (`origin:agent`) apart from
+agents. The room picker narrows to one room. Each of those is its own switch in its own place, and none of them is
+remembered as a set.
+
+The gap is that a "view" is three answers given together: which cards, grouped how, sorted how. Today you rebuild
+the set by hand each time you change your mind about what you are looking at.
+
+- **A view is a named preset.** It holds a filter, a grouping mode and a sort, and picking one sets all three. A
+  picker sits beside the grouping control. Changing any of the three by hand leaves the view marked "edited" rather
+  than silently rewriting it, and "save" writes the change back.
+- **Filters come from a fixed menu, not from code.** Started by me or by an agent (`origin:agent`), has tag, in room,
+  in status, launched by. A free expression stays where it is, in grouping only, because of the rule `compiled` in
+  `js/board.js` writes down: an expression may be stored where it was typed. A fixed menu is what keeps the door open
+  to views that follow you to another browser.
+- **Two new grouping modes, for the examples clint named.** *By role* groups by a tag prefix, `dept:` by default, so
+  `dept:ui` and `dept:runtime` are the groups and a card with no such tag falls back to its project, the way window
+  mode does. *By launcher* groups a worker under the card that launched it. That needs the launcher on the card as
+  the board reads it. It is in the ledger today (`LauncherID` on `WorkItem` in `internal/store/ledger.go`) and not
+  on the task JSON, so this one mode costs a small API change owned with @runtime.
+- **Built-in views, so it is useful on day one.** "Mine" (not `origin:agent`, by project), "workers" (only
+  `origin:agent`, by launcher), "by role" (all, by `dept:` prefix), "needs me" (needs-input or needs-permission,
+  by recency). They can be edited but not deleted, and a "reset" puts one back.
+- **One active view for the board, stack and terminals tabs,** since the question "what am I looking at" does not
+  change when the tab does. Per browser, in `localStorage`, like grouping.
+- **Not in the first build.** A launcher tree (orchestrator, then director, then worker, nested), views shared
+  between browsers, and a view per tab.
+
+Open questions for clint:
+
+1. Are the four built-ins the right four? Recommendation: yes, with "workers" and "mine" as the pair that answers
+   "workers apart from my own cards".
+2. By launcher: one level (a worker under its launcher), or the whole tree? Recommendation: one level first. The
+   tree is the same data drawn nested, and it is worth seeing one level in use before deciding.
+3. One view across the board, stack and terminals tabs, or one each? Recommendation: one.
+4. Per browser, or following you to other browsers? Recommendation: per browser now. Since filters are a fixed menu,
+   moving them to the daemon later is a settings key and not a security question.
+
 ## 51. Five kept worktrees show 48 commits not matched on `claude/main` (housekeeping)
 
 Raised 2026-09-28. Five kept worktrees, each on the 09-22 base `02fe769`, show 48 commits that `git cherry` does not
@@ -1637,6 +1677,19 @@ left or right and lands haphazardly.
 From sa66's open points, 2026-09-28. Item 66 put "new context" on the card menu only, not on the terminal list's
 `termMenu`. Ctrl+Alt+N works in an attached terminal. clint: "end of backlog unsure if it's useful".
 
+Spec (@ui, 2026-09-29), not built. The build is small: `termMenu` in `js/terminal-list.js` gets the same entry the card
+menu has (`card-menu.js`, "new context", note "commit, hand off, clear"), calling the same `newContext(id)`, under the
+same guard (supervised, and not already mid-cycle). No daemon change. The progress chip it drives is already on the
+card and the tab.
+
+The question is only whether it is worth a line on that menu. For: the terminals tab is where you watch a session's
+context fill, and Ctrl+Alt+N there is not always reachable (some layouts send Ctrl+Alt for AltGr, which is why the
+card menu has it). Against: the card menu already has it, one right-click away, and every entry on `termMenu` makes
+the others slower to find.
+
+Open question for clint: add it, or close 71? Recommendation: add it, since it is the one place the operator is
+already looking when a context is full, and it costs one entry and no new code path.
+
 ## 70. Keep-alive is invisible until it has spent something, and one card overspent its budget (feature and bug)
 
 Raised 2026-09-28 by clint: "i still don't see any icons indicating cache is warming or that cachewarming has
@@ -1672,8 +1725,184 @@ clint confirmed the loss happened at the first screen update after the long repl
 little. The table's tail was still on the live 50-row screen, and a bare `\e[H` repaint overwrote it. Find what
 emitted that repaint (Claude Code, or ConPTY in the room) and why. Also test the reattach seam.
 
-Status: sa74 paused at `ba761d6`. That SHA is from before the 66717c5 re-sign: rebase `claude/lost-lines` onto
-`66717c5` before any merge (map in `D:/tmp/resign-map.txt`).
+Status: diagnosed by sa74 on `claude/lost-lines`. Recommendation 1, the height hold, is built there after two
+Mercurius rounds and approved by @terminal, not merged. Option 2 (OpenConsole ConPTY) goes to clint, and the
+replay-only repair is not built.
+
+### What dropped the lines
+
+**Not atrium's ring, replay or board.** The orchestrator's uncollapsed ring (`/scrollback/raw?collapse=0`, 2,723,702
+bytes, pty 206x50) holds the whole reply. At byte 2460305 the pseudo console emits
+`\e[46;3H\e[?25h\e[?2026h\e[?2026l\e[?25l\e[H` and then all 50 rows, each ending `\e[K\r\n`, with no line feed
+ahead of them. Row 1 of that repaint had been row 11 of the screen just before, so rows 1 to 10 (the table's tail,
+Merging, Waiting, Running) are overwritten in place and never reach history. The board's own xterm.js fed those
+bytes at a fixed 206x50 loses exactly those rows. The same ring has about 70 bare-home repaints, and 9 of them shifted
+the screen: 2, 2, 25, 26, 3, 3, 2, 3 and 10 rows lost.
+
+**The inbox ConPTY's resize path, set off by a change in the pty's row count.** Tested through a throwaway pseudo
+console on `conhost.exe` 10.0.26100 (the one the room uses), always with a control that feeds the child's own bytes
+straight to xterm.js, which never lost a line:
+
+| What the child and the host did | Lines lost through inbox ConPTY |
+| --- | --- |
+| Plain and Claude-shaped scrolling (parked cursor, erase and insert, full-width rows, sync output, DECSTBM) | 0 |
+| A child process on the console (git bash, cmd, pwsh), focus reports `\e[O` and `\e[I` | 0, and no repaint |
+| A resize to the same size | 0, one bare `\e[H` repaint each |
+| Columns 120 and 121 alternating | 0 |
+| Rows 50 and 49 alternating, under Claude-shaped frames | 18 of 300 |
+| Rows 50 to 40 and back, under Claude-shaped frames | 49 to 72 of 300 |
+| Rows 50 to 40 and back, under a steady stream | 100 of 300 |
+
+A single row change gives one bare `\e[H` repaint at the new height. conhost files the top rows into its own history,
+which is never sent, and the repaint overwrites them downstream. Two changes close together (50 to 40 to 50) are
+often painted ONCE: a single 50-row repaint, 50 rows before and after, whose row 1 had been row 11. That is the live
+2460305 byte for byte, and it explains why the new reply fits the freed rows exactly.
+
+**Claude Code is not implicated.** Claude 2.1.284 (classic renderer) in a bare 206x50 pty with no resizes produced no
+full repaint at all over 4 runs, including a turn taller than the screen and messages typed mid-turn.
+
+What changed the rows at 21:19:59 is not recorded. atrium logs no resizes, and a mark laid and undone with nothing
+written between merges away. But the live ring's own repaints show the pty at 47, 48, 50 and 51 rows at different
+points of the session. The agreed height is the SHORTEST attached viewer's (`agreedViewport`).
+
+Checked in the code, what can and cannot move the rows for a moment:
+- **One viewer's refit that ends at the same size cannot.** `onTermResize` skips when the pane's pixels did not move
+  (`terminal-links.js:2096`), sends only when the fitted size changed (`:2120`), and waits for it to hold 250 ms
+  before sending what it is by then (`:1914`). The daemon drops a frame at the size the pty already has
+  (`supervisor.go:1286`). A wobble held longer than 250 ms does send both sizes.
+- **A reattach cannot shrink the rows through its own viewer.** Both sockets carry the same pane's `termFitRows`, and
+  a new terminal fits before it connects (`terminal.js:926` then `:930`), so its first frame is never a default size.
+- **A reattach of the SHORTEST viewer, with another viewer attached, grows the rows and shrinks them back.** Viewers
+  are keyed by socket (`attach.go:285`, `:380`). The board closes the old socket first (`terminal-links.js:833`), the
+  daemon drops it as soon as its reader sees the close (the deferred `dropViewport`), and the new socket's size lands
+  only after `onopen` (`terminal-links.js:908`). In that gap the agreed height is the next shortest viewer's. With a
+  single viewer nothing moves, because the last viewer leaving never resizes (`supervisor.go:1350`).
+- **A shorter viewer that attaches for a while (a popped-out window, a phone, a second pane) shrinks the rows**, and
+  grows them back when it leaves.
+
+### OpenConsole ConPTY is the fix at the source
+
+`Microsoft.Windows.Console.ConPTY` 1.24.260710001 (conpty.dll plus OpenConsole.exe, MIT) through the same harness:
+**0 lines lost in every row above, and no `\e[H` repaint at all**, over 30 to 62 resizes a run. It passes the child's
+VT through, so a line feed arrives as a line feed.
+
+What adopting it costs:
+- Two binaries per architecture shipped beside atrium (x64 about 1.2 MB together).
+- go-pty calls kernel32's `CreatePseudoConsole`, so atrium needs its own create, resize and close through
+  conpty.dll. `internal/daemon/conpty_harness_repro_test.go` does it in about 100 lines, with the inbox call kept
+  as the fallback.
+- At start OpenConsole queries the terminal (`\e[c` and `\e[1t`). A runner with no viewer attached needs atrium to
+  answer, or the host waits for a timeout.
+- Passthrough changes the byte shapes that `screen.go`, `collapseRedraws`, the cursor settle, the typing gate and the
+  replay tests were tuned on, all of which were measured against conhost's re-rendered output. So it needs the whole
+  terminal test plan run again.
+- Item 81 becomes a prerequisite. The inbox conhost turns a runner's scroll region into plain line feeds and a
+  repaint (seen in the DECSTBM repro), so `screen.go` rarely meets one today. Passthrough hands DECSTBM straight to
+  it.
+- Where the binaries are looked for: the directory the setting names, else the one beside `atrium.exe`. conpty.dll is
+  loaded by full path only, never by bare name, and OpenConsole.exe must exist beside it, checked before use, because
+  conpty.dll quietly starts the System32 conhost when it is missing (to be confirmed against its source when built).
+  Anything else goes to the inbox kernel32 `CreatePseudoConsole`, logged once with the reason: the setting off, either
+  file missing, a load or export failure, or a create through conpty.dll that fails.
+
+### Keeping the rows a no-scroll repaint is about to overwrite
+
+Both options detect the same thing and differ only in where they act.
+
+**The strict-match rule.** A candidate is a bare `\e[H` (or `\e[1;1H`) that starts a repaint of the full current
+height, meaning as many rows written, each ending in an erase and a line feed, before the next cursor move. There
+must be no height change at that byte in the ring's marks, since a resize repaint to a new height is the height
+model's business. Buffer the repaint until it is complete. Find the smallest `k` from 1 to rows-1 such that repaint
+rows 1 to M equal screen rows k+1 to k+M exactly, where M is at least max(6, rows/4), and at least 4 of those rows are
+non-blank and pairwise distinct. On a match, rows 1 to k go to history before the repaint is applied. No match, or
+more than one `k` passing, means do nothing.
+
+**False positives.** The rule can only ever ADD rows to history, never remove one. So a wrong call puts a duplicate or
+stale line in the scrollback, and a missed call leaves the loss as it is today. The ways it goes wrong:
+- Content that legitimately moved up: Claude collapsing a block, a tool's output shrinking, a reprint after `/clear`
+  or a compaction. Those files rows the runner deliberately removed.
+- Repeated rows (blanks, separators, box borders) aligning at the wrong `k`. The distinct non-blank rows are there
+  to stop it.
+- A repaint split across reads, which has to be held until it is whole, so the buffer needs a byte and time cap.
+
+**Replay only, in `screen.go`.** The grid model already exists there. Detection costs O(rows squared) per candidate,
+and candidates are rare (about 70 in 2.7 MB), so the cost is negligible. It repairs `/scrollback/text`, every attach
+replay, and the carryover after a restart, and viewers see nothing new live. It does NOT repair a pane that was
+watching when it happened, which is clint's case, until that pane reattaches.
+
+**Live, on the fan-out path.** One screen model per runner fed every output byte (an O(bytes) VT parse on the hot path,
+about 50x206 cells a runner), and the matching repaint held back so that `\e[<rows>;1H` plus `k` line feeds can go
+ahead of it to every viewer. It repairs the pane clint was copying from. It costs parse CPU on all output of all
+runners, latency on every repaint that is held, and a wrong call is shown to every viewer at once. It also becomes
+dead code the day the ConPTY is swapped.
+
+### The height hold, as a state rule
+
+Recommendation 1 below, stated exactly. The hold is `heightHold`, 500 ms, twice the board's own 250 ms settle.
+
+**State.** On the runner, beside `views`:
+- `views` is updated at once on every frame and every detach, as it is today.
+- The applied size is what the pty is at. It is `buf.CurrentSize()`, which only the apply steps below move, so it
+  needs no new field. `appliedRows` below means its rows.
+- `pendingRows` is a height waiting to be applied, 0 for none. `pendingGen` counts every change to it, and
+  `pendingTimer` is the one timer.
+
+**`setViewport` and `dropViewport`**, under `resizeMu` as item 53 made them, after updating `views` and computing
+`agreed`. `dropViewport` keeps its two early returns first: after `r.done`, and when no viewer is left.
+1. Width is immediate. If `agreed.cols` differs from the applied width, `SetSize(agreed.cols, appliedRows)`, then
+   `Resize(agreed.cols, appliedRows)`, then `noteResized`. The CURRENT APPLIED rows, never `agreed.rows`, or a width
+   change would carry the new height past the hold.
+2. Height is held. If `agreed.rows` equals `appliedRows`, stop the timer and clear `pendingRows`, which cancels a
+   flip that came back. If it equals `pendingRows`, do nothing, so the hold keeps counting from when that value was
+   first seen. Otherwise set `pendingRows` to it, bump `pendingGen`, and restart the timer for the full hold. A new
+   value always restarts it.
+3. The re-tell. Whenever a held height is cancelled or superseded, here or when the timer fires, call `noteResized`
+   with no `SetSize` and no `Resize`, so every attach re-reads `CurrentSize` and tells its viewer the applied size.
+
+**The timer firing.** Take `resizeMu`, then in order:
+1. A `pendingGen` that is not the one it was started with means a later change superseded it. Return.
+2. After `r.done`, clear `pendingRows` and return. A dead terminal is never resized, as in `dropViewport`.
+3. Re-read `views` under `r.mu`. No viewers left means cancel: clear `pendingRows` and keep the applied size, which
+   is what the last viewer leaving already means.
+4. Apply only if `agreedViewport(views).rows` still equals `pendingRows` AND differs from `appliedRows`. Then
+   `SetSize(agreed.cols, pendingRows)`, then `Resize`, then `noteResized`, keeping mark before resize. A `Resize`
+   error is logged, as `attach.go` does now. Anything else clears `pendingRows` without resizing, and re-tells.
+
+**What viewers see during the hold.** `CurrentSize` reports the APPLIED size, never the agreed one, so `tellSize`, the
+ring's marks and the replay all agree with the pty. A viewer is told the new height only when it is applied.
+
+**The re-tell cannot start a refit loop.** Each attach sends a `size` frame only when `CurrentSize` differs from
+what it last told that socket (`attach.go:479`), so a re-tell with nothing changed sends no frame. A frame at the same
+size would be harmless anyway. `takeTermSize` (`terminal.js:65`) only stores the size and calls `applyPtySize`, which
+resizes xterm only when the grid differs (`terminal-links.js:1875`) and never sends a `resize` back. Only a fit
+(`onTermResize`) sends one.
+
+**Growing waits too.** The transient in the live room was a reattach of the shortest viewer, and that GROWS first
+and shrinks back (the list above), so an immediate grow would let the very flip this exists to stop through. A
+taller pane held at the old height only shows empty space under the grid for half a second, which costs nothing.
+One rule for both directions is also the simpler one to test.
+
+**The cost, named.** A viewer that really is shorter waits half a second while the pty paints more rows than its
+grid has. That viewer can garble its bottom rows, and scroll a few into its own scrollback, until the repaint at the
+new height. It is one viewer and one resize, against a flip that costs every viewer's history.
+
+**Tests.** Rows flipped 50, 40, 50 inside the hold: zero `Resize` calls. Held past it: one, at the new height. A width
+change during a pending shrink: one `Resize` at the new width and the OLD rows, then the shrink when the hold ends.
+Every viewer gone before the timer fires, and `r.done` closed before it fires: zero. `CurrentSize` read during the
+hold: the applied size. A hold cancelled by the height coming back, and one superseded by a new height: `sizeChanged`
+wakes with no `Resize`. Then the harness `flip` runs through the real code path.
+
+### Recommendation
+
+1. **Now, small: stop transient row changes reaching the pty,** by the state rule above. That removes the coalesced
+   flips, which are the big losses (10, 25, 26 rows). A deliberate height change still costs about a row per row
+   changed, and the width stays immediate. Testable with the harness above.
+2. **The real fix: OpenConsole ConPTY**, behind a setting with inbox as the fallback, gated on the whole terminal test
+   plan.
+3. **Replay-only repair only if 2 is refused.** The live version is not worth its cost and risk next to 2.
+
+Repro, captures and scripts: `HANDOFF.md` on `claude/lost-lines`, `build.claude/lost-lines/` and
+`build.claude/conpty/` in that worktree (not committed).
 
 ## 75. sg3 as a room, and machine bootstrap reuses the operator's shared folder under `localai` (feature)
 
@@ -1751,21 +1980,33 @@ Design (@ui), small on purpose:
 - **What it mutes.** Toasts, desktop notifications and the sound that goes with them, everything `notify` in
   `js/notify.js` would pop. The drawer keeps logging every entry and the bell's badge keeps counting, so nothing is
   lost and opening the drawer shows what was held back. The marks on cards are untouched.
-- **Permission requests still notify.** A permission blocks a session until a human answers, the same exception item
-  44 makes. The button's tip says so. Open for clint below.
+- **Held back means recorded, not dropped.** Today the drawer is filled by `toast` (through the toast-log wrapper)
+  and by the one explicit `logNotification` call on the desktop branch. Off skips both `toast` and
+  `showNotification`, so the off path calls `logNotification` itself, once per alert, and plays no sound. Without that
+  the switch would mute everything and silently empty the drawer it promises to fill.
+- **Permission requests still notify. Built that way, waiting on clint.** A permission blocks a session until a
+  human answers, the same exception item 44 makes, so off lets them through the normal `notify` path. The choice is
+  ONE named constant in `js/notify.js` (off silences permissions: false), so flipping it is one line.
+  `docs/changes/79.md` names it as waiting on clint. The button's tip says permissions still come through.
 - **Per browser, in `localStorage`** (`atrium.notify.off`), like the sound mute (`atrium.sound`). A phone and a desk
   want different answers, and the daemon has no notion of which browser is which. Every window of one browser shares
   it, and a popped-out window follows the board.
 - **The bell shows it.** Off, the bell is drawn as a struck bell (U+1F515) with the tip "notifications are off. click
-  to see what arrived", and the badge still counts. On, it is the bell it is today.
+  to see what arrived", and the badge still counts. On, it is the bell it is today. The toggle button and the bell
+  carry the same text as their `aria-label`, repainted with the state.
 - **Item 44.** 44 is a filter on WHICH cards notify (not agent-launched ones). 79 is a master switch over all of
   them. Off beats everything, including a card's own per-card override, because it is the operator saying stop now.
   On, 44's filter and per-card overrides apply as they do today. The gear's notifications section shows the same
   switch, so the two are found in one place.
 - **Not built.** A timed mute ("for an hour") is the obvious next step and is left out until asked for.
 
-Open question for clint: should "off" silence permission requests too? The recommendation is no, since a session
-blocks on one until somebody answers, and a muted board is the likeliest place to forget one.
+Open question for clint: should "off" silence permission requests too? The build says no, since a session blocks on
+one until somebody answers, and a muted board is the likeliest place to forget one. Flipping it is the one constant
+above.
+
+Review: Mercurius round 1 (s_12NjmPjbUY9e) found the permission question left formally open (C1, closed above as
+built-no, flippable) and no record-only path for held-back alerts (C2, folded as the `logNotification` rule). Its
+advisory, an `aria-label` that follows the state, is folded too.
 
 ## 80. Real-time token burn and usage charts (feature)
 
@@ -1842,6 +2083,11 @@ default), so a loaded machine can be given more time without editing the file. E
 any other wait whose failure names only the symptom, says which wait ran out and how long it had. Owner @ui, queued
 behind item 80.
 
+Status 2026-09-29, done on `claude/ui`. `HEADLESS_SLOW` scales all 191 timeouts, not the sleeps. The dismiss block
+names its three waits, and its menu wait opens the menu again if a render closed it, which is the likelier flake
+than a slow browser. A full run with `HEADLESS_SLOW=3` beside `go test` passed. Other sections still fail on the
+symptom only when a wait runs out, and get the same treatment when one is caught flaking.
+
 ## 81. `screen.go` ignores DECSTBM scroll regions (bug)
 
 Found 2026-09-28 by sa54's differential test (item 54). `screen.go` never reads `CSI top;bottom r`, so a runner
@@ -1851,12 +2097,115 @@ shows in the attach replay and the text scrollback view whenever a runner uses a
 `internal/daemon/screen_diff_cases_test.go`, skipped as `backlog-2 81` until it agrees, and it fails once it does
 so the skip gets removed. Owned by @terminal.
 
+**Done by sa81 on `claude/sa81`.** `screen.go` now keeps a scroll region per buffer and follows xterm.js: line feed,
+RI, `CSI S/T/L/M` act inside it, rows leave to history only when the region starts at the top, an invalid one is
+ignored, and RIS, a resize and the alt screen reset it. The skip is gone and thirteen differential cases cover each
+rule. The text replay (`textAtRows`) now writes the region back before the cursor. `collapseRedraws` needed no change.
+DECOM is not implemented, since nothing here uses it.
+
 ## 82. `screen.go` gives a wide character one cell (bug)
 
 Found 2026-09-28 by sa54's differential test (item 54). `screen.go` gives every rune one cell, and xterm.js gives
 CJK and other wide characters two. A cursor move back over a wide character lands on the wrong column: `あ.う`
 against `あい.`. A fix needs a continuation cell handled in `render`, `writeRow`, and the erase and insert ops. The
 case is skipped as `backlog-2 82` in `internal/daemon/screen_diff_cases_test.go`. Owned by @terminal.
+
+Status: built by sa82, merged into claude/terminal. `screen.go` gives a wide character a head and a continuation cell, widths
+come from a table generated from the vendored xterm.js, and the skip is gone. Differential cases cover each op,
+all agreeing with xterm.js apart from one accepted reflow difference. See `docs/changes/82.md`.
+
+### Design
+
+Written against `screen.go` before sa81 (DECSTBM) merges. Sa81 lands first and this lands second, so the cell ops
+below are named by what they touch, not by line.
+
+**How width is decided.** The board loads `@xterm/xterm` 5.5.0 (`internal/api/web/vendor/VERSIONS.md`) and
+`index.html` loads no unicode addon, so xterm runs its DEFAULT provider, `UnicodeV6`, and that is the table to match.
+It is not what `golang.org/x/text/width` (in `go.mod`, indirect only, Unicode 15 based) or `go-runewidth` say. The
+visible difference is that V6 gives every astral emoji (U+1F300 and up) width 1, and only U+20000..U+2FFFD and
+U+30000..U+3FFFD width 2 above the BMP, so a grinning face is ONE cell on the board today. Matching a newer table
+would leave the replay one column off per emoji, which is this bug in the other direction. No new dependency: a
+generated table, `screen_width.go`, holding the BMP wide ranges, the zero width (combining) ranges and the two astral
+wide ranges, produced by `testdata/gen_widths.js` from the vendored `xterm.js` (`UnicodeService.wcwidth`). A parity
+test runs the same node script over every code point 0..0x10FFFF and compares with the Go function, so an xterm
+upgrade, or a unicode11 addon, fails a test instead of drifting. Lookup is a `< 0x7f` fast path, then a binary search
+over a few hundred ranges.
+
+- Ambiguous width is 1. V6 has no ambiguous class.
+- Combining marks, ZWJ (U+200D), variation selectors (FE00..FE0F) and other zero width code points are width 0. They
+  attach to the cell before them and take no cell. VS16 does not widen its base, again as V6.
+- A ZWJ emoji sequence is therefore several width 1 emoji with joiners attached, which is what xterm shows. No
+  grapheme segmentation, so no `rivo/uniseg`.
+- A zero width code point with nothing to attach to (column 0, or after another loose mark) is NOT dropped: xterm
+  gives it a cell of its own that moves the cursor one column. The differential settled this, and `put` does the
+  same. It attaches to a blank cell like any other.
+- C0 and DEL stay in `step`, unchanged.
+
+**The cell model.** `cell` is `{ch rune, sgr string}`, 24 bytes. It becomes `{ch rune, ext uint32, sgr string}`, still
+24 bytes, since the rune leaves 4 bytes of padding.
+
+- `ch == contCh` (a negative sentinel) marks the second cell of a wide character. It carries the head's `sgr`, so
+  per cell colour ops stay per cell.
+- `ext` is an index into `screen.combs []string` (0 means none) holding the marks appended to that cell. Marks are
+  rare, so the table stays tiny and rows stay flat and copyable. It lives as long as the screen, which is as long as
+  any row that refers to it, history included.
+- Every wide head is followed by exactly one `contCh`, and every `contCh` follows a wide head. The ops below keep
+  that true, and the differential asserts it after every case.
+
+**Per op.** Where I say "as xterm" from memory of its `InputHandler` and `eraseInBufferLine`, phase 2 confirms it in
+the differential and takes xterm's answer where they differ.
+
+- `put`: width 0 appends to the previous cell (the head, when the previous is a continuation) via `combs`, moves
+  nothing and leaves `wrapNext` alone. Width 1 writes one cell. Width 2 writes head and continuation and advances
+  two. Before writing, `clearHalf` repairs what is overwritten: writing on a continuation blanks the head before it,
+  writing on a head blanks its continuation, and a width 2 write whose second cell lands on the head of another wide
+  character blanks that one's continuation. Blanked cells are the plain `blank` value.
+- A wide character at the last column wraps early. `put` sees `col == cols-1` with width 2, wraps first and writes on
+  the next row. The differential settled the abandoned last-column cell: xterm BLANKS it, wearing the colour being
+  written, so a character already there is gone. xterm clamps a terminal to two columns, so the one column guard is
+  only a guard.
+- A cursor landing on a continuation (`CUB`, `CHA`, `CUP`, backspace, restore, tab) stays there. The next write
+  repairs through `clearHalf`. Nothing snaps the cursor to the head.
+- Erase (`EL`, `ED`, `ECH`): the blanked span widens to whole characters. A span starting on a continuation blanks
+  the head before it, and one ending on a head blanks the continuation after it. `ED` goes through `EL` plus
+  whole-row blanks, so it inherits this.
+- `ICH` and `DCH`: after the shift, a continuation left first in the moved run, or a head left last with its
+  continuation shifted off, is blanked. That is `clearHalf` at the two seams.
+- `IL`, `DL`, `CSI S` and `CSI T`: move whole rows, so a wide character and its continuation always move together.
+  No change. Under sa81's regions that still holds, since a region chooses WHICH rows move and never cuts a row.
+  Nothing there reads columns, and there is no left and right margin mode (DECLRMM) to cut one. Sa81's row copies
+  must stay row copies, and if they ever copy a column span this design needs another pass.
+- `resize` narrower: a cut between head and continuation blanks the orphan head. Widening pads blanks. History rows
+  keep the width and cells they had. `fitRows` and `applyCuts` move rows, never cells, so they are unchanged. The alt
+  screen is `[]cell` too and gets the same cut.
+- `rowIsBlank` counts a continuation as not blank, which is safe because one only follows a non-blank head.
+
+**Output.** `render` and `writeRow` skip `contCh` cells and write the head rune once, followed by its `ext` marks. The
+end-trim loop trims only blanks, so a wide character in the last two cells is kept. `textWithCursor` needs no change:
+`s.col` is already a cell column, `CUF` in cells is what the terminal executes after painting the rune in two of
+them, and the relative move stays right. `textAtRows` ends in an absolute `CSI row;col H` in cells, correct for the
+same reason. The scrollback view and the replay therefore emit each wide rune once and let the attaching xterm give
+it two columns.
+
+**Cost.** Memory: nothing per cell, 24 bytes as now. Time: `put` gains one comparison on the ASCII path, a binary
+search on other runes, and two neighbour reads for `clearHalf`. Replay parse cost is dominated by `decodeRune`, which
+allocates through `[]rune(string(...))` for every non ASCII rune, so a CJK heavy ring pays it per character. Worth
+replacing with `utf8.DecodeRune` while here. It is a small change outside the cell model, and I will measure both
+with a benchmark added in phase 2.
+
+**Tests.**
+
+- `TestWidthMatchesXterm` (node, every code point, skips without node) and `TestWidthTable` (no node: 2 for a
+  hiragana letter, 1 for an astral emoji, 0 for a combining acute and for U+200D, 2 for U+20000).
+- No node: wide put and overwrite of each half, wide at the last column, wide in a one column grid, a mark on a wide
+  head, each erase and `ICH`/`DCH` seam, `resize` across a wide character, and the head and continuation invariant
+  after each. `render` and `writeRow` emit the rune once, and `textWithCursor` lands on the right column after wide
+  text.
+- Differential, the `backlog-2 82` skip removed: the existing case, overwrite the first half, overwrite the second
+  half, wide at the last column, `EL` 0, 1 and 2 through a wide character, `ECH`, `DCH` and `ICH` at a seam, a
+  combining mark after ASCII and after a wide character, a ZWJ sequence, an astral emoji (width 1, the V6 result) and
+  an ambiguous character. Each agrees with xterm.js or carries an `accept` with the reason. `dumpScreen` learns to
+  skip continuations and carry marks, and asserts the invariant.
 
 ## 83. `atrium_say` refuses a card in `done` while its terminal is still alive (bug)
 
@@ -1884,6 +2233,20 @@ Fix, test only: give `cardFor` a PID that is guaranteed dead. Prefer a helper th
 returns its pid, over a large constant. Then grep the `_test.go` files for other `PID: 1` style assumptions.
 `processAlive` is right and does not change. Verified on m1mini with pid 2147483000: both pass, and so does the
 whole package. Owned by @runtime.
+
+## 86. `screen.go`'s combining-mark table only grows (bug, low)
+
+Found 2026-09-29 reviewing item 82. A cell carrying combining marks points into `screen.combs`, and every mark
+attached appends a new string there, even one already held. Nothing ever removes an entry: not a clear, not RIS,
+not a row leaving history. So the table fills to `combsMaxKept` (65536) per screen, and past that `combine` drops
+every new mark for as long as the screen lives. A long session in Vietnamese or another heavily accented script
+would replay its later text without its accents. Memory is bounded (65536 entries of at most 32 bytes), so this is
+not a leak, and it did not block item 82.
+
+Fix: intern the strings (a map from mark string to index, so a repeated mark costs nothing), and compact the table
+when history is trimmed or the screen is reset, by walking the live cells and renumbering `ext`. A test attaches
+more than `combsMaxKept` marks across a scrolling screen and checks that the last row still carries its marks.
+Owned by @terminal. Low priority.
 
 
 ------------
