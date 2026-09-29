@@ -5,6 +5,15 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **A worker waiting on its own background runs is no longer marked STUCK.** See `docs/backlog-2.md` item 31 and
+  `docs/background-hold-design.md`.
+
+  A worker whose turn ends with background shells or headless runs still going is not marked STUCK, and its
+  launcher is not told it stopped silently. `atrium turn` now sends `background_running`, the count of running
+  non-subagent entries in the Stop payload's `background_tasks`, and the daemon holds the silent-stop alert while it
+  is above zero. When the work finishes the session wakes and stops again, and that later turn end is the clock.
+  The hold is capped at two hours (`ATRIUM_A2A_BACKGROUND_HOLD`) so a dev server left up cannot hide a real stop.
+
 - **Each item ships its own changelog and test-plan entry, and the merger folds them in.** See `docs/backlog-2.md`
   item 77 (b, c and g).
 
