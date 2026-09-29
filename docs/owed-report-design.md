@@ -30,8 +30,11 @@ something the launcher is waiting on. A card nobody is waiting on is not stuck b
 ## What is recorded about the sender, and where
 
 Every door that records a prompt already writes the sender into the event payload as `from_peer` (a wire name), and
-leaves it out for the operator. The launch writes `via: "launch"`. Nothing new is needed at any door, which is the
-point: the existing comment on `appendEventOn` asks that "every path that records a prompt stamps it, including ones
+leaves it out for the operator. The launch's opening prompt now does the same, naming the session that asked for the
+launch (`req.SpawnedBy`) and leaving it out when the operator did. That matters because a launch also runs onto an
+existing card (a reopen or a resume with a prompt), where the recorded launcher, written once, is not necessarily who
+is asking. `via: "launch"` alone therefore counts for nothing (Mercurius round 1, finding C1). Nothing else is needed
+at any door, which is the point: the existing comment on `appendEventOn` asks that "every path that records a prompt stamps it, including ones
 written after this", and a rule enforced by each door is a rule the next door forgets.
 
 So the decision is made once, in the store, where the stamp is. A new column `task.owed_at` holds the last prompt
@@ -40,13 +43,12 @@ later. `OwesReport` and `PromptKey` move to `owed_at`.
 
 `appendEventOn`, for a `prompted` event, decides whether it counts:
 
-1. `via == "launch"`: counts. The opening prompt is the launcher's by definition.
-2. `from_peer` empty: does not count. That is the operator, a note, an action, a wake.
-3. `from_peer` names the card's launcher: counts. Compared three ways, because the launcher is recorded by wire name
+1. `from_peer` empty: does not count. That is the operator, a note, an action, a wake, a reopen by the operator.
+2. `from_peer` names the card's launcher: counts. Compared three ways, because the launcher is recorded by wire name
    (`spawned_by`, qualified by tenant), by card id (`spawned_by_id`), and for a launcher on another room as
    `name@room`: the sender qualified against `spawned_by`, the sender against the wire name of the card
    `spawned_by_id` names, and the sender against `spawned_by` case-insensitively.
-4. Anything else: does not count.
+3. Anything else: does not count.
 
 Why stored, not in memory: the debt has to survive a daemon restart or a restart would forgive everything owed, and
 `docs/activity-design.md` forbids storing only what a runner is doing RIGHT NOW. A debt is a fact about a
@@ -96,7 +98,7 @@ Nothing is in memory. `owed_at`, `reported_at` and `turn_end` are stored, and th
 
 ## Resident versus one-shot
 
-A one-shot worker: launched with a prompt, so `via: "launch"` sets the debt, and every message from its launcher
+A one-shot worker: launched with a prompt, so the opening prompt, sent as its launcher, sets the debt, and every message from its launcher
 after that sets it again. Behaviour is unchanged, except that an operator prompt to an agent-launched worker no longer
 makes it owe its launcher, which is intended: the launcher did not ask.
 

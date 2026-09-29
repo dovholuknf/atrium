@@ -13,7 +13,8 @@ func TestOnlyTheLaunchersPromptOwesAReport(t *testing.T) {
 	for name, ev := range map[string]map[string]any{
 		"the operator":  {"text": "x", "via": "terminal"},
 		"a third":       {"text": "x", "from_peer": "other"},
-		"a note":        {"text": "x", "from": "note"},
+		"a reopen":      {"text": "x", "via": "launch"},
+		"a note":       {"text": "x", "from": "note"},
 		"a delivery":    {"delivered": 1, "via": "stop"},
 		"a look-alike":  {"text": "x", "from_peer": "boss2"},
 		"an empty peer": {"text": "x", "from_peer": " "},

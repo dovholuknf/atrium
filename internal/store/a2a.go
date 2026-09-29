@@ -138,20 +138,17 @@ func (t *Task) OwesReport() bool {
 }
 
 // promptOwes decides whether one `prompted` event makes the card owe its
-// launcher a report: the opening prompt, or a message whose sender is the
-// launcher. The operator, a note, an action, atrium's own wake and a message
+// launcher a report: a prompt or message whose sender is the launcher. The
+// opening prompt names the session that asked for the launch as its sender, so
+// a reopen by the operator is not counted. The operator, a note, an action, atrium's own wake and a message
 // from any other session do not. Decided here, where the stamp is, so a door
 // written later cannot forget it. See docs/owed-report-design.md.
 func promptOwes(q querier, s *Store, taskID string, payload []byte) (bool, error) {
 	var p struct {
-		Via      string `json:"via"`
 		FromPeer string `json:"from_peer"`
 	}
 	if err := json.Unmarshal(payload, &p); err != nil {
 		return false, nil
-	}
-	if p.Via == "launch" {
-		return true, nil
 	}
 	from := strings.TrimSpace(p.FromPeer)
 	if from == "" {
