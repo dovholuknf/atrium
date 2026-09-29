@@ -38,14 +38,14 @@ const MaxSize = 256 << 10
 // File is the normalized result. Sections that were absent are absent (nil) or
 // empty, never invented, except the defaults the design names for git.
 type File struct {
-	Version   int                  `json:"version"`
-	Atrium    *Atrium              `json:"atrium,omitempty"`
-	Git       *Git                 `json:"git,omitempty"`
-	Toolchain map[string]Tool      `json:"toolchain"`
-	Runners   map[string]Runner    `json:"runners"`
-	Room      Room                 `json:"room"`
-	Env       map[string]EnvEntry  `json:"env"`
-	Services  []string             `json:"services"`
+	Version   int                 `json:"version"`
+	Atrium    *Atrium             `json:"atrium,omitempty"`
+	Git       *Git                `json:"git,omitempty"`
+	Toolchain map[string]Tool     `json:"toolchain"`
+	Runners   map[string]Runner   `json:"runners"`
+	Room      Room                `json:"room"`
+	Env       map[string]EnvEntry `json:"env"`
+	Services  []string            `json:"services"`
 }
 
 type Atrium struct {

@@ -23,7 +23,7 @@ type fakeClock struct {
 func newClock(now time.Time) *fakeClock {
 	return &fakeClock{now: now, tick: make(chan time.Time), disk: make(chan time.Time)}
 }
-func (c *fakeClock) Now() time.Time { c.mu.Lock(); defer c.mu.Unlock(); return c.now }
+func (c *fakeClock) Now() time.Time  { c.mu.Lock(); defer c.mu.Unlock(); return c.now }
 func (c *fakeClock) set(t time.Time) { c.mu.Lock(); c.now = t; c.mu.Unlock() }
 func (c *fakeClock) Ticker(d time.Duration) (<-chan time.Time, func()) {
 	if d == Interval {

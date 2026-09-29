@@ -408,7 +408,7 @@ func (n *newContexts) sameDirBusy(d *Daemon, task *store.Task) string {
 }
 
 var (
-	errNoTerminal    = errors.New("atrium does not own this session's terminal, so it cannot type into it")
+	errNoTerminal     = errors.New("atrium does not own this session's terminal, so it cannot type into it")
 	errNewContextBusy = errors.New("a new context is already under way on this card")
 )
 
