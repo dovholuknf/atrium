@@ -5125,3 +5125,64 @@ running, and its worktree and branch are untouched.
 
 **Expected:** the worker is asked to leave (`exited` true), and `kept` says the worktree has uncommitted changes and
 names them. The worktree, the change and the branch are all still there.
+
+## CM. Every dialog in one design
+
+These need the board rebuilt from this change (the page is embedded), then a hard reload. Nothing on the daemon
+changes. Every dialog is drawn from one set of parts in `css/dialogs.css`, under "the dialog family": a head with a
+small eyebrow above the title, a body that is the only part that scrolls, panels (`.dlg-sec`) with their own
+heading, a two-column grid of fields (`.dlg-grid`) inside a panel, and a foot (`.dlg-foot`) pinned under the body
+that holds the actions. `node scripts/shoot-dialogs.js <dir> harbour,paper` draws every dialog headless against a
+mocked daemon and is how the pictures in `D:/tmp/sa56/after` were made. See `docs/backlog-2.md` item 56.
+
+### CM1. The frame is the same everywhere
+
+1. In harbour, open a card's details, the gear, `+ new agent`, a runner's edit, a fixture's edit, and a
+   confirmation (move a card holding a permission to shelved).
+2. Switch the skin to paper and open them again.
+
+**Expected:** each has a thin teal-to-blue rule along its top edge, a blurred backdrop, a small uppercase eyebrow
+above the title saying what kind of thing it is (`card details`, `the gear`, `launch`, `agents · runner`,
+`agents · fixture`, `atrium asks`), and `close` as a quiet outlined button in the corner. In paper all of it is
+light, with no dark panel or dark input left over.
+
+### CM2. Only the body scrolls
+
+1. Open a runner's edit on a window shorter than the form.
+2. Scroll the form.
+
+**Expected:** the head and the foot stay put, and `save`, `delete` and `cancel` are always on screen. The same holds
+for launch with `more` open, the recogniser, and the terminal themes.
+
+### CM3. Long forms are grouped
+
+1. Open a runner's edit, a recogniser, a provider, a source, add a room, and room settings.
+
+**Expected:** the fields sit on lifted panels with a teal heading each. The runner reads `what it is`, `how it
+starts`, `its terminal`, `where and with what`. The short fields sit two to a row, and on a window narrower than
+760px they go to one column. Every field that was there before is still there, and saving writes the same thing.
+
+### CM4. The foot keeps its actions and says why
+
+1. Open a runner's edit, clear the command, and press save (or save one the daemon refuses).
+
+**Expected:** the reason appears in red between the body and the foot, lined up with both, and goes when the dialog
+closes. While a save is in flight the other buttons in the foot are disabled. `delete` is tinted red before it is
+hovered.
+
+### CM5. The gear
+
+1. Open the gear and walk the panes.
+
+**Expected:** the pane list is a panel down the left, the open pane marked with a teal edge, and the pane's name is
+the title at the top of the pane. Every field still saves on change, and switching panes does not move the dialog.
+
+### CM6. Pickers and the smaller dialogs
+
+1. From launch press `repo`, choose a repository, then `browse`.
+2. Open the notifications tray, the session switcher (ctrl-shift-k), share a card, and the hooks dialog.
+
+**Expected:** the repository and worktree rows are bordered rows the height of a field with the path beside the name,
+the directory browser's folders sit on one panel, the share dialog's `done` is in a foot on the right and there is
+no empty foot while the share is being made, and the confirmation dialog's buttons are in a foot on the right with
+the affirmative last.
