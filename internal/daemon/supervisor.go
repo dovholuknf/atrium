@@ -89,9 +89,23 @@ type widthMark struct {
 
 // ringBuffer keeps the last N bytes written to it, and the widths they were
 // written at.
+//
+// N IS A CEILING, NOT AN ALLOCATION. The buffer used to be `make([]byte, N)` at
+// spawn, and N is the scrollback setting, which the live room had at 512MB. So
+// every runner and every shell committed half a gigabyte the moment it
+// started, whether it went on to print a megabyte or a prompt: 26 cards
+// reopening after a restart came to 13GB of private memory for about 190MB of
+// actual scrollback, and a heap profile of a throwaway room put all of it in
+// `newRingSized`. Now the slice grows as output arrives, doubling, and only
+// wraps once it has reached N. What a ring costs is what it holds, give or
+// take one doubling.
 type ringBuffer struct {
-	mu   sync.Mutex
+	mu sync.Mutex
+	// data is the bytes held. Shorter than max until the output has filled
+	// it, and exactly max from the moment it first wraps, which is what
+	// `full` means.
 	data []byte
+	max  int
 	full bool
 	at   int
 	// written counts every byte ever handed to Write, including bytes long
@@ -112,10 +126,38 @@ func newRingSized(size, cols, rows int) *ringBuffer {
 	if rows <= 0 {
 		rows = screenRows
 	}
+	if size < 0 {
+		size = 0
+	}
 	return &ringBuffer{
-		data:  make([]byte, size),
+		max:   size,
 		marks: []widthMark{{at: 0, cols: cols, rows: rows}},
 	}
+}
+
+// ringFloor is the smallest slice a ring allocates, so a session that prints a
+// line at a time does not reallocate on every one of its first few hundred.
+const ringFloor = 64 << 10
+
+// reserve makes room for the unwrapped buffer to reach `need` bytes.
+//
+// Callers hold the lock, and only call it before the buffer has wrapped, so
+// everything held is `data[:at]` and a plain copy keeps it in order.
+//
+// STRICTLY MORE than `need` until the ceiling, never equal to it. Write wraps
+// when `at` reaches the end of the slice, and a slice that ended exactly where
+// a write did would wrap a buffer that had not yet reached its size.
+func (r *ringBuffer) reserve(need int) {
+	if need < len(r.data) || len(r.data) >= r.max {
+		return
+	}
+	grown := max(2*len(r.data), need+1, ringFloor)
+	if grown > r.max {
+		grown = r.max
+	}
+	data := make([]byte, grown)
+	copy(data, r.data[:r.at])
+	r.data = data
 }
 
 func (r *ringBuffer) Write(p []byte) (int, error) {
@@ -125,10 +167,16 @@ func (r *ringBuffer) Write(p []byte) (int, error) {
 	r.written += int64(n)
 	defer r.forgetOldMarks()
 	// A write larger than the whole buffer keeps only its tail.
-	if n >= len(r.data) {
-		copy(r.data, p[n-len(r.data):])
+	if n >= r.max {
+		if len(r.data) < r.max {
+			r.data = make([]byte, r.max)
+		}
+		copy(r.data, p[n-r.max:])
 		r.at, r.full = 0, true
 		return n, nil
+	}
+	if !r.full {
+		r.reserve(r.at + n)
 	}
 	first := copy(r.data[r.at:], p)
 	if first < n {
@@ -249,24 +297,28 @@ func (r *ringBuffer) retainedStart() int64 { return r.written - int64(r.retained
 // "restart the daemon for this to take effect", said to somebody who raised
 // the limit BECAUSE they had just lost scrollback, and whose restart would
 // then cost them the buffer they were trying to keep.
+//
+// IT RAISES THE CEILING AND ALLOCATES NOTHING NEW for a buffer that has not
+// wrapped, which is most of them. One that has wrapped is put back in order
+// at the size it already was, and grows from there as output arrives, the
+// same as a buffer that never wrapped.
 func (r *ringBuffer) Grow(size int) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if size <= len(r.data) {
+	if size <= r.max {
+		return
+	}
+	r.max = size
+	if !r.full {
 		return
 	}
 	// THE RAW RETAINED BYTES, not what `from` returns. `from` trims to a line
 	// start so a snapshot never begins mid escape, and dropping those bytes
 	// here would shift `retainedStart` without shifting the width marks
 	// expressed against it. What goes in is byte for byte what was held.
-	data := make([]byte, size)
-	n := 0
-	if r.full {
-		n = copy(data, r.data[r.at:])
-		n += copy(data[n:], r.data[:r.at])
-	} else {
-		n = copy(data, r.data[:r.at])
-	}
+	data := make([]byte, len(r.data))
+	n := copy(data, r.data[r.at:])
+	n += copy(data[n:], r.data[:r.at])
 	r.data = data
 	r.at = n
 	r.full = false
