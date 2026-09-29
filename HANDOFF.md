@@ -39,7 +39,8 @@ You are @fabric, the Director of Fabric: hub, rooms, cross-room, overlays and pr
 
 ## Branch state
 
-- claude/fabric head: the handoff commit on top of 5c3c5f6, which merged claude/main bb65176. @merge told it is ready.
+- claude/fabric head: this handoff commit. 5c3c5f6 merged claude/main bb65176 and @merge was told it is ready. Since
+  then, docs only: item 92 and the item 16 stage 1 list (5d22694). Tell @merge again when there is more.
 
 ## Done this context
 
@@ -68,9 +69,17 @@ You are @fabric, the Director of Fabric: hub, rooms, cross-room, overlays and pr
   fails the same on claude/main alone. @terminal told.
 - A dead session's cwd gets `.claude/agent-log.txt` written on exit, which is what kept the fb01 and fb04 folders.
 
+- **Item 92** numbered: `/v1/tasks/prune` reaches one room. Fold it into the next worker that touches
+  `internal/link`, never a worker of its own.
+- **Item 16 stage 1 is HELD, fb06 was NOT launched.** It changes clint's dotfiles skill and personas, and @dotfiles is
+  his card. `docs/review-memory-design.md` "Stage 1, file by file" lists the eight edits and his one-line yes. If he
+  says yes: fb06 (Sonnet, claude-sg4) writes them UNCOMMITTED in dotfiles, per the standing rule. Ask atrium-87300
+  where it works first. The replay (about 17M tokens) is a separate yes. Exit fb06 by card id once done.
+
 ## In flight
 
-Nothing on this card. fb03 below is the only open worker.
+Nothing on this card. fb03 below is the only open worker. **This context stays idle until clint answers or @merge
+needs you.**
 
 ## fb03: ACCEPTED, waiting on clint's fetch
 
@@ -84,11 +93,54 @@ Nothing on this card. fb03 below is the only open worker.
 
 ## Waiting on clint (in the morning report via atrium-87300)
 
-1. `room-git.ps1 fetch sg3`, to bring fb03 back.
+Each is listed once. The recommendation, where there is one, is in the doc named.
+
+**Things only clint can run**
+
+1. `pwsh -File scripts/room-git.ps1 fetch sg3`, to bring fb03 back.
 2. The m1mini room restart, for the .zprofile PATH.
-3. Any `push-base`.
-4. Open questions: item 59 (4, `docs/multi-room-design.md`), item 49 (3), item 46 (4) and item 75 (4) in backlog-2,
-   item 16 (6, `docs/review-memory-design.md`).
+3. Any `room-git.ps1 push-base`.
+
+**Yes or no**
+
+4. Item 16 stage 1: "build it" (eight edits in his dotfiles, uncommitted). `docs/review-memory-design.md`.
+5. Item 16: "and run the replay" of PR #4480, about 17M tokens. Only after 4.
+
+**Item 16, `docs/review-memory-design.md` "Open questions". 6, 7 and 11 gate stage 2**
+
+6. Layout: `personas/<id>/repos/<host>/<org>/<repo>.md` in dotagents, or beside `mercurius.yaml`?
+7. Who edits a reviewer file: the conductor from `repo_notes`, or each persona itself?
+8. Is a resident card per repo still wanted once the files exist, or only if stage 2 falls short?
+9. Panel size: is "about 150 changed lines, or a backport" the line for steward plus one?
+10. Should Mercurius ever read a repo's reviewer file? Recommended no.
+11. Does anything in the parked `bc58c32:docs/personas-design.md` still stand?
+
+**Item 59, `docs/multi-room-design.md` "Open questions for clint"**
+
+12. Is a sibling room worth building for the test room alone?
+13. Draining in place: worth a flag, or is today's 90 second park enough?
+14. May the permission hook for a supervised session wait for its room instead of failing open at once?
+15. Who owns C: the supervisor is Terminal's, the adoption and the hook are Fabric's and Runtime's.
+
+**Item 49, `docs/everywhere-card-design.md` "Open questions for clint"**
+
+16. Is `atrium:everywhere` the tag name?
+17. Should a foreign card's permission be answerable from a scoped view? Recommended later.
+18. Tag the orchestrator by hand, or have `atrium_launch` tag it? Recommended by hand.
+
+**Item 46, backlog-2 `## 46.` "Open questions for clint"**
+
+19. Should `-Autostart` become the default, and on Windows is it a logon task or the detached room?
+20. Which Linux machine may the Linux autostart test run on? sg4-wsl is ruled out.
+21. Should provision write `permissions.allow` for `mcp__atrium-control__*`? Likely no.
+22. When does stage 2 start, and does it wait on item 75's account question?
+
+**Item 75, backlog-2 `## 75.` "Open questions for clint"**
+
+23. What is the shared folder, and what goes in it?
+24. Does `localai` replace `claude` on sg3 (moving a live room), or only apply to new machines?
+25. May provisioning create the account (needs admin), or does the operator make `localai` first?
+26. Should the room run so CIM works for its workers, or does a worker that needs CIM go without?
 
 ## Then
 
