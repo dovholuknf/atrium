@@ -269,8 +269,12 @@ var leanContextHooks = []string{"SessionStart", "UserPromptSubmit"}
 
 // leanSettings is the `--settings` value for a lean launch, built from the
 // operator's settings.json. Unknown keys are dropped, which is the point: the
-// status line, the output style and the attribution text cost tokens or do
-// nothing for a worker.
+// output style and the attribution text cost tokens or do nothing for a worker.
+//
+// THE STATUS LINE IS KEPT (r-001). It costs no model tokens, since it runs
+// outside the conversation, and it is what posts a card's context figures to
+// atrium (docs/statusline-telemetry.md). Dropping it left every lean card, and so
+// every worker, with no status line and no context size on the board.
 func leanSettings(user []byte, stopHook string) (string, error) {
 	doc := map[string]json.RawMessage{}
 	if len(strings.TrimSpace(string(user))) > 0 {
@@ -282,7 +286,7 @@ func leanSettings(user []byte, stopHook string) (string, error) {
 		// Empty attribution: no Co-Authored-By trailer and no reminder about one.
 		"attribution": map[string]string{"commit": "", "pr": ""},
 	}
-	for _, k := range []string{"permissions", "env", "model", "effortLevel"} {
+	for _, k := range []string{"permissions", "env", "model", "effortLevel", "statusLine"} {
 		if v, ok := doc[k]; ok {
 			out[k] = v
 		}
