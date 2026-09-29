@@ -5,6 +5,22 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **Every card keep-alive watches wears a chip, and lean cards are no longer forked into a full rewrite.** See
+  `docs/backlog-2.md` item 70, `docs/cache-keepalive-design.md` and `docs/test-plan.md` BL7.
+
+  The chip drew only after a refresh or a stop, so an idle card that was not due yet showed nothing and the feature
+  read as off. A card with the switch on now wears a dotted `◎ watching` chip, with the last skip reason, the
+  warm-until time and the budget in its tooltip, beside the `❄ warm` and dashed `❄ cold` chips that were there.
+
+  sa55's card read `stopped:miss`, 0 refreshes, $1.02 spent against a $0.12 budget. Its one fork read none of the
+  cache and wrote all 127,952 tokens at the 1h price. It was a lean card, and a fork carries none of a lean card's
+  launch args (its tool list, MCP config and system prompt), so the prefix differed from the first token. The only
+  other real miss in the ledger was the other lean card. The budget could not stop it: the check before a fork
+  prices a read, and a miss costs eight budgets by construction. Lean cards are now skipped (`lean card`). The
+  receipt drops its 5% write threshold, which had stopped two forks that read 99.99% as misses. The card's view
+  counts misses as `missed`, which the stopped tooltip shows, where before a miss vanished from the refresh count.
+  `internal/daemon`: ROOM RESTART. `internal/api/web`: HUB RESTART for the board a hub serves.
+
 - **A provisioned room's claude cards get atrium-control, so they can answer another room.** See
   `docs/cross-room-say-design.md` "A room without atrium-control" and `docs/test-plan.md` CE7.
 
