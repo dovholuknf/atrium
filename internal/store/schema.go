@@ -1760,6 +1760,18 @@ var migrations = []struct {
 			`ALTER TABLE task ADD COLUMN alias_note TEXT NOT NULL DEFAULT ''`,
 		},
 	},
+	{
+		// `owed_at` is the last prompt that made this card owe its launcher a
+		// report: its opening prompt or a message from the launcher, and nothing
+		// else. `prompted_at` stays the last prompt from anyone. The backfill
+		// keeps a debt that is open today open, on the old wider basis. See
+		// docs/owed-report-design.md.
+		name: "0068_owed_at",
+		stmts: []string{
+			`ALTER TABLE task ADD COLUMN owed_at TEXT NOT NULL DEFAULT ''`,
+			`UPDATE task SET owed_at = prompted_at WHERE owed_at = '' AND prompted_at != ''`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the

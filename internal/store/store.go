@@ -301,6 +301,9 @@ type Task struct {
 	// a typed message, or a queued one a hook carried in. Stamped wherever a
 	// `prompted` event is written.
 	PromptedAt *time.Time `json:"prompted_at,omitempty"`
+	// OwedAt is the last prompt that made this card owe its launcher a report:
+	// its opening prompt or a message from the launcher. See promptOwes.
+	OwedAt *time.Time `json:"owed_at,omitempty"`
 	// Theme names the terminal palette this session uses. Held on the card so
 	// it survives a restart and follows the session into another browser,
 	// which is the point of coloring terminals: telling them apart at a
