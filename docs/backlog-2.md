@@ -1866,6 +1866,9 @@ The refusal reads the card's status and not the runner. Expected: a say to a car
 delivered whatever column the card is in. A `done` card with no runner still refuses, and says so. Item 41 is about
 which prompts make a card owe a report, not the card's state after one, so this is separate. Owned by @runtime.
 
+Status: fixed on `claude/sa83`. `sessionGone` is now a daemon method that also asks the supervisor, and `atrium tell`
+uses it. See `docs/changes/83.md`.
+
 ## 84. Two `nosession` tests fail on macOS and Linux (bug)
 
 Found 2026-09-28 on m1mini (macOS arm64, `hub-main` 52ca01a). `TestASayToAGoneSessionIsUndeliverable` and

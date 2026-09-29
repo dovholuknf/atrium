@@ -286,8 +286,9 @@ func (d *Daemon) resolvePeer(w http.ResponseWriter, from, to, verb string) *stor
 		writeJSONErr(w, http.StatusBadRequest, errString("a session cannot "+verb+" itself"))
 		return nil
 	}
-	switch target.Status {
-	case store.StatusDead, store.StatusDone:
+	// The same test the message endpoint uses, so `atrium tell` and `atrium_say`
+	// agree: a done card whose terminal is still live is somebody to talk to.
+	if d.sessionGone(target) {
 		writeJSONErr(w, http.StatusConflict, fmt.Errorf(
 			"%s has ended, so nothing would read this", to))
 		return nil
