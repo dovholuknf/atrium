@@ -88,9 +88,9 @@ function ucTargets() {
   return { ask: attached, absent };
 }
 
-async function ucFetchRoom(room, since, bw, card) {
+async function ucFetchRoom(room, since, bw, card, group) {
   const q = `/v1/usage?since=${encodeURIComponent(new Date(since).toISOString())}&bucket=${bw}` +
-    (card ? "&card=" + encodeURIComponent(card) : "");
+    (card ? "&card=" + encodeURIComponent(card) : "") + (group ? "&group=" + group : "");
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 15000);
   try {
@@ -113,6 +113,7 @@ function ucIngest(series, bw) {
     let cur = m.get(t);
     if (!cur) m.set(t, cur = { t, total: ucSums(), cards: {}, causes: {} });
     ucAdd(cur.total, b.total);
+    ucIngestGroups(cur, b);
     for (const [id, s] of Object.entries(b.cards || {})) ucAdd(cur.cards[id] || (cur.cards[id] = ucSums()), s);
     for (const [c, s] of Object.entries(b.causes || {})) ucAdd(cur.causes[c] || (cur.causes[c] = ucSums()), s);
   }
@@ -127,20 +128,22 @@ async function loadUsageTab() {
   ucAskSetting();
   const seq = ++UC.loading;
   UC.inflight++;
+  UC.lastRead = Date.now();
   const rooms = {};
   for (const r of absent) rooms[r] = { state: "absent", why: "not attached", buckets: new Map() };
   const asked = UC.card ? [UC.card.room] : ask;
   const got = await Promise.all(asked.map(r =>
-    ucFetchRoom(r, UC.since, bw, UC.card ? UC.card.id : "").then(x => [r, x])));
+    ucFetchRoom(r, UC.since, bw, UC.card ? UC.card.id : "", ucGroupParam()).then(x => [r, x])));
   UC.inflight--;
   if (seq !== UC.loading) return;
   for (const [r, x] of got) {
-    rooms[r] = { state: x.state, why: x.why || "", buckets: x.series ? ucIngest(x.series, bw) : new Map() };
+    rooms[r] = { state: x.state, why: x.why || "", buckets: x.series ? ucIngest(x.series, bw) : new Map(), noGroups: ucNoGroups(x.series) };
   }
   UC.rooms = rooms;
   if (typeof ulLoad === "function") ulLoad(asked);
   const held = UC.pending.splice(0);
   for (const e of held) ucApply(e);
+  ucLoadItems(asked, UC.since);
   ucPaint();
 }
 
@@ -149,6 +152,7 @@ function onUsageEvent(e) {
   let d;
   try { d = JSON.parse(e.data); } catch (err) { return; }
   if (!d || !d.task_id) return;
+  ucGroupStale();
   if (UC.inflight) { UC.pending.push(d); return; }
   if (!isViewing("usage")) return;
   ucApply(d);
@@ -248,10 +252,9 @@ function ucPaint() {
   html += ucLegend();
   html += `<h4 class="uch">burn rate <span class="ucnote">${UC.cacheReads ? "" : "counted "}tokens per minute, stacked by kind</span></h4>` +
     ucBurn(series) +
-    `<h4 class="uch">by card <span class="ucnote">top ${UC_TOP_CARDS} by ${UC.cacheReads ? "" : "counted "}tokens, the rest as others. ` +
-    `Click one to filter</span></h4>` + ucCards(cardRows, series) +
+    ucCardsHead() + ucGroups(series) + ucCards(ucGroupFilter(cardRows), series) +
     `<h4 class="uch">tokens by kind</h4>` + ucSplit(total, causes, cardRows) +
-    `<h4 class="uch">tokens by cause</h4>` + ucCauseTable(causes) + ulSection();
+    `<h4 class="uch">tokens by cause</h4>` + ucCauseTable(causes) + ulSection() + ucItems();
   body.innerHTML = html;
   ucAfterPaint(body);
 }

@@ -7302,6 +7302,116 @@ async function usageCacheReadsSection(browser, base) {
   if (errors.length) fail("usageCacheReads: the page threw: " + errors.join(" | "));
 }
 
+// The usage tab grouped by department or director, and tokens per accepted item (u-014).
+async function usageGroupsSection(browser, base) {
+  const errors = [];
+  const at = new Date(Math.floor(Date.now() / 900000) * 900000 - 900000).toISOString();
+  const mk = n => ({ rows: 1, replies: 1, input: n, output: 0, cache_write_5m: 0, cache_write_1h: 0, cache_read: n * 10, cost: 0 });
+  const total = mk(3000), sA = mk(2000), sB = mk(1000);
+  const groupsFor = g => g === "dept" ? { "": mk(500), eng: mk(2000), "@before": mk(1000) }
+    : { "": mk(700), atlas: mk(2300) };
+  const itemsBody = { items: [
+    { item: "u-005", title: "review tab design", counted: 2100000, cache_read: 88000000, cards: 3, split: 1 },
+    { item: "r-004", title: "worktree reaper fix", counted: 4800000, cache_read: 210000000, cards: 2, split: 2 },
+    { item: "t-002", title: "banner copies", counted: 1200000, cache_read: 40000000, cards: 1, split: 1 }], unlinked: 2 };
+  const run = async (opts, fn) => {
+    const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+    const sp = await ctx.newPage();
+    sp.on("pageerror", e => errors.push(String(e)));
+    const reads = [];
+    await ctx.route(/\/v1\/usage\?/, route => {
+      const u = new URL(route.request().url());
+      const g = u.searchParams.get("group") || "";
+      reads.push({ group: g, at: Date.now() });
+      const b = { t: at, total, cards: { "uc-a": sA, "uc-b": sB }, causes: { operator: total } };
+      if (g && !opts.old) b.groups = groupsFor(g);
+      route.fulfill({ json: { buckets: [b] } });
+    });
+    await ctx.route(/\/v1\/usage\/items/, route =>
+      opts.items404 ? route.fulfill({ status: 404, body: "not found" }) : route.fulfill({ json: itemsBody }));
+    await ctx.route("**/v1/settings", route => route.fulfill({ json: { usage_cache_reads: false, board_skin: "harbour", board_skins: SKINS } }));
+    try {
+      await sp.goto(base, { waitUntil: "domcontentloaded" });
+      await sp.waitForSelector("#stack-list .stackrow", { state: "attached", timeout: slow(15000) });
+      await sp.evaluate(() => switchView("usage"));
+      await sp.waitForSelector("#uc-body .ucchart[data-chart=burn] rect", { timeout: slow(10000) });
+      await sp.waitForTimeout(1500);
+      await fn(sp, reads);
+    } finally { await ctx.close(); }
+  };
+  const tiles = sp => sp.evaluate(() => [...document.querySelectorAll("#uc-body [data-role=groups] .ucmini")]
+    .map(m => m.querySelector(".uctitle").textContent));
+  const pick = async (sp, v) => {
+    await sp.selectOption("#uc-group", v);
+    await sp.waitForFunction(v => UC.group === v && !UC.inflight, v, { timeout: slow(5000) });
+    await sp.waitForTimeout(200);
+  };
+  await run({}, async (sp, reads) => {
+    if (await sp.$("#uc-body [data-role=groups]")) fail("usageGroups: card view draws group tiles.");
+    if (reads.some(r => r.group)) fail("usageGroups: card view sent a group.");
+    await sp.evaluate(() => { lastTasks = [
+      { id: "uc-a", display_title: "alpha", tags: ["dept:eng"] },
+      { id: "uc-b", display_title: "beta", tags: [], spawned_by: "atlas" }].concat(lastTasks || []); });
+    await pick(sp, "dept");
+    if (!reads.some(r => r.group === "dept")) fail("usageGroups: department sent no group=dept: " + JSON.stringify(reads.map(r => r.group)));
+    const t = await tiles(sp);
+    if (t.join("|") !== "eng|before grouping|no department") fail("usageGroups: dept tiles are " + t.join("|"));
+    await sp.click('#uc-body .ucmini[data-group="eng"]');
+    const cards = await sp.evaluate(() => [...document.querySelectorAll("#uc-body .ucmini[data-id]")].map(m => m.dataset.id));
+    if (cards.join() !== "uc-a") fail("usageGroups: a click on eng left cards " + cards);
+    await sp.click('#uc-body .ucmini[data-group="eng"]');
+    const all = await sp.evaluate(() => document.querySelectorAll("#uc-body .ucmini[data-id]").length);
+    if (all !== 2) fail("usageGroups: a second click did not clear the filter: " + all);
+    await pick(sp, "launcher");
+    if (!reads.some(r => r.group === "launcher")) fail("usageGroups: director sent no group=launcher.");
+    const l = await tiles(sp);
+    if (l.join("|") !== "atlas|clint") fail("usageGroups: director tiles are " + l.join("|"));
+    await sp.click('#uc-body .ucmini[data-group="atlas"]');
+    const c2 = await sp.evaluate(() => [...document.querySelectorAll("#uc-body .ucmini[data-id]")].map(m => m.dataset.id));
+    if (c2.join() !== "uc-b") fail("usageGroups: a click on atlas left cards " + c2);
+    await sp.evaluate(() => { UC.cacheReads = true; UC.groupKey = null; ucPaint(); });
+    if ((await tiles(sp)).join("|") !== "atlas|clint") fail("usageGroups: tiles lost their order with cache reads on.");
+    await sp.evaluate(() => { UC.cacheReads = false; });
+    await pick(sp, "card");
+    if (reads[reads.length - 1].group !== "") fail("usageGroups: back on card still sends a group.");
+    const items = await sp.evaluate(() => ({
+      text: (document.querySelector("#uc-body .ucitems") || {}).textContent || "",
+      n: document.querySelectorAll("#uc-body .ucitems > span:nth-child(4n+2)").length,
+      foot: (document.querySelector("#uc-body [data-role=items-foot]") || {}).textContent || "",
+      tips: [...document.querySelectorAll("#uc-body .ucitems > span[data-tip]")].map(s => s.getAttribute("data-tip")) }));
+    if (items.n !== 3) fail("usageGroups: the items table has " + items.n + " rows.");
+    if (!/median 2\.1M per item · 3 items accepted/.test(items.foot)) fail("usageGroups: the footer reads " + items.foot);
+    if (!/2 accepted items have no card on record/.test(items.foot)) fail("usageGroups: no unlinked line: " + items.foot);
+    if (items.tips.length !== 4 || !items.tips.every(t => /shared/.test(t))) fail("usageGroups: the split hint is " + JSON.stringify(items.tips));
+    if (items.text.indexOf("r-004") > items.text.indexOf("u-005")) fail("usageGroups: items are not biggest first.");
+  });
+  await run({ old: true }, async sp => {
+    await pick(sp, "dept");
+    const s = await sp.evaluate(() => ({ note: (document.querySelector("#uc-body [data-role=nogroups]") || {}).textContent || "",
+      tiles: document.querySelectorAll("#uc-body [data-role=groups] .ucmini").length,
+      cards: document.querySelectorAll("#uc-body .ucmini[data-id]").length }));
+    if (!/does not group usage yet/.test(s.note)) fail("usageGroups: a room without groups says " + s.note);
+    if (s.tiles !== 0 || s.cards !== 2) fail("usageGroups: a room without groups drew " + JSON.stringify(s));
+  });
+  await run({ items404: true }, async sp => {
+    const s = await sp.evaluate(() => ({ old: (document.querySelector("#uc-body [data-role=items-old]") || {}).textContent || "",
+      table: !!document.querySelector("#uc-body .ucitems") }));
+    if (!/too old/.test(s.old) || s.table) fail("usageGroups: a 404 on items gave " + JSON.stringify(s));
+  });
+  await run({}, async (sp, reads) => {
+    await pick(sp, "dept");
+    reads.length = 0;
+    for (let i = 0; i < 6; i++) {
+      await sp.evaluate(() => { for (let k = 0; k < 10; k++) onUsageEvent({ data: JSON.stringify({ task_id: "uc-a", ended_at: new Date().toISOString(), input: 1, output: 1, cause: "operator" }) }); });
+      await sp.waitForTimeout(1000);
+    }
+    await sp.waitForTimeout(500);
+    const n = reads.filter(r => r.group === "dept").length;
+    if (n !== 1) fail("usageGroups: a burst of usage events for 6.5s gave " + n + " re-reads, want 1.");
+  });
+  if (errors.length) fail("usageGroups: the page threw: " + errors.join(" | "));
+}
+
 // The rooms dashboard: the room menu's tiles, fed `room-stats` snapshots.
 //
 // Drives `onRoomStats` directly with fixture snapshots, the same function the
@@ -7780,7 +7890,7 @@ async function main() {
       history: historySection, contextSize: contextSizeSection, peekEverywhere: peekEverywhereSection, cardRoute: cardRouteSection,
       quietDoer: quietDoerSection, looksIdle: looksIdleSection, notifyOff: notifyOffSection,
       questionsClick: questionsClickSection, walk: walkSection, linkReuse: linkReuseSection,
-      usageCacheReads: usageCacheReadsSection, roomsDash: roomsDashSection, phoneView: phoneViewSection, usagePolish: usagePolishSection, usageLimits: usageLimitsSection,
+      usageCacheReads: usageCacheReadsSection, roomsDash: roomsDashSection, phoneView: phoneViewSection, usagePolish: usagePolishSection, usageLimits: usageLimitsSection, usageGroups: usageGroupsSection,
       eventDriven: eventDrivenSection, idleBudget: idleBudgetSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
@@ -9715,6 +9825,7 @@ async function main() {
     await idleBudgetSection(browser, base);
     await usagePolishSection(browser, base);
     await usageLimitsSection(browser, base);
+    await usageGroupsSection(browser, base);
     await reselectSection(browser, base);
     // ── over a terminal the toasts hang from the top right ─────────────────
     await toastsTopSection(browser, base);
