@@ -1713,5 +1713,11 @@ Open question for clint: is burn at turn end enough, or does "real time" mean wa
 That needs the room to tail every running transcript, which is a bigger and riskier change. Built at turn end first.
 Top 12 cards plus "others" is the first cut, easy to change.
 
+Status (branch `claude/sa80`): built as written, at turn end. `GET /v1/usage` takes one addition the design did not
+have, an optional `card` id, because a bucket carries causes only for the whole board and a card-filtered tab could not
+show that card's cause table otherwise. A card filter reads that one card from its own room. The tab, the small chart
+in a card's details, and the `usage` event are in. Not done: watching a turn spend while it runs, and any per-kind
+dollars. Charts were drawn in a headless run against mocks only, not yet looked at against a live room.
+
 
 ------------

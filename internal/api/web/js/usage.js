@@ -105,6 +105,7 @@ async function loadUsage(id) {
     return;
   }
   if (!current || current.id !== id) return;
+  if (typeof paintCardUsageChart === "function") paintCardUsageChart(current);
   const t = v.totals || {};
   const by = v.by_cause || {};
   const own = usageOwn(by);

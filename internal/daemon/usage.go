@@ -125,6 +125,28 @@ type usageTracker struct {
 	readMu sync.Mutex
 	cursor map[string]*usageCursor
 	subs   map[string]*subagentCursors
+
+	// broadcast tells the board a row was written. Nil in tests and until the
+	// daemon wires it. See emitRow.
+	broadcast func(kind string, v any)
+}
+
+// usageEvent is one written row as the `usage` event carries it: the figures
+// and the card id, and no message text. The hub adds the source room.
+func usageEvent(row *store.SessionUsage) map[string]any {
+	return map[string]any{
+		"task_id": row.TaskID, "ended_at": row.Ended, "cause": row.Cause,
+		"input": row.Input, "output": row.Output, "cache_write_5m": row.CacheWrite5m,
+		"cache_write_1h": row.CacheWrite1h, "cache_read": row.CacheRead, "cost": row.Cost,
+	}
+}
+
+// emitRow pushes a row that was just written, best effort like everything else
+// on this path: the row is on record whether or not anybody hears of it.
+func (u *usageTracker) emitRow(row *store.SessionUsage) {
+	if u != nil && u.broadcast != nil && row != nil {
+		u.broadcast("usage", usageEvent(row))
+	}
 }
 
 func newUsageTracker(st *store.Store) *usageTracker {
@@ -298,6 +320,7 @@ func (u *usageTracker) record(t *store.Task, seg usageSegment) (*store.SessionUs
 			return nil, err
 		}
 		main.advance()
+		u.emitRow(row)
 	}
 	// A reply is the card's or a subagent's, never both.
 	side.drop(main)
@@ -309,6 +332,7 @@ func (u *usageTracker) record(t *store.Task, seg usageSegment) (*store.SessionUs
 			return row, err
 		}
 		side.advance()
+		u.emitRow(sub)
 	}
 	return row, nil
 }
