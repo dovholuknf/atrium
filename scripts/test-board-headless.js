@@ -4513,6 +4513,135 @@ async function carryLinkSection(browser, base) {
   tasksMode = was;
 }
 
+// ── the file-link tip survives a repaint of its row (backlog-2 t-001) ─────
+// xterm drops the link under the pointer when its row is redrawn, which fires
+// `leave` and then `hover` again. The tip used to hide on `leave` and come back
+// after the hover delay. It now stays up across a repaint, and still goes when
+// the pointer really leaves, on a click, or for a different path.
+async function linkTipSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  landList = [LAND["land-live"]];
+  landPerms = [];
+  const errors = [];
+  const ctx = await landContext(browser);
+  await ctx.addInitScript(() => {
+    const Real = window.WebSocket;
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
+        onopen: null, onclose: null, onmessage: null, onerror: null,
+        send() {}, close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  });
+  // Every word asked about is a file, so both paths become links.
+  await ctx.route("**/files/probe", route => {
+    const paths = JSON.parse(route.request().postData() || "{}").paths || [];
+    const found = paths.filter(p => /\//.test(p)).map(p => ({ path: p, rel: p, size: 1234, dir: false }));
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ found }) });
+  });
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await p.evaluate(() => attachTask("land-live"));
+    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live", null,
+      { timeout: slow(10000) });
+    await p.waitForTimeout(300);
+    const row = "see src/alpha.go here";
+    await p.evaluate(row => termSock.onmessage({ data: row + "\r\nsrc/beta.go\r\n" }), row);
+    await p.waitForTimeout(200);
+    // The tip's state, and every time it went on or off.
+    await p.evaluate(() => {
+      window.__tipLog = [];
+      const t = document.getElementById("tip");
+      new MutationObserver(() => window.__tipLog.push(t.classList.contains("on"))).observe(t,
+        { attributes: true, attributeFilter: ["class"] });
+    });
+    const tip = () => p.evaluate(() => {
+      const t = document.getElementById("tip");
+      return { on: t.classList.contains("on"), text: t.textContent };
+    });
+    const box = await p.locator("#t-screen .xterm-screen").boundingBox();
+    const cell = await p.evaluate(() => {
+      const d = term._core._renderService.dimensions.css.cell;
+      return { w: d.width, h: d.height };
+    });
+    const at = (col, r) => [box.x + cell.w * (col + 0.5), box.y + cell.h * (r + 0.5)];
+    const onAlpha = at(8, 0), onBeta = at(3, 1), off = at(40, 5);
+
+    // 1. Hovering brings the tip up after the delay.
+    await p.mouse.move(...off);
+    await p.mouse.move(...onAlpha, { steps: 3 });
+    await p.waitForTimeout(800);
+    let t = await tip();
+    if (!t.on || !/src\/alpha\.go/.test(t.text)) {
+      fail("hovering a path in the terminal did not show its tip, so this proves nothing: " + JSON.stringify(t));
+      return;
+    }
+
+    // 2. A repaint of the hovered row, then the pointer nudged so xterm asks for
+    // the link again. The tip must never go off in between.
+    await p.evaluate(row => { window.__tipLog.length = 0; termSock.onmessage({ data: "\x1b[3A\r" + row + "\r\n" }); }, row);
+    await p.mouse.move(onAlpha[0] + 1, onAlpha[1]);
+    await p.waitForTimeout(700);
+    const log = await p.evaluate(() => window.__tipLog.slice());
+    t = await tip();
+    if (log.includes(false)) fail("the tip went off while its row was repainted: " + JSON.stringify(log));
+    if (!t.on || !/src\/alpha\.go/.test(t.text)) fail("the tip was gone after its row repainted: " + JSON.stringify(t));
+
+    // 3. A different path replaces it at once, not after the delay.
+    await p.mouse.move(...onBeta, { steps: 2 });
+    await p.waitForTimeout(100);
+    t = await tip();
+    if (t.on && /alpha/.test(t.text)) fail("the tip for the old path stayed while the pointer was on another: " +
+      JSON.stringify(t));
+    await p.waitForTimeout(700);
+    t = await tip();
+    if (!t.on || !/src\/beta\.go/.test(t.text)) fail("the other path did not get its own tip: " + JSON.stringify(t));
+
+    // 4. The pointer leaving the link for blank terminal goes after the grace.
+    await p.mouse.move(...off, { steps: 2 });
+    await p.waitForTimeout(500);
+    t = await tip();
+    if (t.on) fail("the tip stayed after the pointer left the path: " + JSON.stringify(t));
+
+    // 5. The pointer leaving the terminal altogether hides at once.
+    await p.mouse.move(...onAlpha, { steps: 2 });
+    await p.waitForTimeout(800);
+    if (!(await tip()).on) fail("the tip did not come back for the second hover, so step 5 proves nothing.");
+    await p.mouse.move(box.x - 20, box.y - 20);
+    await p.waitForTimeout(50);
+    t = await tip();
+    if (t.on) fail("the tip stayed after the pointer left the terminal: " + JSON.stringify(t));
+
+    // 6. A click that opens the file takes it down at once.
+    await p.mouse.move(...onAlpha, { steps: 2 });
+    await p.waitForTimeout(800);
+    await p.mouse.click(...onAlpha);
+    await p.waitForTimeout(50);
+    t = await tip();
+    if (t.on) fail("the tip stayed after the path was clicked: " + JSON.stringify(t));
+
+    // 7. A scroll of the page hides it.
+    await p.mouse.move(...off);
+    await p.mouse.move(...onAlpha, { steps: 2 });
+    await p.waitForTimeout(800);
+    await p.evaluate(() => window.dispatchEvent(new Event("scroll")));
+    t = await tip();
+    if (t.on) fail("a scroll left the path's tip up: " + JSON.stringify(t));
+    if (errors.length) fail("the link tip page threw uncaught errors: " + errors.join(" | "));
+  } finally {
+    tasksMode = was;
+    await ctx.close();
+  }
+}
+
 // ── copy on select answers the pointer, not the find bar ──────────────────
 // Test plan BJ. The search addon shows a match by selecting it, so copy on
 // select used to copy every find keystroke, step and re-search. Typing in the
@@ -6437,7 +6566,7 @@ async function main() {
     const only = { termWear: termWearSection, bridge: bridgeSection, settingsOnce: settingsOnceSection,
       groupRemove: groupRemoveSection, worn: wornSection, restartGate: restartGateSection, restartStays: restartStaysSection, atriumDown: atriumDownSection,
       toastStays: toastStaysSection, groupColor: groupColorSection,
-      groupDrag: groupDragSection, tooltip: tooltipSection, popoutTagFlip: popoutTagFlipSection, idleRate: idleRateSection, foldStill: foldStillSection,
+      groupDrag: groupDragSection, tooltip: tooltipSection, linkTip: linkTipSection,popoutTagFlip: popoutTagFlipSection, idleRate: idleRateSection, foldStill: foldStillSection,
       untaggedSort: untaggedSortSection, newCard: newCardSection, themePreview: themePreviewSection, land: landSection, reselect: reselectSection,
       toastsTop: toastsTopSection, sayWhen: sayWhenSection, pasteSpinner: pasteSpinnerSection,
       pasteBig: pasteBigSection, pasteBusy: pasteBusySection, typing: typingSection, alias: aliasSection, copySelect: copySelectSection, busyGuard: busyGuardSection, keepalive: keepaliveSection,
