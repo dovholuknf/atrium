@@ -1656,6 +1656,7 @@ function sendInput(text, quiet, pasted) {
   if (pasted && !quiet) pasteBegin(d.length); // before the send
   send({ t: "in", d });
   if (quiet) return;
+  phoneFollow();
   if (term) term.scrollToBottom();
   followScrollUntil = Date.now() + followScrollFor;
   if (pasted) lagPasteMark("sent");
@@ -2448,7 +2449,10 @@ function phoneZoomFit() {
 // may resize (a resize moves the pty), so the rows under the keyboard are reached
 // by scrolling the pan container. It gets bottom padding for the part of it the
 // keyboard covers, or the last rows could never scroll clear of it.
-function keepCursorInView(host, t) {
+// Where this code last left the pane, so its own scroll event is recognised and is not read as the reader.
+let phoneOwn = { l: 0, t: 0 };
+
+function keepCursorInView(host, t, noPan) {
   if (!host || !t) return;
   const b = t.buffer.active;
   if (b.viewportY < b.baseY) return;
@@ -2467,6 +2471,7 @@ function keepCursorInView(host, t) {
   const pad = (covered ? Math.ceil(covered + ch * 2) : 0) + "px";
   if (host.style.paddingBottom !== pad) host.style.paddingBottom = pad;
   // The pane's own top padding, then the rows above the cursor.
+  if (noPan) return;
   const inner = parseFloat(getComputedStyle(host).paddingTop) || 0;
   const rowTop = hostBox.top + inner + b.cursorY * ch - host.scrollTop;
   const rowBottom = rowTop + ch * 2;
@@ -2475,6 +2480,7 @@ function keepCursorInView(host, t) {
   const colLeft = hostBox.left + b.cursorX * cw - host.scrollLeft;
   if (colLeft + cw > hostBox.right) host.scrollLeft += colLeft + cw - hostBox.right;
   else if (colLeft < hostBox.left) host.scrollLeft -= hostBox.left - colLeft;
+  phoneOwn = { l: host.scrollLeft, t: host.scrollTop };
 }
 
 // WHY THE PHONE BOUNCED (u-017). Focusing a terminal scrolls its helper textarea into view, and
@@ -2497,6 +2503,62 @@ function phoneSyncTextarea() {
   } catch (e) {}
 }
 
+// MANUAL PAN STATE (u-017b). `phoneTouching`: a finger is on the pane. `phoneManual`: the reader scrolled it
+// by hand, so the cursor follow is off until `phoneFollow` (typing, the key bar, a paste, or the follow chip).
+let phoneTouching = false, phoneManual = false, phoneManualPos = null;
+
+function phoneFollowChip(on) {
+  const c = document.getElementById("t-follow");
+  if (c) c.hidden = !on;
+}
+
+// The reader typed or tapped follow: the cursor is followed again, and brought into view now.
+function phoneFollow() {
+  if (!phoneManual) return;
+  phoneManual = false; phoneManualPos = null;
+  phoneFollowChip(false);
+  phoneKeepSoon(true);
+}
+
+// The reader moved the pane. A scroll that is exactly where this code left it is its own echo.
+function phoneManualScroll(host) {
+  if (!termPhone() || !phoneTouching) return;
+  if (host.scrollLeft === phoneOwn.l && host.scrollTop === phoneOwn.t) return;
+  phoneManual = true;
+  phoneManualPos = { l: host.scrollLeft, t: host.scrollTop };
+  phoneFollowChip(true);
+}
+
+function wirePhonePan() {
+  const host = document.getElementById("t-screen");
+  if (!host || host._phonePan) return;
+  host._phonePan = true;
+  host.addEventListener("touchstart", () => { phoneTouching = true; }, { passive: true });
+  const up = () => { phoneTouching = false; };
+  host.addEventListener("touchend", up, { passive: true });
+  host.addEventListener("touchcancel", up, { passive: true });
+  host.addEventListener("scroll", () => phoneManualScroll(host), { passive: true });
+  // a wheel or trackpad (the desktop-size override on a laptop) is a reader panning too
+  host.addEventListener("wheel", () => { phoneTouching = true; requestAnimationFrame(() => { phoneManualScroll(host); phoneTouching = false; }); }, { passive: true });
+  const pane = document.getElementById("term-pane");
+  if (pane && !document.getElementById("t-follow")) {
+    const c = document.createElement("button");
+    c.id = "t-follow"; c.type = "button"; c.hidden = true; c.textContent = "follow";
+    c.addEventListener("pointerdown", (e) => e.preventDefault());
+    c.addEventListener("click", phoneFollow);
+    pane.appendChild(c);
+  }
+  // A focus scroll the browser did for the textarea must not move a pan the reader chose.
+  document.addEventListener("focusin", (e) => {
+    if (!phoneManual || !phoneManualPos || !e.target || !e.target.classList || !e.target.classList.contains("xterm-helper-textarea")) return;
+    requestAnimationFrame(() => {
+      if (!phoneManual || !phoneManualPos) return;
+      host.scrollLeft = phoneManualPos.l; host.scrollTop = phoneManualPos.t;
+      phoneOwn = { l: host.scrollLeft, t: host.scrollTop };
+    });
+  });
+}
+
 let phoneKeepKey = "";
 function phoneKeepCursor(force) {
   if (!term || !termPhone()) return;
@@ -2510,7 +2572,10 @@ function phoneKeepCursor(force) {
     vv ? Math.round(vv.offsetTop) + "," + Math.round(vv.height) : ""].join("|");
   if (!force && key === phoneKeepKey) return;
   phoneKeepKey = key;
-  keepCursorInView(host, term);
+  // A MANUAL PAN WINS (u-017b). While a finger is down, and after the reader has panned by hand, the pane
+  // is never moved (only its bottom padding is kept). It follows the cursor again only on the reader's input
+  // (`phoneFollow`), never on output.
+  keepCursorInView(host, term, phoneTouching || phoneManual);
 }
 
 let phoneKeepQueued = false, phoneKeepForce = false;
@@ -2647,5 +2712,6 @@ function syncPhoneView() {
   }
   wirePhoneKeys();
   wirePhonePinch();
+  wirePhonePan();
   if (term) { markWide(); phoneZoomFit(); sizeTermHost(); }
 }
