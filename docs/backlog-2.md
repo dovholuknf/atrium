@@ -1503,6 +1503,8 @@ CLAUDE.md the main checkout has, at the same relative paths, and fails loudly if
 brief uses it from then on. Owned by Release and Quality (@merge). A worker's first check is that `CLAUDE.md`
 exists in its worktree.
 
+Status: built on claude/sa76, not merged. `scripts/new-worktree.ps1 -Name <name>`.
+
 ## 77. A merge pipeline that does not conflict or rerun (feature, HIGH)
 
 Raised 2026-09-28 by clint: "it always seems super slow". saorch timed its last four merges at about 20 to 25
