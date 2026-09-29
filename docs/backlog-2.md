@@ -1975,8 +1975,10 @@ length. The copy is rows times cols cells, about 10,000 for 206x50, and candidat
 **Following it.** Each line feed while the candidate is open records the row just finished as text, SGR stripped
 and trailing blanks trimmed. That is the repaint's row `n`. Recording at the line feed rather than at the end is
 what keeps it right when the last row's `\r\n` scrolls the grid, as a 50-row repaint of `\e[K\r\n` rows does.
-Printable text, `\r`, `CSI K` and SGR are the only things allowed while it is open. Anything else cancels it without
-a word: another cursor move, `CSI J`, insert or delete lines, a scroll, DECSTBM, the alternate screen, a size cut
+Printable text, `\r`, `CSI K` and SGR are the only things allowed while it is open. One exception: once exactly
+`rows - 1` rows are recorded, the next cursor move CLOSES the candidate instead of cancelling it, and the row the
+cursor was on is recorded as the last one first (see "Closing one"). Anything else cancels it without a word:
+another cursor move, `CSI J`, insert or delete lines, a scroll, DECSTBM, the alternate screen, a size cut
 from `applyCuts` after the `\e[H` (a cut just before it is the case below), or more than 64 KB consumed since it
 opened.
 
@@ -2001,6 +2003,8 @@ that the height hold is in. Without it option 3 is built blind. Tab-separated, o
 - `k`, and `added`, the rows spliced into history, both 0 when nothing was,
 - `why`, what cancelled it or which condition failed, empty otherwise.
 The last line totals each outcome and the rows added, so two readings a day apart compare at a glance.
+`repair=report` always renders in `screen` mode whatever `mode` says, ignores `ansi`, and reads whichever bytes
+`collapse` selects, the same as the text it replaces.
 
 **Tests.**
 - Unit, in `screen_test.go`: a 10-row grid, 10 numbered lines, then `\e[H` and 10 rows `\e[K\r\n` starting from
