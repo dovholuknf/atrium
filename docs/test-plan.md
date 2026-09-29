@@ -5257,3 +5257,127 @@ atrium-control server, not the older stdio CLI one.
 **Expected:** after the first restart the eligible live cards have their defaults (`@saorch`), and clashes carry
 `no alias` chips. After the second the cleared card stays without an alias: the pass is guarded by the setting
 `alias_default_backfill` and does not run again.
+
+## CN. A worker waiting on background runs is not STUCK
+
+### CN1. Background shells hold the alert
+
+1. On a room with the new binary and its Stop hook installed, launch an agent-launched worker.
+2. Tell it to start three `run_in_background` shells that each sleep four minutes, then end its turn without calling
+   `atrium_report`.
+3. Watch the card for five minutes.
+
+**Expected:** the card sits in needs-input with no STUCK, and the launcher gets no "ended its turn without
+reporting" notice.
+
+### CN2. The clock starts at the later stop
+
+1. Let the shells from CN1 finish. The worker wakes, reads them, and stops again.
+2. Leave it saying nothing to its launcher.
+
+**Expected:** the notice and STUCK arrive two minutes after that second stop, not after the first.
+
+### CN3. No background work behaves as before
+
+1. Repeat CN1 with no background shells.
+
+**Expected:** STUCK and the notice arrive as they did before this change.
+
+## CO. Revert snapshot name matches the file
+
+### CO1. Two different binaries
+
+1. Run `pwsh scripts/live/test-save-revert.ps1 -A <older exe> -B <newer exe>` with two binaries that report different
+   `atrium version` output.
+
+**Expected:** every line says PASS. Each snapshot is named `atrium.revert-<commit7>-<board8>.exe` from its own file's
+`atrium version`, and only one snapshot remains after each save.
+
+### CO2. A file that cannot answer
+
+1. The same script ends by saving a file that is not a program.
+
+**Expected:** a WARNING line, a snapshot named `atrium.revert-unknown-<timestamp>.exe`, and no error.
+
+## CP. Viewport changes apply in order
+
+### CP1. Two windows resizing at once
+
+- Automated: `go test ./internal/daemon -run TestConcurrentViewport -race` fails on the old code and passes now.
+- Manual: attach two browser windows of different sizes to one card, drag both at once, and check the pty size
+  (`stty size` in the shell) matches the wider window and the shorter height.
+
+## CQ. screen.go against xterm.js, and the pty size over the socket
+
+### CQ1. Run the differential
+
+1. From a checkout with `node` on the PATH, clear `ATRIUM_LOCATION`, `ATRIUM_SHARED_LOCATION` and
+   `ATRIUM_DEBUG_INPUTLAG`, then run `go test ./internal/daemon -run TestScreenAgainstXterm -v`.
+
+**Expected:** every subcase passes except `scroll region` and `wide characters`, which SKIP and print the difference.
+Without node the whole test skips and says so. A skip is a known bug in `screen.go` that is waiting on its own backlog
+item. When one is fixed the case fails with "now agree, so drop the skip", and the marker comes out.
+
+### CQ2. An accepted difference that goes away
+
+1. Read the `accept` map of any fixture. Each entry is a difference `screen.go` has on purpose, with the reason.
+
+**Expected:** if `screen.go` ever starts agreeing with xterm.js there, the test fails and names the entry to delete.
+
+### CQ3. The pty follows the pane
+
+1. Run `go test ./internal/daemon -run "TestTheAttachingViewers|TestReattachingAt|TestARestartedSession|TestASecondViewerSizes" -v`.
+
+**Expected:** all four pass.
+
+## CR. Hub input-lag log stays quiet when idle
+
+### CR1. Idle and typing
+
+- With `hub.err` input-lag logging on and a terminal attached but idle for 5 minutes, no `hub <room> echo: frame up ->
+  first bytes back ~45000ms` line appears.
+- Type into the same terminal: a `hub <room> echo` line still appears when the hop is over the threshold.
+- `go test ./internal/link -run "Lag|OnlyControl"` passes.
+
+## CS. One merge-check script and a dedicated merge worktree
+
+See `docs/backlog-2.md` item 77, parts a and e. Nothing here is Go: run the scripts.
+
+### CS1. The check in one call
+
+1. From a merge worktree, run `pwsh scripts/merge-check.ps1`.
+
+**Expected:** only failures print, then one summary line such as `merge-check: go 2100 pass, 1 flaky-pass | board ok
+(headless ran, NODE_PATH=...) | skins skipped (board unchanged) | build ok | PASSED`. Exit is 0. A check that did not
+run has no count on the line. A failure prints the failing test's own output and the line ends `FAILED`, exit 1.
+
+### CS2. Playwright is found, or the run fails loudly
+
+1. Run on a machine where no `node_modules` holds Playwright and no `-NodePath` is given.
+2. Run again with `-SkipHeadless`.
+
+**Expected:** the first fails with `playwright not found` and says how to fix it, rather than passing with the
+headless run skipped. The second prints `board ok (no headless)`. With Playwright present but chromium missing, the
+board check fails, since the headless run skipped itself.
+
+### CS3. Known noise is rerun alone
+
+1. Load the machine so `TestRealSessionsKeepTheirText` or an `internal/link` restart-gate test fails inside the run.
+
+**Expected:** each is rerun alone once. Passing alone, it is counted as `flaky-pass` and does not fail the run. Failing
+alone too, it is a real failure. Any other failing test is real at once.
+
+### CS4. Skins run only when the board changed
+
+1. After a merge commit that touches nothing under `internal/api/web/`, run the script. Then run with `-Board`.
+
+**Expected:** the first says `skins skipped (board unchanged)`, the second prints `all N skins agree...`. `-NoBoard`
+skips whatever the diff says, and `-Base <ref>` changes what the diff is taken against (default `HEAD^1`).
+
+### CS5. The merge worktree
+
+1. Run `pwsh scripts/setup-merge-worktree.ps1`, then run it again.
+
+**Expected:** the first creates `D:/worktrees/claude/atrium/merge` on `claude/merge-scratch`, links every CLAUDE.md,
+and installs Playwright and chromium. The second says the worktree is already registered and the install is done, and
+changes nothing. `merge-check.ps1` run from there needs no `-NodePath`.

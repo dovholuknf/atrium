@@ -5,6 +5,61 @@ section heading is just "what landed in this iteration."
 
 ## Unreleased
 
+- **One merge-check script and a dedicated merge worktree.** See `docs/backlog-2.md` item 77, parts a and e.
+
+  `scripts/merge-check.ps1` runs `go test -p 4 ./...` (with `ATRIUM_LOCATION` and `ATRIUM_DEBUG_INPUTLAG` cleared),
+  `check-board.sh` with the headless run and `NODE_PATH` preset, `check-skins.sh` when the diff touches
+  `internal/api/web/`, and the build. It prints failures and one summary line with a count per check, so a skipped
+  check is a missing count. Playwright is found from `-NodePath`, `ATRIUM_NODE_PATH`, the merge worktree or any
+  sibling worktree, and a missing one fails unless `-SkipHeadless` says it is meant. Known noise
+  (`TestRealSessionsKeepTheirText`, the link restart-gate tests) is rerun alone once and reported as `flaky-pass`.
+  `-SkipGo`, `-Board`, `-NoBoard`, `-Base` and `-SkipBuild` cut it down.
+  `scripts/setup-merge-worktree.ps1` makes `D:/worktrees/claude/atrium/merge` on `claude/merge-scratch`, links the
+  CLAUDE.md files and installs Playwright and chromium, idempotently, so merges never lock the main checkout.
+
+- **The hub's input-lag log no longer reports a fake echo on an idle terminal.** It no longer reports a fake ~45000ms "echo" every 45s on an idle terminal. The hub's echo clock
+  now starts only on a Write that carries a websocket data frame, not on the browser's pong (or any ping or close).
+  A control frame read back from the room, such as its idle ping, no longer closes a clock a keystroke started. A
+  Write with a data frame among control frames, or one that ends inside a frame, still counts as input. The room's own
+  lag timing (`internal/daemon/attach.go`) starts only on an `in` message, never a control frame, so it needed no
+  change.
+
+- **screen.go is checked against xterm.js.** See `docs/backlog-2.md` item 54.
+
+  `TestScreenAgainstXterm` feeds the same bytes, at the same size and with the same width marks, to `screen.go` and
+  to the vendored `internal/api/web/vendor/xterm.js` (run in plain node by `internal/daemon/testdata/xterm_dump.js`),
+  then compares every row, which cells carry an attribute, the cursor, and how many rows scrolled off. Trailing blanks
+  are trimmed on both, and attributes are compared as styled or default because `screen.go` has no colour model. The
+  fixtures are a startup banner, the kitty keyboard push and pop, ctrl-delete, ConPTY's full-width coloured diff
+  lines, the alt screen, bracketed paste, a width change mid stream, a bare `CSI H` repaint over long output (with
+  and without cursor moves), and a set of small single-feature traces. Two real differences were found and are
+  skipped with `backlog-2 NN` markers, and the accepted ones are written next to their fixtures. No `screen.go`
+  behaviour changed. Four size tests go in through the real websocket: the pty takes the attaching viewer's size,
+  a reattach at the same size does not resize, a restarted card follows the pane and not the saved width, and two
+  viewers get the widest width and the shortest height. Test only, nothing to deploy.
+
+- **Viewport changes apply in the order they were computed.** Two viewers resizing at the same moment could leave the pty at a stale size, with the ring's width marks
+  disagreeing with it. `setViewport` and `dropViewport` now hold one resize mutex across working out the agreed
+  size, the change guard, the width mark and the pty resize, so the last computed size is always the last applied.
+  The shell terminal shares the same code and is covered.
+
+- **A deploy's revert snapshot is named after the file it copies.** See `docs/backlog-2.md` item 65.
+
+  `Save-Revert` used to name `atrium.revert-<id>.exe` after the build the hub's health reported. When the room had been
+  deployed after the hub, the file held a newer build than the hub ran, so the name lied. The snapshot is now named
+  from `atrium version` run on the file itself, `atrium.revert-<commit7>-<board8>.exe`. A file that cannot answer gets
+  `atrium.revert-unknown-<timestamp>.exe` and a warning, and the deploy carries on. `scripts/live/test-save-revert.ps1`
+  proves it against two real binaries in a temp directory.
+
+- **A worker waiting on its own background runs is no longer marked STUCK.** See `docs/backlog-2.md` item 31 and
+  `docs/background-hold-design.md`.
+
+  A worker whose turn ends with background shells or headless runs still going is not marked STUCK, and its
+  launcher is not told it stopped silently. `atrium turn` now sends `background_running`, the count of running
+  non-subagent entries in the Stop payload's `background_tasks`, and the daemon holds the silent-stop alert while it
+  is above zero. When the work finishes the session wakes and stops again, and that later turn end is the clock.
+  The hold is capped at two hours (`ATRIUM_A2A_BACKGROUND_HOLD`) so a dev server left up cannot hide a real stop.
+
 - **Each item ships its own changelog and test-plan entry, and the merger folds them in.** See `docs/backlog-2.md`
   item 77 (b, c and g).
 
