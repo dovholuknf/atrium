@@ -79,8 +79,10 @@ function peekBody(t, v) {
   const scale = limit * 1.5;
   const fill = Math.min(100, (ctx / scale) * 100);
   const tot = (v && v.totals) || {};
-  const cell = (label, value) =>
-    `<div class="peek-cell"><b>${loading ? "&nbsp;" : esc(value)}</b><span>${esc(label)}</span></div>`;
+  const own = usageOwn(v && v.by_cause);
+  const cell = (label, value, tip) =>
+    `<div class="peek-cell"${tip ? ` data-tip="${esc(tip)}"` : ""}><b>${loading ? "&nbsp;" : esc(value)}</b>` +
+    `<span>${esc(label)}</span></div>`;
   return head +
     `<div class="peek-ctx${warn ? " warn" : ""}">
       <div class="peek-num"><b>${loading ? "&nbsp;" : usageTokens(ctx)}</b><span>context</span></div>
@@ -90,12 +92,14 @@ function peekBody(t, v) {
         `<span>warns at ${k}k</span></div>
     </div>
     <div class="peek-grid">
-      ${cell("turns", String(tot.rows || 0))}
-      ${cell("in", usageTokens(tot.input))}
-      ${cell("out", usageTokens(tot.output))}
-      ${cell("cache read", usageTokens(tot.cache_read))}
-      ${cell("cache write", usageTokens((tot.cache_write_5m || 0) + (tot.cache_write_1h || 0)))}
-      ${cell("est.", usageMoney(tot.cost))}
+      ${cell("prompts", String(own.prompts), USAGE_TIPS.prompts + ". " + USAGE_TIPS.scope)}
+      ${cell("calls", String(own.calls), USAGE_TIPS.calls)}
+      ${cell("uncached in", usageTokens(tot.input), USAGE_TIPS.input)}
+      ${cell("out", usageTokens(tot.output), USAGE_TIPS.output)}
+      ${cell("cache read", usageTokens(tot.cache_read), USAGE_TIPS.read)}
+      ${cell("cache write", usageTokens((tot.cache_write_5m || 0) + (tot.cache_write_1h || 0)),
+        "5m and 1h cache writes together. " + USAGE_TIPS.write5m + "; " + USAGE_TIPS.write1h)}
+      ${cell("est.", usageMoney(tot.cost), USAGE_TIPS.cost)}
     </div>` + peekFoot(t);
 }
 
