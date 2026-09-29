@@ -3770,7 +3770,8 @@ async function pasteSpinnerSection(browser, base) {
       pasteShow = f => { window.__shown++; real(f); };
     });
 
-    // 1. A one-line paste held on the socket for 50ms shows, then goes on the echo.
+    // 1. A one-line paste held on the socket for 50ms shows, and an echo inside
+    // the hold does not take it down (u-007: a busy runner echoes at once).
     const heldGot = await p.evaluate(() => new Promise(done => {
       const vis = () => { const el = document.getElementById("t-pasting"); return !!(el && !el.hidden); };
       pasteEnd();
@@ -3782,6 +3783,9 @@ async function pasteSpinnerSection(browser, base) {
       setTimeout(() => { termSock.bufferedAmount = 0; termSock.onmessage({ data: "one line" }); }, 50);
       setTimeout(() => { got.after = vis(); got.shown = window.__shown; done(got); }, 120);
     }));
+    // Inside the hold the echo is only noted. Held, then gone once it is quiet.
+    if (!heldGot.after) fail("an echo 50ms in took the spinner down inside its hold: " + JSON.stringify(heldGot));
+    heldGot.after = false;
     if (!heldGot.during || heldGot.shown !== 1) {
       fail("a one-line paste held on the socket for 50ms did not show the spinner: " + JSON.stringify(heldGot));
     }
@@ -3790,18 +3794,22 @@ async function pasteSpinnerSection(browser, base) {
     }
     if (heldGot.after) fail("the spinner stayed up after the paste drained and echoed: " + JSON.stringify(heldGot));
 
-    // 2. A paste that drains and echoes inside 20ms never flashes.
+    // 2. A paste that drains and echoes inside 20ms is still drawn, at once, and
+    // is gone once the runner has been quiet since the echo.
     const quick = await p.evaluate(() => new Promise(done => {
       pasteEnd();
       window.__shown = 0;
       termSock.bufferedAmount = 0;
       sendPasteText("x");
+      const got = { now: window.__shown };
       setTimeout(() => termSock.onmessage({ data: "x" }), 5);
-      setTimeout(() => done({ shown: window.__shown, flight: !!pasteFlight }), 150);
+      setTimeout(() => { got.flight = !!pasteFlight; done(got); }, 150);
     }));
-    if (quick.shown || quick.flight) {
-      fail("a paste that landed inside 20ms flashed the spinner: " + JSON.stringify(quick));
+    if (quick.now !== 1 || !quick.flight) {
+      fail("a paste that landed inside 20ms was not drawn at once and held: " + JSON.stringify(quick));
     }
+    await p.waitForFunction(() => !pasteFlight, null, { timeout: 4000 })
+      .catch(() => fail("a paste echoed once and then quiet never cleared"));
 
     // 3. Typed input never shows it: a key, an escape sequence, or a long burst.
     const typed = await p.evaluate(() => new Promise(done => {
@@ -4234,6 +4242,143 @@ async function pasteBigSection(browser, base) {
     await ctx.close();
   }
   if (errors.length) fail("the big paste page threw: " + errors.join(" | "));
+  landList = []; landPerms = [];
+  tasksMode = was;
+}
+
+// ── a slow paste shows the busy mark at once and keeps it ─────────────────
+// Test plan (u-007). The mock runner does what Claude Code does: it echoes the
+// paste within milliseconds, then works, and prints its real answer late. The
+// box has to be up on the gesture, before any slow step (the clipboard read, the
+// upload), survive the early echo, and go when the runner has said something
+// after the hold. Nothing coming back clears it at the cap.
+async function pasteBusySection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  landList = [LAND["land-live"]];
+  landPerms = [];
+  const errors = [];
+  const ctx = await landContext(browser);
+  await ctx.addInitScript(() => {
+    const Real = window.WebSocket;
+    window.__answerAt = 1000;
+    window.__silent = false;
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
+        onopen: null, onclose: null, onmessage: null, onerror: null,
+        send(str) {
+          let d = "";
+          try { d = JSON.parse(str).d || ""; } catch (e) {}
+          if (window.__silent || d.length < 3) return;
+          // Echo at once, then the real answer late.
+          setTimeout(() => this.onmessage && this.onmessage({ data: "[Pasted text #1]" }), 3);
+          setTimeout(() => this.onmessage && this.onmessage({ data: "the answer" }), window.__answerAt);
+        },
+        close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+    window.__vis = () => { const el = document.getElementById("t-pasting"); return !!(el && !el.hidden); };
+    // Samples the box at given offsets from now, and says what it saw.
+    window.__watch = (gesture, at) => new Promise(done => {
+      pasteEnd();
+      const t0 = performance.now();
+      const seen = {};
+      for (const ms of at) setTimeout(() => { seen[ms] = window.__vis(); }, ms);
+      gesture();
+      seen.sync = window.__vis();
+      seen.text = (document.getElementById("t-pasting") || {}).textContent || "";
+      setTimeout(() => done(seen), Math.max(...at) + 50);
+    });
+  });
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await p.evaluate(() => attachTask("land-live"));
+    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live", null,
+      { timeout: slow(10000) });
+    await p.waitForTimeout(300);
+
+    // What "landed" is: up on the gesture, up through the echo and the wait for
+    // the real answer at 1000ms, gone after it.
+    const expect = (name, seen, textRe) => {
+      if (!seen.sync) fail(name + ": the box was not up on the gesture itself: " + JSON.stringify(seen));
+      if (!seen[100] || !seen[300]) fail(name + ": the early echo took the box down: " + JSON.stringify(seen));
+      if (!seen[700]) fail(name + ": the box went before the runner's real answer: " + JSON.stringify(seen));
+      if (seen[1700]) fail(name + ": the box stayed after the runner answered: " + JSON.stringify(seen));
+      if (textRe && !textRe.test(seen.text)) fail(name + ": the box says the wrong thing: " + JSON.stringify(seen.text));
+    };
+    const at = [100, 300, 700, 1700];
+
+    // 1. ctrl-v, the paste event.
+    expect("ctrl-v", await p.evaluate(a => window.__watch(() => {
+      const dt = new DataTransfer();
+      dt.setData("text/plain", "hello there");
+      document.getElementById("t-screen").dispatchEvent(
+        new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
+    }, a), at), /pasting/);
+
+    // 2. Right click, with a clipboard that takes 300ms to answer: the box is
+    // already up while it is being read.
+    expect("right click", await p.evaluate(a => {
+      Object.defineProperty(navigator, "clipboard", { configurable: true,
+        value: { readText: () => new Promise(r => setTimeout(() => r("clipboard text"), 300)),
+          read: () => Promise.resolve([]) } });
+      return window.__watch(() => {
+        document.getElementById("t-screen").dispatchEvent(
+          new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2 }));
+      }, a);
+    }, at), /clipboard|pasting/);
+
+    // 3. The paste box.
+    expect("paste box", await p.evaluate(a => window.__watch(() => {
+      openPasteBox("");
+      document.getElementById("t-paste-in").value = "from the box";
+      sendPasteBox();
+    }, a), at), /pasting/);
+
+    // 4. An image whose upload is slow to answer, 600ms. The box says what is
+    // landing, and takes the path over as a paste when it arrives.
+    const img = await p.evaluate(a => {
+      const real = window.fetch;
+      window.fetch = (u, o) => /\/files$/.test(String(u))
+        ? new Promise(r => setTimeout(() => r(new Response(JSON.stringify({ paths: ["/tmp/pasted.png"] }),
+          { status: 200, headers: { "Content-Type": "application/json" } })), 600))
+        : real.call(window, u, o);
+      const r = window.__watch(() => {
+        uploadIntoTerm([new File(["png"], "pasted.png", { type: "image/png" })]);
+      }, a);
+      return r.then(seen => { window.fetch = real; return seen; });
+    }, [100, 400, 900, 2100]);
+    if (!img.sync || !/uploading pasted\.png/.test(img.text)) {
+      fail("an image upload did not show the box at once, naming the file: " + JSON.stringify(img));
+    }
+    if (!img[100] || !img[400]) fail("the box went while the upload was still out: " + JSON.stringify(img));
+    if (!img[900]) fail("the box went between the upload answering and the runner answering: " + JSON.stringify(img));
+    if (img[2100]) fail("the box stayed after an uploaded image landed: " + JSON.stringify(img));
+
+    // 5. Nothing comes back: the cap clears it. The clock is moved rather than
+    // waited for, so the poll finds the paste older than the cap.
+    const cap = await p.evaluate(() => new Promise(done => {
+      window.__silent = true;
+      pasteEnd();
+      sendPasteText("nobody answers");
+      const got = { before: window.__vis() };
+      const real = Date.now;
+      Date.now = () => real() + pasteGiveUpMs + 1000;
+      setTimeout(() => { Date.now = real; got.after = window.__vis(); window.__silent = false; done(got); }, 200);
+    }));
+    if (!cap.before) fail("a paste to a silent runner did not show the box: " + JSON.stringify(cap));
+    if (cap.after) fail("a paste to a silent runner was still boxed past the cap: " + JSON.stringify(cap));
+  } finally {
+    await ctx.close();
+  }
+  if (errors.length) fail("the busy paste page threw: " + errors.join(" | "));
   landList = []; landPerms = [];
   tasksMode = was;
 }
@@ -6295,7 +6440,7 @@ async function main() {
       groupDrag: groupDragSection, tooltip: tooltipSection, popoutTagFlip: popoutTagFlipSection, idleRate: idleRateSection, foldStill: foldStillSection,
       untaggedSort: untaggedSortSection, newCard: newCardSection, themePreview: themePreviewSection, land: landSection, reselect: reselectSection,
       toastsTop: toastsTopSection, sayWhen: sayWhenSection, pasteSpinner: pasteSpinnerSection,
-      pasteBig: pasteBigSection, typing: typingSection, alias: aliasSection, copySelect: copySelectSection, busyGuard: busyGuardSection, keepalive: keepaliveSection,
+      pasteBig: pasteBigSection, pasteBusy: pasteBusySection, typing: typingSection, alias: aliasSection, copySelect: copySelectSection, busyGuard: busyGuardSection, keepalive: keepaliveSection,
       stuck: stuckSection, carryLink: carryLinkSection,
       skinScope: skinScopeSection, skinHeal: skinHealSection, toastLives: toastLivesSection,
       history: historySection, contextSize: contextSizeSection, peekEverywhere: peekEverywhereSection, cardRoute: cardRouteSection,
@@ -8234,6 +8379,7 @@ async function main() {
     // ── any paste still in flight after 20ms shows the spinner ─────────────
     await pasteSpinnerSection(browser, base);
     await pasteBigSection(browser, base);
+    await pasteBusySection(browser, base);
     // ── the typing gate readout, off until switched on ─────────────────────
     await typingSection(browser, base);
     // ── a card wears its alias, and the menu sets it ────────────────────────
