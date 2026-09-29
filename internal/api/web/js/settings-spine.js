@@ -1417,6 +1417,10 @@ async function pass(signal) {
       ]).then(([, remote]) => { remoteLocal = remote; })
     : Promise.resolve();
 
+  // The alerts below read `lastTasks`, which the view sets as it paints, so
+  // they wait for the paint. Without it a card that arrived was announced a
+  // pass late, whenever the next one ran.
+  let painted = Promise.resolve();
   if (isEditing()) {
     // Hold the repaint, but keep the counters, sounds and toasts live: those
     // are what tell you something arrived.
@@ -1427,8 +1431,9 @@ async function pass(signal) {
     heldUpdate = true;
   } else {
     if (heldUpdate) { heldUpdate = false; showHeld(false); }
-    jobs.push(Promise.all([cards, permsJob])
-      .then(() => repaintLists(signal, !take.tasks && !take.perms)));
+    painted = Promise.all([cards, permsJob])
+      .then(() => repaintLists(signal, !take.tasks && !take.perms));
+    jobs.push(painted);
   }
 
   // What is lent out, so a card can say so and the menu knows without asking.
@@ -1448,7 +1453,7 @@ async function pass(signal) {
   // Merged into `perms` rather than alerted on separately, so the badge, the
   // window title and the widening nag all count one queue and none of them can
   // learn about rooms later.
-  jobs.push(Promise.all([cards, permsJob]).then(() => {
+  jobs.push(Promise.all([cards, permsJob, painted]).then(() => {
     const waiting = cardsLoaded ? cardsWaiting() : null;
     const local = permsLoaded ? permsLocal : null;
     const remote = remoteLocal;
