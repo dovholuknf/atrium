@@ -165,9 +165,10 @@ why, and may name a panel. The director then:
    case the entry says what the panel becomes. A panel named in the ask wins over both, and the director says so if
    the record disagrees with it. Answer 4 makes this the director's call, and every call is written down with its
    reason.
-3. **Opens the branch.** `review/<slug>/<target>-<sha7>` in dotagents, from the current tip of `review/main`, with no
-   commit yet. That tip is the base commit the reviewers read their files at.
-4. **Launches a review-manager.** One worker card per review, always, whatever the size (answer 8): title `saNN`,
+3. **Opens the branch.** `claude/review/<slug>/<target>-<sha7>` in dotagents, from the current tip of
+   `claude/review/main`, with no commit yet. That tip is the base commit the reviewers read their files at.
+4. **Launches a review-manager.** One worker card per review, always, whatever the size (answer 8): title and alias
+   `pr-<repo>-<number>` (`pr-ziti-4397`, `pr-zrok-1277`), never `saNN`, and named that way in every report (clint),
    model sonnet, theme active-work, tags `atrium:subagent` and `dept:review`, cwd the target repo's checkout. It is
    launched LEAN, with nothing at start that the review does not need, and its brief is minimal: the target, the
    panel and its sizing line, each reviewer's file path and the base commit to read it at, and the report path. It
@@ -196,21 +197,22 @@ clint can still run `/review-panel` by hand in any session. That run applies no 
 
 All reviewer-file writing happens in one dotagents worktree the director owns, `D:/worktrees/claude/dotagents/review`.
 The director is one card doing one thing at a time, so one worktree is enough: it switches branches there, and the
-main checkout clint syncs from is never touched.
+main checkout clint syncs from is never touched. Every branch the director writes is under `claude/`, because only
+clint commits to a main branch and clint's hook allows commits on `claude/*` (answer 15).
 
-- **`review/main`** is the integration branch, the `claude/main` of dotagents. It starts at `main` and is the only
-  branch the director merges into.
-- **`review/<slug>/<target>-<sha7>`** holds one review's changes, for example
-  `review/github-openziti-ziti/pr-4480-3f9c2ab` or `review/github-openziti-channel/a1b2c3d..e4f5a6b-e4f5a6b`. The head
-  sha keeps a second review of the same PR after a push on its own branch. The branch gets ONE commit, written when
-  the review-manager reports: every applied note for every persona on the panel, plus any refuted-finding entries. Its
-  subject says the repo, the target and the panel, for example `github/openziti/ziti pr-4480: steward, go-sec, 3 add,
-  1 drop`. Refused notes and the sizing call go in the body, since this repo's commits are the record of what a
-  review taught.
-- **`review/director/<yyyy-mm-dd>-<topic>`** holds a change to the dangerous-change record made outside any one
-  review, such as a seed or a correction clint asked for.
+- **`claude/review/main`** is the integration branch, the `claude/main` of dotagents. It starts at `main` and is the
+  only branch the director merges into.
+- **`claude/review/<slug>/<target>-<sha7>`** holds one review's changes, for example
+  `claude/review/github-openziti-ziti/pr-4480-3f9c2ab` or
+  `claude/review/github-openziti-channel/a1b2c3d..e4f5a6b-e4f5a6b`. The head sha keeps a second review of the same PR
+  after a push on its own branch. The branch gets ONE commit, written when the review-manager reports: every applied
+  note for every persona on the panel, plus any refuted-finding entries. Its subject says the repo, the target and
+  the panel, for example `github/openziti/ziti pr-4480: steward, go-sec, 3 add, 1 drop`. Refused notes and the sizing
+  call go in the body, since this repo's commits are the record of what a review taught.
+- **`claude/review/director/<yyyy-mm-dd>-<topic>`** holds a change to the dangerous-change record made outside any
+  one review, such as a seed or a correction clint asked for.
 
-**When they merge.** A review's branch merges into `review/main` with `--no-ff`, at the first of these:
+**When they merge.** A review's branch merges into `claude/review/main` with `--no-ff`, at the first of these:
 
 1. **Before the next review of the same repo starts.** Step 3 above merges every finished branch for that slug first,
    so the second PR reads what the first one taught, before clint has taken it into `main` (answer 7). That is the
@@ -225,14 +227,14 @@ main checkout clint syncs from is never touched.
 Two branches that edited the same file conflict at merge. The director resolves by hand: both sets of adds, both
 sets of drops, the 150-line cap applied after, and the resolution named in the merge commit.
 
-**How clint takes it.** At any merge point the director tells clint, on its card: `review/main` is N commits ahead of
-`main`, these files changed, read it with `git diff main...review/main` in dotagents. clint takes it with
-`git merge --ff-only review/main` in the main checkout, and the usual sync pushes it. If `main` has moved (every "sync
-agent files" commit moves it), the director first merges `main` into `review/main`, so the fast-forward always works.
-The director never commits on `main`, never pushes, and never runs `agent-sync.ps1`.
+**How clint takes it.** At any merge point the director tells clint, on its card: `claude/review/main` is N commits
+ahead of `main`, these files changed, read it with `git diff main...claude/review/main` in dotagents. clint takes it
+with `git merge --ff-only claude/review/main` in the main checkout, and the usual sync pushes it. If `main` has moved
+(every "sync agent files" commit moves it), the director first merges `main` into `claude/review/main`, so the
+fast-forward always works. The director never commits on `main`, never pushes, and never runs `agent-sync.ps1`.
 
-A branch clint rejects is deleted unmerged, or reverted on `review/main` if it was already merged. Either is one
-command, and the director does it on clint's word.
+A branch clint rejects is deleted unmerged, or reverted on `claude/review/main` if it was already merged. Either is
+one command, and the director does it on clint's word.
 
 ### The dangerous-change record
 
@@ -306,13 +308,53 @@ review-manager never walks comments.
     * Add a test to tests/http_tests.cpp: malformed CA, GET a public https site, expect failure.
     ```
 
-    The first line is the file, the line number, and the code on that line. The last bullet is either "Add a test to
-    <file>: <input>, expect <result>" or "No new test needed".
+    The first line is the file, the line number, and the code on that line. The last bullet is "Add a test to <file>:
+    <input>, expect <result>" when a test is needed. Rules 20 to 22 amend this shape.
 11. Each bullet is one sentence: no call chains, traces, evidence dumps or line lists. It is worded as "LLM review
     says", and kept uncertain and human.
 12. A comment never says the author built or ran anything. clint posts these under clint's own name, and did not run
     the repros.
 13. Nothing is ever posted to GitHub by the director, a review-manager or a reviewer. clint posts.
+
+Rules 14 to 24 come from the second half of the same session. Where one conflicts with rules 1 to 13, it wins. They
+are in `general.md` on dotagents branch `claude/review/director/2026-09-29-walk-rules`.
+
+**Walk order and completeness.**
+
+14. Once the sorted walk list has been shown, it is fixed. The director walks it in exactly that order and never skips
+    ahead. A new finding goes into its sorted place, and the director says where it went.
+15. Leaks are walk items too, each in its own sorted place. When PR code calls the framework that leaks (`make_identity`
+    calling `SecCertificateAddToKeychain` in `context.c`), the finding belongs to the PR, anchored on the PR line. A
+    leak is never skipped as "not caused by the PR".
+16. When clint skips an item, the director accepts it and moves on without arguing.
+
+**Line numbers.**
+
+17. Before the walk, and again whenever clint's view disagrees, the director checks the PR head (`gh pr view <n>
+    --json headRefOid`). If it moved since the review, every remaining item is re-anchored on the current head, and
+    the director says which commit the numbers come from. Repro results from the old head are softened.
+18. Line numbers come from `gh pr diff` or from raw file bytes (`gh api -X GET .../contents/<path>?ref=<sha>` with
+    `Accept: application/vnd.github.raw`, piped through `tee`). Never PowerShell `>` redirection, which shifted the
+    line count by 6 in that session.
+19. When clint's screenshot still disagrees after that, the director asks whether the Files tab shows "All commits"
+    rather than one commit or "changes since your last review".
+
+**Comment shape.** These amend rule 10.
+
+20. The severity goes on each item's label line, outside the comment block.
+21. The fix bullet is left out when there is no fix, and the test bullet is left out when no test is needed. "No new
+    test needed" is never written.
+22. Identifiers, functions, constants, enum values and file paths are formatted as `code`.
+23. An FYI (cross-repo impact, performance, anything not proven) is ONE question, not a claim followed by
+    conclusions. When clint asks "do we care? do we know?", the answer says three things: traced or run, who it hits,
+    and who it does not.
+24. clint's wording decides. If clint picks a name that does not exist yet, the director says so once, then writes the
+    comment that way.
+
+**Naming.**
+
+25. A review-manager is titled and aliased `pr-<repo>-<number>` (`pr-ziti-4397`, `pr-zrok-1277`), never `saNN`, and
+    every report names it that way.
 
 What this changes elsewhere in the design: the review-manager's report to the director carries the table's columns
 (Cause, Test status, PR-head line) on every finding, so the director can build the table and walk the comments
@@ -325,7 +367,7 @@ without reopening the review. The skill's step 7 report gains those two columns 
 | the digest, batched reads, turn budget, the `repo_notes` parse, passing notes through | dotfiles, `review-panel` skill and the four personas |
 | the reviewer files and the dangerous-change record | dotagents, `personas/<id>/repos/<host>/<org>/<repo>.md` |
 | picking panels, applying notes, branches and merges | the director, @review, one resident card |
-| each review's review-manager | an saNN worker, one per review, culled when it reports |
+| each review's review-manager | a `pr-<repo>-<number>` worker, one per review, culled when it reports |
 | proposed guards | the director's report, then clint, then `mercurius.yaml` or `CLAUDE.md` by hand |
 
 Nothing in atrium changes. No migration. The director and its workers are ordinary cards.
@@ -336,16 +378,16 @@ Nothing in atrium changes. No migration. The director and its workers are ordina
 clint undid that attempt on 09-23 and never reviewed it (answer 6). What is taken, by name:
 
 - **The trust split, as branches instead of folders.** The pack split `knowledge/` (a human agreed) from `memory/`
-  (the model believes). Here `main` is what clint took and `review/main` is what the director applied, which is the
-  same split with git doing the bookkeeping.
+  (the model believes). Here `main` is what clint took and `claude/review/main` is what the director applied, which
+  is the same split with git doing the bookkeeping.
 - **"Would a different persona make the same mistake?"** The pack's test for where a wrong finding goes. It decides
   between a reviewer-file false positive and a proposed guard, under the `mercurius.yaml` boundary above.
 - **`rejected.md`, folded in.** The pack had its conductor (the role this design calls the review-manager) append
   refuted findings to a per-persona file. Here they are false-positive entries in that persona's reviewer file,
   written by the director from the verify pass.
 - **"What is new" is a git fact.** The pack used a `Lessons-reviewed` trailer so no marker file was needed. Here it is
-  simpler still: `main..review/main`.
-- **Only the human pushes.** Unchanged, and now also true of `main`: the director stops at `review/main`.
+  simpler still: `main..claude/review/main`.
+- **Only the human pushes.** Unchanged, and now also true of `main`: the director stops at `claude/review/main`.
 - **The repo facts already written.** The pack's copies of `~/.claude/agent-memory/` hold lessons that are repo facts
   despite the "keep it general" rule: the openziti/channel `MultiListener` registration identity and lock order,
   the ziti CLI's zitified transport, the zitadel `rp` library as the OAuth exemplar, the hello-header budget, nested
@@ -412,10 +454,10 @@ Every step is a change clint reviews before it is used. None of it is started un
 
 **The director's own setup (after clint approves):**
 
-4. The dotagents worktree at `D:/worktrees/claude/dotagents/review` on a new `review/main` from `main`, and the
+4. The dotagents worktree at `D:/worktrees/claude/dotagents/review` on a new `claude/review/main` from `main`, and the
    reports folder `D:/worktrees/claude/reviews/`.
-5. A seed branch `review/director/<date>-seed` (answer 11): the openziti/ziti reviewer files for the four personas from
-   the parked lessons that are about openziti/ziti, each `@ unverified`, and the first dangerous-change entries,
+5. A seed branch `claude/review/director/<date>-seed` (answer 11): the openziti/ziti reviewer files for the four
+   personas from the parked lessons that are about openziti/ziti, each `@ unverified`, and the first dangerous-change entries,
    general and openziti/ziti, and the thirteen standing rules at the top of `general.md`. The seed copies.
    `~/.claude/agent-memory/` is left exactly as it is (answer 12).
 6. The first two openziti/ziti reviews started through the director, the second after the first's branch merged, and
@@ -423,26 +465,29 @@ Every step is a change clint reviews before it is used. None of it is started un
 
 ### Stage 2, as built (2026-09-29)
 
-Steps 1 to 5 are built by the director itself, with no workers, and everything is uncommitted for clint. Step 6 waits
-for clint to pick the first PR.
+Steps 1 to 5 are built by the director itself, with no workers. Everything is committed on `claude/` branches and
+nothing on a main branch (answer 15). Step 6 is the first two reviews clint picked (answer 17).
 
 - **dotfiles**, worktree `D:/worktrees/claude/dotfiles/review-stage2`, branch `claude/review-stage2` from the same
-  base as sa16 (`dd58560`). It carries sa16's stage 1 diff applied unchanged, with stage 2 on top, so it reads as
-  stage 1 plus stage 2 and sa16's worktree is untouched. `claude/skills/review-panel/SKILL.md` and the four personas
-  in `claude/agents/`.
-- **dotagents**, worktree `D:/worktrees/claude/dotagents/review`, branch `review/director/2026-09-29-seed` from
-  `review/main`, which sits at dotagents `main` (`4c1b5b7`). `scripts/_common.ps1` (the exclusion), and six new
-  files under `personas/`: the four openziti/ziti reviewer files, and the director's `general.md` and openziti/ziti
-  danger file.
-- **Reports folder** `D:/worktrees/claude/reviews/`, empty.
+  base as sa16 (`dd58560`), one commit, `1b96a0e`. It carries sa16's stage 1 diff unchanged, with stage 2 on top and
+  "conductor" renamed "review-manager" in the skill (answer 16), so it reads as stage 1 plus stage 2 and sa16's
+  worktree is untouched. `claude/skills/review-panel/SKILL.md` and the four personas in `claude/agents/`.
+- **dotagents**, worktree `D:/worktrees/claude/dotagents/review`. The seed is `1348dd1` on
+  `claude/review/director/2026-09-29-seed`, merged into `claude/review/main` as `ec62191`, from dotagents `main` at
+  `4c1b5b7`. `scripts/_common.ps1` (the exclusion), and six new files under `personas/`: the four openziti/ziti
+  reviewer files, and the director's `general.md` and openziti/ziti danger file.
+- **Reports folder** `D:/worktrees/claude/reviews/`.
 
 Two things the build found that the stage 2 steps above did not say:
 
 - **The finding schema gained two fields,** `third_party` and `test_status`, and `line` is defined as the PR head's
   line. Cause is derived from `third_party` and the existing `preexisting`, so no field duplicates another.
-- **A reviewer reads its file at a commit, and the seed is not committed yet.** The first review through the
-  director needs the seed committed on its branch and merged into `review/main`, so there is a commit to read at.
-  That commit waits for clint's word.
+- **A reviewer reads its file at a commit,** so the seed had to be committed and merged before the first review. It
+  was, once answer 15 put the branches under `claude/`.
+- **Until clint takes `claude/review-stage2`, a review runs on the stage 2 skill and personas from that worktree**
+  (answer 17). The review-manager's cwd is a run folder holding copies of the four personas under `.claude/agents/`,
+  since a project subagent wins over a user-level one of the same name. The skill is not relied on the same way: the
+  brief names the stage 2 `SKILL.md` by absolute path and the review-manager follows that file.
 
 ## Review
 
@@ -482,7 +527,7 @@ way @merge owns `claude/main`. The design is revised around it before stage 2 st
 
 The eight questions the first revision asked, answered through @orchestrator, numbered on from the first set.
 
-7. **`review/main` first.** Yes. The next review reads `review/main` before clint takes it into `main`.
+7. **`claude/review/main` first.** Yes. The next review reads `claude/review/main` before clint takes it into `main`.
 8. **A worker per review.** Always, and lean: no unneeded context at start, a lean launch and a minimal brief.
 9. **Reports.** At `D:/worktrees/claude/reviews/<slug>/<target>-<sha7>.md`, never committed.
 10. **The exclusion.** A worker may make the `personas` exclusion in dotagents `scripts/_common.ps1`, uncommitted.
@@ -491,3 +536,15 @@ The eight questions the first revision asked, answered through @orchestrator, nu
 13. **Concurrency and naming.** Three at once to start. The hierarchy is the director, then its per-review
     subordinates, and those spawn the reviewer agents. "Conductor" is renamed "review-manager" everywhere.
 14. **Mercurius.** One round on the revision, anything useful folded in. clint's read is what decides.
+
+## clint's answers to stage 2 as built, 2026-09-29
+
+15. **Branches.** Only clint commits to main branches. The director may commit to any `claude/*` branch, and clint's
+    hook enforces that. The dotagents branches are `claude/review/main`,
+    `claude/review/<host>-<org>-<repo>/<target>-<sha7>` and `claude/review/director/<date>-<topic>`. The seed is committed and merged into
+    `claude/review/main`, and the dotfiles `claude/review-stage2` work is committed.
+16. **One word.** "Conductor" is renamed "review-manager" in the `review-panel` skill too.
+17. **The first reviews.** openziti/ziti PR #4397, then openziti/zrok PR #1277, which may run beside it and starts
+    with no reviewer files. Each through the director's flow with its own review-manager, on the skill and personas
+    from the `review-stage2` worktree, handed back as the standing rules say, and the comments walked with clint one
+    at a time on the director's card.
