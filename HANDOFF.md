@@ -1,6 +1,8 @@
 # HANDOFF: @ui, director of the board, branch claude/ui
 
-Read BRIEF.md and DIRECTOR.md first. They still hold. Written 2026-09-29 around 03:45 UTC.
+Read BRIEF.md and DIRECTOR.md first. They still hold. Written 2026-09-29 around 03:45 UTC, updated at the cycle
+with the headless result. The orchestrator already has the three open questions below, and wants every turn to end
+with `atrium_report`.
 
 ## Rules added since BRIEF.md (from the orchestrator, atrium-87300)
 
@@ -29,8 +31,15 @@ In flight:
   01a0eb39-9ae9-7def-a47a-d2d40ade9d82. It reports to this card. It goes in the NEXT batch.
 
 Batch suite on claude/ui before the sa43 merge: `go test -p 4 ./...` failed only TestRealSessionsKeepTheirText
-(known noise). check-board.sh passed. The headless full run was still going (background task in the old context,
-logs in the scratchpad `headless.log`, which may not survive the cycle). Treat it as not yet known.
+(known noise). check-board.sh passed. The headless full run was still going at the cycle (log:
+C:/Users/claude/AppData/Local/Temp/claude/D--worktrees-claude-atrium-ui/c7720565-5f3e-4a42-9025-68bf67ea86a6/scratchpad/headless.log).
+By then it had 13 FAILs, ALL in the atrium-down and restart-cover section: "a reload with atrium down did not load
+a page: net::ERR_EMPTY_RESPONSE", down.html clock empty, restart cover not drawn, and "the atrium-down pages threw:
+TypeError: Cannot read properties of null (reading 'open')". None of 78, 44 or 43 touches down.html or the restart
+cover, so check that section on claude/main before blaming this branch: in a scratch worktree of claude/main, or by
+`git stash`-free means such as running `HEADLESS_ONLY=<that section>` on claude/ui and again on a claude/main
+worktree. Item 28 in backlog-2 says the full headless run fails often on claude/main. If it fails the same on
+claude/main, hand to @merge saying so. If only on claude/ui, find which merge broke it before handing off.
 
 ## Next steps, in order
 
