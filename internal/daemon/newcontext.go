@@ -43,9 +43,11 @@ import (
 // running now, and a restart ends the terminal it was typing into. A failed
 // chip does not survive one either: it described a sequence nobody is running.
 //
-// A FAILED STEP STAYS ON THE CARD with its reason until it is dismissed or the
-// action is run again, so a sequence that stopped is never mistaken for one that
-// finished.
+// A FAILED STEP STAYS ON THE CARD with its reason until the clear is PROVEN (a
+// SessionStart naming a conversation other than the run's), the action is run
+// again, or it is dismissed. Never on a turn start: a turn says nothing about
+// whether the context went. So a sequence that stopped is never mistaken for one
+// that finished. The reason stays in the card's history as an event.
 
 // The steps a chip can be on.
 const (
@@ -145,6 +147,9 @@ type newContext struct {
 	file   string
 	since  time.Time
 	reason string
+	// conv is the conversation the run started in. A failed chip clears when a
+	// SessionStart names a different one, which is the proof the clear happened.
+	conv string
 	// gen tells a run whether it is still the card's. A dismiss or a fresh run
 	// bumps it, and the goroutine it replaced stops without saying anything.
 	gen uint64
@@ -167,15 +172,49 @@ func (n *newContexts) stopAll() { n.stopOnce.Do(func() { close(n.stop) }) }
 
 // begin claims a card for a run and returns its generation, or false when one is
 // already going. A failed chip is not going: running the action again replaces it.
-func (n *newContexts) begin(taskID, file string) (uint64, bool) {
+func (n *newContexts) begin(taskID, file, conv string) (uint64, bool) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	if cur := n.by[taskID]; cur != nil && cur.step != NewContextFailed {
 		return 0, false
 	}
 	n.gens++
-	n.by[taskID] = &newContext{step: NewContextCapture, file: file, since: time.Now(), gen: n.gens}
+	n.by[taskID] = &newContext{step: NewContextCapture, file: file, conv: conv, since: time.Now(), gen: n.gens}
 	return n.gens, true
+}
+
+// conversationOf is the conversation a card's session is in now: the id its last
+// SessionStart reported, else the resume id stored on the card.
+func (d *Daemon) conversationOf(t *store.Task) string {
+	if d.wake != nil {
+		if c := d.wake.conversation(t.ID); c != "" {
+			return c
+		}
+	}
+	return t.ResumeID
+}
+
+// sessionStarted clears a FAILED chip when a SessionStart names a conversation
+// other than the one the run began in: a new conversation really began, so the
+// clear did happen. It reports whether it cleared one.
+//
+// NEVER ON A TURN START. A peer message can start a turn in a card whose clear
+// failed, and in one whose context had cleared but whose wake was not typed. Both
+// turns say nothing about whether the context went, so the chip stays until this,
+// a rerun, or a dismissal. A run with no starting conversation on record cannot
+// be proven and stays as well.
+func (n *newContexts) sessionStarted(taskID, conv string) bool {
+	if n == nil || conv == "" {
+		return false
+	}
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	cur := n.by[taskID]
+	if cur == nil || cur.step != NewContextFailed || cur.conv == "" || cur.conv == conv {
+		return false
+	}
+	delete(n.by, taskID)
+	return true
 }
 
 // mine reports whether gen is still the card's run.
@@ -323,7 +362,7 @@ func (d *Daemon) StartNewContext(taskID string) error {
 	if other := d.nctx.sameDirBusy(d, task); other != "" {
 		return &newContextSharedError{other: other}
 	}
-	gen, ok := d.nctx.begin(taskID, HandoffName(task))
+	gen, ok := d.nctx.begin(taskID, HandoffName(task), d.conversationOf(task))
 	if !ok {
 		return errNewContextBusy
 	}
@@ -389,44 +428,23 @@ func (d *Daemon) runNewContext(taskID string, gen uint64) {
 		reason := step + ": " + err.Error()
 		if d.nctx.fail(taskID, gen, reason) {
 			log.Printf("[atrium] new context on %s stopped, %s", taskID, reason)
+			// The chip goes when the clear is proven, and the reason stays in the card's
+			// history after it.
+			if err := d.st.AppendEvent(taskID, store.EventNotified, map[string]any{
+				"by": newContextBy, "failed": reason,
+			}); err != nil {
+				log.Printf("[atrium] could not record the new context failure on %s: %v", taskID, err)
+			}
 			d.publishTask(taskID)
 			d.releaseHeld(taskID)
 		}
 	}
-	started := time.Now()
 
-	// 1. The capture prompt, typed once the runner is between turns.
-	turns := d.act.turnsBegun(taskID)
-	if err := d.ncType(taskID, gen, newContextLabel, newContextCapture(file), ncTiming.captureEnd); err != nil {
-		fail("could not type the capture prompt", err)
-		return
-	}
-	// 2. Wait for the turn it starts to end.
-	err := d.ncWait(taskID, gen, ncTiming.captureBegin, "the capture prompt to start a turn",
-		func() (bool, error) { return d.act.turnsBegun(taskID) > turns, nil })
-	if err != nil {
-		fail("the capture prompt did nothing", err)
-		return
-	}
-	quiet := time.Time{}
-	err = d.ncWait(taskID, gen, ncTiming.captureEnd, "the capture turn to end", func() (bool, error) {
-		if d.act.midTurn(taskID) || d.act.onSubagents(taskID) {
-			quiet = time.Time{}
-			return false, nil
-		}
-		if quiet.IsZero() {
-			quiet = time.Now()
-		}
-		return time.Since(quiet) >= ncTiming.turnSettle, nil
-	})
-	if err != nil {
-		fail("the capture did not finish", err)
-		return
-	}
-	// Not cleared over a handoff that was never written. The clear cannot be
-	// taken back, and the capture is the only thing that makes it safe.
-	if err := d.handoffWritten(taskID, file, started); err != nil {
-		fail("nothing cleared", err)
+	// 1 and 2. The capture prompt, the turn it starts, and the file it wrote. Not
+	// cleared over a handoff that was never written: the clear cannot be taken
+	// back, and the capture is the only thing that makes it safe.
+	if step, err := d.ncCapture(taskID, gen, file); err != nil {
+		fail(step, err)
 		return
 	}
 
@@ -441,7 +459,7 @@ func (d *Daemon) runNewContext(taskID string, gen uint64) {
 		fail("could not type /clear", err)
 		return
 	}
-	err = d.ncWait(taskID, gen, ncTiming.clearWait, "a new session to start after /clear (is the session hook installed?)",
+	err := d.ncWait(taskID, gen, ncTiming.clearWait, "a new session to start after /clear (is the session hook installed?)",
 		func() (bool, error) {
 			at, ok := d.wake.sessionStarted(taskID)
 			return ok && at.After(before) && !at.Before(typedAt), nil
@@ -470,7 +488,10 @@ func (d *Daemon) runNewContext(taskID string, gen uint64) {
 		fail("the wake was not typed", err)
 		return
 	}
-	if err := d.ncType(taskID, gen, newContextLabel, newContextWake(file), ncTiming.typeWait); err != nil {
+	// A turn in progress is waited out like the capture's, not for typeWait: the new
+	// session may already be taking a turn on something else (r-016, @ui), and the
+	// cycle fails only if no gap opens in captureEnd.
+	if err := d.ncType(taskID, gen, newContextLabel, newContextWake(file), ncTiming.captureEnd); err != nil {
 		fail("could not type the wake prompt", err)
 		return
 	}
@@ -479,6 +500,42 @@ func (d *Daemon) runNewContext(taskID string, gen uint64) {
 		d.publishTask(taskID)
 		d.releaseHeld(taskID)
 	}
+}
+
+// ncCapture is the capture half of the sequence: the prompt typed between turns,
+// the turn it starts waited out, and the card's own file checked. It returns the
+// step that stopped it and why. The idle parking runs this alone, with no clear
+// after it, so a card is asked to write its handoff without losing its context.
+func (d *Daemon) ncCapture(taskID string, gen uint64, file string) (string, error) {
+	started := time.Now()
+	turns := d.act.turnsBegun(taskID)
+	if err := d.ncType(taskID, gen, newContextLabel, newContextCapture(file), ncTiming.captureEnd); err != nil {
+		return "could not type the capture prompt", err
+	}
+	// Wait for the turn it starts to end.
+	err := d.ncWait(taskID, gen, ncTiming.captureBegin, "the capture prompt to start a turn",
+		func() (bool, error) { return d.act.turnsBegun(taskID) > turns, nil })
+	if err != nil {
+		return "the capture prompt did nothing", err
+	}
+	quiet := time.Time{}
+	err = d.ncWait(taskID, gen, ncTiming.captureEnd, "the capture turn to end", func() (bool, error) {
+		if d.act.midTurn(taskID) || d.act.onSubagents(taskID) {
+			quiet = time.Time{}
+			return false, nil
+		}
+		if quiet.IsZero() {
+			quiet = time.Now()
+		}
+		return time.Since(quiet) >= ncTiming.turnSettle, nil
+	})
+	if err != nil {
+		return "the capture did not finish", err
+	}
+	if err := d.handoffWritten(taskID, file, started); err != nil {
+		return "nothing cleared", err
+	}
+	return "", nil
 }
 
 // ncWait polls cond until it is true, the run is replaced, the terminal goes, or
@@ -518,18 +575,39 @@ func (d *Daemon) ncWait(taskID string, gen uint64, limit time.Duration, what str
 // Only between turns: a prompt typed mid-turn is held by the runner and merged
 // with whatever else lands, which is the race this sequence exists to avoid. A
 // dialog on screen stops it as well, since the Enter would answer it.
+//
+// THE QUIET CHECK AND THE WRITE ARE ONE STEP. The check (no prompt event and no
+// turn begun for `turnSettle`, no turn in progress, no dialog, and the run still
+// the card's) runs under the input lock `injectPeer` takes, so nothing typed by
+// the injector or the operator can land between "quiet" and the write. The
+// cheap look before it only spares taking the lock every poll.
+//
+// THE HOLD IS NOT ADDED HERE. r-007 stage 1b already holds the card's peer
+// injector and every delivery path (`holdingMessages`) from the capture to the
+// wake, so nothing else types into the card during a run. What that could not
+// give was atomicity: a message already past its own check when the run began.
+// The lock gives it.
 func (d *Daemon) ncType(taskID string, gen uint64, label, text string, limit time.Duration) error {
 	return d.ncWait(taskID, gen, limit, "an empty line and no turn in progress", func() (bool, error) {
 		run := d.sup.get(taskID)
 		if run == nil || d.act.dialogOpen(taskID) || d.act.midTurn(taskID) {
 			return false, nil
 		}
-		// Checked again at the last moment: a dismiss between the poll and the
-		// write must not be typed after.
-		if !d.nctx.mine(taskID, gen) {
+		gone := false
+		quiet := func() bool {
+			// Checked at the last moment: a dismiss between the poll and the
+			// write must not be typed after.
+			if !d.nctx.mine(taskID, gen) {
+				gone = true
+				return false
+			}
+			return !d.act.dialogOpen(taskID) && !d.act.midTurn(taskID) &&
+				d.act.sinceBusy(taskID) >= ncTiming.turnSettle
+		}
+		wrote, err := d.typeLabelledGuarded(run, taskID, label, text, quiet)
+		if gone {
 			return false, errNewContextGone
 		}
-		wrote, err := d.typeLabelledThroughGate(run, taskID, label, text)
 		if err != nil || !wrote {
 			return false, err
 		}

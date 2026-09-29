@@ -689,6 +689,11 @@ func (d *Daemon) Launch(req LaunchRequest) (*store.Task, error) {
 	t, err := d.launchLocked(req)
 	if err == nil && req.TaskID != "" {
 		d.startedAt.Store(req.TaskID, time.Now())
+		// A runner started onto a parked card is the card waking up, whoever
+		// pressed what. `unpark` itself calls launchLocked, so it never comes here.
+		if _, uerr := d.st.Unpark(req.TaskID, "launch"); uerr != nil {
+			log.Printf("[atrium] could not clear the parked mark on %s: %v", req.TaskID, uerr)
+		}
 	}
 	return t, err
 }
