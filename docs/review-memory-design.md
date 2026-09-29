@@ -169,10 +169,12 @@ why, and may name a panel. The director then:
    `claude/review/main`, with no commit yet. That tip is the base commit the reviewers read their files at.
 4. **Launches a review-manager.** One worker card per review, always, whatever the size (answer 8): title and alias
    `pr-<repo>-<number>` (`pr-ziti-4397`, `pr-zrok-1277`), never `saNN`, and named that way in every report (clint),
-   model sonnet, theme active-work, tags `atrium:subagent` and `dept:review`, cwd the target repo's checkout. It is
+   model sonnet, theme active-work, tags `atrium:subagent`, `dept:review`, `review` and `pr`, cwd the target repo's
+   checkout. It is
    launched LEAN, with nothing at start that the review does not need, and its brief is minimal: the target, the
    panel and its sizing line, each reviewer's file path and the base commit to read it at, the repo's known consumers
-   from its review-director file with their checkouts (standing rule 27), and the report path. It
+   from its review-director file with their checkouts (standing rule 27), the second-opinion setting (rule 29,
+   Mercurius unless clint named a model), and the report path. It
    runs the `review-panel` skill with exactly that panel, writes nothing to dotagents, writes its full report to the
    report path and one file per finding to `<run>/findings/` (skill step 7, standing rule 10), and reports to @review with the verdict, the findings, every `repo_notes` block by persona, and every
    refuted finding with its reason. At most three review-managers run at once to start (answer 13), and a fourth ask
@@ -383,6 +385,26 @@ are in `general.md` on dotagents branch `claude/review/director/2026-09-29-walk-
     step. That turns a vague fit finding into a stated impact. A repo's consumers are listed in its review-director
     reviewer file under `## Known consumers`, with the local checkout to grep. For tlsuv: ziti-sdk-c,
     ziti-tunnel-sdk-c and ziti-sdk-nodejs.
+
+**Links, a second opinion, and tags.** In `general.md` at dotagents `c71fa85`.
+
+28. Every report, walker message and finding file starts with the PR URL. Every finding carries a deep link to its
+    line in the Files tab, `.../pull/<n>/files#diff-<sha256 of the path>R<line>` (`L` for a removed line), after its
+    label line and in the table. GitHub has no URL that opens a comment box, so the link lands on the line and clint
+    clicks `+`, said once per walk. One link per review is checked against `gh pr diff`, never guessed.
+29. After the panel and the verify pass, before the walk, a different model gives a second opinion on the distilled
+    findings: the report without its repo notes, the finding files, the diff and the changed files at the head. Its
+    verdict per finding goes in that finding's Evidence, and a new finding goes in its sorted place marked as its own.
+    Where it disagrees, the review-manager reads the code, decides, and writes why. It never reads a reviewer file.
+    Which model is a setting: Mercurius by default, or a runner card on `codex` or `gemini`, named by clint when he
+    asks for a review, and named in the report. Skill step 8 is the procedure. `general.md` lists the room's runners
+    and what each is chosen for.
+30. Every review-manager and walker is tagged `atrium:subagent`, `dept:review`, `review` and `pr`.
+
+The first second opinions, run by the director on the two reviews already filed (Mercurius, codex gpt-5.5):
+zrok #1277 went from 14 rows to 15. Its new row 04 was the critic's possible gap 1, the ambiguous commit, and one
+medium went to low. ziti #4397 went from 12 rows to 11: four mediums went to low and one was refuted. The director
+overruled it three times, each with the reason in the finding's Evidence.
 
 What this changes elsewhere in the design: the review-manager's report to the director carries the table's columns
 (Cause, Test status, PR-head line) on every finding, so the director can build the table and walk the comments
