@@ -211,3 +211,58 @@ func TestANonClaudeCardHasNoSize(t *testing.T) {
 		t.Fatalf("a non-Claude card has a size: %+v", got)
 	}
 }
+
+// Item 62, sa58: a worker told at 151k was cleared onto a new session on the
+// same card and grew to 336k with no second notice, because the resume id
+// does not follow a `/clear` until the new transcript has something in it.
+// The new session starting re-arms the notice, and the new transcript is the
+// one read, before its first turn has ended.
+func TestAClearedCardIsANewCrossing(t *testing.T) {
+	d := testDaemon(t)
+	launcher, worker := launchedPair(t, d)
+	reply := withTranscript(t, d, worker)
+	reply(151_000)
+	watch(t, d)
+	if n := len(contextNotices(t, d, launcher.ID)); n != 1 {
+		t.Fatalf("launcher has %d context notices, want 1", n)
+	}
+
+	// `/clear`: the session hook says a new session started, with nothing
+	// written behind it yet, so the card keeps its old resume id.
+	cleared := filepath.Join(t.TempDir(), "cleared.jsonl")
+	old := d.ctx.transcript
+	d.ctx.transcript = func(cwd, id string) string {
+		if id == "sess-cleared" {
+			return cleared
+		}
+		return old(cwd, id)
+	}
+	no := false
+	if err := d.onSession(SessionEvent{Agent: worker.WireName, Event: "start", Source: "clear",
+		Resume: "sess-cleared", Resumable: &no, TaskID: worker.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := d.st.Get(worker.ID); got.ResumeID != "sess-"+worker.WireName {
+		t.Fatalf("resume id %q, want the old one kept until the new session writes", got.ResumeID)
+	}
+	watch(t, d)
+
+	line := fmt.Sprintf(`{"type":"assistant","timestamp":%q,"message":{"model":"claude-opus-5-5",`+
+		`"usage":{"input_tokens":1,"cache_creation_input_tokens":0,"cache_read_input_tokens":%d}}}`+"\n",
+		time.Now().UTC().Format(time.RFC3339Nano), 335_999)
+	if err := os.WriteFile(cleared, []byte(line), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	watch(t, d)
+	if got, _ := d.contextSizeFor(worker.ID).(*ContextSize); got == nil || got.Tokens != 336_000 {
+		t.Fatalf("context %+v, want the cleared session's 336k", got)
+	}
+	msgs := contextNotices(t, d, launcher.ID)
+	if len(msgs) != 2 || !strings.Contains(msgs[1].Text, "336k") {
+		t.Fatalf("launcher has %v, want a second notice at 336k", msgs)
+	}
+	watch(t, d)
+	if n := len(contextNotices(t, d, launcher.ID)); n != 2 {
+		t.Fatalf("launcher has %d context notices, want still 2", n)
+	}
+}

@@ -52,12 +52,47 @@ type contextSizes struct {
 	// threshold is a new look at an unchanged size: a card now under a raised
 	// line is re-armed before it grows past it.
 	judged map[string]int64
+	// session is the session each card's runner last said it started, which
+	// is newer than its resume id after a `/clear`. See started.
+	session map[string]string
 	// transcript finds a card's transcript. api.TranscriptPath, swapped in tests.
 	transcript func(cwd, sessionID string) string
 }
 
 func newContextSizes() *contextSizes {
-	return &contextSizes{m: map[string]contextSeen{}, judged: map[string]int64{}, transcript: api.TranscriptPath}
+	return &contextSizes{m: map[string]contextSeen{}, judged: map[string]int64{}, session: map[string]string{},
+		transcript: api.TranscriptPath}
+}
+
+// started records the session a card's runner says it has just started.
+//
+// A `/clear` starts a new session on the same card, with a new transcript, and
+// the resume id does not follow it until the new one has something written:
+// the session hook keeps the old id, rightly, and only the next Stop moves it.
+// Read by the resume id, the card sat on its old transcript's last size for
+// that whole first turn, and the notice, claimed for the old id, did not come
+// again for the new one (item 62, sa58: 151k, cleared, 336k with no word).
+func (c *contextSizes) started(id, sessionID string) {
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.session[id] = sessionID
+}
+
+// sessionOf is the session to read a card's context from: the one its runner
+// last started, or its resume id when none has been heard since this process
+// began. NOT STORED: a restart resumes the card by its resume id, and the
+// session hook says the id again when it comes up.
+func (c *contextSizes) sessionOf(t *store.Task) string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if s := c.session[t.ID]; s != "" {
+		return s
+	}
+	return strings.TrimSpace(t.ResumeID)
 }
 
 // judge records the threshold a card is held against, and reports whether it
@@ -85,7 +120,7 @@ func (d *Daemon) contextSizeFor(taskID string) any {
 // read is a card's context now, and whether it changed since the last read. A
 // card with no transcript reads as zero.
 func (c *contextSizes) read(t *store.Task) (int64, bool) {
-	path := c.transcript(t.Worktree, t.ResumeID)
+	path := c.transcript(t.Worktree, c.sessionOf(t))
 	if path == "" {
 		return 0, false
 	}
@@ -109,6 +144,17 @@ func (c *contextSizes) read(t *store.Task) (int64, bool) {
 	return r.Context, !ok || last.tokens != r.Context
 }
 
+// forgetSessions drops the started session of every card not in open.
+func (c *contextSizes) forgetSessions(open map[string]bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for id := range c.session {
+		if !open[id] {
+			delete(c.session, id)
+		}
+	}
+}
+
 // forgetExcept drops every card not in live, and returns the ones it dropped.
 func (c *contextSizes) forgetExcept(live map[string]bool) []string {
 	c.mu.Lock()
@@ -130,16 +176,20 @@ func (c *contextSizes) forgetExcept(live map[string]bool) []string {
 // ONE NOTICE PER CROSSING. The claim is stored, so a restart that finds the
 // card still past the line sends nothing. A card seen back under the line has
 // its claim dropped, so a card that compacts and grows past it again is a new
-// crossing. A human-started card is never noticed, only marked.
+// crossing. The claim is keyed on the session, so a card cleared onto a new
+// one is a new crossing too. A human-started card is never noticed, only
+// marked.
 func (d *Daemon) watchContext() error {
 	tasks, err := d.st.List(store.StatusRunning, store.StatusNeedsInput, store.StatusNeedsPermission)
 	if err != nil {
 		return err
 	}
 	limit := api.ContextThreshold(d.st)
-	live := map[string]bool{}
+	live, open := map[string]bool{}, map[string]bool{}
 	for _, t := range tasks {
-		if strings.TrimSpace(t.ResumeID) == "" || strings.TrimSpace(t.Worktree) == "" {
+		open[t.ID] = true
+		session := d.ctx.sessionOf(t)
+		if session == "" || strings.TrimSpace(t.Worktree) == "" {
 			continue
 		}
 		if h, err := d.st.Harness(t.Runner); err != nil || !isClaude(h) {
@@ -164,12 +214,13 @@ func (d *Daemon) watchContext() error {
 			}
 			continue
 		}
-		d.notifyLauncher(t, NoticeContext, t.ResumeID, fmt.Sprintf(
+		d.notifyLauncher(t, NoticeContext, session, fmt.Sprintf(
 			"%s is at %dk context. Tell it to report what it has and stop, or hand off.",
 			t.WireName, tokens/1000))
 	}
 	for _, id := range d.ctx.forgetExcept(live) {
 		d.publishTask(id)
 	}
+	d.ctx.forgetSessions(open)
 	return nil
 }

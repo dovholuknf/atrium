@@ -1289,6 +1289,17 @@ another can end silently with nothing reaching the launcher.
 Related: item 36 (a finished worker stays up), and the work ledger, `docs/work-ledger-design.md` and
 `docs/work-ledger-plan.md`.
 
+**Status, 2026-09-28, sa62: fixed on `claude/missed-notices`, not merged.** Read off the live cards. sa42 had no
+`prompted` event before the nudge: the opening prompt goes on the command line and nothing recorded it, so
+`prompted_at` was empty, the worker owed no report, and its first turn could never be a silent stop. The launch now
+records it, and a session starting no longer writes a turn end, so the worker is not stuck before it begins. sa58's
+silent stop did fire (21:12:34, the nudge came 11 seconds later). Its context notice is keyed on the session, but
+after the `/clear` the resume id stayed on the old session until the new one's first Stop, 51 minutes later, so the
+watcher kept reading the old transcript. The watcher now reads the session the runner last started. The ledger's
+`ended` notice to a launcher on another room is held in the relay outbox. Still open: a remote launcher's verdict and
+the ledger's say entry across rooms, and a report to the merger that leaves the orchestrator no sign. See
+`docs/test-plan.md` section CG.
+
 ## 63. Starting onto an existing card goes to the wrong room (bug, HIGH)
 
 Raised 2026-09-28 by clint: "fixed immediately, then fixed in the long run". The board posts `/v1/launch` with

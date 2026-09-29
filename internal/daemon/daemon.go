@@ -272,6 +272,8 @@ func New(opts Options) (*Daemon, error) {
 	d.ledgerDirty = make(chan struct{}, 1)
 	st.OnLedgerChange = d.ledgerChanged
 	st.OnLedgerNotice = d.ledgerNotice
+	st.RemoteArbiter = d.launcherRelay
+	st.OnRelayHeld = d.kickRelays
 	d.ap.BoardDir = opts.BoardDir
 	d.ap.Decide = d.decide
 	d.ap.Room = opts.Room
