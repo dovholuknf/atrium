@@ -204,6 +204,16 @@ No migration on either side.
   a permission on it shows the column but no answer buttons.
 - FE8: removing the tag drops it from the sg3 view within a few seconds without a reload.
 - FE9: an old board against the new hub: the scoped stream is unchanged byte for byte.
+- FE10: a new room against an old hub: `atrium_peers` without `rooms` lists the local rows only. The old hub answers
+  the `peers` op with every room's cards, none carries `everywhere`, and the room appends none of them. Pin this as
+  a unit test too, since today's `rooms:true` answer already returns cross-room rows and forgetting the filter would
+  list them all.
+
+## Review
+
+Mercurius session `s_L4wmA1mqNRCP`, round 1, 2026-09-29: `ready_to_build`, no concerns, no questions. One advisory:
+the old-hub peers path depends on a filter over a field today's rows lack, so an implementation could list every
+remote peer by forgetting it. Folded in as FE10, with a unit test named there.
 
 ## Open questions for clint
 
