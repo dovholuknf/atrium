@@ -98,6 +98,9 @@ type Daemon struct {
 	// of keystrokes costs one map lookup each and one store write a minute. See
 	// humanTouch in park.go.
 	humanTouched sync.Map
+	// decideWho is who is deciding a permission while the decide route resolves
+	// it: permission id to decider. Held only for the call. See decideBy.
+	decideWho sync.Map
 	// idle is what the idle parking tick remembers between ticks: a handoff under
 	// way, and the idle clock a handoff turn must not move. See idletick.go.
 	idle idleParks
@@ -302,6 +305,7 @@ func New(opts Options) (*Daemon, error) {
 	st.OnRelayHeld = d.kickRelays
 	d.ap.BoardDir = opts.BoardDir
 	d.ap.Decide = d.decide
+	d.ap.DecideBy = d.decideBy
 	d.ap.Room = opts.Room
 	d.ap.Launch = d.launchFromJSON
 	d.ap.Kill = d.Kill
@@ -527,6 +531,23 @@ func (d *Daemon) launchFromJSON(body []byte) (*store.Task, error) {
 // without signalling the reply channel the hook is waiting on would leave that
 // runner hanging.
 func (d *Daemon) decide(permID, decision, reason, command string) (*store.Permission, error) {
+	return d.decideBy(permID, decision, reason, command, "")
+}
+
+// DecidedByHubAuto is the one decider a caller of the decide route may name:
+// the hub's board-wide auto switch (r-020). Everything else a caller sends is
+// refused, so no caller can forge a rule's name or another decider.
+const DecidedByHubAuto = "global-auto"
+
+// decideBy is decide with the decider named. "" is the operator by hand, as
+// always. `by` is stashed for the permission, and whichever path records the
+// decision (the parked agent's, or the fallback below) reads it back, so both
+// record the same decider.
+func (d *Daemon) decideBy(permID, decision, reason, command, by string) (*store.Permission, error) {
+	if by != "" {
+		d.decideWho.Store(permID, by)
+		defer d.decideWho.Delete(permID)
+	}
 	p, err := d.decideInner(permID, decision, reason, command)
 	// A person answering is the human touch. A rule or auto mode answering is
 	// not, and never comes through here with DecidedBySelf.
@@ -551,13 +572,24 @@ func (d *Daemon) decideInner(permID, decision, reason, command string) (*store.P
 	// Nothing is blocked on it: the agent gave up, or the daemon restarted
 	// while the request was pending. Record the decision anyway so the queue
 	// does not keep showing it.
-	p, err := d.st.DecidePermission(permID, decision, reason)
+	p, err := d.st.DecidePermissionBy(permID, decision, reason, d.decidedBy(permID))
 	if err != nil {
 		return nil, err
 	}
 	d.publishTask(p.TaskID)
 	d.ap.Broadcast("permission", p)
 	return p, nil
+}
+
+// decidedBy is who is deciding this permission right now: the decider stashed by
+// decideBy, else the operator by hand.
+func (d *Daemon) decidedBy(permID string) string {
+	if v, ok := d.decideWho.Load(permID); ok {
+		if by, _ := v.(string); by != "" {
+			return by
+		}
+	}
+	return store.DecidedBySelf
 }
 
 // Store exposes the store.
@@ -836,7 +868,7 @@ func (d *Daemon) CancelPending(taskID, reason string) (int, error) {
 }
 
 func (d *Daemon) onPermDecided(permID, decision, reason string) {
-	p, err := d.st.DecidePermission(permID, decision, reason)
+	p, err := d.st.DecidePermissionBy(permID, decision, reason, d.decidedBy(permID))
 	if err != nil {
 		log.Printf("[atrium] decide %s: %v", permID, err)
 		return

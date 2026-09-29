@@ -35,6 +35,10 @@ type Server struct {
 	// reply channel that only the daemon can signal. Writing the decision without
 	// signalling would leave the runner hanging forever.
 	Decide func(permID, decision, reason, command string) (*store.Permission, error)
+	// DecideBy is Decide with the decider named: "" is the operator by hand, and
+	// the only other value a caller may send is "global-auto", the hub's switch
+	// (r-020). Owned by the daemon.
+	DecideBy func(permID, decision, reason, command, by string) (*store.Permission, error)
 	// Launch starts a runner. The daemon owns process spawning, so the API
 	// hands the request body straight through rather than reaching for it.
 	Launch func(body []byte) (*store.Task, error)
@@ -1511,6 +1515,12 @@ func (s *Server) decidePermission(w http.ResponseWriter, r *http.Request) {
 		// covers everything inside it. Empty means command, which is what
 		// every caller sent before folders existed.
 		Kind string `json:"kind"`
+		// By names who decided when it was not the operator by hand. Only
+		// "global-auto" is accepted, which is the hub's board-wide auto switch
+		// forwarding its approval (r-020). Empty means the operator, as always.
+		// Anything else is refused, so no caller can forge a rule's name or
+		// another decider into the record.
+		By string `json:"by"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeErr(w, http.StatusBadRequest, err)
@@ -1518,6 +1528,10 @@ func (s *Server) decidePermission(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.Decision != "approve" && body.Decision != "block" {
 		writeErr(w, http.StatusBadRequest, fmt.Errorf("decision must be approve or block"))
+		return
+	}
+	if body.By != "" && body.By != "global-auto" {
+		writeErr(w, http.StatusBadRequest, fmt.Errorf(`by may only be "global-auto", or left out for the operator`))
 		return
 	}
 	// The rule is written before the decision so a crash in between leaves the
@@ -1564,7 +1578,14 @@ func (s *Server) decidePermission(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	p, err := s.Decide(r.PathValue("id"), body.Decision, body.Reason, body.Command)
+	decide := s.Decide
+	if body.By != "" && s.DecideBy != nil {
+		by := body.By
+		decide = func(id, decision, reason, command string) (*store.Permission, error) {
+			return s.DecideBy(id, decision, reason, command, by)
+		}
+	}
+	p, err := decide(r.PathValue("id"), body.Decision, body.Reason, body.Command)
 	if err != nil {
 		s.fail(w, err)
 		return
