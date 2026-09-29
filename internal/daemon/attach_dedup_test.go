@@ -287,4 +287,3 @@ func extractTags(s string) []string {
 		s = s[j:]
 	}
 }
-
