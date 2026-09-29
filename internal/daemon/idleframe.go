@@ -96,9 +96,9 @@ func classifyScreen(text string) (bool, string) {
 	}
 	// A hint or a spinner ANYWHERE in the last rows says working. This is wider
 	// than where they are drawn on purpose: a screen rebuilt from a 64KB tail can
-	// leave a row where it was not, and a misplaced working row must still veto. Claude Code uses
-	// neither, and the silence the caller requires is the other guard, since a
-	// running turn redraws its spinner every second.
+	// leave a row where it was not, and a misplaced working row must still veto.
+	// The silence the caller requires is the other guard, since a running turn
+	// redraws its spinner every second.
 	for i := n - 1; i >= 0 && i >= n-12; i-- {
 		if strings.Contains(lines[i], frameInterrupt) {
 			return false, frameHint
