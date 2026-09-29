@@ -243,6 +243,11 @@
   .ucminis { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: var(--sp-3); }
   .ucmini { padding: 6px 8px; border: 1px solid var(--stroke-dim); border-radius: var(--r-md); cursor: pointer; }
   .ucmini.other { cursor: default; }
+  .ucmini.sel { background: var(--lift); border-color: var(--dim); }
+  .uch select { margin-left: 8px; font: var(--fs-xs) var(--mono); }
+  .ucitems { display: grid; grid-template-columns: minmax(0, 1fr) repeat(3, auto); gap: 0 var(--sp-3); font: var(--fs-xs) var(--mono); color: var(--dim); }
+  .ucitems > span:nth-child(4n+2), .ucitems > span:nth-child(4n+3), .ucitems > span:nth-child(4n) { text-align: right; }
+  .ucitems > span:nth-child(4n+1) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .ucmini:hover:not(.other) { background: var(--lift); }
   .ucmini svg { display: block; width: 100%; height: 40px; }
   .ucminit { display: flex; justify-content: space-between; gap: var(--sp-2); font: var(--fs-xs) var(--mono); color: var(--dim); }
