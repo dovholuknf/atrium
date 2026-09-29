@@ -744,6 +744,15 @@ profile on Unix.
 **One room per machine.** A remote that is already a room of any hub, or runs an atrium this did not install, is
 refused with exit 6.
 
+**Git.** A room gets its clone by PUSH from the hub's side, because a private repository cannot be cloned on a
+machine that holds no GitHub credential. `scripts/room-git.ps1 init <room>` (run last by provision, unless `-Repo
+none`) makes `~/git/github/<owner>/<repo>` there with `receive.denyCurrentBranch=updateInstead`, adds a git remote
+named for the room here, pushes `claude/main` to `hub-main` and checks it out, and adopts a clone already there.
+Then `push-base <room>` refreshes `hub-main`, `worktree <room> <name>` makes `claude/<name>` on the remote and prints
+the path for `atrium_launch room=<room>`, and `fetch <room>` brings the room's `claude/*` branches back to
+`<room>/claude/*` for the Release department to merge. The atrium binary does no git. See `docs/remote-launch.md`
+section 6.
+
 ssh runs with `BatchMode=yes` and whatever the operator's ssh config and agent say. The script holds no key. The join
 string is single-use, good for an hour, and not stored. `~/.atrium/provision/manifest.json` records what was on the
 machine before the first run, so `-Remove` takes away only what this added. That covers runners it installed, the
