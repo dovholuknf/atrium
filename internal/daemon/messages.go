@@ -101,6 +101,13 @@ func messageIDs(msgs []*store.Message) []string {
 
 // takeMessages returns anything queued for a task and marks it delivered.
 func (d *Daemon) takeMessages(taskID, via string) ([]*store.Message, error) {
+	// HELD FOR A NEW CONTEXT. A hook delivery during the capture turn would put
+	// the message into the context about to be cleared, and during the clear it
+	// would be lost. It stays queued and the hooks after the wake carry it. See
+	// newcontext.go.
+	if d.holdingMessages(taskID) {
+		return nil, nil
+	}
 	msgs, err := d.st.PendingMessages(taskID)
 	if err != nil || len(msgs) == 0 {
 		return nil, err
@@ -494,7 +501,11 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 	// AND THROUGH THE TURN RULE, whoever sent it. Immediate is typed mid-turn.
 	// Done, or a runner that does not take input mid-turn, waits for the turn to
 	// end. See saywhen.go.
-	if run := d.sup.get(taskID); run != nil && !d.act.dialogOpen(taskID) && !d.turnHolds(taskID, waitTurn) {
+	//
+	// NOT WHILE THE CARD IS IN A NEW-CONTEXT CYCLE: held in the queue below, and
+	// delivered after the wake prompt.
+	holding := d.holdingMessages(taskID)
+	if run := d.sup.get(taskID); run != nil && !holding && !d.act.dialogOpen(taskID) && !d.turnHolds(taskID, waitTurn) {
 		wrote, err := d.typeThroughGate(run, taskID, from, body.Text)
 		if err != nil {
 			writeJSONErr(w, http.StatusInternalServerError, err)
@@ -602,6 +613,11 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 				out["warning"] = why
 			}
 		}
+	}
+	if holding {
+		// Queued, never typed, whatever the hooks report about reach.
+		out["delivered"] = "queued"
+		out["warning"] = newContextHoldNote
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(out)

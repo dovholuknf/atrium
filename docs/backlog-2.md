@@ -3611,7 +3611,7 @@ fixed at launch, so it is a stable key), and u-005 stage 2 (a PR's walker and tr
 
 ## r-007. Park a card that has been idle for hours, directors included (design)
 
-Status: designed, not reviewed. BUILT so far: stage 1, the director silent-stop rule. Owned by @runtime. Raised by clint 2026-09-29: "do we need to keep
+Status: designed, not reviewed. BUILT so far: stage 1, the director silent-stop rule, and stage 1b, holding messages during a new-context cycle. Owned by @runtime. Raised by clint 2026-09-29: "do we need to keep
 directors online all the time? they should shut down after a couple hours if they are not working." The design is
 section 7 of `docs/keepalive-policy-design.md`, "Parking a card that has gone idle".
 

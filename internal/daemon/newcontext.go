@@ -201,6 +201,20 @@ func (n *newContexts) clear(taskID string) bool {
 	return had
 }
 
+// holding reports whether a card is inside a new-context cycle that has not
+// ended: from `begin` until the wake prompt has been typed. A failed chip is not
+// holding, since nothing is running any more and a held message would be
+// stranded.
+func (n *newContexts) holding(taskID string) bool {
+	if n == nil {
+		return false
+	}
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	cur := n.by[taskID]
+	return cur != nil && cur.step != NewContextFailed
+}
+
 func (n *newContexts) get(taskID string) *newContext {
 	n.mu.Lock()
 	defer n.mu.Unlock()
@@ -244,6 +258,27 @@ func newContextView(c *newContext) map[string]any {
 
 var errNewContextGone = errors.New("superseded")
 
+// holdingMessages is the question every delivery path asks for a card: is it in
+// a new-context cycle. While it is, no message is typed and no hook carries one,
+// because capture would put it in the context about to be cleared and clear
+// would lose it. The cycle's own typing (`ncType`) does not ask.
+func (d *Daemon) holdingMessages(taskID string) bool { return d.nctx.holding(taskID) }
+
+// newContextHoldNote is what a sender is told while a card is held.
+const newContextHoldNote = "queued: this card is starting a new context, and everything for it is held " +
+	"until its wake prompt has been typed."
+
+// releaseHeld is called when a cycle ends any way at all: the wake typed, a
+// failed step, a dismissal. What was held is then delivered by the ordinary
+// paths, so the typist is kicked to try at once rather than at the end of a
+// backoff. It never types ahead of the wake prompt, which has been typed by now.
+func (d *Daemon) releaseHeld(taskID string) {
+	if d.pending != nil {
+		d.pending.reset(taskID)
+	}
+	d.publishTask(taskID)
+}
+
 // StartNewContext begins the sequence on a card and returns at once. The steps
 // run in the background and the card's chip says where they are.
 func (d *Daemon) StartNewContext(taskID string) error {
@@ -281,6 +316,7 @@ func (d *Daemon) runNewContext(taskID string, gen uint64) {
 		if d.nctx.fail(taskID, gen, reason) {
 			log.Printf("[atrium] new context on %s stopped, %s", taskID, reason)
 			d.publishTask(taskID)
+			d.releaseHeld(taskID)
 		}
 	}
 	started := time.Now()
@@ -361,6 +397,7 @@ func (d *Daemon) runNewContext(taskID string, gen uint64) {
 	if d.nctx.finish(taskID, gen) {
 		log.Printf("[atrium] new context on %s done", taskID)
 		d.publishTask(taskID)
+		d.releaseHeld(taskID)
 	}
 }
 
@@ -469,6 +506,7 @@ func (d *Daemon) handleNewContext(w http.ResponseWriter, r *http.Request) {
 	case http.MethodDelete:
 		gone := d.nctx.clear(id)
 		d.publishTask(id)
+		d.releaseHeld(id)
 		ncJSON(w, http.StatusOK, map[string]any{"card": id, "cleared": gone})
 	case http.MethodPost:
 		switch err := d.StartNewContext(id); {
