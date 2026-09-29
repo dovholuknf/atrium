@@ -168,6 +168,17 @@
        padding too, undoing that fix for every window narrower than 900px. */
     #t-screen { padding: 6px 0; margin: 6px 4px; }
     .term-help { display: none; }
+    /* The walk drawer stacks above the terminal. The rail becomes a strip that scrolls sideways and the finding is
+       the page. Posting from a phone is a real case: copy, then open. The saved width is not applied here
+       (`walkApplyWidth`), since a width in a column is the wrong axis. */
+    .term-body { flex-direction: column; }
+    .walk { width: auto; min-width: 0; max-height: 62%; border-right: none; border-bottom: 1px solid var(--stroke-dim); }
+    .walk-body { flex-direction: column; }
+    .walk-rail { width: auto; max-width: none; display: flex; overflow-x: auto; overflow-y: hidden; border-right: none; border-bottom: 1px solid var(--stroke-dim); }
+    .wk-row { width: auto; flex: 0 0 auto; }
+    .wk-row.brk { border-top: none; border-left: 1px solid var(--stroke-dim); }
+    .wk-p { display: none; }
+    .walk-grip { display: none; }
 
     dialog { width: 96vw; }
     .dlg-body { padding: 14px; }

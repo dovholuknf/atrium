@@ -418,21 +418,50 @@ function useWebLinks(t) {
 // NOT atrium's file viewer, which is where a clicked PATH goes. A URL is not a
 // file in the card and the daemon has no business being asked about it.
 //
-// `noreferrer` because the board can be published, and the address of a
-// published board is not something to hand to whatever an agent printed a link
-// to. It implies `noopener`, and `noopener` is named as well so that reading
-// the line does not require knowing that.
+// It is opened by `openLinkReused`, which reuses one tab per pull request
+// rather than opening a new one per click.
 function openTermURL(ev, uri) {
   ev.preventDefault();
-  const a = document.createElement("a");
-  a.href = uri;
-  a.target = "_blank";
-  a.rel = "noreferrer noopener";
-  // Attached before it is clicked. A detached anchor is ignored by some
-  // browsers, and the failure is a click that does nothing at all.
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
+  openLinkReused(uri);
+}
+
+// The name of the window a link opens into. One per pull request for
+// github.com/<org>/<repo>/pull/<n> and anything under it, so a walk that clicks
+// a deep link per finding keeps one tab. Anything else is one per origin plus
+// path, with no query and no hash. "" for a URL that is not http or https.
+function linkWindowName(url) {
+  let u;
+  try { u = new URL(url); } catch (e) { return ""; }
+  if (u.protocol !== "http:" && u.protocol !== "https:") return "";
+  const host = u.host.toLowerCase();
+  const pr = u.pathname.match(/^\/([^/]+)\/([^/]+)\/pull\/(\d+)(?:\/|$)/);
+  if (host === "github.com" && pr) return "atrium-link-" + host + "/" + pr[1] + "/" + pr[2] + "/pull/" + pr[3];
+  return "atrium-link-" + host + u.pathname;
+}
+
+// Opens a link into its named window and brings that window forward. Called by
+// the terminal's links and by the review walk's `o` and `C`.
+//
+// `window.open(url, name)` and not `rel=noopener`: Chrome ignores the name and
+// opens a new tab whenever noopener is set. The opener is cut by hand instead,
+// at once, so the page cannot reach back into the board.
+//
+// The referrer is withheld by the page's `<meta name="referrer">` in
+// index.html and not here. The old `rel=noreferrer` did it, because a published
+// board's address is not something to hand to whatever an agent printed a link
+// to, but `noreferrer` implies `noopener` and so brings the new tab back, and
+// `window.open` has no per-call referrer option that avoids it.
+//
+// A popup blocker makes `window.open` return null. That is not an error here.
+function openLinkReused(url) {
+  const name = linkWindowName(url);
+  if (!name) return null;
+  let w = null;
+  try { w = window.open(url, name); } catch (e) { return null; }
+  if (!w) return null;
+  try { w.opener = null; } catch (e) {}
+  try { w.focus(); } catch (e) {}
+  return w;
 }
 
 // ── the "not replayed here" notice's two actions ─────────
@@ -1624,11 +1653,12 @@ function sendInput(text, quiet, pasted) {
   const d = String(text == null ? "" : text);
   if (pasteHeld) { pasteHeld.push([d, quiet, pasted]); return; }
   if (pasted && d.length >= pasteBigAt) { sendBigPaste(d); return; }
+  if (pasted && !quiet) pasteBegin(d.length); // before the send
   send({ t: "in", d });
   if (quiet) return;
-  if (pasted) pasteBegin(d.length);
   if (term) term.scrollToBottom();
   followScrollUntil = Date.now() + followScrollFor;
+  if (pasted) lagPasteMark("sent");
 }
 
 // ── a paste, while it is on its way ─────────────────────
@@ -1649,9 +1679,17 @@ function sendInput(text, quiet, pasted) {
 // good. At the cap it just goes: the bytes left, and waiting longer says nothing.
 
 // Any size. What starts it is where the bytes came from, not how many there are
-// (see `sendInput`). Not drawn until the paste has been in flight this long, so
-// one that lands at once never flashes.
-const pasteShowAfterMs = 20;
+// (see `sendInput`). Drawn AT ONCE. It used to wait 20ms so a paste that landed
+// straight away never flashed, and a busy runner ended it inside that 20ms: it
+// repaints all the time, so the first output after the drain was never the paste
+// landing, and the box was never seen on the pastes that were slow.
+//
+// So it stays up at least `pasteHoldMs`, and output inside that only counts as
+// "the runner echoed". Past the hold the next output ends it, and an echo
+// followed by `pasteQuietMs` of nothing ends it too. A runner that prints an
+// echo and then works silently for a while is the case this is a guess for.
+const pasteHoldMs = 400;
+const pasteQuietMs = 1500;
 const pasteGiveUpMs = 20000;
 
 // A BIG PASTE LANDS LONG AFTER IT DRAINS, and nothing above sees that.
@@ -1709,6 +1747,7 @@ function sendBigPaste(d) {
       return;
     }
     sendFrame(s);
+    lagPasteMark("sent");
     if (pasteFlight === f) f.sent = true;
     if (term) term.scrollToBottom();
     followScrollUntil = Date.now() + followScrollFor;
@@ -1730,32 +1769,52 @@ let pasteFlight = null;
 // small paste right behind a big one would take the box straight down.
 function pasteBegin(n, big) {
   const prev = pasteFlight && pasteFlight.shown && pasteFlight.sock === termSock ? pasteFlight : null;
-  pasteEnd();
+  pasteEnd("", true);
+  lagPasteStart("paste");
   const now = Date.now();
+  // EVERY PASTE HOLDS, not only a big one. See `pasteHoldMs`.
   const f = { sock: termSock, t0: now, n, timer: 0, shown: false, sent: !big,
-    holdUntil: Math.max(big ? now + pasteHoldFor(n) : 0, prev ? prev.holdUntil : 0), echoed: false };
-  const atOnce = big || now < f.holdUntil;
+    holdUntil: Math.max(now + (big ? pasteHoldFor(n) : pasteHoldMs), prev ? prev.holdUntil : 0),
+    echoed: false, lastOut: 0, drained: false };
   pasteFlight = f;
   const tick = () => {
     if (pasteFlight !== f) return;
-    if (termSock !== f.sock || !f.sock || Date.now() - f.t0 > pasteGiveUpMs) { pasteEnd(); return; }
-    if (f.echoed && Date.now() >= f.holdUntil) { pasteEnd(); return; }
-    if (!f.shown && (atOnce || Date.now() - f.t0 >= pasteShowAfterMs)) { f.shown = true; pasteShow(f); }
-    // The first wait is the show delay, so the box is not held to the poll.
-    f.timer = setTimeout(tick, f.shown ? 50 : pasteShowAfterMs);
+    const t = Date.now();
+    if (termSock !== f.sock || !f.sock || t - f.t0 > pasteGiveUpMs) { pasteEnd("the cap"); return; }
+    if (f.sent && !f.drained && f.sock.bufferedAmount === 0) { f.drained = true; lagPasteMark("drained"); }
+    // An echo and then nothing: the runner took it and has no more to say.
+    if (f.echoed && t >= f.holdUntil && t - f.lastOut >= pasteQuietMs) { pasteEnd("quiet"); return; }
+    if (!f.shown) { f.shown = true; pasteShow(f); lagPasteMark("shown"); }
+    f.timer = setTimeout(tick, 50);
   };
   tick();
 }
 
-// Called on every output frame. Ends the paste if its bytes have all left.
-// Read here rather than on the poll, so an echo that lands between two polls
-// is not missed. Inside a big paste's hold it is noted, and the poll ends it
-// when the hold runs out.
+// Called on every output frame. Ends the paste if its bytes have all left and
+// it has been up long enough. Read here rather than on the poll, so output that
+// lands between two polls is not missed. Inside the hold it is only noted, and
+// the poll ends it when the hold runs out.
 function pasteSawOutput() {
   const f = pasteFlight;
   if (!f || !f.sent || !f.sock || f.sock.bufferedAmount !== 0) return;
-  if (Date.now() < f.holdUntil) { f.echoed = true; return; }
-  pasteEnd();
+  lagPasteMark("output");
+  f.lastOut = Date.now();
+  if (f.lastOut < f.holdUntil) { f.echoed = true; return; }
+  pasteEnd("output");
+}
+
+// Reading the clipboard or uploading a file, before there are bytes to send.
+// The box goes up at once, on the gesture, and the paste that follows replaces
+// it without a gap. Capped like a paste, so a clipboard prompt nobody answers
+// cannot leave it up.
+let pasteWaitTimer = 0;
+function pasteWaiting(say, how) {
+  lagPasteStart(how);
+  if (pasteFlight) return;
+  showPasting(say);
+  lagPasteMark("shown");
+  clearTimeout(pasteWaitTimer);
+  pasteWaitTimer = setTimeout(() => pasteEnd("the cap"), pasteGiveUpMs);
 }
 
 function pasteSize(n) {
@@ -1782,9 +1841,13 @@ function showPasting(say) {
   placeToasts();
 }
 
-function pasteEnd() {
+// `handOn` is a paste taking over from a wait or from an older paste: the box
+// stays and so does the timing line, which is one per gesture.
+function pasteEnd(why, handOn) {
   if (pasteFlight) clearTimeout(pasteFlight.timer);
+  clearTimeout(pasteWaitTimer);
   pasteFlight = null;
+  if (!handOn) { lagPasteMark("cleared"); lagPasteDone(why || "the board"); }
   const el = document.getElementById("t-pasting");
   if (el) el.hidden = true;
   placeToasts();

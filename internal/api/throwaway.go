@@ -56,7 +56,7 @@ func (s *Server) promoteCard(w http.ResponseWriter, r *http.Request) {
 			s.fail(w, err)
 			return
 		}
-		s.Broadcast("task", toView(t))
+		s.PublishTask(t)
 		writeJSON(w, http.StatusOK, map[string]any{
 			"task": toView(t), "to": to, "when": "the session ends",
 		})
@@ -76,7 +76,7 @@ func (s *Server) promoteCard(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	s.Broadcast("task", toView(t))
+	s.PublishTask(t)
 	writeJSON(w, http.StatusOK, map[string]any{"task": toView(t), "to": to, "when": "now"})
 }
 

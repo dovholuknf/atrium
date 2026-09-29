@@ -434,6 +434,12 @@
     backdrop-filter: saturate(160%) blur(12px);
     border-bottom-color: var(--grid);
   }
+  /* The walk drawer's header takes the same frost as the board's. */
+  :root[data-skin="website"] .walk-head {
+    background: rgba(var(--bg1-rgb),.78);
+    backdrop-filter: saturate(160%) blur(12px);
+    border-bottom-color: var(--grid);
+  }
   /* Dark ink on the gradient, the site's own `#04121D`, because the accent is
      too bright for the board's light text to read on. */
   :root[data-skin="website"] button.go {
