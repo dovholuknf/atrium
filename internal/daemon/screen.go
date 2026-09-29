@@ -68,6 +68,47 @@ type screen struct {
 	altCells [][]cell
 	altRow   int
 	altCol   int
+	// regSet is whether DECSTBM has narrowed the scroll region, and regTop and
+	// regBot are its rows, zero based and inclusive. Unset, the region is the
+	// whole grid, which is why it is not stored as numbers alone: the grid's
+	// height can change under a guessed size, and "the whole grid" follows it.
+	// Each buffer has its own, so the normal screen's is parked while the
+	// alternate one is up.
+	regSet         bool
+	regTop, regBot int
+	altRegSet      bool
+	altRegTop      int
+	altRegBot      int
+}
+
+// region is the rows a line feed scrolls between, inclusive.
+func (s *screen) region() (top, bot int) {
+	if !s.regSet {
+		return 0, len(s.cells) - 1
+	}
+	return s.regTop, minInt(s.regBot, len(s.cells)-1)
+}
+
+// resetRegion puts the region back to the whole grid.
+func (s *screen) resetRegion() { s.regSet = false }
+
+// setRegion is `CSI top;bottom r`, 1-based and inclusive. It follows xterm.js:
+// a missing or zero bottom, or one past the last row, means the last row, and a
+// region of fewer than two rows is ignored WITHOUT homing the cursor. A valid
+// one homes it.
+func (s *screen) setRegion(top, bottom int) {
+	if top < 1 {
+		top = 1
+	}
+	if bottom < 1 || bottom > s.rows {
+		bottom = s.rows
+	}
+	if bottom <= top {
+		return
+	}
+	s.regSet = true
+	s.regTop, s.regBot = top-1, bottom-1
+	s.moveTo(0, 0)
 }
 
 func newScreen(cols int) *screen { return newScreenSized(cols, 0) }
@@ -145,18 +186,24 @@ func (s *screen) grow(toRow int) {
 	s.rows = len(s.cells)
 }
 
-// scroll moves the grid up one row and saves the top row in history.
+// scroll moves the region up one row. The row leaving the top is filed in
+// history only when the region starts at the screen's top, which is xterm.js's
+// rule: rows scrolled out of a region that starts lower were never above the
+// fold and are discarded. The alternate screen has no scrollback, by definition.
 func (s *screen) scroll() {
-	if s.alt {
-		// The alternate screen has no scrollback, by definition. A full-screen
-		// program scrolling its own view is not producing history.
-		copy(s.cells, s.cells[1:])
-		s.cells[len(s.cells)-1] = blankRow(s.cols)
-		return
+	top, bot := s.region()
+	if top == 0 && !s.alt {
+		s.history = append(s.history, s.cells[0])
 	}
-	s.history = append(s.history, s.cells[0])
-	copy(s.cells, s.cells[1:])
-	s.cells[len(s.cells)-1] = blankRow(s.cols)
+	copy(s.cells[top:bot], s.cells[top+1:bot+1])
+	s.cells[bot] = blankRow(s.cols)
+}
+
+// scrollDown moves the region down one row, dropping its bottom row.
+func (s *screen) scrollDown() {
+	top, bot := s.region()
+	copy(s.cells[top+1:bot+1], s.cells[top:bot])
+	s.cells[top] = blankRow(s.cols)
 }
 
 // put writes one character at the cursor and advances it.
@@ -184,12 +231,14 @@ func (s *screen) put(ch rune) {
 
 func (s *screen) lineFeed() {
 	s.wrapNext = false
-	if s.row >= s.rows-1 {
+	// Only the region's bottom row scrolls. Below the region a line feed moves
+	// down until the last row and stops there.
+	_, bot := s.region()
+	if s.row == bot {
 		s.scroll()
-		s.row = s.rows - 1
-		return
+	} else if s.row < s.rows-1 {
+		s.row++
 	}
-	s.row++
 }
 
 func (s *screen) moveTo(row, col int) {
@@ -256,23 +305,36 @@ func (s *screen) eraseDisplay(mode int) {
 }
 
 // insertLines is `CSI L`, and deleteLines is `CSI M`. Both move the lines below
-// the cursor, which is how an application opens or closes a gap in a list.
+// the cursor, which is how an application opens or closes a gap in a list. They
+// act inside the scroll region and do nothing with the cursor outside it.
 func (s *screen) insertLines(n int) {
 	s.grow(s.row)
+	top, bot := s.region()
+	if s.row < top || s.row > bot {
+		return
+	}
+	n = minInt(n, bot-s.row+1)
 	for k := 0; k < n; k++ {
-		copy(s.cells[s.row+1:], s.cells[s.row:])
+		copy(s.cells[s.row+1:bot+1], s.cells[s.row:bot])
 		s.cells[s.row] = blankRow(s.cols)
 	}
+	s.col, s.wrapNext = 0, false
 }
 
 func (s *screen) deleteLines(n int) {
 	s.grow(s.row)
+	top, bot := s.region()
+	if s.row < top || s.row > bot {
+		return
+	}
+	n = minInt(n, bot-s.row+1)
 	for k := 0; k < n; k++ {
 		// The line leaving is not history: it is being removed from a view the
 		// application is rearranging, and it was never below the fold.
-		copy(s.cells[s.row:], s.cells[s.row+1:])
-		s.cells[len(s.cells)-1] = blankRow(s.cols)
+		copy(s.cells[s.row:bot], s.cells[s.row+1:bot+1])
+		s.cells[bot] = blankRow(s.cols)
 	}
+	s.col, s.wrapNext = 0, false
 }
 
 func rowIsBlank(r []cell) bool {
@@ -293,6 +355,8 @@ func (s *screen) toAlt() {
 	s.alt = true
 	s.altCells = s.cells
 	s.altRow, s.altCol = s.row, s.col
+	s.altRegSet, s.altRegTop, s.altRegBot = s.regSet, s.regTop, s.regBot
+	s.resetRegion()
 	s.cells = make([][]cell, s.rows)
 	for i := range s.cells {
 		s.cells[i] = blankRow(s.cols)
@@ -308,6 +372,7 @@ func (s *screen) fromAlt() {
 	s.cells = s.altCells
 	s.rows = len(s.cells)
 	s.row, s.col = s.altRow, s.altCol
+	s.regSet, s.regTop, s.regBot = s.altRegSet, s.altRegTop, s.altRegBot
 	s.altCells = nil
 }
 
@@ -403,6 +468,12 @@ func (s *screen) textAtRows() string {
 		if i < len(s.cells)-1 {
 			b.WriteString("\r\n")
 		}
+	}
+	// The scroll region goes back before the cursor does, since setting one homes
+	// the cursor. A session that scrolls inside a region keeps doing it after the
+	// attach, and a terminal without the region would scroll its whole screen.
+	if s.regSet {
+		b.WriteString("\x1b[" + strconv.Itoa(s.regTop+1) + ";" + strconv.Itoa(s.regBot+1) + "r")
 	}
 	b.WriteString("\x1b[" + strconv.Itoa(s.row+1) + ";" + strconv.Itoa(s.col+1) + "H")
 	return b.String()
@@ -670,6 +741,9 @@ func (s *screen) resizeRows(rows int) {
 	if rows == s.rows {
 		return
 	}
+	// A terminal resets the region when its height changes.
+	s.resetRegion()
+	s.altRegSet = false
 	if s.alt {
 		s.cells, _ = s.fitRows(s.cells, &s.row, rows, false)
 		s.altCells, _ = s.fitRows(s.altCells, &s.altRow, rows, true)
@@ -780,17 +854,17 @@ func (s *screen) escape(b []byte, i int) int {
 		s.sgr = s.attr.render()
 		return i + 1
 	case 'M':
-		// Reverse index: up one, scrolling the screen down at the top.
-		if s.row == 0 {
-			copy(s.cells[1:], s.cells)
-			s.cells[0] = blankRow(s.cols)
-		} else {
+		// Reverse index: up one, scrolling the region down at its top.
+		if top, _ := s.region(); s.row == top {
+			s.scrollDown()
+		} else if s.row > 0 {
 			s.row--
 		}
 		return i + 1
 	case 'c':
 		// Full reset. The screen is cleared and what was on it was still seen.
 		s.eraseDisplay(2)
+		s.resetRegion()
 		s.moveTo(0, 0)
 		s.attr = sgrState{}
 		s.sgr = ""
@@ -905,14 +979,15 @@ func (s *screen) csi(b []byte, start, i int) int {
 		for j := s.col; j < minInt(s.col+arg(0, 1), len(r)); j++ {
 			r[j] = blank
 		}
+	case 'r':
+		s.setRegion(arg(0, 1), arg(1, 0))
 	case 'S':
-		for k := 0; k < arg(0, 1); k++ {
+		for k := 0; k < minInt(arg(0, 1), s.rows); k++ {
 			s.scroll()
 		}
 	case 'T':
-		for k := 0; k < arg(0, 1); k++ {
-			copy(s.cells[1:], s.cells)
-			s.cells[0] = blankRow(s.cols)
+		for k := 0; k < minInt(arg(0, 1), s.rows); k++ {
+			s.scrollDown()
 		}
 	case 'm':
 		s.setSGR(string(b[start:i-1]) + "m")
