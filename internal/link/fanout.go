@@ -759,11 +759,12 @@ func (p *Proxy) saveBoardAuto(w http.ResponseWriter, payload []byte, stock Inven
 		writeErrBody(w, http.StatusInternalServerError, err.Error())
 		return true
 	}
-	// Turning it on empties the queue at once rather than on the approver's next
-	// tick, which is what a person expects from a button they just pressed. See
-	// `docs/auto-mode.md`, "turning it on empties the queue".
-	if *body.GlobalAuto && p.approver != nil {
-		p.approver.nudge()
+	// Turning it on empties the queue at once, which is what a person expects
+	// from a button they just pressed. See `docs/auto-mode.md`, "turning it on
+	// empties the queue". Told either way: turning it OFF is what lets the
+	// approver stop watching every room.
+	if ap := p.autoApprover(); ap != nil {
+		ap.nudge()
 	}
 	writeJSONBody(w, http.StatusOK, p.boardAutoView(stock))
 	return true
