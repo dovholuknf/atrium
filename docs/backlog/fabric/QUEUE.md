@@ -36,9 +36,13 @@ is live.
    - Low 4, fixed: `TestAKeylessAttachCannotReplaceAKeyedRoom` tests the `Hub.control` keyless-over-keyed refusal by
      itself.
 2. **49: the hub half of atrium:everywhere.** `docs/rnd/everywhere-card-design.md`, `docs/backlog/fabric/49.md`.
-   Large, no migration (the design needs none). Worker `49` on m1mini, card `m1mini~01a0f484-68f0-7a58-96d6-c42e60df6649`,
-   branch `claude/49` in `/Users/claude/git/github/dovholuknf/atrium-worktrees/49`, launched 2026-09-30 18:50 with
-   five stages. It says the sha after each stage. Collect, review, then @review, then land.
+   Large, no migration (the design needs none). PAUSED 2026-09-30 19:30 (clint: UI only). All five stages are built,
+   `m1mini/claude/49` 451b48ef..7f523835, collected into the main checkout and read by @fabric. The worker card has
+   exited. Its worktree on m1mini stays until the branch lands. With @review. link and cli pass, and 49's daemon
+   tests pass. A full daemon run with `-timeout 40m` was started in `D:/worktrees/claude/atrium/49`, which is reset
+   to the branch, after the first run timed out at 10 minutes under load. To finish: that result, @review's pass,
+   merge onto claude/main, `atrium_cull card=49@m1mini tip=7f523835`, and a hub deploy plus a room deploy, since
+   both sides changed.
 3. **f-003 stage 1.** The `atrium_resources` tool (ctlclass.go, the worker set goes 6 to 7), `resources.md` by the
    state dir, `atrium resources init`, and one framing line on every card.
 4. **The Linux autostart proof on cdzrok.** Check that the machine is up first.
