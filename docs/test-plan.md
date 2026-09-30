@@ -7953,3 +7953,12 @@ Needs a hub with one room and two browsers on the board. `curl` stands in for th
 1. On a board with the @ui half, paste 1 MB into a supervised card. The spinner runs until the room answers `in-done`
    for that paste, then stops. The paste arrives as one `[Pasted text #1]`, not several.
 2. An older board (no `id` on its `in` frames) pastes as before and never shows `in-done` text in the terminal.
+
+## HH. The board is gzipped and revalidates (r-new-board-gzip)
+
+1. `curl -sI -H 'Accept-Encoding: gzip' http://127.0.0.1:7778/js/core.js` on the hub and on the room's board port.
+   `Content-Encoding: gzip`, `Cache-Control: no-cache`, an `ETag` ending `-gz"`, `Vary: Accept-Encoding`.
+2. The same request with `If-None-Match` set to that ETag answers `304` with no body.
+3. Reload the board on a phone over the share. The network panel shows 304s, and the board opens in about a second.
+4. Rebuild with a changed script and restart the hub. The open board reloads itself on the new build id and gets the
+   new script, not a cached one.
