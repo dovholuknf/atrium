@@ -13629,8 +13629,14 @@ async function growlBoard(browser, base, hub) {
       body: JSON.stringify({ growl: Object.assign({}, row, { state }) }) });
   });
   await ctx.route("**/v1/permissions/*/decide", route => {
-    h.decides.push({ url: new URL(route.request().url()).pathname, body: JSON.parse(route.request().postData() || "{}") });
+    h.decides.push({ url: new URL(route.request().url()).pathname, body: JSON.parse(route.request().postData() || "{}"),
+      room: route.request().headers()["x-atrium-room"] || "" });
     return route.fulfill({ status: 204, body: "" });
+  });
+  h.holds = [];
+  await ctx.route("**/v1/hold", route => {
+    h.holds.push({ body: JSON.parse(route.request().postData() || "{}"), room: route.request().headers()["x-atrium-room"] || "" });
+    return route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
   });
   await ctx.route("**/v1/tasks/*/message", route => {
     h.messages.push({ url: new URL(route.request().url()).pathname, body: JSON.parse(route.request().postData() || "{}") });
@@ -13731,6 +13737,17 @@ async function growlActionsSection(browser, base) {
     const blk = h.decides[1];
     if (!blk || blk.body.decision !== "block" || blk.body.reason !== "use pnpm instead") fail("growlActions: block posted " + JSON.stringify(blk));
     if (h.posts.length) fail("growlActions: approve and block posted to /_hub/growls: " + JSON.stringify(h.posts));
+    // the permission's room is named, so the merged view reaches it
+    if (h.decides[0].room !== "alpha" || h.decides[1].room !== "alpha") fail("growlActions: decide carried room " + JSON.stringify(h.decides.map(d => d.room)));
+    // lift asks first, then posts the room's own hold call with the row's room
+    await h.say([GR("hold1", "deploy-hold", 1, { room: "sgg" })]);
+    await p.click('#growl .gr-full button[data-do="lift"]');
+    await p.waitForSelector("#ask[open]", { timeout: slow(5000) });
+    if (h.holds.length) fail("growlActions: lift posted before it asked.");
+    await p.click('#ask-actions button:has-text("lift it")');
+    await p.waitForTimeout(300);
+    if (h.holds.length !== 1 || h.holds[0].body.action !== "lift" || h.holds[0].room !== "sgg") fail("growlActions: lift posted " + JSON.stringify(h.holds));
+    if (h.posts.length) fail("growlActions: lift posted to /_hub/growls.");
     // a permission row with no subject yet cannot be answered
     await h.say([GR("e", "permission", 1, { subject: "", body: "" })]);
     if (!(await p.isDisabled('#growl .gr-full button[data-do="approve"]')) || !(await p.isDisabled('#growl .gr-full button[data-do="block"]'))) {
