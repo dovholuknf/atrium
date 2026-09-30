@@ -24,7 +24,10 @@ import (
 type PermissionRequest struct {
 	Agent   string `json:"agent"`
 	Command string `json:"command"`
-	Tool    string `json:"tool,omitempty"`
+	// NameSource is "dir" when Agent was made up from the directory, so
+	// Register will not match it to a finished card. Absent is a told name.
+	NameSource string `json:"name_source,omitempty"`
+	Tool       string `json:"tool,omitempty"`
 	// PID is the runner's own process, not the hook's. It is what lets atrium
 	// tell a live session from a dead one by asking the operating system,
 	// which costs nothing, instead of asking the runner, which costs a turn.

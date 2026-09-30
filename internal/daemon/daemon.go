@@ -732,6 +732,7 @@ func (d *Daemon) onPermRequest(req PermissionRequest) (string, *AutoDecision, er
 			obs.PID = 0
 		}
 	}
+	obs.NameSource = req.NameSource
 	if req.Cwd != "" {
 		obs.Worktree = strings.ReplaceAll(req.Cwd, `\`, "/")
 	}
