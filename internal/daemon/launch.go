@@ -949,7 +949,8 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 			return nil, fmt.Errorf("lean_agents and lean_skills keep them on a lean launch, and this one says lean: false")
 		}
 	}
-	lean, leanMCP, kit := leanOptions(req, task)
+	gateway := d.st.LeanWorkerGateway()
+	lean, leanMCP, kit := leanOptions(req, task, gateway)
 	if lean && !isClaude(h) {
 		return nil, fmt.Errorf("%s cannot start lean. lean is a claude launch option", h.Label)
 	}
@@ -963,7 +964,7 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 		if agent {
 			stop = stopHookCommand()
 		}
-		return leanArgs(a, readUserSettings(), stop, leanMCP, kit, os.ReadFile)
+		return leanArgs(a, readUserSettings(), stop, leanMCP, kit, gateway, os.ReadFile)
 	}
 	if args, err = finishArgs(args); err != nil {
 		return nil, err

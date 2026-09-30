@@ -776,7 +776,7 @@ func (k *keepalive) forkEnv(h *store.Harness, t *store.Task) ([]string, error) {
 	}
 	extra := map[string]string{"ATRIUM_PERM_GATE": "off"}
 	// The memory section of the system prompt is in the cache key.
-	if lean, _, _ := leanOptions(LaunchRequest{}, t); lean {
+	if lean, _, _ := leanOptions(LaunchRequest{}, t, ""); lean {
 		leanEnv(extra)
 	}
 	if _, set := env[keepaliveTTLVar]; !set {
@@ -826,13 +826,14 @@ func keepFlags(args []string) []string {
 // depends on. It is built by the code a restart uses: the harness's resume args,
 // the card's stored extra args, and for a lean card the lean set. Model and effort
 // are left to the fork, which names its own.
-func forkCardArgs(h *store.Harness, t *store.Task) ([]string, error) {
+func forkCardArgs(st *store.Store, h *store.Harness, t *store.Task) ([]string, error) {
 	args, _, err := runnerArgsWith(h, t.ResumeID, "", launchOptions{Args: t.LaunchArgs})
 	if err != nil {
 		return nil, err
 	}
-	if lean, mcp, kit := leanOptions(LaunchRequest{}, t); lean {
-		if args, err = leanArgs(args, readUserSettings(), "", mcp, kit, os.ReadFile); err != nil {
+	gateway := st.LeanWorkerGateway()
+	if lean, mcp, kit := leanOptions(LaunchRequest{}, t, gateway); lean {
+		if args, err = leanArgs(args, readUserSettings(), "", mcp, kit, gateway, os.ReadFile); err != nil {
 			return nil, err
 		}
 	}
@@ -945,7 +946,7 @@ func (k *keepalive) refresh(ctx context.Context, t *store.Task, v verdict) {
 		effort, err = forkEffortArgs(v.h, t)
 	}
 	if err == nil {
-		carried, err = forkCardArgs(v.h, t)
+		carried, err = forkCardArgs(k.st, v.h, t)
 	}
 	if err != nil {
 		log.Printf("[atrium] keep-alive: not refreshing %s: %v", t.ID, err)
