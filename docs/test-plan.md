@@ -7922,6 +7922,14 @@ Needs a hub with one room and two browsers on the board. `curl` stands in for th
    share, the card's alias page opens it too. Another card's alias and a made-up name both answer the same 403. Rename
    the lent card's alias on the board: the old alias answers 403, and the handed-out address still opens it.
 
+## HE. Held-message escalation
+
+1. (R1, room) Set `escalate_held_after` to 1 on the settings page. Send a card that is mid-turn a message with
+   `when: done`. Until a minute has passed, the card's next tool calls do not carry it. After that, the next tool call
+   delivers it with `[atrium] this message waited 1 minutes for your turn to end, so it is delivered now.` in front.
+   The card's timeline shows `held message escalated after 1m` and the sender's say shows the same note. Clear the
+   setting and the wait is 15 minutes again.
+
 ## HF. A new context on a card that never leaves running (r-new-new-context-mid-turn)
 
 1. Press new context on a director that is in a long turn (workers, watchers, background tasks). About a minute later

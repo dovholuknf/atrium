@@ -132,6 +132,15 @@ func (s *Store) PendingMessages(taskID string) ([]*Message, error) {
 	return out, err
 }
 
+// BackdateMessage moves a message's creation into the past. Test support: the
+// alternative is a test that sleeps for a quarter of an hour.
+func (s *Store) BackdateMessage(id string, by time.Duration) error {
+	return s.guard(func() error {
+		_, err := s.db.Exec(`UPDATE message SET created_at = ? WHERE id = ?`, ts(now().Add(-by)), id)
+		return err
+	})
+}
+
 // MarkDelivered records that a message reached the session, and how.
 func (s *Store) MarkDelivered(taskID, via string, ids []string) error {
 	if len(ids) == 0 {
