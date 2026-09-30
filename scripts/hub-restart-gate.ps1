@@ -1,4 +1,4 @@
-# Ask a running hub whether it may be restarted now. See docs/hub-restart-gate.md.
+# Ask a running hub whether it may be restarted now. See docs/fabric/hub-restart-gate.md.
 #
 # A hub-only deploy calls this before it stops the hub. The hub waits until no
 # board has been used for -Idle seconds, shows every board a -Countdown second

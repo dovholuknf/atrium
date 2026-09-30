@@ -15,7 +15,7 @@ import (
 
 // Sessions that can address each other.
 //
-// `CLAUDE.md` says atrium has no answer for this at all, and `docs/charon.md`
+// `CLAUDE.md` says atrium has no answer for this at all, and `docs/rnd/charon.md`
 // ranks it first of six things worth taking, with the instruction: adopt the
 // shape, do not port the code, and do not port the delivery mechanism.
 //
@@ -100,7 +100,7 @@ const (
 // In memory, and it dies with the daemon. That is right: the thing being
 // bounded is a runaway session, and a session does not survive the daemon
 // either. Charon's equivalent leaks across restarts because it was persisted,
-// which is the failure `docs/charon.md` catalogs at length.
+// which is the failure `docs/rnd/charon.md` catalogs at length.
 type peerLimiter struct {
 	mu   sync.Mutex
 	sent map[string][]time.Time
@@ -200,7 +200,7 @@ func (d *Daemon) peers(exclude string) ([]Peer, error) {
 // One endpoint and two questions, because they are the same rows read for
 // different reasons and the second is the first plus the sessions that have
 // finished. Discovery is first class rather than an afterthought:
-// `docs/charon.md` makes listing mandatory before sending, and the reason is
+// `docs/rnd/charon.md` makes listing mandatory before sending, and the reason is
 // that a model which guesses a handle messages nobody and has no way to find
 // that out.
 func (d *Daemon) handlePeers(w http.ResponseWriter, r *http.Request) {

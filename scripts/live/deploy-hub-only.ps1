@@ -13,7 +13,7 @@ $LiveLog = Join-Path $Base 'deploy.log'
 if (-not (Test-Path $AtriumNew)) { Say "FATAL: no new build at $AtriumNew"; exit 1 }
 if (-not (Test-NewBuildStamped)) { exit 1 }
 
-# Gate: wait for an idle board, count down in a toast clint can click to pause (docs/hub-restart-gate.md).
+# Gate: wait for an idle board, count down in a toast clint can click to pause (docs/fabric/hub-restart-gate.md).
 # Exit 0 means go (or a hub too old to ask), anything else means leave the hub alone.
 if (-not $WhatIf) {
   & 'D:\git\github\dovholuknf\atrium\scripts\hub-restart-gate.ps1' | ForEach-Object { Say "gate: $_" }

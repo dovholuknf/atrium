@@ -23,7 +23,7 @@ var raiseFailedOnce sync.Once
 // overslept by 15 to 149ms in bursts: 571 stalls in 120s, while the same loop at AboveNormal, run at
 // the same moment, logged none. The room and the hub already raise themselves, but the runner and
 // its console host stayed Normal and competed on equal terms with go test, headless chrome and pwsh,
-// so a keystroke waited at the runner's redraw. See docs/input-lag-logging.md.
+// so a keystroke waited at the runner's redraw. See docs/terminal/input-lag-logging.md.
 //
 // THE CHILDREN OF THE RUNNER ARE LEFT ALONE, ON PURPOSE. Windows hands a priority class down to a
 // child only for Idle and BelowNormal, so the go test and chrome an agent starts stay Normal and keep

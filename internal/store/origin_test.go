@@ -9,7 +9,7 @@ import (
 
 // Where a card's work came from, and the rules that make it deduplicable.
 //
-// See docs/intake-design.md. The column existed for a long time and was
+// See docs/runtime/intake-design.md. The column existed for a long time and was
 // written by nothing, so none of this had anywhere to be tested before.
 
 func TestSetOriginRecordsAllThree(t *testing.T) {

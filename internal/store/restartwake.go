@@ -8,7 +8,7 @@ import (
 )
 
 // The after-restart wake: "when you come back, say this". See
-// docs/restart-wake.md.
+// docs/runtime/restart-wake.md.
 //
 // A restart ends every terminal the room owns, and a resumed session comes back
 // idle. A wake is one prompt, queued before the restart by the session itself or

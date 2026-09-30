@@ -1,20 +1,20 @@
 # A room that starts again by itself: after a logoff, and after a reboot
 
 clint, 2026-09-29, through @orchestrator: rooms on sg3, sgg (Windows) and m1mini (macOS) should come back by
-themselves after a reboot or a logoff. Linux is covered in `docs/packaging.md`. This should be one decision
+themselves after a reboot or a logoff. Linux is covered in `docs/release/packaging.md`. This should be one decision
 across the three, and it should fit @fabric's `atrium.requirements` (f-005), which does not exist yet and will be
 written from @fabric's step log.
 
 **SHELVED by clint, 2026-09-29.** clint starts rooms by hand and @orchestrator reaches them over ssh when needed,
 which works for him. No spike and no build. This design is kept as the record of what was found and decided, for
 the day reboot survival is wanted. Two parts of it stand on their own and are in use elsewhere: the one preflight
-verb (section 4, adopted by `docs/room-requirements-design.md`), and the pinned state dir (section 2.4, adopted by
+verb (section 4, adopted by `docs/fabric/room-requirements-design.md`), and the pinned state dir (section 2.4, adopted by
 `provision-room.ps1 -Restart`).
 
 Nothing here is built, and nothing here is tested against a real room. The standing rule holds: autostart and service
 tests run on claudevm, never on sg3, sgg or m1mini.
 
-The facts are @fabric's step log in `docs/backlog/fabric/f-005.md` (on `claude/fabric`), `docs/packaging.md`
+The facts are @fabric's step log in `docs/backlog/fabric/f-005.md` (on `claude/fabric`), `docs/release/packaging.md`
 ("Running as a service, on three operating systems"), `scripts/atrium-autostart.ps1`, `scripts/atrium-service.sh`
 and `scripts/provision-room.ps1`.
 
@@ -66,7 +66,7 @@ desktop on the machine's screen, stores the password where auto-logon keeps it (
 `/etc/kcpassword`, which is obfuscation and not encryption), needs admin anyway, and on macOS is not available while
 FileVault is on. It stays as the fallback on Windows if the S4U spike fails (section 6).
 
-**Why not a real service.** `docs/packaging.md` already weighed it and the reasons stand: a stored password,
+**Why not a real service.** `docs/release/packaging.md` already weighed it and the reasons stand: a stored password,
 a different session and profile, and service-control code in the binary. The S4U task and the user-scoped
 LaunchDaemon are not services. They are the platform's scheduler starting the user's own process.
 
@@ -246,7 +246,7 @@ with: the room is up, and every session it starts is useless.
 
 How the check runs in that context: the room's own API gets a verb, `POST /v1/preflight`, that runs each runner's
 status command (`claude auth status`, `codex login status`) from inside the room process and returns what each
-printed. The same verb answers @fabric's tool and env questions (`docs/room-requirements-design.md`, question 3):
+printed. The same verb answers @fabric's tool and env questions (`docs/fabric/room-requirements-design.md`, question 3):
 the body names what to check (`runner_auth`, `tools`, `env_present`), and the caller names KEYS, never commands.
 The room maps each key to a fixed command from a table in the binary, and an unknown key gets a PATH lookup and no
 exec, so the verb can never run what a caller sends. `env_present` answers booleans and never a value. Each command
@@ -288,7 +288,7 @@ A person can still start a room by hand with a copied nonce. That is a deliberat
 guards against. It is not a security boundary, and nothing trusts the marker for anything but this check.
 
 Atrium holds no credential for either check. It runs commands that already have one, by name, which is the rule
-`CLAUDE.md` states for overlays and `docs/scm-design.md` for `fetch`.
+`CLAUDE.md` states for overlays and `docs/runtime/scm-design.md` for `fetch`.
 
 ## 5. What changes where
 
@@ -303,7 +303,7 @@ Atrium holds no credential for either check. It runs commands that already have 
 | `internal/api` | `POST /v1/preflight`, bounded in time and output like a source, returning the pid and the `--started-by` value | @runtime |
 | every registration (task XML, plist, unit) | a fresh nonce in `--started-by` and in `<state dir>/room/supervisor.json` | @fabric |
 | `atrium.requirements` and its check command | the two entries in section 4 | @fabric, in the file it is designing |
-| `docs/packaging.md` | the Windows and macOS trade statements change from "stops when you log out" to the boot start, with its costs | @merge |
+| `docs/release/packaging.md` | the Windows and macOS trade statements change from "stops when you log out" to the boot start, with its costs | @merge |
 
 `packaging.md` currently says "Windows has no enable-linger" and "macOS has no equivalent of enable-linger". If the
 spikes pass, both sentences become wrong, and the packaging doc has to say so, since it is the record of why each

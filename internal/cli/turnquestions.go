@@ -16,7 +16,7 @@ import (
 // ATRIUM STILL DOES NOT RECORD WHAT A SESSION SAID. The hook reads the turn's
 // last message, keeps only the numbered lines of its last `Open Questions:`
 // block, and sends those. The message and the transcript never leave this
-// process. See docs/seen-design.md.
+// process. See docs/runtime/seen-design.md.
 //
 // THE HOOK POSTURE HOLDS. Every failure here is "the text is not known", which
 // leaves the card's questions as they were. Nothing here can fail a turn: the

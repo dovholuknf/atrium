@@ -35,7 +35,7 @@
 #
 # VERIFIED: both packages have been built from this file and their contents and
 # scriptlets inspected. Neither has been installed on a Linux machine, because
-# there is not one here. What that leaves untested is named in docs/packaging.md
+# there is not one here. What that leaves untested is named in docs/release/packaging.md
 # rather than implied to be fine.
 
 name: atrium
@@ -101,7 +101,7 @@ contents:
     dst: /usr/share/doc/atrium/README.md
     file_info:
       mode: 0644
-  - src: docs/packaging.md
+  - src: docs/release/packaging.md
     dst: /usr/share/doc/atrium/packaging.md
     file_info:
       mode: 0644

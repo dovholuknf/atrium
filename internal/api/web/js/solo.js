@@ -12,7 +12,7 @@
 //
 // What this deliberately is NOT is handing the session to Windows Terminal.
 // That would mean atrium stops owning the pty, which costs attach, the
-// activity badge, the liveness check and stop, and `docs/supervision-design.md`
+// activity badge, the liveness check and stop, and `docs/terminal/supervision-design.md`
 // records that there is no reattach on Windows to get them back. A browser
 // window is what is buildable; the backlog is right that a real terminal is
 // what you actually want and that it is not available at this price.
@@ -231,7 +231,7 @@ async function popOutTask(id) {
     //
     // Falling through was right for the first and wrong for the second, where
     // it opened a SECOND window onto one terminal, which is the thing
-    // `docs/supervision-design.md` says nothing arbitrates, and then said "it
+    // `docs/terminal/supervision-design.md` says nothing arbitrates, and then said "it
     // was not there any more" about a window still on screen.
     //
     // So the difference is asked for rather than guessed at. A window that
@@ -260,7 +260,7 @@ async function popOutTask(id) {
   win.focus();
   // Detached only when the board is holding THIS card, because two views onto
   // one terminal both writing input is the situation
-  // `docs/supervision-design.md` says nothing arbitrates. Popping out one card
+  // `docs/terminal/supervision-design.md` says nothing arbitrates. Popping out one card
   // from the stack must not tear down the unrelated terminal the board has
   // open, which is what an unconditional `closeTerm` did.
   if (termTask && sameCard(termTask.id, id)) closeTerm();

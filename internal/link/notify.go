@@ -35,7 +35,7 @@ import (
 // argv the operator wrote, run with no shell. Whatever token it needs to reach
 // ntfy, a Signal bot or anything else lives in the operator's own script, on the
 // operator's own disk. Nothing atrium stores is somebody else's secret, which is
-// the line docs/overlays.md draws and CLAUDE.md repeats.
+// the line docs/fabric/overlays.md draws and CLAUDE.md repeats.
 //
 // ── what the command is told ────────────────────────────
 //

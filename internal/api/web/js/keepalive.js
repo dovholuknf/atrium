@@ -3,7 +3,7 @@
 // An idle Claude card's prompt cache is refreshed shortly before it expires, so
 // coming back to the card costs a cache read rather than a write of its whole
 // context. The daemon does the work. This file draws the switch, the chip and
-// the toast. See docs/cache-keepalive-design.md.
+// the toast. See docs/runtime/cache-keepalive-design.md.
 
 // What each stopped state means, for the chip's tooltip.
 const KEEPALIVE_STOPPED = {

@@ -13,7 +13,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
-// The after-restart wake. See docs/restart-wake.md.
+// The after-restart wake. See docs/runtime/restart-wake.md.
 
 // queuedWake queues a wake on a fresh card with a terminal and returns both.
 func queuedWake(t *testing.T, d *Daemon, text string) (*store.RestartWake, *runner, *fakePTY) {

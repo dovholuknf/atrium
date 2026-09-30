@@ -78,7 +78,7 @@ func LocationPath() (string, error) {
 	// finds the daemon. Two daemons under one account both writing this path
 	// means the second one silently takes every hook on the machine, and the
 	// symptom is not an error: it is activity arriving at a board nobody is
-	// looking at. `docs/preview-design.md` says what that costs.
+	// looking at. `docs/ui/preview-design.md` says what that costs.
 	//
 	// A room sets this before it opens anything, and a second room started
 	// with `--isolated` names a private file, so the machine's room keeps its

@@ -14,7 +14,7 @@ import (
 )
 
 // The relay: a room asking its hub to carry one message, or one question, to
-// another room. See docs/cross-room-say-design.md.
+// another room. See docs/fabric/cross-room-say-design.md.
 //
 // ── dialled by the room, like everything else ───────────
 //

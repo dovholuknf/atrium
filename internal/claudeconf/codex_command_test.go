@@ -11,7 +11,7 @@ import (
 // Measured against codex-cli 0.153.2 with a probe hook: the same command with
 // two quotes around the program printed `hook: SessionStart Failed`, and
 // without them printed `hook: SessionStart Completed`. Quotes on the ARGUMENTS
-// were honored in both. See `docs/other-runners.md`.
+// were honored in both. See `docs/runtime/other-runners.md`.
 
 // The whole bug in one line: codex runs the first word, so the first word has
 // to be a path and not a quoted path.

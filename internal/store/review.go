@@ -12,7 +12,7 @@ import (
 // not be read. What gets read is the subset that would have interrupted you,
 // which is the set answered by the mode rather than by a person.
 //
-// See docs/auto-mode.md.
+// See docs/runtime/auto-mode.md.
 
 // ReviewGroup is one tool's worth of a run, with its commands.
 type ReviewGroup struct {

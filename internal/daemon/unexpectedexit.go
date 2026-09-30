@@ -9,7 +9,7 @@ import (
 )
 
 // The unexpected-exit notice: a line typed into a card whose runner was mid-turn
-// when the room went away. See docs/unexpected-exit-wake.md.
+// when the room went away. See docs/runtime/unexpected-exit-wake.md.
 //
 // A FORCED TURN, ON PURPOSE. The restart wake is typed only because a session
 // asked for it. This one is typed because the room took the session's turn away

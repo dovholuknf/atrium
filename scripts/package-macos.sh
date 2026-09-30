@@ -12,7 +12,7 @@
 # `pkgbuild` and `productbuild` are Apple's, ship with the developer tools, and
 # have no cross-platform equivalent, so unlike nfpm this cannot build a macOS
 # artefact from Windows. On any other platform it says so and exits, and CI parses
-# it without running it. docs/packaging.md records that no .pkg has been built on
+# it without running it. docs/release/packaging.md records that no .pkg has been built on
 # this machine because there is not a Mac here to build it on.
 #
 # ALL THE LOGIC IS HERE and the workflow only checks out and calls it, per the
@@ -124,7 +124,7 @@ for arch in arm64 amd64; do
   # atrium was installed.
   cp packaging/atrium.plist "$root/usr/local/share/atrium/atrium.plist"
   cp README.md "$root/usr/local/share/doc/atrium/README.md"
-  cp docs/packaging.md "$root/usr/local/share/doc/atrium/packaging.md"
+  cp docs/release/packaging.md "$root/usr/local/share/doc/atrium/packaging.md"
 
   component="build.claude/macos/$arch/atrium-component.pkg"
   pkgbuild \

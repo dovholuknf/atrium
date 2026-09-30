@@ -499,7 +499,7 @@ that path is bound to the local address rather than served by the board's own ha
 
 **Expect** atrium's own refusal naming the next step, not ziti's message about a file it could not load.
 
-**Failure mode** a stack trace or a library error reaching the board. `docs/overlays.md` has the reasoning:
+**Failure mode** a stack trace or a library error reaching the board. `docs/fabric/overlays.md` has the reasoning:
 report the state, offer the next command, never invent one.
 
 ### H4. OpenZiti, end to end. NOT YET RUN.
@@ -508,7 +508,7 @@ There is no enrolled identity on this machine, so the ziti listener has never be
 it is covered by tests. When an identity exists: enroll from the gear, pick a bindable service from the list the
 service field offers, start, and reach the board from another machine on that network.
 
-Until somebody does that, `docs/overlays.md` says so rather than implying both halves are equally proved.
+Until somebody does that, `docs/fabric/overlays.md` says so rather than implying both halves are equally proved.
 
 
 ### H5. The zrok account block counts what the account is holding
@@ -531,7 +531,7 @@ with `reserved` true. Not just this machine's. The line underneath says how many
 when there are any, how many reserved names start with `atrium-`.
 
 **Expect no fraction anywhere.** zrok does not tell an account token where its ceilings are, so a "3 of 5" in
-this block would mean somebody invented a denominator. `docs/overlays.md` has the reasoning.
+this block would mean somebody invented a denominator. `docs/fabric/overlays.md` has the reasoning.
 
 **Failure mode** counts that only cover this machine. The limit is per account, and every machine that ever ran
 `zrok enable` is an environment on it, so a count that stops at this one reads comfortable while the account is
@@ -1183,7 +1183,7 @@ board would fail to find it, open a second window onto the same terminal, and sa
 2. Go back to the board. Press `attach` on that card.
 
 **Expect** a dialog titled "this terminal is open in another window", telling you to switch to that window, or close
-it and pop the card out again. **No second window opens.** Two views on one terminal is the situation `docs/supervision-design.md`
+it and pop the card out again. **No second window opens.** Two views on one terminal is the situation `docs/terminal/supervision-design.md`
 says nothing arbitrates, so opening one here is a failure even though it looks helpful.
 
 ### P3. A stale claim still opens a window
@@ -1289,7 +1289,7 @@ that decides what `//example.com` means.
 
 ## R. Statusline telemetry
 
-The endpoint is `POST /telemetry` on the agent listener. See `docs/statusline-telemetry.md` for the contract.
+The endpoint is `POST /telemetry` on the agent listener. See `docs/runtime/statusline-telemetry.md` for the contract.
 
 Nothing here needs a statusline script: every step is a `curl` you can run yourself, which is the point of a
 contract precise enough to be implemented from.
@@ -1503,7 +1503,7 @@ makes the field meaningless.
 
 ## U. Sending work to another machine
 
-The outward half of federation. `docs/remote-launch.md`. All of it needs two atriums, so the second one can be
+The outward half of federation. `docs/fabric/remote-launch.md`. All of it needs two atriums, so the second one can be
 another daemon on this machine with its own database and port, started as a room pointing at the first.
 
 Set up once, on the machine that will be the room:
@@ -1598,7 +1598,7 @@ started.
 
 ## V. What the round 1 to 8 review turned up, fixed
 
-Every scenario here is a defect the operator found by using the board, written up in `docs/dispatch-queue.md`
+Every scenario here is a defect the operator found by using the board, written up in `docs/orchestrator/dispatch-queue.md`
 and then fixed. They are the ones a Go test cannot answer: two browser windows, a restart, a light skin.
 
 ### V1. Two windows on one terminal are refused
@@ -1824,7 +1824,7 @@ that history exists.
 
 **Why it is in the plan:** two restarts in a row went this way because `POST /v1/shutdown` refuses while a
 share is running, so the wind-down never ran and the carryover was never written. The scrollback fix looked
-broken when it was working. See `docs/dispatch-queue.md` group T.
+broken when it was working. See `docs/orchestrator/dispatch-queue.md` group T.
 
 ### W6. A restart reopens the terminals that were open
 
@@ -1992,7 +1992,7 @@ gives you: its own home directory, its own `~/.atrium` and database, its own add
 `%LOCALAPPDATA%`, and its own hooks. So this runs the whole rooms path without a second box.
 
 It is also the safe way to run two daemons here. Two daemons under ONE account fight over the address file, and
-`docs/preview-design.md` says what that costs: the second one silently takes every hook on the machine, and the
+`docs/ui/preview-design.md` says what that costs: the second one silently takes every hook on the machine, and the
 symptom is not an error, it is activity arriving at a board nobody is looking at. Different accounts have
 different `%LOCALAPPDATA%`, so the files cannot collide.
 
@@ -2080,7 +2080,7 @@ written, which is right for a machine where the daemon and its callers are the s
 ## AA. Runner setup
 
 What stops a runner working in the folders atrium launches it in, and the fixes. See
-`docs/runner-setup-design.md`. Run these against a throwaway room whose account has its own home, or with
+`docs/runtime/runner-setup-design.md`. Run these against a throwaway room whose account has its own home, or with
 `GEMINI_CLI_HOME` set on the gemini row to a scratch directory, never against a `~/.gemini` somebody uses.
 
 ### AA0. Set up, once
@@ -2147,7 +2147,7 @@ report.
 
 A session launched by another session (`atrium_launch`, the `origin:agent` tag) owes its launcher a report every
 turn. A turn that ends without one is a silent stop: the launcher is told, then the board on a backoff. Atrium
-never forces a turn. See `docs/a2a-reliability-design.md`.
+never forces a turn. See `docs/runtime/a2a-reliability-design.md`.
 
 Run these in a throwaway hub and room, never against the live board. Start one session in the throwaway room as
 the launcher, and launch workers from it with `atrium_launch`. Shorten the thresholds for the test with
@@ -2247,7 +2247,7 @@ The dialog's card shows `spawned_by: "@human"`. Reopening the worker's card does
 ## AC. Seen tracking
 
 Whether the operator has seen a card's latest turn, and whether its Open Questions are answered. See
-`docs/seen-design.md`. Run against a throwaway room with the Stop hook (`atrium turn --event end`) and the
+`docs/runtime/seen-design.md`. Run against a throwaway room with the Stop hook (`atrium turn --event end`) and the
 `UserPromptSubmit` hook wired, and two supervised sessions on it: `asker` and `peer`.
 
 ### AC1. A turn nobody saw is marked
@@ -2512,7 +2512,7 @@ box to the dots codex draws there. Once codex is idle the cursor sits at the pro
 
 ## AI. The work ledger records (stage 1)
 
-Run in a throwaway room, never against the live board. See `docs/work-ledger-design.md`. The room needs this
+Run in a throwaway room, never against the live board. See `docs/runtime/work-ledger-design.md`. The room needs this
 build. The hook binary is unchanged. `work-ledger.md` is in the room's database directory.
 
 Set up: a session `orch` on the board. From `orch`, `atrium_launch` a worker `w1` with a brief, in a scratch
@@ -2610,7 +2610,7 @@ next tool call or next turn end, not before.
 
 ## AK. The after-restart wake
 
-Run in a throwaway room, never against the live board. See `docs/restart-wake.md`. The room and the hub both need
+Run in a throwaway room, never against the live board. See `docs/runtime/restart-wake.md`. The room and the hub both need
 this build: the tool is served by the hub, the queue and the typing are the room's. The hook binary is unchanged.
 
 Set up: a supervised claude session `orch` on the throwaway room, idle, with nothing in its input line.
@@ -2702,7 +2702,7 @@ same gradient as before, and there is no glow behind the board.
 
 ## AM. The hub restart gate
 
-Run against a throwaway hub built from this branch, never the live one. See `docs/hub-restart-gate.md`. Open the
+Run against a throwaway hub built from this branch, never the live one. See `docs/fabric/hub-restart-gate.md`. Open the
 throwaway hub's board in two windows and pop one terminal out into a third.
 
 ### AM1. No board open goes at once
@@ -2809,7 +2809,7 @@ not exist. Put the runner's prepare command back.
 
 ## AO. A held restart stays held, and toasts stay on screen
 
-Run against a throwaway hub built from this branch, never the live one. See `docs/hub-restart-gate.md`. Open the
+Run against a throwaway hub built from this branch, never the live one. See `docs/fabric/hub-restart-gate.md`. Open the
 throwaway hub's board in two windows. Use `scripts/hub-restart-gate.ps1` from this branch.
 
 ### AO1. A pause holds the deploy with no timeout
@@ -2901,7 +2901,7 @@ shows the session.
 ## AQ. The gate says which go it gave, and counts every board
 
 Run against a throwaway hub with ONE room attached, the live shape (`/_hub/health` says `"only"`). Never the live
-hub. See `docs/hub-restart-gate.md`.
+hub. See `docs/fabric/hub-restart-gate.md`.
 
 ### AQ1. A go with no board says so
 
@@ -3132,7 +3132,7 @@ stream of them.
 
 ## AW. One atrium binary, and the atrium2 shim
 
-Stage 3 of `docs/one-atrium-plan.md`. `atrium` now carries the hub and the room, and `cmd/atrium2` is a shim that
+Stage 3 of `docs/fabric/one-atrium-plan.md`. `atrium` now carries the hub and the room, and `cmd/atrium2` is a shim that
 answers the live scripts' lines until the cutover. This covers the parsing, the collisions, the hook lines, the
 defaults and the one-machine key minting:
 
@@ -3184,7 +3184,7 @@ pid does not change, and the room reattaches.
 
 **Expected:** the cutover names exactly the running `atrium2.exe` hub and room pids, the database copies, the
 stage-then-two-renames of `.atrium\bin\atrium.exe`, the scripts swap, and the two start lines in
-`docs/one-atrium-cutover.md`. Nothing on the machine changes. The deploy scripts find no process to stop until the
+`docs/fabric/one-atrium-cutover.md`. Nothing on the machine changes. The deploy scripts find no process to stop until the
 cutover has run, because they match `atrium*.exe` in `.atrium\bin` by subcommand.
 
 ## AX. Untagged follows the sort pill
@@ -3209,7 +3209,7 @@ its pin order, and each group of your own keeps the order you dragged it into.
 
 ## AY. The unexpected-exit notice
 
-See `docs/unexpected-exit-wake.md`. The tests cover a crash, a planned stop, an idle
+See `docs/runtime/unexpected-exit-wake.md`. The tests cover a crash, a planned stop, an idle
 card, a self-queued wake winning, restarts in a row and the setting off:
 
 ```powershell
@@ -3815,7 +3815,7 @@ made a minute later is refused as before, since that is a launch onto a card tha
 Needs a room restart first: the loop, the fork and the launch switch are in the room daemon. Run on the board with a
 Claude card on Opus 5.5 or Fable 5.1 whose context is over 50k. Go tests in `internal/daemon/keepalive_test.go`
 cover BL2 to BL6 with a fake fork and a fake clock. The headless section `keepalive` covers BL4 to BL6. See
-`docs/cache-keepalive-design.md`.
+`docs/runtime/cache-keepalive-design.md`.
 
 **Re-run BL1 after any Claude Code upgrade** that changes sessions, settings sources, hooks or prompt caching. The
 design rests on how Claude Code behaves today, not on a contract.
@@ -4027,7 +4027,7 @@ there.
 BP1 to BP3 need the hub and the room built from this change, and a room restart. Go tests `TestLeanArgs*`,
 `TestLeanSettings*` and `TestLeanOptionsComeFromTheRequestOrTheCard` in `internal/daemon/lean_test.go`, and
 `TestLaunchIsLeanByDefaultAndForwardsTheMCPList` in `internal/link/control_mcp_test.go`, cover the flags, the MCP list
-and the default. See `docs/lean-workers-design.md` and `docs/backlog-2.md` item 29.
+and the default. See `docs/runtime/lean-workers-design.md` and `docs/backlog-2.md` item 29.
 
 ### BP1. A default launch is lean
 
@@ -4592,7 +4592,7 @@ last line, which changes as the pointer moves to another chip. 2 shows the gear'
 Backlog-2 item 48. `atrium_launch`, `atrium launch` and the board's launch dialog take `model` and `effort`, which
 each runner's row maps (claude: `--model`, `--effort`. codex: `--model`, `-c model_reasoning_effort=`), and `args`
 and `env`, passed as given. Nothing is checked against a list. A runner with no mapping refuses. The card keeps all
-four across a restart and shows them on its model chip, env by name only. See `docs/launch-options-design.md`. The
+four across a restart and shows them on its model chip, env by name only. See `docs/runtime/launch-options-design.md`. The
 Go tests are in `internal/daemon/launch_options_test.go`, `internal/store/launch_options_test.go` and
 `internal/link/control_mcp_test.go`. The room half needs a room restart (migration 0065), the `atrium_launch` half a
 hub restart.
@@ -4720,7 +4720,7 @@ CD1 to CD4 need a hub built from this change and a hub restart, with at least tw
 changes. Go tests in `internal/link/cardroute_test.go` cover a launch onto a plain and a tagged card with a wrong
 header, a new launch that still follows the header, `PATCH /v1/tasks/<plain id>` and a per-card verb with a wrong
 header, a tagged path beating a wrong header, the 404 naming the card and the rooms, and `prune` and `pin-order`
-still following the header. See `docs/backlog-2.md` item 63 and `docs/card-room-routing.md`.
+still following the header. See `docs/backlog-2.md` item 63 and `docs/fabric/card-room-routing.md`.
 
 ### CD1. Start a done card from the ALL view
 
@@ -4788,7 +4788,7 @@ old-room fallback, a same-room say, and a launch onto another room), the room si
 back, `atrium tell`, a silent stop and a report to a remote launcher by card id, a say to a remote launcher paying
 the turn, the drain dropping an unconfirmed say and keeping a notice, expiry, and a launch keeping a tagged
 launcher), the stdio server in `internal/cli/control_relay_test.go`, and the grammar in both `address_test.go`
-files. See `docs/cross-room-say-design.md` and `docs/backlog-2.md` item 58.
+files. See `docs/fabric/cross-room-say-design.md` and `docs/backlog-2.md` item 58.
 
 ### CE1. A card on the hub's machine says to a card on m1mini
 
@@ -5039,7 +5039,7 @@ and a card from `atrium_launch` with `room` read and exited by its returned card
 and `exit` in the same file, the room endpoints in `internal/daemon/relay_test.go` (read and exit through the hub,
 own room answered local, a refusal and an old hub passed back, no hub), and the stdio tools in
 `internal/cli/control_relay_test.go` (across, local, a refusal, and an older room). See `docs/backlog-2.md` item 68
-and `docs/cross-room-say-design.md` "Reading and exiting a card on another room".
+and `docs/fabric/cross-room-say-design.md` "Reading and exiting a card on another room".
 
 ### CJ1. The orchestrator watches and ends what it launched on another room
 

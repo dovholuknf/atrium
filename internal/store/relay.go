@@ -6,7 +6,7 @@ import (
 )
 
 // The relay outbox: what this room owes a card on another room. See
-// docs/cross-room-say-design.md.
+// docs/fabric/cross-room-say-design.md.
 //
 // ON THE SENDER'S ROOM, because the hub holds nothing. A row is a message or a
 // launcher notice that could not be carried when it was sent, because the hub

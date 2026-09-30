@@ -27,7 +27,7 @@ import (
 // It also does not learn git. A recogniser produces a PATH, and how that path
 // came into existence is somebody else's business. Where the path does not
 // exist, resolution says so and stops, rather than making one. See
-// docs/scm-design.md, part one.
+// docs/runtime/scm-design.md, part one.
 
 // Recogniser is one row: a pattern, and the templates it fills in.
 type Recogniser struct {

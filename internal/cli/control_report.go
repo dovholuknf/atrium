@@ -14,7 +14,7 @@ import (
 // atrium_report on the stdio server, for a room whose sessions have no hub
 // control MCP to call. The same shape as the hub's, and the same endpoint on
 // the room: it validates the report and tells the launcher, on this room or
-// another. See internal/daemon/finish.go and docs/cross-room-say-design.md.
+// another. See internal/daemon/finish.go and docs/fabric/cross-room-say-design.md.
 
 type ReportInput struct {
 	Status   string `json:"status" jsonschema:"done, blocked, question or progress"`
