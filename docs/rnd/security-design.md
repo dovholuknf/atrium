@@ -132,9 +132,12 @@ answering 403 to everything starts, runs a gated tool call through the native pr
 
 - **The board.** A browser with no cookie gets a one-page sign-in: "open this board with `atrium board`". `atrium board`
   (new: `atrium open` is taken, it hands atrium a URL to recognise) mints a one-time code good for 60 seconds, opens
-  `http://127.0.0.1:<port>/?code=<code>`, and the board trades it for the cookie and takes the code off the address. The
-  cookie is `HttpOnly`, `SameSite=Strict`, scoped to the listener that set it, lasts 30 days and renews on use. The
-  published board's OIDC or basic login sets the same operator cookie. The phone signs in on the share it uses.
+  `http://127.0.0.1:<port>/?code=<code>`, and the board trades it for the cookie and takes the code off the address.
+  The mint is `POST /v1/board-code`, operator only, so `atrium board` presents the operator token. The trade is
+  `POST /v1/board-code/redeem` with the code in the body, open to `all`, since the caller has nothing but the code. A
+  code is good once, for 60 seconds, on the listener that minted it. The hub answers both itself for its own board
+  and never proxies them. The cookie is `HttpOnly`, `SameSite=Strict`, scoped to the listener that set it, lasts 30
+  days and renews on use. The published board's OIDC or basic login sets the same operator cookie. The phone signs in on the share it uses.
 - **The operator token** is `%LOCALAPPDATA%\atrium\operator.token`, created with an explicit DACL naming only the
   current user. Go's `0o600` does nothing on Windows, so the DACL is set through the Windows API, and a start that finds
   a wider ACL narrows it and logs it. Atrium's own processes (a room calling its hub's `/_hub/nudge`, say) present it.
@@ -174,16 +177,31 @@ Two body rules sit beside the route table, because one route carries fields of d
 
 ### Rolling it out
 
-`auth.local` is a daemon setting: `off`, `warn`, `enforce`. `warn` accepts everything and records each call that
-`enforce` would refuse: the route, the scope it needed, the user agent, and the process name when the port lookup finds
-one. The gear shows the count and the list. Stage 2 ships in `warn`. Clint's scripts move to `atrium` verbs or
-`atrium token` while the count falls. `enforce` is clint's to switch on (section 12, item 1).
+`auth.local` is a daemon setting: `off`, `warn`, `enforce`. `warn` accepts everything and runs every check `enforce`
+would: the route's scope AND the two body rules above. It records each call either kind would refuse, with which kind
+it was (`route` or `body`), the route, the scope it needed, the field that tripped a body rule, the user agent, and the
+process name when the port lookup finds one. The gear shows the count and the list. Stage 2 ships in `warn`. Clint's
+scripts move to `atrium` verbs or `atrium token` while the count falls. `enforce` is clint's to switch on (section 12,
+item 1).
 
-**Acceptance test.** Each row of the appendix, from a card, from `atrium` in a terminal that is not a card, from curl
-with no token, and from the board, in `warn` and in `enforce`. In `warn` every call succeeds and the would-be refusals
-are counted exactly. In `enforce` each answers as the table says. Through the hub the same rows answer the same. A
-spoofed `X-Atrium-Scope` from a caller is stripped on the hub and on a room's loopback listener. Every hook, with and
-without a token, still passes the stage 1 test.
+**Until 2c lands, every agent is `none`.** 2a has no card tokens, so a session's hooks, CLI calls and MCP calls carry
+no credential, and `warn` counts them. So `enforce` must not be switched on before 2c passes its test. The setting
+refuses `enforce` while card tokens are not being minted, and says why.
+
+**Acceptance test for 2a** (operator and `none` callers only). Each row of the appendix from `atrium` in a terminal that
+is not a card (operator token), from the board (cookie), and from curl with no token, in `warn` and in `enforce`, on a
+room's loopback port and through the hub. In `warn` every call succeeds and each would-be refusal is recorded with the
+right kind, including a `PATCH` carrying `auto_approve` and a launch carrying `env` from a `none` caller. In `enforce`
+operator succeeds everywhere and `none` succeeds only on `all` rows. A spoofed `X-Atrium-Scope` from a caller is
+stripped on the hub and on a room's loopback listener. `POST /v1/board-code/redeem` accepts a fresh code once and
+refuses it a second time and after 60 seconds. Every hook, with and without a token, still passes the stage 1 test.
+
+**Acceptance test for 2c** (card scope). Each `C`, `Cs` and `Co` row from a card, on its own room's port and through
+the hub from another room, for its own card, a card it launched, and a card it did not launch. The two body rules from
+a card, in `warn` (recorded as `body`) and in `enforce` (refused). The hub's verification: a good token is accepted and
+cached, a token for a card that has ended is refused within the cache's five minutes, and a token naming one room
+presented for another room's card is refused. `from` on `/tell` and `/v1/say` is the token's card whatever the body
+says. The MCP tools' class comes from the verified card, and `X-Atrium-Agent` alone gets nothing more than `none`.
 
 ## 7. The hard limit
 
@@ -308,7 +326,9 @@ when that test passes on claude/main, not before.
 | W1 | the Web Push sink, VAPID, subscriptions | @runtime | M | growler phone reminders | 2a | hub |
 | W2 | subscribe on `/m`, the service worker's `push` handler | @ui | S | | W1 | hub |
 
-Stages 1, 4 and 5 can run beside stage 0 now. Stage 2a in `warn` changes no answer, so it can land without a hold.
+Stages 1, 4 and 5 can run beside stage 0 now. Stage 2a in `warn` changes no answer, so it can land without a hold. 2a
+is tested with operator and `none` callers only, and 2c carries the whole card-scope test (section 6). `enforce` waits
+for 2c.
 
 ## 12. Questions for later
 
@@ -339,13 +359,13 @@ allowed. A guest keeps the allowlist in `overlay_guest.go`, which this table doe
 
 | scope | routes |
 | --- | --- |
-| all | `GET /v1/health`, `GET /` and the board's static files |
+| all | `GET /v1/health`, `GET /` and the board's static files, `POST /v1/board-code/redeem` |
 | C (read) | `GET /v1/room/stats`, `/v1/settings`, `/v1/fixtures`, `/v1/themes`, `/v1/rooms`, `/v1/dispatch`, `/v1/tasks`, `/v1/state`, `/v1/tasks/{id}`, `/v1/tasks/{id}/asks`, `/v1/offered`, `/v1/history`, `/v1/tasks/{id}/files`, `/files/list`, `/files/zip`, `/files/text`, `/icon`, `/sessions`, `/sessions/{session}/export`, `/v1/sources`, `/v1/recognisers`, `/v1/providers`, `/v1/providers/{name}/repos`, `/v1/providers/{name}/worktrees`, `/v1/browse`, `/v1/tasks/{id}/events`, `/review`, `/v1/waiting`, `/v1/permissions`, `/v1/permissions/history`, `/v1/rules`, `/v1/rules/export`, `/v1/rules/preview-claude`, `/v1/hooks`, `/v1/harnesses`, `/v1/harnesses/discover`, `/v1/tasks/{id}/scrollback/older`, `/scrollback/raw`, `/scrollback/text`, `/typing`, `/v1/actions`, `/v1/tasks/{id}/says`, `/v1/peers/rooms`, `/v1/peers/card`, `GET /v1/tasks/{id}/restart-wake`, `GET /v1/hold`, `GET /v1/tasks/{id}/new-context`, `/v1/tasks/{id}/usage`, `/replies`, `/messages`, `/v1/usage`, `/v1/usage/limits`, `/v1/usage/items`, `GET /v1/events` |
 | C (read-shaped POST) | `POST /v1/tasks/{id}/files/probe`, `POST /v1/recognise`, `POST /v1/preflight` |
 | C (as itself) | `POST /v1/say` (`from` is the token's card), `POST /v1/launch` (body rule, section 6), `POST /v1/dispatch`, `POST /v1/merged`, `POST /v1/merge-proof`, `POST /v1/tasks/archive-workers`, `POST /v1/hold` |
 | Cs | `POST /v1/tasks/{id}/report`, `POST /v1/tasks/{id}/files`, `PUT /v1/tasks/{id}/files/text`, `POST` and `DELETE /v1/tasks/{id}/restart-wake`, `POST /v1/tasks/{id}/keepalive`, `POST` and `DELETE /v1/tasks/{id}/icon` |
 | Co | `PATCH /v1/tasks/{id}` (body rule, section 6), `POST /v1/tasks/{id}/exit`, `/kill`, `/cull`, `/cull/hold`, `/restart`, `/resume`, `POST` and `DELETE /v1/tasks/{id}/new-context`, `POST /v1/peers/exit` |
-| O | everything else, which is: `POST /v1/settings`, fixtures `PUT`, `POST`, `DELETE` and `/start`, themes `PUT`, `DELETE` and `/import`, `GET /v1/overlays` and every overlay write (`PUT`, `/start`, `/stop`, `/setup`, `/teardown`, `/inspect-token`, `/zrok/reserve`, `/zrok/endpoint`, `GET /zrok/account`, `GET /ziti/services`), `POST /v1/rooms`, `DELETE /v1/rooms/{name}`, `GET /v1/rooms/join`, `POST /v1/rooms/{room}/permissions/{id}/decide`, `DELETE /v1/dispatch/{id}`, `POST /v1/dispatch/{id}/result`, `GET` and `PUT /v1/auth`, `GET /v1/config/export`, `POST /v1/config/import`, `GET /v1/shares`, `POST` and `DELETE /v1/tasks/{id}/share`, `POST /v1/tasks/{id}/seen`, `/questions/dismiss`, `DELETE /v1/tasks/{id}/asks`, `DELETE /v1/tasks/{id}`, `/promote`, `POST /v1/tasks/prune`, `/pin-order`, `POST /v1/intake`, `POST /v1/tasks/{id}/files/open`, `/open-terminal`, `DELETE /v1/tasks/{id}/files`, `DELETE /v1/tasks/{id}/sessions/{session}`, sources `PUT`, `DELETE` and `/run`, recognisers `PUT` and `DELETE`, providers `PUT`, `DELETE`, `/discover`, `/check-worktrees`, `/worktree`, `PUT` and `DELETE /repos`, `POST /v1/shutdown`, `POST /v1/permissions/{id}/decide`, rules `POST`, `DELETE` and `/import`, `POST /v1/hooks/install`, harnesses `PUT`, `DELETE` and `/setup/fix`, `GET /v1/tasks/{id}/attach`, `POST` and `DELETE /v1/tasks/{id}/shell`, actions `PUT` and `DELETE`, `POST /v1/tasks/{id}/action`, `/note/send`, `/message` |
+| O | everything else, which is: `POST /v1/board-code` (the mint), `POST /v1/settings`, fixtures `PUT`, `POST`, `DELETE` and `/start`, themes `PUT`, `DELETE` and `/import`, `GET /v1/overlays` and every overlay write (`PUT`, `/start`, `/stop`, `/setup`, `/teardown`, `/inspect-token`, `/zrok/reserve`, `/zrok/endpoint`, `GET /zrok/account`, `GET /ziti/services`), `POST /v1/rooms`, `DELETE /v1/rooms/{name}`, `GET /v1/rooms/join`, `POST /v1/rooms/{room}/permissions/{id}/decide`, `DELETE /v1/dispatch/{id}`, `POST /v1/dispatch/{id}/result`, `GET` and `PUT /v1/auth`, `GET /v1/config/export`, `POST /v1/config/import`, `GET /v1/shares`, `POST` and `DELETE /v1/tasks/{id}/share`, `POST /v1/tasks/{id}/seen`, `/questions/dismiss`, `DELETE /v1/tasks/{id}/asks`, `DELETE /v1/tasks/{id}`, `/promote`, `POST /v1/tasks/prune`, `/pin-order`, `POST /v1/intake`, `POST /v1/tasks/{id}/files/open`, `/open-terminal`, `DELETE /v1/tasks/{id}/files`, `DELETE /v1/tasks/{id}/sessions/{session}`, sources `PUT`, `DELETE` and `/run`, recognisers `PUT` and `DELETE`, providers `PUT`, `DELETE`, `/discover`, `/check-worktrees`, `/worktree`, `PUT` and `DELETE /repos`, `POST /v1/shutdown`, `POST /v1/permissions/{id}/decide`, rules `POST`, `DELETE` and `/import`, `POST /v1/hooks/install`, harnesses `PUT`, `DELETE` and `/setup/fix`, `GET /v1/tasks/{id}/attach`, `POST` and `DELETE /v1/tasks/{id}/shell`, actions `PUT` and `DELETE`, `POST /v1/tasks/{id}/action`, `/note/send`, `/message` |
 
 `attach` is `O` because a terminal takes keystrokes, and a card typing into another card's terminal is that card
 speaking as the other. A card says through `/v1/say`. `seen` and `questions/dismiss` are `O` because they record that
@@ -362,10 +382,10 @@ a human looked, which is the fact seen exists to keep. `message` is `O` because 
 
 | scope | routes |
 | --- | --- |
-| all | `/_hub/health`, the board's static files |
+| all | `/_hub/health`, the board's static files, `POST /v1/board-code/redeem` (answered by the hub, not proxied) |
 | C (read) | `/_hub/rooms`, `/_hub/inventory`, `GET /_hub/deps`, `GET /_hub/growls`, `GET /_hub/launch-caps`, `GET /_hub/deploy-owner`, `/v1/events/hub`, `/v1/events/room/<name>`, `/v1/events` |
 | C (as itself) | `/_hub/mcp` (tools by the verified card's class), `/_hub/deps/ready`, `/_hub/deps/rename`, `/_hub/deps/clear`, `POST /_hub/restart` (section 12, item 5), `POST /_hub/growls/{id}` |
-| O | `/_hub/audit`, `/_hub/nudge` (atrium's own rooms present the operator token), `/_hub/inventory/mark`, `/_hub/inventory/forget`, `/_hub/notify`, `/_hub/notify/test`, `/_hub/git/sync`, `/_hub/git/collect`, `/_hub/git/status`, writes to `/_hub/launch-caps` and `/_hub/deploy-owner`, `/_hub/presence`, `/_hub/restart/pause`, `/_hub/restart/resume`, `/_hub/restart/input` |
+| O | `POST /v1/board-code` (the mint, answered by the hub, not proxied), `/_hub/audit`, `/_hub/nudge` (atrium's own rooms present the operator token), `/_hub/inventory/mark`, `/_hub/inventory/forget`, `/_hub/notify`, `/_hub/notify/test`, `/_hub/git/sync`, `/_hub/git/collect`, `/_hub/git/status`, writes to `/_hub/launch-caps` and `/_hub/deploy-owner`, `/_hub/presence`, `/_hub/restart/pause`, `/_hub/restart/resume`, `/_hub/restart/input` |
 | as the room it names | every proxied `/v1/...` route, checked by the hub against the room table above and forwarded with its scope |
 
 The hub's loopback-only guards stay as they are, and they add to scope rather than replacing it.
