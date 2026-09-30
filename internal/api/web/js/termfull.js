@@ -125,17 +125,45 @@ document.addEventListener("click", e => {
   clearTermPane = function (switching) { setTermFull(false); return inner.apply(this, arguments); };
 })();
 
-// THE PHONE HEADER, hidden on its own. Saved per device: "1" hidden, "0" shown, nothing saved means the
-// landscape auto-collapse in phone.css decides. A saved choice wins over that, through the two body classes.
-const PHONE_HDR_KEY = "atrium.phone.headerHidden";
-function phoneHeaderApply() {
+// THE PHONE HEADERS, slim or open: the board header (u-021, #hdr-toggle) and the terminal bar (u-020,
+// #t-bar-toggle, in the pop-out too). ONE saved choice for both, per device: "1" open, anything else (or nothing
+// saved) slim. A class on body and the chevrons' aria state only, so nothing polls.
+const PHONE_HDR_KEY = "atrium.phone.headerOpen";
+function phoneHeaderOpenApply() {
   let v = null;
   try { v = localStorage.getItem(PHONE_HDR_KEY); } catch (e) {}
-  document.body.classList.toggle("hdr-hidden", v === "1");
-  document.body.classList.toggle("hdr-shown", v === "0");
+  const open = v === "1";
+  document.body.classList.toggle("hdr-open", open);
+  const h = document.getElementById("hdr-toggle");
+  if (h) {
+    h.setAttribute("aria-expanded", open ? "true" : "false");
+    h.setAttribute("aria-label", open ? "hide the rest of the header" : "show the full header");
+    h.textContent = open ? "▴" : "▾";
+  }
+  const t = document.getElementById("t-bar-toggle");
+  if (t) {
+    t.setAttribute("aria-expanded", open ? "true" : "false");
+    t.setAttribute("aria-label", open ? "hide the terminal's details and buttons" : "show the terminal's details and buttons");
+  }
 }
-function phoneHeaderSet(hide) {
-  try { localStorage.setItem(PHONE_HDR_KEY, hide ? "1" : "0"); } catch (e) {}
-  phoneHeaderApply();
+function phoneHeaderOpenSet(open) {
+  try { localStorage.setItem(PHONE_HDR_KEY, open ? "1" : "0"); } catch (e) {}
+  phoneHeaderOpenApply();
 }
-phoneHeaderApply();
+// A pop-out window and the board follow each other. A null key is localStorage.clear().
+window.addEventListener("storage", e => { if (!e.key || e.key === PHONE_HDR_KEY) phoneHeaderOpenApply(); });
+(function () {
+  // A tap on either chevron must not move focus, so it neither pops the keyboard nor blurs the terminal.
+  for (const id of ["t-bar-toggle", "hdr-toggle"]) {
+    const b = document.getElementById(id);
+    if (b) b.addEventListener("mousedown", e => e.preventDefault());
+  }
+  // The terminal's slim row is a target too: a tap on bare bar (not a button, not the alias editor) opens it.
+  const bar = document.querySelector(".term-bar");
+  if (bar) bar.addEventListener("click", e => {
+    if (!document.body.classList.contains("term-phone") || document.body.classList.contains("hdr-open")) return;
+    if (e.target.closest("button, .can-alias, a, input, select")) return;
+    phoneHeaderOpenSet(true);
+  });
+  phoneHeaderOpenApply();
+})();
