@@ -5,6 +5,7 @@ import (
 	"embed"
 	"encoding/hex"
 	"io/fs"
+	"mime"
 	"net/http"
 	"os"
 	pathpkg "path"
@@ -117,6 +118,10 @@ func (s *Server) boardID() string {
 	}
 	return buildID(board(s.BoardDir))
 }
+
+// The phone page's manifest has no type on a machine whose registry does not name one, and a browser ignores a
+// manifest served as text.
+func init() { _ = mime.AddExtensionType(".webmanifest", "application/manifest+json") }
 
 func webHandler(dir string) http.Handler {
 	files := http.FileServer(http.FS(board(dir)))
