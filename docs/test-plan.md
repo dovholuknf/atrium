@@ -7621,3 +7621,53 @@ The stack and the terminals list show `cache: 5 warm · 2 kept warm · 9 cold ·
 
 ### GL5. A phone uses the short text
 At 390px the chips read `❄ → 03:32`, `❄ 3× next ~03:27`, `❄ cold`, `⊘ not worth it`, `○ off`, and no row overflows. The full words are in the tooltip.
+
+## GM. A held message names what holds it
+
+### GM1. Held by a new-context cycle
+
+1. Start a new-context cycle on a card and, during its capture step, send it a message from another card.
+2. Look at the card's held chip and GET /v1/tasks/<id>/typing.
+
+**Expected:** the chip says the message waits for the new-context cycle, not the line, and /typing shows the line empty.
+
+### GM2. Held by a shut line
+
+1. Type half a sentence into a card's terminal without sending it.
+2. Send that card a message from another card.
+
+**Expected:** the chip says the line is holding it, and clears when the line is submitted or emptied.
+
+## GN. Cull with an abbreviated tip
+
+1. In a throwaway room, make a worker card whose branch is merged, and note its head with `git rev-parse HEAD`.
+2. Call `atrium_cull card=<id> tip=<first 7 characters of the head>`.
+   **Expected:** the card is culled, exactly as with the full 40-character sha.
+3. On another throwaway worker, call `atrium_cull` with `tip=deadbeefdeadbeef`.
+   **Expected:** refused with "the tip deadbeefdeadbeef is not a commit in this room's repository", not "new commits".
+4. Commit once more on a throwaway worker after noting its head, then cull with the old head abbreviated.
+   **Expected:** refused with "new commits since the merged branch was fetched", both shas 10 characters long.
+
+## GO. A launch with a used title starts a new card
+
+### GO1. Same title after the card finished
+
+1. Launch a session with title `smoke`. Finish it so its card is done.
+2. Launch again with title `smoke`.
+
+**Expected:** a new card named `smoke-2` starts, the old card is untouched and is not re-prompted.
+
+### GO2. Explicit card id still reuses
+
+1. Launch onto the done card by its id.
+
+**Expected:** that card starts again under its own name.
+
+## GP. A directory-named hook and a finished card (r-040)
+
+1. Finish a card named `x`. Start a second card `y` in a checkout, with a pid.
+2. Post a session event for that same pid and checkout naming the session `x` with the name taken from the directory.
+3. Look at the board and the daemon log.
+
+**Expected:** the board is not halted. Card `y` keeps its name and its pid and directory are refreshed. The finished
+card `x` still holds `x`. A name that was told, not guessed, still matches the finished card as before.
