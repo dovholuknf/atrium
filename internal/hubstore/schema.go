@@ -228,10 +228,11 @@ var migrations = []struct {
 		// foreign key, for the reason room_audit has none: the record of a
 		// dismissal outlives the room it was about until the prune takes it.
 		//
-		// `ended_at` is not in the design's table. It is when the REASON ended,
-		// which is a different fact from the state: a growler dismissed an hour
-		// ago whose permission was answered just now is still `dismissed`, and it
-		// still has to stop being the current halt or the current waiting spell.
+		// `ended_at` is not in the design's table. It is when the REASON ended.
+		// An ended reason makes every row `resolved`, a dismissed one included,
+		// so a dismissal can only be undone while its reason stands (agreed with
+		// @ui). The row's `changed_*` then say the hub ended it, and who dismissed
+		// it is on the board's toast log, not here.
 		name: "0005_growl",
 		stmts: []string{
 			`CREATE TABLE IF NOT EXISTS growl (

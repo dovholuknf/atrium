@@ -1560,6 +1560,9 @@ func (s *Store) appendEvent(taskID, kind string, payload any) error {
 // writes in the caller's transaction and the cold sinks are fed after it
 // commits, so a rolled back change never reaches a cold trail.
 func (s *Store) appendEventOn(q querier, taskID, kind string, payload any) (*Event, error) {
+	if strings.TrimSpace(taskID) == "" {
+		return nil, fmt.Errorf("an event needs a card: %w", sql.ErrNoRows)
+	}
 	blob := []byte("{}")
 	if payload != nil {
 		b, err := json.Marshal(payload)
@@ -1579,6 +1582,14 @@ func (s *Store) appendEventOn(q querier, taskID, kind string, payload any) (*Eve
 			err = s.hot.Append(taskID, e)
 		}
 		if err != nil {
+			// A CARD THAT IS NOT THERE IS AN ANSWER, NOT A BROKEN DISK. The event's
+			// foreign key refuses it, and `guard` halts the store on anything it
+			// does not know, so a timeline note naming a card that was never made
+			// or was removed halted the room (r-new-review-c184ae8c). Returned as
+			// no rows, which `guard` hands back and never halts on.
+			if strings.Contains(strings.ToLower(err.Error()), "foreign key constraint failed") {
+				return nil, fmt.Errorf("no card %q to record %s on: %w", taskID, kind, sql.ErrNoRows)
+			}
 			return nil, err
 		}
 	}
