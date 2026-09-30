@@ -203,7 +203,17 @@ func TestNotifyIdentityPerReasonAndPriority(t *testing.T) {
 		name, payload, reason, ident string
 	}{
 		{"permission", `{"status":"needs-permission","waiting_since":"T1"}`, "permission", "a|permission|T1"},
+		// No seen row at all is a room on an older build, which cannot say, so
+		// input notifies as it always did.
 		{"input", `{"status":"needs-input","waiting_since":"T2"}`, "input", "a|input|T2"},
+		// A card that has never finished a turn is not news: whoever launched it
+		// is already there or gave it its prompt.
+		{"input before any turn", `{"status":"needs-input","waiting_since":"T2","seen":{"unseen":false}}`, "", ""},
+		{"input after a turn", `{"status":"needs-input","waiting_since":"T2","seen":{"turn_ended_at":"T1"}}`,
+			"input", "a|input|T2"},
+		// Permission is asked whatever the turns say.
+		{"permission before any turn", `{"status":"needs-permission","waiting_since":"T1","seen":{}}`,
+			"permission", "a|permission|T1"},
 		{"question", `{"status":"running","seen":{"questions_at":"T3","open_questions":["q?"]}}`, "question", "a|question|T3"},
 		// Questions whose text could not be read are still owed.
 		{"unparsed questions", `{"status":"running","seen":{"questions_at":"T3","questions_unparsed":true}}`,
@@ -357,14 +367,37 @@ func TestNotifySuppressedWhileATabIsVisibleButStored(t *testing.T) {
 
 func TestPresenceTabClearsWhenItsStreamCloses(t *testing.T) {
 	p := newPresence()
+	clock := time.Now()
+	p.now = func() time.Time { return clock }
 	end := p.Open("t1")
 	p.Set("t1", true)
 	if p.Count() != 1 {
 		t.Fatal("a visible tab is not counted")
 	}
 	end()
+	if p.Count() != 1 {
+		t.Fatal("a tab lost its visibility the instant its stream closed, before a reconnect could hold it")
+	}
+	clock = clock.Add(streamGrace + time.Second)
 	if p.Count() != 0 {
-		t.Fatal("a tab whose stream closed is still visible")
+		t.Fatal("a tab whose stream closed is still visible after the grace")
+	}
+}
+
+// A STREAM THAT RECONNECTS IS THE SAME TAB. The board does not post visible
+// again after a reconnect, so the tab has to survive the gap (f-025).
+func TestPresenceSurvivesAStreamReconnect(t *testing.T) {
+	p := newPresence()
+	clock := time.Now()
+	p.now = func() time.Time { return clock }
+	end := p.Open("t1")
+	p.Set("t1", true)
+	end()
+	clock = clock.Add(2 * time.Second)
+	p.Open("t1")
+	clock = clock.Add(time.Hour)
+	if p.Count() != 1 {
+		t.Fatal("a tab whose stream reconnected was dropped")
 	}
 }
 
@@ -412,6 +445,14 @@ func recordingCommand(t *testing.T) (CommandSink, string) {
 	out := filepath.Join(t.TempDir(), "out.jsonl")
 	t.Setenv("ATRIUM_NOTIFY_HELPER", "record")
 	t.Setenv("ATRIUM_NOTIFY_OUT", out)
+	// THE HELPER IS THIS WHOLE TEST BINARY, started as a child, and on a loaded
+	// machine that start alone can pass the sink's ten seconds. These tests are
+	// about what the command is given, not how long it may take, so the bound is
+	// taken out of the way. The timeout has its own test. Safe to change here
+	// because t.Setenv above already rules out a parallel test.
+	was := notifyTimeout
+	notifyTimeout = 2 * time.Minute
+	t.Cleanup(func() { notifyTimeout = was })
 	return CommandSink{Argv: func() []string { return []string{os.Args[0]} }}, out
 }
 
@@ -665,6 +706,15 @@ func TestPresenceEndpointTakesTextPlainAndTheStreamClearsIt(t *testing.T) {
 		t.Fatalf("status %+v", s)
 	}
 	cancel()
+	until(t, "the closed stream to end", func() bool {
+		n.pres.mu.Lock()
+		defer n.pres.mu.Unlock()
+		return n.pres.streams["tab-9"] == 0
+	})
+	// Past the reconnect grace, the tab is gone.
+	n.pres.mu.Lock()
+	n.pres.now = func() time.Time { return time.Now().Add(streamGrace + time.Minute) }
+	n.pres.mu.Unlock()
 	until(t, "the closed stream to clear the tab", func() bool { return n.Status().VisibleTabs == 0 })
 }
 
