@@ -217,8 +217,12 @@ The room serves `/v1/git/<name>.git/` on its handler, with the same environment-
 `uploadpack.hideRefs=refs` then `uploadpack.hideRefs=!refs/heads/claude/` then `uploadpack.hideRefs=refs/heads/claude/main`.
 So it offers `claude/*` except `claude/main`, which came from the hub in the first place.
 
-That endpoint sits where `/v1/files` sits: reachable through the hub's board and on the room's own loopback. It offers
-less than `/v1/files` already does, since a card's directory is readable there, `.git` included.
+**That endpoint is served on the LINK only, and the hub's board proxy refuses `/v1/git/` outright.** An earlier draft
+put it where `/v1/files` sits, reachable through the board. @review found what that meant (2026-09-30, f-019b
+4db3db15 held): anyone who can reach the board could list every room's `claude/*` branches and trigger a sync. So the
+proxy answers 403 for `/v1/git/` beside `/v1/shutdown`, the room serves it only to connections the hub dialled over
+the link, never on its own human listener, and it resolves only repo names the hub has synced on this attachment.
+The hub's own sync and collect reach the room through `Hub.Transport`, not through the proxy, so they are unaffected.
 
 The hub collects with
 `git -C <bare> fetch --no-tags --prune <url> +refs/heads/claude/*:refs/rooms/<room>/claude/*`, then delivers
