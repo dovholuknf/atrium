@@ -28,15 +28,25 @@ type Hub struct {
 	T Timings
 	// Enrol answers a room that is joining for the first time and has no
 	// certificate yet. Supplied by the transport, because what a credential IS
-	// is the transport's business and not this file's. Nil refuses enrolment,
-	// which is correct for a transport where identity comes from elsewhere:
-	// an OpenZiti service has already decided who may connect before a byte
-	// arrives here, so there is nothing to enrol.
+	// is the transport's business and not this file's. Nil refuses enrolment.
+	// Over ziti and zrok it is set too, and take() lets it run only inside
+	// TLS, so a room joining with a new-form string is named by the
+	// certificate it leaves with. An old-form room never calls it.
 	Enrol func(net.Conn, *bufio.Reader) (string, error)
 	// Authenticated reports whether a connection proved who it is. A transport
 	// that carries identity itself answers true. Nil means "yes", which is
 	// right for a test over a pipe and nowhere else.
 	Authenticated func(net.Conn) bool
+	// LegacyRefused says whether the hub has switched off the old, certificate-less
+	// path on an overlay (the `overlay_legacy` setting is `refuse`). Asked on every
+	// connection rather than read once, so flipping the setting takes effect at the
+	// next attach without a restart. Nil means allowed, which is what every
+	// transport but an overlay is, since only an overlay has an old path.
+	LegacyRefused func() bool
+	// OnUnproven is told, once per attach, that a room attached without a
+	// certificate. It is how the operator learns who must re-join before the old
+	// path is switched off. Nil on a hub that records nothing.
+	OnUnproven func(name, transport string)
 	// Attaching is asked before a room is adopted, and may refuse it.
 	//
 	// TWO THINGS AT ONCE, and they are the same thing seen from both ends.
@@ -131,6 +141,9 @@ type attached struct {
 	// os and arch are what the room said it runs on, in its hello. Observed, and
 	// they ride the `rooms` event so the board can say which build a machine wants.
 	os, arch string
+	// unproven is the overlay a room attached over WITHOUT a certificate, so its
+	// name is only what it said. Empty for a room the hub's certificate names.
+	unproven string
 	session  string
 	since    time.Time
 	// key identifies the credential this room attached with, so a reconnect
@@ -205,6 +218,14 @@ func (h *Hub) take(ctx context.Context, conn net.Conn) {
 	// with the one-time secret instead, and leaves with a credential.
 	if hi.Kind == "enrol" {
 		defer conn.Close()
+		// A CONNECTION WITHOUT TLS CANNOT ENROL. The secret is spent inside the
+		// pinned handshake, which is what proves the hub to the room, so the old
+		// path is never a way to hand a secret over.
+		if _, legacy := legacyTransport(conn); legacy {
+			_ = writeJSON(conn, welcome{OK: false,
+				Error: "joining has to run inside TLS. update this room to a build that has it"})
+			return
+		}
 		if h.Enrol == nil {
 			_ = writeJSON(conn, welcome{OK: false,
 				Error: "this hub does not enrol rooms. who may connect is decided by its transport"})
@@ -227,6 +248,16 @@ func (h *Hub) take(ctx context.Context, conn net.Conn) {
 	if h.Authenticated != nil && !h.Authenticated(conn) {
 		_ = writeJSON(conn, welcome{OK: false,
 			Error: "this connection presented no credential. run `atrium room join` first"})
+		conn.Close()
+		return
+	}
+
+	// THE OLD PATH IS ALLOWED UNTIL THE OPERATOR SAYS OTHERWISE. A room that
+	// joined an overlay before certificates reached it dials without one, and
+	// turning it away on upgrade would be an outage nobody chose. The switch is a
+	// hub setting, never flipped by anything but a person.
+	if _, legacy := legacyTransport(conn); legacy && h.LegacyRefused != nil && h.LegacyRefused() {
+		_ = writeJSON(conn, welcome{OK: false, Error: RejoinSentence(hi.Room)})
 		conn.Close()
 		return
 	}
@@ -295,6 +326,7 @@ func (h *Hub) control(ctx context.Context, name string, hi hello, conn net.Conn,
 		name: name, version: hi.Version, host: hi.Host, session: session,
 		os: hi.OS, arch: hi.Arch,
 		since: time.Now(), control: conn,
+		unproven: unprovenOver(conn),
 		// Room for a burst plus the terminals a board is likely to hold open.
 		idle:     make(chan net.Conn, 64),
 		want:     h.T.Warm,
@@ -352,6 +384,9 @@ func (h *Hub) control(ctx context.Context, name string, hi hello, conn net.Conn,
 	// the rooms' side.
 	if h.OnAttach != nil {
 		h.OnAttach(name, hi.Host, hi.Version)
+	}
+	if a.unproven != "" && h.OnUnproven != nil {
+		h.OnUnproven(name, a.unproven)
 	}
 
 	log.Printf("[hub] room %q attached from %s", name, conn.RemoteAddr())
@@ -648,6 +683,16 @@ type Attached struct {
 	Beat    time.Time `json:"last_beat"`
 	OS      string    `json:"os,omitempty"`
 	Arch    string    `json:"arch,omitempty"`
+	// Proven is false for a room that attached over an overlay WITHOUT a
+	// certificate, so what it is called is only what it said. That is how an
+	// operator finds who must re-join before the old path is refused.
+	Proven bool `json:"proven"`
+}
+
+// unprovenOver names the overlay a connection took the old path on, or "".
+func unprovenOver(c net.Conn) string {
+	t, _ := legacyTransport(c)
+	return t
 }
 
 // Rooms lists what is attached, for the hub's own status endpoint.
@@ -662,7 +707,7 @@ func (h *Hub) Rooms() []Attached {
 		out = append(out, Attached{
 			Name: a.name, Version: a.version, Host: a.host,
 			Since: a.since, Idle: len(a.idle), Beat: beat,
-			OS: a.os, Arch: a.arch,
+			OS: a.os, Arch: a.arch, Proven: a.unproven == "",
 		})
 	}
 	return out
