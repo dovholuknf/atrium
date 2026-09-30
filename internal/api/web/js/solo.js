@@ -759,9 +759,10 @@ function soloSpeak(kind, item) {
     recordToLog(title, body, "stack", "", soloID);
     return;
   }
-  // A focused window on its own card has nothing to say about it, not even a
-  // toast. Logged. An unfocused one rings, since this window owns the card.
-  if (kind === "ready" && focusIsHere() && termWatching(soloID)) {
+  // A focused window on this card, this one or another, has nothing to say
+  // about it, not even a toast. Logged. With none focused on it this window
+  // rings, since it owns the card.
+  if (kind === "ready" && readySilenced(soloID)) {
     recordToLog(title, body, "stack", "", soloID);
     return;
   }
@@ -789,7 +790,8 @@ function soloSpeak(kind, item) {
   // Handing it its own claim would silence it. `artFor` carries the card the
   // picture belongs to, which is the same id by a different road.
   alerting.notify(title, body, kind === "perm" ? "perms" : "stack", "",
-    item && item.id ? item.id : soloID, "", iconForAlert(soloTask), soloID, { pending: true });
+    item && item.id ? item.id : soloID, "", iconForAlert(soloTask), soloID,
+    { pending: true, ready: kind === "ready" });
 }
 
 // Back to the view you were on, and to the terminal you were reading.

@@ -560,6 +560,8 @@ function openTerm(task) {
   if (termKindFor !== task.id) termKind = "runner";
   termKindFor = task.id;
   termTask = task;
+  // The card this window reads changed, and other windows silence its alerts by it.
+  sayWhetherFocused();
   // An open details drawer follows the terminal to this card. See js/peek.js.
   if (typeof termDrawerFollow === "function") termDrawerFollow(task);
   // Picking a session closes the phone switcher, so the terminal you just chose
