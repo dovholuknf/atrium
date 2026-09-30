@@ -11,12 +11,12 @@ import (
 // platform cannot give it without cgo (darwin), and until the second sample,
 // since a percent needs two readings.
 type Machine struct {
-	CPUPct       *float64  `json:"cpu_pct,omitempty"`
-	CPUSeriesPct []float64 `json:"cpu_series_pct,omitempty"`
-	MemUsedBytes uint64    `json:"mem_used_bytes"`
-	MemTotal     uint64    `json:"mem_total_bytes"`
-	MemSeriesPct []float64 `json:"mem_series_pct"`
-	StaleSince   string    `json:"stale_since,omitempty"`
+	CPUPct       *float64   `json:"cpu_pct,omitempty"`
+	CPUSeriesPct []*float64 `json:"cpu_series_pct,omitempty"`
+	MemUsedBytes uint64     `json:"mem_used_bytes"`
+	MemTotal     uint64     `json:"mem_total_bytes"`
+	MemSeriesPct []*float64 `json:"mem_series_pct"`
+	StaleSince   string     `json:"stale_since,omitempty"`
 }
 
 // MachineReading is one look at the machine. CPU counters are cumulative and
@@ -110,7 +110,7 @@ func parseMeminfo(text string) (total, avail uint64, err error) {
 // minuteAvg is a ring of per-minute averages, keyed by the minute. The series
 // is read out on the same 60 minute grid as tokens.series_per_min: oldest
 // first, the last point the minute series_end names. A minute nothing was
-// sampled in reads 0, as it does there.
+// sampled in is null: 0 would claim an idle, empty machine.
 type minuteAvg struct {
 	m map[int64]*avgAcc
 }
@@ -138,12 +138,13 @@ func (r *minuteAvg) add(minute time.Time, v float64) {
 	}
 }
 
-func (r *minuteAvg) series(minute time.Time) []float64 {
-	out := make([]float64, 60)
+func (r *minuteAvg) series(minute time.Time) []*float64 {
+	out := make([]*float64, 60)
 	k := minute.Unix() / 60
 	for i := range out {
 		if a := r.m[k-int64(59-i)]; a != nil {
-			out[i] = round1(a.sum / float64(a.n))
+			v := round1(a.sum / float64(a.n))
+			out[i] = &v
 		}
 	}
 	return out

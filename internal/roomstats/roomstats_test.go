@@ -1,6 +1,7 @@
 package roomstats
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"os"
@@ -203,21 +204,36 @@ func TestMachineSeriesFollowsTheMinuteGrid(t *testing.T) {
 	src := fullSources(st, clk, new([][]byte))
 	src.Machine = seq.read
 	sm := New(src)
-	sm.Tick()
-	clk.set(t0.Add(3 * time.Minute)) // 19:07
-	sm.Tick()
+	// Ticks at 19:04 to 19:07. The first has memory but no CPU delta, so
+	// memory has 4 points and CPU 3. Every other minute is null, not 0.
+	for i := 0; i < 4; i++ {
+		clk.set(t0.Add(time.Duration(i) * time.Minute))
+		sm.Tick()
+	}
 	var snap Snapshot
 	json.Unmarshal(sm.Bytes(), &snap)
 	if snap.Tokens.SeriesEnd != "2026-09-29T19:07:00Z" {
 		t.Fatalf("series_end %s", snap.Tokens.SeriesEnd)
 	}
-	cs := snap.Machine.CPUSeriesPct
-	if len(cs) != 60 || cs[59] != 75 || cs[58] != 0 {
-		t.Errorf("cpu series %v", cs)
+	check := func(name string, s []*float64, points int, want float64) {
+		t.Helper()
+		if len(s) != 60 {
+			t.Fatalf("%s length %d", name, len(s))
+		}
+		for i, p := range s {
+			if i < 60-points {
+				if p != nil {
+					t.Errorf("%s[%d] = %v, want null", name, i, *p)
+				}
+			} else if p == nil || *p != want {
+				t.Errorf("%s[%d] = %v, want %v", name, i, p, want)
+			}
+		}
 	}
-	ms := snap.Machine.MemSeriesPct
-	if ms[59] != 25 || ms[56] != 25 || ms[57] != 0 {
-		t.Errorf("mem series %v", ms)
+	check("cpu", snap.Machine.CPUSeriesPct, 3, 75)
+	check("mem", snap.Machine.MemSeriesPct, 4, 25)
+	if !bytes.Contains(sm.Bytes(), []byte(`"cpu_series_pct":[null,`)) {
+		t.Error("an unsampled minute must be JSON null")
 	}
 }
 
