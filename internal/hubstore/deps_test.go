@@ -104,6 +104,41 @@ func TestALoopThroughARenameIsRefused(t *testing.T) {
 	}
 }
 
+// r-new-review-7f4e76c0 item 1: two gates that are fine apart, joined by a rename.
+func TestARenameThatClosesALoopIsRefusedWhole(t *testing.T) {
+	s := open(t)
+	addGate(t, s, "r-900", item("r-901"))
+	addGate(t, s, "r-902", item("r-900"))
+	_, err := s.RenameItem(depRepo, "r-901", "r-902", "x")
+	if err == nil || !strings.Contains(err.Error(), "r-902 waits on r-900, which waits on r-902") {
+		t.Fatalf("rename closing a loop = %v", err)
+	}
+	gs, _ := s.Gates(depRepo, "r-900", true)
+	if len(gs) != 1 || gs[0].Target != "r-901" {
+		t.Fatalf("a refused rename moved %+v", gs)
+	}
+	if names, _ := s.ItemNames(depRepo, "r-901"); len(names) != 1 || names[0] != "r-901" {
+		t.Fatalf("a refused rename was recorded: %v", names)
+	}
+}
+
+// r-new-review-7f4e76c0 item 2: `live:<item>` also waits on that item.
+func TestALoopThroughLiveIsRefused(t *testing.T) {
+	s := open(t)
+	live := itemgate.Target{Kind: itemgate.KindCond, Target: "live:r-901"}
+	addGate(t, s, "r-900", live)
+	_, err := s.AddGates(depRepo, "r-901", []itemgate.Target{item("r-900")}, "", "")
+	if err == nil || !strings.HasPrefix(err.Error(), "r-901 waits on r-900, which waits on r-901") {
+		t.Fatalf("loop through live = %v", err)
+	}
+	if _, err := s.AddGates(depRepo, "r-903", []itemgate.Target{{Kind: itemgate.KindCond, Target: "live:r-903"}},
+		"", ""); err == nil {
+		t.Fatal("waiting live on itself should be refused")
+	}
+	// Free text and the other conditions are not edges.
+	addGate(t, s, "r-901", itemgate.Target{Kind: itemgate.KindCond, Target: "room:sg3"})
+}
+
 func TestARenameMovesOpenGatesOnly(t *testing.T) {
 	s := open(t)
 	waiter := addGate(t, s, "r-new-a", item("r-037"))[0]

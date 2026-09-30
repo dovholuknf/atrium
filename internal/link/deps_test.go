@@ -353,6 +353,24 @@ func TestTheWaiterIsToldOnceWhenTheLastGateClears(t *testing.T) {
 	}
 }
 
+// r-new-review-7f4e76c0 item 3: gated again after it was told, the waiter hears this
+// round's reasons only.
+func TestASecondRoundSaysOnlyItsOwnReasons(t *testing.T) {
+	f := newDepsFix(t)
+	ctx := context.Background()
+	f.add(t, "r-039", "r-050")
+	f.commit(t, "changelog/runtime/2026-09-30-r-050.md", "r-050")
+	f.x.proxy.depsTick(ctx)
+	f.add(t, "r-039", "r-051")
+	f.commit(t, "changelog/runtime/2026-09-30-r-051.md", "r-051")
+	f.x.proxy.depsTick(ctx)
+	got := f.x.sg4.messages()
+	if len(got) != 2 || !strings.HasPrefix(got[1]["text"], "r-039 is ready: r-051 landed") ||
+		strings.Contains(got[1]["text"], "r-050") {
+		t.Fatalf("messages = %+v", got)
+	}
+}
+
 func TestReadyListsWhatHasNotLandedAndIsNotGated(t *testing.T) {
 	f := newDepsFix(t)
 	f.add(t, "r-038", "r-050")
