@@ -29,12 +29,18 @@ import (
 // keystrokes and resizes distinguishable without a framing layer:
 //
 //	{"t":"in","d":"ls\r"}        keystrokes
+//	{"t":"in","d":"...","id":"p7"} a paste that wants {"t":"in-done","id":"p7"} back
 //	{"t":"resize","cols":120,"rows":40}
 //	{"t":"signal","s":"int"}     interrupt, which a browser cannot type
 
 type attachIn struct {
-	T    string `json:"t"`
-	D    string `json:"d"`
+	T string `json:"t"`
+	D string `json:"d"`
+	// ID asks for an `in-done` frame once the pty write for this frame has
+	// returned. The board cannot see that write, so a paste spinner had nothing
+	// to stop on. No id, no answer: an older board writes any text frame it
+	// does not know into the terminal.
+	ID   string `json:"id,omitempty"`
 	Cols int    `json:"cols"`
 	Rows int    `json:"rows"`
 	S    string `json:"s"`
@@ -60,6 +66,14 @@ type attachCaps struct {
 	// output, 0 to write it straight through. From the runner's profile, see
 	// `runnerprofile.Profile.CursorSettle`.
 	CursorSettleMs int `json:"cursor_settle_ms,omitempty"`
+}
+
+// attachInDone answers an `in` frame that carried an id, after its bytes are in
+// the pty. One per frame: a paste is never split, since the runner shows a paste
+// that arrives in pieces as several `[Pasted text #N]` markers.
+type attachInDone struct {
+	T  string `json:"t"`
+	ID string `json:"id"`
 }
 
 // attachSize is the size the pty is running at, sent before the backlog, so
@@ -361,6 +375,13 @@ func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, s
 					noteLagIn(&lagIn, got)
 					if err := run.writeOperatorInputTimed([]byte(in.D), got, lagLabel); err != nil {
 						return
+					}
+				}
+				// The write returned, so a paste is in. Writes on this socket are
+				// safe beside the output loop's: coder/websocket serialises them.
+				if in.ID != "" {
+					if msg, err := json.Marshal(attachInDone{T: "in-done", ID: in.ID}); err == nil {
+						_ = c.Write(ctx, websocket.MessageText, msg)
 					}
 				}
 				// SHARED MULTI-PANE INPUT, off unless this runner was opted in.
