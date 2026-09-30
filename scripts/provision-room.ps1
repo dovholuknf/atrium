@@ -178,7 +178,10 @@ param(
     [switch] $SmokeOnly,
     [string] $SmokeTo,
     [string] $SmokeCwd,
-    [int] $SmokeTimeout = 180
+    [int] $SmokeTimeout = 180,
+    # Which runners get a smoke card: claude and codex have a case. Default, every
+    # runner in -Runners and -Install.
+    [string[]] $SmokeRunners = @()
 )
 
 $ErrorActionPreference = 'Stop'
@@ -874,24 +877,48 @@ echo "json=$(printf '%s' "$o" | base64 | tr -d '\n')"
 # here, or claude not signed in (which auth already said, with the command).
 function Invoke-Smoke {
     param([string] $authState)
+    if ($NoSmoke) { Step 'smoke' 'skip' '-NoSmoke'; return }
+    $want = @(@($Runners + $Install) | Where-Object { $_ } | Select-Object -Unique)
+    # `-File x -SmokeRunners claude,codex` arrives as one string, so split it.
+    $chosen = @($SmokeRunners | ForEach-Object { $_ -split ',' } | Where-Object { $_ })
+    if ($chosen.Count) { $want = @($chosen | Select-Object -Unique) }
+    $ran = 0
+    $anyFail = $false
+    foreach ($r in $want) {
+        if (@($Runners + $Install) -notcontains $r) { Step "smoke:$r" 'skip' "$r is not a runner for this room"; continue }
+        if ($r -eq 'claude') {
+            $why = $null
+            if ($authState -eq 'no') { $why = "claude is not signed in on $Name, so a worker there cannot answer. sign in, then rerun" }
+            elseif ($authState -ne 'ok') { $why = 'whether claude is signed in is not known, so the smoke card would only guess' }
+            if ($why) { Step 'smoke:claude' 'skip' $why; continue }
+        } elseif ($r -eq 'codex') {
+            $login = Test-CodexLogin
+            if ($login -eq 'missing') { Step 'smoke:codex' 'skip' "codex is not on PATH on $Name, so there is nothing to run"; continue }
+            if ($login -eq 'no') {
+                $sshCmd = (@($Ssh) + $SshOption + @('-t', $Target)) -join ' '
+                Step 'smoke:codex' 'warn' "codex on $Name is installed and not signed in. the room works and needs you once: run `"$sshCmd codex login --device-auth`""
+                continue
+            }
+        } else {
+            Step "smoke:$r" 'skip' 'no smoke case'
+            continue
+        }
+        $ran++
+        if (-not (Invoke-SmokeCase $r)) { $anyFail = $true }
+    }
+    if ($anyFail) { Finish 8 }
+}
+
+# One smoke card for one runner. True when it passed, false when a `fail` step
+# was written. The card is exited whatever happened.
+function Invoke-SmokeCase {
+    param([string] $runner)
+    $step = "smoke:$runner"
     function Get-SmokeCwd {
         if ($SmokeCwd) { return $SmokeCwd }
-        # THE CLONE room-git.ps1 init made, when it made one, so the worker
-        # proves the room in a repository. Otherwise the remote home, which
-        # exists on every machine.
         if ($script:clonePath) { return $script:clonePath }
         $hs = if ($os -eq 'windows') { '"home=$HOME"' } else { 'echo "home=$HOME"' }
         (ConvertFrom-KeyValue (Invoke-Remote $hs).Out).home
-    }
-
-    $smokeWhy = $null
-    if ($NoSmoke) { $smokeWhy = '-NoSmoke' }
-    elseif (@($Runners + $Install) -notcontains 'claude') { $smokeWhy = 'claude is not a runner for this room' }
-    elseif ($authState -eq 'no') { $smokeWhy = "claude is not signed in on $Name, so a worker there cannot answer. sign in, then rerun" }
-    elseif ($authState -ne 'ok') { $smokeWhy = 'whether claude is signed in is not known, so the smoke card would only guess' }
-    if ($smokeWhy) {
-        Step 'smoke' 'skip' $smokeWhy
-        Finish 0
     }
 
     $nonce = -join ((1..8) | ForEach-Object { '{0:x}' -f (Get-Random -Maximum 16) })
@@ -902,9 +929,25 @@ function Invoke-Smoke {
     if ($to -and $to -notmatch '@' -and $myRoom) { $to = "$to@$myRoom" }
     if (-not $to -and $me -and $myRoom) { $to = "$me@$myRoom" }
     $cwd = Get-SmokeCwd
-    if (-not $cwd) { Step 'smoke' 'fail' "could not resolve a folder on $Name to run in. pass -SmokeCwd"; Finish 8 }
+    if (-not $cwd) { Step $step 'fail' "could not resolve a folder on $Name to run in. pass -SmokeCwd"; return $false }
 
     $said = "smoke ok $Name $nonce"
+    # THE TITLE CARRIES THE NONCE: a card's wire name comes from its title, and a
+    # launch onto a name that already exists re-prompts THAT card. A fixed title
+    # met the previous run's card, whose recap held the previous nonce.
+    if ($runner -eq 'codex') {
+        # THE ROUND TRIP CODEX CAN MAKE: it has no atrium-control tools, so it runs
+        # `atrium finish`, which lands the nonce in the card's recap. Not lean
+        # (lean is claude only). Model and effort are the row's own defaults, with
+        # effort low: the row takes both, and the cheapest that works is the
+        # smallest thinking, not a named model that an account may not have.
+        $prompt = "This is an automated smoke test of the room $Name. Run exactly this one shell command and then stop: atrium finish `"$nonce`""
+        $body = [ordered]@{
+            harness = 'codex'; cwd = $cwd; title = "smoke: $Name codex $nonce"; prompt = $prompt
+            tags = @('atrium:smoke'); effort = 'low'
+            args = @('-a', 'never', '-s', 'workspace-write', '-c', 'sandbox_workspace_write.network_access=true')
+        }
+    } else {
     $prompt = "This is an automated smoke test of the room $Name. Do exactly these steps and nothing else. " +
         "Use only the atrium-control tools: no Bash, no file reads, no edits.`n"
     $n = 1
@@ -912,7 +955,7 @@ function Invoke-Smoke {
     $prompt += "$n. Call atrium_report with status done, the summary: $said, and no_commit: smoke test, no work.`n" +
         "Then stop. When you finish, get blocked, or need an answer, call atrium_report (or atrium_say your launcher) before you end your turn."
     $body = [ordered]@{
-        harness = 'claude'; cwd = $cwd; title = "smoke: $Name"; prompt = $prompt
+        harness = 'claude'; cwd = $cwd; title = "smoke: $Name claude $nonce"; prompt = $prompt
         tags = @('atrium:smoke'); lean = $true
         # SONNET, NOT HAIKU. Claude Code's auto mode does not run on Haiku, so a
         # Haiku card falls back to asking, and nobody answers. Seen on sg3: a
@@ -928,6 +971,7 @@ function Invoke-Smoke {
         # two arguments it also swallowed the prompt that follows it, and the
         # card came up at an empty input line with nothing to do. Seen on sg3.
         args = @('--allowedTools=mcp__atrium-control__atrium_say,mcp__atrium-control__atrium_report')
+    }
     }
     # WHO LAUNCHED IT, so the report lands on the caller's card. A launcher on
     # another room is `me@room`, and its card `room~id`.
@@ -968,13 +1012,44 @@ function Invoke-Smoke {
         }
         $leftWord = if ($left) { 'and it exited' } else { 'but it did not leave within 30s, so exit it yourself' }
         if ($reported) {
-            Step 'smoke' 'ok' "a claude worker on $Name reported $nonce in ${took}s, $leftWord$(if ($to) { ", and said it to $to" })"
-            if (-not $left) { Step 'smoke' 'warn' "card $id is still running on $Name" }
+            Step $step 'ok' "a $runner worker on $Name reported $nonce in ${took}s, $leftWord$(if ($to -and $runner -eq 'claude') { ", and said it to $to" })"
+            if (-not $left) { Step $step 'warn' "card $id is still running on $Name" }
         } else {
             $smokeErr = "the smoke card $id did not report $nonce in ${SmokeTimeout}s ($leftWord). look at it on the board, it is on $Name"
         }
     }
-    if ($smokeErr) { Step 'smoke' 'fail' $smokeErr; Finish 8 }
+    if ($smokeErr) { Step $step 'fail' $smokeErr; return $false }
+    $true
+}
+
+# Is codex signed in there. `codex login status` answers without a prompt. There
+# is no runner-setup adapter for codex, so the hub cannot say, and this is the
+# only check. Returns ok, no, missing or unknown. Unknown goes on to the smoke
+# card, whose own outcome is then the answer.
+function Test-CodexLogin {
+    $cs = if ($os -eq 'windows') {
+@'
+$c = Get-Command codex -ErrorAction SilentlyContinue | Select-Object -First 1
+if (-not $c) { 'codex=missing'; exit 0 }
+$job = Start-Job { param($n) & $n login status 2>&1 | Out-String } -ArgumentList $c.Source
+if (Wait-Job $job -Timeout 30) { 'json=' + [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes((Receive-Job $job | Out-String))) }
+else { Stop-Job $job; 'codex=hung' }
+'@
+    } else {
+@'
+sh_=${SHELL:-/bin/sh}
+if [ -z "$("$sh_" -lc 'command -v codex' 2>/dev/null)" ]; then echo codex=missing; exit 0; fi
+o=$("$sh_" -lc 'codex login status' </dev/null 2>&1)
+echo "json=$(printf '%s' "$o" | base64 | tr -d '\n')"
+'@
+    }
+    $kv = ConvertFrom-KeyValue (Invoke-Remote $cs).Out
+    if ($kv.codex -eq 'missing') { return 'missing' }
+    if ($kv.codex -eq 'hung' -or -not $kv.json) { return 'unknown' }
+    $text = try { [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($kv.json)) } catch { '' }
+    if ($text -match '(?i)not logged in|not signed in') { return 'no' }
+    if ($text -match '(?i)logged in') { return 'ok' }
+    'unknown'
 }
 
 # ── 4. one room per machine ─────────────────────────────────────────────────
@@ -2028,4 +2103,19 @@ $authState = Test-ClaudeAuth
 if ($bad -gt 0) { Finish 5 }
 
 Invoke-Smoke $authState
+
+# THE PROJECT'S REQUIREMENTS, LAST, so a bare machine ends at "meets atrium's requirements", not just "a room".
+# Read only: never -Fix, since a fix here would be this script deciding for a human. -NoSmoke, because the smoke has
+# just run. What it finds is a warn: the room is up, and each unmet line names its fix and who runs it.
+$req = Join-Path $checkout 'atrium.requirements.yaml'
+if ($Repo -eq 'none') {
+    Step 'requirements' 'skip' '-Repo none'
+} elseif (-not (Test-Path $req)) {
+    Step 'requirements' 'skip' "no atrium.requirements.yaml beside this script. run room-check.ps1 $Name from a checkout"
+} else {
+    & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'room-check.ps1') $Name -Target $Target -NoSmoke -Ssh $Ssh @(if ($SshOption) { '-SshOption'; $SshOption -join ',' }) *>&1 | ForEach-Object { Write-Host $_ }
+    $rc = $LASTEXITCODE
+    if ($rc -eq 0) { Step 'requirements' 'ok' "$Name meets atrium.requirements.yaml" }
+    else { Step 'requirements' 'warn' "room-check exited ${rc}: the room works, and the lines above say what is unmet and who fixes it. rerun: room-check.ps1 $Name -Target $Target" }
+}
 Finish 0
