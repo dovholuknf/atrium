@@ -3,7 +3,8 @@
   Every check a merge needs, in one call. Prints failures, and one line per check with a count.
 
 .DESCRIPTION
-  1. go test -p 4 ./...  (ATRIUM_LOCATION and ATRIUM_DEBUG_INPUTLAG cleared: room sessions inherit both and they
+  0. Refuse, before anything runs, when the branch adds any CLAUDE.md (they are untracked links into dotagents).
+  1. go test -p 4 -timeout 30m ./...  (ATRIUM_LOCATION and ATRIUM_DEBUG_INPUTLAG cleared: room sessions inherit both and they
      fail tests)
   2. scripts/check-board.sh, including the headless run, with NODE_PATH pointed at a node_modules that has
      Playwright. A headless run that skipped itself is a FAILURE here, unless -SkipHeadless.
@@ -76,6 +77,18 @@ function Find-NodePath {
   return $null
 }
 
+# ---- 0. no CLAUDE.md
+# Every CLAUDE.md here is an untracked link into dotagents. A branch that adds one has committed a worker's link, which
+# would replace the real file for everybody who checks out main. r-031's worker committed seven. Never skipped.
+$added = @(git diff --name-only --diff-filter=A "$Base...HEAD" 2>$null | Where-Object { $_ -match '(^|/)CLAUDE\.md$' })
+if ($LASTEXITCODE -ne 0) {
+  Fail "CLAUDE.md check" "could not diff against $Base"
+} elseif ($added.Count) {
+  Fail "branch adds CLAUDE.md" (($added | ForEach-Object { "  $_" }) -join "`n")
+  [Console]::Error.WriteLine("merge-check: refusing. Remove them on the branch with git rm --cached, then rerun.")
+  exit 1
+}
+
 # ---- 1. go test
 if ($SkipGo) {
   $summary.Add('go skipped')
@@ -87,7 +100,8 @@ if ($SkipGo) {
   $pkgOut = @{}  # pkg -> output lines
   $testOut = @{} # "pkg|Test" -> output lines
   $pkgFail = @{} # pkg -> $true, a package that failed with no failing test (build failure, panic, timeout)
-  go test -p 4 -json ./... 2>&1 | ForEach-Object {
+  # The daemon package alone can pass Go's 10 minute default under -p 4, which reads as a hang and not a failure.
+  go test -p 4 -timeout 30m -json ./... 2>&1 | ForEach-Object {
     $ev = $null
     try { $ev = $_ | ConvertFrom-Json -ErrorAction Stop } catch { }
     if (-not $ev -or -not $ev.Action) { [Console]::Error.WriteLine("$_"); return }

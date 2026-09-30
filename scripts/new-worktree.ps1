@@ -80,4 +80,17 @@ if (-not (Test-Path -LiteralPath (Join-Path $wt 'CLAUDE.md'))) {
   Fail "CLAUDE.md is absent in $wt (worktree left in place)"
 }
 
+# The links are untracked, so `git add -A` in a worktree commits them. r-031's worker committed seven. info/exclude
+# lives in the common dir and so covers every worktree at once.
+$common = (git -C $wt rev-parse --path-format=absolute --git-common-dir).Trim()
+$exclude = Join-Path $common 'info/exclude'
+$have = @(if (Test-Path -LiteralPath $exclude) { Get-Content -LiteralPath $exclude })
+if ($have -notcontains 'CLAUDE.md') {
+  New-Item -ItemType Directory -Force -Path (Split-Path -Parent $exclude) | Out-Null
+  Add-Content -LiteralPath $exclude -Value 'CLAUDE.md'
+  Write-Output "added CLAUDE.md to $exclude"
+}
+git -C $wt check-ignore -q --no-index CLAUDE.md
+if ($LASTEXITCODE -ne 0) { Fail "CLAUDE.md is not ignored in $wt after writing $exclude" }
+
 Write-Output "linked $count CLAUDE.md file(s) into $wt"
