@@ -21,8 +21,13 @@ import (
 // board and not this hub's, and this hub serves no guest listener at all (see
 // the guests note in events.go). So there is no guest to refuse here. If a hub
 // ever serves one, refuse PUT and test for it in this file before that listener
-// exists. The board itself is trusted the way it is for launching a session,
-// which also runs a program.
+// exists.
+//
+// PUT AND TEST ARE LOOPBACK ONLY (f-024). This header used to say the board is
+// trusted here the way it is for launching a session. But a board reached over
+// an overlay, the phone for one, is not the operator at this machine, and a
+// command the hub runs is exactly what must not be settable from there. GET and
+// presence stay open: the phone reads the setting and says it is visible.
 
 // SetNotify wires the notifier. Optional: a hub without one answers the notify
 // routes 404 and takes presence and ignores it.
@@ -48,6 +53,17 @@ func (p *Proxy) serveNotify(w http.ResponseWriter, r *http.Request, sub string) 
 	fail := func(code int, msg string) {
 		w.WriteHeader(code)
 		fmt.Fprintf(w, `{"error":%q}`, msg)
+	}
+	// SETTING THE COMMAND AND RUNNING IT ARE LOOPBACK ONLY, like /_hub/mcp. A
+	// PUT names a program the hub runs and the test runs it, so neither may be
+	// reachable over an overlay, however the board got there. Reading the
+	// setting is harmless and stays open. See the note at the top of this file.
+	if (sub == "notify" && r.Method == http.MethodPut) || sub == "notify/test" {
+		if !loopbackRemote(r.RemoteAddr) {
+			fail(http.StatusForbidden, "the notify command is set and tested only from the machine the hub "+
+				"runs on. it is not reachable over an overlay.")
+			return
+		}
 	}
 	switch sub {
 	case "notify":
