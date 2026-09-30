@@ -1645,6 +1645,9 @@ function paintWorking(tasks) {
   const n = (tasks || []).filter(t =>
     t.supervised && t.activity && t.activity.what && t.activity.what !== "idle").length;
   el.hidden = n === 0;
+  // The slim phone header shows the count beside the status dot (css/phone.css).
+  const cn = document.getElementById("conn-n");
+  if (cn) { cn.hidden = n === 0; cn.textContent = String(n); }
   if (!n) return;
   el.textContent = n === 1 ? "1 working" : n + " working";
   el.dataset.tip = n === 1

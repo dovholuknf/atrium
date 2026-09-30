@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, interactive-widget=resizes-content">
 <!-- The board's address is never sent to a site a link opens. `openLinkReused` in js/terminal-links.js
      cannot use `rel=noreferrer` (it forces a new tab), so the policy is the page's. Nothing in the daemon reads
      `Referer`, so this costs nothing on the board's own requests. -->
@@ -86,8 +86,6 @@
 </script>
 </head>
 <body>
-<!-- The way back once the phone header is hidden. A strip in the flow, not an overlay, so it covers nothing. -->
-<div id="hdr-strip"><button type="button" id="hdr-show" onclick="phoneHeaderSet(false)">&#9662; show header</button></div>
 <header>
   <div class="bar">
     <h1 class="wordmark accent-text">Atrium</h1>
@@ -157,9 +155,10 @@
     <div class="rooms" id="rooms" hidden onclick="openRooms()">
       <span class="dot"></span><span id="rooms-t">rooms</span>
     </div>
-    <button type="button" id="hdr-hide" class="icon" onclick="phoneHeaderSet(true)"
-      aria-label="hide the header" data-tip="hide the header">&#9652;</button>
-    <div class="conn" id="conn"><span class="dot"></span><span id="conn-t">connecting</span></div>
+    <div class="conn" id="conn"><span class="dot"></span><span class="conn-n" id="conn-n" hidden></span><span id="conn-t">connecting</span></div>
+    <!-- Phone only (css/phone.css): the header is one slim row and this opens the rest. -->
+    <button type="button" id="hdr-toggle" class="icon" onclick="phoneHeaderOpenSet(!document.body.classList.contains('hdr-open'))"
+      aria-label="show the full header" aria-expanded="false">&#9662;</button>
   </div>
   <div class="rule"></div>
 </header>
@@ -354,6 +353,9 @@ Exports honor whatever filter is applied.">?</span>
             <span id="t-mark"></span>
             <strong id="t-title">nothing attached</strong>
           </span>
+          <!-- PHONE ONLY (body.term-phone, see phone.css): the bar is one slim row until this is tapped. -->
+          <button type="button" id="t-bar-toggle" class="icon" onclick="phoneHeaderOpenSet(!document.body.classList.contains('hdr-open'))"
+            aria-label="show the terminal's details and buttons" aria-expanded="false">&#9662;</button>
           <span class="chips" id="t-chips"></span>
           <!-- Hidden until the cog asks for it. On the bar rather than in a
                dialog because the terminal underneath IS the preview: a theme
@@ -551,6 +553,8 @@ Exports honor whatever filter is applied.">?</span>
               data-tip="drag to resize" onpointerdown="walkGripDown(event)"></button>
           </aside>
           <div id="t-screen"></div>
+          <!-- "Messages waiting, clear the line". Absolute, never focused. See js/heldline.js. -->
+          <div class="heldline" id="t-heldline" role="status" aria-live="polite" hidden></div>
         </div>
         <!-- The attached card's details, slid up from the shortcut strip. Read
              only when opened. See js/peek.js. -->
@@ -573,8 +577,9 @@ Exports honor whatever filter is applied.">?</span>
           <button type="button" tabindex="-1" id="t-keys-attach" aria-label="attach a file or photo" onclick="pickTermFiles()">&#128206;</button>
         </div>
         <div class="term-view" id="t-view" hidden>
-          <button type="button" id="t-view-btn" tabindex="-1" onclick="toggleTermView()">fit this screen</button>
-          <span>fit this screen resizes the terminal for every window watching it</span>
+          <button type="button" id="t-view-btn" tabindex="-1" onclick="toggleTermView()"
+            data-tip="fit this screen resizes the terminal for every window watching it">fit this screen</button>
+          <span id="t-view-note">fit this screen resizes the terminal for every window watching it</span>
         </div>
         <!-- What atrium thinks is on the input line, and whether a say may be
              typed in. A debug readout, off unless switched on. See js/typing.js. -->
@@ -3248,6 +3253,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/toast-log.js"></script>
 <script src="/js/keepalive.js"></script>
 <script src="/js/alias.js"></script>
+<script src="/js/heldline.js"></script>
 <script src="/js/settings.js"></script>
 <script src="/js/overlays.js"></script>
 <script src="/js/expose2.js"></script>
