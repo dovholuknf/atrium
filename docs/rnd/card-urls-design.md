@@ -64,6 +64,19 @@ error:
 
 So a bookmark made before the clash keeps opening the card it always opened, and a new one asks once.
 
+**A done card.** A done card keeps answering to its alias behind any live one (`GetByAlias`: a worker that reported done
+still waits at its prompt). A dead or archived card never answers. So for `/alias/rnd`:
+
+| live `rnd` cards, all rooms | done `rnd` cards | opens |
+| --- | --- | --- |
+| 1 | any | the live one. If this browser last opened a done one, the notice line names it and links to it |
+| 0 | 1 | the done one, with "this card is done" over the pane and its last recap line |
+| 0 | 2 or more, on different rooms | the chooser, done cards marked done, newest first |
+| 2 or more | any | the chooser (the clash rule above) |
+| 0 | 0 | the miss: "no card called rnd", with what would have worked |
+
+`/room/<room>/rnd` follows the same table inside one room, where the store already rules out two live holders.
+
 **The room, not the machine, qualifies it.** The hub keys everything by room: tags, routing, the rooms list. A machine
 can hold two rooms (sg4 holds `sg4-control` and `claude-sg4`), so a machine alone does not say where a card is.
 
