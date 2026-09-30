@@ -72,6 +72,13 @@ func matchCard(cards []ctlCard, who string) (ctlCard, bool) {
 			return t, true
 		}
 	}
+	// A wire name without its atrium's prefix, `rnd-director` for
+	// `sparta/rnd-director`, the way the room itself qualifies a bare one.
+	for _, t := range cards {
+		if i := strings.LastIndex(t.Wire, "/"); i >= 0 && t.Wire[i+1:] == who {
+			return t, true
+		}
+	}
 	a := strings.ToLower(strings.TrimPrefix(who, "@"))
 	if a == "" {
 		return ctlCard{}, false
@@ -100,12 +107,20 @@ func wouldWork(room string, cards []ctlCard) []string {
 		if !cardLive(t.Status) {
 			continue
 		}
-		name := t.Wire
+		// A card with no session has no wire name. Its alias still reaches it,
+		// and one with neither is nobody a caller could have meant.
+		name, alias := t.Wire, t.Alias
+		if name == "" {
+			name, alias = alias, ""
+		}
+		if name == "" {
+			continue
+		}
 		if room != "" {
 			name += "@" + room
 		}
-		if t.Alias != "" {
-			name += " (@" + t.Alias + ")"
+		if alias != "" {
+			name += " (@" + alias + ")"
 		}
 		out = append(out, name)
 	}
