@@ -7140,17 +7140,30 @@ async function cacheChipSection(browser, base) {
     });
     check("board", bo);
 
-    // 3. A card 2 seconds from cold flips with no request, from one armed timer.
-    kaFix("cc-flip", { why: "not idle", warm_until: new Date(Date.now() + 2500).toISOString() });
+    // 3. A card 2 seconds from cold flips with no request, from one armed timer. The card arrives warm for an hour, through
+    // the real paint, and its time is brought to two seconds from now in the page once that paint and its fetch are done,
+    // since a busy machine can spend the two seconds on the way here.
+    kaFix("cc-flip", { why: "not idle", warm_until: new Date(Date.now() + 3600000).toISOString() });
     landList = [LAND["cc-flip"]];
     await p.evaluate(() => switchView("stack"));
+    const fetched = p.waitForResponse(r => /\/v1\/tasks(\?|$)/.test(r.url()), { timeout: slow(10000) });
     await p.evaluate(() => tasksSoon());
-    await p.waitForSelector('#stack-list [data-cid="cc-flip"]', { timeout: slow(10000) });
-    const first = await p.evaluate(() => document.querySelector('#stack-list [data-cid="cc-flip"] .cfull').textContent);
+    await fetched;
+    await p.waitForFunction(() => { const e = document.querySelector('#stack-list [data-cid="cc-flip"] .cfull'); return e && /^\u2744 warm/.test(e.textContent); }, null, { timeout: slow(10000) });
+    // No read left to come: a late one would bring the hour back over the time set below.
+    await p.waitForFunction(() => !tasksTimer && !refreshTimer && !refreshInFlight && !refreshDirty && !want.tasks, null, { timeout: slow(15000) });
+    await p.waitForFunction(() => kaTimer > 0, null, { timeout: slow(5000) });
+    const n0 = reqs.length;
+    const first = await p.evaluate(() => {
+      KA_SEEN.get("cc-flip").keepalive.warm_until = new Date(Date.now() + 2500).toISOString();
+      kaRepaint();
+      const now = document.querySelector('#stack-list [data-cid="cc-flip"] .cfull').textContent;
+      kaArm();
+      return now;
+    });
     if (!/^\u2744 warm/.test(first)) fail("cacheChip flip: starts as " + first);
     const armed = await p.evaluate(() => kaTimer > 0);
     if (!armed) fail("cacheChip flip: no timer is armed for the soonest card");
-    const n0 = reqs.length;
     await p.waitForFunction(() => /cold since/.test(document.querySelector('#stack-list [data-cid="cc-flip"] .cfull').textContent),
       null, { timeout: slow(8000) }).catch(() => fail("cacheChip flip: the chip did not flip to cold by itself"));
     if (reqs.length !== n0) fail("cacheChip flip: the flip made " + (reqs.length - n0) + " requests: " + reqs.slice(n0).join(" "));
