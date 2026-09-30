@@ -29,3 +29,26 @@ Reviewed by @review, 2026-09-30, from `git diff claude/main...7d8fe22b`. Room si
    fault. Could `outputSoon` skip the read once the daemon is stopping, or could Close stop pending timers?
 
 ROOM DEPLOY OK 7d8fe22b
+
+## Re-read of 8d0a38c4, 2026-09-30
+
+Read `git show 8d0a38c4`. Low 2 is closed: `Close` calls `stopOutput`, which stops every armed timer and sets
+`closed`, and a timer that already fired checks `closed` before reading. Low 1 is closed for the usual case: a check
+reads from the offset of the last read, takes complete lines only, and goes back to the 2 MB tail on a new
+transcript or a file that shrank.
+
+### Medium (new)
+
+1. **One line over 8 MB freezes output_at for the card, and each check then reads more.** `scanReplyText` uses a
+   `bufio.Scanner` with an 8 MB limit and returns `sc.Err()`. On `ErrTooLong`, `outputMoved` returns false before
+   `o.seen` is written, so the offset never moves past that line. Every later check seeks to the same offset and
+   `io.ReadAll`s everything written since, with no cap (`outputat.go`, the `LimitReader(f, info.Size()-start)`). So
+   output_at stops moving for the rest of the session, and each hook's check reads a chunk that only grows. Before
+   this commit the read was the 2 MB tail, which cannot hold such a line. A transcript line gets that big when a large
+   image or document is pasted into the conversation, which stores it base64 on one line. This is proven from the
+   code path, not by a test.
+   - Fix: cap the chunk the way the first read is capped (`if info.Size()-start > transcriptTail`, start at the
+     tail), and on a scan error still advance the offset to the end of the chunk, so one bad line is skipped once.
+
+ROOM DEPLOY OK 8d0a38c4, with the medium to fix in the next runtime batch. Its effect is one card's phone view
+losing live updates, plus a growing read per hook on that card, and nothing on the hook path waits for it.
