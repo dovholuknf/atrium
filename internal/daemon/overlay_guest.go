@@ -404,7 +404,7 @@ func (d *Daemon) bindCardShare(title string, rec *store.CardShare) (*guestShare,
 		Since: time.Now().Format(time.RFC3339), Token: shr.Token,
 		Name: rec.Name,
 	}
-	srv := &http.Server{Handler: edge.Shared(d.guestHandler(taskID))}
+	srv := &http.Server{Handler: edge.Named(d.guestHandler(taskID), shr.FrontendEndpoints...)}
 	g.srv, g.ln = srv, ln
 	d.guests.put(g)
 
