@@ -16324,6 +16324,27 @@ async function growlPopoutSection(browser, base) {
     if (p2.osc <= p1.osc || p2.notes !== p1.notes + 1) fail("growlPopout: the pop-out did not ring its reminder: " + JSON.stringify([p1, p2]));
     if (b2.osc !== b1.osc || b2.notes !== b1.notes) fail("growlPopout: the board rang beside the pop-out: " + JSON.stringify([b1, b2]));
 
+    // The board has the focus: the pop-out still rings its own card's reminder, under its own switch and mute, and the
+    // board still does not ring for that card.
+    await pop.evaluate(() => { focusedElsewhere = { win: "board-win", at: Date.now(), watch: "" }; });
+    p1 = await heard(pop); b1 = await heard(board);
+    await say([Object.assign({}, mine, { reminders: 31 }), theirs], { remind: [mine.id] });
+    p2 = await heard(pop); b2 = await heard(board);
+    // The tone is the pop-out's. The message itself goes to the board as a toast, as it does for any alert.
+    if (p2.osc <= p1.osc) fail("growlPopout: the pop-out did not ring with the board focused: " + JSON.stringify([p1, p2]));
+    if (b2.osc !== b1.osc || b2.notes !== b1.notes) fail("growlPopout: the board rang for a popped-out card while focused: " + JSON.stringify([b1, b2]));
+    await pop.evaluate(() => setNotifyOff(true));
+    p1 = await heard(pop);
+    await say([Object.assign({}, mine, { reminders: 32 }), theirs], { remind: [mine.id] });
+    p2 = await heard(pop);
+    if (p2.osc !== p1.osc || p2.notes !== p1.notes) fail("growlPopout: a switched-off pop-out rang with the board focused: " + JSON.stringify([p1, p2]));
+    await pop.evaluate(() => { setNotifyOff(false); document.getElementById("sound").click(); });
+    p1 = await heard(pop);
+    await say([Object.assign({}, mine, { reminders: 33 }), theirs], { remind: [mine.id] });
+    p2 = await heard(pop);
+    if (p2.osc !== p1.osc) fail("growlPopout: a muted pop-out played a tone with the board focused.");
+    await pop.evaluate(() => { document.getElementById("sound").click(); focusedElsewhere = { win: "", at: 0 }; });
+
     // Closing the pop-out hands the reminders back to the board, even with its switch left off.
     await pop.evaluate(() => setNotifyOff(true));
     await pop.close();
