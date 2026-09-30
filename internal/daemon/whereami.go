@@ -422,3 +422,18 @@ func removeIfMine(path string) {
 	}
 	_ = os.Remove(path)
 }
+
+// tellWhereIAm puts this daemon's own address file in a child's environment
+// when it keeps one somewhere other than where `LocationPath` would look.
+//
+// THE HOOKS A RUNNER FIRES FIND THEIR DAEMON THROUGH ATRIUM_LOCATION, or else
+// the machine's shared file. A daemon given its own `LocationFile`, a throwaway
+// room or a test, wrote its address there and never told its children, so their
+// hooks read the shared file and reported to whatever room owns it. That is how
+// a test's runner put cards on the live board. Told, they report here, and to
+// nothing once this daemon is gone.
+func (d *Daemon) tellWhereIAm(env map[string]string) {
+	if p := strings.TrimSpace(d.opts.LocationFile); p != "" {
+		env["ATRIUM_LOCATION"] = p
+	}
+}
