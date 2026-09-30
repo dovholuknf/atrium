@@ -797,6 +797,10 @@ type view struct {
 	// no turn has ever ended on. Durable, unlike Activity. See
 	// docs/runtime/seen-design.md.
 	Seen *store.SeenView `json:"seen,omitempty"`
+	// Mercurius says which server a lean card got under the key `mercurius`
+	// when lean_worker_gateway is set: "mercurius: mercurius-worker" or
+	// "mercurius: mercurius (wide)". Absent when the setting is off.
+	Mercurius string `json:"mercurius,omitempty"`
 	// Merged is the chip's data: the branch this worker's merge covered, when it
 	// will be culled, and who held it. Absent on a card that is neither marked
 	// nor held. Durable. See docs/rnd/merged-cull-design.md.
@@ -933,6 +937,7 @@ func (s *Server) withAskCounts(vs []view) []view {
 // withAskCounts.
 func (s *Server) taskEvent(t *store.Task) view {
 	v := toView(t)
+	v.Mercurius = store.MercuriusFor(t.Tags, s.st.LeanWorkerGateway())
 	if n, err := s.st.RepliesOwedFor(t.ID); err == nil {
 		v.RepliesOwed = n
 	}
@@ -1036,6 +1041,13 @@ func (s *Server) flushTask(id string) {
 // swallowing a failure for the same reason `withAskCounts` does: it decorates
 // a row that is worth serving without it.
 func (s *Server) withSeen(vs []view) []view {
+	if gw := s.st.LeanWorkerGateway(); gw != "" {
+		for i := range vs {
+			if vs[i].Task != nil {
+				vs[i].Mercurius = store.MercuriusFor(vs[i].Task.Tags, gw)
+			}
+		}
+	}
 	if marks, err := s.st.MergedViews(); err == nil {
 		for i := range vs {
 			if vs[i].Task != nil {

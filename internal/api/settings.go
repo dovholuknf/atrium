@@ -183,6 +183,7 @@ func globalAutoView(s *Server) map[string]any {
 	autoNewContextView(s.st, out)
 	inputLagView(out)
 	// Reported even when unset, so the setting can be read back as `above_normal`.
+	out["lean_worker_gateway"] = s.st.LeanWorkerGateway()
 	out["runner_priority"] = "above_normal"
 	if !s.st.RunnerPriorityRaised() {
 		out["runner_priority"] = "normal"
@@ -271,6 +272,9 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		// The Windows priority class of a new runner and its pseudo console host:
 		// `above_normal` or `normal`. See `store.SettingRunnerPriority`.
 		RunnerPriority *string `json:"runner_priority"`
+		// The name of the mcp.json server that stands in for `mercurius` on a default
+		// lean launch. A name, never a URL. See `store.SettingLeanWorkerGateway`.
+		LeanWorkerGateway *string `json:"lean_worker_gateway"`
 		// Whether this room logs terminal input lag. Applied at once, with no
 		// restart. See inputlag.go.
 		InputLag *bool `json:"input_lag_log"`
@@ -559,6 +563,22 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := s.st.SetSetting(store.SettingReplayMode, mode); err != nil {
+			s.fail(w, err)
+			return
+		}
+	}
+
+	if body.LeanWorkerGateway != nil {
+		// A server NAME from the runner's mcp.json, never a URL: a header or a token
+		// must not land in this table. Whether the name is in mcp.json is checked at
+		// launch, where the config is read, and refused there with the names it has.
+		v := strings.TrimSpace(*body.LeanWorkerGateway)
+		if strings.ContainsAny(v, "/: \t") {
+			writeErr(w, http.StatusBadRequest, fmt.Errorf(
+				"lean_worker_gateway is a server NAME from the runner's mcp.json, like mercurius-worker, never a URL. got %q", v))
+			return
+		}
+		if err := s.st.SetSetting(store.SettingLeanWorkerGateway, v); err != nil {
 			s.fail(w, err)
 			return
 		}
