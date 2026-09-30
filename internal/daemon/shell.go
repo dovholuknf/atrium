@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aymanbagabas/go-pty"
 	"github.com/dovholuknf/atrium/internal/api"
 	"github.com/dovholuknf/atrium/internal/shellpick"
+	"github.com/dovholuknf/atrium/internal/store"
 )
 
 // A SHELL BESIDE A WEDGED AGENT.
@@ -179,11 +179,6 @@ func (d *Daemon) spawnShell(taskID, cmdName string, args []string, cwd string) e
 			"or install that one: %w", cmdName, err)
 	}
 
-	raise := d.beginPTYRaise()
-	p, err := pty.New()
-	if err != nil {
-		return fmt.Errorf("could not open a pseudo terminal: %w", err)
-	}
 	// The same launch size the runner's terminal gets, because its ring buffer
 	// files those first bytes under the same width. A shell opened at the
 	// platform default and a buffer saying it was 120 columns wide is a
@@ -193,30 +188,28 @@ func (d *Daemon) spawnShell(taskID, cmdName string, args []string, cwd string) e
 	// up the size of the window it is about to be drawn in. See
 	// `launchWidthFor`.
 	cols, rows := d.launchSizeFor(taskID)
-	sizeAtLaunch(p, cols, rows)
-	c := p.Command(resolved, args...)
-	c.Dir = cwd
-	c.Env = d.shellEnv(taskID)
-	if err := c.Start(); err != nil {
-		p.Close()
-		return fmt.Errorf("could not start %s: %w", cmdName, err)
+	t, err := d.startTerm(cmdName, resolved, args, cwd, d.shellEnv(taskID), cols, rows)
+	if err != nil {
+		return err
 	}
-	// The operator types into this one too.
-	raise.apply(c.Process.Pid)
 
 	r := &runner{
-		taskID: taskID, pty: p, cmd: c, started: time.Now(),
+		taskID: taskID, started: time.Now(),
+		// Its own start, not the card's runner's: a card holds both at once.
+		runID:    store.NewRunID(),
 		buf:      newRingSized(api.ScrollbackBytes(d.st), cols, rows),
 		watchers: map[chan []byte]struct{}{},
 		done:     make(chan struct{}),
 	}
+	r.adopt(t)
 	r.touch()
+	d.recordRun(r, store.RunKindShell)
 	d.sup.addShell(r)
 
 	go func() {
 		chunk := make([]byte, 8192)
 		for {
-			n, err := p.Read(chunk)
+			n, err := t.Read(chunk)
 			if n > 0 {
 				r.deliverOutput(chunk[:n])
 			}
@@ -286,11 +279,20 @@ func (d *Daemon) shellEnv(taskID string) []string {
 // none of it applies, and any of it would file a card as dead because its
 // operator closed a terminal.
 func (d *Daemon) awaitShellExit(r *runner) {
-	_ = r.cmd.Wait()
+	_ = r.tm().Wait()
 	r.exitOnce.Do(func() { close(r.done) })
 	r.closeWatchers()
 	r.closePTY()
 	d.sup.removeShell(r.taskID)
+	// Marked filed and nothing else: no event, no status. The mark is what lets
+	// a host's list tell an exit already seen from one nobody has.
+	if r.runID != "" {
+		if _, err := d.st.FileExit(store.ExitFiling{
+			TaskID: r.taskID, RunID: r.runID, Kind: store.RunKindShell,
+		}); err != nil {
+			log.Printf("[atrium] mark shell run %s filed: %v", r.runID, err)
+		}
+	}
 	log.Printf("[atrium] shell for %s closed", r.taskID)
 }
 
@@ -322,9 +324,9 @@ func (d *Daemon) CloseShell(taskID string) {
 	select {
 	case <-r.done:
 	case <-time.After(shellHangup):
-		if r.cmd != nil && r.cmd.Process != nil {
+		if t := r.tm(); t != nil {
 			log.Printf("[atrium] shell for %s did not close, killing it", taskID)
-			_ = r.cmd.Process.Kill()
+			_ = t.Kill()
 		}
 		// Waited on again, because a kill is a request too and the handle is
 		// not released until the process has actually gone.

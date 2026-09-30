@@ -693,8 +693,17 @@ type runner struct {
 	leaving atomic.Bool
 
 	taskID string
-	pty    pty.Pty
-	cmd    *pty.Cmd
+	// runID names this one start, and is what an exit is filed against. Empty
+	// for a runner built without a start, which is only a test. See ptyrun.go in
+	// the store.
+	runID string
+	// t is the terminal, reached through tm() and never used directly. pty and
+	// cmd are the in-process terminal's parts: spawn sets them, and a test that
+	// wants a fake terminal sets pty. See term.go.
+	t        term
+	termOnce sync.Once
+	pty      pty.Pty
+	cmd      *pty.Cmd
 	// pid is the process atrium started. announced is the pid its own session
 	// hook first reported, which differs from pid when the harness is a shim
 	// that starts the real runner. See ownsSession.
@@ -871,8 +880,8 @@ type runner struct {
 // why the guard is here rather than a check at either call site.
 func (r *runner) closePTY() {
 	r.closeOnce.Do(func() {
-		if r.pty != nil {
-			_ = r.pty.Close()
+		if t := r.tm(); t != nil {
+			_ = t.Close()
 		}
 	})
 }
@@ -963,7 +972,7 @@ const sayThenEnter = 140 * time.Millisecond
 // would split one paste into two and undo both. Continue immediately.
 func (r *runner) Write(p []byte) error {
 	for len(p) > 0 {
-		n, err := r.pty.Write(p)
+		n, err := r.tm().Write(p)
 		if err != nil {
 			return err
 		}
@@ -1390,7 +1399,7 @@ func (r *runner) applyViewport(agreed viewport, together bool) error {
 		r.cancelHeld()
 		if agreed.cols != curCols || agreed.rows != curRows {
 			r.buf.SetSize(agreed.cols, agreed.rows)
-			err = r.pty.Resize(agreed.cols, agreed.rows)
+			err = r.tm().Resize(agreed.cols, agreed.rows)
 			r.noteResized()
 		} else if stale {
 			r.noteResized()
@@ -1405,7 +1414,7 @@ func (r *runner) applyViewport(agreed viewport, together bool) error {
 		// At the rows ALREADY APPLIED, never the agreed ones, or a width change
 		// would carry a new height straight past the hold.
 		r.buf.SetSize(agreed.cols, curRows)
-		err = r.pty.Resize(agreed.cols, curRows)
+		err = r.tm().Resize(agreed.cols, curRows)
 		r.noteResized()
 	}
 	r.holdHeight(agreed.rows, curRows)
@@ -1485,7 +1494,7 @@ func (r *runner) applyHeld(gen uint64) {
 		return
 	}
 	r.buf.SetSize(agreed.cols, pending)
-	if err := r.pty.Resize(agreed.cols, pending); err != nil {
+	if err := r.tm().Resize(agreed.cols, pending); err != nil {
 		log.Printf("[atrium] resize %s: %v", r.taskID, err)
 	}
 	r.noteResized()
@@ -1975,11 +1984,6 @@ func (d *Daemon) spawnPTYResume(taskID, cmdName string, args []string, cwd strin
 	}
 	resolved, args = viaShellIfScript(resolved, args)
 
-	raise := d.beginPTYRaise()
-	p, err := pty.New()
-	if err != nil {
-		return 0, fmt.Errorf("could not open a pseudo terminal: %w", err)
-	}
 	// The width this card was last looked at, so a reopened session draws its
 	// first screen for the window it is about to appear in. See
 	// `launchWidthFor`: a fixed width here put a stretch of narrow output into
@@ -1989,9 +1993,6 @@ func (d *Daemon) spawnPTYResume(taskID, cmdName string, args []string, cwd strin
 	// reopen narrow. See `api.SettingTerminalMinCols`.
 	cols, rows := d.launchSizeFor(taskID)
 	cols = max(cols, api.TerminalMinCols(d.st))
-	sizeAtLaunch(p, cols, rows)
-	c := p.Command(resolved, args...)
-	c.Dir = cwd
 	// ATRIUM MADE THIS TERMINAL, SO ATRIUM SAYS WHAT IT IS.
 	//
 	// A program decides whether to use colour by reading the environment, and
@@ -2003,16 +2004,15 @@ func (d *Daemon) spawnPTYResume(taskID, cmdName string, args []string, cwd strin
 	//
 	// That is a bad thing to leave to chance: the child is on a pseudo terminal
 	// this process opened, and whether it is a terminal is not in doubt.
-	c.Env = declareATerminal(env)
-	if err := c.Start(); err != nil {
-		p.Close()
-		return 0, fmt.Errorf("could not start %s: %w", cmdName, err)
+	t, err := d.startTerm(cmdName, resolved, args, cwd, declareATerminal(env), cols, rows)
+	if err != nil {
+		return 0, err
 	}
-	raise.apply(c.Process.Pid)
 
 	r := &runner{
-		taskID: taskID, pty: p, cmd: c, started: time.Now(),
-		pid:     c.Process.Pid,
+		taskID: taskID, started: time.Now(),
+		pid:     t.Pid(),
+		runID:   store.NewRunID(),
 		resumed: resumed,
 		dir:     cwd,
 		spec:    fresh,
@@ -2025,6 +2025,7 @@ func (d *Daemon) spawnPTYResume(taskID, cmdName string, args []string, cwd strin
 		done:     make(chan struct{}),
 		onSized:  d.noteRoomSize,
 	}
+	r.adopt(t)
 	// BEFORE `add`, which is the moment an attach can find this runner. A
 	// viewer that arrived between the two would be sent the new terminal's
 	// first bytes and nothing before them, which is the bug being fixed.
@@ -2032,6 +2033,8 @@ func (d *Daemon) spawnPTYResume(taskID, cmdName string, args []string, cwd strin
 		r.line.escClears = clearsOnEsc(t.Runner)
 	}
 	d.adoptCarryover(r)
+	// DURABLE BEFORE THE LAUNCH COUNTS AS COMPLETE. See `recordRun`.
+	d.recordRun(r, store.RunKindRunner)
 	d.sup.add(r)
 
 	// A card that was lent out gets its address back the moment it has a
@@ -2074,7 +2077,7 @@ func (d *Daemon) spawnPTYResume(taskID, cmdName string, args []string, cwd strin
 		}
 		chunk := make([]byte, 8192)
 		for {
-			n, err := p.Read(chunk)
+			n, err := t.Read(chunk)
 			if n > 0 {
 				// FIRST, so the tap holds what arrived even if everything
 				// below this line is wrong.
@@ -2104,16 +2107,13 @@ func (d *Daemon) spawnPTYResume(taskID, cmdName string, args []string, cwd strin
 	}
 	d.emitLifecycle("session-start", lifecycleStart(d.taskTitle(taskID), runner, resumed))
 
-	pid := 0
-	if c.Process != nil {
-		pid = c.Process.Pid
-	}
-	return pid, nil
+	return r.pid, nil
 }
 
-// awaitExit records the runner exiting and marks its card dead.
+// awaitExit waits for the runner to end, does what only a live runner can, and
+// hands the rest to `fileExit`.
 func (d *Daemon) awaitExit(r *runner) {
-	err := r.cmd.Wait()
+	code := r.tm().Wait()
 	lived := time.Since(r.started)
 	r.exitOnce.Do(func() { close(r.done) })
 	r.closeWatchers()
@@ -2135,13 +2135,42 @@ func (d *Daemon) awaitExit(r *runner) {
 	}
 	d.act.forget(r.taskID)
 
-	code := 0
-	if err != nil {
-		code = -1
-		if ee, ok := err.(*exec.ExitError); ok {
-			code = ee.ExitCode()
-		}
-	}
+	d.fileExit(runExit{
+		taskID: r.taskID, runID: r.runID, code: code, tail: tail, lived: lived,
+		resumed: r.resumed, spec: r.spec,
+	})
+}
+
+// runExit is one runner's end, as much as filing it needs to know.
+//
+// NO `*runner` IN IT, on purpose. The exit of a terminal a host kept for a
+// daemon that was not there arrives with no runner at all, only what the host
+// listed, and it has to file the same way.
+type runExit struct {
+	taskID string
+	// runID is which START ended. An exit of a later start is never taken for an
+	// earlier one, because the pair is the key. See store.FileExit.
+	runID string
+	code  int
+	// tail is the last of its output, read before the terminal closed.
+	tail  string
+	lived time.Duration
+	// resumed and spec say whether this start asked for a resume and what to run
+	// instead. Nil spec means there is no fresh start to fall back to.
+	resumed bool
+	spec    *launchSpec
+}
+
+// fileExit records a runner's end and marks its card dead, AT MOST ONCE per
+// (task_id, run_id). A second call for the same pair does nothing and reports
+// false, so a crash between filing and whatever comes next can be repeated
+// safely.
+//
+// What is claimed atomically is the run's mark, the startup-failure `why` and
+// the `exited` event. The rest (the lifecycle line, the resume retry, the dead
+// status) follows only for the call that claimed it.
+func (d *Daemon) fileExit(x runExit) bool {
+	code, lived, tail := x.code, x.lived, x.tail
 	payload := map[string]any{
 		"exit_code": code, "by": "supervisor",
 		"ran_for": lived.Round(time.Millisecond).String(),
@@ -2149,20 +2178,27 @@ func (d *Daemon) awaitExit(r *runner) {
 	// A runner that lasted seconds did no work, so its last output is a failure
 	// message. One that ran for an hour ended for reasons its final twelve
 	// lines do not explain.
+	why := ""
 	if lived < startupFailureWindow && tail != "" {
 		payload["output"] = tail
-		if err := d.st.SetWhy(r.taskID, "failed to start: "+firstLine(tail)); err != nil {
-			log.Printf("[atrium] note early exit for %s: %v", r.taskID, err)
-		}
+		why = "failed to start: " + firstLine(tail)
 	}
-	if err := d.st.AppendEvent(r.taskID, store.EventExited, payload); err != nil {
-		log.Printf("[atrium] record exit for %s: %v", r.taskID, err)
+	filed, err := d.st.FileExit(store.ExitFiling{
+		TaskID: x.taskID, RunID: x.runID, Kind: store.RunKindRunner, Payload: payload, Why: why,
+	})
+	if err != nil {
+		// Carried on as filed, as it always was: a store that failed here halts
+		// itself, and the run is left unmarked so the next daemon files it again.
+		log.Printf("[atrium] record exit for %s: %v", x.taskID, err)
+	} else if !filed {
+		log.Printf("[atrium] exit of run %s for %s was already filed", x.runID, x.taskID)
+		return false
 	}
 
 	// The room announces the exit with its reason, which the hub cannot see: it
 	// watches a card go dead, not why. See lifecycle.go.
 	exitLine := fmt.Sprintf("%s exited with code %d after %s",
-		d.taskTitle(r.taskID), code, lived.Round(time.Millisecond))
+		d.taskTitle(x.taskID), code, lived.Round(time.Millisecond))
 	if lived < startupFailureWindow && tail != "" {
 		exitLine += ", " + firstLine(tail)
 	}
@@ -2180,44 +2216,45 @@ func (d *Daemon) awaitExit(r *runner) {
 	// a runner that ran for an hour and exited non-zero is a session that
 	// ended, and restarting that would be a loop that reopens a terminal
 	// somebody deliberately closed.
-	if r.resumed && r.spec != nil && code != 0 && lived < startupFailureWindow {
+	if x.resumed && x.spec != nil && code != 0 && lived < startupFailureWindow {
 		log.Printf("[atrium] %s could not resume, starting it fresh: %s",
-			r.taskID, firstLine(tail))
-		if err := d.st.AppendEvent(r.taskID, store.EventLaunched, map[string]any{
+			x.taskID, firstLine(tail))
+		if err := d.st.AppendEvent(x.taskID, store.EventLaunched, map[string]any{
 			"by": "supervisor", "retried": "without the stored resume id",
 			"because": firstLine(tail),
 		}); err != nil {
-			log.Printf("[atrium] record retry for %s: %v", r.taskID, err)
+			log.Printf("[atrium] record retry for %s: %v", x.taskID, err)
 		}
 		// The stored id is known bad. Left in place it would be tried again on
 		// the next start, which is the same failure tomorrow.
-		if err := d.st.ClearResumeID(r.taskID); err != nil {
-			log.Printf("[atrium] clear stale resume for %s: %v", r.taskID, err)
+		if err := d.st.ClearResumeID(x.taskID); err != nil {
+			log.Printf("[atrium] clear stale resume for %s: %v", x.taskID, err)
 		}
-		if err := d.st.SetWhy(r.taskID, ""); err != nil {
-			log.Printf("[atrium] clear why for %s: %v", r.taskID, err)
+		if err := d.st.SetWhy(x.taskID, ""); err != nil {
+			log.Printf("[atrium] clear why for %s: %v", x.taskID, err)
 		}
-		if _, err := d.spawnPTY(r.taskID, r.spec.cmd, r.spec.args, r.spec.cwd, r.spec.env); err != nil {
-			log.Printf("[atrium] fresh start for %s failed too: %v", r.taskID, err)
+		if _, err := d.spawnPTY(x.taskID, x.spec.cmd, x.spec.args, x.spec.cwd, x.spec.env); err != nil {
+			log.Printf("[atrium] fresh start for %s failed too: %v", x.taskID, err)
 		} else {
-			d.publishTask(r.taskID)
-			return
+			d.publishTask(x.taskID)
+			return true
 		}
 	}
 
 	// A card put down by hand stays where it was put.
-	if t, err := d.st.Get(r.taskID); err == nil &&
+	if t, err := d.st.Get(x.taskID); err == nil &&
 		t.Status != store.StatusShelved && t.Status != store.StatusDone && !isParked(t) {
-		if err := d.st.SetStatus(r.taskID, store.StatusDead); err != nil {
-			log.Printf("[atrium] status after exit for %s: %v", r.taskID, err)
+		if err := d.st.SetStatus(x.taskID, store.StatusDead); err != nil {
+			log.Printf("[atrium] status after exit for %s: %v", x.taskID, err)
 		}
 	}
-	d.publishTask(r.taskID)
-	log.Printf("[atrium] supervised runner for %s exited with %d", r.taskID, code)
+	d.publishTask(x.taskID)
+	log.Printf("[atrium] supervised runner for %s exited with %d", x.taskID, code)
 
 	// Clean up throwaways after waiting for the process, when its working
 	// directory is no longer in use. All exit paths reach here. See throwaway.go.
-	d.endThrowaway(r.taskID)
+	d.endThrowaway(x.taskID)
+	return true
 }
 
 // stopSupervised gives every owned runner a chance to finish, then closes its
@@ -2324,7 +2361,7 @@ func windDown(r *runner, grace time.Duration, keys [][]byte) {
 	// A runner with no terminal has nothing to write to and nothing to close.
 	// Guarded rather than assumed, because reaching this with a partial runner
 	// would panic inside shutdown, which is the worst place to panic.
-	if r == nil || r.pty == nil {
+	if r == nil || r.tm() == nil {
 		return
 	}
 	// ATRIUM TYPED THIS EXIT, so the session's end is not a person deciding. The
@@ -2356,8 +2393,8 @@ func windDown(r *runner, grace time.Duration, keys [][]byte) {
 		log.Printf("[atrium] runner for %s stopped", r.taskID)
 	case <-time.After(2 * time.Second):
 		log.Printf("[atrium] runner for %s is still up, killing it", r.taskID)
-		if r.cmd.Process != nil {
-			_ = r.cmd.Process.Kill()
+		{
+			_ = r.tm().Kill()
 			// Wait for the kill to actually take before returning, so a caller
 			// that does not poll for the slot to clear can trust that the runner
 			// is gone. StopRunner's RestartRunner caller polls waitRunnerGone and
