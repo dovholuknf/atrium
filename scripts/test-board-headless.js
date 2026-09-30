@@ -4826,6 +4826,8 @@ async function heldLineSection(browser, base) {
     return p;
   };
   const setAct = async (p, a) => {
+    // The mock's own row too, or a list the board fetches meanwhile repaints the card without it.
+    if (a) LAND["land-live"].activity = a; else delete LAND["land-live"].activity;
     // What a whole-row task event does: the map takes the row, the terminals view repaints from it.
     await p.evaluate(async (a) => {
       const row = Object.assign({}, cardList().find(x => x.id === "land-live"));
@@ -4866,6 +4868,8 @@ async function heldLineSection(browser, base) {
         return { hidden: m.hidden, n: m.querySelector(".pb-n").textContent, nudges: Number(m.dataset.nudges || 0) };
       });
       if (phone) {
+        // the envelope's repaint can land a frame late on a loaded machine, as the box's can below
+        await p.waitForFunction(() => document.querySelector("#toastlog-open .hmsg .pb-n").textContent === "2", null, { timeout: slow(5000) }).catch(() => {});
         const m = await mail();
         if (!s.hidden || m.hidden || m.n !== "2" || m.nudges < 1) fail(tag + "the envelope did not take over from the box: " + JSON.stringify([s, m]));
       } else if (s.hidden || !/2 messages waiting, clear the line/.test(s.text)) fail(tag + "not shown for a line hold: " + JSON.stringify(s));
@@ -4875,6 +4879,7 @@ async function heldLineSection(browser, base) {
       await setAct(p, { held_peer: true, held_for: "line", held_count: 1 });
       // the repaint can land a frame late on a loaded machine
       if (!phone) await p.waitForFunction(() => /1 message waiting/.test(document.getElementById("t-heldline").textContent), null, { timeout: slow(5000) }).catch(() => {});
+      else await p.waitForFunction(() => document.querySelector("#toastlog-open .hmsg .pb-n").textContent === "1", null, { timeout: slow(5000) }).catch(() => {});
       s = await state(p);
       if (phone) { if ((await mail()).n !== "1") fail(tag + "the envelope count did not follow"); }
       else if (!/1 message waiting/.test(s.text)) fail(tag + "singular wording: " + s.text);
