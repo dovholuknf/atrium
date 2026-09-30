@@ -597,7 +597,7 @@ const server = http.createServer((req, res) => {
     // Ahead of the solo modes, which an earlier section can leave set: the
     // group sections read this card's tags for its menu.
     if (id === "filed1") { sendJSON(res, FILED); return; }
-    if (id.startsWith("land-") && !id.includes("/")) {
+    if ((id.startsWith("land-") || id.startsWith("cc-")) && !id.includes("/")) {
       if (LAND[id]) { sendJSON(res, LAND[id]); return; }
       res.writeHead(404, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ error: "no such card" }));
@@ -6471,7 +6471,7 @@ const KA_CARDS = [
     warm_until: "2026-09-27T17:42:00Z" } }),
   Object.assign({}, T1, { id: "ka-warm", display_title: "warm card", keepalive: {
     state: "on", state_at: "2026-09-27T10:00:00Z", refreshes: 3, spent: 0.18, budget: 0.3,
-    warm_until: "2026-09-27T19:00:00Z" } }),
+    warm_until: new Date(Date.now() + 30 * 60000).toISOString() } }),
   Object.assign({}, T1, { id: "ka-quiet", display_title: "quiet card", keepalive: {
     state: "on", state_at: "2026-09-27T10:00:00Z", why: "not due", refreshes: 0, spent: 0, budget: 0.3,
     warm_until: "2099-01-01T12:00:00Z" } }),
@@ -6555,11 +6555,11 @@ async function keepaliveSection(browser, base) {
       const box = document.createElement("div");
       box.innerHTML = cardHTML(t);
       const c = box.querySelector(".chip.keepalive");
-      return { id: t.id, text: c ? c.textContent.trim() : "", stopped: c ? c.classList.contains("stopped") : false,
+      return { id: t.id, text: c ? c.querySelector(".cfull").textContent.trim() : "", stopped: c ? c.classList.contains("stopped") : false,
         watching: c ? c.classList.contains("watching") : false, tip: c ? c.getAttribute("data-tip") : "" };
     }), KA_CARDS);
     const by = Object.fromEntries(chips.map(c => [c.id, c]));
-    if (!by["ka-stop"].stopped || !/cold/.test(by["ka-stop"].text)) {
+    if (!by["ka-stop"].stopped || !/stopped . not worth it/.test(by["ka-stop"].text)) {
       fail("a card stopped at break-even does not draw the stopped chip: " + JSON.stringify(by["ka-stop"]));
     }
     // No chip's tooltip carries a dollar figure (item 37b).
@@ -6567,24 +6567,22 @@ async function keepaliveSection(browser, base) {
     if (!/break-even/.test(by["ka-stop"].tip) || !/5 refreshes/.test(by["ka-stop"].tip)) {
       fail("the stopped chip's tooltip does not carry the refresh count: " + JSON.stringify(by["ka-stop"].tip));
     }
-    if (!/warm/.test(by["ka-warm"].text) || !/kept warm 3x/.test(by["ka-warm"].tip)) {
+    if (!/kept warm 3/.test(by["ka-warm"].text) || !/refreshed this card's cache 3 times/.test(by["ka-warm"].tip)) {
       fail("a card being kept warm does not say so: " + JSON.stringify(by["ka-warm"]));
     }
-    // Watched with nothing spent: its own chip, not the warm or the cold one,
-    // with the reason and the warm-until time in the tooltip.
+    // On, warm, nothing refreshed yet and just waiting: "warm", with the time in the words (u-032).
     const q = by["ka-quiet"];
-    if (!q.watching || q.stopped || !/watching/.test(q.text) || /warm|cold/.test(q.text)) {
-      fail("a watched card with nothing spent does not draw the watching chip: " + JSON.stringify(q));
+    if (q.stopped || !/^.\s?warm . /.test(q.text) || /watching|cold/.test(q.text)) {
+      fail("a warm card with nothing spent does not draw the warm chip: " + JSON.stringify(q));
     }
-    if (!/not due for a refresh yet/.test(q.tip) || !/warm until /.test(q.tip) || !/break-even budget/.test(q.tip)) {
-      fail("the watching chip's tooltip lacks the why, the warm-until or the budget: " + JSON.stringify(q.tip));
+    if (!/idle, and not due for a refresh yet/.test(q.tip) || !/warm until /.test(q.tip)) {
+      fail("the warm chip's tooltip lacks the why or the warm-until: " + JSON.stringify(q.tip));
     }
-    if (by["ka-warm"].watching || by["ka-stop"].watching) fail("the warm or the stopped chip reads as watching.");
     const m = by["ka-miss"];
     if (!m.stopped || !/missed the cache/.test(m.tip) || !/0 refreshes, 1 miss/.test(m.tip)) {
       fail("a card stopped on a miss does not show the miss: " + JSON.stringify(m));
     }
-    if (by["ka-off"].text) fail("a card with its switch off drew a keep-alive chip.");
+    if (!/off . cold/.test(by["ka-off"].text)) fail("a card with its switch off does not say off and cold: " + JSON.stringify(by["ka-off"]));
     if (by["ka-none"].text) fail("a card with no switch drew a keep-alive chip.");
 
     // The card menu's switch: offered on a Claude card, reads its state, and
@@ -6624,6 +6622,324 @@ async function keepaliveSection(browser, base) {
     kaSettings = {};
   }
   if (errors.length) fail("the keep-alive page threw: " + errors.join(" | "));
+}
+
+// ── u-032: the cache chip and the cache line ───────────────────────────────────────────────────────────
+// The table of states as `kaModel` answers it at a fixed clock, then the same chips drawn on the stack, the
+// terminals list, the board and the attached terminal's header, then a card whose cache runs out flipping
+// with no request, then a phone. The line counts with the chip's own bucket.
+function kaFix(id, ka, over) {
+  return landCard(id, Object.assign({ supervised: true, created_at: "2026-09-19T12:00:00Z",
+    keepalive: Object.assign({ state: "on", refreshes: 0, state_at: "2026-09-29T00:00:00Z" }, ka) }, over || {}));
+}
+
+async function cacheChipSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  const errors = [];
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const shots = process.env.CACHE_SHOTS || "";
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    kaFix("cc-seed", { why: "not due", warm_until: new Date(Date.now() + 3600000).toISOString() });
+    landList = [LAND["cc-seed"]];
+    landPerms = [];
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof kaModel === "function", null, { timeout: slow(15000) });
+
+    // 1. The table, at a fixed clock (local 03:00 on 2026-09-30), so every time is HH:MM.
+    const rows = await p.evaluate(() => {
+      const at = (d, h, m) => new Date(2026, 8, d, h, m, 0).getTime();
+      const iso = ms => new Date(ms).toISOString();
+      const now = at(30, 3, 0);
+      const card = ka => ({ id: "x", keepalive: Object.assign({ state: "on", refreshes: 0 }, ka) });
+      const out = [];
+      const add = (name, ka, n) => {
+        const m = kaModel(card(ka), n || now);
+        out.push({ name, full: m && m.full, short: m && m.short, tip: m && m.tip.join(". "), bucket: m && m.bucket });
+      };
+      const w = iso(at(30, 3, 32));
+      add("break-even", { state: "stopped:break-even", warm_until: w });
+      add("miss", { state: "stopped:miss", missed: 1 });
+      add("failing", { state: "stopped:failing" });
+      add("acted", { state: "stopped:acted" });
+      add("off warm", { state: "off", warm_until: w });
+      add("off cold", { state: "off", warm_until: iso(at(30, 2, 0)) });
+      add("off unknown", { state: "off" });
+      add("kept next", { refreshes: 3, why: "not due", warm_until: w });
+      add("kept next exact", { refreshes: 3, why: "not due", warm_until: w, next_refresh_at: iso(at(30, 3, 26)) });
+      add("kept busy", { refreshes: 3, why: "not idle", warm_until: w });
+      add("warm", { why: "not due", warm_until: w });
+      add("warm nowhy", { warm_until: w });
+      for (const why of ["not idle", "context under 50k", "not on the 1h cache", "local hooks",
+        "a permission dialog is open", "budget spent", "parked"]) add("wont " + why, { why, warm_until: w });
+      add("cold", { why: "parked", warm_until: iso(at(30, 2, 4)) });
+      add("cold yesterday", { warm_until: iso(at(29, 20, 4)) });
+      add("no cache", { why: "no session id yet" });
+      add("tomorrow", { why: "not due", warm_until: iso(at(31, 0, 10)), refreshes: 0 }, at(30, 23, 50));
+      add("far date", { warm_until: iso(at(30, 3, 32)) }, at(20, 3, 0));
+      out.push({ name: "not claude", full: kaModel({ id: "y" }, now) });
+      return out;
+    });
+    const by = Object.fromEntries(rows.map(r => [r.name, r]));
+    const want = (n, full, short) => {
+      const r = by[n];
+      if (!r || r.full !== full) fail("cacheChip table " + n + ": wanted " + JSON.stringify(full) + " got " + JSON.stringify(r && r.full));
+      if (short !== undefined && r.short !== short) fail("cacheChip table " + n + ": short wanted " + JSON.stringify(short) + " got " + JSON.stringify(r.short));
+    };
+    want("break-even", "\u2298 stopped \u00b7 not worth it", "\u2298 not worth it");
+    want("miss", "\u2298 stopped \u00b7 cache missed");
+    want("failing", "\u2298 stopped \u00b7 refresh failing");
+    want("acted", "\u2298 stopped \u00b7 refresh used a tool");
+    if (!/stopped:acted/.test(by.acted.tip) || !/stopped:break-even/.test(by["break-even"].tip)) fail("cacheChip: a stop's raw state is not in its tooltip");
+    want("off warm", "\u25cb off \u00b7 warm \u2192 03:32", "\u25cb off");
+    want("off cold", "\u25cb off \u00b7 cold");
+    want("off unknown", "\u25cb off \u00b7 cold");
+    want("kept next", "\u2744 kept warm 3\u00d7 \u00b7 next ~03:27", "\u2744 3\u00d7 next ~03:27");
+    want("kept next exact", "\u2744 kept warm 3\u00d7 \u00b7 next 03:26");
+    want("kept busy", "\u2744 kept warm 3\u00d7 \u2192 03:32 \u00b7 won't refresh: busy");
+    if (/next/.test(by["kept busy"].full)) fail("cacheChip: a busy card promises a next refresh");
+    want("warm", "\u2744 warm \u2192 03:32", "\u2744 \u2192 03:32");
+    want("warm nowhy", "\u2744 warm \u2192 03:32");
+    const words = { "not idle": "busy", "context under 50k": "small", "not on the 1h cache": "5m cache", "local hooks": "local hooks",
+      "a permission dialog is open": "dialog open", "budget spent": "budget spent", "parked": "parked" };
+    for (const [why, word] of Object.entries(words)) {
+      want("wont " + why, "\u2744 warm \u2192 03:32 \u00b7 won't refresh: " + word);
+      if (!by["wont " + why].tip.includes(why)) fail("cacheChip: the raw why " + why + " is not in the tooltip");
+    }
+    want("cold", "\u2744 cold since 02:04", "\u2744 cold");
+    want("cold yesterday", "\u2744 cold since yesterday 20:04");
+    want("no cache", "\u2744 no cache yet");
+    want("tomorrow", "\u2744 warm \u2192 tomorrow 00:10");
+    if (!/^\u2744 warm \u2192 [A-Z][a-z]{2} \d+ 03:32$/.test(by["far date"].full)) fail("cacheChip: a far time is not a date: " + by["far date"].full);
+    if (by["not claude"].full !== null) fail("cacheChip: a card with no keepalive has a model");
+    for (const [n, b] of [["warm", "warm"], ["kept next", "kept"], ["cold", "cold"], ["off warm", "warm"], ["no cache", "cold"]]) {
+      if (by[n].bucket !== b) fail("cacheChip: " + n + " is in bucket " + by[n].bucket + ", wanted " + b);
+    }
+
+    // 2. The drawn chips on every surface, with no hover.
+    const soon = m => new Date(Date.now() + m * 60000).toISOString();
+    kaFix("cc-kept", { refreshes: 3, why: "not due", warm_until: soon(30) });
+    kaFix("cc-warm", { why: "not idle", warm_until: soon(20) });
+    kaFix("cc-cold", { why: "parked", warm_until: soon(-30) });
+    kaFix("cc-stop", { state: "stopped:break-even", refreshes: 5, warm_until: soon(-10) });
+    kaFix("cc-off", { state: "off", warm_until: soon(-1) });
+    kaFix("cc-none", { why: "no session id yet" });
+    landCard("cc-shell", { supervised: true, created_at: "2026-09-19T12:00:00Z", runner: "shell" });
+    const ids = ["cc-kept", "cc-warm", "cc-cold", "cc-stop", "cc-off", "cc-none", "cc-shell"];
+    landList = ids.map(i => LAND[i]);
+    const reqs = [];
+    p.on("request", r => reqs.push(r.url()));
+    await p.reload({ waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await p.evaluate(() => setStackShow(new Set()));
+    const texts = sel => p.evaluate(s => {
+      const o = {};
+      document.querySelectorAll(s).forEach(row => {
+        o[row.dataset.id] = [...row.querySelectorAll(".chip.cache")].filter(e => e.getBoundingClientRect().width > 0)
+          .map(e => e.innerText.trim());
+      });
+      return o;
+    }, sel);
+    const expect = {
+      "cc-kept": /^\u2744 kept warm 3\u00d7 \u00b7 next ~\d\d:\d\d$/,
+      "cc-warm": /^\u2744 warm \u2192 \d\d:\d\d \u00b7 won't refresh: busy$/,
+      "cc-cold": /^\u2744 cold since \d\d:\d\d$/, "cc-stop": /^\u2298 stopped \u00b7 not worth it$/,
+      "cc-off": /^\u25cb off \u00b7 cold$/, "cc-none": /^\u2744 no cache yet$/
+    };
+    const check = (where, o) => {
+      for (const [id, re] of Object.entries(expect)) {
+        if (!o[id] || o[id].length !== 1 || !re.test(o[id][0])) fail("cacheChip " + where + ": " + id + " shows " + JSON.stringify(o[id]));
+      }
+      if (o["cc-shell"] && o["cc-shell"].length) fail("cacheChip " + where + ": a non-Claude card drew a chip " + JSON.stringify(o["cc-shell"]));
+    };
+    await p.waitForFunction(() => document.querySelectorAll("#stack-list .stackrow .chip.cache").length >= 6, null, { timeout: slow(10000) });
+    check("stack", await texts("#stack-list .stackrow"));
+    const tip = await p.evaluate(() => document.querySelector('#stack-list [data-cid="cc-warm"]').dataset.tip);
+    if (!/not idle/.test(tip) || !/busy/.test(tip)) fail("cacheChip: the tooltip lacks the raw why: " + tip);
+    if (shots) { fs.mkdirSync(shots, { recursive: true }); await p.screenshot({ path: path.join(shots, "u-032-stack-1400x900.png") }); }
+
+    await p.evaluate(() => switchView("terms"));
+    await p.waitForSelector(".term-list .card", { timeout: slow(10000) });
+    await p.waitForFunction(() => document.querySelectorAll(".term-list .card .chip.cache").length >= 6, null, { timeout: slow(10000) });
+    check("terminals list", await texts(".term-list .card"));
+    if (shots) await p.screenshot({ path: path.join(shots, "u-032-terms-1400x900.png") });
+
+    // The header: attach a card and its chip is in the bar. A fake socket, as the phone sections use.
+    await p.evaluate(() => {
+      const Real = window.WebSocket;
+      window.WebSocket = function (url, protocols) {
+        if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+        const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0, send() {}, close() { this.readyState = 3; } };
+        setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+        return s;
+      };
+      Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+      attachTask("cc-kept");
+    });
+    await p.waitForFunction(() => termTask && termTask.id === "cc-kept" && document.querySelector("#t-chips .chip.cache"), null, { timeout: slow(10000) });
+    const head = await p.evaluate(() => document.querySelector("#t-chips .chip.cache").innerText.trim());
+    if (!expect["cc-kept"].test(head)) fail("cacheChip header: " + JSON.stringify(head));
+    if (await p.evaluate(() => document.querySelectorAll("#t-chips .chip.cache").length) !== 1) fail("cacheChip header: more than one chip");
+
+    await p.evaluate(() => switchView("board"));
+    await p.waitForFunction(() => document.querySelectorAll("#board .chip.cache").length >= 6, null, { timeout: slow(10000) });
+    const bo = await p.evaluate(() => {
+      const o = {};
+      document.querySelectorAll("#board .card").forEach(c => { o[c.dataset.id] = [...c.querySelectorAll(".chip.cache")].map(e => e.innerText.trim()); });
+      return o;
+    });
+    check("board", bo);
+
+    // 3. A card 2 seconds from cold flips with no request, from one armed timer.
+    kaFix("cc-flip", { why: "not idle", warm_until: new Date(Date.now() + 2500).toISOString() });
+    landList = [LAND["cc-flip"]];
+    await p.evaluate(() => switchView("stack"));
+    await p.evaluate(() => tasksSoon());
+    await p.waitForSelector('#stack-list [data-cid="cc-flip"]', { timeout: slow(10000) });
+    const first = await p.evaluate(() => document.querySelector('#stack-list [data-cid="cc-flip"] .cfull').textContent);
+    if (!/^\u2744 warm/.test(first)) fail("cacheChip flip: starts as " + first);
+    const armed = await p.evaluate(() => kaTimer > 0);
+    if (!armed) fail("cacheChip flip: no timer is armed for the soonest card");
+    const n0 = reqs.length;
+    await p.waitForFunction(() => /cold since/.test(document.querySelector('#stack-list [data-cid="cc-flip"] .cfull').textContent),
+      null, { timeout: slow(8000) }).catch(() => fail("cacheChip flip: the chip did not flip to cold by itself"));
+    if (reqs.length !== n0) fail("cacheChip flip: the flip made " + (reqs.length - n0) + " requests: " + reqs.slice(n0).join(" "));
+    // A throttled tab is put right when it becomes visible again.
+    await p.evaluate(() => {
+      const t = KA_SEEN.get("cc-flip");
+      t.keepalive = Object.assign({}, t.keepalive, { warm_until: new Date(Date.now() + 90 * 60000).toISOString() });
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    if (!/^\u2744 warm/.test(await p.evaluate(() => document.querySelector('#stack-list [data-cid="cc-flip"] .cfull').textContent))) {
+      fail("cacheChip: visibilitychange did not repaint the chip");
+    }
+    await ctx.close();
+
+    // 4. A phone: the short text, and nothing runs off the right edge.
+    landList = ids.map(i => LAND[i]);
+    const pctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+    await pctx.addInitScript(() => localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true })));
+    const q = await pctx.newPage();
+    q.on("pageerror", e => errors.push(String(e)));
+    await q.goto(base, { waitUntil: "domcontentloaded" });
+    await q.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await q.evaluate(() => setStackShow(new Set()));
+    for (const view of ["stack", "terms"]) {
+      await q.evaluate(v => switchView(v), view);
+      const sel = view === "terms" ? ".term-list .card" : "#stack-list .stackrow";
+      await q.waitForFunction(s => document.querySelectorAll(s + " .chip.cache").length >= 6, sel, { timeout: slow(10000) });
+      if (shots) { fs.mkdirSync(shots, { recursive: true }); await q.screenshot({ path: path.join(shots, "u-032-" + view + "-390x844.png") }); }
+      const r = await q.evaluate(s => {
+        const vw = document.documentElement.clientWidth, bad = [], shorts = [];
+        document.querySelectorAll(s).forEach(c => {
+          const cr = c.getBoundingClientRect();
+          if (cr.right > vw + 0.5) bad.push("card");
+          c.querySelectorAll(".chip.cache").forEach(ch => {
+            const r = ch.getBoundingClientRect();
+            if (r.width && (r.right > cr.right + 0.5 || r.right > vw + 0.5)) bad.push("chip " + ch.innerText);
+            shorts.push(ch.innerText.trim());
+            if (ch.getAttribute("aria-label").indexOf(ch.querySelector(".cfull").textContent) !== 0) bad.push("aria " + ch.innerText);
+          });
+        });
+        return { bad, shorts, pg: document.documentElement.scrollWidth - innerWidth };
+      }, sel);
+      if (r.bad.length || r.pg > 0) fail("cacheChip phone " + view + ": " + JSON.stringify(r));
+      if (r.shorts.some(t => t.length > 16) || !r.shorts.includes("\u2744 cold") || !r.shorts.includes("\u25cb off")) {
+        fail("cacheChip phone " + view + ": the chips are not the short text " + JSON.stringify(r.shorts));
+      }
+    }
+    await pctx.close();
+  } finally {
+    tasksMode = was;
+    try { await ctx.close(); } catch (e) {}
+  }
+  if (errors.length) fail("cacheChip: the page threw: " + errors.join(" | "));
+}
+
+async function cacheLineSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  const errors = [];
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const wasSettings = kaSettings;
+  kaSettings = { cache_keepalive_default: true, cache_keepalive_week_refreshes: 83 };
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    const soon = m => new Date(Date.now() + m * 60000).toISOString();
+    kaFix("cl-warm1", { why: "not idle", warm_until: soon(20) });
+    kaFix("cl-warm2", { why: "not due", warm_until: soon(20) });
+    kaFix("cl-kept1", { refreshes: 2, why: "not due", warm_until: soon(30) });
+    kaFix("cl-cold1", { why: "parked", warm_until: soon(-30) });
+    kaFix("cl-cold2", { state: "stopped:miss", warm_until: soon(-5) });
+    kaFix("cl-cold3", { why: "no session id yet" });
+    kaFix("cl-off", { state: "off", warm_until: soon(10) });
+    kaFix("cl-arch", { why: "not idle", warm_until: soon(20) }, { archived_at: "2026-09-28T00:00:00Z" });
+    landCard("cl-shell", { supervised: true, created_at: "2026-09-19T12:00:00Z", runner: "shell" });
+    const ids = ["cl-warm1", "cl-warm2", "cl-kept1", "cl-cold1", "cl-cold2", "cl-cold3", "cl-off", "cl-arch", "cl-shell"];
+    landList = ids.map(i => LAND[i]);
+    landPerms = [];
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await p.evaluate(() => setStackShow(new Set()));
+    const read = id => p.evaluate(i => { const e = document.getElementById(i); return e && !e.hidden ? e.innerText.trim() : null; }, id);
+    const line = "cache: 3 warm \u00b7 1 kept warm \u00b7 3 cold \u00b7 keep-alive 83 refreshes this week";
+    await p.waitForFunction(l => { const e = document.getElementById("cache-line-stack"); return e && e.innerText.trim() === l; }, line,
+      { timeout: slow(10000) }).catch(async () => fail("cacheLine stack: reads " + JSON.stringify(await read("cache-line-stack")) + ", wanted " + line));
+    if (/tokens today/.test(await read("cache-line-stack") || "")) fail("cacheLine: a spend today was drawn with no field for it");
+    // The same state function: the line's counts are the chips' own buckets.
+    const agree = await p.evaluate(() => {
+      const c = { warm: 0, kept: 0, cold: 0 };
+      document.querySelectorAll("#stack-list .stackrow .chip.cache").forEach(e => c[e.dataset.bucket]++);
+      return c;
+    });
+    if (agree.warm !== 3 || agree.kept !== 1 || agree.cold !== 3) fail("cacheLine: the chips' buckets disagree with the line " + JSON.stringify(agree));
+    // A narrowed list counts only what it shows.
+    await p.evaluate(() => { const q = document.getElementById("stack-q"); q.value = "cl warm"; q.dispatchEvent(new Event("input")); });
+    await p.waitForFunction(() => /^cache: 2 warm \u00b7 0 kept warm \u00b7 0 cold/.test(document.getElementById("cache-line-stack").innerText.trim()),
+      null, { timeout: slow(5000) }).catch(async () => fail("cacheLine: a search did not narrow it: " + await read("cache-line-stack")));
+    await p.evaluate(() => { const q = document.getElementById("stack-q"); q.value = ""; q.dispatchEvent(new Event("input")); });
+
+    // A keepalive event moves a card: cl-warm1 goes cold. The line follows through the stream and the refetch.
+    LAND["cl-warm1"].keepalive = Object.assign({}, LAND["cl-warm1"].keepalive, { warm_until: soon(-2), why: "parked" });
+    openStreams.forEach(r => { try { r.write("event: keepalive\ndata: " + JSON.stringify({ task_id: "cl-warm1", state: "on" }) + "\n\n"); } catch (e) {} });
+    await p.waitForFunction(l => document.getElementById("cache-line-stack").innerText.trim() === l,
+      "cache: 2 warm \u00b7 1 kept warm \u00b7 4 cold \u00b7 keep-alive 83 refreshes this week",
+      { timeout: slow(10000) }).catch(async () => fail("cacheLine: an event did not move the line: " + await read("cache-line-stack")));
+    // A refresh outcome asks for the week's figure again, and the spend today when the daemon sends one.
+    kaSettings.cache_keepalive_week_refreshes = 84;
+    kaSettings.cache_keepalive_today_tokens = 365000;
+    openStreams.forEach(r => { try { r.write("event: keepalive\ndata: " + JSON.stringify({ task_id: "cl-warm1", outcome: "warmed" }) + "\n\n"); } catch (e) {} });
+    await p.waitForFunction(() => /84 refreshes this week \u00b7 365k tokens today$/.test(document.getElementById("cache-line-stack").innerText.trim()),
+      null, { timeout: slow(10000) }).catch(async () => fail("cacheLine: the week and today figures did not follow the settings: " + await read("cache-line-stack")));
+
+    // A card running out of cache moves the counts with no request.
+    kaFix("cl-tick", { why: "not idle", warm_until: new Date(Date.now() + 2500).toISOString() });
+    landList = [LAND["cl-tick"]];
+    await p.evaluate(() => tasksSoon());
+    await p.waitForFunction(() => /^cache: 1 warm/.test(document.getElementById("cache-line-stack").innerText.trim()), null, { timeout: slow(10000) });
+    const reqs = [];
+    p.on("request", r => reqs.push(r.url()));
+    await p.waitForFunction(() => /^cache: 0 warm \u00b7 0 kept warm \u00b7 1 cold/.test(document.getElementById("cache-line-stack").innerText.trim()),
+      null, { timeout: slow(8000) }).catch(() => fail("cacheLine: the line did not tick to cold by itself"));
+    if (reqs.length) fail("cacheLine: the tick made requests " + reqs.join(" "));
+
+    // The terminals list carries the same line, and a tap opens the gear on the keep-alive setting.
+    landList = ids.map(i => LAND[i]);
+    await p.evaluate(() => switchView("terms"));
+    await p.waitForFunction(() => { const e = document.getElementById("cache-line-terms"); return e && !e.hidden && /^cache: \d+ warm/.test(e.innerText.trim()); },
+      null, { timeout: slow(10000) }).catch(async () => fail("cacheLine terms: " + await read("cache-line-terms")));
+    await p.evaluate(() => document.getElementById("cache-line-terms").click());
+    await p.waitForFunction(() => { const f = document.getElementById("s-keepalive"); return f && f.getBoundingClientRect().width > 0; },
+      null, { timeout: slow(5000) }).catch(() => fail("cacheLine: a tap did not open the keep-alive setting"));
+  } finally {
+    tasksMode = was;
+    kaSettings = wasSettings;
+    await ctx.close();
+  }
+  if (errors.length) fail("cacheLine: the page threw: " + errors.join(" | "));
 }
 
 // ── the board skin follows the room-picker scope ────────────────────────
@@ -10017,7 +10333,8 @@ async function main() {
       questionsClick: questionsClickSection, walk: walkSection, linkReuse: linkReuseSection,
       usageCacheReads: usageCacheReadsSection, roomsDash: roomsDashSection, phoneView: phoneViewSection, heldLine: heldLineSection, u016: u016Section, phoneHeader: phoneHeaderSection, phoneFocus: phoneFocusSection, phoneTermBar: phoneTermBarSection, phoneShare: phoneShareSection, phonePan: phonePanSection, phoneFollow: phoneFollowSection, phoneTap: phoneTapSection, phoneKeyboard: phoneKeyboardSection, phoneCompose: phoneComposeSection, mCompose: mComposeSection, mPerms: mPermsSection, usagePolish: usagePolishSection, usageLimits: usageLimitsSection, usageGroups: usageGroupsSection,
       eventDriven: eventDrivenSection, idleBudget: idleBudgetSection, pollsGone: pollsGoneSection,
-      phoneListFit: phoneListFitSection, phoneNudge: phoneNudgeSection };
+      phoneListFit: phoneListFitSection, phoneNudge: phoneNudgeSection,
+      cacheChip: cacheChipSection, cacheLine: cacheLineSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -11994,6 +12311,8 @@ async function main() {
     await peekEverywhereSection(browser, base);
     await phoneListFitSection(browser, base);
     await phoneNudgeSection(browser, base);
+    await cacheChipSection(browser, base);
+    await cacheLineSection(browser, base);
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e));
     if (process.env.DEBUG_HEADLESS) {
