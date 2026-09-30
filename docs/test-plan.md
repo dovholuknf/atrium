@@ -7882,3 +7882,11 @@ Needs a hub with one room and two browsers on the board. `curl` stands in for th
 
 1. (R1, room) `curl -s -o NUL -w "%{http_code}" http://127.0.0.1:7777/v1/tasks/01a0ffff-ffff-7fff-bfff-ffffffffffff`
    on a room's own board port answers 404 with `{"error":"no such card"}`, not 500. The same for `/files/text`.
+2. (H1, hub) With two rooms attached: `curl -s -i http://127.0.0.1:7778/v1/tasks/<alias>` answers the card, with
+   `X-Atrium-Card: room~id` and `X-Atrium-Handle: wire@room`. `curl -X POST http://127.0.0.1:7778/v1/tasks/<alias>@<room>/exit`
+   reaches that room's card. `%40` for `@` works the same.
+3. (H1) Give two live cards on two rooms the same alias. The bare alias answers 409 with both in `candidates`, spelled
+   `alias@room`. Mark one done: the bare alias reaches the live one.
+4. (H1) A name nothing holds answers 404 with `would_work` listing the live handles, and names a room that did not answer.
+5. (H1) The board still opens, attaches terminals and drags cards: every board request names an id and asks no room
+   for its list.
