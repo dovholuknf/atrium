@@ -43,7 +43,66 @@ func hubRoomsCmd(use, prefix string) *cobra.Command {
 			"pastes it does not choose what it is called.",
 	}
 	c.AddCommand(roomAddCmd(prefix), roomListCmd(prefix), roomTokenCmd(prefix), roomMarkCmd(prefix),
-		roomRemoveCmd(prefix), roomLogCmd(prefix))
+		roomRemoveCmd(prefix), roomLogCmd(prefix), roomLegacyCmd(prefix))
+	return c
+}
+
+// roomLegacyCmd is the switch for the old, certificate-less overlay link.
+//
+// NEVER FLIPPED BY ANYTHING BUT THIS COMMAND. A hub upgrade leaves the old path
+// on, so no room loses its link by surprise, and the operator turns it off after
+// `atrium rooms log` has shown that nobody is still attaching with a `room-unproven`
+// line. Reversible in one command: `allow` lets those rooms straight back in.
+func roomLegacyCmd(prefix string) *cobra.Command {
+	var f hubStoreFlags
+	c := &cobra.Command{
+		Use:   "legacy [allow|refuse]",
+		Short: "Whether a ziti or zrok room without a certificate may still attach",
+		Long: "Rooms over ziti or zrok used to prove they may reach the hub, and not which room\n" +
+			"they are. A join string from `rooms token` now carries a certificate that does.\n\n" +
+			"`allow` (the default) keeps rooms on an older join string attaching. Each one\n" +
+			"writes a `room-unproven` line, which `rooms log` shows, and is marked unproven\n" +
+			"in the rooms list.\n\n" +
+			"`refuse` turns those rooms away with a sentence telling them to re-join. Turn\n" +
+			"it on only after the log says nobody is still on the old path. With no\n" +
+			"argument this shows which it is now.",
+		Args: cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			store, err := f.open()
+			if err != nil {
+				return err
+			}
+			defer store.Close()
+			out := cmd.OutOrStdout()
+
+			if len(args) == 0 {
+				refused, err := store.OverlayLegacyRefused()
+				if err != nil {
+					return err
+				}
+				if refused {
+					fmt.Fprintln(out, "refuse: a ziti or zrok room without a certificate is turned away")
+				} else {
+					fmt.Fprintln(out, "allow: a ziti or zrok room without a certificate still attaches")
+					fmt.Fprintln(out, "`"+atriumCmd("rooms log")+"` shows who, as room-unproven lines")
+				}
+				return nil
+			}
+			if err := store.SetOverlayLegacy(args[0]); err != nil {
+				return err
+			}
+			f.nudge()
+			if strings.EqualFold(strings.TrimSpace(args[0]), hubstore.OverlayLegacyRefuse) {
+				fmt.Fprintln(out, "refuse: a room without a certificate is turned away from its next attach. "+
+					"`"+atriumCmd("rooms legacy")+" allow` puts it back")
+			} else {
+				fmt.Fprintln(out, "allow: a room without a certificate attaches as it did before")
+			}
+			return nil
+		},
+	}
+	f.bind(c, prefix)
+	f.bindBoard(c, prefix)
 	return c
 }
 
@@ -295,10 +354,17 @@ func joinStringFor(keys link.Keys, store *hubstore.Store, r *hubstore.Room,
 		return keys.MintToken(adv, r.Name, secret)
 
 	case hubstore.TransportZiti:
-		// NO SECRET, because there is nothing for one to do: a policy decided
-		// who may dial this service before atrium existed. The name still
-		// travels, because the transport cannot supply it.
-		return link.MintOverlayToken("ziti", r.Name, service, "")
+		// THE NEW FORM: a secret and the CA fingerprint ride beside the service,
+		// so the room enrols over the overlay and is named by its certificate.
+		if _, err := keys.Fingerprint(); err != nil {
+			return "", errors.New("this machine is not a hub yet. run `" + atriumCmd("run") +
+				"` once first, so it can make itself a certificate authority")
+		}
+		secret, err := store.Mint(r.ID)
+		if err != nil {
+			return "", err
+		}
+		return keys.MintProvenOverlayToken("ziti", r.Name, service, "", secret)
 
 	case hubstore.TransportZrok:
 		// The share token belongs to the hub that reserved it, and this
@@ -309,7 +375,15 @@ func joinStringFor(keys link.Keys, store *hubstore.Store, r *hubstore.Room,
 		if err != nil {
 			return "", err
 		}
-		return link.MintOverlayToken("zrok", r.Name, "", share)
+		if _, err := keys.Fingerprint(); err != nil {
+			return "", errors.New("this machine is not a hub yet. run `" + atriumCmd("run") +
+				"` once first, so it can make itself a certificate authority")
+		}
+		secret, err := store.Mint(r.ID)
+		if err != nil {
+			return "", err
+		}
+		return keys.MintProvenOverlayToken("zrok", r.Name, "", share, secret)
 	}
 	return "", fmt.Errorf("no transport called %q", transport)
 }

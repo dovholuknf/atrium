@@ -103,9 +103,9 @@ func joinCmd() *cobra.Command {
 			self := defaultRoomName()
 			name := j.Name
 
-			// ONLY THE DIRECT TRANSPORT HAS ANYTHING TO ENROL. Under ziti and
-			// zrok the network already decided who may connect, so joining is
-			// writing down where the hub is and starting.
+			// DIRECT ENROLS OVER TCP, and a new-form ziti or zrok string enrols over
+			// its overlay. An old-form overlay string has nothing to enrol: joining
+			// is writing down where the hub is and starting.
 			if j.Transport == "direct" {
 				d := link.Direct{Addr: j.Addr, Keys: keys, Pin: j.Pin}
 				ctx, cancel := context.WithTimeout(cmd.Context(), 30*time.Second)
@@ -118,8 +118,26 @@ func joinCmd() *cobra.Command {
 				if err != nil {
 					return err
 				}
-			} else if err := keys.SaveOverlayRoom(j, name, identity); err != nil {
-				return err
+			} else {
+				// A NEW-FORM STRING CARRIES A SECRET AND A PIN, and the room
+				// spends it OVER the overlay to get the hub's certificate, so
+				// every later connection proves its name. An old-form string has
+				// neither and does exactly what it always did.
+				if j.Proven() {
+					raw, err := rawRoomDialer(j, keys, identity)
+					if err != nil {
+						return err
+					}
+					ctx, cancel := context.WithTimeout(cmd.Context(), 30*time.Second)
+					name, err = link.EnrolOver(ctx, raw, keys, j.Pin, self, j.Secret)
+					cancel()
+					if err != nil {
+						return err
+					}
+				}
+				if err := keys.SaveOverlayRoom(j, name, identity); err != nil {
+					return err
+				}
 			}
 			fmt.Println()
 			fmt.Println("  joined over " + j.Transport + " as \"" + name + "\".")
