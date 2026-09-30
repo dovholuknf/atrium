@@ -44,6 +44,23 @@ body.m.sheet-open { overflow: hidden; }
 .seg button[aria-selected="true"] { color: var(--head); }
 .seg em { font-style: normal; margin-left: 4px; color: var(--dim); font-variant-numeric: tabular-nums; }
 
+/* the growlers: one in full, the rest a count, opening in place. Half the window at most, then it scrolls. */
+.growl { display: flex; flex-direction: column; gap: 8px; max-height: 50dvh; overflow-y: auto; margin-bottom: 14px; padding: 12px; border-radius: 16px;
+  background: var(--card-0); border-left: 3px solid var(--warn); font-size: 14px; }
+.growl[hidden] { display: none; }
+.growl .gm-full { display: flex; flex-direction: column; gap: 6px; }
+.growl .gm-list { display: flex; flex-direction: column; gap: 14px; }
+.growl .gm-head { display: flex; gap: 8px; align-items: baseline; }
+.growl .gm-head b { flex: 1; min-width: 0; color: var(--head); overflow-wrap: anywhere; }
+.growl .gm-off, .growl .gm-note { color: var(--warn); font-size: 13px; }
+.growl .gm-cmd, .growl .gm-line { overflow-wrap: anywhere; color: var(--label); }
+.growl .gm-acts, .growl .gm-opts { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.growl button, .growl .btn { min-height: 40px; padding: 0 12px; border: 1px solid var(--stroke); border-radius: 10px; background: none; color: var(--body); cursor: pointer; display: inline-flex; align-items: center; text-decoration: none; }
+.growl button:disabled { opacity: .45; }
+.growl .gm-reply, .growl .gm-why { flex: 1; min-width: 120px; min-height: 40px; padding: 0 10px; border: 1px solid var(--stroke); border-radius: 10px; background: var(--bg-2); color: var(--head); font: inherit; }
+.growl .gm-strip { width: 100%; text-align: left; border-style: dashed; color: var(--label); }
+.growl .gm-undo { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
+
 .list { display: block; }
 .grp { margin: 22px 4px 8px; font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); }
 .grp em { font-style: normal; margin-left: 4px; }

@@ -68,6 +68,7 @@ function growlApply(next, seed, remind) {
     const g = now.get(id);
     if (g && g.state === "open" && el.dismiss) { el.dismiss(); growlUndo.delete(id); }
   });
+  if (growlPhoneUndo && (now.get(growlPhoneUndo.g.id) || {}).state === "open") growlPhoneUndo = null;
   growlDraw();
   growlReapNotes();
   growlAttention();
@@ -153,13 +154,43 @@ function growlRow(g) {
     `${growlPrimary(g)}<button data-do="dismiss" data-tip="stops this alert. the ? chip on the card stays">&times;</button></div>`;
 }
 
+// One set of listeners for both faces. The drafts and the focus survive a redraw from an event.
+function growlWire(el) {
+  el.addEventListener("click", growlClick);
+  el.addEventListener("input", e => {
+    const row = e.target.closest(".gr-full");
+    if (row && e.target.classList.contains("gr-reply")) growlDrafts.set(row.dataset.id, e.target.value);
+  });
+  el.addEventListener("keydown", e => {
+    if (e.key === "Enter" && e.target.classList.contains("gr-reply")) growlAct(e.target.closest(".gr-full"), "reply");
+  });
+}
+
+function growlRestore(el, focused) {
+  el.querySelectorAll(".gr-full").forEach(full => {
+    const box = full.querySelector(".gr-reply");
+    if (!box) return;
+    box.value = growlDrafts.get(full.dataset.id) || "";
+    if (focused === full.dataset.id) box.focus();
+  });
+}
+
+function growlFocused(el) {
+  const a = document.activeElement;
+  return a && a.classList.contains("gr-reply") && el.contains(a) ? a.closest(".gr-full").dataset.id : "";
+}
+
 function growlDraw() {
+  const rows = growlDrawn();
+  const phone = innerWidth <= PHONE;
+  const desk = document.getElementById("growl");
+  const hand = document.getElementById("growl-phone");
+  if (phone) { if (desk) desk.remove(); } else if (hand) { hand.hidden = true; hand.innerHTML = ""; }
+  if (phone) { growlDrawPhone(rows, hand); return; }
   const host = document.getElementById("toasts");
   if (!host) return;
-  let el = document.getElementById("growl");
-  const rows = growlDrawn();
-  // A phone has no stack yet. The state and the log lines above still run.
-  if (!rows.length || innerWidth <= PHONE) {
+  let el = desk;
+  if (!rows.length) {
     if (el) el.remove();
     growlOpen = false;
     return;
@@ -168,18 +199,10 @@ function growlDraw() {
     el = document.createElement("div");
     el.id = "growl";
     el.className = "sticky";
-    el.addEventListener("click", growlClick);
-    el.addEventListener("input", e => {
-      const row = e.target.closest(".gr-full");
-      if (row && e.target.classList.contains("gr-reply")) growlDrafts.set(row.dataset.id, e.target.value);
-    });
-    el.addEventListener("keydown", e => {
-      if (e.key === "Enter" && e.target.classList.contains("gr-reply")) growlAct(e.target.closest(".gr-full"), "reply");
-    });
+    growlWire(el);
     host.appendChild(el);
   }
-  const focused = document.activeElement && document.activeElement.classList.contains("gr-reply") &&
-    el.contains(document.activeElement) ? document.activeElement.closest(".gr-full").dataset.id : "";
+  const focused = growlFocused(el);
   el.classList.toggle("open", growlOpen && rows.length > 1);
   if (growlOpen && rows.length > 1) {
     el.innerHTML = `<div class="gr-list">${rows.map(growlRow).join("")}</div>` +
@@ -189,16 +212,42 @@ function growlDraw() {
     const rest = rows.slice(1);
     el.innerHTML = growlFull(rows[0]) + (rest.length
       ? `<button class="gr-strip" data-do="expand">+${rest.length} more: ${growlCounts(rest)}</button>` : "");
-    const box = el.querySelector(".gr-reply");
-    if (box) {
-      box.value = growlDrafts.get(rows[0].id) || "";
-      if (focused === rows[0].id) box.focus();
-    }
+    growlRestore(el, focused);
   }
   // The cap is half the window, and the list scrolls inside it.
   el.style.setProperty("--gr-max", Math.floor(innerHeight / 2) + "px");
   if (typeof raiseToasts === "function") raiseToasts();
 }
+
+// ON A PHONE the growler is one line pinned under the header, the one exception to the bell nudge, because the
+// bell's count is the signal that did not work. It is an ordinary flex item of the body, between the header and
+// `main`, so it takes its height out of `main` and never lies over the key bar or the composer. Tapping it opens
+// the stack in place, at most half the window.
+function growlDrawPhone(rows, el) {
+  if (!el) return;
+  const undo = growlPhoneUndo && Date.now() < growlPhoneUndo.until ? growlPhoneUndo.g : null;
+  if (!rows.length && !undo) { el.hidden = true; el.innerHTML = ""; growlOpen = false; return; }
+  if (!el.dataset.wired) { growlWire(el); el.dataset.wired = "1"; }
+  const focused = growlFocused(el);
+  el.hidden = false;
+  el.classList.toggle("open", growlOpen && rows.length > 0);
+  const gone = undo ? `<div class="gp-undo"><span>dismissed: ${esc(undo.title)}</span>` +
+    `<button data-do="undo">undo</button></div>` : "";
+  if (!rows.length) {
+    el.innerHTML = gone;
+  } else if (growlOpen) {
+    el.innerHTML = gone + `<button class="gp-line" data-do="fold"><b>fold</b></button>` +
+      `<div class="gp-list">${rows.map(growlFull).join("")}</div>`;
+  } else {
+    const top = rows[0];
+    el.innerHTML = gone + `<button class="gp-line" data-do="expand"><b>${esc(top.title)}</b>` +
+      (rows.length > 1 ? `<span class="gp-n">+${rows.length - 1}</span>` : "") + `</button>`;
+  }
+  growlRestore(el, focused);
+  el.style.setProperty("--gr-max", Math.floor(innerHeight / 2) + "px");
+}
+// The dismissed growler a phone offers to bring back, since a phone draws no toasts.
+let growlPhoneUndo = null;
 addEventListener("resize", () => { if (growlSet.length) growlDraw(); });
 
 function growlClick(e) {
@@ -207,6 +256,13 @@ function growlClick(e) {
   const row = btn.closest(".gr-full, .gr-row");
   if (btn.dataset.snooze !== undefined) { growlSnoozeFor(row, Number(btn.dataset.snooze)); return; }
   const what = btn.dataset.do;
+  if (what === "undo") {
+    const u = growlPhoneUndo;
+    growlPhoneUndo = null;
+    if (u) growlUndismiss(u.g);
+    growlDraw();
+    return;
+  }
   if (what === "expand" || what === "fold") { growlOpen = what === "expand"; growlSnoozing = ""; growlDraw(); return; }
   if (row) growlAct(row, what);
 }
@@ -316,7 +372,7 @@ async function growlPost(g, body, offerUndo) {
   try {
     res = await plainFetch("/_hub/growls/" + encodeURIComponent(g.id), {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(Object.assign({ via: "board", tab: typeof hubTabId === "string" ? hubTabId : "" }, body))
+      body: JSON.stringify(Object.assign({ via: innerWidth <= PHONE ? "phone" : "board", tab: typeof hubTabId === "string" ? hubTabId : "" }, body))
     });
   } catch (e) {
     toast("could not reach atrium", e.message || String(e));
@@ -340,8 +396,26 @@ async function growlPost(g, body, offerUndo) {
   return d.growl || null;
 }
 
+// Undo for a dismissal: the hub answers with the row open again and its original raised_at, which goes back in the
+// set at once. The next `growls` event confirms it.
+async function growlUndismiss(g) {
+  const back = await growlPost(g, { do: "undismiss" }, false);
+  if (!back) return;
+  if (!growlSet.some(x => x.id === back.id)) growlSet.push(back);
+  growlSet.sort((a, c) => growlUrgency(a) - growlUrgency(c) || String(a.raised_at).localeCompare(String(c.raised_at)));
+  growlDraw();
+}
+
 function growlOfferUndo(g) {
   if (growlDrawn().some(x => x.id === g.id)) return;
+  // A phone draws no toasts, so its undo is a line in the strip for as long as a toast would live.
+  if (innerWidth <= PHONE) {
+    const mine = { g, until: Date.now() + 10000 };
+    growlPhoneUndo = mine;
+    growlDraw();
+    setTimeout(() => { if (growlPhoneUndo === mine) { growlPhoneUndo = null; growlDraw(); } }, 10000);
+    return;
+  }
   const el = toast("dismissed: " + g.title, "");
   if (!el || !el.querySelector) return;
   const b = document.createElement("button");
@@ -350,11 +424,7 @@ function growlOfferUndo(g) {
   b.addEventListener("click", async () => {
     growlUndo.delete(g.id);
     if (el.dismiss) el.dismiss();
-    const back = await growlPost(g, { do: "undismiss" }, false);
-    if (!back) return;
-    if (!growlSet.some(x => x.id === back.id)) growlSet.push(back);
-    growlSet.sort((a, c) => growlUrgency(a) - growlUrgency(c) || String(a.raised_at).localeCompare(String(c.raised_at)));
-    growlDraw();
+    growlUndismiss(g);
   });
   const body = el.querySelector(".body");
   if (body) body.appendChild(b);

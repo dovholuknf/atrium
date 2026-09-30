@@ -92,3 +92,20 @@ reminder" line.
 1. Mute sound and raise a growler unfocused. Unmute, turn notifications off, and raise another.
 
 **Expected:** no tone and no desktop notification in either case. Both growlers are still on screen.
+
+### @LETTER@14. The board on a phone
+
+1. Open the board on a phone (width 480 or less) with two growlers open.
+
+**Expected:** one line under the header with the top growler's title and `+1`. The bell does not stand in for it.
+Tapping the line opens the stack in place, at most half the window, and the terminal's key bar and composer stay
+clear of it. Approve, block, reply, open, snooze and dismiss this all work from it. After a dismiss the strip shows an
+undo line for 10 s.
+
+### @LETTER@15. The phone home
+
+1. Open `/m` with a growler open.
+
+**Expected:** a strip above the card list with one growler in full and the rest as a count that opens in place. Approve
+once, block (asking its reason in the strip), reply, open (the card), snooze, dismiss this and the 10 s undo all work.
+Hub calls say `via: "phone"`. Without a hub, no strip.

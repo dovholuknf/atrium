@@ -11227,7 +11227,7 @@ async function main() {
       usageCacheReads: usageCacheReadsSection, roomsDash: roomsDashSection, phoneView: phoneViewSection, heldLine: heldLineSection, u016: u016Section, phoneHeader: phoneHeaderSection, phoneFocus: phoneFocusSection, phoneTermBar: phoneTermBarSection, phoneShare: phoneShareSection, phonePan: phonePanSection, phoneFollow: phoneFollowSection, phoneTap: phoneTapSection, phoneKeyboard: phoneKeyboardSection, phoneCompose: phoneComposeSection, mCompose: mComposeSection, mPerms: mPermsSection, usagePolish: usagePolishSection, usageLimits: usageLimitsSection, usageGroups: usageGroupsSection,
       eventDriven: eventDrivenSection, idleBudget: idleBudgetSection, pollsGone: pollsGoneSection,
       phoneListFit: phoneListFitSection, phoneNudge: phoneNudgeSection,
-      growlStack: growlStackSection, growlActions: growlActionsSection, growlModal: growlModalSection, growlQuiet: growlQuietSection, growlAttention: growlAttentionSection,
+      growlStack: growlStackSection, growlActions: growlActionsSection, growlModal: growlModalSection, growlQuiet: growlQuietSection, growlAttention: growlAttentionSection, growlPhone: growlPhoneSection, mGrowl: mGrowlSection,
       cacheChip: cacheChipSection, cacheLine: cacheLineSection, mHome: mHomeSection, mCard: mCardSection, mServe: mServeSection, phoneKeyLabel: phoneKeyLabelSection, phoneKeyLit: phoneKeyLitSection, shiftMenu: shiftMenuSection, notifyCommand: notifyCommandSection, presence: presenceSection, tallPty: tallPtySection, roomsMachine: roomsMachineSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
@@ -13224,6 +13224,8 @@ async function main() {
     await growlModalSection(browser, base);
     await growlQuietSection(browser, base);
     await growlAttentionSection(browser, base);
+    await growlPhoneSection(browser, base);
+    await mGrowlSection(browser);
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e));
     if (process.env.DEBUG_HEADLESS) {
@@ -13610,8 +13612,10 @@ function GR(id, reason, n, x) {
   }, x || {});
 }
 
-async function growlBoard(browser, base, hub, init) {
-  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+async function growlBoard(browser, base, hub, init, phone) {
+  const ctx = await browser.newContext(phone
+    ? { viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true }
+    : { viewport: { width: 1400, height: 900 } });
   if (init) await ctx.addInitScript(init);
   const p = await ctx.newPage();
   const h = { ctx, p, errors: [], posts: [], gets: 0, decides: [], messages: [], answer: null, wasHub: hubMode };
@@ -14044,4 +14048,174 @@ async function growlAttentionSection(browser, base) {
     if (h.errors.length) fail("growlAttention: page errors: " + h.errors.join(" | "));
   } finally { await h.close(); }
   if (!bad) console.log("growlAttention ok");
+}
+
+// GROWL_SHOTS=dir writes the pictures a change is reviewed from, as JPEG at quality 80.
+async function growlShot(p, name) {
+  const dir = process.env.GROWL_SHOTS;
+  if (!dir) return;
+  fs.mkdirSync(dir, { recursive: true });
+  await p.screenshot({ path: path.join(dir, name + ".jpg"), type: "jpeg", quality: 80 });
+}
+
+async function growlPhoneSection(browser, base) {
+  const h = await growlBoard(browser, base, true, null, true);
+  const { p } = h;
+  const rect = sel => p.evaluate(s => { const e = document.querySelector(s); if (!e) return null; const r = e.getBoundingClientRect(); return { top: r.top, bottom: r.bottom, h: r.height, vis: !!(r.width && r.height) }; }, sel);
+  try {
+    await h.say([]);
+    const a = GR("a", "permission", 1, { room: "alpha" }), c = GR("c", "question", 2);
+    await h.say([a, c]);
+    if (await p.$("#growl")) fail("growlPhone: the desktop stack drew on a phone.");
+    const strip = await rect("#growl-phone");
+    if (!strip || !strip.vis) fail("growlPhone: no strip on a phone.");
+    // one line: a thumb-sized row, not a card
+    if (strip.h > 60) fail("growlPhone: the closed strip is " + strip.h + "px tall.");
+    const t = await p.textContent("#growl-phone .gp-line");
+    if (!/permission a/.test(t) || !/\+1/.test(t)) fail("growlPhone: the strip read " + JSON.stringify(t));
+    // under the header, and `main` starts below it
+    const hdr = await rect("header"), main = await rect("main");
+    if (strip.top < hdr.bottom - 1) fail("growlPhone: the strip is over the header: " + JSON.stringify([hdr, strip]));
+    if (main.top < strip.bottom - 1) fail("growlPhone: the strip lies over main: " + JSON.stringify([strip, main]));
+    await growlShot(p, "board-closed-390");
+    // tap opens the stack, at most half the window, and never over the key bar
+    await p.tap("#growl-phone .gp-line");
+    await p.waitForSelector("#growl-phone .gp-list .gr-full");
+    if ((await p.$$("#growl-phone .gr-full")).length !== 2) fail("growlPhone: the expanded stack did not list both.");
+    const open = await rect("#growl-phone");
+    if (open.h > 844 / 2 + 1) fail("growlPhone: the open stack is " + open.h + "px in an 844px window.");
+    await p.evaluate(() => { switchView("terms"); });
+    await p.waitForTimeout(400);
+    for (const sel of ["#t-keys", "#t-compose", "#tcompose"]) {
+      const k = await rect(sel);
+      if (k && k.vis && open.bottom > k.top + 1) fail("growlPhone: the open stack lies over " + sel + ": " + JSON.stringify([open, k]));
+    }
+    await growlShot(p, "board-open-390");
+    await p.evaluate(() => { switchView("stack"); });
+    // the actions, through the same paths, and the post says `phone`
+    await p.tap('#growl-phone button[data-do="approve"]');
+    await p.waitForTimeout(250);
+    if (h.decides.length !== 1 || !/\/v1\/permissions\/perm-a\/decide$/.test(h.decides[0].url) || h.decides[0].room !== "alpha") fail("growlPhone: approve was " + JSON.stringify(h.decides));
+    await p.tap('#growl-phone .gr-full[data-id="' + c.id + '"] button[data-do="dismiss"]');
+    await p.waitForSelector("#growl-phone .gp-undo", { timeout: slow(3000) });
+    let last = h.posts[h.posts.length - 1];
+    if (last.body.do !== "dismiss" || last.body.via !== "phone" || !last.body.tab) fail("growlPhone: dismiss posted " + JSON.stringify(last));
+    await p.tap('#growl-phone .gp-undo button[data-do="undo"]');
+    await p.waitForTimeout(300);
+    last = h.posts[h.posts.length - 1];
+    if (last.body.do !== "undismiss" || last.body.via !== "phone") fail("growlPhone: undo posted " + JSON.stringify(last));
+    if (await p.$("#growl-phone .gp-undo")) fail("growlPhone: the undo line stayed after undo.");
+    if (!(await p.textContent("#growl-phone")).includes("question c")) fail("growlPhone: undo did not bring the growler back.");
+    // the undo line leaves by itself
+    await p.tap('#growl-phone .gr-full[data-id="' + c.id + '"] button[data-do="dismiss"]');
+    await p.waitForSelector("#growl-phone .gp-undo", { timeout: slow(3000) });
+    await p.waitForFunction(() => !document.querySelector("#growl-phone .gp-undo"), null, { timeout: slow(11500) })
+      .catch(() => fail("growlPhone: the undo line outlived its window."));
+    // fold, and an empty set takes the strip away
+    await h.say([a, c]);
+    await h.say([]);
+    if (!(await p.$eval("#growl-phone", e => e.hidden))) fail("growlPhone: an empty set left the strip up.");
+    if (h.gets) fail("growlPhone: the board fetched /_hub/growls.");
+    if (h.errors.length) fail("growlPhone: page errors: " + h.errors.join(" | "));
+  } finally { await h.close(); }
+  if (!bad) console.log("growlPhone ok");
+}
+
+async function mGrowlSection(browser) {
+  const st = mServer({});
+  st.tasks = [mCard("a", { display_title: "card a" }), mCard("c", { display_title: "card c" })];
+  await st.open();
+  const vp = { width: 390, height: 844 };
+  try {
+    const { ctx, p, errors } = await mPage(browser, st, vp, "");
+    const tag = "mGrowl: ";
+    const calls = { posts: [], decides: [], messages: [], gets: 0, answer: null };
+    await ctx.route("**/_hub/growls/**", route => {
+      const r = route.request();
+      const id = decodeURIComponent(new URL(r.url()).pathname.replace(/^\/_hub\/growls\//, ""));
+      const body = JSON.parse(r.postData() || "{}");
+      calls.posts.push({ id, body });
+      const row = calls.rows.find(g => g.id === id);
+      if (calls.answer) { const o = calls.answer(body, row); if (o) return route.fulfill({ status: o.status, contentType: "application/json", body: JSON.stringify(o.json) }); }
+      const state = { dismiss: "dismissed", snooze: "snoozed", undismiss: "open" }[body.do];
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ growl: Object.assign({}, row, { state }) }) });
+    });
+    await ctx.route("**/_hub/growls", route => { calls.gets++; return route.fulfill({ status: 404, body: "" }); });
+    await ctx.route("**/v1/permissions/*/decide", route => { calls.decides.push({ url: new URL(route.request().url()).pathname, body: JSON.parse(route.request().postData() || "{}") }); return route.fulfill({ status: 204, body: "" }); });
+    await ctx.route("**/v1/tasks/*/message", route => { calls.messages.push({ url: new URL(route.request().url()).pathname, body: JSON.parse(route.request().postData() || "{}") }); return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ delivered: "queued", when: "done" }) }); });
+    await p.waitForFunction(() => document.getElementById("m-live").classList.contains("on"), null, { timeout: slow(8000) });
+    await p.waitForSelector("#m-skel[hidden]", { state: "attached", timeout: slow(8000) });
+    if (!(await p.$eval("#m-growl", e => e.hidden))) fail(tag + "a strip showed with no growlers.");
+    const say = rows => { calls.rows = rows; st.send("growls", { growls: rows, perm_after_seconds: 120 }); };
+    const perm = GR("a", "permission", 1), q = GR("c", "question", 2);
+    say([perm, q]);
+    await p.waitForFunction(() => !document.getElementById("m-growl").hidden, null, { timeout: slow(4000) });
+    const place = await p.evaluate(() => { const g = document.getElementById("m-growl").getBoundingClientRect(), l = document.getElementById("m-list").getBoundingClientRect(); return { g: g.bottom, l: l.top }; });
+    if (place.g > place.l + 1) fail(tag + "the strip is not above the list: " + JSON.stringify(place));
+    const txt = await p.textContent("#m-growl");
+    if (!/permission a/.test(txt) || !/\+1 more: 1 question/.test(txt)) fail(tag + "the strip read " + JSON.stringify(txt));
+    if ((await p.$$("#m-growl .gm-full")).length !== 1) fail(tag + "more than one growler was drawn in full.");
+    if (await mNoSideways(p)) fail(tag + "the strip scrolls sideways.");
+    await growlShot(p, "m-closed-390");
+    // expand, at most half the window
+    await p.tap("#m-growl .gm-strip");
+    await p.waitForFunction(() => document.querySelectorAll("#m-growl .gm-full").length === 2);
+    const hh = await p.$eval("#m-growl", e => e.getBoundingClientRect().height);
+    if (hh > 844 / 2 + 1) fail(tag + "the open stack is " + hh + "px.");
+    await growlShot(p, "m-open-390");
+    await p.tap("#m-growl .gm-strip");
+    // approve
+    await p.tap('#m-growl button[data-do="approve"]');
+    await p.waitForTimeout(250);
+    if (calls.decides.length !== 1 || !/\/v1\/permissions\/perm-a\/decide$/.test(calls.decides[0].url) || calls.decides[0].body.decision !== "approve") fail(tag + "approve posted " + JSON.stringify(calls.decides));
+    // block asks for its reason in place
+    await p.tap('#m-growl button[data-do="block"]');
+    await p.fill("#m-growl .gm-why", "use pnpm instead");
+    await p.tap('#m-growl button[data-do="sendblock"]');
+    await p.waitForTimeout(250);
+    if (calls.decides.length !== 2 || calls.decides[1].body.decision !== "block" || calls.decides[1].body.reason !== "use pnpm instead") fail(tag + "block posted " + JSON.stringify(calls.decides[1]));
+    if (calls.posts.length) fail(tag + "approve or block posted to /_hub/growls.");
+    // reply, through the message path
+    say([q]);
+    await p.waitForFunction(() => !!document.querySelector("#m-growl .gm-reply"));
+    await p.fill("#m-growl .gm-reply", "yes do it");
+    await p.tap('#m-growl button[data-do="reply"]');
+    await p.waitForTimeout(250);
+    if (calls.messages.length !== 1 || !/\/v1\/tasks\/c\/message$/.test(calls.messages[0].url) || calls.messages[0].body.text !== "yes do it") fail(tag + "reply posted " + JSON.stringify(calls.messages));
+    // snooze
+    await p.tap('#m-growl button[data-do="snooze"]');
+    await p.tap('#m-growl button[data-snooze="15"]');
+    await p.waitForTimeout(250);
+    let last = calls.posts[calls.posts.length - 1];
+    if (!last || last.body.do !== "snooze" || last.body.minutes !== 15 || last.body.via !== "phone" || !last.body.tab) fail(tag + "snooze posted " + JSON.stringify(last));
+    if (await p.$("#m-growl .gm-full")) fail(tag + "a snoozed growler is still drawn.");
+    // dismiss, then undo within the window puts it back
+    say([q]);
+    await p.waitForFunction(() => !document.getElementById("m-growl").hidden);
+    await p.tap('#m-growl button[data-do="dismiss"]');
+    await p.waitForSelector("#m-growl .gm-undo", { timeout: slow(3000) });
+    last = calls.posts[calls.posts.length - 1];
+    if (last.body.do !== "dismiss" || last.body.via !== "phone") fail(tag + "dismiss posted " + JSON.stringify(last));
+    await p.tap('#m-growl .gm-undo button[data-do="undo"]');
+    await p.waitForTimeout(300);
+    last = calls.posts[calls.posts.length - 1];
+    if (last.body.do !== "undismiss" || last.body.via !== "phone") fail(tag + "undo posted " + JSON.stringify(last));
+    if (!(await p.textContent("#m-growl")).includes("question c")) fail(tag + "undo did not restore the growler.");
+    // a 409 says already handled and drops the row
+    calls.answer = body => ({ status: 409, json: { growl: Object.assign({}, q, { state: "resolved" }) } });
+    await p.tap('#m-growl button[data-do="dismiss"]');
+    await p.waitForFunction(() => /already handled/.test(document.getElementById("m-growl").textContent), null, { timeout: slow(3000) })
+      .catch(() => fail(tag + "a 409 did not say already handled."));
+    calls.answer = null;
+    // open goes to the card
+    say([q]);
+    await p.waitForFunction(() => !!document.querySelector("#m-growl .gm-full"));
+    await p.tap('#m-growl button[data-do="open"]');
+    await p.waitForSelector("#m-card.on", { timeout: slow(5000) })
+      .catch(() => fail(tag + "open did not open the card."));
+    if (calls.gets) fail(tag + "the page fetched /_hub/growls.");
+    if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+    await ctx.close();
+  } finally { await st.close(); }
+  if (!bad) console.log("mGrowl ok");
 }
