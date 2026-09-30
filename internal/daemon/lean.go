@@ -64,6 +64,83 @@ func isLeanDefault(name string) bool {
 	return false
 }
 
+// leanConfigServers is every server the runner's MCP config files hold.
+func leanConfigServers(configs []string, readFile func(string) ([]byte, error)) (map[string]json.RawMessage, error) {
+	all := map[string]json.RawMessage{}
+	for _, c := range configs {
+		raw := []byte(c)
+		if !strings.HasPrefix(strings.TrimSpace(c), "{") {
+			b, err := readFile(c)
+			if err != nil {
+				return nil, fmt.Errorf("lean launch could not read the runner's MCP config %s: %w", c, err)
+			}
+			raw = b
+		}
+		var doc struct {
+			MCPServers map[string]json.RawMessage `json:"mcpServers"`
+		}
+		if err := json.Unmarshal(raw, &doc); err != nil {
+			return nil, fmt.Errorf("lean launch could not parse the runner's MCP config %s: %w", c, err)
+		}
+		for k, v := range doc.MCPServers {
+			all[k] = v
+		}
+	}
+	return all, nil
+}
+
+// checkLeanGateway refuses a lean_worker_gateway name that no enabled claude
+// runner's MCP config holds, with the names they do hold, so a typo is caught on
+// save and not by every lean launch after it. The launch checks again, because
+// the file can change after the save.
+func checkLeanGateway(st *store.Store, name string, readFile func(string) ([]byte, error)) error {
+	hs, err := st.Harnesses()
+	if err != nil {
+		return err
+	}
+	have := map[string]bool{}
+	checked := false
+	for _, h := range hs {
+		if !h.Enabled || !isClaude(h) {
+			continue
+		}
+		args, _, err := runnerArgsWith(h, "", "", launchOptions{})
+		if err != nil {
+			continue
+		}
+		var configs []string
+		for i := 0; i < len(args); i++ {
+			if args[i] != "--mcp-config" {
+				continue
+			}
+			for i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+				i++
+				configs = append(configs, args[i])
+			}
+		}
+		if len(configs) == 0 {
+			continue
+		}
+		all, err := leanConfigServers(configs, readFile)
+		if err != nil {
+			return err
+		}
+		checked = true
+		for k := range all {
+			have[k] = true
+		}
+	}
+	if !checked || have[name] {
+		return nil
+	}
+	names := make([]string, 0, len(have))
+	for k := range have {
+		names = append(names, k)
+	}
+	sort.Strings(names)
+	return fmt.Errorf("no MCP server named %s in this runner's config. it has: %s", name, strings.Join(names, ", "))
+}
+
 // leanDisallowed are the tools a lean worker is started without. Each is either
 // the orchestrator's job (Agent, Workflow, the cron and remote tools), a thing
 // a worker in its own worktree must not do (EnterWorktree, plan mode), or a
@@ -263,25 +340,9 @@ func leanArgs(args []string, userSettings []byte, stopHook string, mcp []string,
 // never a URL, so atrium never holds a header or a token. An unknown name is
 // refused with the names the config has.
 func leanServers(configs, extra []string, gateway string, readFile func(string) ([]byte, error)) (string, error) {
-	all := map[string]json.RawMessage{}
-	for _, c := range configs {
-		raw := []byte(c)
-		if !strings.HasPrefix(strings.TrimSpace(c), "{") {
-			b, err := readFile(c)
-			if err != nil {
-				return "", fmt.Errorf("lean launch could not read the runner's MCP config %s: %w", c, err)
-			}
-			raw = b
-		}
-		var doc struct {
-			MCPServers map[string]json.RawMessage `json:"mcpServers"`
-		}
-		if err := json.Unmarshal(raw, &doc); err != nil {
-			return "", fmt.Errorf("lean launch could not parse the runner's MCP config %s: %w", c, err)
-		}
-		for k, v := range doc.MCPServers {
-			all[k] = v
-		}
+	all, err := leanConfigServers(configs, readFile)
+	if err != nil {
+		return "", err
 	}
 	keep := map[string]json.RawMessage{}
 	for _, name := range leanDefaultServers {

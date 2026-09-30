@@ -497,6 +497,7 @@ func New(opts Options) (*Daemon, error) {
 	// it itself would be wrong after every restart.
 	api.HasShell = func(taskID string) bool { return d.sup.getShell(taskID) != nil }
 	api.CloseShellFor = d.CloseShell
+	api.CheckLeanGateway = func(name string) error { return checkLeanGateway(d.st, name, os.ReadFile) }
 	// How many rings the scrollback setting is being multiplied by right now,
 	// so the settings box can say what the number it holds costs in total.
 	api.LiveRings = d.sup.ringCount

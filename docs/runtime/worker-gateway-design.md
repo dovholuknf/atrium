@@ -24,8 +24,8 @@ or `mercurius: mercurius (wide)`.
 
 - `lean_worker_gateway`, empty by default. It holds a server NAME from the runner's mcp.json, never a URL, so no header
   or token lands in atrium's table. The settings API refuses anything that looks like a URL.
-- An unknown name is refused at launch with the list of names mcp.json has. It is checked at launch because that is
-  where the config is read.
+- An unknown name is refused on SAVE (400) and again at launch, each with the list of names mcp.json has. The launch
+  check stays because the file can change after the save.
 - It is not exported (export.go, `neverExported`). It names a machine's own config.
 - No migration. Empty is today's behaviour, byte for byte.
 

@@ -102,3 +102,21 @@ func TestLeanGatewayRestartKeepsWhatTheCardHad(t *testing.T) {
 		}
 	}
 }
+
+func TestLeanGatewayCheckOnSaveReadsTheRunnersMCPConfig(t *testing.T) {
+	d := testDaemon(t)
+	if _, err := d.st.SaveHarness(store.Harness{
+		ID: "claude-gw", Label: "claude", Enabled: true, Cmd: "claude",
+		Args: []string{"--mcp-config", "C:/t/mcp.json"}, LaunchMode: store.LaunchPTY,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	read := leanTestRead(map[string]string{"C:/t/mcp.json": leanGatewayMCP})
+	if err := checkLeanGateway(d.st, "mercurius-worker", read); err != nil {
+		t.Fatal(err)
+	}
+	err := checkLeanGateway(d.st, "typo", read)
+	if err == nil || !strings.Contains(err.Error(), "mercurius-worker") {
+		t.Fatalf("got %v", err)
+	}
+}

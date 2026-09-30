@@ -2,8 +2,10 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/dovholuknf/atrium/internal/store"
@@ -64,5 +66,27 @@ func TestSettingsLeanWorkerGatewayShowsOnTheCard(t *testing.T) {
 	}
 	if got := get(wide); got != "mercurius: mercurius (wide)" {
 		t.Fatalf("wide card = %q", got)
+	}
+}
+
+func TestSettingsLeanWorkerGatewayUnknownNameIsRefusedOnSave(t *testing.T) {
+	srv, st, _ := fileServer(t)
+	old := CheckLeanGateway
+	t.Cleanup(func() { CheckLeanGateway = old })
+	CheckLeanGateway = func(name string) error {
+		if name == "mercurius-worker" {
+			return nil
+		}
+		return fmt.Errorf("no MCP server named %s in this runner's config. it has: mercurius, mercurius-worker", name)
+	}
+	rec := settingsPost(t, srv, `{"lean_worker_gateway":"typo"}`)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "it has: mercurius, mercurius-worker") {
+		t.Fatalf("answered %d: %s", rec.Code, rec.Body.String())
+	}
+	if st.LeanWorkerGateway() != "" {
+		t.Fatal("a refused name was stored")
+	}
+	if rec := settingsPost(t, srv, `{"lean_worker_gateway":"mercurius-worker"}`); rec.Code != 200 {
+		t.Fatalf("a good name answered %d", rec.Code)
 	}
 }
