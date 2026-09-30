@@ -79,9 +79,10 @@ func TestAutoContextCaptureTimeoutRetriesOnceThenGivesUp(t *testing.T) {
 	}
 
 	// Not before retryAfter.
-	autoTiming.retryAfter = time.Hour
-	r.wantNone("before the retry is due")
-	autoTiming.retryAfter = 30 * time.Millisecond
+	r.tick()
+	if s := r.d.auto.get(r.id()); s == nil || s.attempts != 1 || failedWith(r.d, r.id()) == "" {
+		t.Fatalf("a retry started before it was due: %+v", s)
+	}
 
 	// The retry is the same crossing, so the minimum gap does not hold it.
 	retryDue()
@@ -235,6 +236,7 @@ func TestAutoContextClearUnprovenNotRetried(t *testing.T) {
 	if n := r.count("/clear"); n != 1 {
 		t.Fatalf("/clear typed %d times", n)
 	}
+	until(t, "the launcher's notice", func() bool { return len(r.autoFailureNotices()) > 0 })
 	if n := len(r.autoFailureNotices()); n != 1 {
 		t.Fatalf("the launcher heard %d times", n)
 	}
@@ -322,6 +324,7 @@ func TestAutoContextWakeRetryGivesUpAfterOne(t *testing.T) {
 // One notice for an agent card, none for a human card, none again for the same session.
 func TestAutoContextFailureNotifiesLauncherOnce(t *testing.T) {
 	r := gaveUp(t)
+	until(t, "the launcher's notice", func() bool { return len(r.autoFailureNotices()) > 0 })
 	if n := len(r.autoFailureNotices()); n != 1 {
 		t.Fatalf("the launcher heard %d times, want once", n)
 	}
