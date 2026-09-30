@@ -3,10 +3,10 @@
 Written 2026-09-30 for rd-002 by worker rd-002, for @rnd and clint. Research only, nothing was run and no code was
 changed. It builds on `docs/rnd/competitors.md`, `docs/rnd/orca.md` and `docs/rnd/bb.md` and does not redo them.
 
-**Status: wrapped up early on @rnd's instruction, before the atrium side was checked in code.** Sections that are not
-finished say `NOT FINISHED:` and what they need. Read section 7 before acting on any HAVE, PARTIAL or MISSING mark.
-Those marks come from README.md, CHANGELOG.md, the backlog listing and `docs/rnd/competitors.md` (which traced code on
-2026-09-29). Most of them were not re-traced in `internal/` for this item.
+**Status: done, 2026-09-30.** The worker wrapped up at its context limit, and @rnd then checked the atrium side in
+code for every ranked item and the matrix rows that decide them (section 7 says what was checked). The other HAVE,
+PARTIAL and MISSING marks rest on README.md, CHANGELOG.md and `docs/rnd/competitors.md`, which traced code on
+2026-09-29.
 
 Method: competitor claims come from three kinds of evidence, and each item says which. **Release notes** are GitHub
 release bodies fetched with `gh api` (Orca, herdr, ruflo, oh-my-claudecode). **README** means the repository README
@@ -28,9 +28,11 @@ runtime. (3) **A Changes view on every card**: the live diff of the card's workt
 card as a prompt. Superset, Agent Orchestrator, Orca and cmux all have one and it is the step between "the agent says it
 is done" and "accept". Medium, review with ui. (4) **Scheduled launches**: Superset and Orca both shipped cron
 automations and Mission Control lists schedules. Atrium's sources find work on a timer but nothing launches a runner on
-one. Medium, runtime. (5) **Paced resume after a restart, and an agent that reports its own resume command**, which
-herdr shipped in v0.9.2 (`startup_per_agent_delay_ms`). Atrium restarts resume many runners at once and its own backlog
-item 38 is about which ones, so this is the "how fast" half. Small, runtime. Items 6 to 10 follow in section 4.
+one. Medium, runtime. (5) **Dependencies between work items, with a gate only the board resolves**, still unfiled
+and still absent from every tool read except Orca and Gas Town (item 8 below). Medium, runtime. The worker's original
+fifth, paced resume, turned out to exist already: `reopenSaved` starts cards one at a time, `reopenGap` 400ms apart
+(`internal/daemon/reopen.go:40-43`, `:150`). Only herdr's other half, an agent reporting its own resume command, is
+left, and it is small (item 5 below). Items 5 to 10 follow in section 4.
 
 ## 2. Feature matrix
 
@@ -47,12 +49,12 @@ Control, **PS** Paseo, **CM** cmux, **OM** open-multi-agent.
 | --- | --- | --- |
 | Worktree per agent | O, C, G, AO, SS, PS, CM, V | PARTIAL. A launch takes a directory you prepared. `scripts/room-git.ps1 worktree` makes one on a room. Room owned git is f-002 |
 | Start from an issue or ticket URL | O, V, S, SS (Slack, Linear), AO | HAVE. `internal/store/recognisers.go`, `internal/store/sources.go` |
-| Scheduled or recurring runs | SS (automations), O (automations with cron), MC (schedules) | MISSING as far as the docs show. Sources run a command on a timer and raise an inbox card, nothing launches one on a schedule. NOT FINISHED: `internal/daemon/sources.go` was not read for an auto launch path |
+| Scheduled or recurring runs | SS (automations), O (automations with cron), MC (schedules) | MISSING, checked. Sources run a command on a timer and raise an inbox card, and nothing launches one on a schedule (`internal/store/sources.go:29-35`) |
 | Many agent types | O (19 hook installers), AO (32 agents), H (22 detect manifests), PS, OG | PARTIAL. Runners are rows in `internal/store/harness.go`, claude and gemini have setup adapters in `internal/runnersetup/` |
 | A task graph with dependencies | O (`coordinator.ts`), G (molecules) | MISSING. Ledger states exist in `internal/store/ledger.go`, no dependency edge |
 | Launch held under a cap | G (scheduler) | PARTIAL. The cap refuses. See competitors.md 3.1 |
 | Setup and teardown scripts per repository | O (`orca.yaml`), SS, S (`WORKFLOW.md` hooks) | MISSING as a repository held file. Atrium has fixtures and export, not a per repo hook |
-| Per worker browser preview and port detection | AO, SS, CM, O | NOT FINISHED: `docs/ui/preview-design.md` exists and was not read |
+| Per worker browser preview and port detection | AO, SS, CM, O | MISSING, checked. `docs/ui/preview-design.md` is a preview of the BOARD itself on a copied database, not a browser pane for a worker's app |
 | Trigger an agent by voice | PS, O (mobile dictation) | MISSING. In the mobile design's scope |
 
 ### Supervising and permissions
@@ -74,7 +76,7 @@ Control, **PS** Paseo, **CM** cmux, **OM** open-multi-agent.
 
 | Feature | Who ships it | Atrium |
 | --- | --- | --- |
-| Diff of the agent's working tree, with line comments | SS (README:40-55), AO (README:61), O (multi-line review comments), CM | PARTIAL. Pending edit diffs exist in the permission view (README:93). A whole worktree diff was not found. NOT FINISHED: grep `internal/api` for a git diff endpoint |
+| Diff of the agent's working tree, with line comments | SS (README:40-55), AO (README:61), O (multi-line review comments), CM | PARTIAL. Pending edit diffs exist in the permission view (README:93). No worktree diff exists, checked (no `git diff` exec anywhere in `internal/`) |
 | PR, CI and review state on the card | AO (README:77-84), CM (README:65), O (PR page) | MISSING as far as the docs show. u-005 covers reviewing someone else's PR, which is a different job |
 | Send review or CI feedback to the owning agent | AO (README:94), SS (README:43), O (`pr-comments-resolution-prompt.ts`) | MISSING. `docs/runtime/scm-design.md` files it as not built |
 | Stacked pull requests, Bitbucket | O (v1.4.182 and v1.4.183) | MISSING and out of scope for now |
@@ -88,7 +90,7 @@ Control, **PS** Paseo, **CM** cmux, **OM** open-multi-agent.
 | --- | --- | --- |
 | One window over local and SSH machines | H (v0.9.0 `machine add`), SS (remote access), PS (`--host`), CM (`cmux ssh`), O | HAVE. Rooms and the hub, `docs/fabric/` |
 | Wake an offline host by a custom command | SS (README:139) | MISSING |
-| Search session history across every machine | O (v1.4.206 `session-search`), AT | PARTIAL. Every card stays searchable in one room (README:132). NOT FINISHED: whether the hub searches across rooms |
+| Search session history across every machine | O (v1.4.206 `session-search`), AT | PARTIAL, checked. Card fields are searched across every room (`store/history.go:29-66`, merged by `link/fanout.go:363`). Transcript contents are not |
 | Reconnect and MFA on the SSH hop | H (v0.9.1 and v0.9.2), O (v1.4.217) | PARTIAL. Provisioning is `scripts/provision-room.ps1` and friends, f-005 and f-007 |
 | Sessions survive the client closing | H, SS | HAVE for the board. The runner dies with the daemon on Windows, see README "Scope" |
 
@@ -182,7 +184,8 @@ and both are login based servers.
 ## 4. Ranked list
 
 Only what competitors ship and atrium lacks or half has. Items already filed are in 4.2, not ranked. Files were checked
-to exist by name in the repo tree listed in `CLAUDE.md`, and `internal/store/usage.go`, `a2a.go`, `ledger.go`, `sources.go`
+to exist by name in the repo tree listed in `CLAUDE.md`, and `internal/store/usage.go`, `a2a.go`, `ledger.go`,
+`sources.go`
 and `internal/daemon/launch.go`, `daemon.go`, `sweep.go` were named by competitors.md, which read them on 2026-09-29.
 
 ### 4.1 The list
@@ -190,7 +193,8 @@ and `internal/daemon/launch.go`, `daemon.go`, `sweep.go` were named by competito
 **1. A board freeze plus a token and call budget.** A setting `board_frozen` holding reason and who, checked in the
 permission chain after a shelved card and before standing rules, plus per card and per board budgets in tokens and tool
 calls that trip the freeze or shelve the card. *Who ships it:* Gas Town estop (`internal/estop/estop.go`, read in
-competitors.md 2.7), Omnigent `cost_budget` and `max_tool_calls_per_session` (README:564-571), ruflo's `global-ai-budget`
+competitors.md 2.7), Omnigent `cost_budget` and `max_tool_calls_per_session` (README:564-571), ruflo's
+`global-ai-budget`
 import (competitors.md 2.9). *Why:* an operator with many unattended agents needs one switch and one automatic stop, and
 dollars were hidden by decision (item 37), so this is the token form. *Files:* `internal/daemon/daemon.go`,
 `internal/store/settings.go`, `internal/store/usage.go`, `internal/api/settings.go`, and a board control in
@@ -208,7 +212,8 @@ shows linked PR status in the sidebar (README:65), Superset sends diff line feed
 column. *Files:* `internal/store/ledger.go`, `internal/store/actions.go`, `internal/daemon/actions.go`, a new
 `internal/daemon/prstate.go`, `internal/api/web/`. *Owner:* review with runtime. *Size:* large. Related and different:
 u-005 (reviewing someone else's PR) and `docs/runtime/scm-design.md` (outbound configuration and inbound recognisers).
-Whether PR polling exists anywhere was not checked.
+Checked by @rnd: nothing polls PR or check state. `internal/store/recognisers.go` only turns a PR URL into a filled-in
+launch dialog, and the "CI failed on main" cards on the board come from outside the repo.
 
 **3. A Changes view per card.** The card's worktree diff (`git diff` against its base) rendered with the board's
 existing diff styling, with selected lines sent to that card as a prompt. *Who ships it:* Superset (README:40-55),
@@ -216,28 +221,36 @@ Agent Orchestrator (README:61, "changed files"), Orca (release notes: multi-line
 regions), cmux. *Why:* it closes the gap between "done" and "accepted" without leaving the board, and it is what a
 phone page could show instead of a terminal. *Files:* `internal/api/` (a new endpoint beside `files.go` and
 `filetext.go`, resolved through `internal/safepath`), `internal/api/web/`, reuse of the edit diff renderer.
-*Owner:* review with ui. *Size:* medium. Check first whether a worktree diff endpoint already exists.
+*Owner:* review with ui. *Size:* medium. Checked by @rnd: no worktree diff endpoint exists (no `git diff` exec
+anywhere in `internal/`).
 
 **4. Scheduled launches.** A row like a source with a cron or interval field and a launch request instead of an inbox
 item, with the same bounds and three strikes switch off. *Who ships it:* Superset "Automations" (README:129-135), Orca
 automations (`v1.4.190`, `v1.4.198`, cron step fix), Mission Control schedules (README:82). *Why:* overnight triage and
 recurring reports are the standing use of an unattended fleet. *Files:* `internal/store/sources.go`,
-`internal/daemon/sources.go`, `internal/daemon/launch.go`, `internal/api/`. *Owner:* runtime. *Size:* medium. Not found
-in the backlog by name, and the schedule grep only counted hits.
+`internal/daemon/sources.go`, `internal/daemon/launch.go`, `internal/api/`. *Owner:* runtime. *Size:* medium. Checked by
+@rnd: not filed (no backlog item mentions a scheduled or recurring launch, or cron), and a source only has
+`interval_secs` for finding work (`internal/store/sources.go:29-35`).
 
-**5. Paced resume and self reported resume.** After a restart, resume runners one at a time with a configurable gap, and
-let an agent report its own resume command so a harness with no built in resume still comes back. *Who ships it:* herdr
+**5. Self reported resume.** Let an agent report its own resume command, so a harness with no built in resume still
+comes back after a restart. The pacing half is ALREADY BUILT: `reopenSaved` starts cards one at a time, `reopenGap`
+400ms apart (`internal/daemon/reopen.go:40-43`, `:150`), so only the self reported command is proposed. *Who ships it:*
+herdr
 `v0.9.2` release notes ("Restored agents start one at a time, 100 ms apart", "Agents can report their own resume
 command"). *Why:* a room with dozens of cards resuming together is a CPU and rate limit spike and herdr saw it in the
-field. *Files:* `internal/daemon/launch.go`, `internal/store/harness.go`, and whichever file runs the wake after a restart (not
+field. *Files:* `internal/daemon/launch.go`, `internal/store/harness.go`, and whichever file runs the wake after a
+restart (not
 found, see `docs/runtime/restart-wake.md`). *Owner:* runtime. *Size:* small. Related: item 38 (which cards resume) and
 `docs/rnd/rolling-restart-design.md`.
 
-**6. Search history across rooms.** One query from the board that the hub fans out to every room and merges. *Who ships
+**6. Search inside transcripts, across rooms.** Card-level search across rooms ALREADY EXISTS: `EverRun` matches
+title, reason, worktree, tags, recap and external id (`internal/store/history.go:29-66`), and the hub merges
+`/v1/history` over every room in order (`internal/link/fanout.go:363`, `internal/link/proxy.go:502`). What is missing
+is searching what a session SAID and DID, its transcript. *Who ships
 it:* Orca `v1.4.206` (session-search "every computer", `orca search`), Atlas (README:126). *Why:* "which agent touched
 that config last week" is the question a multi machine operator asks and the answer is on another machine.
 *Files:* `internal/store/history.go`, `internal/link/` (a fan out like `pinorder.go`), `internal/api/`. *Owner:* fabric.
-*Size:* medium. Whether the hub already does this was not checked.
+*Size:* medium, since transcripts are on each room's disk and the fan out already exists.
 
 **7. Every commit linked to the card that made it.** Record the head of the card's worktree at each stop, list the
 commits since the base, and re-point on amend or rebase by patch id. *Who ships it:* Atlas checkpoints (README:71-77,
@@ -274,9 +287,11 @@ operator has a machine that sleeps.
 
 ## 5. Do not copy
 
-- **A shared vector memory across agents** (Atlas, ruflo, claude-mem). It is a plugin category that sits inside the agent,
+- **A shared vector memory across agents** (Atlas, ruflo, claude-mem). It is a plugin category that sits inside the
+  agent,
   the agent's own memory files already hold what atrium can safely read, and it would give the daemon an embedding
-  model and a store that can leak one card's secrets into another's prompt. Atrium's handoff (item 66) is the bounded form.
+  model and a store that can leak one card's secrets into another's prompt. Atrium's handoff (item 66) is the bounded
+  form.
 - **Cloud sandboxes** (Omnigent lists a dozen providers). The overlay answer in `docs/fabric/overlays.md` already covers
   "another machine", and a sandbox provider list is an integration surface atrium would carry forever.
 - **A model picked agent router and swarm memory** (ruflo `v3.43.0` to `v3.44.0`). Its own release notes say none of the
@@ -293,7 +308,8 @@ operator has a machine that sleeps.
 ## 6. Where atrium is ahead
 
 Short, because competitors.md section 5 has it. None of the eighteen tools here gates every tool call with durable
-rules while owning the terminal a human types into. The newer control planes (Mission Control, Omnigent, open-multi-agent)
+rules while owning the terminal a human types into. The newer control planes (Mission Control, Omnigent,
+open-multi-agent)
 went to login, servers or libraries. Storage failure halting and not degrading has no counterpart in any README or
 release note read. Windows first: Superset has no Windows build, herdr's live handoff is Unix only and Atlas lists
 Linux as untested, while atrium's supervision is built for ConPTY. What atrium's peers all have that it does not is the
@@ -301,26 +317,25 @@ feedback loop from pull request and CI back to the agent, which is why feature 2
 
 ## 7. What could not be verified
 
-- **NOT FINISHED: the atrium column was not re-traced in code for this item.** HAVE marks with a file rest on README.md,
-  CHANGELOG.md and competitors.md. PARTIAL and MISSING marks rest on a docs grep only. Before building any of items 2, 3,
-  4, 6 or 7, grep `internal/` for the feature first. The specific greps still owed: a git diff endpoint in
-  `internal/api` (item 3), PR or `gh pr` polling in `internal/` and `internal/daemon` (item 2), any auto launch on a
-  source or timer in `internal/daemon/sources.go` (item 4), a cross room history search in `internal/link` (item 6), and
-  a stagger or delay in the restart resume path (item 5).
-- **NOT FINISHED: the backlog was searched by keyword only.** `pwsh scripts/backlog-index.ps1` lists titles and status
-  lines. A grep of `docs/backlog` for freeze, estop, budget and dependency found nothing filed, and the schedule grep
-  returned 76 hits in 39 files that were not read. Someone should open the ones under `docs/backlog/runtime` before
-  item 4 is treated as new.
-- **NOT FINISHED: the matrix is the ten survey tools plus eight entrants at README depth.** Gas Town's Refinery,
+- **Checked in code by @rnd, 2026-09-30, for the ranked items.** Item 2: nothing polls PR or check state
+  (`recognisers.go` is inbound only). Item 3: no worktree diff anywhere in `internal/`. Item 4: no scheduled launch,
+  and a source has only `interval_secs` for finding work. Item 5: pacing exists (`reopen.go:40-43`), so only the self
+  reported resume command is proposed. Item 6: card-level search across rooms exists (`history.go`, `fanout.go:363`),
+  so only transcript search is proposed. Items 1, 7, 8, 9 and 10 rest on the worker's docs reading and competitors.md.
+- **The backlog, checked by @rnd.** No item mentions a freeze, estop, budget cap on tokens or calls, a scheduled or
+  recurring launch, cron, PR or CI state on a card, or work item dependencies. The earlier 39-file "schedule" hit list
+  was words in passing (keep-alive budgets, notification timing, idle parking).
+- **The matrix is the ten survey tools plus eight entrants at README depth.** Gas Town's Refinery,
   Symphony's and humanlayer's recent releases, `munder-difflin`, `stagewise`, `happy` and `t3code` were not read.
   Blank cells mean not seen.
-- **NOT FINISHED: Claude Code's own features** (Agent View, Agent Teams, Remote Control, scheduled tasks) were not
+- **Claude Code's own features** (Agent View, Agent Teams, Remote Control, scheduled tasks) were not
   fetched. They may cover items 4 or 9 for Claude runners, and `docs/rnd/mobile-research.md` has the Remote Control
   page only.
 - **No new source reads.** The clones in `D:/tmp` were not refreshed or opened. Citations in section 4 to README line
   numbers refer to the raw README fetched on 2026-09-30 and not committed, so they will drift. Release note claims are
   from bodies fetched on the same day. The Orca release bodies quoted (for example "`v1.4.190`") were matched by grep
-  of feature lines and headings, not read in full, and the 54 stable releases since 2026-08-01 are far more than was read.
+  of feature lines and headings, not read in full, and the 54 stable releases since 2026-08-01 are far more than was
+  read.
 - **Adoption numbers** are GitHub stars from the API on 2026-09-30. Downloads and the badges some READMEs quote were not
   checked. Newer entrants' claims of production use (open-multi-agent lists three users at about 60 to 80 stars each)
   were not checked either.
