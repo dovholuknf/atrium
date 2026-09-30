@@ -12446,7 +12446,7 @@ function mServer(state) {
   state.close = () => new Promise(r => { state.streams.forEach(s => { try { s.destroy(); } catch (e) {} }); srv.close(r); srv.closeAllConnections && srv.closeAllConnections(); });
   return state;
 }
-const M_VIEWS = [{ width: 390, height: 844 }, { width: 412, height: 915 }];
+// M_VIEWS is declared with mHarness (u-025), the same two sizes.
 async function mPage(browser, state, vp, skin) {
   state.skin = skin || "";
   const ctx = await browser.newContext({ viewport: vp, hasTouch: true, isMobile: true, deviceScaleFactor: 2 });
