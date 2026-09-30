@@ -117,8 +117,10 @@ Framed messages, one connection per daemon, a control stream and multiplexed pty
 - `spawn {id, kind, argv, env, cwd, cols, rows, ring}` answers `{pid, run_id}`. `kind` is `runner` (a card's runner)
   or `shell` (a plain shell), the same split the supervisor keeps today as its `runners` and `shells` maps. The host
   stores it and never acts on it. A reattaching daemon rebuilds both maps from it, so a shell is never filed as a
-  card's exit, counted by the idle rules, or restarted or parked as a runner. `run_id` is assigned by the host, unique
-  for the host's lifetime and never reused, and it names this one runner start. A card started again gets a new one.
+  card's exit, counted by the idle rules, or restarted or parked as a runner. `run_id` is assigned by the host as a
+  random 128-bit ULID-style id, the same shape as the store's keys, so it is unique across every host and every host
+  lifetime, never a counter that a second or restarted host could repeat. It names this one runner start. A card
+  started again gets a new one.
 - `list` answers every pty:
   `{id, kind, run_id, pid, cols, rows, started, exited, exit_code, ring_start, out_offset}`.
 - `attach {id, run_id, from}` streams output from an absolute byte offset. A `from` older than the ring's start gets the
@@ -144,7 +146,8 @@ listed, and the next daemon files it again. So filing an exit MUST be idempotent
 stores `run_id` with the runner start, and the exit event and the dead-card attribution are keyed on the pair, so a
 second filing of the same exit is a no-op and the exit of a later start is never taken for it. The pid and the start
 time are not the key, because a pid is reused and two implementers would pick different clocks. Stage 1 adds the
-column and stage 2 checks every exit path uses it. Collecting first would lose the last screen and could attribute the death wrongly, so it is not allowed.
+column and stage 2 checks every exit path uses it. Collecting first would lose the last screen and could attribute
+the death wrongly, so it is not allowed.
 
 ### 3.3 Its lifetime
 
@@ -186,8 +189,8 @@ runners together, and the next start resumes them as today.
      to Claude's own prompt in the terminal. MUST: the gate treats ANY answer that is not a decision as retryable:
      a refused or reset connection, a timeout, a non-2xx status (a daemon closing its store, or a new one not yet
      migrated), or a 2xx with no decision in it. It retries with the SAME dedup key (`tool_use_id`) for up to 30
-     seconds, then fails open to the runner's own prompt without recording an allow anywhere. The request row is durable, so the new
-     daemon re-surfaces it and chain step 1 (a replayed decision) answers it once. That keeps the fail-open guarantee
+     seconds, then fails open to the runner's own prompt without recording an allow anywhere. The request row is
+     durable, so the new daemon re-surfaces it and chain step 1 (a replayed decision) answers it once. That keeps the fail-open guarantee
      (a bounded wait, then open) and keeps the question on the board. f-006 moves the gate into Go (`atrium hook
      --event permission`), which is where this retry belongs, so f-011 stage 2 depends on f-006.
 2. **Held and queued messages.** Nothing moves. `message` rows, restart wakes and owed reports are in the one
@@ -317,8 +320,8 @@ If B is refused, A is buildable, and these are the answers it would need. Each i
   Scheduler changes in section 7, and the board showing the host build.
 - **Stage 4, host upgrade (@runtime with @terminal).** Section 6: the second host and the per-card idle move. It is
   only needed the first time the protocol changes, so it can wait for that. Acceptance: restart the daemon while cards
-  run on both the primary host and a `.pN` secondary, then check that attach, write, resize and exit filing reach the
-  right host for each card, and that a new launch goes to the newest host.
+  run on both the primary host and a `.pN` secondary, then check that attach, write, resize, exit filing and
+  `collect` reach the right host for each card, and that a new launch goes to the newest host.
 
 clint's answers to section 10 become acceptance lines of the stage they touch (stage 2 for the stop default and the
 retry, stage 3 for on by default). They do not hold stages 0 and 1.
