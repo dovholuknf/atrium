@@ -127,6 +127,21 @@ link stays refused, as it is today.
    secret once and a second spend fails. An old overlay join string is refused with the re-join sentence.
 6. Rollout: a hub deploy, then each overlay room re-joins once. Direct rooms are untouched.
 
+Added by @fabric's review (2026-09-30, filed as f-022):
+
+- **Wrap only the ROOM-LINK listener.** The hub also serves the board over zrok and ziti on a separate listener,
+  and a browser has no client certificate, so the board listener must never get the wrapper. A test pins it.
+- **Every connection kind rides the wrapped dial**: control, data, enrol, upgrade, announce, relay, and f-019's
+  `git`. Nothing may open its own path to the hub. `Room.DialGit` goes through the room's transport `Dialer`.
+- **Deadlines.** `hearHello` and the TLS handshake both set deadlines on the underlying connection, so the ziti edge
+  connection must honour `SetDeadline`. One test over a real edge connection, or a check against the SDK, before
+  rollout.
+- **Provisioning.** `provision-room.ps1`'s ziti and zrok join paths mint the new join string (secret plus CA pin)
+  through `atrium rooms add`, and refuse the old form with the re-join sentence.
+- **Cost.** sg3 and m1mini attach direct (provision reports rooms dialling `192.168.1.68:7779`), and no room is known
+  to be on an overlay link today, so the re-join cost is probably zero. @fabric confirms from the hub's room list
+  before rollout.
+
 Decision 18 then becomes: **the certificate the hub signed proves a room's name on every transport. The overlay
 proves only that the caller may reach the hub.**
 
