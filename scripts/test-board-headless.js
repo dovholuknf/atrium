@@ -5197,24 +5197,25 @@ async function u016Section(browser, base) {
         });
         if (st.ta !== "none" || st.us !== "none") fail(tag + "the key bar does not own its touch: " + JSON.stringify(st));
         const ints = () => p.evaluate(() => window.__sent.filter(x => /"s":"int"/.test(x)).length);
-        const fire = (type, x, y) => p.evaluate(([t, x, y]) => {
-          const b = document.querySelector("#t-keys [data-key=int]");
-          const r = b.getBoundingClientRect();
-          b.dispatchEvent(new PointerEvent(t, { bubbles: true, cancelable: true, pointerId: 7, pointerType: "touch",
-            clientX: r.left + r.width / 2 + x, clientY: r.top + r.height / 2 + y }));
-        }, [type, x, y]);
-        await p.evaluate(() => { window.__sent.length = 0; });
-        await fire("pointerdown", 0, 0); await p.waitForTimeout(150); await fire("pointerup", 0, 0);
-        await p.waitForTimeout(700);
+        const press = (steps) => p.evaluate((steps) => new Promise((res) => {
+          const b = document.querySelector("#t-keys [data-key=int]"), r = b.getBoundingClientRect();
+          const ev = (t, x, y) => b.dispatchEvent(new PointerEvent(t, { bubbles: true, cancelable: true, pointerId: 7,
+            pointerType: "touch", clientX: r.left + r.width / 2 + x, clientY: r.top + r.height / 2 + y }));
+          const next = (i) => { if (i >= steps.length) return res(); const [t, x, y, ms] = steps[i]; ev(t, x, y); setTimeout(() => next(i + 1), ms); };
+          next(0);
+        }), steps);
+        const reset = () => p.evaluate(() => { window.__sent.length = 0; });
+        await reset();
+        await press([["pointerdown", 0, 0, 150], ["pointerup", 0, 0, 700]]);
         if (await ints()) fail(tag + "a short tap on ^C interrupted");
-        await fire("pointerdown", 0, 0); await p.waitForTimeout(200); await fire("pointermove", 30, 0);
-        await p.waitForTimeout(700); await fire("pointerup", 30, 0);
+        await reset();
+        await press([["pointerdown", 0, 0, 200], ["pointermove", 30, 0, 700], ["pointerup", 30, 0, 0]]);
         if (await ints()) fail(tag + "a drag past the threshold still interrupted");
-        await fire("pointerdown", 0, 0); await p.waitForTimeout(200); await fire("pointercancel", 0, 0);
-        await p.waitForTimeout(700);
+        await reset();
+        await press([["pointerdown", 0, 0, 200], ["pointercancel", 0, 0, 700]]);
         if (await ints()) fail(tag + "a cancelled press still interrupted");
-        await fire("pointerdown", 0, 0); await fire("pointermove", 3, 3);
-        await p.waitForTimeout(2000); await fire("pointerup", 0, 0);
+        await reset();
+        await press([["pointerdown", 0, 0, 0], ["pointermove", 3, 3, 2000], ["pointerup", 0, 0, 0]]);
         if ((await ints()) !== 1) fail(tag + "a 2s hold did not interrupt exactly once: " + (await ints()));
       }
 
