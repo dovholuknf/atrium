@@ -42,7 +42,9 @@ is live.
    tests pass. A full daemon run with `-timeout 40m` was started in `D:/worktrees/claude/atrium/49`, which is reset
    to the branch, after the first run timed out at 10 minutes under load. To finish: that result, @review's pass,
    merge onto claude/main, `atrium_cull card=49@m1mini tip=7f523835`, and a hub deploy plus a room deploy, since
-   both sides changed.
+   both sides changed. Before it lands, from @review's name-capture question: index only cards with an empty
+   `spawned_by`, so a worker that inherited atrium:everywhere from its launcher's tags does not answer bare names on
+   every room. One condition in `indexed()`, plus a test.
 3. **f-003 stage 1.** The `atrium_resources` tool (ctlclass.go, the worker set goes 6 to 7), `resources.md` by the
    state dir, `atrium resources init`, and one framing line on every card.
 4. **The Linux autostart proof on cdzrok.** Check that the machine is up first.
