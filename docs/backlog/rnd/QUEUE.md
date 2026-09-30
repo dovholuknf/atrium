@@ -35,15 +35,12 @@ director as `docs/backlog/<dept>/<d>-new-<name>.md`, or fold them into the desig
 
 ## Waiting
 
-Parked items from 2026-09-30 that ask for a design review by @rnd first, in this order:
-
-1. `docs/backlog/ui/u-new-open-with-system.md`: open in Explorer or the system editor. Prove by hand first which
-   desktop a window from the claude-user daemon lands on.
+Nothing.
 
 ## Done
 
 2026-09-30: persistent growler (8f74da4e, answers folded f7110c24, pop-out rules ac94fa51), handle-addressed HTTP
 (f82f3284), card URLs (f7110c24, 5a98ea61), security design (2d4e19b1, codex rounds to a85f2c10), held-message
 escalation (64fadc33, 178362d1), resume says continue (bae9c707), review of u-popout-notify (ac94fa51), lean context
-cycle (81a1fd5c), Defender advice (0c442bee), machine health
-(`docs/rnd/machine-health-design.md`).
+cycle (81a1fd5c), Defender advice (0c442bee), machine health (60adacbb), open with the system
+(`docs/rnd/open-with-system-design.md`).
