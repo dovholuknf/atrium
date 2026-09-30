@@ -58,3 +58,37 @@ line when the growler appeared and one when it left.
 1. Open a room served alone.
 
 **Expected:** no growler, and no request to `/_hub/growls` at load or later.
+
+### @LETTER@9. The tab asks for attention
+
+1. Raise a growler, then click away so the board tab is not focused.
+
+**Expected:** the tab title alternates every 1.5 s between `(n) atrium` and `! ` plus the growler's title. The favicon
+wears an amber dot with the growler count. Focusing the board stops the alternation. The favicon returns to the plain
+mark when no growler is open.
+
+### @LETTER@10. One notification and one tone per growler
+
+1. With two board windows open and neither focused, raise a growler.
+
+**Expected:** one sticky desktop notification tagged for that growler and one tone, not one per window. The card's own
+tone plays if it has one.
+
+### @LETTER@11. Reminders ring again
+
+1. Leave a growler open until the hub sends a reminder.
+
+**Expected:** the tone plays once and the same notification is shown again. The toast log gains one "growler
+reminder" line.
+
+### @LETTER@12. The notification leaves with its growler
+
+1. Let a growler notify, then answer the request from the perms view or another browser.
+
+**Expected:** the notification closes in every browser that showed one.
+
+### @LETTER@13. Mute and the master switch
+
+1. Mute sound and raise a growler unfocused. Unmute, turn notifications off, and raise another.
+
+**Expected:** no tone and no desktop notification in either case. Both growlers are still on screen.
