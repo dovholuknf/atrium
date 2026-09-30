@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -563,5 +564,21 @@ func TestGrowlSinceIsWrittenOnce(t *testing.T) {
 	rig.g.mu.Unlock()
 	if again := rig.g.growlSince(); !again.Equal(first) {
 		t.Fatalf("the seed moved from %v to %v", first, again)
+	}
+}
+
+// A REQUEST THE ROOM NEVER LISTS IS GIVEN UP ON after a few asks, rather than
+// asked about every tick for as long as the growler lasts.
+func TestGrowlFillGivesUp(t *testing.T) {
+	rig := newGrowlRig(t)
+	var asks atomic.Int32
+	rig.g.pending = func(context.Context, string) []pendingPerm { asks.Add(1); return nil }
+	now := rig.g.now()
+	rig.announce(t, growlPermCard("p", now.Add(-5*time.Minute)))
+	for i := 0; i < 8; i++ {
+		rig.g.fill(context.Background(), "sparta")
+	}
+	if n := asks.Load(); n > growlFillTries+1 {
+		t.Fatalf("the room was asked %d times for a request it never lists", n)
 	}
 }

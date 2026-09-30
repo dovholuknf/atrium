@@ -74,6 +74,7 @@ const (
 	growlHoldAfter    = 15 * time.Minute
 	growlPruneEvery   = time.Hour
 	growlBodyMax      = 200
+	growlFillTries    = 3
 	growlSnoozeMaxMin = 7 * 24 * 60
 )
 
@@ -191,6 +192,8 @@ type Growler struct {
 	pending  func(ctx context.Context, room string) []pendingPerm
 	phone    func(Notice)
 
+	// pubMu is publish's, held while a set is built and compared.
+	pubMu  sync.Mutex
 	mu     sync.Mutex
 	last   string
 	pruned time.Time
@@ -198,11 +201,14 @@ type Growler struct {
 	// filling is which rooms have a permission fill running, so a burst of
 	// announcements is one request to that room.
 	filling map[string]bool
+	// fillMiss is how many times a permission growler's request was not in its
+	// room's pending list. See fill.
+	fillMiss map[string]int
 }
 
 // NewGrowler returns a growler over a store. Start runs its ticker.
 func NewGrowler(st GrowlStore) *Growler {
-	return &Growler{st: st, now: time.Now, filling: map[string]bool{}}
+	return &Growler{st: st, now: time.Now, filling: map[string]bool{}, fillMiss: map[string]int{}}
 }
 
 // permAfter is how long a permission waits before it growls.
@@ -244,11 +250,12 @@ func (g *Growler) growlSince() time.Time {
 			since = t
 		}
 	}
+	// Kept in memory whether or not it could be written, so a failed write
+	// does not move it to "now" on every call and read every question as old.
+	// The write is tried again at the next start.
 	if since.IsZero() {
 		since = g.now().UTC()
-		if err := g.st.SetSetting(settingGrowlSince, since.Format(time.RFC3339Nano)); err != nil {
-			return since
-		}
+		_ = g.st.SetSetting(settingGrowlSince, since.Format(time.RFC3339Nano))
 	}
 	g.mu.Lock()
 	g.since = since
@@ -372,11 +379,15 @@ func (g *Growler) fill(ctx context.Context, room string) {
 		return
 	}
 	var need []GrowlRow
+	g.mu.Lock()
 	for _, r := range live {
-		if r.Room == room && r.Reason == ReasonPermission && r.Subject == "" {
+		// A request the room never lists is given up on after a few asks, so a
+		// growler whose status lags is not a request to that room every tick.
+		if r.Room == room && r.Reason == ReasonPermission && r.Subject == "" && g.fillMiss[r.ID] < growlFillTries {
 			need = append(need, r)
 		}
 	}
+	g.mu.Unlock()
 	if len(need) == 0 {
 		return
 	}
@@ -392,6 +403,9 @@ func (g *Growler) fill(ctx context.Context, room string) {
 	for _, r := range need {
 		p, ok := oldest[r.CardID]
 		if !ok {
+			g.mu.Lock()
+			g.fillMiss[r.ID]++
+			g.mu.Unlock()
 			continue
 		}
 		body := clip(p.Command)
@@ -462,6 +476,18 @@ func (g *Growler) tick(ctx context.Context) {
 	}
 	at := g.now()
 	missing := map[string]bool{}
+	// Misses for growlers that have ended are forgotten with them.
+	g.mu.Lock()
+	for id := range g.fillMiss {
+		keep := false
+		for _, r := range live {
+			keep = keep || r.ID == id
+		}
+		if !keep {
+			delete(g.fillMiss, id)
+		}
+	}
+	g.mu.Unlock()
 	for _, r := range live {
 		if r.Reason == ReasonPermission && r.Subject == "" {
 			missing[r.Room] = true
@@ -643,14 +669,16 @@ func (g *Growler) publish(remind []string) {
 	if g.say == nil {
 		return
 	}
+	// BUILT AND COMPARED UNDER ONE LOCK, so two callers at once cannot send the
+	// older set last and leave every screen a set behind until the next tick.
+	g.pubMu.Lock()
+	defer g.pubMu.Unlock()
 	data, fp, err := g.payload(remind)
 	if err != nil {
 		return
 	}
-	g.mu.Lock()
 	same := fp == g.last
 	g.last = fp
-	g.mu.Unlock()
 	if same && len(remind) == 0 {
 		return
 	}
@@ -856,8 +884,10 @@ func (p *Proxy) openGrowls(s *sub) {
 	if err != nil {
 		return
 	}
+	// Waited for, briefly: `publish` sends nothing for a set that has not
+	// changed, so a tab that missed this would see no growler for hours.
 	select {
 	case s.ch <- Event{Kind: "growls", Data: data}:
-	default:
+	case <-time.After(time.Second):
 	}
 }
