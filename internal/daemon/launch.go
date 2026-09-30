@@ -1355,7 +1355,7 @@ func (d *Daemon) launchedName(title, cwd string) string {
 	return launchedName(title, cwd, d.wireNameTaken())
 }
 
-// wireNameTaken reports, for a local name, whether a live session already wears
+// wireNameTaken reports, for a local name, whether any card, live or not, already wears
 // it. Compared against LocalName because the argument is the unqualified name a
 // launch is about to hand out, while a stored wire name carries this atrium's
 // tenant prefix.
@@ -1363,9 +1363,10 @@ func (d *Daemon) wireNameTaken() func(string) bool {
 	taken := map[string]bool{}
 	if tasks, err := d.st.List(); err == nil {
 		for _, t := range tasks {
-			if d.runnerIsLive(t) {
-				taken[store.LocalName(t.WireName)] = true
-			}
+			// Every card holds its name, live or not. Register matches on the
+			// wire name at any status, so handing out a dead card's name would
+			// silently re-prompt that card instead of starting a new one.
+			taken[store.LocalName(t.WireName)] = true
 		}
 	}
 	return func(name string) bool { return taken[name] }
