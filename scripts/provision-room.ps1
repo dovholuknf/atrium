@@ -1052,7 +1052,13 @@ function Invoke-SmokeCase {
     try {
         $card = Invoke-RestMethod -Method Post -Uri "http://$HubAddr/v1/launch" -Headers $hdr `
             -ContentType 'application/json' -Body ($body | ConvertTo-Json -Depth 5) -TimeoutSec 60
-    } catch { $smokeErr = "the hub would not launch it: $($_.Exception.Message)" }
+    } catch {
+        # THE BODY SAYS WHY. The room answers every launch failure 400 with the
+        # reason in the body, and the exception message alone is only "400 (Bad
+        # Request)". Seen on m1mini straight after a restart, and not explainable.
+        $why = "$($_.ErrorDetails.Message)".Trim()
+        $smokeErr = "the hub would not launch it: $($_.Exception.Message)" + $(if ($why) { " $why" } else { '' })
+    }
     if ($card -and -not $card.id) { $smokeErr = 'the hub answered the launch with no card'; $card = $null }
 
     $reported = $false
