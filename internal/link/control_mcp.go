@@ -88,6 +88,12 @@ type controlMCP struct {
 	// room, which is what a test that builds this directly gets. See
 	// launchcaps.go.
 	capFor func(room string) int
+
+	// classMu guards classes, the per-caller class cache. See ctlclass.go.
+	classMu sync.Mutex
+	classes map[string]classEntry
+	// now is the clock the class cache reads. Nil means time.Now, and a test sets it.
+	now func() time.Time
 }
 
 // reservation is one in-flight launch holding a slot against its room's cap
@@ -114,10 +120,18 @@ func newControl(board string, hub *Hub, audit func(room, kind, detail string)) *
 }
 
 // handler is the MCP server over HTTP.
+//
+// TWO SERVERS, BUILT ONCE, and `getServer` picks one per request by the caller's
+// class. See ctlclass.go, which says why this is tidiness and not a boundary.
 func (c *controlMCP) handler() http.Handler {
-	srv := c.server()
+	full, worker := c.server(classFull), c.server(classWorker)
 	return mcp.NewStreamableHTTPHandler(
-		func(*http.Request) *mcp.Server { return srv },
+		func(r *http.Request) *mcp.Server {
+			if c.classOf(r) == classWorker {
+				return worker
+			}
+			return full
+		},
 		// STATELESS, so no Mcp-Session-Id is validated and a temporary session is
 		// used per request. Every session POSTs to the same URL carrying its own
 		// identity headers, which is the whole point: one endpoint, many callers,
@@ -126,11 +140,15 @@ func (c *controlMCP) handler() http.Handler {
 	)
 }
 
-// server wires the tools onto one MCP server.
-func (c *controlMCP) server() *mcp.Server {
+// server wires the tools of one class onto one MCP server.
+//
+// ONE LIST, FILTERED. Every tool is registered here through `addTool`, which
+// skips it when the class does not include it, so a tool's description and its
+// `audited` wrapping are written once whichever servers it lands on.
+func (c *controlMCP) server(class ctlClass) *mcp.Server {
 	s := mcp.NewServer(&mcp.Implementation{Name: "atrium-control", Version: "v0.0.0-dev"}, nil)
 
-	mcp.AddTool(s, &mcp.Tool{
+	addTool(s, class, &mcp.Tool{
 		Name: "atrium_status",
 		Description: "Is atrium running, is its store healthy, and what is on the board.\n\n" +
 			"Answered from the hub, which serves the board, rather than from a local daemon. " +
@@ -138,7 +156,7 @@ func (c *controlMCP) server() *mcp.Server {
 			"every room's.",
 	}, c.statusHandler)
 
-	mcp.AddTool(s, &mcp.Tool{
+	addTool(s, class, &mcp.Tool{
 		Name: "atrium_peers",
 		Description: "The other sessions on this board: what each is called, what it is doing, " +
 			"where it is working, and how long it has been waiting.\n\n" +
@@ -150,7 +168,7 @@ func (c *controlMCP) server() *mcp.Server {
 			"`atrium_say` takes that, as it takes `alias@room`. A bare name always means your own room.",
 	}, c.peersHandler)
 
-	mcp.AddTool(s, &mcp.Tool{
+	addTool(s, class, &mcp.Tool{
 		Name: "atrium_say",
 		Description: "Say something to another session on the board.\n\n" +
 			"IMMEDIATE BY DEFAULT. Where atrium owns the terminal the text is typed in as soon " +
@@ -179,7 +197,7 @@ func (c *controlMCP) server() *mcp.Server {
 			"so ask before sending it again.",
 	}, audited(c, "ctl-wake-say", describeSay, c.sayHandler))
 
-	mcp.AddTool(s, &mcp.Tool{
+	addTool(s, class, &mcp.Tool{
 		Name: "atrium_report",
 		Description: "Report on your work to the session that launched you.\n\n" +
 			"IF ANOTHER SESSION LAUNCHED YOU, END EVERY TURN WITH THIS, or with an `atrium_say` " +
@@ -195,7 +213,7 @@ func (c *controlMCP) server() *mcp.Server {
 			"incomplete report is refused with what is missing, so fix it and call again.",
 	}, c.reportHandler)
 
-	mcp.AddTool(s, &mcp.Tool{
+	addTool(s, class, &mcp.Tool{
 		Name: "atrium_task",
 		Description: "One card: its status, what its runner is doing right now, and its recent " +
 			"events.\n\n" +
@@ -214,10 +232,10 @@ func (c *controlMCP) server() *mcp.Server {
 			"takes it and as `atrium_launch` with `room` hands it back.",
 	}, c.taskHandler)
 
-	mcp.AddTool(s, &mcp.Tool{Name: "atrium_alias", Description: aliasToolDesc},
+	addTool(s, class, &mcp.Tool{Name: "atrium_alias", Description: aliasToolDesc},
 		audited(c, "ctl-alias", describeAlias, c.aliasHandler))
 
-	mcp.AddTool(s, &mcp.Tool{
+	addTool(s, class, &mcp.Tool{
 		Name: "atrium_launch",
 		Description: "Start a new agent in a directory, on its own card, supervised by atrium.\n\n" +
 			"A REAL SESSION, not a subagent. It has its own conversation, its own permission " +
@@ -255,7 +273,7 @@ func (c *controlMCP) server() *mcp.Server {
 			"Returns the card id. Use it with `atrium_task`, `atrium_say` and `atrium_exit`, on another room too.",
 	}, audited(c, "ctl-launch", describeLaunch, c.launchHandler))
 
-	mcp.AddTool(s, &mcp.Tool{
+	addTool(s, class, &mcp.Tool{
 		Name: "atrium_exit",
 		Description: "Ask a session to finish and leave.\n\n" +
 			"ASKED, not killed. Atrium sends the exit keys its harness is configured with, so " +
@@ -267,7 +285,7 @@ func (c *controlMCP) server() *mcp.Server {
 			"takes it and as `atrium_launch` with `room` hands it back.",
 	}, audited(c, "ctl-exit", describeExit, c.exitHandler))
 
-	mcp.AddTool(s, &mcp.Tool{
+	addTool(s, class, &mcp.Tool{
 		Name: "atrium_cull",
 		Description: "Retire a finished worker whose work you have ACCEPTED: ask it to leave, then " +
 			"remove its worktree and delete its branch.\n\n" +
@@ -286,7 +304,7 @@ func (c *controlMCP) server() *mcp.Server {
 			"dropped and nothing marks it again, only an explicit cull removes it.",
 	}, audited(c, "ctl-cull", describeCull, c.cullHandler))
 
-	mcp.AddTool(s, &mcp.Tool{
+	addTool(s, class, &mcp.Tool{
 		Name: "restart_atrium",
 		Description: "Wind a room's daemon down and bring it straight back on the same database.\n\n" +
 			"FORWARDED TO THE ROOM. The hub spawns nothing on the room's machine: it sends the " +
@@ -301,7 +319,7 @@ func (c *controlMCP) server() *mcp.Server {
 			"To be prompted when you come back, call `atrium_wake_after_restart` first.",
 	}, audited(c, "ctl-restart", describeRestart, c.restartHandler))
 
-	mcp.AddTool(s, &mcp.Tool{
+	addTool(s, class, &mcp.Tool{
 		Name: "atrium_wake_after_restart",
 		Description: "Queue one prompt for YOUR OWN card, typed into your terminal once after a restart " +
 			"brings your session back.\n\n" +

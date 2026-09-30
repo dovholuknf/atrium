@@ -78,11 +78,14 @@ const (
 )
 
 const (
-	notifyQueueMax     = 32
-	notifyMaxFailures  = 3
-	notifyStdoutLimit  = 16 << 10
-	notifyStderrLimit  = 8 << 10
-	tabBackstop        = 10 * time.Minute
+	notifyQueueMax    = 32
+	notifyMaxFailures = 3
+	notifyStdoutLimit = 16 << 10
+	notifyStderrLimit = 8 << 10
+	tabBackstop       = 10 * time.Minute
+	// streamGrace is how long a tab whose event stream dropped still counts as
+	// visible, which covers the board reconnecting its stream.
+	streamGrace        = 30 * time.Second
 	notifyPruneEvery   = time.Hour
 	notifyTabIDMaxSize = 128
 )
@@ -138,6 +141,15 @@ type notifyCard struct {
 	Identity string
 }
 
+// notifySeen is the part of a card's seen row the notifier reads.
+type notifySeen struct {
+	QuestionsAt       string   `json:"questions_at"`
+	OpenQuestions     []string `json:"open_questions"`
+	QuestionsUnparsed bool     `json:"questions_unparsed"`
+	TurnEndedAt       string   `json:"turn_ended_at"`
+	Unseen            bool     `json:"unseen"`
+}
+
 // NotifyIdentity works out why a card wants a human right now, from the opaque
 // payload the room announced. ok is false when it does not, or when the card is
 // not the operator's business.
@@ -164,21 +176,21 @@ func NotifyIdentity(id string, payload json.RawMessage) (notifyCard, bool) {
 		Tags         []string `json:"tags"`
 		WaitingSince string   `json:"waiting_since"`
 		LastActivity string   `json:"last_activity_at"`
-		Seen         struct {
-			QuestionsAt       string   `json:"questions_at"`
-			OpenQuestions     []string `json:"open_questions"`
-			QuestionsUnparsed bool     `json:"questions_unparsed"`
-			TurnEndedAt       string   `json:"turn_ended_at"`
-			Unseen            bool     `json:"unseen"`
-		} `json:"seen"`
+		// A pointer, so a room that sent no seen row at all (an older build) is
+		// told apart from a card whose seen row says it never finished a turn.
+		Seen *notifySeen `json:"seen"`
 	}
 	if err := json.Unmarshal(payload, &p); err != nil {
 		return notifyCard{}, false
 	}
-	for _, t := range p.Tags {
-		if t == "origin:agent" {
-			return notifyCard{}, false
-		}
+	sent := p.Seen != nil
+	if !sent {
+		p.Seen = &notifySeen{}
+	}
+	// The same match the control tools use, trimmed and case-insensitive, so a
+	// tag written ` Origin:Agent ` is skipped here as it is there.
+	if hasOriginTag(p.Tags) {
+		return notifyCard{}, false
 	}
 	waited := p.WaitingSince
 	if waited == "" {
@@ -190,6 +202,13 @@ func NotifyIdentity(id string, payload json.RawMessage) (notifyCard, bool) {
 		reason, at = ReasonPermission, waited
 	case p.Seen.QuestionsAt != "" && (len(p.Seen.OpenQuestions) > 0 || p.Seen.QuestionsUnparsed):
 		reason, at = ReasonQuestion, p.Seen.QuestionsAt
+	// A CARD THAT HAS NEVER FINISHED A TURN IS NOT WAITING ON ANYBODY NEW.
+	// Whoever launched it is at it already or handed it its prompt, so an
+	// `input` for a session that has only just started is noise
+	// (atrium-87300, 2026-09-30). Only where the room sent its seen row: an
+	// older room cannot say, and keeps notifying as before.
+	case p.Status == "needs-input" && sent && p.Seen.TurnEndedAt == "":
+		return notifyCard{}, false
 	case p.Status == "needs-input":
 		reason, at = ReasonInput, waited
 	case p.Seen.TurnEndedAt != "" && p.Seen.Unseen:
@@ -213,19 +232,22 @@ func NotifyIdentity(id string, payload json.RawMessage) (notifyCard, bool) {
 //
 // EDGE TRIGGERED, NO HEARTBEAT. A tab says so when it becomes visible or hidden
 // and never otherwise. What keeps that honest is the event stream: a tab opens
-// its stream with `tab=<id>`, and when THAT request ends the tab is dropped, so
-// a crashed tab or a sleeping laptop clears itself. The backstop is for a tab
-// the hub can tie to no stream at all: it expires ten minutes after its last
-// `visible: true`.
+// its stream with `tab=<id>`, and when THAT request ends the tab is dropped
+// after streamGrace, so a crashed tab or a sleeping laptop clears itself and a
+// stream that merely reconnected does not. The backstop is for a tab the hub can
+// tie to no stream at all: it expires ten minutes after its last `visible: true`.
 type presence struct {
 	mu      sync.Mutex
 	visible map[string]time.Time
 	streams map[string]int
-	now     func() time.Time
+	// ended is when a visible tab's last stream closed. See Open.
+	ended map[string]time.Time
+	now   func() time.Time
 }
 
 func newPresence() *presence {
-	return &presence{visible: map[string]time.Time{}, streams: map[string]int{}, now: time.Now}
+	return &presence{visible: map[string]time.Time{}, streams: map[string]int{},
+		ended: map[string]time.Time{}, now: time.Now}
 }
 
 // validTab keeps the id a short plain token: it is a map key and nothing else.
@@ -252,8 +274,11 @@ func (p *presence) Set(tab string, visible bool) {
 	defer p.mu.Unlock()
 	if visible {
 		p.visible[tab] = p.now()
+		// Said again, so it is visible now whatever its old stream did.
+		delete(p.ended, tab)
 	} else {
 		delete(p.visible, tab)
+		delete(p.ended, tab)
 	}
 }
 
@@ -264,6 +289,7 @@ func (p *presence) Open(tab string) func() {
 	}
 	p.mu.Lock()
 	p.streams[tab]++
+	delete(p.ended, tab)
 	p.mu.Unlock()
 	var once sync.Once
 	return func() {
@@ -272,8 +298,15 @@ func (p *presence) Open(tab string) func() {
 			defer p.mu.Unlock()
 			if p.streams[tab]--; p.streams[tab] <= 0 {
 				delete(p.streams, tab)
-				// ITS STREAM ENDED, SO THE TAB IS GONE.
-				delete(p.visible, tab)
+				// ITS STREAM ENDED, SO THE TAB IS GOING, BUT NOT YET. A stream
+				// that drops and reconnects is the same tab, and it does not post
+				// `visible` again, so deleting it here left a watched board
+				// counted as unwatched for good. It keeps its visibility for
+				// streamGrace. A reconnect inside that holds it, and a tab that
+				// really went is dropped when the grace runs out.
+				if _, seen := p.visible[tab]; seen {
+					p.ended[tab] = p.now()
+				}
 			}
 		})
 	}
@@ -285,10 +318,19 @@ func (p *presence) Count() int {
 	defer p.mu.Unlock()
 	n := 0
 	for tab, at := range p.visible {
-		if p.streams[tab] > 0 || p.now().Sub(at) < tabBackstop {
+		ended, dropped := p.ended[tab]
+		switch {
+		case p.streams[tab] > 0:
 			n++
-		} else {
+		case dropped && p.now().Sub(ended) < streamGrace:
+			// Its stream dropped a moment ago, and a reconnect is expected.
+			n++
+		case !dropped && p.now().Sub(at) < tabBackstop:
+			// A tab the hub never tied to a stream, on the ten minute backstop.
+			n++
+		default:
 			delete(p.visible, tab)
+			delete(p.ended, tab)
 		}
 	}
 	return n
@@ -319,11 +361,16 @@ func (c CommandSink) Send(ctx context.Context, n Notice) Result {
 	cmd := exec.CommandContext(runCtx, argv[0], argv[1:]...)
 	hideWindow(cmd)
 	line, _ := json.Marshal(n)
+	// A NUL CANNOT BE IN AN ENVIRONMENT VALUE, and exec refuses the whole run
+	// for one, which three times over switched notify off because of a card's
+	// name. So the environment drops it, and stdin, which is JSON and escapes
+	// it, still carries the name whole.
+	noNUL := func(s string) string { return strings.ReplaceAll(s, "\x00", "") }
 	cmd.Env = append(os.Environ(),
-		"ATRIUM_NOTIFY_NAME="+n.Name,
-		"ATRIUM_NOTIFY_REASON="+n.Reason,
-		"ATRIUM_NOTIFY_CARD="+n.Card,
-		"ATRIUM_NOTIFY_ROOM="+n.Room,
+		"ATRIUM_NOTIFY_NAME="+noNUL(n.Name),
+		"ATRIUM_NOTIFY_REASON="+noNUL(n.Reason),
+		"ATRIUM_NOTIFY_CARD="+noNUL(n.Card),
+		"ATRIUM_NOTIFY_ROOM="+noNUL(n.Room),
 	)
 	cmd.Stdin = bytes.NewReader(append(line, '\n'))
 	// Bounded WHILE reading, not after: see readSource in internal/daemon.
@@ -609,6 +656,21 @@ func (n *Notifier) markSeeded(room string) {
 	_ = n.st.SetSetting(settingNotifySeeded+key, time.Now().UTC().Format(time.RFC3339))
 }
 
+// unseedAll forgets which rooms were seeded, in memory and in the store. Best
+// effort: a room it misses is at worst the flood this exists to prevent.
+func (n *Notifier) unseedAll() {
+	n.mu.Lock()
+	n.seeded = map[string]bool{}
+	n.mu.Unlock()
+	rooms, err := n.st.Rooms()
+	if err != nil {
+		return
+	}
+	for _, room := range rooms {
+		_ = n.st.SetSetting(settingNotifySeeded+strings.ToLower(room), "")
+	}
+}
+
 func (n *Notifier) maybePrune() {
 	n.mu.Lock()
 	if time.Since(n.pruned) < notifyPruneEvery {
@@ -694,7 +756,10 @@ func commandFound(argv []string) error {
 
 // Configure applies a PUT: validate, persist, and seed on the way from off to on.
 func (n *Notifier) Configure(enabled bool, command []string) error {
-	if enabled || len(command) > 0 {
+	// CHECKED ONLY WHEN IT IS GOING TO RUN. A command that has since gone from
+	// the PATH must not stop notify being turned OFF, which is what somebody does
+	// about a command that stopped working. Turning it on checks it again.
+	if enabled {
 		if err := commandFound(command); err != nil {
 			return err
 		}
@@ -707,6 +772,12 @@ func (n *Notifier) Configure(enabled bool, command []string) error {
 	was := n.enabled
 	n.mu.Unlock()
 	if enabled && !was {
+		// EVERY ROOM STARTS UNSEEDED AGAIN. Nothing is recorded while notify is
+		// off, so a room seeded last time would otherwise have everything that
+		// piled up since announced at once on its next change. seed() below
+		// marks the rooms it can, and any other room is seeded silently by its
+		// first announcement.
+		n.unseedAll()
 		if err := n.seed(); err != nil {
 			return fmt.Errorf("could not seed what is already waiting: %w", err)
 		}
