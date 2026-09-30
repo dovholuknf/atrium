@@ -236,8 +236,26 @@ func (d *Daemon) attachParked(w http.ResponseWriter, r *http.Request, t *store.T
 // that is not parked answers ok and does nothing, so a double press is harmless.
 func (d *Daemon) handleResume(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	if _, err := d.st.Get(id); err != nil {
+	t, err := d.st.Get(id)
+	if err != nil {
 		writeJSONErr(w, http.StatusNotFound, err)
+		return
+	}
+	// A CARD THAT IS NOT PARKED AND HAS NO RUNNER IS STARTED TOO. This answered
+	// ok and started nothing for one, which is what every card a restart failed
+	// to bring back was (2026-09-30).
+	if !isParked(t) && d.sup.get(id) == nil {
+		if t.Runner == "" || t.Worktree == "" {
+			writeJSONErr(w, http.StatusConflict, fmt.Errorf("%s cannot be resumed: nothing records which "+
+				"runner or directory it used", t.DisplayTitle()))
+			return
+		}
+		if _, err := d.Launch(d.reopenRequest(t)); err != nil {
+			writeJSONErr(w, http.StatusInternalServerError, err)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true,"started":true}`))
 		return
 	}
 	if err := d.unpark(id, ViaResume); err != nil {

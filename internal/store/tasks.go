@@ -839,6 +839,30 @@ func (s *Store) ClearResumeID(id string) error {
 	})
 }
 
+// ExitAskedBy is the `by` on the event recording that somebody asked a card's
+// runner to exit: a human on the board, a launcher's atrium_exit, a cull.
+const ExitAskedBy = "exit-asked"
+
+// ExitAsked reports whether the last thing that happened to a card's runner was
+// somebody asking it to exit, rather than a launch after that.
+//
+// NOT THE STATUS. A daemon winding down ends every session, each SessionEnd hook
+// moves its card to `done`, and a restart that read `done` as "somebody ended
+// this" brought nothing back (2026-09-30, 12:58). Only an asked exit is a
+// decision, so only an asked exit is recorded, and a launch afterwards undoes it.
+func (s *Store) ExitAsked(taskID string) (bool, error) {
+	var kind string
+	err := s.guard(func() error {
+		return s.db.QueryRow(`SELECT kind FROM event WHERE task_id = ? AND
+			(kind = ? OR (kind = ? AND payload LIKE ?)) ORDER BY at DESC, id DESC LIMIT 1`,
+			taskID, EventLaunched, EventNotified, `%"by":"`+ExitAskedBy+`"%`).Scan(&kind)
+	})
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	return kind == EventNotified, err
+}
+
 // ResumeHolder is a card other than `except` whose resume id is `resumeID`, or
 // nil. The newest when several do, which is the one most likely to be in use.
 func (s *Store) ResumeHolder(resumeID, except string) (*Task, error) {
