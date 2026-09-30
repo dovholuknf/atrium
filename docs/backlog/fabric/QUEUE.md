@@ -19,6 +19,11 @@ is live.
 0b. **room-defender nit** from @review's pass of 7d1625cc: the header line ending "So GOCACHE=C:\ excludes nothing."
    runs past 120 characters. Rewrap it with the next room-defender change, through @review. (The low itself, Go paths
    held to AppData\Local and ~\go, landed as 8b6afd3c.)
+0c. **live ATRIUM_HOSTS, @review's two lows on 8df971e4** (`f-new-review-8df971e4.md`). (1) Start-Room still
+   inherits the caller's ATRIUM_HOSTS, and whether a room gets the User value depends on whether it starts after
+   Start-Hub set it in the script's process. Give Start-Room the same read. (2) A value set only at Machine scope is
+   now ignored: fall back to Machine when User is unset. Small, through @review. @runtime's r-new-hosts-setting
+   replaces all of it later.
 1. **f-026's four review lows** (`docs/backlog/fabric/f-new-review-e738577e.md`). Two are fixed in the landing
    commit and two need no code. Open until the deploy has been checked:
    - Low 1, deploy note: claude-sg4, m1mini and sg3 have no `joined` line left, so they are unenrolled until their
