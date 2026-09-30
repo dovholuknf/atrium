@@ -6910,7 +6910,7 @@ async function cacheChipSection(browser, base) {
     want("cold", "\u2744 cold since 02:04", "\u2744 cold");
     want("cold yesterday", "\u2744 cold since yesterday 20:04");
     want("no cache", "\u2744 no cache yet");
-    want("tomorrow", "\u2744 warm \u2192 tomorrow 00:10");
+    want("tomorrow", "\u2744 warm \u2192 tomorrow 00:10", "\u2744 \u2192 00:10");
     if (!/^\u2744 warm \u2192 [A-Z][a-z]{2} \d+ 03:32$/.test(by["far date"].full)) fail("cacheChip: a far time is not a date: " + by["far date"].full);
     if (by["not claude"].full !== null) fail("cacheChip: a card with no keepalive has a model");
     for (const [n, b] of [["warm", "warm"], ["kept next", "kept"], ["cold", "cold"], ["off warm", "warm"], ["no cache", "cold"]]) {
@@ -6942,9 +6942,10 @@ async function cacheChipSection(browser, base) {
       return o;
     }, sel);
     const expect = {
-      "cc-kept": /^\u2744 kept warm 3\u00d7 \u00b7 next ~\d\d:\d\d$/,
-      "cc-warm": /^\u2744 warm \u2192 \d\d:\d\d \u00b7 won't refresh: busy$/,
-      "cc-cold": /^\u2744 cold since \d\d:\d\d$/, "cc-stop": /^\u2298 stopped \u00b7 not worth it$/,
+      // these fixtures are on the real clock, so near midnight a time carries its day
+      "cc-kept": /^\u2744 kept warm 3\u00d7 \u00b7 next ~(?:tomorrow )?\d\d:\d\d$/,
+      "cc-warm": /^\u2744 warm \u2192 (?:tomorrow )?\d\d:\d\d \u00b7 won't refresh: busy$/,
+      "cc-cold": /^\u2744 cold since (?:yesterday )?\d\d:\d\d$/, "cc-stop": /^\u2298 stopped \u00b7 not worth it$/,
       "cc-off": /^\u25cb off \u00b7 cold$/, "cc-none": /^\u2744 no cache yet$/
     };
     const check = (where, o) => {
@@ -7123,10 +7124,12 @@ async function cacheLineSection(browser, base) {
       null, { timeout: slow(10000) }).catch(async () => fail("cacheLine: the week and today figures did not follow the settings: " + await read("cache-line-stack")));
 
     // A card running out of cache moves the counts with no request.
-    kaFix("cl-tick", { why: "not idle", warm_until: new Date(Date.now() + 2500).toISOString() });
+    kaFix("cl-tick", { why: "not idle", warm_until: new Date(Date.now() + 5000).toISOString() });
     landList = [LAND["cl-tick"]];
     await p.evaluate(() => tasksSoon());
     await p.waitForFunction(() => /^cache: 1 warm/.test(document.getElementById("cache-line-stack").innerText.trim()), null, { timeout: slow(10000) });
+    // let tasksSoon's own read finish first, on a loaded machine it lands after the line already shows
+    await p.waitForTimeout(1200);
     const reqs = [];
     p.on("request", r => reqs.push(r.url()));
     await p.waitForFunction(() => /^cache: 0 warm \u00b7 0 kept warm \u00b7 1 cold/.test(document.getElementById("cache-line-stack").innerText.trim()),
