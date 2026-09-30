@@ -1,9 +1,13 @@
 # f-new-defender-at-provision: Defender exclusions as part of install and room bring-up
 
 Status: built, `scripts/room-defender.ps1` plus a `defender` step in `provision-room.ps1`. sg3 has GOTMPDIR set, and
-its exclusions wait on an administrator running `C:\Users\claude\.atrium\provision\defender-exclusions.ps1` there
-(the ssh login `claude` is not an administrator). sg4's file is at the same path. The elevated path is untested:
-no administrator login is reachable from here. (clint: "should prolly be part of the installation process or maybe
+its exclusions wait on an administrator pasting the line `room-defender.ps1 sg3` prints (the ssh login `claude` is
+not an administrator). The elevated path is untested: no administrator login is reachable from here.
+
+@review's HIGH on 53ccc3b4 (`f-new-review-53ccc3b4.md`) is fixed: it wrote a script in the runner's profile for an
+administrator to run, which any agent could append to. Now nothing is written, the line is only printed, and every
+path is checked against the runner's profile (from HKLM by SID), the worktree root and the build folder, so a
+`GOCACHE=C:\` excludes nothing. The two files it had written, on sg3 and sg4, are deleted. (clint: "should prolly be part of the installation process or maybe
 part of room bring up. sg3 prolly needs something similar").
 
 "The local install script" is `room-defender.ps1 local`. `atrium-service.ps1 install` registers the logon task and

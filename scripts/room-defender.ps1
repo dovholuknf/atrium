@@ -19,13 +19,26 @@
 #   who       the account and whether its token is elevated. `local` run elevated needs -Runner naming that account,
 #             so an administrator's own profile is never what gets excluded
 #   paths     what is excluded: GOCACHE and GOMODCACHE (from go, through the room's room-env.ps1 when there is one),
-#             GOTMPDIR, the clone's build.claude, and the worktree root. Nothing anything downloads into from outside
+#             GOTMPDIR, the clone's build.claude, and the worktree root. Build output, Go's caches and the agents' own
+#             worktrees, which the agents already run as code. GOMODCACHE holds downloaded modules and a worktree can
+#             hold somebody else's pull request, so excluding them trusts that code the way running it already does
 #   gotmpdir  `go test` links its binaries under %TEMP%\go-build* unless GOTMPDIR says otherwise, and %TEMP% is too
 #             broad to exclude. A GOTMPDIR already set is kept. Otherwise it becomes <GOCACHE>\tmp, inside an
 #             excluded path, set with `go env -w` so every go the account runs sees it, a running room included
 #   exclude   elevated: Add-MpPreference for what is missing, then read back. Not elevated: nothing is excluded, and
-#             the command is written to ~\.atrium\provision\defender-exclusions.ps1 on the room and printed, for an
-#             administrator to run. It is a `warn`, not a failure: provisioning runs without admin on purpose
+#             the one Add-MpPreference line is printed for an administrator to paste. It is a `warn`, not a failure:
+#             provisioning runs without admin on purpose
+#
+# NOTHING IS WRITTEN FOR AN ADMINISTRATOR TO RUN. A script left in the runner's profile is one every agent on the
+# room can append to, and an administrator running it runs the agents' line too (@review, 53ccc3b4). The line is only
+# printed, here, on the operator's machine.
+#
+# EVERY PATH IS CHECKED BEFORE IT IS USED, because the Go ones come from the runner's `go env`, which any agent there
+# can change. A path must be fully qualified, hold no wildcard, `~`, `..` or control character, and lie inside one of
+# three roots: the runner's profile (read from HKLM ProfileList by the account's SID, which the account cannot
+# change), the worktree root, or the clone's build.claude. Inside the profile means strictly under it, never the
+# profile itself. A root is refused when it is a drive root, less than two folders deep, or under Windows, Program
+# Files or ProgramData. A refused path is named in a `warn` line and left out. So GOCACHE=C:\ excludes nothing.
 #
 # THE CLONE is -Clone, else, for a room, the path in this repository's git remote named for it (room-git.ps1 init),
 # and for `local`, the main checkout this script belongs to. THE WORKTREE ROOT is -WorktreeRoot, else
@@ -42,7 +55,7 @@
 # `todo`. The last line is `room-defender done ok` or `room-defender done fail <code>`.
 #
 # EXIT CODES
-#   0  done, skipped, or handed to an administrator (a warn line)
+#   0  done, skipped, or handed to an administrator (a warn line). A refused path is a warn too
 #   1  a local problem: bad arguments, or `local` run elevated without -Runner naming the account
 #   2  ssh could not reach the target
 #   3  a step failed on the room: GOTMPDIR could not be set, or the exclusions did not read back
@@ -149,7 +162,8 @@ $id = [Security.Principal.WindowsIdentity]::GetCurrent()
 "user=$($id.Name)"
 "elevated=$(([Security.Principal.WindowsPrincipal]$id).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator))"
 "host=$env:COMPUTERNAME"
-"home=$HOME"
+$pl = Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\$($id.User.Value)" -ErrorAction SilentlyContinue
+"profile=$($pl.ProfileImagePath)"
 $s = Get-Service WinDefend -ErrorAction SilentlyContinue
 "defender=$(if ($s) { $s.Status } else { 'missing' })"
 $g = Get-Command go -ErrorAction SilentlyContinue
@@ -175,7 +189,7 @@ if ($Runner -and ($account -split '\\')[-1] -ne ($Runner -split '\\')[-1]) {
     Fail 'who' 1 "the paths would be read as $account, not $Runner. run this as $Runner"
 }
 if ($local -and $elevated -and -not $Runner) {
-    Fail 'who' 1 "this shell is elevated, so the paths would be $account's. run it unelevated as the account the agents run as, which writes the command for an administrator, or say -Runner $(($account -split '\\')[-1]) if the agents do run as $account"
+    Fail 'who' 1 "this shell is elevated, so the paths would be $account's. run it unelevated as the account the agents run as, which prints the line for an administrator, or say -Runner $(($account -split '\\')[-1]) if the agents do run as $account"
 }
 Step 'who' 'ok' "$account, $(if ($elevated) { 'elevated' } else { 'not elevated' })"
 
@@ -204,15 +218,66 @@ if (-not $WorktreeRoot.Count) {
     } elseif ($Clone) { $WorktreeRoot = @("$Clone-worktrees") }
 }
 
-$tmpNow = "$($kv.gotmpdir)".Trim()
-$tmpWant = if ($tmpNow) { $tmpNow } elseif ($kv.gocache) { Join-Path (Win $kv.gocache) 'tmp' } else { '' }
-$paths = [Collections.Generic.List[string]]::new()
-foreach ($p in @($kv.gocache, $kv.gomodcache, $tmpWant) + @(if ($Clone) { Join-Path (Win $Clone) 'build.claude' }) + $WorktreeRoot) {
-    if ("$p".Trim()) {
-        $w = Win "$p"
-        if (-not ($paths | Where-Object { $_ -ieq $w })) { $paths.Add($w) }
-    }
+# Why a path cannot be used at all, or nothing.
+function Get-PathProblem {
+    param([string] $p)
+    if ($p -match '^[A-Za-z]:$') { return 'is a drive root' }
+    if ($p -notmatch '^[A-Za-z]:\\') { return 'is not a full path on a drive' }
+    # The quote, backtick, dollar and semicolon too: an administrator pastes this line, so nothing in it may be able
+    # to end the quoting, however well Quote-Ps escapes it.
+    if ($p -match "[*?`"<>|~'``$;]" -or $p -match '[\x00-\x1f]') { return 'holds a wildcard, a ~, a quote, or a character no path should' }
+    $parts = @($p -split '\\')
+    if ($parts -contains '..' -or $parts -contains '.') { return 'holds . or ..' }
+    ''
 }
+# Why a path cannot be a ROOT the others are checked against, or nothing.
+function Get-RootProblem {
+    param([string] $p)
+    $why = Get-PathProblem $p
+    if ($why) { return $why }
+    $parts = @($p -split '\\' | Where-Object { $_ })
+    if ($parts.Count -lt 3) { return 'is a drive root, or less than two folders deep' }
+    if ($parts[1] -in 'Windows', 'Program Files', 'Program Files (x86)', 'ProgramData') { return "is under $($parts[0])\$($parts[1])" }
+    ''
+}
+function Test-Inside { param([string] $p, [string] $root) $p.StartsWith($root + '\', [StringComparison]::OrdinalIgnoreCase) }
+
+function Refuse { param([string] $what, [string] $p, [string] $why) Step 'paths' 'warn' "left out $what $p, which $why" }
+
+# THE ROOTS. The profile comes from HKLM by the account's SID, never from its environment.
+$roots = [Collections.Generic.List[string]]::new()
+if (-not $kv.profile) { Step 'paths' 'warn' "could not read $account's profile from the registry, so nothing under it is excluded" }
+else {
+    $pr = Win $kv.profile
+    $why = Get-RootProblem $pr
+    if ($why) { Refuse 'the profile' $pr $why } else { $roots.Add($pr) }
+}
+$paths = [Collections.Generic.List[string]]::new()
+function Add-Path { param([string] $p) if (-not ($paths | Where-Object { $_ -ieq $p })) { $paths.Add($p) } }
+# The worktree root and the build folder are roots AND exclusions.
+foreach ($w in @($WorktreeRoot) + @(if ($Clone) { Join-Path (Win $Clone) 'build.claude' })) {
+    if (-not "$w".Trim()) { continue }
+    $w = Win "$w"
+    $why = Get-RootProblem $w
+    if ($why) { Refuse 'the folder' $w $why } else { $roots.Add($w); Add-Path $w }
+}
+# THE GO PATHS come from the runner's `go env`, which any agent there can set, so each must be strictly inside a root.
+function Test-GoPath {
+    param([string] $what, [string] $p)
+    $p = Win $p
+    $why = Get-PathProblem $p
+    if (-not $why -and -not ($roots | Where-Object { Test-Inside $p $_ })) {
+        $why = "is not inside $account's profile, the worktree root or the build folder"
+    }
+    if ($why) { Refuse $what $p $why; return '' }
+    $p
+}
+$gocache = if ("$($kv.gocache)".Trim()) { Test-GoPath 'GOCACHE' $kv.gocache } else { '' }
+$gomod = if ("$($kv.gomodcache)".Trim()) { Test-GoPath 'GOMODCACHE' $kv.gomodcache } else { '' }
+$tmpNow = "$($kv.gotmpdir)".Trim()
+$tmpWant = if ($tmpNow) { Test-GoPath 'GOTMPDIR' $tmpNow } elseif ($gocache) { Join-Path $gocache 'tmp' } else { '' }
+foreach ($p in $gocache, $gomod, $tmpWant) { if ($p) { Add-Path $p } }
+
 if (-not $kv.go) { Step 'paths' 'warn' "no go for $account on $where, so its caches are not known. install it (room-toolchain.ps1) and run this again" }
 if (-not $paths.Count) { Step 'paths' 'skip' 'nothing to exclude'; Finish 0 }
 Step 'paths' 'ok' ($paths -join ', ')
@@ -221,6 +286,8 @@ Step 'paths' 'ok' ($paths -join ', ')
 
 if (-not $kv.go) {
     Step 'gotmpdir' 'skip' 'no go'
+} elseif (-not $tmpWant) {
+    Step 'gotmpdir' 'skip' 'GOTMPDIR, or the GOCACHE it would go inside, was left out above'
 } elseif ($tmpNow) {
     Step 'gotmpdir' 'ok' "$tmpNow, already set"
 } elseif ($Check) {
@@ -256,21 +323,10 @@ if ($elevated) {
         if ($x.added) { Step 'exclude' 'done' "excluded $($x.added -replace '\|', ', ')" } else { Step 'exclude' 'ok' 'every path is already excluded' }
     }
 } else {
-    $file = Join-Path $kv.home '.atrium\provision\defender-exclusions.ps1'
-    $body = "# Written by atrium's room-defender.ps1 for $account on $(Get-Date -Format 'yyyy-MM-dd HH:mm').`r`n" +
-        "# Run it in an elevated shell. The paths are $account's, written out, so it works from any administrator.`r`n" +
-        "Add-MpPreference -ExclusionPath $list`r`n"
-    if ($Check) {
-        Step 'exclude' 'todo' "not elevated. would write $file for an administrator on $where"
-    } else {
-        $r = Invoke-Room ("`$f = $(Quote-Ps $file)`nNew-Item -ItemType Directory -Force -Path (Split-Path `$f) | Out-Null`n" +
-            "[IO.File]::WriteAllText(`$f, $(Quote-Ps $body))`n`"wrote=`$(Test-Path `$f)`"")
-        $wrote = (ConvertFrom-KeyValue $r.Out).wrote -eq 'True'
-        $how = if ($wrote) { "wrote $file. an administrator on $where runs: powershell -ExecutionPolicy Bypass -File `"$file`"" }
-               else { "could not write $file. an administrator on $where runs the line below" }
-        Step 'exclude' 'warn' "$account is not elevated, so nothing was excluded. $how"
-        Write-Host "    Add-MpPreference -ExclusionPath $list"
-    }
+    # PRINTED, NEVER WRITTEN on the room. See the header.
+    $said = if ($Check) { 'todo' } else { 'warn' }
+    Step 'exclude' $said "$account is not elevated, so nothing was excluded. an administrator on $where pastes the line below into an elevated shell. it holds only the paths listed above"
+    Write-Host "    Add-MpPreference -ExclusionPath $list"
 }
 
 Finish 0

@@ -4,16 +4,18 @@ Top down. @fabric takes the next item from the top of this file, not from messag
 editing this file. After a restart or a new context, @fabric reads this file first, then `HANDOFF.fabric.md` in its
 worktree if there is one.
 
+**Everything goes through @review before claude/main, scripts included** (orchestrator, 2026-09-30, after 53ccc3b4
+landed unreviewed with a HIGH). Land only what @review has passed, at the sha it passed.
+
 Each item: what it is, where the spec is, and its state. @fabric moves an item to "Done" with its landing sha when it
 is live.
 
 ## Queue
 
-0. **f-new-defender-at-provision: built and landed, waiting on an administrator.**
-   `docs/backlog/fabric/f-new-defender-at-provision.md`. `scripts/room-defender.ps1`, and a `defender` step in
-   `provision-room.ps1`. sg3 has GOTMPDIR set. Its exclusions need an administrator on sg3 to run
-   `C:\Users\claude\.atrium\provision\defender-exclusions.ps1` elevated, and sg4's file is at the same path. Close
-   this when both have been run: `Get-MpPreference` in the elevated shell lists the five paths.
+0. **f-new-defender-at-provision: @review's HIGH on 53ccc3b4 fixed on claude/fabric, with @review.** Land it only
+   after @review passes it. Then it waits on an administrator: sg3 has GOTMPDIR set, and its exclusions need the line
+   `room-defender.ps1 sg3` prints pasted into an elevated shell there. sg4 the same, with `room-defender.ps1 local`.
+   Close this when `Get-MpPreference` in that shell lists the paths.
 1. **f-026's four review lows** (`docs/backlog/fabric/f-new-review-e738577e.md`). Two are fixed in the landing
    commit and two need no code. Open until the deploy has been checked:
    - Low 1, deploy note: claude-sg4, m1mini and sg3 have no `joined` line left, so they are unenrolled until their
