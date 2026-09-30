@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -399,21 +398,17 @@ func reportActivity(hubURL, event, name string) {
 	if cwd == "" {
 		cwd, _ = os.Getwd()
 	}
-	agent := name
-	if agent == "" {
-		agent = os.Getenv("ATRIUM_AGENT_NAME")
-	}
-	if agent == "" && cwd != "" {
-		agent = filepath.Base(cwd)
-	}
+	agent, nameSource := hookAgent(name, cwd)
 	if agent == "" {
 		return
 	}
 
 	body, err := json.Marshal(map[string]any{
 		"agent": agent,
-		"event": kind,
-		"tool":  in.ToolName,
+		// "dir" when the name was made up from the directory. Absent otherwise.
+		"name_source": nameSource,
+		"event":       kind,
+		"tool":        in.ToolName,
 		// Who the subagent is. Empty on every other event, which is fine: the
 		// daemon reads these only for subagent-start and subagent-end.
 		"agent_id":   in.AgentID,

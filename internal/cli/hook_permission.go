@@ -73,7 +73,7 @@ func runPermissionHook(hubURL string, stdin []byte, pid int) []byte {
 		return nil
 	}
 
-	agent := agentName("")
+	agent, nameSource := agentNameSource("")
 	base := hubAddress(hubURL)
 
 	joined, ok := probeGate(base, agent)
@@ -101,6 +101,7 @@ func runPermissionHook(hubURL string, stdin []byte, pid int) []byte {
 
 	body, err := json.Marshal(map[string]any{
 		"agent":       agent,
+		"name_source": nameSource,
 		"tool":        in.ToolName,
 		"command":     summary,
 		"pid":         pid,
