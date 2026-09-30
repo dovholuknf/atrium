@@ -6949,3 +6949,175 @@ Manual, on a real phone:
 2. Type while output streams. The view follows the cursor down with no up-and-down bounce.
 3. Tap elsewhere in the terminal, dismiss and reopen the keyboard. The page never shows the board header scrolled away.
 4. Rotate; repeat. Open the same terminal in the pop-out window and on desktop: unchanged.
+
+## FI. A room reattaches on its first try after a hub restart
+
+### FI1. Restart the hub with rooms attached
+
+1. With two or more rooms attached, restart the hub (hub-only deploy, no room restart).
+2. Watch each room's log and the hub's `hub.err`.
+
+**Expected:** each room logs one reattach within a few seconds. No room logs `the hub refused this room:` with an
+empty reason, and `hub.err` shows one `room "<name>" attached` per room, not one every 5 seconds. The input-lag switch
+reaches each room without "no room is attached".
+
+### FI2. Provision a room
+
+1. Run `pwsh -NoProfile -File scripts/provision-room.ps1 <host> ...` against a remote machine.
+
+**Expected:** the attach step passes on the first dial, well inside `-AttachTimeout`.
+
+## FJ. Cull across rooms
+
+### FJ1. A worker on another room is culled
+
+1. On a hub with two rooms, merge a worker's fetched branch on the room that holds the area branch.
+2. From a session on the first room, call `atrium_cull` with `card` set to `name@other`, then to `other~<id>`, with
+   `into` and `tip` set to the proof.
+
+**Expected:** the other room receives the cull with `into` and `tip` exactly as given, and the answer names the card as
+`other~<id>`. The first room is not asked.
+
+### FJ2. A worker cannot cull itself
+
+1. From a worker's own session, call `atrium_cull` on its own name, on `name@ownroom` and on `ownroom~<id>`.
+
+**Expected:** each is refused with "a worker cannot cull itself" and nothing reaches the room.
+
+### FJ3. A room that predates the cull
+
+1. Attach a room built before the merged cull and call `atrium_cull` on one of its cards.
+2. POST `/v1/merged` and `/v1/tasks/<id>/cull/hold` to it through the hub with `X-Atrium-Room` set.
+
+**Expected:** each answers `<room> build <its build> predates cull (needs <sha>). Update the room.`, never "no such
+card".
+
+### FJ4. Mark and preflight go to one room
+
+1. With two rooms attached, GET `/v1/preflight` and POST `/v1/merged` with `X-Atrium-Room` naming one.
+2. Repeat both with no room named.
+
+**Expected:** only the named room is asked. With no room named the hub answers with the question of which room, and no
+room is asked.
+
+### FJ5. A guest reaches none of it
+
+1. Open a shared (guest) link to a session and request `/v1/preflight`, `/v1/merged`, `/v1/tasks/<id>/cull` and
+   `/v1/tasks/<id>/cull/hold`.
+
+**Expected:** every one is refused with 403.
+
+## FK. Provisioning under a profile that writes a BOM
+
+### FK1. A BOM in the caller
+
+1. `pwsh -NoProfile -Command '$OutputEncoding = [Text.UTF8Encoding]::new($true); & ./scripts/provision-room.ps1 m1mini -Restart'`
+
+**Expected:** `provision state ok provisioned before as m1mini`, and the plan ends `provision done ok`. Nothing on the
+room changes.
+
+### FK2. A probe that lost its first lines
+
+1. Run a copy of `provision-room.ps1` with the `$OutputEncoding = [Text.UTF8Encoding]::new($false)` line removed, the
+   same way as FK1.
+
+**Expected:** `provision state fail the remote script lost its first lines ...` and exit 3, not exit 6 and "a room
+answers on 7781, which this script did not put there".
+
+### FK3. The attach wait
+
+1. Run `provision-room.ps1 <room> -Restart` without `-Yes`.
+
+**Expected:** the attach line says it would wait up to 120s (180s when the hub links over zrok).
+
+## FL. A merged worker is culled after a grace period
+
+Needs a scratch repository with `claude/main`, one worker worktree on `claude/w1` with a commit, and a launcher card
+on `claude/main`. Run every step against scratch repositories, never a real one.
+
+### FL1. The merge marks it and tells the launcher once
+
+1. Finish the worker with a `done` report, so its card is done.
+2. Merge `claude/w1` into `claude/main`, then run `atrium merged --into claude/main`.
+
+**Expected:** the card shows `cull_at` about 30 minutes out, `cull_into` `claude/main` and `merged_branch`
+`claude/w1`. The launcher has ONE queued message naming the branch, the time, and `hold=true`. Running the command
+again marks nothing new and sends nothing.
+
+### FL2. The time comes
+
+1. Set `merged_cull_grace` to a few seconds before the merge, and wait it out.
+
+**Expected:** the worktree and `claude/w1` are removed, the work item is `accepted`, and the card leaves the board with
+status `done`. It is not filed as dead.
+
+### FL3. A new turn, a hold, and a dirty worktree
+
+1. Mark a worker, then prompt it before the time. The mark clears and nothing is culled.
+2. Mark another, then `atrium_cull card=<id> hold=true`. Restart the daemon. It is never culled by itself, and a
+   later merge does not mark it.
+3. Mark a third, then leave an untracked file in its worktree before the time.
+
+**Expected:** 1 and 2 as written. In 3 the worker is asked to leave and the worktree and branch are kept, with the
+reason on the answer.
+
+### FL4. Who is never marked
+
+1. Merge with a director's card (tagged `atrium:director`), a card without `origin:agent`, a card still running, and a
+   card with an open question, all on merged branches.
+
+**Expected:** none is marked. The running one is marked by the first merge after it reports done. With
+`merged_cull_grace` set to `off`, nothing is marked at all.
+
+### FL5. `atrium merged` never fails a merge
+
+1. Stop the daemon and run `atrium merged --into claude/main`.
+
+**Expected:** one line on stderr saying nothing answered, and exit code 0.
+
+## FL. Tidying finished workers already on the board
+
+### FL1. Dry run, then the real thing
+
+1. Have done worker cards (`atrium:subagent`, or `origin:agent` with a launcher), plus a done director, a done card
+   with no `origin:agent`, a pinned worker and a running worker.
+2. Run `atrium archive-workers --dry-run`.
+3. Run `atrium archive-workers`.
+
+**Expected:** the dry run lists only the done workers and changes nothing. The real run archives exactly those. The
+others stay on the board. Archived cards keep their history, and no worktree or branch is removed.
+
+## FL. A launch from an agent is a worker
+
+### FL1. The tag
+
+1. From a session, `atrium_launch` with no tags, then again with `tags: ["atrium:director"]`.
+
+**Expected:** the first card carries `atrium:subagent` and `origin:agent`. The second carries `atrium:director` and no
+`atrium:subagent`.
+
+## FL. The hook installer
+
+### FL1. Scratch repository only
+
+1. In a scratch repository, run `pwsh scripts/install-git-hooks.ps1 -DryRun`, then without `-DryRun`.
+2. Run it again, then with `-Remove`.
+
+**Expected:** the dry run writes nothing. The install writes only `.git/hooks/post-merge`. A second run is harmless.
+`-Remove` deletes it. A `post-merge` the script did not write is refused and left alone.
+
+## FM. The popup's context after a /clear
+
+1. On a Claude card with a large context, run a new-context cycle (or type `/clear`).
+2. Before the new session finishes its first turn, open the card's details popup.
+
+**Expected:** the popup's context matches the status line's (the new, small session), not the old conversation's.
+
+## FN. A new context started on a working card waits
+
+1. While a card is working on a turn (or has ended a turn on background work that has not reported yet), press
+   Ctrl+Alt+N on it, or `POST /v1/tasks/<id>/new-context`.
+
+**Expected:** the chip shows the capture step and waits. The capture prompt is typed only once the card is between
+turns, the handoff is written, and the cycle completes. It does not fail in seconds with "not updated by the capture
+turn".
