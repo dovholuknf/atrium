@@ -284,6 +284,10 @@ func (d *Daemon) notifyLauncher(worker *store.Task, source, key, body string) bo
 	if len(text) > maxPeerMessage {
 		text = text[:maxPeerMessage]
 	}
+	if holdsNotices(launcher) {
+		d.holdNotice(launcher, worker, source, text)
+		return true
+	}
 	typed, err := d.deliverPeer(launcher, worker.WireName, text)
 	if err != nil {
 		log.Printf("[atrium] could not tell %s about %s: %v", launcher.DisplayTitle(), worker.DisplayTitle(), err)
@@ -291,6 +295,48 @@ func (d *Daemon) notifyLauncher(worker *store.Task, source, key, body string) bo
 	}
 	log.Printf("[atrium] told %s that %s: %s (typed %v)", launcher.DisplayTitle(), worker.DisplayTitle(), source, typed)
 	return true
+}
+
+// HoldNoticesTag puts a launcher's automatic notices on its card instead of in its
+// terminal. The orchestrator's rule, for any card that wants it without the rest
+// of what OrchestratorTag means.
+const HoldNoticesTag = "atrium:hold-notices"
+
+// holdsNotices reports whether a launcher reads its automatic notices when it
+// asks, rather than having them typed.
+//
+// THE ORCHESTRATOR'S TERMINAL IS WHERE THE OPERATOR READS. A silent stop, a
+// context size or a session that ended, typed there, interrupts him, and on a
+// board of resident directors that report elsewhere every turn end is one. So
+// they go on the launcher's card, on the worker's work item and on the board's
+// bell, and `atrium_task` with `notices` reads them back in one call.
+func holdsNotices(launcher *store.Task) bool {
+	return launcher != nil && (hasTag(launcher.Tags, OrchestratorTag) || hasTag(launcher.Tags, HoldNoticesTag))
+}
+
+// holdNotice records one automatic notice where a launcher that holds them reads
+// it. Never fails its caller, the posture of notifyLauncher.
+func (d *Daemon) holdNotice(launcher, worker *store.Task, source, text string) {
+	ev := store.HeldNoticePayload(source, worker.WireName, worker.ID, text)
+	if err := d.st.AppendEvent(launcher.ID, store.EventNotified, ev); err != nil {
+		log.Printf("[atrium] could not hold a %s notice for %s: %v", source, launcher.DisplayTitle(), err)
+		return
+	}
+	if err := d.st.LogWorkAtrium(worker.ID, source+" notice held for "+launcher.WireName+": "+text); err != nil {
+		log.Printf("[atrium] could not put the %s notice on %s's work item: %v", source, worker.DisplayTitle(), err)
+	}
+	d.ringHeld(launcher.ID, worker.ID, source, text)
+	log.Printf("[atrium] held for %s that %s: %s", launcher.DisplayTitle(), worker.DisplayTitle(), source)
+}
+
+// ringHeld is the board's bell for a held notice: one `notice` event, with the
+// words the board shows. See docs/changes/r-hold-notices.md for what the board
+// does with it.
+func (d *Daemon) ringHeld(launcherID, workerID, source, text string) {
+	d.publishTask(launcherID)
+	d.ap.Broadcast("notice", map[string]any{
+		"task_id": launcherID, "about_card": workerID, "source": source, "toast": text,
+	})
 }
 
 // notifyRemoteLauncher is notifyLauncher for a launcher on another room. The

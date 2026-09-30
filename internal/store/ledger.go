@@ -236,10 +236,22 @@ type LedgerNotice struct {
 	From      string
 	Text      string
 	Source    string
+	// Held is a notice recorded on the arbiter's card and not queued: MessageID is
+	// empty and there is nothing to type.
+	Held bool
 }
 
 // Notice sources the ledger writes, for the a2a_notice dedupe.
 const NoticeEnded = "ended"
+
+// HeldNoticePayload is the `notified` event a held notice leaves on the card it
+// was for. `held` is what a reader filters on. The one shape, so the ledger's
+// notices and the daemon's read alike.
+func HeldNoticePayload(source, about, aboutID, text string) map[string]any {
+	return map[string]any{
+		"by": ByAtrium, "held": true, "source": source, "about": about, "about_card": aboutID, "text": text,
+	}
+}
 
 // cutRunes bounds a string to n bytes on a rune boundary.
 func cutRunes(s string, n int) string {
@@ -833,7 +845,8 @@ func (s *Store) queueNotice(tx *Tx, w *WorkItem, source, key, body string) (*Led
 	if w.ArbiterID == "" {
 		return nil, nil
 	}
-	if _, err := getByOn(tx, `id = ?`, w.ArbiterID); errors.Is(err, sql.ErrNoRows) {
+	arbiter, err := getByOn(tx, `id = ?`, w.ArbiterID)
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, s.relayNotice(tx, w, source, key, body)
 	} else if err != nil {
 		return nil, err
@@ -843,6 +856,22 @@ func (s *Store) queueNotice(tx *Tx, w *WorkItem, source, key, body string) (*Led
 		return nil, err
 	}
 	from := orKeep(w.Handle, "atrium")
+	// A HELD NOTICE is recorded on the arbiter's card and never queued, so nothing
+	// types it and no hook carries it. The arbiter reads it when it asks.
+	if s.HoldNotice != nil && s.HoldNotice(arbiter, source) {
+		ev := HeldNoticePayload(source, from, w.TaskID, body)
+		if _, err := s.appendEventOn(tx, w.ArbiterID, EventNotified, ev); err != nil {
+			return nil, err
+		}
+		n := &LedgerNotice{TaskID: w.TaskID, ArbiterID: w.ArbiterID, From: from, Text: body, Source: source,
+			Held: true}
+		tx.afterCommit(func() {
+			if cb := s.OnLedgerNotice; cb != nil {
+				cb(*n)
+			}
+		})
+		return n, nil
+	}
 	m := &Message{ID: newID(), TaskID: w.ArbiterID, Text: body, CreatedAt: now(), FromPeer: from}
 	if _, err := tx.Exec(`INSERT INTO message (id, task_id, text, created_at, from_peer) VALUES (?,?,?,?,?)`,
 		m.ID, m.TaskID, m.Text, ts(m.CreatedAt), m.FromPeer); err != nil {
@@ -1187,6 +1216,23 @@ func (s *Store) LogWorkMessage(fromID, toID, byHandle, text string) (bool, error
 		return nil
 	})
 	return logged, err
+}
+
+// LogWorkAtrium puts one of atrium's own lines on a card's work item, and does
+// nothing for a card with none.
+func (s *Store) LogWorkAtrium(taskID, text string) error {
+	return s.inTx(func(tx *Tx) error {
+		if _, err := workItemOn(tx, taskID); errors.Is(err, sql.ErrNoRows) {
+			return nil
+		} else if err != nil {
+			return err
+		}
+		id, err := s.insertLog(tx, taskID, logRow{kind: LogAtrium, by: ByAtrium, text: text})
+		if err == nil && id != "" {
+			s.ledgerChanged(tx, taskID)
+		}
+		return err
+	})
 }
 
 // ── ending a generation the sweep found gone ────────────────────────────────────
