@@ -13206,6 +13206,54 @@ async function mRecapSheetSection(browser) {
   if (!bad) console.log("mRecapSheet ok");
 }
 
+async function mOutputAtSection(browser) {
+  const st = mServer({});
+  const c = mCard("out-1", { alias: "mid", display_title: "mid", status: "running", activity: { what: "thinking" },
+    seen: { turn_ended_at: mIso(9 * M_MIN) }, output_at: mIso(8 * M_MIN) });
+  st.tasks = [c];
+  st.replies["out-1"] = { source: "transcript", replies: [{ at: mIso(8 * M_MIN), text: "Reply one." }] };
+  await st.open();
+  try {
+    for (const vp of M_VIEWS) {
+      const { ctx, p, errors } = await mPage(browser, st, vp, "");
+      const tag = "mOutputAt " + vp.width + ": ";
+      st.tasks = [c];
+      await p.waitForSelector("#m-seg-all", { timeout: slow(10000) });
+      await p.tap("#m-seg-all");
+      await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
+      await p.tap('#m-list .row[data-id="out-1"]');
+      await p.waitForSelector("#m-replies .reply", { timeout: slow(5000) });
+      await p.waitForFunction(() => document.getElementById("m-live").classList.contains("on"), null, { timeout: slow(10000) });
+      const t1 = Date.now();
+      while (!st.streams.length && Date.now() - t1 < slow(10000)) await p.waitForTimeout(100);
+      const reads = () => st.hits.filter(h => h === "out-1?3").length;
+      st.hits.length = 0;
+      // a newer output_at re-reads once
+      const at2 = mIso(2 * M_MIN);
+      st.replies["out-1"] = { source: "transcript", replies: [{ at: at2, text: "Reply two, mid-turn." }] };
+      st.send("task", Object.assign({}, c, { row: 1, output_at: at2 }));
+      await p.waitForFunction(() => /Reply two/.test(document.getElementById("m-replies").textContent), null, { timeout: slow(5000) });
+      if (reads() !== 1) fail(tag + "a newer output_at read " + reads() + " times");
+      // the same value, and an event without one, do not
+      st.send("task", Object.assign({}, c, { row: 1, output_at: at2, activity: { what: "tool", tool: "Read" } }));
+      const bare = Object.assign({}, c, { row: 1, activity: { what: "thinking" } });
+      delete bare.output_at;
+      st.send("task", bare);
+      await p.waitForTimeout(700);
+      if (reads() !== 1) fail(tag + "the same or an absent output_at read again: " + reads());
+      // and the next newer one reads again
+      const at3 = mIso(M_MIN);
+      st.replies["out-1"] = { source: "transcript", replies: [{ at: at3, text: "Reply three." }] };
+      st.send("task", Object.assign({}, c, { row: 1, output_at: at3 }));
+      await p.waitForFunction(() => /Reply three/.test(document.getElementById("m-replies").textContent), null, { timeout: slow(5000) });
+      if (reads() !== 2) fail(tag + "the next output_at read " + reads() + " times in all");
+      if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+      await ctx.close();
+    }
+  } finally { await st.close(); }
+  if (!bad) console.log("mOutputAt ok");
+}
+
 async function bootCleanSection(browser, base) {
   const raw = fs.readFileSync(path.join(WEB_ROOT, "index.html"));
   const views = [{ w: 1400, h: 900 }, { w: 390, h: 844, phone: true }, { w: 412, h: 915, phone: true }];
@@ -13269,7 +13317,7 @@ async function main() {
       u001Audit: u001AuditSection,
       pasteStart: pasteStartSection, pasteDone: pasteDoneSection, pasteOldRoom: pasteOldRoomSection, pasteClose: pasteCloseSection,
       growlQuestionShots: growlQuestionShotsSection, growlQuestionBody: growlQuestionBodySection, growlReplyGrow: growlReplyGrowSection, growlChoices: growlChoicesSection, growlStable: growlStableSection, mGrowlQuestion: mGrowlQuestionSection,
-      bootClean: bootCleanSection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mRecapSheet: mRecapSheetSection };
+      bootClean: bootCleanSection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mRecapSheet: mRecapSheetSection, mOutputAt: mOutputAtSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -15299,6 +15347,7 @@ async function main() {
     await mWorkingSection(browser);
     await mOwnMessagesSection(browser);
     await mRecapSheetSection(browser);
+    await mOutputAtSection(browser);
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e));
     if (process.env.DEBUG_HEADLESS) {

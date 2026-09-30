@@ -16,6 +16,8 @@
   let els = null;
   let seq = 0;
   let turnKey = "";
+  // The room's `output_at`: the last reply with text, mid-turn too. Absent keeps the last one seen.
+  let outAt = "";
   let offs = [];
   // Replies already read, so a card opened again paints at once and is refreshed behind it.
   const cache = new Map();
@@ -242,7 +244,7 @@
     setTimeout(() => els.replies.classList.remove("fresh"), 400);
   }
 
-  // The last replies. Read on open and when the card's turn ends, never on a timer. The working line follows the task
+  // The last replies. Read on open, when the card's turn ends and when its `output_at` moves, never on a timer. The working line follows the task
   // events, through the store.
   async function loadReplies() {
     const id = openId;
@@ -262,9 +264,13 @@
 
   function onCards() {
     if (!openId) return;
+    const t = window.mStore.card(openId);
     paint(false);
-    const key = openId + "@" + turnOf(window.mStore.card(openId));
-    if (key !== turnKey) { turnKey = key; loadReplies(); }
+    const key = openId + "@" + turnOf(t);
+    const out = (t && t.output_at) || "";
+    const moved = !!out && out !== outAt;
+    if (out) outAt = out;
+    if (key !== turnKey || moved) { turnKey = key; loadReplies(); }
   }
 
   function mountFor(id) {
@@ -287,6 +293,7 @@
     if (openId) return;
     openId = id;
     turnKey = id + "@" + turnOf(window.mStore.card(id));
+    outAt = (window.mStore.card(id) || {}).output_at || "";
     els.sheet.hidden = false;
     els.scroll.scrollTop = 0;
     els.head.dataset.sig = els.notices.dataset.sig = els.extras.dataset.sig = els.replies.dataset.sig = els.recap.dataset.sig = els.working.dataset.sig = "";
