@@ -66,8 +66,9 @@ func TestConvertClassifies(t *testing.T) {
 
 	entries, skipped = nil, nil
 	convert("mcp__ziti-mcp", "approve", "test", &entries, &skipped)
-	if len(skipped) != 1 {
-		t.Fatalf("mcp entries are not gated and should be skipped: %+v %+v", entries, skipped)
+	if len(skipped) != 0 || len(entries) != 1 || entries[0].Tool != "mcp__ziti-mcp__*" ||
+		entries[0].Pattern != "*" || entries[0].Decision != "approve" || entries[0].Broad {
+		t.Fatalf("a bare server should import as a server-wide rule: %+v %+v", entries, skipped)
 	}
 
 	entries, skipped = nil, nil
@@ -128,9 +129,12 @@ func TestLoadFromSettingsFile(t *testing.T) {
 			t.Errorf("missing %s as %s, got %q", key, want, got[key])
 		}
 	}
+	if got["mcp__ziti-mcp__*|*"] != "approve" {
+		t.Errorf("mcp__ziti-mcp should import as a server-wide approve, got %q", got["mcp__ziti-mcp__*|*"])
+	}
 	// Things atrium does not gate must be reported, not silently dropped.
-	if len(skipped) < 3 {
-		t.Errorf("expected WebSearch, mcp__ziti-mcp and WebFetch to be skipped, got %d: %+v",
+	if len(skipped) < 2 {
+		t.Errorf("expected WebSearch and WebFetch to be skipped, got %d: %+v",
 			len(skipped), skipped)
 	}
 }

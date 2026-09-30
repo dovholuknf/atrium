@@ -12,6 +12,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/dovholuknf/atrium/internal/mcprule"
 )
 
 // Entry is one converted rule.
@@ -38,6 +40,7 @@ type settingsFile struct {
 	Permissions struct {
 		Allow []string `json:"allow"`
 		Deny  []string `json:"deny"`
+		Ask   []string `json:"ask"`
 	} `json:"permissions"`
 }
 
@@ -62,6 +65,7 @@ func Load(projectDir string) ([]Entry, []Skipped, error) {
 	var (
 		entries []Entry
 		skipped []Skipped
+		asks    []mcpAsk
 	)
 	for _, path := range SettingsPaths(projectDir) {
 		raw, err := os.ReadFile(path)
@@ -83,7 +87,15 @@ func Load(projectDir string) ([]Entry, []Skipped, error) {
 		for _, s := range sf.Permissions.Deny {
 			convert(s, "block", label, &entries, &skipped)
 		}
+		for _, s := range sf.Permissions.Ask {
+			// An ask is never imported: a rule can only approve or block. It is
+			// kept for shadowing, and only for MCP tools.
+			if name, reason := mcprule.Normalize(strings.TrimSpace(s)); reason == "" {
+				asks = append(asks, mcpAsk{name: name, source: label})
+			}
+		}
 	}
+	entries = dropShadowedMCP(entries, asks, &skipped)
 	return entries, skipped, nil
 }
 
@@ -97,6 +109,10 @@ var toolsWeGate = map[string]bool{
 func convert(raw, decision, source string, entries *[]Entry, skipped *[]Skipped) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
+		return
+	}
+	if mcprule.Is(raw) {
+		convertMCP(raw, decision, source, entries, skipped)
 		return
 	}
 	tool, arg := split(raw)
@@ -126,6 +142,74 @@ func convert(raw, decision, source string, entries *[]Entry, skipped *[]Skipped)
 		Tool: tool, Pattern: pattern, Decision: decision, Source: source,
 		Broad: strings.Trim(pattern, "*? ") == "",
 	})
+}
+
+// convertMCP turns one `mcp__` entry into a rule that matches the tool name and
+// takes any input. The accepted forms are in mcprule.Normalize.
+//
+// A bare `mcp__*` DENY is imported as Broad, so it needs include_broad: it would
+// also block atrium's own tools, `atrium_report` among them. The same entry as an
+// allow is refused, as Claude Code refuses an unanchored allow glob.
+func convertMCP(raw, decision, source string, entries *[]Entry, skipped *[]Skipped) {
+	if raw == mcprule.Prefix+"*" && decision == "block" {
+		*entries = append(*entries, Entry{
+			Tool: raw, Pattern: mcprule.AnyInput, Decision: decision, Source: source, Broad: true,
+		})
+		return
+	}
+	name, reason := mcprule.Normalize(raw)
+	if reason != "" {
+		*skipped = append(*skipped, Skipped{Raw: raw, Source: source, Reason: reason})
+		return
+	}
+	*entries = append(*entries, Entry{
+		Tool: name, Pattern: mcprule.AnyInput, Decision: decision, Source: source,
+	})
+}
+
+// mcpAsk is an `ask` entry for an MCP tool, read only to shadow allows.
+type mcpAsk struct{ name, source string }
+
+// dropShadowedMCP removes an MCP allow that a deny or an ask covers.
+//
+// Claude Code evaluates deny, then ask, then allow, and specificity does not
+// change that, so `deny mcp__s__*` beside `allow mcp__s__t` blocks `t`. Atrium's
+// store lets the narrower rule win, which would approve it. Importing both
+// literally would make atrium more permissive than the file it was read from, so
+// the allow is dropped and reported, and an ask falls through to asking the human.
+//
+// The reverse pair, a broad allow and a narrow deny, is left alone: the store
+// answers it the same way Claude Code does. MCP only. See
+// docs/runtime/mcp-rules-design.md, section 2.
+func dropShadowedMCP(entries []Entry, asks []mcpAsk, skipped *[]Skipped) []Entry {
+	out := entries[:0:0]
+	for _, e := range entries {
+		if e.Decision != "approve" || !mcprule.Is(e.Tool) {
+			out = append(out, e)
+			continue
+		}
+		shadow := ""
+		for _, d := range entries {
+			if d.Decision == "block" && mcprule.Is(d.Tool) && mcprule.Covers(d.Tool, e.Tool) {
+				shadow = "shadowed by deny " + d.Tool + ", which Claude Code applies first"
+				break
+			}
+		}
+		if shadow == "" {
+			for _, a := range asks {
+				if mcprule.Covers(a.name, e.Tool) {
+					shadow = "shadowed by ask " + a.name + ", which Claude Code prompts on first"
+					break
+				}
+			}
+		}
+		if shadow == "" {
+			out = append(out, e)
+			continue
+		}
+		*skipped = append(*skipped, Skipped{Raw: e.Tool, Source: e.Source, Reason: shadow})
+	}
+	return out
 }
 
 // split pulls `Tool(arg)` apart. A bare `Tool` yields an empty arg.

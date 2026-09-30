@@ -1,6 +1,7 @@
 # Standing rules that name MCP tools (r-034)
 
-Status: DESIGNED, awaiting @rnd. No code is written. Author: the r-034 worker for @runtime.
+Status: BUILT 2026-09-30 to this design, with the answers @rnd gave to the open questions below (see
+`docs/backlog/runtime/r-034.md`). One correction is marked in section 4. Author: the r-034 worker for @runtime.
 
 The gate already sees every `mcp__` call and the store can already hold a rule for one, but nothing can create a
 useful one. The importer skips every `mcp__` entry, and the rule editor would build a rule from compacted JSON. This
@@ -172,8 +173,10 @@ The consequences are the ones the chain already promises, restated for MCP becau
 - An MCP allow beats nothing above it. It cannot approve a call while a message is queued for the session.
 - Auto mode (5) is below the rule. `auto` approving every call of a gateway session does not undo an MCP deny, so a
   deny on `discourse_discourse_create_user` holds under board-wide auto, exactly as `Bash(git push*)` does.
-- `drain.go:58` calls `MatchRule` with the same arguments, so turning auto mode on drains the MCP calls that a rule
-  answers with the same rule, and leaves the rest for the human.
+- `drain.go:58` calls `MatchRule` with the same arguments, so turning auto mode on approves the queued MCP calls
+  that no rule answers or an approve rule covers, and leaves one that a block rule covers in the queue. (An earlier
+  draft of this line said the drain answers a rule's calls with the rule. It does not: it never blocks, it only
+  declines to approve. Corrected when the test for it was written.)
 
 Nothing in `internal/cli` changes either. `permSkipTools` and the `mcp__` gating question in cr48 cli finding 01 are
 independent: skipping the atrium-agent tools in the hook is one answer to that finding, and a standing rule
@@ -269,7 +272,7 @@ Daemon (`internal/daemon`):
 21. Chain order with an MCP call: an approve rule answers, and a queued message, a shelved card and a block rule each
     still answer first or as the rule says. Auto mode on with a block rule still blocks.
 22. The audit row for an MCP rule decision names the tool pattern, not `*`.
-23. `drain` approves the queued MCP call an approve rule covers, and leaves an uncovered one.
+23. `drain` approves the queued MCP call no rule covers, and leaves one a block rule covers in the queue.
 
 ## Open Questions for @rnd
 
