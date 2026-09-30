@@ -1290,6 +1290,8 @@ function showNotification(title, body, goTo, permId, subject, mark, taskFor, ret
       subject: retireBy || permId || "",
       // Where a click on the body lands. See `landOnAlert`.
       taskFor: taskFor || "", key: retireBy || permId || "",
+      // The card's readable path, empty when it has neither alias nor handle. The worker matches a window on it.
+      path: taskFor ? cardUrlPath(cardList().find(t => sameCard(t.id, taskFor)) || (typeof soloTask !== "undefined" && soloTask && sameCard(soloTask.id, taskFor) ? soloTask : null)) : "",
       origin: location.origin
     });
     return null;
