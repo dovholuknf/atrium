@@ -192,6 +192,7 @@ async function renderStack(signal) {
   if (typeof ulOnCards === "function") ulOnCards();
   newCardNote(everything);
   paintWorking(allStack);
+  if (typeof cacheRefresh === "function") cacheRefresh(everything);
   paintStack();
 }
 
@@ -243,6 +244,8 @@ function paintStack() {
 
   document.getElementById("stack-match").textContent =
     list.length === allStack.length ? "" : `${list.length} of ${allStack.length}`;
+  // The cache summary, over the rows this list shows. See js/keepalive.js.
+  if (typeof paintCacheLine === "function") paintCacheLine("cache-line-stack", list);
 
   const s = STACK_SORTS[stackSort] || STACK_SORTS.activity;
   // The tiebreak is applied here rather than written into each cmp, so every
@@ -468,6 +471,7 @@ function stackRow(t) {
       ${originChip(t)}
       ${recapChip(t)}
       ${activityChip(t)}
+      ${typeof keepaliveChip === "function" ? keepaliveChip(t) : ""}
       ${ctxWarnMark(t)}
       ${contextChip(t)}
       ${newContextChip(t)}

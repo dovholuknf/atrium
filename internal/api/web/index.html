@@ -222,6 +222,10 @@
       <span class="barlabel">group</span>
       <div class="seg groupseg" id="stack-group"></div>
     </div>
+    <!-- The cache summary (u-032). One line over the rows below, and a button to
+         the keep-alive setting. Filled in by paintCacheLine. -->
+    <button type="button" class="cacheline" id="cache-line-stack" hidden
+      onclick="openKeepaliveSetting()" data-tip="open the keep-alive setting"></button>
     <div id="stack-list"></div>
   </div>
   <!-- Built once. Only the list bodies are refreshed, so a filter you are
