@@ -208,7 +208,15 @@ function ucPaint() {
   if (!body) return;
   for (const b of document.querySelectorAll("#uc-ranges button")) b.classList.toggle("on", b.dataset.range === UC.range);
   const cr = document.getElementById("uc-cache");
-  if (cr) { cr.classList.toggle("on", UC.cacheReads); cr.setAttribute("aria-pressed", String(UC.cacheReads)); }
+  if (cr) {
+    cr.classList.toggle("on", UC.cacheReads);
+    cr.setAttribute("aria-pressed", String(UC.cacheReads));
+    const lab = document.getElementById("uc-cache-label");
+    if (lab) lab.textContent = UC.cacheReads ? "cache reads shown" : "cache reads hidden";
+    cr.setAttribute("data-tip", UC.cacheReads
+      ? "Cache reads are drawn in the charts and counted in every total. Click to count them apart, since they are most of the input and swamp the rest"
+      : "Cache reads are counted apart and left out of the charts and totals, since they are most of the input and swamp the rest. Click to draw them");
+  }
   ucPaintChips();
   const names = Object.keys(UC.rooms);
   const okRooms = names.filter(n => UC.rooms[n].state === "ok");
@@ -254,6 +262,7 @@ function ucPaint() {
     ucBurn(series) +
     ucCardsHead() + ucGroups(series) + ucCards(ucGroupFilter(cardRows), series) +
     `<h4 class="uch">tokens by kind</h4>` + ucSplit(total, causes, cardRows) +
+    ucCumulative(series) +
     `<h4 class="uch">tokens by cause</h4>` + ucCauseTable(causes) + ulSection() + ucItems();
   body.innerHTML = html;
   ucAfterPaint(body);
@@ -291,10 +300,13 @@ function ucFmtWhen(ms) {
 }
 
 // The whole range on one axis, so a quiet stretch reads as a gap.
-function ucAxis(series) {
+// The clock. A test sets UC.now so a fixture never depends on the real time of day.
+function ucNow() { return UC.now || Date.now(); }
+
+function ucAxis(series, now) {
   const ms = UC.bw * 1000;
   const first = Math.floor(UC.since / ms) * ms;
-  const last = Math.floor(Date.now() / ms) * ms;
+  const last = Math.floor((now || ucNow()) / ms) * ms;
   return { first, n: Math.max(1, Math.round((last - first) / ms) + 1), ms };
 }
 
@@ -325,6 +337,56 @@ function ucBurn(series) {
     `<div class="ucaxis"><span>${ucFmtWhen(ax.first)}</span><span data-n="peak" data-tip="${esc(USAGE_TIPS.peak)}">peak ${usageTokens(Math.round(peak))}/min</span>` +
     `<span>${ucFmtWhen(ax.first + (ax.n - 1) * ax.ms)}</span></div>` +
     `<div class="ucread" aria-live="off">hover a bar</div></div>`;
+}
+
+// The next local midnight after `now`. A day that is 23 or 25 hours long is the Date's business, not ours.
+function ucMidnight(now) {
+  const d = new Date(now);
+  d.setHours(24, 0, 0, 0);
+  return d.getTime();
+}
+
+// The running total of what the charts add up, oldest on the left, following the toggle. On 24h and 7d a
+// dashed line carries on from now to the coming midnight at the pace of the last hour. It says "at this
+// pace" because it does not see the future, and it is left out when the last hour was empty.
+function ucCumulative(series, now) {
+  now = now || ucNow();
+  const ax = ucAxis(series, now);
+  const byT = new Map(series.map(s => [s.t, s]));
+  const pts = [];
+  let run = 0;
+  for (let i = 0; i < ax.n; i++) {
+    const s = byT.get(ax.first + i * ax.ms);
+    if (!s) continue;
+    run += ucShown(s.total);
+    pts.push([ax.first + (i + 1) * ax.ms, run]);
+  }
+  const nowMs = Math.min(now, ax.first + ax.n * ax.ms);
+  // The pace: whole buckets from the one holding an hour ago up to now, over the time they cover.
+  const from = Math.floor((now - 3600000) / ax.ms) * ax.ms;
+  let hour = 0;
+  for (const s of series) if (s.t >= from) hour += ucShown(s.total);
+  const rate = hour / Math.max(now - from, 1);
+  const midnight = ucMidnight(now);
+  const project = (UC.range === "24h" || UC.range === "7d") && hour > 0 && midnight > now;
+  const end = project ? midnight : nowMs;
+  const span = Math.max(end - ax.first, 1);
+  const proj = project ? run + rate * (midnight - now) : run;
+  const W = 600, H = 100;
+  const X = t => (Math.min(t, end) - ax.first) / span * W;
+  const Y = v => H - 2 - v / (proj || 1) * (H - 4);
+  let d = `M0 ${Y(0).toFixed(2)}`;
+  for (const [t, v] of pts) d += ` L${X(Math.min(t, nowMs)).toFixed(2)} ${Y(v).toFixed(2)}`;
+  let svg = `<path class="uck-line" d="${d}"></path>`;
+  let phrase = "";
+  if (project) {
+    svg += `<path class="uck-line uck-proj" d="M${X(nowMs).toFixed(2)} ${Y(run).toFixed(2)} L${W} ${Y(proj).toFixed(2)}"></path>`;
+    phrase = `<span data-n="cumproj" data-tip="${esc(USAGE_TIPS.cumProj)}">at this pace: ${usageTokens(Math.round(proj))} by midnight</span>`;
+  }
+  return `<h4 class="uch">cumulative tokens <span class="ucnote">${UC.cacheReads ? "" : "counted, "}running total over the range</span></h4>` +
+    `<div class="ucchart" data-chart="cumulative"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" ` +
+    `aria-label="running total of tokens over time">${svg}</svg>` +
+    `<div class="ucaxis"><span>0</span>${phrase}<span data-n="cumtotal" data-tip="${esc(USAGE_TIPS.cumTotal)}">${usageTokens(run)}</span></div></div>`;
 }
 
 function ucCards(cardRows, series) {
@@ -359,7 +421,7 @@ function ucCards(cardRows, series) {
       const i = Math.round((t - ax.first) / ax.ms);
       if (i < 0 || i >= ax.n || !(v > 0)) continue;
       const h = v / (m || 1) * (H - 2);
-      bars += `<rect class="uck-cost" x="${(i * bw).toFixed(2)}" y="${(H - h).toFixed(2)}" width="${Math.max(bw - 0.4, 0.4).toFixed(2)}" height="${h.toFixed(2)}"></rect>`;
+      bars += `<rect class="uck-bar" x="${(i * bw).toFixed(2)}" y="${(H - h).toFixed(2)}" width="${Math.max(bw - 0.4, 0.4).toFixed(2)}" height="${h.toFixed(2)}"></rect>`;
     }
     const attrs = c.other ? "" : ` data-room="${esc(c.room)}" data-id="${esc(c.id)}"`;
     html += `<div class="ucmini${c.other ? " other" : ""}"${attrs} data-key="${esc(ucKey(c.room, c.id))}">` +

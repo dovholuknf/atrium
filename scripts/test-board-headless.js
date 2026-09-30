@@ -9359,6 +9359,216 @@ async function usageCacheReadsSection(browser, base) {
   if (errors.length) fail("usageCacheReads: the page threw: " + errors.join(" | "));
 }
 
+// u-027: the usage tab's neutral by-card colour, the toggle that says its state, and the cumulative line.
+// NOTHING HERE READS THE REAL CLOCK. Every fixture is built from one `now` chosen below and handed to the
+// functions that take it (ucCumulative(series, now), ucAxis(series, now), ucMidnight(now)) or set as UC.now,
+// which ucNow() answers for the whole tab. USAGE_SHOT=<file.png> also writes a screenshot of the tab.
+// A picture, not a check, so it may use the real clock: a day of turns, four cards, cache reads dominant.
+// It touches nothing that u-027 added, so USAGE_SHOT_ONLY=1 can take the "before" from the old board.
+async function usageShot(sp, file) {
+  await sp.evaluate(() => {
+    UC.cacheReads = false; UC.range = "24h"; UC.bw = 900; UC.group = "card";
+    UC.since = Math.floor((Date.now() - 86400000) / 1000) * 1000;
+    const last = Math.floor(Date.now() / 900000) * 900000;
+    const ids = ["atrium", "zrok-docs", "board-ui", "reviewer"];
+    const buckets = new Map();
+    for (let i = 1; i <= 90; i++) {
+      const t = last - i * 900000;
+      const cards = {}, total = ucSums();
+      ids.forEach((id, k) => {
+        if ((i * 7 + k * 13) % 5 === 0) return;
+        const v = 200 + ((i * 37 + k * 91) % 900) * (4 - k);
+        const s = { rows: 1, replies: 2, input: v, output: v / 2, cache_write_5m: v * 3, cache_write_1h: 0, cache_read: v * 40, cost: 0 };
+        cards[id] = ucAdd(ucSums(), s);
+        ucAdd(total, s);
+      });
+      buckets.set(t, { t, total, cards, causes: { operator: total }, groups: {} });
+    }
+    UC.now = 0;
+    UC.rooms = { "": { state: "ok", why: "", noGroups: false, buckets } };
+    ucPaint();
+  });
+  await sp.screenshot({ path: file });
+}
+
+async function usageTabSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const sp = await ctx.newPage();
+  const errors = [];
+  sp.on("pageerror", e => errors.push(String(e)));
+  let stored = false;
+  await ctx.route("**/v1/usage*", route => route.fulfill({ json: { buckets: [] } }));
+  await ctx.route("**/v1/settings", async route => {
+    const r = route.request();
+    if (r.method() === "POST") {
+      const body = JSON.parse(r.postData() || "{}");
+      if ("usage_cache_reads" in body) stored = body.usage_cache_reads;
+    }
+    await route.fulfill({ json: { usage_cache_reads: stored, board_skin: "harbour", board_skins: SKINS } });
+  });
+  try {
+    await sp.goto(base, { waitUntil: "domcontentloaded" });
+    await sp.waitForSelector("#stack-list .stackrow", { state: "attached", timeout: slow(15000) });
+    await sp.evaluate(() => switchView("usage"));
+    await sp.waitForFunction(() => document.getElementById("uc-body") && typeof ucPaint === "function", null, { timeout: slow(10000) });
+    await sp.waitForTimeout(400);
+    if (process.env.USAGE_SHOT_ONLY) { await usageShot(sp, process.env.USAGE_SHOT_ONLY); return; }
+
+    // by card and by group: one neutral fill, and totals that follow the toggle
+    const tiles = await sp.evaluate(() => {
+      const now = new Date(2026, 8, 15, 15, 30).getTime();
+      UC.now = now; UC.range = "24h"; UC.bw = 900; UC.since = now - 86400000; UC.group = "dept"; UC.groupKey = null;
+      const mk = (i, o, r) => ({ rows: 1, replies: 1, input: i, output: o, cache_write_5m: 0, cache_write_1h: 0, cache_read: r, cost: 0 });
+      const t0 = Math.floor(now / 900000) * 900000 - 900000;
+      const sA = mk(1000, 500, 90000), sB = mk(200, 100, 40000);
+      const bucket = t => ({ t, total: ucAdd(ucAdd(ucSums(), sA), sB), cards: { "uc-a": ucAdd(ucSums(), sA), "uc-b": ucAdd(ucSums(), sB) },
+        causes: { operator: ucAdd(ucAdd(ucSums(), sA), sB) }, groups: { eng: ucAdd(ucSums(), sA), ops: ucAdd(ucSums(), sB) } });
+      UC.rooms = { "": { state: "ok", why: "", buckets: new Map([[t0, bucket(t0)]]), noGroups: false } };
+      const out = {};
+      for (const on of [false, true]) {
+        UC.cacheReads = on;
+        ucPaint();
+        const q = sel => [...document.querySelectorAll(sel)];
+        const readFill = getComputedStyle(document.querySelector("#uc-body .uclegend .uck-read") || document.querySelector(".uck-read")).backgroundColor;
+        const cards = q('#uc-body .ucminis:not([data-role=groups]) .ucmini[data-id]');
+        const groups = q('#uc-body [data-role=groups] .ucmini');
+        const rects = q("#uc-body .ucmini svg rect");
+        out[on] = {
+          rectClasses: [...new Set(rects.map(r => r.getAttribute("class")))],
+          rectFills: [...new Set(rects.map(r => getComputedStyle(r).fill))],
+          readFill,
+          cardTotals: cards.map(c => c.querySelector("b").textContent),
+          groupTotals: groups.map(c => c.querySelector("b").textContent),
+          want: { a: on ? ucTokens(sA) : ucCounted(sA), b: on ? ucTokens(sB) : ucCounted(sB) },
+          fmt: usageTokens(on ? ucTokens(sA) : ucCounted(sA)) + "|" + usageTokens(on ? ucTokens(sB) : ucCounted(sB)),
+          nCards: cards.length, nGroups: groups.length,
+        };
+      }
+      return out;
+    });
+    for (const on of ["false", "true"]) {
+      const s = tiles[on];
+      if (s.nCards !== 2 || s.nGroups !== 2) fail("usageTab: cards " + s.nCards + " groups " + s.nGroups + " with cache reads " + on);
+      if (s.rectClasses.join() !== "uck-bar") fail("usageTab: by-card and group bars use " + s.rectClasses + " with cache reads " + on);
+      if (s.rectFills.includes(s.readFill) || s.rectFills.length !== 1 || !s.rectFills[0]) fail("usageTab: the bar fill " + s.rectFills + " is the cache read colour " + s.readFill);
+      if (s.cardTotals.join("|") !== s.fmt) fail("usageTab: card totals " + s.cardTotals + " want " + s.fmt + " with cache reads " + on);
+      if (s.groupTotals.join("|") !== s.fmt) fail("usageTab: group totals " + s.groupTotals + " want " + s.fmt + " with cache reads " + on);
+    }
+    if (tiles.false.cardTotals.join() === tiles.true.cardTotals.join()) fail("usageTab: the totals ignore the toggle.");
+
+    // the toggle says its state: on a click and on a settings event from another tab
+    const label = () => sp.evaluate(() => ({ t: document.getElementById("uc-cache-label").textContent,
+      p: document.getElementById("uc-cache").getAttribute("aria-pressed"), tip: document.getElementById("uc-cache").getAttribute("data-tip") }));
+    await sp.evaluate(() => { UC.cacheReads = false; ucPaint(); });
+    let l = await label();
+    if (l.t !== "cache reads hidden" || l.p !== "false" || !/counted apart/.test(l.tip)) fail("usageTab: off reads " + JSON.stringify(l));
+    await sp.click("#uc-cache");
+    await sp.waitForFunction(() => document.getElementById("uc-cache-label").textContent === "cache reads shown", null, { timeout: slow(5000) });
+    l = await label();
+    if (l.p !== "true" || !/drawn in the charts/.test(l.tip)) fail("usageTab: on reads " + JSON.stringify(l));
+    if (!(await sp.evaluate(() => !!document.querySelector("#uc-cache i.uck-read")))) fail("usageTab: the swatch is gone.");
+    await sp.evaluate(() => ucHaveSetting({ usage_cache_reads: false }));
+    l = await label();
+    if (l.t !== "cache reads hidden" || l.p !== "false") fail("usageTab: a settings event off reads " + JSON.stringify(l));
+    await sp.evaluate(() => ucHaveSetting({ usage_cache_reads: true }));
+    l = await label();
+    if (l.t !== "cache reads shown" || l.p !== "true") fail("usageTab: a settings event on reads " + JSON.stringify(l));
+
+    // the cumulative line, at an afternoon and at 23:50, with the projection worked out by hand
+    const cum = await sp.evaluate(() => {
+      const res = {};
+      const mk = i => ({ rows: 1, replies: 1, input: i, output: 0, cache_write_5m: 0, cache_write_1h: 0, cache_read: i * 10, cost: 0 });
+      // eight full 15 minute buckets before now, 3000 counted tokens each
+      const build = (now, ms, n, per) => {
+        const last = Math.floor(now / ms) * ms;
+        const series = [];
+        for (let i = n; i >= 1; i--) series.push({ t: last - i * ms, total: ucAdd(ucSums(), mk(per)) });
+        return series;
+      };
+      const read = (html) => {
+        const div = document.createElement("div");
+        div.innerHTML = html;
+        const paths = [...div.querySelectorAll("svg path")];
+        const ys = paths[0] ? [...paths[0].getAttribute("d").matchAll(/[ML]\S+ (\S+)/g)].map(m => Number(m[1])) : [];
+        return { n: paths.length, dashed: !!div.querySelector(".uck-proj"), ys,
+          axis: div.querySelector(".ucaxis").textContent, total: (div.querySelector("[data-n=cumtotal]") || {}).textContent,
+          proj: (div.querySelector("[data-n=cumproj]") || {}).textContent || "" };
+      };
+      UC.now = 0;
+      UC.cacheReads = false;
+      const run = (label, range, now, ms, n, per) => {
+        UC.range = range; UC.bw = ms / 1000; UC.since = now - { "1h": 3600000, "6h": 21600000, "24h": 86400000, "7d": 604800000 }[range];
+        res[label] = read(ucCumulative(build(now, ms, n, per), now));
+      };
+      const pm = new Date(2026, 8, 15, 15, 30).getTime();
+      const late = new Date(2026, 8, 15, 23, 50).getTime();
+      run("pm24", "24h", pm, 900000, 8, 3000);
+      run("late24", "24h", late, 900000, 8, 3000);
+      run("pm7d", "7d", pm, 3600000, 8, 3000);
+      run("pm1h", "1h", pm, 60000, 8, 3000);
+      run("pm6h", "6h", pm, 300000, 8, 3000);
+      // the last hour empty: a burst two hours back and nothing since
+      UC.range = "24h"; UC.bw = 900; UC.since = pm - 86400000;
+      const old = build(pm - 7200000, 900000, 4, 3000);
+      res.quiet = read(ucCumulative(old, pm));
+      UC.cacheReads = true;
+      res.shown = read(ucCumulative(build(pm, 900000, 8, 3000), pm));
+      UC.now = 0;
+      return res;
+    });
+    // 8 buckets x 3000 = 24000 so far. 3pm: buckets from 14:30 on are 4 x 3000 over the 60 minutes to 15:30 is
+    // 200 a minute, and 510 minutes to midnight adds 102000, so 126k. At 23:50 the hour reaches back to 22:45,
+    // 4 x 3000 over 65 minutes, and 10 minutes to midnight adds 1846: 25846, so 26k.
+    const mono = ys => ys.every((y, i) => i === 0 || y <= ys[i - 1]);
+    for (const k of ["pm24", "late24", "pm7d", "pm1h", "pm6h", "quiet"]) {
+      const c = cum[k];
+      if (!mono(c.ys)) fail("usageTab: the " + k + " line goes down: " + c.ys);
+      if (c.total !== (k === "quiet" ? "12k" : "24k")) fail("usageTab: " + k + " ends at " + c.total + " and the range total is 24k");
+    }
+    if (cum.pm24.proj !== "at this pace: 126k by midnight" || !cum.pm24.dashed || cum.pm24.n !== 2) fail("usageTab: 24h at 15:30 reads " + JSON.stringify(cum.pm24));
+    if (cum.late24.proj !== "at this pace: 26k by midnight" || !cum.late24.dashed) fail("usageTab: 24h at 23:50 reads " + JSON.stringify(cum.late24));
+    if (!/^0.*24k$/.test(cum.pm24.axis.replace(/at this pace.*midnight/, ""))) fail("usageTab: the axis reads " + cum.pm24.axis);
+    if (!/^at this pace: \d+k by midnight$/.test(cum.pm7d.proj) || !cum.pm7d.dashed) fail("usageTab: 7d reads " + JSON.stringify(cum.pm7d));
+    for (const k of ["pm1h", "pm6h", "quiet"]) if (cum[k].dashed || cum[k].proj) fail("usageTab: " + k + " has a projection: " + JSON.stringify(cum[k]));
+    if (cum.shown.total !== "264k") fail("usageTab: with cache reads shown the line ends at " + cum.shown.total + ", 24k counted plus 240k of reads is 264k");
+
+    // the last point of the line equals the range total on the by-kind line in a real paint
+    const paint = await sp.evaluate(() => {
+      const now = new Date(2026, 8, 15, 15, 30).getTime();
+      UC.now = now; UC.range = "24h"; UC.bw = 900; UC.since = now - 86400000; UC.group = "card";
+      // the same two cards again: the toggle above may have had the tab re-read, which is the empty answer
+      const mk = (i, o, r) => ({ rows: 1, replies: 1, input: i, output: o, cache_write_5m: 0, cache_write_1h: 0, cache_read: r, cost: 0 });
+      const t0 = Math.floor(now / 900000) * 900000 - 900000;
+      const sA = mk(1000, 500, 90000), sB = mk(200, 100, 40000);
+      const all = ucAdd(ucAdd(ucSums(), sA), sB);
+      UC.rooms = { "": { state: "ok", why: "", noGroups: false, buckets: new Map([[t0, { t: t0, total: all,
+        cards: { "uc-a": ucAdd(ucSums(), sA), "uc-b": ucAdd(ucSums(), sB) }, causes: { operator: all }, groups: {} }]]) } };
+      const out = [];
+      for (const on of [false, true]) {
+        UC.cacheReads = on;
+        ucPaint();
+        const kinds = [...document.querySelectorAll('#uc-body [data-n^="kind:"]')].map(e => e.textContent);
+        const h = [...document.querySelectorAll("#uc-body h4")].map(e => e.textContent.split(" ")[0] + " " + e.textContent.split(" ")[1]);
+        out.push({ total: (document.querySelector("#uc-body [data-n=cumtotal]") || {}).textContent, kinds, h,
+          want: usageTokens(on ? 131800 : 1800) });
+      }
+      UC.now = 0;
+      return out;
+    });
+    for (const [i, on] of ["off", "on"].entries()) {
+      const p = paint[i];
+      if (p.total !== p.want) fail("usageTab: the cumulative line ends at " + p.total + ", the range total is " + p.want + " with cache reads " + on);
+      const order = p.h.join("|");
+      if (!/tokens by|cumulative tokens|tokens by cause/.test(order) || order.indexOf("cumulative") < order.indexOf("tokens by") || order.lastIndexOf("cumulative") > order.lastIndexOf("tokens by")) fail("usageTab: heading order " + order);
+    }
+
+    if (process.env.USAGE_SHOT) await usageShot(sp, process.env.USAGE_SHOT);
+  } finally {
+    await ctx.close();
+  }
+  if (errors.length) fail("usageTab: the page threw: " + errors.join(" | "));
+}
+
 // The usage tab grouped by department or director, and tokens per accepted item (u-014).
 async function usageGroupsSection(browser, base) {
   const errors = [];
@@ -12523,7 +12733,8 @@ async function main() {
       cacheChip: cacheChipSection, cacheLine: cacheLineSection, mHome: mHomeSection, mCard: mCardSection, mServe: mServeSection, phoneKeyLabel: phoneKeyLabelSection, phoneKeyLit: phoneKeyLitSection, shiftMenu: shiftMenuSection, notifyCommand: notifyCommandSection, presence: presenceSection, tallPty: tallPtySection, roomsMachine: roomsMachineSection, readyOnce: readyOnceSection, readyPopout: readyPopoutSection, popoutNotify: popoutNotifySection, readyTwoWindows: readyTwoWindowsSection,
       cardUrlTable: cardUrlTableSection, cardUrlClash: cardUrlClashSection, cardUrlLinks: cardUrlLinksSection, cardUrlRoom: cardUrlRoomSection, mCardUrl: (b) => mCardUrlSection(b), cardUrlNotify: cardUrlNotifySection,
       clock: clockSection,
-      composeImages: composeImagesSection, composePaste: composePasteSection, mComposeImages: mComposeImagesSection };
+      composeImages: composeImagesSection, composePaste: composePasteSection, mComposeImages: mComposeImagesSection,
+      usageTab: usageTabSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -14538,6 +14749,7 @@ async function main() {
     await composeImagesSection(browser, base);
     await composePasteSection(browser, base);
     await mComposeImagesSection(browser);
+    await usageTabSection(browser, base);
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e));
     if (process.env.DEBUG_HEADLESS) {
