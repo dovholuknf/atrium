@@ -5200,28 +5200,21 @@ async function u016Section(browser, base) {
         if ((await ints()) !== 1) fail(tag + "a 2s hold did not interrupt exactly once: " + (await ints()));
       }
 
-      // the header hidden on its own, saved per device
+      // the header is slim by default and opens behind a chevron, saved per device (u-021 replaced the full hide)
       if (name === "portrait") {
         const hd = () => vis(p, "header");
         const ready = () => p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
-        await p.evaluate(() => document.getElementById("hdr-hide").click());
-        if (await hd()) fail(tag + "the hide control left the header showing");
-        if (!(await vis(p, "#hdr-show"))) fail(tag + "no way back once the header is hidden");
+        if (!(await hd())) fail(tag + "the slim header is not showing");
+        if (await vis(p, "#gear")) fail(tag + "the gear shows in the slim header");
+        await p.evaluate(() => document.getElementById("hdr-toggle").click());
+        if (!(await vis(p, "#gear"))) fail(tag + "the chevron did not open the header");
         await p.setViewportSize({ width: 844, height: 390 });
         await p.waitForTimeout(300);
-        if (await hd()) fail(tag + "rotating to landscape brought the header back");
+        if (!(await hd())) fail(tag + "rotating to landscape hid the header");
         await p.setViewportSize({ width: 390, height: 844 });
         await p.reload({ waitUntil: "domcontentloaded" });
         await ready();
-        if (await hd()) fail(tag + "a reload brought the header back");
-        await p.evaluate(() => document.getElementById("hdr-show").click());
-        if (!(await hd())) fail(tag + "the handle did not show the header");
-        await p.reload({ waitUntil: "domcontentloaded" });
-        await ready();
-        if (!(await hd())) fail(tag + "the shown header did not stay shown after a reload");
-        await p.setViewportSize({ width: 844, height: 390 });
-        await p.waitForTimeout(300);
-        if (!(await hd())) fail(tag + "landscape auto-collapse overrode a saved shown header");
+        if (!(await vis(p, "#gear"))) fail(tag + "the open header did not stay open after a reload");
       }
       await ctx.close();
     }
@@ -5229,6 +5222,96 @@ async function u016Section(browser, base) {
     tasksMode = was;
   }
   if (errors.length) fail("u016: the page threw: " + errors.join(" | "));
+}
+
+// ── u-021: the phone board header is one slim row behind a chevron ─────────
+async function phoneHeaderSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landCard("a~land-one", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  landCard("b~land-two", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  landList = [LAND["a~land-one"], LAND["b~land-two"]];
+  landPerms = [];
+  const errors = [];
+  const shots = process.env.PHONE_HEADER_SHOTS || "";
+  const vis = (p, sel) => p.evaluate(s => {
+    const e = document.querySelector(s);
+    if (!e) return false;
+    const r = e.getBoundingClientRect();
+    return getComputedStyle(e).display !== "none" && r.width > 0 && r.height > 0;
+  }, sel);
+  const ready = (p) => p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+  try {
+    const ctx = await browser.newContext({ viewport: { width: 412, height: 915 }, hasTouch: true, isMobile: true });
+    await ctx.addInitScript(() => localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true })));
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await ready(p);
+    const hh = () => p.evaluate(() => document.querySelector("header").getBoundingClientRect().height);
+    // 1. collapsed by default
+    let h = await hh();
+    if (h > 60) fail("phoneHeader: the collapsed header is " + h + "px tall");
+    if (!(await vis(p, "header nav .tab")) || !(await vis(p, "#toastlog-open"))) fail("phoneHeader: tabs or bell missing from the slim row");
+    if ((await vis(p, "#gear")) || (await vis(p, "button.newagent"))) fail("phoneHeader: gear or new agent show while collapsed");
+    const tb = await p.locator("#hdr-toggle").boundingBox();
+    if (!tb || tb.width < 44 || tb.height < 44) fail("phoneHeader: the chevron is under 44px: " + JSON.stringify(tb));
+    if (await p.getAttribute("#hdr-toggle", "aria-expanded") !== "false") fail("phoneHeader: aria-expanded is not false");
+    const over = await p.evaluate(() => document.documentElement.scrollWidth > innerWidth);
+    if (over) fail("phoneHeader: the page scrolls sideways");
+    if (shots) { fs.mkdirSync(shots, { recursive: true }); await p.screenshot({ path: path.join(shots, "collapsed-412x915.png") }); }
+    // 2. auto mode on shows in the slim row
+    if (await vis(p, "#gauto")) fail("phoneHeader: the auto marker shows while asking");
+    await p.evaluate(() => { globalAuto = true; globalAutoStale = false; globalAutoRead = true; paintGlobalAuto(); });
+    if (!(await vis(p, "#gauto"))) fail("phoneHeader: auto mode on is hidden in the slim row");
+    if (await p.evaluate(() => getComputedStyle(document.getElementById("gauto"), "::after").content) !== '"AUTO"')
+      fail("phoneHeader: the slim auto marker does not say AUTO");
+    if (shots) await p.screenshot({ path: path.join(shots, "collapsed-auto-412x915.png") });
+    // 3. tap opens, tap closes, survives a reload
+    await p.locator("#hdr-toggle").tap();
+    if (!(await p.evaluate(() => document.body.classList.contains("hdr-open")))) fail("phoneHeader: a tap did not open");
+    if (!(await vis(p, "#gear")) || !(await vis(p, "button.newagent"))) fail("phoneHeader: opened header lacks gear or new agent");
+    if (await p.evaluate(() => localStorage.getItem("atrium.phone.headerOpen")) !== "1") fail("phoneHeader: the choice was not saved");
+    if (shots) await p.screenshot({ path: path.join(shots, "expanded-412x915.png") });
+    await p.reload({ waitUntil: "domcontentloaded" });
+    await ready(p);
+    if (!(await p.evaluate(() => document.body.classList.contains("hdr-open")))) fail("phoneHeader: open did not survive a reload");
+    await p.locator("#hdr-toggle").tap();
+    if (await p.evaluate(() => document.body.classList.contains("hdr-open"))) fail("phoneHeader: a second tap did not collapse");
+    await p.evaluate(() => localStorage.setItem("atrium.phone.headerOpen", "1"));
+    await p.evaluate(() => window.dispatchEvent(new StorageEvent("storage", { key: "atrium.phone.headerOpen", newValue: "1" })));
+    if (!(await p.evaluate(() => document.body.classList.contains("hdr-open")))) fail("phoneHeader: the storage event was not followed");
+    await p.evaluate(() => phoneHeaderOpenSet(false));
+    await p.reload({ waitUntil: "domcontentloaded" });
+    await ready(p);
+    if (await p.evaluate(() => document.body.classList.contains("hdr-open"))) fail("phoneHeader: collapsed did not survive a reload");
+    // 4. the room chip is inside its row
+    await p.evaluate(() => switchView("terms"));
+    await p.waitForSelector(".term-list .card .chip.room", { timeout: slow(10000) });
+    const clip = await p.evaluate(() => [...document.querySelectorAll(".term-list .card")].flatMap(c => {
+      const cr = c.getBoundingClientRect();
+      return [...c.querySelectorAll(".chip")].filter(ch => ch.getBoundingClientRect().width > 0)
+        .filter(ch => ch.getBoundingClientRect().right > cr.right + 0.5 || ch.scrollWidth > ch.clientWidth + 1)
+        .map(ch => ({ chip: ch.textContent, right: ch.getBoundingClientRect().right, card: cr.right }));
+    }));
+    if (clip.length) fail("phoneHeader: a chip clips on a card row: " + JSON.stringify(clip));
+    if (shots) await p.screenshot({ path: path.join(shots, "terminals-412x915.png") });
+    await ctx.close();
+    // 5. desktop unchanged
+    const dctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    await dctx.addInitScript(() => localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true })));
+    const dp = await dctx.newPage();
+    dp.on("pageerror", e => errors.push(String(e)));
+    await dp.goto(base, { waitUntil: "domcontentloaded" });
+    await ready(dp);
+    if (await vis(dp, "#hdr-toggle")) fail("phoneHeader: a desktop shows the chevron");
+    if (!(await vis(dp, "#gear")) || !(await vis(dp, "button.newagent")) || !(await vis(dp, "h1.wordmark")))
+      fail("phoneHeader: the desktop header lost a control");
+    await dctx.close();
+  } finally {
+    tasksMode = was;
+  }
+  if (errors.length) fail("phoneHeader: the page threw: " + errors.join(" | "));
 }
 
 // ── focusing a phone terminal does not bounce or hide it (u-017) ──────────
@@ -8911,7 +8994,7 @@ async function main() {
       history: historySection, contextSize: contextSizeSection, peekEverywhere: peekEverywhereSection, cardRoute: cardRouteSection,
       quietDoer: quietDoerSection, looksIdle: looksIdleSection, notifyOff: notifyOffSection,
       questionsClick: questionsClickSection, walk: walkSection, linkReuse: linkReuseSection,
-      usageCacheReads: usageCacheReadsSection, roomsDash: roomsDashSection, phoneView: phoneViewSection, heldLine: heldLineSection, u016: u016Section, phoneFocus: phoneFocusSection, phoneTermBar: phoneTermBarSection, phonePan: phonePanSection, phoneTap: phoneTapSection, phoneKeyboard: phoneKeyboardSection, usagePolish: usagePolishSection, usageLimits: usageLimitsSection, usageGroups: usageGroupsSection,
+      usageCacheReads: usageCacheReadsSection, roomsDash: roomsDashSection, phoneView: phoneViewSection, heldLine: heldLineSection, u016: u016Section, phoneHeader: phoneHeaderSection, phoneFocus: phoneFocusSection, phoneTermBar: phoneTermBarSection, phonePan: phonePanSection, phoneTap: phoneTapSection, phoneKeyboard: phoneKeyboardSection, usagePolish: usagePolishSection, usageLimits: usageLimitsSection, usageGroups: usageGroupsSection,
       eventDriven: eventDrivenSection, idleBudget: idleBudgetSection, pollsGone: pollsGoneSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
@@ -10844,6 +10927,7 @@ async function main() {
     await phoneViewSection(browser, base);
     await heldLineSection(browser, base);
     await u016Section(browser, base);
+    await phoneHeaderSection(browser, base);
     await phoneFocusSection(browser, base);
     await phoneTermBarSection(browser, base);
     await phonePanSection(browser, base);
