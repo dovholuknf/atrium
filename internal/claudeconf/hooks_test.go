@@ -121,8 +121,15 @@ func TestInstallIsSafeToRunTwice(t *testing.T) {
 				}
 			}
 		}
-		if seen != 1 {
-			t.Fatalf("%s has %d atrium commands after two installs, wanted 1", name, seen)
+		// One per wanted row, and PreToolUse carries two: tool-start and the gate.
+		want := 0
+		for _, w := range WantedHooks {
+			if w.Hook == name && !w.Optional {
+				want++
+			}
+		}
+		if seen != want {
+			t.Fatalf("%s has %d atrium commands after two installs, wanted %d", name, seen, want)
 		}
 	}
 
@@ -309,7 +316,7 @@ func TestInstallReplacesTheOldScript(t *testing.T) {
 	}
 	var pre HookStatus
 	for _, h := range before.Hooks {
-		if h.Hook == "PreToolUse" {
+		if h.Event == "tool-start" {
 			pre = h
 		}
 	}

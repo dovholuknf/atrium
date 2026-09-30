@@ -297,6 +297,8 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	// connection instead of each spawning an atrium-control child. It
 	// reaches this hub's own board over loopback derived from `board`.
 	proxy.SetControl(board)
+	// THE LAUNCH CAP PER ROOM, kept in the hub's settings. See launchcaps.go.
+	proxy.SetLaunchCaps(store)
 	// ATTACH AND DETACH AS OPERATIONAL LINES, recorded once each. Set
 	// after the proxy exists because they record through it. Best effort:
 	// the store's Log is fail-open and never blocks the link.
