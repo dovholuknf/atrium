@@ -35,7 +35,7 @@ director as `docs/backlog/<dept>/<d>-new-<name>.md`, or fold them into the desig
 
 ## Waiting
 
-Nothing.
+Nothing. From 2026-09-30 evening, UI work only (clint): design what feeds @ui, then stop and wait.
 
 ## Done
 
@@ -43,4 +43,4 @@ Nothing.
 (f82f3284), card URLs (f7110c24, 5a98ea61), security design (2d4e19b1, codex rounds to a85f2c10), held-message
 escalation (64fadc33, 178362d1), resume says continue (bae9c707), review of u-popout-notify (ac94fa51), lean context
 cycle (81a1fd5c), Defender advice (0c442bee), machine health (60adacbb), open with the system
-(`docs/rnd/open-with-system-design.md`).
+(f0e0d97e), reply suggestions (`docs/rnd/reply-suggestions-design.md`).
