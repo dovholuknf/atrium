@@ -35,9 +35,8 @@ the meantime.
 
 ## Waiting
 
-- @ui's cross-window fix for the medium in `docs/backlog/ui/u-new-review-5e68b83f.md`.
-- @runtime's R4.
-- @runtime's held-message escalation stages (`docs/rnd/held-message-escalation-design.md`).
+- @runtime's fix for the medium in `docs/backlog/runtime/r-new-review-a92bb5f7.md`: R1 never reaches a supervised
+  runner with mid-turn input off.
 
 ## Open lows, for when a fix names them
 
@@ -46,8 +45,16 @@ the meantime.
   Host-rewriting access proxy.
 - `r-new-review-a1abed4f.md` 1: the event insert maps every constraint, a `CHECK` included, to "no card".
 - `u-new-review-5e68b83f.md` 2: quiet without the terminal attached is only the badge.
+- `r-new-review-a92bb5f7.md`: 4 lows.
+- `u-new-review-8333259b.md` L1 L2, parked in @ui's QUEUE.
+- `u-new-review-eb94e016.md` 1.
+- `r-new-review-e25a2c2f.md` 1-2: a wildcard over a public suffix or a dynamic DNS domain, an ignored entry is silent.
+- `u-new-review-8b316172.md` 1-2: phone question links against none on the desktop, a choice press can send twice.
 
 ## Done
 
 2026-09-30: the security audit (16058425), ff747683, 0b4e3f0d, 5edc1821, a23a9034, 06b876bb, 54794900, 3c354ed4,
 5e68b83f, f16ff0c8, b144c66a, c184ae8c, f4466ea0 (ROOM DEPLOY OK), befa812b and a1abed4f (ROOM DEPLOY OK).
+Then f-026 e738577e, u-growler eb94e016, u-ready-spam 23fa4602 (closes the 5e68b83f medium), card URLs 8333259b and
+5954f802, @runtime a92bb5f7 (R1 R3, ROOM DEPLOY OK, 1 medium open), the card-audit landing 53b3b570, wildcard hosts
+e25a2c2f, the paste spinner pair 6ca9e81f 76b9f736 (ROOM DEPLOY OK) and the growler reply 8b316172.
