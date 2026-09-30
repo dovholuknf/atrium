@@ -35,10 +35,11 @@
 #
 # EVERY PATH IS CHECKED BEFORE IT IS USED, because the Go ones come from the runner's `go env`, which any agent there
 # can change. A path must be fully qualified, hold no wildcard, `~`, `..` or control character, and lie inside one of
-# three roots: the runner's profile (read from HKLM ProfileList by the account's SID, which the account cannot
-# change), the worktree root, or the clone's build.claude. Inside the profile means strictly under it, never the
-# profile itself. A root is refused when it is a drive root, less than two folders deep, or under Windows, Program
-# Files or ProgramData. A refused path is named in a `warn` line and left out. So GOCACHE=C:\ excludes nothing.
+# these roots: the runner's <profile>\AppData\Local and <profile>\go, where Go keeps its caches by default, with the
+# profile read from HKLM ProfileList by the account's SID, which the account cannot change, then the worktree root and
+# the clone's build.claude. A Go path must be strictly inside one of them, never a root itself, so GOCACHE pointed at
+# Downloads or at the profile excludes nothing. A root is refused when it is a drive root, less than two folders
+# deep, or under Windows, Program Files or ProgramData. A refused path is named in a `warn` line and left out. So GOCACHE=C:\ excludes nothing.
 #
 # THE CLONE is -Clone, else, for a room, the path in this repository's git remote named for it (room-git.ps1 init),
 # and for `local`, the main checkout this script belongs to. THE WORKTREE ROOT is -WorktreeRoot, else
@@ -244,13 +245,14 @@ function Test-Inside { param([string] $p, [string] $root) $p.StartsWith($root + 
 
 function Refuse { param([string] $what, [string] $p, [string] $why) Step 'paths' 'warn' "left out $what $p, which $why" }
 
-# THE ROOTS. The profile comes from HKLM by the account's SID, never from its environment.
+# THE ROOTS. The profile comes from HKLM by the account's SID, never from its environment, and only the two folders
+# in it where Go keeps its caches are roots, not the profile as a whole.
 $roots = [Collections.Generic.List[string]]::new()
-if (-not $kv.profile) { Step 'paths' 'warn' "could not read $account's profile from the registry, so nothing under it is excluded" }
+if (-not $kv.profile) { Step 'paths' 'warn' "could not read $account's profile from the registry, so no Go cache is excluded" }
 else {
     $pr = Win $kv.profile
     $why = Get-RootProblem $pr
-    if ($why) { Refuse 'the profile' $pr $why } else { $roots.Add($pr) }
+    if ($why) { Refuse 'the profile' $pr $why } else { $roots.Add("$pr\AppData\Local"); $roots.Add("$pr\go") }
 }
 $paths = [Collections.Generic.List[string]]::new()
 function Add-Path { param([string] $p) if (-not ($paths | Where-Object { $_ -ieq $p })) { $paths.Add($p) } }
@@ -267,7 +269,7 @@ function Test-GoPath {
     $p = Win $p
     $why = Get-PathProblem $p
     if (-not $why -and -not ($roots | Where-Object { Test-Inside $p $_ })) {
-        $why = "is not inside $account's profile, the worktree root or the build folder"
+        $why = "is not inside $account's AppData\Local or go folder, the worktree root or the build folder"
     }
     if ($why) { Refuse $what $p $why; return '' }
     $p
