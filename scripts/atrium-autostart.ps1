@@ -193,7 +193,19 @@ if ($Verb -eq 'room') {
 }
 
 $conhost = Join-Path $env:SystemRoot 'System32\conhost.exe'
-if (Test-Path $conhost) {
+if ($Verb -eq 'room') {
+    # A ROOM'S TASK STARTS THE DETACHED ROOM, so a room started by hand, by provision and by a logon is one path:
+    # `room --detach` returns once the room answers. The toolchain's room-env.ps1 is dot-sourced first when
+    # room-toolchain.ps1 wrote one, for the PATH its runners need. The command stays readable text, because
+    # provision-room.ps1 reads the task back to see whether it is already right.
+    # Windows PowerShell 5.1 runs this over ssh, so no -replace with a scriptblock.
+    $detached = ($daemonArgs -replace '^room ', 'room --detach ') -replace '"', "'"
+    $ps = "`$e = Join-Path `$HOME '.atrium\toolchain\room-env.ps1'; if (Test-Path `$e) { . `$e }; & '$($Exe -replace "'", "''")' $detached"
+    $shell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+    $shellArgs = "-NoProfile -ExecutionPolicy Bypass -Command `"$($ps -replace '"', '\"')`""
+    if (Test-Path $conhost) { $command = $conhost; $argument = "--headless `"$shell`" $shellArgs" }
+    else { $command = $shell; $argument = "-WindowStyle Hidden $shellArgs" }
+} elseif (Test-Path $conhost) {
     $command = $conhost
     $argument = "--headless `"$Exe`" $daemonArgs"
 } else {
