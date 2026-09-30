@@ -4,10 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
+	"sync"
 )
 
 // A REQUEST THAT NAMES A CARD GOES TO THE ROOM THAT HOLDS IT. Backlog-2 item 63.
@@ -38,7 +41,7 @@ import (
 const launchBodyLimit = 1 << 20
 
 // notCards are the `/v1/tasks/<segment>` routes whose segment is not a card id.
-var notCards = map[string]bool{"prune": true, "pin-order": true}
+var notCards = map[string]bool{"prune": true, "pin-order": true, "archive-workers": true}
 
 // cardRoomKey carries the room the named card was placed on, ahead of every
 // other way `roomFor` has of choosing one.
@@ -47,6 +50,20 @@ type cardRoomKey struct{}
 // placeCard routes a request that names a card to the room holding it.
 //
 // It returns the request to carry on with, or false once it has answered.
+//
+// A NAME IS RESOLVED HERE, BEFORE ANY ROOM SEES IT, in this order. See
+// docs/rnd/handle-addressed-http-design.md section 4.
+//
+//  1. `room~id`, a tagged id, names the room outright.
+//  2. `name@room` is looked for on that room only.
+//  3. Something shaped like an id goes the way every board request goes: with
+//     two or more rooms, `roomHolding` finds the owner.
+//  4. Anything else is a wire name or an alias, looked for on every attached
+//     room. One live match wins, two is a 409 naming both, none is a 404 with
+//     what would have worked.
+//
+// The request then goes on with the bare id in its path or its launch body, so
+// a room on any build is reached by name.
 func (p *Proxy) placeCard(w http.ResponseWriter, r *http.Request) (*http.Request, bool) {
 	id := cardNamedIn(r)
 	if id == "" {
@@ -57,21 +74,172 @@ func (p *Proxy) placeCard(w http.ResponseWriter, r *http.Request) (*http.Request
 		// A tag came in, so a tag goes back out on the answer, the launch's as
 		// well as a tagged path's. See `retagCard`.
 		r = r.WithContext(context.WithValue(r.Context(), taggedKey{}, room))
-	} else {
-		rooms := p.hub.Rooms()
-		if len(rooms) < 2 {
-			// One room or none is nothing to choose between. The dial goes to the
-			// only room, or says none is attached.
+		return r.WithContext(context.WithValue(r.Context(), cardRoomKey{}, room)), true
+	}
+	rooms := p.hub.Rooms()
+	if name, target, err := SplitAddress(id); err == nil && target != "" {
+		return p.placeByName(w, r, id, name, target, rooms)
+	}
+	if len(rooms) < 2 {
+		// ONE ROOM OR NONE IS NOTHING TO CHOOSE BETWEEN for an id, and the dial
+		// goes to the only room. A segment that is not shaped like one may be a
+		// name the room cannot read, so it is looked for first, and a miss still
+		// goes to the room, which answers for itself.
+		if len(rooms) == 0 || looksLikeCardID(bare) {
 			return r, true
 		}
-		owner, ok := p.roomHolding(r, bare, rooms)
-		if !ok {
-			cardUnplaced(w, bare, rooms, p.rememberedOn(bare))
+		return p.placeByName(w, r, id, id, "", rooms)
+	}
+	// AN ID FIRST, the way every board request goes, and a name only after it
+	// missed. An id is minted and a handle is chosen, so the two do not collide.
+	if owner, ok := p.roomHolding(r, bare, rooms); ok {
+		return r.WithContext(context.WithValue(r.Context(), cardRoomKey{}, owner)), true
+	}
+	if looksLikeCardID(bare) {
+		cardUnplaced(w, bare, rooms, p.rememberedOn(bare))
+		return r, false
+	}
+	return p.placeByName(w, r, id, id, "", rooms)
+}
+
+// looksLikeCardID is the shape of an id a room mints, a UUID. A handle is a
+// name somebody chose and never has this shape. It spares the id path a name
+// lookup that could only miss.
+func looksLikeCardID(s string) bool {
+	if len(s) != 36 {
+		return false
+	}
+	for i, c := range s {
+		switch i {
+		case 8, 13, 18, 23:
+			if c != '-' {
+				return false
+			}
+		default:
+			if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f' || c >= 'A' && c <= 'F') {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// placeByName resolves a name on `target`, or on every attached room when
+// target is empty, and carries the request on to the card it found.
+func (p *Proxy) placeByName(w http.ResponseWriter, r *http.Request, seg, name, target string, rooms []Attached) (
+	*http.Request, bool) {
+	if target != "" {
+		found := ""
+		for _, a := range rooms {
+			if equalFold(a.Name, target) {
+				found = a.Name
+			}
+		}
+		if found == "" {
+			cardAnswer(w, http.StatusNotFound, map[string]any{
+				"error": fmt.Sprintf("no room called %q is attached", target)})
 			return r, false
 		}
-		room = owner
+		rooms = []Attached{{Name: found}}
 	}
-	return r.WithContext(context.WithValue(r.Context(), cardRoomKey{}, room)), true
+	lists := map[string][]ctlCard{}
+	var quiet []string
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	for _, a := range rooms {
+		wg.Add(1)
+		go func(room string) {
+			defer wg.Done()
+			var body struct {
+				Tasks []ctlCard `json:"tasks"`
+			}
+			ok := p.roomGet(r.Context(), room, "/v1/tasks", &body)
+			mu.Lock()
+			defer mu.Unlock()
+			if ok {
+				lists[room] = body.Tasks
+			} else {
+				quiet = append(quiet, room)
+			}
+		}(a.Name)
+	}
+	wg.Wait()
+	sort.Strings(quiet)
+	hit, err := resolveAcross(lists, quiet, name)
+	var none *errNoCard
+	var amb *errAmbiguous
+	switch {
+	case errors.As(err, &amb):
+		cardAnswer(w, http.StatusConflict, map[string]any{"error": err.Error(), "candidates": amb.candidates})
+		return r, false
+	case errors.As(err, &none):
+		// ONE ROOM ANSWERS FOR ITSELF. A segment no list carries goes on as it
+		// always did, and the room says what it says.
+		if target == "" && len(rooms) == 1 {
+			return r, true
+		}
+		cardAnswer(w, http.StatusNotFound, map[string]any{"error": err.Error(), "would_work": none.wouldWork})
+		return r, false
+	case err != nil:
+		cardAnswer(w, http.StatusNotFound, map[string]any{"error": err.Error()})
+		return r, false
+	}
+	bareID := hit.Card.ID
+	if !rewriteCard(r, seg, bareID) {
+		cardAnswer(w, http.StatusBadRequest, map[string]any{"error": "could not name that card in the request"})
+		return r, false
+	}
+	// WHAT IT REACHED, so a script can check before it acts again. The id as the
+	// caller's scope names it, and the handle with its room.
+	named := bareID
+	if len(p.hub.Rooms()) > 1 {
+		named = tagFor(hit.Room, bareID)
+	}
+	w.Header().Set("X-Atrium-Card", named)
+	w.Header().Set("X-Atrium-Handle", hit.Card.Wire+"@"+hit.Room)
+	if target != "" {
+		// Named with its room, so the answer names its cards the same way.
+		r = r.WithContext(context.WithValue(r.Context(), taggedKey{}, hit.Room))
+	}
+	p.rememberCardRoom(bareID, hit.Room)
+	return r.WithContext(context.WithValue(r.Context(), cardRoomKey{}, hit.Room)), true
+}
+
+// rewriteCard puts the bare id where the name was: the path segment, or a
+// launch body's task_id.
+func rewriteCard(r *http.Request, seg, id string) bool {
+	if cardIDIn(r.URL.Path) == seg {
+		r.URL.Path = strings.Replace(r.URL.Path, "/v1/tasks/"+seg, "/v1/tasks/"+id, 1)
+		r.URL.RawPath = ""
+		return true
+	}
+	if r.Method != http.MethodPost || r.URL.Path != "/v1/launch" || r.Body == nil {
+		return false
+	}
+	raw, err := io.ReadAll(r.Body)
+	_ = r.Body.Close()
+	if err != nil {
+		return false
+	}
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) != nil {
+		return false
+	}
+	fields["task_id"], _ = json.Marshal(id)
+	out, err := json.Marshal(fields)
+	if err != nil {
+		return false
+	}
+	r.Body = io.NopCloser(bytes.NewReader(out))
+	r.ContentLength = int64(len(out))
+	return true
+}
+
+// cardAnswer is the hub answering a card request itself, in JSON.
+func cardAnswer(w http.ResponseWriter, code int, body map[string]any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	_ = json.NewEncoder(w).Encode(body)
 }
 
 // cardNamedIn is the card a request names, tagged or plain, or nothing.
