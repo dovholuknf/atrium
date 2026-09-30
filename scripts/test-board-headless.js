@@ -13126,6 +13126,20 @@ async function mOwnMessagesSection(browser) {
       await p.tap('#m-list .row[data-id="own-1"]');
       await p.waitForSelector("#m-replies .reply.mine", { timeout: slow(5000) });
       await mShot(p, "own-messages-" + vp.width);
+      // a huge message is cut, and old or surplus keys are pruned on the next write
+      const kept = await p.evaluate(() => {
+        const now = Date.now();
+        localStorage.setItem("atrium.msent.ancient", JSON.stringify([{ at: new Date(now - 8 * 864e5).toISOString(), text: "old secret" }]));
+        for (let i = 0; i < 60; i++) localStorage.setItem("atrium.msent.bulk" + i, JSON.stringify([{ at: new Date(now - (i + 1) * 60000).toISOString(), text: "x" }]));
+        window.dispatchEvent(new CustomEvent("m-sent", { detail: { id: "own-1", text: "L".repeat(2000000) } }));
+        const keys = Object.keys(localStorage).filter(k => k.indexOf("atrium.msent.") === 0);
+        const mine = JSON.parse(localStorage.getItem("atrium.msent.own-1"));
+        return { n: keys.length, ancient: keys.indexOf("atrium.msent.ancient") >= 0, newest: keys.indexOf("atrium.msent.bulk0") >= 0,
+          oldest: keys.indexOf("atrium.msent.bulk59") >= 0, len: mine[mine.length - 1].text.length, cut: /cut here/.test(mine[mine.length - 1].text) };
+      });
+      if (kept.ancient) fail(tag + "a message older than a week was kept");
+      if (kept.n !== 50 || !kept.newest || kept.oldest) fail(tag + "keys not bounded to the newest 50: " + JSON.stringify(kept));
+      if (kept.len > 4200 || !kept.cut) fail(tag + "a huge message was not cut and marked: " + JSON.stringify(kept));
       if (await mNoSideways(p)) fail(tag + "the card scrolls sideways");
       if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
       await ctx.close();
