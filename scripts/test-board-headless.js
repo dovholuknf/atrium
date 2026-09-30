@@ -20,6 +20,72 @@ const os = require("os");
 const crypto = require("crypto");
 const { wholeBoard } = require("./board-source.js");
 
+// One clock for the whole suite, so no section depends on the time of day the
+// run happens to start. A fixture built from Date.now() and checked as HH:MM
+// broke whenever the real time sat near midnight, because the board then
+// rightly says "tomorrow 00:04". So the run is SHIFTED, not frozen: Date.now()
+// and a no-argument `new Date()` answer real time plus a constant, which keeps
+// timers, debounces and performance.now working while every run starts at noon,
+// twelve hours from either midnight. Node and every browser context take the
+// same offset, so a fixture built in Node agrees with the page reading it.
+//   HEADLESS_CLOCK=real    no shift at all, for debugging against the real time
+//   HEADLESS_CLOCK=23:58   start the run at that local time instead of noon
+// A context that must see the real clock says so: newContext(o, { realClock: true }).
+// Workers do not get it, and no section here runs one that reads the time.
+function clockOffset() {
+  const spec = process.env.HEADLESS_CLOCK || "12:00";
+  if (spec === "real") return 0;
+  const m = /^(\d{1,2}):(\d\d)$/.exec(spec);
+  if (!m || +m[1] > 23 || +m[2] > 59) {
+    console.error("HEADLESS_CLOCK is 'real' or HH:MM, not '" + spec + "'");
+    process.exit(2);
+  }
+  const now = new Date();
+  const target = new Date(now.getFullYear(), now.getMonth(), now.getDate(), +m[1], +m[2], 0, 0);
+  return target.getTime() - now.getTime();
+}
+const CLOCK_OFFSET = clockOffset();
+// Written as a function so the very same text runs in Node and, stringified, in
+// the page. A Proxy rather than a subclass keeps Date.prototype, instanceof and
+// Date.name exactly as they were: only construct, apply and now are answered here.
+function installClock(offset) {
+  if (!offset) return;
+  const Real = Date;
+  const shifted = () => Real.now() + offset;
+  const proxy = new Proxy(Real, {
+    construct(target, args, newTarget) {
+      return Reflect.construct(target, args.length ? args : [shifted()], newTarget);
+    },
+    apply() { return new Real(shifted()).toString(); },
+    get(target, key, recv) {
+      if (key === "now") return shifted;
+      return Reflect.get(target, key, target === recv ? target : recv);
+    },
+  });
+  globalThis.Date = proxy;
+}
+installClock(CLOCK_OFFSET);
+const CLOCK_INIT = "(" + installClock.toString() + ")(" + CLOCK_OFFSET + ");";
+// Wrap the browser so no section can forget the clock: it is the first init
+// script of every context, ahead of any a section adds. browser.newPage() makes
+// its own context, so it goes through the same door.
+function withClock(browser) {
+  const newContext = browser.newContext.bind(browser);
+  browser.newContext = async (opts, more) => {
+    const ctx = await newContext(opts || {});
+    if (!(more && more.realClock)) await ctx.addInitScript({ content: CLOCK_INIT });
+    return ctx;
+  };
+  browser.newPage = async opts => {
+    const ctx = await browser.newContext(opts);
+    const page = await ctx.newPage();
+    const close = page.close.bind(page);
+    page.close = async o => { try { await close(o); } finally { await ctx.close().catch(() => {}); } };
+    return page;
+  };
+  return browser;
+}
+
 // The board's xterm bundle, served off disk so a real Terminal is built. The
 // page loads these as `<script src="/vendor/...">`, which board-source leaves
 // external, and the attach-loop repro needs `openTerm` to build a real terminal
@@ -12095,11 +12161,61 @@ async function cardUrlNotifySection(browser, base) {
   if (!bad) console.log("cardUrlNotify ok");
 }
 
+// The suite's one clock (see CLOCK_OFFSET at the top). The page starts the run at
+// noon or at HEADLESS_CLOCK, a window the page opens agrees, Node and the page
+// read the same time, and the clock still advances. A context that asked for the
+// real clock does not get the shift.
+async function clockSection(browser, base) {
+  const spec = process.env.HEADLESS_CLOCK || "12:00";
+  const want = spec === "real" ? null : spec.split(":").map(Number);
+  // Minutes past midnight, compared round the clock so 23:58 and 00:01 are near.
+  const near = (h, m) => {
+    const d = Math.abs((h * 60 + m) - (want[0] * 60 + want[1]));
+    return Math.min(d, 1440 - d) <= 10;
+  };
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const p = await ctx.newPage();
+  try {
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    const read = pg => pg.evaluate(() => ({
+      h: new Date().getHours(), m: new Date().getMinutes(), now: Date.now(),
+      inst: new Date() instanceof Date, name: Date.name, str: typeof Date(),
+      dated: new Date(0).getTime(), parsed: Date.parse("2026-01-01T00:00:00Z"),
+      proto: Object.getPrototypeOf(new Date()) === Date.prototype,
+    }));
+    const a = await read(p);
+    if (want && !near(a.h, a.m)) fail("clock: the page reads " + a.h + ":" + a.m + ", not near " + spec);
+    if (Math.abs(a.now - Date.now()) > 2000) fail("clock: the page and Node disagree by " + (a.now - Date.now()) + "ms");
+    if (!a.inst || a.name !== "Date" || a.str !== "string" || a.dated !== 0 || !a.proto ||
+        a.parsed !== Date.UTC(2026, 0, 1)) fail("clock: Date is not itself any more: " + JSON.stringify(a));
+    const popup = p.waitForEvent("popup", { timeout: slow(10000) });
+    await p.evaluate(b => { window.open(b + "/#term=s1"); }, base);
+    const w = await popup;
+    const wa = await read(w);
+    if (want && !near(wa.h, wa.m)) fail("clock: a pop-out window reads " + wa.h + ":" + wa.m + ", not near " + spec);
+    if (Math.abs(wa.now - Date.now()) > 2000) fail("clock: a pop-out window disagrees with Node by " + (wa.now - Date.now()) + "ms");
+    await p.waitForTimeout(400);
+    const b = await read(p);
+    if (b.now - a.now < 300 || b.now - a.now > 3000) fail("clock: time did not advance sanely: " + (b.now - a.now) + "ms in 400ms");
+    if (CLOCK_OFFSET) {
+      const rctx = await browser.newContext({ viewport: { width: 800, height: 600 } }, { realClock: true });
+      const rp = await rctx.newPage();
+      await rp.goto(base, { waitUntil: "domcontentloaded" });
+      const r = await rp.evaluate(() => Date.now());
+      await rctx.close();
+      const drift = Math.abs(r - (Date.now() - CLOCK_OFFSET));
+      if (drift > 2000) fail("clock: a realClock context was shifted, off by " + drift + "ms");
+    }
+  } finally {
+    await ctx.close();
+  }
+}
+
 async function main() {
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = "http://127.0.0.1:" + server.address().port;
 
-  const browser = await chromium.launch();
+  const browser = withClock(await chromium.launch());
   // HEADLESS_ONLY=termWear,bridge runs just those sections, for working on one.
   if (process.env.HEADLESS_ONLY) {
     const only = { termWear: termWearSection, bridge: bridgeSection, settingsOnce: settingsOnceSection,
@@ -12119,7 +12235,8 @@ async function main() {
       phoneListFit: phoneListFitSection, phoneNudge: phoneNudgeSection,
       growlStack: growlStackSection, growlActions: growlActionsSection, growlModal: growlModalSection, growlQuiet: growlQuietSection, growlAttention: growlAttentionSection, growlPhone: growlPhoneSection, mGrowl: mGrowlSection, growlPopout: growlPopoutSection,
       cacheChip: cacheChipSection, cacheLine: cacheLineSection, mHome: mHomeSection, mCard: mCardSection, mServe: mServeSection, phoneKeyLabel: phoneKeyLabelSection, phoneKeyLit: phoneKeyLitSection, shiftMenu: shiftMenuSection, notifyCommand: notifyCommandSection, presence: presenceSection, tallPty: tallPtySection, roomsMachine: roomsMachineSection, readyOnce: readyOnceSection, readyPopout: readyPopoutSection, popoutNotify: popoutNotifySection, readyTwoWindows: readyTwoWindowsSection,
-      cardUrlTable: cardUrlTableSection, cardUrlClash: cardUrlClashSection, cardUrlLinks: cardUrlLinksSection, cardUrlRoom: cardUrlRoomSection, mCardUrl: (b) => mCardUrlSection(b), cardUrlNotify: cardUrlNotifySection };
+      cardUrlTable: cardUrlTableSection, cardUrlClash: cardUrlClashSection, cardUrlLinks: cardUrlLinksSection, cardUrlRoom: cardUrlRoomSection, mCardUrl: (b) => mCardUrlSection(b), cardUrlNotify: cardUrlNotifySection,
+      clock: clockSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -14130,6 +14247,7 @@ async function main() {
     await cardUrlRoomSection(browser, base);
     await mCardUrlSection(browser);
     await cardUrlNotifySection(browser, base);
+    await clockSection(browser, base);
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e));
     if (process.env.DEBUG_HEADLESS) {
