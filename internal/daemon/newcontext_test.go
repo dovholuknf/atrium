@@ -27,7 +27,10 @@ func fastNewContext(t *testing.T) {
 	ncTiming.turnSettle = 40 * time.Millisecond
 	ncTiming.clearWait = 400 * time.Millisecond
 	ncTiming.sessionSettle = 20 * time.Millisecond
-	t.Cleanup(func() { ncTiming = old })
+	oldSteps := append([]time.Duration(nil), backoffSteps...)
+	// A say held through the cycle is retried on this front step.
+	backoffSteps[0] = 50 * time.Millisecond
+	t.Cleanup(func() { ncTiming = old; copy(backoffSteps, oldSteps) })
 }
 
 // ncCard is a card with a terminal and a real directory, so HANDOFF.md can be

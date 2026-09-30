@@ -180,7 +180,7 @@ func TestIdleClockReadsHumanTouch(t *testing.T) {
 		t.Fatal(err)
 	}
 	d.parkIdle(idleAfter(3 * time.Hour))
-	if settles(t, d, card.ID) {
+	if settlesTo(t, d, card.ID, false) {
 		t.Fatal("parked ten minutes after a person typed")
 	}
 }
@@ -266,7 +266,7 @@ func TestIdleParkSetting(t *testing.T) {
 	quickPark(t)
 	card := idleAgent(t, d, "offcard", store.StatusNeedsInput)
 	d.parkIdle(idleAfter(100 * time.Hour))
-	if settles(t, d, card.ID) {
+	if settlesTo(t, d, card.ID, false) {
 		t.Fatal("off parked a card")
 	}
 	if err := d.st.SetSetting(store.SettingIdleParkAfter, "3600"); err != nil {
