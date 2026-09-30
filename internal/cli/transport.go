@@ -204,16 +204,17 @@ func readZrokShare(keys link.Keys) (string, error) {
 
 // roomDialer is the room's half, chosen by what the join string says.
 //
-// A ROOM THAT HOLDS A CERTIFICATE DIALS AN OVERLAY INSIDE TLS, and every kind of
-// connection goes through the one Dialer returned here, so none can skip it. A
-// room with no certificate is one that joined before certificates reached the
-// overlays, and it dials exactly as it always did.
+// A ROOM WHOSE JOIN IS THE NEW FORM AND THAT HOLDS A CERTIFICATE DIALS AN OVERLAY
+// INSIDE TLS, and every kind of connection goes through the one Dialer returned
+// here, so none can skip it. An old-form join never wraps, whatever is in the keys
+// directory: a stray room.crt from an earlier direct enrolment, maybe to another
+// hub, would otherwise start a handshake against the wrong CA and drop the room.
 func roomDialer(j link.Join, keys link.Keys, identity string) (link.Dialer, error) {
 	d, err := rawRoomDialer(j, keys, identity)
 	if err != nil {
 		return nil, err
 	}
-	if j.Transport != "direct" && keys.HasRoomCert() {
+	if j.Transport != "direct" && j.Proven() && keys.HasRoomCert() {
 		return link.Proven{Dialer: d, Keys: keys}, nil
 	}
 	return d, nil

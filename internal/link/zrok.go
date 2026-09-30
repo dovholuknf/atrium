@@ -161,6 +161,9 @@ func (z *Zrok) Dial(ctx context.Context) (net.Conn, error) {
 
 // ZrokAuthenticated is `Hub.Authenticated` for this transport.
 //
+// The legacy path's word, as `ZitiAuthenticated` is: `OverlayAuthenticated` is
+// what the hub uses now.
+//
 // True for the same reason as ziti's: a private share is reachable only by an
 // account holding its token, and zrok has already decided that before a byte
 // arrives. The token is the credential, which is why `Describe` refuses to
