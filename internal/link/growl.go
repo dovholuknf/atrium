@@ -1,0 +1,731 @@
+package link
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"log"
+	"net/http"
+	"sort"
+	"strings"
+	"sync"
+	"time"
+)
+
+// The persistent growler: something waiting on a human, shown on every screen
+// until it is handled, dismissed or its reason ends. See
+// docs/rnd/persistent-growler-design.md, which this is stage R1 of.
+//
+// ── what earns one ──────────────────────────────────────
+//
+// The reasons the notify trigger already works out, by the same function
+// (cardReason, which is NotifyIdentity without the origin:agent skip):
+//
+//   - `permission`, once a request has waited growl.perm_after (two minutes).
+//     An origin:agent card growls here too, because a blocked agent is frozen
+//     whoever launched it.
+//   - `question`, at once. Not for an origin:agent card.
+//   - `halt`, from a room's own /v1/health, asked on the ticker.
+//
+// `input` and `finished` never growl. `blocked` and `deploy-hold` are stages
+// R2 and R3.
+//
+// ── who writes, and when ────────────────────────────────
+//
+// After every announcement a room makes, and on a 30 second ticker. The ticker
+// is needed because announcements happen on change: a permission that waited
+// 1 min 59 s and then nothing moved would never be promoted. It also asks each
+// attached room's health, ends snoozes, and counts reminders.
+//
+// ── what a screen hears ─────────────────────────────────
+//
+// The `growls` event carries THE WHOLE LIVE SET, not a delta, for the reason
+// `rooms` does (events.go): it is small, bounded by what is blocked rather than
+// by cards, and a screen that missed one heals on the next. It goes out when
+// the set changes, on a reminder, and once to every stream as it opens.
+//
+// ── what it must not break ──────────────────────────────
+//
+// A growler is never in the path of the thing it is about. Approve and block
+// go to the room the way the perms view does, and the growler resolves because
+// the request left. A store failure here is the hub's halt like any other, and
+// the permission is still answerable from the board.
+
+// Growl settings, in the hub_setting table.
+const settingGrowlPermAfter = "growl.perm_after"
+
+const (
+	growlTick         = 30 * time.Second
+	growlPermAfter    = 2 * time.Minute
+	growlPruneEvery   = time.Hour
+	growlBodyMax      = 200
+	growlSnoozeMaxMin = 7 * 24 * 60
+)
+
+// growlBackoff is when a growler reminds, measured from its raise. The
+// operator's backoff (EscalationBackoff in internal/daemon), stopping at the
+// two hour step: past it the growler stays on screen and stops ringing.
+var growlBackoff = []time.Duration{
+	time.Minute, 2 * time.Minute, 5 * time.Minute, 10 * time.Minute,
+	30 * time.Minute, time.Hour, 2 * time.Hour,
+}
+
+// growlUrgency orders the stack, most urgent first.
+var growlUrgency = map[string]int{
+	ReasonPermission: 1, "halt": 2, "blocked": 3, ReasonQuestion: 4, "deploy-hold": 5,
+}
+
+// The card reasons R1 derives. Passed to the store, which touches no other
+// reason when it syncs a room's cards.
+var growlCardReasons = []string{ReasonPermission, ReasonQuestion}
+
+// ErrGrowlNotFound and ErrGrowlStale are what a GrowlStore answers an action
+// with. Stale carries the row as it is now.
+var (
+	ErrGrowlNotFound = errors.New("no growler has that id")
+	ErrGrowlStale    = errors.New("that growler is already handled")
+)
+
+// GrowlRow is one growler, as the endpoint and the event carry it.
+type GrowlRow struct {
+	ID     string `json:"id"`
+	Room   string `json:"room"`
+	CardID string `json:"card_id"`
+	// Card is the tagged id, room~id. CardID is the room's own.
+	Card      string    `json:"card"`
+	Reason    string    `json:"reason"`
+	Urgency   int       `json:"urgency"`
+	Title     string    `json:"title"`
+	Body      string    `json:"body"`
+	Subject   string    `json:"subject"`
+	RaisedAt  time.Time `json:"raised_at"`
+	State     string    `json:"state"`
+	Until     string    `json:"until"`
+	Reminders int       `json:"reminders"`
+	ChangedAt time.Time `json:"changed_at"`
+	// ChangedVia is board, phone or notification for a human, hub for the hub.
+	ChangedVia string `json:"changed_via"`
+	ChangedTab string `json:"changed_tab"`
+	// RoomOffline is worked out when read: the room is not attached. Its
+	// growlers stay open, because a network blinking is not a reason ending.
+	RoomOffline bool `json:"room_offline"`
+}
+
+// GrowlStore is what the growler needs from the hub's database, by room NAME.
+type GrowlStore interface {
+	// Sync applies one room's card growlers for `reasons`. See
+	// hubstore.Store.GrowlSync.
+	Sync(room string, reasons []string, want []GrowlRow, present map[string]bool) (raised []string, changed bool, err error)
+	// Halt raises or ends a room's halt. See hubstore.Store.GrowlHalt.
+	Halt(room string, halted bool, g GrowlRow) (raised, changed bool, err error)
+	Fill(id, subject, body string) (bool, error)
+	Live() ([]GrowlRow, error)
+	// Act answers ErrGrowlNotFound, or ErrGrowlStale with the row.
+	Act(id, state string, until time.Time, via, tab string) (GrowlRow, error)
+	Wake() ([]string, error)
+	Reminded(id string, n int) error
+	Prune() error
+	Setting(name string) (string, error)
+	Rooms() ([]string, error)
+	Cards(room string) ([]CardState, error)
+}
+
+// roomHealth is one room's answer to /v1/health. ok is false for a room that
+// did not answer, which says nothing either way.
+type roomHealth struct {
+	ok     bool
+	halted bool
+	cause  string
+}
+
+// pendingPerm is one request a room is holding, as its /v1/permissions says.
+type pendingPerm struct {
+	ID          string    `json:"id"`
+	TaskID      string    `json:"task_id"`
+	Tool        string    `json:"tool"`
+	Command     string    `json:"command"`
+	RequestedAt time.Time `json:"requested_at"`
+}
+
+// Growler derives, stores and announces growlers.
+type Growler struct {
+	st  GrowlStore
+	now func() time.Time
+
+	// Wired by the proxy. Each is safe to leave nil in a test.
+	attached func(room string) bool
+	say      func(Event)
+	health   func(ctx context.Context, room string) roomHealth
+	pending  func(ctx context.Context, room string) []pendingPerm
+	phone    func(Notice)
+
+	mu     sync.Mutex
+	last   string
+	pruned time.Time
+	// filling is which rooms have a permission fill running, so a burst of
+	// announcements is one request to that room.
+	filling map[string]bool
+}
+
+// NewGrowler returns a growler over a store. Start runs its ticker.
+func NewGrowler(st GrowlStore) *Growler {
+	return &Growler{st: st, now: time.Now, filling: map[string]bool{}}
+}
+
+// permAfter is how long a permission waits before it growls.
+func (g *Growler) permAfter() time.Duration {
+	if v, err := g.st.Setting(settingGrowlPermAfter); err == nil && v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d >= 0 {
+			return d
+		}
+	}
+	return growlPermAfter
+}
+
+// growlID is the notify identity with the room in front.
+func growlID(room, identity string) string { return room + "|" + identity }
+
+// derive is what a room's cards want right now, and the names of those cards
+// for a reminder to the phone.
+func (g *Growler) derive(room string, cards []CardState) (want []GrowlRow, present map[string]bool) {
+	present = map[string]bool{}
+	after := g.permAfter()
+	at := g.now()
+	for _, c := range cards {
+		present[c.ID] = true
+		nc, ok := cardReason(c.ID, c.Payload)
+		if !ok {
+			continue
+		}
+		row := GrowlRow{ID: growlID(room, nc.Identity), Room: room, CardID: c.ID, Reason: nc.Reason}
+		switch nc.Reason {
+		case ReasonPermission:
+			// An unreadable time cannot be measured, so it is taken as due: a
+			// growler too early is a dismiss, and one never raised is the miss
+			// this whole feature is for.
+			if since, err := time.Parse(time.RFC3339Nano, nc.At); err == nil && at.Sub(since) < after {
+				continue
+			}
+			row.Title = nc.Name + " wants permission"
+		case ReasonQuestion:
+			if nc.Agent {
+				continue
+			}
+			row.Title = nc.Name + " asked a question"
+			if len(nc.Questions) > 1 {
+				row.Title = fmt.Sprintf("%s asked %d questions", nc.Name, len(nc.Questions))
+			}
+			if len(nc.Questions) > 0 {
+				row.Body = clip(nc.Questions[0])
+			}
+		default:
+			continue
+		}
+		want = append(want, row)
+	}
+	return want, present
+}
+
+// clip is one line, bounded.
+func clip(s string) string {
+	s = firstLineOf(s)
+	if r := []rune(s); len(r) > growlBodyMax {
+		s = string(r[:growlBodyMax-1]) + "…"
+	}
+	return s
+}
+
+// Announced is called after a room's announcement is cached. One transaction,
+// and a fill of any new permission off this goroutine.
+func (g *Growler) Announced(room string, cards []CardState) {
+	if g.sync(room, cards) {
+		g.publish(nil)
+	}
+}
+
+// sync derives and stores one room. Reports whether the live set changed.
+func (g *Growler) sync(room string, cards []CardState) bool {
+	want, present := g.derive(room, cards)
+	raised, changed, err := g.st.Sync(room, growlCardReasons, want, present)
+	if err != nil {
+		log.Printf("[hub] growlers could not record %q: %v", room, err)
+		return false
+	}
+	for _, id := range raised {
+		if strings.Contains(id, "|"+ReasonPermission+"|") {
+			go g.fill(context.Background(), room)
+			break
+		}
+	}
+	return changed
+}
+
+// fill asks a room which request each of its permission growlers is about, so
+// the board can approve and block it by id and show the command.
+func (g *Growler) fill(ctx context.Context, room string) {
+	if g.pending == nil {
+		return
+	}
+	g.mu.Lock()
+	if g.filling[room] {
+		g.mu.Unlock()
+		return
+	}
+	g.filling[room] = true
+	g.mu.Unlock()
+	defer func() {
+		g.mu.Lock()
+		delete(g.filling, room)
+		g.mu.Unlock()
+	}()
+	live, err := g.st.Live()
+	if err != nil {
+		return
+	}
+	var need []GrowlRow
+	for _, r := range live {
+		if r.Room == room && r.Reason == ReasonPermission && r.Subject == "" {
+			need = append(need, r)
+		}
+	}
+	if len(need) == 0 {
+		return
+	}
+	perms := g.pending(ctx, room)
+	// The oldest request per card, which is the one that made it wait.
+	oldest := map[string]pendingPerm{}
+	for _, p := range perms {
+		if o, ok := oldest[p.TaskID]; !ok || p.RequestedAt.Before(o.RequestedAt) {
+			oldest[p.TaskID] = p
+		}
+	}
+	moved := false
+	for _, r := range need {
+		p, ok := oldest[r.CardID]
+		if !ok {
+			continue
+		}
+		body := clip(p.Command)
+		if body == "" {
+			body = p.Tool
+		}
+		if ch, err := g.st.Fill(r.ID, p.ID, body); err == nil && ch {
+			moved = true
+		}
+	}
+	if moved {
+		g.publish(nil)
+	}
+}
+
+// Start runs the ticker until ctx ends.
+func (g *Growler) Start(ctx context.Context) {
+	go func() {
+		t := time.NewTicker(growlTick)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				g.tick(ctx)
+			}
+		}
+	}()
+}
+
+// tick is one pass: every room's cards again, every attached room's health,
+// snoozes due, reminders due, any permission still missing its request.
+func (g *Growler) tick(ctx context.Context) {
+	changed := false
+	rooms, err := g.st.Rooms()
+	if err != nil {
+		return
+	}
+	names := map[string]string{}
+	for _, room := range rooms {
+		cards, err := g.st.Cards(room)
+		if err != nil {
+			continue
+		}
+		for _, c := range cards {
+			if nc, ok := cardReason(c.ID, c.Payload); ok {
+				names[room+"|"+c.ID] = nc.Name
+			}
+		}
+		if g.sync(room, cards) {
+			changed = true
+		}
+	}
+	if g.checkHealth(ctx, rooms) {
+		changed = true
+	}
+	remind, err := g.st.Wake()
+	if err != nil {
+		return
+	}
+	if len(remind) > 0 {
+		changed = true
+	}
+	live, err := g.st.Live()
+	if err != nil {
+		return
+	}
+	at := g.now()
+	missing := map[string]bool{}
+	for _, r := range live {
+		if r.Reason == ReasonPermission && r.Subject == "" {
+			missing[r.Room] = true
+		}
+		if r.State != "open" {
+			continue
+		}
+		due := 0
+		for _, step := range growlBackoff {
+			if at.Sub(r.RaisedAt) >= step {
+				due++
+			}
+		}
+		if due <= r.Reminders {
+			continue
+		}
+		if err := g.st.Reminded(r.ID, due); err != nil {
+			continue
+		}
+		remind = append(remind, r.ID)
+		// A REMINDER GOES TO THE PHONE TOO, on the same backoff (clint,
+		// 2026-09-30), through the notify sink, which holds it back while a
+		// desktop tab is visible and does nothing while notify is off.
+		if g.phone != nil && (r.Reason == ReasonPermission || r.Reason == ReasonQuestion) {
+			name := names[r.Room+"|"+r.CardID]
+			if name == "" {
+				name = r.CardID
+			}
+			g.phone(Notice{Name: name, Reason: r.Reason, Card: tagFor(r.Room, r.CardID), Room: r.Room})
+		}
+	}
+	for room := range missing {
+		go g.fill(ctx, room)
+	}
+	g.mu.Lock()
+	prune := at.Sub(g.pruned) >= growlPruneEvery
+	if prune {
+		g.pruned = at
+	}
+	g.mu.Unlock()
+	if prune {
+		_ = g.st.Prune()
+	}
+	if changed || len(remind) > 0 {
+		g.publish(dedupe(remind))
+	}
+}
+
+func dedupe(ids []string) []string {
+	seen := map[string]bool{}
+	out := ids[:0]
+	for _, id := range ids {
+		if !seen[id] {
+			seen[id] = true
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+// checkHealth asks each attached room whether its store has halted. A room
+// that does not answer is left as it was, halted or not.
+func (g *Growler) checkHealth(ctx context.Context, rooms []string) bool {
+	if g.health == nil {
+		return false
+	}
+	var ask []string
+	for _, room := range rooms {
+		if g.attached == nil || g.attached(room) {
+			ask = append(ask, room)
+		}
+	}
+	got := make([]roomHealth, len(ask))
+	var wg sync.WaitGroup
+	for i, room := range ask {
+		wg.Add(1)
+		go func(i int, room string) {
+			defer wg.Done()
+			got[i] = g.health(ctx, room)
+		}(i, room)
+	}
+	wg.Wait()
+	changed := false
+	for i, room := range ask {
+		h := got[i]
+		if !h.ok {
+			continue
+		}
+		row := GrowlRow{
+			ID: room + "|halt|" + g.now().UTC().Format(time.RFC3339Nano), Room: room, Reason: "halt",
+			Title: room + " has halted", Body: clip(h.cause),
+		}
+		_, ch, err := g.st.Halt(room, h.halted, row)
+		if err != nil {
+			log.Printf("[hub] growlers could not record %q's health: %v", room, err)
+			continue
+		}
+		changed = changed || ch
+	}
+	return changed
+}
+
+// view is the live set, ordered and decorated for a screen.
+func (g *Growler) view() ([]GrowlRow, error) {
+	live, err := g.st.Live()
+	if err != nil {
+		return nil, err
+	}
+	for i := range live {
+		g.decorate(&live[i])
+	}
+	// URGENCY, THEN LONGEST WAITING. Inside one urgency the oldest first,
+	// because the agent frozen longest is the one costing most.
+	sort.SliceStable(live, func(i, j int) bool {
+		a, b := live[i], live[j]
+		if a.Urgency != b.Urgency {
+			return a.Urgency < b.Urgency
+		}
+		if !a.RaisedAt.Equal(b.RaisedAt) {
+			return a.RaisedAt.Before(b.RaisedAt)
+		}
+		return a.ID < b.ID
+	})
+	if live == nil {
+		live = []GrowlRow{}
+	}
+	return live, nil
+}
+
+func (g *Growler) decorate(r *GrowlRow) {
+	r.Urgency = growlUrgency[r.Reason]
+	if r.CardID != "" {
+		r.Card = tagFor(r.Room, r.CardID)
+	}
+	r.RoomOffline = g.attached != nil && !g.attached(r.Room)
+}
+
+// payload is the endpoint's body and the event's data.
+func (g *Growler) payload(remind []string) ([]byte, string, error) {
+	rows, err := g.view()
+	if err != nil {
+		return nil, "", err
+	}
+	body := map[string]any{"growls": rows, "perm_after_seconds": int(g.permAfter() / time.Second)}
+	fp, _ := json.Marshal(body)
+	if len(remind) > 0 {
+		body["remind"] = remind
+	}
+	data, err := json.Marshal(body)
+	return data, string(fp), err
+}
+
+// publish sends the set when it differs from the last one sent, and always
+// when there is a reminder in it.
+func (g *Growler) publish(remind []string) {
+	if g.say == nil {
+		return
+	}
+	data, fp, err := g.payload(remind)
+	if err != nil {
+		return
+	}
+	g.mu.Lock()
+	same := fp == g.last
+	g.last = fp
+	g.mu.Unlock()
+	if same && len(remind) == 0 {
+		return
+	}
+	g.say(Event{Kind: "growls", Data: data})
+}
+
+// act is one POST, validated.
+func (g *Growler) act(id, do string, minutes int, via, tab string) (GrowlRow, int, error) {
+	var state string
+	var until time.Time
+	switch do {
+	case "dismiss":
+		state = "dismissed"
+	case "acted":
+		state = "acted"
+	case "undismiss":
+		state = "open"
+	case "snooze":
+		if minutes < 1 || minutes > growlSnoozeMaxMin {
+			return GrowlRow{}, http.StatusBadRequest,
+				fmt.Errorf("a snooze is 1 to %d minutes", growlSnoozeMaxMin)
+		}
+		state, until = "snoozed", g.now().Add(time.Duration(minutes)*time.Minute)
+	default:
+		return GrowlRow{}, http.StatusBadRequest,
+			errors.New(`"do" is dismiss, undismiss, snooze or acted`)
+	}
+	switch via {
+	case "board", "phone", "notification":
+	default:
+		return GrowlRow{}, http.StatusBadRequest, errors.New(`"via" is board, phone or notification`)
+	}
+	if tab != "" && !validTab(tab) {
+		return GrowlRow{}, http.StatusBadRequest, errors.New(`"tab" is a short plain token`)
+	}
+	row, err := g.st.Act(id, state, until, via, tab)
+	switch {
+	case errors.Is(err, ErrGrowlNotFound):
+		return GrowlRow{}, http.StatusNotFound, err
+	case errors.Is(err, ErrGrowlStale):
+		g.decorate(&row)
+		return row, http.StatusConflict, err
+	case err != nil:
+		return GrowlRow{}, http.StatusServiceUnavailable, err
+	}
+	g.decorate(&row)
+	g.publish(nil)
+	return row, http.StatusOK, nil
+}
+
+// ── the proxy's side ────────────────────────────────────
+
+// SetGrowler wires the growler to this hub: which rooms are attached, the
+// event stream, each room's health and pending requests, and the phone.
+func (p *Proxy) SetGrowler(g *Growler) {
+	g.attached = p.hub.Has
+	g.say = p.feeds.broadcast
+	g.health = p.roomHealth
+	g.pending = p.roomPending
+	g.phone = func(x Notice) {
+		if n := p.notifier(); n != nil {
+			n.Remind(x)
+		}
+	}
+	p.mu.Lock()
+	p.growl = g
+	p.mu.Unlock()
+}
+
+func (p *Proxy) growler() *Growler {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.growl
+}
+
+// roomGet is one GET against one room, bounded, decoded into out.
+func (p *Proxy) roomGet(ctx context.Context, room, path string, out any) bool {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+hostFor(room)+path, nil)
+	if err != nil {
+		return false
+	}
+	res, err := p.roomClient(room).Do(req)
+	if err != nil {
+		return false
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		_, _ = io.Copy(io.Discard, io.LimitReader(res.Body, 1<<16))
+		return false
+	}
+	return json.NewDecoder(io.LimitReader(res.Body, 8<<20)).Decode(out) == nil
+}
+
+func (p *Proxy) roomHealth(ctx context.Context, room string) roomHealth {
+	var body struct {
+		Halted bool `json:"halted"`
+		Cause  any  `json:"cause"`
+	}
+	if !p.roomGet(ctx, room, "/v1/health", &body) {
+		return roomHealth{}
+	}
+	h := roomHealth{ok: true, halted: body.Halted}
+	if body.Cause != nil {
+		h.cause = fmt.Sprint(body.Cause)
+	}
+	return h
+}
+
+func (p *Proxy) roomPending(ctx context.Context, room string) []pendingPerm {
+	var body struct {
+		Permissions []pendingPerm `json:"permissions"`
+	}
+	if !p.roomGet(ctx, room, "/v1/permissions", &body) {
+		return nil
+	}
+	return body.Permissions
+}
+
+// serveGrowls answers GET /_hub/growls and POST /_hub/growls/{id}.
+//
+// OPEN LIKE PRESENCE, NOT LOOPBACK ONLY: dismissing from the phone over an
+// overlay is the point. Nothing here runs a program or names one.
+func (p *Proxy) serveGrowls(w http.ResponseWriter, r *http.Request, sub string) {
+	g := p.growler()
+	if g == nil {
+		http.NotFound(w, r)
+		return
+	}
+	fail := func(code int, msg string) {
+		w.WriteHeader(code)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": msg})
+	}
+	if sub == "growls" {
+		if r.Method != http.MethodGet {
+			fail(http.StatusMethodNotAllowed, "that has to be a GET")
+			return
+		}
+		data, _, err := g.payload(nil)
+		if err != nil {
+			fail(http.StatusServiceUnavailable, err.Error())
+			return
+		}
+		_, _ = w.Write(data)
+		return
+	}
+	if r.Method != http.MethodPost {
+		fail(http.StatusMethodNotAllowed, "that has to be a POST")
+		return
+	}
+	id := strings.TrimPrefix(sub, "growls/")
+	var body struct {
+		Do      string `json:"do"`
+		Minutes int    `json:"minutes"`
+		Via     string `json:"via"`
+		Tab     string `json:"tab"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 4<<10)).Decode(&body); err != nil {
+		fail(http.StatusBadRequest, "could not read that: "+err.Error())
+		return
+	}
+	row, code, err := g.act(id, body.Do, body.Minutes, body.Via, body.Tab)
+	switch code {
+	case http.StatusOK, http.StatusConflict:
+		w.WriteHeader(code)
+		_ = json.NewEncoder(w).Encode(map[string]any{"growl": row})
+	default:
+		fail(code, err.Error())
+	}
+}
+
+// openGrowls hands one stream the live set as it opens, so a fresh tab has it
+// without a fetch.
+func (p *Proxy) openGrowls(s *sub) {
+	g := p.growler()
+	if g == nil {
+		return
+	}
+	data, _, err := g.payload(nil)
+	if err != nil {
+		return
+	}
+	select {
+	case s.ch <- Event{Kind: "growls", Data: data}:
+	default:
+	}
+}

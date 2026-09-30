@@ -271,6 +271,8 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	// THE NOTIFY TRIGGER. Built here so the announcement hook below can call
 	// it, started and mounted once the context and the proxy exist.
 	notifier := link.NewNotifier(notifyStore{store})
+	// THE PERSISTENT GROWLERS, derived from the same announcements. See growl.go.
+	growler := link.NewGrowler(growlStore{notifyStore{store}})
 	// WHAT A ROOM SAYS IT IS HOLDING, TAKEN WHOLE. Anything the hub
 	// was keeping for that room and is not in this is discarded,
 	// because it is no longer there, and the discard is written down
@@ -292,6 +294,7 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 			// AFTER THE CACHE IS WRITTEN AND NEVER WAITING ON THE SINK: the
 			// notifier stores identities and hands the changes to its own queue.
 			notifier.Announced(name, cards)
+			growler.Announced(name, cards)
 		}
 		return err
 	}
@@ -360,6 +363,8 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 
 	notifier.Start(ctx)
 	proxy.SetNotify(notifier)
+	proxy.SetGrowler(growler)
+	growler.Start(ctx)
 
 	// A room attaching is synced and collected, off the attach path. The timers stop and the
 	// git children are cancelled within ten seconds of the hub stopping.
