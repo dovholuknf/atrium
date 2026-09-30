@@ -290,3 +290,15 @@
   body.term-full main { padding: 0; }
   body.term-full .term-layout { gap: 0; height: 100%; min-height: 0; }
   body.term-full .term-pane { border: none; border-radius: 0; }
+
+  /* u-019: THE ON-SCREEN KEYBOARD. Sized to the visual viewport (`--vvh`, set by `phoneVVSoon`), so the terminal and
+     the key bar end at the keyboard's top edge and are never under it. `100dvh` before the first measure and
+     where there is no visualViewport. The body is a flex column, so `main` takes what is left. */
+  body.term-phone, body.term-full {
+    height: var(--vvh, 100dvh); max-height: var(--vvh, 100dvh);
+    position: relative; top: var(--vvt, 0px);
+  }
+  /* The pan container scrolls both ways and its bars sat as a grey strip above the key bar. Panning is by
+     finger, so it needs none. */
+  body.term-phone #t-screen.phone { scrollbar-width: none; }
+  body.term-phone #t-screen.phone::-webkit-scrollbar { display: none; }
