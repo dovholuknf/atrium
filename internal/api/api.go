@@ -172,7 +172,26 @@ type Server struct {
 	// Cull asks a merged worker to leave and removes its worktree and branch.
 	// Supplied by the daemon, which owns the terminal and makes every check.
 	// See internal/daemon/cull.go.
-	Cull func(taskID, into string) (any, error)
+	//
+	// `tip` is a merge proof made on another machine: the commit the area branch
+	// was checked to contain, which this room's worktree has to be sitting on.
+	// Empty when the proof is made here.
+	Cull func(taskID, into, tip string) (any, error)
+	// HoldCull keeps a worker: the merged-cull mark is dropped and nothing marks
+	// it again. A route of its own, and not a flag on cull, because a room that
+	// predates the hold would read `hold=true` as an ordinary cull and cull it.
+	HoldCull func(taskID, by string) error
+	// Merged is the post-merge hook's request: mark the finished workers a merge
+	// into `into` covered, limited to `branches` when given. Human listener only,
+	// never the guest allowlist.
+	Merged func(into string, branches []string) (any, error)
+	// ArchiveWorkers is the one-time tidy of done worker cards. Human listener
+	// only. `dryRun` changes nothing and lists what would go.
+	ArchiveWorkers func(dryRun bool) (any, error)
+	// MergeProof is the proof half of a cross-room cull: is `ref` (a fetched
+	// `<room>/claude/<id>`) contained in `into`, in the repository of `dir`.
+	// Answers `{into, ref, tip, merged}`. Human listener only.
+	MergeProof func(dir, ref, into string) (any, error)
 	// RestartRunner asks a runner to exit, waits for it to be gone, and starts
 	// the same conversation again on the SAME card. Unshelve without the shelve,
 	// for a wedged session or one running an old binary. Supplied by the daemon,
@@ -520,6 +539,18 @@ func (s *Server) Handler() http.Handler {
 	if s.Cull != nil {
 		mux.HandleFunc("POST /v1/tasks/{id}/cull", s.cullRunner)
 	}
+	if s.HoldCull != nil {
+		mux.HandleFunc("POST /v1/tasks/{id}/cull/hold", s.holdCull)
+	}
+	if s.Merged != nil {
+		mux.HandleFunc("POST /v1/merged", s.merged)
+	}
+	if s.ArchiveWorkers != nil {
+		mux.HandleFunc("POST /v1/tasks/archive-workers", s.archiveWorkers)
+	}
+	if s.MergeProof != nil {
+		mux.HandleFunc("POST /v1/merge-proof", s.mergeProof)
+	}
 	if s.RestartRunner != nil {
 		mux.HandleFunc("POST /v1/tasks/{id}/restart", s.restartRunner)
 	}
@@ -757,6 +788,11 @@ type view struct {
 	// no turn has ever ended on. Durable, unlike Activity. See
 	// docs/seen-design.md.
 	Seen *store.SeenView `json:"seen,omitempty"`
+	// Merged is the chip's data: the branch this worker's merge covered, when it
+	// will be culled, and who held it. Absent on a card that is neither marked
+	// nor held. Durable. See docs/rnd/merged-cull-design.md.
+	// Embedded, so the fields sit flat on the card: cull_at, cull_into, cull_held.
+	*store.MergedView
 	// Row is always 1. It tells the board this payload is a whole list row, so a
 	// "task" event can be upserted without a re-fetch. Never omitted.
 	Row int `json:"row"`
@@ -897,6 +933,9 @@ func (s *Server) taskEvent(t *store.Task) view {
 	if sn, err := s.st.GetSeen(t.ID); err == nil {
 		v.Seen = sn.View()
 	}
+	if mv, err := s.st.MergedViewFor(t.ID); err == nil {
+		v.MergedView = mv
+	}
 	return v
 }
 
@@ -909,6 +948,13 @@ func (s *Server) PublishTask(t *store.Task) { s.Broadcast("task", s.taskEvent(t)
 // swallowing a failure for the same reason `withAskCounts` does: it decorates
 // a row that is worth serving without it.
 func (s *Server) withSeen(vs []view) []view {
+	if marks, err := s.st.MergedViews(); err == nil {
+		for i := range vs {
+			if vs[i].Task != nil {
+				vs[i].MergedView = marks[vs[i].Task.ID]
+			}
+		}
+	}
 	all, err := s.st.SeenAll()
 	if err != nil {
 		return vs
@@ -1927,15 +1973,89 @@ func (s *Server) exitRunner(w http.ResponseWriter, r *http.Request) {
 func (s *Server) cullRunner(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Into string `json:"into"`
+		// Tip is a merge proof made where the area branch lives. See Server.Cull.
+		Tip string `json:"tip"`
 	}
 	_ = json.NewDecoder(r.Body).Decode(&body)
-	res, err := s.Cull(r.PathValue("id"), body.Into)
+	res, err := s.Cull(r.PathValue("id"), body.Into, body.Tip)
 	if err != nil {
 		writeErr(w, http.StatusConflict, err)
 		return
 	}
 	if t, err := s.st.Get(r.PathValue("id")); err == nil {
 		s.PublishTask(t)
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
+// holdCull is atrium_cull hold=true and the chip's keep. A refusal is a 409
+// carrying the sentence.
+func (s *Server) holdCull(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		By string `json:"by"`
+		// Hold is true to keep the card. Absent means true: the route is named for it.
+		Hold *bool `json:"hold"`
+	}
+	_ = json.NewDecoder(io.LimitReader(r.Body, 1<<12)).Decode(&body)
+	if body.Hold != nil && !*body.Hold {
+		writeErr(w, http.StatusBadRequest, fmt.Errorf("hold=false is not a thing: cull it, or leave it held"))
+		return
+	}
+	if err := s.HoldCull(r.PathValue("id"), body.By); err != nil {
+		writeErr(w, http.StatusConflict, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// merged is `atrium merged`: a merge into a branch happened. 400 only for a
+// body that names no branch. Anything else the room could not do is a 409, and
+// the CLI logs it and exits 0 either way.
+func (s *Server) merged(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Into     string   `json:"into"`
+		Branches []string `json:"branches"`
+	}
+	_ = json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&body)
+	if strings.TrimSpace(body.Into) == "" {
+		writeErr(w, http.StatusBadRequest, fmt.Errorf("no branch named"))
+		return
+	}
+	res, err := s.Merged(body.Into, body.Branches)
+	if err != nil {
+		writeErr(w, http.StatusConflict, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
+// mergeProof answers `{into, ref, tip, merged}` for `{dir, ref, into}`. A refusal
+// is a 409 carrying the reason, since the caller is another part of atrium.
+func (s *Server) mergeProof(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Dir  string `json:"dir"`
+		Ref  string `json:"ref"`
+		Into string `json:"into"`
+	}
+	_ = json.NewDecoder(io.LimitReader(r.Body, 1<<12)).Decode(&body)
+	res, err := s.MergeProof(body.Dir, body.Ref, body.Into)
+	if err != nil {
+		writeErr(w, http.StatusConflict, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
+// archiveWorkers is `atrium archive-workers`. Body `{dry_run}`.
+func (s *Server) archiveWorkers(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		DryRun bool `json:"dry_run"`
+	}
+	_ = json.NewDecoder(io.LimitReader(r.Body, 1<<12)).Decode(&body)
+	res, err := s.ArchiveWorkers(body.DryRun)
+	if err != nil {
+		writeErr(w, http.StatusConflict, err)
+		return
 	}
 	writeJSON(w, http.StatusOK, res)
 }

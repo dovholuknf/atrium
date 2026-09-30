@@ -643,10 +643,21 @@ func (d *Daemon) usageFor(taskID string, limit int) (any, error) {
 		rows = []*store.SessionUsage{}
 	}
 	v := &UsageView{Totals: all, ByCause: byCause, Rows: rows}
-	if t, err := d.st.Get(taskID); err == nil && t != nil && t.ResumeID != "" {
-		if path := d.usage.transcript(t.Worktree, t.ResumeID); path != "" {
-			if r, err := readLastReply(path); err == nil {
-				v.ContextNow, v.Model = r.Context, r.Model
+	// The context NOW is the session the runner last started, not the resume id:
+	// after a /clear the resume id stays on the old conversation until the new
+	// one's first Stop, and read by it the popup showed the old transcript's size
+	// (r-021: 709k against a status line saying 101k). The same fix item 62 made
+	// in contextsize.go.
+	if t, err := d.st.Get(taskID); err == nil && t != nil {
+		session := strings.TrimSpace(t.ResumeID)
+		if d.ctx != nil {
+			session = d.ctx.sessionOf(t)
+		}
+		if session != "" {
+			if path := d.usage.transcript(t.Worktree, session); path != "" {
+				if r, err := readLastReply(path); err == nil {
+					v.ContextNow, v.Model = r.Context, r.Model
+				}
 			}
 		}
 	}

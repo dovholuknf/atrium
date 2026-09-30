@@ -112,6 +112,13 @@ type WorkItem struct {
 	// Inferred marks an item the backfill made from thin records.
 	Inferred  bool      `json:"inferred,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
+	// The merged-cull mark. See merged.go.
+	MergedAt     *time.Time `json:"merged_at,omitempty"`
+	MergedInto   string     `json:"merged_into,omitempty"`
+	MergedSHA    string     `json:"merged_sha,omitempty"`
+	MergedBranch string     `json:"merged_branch,omitempty"`
+	CullAt       *time.Time `json:"cull_at,omitempty"`
+	HeldBy       string     `json:"held_by,omitempty"`
 	// LastReport is the newest report in the log, filled in by the readers
 	// that list items. Not a column.
 	LastReport *WorkLogEntry `json:"last_report,omitempty"`
@@ -304,7 +311,8 @@ func (s *Store) CreateWorkItem(t *Task, in NewWorkItem) (bool, error) {
 
 const workItemColumns = `task_id, handle, title, worktree, launcher_id, launcher_handle, arbiter_id,
 	arbiter_handle, brief, brief_path, state, state_at, state_by, revision, generation, ended_generation,
-	latest_report_id, accepted_report_id, outputs, continued_in, continues, inferred, created_at`
+	latest_report_id, accepted_report_id, outputs, continued_in, continues, inferred, created_at,
+	merged_at, merged_into, merged_sha, merged_branch, cull_at, held_by`
 
 func scanWorkItem(sc interface{ Scan(...any) error }) (*WorkItem, error) {
 	var (
@@ -312,12 +320,20 @@ func scanWorkItem(sc interface{ Scan(...any) error }) (*WorkItem, error) {
 		stateAt, created string
 		outputs          string
 		inferred         int
+		mergedAt, cullAt string
 	)
 	if err := sc.Scan(&w.TaskID, &w.Handle, &w.Title, &w.Worktree, &w.LauncherID, &w.LauncherHandle,
 		&w.ArbiterID, &w.ArbiterHandle, &w.Brief, &w.BriefPath, &w.State, &stateAt, &w.StateBy,
 		&w.Revision, &w.Generation, &w.EndedGeneration, &w.LatestReportID, &w.AcceptedReportID,
-		&outputs, &w.ContinuedIn, &w.Continues, &inferred, &created); err != nil {
+		&outputs, &w.ContinuedIn, &w.Continues, &inferred, &created,
+		&mergedAt, &w.MergedInto, &w.MergedSHA, &w.MergedBranch, &cullAt, &w.HeldBy); err != nil {
 		return nil, err
+	}
+	if t, err := parseTS(mergedAt); err == nil {
+		w.MergedAt = &t
+	}
+	if t, err := parseTS(cullAt); err == nil {
+		w.CullAt = &t
 	}
 	w.StateAt, _ = parseTS(stateAt)
 	w.CreatedAt, _ = parseTS(created)
