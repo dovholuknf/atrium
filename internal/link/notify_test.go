@@ -203,7 +203,17 @@ func TestNotifyIdentityPerReasonAndPriority(t *testing.T) {
 		name, payload, reason, ident string
 	}{
 		{"permission", `{"status":"needs-permission","waiting_since":"T1"}`, "permission", "a|permission|T1"},
+		// No seen row at all is a room on an older build, which cannot say, so
+		// input notifies as it always did.
 		{"input", `{"status":"needs-input","waiting_since":"T2"}`, "input", "a|input|T2"},
+		// A card that has never finished a turn is not news: whoever launched it
+		// is already there or gave it its prompt.
+		{"input before any turn", `{"status":"needs-input","waiting_since":"T2","seen":{"unseen":false}}`, "", ""},
+		{"input after a turn", `{"status":"needs-input","waiting_since":"T2","seen":{"turn_ended_at":"T1"}}`,
+			"input", "a|input|T2"},
+		// Permission is asked whatever the turns say.
+		{"permission before any turn", `{"status":"needs-permission","waiting_since":"T1","seen":{}}`,
+			"permission", "a|permission|T1"},
 		{"question", `{"status":"running","seen":{"questions_at":"T3","open_questions":["q?"]}}`, "question", "a|question|T3"},
 		// Questions whose text could not be read are still owed.
 		{"unparsed questions", `{"status":"running","seen":{"questions_at":"T3","questions_unparsed":true}}`,

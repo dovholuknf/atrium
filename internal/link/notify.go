@@ -141,6 +141,15 @@ type notifyCard struct {
 	Identity string
 }
 
+// notifySeen is the part of a card's seen row the notifier reads.
+type notifySeen struct {
+	QuestionsAt       string   `json:"questions_at"`
+	OpenQuestions     []string `json:"open_questions"`
+	QuestionsUnparsed bool     `json:"questions_unparsed"`
+	TurnEndedAt       string   `json:"turn_ended_at"`
+	Unseen            bool     `json:"unseen"`
+}
+
 // NotifyIdentity works out why a card wants a human right now, from the opaque
 // payload the room announced. ok is false when it does not, or when the card is
 // not the operator's business.
@@ -167,16 +176,16 @@ func NotifyIdentity(id string, payload json.RawMessage) (notifyCard, bool) {
 		Tags         []string `json:"tags"`
 		WaitingSince string   `json:"waiting_since"`
 		LastActivity string   `json:"last_activity_at"`
-		Seen         struct {
-			QuestionsAt       string   `json:"questions_at"`
-			OpenQuestions     []string `json:"open_questions"`
-			QuestionsUnparsed bool     `json:"questions_unparsed"`
-			TurnEndedAt       string   `json:"turn_ended_at"`
-			Unseen            bool     `json:"unseen"`
-		} `json:"seen"`
+		// A pointer, so a room that sent no seen row at all (an older build) is
+		// told apart from a card whose seen row says it never finished a turn.
+		Seen *notifySeen `json:"seen"`
 	}
 	if err := json.Unmarshal(payload, &p); err != nil {
 		return notifyCard{}, false
+	}
+	sent := p.Seen != nil
+	if !sent {
+		p.Seen = &notifySeen{}
 	}
 	// The same match the control tools use, trimmed and case-insensitive, so a
 	// tag written ` Origin:Agent ` is skipped here as it is there.
@@ -193,6 +202,13 @@ func NotifyIdentity(id string, payload json.RawMessage) (notifyCard, bool) {
 		reason, at = ReasonPermission, waited
 	case p.Seen.QuestionsAt != "" && (len(p.Seen.OpenQuestions) > 0 || p.Seen.QuestionsUnparsed):
 		reason, at = ReasonQuestion, p.Seen.QuestionsAt
+	// A CARD THAT HAS NEVER FINISHED A TURN IS NOT WAITING ON ANYBODY NEW.
+	// Whoever launched it is at it already or handed it its prompt, so an
+	// `input` for a session that has only just started is noise
+	// (atrium-87300, 2026-09-30). Only where the room sent its seen row: an
+	// older room cannot say, and keeps notifying as before.
+	case p.Status == "needs-input" && sent && p.Seen.TurnEndedAt == "":
+		return notifyCard{}, false
 	case p.Status == "needs-input":
 		reason, at = ReasonInput, waited
 	case p.Seen.TurnEndedAt != "" && p.Seen.Unseen:
