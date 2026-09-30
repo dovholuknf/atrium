@@ -36,10 +36,6 @@ import (
 // THE STORE IS THE TRUTH. This file keeps a copy for the permission path, written
 // only after the store.
 
-// SettingDeployHoldMax is how long a deploy hold may last, in minutes, before the
-// room lifts it on its own.
-const SettingDeployHoldMax = "deploy_hold_max"
-
 const (
 	deployHoldMaxDefault = 60 * time.Minute
 	// holdTickEvery is how often an expired hold is looked for.
@@ -327,7 +323,7 @@ func newHoldID() string {
 }
 
 func (d *Daemon) deployHoldMax() time.Duration {
-	v, err := d.st.Setting(SettingDeployHoldMax)
+	v, err := d.st.Setting(store.SettingDeployHoldMax)
 	if err != nil {
 		return deployHoldMaxDefault
 	}
