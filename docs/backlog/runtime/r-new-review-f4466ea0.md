@@ -34,6 +34,28 @@ caller's error, returned as such and never a halt. Storage failure stays what th
 `bootResumes` is still filled from `t.ResumeID` (`internal/daemon/reopen.go`), while `reopenResume` resumes what
 `resumeIDFor` answers. Where the two differ, the one-conversation-per-pass rule does not cover the card.
 
+## 3. The test leak: fixed for its trigger, and one low left
+
+Cause, from the diff: `windDownLike` sent a `SessionEvent` with no `Runner`. `onSession` defaults an empty runner to
+`claude` and writes it on the card, so the reopen that followed launched a real `claude` in the test's temp directory.
+That `claude` outlived the test daemon, and its own hooks found the live room. That is the card
+`atrium-reopen-158612187` on claude-sg4. The tests now name `Runner: "shelltest"`, assert that the card's runner
+survives the wind-down, and run `cmd.exe /d` so no AutoRun executes. This trigger is closed.
+
+The production path is not affected. The real hook always sends a runner (`whichRunner`), and a nested session in a
+card's shell is dropped by `ownsSession`.
+
+**Low.** Isolation still depends on each test naming its runner. Any daemon test that ends up launching the `claude`
+harness does the same thing again, because a runner that outlives its test daemon reports to whatever
+`daemon.json` names, which is the live room. Make `testDaemon` refuse to launch any harness the test did not save,
+and kill every runner it started in `t.Cleanup`. Then a leak fails the test instead of putting a card on the live
+board. The leaked card and any `claude` still running in
+`C:/Users/claude/AppData/Local/Temp/atrium-reopen-158612187` are @runtime's to clear. I have not touched them.
+
+## Verdict
+
+**Room deploy OK** on review grounds. Nothing in f4466ea0 blocks the claude-sg4 room deploy. The open items are lows.
+
 ## Tests
 
 `go test ./internal/store/` passes (78s). `./internal/link/ -run 'Growl|Notify'` passes. `./internal/daemon/ -run
