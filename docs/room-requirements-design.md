@@ -234,7 +234,7 @@ f-004's.
    (moved from @fabric by atrium-87300, 2026-09-29), built together with item 5.
 2. `scripts/room-check.ps1` with the rows that already have a checker: attached, toolchain (from ssh, with its
    `warn`), clone, `hub-main`, gitfiles, runner rows, helpers, mcp-config, hooks, smoke. @fabric.
-3. `room-git.ps1 init -Check`, the check mode it lacks. @fabric.
+3. `room-git.ps1 init -Check`, the check mode it lacks. @fabric. Built as f-013 at 87a95a2.
 4. codex as a smoke case in provision. @fabric, after f-007 lands.
 5. `POST /v1/preflight` with its three questions and the fixed key table, from inside the room. @runtime, with
    @rnd's section 4.
@@ -245,7 +245,7 @@ f-004's.
    `atrium room --started-by <kind>` in the foreground, which the existing registrations already do with `room
    --db`. They gain the flag here.
 7. The gate as `apply`, once f-006 ships. @runtime for the hook, @fabric for the check.
-8. `atrium.requirements.yaml` committed at atrium's root, which is the file in section 2.1.
+8. `atrium.requirements.yaml` committed at atrium's root, which is the file in section 2.1. Built as f-013 at 87a95a2: it parses unchanged.
 
 ## 8. Decided with @rnd (2026-09-29)
 
