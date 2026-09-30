@@ -42,23 +42,39 @@ var Version = "dev"
 // as whether the tree was clean.
 var Commit = ""
 
+// Tree is `clean` or `modified`, stamped the same way, and wins over what Go
+// recorded.
+//
+// GO'S OWN FLAG COUNTS UNTRACKED FILES. `vcs.modified` is whether `git status
+// --porcelain` said anything, and a checkout with a notes directory nobody
+// commits says something forever. So every build from the main checkout called
+// itself modified while being exactly its commit, and a deploy refusing a
+// modified build would refuse all of them. The build asks git about tracked
+// files only and says so here.
+var Tree = ""
+
 func versionInfo() (version, commit, dirty string) {
 	version, commit = Version, Commit
 	info, ok := debug.ReadBuildInfo()
-	if !ok {
-		return version, commit, ""
-	}
-	for _, s := range info.Settings {
-		switch s.Key {
-		case "vcs.revision":
-			if commit == "" {
-				commit = s.Value
-			}
-		case "vcs.modified":
-			if s.Value == "true" {
-				dirty = "modified"
+	if ok {
+		for _, s := range info.Settings {
+			switch s.Key {
+			case "vcs.revision":
+				if commit == "" {
+					commit = s.Value
+				}
+			case "vcs.modified":
+				if s.Value == "true" {
+					dirty = "modified"
+				}
 			}
 		}
+	}
+	switch Tree {
+	case "clean":
+		dirty = ""
+	case "modified":
+		dirty = "modified"
 	}
 	return version, commit, dirty
 }

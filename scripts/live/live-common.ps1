@@ -16,7 +16,8 @@
 
 $AtriumBin    = 'C:\Users\claude\.atrium\bin\atrium.exe'
 $AtriumBinDir = Split-Path $AtriumBin
-$AtriumNew    = 'D:\git\github\dovholuknf\atrium\build.claude\atrium.exe'
+$Repo         = 'D:\git\github\dovholuknf\atrium'
+$AtriumNew    = Join-Path $Repo 'build.claude\atrium.exe'
 # A different build to deploy, for a -WhatIf rehearsal from another worktree.
 if ($env:ATRIUM_NEW_BUILD) { $AtriumNew = $env:ATRIUM_NEW_BUILD }
 $Base         = 'C:\Users\claude\.atrium2'
@@ -24,6 +25,10 @@ $HubDir       = Join-Path $Base 'hub'
 $RoomDir      = Join-Path $Base 'room'
 $RoomDb       = 'C:\Users\claude\.atrium\atrium.db'
 $HubHealth    = 'http://127.0.0.1:7778/_hub/health'
+$HubRooms     = 'http://127.0.0.1:7778/_hub/rooms'
+# What the hub calls the room these scripts restart. A room COUNT says nothing about it: m1mini and sg4-wsl attach to
+# the same hub, so "rooms >= 1" passed on 2026-09-29 17:05 while this room was being refused.
+$RoomName     = 'claude-sg4'
 $RoomShutdown = 'http://127.0.0.1:7781/v1/shutdown'
 $RoomHealth   = 'http://127.0.0.1:7781/v1/health'
 # A request the room answers from its store. `/v1/health` and the hub's view of the room both answer while the store is
@@ -138,8 +143,65 @@ function Test-NewBuildStamped([string]$Path = $AtriumNew) {
     Say "FATAL: $Path does not report a commit ('$label'). build it with -ldflags -X ...cli.Commit=<sha>"
     return $false
   }
+  # A MODIFIED BUILD IS NOT ITS COMMIT, so the label above would name code that was never committed. Build with
+  # build-deploy.ps1, which refuses anything but a clean claude/main and stamps the tree state. A build from before
+  # that stamp existed counts untracked files and says modified regardless: rebuild it.
+  $commitLine = @(& $Path version 2>$null) | Where-Object { $_ -match '^commit\s' } | Select-Object -First 1
+  if ($commitLine -match '\(modified\)') {
+    Say "FATAL: $Path says '$commitLine'. it carries uncommitted code, or predates the tree stamp and counted untracked files. build it with build-deploy.ps1"
+    return $false
+  }
   Say "new build is $label"
   return $true
+}
+
+# Get-RoomLink reads what the room says about its own link, from the last [link] attach or failure line in room.err.
+# Returns 'up', 'down' or '' when it has said neither yet. The room has no endpoint for this: /v1/settings and
+# /v1/health answer from the room itself whether or not the hub has it.
+function Get-RoomLink {
+  $err = Join-Path $Base 'room.err'
+  if (-not (Test-Path $err)) { return '' }
+  $last = Select-String -Path $err -Pattern '\[link\] (attached to hub|hub \S+: )' | Select-Object -Last 1
+  if (-not $last) { return '' }
+  if ($last.Line -match '\[link\] attached to hub') { return 'up' }
+  return 'down'
+}
+
+# Get-HubRoom is this room's entry in the hub's own connection list, or $null.
+function Get-HubRoom {
+  try {
+    (Invoke-RestMethod $HubRooms -TimeoutSec 3).rooms | Where-Object { $_.name -eq $RoomName } | Select-Object -First 1
+  } catch { $null }
+}
+
+# Wait-RoomAttached waits for THIS room to be attached, by name, on a connection made after $After, as the hub sees it
+# AND as the room sees it, and then for it to STAY that way for $Hold seconds on the same connection. A five-second
+# attach that the hub then refused passed the old check at 17:05:43 on 2026-09-29. Returns the hub's entry or $null.
+function Wait-RoomAttached([datetime]$After, [int]$Seconds = 150, [int]$Hold = 30) {
+  $dl = (Get-Date).AddSeconds($Seconds)
+  $afterUtc = $After.ToUniversalTime()
+  while ((Get-Date) -lt $dl) {
+    $r = Get-HubRoom
+    if ($r -and ([datetime]$r.since).ToUniversalTime() -ge $afterUtc -and (Get-RoomLink) -eq 'up') {
+      $since = $r.since
+      Say "room $RoomName attached since $since. holding ${Hold}s to see it stay"
+      $held = $true
+      $end = (Get-Date).AddSeconds($Hold)
+      while ((Get-Date) -lt $end) {
+        Start-Sleep -Seconds 5
+        $now = Get-HubRoom
+        $link = Get-RoomLink
+        if (-not $now -or $now.since -ne $since -or $link -ne 'up') {
+          Say "room $RoomName did not stay attached (hub: $(if ($now) { $now.since } else { 'gone' }), room link: $link)"
+          $held = $false
+          break
+        }
+      }
+      if ($held) { return $r }
+    }
+    Start-Sleep -Seconds 2
+  }
+  return $null
 }
 
 # Test-RoomServes asks the room for something it reads from its store, $Tries times over a few seconds.

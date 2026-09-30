@@ -15,8 +15,12 @@ PKG      := ./cmd/atrium
 # HEAD, which is the ordinary case, so the failure is the answer.
 VERSION  := $(shell git describe --tags --exact-match 2>/dev/null || echo dev)
 COMMIT   := $(shell git rev-parse HEAD 2>/dev/null)
+# Tracked files only. Go's own dirty flag counts untracked ones, and this
+# checkout always has some. See `Tree` in internal/cli/version.go.
+TREE     := $(if $(shell git status --porcelain --untracked-files=no 2>/dev/null),modified,clean)
 LDFLAGS  := -X github.com/dovholuknf/atrium/internal/cli.Version=$(VERSION) \
-            -X github.com/dovholuknf/atrium/internal/cli.Commit=$(COMMIT)
+            -X github.com/dovholuknf/atrium/internal/cli.Commit=$(COMMIT) \
+            -X github.com/dovholuknf/atrium/internal/cli.Tree=$(TREE)
 
 .PHONY: build release tidy test check clean
 
