@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/cardurl"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 )
 
@@ -524,6 +525,18 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/m" && p.board != nil {
 		http.Redirect(w, r, "/m/", http.StatusMovedPermanently)
 		return
+	}
+	// A CARD'S READABLE ADDRESS is the board page, and the page resolves the
+	// name. See internal/cardurl.
+	if p.board != nil && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
+		if page, isCard := cardurl.Page(r.URL.Path); isCard {
+			if page == "" {
+				cardurl.NotFound(w, r.URL.Path)
+				return
+			}
+			p.serveAsset(w, r, page)
+			return
+		}
 	}
 	if name, ok := p.asset(r.URL.Path); ok {
 		p.serveAsset(w, r, name)
