@@ -52,3 +52,14 @@ transcript or a file that shrank.
 
 ROOM DEPLOY OK 8d0a38c4, with the medium to fix in the next runtime batch. Its effect is one card's phone view
 losing live updates, plus a growing read per hook on that card, and nothing on the hook path waits for it.
+
+## Re-read of 4470b97a (the medium), 2026-09-30
+
+The medium is closed. Every read, first or not, is capped at `transcriptTail` (2 MB), and a failed scan still
+advances the offset. The scanner's limit is 8 MB, so a 2 MB window can no longer hit `ErrTooLong` at all. The
+advance on error is a backstop. `TestOutputAtGetsPastAHugeLine` passes, and `go vet` passes.
+
+Nit: when more than 2 MB lands between two checks, a reply in the skipped part is not seen. Only the newest reply
+matters, so output_at moves on the next one.
+
+ROOM DEPLOY OK 4470b97a
