@@ -85,7 +85,7 @@ func TestCullOnAnOlderRoomSaysSo(t *testing.T) {
 	c := &controlMCP{board: srv.URL, client: srv.Client()}
 
 	_, _, err := c.cullHandler(context.Background(), ctlReq("orch", "beta"), cullInput{Card: "sa36"})
-	if err == nil || !strings.Contains(err.Error(), "older than atrium_cull") {
+	if err == nil || !strings.Contains(err.Error(), "predates cull (needs "+cullSince+")") {
 		t.Fatalf("err = %v, want the older room named", err)
 	}
 }
