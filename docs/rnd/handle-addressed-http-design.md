@@ -167,7 +167,7 @@ the hub's board when one is running. Every verb prints what it reached, from `X-
 | `atrium new-context <who>` | `POST /v1/tasks/<who>/new-context` | what the scripts in `D:\tmp` do by hand to cycle a director |
 | `atrium launch --onto <who>` | `POST /v1/launch` with `task_id` | extends the existing `launch` command |
 
-`atrium tell` already covers say. Patch stays HTTP only in this item (section 9, Open Question 2).
+`atrium tell` already covers say. Patch stays HTTP only in this item (section 11, item 2).
 
 ## 9. Which routes are in stage 1
 
@@ -196,14 +196,15 @@ against rooms as they are today. R1 and R2 ride the next room deploy rather than
 Test plan: a new section under the most recent letter in `docs/test-plan.md`, with the curl lines from section 7 run
 against the hub with two rooms attached, the 409 case, and the room's own port by alias after R2.
 
-## 11. Open Questions
+## 11. Decided, and questions for later
 
-These are clint's. The build above takes the default named in each.
+Decided by the orchestrator on the doc's defaults, 2026-09-30, while clint is away. Each can be reversed.
 
-1. **Destructive verbs by bare alias.** `exit`, `kill`, `cull` and `DELETE` resolve a bare alias like any other route.
-   An alias moves to a new card once the old one is done, so `atrium exit sa12` meant for the done `sa12` reaches a new
-   live `sa12` if one exists. That is what `atrium_exit` does today, so the default is to allow it and print what it
-   reached. The stricter choice is to refuse a bare alias on those four and require a handle or an id. Allow (default)
-   or refuse?
-2. **Patch on the CLI.** Changing a card's alias, tags or status from a script is `curl -X PATCH` with a JSON body.
-   Is an `atrium card set <who> --alias ... --tags ...` verb wanted now, or is curl enough for patch (default)?
+1. **Destructive verbs take a bare alias**, the same as `atrium_exit`, and print what they reached. An alias moves to a
+   new card once the old one is done, so `atrium exit sa12` meant for a done `sa12` reaches a new live `sa12` if one
+   exists. For later: should `exit`, `kill`, `cull` and `DELETE` refuse a bare alias and require a handle or an id?
+2. **No CLI patch verb.** Patch is `curl -X PATCH` with a JSON body. For later: is `atrium card set <who> --alias ...
+   --tags ...` wanted?
+
+Readable card URLs for the board, the phone and lent sessions are `docs/rnd/card-urls-design.md`, built on this
+resolver.
