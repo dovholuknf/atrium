@@ -9395,7 +9395,7 @@ async function roomsDashSection(browser, base) {
         allFirst: !!(m.firstElementChild && m.firstElementChild.classList.contains("all")),
         off: [...m.querySelectorAll(".rtile-off")].map(b => b.dataset.room + (b.querySelector(".roomx") ? "+x" : "")),
         sparks: m.querySelectorAll("svg.rd-spark polyline").length,
-        mini: !!m.querySelector('.rtile[data-room="m1mini"] .rd-band.machine .rd-dash'),
+        mini: /does not report them/.test((m.querySelector('.rtile[data-room="m1mini"] .rd-band.machine') || {}).textContent || ""),
         width: m.getBoundingClientRect().width,
       };
     });
@@ -9404,7 +9404,7 @@ async function roomsDashSection(browser, base) {
     }
     if (drawn.off.join(",") !== "lab-pc+x") fail("the disconnected demo room is not below with its x: " + JSON.stringify(drawn.off));
     if (drawn.sparks < 5) fail("the demo tiles drew " + drawn.sparks + " sparklines, expected at least 5");
-    if (!drawn.mini) fail("m1mini ships no machine band in the demo and its band did not show a dash");
+    if (!drawn.mini) fail("m1mini ships no machine in the demo and its band did not say the room does not report it");
     if (drawn.width < 500 || drawn.width > 600) fail("the rooms panel is not about 560px wide: " + drawn.width);
 
     if (shots) {
@@ -10999,6 +10999,173 @@ async function tallPtySection(browser, base) {
   if (errors.length) fail("tallPty: the page threw: " + errors.join(" | "));
 }
 
+// u-034: the rooms dashboard's machine band and the all-rooms tile. Snapshots go through
+// onRoomStats in the wire shape. Checks the two sparklines and the figures, a gap for a null
+// sample, words and never a dash for a room with no machine or an empty one, cpu unavailable
+// against not yet sampled, stale_since, the all-rooms rows, and no overflow at 390x844.
+// ROOMS_MACHINE_SHOTS=<dir> saves the open menu at 1400x900.
+async function roomsMachineSection(browser, base) {
+  const skip = () => localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true }));
+  const shots = process.env.ROOMS_MACHINE_SHOTS || "";
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const p = await ctx.newPage();
+  const errors = [];
+  p.on("pageerror", e => errors.push(String(e)));
+  await p.addInitScript(skip);
+  try {
+    await p.goto(base + "/?demo=rooms", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof roomsDemoLive !== "undefined" && roomsDemoLive &&
+      roomsDemoTicks > 0 && !document.getElementById("rooms").hidden, null, { timeout: slow(15000) });
+    await p.evaluate(() => openRooms());
+    await p.waitForTimeout(2300);
+    await p.evaluate(() => clearInterval(roomsDemoTimer));
+    await p.waitForTimeout(900);
+    if (shots) {
+      fs.mkdirSync(shots, { recursive: true });
+      await p.screenshot({ path: path.join(shots, "u-034-after-1400.png") });
+    }
+    const feed = mode => p.evaluate(mode => {
+      const now = Date.now();
+      const iso = ms => new Date(ms).toISOString();
+      const ramp = (a, b) => Array.from({ length: 60 }, (_, i) => Math.round(a + (b - a) * i / 59));
+      const gappy = ramp(20, 60).map((v, i) => (i < 20 || (i > 30 && i < 34) ? null : v));
+      const up = s => ({ started_at: iso(now - s * 1000) });
+      const send = (room, machine, process) => onRoomStats({ v: 1, room, at: iso(now), process, machine });
+      if (mode === "full") {
+        send("sg3", { cpu_pct: 62, cpu_series_pct: gappy, mem_used_bytes: 21e9, mem_total_bytes: 32e9, mem_series_pct: ramp(50, 66) }, up(9999));
+        send("sg4", { cpu_pct: 30, cpu_series_pct: ramp(10, 30), mem_used_bytes: 55e9, mem_total_bytes: 64e9, mem_series_pct: ramp(70, 86) }, up(9999));
+        send("m1mini", { mem_used_bytes: 8e9, mem_total_bytes: 16e9, mem_series_pct: ramp(45, 50) }, up(9999));
+      } else if (mode === "none") {
+        for (const r of ["sg3", "sg4", "m1mini"]) send(r, undefined, up(9999));
+      } else if (mode === "empty") {
+        for (const r of ["sg3", "sg4"]) send(r, {}, up(9999));
+        send("m1mini", undefined, up(9999));
+      } else if (mode === "young") {
+        send("sg3", { mem_used_bytes: 8e9, mem_total_bytes: 16e9 }, up(5));
+        send("sg4", { cpu_pct: 30, cpu_series_pct: ramp(10, 30), mem_used_bytes: 55e9, mem_total_bytes: 64e9, mem_series_pct: ramp(70, 86), stale_since: iso(now - 600e3) }, up(9999));
+        send("m1mini", { mem_used_bytes: 8e9, mem_total_bytes: 16e9 }, up(9999));
+      }
+      const m = document.getElementById("rooms-menu");
+      const tile = n => m.querySelector(`.rtile[data-room="${n}"] .rd-band.machine`);
+      const all = m.querySelector(".rtile.all");
+      const rowsOf = t => [...t.querySelectorAll(".rd-rooms .rd-row")].map(r => r.textContent.replace(/\s+/g, " ").trim());
+      return {
+        hub: roomsHubBuild(),
+        machine: Object.fromEntries(["sg3", "sg4", "m1mini"].map(n => [n, {
+          text: tile(n).textContent.replace(/\s+/g, " ").trim(),
+          sparks: [...tile(n).querySelectorAll("svg.rd-spark")].map(s => s.getAttribute("class").replace("rd-spark ", "")),
+          polylines: [...tile(n).querySelectorAll("svg.rd-spark.cpu polyline")].length,
+          dash: !!tile(n).querySelector(".rd-note .rd-dash"),
+        }])),
+        allRows: rowsOf(all),
+        allDash: all.querySelector(".rd-rooms").textContent.includes("\u2014"),
+        allH: all.getBoundingClientRect().height,
+      };
+    }, mode);
+    const has = (label, ok, extra) => { if (!ok) fail("roomsMachine: " + label + (extra ? ": " + JSON.stringify(extra) : "")); };
+
+    // All five fields: two sparklines, the figures, a gap where the samples are null.
+    const full = await feed("full");
+    const g3 = full.machine.sg3;
+    has("sg3 did not draw a cpu and a mem sparkline", g3.sparks.join(",") === "cpu,mem", g3);
+    has("sg3 cpu and mem figures", /cpu 62%/.test(g3.text) && /mem 66%/.test(g3.text) && /21\/32 GB used/.test(g3.text), g3.text);
+    has("a null sample in the cpu series was not a gap (expected two runs)", g3.polylines === 2, g3);
+    const gapPoints = await p.evaluate(() => [...document.querySelectorAll('.rtile[data-room="sg3"] svg.rd-spark.cpu polyline')]
+      .map(l => l.getAttribute("points").split(" ").length));
+    has("the gap runs do not hold the samples they should", gapPoints[0] === 11 && gapPoints[1] === 26, gapPoints);
+    has("a plain null-free series is one polyline", await p.evaluate(() =>
+      document.querySelectorAll('.rtile[data-room="sg4"] svg.rd-spark.cpu polyline').length) === 1);
+    // macOS shape: memory, no CPU, up for a while: unavailable, in words, no dash.
+    const mini = full.machine.m1mini;
+    has("m1mini cpu was not said to be unavailable", /cpu: not available on this room/.test(mini.text) && /mem 50%/.test(mini.text) && /8\/16 GB used/.test(mini.text), mini.text);
+    has("m1mini drew a cpu sparkline", mini.sparks.join(",") === "mem", mini);
+    // All-rooms rows: busiest and tightest, from rooms that report. The hub build is unknown in
+    // this fixture only if roomsHubBuild is empty, so the rows are checked by content.
+    has("all-rooms busiest row", full.allRows.some(r => /busiest sg3 62%/.test(r)), full.allRows);
+    // The demo's rooms are not all on the hub's build, so the warning row is drawn and the memory
+    // line gives way to it: three rows and never four.
+    has("all-rooms build warning row", full.allRows.some(r => /1 not the hub's build/.test(r)), full.allRows);
+    has("all-rooms band grew past three rows", full.allRows.length === 3 && !full.allRows.some(r => /tightest/.test(r)), full.allRows);
+    has("all-rooms rows hold a dash", !full.allDash, full.allRows);
+    const onHub = await p.evaluate(() => {
+      const h = hubRooms.map(r => Object.assign({}, r, { version: roomsHubBuild() }));
+      const t = document.createElement("template");
+      t.innerHTML = allRoomsTileHTML(h, false).trim();
+      return [...t.content.querySelectorAll(".rd-rooms .rd-row")].map(r => r.textContent.replace(/\s+/g, " ").trim());
+    });
+    has("with every room on the hub's build the rows are live, busiest and tightest", onHub.length === 3 &&
+      /busiest sg3 62%/.test(onHub[1]) && /tightest sg4 86% mem/.test(onHub[2]), onHub);
+
+    // No machine at all: words, no dash, and the all-rooms tile drops its busiest and tightest rows.
+    const none = await feed("none");
+    for (const n of ["sg3", "sg4", "m1mini"]) {
+      has(n + " with no machine did not say the build does not report it", /cpu and memory: this room's build does not report them/.test(none.machine[n].text), none.machine[n].text);
+      has(n + " with no machine drew a dash or a sparkline", !none.machine[n].dash && !none.machine[n].sparks.length, none.machine[n]);
+    }
+    has("all-rooms drew busiest or tightest with no cpu or memory from any room", !none.allRows.some(r => /busiest|tightest/.test(r)), none.allRows);
+    has("all-rooms tile holds a dash with no machine numbers", !none.allDash, none.allRows);
+
+    // An empty machine object: waiting for the first reading.
+    const empty = await feed("empty");
+    has("an empty machine did not say it waits for the first reading", /waiting for the first reading/.test(empty.machine.sg3.text) && !empty.machine.sg3.dash, empty.machine.sg3);
+    has("a room with no machine beside an empty one lost its words", /does not report/.test(empty.machine.m1mini.text));
+
+    // Young room: cpu is still due. Stale sample: the time, and dimmed figures.
+    const young = await feed("young");
+    has("a room started seconds ago said cpu is unavailable", /cpu: waiting for the second reading/.test(young.machine.sg3.text), young.machine.sg3.text);
+    has("stale_since was not drawn as a time", /stale since \d\d:\d\d/.test(young.machine.sg4.text), young.machine.sg4.text);
+    has("stale figures are not dimmed", await p.evaluate(() =>
+      Number(getComputedStyle(document.querySelector('.rtile[data-room="sg4"] .rd-stale')).opacity) < 0.9));
+    has("a stale room was named busiest", !young.allRows.some(r => /busiest sg4/.test(r)), young.allRows);
+
+    // The hub build unknown: the build row is dropped and nothing draws a dash. Known: it is a number.
+    const hub = await p.evaluate(() => {
+      const all = document.querySelector("#rooms-menu .rtile.all .rd-rooms").textContent;
+      return { hub: roomsHubBuild(), row: /not the hub's build/.test(all), dash: all.includes("\u2014") };
+    });
+    has("the build row and the dash", hub.hub ? hub.row && !hub.dash : !hub.row && !hub.dash, hub);
+    has("hub build and the none-fixture rows", none.allRows.length === 2 && /live/.test(none.allRows[0]) && /not the hub's build/.test(none.allRows[1]), none.allRows);
+    const unknown = await p.evaluate(() => {
+      const was = window.roomsDemoLive;
+      roomsDemoLive = false;
+      try {
+        const h = allRoomsTileHTML(hubRooms, false);
+        return { hub: roomsHubBuild(), row: /not the hub's build/.test(h), dash: /rd-rooms[\s\S]*\u2014/.test(h) };
+      } finally { roomsDemoLive = was; }
+    });
+    has("with the hub build unknown the row was drawn or a dash showed", unknown.hub === "" && !unknown.row && !unknown.dash, unknown);
+
+    // The all-rooms tile is no taller with the rows than without them.
+    const tall = { full: full.allH, none: none.allH };
+    has("the all-rooms tile grew with the new rows", tall.full <= tall.none + 8, tall);
+
+    await feed("full");
+
+    // Phone: the tiles stack and nothing is wider than the window.
+    await p.setViewportSize({ width: 390, height: 844 });
+    await p.evaluate(() => { const m = document.getElementById("rooms-menu"); m.hidden = true; openRooms(); });
+    await feed("full");
+    const phone = await p.evaluate(() => {
+      const m = document.getElementById("rooms-menu");
+      const wide = [...m.querySelectorAll(".rtile *")].filter(e => e.getBoundingClientRect().right > 390.5)
+        .map(e => e.className && e.className.baseVal === undefined ? e.className : e.tagName).slice(0, 5);
+      return { right: m.getBoundingClientRect().right, sw: m.scrollWidth, cw: m.clientWidth, wide,
+        doc: document.documentElement.scrollWidth,
+        sparks: m.querySelectorAll('.rtile[data-room="sg3"] svg.rd-spark').length };
+    });
+    has("at 390x844 the rooms menu overflows", phone.right <= 390 && phone.sw <= phone.cw + 1 && !phone.wide.length && phone.doc <= 390 && phone.sparks >= 2, phone);
+    await feed("none");
+    const phone2 = await p.evaluate(() => {
+      const m = document.getElementById("rooms-menu");
+      return { sw: m.scrollWidth, cw: m.clientWidth, doc: document.documentElement.scrollWidth };
+    });
+    has("at 390x844 the words overflow the menu", phone2.sw <= phone2.cw + 1 && phone2.doc <= 390, phone2);
+    if (errors.length) fail("roomsMachine: the page threw: " + errors.join(" | "));
+  } finally {
+    await ctx.close();
+  }
+}
+
 async function main() {
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = "http://127.0.0.1:" + server.address().port;
@@ -11021,7 +11188,7 @@ async function main() {
       usageCacheReads: usageCacheReadsSection, roomsDash: roomsDashSection, phoneView: phoneViewSection, heldLine: heldLineSection, u016: u016Section, phoneHeader: phoneHeaderSection, phoneFocus: phoneFocusSection, phoneTermBar: phoneTermBarSection, phoneShare: phoneShareSection, phonePan: phonePanSection, phoneFollow: phoneFollowSection, phoneTap: phoneTapSection, phoneKeyboard: phoneKeyboardSection, phoneCompose: phoneComposeSection, mCompose: mComposeSection, mPerms: mPermsSection, usagePolish: usagePolishSection, usageLimits: usageLimitsSection, usageGroups: usageGroupsSection,
       eventDriven: eventDrivenSection, idleBudget: idleBudgetSection, pollsGone: pollsGoneSection,
       phoneListFit: phoneListFitSection, phoneNudge: phoneNudgeSection,
-      cacheChip: cacheChipSection, cacheLine: cacheLineSection, mHome: mHomeSection, mCard: mCardSection, mServe: mServeSection, phoneKeyLabel: phoneKeyLabelSection, phoneKeyLit: phoneKeyLitSection, shiftMenu: shiftMenuSection, notifyCommand: notifyCommandSection, presence: presenceSection, tallPty: tallPtySection };
+      cacheChip: cacheChipSection, cacheLine: cacheLineSection, mHome: mHomeSection, mCard: mCardSection, mServe: mServeSection, phoneKeyLabel: phoneKeyLabelSection, phoneKeyLit: phoneKeyLitSection, shiftMenu: shiftMenuSection, notifyCommand: notifyCommandSection, presence: presenceSection, tallPty: tallPtySection, roomsMachine: roomsMachineSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -12967,6 +13134,7 @@ async function main() {
     await eventDrivenSection(browser, base);
     await idleBudgetSection(browser, base);
     await pollsGoneSection(browser, base);
+    await roomsMachineSection(browser, base);
     await mHomeSection(browser);
     await mCardSection(browser);
     await mServeSection(browser);
