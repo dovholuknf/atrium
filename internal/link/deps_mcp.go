@@ -22,7 +22,8 @@ const depsToolDesc = "Work items that wait on other work, kept on the hub across
 	"met stays met.\n\n" +
 	"THERE IS NO CLEAR. A gate clears when the board sees the work land, or when a human clears it on " +
 	"the board. If a gate is wrong, ask the human.\n\n" +
-	"`atrium_launch` REFUSES a worker whose title starts with an item that has an open gate.\n\n" +
+	"`atrium_launch` REFUSES a worker whose title starts with an item that has an open gate: `<id>: ...`, " +
+	"or `<id> ...` for a numbered id such as `r-037`.\n\n" +
 	"action is one of:\n" +
 	"- `add {item, waits_on, why}`: item waits on each entry. A loop is refused, naming it. You are " +
 	"told once, by a say, when the item's last gate clears.\n" +

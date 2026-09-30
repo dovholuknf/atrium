@@ -464,12 +464,9 @@ func (p *Proxy) tellWaiters(ctx context.Context, d *deps) {
 		if err != nil || len(open) > 0 {
 			continue
 		}
-		all, err := d.store.Gates(k.repo, k.item, false)
-		if err != nil {
-			continue
-		}
+		// Only this round's gates: one met and told in an earlier round said so then.
 		var said []string
-		for _, g := range all {
+		for _, g := range byItem[k] {
 			if g.MetWhy != "" {
 				said = append(said, g.MetWhy)
 			}

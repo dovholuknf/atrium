@@ -108,15 +108,39 @@ var shaArg = regexp.MustCompile(`^[0-9a-fA-F]{4,40}$`)
 // ValidSHA is whether a `sha:` argument is a commit id, so nothing else reaches git.
 func ValidSHA(s string) bool { return shaArg.MatchString(s) }
 
-// ItemOfTitle is the item a launch is for: a worker's title starts `<id>:`. A title with no
-// colon counts only when the whole of it is an id. Empty when neither.
+// WaitsOnItem is the item a gate waits on, when it waits on one: an item target, or the
+// argument of `live:<item>`, which also clears only after that item lands. Empty for any
+// other condition. Every loop check reads its edges through this.
+func WaitsOnItem(kind, target string) string {
+	if kind == KindItem {
+		return target
+	}
+	if k, arg := Cond(target); k == "live" && ValidItem(arg) {
+		return arg
+	}
+	return ""
+}
+
+// numberedItem is an id with a number in it, `r-037` or `91`: what a title may start with
+// and be followed by a space. A bare word does not count, or `fix the reaper` would be
+// item `fix`.
+var numberedItem = regexp.MustCompile(`^(?:[A-Za-z]+-)?\d+[A-Za-z]?$`)
+
+// ItemOfTitle is the item a launch is for. A worker's title starts `<id>:`, or `<id> ` when
+// the id is a numbered one (`r-037 fix the reaper`). A title with neither counts only when
+// the whole of it is an id. Empty when none of these.
 func ItemOfTitle(title string) string {
 	title = strings.TrimSpace(title)
 	if i := strings.Index(title, ":"); i >= 0 {
-		title = strings.TrimSpace(title[:i])
+		if id := strings.TrimSpace(title[:i]); ValidItem(id) {
+			return id
+		}
 	}
 	if ValidItem(title) {
 		return title
+	}
+	if f := strings.Fields(title); len(f) > 1 && numberedItem.MatchString(f[0]) {
+		return f[0]
 	}
 	return ""
 }
