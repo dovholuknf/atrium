@@ -442,6 +442,8 @@ function switchView(name) {
   // enough to sit here.
   if (name === "terms") requestAnimationFrame(placeTabBridge);
   placeToasts();
+  // Which card this window is reading just changed if the terminals view came or went.
+  sayWhetherFocused();
   // Fetched on the way in, like history: a feed you go looking for, not one
   // worth polling while you are reading something else. It also refreshes on an
   // `audit` delta and on stream reconnect. See js/audit.js.

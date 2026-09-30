@@ -18,3 +18,9 @@ Pop a card out and focus that window. When the card finishes its turn there is n
 Click another window: the pop-out now rings. The board with that card's terminal showing behaves the same.
 Terminal output inside the 5 seconds delays the ring. Run
 `HEADLESS_ONLY=readyPopout node scripts/test-board-headless.js`.
+
+### @LETTER@4. Other windows stay quiet too
+
+Keep the board focused on a card's terminal with that card's pop-out, or a second board tab, open unfocused. When the
+card finishes its turn neither window toasts or plays, and both log it. Focus another app: the next wait rings. Run
+`HEADLESS_ONLY=readyTwoWindows node scripts/test-board-headless.js`.
