@@ -143,6 +143,16 @@ func (d *Daemon) reopenSaved() {
 	}
 	d.settle.expect(ids)
 
+	// ONE CONVERSATION, ONE CARD, OVER THE WHOLE LIST. Two cards on the list with
+	// one resume id would each find the other not yet running and both resume it.
+	// The first on the list takes it, and the rest start fresh (resumeHeld).
+	for _, t := range wanted {
+		if t.ResumeID != "" {
+			d.bootResumes.LoadOrStore(t.ResumeID, t.ID)
+		}
+	}
+	defer d.bootResumes.Clear()
+
 	log.Printf("[atrium] reopening %d terminal(s) that were open before the restart", len(wanted))
 	reopened := 0
 	for i, t := range wanted {
