@@ -714,3 +714,70 @@ func TestKeepaliveForksOnTheOneMillionVariant(t *testing.T) {
 		t.Fatalf("specs = %+v", f.specs)
 	}
 }
+
+func TestKeepaliveViewShowsLastAndNextRefresh(t *testing.T) {
+	f := newKAFix(t)
+	reply := f.now.Add(-30 * time.Minute)
+	f.reply(reply, replyOpt{})
+	v, _ := f.k.view(f.task.ID).(*keepaliveCardView)
+	if v.LastRefreshAt != nil {
+		t.Fatalf("last_refresh_at = %v before any refresh", v.LastRefreshAt)
+	}
+	wantNext := reply.Add(time.Hour - keepaliveMargin)
+	if v.NextRefreshAt == nil || !v.NextRefreshAt.Equal(wantNext) {
+		t.Fatalf("next_refresh_at = %v, want %v", v.NextRefreshAt, wantNext)
+	}
+	// One second before it the card is not due, at it the loop refreshes.
+	f.now = wantNext.Add(-time.Second)
+	f.tick()
+	if f.forks() != 0 {
+		t.Fatal("refreshed before next_refresh_at")
+	}
+	f.now = wantNext
+	f.tick()
+	if f.forks() != 1 {
+		t.Fatalf("forks = %d at next_refresh_at, want 1", f.forks())
+	}
+	v, _ = f.k.view(f.task.ID).(*keepaliveCardView)
+	if v.LastRefreshAt == nil || v.LastRefreshAt.Sub(wantNext) > time.Second {
+		t.Fatalf("last_refresh_at = %v after a refresh", v.LastRefreshAt)
+	}
+	if v.NextRefreshAt == nil || !v.NextRefreshAt.After(wantNext) {
+		t.Fatalf("next_refresh_at = %v, want a later time", v.NextRefreshAt)
+	}
+	// A new turn starts a new idle stretch: the old refresh does not count.
+	f.now = f.now.Add(time.Minute)
+	f.reply(f.now, replyOpt{})
+	v, _ = f.k.view(f.task.ID).(*keepaliveCardView)
+	if v.LastRefreshAt != nil {
+		t.Fatalf("last_refresh_at = %v in a new stretch", v.LastRefreshAt)
+	}
+}
+
+func TestKeepaliveNextRefreshOnlyWhenNotDue(t *testing.T) {
+	cases := map[string]func(f *kaFix){
+		"off": func(f *kaFix) {
+			f.reply(f.now.Add(-30*time.Minute), replyOpt{})
+			f.st.SetKeepaliveState(f.task.ID, store.KeepaliveOff)
+		},
+		"stopped": func(f *kaFix) {
+			f.reply(f.now.Add(-30*time.Minute), replyOpt{})
+			f.st.SetKeepaliveState(f.task.ID, store.KeepaliveMiss)
+		},
+		"cold":     func(f *kaFix) { f.reply(f.now.Add(-2*time.Hour), replyOpt{}) },
+		"under50k": func(f *kaFix) { f.reply(f.now.Add(-30*time.Minute), replyOpt{ctx: 40_000}) },
+		"not idle": func(f *kaFix) {
+			f.reply(f.now.Add(-30*time.Minute), replyOpt{})
+			f.st.SetStatus(f.task.ID, store.StatusRunning)
+		},
+		"inside margin": func(f *kaFix) { f.reply(f.now.Add(-56*time.Minute), replyOpt{}) },
+	}
+	for name, setup := range cases {
+		f := newKAFix(t)
+		setup(f)
+		v, _ := f.k.view(f.task.ID).(*keepaliveCardView)
+		if v == nil || v.NextRefreshAt != nil {
+			t.Fatalf("%s: view = %+v, want no next_refresh_at", name, v)
+		}
+	}
+}

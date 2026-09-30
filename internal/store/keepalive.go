@@ -250,6 +250,21 @@ func (s *Store) KeepaliveSpendSince(since time.Time) (float64, int, error) {
 	return cost, n, err
 }
 
+// KeepaliveTokensSince is how many refreshes reached the API after a moment,
+// and the tokens they moved (the four counts the ledger records), counted the
+// way KeepaliveSpendSince counts the week.
+func (s *Store) KeepaliveTokensSince(since time.Time) (int, int64, error) {
+	var (
+		n      int
+		tokens int64
+	)
+	err := s.guard(func() error {
+		return s.db.QueryRow(`SELECT COUNT(*), COALESCE(SUM(cache_read + cache_write + input + output), 0)
+			FROM keepalive_refresh WHERE at > ? AND cost > 0`, ts(since)).Scan(&n, &tokens)
+	})
+	return n, tokens, err
+}
+
 func scanKeepaliveCard(r rowScanner) (*KeepaliveCard, error) {
 	var (
 		c  KeepaliveCard
