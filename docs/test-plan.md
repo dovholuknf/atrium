@@ -7121,3 +7121,38 @@ others stay on the board. Archived cards keep their history, and no worktree or 
 **Expected:** the chip shows the capture step and waits. The capture prompt is typed only once the card is between
 turns, the handoff is written, and the cycle completes. It does not fail in seconds with "not updated by the capture
 turn".
+
+## FO. provision-room.ps1 -Remove and the stop URL
+
+Run on a disposable Windows machine only (claudevm), never on a room in use.
+
+### FO1. -Remove leaves nothing of room-git
+
+1. Provision the machine as a room, then run `provision-room.ps1 <target> -Name <room> -Remove`.
+2. On the machine check `~/git/github`, `~/.room-git` and `~/.atrium`. Here run `git remote`.
+
+**Expected:** the `room-git clone done` and `room-git remote done` lines appear, the folders are gone and `git remote`
+no longer lists `<room>`.
+
+### FO2. A clone with unpushed work is kept
+
+1. Provision, then on the machine commit on a new `claude/x` branch inside the clone that this machine does not have.
+2. Run `-Remove`, then `room-git.ps1 remove <room>`.
+
+**Expected:** a `room-git clone warn kept ...` line names the branch and prints `room-git.ps1 remove <room> -Force`.
+The clone and the git remote `<room>` are still there.
+
+### FO3. -Force takes it anyway
+
+1. After FO2, run the printed `remove <room> -Force` command.
+
+**Expected:** a warn line says what was lost, then the clone and the git remote are removed.
+
+### FO4. Stop follows the manifest's ports
+
+1. On a provisioned room, set `ports` in `~/.atrium/provision/manifest.json` to `[7791, 7797]` and run the room on
+   `--http 127.0.0.1:7791 --agent 127.0.0.1:7797`.
+2. Run `-Restart` without `-Yes`, then with `-Yes`.
+
+**Expected:** the plan says `atrium stop --url http://127.0.0.1:7791`, and with `-Yes` the room stops, both ports close
+and it starts again. With no `ports` in the manifest the URL is `http://127.0.0.1:7781`.
