@@ -3979,7 +3979,8 @@ async function pasteSpinnerSection(browser, base) {
       termSock.bufferedAmount = 0;
       sendPasteText("x");
       const got = { now: window.__shown };
-      setTimeout(() => termSock.onmessage({ data: "x" }), 5);
+      // After the frame the send waits for: output before the bytes left says nothing.
+      setTimeout(() => termSock.onmessage({ data: "x" }), 60);
       setTimeout(() => { got.flight = !!pasteFlight; done(got); }, 150);
     }));
     if (quick.now !== 1 || !quick.flight) {
@@ -12758,6 +12759,246 @@ async function u001AuditSection(browser, base) {
   if (errors.length) fail("u001Audit: the page threw: " + errors.join(" | "));
 }
 
+// ── the paste spinner: starts on the paste, stops on the room's word ──────
+// A page whose attach socket is a mock that records every frame it is sent, and
+// whether the spinner was up at that moment. `window.__sent` is the record.
+async function pasteMockPage(browser, base, errors) {
+  landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  landList = [LAND["land-live"]];
+  landPerms = [];
+  const ctx = await landContext(browser);
+  await ctx.addInitScript(() => {
+    const Real = window.WebSocket;
+    window.__sent = [];
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
+        onopen: null, onclose: null, onmessage: null, onerror: null,
+        send(d) {
+          const el = document.getElementById("t-pasting");
+          let m = null;
+          try { m = JSON.parse(d); } catch (e) {}
+          window.__sent.push({ id: m && m.id, len: d.length, up: !!(el && !el.hidden), at: performance.now() });
+        },
+        close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  });
+  const p = await ctx.newPage();
+  p.on("pageerror", e => errors.push(String(e)));
+  await p.goto(base, { waitUntil: "domcontentloaded" });
+  await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+  await p.evaluate(() => attachTask("land-live"));
+  await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live",
+    null, { timeout: slow(10000) });
+  await p.waitForTimeout(300);
+  return { ctx, p };
+}
+
+// Every way a paste can arrive raises the box before the frame leaves, at 50KB
+// and at 1MB. The record is taken inside the page, at the moment of the send.
+async function pasteStartSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  const errors = [];
+  const { ctx, p } = await pasteMockPage(browser, base, errors);
+  try {
+    for (const size of [50000, 1000000]) {
+      for (const how of ["paste event", "right click", "paste box", "direct"]) {
+        const got = await p.evaluate(async ([how, size]) => {
+          const text = "x".repeat(size);
+          const vis = () => { const el = document.getElementById("t-pasting"); return !!(el && !el.hidden); };
+          pasteEnd();
+          window.__sent.length = 0;
+          let during = false;
+          if (how === "paste event") {
+            const dt = new DataTransfer();
+            dt.setData("text/plain", text);
+            document.getElementById("t-screen").dispatchEvent(
+              new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
+            during = vis();
+          } else if (how === "right click") {
+            Object.defineProperty(navigator, "clipboard", { configurable: true, value: {
+              readText: async () => text, read: async () => [] } });
+            document.getElementById("t-screen").dispatchEvent(
+              new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2 }));
+            during = vis();
+          } else if (how === "paste box") {
+            openPasteBox("");
+            document.getElementById("t-paste-in").value = text;
+            sendPasteBox();
+            during = vis();
+          } else {
+            sendPasteText(text);
+            during = vis();
+          }
+          const deadline = performance.now() + 1500;
+          while (!window.__sent.length && performance.now() < deadline) await new Promise(r => setTimeout(r, 10));
+          return { during, sent: window.__sent.slice() };
+        }, [how, size]);
+        const tag = `pasteStart ${how} ${size}: `;
+        if (!got.during) fail(tag + "the box was not up when the gesture returned: " + JSON.stringify(got));
+        const s = got.sent.find(x => x.len > size);
+        if (!s) fail(tag + "no paste frame left: " + JSON.stringify(got));
+        else if (!s.up) fail(tag + "the box was not up at the send: " + JSON.stringify(got));
+        else if (!s.id && how !== "right click") fail(tag + "the frame carried no id: " + JSON.stringify(got));
+        await p.evaluate(() => pasteEnd());
+      }
+    }
+    const typed = await p.evaluate(() => {
+      window.__sent.length = 0;
+      term.input("a", true);
+      return window.__sent.map(x => x.id);
+    });
+    if (typed.some(Boolean)) fail("pasteStart: typing carried a paste id: " + JSON.stringify(typed));
+  } finally {
+    await ctx.close();
+  }
+  if (errors.length) fail("pasteStart: the page threw: " + errors.join(" | "));
+  landList = []; landPerms = [];
+  tasksMode = was;
+}
+
+// A socket that answers: the box ends on the id it sent, not before, and two
+// pastes end in the order they left.
+async function pasteDoneSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  const errors = [];
+  const { ctx, p } = await pasteMockPage(browser, base, errors);
+  try {
+    const got = await p.evaluate(async () => {
+      const vis = () => { const el = document.getElementById("t-pasting"); return !!(el && !el.hidden); };
+      const wait = ms => new Promise(r => setTimeout(r, ms));
+      const idOf = i => window.__sent.filter(x => x.id)[i].id;
+      const done = id => termSock.onmessage({ data: JSON.stringify({ t: "in-done", id }) });
+      const out = {};
+      // First paste: answer it, so the socket is known to answer.
+      sendPasteText("one");
+      await wait(100);
+      done(idOf(0));
+      await wait(100);
+      out.floor = vis();
+      await wait(450);
+      out.first = vis();
+      // Second: output past the hold and a long quiet must not end it.
+      sendPasteText("two");
+      await wait(100);
+      const id1 = idOf(1);
+      await wait(500);
+      termSock.onmessage({ data: "echo" });
+      await wait(1900);
+      out.quiet = vis();
+      done("not-the-id");
+      await wait(80);
+      out.wrong = vis();
+      done(id1);
+      await wait(120);
+      out.right = vis();
+      // Two in a row: the first word leaves the second up.
+      sendPasteText("three");
+      sendPasteText("four");
+      await wait(150);
+      const ids = window.__sent.filter(x => x.id).map(x => x.id);
+      out.ids = ids.slice(2);
+      await wait(400);
+      done(ids[2]);
+      await wait(120);
+      out.afterThree = vis();
+      done(ids[3]);
+      await wait(120);
+      out.afterFour = vis();
+      return out;
+    });
+    if (got.floor !== true) fail("pasteDone: the word ended the box inside its floor: " + JSON.stringify(got));
+    if (got.first !== false) fail("pasteDone: the word did not end the box: " + JSON.stringify(got));
+    if (got.quiet !== true) fail("pasteDone: output and quiet ended an acknowledged paste: " + JSON.stringify(got));
+    if (got.wrong !== true) fail("pasteDone: another paste's id ended it: " + JSON.stringify(got));
+    if (got.right !== false) fail("pasteDone: its own id did not end it: " + JSON.stringify(got));
+    if (got.ids.length !== 2 || got.ids[0] === got.ids[1]) fail("pasteDone: two pastes did not get two ids: " + JSON.stringify(got));
+    if (got.afterThree !== true) fail("pasteDone: the first of two words ended the second paste: " + JSON.stringify(got));
+    if (got.afterFour !== false) fail("pasteDone: the second word did not end it: " + JSON.stringify(got));
+  } finally {
+    await ctx.close();
+  }
+  if (errors.length) fail("pasteDone: the page threw: " + errors.join(" | "));
+  landList = []; landPerms = [];
+  tasksMode = was;
+}
+
+// A socket that never answers: the guess still ends the box, and the cap holds.
+async function pasteOldRoomSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  const errors = [];
+  const { ctx, p } = await pasteMockPage(browser, base, errors);
+  try {
+    const got = await p.evaluate(async () => {
+      const vis = () => { const el = document.getElementById("t-pasting"); return !!(el && !el.hidden); };
+      const wait = ms => new Promise(r => setTimeout(r, ms));
+      const out = {};
+      sendPasteText("one");
+      await wait(100);
+      out.up = vis();
+      await wait(450);
+      termSock.onmessage({ data: "echo" });
+      await wait(50);
+      out.guessed = vis();
+      // No output at all: only the cap ends it. Time is moved, not waited for.
+      sendPasteText("two");
+      await wait(100);
+      out.upAgain = vis();
+      const real = Date.now;
+      Date.now = () => real() + 21000;
+      await wait(150);
+      Date.now = real;
+      out.capped = vis();
+      return out;
+    });
+    if (!got.up || !got.upAgain) fail("pasteOldRoom: the box did not come up: " + JSON.stringify(got));
+    if (got.guessed) fail("pasteOldRoom: output past the hold did not end it on a socket that never answers: " + JSON.stringify(got));
+    if (got.capped) fail("pasteOldRoom: the cap did not end a paste that got no output: " + JSON.stringify(got));
+  } finally {
+    await ctx.close();
+  }
+  if (errors.length) fail("pasteOldRoom: the page threw: " + errors.join(" | "));
+  landList = []; landPerms = [];
+  tasksMode = was;
+}
+
+// A socket that closes: a failed write sends no word, and the box goes.
+async function pasteCloseSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  const errors = [];
+  const { ctx, p } = await pasteMockPage(browser, base, errors);
+  try {
+    const got = await p.evaluate(async () => {
+      const vis = () => { const el = document.getElementById("t-pasting"); return !!(el && !el.hidden); };
+      const wait = ms => new Promise(r => setTimeout(r, ms));
+      const out = {};
+      sendPasteText("one");
+      await wait(100);
+      out.up = vis();
+      const sock = termSock;
+      sock.readyState = 3;
+      sock.onclose({ code: 1006, reason: "" });
+      await wait(20);
+      out.closed = vis();
+      return out;
+    });
+    if (!got.up) fail("pasteClose: the box did not come up: " + JSON.stringify(got));
+    if (got.closed) fail("pasteClose: a closed socket left the box up: " + JSON.stringify(got));
+  } finally {
+    await ctx.close();
+  }
+  if (errors.length) fail("pasteClose: the page threw: " + errors.join(" | "));
+  landList = []; landPerms = [];
+  tasksMode = was;
+}
+
 async function main() {
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = "http://127.0.0.1:" + server.address().port;
@@ -12790,7 +13031,8 @@ async function main() {
       phoneKeyLabel: phoneKeyLabelSection, phoneKeyLit: phoneKeyLitSection,
       notifyCommand: notifyCommandSection, presence: presenceSection, shiftMenu: shiftMenuSection, tallPty: tallPtySection,
       cacheChip: cacheChipSection, cacheLine: cacheLineSection, roomsMachine: roomsMachineSection,
-      u001Audit: u001AuditSection };
+      u001Audit: u001AuditSection,
+      pasteStart: pasteStartSection, pasteDone: pasteDoneSection, pasteOldRoom: pasteOldRoomSection, pasteClose: pasteCloseSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -14806,6 +15048,11 @@ async function main() {
     await composePasteSection(browser, base);
     await mComposeImagesSection(browser);
     await usageTabSection(browser, base);
+    // ── the paste spinner stops on the room's word ──
+    await pasteStartSection(browser, base);
+    await pasteDoneSection(browser, base);
+    await pasteOldRoomSection(browser, base);
+    await pasteCloseSection(browser, base);
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e));
     if (process.env.DEBUG_HEADLESS) {
