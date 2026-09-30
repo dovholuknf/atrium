@@ -164,14 +164,15 @@ func (d *Daemon) onSession(in SessionEvent) error {
 	}
 	bound := task != nil
 	if bound {
-		// A start that did not come from the card's own runner is a `claude`
+		// A report that did not come from the card's own runner is a `claude`
 		// nested in its shell, carrying the inherited task id. It is dropped
-		// whole: taking its pid or its conversation would hand the parent
-		// somebody else's session.
-		starting := in.Event != "join" && in.Event != "leave" && in.Event != "compact" && in.Event != "end"
-		if starting && !d.ownsSession(task, in.PID) {
-			log.Printf("[atrium] dropped a session start for %s from pid %d, which is not its runner "+
-				"(a nested session?), resume %s", task.ID, in.PID, in.Resume)
+		// whole, whatever it says: a nested end would set the parent done, a
+		// nested compact would move it, and taking a pid or a conversation
+		// would hand the parent somebody else's session. An operator's own
+		// join or leave carries no pid and no task id, so it is unaffected.
+		if !d.ownsSession(task, in.PID) {
+			log.Printf("[atrium] dropped a session %s for %s from pid %d, which is not its runner "+
+				"(a nested session?), resume %s", orWord(in.Event, "start"), task.ID, in.PID, in.Resume)
 			return nil
 		}
 		// A name the hook guessed from its directory says nothing about which

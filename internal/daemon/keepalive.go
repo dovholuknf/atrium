@@ -490,6 +490,11 @@ type keepaliveCardView struct {
 	Budget    float64 `json:"-"`
 	// WarmUntil is when the card's cache expires, when atrium knows.
 	WarmUntil *time.Time `json:"warm_until,omitempty"`
+	// LastRefreshAt is the last refresh of the current idle stretch, absent when
+	// there was none. NextRefreshAt is when the loop will next refresh the card,
+	// sent only while decide() says "not due".
+	LastRefreshAt *time.Time `json:"last_refresh_at,omitempty"`
+	NextRefreshAt *time.Time `json:"next_refresh_at,omitempty"`
 }
 
 // keepalive holds the loop's collaborators, so a test can run a tick with a fake
@@ -513,6 +518,11 @@ type keepalive struct {
 	record func(*store.KeepaliveRefresh) error
 	// spent saves one refresh's row in the card's usage record. See usage.go.
 	spent func(*store.SessionUsage) error
+	// holding says a new-context cycle is under way on the card, and session is the
+	// session its runner last started, which moves on at a `/clear` while the resume
+	// id lags. Both nil in a test that has no daemon.
+	holding func(taskID string) bool
+	session func(t *store.Task) string
 
 	mu sync.Mutex
 	// lastMissCard is the card of the room's most recent attempt when that
@@ -606,7 +616,7 @@ type verdict struct {
 // reply, because a refresh made before a hand re-enable still refreshed the
 // cache.
 func (k *keepalive) stretchState(taskID string, card *store.KeepaliveCard, r *lastReply) (
-	anchor time.Time, rows []*store.KeepaliveRefresh, spent float64, count, missed int, expiry time.Time) {
+	anchor time.Time, rows []*store.KeepaliveRefresh, spent float64, count, missed int, expiry time.Time, last time.Time) {
 	anchor = r.At
 	// Only a switch turned ON moves the anchor. A stop is stamped too, and the
 	// stopped card's tooltip wants the spend that led to the stop.
@@ -616,6 +626,9 @@ func (k *keepalive) stretchState(taskID string, card *store.KeepaliveCard, r *la
 	all, _ := k.st.KeepaliveRefreshesSince(taskID, r.At)
 	warm := r.At
 	for _, row := range all {
+		if row.At.After(last) {
+			last = row.At
+		}
 		if row.Outcome == outcomeWarmed && row.At.After(warm) {
 			warm = row.At
 		}
@@ -631,7 +644,23 @@ func (k *keepalive) stretchState(taskID string, card *store.KeepaliveCard, r *la
 			missed++
 		}
 	}
-	return anchor, rows, spent, count, missed, warm.Add(r.TTL)
+	return anchor, rows, spent, count, missed, warm.Add(r.TTL), last
+}
+
+// followSession is the card with its resume id moved to the session its runner last
+// started. After a new context the cache worth keeping warm is the new session's, and
+// the stored id names the old one until the next Stop.
+func (k *keepalive) followSession(t *store.Task) *store.Task {
+	if k.session == nil {
+		return t
+	}
+	s := k.session(t)
+	if s == "" || s == t.ResumeID {
+		return t
+	}
+	cp := *t
+	cp.ResumeID = s
+	return &cp
 }
 
 // decide applies the design's seven rules to one card. It reads, and writes
@@ -640,6 +669,10 @@ func (k *keepalive) decide(t *store.Task, card *store.KeepaliveCard) verdict {
 	skip := func(why string) verdict { return verdict{act: "skip", why: why} }
 	if card == nil || card.State != store.KeepaliveOn {
 		return skip("")
+	}
+	// Its context is about to be cleared, and after it the cache is a new one.
+	if k.holding != nil && k.holding(t.ID) {
+		return skip("new context running")
 	}
 	h, err := k.st.Harness(t.Runner)
 	if err != nil || !isClaude(h) {
@@ -683,12 +716,12 @@ func (k *keepalive) decide(t *store.Task, card *store.KeepaliveCard) verdict {
 	if localHasHooks(t.Worktree) {
 		return skip("local hooks")
 	}
-	anchor, rows, spent, count, _, expiry := k.stretchState(t.ID, card, r)
+	anchor, rows, spent, count, _, expiry, _ := k.stretchState(t.ID, card, r)
 	now := k.now()
 	if !now.Before(expiry) {
 		return skip("cache already cold")
 	}
-	if expiry.Sub(now) > keepaliveMargin {
+	if now.Before(refreshDueAt(expiry)) {
 		return verdict{act: "skip", why: "not due", expiry: expiry, spent: spent, count: count, reply: r,
 			price: price, budget: budgetFor(r.Context, price)}
 	}
@@ -702,6 +735,10 @@ func (k *keepalive) decide(t *store.Task, card *store.KeepaliveCard) verdict {
 	}
 	return v
 }
+
+// refreshDueAt is when a card whose cache expires at expiry becomes due for a
+// refresh. decide() and the card view both read it, so they cannot drift.
+func refreshDueAt(expiry time.Time) time.Time { return expiry.Add(-keepaliveMargin) }
 
 // budgetFor is the stop rule's cap: a fraction of one full 1h rehydration.
 func budgetFor(ctx int64, p keepalivePrice) float64 {
@@ -739,7 +776,7 @@ func (k *keepalive) forkEnv(h *store.Harness, t *store.Task) ([]string, error) {
 	}
 	extra := map[string]string{"ATRIUM_PERM_GATE": "off"}
 	// The memory section of the system prompt is in the cache key.
-	if lean, _, _ := leanOptions(LaunchRequest{}, t); lean {
+	if lean, _, _ := leanOptions(LaunchRequest{}, t, ""); lean {
 		leanEnv(extra)
 	}
 	if _, set := env[keepaliveTTLVar]; !set {
@@ -789,13 +826,14 @@ func keepFlags(args []string) []string {
 // depends on. It is built by the code a restart uses: the harness's resume args,
 // the card's stored extra args, and for a lean card the lean set. Model and effort
 // are left to the fork, which names its own.
-func forkCardArgs(h *store.Harness, t *store.Task) ([]string, error) {
+func forkCardArgs(st *store.Store, h *store.Harness, t *store.Task) ([]string, error) {
 	args, _, err := runnerArgsWith(h, t.ResumeID, "", launchOptions{Args: t.LaunchArgs})
 	if err != nil {
 		return nil, err
 	}
-	if lean, mcp, kit := leanOptions(LaunchRequest{}, t); lean {
-		if args, err = leanArgs(args, readUserSettings(), "", mcp, kit, os.ReadFile); err != nil {
+	gateway := st.LeanWorkerGateway()
+	if lean, mcp, kit := leanOptions(LaunchRequest{}, t, gateway); lean {
+		if args, err = leanArgs(args, readUserSettings(), "", mcp, kit, gateway, os.ReadFile); err != nil {
 			return nil, err
 		}
 	}
@@ -832,6 +870,7 @@ func (k *keepalive) tick(ctx context.Context) {
 		if err != nil || t == nil {
 			continue
 		}
+		t = k.followSession(t)
 		card = k.clearOnRealTurn(t, card)
 		v := k.decide(t, card)
 		k.mu.Lock()
@@ -907,7 +946,7 @@ func (k *keepalive) refresh(ctx context.Context, t *store.Task, v verdict) {
 		effort, err = forkEffortArgs(v.h, t)
 	}
 	if err == nil {
-		carried, err = forkCardArgs(v.h, t)
+		carried, err = forkCardArgs(k.st, v.h, t)
 	}
 	if err != nil {
 		log.Printf("[atrium] keep-alive: not refreshing %s: %v", t.ID, err)
@@ -1056,8 +1095,18 @@ func (k *keepalive) view(taskID string) any {
 	if err != nil {
 		return out
 	}
-	_, _, spent, count, missed, expiry := k.stretchState(taskID, card, r)
+	_, _, spent, count, missed, expiry, last := k.stretchState(taskID, card, r)
 	out.Spent, out.Refreshes, out.Missed = spent, count, missed
+	if !last.IsZero() {
+		out.LastRefreshAt = &last
+	}
+	// decide() re-reads the transcript and the stretch: one more file read and
+	// one indexed query per view. The view is built per board fetch, not per
+	// event.
+	if v := k.decide(t, card); v.act == "skip" && v.why == "not due" {
+		next := refreshDueAt(v.expiry)
+		out.NextRefreshAt = &next
+	}
 	if p, ok := keepalivePriceFor(r.Model); ok {
 		out.Budget = budgetFor(r.Context, p)
 	}

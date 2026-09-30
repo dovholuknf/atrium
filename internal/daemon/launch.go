@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/api"
+	"github.com/dovholuknf/atrium/internal/runnersetup"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -949,7 +950,8 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 			return nil, fmt.Errorf("lean_agents and lean_skills keep them on a lean launch, and this one says lean: false")
 		}
 	}
-	lean, leanMCP, kit := leanOptions(req, task)
+	gateway := d.st.LeanWorkerGateway()
+	lean, leanMCP, kit := leanOptions(req, task, gateway)
 	if lean && !isClaude(h) {
 		return nil, fmt.Errorf("%s cannot start lean. lean is a claude launch option", h.Label)
 	}
@@ -963,7 +965,7 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 		if agent {
 			stop = stopHookCommand()
 		}
-		return leanArgs(a, readUserSettings(), stop, leanMCP, kit, os.ReadFile)
+		return leanArgs(a, readUserSettings(), stop, leanMCP, kit, gateway, os.ReadFile)
 	}
 	if args, err = finishArgs(args); err != nil {
 		return nil, err
@@ -999,7 +1001,10 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 	onto := task != nil
 	claimed := task != nil && task.WireName == ""
 	if agentName == "" {
-		agentName = d.launchedName(req.Title, cwd)
+		var err error
+		if agentName, err = d.launchedName(req.Title, cwd); err != nil {
+			return nil, err
+		}
 	}
 	switch {
 	case task == nil:
@@ -1371,7 +1376,7 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 // rules (see store/tenant.go). A dead card's name is free to take back:
 // relaunching into the same worktree should land on the same name and the same
 // card, which is the point of a stable, title-derived name.
-func (d *Daemon) launchedName(title, cwd string) string {
+func (d *Daemon) launchedName(title, cwd string) (string, error) {
 	return launchedName(title, cwd, d.wireNameTaken())
 }
 
@@ -1379,21 +1384,34 @@ func (d *Daemon) launchedName(title, cwd string) string {
 // it. The store qualifies the name, because the argument is the unqualified name a
 // launch is about to hand out, while a stored wire name carries this atrium's
 // tenant prefix.
-func (d *Daemon) wireNameTaken() func(string) bool { return d.st.WireNameHeld }
+func (d *Daemon) wireNameTaken() func(string) (bool, error) { return d.st.WireNameHeld }
+
+// maxNameSuffix bounds the search for a free name. A store that answers "held"
+// to everything must fail the launch, not spin holding the launch path.
+const maxNameSuffix = 1000
 
 // launchedName is the testable core of the method above: base from the title
 // when there is one, otherwise the directory leaf, then a numeric suffix until
-// no card holds it.
-func launchedName(title, cwd string, taken func(string) bool) string {
+// no card holds it. A store error fails the launch before any card exists.
+func launchedName(title, cwd string, taken func(string) (bool, error)) (string, error) {
 	base := nameSlug(title)
 	if base == "" {
 		base = filepath.Base(cwd)
 	}
 	name := base
-	for n := 2; taken(name); n++ {
+	for n := 2; ; n++ {
+		held, err := taken(name)
+		if err != nil {
+			return "", fmt.Errorf("checking wire name %q: %w", name, err)
+		}
+		if !held {
+			return name, nil
+		}
+		if n > maxNameSuffix {
+			return "", fmt.Errorf("no free wire name for %q after %d suffixes", base, maxNameSuffix)
+		}
 		name = fmt.Sprintf("%s-%d", base, n)
 	}
-	return name
 }
 
 // nameSlug reduces a launch title to something usable as a wire name: lower
@@ -1462,37 +1480,8 @@ func firstLine(s string) string {
 }
 
 // inheritedTaint names environment variables that must not reach a launched
-// runner.
-//
-// The daemon is often started from inside a claude session, so its environment
-// carries that session's markers. Passing them on makes the new session think
-// it is a child of the old one, which among other things silently turns off
-// transcript saving. A launched runner is a top level session and has to start
-// with a clean slate.
-func inheritedTaint(key string) bool {
-	upper := strings.ToUpper(key)
-	switch {
-	case strings.HasPrefix(upper, "CLAUDE_CODE_"):
-		return true
-	case strings.HasPrefix(upper, "CLAUDECODE"):
-		return true
-	case upper == "ATRIUM_AGENT_NAME" || upper == "ATRIUM_TASK_ID" ||
-		upper == "ATRIUM_RUNNER" || upper == "ATRIUM_ROOM":
-		// Replaced below with this launch's own values. ATRIUM_ROOM is here too
-		// so a daemon started from inside a session cannot leak that session's
-		// room to the ones it launches: a child gets THIS daemon's room or none.
-		return true
-	case strings.HasPrefix(upper, "ATRIUM_DEBUG_"):
-		// Diagnostics for THIS process. The live scripts turn on
-		// ATRIUM_DEBUG_INPUTLAG for the room, and a runner that inherited it
-		// logged lag from every atrium binary it ran and failed `go test` in
-		// internal/link. The whole prefix, because every switch under it is a
-		// debug readout for the process it was set on. A runner that wants one
-		// names it in its harness env, which is applied after this filter.
-		return true
-	}
-	return false
-}
+// runner. The list lives in runnersetup so the setup checks read the same one.
+func inheritedTaint(key string) bool { return runnersetup.InheritedTaint(key) }
 
 // permGateDefault is the ATRIUM_PERM_GATE value a launch supplies, and whether
 // to supply one at all.

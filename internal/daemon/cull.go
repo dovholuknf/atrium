@@ -55,6 +55,9 @@ import (
 // launcher puts it on, and only a card carrying it can be culled.
 const SubagentTag = "atrium:subagent"
 
+// errCullNewContext is the refusal while a new context is running on the worker.
+var errCullNewContext = errors.New("a new context is running on it, try again")
+
 // DefaultCullInto is the branch a worker's branch has to be merged into.
 const DefaultCullInto = "claude/main"
 
@@ -100,6 +103,11 @@ func (d *Daemon) CullProved(taskID, into, tip string) (*CullResult, error) {
 	if !d.isWorker(t) {
 		return nil, fmt.Errorf("%s is not tagged %s, so it is not a worker atrium culls. "+
 			"exit it with atrium_exit if it should go", t.DisplayTitle(), SubagentTag)
+	}
+	// A new context in progress is not culled under: the run would fail on a closed
+	// terminal after the capture, and nothing would be cleared. Try again after it.
+	if d.nctx.holding(taskID) {
+		return nil, fmt.Errorf("%s was not culled: %w", t.DisplayTitle(), errCullNewContext)
 	}
 	if strings.TrimSpace(t.Worktree) == "" {
 		return nil, fmt.Errorf("%s has no directory recorded, so atrium cannot check its "+

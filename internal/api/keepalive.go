@@ -51,6 +51,12 @@ func keepaliveSettingsView(st *store.Store, out map[string]any) {
 	if _, n, err := st.KeepaliveSpendSince(time.Now().UTC().Add(-7 * 24 * time.Hour)); err == nil {
 		out["cache_keepalive_week_refreshes"] = n
 	}
+	now := time.Now()
+	midnight := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	if n, tok, err := st.KeepaliveTokensSince(midnight); err == nil {
+		out["cache_keepalive_today_refreshes"] = n
+		out["cache_keepalive_today_tokens"] = tok
+	}
 }
 
 // TranscriptPath is where a Claude session's transcript lives, or "" when it is

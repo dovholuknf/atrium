@@ -222,10 +222,13 @@ func turnEnded(hubURL, event, name, runner string) string {
 	// Only the questions leave this process, never the message they came from.
 	questions, block, known := turnQuestions(in)
 	body, err := json.Marshal(map[string]any{
-		"agent":           agent,
-		"name_source":     nameSource,
-		"task_id":         os.Getenv("ATRIUM_TASK_ID"),
-		"runner":          whichRunner(runner),
+		"agent":       agent,
+		"name_source": nameSource,
+		"task_id":     os.Getenv("ATRIUM_TASK_ID"),
+		"runner":      whichRunner(runner),
+		// The runner's own pid, so the daemon can tell a nested `claude`'s Stop
+		// from the card's. Zero when it cannot be found, which is believed.
+		"pid":             runnerPID(),
 		"cwd":             filepath.ToSlash(cwd),
 		"resume":          in.SessionID,
 		"resumable":       hasTranscript(in.TranscriptPath),

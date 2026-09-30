@@ -181,6 +181,12 @@ type newContext struct {
 	// gen tells a run whether it is still the card's. A dismiss or a fresh run
 	// bumps it, and the goroutine it replaced stops without saying anything.
 	gen uint64
+	// auto marks a run the daemon started at the context threshold, and tokens and
+	// threshold are what it started on. human is a card no agent launched, and
+	// wakeOnly a retry of the wake alone. See autocontext.go.
+	auto              bool
+	human, wakeOnly   bool
+	tokens, threshold int64
 }
 
 type newContexts struct {
@@ -201,13 +207,28 @@ func (n *newContexts) stopAll() { n.stopOnce.Do(func() { close(n.stop) }) }
 // begin claims a card for a run and returns its generation, or false when one is
 // already going. A failed chip is not going: running the action again replaces it.
 func (n *newContexts) begin(taskID, file, conv string) (uint64, bool) {
+	return n.claim(taskID, &newContext{step: NewContextCapture, file: file, conv: conv})
+}
+
+// beginAuto is begin for a run the daemon starts. A wake-only run starts on the wake step.
+func (n *newContexts) beginAuto(taskID, file, conv string, tokens, threshold int64, human, wakeOnly bool) (uint64, bool) {
+	c := &newContext{step: NewContextCapture, file: file, conv: conv, auto: true, human: human, wakeOnly: wakeOnly,
+		tokens: tokens, threshold: threshold}
+	if wakeOnly {
+		c.step = NewContextWake
+	}
+	return n.claim(taskID, c)
+}
+
+func (n *newContexts) claim(taskID string, c *newContext) (uint64, bool) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	if cur := n.by[taskID]; cur != nil && cur.step != NewContextFailed {
 		return 0, false
 	}
 	n.gens++
-	n.by[taskID] = &newContext{step: NewContextCapture, file: file, conv: conv, since: time.Now(), gen: n.gens}
+	c.since, c.gen = time.Now(), n.gens
+	n.by[taskID] = c
 	return n.gens, true
 }
 
@@ -346,6 +367,9 @@ func newContextView(c *newContext) map[string]any {
 		label = "new context failed"
 	}
 	out := map[string]any{"step": c.step, "n": n, "of": 3, "label": label, "file": c.file, "since": c.since}
+	if c.auto {
+		out["auto"], out["tokens"], out["threshold"] = true, c.tokens, c.threshold
+	}
 	if c.reason != "" {
 		out["reason"] = c.reason
 	}
@@ -445,64 +469,97 @@ var (
 // and types nothing further.
 func (d *Daemon) runNewContext(taskID string, gen uint64) {
 	// Recorded at begin, so an alias change mid-cycle cannot split the three uses.
-	file := ""
+	file, auto, wakeOnly := "", false, false
 	if cur := d.nctx.get(taskID); cur != nil {
-		file = cur.file
+		file, auto, wakeOnly = cur.file, cur.auto, cur.wakeOnly
 	}
 	fail := func(step string, err error) {
 		if errors.Is(err, errNewContextGone) {
 			return
 		}
 		reason := step + ": " + err.Error()
+		by, extra, giveUp := newContextBy, map[string]any(nil), false
+		if auto {
+			// What an automatic failure leads to is decided before the chip is written,
+			// since the chip says whether it will be tried again.
+			if !d.nctx.mine(taskID, gen) {
+				return
+			}
+			cur := d.nctx.get(taskID)
+			var attempt int
+			reason, attempt, giveUp = d.autoFailing(taskID, gen, cur.step, step, reason)
+			by, extra = autoContextBy, map[string]any{"attempt": attempt}
+		}
 		if d.nctx.fail(taskID, gen, reason) {
 			log.Printf("[atrium] new context on %s stopped, %s", taskID, reason)
 			// The chip goes when the clear is proven, and the reason stays in the card's
 			// history after it.
-			if err := d.st.AppendEvent(taskID, store.EventNotified, map[string]any{
-				"by": newContextBy, "failed": reason,
-			}); err != nil {
+			ev := map[string]any{"by": by, "failed": reason}
+			for k, v := range extra {
+				ev[k] = v
+			}
+			if err := d.st.AppendEvent(taskID, store.EventNotified, ev); err != nil {
 				log.Printf("[atrium] could not record the new context failure on %s: %v", taskID, err)
+			}
+			if auto {
+				d.autoIdleRelease(taskID, false)
+				if giveUp {
+					d.autoGaveUpNotice(taskID, reason)
+				}
 			}
 			d.publishTask(taskID)
 			d.releaseHeld(taskID)
 		}
 	}
 
-	// 1 and 2. The capture prompt, the turn it starts, and the file it wrote. Not
-	// cleared over a handoff that was never written: the clear cannot be taken
-	// back, and the capture is the only thing that makes it safe.
-	if step, err := d.ncCapture(taskID, gen, file); err != nil {
-		fail(step, err)
-		return
+	// An automatic run types nothing until the line is empty and the launcher has been
+	// told. A card that never opens is left alone, with no chip.
+	if auto && !wakeOnly {
+		if err := d.autoPrepare(taskID, gen); err != nil {
+			if !errors.Is(err, errNewContextGone) {
+				d.autoDeferred(taskID, gen)
+			}
+			return
+		}
 	}
 
-	// 3. `/clear`, then the new session's SessionStart.
-	if !d.nctx.advance(taskID, gen, NewContextClear) {
-		return
-	}
-	d.publishTask(taskID)
-	before, _ := d.wake.sessionStarted(taskID)
-	typedAt := time.Now()
-	if err := d.ncType(taskID, gen, "", newContextClear, ncTiming.typeWait); err != nil {
-		fail("could not type /clear", err)
-		return
-	}
-	err := d.ncWait(taskID, gen, ncTiming.clearWait, "a new session to start after /clear (is the session hook installed?)",
-		func() (bool, error) {
-			at, ok := d.wake.sessionStarted(taskID)
-			return ok && at.After(before) && !at.Before(typedAt), nil
-		})
-	if err != nil {
-		fail("the context did not clear", err)
-		return
-	}
+	if !wakeOnly {
+		// 1 and 2. The capture prompt, the turn it starts, and the file it wrote. Not
+		// cleared over a handoff that was never written: the clear cannot be taken
+		// back, and the capture is the only thing that makes it safe.
+		if step, err := d.ncCapture(taskID, gen, file); err != nil {
+			fail(step, err)
+			return
+		}
 
-	// 4. The wake, once the new session has drawn its input box.
-	if !d.nctx.advance(taskID, gen, NewContextWake) {
-		return
+		// 3. `/clear`, then the new session's SessionStart.
+		if !d.nctx.advance(taskID, gen, NewContextClear) {
+			return
+		}
+		d.publishTask(taskID)
+		before, _ := d.wake.sessionStarted(taskID)
+		typedAt := time.Now()
+		if err := d.ncType(taskID, gen, "", newContextClear, ncTiming.typeWait); err != nil {
+			fail("could not type /clear", err)
+			return
+		}
+		err := d.ncWait(taskID, gen, ncTiming.clearWait, "a new session to start after /clear (is the session hook installed?)",
+			func() (bool, error) {
+				at, ok := d.wake.sessionStarted(taskID)
+				return ok && at.After(before) && !at.Before(typedAt), nil
+			})
+		if err != nil {
+			fail("the context did not clear", err)
+			return
+		}
+
+		// 4. The wake, once the new session has drawn its input box.
+		if !d.nctx.advance(taskID, gen, NewContextWake) {
+			return
+		}
+		d.publishTask(taskID)
 	}
-	d.publishTask(taskID)
-	err = d.ncWait(taskID, gen, ncTiming.sessionSettle+ncTiming.clearWait, "the new session to settle", func() (bool, error) {
+	err := d.ncWait(taskID, gen, ncTiming.sessionSettle+ncTiming.clearWait, "the new session to settle", func() (bool, error) {
 		at, _ := d.wake.sessionStarted(taskID)
 		return time.Since(at) >= ncTiming.sessionSettle, nil
 	})
@@ -525,6 +582,9 @@ func (d *Daemon) runNewContext(taskID string, gen uint64) {
 	}
 	if d.nctx.finish(taskID, gen) {
 		log.Printf("[atrium] new context on %s done", taskID)
+		if auto {
+			d.autoFinished(taskID, gen)
+		}
 		d.publishTask(taskID)
 		d.releaseHeld(taskID)
 	}

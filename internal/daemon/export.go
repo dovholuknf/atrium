@@ -138,6 +138,9 @@ var exportedSettings = []string{
 	api.SettingScrollbackLines,
 	api.SettingTerminalMinCols,
 	api.SettingContextThresholdK,
+	store.SettingAutoNewContext,
+	store.SettingAutoNewContextK,
+	store.SettingAutoNewContextIdleS,
 	api.SettingEditor,
 	api.SettingTerminal,
 	api.SettingPasteKeep,
@@ -162,6 +165,8 @@ var exportedSettings = []string{
 // now is not configuration to restore onto another one, and an import that
 // silently turned it on would be the worst possible thing to restore.
 var neverExported = []string{
+	// A server name from the runner's mcp.json. Machine-specific, so it stays.
+	store.SettingLeanWorkerGateway,
 	store.SettingGlobalAuto,
 	SettingOverlayZrok,
 	SettingOverlayZiti,

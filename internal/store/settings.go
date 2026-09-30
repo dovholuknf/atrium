@@ -239,3 +239,55 @@ func (s *Store) SetGlobalAutoUntil(on bool, until *time.Time) error {
 	}
 	return s.SetSetting(SettingGlobalAuto, untilPrefix+ts(*until))
 }
+
+// SettingLeanWorkerGateway is the NAME of a server in the runner's mcp.json that
+// stands in for `mercurius` on a default lean launch, so a worker reaches
+// mercurius through a narrower gateway than a director does. Empty, the default,
+// is exactly today's behaviour.
+//
+// A NAME, NEVER A URL: the entry, headers and tokens stay in mcp.json and never
+// land in this table. It is not exported.
+//
+// **With this set, the key `mercurius` means the NARROW server for a default
+// lean launch and the WIDE one when a launch names `mercurius` in its lean `mcp`
+// field or the card carries the tag atrium:mcp:mercurius.**
+const SettingLeanWorkerGateway = "lean_worker_gateway"
+
+// LeanWideServer is the key that reads two ways once a gateway is set.
+const LeanWideServer = "mercurius"
+
+// LeanWorkerGateway is the setting, or empty, and empty on a read failure so a
+// launch never waits on it.
+func (s *Store) LeanWorkerGateway() string {
+	v, err := s.Setting(SettingLeanWorkerGateway)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(v)
+}
+
+// MercuriusFor says which server a lean card gets under the key `mercurius`,
+// for the card's details: "mercurius: mercurius-worker" or "mercurius: mercurius
+// (wide)". Empty when no gateway is set or the card is not lean, since then the
+// key means what it always did.
+func MercuriusFor(tags []string, gateway string) string {
+	if gateway == "" {
+		return ""
+	}
+	lean, wide := false, false
+	for _, t := range tags {
+		switch strings.TrimSpace(t) {
+		case "atrium:lean":
+			lean = true
+		case "atrium:mcp:" + LeanWideServer:
+			wide = true
+		}
+	}
+	switch {
+	case !lean:
+		return ""
+	case wide:
+		return "mercurius: mercurius (wide)"
+	}
+	return "mercurius: " + gateway
+}

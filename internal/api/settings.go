@@ -24,6 +24,10 @@ import (
 // it is, which is better than a very long deadline pretending otherwise.
 const maxAutoMinutes = 24 * 60
 
+// CheckLeanGateway is filled by the daemon: it refuses a lean_worker_gateway name the
+// runner's mcp.json does not hold, with the names it does. Nil accepts any name.
+var CheckLeanGateway func(name string) error
+
 func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, globalAutoView(s))
 }
@@ -180,8 +184,10 @@ func globalAutoView(s *Server) map[string]any {
 	}
 	out["idle_park_after_default"] = int64(store.DefaultIdleParkAfter / time.Second)
 	out["idle_park_after_min"] = int64(store.MinIdleParkAfter / time.Second)
+	autoNewContextView(s.st, out)
 	inputLagView(out)
 	// Reported even when unset, so the setting can be read back as `above_normal`.
+	out["lean_worker_gateway"] = s.st.LeanWorkerGateway()
 	out["runner_priority"] = "above_normal"
 	if !s.st.RunnerPriorityRaised() {
 		out["runner_priority"] = "normal"
@@ -270,6 +276,9 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		// The Windows priority class of a new runner and its pseudo console host:
 		// `above_normal` or `normal`. See `store.SettingRunnerPriority`.
 		RunnerPriority *string `json:"runner_priority"`
+		// The name of the mcp.json server that stands in for `mercurius` on a default
+		// lean launch. A name, never a URL. See `store.SettingLeanWorkerGateway`.
+		LeanWorkerGateway *string `json:"lean_worker_gateway"`
 		// Whether this room logs terminal input lag. Applied at once, with no
 		// restart. See inputlag.go.
 		InputLag *bool `json:"input_lag_log"`
@@ -290,6 +299,10 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		KeepaliveSuspended *bool `json:"cache_keepalive_suspended"`
 		// How long a card sits idle before it is parked: seconds, or off.
 		IdleParkAfter *string `json:"idle_park_after"`
+		// The automatic new context: which cards, at what size, after how long idle.
+		AutoNewContext      *string `json:"auto_new_context"`
+		AutoNewContextK     *string `json:"auto_new_context_k"`
+		AutoNewContextIdleS *string `json:"auto_new_context_idle_s"`
 	}
 	// Read once and decoded twice: into the struct, which is what the handler
 	// works from, and into a map, which is the only way to notice a field that
@@ -559,6 +572,28 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if body.LeanWorkerGateway != nil {
+		// A server NAME from the runner's mcp.json, never a URL: a header or a token
+		// must not land in this table. Whether the name is in mcp.json is checked at
+		// launch, where the config is read, and refused there with the names it has.
+		v := strings.TrimSpace(*body.LeanWorkerGateway)
+		if strings.ContainsAny(v, "/: \t") {
+			writeErr(w, http.StatusBadRequest, fmt.Errorf(
+				"lean_worker_gateway is a server NAME from the runner's mcp.json, like mercurius-worker, never a URL. got %q", v))
+			return
+		}
+		if v != "" && CheckLeanGateway != nil {
+			if err := CheckLeanGateway(v); err != nil {
+				writeErr(w, http.StatusBadRequest, err)
+				return
+			}
+		}
+		if err := s.st.SetSetting(store.SettingLeanWorkerGateway, v); err != nil {
+			s.fail(w, err)
+			return
+		}
+	}
+
 	if body.RunnerPriority != nil {
 		// Refused rather than stored: an unknown class would read as the default and look like it took.
 		v := strings.ToLower(strings.TrimSpace(*body.RunnerPriority))
@@ -608,6 +643,42 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := s.st.SetSetting(store.SettingIdleParkAfter, v); err != nil {
+			s.fail(w, err)
+			return
+		}
+	}
+
+	if body.AutoNewContext != nil {
+		v, err := store.CheckAutoNewContext(*body.AutoNewContext)
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, err)
+			return
+		}
+		if err := s.st.SetSetting(store.SettingAutoNewContext, v); err != nil {
+			s.fail(w, err)
+			return
+		}
+	}
+
+	if body.AutoNewContextK != nil {
+		v, err := checkAutoNewContextK(s.st, *body.AutoNewContextK, body.ContextThresholdK)
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, err)
+			return
+		}
+		if err := s.st.SetSetting(store.SettingAutoNewContextK, v); err != nil {
+			s.fail(w, err)
+			return
+		}
+	}
+
+	if body.AutoNewContextIdleS != nil {
+		v, err := store.CheckAutoNewContextIdleS(*body.AutoNewContextIdleS)
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, err)
+			return
+		}
+		if err := s.st.SetSetting(store.SettingAutoNewContextIdleS, v); err != nil {
 			s.fail(w, err)
 			return
 		}

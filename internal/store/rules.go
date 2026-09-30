@@ -7,6 +7,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/mcprule"
 )
 
 // Rule is a standing answer to a permission request. Deciding a request
@@ -33,7 +35,16 @@ type Rule struct {
 	Kind      string    `json:"kind"`
 	CreatedAt time.Time `json:"created_at"`
 	Hits      int       `json:"hits"`
+	// Note is set by the reader, never stored. It says why a rule behaves in a way
+	// the list would not explain, and today has one use: see NoteExactInput.
+	Note string `json:"note,omitempty"`
 }
+
+// NoteExactInput marks a rule for an MCP tool that carries a real pattern. That
+// is what the old approve-forever path wrote from the compacted JSON of one call,
+// so it matches that input and practically nothing else. It keeps working, and
+// this is what lets the rule list say why it never fires again.
+const NoteExactInput = "matches this exact input only"
 
 // Rule kinds.
 //
@@ -316,8 +327,12 @@ func (r *Rule) matches(command, cwd string) bool {
 //
 // A path rule is ranked by the length of its directory, so a rule for one
 // worktree beats a rule for the drive it lives on.
+//
+// The tool name counts as well. Every candidate for one request shares an exact
+// tool, so for ordinary rules that term is a constant and changes nothing. For
+// MCP rules it is what puts `mcp__s__t` above `mcp__s__get_*` above `mcp__s__*`.
 func (r *Rule) specificity() int {
-	return specificity(r.Prefix)
+	return specificity(r.Tool) + specificity(r.Prefix)
 }
 
 func specificity(pattern string) int {
@@ -330,9 +345,15 @@ func (s *Store) MatchRule(tool, command, scope string) (*Rule, error) {
 	var out *Rule
 	err := s.guard(func() error {
 		out = nil
+		// An MCP request also considers rules whose tool is a glob over names.
+		// Nothing else does, so every other tool keeps its exact query.
+		toolWhere := `tool = ?`
+		if mcprule.Is(tool) {
+			toolWhere = `(tool = ? OR (tool LIKE 'mcp\_\_%' ESCAPE '\' AND instr(tool, '*') > 0))`
+		}
 		rows, err := s.db.Query(
 			`SELECT `+ruleColumns+`
-			 FROM perm_rule WHERE tool = ? AND (scope = '' OR scope = ?)`, tool, scope)
+			 FROM perm_rule WHERE `+toolWhere+` AND (scope = '' OR scope = ?)`, tool, scope)
 		if err != nil {
 			return err
 		}
@@ -345,10 +366,17 @@ func (s *Store) MatchRule(tool, command, scope string) (*Rule, error) {
 			// scope is the worktree the request came from, so it doubles as the
 			// session's working directory. A folder rule needs it: commands are
 			// written relative to where the session is.
+			if r.Tool != tool && !matchPattern(r.Tool, tool) {
+				continue
+			}
 			if !r.matches(command, scope) {
 				continue
 			}
-			if out == nil || r.specificity() > out.specificity() {
+			// A tie goes to block. Two rules of equal reach that disagree cannot
+			// be settled by row order, which SQLite does not define, and nobody
+			// who wrote both meant the approve to win.
+			if out == nil || r.specificity() > out.specificity() ||
+				(r.specificity() == out.specificity() && r.Decision == "block" && out.Decision != "block") {
 				out = r
 			}
 		}
@@ -383,6 +411,9 @@ func scanRule(sc interface{ Scan(...any) error }) (*Rule, error) {
 	if r.Kind == "" {
 		r.Kind = KindCommand
 	}
+	if mcprule.Is(r.Tool) && r.Prefix != mcprule.AnyInput {
+		r.Note = NoteExactInput
+	}
 	var err error
 	if r.CreatedAt, err = parseTS(created); err != nil {
 		return nil, err
@@ -402,6 +433,20 @@ func (s *Store) AddRule(tool, prefix, decision, reason, scope string) (*Rule, er
 // an import silently incomplete. Nothing in the UI reaches this path.
 func (s *Store) AddBroadRule(tool, prefix, decision, reason, scope string) (*Rule, error) {
 	return s.addRule(tool, prefix, decision, reason, scope, KindCommand, true)
+}
+
+// AddMCPRule stores a standing answer for an MCP tool, or a glob over the names of
+// a server's tools. It matches the tool and takes any input. See mcprule.Normalize
+// for what is accepted and docs/runtime/mcp-rules-design.md for why nothing
+// narrower than a tool is offered.
+func (s *Store) AddMCPRule(tool, decision, reason, scope string) (*Rule, error) {
+	name, why := mcprule.Normalize(tool)
+	if why != "" {
+		return nil, errors.New(why)
+	}
+	// The pattern is a bare wildcard on purpose, which addRule refuses unless told
+	// it is meant.
+	return s.addRule(name, mcprule.AnyInput, decision, reason, scope, KindCommand, true)
 }
 
 // AddPathRule stores "this tool may work under this directory". See matchPath.

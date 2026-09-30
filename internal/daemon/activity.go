@@ -697,6 +697,10 @@ func (a *activityTracker) backgroundWork(taskID string) (int, time.Time) {
 type ActivityEvent struct {
 	Agent  string `json:"agent"`
 	TaskID string `json:"task_id,omitempty"`
+	// NameSource is "dir" when Agent was made up from the directory. Absent from
+	// a hook older than the field, which is read as a told name. Nothing here
+	// acts on it yet: activity only looks a card up.
+	NameSource string `json:"name_source,omitempty"`
 	// Event is tool-start, tool-end, prompt, subagent-start, subagent-end,
 	// idle or waiting.
 	//

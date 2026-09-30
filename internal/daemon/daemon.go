@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/api"
+	"github.com/dovholuknf/atrium/internal/mcprule"
 	"github.com/dovholuknf/atrium/internal/shellpick"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -182,6 +183,10 @@ type Daemon struct {
 	// nctx holds the new-context sequences under way and the failed ones nobody
 	// has dismissed. In memory. See newcontext.go.
 	nctx *newContexts
+
+	// auto is each card's arm state for the automatic new context, in memory. See
+	// autocontext.go.
+	auto *autoContexts
 
 	// ka keeps idle Claude cards' prompt caches warm. See keepalive.go.
 	ka *keepalive
@@ -493,6 +498,7 @@ func New(opts Options) (*Daemon, error) {
 	// it itself would be wrong after every restart.
 	api.HasShell = func(taskID string) bool { return d.sup.getShell(taskID) != nil }
 	api.CloseShellFor = d.CloseShell
+	api.CheckLeanGateway = func(name string) error { return checkLeanGateway(d.st, name, os.ReadFile) }
 	// How many rings the scrollback setting is being multiplied by right now,
 	// so the settings box can say what the number it holds costs in total.
 	api.LiveRings = d.sup.ringCount
@@ -522,6 +528,9 @@ func New(opts Options) (*Daemon, error) {
 	d.ap.SetKeepalive = d.keepaliveSet
 	// Each card's context size, held the same way. See contextsize.go.
 	d.ctx = newContextSizes()
+	d.ka.holding = d.nctx.holding
+	d.ka.session = d.ctx.sessionOf
+	d.auto = newAutoContexts()
 	api.ContextSizeOf = d.contextSizeFor
 	// Token use on record, read only by a card's details. See usage.go.
 	d.usage = newUsageTracker(st)
@@ -716,10 +725,28 @@ func (d *Daemon) onPermRequest(req PermissionRequest) (string, *AutoDecision, er
 	// The hook reports the runner's own pid and working directory. The pid is
 	// what makes free liveness checks possible.
 	obs.PID = req.PID
+	// A nested `claude` inherits the parent's name, and its own pid must not
+	// replace the parent's on the card. The request is still answered in full.
+	if req.PID > 0 {
+		if t, err := d.st.GetByWireName(req.Agent); err == nil && !d.ownsSession(t, req.PID) {
+			log.Printf("[atrium] permission for %s from pid %d, which is not its runner "+
+				"(a nested session?): gated, but its pid is not recorded", t.ID, req.PID)
+			obs.PID = 0
+		}
+	}
+	obs.NameSource = req.NameSource
 	if req.Cwd != "" {
 		obs.Worktree = strings.ReplaceAll(req.Cwd, `\`, "/")
 	}
 	task, _, err := d.st.Register(obs)
+	if errors.Is(err, store.ErrStaleName) {
+		// A directory name only a finished card holds. A gated call must
+		// still land on a card, or the board has nowhere to ask and the hook
+		// fails open, so this falls back to matching as a told name.
+		log.Printf("[atrium] permission from %q: name is only held by a finished card, matching it anyway", req.Agent)
+		obs.NameSource = ""
+		task, _, err = d.st.Register(obs)
+	}
 	if err != nil {
 		return "", nil, err
 	}
@@ -812,7 +839,15 @@ func (d *Daemon) onPermRequest(req PermissionRequest) (string, *AutoDecision, er
 		// DecidePermissionBy writes the audit event, carrying what answered
 		// this in `by`. A second one here would show every rule decision
 		// twice.
-		if _, err := d.st.DecidePermissionBy(p.ID, rule.Decision, rule.Reason, rule.Prefix); err != nil {
+		//
+		// What is recorded as the decider is the rule's pattern, and an MCP rule's
+		// pattern is always `*`, which names nothing. Its tool is what says which
+		// rule this was.
+		by := rule.Prefix
+		if mcprule.Is(rule.Tool) && rule.Prefix == mcprule.AnyInput {
+			by = rule.Tool
+		}
+		if _, err := d.st.DecidePermissionBy(p.ID, rule.Decision, rule.Reason, by); err != nil {
 			return "", nil, err
 		}
 		return p.ID, &AutoDecision{Decision: rule.Decision, Reason: rule.Reason}, nil
