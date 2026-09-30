@@ -31,10 +31,16 @@ func askOf(t *testing.T, d *Daemon, in HelpRequest) (*httptest.ResponseRecorder,
 	return rec, out
 }
 
+// impossiblePID is a pid no process can have on any platform atrium runs on: past
+// Linux's pid_max ceiling (1<<22), past macOS's 99998, and not a multiple of 4
+// as every Windows pid is. Pid 1 was used before, which is init on Linux and
+// always alive, so a card meant to have no process had one there.
+const impossiblePID = 1<<22 + 1
+
 func cardFor(t *testing.T, d *Daemon, name string) *store.Task {
 	t.Helper()
 	task, _, err := d.st.Register(store.Observed{
-		WireName: name, Worktree: "d:/git/atrium", Runner: "claude", PID: 1,
+		WireName: name, Worktree: "d:/git/atrium", Runner: "claude", PID: impossiblePID,
 	})
 	if err != nil {
 		t.Fatal(err)
