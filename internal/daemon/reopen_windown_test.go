@@ -109,6 +109,42 @@ func TestARestartBringsBackAFixtureAtItsPrompt(t *testing.T) {
 	}
 }
 
+// A TERMINATE KEEPS A CARD DOWN like an asked exit.
+func TestAKilledCardStaysDown(t *testing.T) {
+	d := testDaemon(t)
+	task := shellCard(t, d)
+	d.saveReopen([]*runner{d.sup.get(task.ID)})
+	if err := d.Kill(task.ID); err != nil {
+		t.Fatal(err)
+	}
+	waitGone(t, d, task.ID)
+	if got := d.reopenWanted(); len(got) != 0 {
+		t.Fatalf("a card somebody terminated would reopen: %v", got)
+	}
+}
+
+// /exit TYPED IN THE CARD'S OWN TERMINAL keeps it down, and the same ending
+// during a wind-down does not.
+func TestATypedExitStaysDownAndAWindDownDoesNot(t *testing.T) {
+	d := testDaemon(t)
+	task := shellCard(t, d)
+	end := SessionEvent{Agent: task.WireName, Event: "end", Reason: "prompt_input_exit", TaskID: task.ID}
+	d.windingDown.Store(true)
+	if err := d.onSession(end); err != nil {
+		t.Fatal(err)
+	}
+	if asked, _ := d.st.ExitAsked(task.ID); asked {
+		t.Fatal("a session ended by the wind-down reads as asked to exit")
+	}
+	d.windingDown.Store(false)
+	if err := d.onSession(end); err != nil {
+		t.Fatal(err)
+	}
+	if asked, _ := d.st.ExitAsked(task.ID); !asked {
+		t.Fatal("/exit typed in the card's own terminal is not kept")
+	}
+}
+
 // AN ASKED EXIT STAYS DOWN across the restart, and a launch afterwards undoes it.
 func TestAnAskedExitStaysDown(t *testing.T) {
 	d := testDaemon(t)

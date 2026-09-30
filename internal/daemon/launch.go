@@ -1303,6 +1303,10 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 	if err := d.st.SetOrigin(created.ID, source, req.ExternalID, url); err != nil {
 		return nil, err
 	}
+	// A LAUNCH UNDOES AN ASKED EXIT: whatever was asked before, it runs now.
+	if err := d.st.ClearExitAsked(created.ID); err != nil {
+		return nil, err
+	}
 	if err := d.st.AppendEvent(created.ID, store.EventLaunched, map[string]any{
 		"harness": h.ID, "cmd": logged, "cwd": cwd, "resume": req.Resume,
 		"via": via, "mode": h.LaunchMode, "prompted": prompt != "", "model": model,
@@ -1610,6 +1614,11 @@ func (d *Daemon) Kill(taskID string) error {
 	if t.PID <= 0 {
 		return errors.New("atrium does not know this runner's process. " +
 			"a window-mode launch is handed to the terminal and owns itself, so close it there")
+	}
+	// TERMINATE IS A DECISION, like an asked exit, and keeps the card down across
+	// a restart. See store.ExitAsked.
+	if err := d.st.SetExitAsked(taskID); err != nil {
+		return err
 	}
 	// A process that is already gone is not a failure. The request was "make
 	// this stop running", and it is not running, so the card converges to dead

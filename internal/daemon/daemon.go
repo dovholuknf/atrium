@@ -91,6 +91,10 @@ type Options struct {
 
 // Daemon owns the store and both listeners.
 type Daemon struct {
+	// windingDown is set when shutdown begins. A session ending after it is the
+	// wind-down, never somebody deciding. See the session hook's `end`.
+	windingDown atomic.Bool
+
 	opts Options
 	st   *store.Store
 	ap   *api.Server
@@ -1254,6 +1258,9 @@ func (d *Daemon) Run(ctx context.Context) error {
 // so this can take several seconds. Silence for that long looks like a hang.
 func (d *Daemon) shutdown(servers ...*http.Server) {
 	start := time.Now()
+	// Every session ends from here on, and none of those endings is somebody
+	// deciding. See the session hook's `end`.
+	d.windingDown.Store(true)
 
 	// SAY IT IS COMING, BEFORE ANYTHING GOES.
 	//
