@@ -163,8 +163,9 @@ unsubscribe, a per-device switch in settings, the test notification) is about ha
 
 - **An outbound call.** The hub has never called out. A push goes to the browser vendor's push service (FCM for
   Brave and Chrome, Mozilla's for Firefox, Apple's for Safari). The payload is encrypted end to end, so the service
-  sees only that a push happened and its size. @rnd to rule on whether this crosses the line in `docs/overlays.md`. The
-  argument that it does not: atrium holds its OWN key, never somebody else's credential, and nothing comes back in.
+  sees only that a push happened and its size. @rnd ruled that this does not cross the line in `docs/overlays.md`, on
+  conditions (see "What @rnd's research says"): atrium holds its OWN key, never somebody else's credential, and
+  nothing comes back in.
 - **Brave's toggle.** Brave for Android ships with "Use Google services for push messaging" OFF. Without it, no push
   reaches Brave at all, and the page cannot switch it on. The settings row has to say so.
 - **A per-device opt-in.** Each phone allows notifications once, from the installed app.
@@ -173,18 +174,24 @@ unsubscribe, a per-device switch in settings, the test notification) is about ha
   token) are the first secrets atrium generates. They belong to atrium, so the credential rule holds, but they need
   file permissions and never leave the hub.
 
-**Proposal G-ntfy, the fallback.** The hub POSTs the same one-line event to an ntfy topic URL set in the hub's
+**G-ntfy, considered and replaced by G-cmd below.** The hub would POST the same one-line event to an ntfy topic URL set in the hub's
 settings. About half a worker-day on the same trigger. No key, no subscription table, no crypto. It needs the ntfy app
 on the phone. It is NOT end-to-end encrypted: the card name and why go to ntfy.sh in the clear unless clint
 self-hosts. And a protected topic needs an access token, which is clint's own credential stored by atrium. That is
 exactly what the line in `CLAUDE.md` rules out ("atrium may hold the NAME of a command that has a credential, and
 never somebody else's credential"). So ntfy is only acceptable on an unprotected topic with an unguessable name, or a
-self-hosted server that needs no token. @rnd to confirm. This doc controls on that point: @fabric's estimate says
+self-hosted server that needs no token. @rnd agrees and goes further (see its section). This doc controls on that point: @fabric's estimate says
 storing clint's ntfy token is allowed but new, and it is not allowed. An ntfy access token is never stored by atrium.
 
-@fabric recommends building the trigger once with ntfy as the first sink (about 1 day in all), which proves the diff
-and the coalescing on clint's phone right away, then Web Push behind the same sink interface (about 1.5 days more).
-@ui agrees with the order, IF @rnd clears the unprotected-topic form of ntfy. Otherwise Web Push alone.
+**Proposal G-cmd, the fallback that replaces G-ntfy (@rnd).** A notify command the operator writes, set in the hub's
+settings, run with the card and the reason, bounded in time and output like a source, its failures reported on its own
+row. clint can point it at ntfy, a Signal bot, or anything else, with whatever credential that needs living in his own
+script. atrium holds the name of a command and never the credential.
+
+@fabric recommends building the trigger once with a simple sink first (about 1 day in all), which proves the diff and
+the coalescing on clint's phone right away, then Web Push behind the same sink interface (about 1.5 days more). @ui
+agrees, with the notify command as that first sink. Every push also honours @rnd's conditions: off until turned on,
+card name and reason only, fire and forget, and nothing while clint is at the desktop board.
 
 ### 7. Landscape
 
@@ -197,8 +204,38 @@ terminal. Almost free once B exists.
 
 ## What @rnd's research says
 
-(To be filled from @rnd's reply: the path and sha of its mobile research, and its top findings. Asked 2026-09-29
-~20:35.)
+From `docs/rnd/mobile-research.md` at claude/rnd 7688b98 (a read of docs and READMEs, not of source):
+
+1. **Every agent-first phone client shows a conversation, not a terminal.** Claude Code Remote Control, Happy and
+   Omnara do. The terminal-first tools (VibeTunnel, Termius, Blink) have phone histories that are a long fight with
+   the keyboard.
+2. **So the card on a phone should be the last replies as text**, read from the transcript (t-003 option a, F above,
+   promoted to the DEFAULT), plus the recap and reports, plus a native composer (E). The live bottom rows appear only
+   when a TUI dialog is open, with its options as buttons (`act.dialogOpen` already knows). `keepalive.go`'s
+   `readLastReply` already tails the transcript with a cache, so the text endpoint is small @runtime work. A codex card
+   falls back to the screen rows.
+3. **The keyboard, from the start.** A native textarea gives tap-to-cursor, the magnifier, paste and dictation from the
+   OS, which beats arrow keys synthesised into claude's TUI (u-017c), which breaks on wrapped lines, wide characters
+   and redraws. Plus what u-019 and u-021 already did: `interactive-widget=resizes-content`, a visualViewport
+   listener, focus moved only on a tap, one header row.
+4. **A separate lightweight page at `/m`**, from the same handler, on the same API and SSE, with the same skin
+   variables, and no xterm until the terminal is asked for (which opens the existing pop-out). The manifest's
+   `start_url` is `/m` on a phone. Better than a phone layout inside `index.html`, where every desktop change risks the
+   phone.
+5. **`--remote-control` per claude card** is a cheap extra ("open in the Claude app"), not a replacement: atrium's
+   PreToolUse gate runs first, and the Claude app will not show atrium's permission question.
+
+**On push**, @rnd rules that Web Push does NOT cross the line in `docs/overlays.md`, on three conditions: (a) off until
+the phone's holder turns it on, (b) the payload is the card name and the reason only, (c) fire and forget, bounded,
+never delaying a card, the permission chain or a hook. Also: no push while clint is at the desktop board (the seen
+dwell and page visibility), as Claude Code does. **ntfy is worse as the primary**: ntfy.sh sees plaintext, and the
+topic is a bearer secret atrium would store. The better fallback is an operator-written **notify command**, run with
+the card and the reason, bounded like a source. atrium then holds the name of a command and never the credential, the
+same rule as `docs/scm-design.md`. That replaces G-ntfy, see below.
+
+**What this changes here.** @ui agrees with 1 to 3 and 5. Points 2 and 4 together are a different shape from B, C
+and F above: a conversation-first `/m` page rather than the board squeezed onto a phone. It costs more up front and
+risks less later. It is open question 6 for clint. The notify command replaces G-ntfy in the cost table.
 
 ## Cost and ship order
 
@@ -210,7 +247,7 @@ this needs a room restart.
 | 1 | A, installable board (manifest, icons, iOS meta) | 0.5 worker-day | nothing | wave 1 |
 | 2 | E, compose box in the terminal | 1 worker-day | nothing | wave 1 |
 | 3 | B, bottom tab bar, top row trimmed | 1 worker-day | nothing | wave 1 |
-| 4 | G trigger + ntfy sink (hub) | 1 worker-day, @fabric | @rnd on the line, a migration cleared with the orchestrator | wave 1 |
+| 4 | G trigger + notify command sink (hub) | 1 worker-day, @fabric | a migration cleared with the orchestrator | wave 1 |
 | 5 | C, the "needs you" home and the card sheet, with I, say | 1.5 worker-days | B | wave 2 |
 | 6 | G, Web Push sink (hub) + subscribe (board) | 1.5 + 0.5 worker-days | A, 4, one real-phone proof by clint | wave 2 |
 | 7 | H, landscape is the terminal's | 0.25 worker-day | B | wave 2 |
@@ -220,17 +257,21 @@ Wave 1 is four workers in parallel (three board, one hub), about a day, one hub 
 deploy. Wave 3 is decided from use.
 
 Why this order: A and E fix what he hits every time he picks up the phone (browser chrome, typing). B unblocks C
-and H. The ntfy sink is the cheapest way to prove notifications on his actual phone before anyone writes RFC 8291.
+and H. The notify command sink is the cheapest way to prove notifications on his actual phone before anyone writes RFC 8291.
 
 ## Open questions for clint
 
 1. Bottom tab bar (B), or icon tabs on top (B2)?
 2. The compose box (E) as the default on a phone, with "keys" as the toggle? Or keys by default?
-3. Notifications: Web Push (G), ntfy (G-ntfy) first, or both in the order above? And is turning on Brave's "Use
+3. Notifications: Web Push (G), the notify command (G-cmd) first, or both in the order above? And is turning on Brave's "Use
    Google services for push messaging" acceptable to him?
 4. The "needs you" home (C): should a finished turn nobody read count as needing him, or only questions and
    permissions?
 5. The reading view (F): build it now, or wait for the compose box and landscape to be used for a while first?
+6. @rnd's shape: a separate conversation-first page at `/m` (the last replies as text, a native composer, the live
+   rows only for a dialog, the terminal one tap away in the pop-out), instead of B, C and F inside the board? It
+   would replace rows 3, 5 and 8 of the table with one `/m` page (about 2 to 3 board worker-days) plus a small
+   @runtime text endpoint.
 
 ## Out of scope
 
