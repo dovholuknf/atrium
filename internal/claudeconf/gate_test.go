@@ -147,54 +147,98 @@ func TestALongerGateTimeoutIsLeftAloneAndWritesNothing(t *testing.T) {
 	}
 }
 
-func TestTheDotfilesGateCountsAsPresentAndIsNeverRewritten(t *testing.T) {
-	contents := `{"hooks":{"PreToolUse":[{"hooks":[{"type":"command","command":"` + dotfilesGate +
-		`","timeout":86400}]}]}}`
-	path := withHome(t, contents)
+// gateCommands is every PreToolUse command that gates permission, script or ours.
+func gateCommands(t *testing.T, path string) []map[string]any {
+	t.Helper()
+	var out []map[string]any
+	for _, h := range hooksOf(t, path, "PreToolUse") {
+		if s, _ := h["command"].(string); strings.Contains(s, "--event permission") ||
+			strings.Contains(s, dotfilesGateMarker) {
+			out = append(out, h)
+		}
+	}
+	return out
+}
+
+func TestTheDotfilesGateIsStaleAndInstallAllReplacesIt(t *testing.T) {
+	path := withHome(t, `{"hooks":{"PreToolUse":[{"matcher":"","hooks":[`+
+		`{"type":"command","command":"`+dotfilesGate+`","timeout":86400},`+
+		`{"type":"command","command":"powershell.exe -File C:/x/pre-tool-use-hook.ps1","timeout":5}]}]}}`)
 
 	rep, err := Inspect(testExe)
 	if err != nil {
 		t.Fatal(err)
 	}
 	g := gateRow(t, rep)
-	if !g.Installed || g.Stale || g.TimeoutShort || g.Found != dotfilesGate || g.Other == "" || g.TwoGates {
+	if !g.Installed || !g.Stale || g.Found != dotfilesGate || g.Other == "" || g.TwoGates {
 		t.Fatalf("gate row with the script registered: %+v", g)
 	}
-	if rep.Missing != wantedCount()-1 {
-		t.Fatalf("missing is %d, wanted %d: the gate must not count", rep.Missing, wantedCount()-1)
+	if rep.Missing != wantedCount() {
+		t.Fatalf("missing is %d, wanted %d: the script counts as drift", rep.Missing, wantedCount())
 	}
 
-	// Install all writes the other hooks and passes over the gate.
 	after, _, err := Install(testExe)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if after.Missing != 0 {
-		t.Fatalf("missing is %d after install all", after.Missing)
+	if after.Missing != 0 || after.TwoGates {
+		t.Fatalf("after install all: missing %d, two gates %v", after.Missing, after.TwoGates)
 	}
-	for _, h := range hooksOf(t, path, "PreToolUse") {
-		if s, _ := h["command"].(string); strings.Contains(s, "--event permission") {
-			t.Fatal("install all wrote atrium's gate beside the dotfiles one")
-		}
+	gates := gateCommands(t, path)
+	if len(gates) != 1 || gates[0]["command"] != testExe+" hook --event permission" {
+		t.Fatalf("wanted atrium's gate alone in place of the script, got %v", gates)
 	}
-
-	// By name it refuses, and says why.
-	_, _, err = InstallOnly(testExe, []string{permissionEvent})
-	if err == nil || !strings.Contains(err.Error(), "twice") {
-		t.Fatalf("installing the gate by name over the script answered %v", err)
+	if gates[0]["timeout"] != float64(86400) {
+		t.Fatalf("the script's timeout was not kept: %v", gates[0]["timeout"])
+	}
+	// Replaced in place: still first, and the operator's own hook beside it survives.
+	first, _ := hooksOf(t, path, "PreToolUse")[0]["command"].(string)
+	if !strings.Contains(first, "--event permission") {
+		t.Fatalf("the gate moved: first command is %q", first)
+	}
+	if _, ok := timeoutFor(t, path, "PreToolUse", "pre-tool-use-hook.ps1"); !ok {
+		t.Fatal("the operator's own PreToolUse hook lost its timeout")
 	}
 }
 
-func TestBothGatesRegisteredIsReported(t *testing.T) {
-	withHome(t, `{"hooks":{"PreToolUse":[{"hooks":[`+
-		`{"type":"command","command":"`+dotfilesGate+`","timeout":86400},`+
-		`{"type":"command","command":"`+testExe+` hook --event permission","timeout":86400}]}]}}`)
+func TestInstallingTheGateByNameReplacesTheScript(t *testing.T) {
+	path := withHome(t, `{"hooks":{"PreToolUse":[{"hooks":[{"type":"command","command":"`+dotfilesGate+
+		`","timeout":86400}]}]}}`)
+	if _, res, err := InstallOnly(testExe, []string{permissionEvent}); err != nil || !res.Changed {
+		t.Fatalf("install by name: changed=%v err=%v", res.Changed, err)
+	}
+	gates := gateCommands(t, path)
+	if len(gates) != 1 || gates[0]["command"] != testExe+" hook --event permission" {
+		t.Fatalf("wanted atrium's gate alone, got %v", gates)
+	}
+}
+
+func TestBothGatesRegisteredIsReportedAndInstallDropsTheScript(t *testing.T) {
+	path := withHome(t, `{"hooks":{"PreToolUse":[`+
+		`{"matcher":"","hooks":[{"type":"command","command":"`+dotfilesGate+`","timeout":86400}]},`+
+		`{"matcher":"","hooks":[{"type":"command","command":"`+testExe+` hook --event permission","timeout":86400}]}]}}`)
 	rep, err := Inspect(testExe)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !rep.TwoGates || !gateRow(t, rep).TwoGates {
-		t.Fatalf("two gates were not reported: %+v", gateRow(t, rep))
+	g := gateRow(t, rep)
+	if !rep.TwoGates || !g.TwoGates || g.Found != testExe+" hook --event permission" {
+		t.Fatalf("two gates were not reported against atrium's row: %+v", g)
+	}
+
+	if _, res, err := InstallOnly(testExe, []string{permissionEvent}); err != nil || !res.Changed {
+		t.Fatalf("install by name: changed=%v err=%v", res.Changed, err)
+	}
+	gates := gateCommands(t, path)
+	if len(gates) != 1 || gates[0]["command"] != testExe+" hook --event permission" {
+		t.Fatalf("wanted atrium's gate alone, got %v", gates)
+	}
+	// The entry the script sat alone in goes with it.
+	if n := len(readSettings(t, path)["hooks"].(map[string]any)["PreToolUse"].([]any)); n != 1 {
+		t.Fatalf("%d PreToolUse entries left, wanted 1", n)
+	}
+	if after, _ := Inspect(testExe); after.TwoGates || gateRow(t, after).TwoGates {
+		t.Fatal("two gates still reported after install")
 	}
 }
 
