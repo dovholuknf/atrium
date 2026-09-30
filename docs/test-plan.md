@@ -7851,3 +7851,73 @@ Needs a hub over ziti or zrok and two rooms, one joined before this build and on
    away with the sentence telling it to re-join with a token from `atrium rooms token`. The proven room stays attached.
 6. `atrium rooms legacy allow`. The old room attaches again on its next try, with no hub restart.
 7. The board over zrok or ziti still opens in a browser with no client certificate, in both modes.
+
+## HA. The persistent growler, hub side (R1)
+
+Needs a hub with one room and two browsers on the board. `curl` stands in for the board until U1 lands.
+
+1. Make a card ask for permission and leave it. Before two minutes `GET /_hub/growls` has nothing. Within 30 s of the
+   two minute mark it has one row, reason `permission`, `subject` the request id and `body` the command's first line.
+2. Answer the request from the perms view. Within one announcement the row is gone from `GET /_hub/growls` and the
+   hub's `/v1/events/hub` stream said a `growls` event without it.
+3. End a turn on Open Questions. A `question` row appears at once. `POST /_hub/growls/<id>` with
+   `{"do":"dismiss","via":"board"}` answers 200 and a `growls` event without it. The same POST again answers 409 with
+   the row. `{"do":"undismiss","via":"board"}` answers 200, state open, the original `raised_at` kept.
+4. Snooze it for one minute. It leaves the set, and comes back open inside the next 30 s tick after the minute, with its
+   id in the event's `remind`.
+5. Reply to the questions. The row resolves. An undismiss or a snooze on it now answers 409, state `resolved`.
+6. Stop the room's link. Its growlers stay open with `room_offline: true`. Start it again and they are as they were.
+7. With notify on and no desktop tab visible, a growler's reminders at 1, 2, 5, 10, 30, 60 and 120 minutes each run the
+   notify command once, and nothing after the two hour step.
+8. Halt the room's store. Within 30 s a `halt` row names the room and the cause. Clear it and the row resolves.
+9. (R2) A session reports `atrium_report` status `blocked` with an ask, on a card without the `origin:agent` tag. A
+   `blocked` row appears at once, titled "<name> is blocked", with the ask as its body. Say something to the card. It
+   runs again and the row resolves. The same with status `question` gives a `question` row, "<name> has a question".
+   A worker tagged `origin:agent` that reports blocked raises nothing, and its launcher is told as before.
+10. (R3) Set a deploy hold on a room (`POST /v1/hold` with `{"action":"start",...}`) and leave it. Before fifteen
+    minutes (`growl.hold_after`) nothing. After, a `deploy-hold` row names the room, who held it and why, with the
+    hold id as `subject`. Stop the room's link: the row stays. Lift the hold. The row resolves inside 30 s.
+
+## HB. A card by its handle, over HTTP (r-new-handle-addressed-http)
+
+1. (R1, room) `curl -s -o NUL -w "%{http_code}" http://127.0.0.1:7777/v1/tasks/01a0ffff-ffff-7fff-bfff-ffffffffffff`
+   on a room's own board port answers 404 with `{"error":"no such card"}`, not 500. The same for `/files/text`.
+2. (H1, hub) With two rooms attached: `curl -s -i http://127.0.0.1:7778/v1/tasks/<alias>` answers the card, with
+   `X-Atrium-Card: room~id` and `X-Atrium-Handle: wire@room`. `curl -X POST http://127.0.0.1:7778/v1/tasks/<alias>@<room>/exit`
+   reaches that room's card. `%40` for `@` works the same.
+3. (H1) Give two live cards on two rooms the same alias. The bare alias answers 409 with both in `candidates`, spelled
+   `alias@room`. Mark one done: the bare alias reaches the live one.
+4. (H1) A name nothing holds answers 404 with `would_work` listing the live handles, and names a room that did not answer.
+5. (H1) The board still opens, attaches terminals and drags cards: every board request names an id and asks no room
+   for its list.
+
+## HC. The browser edge (security stage 0 and 1)
+
+1. `curl -s -o NUL -w "%{http_code}" -X POST -H "Origin: https://evil.example" -H "Sec-Fetch-Site: cross-site"
+   http://127.0.0.1:7778/v1/launch` answers 403. The same without the two headers answers as before. Repeat on the
+   room's own board port and on the agent port.
+2. `curl -s -o NUL -w "%{http_code}" -H "Host: evil.example" http://127.0.0.1:7778/` answers 403. `localhost` and
+   `127.0.0.1` answer 200.
+3. A websocket upgrade to `/v1/tasks/<id>/attach` with `Origin: https://evil.example` answers 403, on the hub and on the
+   room's own port. The board's own terminals still attach, through the hub and on the room's own port.
+4. The board still works over a zrok share and a lent session: launch, drag, attach.
+5. With the agent listener answering 403 to everything, a session starts, runs a gated tool call through Claude Code's
+   own prompt, and ends.
+5a. A terminal attaches from the board over a zrok public share and over `zrok access private`, both. The same share
+   asked with `-H "Host: evil.example"` answers 403. A board on a ziti service with `ATRIUM_HOSTS` unset logs once that
+   it answers any Host, and with `ATRIUM_HOSTS` set to its intercept address refuses any other.
+6. (R2, room) On a room's own board port, `curl -s -i http://127.0.0.1:7781/v1/tasks/<alias>` answers the card with
+   `X-Atrium-Card` and `X-Atrium-Handle`. A qualified wire name goes as `tenant%2Fname`. `<alias>@<other-room>`
+   answers 404 saying to ask the hub. A miss answers 404 with `would_work`.
+7. (C1, CLI) `atrium task rnd`, `atrium task rnd@claude-sg4 --json`, `atrium exit <alias>`, `atrium new-context <alias>`
+   and `atrium launch --onto <alias>` each reach the card and print the handle they reached. A miss prints what would
+   have worked. A name on two rooms prints both.
+
+## HD. A card's readable address (card URLs R3, R4)
+
+1. (R3) On the hub and on a room's own port, `GET /alias/<alias>`, `/room/<room>` and `/room/<room>/<name>` answer the
+   board page, and `/m/alias/<alias>` and `/m/room/<room>/<name>` the phone page. `/alias/` and `/room/a/b/c` answer a
+   404 page listing the shapes. Every `/v1/` route answers as before.
+2. (R4) Lend a card. The address handed out is `<frontend>/room/<room>/<handle>`, and it opens the terminal. On that
+   share, the card's alias page opens it too. Another card's alias and a made-up name both answer the same 403. Rename
+   the lent card's alias on the board: the old alias answers 403, and the handed-out address still opens it.

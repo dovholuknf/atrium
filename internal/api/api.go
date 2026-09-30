@@ -668,7 +668,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/tasks/{id}/messages", s.pendingMessages)
 	mux.HandleFunc("GET /v1/events", s.events)
 	mux.Handle("/", webHandler(s.BoardDir))
-	return mux
+	// A card by its handle as well as its id, on every route. See cardnames.go.
+	return s.byName(mux)
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {
@@ -686,6 +687,14 @@ func writeErr(w http.ResponseWriter, code int, err error) {
 // fail maps a store error to a response. A halted store is reported as 503
 // with its cause, since explaining that is what this listener is for.
 func (s *Server) fail(w http.ResponseWriter, err error) {
+	// A ROW THAT IS NOT THERE IS AN ANSWER, NOT A FAILURE. Every `{id}` route
+	// reads its card through here, and an unknown id answered 500, which a
+	// script cannot tell from a broken room. The hub's card routing asks rooms
+	// for ids it does not own and reads anything but 200 as `not here`.
+	if errors.Is(err, sql.ErrNoRows) {
+		writeJSON(w, http.StatusNotFound, map[string]any{"error": "no such card"})
+		return
+	}
 	if halted, cause := s.st.Halted(); halted {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]any{
 			"error":  "atrium is halted and will not recover without a restart",

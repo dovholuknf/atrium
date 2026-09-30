@@ -11205,6 +11205,332 @@ async function roomsMachineSection(browser, base) {
   }
 }
 
+// ── a ready alert rings once per wait, and only after the card went quiet ────
+// The alert rang 17 times for one card. `check` diffed on id membership, so a card out of the set for
+// one pass came back fresh. Keyed on bare id plus waiting_since now, held for quiet first. The quiet is
+// shortened through window.__atriumReadyQuietMs so the test does not sit through five real seconds.
+async function readyOnceSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const page = await ctx.newPage();
+  const errors = [];
+  page.on("pageerror", e => errors.push(String(e)));
+  await page.addInitScript(() => {
+    window.__atriumReadyQuietMs = 600;
+    Document.prototype.hasFocus = () => true;
+  });
+  try {
+    await page.goto(base, { waitUntil: "domcontentloaded" });
+    await page.waitForFunction(() => typeof alerting !== "undefined", null, { timeout: slow(15000) });
+    await page.waitForTimeout(1500);
+    const got = await page.evaluate(async () => {
+      localStorage.removeItem("atrium.toastlog");
+      alerting.set({ debounce: 0, muted: true });
+      const sleep = ms => new Promise(r => setTimeout(r, ms));
+      const w = (id, since) => ({ id, task_id: id, status: "needs-input", waiting_since: since });
+      const say = t => ({ title: t.id + " ready", body: "done" });
+      const check = items => alerting.check("waiting", items, say);
+      const rings = title => toastLog().filter(e => e.title === title).reduce((n, e) => n + (e.n || 1), 0);
+      const out = {};
+      check([]);
+      // Leaves the set and comes back with the same wait.
+      check([w("ro-a", "S1")]);
+      out.heldAtOnce = rings("ro-a ready");
+      await sleep(900);
+      out.first = rings("ro-a ready");
+      check([]);
+      check([w("ro-a", "S1")]);
+      await sleep(900);
+      out.sameWait = rings("ro-a ready");
+      // A new wait.
+      check([]);
+      check([w("ro-a", "S2")]);
+      await sleep(900);
+      out.newWait = rings("ro-a ready");
+      // A wait that ends inside the quiet.
+      check([]);
+      check([w("ro-b", "S1")]);
+      await sleep(200);
+      check([]);
+      await sleep(900);
+      out.ended = rings("ro-b ready");
+      // Activity inside the quiet pushes the ring out.
+      check([w("ro-c", "S1")]);
+      await sleep(350);
+      alerting.activity("ro-c");
+      await sleep(400);
+      out.busy = rings("ro-c ready");
+      await sleep(500);
+      out.settled = rings("ro-c ready");
+      // Two quiet waits are one alert.
+      check([]);
+      check([w("ro-d", "S1"), w("ro-e", "S1")]);
+      await sleep(900);
+      out.pile = rings("2 agents are ready");
+      out.single = rings("ro-d ready") + rings("ro-e ready");
+      return out;
+    });
+    if (got.heldAtOnce !== 0) fail("readyOnce: a fresh wait rang at once: " + JSON.stringify(got));
+    if (got.first !== 1) fail("readyOnce: a quiet wait did not ring exactly once: " + JSON.stringify(got));
+    if (got.sameWait !== 1) fail("readyOnce: the same wait rang again after leaving and returning: " + JSON.stringify(got));
+    if (got.newWait !== 2) fail("readyOnce: a new waiting_since did not ring: " + JSON.stringify(got));
+    if (got.ended !== 0) fail("readyOnce: a wait that ended inside the quiet rang: " + JSON.stringify(got));
+    if (got.busy !== 0) fail("readyOnce: a wait with activity inside the quiet rang early: " + JSON.stringify(got));
+    if (got.settled !== 1) fail("readyOnce: a wait did not ring after the activity went quiet: " + JSON.stringify(got));
+    if (got.pile !== 1 || got.single !== 0) fail("readyOnce: two quiet waits were not one alert: " + JSON.stringify(got));
+    if (errors.length) fail("readyOnce: the page threw: " + errors.join(" | "));
+  } finally {
+    await ctx.close();
+  }
+}
+
+// ── a window reading a card's terminal says nothing about its ready, and its quiet is pty quiet ──────────
+// A focused pop-out (or the board with the terminal attached and showing) gets no toast for its own card's
+// ready, only the log line. An unfocused one rings. Output inside the quiet delays it.
+async function readyPopoutSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const page = await ctx.newPage();
+  const errors = [];
+  page.on("pageerror", e => errors.push(String(e)));
+  await page.addInitScript(() => {
+    window.__atriumReadyQuietMs = 600;
+    window.__focus = true;
+    Document.prototype.hasFocus = () => window.__focus;
+  });
+  try {
+    await page.goto(base, { waitUntil: "domcontentloaded" });
+    await page.waitForFunction(() => typeof alerting !== "undefined" && typeof soloAlert === "function", null,
+      { timeout: slow(15000) });
+    await page.waitForTimeout(1500);
+    const got = await page.evaluate(async () => {
+      localStorage.removeItem("atrium.toastlog");
+      alerting.set({ debounce: 0, muted: true });
+      const sleep = ms => new Promise(r => setTimeout(r, ms));
+      const shown = t => [...document.querySelectorAll("#toasts .toast")].some(e => e.textContent.includes(t));
+      const logged = t => toastLog().some(e => e.title === t);
+      const out = {};
+      // A pop-out: its hash names the card, and it holds that terminal.
+      const popout = async (name, focus, activityAt) => {
+        window.__focus = focus;
+        soloID = name;
+        soloTask = { id: name, display_title: name };
+        soloKnown = { perm: null, ready: false };
+        term = {};
+        termTask = { id: name };
+        history.replaceState(null, "", "#term=" + name);
+        soloAlert("ready", true, { id: name, waiting_since: "W-" + name });
+        if (activityAt) { await sleep(activityAt); readyQuietFedAt = 0; feedReadyQuiet(); out[name + "Early"] = shown(name + " is ready"); await sleep(400); out[name + "Mid"] = shown(name + " is ready"); await sleep(500); }
+        else await sleep(900);
+        out[name] = shown(name + " is ready");
+        out[name + "Log"] = logged(name + " is ready");
+      };
+      await popout("pfocus", true, 0);
+      await popout("pblur", false, 0);
+      await popout("pbusy", false, 350);
+      // The board, with the card's terminal attached and on screen.
+      history.replaceState(null, "", "#");
+      document.getElementById("terms").hidden = false;
+      const w = id => ({ id, task_id: id, status: "needs-input", waiting_since: "S1" });
+      const say = t => ({ title: t.id + " ready", body: "done" });
+      termTask = { id: "bfocus" };
+      window.__focus = true;
+      alerting.check("waiting", [], say);
+      alerting.check("waiting", [w("bfocus")], say);
+      await sleep(900);
+      out.board = shown("bfocus ready");
+      out.boardLog = logged("bfocus ready");
+      termTask = { id: "bother" };
+      alerting.check("waiting", [], say);
+      alerting.check("waiting", [w("bfocus2")], say);
+      await sleep(900);
+      out.boardOther = shown("bfocus2 ready");
+      return out;
+    });
+    const j = JSON.stringify(got);
+    if (got.pfocus || !got.pfocusLog) fail("readyPopout: a focused pop-out toasted its own card or left no log line: " + j);
+    if (!got.pblur || !got.pblurLog) fail("readyPopout: an unfocused pop-out did not ring for its card: " + j);
+    if (got.pbusyEarly || got.pbusyMid) fail("readyPopout: pty output inside the quiet did not delay the ring: " + j);
+    if (!got.pbusy) fail("readyPopout: the ring never came after the output went quiet: " + j);
+    if (got.board || !got.boardLog) fail("readyPopout: the focused board toasted the card it shows: " + j);
+    if (!got.boardOther) fail("readyPopout: the board went quiet for a card it is not showing: " + j);
+    if (errors.length) fail("readyPopout: the page threw: " + errors.join(" | "));
+  } finally {
+    await ctx.close();
+  }
+}
+
+// ── a popped-out window's bell speaks for its card only ──────────────────────
+// u-popout-notify. In a `#term=` window the drawer's toggle writes the CARD's key and the sound button mutes the
+// CARD, so neither touches the board. The pop-out is silent when its own switch or the board-wide one is off, says
+// which, and cannot flip the board's. Sound is counted through a fake AudioContext, desktop notifications through a
+// fake Notification, and both windows share one localStorage like two windows of one browser.
+async function popoutNotifySection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landList = [];
+  landPerms = [];
+  const errors = [];
+  const ctx = await landContext(browser, true);
+  await ctx.addInitScript(() => {
+    window.__osc = 0;
+    window.AudioContext = class {
+      constructor() { this.state = "running"; this.currentTime = 0; this.destination = {}; }
+      resume() {}
+      createGain() {
+        const f = { setValueAtTime() {}, linearRampToValueAtTime() {}, exponentialRampToValueAtTime() {} };
+        return { gain: f, connect(x) { return x; } };
+      }
+      createOscillator() {
+        window.__osc++;
+        return { frequency: { setValueAtTime() {} }, connect(x) { return x; }, start() {}, stop() {} };
+      }
+    };
+  });
+  const open = async hash => {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base + hash, { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof alerting !== "undefined" && typeof windowIsOff === "function", null,
+      { timeout: slow(15000) });
+    await p.waitForTimeout(800);
+    await p.evaluate(() => document.dispatchEvent(new Event("pointerdown")));
+    return p;
+  };
+  // What this window has said: desktop notifications, toasts, sound, and the log.
+  const fire = (p, title, goTo) => p.evaluate(([t, g]) => {
+    alerting.notify(t, "body", g || "", null, null, null, null, "land-live");
+    alerting.play(g === "perms" ? "permission" : "waiting");
+  }, [title, goTo]);
+  const heard = (p, title) => p.evaluate(t => ({
+    note: (window.__notes || []).some(n => n.title === t),
+    toast: [...document.querySelectorAll("#toasts .toast")].some(e => e.textContent.includes(t)),
+    logged: toastLog().some(e => e.title === t)
+  }), title);
+  const osc = p => p.evaluate(() => window.__osc);
+  const store = (p, k) => p.evaluate(k => localStorage.getItem(k), k);
+  const drawer = p => p.evaluate(() => ({
+    toggle: document.getElementById("toastlog-toggle").textContent,
+    disabled: document.getElementById("toastlog-toggle").disabled,
+    scope: document.getElementById("toastlog-scope").hidden ? "" : document.getElementById("toastlog-scope").textContent,
+    bell: document.querySelector("#toastlog-open .glyph").textContent
+  }));
+  try {
+    const pop = await open("/#term=land-live");
+    const board = await open("/");
+    await pop.evaluate(() => { localStorage.clear(); paintNotifyOff(); });
+    await board.evaluate(() => { paintNotifyOff(); });
+
+    // On: the pop-out says and sounds, so the instruments are known to work.
+    await fire(pop, "po on");
+    let h = await heard(pop, "po on");
+    if (!h.note && !h.toast) fail("popoutNotify: a pop-out with everything on said nothing.");
+    if (await osc(pop) < 1) fail("popoutNotify: the sound counter never moved with everything on.");
+
+    // Turn off through the pop-out's own drawer button.
+    await pop.evaluate(() => openToastLog());
+    await pop.click("#toastlog-toggle");
+    if (await store(pop, "atrium.notify.off.card:land-live") !== "1") fail("popoutNotify: the toggle did not write the card key.");
+    if (await store(pop, "atrium.notify.off") !== null) fail("popoutNotify: the pop-out's toggle wrote the board-wide key.");
+    let d = await drawer(pop);
+    if (d.toggle !== "turn on" || d.scope !== "off for this window" || d.bell !== "\u{1F515}") {
+      fail("popoutNotify: the drawer does not say off for this window: " + JSON.stringify(d));
+    }
+    await pop.evaluate(() => document.getElementById("toastlog").close());
+
+    // The board is untouched and still speaks.
+    await board.waitForTimeout(300);
+    if (await board.evaluate(() => notifyIsOff() || windowIsOff())) fail("popoutNotify: the board went off with the pop-out.");
+    if (await board.evaluate(() => document.querySelector("#toastlog-open .glyph").textContent) !== "\u{1F514}") {
+      fail("popoutNotify: the board's bell was struck by the pop-out.");
+    }
+    await board.evaluate(() => alerting.notify("po board", "body", ""));
+    h = await heard(board, "po board");
+    if (!h.note && !h.toast) fail("popoutNotify: the board went quiet when the pop-out turned itself off.");
+
+    // The pop-out holds back its toast, desktop notification and sound, and logs them. A permission too.
+    const before = await osc(pop);
+    await fire(pop, "po held");
+    await fire(pop, "po held perm", "perms");
+    for (const t of ["po held", "po held perm"]) {
+      h = await heard(pop, t);
+      if (h.note || h.toast) fail("popoutNotify: a switched-off pop-out still said '" + t + "': " + JSON.stringify(h));
+      if (!h.logged) fail("popoutNotify: a switched-off pop-out did not log '" + t + "'.");
+    }
+    if (await osc(pop) !== before) fail("popoutNotify: a switched-off pop-out still played a sound.");
+
+    // Back on.
+    await pop.evaluate(() => openToastLog());
+    await pop.click("#toastlog-toggle");
+    await pop.evaluate(() => document.getElementById("toastlog").close());
+    if (await store(pop, "atrium.notify.off.card:land-live") !== null) fail("popoutNotify: turning back on left the card key.");
+    await fire(pop, "po again");
+    h = await heard(pop, "po again");
+    if (!h.note && !h.toast) fail("popoutNotify: turning the pop-out back on did not restore it.");
+
+    // The board-wide switch off silences the pop-out, the drawer says so, and the pop-out cannot flip it.
+    await board.evaluate(() => setNotifyOff(true));
+    await pop.waitForFunction(() => notifyIsOff(), null, { timeout: slow(5000) });
+    await pop.waitForTimeout(300);
+    const b2 = await osc(pop);
+    await fire(pop, "po board off");
+    h = await heard(pop, "po board off");
+    if (h.note || h.toast || !h.logged) fail("popoutNotify: the board-wide off did not silence and log the pop-out: " + JSON.stringify(h));
+    if (await osc(pop) !== b2) fail("popoutNotify: the board-wide off left the pop-out's sound on.");
+    d = await drawer(pop);
+    if (!d.disabled || !/whole board/.test(d.scope) || d.bell !== "\u{1F515}") {
+      fail("popoutNotify: the drawer does not say the board is off: " + JSON.stringify(d));
+    }
+    await pop.evaluate(() => { notifyToggle(); setNotifyOff(false); });
+    if (await store(pop, "atrium.notify.off") !== "1") fail("popoutNotify: the pop-out flipped the board-wide switch.");
+    await pop.evaluate(() => localStorage.removeItem("atrium.notify.off.card:land-live"));
+    await board.evaluate(() => setNotifyOff(false));
+    await pop.waitForFunction(() => !notifyIsOff(), null, { timeout: slow(5000) });
+
+    // Mute in the pop-out mutes that card and leaves the board's sound on.
+    await pop.evaluate(() => document.getElementById("sound").click());
+    if (await store(pop, "atrium.sound.card:land-live") !== JSON.stringify({ muted: true })) {
+      fail("popoutNotify: the sound button did not write the card key: " + await store(pop, "atrium.sound.card:land-live"));
+    }
+    if (await pop.evaluate(() => (JSON.parse(localStorage.getItem("atrium.sound") || "{}").muted === true))) {
+      fail("popoutNotify: the pop-out's mute wrote the board's sound key.");
+    }
+    if (await board.evaluate(() => alerting.get().muted)) fail("popoutNotify: the pop-out's mute muted the board.");
+    const b3 = await osc(pop);
+    await pop.evaluate(() => alerting.play("waiting"));
+    if (await osc(pop) !== b3) fail("popoutNotify: a muted pop-out still played a sound.");
+    const b4 = await osc(board);
+    await board.evaluate(() => alerting.play("waiting"));
+    if (await osc(board) <= b4) fail("popoutNotify: the board's sound went quiet with the pop-out muted.");
+    await pop.evaluate(() => document.getElementById("sound").click());
+    if (JSON.parse(await store(pop, "atrium.sound.card:land-live")).muted !== false) fail("popoutNotify: unmute did not clear the card's mute.");
+
+    // The gear's notification settings are the board's only.
+    const navs = p => p.evaluate(() => { paintSettings();
+      return [...document.querySelectorAll("#settings .pane-nav button")].map(b => b.textContent); });
+    if ((await navs(pop)).includes("notifications")) fail("popoutNotify: the gear offers notification settings in a pop-out.");
+    if (!(await navs(board)).includes("notifications")) fail("popoutNotify: the board's gear lost its notification settings.");
+
+    // Reopening the pop-out keeps its switch.
+    await pop.evaluate(() => setNotifyOff(true));
+    await pop.close();
+    const again = await open("/#term=land-live");
+    if (!await again.evaluate(() => popoutIsOff() && notifyHeld(""))) fail("popoutNotify: a reopened pop-out lost its switch.");
+    d = await drawer(again);
+    if (d.bell !== "\u{1F515}" || d.toggle !== "turn on") fail("popoutNotify: a reopened pop-out does not paint off: " + JSON.stringify(d));
+
+    // With the pop-out gone, the board announces the card under its own settings.
+    await board.evaluate(() => { soloHeld.delete("land-live"); popOuts.delete("land-live"); });
+    await board.evaluate(() => alerting.notify("po handed back", "body", "", null, null, "land-live"));
+    h = await heard(board, "po handed back");
+    if (!h.note && !h.toast) fail("popoutNotify: the board did not announce a card whose pop-out closed.");
+    await again.close();
+  } finally {
+    await ctx.close();
+  }
+  if (errors.length) fail("the pop-out notify pages threw: " + errors.join(" | "));
+  landList = []; landPerms = [];
+  tasksMode = was;
+}
+
 async function main() {
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = "http://127.0.0.1:" + server.address().port;
@@ -11228,7 +11554,7 @@ async function main() {
       eventDriven: eventDrivenSection, idleBudget: idleBudgetSection, pollsGone: pollsGoneSection,
       phoneListFit: phoneListFitSection, phoneNudge: phoneNudgeSection,
       growlStack: growlStackSection, growlActions: growlActionsSection, growlModal: growlModalSection, growlQuiet: growlQuietSection, growlAttention: growlAttentionSection, growlPhone: growlPhoneSection, mGrowl: mGrowlSection,
-      cacheChip: cacheChipSection, cacheLine: cacheLineSection, mHome: mHomeSection, mCard: mCardSection, mServe: mServeSection, phoneKeyLabel: phoneKeyLabelSection, phoneKeyLit: phoneKeyLitSection, shiftMenu: shiftMenuSection, notifyCommand: notifyCommandSection, presence: presenceSection, tallPty: tallPtySection, roomsMachine: roomsMachineSection };
+      cacheChip: cacheChipSection, cacheLine: cacheLineSection, mHome: mHomeSection, mCard: mCardSection, mServe: mServeSection, phoneKeyLabel: phoneKeyLabelSection, phoneKeyLit: phoneKeyLitSection, shiftMenu: shiftMenuSection, notifyCommand: notifyCommandSection, presence: presenceSection, tallPty: tallPtySection, roomsMachine: roomsMachineSection, readyOnce: readyOnceSection, readyPopout: readyPopoutSection, popoutNotify: popoutNotifySection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -13218,6 +13544,10 @@ async function main() {
     await phoneNudgeSection(browser, base);
     await cacheChipSection(browser, base);
     await cacheLineSection(browser, base);
+    await readyOnceSection(browser, base);
+    await readyPopoutSection(browser, base);
+    // ── a pop-out's bell is its own: the card's switch and mute, never the board's ──
+    await popoutNotifySection(browser, base);
     // ── the persistent growler: stack, actions, over a modal, and quiet ────
     await growlStackSection(browser, base);
     await growlActionsSection(browser, base);

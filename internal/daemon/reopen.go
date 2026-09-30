@@ -143,6 +143,16 @@ func (d *Daemon) reopenSaved() {
 	}
 	d.settle.expect(ids)
 
+	// ONE CONVERSATION, ONE CARD, OVER THE WHOLE LIST. Two cards on the list with
+	// one resume id would each find the other not yet running and both resume it.
+	// The first on the list takes it, and the rest start fresh (resumeHeld).
+	for _, t := range wanted {
+		if t.ResumeID != "" {
+			d.bootResumes.LoadOrStore(t.ResumeID, t.ID)
+		}
+	}
+	defer d.bootResumes.Clear()
+
 	log.Printf("[atrium] reopening %d terminal(s) that were open before the restart", len(wanted))
 	reopened := 0
 	for i, t := range wanted {
@@ -206,6 +216,11 @@ func (d *Daemon) reopenWanted() []*store.Task {
 		if t.Status == store.StatusShelved {
 			continue
 		}
+		// AN ASKED EXIT IS KEPT. Not `done`: a wind-down ends every session and
+		// each lands in `done`, which is what this list exists to bring back.
+		if asked, err := d.st.ExitAsked(t.ID); err == nil && asked {
+			continue
+		}
 		// Parked is put down the same way: it wakes when something asks it to.
 		if isParked(t) {
 			continue
@@ -240,6 +255,10 @@ func (d *Daemon) reopenResume(t *store.Task) string {
 	}
 	if !api.SessionExists(t.Worktree, id) {
 		log.Printf("[atrium] %s resumed conversation %s, which is gone. starting fresh", t.ID, id)
+		return ""
+	}
+	if h := d.resumeHeld(t.ID, id); h != nil {
+		d.noteHeldResume(t.ID, "reopen", &heldResume{resume: id, holder: h})
 		return ""
 	}
 	return id

@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/api"
+	"github.com/dovholuknf/atrium/internal/edge"
 	"github.com/dovholuknf/atrium/internal/mcprule"
 	"github.com/dovholuknf/atrium/internal/shellpick"
 	"github.com/dovholuknf/atrium/internal/store"
@@ -90,6 +91,13 @@ type Options struct {
 
 // Daemon owns the store and both listeners.
 type Daemon struct {
+	// windingDown is set when shutdown begins. A session ending after it is the
+	// wind-down, never somebody deciding. See the session hook's `end`.
+	windingDown atomic.Bool
+	// bootResumes is resume id to the card on the reopen list that takes it,
+	// for the length of one reopen pass. See reopenSaved.
+	bootResumes sync.Map
+
 	opts Options
 	st   *store.Store
 	ap   *api.Server
@@ -1034,8 +1042,10 @@ func (d *Daemon) Run(ctx context.Context) error {
 	agentMux.HandleFunc("/tell", d.handleTell)
 	agentMux.HandleFunc("/hooks-changed", d.handleHooksChanged)
 
-	agentSrv := &http.Server{Addr: d.opts.AgentAddr, Handler: agentMux}
-	humanSrv := &http.Server{Addr: d.opts.HumanAddr, Handler: d.BoardHandler()}
+	// THE BROWSER EDGE on both: a web page on this machine cannot write here,
+	// rebind a name onto it, or open a terminal. See internal/edge.
+	agentSrv := &http.Server{Addr: d.opts.AgentAddr, Handler: edge.For(d.opts.AgentAddr, agentMux)}
+	humanSrv := &http.Server{Addr: d.opts.HumanAddr, Handler: edge.For(d.opts.HumanAddr, d.BoardHandler())}
 
 	d.mu.Lock()
 	d.agentServer = agentSrv
@@ -1251,6 +1261,9 @@ func (d *Daemon) Run(ctx context.Context) error {
 // so this can take several seconds. Silence for that long looks like a hang.
 func (d *Daemon) shutdown(servers ...*http.Server) {
 	start := time.Now()
+	// Every session ends from here on, and none of those endings is somebody
+	// deciding. See the session hook's `end`.
+	d.windingDown.Store(true)
 
 	// SAY IT IS COMING, BEFORE ANYTHING GOES.
 	//

@@ -97,7 +97,28 @@ function showPane(host, name, key, opts) {
 }
 
 function settingsBody() { return document.querySelector("#settings .dlg-body"); }
-function buildSettingsNav() { splitIntoPanes(settingsBody(), "s-section", SETTINGS_PANE); }
+function buildSettingsNav() {
+  splitIntoPanes(settingsBody(), "s-section", SETTINGS_PANE);
+  // The gear is the board's. A pop-out keeps the pane in the page, because
+  // `paintSettings` fills its fields by id, but renames it so nothing can
+  // select it and drops its nav button.
+  if (!termOnly()) return;
+  const pane = Array.from(document.querySelectorAll("#settings .pane")).find(p => p.dataset.name === "notifications");
+  if (!pane) return;
+  pane.dataset.name = "notifications (board only)";
+  const wasShown = !pane.hidden;
+  pane.hidden = true;
+  Array.from(document.querySelectorAll("#settings .pane-nav button"))
+    .filter(b => b.textContent === "notifications").forEach(b => b.remove());
+  // The remembered pane was the one just dropped. Show the first that is left,
+  // without writing the choice back: that key is shared with the board.
+  if (wasShown) {
+    const first = Array.from(document.querySelectorAll("#settings .pane")).find(p => p !== pane);
+    if (first) first.hidden = false;
+    const nav = document.querySelector("#settings .pane-nav button");
+    if (nav) nav.classList.add("on");
+  }
+}
 function showSettingsPane(name) { showPane(settingsBody(), name, SETTINGS_PANE); }
 
 function paintSettings() {
@@ -1263,9 +1284,21 @@ function onTaskEvent(e) {
   let d = null;
   try { d = JSON.parse(e.data); } catch (err) {}
   if (typeof dockKick === "function") dockKick(d && d.id);
+  hearActivity(d);
   if (termOnly()) { soloTaskEvent(d); return; }
   if (cardRowComplete(d)) { upsertCard(d); paintSoon(); return; }
   tasksSoon();
+}
+
+// A card doing something, told to the ready alert so it can wait for quiet.
+// Whole rows count only when the live activity changed (its clocks tick and
+// would never be quiet), and a row without one counts because it cannot say.
+function hearActivity(d) {
+  if (!d || !d.id || typeof alerting === "undefined") return;
+  if (!cardRowComplete(d)) { alerting.activity(d.id); return; }
+  const was = termOnly() ? soloRow : cardRows.get(d.id);
+  const shape = a => JSON.stringify(a || null, (k, v) => /seconds$/.test(k) ? undefined : v);
+  if (!was || shape(was.activity) !== shape(d.activity)) alerting.activity(d.id);
 }
 
 // `task-removed`: with an id, that card goes. Without one it was the sweep,

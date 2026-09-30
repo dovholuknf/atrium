@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/dovholuknf/atrium/internal/edge"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -192,7 +193,7 @@ func (d *Daemon) sayGate(t *store.Task) string {
 // up, and the socket closes as a restart so the board reattaches to the runner
 // the ordinary way rather than this function growing a second copy of attach.
 func (d *Daemon) attachParked(w http.ResponseWriter, r *http.Request, t *store.Task) {
-	c, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
+	c, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: edge.ViaLink(r)})
 	if err != nil {
 		log.Printf("[atrium] attach parked %s: %v", t.ID, err)
 		return
@@ -235,8 +236,32 @@ func (d *Daemon) attachParked(w http.ResponseWriter, r *http.Request, t *store.T
 // that is not parked answers ok and does nothing, so a double press is harmless.
 func (d *Daemon) handleResume(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	if _, err := d.st.Get(id); err != nil {
+	t, err := d.st.Get(id)
+	if err != nil {
 		writeJSONErr(w, http.StatusNotFound, err)
+		return
+	}
+	// A CARD THAT IS NOT PARKED AND HAS NO RUNNER IS STARTED TOO. This answered
+	// ok and started nothing for one, which is what every card a restart failed
+	// to bring back was (2026-09-30).
+	if !isParked(t) && d.sup.get(id) == nil {
+		if t.Runner == "" || t.Worktree == "" {
+			writeJSONErr(w, http.StatusConflict, fmt.Errorf("%s cannot be resumed: nothing records which "+
+				"runner or directory it used", t.DisplayTitle()))
+			return
+		}
+		if _, err := d.Launch(d.reopenRequest(t)); err != nil {
+			// Mapped the way `api.launch` maps it: a conversation held by another
+			// card is a 409, anything else is the request's problem, never a 500.
+			code := http.StatusBadRequest
+			if _, busy := err.(interface{ ResumeConflict() map[string]any }); busy {
+				code = http.StatusConflict
+			}
+			writeJSONErr(w, code, err)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true,"started":true}`))
 		return
 	}
 	if err := d.unpark(id, ViaResume); err != nil {

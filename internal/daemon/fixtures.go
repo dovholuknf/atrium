@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"fmt"
 	"log"
 	"strings"
 	"time"
@@ -80,6 +81,21 @@ func (d *Daemon) startFixtures() {
 		if i > 0 {
 			time.Sleep(fixtureGap)
 		}
+		// A CARD SOMEBODY ENDED STAYS ENDED ACROSS A RESTART. An exit is a
+		// human or a launcher saying "this is over", and a fixture bringing it
+		// back at the next boot undid that: on 2026-09-30 the orchestrator
+		// moved to another room, exited this card, and the 11:28 room deploy
+		// started it again as a second copy of the conversation it had moved
+		// to (r-new-reopen-resumes-exited-card). Starting it from the fixtures
+		// page still works: that is somebody asking now.
+		if why := d.fixtureEnded(f); why != "" {
+			log.Printf("[atrium] fixture %q not started: %s", fixtureName(f), why)
+			if err := d.st.NoteFixtureRun(f.ID, why); err != nil {
+				log.Printf("[atrium] could not record why fixture %q did not start: %v", fixtureName(f), err)
+			}
+			d.settle.arrived("fixture:" + f.ID)
+			continue
+		}
 		// Started or failed, this one is no longer something atrium is waiting
 		// to come back. A fixture whose worktree has gone would otherwise hold
 		// the window open to the backstop.
@@ -101,6 +117,19 @@ func (d *Daemon) startFixtures() {
 type FixtureFault struct {
 	Label  string `json:"label"`
 	Reason string `json:"reason"`
+}
+
+// fixtureEnded is why a fixture must not start at boot, or empty: somebody
+// asked its card to exit and nothing launched it since. Never the card's
+// status, which a wind-down moves to `done` for every card. See store.ExitAsked.
+func (d *Daemon) fixtureEnded(f *store.Fixture) string {
+	if f.TaskID == "" {
+		return ""
+	}
+	if asked, err := d.st.ExitAsked(f.TaskID); err != nil || !asked {
+		return ""
+	}
+	return "its card was asked to exit, so a restart leaves it down. start it here to bring it back"
 }
 
 // fixtureName is what to call one in a message. The label, or the directory
@@ -156,8 +185,9 @@ func (d *Daemon) startFixture(f *store.Fixture) error {
 		Title:   f.Label,
 		TaskID:  onto,
 	}
+	var held *heldResume
 	if f.Resume {
-		req.Resume = d.fixtureResume(f, onto)
+		req.Resume, held = d.fixtureResume(f, onto)
 	}
 
 	task, err := d.Launch(req)
@@ -169,6 +199,8 @@ func (d *Daemon) startFixture(f *store.Fixture) error {
 		return err
 	}
 	log.Printf("[atrium] fixture %q started as %s", name, task.ID)
+	// On the card it made, now that there is one.
+	d.noteHeldResume(task.ID, "fixture", held)
 	// Cleared on success, so a fixture that has been fixed stops reporting the
 	// thing that used to be wrong with it.
 	if err := d.st.NoteFixtureRun(f.ID, ""); err != nil {
@@ -219,32 +251,94 @@ func (d *Daemon) StartFixtureNow(id string) error {
 // Anything that does not exist on disk is dropped rather than passed on, and
 // said out loud. Handing a runner an id it cannot find is how this was
 // invisible: the runner starts fresh and reports nothing wrong.
-func (d *Daemon) fixtureResume(f *store.Fixture, onto string) string {
+func (d *Daemon) fixtureResume(f *store.Fixture, onto string) (string, *heldResume) {
 	cwd := strings.TrimSpace(f.Cwd)
+	var held *heldResume
 
 	if strings.EqualFold(strings.TrimSpace(f.ResumeMode), "card") {
 		id := d.resumeIDFor(onto)
 		if id != "" && cwd != "" && !api.SessionExists(cwd, id) {
 			log.Printf("[atrium] fixture %q resumes card %s, whose conversation %s is gone. "+
 				"starting fresh", fixtureName(f), onto, id)
-			return ""
+			return "", nil
 		}
-		return id
+		return id, nil
 	}
 
-	// The default, and what `resume` on has always meant to a person.
+	// The default, and what `resume` on has always meant to a person. But not
+	// a conversation another live card is running: the newest in a shared
+	// checkout is often somebody else's.
 	if cwd != "" {
 		if id := api.LatestSession(cwd); id != "" {
-			return id
+			h := d.resumeHeld(onto, id)
+			if h == nil {
+				return id, nil
+			}
+			held = &heldResume{resume: id, holder: h}
 		}
 	}
 	// Nothing on disk to go back to. The card's own id is the last thing worth
 	// trying, and it is checked like everything else.
 	id := d.resumeIDFor(onto)
 	if id != "" && cwd != "" && !api.SessionExists(cwd, id) {
-		return ""
+		return "", held
 	}
-	return id
+	if h := d.resumeHeld(onto, id); h != nil {
+		return "", &heldResume{resume: id, holder: h}
+	}
+	return id, held
+}
+
+// resumeHeld is whether a conversation belongs to a live card other than
+// `taskID`. Resuming it would open one conversation in two terminals, both
+// writing to it. Said out loud, because the runner would start fresh without a
+// word and nobody would know why.
+//
+// THIS ROOM ONLY. A card on another room on the same machine can hold it too,
+// and nothing here can see that room's cards. What closes that path is the
+// boot rule above: a fixture whose card was ended is not started.
+func (d *Daemon) resumeHeld(taskID, resumeID string) *store.Task {
+	if resumeID == "" {
+		return nil
+	}
+	holders, err := d.st.ResumeHolders(resumeID, taskID)
+	if err != nil {
+		return nil
+	}
+	for _, h := range holders {
+		// A holder coming back in this same boot pass is live too, though it has
+		// no runner yet. See reopenSaved.
+		first, _ := d.bootResumes.Load(resumeID)
+		if !d.runnerIsLive(h) && first != h.ID {
+			continue
+		}
+		log.Printf("[atrium] not resuming conversation %s onto %s: %s (%s) holds it and is live",
+			resumeID, orWord(taskID, "a new card"), h.DisplayTitle(), h.ID)
+		return h
+	}
+	return nil
+}
+
+// heldResume is a resume refused because a live card holds the conversation,
+// kept until there is a card to say so on.
+type heldResume struct {
+	resume string
+	holder *store.Task
+}
+
+// noteHeldResume puts a refused resume on the card that started fresh, where
+// somebody looks, and not only in the log. `via` is who refused it. Written
+// only once the card exists: a fixture's first start has none until it
+// launches, and an event on no card is refused by the store.
+func (d *Daemon) noteHeldResume(taskID, via string, h *heldResume) {
+	if h == nil || taskID == "" {
+		return
+	}
+	d.noteResume(taskID, store.ResumeRefused, map[string]any{
+		"resume": h.resume, "holder": h.holder.ID, "via": via,
+		"reason": fmt.Sprintf("started fresh rather than resume conversation %s: %q holds it and is live",
+			h.resume, h.holder.DisplayTitle()),
+	})
 }
 
 // resumeIDFor is the conversation to pick back up, when there is one.

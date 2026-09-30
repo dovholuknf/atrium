@@ -362,18 +362,59 @@ function notifyIsOff() {
   try { return localStorage.getItem(NOTIFY_OFF_KEY) === "1"; } catch (e) { return false; }
 }
 
+// A POPPED-OUT WINDOW HAS ITS OWN SWITCHES, keyed by the card it shows. The board
+// never reads these, so a toggle in a pop-out cannot change the board. Keyed by
+// card rather than window so closing and reopening the pop-out keeps the choice.
+// `termOnly` lives in solo.js, which loads after this file, so the hash is read
+// here directly.
+const NOTIFY_OFF_CARD_KEY = "atrium.notify.off.card:";
+const SOUND_CARD_KEY = "atrium.sound.card:";
+function inPopout() { return /^#term=/.test(location.hash); }
+// The bare id of this pop-out's card, read off the hash each time because the
+// switcher rewrites it when the window moves to another card.
+function popoutCard() {
+  if (!inPopout()) return "";
+  try { return bareId(decodeURIComponent(location.hash.slice("#term=".length))); } catch (e) { return ""; }
+}
+function popoutIsOff() {
+  const id = popoutCard();
+  if (!id) return false;
+  try { return localStorage.getItem(NOTIFY_OFF_CARD_KEY + id) === "1"; } catch (e) { return false; }
+}
+function popoutSoundMuted() {
+  const id = popoutCard();
+  if (!id) return false;
+  try { return !!JSON.parse(localStorage.getItem(SOUND_CARD_KEY + id) || "{}").muted; } catch (e) { return false; }
+}
+
+// THE ONE ANSWER to "is this window silent", for everything that alerts. The
+// board is silent when the board-wide switch is off. A pop-out is silent when
+// that OR its own card's switch is off, and says which in the drawer.
+function windowIsOff() { return notifyIsOff() || popoutIsOff(); }
+
 function setNotifyOff(off) {
+  // In a pop-out the toggle writes the card's key and never the board's.
+  const key = inPopout() ? (popoutCard() ? NOTIFY_OFF_CARD_KEY + popoutCard() : "") : NOTIFY_OFF_KEY;
   try {
-    if (off) localStorage.setItem(NOTIFY_OFF_KEY, "1");
-    else localStorage.removeItem(NOTIFY_OFF_KEY);
+    if (key) {
+      if (off) localStorage.setItem(key, "1");
+      else localStorage.removeItem(key);
+    }
   } catch (e) {}
   paintNotifyOff();
+}
+
+// What the drawer's toggle does: a pop-out cannot flip the board-wide switch, so
+// with that one off the toggle is inert and says where to change it.
+function notifyToggle() {
+  if (inPopout() && notifyIsOff()) return;
+  setNotifyOff(!windowIsOff());
 }
 
 // Whether this alert is held back. A permission request is held too while the
 // constant above says so. `goTo` is how `notify` tells one apart.
 function notifyHeld(goTo) {
-  if (!notifyIsOff()) return false;
+  if (!windowIsOff()) return false;
   if (goTo === "perms" && !NOTIFY_OFF_SILENCES_PERMISSIONS) return false;
   return true;
 }
@@ -381,7 +422,9 @@ function notifyHeld(goTo) {
 // The bell, the drawer's toggle and the gear's checkbox, all repainted from the
 // one stored answer. The tip and the aria-label are the same text.
 function paintNotifyOff() {
-  const off = notifyIsOff();
+  const boardOff = notifyIsOff();
+  const off = windowIsOff();
+  const popout = inPopout();
   const bell = document.getElementById("toastlog-open");
   if (bell) {
     const g = bell.querySelector(".glyph");
@@ -396,19 +439,55 @@ function paintNotifyOff() {
   const t = document.getElementById("toastlog-toggle");
   if (t) {
     t.textContent = off ? "turn on" : "turn off";
-    const tip = off
+    let tip = off
       ? "notifications are off. turn them back on"
       : "hold back toasts, desktop notifications and sound. what arrives is still listed here" +
         (NOTIFY_OFF_SILENCES_PERMISSIONS ? "" : ". permission requests still come through");
+    if (popout) {
+      t.textContent = boardOff ? "off for the board" : off ? "turn on" : "turn off";
+      t.disabled = boardOff;
+      tip = boardOff
+        ? "off for the whole board, change it on the board"
+        : off
+          ? "off for this window. turn it back on"
+          : "hold back this window's toasts, desktop notifications and sound. the board keeps its own settings";
+    }
     t.dataset.tip = tip;
     t.setAttribute("aria-label", tip);
   }
+  const scope = document.getElementById("toastlog-scope");
+  if (scope) {
+    scope.hidden = !popout || !off;
+    scope.textContent = boardOff ? "off for the whole board, change it on the board" : "off for this window";
+  }
   const c = document.getElementById("s-notifyoff");
-  if (c) c.checked = off;
+  if (c) c.checked = boardOff;
 }
-// Another window of this browser flipped it.
-window.addEventListener("storage", e => { if (e.key === NOTIFY_OFF_KEY) paintNotifyOff(); });
+// Another window of this browser flipped it. A pop-out hears the board's switch
+// and its own card's, and the board hears only its own.
+window.addEventListener("storage", e => {
+  if (e.key === NOTIFY_OFF_KEY || (e.key && e.key.startsWith(NOTIFY_OFF_CARD_KEY))) paintNotifyOff();
+});
 addEventListener("DOMContentLoaded", paintNotifyOff);
+
+// Whether THIS window is showing this card's terminal right now: a pop-out for
+// it, or the board on the terminals view with it attached. Said to the ready
+// alert, which has nothing to tell someone reading the screen it is about.
+function termWatching(id) {
+  if (!id || !term || !termTask || !sameCard(termTask.id, id)) return false;
+  return termOnly() || isViewing("terms");
+}
+
+// PTY OUTPUT IS ACTIVITY, for the one card this window has attached. A ready
+// alert waits for quiet and the window reading a terminal is the one that sees
+// it move. At most once a second and it makes no request.
+let readyQuietFedAt = 0;
+function feedReadyQuiet() {
+  const now = Date.now();
+  if (now - readyQuietFedAt < 1000 || !termTask) return;
+  readyQuietFedAt = now;
+  alerting.activity(termTask.id);
+}
 
 const alerting = (() => {
   let ctx = null;
@@ -430,14 +509,22 @@ const alerting = (() => {
   // room set changes. See the header on `reseed`.
   const RESEED = "\0reseed";
 
+  // A pop-out mutes its own card and leaves the board's sound alone.
+  const muted = () => inPopout() ? popoutSoundMuted() : !!prefs.muted;
+
   const btn = document.getElementById("sound");
   const paint = () => {
-    btn.classList.toggle("muted", prefs.muted);
-    btn.innerHTML = prefs.muted ? "&#128263;" : "&#9835;";
-    btn.dataset.tip = prefs.muted ? "muted. click for sound" : "sound on. click to mute";
+    btn.classList.toggle("muted", muted());
+    btn.innerHTML = muted() ? "&#128263;" : "&#9835;";
+    btn.dataset.tip = inPopout()
+      ? (muted() ? "muted for this window. click for sound" : "sound on. click to mute this window")
+      : (muted() ? "muted. click for sound" : "sound on. click to mute");
     btn.setAttribute("aria-label", btn.dataset.tip);
   };
   paint();
+  window.addEventListener("storage", e => {
+    if (e.key && e.key.startsWith(SOUND_CARD_KEY)) { paint(); paintAudioState(); }
+  });
 
   const save = () => {
     localStorage.setItem("atrium.sound", JSON.stringify(prefs));
@@ -464,7 +551,7 @@ const alerting = (() => {
   });
 
   function audioBlocked() {
-    return !prefs.muted && (!ctx || ctx.state !== "running");
+    return !muted() && (!ctx || ctx.state !== "running");
   }
   function paintAudioState() {
     const el = document.getElementById("sound");
@@ -505,7 +592,7 @@ const alerting = (() => {
   // by ear is the trade, and it is the right way round: which agent is the
   // fact you cannot get any other way while your back is turned.
   function play(kind, sound) {
-    if (prefs.muted) return;
+    if (muted()) return;
     if (notifyHeld(kind === "permission" ? "perms" : "")) return;
     preview(sound || (kind === "permission" ? prefs.perm : prefs.input));
   }
@@ -597,7 +684,7 @@ const alerting = (() => {
     // symptom this fixes. Cases 1, 2 and 4 all land on a `toast`, here or in a
     // sibling window sharing this origin's localStorage, and the wrapper in
     // toast-log.js records those. Only this branch has to say so itself.
-    if (!prefs.muted && prefs.desktop !== false && desktopAllowed()) {
+    if (!muted() && prefs.desktop !== false && desktopAllowed()) {
       logNotification(title, body, goTo, key, landOn);
       showNotification(title, body, goTo, permId, subject, mark, landOn, key);
       return;
@@ -611,9 +698,17 @@ const alerting = (() => {
   }
 
   btn.onclick = () => {
-    prefs.muted = !prefs.muted;
-    save();
-    if (!prefs.muted) {
+    if (inPopout()) {
+      const id = popoutCard();
+      if (id) {
+        try { localStorage.setItem(SOUND_CARD_KEY + id, JSON.stringify({ muted: !popoutSoundMuted() })); } catch (e) {}
+      }
+      paint();
+    } else {
+      prefs.muted = !prefs.muted;
+      save();
+    }
+    if (!muted()) {
       unlock();
       play("waiting");
     }
@@ -635,8 +730,21 @@ const alerting = (() => {
   // A parser cannot catch this: it is valid JavaScript that fails when run.
   const nagged = {};
 
+  // State for the once-per-wait rule below, declared up here for the same
+  // reason as `nagged`: a `const` under the return never runs.
+  const rung = new Map();
+  const RUNG_KEEP_MS = 3600000;
+  const RUNG_CAP = 1000;
+  const held = new Map();
+  const lastActive = new Map();
+  let liveWaits = new Set();
+  // Held alerts, one bucket per kind. Permissions and ready cards are never
+  // merged into one alert: they say different things and want different
+  // amounts of hurry.
+  const pending = {};
+
   return {
-    check, nag, play, preview, save, unlock, notify, settling, reseed,
+    check, nag, play, preview, save, unlock, notify, settling, reseed, activity, sinceActive, quietMs,
     get: () => prefs,
     set: (patch) => { Object.assign(prefs, patch); save(); }
   };
@@ -727,11 +835,13 @@ const alerting = (() => {
     // Diffed on the BARE id, so a card keeps its identity whether the aggregate
     // view tags it `room~id` (two rooms) or leaves it bare (one). See `bareId`.
     const ids = new Set(items.map(i => bareId(i.id)));
+    trackWaits(kind, items);
     // A ROOM SET CHANGE IS NOT A PILE OF NEW AGENTS. `reseed` marked this kind
     // when a room attached or detached, so take this set as the new baseline
     // and say nothing, the same way settling and a fresh page load do.
     if (known[kind] === RESEED) {
       known[kind] = ids;
+      rememberRung(kind, items);
       return;
     }
     // A RESTART IS NOT A PILE OF NEW AGENTS. While the daemon says it is still
@@ -750,11 +860,13 @@ const alerting = (() => {
     // interrupted for.
     if (settlingNow && (kind === "arrived" || kind === "waiting" || kind === "looksidle")) {
       known[kind] = ids;
+      rememberRung(kind, items);
       return;
     }
     const prev = known[kind] === undefined ? null : known[kind];
     if (prev === null) {
       known[kind] = ids;
+      rememberRung(kind, items);
       // A permission that is already pending when the page loads still needs
       // answering. Staying silent about it meant every reload swallowed the
       // alert for whatever was already blocked, which during a working session
@@ -774,10 +886,127 @@ const alerting = (() => {
       }
       return;
     }
-    const fresh = items.filter(i => !prev.has(bareId(i.id)));
+    let fresh = items.filter(i => !prev.has(bareId(i.id)));
     known[kind] = ids;
+    // A WAIT THAT HAS RUNG NEVER RINGS AGAIN. Membership flaps (a card out of
+    // the set for one pass and back) make a card look fresh with the same wait.
+    fresh = fresh.filter(i => !rungHas(kind, i));
     if (!fresh.length) return;
+    // A READY ALERT IS HELD UNTIL THE CARD HAS BEEN QUIET. See `holdWaits`.
+    if (kind === "waiting") {
+      holdWaits(fresh, describe);
+      return;
+    }
+    deliver(kind, fresh, describe);
+  }
 
+  // ── a wait rings once, and only after the card went quiet ─────────────
+  //
+  // The ready alert rang 17 times for one card in four minutes. `check` diffs
+  // on id membership, so anything that drops a row out of the waiting set for a
+  // single pass (offline, a partial row, needs-input to needs-permission and
+  // back, the merged view losing a room for a moment) brought it back as
+  // fresh. And a busy agent that ends short turns really is waiting, briefly,
+  // many times.
+  //
+  // KEYED ON THE WAIT, not the card: bare id plus `waiting_since`. The same
+  // wait never rings twice however often it leaves and re-enters the set. A new
+  // `waiting_since` is a new wait and may ring. `looksidle` is keyed on the
+  // flag time already, so it only needs the memory and not the hold.
+  function rungKey(kind, i) {
+    if (kind === "waiting") return bareId(i.id) + "|" + (i.waiting_since || "");
+    if (kind === "looksidle") return bareId(i.id);
+    return "";
+  }
+  function rungHas(kind, i) {
+    const k = rungKey(kind, i);
+    return !!k && rung.has(k);
+  }
+  function rememberRung(kind, items) {
+    items.forEach(i => { const k = rungKey(kind, i); if (k) rung.set(k, Date.now()); });
+  }
+  // Every pass: what is waiting now, and which remembered waits are over.
+  function trackWaits(kind, items) {
+    if (kind !== "waiting" && kind !== "looksidle") return;
+    const now = Date.now();
+    const live = new Set(items.map(i => rungKey(kind, i)));
+    const liveIds = new Set(items.map(i => bareId(i.task_id || i.id)));
+    if (kind === "waiting") {
+      liveWaits = live;
+      held.forEach((h, k) => { if (!live.has(k)) { clearTimeout(h.timer); held.delete(k); } });
+    }
+    live.forEach(k => { if (rung.has(k)) rung.set(k, now); });
+    const mine = k => kind === "waiting" ? k.includes("|") : !k.includes("|");
+    rung.forEach((at, k) => {
+      if (!mine(k) || live.has(k)) return;
+      const id = k.split("|")[0];
+      // The card is here under a different wait, or has been gone a while.
+      if (liveIds.has(id) || now - at > RUNG_KEEP_MS) rung.delete(k);
+    });
+    while (rung.size > RUNG_CAP) rung.delete(rung.keys().next().value);
+  }
+
+  // SECONDS OF QUIET BEFORE A READY ALERT, overridable so a headless test does
+  // not wait for real ones. A plain board never sets it.
+  // A function declaration, because a `const` under the return never runs.
+  function quietMs() { return (typeof window !== "undefined" && window.__atriumReadyQuietMs) || 5000; }
+
+  // How long a card has been quiet, in ms. THE ONE PLACE to feed the room's real
+  // pty-output time once it is published: until then the only signal is an
+  // `activity` change heard on the event stream (see `activity` below).
+  function quietFor(i) {
+    const at = Math.max(lastActive.get(bareId(i.task_id || i.id)) || 0, (held.get(rungKey("waiting", i)) || {}).at || 0);
+    return Date.now() - at;
+  }
+
+  // The board heard something from this card. Any of it restarts the quiet.
+  function activity(id) {
+    if (id) lastActive.set(bareId(id), Date.now());
+  }
+
+  // Ms since this card was last heard doing anything, for a window that holds
+  // its own card and so has no held entry to measure from. Infinity if never.
+  function sinceActive(id) {
+    const at = lastActive.get(bareId(id));
+    return at ? Date.now() - at : Infinity;
+  }
+
+  function holdWaits(fresh, describe) {
+    fresh.forEach(i => {
+      const k = rungKey("waiting", i);
+      if (held.has(k)) { held.get(k).item = i; return; }
+      held.set(k, { item: i, at: Date.now(), timer: 0 });
+    });
+    settleWaits(describe);
+  }
+
+  // One timer per held wait. A timer that fires announces everything held that
+  // is quiet by then, so two quiet waits are one alert, and puts back any that
+  // heard activity in the meantime.
+  function settleWaits(describe) {
+    held.forEach((h, k) => {
+      if (h.timer) return;
+      h.describe = describe || h.describe;
+      const left = Math.max(0, quietMs() - quietFor(h.item));
+      h.timer = setTimeout(() => { h.timer = 0; fireWaits(); }, left);
+    });
+  }
+  function fireWaits() {
+    const due = [];
+    let again = false;
+    held.forEach((h, k) => {
+      clearTimeout(h.timer);
+      h.timer = 0;
+      if (!liveWaits.has(k)) { held.delete(k); return; }
+      if (quietFor(h.item) >= quietMs()) due.push([k, h]);
+      else again = true;
+    });
+    due.forEach(([k]) => { held.delete(k); rung.set(k, Date.now()); });
+    if (again) settleWaits();
+    if (due.length) deliver("waiting", due.map(([, h]) => h.item), due[0][1].describe);
+  }
+
+  function deliver(kind, fresh, describe) {
     // Held briefly, so several agents finishing together are one alert rather
     // than a burst. Zero means announce now, which is the default: a delay
     // between something needing you and being told is a real cost, and it is
@@ -802,11 +1031,6 @@ const alerting = (() => {
     }, Math.max(0, Math.min(holdMs, holdMs * 3 - waited)));
   }
 
-  // Held alerts, one bucket per kind. Permissions and ready cards are never
-  // merged into one alert: they say different things and want different
-  // amounts of hurry.
-  const pending = {};
-
   // Says one thing about a set of items that all arrived together.
   function announce(kind, fresh, describe) {
     // A CARD WITH ITS OWN WINDOW IS THAT WINDOW'S TO ANNOUNCE, and that means
@@ -827,6 +1051,17 @@ const alerting = (() => {
     // notification from it is noise. Dropped before `play` and before the count
     // in the title, so a pile of three with one worker is a pile of two. The log
     // line stays, because it is the record that the event happened.
+    // A FOCUSED WINDOW SHOWING THE CARD SAYS NOTHING ABOUT IT, not even a toast.
+    // Logged, since the log is the record. An unfocused window keeps the rules
+    // above and below.
+    if (kind === "waiting" || kind === "looksidle") {
+      fresh = fresh.filter(i => {
+        if (!focusIsHere() || !termWatching(i.task_id || i.id)) return true;
+        const q = describe(i);
+        recordToLog(q.title, q.body, "stack", "", i.task_id || i.id);
+        return false;
+      });
+    }
     fresh = fresh.filter(i => {
       if (!quietDoer(kind, i)) return true;
       const q = describe(i);

@@ -14,7 +14,9 @@ import (
 
 	zroksdk "github.com/openziti/zrok/v2/sdk/golang/sdk"
 
+	"github.com/dovholuknf/atrium/internal/edge"
 	"github.com/dovholuknf/atrium/internal/store"
+	"net/url"
 )
 
 // Lending ONE session to ONE person.
@@ -381,7 +383,7 @@ func (d *Daemon) bindCardShare(title string, rec *store.CardShare) (*guestShare,
 	// reported as the failure it is rather than described as a private one.
 	address := ""
 	if len(shr.FrontendEndpoints) > 0 {
-		address = strings.TrimRight(shr.FrontendEndpoints[0], "/") + "/#term=" + taskID
+		address = strings.TrimRight(shr.FrontendEndpoints[0], "/") + d.guestPath(taskID)
 	}
 	if address == "" {
 		if mode == "public" {
@@ -403,7 +405,7 @@ func (d *Daemon) bindCardShare(title string, rec *store.CardShare) (*guestShare,
 		Since: time.Now().Format(time.RFC3339), Token: shr.Token,
 		Name: rec.Name,
 	}
-	srv := &http.Server{Handler: d.guestHandler(taskID)}
+	srv := &http.Server{Handler: edge.Named(d.guestHandler(taskID), shr.FrontendEndpoints...)}
 	g.srv, g.ln = srv, ln
 	d.guests.put(g)
 
@@ -702,6 +704,28 @@ func (d *Daemon) guestHandler(taskID string) http.Handler {
 			return
 		}
 
+		// THIS CARD BY ITS NAME, and only this card (u-new-card-urls R4). The
+		// page on this card's readable address, and the lookup the page makes
+		// from there, each served only when the name resolves to this card.
+		// Anything else is the same 403 as every refusal below, found or not,
+		// so a guest cannot ask this listener which names exist here.
+		if r.Method == http.MethodGet || r.Method == http.MethodHead {
+			if name, page, ok := guestNamed(r.URL.EscapedPath(), d.opts.Room); ok {
+				if !d.namesCard(name, taskID) {
+					http.Error(w, "this link is one terminal. nothing else here is shared.", http.StatusForbidden)
+					return
+				}
+				r = r.Clone(r.Context())
+				if page {
+					r.URL.Path, r.URL.RawPath = "/", ""
+				} else {
+					r.URL.Path, r.URL.RawPath = mine, ""
+				}
+				board.ServeHTTP(w, r)
+				return
+			}
+		}
+
 		// EVERYTHING ELSE.
 		//
 		// Named cases that are refused on purpose, so the next person does not
@@ -736,4 +760,69 @@ func (d *Daemon) guestHandler(taskID string) http.Handler {
 		http.Error(w, "this link is one terminal. nothing else here is shared.",
 			http.StatusForbidden)
 	})
+}
+
+// guestNamed reads a card name off a guest request: the card's readable page,
+// `/room/<room>/<name>` or `/alias/<name>`, or the page's lookup,
+// `/v1/tasks/<name>` or `/v1/tasks/<name>@<room>`. `page` says which. A room
+// part naming another room is not this listener's, and is not read.
+func guestNamed(escaped, room string) (name string, page, ok bool) {
+	unesc := func(s string) string {
+		if u, err := url.PathUnescape(s); err == nil {
+			return u
+		}
+		return s
+	}
+	parts := strings.Split(strings.TrimPrefix(escaped, "/"), "/")
+	switch {
+	case len(parts) == 2 && parts[0] == "alias" && parts[1] != "":
+		return unesc(parts[1]), true, true
+	case len(parts) == 3 && parts[0] == "room" && parts[2] != "":
+		if room == "" || !strings.EqualFold(unesc(parts[1]), room) {
+			return "", false, false
+		}
+		return unesc(parts[2]), true, true
+	case len(parts) == 3 && parts[0] == "v1" && parts[1] == "tasks" && parts[2] != "":
+		n := unesc(parts[2])
+		if i := strings.LastIndex(n, "@"); i > 0 {
+			if room == "" || !strings.EqualFold(n[i+1:], room) {
+				return "", false, false
+			}
+			n = n[:i]
+		}
+		return n, false, true
+	}
+	return "", false, false
+}
+
+// namesCard is whether a name, as the room resolves one, is this card: its
+// wire name, or its alias as it is at the time of the request.
+func (d *Daemon) namesCard(name, taskID string) bool {
+	name = strings.TrimPrefix(strings.TrimSpace(name), "@")
+	if name == "" {
+		return false
+	}
+	if name == taskID {
+		return true
+	}
+	if t, err := d.st.GetByWireName(d.st.Qualify(name)); err == nil {
+		return t.ID == taskID
+	}
+	if t, err := d.st.GetByAlias(name); err == nil {
+		return t.ID == taskID
+	}
+	return false
+}
+
+// guestPath is the address a lent card is handed out on: its HANDLE, which is
+// that card's for its whole life, never its alias, which can be changed or taken
+// by a new card once this one is done. `#term=` when the room or the card has no
+// name to build one from, and that still works on the same listener.
+func (d *Daemon) guestPath(taskID string) string {
+	room := strings.TrimSpace(d.opts.Room)
+	t, err := d.st.Get(taskID)
+	if err != nil || room == "" || t.WireName == "" {
+		return "/#term=" + taskID
+	}
+	return "/room/" + url.PathEscape(room) + "/" + url.PathEscape(t.WireName)
 }
