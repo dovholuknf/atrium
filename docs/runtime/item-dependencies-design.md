@@ -219,6 +219,38 @@ is recorded. A launch whose id matches no gate is untouched, so every existing l
 A gate is not a column. It says nothing about what the card's runner is doing, and a blocked item usually has no card
 at all yet. A chip and a list follow "status is a column, activity is a badge".
 
+### 5.1 What the board calls (as built, @runtime)
+
+Every answer is JSON. A refusal is `{"error": "<sentence>"}` with its status, and the sentence is written to be shown.
+
+`GET /_hub/deps?open=1` (also `item=`, `repo=`). Open to any board. Answers `{"gates": [gate, ...]}`, oldest first,
+each checked on the way out, so a gate met by this very read is not in an `open=1` answer:
+
+```json
+{"id": "0199...", "repo": "github/dovholuknf/atrium", "item": "r-038", "kind": "item", "target": "r-037",
+ "why": "needs the store half", "added_by": "runtime-director@sg4", "added_at": "2026-09-30T13:00:00Z",
+ "state": "open", "reason": "not landed: no changelog/*/*-r-037.md on claude/main 1a2b3c4"}
+```
+
+`kind` is `item` or `cond`. `state` is `open` or `met`. A met gate also has `met_at` and `met_by` (`atrium` or
+`human`), and `reason` is then what was seen when it was met. `added_by` is `human` for a gate added from the board.
+The chip's tooltip is `reason`. A card's gates are the gates whose `item` equals the card's alias, or its title up to
+the first `:`.
+
+`POST /_hub/deps` `{"item": "r-038", "waits_on": ["r-037", "room:sg3"], "why": "..."}`. The Add form. `repo` only
+when the hub has more than one. Leave `added_by` off, which records `human`. Answers `{"gates": [...]}` checked at
+once, so a target already met comes back `met`. 409 for a loop (the sentence names it) or a bad id, 400 for an empty
+entry or more than 20. Loopback only (403 otherwise).
+
+`POST /_hub/deps/clear` `{"id": "<gate id>", "why": "<required>"}`. The Clear button: ask for the reason first, the
+route refuses an empty one (400). 409 when already met, 404 for no such gate. Answers `{"gate": gate}`. Loopback only.
+
+`GET /_hub/deps/ready?dept=runtime` answers `{"items": [{"id", "title", "status"}]}`. Optional for the board.
+
+The hub publishes a `deps` event on its feed when a gate is added, met, cleared or renamed:
+`{"repo": "...", "item": "r-038", "what": "added|met|cleared|renamed"}`. A delta: re-fetch `GET /_hub/deps?open=1`
+on it and on reconnect.
+
 ## 6. How the orchestrator and directors use it
 
 This part is instructions for whoever owns `DIRECTOR.md` and the orchestrator's cold start, not code:

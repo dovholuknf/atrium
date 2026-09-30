@@ -118,7 +118,17 @@ func (r *Runner) Git(ctx context.Context, dir string, args ...string) (string, e
 	return r.git(ctx, dir, nil, args...)
 }
 
+// GitInput is Git with `stdin` fed to the command, for a batch read such as
+// `cat-file --batch` that takes its list on standard input.
+func (r *Runner) GitInput(ctx context.Context, dir string, stdin []byte, args ...string) (string, error) {
+	return r.gitWith(ctx, dir, nil, stdin, args...)
+}
+
 func (r *Runner) git(ctx context.Context, dir string, extraEnv []string, args ...string) (string, error) {
+	return r.gitWith(ctx, dir, extraEnv, nil, args...)
+}
+
+func (r *Runner) gitWith(ctx context.Context, dir string, extraEnv []string, stdin []byte, args ...string) (string, error) {
 	r.mu.Lock()
 	if r.stopped {
 		r.mu.Unlock()
@@ -144,6 +154,9 @@ func (r *Runner) git(ctx context.Context, dir string, extraEnv []string, args ..
 	cmd.Env = CleanEnv(extraEnv...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	if stdin != nil {
+		cmd.Stdin = bytes.NewReader(stdin)
+	}
 	cmd.WaitDelay = 5 * time.Second
 	if err := cmd.Run(); err != nil {
 		if ctx.Err() != nil {

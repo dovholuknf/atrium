@@ -1,7 +1,19 @@
 # r-new-item-dependencies. Work items that wait on other work, with a gate only the board resolves
 
-Status: designed 2026-09-30 in `docs/runtime/item-dependencies-design.md` (@rnd), ready to build. clint wants it
-BUILT TODAY (2026-09-30). @runtime builds stage 1 (hub only, one worker day), @ui draws it (design section 5). From `docs/rnd/competitor-features.md` item 8 (Orca and Gas Town have it).
+Status: stage 1 BUILT 2026-09-30 by @runtime on `claude/r-deps`, to `docs/runtime/item-dependencies-design.md`.
+Hub side only: live at the next hub deploy, no room restart. The board half is @ui's (design section 5, which now
+carries the API shapes). From `docs/rnd/competitor-features.md` item 8 (Orca and Gas Town have it).
+
+Code: `internal/itemgate` (ids, targets, the landed path, loops), `internal/hubstore/deps.go` (migration
+`0004_item_gate`), `internal/link/deps.go` (the checks, `/_hub/deps*`, the launch refusal, the ticker) and
+`internal/link/deps_mcp.go` (`atrium_deps`). Tests beside each.
+
+Differs from the design in two small ways:
+
+- The reads (`GET /_hub/deps`, `GET /_hub/deps/ready`) are open like `GET /_hub/launch-caps`, so a board reached
+  over an overlay can show the Blocked list. Every write is loopback only.
+- `atrium_launch` has no alias field, so the item comes from the title alone (`<id>:` prefix, or a title that is only
+  an id).
 
 ## Why
 
