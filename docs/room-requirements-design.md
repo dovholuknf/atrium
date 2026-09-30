@@ -235,7 +235,7 @@ f-004's.
 2. `scripts/room-check.ps1` with the rows that already have a checker: attached, toolchain (from ssh, with its
    `warn`), clone, `hub-main`, gitfiles, runner rows, helpers, mcp-config, hooks, smoke. @fabric.
 3. `room-git.ps1 init -Check`, the check mode it lacks. @fabric.
-4. codex as a smoke case in provision. @fabric, after f-007 lands.
+4. codex as a smoke case in provision. @fabric, after f-007 lands. Built as f-015, see its backlog file.
 5. `POST /v1/preflight` with its three questions and the fixed key table, from inside the room. @runtime, with
    @rnd's section 4.
    Items 1 and 5 were built as r-018 at 2c67bca. The shapes are in its `docs/changes/r-018.md`. The hub route for
