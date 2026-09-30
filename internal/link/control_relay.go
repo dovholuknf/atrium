@@ -51,6 +51,12 @@ func (c *controlMCP) relay(ctx context.Context, from string, req RelayRequest) R
 			return c.exitAcross(ctx, target, req.To)
 		}
 		return c.cardAcross(ctx, target, req.To, req.Events)
+	case RelayFind:
+		card, code, err := c.hub.lookupEverywhere(from, req.To)
+		if err != nil {
+			return RelayAnswer{Code: code, Error: err.Error()}
+		}
+		return RelayAnswer{OK: true, To: card.Wire + "@" + card.Room, Card: tagFor(card.Room, card.ID)}
 	case RelayPeers:
 		peers, quiet := c.peersElsewhere(ctx, from, req.All)
 		ans := RelayAnswer{OK: true, Peers: peers}

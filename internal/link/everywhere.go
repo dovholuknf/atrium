@@ -2,6 +2,8 @@ package link
 
 import (
 	"encoding/json"
+	"fmt"
+	"net/http"
 	"sort"
 	"strings"
 	"sync"
@@ -174,4 +176,35 @@ func (c everyCard) answersTo(name string) bool {
 // starts. Reports whether the index changed.
 func (h *Hub) IndexEverywhere(room string, cards []CardState) bool {
 	return h.every.replace(room, cards)
+}
+
+// lookupEverywhere is the one card on another room that `who` names, or the
+// refusal that says why not: a 409 naming every match when two or more rooms
+// answer, a 404 carrying the everywhere list when none does. `code` is the
+// refusal's status, zero on a match.
+func (h *Hub) lookupEverywhere(besides, who string) (card everyCard, code int, err error) {
+	if h == nil {
+		return everyCard{}, http.StatusNotFound, fmt.Errorf("no card called %q on another room", who)
+	}
+	switch found := h.every.find(besides, who); len(found) {
+	case 1:
+		return found[0], 0, nil
+	case 0:
+		msg := fmt.Sprintf("no card called %q on another room", who)
+		var list []string
+		for _, c := range h.every.all(besides) {
+			list = append(list, c.spelled())
+		}
+		if len(list) > 0 {
+			msg += ". cards on every room: " + strings.Join(list, ", ")
+		}
+		return everyCard{}, http.StatusNotFound, fmt.Errorf("%s", msg)
+	default:
+		var list []string
+		for _, c := range found {
+			list = append(list, c.spelled())
+		}
+		return everyCard{}, http.StatusConflict, fmt.Errorf("%q names a card on more than one room: %s. "+
+			"say which, as name@room", strings.TrimPrefix(strings.TrimSpace(who), "@"), strings.Join(list, ", "))
+	}
 }
