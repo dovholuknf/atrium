@@ -125,17 +125,24 @@ document.addEventListener("click", e => {
   clearTermPane = function (switching) { setTermFull(false); return inner.apply(this, arguments); };
 })();
 
-// THE PHONE HEADER, hidden on its own. Saved per device: "1" hidden, "0" shown, nothing saved means the
-// landscape auto-collapse in phone.css decides. A saved choice wins over that, through the two body classes.
-const PHONE_HDR_KEY = "atrium.phone.headerHidden";
-function phoneHeaderApply() {
+// THE PHONE HEADERS, slim or open. One saved choice for the board header and the terminal bar (u-020), so a
+// pop-out window and the board agree: "1" open, anything else (or nothing saved) slim. The class is `hdr-open`.
+const PHONE_HDR_KEY = "atrium.phone.headerOpen";
+function phoneHeaderOpenApply() {
   let v = null;
   try { v = localStorage.getItem(PHONE_HDR_KEY); } catch (e) {}
-  document.body.classList.toggle("hdr-hidden", v === "1");
-  document.body.classList.toggle("hdr-shown", v === "0");
+  const open = v === "1";
+  document.body.classList.toggle("hdr-open", open);
+  const b = document.getElementById("hdr-toggle");
+  if (b) {
+    b.setAttribute("aria-expanded", open ? "true" : "false");
+    b.setAttribute("aria-label", open ? "hide the rest of the header" : "show the full header");
+    b.textContent = open ? "▴" : "▾";
+  }
 }
-function phoneHeaderSet(hide) {
-  try { localStorage.setItem(PHONE_HDR_KEY, hide ? "1" : "0"); } catch (e) {}
-  phoneHeaderApply();
+function phoneHeaderOpenSet(open) {
+  try { localStorage.setItem(PHONE_HDR_KEY, open ? "1" : "0"); } catch (e) {}
+  phoneHeaderOpenApply();
 }
-phoneHeaderApply();
+window.addEventListener("storage", e => { if (!e.key || e.key === PHONE_HDR_KEY) phoneHeaderOpenApply(); });
+phoneHeaderOpenApply();
