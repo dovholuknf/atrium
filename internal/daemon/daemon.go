@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/api"
+	"github.com/dovholuknf/atrium/internal/mcprule"
 	"github.com/dovholuknf/atrium/internal/shellpick"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -838,7 +839,15 @@ func (d *Daemon) onPermRequest(req PermissionRequest) (string, *AutoDecision, er
 		// DecidePermissionBy writes the audit event, carrying what answered
 		// this in `by`. A second one here would show every rule decision
 		// twice.
-		if _, err := d.st.DecidePermissionBy(p.ID, rule.Decision, rule.Reason, rule.Prefix); err != nil {
+		//
+		// What is recorded as the decider is the rule's pattern, and an MCP rule's
+		// pattern is always `*`, which names nothing. Its tool is what says which
+		// rule this was.
+		by := rule.Prefix
+		if mcprule.Is(rule.Tool) && rule.Prefix == mcprule.AnyInput {
+			by = rule.Tool
+		}
+		if _, err := d.st.DecidePermissionBy(p.ID, rule.Decision, rule.Reason, by); err != nil {
 			return "", nil, err
 		}
 		return p.ID, &AutoDecision{Decision: rule.Decision, Reason: rule.Reason}, nil

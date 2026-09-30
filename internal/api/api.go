@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/claudeconf"
+	"github.com/dovholuknf/atrium/internal/mcprule"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -318,6 +319,17 @@ func (s *Server) forever(permID, decision, reason, prefix, kind string) error {
 	p, err := s.st.GetPermission(permID)
 	if err != nil {
 		return err
+	}
+	// An MCP tool has no command to cut a prefix from: what it would cut is the
+	// compacted JSON of this one call, a rule that matches that input and nothing
+	// else. The rule is about the tool, so it is written as one, and the name is
+	// what is recorded against the request.
+	if mcprule.Is(p.Tool) {
+		rule, err := s.st.AddMCPRule(p.Tool, decision, reason, "")
+		if err != nil {
+			return err
+		}
+		return s.st.NoteRuleCreated(permID, rule.Tool)
 	}
 	if prefix == "" {
 		prefix = store.DefaultPrefix(p.Tool, p.Command)
@@ -1825,9 +1837,23 @@ func (s *Server) addRule(w http.ResponseWriter, r *http.Request) {
 		rule *store.Rule
 		err  error
 	)
-	if body.Kind == store.KindPath {
+	switch {
+	case mcprule.Is(strings.TrimSpace(body.Tool)):
+		// A rule about an MCP tool matches the tool and takes any input. Refusing
+		// anything narrower here keeps the fragile rule, a prefix cut from
+		// compacted JSON, from being created by hand.
+		if body.Kind == store.KindPath {
+			writeErr(w, http.StatusBadRequest, fmt.Errorf("an MCP rule names a tool, not a folder"))
+			return
+		}
+		if p := strings.TrimSpace(body.Prefix); p != "" && p != mcprule.AnyInput {
+			writeErr(w, http.StatusBadRequest, fmt.Errorf("%s", mcprule.ReasonArguments))
+			return
+		}
+		rule, err = s.st.AddMCPRule(body.Tool, body.Decision, body.Reason, body.Scope)
+	case body.Kind == store.KindPath:
 		rule, err = s.st.AddPathRule(body.Tool, body.Prefix, body.Decision, body.Reason, body.Scope)
-	} else {
+	default:
 		rule, err = s.st.AddRule(body.Tool, body.Prefix, body.Decision, body.Reason, body.Scope)
 	}
 	if err != nil {
@@ -1943,7 +1969,19 @@ func (s *Server) importRules(w http.ResponseWriter, r *http.Request) {
 		if e.Broad {
 			add = s.st.AddBroadRule
 		}
-		if _, err := add(e.Tool, e.Pattern, e.Decision, "imported from "+e.Source, ""); err != nil {
+		if mcprule.Is(e.Tool) && !e.Broad {
+			// Entries may also arrive from a caller rather than from settings.json.
+			// An MCP rule takes any input, so a narrower pattern is refused here as
+			// it is on the add route.
+			if e.Pattern != mcprule.AnyInput {
+				err = fmt.Errorf("%s", mcprule.ReasonArguments)
+			} else {
+				_, err = s.st.AddMCPRule(e.Tool, e.Decision, "imported from "+e.Source, "")
+			}
+		} else {
+			_, err = add(e.Tool, e.Pattern, e.Decision, "imported from "+e.Source, "")
+		}
+		if err != nil {
 			failed = append(failed, map[string]string{
 				"tool": e.Tool, "pattern": e.Pattern, "error": err.Error(),
 			})
