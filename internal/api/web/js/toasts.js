@@ -99,7 +99,7 @@ function landFromURL() {
   const q = new URLSearchParams(location.search);
   if (!q.has("land") && !q.has("view")) return;
   const taskFor = q.get("land") || "", goTo = q.get("view") || "", key = q.get("key") || "";
-  history.replaceState(history.state, "", location.pathname + location.hash);
+  history.replaceState(history.state, "", "/" + location.hash);
   landOnAlert(taskFor, goTo, key);
 }
 

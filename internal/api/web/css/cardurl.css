@@ -1,0 +1,22 @@
+/* The words a card's address says when it does not open a terminal, and the line over one that does. See js/cardurl.js. */
+  #cardurl {
+    position: fixed; inset: 0; z-index: 50; box-sizing: border-box; padding: 12vh 24px 24px;
+    display: flex; flex-direction: column; align-items: center; gap: 12px;
+    background: var(--cardurl-bg, var(--bg-1)); color: var(--cardurl-fg, var(--head)); font: var(--fs-md)/1.5 var(--mono);
+  }
+  #cardurl[hidden], #cardurl-note[hidden] { display: none; }
+  #cardurl .cu-list { display: flex; flex-direction: column; gap: 6px; max-width: 80ch; width: 100%; }
+  #cardurl .cu-row {
+    padding: 8px 12px; border: 1px solid var(--cardurl-line, var(--stroke-dim)); border-radius: 6px;
+    color: var(--cardurl-link, var(--blue)); text-decoration: none; word-break: break-all;
+  }
+  #cardurl a.cu-row:hover { background: var(--cardurl-hover, var(--btn-hover)); }
+  #cardurl-note {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 40; padding: 6px 36px 6px 12px;
+    background: var(--cardurl-note-bg, var(--shell-0)); color: var(--cardurl-note-fg, var(--warn));
+    border-bottom: 1px solid var(--cardurl-line, var(--stroke-dim)); font: var(--fs-sm)/1.5 var(--mono);
+  }
+  #cardurl-note a { color: var(--cardurl-link, var(--blue)); }
+  #cardurl-note .cu-x {
+    position: absolute; top: 4px; right: 8px; background: none; border: 0; color: inherit; font-size: 16px; cursor: pointer;
+  }
