@@ -131,3 +131,15 @@ is a follow-up if that server stays.
 
 The `launched` event's `cmd` is the harness command before the lean flags go on, as it was before this change. The
 lean flags carry the whole settings copy, so the event records `lean` and `mcp` beside `cmd` instead.
+
+## lean_agents (r-005)
+
+`lean_agents: ["codebase-steward", ...]` on `atrium_launch` (the hub's and the stdio control MCP) starts the worker
+lean and keeps the `Agent` tool (and `Task`) out of `--disallowedTools`. It passes `--agents <json>` built from just
+the named files in `~/.claude/agents`: description, prompt, tools, disallowedTools, model and maxTurns. The user
+source stays cut, so no other agent, skill, memory or CLAUDE.md loads. Claude Code's built-in types (Explore,
+general-purpose, Plan) come with the Agent tool. A plugin directory was rejected because plugin agents are namespaced.
+Refused: a name with no file, an unsafe name, `lean: false`, a runner that is not claude, and definitions past 14000
+bytes (they ride on the command line). The card keeps the list as `atrium:agent:<name>` tags, so a restart, a resume and
+the keep-alive fork rebuild the same flags, with no column. A room older than the field is named in the launch warning.
+The review-panel skill cannot ride on `--agents`, so it is not carried.
