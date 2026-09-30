@@ -78,11 +78,11 @@ const (
 )
 
 const (
-	notifyQueueMax     = 32
-	notifyMaxFailures  = 3
-	notifyStdoutLimit  = 16 << 10
-	notifyStderrLimit  = 8 << 10
-	tabBackstop        = 10 * time.Minute
+	notifyQueueMax    = 32
+	notifyMaxFailures = 3
+	notifyStdoutLimit = 16 << 10
+	notifyStderrLimit = 8 << 10
+	tabBackstop       = 10 * time.Minute
 	// streamGrace is how long a tab whose event stream dropped still counts as
 	// visible, which covers the board reconnecting its stream.
 	streamGrace        = 30 * time.Second
