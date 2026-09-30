@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/json"
 	"errors"
@@ -68,6 +69,11 @@ const newContextBy = "new-context"
 var newContextLabel = atriumLabel("new context:")
 
 // newContextCapture is what the session is asked to do before its context goes.
+//
+// The token is matched as a SUBSTRING of the file's first 4 KB, not as a whole line:
+// a model writing markdown puts it in backticks, a bullet or bold, and refusing a
+// fresh capture for that is the failure this exists to fix. The token is random per
+// run, so a substring is as unforgeable as an exact line.
 //
 // ONE LINE. It is typed and submitted like any prompt, and the model gets the
 // whole of it. It says what happens next, so a session that would otherwise
@@ -720,10 +726,8 @@ func (d *Daemon) handoffWritten(taskID, file string, since time.Time, token stri
 	}
 	head := make([]byte, handoffHead)
 	n, _ := io.ReadFull(f, head)
-	for _, line := range strings.Split(string(head[:n]), "\n") {
-		if strings.TrimSpace(line) == captureLine(token) {
-			return nil
-		}
+	if bytes.Contains(head[:n], []byte(captureLine(token))) {
+		return nil
 	}
 	return fmt.Errorf("%s in %s is older than the capture and lacks the line %s in its first 4 KB, so the card should have added it",
 		file, dir, captureLine(token))

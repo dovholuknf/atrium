@@ -38,6 +38,24 @@ func TestHandoffWrittenAcceptsAnOldFileWithTheToken(t *testing.T) {
 	}
 }
 
+// Markdown dressing around the line does not stop it counting.
+func TestHandoffWrittenAcceptsTheTokenInMarkdown(t *testing.T) {
+	for name, line := range map[string]string{
+		"backticks": "`" + captureLine("7-abc") + "`",
+		"bullet":    "- " + captureLine("7-abc"),
+		"bold":      "**" + captureLine("7-abc") + "**",
+	} {
+		t.Run(name, func(t *testing.T) {
+			d := testDaemon(t)
+			task, _, dir := ncCard(t, d)
+			writeAged(t, filepath.Join(dir, HandoffName(task)), append([]byte(line+"\n"), handoffBody...), time.Minute)
+			if err := d.handoffWritten(task.ID, HandoffName(task), time.Now(), "7-abc"); err != nil {
+				t.Fatalf("refused the token as %s: %v", name, err)
+			}
+		})
+	}
+}
+
 // The same file without it fails, and says what to do.
 func TestHandoffWrittenNamesTheMissingToken(t *testing.T) {
 	d := testDaemon(t)
