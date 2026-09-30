@@ -839,6 +839,90 @@ func (s *Store) ClearResumeID(id string) error {
 	})
 }
 
+// ExitAskedBy is the `by` on the event recording that somebody asked a card's
+// runner to exit: a human on the board, a launcher's atrium_exit, a cull.
+const ExitAskedBy = "exit-asked"
+
+// ExitAsked reports whether somebody asked a card's runner to exit and nothing
+// has launched it since.
+//
+// NOT THE STATUS. A daemon winding down ends every session, each SessionEnd hook
+// moves its card to `done`, and a restart that read `done` as "somebody ended
+// this" brought nothing back (2026-09-30, 12:58). Only an asked exit is a
+// decision, so only an asked exit is recorded, and a launch clears it.
+//
+// A COLUMN, which no event setting can route away or compact (migration 0076).
+func (s *Store) ExitAsked(taskID string) (bool, error) {
+	var at string
+	err := s.guard(func() error {
+		return s.db.QueryRow(`SELECT exit_asked_at FROM task WHERE id = ?`, taskID).Scan(&at)
+	})
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	return at != "", err
+}
+
+// SetExitAsked records that somebody asked this card's runner to exit.
+func (s *Store) SetExitAsked(taskID string) error {
+	return s.guard(func() error {
+		_, err := s.db.Exec(`UPDATE task SET exit_asked_at = ? WHERE id = ?`, ts(now()), taskID)
+		return err
+	})
+}
+
+// ClearExitAsked is a launch: whatever was asked before, the card runs now.
+func (s *Store) ClearExitAsked(taskID string) error {
+	return s.guard(func() error {
+		_, err := s.db.Exec(`UPDATE task SET exit_asked_at = '' WHERE id = ? AND exit_asked_at != ''`, taskID)
+		return err
+	})
+}
+
+// ResumeHolders is every card other than `except` whose resume id is
+// `resumeID`, newest first. All of them, because a newer dead holder must not
+// hide an older live one.
+func (s *Store) ResumeHolders(resumeID, except string) ([]*Task, error) {
+	resumeID = strings.TrimSpace(resumeID)
+	if resumeID == "" {
+		return nil, nil
+	}
+	var out []*Task
+	err := s.guard(func() error {
+		out = nil
+		rows, err := s.db.Query(`SELECT id FROM task WHERE resume_id = ? AND id != ? ORDER BY created_at DESC`,
+			resumeID, except)
+		if err != nil {
+			return err
+		}
+		var ids []string
+		for rows.Next() {
+			var id string
+			if err := rows.Scan(&id); err != nil {
+				rows.Close()
+				return err
+			}
+			ids = append(ids, id)
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return err
+		}
+		for _, id := range ids {
+			t, err := s.getBy(`id = ?`, id)
+			if errors.Is(err, sql.ErrNoRows) {
+				continue
+			}
+			if err != nil {
+				return err
+			}
+			out = append(out, t)
+		}
+		return nil
+	})
+	return out, err
+}
+
 // ResumeClaim is what ClaimResumeID did with a conversation id.
 type ResumeClaim struct {
 	// Stored is whether the id is now on the card.
@@ -1476,6 +1560,9 @@ func (s *Store) appendEvent(taskID, kind string, payload any) error {
 // writes in the caller's transaction and the cold sinks are fed after it
 // commits, so a rolled back change never reaches a cold trail.
 func (s *Store) appendEventOn(q querier, taskID, kind string, payload any) (*Event, error) {
+	if strings.TrimSpace(taskID) == "" {
+		return nil, fmt.Errorf("an event needs a card: %w", sql.ErrNoRows)
+	}
 	blob := []byte("{}")
 	if payload != nil {
 		b, err := json.Marshal(payload)
@@ -1495,6 +1582,14 @@ func (s *Store) appendEventOn(q querier, taskID, kind string, payload any) (*Eve
 			err = s.hot.Append(taskID, e)
 		}
 		if err != nil {
+			// A CARD THAT IS NOT THERE IS AN ANSWER, NOT A BROKEN DISK. The event's
+			// foreign key refuses it, and `guard` halts the store on anything it
+			// does not know, so a timeline note naming a card that was never made
+			// or was removed halted the room (r-new-review-c184ae8c). Returned as
+			// no rows, which `guard` hands back and never halts on.
+			if strings.Contains(strings.ToLower(err.Error()), "foreign key constraint failed") {
+				return nil, fmt.Errorf("no card %q to record %s on: %w", taskID, kind, sql.ErrNoRows)
+			}
 			return nil, err
 		}
 	}

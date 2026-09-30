@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/cardurl"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 )
 
@@ -94,6 +95,10 @@ type Proxy struct {
 	// notify is the trigger and its sink. Nil until SetNotify wires it. See
 	// notify.go.
 	notify *Notifier
+
+	// growl is the persistent growlers. Nil until SetGrowler wires it, and a hub
+	// without one answers /_hub/growls 404. See growl.go.
+	growl *Growler
 
 	// gitHub is the hub's git side: mirror, sync, collect. Nil until SetGit wires it, and
 	// a hub without one answers /_hub/git 404. See git_hub.go.
@@ -408,9 +413,17 @@ func (p *Proxy) roomHasCard(r *http.Request, room, bare string) bool {
 		return false
 	}
 	defer res.Body.Close()
+	// THE ID IT ANSWERED WITH MUST BE THE ID ASKED ABOUT. A room that learns to
+	// answer a name (handle-addressed-http R2) answers 200 for `rnd` on every
+	// room that has one, and the first to answer would be cached as the owner.
+	// So a name can never be "held" through this path, whatever a room answers.
+	var body struct {
+		ID string `json:"id"`
+	}
+	err = json.NewDecoder(io.LimitReader(res.Body, 1<<20)).Decode(&body)
 	// Drained so the pooled connection can be reused.
 	_, _ = io.Copy(io.Discard, io.LimitReader(res.Body, 1<<20))
-	return res.StatusCode == http.StatusOK
+	return res.StatusCode == http.StatusOK && err == nil && body.ID == bare
 }
 
 // cachedCardRoom returns a recently resolved owner for a bare id, and only while
@@ -512,6 +525,18 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/m" && p.board != nil {
 		http.Redirect(w, r, "/m/", http.StatusMovedPermanently)
 		return
+	}
+	// A CARD'S READABLE ADDRESS is the board page, and the page resolves the
+	// name. See internal/cardurl.
+	if p.board != nil && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
+		if page, isCard := cardurl.Page(r.URL.Path); isCard {
+			if page == "" {
+				cardurl.NotFound(w, r.URL.Path)
+				return
+			}
+			p.serveAsset(w, r, page)
+			return
+		}
 	}
 	if name, ok := p.asset(r.URL.Path); ok {
 		p.serveAsset(w, r, name)
@@ -1336,6 +1361,10 @@ func (p *Proxy) serveHubAPI(w http.ResponseWriter, r *http.Request) {
 		p.serveRestart(w, r, strings.TrimPrefix(strings.TrimPrefix(sub, "restart"), "/"))
 		return
 	}
+	if strings.HasPrefix(sub, "growls/") {
+		p.serveGrowls(w, r, sub)
+		return
+	}
 	switch sub {
 	case "rooms":
 		// ATTACHED ONLY, and every other pane on the board depends on that.
@@ -1366,6 +1395,8 @@ func (p *Proxy) serveHubAPI(w http.ResponseWriter, r *http.Request) {
 		p.serveDeps(w, r, sub)
 	case "presence":
 		p.servePresence(w, r)
+	case "growls":
+		p.serveGrowls(w, r, sub)
 	case "audit":
 		// THE OPERATIONAL FEED, newest first, filterable. Read-only: the board
 		// shows what happened and never writes here. See audit.go.

@@ -1303,6 +1303,10 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 	if err := d.st.SetOrigin(created.ID, source, req.ExternalID, url); err != nil {
 		return nil, err
 	}
+	// A LAUNCH UNDOES AN ASKED EXIT: whatever was asked before, it runs now.
+	if err := d.st.ClearExitAsked(created.ID); err != nil {
+		return nil, err
+	}
 	if err := d.st.AppendEvent(created.ID, store.EventLaunched, map[string]any{
 		"harness": h.ID, "cmd": logged, "cwd": cwd, "resume": req.Resume,
 		"via": via, "mode": h.LaunchMode, "prompted": prompt != "", "model": model,
@@ -1627,6 +1631,12 @@ func (d *Daemon) Kill(taskID string) error {
 		}
 	}
 
+	// TERMINATE IS A DECISION, like an asked exit, and keeps the card down across
+	// a restart. Recorded once the process is stopped or gone, never before: a
+	// kill that failed leaves the card running, and it must not stay down.
+	if err := d.st.SetExitAsked(taskID); err != nil {
+		return err
+	}
 	detected := "you"
 	if gone {
 		detected = "already gone"

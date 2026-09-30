@@ -1883,6 +1883,27 @@ var migrations = []struct {
 			`ALTER TABLE work_item ADD COLUMN held_by       TEXT NOT NULL DEFAULT ''`,
 		},
 	},
+	{
+		// SOMEBODY ASKED THIS CARD'S RUNNER TO EXIT, and nothing has launched it
+		// since. The one thing that keeps a card or a fixture down across a
+		// restart (store.ExitAsked). A column, not an event, because events can be
+		// routed to the cold sink or compacted away by kind, and losing this
+		// silently brings every exited card back. Carried over from the
+		// `exit-asked` events ff747683 wrote, where the newest of those and a
+		// launch is the ask.
+		name: "0076_task_exit_asked",
+		stmts: []string{
+			`ALTER TABLE task ADD COLUMN exit_asked_at TEXT NOT NULL DEFAULT ''`,
+			`UPDATE task SET exit_asked_at = (
+				SELECT e.at FROM event e WHERE e.task_id = task.id AND (e.kind = 'launched' OR
+					(e.kind = 'notified' AND e.payload LIKE '%"by":"exit-asked"%'))
+				ORDER BY e.at DESC, e.id DESC LIMIT 1)
+			 WHERE exit_asked_at = '' AND (
+				SELECT e.kind FROM event e WHERE e.task_id = task.id AND (e.kind = 'launched' OR
+					(e.kind = 'notified' AND e.payload LIKE '%"by":"exit-asked"%'))
+				ORDER BY e.at DESC, e.id DESC LIMIT 1) = 'notified'`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the

@@ -107,6 +107,12 @@ the card, because the chip is a fact about the card and the questions really are
 stays where it is. Two buttons with one word would be one meaning per word broken, so the growler's is labelled
 **dismiss this** and the tip says the chip stays.
 
+**Dismiss has an undo** (clint, 2026-09-30). For ten seconds after a dismiss, the stack shows one line where the
+growler was, "dismissed. undo", on the screen that dismissed it. Undo sets the row back to `open` and records it
+(`changed_via`, as any action). After the ten seconds, the toast log's line for the dismissal carries the same undo for
+as long as the reason still holds, so a growler dismissed by mistake an hour ago can still be put back. Undo is
+`POST /_hub/growls/{id}` with `{"do": "reopen"}`. It answers `409` once the reason has ended, and the log row says so.
+
 **Snooze** hides it everywhere until the time, then raises it again as if new, with a reminder. A snooze does not
 survive the reason ending: if the request is answered while snoozed, it simply resolves.
 
@@ -173,7 +179,8 @@ live (`docs/rnd/room-deploy-hold-design.md`).
 ### How screens hear it
 
 - `GET /_hub/growls` answers the open and snoozed set.
-- `POST /_hub/growls/{id}` with `{"do": "dismiss" | "snooze" | "acted", "minutes": n, "via": "...", "tab": "..."}`.
+- `POST /_hub/growls/{id}` with `{"do": "dismiss" | "snooze" | "acted" | "reopen", "minutes": n, "via": "...",
+  "tab": "..."}`.
   A stale id (the reason already ended) answers `409` with the row, so a click on an old screen says "already
   handled" rather than nothing.
 - The hub event stream gains a `growls` event carrying **the whole open set**. This bends the stream's deltas-only rule
@@ -189,7 +196,10 @@ one exception to "a phone nudges the bell instead of drawing a box": a growler i
 header, because the bell's count is exactly the signal that did not work. It never covers the terminal's key bar.
 
 The phone push is the hub notify sink, which already fires for `permission` and `question` when no desktop tab is
-visible. It fires once when a growler is raised. Reminders to the phone are Open Question 2.
+visible. It fires when a growler is raised and again on each reminder (section 7), on the same backoff, while no
+desktop tab is visible (clint, 2026-09-30). The sink's `Notice` gains no field for it: a reminder is the same four
+fields, and the reason reads `permission` or `question` as it did. The sink is the operator's own command, so this
+reaches a phone only where one is configured. Web Push would need HTTPS and belongs to the security design.
 
 ### A board with no hub
 
@@ -222,6 +232,29 @@ reminder is the growler's. Before two minutes the nag's first toast at one minut
 
 **Keyed toasts step aside.** A toast whose key names a subject that has an open growler is not drawn. It is still
 logged. Otherwise the growler and a toast would say the same thing in two boxes.
+
+### A popped-out card
+
+Added 2026-09-30 after u-popout-notify (1a1f9362), which gave a pop-out its own switch and mute, kept per card in
+`localStorage` (`atrium.notify.off.card:<id>`, `atrium.sound.card:<id>`). Those are about the interruption in one
+window of one browser. The growler's state is on the hub. They do not conflict, and three rules keep it that way:
+
+1. **Drawing: the board draws every growler, a pop-out draws only its own card's.** A growler is state, like the
+   card's badges and counts, which the board keeps for a popped-out card (the header of `js/notify.js`). So the board's
+   stack includes growlers for popped-out cards, and the pop-out's stack holds only the growlers for the card it shows.
+   Neither switch hides a growler anywhere (u-popout-notify, point 4).
+2. **Ringing: a popped-out card's reminders belong to its pop-out**, the same one-owner rule `notify` keeps for its
+   alerts. The pop-out plays the tone and raises the desktop notification, so its switch and mute hold them back, as
+   the master switch does on the board. The board does not ring them in its place. Where the pop-out's switch or mute
+   is on, the board's growler for that card says so on its face ("muted in its window"), so a reminder held back is
+   visible rather than simply absent. The pop-out writes nothing new for this: the board reads the two per-card keys
+   in the same `localStorage`.
+3. **The phone is not a window.** The hub's phone reminders (section 6) never see a browser's switches, so a pop-out
+   switched off does not stop them. Dismiss and snooze are the controls that quiet a growler everywhere, because they
+   are on the hub.
+
+The title and favicon (section 7) are per window: a pop-out's own title alternates for its card's growler unless its
+switch is off.
 
 ## 8. The toast, the toast log, the modal: one model, recommended
 
@@ -271,7 +304,7 @@ Sizes: S is up to half a day for one worker, M is a day, L is two or more.
 | stage | owner | size | what | depends on |
 | --- | --- | --- | --- | --- |
 | R1 | @runtime | M | hub `growl` table (migration at the end of the hubstore slice), derivation from `NotifyIdentity` for `permission` and `question`, the 30 s ticker (perm age, snooze end, reminders), `GET` and `POST /_hub/growls`, the `growls` event with the whole set, `halt` from the merged health. Go tests for the identity, the 409, snooze, prune, and a room going offline | nothing |
-| U1 | @ui | M | the pinned stack in `#toasts`: face, actions (approve, block, reply, open, snooze, dismiss this), expand and fold, order, the `409` message, keyed toast and nag suppression, log lines for raise and end. Headless Playwright with mocked `/_hub/growls` and a mocked event | R1's API shape (can start on the mock the day R1's shape is agreed) |
+| U1 | @ui | M | the pinned stack in `#toasts`: face, actions (approve, block, reply, open, snooze, dismiss this, and undo on the stack and in the log), expand and fold, order, the `409` message, keyed toast and nag suppression, log lines for raise and end. Headless Playwright with mocked `/_hub/growls` and a mocked event | R1's API shape (can start on the mock the day R1's shape is agreed) |
 | U2 | @ui | S | unfocused attention: title alternation, favicon dot and count, sticky desktop notification per growler, `reapNotifications` by growler id, tone on raise and remind | U1 |
 | R2 | @runtime | S | the room publishes a card's last report status in its state payload, the hub derives `blocked` and report `question`. Room side, so it needs a room deploy | R1 |
 | U3 | @ui | S | `/m`: `mStore.growls`, the strip above the card list, same actions. The phone board's pinned strip under the header | U1 |
@@ -287,19 +320,14 @@ from the perms view resolves its growler everywhere, a snooze comes back, a room
 desktop notification closes on the other browser when handled on one, and a growler draws over an open settings dialog
 and its buttons work there.
 
-## 11. Open Questions
+## 11. Answers, and questions for later
 
-These are clint's. None is decided in the build above beyond the default named in each.
+clint answered the four questions on 2026-09-30, and the sections above carry the answers.
 
-1. **The permission threshold.** Default 2 minutes before a waiting permission becomes a growler. At once would put a
-   persistent box over every request, most of which are answered from the toast in under a minute. Is 2 minutes right,
-   or do you want permissions to growl at once?
-2. **Reminders to the phone.** The hub's phone command fires once per growler today. Reminders could also go to the
-   phone on the same backoff, which means a phone buzzing at 1, 2, 5, 10, 30, 60 and 120 minutes for one unanswered
-   request while no desktop tab is visible. Once only (the default), or every reminder?
-3. **`input` without a report.** Left out, because every finished worker is in needs-input and a growler each would be a
-   pile. Is there a case you want to growl that is neither a report nor Open Questions, for example any card you tagged
-   yourself, or the orchestrator's card whenever it waits?
-4. **Dismiss versus the `?` chip.** Dismissing a question growler leaves the `?` chip on the card (the questions are
-   still unanswered). The alternative is that dismissing the growler also dismisses the questions, one click instead of
-   two, and nothing left on the card saying they were never answered. Keep them separate (the default)?
+1. **The permission threshold: 2 minutes** ("just guess").
+2. **Reminders to the phone: yes, on the backoff** ("would be sick"). Section 6.
+3. **`input` without a report: no growler** ("if it's done it's done").
+4. **Keep the `?` chip apart from dismiss**, and a dismissed growler offers an undo ("oh fuck, put it back"). Section 4.
+
+For later: the phone path is the operator's own notify command, and none is confirmed configured on the hub. Is one set
+up, and does he want ntfy? Web Push goes to the security design, since it needs HTTPS.

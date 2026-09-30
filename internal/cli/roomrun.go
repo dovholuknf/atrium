@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/daemon"
+	"github.com/dovholuknf/atrium/internal/edge"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/link"
 	"github.com/spf13/cobra"
@@ -391,7 +392,8 @@ func runRoom(keys link.Keys, db, human, agent string, restartAfter time.Duration
 	}
 	// MESSAGES TO OTHER ROOMS go through this link, and what is owed goes the
 	// moment it reattaches. See internal/daemon/relay.go.
-	room.Handler = roomHandler(d, room)
+	// MARKED AS THE LINK, so a terminal attach knows the hub's edge checked it. See internal/edge.
+	room.Handler = edge.MarkLink(roomHandler(d, room))
 	room.OnAttach = d.RelayAttached
 	d.SetRelay(linkRelay{room: room})
 	go func() {

@@ -139,6 +139,19 @@ type notifyCard struct {
 	Name     string
 	Reason   string
 	Identity string
+	// At is the timestamp that made it a reason, the last part of Identity.
+	At string
+	// Agent is an origin:agent card. NotifyIdentity never returns one, and the
+	// growler takes one for a permission only.
+	Agent bool
+	// Questions are the open questions, for a question.
+	Questions []string
+	// Report is `blocked` or `question` when the card is waiting because its
+	// session said so with atrium_report, and Ask is what it asked for. The
+	// notifier reads neither field, and a reported card notifies as input. That
+	// includes one whose first turn has not ended, which said nothing before:
+	// a session that reported blocked is waiting on somebody.
+	Report, Ask string
 }
 
 // notifySeen is the part of a card's seen row the notifier reads.
@@ -164,6 +177,17 @@ type notifySeen struct {
 // origin:agent cards are skipped: an agent started another agent, and the
 // operator is told about the one that started it (item 44).
 func NotifyIdentity(id string, payload json.RawMessage) (notifyCard, bool) {
+	nc, ok := cardReason(id, payload)
+	if !ok || nc.Agent {
+		return notifyCard{}, false
+	}
+	return nc, true
+}
+
+// cardReason is NotifyIdentity without the origin:agent skip, which is the
+// caller's to apply. The growler needs the difference: a blocked agent is
+// frozen whoever launched it, so its permission still growls.
+func cardReason(id string, payload json.RawMessage) (notifyCard, bool) {
 	// THE SEEN FIELDS ARE UNDER `seen`, the room's seen row as /v1/state sends
 	// it beside the stored card (internal/api/state.go). They were read at the
 	// top level, where no payload ever carried them, so a question and a finished
@@ -176,6 +200,11 @@ func NotifyIdentity(id string, payload json.RawMessage) (notifyCard, bool) {
 		Tags         []string `json:"tags"`
 		WaitingSince string   `json:"waiting_since"`
 		LastActivity string   `json:"last_activity_at"`
+		// WHY IT WAITS, which a report sets to its status: `blocked` or
+		// `question` (internal/daemon/finish.go). The stored card has always
+		// carried it, so the hub reads it with no room change.
+		WaitingReason string `json:"waiting_reason"`
+		Recap         string `json:"recap"`
 		// A pointer, so a room that sent no seen row at all (an older build) is
 		// told apart from a card whose seen row says it never finished a turn.
 		Seen *notifySeen `json:"seen"`
@@ -189,12 +218,18 @@ func NotifyIdentity(id string, payload json.RawMessage) (notifyCard, bool) {
 	}
 	// The same match the control tools use, trimmed and case-insensitive, so a
 	// tag written ` Origin:Agent ` is skipped here as it is there.
-	if hasOriginTag(p.Tags) {
-		return notifyCard{}, false
-	}
+	agent := hasOriginTag(p.Tags)
 	waited := p.WaitingSince
 	if waited == "" {
 		waited = p.LastActivity
+	}
+	report, ask := "", ""
+	if p.Status == "needs-input" && (p.WaitingReason == "blocked" || p.WaitingReason == ReasonQuestion) {
+		report = p.WaitingReason
+		// The report's ask is on the recap after `needs: `. See finish.go.
+		if i := strings.LastIndex(p.Recap, "needs: "); i >= 0 {
+			ask = strings.TrimSpace(p.Recap[i+len("needs: "):])
+		}
 	}
 	var reason, at string
 	switch {
@@ -207,7 +242,8 @@ func NotifyIdentity(id string, payload json.RawMessage) (notifyCard, bool) {
 	// `input` for a session that has only just started is noise
 	// (atrium-87300, 2026-09-30). Only where the room sent its seen row: an
 	// older room cannot say, and keeps notifying as before.
-	case p.Status == "needs-input" && sent && p.Seen.TurnEndedAt == "":
+	// A session that REPORTED is waiting on somebody, finished turn or not.
+	case p.Status == "needs-input" && sent && p.Seen.TurnEndedAt == "" && report == "":
 		return notifyCard{}, false
 	case p.Status == "needs-input":
 		reason, at = ReasonInput, waited
@@ -223,7 +259,8 @@ func NotifyIdentity(id string, payload json.RawMessage) (notifyCard, bool) {
 	if name == "" {
 		name = id
 	}
-	return notifyCard{ID: id, Name: name, Reason: reason, Identity: id + "|" + reason + "|" + at}, true
+	return notifyCard{ID: id, Name: name, Reason: reason, Identity: id + "|" + reason + "|" + at,
+		At: at, Agent: agent, Questions: p.Seen.OpenQuestions, Report: report, Ask: ask}, true
 }
 
 // ── presence ────────────────────────────────────────────
@@ -616,6 +653,16 @@ func (n *Notifier) Announced(room string, cards []CardState) {
 		c := info[id]
 		n.enqueue(Notice{Name: c.Name, Reason: c.Reason, Card: tagFor(room, id), Room: room})
 	}
+}
+
+// Remind is a growler reminding, sent to the sink like a change would be: held
+// back while a desktop tab is visible, and dropped by the worker while notify
+// is off. See growl.go.
+func (n *Notifier) Remind(x Notice) {
+	if n.pres.Count() > 0 {
+		return
+	}
+	n.enqueue(x)
 }
 
 func notifyPlan(cards []CardState) (ids map[string]string, info map[string]notifyCard, present []string) {

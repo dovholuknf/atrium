@@ -187,6 +187,8 @@ func TestAttachAcrossTwoRoomsWhileHeld(t *testing.T) {
 // and establish the upgrade. A room that is slow to answer the card lookup must
 // not stall the attach to the room that owns it.
 func TestBareIdAttachWithTwoRoomsIsNotStalledBySlowRoom(t *testing.T) {
+	// Shaped like the ids a room mints. Anything else is read as a name first.
+	const wantedID = "01a0cafe-0000-7000-8000-00000000beef"
 	// beta owns nothing and is slow to say so; alpha owns the card.
 	slow := make(chan struct{})
 	defer close(slow)
@@ -197,8 +199,8 @@ func TestBareIdAttachWithTwoRoomsIsNotStalledBySlowRoom(t *testing.T) {
 				return
 			}
 			// GET /v1/tasks/<id>: alpha owns "wanted", beta owns nothing and is slow.
-			if name == "alpha" && strings.Contains(r.URL.Path, "wanted") {
-				fmt.Fprint(w, `{"id":"wanted","supervised":true}`)
+			if name == "alpha" && strings.Contains(r.URL.Path, wantedID) {
+				fmt.Fprintf(w, `{"id":%q,"supervised":true}`, wantedID)
 				return
 			}
 			if name == "beta" {
@@ -215,7 +217,7 @@ func TestBareIdAttachWithTwoRoomsIsNotStalledBySlowRoom(t *testing.T) {
 	defer done()
 
 	start := time.Now()
-	if err := dialAttach(t, front.URL, "/v1/tasks/wanted/attach"); err != nil {
+	if err := dialAttach(t, front.URL, "/v1/tasks/"+wantedID+"/attach"); err != nil {
 		t.Fatalf("bare-id attach to the owning room never established: %v", err)
 	}
 	if took := time.Since(start); took > 1*time.Second {

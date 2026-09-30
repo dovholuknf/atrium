@@ -35,7 +35,8 @@ func holds(room string, ids ...string) http.Handler {
 			return
 		}
 		// `saw_task_id`, not `task_id`, which the hub retags on a tagged answer.
-		fmt.Fprintf(w, `{"served_by":%q,"path":%q,"saw_task_id":%q}`, room, r.URL.Path, body.TaskID)
+		// `id` as a real room's card read carries it, which the hub checks.
+		fmt.Fprintf(w, `{"id":%q,"served_by":%q,"path":%q,"saw_task_id":%q}`, id, room, r.URL.Path, body.TaskID)
 	})
 }
 

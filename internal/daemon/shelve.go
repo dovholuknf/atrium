@@ -35,6 +35,19 @@ func (d *Daemon) StopRunner(taskID string) error {
 	if err != nil {
 		return err
 	}
+	if d.sup.get(taskID) == nil {
+		return fmt.Errorf("atrium does not own a terminal for %s, so there is "+
+			"nothing here to exit", t.DisplayTitle())
+	}
+	// SOMEBODY ASKED, and that is the one thing that keeps a card down across a
+	// restart. Written before the runner goes, so a restart racing the exit still
+	// reads it. See store.ExitAsked.
+	if err := d.st.SetExitAsked(taskID); err != nil {
+		return err
+	}
+	if err := d.st.AppendEvent(taskID, store.EventNotified, map[string]any{"by": store.ExitAskedBy}); err != nil {
+		return err
+	}
 	if !d.stopOne(taskID, shelveGrace) {
 		return fmt.Errorf("atrium does not own a terminal for %s, so there is "+
 			"nothing here to exit", t.DisplayTitle())

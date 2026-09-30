@@ -82,6 +82,9 @@ func (d *Daemon) reviveOwnedDead() error {
 		if t.Status != store.StatusDead {
 			continue
 		}
+		if err := d.st.ClearExitAsked(t.ID); err != nil {
+			return err
+		}
 		if err := d.st.AppendEvent(t.ID, store.EventLaunched, map[string]any{
 			"by": "reaper", "detected": "filed dead while atrium still owns its runner",
 			"pid": t.PID,

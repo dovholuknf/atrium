@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/api"
+	"github.com/dovholuknf/atrium/internal/edge"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/hubstore"
 	"github.com/dovholuknf/atrium/internal/link"
@@ -271,6 +272,8 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	// THE NOTIFY TRIGGER. Built here so the announcement hook below can call
 	// it, started and mounted once the context and the proxy exist.
 	notifier := link.NewNotifier(notifyStore{store})
+	// THE PERSISTENT GROWLERS, derived from the same announcements. See growl.go.
+	growler := link.NewGrowler(growlStore{notifyStore{store}})
 	// WHAT A ROOM SAYS IT IS HOLDING, TAKEN WHOLE. Anything the hub
 	// was keeping for that room and is not in this is discarded,
 	// because it is no longer there, and the discard is written down
@@ -292,6 +295,7 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 			// AFTER THE CACHE IS WRITTEN AND NEVER WAITING ON THE SINK: the
 			// notifier stores identities and hands the changes to its own queue.
 			notifier.Announced(name, cards)
+			growler.Announced(name, cards)
 		}
 		return err
 	}
@@ -360,6 +364,8 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 
 	notifier.Start(ctx)
 	proxy.SetNotify(notifier)
+	proxy.SetGrowler(growler)
+	growler.Start(ctx)
 
 	// A room attaching is synced and collected, off the attach path. The timers stop and the
 	// git children are cancelled within ten seconds of the hub stopping.
@@ -399,8 +405,9 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	go store.VacuumLoop(ctx)
 
 	srv := &http.Server{
-		Addr:    board,
-		Handler: proxy,
+		Addr: board,
+		// The browser edge. See internal/edge.
+		Handler: edge.For(board, proxy),
 		// NO WRITE TIMEOUT. The event stream and the terminal are both
 		// meant to stay open for hours, and a write deadline would cut
 		// them with nothing to show for it.
@@ -452,7 +459,8 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 			log.Printf("[hub] serving the board on a %s zrok share: %s", bs.Mode, bs.Address)
 			proxy.RecordAudit("", "board-share-opened",
 				"the board is on a "+bs.Mode+" zrok share: "+bs.Address)
-			serveBoardOn(ctx, shareLn, proxy, "zrok share")
+			// The share's address is the one name it answers besides loopback.
+			serveBoardOn(ctx, shareLn, edge.Named(proxy, bs.Address), "zrok share")
 
 		case "ziti":
 			// The headless equivalent of the panel's OpenZiti toggle. The
@@ -475,7 +483,7 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 			log.Printf("[hub] serving the board on the ziti service %q", boardService)
 			proxy.RecordAudit("", "board-share-opened",
 				"the board is on the ziti service "+boardService)
-			serveBoardOn(ctx, shareLn, proxy, "ziti service")
+			serveBoardOn(ctx, shareLn, zitiBoardEdge(proxy, boardService), "ziti service")
 
 		default:
 			return fmt.Errorf("no board transport called %q. one of: zrok, ziti", bt)
@@ -707,4 +715,16 @@ func portOf(addr string) string {
 		return addr
 	}
 	return ":" + port
+}
+
+// zitiBoardEdge is the hub board's browser edge on a ziti service. See zitiEdge
+// in internal/daemon: the intercept address is the network's, so $ATRIUM_HOSTS
+// names it, and with none the service answers any Host, said once.
+func zitiBoardEdge(h http.Handler, service string) http.Handler {
+	if len(edge.EnvNames()) == 0 {
+		log.Printf("[hub] the ziti service %q answers any Host. set %s to its intercept address "+
+			"to refuse a rebound one", service, edge.EnvHosts)
+		return edge.Unnamed(h)
+	}
+	return edge.Named(h)
 }

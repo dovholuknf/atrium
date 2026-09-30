@@ -36,8 +36,10 @@ type launchOpts struct {
 	// atrium derives none of it, and every one is optional.
 	repo, org, host, branch, window, theme string
 	ifRunning, reportTo                    string
-	tags                                   []string
-	quiet                                  bool
+	// onto is a card to start the runner on, by handle, alias, name@room or id.
+	onto  string
+	tags  []string
+	quiet bool
 }
 
 func newLaunch() *cobra.Command {
@@ -99,6 +101,9 @@ func newLaunch() *cobra.Command {
 	c.Flags().StringVar(&o.reportTo, "report-to", "",
 		"who this card reports to: a handle, alias or card id on this room, such as review. its reports "+
 			"and silent-stop notices go there. an unknown name refuses the launch")
+	c.Flags().StringVar(&o.onto, "onto", "",
+		"start the runner on this existing card, named by its handle, alias, name@room or id. "+
+			"without --cwd it runs in the card's own directory")
 	c.Flags().BoolVar(&o.quiet, "quiet", false, "print only the card id")
 	c.Flags().StringVar(&o.boardURL, "url", "",
 		"atrium board address (default: $ATRIUM_BOARD_URL or localhost:7778)")
@@ -123,6 +128,11 @@ func parseEnvPairs(pairs []string) (map[string]string, error) {
 }
 
 func launchAgent(o launchOpts) error {
+	onto := strings.TrimSpace(o.onto)
+	if onto != "" && strings.TrimSpace(o.cwd) == "" {
+		// The card knows its directory. The daemon uses it when none is sent.
+		return launchBody(o, "")
+	}
 	if strings.TrimSpace(o.cwd) == "" {
 		got, err := os.Getwd()
 		if err != nil {
@@ -146,6 +156,11 @@ func launchAgent(o launchOpts) error {
 			"a resumed conversation already has its instruction")
 	}
 
+	return launchBody(o, filepath.ToSlash(abs))
+}
+
+// launchBody posts the launch. `cwd` empty onto a card means the card's own.
+func launchBody(o launchOpts, cwd string) error {
 	env, err := parseEnvPairs(o.env)
 	if err != nil {
 		return err
@@ -156,7 +171,8 @@ func launchAgent(o launchOpts) error {
 		"args":        o.args,
 		"env":         env,
 		"harness":     o.harness,
-		"cwd":         filepath.ToSlash(abs),
+		"cwd":         cwd,
+		"task_id":     strings.TrimSpace(o.onto),
 		"title":       o.title,
 		"why":         o.why,
 		"resume":      o.resume,
@@ -214,6 +230,9 @@ func launchAgent(o launchOpts) error {
 		return nil
 	}
 	fmt.Printf("started %s as %s\n", harness, task.DisplayTitle)
+	if h := resp.Header.Get("X-Atrium-Handle"); h != "" {
+		fmt.Printf("  onto  %s\n", h)
+	}
 	if task.PID > 0 {
 		fmt.Printf("  pid   %d\n", task.PID)
 	}

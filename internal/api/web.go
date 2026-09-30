@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"embed"
 	"encoding/hex"
+	"github.com/dovholuknf/atrium/internal/cardurl"
 	"io/fs"
 	"mime"
 	"net/http"
@@ -134,6 +135,20 @@ func webHandler(dir string) http.Handler {
 			w.Header().Set("Cache-Control", "public, max-age=86400")
 		} else {
 			w.Header().Set("Cache-Control", "no-store, must-revalidate")
+		}
+		// A card's readable address is the board page. See internal/cardurl.
+		if r.Method == http.MethodGet || r.Method == http.MethodHead {
+			if page, isCard := cardurl.Page(r.URL.Path); isCard {
+				if page == "" {
+					cardurl.NotFound(w, r.URL.Path)
+					return
+				}
+				// The page's directory, which the file server answers with its index.
+				r2 := r.Clone(r.Context())
+				r2.URL.Path, r2.URL.RawPath = "/"+strings.TrimSuffix(page, "index.html"), ""
+				files.ServeHTTP(w, r2)
+				return
+			}
 		}
 		files.ServeHTTP(w, r)
 	})

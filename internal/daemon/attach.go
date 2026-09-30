@@ -13,6 +13,7 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/dovholuknf/atrium/internal/api"
+	"github.com/dovholuknf/atrium/internal/edge"
 	"github.com/dovholuknf/atrium/internal/runnerprofile"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -254,9 +255,12 @@ func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, s
 	defer run.touch()
 
 	c, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-		// Loopback only, and the board is served from the same origin. A
-		// stricter check here would break reaching it over an overlay.
-		InsecureSkipVerify: true,
+		// THE ORIGIN IS CHECKED, except on the link. On a listener of its own
+		// a browser's Origin must name the Host it asked, which is true of the
+		// board over loopback and over an overlay alike. Through the hub the
+		// Origin is the hub's page and the Host is the link's, and the hub's
+		// edge already checked. See internal/edge.
+		InsecureSkipVerify: edge.ViaLink(r),
 	})
 	if err != nil {
 		log.Printf("[atrium] attach %s: %v", taskID, err)
