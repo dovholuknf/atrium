@@ -26,10 +26,12 @@ import (
 // worker. A worker's own done report means it thinks it is finished, and a
 // worker that culled itself would remove the worktree its reviewer has not read
 // yet. So the tool is the acceptance, and the room adds the one check it can
-// make on its own: the branch is merged. A timer or a hook on the merge was the
-// other candidate, and it was turned down because a merge is not an acceptance.
-// A branch can land and still be sent back, and the worker is the cheapest
-// place to make the fix while its conversation is still warm.
+// make on its own: the branch is merged. A merge is not an acceptance: a branch
+// can land and still be sent back, and the worker is the cheapest place to make
+// the fix while its conversation is still warm. A hook on the merge was first
+// turned down for that reason, and then built with a grace period in which to send
+// the work back: a merge only MARKS a worker, and the sweep calls this when the
+// time comes, with every check re-run. See mergedcull.go.
 //
 // WHAT IT WILL NOT DO, each checked here on the room rather than trusted from
 // the caller:
@@ -79,6 +81,14 @@ type CullResult struct {
 // Cull asks a merged worker to leave and removes its worktree and branch. See
 // the top of this file for what it refuses.
 func (d *Daemon) Cull(taskID, into string) (*CullResult, error) {
+	return d.CullProved(taskID, into, "")
+}
+
+// CullProved is Cull with a merge proof made elsewhere. `tip` is the commit the
+// area branch was checked to contain, and this room's worktree has to be sitting
+// on exactly it, because the proof was made where the area branch lives. Empty
+// means the proof is made here, against a branch of this repository.
+func (d *Daemon) CullProved(taskID, into, tip string) (*CullResult, error) {
 	t, err := d.st.Get(taskID)
 	if err != nil {
 		return nil, err
@@ -87,7 +97,7 @@ func (d *Daemon) Cull(taskID, into string) (*CullResult, error) {
 	if into == "" {
 		into = DefaultCullInto
 	}
-	if !hasTag(t.Tags, SubagentTag) {
+	if !d.isWorker(t) {
 		return nil, fmt.Errorf("%s is not tagged %s, so it is not a worker atrium culls. "+
 			"exit it with atrium_exit if it should go", t.DisplayTitle(), SubagentTag)
 	}
@@ -102,11 +112,15 @@ func (d *Daemon) Cull(taskID, into string) (*CullResult, error) {
 	defer unlock()
 
 	res := &CullResult{Card: taskID, Into: into, Worktree: t.Worktree}
-	plan, err := inspectCull(t.Worktree, into)
+	plan, err := inspectCullProved(t.Worktree, into, tip)
 	if err != nil {
 		return nil, fmt.Errorf("%s was not culled: %w", t.DisplayTitle(), err)
 	}
 	res.Branch = plan.branch
+	if plan.moved != "" {
+		return nil, fmt.Errorf("%s was not culled: new commits since the merged branch was fetched: %s vs %s",
+			t.DisplayTitle(), shortRef(plan.moved), shortRef(tip))
+	}
 	if !plan.merged {
 		return nil, fmt.Errorf("%s was not culled: its branch %s is not merged into %s",
 			t.DisplayTitle(), plan.branch, into)
@@ -129,7 +143,7 @@ func (d *Daemon) Cull(taskID, into string) (*CullResult, error) {
 	}
 
 	// Again, after the exit: a runner writes on its way out.
-	plan, err = inspectCull(t.Worktree, into)
+	plan, err = inspectCullProved(t.Worktree, into, tip)
 	if err != nil {
 		res.Kept = "the worktree could not be read after the exit: " + err.Error()
 		return d.culled(t, res), nil
@@ -139,7 +153,7 @@ func (d *Daemon) Cull(taskID, into string) (*CullResult, error) {
 			strings.Join(plan.dirty, ", ")
 		return d.culled(t, res), nil
 	}
-	if !plan.merged {
+	if !plan.merged || plan.moved != "" {
 		res.Kept = "its branch moved on the way out and is no longer merged, so it and the worktree were kept"
 		return d.culled(t, res), nil
 	}
@@ -156,11 +170,31 @@ func (d *Daemon) Cull(taskID, into string) (*CullResult, error) {
 	return d.culled(t, res), nil
 }
 
-// culled logs what a cull did, and hands the result back.
+// culled logs what a cull did, and hands the result back. Reaching here means
+// the branch was proved merged and the worker was asked to leave, which is the
+// acceptance: the work item closes as accepted, even when a dirty worktree was
+// kept.
 func (d *Daemon) culled(t *store.Task, res *CullResult) *CullResult {
 	log.Printf("[atrium] culled %s: exited=%v worktree removed=%v branch %s deleted=%v %s",
 		t.DisplayTitle(), res.Exited, res.WorktreeRemoved, res.Branch, res.BranchDeleted, res.Kept)
+	if err := d.st.AcceptMerged(t.ID); err != nil {
+		log.Printf("[atrium] could not close %s as accepted: %v", t.DisplayTitle(), err)
+	}
+	// Off the board too. Not recorded as dead, which would be a death in the
+	// ledger for accepted work: the card keeps its status and its history.
+	if err := d.st.ArchiveCulled(t.ID, "culled: its branch merged and it was asked to leave"); err != nil {
+		log.Printf("[atrium] could not archive %s: %v", t.DisplayTitle(), err)
+	} else {
+		d.ap.Broadcast("task-removed", nil)
+	}
 	return res
+}
+
+func shortRef(s string) string {
+	if len(s) > 10 {
+		return s[:10]
+	}
+	return s
 }
 
 func finishedStatus(s string) bool {
@@ -177,6 +211,9 @@ type cullPlan struct {
 	common string
 	branch string
 	merged bool
+	// tip is the commit a proof made elsewhere named, and moved is the commit
+	// the branch is on when it is not that one. Both empty for a proof made here.
+	tip, moved string
 	// dirty lists the changes git reports, minus atrium's own BRIEF.md.
 	dirty []string
 	// brief is BRIEF.md sitting untracked in the worktree, removed before git
@@ -187,7 +224,13 @@ type cullPlan struct {
 // inspectCull reads the worktree's git state and refuses anything a cull must
 // never remove. Merged and dirty are reported, not refused, so the caller
 // decides what each means.
-func inspectCull(wt, into string) (*cullPlan, error) {
+func inspectCull(wt, into string) (*cullPlan, error) { return inspectCullProved(wt, into, "") }
+
+// inspectCullProved is inspectCull where the merge was proved elsewhere. With a
+// tip, this repository has no `into` to check against, so merged means the
+// worktree is sitting on exactly that commit, and `moved` names the commit it is
+// on when it is not.
+func inspectCullProved(wt, into, tip string) (*cullPlan, error) {
 	wt = filepath.FromSlash(wt)
 	if fi, err := os.Stat(wt); err != nil || !fi.IsDir() {
 		return nil, fmt.Errorf("its directory %s is not there, so atrium cannot check its branch", wt)
@@ -211,12 +254,25 @@ func inspectCull(wt, into string) (*cullPlan, error) {
 	if protectedBranch(p.branch, into) {
 		return nil, fmt.Errorf("%s is on %s, which a cull never deletes", wt, p.branch)
 	}
-	if _, err := gitIn(wt, "rev-parse", "--verify", "-q", "refs/heads/"+into); err != nil {
-		return nil, fmt.Errorf("there is no branch %s to check it against", into)
-	}
-	p.merged, err = isAncestor(wt, "refs/heads/"+p.branch, "refs/heads/"+into)
-	if err != nil {
-		return nil, err
+	p.tip = strings.TrimSpace(tip)
+	if p.tip != "" {
+		head, err := gitIn(wt, "rev-parse", "--verify", "-q", "refs/heads/"+p.branch)
+		if err != nil {
+			return nil, fmt.Errorf("could not read branch %s: %w", p.branch, err)
+		}
+		if head == p.tip {
+			p.merged = true
+		} else {
+			p.moved = head
+		}
+	} else {
+		if _, err := gitIn(wt, "rev-parse", "--verify", "-q", "refs/heads/"+into); err != nil {
+			return nil, fmt.Errorf("there is no branch %s to check it against", into)
+		}
+		p.merged, err = isAncestor(wt, "refs/heads/"+p.branch, "refs/heads/"+into)
+		if err != nil {
+			return nil, err
+		}
 	}
 	status, err := gitIn(wt, "status", "--porcelain=v1", "--untracked-files=all")
 	if err != nil {
@@ -282,7 +338,19 @@ func removeWorktree(p *cullPlan) error {
 // merged. `-D` rather than `-d`, because `-d` checks against whatever HEAD the
 // main checkout is on rather than against the branch this was checked against.
 func deleteMergedBranch(p *cullPlan, into string) error {
-	merged, err := isAncestor(p.common, "refs/heads/"+p.branch, "refs/heads/"+into)
+	var (
+		merged bool
+		err    error
+	)
+	if p.tip != "" {
+		// Nothing here to check `into` against. The branch has to still be the
+		// commit the proof was made for.
+		var head string
+		head, err = gitIn(p.common, "--git-dir="+p.common, "rev-parse", "--verify", "-q", "refs/heads/"+p.branch)
+		merged = err == nil && head == p.tip
+	} else {
+		merged, err = isAncestor(p.common, "refs/heads/"+p.branch, "refs/heads/"+into)
+	}
 	if err != nil || !merged {
 		return fmt.Errorf("the worktree was removed and branch %s kept, because it no longer "+
 			"reads as merged into %s", p.branch, into)
