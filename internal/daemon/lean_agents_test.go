@@ -45,14 +45,14 @@ func kitDirs(t *testing.T) (agents, skills, root string) {
 func TestLeanArgsAgentToolIsDisallowedOnlyWithoutLeanAgents(t *testing.T) {
 	kitDirs(t)
 	in := []string{"--model", "m", "go"}
-	without, err := leanArgs(in, nil, "", nil, leanKit{}, os.ReadFile)
+	without, err := leanArgs(in, nil, "", nil, leanKit{}, "", os.ReadFile)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(","+flagValue(t, without, "--disallowedTools")+",", ",Agent,") || count(without, "--plugin-dir") != 0 {
 		t.Fatalf("a plain lean launch keeps Agent disallowed and has no --plugin-dir: %q", without)
 	}
-	with, err := leanArgs(in, nil, "", nil, leanKit{Agents: []string{"codebase-steward"}}, os.ReadFile)
+	with, err := leanArgs(in, nil, "", nil, leanKit{Agents: []string{"codebase-steward"}}, "", os.ReadFile)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +70,7 @@ func TestLeanArgsAgentToolIsDisallowedOnlyWithoutLeanAgents(t *testing.T) {
 	if with[len(with)-1] != "go" || flagValue(t, with, "--setting-sources") != "project,local" || count(with, "--agents") != 0 {
 		t.Fatalf("prompt last, user source still cut, no inline --agents: %q", with)
 	}
-	sk, err := leanArgs(in, nil, "", nil, leanKit{Skills: []string{"review-panel"}}, os.ReadFile)
+	sk, err := leanArgs(in, nil, "", nil, leanKit{Skills: []string{"review-panel"}}, "", os.ReadFile)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +83,7 @@ func TestLeanArgsAgentToolIsDisallowedOnlyWithoutLeanAgents(t *testing.T) {
 func TestLeanPluginHoldsOnlyTheNamedFilesByteForByte(t *testing.T) {
 	agents, _, root := kitDirs(t)
 	got, err := leanArgs([]string{"go"}, nil, "", nil,
-		leanKit{Agents: []string{"codebase-steward", "go-security-reviewer"}, Skills: []string{"review-panel"}}, os.ReadFile)
+		leanKit{Agents: []string{"codebase-steward", "go-security-reviewer"}, Skills: []string{"review-panel"}}, "", os.ReadFile)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,14 +117,14 @@ func TestLeanPluginHoldsOnlyTheNamedFilesByteForByte(t *testing.T) {
 	}
 	// The same kit finds the same directory and leaves it alone.
 	again, err := leanArgs([]string{"go"}, nil, "", nil,
-		leanKit{Agents: []string{"go-security-reviewer", "codebase-steward"}, Skills: []string{"review-panel"}}, os.ReadFile)
+		leanKit{Agents: []string{"go-security-reviewer", "codebase-steward"}, Skills: []string{"review-panel"}}, "", os.ReadFile)
 	if err != nil || flagValue(t, again, "--plugin-dir") != dir {
 		t.Fatalf("same kit, different directory: %v", err)
 	}
 	// A changed file is a different directory, so a live session's is never rewritten.
 	write(t, filepath.Join(agents, "codebase-steward.md"), "---\ndescription: changed\n---\nNew.")
 	changed, err := leanArgs([]string{"go"}, nil, "", nil,
-		leanKit{Agents: []string{"codebase-steward"}}, os.ReadFile)
+		leanKit{Agents: []string{"codebase-steward"}}, "", os.ReadFile)
 	if err != nil || flagValue(t, changed, "--plugin-dir") == dir {
 		t.Fatalf("a changed kit should get its own directory: %v", err)
 	}
@@ -172,39 +172,39 @@ func TestLeanPluginCopiesAHardLinkedAgent(t *testing.T) {
 
 func TestLeanKitRefusesAnUnknownOrUnsafeName(t *testing.T) {
 	kitDirs(t)
-	_, err := leanArgs([]string{"go"}, nil, "", nil, leanKit{Agents: []string{"codebase-steward", "no-such-agent"}}, os.ReadFile)
+	_, err := leanArgs([]string{"go"}, nil, "", nil, leanKit{Agents: []string{"codebase-steward", "no-such-agent"}}, "", os.ReadFile)
 	if err == nil || !strings.Contains(err.Error(), "no-such-agent") {
 		t.Fatalf("an unknown agent should be refused by name, got %v", err)
 	}
-	_, err = leanArgs([]string{"go"}, nil, "", nil, leanKit{Skills: []string{"no-such-skill"}}, os.ReadFile)
+	_, err = leanArgs([]string{"go"}, nil, "", nil, leanKit{Skills: []string{"no-such-skill"}}, "", os.ReadFile)
 	if err == nil || !strings.Contains(err.Error(), "no-such-skill") {
 		t.Fatalf("an unknown skill should be refused by name, got %v", err)
 	}
 	for _, bad := range []string{"../settings", "a/b", `a\b`, ".hidden"} {
-		if _, err := leanArgs([]string{"go"}, nil, "", nil, leanKit{Agents: []string{bad}}, os.ReadFile); err == nil {
+		if _, err := leanArgs([]string{"go"}, nil, "", nil, leanKit{Agents: []string{bad}}, "", os.ReadFile); err == nil {
 			t.Fatalf("agent %q should be refused", bad)
 		}
-		if _, err := leanArgs([]string{"go"}, nil, "", nil, leanKit{Skills: []string{bad}}, os.ReadFile); err == nil {
+		if _, err := leanArgs([]string{"go"}, nil, "", nil, leanKit{Skills: []string{bad}}, "", os.ReadFile); err == nil {
 			t.Fatalf("skill %q should be refused", bad)
 		}
 	}
 }
 
 func TestLeanOptionsCarryTheKitOnTheCardAndTheRequestReplacesIt(t *testing.T) {
-	lean, _, kit := leanOptions(LaunchRequest{LeanAgents: []string{" b", "a", "a"}, LeanSkills: []string{"s"}}, nil)
+	lean, _, kit := leanOptions(LaunchRequest{LeanAgents: []string{" b", "a", "a"}, LeanSkills: []string{"s"}}, nil, "")
 	if !lean || strings.Join(kit.Agents, ",") != "a,b" || strings.Join(kit.Skills, ",") != "s" {
 		t.Fatalf("lean_agents implies lean, got %v %+v", lean, kit)
 	}
 	card := &store.Task{Tags: mergeTags([]string{"origin:agent"}, leanTags([]string{"ziti"}, leanKit{Agents: []string{"a", "b"}, Skills: []string{"s"}}))}
-	lean, mcp, kit := leanOptions(LaunchRequest{}, card)
+	lean, mcp, kit := leanOptions(LaunchRequest{}, card, "")
 	if !lean || strings.Join(kit.Agents, ",") != "a,b" || strings.Join(kit.Skills, ",") != "s" || len(mcp) != 1 {
 		t.Fatalf("a restart keeps the lists, got %v %q %+v", lean, mcp, kit)
 	}
-	if _, _, kit = leanOptions(LaunchRequest{LeanAgents: []string{"c"}}, card); strings.Join(kit.Agents, ",") != "c" || strings.Join(kit.Skills, ",") != "s" {
+	if _, _, kit = leanOptions(LaunchRequest{LeanAgents: []string{"c"}}, card, ""); strings.Join(kit.Agents, ",") != "c" || strings.Join(kit.Skills, ",") != "s" {
 		t.Fatalf("a request naming agents replaces the card's agents only, got %+v", kit)
 	}
 	off := false
-	if lean, _, kit = leanOptions(LaunchRequest{Lean: &off}, card); lean || !kit.empty() {
+	if lean, _, kit = leanOptions(LaunchRequest{Lean: &off}, card, ""); lean || !kit.empty() {
 		t.Fatalf("lean: false drops them, got %v %+v", lean, kit)
 	}
 	got, cut := withoutLeanTags(card.Tags)
@@ -290,7 +290,7 @@ func TestLaunchKeepsTheKitOnTheCardForARestartAndWritesNothingInTheWorktree(t *t
 		t.Fatal("no card")
 	}
 	t.Cleanup(func() { _ = d.StopRunner(card.ID) })
-	lean, _, kit := leanOptions(LaunchRequest{}, card)
+	lean, _, kit := leanOptions(LaunchRequest{}, card, "")
 	if !lean || strings.Join(kit.Agents, ",") != "codebase-steward,go-security-reviewer" || strings.Join(kit.Skills, ",") != "review-panel" {
 		t.Fatalf("the card should keep the lists for a restart, tags %q -> %v %+v", card.Tags, lean, kit)
 	}
