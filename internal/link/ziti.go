@@ -22,8 +22,11 @@ import (
 // which identities may dial and which may bind, and a connection that should
 // not exist is never made.
 //
-// So there is no enrolment here, no certificate, no join secret, and no CA to
-// keep. `Hub.Enrol` is left nil and the hub says so plainly when somebody tries.
+// That proves the connection may reach the hub and not WHICH ROOM it is, so the
+// old form of a join string has no enrolment here, no certificate and no join
+// secret, and the hub says so plainly when somebody tries. The new form runs
+// direct.go's mutual TLS inside this transport (see overlaytls.go), and the old
+// form keeps attaching beside it until `atrium rooms legacy refuse`.
 //
 // This is what the design meant by "a transport supplies a net.Listener and
 // something that returns a net.Conn". Everything above this file is unchanged.
@@ -137,7 +140,11 @@ func (z *Ziti) Close() {
 
 // ZitiAuthenticated is `Hub.Authenticated` for this transport.
 //
-// ALWAYS TRUE, AND THAT IS NOT A SHORTCUT. A connection only exists because a
+// This is the legacy path's word: `OverlayAuthenticated` answers for a room
+// that arrives without a certificate, and asks the certificate for one that
+// does.
+//
+// TRUE, AND THAT IS NOT A SHORTCUT. A connection only exists because a
 // policy on the network allowed an enrolled identity to dial a service. There
 // is no unauthenticated path to this handler, which is exactly the property the
 // certificate machinery in `direct.go` is trying to reconstruct by hand.

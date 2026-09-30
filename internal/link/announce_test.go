@@ -10,6 +10,13 @@ import (
 	"time"
 )
 
+// announceWait bounds each wait in these tests for something to arrive. Every
+// wait is polled and returns as soon as its condition holds, so the bound only
+// costs time when a test is failing. It was 5 and 10 seconds, and a loaded
+// machine running three suites at once took longer than that to carry one
+// announcement through the ceiling, a dial and a store write.
+const announceWait = 30 * time.Second
+
 // A room telling its hub what it is holding.
 //
 // Over a real listener with a real hub and a real room, for the same reason the
@@ -127,7 +134,7 @@ func caching(t *testing.T, state http.Handler) (*Hub, *[]announcement, *sync.Mut
 		T: Timings{Beat: 200 * time.Millisecond, Warm: 1, Backoff: 50 * time.Millisecond},
 	}
 	go func() { _ = room.Run(ctx) }()
-	waitFor(t, 5*time.Second, func() bool { return hub.Has("testroom") })
+	waitFor(t, announceWait, func() bool { return hub.Has("testroom") })
 
 	return hub, &got, &mu, func() { stop(); ln.Close() }
 }
@@ -143,7 +150,7 @@ func TestARoomSaysWhatItHoldsAsSoonAsItAttaches(t *testing.T) {
 	_, got, mu, stop := caching(t, state)
 	defer stop()
 
-	waitFor(t, 5*time.Second, func() bool {
+	waitFor(t, announceWait, func() bool {
 		mu.Lock()
 		defer mu.Unlock()
 		return len(*got) > 0
@@ -181,7 +188,7 @@ func TestAChangeReachesTheHubWithoutAnybodyAsking(t *testing.T) {
 	_, got, mu, stop := caching(t, state)
 	defer stop()
 
-	waitFor(t, 5*time.Second, func() bool {
+	waitFor(t, announceWait, func() bool {
 		mu.Lock()
 		defer mu.Unlock()
 		return len(*got) > 0
@@ -192,7 +199,7 @@ func TestAChangeReachesTheHubWithoutAnybodyAsking(t *testing.T) {
 		map[string]any{"id": "three", "status": "running"},
 	)
 
-	waitFor(t, 10*time.Second, func() bool {
+	waitFor(t, announceWait, func() bool {
 		mu.Lock()
 		defer mu.Unlock()
 		last := (*got)[len(*got)-1]
@@ -219,7 +226,7 @@ func TestNothingIsSentWhenNothingChanged(t *testing.T) {
 	_, got, mu, stop := caching(t, state)
 	defer stop()
 
-	waitFor(t, 5*time.Second, func() bool {
+	waitFor(t, announceWait, func() bool {
 		mu.Lock()
 		defer mu.Unlock()
 		return len(*got) > 0
@@ -259,7 +266,7 @@ func TestARoomInTroubleDoesNotAnnounceItselfEmpty(t *testing.T) {
 	_, got, mu, stop := caching(t, state)
 	defer stop()
 
-	waitFor(t, 5*time.Second, func() bool {
+	waitFor(t, announceWait, func() bool {
 		mu.Lock()
 		defer mu.Unlock()
 		return len(*got) > 0
@@ -292,7 +299,7 @@ func TestAnAnswerWithNoCardListIsNotAnEmptyRoom(t *testing.T) {
 	_, got, mu, stop := caching(t, state)
 	defer stop()
 
-	waitFor(t, 5*time.Second, func() bool {
+	waitFor(t, announceWait, func() bool {
 		mu.Lock()
 		defer mu.Unlock()
 		return len(*got) > 0
@@ -320,7 +327,7 @@ func TestARoomWithNoCardsAnnouncesAnEmptyList(t *testing.T) {
 	_, got, mu, stop := caching(t, state)
 	defer stop()
 
-	waitFor(t, 5*time.Second, func() bool {
+	waitFor(t, announceWait, func() bool {
 		mu.Lock()
 		defer mu.Unlock()
 		return len(*got) > 0
@@ -328,7 +335,7 @@ func TestARoomWithNoCardsAnnouncesAnEmptyList(t *testing.T) {
 
 	state.set()
 
-	waitFor(t, 10*time.Second, func() bool {
+	waitFor(t, announceWait, func() bool {
 		mu.Lock()
 		defer mu.Unlock()
 		return len((*got)[len(*got)-1].Cards) == 0
@@ -377,7 +384,7 @@ func TestAnAnnouncementThatFailedIsSentAgain(t *testing.T) {
 		T: Timings{Beat: 200 * time.Millisecond, Warm: 1, Backoff: 50 * time.Millisecond},
 	}
 	go func() { _ = room.Run(ctx) }()
-	waitFor(t, 5*time.Second, func() bool { return hub.Has("testroom") })
+	waitFor(t, announceWait, func() bool { return hub.Has("testroom") })
 
 	waitFor(t, 20*time.Second, func() bool {
 		mu.Lock()
@@ -430,7 +437,7 @@ func TestARoomDoesNotAnnounceAtAHubThatKeepsNothing(t *testing.T) {
 		T:       Timings{Beat: 200 * time.Millisecond, Warm: 1, Backoff: 50 * time.Millisecond},
 	}
 	go func() { _ = room.Run(ctx) }()
-	waitFor(t, 5*time.Second, func() bool { return hub.Has("testroom") })
+	waitFor(t, announceWait, func() bool { return hub.Has("testroom") })
 
 	state.set(map[string]any{"id": "one", "status": "done"})
 	time.Sleep(2 * announceEvery)

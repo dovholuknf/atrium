@@ -46,10 +46,27 @@
 # left. It is skipped when auth warned, or with `-NoSmoke`. `-SmokeOnly` runs
 # just these two against a room already provisioned, and changes nothing on it.
 #
-# NO AUTOSTART BY DEFAULT. The room is started in the background with
-# `atrium room --detach` and runs until the machine restarts or the user logs
-# out. `-Autostart` installs the logon task, systemd user unit or LaunchAgent as
-# well. `-Linger` (Linux, with -Autostart) keeps it running after logout.
+# AUTOSTART IS THE DEFAULT for a new provision: the logon task, systemd user unit
+# or LaunchAgent is installed, so the room comes back after a reboot. On Windows
+# the task's action is `room --detach` (after dot-sourcing
+# ~\.atrium\toolchain\room-env.ps1 when it exists), so a room started by hand, by
+# provision and by a logon is one path. `-NoAutostart` starts the room in the
+# background with `atrium room --detach` and registers nothing, and it then runs
+# until the machine restarts or the user logs out. `-Autostart` is accepted: a
+# no-op on a new provision, and on a rerun it registers autostart for a room
+# provisioned without. A RERUN KEEPS THE MODE THE MANIFEST RECORDS, so nothing on a
+# machine already provisioned changes. `-Linger` (Linux, with autostart) keeps the
+# room running after logout.
+#
+# THE ACCOUNT. `-User localai` says the account the room must run as. It is
+# checked over the ssh login and never created: making an account needs admin, and
+# provisioning runs without it. A missing account prints the one command an
+# administrator runs (`net user localai /add`, `sysadminctl -addUser localai` or
+# `sudo useradd -m localai`) and stops with exit 11. An account that exists but is
+# not the ssh login is exit 1: target `localai@host`.
+#
+# THE SMOKE FOLDER is the room's clone, else the path from this repository's git
+# remote for the room, else `~/.atrium/smoke`, made when missing. Never the home.
 #
 # ONE LINE PER STEP, for a person and for the board dialog that will call this
 # later (backlog-2 item 46, stage 2). Every step line is
@@ -75,6 +92,8 @@
 #  10  -Restart refused: the room's supervisor has it switched off (a sticky
 #      stop), which a start would not undo. `service start` is the fix. Nothing
 #      was stopped
+#  11  -User names an account that does not exist on the remote. The line prints the
+#      command to create it, which this never runs. Nothing was changed
 #  (-Restart also uses 3 for a stop or start that did not work, 4 for a room
 #  that did not come back attached, and 6 for a machine this did not provision)
 #
@@ -95,7 +114,7 @@
 #   macOS    ~/.local/bin/atrium
 #   all      ~/.atrium/room (key, certificate or ziti identity, room.log),
 #            ~/.atrium/atrium.db, ~/.atrium/provision/manifest.json
-#   -Autostart adds a logon task `atrium` (RunLevel Limited), a systemd user unit
+#   autostart (the default) adds a logon task `atrium` (RunLevel Limited), a systemd user unit
 #            atrium.service, or a LaunchAgent io.github.dovholuknf.atrium, and
 #            their scripts under ~/.atrium/provision
 #   -Install  adds the runner where its own installer puts it, usually ~/.local.
@@ -129,6 +148,8 @@ param(
     [switch] $Restart,
     [switch] $Yes,
     [switch] $Force,
+    # The account the room must run as, for example localai. Checked, never created: see "the account".
+    [string] $User,
 
     # Build the binary from this checkout instead of fetching a release.
     [switch] $FromCheckout,
@@ -137,9 +158,12 @@ param(
     # A prebuilt atrium for the remote's OS and arch, instead of either.
     [string] $Binary,
 
-    # Install autostart as well as starting the room now.
+    # Autostart is on by default for a new provision. -NoAutostart starts the room in the background and registers
+    # nothing. -Autostart is accepted and is a no-op on a new provision, and on a rerun it registers autostart for a
+    # room that was provisioned without it.
     [switch] $Autostart,
-    # Linux with -Autostart: turn on lingering so the room survives logout.
+    [switch] $NoAutostart,
+    # Linux with autostart: turn on lingering so the room survives logout.
     [switch] $Linger,
 
     # Ziti hubs: the remote's enrollment JWT, as a file, or as a command that
@@ -190,8 +214,9 @@ $ProgressPreference = 'SilentlyContinue'
 # the sh script, and its first line then fails (`sh: 1: A=...: not found`).
 $OutputEncoding = [Text.UTF8Encoding]::new($false)
 if ($SmokeOnly -and ($Remove -or $NoSmoke)) { Write-Host 'provision args fail -SmokeOnly goes with neither -Remove nor -NoSmoke'; exit 1 }
-if ($Restart -and ($Remove -or $SmokeOnly -or $Autostart -or $Install.Count -or $Binary -or $FromCheckout -or $Version)) {
-    Write-Host 'provision args fail -Restart changes nothing but the running room, so it goes with none of -Remove, -SmokeOnly, -Autostart, -Install, -Binary, -FromCheckout, -Version'; exit 1
+if ($Autostart -and $NoAutostart) { Write-Host 'provision args fail -Autostart and -NoAutostart say opposite things'; exit 1 }
+if ($Restart -and ($Remove -or $SmokeOnly -or $Autostart -or $NoAutostart -or $Install.Count -or $Binary -or $FromCheckout -or $Version)) {
+    Write-Host 'provision args fail -Restart changes nothing but the running room, so it goes with none of -Remove, -SmokeOnly, -Autostart, -NoAutostart, -Install, -Binary, -FromCheckout, -Version'; exit 1
 }
 if (($Yes -or $Force) -and -not $Restart) { Write-Host 'provision args fail -Yes and -Force belong to -Restart'; exit 1 }
 $checkout = Split-Path -Parent $PSScriptRoot
@@ -229,7 +254,7 @@ function Fail {
 }
 
 if (-not $Target) {
-    Write-Host 'usage: provision-room.ps1 <user@host> [-Name room] [-Runners claude,codex] [-Install claude] [-Remove]'
+    Write-Host 'usage: provision-room.ps1 <user@host> [-Name room] [-Runners claude,codex] [-Install claude] [-NoAutostart] [-User name] [-Remove]'
     exit 1
 }
 
@@ -446,6 +471,37 @@ $goarch = switch -Regex ($arch) {
 }
 if (-not $goarch) { Fail 'os' 2 "$os on $arch, which atrium is not built for" }
 Step 'os' 'ok' "$os $goarch $remoteHost"
+
+# ── the account, when one was asked for ─────────────────────────────────────
+
+# NEVER CREATES AN ACCOUNT. Making one needs admin, which provisioning runs without on purpose. -User names the
+# account the room must run as. Asked over the login this run already has, and when the account is not there it
+# prints the one command the operator runs and stops with 11. Provisioning runs AS the ssh login, so an account that
+# exists but is not that login is a mistake in the target, not something this can fix.
+function Get-CreateAccountCommand {
+    param([string] $os, [string] $user)
+    switch ($os) {
+        'windows' { "net user $user /add" }
+        'darwin'  { "sysadminctl -addUser $user" }
+        default   { "sudo useradd -m $user" }
+    }
+}
+if ($User) {
+    $q = switch ($os) {
+        'windows' { "net user $(Quote-Ps $User) 2>&1 | Out-Null; if (`$LASTEXITCODE -eq 0) { 'exists=True' } else { 'exists=False' }`n'login=' + `$env:USERNAME" }
+        'darwin'  { "if dscl . -read /Users/$(Quote-Sh $User) >/dev/null 2>&1; then echo exists=True; else echo exists=False; fi; echo login=`$(id -un)" }
+        default   { "if id $(Quote-Sh $User) >/dev/null 2>&1; then echo exists=True; else echo exists=False; fi; echo login=`$(id -un)" }
+    }
+    $acct = ConvertFrom-KeyValue (Invoke-Remote $q).Out
+    if ($acct.exists -ne 'True') {
+        Step 'account' 'fail' "$User does not exist on $remoteHost. this never creates an account. an administrator runs: $(Get-CreateAccountCommand $os $User)"
+        Finish 11
+    }
+    if ($acct.login -and $acct.login -ne $User) {
+        Fail 'account' 1 "$User exists, and $Target logs in as $($acct.login). target $User@<host> so the room runs as $User"
+    }
+    Step 'account' 'ok' "$User, the account this room runs as"
+}
 
 # ── 2. the hub ──────────────────────────────────────────────────────────────
 
@@ -918,8 +974,9 @@ function Invoke-SmokeCase {
         if ($SmokeCwd) { return $SmokeCwd }
         if ($script:clonePath) { return $script:clonePath }
         # -SMOKEONLY MAKES NO CLONE, but room-git init left this repository a remote
-        # named for the room, and its url is the clone's path there. The home is
-        # the last resort: item 67 refuses to start a card in it.
+        # named for the room, and its url is the clone's path there. NEVER THE
+        # HOME: item 67 refuses to start a card in it, so the last resort is
+        # ~/.atrium/smoke, which is made on the remote when it is missing.
         $url = & git -C (Split-Path $PSScriptRoot) remote get-url $Name 2>$null
         if ($LASTEXITCODE -eq 0 -and $url) {
             $url = "$url".Trim()
@@ -927,8 +984,9 @@ function Invoke-SmokeCase {
             if ($url -match '^ssh://[^/]+/([A-Za-z]:/.*)$') { return $Matches[1] }
             if ($url -match '^ssh://[^/]+(/.*)$') { return $Matches[1] }
         }
-        $hs =if ($os -eq 'windows') { '"home=$HOME"' } else { 'echo "home=$HOME"' }
-        (ConvertFrom-KeyValue (Invoke-Remote $hs).Out).home
+        $hs = if ($os -eq 'windows') { "`$d = Join-Path `$A 'smoke'; New-Item -ItemType Directory -Force -Path `$d | Out-Null; `"dir=`$(`$d -replace '\\', '/')`"" }
+              else { 'd="$A/smoke"; mkdir -p "$d" && echo "dir=$d"' }
+        (ConvertFrom-KeyValue (Invoke-Remote $hs).Out).dir
     }
 
     $nonce = -join ((1..8) | ForEach-Object { '{0:x}' -f (Get-Random -Maximum 16) })
@@ -1339,6 +1397,7 @@ if ($up) { 'start=done' } else { 'start=fail the task did not bring the room up 
     Finish 0
 }
 
+$freshManifest = -not $manifest
 if (-not $manifest) {
     $pre = [ordered]@{}
     foreach ($k in $preKeys) { $pre[$k] = if ($k -eq 'service') { [bool] $state.service } else { $state.$k -eq 'True' } }
@@ -1359,8 +1418,12 @@ if (-not $manifest) {
 $manifest.hub = $hubId
 $manifest.transport = $transport
 # Autostart, once installed, stays until -Remove.
+#
+# THE DEFAULT APPLIES TO A NEW PROVISION ONLY. A machine with a manifest keeps the mode the manifest records, so a
+# rerun on a room that was provisioned without autostart does not start registering one. -Autostart on such a rerun
+# still means what it says.
 $hadAutostartBefore = [bool] $manifest.autostart
-$useAutostart = $Autostart -or $hadAutostartBefore
+$useAutostart = $Autostart -or $hadAutostartBefore -or ($freshManifest -and -not $NoAutostart)
 $manifest.autostart = $useAutostart
 Save-Manifest
 
@@ -1883,7 +1946,7 @@ if (-not $useAutostart) {
     if ($os -eq 'windows') {
         $as = @'
 $svc = Get-AT
-if ($svc -and $svc -like "*$Bin*room --db*") { "autostart=ok" }
+if ($svc -and $svc -like "*$Bin*room --*") { "autostart=ok" }
 else {
     $o = & (Join-Path $P 'scripts\atrium-service.ps1') install -Verb room -Exe $Bin *>&1
     if (-not (Get-AT)) { $o; exit 1 }
