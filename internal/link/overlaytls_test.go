@@ -438,7 +438,7 @@ func TestOldPathCannotTakeAnAttachedProvenName(t *testing.T) {
 	}
 	r.attach("alpha", Proven{Dialer: plain{addr: r.addr}, Keys: rk})
 	waitFor(t, 5*time.Second, func() bool { return r.hub.Has("alpha") })
-	for _, kind := range []string{"control", "data", relayKind, announceKind} {
+	for _, kind := range []string{"control", "data", relayKind, announceKind, upgradeKind, gitKind} {
 		w, err := r.rawHello(false, kind, "alpha")
 		if err != nil {
 			t.Fatalf("%s: %v", kind, err)
@@ -454,6 +454,57 @@ func TestOldPathCannotTakeAnAttachedProvenName(t *testing.T) {
 	// ONE LINE, however many dials: whoever it is redials on a backoff.
 	if got := r.refusedLines(); len(got) != 1 || got[0] != "alpha@zrok" {
 		t.Fatalf("the refusals were reported as %v", got)
+	}
+}
+
+// A KEYLESS ATTACH CANNOT REPLACE A KEYED ROOM, on any transport. Before f-026 an
+// empty key slipped past the comparison in `Hub.control`. Over a pipe, with the
+// key read from a table, so only that comparison is under test.
+func TestAKeylessAttachCannotReplaceAKeyedRoom(t *testing.T) {
+	var mu sync.Mutex
+	keys := map[net.Conn]string{}
+	was := peerKey
+	peerKey = func(c net.Conn) string {
+		mu.Lock()
+		defer mu.Unlock()
+		if k, ok := keys[c]; ok {
+			return k
+		}
+		return was(c)
+	}
+	t.Cleanup(func() { peerKey = was })
+
+	h := NewHub(Timings{Beat: time.Hour, Silence: time.Hour, Warm: 1})
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	dial := func(key string) welcome {
+		t.Helper()
+		srv, cli := net.Pipe()
+		t.Cleanup(func() { _ = cli.Close() })
+		mu.Lock()
+		keys[srv] = key
+		mu.Unlock()
+		go h.control(ctx, "alpha", hello{V: Version, Kind: "control", Room: "alpha"}, srv, bufio.NewReader(srv))
+		var w welcome
+		_ = cli.SetDeadline(time.Now().Add(5 * time.Second))
+		br := bufio.NewReader(cli)
+		if err := readJSON(br, &w); err != nil {
+			t.Fatal(err)
+		}
+		// A PIPE HAS NO BUFFER, so the room keeps reading, as a socket would let
+		// the hub write its goodbye when this link is replaced.
+		_ = cli.SetDeadline(time.Time{})
+		go func() { _, _ = io.Copy(io.Discard, br) }()
+		return w
+	}
+	if w := dial("key-one"); !w.OK {
+		t.Fatalf("the keyed room was refused: %+v", w)
+	}
+	if w := dial(""); w.OK || !strings.Contains(w.Error, "different room") {
+		t.Fatalf("a keyless attach over a keyed room was answered %+v", w)
+	}
+	if w := dial("key-one"); !w.OK {
+		t.Fatalf("the same key could not reconnect: %+v", w)
 	}
 }
 

@@ -9,9 +9,17 @@ is live.
 
 ## Queue
 
-1. **f-026: a room with no certificate cannot take a proven room's name.** `docs/backlog/fabric/f-026.md`. Built as
-   the f-026 commit on claude/fabric, with hubstore migration `0006_room_enrolled` (approved). With @review. Then land, report,
-   and a hub-only deploy.
+1. **f-026's four review lows** (`docs/backlog/fabric/f-new-review-e738577e.md`). Two are fixed in the landing
+   commit and two need no code. Open until the deploy has been checked:
+   - Low 1, deploy note: claude-sg4, m1mini and sg3 have no `joined` line left, so they are unenrolled until their
+     first certificate attach after the migration. The hub-only deploy restarts the hub and every room reattaches,
+     which marks them. After the deploy, check `enrolled_at` is set for all four rooms in the hub store. Until then a
+     legacy dial under one of their names is accepted while that room is detached.
+   - Low 2, no change: `Spend` marks the name enrolled before the certificate is signed. A spent secret needs a new
+     join string anyway, so a failed signing leaves nothing to exploit.
+   - Low 3, fixed: `TestOldPathCannotTakeAnAttachedProvenName` covers `upgradeKind` and `gitKind` too.
+   - Low 4, fixed: `TestAKeylessAttachCannotReplaceAKeyedRoom` tests the `Hub.control` keyless-over-keyed refusal by
+     itself.
 2. **49: the hub half of atrium:everywhere.** `docs/rnd/everywhere-card-design.md`, `docs/backlog/fabric/49.md`.
    Large. A hubstore migration (it would be 0007) needs the orchestrator's OK. Reuse worktree
    `D:/worktrees/claude/atrium/49`, merging claude/main into it first. Its first run died.
@@ -30,3 +38,5 @@ is live.
      into the main checkout as `<room>/claude/*`.
   3. How a director places a worker on sg3 or m1mini: `docs/backlog/fabric/remote-workers.md`.
 - 2026-09-30, a refused provision smoke launch prints the room's reason: e4eb68dd.
+- 2026-09-30, f-026, a room with no certificate cannot take or relay as a proven name: passed by @review
+  (e738577e), landed with lows 3 and 4 fixed. The landing sha is in `notes/director-reports.md`.
