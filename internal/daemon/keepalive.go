@@ -794,8 +794,8 @@ func forkCardArgs(h *store.Harness, t *store.Task) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	if lean, mcp, agents := leanOptions(LaunchRequest{}, t); lean {
-		if args, err = leanArgs(args, readUserSettings(), "", mcp, agents, os.ReadFile); err != nil {
+	if lean, mcp, kit := leanOptions(LaunchRequest{}, t); lean {
+		if args, err = leanArgs(args, readUserSettings(), "", mcp, kit, os.ReadFile); err != nil {
 			return nil, err
 		}
 	}
