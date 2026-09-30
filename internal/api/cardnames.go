@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/dovholuknf/atrium/internal/store"
@@ -65,7 +66,14 @@ func cardSegment(path string) string {
 // byName is the wrapper.
 func (s *Server) byName(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		seg := cardSegment(r.URL.Path)
+		// READ ESCAPED, so a qualified wire name, `sparta%2Frnd`, is one segment
+		// and not two.
+		esc := r.URL.EscapedPath()
+		segEsc := cardSegment(esc)
+		seg, err := url.PathUnescape(segEsc)
+		if err != nil {
+			seg = segEsc
+		}
 		if seg == "" || cardRoutesNotCards[seg] || looksLikeID(seg) {
 			next.ServeHTTP(w, r)
 			return
@@ -98,8 +106,11 @@ func (s *Server) byName(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		r.URL.Path = strings.Replace(r.URL.Path, "/v1/tasks/"+seg, "/v1/tasks/"+t.ID, 1)
-		r.URL.RawPath = ""
+		rest := esc[len("/v1/tasks/")+len(segEsc):]
+		r.URL.RawPath = "/v1/tasks/" + t.ID + rest
+		if p, err := url.PathUnescape(r.URL.RawPath); err == nil {
+			r.URL.Path = p
+		}
 		w.Header().Set("X-Atrium-Card", t.ID)
 		handle := t.WireName
 		if tenant := s.st.Tenant(); tenant != "" && handle != "" {

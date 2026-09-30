@@ -72,6 +72,13 @@ func matchCard(cards []ctlCard, who string) (ctlCard, bool) {
 			return t, true
 		}
 	}
+	// A wire name without its atrium's prefix, `rnd-director` for
+	// `sparta/rnd-director`, the way the room itself qualifies a bare one.
+	for _, t := range cards {
+		if i := strings.LastIndex(t.Wire, "/"); i >= 0 && t.Wire[i+1:] == who {
+			return t, true
+		}
+	}
 	a := strings.ToLower(strings.TrimPrefix(who, "@"))
 	if a == "" {
 		return ctlCard{}, false
