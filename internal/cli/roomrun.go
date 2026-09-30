@@ -404,6 +404,12 @@ func runRoom(keys link.Keys, db, human, agent string, restartAfter time.Duration
 // roomHandler is the board with the room's git surface in front of it: /v1/git/ is sync,
 // its status, and upload-pack over the clones. Clones live under the git_root setting,
 // which is set on the room and never by the hub, and defaults to ~/git.
+//
+// IT IS THE LINK'S HANDLER ONLY, set as room.Handler, which serves connections the hub asked
+// for. The room's own human listener and a lent session's guest listener use
+// d.BoardHandler() directly and have no /v1/git/ at all. The hub's board proxy refuses the
+// path as well, so the hub's own sync and collect are the only way in. And only a repository
+// the hub has synced since this room started is served (gitsync.Syncer.Served).
 func roomHandler(d *daemon.Daemon, room *link.Room) http.Handler {
 	sy := &gitsync.Syncer{Root: func() string {
 		if v, err := d.Store().Setting(gitsync.SettingGitRoot); err == nil && strings.TrimSpace(v) != "" {

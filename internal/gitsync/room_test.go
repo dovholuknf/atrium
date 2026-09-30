@@ -284,6 +284,50 @@ func TestTheRoomServesClaudeBranchesExceptMainAndNothingElse(t *testing.T) {
 	}
 }
 
+// Only a repository the hub has synced is served. A clone that is on disk but was never synced,
+// or whose sync was refused, is a 404 even to the hub.
+func TestTheRoomServesOnlyWhatTheHubHasSynced(t *testing.T) {
+	s := freshServed(t)
+	srv, root := roomServer(t, s)
+	url := srv.URL + "/v1/git/github/o/r.git/info/refs?service=git-upload-pack"
+
+	// A clone that exists (somebody's own checkout) and was never synced.
+	clone := filepath.Join(root, "github", "o", "r")
+	if err := os.MkdirAll(clone, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	git(t, clone, "init", "-q", "-b", "claude/private")
+	commit(t, clone, "p.txt", "private")
+	if code, _ := get(t, url); code != 404 {
+		t.Fatalf("an unsynced clone answered %d", code)
+	}
+
+	// A sync the room refused (another repository's origin) does not make it served.
+	git(t, clone, "remote", "add", "origin", "https://github.com/someone/else.git")
+	post(t, srv.URL+"/v1/git/sync", `{"name":"github/o/r"}`)
+	if code, _ := get(t, url); code != 404 {
+		t.Fatalf("a refused clone answered %d", code)
+	}
+
+	// Once the hub has synced it, it is served.
+	git(t, clone, "remote", "set-url", "origin", "git@github.com:o/r.git")
+	if code, out := post(t, srv.URL+"/v1/git/sync", `{"name":"github/o/r"}`); code != 200 || !strings.Contains(out, `"ok"`) {
+		t.Fatalf("%d %s", code, out)
+	}
+	if code, _ := get(t, url); code != 200 {
+		t.Fatalf("a synced clone answered %d", code)
+	}
+	// And a name the hub never asked about is 404 whatever is on disk.
+	other := filepath.Join(root, "github", "o", "other")
+	if err := os.MkdirAll(other, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	git(t, other, "init", "-q")
+	if code, _ := get(t, srv.URL+"/v1/git/github/o/other.git/info/refs?service=git-upload-pack"); code != 404 {
+		t.Fatalf("a name never synced answered %d", code)
+	}
+}
+
 func TestCleanLocksRemovesOnlyOldOwnedOnes(t *testing.T) {
 	dir := t.TempDir()
 	old := time.Now().Add(-time.Hour)
