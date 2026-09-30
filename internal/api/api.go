@@ -206,6 +206,10 @@ type Server struct {
 	// UsageOf is a card's token use on record, for its details. Owned by the
 	// daemon. See internal/daemon/usage.go.
 	UsageOf func(taskID string, limit int) (any, error)
+	// Replies is a card's last n replies as text, for the phone's conversation
+	// page (r-024). Owned by the daemon, which reads the transcript. See
+	// internal/daemon/replies.go.
+	Replies func(taskID string, n int) (any, error)
 	// RoomStats is the last `room-stats` snapshot the sampler pushed, as JSON,
 	// or nil before the first. Does no work of its own. Owned by the daemon.
 	// See internal/roomstats.
@@ -629,6 +633,9 @@ func (s *Server) Handler() http.Handler {
 	}
 	if s.UsageOf != nil {
 		mux.HandleFunc("GET /v1/tasks/{id}/usage", s.cardUsage)
+	}
+	if s.Replies != nil {
+		mux.HandleFunc("GET /v1/tasks/{id}/replies", s.cardReplies)
 	}
 	mux.HandleFunc("GET /v1/usage", s.roomUsage)
 	mux.HandleFunc("GET /v1/usage/limits", s.roomLimits)
