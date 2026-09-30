@@ -232,7 +232,7 @@ f-004's.
 1. The file format and `atrium requirements <file> --json`. The schema, the template rules, and refusing an absolute
    path or anything that looks like a secret, the way scm-design's exporter refuses one. @runtime as r-018
    (moved from @fabric by atrium-87300, 2026-09-29), built together with item 5.
-2. (Built as f-014.) `scripts/room-check.ps1` with the rows that already have a checker: attached, toolchain (from ssh, with its
+2. (Built as f-014 at 056126a.) `scripts/room-check.ps1` with the rows that already have a checker: attached, toolchain (from ssh, with its
    `warn`), clone, `hub-main`, gitfiles, runner rows, helpers, mcp-config, hooks, smoke. @fabric.
 3. `room-git.ps1 init -Check`, the check mode it lacks. @fabric. Built as f-013 at 87a95a2.
 4. codex as a smoke case in provision. @fabric, after f-007 lands.
