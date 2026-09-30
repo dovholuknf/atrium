@@ -18,6 +18,12 @@ Status: queued for @ui (clint via @runtime, 2026-09-30 evening). Board only unle
    and subagents). Remember the choice on the device. Reuse the desktop board's sort and group rules rather than a
    second copy.
 
+7. **What clint sends is not shown.** A message typed in the /m box shows "sent" and never appears in the
+   conversation. Show his own messages in the thread, in order, marked as his (screenshot
+   `.atrium/incoming/20260930-192414-pasted.png`, on /m/alias/orchestrator over the zrok share).
+8. **The recap is hours stale and undated.** The orchestrator card showed the recap from the 12:02 cycle at 19:24.
+   Put the recap's time on it, and dim or fold one older than the card's last turn.
+
 Found in the same session, also on the phone: no header shown, the card picker would not open and a card could not
 be left (likely the notify.js load-order failure, fixed first), a card opened by its card URL has no way back to
 the board, and the send button's arrow is off center.
