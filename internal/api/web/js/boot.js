@@ -59,6 +59,7 @@ guestKnown = askIfGuest().then(word => { guestWord = word; return word; });
 // decides which of three event streams to open and whether every request this
 // page makes carries a room, so it cannot run after the first of them. See
 // `js/rooms.js`.
+cardUrlScope();
 startRooms().then(() => {
   if (termOnly()) {
     // The same stream and the same interval as the board. `refresh` sends a

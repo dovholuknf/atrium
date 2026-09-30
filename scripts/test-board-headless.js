@@ -11531,6 +11531,294 @@ async function popoutNotifySection(browser, base) {
   tasksMode = was;
 }
 
+// ── card urls: a card has an address made of names ───────────────────────────
+// u-card-urls U1. The board page served on `/alias/<a>`, `/room/<room>` and `/room/<room>/<name>` reads the path and asks
+// the hub's handle-addressed route for the card. The lookups are mocked with `page.route`, and each row of the design's
+// section 5 table, the clash, the links the board builds and the room scope get a section.
+async function cuOpen(browser, base, pathname, lookups, setup, unfocused) {
+  const ctx = await landContext(browser, unfocused);
+  const hits = [];
+  const errors = [];
+  const page = await ctx.newPage();
+  page.on("pageerror", e => errors.push(String(e)));
+  await page.route("**/*", route => {
+    const rq = route.request();
+    const p = new URL(rq.url()).pathname;
+    if (/^\/(alias|room)\//.test(p) && rq.resourceType() === "document") {
+      return route.fulfill({ status: 200, contentType: "text/html", body: HTML });
+    }
+    const m = /^\/v1\/tasks\/([^/]+)$/.exec(p);
+    const key = m ? decodeURIComponent(m[1]) : "";
+    if (key && lookups[key]) {
+      hits.push(key);
+      const l = lookups[key];
+      return route.fulfill({ status: l.status || 200, contentType: "application/json", body: JSON.stringify(l.body) });
+    }
+    return route.continue();
+  });
+  if (setup) {
+    await page.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await page.evaluate(setup);
+  }
+  await page.goto(base + pathname, { waitUntil: "domcontentloaded" });
+  return { ctx, page, hits, errors };
+}
+const cuSolo = (page, id) => page.waitForFunction(i => typeof soloID !== "undefined" && soloID === i, id,
+  { timeout: slow(15000) });
+const cuText = (page, sel) => page.evaluate(s => {
+  const e = document.querySelector(s);
+  return e && !e.hidden ? e.textContent : "";
+}, sel);
+const cuLinks = (page, sel) => page.evaluate(s => [...document.querySelectorAll(s + " a")].map(a => a.getAttribute("href")), sel);
+
+async function cardUrlTableSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landList = [];
+  landCard("land-a", { alias: "rnd", room: "claude-sg4", wire_name: "sparta/rnd-director" });
+  landCard("land-old", { alias: "rnd", status: "done" });
+  landCard("land-d", { alias: "rnd", status: "done", recap: "first line\nthe last line" });
+  const found = id => ({ body: LAND[id] });
+  const miss = { status: 404, body: { error: "no card called \"rnd\"", would_work: ["rnd-director@claude-sg4 (@rnd2)", "plain@claude-sg4"] } };
+  const row = async (name, pathname, lookups, setup, check, expectCard) => {
+    const r = await cuOpen(browser, base, pathname, lookups, setup);
+    try {
+      if (expectCard) await cuSolo(r.page, expectCard);
+      else await r.page.waitForSelector("#cardurl:not([hidden])", { timeout: slow(15000) });
+      await check(r);
+      if (r.hits.length !== 1) fail("cardUrlTable " + name + ": " + r.hits.length + " lookups for one open: " + r.hits.join(","));
+      if (r.errors.length) fail("cardUrlTable " + name + ": the page threw: " + r.errors.join(" | "));
+    } finally { await r.ctx.close(); }
+  };
+  const key = "atrium.cardurl.claude-sg4/rnd";
+  try {
+    // a card, nothing remembered: opens it and says nothing. The path stays and the id is kept for next time.
+    await row("fresh", "/room/claude-sg4/rnd", { "rnd@claude-sg4": found("land-a") }, null, async r => {
+      if (await cuText(r.page, "#cardurl-note")) fail("cardUrlTable fresh: a first open said something");
+      const got = await r.page.evaluate(k => ({ path: location.pathname, last: localStorage.getItem(k), solo: document.body.classList.contains("solo") }), key);
+      if (got.path !== "/room/claude-sg4/rnd") fail("cardUrlTable fresh: the path was rewritten to " + got.path);
+      if (got.last !== "land-a") fail("cardUrlTable fresh: the last id is " + got.last);
+      if (!got.solo) fail("cardUrlTable fresh: the page is not a terminal window");
+    }, "land-a");
+
+    // a card, the same id as last time: nothing said
+    await row("same", "/room/claude-sg4/rnd", { "rnd@claude-sg4": found("land-a") }, k => localStorage.setItem("atrium.cardurl.claude-sg4/rnd", "land-a"), async r => {
+      if (await cuText(r.page, "#cardurl-note")) fail("cardUrlTable same: the same card said something: " + await cuText(r.page, "#cardurl-note"));
+    }, "land-a");
+
+    // a card, a different id, and the old one is done: one line, and a link to it by fragment
+    await row("different", "/room/claude-sg4/rnd", { "rnd@claude-sg4": found("land-a") }, () => localStorage.setItem("atrium.cardurl.claude-sg4/rnd", "land-old"), async r => {
+      const t = await cuText(r.page, "#cardurl-note");
+      if (!/@rnd is a different card now/.test(t) || !/is done/.test(t)) fail("cardUrlTable different: the line says: " + t);
+      const links = await cuLinks(r.page, "#cardurl-note");
+      if (links.join() !== "/#term=land-old") fail("cardUrlTable different: the link is " + links.join());
+    }, "land-a");
+
+    // the old card is gone: the line says so and offers no link
+    await row("gone", "/room/claude-sg4/rnd", { "rnd@claude-sg4": found("land-a") }, () => localStorage.setItem("atrium.cardurl.claude-sg4/rnd", "land-gone"), async r => {
+      const t = await cuText(r.page, "#cardurl-note");
+      if (!/different card now/.test(t) || !/is gone/.test(t)) fail("cardUrlTable gone: the line says: " + t);
+      if ((await cuLinks(r.page, "#cardurl-note")).length) fail("cardUrlTable gone: a link to a card that is gone");
+    }, "land-a");
+
+    // a done card answering alone: says it is done, with its last recap line
+    await row("done", "/alias/rnd", { rnd: found("land-d") }, null, async r => {
+      const t = await cuText(r.page, "#cardurl-note");
+      if (t !== "this card is done. the last line×") fail("cardUrlTable done: the line says: " + t);
+    }, "land-d");
+
+    // 404: no terminal, a sentence, and what would have worked as readable links
+    await row("miss", "/room/claude-sg4/rnd", { "rnd@claude-sg4": miss }, null, async r => {
+      const t = await cuText(r.page, "#cardurl");
+      if (!/no card called rnd on room claude-sg4/.test(t)) fail("cardUrlTable miss: it says: " + t);
+      const links = await cuLinks(r.page, "#cardurl");
+      if (links.join() !== "/alias/rnd2,/room/claude-sg4/plain") fail("cardUrlTable miss: the links are " + links.join());
+      if (await r.page.evaluate(() => soloID)) fail("cardUrlTable miss: a terminal opened on a miss");
+    });
+
+    // 404 on /alias/
+    await row("aliasMiss", "/alias/ghost", { ghost: miss }, null, async r => {
+      const t = await cuText(r.page, "#cardurl");
+      if (!/^no card called ghost/.test(t)) fail("cardUrlTable aliasMiss: it says: " + t);
+    });
+
+    // 409 on /room/: cannot happen, and is shown as the chooser
+    await row("roomClash", "/room/claude-sg4/rnd", { "rnd@claude-sg4": { status: 409, body: { error: "two", candidates: ["rnd@claude-sg4 (claude-sg4~land-a)", "rnd@claude-sg4 (claude-sg4~land-old)"] } } }, null, async r => {
+      const n = (await cuLinks(r.page, "#cardurl")).length;
+      if (n !== 2) fail("cardUrlTable roomClash: " + n + " choices");
+    });
+
+    // room not attached: says so, and offers the attached rooms as links
+    hubMode = true;
+    await row("noRoom", "/room/nope/rnd", { "rnd@nope": { status: 404, body: { error: "no room called \"nope\" is attached" } } }, null, async r => {
+      const t = await cuText(r.page, "#cardurl");
+      if (!/room nope is not attached to this hub/.test(t)) fail("cardUrlTable noRoom: it says: " + t);
+      const links = await cuLinks(r.page, "#cardurl");
+      if (links.join() !== "/room/alpha") fail("cardUrlTable noRoom: the links are " + links.join());
+    });
+    hubMode = false;
+
+    // a board scoped to a room is not a terminal, and looks nothing up
+    const scoped = await cuOpen(browser, base, "/room/claude-sg4", {});
+    try {
+      await scoped.page.waitForFunction(() => typeof cardUrlShape === "function" && typeof roomNow === "function", null, { timeout: slow(15000) });
+      const s = await scoped.page.evaluate(() => ({ only: termOnly(), solo: document.body.classList.contains("solo") }));
+      if (s.only || s.solo) fail("cardUrlTable: /room/<room> alone booted as a terminal");
+    } finally { await scoped.ctx.close(); }
+  } finally {
+    hubMode = false;
+    landList = []; landPerms = [];
+    tasksMode = was;
+  }
+  if (!bad) console.log("cardUrlTable ok");
+}
+
+async function cardUrlClashSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landList = [];
+  landCard("land-x", { alias: "rnd", status: "needs-input", created_at: "2026-09-30T10:00:00Z" });
+  landCard("land-y", { alias: "rnd", status: "done", created_at: "2026-09-30T11:00:00Z" });
+  const clash = { status: 409, body: { error: "\"rnd\" is on more than one room", candidates: ["rnd@sg4 (sg4~land-x)", "rnd@m1 (m1~land-y)"] } };
+  const lookups = {
+    rnd: clash,
+    "sg4~land-x": { body: Object.assign({}, LAND["land-x"], { id: "sg4~land-x" }) },
+    "m1~land-y": { body: Object.assign({}, LAND["land-y"], { id: "m1~land-y" }) },
+    "rnd@sg4": { body: Object.assign({}, LAND["land-x"], { id: "sg4~land-x" }) }
+  };
+  try {
+    // nothing remembered: the chooser, live before done, each one its qualified link. Picking remembers it for the path.
+    let r = await cuOpen(browser, base, "/alias/rnd", lookups);
+    try {
+      await r.page.waitForSelector("#cardurl:not([hidden]) .cu-row", { timeout: slow(15000) });
+      const links = await cuLinks(r.page, "#cardurl");
+      if (links.join() !== "/room/sg4/rnd,/room/m1/rnd") fail("cardUrlClash: the chooser links are " + links.join());
+      const t = await cuText(r.page, "#cardurl");
+      if (!/more than one room/.test(t) || !/m1 {2}rnd {2}done/.test(t)) fail("cardUrlClash: the chooser says: " + t);
+      if (await r.page.evaluate(() => soloID)) fail("cardUrlClash: a terminal opened with two candidates");
+      await r.page.click('#cardurl a[href="/room/m1/rnd"]');
+      const last = await r.page.evaluate(() => localStorage.getItem("atrium.cardurl.alias:rnd"));
+      if (last !== "land-y") fail("cardUrlClash: picking did not remember the card for the path: " + last);
+    } finally { await r.ctx.close(); }
+
+    // the card this browser opened last time is one of them: it opens, with a line naming the other
+    r = await cuOpen(browser, base, "/alias/rnd", lookups, () => localStorage.setItem("atrium.cardurl.alias:rnd", "land-x"));
+    try {
+      await cuSolo(r.page, "sg4~land-x");
+      const t = await cuText(r.page, "#cardurl-note");
+      if (!/@rnd is also on m1/.test(t)) fail("cardUrlClash: the remembered card's line says: " + t);
+      const links = await cuLinks(r.page, "#cardurl-note");
+      if (links.join() !== "/room/m1/rnd") fail("cardUrlClash: the line links to " + links.join());
+      if (await cuText(r.page, "#cardurl")) fail("cardUrlClash: the chooser showed for a remembered card");
+    } finally { await r.ctx.close(); }
+
+    // a remembered card that is not a candidate any more: the chooser
+    r = await cuOpen(browser, base, "/alias/rnd", lookups, () => localStorage.setItem("atrium.cardurl.alias:rnd", "land-zz"));
+    try {
+      await r.page.waitForSelector("#cardurl:not([hidden]) .cu-row", { timeout: slow(15000) });
+      if (await r.page.evaluate(() => soloID)) fail("cardUrlClash: opened a card that was not a candidate");
+    } finally { await r.ctx.close(); }
+  } finally {
+    landList = []; landPerms = [];
+    tasksMode = was;
+  }
+  if (!bad) console.log("cardUrlClash ok");
+}
+
+async function cardUrlLinksSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landList = [];
+  landCard("land-a", { alias: "rnd", room: "r1" });
+  landCard("land-b", { alias: "other", room: "r1" });
+  landCard("land-c", { alias: "twin", room: "r1" });
+  landCard("land-n", { alias: "", wire_name: "", room: "r1" });
+  landCard("land-h", { alias: "", wire_name: "sparta/handled", room: "r1" });
+  const lookups = { rnd: { body: LAND["land-a"] } };
+  try {
+    // the solo window: the switcher writes readable paths, a clashing alias does not get /alias/
+    let r = await cuOpen(browser, base, "/alias/rnd", lookups);
+    try {
+      await cuSolo(r.page, "land-a");
+      const go = async id => {
+        await r.page.evaluate(i => soloSwitch(i), id);
+        await r.page.waitForFunction(i => soloID === i, id, { timeout: slow(10000) });
+        return r.page.evaluate(() => location.pathname + location.hash);
+      };
+      let at = await go("land-b");
+      if (at !== "/alias/other") fail("cardUrlLinks: the switcher wrote " + at + " for a card with an alias");
+      await r.page.evaluate(() => { swTasks = [{ id: "r2~z", alias: "twin", status: "running", room: "r2" }]; });
+      at = await go("land-c");
+      if (at !== "/room/r1/twin") fail("cardUrlLinks: a clashing alias was written as " + at);
+      at = await go("land-h");
+      if (at !== "/room/r1/handled") fail("cardUrlLinks: a card with only a handle was written as " + at);
+      at = await go("land-n");
+      if (at !== "/#term=land-n") fail("cardUrlLinks: a card with neither was written as " + at);
+      const last = await r.page.evaluate(() => localStorage.getItem("atrium.cardurl.r1/twin"));
+      if (last !== "land-c") fail("cardUrlLinks: the switcher did not keep the last id for the path: " + last);
+    } finally { await r.ctx.close(); }
+
+    // the board: a pop-out link is the card's readable path, and a clash gets the qualified one
+    landList = [LAND["land-a"], LAND["land-b"], Object.assign({}, LAND["land-c"]), Object.assign({}, LAND["land-c"], { id: "land-c2", room: "r2" })];
+    r = await cuOpen(browser, base, "/", {});
+    try {
+      await r.page.waitForFunction(() => typeof cardList === "function" && cardList().length >= 4, null, { timeout: slow(15000) });
+      const urls = await r.page.evaluate(async () => {
+        const out = [];
+        window.open = u => { out.push(u); return { focus() {}, closed: false }; };
+        for (const id of ["land-b", "land-c", "land-n"]) await popOutTask(id);
+        return out;
+      });
+      if (urls.join() !== "/alias/other,/room/r1/twin,/#term=land-n") fail("cardUrlLinks: the pop-out links are " + urls.join());
+    } finally { await r.ctx.close(); }
+
+    // an old `#term=` link still opens, and a notification landing writes `/`
+    r = await cuOpen(browser, base, "/#term=land-a", {});
+    try {
+      await cuSolo(r.page, "land-a");
+      if (await r.page.evaluate(() => location.hash) !== "#term=land-a") fail("cardUrlLinks: the fragment was rewritten");
+    } finally { await r.ctx.close(); }
+    landList = [LAND["land-a"]];
+    r = await cuOpen(browser, base, "/room/r1?land=land-a&view=terms", {});
+    try {
+      await r.page.waitForFunction(() => location.search === "", null, { timeout: slow(15000) });
+      const p = await r.page.evaluate(() => location.pathname);
+      if (p !== "/") fail("cardUrlLinks: landFromURL left the address at " + p);
+    } finally { await r.ctx.close(); }
+  } finally {
+    landList = []; landPerms = [];
+    tasksMode = was;
+  }
+  if (!bad) console.log("cardUrlLinks ok");
+}
+
+async function cardUrlRoomSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landList = [LAND["land-live"] || landCard("land-live", {})];
+  hubMode = true;
+  try {
+    const seen = [];
+    const r = await cuOpen(browser, base, "/room/sgg", {}, () => { localStorage.setItem("atrium.room", "alpha"); localStorage.setItem("atrium.term", "alpha~t1"); });
+    try {
+      r.page.on("request", q => { if (new URL(q.url()).pathname === "/v1/tasks") seen.push(q.headers()["x-atrium-room"] || ""); });
+      await r.page.waitForFunction(() => typeof roomNow === "function" && roomNow() === "sgg", null, { timeout: slow(15000) });
+      const got = await r.page.evaluate(() => ({ solo: document.body.classList.contains("solo"), term: localStorage.getItem("atrium.term"), room: localStorage.getItem("atrium.room") }));
+      if (got.solo || got.room !== "sgg") fail("cardUrlRoom: /room/sgg did not scope the board: " + JSON.stringify(got));
+      if (got.term) fail("cardUrlRoom: the card remembered from the other room stayed: " + got.term);
+      await r.page.evaluate(() => runRefresh());
+      await r.page.waitForTimeout(500);
+      if (!seen.length || seen.some(h => h !== "sgg")) fail("cardUrlRoom: board requests did not carry the room: " + JSON.stringify(seen));
+      if (r.errors.length) fail("cardUrlRoom: the page threw: " + r.errors.join(" | "));
+    } finally { await r.ctx.close(); }
+  } finally {
+    hubMode = false;
+    landList = []; landPerms = [];
+    tasksMode = was;
+  }
+  if (!bad) console.log("cardUrlRoom ok");
+}
+
 async function main() {
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = "http://127.0.0.1:" + server.address().port;
@@ -11553,7 +11841,8 @@ async function main() {
       usageCacheReads: usageCacheReadsSection, roomsDash: roomsDashSection, phoneView: phoneViewSection, heldLine: heldLineSection, u016: u016Section, phoneHeader: phoneHeaderSection, phoneFocus: phoneFocusSection, phoneTermBar: phoneTermBarSection, phoneShare: phoneShareSection, phonePan: phonePanSection, phoneFollow: phoneFollowSection, phoneTap: phoneTapSection, phoneKeyboard: phoneKeyboardSection, phoneCompose: phoneComposeSection, mCompose: mComposeSection, mPerms: mPermsSection, usagePolish: usagePolishSection, usageLimits: usageLimitsSection, usageGroups: usageGroupsSection,
       eventDriven: eventDrivenSection, idleBudget: idleBudgetSection, pollsGone: pollsGoneSection,
       phoneListFit: phoneListFitSection, phoneNudge: phoneNudgeSection,
-      cacheChip: cacheChipSection, cacheLine: cacheLineSection, mHome: mHomeSection, mCard: mCardSection, mServe: mServeSection, phoneKeyLabel: phoneKeyLabelSection, phoneKeyLit: phoneKeyLitSection, shiftMenu: shiftMenuSection, notifyCommand: notifyCommandSection, presence: presenceSection, tallPty: tallPtySection, roomsMachine: roomsMachineSection, readyOnce: readyOnceSection, readyPopout: readyPopoutSection, popoutNotify: popoutNotifySection };
+      cacheChip: cacheChipSection, cacheLine: cacheLineSection, mHome: mHomeSection, mCard: mCardSection, mServe: mServeSection, phoneKeyLabel: phoneKeyLabelSection, phoneKeyLit: phoneKeyLitSection, shiftMenu: shiftMenuSection, notifyCommand: notifyCommandSection, presence: presenceSection, tallPty: tallPtySection, roomsMachine: roomsMachineSection, readyOnce: readyOnceSection, readyPopout: readyPopoutSection, popoutNotify: popoutNotifySection,
+      cardUrlTable: cardUrlTableSection, cardUrlClash: cardUrlClashSection, cardUrlLinks: cardUrlLinksSection, cardUrlRoom: cardUrlRoomSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -13547,6 +13836,11 @@ async function main() {
     await readyPopoutSection(browser, base);
     // ── a pop-out's bell is its own: the card's switch and mute, never the board's ──
     await popoutNotifySection(browser, base);
+    // ── card urls: a card has an address made of names ──
+    await cardUrlTableSection(browser, base);
+    await cardUrlClashSection(browser, base);
+    await cardUrlLinksSection(browser, base);
+    await cardUrlRoomSection(browser, base);
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e));
     if (process.env.DEBUG_HEADLESS) {

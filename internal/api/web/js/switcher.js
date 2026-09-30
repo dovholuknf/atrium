@@ -330,8 +330,8 @@ async function switchTo(id) {
 // - **The window's NAME.** It is `atrium-term-<id>`, and the board finds a
 //   window it did not open by that name. Leave it and `reopenByName` finds
 //   nothing, so the board opens a SECOND window on a card this one is holding.
-// - **The address.** `#term=<id>` is how this window resolves its card on
-//   load, and it reloads itself whenever the daemon serves a new build.
+// - **The address.** The card's readable path, or `#term=<id>` for a card with
+//   no name, is how this window resolves its card on load, and it reloads itself whenever the daemon serves a new build.
 //   `replaceState` rather than assigning to the hash, so the back button does
 //   not walk a window through cards it used to be showing.
 // - **What is being alerted about.** The mark in the title bar and the two
@@ -360,7 +360,10 @@ async function soloSwitch(id) {
   soloYielded = false;
   soloMark = "";
   soloKnown = { perm: null, ready: null };
-  history.replaceState(null, "", location.pathname + "#term=" + encodeURIComponent(id));
+  // The readable path when the card has one, and the fragment when it has neither an alias nor a handle.
+  const path = cardUrlPath(task, swTasks);
+  history.replaceState(null, "", path || "/#term=" + encodeURIComponent(id));
+  cardUrlNote(path, task);
   window.name = "atrium-term-" + bareId(id);
   if (soloBus) {
     soloBus.postMessage({ type: "solo-release", task: was });

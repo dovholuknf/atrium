@@ -365,15 +365,16 @@ function notifyIsOff() {
 // A POPPED-OUT WINDOW HAS ITS OWN SWITCHES, keyed by the card it shows. The board
 // never reads these, so a toggle in a pop-out cannot change the board. Keyed by
 // card rather than window so closing and reopening the pop-out keeps the choice.
-// `termOnly` lives in solo.js, which loads after this file, so the hash is read
-// here directly.
+// `termOnly` lives in solo.js, which loads after this file, so the hash and the
+// path are read here directly.
 const NOTIFY_OFF_CARD_KEY = "atrium.notify.off.card:";
 const SOUND_CARD_KEY = "atrium.sound.card:";
-function inPopout() { return /^#term=/.test(location.hash); }
+function inPopout() { return /^#term=/.test(location.hash) || cardUrlIsCard(); }
 // The bare id of this pop-out's card, read off the hash each time because the
 // switcher rewrites it when the window moves to another card.
 function popoutCard() {
   if (!inPopout()) return "";
+  if (!/^#term=/.test(location.hash)) return soloID ? bareId(soloID) : "";
   try { return bareId(decodeURIComponent(location.hash.slice("#term=".length))); } catch (e) { return ""; }
 }
 function popoutIsOff() {
