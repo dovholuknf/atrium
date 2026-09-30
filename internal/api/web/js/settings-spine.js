@@ -97,7 +97,28 @@ function showPane(host, name, key, opts) {
 }
 
 function settingsBody() { return document.querySelector("#settings .dlg-body"); }
-function buildSettingsNav() { splitIntoPanes(settingsBody(), "s-section", SETTINGS_PANE); }
+function buildSettingsNav() {
+  splitIntoPanes(settingsBody(), "s-section", SETTINGS_PANE);
+  // The gear is the board's. A pop-out keeps the pane in the page, because
+  // `paintSettings` fills its fields by id, but renames it so nothing can
+  // select it and drops its nav button.
+  if (!termOnly()) return;
+  const pane = Array.from(document.querySelectorAll("#settings .pane")).find(p => p.dataset.name === "notifications");
+  if (!pane) return;
+  pane.dataset.name = "notifications (board only)";
+  const wasShown = !pane.hidden;
+  pane.hidden = true;
+  Array.from(document.querySelectorAll("#settings .pane-nav button"))
+    .filter(b => b.textContent === "notifications").forEach(b => b.remove());
+  // The remembered pane was the one just dropped. Show the first that is left,
+  // without writing the choice back: that key is shared with the board.
+  if (wasShown) {
+    const first = Array.from(document.querySelectorAll("#settings .pane")).find(p => p !== pane);
+    if (first) first.hidden = false;
+    const nav = document.querySelector("#settings .pane-nav button");
+    if (nav) nav.classList.add("on");
+  }
+}
 function showSettingsPane(name) { showPane(settingsBody(), name, SETTINGS_PANE); }
 
 function paintSettings() {
