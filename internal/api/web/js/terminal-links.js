@@ -1011,7 +1011,7 @@ function connectTerm(taskID) {
     traceOut(e.data);
     // Output is binary, so text is the daemon. See `takeTermCaps`.
     if (typeof e.data === "string") {
-      if (takeTermCaps(e.data) || takeTermSize(e.data)) return;
+      if (takeTermCaps(e.data) || takeTermSize(e.data) || takePasteDone(e.data, sock)) return;
       pasteSawOutput();
       term.write(e.data, lagOnOutput(followScroll));
       return;
@@ -1035,6 +1035,8 @@ function connectTerm(taskID) {
     // socket stops being the current one, including ways nobody has thought
     // of yet.
     if (termSock !== sock) return;
+    // A paste in flight on this socket is over: a failed write closes it and sends no in-done.
+    if (pasteFlight && pasteFlight.sock === sock) pasteEnd("the socket closing");
     traceCtl({ ev: "sock-close", code: ev ? ev.code : 0, reason: ev ? ev.reason : "" });
     carryLoadEnd();
 
@@ -1653,14 +1655,12 @@ const followScrollFor = 1200;
 function sendInput(text, quiet, pasted) {
   const d = String(text == null ? "" : text);
   if (pasteHeld) { pasteHeld.push([d, quiet, pasted]); return; }
-  if (pasted && d.length >= pasteBigAt) { sendBigPaste(d); return; }
-  if (pasted && !quiet) pasteBegin(d.length); // before the send
+  if (pasted && !quiet) { sendPaste(d); return; }
   send({ t: "in", d });
   if (quiet) return;
   phoneFollow();
   if (term) term.scrollToBottom();
   followScrollUntil = Date.now() + followScrollFor;
-  if (pasted) lagPasteMark("sent");
 }
 
 // ── a paste, while it is on its way ─────────────────────
@@ -1707,8 +1707,14 @@ const pasteGiveUpMs = 20000;
 //
 // So from this size the box goes up FIRST, the frame leaves once it has
 // painted, and it stays up at least `pasteHoldFor` before an echo may end it.
-// The hold is a floor so the box can be read, not a measure of the pty: the
-// board has no word from the daemon for when the write finished.
+// The hold is a floor so the box can be read, not a measure of the pty.
+//
+// THE ROOM NOW SAYS WHEN THE WRITE FINISHED, so all of the above is the
+// fallback. A paste frame carries an `id` and the room answers
+// `{"t":"in-done","id":...}` on the same socket once the pty write returned.
+// A socket that has answered once ends its pastes on that word alone. An older
+// room never answers, and is told apart per socket rather than by version: a
+// socket that has not answered is guessed for, as it always was.
 const pasteBigAt = 256 * 1024;
 
 function pasteHoldFor(n) {
@@ -1724,21 +1730,32 @@ const pasteFrameMax = 4 << 20;
 // null when none is waiting.
 let pasteHeld = null;
 
-function sendBigPaste(d) {
-  const s = JSON.stringify({ t: "in", d });
-  const bytes = new TextEncoder().encode(s).length;
-  if (bytes > pasteFrameMax) {
-    toast("that paste is too big", `${pasteSize(bytes)}, and a terminal takes up to ${pasteSize(pasteFrameMax)} at once`);
-    return;
-  }
-  pasteBegin(d.length, true);
+// EVERY PASTE, at any size: the box goes up before anything is measured or
+// sent, and the frame leaves after it has painted. The synchronous `send` holds
+// the main thread, so a box raised in the same task would wait behind it.
+let pasteSeq = 0;
+const pasteSeqBase = Date.now().toString(36);
+
+function sendPaste(d) {
+  const big = d.length >= pasteBigAt;
+  pasteBegin(d.length, big);
   const f = pasteFlight;
   const sock = termSock;
+  const id = "p" + pasteSeqBase + "." + (++pasteSeq);
+  f.id = id;
   pasteHeld = [];
   let gone = false;
   const go = () => {
     if (gone) return;
     gone = true;
+    const s = JSON.stringify({ t: "in", d, id });
+    const bytes = big ? new TextEncoder().encode(s).length : s.length;
+    if (bytes > pasteFrameMax) {
+      pasteHeld = null;
+      if (pasteFlight === f) pasteEnd();
+      toast("that paste is too big", `${pasteSize(bytes)}, and a terminal takes up to ${pasteSize(pasteFrameMax)} at once`);
+      return;
+    }
     // THE TERMINAL CHANGED UNDER IT: a switch to another card or a reconnect.
     // The paste and whatever was typed behind it belong to the one it was
     // aimed at, so none of it goes to this one.
@@ -1750,7 +1767,8 @@ function sendBigPaste(d) {
     }
     sendFrame(s);
     lagPasteMark("sent");
-    if (pasteFlight === f) f.sent = true;
+    if (pasteFlight === f) { f.sent = true; f.sentAt = Date.now(); }
+    phoneFollow();
     if (term) term.scrollToBottom();
     followScrollUntil = Date.now() + followScrollFor;
     const q = pasteHeld;
@@ -1775,7 +1793,7 @@ function pasteBegin(n, big) {
   lagPasteStart("paste");
   const now = Date.now();
   // EVERY PASTE HOLDS, not only a big one. See `pasteHoldMs`.
-  const f = { sock: termSock, t0: now, n, timer: 0, shown: false, sent: !big,
+  const f = { sock: termSock, t0: now, n, timer: 0, shown: false, sent: false, sentAt: 0, id: "", done: false,
     holdUntil: Math.max(now + (big ? pasteHoldFor(n) : pasteHoldMs), prev ? prev.holdUntil : 0),
     echoed: false, lastOut: 0, drained: false };
   pasteFlight = f;
@@ -1784,8 +1802,10 @@ function pasteBegin(n, big) {
     const t = Date.now();
     if (termSock !== f.sock || !f.sock || t - f.t0 > pasteGiveUpMs) { pasteEnd("the cap"); return; }
     if (f.sent && !f.drained && f.sock.bufferedAmount === 0) { f.drained = true; lagPasteMark("drained"); }
+    // The room said the write finished. Only the floor, so the box can be read, is left to wait for.
+    if (f.done && t >= f.t0 + pasteHoldMs) { pasteEnd("the room's word"); return; }
     // An echo and then nothing: the runner took it and has no more to say.
-    if (f.echoed && t >= f.holdUntil && t - f.lastOut >= pasteQuietMs) { pasteEnd("quiet"); return; }
+    if (f.echoed && t >= f.holdUntil && t - f.lastOut >= pasteQuietMs && pasteMayGuess(f)) { pasteEnd("quiet"); return; }
     if (!f.shown) { f.shown = true; pasteShow(f); lagPasteMark("shown"); }
     f.timer = setTimeout(tick, 50);
   };
@@ -1801,8 +1821,32 @@ function pasteSawOutput() {
   if (!f || !f.sent || !f.sock || f.sock.bufferedAmount !== 0) return;
   lagPasteMark("output");
   f.lastOut = Date.now();
-  if (f.lastOut < f.holdUntil) { f.echoed = true; return; }
+  if (f.lastOut < f.holdUntil || !pasteMayGuess(f)) { f.echoed = true; return; }
   pasteEnd("output");
+}
+
+// May output end this paste. Not on a socket that has answered with `in-done`,
+// which ends it on that alone.
+function pasteMayGuess(f) {
+  return f.sock.pasteAck !== "yes";
+}
+
+// `{"t":"in-done","id":...}`, the room's word that the pty write for a paste
+// returned. Any such frame makes the socket a new room for good, even one for a
+// paste that has since been replaced.
+function takePasteDone(data, sock) {
+  if (!data || data[0] !== "{") return false;
+  let msg;
+  try { msg = JSON.parse(data); } catch (e) { return false; }
+  if (!msg || msg.t !== "in-done") return false;
+  sock.pasteAck = "yes";
+  const f = pasteFlight;
+  if (f && f.sock === sock && f.id && f.id === msg.id) {
+    lagPasteMark("in-done");
+    f.done = true;
+    if (Date.now() >= f.t0 + pasteHoldMs) pasteEnd("the room's word");
+  }
+  return true;
 }
 
 // Reading the clipboard or uploading a file, before there are bytes to send.
