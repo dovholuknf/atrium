@@ -314,6 +314,13 @@ func holdsNotices(launcher *store.Task) bool {
 	return launcher != nil && (hasTag(launcher.Tags, OrchestratorTag) || hasTag(launcher.Tags, HoldNoticesTag))
 }
 
+// holdsReports reports whether a launcher's workers' reports are held the same
+// way. Only HoldNoticesTag does it: a card that asked for its terminal to be left
+// alone meant reports too, but OrchestratorTag alone keeps today's delivery.
+func holdsReports(launcher *store.Task) bool {
+	return launcher != nil && hasTag(launcher.Tags, HoldNoticesTag)
+}
+
 // holdNotice records one automatic notice where a launcher that holds them reads
 // it. Never fails its caller, the posture of notifyLauncher.
 func (d *Daemon) holdNotice(launcher, worker *store.Task, source, text string) {

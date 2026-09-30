@@ -331,9 +331,11 @@ func New(opts Options) (*Daemon, error) {
 	st.OnLedgerChange = d.ledgerChanged
 	st.OnLedgerNotice = d.ledgerNotice
 	st.RemoteArbiter = d.launcherRelay
-	// A report is the worker speaking, and is delivered as it always was.
 	st.HoldNotice = func(arbiter *store.Task, source string) bool {
-		return source != NoticeReport && holdsNotices(arbiter)
+		if source == NoticeReport {
+			return holdsReports(arbiter)
+		}
+		return holdsNotices(arbiter)
 	}
 	st.OnRelayHeld = d.kickRelays
 	d.ap.BoardDir = opts.BoardDir

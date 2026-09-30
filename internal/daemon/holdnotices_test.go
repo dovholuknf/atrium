@@ -11,7 +11,7 @@ import (
 
 // A launcher tagged as the orchestrator, or with HoldNoticesTag, reads its
 // automatic notices off its card. Nothing is typed into its terminal and nothing
-// is queued for a hook to carry. Reports still arrive as before.
+// is queued for a hook to carry. Reports are held too under HoldNoticesTag only.
 
 // heldOn is the held notices on a card, oldest first.
 func heldOn(t *testing.T, d *Daemon, id string) []map[string]any {
@@ -79,14 +79,33 @@ func TestTheOrchestratorGetsASilentStopOnItsCardNotInItsTerminal(t *testing.T) {
 	}
 }
 
-func TestHoldNoticesTagHoldsAndAReportStillArrives(t *testing.T) {
+func TestHoldNoticesTagHoldsNoticesAndReports(t *testing.T) {
 	d := testDaemon(t)
-	launcher, _ := holdingPair(t, d, HoldNoticesTag)
+	launcher, worker := holdingPair(t, d, HoldNoticesTag)
 
 	stopTurn(t, d, "worker")
 	if n := len(heldOn(t, d, launcher.ID)); n != 1 {
 		t.Fatalf("%d held notices, want one", n)
 	}
+	rec, out := finishWith(t, d, FinishRequest{Agent: "worker", Status: ReportDone,
+		NoCommit: "research only", Recap: "the matrix is written up"})
+	if rec.Code != http.StatusOK || out["launcher_told"] != true {
+		t.Fatalf("report answered %d: %s", rec.Code, rec.Body)
+	}
+	if msgs := pendingFrom(t, d, launcher.ID); len(msgs) != 0 {
+		t.Fatalf("the launcher has %d queued, want none: %v", len(msgs), msgs)
+	}
+	held := heldOn(t, d, launcher.ID)
+	if len(held) != 2 || held[1]["source"] != NoticeReport || held[1]["about_card"] != worker.ID ||
+		!strings.Contains(held[1]["text"].(string), "the matrix is written up") {
+		t.Fatalf("held = %v, want the silent stop then the report", held)
+	}
+}
+
+func TestTheOrchestratorTagAloneStillHasReportsQueued(t *testing.T) {
+	d := testDaemon(t)
+	launcher, _ := holdingPair(t, d, OrchestratorTag)
+
 	rec, out := finishWith(t, d, FinishRequest{Agent: "worker", Status: ReportDone,
 		NoCommit: "research only", Recap: "the matrix is written up"})
 	if rec.Code != http.StatusOK || out["launcher_told"] != true {
