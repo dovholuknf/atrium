@@ -33,7 +33,7 @@ func TestACardByItsHandleOnTheRoom(t *testing.T) {
 		_ = json.Unmarshal(rec.Body.Bytes(), &m)
 		return rec, m
 	}
-	for _, who := range []string{"rnd", "@rnd", "RND", "rnd-director", "sparta/rnd-director", "rnd@sparta",
+	for _, who := range []string{"rnd", "@rnd", "RND", "rnd-director", "sparta%2Frnd-director", "rnd@sparta",
 		"@rnd@SPARTA", "rnd%40sparta", task.ID} {
 		rec, body := get("/v1/tasks/" + who)
 		if rec.Code != http.StatusOK || body["id"] != task.ID {
