@@ -90,12 +90,13 @@ func (p *Proxy) placeCard(w http.ResponseWriter, r *http.Request) (*http.Request
 		}
 		return p.placeByName(w, r, id, id, "", rooms)
 	}
-	// AN ID FIRST, the way every board request goes, and a name only after it
-	// missed. An id is minted and a handle is chosen, so the two do not collide.
-	if owner, ok := p.roomHolding(r, bare, rooms); ok {
-		return r.WithContext(context.WithValue(r.Context(), cardRoomKey{}, owner)), true
-	}
+	// AN ID GOES THE WAY EVERY BOARD REQUEST GOES. Anything not shaped like one
+	// is a name first, and only a name no list carries is asked for as an id
+	// (placeByName), so a name does not pay for a fan-out that can only miss.
 	if looksLikeCardID(bare) {
+		if owner, ok := p.roomHolding(r, bare, rooms); ok {
+			return r.WithContext(context.WithValue(r.Context(), cardRoomKey{}, owner)), true
+		}
 		cardUnplaced(w, bare, rooms, p.rememberedOn(bare))
 		return r, false
 	}
@@ -168,6 +169,22 @@ func (p *Proxy) placeByName(w http.ResponseWriter, r *http.Request, seg, name, t
 	hit, err := resolveAcross(lists, quiet, name)
 	var none *errNoCard
 	var amb *errAmbiguous
+	// A WRITE NEVER GUESSES PAST A ROOM THAT DID NOT ANSWER. The card somebody
+	// meant may be on it, and one match elsewhere would otherwise take the exit,
+	// the message or the kill. A read can say what it found, a write cannot be
+	// taken back. The caller names the room.
+	write := r.Method != http.MethodGet && r.Method != http.MethodHead
+	quietWrite := func(found []string) (*http.Request, bool) {
+		for _, q := range quiet {
+			found = append(found, name+"@"+q+" (not answering)")
+		}
+		cardAnswer(w, http.StatusConflict, map[string]any{
+			"error": fmt.Sprintf("%q may be on %s, which is not answering. name the room",
+				name, strings.Join(quiet, ", ")),
+			"candidates": found,
+		})
+		return r, false
+	}
 	switch {
 	case errors.As(err, &amb):
 		cardAnswer(w, http.StatusConflict, map[string]any{"error": err.Error(), "candidates": amb.candidates})
@@ -178,11 +195,23 @@ func (p *Proxy) placeByName(w http.ResponseWriter, r *http.Request, seg, name, t
 		if target == "" && len(rooms) == 1 {
 			return r, true
 		}
+		// An id of some other shape, asked for the old way.
+		if target == "" {
+			if owner, ok := p.roomHolding(r, seg, rooms); ok {
+				return r.WithContext(context.WithValue(r.Context(), cardRoomKey{}, owner)), true
+			}
+		}
+		if write && target == "" && len(quiet) > 0 {
+			return quietWrite(nil)
+		}
 		cardAnswer(w, http.StatusNotFound, map[string]any{"error": err.Error(), "would_work": none.wouldWork})
 		return r, false
 	case err != nil:
 		cardAnswer(w, http.StatusNotFound, map[string]any{"error": err.Error()})
 		return r, false
+	}
+	if write && target == "" && len(quiet) > 0 {
+		return quietWrite([]string{hit.spelled()})
 	}
 	bareID := hit.Card.ID
 	if !rewriteCard(r, seg, bareID) {
