@@ -24,13 +24,13 @@ import (
 // the cull simply runs once the room is updated and the mark is sent again.
 
 // cullSince is the commit a room has to include to answer the cull, its hold and
-// the mark. It is r-019's head on claude/r-019 (bce003b) at the time this was
-// written, and MUST be updated to the commit r-019 lands as on claude/main.
+// the mark. It is the claude/main commit r-019 landed as, the merge of
+// claude/runtime 9522700, so any build from claude/main at or after it answers.
 //
 // It is one constant, and not a requirements-file key, because the requirements
 // file's `atrium.min` names what a REPOSITORY needs of the binary it is opened
 // with. There is no floor of atrium's own that a room is held to.
-const cullSince = "bce003b"
+const cullSince = "965ffe9"
 
 // predatesCull is the sentence for a room that answered 404 to one of the routes.
 // `build` is what the room's hello said, which is empty for a room that sent none.
