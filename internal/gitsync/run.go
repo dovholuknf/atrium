@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -145,7 +146,25 @@ func (r *Runner) git(ctx context.Context, dir string, extraEnv []string, args ..
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	cmd.WaitDelay = 5 * time.Second
-	if err := cmd.Run(); err != nil {
+	// A cancel ends the child's whole tree, not the child alone. See tree_windows.go.
+	var tree atomic.Pointer[procTree]
+	prepareTree(cmd)
+	cmd.Cancel = func() error {
+		if t := tree.Load(); t != nil {
+			return t.kill()
+		}
+		return cmd.Process.Kill()
+	}
+	err := cmd.Start()
+	if err == nil {
+		t := startTree(cmd)
+		tree.Store(t)
+		err = cmd.Wait()
+		if t != nil {
+			t.close()
+		}
+	}
+	if err != nil {
 		if ctx.Err() != nil {
 			switch {
 			case r.root.Err() != nil:
