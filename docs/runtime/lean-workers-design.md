@@ -131,3 +131,37 @@ is a follow-up if that server stays.
 
 The `launched` event's `cmd` is the harness command before the lean flags go on, as it was before this change. The
 lean flags carry the whole settings copy, so the event records `lean` and `mcp` beside `cmd` instead.
+
+## lean_agents and lean_skills (r-005)
+
+`lean_agents: ["codebase-steward", ...]` and `lean_skills: ["review-panel", ...]` on `atrium_launch` (the hub's and
+the stdio control MCP) start the worker lean and keep what they name. `lean_agents` keeps the `Agent` tool (and `Task`)
+out of `--disallowedTools`. `lean_skills` does the same for `Skill`. The user source stays cut, so no other agent, skill,
+memory or CLAUDE.md loads.
+
+**Mechanism: `--plugin-dir`.** `--agents <json>` was tried first and cannot carry real agents: four of them come to
+about 39 KB, a Windows command line takes 32 KB in all, and `--agents` takes a file only with `--print`. So atrium
+writes a session-only plugin and passes `--plugin-dir <dir>`. The plugin holds `.claude-plugin/plugin.json`,
+`agents/<name>.md` and `skills/<name>/`, copied byte for byte from `~/.claude/agents` and `~/.claude/skills`, following
+links. Nothing else of `~/.claude` comes with them.
+
+**Names are namespaced.** Claude Code namespaces every plugin's agents and skills, so the worker starts them as
+`atrium:<name>`, for example `atrium:go-security-reviewer` and `atrium:review-panel`. A review manager's prompt must use
+those names. There is no way to get the bare name from a plugin, and the bare name is what `--agents` gave, which is the
+reason it was tried first.
+
+**Where the directories live.** In atrium's own state, `<state>/lean-plugins/<hash>/`, next to the database, never in
+the worktree (which must stay clean for the cull). The hash is of the plugin's contents, so one distinct set of named
+files is one directory, shared by every card that names it, written once and never rewritten under a live session. A
+changed agent file is a new directory. They do not pile up beyond the number of distinct sets, and every one is safe to
+delete when no worker is running: the next launch, restart, resume or keep-alive fork writes it again from the card's
+tags.
+
+**Costs and limits.** With `lean_skills`, Claude Code's built-in skills come back with the `Skill` tool, about 2k
+tokens. The built-in agent types (Explore, general-purpose, Plan, statusline-setup) come with the `Agent` tool and
+cannot be removed.
+
+**Refused, each tested:** a name with no file or directory (the error names it), an unsafe name (a separator,
+dot-dot or leading dot), `lean: false` with either field, and a runner that is not claude. The card keeps the lists as
+`atrium:agent:<name>` and `atrium:skill:<name>` tags, so a restart, a resume and the keep-alive fork rebuild the same
+flags, with no column. A room older than the fields is named in the launch warning.
