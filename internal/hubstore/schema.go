@@ -170,6 +170,22 @@ var migrations = []struct {
 			`ALTER TABLE room ADD COLUMN cleared_at TEXT NOT NULL DEFAULT ''`,
 		},
 	},
+	{
+		// WHAT THE NOTIFY TRIGGER LAST ACTED ON, per card. See notify.go: a row
+		// is kept until its identity changes, not until its card leaves the
+		// cache, so a card that returns unchanged does not notify twice. No
+		// foreign key on purpose, for the same reason room_audit has none.
+		name: "0003_notify_sent",
+		stmts: []string{
+			`CREATE TABLE IF NOT EXISTS notify_sent (
+				room_id  TEXT NOT NULL,
+				card_id  TEXT NOT NULL,
+				identity TEXT NOT NULL,
+				at       TEXT NOT NULL,
+				PRIMARY KEY (room_id, card_id)
+			)`,
+		},
+	},
 }
 
 func (s *Store) migrate() error {
