@@ -49,6 +49,9 @@ type hello struct {
 	// means the hub may install one: the room still decides, fetches and
 	// verifies. See `upgrade.go`.
 	Upgrades bool `json:"upgrades,omitempty"`
+	// Git says this room takes git syncs: it serves /v1/git/sync and its own claude/*
+	// branches. The hub never asks a room that did not say so. See git.go.
+	Git bool `json:"git,omitempty"`
 }
 
 // welcome is the hub's answer to a hello.
@@ -72,6 +75,9 @@ type welcome struct {
 	// dials, is told no, and logs a failure on every change for the life of
 	// the attachment, which reads as something being broken.
 	Caches bool `json:"caches,omitempty"`
+	// Git says this hub serves repositories on the `git` connection kind. A room never
+	// dials that kind at a hub that did not say so. See git.go.
+	Git bool `json:"git,omitempty"`
 }
 
 // note is a line on the control connection, after the handshake. One struct
@@ -232,10 +238,10 @@ func hearHello(conn net.Conn, br *bufio.Reader) (hello, error) {
 		return h, fmt.Errorf("link version %d, wanted %d", h.V, Version)
 	}
 	switch h.Kind {
-	case "control", "data", "enrol", upgradeKind, announceKind, relayKind:
+	case "control", "data", "enrol", upgradeKind, announceKind, relayKind, gitKind:
 	default:
 		_ = writeJSON(conn, welcome{OK: false,
-			Error: "a connection is control, data, enrol, upgrade, announce or relay"})
+			Error: "a connection is control, data, enrol, upgrade, announce, relay or git"})
 		return h, fmt.Errorf("unknown connection kind %q", h.Kind)
 	}
 	return h, conn.SetDeadline(time.Time{})
