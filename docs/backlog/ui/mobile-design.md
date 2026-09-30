@@ -37,7 +37,9 @@ These are in, or in the second phone deploy, and the design below builds on them
 ## The screens, as clint would see them
 
 Each screen says what he sees today (after deploy 2), what is wrong with it, and the proposal. The proposals are
-lettered so clint can pick them one by one.
+lettered so clint can pick them one by one. Together they are **Path 1**, the board redesigned for a phone. **Path 2**,
+a separate conversation page at `/m` from @rnd's research, is the alternative, laid out in "Two paths" with its own
+cost and ship order. @ui recommends Path 2.
 
 ### 0. Getting there
 
@@ -234,13 +236,69 @@ the card and the reason, bounded like a source. atrium then holds the name of a 
 same rule as `docs/scm-design.md`. That replaces G-ntfy, see below.
 
 **What this changes here.** @ui agrees with 1 to 3 and 5. Points 2 and 4 together are a different shape from B, C
-and F above: a conversation-first `/m` page rather than the board squeezed onto a phone. It costs more up front and
-risks less later. It is open question 6 for clint. The notify command replaces G-ntfy in the cost table.
+and F above: a conversation-first `/m` page rather than the board squeezed onto a phone. That is Path 2 in
+"Two paths" below. The notify command replaces G-ntfy in both.
+
+## Two paths, for clint to pick
+
+clint's word for the phone today is "usable but barely". There are two ways to fix that, and they are real
+alternatives: each one makes part of the other unnecessary. Both keep the quick fixes (deploy 2 and u-023, the
+terminal at 75% of the screen), because the terminal stays the fallback either way.
+
+### Path 1: the board, redesigned for a phone (A, B, C, E, F, H above)
+
+The phone keeps loading `index.html`, and `phone.css` plus the `termPhone()` rules reshape it: a bottom tab bar, a
+"needs you" home with a card sheet, a compose box in the terminal, and later a reading view.
+
+- **For it:** one page to keep. Every feature the desktop gets reaches the phone on the same day.
+- **Against it:** every desktop change can break the phone, and the phone has broken that way all day on
+  2026-09-29. The terminal stays the main thing a card shows, which is the shape @rnd found every phone terminal tool
+  fighting. The reading view (F), which is the actual fix for reading a reply, comes last and costs the most.
+
+### Path 2: a conversation page at `/m` (@rnd's recommendation)
+
+A separate, light page at `/m`, served by the same handler, on the same JSON API and SSE stream, with the same skin
+variables, and no xterm on it. What clint sees:
+
+1. **Home: needs you.** The cards waiting on him (needs-input, needs-permission, open questions, and an unseen
+   finished turn if he says so), oldest first, two lines each: the name and why. A permission is answered right on
+   the row (the `.row.perm` layout, which already works on a phone). A one-line switch shows every card instead.
+2. **A card is its conversation.** The last few replies as text, reflowed at the phone's width, read from the
+   transcript, then the recap and the last report, then the open questions.
+3. **A native composer** at the bottom, a real textarea, so autocorrect, dictation, paste, tap-to-cursor and the
+   magnifier are the phone's own. Send goes through `POST /v1/tasks/{id}/message`, which types it into the terminal
+   atrium owns, as the desktop "say" does.
+4. **A dialog shows as buttons.** When the card's TUI has a dialog open (`act.dialogOpen` in
+   `internal/daemon/activity.go` already knows, but only as yes or no), the page shows the live bottom rows of the
+   screen as text with buttons for 1 to 9, Esc and Enter. Parsing the options into labelled buttons is a later step.
+5. **The terminal is one tap away**, "open terminal", which opens the existing pop-out (`#term=`) with everything
+   deploy 2 and u-023 did to it.
+6. **Installable:** the manifest's `start_url` is `/m` on a phone (A, folded in).
+
+- **For it:** it is the shape every agent-first phone client has settled on (Claude Code Remote Control, Happy,
+  Omnara). Typing and reading, the two things that are worst today, are fixed by the design rather than worked around.
+  The phone page cannot be broken by a desktop change to `index.html`.
+- **Against it:** a second page to keep, so a new card field or a new action has to be added twice when it matters on
+  a phone. A codex card has no transcript atrium reads, so it falls back to the screen's rows as text.
+  It needs one small @runtime endpoint.
+
+**Recommendation from @ui: Path 2.** It fixes typing and reading first instead of last, and it stops the desktop and
+the phone breaking each other, which is where most of today's phone bugs came from. Path 1's B and C would be built
+and then mostly replaced by it.
 
 ## Cost and ship order
 
-A worker here is one Sonnet worker on a board-only branch unless it says hub. "Deploy" is a hub deploy, and none of
-this needs a room restart.
+A worker here is one Sonnet worker on a board-only branch unless it says hub or room. "Deploy" is a hub deploy, and
+none of this needs a room restart except where a row says room. Notifications (G, G-cmd) are the same in both paths.
+
+### Already under way, in both paths
+
+| # | What | Cost | State |
+| --- | --- | --- | --- |
+| 0 | Deploy 2 (u-017b to u-021) | done | suite running, then to @merge |
+| 0b | u-023: the terminal output at least 75% of the screen in portrait, card picker in the slim row | 0.5 worker-day | worker running on sg3 |
+
+### Path 1
 
 | # | Proposal | Cost | Needs | Ship |
 | --- | --- | --- | --- | --- |
@@ -253,25 +311,40 @@ this needs a room restart.
 | 7 | H, landscape is the terminal's | 0.25 worker-day | B | wave 2 |
 | 8 | F, reading view (t-003 option a) | 2 to 3 worker-days | E | wave 3, only if panning replies is still the complaint |
 
-Wave 1 is four workers in parallel (three board, one hub), about a day, one hub deploy. Wave 2 is three, one more hub
-deploy. Wave 3 is decided from use.
+Wave 1 is four workers in parallel (three board, one hub), about a day, one hub deploy. Wave 2 is three, one more
+hub deploy. Wave 3 is decided from use. In all, about 9 to 10 worker-days, and reading a reply is fixed last.
 
-Why this order: A and E fix what he hits every time he picks up the phone (browser chrome, typing). B unblocks C
-and H. The notify command sink is the cheapest way to prove notifications on his actual phone before anyone writes RFC 8291.
+### Path 2
+
+| # | What | Cost | Needs | Ship |
+| --- | --- | --- | --- | --- |
+| M1 | `/m`: needs-you home, the card view (recap, report, questions), permissions on the row, the composer, "open terminal", the manifest with `start_url: /m` | 2 worker-days | nothing (shows recap and report until M2 lands) | wave 1 |
+| M2 | The last replies as text: `GET /v1/tasks/{id}/replies?n=`, from `readLastReply`'s transcript tail and its cache, codex falling back to the screen rows | 0.5 worker-day, @runtime | the hub passing it through to rooms, checked with @fabric | wave 1, a room restart |
+| 4 | G trigger + notify command sink (hub) | 1 worker-day, @fabric | a migration cleared with the orchestrator | wave 1 |
+| M3 | A dialog as the live rows plus 1 to 9, Esc and Enter buttons | 0.5 worker-day | M1 | wave 2 |
+| 6 | G, Web Push sink (hub) + subscribe (on `/m`) | 1.5 + 0.5 worker-days | M1, 4, one real-phone proof by clint | wave 2 |
+| M4 | The dialog's options parsed into labelled buttons | 1 worker-day, with @terminal | M3, and only if the numbers are not enough | wave 3 |
+
+Wave 1 is three workers in parallel (board, room, hub), about a day and a half because M1 is the largest single
+piece, then one hub deploy and one room restart. Wave 2 is two workers, one more hub deploy. In all, about 6 to 7
+worker-days, and reading and typing are fixed in wave 1.
+
+Why this order: M1 alone already fixes typing (the composer) and finding what needs him. M2 fixes reading. The notify
+command sink is the cheapest way to prove notifications on his actual phone before anyone writes RFC 8291.
 
 ## Open questions for clint
 
-1. Bottom tab bar (B), or icon tabs on top (B2)?
-2. The compose box (E) as the default on a phone, with "keys" as the toggle? Or keys by default?
-3. Notifications: Web Push (G), the notify command (G-cmd) first, or both in the order above? And is turning on Brave's "Use
-   Google services for push messaging" acceptable to him?
-4. The "needs you" home (C): should a finished turn nobody read count as needing him, or only questions and
-   permissions?
-5. The reading view (F): build it now, or wait for the compose box and landscape to be used for a while first?
-6. @rnd's shape: a separate conversation-first page at `/m` (the last replies as text, a native composer, the live
-   rows only for a dialog, the terminal one tap away in the pop-out), instead of B, C and F inside the board? It
-   would replace rows 3, 5 and 8 of the table with one `/m` page (about 2 to 3 board worker-days) plus a small
-   @runtime text endpoint.
+1. **Path 1 or Path 2?** (@ui recommends Path 2.) The questions below depend on it.
+2. Path 1 only: bottom tab bar (B), or icon tabs on top (B2)? And the compose box (E) as the default on a phone,
+   with "keys" as the toggle, or keys by default?
+3. Notifications: Web Push (G), the notify command (G-cmd) first, or both in the order above? And is turning on
+   Brave's "Use Google services for push messaging" acceptable to him?
+4. "Needs you": should a finished turn nobody read count as needing him, or only questions and permissions?
+5. Path 1 only: the reading view (F), build it now, or wait for the compose box and landscape to be used first?
+6. The column count. clint asked for the phone terminal to open at a column count that fits the width. The phone
+   never resizes the pty (t-003b), because a resize reflows the terminal for every window watching it, including
+   the desktop. The findings on whether a phone could open fitted when it is the only window attached are coming from
+   u-023 and go here. In Path 2 this matters less: the terminal is the fallback, and the text is read on `/m`.
 
 ## Out of scope
 
