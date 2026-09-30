@@ -138,6 +138,9 @@ func TestLeanPluginFollowsLinks(t *testing.T) {
 	if err := os.Symlink(real, link); err != nil {
 		t.Skipf("no symlinks here: %v", err)
 	}
+	if _, err := os.ReadFile(link); err != nil {
+		t.Skipf("a symlink is made but cannot be followed here (Windows untrusted mount point): %v", err)
+	}
 	dir, err := leanPluginDir(leanKit{Agents: []string{"linked-agent"}})
 	if err != nil {
 		t.Fatal(err)
@@ -145,6 +148,25 @@ func TestLeanPluginFollowsLinks(t *testing.T) {
 	b, err := os.ReadFile(filepath.Join(dir, "agents", "linked-agent.md"))
 	if err != nil || string(b) != stewardAgent {
 		t.Fatalf("a linked agent should be copied through: %v", err)
+	}
+}
+
+// A hard link works where a symlink is not allowed, so the copy-through is
+// covered on every platform.
+func TestLeanPluginCopiesAHardLinkedAgent(t *testing.T) {
+	agents, _, _ := kitDirs(t)
+	real := filepath.Join(t.TempDir(), "steward-real.md")
+	write(t, real, stewardAgent)
+	if err := os.Link(real, filepath.Join(agents, "hard-agent.md")); err != nil {
+		t.Skipf("no hard links here: %v", err)
+	}
+	dir, err := leanPluginDir(leanKit{Agents: []string{"hard-agent"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(filepath.Join(dir, "agents", "hard-agent.md"))
+	if err != nil || string(b) != stewardAgent {
+		t.Fatalf("a linked agent should be copied byte for byte: %v", err)
 	}
 }
 
