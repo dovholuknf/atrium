@@ -183,6 +183,10 @@ type Daemon struct {
 	// has dismissed. In memory. See newcontext.go.
 	nctx *newContexts
 
+	// auto is each card's arm state for the automatic new context, in memory. See
+	// autocontext.go.
+	auto *autoContexts
+
 	// ka keeps idle Claude cards' prompt caches warm. See keepalive.go.
 	ka *keepalive
 
@@ -522,6 +526,9 @@ func New(opts Options) (*Daemon, error) {
 	d.ap.SetKeepalive = d.keepaliveSet
 	// Each card's context size, held the same way. See contextsize.go.
 	d.ctx = newContextSizes()
+	d.ka.holding = d.nctx.holding
+	d.ka.session = d.ctx.sessionOf
+	d.auto = newAutoContexts()
 	api.ContextSizeOf = d.contextSizeFor
 	// Token use on record, read only by a card's details. See usage.go.
 	d.usage = newUsageTracker(st)
