@@ -5224,7 +5224,8 @@ async function u016Section(browser, base) {
       // the header is slim by default and opens behind a chevron, saved per device (u-021 replaced the full hide)
       if (name === "portrait") {
         const hd = () => vis(p, "header");
-        const ready = () => p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+        // attached, not visible: the reload can come back on the terminals tab, where the stack list is hidden
+        const ready = () => p.waitForSelector("#stack-list .stackrow", { state: "attached", timeout: slow(15000) });
         if (!(await hd())) fail(tag + "the slim header is not showing");
         if (await vis(p, "#gear")) fail(tag + "the gear shows in the slim header");
         await p.evaluate(() => document.getElementById("hdr-toggle").click());
