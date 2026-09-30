@@ -1,6 +1,6 @@
 # u-new-duplicate-card-row. A card shows twice on the terminals tab, one row live and one stale (bug)
 
-Status: not started. Filed by the orchestrator 2026-09-30 for @ui, from clint's screenshots
+Status: fixed hub-side by @ui 2026-09-30 (see "Cause and fix" at the end). Filed by the orchestrator 2026-09-30 for @ui, from clint's screenshots
 (`.atrium/incoming/20260930-074453-pasted.png`, `20260930-074539-pasted.png`). The cause may sit on the hub side
 (`internal/link`), so bring in @fabric if it does.
 
@@ -41,3 +41,29 @@ say "waiting for this turn to end" on the badge, not give up after 2 minutes.
 - A live `task` event on the hub always carries the same id the list does, or the board keys rows so that the two
   can never become two rows.
 - A headless case: a list row `r~id`, then a `task` event for `id`. One row stays, updated.
+
+## Cause and fix
+
+The hub was wrong, not the board, and not r-013. The hub had two rules for "is this the merged view", and they
+disagreed:
+
+- `roomFor` in `internal/link/proxy.go` decides whether `/v1/tasks` comes back tagged. It treats one attached room as
+  the merged view when the hub still remembers cards for another room. That is decision 16: a shut laptop's cards stay
+  on the board.
+- `serveEvents` in `internal/link/events.go` asked only `hub.Only() == ""`, so with one room attached it sent every
+  event untagged.
+
+It started this morning because sg3 and m1mini went offline. `claude-sg4` became the only attached room while the hub
+still held their cards, so the list said `claude-sg4~01a0...` and every `task`, `activity` and `permission` event
+said `01a0...`. The board keys rows by id and drew each card twice.
+
+The fix is one helper, `merged()` in `proxy.go`, that both paths call, so the list and the stream cannot drift again.
+The test is `TestOneRoomLiveAndOneRememberedStreamsTagged` in `internal/link/events_test.go`. It fails before the fix,
+on both `/v1/events` and `/v1/events/hub`.
+
+The board is not meant to normalise ids. The hub's contract (`taggedFields`) is that the stream and the list name a
+card the same way, and a board that quietly matched a bare id to a tagged row would hide the next break of that
+contract. So there is no board change and no headless case: the headless harness mocks the hub's endpoints, so a
+board test cannot fail on a hub bug.
+
+The "new context failed ... waiting for an empty line" part is @runtime's (r-016's shape) and is not touched here.

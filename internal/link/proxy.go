@@ -260,10 +260,26 @@ func (p *Proxy) roomFor(r *http.Request) (name string, named bool) {
 	// room would drop them from the board entirely. That is the case decision
 	// 16 is about, and it is the common one, because rooms are machines and
 	// machines get shut.
-	if only := p.hub.Only(); only != "" && !p.rememberingOthers(only) {
+	if only, merged := p.merged(); !merged {
 		return only, false
 	}
 	return "", false
+}
+
+// merged reports whether a request that names no room gets the merged view, and
+// the one room it gets otherwise.
+//
+// ONE ANSWER FOR THE LISTS AND THE STREAM. `roomFor` decides whether `/v1/tasks`
+// comes back tagged, and `serveEvents` decides whether an event does. They
+// disagreed once: the stream asked only whether one room was attached, so with
+// one room live and another remembered the list said `sg4~01a0`, every event said
+// `01a0`, and the board drew each card twice.
+func (p *Proxy) merged() (only string, merged bool) {
+	only = p.hub.Only()
+	if only == "" || p.rememberingOthers(only) {
+		return "", true
+	}
+	return only, false
 }
 
 // rememberingOthers reports whether the hub is holding cards for a room other
