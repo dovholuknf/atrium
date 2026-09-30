@@ -206,9 +206,9 @@ func (d *Daemon) reopenWanted() []*store.Task {
 		if t.Status == store.StatusShelved {
 			continue
 		}
-		// Ended is ended. A runner still at its prompt when the daemon stopped
-		// is on the list, and a restart must not undo the exit that ended it.
-		if t.Status == store.StatusDone {
+		// AN ASKED EXIT IS KEPT. Not `done`: a wind-down ends every session and
+		// each lands in `done`, which is what this list exists to bring back.
+		if asked, err := d.st.ExitAsked(t.ID); err == nil && asked {
 			continue
 		}
 		// Parked is put down the same way: it wakes when something asks it to.

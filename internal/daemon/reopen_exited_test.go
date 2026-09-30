@@ -25,10 +25,15 @@ func endedCard(t *testing.T, d *Daemon, name, dir string) *store.Task {
 	if err := d.st.SetStatus(task.ID, store.StatusDone); err != nil {
 		t.Fatal(err)
 	}
+	// What StopRunner writes when somebody asks. `done` alone is what every
+	// wind-down leaves behind, and is not an ending.
+	if err := d.st.AppendEvent(task.ID, store.EventNotified, map[string]any{"by": store.ExitAskedBy}); err != nil {
+		t.Fatal(err)
+	}
 	return task
 }
 
-// AN ENDED CARD STAYS ENDED, even when its runner was still at the prompt when
+// A CARD ASKED TO EXIT STAYS DOWN, even when its runner was still at the prompt when
 // the daemon stopped and so is on the list of what was open.
 func TestAnEndedCardIsNotReopened(t *testing.T) {
 	d := reopenDaemon(t)
@@ -39,7 +44,7 @@ func TestAnEndedCardIsNotReopened(t *testing.T) {
 	}
 }
 
-// A FIXTURE WHOSE CARD WAS ENDED DOES NOT START AT BOOT, and its row says why,
+// A FIXTURE WHOSE CARD WAS ASKED TO EXIT DOES NOT START AT BOOT, and its row says why,
 // which is where somebody looks for a fixture that did not come up.
 func TestAFixtureWhoseCardWasEndedDoesNotStart(t *testing.T) {
 	d := reopenDaemon(t)
@@ -64,7 +69,7 @@ func TestAFixtureWhoseCardWasEndedDoesNotStart(t *testing.T) {
 		t.Fatal(err)
 	}
 	raw, _ := json.Marshal(row)
-	if !strings.Contains(string(raw), "was ended") {
+	if !strings.Contains(string(raw), "asked to exit") {
 		t.Fatalf("the fixture row does not say why it did not start: %s", raw)
 	}
 }

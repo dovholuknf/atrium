@@ -118,17 +118,17 @@ type FixtureFault struct {
 	Reason string `json:"reason"`
 }
 
-// fixtureEnded is why a fixture must not start at boot, or empty. Its card is
-// done: somebody exited it, or its session said the work was over.
+// fixtureEnded is why a fixture must not start at boot, or empty: somebody
+// asked its card to exit and nothing launched it since. Never the card's
+// status, which a wind-down moves to `done` for every card. See store.ExitAsked.
 func (d *Daemon) fixtureEnded(f *store.Fixture) string {
 	if f.TaskID == "" {
 		return ""
 	}
-	t, err := d.st.Get(f.TaskID)
-	if err != nil || t.Status != store.StatusDone {
+	if asked, err := d.st.ExitAsked(f.TaskID); err != nil || !asked {
 		return ""
 	}
-	return "its card was ended, so a restart leaves it ended. start it here to bring it back"
+	return "its card was asked to exit, so a restart leaves it down. start it here to bring it back"
 }
 
 // fixtureName is what to call one in a message. The label, or the directory
