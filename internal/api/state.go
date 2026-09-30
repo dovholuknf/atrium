@@ -56,7 +56,7 @@ func (s *Server) roomState(w http.ResponseWriter, r *http.Request) {
 	}
 	// The seen rows are a decoration: a room whose seen table will not read
 	// still says what it holds, as withSeen does for the board.
-	seen, _ := s.st.SeenAll()
+	seen, seenErr := s.st.SeenAll()
 	// NONE IS AN ANSWER AND MUST LOOK LIKE ONE, which is why this is made and
 	// never left nil. A nil slice marshals to `null`, which is
 	// indistinguishable from a body that never mentioned cards at all, and
@@ -72,8 +72,13 @@ func (s *Server) roomState(w http.ResponseWriter, r *http.Request) {
 		// a room on an older build that sends no seen at all. The notifier needs
 		// exactly that difference to keep quiet about a session that has only
 		// just started.
+		//
+		// UNLESS THE SEEN TABLE COULD NOT BE READ. Then every card goes out with
+		// `seen: null`, which the notifier reads as a room that cannot say, and it
+		// falls back to notifying input as before. An empty object for every card
+		// would have silenced input on every waiting card because of one bad read.
 		v := seen[t.ID].View()
-		if v == nil {
+		if v == nil && seenErr == nil {
 			v = &store.SeenView{}
 		}
 		cards = append(cards, stateCard{Task: t, Seen: v})
