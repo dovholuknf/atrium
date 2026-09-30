@@ -27,6 +27,8 @@ import (
 type Server struct {
 	st  *store.Store
 	bus *bus
+	// pend coalesces PublishTask per card.
+	pend taskPending
 	// Room is the name this daemon is known by on a hub, or empty. It only
 	// words a not-found. See NotOnRoom.
 	Room string
@@ -949,7 +951,86 @@ func (s *Server) taskEvent(t *store.Task) view {
 // PublishTask broadcasts a "task" event carrying the same row a /v1/tasks
 // list holds for the card, so the board can upsert it without a re-fetch.
 // Every "task" broadcast goes through here.
-func (s *Server) PublishTask(t *store.Task) { s.Broadcast("task", s.taskEvent(t)) }
+//
+// It does not run the queries: it marks the card pending and returns. A mark
+// already standing for the card (taskCoalesce) absorbs the call, and the send
+// reads the card then, so the event always carries the latest state and a
+// burst costs one card's worth of queries per window. See flushTask.
+func (s *Server) PublishTask(t *store.Task) {
+	if t == nil {
+		return
+	}
+	id := t.ID
+	s.pend.mark(id, func() { s.flushTask(id) })
+}
+
+// taskCoalesce is the window a card's "task" events are folded into.
+const taskCoalesce = 200 * time.Millisecond
+
+// taskPending is one timer per card with an event waiting to go.
+type taskPending struct {
+	mu     sync.Mutex
+	timers map[string]*time.Timer
+	closed bool
+	// send serialises the read and the broadcast, so a later flush for a
+	// card can never overtake an earlier one and put older state on the wire.
+	send sync.Mutex
+}
+
+func (p *taskPending) mark(id string, fn func()) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.closed {
+		return
+	}
+	if _, ok := p.timers[id]; ok {
+		return
+	}
+	if p.timers == nil {
+		p.timers = map[string]*time.Timer{}
+	}
+	p.timers[id] = time.AfterFunc(taskCoalesce, fn)
+}
+
+// take clears the mark, so a publish from here on schedules a fresh send. It
+// reports false once the server has closed.
+func (p *taskPending) take(id string) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.closed {
+		return false
+	}
+	delete(p.timers, id)
+	return true
+}
+
+func (p *taskPending) close() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.closed = true
+	for id, t := range p.timers {
+		t.Stop()
+		delete(p.timers, id)
+	}
+}
+
+// flushTask sends the card's "task" event from the row as it is now. A card
+// that is gone (deleted between the publish and the send) sends nothing: its
+// "task-removed" is the event for that, and a task event here would put it back
+// on the board. A halted store sends nothing either, quietly, since every
+// call fails the same way.
+func (s *Server) flushTask(id string) {
+	if !s.pend.take(id) {
+		return
+	}
+	s.pend.send.Lock()
+	defer s.pend.send.Unlock()
+	t, err := s.st.Get(id)
+	if err != nil {
+		return
+	}
+	s.Broadcast("task", s.taskEvent(t))
+}
 
 // withSeen stamps each card's seen state, for the whole list in one query and
 // swallowing a failure for the same reason `withAskCounts` does: it decorates
@@ -1388,11 +1469,18 @@ func (s *Server) deleteTask(w http.ResponseWriter, r *http.Request) {
 	if CloseShellFor != nil {
 		CloseShellFor(id)
 	}
-	if err := s.st.Forget(id); err != nil {
+	// Under the send lock so a flush that read the card before the forget
+	// cannot broadcast it after the removal and put it back on the board.
+	s.pend.send.Lock()
+	err := s.st.Forget(id)
+	if err == nil {
+		s.Broadcast("task-removed", map[string]string{"id": id})
+	}
+	s.pend.send.Unlock()
+	if err != nil {
 		s.fail(w, err)
 		return
 	}
-	s.Broadcast("task-removed", map[string]string{"id": id})
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -2122,7 +2210,10 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 // Close releases every SSE subscriber. An event stream is an open request, and
 // http.Server.Shutdown waits for those, so without this a single browser tab
 // holds the board listener open until the shutdown grace period expires.
-func (s *Server) Close() { s.bus.close() }
+func (s *Server) Close() {
+	s.pend.close()
+	s.bus.close()
+}
 
 type message struct {
 	kind string

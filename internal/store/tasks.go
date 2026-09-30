@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"sort"
 	"strings"
 	"time"
@@ -217,6 +218,13 @@ func (s *Store) Register(obs Observed) (*Task, bool, error) {
 			}
 		}
 		if task != nil {
+			// FOUND BY PID, NOT BY NAME, AND THE NAME IS A GUESS (r-040). The
+			// guess may be the name of a finished card, which the lookup above
+			// skipped on purpose. Writing it onto this live card would collide
+			// with that card, so a guessed name never renames a card.
+			if derived && task.WireName != obs.WireName {
+				obs.WireName = task.WireName
+			}
 			return s.refreshObserved(task, obs)
 		}
 		t, err := s.create(obs)
@@ -294,6 +302,25 @@ func (s *Store) refreshObservedAt(t *Task, obs Observed, move bool) error {
 		sameSession := obs.Resume == "" || t.ResumeID == "" || obs.Resume == t.ResumeID
 		if sameSession {
 			obs.PID = t.PID
+		}
+	}
+	// A NAME ANOTHER ROW HOLDS IS NEVER WRITTEN (r-040). wire_name is unique, and
+	// the constraint failing is not transient, so it would halt the store. Keep the
+	// card's current name here, where it is checked in the same guarded op, so no
+	// caller can reach the constraint.
+	if obs.WireName != "" && obs.WireName != t.WireName {
+		var one int
+		err := s.db.QueryRow(`SELECT 1 FROM task WHERE wire_name = ? AND id != ? LIMIT 1`,
+			obs.WireName, t.ID).Scan(&one)
+		if err == nil {
+			var other string
+			_ = s.db.QueryRow(`SELECT id FROM task WHERE wire_name = ? AND id != ? LIMIT 1`,
+				obs.WireName, t.ID).Scan(&other)
+			log.Printf("store: card %s keeps name %q, card %s already holds %q",
+				t.ID, t.WireName, other, obs.WireName)
+			obs.WireName = t.WireName
+		} else if !errors.Is(err, sql.ErrNoRows) {
+			return err
 		}
 	}
 	n := now()
@@ -1612,4 +1639,21 @@ func (s *Store) ListArchived(limit int) ([]*Task, error) {
 		return rows.Err()
 	})
 	return out, err
+}
+
+// WireNameHeld reports whether any card, archived or done included, already has
+// this wire name. Register matches on it at every status, so a launch that hands
+// out a held name gets that card back. The name is qualified as Register does.
+// A storage failure answers true: the caller gets a suffixed name rather than a
+// card that might be re-prompted, and the guard has already halted the daemon.
+func (s *Store) WireNameHeld(name string) bool {
+	name = s.Qualify(name)
+	err := s.guard(func() error {
+		var one int
+		return s.db.QueryRow(`SELECT 1 FROM task WHERE wire_name = ? LIMIT 1`, name).Scan(&one)
+	})
+	if errors.Is(err, sql.ErrNoRows) {
+		return false
+	}
+	return true
 }
