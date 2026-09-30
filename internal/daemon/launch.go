@@ -999,7 +999,10 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 	onto := task != nil
 	claimed := task != nil && task.WireName == ""
 	if agentName == "" {
-		agentName = d.launchedName(req.Title, cwd)
+		var err error
+		if agentName, err = d.launchedName(req.Title, cwd); err != nil {
+			return nil, err
+		}
 	}
 	switch {
 	case task == nil:
@@ -1371,7 +1374,7 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 // rules (see store/tenant.go). A dead card's name is free to take back:
 // relaunching into the same worktree should land on the same name and the same
 // card, which is the point of a stable, title-derived name.
-func (d *Daemon) launchedName(title, cwd string) string {
+func (d *Daemon) launchedName(title, cwd string) (string, error) {
 	return launchedName(title, cwd, d.wireNameTaken())
 }
 
@@ -1379,21 +1382,34 @@ func (d *Daemon) launchedName(title, cwd string) string {
 // it. The store qualifies the name, because the argument is the unqualified name a
 // launch is about to hand out, while a stored wire name carries this atrium's
 // tenant prefix.
-func (d *Daemon) wireNameTaken() func(string) bool { return d.st.WireNameHeld }
+func (d *Daemon) wireNameTaken() func(string) (bool, error) { return d.st.WireNameHeld }
+
+// maxNameSuffix bounds the search for a free name. A store that answers "held"
+// to everything must fail the launch, not spin holding the launch path.
+const maxNameSuffix = 1000
 
 // launchedName is the testable core of the method above: base from the title
 // when there is one, otherwise the directory leaf, then a numeric suffix until
-// no card holds it.
-func launchedName(title, cwd string, taken func(string) bool) string {
+// no card holds it. A store error fails the launch before any card exists.
+func launchedName(title, cwd string, taken func(string) (bool, error)) (string, error) {
 	base := nameSlug(title)
 	if base == "" {
 		base = filepath.Base(cwd)
 	}
 	name := base
-	for n := 2; taken(name); n++ {
+	for n := 2; ; n++ {
+		held, err := taken(name)
+		if err != nil {
+			return "", fmt.Errorf("checking wire name %q: %w", name, err)
+		}
+		if !held {
+			return name, nil
+		}
+		if n > maxNameSuffix {
+			return "", fmt.Errorf("no free wire name for %q after %d suffixes", base, maxNameSuffix)
+		}
 		name = fmt.Sprintf("%s-%d", base, n)
 	}
-	return name
 }
 
 // nameSlug reduces a launch title to something usable as a wire name: lower
