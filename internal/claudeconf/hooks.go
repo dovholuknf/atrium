@@ -41,7 +41,26 @@ type HookEvent struct {
 	// Warn is what has to be understood before installing an optional hook.
 	// Shown by the board next to the switch rather than buried in the docs.
 	Warn string `json:"warn,omitempty"`
+	// Timeout is the seconds Claude Code should wait for this hook before it
+	// kills it, or zero to write none. Claude's own default is 60, which is
+	// right for a hook that posts and exits and wrong for one that waits on a
+	// human. Only the permission gate sets it.
+	Timeout int `json:"timeout,omitempty"`
 }
+
+// permissionEvent is the atrium event name of the permission gate.
+const permissionEvent = "permission"
+
+// gateTimeout is how long the gate may wait on a human: a day, the same the
+// dotfiles script registers. A shorter one silently turns every question older
+// than the timeout into Claude Code's own prompt.
+const gateTimeout = 86400
+
+// dotfilesGateMarker names the script gate that predates atrium's own.
+const dotfilesGateMarker = "atrium-perm-hook"
+
+// dotfilesGateNote is what the board says while another gate holds the slot.
+const dotfilesGateNote = "the dotfiles gate is registered. atrium's own replaces it once that is agreed"
 
 // WantedHooks are the hooks atrium can register, in the order they read best.
 //
@@ -63,6 +82,17 @@ var WantedHooks = []HookEvent{
 		Why: "the card goes to finished when the session closes"},
 	{Hook: "PreToolUse", Event: "tool-start", Sub: "hook", Arg: "tool-start",
 		Why: "which tool a session is running right now"},
+	// The permission gate. It IS in "install all", unlike Stop, because it gates
+	// only sessions atrium already knows and a room without it never puts a
+	// question on the board. The timeout is the point of the row: Claude Code
+	// kills a hook at 60 seconds when none is given, and this one waits on a
+	// person. Claude's target only, codex is a later question.
+	{Hook: "PreToolUse", Event: permissionEvent, Sub: "hook", Arg: "permission",
+		Why:     "a tool call waits on the board until you answer it",
+		Timeout: gateTimeout,
+		Warn: "this one blocks a tool call until a human answers on the board. it only gates " +
+			"sessions atrium already knows, and it lets everything through when atrium is not " +
+			"reachable."},
 	{Hook: "PostToolUse", Event: "tool-end", Sub: "hook", Arg: "tool-end",
 		Why: "when that tool finished, so the card stops claiming it"},
 	// The same thing to a badge that only says what is running now. A distinct
@@ -130,6 +160,16 @@ type HookStatus struct {
 	// atrium is running from. Usually the old dotfiles script, or a second
 	// checkout.
 	Stale bool `json:"stale"`
+	// TimeoutShort marks an installed hook registered with a shorter timeout
+	// than it needs, or none. Counted in Missing, so the board offers the fix.
+	TimeoutShort bool `json:"timeout_short,omitempty"`
+	// Other says another gate holds this slot, and what to make of it. Set on
+	// the permission row only.
+	Other string `json:"other,omitempty"`
+	// TwoGates is true when the dotfiles gate AND atrium's own are both
+	// registered, which asks the human twice for every call. Nothing here fixes
+	// it. It is reported so the board can say so.
+	TwoGates bool `json:"two_gates,omitempty"`
 	// Want is the command atrium would write.
 	Want string `json:"want"`
 }
@@ -144,6 +184,9 @@ type HookReport struct {
 	Exists  bool         `json:"exists"`
 	Hooks   []HookStatus `json:"hooks"`
 	Missing int          `json:"missing"`
+	// TwoGates is set when two permission gates are registered. See
+	// HookStatus.TwoGates.
+	TwoGates bool `json:"two_gates,omitempty"`
 	// Unreadable carries a parse error. Nothing is written when this is set,
 	// because rewriting a file atrium could not read would lose whatever is
 	// in it.
@@ -273,13 +316,24 @@ func InspectTarget(t Target, exe string) (*HookReport, error) {
 			st.Installed = true
 			st.Found = cmd
 			st.Stale = !sameBinary(cmd, exe) || !saysWhichRunner(t, cmd)
+			st.TimeoutShort = w.Timeout > 0 && timeoutOf(doc, w.Hook, cmd) < float64(w.Timeout)
 			break
+		}
+		// Another gate holding the permission slot counts as the slot being
+		// filled: present, not stale, not missing. See otherGate.
+		if other := otherGate(t, w, installed); other != "" {
+			st.TwoGates = st.Installed
+			rep.TwoGates = rep.TwoGates || st.TwoGates
+			st.Installed, st.Found, st.Stale, st.TimeoutShort = true, other, false, false
+			st.Other = dotfilesGateNote
+			rep.Hooks = append(rep.Hooks, st)
+			continue
 		}
 		// An optional hook that is not installed is not missing. It was never
 		// promised, and counting it would leave the board permanently offering
 		// to fix something that is off on purpose. A stale one still counts:
 		// somebody installed it, and it is now pointing at the wrong binary.
-		if (!st.Installed && !w.Optional) || st.Stale {
+		if (!st.Installed && !w.Optional) || st.Stale || st.TimeoutShort {
 			rep.Missing++
 		}
 		rep.Hooks = append(rep.Hooks, st)
@@ -355,8 +409,18 @@ func InstallOnlyTarget(t Target, exe string, events []string) (*HookReport, Inst
 		if len(wanted) == 0 && w.Optional {
 			continue
 		}
+		// Another gate holds the permission slot, so atrium's is never written
+		// beside it and never rewrites it. "Install all" passes over the row and
+		// naming it is an error, because two gates ask the human twice.
+		if other := otherGate(t, w, registeredCommands(doc)); other != "" {
+			if len(wanted) == 0 {
+				continue
+			}
+			return nil, none, fmt.Errorf("the dotfiles permission gate is already registered (%s), "+
+				"and a second gate would ask you twice for every tool call, so nothing was changed", other)
+		}
 		matched++
-		did, err := upsert(t, doc, w.Hook, exe, w.Event)
+		did, err := upsert(t, doc, w.Hook, exe, w.Event, w.Timeout)
 		if err != nil {
 			return nil, none, err
 		}
@@ -416,7 +480,11 @@ func InstallOnlyTarget(t Target, exe string, events []string) (*HookReport, Inst
 // leaving everything else in place.
 // changed reports whether anything was actually written, so an install that
 // finds everything already correct writes no file and keeps no backup.
-func upsert(t Target, doc map[string]json.RawMessage, hook, exe, event string) (changed bool, err error) {
+//
+// timeout is seconds, zero to write none. A new entry gets it, and an entry
+// corrected in place has a shorter one raised to it. A longer one is the
+// operator's and is left alone.
+func upsert(t Target, doc map[string]json.RawMessage, hook, exe, event string, timeout int) (changed bool, err error) {
 	all := hooksSection(doc)
 	if raw, ok := doc["hooks"]; ok {
 		var probe map[string]any
@@ -450,15 +518,19 @@ func upsert(t Target, doc map[string]json.RawMessage, hook, exe, event string) (
 				continue
 			}
 			if s, _ := hm["command"].(string); reportsEventFor(t, s, event) {
-				// Already exactly right. Rewriting it would produce another
-				// backup of a file nothing changed in.
-				if s == want {
+				short := timeout > 0 && timeoutIn(hm) < float64(timeout)
+				// Already exactly right, timeout included. Rewriting it would
+				// produce another backup of a file nothing changed in.
+				if s == want && !short {
 					if kind, _ := hm["type"].(string); kind == "command" {
 						return false, nil
 					}
 				}
 				hm["command"] = want
 				hm["type"] = "command"
+				if short {
+					hm["timeout"] = timeout
+				}
 				all[hook] = entries
 				return true, store(doc, all)
 			}
@@ -478,16 +550,78 @@ func upsert(t Target, doc map[string]json.RawMessage, hook, exe, event string) (
 			continue
 		}
 		list, _ := m["hooks"].([]any)
-		m["hooks"] = append(list, map[string]any{"type": "command", "command": want})
+		m["hooks"] = append(list, newCommand(want, timeout))
 		all[hook] = entries
 		return true, store(doc, all)
 	}
 
 	all[hook] = append(entries, map[string]any{
 		"matcher": "",
-		"hooks":   []any{map[string]any{"type": "command", "command": want}},
+		"hooks":   []any{newCommand(want, timeout)},
 	})
 	return true, store(doc, all)
+}
+
+// newCommand is one hook entry as written, with a timeout only when one is wanted.
+func newCommand(command string, timeout int) map[string]any {
+	h := map[string]any{"type": "command", "command": command}
+	if timeout > 0 {
+		h["timeout"] = timeout
+	}
+	return h
+}
+
+// timeoutIn reads the timeout off one registered command, zero when there is none.
+func timeoutIn(hm map[string]any) float64 {
+	n, _ := hm["timeout"].(float64)
+	return n
+}
+
+// timeoutOf finds the timeout registered for one command under one hook name.
+// The command string alone does not carry it: it lives in the per-command map.
+// The longest wins when a command is registered twice, since that is the one
+// that lets a gate live.
+func timeoutOf(doc map[string]json.RawMessage, hook, command string) float64 {
+	best := 0.0
+	for _, entry := range hooksSection(doc)[hook] {
+		m, ok := entry.(map[string]any)
+		if !ok {
+			continue
+		}
+		list, _ := m["hooks"].([]any)
+		for _, h := range list {
+			hm, ok := h.(map[string]any)
+			if !ok {
+				continue
+			}
+			if s, _ := hm["command"].(string); s == command && timeoutIn(hm) > best {
+				best = timeoutIn(hm)
+			}
+		}
+	}
+	return best
+}
+
+// otherGate answers the command of ANOTHER permission gate holding the slot
+// this row would fill, or empty when there is none or the row is not the gate.
+//
+// THE ONE PLACE THE COEXISTENCE DECISION LIVES. Today the dotfiles script
+// wins: a registered command containing `atrium-perm-hook` counts as the gate
+// being present, and atrium neither adds its own beside it nor rewrites it.
+// Whether atrium's row REPLACES the script is clint's call and is not made.
+// When it is, flip this to return "" (and let upsert treat the script as the
+// entry to correct, as it does for `atrium-session-hook.ps1`), and nothing
+// else in this package has to change.
+func otherGate(t Target, w HookEvent, installed map[string][]string) string {
+	if t.ID != Claude.ID || w.Event != permissionEvent {
+		return ""
+	}
+	for _, cmd := range installed[w.Hook] {
+		if strings.Contains(strings.ToLower(cmd), dotfilesGateMarker) {
+			return cmd
+		}
+	}
+	return ""
 }
 
 func store(doc map[string]json.RawMessage, all map[string][]any) error {
