@@ -134,7 +134,7 @@ func (c *controlMCP) cardAcross(ctx context.Context, room, to string, withEvents
 	if err != nil {
 		return refusal(err)
 	}
-	t, events, err := c.readCard(ctx, room, id, withEvents)
+	t, events, _, err := c.readCard(ctx, room, id, withEvents, false)
 	if err != nil {
 		return refusal(err)
 	}
