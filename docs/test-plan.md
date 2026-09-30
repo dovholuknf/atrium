@@ -7401,3 +7401,49 @@ with `updatedInput` holding the edited command.
 2. Run it again with a tool named Read.
 
 **Expected:** no output and exit code 0 each time, and no card appears for the Read.
+
+## GC. Git sync over the hub and rooms
+
+The automated coverage is `internal/gitsync`, `internal/link/git*_test.go` and `internal/cli/atrium_rooms_git_test.go`,
+which run real git in temporary directories. These are the parts a person checks on a live hub and room. The design is
+`docs/rnd/git-sync-design.md`.
+
+### GC1. The hub mirrors and a room follows
+
+1. On the hub, `atrium rooms git repos add github/<owner>/<repo> <the checkout @merge writes>`, then
+   `atrium rooms git repos ls`.
+2. Wait 30 seconds, then `atrium rooms git status`.
+3. On a room that says Git, `atrium rooms git sync <room> <name> --init` when it has no clone, or without `--init`
+   when it does.
+4. Move `claude/main` in the checkout (a commit, and once a re-sign with `git commit --amend`), wait 30 seconds, and
+   read the room's `GET /v1/git/status`.
+
+**Expected:** the mirror line shows the checkout's sha. The sync answers `ok` with that sha, and the room's
+`claude/main` and `hub-main` are at it. After step 4 the room follows with nobody running anything, including the
+non fast-forward move. A room whose clone is missing answers `absent` until `--init`.
+
+### GC2. Refusals
+
+1. `atrium rooms git repos add` cannot take a branch. Write `git_repos` by hand with a `claude/ui` branch.
+2. Start the hub with that setting in place.
+3. Check out `claude/main` in a worktree in the room's clone, then sync it.
+
+**Expected:** step 1 has no flag for a branch and the hub refuses the value, naming the integration branch. Step 2
+logs `git_repos is refused, so this hub mirrors nothing` and mirrors nothing. Step 3 answers `behind`, not a forced move.
+
+### GC3. Collecting
+
+1. On a room, make a commit on `claude/<something>` in its clone. `atrium rooms git collect <room>`.
+2. In the hub's checkout, `git for-each-ref refs/remotes/<room>`.
+3. Delete that branch on the room and collect again.
+
+**Expected:** step 2 shows `refs/remotes/<room>/claude/<something>` at the room's sha, and nothing new under
+`refs/heads`. The room's `claude/main` is never there. After step 3 the branch is gone from the hub's checkout.
+
+### GC4. Old builds
+
+1. Attach a room built before f-019, then run `atrium rooms git sync <room>` and `atrium rooms git collect <room>`.
+2. Attach a new room to a hub built before f-019.
+
+**Expected:** step 1 says the room's build predates git sync (`unsupported`, and the collect is refused) and the room
+is never sent a request. In step 2 the room's sync fails saying the hub predates git sync and never dials the `git` kind.
