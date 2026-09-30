@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/api"
+	"github.com/dovholuknf/atrium/internal/runnersetup"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -1479,37 +1480,8 @@ func firstLine(s string) string {
 }
 
 // inheritedTaint names environment variables that must not reach a launched
-// runner.
-//
-// The daemon is often started from inside a claude session, so its environment
-// carries that session's markers. Passing them on makes the new session think
-// it is a child of the old one, which among other things silently turns off
-// transcript saving. A launched runner is a top level session and has to start
-// with a clean slate.
-func inheritedTaint(key string) bool {
-	upper := strings.ToUpper(key)
-	switch {
-	case strings.HasPrefix(upper, "CLAUDE_CODE_"):
-		return true
-	case strings.HasPrefix(upper, "CLAUDECODE"):
-		return true
-	case upper == "ATRIUM_AGENT_NAME" || upper == "ATRIUM_TASK_ID" ||
-		upper == "ATRIUM_RUNNER" || upper == "ATRIUM_ROOM":
-		// Replaced below with this launch's own values. ATRIUM_ROOM is here too
-		// so a daemon started from inside a session cannot leak that session's
-		// room to the ones it launches: a child gets THIS daemon's room or none.
-		return true
-	case strings.HasPrefix(upper, "ATRIUM_DEBUG_"):
-		// Diagnostics for THIS process. The live scripts turn on
-		// ATRIUM_DEBUG_INPUTLAG for the room, and a runner that inherited it
-		// logged lag from every atrium binary it ran and failed `go test` in
-		// internal/link. The whole prefix, because every switch under it is a
-		// debug readout for the process it was set on. A runner that wants one
-		// names it in its harness env, which is applied after this filter.
-		return true
-	}
-	return false
-}
+// runner. The list lives in runnersetup so the setup checks read the same one.
+func inheritedTaint(key string) bool { return runnersetup.InheritedTaint(key) }
 
 // permGateDefault is the ATRIUM_PERM_GATE value a launch supplies, and whether
 // to supply one at all.

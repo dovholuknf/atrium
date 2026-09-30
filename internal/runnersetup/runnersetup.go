@@ -313,3 +313,47 @@ func exists(p string) bool {
 	_, err := os.Stat(p)
 	return err == nil
 }
+
+// InheritedTaint names environment variables that must not reach a launched
+// runner. The daemon strips them at launch and the setup checks read the same
+// list, so a check never counts a variable no launched runner will see.
+//
+// The daemon is often started from inside a claude session, so its environment
+// carries that session's markers. Passing them on makes the new session think
+// it is a child of the old one, which among other things silently turns off
+// transcript saving. A launched runner is a top level session and has to start
+// with a clean slate.
+func InheritedTaint(key string) bool {
+	upper := strings.ToUpper(key)
+	switch {
+	case strings.HasPrefix(upper, "CLAUDE_CODE_"):
+		return true
+	case strings.HasPrefix(upper, "CLAUDECODE"):
+		return true
+	case upper == "ATRIUM_AGENT_NAME" || upper == "ATRIUM_TASK_ID" ||
+		upper == "ATRIUM_RUNNER" || upper == "ATRIUM_ROOM":
+		// Replaced at launch with this launch's own values. ATRIUM_ROOM is here
+		// too so a daemon started from inside a session cannot leak that
+		// session's room to the ones it launches: a child gets THIS daemon's
+		// room or none.
+		return true
+	case strings.HasPrefix(upper, "ATRIUM_DEBUG_"):
+		// Diagnostics for THIS process. The live scripts turn on
+		// ATRIUM_DEBUG_INPUTLAG for the room, and a runner that inherited it
+		// logged lag from every atrium binary it ran and failed `go test` in
+		// internal/link. The whole prefix, because every switch under it is a
+		// debug readout for the process it was set on. A runner that wants one
+		// names it in its harness env, which is applied after this filter.
+		return true
+	}
+	return false
+}
+
+// launched reads a variable from the daemon's environment as a launched runner
+// will have it: a name the launch strips reads as empty.
+func (e Env) launched(key string) string {
+	if InheritedTaint(key) {
+		return ""
+	}
+	return e.inherited(key)
+}

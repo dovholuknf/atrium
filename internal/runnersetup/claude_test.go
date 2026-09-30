@@ -64,3 +64,36 @@ func TestInspectCountsOnlyFailures(t *testing.T) {
 		}
 	}
 }
+
+// CLAUDE_CODE_OAUTH_TOKEN in the daemon's env is stripped at launch, so it is
+// not a sign-in a launched runner has.
+func TestClaudeAuthIgnoresAStrippedToken(t *testing.T) {
+	getenv := func(k string) string {
+		if k == "CLAUDE_CODE_OAUTH_TOKEN" {
+			return "fake-token"
+		}
+		return ""
+	}
+	env := Env{Home: t.TempDir(), Getenv: getenv, GOOS: "windows"}
+	if r := claudeAuthCheck(env); r.State != Fail {
+		t.Fatalf("the token alone must not read as signed in, got %+v", r)
+	}
+	writeFile(t, filepath.Join(env.Home, ".claude", ".credentials.json"), `{}`)
+	if r := claudeAuthCheck(env); r.State != OK {
+		t.Fatalf("token and credentials file should be ok, got %+v", r)
+	}
+	env.Getenv = func(string) string { return "" }
+	if r := claudeAuthCheck(env); r.State != OK {
+		t.Fatalf("the credentials file alone should be ok, got %+v", r)
+	}
+	env.Getenv = func(k string) string {
+		if k == "ANTHROPIC_API_KEY" {
+			return "fake-key"
+		}
+		return ""
+	}
+	env.Home = t.TempDir()
+	if r := claudeAuthCheck(env); r.State != OK {
+		t.Fatalf("an inherited api key is not stripped and should be ok, got %+v", r)
+	}
+}
