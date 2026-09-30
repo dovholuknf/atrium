@@ -361,9 +361,7 @@ function rememberPopOutSize(id, w, h, alsoDefault) {
   } catch (e) {}
 }
 
-// termOnly reports whether this window is a popped-out terminal.
-// An old `#term=` link wins over a path, so every link already sent keeps working. See js/cardurl.js.
-function termOnly() { return /^#term=/.test(location.hash) || cardUrlIsCard(); }
+// `termOnly`, whether this window is a popped-out terminal, lives in js/cardurl.js, which loads first.
 
 // Strips the page down to one terminal.
 //
