@@ -692,15 +692,19 @@ foreach ($rn in ($req.runners.Keys | Sort-Object)) {
     if (-not $req.runners[$rn].Smoke -and -not $req.runners[$rn].smoke) { continue }
     if ($NoSmoke) { Row "smoke.$rn" 'skip' '-NoSmoke'; continue }
     if (-not $info) { Row "smoke.$rn" 'skip' 'the room is not attached'; continue }
-    if ($rn -ne 'claude') { Row "smoke.$rn" 'skip' "provision's smoke is claude only, and $rn is its item 4 (not built)"; continue }
-    $sa = @($Target, '-Name', $Room, '-SmokeOnly', '-SmokeTimeout', "$SmokeTimeout", '-HubAddr', $HubAddr) + $childSsh
+    # ONE RUNNER PER CALL, named twice: -Runners because provision smokes only a runner it was told the room has,
+    # and -SmokeRunners so it smokes only this one. Provision's steps are `smoke:<runner>` (f-015), or a bare `smoke`
+    # for a line about the whole step.
+    $sa = @($Target, '-Name', $Room, '-SmokeOnly', '-Runners', $rn, '-SmokeRunners', $rn,
+        '-SmokeTimeout', "$SmokeTimeout", '-HubAddr', $HubAddr) + $childSsh
     if ($clonePath) { $sa += @('-SmokeCwd', $clonePath) }
     $r = Invoke-Script 'provision-room.ps1' $sa
-    $sm = @($r.Out | Where-Object { $_ -match '^provision smoke ' })
+    $pat = "^provision smoke(:$([regex]::Escape($rn)))? "
+    $sm = @($r.Out | Where-Object { $_ -match $pat })
     if ($r.Code -eq 2) { Fail-Now "smoke.$rn" 2 "provision could not reach $Target" }
     if (-not $sm.Count) { Row "smoke.$rn" 'fail' "provision -SmokeOnly said nothing about smoke (exit $($r.Code)): $(($r.Out | Select-Object -Last 2) -join ' | ')"; Unmet 'human'; continue }
     foreach ($l in $sm) {
-        if ($l -match '^provision smoke (\S+)\s*(.*)$') {
+        if ($l -match "^provision smoke(?::\S+)? (\S+)\s*(.*)$") {
             $st = $Matches[1]; $d = $Matches[2]
             Row "smoke.$rn" $st $d
             if ($st -eq 'fail') { Unmet 'human' }

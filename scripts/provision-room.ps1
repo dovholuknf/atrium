@@ -2103,4 +2103,19 @@ $authState = Test-ClaudeAuth
 if ($bad -gt 0) { Finish 5 }
 
 Invoke-Smoke $authState
+
+# THE PROJECT'S REQUIREMENTS, LAST, so a bare machine ends at "meets atrium's requirements", not just "a room".
+# Read only: never -Fix, since a fix here would be this script deciding for a human. -NoSmoke, because the smoke has
+# just run. What it finds is a warn: the room is up, and each unmet line names its fix and who runs it.
+$req = Join-Path $checkout 'atrium.requirements.yaml'
+if ($Repo -eq 'none') {
+    Step 'requirements' 'skip' '-Repo none'
+} elseif (-not (Test-Path $req)) {
+    Step 'requirements' 'skip' "no atrium.requirements.yaml beside this script. run room-check.ps1 $Name from a checkout"
+} else {
+    & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'room-check.ps1') $Name -Target $Target -NoSmoke -Ssh $Ssh @(if ($SshOption) { '-SshOption'; $SshOption -join ',' }) *>&1 | ForEach-Object { Write-Host $_ }
+    $rc = $LASTEXITCODE
+    if ($rc -eq 0) { Step 'requirements' 'ok' "$Name meets atrium.requirements.yaml" }
+    else { Step 'requirements' 'warn' "room-check exited ${rc}: the room works, and the lines above say what is unmet and who fixes it. rerun: room-check.ps1 $Name -Target $Target" }
+}
 Finish 0
