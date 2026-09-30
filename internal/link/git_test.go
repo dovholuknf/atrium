@@ -151,6 +151,32 @@ func TestNothingIsDialledWithoutTheCapability(t *testing.T) {
 	}
 }
 
+// A git connection carries the session of the control connection it belongs to, as a data
+// connection does. A stale one is refused.
+func TestAGitConnectionWithAStaleSessionIsRefused(t *testing.T) {
+	x := newGitFixture(t, true, true, nil)
+	dial := func(session string) (welcome, error) {
+		conn, err := x.room.Dial.Dial(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer conn.Close()
+		return sayHello(conn, bufio.NewReader(conn), hello{Kind: gitKind, Room: "sg3", Session: session})
+	}
+	for _, s := range []string{"", "not-the-session"} {
+		w, err := dial(s)
+		if err == nil || w.OK || !strings.Contains(w.Error, "session is not current") {
+			t.Fatalf("session %q: w=%+v err=%v", s, w, err)
+		}
+	}
+	x.room.mu.Lock()
+	current := x.room.session
+	x.room.mu.Unlock()
+	if w, err := dial(current); err != nil || !w.OK {
+		t.Fatalf("the current session was refused: w=%+v err=%v", w, err)
+	}
+}
+
 func TestAHubKnowsWhichRoomsSaidGit(t *testing.T) {
 	x := newGitFixture(t, true, true, nil)
 	if !x.hub.RoomSaysGit("SG3") {

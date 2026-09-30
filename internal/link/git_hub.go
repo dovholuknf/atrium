@@ -27,7 +27,7 @@ type hubGitRooms struct{ h *Hub }
 func (g hubGitRooms) Attached() []gitsync.RoomInfo {
 	var out []gitsync.RoomInfo
 	for _, a := range g.h.Rooms() {
-		out = append(out, gitsync.RoomInfo{Name: a.Name, Git: a.Git})
+		out = append(out, gitsync.RoomInfo{Name: a.Name, Host: a.Host, Git: a.Git})
 	}
 	return out
 }

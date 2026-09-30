@@ -284,7 +284,7 @@ func (h *Hub) take(ctx context.Context, conn net.Conn) {
 		// A ROOM FETCHING A REPOSITORY, as HTTP on this connection. Dialled by the room
 		// after the hub said Git. See `git.go`.
 		defer conn.Close()
-		h.serveGit(name, conn, br)
+		h.serveGit(name, hi.Session, conn, br)
 	}
 }
 
