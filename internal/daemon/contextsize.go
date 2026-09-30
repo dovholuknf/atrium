@@ -205,6 +205,9 @@ func (d *Daemon) watchContext() error {
 		}
 		tokens, changed := d.ctx.read(t)
 		if tokens == 0 {
+			// A card just cleared reads as nothing until its new conversation has a reply,
+			// and the wake retry is what gets it one.
+			d.autoRetryUnread(t, now)
 			continue
 		}
 		live[t.ID] = true

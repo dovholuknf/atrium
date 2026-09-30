@@ -158,8 +158,9 @@ func (r *autoRig) fired() bool {
 // wantNone runs a tick and fails when it started a cycle.
 func (r *autoRig) wantNone(why string) {
 	r.t.Helper()
+	before := len(r.f.written())
 	r.tick()
-	if r.fired() || r.f.written() != "" {
+	if r.fired() || len(r.f.written()) != before {
 		r.t.Fatalf("a cycle started %s (typed %q)", why, r.f.written())
 	}
 }
@@ -213,6 +214,10 @@ func (r *autoRig) cycle(conv string, after int64) {
 		return strings.Contains(r.f.written(), newContextWake(HandoffName(r.task)))
 	})
 	until(r.t, "the chip to go", func() bool { return r.d.newContextFor(r.id()) == nil })
+	until(r.t, "the run to be marked finished", func() bool {
+		s := r.d.auto.get(r.id())
+		return s != nil && s.finished
+	})
 	r.size(after)
 }
 
