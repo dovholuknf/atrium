@@ -100,12 +100,20 @@ func wouldWork(room string, cards []ctlCard) []string {
 		if !cardLive(t.Status) {
 			continue
 		}
-		name := t.Wire
+		// A card with no session has no wire name. Its alias still reaches it,
+		// and one with neither is nobody a caller could have meant.
+		name, alias := t.Wire, t.Alias
+		if name == "" {
+			name, alias = alias, ""
+		}
+		if name == "" {
+			continue
+		}
 		if room != "" {
 			name += "@" + room
 		}
-		if t.Alias != "" {
-			name += " (@" + t.Alias + ")"
+		if alias != "" {
+			name += " (@" + alias + ")"
 		}
 		out = append(out, name)
 	}
