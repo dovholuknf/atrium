@@ -1,6 +1,7 @@
 # f-019: git sync over the hub and rooms (design)
 
-Status: design, for review. Owned by @rnd (design) and @fabric (the hub side). Item: `docs/backlog/fabric/f-019.md`.
+Status: design, reviewed (Mercurius round 1 ready to build, then @fabric's nine changes, all taken). Owned by @rnd
+(design) and @fabric (the hub side). Item: `docs/backlog/fabric/f-019.md`.
 Direction settled by decision 19 in `docs/decisions.md`. First live proof: sg3. Second: m1mini.
 
 ## 1. The problem, in one paragraph
@@ -79,18 +80,32 @@ Serving the checkout directly would be one moving part fewer. It is not done, fo
   fetch, run by the hub process, not by an agent.
 - **Tell the rooms.** When the mirrored ref moved, the hub asks every attached room that has the repo to sync
   (section 6). A room that is not attached syncs when it next attaches.
-- **Deliver out.** After a collect (section 7), the hub runs
-  `git -C <checkout> fetch --no-tags --prune <bare> +refs/rooms/<room>/claude/*:refs/remotes/<room>/claude/*`.
-  That is exactly where `room-git.ps1 fetch` put them, so @merge's way of working does not change in stage 1.
+- **Deliver out.** After a collect (section 7) that MOVED a ref (`for-each-ref refs/rooms/<room>` compared before and
+  after), the hub runs `git -C <checkout> -c safe.directory=<checkout> fetch --no-tags --prune --no-write-fetch-head
+  <bare> +refs/rooms/<room>/claude/*:refs/remotes/<room>/claude/*`. That is exactly where `room-git.ps1 fetch` put
+  them, so @merge's way of working does not change in stage 1. A collect that moved nothing touches the checkout not
+  at all, and `--no-write-fetch-head` keeps @merge's `FETCH_HEAD` its own. @merge's git holds the same locks, so lock
+  contention is retried with a short backoff before it is reported.
 
 The hub never writes a branch under `refs/heads` in the checkout. It writes `refs/remotes/<room>/*` only.
+
+**Room names in refs** are `keyOf(room)`, lowercased, because NTFS is case-insensitive and `Alpha` and `alpha` are one
+room to the hub anyway. A name `git check-ref-format` rejects is refused. The checkout's existing remotes (`sg3`,
+`m1mini`, `claudevm`) were named for ssh aliases by `room-git.ps1`. They match the room names today, which is not
+guaranteed.
 
 ### 4.4 Serving it
 
 `git http-backend` behind `net/http/cgi`, with:
 
 - `GIT_PROJECT_ROOT` the hub's `git` directory and `GIT_HTTP_EXPORT_ALL=1`
+- **every server setting in the CGI environment**, as `GIT_CONFIG_COUNT`, `GIT_CONFIG_KEY_n` and `GIT_CONFIG_VALUE_n`,
+  never written into a repository's config. The room's clone is the operator's. This needs git 2.31 or later, checked
+  beside the Cygwin check (m1mini's Apple git is 2.39). `net/http/cgi` does not pass PATH through by default, so the
+  handler sets `InheritEnv` or runs the git found by `git --exec-path`
 - `http.receivepack=false` and `http.uploadarch=false`, so only upload-pack answers
+- `http.getanyfile=false`. With `GIT_HTTP_EXPORT_ALL`, http-backend also serves the DUMB protocol (`objects/info/packs`,
+  loose objects by path), which ignores hideRefs completely. The v0 point below only holds with it off
 - `uploadpack.hideRefs=refs/rooms`, so one room does not read another's branches. They are all the operator's rooms,
   so this is tidiness, not a wall
 - the request's `Git-Protocol` header dropped, so the server speaks protocol v0. In v0 upload-pack refuses a want
@@ -98,6 +113,8 @@ The hub never writes a branch under `refs/heads` in the checkout. It writes `ref
   Protocol v2's rules for wants are looser and are not relied on. A test fetches a hidden sha by id and must fail.
 - the repo name from the URL checked against `git_repos` before the CGI runs. A name not on the list is 404, and a
   path with `..` or a drive letter never reaches git.
+
+**The hub's bare repositories are served only on the `git` connection kind**, never on the board listener.
 
 `git http-backend` ships with every git the hub could run (Git for Windows has it in `libexec/git-core`). Smart HTTP
 rather than a bundle per transfer, because a bundle has to be told what the other side has already, and that
@@ -124,8 +141,15 @@ git fetch http://127.0.0.1:Q/T/<name>.git
 - **Room to hub: a new connection kind, `git`.** Dialled by the room the way `upgrade`, `announce` and `relay` are,
   with the same hello and the control connection's `Session`. After the welcome the connection is plain HTTP/1.1 and
   the hub serves the handler of section 4.4 on it. `hearHello`'s list of kinds and its refusal sentence gain `git`
-  together, with a test. An older hub refuses with the old sentence, which lists the kinds and does not contain
-  `git`, and the room turns that into "the hub predates git sync", the way `Room.Relay` already reads a refusal.
+  together, with a test.
+- **One link connection per TCP connection.** Git over HTTP makes several requests and may open more than one
+  connection. The room's forwarder is a `ReverseProxy` whose `Transport.DialContext` dials a NEW `git` link connection
+  each time, and the hub serves each through a one-connection listener and an `http.Server` with `ReadHeaderTimeout`
+  and `IdleTimeout`. Without those, a link connection whose deadline was cleared after the hello (`protocol.go`,
+  `sayHello`) could sit open for ever.
+- **A capability, asked once at the handshake.** `hello` gains `Git bool` (like `Upgrades`) and `welcome` gains `Git
+  bool` (like `Caches`). The hub never asks a room that did not say `Git`, and a room never dials `git` to a hub that
+  did not say it. So nothing is found out by being refused, and nothing about it is stored.
 - **Hub to room: the data pool.** `Hub.Dial(room)` is already `http.Transport.DialContext` shaped, and the room's
   handler is already on the other end. Nothing new on the wire.
 - **Leaves dial out still holds.** Both paths ride connections the room dialled.
@@ -164,7 +188,8 @@ clones and worktrees keep working.
    - `absent`: no clone and `init` was false. Nothing was run
    - `behind`: the fetch worked and git refused a move (a worktree holds `claude/main`, or `hub-main` is checked out
      with changes). `sha` is what was fetched
-   - `failed`: nothing was fetched. Git missing or the wrong git, the hub refused the `git` kind, or the fetch failed
+   - `failed`: nothing was fetched. Git missing, the wrong git or older than 2.31, the hub did not say `Git`, or the
+     fetch failed
    `detail` is git's own words, first line.
 
 The last answer is also kept in memory on the room and served at `GET /v1/git/status`, which is what `room-git.ps1
@@ -180,7 +205,8 @@ init -Check` answered by ssh.
 
 ## 7. The room side: serving its branches, and the hub collecting them
 
-The room serves `/v1/git/<name>.git/` on its handler, upload-pack only, protocol v0, with
+The room serves `/v1/git/<name>.git/` on its handler, with the same environment-only configuration as section 4.4
+(upload-pack only, `http.getanyfile=false`, protocol v0), and
 `uploadpack.hideRefs=refs` then `uploadpack.hideRefs=!refs/heads/claude/` then `uploadpack.hideRefs=refs/heads/claude/main`.
 So it offers `claude/*` except `claude/main`, which came from the hub in the first place.
 
@@ -201,9 +227,16 @@ merged it is lost here but is still in the room's reflog, which is where it woul
 
 ## 8. What decision 17 asks of this
 
-- **Restart freely.** Stage 1 keeps no state outside git refs and the `git_repos` setting. A ref update is atomic, so
-  a hub killed mid-fetch leaves the old ref or the new one. A sync the hub was driving dies with it, and the room's
-  fetch fails and is retried at the reattach.
+- **Restart freely.** Stage 1 keeps no state outside git refs and the `git_repos` setting, which is a row in
+  `hub_setting`, so there is no migration. A ref update is atomic, so a hub killed mid-fetch leaves the old ref or the
+  new one. A sync the hub was driving dies with it, and the room's fetch fails and is retried at the reattach.
+- **Stale lock files are the real hazard.** A git killed mid-fetch leaves `*.lock` files (a ref lock,
+  `packed-refs.lock`), and every later git on that repository fails with "File exists". So: (a) on hub and room
+  shutdown, git children are cancelled and waited for inside the shutdown bound. (b) Before each sync or collect, a
+  `*.lock` file older than the ten-minute command bound is removed ONLY under refs that side owns: the bare
+  repository's refs and `refs/rooms/<room>` on the hub, `refs/remotes/<room>` in the checkout, and
+  `refs/remotes/hub`, `claude/main` and `hub-main` in a room's clone. A lock anywhere else is reported in git's words
+  and never cleaned.
 - **No mutation queue to lose.** Stage 1 has no queue. Stage 3's queue is rows in the hub store (section 11).
 - **Converges on reconnect.** Every attach syncs and collects.
 - **The hub down costs nobody a session.** A room without its hub keeps every clone, worktree and running card. It
@@ -211,8 +244,11 @@ merged it is lost here but is still in the room's reflog, which is where it woul
 
 ## 9. Compatibility and the rollout
 
-- An old room answers 404 on `/v1/git/sync`. The hub records "the room's build predates git sync" on the room's row
-  and does not ask again until it reattaches. An old hub refuses the `git` kind, and a new room says so once.
+- An old room does not say `Git` in its hello, so the hub never asks it, and the hub's git status for that room says
+  "this room's build predates git sync", computed from the attachment and never stored. An old hub does not say
+  `Git` in its welcome, so a new room never dials the kind, and its `GET /v1/git/status` says the hub predates it.
+- **Step 0, the hub.** The hub runs on sg4 and needs the new build first. That is a hub-only deploy, which @merge does
+  without asking. Then set `git_repos` for atrium and check the bare repository mirrors `claude/main`.
 - **sg3 first.** It needs a room build with stage 1 on it and one restart, which is clint's word through
   @orchestrator. Its clone already exists (`init` false), and is at 4815d47 by @runtime's hand push, so the proof is
   the NEXT `claude/main` reaching it with nobody pushing. After the restart: the attach syncs, `GET /v1/git/status`
@@ -262,15 +298,21 @@ tool takes a path, a url or a refspec, so no agent can point atrium's git at any
 ## 14. Tests
 
 - The hub serves upload-pack only: a push to the served url fails.
+- The dumb protocol is off: `GET <name>.git/objects/info/packs` and a loose object's path answer 403 or 404, on both
+  servers.
+- A chunked POST (client `-c http.postBuffer=1024`) goes through forwarder, link and cgi and the fetch completes.
+- No server setting is written into any repository's config.
+- A stale `*.lock` older than the bound under an owned ref is removed, and one elsewhere is reported and left.
+- A collect that moved nothing does not touch the checkout, and `FETCH_HEAD` in the checkout is never written.
+- A room that did not say `Git` is never asked, and a hub that did not say it is never dialled.
 - A hidden ref's sha fetched by id fails, over v0, with the client asking for v2.
 - A repo name not in `git_repos`, and names with `..`, `%2e%2e`, a drive letter or a backslash, are 404.
 - The forwarder refuses a request without its token and closes when the command exits.
 - Sync end to end against a real git in temp dirs: `absent`, `init`, ok, a re-signed (non fast-forward) `claude/main`,
   `behind` with `claude/main` checked out in a worktree, `behind` with a dirty `hub-main` checkout, `failed` against
-  an old hub's refusal.
+  a hub that did not say `Git`.
 - Collect: a new branch arrives, a deleted one is pruned, `claude/main` on the room is never collected.
 - A hub killed mid-fetch leaves every ref at its old or its new sha.
-- An old room's 404 and an old hub's refusal are each said once.
 
 ## 15. Open questions
 
