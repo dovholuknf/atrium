@@ -8,6 +8,7 @@ import (
 
 func TestMain(m *testing.M) {
 	settleWindow = 300 * time.Millisecond
+	shelveGrace = time.Second
 	// A test runner that ignores the first exit key would otherwise cost every
 	// test that stops one 600 ms per key on cleanup.
 	// The settle window is 2 s in production; a test runner that will survive
