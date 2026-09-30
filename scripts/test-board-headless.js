@@ -12614,15 +12614,22 @@ async function mCardSection(browser) {
       await mShot(p, "card-fallback-dark-" + vp.width);
       if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
       await ctx.close();
-      // when the two files of the other worker exist they are mounted and released
+      // compose.js and perms.js (u-025) are mounted on open and released on leave. The page loads the real ones,
+      // which would replace a stub set up front, so they are wrapped once they are there.
       const c2 = await browser.newContext({ viewport: vp, hasTouch: true, isMobile: true });
-      await c2.addInitScript(() => {
-        window.__mounts = [];
-        window.mCompose = { mount: (el, id) => window.__mounts.push("compose:" + id), unmount() { window.__mounts.push("compose-off"); } };
-        window.mPerms = { mount: (el, id) => window.__mounts.push("perms:" + id), unmount() { window.__mounts.push("perms-off"); } };
-      });
       const p2 = await c2.newPage();
       await p2.goto(st.url + "/m/", { waitUntil: "domcontentloaded" });
+      await p2.evaluate(() => {
+        window.__mounts = [];
+        for (const [name, tag] of [["mCompose", "compose"], ["mPerms", "perms"]]) {
+          const real = window[name];
+          if (!real) { window.__mounts.push(tag + "-missing"); continue; }
+          window[name] = Object.assign({}, real, {
+            mount: (el, id, o) => { window.__mounts.push(tag + ":" + id); return real.mount(el, id, o); },
+            unmount: () => { window.__mounts.push(tag + "-off"); return real.unmount(); }
+          });
+        }
+      });
       await p2.waitForSelector("#m-list .row", { timeout: slow(10000) });
       await p2.tap('#m-list .row[data-id="card-a"]');
       await p2.waitForSelector("#m-card.on", { timeout: slow(5000) });

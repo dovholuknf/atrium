@@ -269,8 +269,9 @@
     header { padding-top: env(safe-area-inset-top, 0px); }
     #hdr-toggle { display: inline-flex; min-width: 44px; min-height: 44px; }
     header .bar .conn { display: flex; }
-    /* The way to /m, the phone page. A quiet word in the slim row, thumb sized. */
-    header .bar > .mlink {
+    /* The way to /m, the phone page, thumb sized. Only in the opened header: the slim row is the tabs' (u-026),
+       and a word there clips them. */
+    body.hdr-open header .bar > .mlink {
       display: inline-flex; align-items: center; min-height: 44px; padding: 0 8px; order: 5;
       font-size: var(--fs-sm); color: var(--teal); text-decoration: none; white-space: nowrap;
     }
