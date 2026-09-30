@@ -21,6 +21,13 @@ function followHeldLine(list) {
     const a = t && t.supervised !== false && t.activity;
     if (a && a.held_peer && a.held_for === "line") { show = true; count = a.held_count; }
   }
+  // A phone draws no notice box: the envelope on the bell nudges and carries the count. See js/phone-bell.js.
+  if (typeof phoneToasts === "function" && phoneToasts()) {
+    if (!el.hidden) { el.hidden = true; el.innerHTML = ""; }
+    phoneHeld(show ? count : 0);
+    return;
+  }
+  if (typeof phoneHeld === "function") phoneHeld(0);
   if (!show) { if (!el.hidden) { el.hidden = true; el.innerHTML = ""; } return; }
   const html = heldLineText(count);
   if (el.innerHTML !== html) el.innerHTML = html;

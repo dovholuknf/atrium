@@ -141,6 +141,11 @@
     left: auto; top: auto; z-index: 200;
     margin: 0; padding: 0; border: none; background: none; overflow: visible;
     max-width: min(420px, 88vw); pointer-events: none;
+    /* A fixed box with a left of auto is as wide as the room between the viewport edge and its `right`, and over a
+       terminal `right` is measured from the pane, which on a phone can sit far from the viewport edge. That left a
+       column about 70px wide with one word per line. A floor on the width, and `placeToasts` keeps `right` low
+       enough for the floor to fit. */
+    min-width: min(240px, calc(100vw - 16px));
     display: flex; flex-direction: column-reverse; gap: var(--sp-3);
   }
   /* Over a terminal the stack hangs from the top, below the pane's bar and whatever floats over it, because the
