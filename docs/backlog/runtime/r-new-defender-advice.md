@@ -1,6 +1,6 @@
 # r-new-defender-advice: notice Defender eating a Windows room, and say the fix
 
-Status: parked (clint, 2026-09-30). Runtime detects, @ui shows it. Design review by @rnd before a build.
+Status: parked (clint, 2026-09-30). Runtime detects, @ui shows it. Designed by @rnd: `docs/rnd/defender-advice-design.md`.
 
 ## Why
 
