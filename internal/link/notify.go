@@ -148,7 +148,9 @@ type notifyCard struct {
 	Questions []string
 	// Report is `blocked` or `question` when the card is waiting because its
 	// session said so with atrium_report, and Ask is what it asked for. The
-	// notifier reads neither: a reported card notifies as input, as before.
+	// notifier reads neither field, and a reported card notifies as input. That
+	// includes one whose first turn has not ended, which said nothing before:
+	// a session that reported blocked is waiting on somebody.
 	Report, Ask string
 }
 
