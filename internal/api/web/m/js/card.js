@@ -112,7 +112,7 @@
     if (els.notices.dataset.sig !== not) { els.notices.innerHTML = not; els.notices.dataset.sig = not; }
     const ex = recapHTML(t) + questionsHTML(t);
     if (els.extras.dataset.sig !== ex) { els.extras.innerHTML = ex; els.extras.dataset.sig = ex; }
-    els.term.href = "/#term=" + encodeURIComponent(t.id);
+    els.term.href = pathFor(t, "") || "/#term=" + encodeURIComponent(t.id);
     if (full) paintReplies();
   }
 
@@ -181,7 +181,9 @@
     requestAnimationFrame(() => requestAnimationFrame(() => els.sheet.classList.add("on")));
     document.body.classList.add("sheet-open");
     if (!fromHistory) {
-      try { history.pushState({ mcard: id }, ""); } catch (e) {}
+      // The card's readable path goes in the bar, so a bookmark or a shared link opens it. A card with no name keeps the address.
+      const at = pathFor(window.mStore.card(id), "/m");
+      try { history.pushState({ mcard: id }, "", at || location.href); } catch (e) {}
     }
     offs = [window.mStore.on("cards", onCards), window.mStore.on("perms", () => paint(false))];
     loadReplies();
@@ -211,8 +213,123 @@
 
   function close() {
     if (!openId) return;
-    if (history.state && history.state.mcard) history.back(); // popstate does the closing
+    // Opened straight from its address, so there is no page of ours behind it to go back to.
+    if (history.state && history.state.direct) {
+      try { history.replaceState(null, "", "/m/"); } catch (e) {}
+      closeNow();
+    } else if (history.state && history.state.mcard) history.back(); // popstate does the closing
     else closeNow();
+  }
+
+  // ── the card's address ───────────────────────────────────────────────────
+  // `/m/alias/<alias>` and `/m/room/<room>/<name>` open a card, the phone's side of docs/rnd/card-urls-design.md. Names
+  // are compared the way the resolver does, without a leading `@` and in lower case. The lookup is one read per open.
+  const enc = encodeURIComponent;
+  const dec = s => { try { return decodeURIComponent(s); } catch (e) { return s; } };
+  const nameOf = s => String(s || "").replace(/^@/, "").toLowerCase();
+
+  function shapeOf(path) {
+    const p = String(path).replace(/\/$/, "").split("/");
+    if (p[0] !== "" || p[1] !== "m") return null;
+    if (p[2] === "alias" && p.length === 4 && p[3]) return { kind: "alias", alias: nameOf(dec(p[3])) };
+    if (p[2] === "room" && p.length === 5 && p[3] && p[4]) return { kind: "card", room: dec(p[3]), name: nameOf(dec(p[4])) };
+    return null;
+  }
+
+  // The path a card is linked by under `base` (`/m` for this page, empty for the board), or "" when it has no alias
+  // and no handle. `/alias/` unless another live card holds the alias, then the room's qualified form.
+  function pathFor(t, base) {
+    if (!t) return "";
+    const alias = nameOf(t.alias);
+    const wire = String(t.wire_name || "");
+    const handle = nameOf(wire.slice(wire.lastIndexOf("/") + 1));
+    const room = t.room || window.mNet.roomOf(t.id) || "";
+    const clash = alias && window.mStore.cards().some(o => window.mNet.bareId(o.id) !== window.mNet.bareId(t.id) &&
+      nameOf(o.alias) === alias && o.status !== "dead" && o.status !== "done");
+    if (alias && !clash) return base + "/alias/" + enc(alias);
+    const name = alias || handle;
+    if (room && name) return base + "/room/" + enc(room) + "/" + enc(name);
+    return alias ? base + "/alias/" + enc(alias) : "";
+  }
+
+  function keyOf(s) { return "atrium.cardurl." + (s.kind === "alias" ? "alias:" + s.alias : s.room + "/" + s.name); }
+  function lastOf(s) { try { return localStorage.getItem(keyOf(s)) || ""; } catch (e) { return ""; } }
+  function remember(s, id) { try { localStorage.setItem(keyOf(s), window.mNet.bareId(id)); } catch (e) {} }
+
+  // What the address says when it opens nothing: a sentence and the links that would work.
+  function say(title, rows, s) {
+    let box = q("m-cardurl");
+    if (!box) { box = document.createElement("div"); box.id = "m-cardurl"; document.body.appendChild(box); }
+    box.hidden = false;
+    box.innerHTML = "<h1>" + U.esc(title) + '</h1><p><a class="home" href="/m/">all cards</a></p><div class="cu-list">' +
+      rows.map(r => r.href ? '<a class="cu-row" href="' + U.esc(r.href) + '"' + (r.id ? ' data-id="' + U.esc(r.id) + '"' : "") + ">" + U.esc(r.text) + "</a>"
+        : '<span class="cu-row">' + U.esc(r.text) + "</span>").join("") + "</div>";
+    if (s) box.onclick = e => { const a = e.target.closest && e.target.closest("a[data-id]"); if (a) remember(s, a.dataset.id); };
+  }
+
+  // A card is opened once the store holds it, which is after its first read. The store is asked again on every change
+  // until then, and a store that has read and still lacks the card opens it to say so.
+  function whenHeld(id, fn) {
+    if (window.mStore.card(id) || window.mNet.loaded()) { fn(); return; }
+    const off = window.mStore.on("cards", () => {
+      if (window.mStore.card(id) || window.mNet.loaded()) { off(); fn(); }
+    });
+  }
+
+  function openNamed(t, s) {
+    remember(s, t.id);
+    whenHeld(t.id, () => {
+      try { history.replaceState({ mcard: t.id, direct: true }, ""); } catch (e) {}
+      open(t.id, true);
+    });
+  }
+
+  async function openFromPath() {
+    const s = shapeOf(location.pathname);
+    if (!s) return;
+    const who = s.kind === "alias" ? s.alias : s.name;
+    let t = null;
+    try {
+      t = await window.mNet.api("/v1/tasks/" + (s.kind === "alias" ? enc(s.alias) : enc(s.name) + "@" + enc(s.room)));
+    } catch (e) {
+      const b = e.body || {};
+      const base = s.kind === "alias" ? "" : " on room " + s.room;
+      if (e.status === 409) { await clash(s, b); return; }
+      if (e.status !== 404) { say("could not look that up", [{ text: e.message }]); return; }
+      if (s.kind === "card" && b.would_work === undefined && /no room called/.test(e.message)) {
+        say("room " + s.room + " is not attached to this hub", window.mNet.rooms().map(r => ({ text: r.name, href: "/m/room/" + enc(r.name) })));
+        return;
+      }
+      const one = window.mNet.rooms().length === 1 ? window.mNet.rooms()[0].name : "";
+      say("no card called " + who + base, (b.would_work || []).map(w => {
+        const m = /^(\S+?)(?:@(\S+))?(?: \(@(\S+)\))?$/.exec(w);
+        if (!m) return { text: w };
+        const room = m[2] || one;
+        return { text: w, href: m[3] ? "/m/alias/" + enc(m[3]) : room ? "/m/room/" + enc(room) + "/" + enc(m[1]) : "" };
+      }), null);
+      return;
+    }
+    openNamed(t, s);
+  }
+
+  // A name two rooms hold. The card opened last time wins when it is one of them. Otherwise a list, and picking one
+  // remembers it for this path.
+  async function clash(s, body) {
+    const cands = (body.candidates || []).map(c => { const m = /^(.*)@(\S+) \((.+)\)$/.exec(String(c)); return m ? { name: m[1], room: m[2], id: m[3] } : null; }).filter(Boolean);
+    const last = lastOf(s);
+    const mine = last && cands.find(c => window.mNet.bareId(c.id) === last);
+    if (mine) {
+      try { openNamed(await window.mNet.api("/v1/tasks/" + enc(mine.id)), s); return; } catch (e) {}
+    }
+    const rows = [];
+    for (const c of cands) {
+      let t = null;
+      try { t = await window.mNet.api("/v1/tasks/" + enc(c.id)); } catch (e) {}
+      rows.push({ text: c.room + "  " + c.name + (t ? "  " + (t.status === "done" ? "done" : (t.activity && t.activity.what) || t.status || "") : ""),
+        href: "/m/room/" + enc(c.room) + "/" + enc(c.name), id: c.id, done: !!t && t.status === "done", at: t && t.created_at || "" });
+    }
+    rows.sort((a, b) => (a.done - b.done) || String(b.at).localeCompare(String(a.at)));
+    say("@" + (s.alias || s.name) + " is on more than one room", rows, s);
   }
 
   // ── the keyboard ─────────────────────────────────────────────────────────
@@ -248,6 +365,7 @@
       try { history.replaceState(null, ""); } catch (e) {}
     }
     followViewport();
+    openFromPath();
   }
 
   window.mCard = { init, open, close, isOpen: () => !!openId, current: () => openId };
