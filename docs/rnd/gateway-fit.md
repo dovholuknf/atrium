@@ -1,8 +1,7 @@
 # mcp-gateway, llm-gateway and sterling: what atrium should take, lean on, or leave
 
-**Status: PARTIAL. Written 2026-09-30 by worker rd-001 under a wrap-up order.** Sections marked `NOT FINISHED:` say
-what they still need. Nothing was run from the projects read, and nothing in atrium was changed. `HANDOFF.rd-001.md`
-in the repo root says what was read and what is left, so a fresh session can finish without re-reading.
+**Status: done, 2026-09-30.** Written by worker rd-001 and finished by @rnd from its handoff. Nothing was run from
+the projects read, and nothing in atrium was changed.
 
 Read `docs/rnd/ai-platform-fit.md` and `docs/rnd/spike-mcp-gateway.md` first. This document does not redo them.
 
@@ -27,8 +26,18 @@ aggregator.** Three points carry it.
 3. **Running the gateway as another OS user is the right design for secret custody, with one hole to close now.**
    Verified: the agent account cannot even read the ACL of `C:\Users\clint`. But the gateway binary the other user
    runs, `D:\git\github\openziti\mcp-gateway\build.claude\mcp-gateway.exe`, grants `Authenticated Users` Modify, so
-   an agent can replace what runs as clint at the next gateway restart. Move the binary somewhere only clint can
-   write. That matters more than any idea below.
+   an agent can replace what runs as clint at the next gateway restart. The same holds for the other process clint
+   runs from `D:\`, `mercurius.exe` (below). Move both binaries somewhere only clint can write. That matters more
+   than any idea below, and it went to @orchestrator for clint's morning report the moment it was confirmed.
+4. **llm-gateway: lean on nothing and copy nothing.** Its only inbound surface is OpenAI chat completions
+   (`gateway/handler.go:21-23`). Claude Code speaks Anthropic's Messages API on a subscription, and codex speaks its
+   own, so no runner atrium supervises could route through it. Its custody idea is the same one mcp-gateway already
+   gives clint.
+5. **sterling: still the one integration worth building, and still not started.** The approval gate is still
+   terminal-only and still constructed in one place (`internal/harness/harness.go:303` at `origin/main`'s newest
+   line). What changed is that `Allow` now returns a `runrecord.Resolution`, so sterling has its own record of each
+   decision, which makes stage 5 of `ai-platform-fit.md` (one record, naming the artifact) easier. "mint" still does
+   not exist on this machine.
 
 Ideas worth taking are small and all sit inside existing atrium files. Ranked list follows.
 
@@ -36,9 +45,11 @@ Ideas worth taking are small and all sit inside existing atrium files. Ranked li
 
 ## What changed since 2026-09-15
 
-- **The three projects have not changed.** Last commits: mcp-gateway `cc45748` 2026-08-13, llm-gateway `5f06b36`
-  2026-08-12, sterling `e113dec` 2026-07-30. Every verdict in the two earlier documents that rests on their source
-  still holds.
+- **Two of the three projects have not changed.** Last commits: mcp-gateway `cc45748` 2026-08-13, llm-gateway
+  `5f06b36` 2026-08-12. **sterling has.** Its checkout here sits on the stale branch `learn-updates` (`e113dec`,
+  2026-07-30), while `origin/main` is at 2026-09-16 and `origin/digest-keyed-materialization-lifecycle` at `7a15882`,
+  2026-09-18, with 247 files changed against the checkout. The approval seam was re-read at `7a15882` (sterling
+  section below). Anyone reading sterling on this machine should read `origin/main`, not the working tree.
 - **Atrium changed a lot** (roughly 80 commits since 09-15). What matters here: the control MCP moved to the hub
   and is per request and stateless (already true on 09-15, `control_mcp.go:21-45`), lean workers exist
   (`lean.go`), and the Go permission gate `atrium hook --event permission` shipped (`internal/cli/hook_permission.go`).
@@ -98,8 +109,14 @@ judgment call, and the identity header is spoofable, so this is tidiness not a b
 `CLAUDE_CODE_*`, `CLAUDECODE*`, four `ATRIUM_*` names and `ATRIUM_DEBUG_*` (`internal/daemon/launch.go:1462-1485`,
 `:1583-1598`).
 
-**Where.** `childEnvFrom` in `launch.go` and a harness column. **Not finished:** I did not establish what the
-daemon's environment holds on this machine, which decides whether this is a fix or a nicety.
+**Where.** `childEnvFrom` in `launch.go` and a harness column.
+
+**Read, names only, from a supervised session on sg4.** Every runner inherits `CLAUDE_GH_TOKEN` and `BB_TOKEN` from
+the environment the daemon was started in. So a lean worker writing a docs change holds a GitHub token and a
+Bitbucket token it never needs. This makes the idea a real control rather than a nicety: a per-harness allowlist
+(the `env_policy: closed` shape), or at least a per-harness deny list the operator writes, so a worker row can drop
+the tokens while @review's row keeps `CLAUDE_GH_TOKEN` for `gh`. **Inferred:** which of these are deliberate is
+clint's to say. Nothing here says either token has been misused.
 
 ### 5. Do not give every lean worker the whole gateway (finding, not an idea taken)
 
@@ -122,9 +139,12 @@ spike's "the listener is the identity"), or per-backend `tools: allow` lists in 
 - **Session idle reaping** (CHANGELOG `Unreleased`). Answers a leak atrium's stateless design does not have.
 - **Wedge watchdog** (`docs/future/gateway-wedge-resilience.md`). Concerns the zrok listener. Atrium's halt is a
   different and already documented posture.
-- **Managed mode** (`CLAUDE.md` in mcp-gateway, an orchestrator creates the share and heartbeats over gRPC).
-  NOT FINISHED: I did not read `ipc/gatewayGrpc/gateway.proto` or `gateway/ipc` to see whether atrium could be that
-  orchestrator. Per the spike, supervising the gateway outside a room is a bad trade, so expect no.
+- **Managed mode** (`CLAUDE.md` in mcp-gateway, an orchestrator creates the share and heartbeats over gRPC). Read:
+  `ipc/gatewayGrpc/gateway.proto:5-70` is lifecycle only. The gateway registers with a share token and a pid,
+  heartbeats with `active_connections` and `tool_invocations`, reports a state, and answers ping and shutdown.
+  Atrium could be that orchestrator, and would gain a health line on the board and a shutdown button over clint's
+  process. The button is the wrong way round: it puts a kill switch over the credential holder into a service every
+  agent can reach on loopback. A new gRPC surface for a health line is not worth it either. Left, as the spike said.
 - **The `/permission` seam at the gateway.** Settled by the two earlier documents and unchanged.
 
 ---
@@ -150,8 +170,15 @@ What that does not do, and the earlier spike already said most of it:
   relies on (`docs/runtime/reload-design.md`). **Inferred, not tried:** an agent renames the exe aside, drops its own
   at the same path, and the next start of the gateway runs it as clint with clint's config and tokens. The same
   question applies to every command named under `backends:` in the config, which I could not read.
-- **Fix.** Install the gateway and every stdio backend binary somewhere clint alone can write, and run from there.
-  `build.claude` is a build output directory and was never meant to be a run location for another user.
+- **Also verified: it is not the only one.** Of the processes running from `D:\`, two run as clint: this gateway and
+  `D:\worktrees\github\michaelquigley\mercurius\http-support\build\mercurius.exe` (the reviewer behind every Mercurius
+  round). Its exe and folder carry the same inherited `Authenticated Users:(M)`. clint's scheduled tasks all run from
+  `C:\Program Files`, which is fine. His Startup folder and `HKCU` Run keys cannot be read from the agent account, so
+  anything started that way is unchecked.
+- **Fix.** Install the gateway, mercurius and every stdio backend binary somewhere clint alone can write, and run
+  from there. `build.claude` and `build` are build output directories and were never meant to be run locations for
+  another user. The source trees under `D:\git` are agent-writable too, so a copy should be built from a commit clint
+  has looked at.
 
 Should atrium hold any of this? No, and this document adds nothing to the refusal in `spike-mcp-gateway.md`.
 
@@ -159,8 +186,8 @@ Should atrium hold any of this? No, and this document adds nothing to the refusa
 
 ## llm-gateway
 
-**NOT FINISHED.** Read: `README.md` lines 1-260, `CHANGELOG.md` whole. Not read: `docs/current`, `docs/future/roadmap/*`,
-`keys/`, `gateway/handler.go`, the Sterling capability alias code.
+Read: `README.md` lines 1-260, `CHANGELOG.md` whole, `gateway/handler.go` routes, `providers/anthropic.go`, and the
+state line of every roadmap item under `docs/future/roadmap/`.
 
 What is known:
 
@@ -172,29 +199,51 @@ What is known:
 - `CHANGELOG.md:31` says a credential-firewall deployment was a design target: the gateway holds provider keys and
   clients hold only a virtual key. That is the same custody idea as the other user's mcp-gateway.
 
-Tentative answer, unchanged from 09-15: **no fit.** Claude Code does not speak OpenAI format to a base URL, so
-atrium's runners would not route through it, and a harness row can already carry a base URL in its env. The custody
-question has the same answer as above and needs no atrium code.
+- **Read: the only inbound API is OpenAI's.** The mux serves `GET /v1/models`, `POST /v1/chat/completions` and
+  `GET /health` (`gateway/handler.go:21-23`), and everything else is 404 (`:31`). Anthropic is an OUTBOUND provider
+  only: `providers/anthropic.go:160` and `:200` POST to `/v1/messages` with an API key (`NewAnthropic(apiKey, ...)`,
+  `:128`). So a request through it is billed per token on a key, never on a Claude subscription.
+- **Read: the roadmap has not moved.** `per-key-metrics.md` is still `researching`, `gateway-side-spend-limits.md`
+  and `per-key-rate-limiting.md` are `horizon`, and `key-storage.md` is `researching`. The spend-limit item says
+  it depends on per-key metrics, which still does not exist.
 
-Still needed: read the roadmap items `gateway-side-spend-limits.md` and `per-key-metrics.md` to see whether the
-state recorded on 09-15 moved, and check whether a codex or ollama harness row would gain anything from a virtual key
-per card.
+**Answer: no fit, now settled rather than tentative.** Claude Code speaks Anthropic's Messages API on a
+subscription, and llm-gateway neither accepts that inbound nor could carry a subscription outbound. codex speaks its
+own Responses shape, not chat completions. An ollama row could be pointed at it through an env variable in its
+harness row, which works today with no code. A virtual key per card would give per-card spend only once
+`per-key-metrics` ships, and atrium already reads spend from the transcript for Claude cards (the usage tab).
+
+**Lean on it or copy it?** Neither. Its custody idea, the gateway holds the provider key and a client holds a
+virtual one (`CHANGELOG.md:31`), is sound and is the same idea as clint's mcp-gateway. Atrium has no provider keys to
+protect, because its runners sign in themselves. If one day an API-key runner is added (a codex row on an API key, a
+local agent on a paid model), llm-gateway running as clint is the right place for that key, and the harness row
+carries only the virtual key and the base URL. That is configuration, not atrium code.
 
 ---
 
 ## sterling
 
-**NOT FINISHED.** Nothing in sterling was re-read. The 09-15 finding stands until someone checks it: the only real
-fit is sterling's terminal-only approval gate calling atrium's `/permission`
-(`docs/rnd/ai-platform-fit.md` section 1), with the fail-closed inversion written down.
+**Read, at `7a15882` (2026-09-18, the newest ref):**
 
-Still needed:
+- The approval gate is unchanged in shape. `newApprovalGate(attended, autoApprove, input, output)` is still built in
+  one place (`internal/harness/harness.go:303`), still reads `y/N` from a terminal (`approvalGate.go`, `ReadString`),
+  and still fails closed when unattended unless `--auto-approve` converts prompts (signed denies stay denied).
+- New: `Allow` returns a `runrecord.Resolution` with the error (`approvalGate.go:37`), so each decision lands in
+  sterling's own run record. The branch `origin/run-record` (2026-09-02) is where that came from.
+- Still no `Approver` interface and no injection seam for the gate, though `harness.Options` has them for the tool
+  and model clients. A search of the whole tree for `atrium` or `Approver` finds nothing.
+- The newest work (`per-run-runtime-inputs`, `digest-keyed-materialization-lifecycle`, and `internal/recipe/validate.go`
+  growing by 428 lines) is about recipes and materialisation, not about approvals.
 
-1. `git log` in `D:/git/github/netfoundry/sterling` since 2026-07-30 (the log I ran shows the newest commit is
-   `e113dec` 2026-07-30, so nothing new, but the working tree and branches were not inspected).
-2. Search this machine for a project called mint: a Glob for directories and repos named `mint*` under `D:/git`,
-   `D:/worktrees` and the home directories. The 09-15 document found none. I did not repeat the search.
-3. Read the roadmap directory, `docs/future/`, for anything about approvals or an external approver.
+**Verdict: the 09-15 recommendation stands, and is slightly easier now.** The one integration worth building is
+still sterling's `prompt` disposition asking atrium's `/permission`, failing closed when atrium is unreachable, and
+with standing rules and auto mode unable to answer a signed prompt (stages 1 to 5 of `ai-platform-fit.md` section 1).
+Stage 5 (one record naming the artifact) now has a sterling-side record to reconcile with. Nothing new in sterling
+asks for atrium, and nobody has built the seam. It is still a proposal to sterling's maintainer, not a change atrium
+can make alone.
+
+**mint:** a search for directories named `mint*` to depth 3 under `D:/git`, `D:/worktrees` and `C:/Users/claude`
+finds nothing, and sterling's tree does not use it as a name. Nothing to assess.
 
 ---
 
@@ -207,5 +256,8 @@ Still needed:
 - **That the binary swap works.** The ACL is read. The rename-aside and replace is inferred and was not tried.
 - **What `permSummary` produces for MCP input in practice.** Read from source only.
 - **How the settings importer meets a lean worker's filtered settings.** Not traced.
-- **llm-gateway and sterling beyond what is listed above.**
+- **clint's Startup folder and HKCU Run keys**, for other things he runs from `D:\`. Unreadable from this account.
+- **Whether `CLAUDE_GH_TOKEN` and `BB_TOKEN` reaching every runner is deliberate.** Names only were read, never
+  values.
+- **sterling's intent.** Whether its maintainer wants an external approver is still unasked.
 - **Anything by execution.** No request was sent to 8088, 7777 or 7778.
