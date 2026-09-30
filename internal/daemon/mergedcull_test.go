@@ -334,3 +334,18 @@ func TestAProvedCullShowsBothShasAtTheSameLengthWhenMoved(t *testing.T) {
 		t.Fatalf("err = %v, want new commits with a 10-character sha on both sides", err)
 	}
 }
+
+func TestAProvedCullRefusesATipThatIsNotAHexSha(t *testing.T) {
+	d := testDaemon(t)
+	r := newCullRepo(t, false)
+	task := cullCard(t, d, r.wt, OriginAgentTag, SubagentTag)
+	for _, tip := range []string{"HEAD", "claude/r-026", "-x", "abc12"} {
+		_, err := d.CullProved(task.ID, DefaultCullInto, tip)
+		if err == nil || !strings.Contains(err.Error(), "is not a sha") {
+			t.Fatalf("tip %q: err = %v, want a refusal saying it is not a sha", tip, err)
+		}
+	}
+	if _, err := os.Stat(r.wt); err != nil {
+		t.Errorf("the worktree was touched: %v", err)
+	}
+}
