@@ -641,6 +641,10 @@ func (d *Daemon) closeDB() error {
 	return err
 }
 
+// runnerFound is api.RunnerFound, a variable so tests can skip a PATH walk
+// that costs a stat per entry per runner on every daemon they start.
+var runnerFound = api.RunnerFound
+
 // reportRunners says which configured runners this machine actually has.
 //
 // Printed at startup because PATH is read when the process starts. Installing
@@ -665,7 +669,7 @@ func (d *Daemon) reportRunners() {
 		if h.Enabled {
 			state = "on "
 		}
-		if p := api.RunnerFound(h); p != "" {
+		if p := runnerFound(h); p != "" {
 			log.Printf("[atrium]   %-*s  %s  %s", width, h.ID, state, p)
 			continue
 		}

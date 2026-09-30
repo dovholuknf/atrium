@@ -22,7 +22,7 @@ import (
 //
 // Shorter than shutdown's ten seconds, because shutdown is stopping everything
 // at once and this is one card the operator is putting down while watching.
-const shelveGrace = 5 * time.Second
+var shelveGrace = 5 * time.Second
 
 // StopRunner asks a runner to exit the way its harness says to, without
 // shelving the card.
