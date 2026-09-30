@@ -4749,6 +4749,117 @@ async function linkTipSection(browser, base) {
   }
 }
 
+// ── "messages waiting, clear the line" (u-018) ────────────────────────────
+// The notice shows only while the operator's own line holds queued peer messages, is driven by the card list
+// (no timer, no request), and never takes focus or moves the grid.
+async function heldLineSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  landList = [LAND["land-live"]];
+  landPerms = [];
+  const errors = [];
+  const fakeSock = () => {
+    const Real = window.WebSocket;
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
+        onopen: null, onclose: null, onmessage: null, onerror: null, send() {}, close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  };
+  const open = async (ctx) => {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await p.evaluate(() => attachTask("land-live"));
+    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live",
+      null, { timeout: slow(10000) });
+    await p.waitForTimeout(300);
+    return p;
+  };
+  const setAct = async (p, a) => {
+    // What a whole-row task event does: the map takes the row, the terminals view repaints from it.
+    await p.evaluate(async (a) => {
+      const row = Object.assign({}, cardList().find(x => x.id === "land-live"));
+      if (a) row.activity = a; else delete row.activity;
+      upsertCard(row);
+      await renderTermList();
+    }, a);
+  };
+  const state = (p) => p.evaluate(() => {
+    const el = document.getElementById("t-heldline");
+    const r = el.getBoundingClientRect();
+    return { hidden: el.hidden, text: el.textContent, rect: { t: r.top, b: r.bottom, l: r.left, r: r.right },
+      active: document.activeElement && (document.activeElement.id || document.activeElement.tagName) };
+  });
+  try {
+    for (const phone of [false, true]) {
+      const tag = "heldLine" + (phone ? " (phone)" : "") + ": ";
+      const ctx = await browser.newContext(phone
+        ? { viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true }
+        : { viewport: { width: 1280, height: 800 } });
+      await ctx.addInitScript((ph) => {
+        localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true }));
+        if (ph) localStorage.setItem("atrium.termphone", "1");
+      }, phone);
+      await ctx.addInitScript(fakeSock);
+      const p = await open(ctx);
+      await setAct(p, null);
+      let s = await state(p);
+      if (!s.hidden) fail(tag + "shown with no activity");
+      const before = s.active;
+      const grid = () => p.evaluate(() => ({ c: term.cols, r: term.rows }));
+      const g0 = await grid();
+      await setAct(p, { held_peer: true, held_for: "line", held_count: 2 });
+      s = await state(p);
+      if (s.hidden || !/2 messages waiting, clear the line/.test(s.text)) fail(tag + "not shown for a line hold: " + JSON.stringify(s));
+      if (s.active !== before) fail(tag + "appearing moved focus: " + before + " -> " + s.active);
+      const g1 = await grid();
+      if (g0.c !== g1.c || g0.r !== g1.r) fail(tag + "the grid changed");
+      await setAct(p, { held_peer: true, held_for: "line", held_count: 1 });
+      s = await state(p);
+      if (!/1 message waiting/.test(s.text)) fail(tag + "singular wording: " + s.text);
+      // clear of a follow chip parked bottom right, and above the phone key bar
+      const ov = await p.evaluate(() => {
+        const pane = document.getElementById("term-pane");
+        const f = document.createElement("div");
+        f.id = "t-follow"; f.textContent = "follow";
+        f.style.cssText = "position:absolute;right:14px;bottom:60px;padding:4px 10px;z-index:5";
+        pane.appendChild(f);
+        const a = document.getElementById("t-heldline").getBoundingClientRect(), b = f.getBoundingClientRect();
+        const keys = document.getElementById("t-keys").getBoundingClientRect();
+        const kv = getComputedStyle(document.getElementById("t-keys")).display !== "none";
+        f.remove();
+        return { overlap: !(a.right <= b.left || a.left >= b.right || a.bottom <= b.top || a.top >= b.bottom),
+          aboveKeys: !kv || a.bottom <= keys.top, keysShown: kv };
+      });
+      if (ov.overlap) fail(tag + "overlaps the follow chip");
+      if (!ov.aboveKeys) fail(tag + "not above the key bar");
+      if (phone && !ov.keysShown) fail(tag + "key bar not showing");
+      await setAct(p, null);
+      s = await state(p);
+      if (!s.hidden) fail(tag + "still shown after delivery");
+      await setAct(p, { held_peer: true, held_for: "turn", held_count: 3 });
+      s = await state(p);
+      if (!s.hidden) fail(tag + "shown for a turn hold");
+      await setAct(p, { held_peer: true, held_for: "dialog", held_count: 3 });
+      s = await state(p);
+      if (!s.hidden) fail(tag + "shown for a dialog hold");
+      await setAct(p, { held_for: "line", held_count: 3 });
+      s = await state(p);
+      if (!s.hidden) fail(tag + "shown with no held_peer");
+      await ctx.close();
+    }
+    if (errors.length) fail("heldLine threw: " + errors.join(" | "));
+  } finally {
+    tasksMode = was;
+  }
+}
+
 // ── a phone view never resizes the pty (t-003b) ───────────────────────────
 // A touch-first device attaches without ever sending a resize, draws the pty's
 // exact grid, zooms by font size, and has a key bar. A desktop is unchanged.
@@ -8474,7 +8585,7 @@ async function main() {
       history: historySection, contextSize: contextSizeSection, peekEverywhere: peekEverywhereSection, cardRoute: cardRouteSection,
       quietDoer: quietDoerSection, looksIdle: looksIdleSection, notifyOff: notifyOffSection,
       questionsClick: questionsClickSection, walk: walkSection, linkReuse: linkReuseSection,
-      usageCacheReads: usageCacheReadsSection, roomsDash: roomsDashSection, phoneView: phoneViewSection, u016: u016Section, phoneFocus: phoneFocusSection, phonePan: phonePanSection, usagePolish: usagePolishSection, usageLimits: usageLimitsSection, usageGroups: usageGroupsSection,
+      usageCacheReads: usageCacheReadsSection, roomsDash: roomsDashSection, phoneView: phoneViewSection, heldLine: heldLineSection, u016: u016Section, phoneFocus: phoneFocusSection, phonePan: phonePanSection, usagePolish: usagePolishSection, usageLimits: usageLimitsSection, usageGroups: usageGroupsSection,
       eventDriven: eventDrivenSection, idleBudget: idleBudgetSection, pollsGone: pollsGoneSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
@@ -10405,6 +10516,7 @@ async function main() {
     await usageCacheReadsSection(browser, base);
     await roomsDashSection(browser, base);
     await phoneViewSection(browser, base);
+    await heldLineSection(browser, base);
     await u016Section(browser, base);
     await phoneFocusSection(browser, base);
     await phonePanSection(browser, base);
