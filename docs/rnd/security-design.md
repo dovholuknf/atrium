@@ -273,8 +273,8 @@ Android Chrome subscribes from any secure page. An iPhone needs the page install
 later), and `/m` already ships the manifest for that.
 
 The hub notify trigger already expects "Web Push ... as a second one behind the same trigger"
-(`internal/link/notify.go`). The push sink is that sink, so the growler's phone reminders reach the phone with the same backoff and the same "no
-desktop tab visible" rule.
+(`internal/link/notify.go`). The push sink is that sink, so the growler's phone reminders reach the phone with the
+same backoff and the same "no desktop tab visible" rule.
 
 - The hub makes a VAPID key pair once (RFC 8292). It is atrium's own key, so the credential rule holds, and it is on
   the never-exported list.
@@ -321,8 +321,8 @@ in the day's questions-for-later list.
 2. **The fixed chain step (section 8).** It adds a step between "a shelved card" and "a standing rule", with no switch
    on the board. The chain's order is documented as critical. Default: on, in that place.
 3. **What a card may pass to launch.** The default refuses `env` and takes `args` only from the harness's own list,
-   which closes `--dangerously-skip-permissions` from a card. If a director needs a model or an effort level, those two go on
-   the list. Does anything of his launch with other arguments from inside a card?
+   which closes `--dangerously-skip-permissions` from a card. If a director needs a model or an effort level, those
+   two go on the list. Does anything of his launch with other arguments from inside a card?
 4. **Web Push through Google and Apple.** Four encrypted fields cross the phone vendor's push service. Acceptable, as
    the parked ntfy route would cross ntfy's server?
 5. **`restart_atrium` from a card.** The control MCP's restart tool exists for agents, so `POST /_hub/restart` stays
