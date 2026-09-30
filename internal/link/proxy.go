@@ -1057,6 +1057,7 @@ type ShareAuth struct {
 // permission chain is then whatever each room's own gate does, exactly as
 // before. See autoapprove.go.
 func (p *Proxy) SetInventory(s Inventory) {
+	p.hub.every.setHolding(s)
 	p.mu.Lock()
 	p.stock = s
 	if p.approver == nil {
@@ -1241,6 +1242,7 @@ func (p *Proxy) forgetInventory(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, `{"error":%q}`, err.Error())
 		return
 	}
+	p.hub.every.drop(body.Name)
 	p.feeds.roomsChanged()
 	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
 }

@@ -2,6 +2,7 @@ package link
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"sort"
@@ -52,6 +53,9 @@ type everywhere struct {
 	byRoom map[string][]everyCard
 	// names keeps each room's spelling, since the map is keyed folded.
 	names map[string]string
+	// live is the rooms the hub still holds a record of, folded. Nil means all
+	// of them. See `holding`.
+	live func() map[string]bool
 }
 
 func newEverywhere() *everywhere {
@@ -120,12 +124,24 @@ func (e *everywhere) replace(room string, cards []CardState) bool {
 }
 
 // all is every indexed card except those on `besides`, in room then id order.
+//
+// A ROOM THE HUB NO LONGER HOLDS IS LEFT OUT. Removing or forcing a room out
+// cascades its cached cards away, and that can be done by the rooms CLI in
+// another process, which this one cannot be told about. So the index is checked
+// against what the store still holds, and a failed check leaves it as it is.
 func (e *everywhere) all(besides string) []everyCard {
+	e.mu.Lock()
+	live := e.live
+	e.mu.Unlock()
+	var held map[string]bool
+	if live != nil {
+		held = live()
+	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	var out []everyCard
 	for key, cards := range e.byRoom {
-		if key == keyOf(besides) {
+		if key == keyOf(besides) || (held != nil && !held[key]) {
 			continue
 		}
 		out = append(out, cards...)
@@ -137,6 +153,17 @@ func (e *everywhere) all(besides string) []everyCard {
 		return out[i].ID < out[j].ID
 	})
 	return out
+}
+
+// drop forgets one room's cards, for a room whose record has just gone.
+func (e *everywhere) drop(room string) bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	key := keyOf(room)
+	_, had := e.byRoom[key]
+	delete(e.byRoom, key)
+	delete(e.names, key)
+	return had
 }
 
 // find is the cards on other rooms that answer to `who`: a handle, or an alias,
@@ -206,5 +233,70 @@ func (h *Hub) lookupEverywhere(besides, who string) (card everyCard, code int, e
 		}
 		return everyCard{}, http.StatusConflict, fmt.Errorf("%q names a card on more than one room: %s. "+
 			"say which, as name@room", strings.TrimPrefix(strings.TrimSpace(who), "@"), strings.Join(list, ", "))
+	}
+}
+
+// sendName is what a say is addressed with on the card's own room.
+func (c everyCard) sendName() string {
+	if c.Wire != "" {
+		return c.Wire
+	}
+	return c.Alias
+}
+
+// everywhereFallthrough is what a tool that may reach another room does when a
+// bare name missed on the caller's own room, `miss` being that miss. One match
+// comes back. Two or more is the 409 sentence. None is the miss itself with
+// the everywhere cards added, as `handle@room`, so the caller sees them too.
+//
+// A miss that is the room not answering is not a miss, and a caller with no room
+// reads the aggregate list, where every room is already looked at.
+func (c *controlMCP) everywhereFallthrough(room, who string, miss error) (everyCard, error) {
+	var be *boardError
+	if room == "" || c.hub == nil || errors.As(miss, &be) {
+		return everyCard{}, miss
+	}
+	card, code, err := c.hub.lookupEverywhere(room, who)
+	switch code {
+	case 0:
+		return card, nil
+	case http.StatusConflict:
+		return everyCard{}, err
+	}
+	var list []string
+	for _, e := range c.hub.every.all(room) {
+		list = append(list, e.spelled())
+	}
+	if len(list) == 0 {
+		return everyCard{}, miss
+	}
+	return everyCard{}, fmt.Errorf("%s. on other rooms: %s", miss.Error(), strings.Join(list, ", "))
+}
+
+// asPeer is the card as a row of atrium_peers.
+func (c everyCard) asPeer() peer {
+	return peer{Handle: c.sendName() + "@" + c.Room, Card: tagFor(c.Room, c.ID), Room: c.Room,
+		Status: c.Status, Everywhere: true}
+}
+
+// setHolding ties the index to the store: a room counts only while the store
+// still holds cards for it. Nil stops checking.
+func (e *everywhere) setHolding(s Inventory) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if s == nil {
+		e.live = nil
+		return
+	}
+	e.live = func() map[string]bool {
+		names, err := s.Holding()
+		if err != nil {
+			return nil
+		}
+		held := make(map[string]bool, len(names))
+		for _, n := range names {
+			held[keyOf(n)] = true
+		}
+		return held
 	}
 }
