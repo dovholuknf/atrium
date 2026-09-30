@@ -233,6 +233,29 @@ reminder is the growler's. Before two minutes the nag's first toast at one minut
 **Keyed toasts step aside.** A toast whose key names a subject that has an open growler is not drawn. It is still
 logged. Otherwise the growler and a toast would say the same thing in two boxes.
 
+### A popped-out card
+
+Added 2026-09-30 after u-popout-notify (1a1f9362), which gave a pop-out its own switch and mute, kept per card in
+`localStorage` (`atrium.notify.off.card:<id>`, `atrium.sound.card:<id>`). Those are about the interruption in one
+window of one browser. The growler's state is on the hub. They do not conflict, and three rules keep it that way:
+
+1. **Drawing: the board draws every growler, a pop-out draws only its own card's.** A growler is state, like the
+   card's badges and counts, which the board keeps for a popped-out card (the header of `js/notify.js`). So the board's
+   stack includes growlers for popped-out cards, and the pop-out's stack holds only the growlers for the card it shows.
+   Neither switch hides a growler anywhere (u-popout-notify, point 4).
+2. **Ringing: a popped-out card's reminders belong to its pop-out**, the same one-owner rule `notify` keeps for its
+   alerts. The pop-out plays the tone and raises the desktop notification, so its switch and mute hold them back, as
+   the master switch does on the board. The board does not ring them in its place. Where the pop-out's switch or mute
+   is on, the board's growler for that card says so on its face ("muted in its window"), so a reminder held back is
+   visible rather than simply absent. The pop-out writes nothing new for this: the board reads the two per-card keys
+   in the same `localStorage`.
+3. **The phone is not a window.** The hub's phone reminders (section 6) never see a browser's switches, so a pop-out
+   switched off does not stop them. Dismiss and snooze are the controls that quiet a growler everywhere, because they
+   are on the hub.
+
+The title and favicon (section 7) are per window: a pop-out's own title alternates for its card's growler unless its
+switch is off.
+
 ## 8. The toast, the toast log, the modal: one model, recommended
 
 **Recommended: one alert model, three levels of persistence, the modal outside it.**
