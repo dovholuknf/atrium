@@ -111,8 +111,10 @@ func toolNames(t *testing.T, s *mcp.ClientSession) []string {
 
 var workerSix = []string{"atrium_alias", "atrium_peers", "atrium_report", "atrium_say", "atrium_status", "atrium_task"}
 
-var fullEleven = []string{"atrium_alias", "atrium_cull", "atrium_exit", "atrium_launch", "atrium_peers",
-	"atrium_report", "atrium_say", "atrium_status", "atrium_task", "atrium_wake_after_restart", "restart_atrium"}
+// fullThirteen is f-021's eleven plus f-019's two git tools, which are full-only.
+var fullThirteen = []string{"atrium_alias", "atrium_cull", "atrium_exit", "atrium_git_collect", "atrium_git_sync",
+	"atrium_launch", "atrium_peers", "atrium_report", "atrium_say", "atrium_status", "atrium_task",
+	"atrium_wake_after_restart", "restart_atrium"}
 
 func sameNames(t *testing.T, who string, got, want []string) {
 	t.Helper()
@@ -143,20 +145,20 @@ func TestWorkerSeesSixToolsAndCullIsUnknown(t *testing.T) {
 func TestDirectorUntaggedAndBothGetEveryTool(t *testing.T) {
 	h := newClassHarness(t, classTasks)
 	for _, who := range []string{"boss", "human", "both"} {
-		sameNames(t, who, toolNames(t, h.connect(t, who, "alpha")), fullEleven)
+		sameNames(t, who, toolNames(t, h.connect(t, who, "alpha")), fullThirteen)
 	}
 }
 
 func TestUnknownAgentAndNoHeaderGetEveryTool(t *testing.T) {
 	h := newClassHarness(t, classTasks)
-	sameNames(t, "unknown agent", toolNames(t, h.connect(t, "nobody", "alpha")), fullEleven)
-	sameNames(t, "no header", toolNames(t, h.connect(t, "", "")), fullEleven)
+	sameNames(t, "unknown agent", toolNames(t, h.connect(t, "nobody", "alpha")), fullThirteen)
+	sameNames(t, "no header", toolNames(t, h.connect(t, "", "")), fullThirteen)
 }
 
 func TestFailedLookupFailsOpenToEveryTool(t *testing.T) {
 	h := newClassHarness(t, classTasks)
 	h.board.Close()
-	sameNames(t, "board down", toolNames(t, h.connect(t, "worker1", "alpha")), fullEleven)
+	sameNames(t, "board down", toolNames(t, h.connect(t, "worker1", "alpha")), fullThirteen)
 }
 
 // A found answer is remembered for a minute and looked up again after that.

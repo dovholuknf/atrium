@@ -148,11 +148,12 @@ const gitCollectToolDesc = "Ask the hub to fetch a room's claude/* branches now,
 	"Call it when a worker has just finished and you do not want to wait. Branches the room deleted " +
 	"are pruned, and claude/main on a room is never collected. Nothing under refs/heads is written."
 
-// registerGit adds the two tools to the control server.
-func (c *controlMCP) registerGit(s *mcp.Server) {
-	mcp.AddTool(s, &mcp.Tool{Name: "atrium_git_sync", Description: gitSyncToolDesc},
+// registerGit adds the two tools to the control server being built. Through
+// `addTool`, so they land on the full server only: neither is in `workerTools`.
+func (c *controlMCP) registerGit(s *mcp.Server, class ctlClass) {
+	addTool(s, class, &mcp.Tool{Name: "atrium_git_sync", Description: gitSyncToolDesc},
 		audited(c, "ctl-git-sync", describeGitSync, c.gitSyncHandler))
-	mcp.AddTool(s, &mcp.Tool{Name: "atrium_git_collect", Description: gitCollectToolDesc},
+	addTool(s, class, &mcp.Tool{Name: "atrium_git_collect", Description: gitCollectToolDesc},
 		audited(c, "ctl-git-collect", describeGitCollect, c.gitCollectHandler))
 }
 
