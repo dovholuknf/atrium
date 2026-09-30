@@ -1,0 +1,16 @@
+{
+  "name": "atrium",
+  "short_name": "atrium",
+  "description": "The sessions that need you, on your phone.",
+  "start_url": "/m/",
+  "scope": "/m/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "theme_color": "#0B1B2E",
+  "background_color": "#0B1B2E",
+  "icons": [
+    { "src": "/m/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/m/icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/m/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

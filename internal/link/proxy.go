@@ -9,6 +9,7 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"mime"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -506,6 +507,12 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if p.eventsFor(w, r) {
 		return
 	}
+	// The phone page lives in a directory of the board. Without the slash it is sent to the slash, the way the
+	// room's own file server does, so a typed /m lands on it.
+	if r.URL.Path == "/m" && p.board != nil {
+		http.Redirect(w, r, "/m/", http.StatusMovedPermanently)
+		return
+	}
 	if name, ok := p.asset(r.URL.Path); ok {
 		p.serveAsset(w, r, name)
 		return
@@ -637,6 +644,9 @@ func (p *Proxy) readWait() time.Duration {
 	return roomReadWait
 }
 
+// The same type the room's file server gives the phone page's manifest. See webHandler in internal/api/web.go.
+func init() { _ = mime.AddExtensionType(".webmanifest", "application/manifest+json") }
+
 // asset decides whether the hub has this file.
 func (p *Proxy) asset(urlPath string) (string, bool) {
 	if p.board == nil {
@@ -658,7 +668,16 @@ func (p *Proxy) asset(urlPath string) (string, bool) {
 	}
 	defer f.Close()
 	st, err := f.Stat()
-	if err != nil || st.IsDir() {
+	if err != nil {
+		return "", false
+	}
+	if st.IsDir() {
+		// A directory answers with its index page, as the room's file server does (/m/ is the phone page).
+		idx := name + "/index.html"
+		if g, err := p.board.Open(idx); err == nil {
+			g.Close()
+			return idx, true
+		}
 		return "", false
 	}
 	return name, true

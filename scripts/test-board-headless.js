@@ -3725,6 +3725,8 @@ async function sayWhenSection(browser, base) {
       return { turn: one({ held_for: "turn", held_count: 2 }), line: one({ held_for: "line" }),
         lines: one({ held_for: "line", held_count: 2, held_seconds: 3723 }),
         dialog: one({ held_for: "dialog" }), old: one({}),
+        newctx: one({ held_for: "new-context" }), newctxs: one({ held_for: "new-context", held_count: 2 }),
+        empty: one({ held_for: "" }), unknown: one({ held_for: "something-new" }),
         ages: [16, 125, 3603].map(termHeldAge) };
     });
     const want = {
@@ -3737,7 +3739,13 @@ async function sayWhenSection(browser, base) {
       dialog: "1 message has been waiting to be delivered to this agent for 1m 30s and is blocked by " +
         "a dialog open in this terminal, which typing would answer. Answer the dialog to dequeue this message",
     };
-    want.old = want.line;
+    // u-029: "new-context" names the cycle, and "" or a value the page does not know reads "about to be retried".
+    want.newctx = "1 message has been waiting to be delivered to this agent for 1m 30s and is held while a " +
+      "new-context cycle is in progress. It goes in after its wake prompt";
+    want.newctxs = "2 messages have been waiting to be delivered to this agent for 1m 30s and are held while a " +
+      "new-context cycle is in progress. They go in after its wake prompt";
+    want.old = "1 message has been waiting to be delivered to this agent for 1m 30s and is about to be retried";
+    want.empty = want.old; want.unknown = want.old;
     for (const k of Object.keys(want)) {
       if (!chips[k] || chips[k].tip !== want[k]) {
         fail("the held chip's tip for " + k + " reads " + JSON.stringify(chips[k] && chips[k].tip) +
@@ -4140,6 +4148,42 @@ async function aliasSection(browser, base) {
     await ctx.close();
   }
   if (errors.length) fail("the alias page threw: " + errors.join(" | "));
+}
+
+// ── a question asked straight after another was answered ──────────────────
+// `close` is queued, so the first question's close event can land after the
+// second one is open. It used to answer the second with a cancel before anybody
+// saw it: the alias from the terminal bar was lost that way in a loaded full run.
+async function askAgainSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const p = await ctx.newPage();
+  const errors = [];
+  p.on("pageerror", e => errors.push(String(e)));
+  try {
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof askText === "function", null, { timeout: slow(15000) });
+    const got = await p.evaluate(async () => {
+      const first = askText("one", "", "a", "");
+      document.querySelector("#ask-actions button.go").click();
+      const a = await first;
+      // Still inside the task that closed the first, so its close event is queued behind this.
+      let b = "(pending)";
+      const second = askText("two", "", "b", "").then(v => { b = v; });
+      await new Promise(r => setTimeout(r, 100));
+      const waited = { b, open: document.getElementById("ask").open };
+      document.querySelector("#ask-actions button.go").click();
+      await second;
+      return { a, waited, b };
+    });
+    if (got.a !== "a") fail("askAgain: the first question did not answer with its value: " + JSON.stringify(got));
+    if (got.waited.b !== "(pending)" || !got.waited.open) {
+      fail("askAgain: the first question's close cancelled the second: " + JSON.stringify(got));
+    }
+    if (got.b !== "b") fail("askAgain: the second question did not answer with its value: " + JSON.stringify(got));
+  } finally {
+    await ctx.close();
+  }
+  if (errors.length) fail("askAgain: the page threw: " + errors.join(" | "));
 }
 
 // ── a big paste shows the spinner too ─────────────────────────────────────
@@ -4829,6 +4873,8 @@ async function heldLineSection(browser, base) {
       const g1 = await grid();
       if (g0.c !== g1.c || g0.r !== g1.r) fail(tag + "the grid changed");
       await setAct(p, { held_peer: true, held_for: "line", held_count: 1 });
+      // the repaint can land a frame late on a loaded machine
+      if (!phone) await p.waitForFunction(() => /1 message waiting/.test(document.getElementById("t-heldline").textContent), null, { timeout: slow(5000) }).catch(() => {});
       s = await state(p);
       if (phone) { if ((await mail()).n !== "1") fail(tag + "the envelope count did not follow"); }
       else if (!/1 message waiting/.test(s.text)) fail(tag + "singular wording: " + s.text);
@@ -5189,31 +5235,33 @@ async function u016Section(browser, base) {
         });
         if (st.ta !== "none" || st.us !== "none") fail(tag + "the key bar does not own its touch: " + JSON.stringify(st));
         const ints = () => p.evaluate(() => window.__sent.filter(x => /"s":"int"/.test(x)).length);
-        const fire = (type, x, y) => p.evaluate(([t, x, y]) => {
-          const b = document.querySelector("#t-keys [data-key=int]");
-          const r = b.getBoundingClientRect();
-          b.dispatchEvent(new PointerEvent(t, { bubbles: true, cancelable: true, pointerId: 7, pointerType: "touch",
-            clientX: r.left + r.width / 2 + x, clientY: r.top + r.height / 2 + y }));
-        }, [type, x, y]);
-        await p.evaluate(() => { window.__sent.length = 0; });
-        await fire("pointerdown", 0, 0); await p.waitForTimeout(150); await fire("pointerup", 0, 0);
-        await p.waitForTimeout(700);
+        const press = (steps) => p.evaluate((steps) => new Promise((res) => {
+          const b = document.querySelector("#t-keys [data-key=int]"), r = b.getBoundingClientRect();
+          const ev = (t, x, y) => b.dispatchEvent(new PointerEvent(t, { bubbles: true, cancelable: true, pointerId: 7,
+            pointerType: "touch", clientX: r.left + r.width / 2 + x, clientY: r.top + r.height / 2 + y }));
+          const next = (i) => { if (i >= steps.length) return res(); const [t, x, y, ms] = steps[i]; ev(t, x, y); setTimeout(() => next(i + 1), ms); };
+          next(0);
+        }), steps);
+        const reset = () => p.evaluate(() => { window.__sent.length = 0; });
+        await reset();
+        await press([["pointerdown", 0, 0, 150], ["pointerup", 0, 0, 700]]);
         if (await ints()) fail(tag + "a short tap on ^C interrupted");
-        await fire("pointerdown", 0, 0); await p.waitForTimeout(200); await fire("pointermove", 30, 0);
-        await p.waitForTimeout(700); await fire("pointerup", 30, 0);
+        await reset();
+        await press([["pointerdown", 0, 0, 200], ["pointermove", 30, 0, 700], ["pointerup", 30, 0, 0]]);
         if (await ints()) fail(tag + "a drag past the threshold still interrupted");
-        await fire("pointerdown", 0, 0); await p.waitForTimeout(200); await fire("pointercancel", 0, 0);
-        await p.waitForTimeout(700);
+        await reset();
+        await press([["pointerdown", 0, 0, 200], ["pointercancel", 0, 0, 700]]);
         if (await ints()) fail(tag + "a cancelled press still interrupted");
-        await fire("pointerdown", 0, 0); await fire("pointermove", 3, 3);
-        await p.waitForTimeout(2000); await fire("pointerup", 0, 0);
+        await reset();
+        await press([["pointerdown", 0, 0, 0], ["pointermove", 3, 3, 2000], ["pointerup", 0, 0, 0]]);
         if ((await ints()) !== 1) fail(tag + "a 2s hold did not interrupt exactly once: " + (await ints()));
       }
 
       // the header is slim by default and opens behind a chevron, saved per device (u-021 replaced the full hide)
       if (name === "portrait") {
         const hd = () => vis(p, "header");
-        const ready = () => p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+        // attached, not visible: the reload can come back on the terminals tab, where the stack list is hidden
+        const ready = () => p.waitForSelector("#stack-list .stackrow", { state: "attached", timeout: slow(15000) });
         if (!(await hd())) fail(tag + "the slim header is not showing");
         if (await vis(p, "#gear")) fail(tag + "the gear shows in the slim header");
         await p.evaluate(() => document.getElementById("hdr-toggle").click());
@@ -6052,14 +6100,18 @@ async function phoneTapSection(browser, base) {
     await p.touchscreen.tap(...at(1, 4));
     await p.waitForTimeout(150);
     await expect("a tap on output", []);
-    // a wrapped line above: Up, then horizontal from the clamped column
+    // u-029: a tap on another row inside the input sends NOTHING (no Up or Down, no Left or Right), whether
+    // it lands inside the text or past its end, so the daemon's line tracker is never left "unsure"
     await p.touchscreen.tap(...at(5, 10));
     await p.waitForTimeout(150);
-    await expect("a tap on the line above", [U + L.repeat(11)]);
-    // past the end of the line above: clamps to its end (24), 3 to the right of column 21
+    await expect("a tap on the line above", []);
     await p.touchscreen.tap(...at(5, 50));
     await p.waitForTimeout(150);
-    await expect("a tap past the end of the line above", [U + R.repeat(3)]);
+    await expect("a tap past the end of the line above", []);
+    // the same row still moves the cursor after a tap on another row
+    await p.touchscreen.tap(...at(6, 18));
+    await p.waitForTimeout(150);
+    await expect("a tap 3 cells left after a tap elsewhere", [L.repeat(3)]);
     // a tap on a rule and on the status line send nothing
     await p.touchscreen.tap(...at(4, 3));
     await p.touchscreen.tap(...at(8, 3));
@@ -6097,6 +6149,189 @@ async function phoneTapSection(browser, base) {
     tasksMode = was;
   }
   if (errors.length) fail("phoneTap: the page threw: " + errors.join(" | "));
+}
+
+// ── the phone key bar: a long press names the key, a tap is not left lit (u-029) ──
+// Real pointer events through CDP touch (the same ones a finger makes), never click() alone. The key bar sits on
+// the attached phone terminal, whose socket is faked so every frame it sends can be read back.
+async function phoneKeysOpen(browser, base) {
+  landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  landList = [LAND["land-live"]];
+  landPerms = [];
+  const fakeSock = () => {
+    const Real = window.WebSocket;
+    window.__sent = [];
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
+        onopen: null, onclose: null, onmessage: null, onerror: null,
+        send(d) { window.__sent.push(String(d)); }, close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  };
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+  await ctx.addInitScript(() => {
+    localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true }));
+    localStorage.setItem("atrium.termphone", "1");
+  });
+  await ctx.addInitScript(fakeSock);
+  const p = await ctx.newPage();
+  const errors = [];
+  p.on("pageerror", e => errors.push(String(e.stack || e)));
+  await p.goto(base, { waitUntil: "domcontentloaded" });
+  await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+  await p.evaluate(() => attachTask("land-live"));
+  await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live",
+    null, { timeout: slow(10000) });
+  await p.waitForSelector("#t-keys button", { state: "visible", timeout: slow(5000) });
+  const cdp = await ctx.newCDPSession(p);
+  const centre = (sel) => p.evaluate((s) => {
+    const r = document.querySelector(s).getBoundingClientRect();
+    return [r.left + r.width / 2, r.top + r.height / 2];
+  }, sel);
+  const touch = (type, x, y) => cdp.send("Input.dispatchTouchEvent", { type, touchPoints: type === "touchEnd" ? [] : [{ x, y }] });
+  // press, wait ms, optionally slide dx, and hand back the release
+  const press = async (sel, ms, dx) => {
+    const [x, y] = await centre(sel);
+    await touch("touchStart", x, y);
+    await p.waitForTimeout(ms);
+    if (dx) { await touch("touchMove", x + dx, y); await p.waitForTimeout(80); }
+    return async () => { await touch("touchEnd", x, y); await p.waitForTimeout(120); };
+  };
+  const frames = () => p.evaluate(() => window.__sent.slice());
+  const clear = () => p.evaluate(() => { window.__sent.length = 0; });
+  const label = () => p.evaluate(() => {
+    const el = document.getElementById("t-keylabel");
+    if (!el || !el.classList.contains("on")) return null;
+    const r = el.getBoundingClientRect();
+    return { text: el.textContent, l: r.left, r: r.right, t: r.top, b: r.bottom, vw: document.documentElement.clientWidth };
+  });
+  return { ctx, p, errors, press, frames, clear, label, centre, touch };
+}
+
+async function phoneKeyLabelSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  let h;
+  try {
+    h = await phoneKeysOpen(browser, base);
+    const { p, press, frames, clear, label } = h;
+    const key = (k) => "#t-keys [data-key=" + k + "]";
+    await clear();
+    await p.evaluate(() => { window.__fg = 0; document.addEventListener("focusin", () => { window.__fg++; }, true); });
+    // every key names itself in words, Esc and Tab included
+    const names = await p.evaluate(() => [...document.querySelectorAll("#t-keys button")].map(b => b.getAttribute("aria-label")));
+    if (names.some(n => !n)) fail("phoneKeyLabel: a key has no aria-label: " + JSON.stringify(names));
+    // a long press on enter shows the bubble inside the viewport and sends nothing
+    let up = await press(key("enter"), 550);
+    let lb = await label();
+    if (!lb || lb.text !== "enter") fail("phoneKeyLabel: a held enter shows " + JSON.stringify(lb));
+    else if (lb.l < 0 || lb.r > lb.vw || lb.t < 0) fail("phoneKeyLabel: the bubble leaves the viewport " + JSON.stringify(lb));
+    await up();
+    if (await label()) fail("phoneKeyLabel: the bubble stays after release");
+    let got = await frames();
+    if (got.length) fail("phoneKeyLabel: a long press on enter sent " + JSON.stringify(got));
+    // a short tap sends "\r" once, with no bubble
+    await clear();
+    up = await press(key("enter"), 60);
+    if (await label()) fail("phoneKeyLabel: a short tap showed the bubble");
+    await up();
+    got = (await frames()).filter(x => /"t":"in"/.test(x)).map(x => JSON.parse(x).d);
+    if (JSON.stringify(got) !== JSON.stringify(["\r"])) fail("phoneKeyLabel: a short tap on enter sent " + JSON.stringify(got));
+    // the keys at either end keep the bubble on screen
+    for (const k of ["esc", "attach"]) {
+      const sel = k === "attach" ? "#t-keys-attach" : key(k);
+      up = await press(sel, 550);
+      lb = await label();
+      if (!lb) fail("phoneKeyLabel: no bubble on " + k);
+      else if (lb.l < 0 || lb.r > lb.vw) fail("phoneKeyLabel: the " + k + " bubble leaves the viewport " + JSON.stringify(lb));
+      else if (k === "attach" && lb.text !== "attach a file or photo") fail("phoneKeyLabel: the attach label reads " + lb.text);
+      await up();
+    }
+    // ^C: the label at 400ms, the interrupt once at PHONE_INT_HOLD_MS (600), a short tap nothing
+    await clear();
+    up = await press(key("int"), 500);
+    lb = await label();
+    if (!lb || !/^ctrl c/.test(lb.text)) fail("phoneKeyLabel: a held ^C shows " + JSON.stringify(lb));
+    if ((await frames()).length) fail("phoneKeyLabel: ^C fired before its hold time");
+    await p.waitForTimeout(400);
+    await up();
+    got = await frames();
+    if (got.length !== 1 || !/"t":"signal"/.test(got[0]) || !/int/.test(got[0])) fail("phoneKeyLabel: a held ^C sent " + JSON.stringify(got));
+    await clear();
+    up = await press(key("int"), 60); await up();
+    if ((await frames()).length) fail("phoneKeyLabel: a short tap on ^C sent " + JSON.stringify(await frames()));
+    // sliding off cancels, for enter (label up already) and for ^C
+    await clear();
+    up = await press(key("enter"), 550, 60);
+    if (await label()) fail("phoneKeyLabel: the bubble stays after sliding off");
+    await up();
+    up = await press(key("int"), 100, 60);
+    await p.waitForTimeout(700);
+    await up();
+    got = await frames();
+    if (got.length) fail("phoneKeyLabel: sliding off still sent " + JSON.stringify(got));
+    const fg = await p.evaluate(() => window.__fg);
+    if (fg) fail("phoneKeyLabel: a key press moved focus " + fg + " times");
+    // the shot for the change notes
+    if (process.env.KEYLABEL_SHOT) {
+      up = await press(key("btab"), 550);
+      await p.screenshot({ path: process.env.KEYLABEL_SHOT });
+      await up();
+    }
+    console.log("phoneKeyLabel: enter, ^C, slide off and focus checked");
+  } finally {
+    tasksMode = was;
+    if (h) { if (h.errors.length) fail("phoneKeyLabel: the page threw: " + h.errors.join(" | ")); await h.ctx.close(); }
+  }
+}
+
+async function phoneKeyLitSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  let h;
+  try {
+    h = await phoneKeysOpen(browser, base);
+    const { p, centre } = h;
+    const probe = () => p.evaluate(() => {
+      const out = {};
+      for (const b of document.querySelectorAll("#t-keys button")) {
+        const cs = getComputedStyle(b);
+        out[b.getAttribute("aria-label")] = cs.backgroundColor + "|" + cs.borderColor + "|" + cs.transform;
+      }
+      out.focusInKeys = !!(document.activeElement && document.activeElement.closest("#t-keys"));
+      return out;
+    });
+    const rest = await probe();
+    for (const sel of ["#t-keys [data-key=left]", "#t-keys [data-key=enter]", "#t-keys [data-key=tab]", "#t-keys-attach"]) {
+      const [x, y] = await centre(sel);
+      await p.touchscreen.tap(x, y);
+      await p.waitForTimeout(400);
+      const now = await probe();
+      for (const k of Object.keys(rest)) if (now[k] !== rest[k])
+        fail("phoneKeyLit: after a tap on " + sel + " " + k + " reads " + now[k] + ", resting " + rest[k]);
+    }
+    // no shared button hover rule applies where a pointer cannot hover
+    const bad = await p.evaluate(() => {
+      const out = [];
+      const walk = (rules, inHover) => {
+        for (const r of rules) {
+          if (r.media) walk(r.cssRules, inHover || /hover:\s*hover/.test(r.media.mediaText));
+          else if (r.cssRules) walk(r.cssRules, inHover);
+          else if (r.selectorText && !inHover && /(^|,\s*)(\.term-bar )?button(\.icon|\.traytoggle)?:hover\s*($|,)/.test(r.selectorText)) out.push(r.selectorText);
+        }
+      };
+      for (const ss of document.styleSheets) { try { walk(ss.cssRules, false); } catch (e) {} }
+      return out;
+    });
+    if (bad.length) fail("phoneKeyLit: shared button hover rules outside (hover: hover): " + bad.join(" | "));
+    console.log("phoneKeyLit: resting look after taps checked");
+  } finally {
+    tasksMode = was;
+    if (h) { if (h.errors.length) fail("phoneKeyLit: the page threw: " + h.errors.join(" | ")); await h.ctx.close(); }
+  }
 }
 
 // ── the on-screen keyboard sizes the phone layout (u-019) ─────────────────
@@ -6711,7 +6946,7 @@ async function cacheChipSection(browser, base) {
     want("cold", "\u2744 cold since 02:04", "\u2744 cold");
     want("cold yesterday", "\u2744 cold since yesterday 20:04");
     want("no cache", "\u2744 no cache yet");
-    want("tomorrow", "\u2744 warm \u2192 tomorrow 00:10");
+    want("tomorrow", "\u2744 warm \u2192 tomorrow 00:10", "\u2744 \u2192 00:10");
     if (!/^\u2744 warm \u2192 [A-Z][a-z]{2} \d+ 03:32$/.test(by["far date"].full)) fail("cacheChip: a far time is not a date: " + by["far date"].full);
     if (by["not claude"].full !== null) fail("cacheChip: a card with no keepalive has a model");
     for (const [n, b] of [["warm", "warm"], ["kept next", "kept"], ["cold", "cold"], ["off warm", "warm"], ["no cache", "cold"]]) {
@@ -6743,9 +6978,10 @@ async function cacheChipSection(browser, base) {
       return o;
     }, sel);
     const expect = {
-      "cc-kept": /^\u2744 kept warm 3\u00d7 \u00b7 next ~\d\d:\d\d$/,
-      "cc-warm": /^\u2744 warm \u2192 \d\d:\d\d \u00b7 won't refresh: busy$/,
-      "cc-cold": /^\u2744 cold since \d\d:\d\d$/, "cc-stop": /^\u2298 stopped \u00b7 not worth it$/,
+      // these fixtures are on the real clock, so near midnight a time carries its day
+      "cc-kept": /^\u2744 kept warm 3\u00d7 \u00b7 next ~(?:tomorrow )?\d\d:\d\d$/,
+      "cc-warm": /^\u2744 warm \u2192 (?:tomorrow )?\d\d:\d\d \u00b7 won't refresh: busy$/,
+      "cc-cold": /^\u2744 cold since (?:yesterday )?\d\d:\d\d$/, "cc-stop": /^\u2298 stopped \u00b7 not worth it$/,
       "cc-off": /^\u25cb off \u00b7 cold$/, "cc-none": /^\u2744 no cache yet$/
     };
     const check = (where, o) => {
@@ -6924,10 +7160,12 @@ async function cacheLineSection(browser, base) {
       null, { timeout: slow(10000) }).catch(async () => fail("cacheLine: the week and today figures did not follow the settings: " + await read("cache-line-stack")));
 
     // A card running out of cache moves the counts with no request.
-    kaFix("cl-tick", { why: "not idle", warm_until: new Date(Date.now() + 2500).toISOString() });
+    kaFix("cl-tick", { why: "not idle", warm_until: new Date(Date.now() + 5000).toISOString() });
     landList = [LAND["cl-tick"]];
     await p.evaluate(() => tasksSoon());
     await p.waitForFunction(() => /^cache: 1 warm/.test(document.getElementById("cache-line-stack").innerText.trim()), null, { timeout: slow(10000) });
+    // let tasksSoon's own read finish first, on a loaded machine it lands after the line already shows
+    await p.waitForTimeout(1200);
     const reqs = [];
     p.on("request", r => reqs.push(r.url()));
     await p.waitForFunction(() => /^cache: 0 warm \u00b7 0 kept warm \u00b7 1 cold/.test(document.getElementById("cache-line-stack").innerText.trim()),
@@ -9196,7 +9434,7 @@ async function roomsDashSection(browser, base) {
         allFirst: !!(m.firstElementChild && m.firstElementChild.classList.contains("all")),
         off: [...m.querySelectorAll(".rtile-off")].map(b => b.dataset.room + (b.querySelector(".roomx") ? "+x" : "")),
         sparks: m.querySelectorAll("svg.rd-spark polyline").length,
-        mini: !!m.querySelector('.rtile[data-room="m1mini"] .rd-band.machine .rd-dash'),
+        mini: /does not report them/.test((m.querySelector('.rtile[data-room="m1mini"] .rd-band.machine') || {}).textContent || ""),
         width: m.getBoundingClientRect().width,
       };
     });
@@ -9205,7 +9443,7 @@ async function roomsDashSection(browser, base) {
     }
     if (drawn.off.join(",") !== "lab-pc+x") fail("the disconnected demo room is not below with its x: " + JSON.stringify(drawn.off));
     if (drawn.sparks < 5) fail("the demo tiles drew " + drawn.sparks + " sparklines, expected at least 5");
-    if (!drawn.mini) fail("m1mini ships no machine band in the demo and its band did not show a dash");
+    if (!drawn.mini) fail("m1mini ships no machine in the demo and its band did not say the room does not report it");
     if (drawn.width < 500 || drawn.width > 600) fail("the rooms panel is not about 560px wide: " + drawn.width);
 
     if (shots) {
@@ -10320,6 +10558,653 @@ async function phoneNudgeSection(browser, base) {
   if (errors.length) fail("phoneNudge: the page threw: " + errors.join(" | "));
 }
 
+// u-031: Shift+right click in the attached terminal opens termMenu at the pointer, with "new context".
+async function shiftMenuSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  landCard("land-busy", { supervised: true, created_at: "2026-09-19T12:01:00Z",
+    new_context: { step: "clearing", n: 2, of: 4, label: "clear" } });
+  landCard("land-bare", { supervised: false, pinned: true, created_at: "2026-09-19T12:02:00Z" });
+  landList = [LAND["land-live"], LAND["land-busy"], LAND["land-bare"]];
+  landPerms = [];
+  const errors = [];
+  const fakeSock = () => {
+    const Real = window.WebSocket;
+    window.__sent = [];
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
+        onopen: null, onclose: null, onmessage: null, onerror: null,
+        send(d) { window.__sent.push(String(d)); }, close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  };
+  try {
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+    await ctx.addInitScript(fakeSock);
+    const posts = [];
+    await ctx.route("**/v1/tasks/*/new-context", route => {
+      posts.push(new URL(route.request().url()).pathname + " " + route.request().method());
+      return route.fulfill({ status: 200, contentType: "application/json",
+        body: JSON.stringify({ new_context: { file: "HANDOFF.x.md" } }) });
+    });
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    const attach = async (id) => {
+      await p.evaluate(i => attachTask(i), id);
+      await p.waitForFunction(i => termSock && termSock.readyState === 1 && termTask && termTask.id === i,
+        id, { timeout: slow(10000) });
+      await p.waitForTimeout(300);
+    };
+    const fire = (opts) => p.evaluate(o => {
+      let pasted = 0;
+      const real = window.pasteIntoTerm;
+      window.pasteIntoTerm = () => { pasted++; };
+      const ev = new MouseEvent("contextmenu", Object.assign({ bubbles: true, cancelable: true, clientX: 210, clientY: 160 }, o));
+      document.querySelector("#t-screen .xterm-screen, #t-screen").dispatchEvent(ev);
+      window.pasteIntoTerm = real;
+      return { prevented: ev.defaultPrevented, pasted };
+    }, opts);
+    const menu = () => p.evaluate(() => {
+      const m = document.getElementById("cardmenu");
+      const r = m.getBoundingClientRect();
+      const shown = getComputedStyle(m).display !== "none" && r.width > 0;
+      return { shown, left: r.left, top: r.top,
+        labels: shown ? [...m.querySelectorAll("button")].map(b => b.textContent) : [] };
+    });
+    const closeMenu = async () => { await p.keyboard.press("Escape"); await p.evaluate(() => document.body.click()); await p.waitForTimeout(100); };
+    const has = (m) => m.labels.some(l => /new context/.test(l));
+
+    await attach("land-live");
+    // plain: paste, no menu
+    let r = await fire({});
+    if (!r.prevented || r.pasted !== 1) fail("shiftMenu: a plain right click no longer pastes: " + JSON.stringify(r));
+    let m = await menu();
+    if (m.shown) fail("shiftMenu: a plain right click opened a menu: " + JSON.stringify(m));
+    // shift: menu, no paste
+    r = await fire({ shiftKey: true });
+    if (r.pasted) fail("shiftMenu: shift right click pasted");
+    if (!r.prevented) fail("shiftMenu: shift right click left the browser's menu up");
+    await p.waitForFunction(() => { const m = document.getElementById("cardmenu"); return getComputedStyle(m).display !== "none" && m.querySelector("button"); },
+      null, { timeout: slow(5000) });
+    m = await menu();
+    if (!has(m)) fail("shiftMenu: no new context on the terminal menu: " + JSON.stringify(m));
+    if (!m.labels.some(l => /rename/.test(l))) fail("shiftMenu: this is not termMenu: " + JSON.stringify(m));
+    if (Math.abs(m.left - 210) > 40 || Math.abs(m.top - 160) > 40) fail("shiftMenu: the menu is not at the pointer: " + JSON.stringify(m));
+    // choose it
+    await p.evaluate(() => [...document.querySelectorAll("#cardmenu button")].find(b => /new context/.test(b.textContent)).click());
+    await p.waitForTimeout(400);
+    if (posts.length !== 1 || posts[0] !== "/v1/tasks/land-live/new-context POST")
+      fail("shiftMenu: choosing new context did not POST once: " + JSON.stringify(posts));
+    await closeMenu();
+    // ctrl still belongs to the browser
+    r = await fire({ ctrlKey: true });
+    if (r.prevented || r.pasted) fail("shiftMenu: ctrl right click was taken: " + JSON.stringify(r));
+
+    // mid-cycle card
+    await attach("land-busy");
+    await fire({ shiftKey: true });
+    await p.waitForFunction(() => document.querySelector("#cardmenu button"), null, { timeout: slow(5000) });
+    m = await menu();
+    if (has(m)) fail("shiftMenu: new context is offered mid-cycle: " + JSON.stringify(m));
+    await closeMenu();
+
+    // the row menu, on the list
+    await p.evaluate(() => { const b = document.querySelector("#term-list [oncontextmenu*=\"land-live\"]");
+      if (!b) throw new Error("no land-live row");
+      b.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 60, clientY: 60 })); });
+    await p.waitForFunction(() => document.querySelector("#cardmenu button"), null, { timeout: slow(5000) });
+    m = await menu();
+    if (!has(m)) fail("shiftMenu: the row menu has no new context: " + JSON.stringify(m));
+    await closeMenu();
+    // unsupervised row
+    await p.evaluate(() => { const b = document.querySelector("#term-list [oncontextmenu*=\"land-bare\"]");
+      if (!b) throw new Error("no land-bare row");
+      b.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 60, clientY: 60 })); });
+    await p.waitForFunction(() => document.querySelector("#cardmenu button"), null, { timeout: slow(5000) });
+    m = await menu();
+    if (has(m)) fail("shiftMenu: new context is offered on an unsupervised card: " + JSON.stringify(m));
+    await ctx.close();
+  } finally {
+    tasksMode = was;
+  }
+  if (errors.length) fail("shiftMenu: the page threw: " + errors.join(" | "));
+}
+
+// ── the hub's notify command in the gear (u-030) ────────────────────────────
+//
+// The mock server answers 404 to /_hub/notify, so each case routes it in the browser context.
+async function notifyCommandSection(browser, base) {
+  const errors = [];
+  const note = { enabled: true, command: ["ntfy", "publish", "my topic"], last_run_at: "2026-09-30T10:00:00Z",
+    last_ok_at: "2026-09-30T09:00:00Z", last_error: "exit 2", failures: 3, disabled_reason: "three failures",
+    sent: 7, dropped: 2, suppressed: 5, visible_tabs: 2 };
+  const puts = [], tests = [], gets = [];
+  const open = async (ctx, hub) => {
+    await ctx.route("**/_hub/notify**", route => {
+      const req = route.request(), u = new URL(req.url());
+      if (!hub) return route.fulfill({ status: 404, body: "not a hub" });
+      if (u.pathname === "/_hub/notify/test") {
+        tests.push(1);
+        return route.fulfill({ contentType: "application/json",
+          body: JSON.stringify({ ok: false, exit_code: 2, output: "no such topic", took_ms: 41 }) });
+      }
+      if (req.method() === "PUT") {
+        const b = JSON.parse(req.postData());
+        puts.push(b);
+        return route.fulfill({ contentType: "application/json", body: JSON.stringify(Object.assign({}, note, b)) });
+      }
+      gets.push(1);
+      return route.fulfill({ contentType: "application/json", body: JSON.stringify(note) });
+    });
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow, #term-list .card.tab", { state: "attached", timeout: slow(15000) });
+    return p;
+  };
+
+  // (a) On a hub the row draws every field.
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  try {
+    const p = await open(ctx, true);
+    await p.click("#gear");
+    await p.waitForFunction(() => !document.getElementById("s-hn-row").hidden, null, { timeout: slow(10000) });
+    await p.evaluate(() => showSettingsPane && showSettingsPane("notifications"));
+    const shown = await p.evaluate(() => ({
+      on: document.getElementById("s-hn-enabled").checked,
+      cmd: document.getElementById("s-hn-command").value,
+      status: document.getElementById("s-hn-status").textContent,
+      help: document.getElementById("s-hn-row").textContent
+    }));
+    if (!shown.on) fail("notifyCommand: the enabled box was not checked");
+    if (shown.cmd !== "ntfy\npublish\nmy topic") fail("notifyCommand: the argv is not one per line: " + JSON.stringify(shown.cmd));
+    for (const w of ["failures in a row: 3", "exit 2", "three failures", "7 sent, 2 dropped, 5 held back",
+      "2 board tabs visible now", "last ok:"]) {
+      if (!shown.status.includes(w)) fail("notifyCommand: the status did not say '" + w + "': " + shown.status);
+    }
+    if (!/ON THE HUB MACHINE/.test(shown.help) || !/no credential/.test(shown.help)) {
+      fail("notifyCommand: the row does not say where it runs and that atrium holds no credential");
+    }
+    // (b) Save PUTs the argv, blank lines dropped.
+    await p.fill("#s-hn-command", "curl\n\n-d\nhello world\n");
+    await p.evaluate(() => { document.getElementById("s-hn-enabled").checked = false; });
+    await p.evaluate(() => saveHubNotify());
+    await p.waitForFunction(() => document.getElementById("s-hn-msg").textContent === "saved", null, { timeout: slow(10000) });
+    const put = puts[puts.length - 1];
+    if (!put || put.enabled !== false || JSON.stringify(put.command) !== JSON.stringify(["curl", "-d", "hello world"])) {
+      fail("notifyCommand: save PUT the wrong body: " + JSON.stringify(put));
+    }
+    // (c) A test POSTs and shows the answer inline, and leaves an unsaved edit alone.
+    await p.fill("#s-hn-command", "unsaved");
+    await p.evaluate(() => testHubNotify());
+    await p.waitForFunction(() => /exit code 2/.test(document.getElementById("s-hn-test").textContent), null,
+      { timeout: slow(10000) });
+    const t = await p.textContent("#s-hn-test");
+    if (!/failed/.test(t) || !/41 ms/.test(t) || !/no such topic/.test(t)) fail("notifyCommand: the test answer is incomplete: " + t);
+    if (!tests.length) fail("notifyCommand: the test never POSTed");
+    if (await p.inputValue("#s-hn-command") !== "unsaved") fail("notifyCommand: a test threw away an unsaved edit");
+  } finally { await ctx.close(); }
+
+  // (d) No hub, no row.
+  const ctx2 = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  try {
+    const p = await open(ctx2, false);
+    await p.click("#gear");
+    await p.waitForTimeout(500);
+    const vis = await p.evaluate(() => { const r = document.getElementById("s-hn-row"); return r.hidden || r.offsetParent === null; });
+    if (!vis) fail("notifyCommand: a 404 from the hub still drew the row");
+  } finally { await ctx2.close(); }
+
+  // (e) A guest board draws no row and never asks the hub.
+  const ctx3 = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const hubCalls = [];
+  try {
+    await ctx3.route("**/v1/tasks", r => r.fulfill({ status: 403, body: "this link is one terminal." }));
+    // The rooms probe is the board's own and older than this. Only what this feature adds is counted.
+    ctx3.on("request", r => { if (/^\/_hub\/(notify|presence)/.test(new URL(r.url()).pathname)) hubCalls.push(r.url()); });
+    const p = await ctx3.newPage();
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => document.body.classList.contains("guestonly"), null, { timeout: slow(15000) });
+    await p.waitForTimeout(500);
+    const row = await p.evaluate(() => { const r = document.getElementById("s-hn-row"); return !r || r.hidden || r.offsetParent === null; });
+    if (!row) fail("notifyCommand: a guest board drew the row");
+    if (hubCalls.length) fail("notifyCommand: a guest board called the hub: " + hubCalls.join(" "));
+  } finally { await ctx3.close(); }
+  if (errors.length) fail("notifyCommand: the page threw: " + errors.join(" | "));
+}
+
+// ── the board's presence (u-030) ────────────────────────────────────────────
+async function presenceSection(browser, base) {
+  const errors = [];
+  const posts = [], streams = [];
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  await ctx.addInitScript(() => {
+    window.__hide = false;
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true, get: () => (window.__hide ? "hidden" : "visible")
+    });
+    window.__beacons = [];
+    navigator.sendBeacon = (url, data) => { window.__beacons.push({ url, type: data && data.type }); return true; };
+  });
+  let status = 200;
+  await ctx.route("**/_hub/presence", route => {
+    posts.push(JSON.parse(route.request().postData()));
+    route.fulfill({ status, contentType: "application/json", body: status === 200 ? '{"ok":true}' : "not a hub" });
+  });
+  ctx.on("request", r => { if (new URL(r.url()).pathname.startsWith("/v1/events")) streams.push(r.url()); });
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow, #term-list .card.tab", { state: "attached", timeout: slow(15000) });
+    await p.waitForTimeout(500);
+    const tab = await p.evaluate(() => hubTabId);
+    if (!tab) fail("presence: no tab id");
+    if (!streams.length || !streams.every(u => new URL(u).searchParams.get("tab") === tab)) {
+      fail("presence: the event stream URL does not carry tab=" + tab + ": " + streams.join(" "));
+    }
+    if (!posts.length || posts[0].visible !== true || posts[0].tab !== tab) fail("presence: load did not post visible true: " + JSON.stringify(posts));
+    // hidden
+    const n0 = posts.length;
+    await p.evaluate(() => { window.__hide = true; document.dispatchEvent(new Event("visibilitychange")); });
+    await p.waitForTimeout(300);
+    const last = posts[posts.length - 1];
+    if (posts.length !== n0 + 1 || last.visible !== false) fail("presence: hidden did not post visible false: " + JSON.stringify(posts.slice(n0)));
+    // pagehide goes by beacon, as text/plain, and not by fetch.
+    const n1 = posts.length;
+    await p.evaluate(() => window.dispatchEvent(new Event("pagehide")));
+    const beacons = await p.evaluate(() => window.__beacons);
+    if (beacons.length !== 1 || beacons[0].url !== "/_hub/presence" || !/^text\/plain/.test(beacons[0].type)) {
+      fail("presence: pagehide did not sendBeacon as text/plain: " + JSON.stringify(beacons));
+    }
+    if (posts.length !== n1) fail("presence: pagehide also fetched");
+    // A 404 stops it: the next post is the last.
+    status = 404;
+    await p.evaluate(() => { window.__hide = false; document.dispatchEvent(new Event("visibilitychange")); });
+    await p.waitForTimeout(300);
+    const n2 = posts.length;
+    await p.evaluate(() => { window.__hide = true; document.dispatchEvent(new Event("visibilitychange")); });
+    await p.evaluate(() => { window.__hide = false; document.dispatchEvent(new Event("visibilitychange")); });
+    await p.waitForTimeout(300);
+    if (posts.length !== n2) fail("presence: posts continued after a 404: " + (posts.length - n2) + " more");
+    const reloaded = await p.evaluate(() => sessionStorage.getItem("atrium.tab"));
+    if (reloaded !== tab) fail("presence: the tab id is not in sessionStorage");
+  } finally { await ctx.close(); }
+  if (errors.length) fail("presence: the page threw: " + errors.join(" | "));
+  // And an idle board adds no request per minute: idleBudget is run beside this one and still has to pass.
+}
+
+// ── t-003c: the pty is taller than the pane, so the board draws all of it and clips to the cursor ──
+// Test plan @LETTER@ in docs/changes/u-033.md. A desktop pane, a size frame with more rows than the pane fits.
+async function tallPtySection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  landList = [LAND["land-live"]];
+  landPerms = [];
+  const errors = [];
+  const fakeSock = () => {
+    const Real = window.WebSocket;
+    window.__sent = [];
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
+        onopen: null, onclose: null, onmessage: null, onerror: null,
+        send(d) { window.__sent.push(String(d)); }, close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  };
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 560 } });
+  try {
+    await ctx.addInitScript(() => {
+      localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true }));
+      localStorage.setItem("atrium.termphone", "0");
+    });
+    await ctx.addInitScript(fakeSock);
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e.stack || e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await p.evaluate(() => attachTask("land-live"));
+    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live",
+      null, { timeout: slow(10000) });
+    await p.waitForTimeout(300);
+    const size = async (rows) => {
+      await p.evaluate((r) => termSock.onmessage({ data: '{"t":"size","cols":132,"rows":' + r + '}' }), rows);
+      await p.waitForTimeout(250);
+    };
+    const put = async (s) => { await p.evaluate((x) => termSock.onmessage({ data: x }), s); await p.waitForTimeout(250); };
+    // Where row `r` (0 based) sits against the pane, in px.
+    const rowBox = (r) => p.evaluate((row) => {
+      const host = document.getElementById("t-screen"), x = host.querySelector(".xterm");
+      const ch = term._core._renderService.dimensions.css.cell.height;
+      const hb = host.getBoundingClientRect(), top = x.getBoundingClientRect().top + row * ch;
+      return { top, bottom: top + ch, hostTop: hb.top, hostBottom: hb.bottom, ch };
+    }, r);
+    const inside = (b) => b.top >= b.hostTop - 1 && b.bottom <= b.hostBottom + 1;
+    const st = () => p.evaluate(() => {
+      const host = document.getElementById("t-screen");
+      return { rows: term.rows, tall: host.classList.contains("tall"), st: host.scrollTop, fit: termFitRows,
+        oy: getComputedStyle(host).overflowY, viewportY: term.buffer.active.viewportY, baseY: term.buffer.active.baseY };
+    });
+    const resizes = () => p.evaluate(() => window.__sent.filter(x => /"t":"resize"/.test(x)).map(x => JSON.parse(x)));
+
+    // 1. a taller pty: the grid is the pty's, the pane clips it, the cursor stays in view at both ends.
+    const s0 = await st();
+    if (s0.tall || s0.fit < 8 || s0.fit >= 48) fail("tallPty: the pane fits " + s0.fit + " rows or starts tall: " + JSON.stringify(s0));
+    await size(48);
+    await put("\x1b[2J\x1b[4;1Hprompt");
+    let s1 = await st();
+    if (s1.rows !== 48 || !s1.tall) fail("tallPty: 48 rows did not draw tall: " + JSON.stringify(s1));
+    if (s1.oy !== "hidden") fail("tallPty: the clip is not overflow-y hidden, so there could be a second scrollbar: " + s1.oy);
+    if (!inside(await rowBox(3))) fail("tallPty: the cursor at row 3 is outside the pane");
+    await put("\x1b[2J\x1b[48;1Hprompt");
+    s1 = await st();
+    if (!inside(await rowBox(47))) fail("tallPty: the cursor at row 47 is outside the pane: " + JSON.stringify(s1));
+    if (s1.st <= 0) fail("tallPty: the clip did not follow the cursor to the bottom: " + JSON.stringify(s1));
+
+    // 2. non blank rows under the cursor stay in view: the cursor at 40 of 48, text down to 44.
+    await put("\x1b[2J\x1b[45;1Hmode line\x1b[41;1Hprompt");
+    const c40 = await rowBox(40), c44 = await rowBox(44);
+    if (!inside(c40) || !inside(c44)) fail("tallPty: rows 40 to 44 do not all show: " + JSON.stringify([c40, c44]));
+    if (inside(await rowBox(46))) fail("tallPty: blank rows under the last text row were kept in view");
+
+    // 3. the rule falls back to the cursor row plus one when what is under it does not fit.
+    const fit = (await st()).fit;
+    await put("\x1b[2J\x1b[" + (fit + 12) + ";1Hbelow\x1b[3;1Hprompt");
+    if (!inside(await rowBox(2)) || !inside(await rowBox(3))) fail("tallPty: the cursor row plus one is not in view when the rest does not fit");
+
+    // 4. the wheel brings hidden rows in: xterm's own scroll moves rows, the clip stays where it was.
+    await p.evaluate(() => { let s = ""; for (let i = 0; i < 120; i++) s += "history " + i + "\r\n"; termSock.onmessage({ data: s + "\x1b[48;1Hprompt" }); });
+    await p.waitForTimeout(300);
+    const before = await st();
+    const box = await p.evaluate(() => { const r = document.getElementById("t-screen").getBoundingClientRect(); return { x: r.left + 40, y: r.top + 60 }; });
+    await p.mouse.move(box.x, box.y);
+    for (let i = 0; i < 5; i++) await p.mouse.wheel(0, -40);
+    await p.waitForTimeout(300);
+    const after = await st();
+    if (!(after.viewportY < before.viewportY)) fail("tallPty: the wheel did not scroll xterm: " + JSON.stringify([before, after]));
+    if (after.st !== before.st) fail("tallPty: scrolling xterm moved the clip: " + JSON.stringify([before, after]));
+    await p.evaluate(() => term.scrollToBottom());
+    await p.waitForTimeout(200);
+
+    // 5. no feedback loop: a fit still proposes what the pane shows, and the resize frames say so.
+    await p.evaluate(() => fitTerm());
+    const s5 = await st();
+    if (s5.fit !== fit || s5.rows !== 48) fail("tallPty: a fit changed the answer, a loop: " + JSON.stringify([fit, s5]));
+    const rs = await resizes();
+    if (rs.some(r => r.rows > fit)) fail("tallPty: a resize frame carried the pty's height, not the pane's: " + JSON.stringify(rs));
+
+    // 6. a link inside the clipped grid opens itself. The text is on a row the clip is showing.
+    await put("\x1b[2J\x1b[47;1Hsee https://example.com/tall-link now\x1b[48;1Hprompt");
+    await p.evaluate(() => { window.__opened = []; window.openLinkReused = (u) => window.__opened.push(u); });
+    const lb = await p.evaluate(() => {
+      const host = document.getElementById("t-screen"), x = host.querySelector(".xterm-screen").getBoundingClientRect();
+      const d = term._core._renderService.dimensions.css.cell;
+      return { x: x.left + d.width * 12, y: x.top + d.height * 46.5 };
+    });
+    await p.mouse.move(lb.x, lb.y);
+    await p.waitForTimeout(150);
+    await p.mouse.click(lb.x, lb.y);
+    await p.waitForTimeout(200);
+    const opened = await p.evaluate(() => window.__opened);
+    if (opened.length !== 1 || opened[0] !== "https://example.com/tall-link") fail("tallPty: a click on a link in the clip opened " + JSON.stringify(opened));
+
+    // 7. mouse reporting reads xterm's own rect, so a click sends the grid's coordinates and not the pane's.
+    await put("\x1b[2J\x1b[?1000h\x1b[?1006h\x1b[48;1Hprompt");
+    await p.evaluate(() => { window.__sent.length = 0; });
+    const mb = await p.evaluate(() => {
+      const x = document.querySelector("#t-screen .xterm-screen").getBoundingClientRect();
+      const d = term._core._renderService.dimensions.css.cell;
+      return { x: x.left + d.width * 4.5, y: x.top + d.height * 45.5 };
+    });
+    await p.mouse.click(mb.x, mb.y);
+    await p.waitForTimeout(200);
+    const rep = await p.evaluate(() => window.__sent.map(x => { try { return JSON.parse(x).d || ""; } catch (e) { return ""; } })
+      .filter(x => x.indexOf("\x1b[<0;") === 0));
+    if (!rep.length || !/\[<0;5;46M/.test(rep[0])) fail("tallPty: a mouse click reported " + JSON.stringify(rep) + ", not column 5 row 46");
+    await put("\x1b[?1000l\x1b[?1006l");
+
+    // 8. selection: a drag past the pane's bottom. Accepted, not autoscrolled: xterm's autoscroll works its own
+    // viewport and #t-screen is not it, so the clip stays put and nothing throws.
+    const sel0 = await st();
+    const db = await p.evaluate(() => { const r = document.getElementById("t-screen").getBoundingClientRect(); return { x: r.left + 60, y: r.top + 30, y2: r.bottom + 40 }; });
+    await p.mouse.move(db.x, db.y); await p.mouse.down(); await p.mouse.move(db.x + 80, db.y2, { steps: 6 });
+    await p.waitForTimeout(300); await p.mouse.up();
+    const sel1 = await st();
+    if (sel1.st !== sel0.st) fail("tallPty: a selection drag moved the clip: " + JSON.stringify([sel0, sel1]));
+
+    // 9. focus and typing leave the clip where the rule put it (u-017's fight).
+    await put("\x1b[2J\x1b[48;1Hprompt");
+    const f0 = await st();
+    await p.evaluate(() => { document.activeElement && document.activeElement.blur(); term.focus(); });
+    await p.waitForTimeout(250);
+    await p.keyboard.type("abc");
+    await p.waitForTimeout(250);
+    const f1 = await st();
+    if (f1.st !== f0.st || !f1.tall) fail("tallPty: focus or typing moved the clip: " + JSON.stringify([f0, f1]));
+
+    // 10. a pane resize reruns the clip and the fit: a taller pane shows more, and the frame is the fit's.
+    await p.evaluate(() => { window.__sent.length = 0; });
+    await p.setViewportSize({ width: 1280, height: 420 });
+    await p.waitForTimeout(700);
+    const r0 = await st();
+    if (r0.fit >= fit || r0.rows !== 48 || !r0.tall) fail("tallPty: a shorter pane did not refit: " + JSON.stringify([fit, r0]));
+    if (!inside(await rowBox(47))) fail("tallPty: after a pane resize the cursor left the pane");
+    const rs2 = await resizes();
+    if (rs2.some(r => r.rows > r0.fit)) fail("tallPty: the resize after a pane drag was the pty's height: " + JSON.stringify(rs2));
+
+    // 11. the find bar and a tooltip stay inside the pane.
+    await p.evaluate(() => openFind());
+    await p.waitForTimeout(200);
+    const fb = await p.evaluate(() => {
+      const f = document.getElementById("t-find").getBoundingClientRect(), pn = document.querySelector(".term-pane").getBoundingClientRect();
+      return { fl: f.left, ft: f.top, fr: f.right, fb: f.bottom, pl: pn.left, pt: pn.top, pr: pn.right, pb: pn.bottom };
+    });
+    if (fb.fl < fb.pl - 1 || fb.ft < fb.pt - 1 || fb.fr > fb.pr + 1 || fb.fb > fb.pb + 1) fail("tallPty: the find bar left the pane: " + JSON.stringify(fb));
+    await p.keyboard.press("Escape");
+
+    // 12. a size frame of the pane's own height takes tall off. A frame taller than the pane puts it back.
+    await size((await st()).fit);
+    const t0 = await st();
+    if (t0.tall || t0.st !== 0) fail("tallPty: a size frame at the pane's height left tall on: " + JSON.stringify(t0));
+    await size(48);
+    if (!(await st()).tall) fail("tallPty: 48 rows did not bring tall back");
+
+    // 13. SAFE ON AN OLD ROOM: an old room never makes the pty taller than a viewer, so its size frames are never
+    // above the fit. Every one of them, and a room that sends none, leaves tall off.
+    await size((await st()).fit - 3);
+    const old2 = await st();
+    if (old2.tall || old2.rows !== old2.fit - 3) fail("tallPty: a pty under the pane's rows switched tall on: " + JSON.stringify(old2));
+    await size((await st()).fit);
+    const old0 = await st();
+    if (old0.tall || old0.st !== 0) fail("tallPty: a pty at the pane's rows switched tall on: " + JSON.stringify(old0));
+    await p.evaluate(() => { termPtyRows = 0; applyPtySize(); });
+    await p.waitForTimeout(150);
+    const old1 = await st();
+    if (old1.tall || old1.rows !== old1.fit) fail("tallPty: with no rows from the room the grid is not the fit: " + JSON.stringify(old1));
+  } finally {
+    await ctx.close();
+    tasksMode = was;
+  }
+  if (errors.length) fail("tallPty: the page threw: " + errors.join(" | "));
+}
+
+// u-034: the rooms dashboard's machine band and the all-rooms tile. Snapshots go through
+// onRoomStats in the wire shape. Checks the two sparklines and the figures, a gap for a null
+// sample, words and never a dash for a room with no machine or an empty one, cpu unavailable
+// against not yet sampled, stale_since, the all-rooms rows, and no overflow at 390x844.
+// ROOMS_MACHINE_SHOTS=<dir> saves the open menu at 1400x900.
+async function roomsMachineSection(browser, base) {
+  const skip = () => localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true }));
+  const shots = process.env.ROOMS_MACHINE_SHOTS || "";
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const p = await ctx.newPage();
+  const errors = [];
+  p.on("pageerror", e => errors.push(String(e)));
+  await p.addInitScript(skip);
+  try {
+    await p.goto(base + "/?demo=rooms", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof roomsDemoLive !== "undefined" && roomsDemoLive &&
+      roomsDemoTicks > 0 && !document.getElementById("rooms").hidden, null, { timeout: slow(15000) });
+    await p.evaluate(() => openRooms());
+    await p.waitForTimeout(2300);
+    await p.evaluate(() => clearInterval(roomsDemoTimer));
+    await p.waitForTimeout(900);
+    if (shots) {
+      fs.mkdirSync(shots, { recursive: true });
+      await p.screenshot({ path: path.join(shots, "u-034-after-1400.png") });
+    }
+    const feed = mode => p.evaluate(mode => {
+      const now = Date.now();
+      const iso = ms => new Date(ms).toISOString();
+      const ramp = (a, b) => Array.from({ length: 60 }, (_, i) => Math.round(a + (b - a) * i / 59));
+      const gappy = ramp(20, 60).map((v, i) => (i < 20 || (i > 30 && i < 34) ? null : v));
+      const up = s => ({ started_at: iso(now - s * 1000) });
+      const send = (room, machine, process) => onRoomStats({ v: 1, room, at: iso(now), process, machine });
+      if (mode === "full") {
+        send("sg3", { cpu_pct: 62, cpu_series_pct: gappy, mem_used_bytes: 21e9, mem_total_bytes: 32e9, mem_series_pct: ramp(50, 66) }, up(9999));
+        send("sg4", { cpu_pct: 30, cpu_series_pct: ramp(10, 30), mem_used_bytes: 55e9, mem_total_bytes: 64e9, mem_series_pct: ramp(70, 86) }, up(9999));
+        send("m1mini", { mem_used_bytes: 8e9, mem_total_bytes: 16e9, mem_series_pct: ramp(45, 50) }, up(9999));
+      } else if (mode === "none") {
+        for (const r of ["sg3", "sg4", "m1mini"]) send(r, undefined, up(9999));
+      } else if (mode === "empty") {
+        for (const r of ["sg3", "sg4"]) send(r, {}, up(9999));
+        send("m1mini", undefined, up(9999));
+      } else if (mode === "young") {
+        send("sg3", { mem_used_bytes: 8e9, mem_total_bytes: 16e9 }, up(5));
+        send("sg4", { cpu_pct: 30, cpu_series_pct: ramp(10, 30), mem_used_bytes: 55e9, mem_total_bytes: 64e9, mem_series_pct: ramp(70, 86), stale_since: iso(now - 600e3) }, up(9999));
+        send("m1mini", { mem_used_bytes: 8e9, mem_total_bytes: 16e9 }, up(9999));
+      }
+      const m = document.getElementById("rooms-menu");
+      const tile = n => m.querySelector(`.rtile[data-room="${n}"] .rd-band.machine`);
+      const all = m.querySelector(".rtile.all");
+      const rowsOf = t => [...t.querySelectorAll(".rd-rooms .rd-row")].map(r => r.textContent.replace(/\s+/g, " ").trim());
+      return {
+        hub: roomsHubBuild(),
+        machine: Object.fromEntries(["sg3", "sg4", "m1mini"].map(n => [n, {
+          text: tile(n).textContent.replace(/\s+/g, " ").trim(),
+          sparks: [...tile(n).querySelectorAll("svg.rd-spark")].map(s => s.getAttribute("class").replace("rd-spark ", "")),
+          polylines: [...tile(n).querySelectorAll("svg.rd-spark.cpu polyline")].length,
+          dash: !!tile(n).querySelector(".rd-note .rd-dash"),
+        }])),
+        allRows: rowsOf(all),
+        allDash: all.querySelector(".rd-rooms").textContent.includes("\u2014"),
+        allH: all.getBoundingClientRect().height,
+      };
+    }, mode);
+    const has = (label, ok, extra) => { if (!ok) fail("roomsMachine: " + label + (extra ? ": " + JSON.stringify(extra) : "")); };
+
+    // All five fields: two sparklines, the figures, a gap where the samples are null.
+    const full = await feed("full");
+    const g3 = full.machine.sg3;
+    has("sg3 did not draw a cpu and a mem sparkline", g3.sparks.join(",") === "cpu,mem", g3);
+    has("sg3 cpu and mem figures", /cpu 62%/.test(g3.text) && /mem 66%/.test(g3.text) && /21\/32 GB used/.test(g3.text), g3.text);
+    has("a null sample in the cpu series was not a gap (expected two runs)", g3.polylines === 2, g3);
+    const gapPoints = await p.evaluate(() => [...document.querySelectorAll('.rtile[data-room="sg3"] svg.rd-spark.cpu polyline')]
+      .map(l => l.getAttribute("points").split(" ").length));
+    has("the gap runs do not hold the samples they should", gapPoints[0] === 11 && gapPoints[1] === 26, gapPoints);
+    has("a plain null-free series is one polyline", await p.evaluate(() =>
+      document.querySelectorAll('.rtile[data-room="sg4"] svg.rd-spark.cpu polyline').length) === 1);
+    // macOS shape: memory, no CPU, up for a while: unavailable, in words, no dash.
+    const mini = full.machine.m1mini;
+    has("m1mini cpu was not said to be unavailable", /cpu: not available on this room/.test(mini.text) && /mem 50%/.test(mini.text) && /8\/16 GB used/.test(mini.text), mini.text);
+    has("m1mini drew a cpu sparkline", mini.sparks.join(",") === "mem", mini);
+    // All-rooms rows: busiest and tightest, from rooms that report. The hub build is unknown in
+    // this fixture only if roomsHubBuild is empty, so the rows are checked by content.
+    has("all-rooms busiest row", full.allRows.some(r => /busiest sg3 62%/.test(r)), full.allRows);
+    // The demo's rooms are not all on the hub's build, so the warning row is drawn and the memory
+    // line gives way to it: three rows and never four.
+    has("all-rooms build warning row", full.allRows.some(r => /1 not the hub's build/.test(r)), full.allRows);
+    has("all-rooms band grew past three rows", full.allRows.length === 3 && !full.allRows.some(r => /tightest/.test(r)), full.allRows);
+    has("all-rooms rows hold a dash", !full.allDash, full.allRows);
+    const onHub = await p.evaluate(() => {
+      const h = hubRooms.map(r => Object.assign({}, r, { version: roomsHubBuild() }));
+      const t = document.createElement("template");
+      t.innerHTML = allRoomsTileHTML(h, false).trim();
+      return [...t.content.querySelectorAll(".rd-rooms .rd-row")].map(r => r.textContent.replace(/\s+/g, " ").trim());
+    });
+    has("with every room on the hub's build the rows are live, busiest and tightest", onHub.length === 3 &&
+      /busiest sg3 62%/.test(onHub[1]) && /tightest sg4 86% mem/.test(onHub[2]), onHub);
+
+    // No machine at all: words, no dash, and the all-rooms tile drops its busiest and tightest rows.
+    const none = await feed("none");
+    for (const n of ["sg3", "sg4", "m1mini"]) {
+      has(n + " with no machine did not say the build does not report it", /cpu and memory: this room's build does not report them/.test(none.machine[n].text), none.machine[n].text);
+      has(n + " with no machine drew a dash or a sparkline", !none.machine[n].dash && !none.machine[n].sparks.length, none.machine[n]);
+    }
+    has("all-rooms drew busiest or tightest with no cpu or memory from any room", !none.allRows.some(r => /busiest|tightest/.test(r)), none.allRows);
+    has("all-rooms tile holds a dash with no machine numbers", !none.allDash, none.allRows);
+
+    // An empty machine object: waiting for the first reading.
+    const empty = await feed("empty");
+    has("an empty machine did not say it waits for the first reading", /waiting for the first reading/.test(empty.machine.sg3.text) && !empty.machine.sg3.dash, empty.machine.sg3);
+    has("a room with no machine beside an empty one lost its words", /does not report/.test(empty.machine.m1mini.text));
+
+    // Young room: cpu is still due. Stale sample: the time, and dimmed figures.
+    const young = await feed("young");
+    has("a room started seconds ago said cpu is unavailable", /cpu: waiting for the second reading/.test(young.machine.sg3.text), young.machine.sg3.text);
+    has("stale_since was not drawn as a time", /stale since \d\d:\d\d/.test(young.machine.sg4.text), young.machine.sg4.text);
+    has("stale figures are not dimmed", await p.evaluate(() =>
+      Number(getComputedStyle(document.querySelector('.rtile[data-room="sg4"] .rd-stale')).opacity) < 0.9));
+    has("a stale room was named busiest", !young.allRows.some(r => /busiest sg4/.test(r)), young.allRows);
+
+    // The hub build unknown: the build row is dropped and nothing draws a dash. Known: it is a number.
+    const hub = await p.evaluate(() => {
+      const all = document.querySelector("#rooms-menu .rtile.all .rd-rooms").textContent;
+      return { hub: roomsHubBuild(), row: /not the hub's build/.test(all), dash: all.includes("\u2014") };
+    });
+    has("the build row and the dash", hub.hub ? hub.row && !hub.dash : !hub.row && !hub.dash, hub);
+    has("hub build and the none-fixture rows", none.allRows.length === 2 && /live/.test(none.allRows[0]) && /not the hub's build/.test(none.allRows[1]), none.allRows);
+    const unknown = await p.evaluate(() => {
+      const was = window.roomsDemoLive;
+      roomsDemoLive = false;
+      try {
+        const h = allRoomsTileHTML(hubRooms, false);
+        return { hub: roomsHubBuild(), row: /not the hub's build/.test(h), dash: /rd-rooms[\s\S]*\u2014/.test(h) };
+      } finally { roomsDemoLive = was; }
+    });
+    has("with the hub build unknown the row was drawn or a dash showed", unknown.hub === "" && !unknown.row && !unknown.dash, unknown);
+
+    // The all-rooms tile is no taller with the rows than without them.
+    const tall = { full: full.allH, none: none.allH };
+    has("the all-rooms tile grew with the new rows", tall.full <= tall.none + 8, tall);
+
+    await feed("full");
+
+    // Phone: the tiles stack and nothing is wider than the window.
+    await p.setViewportSize({ width: 390, height: 844 });
+    await p.evaluate(() => { const m = document.getElementById("rooms-menu"); m.hidden = true; openRooms(); });
+    await feed("full");
+    const phone = await p.evaluate(() => {
+      const m = document.getElementById("rooms-menu");
+      const wide = [...m.querySelectorAll(".rtile *")].filter(e => e.getBoundingClientRect().right > 390.5)
+        .map(e => e.className && e.className.baseVal === undefined ? e.className : e.tagName).slice(0, 5);
+      return { right: m.getBoundingClientRect().right, sw: m.scrollWidth, cw: m.clientWidth, wide,
+        doc: document.documentElement.scrollWidth,
+        sparks: m.querySelectorAll('.rtile[data-room="sg3"] svg.rd-spark').length };
+    });
+    has("at 390x844 the rooms menu overflows", phone.right <= 390 && phone.sw <= phone.cw + 1 && !phone.wide.length && phone.doc <= 390 && phone.sparks >= 2, phone);
+    await feed("none");
+    const phone2 = await p.evaluate(() => {
+      const m = document.getElementById("rooms-menu");
+      return { sw: m.scrollWidth, cw: m.clientWidth, doc: document.documentElement.scrollWidth };
+    });
+    has("at 390x844 the words overflow the menu", phone2.sw <= phone2.cw + 1 && phone2.doc <= 390, phone2);
+    if (errors.length) fail("roomsMachine: the page threw: " + errors.join(" | "));
+  } finally {
+    await ctx.close();
+  }
+}
+
 async function main() {
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = "http://127.0.0.1:" + server.address().port;
@@ -10333,7 +11218,7 @@ async function main() {
       groupDrag: groupDragSection, tooltip: tooltipSection, linkTip: linkTipSection,popoutTagFlip: popoutTagFlipSection, idleRate: idleRateSection, foldStill: foldStillSection,
       untaggedSort: untaggedSortSection, newCard: newCardSection, themePreview: themePreviewSection, land: landSection, reselect: reselectSection,
       toastsTop: toastsTopSection, sayWhen: sayWhenSection, pasteSpinner: pasteSpinnerSection,
-      pasteBig: pasteBigSection, pasteBusy: pasteBusySection, typing: typingSection, alias: aliasSection, copySelect: copySelectSection, busyGuard: busyGuardSection, keepalive: keepaliveSection,
+      pasteBig: pasteBigSection, pasteBusy: pasteBusySection, typing: typingSection, alias: aliasSection, askAgain: askAgainSection, copySelect: copySelectSection, busyGuard: busyGuardSection, keepalive: keepaliveSection,
       stuck: stuckSection, carryLink: carryLinkSection,
       skinScope: skinScopeSection, skinHeal: skinHealSection, toastLives: toastLivesSection,
       history: historySection, contextSize: contextSizeSection, peekEverywhere: peekEverywhereSection, cardRoute: cardRouteSection,
@@ -10342,7 +11227,7 @@ async function main() {
       usageCacheReads: usageCacheReadsSection, roomsDash: roomsDashSection, phoneView: phoneViewSection, heldLine: heldLineSection, u016: u016Section, phoneHeader: phoneHeaderSection, phoneFocus: phoneFocusSection, phoneTermBar: phoneTermBarSection, phoneShare: phoneShareSection, phonePan: phonePanSection, phoneFollow: phoneFollowSection, phoneTap: phoneTapSection, phoneKeyboard: phoneKeyboardSection, phoneCompose: phoneComposeSection, mCompose: mComposeSection, mPerms: mPermsSection, usagePolish: usagePolishSection, usageLimits: usageLimitsSection, usageGroups: usageGroupsSection,
       eventDriven: eventDrivenSection, idleBudget: idleBudgetSection, pollsGone: pollsGoneSection,
       phoneListFit: phoneListFitSection, phoneNudge: phoneNudgeSection,
-      cacheChip: cacheChipSection, cacheLine: cacheLineSection };
+      cacheChip: cacheChipSection, cacheLine: cacheLineSection, mHome: mHomeSection, mCard: mCardSection, mServe: mServeSection, phoneKeyLabel: phoneKeyLabelSection, phoneKeyLit: phoneKeyLitSection, shiftMenu: shiftMenuSection, notifyCommand: notifyCommandSection, presence: presenceSection, tallPty: tallPtySection, roomsMachine: roomsMachineSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -12288,6 +13173,16 @@ async function main() {
     await eventDrivenSection(browser, base);
     await idleBudgetSection(browser, base);
     await pollsGoneSection(browser, base);
+    await roomsMachineSection(browser, base);
+    await mHomeSection(browser);
+    await mCardSection(browser);
+    await mServeSection(browser);
+    await phoneKeyLabelSection(browser, base);
+    await phoneKeyLitSection(browser, base);
+    await shiftMenuSection(browser, base);
+    await notifyCommandSection(browser, base);
+    await presenceSection(browser, base);
+    await tallPtySection(browser, base);
     await usagePolishSection(browser, base);
     await usageLimitsSection(browser, base);
     await usageGroupsSection(browser, base);
@@ -12304,6 +13199,7 @@ async function main() {
     await typingSection(browser, base);
     // ── a card wears its alias, and the menu sets it ────────────────────────
     await aliasSection(browser, base);
+    await askAgainSection(browser, base);
     // ── copy on select answers the pointer, not the find bar ───────────────
     await copySelectSection(browser, base);
     // ── the not-replayed notice opens or loads the pre-restart history ─────
@@ -12386,3 +13282,307 @@ async function main() {
 }
 
 main().catch(e => { console.error(e); process.exit(1); });
+
+// ── the phone page, /m (u-024) ─────────────────────────────────────────────
+// Each section runs its own tiny server: the page, its stylesheet and scripts off disk, the board's tokens and
+// themes, and mocks for the four endpoints the page reads. `base` is not used.
+const M_ROOT = path.join(WEB_ROOT, "m");
+const M_TYPES = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".png": "image/png",
+  ".webmanifest": "application/manifest+json" };
+const M_MIN = 60 * 1000;
+function mIso(msAgo) { return new Date(Date.now() - msAgo).toISOString(); }
+function mCard(id, over) {
+  return Object.assign({ id, title: id, display_title: id, status: "running", created_at: mIso(3600000),
+    last_activity_at: mIso(M_MIN), seen: {}, activity: {} }, over || {});
+}
+function mServer(state) {
+  state.tasks = state.tasks || [];
+  state.perms = state.perms || [];
+  state.replies = state.replies || {};
+  state.hits = [];
+  state.streams = [];
+  state.skin = state.skin || "";
+  const srv = http.createServer((req, res) => {
+    const u = new URL(req.url, "http://x");
+    const p = u.pathname;
+    const json = (code, o) => { res.writeHead(code, { "Content-Type": "application/json" }); res.end(JSON.stringify(o)); };
+    if (p === "/v1/tasks") return json(200, { tasks: state.tasks });
+    if (p === "/v1/permissions") return json(200, { permissions: state.perms });
+    if (p === "/v1/settings") return json(200, { board_skins: ["default", "daylight"], board_skin: state.skin || "default" });
+    if (p === "/_hub/rooms") return json(404, { error: "not a hub" });
+    if (p === "/v1/events") {
+      res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" });
+      res.write(": hi\n\n");
+      state.streams.push(res);
+      req.on("close", () => { state.streams = state.streams.filter(s => s !== res); });
+      return;
+    }
+    const m = p.match(/^\/v1\/tasks\/([^/]+)\/replies$/);
+    if (m) {
+      state.hits.push(decodeURIComponent(m[1]) + "?" + u.searchParams.get("n"));
+      const r = state.replies[decodeURIComponent(m[1])];
+      if (!r || r === 404) return json(404, { error: "not found" });
+      return json(200, r);
+    }
+    let file = null;
+    if (p === "/m/" || p === "/m") file = path.join(M_ROOT, "index.html");
+    else if (p.startsWith("/m/")) file = path.join(M_ROOT, p.slice(3));
+    else if (p.startsWith("/css/")) file = path.join(WEB_ROOT, p);
+    if (file && !path.relative(WEB_ROOT, file).startsWith("..") && fs.existsSync(file) && fs.statSync(file).isFile()) {
+      res.writeHead(200, { "Content-Type": M_TYPES[path.extname(file)] || "application/octet-stream" });
+      return res.end(fs.readFileSync(file));
+    }
+    res.writeHead(404); res.end("nope");
+  });
+  state.send = (kind, o) => state.streams.forEach(s => s.write("event: " + kind + "\ndata: " + JSON.stringify(o) + "\n\n"));
+  state.open = () => new Promise(r => srv.listen(0, "127.0.0.1", () => { state.url = "http://127.0.0.1:" + srv.address().port; r(state.url); }));
+  state.close = () => new Promise(r => { state.streams.forEach(s => { try { s.destroy(); } catch (e) {} }); srv.close(r); srv.closeAllConnections && srv.closeAllConnections(); });
+  return state;
+}
+// M_VIEWS is declared with mHarness (u-025), the same two sizes.
+async function mPage(browser, state, vp, skin) {
+  state.skin = skin || "";
+  const ctx = await browser.newContext({ viewport: vp, hasTouch: true, isMobile: true, deviceScaleFactor: 2 });
+  if (skin) await ctx.addInitScript(s => { try { localStorage.setItem("atrium.skin", s); } catch (e) {} }, skin);
+  const p = await ctx.newPage();
+  const errors = [];
+  p.on("pageerror", e => errors.push(String(e)));
+  await p.goto(state.url + "/m/", { waitUntil: "domcontentloaded" });
+  return { ctx, p, errors };
+}
+const mNoSideways = (p) => p.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
+async function mShot(p, name) {
+  const dir = process.env.M_SHOTS;
+  if (dir) {
+    // Let the fade, the slide and the stream settle, so the picture is the resting state.
+    await p.waitForFunction(() => document.getElementById("m-live").classList.contains("on"), null, { timeout: slow(8000) }).catch(() => {});
+    await p.waitForTimeout(900);
+    fs.mkdirSync(dir, { recursive: true }); await p.screenshot({ path: path.join(dir, name + ".png") }); }
+}
+function mNeedsCards() {
+  return [
+    mCard("new-1", { alias: "newest", display_title: "the newest wait", status: "needs-permission", waiting_since: mIso(2 * M_MIN) }),
+    mCard("old-1", { alias: "oldest", display_title: "the oldest wait", status: "needs-input", waiting_since: mIso(50 * M_MIN), waiting_reason: "turn",
+      seen: { answered: false, open_questions: ["which one?", "and this?"], questions_at: mIso(50 * M_MIN) } }),
+    mCard("unread-1", { display_title: "read me", seen: { unseen: true, turn_ended_at: mIso(4 * M_MIN) } }),
+    mCard("rep-1", { display_title: "reporter", spawned_by: "@human", reported_at: mIso(9 * M_MIN), human_at: mIso(30 * M_MIN) }),
+    mCard("busy-1", { display_title: "just working", activity: { what: "tool", tool: "Read", seconds: 3 } }),
+    mCard("idle-1", { display_title: "resting", status: "done" }),
+  ];
+}
+const M_PERMS = () => [{ id: "p1", task_id: "new-1", tool: "Bash", command: "go test ./...", requested_at: mIso(2 * M_MIN) }];
+
+async function mHomeSection(browser) {
+  const st = mServer({});
+  await st.open();
+  try {
+    for (const vp of M_VIEWS) {
+      st.tasks = mNeedsCards();
+      st.perms = M_PERMS();
+      const { ctx, p, errors } = await mPage(browser, st, vp, "");
+      const tag = "mHome " + vp.width + ": ";
+      await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
+      const names = await p.$$eval("#m-list .row .name b", e => e.map(x => x.textContent));
+      if (names.join(",") !== "oldest,reporter,read me,newest") fail(tag + "needs-you order is not oldest wait first: " + names.join(","));
+      const why = await p.$$eval("#m-list .row .why", e => e.map(x => x.textContent));
+      if (!/asks 2 questions/.test(why[0])) fail(tag + "first reason is " + why[0]);
+      if (!why.some(w => /wants to run go test \.\/\.\.\./.test(w))) fail(tag + "the permission reason is missing: " + why.join("|"));
+      if (!why.some(w => /finished 4m ago, not read/.test(w))) fail(tag + "the unread reason is missing");
+      if (!why.some(w => /report waiting/.test(w))) fail(tag + "the report reason is missing");
+      if (await p.$(".row .room")) fail(tag + "a room tag shows with one room");
+      if (await mNoSideways(p)) fail(tag + "the home scrolls sideways");
+      const h = await p.$eval("#m-list .row", e => e.getBoundingClientRect().height);
+      if (h < 44) fail(tag + "a row is " + h + "px tall");
+      await mShot(p, "home-needs-dark-" + vp.width);
+      await p.tap("#m-seg-all");
+      await p.waitForSelector("#m-list h2.grp", { timeout: slow(5000) });
+      const grp = await p.$$eval("#m-list h2.grp", e => e.map(x => x.textContent.replace(/\s+/g, " ").trim()));
+      if (!/^Working/.test(grp[0]) || !/^Waiting/.test(grp[1]) || !/^Idle/.test(grp[2])) fail(tag + "all is not grouped working, waiting, idle: " + grp.join("|"));
+      if (await mNoSideways(p)) fail(tag + "all scrolls sideways");
+      await mShot(p, "home-all-dark-" + vp.width);
+      await p.tap("#m-seg-needs");
+      await p.waitForFunction(() => document.querySelectorAll("#m-list .row").length === 4, null, { timeout: slow(5000) });
+      // one stops needing you and leaves smoothly
+      st.tasks = st.tasks.filter(t => t.id !== "old-1");
+      st.send("task-removed", { id: "old-1" });
+      await p.waitForFunction(() => { const e = document.querySelector('[data-key="c:old-1"]'); return !e || e.classList.contains("leaving"); }, null, { timeout: slow(5000) });
+      await p.waitForFunction(() => !document.querySelector('[data-key="c:old-1"]'), null, { timeout: slow(5000) });
+      if ((await p.$$("#m-list .row")).length !== 3) fail(tag + "the row that stopped needing you is still listed");
+      // the designed empty state
+      st.tasks = st.tasks.filter(t => t.id === "busy-1" || t.id === "idle-1");
+      st.perms = [];
+      st.send("task-removed", {});
+      await p.waitForSelector("#m-empty:not([hidden])", { timeout: slow(8000) });
+      if (!/Nothing needs you/.test(await p.textContent("#m-empty"))) fail(tag + "the empty state has the wrong words");
+      await mShot(p, "home-empty-dark-" + vp.width);
+      if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+      await ctx.close();
+      // light
+      const lt = await mPage(browser, st, vp, "daylight");
+      await lt.p.waitForSelector("#m-empty:not([hidden])", { timeout: slow(8000) });
+      await mShot(lt.p, "home-empty-light-" + vp.width);
+      await lt.ctx.close();
+      st.tasks = mNeedsCards();
+      st.perms = M_PERMS();
+      const l2 = await mPage(browser, st, vp, "daylight");
+      await l2.p.waitForSelector("#m-list .row", { timeout: slow(8000) });
+      await mShot(l2.p, "home-needs-light-" + vp.width);
+      await l2.p.tap("#m-seg-all");
+      await l2.p.waitForSelector("#m-list h2.grp", { timeout: slow(5000) });
+      await mShot(l2.p, "home-all-light-" + vp.width);
+      await l2.ctx.close();
+    }
+  } finally { await st.close(); }
+  if (!bad) console.log("mHome ok");
+}
+
+async function mCardSection(browser) {
+  const st = mServer({});
+  const ta = mCard("card-a", { alias: "builder", display_title: "the builder", status: "needs-input", waiting_since: mIso(5 * M_MIN),
+    recap: "It is **halfway** through the change.", seen: { turn_ended_at: mIso(3 * M_MIN), unseen: true, answered: false, open_questions: ["which port?", "keep the flag?"] },
+    activity: { what: "tool", tool: "Read", seconds: 2 } });
+  const tb = mCard("card-b", { display_title: "on the screen", status: "needs-input", waiting_since: mIso(6 * M_MIN), seen: { turn_ended_at: mIso(9 * M_MIN) } });
+  const tc = mCard("card-c", { display_title: "no replies yet", status: "needs-input", waiting_since: mIso(8 * M_MIN), recap: "A recap stands in.",
+    reported_at: mIso(20 * M_MIN), report_sha: "abcdef1234567", seen: { turn_ended_at: mIso(7 * M_MIN) } });
+  st.tasks = [ta, tb, tc];
+  const evil = "# Plan\n\nA <script>window.__pwn = 1</script> line with **bold**, `inline` and [bad](javascript:window.__pwn=1) and [good](https://example.com/x).\n\n- one\n- two\n\n```\n" +
+    "x".repeat(400) + "\n```\n";
+  const twoReplies = () => ({ source: "transcript", replies: [
+    { at: mIso(9 * M_MIN), text: "First reply, plain." },
+    { at: mIso(4 * M_MIN), text: evil, truncated: true } ] });
+  st.replies["card-a"] = twoReplies();
+  st.replies["card-b"] = { source: "screen", replies: [{ at: mIso(M_MIN), text: "$ go test ./...\nok  \tpkg\t0.3s", truncated: false }] };
+  st.replies["card-c"] = 404;
+  await st.open();
+  try {
+    for (const vp of M_VIEWS) {
+      st.replies["card-a"] = twoReplies();
+      const { ctx, p, errors } = await mPage(browser, st, vp, "");
+      const tag = "mCard " + vp.width + ": ";
+      await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
+      st.hits.length = 0;
+      // compose.js and perms.js do not exist yet, and the sheet still opens
+      await p.tap('#m-list .row[data-id="card-a"]');
+      await p.waitForSelector("#m-card.on", { timeout: slow(5000) });
+      await p.waitForSelector("#m-replies .reply", { timeout: slow(5000) });
+      if (!/builder/.test(await p.textContent("#m-card-head"))) fail(tag + "the head does not carry the name");
+      if ((await p.$$("#m-replies .reply")).length !== 2) fail(tag + "two replies are not shown");
+      if (await p.evaluate(() => window.__pwn)) fail(tag + "a script in a reply ran");
+      if (await p.$("#m-replies script")) fail(tag + "a script element reached the DOM");
+      if (await p.$('#m-replies a[href^="javascript:"]')) fail(tag + "a javascript: link survived");
+      if (!(await p.$('#m-replies a[href="https://example.com/x"]'))) fail(tag + "the safe link was dropped");
+      if (!/cut short/.test(await p.textContent("#m-replies"))) fail(tag + "a truncated reply does not say so");
+      const pre = await p.$eval("#m-replies pre", e => ({ sw: e.scrollWidth, cw: e.clientWidth, ox: getComputedStyle(e).overflowX }));
+      if (pre.sw <= pre.cw || pre.ox !== "auto") fail(tag + "the code block does not scroll inside itself: " + JSON.stringify(pre));
+      if (await mNoSideways(p)) fail(tag + "the card scrolls sideways");
+      if (!/which port/.test(await p.textContent("#m-card-extras"))) fail(tag + "the open questions are missing");
+      if (await p.getAttribute("#m-card-term", "href") !== "/#term=card-a") fail(tag + "open terminal does not point at the pop-out");
+      if (st.hits.filter(h => h === "card-a?3").length !== 1) fail(tag + "replies fetched " + st.hits.join(","));
+      await mShot(p, "card-dark-" + vp.width);
+      // refetch only when the turn ends
+      st.send("task", Object.assign({}, ta, { row: 1, last_activity_at: mIso(1000) }));
+      await p.waitForTimeout(600);
+      if (st.hits.filter(h => h === "card-a?3").length !== 1) fail(tag + "replies refetched without a new turn: " + st.hits.join(","));
+      st.replies["card-a"] = { source: "transcript", replies: [{ at: mIso(1000), text: "A fresh reply." }] };
+      st.send("task", Object.assign({}, ta, { row: 1, seen: Object.assign({}, ta.seen, { turn_ended_at: mIso(500) }) }));
+      await p.waitForFunction(() => /A fresh reply/.test(document.getElementById("m-replies").textContent), null, { timeout: slow(5000) });
+      if (st.hits.filter(h => h === "card-a?3").length !== 2) fail(tag + "the turn end did not refetch once: " + st.hits.join(","));
+      // the browser back button closes the sheet
+      await p.goBack();
+      await p.waitForFunction(() => document.getElementById("m-card").hidden, null, { timeout: slow(5000) });
+      if (!(await p.$("#m-list .row"))) fail(tag + "the home is gone after back");
+      // a screen source
+      await p.tap('#m-list .row[data-id="card-b"]');
+      await p.waitForSelector("#m-replies pre.screen", { timeout: slow(5000) });
+      if (!/from the screen/.test(await p.textContent("#m-replies"))) fail(tag + "a screen reply is not labelled");
+      await mShot(p, "card-screen-dark-" + vp.width);
+      await p.tap("#m-card-back");
+      await p.waitForFunction(() => document.getElementById("m-card").hidden, null, { timeout: slow(5000) });
+      // a 404 falls back to the recap and the last report
+      await p.tap('#m-list .row[data-id="card-c"]');
+      await p.waitForSelector("#m-card.on", { timeout: slow(5000) });
+      await p.waitForFunction(() => !document.querySelector("#m-replies .loading"), null, { timeout: slow(5000) });
+      const fb = await p.textContent("#m-card-scroll");
+      if (!/A recap stands in/.test(fb) || !/abcdef1/.test(fb)) fail(tag + "the 404 fallback lacks the recap or the last report: " + fb.slice(0, 200));
+      await mShot(p, "card-fallback-dark-" + vp.width);
+      if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+      await ctx.close();
+      // compose.js and perms.js (u-025) are mounted on open and released on leave. The page loads the real ones,
+      // which would replace a stub set up front, so they are wrapped once they are there.
+      const c2 = await browser.newContext({ viewport: vp, hasTouch: true, isMobile: true });
+      const p2 = await c2.newPage();
+      await p2.goto(st.url + "/m/", { waitUntil: "domcontentloaded" });
+      await p2.evaluate(() => {
+        window.__mounts = [];
+        for (const [name, tag] of [["mCompose", "compose"], ["mPerms", "perms"]]) {
+          const real = window[name];
+          if (!real) { window.__mounts.push(tag + "-missing"); continue; }
+          window[name] = Object.assign({}, real, {
+            mount: (el, id, o) => { window.__mounts.push(tag + ":" + id); return real.mount(el, id, o); },
+            unmount: () => { window.__mounts.push(tag + "-off"); return real.unmount(); }
+          });
+        }
+      });
+      await p2.waitForSelector("#m-list .row", { timeout: slow(10000) });
+      await p2.tap('#m-list .row[data-id="card-a"]');
+      await p2.waitForSelector("#m-card.on", { timeout: slow(5000) });
+      await p2.goBack();
+      await p2.waitForFunction(() => document.getElementById("m-card").hidden, null, { timeout: slow(5000) });
+      const mounts = await p2.evaluate(() => window.__mounts.join(","));
+      if (!/perms:card-a/.test(mounts) || !/compose:card-a/.test(mounts) || !/perms-off/.test(mounts)) fail(tag + "the mounts were not called and released: " + mounts);
+      await c2.close();
+      // light
+      st.replies["card-a"] = twoReplies();
+      const lt = await mPage(browser, st, vp, "daylight");
+      await lt.p.waitForSelector("#m-list .row", { timeout: slow(8000) });
+      await lt.p.tap('#m-list .row[data-id="card-a"]');
+      await lt.p.waitForSelector("#m-replies .reply", { timeout: slow(5000) });
+      await lt.p.waitForTimeout(500);
+      await mShot(lt.p, "card-light-" + vp.width);
+      await lt.ctx.close();
+    }
+  } finally { await st.close(); }
+  if (!bad) console.log("mCard ok");
+}
+
+async function mServeSection(browser) {
+  const st = mServer({});
+  await st.open();
+  try {
+    const { ctx, p, errors } = await mPage(browser, st, M_VIEWS[0], "");
+    const tag = "mServe: ";
+    await p.waitForSelector("#m-skel[hidden]", { state: "attached", timeout: slow(10000) });
+    const head = await p.evaluate(() => ({
+      manifest: (document.querySelector('link[rel="manifest"]') || {}).href,
+      vp: document.querySelector('meta[name="viewport"]').content,
+      apple: !!document.querySelector('meta[name="apple-mobile-web-app-capable"]'),
+      touch: (document.querySelector('link[rel="apple-touch-icon"]') || {}).href,
+      board: !!window.Terminal,
+    }));
+    if (!/\/m\/manifest\.webmanifest$/.test(head.manifest || "")) fail(tag + "no manifest link");
+    if (!/viewport-fit=cover/.test(head.vp) || !/interactive-widget=resizes-content/.test(head.vp)) fail(tag + "viewport meta: " + head.vp);
+    if (!head.apple || !head.touch) fail(tag + "the iOS meta tags are missing");
+    if (head.board) fail(tag + "the phone page loaded xterm");
+    const man = await (await fetch(head.manifest)).json();
+    if (man.display !== "standalone" || man.start_url !== "/m/" || man.scope !== "/m/" || man.name !== "atrium") fail(tag + "manifest fields: " + JSON.stringify(man));
+    if (!man.theme_color || !man.background_color) fail(tag + "manifest colours are missing");
+    if (!(man.icons || []).some(i => i.purpose === "maskable")) fail(tag + "no maskable icon");
+    for (const i of man.icons) {
+      const r = await fetch(st.url + i.src);
+      if (r.status !== 200 || r.headers.get("content-type") !== "image/png") fail(tag + i.src + " answered " + r.status);
+    }
+    if (!(await p.$('a.board[href="/"]'))) fail(tag + "no link back to the board");
+    const cs = await p.evaluate(() => { const b = getComputedStyle(document.body); return { ov: b.overflow, disp: b.display }; });
+    if (cs.disp === "flex" || cs.ov === "hidden") fail(tag + "the board's body rules leaked in: " + JSON.stringify(cs));
+    await p.waitForFunction(() => document.getElementById("m-live").classList.contains("on"), null, { timeout: slow(8000) });
+    if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+    await ctx.close();
+    // the stream dropping turns the live dot off
+    const b = await mPage(browser, st, M_VIEWS[1], "");
+    await b.p.waitForFunction(() => document.getElementById("m-live").classList.contains("on"), null, { timeout: slow(8000) });
+    st.streams.forEach(s => s.destroy());
+    await b.p.waitForFunction(() => !document.getElementById("m-live").classList.contains("on"), null, { timeout: slow(8000) });
+    await b.ctx.close();
+  } finally { await st.close(); }
+  if (!bad) console.log("mServe ok");
+}
