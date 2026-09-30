@@ -667,6 +667,8 @@ const alerting = (() => {
       if (isNaN(since)) return;
       const waitedMs = now - since;
       if (waitedMs < 60000) return;
+      // A growler is on screen for this request and its reminders are the growler's.
+      if (typeof growlHas === "function" && growlHas(p.id)) return;
 
       // THE OPERATOR'S BACKOFF: 1m, 2m, 5m, 10m, 30m, 1h, 2h, 4h, 8h, 24h, then
       // daily. The same schedule the room uses for a silent stop and a stuck
