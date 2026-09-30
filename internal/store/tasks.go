@@ -1640,3 +1640,20 @@ func (s *Store) ListArchived(limit int) ([]*Task, error) {
 	})
 	return out, err
 }
+
+// WireNameHeld reports whether any card, archived or done included, already has
+// this wire name. Register matches on it at every status, so a launch that hands
+// out a held name gets that card back. The name is qualified as Register does.
+// A storage failure answers true: the caller gets a suffixed name rather than a
+// card that might be re-prompted, and the guard has already halted the daemon.
+func (s *Store) WireNameHeld(name string) bool {
+	name = s.Qualify(name)
+	err := s.guard(func() error {
+		var one int
+		return s.db.QueryRow(`SELECT 1 FROM task WHERE wire_name = ? LIMIT 1`, name).Scan(&one)
+	})
+	if errors.Is(err, sql.ErrNoRows) {
+		return false
+	}
+	return true
+}
