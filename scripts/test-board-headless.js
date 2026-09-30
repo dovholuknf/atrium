@@ -12707,6 +12707,57 @@ async function clockSection(browser, base) {
   }
 }
 
+// ── u-001: the worst phone findings, as checks that FAIL today ─────────────
+// Not in the default run: `HEADLESS_ONLY=u001Audit` only. Each one is a finding in
+// docs/backlog/ui/u-001-audit.md, and the wave that fixes it turns it green.
+async function u001AuditSection(browser, base) {
+  const was = tasksMode;
+  const errors = [];
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+  await ctx.addInitScript(() => localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true })));
+  const p = await ctx.newPage();
+  p.on("pageerror", e => errors.push(String(e)));
+  try {
+    // R1. One tap on `? N` throws the questions away unread: their text lives only in the chip's tooltip.
+    tasksMode = "qclick";
+    qDismissed.clear(); qDismissWrites = []; qDismissMode = "ok";
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    const chip = '#stack-list .stackrow[data-id="qc1"] .chip.questions';
+    await p.waitForSelector(chip, { timeout: slow(15000) });
+    await p.locator(chip).tap({ force: true });
+    await p.waitForTimeout(600);
+    if (qDismissWrites.length) fail("u001Audit R1: a tap on the ? chip on a phone dismissed the questions without showing them");
+
+    // E1. The show, sort and group pills are the most common target on the board, and a thumb needs 44px.
+    const pill = await p.evaluate(() => Math.min(...[...document.querySelectorAll("#stack .seg button")]
+      .map(b => b.getBoundingClientRect().height).filter(h => h > 0)));
+    if (pill < 44) fail("u001Audit E1: the stack's filter pills are " + Math.round(pill) + "px tall on a phone, under 44");
+
+    // R2. Editing a permission's command with the keyboard up leaves no way to approve without closing it.
+    tasksMode = "land";
+    landList = [];
+    landPerms = [{ id: "u1p", perm_id: "u1p", task_id: "t1", agent: "first card", tool: "Bash",
+      command: "go test ./internal/api/... -run TestCompose -count=1", requested_at: new Date().toISOString() }];
+    await p.evaluate(() => { permsLoaded = false; return runRefresh(); });
+    await p.evaluate(() => switchView("perms"));
+    await p.waitForSelector("#perms-list .row.perm textarea.cmd", { timeout: slow(10000) });
+    await p.locator("#perms-list .row.perm textarea.cmd").tap();
+    await p.setViewportSize({ width: 390, height: 506 });
+    await p.evaluate(() => document.activeElement.scrollIntoView({ block: "nearest" }));
+    await p.waitForTimeout(300);
+    const kb = await p.evaluate(() => {
+      const a = document.querySelector('#perms-list .row.perm [data-do="approve"]').getBoundingClientRect();
+      return { top: Math.round(a.top), bottom: Math.round(a.bottom), H: innerHeight };
+    });
+    if (kb.bottom > kb.H || kb.top < 0) fail("u001Audit R2: approve is off screen while the command is edited with the keyboard up: " + JSON.stringify(kb));
+  } finally {
+    tasksMode = was;
+    landPerms = [];
+    await ctx.close();
+  }
+  if (errors.length) fail("u001Audit: the page threw: " + errors.join(" | "));
+}
+
 async function main() {
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = "http://127.0.0.1:" + server.address().port;
@@ -12734,7 +12785,12 @@ async function main() {
       cardUrlTable: cardUrlTableSection, cardUrlClash: cardUrlClashSection, cardUrlLinks: cardUrlLinksSection, cardUrlRoom: cardUrlRoomSection, mCardUrl: (b) => mCardUrlSection(b), cardUrlNotify: cardUrlNotifySection,
       clock: clockSection,
       composeImages: composeImagesSection, composePaste: composePasteSection, mComposeImages: mComposeImagesSection,
-      usageTab: usageTabSection };
+      usageTab: usageTabSection,
+      mHome: mHomeSection, mCard: mCardSection, mServe: mServeSection,
+      phoneKeyLabel: phoneKeyLabelSection, phoneKeyLit: phoneKeyLitSection,
+      notifyCommand: notifyCommandSection, presence: presenceSection, shiftMenu: shiftMenuSection, tallPty: tallPtySection,
+      cacheChip: cacheChipSection, cacheLine: cacheLineSection, roomsMachine: roomsMachineSection,
+      u001Audit: u001AuditSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
