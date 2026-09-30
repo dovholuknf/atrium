@@ -295,3 +295,42 @@ func TestAProvedCullIsAcceptedAtTheProvedTip(t *testing.T) {
 		t.Fatalf("result = %+v, want the worktree removed on the strength of the proof", res)
 	}
 }
+
+func TestAProvedCullAcceptsAnAbbreviatedTip(t *testing.T) {
+	d := testDaemon(t)
+	r := newCullRepo(t, false)
+	task := cullCard(t, d, r.wt, OriginAgentTag, SubagentTag)
+	tip := cullGit(t, r.wt, "rev-parse", "HEAD")[:7]
+	res, err := d.CullProved(task.ID, DefaultCullInto, tip)
+	if err != nil {
+		t.Fatalf("cull: %v", err)
+	}
+	if !res.WorktreeRemoved {
+		t.Fatalf("result = %+v, want the worktree removed", res)
+	}
+}
+
+func TestAProvedCullRefusesATipThatIsNotACommitHere(t *testing.T) {
+	d := testDaemon(t)
+	r := newCullRepo(t, false)
+	task := cullCard(t, d, r.wt, OriginAgentTag, SubagentTag)
+	_, err := d.CullProved(task.ID, DefaultCullInto, "deadbeefdeadbeef")
+	if err == nil || !strings.Contains(err.Error(), "not a commit in this room") || strings.Contains(err.Error(), "new commits") {
+		t.Fatalf("err = %v, want a refusal saying the tip is not a commit here", err)
+	}
+	if _, err := os.Stat(r.wt); err != nil {
+		t.Errorf("the worktree was touched: %v", err)
+	}
+}
+
+func TestAProvedCullShowsBothShasAtTheSameLengthWhenMoved(t *testing.T) {
+	d := testDaemon(t)
+	r := newCullRepo(t, true)
+	task := cullCard(t, d, r.wt, OriginAgentTag, SubagentTag)
+	tip := cullGit(t, r.wt, "rev-parse", "HEAD")
+	cullGit(t, r.wt, "commit", "-q", "--allow-empty", "-m", "more")
+	_, err := d.CullProved(task.ID, DefaultCullInto, tip[:7])
+	if err == nil || !strings.Contains(err.Error(), "new commits") || !strings.HasSuffix(err.Error(), " vs "+tip[:10]) {
+		t.Fatalf("err = %v, want new commits with a 10-character sha on both sides", err)
+	}
+}

@@ -119,7 +119,7 @@ func (d *Daemon) CullProved(taskID, into, tip string) (*CullResult, error) {
 	res.Branch = plan.branch
 	if plan.moved != "" {
 		return nil, fmt.Errorf("%s was not culled: new commits since the merged branch was fetched: %s vs %s",
-			t.DisplayTitle(), shortRef(plan.moved), shortRef(tip))
+			t.DisplayTitle(), shortRef(plan.moved), shortRef(plan.tip))
 	}
 	if !plan.merged {
 		return nil, fmt.Errorf("%s was not culled: its branch %s is not merged into %s",
@@ -254,8 +254,11 @@ func inspectCullProved(wt, into, tip string) (*cullPlan, error) {
 	if protectedBranch(p.branch, into) {
 		return nil, fmt.Errorf("%s is on %s, which a cull never deletes", wt, p.branch)
 	}
-	p.tip = strings.TrimSpace(tip)
-	if p.tip != "" {
+	if tip = strings.TrimSpace(tip); tip != "" {
+		p.tip, err = resolveTip(wt, tip)
+		if err != nil {
+			return nil, err
+		}
 		head, err := gitIn(wt, "rev-parse", "--verify", "-q", "refs/heads/"+p.branch)
 		if err != nil {
 			return nil, fmt.Errorf("could not read branch %s: %w", p.branch, err)
@@ -290,6 +293,25 @@ func inspectCullProved(wt, into, tip string) (*cullPlan, error) {
 		p.dirty = append(p.dirty, strings.TrimSpace(line))
 	}
 	return p, nil
+}
+
+// resolveTip turns the tip a caller typed, possibly an abbreviated sha, into the
+// full commit sha in this worktree's repository, so it compares like for like.
+// A tip that is not a commit here is refused by name; that is not the same as the
+// branch having moved past a known tip.
+func resolveTip(wt, tip string) (string, error) {
+	if strings.HasPrefix(tip, "-") {
+		return "", fmt.Errorf("%q is not a commit", tip)
+	}
+	full, err := gitIn(wt, "rev-parse", "--verify", tip+"^{commit}")
+	if err != nil {
+		if strings.Contains(err.Error(), "ambiguous") {
+			return "", fmt.Errorf("the tip %s is ambiguous here, matching more than one object. give more of the sha", tip)
+		}
+		return "", fmt.Errorf("the tip %s is not a commit in this room's repository. it was never fetched here, "+
+			"or it is not a commit", tip)
+	}
+	return full, nil
 }
 
 // protectedBranch is a branch a cull never deletes, whatever the worktree says.
