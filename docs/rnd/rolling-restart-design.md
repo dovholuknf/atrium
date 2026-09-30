@@ -114,10 +114,13 @@ Framed messages, one connection per daemon, a control stream and multiplexed pty
 
 - `hello {proto, build}` both ways. A daemon that needs a newer `proto` than the host speaks does not use that host
   for new launches (section 6). The build string is shown on the board.
-- `spawn {id, argv, env, cwd, cols, rows, ring}` answers `{pid, run_id}`. `run_id` is assigned by the host, unique
+- `spawn {id, kind, argv, env, cwd, cols, rows, ring}` answers `{pid, run_id}`. `kind` is `runner` (a card's runner)
+  or `shell` (a plain shell), the same split the supervisor keeps today as its `runners` and `shells` maps. The host
+  stores it and never acts on it. A reattaching daemon rebuilds both maps from it, so a shell is never filed as a
+  card's exit, counted by the idle rules, or restarted or parked as a runner. `run_id` is assigned by the host, unique
   for the host's lifetime and never reused, and it names this one runner start. A card started again gets a new one.
 - `list` answers every pty:
-  `{id, run_id, pid, cols, rows, started, exited, exit_code, ring_start, out_offset}`.
+  `{id, kind, run_id, pid, cols, rows, started, exited, exit_code, ring_start, out_offset}`.
 - `attach {id, run_id, from}` streams output from an absolute byte offset. A `from` older than the ring's start gets the
   whole ring and a `truncated` flag, which is the replay case. The answer carries the retained bytes WITH their size
   cuts: the same `(offset, cols, rows)` marks `ringBuffer.ReplayCuts` returns today (`supervisor.go`, `sizeCut` in
@@ -313,7 +316,12 @@ If B is refused, A is buildable, and these are the answers it would need. Each i
 - **Stage 3, rooms (@fabric).** `restart_atrium` and `provision-room.ps1 -Restart` use it. Plus the systemd and Task
   Scheduler changes in section 7, and the board showing the host build.
 - **Stage 4, host upgrade (@runtime with @terminal).** Section 6: the second host and the per-card idle move. It is
-  only needed the first time the protocol changes, so it can wait for that.
+  only needed the first time the protocol changes, so it can wait for that. Acceptance: restart the daemon while cards
+  run on both the primary host and a `.pN` secondary, then check that attach, write, resize and exit filing reach the
+  right host for each card, and that a new launch goes to the newest host.
+
+clint's answers to section 10 become acceptance lines of the stage they touch (stage 2 for the stop default and the
+retry, stage 3 for on by default). They do not hold stages 0 and 1.
 
 Stage 2 is where clint gets the feature.
 
