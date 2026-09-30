@@ -3,6 +3,7 @@ module github.com/dovholuknf/atrium
 go 1.26.2
 
 require (
+	github.com/Microsoft/go-winio v0.6.2
 	github.com/aymanbagabas/go-pty v0.2.3
 	github.com/coder/websocket v1.8.15
 	github.com/go-openapi/runtime v0.29.0
@@ -21,7 +22,6 @@ require (
 
 require (
 	github.com/Jeffail/gabs v1.4.0 // indirect
-	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/creack/pty v1.1.24 // indirect
