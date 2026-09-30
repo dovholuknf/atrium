@@ -7487,3 +7487,91 @@ The restart countdown and the paused toast with its resume button stay as toasts
    fix it answered `runner=0`.
 2. On a Linux room with a native claude install (`~/.local/share/claude/versions/<version>`), start a card and look
    at its details on the board: the pid is the claude process, not 0, and `ps -o comm= -p <pid>` shows the version.
+
+## GG. The permission gate hook row (f-006)
+
+Use a scratch HOME so nothing touches the real settings. Set `HOME` and `USERPROFILE` to an empty temp directory and
+point `ATRIUM_HOOK_EXE` at the atrium binary.
+
+**GG1. The gate row and its timeout.**
+1. Run `atrium hook status`. The PreToolUse `permission` row reads `not wired`.
+2. Run `atrium hook install`. Open `.claude/settings.json`: the `hook --event permission` command has `"timeout":
+   86400` and no other atrium command has a timeout.
+3. Change that timeout to 60 and run `atrium hook status`, then `GET /v1/hooks`. The row reports `timeout_short` and
+   `missing` counts it.
+4. Run `atrium hook install --event permission`. The timeout is 86400 again and the matcher on the entry is kept. Set
+   it to 90000 and run it again: nothing is written and there is no new `.bak` file.
+
+**GG2. The dotfiles gate holds the slot.**
+1. Start from a settings file whose PreToolUse has `pwsh -NoProfile -File C:/x/atrium-perm-hook.ps1`, timeout 86400.
+2. `atrium hook status` shows the permission row as wired, and `GET /v1/hooks` carries an `other` line for it and does
+   not count it in `missing`.
+3. `atrium hook install` writes the other hooks and leaves the script row alone. No `hook --event permission` command
+   is added.
+4. `atrium hook install --event permission` fails, saying two gates would ask twice.
+
+**GG3. Both gates.** Add `atrium hook --event permission` beside the script. `GET /v1/hooks` reports
+`two_gates` true, on the row and on the report. Nothing rewrites either entry.
+
+## GH. Mutating control calls are audited (f-020)
+
+1. From a session on a room, `atrium_launch` a worker, then `atrium_cull` it once merged. `curl -s
+   'http://127.0.0.1:7778/_hub/audit?kind=ctl-launch'` and `...?kind=ctl-cull` each show one line on that room, reading
+   `by <you>@<room> (claimed): launch claude as <card>, ok` and `... cull <card> into claude/main, ok`.
+2. `atrium_exit` a card, set an alias with `atrium_alias`, then only read one. `kind=ctl-exit` and `kind=ctl-alias`
+   show one line each for the exit and the set, and none for the read.
+3. `atrium_say` a live session, then a parked one with `wake` true. Only the wake shows, as `kind=ctl-wake-say`.
+   `atrium_report` and `atrium_status` write nothing.
+4. `atrium_launch` with the room at its cap. `kind=ctl-launch` shows `... refused: at the launch cap of N running
+   workers on room <room>`, and no `launch-refused` line is written.
+5. `atrium_cull` a card that is not merged. The line ends with the room's refusal, cut to its first line.
+6. From room A, `atrium_launch room=B`. The line is on room B (`?room=B`), and its text says `by <you>@A`. Room A has
+   no copy.
+7. Read every `ctl-*` line back: none contains a prompt, brief, message text, args or env values.
+
+## GI. Notify fires for a question and for an unseen finished turn (f-023)
+
+1. On a room running this build: `curl -s http://127.0.0.1:7778/v1/state` shows each card with a `seen` object beside
+   its stored fields (`turn_ended_at`, `unseen`, and `open_questions` while a question is owed).
+2. With the hub's notify turned on (`PUT /_hub/notify`, from the hub's machine), have a card end a turn with an
+   `## Open Questions` block while no board tab is visible. One notification arrives with the reason "question".
+3. Answer it, then let a card finish a turn with no board open. One notification arrives with the reason "finished".
+   Look at the card, and no second one comes for the same turn.
+4. A room on an older build still notifies for permission and input, and never for question or finished.
+
+## GJ. The notify command is set and tested from the hub's machine only (f-024)
+
+1. On the hub's machine, `curl -s http://127.0.0.1:7778/_hub/notify` answers the setting, and a PUT of
+   `{"enabled":false,"command":["cmd"]}` answers 200.
+2. From another machine, through the board's overlay address (zrok or ziti), the same GET answers 200, and the PUT
+   and `POST /_hub/notify/test` answer 403 with "set and tested only from the machine the hub runs on". The setting
+   is unchanged afterwards.
+3. `POST /_hub/presence {"visible":true,"tab":"x"}` from the other machine still answers ok.
+
+## GK. The launch cap per room (room-launch-cap)
+
+1. On the hub: `curl -s http://127.0.0.1:7778/_hub/launch-caps` answers `{"default":10,"rooms":{}}` before anything
+   is set.
+2. `curl -s -X PUT -H 'Content-Type: application/json' -d '{"default":5,"rooms":{"claude-sg4":10,"sg3":5,"m1mini":5}}'
+   http://127.0.0.1:7778/_hub/launch-caps` answers the same caps back. A GET after a hub restart still does.
+3. A PUT with a cap of -1 or 1000, a blank room name, or not JSON answers 400 and changes nothing.
+4. With sg3 at 5 live `atrium:subagent` workers, `atrium_launch room=sg3` is refused with "at the launch cap of 5
+   running workers on room sg3", and a launch onto claude-sg4 with fewer than 10 there goes through.
+5. Directors and parked workers (no live terminal) do not count on either room.
+
+## GL. Cache chip and cache line on every Claude card
+
+### GL1. Every Claude card shows its cache state without hover
+Look at the stack, the terminals list, the board and an attached terminal's header. Each Claude card carries one chip: `❄ warm → 03:32`, `❄ kept warm 3× · next ~03:27`, `❄ cold since 02:04`, `❄ no cache yet`, `○ off · cold` or `⊘ stopped · not worth it`. A shell card draws no chip. Hover adds the raw why and state, never the answer.
+
+### GL2. A card that will not refresh says why
+A warm card the daemon is not going to refresh reads `❄ warm → 03:32 · won't refresh: busy` (or small, 5m cache, local hooks, dialog open, budget spent, parked). "next ~HH:MM" appears only when the card is simply not due yet.
+
+### GL3. The chip flips without a reload
+Watch a card whose cache runs out in a few seconds. It changes from warm to cold on its own, with no request in the network log.
+
+### GL4. The summary line
+The stack and the terminals list show `cache: 5 warm · 2 kept warm · 9 cold · keep-alive 83 refreshes this week` over the Claude cards they show, not archived. Search narrows the counts. A keep-alive event moves them. Tapping the line opens the gear on the keep-alive setting.
+
+### GL5. A phone uses the short text
+At 390px the chips read `❄ → 03:32`, `❄ 3× next ~03:27`, `❄ cold`, `⊘ not worth it`, `○ off`, and no row overflows. The full words are in the tooltip.
