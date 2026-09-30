@@ -2,8 +2,11 @@ package hubstore
 
 import (
 	"database/sql"
+	"encoding/json"
 	"strings"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/gitsync"
 )
 
 // The hub's own settings, kept in the `hub_setting` table the schema already
@@ -175,6 +178,38 @@ func (s *Store) SetHubSetting(name, value string) error {
 			name, value, ts(now()))
 		return err
 	})
+}
+
+// SettingGitRepos names the repositories this hub mirrors and serves to its rooms, a JSON
+// list of {name, checkout, branch}. Key-value like every other hub setting, so it needs no
+// migration. See internal/gitsync and docs/rnd/git-sync-design.md.
+const SettingGitRepos = "git_repos"
+
+// GitRepos reads the list, refusing an entry that is not allowed, with why. A refusal here
+// is a hub that mirrors nothing and says so, never one that mirrors a branch it should not.
+func (s *Store) GitRepos() ([]gitsync.Repo, error) {
+	v, err := s.HubSetting(SettingGitRepos)
+	if err != nil {
+		return nil, err
+	}
+	return gitsync.ParseRepos(v)
+}
+
+// SetGitRepos writes the list as JSON after validating it, so a branch that is not the
+// integration branch is refused when it is typed and not when it is next mirrored.
+func (s *Store) SetGitRepos(raw string) error {
+	repos, err := gitsync.ParseRepos(raw)
+	if err != nil {
+		return err
+	}
+	if repos == nil {
+		return s.SetHubSetting(SettingGitRepos, "")
+	}
+	out, err := json.Marshal(repos)
+	if err != nil {
+		return err
+	}
+	return s.SetHubSetting(SettingGitRepos, string(out))
 }
 
 // HubSkin is the skin the ALL view wears. Empty means unset, which the serving

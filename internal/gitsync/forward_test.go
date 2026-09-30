@@ -2,10 +2,10 @@ package gitsync
 
 import (
 	"fmt"
-	"os/exec"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"

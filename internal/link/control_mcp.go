@@ -299,6 +299,8 @@ func (c *controlMCP) server() *mcp.Server {
 			"cancel it.",
 	}, c.wakeHandler)
 
+	c.registerGit(s)
+
 	return s
 }
 
