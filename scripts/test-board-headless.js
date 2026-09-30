@@ -12684,6 +12684,32 @@ async function cardUrlNotifySection(browser, base) {
   if (!bad) console.log("cardUrlNotify ok");
 }
 
+// A pop-out that reloads onto another card takes that card's window name, so the board's one-window-per-card rule finds it.
+async function cardUrlWinNameSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landList = [];
+  landCard("land-a", { alias: "rnd", room: "r1" });
+  landCard("land-b", { alias: "other", room: "r1" });
+  const lookups = { rnd: { body: LAND["land-a"] }, other: { body: LAND["land-b"] } };
+  try {
+    const r = await cuOpen(browser, base, "/alias/rnd", lookups, () => { window.name = "atrium-term-stale"; });
+    try {
+      await cuSolo(r.page, "land-a");
+      const n1 = await r.page.evaluate(() => window.name);
+      if (n1 !== "atrium-term-land-a") fail("cardUrlWinName: the window is named " + n1 + " on /alias/rnd");
+      await r.page.goto(base + "/alias/other", { waitUntil: "domcontentloaded" });
+      await cuSolo(r.page, "land-b");
+      const n2 = await r.page.evaluate(() => window.name);
+      if (n2 !== "atrium-term-land-b") fail("cardUrlWinName: after the reload onto another card the window is named " + n2);
+    } finally { await r.ctx.close(); }
+  } finally {
+    landList = []; landPerms = [];
+    tasksMode = was;
+  }
+  if (!bad) console.log("cardUrlWinName ok");
+}
+
 // The suite's one clock (see CLOCK_OFFSET at the top). The page starts the run at
 // noon or at HEADLESS_CLOCK, a window the page opens agrees, Node and the page
 // read the same time, and the clock still advances. A context that asked for the
@@ -13269,7 +13295,7 @@ async function main() {
       u001Audit: u001AuditSection,
       pasteStart: pasteStartSection, pasteDone: pasteDoneSection, pasteOldRoom: pasteOldRoomSection, pasteClose: pasteCloseSection,
       growlQuestionShots: growlQuestionShotsSection, growlQuestionBody: growlQuestionBodySection, growlReplyGrow: growlReplyGrowSection, growlChoices: growlChoicesSection, growlStable: growlStableSection, mGrowlQuestion: mGrowlQuestionSection,
-      bootClean: bootCleanSection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mRecapSheet: mRecapSheetSection };
+      bootClean: bootCleanSection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mRecapSheet: mRecapSheetSection, cardUrlWinName: cardUrlWinNameSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -15299,6 +15325,7 @@ async function main() {
     await mWorkingSection(browser);
     await mOwnMessagesSection(browser);
     await mRecapSheetSection(browser);
+    await cardUrlWinNameSection(browser, base);
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e));
     if (process.env.DEBUG_HEADLESS) {
