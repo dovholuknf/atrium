@@ -354,6 +354,7 @@ function clearTermPane(switching) {
   if (term) { term.dispose(); term = null; }
   termFit = null;
   termTask = null;
+  if (typeof tcomposeSync === "function") tcomposeSync();
   if (typeof phoneManualReset === "function") phoneManualReset();
   if (typeof walkReset === "function") walkReset();
   dropThemePreview();

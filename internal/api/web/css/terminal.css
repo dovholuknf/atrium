@@ -615,11 +615,17 @@
   /* u-017b: the follow chip, shown only while a manual pan has switched the cursor follow off. */
   .term-body { position: relative; }
   #t-follow {
-    position: absolute; right: 22px; bottom: 8px; z-index: 5; padding: 6px 12px; min-height: 32px;
-    border: 1px solid var(--term-line, var(--stroke-dim)); border-radius: var(--r-sm);
-    background: var(--term-bg, var(--bg-2)); color: var(--term-fg, var(--dim)); font: var(--fs-md)/1 var(--mono);
-    opacity: .9; touch-action: manipulation;
+    position: absolute; right: 10px; bottom: 8px; z-index: 5; width: 44px; height: 44px; padding: 0;
+    border: 1px solid var(--term-line, var(--stroke-dim)); border-radius: 50%;
+    background: var(--term-bg, var(--bg-2)); color: var(--term-fg, var(--dim)); font: var(--fs-lg)/1 var(--mono);
+    opacity: .9; touch-action: manipulation; display: flex; align-items: center; justify-content: center;
   }
+  #t-follow[hidden] { display: none; }
+  #t-follow .n {
+    position: absolute; top: -4px; right: -4px; min-width: 18px; height: 18px; padding: 0 4px; box-sizing: border-box;
+    border-radius: 9px; background: var(--teal); color: var(--bg-2); font: 600 11px/18px var(--mono); text-align: center;
+  }
+  #t-follow .n[hidden] { display: none; }
   .term-list .card .chip { white-space: nowrap; }
 
   /* Never set a width here. Color only. The fit addon works out how many columns fit by measuring the

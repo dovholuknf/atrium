@@ -183,7 +183,9 @@ function placeToasts() {
     if (b.height) below = Math.max(below, b.bottom);
   });
   host.style.setProperty("--toast-top", Math.round(below + 12) + "px");
-  host.style.setProperty("--toast-right", Math.max(8, Math.round(innerWidth - r.right + 12)) + "px");
+  // Never so far in that the floor width (240px, see #toasts) has nowhere to sit: the box would collapse to a sliver.
+  const room = Math.max(8, innerWidth - 248);
+  host.style.setProperty("--toast-right", Math.min(room, Math.max(8, Math.round(innerWidth - r.right + 12))) + "px");
 }
 addEventListener("resize", placeToasts);
 

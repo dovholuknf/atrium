@@ -2452,6 +2452,15 @@ function phoneZoomFit() {
 // Where this code last left the pane, so its own scroll event is recognised and is not read as the reader.
 let phoneOwn = { l: 0, t: 0 };
 
+// Where the grid's first row is on screen, in viewport px. The grid is bottom anchored on a phone (u-023, margin-top
+// auto in phone.css), so a pane taller than the grid leaves the spare height ABOVE it and the offset is not the pane's
+// padding. It is read from the grid element itself, which already includes the pan.
+function phoneGridTop(host, hostBox) {
+  const x = host.querySelector(".xterm");
+  if (x) return x.getBoundingClientRect().top;
+  return hostBox.top + (parseFloat(getComputedStyle(host).paddingTop) || 0) - host.scrollTop;
+}
+
 function keepCursorInView(host, t, noPan) {
   if (!host || !t) return;
   const b = t.buffer.active;
@@ -2472,8 +2481,7 @@ function keepCursorInView(host, t, noPan) {
   if (host.style.paddingBottom !== pad) host.style.paddingBottom = pad;
   // The pane's own top padding, then the rows above the cursor.
   if (noPan) return;
-  const inner = parseFloat(getComputedStyle(host).paddingTop) || 0;
-  const rowTop = hostBox.top + inner + b.cursorY * ch - host.scrollTop;
+  const rowTop = phoneGridTop(host, hostBox) + b.cursorY * ch;
   const rowBottom = rowTop + ch * 2;
   if (rowBottom > visBottom) host.scrollTop += rowBottom - visBottom;
   else if (rowTop < visTop) host.scrollTop -= visTop - rowTop;
@@ -2504,39 +2512,92 @@ function phoneSyncTextarea() {
 }
 
 // MANUAL PAN STATE (u-017b). `phoneTouching`: a finger is on the pane. `phoneManual`: the reader scrolled it
-// by hand, so the cursor follow is off until `phoneFollow` (typing, the key bar, a paste, or the follow chip).
+// by hand, so the cursor follow is off until `phoneFollow`: typing, the key bar, a paste, a tap on the round
+// down button (#t-follow), or panning back to within about one row of the cursor (u-023, the chat-app pattern).
 let phoneTouching = false, phoneManual = false, phoneManualPos = null;
+// The absolute cursor line when the reader panned away, so the button can count the lines that arrived since.
+let phoneAwayAt = -1;
 
 // The pane opened another card or detached: the pan state belongs to the card it was made on.
 function phoneManualReset() {
-  phoneTouching = false; phoneManual = false; phoneManualPos = null;
+  phoneTouching = false; phoneManual = false; phoneManualPos = null; phoneAwayAt = -1;
   phoneOwn = { l: 0, t: 0 }; phoneKeepKey = "";
   phoneFollowChip(false);
 }
 
-function phoneFollowChip(on) {
+// The round down button. Shown only while a manual pan has the cursor out of view, with a small count of the lines
+// that arrived since. No arg or false hides it and forgets the count.
+function phoneFollowChip(on, count) {
   const c = document.getElementById("t-follow");
-  if (c) c.hidden = !on;
+  if (!c) return;
+  c.hidden = !on;
+  const n = c.querySelector(".n");
+  if (!on) { if (n) n.hidden = true; return; }
+  const k = count || 0;
+  if (n) { n.hidden = k < 1; n.textContent = k > 99 ? "99+" : String(k); }
+  c.setAttribute("aria-label", k > 0 ? "back to the cursor, " + k + " new lines" : "back to the cursor");
+}
+
+// How far the cursor cell lies outside the visible part of the pane, in px (0 while it is inside). Vertical or
+// horizontal, whichever is bigger: a reader panned sideways to read a wide line is away from the cursor too.
+function phoneCursorGap(host) {
+  if (!term) return 0;
+  let cw = 0, ch = 0;
+  try { const d = term._core._renderService.dimensions.css.cell; cw = d.width; ch = d.height; } catch (e) {}
+  if (!cw || !ch) return 0;
+  const b = term.buffer.active, hb = host.getBoundingClientRect();
+  const vv = window.visualViewport;
+  const top = Math.max(hb.top, vv ? vv.offsetTop : 0), bottom = Math.min(hb.bottom, vv ? vv.offsetTop + vv.height : window.innerHeight);
+  const rowTop = phoneGridTop(host, hb) + b.cursorY * ch;
+  const colLeft = hb.left + b.cursorX * cw - host.scrollLeft;
+  const dy = Math.max(0, top - (rowTop + ch), rowTop - bottom);
+  const dx = Math.max(0, hb.left - (colLeft + cw), colLeft - hb.right);
+  return Math.max(dy, dx);
+}
+
+// Runs on a manual pan and on output while panned away. Within about one row of the cursor follow resumes by itself,
+// otherwise the button shows with the count of new lines.
+function phoneFollowUpdate(panned) {
+  if (!phoneManual || !term) return;
+  const host = document.getElementById("t-screen");
+  if (!host) return;
+  const b = term.buffer.active, abs = b.baseY + b.cursorY;
+  if (phoneAwayAt < 0) phoneAwayAt = abs;
+  let ch = 0;
+  try { ch = term._core._renderService.dimensions.css.cell.height; } catch (e) {}
+  const gap = phoneCursorGap(host);
+  // Only the reader's own pan may resume the follow. Output alone just updates the button.
+  if (panned && gap <= (ch || 20)) { phoneFollow(true); return; }
+  if (gap <= 0) { phoneFollowChip(false); return; }
+  phoneFollowChip(true, Math.max(0, abs - phoneAwayAt));
 }
 
 // The reader typed or tapped follow: the cursor is followed again, and brought into view now.
-function phoneFollow() {
+// `smooth`: the tap on the button animates back to the cursor. Nothing is ever resized.
+function phoneFollow(smooth) {
   if (!phoneManual) return;
-  phoneManual = false; phoneManualPos = null;
+  phoneManual = false; phoneManualPos = null; phoneAwayAt = -1;
   phoneFollowChip(false);
+  // keepCursorInView returns while xterm's own viewport is above the bottom, so bring it down first (u-023).
+  try { if (term) term.scrollToBottom(); } catch (e) {}
+  const host = document.getElementById("t-screen");
+  if (smooth === "tap" && host) {
+    host.style.scrollBehavior = "smooth";
+    setTimeout(() => { host.style.scrollBehavior = ""; }, 600);
+  }
   phoneKeepSoon(true);
 }
 
 // The reader moved the pane. A scroll that is exactly where this code left it is its own echo.
 function phoneManualScroll(host) {
   if (!termPhone()) return;
-  if (host.scrollLeft === phoneOwn.l && host.scrollTop === phoneOwn.t) return;
+  if (!phoneManual && host.scrollLeft === phoneOwn.l && host.scrollTop === phoneOwn.t) return;
   // Once the pan is manual EVERY scroll that is not our echo updates the remembered spot, touching or not:
   // a fling keeps scrolling after touchend, and a focus must restore where it ended, not where it began.
   if (!phoneTouching && !phoneManual) return;
   phoneManual = true;
   phoneManualPos = { l: host.scrollLeft, t: host.scrollTop };
-  phoneFollowChip(true);
+  phoneFollowUpdate(true);
 }
 
 function wirePhonePan() {
@@ -2555,9 +2616,11 @@ function wirePhonePan() {
   const pane = host.parentElement;
   if (pane && !document.getElementById("t-follow")) {
     const c = document.createElement("button");
-    c.id = "t-follow"; c.type = "button"; c.hidden = true; c.textContent = "follow";
+    c.id = "t-follow"; c.type = "button"; c.hidden = true;
+    c.setAttribute("aria-label", "back to the cursor");
+    c.innerHTML = '<span class="arrow" aria-hidden="true">\u2193</span><span class="n" hidden></span>';
     c.addEventListener("pointerdown", (e) => e.preventDefault());
-    c.addEventListener("click", phoneFollow);
+    c.addEventListener("click", () => phoneFollow("tap"));
     pane.appendChild(c);
   }
   // A focus scroll the browser did for the textarea must not move a pan the reader chose.
@@ -2588,6 +2651,7 @@ function phoneKeepCursor(force) {
   // is never moved (only its bottom padding is kept). It follows the cursor again only on the reader's input
   // (`phoneFollow`), never on output.
   keepCursorInView(host, term, phoneTouching || phoneManual);
+  if (phoneManual) phoneFollowUpdate();
 }
 
 let phoneKeepQueued = false, phoneKeepForce = false;
@@ -2812,8 +2876,28 @@ function phoneVVSoon() {
   });
 }
 
+// u-023: on a phone "fit this screen" sits in the tray (the terminal bar), not under the key bar. A desktop keeps it in
+// the footer, where it always was.
+function phoneFitPlace(phone) {
+  const v = document.getElementById("t-view"), bar = document.querySelector(".term-bar"), foot = document.querySelector(".term-foot");
+  if (!v || !bar || !foot) return;
+  if (phone && v.parentElement !== bar) bar.appendChild(v);
+  else if (!phone && v.parentElement === bar) foot.insertBefore(v, document.getElementById("t-typing") || null);
+}
+
+// The soft keyboard belongs to the composer on a phone. `inputmode="none"` keeps it from opening for xterm's
+// textarea, which stays focusable so a hardware keyboard still types into the terminal. See js/tcompose.js.
+function phoneInputMode() {
+  if (!term || !term.textarea) return;
+  if (termPhone()) term.textarea.setAttribute("inputmode", "none");
+  else term.textarea.removeAttribute("inputmode");
+}
+
 function syncPhoneView() {
   document.body.classList.toggle("term-phone", termPhone());
+  phoneFitPlace(termPhone());
+  if (typeof tcomposeSync === "function") tcomposeSync();
+  phoneInputMode();
   syncTermViewButton();
   if (window.visualViewport && !window._phoneVV) {
     window._phoneVV = true;
