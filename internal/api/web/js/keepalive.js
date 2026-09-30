@@ -163,13 +163,16 @@ function kaModel(t, now) {
   const wont = !waiting && why && why !== "not due" ? (KA_WONT[why] || "") : "";
   const base = n > 0 ? `❄ kept warm ${n}×` : "❄ warm";
   const until = kaClock(wu, now);
+  // The phone's short text is HH:MM alone: "tomorrow" near midnight overflowed its 16 characters, and the full
+  // text in the aria-label and tooltip still carries the day.
+  const hm = ms => { const d = new Date(ms); return kaPad(d.getHours()) + ":" + kaPad(d.getMinutes()); };
+  const tilde = exact ? "" : "~";
   if (waiting && n > 0) {
-    const nx = (exact ? "" : "~") + kaClock(next, now);
-    m.full = `${base} · next ${nx}`;
-    m.short = `❄ ${n}× next ${nx}`;
+    m.full = `${base} · next ${tilde}${kaClock(next, now)}`;
+    m.short = `❄ ${n}× next ${tilde}${hm(next)}`;
   } else {
     m.full = `${base} → ${until}` + (wont ? ` · won't refresh: ${wont}` : "");
-    m.short = `❄ → ${until}`;
+    m.short = `❄ → ${hm(wu)}`;
   }
   m.cls = n > 0 ? "kept" : "warm";
   m.next = waiting ? next : 0;
