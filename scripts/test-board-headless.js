@@ -5090,7 +5090,7 @@ async function u016Section(browser, base) {
 
       if (phone) {
         const a = await p.evaluate(() => {
-          const b = document.getElementById("t-attach"); const r = b.getBoundingClientRect();
+          const b = document.getElementById("t-keys-attach"); const r = b.getBoundingClientRect();
           const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
           return { w: r.width, h: r.height, shown: r.width > 0, top: !!top && (top === b || b.contains(top)),
             inView: r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight };
@@ -5236,6 +5236,121 @@ async function u016Section(browser, base) {
 // browser scrolled the pane there, the cursor keep scrolled back, every frame. Headless Chromium does not
 // scroll a focused element into view the way iOS does, so the scroll is simulated (`browserFocusScroll`)
 // on focus and on every viewport change. Portrait and landscape, a keyboard-sized height, output for 2s.
+// ── u-020: the terminal bar on a phone is one slim row, collapsed by default ──
+async function phoneTermBarSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  landList = [LAND["land-live"]];
+  landPerms = [];
+  const errors = [];
+  const fakeSock = () => {
+    const Real = window.WebSocket;
+    window.__sent = [];
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
+        onopen: null, onclose: null, onmessage: null, onerror: null,
+        send(d) { window.__sent.push(String(d)); }, close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  };
+  const open = async (ctx) => {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await p.evaluate(() => attachTask("land-live"));
+    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live",
+      null, { timeout: slow(10000) });
+    await p.waitForTimeout(300);
+    return p;
+  };
+  const vis = (p, sel) => p.evaluate(s => { const e = document.querySelector(s); if (!e) return false;
+    const r = e.getBoundingClientRect(); const cs = getComputedStyle(e);
+    return cs.display !== "none" && cs.visibility !== "hidden" && r.width > 0 && r.height > 0; }, sel);
+  const box = (p, sel) => p.evaluate(s => { const r = document.querySelector(s).getBoundingClientRect(); return { w: r.width, h: r.height }; }, sel);
+  try {
+    const pctx = await browser.newContext({ viewport: { width: 412, height: 915 }, hasTouch: true, isMobile: true });
+    await pctx.addInitScript(() => {
+      localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true }));
+      localStorage.setItem("atrium.termphone", "1");
+    });
+    await pctx.addInitScript(fakeSock);
+    const p = await open(pctx);
+    for (const mode of ["normal", "full"]) {
+      const tag = "phoneTermBar " + mode + ": ";
+      if (mode === "full") { await p.evaluate(() => setTermFull(true)); await p.waitForTimeout(200); }
+      const shot = process.env.U020_SHOT;
+      if ((await box(p, ".term-bar")).h > 56) fail(tag + "the collapsed bar is not one row: " + JSON.stringify(await box(p, ".term-bar")));
+      for (const s of ["#t-chips .chip.path", "#t-chips", "#t-attach", "#t-cog"])
+        if (await vis(p, s)) fail(tag + s + " shows while collapsed");
+      if (!(await vis(p, "#t-full"))) fail(tag + "full screen is not in the collapsed bar");
+      const cb = await box(p, "#t-bar-toggle");
+      if (cb.w < 44 || cb.h < 44) fail(tag + "the chevron is under 44px: " + JSON.stringify(cb));
+      if (await p.evaluate(() => document.getElementById("t-bar-toggle").getAttribute("aria-expanded")) !== "false") fail(tag + "aria-expanded not false");
+      if (shot) await p.screenshot({ path: shot + "-" + mode + "-collapsed.png" });
+      const before = await p.evaluate(() => document.activeElement && document.activeElement.tagName);
+      await p.tap("#t-bar-toggle");
+      await p.waitForTimeout(200);
+      if (!(await vis(p, "#t-chips .chip.path"))) fail(tag + "a tap on the chevron did not show the path chip");
+      if (await vis(p, "#t-attach")) fail(tag + "the paperclip shows in the expanded phone bar");
+      if (!(await vis(p, "#t-keys-attach"))) fail(tag + "the key bar's attach is gone");
+      if (await p.evaluate(() => document.getElementById("t-bar-toggle").getAttribute("aria-expanded")) !== "true") fail(tag + "aria-expanded not true");
+      if (await p.evaluate(() => document.activeElement && document.activeElement.tagName) !== before) fail(tag + "the toggle moved focus");
+      if (await vis(p, "#t-view-note")) fail(tag + "the fit this screen sentence still shows on a phone");
+      if (shot) await p.screenshot({ path: shot + "-" + mode + "-expanded.png" });
+      await p.reload({ waitUntil: "domcontentloaded" });
+      await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+      if (!(await p.evaluate(() => document.body.classList.contains("hdr-open")))) fail(tag + "the open choice did not survive a reload");
+      await p.tap("#t-bar-toggle");
+      await p.waitForTimeout(200);
+      if (await p.evaluate(() => document.body.classList.contains("hdr-open"))) fail(tag + "a second tap did not collapse");
+      if (mode === "normal") {
+        await p.evaluate(() => attachTask("land-live"));
+        await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask, null, { timeout: slow(10000) });
+        await p.waitForTimeout(300);
+      }
+    }
+    await pctx.close();
+    // the popped-out window (#term=, no board header at all), and the two follow each other through storage
+    const sctx = await browser.newContext({ viewport: { width: 412, height: 915 }, hasTouch: true, isMobile: true });
+    await sctx.addInitScript(() => {
+      localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true }));
+      localStorage.setItem("atrium.termphone", "1");
+    });
+    await sctx.addInitScript(fakeSock);
+    const sp = await sctx.newPage();
+    sp.on("pageerror", e => errors.push(String(e)));
+    await sp.goto(base + "/#term=land-live", { waitUntil: "domcontentloaded" });
+    await sp.waitForFunction(() => termSock && termSock.readyState === 1 && termTask, null, { timeout: slow(15000) });
+    await sp.waitForTimeout(300);
+    if ((await box(sp, ".term-bar")).h > 56) fail("phoneTermBar popout: the collapsed bar is not one row");
+    if (await vis(sp, "#t-chips .chip.path")) fail("phoneTermBar popout: the path shows while collapsed");
+    const pb = await box(sp, "#t-bar-toggle");
+    if (pb.w < 44 || pb.h < 44) fail("phoneTermBar popout: the chevron is under 44px");
+    if (process.env.U020_SHOT) await sp.screenshot({ path: process.env.U020_SHOT + "-popout-collapsed.png" });
+    await sp.tap("#t-bar-toggle");
+    await sp.waitForTimeout(200);
+    if (!(await vis(sp, "#t-chips .chip.path"))) fail("phoneTermBar popout: a tap did not expand");
+    if (process.env.U020_SHOT) await sp.screenshot({ path: process.env.U020_SHOT + "-popout-expanded.png" });
+    await sctx.close();
+    // desktop: unchanged
+    const dctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    await dctx.addInitScript(fakeSock);
+    const dp = await open(dctx);
+    if (await vis(dp, "#t-bar-toggle")) fail("phoneTermBar: a chevron shows on a desktop");
+    for (const s of ["#t-chips .chip.path", "#t-attach", "#t-full", "#t-cog"])
+      if (!(await vis(dp, s))) fail("phoneTermBar: " + s + " is not shown on a desktop");
+    await dctx.close();
+    if (errors.length) fail("phoneTermBar: the page threw: " + errors.join(" | "));
+  } finally {
+    tasksMode = was;
+  }
+}
+
 async function phoneFocusSection(browser, base) {
   const was = tasksMode;
   tasksMode = "land";
@@ -8585,7 +8700,7 @@ async function main() {
       history: historySection, contextSize: contextSizeSection, peekEverywhere: peekEverywhereSection, cardRoute: cardRouteSection,
       quietDoer: quietDoerSection, looksIdle: looksIdleSection, notifyOff: notifyOffSection,
       questionsClick: questionsClickSection, walk: walkSection, linkReuse: linkReuseSection,
-      usageCacheReads: usageCacheReadsSection, roomsDash: roomsDashSection, phoneView: phoneViewSection, heldLine: heldLineSection, u016: u016Section, phoneFocus: phoneFocusSection, phonePan: phonePanSection, usagePolish: usagePolishSection, usageLimits: usageLimitsSection, usageGroups: usageGroupsSection,
+      usageCacheReads: usageCacheReadsSection, roomsDash: roomsDashSection, phoneView: phoneViewSection, heldLine: heldLineSection, u016: u016Section, phoneFocus: phoneFocusSection, phoneTermBar: phoneTermBarSection, phonePan: phonePanSection, usagePolish: usagePolishSection, usageLimits: usageLimitsSection, usageGroups: usageGroupsSection,
       eventDriven: eventDrivenSection, idleBudget: idleBudgetSection, pollsGone: pollsGoneSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
@@ -10519,6 +10634,7 @@ async function main() {
     await heldLineSection(browser, base);
     await u016Section(browser, base);
     await phoneFocusSection(browser, base);
+    await phoneTermBarSection(browser, base);
     await phonePanSection(browser, base);
     await eventDrivenSection(browser, base);
     await idleBudgetSection(browser, base);

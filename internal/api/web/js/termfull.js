@@ -139,3 +139,38 @@ function phoneHeaderSet(hide) {
   phoneHeaderApply();
 }
 phoneHeaderApply();
+
+// THE TERMINAL BAR on a phone (`.term-bar`, body.term-phone) and, with u-021, the board header: one slim row by
+// default, everything else when expanded. ONE saved choice for both, per device: "1" expanded, anything else
+// (including nothing saved) collapsed. A class on body and the chevron's aria state only, so nothing polls.
+const PHONE_HDR_OPEN_KEY = "atrium.phone.headerOpen";
+function phoneHeaderOpenApply() {
+  let v = null;
+  try { v = localStorage.getItem(PHONE_HDR_OPEN_KEY); } catch (e) {}
+  const open = v === "1";
+  document.body.classList.toggle("hdr-open", open);
+  const b = document.getElementById("t-bar-toggle");
+  if (b) {
+    b.setAttribute("aria-expanded", open ? "true" : "false");
+    b.setAttribute("aria-label", open ? "hide the terminal's details and buttons" : "show the terminal's details and buttons");
+  }
+}
+function phoneHeaderOpenSet(open) {
+  try { localStorage.setItem(PHONE_HDR_OPEN_KEY, open ? "1" : "0"); } catch (e) {}
+  phoneHeaderOpenApply();
+}
+// A pop-out window and the board follow each other.
+window.addEventListener("storage", e => { if (e.key === PHONE_HDR_OPEN_KEY) phoneHeaderOpenApply(); });
+(function () {
+  const b = document.getElementById("t-bar-toggle");
+  // A tap must not move focus, so it neither pops the keyboard nor blurs the terminal.
+  if (b) b.addEventListener("mousedown", e => e.preventDefault());
+  // The slim row is a target too: a tap on bare bar (not a button, not the alias editor) opens it.
+  const bar = document.querySelector(".term-bar");
+  if (bar) bar.addEventListener("click", e => {
+    if (!document.body.classList.contains("term-phone") || document.body.classList.contains("hdr-open")) return;
+    if (e.target.closest("button, .can-alias, a, input, select")) return;
+    phoneHeaderOpenSet(true);
+  });
+  phoneHeaderOpenApply();
+})();
