@@ -24,6 +24,10 @@ import (
 // it is, which is better than a very long deadline pretending otherwise.
 const maxAutoMinutes = 24 * 60
 
+// CheckLeanGateway is filled by the daemon: it refuses a lean_worker_gateway name the
+// runner's mcp.json does not hold, with the names it does. Nil accepts any name.
+var CheckLeanGateway func(name string) error
+
 func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, globalAutoView(s))
 }
@@ -577,6 +581,12 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusBadRequest, fmt.Errorf(
 				"lean_worker_gateway is a server NAME from the runner's mcp.json, like mercurius-worker, never a URL. got %q", v))
 			return
+		}
+		if v != "" && CheckLeanGateway != nil {
+			if err := CheckLeanGateway(v); err != nil {
+				writeErr(w, http.StatusBadRequest, err)
+				return
+			}
 		}
 		if err := s.st.SetSetting(store.SettingLeanWorkerGateway, v); err != nil {
 			s.fail(w, err)
