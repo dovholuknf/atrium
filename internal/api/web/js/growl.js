@@ -45,17 +45,18 @@ function onGrowlsEvent(e) {
   try { d = JSON.parse(e.data); } catch (err) { return; }
   if (!d || !Array.isArray(d.growls)) return;
   if (d.perm_after_seconds) growlPermAfter = d.perm_after_seconds;
-  growlApply(d.growls, !growlHeard);
+  growlApply(d.growls, !growlHeard, Array.isArray(d.remind) ? d.remind : []);
   growlHeard = true;
 }
 
-function growlApply(next, seed) {
+function growlApply(next, seed, remind) {
   const was = new Map(growlSet.map(g => [g.id, g]));
   const now = new Map(next.map(g => [g.id, g]));
+  const raised = [];
   if (!seed) {
     next.forEach(g => {
       const w = was.get(g.id);
-      if (g.state === "open" && (!w || w.state !== "open")) growlLog("growler", g);
+      if (g.state === "open" && (!w || w.state !== "open")) { growlLog("growler", g); raised.push(g); }
       if (g.state === "snoozed" && w && w.state === "open") growlLog("growler snoozed", g);
     });
     growlSet.forEach(g => {
@@ -68,9 +69,29 @@ function growlApply(next, seed) {
     if (g && g.state === "open" && el.dismiss) { el.dismiss(); growlUndo.delete(id); }
   });
   growlDraw();
+  growlReapNotes();
+  growlAttention();
+  if (!seed) growlAttend(raised, remind);
 }
 
-function growlLog(what, g) {
+// EVERY OPEN WINDOW HEARS EVERY EVENT, and they share one localStorage and one toast log. A line or an alert
+// that every window made would be said once per window, so the first to claim a key says it. The key carries the
+// growler's `raised_at`, which the hub resets when a snooze ends, so a growler raised again is a new key.
+const GROWL_ONCE_KEY = "atrium.growl.once";
+function growlOnce(key) {
+  try {
+    const now = Date.now();
+    const seen = JSON.parse(localStorage.getItem(GROWL_ONCE_KEY) || "{}");
+    Object.keys(seen).forEach(k => { if (now - seen[k] > 60000) delete seen[k]; });
+    if (seen[key]) return false;
+    seen[key] = now;
+    localStorage.setItem(GROWL_ONCE_KEY, JSON.stringify(seen));
+  } catch (e) {}
+  return true;
+}
+
+function growlLog(what, g, extra) {
+  if (!growlOnce(what + "|" + g.id + "|" + g.raised_at + "|" + (extra || ""))) return;
   if (typeof recordToLog === "function") recordToLog(what + ": " + g.title, g.body || "", "", null, null);
 }
 
@@ -351,3 +372,132 @@ toast = function (title, body, goTo, key, taskFor) {
   }
   return growlRawToast(title, body, goTo, key, taskFor);
 };
+
+// ── asking for attention while the tab is not in front ───────────────────────
+// All of it follows the hub's `growls` event, so every screen agrees on when a reminder happened. The growler on
+// screen is state and is never held back by mute or the master switch. Sound and desktop notifications are, by
+// going through `alerting.play` and `notify`, which ask `notifyHeld` and the mute themselves.
+
+function growlIsOpen(id) { return growlSet.some(g => g.id === id && g.state === "open"); }
+
+// A raise or a reminder, said by one window. The one looking at the board plays the tone, and so does the one
+// picked when nobody is looking, which also raises the desktop notification. A window that knows another has the
+// focus says nothing.
+function growlAttend(raised, remind) {
+  const said = new Map();
+  (remind || []).forEach(id => {
+    const g = growlSet.find(x => x.id === id && x.state === "open");
+    if (g) said.set(id, [g, "remind"]);
+  });
+  raised.forEach(g => { if (!said.has(g.id)) said.set(g.id, [g, "raise"]); });
+  said.forEach(([g, kind]) => growlSay(g, kind));
+}
+
+function growlSay(g, kind) {
+  if (focusIsElsewhere()) return;
+  const extra = kind === "remind" ? "r" + (g.reminders || 0) : "";
+  if (!growlOnce("say|" + kind + "|" + g.id + "|" + g.raised_at + "|" + extra)) return;
+  if (kind === "remind") growlLog("growler reminder", g, extra);
+  const perm = g.reason === "permission";
+  const card = typeof cardRows !== "undefined" ? cardRows.get(growlCard(g)) : null;
+  alerting.play(perm ? "permission" : "waiting", card ? soundForAlert(card) : "");
+  alerting.notify(g.title, growlFirstLine(g.body), perm ? "perms" : "", "", "growl:" + g.id,
+    growlCard(g), card ? card.icon || "" : "", "", {
+      growl: { id: g.id, key: perm ? growlPermID(g) : "", onShown: n => growlNotes.set(g.id, n) }
+    });
+}
+
+// The notifications this page made itself, for the browsers with no service worker.
+const growlNotes = new Map();
+
+// Closes every growler notification whose growler is no longer open, in this browser. Each browser gets the
+// event, so each takes down its own.
+function growlReapNotes() {
+  growlNotes.forEach((n, id) => { if (!growlIsOpen(id)) { try { n.close(); } catch (e) {} growlNotes.delete(id); } });
+  if (typeof swReg === "undefined" || !swReg || !swReg.getNotifications) return;
+  swReg.getNotifications().then(list => list.forEach(n => {
+    const s = (n.data || {}).subject || "";
+    if (s.indexOf("growl:") === 0 && !growlIsOpen(s.slice(6))) n.close();
+  })).catch(() => {});
+}
+
+// The poll's own sweep closes any notification whose subject is not pending, which a growler's never is.
+// Its ids are added to what counts as pending, and the event above does the closing.
+const growlRawReap = reapNotifications;
+// eslint-disable-next-line no-func-assign
+reapNotifications = function (liveKeys) {
+  const keys = new Set(liveKeys);
+  growlSet.forEach(g => { if (g.state === "open") keys.add("growl:" + g.id); });
+  return growlRawReap(keys);
+};
+
+// TAB TITLE AND FAVICON. The title alternates between what `retitle` wrote and the top growler while the tab is
+// not focused. It is a label tick and asks for nothing. The favicon wears an amber dot with the count for as long
+// as any growler is open, focused or not.
+let growlTick = 0;
+let growlTitleBase = "";
+let growlTitleAlt = false;
+let growlMark = "";
+
+function growlStopTitle() {
+  clearInterval(growlTick);
+  growlTick = 0;
+  if (growlTitleAlt) document.title = growlTitleBase;
+  growlTitleAlt = false;
+}
+
+function growlTitleStep() {
+  const top = growlDrawn()[0];
+  if (!top || document.hasFocus()) { growlStopTitle(); return; }
+  if (growlTitleAlt) {
+    document.title = growlTitleBase;
+    growlTitleAlt = false;
+  } else {
+    growlTitleBase = document.title;
+    document.title = "! " + top.title;
+    growlTitleAlt = true;
+  }
+}
+
+function growlMarkURL(n) {
+  const size = 64;
+  const c = document.createElement("canvas");
+  c.width = c.height = size;
+  const g = c.getContext("2d");
+  g.fillStyle = "#0B1B2E";
+  g.fillRect(0, 0, size, size);
+  drawAtriumA(g, size);
+  const warn = getComputedStyle(document.documentElement).getPropertyValue("--warn").trim() || "#e0a53a";
+  g.fillStyle = warn;
+  g.beginPath();
+  g.arc(size * 0.7, size * 0.3, size * 0.3, 0, Math.PI * 2);
+  g.fill();
+  g.fillStyle = "#0B1B2E";
+  g.font = "bold " + Math.round(size * 0.4) + "px sans-serif";
+  g.textAlign = "center";
+  g.textBaseline = "middle";
+  g.fillText(n > 9 ? "9+" : String(n), size * 0.7, size * 0.32);
+  return c.toDataURL("image/png");
+}
+
+function growlAttention() {
+  const n = growlDrawn().length;
+  const link = document.getElementById("favicon");
+  if (link) {
+    try {
+      if (n) {
+        if (growlMark !== String(n)) { link.href = growlMarkURL(n); growlMark = String(n); }
+      } else if (growlMark) {
+        growlMark = "";
+        wearTheMark();
+      }
+    } catch (e) {}
+  }
+  if (n && !document.hasFocus()) {
+    if (!growlTick) { growlTick = setInterval(growlTitleStep, 1500); growlTitleStep(); }
+  } else {
+    growlStopTitle();
+  }
+}
+addEventListener("focus", growlAttention);
+document.addEventListener("visibilitychange", growlAttention);

@@ -11227,7 +11227,7 @@ async function main() {
       usageCacheReads: usageCacheReadsSection, roomsDash: roomsDashSection, phoneView: phoneViewSection, heldLine: heldLineSection, u016: u016Section, phoneHeader: phoneHeaderSection, phoneFocus: phoneFocusSection, phoneTermBar: phoneTermBarSection, phoneShare: phoneShareSection, phonePan: phonePanSection, phoneFollow: phoneFollowSection, phoneTap: phoneTapSection, phoneKeyboard: phoneKeyboardSection, phoneCompose: phoneComposeSection, mCompose: mComposeSection, mPerms: mPermsSection, usagePolish: usagePolishSection, usageLimits: usageLimitsSection, usageGroups: usageGroupsSection,
       eventDriven: eventDrivenSection, idleBudget: idleBudgetSection, pollsGone: pollsGoneSection,
       phoneListFit: phoneListFitSection, phoneNudge: phoneNudgeSection,
-      growlStack: growlStackSection, growlActions: growlActionsSection, growlModal: growlModalSection, growlQuiet: growlQuietSection,
+      growlStack: growlStackSection, growlActions: growlActionsSection, growlModal: growlModalSection, growlQuiet: growlQuietSection, growlAttention: growlAttentionSection,
       cacheChip: cacheChipSection, cacheLine: cacheLineSection, mHome: mHomeSection, mCard: mCardSection, mServe: mServeSection, phoneKeyLabel: phoneKeyLabelSection, phoneKeyLit: phoneKeyLitSection, shiftMenu: shiftMenuSection, notifyCommand: notifyCommandSection, presence: presenceSection, tallPty: tallPtySection, roomsMachine: roomsMachineSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
@@ -13223,6 +13223,7 @@ async function main() {
     await growlActionsSection(browser, base);
     await growlModalSection(browser, base);
     await growlQuietSection(browser, base);
+    await growlAttentionSection(browser, base);
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e));
     if (process.env.DEBUG_HEADLESS) {
@@ -13609,8 +13610,9 @@ function GR(id, reason, n, x) {
   }, x || {});
 }
 
-async function growlBoard(browser, base, hub) {
+async function growlBoard(browser, base, hub, init) {
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  if (init) await ctx.addInitScript(init);
   const p = await ctx.newPage();
   const h = { ctx, p, errors: [], posts: [], gets: 0, decides: [], messages: [], answer: null, wasHub: hubMode };
   p.on("pageerror", e => h.errors.push(String(e)));
@@ -13901,7 +13903,8 @@ async function growlQuietSection(browser, base) {
     if (l.filter(t => t === "growler ended: permission a").length !== 1) fail("growlQuiet: ending logged " + JSON.stringify(l));
     // a snooze coming back open is raised again
     await h.say([Object.assign({}, row, { state: "snoozed" })]);
-    await h.say([row], { remind: [row.id] });
+    // the hub resets raised_at when a snooze ends
+    await h.say([Object.assign({}, row, { raised_at: new Date(GR_T0 + 99 * 60000).toISOString() })], { remind: [row.id] });
     l = await log();
     if (l.filter(t => t === "growler: permission a").length !== 2) fail("growlQuiet: a snooze ending did not log a new raise: " + JSON.stringify(l));
     // a hub never asks for the set, at load or later
@@ -13919,4 +13922,126 @@ async function growlQuietSection(browser, base) {
     if (b.errors.length) fail("growlQuiet: no-hub page errors: " + b.errors.join(" | "));
   } finally { await b.close(); }
   if (!bad) console.log("growlQuiet ok");
+}
+
+// Stands in for the browser's sound and desktop notifications, so a test can count what was asked for.
+const GROWL_STUBS = `
+  window.__osc = 0; window.__notes = []; window.__closed = [];
+  window.AudioContext = class {
+    constructor() { this.state = "running"; this.currentTime = 0; this.destination = {}; }
+    resume() {}
+    createOscillator() { return { type: "", frequency: { setValueAtTime() {} }, connect(a) { return a; },
+      start() { window.__osc++; }, stop() {} }; }
+    createGain() { return { gain: { setValueAtTime() {}, linearRampToValueAtTime() {}, exponentialRampToValueAtTime() {} },
+      connect(a) { return a; } }; }
+  };
+  window.Notification = class {
+    constructor(t, o) { this.opts = o || {}; window.__notes.push({ title: t, tag: this.opts.tag, req: this.opts.requireInteraction, renotify: this.opts.renotify }); }
+    close() { window.__closed.push(this.opts.tag); }
+    static requestPermission() { return Promise.resolve("granted"); }
+  };
+  window.Notification.permission = "granted";
+`;
+
+async function growlAttentionSection(browser, base) {
+  const h = await growlBoard(browser, base, true, GROWL_STUBS);
+  const { p } = h;
+  const focus = on => p.evaluate(v => { document.hasFocus = () => v; if (v) window.dispatchEvent(new Event("focus")); }, on);
+  const n = () => p.evaluate(() => ({ osc: window.__osc, notes: window.__notes.length, closed: window.__closed.slice() }));
+  const title = () => p.evaluate(() => document.title);
+  const icon = () => p.evaluate(() => document.getElementById("favicon").href);
+  const log = () => p.evaluate(() => toastLog().map(e => e.title));
+  try {
+    await p.mouse.click(700, 450);
+    const base0 = await icon();
+    await focus(false);
+    // the first event seeds: a growler already there is not a new alert
+    const old = GR("old", "question", 0);
+    await h.say([old]);
+    let s = await n();
+    if (s.osc || s.notes) fail("growlAttention: the seeding event rang or notified: " + JSON.stringify(s));
+
+    // a raise while unfocused: one tone, one notification under the growler's tag
+    const a = GR("a", "permission", 1);
+    await h.say([old, a]);
+    s = await n();
+    if (!s.osc) fail("growlAttention: a raise made no sound.");
+    let notes = await p.evaluate(() => window.__notes);
+    if (notes.length !== 1 || notes[0].tag !== "atrium-growl:" + a.id || notes[0].req !== true) fail("growlAttention: the notification was " + JSON.stringify(notes));
+    if ((await log()).filter(t => t === "growler: permission a").length !== 1) fail("growlAttention: the raise was not one log line: " + JSON.stringify(await log()));
+
+    // the tab title alternates and the favicon wears the count
+    await p.waitForFunction(() => /^! /.test(document.title), null, { timeout: slow(3000) })
+      .catch(async () => fail("growlAttention: the title never showed the growler: " + await title()));
+    await p.waitForFunction(() => !/^! /.test(document.title), null, { timeout: slow(3500) })
+      .catch(() => fail("growlAttention: the title did not alternate back."));
+    const one = await icon();
+    if (one === base0) fail("growlAttention: the favicon did not change for an open growler.");
+    await h.say([old, a, GR("b", "question", 2)]);
+    if ((await icon()) === one) fail("growlAttention: the favicon did not change with the count.");
+
+    // focus stops it
+    await focus(true);
+    await p.waitForTimeout(200);
+    const still = await title();
+    if (/^! /.test(still)) fail("growlAttention: the title stayed alternating after focus: " + still);
+    await p.waitForTimeout(3300);
+    if (/^! /.test(await title())) fail("growlAttention: the title alternated again while focused.");
+
+    // a reminder rings the tone and notifies under the same tag again
+    await focus(false);
+    const before = await n();
+    await h.say([old, Object.assign({}, a, { reminders: 1 }), GR("b", "question", 2)], { remind: [a.id] });
+    s = await n();
+    if (s.osc <= before.osc || s.notes !== before.notes + 1) fail("growlAttention: a reminder was " + JSON.stringify([before, s]));
+    if (!(await log()).includes("growler reminder: permission a")) fail("growlAttention: the reminder was not logged.");
+    notes = await p.evaluate(() => window.__notes);
+    if (notes[notes.length - 1].tag !== "atrium-growl:" + a.id || notes[notes.length - 1].renotify !== true) fail("growlAttention: the reminder notification was " + JSON.stringify(notes[notes.length - 1]));
+
+    // a notification closes when its growler leaves `open`, and only then
+    await h.say([old, GR("b", "question", 2)]);
+    s = await n();
+    if (!s.closed.includes("atrium-growl:" + a.id)) fail("growlAttention: the notification was not closed: " + JSON.stringify(s.closed));
+    // the service worker's own list, swept by the event and left alone by the poll
+    await p.evaluate(ids => {
+      window.__fake = ids.map(id => ({ data: { subject: "growl:" + id }, tag: "atrium-growl:" + id, close() { window.__closed.push("sw:" + id); } }));
+      swReg = { active: null, getNotifications: () => Promise.resolve(window.__fake) };
+    }, [old.id, "gone"]);
+    await p.evaluate(() => reapNotifications(new Set()));
+    await p.waitForTimeout(150);
+    s = await n();
+    if (s.closed.includes("sw:" + old.id)) fail("growlAttention: the poll's sweep closed a growler that is still open.");
+    await h.say([old]);
+    s = await n();
+    if (!s.closed.includes("sw:gone") || s.closed.includes("sw:" + old.id)) fail("growlAttention: the event sweep closed " + JSON.stringify(s.closed));
+
+    // focused here: the tone, and no notification
+    await focus(true);
+    const f0 = await n();
+    await h.say([old, GR("c", "question", 3)]);
+    s = await n();
+    if (s.osc <= f0.osc || s.notes !== f0.notes) fail("growlAttention: a focused raise was " + JSON.stringify([f0, s]));
+
+    // muted and master-off are silent, and the growler is still on screen
+    await focus(false);
+    await p.evaluate(() => alerting.set({ muted: true }));
+    const m0 = await n();
+    await h.say([old, GR("c", "question", 3), GR("d", "question", 4)]);
+    s = await n();
+    if (s.osc !== m0.osc || s.notes !== m0.notes) fail("growlAttention: a muted raise was " + JSON.stringify([m0, s]));
+    await p.evaluate(() => alerting.set({ muted: false }));
+    await p.evaluate(() => setNotifyOff(true));
+    await h.say([old, GR("c", "question", 3), GR("d", "question", 4), GR("e", "question", 5)]);
+    s = await n();
+    if (s.osc !== m0.osc || s.notes !== m0.notes) fail("growlAttention: a raise with the master switch off was " + JSON.stringify([m0, s]));
+    if (!(await p.$("#growl"))) fail("growlAttention: the master switch hid the growler on screen.");
+    await p.evaluate(() => setNotifyOff(false));
+
+    // nothing open restores the mark
+    await h.say([]);
+    if ((await icon()) !== base0) fail("growlAttention: the favicon was not restored at zero.");
+    if (h.gets) fail("growlAttention: the board fetched /_hub/growls.");
+    if (h.errors.length) fail("growlAttention: page errors: " + h.errors.join(" | "));
+  } finally { await h.close(); }
+  if (!bad) console.log("growlAttention ok");
 }
