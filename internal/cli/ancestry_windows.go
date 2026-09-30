@@ -20,15 +20,6 @@ import (
 // half seconds per session start on this machine. CreateToolhelp32Snapshot is
 // the same information for a few milliseconds.
 
-// runnerNames are the process names a claude session runs under. Checked
-// without an extension, since that differs by platform and by how it was
-// installed.
-var runnerNames = map[string]bool{"claude": true, "node": true}
-
-// maxHops bounds the walk. A hook is two or three processes below its runner,
-// and a bound means a corrupt or cyclic parent chain cannot spin here.
-const maxHops = 6
-
 // runnerPID walks up from this process and returns the first ancestor that
 // looks like a runner, or 0 when none is found.
 //
