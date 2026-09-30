@@ -16,8 +16,9 @@
 // Nothing here asks for anything: no fetch, no poll, no timer. The board is
 // event-driven, and this is one more thing driven by an event.
 //
-// A FIELD A ROOM HAS NOT SHIPPED YET IS ABSENT, and its band shows a dash. A
-// dash is a true statement about what is known. A zero would be a lie.
+// A FIELD A ROOM HAS NOT SHIPPED YET IS ABSENT. The tokens and disk bands show
+// a dash for it, the machine band says in words why there is no figure, and a
+// sample a room could not take is a gap in the line. A zero would be a lie.
 //
 // ── and the preview ─────────────────────────────────────────────────────────
 //
@@ -177,14 +178,31 @@ const RD_DASH = `<span class="rd-dash">&mdash;</span>`;
 // Redrawn from the array every time, never animated: a polyline is a few
 // hundred bytes and the browser draws it in no time. `hi` pins the top, so a
 // CPU line is out of 100 and not out of its own peak.
+//
+// A `null` IS A GAP AND NEVER A ZERO. A minute nobody sampled drawn as 0 would
+// read as an idle machine, so the line breaks there and each run of real
+// samples is its own polyline. A run of one is drawn as a dot (two equal points
+// and a round cap), since a line needs two.
 function sparkSVG(series, cls, hi) {
-  if (!Array.isArray(series) || series.length < 2) return `<span class="rd-spark ${cls} none"></span>`;
+  const real = Array.isArray(series) ? series.filter(v => v !== null && v !== undefined) : [];
+  if (!real.length || series.length < 2) return `<span class="rd-spark ${cls} none"></span>`;
   const n = series.length;
-  const top = hi || Math.max(1, ...series.map(v => Number(v) || 0));
-  const pts = series.map((v, i) =>
-    `${(i * 100 / (n - 1)).toFixed(1)},${(23 - Math.min(1, (Number(v) || 0) / top) * 21).toFixed(1)}`).join(" ");
+  const top = hi || Math.max(1, ...real.map(v => Number(v) || 0));
+  const runs = [];
+  let cur = null;
+  series.forEach((v, i) => {
+    if (v === null || v === undefined) { cur = null; return; }
+    if (!cur) { cur = []; runs.push(cur); }
+    cur.push(`${(i * 100 / (n - 1)).toFixed(1)},${(23 - Math.min(1, (Number(v) || 0) / top) * 21).toFixed(1)}`);
+  });
+  const draw = pts => {
+    const line = pts.length === 1 ? pts[0] + " " + pts[0] : pts.join(" ");
+    const x0 = pts[0].split(",")[0], x1 = pts[pts.length - 1].split(",")[0];
+    return (pts.length > 1 ? `<polygon class="area" points="${x0},24 ${line} ${x1},24"/>` : "") +
+      `<polyline points="${line}"/>`;
+  };
   return `<svg class="rd-spark ${cls}" viewBox="0 0 100 24" preserveAspectRatio="none" aria-hidden="true"
-    ><polygon class="area" points="0,24 ${pts} 100,24"/><polyline points="${pts}"/></svg>`;
+    >${runs.map(draw).join("")}</svg>`;
 }
 
 // limitBar is one `highest seen` bar, or a dash when no card has said.
@@ -250,16 +268,69 @@ function tokensBand(key, tok, cards) {
   return `<div class="rd-band tokens"><div class="rd-h">tokens</div>${body}${limitBars(cards)}</div>`;
 }
 
-// machineBand is the CPU and its line, memory, disk and worktrees.
-function machineBand(key, m, d) {
-  const cpu = m && typeof m.cpu_pct === "number"
-    ? `<div class="rd-row rd-rate${m.cpu_pct > 90 ? " hot" : ""}">
+// hhmm is a timestamp as the wall clock reads it, for `stale since`.
+function hhmm(iso) {
+  const d = new Date(iso);
+  if (isNaN(d)) return "";
+  return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+}
+
+// How long after a room starts its first CPU reading can still be on the way.
+// The room samples every 10s and CPU needs two samples to be a rate.
+const CPU_FIRST_SECONDS = 30;
+
+// machineState is what the snapshot lets us tell apart about cpu and memory:
+//   no `machine` object   the room's build does not send it at all
+//   `machine` with none   the room does, and has not taken its first sample
+//   memory but no CPU     CPU is unavailable on that room (macOS has no machine
+//                         CPU without cgo), except in the first seconds after
+//                         the room started, when the second sample is still due
+// Anything else is figures and needs no words.
+function machineState(m, s) {
+  if (!m || typeof m !== "object") return "unreported";
+  const hasCpu = typeof m.cpu_pct === "number";
+  const hasMem = !!m.mem_total_bytes;
+  if (!hasCpu && !hasMem) return "waiting";
+  if (hasMem && !hasCpu) {
+    const started = s && s.process && Date.parse(s.process.started_at || "");
+    return started && (Date.now() - started) / 1000 < CPU_FIRST_SECONDS ? "cpu-soon" : "cpu-unavailable";
+  }
+  return "ok";
+}
+
+// machineBand is the CPU and its line, memory and its line, disk and worktrees.
+//
+// A failed sample sets `stale_since`: the figures stay, dimmed, with the time.
+function machineBand(key, m, d, s) {
+  const st = machineState(m, s);
+  const stale = m && m.stale_since ? hhmm(m.stale_since) : "";
+  const note = t => `<div class="rd-row rd-note">${t}</div>`;
+  let cpu = "", mem = "";
+  if (st === "unreported") {
+    cpu = note("cpu and memory: this room's build does not report them");
+  } else if (st === "waiting") {
+    cpu = note("cpu and memory: waiting for the first reading");
+  } else {
+    if (typeof m.cpu_pct === "number") {
+      cpu = `<div class="rd-row rd-rate${m.cpu_pct > 90 && !stale ? " hot" : ""}">
         <span>cpu <b class="rd-big" data-v="${key}.cpu">${Math.round(m.cpu_pct)}%</b></span>
-        ${sparkSVG(m.cpu_series_pct, "cpu", 100)}</div>`
-    : `<div class="rd-row"><span>cpu ${RD_DASH}</span></div>`;
-  const mem = m && m.mem_total_bytes
-    ? `<div class="rd-row"><span>mem <b data-v="${key}.mem">${fmtGB(m.mem_used_bytes).replace(" GB", "")}/${fmtGB(m.mem_total_bytes)}</b></span></div>`
-    : `<div class="rd-row"><span>mem ${RD_DASH}</span></div>`;
+        ${sparkSVG(m.cpu_series_pct, "cpu", 100)}</div>`;
+    } else {
+      cpu = note(st === "cpu-soon" ? "cpu: waiting for the second reading" : "cpu: not available on this room");
+    }
+    if (m.mem_total_bytes) {
+      const pct = Math.round(100 * (Number(m.mem_used_bytes) || 0) / m.mem_total_bytes);
+      mem = `<div class="rd-row rd-rate">
+        <span>mem <b class="rd-big" data-v="${key}.mem">${pct}%</b></span>
+        ${sparkSVG(m.mem_series_pct, "mem", 100)}</div>
+        <div class="rd-row rd-dim rd-memgb"><span data-v="${key}.memgb">${fmtGB(m.mem_used_bytes).replace(" GB", "")}/${fmtGB(m.mem_total_bytes)} used</span></div>`;
+    } else {
+      mem = note("mem: waiting for the first reading");
+    }
+  }
+  const shown = stale
+    ? `<div class="rd-stale" data-tip="${esc(`the last sample failed, these figures are from before ${stale}`)}">${cpu}${mem}<div class="rd-row rd-note">stale since ${stale}</div></div>`
+    : cpu + mem;
   const disk = d && d.total_bytes
     ? `<div class="rd-row" data-tip="free on ${esc(d.path || "the volume holding the worktrees")}${d.db_bytes
         ? ", of which atrium's database is " + fmtGB(d.db_bytes) : ""}"
@@ -268,7 +339,7 @@ function machineBand(key, m, d) {
   const wt = d && typeof d.worktrees === "number"
     ? `<div class="rd-row" data-tip="card worktrees atrium knows about"><span><b data-v="${key}.wt">${d.worktrees}</b> worktrees</span></div>`
     : "";
-  return `<div class="rd-band machine"><div class="rd-h">machine</div>${cpu}${mem}${disk}${wt}</div>`;
+  return `<div class="rd-band machine"><div class="rd-h">machine</div>${shown}${disk}${wt}</div>`;
 }
 
 // ── the tiles ───────────────────────────────────────────────────────────────
@@ -291,7 +362,7 @@ function roomTileHTML(room, snap, on) {
   const a = agentCounts(cards);
   const s = snap || {};
   const m = s.machine;
-  const hot = a.needs_you > 0 || (m && m.cpu_pct > 90);
+  const hot = a.needs_you > 0 || (m && m.cpu_pct > 90 && !m.stale_since);
 
   const meta = [];
   if (room.os) meta.push(esc(room.os));
@@ -316,7 +387,7 @@ function roomTileHTML(room, snap, on) {
     <div class="rt-bands">
       ${agentsBand(key, q, a, s.runners)}
       ${tokensBand(key, s.tokens, cards)}
-      ${machineBand(key, m, s.disk)}
+      ${machineBand(key, m, s.disk, s)}
     </div></div>`;
 }
 
@@ -349,11 +420,29 @@ function allRoomsTileHTML(rooms, on) {
   const off = hub ? rooms.filter(r => r.version && r.version !== hub).length : 0;
   const away = (typeof hubInventory !== "undefined" ? hubInventory : []).filter(r =>
     !r.attached && r.first_seen && r.transport !== "local").length;
-  let busiest = null;
+  // A room with a stale reading is left out: its figure is from before a failure.
+  let busiest = null, tight = null;
   for (const r of rooms) {
     const m = (roomStats[r.name] || {}).machine;
-    if (m && typeof m.cpu_pct === "number" && (!busiest || m.cpu_pct > busiest.cpu)) busiest = { name: r.name, cpu: m.cpu_pct };
+    if (!m || m.stale_since) continue;
+    if (typeof m.cpu_pct === "number" && (!busiest || m.cpu_pct > busiest.cpu)) busiest = { name: r.name, cpu: m.cpu_pct };
+    if (m.mem_total_bytes) {
+      const used = 100 * (Number(m.mem_used_bytes) || 0) / m.mem_total_bytes;
+      if (!tight || used > tight.used) tight = { name: r.name, used };
+    }
   }
+  // A row with nothing to say is not drawn, so there are no dashes. The build
+  // row needs a hub build to compare against, and is only a row when a room is
+  // off it: a count of zero is nothing to say. Busiest and tightest need a room
+  // that has reported. THE BAND HAS THREE ROWS AND NEVER MORE, because a fourth
+  // makes the all-rooms tile taller than the tokens band beside it. The
+  // warning outranks the memory line, which gives way to it.
+  const buildRow = hub && off
+    ? `<div class="rd-row rd-warn"><span><b data-v="all.offbuild" data-n="${off}">${off}</b> not the hub's build</span></div>` : "";
+  const busyRow = busiest
+    ? `<div class="rd-row" data-tip="the room with the highest machine cpu right now"><span>busiest <b data-v="all.busy">${esc(busiest.name)} ${Math.round(busiest.cpu)}%</b></span></div>` : "";
+  const tightRow = tight && !buildRow
+    ? `<div class="rd-row" data-tip="the room with the least memory free"><span>tightest <b data-v="all.tight">${esc(tight.name)} ${Math.round(tight.used)}% mem</b></span></div>` : "";
   return `<div class="rtile all${on ? " on" : ""}${a.needs_you ? " hot" : ""}" role="button" tabindex="0"
     onclick="pickRoom('')" onkeydown="rtileKey(event,'')">
     <div class="rt-head">
@@ -366,9 +455,7 @@ function allRoomsTileHTML(rooms, on) {
       <div class="rd-band rd-rooms"><div class="rd-h">rooms</div>
         <div class="rd-row"><span><b class="rd-big" data-v="all.live" data-n="${rooms.length}">${rooms.length}</b> live</span>
           <span><b data-v="all.away" data-n="${away}">${away}</b> away</span></div>
-        <div class="rd-row${off ? " rd-warn" : ""}"><span><b data-v="all.offbuild" data-n="${off}">${hub ? off : "&mdash;"}</b> not the hub's build</span></div>
-        <div class="rd-row"><span>busiest ${busiest
-          ? `<b data-v="all.busy">${esc(busiest.name)} ${Math.round(busiest.cpu)}%</b>` : RD_DASH}</span></div>
+        ${buildRow}${busyRow}${tightRow}
       </div>
     </div></div>`;
 }
@@ -428,8 +515,7 @@ const ROOMS_DEMO_SET = [
     up: 26 * 3600 + 3 * 60, cpu: 88, mem: 64e9, used: 49e9, disk: 1000e9, free: 318e9, rate: 72000,
     path: "E:\\worktrees", worktrees: 61, cards: { running: 11, idle: 1, perms: 1, done: 23 },
     runners: [["claude", true], ["codex", true], ["gemini", true]] },
-  // THE SECOND WAVE HAS NOT SHIPPED HERE, so there is no `machine` and the
-  // machine band shows the dash path.
+  // THIS BUILD SHIPS NO `machine`, so the band says the room does not report it.
   { name: "m1mini", host: "m1mini.local", os: "darwin", transport: "zrok", version: ROOMS_DEMO_HUB_BUILD,
     up: 3 * 86400 + 5 * 3600, noMachine: true, disk: 256e9, free: 88e9, rate: 9000,
     path: "/Users/claude/git", worktrees: 14, cards: { running: 2, idle: 3, done: 5 },
@@ -456,15 +542,17 @@ function roomsDemoStart() {
   const now = Date.now();
   const iso = ms => new Date(ms).toISOString();
   for (const r of ROOMS_DEMO_SET) {
-    const rate = [], cpu = [];
+    const rate = [], cpu = [], mem = [];
     let x = r.rate, c = r.cpu || 0;
     for (let i = 0; i < 60; i++) {
       x = demoWalk(x, r.rate * 0.12, r.rate * 0.35, r.rate * 1.8);
       rate.push(Math.round(x));
       c = demoWalk(c, 6, 8, 99);
       cpu.push(Math.round(c));
+      // The first minutes of a restarted room are nulls: a gap, not an idle machine.
+      mem.push(i < 8 ? null : Math.round(100 * (r.used || 0) / (r.mem || 1) + Math.sin(i / 5) * 3));
     }
-    roomsDemoState[r.name] = { rate, cpu, used: r.used || 0, free: r.free,
+    roomsDemoState[r.name] = { rate, cpu, mem, used: r.used || 0, free: r.free,
       day: { in: r.rate * 260, out: r.rate * 34, cache_read: r.rate * 1500, cache_write: r.rate * 70 } };
     const add = (n, status, over) => {
       for (let i = 0; i < (n || 0); i++) {
@@ -511,6 +599,8 @@ function roomsDemoTick() {
     const lastCpu = st.cpu[st.cpu.length - 1];
     st.cpu.push(Math.round(demoWalk(lastCpu, 7, r.name === "sg4" ? 78 : 8, 99)));
     st.cpu.shift();
+    st.mem.push(Math.round(100 * st.used / (r.mem || 1)));
+    st.mem.shift();
     st.used = demoWalk(st.used, (r.mem || 0) * 0.01, (r.mem || 0) * 0.4, (r.mem || 0) * 0.92);
     st.free = Math.max(1e9, st.free - Math.random() * 2e8);
     const perMin = Math.round(st.rate.slice(-5).reduce((n, v) => n + v, 0) / 5);
@@ -538,7 +628,7 @@ function roomsDemoTick() {
     };
     if (!r.noMachine) {
       snap.machine = { cpu_pct: st.cpu[st.cpu.length - 1], mem_used_bytes: Math.round(st.used),
-        mem_total_bytes: r.mem, cpu_series_pct: st.cpu.slice() };
+        mem_total_bytes: r.mem, cpu_series_pct: st.cpu.slice(), mem_series_pct: st.mem.slice() };
     }
     roomsDemoDrift(r.name);
     onRoomStats(snap);

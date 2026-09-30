@@ -266,6 +266,13 @@
   .rd-spark.tok .area { fill: var(--teal); }
   .rd-spark.cpu polyline { stroke: var(--blue); }
   .rd-spark.cpu .area { fill: var(--blue); }
+  /* u-034: memory's own colour, through a variable a skin can set. A one-point run is a dot, so the cap is round. */
+  .rd-spark.mem polyline { stroke: var(--spark-mem, #b48cff); }
+  .rd-spark.mem .area { fill: var(--spark-mem, #b48cff); }
+  .rd-spark polyline { stroke-linecap: round; }
+  .rd-note { color: var(--dim); font-size: var(--fs-xs); }
+  .rd-stale { opacity: .55; }
+  .rd-stale .rd-note:last-child { color: var(--warn); }
   .rd-rate.hot .rd-spark.cpu polyline { stroke: var(--danger); }
   .rd-rate.hot .rd-spark.cpu .area { fill: var(--danger); }
   .rd-rate.hot b { color: var(--danger-text); }
