@@ -2,6 +2,7 @@ package runnersetup
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -315,5 +316,48 @@ func TestConcurrentClaudeWritesKeepEveryChange(t *testing.T) {
 		if !projectTrusted(obj, keyFor(t, dir)) {
 			t.Fatalf("a trust entry was lost: %s", dir)
 		}
+	}
+}
+
+// A Mkdir answered ACCESS_DENIED while the lock is being released (Windows,
+// delete pending) is waited out, and the lock is then taken.
+func TestLockRetriesADeniedMkdir(t *testing.T) {
+	_, path := claudeHome(t)
+	real := mkdirLock
+	denied := 2
+	mkdirLock = func(name string, perm os.FileMode) error {
+		if denied > 0 {
+			denied--
+			return &os.PathError{Op: "mkdir", Path: name, Err: os.ErrPermission}
+		}
+		return real(name, perm)
+	}
+	t.Cleanup(func() { mkdirLock = real })
+	unlock, err := lockClaudeConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unlock()
+	if denied != 0 {
+		t.Fatalf("the denied answers were not retried: %d left", denied)
+	}
+	if exists(path + ".lock") {
+		t.Fatal("unlock left the lock directory")
+	}
+}
+
+// A Mkdir that stays denied is a real permission error, reported as itself
+// when the wait ends rather than as a session holding the lock.
+func TestLockReportsAPersistentDeniedMkdir(t *testing.T) {
+	_, path := claudeHome(t)
+	real := mkdirLock
+	mkdirLock = func(name string, perm os.FileMode) error {
+		return &os.PathError{Op: "mkdir", Path: name, Err: os.ErrPermission}
+	}
+	was := claudeLockWait
+	claudeLockWait = 100 * time.Millisecond
+	t.Cleanup(func() { mkdirLock = real; claudeLockWait = was })
+	if _, err := lockClaudeConfig(path); !errors.Is(err, os.ErrPermission) {
+		t.Fatalf("got %v, want the permission error", err)
 	}
 }
