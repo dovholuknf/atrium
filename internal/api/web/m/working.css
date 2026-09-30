@@ -1,0 +1,44 @@
+/* The phone card view's live working line, the Recap control and its sheet, and the operator's own messages. See js/card.js. */
+.working {
+  flex: none; display: flex; align-items: center; gap: 12px; margin: 0 max(12px, env(safe-area-inset-right, 0px)) 8px max(12px, env(safe-area-inset-left, 0px));
+  padding: 12px 16px; border-radius: 16px; min-width: 0;
+  background: var(--working-bg, var(--teal-bg)); border: 1px solid var(--working-line, var(--teal));
+  color: var(--working-fg, var(--teal)); font-size: 19px; font-weight: 650; letter-spacing: -.01em;
+}
+.working[hidden] { display: none; }
+.wk-spin {
+  flex: none; width: 22px; height: 22px; border-radius: 50%; box-sizing: border-box;
+  border: 3px solid var(--working-track, var(--stroke-dim)); border-top-color: var(--working-fg, var(--teal));
+  animation: wk-turn .8s linear infinite;
+}
+.wk-what { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wk-verb { font-weight: 500; opacity: .75; }
+@keyframes wk-turn { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .wk-spin { animation: wk-pulse 1.6s ease-in-out infinite; border-top-color: var(--working-track, var(--stroke-dim)); background: var(--working-fg, var(--teal)); }
+  @keyframes wk-pulse { 50% { opacity: .35; } }
+}
+
+.recap-btn {
+  display: inline-flex; align-items: center; gap: 8px; min-height: 40px; margin: 10px 0 0; padding: 0 14px; border-radius: 12px;
+  border: 1px solid var(--stroke-dim); background: var(--lift); color: var(--label); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer;
+}
+.recap-btn em { font-style: normal; font-weight: 500; color: var(--dim); font-size: 12.5px; }
+.recap-btn.stale { opacity: .6; }
+
+.recap { position: absolute; inset: 0; z-index: 5; display: flex; flex-direction: column; justify-content: flex-end; }
+.recap[hidden] { display: none; }
+.recap-back { position: absolute; inset: 0; background: rgba(var(--shadow-rgb), .55); }
+.recap-sheet {
+  position: relative; max-height: 80%; overflow-y: auto; overscroll-behavior: contain; box-sizing: border-box;
+  padding: 16px max(16px, env(safe-area-inset-right, 0px)) calc(20px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+  border-radius: 22px 22px 0 0; background: var(--card-0); box-shadow: 0 -10px 30px rgba(var(--shadow-rgb), .45);
+}
+.recap-top { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; }
+.recap-top h2 { margin: 0; color: var(--head); font-size: 18px; }
+.recap-at { flex: 1; min-width: 0; color: var(--dim); font-size: 13px; }
+.recap-x { flex: none; align-self: center; width: 44px; height: 44px; margin: -8px -8px -8px 0; border: 0; background: none; color: var(--label); font-size: 28px; cursor: pointer; }
+.recap-sheet .md.stale { opacity: .55; }
+
+.reply.mine { align-self: flex-end; max-width: 92%; border-radius: 18px 18px 6px 18px; background: var(--mine-bg, var(--chip)); }
+.reply .own { color: var(--head); font-size: 15.5px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
