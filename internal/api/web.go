@@ -5,8 +5,8 @@ import (
 	"embed"
 	"encoding/hex"
 	"github.com/dovholuknf/atrium/internal/cardurl"
+	"github.com/dovholuknf/atrium/internal/webasset"
 	"io/fs"
-	"mime"
 	"net/http"
 	"os"
 	pathpkg "path"
@@ -120,36 +120,47 @@ func (s *Server) boardID() string {
 	return buildID(board(s.BoardDir))
 }
 
-// The phone page's manifest has no type on a machine whose registry does not name one, and a browser ignores a
-// manifest served as text.
-func init() { _ = mime.AddExtensionType(".webmanifest", "application/manifest+json") }
-
 func webHandler(dir string) http.Handler {
-	files := http.FileServer(http.FS(board(dir)))
+	fsys := board(dir)
+	files := http.FileServer(http.FS(fsys))
+	// Gzip and ETags for every file. See internal/webasset.
+	assets := webasset.New(fsys)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// The board is compiled into the binary, so a rebuild is the only way
-		// it changes, and a cached copy after a rebuild looks exactly like a
-		// bug that was not fixed. Vendored libraries never change, so they
-		// keep caching.
-		if strings.HasPrefix(r.URL.Path, "/vendor/") {
-			w.Header().Set("Cache-Control", "public, max-age=86400")
-		} else {
-			w.Header().Set("Cache-Control", "no-store, must-revalidate")
-		}
-		// A card's readable address is the board page. See internal/cardurl.
 		if r.Method == http.MethodGet || r.Method == http.MethodHead {
+			// A card's readable address is the board page. See internal/cardurl.
 			if page, isCard := cardurl.Page(r.URL.Path); isCard {
 				if page == "" {
 					cardurl.NotFound(w, r.URL.Path)
 					return
 				}
-				// The page's directory, which the file server answers with its index.
-				r2 := r.Clone(r.Context())
-				r2.URL.Path, r2.URL.RawPath = "/"+strings.TrimSuffix(page, "index.html"), ""
-				files.ServeHTTP(w, r2)
+				if assets.Serve(w, r, strings.TrimPrefix(page, "/")) {
+					return
+				}
+			}
+			if name, ok := fileName(r.URL.Path); ok && assets.Serve(w, r, name) {
 				return
 			}
 		}
+		// Redirects, directory listings and everything that is not a file stay
+		// the file server's. Nothing it answers is cached.
+		w.Header().Set("Cache-Control", "no-store, must-revalidate")
 		files.ServeHTTP(w, r)
 	})
+}
+
+// fileName is the file a request path names, with a directory's index page for
+// a path ending in a slash. `/x/index.html` is left to the file server, which
+// redirects it to `/x/`.
+func fileName(p string) (string, bool) {
+	if !strings.HasPrefix(p, "/") || strings.HasSuffix(p, "/index.html") {
+		return "", false
+	}
+	name := strings.TrimPrefix(pathpkg.Clean(p), "/")
+	if strings.HasSuffix(p, "/") {
+		name = pathpkg.Join(name, "index.html")
+	}
+	if name == "" || name == "." {
+		return "", false
+	}
+	return name, true
 }

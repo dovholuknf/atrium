@@ -70,11 +70,13 @@ func TestEveryScriptThePageLoadsIsServed(t *testing.T) {
 	}
 }
 
-// The board must not be cached, and that has to hold for the new files too.
+// The board must never be used from cache without asking, and that has to hold
+// for the new files too.
 //
 // A cached script after a rebuild looks exactly like a bug that was not fixed,
 // and with the board split across two dozen files there are now two dozen ways
-// to get half an old board and half a new one.
+// to get half an old board and half a new one. `no-cache` asks every time, and
+// the ETag makes an unchanged file a 304. See internal/webasset.
 func TestTheSplitBoardIsNotCached(t *testing.T) {
 	h := webHandler("")
 	paths := []string{"/", "/js/core.js"}
@@ -84,8 +86,21 @@ func TestTheSplitBoardIsNotCached(t *testing.T) {
 	for _, path := range paths {
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
-		if !strings.Contains(rec.Header().Get("Cache-Control"), "no-store") {
-			t.Errorf("%s is served as cacheable: %q", path, rec.Header().Get("Cache-Control"))
+		cc := rec.Header().Get("Cache-Control")
+		if !strings.Contains(cc, "no-cache") && !strings.Contains(cc, "no-store") {
+			t.Errorf("%s is served as cacheable: %q", path, cc)
+		}
+		tag := rec.Header().Get("ETag")
+		if tag == "" {
+			t.Errorf("%s has no ETag, so a reload downloads it again", path)
+			continue
+		}
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.Header.Set("If-None-Match", tag)
+		again := httptest.NewRecorder()
+		h.ServeHTTP(again, req)
+		if again.Code != http.StatusNotModified {
+			t.Errorf("%s revalidated with its own ETag answers %d, not 304", path, again.Code)
 		}
 	}
 }
