@@ -3,6 +3,7 @@ package link
 import (
 	"bufio"
 	"context"
+	"crypto/ecdsa"
 	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
@@ -69,6 +70,23 @@ type Direct struct {
 
 // Listen brings up the hub's port.
 func (d Direct) Listen() (net.Listener, error) {
+	cfg, err := d.ServerTLS()
+	if err != nil {
+		return nil, err
+	}
+	ln, err := net.Listen("tcp", d.Addr)
+	if err != nil {
+		return nil, err
+	}
+	return tls.NewListener(ln, cfg), nil
+}
+
+// ServerTLS is the hub's side of the handshake, and the ONE place it is built.
+//
+// Direct wraps a TCP listener in it, and an overlay's room-link listener wraps
+// the connections it accepts in the same thing (`overlaytls.go`), so a room is
+// named by its certificate on every transport and by the same rules.
+func (d Direct) ServerTLS() (*tls.Config, error) {
 	cert, err := tls.LoadX509KeyPair(d.Keys.path("hub.crt"), d.Keys.path("hub.key"))
 	if err != nil {
 		return nil, fmt.Errorf("this hub has no certificate yet: %w", err)
@@ -91,18 +109,14 @@ func (d Direct) Listen() (net.Listener, error) {
 	pool := x509.NewCertPool()
 	pool.AddCert(ca)
 
-	ln, err := net.Listen("tcp", d.Addr)
-	if err != nil {
-		return nil, err
-	}
-	return tls.NewListener(ln, &tls.Config{
+	return &tls.Config{
 		Certificates: []tls.Certificate{cert},
 		// ASKED FOR, NOT REQUIRED, so enrolment can happen on this port. The
 		// hello handler refuses control and data without one.
 		ClientAuth: tls.VerifyClientCertIfGiven,
 		ClientCAs:  pool,
 		MinVersion: tls.VersionTLS13,
-	}), nil
+	}, nil
 }
 
 // identify reads the room name out of the client certificate.
@@ -357,6 +371,15 @@ func (d Direct) Enrol(ctx context.Context, self, secret string) (string, error) 
 	if err != nil {
 		return "", fmt.Errorf("could not reach the hub at %s: %w", d.Addr, err)
 	}
+	return enrolOn(conn, d.Keys, d.Addr, self, secret, key, csr)
+}
+
+// enrolOn is the conversation after a connection to the hub is up and pinned.
+//
+// Shared by direct, which dials TLS itself, and by an overlay, which spends the
+// secret on a connection the transport dialled (`overlaytls.go`). Closes conn.
+func enrolOn(conn net.Conn, keys Keys, hub, self, secret string,
+	key *ecdsa.PrivateKey, csr []byte) (string, error) {
 	defer conn.Close()
 
 	br := bufio.NewReader(conn)
@@ -399,7 +422,7 @@ func (d Direct) Enrol(ctx context.Context, self, secret string) (string, error) 
 	if name == "" {
 		return "", errors.New("the hub signed a certificate with no name in it")
 	}
-	if err := d.Keys.SaveRoom(key, resp.Cert, resp.CA, d.Addr, name); err != nil {
+	if err := keys.SaveRoom(key, resp.Cert, resp.CA, hub, name); err != nil {
 		return "", err
 	}
 	log.Printf("[join] enrolled as %s", describeCert(c))

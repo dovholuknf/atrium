@@ -254,8 +254,9 @@ func (k Keys) MintToken(addr, name, secret string) (string, error) {
 	return tokenPrefix + base64.RawURLEncoding.EncodeToString(body), nil
 }
 
-// MintOverlayToken makes a join string for a transport that carries its own
-// identity.
+// MintOverlayToken makes the OLD form of a join string for a transport that
+// carries its own identity. See MintProvenOverlayToken for what a hub mints now.
+// The text below is why the old form proves nothing, which is why it was replaced.
 //
 // NO SECRET AND NO FINGERPRINT, because there is nothing for them to do. Under
 // ziti a policy decided who may dial before any of this ran, and under zrok the
@@ -302,6 +303,36 @@ func MintOverlayToken(kind, name, service, shareToken string) (string, error) {
 		return "", errors.New("no transport called " + kind)
 	}
 	body, err := json.Marshal(t)
+	if err != nil {
+		return "", err
+	}
+	return tokenPrefix + base64.RawURLEncoding.EncodeToString(body), nil
+}
+
+// MintProvenOverlayToken is the NEW form of an overlay join string: the same as
+// MintOverlayToken, plus the one-time secret and the CA fingerprint a direct one
+// carries, so the room enrols over the overlay and is named by its certificate.
+//
+// This is what `atrium rooms token` mints for a ziti or zrok hub. The old form
+// stays parseable so a room already joined keeps attaching, but nothing mints it
+// any more except a test standing in for a room from before this existed.
+func (k Keys) MintProvenOverlayToken(kind, name, service, shareToken, secret string) (string, error) {
+	if strings.TrimSpace(secret) == "" {
+		return "", errors.New("an overlay join string needs a secret from the hub's store")
+	}
+	fp, err := k.Fingerprint()
+	if err != nil {
+		return "", err
+	}
+	old, err := MintOverlayToken(kind, name, service, shareToken)
+	if err != nil {
+		return "", err
+	}
+	j, err := ParseToken(old)
+	if err != nil {
+		return "", err
+	}
+	body, err := json.Marshal(token{T: kind, N: j.Name, V: j.Service, K: j.ShareToken, F: fp, S: secret})
 	if err != nil {
 		return "", err
 	}
@@ -363,8 +394,19 @@ func ParseToken(s string) (Join, error) {
 		return j, errors.New("that join string is for a transport this build does not have: " +
 			j.Transport)
 	}
+	// AN OVERLAY STRING CARRIES BOTH HALVES OF A CERTIFICATE JOIN OR NEITHER. One
+	// half is a damaged string, and guessing which form was meant would either
+	// silently skip enrolment or try it without a pin.
+	if j.Transport != "direct" && (j.Secret == "") != (j.Pin == "") {
+		return j, errors.New("that join string is missing part of itself")
+	}
 	return j, nil
 }
+
+// Proven says this join string is the new form: it carries a secret to enrol
+// with and a fingerprint to pin the hub by, so the room will hold a certificate.
+// False for a string from before the certificate reached ziti and zrok.
+func (j Join) Proven() bool { return j.Secret != "" && j.Pin != "" }
 
 // ── enrolment ────────────────────────────────────────────
 

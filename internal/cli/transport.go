@@ -87,15 +87,18 @@ func openHub(kind string, keys link.Keys, linkAddr, advertise, service string,
 
 	case "ziti":
 		z := &link.Ziti{Identity: zitiIdentity, Service: service}
+		d, err := overlayDirect(keys, spend)
+		if err != nil {
+			return nil, err
+		}
 		return &hubSide{
-			listen: z.Listen,
-			// NIL, AND THAT IS THE POINT. There is nothing to enrol: the
-			// network decided who may dial this service before atrium existed.
-			// The hub says so plainly if a room tries.
-			enrol: nil,
-			auth:  link.ZitiAuthenticated,
-			joinString: func(name, _ string) (string, error) {
-				return link.MintOverlayToken("ziti", name, service, "")
+			listen: overlayListen(z.Listen, d, "ziti"),
+			// THE CERTIFICATE NAMES THE ROOM, as it does over direct. The overlay
+			// decides only who may reach this service, so enrolment runs inside it.
+			enrol: d.ServeEnrolment,
+			auth:  link.OverlayAuthenticated,
+			joinString: func(name, secret string) (string, error) {
+				return keys.MintProvenOverlayToken("ziti", name, service, "", secret)
 			},
 			release: z.Close,
 			says:    "the ziti service " + service,
@@ -103,6 +106,10 @@ func openHub(kind string, keys link.Keys, linkAddr, advertise, service string,
 
 	case "zrok":
 		z := &link.Zrok{}
+		d, err := overlayDirect(keys, spend)
+		if err != nil {
+			return nil, err
+		}
 		shareToken, err := z.Share()
 		if err != nil {
 			return nil, err
@@ -113,11 +120,11 @@ func openHub(kind string, keys link.Keys, linkAddr, advertise, service string,
 			log.Printf("[hub] could not write the share down for `rooms token`: %v", err)
 		}
 		return &hubSide{
-			listen: z.Listen,
-			enrol:  nil,
-			auth:   link.ZrokAuthenticated,
-			joinString: func(name, _ string) (string, error) {
-				return link.MintOverlayToken("zrok", name, "", shareToken)
+			listen: overlayListen(z.Listen, d, "zrok"),
+			enrol:  d.ServeEnrolment,
+			auth:   link.OverlayAuthenticated,
+			joinString: func(name, secret string) (string, error) {
+				return keys.MintProvenOverlayToken("zrok", name, "", shareToken, secret)
 			},
 			release: func() {
 				clearZrokShare(keys)
@@ -128,6 +135,40 @@ func openHub(kind string, keys link.Keys, linkAddr, advertise, service string,
 	}
 	return nil, fmt.Errorf("no transport called %q. one of: %s",
 		kind, strings.Join(transports, ", "))
+}
+
+// overlayDirect is the direct transport's half a hub over an overlay borrows: its
+// certificate authority and its enrolment. No address, because the overlay
+// supplies the listener. A hub that was ziti-only now keeps the same key directory
+// a direct hub keeps.
+//
+// The hub certificate names no host: a room's `clientTLS` checks the issuer and
+// ignores the address, so no name matters over an overlay.
+func overlayDirect(keys link.Keys, spend func(string) (string, error)) (link.Direct, error) {
+	if err := keys.EnsureCA(nil); err != nil {
+		return link.Direct{}, fmt.Errorf("could not set this hub up: %w", err)
+	}
+	return link.Direct{Keys: keys, Spend: spend}, nil
+}
+
+// overlayListen wraps an overlay's ROOM-LINK listener so it serves certificate
+// rooms and, until the operator says otherwise, rooms on the old path.
+//
+// ONLY THIS LISTENER. The board is served over an overlay by a different
+// listener, built under internal/daemon and by the board share in atrium_run.go,
+// and neither goes through here: a browser has no client certificate.
+func overlayListen(inner func() (net.Listener, error), d link.Direct, transport string) func() (net.Listener, error) {
+	return func() (net.Listener, error) {
+		cfg, err := d.ServerTLS()
+		if err != nil {
+			return nil, err
+		}
+		ln, err := inner()
+		if err != nil {
+			return nil, err
+		}
+		return link.MixedListener(ln, cfg, transport), nil
+	}
 }
 
 // zrokShareFile is where a hub running over zrok writes the private share it
@@ -162,7 +203,25 @@ func readZrokShare(keys link.Keys) (string, error) {
 }
 
 // roomDialer is the room's half, chosen by what the join string says.
+//
+// A ROOM THAT HOLDS A CERTIFICATE DIALS AN OVERLAY INSIDE TLS, and every kind of
+// connection goes through the one Dialer returned here, so none can skip it. A
+// room with no certificate is one that joined before certificates reached the
+// overlays, and it dials exactly as it always did.
 func roomDialer(j link.Join, keys link.Keys, identity string) (link.Dialer, error) {
+	d, err := rawRoomDialer(j, keys, identity)
+	if err != nil {
+		return nil, err
+	}
+	if j.Transport != "direct" && keys.HasRoomCert() {
+		return link.Proven{Dialer: d, Keys: keys}, nil
+	}
+	return d, nil
+}
+
+// rawRoomDialer is the transport with nothing wrapped round it. Enrolment dials
+// this, because the pinned handshake it runs is not the room's own.
+func rawRoomDialer(j link.Join, keys link.Keys, identity string) (link.Dialer, error) {
 	switch j.Transport {
 	case "direct":
 		return link.Direct{Addr: j.Addr, Keys: keys, Pin: j.Pin}, nil
