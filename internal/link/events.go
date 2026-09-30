@@ -522,6 +522,12 @@ func (p *Proxy) serveEvents(w http.ResponseWriter, r *http.Request, room string,
 
 	s := p.feeds.add(room)
 	defer p.feeds.drop(s)
+	// A DESKTOP TAB'S STREAM IS WHAT KEEPS ITS PRESENCE TRUE. When this request
+	// ends, whether by a closed tab, a crash or a sleeping laptop, the tab is no
+	// longer visible. See presence in notify.go.
+	if n := p.notifier(); n != nil {
+		defer n.pres.Open(r.URL.Query().Get("tab"))()
+	}
 
 	// The same 25 seconds the daemon uses, and it has to stay under the
 	// transport's 90 second idle timeout or a quiet board would be cut off
