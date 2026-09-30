@@ -59,6 +59,13 @@ The hub learns its repos from a hub setting, `git_repos`, a list of `{name, chec
 [{"name": "github/dovholuknf/atrium", "checkout": "D:/git/github/dovholuknf/atrium", "branch": "claude/main"}]
 ```
 
+**A room's `hub-main` mirrors the integration branch only, never a department branch** (atrium-87300's rule,
+2026-09-30, after sg3's `hub-main` was set by hand to a `claude/ui` commit and workers of other departments started on
+unmerged ui work). So `branch` is the repo's INTEGRATION branch and nothing else: `claude/main` for atrium. The hub
+refuses a `git_repos` entry whose `branch` is not `claude/main` or `main`, no tool, route or CLI verb takes a branch,
+and the room maps only the fetched integration branch onto `claude/main` and `hub-main`. A room never gets a
+department branch from the hub by any path.
+
 `checkout` is the hub machine's own clone, the one @merge writes. It is a path on the hub's machine, set by the
 operator on the hub (the CLI or the board's hub settings), never by a room.
 
