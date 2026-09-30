@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -104,7 +105,7 @@ func TestAFixtureDoesNotResumeAConversationALiveCardHolds(t *testing.T) {
 
 	d.sup.add(&runner{taskID: other.ID, buf: newRing(64, 80), watchers: map[chan []byte]struct{}{},
 		done: make(chan struct{})})
-	if got := d.fixtureResume(f, mine.ID); got != "" {
+	if got, _ := d.fixtureResume(f, mine.ID); got != "" {
 		t.Fatalf("the fixture resumed %q, which a live card holds", got)
 	}
 	// A NEWER DEAD HOLDER DOES NOT HIDE THE OLDER LIVE ONE (r-new-review-0b4e3f0d).
@@ -116,17 +117,9 @@ func TestAFixtureDoesNotResumeAConversationALiveCardHolds(t *testing.T) {
 	if err := d.st.SetStatus(stale.ID, store.StatusDead); err != nil {
 		t.Fatal(err)
 	}
-	if got := d.fixtureResume(f, mine.ID); got != "" {
-		t.Fatalf("a newer dead holder hid the live one, and the fixture resumed %q", got)
-	}
-	// Said on the card, not only in the log.
-	evs, _ := d.st.Events(mine.ID, 50)
-	said := false
-	for _, e := range evs {
-		said = said || strings.Contains(string(e.Payload), "started fresh rather than resume")
-	}
-	if !said {
-		t.Fatal("the refused resume is not on the card's timeline")
+	got, held := d.fixtureResume(f, mine.ID)
+	if got != "" || held == nil || held.holder.ID != other.ID {
+		t.Fatalf("a newer dead holder hid the live one: resumed %q, held %+v", got, held)
 	}
 	if err := d.st.ClearResumeID(stale.ID); err != nil {
 		t.Fatal(err)
@@ -136,7 +129,7 @@ func TestAFixtureDoesNotResumeAConversationALiveCardHolds(t *testing.T) {
 	if err := d.st.SetStatus(other.ID, store.StatusDead); err != nil {
 		t.Fatal(err)
 	}
-	if got := d.fixtureResume(f, mine.ID); got != theirs {
+	if got, _ := d.fixtureResume(f, mine.ID); got != theirs {
 		t.Fatalf("with its holder gone the fixture resumed %q, want %s", got, theirs)
 	}
 }
@@ -179,5 +172,69 @@ func TestTwoCardsOnTheReopenListShareNoConversation(t *testing.T) {
 	}
 	if got := d.reopenResume(b); got != "" {
 		t.Fatalf("the second card on the list resumed %q too", got)
+	}
+}
+
+// A FIXTURE'S FIRST START NEVER HALTS THE STORE (r-new-review-c184ae8c). It has no
+// card until it launches, and a refused resume noted on card "" failed the
+// event's foreign key, which halted the room. The note lands on the card it made.
+func TestAFixtureFirstStartNeverHaltsTheStore(t *testing.T) {
+	d := testDaemon(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	holder := shellCard(t, d)
+	// The fixture's own directory, so it has no card to adopt, holding a newest
+	// conversation that the live holder elsewhere owns.
+	dir, err := os.MkdirTemp("", "atrium-fixture-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	dir = filepath.ToSlash(dir)
+	proj := filepath.Join(home, ".claude", "projects", strings.Map(func(r rune) rune {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' {
+			return r
+		}
+		return '-'
+	}, dir))
+	if err := os.MkdirAll(proj, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	const conv = "c184ae8c-0000-4000-8000-000000000001"
+	if err := os.WriteFile(filepath.Join(proj, conv+".jsonl"), []byte("{}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.st.SetResumeID(holder.ID, conv); err != nil {
+		t.Fatal(err)
+	}
+	f, err := d.st.SaveFixture(&store.Fixture{Label: "shared", Harness: "shelltest", Cwd: dir,
+		Resume: true, Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.startFixtures()
+	if halted, cause := d.st.Halted(); halted {
+		t.Fatalf("a fixture's first start halted the store: %v", cause)
+	}
+	row, _ := d.st.GetFixture(f.ID)
+	if row.TaskID == "" || row.TaskID == holder.ID {
+		t.Fatalf("the fixture did not start a card of its own: %+v", row)
+	}
+	t.Cleanup(func() {
+		if r := d.sup.get(row.TaskID); r != nil {
+			windDown(r, time.Second, d.exitKeysFor(row.TaskID))
+		}
+		for end := time.Now().Add(10 * time.Second); time.Now().Before(end) && d.sup.get(row.TaskID) != nil; {
+			time.Sleep(50 * time.Millisecond)
+		}
+	})
+	evs, _ := d.st.Events(row.TaskID, 50)
+	said := false
+	for _, e := range evs {
+		said = said || strings.Contains(string(e.Payload), "started fresh rather than resume")
+	}
+	if !said {
+		t.Fatal("the refused resume is not on the card the fixture made")
 	}
 }
