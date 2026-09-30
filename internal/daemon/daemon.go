@@ -122,7 +122,7 @@ type Daemon struct {
 	roomLoaded bool
 
 	// act holds what each runner is doing right now, in memory only. See
-	// docs/activity-design.md.
+	// docs/runtime/activity-design.md.
 	act *activityTracker
 	// esc is which agent-launched cards the board should hear about, and how
 	// many times it has. In memory, like the activity it is derived from: a
@@ -150,7 +150,7 @@ type Daemon struct {
 	// In memory, and that is now only half the story: the ADDRESS is recorded
 	// in the store and comes back after a restart. What is here is the live
 	// listener, which cannot outlive the process. See overlay_guest.go, and
-	// `docs/overlays.md` for why an address that dies with the daemon was the
+	// `docs/fabric/overlays.md` for why an address that dies with the daemon was the
 	// wrong answer.
 	guests guestShares
 
@@ -497,7 +497,7 @@ func New(opts Options) (*Daemon, error) {
 	// What a runner is doing right now. Held in the daemon, never written down.
 	api.ActivityOf = d.activityFor
 	// How much context it has burned. Held the same way and for the same
-	// reason. See docs/statusline-telemetry.md.
+	// reason. See docs/runtime/statusline-telemetry.md.
 	api.TelemetryOf = d.telemetryFor
 	// Which agent-launched cards are stuck, for the board to ring about. Held
 	// the same way. See a2a.go.
@@ -932,7 +932,7 @@ func (d *Daemon) publishTask(id string) {
 // the escape hatch the whole split depends on.
 //
 // NOT the agent listener. That one is a different mux on a different port and
-// `docs/overlays.md` says never to publish it. See `Run` below.
+// `docs/fabric/overlays.md` says never to publish it. See `Run` below.
 func (d *Daemon) BoardHandler() http.Handler { return d.ap.Handler() }
 
 func (d *Daemon) Run(ctx context.Context) error {
@@ -952,7 +952,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 	// taking the question off the card it was on.
 	agentMux.HandleFunc("/answer", d.handleAnswer)
 	// Sessions addressing each other. On the AGENT listener, because that is
-	// what a session can already reach, and `docs/overlays.md` says never to
+	// what a session can already reach, and `docs/fabric/overlays.md` says never to
 	// publish this port. A peer bus is the first feature that gives anybody a
 	// reason to want it reachable, and the answer is still no: two machines
 	// talking is the forum's job, not this one's.

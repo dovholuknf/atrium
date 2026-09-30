@@ -230,7 +230,7 @@ func TestLaunchIsLeanByDefaultAndForwardsTheMCPList(t *testing.T) {
 
 // The launch options reach the room as given, and a room that hands back a card
 // without them (one older than launch options) gets a warning in the result
-// rather than silence. See docs/launch-options-design.md.
+// rather than silence. See docs/runtime/launch-options-design.md.
 func TestLaunchForwardsItsOptionsAndWarnsWhenARoomDropsThem(t *testing.T) {
 	type sent struct {
 		Model  string            `json:"model"`

@@ -623,7 +623,7 @@ function toggleSubagents(chip) {
 // now or let it sit.
 //
 // Absent for every runner whose statusline does not post, which is all of them
-// until one is wired up. See docs/statusline-telemetry.md.
+// until one is wired up. See docs/runtime/statusline-telemetry.md.
 const CTX_WARM = 60;
 const CTX_HOT = 85;
 
@@ -1104,7 +1104,7 @@ window.addEventListener("storage", e => {
 //     Wanted, reasonably: grouping is board-wide and today it is lost when you
 //     open a different browser. `internal/api/settings.go` refuses the field
 //     rather than leaving that to be discovered.
-//   - Federation. `docs/federation-design-v2.md` puts many machines behind one
+//   - Federation. `docs/rnd/federation-design-v2.md` puts many machines behind one
 //     board, and a grouping function shipped from a leaf and run in the
 //     forum's browser crosses a boundary that does not exist today.
 //   - What the function can already reach. These run with full page scope, so

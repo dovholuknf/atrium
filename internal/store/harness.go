@@ -29,7 +29,7 @@ type Harness struct {
 	// explicit path is the per-room "configured as to what it supports" answer,
 	// and it makes availability reliable: the question becomes whether this
 	// path exists on this room rather than whether a name resolves. Empty means
-	// fall back to PATH resolution of Cmd. See docs/runner-scoping-design.md.
+	// fall back to PATH resolution of Cmd. See docs/fabric/runner-scoping-design.md.
 	BinPath string            `json:"bin_path"`
 	Args    []string          `json:"args"`
 	Cwd     string            `json:"cwd"`
@@ -446,7 +446,7 @@ func (h *Harness) ExitBytes() [][]byte {
 // Exe is the command to actually run: the explicit BinPath when set, otherwise
 // Cmd for the caller to resolve against PATH. An explicit path is used verbatim,
 // which is what lets a runner start on a room where its binary is installed but
-// not on the room process PATH. See docs/runner-scoping-design.md.
+// not on the room process PATH. See docs/fabric/runner-scoping-design.md.
 func (h *Harness) Exe() string {
 	if p := strings.TrimSpace(h.BinPath); p != "" {
 		return p

@@ -463,7 +463,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/offered", s.listOffered)
 	mux.HandleFunc("GET /v1/history", s.history)
 	// Bytes into and out of a card's own directory, and nowhere else. See
-	// docs/file-transfer-design.md.
+	// docs/runtime/file-transfer-design.md.
 	mux.HandleFunc("POST /v1/tasks/{id}/files", s.uploadFiles)
 	mux.HandleFunc("GET /v1/tasks/{id}/files", s.downloadFile)
 	// Finding a file so it can be taken back out. Bounded to the card's own
@@ -496,8 +496,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/recognise", s.recognise)
 	// WHERE A REPOSITORY LIVES ON THIS MACHINE, declared rather than guessed.
 	// A provider is a root and a layout, and it holds no credential, makes no
-	// network call and clones nothing. See `docs/providers-design.md`, and note
-	// that `scm` in `docs/scm-design.md` is two OTHER features: this is a third
+	// network call and clones nothing. See `docs/runtime/providers-design.md`, and note
+	// that `scm` in `docs/runtime/scm-design.md` is two OTHER features: this is a third
 	// thing under a name of its own so that the word keeps meaning one thing.
 	mux.HandleFunc("GET /v1/providers", s.listProviders)
 	mux.HandleFunc("PUT /v1/providers/{name}", s.saveProvider)
@@ -741,12 +741,12 @@ type view struct {
 	// Activity is what the runner is doing right now, as opposed to what it
 	// needs. Absent when atrium has heard nothing recently, which is the case
 	// for a runner with no hooks and after a daemon restart. See
-	// docs/activity-design.md.
+	// docs/runtime/activity-design.md.
 	Activity any `json:"activity,omitempty"`
 	// Telemetry is how much context the session has burned and how close its
 	// account is to a limit, as its statusline last reported. Absent for a
 	// runner whose statusline does not post, which is every runner until one
-	// is wired up. See docs/statusline-telemetry.md.
+	// is wired up. See docs/runtime/statusline-telemetry.md.
 	//
 	// Its own field rather than part of Activity: the two expire on different
 	// clocks, and a session that has been idle for twenty minutes has no
@@ -756,11 +756,11 @@ type view struct {
 	// Escalation is an agent-launched card that is stuck: it stopped without
 	// reporting, or one tool call has run too long. Its `count` steps up on the
 	// operator's backoff and the board rings each time it does. Absent when
-	// the card is fine. See docs/a2a-reliability-design.md.
+	// the card is fine. See docs/runtime/a2a-reliability-design.md.
 	Escalation any `json:"escalation,omitempty"`
 	// RestartWake is the prompt waiting to be typed in once this card's runner
 	// is back after a restart. Absent when there is none. See
-	// docs/restart-wake.md.
+	// docs/runtime/restart-wake.md.
 	RestartWake any `json:"restart_wake,omitempty"`
 	// NewContext is the card's capture, clear and wake sequence: the step it is
 	// on, or why it stopped. Absent when none is under way. See
@@ -768,11 +768,11 @@ type view struct {
 	NewContext any `json:"new_context,omitempty"`
 	// Keepalive is the card's cache keep-alive switch and its current idle
 	// stretch. Absent on a card with no switch, which is every card that is
-	// not Claude. See docs/cache-keepalive-design.md.
+	// not Claude. See docs/runtime/cache-keepalive-design.md.
 	Keepalive any `json:"keepalive,omitempty"`
 	// ContextSize is the card's context in tokens, read from its transcript
 	// and never stored, and whether it is past the threshold. Absent on a card
-	// that is not Claude or has no transcript yet. See docs/activity-design.md.
+	// that is not Claude or has no transcript yet. See docs/runtime/activity-design.md.
 	ContextSize any `json:"context_size,omitempty"`
 	// AsksOpen is how many questions this card has outstanding.
 	//
@@ -788,12 +788,12 @@ type view struct {
 	// zero, because the row says that much by drawing the ask or not.
 	AsksOpen int `json:"asks_open,omitempty"`
 	// RepliesOwed is how many says to this card asked for a reply that has not
-	// come. Absent at zero. Task JSON only, no chip. See docs/say-lifecycle-design.md.
+	// come. Absent at zero. Task JSON only, no chip. See docs/runtime/say-lifecycle-design.md.
 	RepliesOwed int `json:"replies_owed,omitempty"`
 	// Seen is whether the operator has seen this card's latest turn, and the
 	// Open Questions that turn left that nobody has answered. Absent on a card
 	// no turn has ever ended on. Durable, unlike Activity. See
-	// docs/seen-design.md.
+	// docs/runtime/seen-design.md.
 	Seen *store.SeenView `json:"seen,omitempty"`
 	// Merged is the chip's data: the branch this worker's merge covered, when it
 	// will be culled, and who held it. Absent on a card that is neither marked
@@ -976,7 +976,7 @@ func (s *Server) withSeen(vs []view) []view {
 
 // markSeen is the board saying a window showed this card's terminal to
 // somebody. The rule for when it may say so is the board's, because only a
-// browser knows whether its window is in front. See docs/seen-design.md.
+// browser knows whether its window is in front. See docs/runtime/seen-design.md.
 //
 // `turn_ended_at` is the turn the board was showing. One older than the stored
 // turn marks nothing, and the answer carries `stale` and the current state so

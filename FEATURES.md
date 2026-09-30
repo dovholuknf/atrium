@@ -59,7 +59,7 @@ on `claude/main` and is not yet on `main`. Whether a build is deployed on a give
 - **You jump to any session with a keystroke switcher.**
   `ctrl-shift-k` opens a filter over title, directory and tags, with the sessions you visited last listed first.
   Inside a popped-out window it moves that window to another card. The key is a setting, because browsers keep
-  different keys for themselves. Docs: `docs/switcher-design.md`. Landed 2026-09-07 (`3e6f425`).
+  different keys for themselves. Docs: `docs/ui/switcher-design.md`. Landed 2026-09-07 (`3e6f425`).
 
 - **You click outside a dialog to close it, unless it holds unsaved edits.**
   A dialog marked `data-guard` keeps its explicit close. Every other dialog closes on a click that starts and ends
@@ -67,7 +67,7 @@ on `claude/main` and is not yet on `main`. Whether a build is deployed on a give
 
 - **The board keeps your scroll position and place across repaints.**
   Lists repaint in place, so a poll does not throw away where you were. Browser back and forward move between
-  views. Docs: `docs/board-repaint.md`. Landed 2026-09-06 (`ab5afe6`), back and forward on 2026-09-11 (`d7ea87e`).
+  views. Docs: `docs/ui/board-repaint.md`. Landed 2026-09-06 (`ab5afe6`), back and forward on 2026-09-11 (`d7ea87e`).
 
 - **The board works on a phone.**
   The header holds its shape from a phone to a wide monitor, with 40px tap targets at touch widths. On a phone the
@@ -80,7 +80,7 @@ on `claude/main` and is not yet on `main`. Whether a build is deployed on a give
 
 - **A new board build reloads open pages on its own.**
   The build id hashes the whole `web/` tree, and a page reloads when it sees a new one on `/v1/health`. Docs:
-  `docs/reload-design.md`. Landed 2026-09-04 (`a874f91`).
+  `docs/runtime/reload-design.md`. Landed 2026-09-04 (`a874f91`).
 
 - **You can draw every card in its own terminal's colours, to find a session by colour.**
   `board cards wear their terminal colours` in the gear's board pane, off by default. On, each card in the stack
@@ -113,17 +113,17 @@ on `claude/main` and is not yet on `main`. Whether a build is deployed on a give
 
 - **A card tells a question apart from a finished turn.**
   A session blocked on you sorts above one that ran out of work, because the Notification hook fires only for the
-  first. A compacting session counts as working. Docs: `README.md`, `docs/hooks.md`. Landed 2026-09-04 (`304fbe0`,
+  first. A compacting session counts as working. Docs: `README.md`, `docs/runtime/hooks.md`. Landed 2026-09-04 (`304fbe0`,
   `4aaf174`).
 
 - **Each card shows what its runner is doing right now.**
   A live badge says thinking, running a named tool, or how many subagents are working, and for how long. It is
-  never stored, because it would be wrong the moment the daemon restarted. Docs: `docs/activity-design.md`. Landed
+  never stored, because it would be wrong the moment the daemon restarted. Docs: `docs/runtime/activity-design.md`. Landed
   2026-09-02 (`a85e2a3`).
 
 - **A card shows how much context its session has burned.**
   A statusline script posts to `/telemetry`, and the card draws context used and account limits. The statusline
-  script lives in another repository. Docs: `docs/statusline-telemetry.md`. Landed 2026-09-07 (`2ba1a2d`).
+  script lives in another repository. Docs: `docs/runtime/statusline-telemetry.md`. Landed 2026-09-07 (`2ba1a2d`).
 
 - **You pin cards, and pinned cards keep the order you set.**
   Pinned cards sit at the top of their column and of the switcher, with a line under them. Their order is a stored
@@ -156,14 +156,14 @@ on `claude/main` and is not yet on `main`. Whether a build is deployed on a give
 - **A machine that is not answering still shows its cards, and nothing on it opens.**
   Cards from an offline room are drawn from what it last said, in one folded group at the bottom of every column.
   Attach, resume and start are not drawn, and the hub refuses every request for that room by name. Nothing is
-  queued for its return. Docs: `CHANGELOG.md`, `docs/hub-room-requirements.md`. Landed 2026-09-17 (`a59d4d2`).
+  queued for its return. Docs: `CHANGELOG.md`, `docs/fabric/hub-room-requirements.md`. Landed 2026-09-17 (`a59d4d2`).
 
 - **A card says whether you have seen its last turn, and whether you answered its Open Questions.**
   An unread turn wears a teal dot, and a turn that ended on unanswered Open Questions wears `? N` with the
   questions in its tooltip, on the board card, the stack row and the terminal strip row. A turn is seen when a
   focused, visible window shows that card's runner terminal scrolled to the bottom for 3 seconds, or when you type
   into it, submit a prompt, or send it a message. A peer's message never counts. Only the question lines are kept,
-  never the message. A reply answers them. Stored, so it survives a restart. Docs: `docs/seen-design.md`. Landed
+  never the message. A reply answers them. Stored, so it survives a restart. Docs: `docs/runtime/seen-design.md`. Landed
   2026-09-23 (`e911361`, `dc88645`, `d1bff8c`). **claude/main only**.
 
 ### Cards and columns: removed, and why
@@ -175,7 +175,7 @@ on `claude/main` and is not yet on `main`. Whether a build is deployed on a give
 - **Atrium runs each agent under a pseudo terminal it owns, and you attach from the browser.**
   You type into the session, read it, stop it and restart it. A supervised runner dies with the daemon that owns
   its pty, so a restart resumes conversations rather than reattaching processes. Docs:
-  `docs/supervision-design.md`. Landed 2026-09-01 (`b054a57`).
+  `docs/terminal/supervision-design.md`. Landed 2026-09-01 (`b054a57`).
 
 - **You pop a terminal into its own window.**
   The window is the same page in terminal-only mode, titled with the session's address, marked when that session
@@ -216,13 +216,13 @@ on `claude/main` and is not yet on `main`. Whether a build is deployed on a give
 - **A narrow window does not shrink a shared session. It scrolls sideways.**
   The pty's width follows the widest attached viewer and its height the shortest. A claude terminal never goes
   narrower than `terminal_min_cols`, 120 by default. A drag sends one resize once the window settles. A shell is
-  exempt from the floor. Docs: `docs/terminal-resize-decoupling-design.md`. Landed 2026-09-22 (`7d16408`,
+  exempt from the floor. Docs: `docs/terminal/terminal-resize-decoupling-design.md`. Landed 2026-09-22 (`7d16408`,
   `aa5e202`, `f787af4`). **claude/main only**.
 
 - **Atrium never types into a line you are writing.**
   Every automated write waits until your line is empty and the keyboard has been quiet for two seconds. A held
   write is queued and retried. Atrium also refuses to type into a permission dialog it did not raise. Docs:
-  `docs/agent-messaging.md`. Landed 2026-09-20 (`97566c0`), all writes gated on 2026-09-22 (`5310857`), dialog
+  `docs/runtime/agent-messaging.md`. Landed 2026-09-20 (`97566c0`), all writes gated on 2026-09-22 (`5310857`), dialog
   guard on 2026-09-16 (`704b2e9`).
 
 - **A paste reaches the session as one paste.**
@@ -232,12 +232,12 @@ on `claude/main` and is not yet on `main`. Whether a build is deployed on a give
 
 - **You open a shell beside a wedged agent.**
   `open a shell here` opens a shell on the card rather than a second card. Shells are a property of the machine and
-  can be switched off. Docs: `docs/supervision-design.md`. Landed 2026-09-05 (`c34e9a2`), switchable on
+  can be switched off. Docs: `docs/terminal/supervision-design.md`. Landed 2026-09-05 (`c34e9a2`), switchable on
   2026-09-17 (`6a6747d`).
 
 - **You restart a session onto the same card from the terminal cog.**
   The session exits and resumes its conversation, so it picks up new defaults without losing context. Docs:
-  `docs/reload-design.md`. Landed 2026-09-18 (`8f12db5`, `b1f009e`).
+  `docs/runtime/reload-design.md`. Landed 2026-09-18 (`8f12db5`, `b1f009e`).
 
 - **Ending a session puts you back on the terminal you were on.**
   Only a real restart shows the restart banner. Docs: `CHANGELOG.md`. Landed 2026-09-11 (`72628a8`).
@@ -251,7 +251,7 @@ on `claude/main` and is not yet on `main`. Whether a build is deployed on a give
 
 - **A terminal row shows a pulsing mark while it holds a peer message, and a room badge.**
   The mark's tooltip leads with sender and age. Each card wears a badge in a stable per-room colour. Docs:
-  `docs/agent-messaging.md`. Landed 2026-09-21 (`004b77c`, `b8e1c92`, `875862f`).
+  `docs/runtime/agent-messaging.md`. Landed 2026-09-21 (`004b77c`, `b8e1c92`, `875862f`).
 
 - **Paths and URLs in terminal output are links.**
   A path that is a real file in the card's directory opens in atrium's editor in your browser. A directory opens
@@ -260,11 +260,11 @@ on `claude/main` and is not yet on `main`. Whether a build is deployed on a give
 
 - **Keystrokes stay smooth on a busy Windows machine.**
   The hub and the room run at above-normal priority. `ATRIUM_PRIORITY=normal` turns it off. Docs:
-  `docs/input-lag-logging.md`. Landed 2026-09-22 (`22a5264`).
+  `docs/terminal/input-lag-logging.md`. Landed 2026-09-22 (`22a5264`).
 
 - **Typed keystrokes can be shown in several panes at once (display only).**
   The room fans keystrokes out to other attached panes for display. The commit that added it marks it parked.
-  Docs: `docs/multi-pane-input-design.md`. Landed 2026-09-20 (`c1f541e`).
+  Docs: `docs/terminal/multi-pane-input-design.md`. Landed 2026-09-20 (`c1f541e`).
 
 ### Terminals: removed, and why
 
@@ -280,7 +280,7 @@ on `claude/main` and is not yet on `main`. Whether a build is deployed on a give
 - **Every tool call an agent wants to make goes through a gate you answer.**
   A PreToolUse hook blocks until you approve or block, and a block hands your reason back to the agent. Every
   request says which agent is asking. A hook never fails a session: the permission hook fails open when atrium is
-  down. Docs: `README.md`, `docs/hooks.md`. Landed 2026-09-01 (`fdc5c8e`).
+  down. Docs: `README.md`, `docs/runtime/hooks.md`. Landed 2026-09-01 (`fdc5c8e`).
 
 - **A pending edit shows a real diff.**
   Unchanged context is dimmed and changed words are picked out. Docs: `README.md`. Landed 2026-09-01 (`c51ae30`).
@@ -297,7 +297,7 @@ on `claude/main` and is not yet on `main`. Whether a build is deployed on a give
 - **Auto mode approves without asking and still records everything.**
   Turn it on per card, for the whole board, or for the next hour. It never overrides a never rule or a shelved
   card. `what did it do?` reads the record back grouped by tool, with unseen decisions first. Board-wide auto is
-  held and enforced by the hub. Docs: `docs/auto-mode.md`. Landed 2026-09-02 (`a85e2a3`), for an hour on
+  held and enforced by the hub. Docs: `docs/runtime/auto-mode.md`. Landed 2026-09-02 (`a85e2a3`), for an hour on
   2026-09-03 (`e11e950`), hub-held on 2026-09-19 (`a7551af`).
 
 - **Shelving a card is a standing no, and answers what it had pending.**
@@ -308,7 +308,7 @@ on `claude/main` and is not yet on `main`. Whether a build is deployed on a give
 
 - **Every session on a machine can be gated without wiring anything into the agent.**
   `ATRIUM_PERM_GATE=on` gates every session. The runners tab writes the missing hooks into Claude Code's settings,
-  and preserves sibling hooks and symlinks. Codex hooks are a second target. Docs: `docs/hooks.md`. Landed
+  and preserves sibling hooks and symlinks. Codex hooks are a second target. Docs: `docs/runtime/hooks.md`. Landed
   2026-09-02 (`7eb7f0f`), codex on 2026-09-03 (`5469fa9`).
 
 - **You put a running session on the board, or take it off, without a restart.**
@@ -323,7 +323,7 @@ on `claude/main` and is not yet on `main`. Whether a build is deployed on a give
 - **You queue a message to a running session.**
   It is typed into the terminal when atrium owns it and your line is empty, or carried by the next hook when it
   does not. It arrives framed as a message from you. Saying anything to a card answers its open question. Docs:
-  `docs/agent-messaging.md`. Landed 2026-09-03 (`39a8461`).
+  `docs/runtime/agent-messaging.md`. Landed 2026-09-03 (`39a8461`).
 
 - **You write named actions once and press them on any card.**
   An action is a stored prompt, optionally limited to a tag or a runner, and can ask the runner to quit afterwards.
@@ -341,7 +341,7 @@ on `claude/main` and is not yet on `main`. Whether a build is deployed on a give
 - **Sessions find each other and talk through atrium.**
   `atrium peers`, `atrium tell`, `atrium ask --peer` and `atrium answer`. A message is typed when the target
   terminal is free, and queued and retried from two seconds out to four hours when it is not. Peer messages are
-  capped at 8000 characters and 20 a minute. Docs: `docs/agent-messaging.md`. Landed 2026-09-06 (`cc6c921`), ask
+  capped at 8000 characters and 20 a minute. Docs: `docs/runtime/agent-messaging.md`. Landed 2026-09-06 (`cc6c921`), ask
   and answer on 2026-09-07 (`8866594`), retry and typing on 2026-09-22 (`2735470`).
 
 - **An atrium has a name, so wire names from two machines cannot collide.**
@@ -353,13 +353,13 @@ on `claude/main` and is not yet on `main`. Whether a build is deployed on a give
   `atrium_launch` and `restart_atrium`. `atrium_cull` retires a merged, accepted worker and removes its worktree and
   branch (backlog-2 item 36). `atrium_say` carries the caller's identity. `atrium_launch` can write a `BRIEF.md`, set a
   terminal theme, and is capped at 10 concurrent agent-launched sessions. Loopback only. Docs:
-  `docs/agent-messaging.md`, `docs/reload-design.md`. Landed 2026-09-18 (`d192062`, `85204e5`, `09b3fee`), cap
+  `docs/runtime/agent-messaging.md`, `docs/runtime/reload-design.md`. Landed 2026-09-18 (`d192062`, `85204e5`, `09b3fee`), cap
   on 2026-09-19 (`da0866b`).
 
 - **An agent asks whether the human has read its last turn and answered its questions.**
   `atrium_task` with no card answers about the caller's own card, and its `seen` block says whether the last turn
   is unseen and which of its Open Questions are still open. `atrium_peers` counts unseen turns and open questions
-  per peer. Docs: `docs/seen-design.md`. Landed 2026-09-23 (`d03762a`). **claude/main only**.
+  per peer. Docs: `docs/runtime/seen-design.md`. Landed 2026-09-23 (`d03762a`). **claude/main only**.
 
 ### Messages, peers and agent commands: removed, and why
 
@@ -373,17 +373,17 @@ on `claude/main` and is not yet on `main`. Whether a build is deployed on a give
   serves the hub in the foreground and starts `atrium room` detached when no room answers, making and enrolling the
   room over its own link the first time. A room runs the binary the hooks run, so the board's install-hooks button
   writes lines that run. `cmd/atrium2` is a temporary shim for this machine's live scripts until the cutover. Docs:
-  `docs/one-atrium-plan.md` stage 3, `docs/one-atrium-cutover.md`, `docs/test-plan.md` section AW.
+  `docs/fabric/one-atrium-plan.md` stage 3, `docs/fabric/one-atrium-cutover.md`, `docs/test-plan.md` section AW.
 
 - **A hub serves the board and rooms run the agents.**
   `atrium run` serves the board and proxies to rooms, and holds no card state, so it restarts without costing a
   session. `atrium room` owns the database, the ptys and the agents. A room dials the hub over mutual TLS after a
-  one-string join. Docs: `docs/hub-room-plan.md`, `docs/how-atrium-works.md`. Landed 2026-09-17 (`7dde248`).
+  one-string join. Docs: `docs/fabric/hub-room-plan.md`, `docs/how-atrium-works.md`. Landed 2026-09-17 (`7dde248`).
 
 - **One board shows every room, and a room picker scopes it.**
   Lists, the event stream and history merge across rooms. The picker shows one line a room with a state dot,
   updates live, and lists disconnected rooms dimmed. Each room has a settings cog. Docs:
-  `docs/hub-room-requirements.md`. Landed 2026-09-17 (`44f65ff`, `7c175ab`), picker on 2026-09-19 (`53fc643`).
+  `docs/fabric/hub-room-requirements.md`. Landed 2026-09-17 (`44f65ff`, `7c175ab`), picker on 2026-09-19 (`53fc643`).
 
 - **The hub names its rooms, and adding a room writes it down.**
   `atrium rooms add|ls|token|mark|rm|log`. The join string is bound to one name, and the room reads its name
@@ -410,10 +410,10 @@ on `claude/main` and is not yet on `main`. Whether a build is deployed on a give
 
 - **The board and the room link bind separately.**
   The board (`--addr`) is loopback only. The room link (`--link`) may bind wide, with `--link-advertise` naming the
-  address in join tokens. Docs: `docs/hub-room-plan.md`. Landed 2026-09-18 (`48313e7`).
+  address in join tokens. Docs: `docs/fabric/hub-room-plan.md`. Landed 2026-09-18 (`48313e7`).
 
 - **A room joins over direct mTLS, a private zrok share, or OpenZiti.**
-  `atrium room join` takes a transport flag and its material. Docs: `docs/ziti-zrok-flow-design.md`. Landed
+  `atrium room join` takes a transport flag and its material. Docs: `docs/fabric/ziti-zrok-flow-design.md`. Landed
   2026-09-17 (`97d4110`), join flags on 2026-09-19 (`6e978be`).
 
 - **A hub offers builds, and a room decides whether to take one.**
@@ -428,12 +428,12 @@ on `claude/main` and is not yet on `main`. Whether a build is deployed on a give
   Docs: `CHANGELOG.md`. Landed 2026-09-17 (`3a7d1d8`).
 
 - **The launch dialog offers only the runners a room has.**
-  Each room holds its own runner binary path. Docs: `docs/runner-scoping-design.md`. Landed 2026-09-21
+  Each room holds its own runner binary path. Docs: `docs/fabric/runner-scoping-design.md`. Landed 2026-09-21
   (`be6a6ab`, `9a34352`).
 
 - **You queue work for another machine.**
   `atrium dispatch to <room>`, `list` and `cancel`. The room claims it on its check-in and launches on its own
-  daemon. Docs: `docs/remote-launch.md`. Landed 2026-09-07 (`8866594`).
+  daemon. Docs: `docs/fabric/remote-launch.md`. Landed 2026-09-07 (`8866594`).
 
 ### Rooms and the hub: removed, and why
 
@@ -442,24 +442,24 @@ on `claude/main` and is not yet on `main`. Whether a build is deployed on a give
   string authorised a join as any name.
 - **The `settings -> this machine` pane.** Its nine settings moved behind each room's cog on 2026-09-17 (`3a7d1d8`).
 - **Heartbeat federation.** `atrium room` reporting to `/v1/rooms` every twenty seconds (2026-09-06, `c78ff42`) is
-  the older mechanism. The hub and room link supersedes it. Docs: `docs/federation-design-v2.md`.
+  the older mechanism. The hub and room link supersedes it. Docs: `docs/rnd/federation-design-v2.md`.
 
 ## Overlays and sharing
 
 - **Atrium serves the board on a zrok share or an OpenZiti service.**
   The SDK hands back a listener and the board is one handler on it. Nothing is proxied and atrium holds no
-  identity. A failed share never takes the local board down. Docs: `docs/overlays.md`,
-  `docs/ziti-zrok-flow-design.md`. Landed 2026-09-03 (`b716356`), hub board share on 2026-09-18 (`a7f397b`),
+  identity. A failed share never takes the local board down. Docs: `docs/fabric/overlays.md`,
+  `docs/fabric/ziti-zrok-flow-design.md`. Landed 2026-09-03 (`b716356`), hub board share on 2026-09-18 (`a7f397b`),
   `--board-transport ziti` on 2026-09-19 (`611846a`).
 
 - **You lend one session to one person.**
   `share this session` serves that terminal on its own address through an allowlist handler that refuses
-  everything else, including shells. Read-only is enforced on the socket. Docs: `docs/overlays.md`. Landed
+  everything else, including shells. Read-only is enforced on the socket. Docs: `docs/fabric/overlays.md`. Landed
   2026-09-04 (`5af35c2`).
 
 - **Shares survive a restart and can reserve their own address.**
   Reserve a zrok name from the board. Atrium keeps its own zrok environment. The panel shows the share's name as
-  your zrok account calls it. Docs: `docs/overlays.md`, `docs/zrok-share-500.md`. Landed 2026-09-03 (`fcb13e7`),
+  your zrok account calls it. Docs: `docs/fabric/overlays.md`, `docs/fabric/zrok-share-500.md`. Landed 2026-09-03 (`fcb13e7`),
   survival on 2026-09-06 (`cc6c921`, `c78ff42`).
 
 - **You revoke a public share from the board.**
@@ -469,12 +469,12 @@ on `claude/main` and is not yet on `main`. Whether a build is deployed on a give
 - **A published board asks for a login.**
   A name and password, or an OIDC provider, or both, with the password checked first. It guards only the published
   handler, never loopback. A public zrok board share is refused without a login. The login settings sit under the
-  panel that publishes the board. Docs: `docs/overlays.md`. OIDC landed 2026-09-06 (`c78ff42`), password
+  panel that publishes the board. Docs: `docs/fabric/overlays.md`. OIDC landed 2026-09-06 (`c78ff42`), password
   2026-09-11 (`fd00c11`), public-share login on 2026-09-19 and 2026-09-20 (`1f6bb6c`, `ad1aa90`).
 
 - **Three trial surfaces for exposing the board sit side by side.**
   The `expose the board` redo ships three coexisting surfaces to compare, before one is chosen. Docs:
-  `docs/ziti-zrok-flow-design.md`, `docs/test-plan.md`. Landed 2026-09-20 (`e27ca9f`).
+  `docs/fabric/ziti-zrok-flow-design.md`, `docs/test-plan.md`. Landed 2026-09-20 (`e27ca9f`).
 
 ### Overlays and sharing: removed, and why
 
@@ -486,7 +486,7 @@ on `claude/main` and is not yet on `main`. Whether a build is deployed on a give
 - **A runner is configuration, not code.**
   claude, codex, ollama, a shell or anything you add: a command, arguments, a directory, an environment, resume
   arguments and exit keys. Runners whose command is not on the machine are left out of launch menus. Docs:
-  `README.md`, `docs/other-runners.md`, `docs/atrium-for-agents.md`. Landed 2026-09-01 (`c51ae30`), non-claude
+  `README.md`, `docs/runtime/other-runners.md`, `docs/atrium-for-agents.md`. Landed 2026-09-01 (`c51ae30`), non-claude
   runners on 2026-09-07 (`6634742`).
 
 - **You start an agent from the launch dialog, a card's menu, a URL or the CLI.**
@@ -506,7 +506,7 @@ on `claude/main` and is not yet on `main`. Whether a build is deployed on a give
 
 - **A restart reopens what was open.**
   Cards that had a runner come back and resume their conversations. Alerts stay quiet until every card named has
-  arrived, and permission requests still ring. Docs: `docs/reload-design.md`. Landed 2026-09-08 (`45dffb3`),
+  arrived, and permission requests still ring. Docs: `docs/runtime/reload-design.md`. Landed 2026-09-08 (`45dffb3`),
   quiesce on 2026-09-15 (`2017744`).
 
 - **Fixtures are sessions atrium keeps running, and you switch them on and off.**
@@ -526,7 +526,7 @@ on `claude/main` and is not yet on `main`. Whether a build is deployed on a give
 - **A runner's row says what stops it working, and fixes what atrium may fix.**
   A `setup` chip opens named checks with `fix` buttons or commands to copy. Gemini checks folder trust and
   sign-in, and a gemini card in a new folder is trusted before it starts. Claude checks sign-in and hooks. Every
-  edit keeps backups. Docs: `docs/runner-setup-design.md`. Landed 2026-09-23 (`87f548a`, `dba9768`). **claude/main
+  edit keeps backups. Docs: `docs/runtime/runner-setup-design.md`. Landed 2026-09-23 (`87f548a`, `dba9768`). **claude/main
   only**.
 
 - **Every on/off row on the rooms page switches from its own pill.**
@@ -543,21 +543,21 @@ on `claude/main` and is not yet on `main`. Whether a build is deployed on a give
 
 - **An inbox holds work atrium did not start.**
   A card with no runner behind it. `start` opens the launch dialog prefilled and starts onto that card. Docs:
-  `docs/intake-design.md`. Landed 2026-09-03 (`1f8c8d8`).
+  `docs/runtime/intake-design.md`. Landed 2026-09-03 (`1f8c8d8`).
 
 - **A source is a command on a timer that posts work items.**
   Atrium holds an argv and an interval, never a credential. A source that fails three times in a row switches off
   with the reason. An item that moves on rewrites its card while it is still in the inbox. Docs:
-  `docs/intake-design.md`, `scripts/sources/`. Landed 2026-09-03 (`9028a32`).
+  `docs/runtime/intake-design.md`, `scripts/sources/`. Landed 2026-09-03 (`9028a32`).
 
 - **A URL fills in the launch dialog.**
   Recogniser rows turn a pasted URL into launch fields, and `atrium open <url>` does the same from a shell. Docs:
-  `docs/scm-design.md`. Landed 2026-09-07 (`6634742`).
+  `docs/runtime/scm-design.md`. Landed 2026-09-07 (`6634742`).
 
 - **Providers tell atrium where your repositories live.**
   A provider is a name, a root and a layout, and defining one adopts every checkout under it. Presence on disk is
   worked out fresh, so an unplugged drive greys rows and deletes nothing. Worktree support runs `git worktree add`
-  with no shell. Docs: `docs/providers-design.md`, `docs/test-plan-z-providers.md`. Landed 2026-09-17
+  with no shell. Docs: `docs/runtime/providers-design.md`, `docs/release/test-plan-z-providers.md`. Landed 2026-09-17
   (`0f47f96`), projects dropped on 2026-09-22 (`17fdffa`).
 
 ### Intake, sources and providers: removed, and why
@@ -570,11 +570,11 @@ on `claude/main` and is not yet on `main`. Whether a build is deployed on a give
 
 - **You paste or drop files into a session.**
   The bytes land in `.atrium/incoming` under the card's directory and the path is typed without Enter. Docs:
-  `docs/file-transfer-design.md`. Landed 2026-09-03 (`6b6393c`).
+  `docs/runtime/file-transfer-design.md`. Landed 2026-09-03 (`6b6393c`).
 
 - **You browse a session's directory and take files out, one at a time or as a zip.**
   Everything resolves through one containment check against the card's directory. Anything outside answers 403.
-  Docs: `docs/file-transfer-design.md`. Landed 2026-09-04 (`c248274`, `304fbe0`).
+  Docs: `docs/runtime/file-transfer-design.md`. Landed 2026-09-04 (`c248274`, `304fbe0`).
 
 - **You read and edit a file in atrium's own editor in the browser.**
   Escape closes the editor, then the drawer. Docs: `docs/user-guide.md` pattern 10. Landed 2026-09-07
@@ -586,7 +586,7 @@ on `claude/main` and is not yet on `main`. Whether a build is deployed on a give
   (`c248274`), terminal window 2026-09-11 (`f690f32`).
 
 - **The directory picker is bounded to configured roots and completes paths with Tab.**
-  Docs: `docs/status.md`. Landed 2026-09-05 (`99e2d8e`), Tab completion on 2026-09-06 (`c78ff42`).
+  Docs: `docs/orchestrator/status.md`. Landed 2026-09-05 (`99e2d8e`), Tab completion on 2026-09-06 (`c78ff42`).
 
 ### Files: removed, and why
 
@@ -599,12 +599,12 @@ on `claude/main` and is not yet on `main`. Whether a build is deployed on a give
   Landed 2026-09-03 (`db2cf2c`).
 
 - **Every permission decision records who asked and who answered.**
-  You, a rule, or auto mode. The decision log sits in the permissions pane. Docs: `docs/auto-mode.md`. Landed
+  You, a rule, or auto mode. The decision log sits in the permissions pane. Docs: `docs/runtime/auto-mode.md`. Landed
   2026-09-02 (`7eb7f0f`).
 
 - **An audit tab shows hub and room events.**
   Rooms attaching and dropping, launches refused by the cap, permissions, and session start and exit, with a
-  filter. Docs: `docs/audit-design.md`. Landed 2026-09-19 (`22cee75`, `4a703b0`).
+  filter. Docs: `docs/fabric/audit-design.md`. Landed 2026-09-19 (`22cee75`, `4a703b0`).
 
 - **Desktop notifications carry approve and block buttons.**
   One alert per event: the focused atrium window toasts, and with no window focused the operating system notifies
@@ -633,7 +633,7 @@ on `claude/main` and is not yet on `main`. Whether a build is deployed on a give
 
 - **You back up and restore atrium's configuration.**
   `GET /v1/config/export` and `POST /v1/config/import`, dry run by default, and `back it up` in the settings cog.
-  Docs: `docs/status.md`. Landed 2026-09-06 (`c78ff42`).
+  Docs: `docs/orchestrator/status.md`. Landed 2026-09-06 (`c78ff42`).
 
 - **A shared address file lets hooks and scripts find the daemon.**
   `shared_location` names a directory both accounts can read. Docs: `README.md`. Landed 2026-09-06 (`c78ff42`).
@@ -646,7 +646,7 @@ on `claude/main` and is not yet on `main`. Whether a build is deployed on a give
 
 - **You install atrium from a deb, rpm, macOS pkg or Windows MSI.**
   Each has a per-user path that needs no admin rights. `make release` builds five platforms. Docs:
-  `docs/packaging.md`. Release landed 2026-09-06 (`ab5afe6`), packages on 2026-09-19 (`7560db7`).
+  `docs/release/packaging.md`. Release landed 2026-09-06 (`ab5afe6`), packages on 2026-09-19 (`7560db7`).
 
 - **The daemon starts at logon.**
   `scripts/atrium-autostart.ps1` registers a logon task, not a service, because a service cannot open a pty you
@@ -654,7 +654,7 @@ on `claude/main` and is not yet on `main`. Whether a build is deployed on a give
 
 - **A session restarts atrium from inside atrium.**
   `restart_atrium` parks the other agents, spawns a detached restarter and comes back as the same room. It installs
-  a staged binary on the way. Duplicate asks are dropped. Docs: `docs/reload-design.md`. Landed 2026-09-04
+  a staged binary on the way. Duplicate asks are dropped. Docs: `docs/runtime/reload-design.md`. Landed 2026-09-04
   (`3d89e69`, `82ba917`), room-side restart on 2026-09-18 (`c5ccfc3`), same-room restart on 2026-09-22
   (`5390365`).
 
@@ -663,7 +663,7 @@ on `claude/main` and is not yet on `main`. Whether a build is deployed on a give
 
 - **A preview board shows a change on a copy of your cards and acts on nothing.**
   `atrium preview --from live` runs a second daemon that takes no hooks and starts passive. Docs:
-  `docs/preview-design.md`. Landed 2026-09-06 (`2985923`).
+  `docs/ui/preview-design.md`. Landed 2026-09-06 (`2985923`).
 
 - **Atrium warns when it opens a different database than last time.**
   Docs: `README.md`. Landed 2026-09-04 (`c248274`).
@@ -675,7 +675,7 @@ on `claude/main` and is not yet on `main`. Whether a build is deployed on a give
 ### Packaging, install and operations: removed, and why
 
 - **`atrium install`.** Removed before shipping, because copying a file is the shallow half of installing. The
-  packages replace it. Docs: `docs/status.md`, `docs/packaging.md`.
+  packages replace it. Docs: `docs/orchestrator/status.md`, `docs/release/packaging.md`.
 - **The v1 `start-atrium.ps1`.** Retired to a stub on 2026-09-19 (`ee7a589`).
 
 ## Diagnostics
@@ -690,7 +690,7 @@ on `claude/main` and is not yet on `main`. Whether a build is deployed on a give
 
 - **One checkbox times the whole keystroke path.**
   `log terminal input lag` switches the browser, the hub and the room live. `ATRIUM_DEBUG_INPUTLAG` wins for the
-  life of the process. Docs: `docs/input-lag-logging.md`. Landed 2026-09-22 (`97f68a4`, `fd471ca`).
+  life of the process. Docs: `docs/terminal/input-lag-logging.md`. Landed 2026-09-22 (`97f68a4`, `fd471ca`).
 
 ### Diagnostics: removed, and why
 
@@ -701,11 +701,11 @@ on `claude/main` and is not yet on `main`. Whether a build is deployed on a give
 - **A terminal hub and an MCP agent loop: removed.**
   `atrium hub`, `atrium agent`, `atrium daemon --tui`, `/submit` and `POST /v1/tasks/{id}/prompt` are gone. The
   board does everything the terminal UI did, and a supervised session takes a message without a loop. The
-  `/permission` long-poll the daemon shared with it stays, unchanged. Plan: `docs/one-atrium-plan.md` stage 1.
+  `/permission` long-poll the daemon shared with it stays, unchanged. Plan: `docs/fabric/one-atrium-plan.md` stage 1.
 
 - **A read-only state aggregator: removed.**
   `atrium serve`, `status` and `watch` are gone, with `internal/server` and `internal/state`. Nothing called them,
-  and `gwt watch` already tails the same ledger. Plan: `docs/one-atrium-plan.md` stage 2.
+  and `gwt watch` already tails the same ledger. Plan: `docs/fabric/one-atrium-plan.md` stage 2.
 
 ### The older v1 modes: removed, and why
 

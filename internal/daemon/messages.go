@@ -115,7 +115,7 @@ func (d *Daemon) takeMessages(taskID, via string) ([]*store.Message, error) {
 	// A peer message waiting to be typed stays for the typist. It waits for an
 	// empty line and the end of the turn, and a hook that carried it mid-turn
 	// would skip that wait. In memory, so after a restart, or once the terminal
-	// is gone, the hooks deliver it as they always did. See docs/typing-race.md.
+	// is gone, the hooks deliver it as they always did. See docs/terminal/typing-race.md.
 	if d.pending != nil {
 		msgs = d.pending.withoutHeldPeers(taskID, msgs)
 		if len(msgs) == 0 {
@@ -181,7 +181,7 @@ func (d *Daemon) handleStop(w http.ResponseWriter, r *http.Request) {
 		// resumed, and storing it loses the one that could.
 		Resumable *bool `json:"resumable,omitempty"`
 		// The Open Questions the turn ended on, read by the hook off the last
-		// message. Only the questions travel. See docs/seen-design.md.
+		// message. Only the questions travel. See docs/runtime/seen-design.md.
 		Questions      []string `json:"questions,omitempty"`
 		QuestionsBlock bool     `json:"questions_block,omitempty"`
 		QuestionsKnown bool     `json:"questions_known,omitempty"`
@@ -664,7 +664,7 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 	// asking things the operator has already been told about. A peer's answer
 	// is the opposite and settles only what that peer was asked.
 	d.askAnswered(taskID, "the operator")
-	// A peer's message is not the operator reading the turn. See docs/seen-design.md.
+	// A peer's message is not the operator reading the turn. See docs/runtime/seen-design.md.
 	if from == "" {
 		d.seenAnswered(taskID, store.SeenMessage)
 	}
@@ -679,7 +679,7 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 	// atrium does not own, a claude session with no hooks installed) holds the
 	// message forever while the sender is told `queued`. It is still queued,
 	// because the card may be relaunched under atrium, but the sender hears
-	// the truth and what to do instead. See docs/a2a-reliability-design.md.
+	// the truth and what to do instead. See docs/runtime/a2a-reliability-design.md.
 	out := map[string]any{"delivered": "queued", "id": m.ID, "when": whenWord(waitTurn)}
 	if from != "" && terr == nil {
 		rec.State, rec.MessageID = store.SayQueued, m.ID

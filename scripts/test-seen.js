@@ -5,7 +5,7 @@
 // for the whole dwell. Every way it can go wrong is silent: a report sent from
 // a window behind another one marks a turn read that nobody read, which is the
 // failure this exists to stop. So each condition is dropped in turn and the
-// report must not go. See docs/seen-design.md.
+// report must not go. See docs/runtime/seen-design.md.
 const fs = require("fs");
 const path = require("path");
 

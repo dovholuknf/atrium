@@ -20,7 +20,7 @@ import (
 // Atrium holds an argv and an interval, runs it, and reads its stdout as
 // intake items. It never learns what GitHub is, and there is nowhere in the
 // source table to put a credential: `gh` already has one, in the keyring it
-// already uses. See docs/intake-design.md, layer 2.
+// already uses. See docs/runtime/intake-design.md, layer 2.
 //
 // Everything here obeys the rule the resilience section states for hooks, for
 // the same reason: intake is a suggestion, not durable state. A source that

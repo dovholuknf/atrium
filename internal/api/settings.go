@@ -163,7 +163,7 @@ func globalAutoView(s *Server) map[string]any {
 	out["replay_mode"] = mode
 	out["replay_modes"] = []string{"raw", "screen", "flat"}
 	// Whether a runner the room's exit interrupted mid-turn is told so when it
-	// comes back. On unless switched off. See docs/unexpected-exit-wake.md.
+	// comes back. On unless switched off. See docs/runtime/unexpected-exit-wake.md.
 	out["unexpected_exit_wake"] = s.st.UnexpectedExitOn()
 	// Whether the usage tab draws cache reads. Off unless switched on.
 	out["usage_cache_reads"] = s.usageCacheReads()

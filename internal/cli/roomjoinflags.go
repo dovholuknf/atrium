@@ -11,7 +11,7 @@ import (
 // The transport half of `atrium room join`, split out so it can be tested without a
 // hub, a network or a cobra command.
 //
-// The design this implements is `docs/ziti-zrok-flow-design.md`, "The room link:
+// The design this implements is `docs/fabric/ziti-zrok-flow-design.md`, "The room link:
 // `atrium room join` with a transport". The token names the room and pins the hub's
 // trust anchor. These flags say HOW to reach the hub and what to prove the right
 // with, which the token used to have to carry itself:

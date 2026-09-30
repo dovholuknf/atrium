@@ -197,7 +197,7 @@
     #t-screen { height: 55vh; }
   }
 
-  /* A phone. `docs/charon.md` calls answering approvals from away the gap that
+  /* A phone. `docs/rnd/charon.md` calls answering approvals from away the gap that
      matters most: a gate you cannot answer from away is a gate you turn off.
      The overlay already gets the board to a phone, so all that was missing was
      this screen at that width. Aimed at the permissions queue, not the whole

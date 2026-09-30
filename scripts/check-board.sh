@@ -136,7 +136,7 @@ fi
 
 # The runner setup chip and dialog, RUN against a fake row. A fix button that
 # posts to the wrong place, or a sign-in check that grows a fix button, draws
-# fine and is wrong. See docs/runner-setup-design.md.
+# fine and is wrong. See docs/runtime/runner-setup-design.md.
 if ! node "$here/scripts/check-runner-setup.js" "$whole"; then
   echo "the runner setup chip or dialog is broken" >&2
   fail=1
@@ -264,7 +264,7 @@ fi
 
 # The seen report, RUN against a fake clock. A turn reported seen from a window
 # behind another one, or scrolled up, or attached to a shell, marks a turn read
-# that nobody read, and nothing on screen says so. See docs/seen-design.md.
+# that nobody read, and nothing on screen says so. See docs/runtime/seen-design.md.
 if ! node "$here/scripts/test-seen.js"; then
   echo "a turn would be reported seen when nobody was looking. see above." >&2
   fail=1

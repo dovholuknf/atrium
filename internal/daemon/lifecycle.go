@@ -12,7 +12,7 @@ import "fmt"
 // long it ran, whether an agent handed the work back or a runner fell over on
 // startup. So the room says it, on its own event stream, and the hub turns the
 // line into an audit row. See internal/link/events.go, which reads the
-// `lifecycle` kind off the relay and records it, and docs/audit-design.md, which
+// `lifecycle` kind off the relay and records it, and docs/fabric/audit-design.md, which
 // deferred exactly this to a room restart.
 //
 // ── the shape on the wire ────────────────────────────────

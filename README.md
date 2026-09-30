@@ -112,7 +112,7 @@ itself when its runner exits.
 directory or the tags, and Enter. The last few you went to come first, so moving between two sessions is one
 key and one more. It works inside a popped-out window too, which moves that window to another card rather than
 opening a second one. The key is a setting because browsers keep different keys for themselves and refuse to
-hand one over without saying so: `docs/switcher-design.md` is the whole argument, and settings names the
+hand one over without saying so: `docs/ui/switcher-design.md` is the whole argument, and settings names the
 browser that takes the default.
 
 **Files, in both directions.** Drop or paste into a session to send a file in. Browse the session's directory to
@@ -274,17 +274,17 @@ This is a personal tool. The parts that are missing are missing on purpose, or a
 - `docs/architecture-v2.md` -- the design, the decisions, what is built and what was abandoned.
 - `docs/user-guide.md` -- walkthroughs, including the hooks.
 - `docs/backlog.md` -- what is outstanding, why it matters, and what is out of scope.
-- `docs/activity-design.md` -- the live badge on a card, and why it is never written down.
-- `docs/statusline-telemetry.md` -- how much context a session has burned, posted by its statusline. The
+- `docs/runtime/activity-design.md` -- the live badge on a card, and why it is never written down.
+- `docs/runtime/statusline-telemetry.md` -- how much context a session has burned, posted by its statusline. The
   contract for the other half, which lives in a different repository.
-- `docs/auto-mode.md` -- approving without being asked, and reading the record afterwards.
-- `docs/supervision-design.md` -- pseudo terminals, attaching from the browser, and how a runner is stopped.
-- `docs/overlays.md` -- reaching the board from another machine, and the line atrium will not cross to do it.
-- `docs/preview-design.md` -- a second board on a copy of the cards, and why two ACTIVE atriums cannot share one
+- `docs/runtime/auto-mode.md` -- approving without being asked, and reading the record afterwards.
+- `docs/terminal/supervision-design.md` -- pseudo terminals, attaching from the browser, and how a runner is stopped.
+- `docs/fabric/overlays.md` -- reaching the board from another machine, and the line atrium will not cross to do it.
+- `docs/ui/preview-design.md` -- a second board on a copy of the cards, and why two ACTIVE atriums cannot share one
   database.
-- `docs/intake-design.md` -- starting a card from an issue or a ticket, in layers.
-- `docs/file-transfer-design.md` -- moving files in and out of a session, and what containment means here.
-- `docs/federation-design-v2.md` -- one board over many machines. Leaves dial out, the forum holds nothing.
+- `docs/runtime/intake-design.md` -- starting a card from an issue or a ticket, in layers.
+- `docs/runtime/file-transfer-design.md` -- moving files in and out of a session, and what containment means here.
+- `docs/rnd/federation-design-v2.md` -- one board over many machines. Leaves dial out, the forum holds nothing.
 - `docs/test-plan.md` -- manual scenarios that should pass before tagging a build.
 - `CHANGELOG.md` -- what landed, and when.
 

@@ -12,7 +12,7 @@ import (
 //
 // ── why the hub owns a board skin at all ─────────────────
 //
-// A skin is about the BOARD's appearance, and `docs/hub-room-requirements.md`
+// A skin is about the BOARD's appearance, and `docs/fabric/hub-room-requirements.md`
 // gives anything about the board to the hub. The ALL view is the hub's view, so
 // the skin it wears is the hub's own, not one borrowed from whichever room
 // sorts first. That borrow is the bug: with a second room mid-attach the ALL
@@ -33,7 +33,7 @@ const SettingBoardSkin = "board_skin"
 // ── why the hub owns this, and the room keeps its own ────
 //
 // Board-wide "approve everything" is BOARD POLICY: one answer for every session
-// on every room, including ones that have not started. `docs/hub-room-requirements.md`
+// on every room, including ones that have not started. `docs/fabric/hub-room-requirements.md`
 // gives anything about the board to the hub, so this is the hub's to hold, the
 // same as the skin above. It used to live in the room as `global_auto`, which
 // only ever covered sessions THAT room's gate had seen and, in the ALL view, had
@@ -56,7 +56,7 @@ const boardAutoUntil = "until:"
 // ── why the hub owns this, like the skin ─────────────────
 //
 // A public zrok share is a URL anyone can open, so it carries a login at the
-// edge. `docs/ziti-zrok-flow-design.md` (decision 1) gives the operator two
+// edge. `docs/fabric/ziti-zrok-flow-design.md` (decision 1) gives the operator two
 // choices for that login, per share: zrok `updb` (a username and password) or
 // OIDC. Either way it is BOARD POLICY, one answer for the one board, so it is
 // the hub's to hold, the same as the skin and the board-wide auto flag above.

@@ -666,7 +666,7 @@ func (d *Daemon) guestHandler(taskID string) http.Handler {
 			// agent, the conversation, the work. A shell in the card's
 			// directory is a general purpose command line on this machine, so
 			// a share that reached one would be a share of the machine, which
-			// is the line `docs/overlays.md` says atrium does not cross.
+			// is the line `docs/fabric/overlays.md` says atrium does not cross.
 			//
 			// Refused rather than quietly rewritten to the runner. A guest
 			// asking for this is either confused or trying it, and both are

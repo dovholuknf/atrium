@@ -15,7 +15,7 @@ import (
 
 // The failure this is written against: the orchestrator ended turns with an
 // Open Questions block, the operator never read them, and the orchestrator
-// kept saying they were still open. See docs/seen-design.md.
+// kept saying they were still open. See docs/runtime/seen-design.md.
 
 // seenCard fetches a card through the board's API, which is where the board
 // and the control tools both read it.

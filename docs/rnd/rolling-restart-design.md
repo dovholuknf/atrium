@@ -18,9 +18,9 @@ there it runs inside one room, where it is `RestartRunner` at an idle moment and
 
 - The supervisor spawns every runner under a pty the daemon process owns (`internal/daemon/supervisor.go`, `type
   runner`: `pty pty.Pty`, `cmd *pty.Cmd`). Closing that pty takes the process with it.
-  `docs/supervision-design.md`, "A terminal belongs to the daemon that opened it", says why only the opener
+  `docs/terminal/supervision-design.md`, "A terminal belongs to the daemon that opened it", says why only the opener
   can attach.
-- So a daemon restart ends every supervised runner. `docs/reload-design.md` section 5 brings back only the
+- So a daemon restart ends every supervised runner. `docs/runtime/reload-design.md` section 5 brings back only the
   fixtures, and `reopen.go` brings back what the reopen list names, each as a resume: a new process on the old
   conversation.
 - A resume is safe only when the card is idle. That is why a restart waits for every card to be idle at the same
@@ -198,7 +198,7 @@ runners together, and the next start resumes them as today.
 1. **Hooks.** Nothing is retargeted. The new daemon writes the same location file, binds the same two ports and opens
    the same database. Every runner's `ATRIUM_LOCATION` still names that file (`whereami.go`, `LocationPath`). No
    second room exists, so nothing can capture the hooks. During the gap of a few seconds:
-   - Activity posts fail and are dropped. That is fine by design (`docs/activity-design.md`), and the next
+   - Activity posts fail and are dropped. That is fine by design (`docs/runtime/activity-design.md`), and the next
      event re-derives the badge.
    - `SessionStart` and `SessionEnd` in the gap are lost. A runner that ended in the gap is found by `list`
      (`exited`), and the new daemon files it as the reaper would have. A runner cannot start in the gap, because
@@ -302,7 +302,7 @@ refusing to start.
   task, which is today's behaviour and no worse. The spike checks which one the real room task gives.
 - **systemd.** A user unit with the default `KillMode=control-group` kills every process in its cgroup on stop or
   restart, host included. MUST: the host runs in its own unit (started with `systemd-run --user`), or the room's unit
-  uses `KillMode=process`. `docs/packaging.md` says a user unit and a logon task are one decision on two
+  uses `KillMode=process`. `docs/release/packaging.md` says a user unit and a logon task are one decision on two
   platforms, so both change together.
 - **macOS launchd.** A LaunchAgent's children are killed with it unless they leave its process group, which `Setsid`
   does. Checked in the spike on m1mini.

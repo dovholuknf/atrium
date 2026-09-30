@@ -1,7 +1,7 @@
 // ── has the operator seen this turn ─────────────────────
 //
 // Two marks on a card, and the one thing only a browser can tell the room.
-// See docs/seen-design.md.
+// See docs/runtime/seen-design.md.
 //
 // THE MARKS. A card whose latest turn nobody has seen wears a dot. A card whose
 // turn ended on Open Questions nobody has answered wears `? 3`. Both are chips,

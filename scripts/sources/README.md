@@ -5,7 +5,7 @@ one into a card with no runner, waiting in the inbox until you press start.
 
 **Atrium holds an argv and an interval. It never holds a credential.** `gh` has a token in the keyring it
 already uses, `mcp-gateway` has four backends' worth of secrets, `zrok` has an environment. There is nowhere in
-a source row to put one, and that is the design rather than an omission. See `docs/intake-design.md`.
+a source row to put one, and that is the design rather than an omission. See `docs/runtime/intake-design.md`.
 
 ## The shape
 

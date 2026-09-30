@@ -2,7 +2,7 @@
   "$comment": [
     "A scoop manifest, and the easiest of the five packaging targets by a long way.",
     "No account, no review, no signing: a JSON file in a bucket pointing at a release",
-    "asset and its hash. That is why it is first in docs/packaging.md, and why this",
+    "asset and its hash. That is why it is first in docs/release/packaging.md, and why this",
     "file exists before any of the others: it proves the release SHAPE is right",
     "before anything harder depends on it.",
     "",

@@ -705,7 +705,7 @@ function noteChip(t) {
 //
 // The effort and the extra args and env ride on the same chip, for the same
 // reason, and the env by name only: its values never leave the room. See
-// docs/launch-options-design.md.
+// docs/runtime/launch-options-design.md.
 function modelChip(t) {
   const model = (t.model || "").trim();
   const effort = (t.effort || "").trim();

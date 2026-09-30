@@ -47,7 +47,7 @@ which reads the runner's JSON from stdin, posts one fact to the agent listener a
 
 Fields atrium reads from the stdin JSON: `session_id`, `cwd`, `transcript_path`, `hook_event_name`, `source`,
 `reason`, `tool_name`, `tool_input`, `tool_use_id`, `stop_hook_active`, `agent_id`, `agent_type`, `trigger`.
-Codex spells these the same as Claude, which is why codex needed almost no work. See `docs/other-runners.md` in
+Codex spells these the same as Claude, which is why codex needed almost no work. See `docs/runtime/other-runners.md` in
 the atrium repo (`D:\git\github\dovholuknf\atrium`) for how codex was measured, and copy that method. The table
 of hooks atrium wants is `WantedHooks` in `internal/claudeconf/hooks.go`.
 
@@ -98,7 +98,7 @@ installed here:
 4. A mapping table from the atrium table above to your CLI's events, with each row marked works, partial or none, and
    the evidence for each.
 5. Whether a Stop-equivalent can block and feed a reason back, and whether a PreToolUse-equivalent can deny with
-   a reason. Prove each with a probe, the way `docs/other-runners.md` did for codex.
+   a reason. Prove each with a probe, the way `docs/runtime/other-runners.md` did for codex.
 6. How folder trust works and how a folder or a parent such as `D:\worktrees` is trusted without the interactive
    prompt. Also how to register an MCP server.
 7. Field names that differ from Claude's, and anything about quoting or paths that would break a written hook.
@@ -106,5 +106,5 @@ installed here:
 Use a scratch config home for probes. Do not edit clint's real config for your CLI (`~/.gemini`, `~/.codex` and so
 on). Do not restart atrium.
 
-When the report is in, it becomes a section of `docs/other-runners.md`, and the runner gets a hooks target like
+When the report is in, it becomes a section of `docs/runtime/other-runners.md`, and the runner gets a hooks target like
 codex's.

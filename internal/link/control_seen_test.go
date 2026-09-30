@@ -10,7 +10,7 @@ import (
 )
 
 // The orchestrator's question, answered: has the human seen my last turn, and
-// which of its questions are still owed. See docs/seen-design.md.
+// which of its questions are still owed. See docs/runtime/seen-design.md.
 
 func seenBoard(t *testing.T) *httptest.Server {
 	t.Helper()

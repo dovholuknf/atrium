@@ -2,7 +2,7 @@
 
 One page on the whole system: what runs, what talks to what, and where each fact lives. Each section links to
 the design document that covers it in depth. For how sessions message each other, read
-`docs/agent-messaging.md`.
+`docs/runtime/agent-messaging.md`.
 
 ## What atrium is
 
@@ -33,7 +33,7 @@ them. It runs for days and is never restarted to change the board.
 **The hub** (`cmd/atrium2`, `internal/link`) serves the board's HTML, CSS, and JS itself and proxies every other
 request to a room. It holds no card state, so it restarts freely while board work is in progress. The split
 follows lifetimes: board code changes every few minutes, and agents must not die for it. See
-`docs/hub-room-plan.md`.
+`docs/fabric/hub-room-plan.md`.
 
 The room dials the hub, never the other way. A hub restart is the room noticing a closed socket and redialling.
 Joining is one pasted string, which pins the hub's certificate authority, and every link after that is mutual
@@ -54,7 +54,7 @@ status column, a worktree, tags, an event log, a queue of messages, and a list o
 - **Status is a column, a bucket of human attention.** `running`, `needs-input`, `needs-permission`, `shelved`,
   `done`, `dead`, plus `backlog` for work not started. Stored.
 - **Activity is a badge, a fact about the runner right now.** Thinking, running a tool, idle. Never stored,
-  because it would be wrong the moment the daemon restarted. `docs/activity-design.md`.
+  because it would be wrong the moment the daemon restarted. `docs/runtime/activity-design.md`.
 - **Observed values never overwrite overrides.** What a hook reports goes in one set of fields. What a human
   typed goes in another and wins.
 
@@ -64,7 +64,7 @@ Two ways, and they differ in what atrium can do for the session.
 
 **Supervised.** Atrium launches the runner (`atrium launch`, the board's launch dialog, or `atrium_launch`) in a
 pseudo terminal it owns. The browser attaches to that terminal over a websocket. Atrium can type into it, read
-its screen, restart it, and ask it to leave. `docs/supervision-design.md`.
+its screen, restart it, and ask it to leave. `docs/terminal/supervision-design.md`.
 
 **Joined.** A session started in an ordinary terminal runs `atrium join`. It gets a card and its tool calls are
 gated, but atrium has no terminal to write to. Everything atrium says to it has to ride a hook.
@@ -72,7 +72,7 @@ gated, but atrium has no terminal to write to. Everything atrium says to it has 
 ## Hooks
 
 Claude Code's hooks are how a session reports in. `atrium hook`, `atrium session`, and `atrium turn` are the
-commands registered in `settings.json`. The board writes the missing ones for you. `docs/hooks.md`.
+commands registered in `settings.json`. The board writes the missing ones for you. `docs/runtime/hooks.md`.
 
 | Hook | Goes to | What it does |
 | --- | --- | --- |
@@ -94,11 +94,11 @@ The order is the design.
 
 1. **A replayed decision.** The same request already answered gets the same answer.
 2. **A queued message.** The call is blocked and the block reason carries the message. This is how a working
-   session hears from you. See `docs/agent-messaging.md`.
+   session hears from you. See `docs/runtime/agent-messaging.md`.
 3. **A shelved card.** A standing no.
 4. **A standing rule.** Most specific match wins: prefix, glob, or folder.
 5. **Auto mode.** Approve and record. Last, so messages, shelving, and rules all still win.
-   `docs/auto-mode.md`.
+   `docs/runtime/auto-mode.md`.
 6. **Ask the human.** The card moves to `needs-permission` and the agent blocks until someone decides.
 
 Every decision is written to the audit log with what made it.
@@ -113,7 +113,7 @@ Every card has a durable message queue. A message reaches a session one of two w
 
 Agents use `atrium peers` to find handles, `atrium tell` to say something, `atrium ask --peer` and `atrium
 answer` to ask and reply, and the MCP tools `atrium_peers` and `atrium_say` for the same through the hub. The
-full mechanics, limits, and known gaps are in `docs/agent-messaging.md`.
+full mechanics, limits, and known gaps are in `docs/runtime/agent-messaging.md`.
 
 ## Agents telling atrium things
 
@@ -145,14 +145,14 @@ listener on a later one. Running without durable state is worse than not running
 `atrium stop` winds a room down: event streams released first, supervised runners given ten seconds, every step
 logged. Killing the process is not the same thing. Closing a pseudo terminal ends the process attached to it,
 so a kill ends every supervised agent at once. `restart_atrium` schedules a restart a few seconds out and parks
-busy agents first. `docs/reload-design.md`.
+busy agents first. `docs/runtime/reload-design.md`.
 
 ## Reaching the board from elsewhere
 
 The board is loopback only and has no login. Reaching it from another machine is an overlay's job: atrium can
 serve the board on a zrok share or an OpenZiti service, where the SDK hands back a `net.Listener` and the board
 is one handler on it. Atrium holds the name of a credential, never somebody else's credential.
-`docs/overlays.md`.
+`docs/fabric/overlays.md`.
 
 ## The older surface
 
@@ -165,11 +165,11 @@ and `watch`), went next: `gwt watch` tails the same ledger.
 | Question | Document |
 | --- | --- |
 | Why v2 is shaped this way | `docs/architecture-v2.md` |
-| Hub and room split | `docs/hub-room-plan.md` |
-| Messaging between sessions | `docs/agent-messaging.md` |
-| Terminals and attach | `docs/supervision-design.md` |
-| The live badge | `docs/activity-design.md` |
-| Auto mode and its review | `docs/auto-mode.md` |
-| Hooks | `docs/hooks.md`, `docs/user-guide.md` |
-| Many machines, one board | `docs/federation-design-v2.md` |
-| Installing | `docs/packaging.md` |
+| Hub and room split | `docs/fabric/hub-room-plan.md` |
+| Messaging between sessions | `docs/runtime/agent-messaging.md` |
+| Terminals and attach | `docs/terminal/supervision-design.md` |
+| The live badge | `docs/runtime/activity-design.md` |
+| Auto mode and its review | `docs/runtime/auto-mode.md` |
+| Hooks | `docs/runtime/hooks.md`, `docs/user-guide.md` |
+| Many machines, one board | `docs/rnd/federation-design-v2.md` |
+| Installing | `docs/release/packaging.md` |
