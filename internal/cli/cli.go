@@ -106,7 +106,7 @@ func newRoot() *cobra.Command {
 			"shows every one of them on one board.",
 	}
 	root.AddCommand(newDaemon(),
-		newJoin(), newLeave(), newStop(), newLaunch(), newPreview(), newHook(), newSession(), newTurn(),
+		newJoin(), newLeave(), newStop(), newLaunch(), newTaskCmd(), newExitCmd(), newNewContextCmd(), newPreview(), newHook(), newSession(), newTurn(),
 		newName(), newFinish(), newPeers(), newTell(), newControl(), newVersion(), newAsk(),
 		newAnswer(), newOpen(), newDispatch(), newReplayCmd(), newRequirements(), newMerged(), newArchiveWorkers())
 	// The atrium and its rooms, which were `atrium2` until the two binaries
