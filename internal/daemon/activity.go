@@ -242,6 +242,9 @@ const (
 	// HeldForDialog is a prompt the runner drew on its own screen, which an
 	// Enter would answer. It goes once the dialog is answered.
 	HeldForDialog = "dialog"
+	// HeldForNewContext is a new-context cycle in progress. It holds every
+	// message until its wake prompt has been typed. See newcontext.go.
+	HeldForNewContext = "new-context"
 )
 
 // Whose rule a turn wait is, as HeldTurn says it. The board names the one that
