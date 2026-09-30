@@ -209,8 +209,10 @@
   .uck-read { fill: rgb(var(--teal-rgb)); background: rgb(var(--teal-rgb)); }
   .uck-w5 { fill: rgb(var(--path-rgb)); background: rgb(var(--path-rgb)); }
   .uck-w1 { fill: rgb(var(--stroke-rgb)); background: rgb(var(--stroke-rgb)); }
-  .uck-cost { fill: rgba(var(--teal-rgb), .8); }
-  .uck-line { fill: none; stroke: rgb(var(--teal-rgb)); stroke-width: 2; vector-effect: non-scaling-stroke; }
+  /* By card and by group draw in one neutral colour that no kind uses. See --usage-bar in tokens.css. */
+  .uck-bar { fill: var(--usage-bar); }
+  .uck-line { fill: none; stroke: var(--usage-bar); stroke-width: 2; vector-effect: non-scaling-stroke; }
+  .uck-proj { stroke-dasharray: 5 4; opacity: .7; }
   .ucranges button.on { color: var(--head); border-color: rgb(var(--teal-rgb)); }
   .ucranges button.on i, #uc-cache i { display: inline-block; width: 10px; height: 10px; margin-right: 5px; border-radius: 2px; }
   .uccacheline { margin-top: 4px; }

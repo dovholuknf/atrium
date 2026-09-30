@@ -68,6 +68,8 @@ const USAGE_TIPS = {
   causeCount: "prompts and API calls (or refreshes) recorded in the range for this cause",
   causeCounted: "counted tokens in the range for this cause: uncached in, out and cache writes. cache reads are the dim column",
   causeAll: "all five kinds of tokens in the range for this cause, cache reads included",
+  cumTotal: "the running total over the range: counted tokens, or all five kinds with cache reads shown. it matches tokens by kind",
+  cumProj: "the last hour's pace carried on to the coming midnight. it does not see the future, so a quiet or busy evening changes it",
   scope: "covers the whole card: every session it has run, including before a /clear, and keep-alive refreshes " +
     "and subagents",
 };

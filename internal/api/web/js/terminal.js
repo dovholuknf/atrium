@@ -1255,6 +1255,8 @@ async function pasteFilesIntoTerm() {
 // what comes back is a path. Charon's lesson, and worth taking whole.
 async function uploadIntoTerm(files) {
   if (!termTask || !files || !files.length) return;
+  // On a phone with the composer up, it owns the upload: chips, progress and the paths at its caret.
+  if (typeof tcomposeAttach === "function" && tcomposeAttach(files)) return;
   const form = new FormData();
   for (const f of files) form.append("file", f, f.name);
 

@@ -44,6 +44,9 @@
     --grid: #1B3B5A;
     --head: #F2F8FF; --body: #9FBDD4; --label: #7FA6C4;
     --dim: #5E819C; --dimmest: #456C88;
+    /* The usage tab's by-card bars and cumulative line: the label colour at about 70%, so every skin reaches it
+       through --label and none has to set it. Deliberately not a kind colour. */
+    --usage-bar: color-mix(in srgb, var(--label) 70%, transparent);
     --chip-accent: #0E3D33; --chip-accent-stroke: #1C6B5A; --chip-accent-text: #8FE8D5;
     /* Where a button goes when the pointer is over it. Named so a skin can move it. */
     --btn-hover: #1D4666;
