@@ -105,10 +105,13 @@ the key).
 **Host names and generations.** The state-dir-derived name with no suffix is the PRIMARY host, and it is where a
 daemon looks first. A host started for a newer protocol (section 6) is a SECONDARY, named with its protocol as a
 suffix (`<name>.p2`), so the two never collide. Discovery at daemon start is: connect to the primary, then list the
-suffixed names that exist in the state dir and connect to each. Every pty is owned by exactly one host, the daemon
-keeps a `card -> host` map in memory built from each host's `list`, and the board shows each card's host. When the
-old primary exits empty, the newest secondary is not renamed. It stays suffixed and is found by the listing, so
-there is never a moment where two processes want one name.
+suffixed names that exist in the state dir and connect to each. A name that exists is not a live host: a crashed
+host can leave a stale socket file behind. A name only counts once `hello` answers on it, and a stale unix socket
+file that refuses the connection is removed. On Windows the listing is of `\\.\pipe\` rather than the state dir,
+and a named pipe vanishes with its last handle, so there is no stale entry to clear. Every pty is owned by exactly
+one host, the daemon keeps a `card -> host` map in memory built from each host's `list`, and the board shows each
+card's host. When the old primary exits empty, the newest secondary is not renamed. It stays suffixed and is found
+by the listing, so there is never a moment where two processes want one name.
 
 Framed messages, one connection per daemon, a control stream and multiplexed pty streams:
 
@@ -121,18 +124,22 @@ Framed messages, one connection per daemon, a control stream and multiplexed pty
   random 128-bit ULID-style id, the same shape as the store's keys, so it is unique across every host and every host
   lifetime, never a counter that a second or restarted host could repeat. It names this one runner start. A card
   started again gets a new one.
+- **`run_id` is the pty's address.** Every verb after `spawn` names the pty by `run_id` alone. `id` is the card id
+  and `kind` says which of the card's ptys this is, and both are only attributes that `list` reports back. A card's
+  runner and its shell share an `id`, so an `id` never selects a pty, and a verb naming a `run_id` the host does not
+  hold is refused. Nothing can type into, resize or kill the wrong pty, or a later start of the right one.
 - `list` answers every pty:
-  `{id, kind, run_id, pid, cols, rows, started, exited, exit_code, ring_start, out_offset}`.
-- `attach {id, run_id, from}` streams output from an absolute byte offset. A `from` older than the ring's start gets the
+  `{run_id, id, kind, pid, cols, rows, started, exited, exit_code, ring_start, out_offset}`.
+- `attach {run_id, from}` streams output from an absolute byte offset. A `from` older than the ring's start gets the
   whole ring and a `truncated` flag, which is the replay case. The answer carries the retained bytes WITH their size
   cuts: the same `(offset, cols, rows)` marks `ringBuffer.ReplayCuts` returns today (`supervisor.go`, `sizeCut` in
   `screen.go`), because a screen model rebuilt from bytes alone replays every resize at the wrong width. The host
   therefore owns the cut list along with the ring.
-- `write {id, bytes}`, `signal {id, term|kill}`.
-- `resize {id, cols, rows}` records a cut at the current offset BEFORE applying the pty resize, as the ring does
+- `write {run_id, bytes}`, `signal {run_id, term|kill}`.
+- `resize {run_id, cols, rows}` records a cut at the current offset BEFORE applying the pty resize, as the ring does
   today, so the cut and the first byte at the new size can never be out of order.
-- `collect {id, run_id}` acknowledges an exit, and only then does the host forget that pty and its ring. A `run_id`
-  that does not match the pty's is refused, so a late collect can never forget a later start.
+- `collect {run_id}` acknowledges an exit, and only then does the host forget that pty and its ring. Because the
+  address is the start, a late collect can never forget a later start of the same card.
 
 Absolute offsets make a reattach exact: the new daemon replays the ring from its start into a fresh screen model and
 then follows live, with no byte seen twice or skipped. The output is always at the width it was written at, because
@@ -145,9 +152,9 @@ today. It sends `collect` only after that filing is durable in the store. A cras
 listed, and the next daemon files it again. So filing an exit MUST be idempotent on `(task_id, run_id)`. The daemon
 stores `run_id` with the runner start, and the exit event and the dead-card attribution are keyed on the pair, so a
 second filing of the same exit is a no-op and the exit of a later start is never taken for it. The pid and the start
-time are not the key, because a pid is reused and two implementers would pick different clocks. Stage 1 adds the
-column and stage 2 checks every exit path uses it. Collecting first would lose the last screen and could attribute
-the death wrongly, so it is not allowed.
+time are not the key, because a pid is reused and two implementers would pick different clocks. All of this is
+stage 1: the column, and every exit path keyed on the pair, the live exit and the exit found at reattach alike.
+Collecting first would lose the last screen and could attribute the death wrongly, so it is not allowed.
 
 ### 3.3 Its lifetime
 
@@ -190,9 +197,10 @@ runners together, and the next start resumes them as today.
      a refused or reset connection, a timeout, a non-2xx status (a daemon closing its store, or a new one not yet
      migrated), or a 2xx with no decision in it. It retries with the SAME dedup key (`tool_use_id`) for up to 30
      seconds, then fails open to the runner's own prompt without recording an allow anywhere. The request row is
-     durable, so the new daemon re-surfaces it and chain step 1 (a replayed decision) answers it once. That keeps the fail-open guarantee
-     (a bounded wait, then open) and keeps the question on the board. f-006 moves the gate into Go (`atrium hook
-     --event permission`), which is where this retry belongs, so f-011 stage 2 depends on f-006.
+     durable, so the new daemon re-surfaces it and chain step 1 (a replayed decision) answers it once. That keeps
+     the fail-open guarantee (a bounded wait, then open) and keeps the question on the board. f-006 moves the gate
+     into Go (`atrium hook --event permission`), which is where this retry belongs, so f-011 stage 2 depends on
+     f-006.
 2. **Held and queued messages.** Nothing moves. `message` rows, restart wakes and owed reports are in the one
    database. What is lost is in memory and already designed to be: a pending injection's on-screen retry schedule
    (`pendinginject.go`: "a restart costs the on-screen retry and nothing that was said").
@@ -312,8 +320,9 @@ If B is refused, A is buildable, and these are the answers it would need. Each i
   talking to it, and reattach with ring replay. No change in behaviour yet: the daemon still stops its runners on
   stop. Behind a setting, off by default. Acceptance: with the setting off, restart, stop, reopen and attach replay
   behave exactly as today and every existing supervisor, attach and restart test passes unchanged. With it on, the
-  same tests pass, plus host tests for reattach replay, a resize after reattach, and an exit filed once across a
-  daemon crash between filing and `collect`.
+  same tests pass, plus host tests for reattach replay, a resize after reattach, a card with both a runner and a
+  shell where each verb reaches only the `run_id` it names, and an exit filed exactly once, on the live path and
+  across a daemon crash between filing and `collect`.
 - **Stage 2, the restart that leaves runners up (@runtime).** The gate and the re-derivation list in section 5, the
   line-unknown rule, `atrium stop` versus `atrium stop --runners`, and the gate's 30-second retry, which needs f-006.
 - **Stage 3, rooms (@fabric).** `restart_atrium` and `provision-room.ps1 -Restart` use it. Plus the systemd and Task
