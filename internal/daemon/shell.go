@@ -270,7 +270,12 @@ func (d *Daemon) shellEnv(taskID string) []string {
 		}
 		out = append(out, kv)
 	}
-	return append(out, "ATRIUM_TASK_ID="+taskID)
+	extra := map[string]string{"ATRIUM_TASK_ID": taskID}
+	d.tellWhereIAm(extra)
+	for k, v := range extra {
+		out = append(out, k+"="+v)
+	}
+	return out
 }
 
 // awaitShellExit is `awaitExit` with everything about the card taken out.
