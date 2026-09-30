@@ -11894,7 +11894,7 @@ async function mCardUrlSection(browser) {
         return at;
       };
       const got = [await pushed("card-d"), await pushed("card-a"), await pushed("card-b")];
-      if (got.join() !== "/m/alias/solo,/m/room/claude-sg4/builder,/m/room/claude-sg4/handled") fail("mCardUrl: the pushed paths are " + got.join());
+      if (got.join() !== "/m/alias/solo,/m/room/claude-sg4/builder-1,/m/room/claude-sg4/handled") fail("mCardUrl: the pushed paths are " + got.join());
     } finally { await r.ctx.close(); }
 
     // a miss says what would have worked, as links to this page
@@ -11932,18 +11932,31 @@ async function cardUrlNotifySection(browser, base) {
   landList = [];
   landCard("land-a", { alias: "rnd", room: "r1" });
   landCard("land-n", { alias: "", wire_name: "", room: "r1" });
-  landList = [LAND["land-a"], LAND["land-n"]];
+  // A done card whose alias a live card in another room took, with a handle that has capitals: the room form names it by
+  // that handle, since the resolver lets the live alias win and compares a wire name as written.
+  landCard("land-done", { alias: "twin", room: "r1", status: "done", wire_name: "sparta/Done-One" });
+  landCard("land-live", { alias: "twin", room: "r2", status: "running" });
+  landList = [LAND["land-a"], LAND["land-n"], LAND["land-done"], LAND["land-live"]];
   const r = await cuOpen(browser, base, "/", {}, null, true);
   try {
-    await r.page.waitForFunction(() => typeof cardList === "function" && cardList().length >= 3, null, { timeout: slow(15000) });
+    await r.page.waitForFunction(() => typeof cardList === "function" && cardList().length >= 5, null, { timeout: slow(15000) });
     const sent = await r.page.evaluate(() => {
       const out = [];
       swReg = { active: { postMessage: m => out.push(m) } };
       showNotification("a", "b", "", "", "s", "", "land-a", "k");
       showNotification("n", "b", "", "", "s", "", "land-n", "k");
+      showNotification("d", "b", "", "", "s", "", "land-done", "k");
       return out.map(m => m.path);
     });
-    if (sent.join() !== "/alias/rnd,") fail("cardUrlNotify: the notification paths are " + JSON.stringify(sent));
+    if (sent.join() !== "/alias/rnd,,/room/r1/Done-One") fail("cardUrlNotify: the notification paths are " + JSON.stringify(sent));
+    const opened = await r.page.evaluate(async () => {
+      const out = [];
+      window.open = u => { out.push(u); return { focus() {}, closed: false }; };
+      await popOutTask("land-done");
+      return out;
+    });
+    if (opened.join() !== "/room/r1/Done-One") fail("cardUrlNotify: the pop-out link for a done card with a taken alias is " + opened.join());
+    if (await r.page.evaluate(() => cardUrlShape("/room/r1/Done-One").name) !== "Done-One") fail("cardUrlNotify: the handle was lowercased");
   } finally { await r.ctx.close(); }
 
   // The worker's click, run on its own source with a fake scope and windows.

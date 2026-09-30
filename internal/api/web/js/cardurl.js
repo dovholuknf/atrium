@@ -18,7 +18,8 @@ function cardUrlShape(path) {
   }
   if (parts[1] === "room" && parts.length === 3 && parts[2]) return { kind: "room", room: dec(parts[2]) };
   if (parts[1] === "room" && parts.length === 4 && parts[2] && parts[3]) {
-    return { kind: "card", room: dec(parts[2]), name: cardUrlName(dec(parts[3])) };
+    // A wire name compares case-sensitively, so only the alias form is lowered.
+    return { kind: "card", room: dec(parts[2]), name: dec(parts[3]).replace(/^@/, "") };
   }
   return null;
 }
@@ -53,11 +54,12 @@ function cardUrlPath(t, all) {
   if (!t) return "";
   const alias = cardUrlName(t.alias);
   const wire = String(t.wire_name || "");
-  const handle = cardUrlName(wire.slice(wire.lastIndexOf("/") + 1));
+  const handle = wire.slice(wire.lastIndexOf("/") + 1);
   const room = t.room || roomOf(t.id) || "";
   const enc = encodeURIComponent;
   if (alias && !cardUrlClashes(t, alias, all)) return "/alias/" + enc(alias);
-  const name = alias || handle;
+  // The handle first: a done card whose alias a live card took is reached by its handle, since the resolver lets a live alias win.
+  const name = handle || alias;
   if (room && name) return "/room/" + enc(room) + "/" + enc(name);
   return alias ? "/alias/" + enc(alias) : "";
 }
