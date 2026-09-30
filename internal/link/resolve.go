@@ -53,6 +53,28 @@ func (e *errNoCard) Error() string {
 type errAmbiguous struct {
 	who        string
 	candidates []string
+	// choices is the same cards with enough beside each name for the board's
+	// chooser to draw them without asking each room again.
+	choices []choice
+}
+
+// choice is one card in a 409, as the board's chooser draws it.
+type choice struct {
+	// Spelled is the candidate string, as in `candidates`.
+	Spelled  string `json:"spelled"`
+	Card     string `json:"card"`
+	Room     string `json:"room"`
+	Handle   string `json:"handle"`
+	Status   string `json:"status"`
+	Activity string `json:"activity,omitempty"`
+	Created  string `json:"created_at"`
+}
+
+func (c candidate) choice() choice {
+	return choice{
+		Spelled: c.spelled(), Card: tagFor(c.Room, c.Card.ID), Room: c.Room, Handle: c.Card.Wire + "@" + c.Room,
+		Status: c.Card.Status, Activity: c.Card.Activity.What, Created: c.Card.Created,
+	}
 }
 
 func (e *errAmbiguous) Error() string {
@@ -178,6 +200,7 @@ func resolveAcross(lists map[string][]ctlCard, quiet []string, who string) (cand
 	e := &errAmbiguous{who: who}
 	for _, c := range pick {
 		e.candidates = append(e.candidates, c.spelled())
+		e.choices = append(e.choices, c.choice())
 	}
 	return candidate{}, e
 }

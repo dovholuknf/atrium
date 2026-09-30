@@ -97,6 +97,20 @@ func TestANameOnTwoRoomsIsAConflict(t *testing.T) {
 	if !strings.HasPrefix(fmt.Sprint(cands[0]), "rnd@alpha") || !strings.HasPrefix(fmt.Sprint(cands[1]), "rnd@beta") {
 		t.Fatalf("the candidates are %v, want rnd@alpha and rnd@beta", cands)
 	}
+	// Each choice carries what the board's chooser draws, so it need not fetch each card.
+	choices, _ := body["choices"].([]any)
+	if len(choices) != 2 {
+		t.Fatalf("choices are %v", body["choices"])
+	}
+	first, _ := choices[0].(map[string]any)
+	second, _ := choices[1].(map[string]any)
+	if first["room"] != "alpha" || first["status"] != "running" || first["created_at"] != "2026-09-30T10:00:00Z" ||
+		first["handle"] != "alpha-rnd@alpha" || first["card"] != "alpha~"+idA || first["spelled"] != cands[0] {
+		t.Fatalf("the first choice is %v", first)
+	}
+	if second["room"] != "beta" || second["status"] != "needs-input" {
+		t.Fatalf("the second choice is %v", second)
+	}
 	// Named with its room, it is one card again.
 	code, hdr, body := ask(t, http.MethodPost, front.URL+"/v1/tasks/rnd@beta/exit", "{}")
 	if code != http.StatusOK || body["served_by"] != "beta" || body["path"] != "/v1/tasks/"+idB+"/exit" {
