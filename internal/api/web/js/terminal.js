@@ -1004,16 +1004,23 @@ function wireTerminalPaste(screen) {
   // terminal, and reaching for `ctrl-v` instead means leaving the mouse for one
   // keystroke.
   //
-  // SHIFT OR CTRL LETS THE BROWSER HAVE IT, which is the convention every site
-  // that overrides this menu already follows, so `inspect` and `save image as`
-  // are one modifier away rather than gone.
+  // CTRL LETS THE BROWSER HAVE IT, which is the convention every site that
+  // overrides this menu already follows, so `inspect` and `save image as` are
+  // one modifier away rather than gone. SHIFT opens the terminal's own menu.
   //
   // Goes through `pasteIntoTerm` rather than reading the clipboard here,
   // because that is the one path that tries FILES first: right clicking with a
   // screenshot on the clipboard uploads it and hands the runner a path, the
   // same as `ctrl-v` does.
   screen.addEventListener("contextmenu", e => {
-    if (!termTask || e.shiftKey || e.ctrlKey) return;
+    if (!termTask || e.ctrlKey) return;
+    // SHIFT ALONE OPENS THE TERMINAL'S MENU for this card, the row menu of the terminals list, at the
+    // pointer. Plain stays paste. A phone's long press never carries shift, so nothing changes there.
+    if (e.shiftKey) {
+      if (e.altKey || e.metaKey || typeof termMenu !== "function") return;
+      termMenu(e, termTask.id);
+      return;
+    }
     e.preventDefault();
     e.stopPropagation();
     // A LONG PRESS ON A PHONE IS NOT A RIGHT CLICK. Android fires `contextmenu` on one, and pasting the

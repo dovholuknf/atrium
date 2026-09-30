@@ -714,6 +714,18 @@ async function termMenu(e, id) {
       ? { label: t.shell ? "go to its shell" : "open a shell here", act: () => openShellFor(id) }
       : null,
     t.shell ? { label: "close its shell", act: () => closeShellFor(id) } : null,
+    // THE CARD MENU'S ENTRY, same guard. Ctrl+Alt+N is not always reachable, and this menu is what
+    // Shift+right click in the terminal opens. Absent while a cycle runs, since a second one would
+    // type over the first. A failed cycle may be run again.
+    t.supervised && !["done", "dead", "shelved"].includes(t.status) &&
+      !(t.new_context && t.new_context.step !== "failed") ? {
+      label: "new context", note: "commit, hand off, clear",
+      help: "Asks the session to commit or stash and write everything relevant to " +
+        "its own HANDOFF.<name>.md, waits for that turn to end, clears the context, " +
+        "and then tells it to read the file and continue. Ctrl+Alt+N in its " +
+        "terminal does the same.",
+      act: () => newContext(id)
+    } : null,
     { sep: true },
     { label: "what did it do?", act: () => { current = t; openReview(); } },
     { label: "details…", act: () => openTask(id) },
