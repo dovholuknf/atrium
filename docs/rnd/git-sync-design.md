@@ -123,8 +123,9 @@ git fetch http://127.0.0.1:Q/T/<name>.git
   exits. So another process on the same machine has a few seconds and needs a 128-bit guess.
 - **Room to hub: a new connection kind, `git`.** Dialled by the room the way `upgrade`, `announce` and `relay` are,
   with the same hello and the control connection's `Session`. After the welcome the connection is plain HTTP/1.1 and
-  the hub serves the handler of section 4.4 on it. An older hub refuses `git` with the sentence `hearHello` already
-  has, and the room reports "the hub predates git sync".
+  the hub serves the handler of section 4.4 on it. `hearHello`'s list of kinds and its refusal sentence gain `git`
+  together, with a test. An older hub refuses with the old sentence, which lists the kinds and does not contain
+  `git`, and the room turns that into "the hub predates git sync", the way `Room.Relay` already reads a refusal.
 - **Hub to room: the data pool.** `Hub.Dial(room)` is already `http.Transport.DialContext` shaped, and the room's
   handler is already on the other end. Nothing new on the wire.
 - **Leaves dial out still holds.** Both paths ride connections the room dialled.
@@ -158,8 +159,13 @@ clones and worktrees keep working.
      Otherwise `git branch -f`.
    Both are FORCE moves in the sense that they need not fast-forward, because `claude/main` is re-signed from time to
    time and a re-sign rewrites every sha.
-5. **Answers** `{"state": "ok|absent|behind|refused", "sha": "...", "detail": "..."}`. `behind` is a fetch that
-   worked and a move that git refused. `detail` is git's own words, first line.
+5. **Answers** `{"state": "ok|absent|behind|failed", "sha": "...", "detail": "..."}`. Exactly one of:
+   - `ok`: fetched, and both branches are at the hub's sha
+   - `absent`: no clone and `init` was false. Nothing was run
+   - `behind`: the fetch worked and git refused a move (a worktree holds `claude/main`, or `hub-main` is checked out
+     with changes). `sha` is what was fetched
+   - `failed`: nothing was fetched. Git missing or the wrong git, the hub refused the `git` kind, or the fetch failed
+   `detail` is git's own words, first line.
 
 The last answer is also kept in memory on the room and served at `GET /v1/git/status`, which is what `room-git.ps1
 init -Check` answered by ssh.
@@ -260,7 +266,8 @@ tool takes a path, a url or a refspec, so no agent can point atrium's git at any
 - A repo name not in `git_repos`, and names with `..`, `%2e%2e`, a drive letter or a backslash, are 404.
 - The forwarder refuses a request without its token and closes when the command exits.
 - Sync end to end against a real git in temp dirs: `absent`, `init`, ok, a re-signed (non fast-forward) `claude/main`,
-  `refused` with `claude/main` checked out in a worktree, `behind` with a dirty `hub-main` checkout.
+  `behind` with `claude/main` checked out in a worktree, `behind` with a dirty `hub-main` checkout, `failed` against
+  an old hub's refusal.
 - Collect: a new branch arrives, a deleted one is pruned, `claude/main` on the room is never collected.
 - A hub killed mid-fetch leaves every ref at its old or its new sha.
 - An old room's 404 and an old hub's refusal are each said once.
