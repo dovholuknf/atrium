@@ -149,6 +149,9 @@ type Server struct {
 	// runner is back after a restart. Owned by the daemon, which owns the
 	// terminal. See internal/daemon/restartwake.go.
 	RestartWake http.HandlerFunc
+	// Hold reads, sets or lifts the room deploy hold. Owned by the daemon, which
+	// runs the permission chain it acts in. See internal/daemon/roomhold.go.
+	Hold http.HandlerFunc
 	// NewContext starts a card's capture, clear and wake sequence, reads it or
 	// takes its chip off. Owned by the daemon, which owns the terminal. See
 	// internal/daemon/newcontext.go.
@@ -634,6 +637,10 @@ func (s *Server) Handler() http.Handler {
 		mux.HandleFunc("GET /v1/tasks/{id}/restart-wake", s.RestartWake)
 		mux.HandleFunc("DELETE /v1/tasks/{id}/restart-wake", s.RestartWake)
 	}
+	if s.Hold != nil {
+		mux.HandleFunc("GET /v1/hold", s.Hold)
+		mux.HandleFunc("POST /v1/hold", s.Hold)
+	}
 	if s.NewContext != nil {
 		mux.HandleFunc("POST /v1/tasks/{id}/new-context", s.NewContext)
 		if s.Resume != nil {
@@ -776,6 +783,9 @@ type view struct {
 	// is back after a restart. Absent when there is none. See
 	// docs/runtime/restart-wake.md.
 	RestartWake any `json:"restart_wake,omitempty"`
+	// Held is the room deploy hold this card is held by: kind, by, since. Absent
+	// when it is not held. The board draws it as a badge, never a column.
+	Held any `json:"held,omitempty"`
 	// NewContext is the card's capture, clear and wake sequence: the step it is
 	// on, or why it stopped. Absent when none is under way. See
 	// internal/daemon/newcontext.go.
@@ -856,6 +866,10 @@ var EscalationOf func(taskID string) any
 // daemon, which mirrors the store's rows in memory so this is no query per card.
 var RestartWakeOf func(taskID string) any
 
+// HeldOf returns the room deploy hold a card is held by, or nil. Supplied by the
+// daemon, read from memory.
+var HeldOf func(taskID string) any
+
 // NewContextOf returns a card's new-context sequence, or nil. Supplied by the
 // daemon, which holds it in memory.
 var NewContextOf func(taskID string) any
@@ -890,6 +904,9 @@ func toView(t *store.Task) view {
 	}
 	if RestartWakeOf != nil {
 		v.RestartWake = RestartWakeOf(t.ID)
+	}
+	if HeldOf != nil {
+		v.Held = HeldOf(t.ID)
 	}
 	if NewContextOf != nil {
 		v.NewContext = NewContextOf(t.ID)

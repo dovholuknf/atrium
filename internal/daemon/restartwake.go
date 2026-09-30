@@ -213,6 +213,8 @@ func (d *Daemon) clearWake(taskID, by string) (bool, error) {
 	}
 	d.wake.forget(taskID)
 	d.publishTask(taskID)
+	// A deploy wake cleared by hand lets the card's held messages go as well.
+	d.wakeTyped(taskID)
 	return gone, nil
 }
 
@@ -291,6 +293,7 @@ func (d *Daemon) tryWake(w *store.RestartWake, now time.Time) {
 	d.wake.forget(w.TaskID)
 	log.Printf("[atrium] after-restart wake (%s) typed into %s", orWord(w.By, "unnamed"), w.TaskID)
 	d.publishTask(w.TaskID)
+	d.wakeTyped(w.TaskID)
 }
 
 // wakeRunnerReady reports whether the runner up now is the one the wake is for,
