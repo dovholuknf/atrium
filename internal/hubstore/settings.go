@@ -2,6 +2,7 @@ package hubstore
 
 import (
 	"database/sql"
+	"errors"
 	"strings"
 	"time"
 )
@@ -26,6 +27,41 @@ import (
 
 // SettingBoardSkin names the hub's board skin in the setting table.
 const SettingBoardSkin = "board_skin"
+
+// SettingOverlayLegacy names the switch for the old, certificate-less room link
+// over ziti and zrok (f-022).
+//
+// EMPTY OR `allow` KEEPS TODAY'S BEHAVIOUR, and `refuse` turns away a room that
+// connects without a certificate. It is only ever set by a person, through
+// `atrium rooms legacy`, and never flipped by anything the hub does: the whole
+// point is that the operator chooses the moment after seeing who is still on the
+// old path.
+const SettingOverlayLegacy = "overlay_legacy"
+
+// Values SettingOverlayLegacy takes. Anything else reads as allow, so a stray
+// value can never lock a room out.
+const (
+	OverlayLegacyAllow  = "allow"
+	OverlayLegacyRefuse = "refuse"
+)
+
+// SetOverlayLegacy writes the switch. Only allow and refuse are accepted.
+func (s *Store) SetOverlayLegacy(value string) error {
+	v := strings.ToLower(strings.TrimSpace(value))
+	if v != OverlayLegacyAllow && v != OverlayLegacyRefuse {
+		return errors.New("overlay_legacy is allow or refuse")
+	}
+	return s.SetHubSetting(SettingOverlayLegacy, v)
+}
+
+// OverlayLegacyRefused reports whether the old overlay path is switched off.
+func (s *Store) OverlayLegacyRefused() (bool, error) {
+	v, err := s.HubSetting(SettingOverlayLegacy)
+	if err != nil {
+		return false, err
+	}
+	return strings.EqualFold(strings.TrimSpace(v), OverlayLegacyRefuse), nil
+}
 
 // SettingBoardAuto names the hub's board-wide auto-approve flag in the setting
 // table.

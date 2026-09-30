@@ -231,11 +231,22 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	// which room they are, so the name is asserted by the room and
 	// checked only against the list. Nobody should have to read
 	// `certs.go` to find that out.
-	if transport != "" && transport != "direct" {
-		log.Printf("[hub] rooms over %s prove they may connect, not which room "+
-			"they are. a name here is taken on trust and checked against the "+
-			"list, and binding one to an overlay identity is an open question",
-			transport)
+	//
+	// Over an overlay a room with a certificate is named by it, like a direct
+	// one. A room that joined before that still attaches, on the overlay's
+	// word alone, for as long as `overlay_legacy` allows it. The warning
+	// stays while that is true, and goes when the operator refuses it.
+	h.LegacyRefused = func() bool {
+		refused, err := store.OverlayLegacyRefused()
+		// A STORE THAT CANNOT ANSWER ALLOWS. A read error must not be the thing
+		// that turns every overlay room away.
+		return err == nil && refused
+	}
+	if transport != "" && transport != "direct" && !h.LegacyRefused() {
+		log.Printf("[hub] rooms over %s that joined with a certificate are named by it. "+
+			"a room on an older join string still attaches without one, and its name is "+
+			"taken on trust and checked against the list. `%s` says who, and refuses them "+
+			"once everyone has re-joined", transport, atriumCmd("rooms legacy"))
 	}
 	h.Attaching = func(name, host, ver string) error {
 		r, err := store.ByName(name)
@@ -307,6 +318,23 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 		// Off the attach path, because it is a request to the room that
 		// just arrived and the attach should not wait on it.
 		go proxy.PushInputLag(name)
+	}
+	// A ROOM ON THE OLD PATH, said once per attach. This is how the operator
+	// finds who must re-join before flipping the switch: the audit line names
+	// the overlay and the step, and the rooms list marks the room `proven:
+	// false` for as long as it is attached.
+	h.OnUnproven = func(name, over string) {
+		unproven := 0
+		for _, a := range h.Rooms() {
+			if !a.Proven {
+				unproven++
+			}
+		}
+		log.Printf("[hub] room %q attached over %s without a certificate, so its name is "+
+			"unproven. %d attached room(s) are unproven", name, over, unproven)
+		proxy.RecordAudit(name, "room-unproven", "attached over "+over+
+			" without a certificate. re-join it with a new join string from `"+
+			atriumCmd("rooms token")+" "+name+"`")
 	}
 	h.OnDetach = func(name, why string) {
 		proxy.RecordAudit(name, "room-detached", why)
