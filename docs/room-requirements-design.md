@@ -232,10 +232,10 @@ f-004's.
 1. The file format and `atrium requirements <file> --json`. The schema, the template rules, and refusing an absolute
    path or anything that looks like a secret, the way scm-design's exporter refuses one. @runtime as r-018
    (moved from @fabric by atrium-87300, 2026-09-29), built together with item 5.
-2. `scripts/room-check.ps1` with the rows that already have a checker: attached, toolchain (from ssh, with its
+2. (Built as f-014 at 056126a.) `scripts/room-check.ps1` with the rows that already have a checker: attached, toolchain (from ssh, with its
    `warn`), clone, `hub-main`, gitfiles, runner rows, helpers, mcp-config, hooks, smoke. @fabric.
-3. `room-git.ps1 init -Check`, the check mode it lacks. @fabric.
-4. codex as a smoke case in provision. @fabric, after f-007 lands. Built as f-015, see its backlog file.
+3. `room-git.ps1 init -Check`, the check mode it lacks. @fabric. Built as f-013 at 87a95a2.
+4. codex as a smoke case in provision. @fabric, after f-007 lands. Built as f-015 at f6540a7.
 5. `POST /v1/preflight` with its three questions and the fixed key table, from inside the room. @runtime, with
    @rnd's section 4.
    Items 1 and 5 were built as r-018 at 2c67bca. The shapes are in its `docs/changes/r-018.md`. The hub route for
@@ -245,7 +245,7 @@ f-004's.
    `atrium room --started-by <kind>` in the foreground, which the existing registrations already do with `room
    --db`. They gain the flag here.
 7. The gate as `apply`, once f-006 ships. @runtime for the hook, @fabric for the check.
-8. `atrium.requirements.yaml` committed at atrium's root, which is the file in section 2.1.
+8. `atrium.requirements.yaml` committed at atrium's root, which is the file in section 2.1. Built as f-013 at 87a95a2: it parses unchanged.
 
 ## 8. Decided with @rnd (2026-09-29)
 
