@@ -4,6 +4,8 @@ document.getElementById("gear").onclick = () => {
   // A fresh visit asks again which machine it is editing, if it has to ask.
   settingsRoom = "";
   paintSettings();
+  // The hub's notify command, read once per open and not per repaint, so an unsaved edit survives a toggle.
+  if (typeof loadHubNotify === "function") loadHubNotify();
   // Every field that saves itself, wired once. Here rather than at load
   // because the panes are cut up at runtime and this is the moment they are
   // all certain to exist. See `wireSelfSaving`.

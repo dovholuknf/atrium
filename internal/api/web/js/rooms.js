@@ -887,9 +887,11 @@ window.WebSocket.prototype = PlainSocket.prototype;
 // A PATH RATHER THAN THE HEADER ABOVE, because `EventSource` sets no headers.
 // That is the whole reason the hub has three spellings of this endpoint.
 function eventsURL() {
-  if (!hubIsHub || roomsDemoLive) return "/v1/events";
+  // `?tab=` names this page to the hub, which counts a tab visible while its stream is open. See js/hubnotify.js.
+  const tab = "?tab=" + encodeURIComponent(hubTabId);
+  if (!hubIsHub || roomsDemoLive) return "/v1/events" + tab;
   const room = roomNow();
-  return room ? "/v1/events/room/" + encodeURIComponent(room) : "/v1/events/hub";
+  return (room ? "/v1/events/room/" + encodeURIComponent(room) : "/v1/events/hub") + tab;
 }
 
 // ── the cover, while a room is being changed ────────────────────────────────

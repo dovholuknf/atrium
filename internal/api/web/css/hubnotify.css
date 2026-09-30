@@ -1,0 +1,11 @@
+/* u-030: the hub's notify command row in the settings gear. See js/hubnotify.js. */
+  #s-hn-row[hidden] { display: none; }
+  #s-hn-row .hn-command {
+    display: block; width: 100%; max-width: 64ch; margin: 6px 0; box-sizing: border-box;
+    font: var(--fs-sm)/1.5 var(--mono); resize: vertical;
+  }
+  #s-hn-row .hn-test {
+    margin: 6px 0; padding: 6px 8px; max-width: 64ch; white-space: pre-wrap; word-break: break-all;
+    font: var(--fs-sm)/1.5 var(--mono); border: 1px solid var(--hairline);
+  }
+  #s-hn-row .hn-status { margin: 6px 0; font-size: var(--fs-sm); line-height: 1.5; }
