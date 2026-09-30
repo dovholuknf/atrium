@@ -55,6 +55,19 @@ func (s *Syncer) runner() *Runner {
 	return Default
 }
 
+// Served says whether the hub has synced this repository at least once since this room started
+// (the Syncer's memory is in memory only, so a restart forgets it and the hub's sync on attach
+// fills it again) and got a clone out of it: the last answer was ok or behind, both of which mean the fetch worked.
+// The room's git endpoint serves only such names, so a name the hub never asked about is a 404
+// even from the hub, and a clone that a sync refused (another repository's origin, a failed
+// fetch) is never offered.
+func (s *Syncer) Served(name string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	st, ok := s.last[name]
+	return ok && (st.State == StateOK || st.State == StateBehind)
+}
+
 // Last is every remembered answer, newest first is not promised. Empty before any sync.
 func (s *Syncer) Last() []Status {
 	s.mu.Lock()

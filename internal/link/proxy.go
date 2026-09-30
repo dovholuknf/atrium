@@ -447,6 +447,16 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			`run atrium stop on the machine the room is on."}`)
 		return
 	}
+	// GIT SYNC IS BETWEEN THE HUB AND ITS ROOMS, NOT THE BOARD. A room serves its claude/*
+	// branches and takes sync requests at /v1/git/, and the hub reaches them through
+	// Hub.Transport, never through this proxy. Forwarding them would let anybody who can
+	// reach the board list and fetch every branch under the room's git root and start a sync.
+	if r.URL.Path == "/v1/git" || strings.HasPrefix(r.URL.Path, "/v1/git/") {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		fmt.Fprint(w, `{"error":"git on a room is reached by the hub's own sync and collect, never through the board"}`)
+		return
+	}
 	// A REQUEST THAT NAMES A CARD GOES WHERE THE CARD IS, whatever the header
 	// says. Ahead of startsNothing so that sees the room the work would land on.
 	// See cardroute.go.

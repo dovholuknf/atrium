@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"strings"
 	"testing"
@@ -68,6 +69,31 @@ func TestTheHubGitRoutesAnswerAndRefuseWhatTheyShould(t *testing.T) {
 	res.Body.Close()
 	if res.StatusCode != 200 {
 		t.Fatalf("status = %d", res.StatusCode)
+	}
+}
+
+// The board proxy never forwards /v1/git/ to a room, so nobody who can reach the board can list
+// a room's branches, fetch them or start a sync.
+func TestTheBoardProxyRefusesEverythingUnderV1Git(t *testing.T) {
+	hub := NewHub(Timings{})
+	p := NewProxy(hub, nil, "", func() string { return "sg3" })
+	for _, c := range []struct{ method, path, ctype string }{
+		{"GET", "/v1/git/github/o/r.git/info/refs?service=git-upload-pack", ""},
+		{"POST", "/v1/git/github/o/r.git/git-upload-pack", "application/x-git-upload-pack-request"},
+		{"POST", "/v1/git/sync", "application/json"},
+		{"GET", "/v1/git/status", ""},
+		{"GET", "/v1/git", ""},
+	} {
+		req := httptest.NewRequest(c.method, c.path, strings.NewReader(`{"name":"github/o/r","init":true}`))
+		if c.ctype != "" {
+			req.Header.Set("Content-Type", c.ctype)
+		}
+		req.Header.Set(RoomHeader, "sg3")
+		rec := httptest.NewRecorder()
+		p.ServeHTTP(rec, req)
+		if rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), "never through the board") {
+			t.Errorf("%s %s = %d %s", c.method, c.path, rec.Code, rec.Body.String())
+		}
 	}
 }
 

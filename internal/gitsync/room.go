@@ -41,6 +41,10 @@ func (h *RoomHandler) Handler() http.Handler {
 	mux.Handle("/v1/git/", &Backend{
 		Prefix: "/v1/git",
 		Resolve: func(name string) (string, bool) {
+			// ONLY A NAME THE HUB HAS SYNCED on this attachment. See Syncer.Served.
+			if !h.Syncer.Served(name) {
+				return "", false
+			}
 			root := h.Syncer.Root()
 			if root == "" {
 				return "", false
