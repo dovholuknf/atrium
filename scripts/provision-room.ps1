@@ -279,11 +279,20 @@ $winHelpers = @'
 function Sch { $ErrorActionPreference = 'Continue'; & schtasks.exe @args 2>&1 }
 function Get-AT { $x = Sch /Query /TN atrium /XML; if ($LASTEXITCODE -eq 0) { $e = ([xml](($x | ForEach-Object { "$_" }) -join "`n")).Task.Actions.Exec; "$($e.Command) $($e.Arguments)".Trim() } }
 '@
+#
+# $StopUrl IS THE ONE ANSWER TO "WHERE DOES atrium stop GO", in every script that stops the room. Get-StopUrl reads
+# it from the manifest's `ports` (the first is the room's own board), and falls back to the default 7781 when there
+# is no manifest or it records none. It is read afresh on every call, since the manifest is loaded after the first.
+function Get-StopUrl {
+    $p = if ($script:manifest -and $script:manifest.ports) { @($script:manifest.ports)[0] } else { $null }
+    if ("$p" -notmatch '^\d{1,5}$') { $p = 7781 }
+    "http://127.0.0.1:$p"
+}
 function Invoke-Remote {
     param([string] $script)
     if ($script:remoteOS -eq 'windows') {
         $full = "`$ErrorActionPreference='Stop'; `$ProgressPreference='SilentlyContinue'`n$(if ($script -match '\b(Sch|Get-AT)\b') { $winHelpers })`n" +
-            "`$A = Join-Path `$HOME '.atrium'; `$Bin = Join-Path `$A 'bin\atrium.exe'`n" +
+            "`$A = Join-Path `$HOME '.atrium'; `$Bin = Join-Path `$A 'bin\atrium.exe'; `$StopUrl = '$(Get-StopUrl)'`n" +
             "`$P = Join-Path `$A 'provision'; `$M = Join-Path `$P 'manifest.json'`n" +
             "`$L = Join-Path `$env:LOCALAPPDATA 'atrium'`n" +
             # PATH FROM THE REGISTRY, so a Path entry this run added is seen by the
@@ -308,7 +317,7 @@ function Invoke-Remote {
         }
         $out = & $Ssh @sshBase $Target "powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand $enc" 2>&1
     } else {
-        $full = "A=`"`$HOME/.atrium`"; Bin=`"`$HOME/.local/bin/atrium`"`n" +
+        $full = "A=`"`$HOME/.atrium`"; Bin=`"`$HOME/.local/bin/atrium`"; StopUrl='$(Get-StopUrl)'`n" +
             "P=`"`$A/provision`"; M=`"`$P/manifest.json`"`n" +
             # Where the room writes its address and lastdb.json. internal/daemon/whereami.go.
             "if [ `"`$(uname -s)`" = Darwin ]; then L=`"`$HOME/Library/Caches/atrium`"; " +
@@ -661,7 +670,7 @@ if ($pathadded -eq 'registry') {
     [Environment]::SetEnvironmentVariable('Path', ((@($cur -split ';') | Where-Object { $_ -and $_ -ne $d }) -join ';'), 'User')
     "path=removed ~\.local\bin from the user's Path"
 }
-if (Test-Path $Bin) { try { & $Bin stop --url http://127.0.0.1:7781 2>&1 | Out-Null } catch {} }
+if (Test-Path $Bin) { try { & $Bin stop --url $StopUrl 2>&1 | Out-Null } catch {} }
 $deadline = (Get-Date).AddSeconds(20)
 while ((Get-Process atrium -ErrorAction SilentlyContinue | Where-Object Path -eq $Bin) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 500 }
 Get-Process atrium -ErrorAction SilentlyContinue | Where-Object Path -eq $Bin | Stop-Process -Force
@@ -695,7 +704,7 @@ case "$pathadded" in "$HOME"/*)
     echo "path=removed the line this added to $pathadded"
   fi;;
 esac
-if [ -x "$Bin" ]; then "$Bin" stop --url http://127.0.0.1:7781 >/dev/null 2>&1 || true; fi
+if [ -x "$Bin" ]; then "$Bin" stop --url $StopUrl >/dev/null 2>&1 || true; fi
 if [ "$auto" = True ] && [ "$pre_service" = False ] && [ -f "$P/scripts/atrium-service.sh" ]; then
   ATRIUM_EXE="$Bin" ATRIUM_SERVICE_VERB=room bash "$P/scripts/atrium-service.sh" uninstall >/dev/null 2>&1 || true
   echo "service=removed"
@@ -757,6 +766,13 @@ if [ "$pre_bindir" = False ]; then rmdir "$(dirname "$Bin")" 2>/dev/null || true
     if ($gone) { Step 'runners' 'done' "removed $($gone -join ', ')" }
     if ($kv.path) { Step 'path' 'done' ($kv.path -replace '^removed', 'removed') }
     Step 'files' 'done' $kv.files
+
+    # WHAT room-git.ps1 init MADE, undone by room-git.ps1 rather than by knowing its layout: the clone on the remote,
+    # ~\.room-git, and the git remote here. It keeps the clone, and says why, when it holds work this machine lacks.
+    if ($Repo -ne 'none') {
+        & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'room-git.ps1') remove $room -Target $Target -Ssh $Ssh @(if ($SshOption) { '-SshOption'; $SshOption -join ',' }) *>&1 | ForEach-Object { Write-Host $_ }
+        if ($LASTEXITCODE -ne 0) { Step 'git' 'warn' "room-git remove exited $LASTEXITCODE. rerun: room-git.ps1 remove $room -Target $Target" }
+    }
 
     # A ROOM HEARD FROM IN THE LAST TWENTY SECONDS IS NOT REMOVED, even forced,
     # so wait for the hub to stop hearing from it.
@@ -1094,7 +1110,7 @@ fi
         'launchagent'  { 'launchctl kickstart gui/<uid>/io.github.dovholuknf.atrium' }
     }
     if (-not $Yes) {
-        Step 'stop' 'skip' "would run atrium stop, then wait up to 40s for ports $portsText to close. never a kill"
+        Step 'stop' 'skip' "would run atrium stop --url $(Get-StopUrl), then wait up to 40s for ports $portsText to close. never a kill"
         Step 'start' 'skip' "would start it with $startSays"
         Step 'attach' 'skip' "would wait up to ${AttachTimeout}s for $Name on the hub, and compare its runner rows$(if ($rowsBefore) { " ($($rowsBefore -join ', '))" })"
         Step 'restart' 'ok' 'plan only. nothing was changed. add -Yes to do it'
@@ -1105,7 +1121,7 @@ fi
     $sp = $(if ($os -eq 'windows') { "`$ports = @($($ports -join ', '))`n" } else { "ports='$($ports -join ' ')'`n" }) + $(if ($os -eq 'windows') {
 @'
 $ErrorActionPreference = 'Continue'
-if (Test-Path $Bin) { & $Bin stop --url http://127.0.0.1:7781 2>&1 | Out-Null }
+if (Test-Path $Bin) { & $Bin stop --url $StopUrl 2>&1 | Out-Null }
 $end = (Get-Date).AddSeconds(40)
 do {
     $open = @($ports | Where-Object { try { $c = New-Object Net.Sockets.TcpClient; $c.Connect('127.0.0.1', $_); $c.Close(); $true } catch { $false } })
@@ -1117,7 +1133,7 @@ if ($open) { "open=$($open -join ',')"; exit 1 }
 '@
     } else {
 @'
-if [ -x "$Bin" ]; then "$Bin" stop --url http://127.0.0.1:7781 >/dev/null 2>&1; fi
+if [ -x "$Bin" ]; then "$Bin" stop --url $StopUrl >/dev/null 2>&1; fi
 n=0
 while :; do
   open=""
@@ -1359,7 +1375,7 @@ if ($state.binsha -eq $sha) {
     $swap = if ($os -eq 'windows') {
 @'
 if (Test-Path $Bin) {
-    try { & $Bin stop --url http://127.0.0.1:7781 2>&1 | Out-Null } catch {}
+    try { & $Bin stop --url $StopUrl 2>&1 | Out-Null } catch {}
     $null = Sch /End /TN atrium
     $deadline = (Get-Date).AddSeconds(20)
     while ((Get-Process atrium -ErrorAction SilentlyContinue | Where-Object Path -eq $Bin) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 500 }
@@ -1372,7 +1388,7 @@ Move-Item -Force "$Bin.new" $Bin
     } else {
 @'
 if [ -x "$Bin" ]; then
-  "$Bin" stop --url http://127.0.0.1:7781 >/dev/null 2>&1 || true
+  "$Bin" stop --url $StopUrl >/dev/null 2>&1 || true
   n=0; while pgrep -f "$Bin room" >/dev/null 2>&1 && [ $n -lt 40 ]; do sleep 0.5; n=$((n+1)); done
   pkill -9 -f "$Bin room" 2>/dev/null || true
 fi
@@ -1727,9 +1743,9 @@ echo "pathadded=$f"
 # service's room would find the ports taken and exit.
 if (($pathChanged -or ($useAutostart -and -not $hadAutostartBefore)) -and -not $binChanged) {
     $stop = if ($os -eq 'windows') {
-        "`$ErrorActionPreference = 'Continue'; if (Test-Path `$Bin) { & `$Bin stop --url http://127.0.0.1:7781 2>&1 | Out-Null }; Start-Sleep -Seconds 3"
+        "`$ErrorActionPreference = 'Continue'; if (Test-Path `$Bin) { & `$Bin stop --url `$StopUrl 2>&1 | Out-Null }; Start-Sleep -Seconds 3"
     } else {
-        "if [ -x `"`$Bin`" ]; then `"`$Bin`" stop --url http://127.0.0.1:7781 >/dev/null 2>&1; sleep 3; fi"
+        "if [ -x `"`$Bin`" ]; then `"`$Bin`" stop --url `$StopUrl >/dev/null 2>&1; sleep 3; fi"
     }
     $null = Invoke-Remote $stop
 }

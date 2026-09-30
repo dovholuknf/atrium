@@ -4,6 +4,7 @@
 #   pwsh -File scripts\room-git.ps1 push-base m1mini [-From claude/main]
 #   pwsh -File scripts\room-git.ps1 fetch     m1mini
 #   pwsh -File scripts\room-git.ps1 worktree  m1mini fb02-proof [-Base hub-main] [-Root <remote dir>]
+#   pwsh -File scripts\room-git.ps1 remove    m1mini [-Force]   undo init, keeping the clone when it holds unpushed work
 #
 # WHY PUSH. A room holds no GitHub credential and has no route back to this machine, so a private repository
 # cannot be cloned there. The operator's own ssh reaches the room already, so this side makes the repository on the
@@ -67,6 +68,8 @@ param(
     [string] $Base = 'hub-main',
     # worktree: the directory worktrees go under. Default <clone>-worktrees.
     [string] $Root,
+    # remove: take the clone even when it holds a branch or stash that is not on this machine.
+    [switch] $Force,
     [string] $Ssh = 'ssh',
     [string[]] $SshOption = @()
 )
@@ -96,9 +99,9 @@ function Fail {
     Finish $code
 }
 
-$commands = 'init', 'push-base', 'fetch', 'worktree'
+$commands = 'init', 'push-base', 'fetch', 'worktree', 'remove'
 if ($Command -notin $commands -or -not $Room -or ($Command -eq 'worktree' -and -not $Name)) {
-    Write-Host 'usage: room-git.ps1 init|push-base|fetch <room> [-Target user@host] [-Repo path] [-Path remote] [-From claude/main]'
+    Write-Host 'usage: room-git.ps1 init|push-base|fetch|remove <room> [-Target user@host] [-Repo path] [-Path remote] [-From claude/main] [-Force]'
     Write-Host '       room-git.ps1 worktree <room> <name> [-Base hub-main] [-Root remote dir]'
     exit 1
 }
@@ -483,9 +486,97 @@ echo worktree=done
     Step 'cwd' 'ok' $wt
 }
 
+# ── remove ──────────────────────────────────────────────────────────────────
+
+# Invoke-Remove undoes init: the clone on the remote (and <clone>-worktrees, and ~\.room-git on Windows), then the
+# git remote here. THE CLONE MAY HOLD WORK THAT EXISTS NOWHERE ELSE, so it goes only when every branch and stash in it
+# is on this machine, and its work tree and worktrees are clean. Otherwise it stays, the remote here stays with it
+# (it is how the work gets fetched), and a warn line names what kept it and the command that removes it anyway.
+function Invoke-Remove {
+    if (-not $existing) { Step 'remote' 'skip' "this repository has no remote called $Room, so there is nothing of init to undo"; return }
+    $clone = Get-ClonePath
+    Test-Ssh
+    $hand = "pwsh -File scripts/room-git.ps1 remove $Room -Force"
+    $inspect = if ($script:remoteOS -eq 'windows') {
+        "`$C = $(Quote-Ps $clone)`n" + @'
+if (-not (Test-Path -LiteralPath $C)) { 'gone=1'; exit 0 }
+Set-Location $C
+git for-each-ref '--format=branch=%(refname:short) %(objectname)' refs/heads
+git stash list '--format=stash=%H %gs'
+if (git status --porcelain) { "dirty=$C" }
+foreach ($l in (git worktree list --porcelain)) { if ("$l" -match '^worktree (.+)$' -and $Matches[1] -ne ($C -replace '/', '\') -and $Matches[1] -ne $C) { if (git -C $Matches[1] status --porcelain) { "dirty=$($Matches[1])" } } }
+'@
+    } else {
+        "C=$(Quote-Sh $clone)`n" + @'
+if [ ! -e "$C" ]; then echo gone=1; exit 0; fi
+cd "$C" || exit 4
+git for-each-ref '--format=branch=%(refname:short) %(objectname)' refs/heads
+git stash list '--format=stash=%H %gs'
+if [ -n "$(git status --porcelain)" ]; then echo "dirty=$C"; fi
+git worktree list --porcelain | sed -n 's/^worktree //p' | while IFS= read -r w; do
+  if [ "$w" != "$C" ] && [ -n "$(git -C "$w" status --porcelain 2>/dev/null)" ]; then echo "dirty=$w"; fi
+done
+'@
+    }
+    $r = Invoke-Remote $inspect
+    if ($r.Code -ne 0) { Fail 'remove' 4 "could not read the clone at $clone on $($script:sshTarget)" $r.Out }
+    $gone = $r.Out -contains 'gone=1'
+
+    $kept = @()
+    if (-not $gone) {
+        $localStash = @((Invoke-Git @('stash', 'list', '--format=%H')).Out)
+        foreach ($l in $r.Out) {
+            if ($l -match '^branch=(\S+) (\S+)$') {
+                $c = Invoke-Git @('for-each-ref', '--contains', $Matches[2], '--format=%(refname)', 'refs/heads', 'refs/tags')
+                if ($c.Code -ne 0 -or -not ($c.Out | Where-Object { $_ })) { $kept += "branch $($Matches[1]) ($($Matches[2].Substring(0, 9))) is not on this machine" }
+            } elseif ($l -match '^stash=(\S+) (.*)$') {
+                $sha = $Matches[1]; $msg = $Matches[2]
+                $c = Invoke-Git @('for-each-ref', '--contains', $sha, '--format=%(refname)', 'refs/heads', 'refs/tags')
+                if ($localStash -notcontains $sha -and ($c.Code -ne 0 -or -not ($c.Out | Where-Object { $_ }))) { $kept += "stash $($sha.Substring(0, 9)) `"$msg`" is not on this machine" }
+            } elseif ($l -match '^dirty=(.+)$') {
+                $kept += "$($Matches[1]) has uncommitted changes"
+            }
+        }
+    }
+    if ($kept -and -not $Force) {
+        Step 'clone' 'warn' "kept $clone on $($script:sshTarget): $($kept -join '; '). the git remote $Room is kept too. to remove it anyway: $hand"
+        return
+    }
+    if ($kept) { Step 'clone' 'warn' "-Force: removing $clone although $($kept -join '; ')" }
+
+    if (-not $gone) {
+        # ONLY UNDER THE REMOTE HOME. The path came from a git remote url, and a delete keyed on it should not be able
+        # to reach outside where init put things by default.
+        $s = if ($script:remoteOS -eq 'windows') {
+            "`$C = $(Quote-Ps $clone)`n" + @'
+$h = $HOME -replace '\\', '/'
+if (-not $C.StartsWith($h + '/', [StringComparison]::OrdinalIgnoreCase)) { "err=$C is not under $h"; exit 4 }
+foreach ($d in $C, "$C-worktrees") { if (Test-Path -LiteralPath $d) { Remove-Item -LiteralPath $d -Recurse -Force -ErrorAction Stop; "removed=$d" } }
+$rg = Join-Path $HOME '.room-git'
+if (Test-Path -LiteralPath $rg) { Remove-Item -LiteralPath $rg -Recurse -Force; "removed=$rg" }
+'@
+        } else {
+            "C=$(Quote-Sh $clone)`n" + @'
+case "$C" in "$HOME"/?*) ;; *) echo "err=$C is not under $HOME"; exit 4;; esac
+for d in "$C" "$C-worktrees"; do if [ -e "$d" ]; then rm -rf "$d" || exit 4; echo "removed=$d"; fi; done
+'@
+        }
+        $d = Invoke-Remote $s
+        if ($d.Code -ne 0) { Fail 'clone' 4 "could not remove $clone on $($script:sshTarget)" $d.Out }
+        $what = @($d.Out | Where-Object { $_ -like 'removed=*' } | ForEach-Object { $_.Substring(8) })
+        Step 'clone' 'done' "removed $($what -join ', ') on $($script:sshTarget)"
+    } else {
+        Step 'clone' 'skip' "$clone is already gone on $($script:sshTarget)"
+    }
+    $rm = Invoke-Git @('remote', 'remove', $Room)
+    if ($rm.Code -ne 0) { Fail 'remote' 1 "git remote remove $Room failed" $rm.Out }
+    Step 'remote' 'done' "removed the git remote $Room here"
+}
+
 # ── go ──────────────────────────────────────────────────────────────────────
 
 switch ($Command) {
+    'remove' { Invoke-Remove }
     'init' { Invoke-Init }
     'push-base' {
         if (-not $existing) { Fail 'remote' 1 "this repository has no ssh remote called $Room. run: room-git.ps1 init $Room" }
