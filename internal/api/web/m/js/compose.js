@@ -23,8 +23,16 @@
 // A DRAFT per card lives in localStorage and is cleared only by a send the daemon accepted. Every storage
 // access is wrapped, because a private window throws.
 //
-// No timers that fetch. The only requests are the send and one read of `/v1/harnesses`, made the first time a
-// card's capability is needed.
+// ATTACHED FILES (u-028). `attach(files)` uploads a batch in ONE request, puts the returned paths in the box at the
+// caret and shows one chip per file above it: a thumbnail for an image (an object URL of the local File, revoked
+// when the chip goes), a glyph and the name for anything else. The chip says "uploading" while the request is in
+// flight and shows the reason when it fails, and a failure inserts no path. The chip's X removes the chip and the
+// exact span of text its path was inserted as, tracked through later edits of the text around it. A paste that
+// carries an image and no text goes through the same `attach`. Upload computes its own destination server side
+// and takes no path, so nothing here can aim it anywhere.
+//
+// No timers that fetch. The only requests are the send, one read of `/v1/harnesses`, made the first time a
+// card's capability is needed, and an upload when a file is attached.
 (function () {
   "use strict";
 
@@ -137,6 +145,9 @@
   //   opts.follow       lift over the keyboard by the visual viewport. Default true. The board's phone layout
   //                     is already sized to the visual viewport, so it passes false.
   //   opts.noteMs       clear the note after this long, so it does not hold height. Default: kept.
+  //   opts.upload(files) how a batch goes up, resolving to { paths: [...] } in file order. Default: POST
+  //                     /v1/tasks/{id}/files as multipart. The board passes its own `api` call.
+  //   opts.canUpload()  whether files may be attached at all (a guest link has no file endpoint). Default true.
   //
   // A SEND NEVER HAPPENS DURING AN IME COMPOSITION. Android keyboards compose a swiped word in the box and
   // fire compositionstart, update and end, then input. Send is the button, so what has to hold is that the
@@ -164,6 +175,10 @@
     note.setAttribute("role", "status");
     note.setAttribute("aria-live", "polite");
 
+    const files = el("div", "mc-files");
+    files.setAttribute("role", "group");
+    files.setAttribute("aria-label", "attached files");
+
     const row = el("div", "mc-row");
     const ta = el("textarea", "mc-box");
     ta.rows = 1;
@@ -182,10 +197,13 @@
       '<path d="M12 19V5M6 11l6-6 6 6" fill="none" stroke="currentColor" stroke-width="2.4" ' +
       'stroke-linecap="round" stroke-linejoin="round"/></svg>';
     row.append(ta, send);
-    root.append(chips, note, row);
+    root.append(files, chips, note, row);
     host.replaceChildren(root);
 
-    const state = { el: root, host, id: cardId, offs, sending: false, pasteOK: null, ta, refresh: () => refresh() };
+    const state = {
+      el: root, host, id: cardId, offs, sending: false, pasteOK: null, ta, refresh: () => refresh(),
+      atts: [], uploading: 0, last: "", opts, files
+    };
     cur = state;
 
     const say = (kind, text) => {
@@ -198,7 +216,8 @@
       }
     };
     const refresh = () => {
-      send.disabled = !ta.value.trim() || state.sending;
+      // Not while a file is still going up: the message would leave without its path.
+      send.disabled = !ta.value.trim() || state.sending || state.uploading > 0;
       writeDraft(cardId, ta.value);
       grow(ta, maxLines);
     };
@@ -225,7 +244,24 @@
     };
     capability().then(hint);
 
-    ta.addEventListener("input", () => { refresh(); hint(); });
+    ta.addEventListener("input", () => { follow(state, ta.value); refresh(); hint(); });
+    ta.addEventListener("paste", e => {
+      if (opts.canUpload && !opts.canUpload()) return;
+      const dt = e.clipboardData;
+      if (!dt) return;
+      const got = [];
+      for (const item of dt.items || []) {
+        if (item.kind !== "file") continue;
+        const f = item.getAsFile();
+        if (f) got.push(f);
+      }
+      if (!got.length) for (const f of dt.files || []) got.push(f);
+      // A clipboard that also carries text is a text paste: a page's copied image comes with its markup, and
+      // the person meant the words.
+      if (!got.length || dt.getData("text/plain")) return;
+      e.preventDefault();
+      attach(got);
+    });
     chips.addEventListener("click", e => {
       const b = e.target.closest(".mc-chip");
       if (!b) return;
@@ -235,6 +271,12 @@
       ta.focus();
       const n = ta.value.length;
       try { ta.setSelectionRange(n, n); } catch (err) {}
+    });
+    files.addEventListener("click", e => {
+      const x = e.target.closest(".mc-fx");
+      if (!x) return;
+      const a = state.atts.find(t => t.el === x.parentNode);
+      if (a) removeAtt(state, a);
     });
     ta.addEventListener("compositionstart", () => { state.composing = true; });
     ta.addEventListener("compositionend", () => { state.composing = false; });
@@ -292,6 +334,7 @@
         if (ok) {
           ta.value = "";
           writeDraft(cardId, "");
+          clearAtts(state);
         }
       } catch (e) {
         // The text stays where it is.
@@ -308,13 +351,188 @@
     if (opts.follow !== false) offs.push(followKeyboard(root));
 
     ta.value = readDraft(cardId);
+    state.last = ta.value;
     refresh();
     showChips();
     if (ta.value && !opts.compact) say("hint", "Draft kept.");
   }
 
+  // ---- attached files
+
+  // Where one edit landed, as the old range [p, oldEnd) replaced by new text ending at newEnd: the common prefix
+  // and suffix of the two strings, which is exact for a single edit.
+  function editOf(a, b) {
+    let p = 0;
+    const max = Math.min(a.length, b.length);
+    while (p < max && a.charCodeAt(p) === b.charCodeAt(p)) p++;
+    let ea = a.length, eb = b.length;
+    while (ea > p && eb > p && a.charCodeAt(ea - 1) === b.charCodeAt(eb - 1)) { ea--; eb--; }
+    return { p, oldEnd: ea, newEnd: eb };
+  }
+
+  // The box changed from state.last to `now`: move every tracked span with it. A span the edit reached into is
+  // no longer known by position and is found by its text when it is removed.
+  function follow(state, now) {
+    const old = state.last;
+    state.last = now;
+    if (old === now) return;
+    const ed = editOf(old, now);
+    const delta = ed.newEnd - ed.oldEnd;
+    for (const a of state.atts) {
+      if (a.start == null || a.broken) continue;
+      if (a.end <= ed.p) continue;
+      if (a.start >= ed.oldEnd) { a.start += delta; a.end += delta; continue; }
+      a.broken = true;
+    }
+  }
+
+  function revoke(a) {
+    if (!a.url) return;
+    try { URL.revokeObjectURL(a.url); } catch (e) {}
+    a.url = "";
+  }
+
+  function clearAtts(state) {
+    for (const a of state.atts) revoke(a);
+    state.atts = [];
+    state.files.replaceChildren();
+    state.files.classList.remove("on");
+  }
+
+  function chipOf(a) {
+    const c = el("div", "mc-file");
+    let mark;
+    if (a.url) {
+      mark = el("img", "mc-thumb");
+      mark.src = a.url;
+      mark.alt = "";
+    } else {
+      mark = el("span", "mc-glyph", "📄");
+      mark.setAttribute("aria-hidden", "true");
+    }
+    const name = el("span", "mc-fname", a.name);
+    const st = el("span", "mc-fstate");
+    const x = el("button", "mc-fx", "✕");
+    x.type = "button";
+    x.setAttribute("aria-label", "remove " + a.name);
+    // Takes no focus, so the keyboard and the caret stay where they are.
+    x.addEventListener("pointerdown", e => e.preventDefault());
+    c.append(mark, name, st, x);
+    a.el = c;
+    a.stEl = st;
+    paintChip(a);
+    return c;
+  }
+
+  function paintChip(a) {
+    const word = a.status === "up" ? "uploading" : a.status === "err" ? a.err : "";
+    a.el.dataset.state = a.status;
+    a.stEl.textContent = word;
+    a.el.setAttribute("aria-label", a.name + (word ? ": " + word : ""));
+  }
+
+  // Puts `text` at the caret as `insert` does and returns where it landed, so a caller can name spans in it.
+  function place(state, text) {
+    const ta = state.ta;
+    const v = ta.value;
+    let a = ta.selectionStart, b = ta.selectionEnd;
+    if (typeof a !== "number") { a = b = v.length; }
+    const before = v.slice(0, a), after = v.slice(b);
+    const lead = before && !/\s$/.test(before) ? " " : "";
+    const tail = /^\s/.test(after) ? "" : " ";
+    const put = lead + text.trim() + tail;
+    ta.value = before + put + after;
+    follow(state, ta.value);
+    const at = before.length + put.length;
+    state.refresh();
+    ta.focus();
+    try { ta.setSelectionRange(at, at); } catch (e) {}
+    return before.length + lead.length;
+  }
+
+  // The chip goes and so does its path, and nothing else in the text.
+  function removeAtt(state, a) {
+    const i = state.atts.indexOf(a);
+    if (i < 0) return;
+    state.atts.splice(i, 1);
+    revoke(a);
+    a.el.remove();
+    state.files.classList.toggle("on", state.atts.length > 0);
+    if (!a.path) return;
+    const ta = state.ta;
+    const v = ta.value;
+    let s = a.broken ? -1 : a.start;
+    if (s < 0 || v.slice(s, s + a.path.length) !== a.path) s = v.indexOf(a.path);
+    if (s < 0) return;
+    const caret = ta.selectionStart;
+    ta.value = v.slice(0, s) + v.slice(s + a.path.length);
+    follow(state, ta.value);
+    try {
+      const c = caret > s ? Math.max(s, caret - a.path.length) : caret;
+      ta.setSelectionRange(c, c);
+    } catch (e) {}
+    state.refresh();
+  }
+
+  async function defaultUpload(id, list) {
+    const form = new FormData();
+    for (const f of list) form.append("file", f, f.name);
+    const headers = {};
+    const room = guard(() => localStorage.getItem("atrium.room"));
+    if (room) headers["X-Atrium-Room"] = room;
+    const r = await fetch("/v1/tasks/" + encodeURIComponent(id) + "/files", { method: "POST", headers, body: form });
+    let body = null, raw = "";
+    try { raw = await r.text(); body = JSON.parse(raw); } catch (e) {}
+    if (!r.ok) throw new Error((body && body.error) || raw.trim() || r.statusText || "failed");
+    return body || {};
+  }
+
+  // Uploads a batch as one request and returns once every chip has settled, with the paths that went in.
+  async function attach(list) {
+    const state = cur;
+    list = Array.from(list || []);
+    if (!state || !list.length) return [];
+    if (state.opts.canUpload && !state.opts.canUpload()) return [];
+    const mine = list.map(f => ({
+      file: f, name: f.name || "file", status: "up", path: "", err: "", start: null, end: null, broken: false,
+      url: f.type && f.type.indexOf("image/") === 0 ? guard(() => URL.createObjectURL(f)) || "" : ""
+    }));
+    for (const a of mine) {
+      state.atts.push(a);
+      state.files.appendChild(chipOf(a));
+    }
+    state.files.classList.add("on");
+    state.files.scrollLeft = state.files.scrollWidth;
+    state.uploading++;
+    state.refresh();
+    let res = null, failed = "";
+    try {
+      res = await (state.opts.upload ? state.opts.upload(list) : defaultUpload(state.id, list));
+    } catch (e) {
+      failed = e && e.message ? e.message : String(e || "failed");
+    }
+    state.uploading--;
+    if (cur !== state) { for (const a of mine) revoke(a); return []; }
+    const paths = (res && res.paths) || [];
+    const landed = [];
+    mine.forEach((a, i) => {
+      if (!state.atts.includes(a)) return; // its chip was removed while it was going up
+      if (failed || !paths[i]) { a.status = "err"; a.err = failed || "no path came back"; }
+      else { a.status = "ok"; a.path = String(paths[i]); landed.push(a); }
+      paintChip(a);
+    });
+    if (landed.length) {
+      let at = place(state, landed.map(a => a.path).join(" "));
+      for (const a of landed) { a.start = at; a.end = at + a.path.length; at = a.end + 1; }
+    } else {
+      state.refresh();
+    }
+    return landed.map(a => a.path);
+  }
+
   function unmount() {
     if (!cur) return;
+    clearAtts(cur);
     cur.offs.forEach(f => { try { f(); } catch (e) {} });
     if (cur.host && cur.el.parentNode === cur.host) cur.host.replaceChildren();
     cur = null;
@@ -326,21 +544,9 @@
   // uploaded files.
   function insert(text) {
     if (!cur || !text) return false;
-    const ta = cur.ta;
-    const v = ta.value;
-    let a = ta.selectionStart, b = ta.selectionEnd;
-    if (typeof a !== "number") { a = b = v.length; }
-    const before = v.slice(0, a), after = v.slice(b);
-    const lead = before && !/\s$/.test(before) ? " " : "";
-    const tail = /^\s/.test(after) ? "" : " ";
-    const put = lead + text.trim() + tail;
-    ta.value = before + put + after;
-    const at = before.length + put.length;
-    cur.refresh();
-    ta.focus();
-    try { ta.setSelectionRange(at, at); } catch (e) {}
+    place(cur, text);
     return true;
   }
 
-  window.mCompose = { mount, unmount, insert };
+  window.mCompose = { mount, unmount, insert, attach };
 })();

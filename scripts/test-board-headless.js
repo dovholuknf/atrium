@@ -10066,6 +10066,292 @@ async function phoneComposeSection(browser, base) {
   if (errors.length) fail("phoneCompose: the page threw: " + errors.join(" | "));
 }
 
+// ── files attached in the composer (u-028) ─────────────────────────────────
+// A 1x1 png, so an image chip's thumbnail is a real image.
+const COMPOSE_PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+
+// The board's phone terminal with the upload endpoint mocked. mode.up is ok, slow or fail, and calls counts requests.
+async function composeBoardOpen(browser, base, errors, mode, calls) {
+  landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  landList = [LAND["land-live"]];
+  landPerms = [];
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+  await ctx.addInitScript(() => {
+    localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true }));
+    localStorage.setItem("atrium.termphone", "1");
+    window.__revoked = 0;
+    const rev = URL.revokeObjectURL.bind(URL);
+    URL.revokeObjectURL = (u) => { window.__revoked++; return rev(u); };
+    const Real = window.WebSocket;
+    window.__sent = [];
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
+        onopen: null, onclose: null, onmessage: null, onerror: null,
+        send(d) { window.__sent.push(String(d)); }, close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  });
+  await ctx.route("**/v1/tasks/*/files", async route => {
+    if (route.request().method() !== "POST") return route.fallback();
+    calls.n++;
+    const names = [...(route.request().postDataBuffer() || Buffer.alloc(0)).toString("latin1").matchAll(/filename="([^"]*)"/g)].map(m => m[1]);
+    calls.names.push(names);
+    if (mode.up === "fail") return route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: "disk full" }) });
+    if (mode.up === "slow") await new Promise(r => setTimeout(r, 500));
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ paths: names.map(n => "/w/" + n) }) });
+  });
+  await ctx.addInitScript((png) => { window.__png = png; }, COMPOSE_PNG);
+  const p = await ctx.newPage();
+  p.on("pageerror", e => { errors.push(String(e.stack || e)); });
+  await p.goto(base, { waitUntil: "domcontentloaded" });
+  await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+  await p.evaluate(() => attachTask("land-live"));
+  await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live",
+    null, { timeout: slow(10000) });
+  await p.evaluate(() => new Promise(r => term.write("[?2004h", r)));
+  await p.waitForSelector("#t-compose textarea", { timeout: slow(5000) });
+  await p.waitForTimeout(300);
+  return { ctx, p };
+}
+
+async function composeImagesSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  const errors = [], mode = { up: "ok" }, calls = { n: 0, names: [] };
+  const png = (n) => ({ name: n, mimeType: "image/png", buffer: Buffer.from(COMPOSE_PNG, "base64") });
+  try {
+    const { ctx, p } = await composeBoardOpen(browser, base, errors, mode, calls);
+    const ta = "#t-compose textarea";
+    const val = () => p.evaluate((s) => document.querySelector(s).value, ta);
+    const setVal = (v, at) => p.evaluate(([s, v, at]) => {
+      const t = document.querySelector(s);
+      t.value = v; t.dispatchEvent(new Event("input", { bubbles: true }));
+      t.setSelectionRange(at, at);
+      document.activeElement && document.activeElement.blur();
+      window.__sent.length = 0;
+    }, [ta, v, at]);
+    const chips = () => p.evaluate(() => Array.from(document.querySelectorAll("#t-compose .mc-file")).map(c => ({
+      name: c.querySelector(".mc-fname").textContent, state: c.dataset.state, state_text: c.querySelector(".mc-fstate").textContent,
+      thumb: !!c.querySelector("img.mc-thumb") && /^blob:/.test(c.querySelector("img.mc-thumb").src),
+      glyph: !!c.querySelector(".mc-glyph") })));
+    const budget = async (tag) => {
+      const m = await p.evaluate(() => {
+        // What sits around the row of text: with chips floating over the terminal it is the padding only, so the
+        // empty composer's 48px budget holds. The box itself grows with its text, which is not the chips' doing.
+        const h = 48 + document.querySelector("#t-compose .mc").getBoundingClientRect().height -
+          document.querySelector("#t-compose .mc-row").getBoundingClientRect().height - 4;
+        const f =document.querySelector("#t-compose .mc-files").getBoundingClientRect();
+        const cs = Array.from(document.querySelectorAll("#t-compose .mc-file")).map(c => c.getBoundingClientRect().top);
+        const kids = Array.from(document.querySelector("#t-compose .mc").children).map(k => k.className + ":" + k.getBoundingClientRect().height);
+        return { h, kids, fh: f.height, fw: f.width, tops: cs, oneRow: cs.every(t => Math.abs(t - cs[0]) < 2) };
+      });
+      if (m.h > 48.5) fail("composeImages " + tag + ": the composer around its row is " + (m.h - 44) + "px taller than an empty one " + JSON.stringify(m.kids));
+      if (!m.oneRow) fail("composeImages " + tag + ": the chips wrapped onto more than one row: " + JSON.stringify(m));
+      if (m.fh > 48) fail("composeImages " + tag + ": the chip row is " + m.fh + "px tall");
+    };
+
+    // Two files at once: one request, both paths at the caret, a chip each, thumbnails on the images.
+    await setVal("look at  and fix", 8);
+    await p.setInputFiles("#t-attach-in", [png("a.png"), png("b.heic")]);
+    await p.waitForFunction(() => document.querySelector("#t-compose textarea").value.includes("/w/b.heic"), null, { timeout: slow(5000) });
+    if (calls.n !== 1 || calls.names[0].join() !== "a.png,b.heic") fail("composeImages: uploads " + JSON.stringify(calls));
+    if ((await val()) !== "look at /w/a.png /w/b.heic and fix") fail("composeImages: the text is " + JSON.stringify(await val()));
+    let c = await chips();
+    if (c.length !== 2 || c[0].name !== "a.png" || c[1].name !== "b.heic") fail("composeImages: chips " + JSON.stringify(c));
+    if (!c[0].thumb) fail("composeImages: the image chip has no thumbnail");
+    if (c[1].thumb && c[1].glyph) fail("composeImages: a chip has both " + JSON.stringify(c[1]));
+    if (c.some(x => x.state !== "ok")) fail("composeImages: chip states " + JSON.stringify(c));
+
+    // A file that is not an image wears a glyph and its name.
+    await p.setInputFiles("#t-attach-in", [{ name: "notes.txt", mimeType: "text/plain", buffer: Buffer.from("hi") }]);
+    await p.waitForFunction(() => document.querySelector("#t-compose textarea").value.includes("/w/notes.txt"), null, { timeout: slow(5000) });
+    c = await chips();
+    if (c.length !== 3 || !c[2].glyph || c[2].thumb || c[2].name !== "notes.txt") fail("composeImages: the file chip " + JSON.stringify(c[2]));
+    await budget("three chips");
+
+    // A slow upload says so on its chip, and send waits for it.
+    mode.up = "slow";
+    await p.setInputFiles("#t-attach-in", [png("slow.png")]);
+    await p.waitForFunction(() => document.querySelector("#t-compose .mc-file[data-state=up]"), null, { timeout: slow(3000) });
+    const upn = await p.evaluate(() => ({ t: document.querySelector("#t-compose .mc-file[data-state=up] .mc-fstate").textContent,
+      send: document.querySelector("#t-compose .mc-send").disabled }));
+    if (upn.t !== "uploading" || !upn.send) fail("composeImages: an upload in flight showed " + JSON.stringify(upn));
+    await p.waitForFunction(() => !document.querySelector("#t-compose .mc-file[data-state=up]"), null, { timeout: slow(5000) });
+    mode.up = "ok";
+
+    // The X removes its chip and exactly its path, even after the text around it was edited.
+    let before = await val();
+    await setVal("PRE " + before + " tail", 4);
+    const rev0 = await p.evaluate(() => window.__revoked);
+    await p.tap("#t-compose .mc-file:nth-child(2) .mc-fx");
+    const after = await val();
+    const want = ("PRE " + before + " tail").replace("/w/b.heic", "");
+    if (after !== want) fail("composeImages: removing a chip left " + JSON.stringify(after) + ", want " + JSON.stringify(want));
+    c = await chips();
+    if (c.length !== 3 || c.some(x => x.name === "b.heic")) fail("composeImages: chips after a remove " + JSON.stringify(c));
+    if ((await p.evaluate(() => window.__revoked)) <= rev0) fail("composeImages: the removed chip's object URL was not revoked");
+
+    // A failed upload shows its reason on its chip and inserts nothing.
+    mode.up = "fail";
+    before = await val();
+    await p.setInputFiles("#t-attach-in", [png("bad.png")]);
+    await p.waitForFunction(() => document.querySelector("#t-compose .mc-file[data-state=err]"), null, { timeout: slow(5000) });
+    const bad = await p.evaluate(() => document.querySelector("#t-compose .mc-file[data-state=err] .mc-fstate").textContent);
+    if (!/disk full/.test(bad)) fail("composeImages: the failed chip says " + JSON.stringify(bad));
+    if ((await val()) !== before) fail("composeImages: a failed upload changed the text");
+    await budget("a failed chip");
+    if (process.env.U028_SHOTS) {
+      await p.screenshot({ path: path.join(process.env.U028_SHOTS, "u-028-failed-390x844.png") });
+    }
+    mode.up = "ok";
+    await p.tap("#t-compose .mc-file[data-state=err] .mc-fx");
+    if ((await val()) !== before) fail("composeImages: removing a failed chip changed the text");
+
+    // Send clears the chips.
+    await p.evaluate(() => window.__sent.length = 0);
+    await p.tap("#t-compose .mc-send");
+    await p.waitForTimeout(300);
+    if ((await chips()).length) fail("composeImages: chips after a send " + JSON.stringify(await chips()));
+    if (!(await p.evaluate(() => window.__sent.some(x => /\/w\/a\.png/.test(x))))) fail("composeImages: nothing was sent: " + JSON.stringify(await p.evaluate(() => ({ s: window.__sent,
+      note: document.querySelector("#t-compose .mc-note").textContent, dis: document.querySelector("#t-compose .mc-send").disabled,
+      v: document.querySelector("#t-compose textarea").value }))));
+
+    // Two images and one file, for the screenshot.
+    await setVal("", 0);
+    // The "sent" note holds height until it clears, and it is not the chips' doing.
+    await p.waitForFunction(() => document.querySelector("#t-compose .mc-note").getBoundingClientRect().height === 0, null, { timeout: slow(6000) });
+    await p.setInputFiles("#t-attach-in", [png("one.png"), png("two.png"), { name: "report.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF") }]);
+    await p.waitForFunction(() => document.querySelector("#t-compose textarea").value.includes("report.pdf"), null, { timeout: slow(5000) });
+    await budget("the shot");
+    if (process.env.U028_SHOTS) {
+      await p.screenshot({ path: path.join(process.env.U028_SHOTS, "u-028-chips-390x844.png") });
+    }
+    await ctx.close();
+  } finally {
+    tasksMode = was;
+  }
+  if (errors.length) fail("composeImages: the page threw: " + errors.join(" | "));
+}
+
+async function composePasteSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  const errors = [], mode = { up: "ok" }, calls = { n: 0, names: [] };
+  try {
+    const { ctx, p } = await composeBoardOpen(browser, base, errors, mode, calls);
+    const ta = "#t-compose textarea";
+    // A paste with the given parts, and whether the composer took it over.
+    const paste = (parts) => p.evaluate(([s, parts]) => {
+      const t = document.querySelector(s);
+      t.focus();
+      const dt = new DataTransfer();
+      for (const x of parts) {
+        if (x.text != null) dt.setData("text/plain", x.text);
+        else {
+          const b = Uint8Array.from(atob(window.__png), ch => ch.charCodeAt(0));
+          dt.items.add(new File([b], x.file, { type: "image/png" }));
+        }
+      }
+      const e = new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true });
+      t.dispatchEvent(e);
+      return e.defaultPrevented;
+    }, [ta, parts]);
+
+    // A text paste is left to the browser: nothing uploaded, nothing taken over.
+    if (await paste([{ text: "hello" }])) fail("composePaste: a text paste was taken over");
+    await p.waitForTimeout(200);
+    if (calls.n) fail("composePaste: a text paste uploaded");
+    // An image with text alongside is still a text paste.
+    if (await paste([{ text: "words" }, { file: "img.png" }])) fail("composePaste: an image with text was taken over");
+    await p.waitForTimeout(200);
+    if (calls.n) fail("composePaste: an image with text uploaded");
+
+    // An image alone uploads ONCE and its path goes in.
+    if (!(await paste([{ file: "shot.png" }]))) fail("composePaste: an image paste was not taken over");
+    await p.waitForFunction(() => document.querySelector("#t-compose textarea").value.includes("/w/shot.png"), null, { timeout: slow(5000) });
+    await p.waitForTimeout(300);
+    if (calls.n !== 1) fail("composePaste: the image uploaded " + calls.n + " times");
+    const v = await p.evaluate((s) => document.querySelector(s).value, ta);
+    if (v.trim() !== "/w/shot.png") fail("composePaste: the text is " + JSON.stringify(v));
+    const n = await p.evaluate(() => document.querySelectorAll("#t-compose .mc-file").length);
+    if (n !== 1) fail("composePaste: " + n + " chips");
+    await ctx.close();
+  } finally {
+    tasksMode = was;
+  }
+  if (errors.length) fail("composePaste: the page threw: " + errors.join(" | "));
+}
+
+// The same composer on the /m page's mount.
+async function mComposeImagesSection(browser) {
+  const tag = "mComposeImages: ";
+  const { ctx, p, calls, errors } = await mHarness(browser, M_VIEWS[0]);
+  const up = { mode: "ok", n: 0 };
+  await ctx.route(M_ORIGIN + "/v1/tasks/*/files", async route => {
+    up.n++;
+    const names = [...(route.request().postDataBuffer() || Buffer.alloc(0)).toString("latin1").matchAll(/filename="([^"]*)"/g)].map(m => m[1]);
+    if (up.mode === "fail") return route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: "no room" }) });
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ paths: names.map(n => "/w/" + n) }) });
+  });
+  await p.evaluate(() => { window.__revoked = 0; const r = URL.revokeObjectURL.bind(URL); URL.revokeObjectURL = (u) => { window.__revoked++; return r(u); }; });
+  await p.evaluate(() => mCompose.mount(document.getElementById("m-compose"), "c1"));
+  const box = "#m-compose .mc-box";
+  const val = () => p.$eval(box, t => t.value);
+  const mk = (names) => p.evaluate((names) => {
+    const b = Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="), c => c.charCodeAt(0));
+    return mCompose.attach(names.map(n => new File([b], n, { type: /\.png$/.test(n) ? "image/png" : "text/plain" })));
+  }, names);
+
+  await mk(["a.png", "b.txt"]);
+  if (up.n !== 1) fail(tag + up.n + " uploads for two files");
+  if ((await val()).trim() !== "/w/a.png /w/b.txt") fail(tag + "text " + JSON.stringify(await val()));
+  const c = await p.evaluate(() => Array.from(document.querySelectorAll("#m-compose .mc-file")).map(x => ({
+    thumb: !!x.querySelector("img.mc-thumb"), glyph: !!x.querySelector(".mc-glyph"), name: x.querySelector(".mc-fname").textContent })));
+  if (c.length !== 2 || !c[0].thumb || !c[1].glyph) fail(tag + "chips " + JSON.stringify(c));
+  const oneRow = await p.evaluate(() => { const r = document.querySelector("#m-compose .mc-files"); return r.getBoundingClientRect().height <= 60; });
+  if (!oneRow) fail(tag + "the chip row is more than one row");
+
+  // The X removes its own path only.
+  await p.tap("#m-compose .mc-file:nth-child(1) .mc-fx");
+  if ((await val()).trim() !== "/w/b.txt") fail(tag + "after remove " + JSON.stringify(await val()));
+  if ((await p.evaluate(() => window.__revoked)) < 1) fail(tag + "the thumbnail was not revoked");
+
+  // A failed upload shows its reason and inserts nothing.
+  up.mode = "fail";
+  const before = await val();
+  await mk(["bad.png"]);
+  const bad = await p.evaluate(() => (document.querySelector("#m-compose .mc-file[data-state=err] .mc-fstate") || {}).textContent);
+  if (!/no room/.test(bad || "")) fail(tag + "failed chip says " + JSON.stringify(bad));
+  if ((await val()) !== before) fail(tag + "a failed upload changed the text");
+  up.mode = "ok";
+
+  // A pasted image goes up once.
+  const n0 = up.n;
+  const took = await p.evaluate(() => {
+    const t = document.querySelector("#m-compose .mc-box");
+    const b = Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="), c => c.charCodeAt(0));
+    const dt = new DataTransfer();
+    dt.items.add(new File([b], "pasted.png", { type: "image/png" }));
+    const e = new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true });
+    t.dispatchEvent(e);
+    return e.defaultPrevented;
+  });
+  await p.waitForFunction(() => document.querySelector("#m-compose .mc-box").value.includes("/w/pasted.png"), null, { timeout: slow(5000) });
+  await p.waitForTimeout(200);
+  if (!took || up.n !== n0 + 1) fail(tag + "the paste uploaded " + (up.n - n0) + " times");
+
+  // Send clears the chips.
+  await p.tap("#m-compose .mc-send");
+  await p.waitForTimeout(300);
+  if (await p.evaluate(() => document.querySelectorAll("#m-compose .mc-file").length)) fail(tag + "chips after a send");
+  if (calls.message.length !== 1) fail(tag + "sends " + calls.message.length);
+  await ctx.close();
+  if (errors.length) fail(tag + "the page threw: " + errors.join(" | "));
+}
+
 // ── the phone page's composer and permission rows (u-025) ─────────────────
 // Headless, with window.mStore stubbed and every endpoint answered by page.route on a fake origin, so this
 // needs neither u-024's page nor a daemon. Views 390x844 and 412x915 with touch.
@@ -12236,7 +12522,8 @@ async function main() {
       growlStack: growlStackSection, growlActions: growlActionsSection, growlModal: growlModalSection, growlQuiet: growlQuietSection, growlAttention: growlAttentionSection, growlPhone: growlPhoneSection, mGrowl: mGrowlSection, growlPopout: growlPopoutSection,
       cacheChip: cacheChipSection, cacheLine: cacheLineSection, mHome: mHomeSection, mCard: mCardSection, mServe: mServeSection, phoneKeyLabel: phoneKeyLabelSection, phoneKeyLit: phoneKeyLitSection, shiftMenu: shiftMenuSection, notifyCommand: notifyCommandSection, presence: presenceSection, tallPty: tallPtySection, roomsMachine: roomsMachineSection, readyOnce: readyOnceSection, readyPopout: readyPopoutSection, popoutNotify: popoutNotifySection, readyTwoWindows: readyTwoWindowsSection,
       cardUrlTable: cardUrlTableSection, cardUrlClash: cardUrlClashSection, cardUrlLinks: cardUrlLinksSection, cardUrlRoom: cardUrlRoomSection, mCardUrl: (b) => mCardUrlSection(b), cardUrlNotify: cardUrlNotifySection,
-      clock: clockSection };
+      clock: clockSection,
+      composeImages: composeImagesSection, composePaste: composePasteSection, mComposeImages: mComposeImagesSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -14248,6 +14535,9 @@ async function main() {
     await mCardUrlSection(browser);
     await cardUrlNotifySection(browser, base);
     await clockSection(browser, base);
+    await composeImagesSection(browser, base);
+    await composePasteSection(browser, base);
+    await mComposeImagesSection(browser);
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e));
     if (process.env.DEBUG_HEADLESS) {

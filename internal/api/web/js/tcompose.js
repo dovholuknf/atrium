@@ -27,6 +27,14 @@ function tcomposeInsert(text) {
   return window.mCompose.insert(text);
 }
 
+// A batch of files for the composer: one upload, one chip each, paths at the caret. False when there is no
+// composer, and the caller uploads into the terminal as before.
+function tcomposeAttach(files) {
+  if (!tcomposeFor || !window.mCompose) return false;
+  window.mCompose.attach(files);
+  return true;
+}
+
 function tcomposeSync() {
   const host = document.getElementById("t-compose");
   if (!host || !window.mCompose) return;
@@ -41,6 +49,12 @@ function tcomposeSync() {
   tcomposeFor = want;
   window.mCompose.mount(host, want, {
     compact: true, maxLines: 4, follow: false, noteMs: 2500,
+    canUpload: () => !isGuest(),
+    upload: (files) => {
+      const form = new FormData();
+      for (const f of files) form.append("file", f, f.name);
+      return api(`/v1/tasks/${want}/files`, { method: "POST", body: form });
+    },
     canPaste: () => !!((term && term.modes && term.modes.bracketedPasteMode) || termCaps.bracketed_paste),
     send: async (text) => {
       if (!termSock || termSock.readyState !== WebSocket.OPEN) throw new Error("the terminal is not connected");
