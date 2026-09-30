@@ -167,7 +167,7 @@ func gitStatusCmd(prefix string) *cobra.Command {
 		Short: "What the hub last did: each mirror, and each room's sync state",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			var out gitsync.Status
+			var out gitsync.HubStatus
 			if err := hubCall(&f, http.MethodGet, "/_hub/git/status", nil, &out); err != nil {
 				return err
 			}

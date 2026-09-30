@@ -21,9 +21,6 @@ type Repo struct {
 	Branch string `json:"branch"`
 }
 
-// IntegrationBranch is what an empty branch means.
-const IntegrationBranch = "claude/main"
-
 // ValidateRepo says whether an entry may be mirrored, and why not in words the operator
 // reads.
 //

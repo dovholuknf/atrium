@@ -263,7 +263,7 @@ func (h *Hub) mirrorOne(ctx context.Context, r Repo) (mirrored, error) {
 			return mirrored{}, err
 		}
 	}
-	h.removeStaleLocks(filepath.Join(bare, "refs"), filepath.Join(bare, "packed-refs.lock"))
+	h.cleanLocks(bare, "refs", "packed-refs")
 	// HEAD ALWAYS NAMES THE INTEGRATION BRANCH. Upload-pack advertises `symref=HEAD:<target>`
 	// even when HEAD is hidden, so a HEAD that pointed at a room's branch would say its name.
 	if cur, _ := run.Git(ctx, bare, "symbolic-ref", "-q", "HEAD"); strings.TrimSpace(cur) != "refs/heads/"+r.Branch {
@@ -298,26 +298,12 @@ func short(sha string) string {
 	return sha
 }
 
-// removeStaleLocks removes *.lock files older than the command bound, under paths this
-// side owns. A lock younger than that may be a command still running. Anything else is
-// git's to report in its own words and is never cleaned.
-func (h *Hub) removeStaleLocks(paths ...string) {
-	bound := h.runner().Bound
-	if bound <= 0 {
-		bound = CommandBound
-	}
-	for _, root := range paths {
-		_ = filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
-			if err != nil || d.IsDir() || !strings.HasSuffix(p, ".lock") {
-				return nil
-			}
-			if info, err := d.Info(); err == nil && time.Since(info.ModTime()) > bound {
-				if os.Remove(p) == nil {
-					h.audit("", "git-lock-removed", p)
-				}
-			}
-			return nil
-		})
+// cleanLocks removes stale locks under the refs this side owns in gitDir, and says so. A
+// stale lock anywhere else is left, and git reports it in its own words when it trips on it.
+func (h *Hub) cleanLocks(gitDir string, owned ...string) {
+	removed, _ := CleanLocks(gitDir, owned, h.runner().Bound)
+	for _, p := range removed {
+		h.audit("", "git-lock-removed", p)
 	}
 }
 
@@ -400,7 +386,7 @@ func (h *Hub) askRoom(ctx context.Context, room, name string, init bool) SyncRes
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if resp.StatusCode != http.StatusOK {
-		res.Detail = fmt.Sprintf("the room answered %d: %s", resp.StatusCode, firstLine(string(raw)))
+		res.Detail = fmt.Sprintf("the room answered %d: %s", resp.StatusCode, lineOf(string(raw)))
 		return res
 	}
 	var ans struct{ State, SHA, Detail string }
@@ -413,7 +399,7 @@ func (h *Hub) askRoom(ctx context.Context, room, name string, init bool) SyncRes
 	return res
 }
 
-func firstLine(s string) string {
+func lineOf(s string) string {
 	s = strings.TrimSpace(s)
 	if i := strings.IndexByte(s, '\n'); i >= 0 {
 		s = s[:i]
@@ -478,8 +464,7 @@ func (h *Hub) collectOne(ctx context.Context, room, key string, r Repo) CollectR
 		cr.Error = "the hub has not mirrored this repository yet"
 		return cr
 	}
-	ownedRefs := filepath.Join(bare, "refs", "rooms", key)
-	h.removeStaleLocks(ownedRefs, filepath.Join(bare, "packed-refs.lock"))
+	h.cleanLocks(bare, "refs/rooms/"+key, "packed-refs")
 
 	before, _ := listRefs(ctx, run, bare, "refs/rooms/"+key+"/")
 
@@ -524,7 +509,7 @@ func (h *Hub) deliver(ctx context.Context, r Repo, key string) error {
 	run := h.runner()
 	ck := slash(r.Checkout)
 	if common, err := run.Git(ctx, ck, "-c", "safe.directory="+ck, "rev-parse", "--path-format=absolute", "--git-common-dir"); err == nil {
-		h.removeStaleLocks(filepath.Join(strings.TrimSpace(common), "refs", "remotes", key))
+		h.cleanLocks(strings.TrimSpace(common), "refs/remotes/"+key)
 	}
 	args := []string{"-c", "safe.directory=" + ck, "fetch", "-q", "--no-tags", "--no-write-fetch-head", "--prune",
 		slash(h.Bare(r.Name)), "+refs/rooms/" + key + "/claude/*:refs/remotes/" + key + "/claude/*"}
@@ -667,18 +652,18 @@ func (h *Hub) tellRooms(ctx context.Context, name string) {
 	}
 }
 
-// Status is what the hub knows, for the board and the CLI.
-type Status struct {
+// HubStatus is what the hub knows, for the board and the CLI.
+type HubStatus struct {
 	Repos  []Repo                `json:"repos"`
 	Mirror []MirrorState         `json:"mirror"`
 	Rooms  map[string]*RoomState `json:"rooms"`
 }
 
-func (h *Hub) Status() Status {
+func (h *Hub) Status() HubStatus {
 	repos, _ := h.Repos()
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	st := Status{Repos: repos, Rooms: map[string]*RoomState{}}
+	st := HubStatus{Repos: repos, Rooms: map[string]*RoomState{}}
 	for _, m := range h.mirror {
 		st.Mirror = append(st.Mirror, m)
 	}
