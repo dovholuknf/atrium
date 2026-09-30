@@ -1,6 +1,8 @@
 package daemon
 
 import (
+	"encoding/json"
+	"os"
 	"testing"
 	"time"
 )
@@ -46,6 +48,62 @@ func TestOutputAtMovesOnANewReply(t *testing.T) {
 	d.forgetOutput(map[string]bool{})
 	if d.outputAtFor(f.task.ID) != "" {
 		t.Fatal("a closed card kept its output time")
+	}
+}
+
+// A line still being written is not skipped: the read stops before it, and the
+// next read takes it whole.
+func TestOutputAtWaitsForAWholeLine(t *testing.T) {
+	f := newUsageFix(t)
+	d := &Daemon{st: f.st, usage: f.u, ctx: newContextSizes()}
+	transcriptReply(t, f.path, "m1", f.base, false, textBlock("first"))
+	if !d.outputMoved(f.task) {
+		t.Fatal("the first reply did not move output_at")
+	}
+	b, _ := json.Marshal(map[string]any{
+		"type": "assistant", "timestamp": f.base.Add(time.Minute).Format(time.RFC3339Nano),
+		"message": map[string]any{"id": "m2", "content": []any{textBlock("second")}},
+	})
+	half := len(b) / 2
+	appendRaw(t, f.path, b[:half])
+	if d.outputMoved(f.task) {
+		t.Fatal("half a line moved output_at")
+	}
+	appendRaw(t, f.path, append(b[half:], '\n'))
+	if !d.outputMoved(f.task) {
+		t.Fatal("the line, once whole, was never read")
+	}
+	if got := d.outputAtFor(f.task.ID); got != f.base.Add(time.Minute).UTC().Format(time.RFC3339Nano) {
+		t.Fatalf("output_at is %q", got)
+	}
+}
+
+func appendRaw(t *testing.T, path string, b []byte) {
+	t.Helper()
+	fh, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fh.Close()
+	if _, err := fh.Write(b); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A check armed before Close never runs.
+func TestCloseStopsAPendingOutputCheck(t *testing.T) {
+	f := newUsageFix(t)
+	d := &Daemon{st: f.st, usage: f.u, ctx: newContextSizes()}
+	transcriptReply(t, f.path, "m1", f.base, false, textBlock("hello"))
+	d.outputSoon(f.task.ID)
+	d.stopOutput()
+	time.Sleep(outputCheckDelay + 200*time.Millisecond)
+	if d.outputAtFor(f.task.ID) != "" {
+		t.Fatal("a check armed before Close read the transcript")
+	}
+	d.outputSoon(f.task.ID)
+	if len(d.output.pending) != 0 {
+		t.Fatal("a check was armed after Close")
 	}
 }
 
