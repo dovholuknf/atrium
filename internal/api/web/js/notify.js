@@ -269,6 +269,7 @@ if (soloBus) {
     }
     if (m.type === "solo-claim" && m.task) {
       soloHeld.set(m.task, Date.now());
+      if (typeof growlDraw === "function") growlDraw();
       // AND THE BOARD LETS GO OF IT.
       //
       // Every claim used to be for a card the board had just popped out, and
@@ -296,6 +297,8 @@ if (soloBus) {
       // so the handle outlives the claim, and the board would go on refusing to
       // attach and "raising" a window that is showing something else entirely.
       popOuts.delete(m.task);
+      // The board's growler for that card stops saying it is muted, and the board rings it again.
+      if (typeof growlDraw === "function") growlDraw();
     }
     // A popped-out window asking to be closed, because it cannot reliably
     // close itself.
@@ -650,6 +653,20 @@ const alerting = (() => {
     // WHO RAISES the alert. Where it lands is the rest of this function.
     if (taskFor && poppedOut(taskFor)) return;
 
+    // A GROWLER ALREADY SITS ON THE BOARD, so it never toasts: what it asks for is the operating system's
+    // attention when nobody is looking. The tone is the caller's, through `play`. The toast log line is the
+    // growler's own, written once by js/growl.js, so this path records nothing. See the header above.
+    if (opts.growl) {
+      if (notifyHeld(goTo) || focusIsHere() || focusIsElsewhere()) return;
+      if (!prefs.muted && prefs.desktop !== false && desktopAllowed()) {
+        showNotification(title, body, goTo, permId, subject, mark, taskFor || artFor || null, opts.growl.key || "", {
+          tag: "atrium-growl:" + opts.growl.id, sticky: true, retire: "growl:" + opts.growl.id,
+          onShown: opts.growl.onShown
+        });
+      }
+      return;
+    }
+
     // THE MASTER SWITCH (item 79), over item 44's filter and over a card's own
     // tone. HELD BACK MEANS RECORDED: no toast, no desktop notification and no
     // sound, but the drawer and the bell's badge still get the entry, once.
@@ -802,6 +819,8 @@ const alerting = (() => {
       if (isNaN(since)) return;
       const waitedMs = now - since;
       if (waitedMs < 60000) return;
+      // A growler is on screen for this request and its reminders are the growler's.
+      if (typeof growlHas === "function" && growlHas(p.id)) return;
 
       // THE OPERATOR'S BACKOFF: 1m, 2m, 5m, 10m, 30m, 1h, 2h, 4h, 8h, 24h, then
       // daily. The same schedule the room uses for a silent stop and a stuck
@@ -1273,19 +1292,22 @@ if ("serviceWorker" in navigator) {
 }
 
 // `retireBy` is the pending item it goes with, empty for one nothing answers.
-function showNotification(title, body, goTo, permId, subject, mark, taskFor, retireBy) {
+// `opts` is a growler's: its own tag, sticky whatever the reason, the subject to retire it by, and a callback
+// handed the notification when this page made it directly.
+function showNotification(title, body, goTo, permId, subject, mark, taskFor, retireBy, opts) {
   if (!("Notification" in window) || Notification.permission !== "granted") return null;
+  opts = opts || {};
   const expiry = Number(alerting.get().expiry) || 0;
   // Sticky means Windows never takes it down by itself. That is right for a
   // blocked agent and wrong forever, so an expiry overrides it.
-  const sticky = goTo === "perms" && expiry === 0;
+  const sticky = opts.sticky || (goTo === "perms" && expiry === 0);
 
   // One tag per subject. A shared tag replaces the notification already on
   // screen, so two agents finishing within a few seconds of each other showed
   // one name and the other went by unseen. The subject is the card or the
   // request, and a summary of several has none, which is correct: those are
   // meant to replace each other.
-  const tag = (goTo === "perms" ? "atrium-perm" : "atrium") + (subject ? ":" + subject : "");
+  const tag = opts.tag || (goTo === "perms" ? "atrium-perm" : "atrium") + (subject ? ":" + subject : "");
 
   // An uploaded picture is used as it is. A glyph is drawn.
   //
@@ -1310,11 +1332,11 @@ function showNotification(title, body, goTo, permId, subject, mark, taskFor, ret
       type: "notify", title, body: body || "",
       icon: art,
       tag,
-      sticky, expireMs: expiry * 1000, goTo, permId: permId || "",
+      sticky, expireMs: opts.sticky ? 0 : expiry * 1000, goTo, permId: permId || "",
       // What this is about, so it can be taken down once that is answered.
       // permId only exists for a permission, and a card that has gone ready
       // and then been replied to had nothing to retire it by.
-      subject: retireBy || permId || "",
+      subject: opts.retire || retireBy || permId || "",
       // Where a click on the body lands. See `landOnAlert`.
       taskFor: taskFor || "", key: retireBy || permId || "",
       origin: location.origin
@@ -1341,7 +1363,8 @@ function showNotification(title, body, goTo, permId, subject, mark, taskFor, ret
     n.close();
     landOnAlert(taskFor || "", goTo || "", retireBy || permId || "");
   };
-  if (expiry > 0) setTimeout(() => n.close(), expiry * 1000);
+  if (expiry > 0 && !opts.sticky) setTimeout(() => n.close(), expiry * 1000);
+  if (opts.onShown) opts.onShown(n);
   return n;
 }
 
