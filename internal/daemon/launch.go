@@ -1615,11 +1615,6 @@ func (d *Daemon) Kill(taskID string) error {
 		return errors.New("atrium does not know this runner's process. " +
 			"a window-mode launch is handed to the terminal and owns itself, so close it there")
 	}
-	// TERMINATE IS A DECISION, like an asked exit, and keeps the card down across
-	// a restart. See store.ExitAsked.
-	if err := d.st.SetExitAsked(taskID); err != nil {
-		return err
-	}
 	// A process that is already gone is not a failure. The request was "make
 	// this stop running", and it is not running, so the card converges to dead
 	// and the caller is told it worked. Reporting an error here made asking to
@@ -1636,6 +1631,12 @@ func (d *Daemon) Kill(taskID string) error {
 		}
 	}
 
+	// TERMINATE IS A DECISION, like an asked exit, and keeps the card down across
+	// a restart. Recorded once the process is stopped or gone, never before: a
+	// kill that failed leaves the card running, and it must not stay down.
+	if err := d.st.SetExitAsked(taskID); err != nil {
+		return err
+	}
 	detected := "you"
 	if gone {
 		detected = "already gone"
