@@ -114,9 +114,11 @@ Framed messages, one connection per daemon, a control stream and multiplexed pty
 
 - `hello {proto, build}` both ways. A daemon that needs a newer `proto` than the host speaks does not use that host
   for new launches (section 6). The build string is shown on the board.
-- `spawn {id, argv, env, cwd, cols, rows, ring}` answers `{pid}`.
-- `list` answers every pty: `{id, pid, cols, rows, started, exited, exit_code, ring_start, out_offset}`.
-- `attach {id, from}` streams output from an absolute byte offset. A `from` older than the ring's start gets the
+- `spawn {id, argv, env, cwd, cols, rows, ring}` answers `{pid, run_id}`. `run_id` is assigned by the host, unique
+  for the host's lifetime and never reused, and it names this one runner start. A card started again gets a new one.
+- `list` answers every pty:
+  `{id, run_id, pid, cols, rows, started, exited, exit_code, ring_start, out_offset}`.
+- `attach {id, run_id, from}` streams output from an absolute byte offset. A `from` older than the ring's start gets the
   whole ring and a `truncated` flag, which is the replay case. The answer carries the retained bytes WITH their size
   cuts: the same `(offset, cols, rows)` marks `ringBuffer.ReplayCuts` returns today (`supervisor.go`, `sizeCut` in
   `screen.go`), because a screen model rebuilt from bytes alone replays every resize at the wrong width. The host
@@ -124,7 +126,8 @@ Framed messages, one connection per daemon, a control stream and multiplexed pty
 - `write {id, bytes}`, `signal {id, term|kill}`.
 - `resize {id, cols, rows}` records a cut at the current offset BEFORE applying the pty resize, as the ring does
   today, so the cut and the first byte at the new size can never be out of order.
-- `collect {id}` acknowledges an exit, and only then does the host forget that pty and its ring.
+- `collect {id, run_id}` acknowledges an exit, and only then does the host forget that pty and its ring. A `run_id`
+  that does not match the pty's is refused, so a late collect can never forget a later start.
 
 Absolute offsets make a reattach exact: the new daemon replays the ring from its start into a fresh screen model and
 then follows live, with no byte seen twice or skipped. The output is always at the width it was written at, because
@@ -134,8 +137,11 @@ the cuts say what the width was, which is the problem `supervision-design.md` sp
 first attaches and replays the retained output and its cuts into a screen model. Only then does it file the exit:
 the event, the dead-card attribution and the tail it reads for a startup failure, exactly as a live exit is filed
 today. It sends `collect` only after that filing is durable in the store. A crash between the two leaves the pty
-listed, and the next daemon files it again. So filing an exit MUST be idempotent per card and runner start: stage 2
-checks that it is, and makes it so where it is not. Collecting first would lose the last screen and could attribute the death wrongly, so it is not allowed.
+listed, and the next daemon files it again. So filing an exit MUST be idempotent on `(task_id, run_id)`. The daemon
+stores `run_id` with the runner start, and the exit event and the dead-card attribution are keyed on the pair, so a
+second filing of the same exit is a no-op and the exit of a later start is never taken for it. The pid and the start
+time are not the key, because a pid is reused and two implementers would pick different clocks. Stage 1 adds the
+column and stage 2 checks every exit path uses it. Collecting first would lose the last screen and could attribute the death wrongly, so it is not allowed.
 
 ### 3.3 Its lifetime
 
@@ -174,8 +180,10 @@ runners together, and the next start resumes them as today.
      (`exited`), and the new daemon files it as the reaper would have. A runner cannot start in the gap, because
      only the daemon spawns.
    - **A permission request in flight.** Its long-poll breaks when the old daemon exits, and today that fails open
-     to Claude's own prompt in the terminal. MUST: the gate, on a refused or reset connection, retries with the
-     SAME dedup key (`tool_use_id`) for up to 30 seconds before failing open. The request row is durable, so the new
+     to Claude's own prompt in the terminal. MUST: the gate treats ANY answer that is not a decision as retryable:
+     a refused or reset connection, a timeout, a non-2xx status (a daemon closing its store, or a new one not yet
+     migrated), or a 2xx with no decision in it. It retries with the SAME dedup key (`tool_use_id`) for up to 30
+     seconds, then fails open to the runner's own prompt without recording an allow anywhere. The request row is durable, so the new
      daemon re-surfaces it and chain step 1 (a replayed decision) answers it once. That keeps the fail-open guarantee
      (a bounded wait, then open) and keeps the question on the board. f-006 moves the gate into Go (`atrium hook
      --event permission`), which is where this retry belongs, so f-011 stage 2 depends on f-006.
@@ -296,7 +304,10 @@ If B is refused, A is buildable, and these are the answers it would need. Each i
   under the real room scheduled task and under a systemd user unit. About a day. The design stands or falls on it.
 - **Stage 1, the host and the split (@terminal).** `atrium ptyhost`, the protocol in section 3.2, the supervisor
   talking to it, and reattach with ring replay. No change in behaviour yet: the daemon still stops its runners on
-  stop. Behind a setting, off by default.
+  stop. Behind a setting, off by default. Acceptance: with the setting off, restart, stop, reopen and attach replay
+  behave exactly as today and every existing supervisor, attach and restart test passes unchanged. With it on, the
+  same tests pass, plus host tests for reattach replay, a resize after reattach, and an exit filed once across a
+  daemon crash between filing and `collect`.
 - **Stage 2, the restart that leaves runners up (@runtime).** The gate and the re-derivation list in section 5, the
   line-unknown rule, `atrium stop` versus `atrium stop --runners`, and the gate's 30-second retry, which needs f-006.
 - **Stage 3, rooms (@fabric).** `restart_atrium` and `provision-room.ps1 -Restart` use it. Plus the systemd and Task
