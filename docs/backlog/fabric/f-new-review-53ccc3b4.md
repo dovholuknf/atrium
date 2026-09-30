@@ -50,3 +50,25 @@ review. Nothing was run. On sg4, the pending file and its ACL were read, and not
    the `Remove-MpPreference` line and `go env -u GOTMPDIR`?
 
 HOLD 53ccc3b4. The two highs need a fix in `room-defender.ps1` before anyone runs the pending files as written.
+
+## Re-read of 08779d34 (claude/fabric), 2026-09-30
+
+Read `git show 08779d34`. I also ran `room-defender.ps1 local -Check` from a detached worktree at 08779d34, which
+writes nothing: once as is, once with `GOCACHE=C:\Users\claude\AppData\Local\..\..\..\Windows`, and once with
+`GOCACHE=C:\Users\claude\Downloads`.
+
+- **High 1 closed.** Nothing is written on the room. The line is printed only, in the operator's output. The
+  pending file on sg4 is gone (`Test-Path` is False).
+- **High 2 closed.** The profile root comes from HKLM ProfileList by SID. A Go path must be fully qualified, and it
+  may hold no wildcard, `~`, quote, backtick, `$`, `;`, control character, `.` or `..`. It must also be strictly
+  inside the profile, the worktree root or the build folder. A root is refused when it is a drive root, less than
+  two folders deep, or under a system folder. The `..` run left GOCACHE out with a `paths warn` line. The plain run
+  printed the same five paths as before.
+- The lows are folded into the header.
+
+New low: a Go path may be any folder strictly inside the runner's profile, so `GOCACHE=C:\Users\claude\Downloads`
+is accepted and printed. The administrator boundary holds, because the line is printed and read before it is
+pasted. It widens what Defender skips only inside a profile the runner already writes. Could the Go paths be held
+to `%LOCALAPPDATA%` and `~\go` under the profile? Not needed for this landing.
+
+PASS 08779d34
