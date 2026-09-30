@@ -16,7 +16,7 @@ import (
 )
 
 // The after-restart wake: a prompt typed into a card's terminal once, when its
-// runner is back after a restart. See docs/restart-wake.md.
+// runner is back after a restart. See docs/runtime/restart-wake.md.
 //
 // A room restart ends every terminal it owns. The fixtures and reopenSaved bring
 // the sessions back, and a resumed session sits idle until somebody types into
@@ -268,7 +268,7 @@ func (d *Daemon) tryWake(w *store.RestartWake, now time.Time) {
 	}
 	// The same gate every automated write goes through, plus the turn. A dialog
 	// on screen would be answered by the Enter. A runner mid-turn holds what is
-	// typed and merges it with the operator's draft. See docs/typing-race.md.
+	// typed and merges it with the operator's draft. See docs/terminal/typing-race.md.
 	if d.act.dialogOpen(w.TaskID) || d.act.midTurn(w.TaskID) {
 		return
 	}

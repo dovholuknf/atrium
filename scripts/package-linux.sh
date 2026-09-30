@@ -146,4 +146,4 @@ echo
 echo
 echo "in $out"
 echo
-echo "nothing was published and nothing was signed. see docs/packaging.md."
+echo "nothing was published and nothing was signed. see docs/release/packaging.md."

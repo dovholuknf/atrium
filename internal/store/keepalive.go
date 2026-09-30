@@ -9,7 +9,7 @@ import (
 
 // The cache keep-alive's durable half: each card's switch, the room's default
 // and suspension, and the ledger of every refresh. See
-// docs/cache-keepalive-design.md. The daemon decides when to refresh. This file
+// docs/runtime/cache-keepalive-design.md. The daemon decides when to refresh. This file
 // only keeps the rows.
 
 // SettingKeepaliveDefault is whether a NEW Claude card starts with keep-alive

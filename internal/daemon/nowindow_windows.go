@@ -33,7 +33,7 @@ const createNoWindow = 0x08000000
 // allocated before anything is asked about how to show it.
 //
 // DELIBERATELY NOT APPLIED TO A RUNNER. Window launch mode exists to put a
-// real terminal on screen, and `docs/supervision-design.md` is about the case
+// real terminal on screen, and `docs/terminal/supervision-design.md` is about the case
 // where atrium owns the terminal instead. Both are windows somebody asked for.
 // This is for the commands nobody asked to watch.
 func hideWindow(cmd *exec.Cmd) {

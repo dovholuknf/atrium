@@ -10,7 +10,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
-// The daemon's half of stage 1 of docs/work-ledger-design.md: a launch makes
+// The daemon's half of stage 1 of docs/runtime/work-ledger-design.md: a launch makes
 // the item, a report and a message land on it, the sweep finds what no exit
 // path reached, and the snapshot file follows.
 

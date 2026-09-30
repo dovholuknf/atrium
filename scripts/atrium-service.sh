@@ -26,7 +26,7 @@
 # fine and both say what they found.
 #
 # This is also what the CI workflow would call, if there were a Linux machine
-# here to call it on. There is not, and docs/packaging.md says which parts of
+# here to call it on. There is not, and docs/release/packaging.md says which parts of
 # this file have therefore never executed.
 
 set -euo pipefail

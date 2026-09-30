@@ -14,7 +14,7 @@ import (
 )
 
 // The work ledger: who was handed what, where it is, and who said it was done.
-// See docs/work-ledger-design.md for the whole argument.
+// See docs/runtime/work-ledger-design.md for the whole argument.
 //
 // A card another session launched gets a WORK ITEM. Its state is a second axis
 // beside the card's column. The column says what the session is doing, the

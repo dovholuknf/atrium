@@ -27,10 +27,10 @@ import (
 //
 // The statusline script itself lives outside this repository. What atrium owns
 // is this endpoint, what the board draws from it, and the contract in
-// `docs/statusline-telemetry.md`, which is written to be implementable without
+// `docs/runtime/statusline-telemetry.md`, which is written to be implementable without
 // asking anybody a question.
 //
-// NEVER STORED, for the reason in `docs/activity-design.md`. A context figure
+// NEVER STORED, for the reason in `docs/runtime/activity-design.md`. A context figure
 // is a fact about a process that is running right now. Written down, it
 // survives the restart that killed the session it described and becomes a
 // confident lie about which agent needs you.
@@ -270,7 +270,7 @@ func telemetryKey(in TelemetryEvent) string {
 
 // taskForTelemetry resolves a post to a card, or "".
 //
-// Order matters and is documented in `docs/statusline-telemetry.md`: the card
+// Order matters and is documented in `docs/runtime/statusline-telemetry.md`: the card
 // id outright, then the harness's session id against the resume id atrium
 // already records, then the wire name every other hook uses. A statusline is
 // handed the session id and nothing else, so the middle one is the path that

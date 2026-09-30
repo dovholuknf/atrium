@@ -16,7 +16,7 @@ import (
 //
 // The point is a machine that can be rebuilt from a checkout: the harnesses,
 // the fixtures, the sources, the actions, the rules, the skin, the timers.
-// `docs/scm-design.md` has the design and this is the outbound half of it.
+// `docs/runtime/scm-design.md` has the design and this is the outbound half of it.
 //
 // THE HARD PART IS WHAT MUST NOT LEAVE, and the failure mode is why. A secret
 // pushed to a repository is still in the history after it is deleted, so this

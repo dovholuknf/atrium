@@ -45,7 +45,7 @@ func guestGet(h http.Handler, path string) *httptest.ResponseRecorder {
 // on the same path the share already allows. Without an explicit refusal, a
 // WRITABLE guest could append `?kind=shell` to the one route they are given
 // and reach a shell in the card's working directory. That is not lending a
-// session, it is lending the machine, and it is the line `docs/overlays.md`
+// session, it is lending the machine, and it is the line `docs/fabric/overlays.md`
 // says atrium does not cross.
 func TestAWritableGuestCannotReachTheShell(t *testing.T) {
 	d, _, cancel, _ := startDaemon(t)

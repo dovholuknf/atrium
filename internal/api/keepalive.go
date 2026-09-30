@@ -15,7 +15,7 @@ import (
 
 // The cache keep-alive's HTTP half: the per-card switch, and the room's default
 // and suspension on the settings screen. The daemon owns the loop. See
-// docs/cache-keepalive-design.md.
+// docs/runtime/cache-keepalive-design.md.
 
 // setKeepalive flips one card's switch. `{"on": true}` turns it on, which also
 // clears any stopped state and restarts the card's budget.

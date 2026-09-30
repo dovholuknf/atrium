@@ -23,8 +23,8 @@ import (
 // Scoped is a byte pipe and needs none of this. Aggregate cannot be a pipe,
 // because you cannot forward one request to four rooms and concatenate the
 // answers. So the hub parses, merges, and hands back one payload, which is the
-// thing `docs/federation-design-v2.md` ruled out and the operator overrode
-// knowingly. See `docs/hub-room-requirements.md`.
+// thing `docs/rnd/federation-design-v2.md` ruled out and the operator overrode
+// knowingly. See `docs/fabric/hub-room-requirements.md`.
 //
 // ── what is merged, and what is deliberately not ─────────
 //
@@ -104,7 +104,7 @@ var borrowed = map[string]bool{
 	// things to add somewhere unspecified.
 	"/v1/harnesses/discover": true,
 	// WHO MAY OPEN THE BOARD, AND WHERE IT IS PUBLISHED, which
-	// `docs/hub-room-requirements.md` says belong to the hub: there is one
+	// `docs/fabric/hub-room-requirements.md` says belong to the hub: there is one
 	// board and publishing it is the hub's job. Until they move, one room's
 	// answer is what the board draws, and drawing nothing was worse.
 	"/v1/auth":     true,
@@ -376,7 +376,7 @@ func derive(obj map[string]any) {
 //
 // ── and this one IS sorted ───────────────────────────────
 //
-// `docs/hub-room-requirements.md` says cross-room order is not a guarantee,
+// `docs/fabric/hub-room-requirements.md` says cross-room order is not a guarantee,
 // and that stands for the live lists: they carry no shared clock and sorting
 // them would claim one. History is different. Every row has a creation time,
 // the whole point of the list is chronology, and "newest first" is what it
@@ -771,7 +771,7 @@ func (p *Proxy) saveBoardAuto(w http.ResponseWriter, payload []byte, stock Inven
 		return true
 	}
 	// Turning it on empties the queue at once, which is what a person expects
-	// from a button they just pressed. See `docs/auto-mode.md`, "turning it on
+	// from a button they just pressed. See `docs/runtime/auto-mode.md`, "turning it on
 	// empties the queue". Told either way: turning it OFF is what lets the
 	// approver stop watching every room.
 	if ap := p.autoApprover(); ap != nil {

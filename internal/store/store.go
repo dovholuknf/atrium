@@ -152,7 +152,7 @@ type Task struct {
 	// Atrium never learns what a source means. `github`, `zendesk` and `ci`
 	// are strings it renders as a badge and stores, and whoever posted the
 	// item did the reading. That is the whole reason intake can serve a system
-	// nobody has thought of yet. See docs/intake-design.md.
+	// nobody has thought of yet. See docs/runtime/intake-design.md.
 	Source string `json:"source,omitempty"`
 	URL    string `json:"url,omitempty"`
 	// Prompt is the instruction this card was raised with, waiting for a
@@ -188,7 +188,7 @@ type Task struct {
 	Model string `json:"model,omitempty"`
 	// Effort, LaunchArgs and LaunchEnv are the rest of what this card was
 	// launched with, sticky the same way Model is. See
-	// docs/launch-options-design.md. Effort is text the runner is handed in the
+	// docs/runtime/launch-options-design.md. Effort is text the runner is handed in the
 	// shape its harness row declares, never checked against a list.
 	//
 	// THE ENV VALUES NEVER LEAVE THE ROOM. A restart needs them, so they are
@@ -291,12 +291,12 @@ type Task struct {
 	// SpawnedBy is the handle of the session that launched this card, `@human`
 	// for the board's own launch dialog, and empty for a session nobody
 	// launched. SpawnedByID is that session's card id when it was known at
-	// launch. Written once, by `SetLineage`. See docs/agent-lineage-design.md.
+	// launch. Written once, by `SetLineage`. See docs/rnd/agent-lineage-design.md.
 	SpawnedBy   string `json:"spawned_by,omitempty"`
 	SpawnedByID string `json:"spawned_by_id,omitempty"`
 	// ReportedAt is the last time this card said something to its launcher: a
 	// structured report, or a peer message to it. See
-	// docs/a2a-reliability-design.md.
+	// docs/runtime/a2a-reliability-design.md.
 	ReportedAt *time.Time `json:"reported_at,omitempty"`
 	// ReportSHA is the commit a `done` report named. ReportUnverified is set
 	// when that commit is not in this card's worktree, and the board flags it.

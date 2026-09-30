@@ -1266,7 +1266,7 @@ async function uploadIntoTerm(files) {
   // instruction being sent. A pasted path is a fragment of an instruction the
   // human is still writing, and submitting it for them is the difference
   // between a helpful paste and a runner that starts working on half a
-  // sentence. docs/supervision-design.md is why this matters: atrium owns a
+  // sentence. docs/terminal/supervision-design.md is why this matters: atrium owns a
   // real terminal that a person may be mid-command in.
   const paths = (res.paths || []).join(" ");
   // The preamble says what the path is for. A bare path is what a person types

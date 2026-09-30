@@ -12,7 +12,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
-// Step 1 of docs/turn-end-spike.md: the Stop that ends a turn a Stop hook
+// Step 1 of docs/rnd/turn-end-spike.md: the Stop that ends a turn a Stop hook
 // continued now reaches the room, flagged, and the room treats it as a turn
 // that really is over.
 

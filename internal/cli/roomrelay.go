@@ -10,7 +10,7 @@ import (
 
 // linkRelay is the daemon's Relay over a room's link to its hub. Here because
 // internal/daemon and internal/link do not import each other, and this is the
-// one place that holds both. See docs/cross-room-say-design.md.
+// one place that holds both. See docs/fabric/cross-room-say-design.md.
 type linkRelay struct{ room *link.Room }
 
 func (l linkRelay) Say(ctx context.Context, s daemon.RelaySay) (daemon.RelayResult, error) {

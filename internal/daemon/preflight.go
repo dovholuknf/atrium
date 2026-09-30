@@ -29,7 +29,7 @@ import (
 // `env_present` answers a boolean per name and never a value.
 //
 // Not on the agent listener, which every session can reach.
-// See docs/room-requirements-design.md, section 4.
+// See docs/fabric/room-requirements-design.md, section 4.
 
 const (
 	// preflightEach bounds one command, preflightTotal the whole request.

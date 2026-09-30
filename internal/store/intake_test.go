@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// The inbox. See docs/intake-design.md, and the round one review notes in
+// The inbox. See docs/runtime/intake-design.md, and the round one review notes in
 // .mercurius/s_yrt82p4nug6O/round-01/, which is where three of these tests
 // come from.
 

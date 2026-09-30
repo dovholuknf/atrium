@@ -19,7 +19,7 @@ import (
 // keep-alive's own figure, the last main reply's input plus cache writes plus
 // cache reads, read by the same `readLastReply`.
 //
-// NEVER STORED, like activity (docs/activity-design.md). It lives in a map
+// NEVER STORED, like activity (docs/runtime/activity-design.md). It lives in a map
 // here and dies with the process; the next tick reads it again. What IS stored
 // is the notice claim, so a restart does not tell a launcher twice.
 

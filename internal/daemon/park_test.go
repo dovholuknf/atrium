@@ -15,7 +15,7 @@ import (
 )
 
 // r-007 stage 3: the human touch, parking, and a say to a parked card. See
-// docs/keepalive-policy-design.md sections 1, 4, 5 and 6.
+// docs/rnd/keepalive-policy-design.md sections 1, 4, 5 and 6.
 
 func humanStamp(t *testing.T, d *Daemon, id string) (string, bool) {
 	t.Helper()

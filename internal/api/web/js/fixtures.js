@@ -397,7 +397,7 @@ function hooksChip(h) {
 // What stops a runner working in the folders atrium launches it in: a folder
 // it does not trust, a sign-in never done, hooks never wired. The daemon runs
 // the checks and sends them on each row as `setup`. A row with no adapter has
-// no setup and shows nothing here. See docs/runner-setup-design.md.
+// no setup and shows nothing here. See docs/runtime/runner-setup-design.md.
 function setupChip(h) {
   const s = h.setup;
   if (!s) return "";
@@ -1231,7 +1231,7 @@ async function launchRunnerHereNow(harnessID, cwd, ontoTask, room) {
       method: "POST",
       headers,
       // AS HELD, tag and all. The hub routes by the tag and strips it on the
-      // way into the room. See docs/card-room-routing.md.
+      // way into the room. See docs/fabric/card-room-routing.md.
       body: JSON.stringify({ harness: harnessID, cwd: cwd || "", task_id: ontoTask || "" })
     });
   } catch (e) { tellUser("could not start it", e.message); return; }
@@ -1258,7 +1258,7 @@ function launchRoomNow() {
 // room reported from the same PATH lookup launching does, so a runner offered
 // here is one that will run rather than one that fails at exec. An empty room
 // means the one machine's list, which carries no room to match on. See
-// docs/runner-scoping-design.md.
+// docs/fabric/runner-scoping-design.md.
 function launchableHarnesses(room) {
   return allHarnesses.filter(h =>
     h.enabled && h.found && (!room || (h.room || "") === room));
@@ -1518,7 +1518,7 @@ async function launchNow() {
     // AS HELD, `room~id` and all. The room's store keys by the plain id, and
     // the hub is what strips the tag, on the way in, after routing by it. The
     // header alone could name the wrong room (backlog-2 item 63). See
-    // docs/card-room-routing.md.
+    // docs/fabric/card-room-routing.md.
     task_id: launchTarget.task_id || "",
     // No resume id means no resume arguments, so the daemon starts fresh.
     resume: resumeOff ? "" : launchTarget.resume,
@@ -1537,7 +1537,7 @@ async function launchNow() {
     // An empty model uses the runner default for new cards. Existing cards keep
     // their saved model when no replacement is supplied.
     model: document.getElementById("l-model").value.trim(),
-    // The same for the effort. See docs/launch-options-design.md.
+    // The same for the effort. See docs/runtime/launch-options-design.md.
     effort: document.getElementById("l-effort").value.trim()
   });
   // WHAT THE RECOGNISER KNEW, sent only when there was one. The daemon never

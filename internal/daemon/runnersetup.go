@@ -15,7 +15,7 @@ import (
 //
 // NEVER FAILS A LAUNCH. A write that goes wrong is logged and the runner starts
 // anyway, and the runner's own prompt is the fallback. See
-// docs/runner-setup-design.md.
+// docs/runtime/runner-setup-design.md.
 //
 // env is the environment the runner will get, prepare step included, so a
 // GEMINI_CLI_HOME set by the row or by a prepare command is the one honoured.

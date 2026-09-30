@@ -14,7 +14,7 @@ import (
 
 // The stdio atrium control against a fake room board. It must name its sender,
 // take `name@room`, and still work against a room older than /v1/say. See
-// docs/cross-room-say-design.md.
+// docs/fabric/cross-room-say-design.md.
 
 type stdioBoard struct {
 	mu      sync.Mutex

@@ -54,5 +54,5 @@ func checkContextThresholdK(value string) (string, error) {
 
 // ContextSizeOf returns a card's context size as the board draws it, or nil.
 // Supplied by the daemon, which reads it from the card's transcript and holds
-// it in memory. Never stored. See docs/activity-design.md.
+// it in memory. Never stored. See docs/runtime/activity-design.md.
 var ContextSizeOf func(taskID string) any

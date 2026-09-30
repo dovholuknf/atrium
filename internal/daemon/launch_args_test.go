@@ -7,7 +7,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
-// Handing a runner its first instruction. See docs/intake-design.md: this is
+// Handing a runner its first instruction. See docs/runtime/intake-design.md: this is
 // the whole of intake layer 0 on the daemon side, and everything else in that
 // document needs it.
 

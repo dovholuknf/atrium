@@ -570,7 +570,7 @@ type LaunchInput struct {
 	Runner string   `json:"runner,omitempty" jsonschema:"which configured runner to start. default claude"`
 	Tags   []string `json:"tags,omitempty" jsonschema:"free text labels, used for grouping and filtering"`
 	// The launch options, as the hub's atrium_launch takes them. See
-	// docs/launch-options-design.md.
+	// docs/runtime/launch-options-design.md.
 	Model  string            `json:"model,omitempty" jsonschema:"which model the runner starts on, in the shape its runner row declares. not checked against any list. empty is the runner's default"`
 	Effort string            `json:"effort,omitempty" jsonschema:"thinking effort, in the shape its runner row declares. not checked. empty is the runner's default"`
 	Args   []string          `json:"args,omitempty" jsonschema:"extra command-line arguments for the runner, used as given. shown on the card, so keep secrets out"`

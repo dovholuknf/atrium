@@ -95,7 +95,7 @@ if (swAt < 0) {
   }
   if (!/poppedOut\(id\)/.test(body)) {
     fail("soloSwitch does not refuse a card that already has a window. Two views onto one " +
-      "terminal both taking input is the situation docs/supervision-design.md says nothing " +
+      "terminal both taking input is the situation docs/terminal/supervision-design.md says nothing " +
       "arbitrates, and the board refuses it in attachTask for the same reason.");
   }
 }

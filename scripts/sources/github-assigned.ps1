@@ -3,7 +3,7 @@
 # A source is a command atrium runs on a timer whose stdout is a JSON array of
 # intake items. Atrium holds this script's path and an interval. `gh` holds the
 # token, in the keyring it already uses. Atrium never sees it, which is the rule
-# in docs/intake-design.md and the reason a source is a command rather than an
+# in docs/runtime/intake-design.md and the reason a source is a command rather than an
 # integration.
 #
 # Point a source row at this:

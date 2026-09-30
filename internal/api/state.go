@@ -11,7 +11,7 @@ import (
 // ── why this is not `/v1/tasks` ─────────────────────────
 //
 // THE HUB CACHES EXACTLY WHAT THE ROOM PERSISTS, AND NEVER WHAT THE ROOM
-// DECLINES TO PERSIST. That is not a new rule. `docs/activity-design.md` says
+// DECLINES TO PERSIST. That is not a new rule. `docs/runtime/activity-design.md` says
 // what a runner is doing right now is never written down, because it would be
 // a lie the moment the daemon restarted, and a hub writing it down would break
 // that rule at one remove.

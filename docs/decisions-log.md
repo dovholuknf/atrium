@@ -68,7 +68,7 @@ Rules for adding:
 - **Board-share auth** (see docs/interview-log.md): public zrok share auth = OIDC or basic (updb) with creds set on
   the settings screen; a updb login needs BOTH name and password to count; a hub public share gets creds from zrok
   updb only (hub grows no login); JWT-enroll-at-join for both transports.
-- **The board stays loopback, always; off-machine reach is overlay only** (docs/ziti-zrok-flow-design.md).
+- **The board stays loopback, always; off-machine reach is overlay only** (docs/fabric/ziti-zrok-flow-design.md).
 - **Hub-only vs room-side deploys.** The hub holds nothing and is disposable (hub restart deploys embedded board +
   hub/link Go). Room/daemon Go changes need a planned room restart, so work is split into a hub-deployable phase
   now and a room-restart phase parked. See the orchestrator-mode memory.
@@ -78,12 +78,12 @@ Rules for adding:
   - Landing is `scripts/land-claude-main.ps1` (untracked, excluded): one-line subjects, no co-author, authored and
     signed by him, then push. Only his signed commits reach `origin/main`.
   - The orchestrator decides when work is done. A worker's `done` or exit never completes it. Designed as the work
-    ledger (`docs/work-ledger-plan.md`), with his four yeses: done column plus a `reported` chip, board-launched cards
+    ledger (`docs/runtime/work-ledger-plan.md`), with his four yeses: done column plus a `reported` chip, board-launched cards
     tracked only on request, no nag, build stage 1.
   - A peer message is typed only when the input line is empty AND the turn has ended, re-checking, never queued.
   - Workers wear theme `active-work` and tag `atrium:subagent`. The 10-session cap counts only the orchestrator's
     own workers.
   - Deploy scripts keep exactly one revert binary. The docs site ships on GitHub Pages, refreshed only at a release.
     First release is 0.0.1.
-  - The unread dot while running waits on the turn-end spike (`docs/turn-end-spike.md`). Its step 1 (post every Stop)
+  - The unread dot while running waits on the turn-end spike (`docs/rnd/turn-end-spike.md`). Its step 1 (post every Stop)
     and step 2 (nudge a silent worker, reverses "no forced turns") are not yet decided.

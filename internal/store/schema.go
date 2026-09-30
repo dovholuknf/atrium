@@ -468,7 +468,7 @@ var migrations = []struct {
 		// atrium never interprets it: `github`, `zendesk`, `ci` are strings
 		// that become a badge. `url` is the way back to the thing itself,
 		// which is the entire reverse direction worth building. See
-		// docs/intake-design.md.
+		// docs/runtime/intake-design.md.
 		//
 		// The index is on the pair, because the pair is what deduplicates: the
 		// same issue number means different work in two different trackers.
@@ -500,7 +500,7 @@ var migrations = []struct {
 		// the board says in the comment above COLUMNS. An offered item is
 		// exactly what that status was named for: on the board, not started.
 		//
-		// docs/intake-design.md argued for a new `offered` status and
+		// docs/runtime/intake-design.md argued for a new `offered` status and
 		// enumerated the six it was not, skipping this one. Following that
 		// would have meant rebuilding `task` to change a CHECK constraint, and
 		// `task` is the parent of four ON DELETE CASCADE relationships. With
@@ -544,7 +544,7 @@ var migrations = []struct {
 		// GitHub is. Atrium holds an argv and an interval; `gh` holds the
 		// token, in the keyring it already uses.
 		//
-		// That is the rule docs/intake-design.md states and this is what
+		// That is the rule docs/runtime/intake-design.md states and this is what
 		// enforces it: there is nowhere in this table to put a credential.
 		//
 		// The failure bookkeeping is three columns rather than a log, because
@@ -1286,11 +1286,11 @@ var migrations = []struct {
 	},
 	{
 		// WHERE A REPOSITORY LIVES ON THIS MACHINE, declared rather than
-		// rediscovered. See `docs/providers-design.md`.
+		// rediscovered. See `docs/runtime/providers-design.md`.
 		//
 		// The operator names a provider and everything refers to it by that
 		// string, so the NAME is the primary key rather than a ULID with a name
-		// beside it. Same rule `docs/scm-design.md` states for import identity
+		// beside it. Same rule `docs/runtime/scm-design.md` states for import identity
 		// across machines: identity is by name, not by id. The cost is that
 		// renaming is a delete plus an add, which the dialog says on the field.
 		//
@@ -1384,7 +1384,7 @@ var migrations = []struct {
 		// availability the question of whether this path exists on this room
 		// rather than whether a name resolves. Empty keeps PATH resolution of
 		// `cmd`, which is what every existing row wants. See
-		// docs/runner-scoping-design.md.
+		// docs/fabric/runner-scoping-design.md.
 		name: "0054_harness_bin_path",
 		stmts: []string{
 			`ALTER TABLE harness ADD COLUMN bin_path TEXT NOT NULL DEFAULT ''`,
@@ -1393,7 +1393,7 @@ var migrations = []struct {
 	{
 		// WHO STARTED THIS CARD, kept so a worker can address its launcher back.
 		//
-		// See docs/agent-lineage-design.md. Two columns rather than one: the
+		// See docs/rnd/agent-lineage-design.md. Two columns rather than one: the
 		// HANDLE names the parent for a peer message and prints on the card, and
 		// the ID is the direct link the board can click to. Both empty on a card
 		// nobody launched, which is every card written before this existed and
@@ -1411,7 +1411,7 @@ var migrations = []struct {
 	},
 	{
 		// WHAT A WORKER OWES ITS LAUNCHER, and whether atrium can reach a card at
-		// all. See docs/a2a-reliability-design.md.
+		// all. See docs/runtime/a2a-reliability-design.md.
 		//
 		// `reported_at` is the last time the card said something to its launcher:
 		// a structured report, or a peer message to it. A turn that ends later than
@@ -1453,7 +1453,7 @@ var migrations = []struct {
 	},
 	{
 		// Whether the operator has seen a card's latest turn, and the open
-		// questions that turn asked. See docs/seen-design.md.
+		// questions that turn asked. See docs/runtime/seen-design.md.
 		//
 		// A table of its own rather than columns on `task`, because every column
 		// there changes `taskColumns`, `scanTask` and the insert's placeholder
@@ -1478,7 +1478,7 @@ var migrations = []struct {
 	},
 	{
 		// THE WORK LEDGER: who was handed what, where it is, and who said it
-		// was done. See docs/work-ledger-design.md and ledger.go.
+		// was done. See docs/runtime/work-ledger-design.md and ledger.go.
 		//
 		// Two tables of their own rather than columns on `task`, for the reason
 		// `turn_seen` gives. And NO foreign key to `task`, in either table: the
@@ -1543,7 +1543,7 @@ var migrations = []struct {
 	{
 		// THE AFTER-RESTART WAKE: one prompt per card, typed into its terminal
 		// once the card's runner is back after a restart. See
-		// docs/restart-wake.md and restartwake.go.
+		// docs/runtime/restart-wake.md and restartwake.go.
 		//
 		// Durable because the restart it is about ends the process that took it.
 		// One row per card, so a newer wake replaces an older one. A card
@@ -1583,7 +1583,7 @@ var migrations = []struct {
 	},
 	{
 		// THE CACHE KEEP-ALIVE: a card's switch, and every refresh it cost. See
-		// docs/cache-keepalive-design.md and keepalive.go.
+		// docs/runtime/cache-keepalive-design.md and keepalive.go.
 		//
 		// Tables of their own rather than columns on task, because a card that
 		// never ran Claude has no row and no opinion. `keepalive_card.state` is
@@ -1697,7 +1697,7 @@ var migrations = []struct {
 	},
 	{
 		// LAUNCH OPTIONS: a thinking effort, and extra argv and environment
-		// passed through as given. See docs/launch-options-design.md.
+		// passed through as given. See docs/runtime/launch-options-design.md.
 		//
 		// On `harness`, how a runner is ASKED for an effort, the way 0047 added
 		// `model_args`, and the env var names for a runner that takes model or
@@ -1730,7 +1730,7 @@ var migrations = []struct {
 		// hub holds nothing. A sent row is deleted, so the table only ever holds
 		// what is owed. `to_card` is the target's card id on its room when it
 		// is known, which it always is for a launcher notice. See relay.go in
-		// internal/daemon and docs/cross-room-say-design.md.
+		// internal/daemon and docs/fabric/cross-room-say-design.md.
 		name: "0066_relay_outbox",
 		stmts: []string{
 			`CREATE TABLE IF NOT EXISTS relay_outbox (
@@ -1765,7 +1765,7 @@ var migrations = []struct {
 		// report: its opening prompt or a message from the launcher, and nothing
 		// else. `prompted_at` stays the last prompt from anyone. The backfill
 		// keeps a debt that is open today open, on the old wider basis. See
-		// docs/owed-report-design.md.
+		// docs/rnd/owed-report-design.md.
 		name: "0068_owed_at",
 		stmts: []string{
 			`ALTER TABLE task ADD COLUMN owed_at TEXT NOT NULL DEFAULT ''`,
@@ -1776,7 +1776,7 @@ var migrations = []struct {
 		// A SAY'S LIFECYCLE ON RECORD: sent, the handle it resolved to, queued,
 		// delivered and by which channel, and a reply asked for that is still
 		// owed. Separate from `owed_at`, which is a report owed to a launcher.
-		// See docs/say-lifecycle-design.md.
+		// See docs/runtime/say-lifecycle-design.md.
 		name: "0069_say",
 		stmts: []string{
 			`CREATE TABLE IF NOT EXISTS say (
@@ -1824,7 +1824,7 @@ var migrations = []struct {
 	{
 		// The last moment a person did something to a card and what they did, and
 		// when a card was parked: no process, status kept. Empty means never. See
-		// docs/keepalive-policy-design.md sections 1, 4 and 7.
+		// docs/rnd/keepalive-policy-design.md sections 1, 4 and 7.
 		name: "0071_human_at_parked_at",
 		stmts: []string{
 			`ALTER TABLE task ADD COLUMN human_at TEXT NOT NULL DEFAULT ''`,

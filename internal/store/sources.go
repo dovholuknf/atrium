@@ -16,7 +16,7 @@ import (
 // Atrium holds an argv and an interval. `gh` holds the token, `mcp-gateway`
 // holds four backends' worth of secrets, `zrok` holds an environment. There is
 // nowhere in this struct to put a credential and that is the point, not an
-// omission. See docs/intake-design.md, "How this must not be built".
+// omission. See docs/runtime/intake-design.md, "How this must not be built".
 
 // Source is one configured way of finding work.
 type Source struct {

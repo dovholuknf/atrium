@@ -4,7 +4,7 @@ Real-world walkthroughs for the patterns this thing supports. If you want a feat
 [README](../README.md).
 
 Patterns 1 to 6 walked the v1 hub and agent loop (`atrium hub`, `atrium agent`, the terminal UI, the choices
-picker). Mode A is removed, so they are gone and the numbering below keeps its gaps. `docs/one-atrium-plan.md`
+picker). Mode A is removed, so they are gone and the numbering below keeps its gaps. `docs/fabric/one-atrium-plan.md`
 says why. The board does what the terminal UI did. Mode B (`atrium serve`, `status` and `watch`) is removed too.
 
 ## Pattern 0: having the daemon there in the morning
@@ -50,7 +50,7 @@ Items land in the **inbox**, which is a column that only appears when there is s
 **start** opens the launch dialog with everything the source knew already filled in, and starts the session onto
 that same card so the work keeps its link to what it came from.
 
-**Read the engineering versus support split in `docs/intake-design.md` before writing a source for a support
+**Read the engineering versus support split in `docs/runtime/intake-design.md` before writing a source for a support
 queue.** A support case names a customer rather than a repo, so it can be offered and not prepared, and it
 carries somebody else's words, which is a reason to put the identifier on the card and not the subject line.
 
@@ -123,7 +123,7 @@ Two things it deliberately will not do. It does not take the hooks: every claude
 reports to the real daemon, so a preview is for LOOKING at a board and never a second place to work. And it
 starts PASSIVE, so it does not start the fixtures or re-bind the shares it can see in the copy. Both rules, and
 why running two ordinary daemons over one database is a different question with a worse answer, are in
-`docs/preview-design.md`.
+`docs/ui/preview-design.md`.
 
 ## Pattern 12: a session that is stuck, and one that asks another session
 
