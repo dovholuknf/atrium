@@ -52,12 +52,12 @@ func (g growlStore) Sync(room string, reasons []string, want []link.GrowlRow, pr
 	return g.s.GrowlSync(id, reasons, out, present)
 }
 
-func (g growlStore) Halt(room string, halted bool, row link.GrowlRow) (bool, bool, error) {
+func (g growlStore) Room(room, reason string, on bool, row link.GrowlRow) (bool, bool, error) {
 	id, err := g.roomID(room)
 	if err != nil {
 		return false, false, err
 	}
-	return g.s.GrowlHalt(id, halted, toHubGrowl(row))
+	return g.s.GrowlRoom(id, reason, on, toHubGrowl(row))
 }
 
 func (g growlStore) Fill(id, subject, body string) (bool, error) {

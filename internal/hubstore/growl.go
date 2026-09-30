@@ -213,19 +213,20 @@ func (s *Store) GrowlSync(roomID string, reasons []string, want []Growl, present
 	return raised, changed, err
 }
 
-// GrowlHalt is a room's health, answered. Halted raises g unless the room
-// already has a current halt, which then keeps its id and takes g's title and
-// body. Not halted ends the current one. A room that did not answer is never
-// passed here: silence is not health.
-func (s *Store) GrowlHalt(roomID string, halted bool, g Growl) (raised, changed bool, err error) {
+// GrowlRoom is a growler about a room rather than a card, `halt` or
+// `deploy-hold`, from the room's own answer. On raises g unless the room
+// already has a current one of that reason, which then keeps its id and takes
+// g's title, body and subject. Off ends the current one. A room that did not
+// answer is never passed here: silence is neither.
+func (s *Store) GrowlRoom(roomID, reason string, on bool, g Growl) (raised, changed bool, err error) {
 	at := now()
 	err = s.tx(func(t *sql.Tx) error {
 		raised, changed = false, false
-		had, err := queryGrowls(t, `g.room_id = ? AND g.reason = 'halt' AND g.ended_at = ''`, roomID)
+		had, err := queryGrowls(t, `g.room_id = ? AND g.reason = ? AND g.ended_at = ''`, roomID, reason)
 		if err != nil {
 			return err
 		}
-		if !halted {
+		if !on {
 			for _, h := range had {
 				live, err := endGrowl(t, h, at)
 				if err != nil {
@@ -237,18 +238,19 @@ func (s *Store) GrowlHalt(roomID string, halted bool, g Growl) (raised, changed 
 		}
 		if len(had) > 0 {
 			h := had[0]
-			if h.Title == g.Title && h.Body == g.Body {
+			if h.Title == g.Title && h.Body == g.Body && h.Subject == g.Subject {
 				return nil
 			}
-			if _, err := t.Exec(`UPDATE growl SET title = ?, body = ? WHERE id = ?`, g.Title, g.Body, h.ID); err != nil {
+			if _, err := t.Exec(`UPDATE growl SET title = ?, body = ?, subject = ? WHERE id = ?`,
+				g.Title, g.Body, g.Subject, h.ID); err != nil {
 				return err
 			}
 			changed = h.Live()
 			return nil
 		}
-		res, err := t.Exec(`INSERT INTO growl (id, room_id, reason, title, body, raised_at, state, changed_at,
-			changed_via) VALUES (?, ?, 'halt', ?, ?, ?, 'open', ?, 'hub') ON CONFLICT (id) DO NOTHING`,
-			g.ID, roomID, g.Title, g.Body, ts(at), ts(at))
+		res, err := t.Exec(`INSERT INTO growl (id, room_id, reason, title, body, subject, raised_at, state,
+			changed_at, changed_via) VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?, 'hub') ON CONFLICT (id) DO NOTHING`,
+			g.ID, roomID, reason, g.Title, g.Body, g.Subject, ts(at), ts(at))
 		if err != nil {
 			return err
 		}
