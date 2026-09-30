@@ -1,6 +1,7 @@
 # f-019: git sync over the hub and rooms (design)
 
-Status: design, reviewed (Mercurius round 1 ready to build, then @fabric's nine changes, all taken). Owned by @rnd (design) and @fabric (the hub side). Item: `docs/backlog/fabric/f-019.md`.
+Status: design, reviewed (Mercurius round 1 ready to build, then @fabric's nine changes, all taken). Owned by @rnd
+(design) and @fabric (the hub side). Item: `docs/backlog/fabric/f-019.md`.
 Direction settled by decision 19 in `docs/decisions.md`. First live proof: sg3. Second: m1mini.
 
 ## 1. The problem, in one paragraph
