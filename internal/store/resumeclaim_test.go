@@ -102,3 +102,40 @@ func TestClaimResumeIDMissingClaimantKeepsTheHolder(t *testing.T) {
 		t.Fatal("a missing claimant cleared the holder")
 	}
 }
+
+// r-042: the archived half of "finished or archived", which the done test skips.
+func TestRegisterWillNotMatchAnArchivedCardByADirectoryName(t *testing.T) {
+	s := openTestStore(t)
+	card := claimCard(t, s, "atrium")
+	if _, err := s.db.Exec(`UPDATE task SET archived_at = ? WHERE id = ?`, ts(now()), card.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.Register(Observed{WireName: "atrium", NameSource: NameFromDir}); !errors.Is(err, ErrStaleName) {
+		t.Fatalf("want ErrStaleName, got %v", err)
+	}
+	got, created, err := s.Register(Observed{WireName: "atrium"})
+	if err != nil || created || got.ID != card.ID {
+		t.Fatalf("a told name must still match: %v %v %v", got, created, err)
+	}
+}
+
+// r-042: a directory name that matches nothing still finds the live card the
+// pid and worktree point at, and never a finished one.
+func TestRegisterDirectoryNameFallsBackToThePidHint(t *testing.T) {
+	s := openTestStore(t)
+	card, _, err := s.Register(Observed{WireName: "named", Worktree: "/tmp/w", PID: 4242, Runner: "claude"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, created, err := s.Register(Observed{WireName: "w", NameSource: NameFromDir, Worktree: "/tmp/w", PID: 4242})
+	if err != nil || created || got.ID != card.ID {
+		t.Fatalf("the pid hint did not match the live card: %v %v %v", got, created, err)
+	}
+	if err := s.SetStatus(card.ID, StatusDone); err != nil {
+		t.Fatal(err)
+	}
+	got, created, err = s.Register(Observed{WireName: "w2", NameSource: NameFromDir, Worktree: "/tmp/w", PID: 4242})
+	if err != nil || !created || got.ID == card.ID {
+		t.Fatalf("a finished card matched by pid: %v %v %v", got, created, err)
+	}
+}
