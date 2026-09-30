@@ -2692,8 +2692,10 @@ function phonePageHold() {
 // the prompt width and never less than the cursor on the cursor's row. A tap past it lands on its end. The
 // arrow count is in CHARACTERS: a wide glyph fills two cells and is one arrow.
 //
-// ROWS: Up/Down once per row of difference, then Left/Right. Up/Down keep the column the app was at, clamped to
-// the shorter row, so the horizontal delta is worked out from that clamped column.
+// ROWS: only the cursor's own row. A tap on another row sends NOTHING, not Up/Down and not Left/Right either
+// (they would be counted from the wrong row). The daemon's line tracker (typedLine) cannot know what Up/Down do
+// (history recall), so it marks the line "unsure", and an unsure line HOLDS every queued say until it is
+// cleared. A stray tap must not hold every message to the session.
 const PHONE_TAP_MOVE = 10, PHONE_TAP_MS = 400;
 const phoneRuleRow = (t) => { const x = t.replace(/\s+/g, ""); return x.length >= 8 && (x.match(/─/g) || []).length >= x.length * 0.8; };
 
@@ -2714,6 +2716,7 @@ function phoneTapKeys(row, col) {
   if (!m) return "";
   const pre = m[0].length;
   const endOf = (r) => Math.max(pre, text(r).length, r === cy ? b.cursorX : 0);
+  if (row !== cy) return "";
   const chars = (r, from, to) => {
     const l = line(r); let n = 0;
     for (let i = Math.min(from, to); i < Math.max(from, to); i++) {
@@ -2725,13 +2728,9 @@ function phoneTapKeys(row, col) {
   const target = Math.max(pre, Math.min(col, endOf(row)));
   const app = !!(term.modes && term.modes.applicationCursorKeysMode);
   const key = (c) => (app ? "\x1bO" : "\x1b[") + c;
-  let out = "";
-  const dy = row - cy;
-  if (dy) out += key(dy < 0 ? "A" : "B").repeat(Math.abs(dy));
-  const from = dy ? Math.min(b.cursorX, endOf(row)) : b.cursorX;
+  const from = b.cursorX;
   const n = chars(row, from, target);
-  if (n) out += key(target < from ? "D" : "C").repeat(n);
-  return out;
+  return n ? key(target < from ? "D" : "C").repeat(n) : "";
 }
 
 function wirePhoneTap() {
@@ -2822,37 +2821,75 @@ function wirePhoneKeys() {
   const hold = (e) => e.preventDefault();
   bar.addEventListener("pointerdown", hold);
   bar.addEventListener("mousedown", hold);
-  // ctrl-c interrupts a turn, so a stray tap must not: it needs a long press. Pointer events with capture, so
-  // the press stays ours if the finger drifts off the key, and it is cancelled by a drag past 10px or by the
-  // browser taking the touch. It fires once at PHONE_INT_HOLD_MS and never again however long it is held.
-  // A short tap does nothing (the click handler below skips `int`).
-  let intTimer = 0, intId = -1, intX = 0, intY = 0;
-  const intCancel = () => {
-    clearTimeout(intTimer); intTimer = 0; intId = -1;
-    const b = document.querySelector("#t-keys .hold"); if (b) b.classList.remove("hold");
+  // EVERY key is one pointer press with capture, so the press stays ours if the finger drifts off the key, and
+  // it is cancelled by a drag past 10px or by the browser taking the touch. Held PHONE_LABEL_MS (400) it shows
+  // the key's name in words (its aria-label) in a bubble above it, and that press is a question, not a key: the
+  // click that follows the release is swallowed. A short tap sends the key as before. ctrl-c interrupts a turn,
+  // so a stray tap must not: it fires once at PHONE_INT_HOLD_MS (600, after its label is up) and never again
+  // however long it is held, and a short tap does nothing (the click handler skips `int`).
+  let pressTimer = 0, intTimer = 0, pressId = -1, pressX = 0, pressY = 0, pressBtn = null, swallow = false;
+  const pressEnd = () => {
+    clearTimeout(pressTimer); clearTimeout(intTimer); pressTimer = intTimer = 0; pressId = -1;
+    if (pressBtn) pressBtn.classList.remove("hold");
+    pressBtn = null; phoneKeyLabel(null);
   };
   bar.addEventListener("pointerdown", (e) => {
-    const b = e.target.closest("button[data-key=int]");
+    const b = e.target.closest("button");
     if (!b) return;
-    intCancel();
-    intId = e.pointerId; intX = e.clientX; intY = e.clientY;
+    pressEnd(); swallow = false;
+    pressId = e.pointerId; pressX = e.clientX; pressY = e.clientY; pressBtn = b;
     try { b.setPointerCapture(e.pointerId); } catch (err) {}
-    b.classList.add("hold");
-    intTimer = setTimeout(() => { intTimer = 0; intId = -1; b.classList.remove("hold"); phoneKey("int"); }, PHONE_INT_HOLD_MS);
+    const isInt = b.dataset.key === "int";
+    if (isInt) b.classList.add("hold");
+    pressTimer = setTimeout(() => { pressTimer = 0; swallow = true; phoneKeyLabel(b); }, PHONE_LABEL_MS);
+    if (isInt) intTimer = setTimeout(() => {
+      intTimer = 0; swallow = true; const k = pressBtn; pressEnd(); if (k) k.blur(); phoneKey("int");
+    }, PHONE_INT_HOLD_MS);
   });
   bar.addEventListener("pointermove", (e) => {
-    if (e.pointerId !== intId) return;
-    if (Math.hypot(e.clientX - intX, e.clientY - intY) > 10) intCancel();
+    if (e.pointerId !== pressId) return;
+    if (Math.hypot(e.clientX - pressX, e.clientY - pressY) > 10) { swallow = true; pressEnd(); }
   });
   for (const ev of ["pointerup", "pointercancel", "lostpointercapture"]) bar.addEventListener(ev, (e) => {
-    if (e.pointerId === intId || ev === "pointercancel") intCancel();
+    if (e.pointerId === pressId || ev === "pointercancel") {
+      if (ev === "pointercancel") swallow = true;
+      pressEnd();
+    }
   });
   // The browser's own long press on a key (a context menu, a callout) is not what a held key means.
   bar.addEventListener("contextmenu", (e) => e.preventDefault());
+  // A press that showed its label, or slid off, or fired ^C, sends nothing on release. Capture phase so it
+  // also stops the attach key's own onclick.
   bar.addEventListener("click", (e) => {
-    const b = e.target.closest("button[data-key]");
-    if (b && b.dataset.key !== "int") phoneKey(b.dataset.key);
+    if (!swallow) return;
+    swallow = false; e.preventDefault(); e.stopPropagation();
+    const b = e.target.closest("button"); if (b) b.blur();
+  }, true);
+  bar.addEventListener("click", (e) => {
+    const b = e.target.closest("button");
+    if (!b) return;
+    if (b.dataset.key && b.dataset.key !== "int") phoneKey(b.dataset.key);
+    b.blur();
   });
+}
+
+// The long press label: one bubble, made on first use, fixed above the key and clamped to 8px from either edge
+// of the viewport so a key at the end of the bar cannot push it off screen. `null` hides it.
+const PHONE_LABEL_MS = 400;
+function phoneKeyLabel(btn) {
+  let el = document.getElementById("t-keylabel");
+  if (!btn) { if (el) el.classList.remove("on"); return; }
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "t-keylabel"; el.setAttribute("aria-hidden", "true");
+    document.body.appendChild(el);
+  }
+  el.textContent = btn.getAttribute("aria-label") || btn.textContent;
+  el.classList.add("on");
+  const r = btn.getBoundingClientRect(), w = el.offsetWidth, h = el.offsetHeight, vw = document.documentElement.clientWidth;
+  const left = Math.max(8, Math.min(vw - 8 - w, r.left + r.width / 2 - w / 2));
+  el.style.left = left + "px";
+  el.style.top = Math.max(8, r.top - h - 8) + "px";
 }
 
 // THE KEYBOARD SIZES THE LAYOUT (u-019). `--vvh` and `--vvt` are the visual viewport's height and offset, and the

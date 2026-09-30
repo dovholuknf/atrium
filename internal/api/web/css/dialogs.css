@@ -386,9 +386,13 @@
     background: var(--chip); border: 1px solid var(--stroke-dim);
     border-radius: var(--r-sm); padding: 9px 16px; transition: all .14s;
   }
-  button:hover {
-    color: var(--head); border-color: var(--blue);
-    background: var(--btn-hover); transform: translateY(-1px);
+  /* Only where a pointer can really hover. A touch leaves `:hover` on the last thing tapped, so on a phone
+     the button stayed lit and lifted until the next tap elsewhere (u-029). */
+  @media (hover: hover) {
+    button:hover {
+      color: var(--head); border-color: var(--blue);
+      background: var(--btn-hover); transform: translateY(-1px);
+    }
   }
   button:active { transform: translateY(0); }
   /* A control that cannot do anything has to look like it cannot. Without this
@@ -410,7 +414,7 @@
     padding: 8px 13px; font-size: var(--fs-3xl); line-height: 1; color: var(--teal);
     background: transparent; border-color: transparent;
   }
-  button.icon:hover { border-color: var(--stroke-dim); }
+  @media (hover: hover) { button.icon:hover { border-color: var(--stroke-dim); } }
   button.icon.muted { color: var(--dimmest); }
   /* Sound is on, but the browser has not let this page make any yet. */
   button.icon.blocked:not(.muted) { color: var(--warn); animation: nudge 2.4s ease-in-out infinite; }

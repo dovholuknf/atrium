@@ -3725,6 +3725,8 @@ async function sayWhenSection(browser, base) {
       return { turn: one({ held_for: "turn", held_count: 2 }), line: one({ held_for: "line" }),
         lines: one({ held_for: "line", held_count: 2, held_seconds: 3723 }),
         dialog: one({ held_for: "dialog" }), old: one({}),
+        newctx: one({ held_for: "new-context" }), newctxs: one({ held_for: "new-context", held_count: 2 }),
+        empty: one({ held_for: "" }), unknown: one({ held_for: "something-new" }),
         ages: [16, 125, 3603].map(termHeldAge) };
     });
     const want = {
@@ -3737,7 +3739,13 @@ async function sayWhenSection(browser, base) {
       dialog: "1 message has been waiting to be delivered to this agent for 1m 30s and is blocked by " +
         "a dialog open in this terminal, which typing would answer. Answer the dialog to dequeue this message",
     };
-    want.old = want.line;
+    // u-029: "new-context" names the cycle, and "" or a value the page does not know reads "about to be retried".
+    want.newctx = "1 message has been waiting to be delivered to this agent for 1m 30s and is held while a " +
+      "new-context cycle is in progress. It goes in after its wake prompt";
+    want.newctxs = "2 messages have been waiting to be delivered to this agent for 1m 30s and are held while a " +
+      "new-context cycle is in progress. They go in after its wake prompt";
+    want.old = "1 message has been waiting to be delivered to this agent for 1m 30s and is about to be retried";
+    want.empty = want.old; want.unknown = want.old;
     for (const k of Object.keys(want)) {
       if (!chips[k] || chips[k].tip !== want[k]) {
         fail("the held chip's tip for " + k + " reads " + JSON.stringify(chips[k] && chips[k].tip) +
@@ -6052,14 +6060,18 @@ async function phoneTapSection(browser, base) {
     await p.touchscreen.tap(...at(1, 4));
     await p.waitForTimeout(150);
     await expect("a tap on output", []);
-    // a wrapped line above: Up, then horizontal from the clamped column
+    // u-029: a tap on another row inside the input sends NOTHING (no Up or Down, no Left or Right), whether
+    // it lands inside the text or past its end, so the daemon's line tracker is never left "unsure"
     await p.touchscreen.tap(...at(5, 10));
     await p.waitForTimeout(150);
-    await expect("a tap on the line above", [U + L.repeat(11)]);
-    // past the end of the line above: clamps to its end (24), 3 to the right of column 21
+    await expect("a tap on the line above", []);
     await p.touchscreen.tap(...at(5, 50));
     await p.waitForTimeout(150);
-    await expect("a tap past the end of the line above", [U + R.repeat(3)]);
+    await expect("a tap past the end of the line above", []);
+    // the same row still moves the cursor after a tap on another row
+    await p.touchscreen.tap(...at(6, 18));
+    await p.waitForTimeout(150);
+    await expect("a tap 3 cells left after a tap elsewhere", [L.repeat(3)]);
     // a tap on a rule and on the status line send nothing
     await p.touchscreen.tap(...at(4, 3));
     await p.touchscreen.tap(...at(8, 3));
@@ -6097,6 +6109,189 @@ async function phoneTapSection(browser, base) {
     tasksMode = was;
   }
   if (errors.length) fail("phoneTap: the page threw: " + errors.join(" | "));
+}
+
+// ── the phone key bar: a long press names the key, a tap is not left lit (u-029) ──
+// Real pointer events through CDP touch (the same ones a finger makes), never click() alone. The key bar sits on
+// the attached phone terminal, whose socket is faked so every frame it sends can be read back.
+async function phoneKeysOpen(browser, base) {
+  landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  landList = [LAND["land-live"]];
+  landPerms = [];
+  const fakeSock = () => {
+    const Real = window.WebSocket;
+    window.__sent = [];
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
+        onopen: null, onclose: null, onmessage: null, onerror: null,
+        send(d) { window.__sent.push(String(d)); }, close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  };
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+  await ctx.addInitScript(() => {
+    localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true }));
+    localStorage.setItem("atrium.termphone", "1");
+  });
+  await ctx.addInitScript(fakeSock);
+  const p = await ctx.newPage();
+  const errors = [];
+  p.on("pageerror", e => errors.push(String(e.stack || e)));
+  await p.goto(base, { waitUntil: "domcontentloaded" });
+  await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+  await p.evaluate(() => attachTask("land-live"));
+  await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live",
+    null, { timeout: slow(10000) });
+  await p.waitForSelector("#t-keys button", { state: "visible", timeout: slow(5000) });
+  const cdp = await ctx.newCDPSession(p);
+  const centre = (sel) => p.evaluate((s) => {
+    const r = document.querySelector(s).getBoundingClientRect();
+    return [r.left + r.width / 2, r.top + r.height / 2];
+  }, sel);
+  const touch = (type, x, y) => cdp.send("Input.dispatchTouchEvent", { type, touchPoints: type === "touchEnd" ? [] : [{ x, y }] });
+  // press, wait ms, optionally slide dx, and hand back the release
+  const press = async (sel, ms, dx) => {
+    const [x, y] = await centre(sel);
+    await touch("touchStart", x, y);
+    await p.waitForTimeout(ms);
+    if (dx) { await touch("touchMove", x + dx, y); await p.waitForTimeout(80); }
+    return async () => { await touch("touchEnd", x, y); await p.waitForTimeout(120); };
+  };
+  const frames = () => p.evaluate(() => window.__sent.slice());
+  const clear = () => p.evaluate(() => { window.__sent.length = 0; });
+  const label = () => p.evaluate(() => {
+    const el = document.getElementById("t-keylabel");
+    if (!el || !el.classList.contains("on")) return null;
+    const r = el.getBoundingClientRect();
+    return { text: el.textContent, l: r.left, r: r.right, t: r.top, b: r.bottom, vw: document.documentElement.clientWidth };
+  });
+  return { ctx, p, errors, press, frames, clear, label, centre, touch };
+}
+
+async function phoneKeyLabelSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  let h;
+  try {
+    h = await phoneKeysOpen(browser, base);
+    const { p, press, frames, clear, label } = h;
+    const key = (k) => "#t-keys [data-key=" + k + "]";
+    await clear();
+    await p.evaluate(() => { window.__fg = 0; document.addEventListener("focusin", () => { window.__fg++; }, true); });
+    // every key names itself in words, Esc and Tab included
+    const names = await p.evaluate(() => [...document.querySelectorAll("#t-keys button")].map(b => b.getAttribute("aria-label")));
+    if (names.some(n => !n)) fail("phoneKeyLabel: a key has no aria-label: " + JSON.stringify(names));
+    // a long press on enter shows the bubble inside the viewport and sends nothing
+    let up = await press(key("enter"), 550);
+    let lb = await label();
+    if (!lb || lb.text !== "enter") fail("phoneKeyLabel: a held enter shows " + JSON.stringify(lb));
+    else if (lb.l < 0 || lb.r > lb.vw || lb.t < 0) fail("phoneKeyLabel: the bubble leaves the viewport " + JSON.stringify(lb));
+    await up();
+    if (await label()) fail("phoneKeyLabel: the bubble stays after release");
+    let got = await frames();
+    if (got.length) fail("phoneKeyLabel: a long press on enter sent " + JSON.stringify(got));
+    // a short tap sends "\r" once, with no bubble
+    await clear();
+    up = await press(key("enter"), 60);
+    if (await label()) fail("phoneKeyLabel: a short tap showed the bubble");
+    await up();
+    got = (await frames()).filter(x => /"t":"in"/.test(x)).map(x => JSON.parse(x).d);
+    if (JSON.stringify(got) !== JSON.stringify(["\r"])) fail("phoneKeyLabel: a short tap on enter sent " + JSON.stringify(got));
+    // the keys at either end keep the bubble on screen
+    for (const k of ["esc", "attach"]) {
+      const sel = k === "attach" ? "#t-keys-attach" : key(k);
+      up = await press(sel, 550);
+      lb = await label();
+      if (!lb) fail("phoneKeyLabel: no bubble on " + k);
+      else if (lb.l < 0 || lb.r > lb.vw) fail("phoneKeyLabel: the " + k + " bubble leaves the viewport " + JSON.stringify(lb));
+      else if (k === "attach" && lb.text !== "attach a file or photo") fail("phoneKeyLabel: the attach label reads " + lb.text);
+      await up();
+    }
+    // ^C: the label at 400ms, the interrupt once at PHONE_INT_HOLD_MS (600), a short tap nothing
+    await clear();
+    up = await press(key("int"), 500);
+    lb = await label();
+    if (!lb || !/^ctrl c/.test(lb.text)) fail("phoneKeyLabel: a held ^C shows " + JSON.stringify(lb));
+    if ((await frames()).length) fail("phoneKeyLabel: ^C fired before its hold time");
+    await p.waitForTimeout(400);
+    await up();
+    got = await frames();
+    if (got.length !== 1 || !/"t":"signal"/.test(got[0]) || !/int/.test(got[0])) fail("phoneKeyLabel: a held ^C sent " + JSON.stringify(got));
+    await clear();
+    up = await press(key("int"), 60); await up();
+    if ((await frames()).length) fail("phoneKeyLabel: a short tap on ^C sent " + JSON.stringify(await frames()));
+    // sliding off cancels, for enter (label up already) and for ^C
+    await clear();
+    up = await press(key("enter"), 550, 60);
+    if (await label()) fail("phoneKeyLabel: the bubble stays after sliding off");
+    await up();
+    up = await press(key("int"), 100, 60);
+    await p.waitForTimeout(700);
+    await up();
+    got = await frames();
+    if (got.length) fail("phoneKeyLabel: sliding off still sent " + JSON.stringify(got));
+    const fg = await p.evaluate(() => window.__fg);
+    if (fg) fail("phoneKeyLabel: a key press moved focus " + fg + " times");
+    // the shot for the change notes
+    if (process.env.KEYLABEL_SHOT) {
+      up = await press(key("btab"), 550);
+      await p.screenshot({ path: process.env.KEYLABEL_SHOT });
+      await up();
+    }
+    console.log("phoneKeyLabel: enter, ^C, slide off and focus checked");
+  } finally {
+    tasksMode = was;
+    if (h) { if (h.errors.length) fail("phoneKeyLabel: the page threw: " + h.errors.join(" | ")); await h.ctx.close(); }
+  }
+}
+
+async function phoneKeyLitSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  let h;
+  try {
+    h = await phoneKeysOpen(browser, base);
+    const { p, centre } = h;
+    const probe = () => p.evaluate(() => {
+      const out = {};
+      for (const b of document.querySelectorAll("#t-keys button")) {
+        const cs = getComputedStyle(b);
+        out[b.getAttribute("aria-label")] = cs.backgroundColor + "|" + cs.borderColor + "|" + cs.transform;
+      }
+      out.focusInKeys = !!(document.activeElement && document.activeElement.closest("#t-keys"));
+      return out;
+    });
+    const rest = await probe();
+    for (const sel of ["#t-keys [data-key=left]", "#t-keys [data-key=enter]", "#t-keys [data-key=tab]", "#t-keys-attach"]) {
+      const [x, y] = await centre(sel);
+      await p.touchscreen.tap(x, y);
+      await p.waitForTimeout(400);
+      const now = await probe();
+      for (const k of Object.keys(rest)) if (now[k] !== rest[k])
+        fail("phoneKeyLit: after a tap on " + sel + " " + k + " reads " + now[k] + ", resting " + rest[k]);
+    }
+    // no shared button hover rule applies where a pointer cannot hover
+    const bad = await p.evaluate(() => {
+      const out = [];
+      const walk = (rules, inHover) => {
+        for (const r of rules) {
+          if (r.media) walk(r.cssRules, inHover || /hover:\s*hover/.test(r.media.mediaText));
+          else if (r.cssRules) walk(r.cssRules, inHover);
+          else if (r.selectorText && !inHover && /(^|,\s*)(\.term-bar )?button(\.icon|\.traytoggle)?:hover\s*($|,)/.test(r.selectorText)) out.push(r.selectorText);
+        }
+      };
+      for (const ss of document.styleSheets) { try { walk(ss.cssRules, false); } catch (e) {} }
+      return out;
+    });
+    if (bad.length) fail("phoneKeyLit: shared button hover rules outside (hover: hover): " + bad.join(" | "));
+    console.log("phoneKeyLit: resting look after taps checked");
+  } finally {
+    tasksMode = was;
+    if (h) { if (h.errors.length) fail("phoneKeyLit: the page threw: " + h.errors.join(" | ")); await h.ctx.close(); }
+  }
 }
 
 // ── the on-screen keyboard sizes the phone layout (u-019) ─────────────────
@@ -10342,7 +10537,7 @@ async function main() {
       usageCacheReads: usageCacheReadsSection, roomsDash: roomsDashSection, phoneView: phoneViewSection, heldLine: heldLineSection, u016: u016Section, phoneHeader: phoneHeaderSection, phoneFocus: phoneFocusSection, phoneTermBar: phoneTermBarSection, phoneShare: phoneShareSection, phonePan: phonePanSection, phoneFollow: phoneFollowSection, phoneTap: phoneTapSection, phoneKeyboard: phoneKeyboardSection, phoneCompose: phoneComposeSection, mCompose: mComposeSection, mPerms: mPermsSection, usagePolish: usagePolishSection, usageLimits: usageLimitsSection, usageGroups: usageGroupsSection,
       eventDriven: eventDrivenSection, idleBudget: idleBudgetSection, pollsGone: pollsGoneSection,
       phoneListFit: phoneListFitSection, phoneNudge: phoneNudgeSection,
-      cacheChip: cacheChipSection, cacheLine: cacheLineSection, mHome: mHomeSection, mCard: mCardSection, mServe: mServeSection };
+      cacheChip: cacheChipSection, cacheLine: cacheLineSection, mHome: mHomeSection, mCard: mCardSection, mServe: mServeSection, phoneKeyLabel: phoneKeyLabelSection, phoneKeyLit: phoneKeyLitSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -12291,6 +12486,8 @@ async function main() {
     await mHomeSection(browser);
     await mCardSection(browser);
     await mServeSection(browser);
+    await phoneKeyLabelSection(browser, base);
+    await phoneKeyLitSection(browser, base);
     await usagePolishSection(browser, base);
     await usageLimitsSection(browser, base);
     await usageGroupsSection(browser, base);
