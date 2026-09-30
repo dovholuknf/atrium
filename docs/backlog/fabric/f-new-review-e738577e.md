@@ -63,6 +63,13 @@ At 4333ff0c, in a detached worktree, `ATRIUM_LOCATION` and `ATRIUM_DEBUG_INPUTLA
 
 Not run: internal/daemon and internal/api, which the diff does not touch.
 
+## Follow-up 53a6f8f0 (landed with 3bea1447)
+
+`git range-diff` shows 3bea1447 is the same patch as e738577e. 53a6f8f0 closes lows 3 and 4: the kinds loop adds
+`upgradeKind` and `gitKind`, and `TestAKeylessAttachCannotReplaceAKeyedRoom` tests the `Hub.control` comparison over
+a pipe. At 53a6f8f0: vet clean on link, the five old-path and keyless tests pass 3 of 3. With the pre-f-026
+comparison put back, the keyless test fails, so it pins the fix. Lows 1 and 2 stay as noted.
+
 ## Verdict
 
 **PASS e738577e.** Four lows, none blocking. Hub side: **ROOM DEPLOY OK e738577e** on review grounds.
