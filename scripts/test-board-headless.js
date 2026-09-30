@@ -13044,6 +13044,7 @@ async function mWorkingSection(browser) {
     for (const vp of M_VIEWS) {
       const { ctx, p, errors } = await mPage(browser, st, vp, "");
       const tag = "mWorking " + vp.width + ": ";
+      st.tasks = [run];
       await p.waitForSelector("#m-seg-all", { timeout: slow(10000) });
       await p.tap("#m-seg-all");
       await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
@@ -13055,6 +13056,7 @@ async function mWorkingSection(browser) {
           fs: parseFloat(getComputedStyle(w).fontSize), anim: getComputedStyle(w.querySelector(".wk-spin") || w).animationName,
           chipText: document.querySelector(".c-state").textContent, sw: document.documentElement.scrollWidth, iw: window.innerWidth };
       });
+      await p.waitForFunction(() => !document.getElementById("m-working").hidden, null, { timeout: slow(5000) });
       let b = await box();
       if (b.hidden || b.text !== "thinking") fail(tag + "no thinking line: " + JSON.stringify(b));
       if (b.inChips || /thinking/.test(b.chipText)) fail(tag + "the working text is in the chip row: " + b.chipText);
@@ -13063,6 +13065,10 @@ async function mWorkingSection(browser) {
       if (b.bottom > b.composeTop + 1 || b.composeTop - b.bottom > 40) fail(tag + "the line is not pinned just above the composer: " + JSON.stringify(b));
       if (b.sw > b.iw + 1) fail(tag + "the card scrolls sideways");
       await mShot(p, "working-thinking-" + vp.width);
+      // events sent before the page's stream is open are lost, so wait for the stream the page holds
+      await p.waitForFunction(() => document.getElementById("m-live").classList.contains("on"), null, { timeout: slow(10000) });
+      const t1 = Date.now();
+      while (!st.streams.length && Date.now() - t1 < slow(10000)) await p.waitForTimeout(100);
       // a tool event shows the tool's name, from the stream
       st.send("task", Object.assign({}, run, { row: 1, activity: { what: "tool", tool: "Bash", seconds: 2 } }));
       await p.waitForFunction(() => /Bash/.test(document.getElementById("m-working").textContent), null, { timeout: slow(5000) });
@@ -13082,6 +13088,9 @@ async function mWorkingSection(browser) {
       const t0 = Date.now();
       while (!st.streams.length && Date.now() - t0 < slow(15000)) await p.waitForTimeout(200);
       if (!st.streams.length) fail(tag + "the stream did not reopen (" + n + " before)");
+      await p.waitForFunction(() => document.getElementById("m-live").classList.contains("on"), null, { timeout: slow(10000) });
+      // the reopen reads the tasks again, so the room's answer must already agree with the event
+      st.tasks = [Object.assign({}, run, { status: "needs-input", activity: { what: "idle" } })];
       st.send("task", Object.assign({}, run, { row: 1, status: "needs-input", activity: { what: "idle" } }));
       await p.waitForFunction(() => document.getElementById("m-working").hidden, null, { timeout: slow(5000) });
       // the old thinking badge is gone from the chip row in every state
