@@ -232,7 +232,7 @@
     const p = String(path).replace(/\/$/, "").split("/");
     if (p[0] !== "" || p[1] !== "m") return null;
     if (p[2] === "alias" && p.length === 4 && p[3]) return { kind: "alias", alias: nameOf(dec(p[3])) };
-    if (p[2] === "room" && p.length === 5 && p[3] && p[4]) return { kind: "card", room: dec(p[3]), name: nameOf(dec(p[4])) };
+    if (p[2] === "room" && p.length === 5 && p[3] && p[4]) return { kind: "card", room: dec(p[3]), name: dec(p[4]).replace(/^@/, "") };
     return null;
   }
 
@@ -242,12 +242,12 @@
     if (!t) return "";
     const alias = nameOf(t.alias);
     const wire = String(t.wire_name || "");
-    const handle = nameOf(wire.slice(wire.lastIndexOf("/") + 1));
+    const handle = wire.slice(wire.lastIndexOf("/") + 1);
     const room = t.room || window.mNet.roomOf(t.id) || "";
     const clash = alias && window.mStore.cards().some(o => window.mNet.bareId(o.id) !== window.mNet.bareId(t.id) &&
       nameOf(o.alias) === alias && o.status !== "dead" && o.status !== "done");
     if (alias && !clash) return base + "/alias/" + enc(alias);
-    const name = alias || handle;
+    const name = handle || alias;
     if (room && name) return base + "/room/" + enc(room) + "/" + enc(name);
     return alias ? base + "/alias/" + enc(alias) : "";
   }
