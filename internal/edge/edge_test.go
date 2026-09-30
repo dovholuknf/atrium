@@ -3,6 +3,7 @@ package edge
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 )
 
@@ -60,12 +61,20 @@ func TestTheBrowserEdge(t *testing.T) {
 	}
 }
 
-// A SHARE NAMES ITS OWN HOST, so a shared listener checks origins and not hosts.
-func TestASharedListenerTakesAnyHost(t *testing.T) {
-	h := Shared(ok)
+// A SHARE ANSWERS ITS OWN NAME AND NO OTHER. A rebound page is same origin, its
+// Origin and Host both the attacker's, so only the Host check stops it.
+func TestASharedListenerAnswersOnlyItsNames(t *testing.T) {
+	h := Named(ok, "https://board.share.zrok.io")
 	if got := status(h, http.MethodPost, "board.share.zrok.io", map[string]string{
 		"Sec-Fetch-Site": "same-origin", "Origin": "https://board.share.zrok.io"}); got != 200 {
-		t.Fatalf("the board over a share answered %d", got)
+		t.Fatalf("the board over its share answered %d", got)
+	}
+	if got := status(h, http.MethodPost, "127.0.0.1:9191", nil); got != 200 {
+		t.Fatalf("a private access proxy on loopback answered %d", got)
+	}
+	if got := status(h, http.MethodPost, "evil.example:7778", map[string]string{
+		"Sec-Fetch-Site": "same-origin", "Origin": "http://evil.example:7778"}); got != 403 {
+		t.Fatalf("a rebound page over a share answered %d", got)
 	}
 	if got := status(h, http.MethodPost, "board.share.zrok.io", map[string]string{
 		"Sec-Fetch-Site": "cross-site", "Origin": "https://evil.example"}); got != 403 {
@@ -73,11 +82,47 @@ func TestASharedListenerTakesAnyHost(t *testing.T) {
 	}
 }
 
-// For CHOOSES BY THE ADDRESS: a loopback one checks the Host, a wide one does not.
+// $ATRIUM_HOSTS ADDS A NAME to every listener.
+func TestEnvHostsAddsNames(t *testing.T) {
+	t.Setenv(EnvHosts, "sg4.lan, 10.0.0.9")
+	h := Named(ok)
+	for host, want := range map[string]int{"sg4.lan:7778": 200, "10.0.0.9": 200, "evil.example": 403} {
+		if got := status(h, http.MethodGet, host, nil); got != want {
+			t.Errorf("%s answered %d, want %d", host, got, want)
+		}
+	}
+}
+
+// UNNAMED CHECKS ORIGINS, NOT HOSTS, for a ziti service nobody named.
+func TestUnnamedChecksOriginsOnly(t *testing.T) {
+	h := Unnamed(ok)
+	if got := status(h, http.MethodGet, "board.ziti", nil); got != 200 {
+		t.Fatalf("an unnamed listener refused its host: %d", got)
+	}
+	if got := status(h, http.MethodPost, "board.ziti", map[string]string{
+		"Sec-Fetch-Site": "cross-site", "Origin": "https://evil.example"}); got != 403 {
+		t.Fatalf("an unnamed listener let a cross-site write through: %d", got)
+	}
+}
+
+// For CHOOSES BY THE ADDRESS: loopback names, the bound address, or every name
+// this machine has for a bind on every interface. Never any name at all.
 func TestForChoosesByAddress(t *testing.T) {
-	for addr, want := range map[string]int{"127.0.0.1:7781": 403, "localhost:7781": 403, "0.0.0.0:7781": 200, ":7781": 200} {
-		if got := status(For(addr, ok), http.MethodGet, "sg4:7781", nil); got != want {
-			t.Errorf("%s with Host sg4 answered %d, want %d", addr, got, want)
+	host, _ := os.Hostname()
+	cases := []struct {
+		addr, host string
+		want       int
+	}{
+		{"127.0.0.1:7781", "sg4:7781", 403},
+		{"localhost:7781", "localhost:7781", 200},
+		{"192.168.1.68:7781", "192.168.1.68:7781", 200},
+		{"192.168.1.68:7781", "evil.example:7781", 403},
+		{"0.0.0.0:7781", host + ":7781", 200},
+		{":7781", "evil.example:7781", 403},
+	}
+	for _, c := range cases {
+		if got := status(For(c.addr, ok), http.MethodGet, c.host, nil); got != c.want {
+			t.Errorf("%s with Host %s answered %d, want %d", c.addr, c.host, got, c.want)
 		}
 	}
 }

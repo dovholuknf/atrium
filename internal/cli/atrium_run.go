@@ -459,7 +459,8 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 			log.Printf("[hub] serving the board on a %s zrok share: %s", bs.Mode, bs.Address)
 			proxy.RecordAudit("", "board-share-opened",
 				"the board is on a "+bs.Mode+" zrok share: "+bs.Address)
-			serveBoardOn(ctx, shareLn, proxy, "zrok share")
+			// The share's address is the one name it answers besides loopback.
+			serveBoardOn(ctx, shareLn, edge.Named(proxy, bs.Address), "zrok share")
 
 		case "ziti":
 			// The headless equivalent of the panel's OpenZiti toggle. The
@@ -482,7 +483,7 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 			log.Printf("[hub] serving the board on the ziti service %q", boardService)
 			proxy.RecordAudit("", "board-share-opened",
 				"the board is on the ziti service "+boardService)
-			serveBoardOn(ctx, shareLn, proxy, "ziti service")
+			serveBoardOn(ctx, shareLn, zitiBoardEdge(proxy, boardService), "ziti service")
 
 		default:
 			return fmt.Errorf("no board transport called %q. one of: zrok, ziti", bt)
@@ -519,7 +520,7 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 // the listener is obtained differs per overlay and stays at the call site, which
 // is the one thing that is not shared. `what` is only for the log line.
 func serveBoardOn(ctx context.Context, ln net.Listener, h http.Handler, what string) {
-	srv := &http.Server{Handler: edge.Shared(h), ReadHeaderTimeout: 10 * time.Second}
+	srv := &http.Server{Handler: h, ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		<-ctx.Done()
 		_ = srv.Close()
@@ -714,4 +715,16 @@ func portOf(addr string) string {
 		return addr
 	}
 	return ":" + port
+}
+
+// zitiBoardEdge is the hub board's browser edge on a ziti service. See zitiEdge
+// in internal/daemon: the intercept address is the network's, so $ATRIUM_HOSTS
+// names it, and with none the service answers any Host, said once.
+func zitiBoardEdge(h http.Handler, service string) http.Handler {
+	if len(edge.EnvNames()) == 0 {
+		log.Printf("[hub] the ziti service %q answers any Host. set %s to its intercept address "+
+			"to refuse a rebound one", service, edge.EnvHosts)
+		return edge.Unnamed(h)
+	}
+	return edge.Named(h)
 }

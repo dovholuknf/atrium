@@ -11,10 +11,13 @@
 //     method whose `Sec-Fetch-Site` is not same-origin or none, falling back to
 //     comparing `Origin` with `Host`. A request with neither header passes,
 //     which is every hook, the CLI, the MCP server and curl.
-//   - A REBOUND HOST. DNS rebinding points a name the page controls at
-//     127.0.0.1, and then the page is "same origin" with atrium. A loopback
-//     listener answers only a loopback `Host`: `127.0.0.1`, `localhost`,
-//     `[::1]`, any port.
+//   - A REBOUND HOST. DNS rebinding points a name the page controls at an
+//     address atrium answers, and then the page is "same origin" with atrium:
+//     its Origin and its Host are both the attacker's name. So a listener
+//     answers only the names it is known by. Loopback names always, `127.0.0.1`,
+//     `localhost` and `[::1]` with any port, and on any other listener the names
+//     it was given: the share's host, the address it is bound to, this machine's
+//     own names, and $ATRIUM_HOSTS.
 //   - A CROSS-ORIGIN WEBSOCKET. An upgrade is a GET, which the first check
 //     passes, so an upgrade whose `Origin` names another host is refused here.
 //
@@ -32,43 +35,103 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 )
 
-// Loopback wraps a handler served on a loopback listener: the Host check, the
-// cross-origin write check and the websocket Origin check.
-func Loopback(h http.Handler) http.Handler { return hostCheck(Shared(h)) }
+// EnvHosts is the variable naming extra hosts every listener answers, comma
+// separated: a LAN name, a ziti intercept address, a reverse proxy's name.
+const EnvHosts = "ATRIUM_HOSTS"
 
-// Shared wraps a handler served on a listener that is not loopback, an
-// overlay share, where the share names the host and there is no Host list to
-// check against.
-func Shared(h http.Handler) http.Handler {
-	cop := http.NewCrossOriginProtection()
-	return cop.Handler(upgradeCheck(h))
+// Loopback wraps a handler served on a loopback listener: loopback names only.
+func Loopback(h http.Handler) http.Handler { return Named(h) }
+
+// Named wraps a handler that answers loopback names and `names`, plus
+// $ATRIUM_HOSTS. A name may be a host, a host and port, or a URL.
+func Named(h http.Handler, names ...string) http.Handler {
+	allow := map[string]bool{}
+	for _, n := range append(names, EnvNames()...) {
+		if host := hostOf(n); host != "" {
+			allow[host] = true
+		}
+	}
+	return hostCheck(checks(h), allow)
 }
 
-// For wraps a handler by the address it listens on: Loopback when the address
-// is a loopback one, Shared otherwise. A board bound wide on purpose is reached
-// by whatever name somebody typed, and refusing those would break it.
+// Unnamed wraps a handler whose listener has no name atrium knows, which is a
+// ziti service nobody listed in $ATRIUM_HOSTS: the name a browser uses is the
+// service's intercept address, configured on the network and not here. It
+// checks origins and not hosts, which leaves rebinding open there, so a caller
+// must say so where somebody will read it.
+func Unnamed(h http.Handler) http.Handler { return checks(h) }
+
+// For wraps a handler by the address it listens on: loopback names for a
+// loopback address, and for any other the address itself and, when it is every
+// interface, each interface's address and this machine's names.
 func For(addr string, h http.Handler) http.Handler {
 	host, _, err := net.SplitHostPort(addr)
 	if err != nil {
 		host = addr
 	}
-	if ip := net.ParseIP(strings.Trim(host, "[]")); (ip != nil && ip.IsLoopback()) || strings.EqualFold(host, "localhost") {
+	host = strings.Trim(host, "[]")
+	if LoopbackHost(host) {
 		return Loopback(h)
 	}
-	return Shared(h)
+	if ip := net.ParseIP(host); host != "" && (ip == nil || !ip.IsUnspecified()) {
+		return Named(h, host)
+	}
+	return Named(h, machineNames()...)
+}
+
+// EnvNames is $ATRIUM_HOSTS, split.
+func EnvNames() []string {
+	var out []string
+	for _, s := range strings.Split(os.Getenv(EnvHosts), ",") {
+		if s = strings.TrimSpace(s); s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// machineNames is what a browser on the network can call this machine: every
+// interface address, and the host name with and without its domain.
+func machineNames() []string {
+	var out []string
+	if addrs, err := net.InterfaceAddrs(); err == nil {
+		for _, a := range addrs {
+			if ipn, ok := a.(*net.IPNet); ok {
+				out = append(out, ipn.IP.String())
+			}
+		}
+	}
+	if h, err := os.Hostname(); err == nil && h != "" {
+		out = append(out, h)
+		if i := strings.IndexByte(h, '.'); i > 0 {
+			out = append(out, h[:i])
+		}
+	}
+	return out
+}
+
+// hostOf is the host part of a name, a host:port or a URL, lower case.
+func hostOf(s string) string {
+	s = strings.TrimSpace(s)
+	if strings.Contains(s, "://") {
+		if u, err := url.Parse(s); err == nil {
+			s = u.Host
+		}
+	}
+	if h, _, err := net.SplitHostPort(s); err == nil {
+		s = h
+	}
+	return strings.ToLower(strings.Trim(s, "[]"))
 }
 
 // LoopbackHost reports whether a Host header names this machine's loopback.
 func LoopbackHost(hostport string) bool {
-	host := hostport
-	if h, _, err := net.SplitHostPort(hostport); err == nil {
-		host = h
-	}
-	host = strings.Trim(host, "[]")
-	if strings.EqualFold(host, "localhost") {
+	host := hostOf(hostport)
+	if host == "localhost" {
 		return true
 	}
 	ip := net.ParseIP(host)
@@ -81,10 +144,15 @@ func refuse(w http.ResponseWriter, msg string) {
 	_, _ = w.Write([]byte(`{"error":"` + msg + `"}` + "\n"))
 }
 
-func hostCheck(h http.Handler) http.Handler {
+func checks(h http.Handler) http.Handler {
+	cop := http.NewCrossOriginProtection()
+	return cop.Handler(upgradeCheck(h))
+}
+
+func hostCheck(h http.Handler, allow map[string]bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !LoopbackHost(r.Host) {
-			refuse(w, "this listener answers only 127.0.0.1, localhost or [::1]")
+		if !LoopbackHost(r.Host) && !allow[hostOf(r.Host)] {
+			refuse(w, "this listener does not answer to that name. $"+EnvHosts+" adds one")
 			return
 		}
 		h.ServeHTTP(w, r)

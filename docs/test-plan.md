@@ -7903,6 +7903,9 @@ Needs a hub with one room and two browsers on the board. `curl` stands in for th
 4. The board still works over a zrok share and a lent session: launch, drag, attach.
 5. With the agent listener answering 403 to everything, a session starts, runs a gated tool call through Claude Code's
    own prompt, and ends.
+5a. A terminal attaches from the board over a zrok public share and over `zrok access private`, both. The same share
+   asked with `-H "Host: evil.example"` answers 403. A board on a ziti service with `ATRIUM_HOSTS` unset logs once that
+   it answers any Host, and with `ATRIUM_HOSTS` set to its intercept address refuses any other.
 6. (R2, room) On a room's own board port, `curl -s -i http://127.0.0.1:7781/v1/tasks/<alias>` answers the card with
    `X-Atrium-Card` and `X-Atrium-Handle`. A qualified wire name goes as `tenant%2Fname`. `<alias>@<other-room>`
    answers 404 saying to ask the hub. A miss answers 404 with `would_work`.
