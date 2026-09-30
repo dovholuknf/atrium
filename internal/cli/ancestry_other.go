@@ -18,12 +18,34 @@ func runnerPID() int {
 		if !ok {
 			return 0
 		}
-		if i > 0 && runnerNames[name] {
+		if i > 0 && (runnerNames[name] || runnerNames[argv0Base(walk)]) {
 			return walk
 		}
 		walk = parent
 	}
 	return 0
+}
+
+// argv0Base is the lowercased basename of a process's argv[0], or "" when it
+// cannot be read.
+//
+// The name in /proc/<pid>/stat is not enough on its own: the native claude
+// install is a file named for its version, so the kernel says "2.1.285" while
+// argv[0] says "claude". Only asked when the name did not match, so node and
+// the shells in between cost nothing extra. The darwin file does the same.
+func argv0Base(pid int) string {
+	raw, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/cmdline")
+	if err != nil {
+		return ""
+	}
+	if i := strings.IndexByte(string(raw), 0); i >= 0 {
+		raw = raw[:i]
+	}
+	arg := string(raw)
+	if k := strings.LastIndexByte(arg, '/'); k >= 0 {
+		arg = arg[k+1:]
+	}
+	return strings.ToLower(arg)
 }
 
 // procStat reads a process's name and parent from /proc/<pid>/stat.
