@@ -556,7 +556,9 @@ func (g *Growler) act(id, do string, minutes int, via, tab string) (GrowlRow, in
 		state = "dismissed"
 	case "acted":
 		state = "acted"
-	case "undismiss":
+	// The design doc says reopen and the board was built on undismiss. One
+	// action under two names, rather than a board and a doc that disagree.
+	case "reopen", "undismiss":
 		state = "open"
 	case "snooze":
 		if minutes < 1 || minutes > growlSnoozeMaxMin {
@@ -566,7 +568,7 @@ func (g *Growler) act(id, do string, minutes int, via, tab string) (GrowlRow, in
 		state, until = "snoozed", g.now().Add(time.Duration(minutes)*time.Minute)
 	default:
 		return GrowlRow{}, http.StatusBadRequest,
-			errors.New(`"do" is dismiss, undismiss, snooze or acted`)
+			errors.New(`"do" is dismiss, reopen (or undismiss), snooze or acted`)
 	}
 	switch via {
 	case "board", "phone", "notification":

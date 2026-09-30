@@ -433,4 +433,9 @@ func TestGrowlEndpoints(t *testing.T) {
 	if rows, _ := rig.lastEvent(t)["growls"].([]any); len(rows) != 1 {
 		t.Fatalf("after an undismiss the event carried %v", rows)
 	}
+	// reopen is the design doc's name for the same action.
+	_, _ = do(http.MethodPost, path, `{"do":"dismiss","via":"board"}`)
+	if code, _ := do(http.MethodPost, path, `{"do":"reopen","via":"board"}`); code != 200 {
+		t.Fatalf("reopen answered %d", code)
+	}
 }
