@@ -131,7 +131,7 @@ func TestIdleParkRule(t *testing.T) {
 				c.mut(d, card)
 			}
 			d.parkIdle(idleAfter(3 * time.Hour))
-			got := settles(t, d, card.ID)
+			got := settlesTo(t, d, card.ID, c.parks)
 			if got != c.parks {
 				t.Fatalf("parked=%v, want %v", got, c.parks)
 			}
