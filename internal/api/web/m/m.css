@@ -58,6 +58,23 @@ body.m.sheet-open { overflow: hidden; }
 .growl button, .growl .btn { min-height: 40px; padding: 0 12px; border: 1px solid var(--stroke); border-radius: 10px; background: none; color: var(--body); cursor: pointer; display: inline-flex; align-items: center; text-decoration: none; }
 .growl button:disabled { opacity: .45; }
 .growl .gm-reply, .growl .gm-why { flex: 1; min-width: 120px; min-height: 40px; padding: 0 10px; border: 1px solid var(--stroke); border-radius: 10px; background: var(--bg-2); color: var(--head); font: inherit; }
+/* A question is read whole, in a box with its own scroll. Long paths and tokens wrap, a code block scrolls sideways
+   inside itself, and lists and paragraphs keep their spacing. */
+.growl .gm-full { flex: 0 1 auto; min-height: 0; }
+.growl .gm-body { flex: 1 1 auto; min-height: 5em; max-height: min(30dvh, 260px); overflow: auto; overflow-wrap: anywhere; color: var(--label); }
+.growl .gm-body p { margin: 0 0 .6em; }
+.growl .gm-body ol, .growl .gm-body ul { margin: 0 0 .6em; padding-left: 1.5em; }
+.growl .gm-body pre { margin: 0 0 .6em; padding: 6px 8px; overflow-x: auto; border-radius: 8px; background: var(--bg-2); }
+.growl .gm-body pre code { white-space: pre; overflow-wrap: normal; }
+.growl .gm-choices { display: flex; flex-wrap: wrap; gap: 8px; }
+.growl .gm-choices button { text-align: left; overflow-wrap: anywhere; height: auto; padding-top: 8px; padding-bottom: 8px; }
+/* The reply box grows with what is typed up to a cap, then scrolls. The bigger box is taller. */
+.growl .gm-replybox { display: flex; gap: 8px; align-items: flex-end; }
+.growl .gm-replybox .gm-reply { padding: 9px 10px; resize: none; line-height: 1.4; overflow-y: auto; max-height: 9em; min-width: 0; }
+.growl .gm-replyacts { display: flex; gap: 8px; }
+.growl .gm-replybox.big { flex-direction: column; align-items: stretch; }
+.growl .gm-replybox.big .gm-reply { min-height: 22dvh; max-height: 34dvh; }
+.growl .gm-full:has(.gm-replybox.big) .gm-body { max-height: min(16dvh, 140px); }
 .growl .gm-strip { width: 100%; text-align: left; border-style: dashed; color: var(--label); }
 .growl .gm-undo { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
 
