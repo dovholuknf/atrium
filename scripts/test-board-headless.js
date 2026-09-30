@@ -11531,6 +11531,107 @@ async function popoutNotifySection(browser, base) {
   tasksMode = was;
 }
 
+// ── the focused window that shows a card silences its ready alert in EVERY window ──────────────────────
+// Two documents of one browser share a BroadcastChannel. The focused one is attached to card X on the
+// terminals view, the other is unfocused. X goes ready: neither toasts nor plays, both log. Then focus
+// moves away and the next wait rings.
+async function readyTwoWindowsSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const errors = [];
+  await ctx.addInitScript(() => {
+    window.__atriumReadyQuietMs = 600;
+    window.__focus = false;
+    Document.prototype.hasFocus = () => window.__focus;
+    window.__osc = 0;
+    window.AudioContext = class {
+      constructor() { this.state = "running"; this.currentTime = 0; this.destination = {}; }
+      resume() {}
+      createOscillator() {
+        window.__osc++;
+        return { type: "", frequency: { setValueAtTime() {} }, connect: x => x, start() {}, stop() {} };
+      }
+      createGain() {
+        return { gain: { setValueAtTime() {}, linearRampToValueAtTime() {}, exponentialRampToValueAtTime() {} },
+          connect: x => x };
+      }
+    };
+  });
+  const open = async () => {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof alerting !== "undefined" && typeof soloAlert === "function", null,
+      { timeout: slow(15000) });
+    await p.waitForTimeout(1500);
+    await p.evaluate(() => {
+      alerting.set({ debounce: 0, muted: false });
+      document.dispatchEvent(new Event("pointerdown"));
+      window.__osc = 0;
+    });
+    return p;
+  };
+  const a = await open();
+  const b = await open();
+  try {
+    await a.evaluate(() => localStorage.removeItem("atrium.toastlog"));
+    // A: focused, the board with X attached on the terminals view.
+    await a.evaluate(() => {
+      window.__focus = true;
+      term = {};
+      termTask = { id: "tw-x" };
+      document.getElementById("terms").hidden = false;
+      sayWhetherFocused();
+    });
+    await b.waitForTimeout(300);
+    const state = p => p.evaluate(t => ({
+      toasted: [...document.querySelectorAll("#toasts .toast")].some(e => e.textContent.includes(t)),
+      osc: window.__osc
+    }), "tw-x is ready");
+    const logged = p => p.evaluate(() => toastLog().some(e => e.title === "tw-x is ready"));
+    const w = since => ({ id: "tw-x", task_id: "tw-x", status: "needs-input", waiting_since: since });
+    const say = t => ({ title: t.id + " is ready", body: "done" });
+
+    // 1. The unfocused board on the kanban hears X go ready.
+    await b.evaluate(([w1, sayS]) => {
+      alerting.check("waiting", [], t => ({ title: t.id + " is ready", body: "done" }));
+      alerting.check("waiting", [{ id: "tw-x", task_id: "tw-x", status: "needs-input", waiting_since: "W1" }],
+        t => ({ title: t.id + " is ready", body: "done" }));
+    }, [0, 0]);
+    await b.waitForTimeout(1000);
+    const a1 = await state(a), b1 = await state(b);
+    if (a1.toasted || a1.osc || b1.toasted || b1.osc) fail("readyTwoWindows: the focused board's card rang in a window: " + JSON.stringify({ a1, b1 }));
+    if (!await logged(b)) fail("readyTwoWindows: the unfocused board left no log line");
+
+    // 2. A pop-out of X, unfocused, while the board is focused on X.
+    await b.evaluate(() => {
+      soloID = "tw-x";
+      soloTask = { id: "tw-x", display_title: "tw-x" };
+      soloKnown = { perm: null, ready: false };
+      term = {};
+      termTask = { id: "tw-x" };
+      history.replaceState(null, "", "#term=tw-x");
+      soloAlert("ready", true, { id: "tw-x", waiting_since: "P1" });
+    });
+    await b.waitForTimeout(1000);
+    const a2 = await state(a), b2 = await state(b);
+    if (a2.toasted || a2.osc || b2.toasted || b2.osc) fail("readyTwoWindows: an unfocused pop-out rang for the card the focused board shows: " + JSON.stringify({ a2, b2 }));
+
+    // 3. Control: focus leaves the board, and the next wait rings.
+    await a.evaluate(() => { window.__focus = false; sayWhetherFocused(); });
+    await b.waitForTimeout(300);
+    await b.evaluate(() => {
+      soloKnown = { perm: null, ready: false };
+      soloAlert("ready", true, { id: "tw-x", waiting_since: "P2" });
+    });
+    await b.waitForTimeout(1000);
+    const b3 = await state(b);
+    if (!b3.toasted && !b3.osc) fail("readyTwoWindows: with focus away the next wait did not ring: " + JSON.stringify(b3));
+  } finally {
+    await ctx.close();
+  }
+  if (errors.length) fail("readyTwoWindows: a page threw: " + errors.join(" | "));
+}
+
 async function main() {
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = "http://127.0.0.1:" + server.address().port;
@@ -11553,7 +11654,7 @@ async function main() {
       usageCacheReads: usageCacheReadsSection, roomsDash: roomsDashSection, phoneView: phoneViewSection, heldLine: heldLineSection, u016: u016Section, phoneHeader: phoneHeaderSection, phoneFocus: phoneFocusSection, phoneTermBar: phoneTermBarSection, phoneShare: phoneShareSection, phonePan: phonePanSection, phoneFollow: phoneFollowSection, phoneTap: phoneTapSection, phoneKeyboard: phoneKeyboardSection, phoneCompose: phoneComposeSection, mCompose: mComposeSection, mPerms: mPermsSection, usagePolish: usagePolishSection, usageLimits: usageLimitsSection, usageGroups: usageGroupsSection,
       eventDriven: eventDrivenSection, idleBudget: idleBudgetSection, pollsGone: pollsGoneSection,
       phoneListFit: phoneListFitSection, phoneNudge: phoneNudgeSection,
-      cacheChip: cacheChipSection, cacheLine: cacheLineSection, mHome: mHomeSection, mCard: mCardSection, mServe: mServeSection, phoneKeyLabel: phoneKeyLabelSection, phoneKeyLit: phoneKeyLitSection, shiftMenu: shiftMenuSection, notifyCommand: notifyCommandSection, presence: presenceSection, tallPty: tallPtySection, roomsMachine: roomsMachineSection, readyOnce: readyOnceSection, readyPopout: readyPopoutSection, popoutNotify: popoutNotifySection };
+      cacheChip: cacheChipSection, cacheLine: cacheLineSection, mHome: mHomeSection, mCard: mCardSection, mServe: mServeSection, phoneKeyLabel: phoneKeyLabelSection, phoneKeyLit: phoneKeyLitSection, shiftMenu: shiftMenuSection, notifyCommand: notifyCommandSection, presence: presenceSection, tallPty: tallPtySection, roomsMachine: roomsMachineSection, readyOnce: readyOnceSection, readyPopout: readyPopoutSection, popoutNotify: popoutNotifySection, readyTwoWindows: readyTwoWindowsSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -13547,6 +13648,7 @@ async function main() {
     await readyPopoutSection(browser, base);
     // ── a pop-out's bell is its own: the card's switch and mute, never the board's ──
     await popoutNotifySection(browser, base);
+    await readyTwoWindowsSection(browser, base);
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e));
     if (process.env.DEBUG_HEADLESS) {
