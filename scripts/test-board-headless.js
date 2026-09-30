@@ -10801,6 +10801,204 @@ async function presenceSection(browser, base) {
   // And an idle board adds no request per minute: idleBudget is run beside this one and still has to pass.
 }
 
+// ── t-003c: the pty is taller than the pane, so the board draws all of it and clips to the cursor ──
+// Test plan @LETTER@ in docs/changes/u-033.md. A desktop pane, a size frame with more rows than the pane fits.
+async function tallPtySection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  landList = [LAND["land-live"]];
+  landPerms = [];
+  const errors = [];
+  const fakeSock = () => {
+    const Real = window.WebSocket;
+    window.__sent = [];
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
+        onopen: null, onclose: null, onmessage: null, onerror: null,
+        send(d) { window.__sent.push(String(d)); }, close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  };
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 560 } });
+  try {
+    await ctx.addInitScript(() => {
+      localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true }));
+      localStorage.setItem("atrium.termphone", "0");
+    });
+    await ctx.addInitScript(fakeSock);
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e.stack || e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await p.evaluate(() => attachTask("land-live"));
+    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live",
+      null, { timeout: slow(10000) });
+    await p.waitForTimeout(300);
+    const size = async (rows) => {
+      await p.evaluate((r) => termSock.onmessage({ data: '{"t":"size","cols":132,"rows":' + r + '}' }), rows);
+      await p.waitForTimeout(250);
+    };
+    const put = async (s) => { await p.evaluate((x) => termSock.onmessage({ data: x }), s); await p.waitForTimeout(250); };
+    // Where row `r` (0 based) sits against the pane, in px.
+    const rowBox = (r) => p.evaluate((row) => {
+      const host = document.getElementById("t-screen"), x = host.querySelector(".xterm");
+      const ch = term._core._renderService.dimensions.css.cell.height;
+      const hb = host.getBoundingClientRect(), top = x.getBoundingClientRect().top + row * ch;
+      return { top, bottom: top + ch, hostTop: hb.top, hostBottom: hb.bottom, ch };
+    }, r);
+    const inside = (b) => b.top >= b.hostTop - 1 && b.bottom <= b.hostBottom + 1;
+    const st = () => p.evaluate(() => {
+      const host = document.getElementById("t-screen");
+      return { rows: term.rows, tall: host.classList.contains("tall"), st: host.scrollTop, fit: termFitRows,
+        oy: getComputedStyle(host).overflowY, viewportY: term.buffer.active.viewportY, baseY: term.buffer.active.baseY };
+    });
+    const resizes = () => p.evaluate(() => window.__sent.filter(x => /"t":"resize"/.test(x)).map(x => JSON.parse(x)));
+
+    // 1. a taller pty: the grid is the pty's, the pane clips it, the cursor stays in view at both ends.
+    const s0 = await st();
+    if (s0.tall || s0.fit < 8 || s0.fit >= 48) fail("tallPty: the pane fits " + s0.fit + " rows or starts tall: " + JSON.stringify(s0));
+    await size(48);
+    await put("\x1b[2J\x1b[4;1Hprompt");
+    let s1 = await st();
+    if (s1.rows !== 48 || !s1.tall) fail("tallPty: 48 rows did not draw tall: " + JSON.stringify(s1));
+    if (s1.oy !== "hidden") fail("tallPty: the clip is not overflow-y hidden, so there could be a second scrollbar: " + s1.oy);
+    if (!inside(await rowBox(3))) fail("tallPty: the cursor at row 3 is outside the pane");
+    await put("\x1b[2J\x1b[48;1Hprompt");
+    s1 = await st();
+    if (!inside(await rowBox(47))) fail("tallPty: the cursor at row 47 is outside the pane: " + JSON.stringify(s1));
+    if (s1.st <= 0) fail("tallPty: the clip did not follow the cursor to the bottom: " + JSON.stringify(s1));
+
+    // 2. non blank rows under the cursor stay in view: the cursor at 40 of 48, text down to 44.
+    await put("\x1b[2J\x1b[45;1Hmode line\x1b[41;1Hprompt");
+    const c40 = await rowBox(40), c44 = await rowBox(44);
+    if (!inside(c40) || !inside(c44)) fail("tallPty: rows 40 to 44 do not all show: " + JSON.stringify([c40, c44]));
+    if (inside(await rowBox(46))) fail("tallPty: blank rows under the last text row were kept in view");
+
+    // 3. the rule falls back to the cursor row plus one when what is under it does not fit.
+    const fit = (await st()).fit;
+    await put("\x1b[2J\x1b[" + (fit + 12) + ";1Hbelow\x1b[3;1Hprompt");
+    if (!inside(await rowBox(2)) || !inside(await rowBox(3))) fail("tallPty: the cursor row plus one is not in view when the rest does not fit");
+
+    // 4. the wheel brings hidden rows in: xterm's own scroll moves rows, the clip stays where it was.
+    await p.evaluate(() => { let s = ""; for (let i = 0; i < 120; i++) s += "history " + i + "\r\n"; termSock.onmessage({ data: s + "\x1b[48;1Hprompt" }); });
+    await p.waitForTimeout(300);
+    const before = await st();
+    const box = await p.evaluate(() => { const r = document.getElementById("t-screen").getBoundingClientRect(); return { x: r.left + 40, y: r.top + 60 }; });
+    await p.mouse.move(box.x, box.y);
+    for (let i = 0; i < 5; i++) await p.mouse.wheel(0, -40);
+    await p.waitForTimeout(300);
+    const after = await st();
+    if (!(after.viewportY < before.viewportY)) fail("tallPty: the wheel did not scroll xterm: " + JSON.stringify([before, after]));
+    if (after.st !== before.st) fail("tallPty: scrolling xterm moved the clip: " + JSON.stringify([before, after]));
+    await p.evaluate(() => term.scrollToBottom());
+    await p.waitForTimeout(200);
+
+    // 5. no feedback loop: a fit still proposes what the pane shows, and the resize frames say so.
+    await p.evaluate(() => fitTerm());
+    const s5 = await st();
+    if (s5.fit !== fit || s5.rows !== 48) fail("tallPty: a fit changed the answer, a loop: " + JSON.stringify([fit, s5]));
+    const rs = await resizes();
+    if (rs.some(r => r.rows > fit)) fail("tallPty: a resize frame carried the pty's height, not the pane's: " + JSON.stringify(rs));
+
+    // 6. a link inside the clipped grid opens itself. The text is on a row the clip is showing.
+    await put("\x1b[2J\x1b[47;1Hsee https://example.com/tall-link now\x1b[48;1Hprompt");
+    await p.evaluate(() => { window.__opened = []; window.openLinkReused = (u) => window.__opened.push(u); });
+    const lb = await p.evaluate(() => {
+      const host = document.getElementById("t-screen"), x = host.querySelector(".xterm-screen").getBoundingClientRect();
+      const d = term._core._renderService.dimensions.css.cell;
+      return { x: x.left + d.width * 12, y: x.top + d.height * 46.5 };
+    });
+    await p.mouse.move(lb.x, lb.y);
+    await p.waitForTimeout(150);
+    await p.mouse.click(lb.x, lb.y);
+    await p.waitForTimeout(200);
+    const opened = await p.evaluate(() => window.__opened);
+    if (opened.length !== 1 || opened[0] !== "https://example.com/tall-link") fail("tallPty: a click on a link in the clip opened " + JSON.stringify(opened));
+
+    // 7. mouse reporting reads xterm's own rect, so a click sends the grid's coordinates and not the pane's.
+    await put("\x1b[2J\x1b[?1000h\x1b[?1006h\x1b[48;1Hprompt");
+    await p.evaluate(() => { window.__sent.length = 0; });
+    const mb = await p.evaluate(() => {
+      const x = document.querySelector("#t-screen .xterm-screen").getBoundingClientRect();
+      const d = term._core._renderService.dimensions.css.cell;
+      return { x: x.left + d.width * 4.5, y: x.top + d.height * 45.5 };
+    });
+    await p.mouse.click(mb.x, mb.y);
+    await p.waitForTimeout(200);
+    const rep = await p.evaluate(() => window.__sent.map(x => { try { return JSON.parse(x).d || ""; } catch (e) { return ""; } })
+      .filter(x => x.indexOf("\x1b[<0;") === 0));
+    if (!rep.length || !/\[<0;5;46M/.test(rep[0])) fail("tallPty: a mouse click reported " + JSON.stringify(rep) + ", not column 5 row 46");
+    await put("\x1b[?1000l\x1b[?1006l");
+
+    // 8. selection: a drag past the pane's bottom. Accepted, not autoscrolled: xterm's autoscroll works its own
+    // viewport and #t-screen is not it, so the clip stays put and nothing throws.
+    const sel0 = await st();
+    const db = await p.evaluate(() => { const r = document.getElementById("t-screen").getBoundingClientRect(); return { x: r.left + 60, y: r.top + 30, y2: r.bottom + 40 }; });
+    await p.mouse.move(db.x, db.y); await p.mouse.down(); await p.mouse.move(db.x + 80, db.y2, { steps: 6 });
+    await p.waitForTimeout(300); await p.mouse.up();
+    const sel1 = await st();
+    if (sel1.st !== sel0.st) fail("tallPty: a selection drag moved the clip: " + JSON.stringify([sel0, sel1]));
+
+    // 9. focus and typing leave the clip where the rule put it (u-017's fight).
+    await put("\x1b[2J\x1b[48;1Hprompt");
+    const f0 = await st();
+    await p.evaluate(() => { document.activeElement && document.activeElement.blur(); term.focus(); });
+    await p.waitForTimeout(250);
+    await p.keyboard.type("abc");
+    await p.waitForTimeout(250);
+    const f1 = await st();
+    if (f1.st !== f0.st || !f1.tall) fail("tallPty: focus or typing moved the clip: " + JSON.stringify([f0, f1]));
+
+    // 10. a pane resize reruns the clip and the fit: a taller pane shows more, and the frame is the fit's.
+    await p.evaluate(() => { window.__sent.length = 0; });
+    await p.setViewportSize({ width: 1280, height: 420 });
+    await p.waitForTimeout(700);
+    const r0 = await st();
+    if (r0.fit >= fit || r0.rows !== 48 || !r0.tall) fail("tallPty: a shorter pane did not refit: " + JSON.stringify([fit, r0]));
+    if (!inside(await rowBox(47))) fail("tallPty: after a pane resize the cursor left the pane");
+    const rs2 = await resizes();
+    if (rs2.some(r => r.rows > r0.fit)) fail("tallPty: the resize after a pane drag was the pty's height: " + JSON.stringify(rs2));
+
+    // 11. the find bar and a tooltip stay inside the pane.
+    await p.evaluate(() => openFind());
+    await p.waitForTimeout(200);
+    const fb = await p.evaluate(() => {
+      const f = document.getElementById("t-find").getBoundingClientRect(), pn = document.querySelector(".term-pane").getBoundingClientRect();
+      return { fl: f.left, ft: f.top, fr: f.right, fb: f.bottom, pl: pn.left, pt: pn.top, pr: pn.right, pb: pn.bottom };
+    });
+    if (fb.fl < fb.pl - 1 || fb.ft < fb.pt - 1 || fb.fr > fb.pr + 1 || fb.fb > fb.pb + 1) fail("tallPty: the find bar left the pane: " + JSON.stringify(fb));
+    await p.keyboard.press("Escape");
+
+    // 12. a size frame of the pane's own height takes tall off. A frame taller than the pane puts it back.
+    await size((await st()).fit);
+    const t0 = await st();
+    if (t0.tall || t0.st !== 0) fail("tallPty: a size frame at the pane's height left tall on: " + JSON.stringify(t0));
+    await size(48);
+    if (!(await st()).tall) fail("tallPty: 48 rows did not bring tall back");
+
+    // 13. SAFE ON AN OLD ROOM: an old room never makes the pty taller than a viewer, so its size frames are never
+    // above the fit. Every one of them, and a room that sends none, leaves tall off.
+    await size((await st()).fit - 3);
+    const old2 = await st();
+    if (old2.tall || old2.rows !== old2.fit - 3) fail("tallPty: a pty under the pane's rows switched tall on: " + JSON.stringify(old2));
+    await size((await st()).fit);
+    const old0 = await st();
+    if (old0.tall || old0.st !== 0) fail("tallPty: a pty at the pane's rows switched tall on: " + JSON.stringify(old0));
+    await p.evaluate(() => { termPtyRows = 0; applyPtySize(); });
+    await p.waitForTimeout(150);
+    const old1 = await st();
+    if (old1.tall || old1.rows !== old1.fit) fail("tallPty: with no rows from the room the grid is not the fit: " + JSON.stringify(old1));
+  } finally {
+    await ctx.close();
+    tasksMode = was;
+  }
+  if (errors.length) fail("tallPty: the page threw: " + errors.join(" | "));
+}
+
 async function main() {
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = "http://127.0.0.1:" + server.address().port;
@@ -10823,7 +11021,7 @@ async function main() {
       usageCacheReads: usageCacheReadsSection, roomsDash: roomsDashSection, phoneView: phoneViewSection, heldLine: heldLineSection, u016: u016Section, phoneHeader: phoneHeaderSection, phoneFocus: phoneFocusSection, phoneTermBar: phoneTermBarSection, phoneShare: phoneShareSection, phonePan: phonePanSection, phoneFollow: phoneFollowSection, phoneTap: phoneTapSection, phoneKeyboard: phoneKeyboardSection, phoneCompose: phoneComposeSection, mCompose: mComposeSection, mPerms: mPermsSection, usagePolish: usagePolishSection, usageLimits: usageLimitsSection, usageGroups: usageGroupsSection,
       eventDriven: eventDrivenSection, idleBudget: idleBudgetSection, pollsGone: pollsGoneSection,
       phoneListFit: phoneListFitSection, phoneNudge: phoneNudgeSection,
-      cacheChip: cacheChipSection, cacheLine: cacheLineSection, mHome: mHomeSection, mCard: mCardSection, mServe: mServeSection, phoneKeyLabel: phoneKeyLabelSection, phoneKeyLit: phoneKeyLitSection, shiftMenu: shiftMenuSection, notifyCommand: notifyCommandSection, presence: presenceSection };
+      cacheChip: cacheChipSection, cacheLine: cacheLineSection, mHome: mHomeSection, mCard: mCardSection, mServe: mServeSection, phoneKeyLabel: phoneKeyLabelSection, phoneKeyLit: phoneKeyLitSection, shiftMenu: shiftMenuSection, notifyCommand: notifyCommandSection, presence: presenceSection, tallPty: tallPtySection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -12777,6 +12975,7 @@ async function main() {
     await shiftMenuSection(browser, base);
     await notifyCommandSection(browser, base);
     await presenceSection(browser, base);
+    await tallPtySection(browser, base);
     await usagePolishSection(browser, base);
     await usageLimitsSection(browser, base);
     await usageGroupsSection(browser, base);
