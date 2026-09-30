@@ -259,14 +259,12 @@ f-004's.
    on a room. A director's run is the check alone, never `-Fix`, so a director never changes a room on its own. Not
    on a timer, since a source is a suggestion and this is a gate.
 
-## 9. Open questions
+## 9. Decided with clint (2026-09-29)
 
-1. **The name, for clint.** He said `atrium.requirements`. The `.yaml` suffix is our recommendation, and it changes
-   his word.
-2. **Who gives `-Yes` on a real room.** A restart is clint's call. Is an account-scope fix (installing the hooks) his
-   too, or atrium-87300's, as the first hook install on sg3 and m1mini was?
-3. **`runner_auth: [claude, codex]` fails sg3,** which has no codex. That is the check telling the truth, and it
-   means sg3 cannot take atrium's codex work. Either install codex there (f-007's installer, then clint's
-   `codex login --device-auth`), or accept sg3 as claude only, which needs a per-room way to say "this room takes
-   only claude work". Recommend installing codex on sg3, since a per-room exception is the first step to a file
-   that no longer says what a room needs.
+These were the open questions. The answers came through atrium-87300.
+
+1. **The name keeps `.yaml`.** `atrium.requirements.yaml`, as section 8 recommends.
+2. **clint alone gives `-Yes` on a real room,** for a restart and for an account-scope fix (installing the hooks)
+   alike. A director or atrium-87300 runs the check and `-Fix` at machine and room scope only.
+3. **sg3 gets codex, the npm way,** so `runner_auth: [claude, codex]` stays as written and there is no per-room
+   exception. Then clint runs `codex login --device-auth` there.
