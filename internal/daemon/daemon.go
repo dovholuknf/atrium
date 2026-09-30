@@ -207,6 +207,8 @@ type Daemon struct {
 	// ctx is each live Claude card's context size, read from its transcript.
 	// See contextsize.go.
 	ctx *contextSizes
+	// output is when each card's transcript last gained a reply. See outputat.go.
+	output outputTimes
 
 	// announced is every conversation id a SessionStart announced for a card
 	// (key "card|id"), and resumeNoted the refusals already written onto a
@@ -558,6 +560,7 @@ func New(opts Options) (*Daemon, error) {
 	d.ka.session = d.ctx.sessionOf
 	d.auto = newAutoContexts()
 	api.ContextSizeOf = d.contextSizeFor
+	api.OutputAtOf = d.outputAtFor
 	// Token use on record, read only by a card's details. See usage.go.
 	d.usage = newUsageTracker(st)
 	d.usage.broadcast = d.ap.Broadcast

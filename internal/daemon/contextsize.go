@@ -203,6 +203,10 @@ func (d *Daemon) watchContext() error {
 		if h, err := d.st.Harness(t.Runner); err != nil || !isClaude(h) {
 			continue
 		}
+		// For a runner whose hooks are not wired. See outputat.go.
+		if d.outputMoved(t) {
+			d.publishTask(t.ID)
+		}
 		tokens, changed := d.ctx.read(t)
 		if tokens == 0 {
 			// A card just cleared reads as nothing until its new conversation has a reply,
@@ -245,5 +249,6 @@ func (d *Daemon) watchContext() error {
 	// until its new conversation has a reply, and its arm state must outlast that.
 	d.auto.forgetExcept(open)
 	d.ctx.forgetSessions(open)
+	d.forgetOutput(open)
 	return nil
 }
