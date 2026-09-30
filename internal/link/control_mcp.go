@@ -83,13 +83,19 @@ type controlMCP struct {
 	reservations []reservation
 	// resSeq numbers reservations so each has a distinct id.
 	resSeq int
+
+	// capFor is the launch cap for one room. Nil means launchCap() for every
+	// room, which is what a test that builds this directly gets. See
+	// launchcaps.go.
+	capFor func(room string) int
 }
 
-// reservation is one in-flight launch holding a slot against the cap until its
-// card appears in the live count or it expires.
+// reservation is one in-flight launch holding a slot against its room's cap
+// until its card appears in the live count or it expires.
 type reservation struct {
-	id string
-	at time.Time
+	id   string
+	room string
+	at   time.Time
 }
 
 // newControlHandler builds the hub-side control MCP server as an http.Handler,
@@ -1036,9 +1042,22 @@ func launchCap() int {
 	return DefaultLaunchCap
 }
 
-// runningForCap counts the sessions that count against the launch cap: live
-// supervised runners tagged SubagentTag, aggregated across every room the hub
-// can see because the machine load they put on the box is shared.
+// capOf is the launch cap for one room.
+func (c *controlMCP) capOf(room string) int {
+	if c.capFor != nil {
+		return c.capFor(room)
+	}
+	return launchCap()
+}
+
+// runningForCap counts the sessions that count against a room's launch cap:
+// live supervised runners tagged SubagentTag, on THAT ROOM ONLY.
+//
+// PER ROOM, because a room is a machine and the cap is about the load on it.
+// This used to count the aggregate over every room the hub could see, so five
+// workers on sg3 and five on sg4 refused a launch onto either. An empty room is
+// a caller the hub cannot place, and gets the aggregate, which can only ever be
+// more cautious.
 //
 // ONLY SUBAGENTS. OriginTag is on every atrium_launch card, orchestrators and
 // the resident merger as much as their workers, so it is not what the cap
@@ -1046,13 +1065,11 @@ func launchCap() int {
 // it. A done/dead/shelved card has no running runner and a backlog card has not
 // started one, so none of them count, and the launch being attempted is not
 // present yet so it is never counted.
-func (c *controlMCP) runningForCap(ctx context.Context) (int, error) {
+func (c *controlMCP) runningForCap(ctx context.Context, room string) (int, error) {
 	var body struct {
 		Tasks []ctlCard `json:"tasks"`
 	}
-	// Empty room is the aggregate view over every attached room, which is what a
-	// shared-machine cap wants rather than one room's slice.
-	if err := c.ask(ctx, http.MethodGet, "/v1/tasks", "", nil, &body); err != nil {
+	if err := c.ask(ctx, http.MethodGet, "/v1/tasks", room, nil, &body); err != nil {
 		return 0, err
 	}
 	n := 0
@@ -1083,23 +1100,30 @@ func (c *controlMCP) runningForCap(ctx context.Context) (int, error) {
 // The count is done here under the lock rather than at the call site so the
 // check and the record are one indivisible step. Expired reservations are swept
 // on the way in, which is the only place they need collecting.
-func (c *controlMCP) reserveSlot(live, limit int) (id string, ok bool) {
+//
+// Reservations are per room, like the count: a launch in flight to sg3 holds
+// nothing against sg4.
+func (c *controlMCP) reserveSlot(room string, live, limit int) (id string, ok bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	now := time.Now()
 	kept := c.reservations[:0]
+	pending := 0
 	for _, r := range c.reservations {
 		if now.Sub(r.at) < reservationTTL {
 			kept = append(kept, r)
+			if equalFold(r.room, room) {
+				pending++
+			}
 		}
 	}
 	c.reservations = kept
-	if live+len(c.reservations) >= limit {
+	if live+pending >= limit {
 		return "", false
 	}
 	c.resSeq++
 	id = strconv.Itoa(c.resSeq) + "@" + now.Format(time.RFC3339Nano)
-	c.reservations = append(c.reservations, reservation{id: id, at: now})
+	c.reservations = append(c.reservations, reservation{id: id, room: room, at: now})
 	return id, true
 }
 
@@ -1194,15 +1218,19 @@ func (c *controlMCP) launchHandler(ctx context.Context, req *mcp.CallToolRequest
 	// room, the board mid-restart), not a reason to brick launching, so allow the
 	// launch rather than wrongly refuse. The soft nudge in the redirect hook is
 	// the first line of defence and a stuck count must not become a launch outage.
-	limit := launchCap()
-	if n, err := c.runningForCap(ctx); err == nil {
-		if _, ok := c.reserveSlot(n, limit); !ok {
+	limit := c.capOf(room)
+	if n, err := c.runningForCap(ctx, room); err == nil {
+		if _, ok := c.reserveSlot(room, n, limit); !ok {
+			where := "room " + room
+			if room == "" {
+				where = "every room together"
+			}
 			if c.audit != nil {
 				c.audit(room, "launch-refused", fmt.Sprintf(
-					"at the cap of %d running sessions", limit))
+					"at the cap of %d running workers on %s", limit, where))
 			}
-			return nil, out, fmt.Errorf("at the launch cap of %d running sessions. wait for one to "+
-				"finish, or exit one, before launching another", limit)
+			return nil, out, fmt.Errorf("at the launch cap of %d running workers on %s. wait for one "+
+				"to finish, exit one, or launch on another room", limit, where)
 		}
 	}
 
