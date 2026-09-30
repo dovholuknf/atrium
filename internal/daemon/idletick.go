@@ -49,6 +49,9 @@ type handoffMark struct {
 	written    bool
 	timedOut   bool
 	timeoutWhy string
+	// prev is the mark an automatic new context found when it took this one, put
+	// back if the cycle fails.
+	prev *handoffMark
 }
 
 // idleParks is the tick's memory, in memory on purpose: it describes an idle
