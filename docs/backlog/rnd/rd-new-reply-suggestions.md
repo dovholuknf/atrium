@@ -1,6 +1,6 @@
 # rd-new-reply-suggestions: the quick-reply buttons say what this question's answers are
 
-Status: queued for @rnd design (clint, 2026-09-30 evening), @ui builds after, @runtime if the parse lives in the room.
+Status: designed by @rnd, `docs/rnd/reply-suggestions-design.md`. @ui builds RS1 and RS4, @runtime RS2 and RS3.
 
 ## Why
 
