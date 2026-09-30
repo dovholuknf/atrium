@@ -1324,9 +1324,11 @@ function Build-Checkout {
     $ver = (git -C $checkout describe --tags --exact-match 2>$null)
     if (-not $ver) { $ver = 'dev' }
     $commit = (git -C $checkout rev-parse HEAD 2>$null)
+    # Tracked files only, as the Makefile does. See `Tree` in internal/cli/version.go.
+    $tree = if (git -C $checkout status --porcelain --untracked-files=no 2>$null) { 'modified' } else { 'clean' }
     $env:CGO_ENABLED = '0'; $env:GOOS = $os; $env:GOARCH = $goarch
     try {
-        $b = & go -C $checkout build -trimpath -ldflags "-s -w -X github.com/dovholuknf/atrium/internal/cli.Version=$ver -X github.com/dovholuknf/atrium/internal/cli.Commit=$commit" -o $Binary ./cmd/atrium 2>&1
+        $b = & go -C $checkout build -trimpath -ldflags "-s -w -X github.com/dovholuknf/atrium/internal/cli.Version=$ver -X github.com/dovholuknf/atrium/internal/cli.Commit=$commit -X github.com/dovholuknf/atrium/internal/cli.Tree=$tree" -o $Binary ./cmd/atrium 2>&1
         $bc = $LASTEXITCODE
     } finally {
         Remove-Item Env:CGO_ENABLED, Env:GOOS, Env:GOARCH -ErrorAction SilentlyContinue
