@@ -41,11 +41,7 @@ function termDeviceKey(base) { return termNarrow() ? base + ".mobile" : base; }
 // and the hub agree on what a doer is rather than keeping a second definition
 // that can drift. A tag, not a dedicated field, because that is the durable
 // structural signal the board actually receives per card.
-const DOER_TAG = "origin:agent";
-function isDoer(t) {
-  return !!(t && Array.isArray(t.tags) &&
-    t.tags.some(x => String(x).trim().toLowerCase() === DOER_TAG));
-}
+// DOER_TAG and isDoer live in js/cardrules.js.
 
 // HIDE, NOT COLLAPSE-INTO-A-GROUP, and here is why the plainer of the two won.
 // A collapsed "N doers" group would have to be a heading, and the strip already

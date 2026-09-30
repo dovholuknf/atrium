@@ -13043,7 +13043,7 @@ async function bootCleanSection(browser, base) {
       const p = await ctx.newPage();
       await p.route(/\/alias\/rnd$/, r => r.fulfill({ status: 200, contentType: "text/html", body: raw }));
       const errors = [];
-      p.on("pageerror", e => errors.push(String(e && e.message || e)));
+      p.on("pageerror", e => errors.push(String(e && e.message || e) + (process.env.BOOT_STACK ? " " + e.stack : "")));
       const tag = "bootClean " + v.w + " " + at + ": ";
       try {
         await p.goto(base + at, { waitUntil: "load" });
@@ -13058,6 +13058,74 @@ async function bootCleanSection(browser, base) {
     }
   }
   if (!bad) console.log("bootClean ok");
+}
+
+// ── the /m home order, grouping and filters ──────────────────────────────
+async function mHomeOrderSection(browser) {
+  const st = mServer({});
+  await st.open();
+  const cards = () => [
+    mCard("a-1", { alias: "alpha", worktree: "/g/github/o/one", last_activity_at: mIso(5 * M_MIN) }),
+    mCard("b-1", { alias: "bravo", worktree: "/g/github/o/two", status: "done", last_activity_at: mIso(1 * M_MIN) }),
+    mCard("c-1", { alias: "charlie", worktree: "/g/github/o/one", tags: ["origin:agent"], last_activity_at: mIso(30 * M_MIN) }),
+    mCard("d-1", { alias: "delta", worktree: "/g/github/o/two", status: "needs-input", waiting_since: mIso(10 * M_MIN), last_activity_at: mIso(10 * M_MIN) }),
+  ];
+  const names = p => p.$$eval("#m-list .row .name b", e => e.map(x => x.textContent));
+  const heads = p => p.$$eval("#m-list h2.grp", e => e.map(x => x.textContent.replace(/\s+/g, " ").trim()));
+  const pick = async (p, sel) => { await p.tap(sel); await p.waitForTimeout(150); };
+  try {
+    for (const vp of M_VIEWS) {
+      st.tasks = cards();
+      st.perms = [];
+      const { ctx, p, errors } = await mPage(browser, st, vp, "");
+      const tag = "mHomeOrder " + vp.width + ": ";
+      await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
+      // newest first by default, in the needs list too
+      let n = await names(p);
+      if (n.join(",") !== "delta") fail(tag + "needs list is " + n.join(","));
+      await p.tap("#m-seg-all");
+      await p.waitForSelector("#m-list h2.grp", { timeout: slow(5000) });
+      n = await names(p);
+      if (n.join(",") !== "alpha,charlie,delta,bravo") fail(tag + "default is not newest first inside each status group: " + n.join(","));
+      await p.tap("#m-opts-btn");
+      await pick(p, '[data-opt="order"][data-val="oldest"]');
+      n = await names(p);
+      if (n.join(",") !== "charlie,alpha,delta,bravo") fail(tag + "oldest first is " + n.join(","));
+      await pick(p, '[data-opt="group"][data-val="project"]');
+      let h = await heads(p);
+      n = await names(p);
+      if (h.length !== 2 || !/^o\/one/.test(h[0]) || !/^o\/two/.test(h[1])) fail(tag + "project groups are " + h.join("|"));
+      if (n.join(",") !== "charlie,alpha,delta,bravo") fail(tag + "project grouped oldest first is " + n.join(","));
+      await pick(p, '[data-opt="group"][data-val="room"]');
+      h = await heads(p);
+      if (h.length !== 1 || !/^no room/.test(h[0])) fail(tag + "room groups are " + h.join("|"));
+      await pick(p, '[data-opt="group"][data-val="none"]');
+      await pick(p, '[data-opt="order"][data-val="newest"]');
+      await pick(p, '[data-opt="hideSubs"]');
+      n = await names(p);
+      if (n.indexOf("charlie") >= 0 || n.length !== 3) fail(tag + "hide subagents left " + n.join(","));
+      await pick(p, '[data-opt="hideDone"]');
+      n = await names(p);
+      if (n.indexOf("bravo") >= 0 || n.length !== 2) fail(tag + "hide finished left " + n.join(","));
+      await pick(p, '[data-opt="needsMe"]');
+      n = await names(p);
+      if (n.join(",") !== "delta") fail(tag + "needs me only left " + n.join(","));
+      // remembered across a reload
+      await p.reload({ waitUntil: "domcontentloaded" });
+      await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
+      const o = await p.evaluate(() => window.mHome.opts());
+      if (!o.hideSubs || !o.hideDone || !o.needsMe || o.order !== "newest" || o.group !== "none") fail(tag + "the choice was not remembered: " + JSON.stringify(o));
+      await p.tap("#m-opts-btn");
+      await pick(p, '[data-opt="order"][data-val="oldest"]');
+      await p.reload({ waitUntil: "domcontentloaded" });
+      await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
+      if ((await p.evaluate(() => window.mHome.opts())).order !== "oldest") fail(tag + "oldest was not remembered");
+      if (await mNoSideways(p)) fail(tag + "the home scrolls sideways");
+      if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+      await ctx.close();
+    }
+  } finally { await st.close(); }
+  if (!bad) console.log("mHomeOrder ok");
 }
 
 async function main() {
@@ -13095,7 +13163,7 @@ async function main() {
       u001Audit: u001AuditSection,
       pasteStart: pasteStartSection, pasteDone: pasteDoneSection, pasteOldRoom: pasteOldRoomSection, pasteClose: pasteCloseSection,
       growlQuestionShots: growlQuestionShotsSection, growlQuestionBody: growlQuestionBodySection, growlReplyGrow: growlReplyGrowSection, growlChoices: growlChoicesSection, growlStable: growlStableSection, mGrowlQuestion: mGrowlQuestionSection,
-      bootClean: bootCleanSection };
+      bootClean: bootCleanSection, mHomeOrder: mHomeOrderSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -15122,6 +15190,7 @@ async function main() {
     await growlStableSection(browser, base);
     await mGrowlQuestionSection(browser);
     await bootCleanSection(browser, base);
+    await mHomeOrderSection(browser);
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e));
     if (process.env.DEBUG_HEADLESS) {
@@ -15232,7 +15301,7 @@ function mServer(state) {
     let file = null;
     if (p === "/m/" || p === "/m") file = path.join(M_ROOT, "index.html");
     else if (p.startsWith("/m/")) file = path.join(M_ROOT, p.slice(3));
-    else if (p.startsWith("/css/")) file = path.join(WEB_ROOT, p);
+    else if (p.startsWith("/css/") || p === "/js/cardrules.js") file = path.join(WEB_ROOT, p);
     if (file && !path.relative(WEB_ROOT, file).startsWith("..") && fs.existsSync(file) && fs.statSync(file).isFile()) {
       res.writeHead(200, { "Content-Type": M_TYPES[path.extname(file)] || "application/octet-stream" });
       return res.end(fs.readFileSync(file));
@@ -15288,9 +15357,9 @@ async function mHomeSection(browser) {
       const tag = "mHome " + vp.width + ": ";
       await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
       const names = await p.$$eval("#m-list .row .name b", e => e.map(x => x.textContent));
-      if (names.join(",") !== "oldest,reporter,read me,newest") fail(tag + "needs-you order is not oldest wait first: " + names.join(","));
+      if (names.join(",") !== "newest,oldest,reporter,read me") fail(tag + "needs-you order is not newest activity first, then the tie break: " + names.join(","));
       const why = await p.$$eval("#m-list .row .why", e => e.map(x => x.textContent));
-      if (!/asks 2 questions/.test(why[0])) fail(tag + "first reason is " + why[0]);
+      if (!why.some(w => /asks 2 questions/.test(w))) fail(tag + "the questions reason is missing: " + why.join("|"));
       if (!why.some(w => /wants to run go test \.\/\.\.\./.test(w))) fail(tag + "the permission reason is missing: " + why.join("|"));
       if (!why.some(w => /finished 4m ago, not read/.test(w))) fail(tag + "the unread reason is missing");
       if (!why.some(w => /report waiting/.test(w))) fail(tag + "the report reason is missing");

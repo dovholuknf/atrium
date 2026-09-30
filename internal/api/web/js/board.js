@@ -1029,25 +1029,11 @@ const GROUPING_KEY = "atrium.grouping";
 
 // Defaults, shown in the settings dialog as the starting point and used when
 // nothing has been written.
-const DEFAULT_GROUP_BY = `// Return the group name for a card, or "" for no group.
-// The whole task is available: worktree, runner, status, title, why, pid.
-const path = (task.worktree || "").replace(/\\\\/g, "/");
-if (!path) return "";
+// DEFAULT_GROUP_BY and the project rule live in js/cardrules.js, which the phone page loads too.
 
-// .../<forge>/<org>/<repo>/... -> "org/repo"
-const forge = path.match(/\\/(?:github|gitlab|bitbucket)[^/]*\\/([^/]+)\\/([^/]+)/i);
-if (forge) return forge[1] + "/" + forge[2];
 
-// Otherwise the last two segments, which is usually parent/leaf.
-const parts = path.split("/").filter(Boolean);
-if (parts.length >= 2) return parts.slice(-2).join("/");
-return parts[0] || "";`;
+// DEFAULT_GROUP_ORDER is in js/cardrules.js too.
 
-const DEFAULT_GROUP_ORDER = `// Sort two group names. Return <0, 0, or >0.
-// Alphabetical, with anything ungrouped last.
-if (!a) return 1;
-if (!b) return -1;
-return a.localeCompare(b);`;
 
 // On by default. A board of leaf directory names says nothing about which
 // repo any of them belong to, and the default rule works with no setup.
@@ -1135,12 +1121,7 @@ function compiled(body, fallback, ...args) {
 // Compiled from the same source the settings dialog shows and cached, so there
 // is one project rule on the board and not a second copy written in JavaScript
 // beside the one written as a string.
-let projectRule;
-function defaultProjectOf(task) {
-  if (projectRule === undefined) projectRule = compiled("", DEFAULT_GROUP_BY, "task");
-  if (!projectRule) return "";
-  try { return String(projectRule(task) ?? ""); } catch (e) { return ""; }
-}
+function defaultProjectOf(task) { return cardProjectOf(task); }
 
 // Builds the grouper and the sorter for one render, each already wrapped so a
 // throw on one card cannot stop the board drawing the rest.
