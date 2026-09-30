@@ -142,6 +142,15 @@ type attached struct {
 	// control is the connection the room dialled first, and the only one that
 	// stays framed. Writing to it asks for more data connections.
 	control net.Conn
+	// wmu serialises every write on control, and `control` holds it from the
+	// moment this room is published until the welcome is written. THE WELCOME
+	// MUST BE THE FIRST FRAME. Publishing fires the attach hooks, and anything
+	// they start that wants a connection writes `need` here. Written first,
+	// that `need` is read by the room as a welcome with no `ok` in it, which it
+	// reports as a refusal with no reason, and it redials. On 2026-09-29 that
+	// kept the live rooms off the hub for two and five minutes after a restart.
+	// Also keeps two writers from interleaving the bytes of one frame.
+	wmu sync.Mutex
 	// idle holds data connections nobody is using. Buffered generously: a room
 	// answering a burst of `need` all at once must not block on handing them
 	// over.
@@ -309,6 +318,14 @@ func (h *Hub) control(ctx context.Context, name string, hi hello, conn net.Conn,
 	// reconnect is the same room proving it is the same room, and a different
 	// key under a taken name is refused rather than obeyed.
 	a.key = peerKey(conn)
+	// Held until the welcome is written, below. See `wmu`.
+	a.wmu.Lock()
+	welcomed := false
+	defer func() {
+		if !welcomed {
+			a.wmu.Unlock()
+		}
+	}()
 	h.mu.Lock()
 	old, taken := h.rooms[keyOf(name)]
 	if taken && old.key != "" && a.key != "" && old.key != a.key {
@@ -338,10 +355,20 @@ func (h *Hub) control(ctx context.Context, name string, hi hello, conn net.Conn,
 	}
 
 	log.Printf("[hub] room %q attached from %s", name, conn.RemoteAddr())
-	if err := writeJSON(conn, welcome{
+	// Bounded, because a newer connection's `old.close` waits on `wmu` while it
+	// holds `h.mu`, and a room that stopped reading must not freeze every attach.
+	_ = conn.SetWriteDeadline(time.Now().Add(handshakeWait))
+	err := writeJSON(conn, welcome{
 		OK: true, Session: session, Warm: h.T.Warm, Caches: h.Cached != nil,
-	}); err != nil {
+	})
+	_ = conn.SetWriteDeadline(time.Time{})
+	welcomed = true
+	a.wmu.Unlock()
+	if err != nil {
+		// Forgotten as well as closed. Nothing watches a room that was never
+		// welcomed, so it would otherwise stay listed until it reconnected.
 		a.close(err.Error())
+		h.forget(name, a, err.Error())
 		return
 	}
 
@@ -359,7 +386,7 @@ func (h *Hub) control(ctx context.Context, name string, hi hello, conn net.Conn,
 		log.Printf("[hub] telling %q about %s for %s/%s, which it may take or ignore",
 			name, b.Version, b.OS, b.Arch)
 		offer := b.Offer
-		_ = writeJSON(conn, note{Offer: &offer})
+		_ = a.send(note{Offer: &offer})
 	}
 
 	for {
@@ -374,7 +401,7 @@ func (h *Hub) control(ctx context.Context, name string, hi hello, conn net.Conn,
 			// Echoed, so the room can tell a live socket from a half-open one.
 			// A write that succeeds into a dead connection is the failure mode
 			// a heartbeat exists to catch, and only a round trip catches it.
-			_ = writeJSON(conn, note{Beat: n.Beat})
+			_ = a.send(note{Beat: n.Beat})
 		}
 	}
 
@@ -496,7 +523,7 @@ func (a *attached) close(why string) {
 	a.closed = true
 	a.mu.Unlock()
 
-	_ = writeJSON(a.control, note{Bye: why})
+	_ = a.send(note{Bye: why})
 	_ = a.control.Close()
 	close(a.done)
 	// Every pooled connection goes too. A request already in flight on one is
@@ -577,7 +604,7 @@ func (h *Hub) AskRestart(room string, ask RestartAsk) error {
 	if closed {
 		return ErrNoRoom
 	}
-	if err := writeJSON(a.control, note{Restart: &ask}); err != nil {
+	if err := a.send(note{Restart: &ask}); err != nil {
 		return fmt.Errorf("could not reach the room over the link: %w", err)
 	}
 	return nil
@@ -593,7 +620,15 @@ func (a *attached) request(n int) {
 	a.mu.Unlock()
 	// Best effort. A failed write means the control connection is gone, which
 	// the reader will notice, and there is nothing useful to do here about it.
-	_ = writeJSON(a.control, note{Need: n})
+	_ = a.send(note{Need: n})
+}
+
+// send writes one frame on the control connection, after the welcome and never
+// through the middle of another frame. See `wmu`.
+func (a *attached) send(v any) error {
+	a.wmu.Lock()
+	defer a.wmu.Unlock()
+	return writeJSON(a.control, v)
 }
 
 // dialer is `Dial` bound to one room, in the shape `http.Transport` wants.

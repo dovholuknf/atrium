@@ -164,8 +164,9 @@ param(
     # 'none' skips the git clone that room-git.ps1 makes by push. Anything else makes it.
     [string] $Repo = 'atrium',
 
-    # How long to wait for the room to show as attached on the hub, in seconds.
-    [int] $AttachTimeout = 60,
+    # How long to wait for the room to show as attached on the hub, in seconds. 60 was too short on sg3 and sg4-wsl
+    # (2026-09-29), even apart from the attach race the hub now fixes.
+    [int] $AttachTimeout = 120,
 
     # The smoke card, last: a small claude worker on the room that reports back.
     # -SmokeTo is who it atrium_says "smoke ok <room> <nonce>" to, default the
@@ -182,6 +183,9 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
+# UTF-8 WITHOUT A BOM for what is piped to ssh. A profile that sets $OutputEncoding with one puts EF BB BF in front of
+# the sh script, and its first line then fails (`sh: 1: A=...: not found`).
+$OutputEncoding = [Text.UTF8Encoding]::new($false)
 if ($SmokeOnly -and ($Remove -or $NoSmoke)) { Write-Host 'provision args fail -SmokeOnly goes with neither -Remove nor -NoSmoke'; exit 1 }
 if ($Restart -and ($Remove -or $SmokeOnly -or $Autostart -or $Install.Count -or $Binary -or $FromCheckout -or $Version)) {
     Write-Host 'provision args fail -Restart changes nothing but the running room, so it goes with none of -Remove, -SmokeOnly, -Autostart, -Install, -Binary, -FromCheckout, -Version'; exit 1
@@ -379,6 +383,16 @@ function Get-HubRoom {
     $r.Out | Where-Object { $_ -match "^$([regex]::Escape($room))\s" } | Select-Object -First 1
 }
 
+# Get-HubLog names where the hub's log is, for an attach that did not happen. The hub's stderr goes wherever whoever
+# started it sent it, so this is the live layout's `hub.err` beside the hub dir when there is one.
+function Get-HubLog {
+    if ($HubDir) {
+        $f = Join-Path (Split-Path -Parent $HubDir) 'hub.err'
+        if (Test-Path $f) { return "the hub's log is $f" }
+    }
+    "the hub's log is wherever its stderr goes"
+}
+
 # ── 1. reach the target and learn what it is ────────────────────────────────
 
 # THE PROBE HAS TO WORK BEFORE WE KNOW THE SHELL. `uname` answers on Linux and
@@ -450,8 +464,8 @@ switch ($transport) {
     default { Fail 'hub' 1 "the hub links over $transport, which this script does not know" }
 }
 # zrok takes most of a minute to let a new access dial a share, measured
-# 2026-09-28, so its default wait is doubled.
-if ($transport -eq 'zrok' -and -not $PSBoundParameters.ContainsKey('AttachTimeout')) { $AttachTimeout = 120 }
+# 2026-09-28, so its default wait is longer.
+if ($transport -eq 'zrok' -and -not $PSBoundParameters.ContainsKey('AttachTimeout')) { $AttachTimeout = 180 }
 try {
     $h = Invoke-RestMethod -Uri "http://$HubAddr/_hub/health" -TimeoutSec 5
     Step 'hub' 'ok' "$says, $($h.rooms) attached now"
@@ -463,6 +477,7 @@ try {
 
 $stateScript = if ($os -eq 'windows') {
 @'
+if ($A) { 'preamble=ok' }
 "atriumdir=$(Test-Path $A)"
 "bindir=$(Test-Path (Split-Path -Parent $Bin))"
 "locdir=$(Test-Path $L)"
@@ -486,6 +501,7 @@ foreach ($port in 7781, 7778) {
 } else {
 @'
 tf() { if [ -e "$1" ]; then echo True; else echo False; fi; }
+if [ -n "$A" ]; then echo "preamble=ok"; fi
 echo "atriumdir=$(tf "$A")"
 echo "bindir=$(tf "$(dirname "$Bin")")"
 echo "locdir=$(tf "$L")"
@@ -518,6 +534,11 @@ done
 $st = Invoke-Remote $stateScript
 if ($st.Code -ne 0) { Fail 'state' 3 'could not read what the remote has' $st.Out }
 $state = ConvertFrom-KeyValue $st.Out
+# THE PREAMBLE HAS TO HAVE RUN, or nothing below can be trusted. With a BOM in front of the piped sh script its first
+# line (`A=...`) failed, the manifest was never found, and a room this script made read as one it did not put there.
+if ($state.preamble -ne 'ok') {
+    Fail 'state' 3 'the remote script lost its first lines, so what it read cannot be trusted. a BOM or a remote profile in the way? try pwsh -NoProfile' $st.Out
+}
 $manifest = if ($state.manifest) { $state.manifest | ConvertFrom-Json } else { $null }
 # What the manifest records as already there before the first run.
 $preKeys = @('atriumdir', 'bindir', 'bin', 'db', 'roomdir', 'locdir', 'service')
@@ -1194,7 +1215,7 @@ if ($up) { 'start=done' } else { 'start=fail the task did not bring the room up 
         $still = Get-LiveNow
         if (-not $still -or $still.since -ne $seen.since) { $seen = $null }
     }
-    if (-not $seen) { Fail 'attach' 4 "the hub has no lasting connection from $Name after ${AttachTimeout}s" @(Get-HubRoom $Name) }
+    if (-not $seen) { Fail 'attach' 4 "the hub has no lasting connection from $Name after ${AttachTimeout}s. $(Get-HubLog)" @(Get-HubRoom $Name) }
     $rowsNote = 'runner rows not compared'
     if ($null -ne $rowsBefore) {
         $rowsAfter = $null
@@ -1840,7 +1861,7 @@ if ($seen) {
 }
 if (-not $seen) {
     $why = if ($dropped) { "$Name attached and then went away. it may have died with the ssh session: try -Autostart" }
-           else { "the hub has no live connection from $Name after ${AttachTimeout}s" }
+           else { "the hub has no live connection from $Name after ${AttachTimeout}s. $(Get-HubLog)" }
     Fail 'attached' 4 $why @(Get-HubRoom $Name)
 }
 Step 'attached' 'ok' "$Name on the hub since $(([datetime] $seen.since).ToString('HH:mm:ss')), host $($seen.host), build $($seen.version)"
