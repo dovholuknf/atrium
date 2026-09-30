@@ -830,6 +830,15 @@ func (s *Store) SetResumeID(id, resumeID string) error {
 	})
 }
 
+// ClearResumeID forgets the card's resume id. `SetResumeID` ignores a blank on
+// purpose, so this is the one way to drop an id known to be bad.
+func (s *Store) ClearResumeID(id string) error {
+	return s.guard(func() error {
+		_, err := s.db.Exec(`UPDATE task SET resume_id = '' WHERE id = ?`, id)
+		return err
+	})
+}
+
 // ResumeClaim is what ClaimResumeID did with a conversation id.
 type ResumeClaim struct {
 	// Stored is whether the id is now on the card.
@@ -862,7 +871,21 @@ func (s *Store) ClaimResumeID(id, resumeID string, byID bool, live func(*Task) b
 	}
 	err := s.guard(func() error {
 		out = ResumeClaim{}
-		rows, err := s.db.Query(`SELECT id FROM task WHERE resume_id = ? AND id != ?`, resumeID, id)
+		tx, err := s.db.Begin()
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback()
+		// A claimant that is not there stores nothing and, above all, clears
+		// nothing: moving the id onto a card that does not exist loses it.
+		var one int
+		if err := tx.QueryRow(`SELECT 1 FROM task WHERE id = ?`, id).Scan(&one); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return nil
+			}
+			return err
+		}
+		rows, err := tx.Query(`SELECT id FROM task WHERE resume_id = ? AND id != ?`, resumeID, id)
 		if err != nil {
 			return err
 		}
@@ -878,7 +901,7 @@ func (s *Store) ClaimResumeID(id, resumeID string, byID bool, live func(*Task) b
 		rows.Close()
 		var holders []*Task
 		for _, h := range ids {
-			t, err := s.getBy(`id = ?`, h)
+			t, err := getByOn(tx, `id = ?`, h)
 			if err != nil {
 				return err
 			}
@@ -890,13 +913,18 @@ func (s *Store) ClaimResumeID(id, resumeID string, byID bool, live func(*Task) b
 				return nil
 			}
 		}
+		// One holder per conversation: every other holder is cleared and this
+		// card set in one transaction, so a retry sees all of it or none.
 		for _, h := range holders {
-			if _, err := s.db.Exec(`UPDATE task SET resume_id = '' WHERE id = ?`, h.ID); err != nil {
+			if _, err := tx.Exec(`UPDATE task SET resume_id = '' WHERE id = ?`, h.ID); err != nil {
 				return err
 			}
 			out.Moved = append(out.Moved, h)
 		}
-		if _, err := s.db.Exec(`UPDATE task SET resume_id = ? WHERE id = ?`, resumeID, id); err != nil {
+		if _, err := tx.Exec(`UPDATE task SET resume_id = ? WHERE id = ?`, resumeID, id); err != nil {
+			return err
+		}
+		if err := tx.Commit(); err != nil {
 			return err
 		}
 		out.Stored = true
@@ -1644,16 +1672,19 @@ func (s *Store) ListArchived(limit int) ([]*Task, error) {
 // WireNameHeld reports whether any card, archived or done included, already has
 // this wire name. Register matches on it at every status, so a launch that hands
 // out a held name gets that card back. The name is qualified as Register does.
-// A storage failure answers true: the caller gets a suffixed name rather than a
-// card that might be re-prompted, and the guard has already halted the daemon.
-func (s *Store) WireNameHeld(name string) bool {
+// A storage failure is returned, not answered: the guard has already halted the
+// daemon, and a caller that read it as "held" would keep asking forever.
+func (s *Store) WireNameHeld(name string) (bool, error) {
 	name = s.Qualify(name)
 	err := s.guard(func() error {
 		var one int
 		return s.db.QueryRow(`SELECT 1 FROM task WHERE wire_name = ? LIMIT 1`, name).Scan(&one)
 	})
 	if errors.Is(err, sql.ErrNoRows) {
-		return false
+		return false, nil
 	}
-	return true
+	if err != nil {
+		return false, err
+	}
+	return true, nil
 }

@@ -34,6 +34,9 @@ type ContextSize struct {
 	// board and the notice cannot disagree about the line.
 	Warn       bool `json:"warn"`
 	ThresholdK int  `json:"threshold_k"`
+	// AutoK is the size, in thousands, at which atrium cycles the card's context, for
+	// the tooltip. Absent on a card the setting does not reach.
+	AutoK int `json:"auto_k,omitempty"`
 }
 
 // contextSeen is one card's last read, and what the file looked like then, so
@@ -114,7 +117,11 @@ func (d *Daemon) contextSizeFor(taskID string) any {
 		return nil
 	}
 	limit := api.ContextThreshold(d.st)
-	return &ContextSize{Tokens: s.tokens, Warn: s.tokens >= limit, ThresholdK: int(limit / 1000)}
+	out := &ContextSize{Tokens: s.tokens, Warn: s.tokens >= limit, ThresholdK: int(limit / 1000)}
+	if t, err := d.st.Get(taskID); err == nil && d.autoContextSubject(t, d.st.AutoNewContextMode()) {
+		out.AutoK = int(d.autoThreshold(t) / 1000)
+	}
+	return out
 }
 
 // read is a card's context now, and whether it changed since the last read. A
@@ -185,6 +192,7 @@ func (d *Daemon) watchContext() error {
 		return err
 	}
 	limit := api.ContextThreshold(d.st)
+	now := time.Now()
 	live, open := map[string]bool{}, map[string]bool{}
 	for _, t := range tasks {
 		open[t.ID] = true
@@ -197,9 +205,15 @@ func (d *Daemon) watchContext() error {
 		}
 		tokens, changed := d.ctx.read(t)
 		if tokens == 0 {
+			// A card just cleared reads as nothing until its new conversation has a reply,
+			// and the wake retry is what gets it one.
+			d.autoRetryUnread(t, now)
 			continue
 		}
 		live[t.ID] = true
+		// Every tick and not only when the size changed: the gates it waits on move
+		// by themselves. See autocontext.go.
+		d.watchAutoContext(t, tokens, now)
 		moved := d.ctx.judge(t.ID, limit)
 		if !changed && !moved {
 			continue
@@ -214,13 +228,22 @@ func (d *Daemon) watchContext() error {
 			}
 			continue
 		}
-		d.notifyLauncher(t, NoticeContext, session, fmt.Sprintf(
-			"%s is at %dk context. Tell it to report what it has and stop, or hand off.",
-			t.WireName, tokens/1000))
+		body := fmt.Sprintf("%s is at %dk context. Tell it to report what it has and stop, or hand off.",
+			t.WireName, tokens/1000)
+		// A card atrium will cycle needs nothing from its launcher, and a launcher that
+		// acted on this would race the automatic one.
+		if d.autoContextSubject(t, d.st.AutoNewContextMode()) {
+			body = fmt.Sprintf("%s is at %dk context and atrium will cycle its context at %dk, so it needs no action.",
+				t.WireName, tokens/1000, d.autoThreshold(t)/1000)
+		}
+		d.notifyLauncher(t, NoticeContext, session, body)
 	}
 	for _, id := range d.ctx.forgetExcept(live) {
 		d.publishTask(id)
 	}
+	// By the open cards and not the live ones: a card just cleared reads as nothing
+	// until its new conversation has a reply, and its arm state must outlast that.
+	d.auto.forgetExcept(open)
 	d.ctx.forgetSessions(open)
 	return nil
 }

@@ -62,21 +62,28 @@ func newLeave() *cobra.Command {
 // hook exactly. Both have to agree or a session would join under one name and
 // be gated under another.
 func agentName(override string) string {
-	if override != "" {
-		return override
-	}
-	if v := os.Getenv("ATRIUM_AGENT_NAME"); v != "" {
-		return v
+	a, _ := agentNameSource(override)
+	return a
+}
+
+// agentNameSource is agentName that also says where the name came from, for the
+// callers that report it. The process's own directory stands in for the cwd.
+func agentNameSource(override string) (agent, source string) {
+	if a, s := hookAgent(override, ""); a != "" {
+		return a, s
 	}
 	cwd, err := os.Getwd()
 	if err != nil {
-		return "unknown"
+		return "unknown", ""
 	}
-	return filepath.Base(cwd)
+	return hookAgent("", cwd)
 }
 
-// hookAgent is agentName for a hook, which has the session's cwd to hand, and
-// says where the name came from: "dir" when it fell back to the directory.
+// hookAgent is the ONE place a session's name is derived: the explicit name,
+// then $ATRIUM_AGENT_NAME, then the base of the cwd it is given. It says where the
+// name came from: "dir" when it fell back to the directory. Every caller goes
+// through it, so the join, the permission hook and the activity hooks cannot
+// disagree about what a session is called.
 //
 // The daemon cannot tell a real name `atrium` from a directory called `atrium`
 // otherwise, and two cards in one checkout share the second (r-021).

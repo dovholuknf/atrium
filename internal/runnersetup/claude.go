@@ -36,7 +36,7 @@ func claudeAuthCheck(env Env) Result {
 			return r
 		}
 	}
-	if env.inherited("ANTHROPIC_API_KEY") != "" || env.inherited("CLAUDE_CODE_OAUTH_TOKEN") != "" {
+	if env.launched("ANTHROPIC_API_KEY") != "" || env.launched("CLAUDE_CODE_OAUTH_TOKEN") != "" {
 		r.State, r.Detail = OK, "a key is in the environment the runner starts with."
 		return r
 	}

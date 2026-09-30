@@ -5,7 +5,9 @@ import (
 	"bytes"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"io"
+	"log"
 	"os"
 	"strings"
 	"sync"
@@ -55,7 +57,15 @@ var errNoSuchCard = sql.ErrNoRows
 // repliesFor answers the endpoint for one card.
 func (d *Daemon) repliesFor(taskID string, n int) (*RepliesView, error) {
 	t, err := d.st.Get(taskID)
-	if err != nil || t == nil {
+	if err != nil {
+		// Only a missing row is "no such card". Any other store error is the
+		// store's, and the route answers it as one.
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, errNoSuchCard
+		}
+		return nil, err
+	}
+	if t == nil {
 		return nil, errNoSuchCard
 	}
 	switch {
@@ -71,13 +81,25 @@ func (d *Daemon) repliesFor(taskID string, n int) (*RepliesView, error) {
 		}
 		if session != "" {
 			if path := d.usage.transcript(t.Worktree, session); path != "" {
-				if replies, err := readReplies(path, n); err == nil {
+				replies, err := readReplies(path, n)
+				if err == nil {
 					return &RepliesView{Source: "transcript", Replies: replies}, nil
 				}
+				logRepliesFallback(path, err)
 			}
 		}
 	}
 	return &RepliesView{Source: "screen", Replies: d.screenReply(taskID)}, nil
+}
+
+// repliesFellBack holds the transcripts already logged as unreadable, so a page
+// that reads on every turn end says why once and not every time.
+var repliesFellBack sync.Map
+
+func logRepliesFallback(path string, err error) {
+	if _, seen := repliesFellBack.LoadOrStore(path, true); !seen {
+		log.Printf("[atrium] replies: cannot read transcript %s, answering from the screen: %v", path, err)
+	}
 }
 
 // screenReply is the card's screen as text, as one reply: the codex card and the

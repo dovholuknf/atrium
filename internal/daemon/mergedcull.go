@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"path/filepath"
@@ -301,6 +302,11 @@ func (d *Daemon) cullDue(w *store.WorkItem) {
 		return
 	}
 	if _, err := d.Cull(w.TaskID, w.MergedInto); err != nil {
+		// The mark stays: the sweep is periodic and the next pass gets it.
+		if errors.Is(err, errCullNewContext) {
+			log.Printf("[atrium] not culling %s yet: %v", t.DisplayTitle(), err)
+			return
+		}
 		drop(err.Error())
 		return
 	}

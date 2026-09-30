@@ -29,14 +29,22 @@ func freePort(t *testing.T) string {
 // safeBuf collects log output written from the daemon's goroutines while the
 // test reads it. A bare bytes.Buffer would be a data race.
 type safeBuf struct {
-	mu  sync.Mutex
-	buf bytes.Buffer
+	mu   sync.Mutex
+	buf  bytes.Buffer
+	wake chan struct{}
 }
 
 func (b *safeBuf) Write(p []byte) (int, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return b.buf.Write(p)
+	n, err := b.buf.Write(p)
+	// Every write wakes whoever is waiting for a line, so waitFor reacts to
+	// the log itself and never guesses how long startup takes.
+	if b.wake != nil {
+		close(b.wake)
+		b.wake = nil
+	}
+	return n, err
 }
 
 func (b *safeBuf) String() string {
@@ -45,17 +53,25 @@ func (b *safeBuf) String() string {
 	return b.buf.String()
 }
 
-// waitFor blocks until the log contains want, or gives up.
+// waitFor blocks until the log contains want. There is no wall-clock limit of
+// its own: startup under load can take seconds (resolving real runners on PATH
+// alone took 4s once), and a fixed guess flaked. A daemon that never gets
+// there is stopped by go test's own timeout, which prints the goroutines.
 func (b *safeBuf) waitFor(t *testing.T, want string) {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		if strings.Contains(b.String(), want) {
+	for {
+		b.mu.Lock()
+		if strings.Contains(b.buf.String(), want) {
+			b.mu.Unlock()
 			return
 		}
-		time.Sleep(10 * time.Millisecond)
+		if b.wake == nil {
+			b.wake = make(chan struct{})
+		}
+		ch := b.wake
+		b.mu.Unlock()
+		<-ch
 	}
-	t.Fatalf("log never contained %q. got:\n%s", want, b.String())
 }
 
 func startDaemon(t *testing.T) (*Daemon, *safeBuf, context.CancelFunc, chan error) {

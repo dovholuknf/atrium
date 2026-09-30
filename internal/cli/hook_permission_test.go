@@ -276,3 +276,33 @@ func TestPermPostTimeoutEnv(t *testing.T) {
 }
 
 func writeFileT(name, body string) error { return os.WriteFile(name, []byte(body), 0o644) }
+
+// r-042: the process table is walked only when there is something to post.
+func TestPermissionHookFindsThePidOnlyWhenPosting(t *testing.T) {
+	h := newFakeHub(t, true, 200, `{"decision":"approve"}`)
+	calls := 0
+	pidOf := func() int { calls++; return 4242 }
+
+	permEnv(t, "off")
+	permissionHook(h.srv.URL, []byte(bashPayload), pidOf)
+	permEnv(t, "force")
+	permissionHook(h.srv.URL, nil, pidOf)
+	permissionHook(h.srv.URL, []byte(`not json`), pidOf)
+	permissionHook(h.srv.URL, []byte(`{"tool_name":"Read","tool_input":{}}`), pidOf)
+	if calls != 0 {
+		t.Fatalf("the pid was looked up %d times for calls with nothing to do", calls)
+	}
+	// The room has no gate and nothing forces one: nothing to post either.
+	quiet := newFakeHub(t, false, 200, `{"decision":"approve"}`)
+	permEnv(t, "")
+	permissionHook(quiet.srv.URL, []byte(bashPayload), pidOf)
+	if calls != 0 {
+		t.Fatalf("the pid was looked up for an ungated room")
+	}
+	if out := permissionHook(h.srv.URL, []byte(bashPayload), pidOf); out == nil || calls != 1 {
+		t.Fatalf("a post must look the pid up once: out=%q calls=%d", out, calls)
+	}
+	if got := h.posts[len(h.posts)-1]["pid"]; got != float64(4242) {
+		t.Fatalf("pid posted %v", got)
+	}
+}

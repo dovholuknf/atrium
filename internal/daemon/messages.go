@@ -176,6 +176,10 @@ func (d *Daemon) handleStop(w http.ResponseWriter, r *http.Request) {
 		// turn ending. Empty from a hook older than the field, which keeps
 		// the claude default it always had.
 		Runner string `json:"runner,omitempty"`
+		// The runner's own pid, so a Stop from a `claude` nested in the card's
+		// shell is not taken for the card's. Zero from a hook older than the
+		// field, which means unknown and is believed.
+		PID int `json:"pid,omitempty"`
 		// Whether there is a conversation behind that id yet. See the note on
 		// SessionEvent.Resumable: an id with nothing written cannot be
 		// resumed, and storing it loses the one that could.
@@ -230,6 +234,14 @@ func (d *Daemon) handleStop(w http.ResponseWriter, r *http.Request) {
 	bound := false
 	if in.TaskID != "" {
 		if t, gerr := d.st.Get(in.TaskID); gerr == nil {
+			// A Stop from a nested session is not this card's turn ending, and
+			// answering it as one would take the parent's queued message.
+			if !d.ownsSession(t, in.PID) {
+				log.Printf("[atrium] dropped a stop for %s from pid %d, which is not its runner "+
+					"(a nested session?)", t.ID, in.PID)
+				nothing()
+				return
+			}
 			// Onto the card it was launched on, never a name lookup.
 			if in.NameSource == store.NameFromDir {
 				obs.WireName = ""
