@@ -8,8 +8,8 @@
 //
 // A section whose sampler failed keeps its last good values and gains
 // `stale_since`, the time of the first failed sample. A section never sampled
-// successfully is absent. Never zeros. The second wave's fields (`machine`,
-// per-runner `cpu_pct` and `rss_bytes`) are absent from this wave.
+// successfully is absent. Never zeros. Per-runner `cpu_pct` and `rss_bytes` are
+// still to come.
 package roomstats
 
 import (
@@ -84,6 +84,7 @@ type Snapshot struct {
 	Tokens  *Tokens  `json:"tokens,omitempty"`
 	Process *Process `json:"process,omitempty"`
 	Disk    *Disk    `json:"disk,omitempty"`
+	Machine *Machine `json:"machine,omitempty"`
 	Runners []Runner `json:"runners,omitempty"`
 	// RunnersStaleSince is the runners array's stale mark, since an array
 	// carries no field of its own.
@@ -122,6 +123,8 @@ type Sources struct {
 	// Worktrees counts distinct existing card worktrees the room knows.
 	Worktrees func() (int, error)
 	Runners   func() ([]Runner, error)
+	// Machine reads whole-machine CPU counters and memory.
+	Machine func() (MachineReading, error)
 	// Publish gets the snapshot's JSON every tick.
 	Publish func(data []byte)
 }
@@ -136,6 +139,11 @@ type Sampler struct {
 	lastCPU time.Duration
 	lastAt  time.Time
 	staleAt map[string]string
+
+	// machine state: the previous CPU counters, and the per-minute rings.
+	prevIdle, prevTotal uint64
+	havePrevCPU         bool
+	cpuRing, memRing    *minuteAvg
 }
 
 // New builds a sampler. Nothing runs until Run.
@@ -146,7 +154,8 @@ func New(src Sources) *Sampler {
 	if src.Started.IsZero() {
 		src.Started = src.Clock.Now()
 	}
-	return &Sampler{src: src, staleAt: map[string]string{}, lastAt: src.Started}
+	return &Sampler{src: src, staleAt: map[string]string{}, lastAt: src.Started,
+		cpuRing: newMinuteAvg(), memRing: newMinuteAvg()}
 }
 
 func rfc(t time.Time) string { return t.UTC().Format(time.RFC3339) }
@@ -238,6 +247,11 @@ func (s *Sampler) Tick() {
 	if s.src.Usage != nil {
 		tok, tokErr = s.tokens(now)
 	}
+	var mr MachineReading
+	var machErr error
+	if s.src.Machine != nil {
+		mr, machErr = s.src.Machine()
+	}
 	var runners []Runner
 	var runErr error
 	if s.src.Runners != nil {
@@ -257,6 +271,9 @@ func (s *Sampler) Tick() {
 	}
 	if s.src.ProcessTimes != nil {
 		s.sampleProcess(now)
+	}
+	if s.src.Machine != nil {
+		s.sampleMachine(now, mr, machErr)
 	}
 	if s.src.Runners != nil {
 		st := s.mark("runners", runErr, now)
@@ -299,6 +316,40 @@ func (s *Sampler) sampleProcess(now time.Time) {
 	s.lastCPU, s.lastAt = cpu, now
 	p.HeapBytes, p.Goroutines = memStats()
 	s.snap.Process = p
+}
+
+// sampleMachine runs with the lock held. CPU needs two readings, so the first
+// tick leaves it out. The series end on the minute tokens.series_end names.
+func (s *Sampler) sampleMachine(now time.Time, mr MachineReading, err error) {
+	st := s.mark("machine", err, now)
+	if err != nil {
+		if s.snap.Machine != nil {
+			s.snap.Machine.StaleSince = st
+		}
+		return
+	}
+	minute := now.UTC().Truncate(time.Minute)
+	m := s.snap.Machine
+	if m == nil {
+		m = &Machine{}
+	}
+	m.StaleSince = ""
+	m.MemUsedBytes, m.MemTotal = mr.MemUsed, mr.MemTotal
+	s.memRing.add(minute, memPct(mr.MemUsed, mr.MemTotal))
+	if mr.HasCPU {
+		if s.havePrevCPU {
+			if pct, ok := cpuBusyPct(s.prevIdle, s.prevTotal, mr.CPUIdle, mr.CPUTotal); ok {
+				m.CPUPct = &pct
+				s.cpuRing.add(minute, pct)
+			}
+		}
+		s.prevIdle, s.prevTotal, s.havePrevCPU = mr.CPUIdle, mr.CPUTotal, true
+	}
+	if m.CPUPct != nil {
+		m.CPUSeriesPct = s.cpuRing.series(minute)
+	}
+	m.MemSeriesPct = s.memRing.series(minute)
+	s.snap.Machine = m
 }
 
 // tokens reads two windows, one query each: the last hour by the minute (which
