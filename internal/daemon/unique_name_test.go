@@ -1,6 +1,10 @@
 package daemon
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/dovholuknf/atrium/internal/store"
+)
 
 // TWO LAUNCHES IN ONE DIRECTORY MUST NOT SHARE A NAME. The wire name is the key
 // registration matches on, so a second session wearing the first's name is
@@ -78,5 +82,40 @@ func TestNameSlug(t *testing.T) {
 	}
 	if long[len(long)-1] == '-' {
 		t.Errorf("slug %q ends on a dash", long)
+	}
+}
+
+// A DEAD OR DONE CARD STILL HOLDS ITS NAME. Register matches the wire name at any
+// status, so a launch titled the same as a finished card was handed that card and
+// re-prompted its old recap. r-028.
+func TestLaunchedNameSkipsADeadCardsName(t *testing.T) {
+	d := testDaemon(t)
+	old, _, err := d.st.Register(store.Observed{WireName: "smoke", Worktree: "/work/smoke"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := d.st.SetStatus(old.ID, "done"); err != nil {
+		t.Fatal(err)
+	}
+	if got := d.launchedName("smoke", "/work/smoke"); got != "smoke-2" {
+		t.Fatalf("a title matching a done card got %q, want smoke-2", got)
+	}
+}
+
+// An ARCHIVED card holds its name too: List skips it, Register does not.
+func TestLaunchedNameSkipsAnArchivedCardsName(t *testing.T) {
+	d := testDaemon(t)
+	old, _, err := d.st.Register(store.Observed{WireName: "smoke", Worktree: "/work/smoke"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := d.st.SetStatus(old.ID, "done"); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.st.ArchiveCulled(old.ID, "test"); err != nil {
+		t.Fatal(err)
+	}
+	if got := d.launchedName("smoke", "/work/smoke"); got != "smoke-2" {
+		t.Fatalf("a title matching an archived card got %q, want smoke-2", got)
 	}
 }
