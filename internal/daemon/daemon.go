@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/api"
+	"github.com/dovholuknf/atrium/internal/edge"
 	"github.com/dovholuknf/atrium/internal/mcprule"
 	"github.com/dovholuknf/atrium/internal/shellpick"
 	"github.com/dovholuknf/atrium/internal/store"
@@ -1034,8 +1035,10 @@ func (d *Daemon) Run(ctx context.Context) error {
 	agentMux.HandleFunc("/tell", d.handleTell)
 	agentMux.HandleFunc("/hooks-changed", d.handleHooksChanged)
 
-	agentSrv := &http.Server{Addr: d.opts.AgentAddr, Handler: agentMux}
-	humanSrv := &http.Server{Addr: d.opts.HumanAddr, Handler: d.BoardHandler()}
+	// THE BROWSER EDGE on both: a web page on this machine cannot write here,
+	// rebind a name onto it, or open a terminal. See internal/edge.
+	agentSrv := &http.Server{Addr: d.opts.AgentAddr, Handler: edge.For(d.opts.AgentAddr, agentMux)}
+	humanSrv := &http.Server{Addr: d.opts.HumanAddr, Handler: edge.For(d.opts.HumanAddr, d.BoardHandler())}
 
 	d.mu.Lock()
 	d.agentServer = agentSrv

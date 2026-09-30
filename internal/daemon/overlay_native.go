@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/edge"
 	"github.com/openziti/sdk-golang/ziti"
 	"github.com/openziti/zrok/v2/environment/env_core"
 	zroksdk "github.com/openziti/zrok/v2/sdk/golang/sdk"
@@ -262,7 +263,7 @@ func (d *Daemon) startZrokNative(cfg ZrokConfig) error {
 
 	d.overlayStep("zrok", "done", address)
 	log.Printf("[atrium] serving the board on a %s zrok share at %s", mode, address)
-	d.nat(OverlayZrok).serveOn(ln, d.authGuard(d.ap.Handler()), address, shr.Token)
+	d.nat(OverlayZrok).serveOn(ln, edge.Shared(d.authGuard(d.ap.Handler())), address, shr.Token)
 	return nil
 }
 
@@ -305,6 +306,6 @@ func (d *Daemon) startZitiNative(cfg ZitiConfig) error {
 	// network, and the service name is the whole identifier.
 	// A ziti service is administered on the network and atrium never created
 	// it, so there is nothing here to release.
-	d.nat(OverlayZiti).serveOn(ln, d.authGuard(d.ap.Handler()), "ziti service "+service, "")
+	d.nat(OverlayZiti).serveOn(ln, edge.Shared(d.authGuard(d.ap.Handler())), "ziti service "+service, "")
 	return nil
 }
