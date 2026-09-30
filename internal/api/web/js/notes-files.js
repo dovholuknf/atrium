@@ -1413,6 +1413,12 @@ async function bootSkin() {
   let s;
   try { s = await api("/v1/settings"); } catch (e) { return; }
   applyResolvedSkin(s);
+  // The same answer pasteSettings would fetch. Kept, so the cache line's week figure does not read it again.
+  if (!pastePrefs) {
+    pastePrefs = s;
+    applyScrollback();
+    if (typeof kaRepaint === "function") kaRepaint();
+  }
 }
 
 async function saveBrowseRoots() {

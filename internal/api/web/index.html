@@ -63,6 +63,7 @@
 <link rel="stylesheet" href="/css/themes.css">
 <link rel="stylesheet" href="/css/expose2.css">
 <link rel="stylesheet" href="/css/expose3.css">
+<link rel="stylesheet" href="/css/hubnotify.css">
 <link rel="stylesheet" href="/m/compose.css">
 <!-- SWITCHING ROOMS IS A RELOAD, AND A RELOAD IS TWO VIEWS.
      The board comes up on the stack, because that is what the markup says, and
@@ -157,6 +158,8 @@
       <span class="dot"></span><span id="rooms-t">rooms</span>
     </div>
     <div class="conn" id="conn"><span class="dot"></span><span class="conn-n" id="conn-n" hidden></span><span id="conn-t">connecting</span></div>
+    <!-- Phone only (css/phone.css): the conversation page at /m, a separate page that never loads the board. -->
+    <a id="m-link" class="mlink" href="/m/" aria-label="open the phone view">phone view</a>
     <!-- Phone only (css/phone.css): the header is one slim row and this opens the rest. -->
     <button type="button" id="hdr-toggle" class="icon" onclick="phoneHeaderOpenSet(!document.body.classList.contains('hdr-open'))"
       aria-label="show the full header" aria-expanded="false">&#9662;</button>
@@ -575,15 +578,15 @@ Exports honor whatever filter is applied.">?</span>
         <!-- PHONE ONLY: the composer, a real textarea, above the key bar. See js/tcompose.js. -->
         <div id="t-compose" hidden></div>
         <div class="term-keys" id="t-keys" role="toolbar" aria-label="terminal keys">
-          <button type="button" tabindex="-1" data-key="esc">Esc</button>
+          <button type="button" tabindex="-1" data-key="esc" aria-label="escape">Esc</button>
           <button type="button" tabindex="-1" data-key="left" aria-label="left">&larr;</button>
           <button type="button" tabindex="-1" data-key="down" aria-label="down">&darr;</button>
           <button type="button" tabindex="-1" data-key="up" aria-label="up">&uarr;</button>
           <button type="button" tabindex="-1" data-key="right" aria-label="right">&rarr;</button>
-          <button type="button" tabindex="-1" data-key="tab">Tab</button>
+          <button type="button" tabindex="-1" data-key="tab" aria-label="tab">Tab</button>
           <button type="button" tabindex="-1" data-key="btab" aria-label="shift tab">&#8676;</button>
           <button type="button" tabindex="-1" data-key="enter" aria-label="enter">&crarr;</button>
-          <button type="button" tabindex="-1" data-key="int" aria-label="ctrl c, hold to interrupt">^C</button>
+          <button type="button" tabindex="-1" data-key="int" aria-label="ctrl c, keep holding to interrupt">^C</button>
           <button type="button" tabindex="-1" id="t-keys-attach" aria-label="attach a file or photo" onclick="pickTermFiles()">&#128206;</button>
         </div>
         <div class="term-view" id="t-view" hidden>
@@ -1553,9 +1556,30 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         notification, and it beats a card's own tone. Everything held back is still listed in the tray. A permission
         request still notifies. Kept in this browser.</span>
     </div>
+    <!-- u-030: the hub's notify command. Hidden until the hub answers, so a board with no hub never draws it.
+         See js/hubnotify.js. -->
+    <div class="field" id="s-hn-row" hidden>
+      <label class="eyebrow" for="s-hn-command">notify command (on the hub)</label>
+      <label class="check">
+        <input type="checkbox" id="s-hn-enabled">
+        <span>run it when something needs you and no board tab is open</span>
+      </label>
+      <textarea id="s-hn-command" class="hn-command" rows="4" spellcheck="false"
+        placeholder="one argument per line, the program first"></textarea>
+      <div class="picker">
+        <button onclick="saveHubNotify()">save</button>
+        <button onclick="testHubNotify()">send a test</button>
+        <span class="hintline" id="s-hn-msg"></span>
+      </div>
+      <pre class="hn-test" id="s-hn-test" hidden></pre>
+      <div class="hn-status" id="s-hn-status"></div>
+      <span class="hintline">This runs ON THE HUB MACHINE, as the hub's user, not on this one. One argument per
+        line, so a path with a space in it needs no quoting. Atrium keeps no credential: a token the command needs
+        lives in that command's own config, never in this field.</span>
+    </div>
     <div class="field">
       <label class="check">
-        <input type="checkbox" id="s-quietdoers" onchange="alerting.set({ quietDoers: this.checked })">
+        <input type="checkbox" id="s-quietdoers"onchange="alerting.set({ quietDoers: this.checked })">
         <span>don't notify me about cards an agent launched</span>
       </label>
       <span class="hintline">No toast, sound or desktop notification for a card tagged
@@ -3281,6 +3305,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/usage-groups.js"></script>
 <script src="/js/peek.js"></script>
 <script src="/js/settings-spine.js"></script>
+<script src="/js/hubnotify.js"></script>
 <script src="/js/themes.js"></script>
 <script src="/js/terminal.js"></script>
 <script src="/js/termcursor.js"></script>

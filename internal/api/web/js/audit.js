@@ -18,6 +18,9 @@
 // kinds. Unknown kinds still show in the list, they are just not offered here.
 const AUDIT_KINDS = [
   "hub-started", "hub-restart", "room-attached", "room-detached", "room-going-down",
+  // the hub's mutating control calls (f-020). A refused launch is ctl-launch with a "refused: ..." outcome now,
+  // and launch-refused stays only while its old rows age out
+  "ctl-launch", "ctl-exit", "ctl-cull", "ctl-restart", "ctl-wake", "ctl-wake-say", "ctl-alias", "launch-caps-set",
   "launch-refused", "board-share-opened",
   "session-start", "session-finish", "session-exit",
   "permission-requested", "permission-decided",
