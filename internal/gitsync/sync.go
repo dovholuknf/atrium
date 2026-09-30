@@ -116,6 +116,12 @@ func (s *Syncer) sync(ctx context.Context, name string, init bool, hub func() (h
 		}
 	}
 
+	// A SECOND GUARD, beside the hub skipping its own machine's room. A clone that already has
+	// an origin belongs to whatever that origin is, and if that is not this repository the
+	// path is somebody else's checkout and is not touched.
+	if msg := originMismatch(ctx, g, clone, name); msg != "" {
+		return failed(msg)
+	}
 	if hub == nil {
 		return failed("this hub predates git sync")
 	}
@@ -182,6 +188,30 @@ func (s *Syncer) sync(ctx context.Context, name string, init bool, hub func() (h
 		}
 	}
 	return res
+}
+
+// originMismatch says why a clone whose origin remote is not `name` must be left alone, or
+// nothing when it has no origin or the origin is this repository. Only owner/repo is compared,
+// since the name's host is a label (`github`) and the url's is a domain (`github.com`).
+func originMismatch(ctx context.Context, g *Runner, clone, name string) string {
+	out, err := g.Git(ctx, clone, "config", "--get", "remote.origin.url")
+	origin := strings.TrimSpace(out)
+	if err != nil || origin == "" {
+		return ""
+	}
+	tail := func(s string) string {
+		s = strings.ToLower(strings.TrimSuffix(strings.TrimRight(strings.TrimSpace(s), "/"), ".git"))
+		parts := strings.FieldsFunc(s, func(r rune) bool { return r == '/' || r == ':' || r == '\\' })
+		if len(parts) > 2 {
+			parts = parts[len(parts)-2:]
+		}
+		return strings.Join(parts, "/")
+	}
+	if tail(origin) == tail(name) {
+		return ""
+	}
+	return "the clone at " + filepath.ToSlash(clone) + " has origin " + origin + ", which is not " + name +
+		", so it was left alone"
 }
 
 func firstLine(err error) string {

@@ -3,6 +3,7 @@ package gitsync
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -18,6 +19,7 @@ import (
 type fakeRooms struct {
 	srv  *httptest.Server
 	name string
+	host string
 	git  bool
 	up   bool
 }
@@ -26,7 +28,7 @@ func (f *fakeRooms) Attached() []RoomInfo {
 	if !f.up {
 		return nil
 	}
-	return []RoomInfo{{Name: f.name, Git: f.git}}
+	return []RoomInfo{{Name: f.name, Host: f.host, Git: f.git}}
 }
 
 func (f *fakeRooms) Transport(string) http.RoundTripper {
@@ -364,6 +366,63 @@ func TestSyncAsksTheRoomAndRecordsItsAnswer(t *testing.T) {
 	raw, _ := json.Marshal(st)
 	if !strings.Contains(string(raw), `"state":"behind"`) || !strings.Contains(string(raw), `"repos":[`) {
 		t.Fatalf("shape = %s", raw)
+	}
+}
+
+// The room on the hub's own machine shares the checkout's disk, so it is skipped, and the
+// status says why.
+func TestTheRoomOnTheHubsOwnMachineIsSkipped(t *testing.T) {
+	x := newHubFixture(t, true)
+	x.rooms.host = "Sg4"
+	x.h.SelfHost = "sg4"
+	res, err := x.h.Sync(bg, "sg3", "", true)
+	if err != nil || len(res) != 1 || res[0].State != "skipped" || res[0].Detail != SameMachine {
+		t.Fatalf("sync = %+v err=%v", res, err)
+	}
+	if _, err := x.h.Collect(bg, "sg3"); err == nil || err.Error() != SameMachine {
+		t.Fatalf("collect err = %v", err)
+	}
+	x.h.Attached(bg, "sg3")
+	time.Sleep(300 * time.Millisecond)
+	if x.syncs.Load() != 0 || x.requests.Load() != 0 {
+		t.Fatalf("the room was contacted: syncs=%d requests=%d", x.syncs.Load(), x.requests.Load())
+	}
+	if st := x.h.Status().Rooms["sg3"]; st == nil || st.Repos[0].Detail != SameMachine {
+		t.Fatalf("status = %+v", st)
+	}
+	// Another machine is not skipped.
+	x.h.SelfHost = "elsewhere"
+	x.answer.Store("ok")
+	if _, err := x.h.Sync(bg, "sg3", "", false); err != nil || x.syncs.Load() != 1 {
+		t.Fatalf("a different host was skipped: syncs=%d err=%v", x.syncs.Load(), err)
+	}
+}
+
+// A failure is audited when it changes, and so is the recovery. Repeats stay in memory.
+func TestAFailureIsAuditedOnlyWhenItChanges(t *testing.T) {
+	var rows []string
+	h := &Hub{Audit: func(room, kind, detail string) { rows = append(rows, kind+" "+detail) }}
+	boom := errors.New("no route")
+	for i := 0; i < 20; i++ {
+		h.auditFailure("sg3", "git-collected", "collect:sg3", boom)
+	}
+	if len(rows) != 1 || rows[0] != "git-collected failed: no route" {
+		t.Fatalf("rows = %v", rows)
+	}
+	h.auditFailure("sg3", "git-collected", "collect:sg3", errors.New("other words"))
+	h.auditFailure("sg3", "git-collected", "collect:sg3", errors.New("other words"))
+	if len(rows) != 2 {
+		t.Fatalf("a changed failure was not written once: %v", rows)
+	}
+	h.auditFailure("sg3", "git-collected", "collect:sg3", nil)
+	h.auditFailure("sg3", "git-collected", "collect:sg3", nil)
+	if len(rows) != 3 || rows[2] != "git-collected recovered" {
+		t.Fatalf("recovery: %v", rows)
+	}
+	// Another key is its own thread.
+	h.auditFailure("m1mini", "git-collected", "collect:m1mini", boom)
+	if len(rows) != 4 {
+		t.Fatalf("rows = %v", rows)
 	}
 }
 

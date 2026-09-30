@@ -219,7 +219,7 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	// THE HUB'S REPOSITORIES, mirrored from the operator's checkouts into bare copies under
 	// the hub's directory and served to rooms on the `git` link kind and nowhere else. Set
 	// here so the welcome says Git. See internal/gitsync and docs/rnd/git-sync-design.md.
-	gitHub := &gitsync.Hub{Dir: keys.Dir, Repos: store.GitRepos, Rooms: h.GitRooms()}
+	gitHub := &gitsync.Hub{Dir: keys.Dir, Repos: store.GitRepos, Rooms: h.GitRooms(), SelfHost: hostname()}
 	h.Git = gitHub.Backend()
 	if _, err := store.GitRepos(); err != nil {
 		// SAID AT STARTUP, and the hub then mirrors nothing rather than mirror a branch it

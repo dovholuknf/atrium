@@ -100,13 +100,19 @@ func (r *Room) HubServesGit() bool {
 // ── the hub's side ──────────────────────────────────────
 
 // serveGit answers HTTP on one connection a room dialled, with the hub's Git handler.
-func (h *Hub) serveGit(name string, conn net.Conn, br *bufio.Reader) {
+func (h *Hub) serveGit(name, session string, conn net.Conn, br *bufio.Reader) {
 	if h.Git == nil {
 		_ = writeJSON(conn, welcome{OK: false, Error: "this hub serves no repositories"})
 		return
 	}
-	if !h.Has(name) {
-		_ = writeJSON(conn, welcome{OK: false, Error: "attach to this hub before asking it for anything"})
+	// THE SESSION MUST BE THE ROOM'S CURRENT ONE, as a data connection's must. A git connection
+	// carrying a stale session is from a link that has since gone, and a certificate that is not
+	// attached right now could be anything.
+	h.mu.Lock()
+	a := h.rooms[keyOf(name)]
+	h.mu.Unlock()
+	if a == nil || session == "" || session != a.session {
+		_ = writeJSON(conn, welcome{OK: false, Error: "that session is not current. reconnect"})
 		return
 	}
 	if err := writeJSON(conn, welcome{OK: true}); err != nil {

@@ -19,6 +19,8 @@ import (
 // RoomInfo is an attached room, as the hub's git side needs to know it.
 type RoomInfo struct {
 	Name string
+	// Host is what the room called its machine in its hello.
+	Host string
 	// Git is whether the room said, in its hello, that it takes git syncs. A room that did
 	// not is never asked, and is never probed by being refused.
 	Git bool
@@ -47,11 +49,15 @@ type Hub struct {
 	Audit func(room, kind, detail string)
 	// MirrorEvery and CollectEvery default to 30 seconds and 5 minutes.
 	MirrorEvery, CollectEvery time.Duration
+	// SelfHost is this hub machine's hostname. The room whose hello Host equals it is skipped.
+	SelfHost string
 
 	mu     sync.Mutex
 	locks  map[string]*sync.Mutex
 	mirror map[string]MirrorState
 	rooms  map[string]*RoomState
+	// failing is the last words of each failure already audited. See auditFailure.
+	failing map[string]string
 }
 
 // MirrorState is the last look at one repository's mirror.
@@ -74,7 +80,7 @@ type RoomState struct {
 	Collect *CollectResult `json:"collect,omitempty"`
 }
 
-var severity = map[string]int{"ok": 1, "unsupported": 2, "absent": 3, "behind": 4, "failed": 5}
+var severity = map[string]int{"ok": 1, "skipped": 1, "unsupported": 2, "absent": 3, "behind": 4, "failed": 5}
 
 func (rs *RoomState) shape() {
 	rs.State, rs.Repos = "none", []SyncResult{}
@@ -329,6 +335,10 @@ func (h *Hub) Sync(ctx context.Context, room, name string, init bool) ([]SyncRes
 	}
 	var out []SyncResult
 	for _, r := range repos {
+		if h.sameMachine(info) {
+			out = append(out, h.remember(SyncResult{Room: info.Name, Name: r.Name, State: "skipped", Detail: SameMachine}))
+			continue
+		}
 		if !info.Git {
 			out = append(out, h.remember(SyncResult{Room: info.Name, Name: r.Name, State: "unsupported",
 				Detail: "the room's build predates git sync, so it never said Git in its hello"}))
@@ -426,6 +436,9 @@ func (h *Hub) Collect(ctx context.Context, room string) (CollectResult, error) {
 		return res, fmt.Errorf("the room %q is not attached", room)
 	}
 	res.Room = info.Name
+	if h.sameMachine(info) {
+		return res, errors.New(SameMachine)
+	}
 	if !info.Git {
 		return res, errors.New("the room's build predates git sync, so it never said Git in its hello")
 	}
@@ -579,12 +592,14 @@ func (h *Hub) Attached(ctx context.Context, room string) {
 		if !ok || !info.Git {
 			return
 		}
-		if _, err := h.Sync(ctx, room, "", false); err != nil {
-			h.audit(room, "git-sync", "failed: "+err.Error())
+		_, err := h.Sync(ctx, room, "", false)
+		h.auditFailure(room, "git-sync", "attach:"+room, err)
+		if h.sameMachine(info) {
+			// Recorded as skipped by the sync, and nothing else is done for it.
+			return
 		}
-		if _, err := h.Collect(ctx, room); err != nil {
-			h.audit(room, "git-collected", "failed: "+err.Error())
-		}
+		_, err = h.Collect(ctx, room)
+		h.auditFailure(room, "git-collected", "collect:"+room, err)
 	}()
 }
 
@@ -606,8 +621,8 @@ func (h *Hub) Start(ctx context.Context, wait time.Duration) {
 		defer t.Stop()
 		for {
 			moved, err := h.Mirror(ctx)
-			if err != nil && ctx.Err() == nil {
-				h.audit("", "git-mirror", "failed: "+err.Error())
+			if ctx.Err() == nil {
+				h.auditFailure("", "git-mirror", "mirror", err)
 			}
 			for _, name := range moved {
 				go h.tellRooms(ctx, name)
@@ -629,9 +644,10 @@ func (h *Hub) Start(ctx context.Context, wait time.Duration) {
 			case <-t.C:
 			}
 			for _, r := range h.Rooms.Attached() {
-				if r.Git {
-					if _, err := h.Collect(ctx, r.Name); err != nil && ctx.Err() == nil {
-						h.audit(r.Name, "git-collected", "failed: "+err.Error())
+				if r.Git && !h.sameMachine(r) {
+					_, err := h.Collect(ctx, r.Name)
+					if ctx.Err() == nil {
+						h.auditFailure(r.Name, "git-collected", "collect:"+r.Name, err)
 					}
 				}
 			}
@@ -642,13 +658,50 @@ func (h *Hub) Start(ctx context.Context, wait time.Duration) {
 // tellRooms asks every attached room that takes git to sync a repository whose mirror moved.
 func (h *Hub) tellRooms(ctx context.Context, name string) {
 	for _, r := range h.Rooms.Attached() {
-		if !r.Git {
+		if !r.Git || h.sameMachine(r) {
 			continue
 		}
 		res := h.remember(h.askRoom(ctx, r.Name, name, false))
+		var err error
 		if res.State == "failed" {
-			h.audit(r.Name, "git-sync", name+" failed: "+res.Detail)
+			err = errors.New(name + ": " + res.Detail)
 		}
+		h.auditFailure(r.Name, "git-sync", "tell:"+r.Name+":"+name, err)
+	}
+}
+
+// SameMachine is what the status says of the room that shares the hub's own disk.
+const SameMachine = "same machine as the hub, skipped"
+
+// sameMachine is the room whose hello Host is this hub's own hostname. It shares the checkout's
+// disk, so syncing it is pointless, and on a hub whose checkout is under the room's git root it
+// would sync into the checkout @merge writes.
+func (h *Hub) sameMachine(r RoomInfo) bool {
+	return h.SelfHost != "" && r.Host != "" && strings.EqualFold(h.SelfHost, r.Host)
+}
+
+// auditFailure records a failure only when it CHANGES. A room whose collect keeps failing would
+// otherwise write a row every five minutes against a capped log. The first failure is written,
+// and so is the recovery. Repeats of the same words are held in memory. A nil err is a success.
+func (h *Hub) auditFailure(room, kind, key string, err error) {
+	h.mu.Lock()
+	if h.failing == nil {
+		h.failing = map[string]string{}
+	}
+	prev, was := h.failing[key]
+	switch {
+	case err == nil && was:
+		delete(h.failing, key)
+		h.mu.Unlock()
+		h.audit(room, kind, "recovered")
+	case err == nil:
+		h.mu.Unlock()
+	case was && prev == err.Error():
+		h.mu.Unlock()
+	default:
+		h.failing[key] = err.Error()
+		h.mu.Unlock()
+		h.audit(room, kind, "failed: "+err.Error())
 	}
 }
 
