@@ -101,13 +101,32 @@ function focusIsElsewhere() {
   return focusedElsewhere.win;
 }
 
+// The bare id of the card this window shows the terminal of, or "". Function
+// declarations only: `termWatching` is defined further down and hoists.
+function watchedCard() {
+  // `termTask` is a `let` in a later script, and this runs once at load before
+  // it exists: a `typeof` on it would throw, so the read is guarded instead.
+  try { return termTask && termWatching(termTask.id) ? bareId(termTask.id) : ""; } catch (e) { return ""; }
+}
+
+// Whether a ready alert for this card is to be said nowhere. A window that is
+// focused and showing the card claims it, and that window's claim covers every
+// other window: the sound, the toast and the toast forwarded to it.
+function readySilenced(id) {
+  if (!id) return false;
+  if (focusIsHere()) return termWatching(id);
+  return !!focusIsElsewhere() && !!focusedElsewhere.watch && focusedElsewhere.watch === bareId(id);
+}
+
 // Said on every transition AND on a beat while focused. The transition is what
 // makes it prompt and the beat is what makes it survive a window that never
 // got to say goodbye.
 function sayWhetherFocused() {
   if (!soloBus) return;
   const now = focusIsHere();
-  if (now) soloBus.postMessage({ type: "win-focus", win: thisWindowSays });
+  // `watch` is the card this window is reading, so another window's ready alert
+  // for it can stay quiet too. See `readySilenced`.
+  if (now) soloBus.postMessage({ type: "win-focus", win: thisWindowSays, watch: watchedCard() });
   else if (hadFocus) soloBus.postMessage({ type: "win-blur", win: thisWindowSays });
   hadFocus = now;
 }
@@ -161,7 +180,7 @@ if (soloBus) {
     // one equally: the board has to know a popped-out window is being read,
     // and that window has to know the board is.
     if (m.type === "win-focus" && m.win) {
-      focusedElsewhere = { win: m.win, at: Date.now() };
+      focusedElsewhere = { win: m.win, at: Date.now(), watch: m.watch || "" };
       return;
     }
     if (m.type === "win-blur" && m.win) {
@@ -177,6 +196,12 @@ if (soloBus) {
     // at. It hands the toast to the one that is, addressed by name, and says
     // nothing itself.
     if (m.type === "win-toast" && m.win === thisWindowSays) {
+      // A ready alert for the card this window is reading is not said here,
+      // whoever raised it. Logged.
+      if (m.ready && termWatching(m.taskFor)) {
+        recordToLog(m.title || "", m.body || "", "stack", "", m.taskFor);
+        return;
+      }
       toast(m.title || "", m.body || "", m.goTo || "", m.key || null, m.taskFor || null);
       return;
     }
@@ -474,8 +499,10 @@ addEventListener("DOMContentLoaded", paintNotifyOff);
 // it, or the board on the terminals view with it attached. Said to the ready
 // alert, which has nothing to tell someone reading the screen it is about.
 function termWatching(id) {
-  if (!id || !term || !termTask || !sameCard(termTask.id, id)) return false;
-  return termOnly() || isViewing("terms");
+  try {
+    if (!id || !term || !termTask || !sameCard(termTask.id, id)) return false;
+    return termOnly() || isViewing("terms");
+  } catch (e) { return false; }
 }
 
 // PTY OUTPUT IS ACTIVITY, for the one card this window has attached. A ready
@@ -657,7 +684,7 @@ const alerting = (() => {
     if (elsewhere && soloBus) {
       soloBus.postMessage({
         type: "win-toast", win: elsewhere, title, body: body || "",
-        goTo: goTo || "", key: key || "", taskFor: landOn || ""
+        goTo: goTo || "", key: key || "", taskFor: landOn || "", ready: !!opts.ready
       });
       return;
     }
@@ -1030,22 +1057,22 @@ const alerting = (() => {
     // Dropped here rather than in `check`, so those cards are still recorded
     // as seen: they were announced, by the window that owns them.
     fresh = fresh.filter(i => !poppedOut(i.task_id || i.id));
-    // A CARD AN AGENT LAUNCHED IS LOGGED AND NOT SAID. Its launcher already
-    // hears through `notifyLauncher`, so a toast, a sound or a desktop
-    // notification from it is noise. Dropped before `play` and before the count
-    // in the title, so a pile of three with one worker is a pile of two. The log
-    // line stays, because it is the record that the event happened.
-    // A FOCUSED WINDOW SHOWING THE CARD SAYS NOTHING ABOUT IT, not even a toast.
-    // Logged, since the log is the record. An unfocused window keeps the rules
-    // above and below.
+    // A FOCUSED WINDOW SHOWING THE CARD SAYS NOTHING ABOUT IT, in every window:
+    // no toast, no sound, and none forwarded. See `readySilenced`. Logged, since
+    // the log is the record.
     if (kind === "waiting" || kind === "looksidle") {
       fresh = fresh.filter(i => {
-        if (!focusIsHere() || !termWatching(i.task_id || i.id)) return true;
+        if (!readySilenced(i.task_id || i.id)) return true;
         const q = describe(i);
         recordToLog(q.title, q.body, "stack", "", i.task_id || i.id);
         return false;
       });
     }
+    // A CARD AN AGENT LAUNCHED IS LOGGED AND NOT SAID. Its launcher already
+    // hears through `notifyLauncher`, so a toast, a sound or a desktop
+    // notification from it is noise. Dropped before `play` and before the count
+    // in the title, so a pile of three with one worker is a pile of two. The log
+    // line stays, because it is the record that the event happened.
     fresh = fresh.filter(i => {
       if (!quietDoer(kind, i)) return true;
       const q = describe(i);
@@ -1088,7 +1115,8 @@ const alerting = (() => {
     notify(title, body, kind === "permission" ? "perms" : "stack", actionable, subject,
       fresh.length === 1 ? (fresh[0].task_id || fresh[0].id) : "",
       fresh.length === 1 ? iconForAlert(fresh[0]) : "", "",
-      { pending: kind === "permission" || kind === "waiting" });
+      { pending: kind === "permission" || kind === "waiting",
+        ready: kind === "waiting" || kind === "looksidle" });
   }
 })();
 
