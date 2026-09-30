@@ -3290,6 +3290,8 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/sharing.js"></script>
 <script src="/js/stack.js"></script>
 <script src="/js/logs-rules.js"></script>
+<!-- cardurl.js before notify.js: notify.js's load-time paint asks inPopout, which asks cardUrlIsCard. -->
+<script src="/js/cardurl.js"></script>
 <script src="/js/notify.js"></script>
 <script src="/js/toasts.js"></script>
 <!-- AFTER `toasts.js`, and it has to be. It wraps `toast`, which is a function
@@ -3334,7 +3336,6 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/browser-dialogs.js"></script>
 <script src="/js/providers.js"></script>
 <script src="/js/tooltips.js"></script>
-<script src="/js/cardurl.js"></script>
 <script src="/js/solo.js"></script>
 <script src="/js/switcher.js"></script>
 <script src="/js/hubrestart.js"></script>
