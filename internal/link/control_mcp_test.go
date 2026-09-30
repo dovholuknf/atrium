@@ -410,7 +410,7 @@ func TestLaunchCapCountsOnlyRunningSubagents(t *testing.T) {
 	defer srv.Close()
 	c := &controlMCP{board: srv.URL, client: srv.Client()}
 
-	if n, err := c.runningForCap(context.Background()); err != nil || n != DefaultLaunchCap-1 {
+	if n, err := c.runningForCap(context.Background(), "beta"); err != nil || n != DefaultLaunchCap-1 {
 		t.Fatalf("runningForCap = %d, %v; want only the %d running subagents", n, err, DefaultLaunchCap-1)
 	}
 	if _, _, err := c.launchHandler(context.Background(), ctlReq("a", "beta"),
