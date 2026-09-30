@@ -186,8 +186,9 @@ It reads that account's Go caches, the clone's `build.claude` and the worktree r
 `<GOCACHE>\tmp` with `go env -w`, so `go test` links its binaries inside an excluded path instead of `%TEMP%`. The
 exclusions need elevation, so it prints one `Add-MpPreference` line, with the paths spelled out, for an administrator
 to paste into an elevated shell. It writes no script for them to run: the agents' account could change a script it
-owns. Every path is checked first, since an agent can set its own `GOCACHE`: it must lie inside that account's
-profile, the worktree root or the build folder, and a drive root, a wildcard or a quote is left out with a warning.
+owns. Every path is checked first, since an agent can set its own `GOCACHE`: a Go path must lie inside that account's
+`AppData\Local` or `go` folder, the worktree root or the build folder, and a drive root, a wildcard or a quote is left
+out with a warning.
 Run elevated with `-Runner <account>`, it applies them itself.
 
 By hand, exclude the paths that only ever hold build output, caches and agent worktrees. Run this in an elevated shell
