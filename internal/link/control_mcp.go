@@ -674,31 +674,28 @@ func (c *controlMCP) resolvePeer(ctx context.Context, room, who string) (id, han
 	if err := c.ask(ctx, http.MethodGet, "/v1/tasks", room, nil, &body); err != nil {
 		return "", "", err
 	}
-	for _, t := range body.Tasks {
-		if t.Wire == who || t.ID == who {
-			return t.ID, t.Wire, nil
+	// The rule is matchCard's (resolve.go), shared with the hub's HTTP routing.
+	// A caller with no room reads the aggregate list, where two rooms can each
+	// hold a live card with one alias. That is ambiguous, never the first found.
+	if room == "" {
+		byRoom := map[string][]ctlCard{}
+		for _, t := range body.Tasks {
+			r, _ := splitTag(t.ID)
+			byRoom[r] = append(byRoom[r], t)
+		}
+		if len(byRoom) > 1 {
+			found, err := resolveAcross(byRoom, nil, who)
+			var amb *errAmbiguous
+			if errors.As(err, &amb) {
+				return "", "", err
+			}
+			if err == nil {
+				return found.Card.ID, found.Card.Wire, nil
+			}
 		}
 	}
-	// Then an alias, `sa89` or `@dotfiles`, the name an operator mentions a
-	// card by. Live first, then newest, which is what the room's own resolution
-	// does: a done card still answers behind a live one, because a worker that
-	// reported done waits at its prompt. A dead card keeps its alias as a record
-	// and no longer answers. Case and a leading `@` do not matter.
-	if a := strings.ToLower(strings.TrimPrefix(who, "@")); a != "" {
-		var best *ctlCard
-		for i := range body.Tasks {
-			t := &body.Tasks[i]
-			if t.Alias != a || t.Status == "dead" {
-				continue
-			}
-			// Live before done, then newest: the room's own order.
-			if best == nil || aliasBeats(t.Status, t.Created, best.Status, best.Created) {
-				best = t
-			}
-		}
-		if best != nil {
-			return best.ID, best.Wire, nil
-		}
+	if t, ok := matchCard(body.Tasks, who); ok {
+		return t.ID, t.Wire, nil
 	}
 	// The list of ones that would have worked, which is the whole of the fix for
 	// a wrong handle and is otherwise another tool call away.

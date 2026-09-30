@@ -412,9 +412,17 @@ func (p *Proxy) roomHasCard(r *http.Request, room, bare string) bool {
 		return false
 	}
 	defer res.Body.Close()
+	// THE ID IT ANSWERED WITH MUST BE THE ID ASKED ABOUT. A room that learns to
+	// answer a name (handle-addressed-http R2) answers 200 for `rnd` on every
+	// room that has one, and the first to answer would be cached as the owner.
+	// So a name can never be "held" through this path, whatever a room answers.
+	var body struct {
+		ID string `json:"id"`
+	}
+	err = json.NewDecoder(io.LimitReader(res.Body, 1<<20)).Decode(&body)
 	// Drained so the pooled connection can be reused.
 	_, _ = io.Copy(io.Discard, io.LimitReader(res.Body, 1<<20))
-	return res.StatusCode == http.StatusOK
+	return res.StatusCode == http.StatusOK && err == nil && body.ID == bare
 }
 
 // cachedCardRoom returns a recently resolved owner for a bare id, and only while
