@@ -48,14 +48,46 @@ func Loopback(h http.Handler) http.Handler { return Named(h) }
 
 // Named wraps a handler that answers loopback names and `names`, plus
 // $ATRIUM_HOSTS. A name may be a host, a host and port, or a URL.
+//
+// `*.example.com` answers every name under that domain, and not the domain
+// itself. For a share frontend that hands out a random name per share, like
+// `*.shares.zrok.io`. Still no rebinding: a page can only rebind a name whose
+// DNS it controls, and nobody but the frontend's operator controls names under
+// its domain.
 func Named(h http.Handler, names ...string) http.Handler {
-	allow := map[string]bool{}
+	allow := hostSet{exact: map[string]bool{}}
 	for _, n := range append(names, EnvNames()...) {
-		if host := hostOf(n); host != "" {
-			allow[host] = true
+		host := hostOf(n)
+		if suffix, ok := strings.CutPrefix(host, "*."); ok {
+			if strings.Contains(suffix, ".") {
+				allow.under = append(allow.under, "."+suffix)
+			}
+			continue
+		}
+		if host != "" {
+			allow.exact[host] = true
 		}
 	}
 	return hostCheck(checks(h), allow)
+}
+
+// hostSet is the names a listener answers besides loopback: exact names, and
+// the domains every name under which it answers, each with its leading dot.
+type hostSet struct {
+	exact map[string]bool
+	under []string
+}
+
+func (s hostSet) has(host string) bool {
+	if s.exact[host] {
+		return true
+	}
+	for _, d := range s.under {
+		if len(host) > len(d) && strings.HasSuffix(host, d) {
+			return true
+		}
+	}
+	return false
 }
 
 // Unnamed wraps a handler whose listener has no name atrium knows, which is a
@@ -149,9 +181,9 @@ func checks(h http.Handler) http.Handler {
 	return cop.Handler(upgradeCheck(h))
 }
 
-func hostCheck(h http.Handler, allow map[string]bool) http.Handler {
+func hostCheck(h http.Handler, allow hostSet) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !LoopbackHost(r.Host) && !allow[hostOf(r.Host)] {
+		if !LoopbackHost(r.Host) && !allow.has(hostOf(r.Host)) {
 			refuse(w, "this listener does not answer to that name. $"+EnvHosts+" adds one")
 			return
 		}

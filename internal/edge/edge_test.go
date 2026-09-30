@@ -93,6 +93,26 @@ func TestEnvHostsAddsNames(t *testing.T) {
 	}
 }
 
+// A WILDCARD ANSWERS EVERY NAME UNDER A DOMAIN, for a share frontend that
+// hands out a random name per share, and never the domain alone or a lookalike.
+func TestEnvHostsWildcard(t *testing.T) {
+	t.Setenv(EnvHosts, "*.shares.zrok.io, *.com")
+	h := Named(ok)
+	for host, want := range map[string]int{
+		"hdzujxlq0dan.shares.zrok.io": 200,
+		"atrium.shares.zrok.io:443":   200,
+		"a.b.shares.zrok.io":          200,
+		"shares.zrok.io":              403,
+		"evilshares.zrok.io":          403,
+		"shares.zrok.io.evil.example": 403,
+		"example.com":                 403, // a wildcard over a bare label is ignored
+	} {
+		if got := status(h, http.MethodGet, host, nil); got != want {
+			t.Errorf("%s answered %d, want %d", host, got, want)
+		}
+	}
+}
+
 // UNNAMED CHECKS ORIGINS, NOT HOSTS, for a ziti service nobody named.
 func TestUnnamedChecksOriginsOnly(t *testing.T) {
 	h := Unnamed(ok)
