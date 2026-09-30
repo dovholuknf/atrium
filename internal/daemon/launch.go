@@ -1178,7 +1178,7 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 		// this, `codex` reaches wt.exe as a bare name and comes back as
 		// 0x80070002, "the system cannot find the file specified", about a
 		// file that is on PATH.
-		cmdName, cmdArgs := h.Exe(), args
+		cmdName, cmdArgs := agentSpawn(h.Exe(), args)
 		if resolved, err := exec.LookPath(cmdName); err == nil {
 			cmdName, cmdArgs = viaShellIfScript(resolved, args)
 		}
