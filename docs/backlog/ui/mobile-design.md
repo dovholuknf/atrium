@@ -113,7 +113,8 @@ What is still wrong, from today's reports and the screenshots:
 **Proposal E, a compose box.** A native text field above the key bar, one line growing to four, with a send button.
 It is where he types on a phone. Autocorrect, dictation, swipe and paste work, because it is a real field. Send
 delivers the text as ONE input frame (one paste, the rule in `web/CLAUDE.md`), then Enter, exactly what typing it
-would have done. The key bar keys still go straight to the terminal, so menus, Esc and ^C are unchanged. A toggle on
+would have done. Line breaks inside the text are sent as they are, inside that one paste, so a pasted block arrives
+as a block and only the final Enter submits it. The key bar keys still go straight to the terminal, so menus, Esc and ^C are unchanged. A toggle on
 the key bar switches between "compose" (the default on a phone) and "keys" (the xterm textarea, today's behaviour),
 for vim, a password prompt, or anything that needs raw keys. Board only.
 
@@ -152,7 +153,10 @@ is the card id, its name, and why, nothing more. A tap opens that card through t
 ecdsa, with RFC 8291's test vector pinning the bytes). The trigger lives on the hub and needs no room change: rooms
 already send the hub their card list within 2 seconds of a change, and the hub diffs it against the stored copy, so a
 hub restart does not push everything again. What it needs from @ui is which fields mark "question" and "finished":
-`questions_at` with a non-empty `open_questions`, and `turn_ended_at` with `unseen`. The board half (subscribe,
+`questions_at` with a non-empty `open_questions`, and `turn_ended_at` with `unseen`. A push is identified by the card
+id, the reason (permission, input, question, finished) and that reason's own timestamp (`questions_at`,
+`turn_ended_at`, or when the status changed). The hub stores the last identity it pushed per card and sends only
+when it changes, so a room republishing the same card never buzzes twice. The board half (subscribe,
 unsubscribe, a per-device switch in settings, the test notification) is about half a day.
 
 **The costs clint pays:**
@@ -175,7 +179,8 @@ on the phone. It is NOT end-to-end encrypted: the card name and why go to ntfy.s
 self-hosts. And a protected topic needs an access token, which is clint's own credential stored by atrium. That is
 exactly what the line in `CLAUDE.md` rules out ("atrium may hold the NAME of a command that has a credential, and
 never somebody else's credential"). So ntfy is only acceptable on an unprotected topic with an unguessable name, or a
-self-hosted server that needs no token. @rnd to confirm.
+self-hosted server that needs no token. @rnd to confirm. This doc controls on that point: @fabric's estimate says
+storing clint's ntfy token is allowed but new, and it is not allowed. An ntfy access token is never stored by atrium.
 
 @fabric recommends building the trigger once with ntfy as the first sink (about 1 day in all), which proves the diff
 and the coalescing on clint's phone right away, then Web Push behind the same sink interface (about 1.5 days more).
