@@ -42,7 +42,9 @@ func TestAMessageFromAThirdSessionOwesNothing(t *testing.T) {
 	if err := d.watchWorkers(time.Now().Add(time.Hour)); err != nil {
 		t.Fatal(err)
 	}
-	if x := d.esc.get(worker.ID); x != nil {
+	// A SILENT STOP is the debt this is about. The worker is left mid-turn an hour
+	// on, which is a long turn (R3), a report about time and not about debt.
+	if x := d.esc.get(worker.ID); x != nil && x.Source != NoticeLongTurn {
 		t.Fatalf("the board rang STUCK for a debt nobody was owed: %+v", x)
 	}
 }
