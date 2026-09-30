@@ -46,15 +46,20 @@ function stripComments(css) {
 
 // `:root { ... }` and every `:root[data-skin="x"] { ... }`, flattened to a map
 // of variable to unresolved value text. Same shape the skins check parses, and
-// the same assumption: one block per skin, closed by a `}` at two spaces.
+// the same assumption: a block closed by a `}` at two spaces.
+//
+// A second block for the same selector ADDS to the first, as it does in CSS.
+// Starting it over is what let `walk.css`, a `:root` of four derived colours,
+// wipe out every token `tokens.css` declared before it.
 function parseSkins(css) {
   const lines = stripComments(css).split("\n");
   const blocks = new Map();
   let current = null;
+  const open = (name) => { current = name; if (!blocks.has(name)) blocks.set(name, {}); };
   for (const line of lines) {
-    if (/^\s{0,2}:root\s*\{/.test(line)) { current = ":root"; blocks.set(current, {}); continue; }
+    if (/^\s{0,2}:root\s*\{/.test(line)) { open(":root"); continue; }
     const skin = line.match(/^\s{0,2}:root\[data-skin="([^"]+)"\]\s*\{/);
-    if (skin) { current = skin[1]; blocks.set(current, {}); continue; }
+    if (skin) { open(skin[1]); continue; }
     if (current && /^\s{0,2}\}/.test(line)) { current = null; continue; }
     if (!current) continue;
     for (const decl of line.split(";")) {
