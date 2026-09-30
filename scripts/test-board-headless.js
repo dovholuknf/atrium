@@ -4826,6 +4826,8 @@ async function heldLineSection(browser, base) {
     return p;
   };
   const setAct = async (p, a) => {
+    // The mock's own row too, or a list the board fetches meanwhile repaints the card without it.
+    if (a) LAND["land-live"].activity = a; else delete LAND["land-live"].activity;
     // What a whole-row task event does: the map takes the row, the terminals view repaints from it.
     await p.evaluate(async (a) => {
       const row = Object.assign({}, cardList().find(x => x.id === "land-live"));
