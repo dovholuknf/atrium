@@ -13233,6 +13233,62 @@ async function cardUrlWayOutSection(browser, base) {
   if (!bad) console.log("cardUrlWayOut ok");
 }
 
+// ── the board on a phone, on the real page ───────────────────────────────
+// The header shows on the board, and a card's own window has the way out and a picker that opens and switches. On the
+// page as a browser loads it (one script tag per file), at both phone widths.
+async function phoneBootSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landList = [];
+  landCard("land-a", { alias: "rnd", room: "claude-sg4", wire_name: "sparta/rnd-director", supervised: true });
+  landCard("land-b", { alias: "second", room: "claude-sg4", wire_name: "sparta/second", supervised: true });
+  landList = [LAND["land-a"], LAND["land-b"]];
+  const raw = fs.readFileSync(path.join(WEB_ROOT, "index.html"));
+  try {
+    for (const w of [390, 412]) {
+      for (const at of ["/raw", "/raw#term=land-a", "/alias/rnd"]) {
+        const tag = "phoneBoot " + w + " " + at + ": ";
+        const ctx = await browser.newContext({ viewport: { width: w, height: 844 }, hasTouch: true, isMobile: true });
+        await ctx.addInitScript(() => localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true })));
+        const p = await ctx.newPage();
+        const errors = [];
+        p.on("pageerror", e => errors.push(String(e && e.message || e)));
+        await p.route("**/*", route => {
+          const rq = route.request();
+          const u = new URL(rq.url());
+          if (u.pathname === "/alias/rnd" && rq.resourceType() === "document") return route.fulfill({ status: 200, contentType: "text/html", body: raw });
+          if (u.pathname === "/v1/tasks/rnd") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(LAND["land-a"]) });
+          return route.continue();
+        });
+        try {
+          await p.goto(base + at, { waitUntil: "load" });
+          await p.waitForTimeout(1200);
+          const solo = at !== "/raw";
+          if (!solo) {
+            const h = await p.evaluate(() => { const e = document.querySelector("header"); const r = e && e.getBoundingClientRect(); return r ? { h: r.height, vis: getComputedStyle(e).visibility !== "hidden" && getComputedStyle(e).display !== "none" } : null; });
+            if (!h || !h.vis || h.h < 20) fail(tag + "no header: " + JSON.stringify(h));
+            continue;
+          }
+          await cuSolo(p, "land-a");
+          const way = await p.evaluate(() => { const e = document.querySelector(".cu-way.float .cu-all"); if (!e) return false; const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; });
+          if (!way) fail(tag + "no way out is shown");
+          await p.tap("#t-tray-handle");
+          await p.waitForFunction(() => document.body.classList.contains("tray-open"), null, { timeout: slow(5000) });
+          await p.tap("#t-pick");
+          await p.waitForFunction(() => { const d = document.getElementById("switcher"); return d && d.open; }, null, { timeout: slow(5000) })
+            .catch(() => fail(tag + "the card picker did not open"));
+          await p.waitForFunction(() => document.querySelectorAll("#sw-list .sw-row, #switcher .row").length > 0 || swRows.length > 1, null, { timeout: slow(5000) }).catch(() => {});
+          await p.keyboard.press("Enter");
+          await p.waitForFunction(() => soloID === "land-b", null, { timeout: slow(8000) })
+            .catch(async () => fail(tag + "switching did not land on the other card " + JSON.stringify(await p.evaluate(() => ({ id: soloID, rows: swRows.map(t => t.id), q: swQuery, tasks: swTasks.map(t => t.id + ":" + t.supervised), open: document.getElementById("switcher").open })))));
+        } finally { await ctx.close(); }
+        if (errors.length) fail(tag + "threw: " + errors.join(" | "));
+      }
+    }
+  } finally { tasksMode = was; }
+  if (!bad) console.log("phoneBoot ok");
+}
+
 async function main() {
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = "http://127.0.0.1:" + server.address().port;
@@ -13268,7 +13324,7 @@ async function main() {
       u001Audit: u001AuditSection,
       pasteStart: pasteStartSection, pasteDone: pasteDoneSection, pasteOldRoom: pasteOldRoomSection, pasteClose: pasteCloseSection,
       growlQuestionShots: growlQuestionShotsSection, growlQuestionBody: growlQuestionBodySection, growlReplyGrow: growlReplyGrowSection, growlChoices: growlChoicesSection, growlStable: growlStableSection, mGrowlQuestion: mGrowlQuestionSection,
-      bootClean: bootCleanSection, mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection };
+      bootClean: bootCleanSection, mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -15297,6 +15353,7 @@ async function main() {
     await bootCleanSection(browser, base);
     await mHomeOrderSection(browser);
     await cardUrlWayOutSection(browser, base);
+    await phoneBootSection(browser, base);
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e));
     if (process.env.DEBUG_HEADLESS) {
@@ -16438,7 +16495,7 @@ async function growlReplyGrowSection(browser, base) {
       await p.focus(box);
       await p.keyboard.type("first");
       await p.keyboard.press("Shift+Enter");
-      await p.keyboard.type("second");
+      await p.keyboard.type("land b");
       if ((await size()).v !== "first\nsecond") fail(tag + "Shift+Enter did not make a newline: " + JSON.stringify((await size()).v));
       if (h.messages.length) fail(tag + "Shift+Enter sent.");
       await p.keyboard.press("Enter");
