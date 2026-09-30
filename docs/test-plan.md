@@ -7401,3 +7401,80 @@ with `updatedInput` holding the edited command.
 2. Run it again with a tool named Read.
 
 **Expected:** no output and exit code 0 each time, and no card appears for the Read.
+
+## GC. Terminal output share on a phone
+
+### GC1. Terminals tab
+At 390x844 portrait with a card attached and the headers collapsed, the terminal output fills at least 75% of the screen height (the test measures 85.5%, it was 64.9%). No separate card picker row shows above the terminal.
+
+### GC2. Pop-out
+Open the card with `#term=`. The output fills at least 75% of the screen (92.3%, it was 81.0%).
+
+### GC3. Tray
+The terminal bar is hidden. A small grip at the top centre (44px touch area, clear of the top right corner) opens it by tap or by pulling down. Swipe up, a tap outside, or the chevron closes it. Opening it does not move or resize the terminal. It holds the card picker button, the other buttons and "fit this screen". The key bar (44px keys) is the only bar at the bottom.
+
+### GC4. Card picker
+In the tray, the card name button (44px) opens the card list under the tray. A second tap closes the list and the tray.
+
+## GC. Follow button
+
+### GC1. Pan away
+On a long scrollback, drag up. A round down button shows bottom right with no count. New output raises the count and never moves the view.
+
+### GC2. Tap the button
+It scrolls back to the cursor and hides. While output streams the cursor row stays in view and the button stays hidden.
+
+### GC3. Pan back
+Pan away, let output arrive, then pan back down to within a row of the cursor. The button hides and follow resumes with no tap, including when the pan ends at exactly the spot the board last scrolled to.
+
+### GC4. Run
+`HEADLESS_ONLY=phoneShare,phoneFollow,phoneHeader,phoneTermBar,phoneKeyboard,phoneTap,phonePan,phoneFocus,phoneView,u016,heldLine node scripts/test-board-headless.js`.
+
+## GC. Bottom anchor
+
+### GC1. Pop-out with a short pty
+Open a card with a 48-row pty in the pop-out at 390x844. The prompt sits just above the key bar with no blank rows under the cursor row. Any spare height is a plain band above the grid, and the follow button is hidden while the cursor is in view. The pty size is never changed.
+
+### GC2. Terminals tab and keyboard
+The same on the terminals tab, and with the on-screen keyboard up or down the cursor row stays just above the key bar.
+
+## GD. Phone terminal composer
+
+### GD1. Type into a real box
+On a phone, open a terminal card. Above the key bar is a one line message box. Swipe-type or dictate a sentence, then tap the arrow. It reaches the session once, as one paste then Enter, with no doubled or garbled words. Enter in the box adds a new line and sends nothing.
+
+### GD2. Hardware keyboard and desktop
+With a hardware keyboard attached, tap the terminal and type. The keys reach the session and no soft keyboard rises. On a desktop the box is not there.
+
+## GD. Phone page composer and permission rows
+
+### GD1. Message a session from /m
+Open a card on the phone page. Type in the box, tap the arrow. A typed message says "sent", one held back says "queued, delivered when the line is clear". A failed send keeps your text and says why. Leave and come back and the draft is still there.
+
+### GD2. Answer a permission
+A pending request shows the tool and the command. Approve, deny, or deny with a reason (the reason goes to the session). One answered on the desktop slides away.
+
+## GD. Attach on the phone terminal
+
+### GD1. Paths land in the message box
+On a phone terminal, type "look at  and fix" with the caret between the words, tap the key bar paperclip and pick two photos. Both paths appear at the caret with your words either side kept, nothing reaches the session yet, and the message box has focus so the keyboard comes up. Tap the arrow to send.
+
+## GE. Phone lists, tab row and bell nudge
+
+### GE1. The tab row fits at 390px
+On a phone at 390px the header shows stack, board, terminals and perms as equal segments with every label whole. AUTO is a dot on the bell and the bell's label says auto mode is on. The chevron sits at the end. Nothing overlaps. Opening the chevron shows all tabs as a grid of equal segments.
+
+### GE2. The terminals and stack lists fit
+Open the terminals tab and the stack tab. Every card is the same width, nothing passes the right edge, titles and paths ellipsize, the room and `? N` chips stay inside their card, the summary bar sits above the first card and the group nesting is a thin edge.
+
+### GE3. A toast is a nudge of the bell
+On a phone trigger any toast. No box is drawn, the bell shakes once and its count goes up, and the entry is in the log the bell opens. With the terminal full screen the corner bell `#phone-bell` shows instead of the header's, and only one bell is ever on screen.
+
+### GE4. A held message nudges the envelope
+With a message held behind your typed line the envelope on the bell nudges with its count and no notice box is drawn in the pane.
+
+### GE5. A desktop is unchanged
+At desktop width the same toast still draws a toast, there is no corner badge and the header has all its tabs.
+
+### GE6. The hub restart gate still works on a phone
+The restart countdown and the paused toast with its resume button stay as toasts on a phone, since they are not made by `toast()` and hold the only pause and resume controls.
