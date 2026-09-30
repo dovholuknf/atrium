@@ -29,3 +29,14 @@ checks are @ui's, and I ran none.
    phone keeps your recent messages?
 
 HUB DEPLOY OK 3eee75da
+
+## Re-read of 183d043c, 2026-09-30
+
+Both lows are closed. A stored message is cut at 4096 characters with a marker. Every write drops messages older
+than a week, removes empty keys, and keeps only the newest 50 cards. The key list is collected before anything is
+removed, so the loop does not skip keys.
+
+Nit: the prune cuts by age and card count, not by size. A message stored whole by 3eee75da before this fix keeps
+its full size for up to a week. That window was hours, so cutting old entries to 4 KB in `pruneSent` is optional.
+
+HUB DEPLOY OK 183d043c
