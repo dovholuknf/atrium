@@ -86,6 +86,8 @@
 </script>
 </head>
 <body>
+<!-- The way back once the phone header is hidden. A strip in the flow, not an overlay, so it covers nothing. -->
+<div id="hdr-strip"><button type="button" id="hdr-show" onclick="phoneHeaderSet(false)">&#9662; show header</button></div>
 <header>
   <div class="bar">
     <h1 class="wordmark accent-text">Atrium</h1>
@@ -155,6 +157,8 @@
     <div class="rooms" id="rooms" hidden onclick="openRooms()">
       <span class="dot"></span><span id="rooms-t">rooms</span>
     </div>
+    <button type="button" id="hdr-hide" class="icon" onclick="phoneHeaderSet(true)"
+      aria-label="hide the header" data-tip="hide the header">&#9652;</button>
     <div class="conn" id="conn"><span class="dot"></span><span id="conn-t">connecting</span></div>
   </div>
   <div class="rule"></div>
@@ -387,6 +391,13 @@ Exports honor whatever filter is applied.">?</span>
           <span class="grow"></span>
           <button onclick="sendSignal('int')"
             data-tip="ctrl-c copies when text is selected, so send an interrupt explicitly">ctrl-c</button>
+          <!-- Picker for phones, which have no drag and no usable image paste. Same pipeline as both: `uploadIntoTerm`.
+               No `accept`, since a narrow one blocks HEIC and the camera on iOS and Android. Hidden for a guest. -->
+          <button id="t-attach" class="icon" onclick="pickTermFiles()"
+            aria-label="attach a file or photo" data-tip="attach a file or photo">&#128206;</button>
+          <input type="file" id="t-attach-in" multiple hidden tabindex="-1">
+          <button id="t-full" class="icon" onclick="toggleTermFull()" aria-pressed="false"
+            aria-label="full screen terminal" data-tip="full screen: the terminal fills the window">&#9974;</button>
           <button id="t-popout" onclick="popOutTerm()"
             data-tip="open this terminal in its own window, so alt-tab reaches it">pop out</button>
           <!-- Only when the card's directory holds a findings folder. The bar is the progress: one segment per
@@ -559,6 +570,7 @@ Exports honor whatever filter is applied.">?</span>
           <button type="button" tabindex="-1" data-key="btab" aria-label="shift tab">&#8676;</button>
           <button type="button" tabindex="-1" data-key="enter" aria-label="enter">&crarr;</button>
           <button type="button" tabindex="-1" data-key="int" aria-label="ctrl c, hold to interrupt">^C</button>
+          <button type="button" tabindex="-1" id="t-keys-attach" aria-label="attach a file or photo" onclick="pickTermFiles()">&#128206;</button>
         </div>
         <div class="term-view" id="t-view" hidden>
           <button type="button" id="t-view-btn" tabindex="-1" onclick="toggleTermView()">fit this screen</button>
@@ -3243,6 +3255,8 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/notes-files.js"></script>
 <script src="/js/usage.js"></script>
 <script src="/js/usage-charts.js"></script>
+<script src="/js/usage-limits.js"></script>
+<script src="/js/usage-groups.js"></script>
 <script src="/js/peek.js"></script>
 <script src="/js/settings-spine.js"></script>
 <script src="/js/themes.js"></script>
@@ -3254,6 +3268,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/terminal-links.js"></script>
 <script src="/js/walk.js"></script>
 <script src="/js/terminal-debug.js"></script>
+<script src="/js/termfull.js"></script>
 <script src="/js/inputlag.js"></script>
 <script src="/js/typing.js"></script>
 <script src="/js/termtrace.js"></script>

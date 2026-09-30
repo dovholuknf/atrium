@@ -3133,6 +3133,11 @@ async function themePreviewSection(browser, base) {
     // Detaching ends a preview.
     await p.evaluate(() => { pickTheme(); previewTheme("dracula"); });
     await p.evaluate(() => clearTermPane(false));
+    // The repaint rides a queued refresh (dropThemePreview), which under load outlasts read()'s 400ms.
+    await p.waitForFunction(a => {
+      const row = document.querySelector('#term-list .card.tab[data-id="tp-a"]');
+      return row && getComputedStyle(row).backgroundColor === a;
+    }, saved.a, { timeout: slow(5000) }).catch(() => {});
     r = await read();
     if (r.a !== saved.a || !r.wrap) fail("after detaching mid-preview the row is " + r.a + ", picker hidden " + r.wrap);
     if (await p.evaluate(() => themePreview)) fail("detaching left a preview held.");
@@ -4188,12 +4193,14 @@ async function pasteBigSection(browser, base) {
       window.__frames = [];
       const vis = () => { const el = document.getElementById("t-pasting"); return !!(el && !el.hidden); };
       const seen = [];
+      let frame = 0, firstFrame = -1;
       const t0 = performance.now();
       const loop = () => {
         const t = performance.now() - t0;
-        if (vis()) seen.push(t);
+        if (vis()) { seen.push(t); if (firstFrame < 0) firstFrame = frame; }
+        frame++;
         if (t < 1500) { requestAnimationFrame(loop); return; }
-        done({ first: seen.length ? Math.round(seen[0]) : -1,
+        done({ first: seen.length ? Math.round(seen[0]) : -1, firstFrame,
           span: seen.length ? Math.round(seen[seen.length - 1] - seen[0]) : 0,
           sizes: window.__frames.map(f => f.length), heads: window.__frames.map(f => f.slice(0, 32)),
           text: (document.getElementById("t-pasting") || {}).textContent || "" });
@@ -4214,9 +4221,11 @@ async function pasteBigSection(browser, base) {
       fail(name + ": the paste did not leave as one frame of " + want + " bytes or more: " + JSON.stringify(got.sizes));
       return;
     }
-    if (got.first < 0 || got.first > 50 || got.span < 300) {
+    // "Within a frame" counted in frames: the gesture itself blocks the thread for a 3MB string, so the first
+    // frame after it lands late under load, and the spinner being on that frame is the claim.
+    if (got.first < 0 || (got.first > 50 && got.firstFrame > 1) || got.span < 300) {
       fail(name + ": a big paste did not paint the spinner within a frame and hold it 300ms: " +
-        JSON.stringify({ first: got.first, span: got.span }));
+        JSON.stringify({ first: got.first, firstFrame: got.firstFrame, span: got.span }));
     }
   };
   try {
@@ -4908,6 +4917,334 @@ async function phoneViewSection(browser, base) {
   if (errors.length) fail("phoneView: the page threw: " + errors.join(" | "));
 }
 
+// ── u-016: phone upload, header hide, landscape, full screen ─────────────
+async function u016Section(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  landList = [LAND["land-live"]];
+  landPerms = [];
+  const errors = [];
+  const fakeSock = () => {
+    const Real = window.WebSocket;
+    window.__sent = [];
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
+        onopen: null, onclose: null, onmessage: null, onerror: null,
+        send(d) { window.__sent.push(String(d)); }, close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+    window.__fs = 0;
+    Element.prototype.requestFullscreen = function () { window.__fs++; return Promise.resolve(); };
+  };
+  const open = async (ctx) => {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await p.evaluate(() => attachTask("land-live"));
+    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live",
+      null, { timeout: slow(10000) });
+    await p.waitForTimeout(300);
+    return p;
+  };
+  const vis = (p, sel) => p.evaluate(s => {
+    const e = document.querySelector(s);
+    if (!e) return false;
+    const r = e.getBoundingClientRect();
+    return getComputedStyle(e).display !== "none" && r.width > 0 && r.height > 0;
+  }, sel);
+  const rect = (p, sel) => p.evaluate(s => {
+    const r = document.querySelector(s).getBoundingClientRect();
+    return { w: r.width, h: r.height, t: r.top, b: r.bottom, vh: innerHeight, vw: innerWidth };
+  }, sel);
+  const isFull = (p) => p.evaluate(() => document.body.classList.contains("term-full"));
+  try {
+    for (const [name, vp, phone] of [["portrait", { width: 390, height: 844 }, true],
+        ["landscape", { width: 844, height: 390 }, true], ["desktop", { width: 1280, height: 720 }, false]]) {
+      const tag = "u016 " + name + ": ";
+      const ctx = await browser.newContext(phone ? { viewport: vp, hasTouch: true, isMobile: true } : { viewport: vp });
+      await ctx.addInitScript(() => localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true })));
+      await ctx.addInitScript(fakeSock);
+      let uploads = 0;
+      await ctx.route("**/v1/tasks/*/files", route => {
+        if (route.request().method() !== "POST") return route.fallback();
+        uploads++;
+        return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ paths: ["/tmp/x.png"] }) });
+      });
+      const p = await open(ctx);
+
+      if (phone) {
+        const a = await p.evaluate(() => {
+          const b = document.getElementById("t-attach"); const r = b.getBoundingClientRect();
+          const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+          return { w: r.width, h: r.height, shown: r.width > 0, top: !!top && (top === b || b.contains(top)),
+            inView: r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight };
+        });
+        if (!a.shown || a.w < 40 || a.h < 40) fail(tag + "the attach control is missing or under 40px: " + JSON.stringify(a));
+        if (!a.top || !a.inView) fail(tag + "the attach control is covered or off screen: " + JSON.stringify(a));
+        const pick = () => p.setInputFiles("#t-attach-in", [{ name: "a.heic", mimeType: "image/heic", buffer: Buffer.from("x") }]);
+        await pick();
+        await p.waitForTimeout(400);
+        if (uploads !== 1) fail(tag + "a chosen file did not reach the upload endpoint: " + uploads);
+        await pick();
+        await p.waitForTimeout(400);
+        if (uploads !== 2) fail(tag + "the same file twice did not upload twice: " + uploads);
+      }
+
+      if (name === "landscape") {
+        const h = await rect(p, "header");
+        if (h.h > h.vh * 0.2) fail(tag + "the header takes more than 20% of the height: " + JSON.stringify(h));
+        const t = await rect(p, "#term-pane");
+        if (t.h < t.vh * 0.6) fail(tag + "the terminal pane is under 60% of the height: " + JSON.stringify(t));
+      }
+
+      // full screen
+      await p.evaluate(() => document.getElementById("t-full").click());
+      await p.waitForTimeout(400);
+      if (!(await isFull(p))) fail(tag + "the button did not turn full screen on");
+      if (await vis(p, "header")) fail(tag + "the header shows in full screen");
+      if (await vis(p, "#term-list")) fail(tag + "the terminal list shows in full screen");
+      const pr = await rect(p, "#term-pane");
+      if (pr.h < pr.vh - 2 || pr.w < pr.vw - 2) fail(tag + "the pane does not fill the viewport: " + JSON.stringify(pr));
+      if (phone) {
+        if (!(await vis(p, "#t-keys"))) fail(tag + "the key bar is gone in full screen");
+        if ((await p.evaluate(() => window.__fs)) < 1) fail(tag + "requestFullscreen was not called");
+        await p.evaluate(() => document.dispatchEvent(new Event("fullscreenchange")));
+        await p.waitForTimeout(200);
+        if (await isFull(p)) fail(tag + "fullscreenchange did not leave full screen");
+      } else {
+        // desktop: Esc with the terminal focused goes to the runner and does not leave
+        await p.evaluate(() => term.focus());
+        await p.keyboard.press("Escape");
+        if (!(await isFull(p))) fail(tag + "Esc in the focused terminal left full screen");
+        await p.evaluate(() => document.activeElement && document.activeElement.blur());
+        await p.keyboard.press("Escape");
+        await p.waitForTimeout(300);
+        if (await isFull(p)) fail(tag + "Esc outside the terminal did not leave full screen");
+      }
+      // the button both ways
+      await p.evaluate(() => { if (!document.body.classList.contains("term-full")) document.getElementById("t-full").click(); });
+      await p.waitForTimeout(200);
+      await p.evaluate(() => document.getElementById("t-full").click());
+      await p.waitForTimeout(300);
+      if (await isFull(p)) fail(tag + "the button did not leave full screen");
+      if (phone) {
+        await p.evaluate(() => document.getElementById("t-full").click());
+        await p.waitForTimeout(200);
+        await p.evaluate(() => { window.__sent.length = 0; document.querySelector("#t-keys [data-key=esc]").click(); });
+        if (!(await isFull(p))) fail(tag + "one key bar Esc left full screen");
+        if (!(await p.evaluate(() => window.__sent.some(x => /u001b/.test(x)))))
+          fail(tag + "the first key bar Esc did not reach the runner");
+        await p.evaluate(() => document.querySelector("#t-keys [data-key=esc]").click());
+        if (await isFull(p)) fail(tag + "a double key bar Esc did not leave full screen");
+      }
+      if (await p.evaluate(() => Object.keys(localStorage).some(k => /full/i.test(k))))
+        fail(tag + "full screen was saved to localStorage");
+      if (name !== "landscape" && !(await vis(p, "header"))) fail(tag + "the header did not come back");
+
+      // long presses (u-016b)
+      {
+        const ctxm = await p.evaluate(() => {
+          let pasted = 0;
+          const real = window.pasteIntoTerm;
+          window.pasteIntoTerm = () => { pasted++; };
+          const ev = new MouseEvent("contextmenu", { bubbles: true, cancelable: true });
+          document.querySelector("#t-screen .xterm-screen, #t-screen").dispatchEvent(ev);
+          window.pasteIntoTerm = real;
+          return { prevented: ev.defaultPrevented, pasted };
+        });
+        if (phone && (!ctxm.prevented || ctxm.pasted)) fail(tag + "a long press on the grid was not swallowed, or pasted: " + JSON.stringify(ctxm));
+        if (!phone && (!ctxm.prevented || ctxm.pasted !== 1)) fail(tag + "desktop right click no longer pastes: " + JSON.stringify(ctxm));
+      }
+      if (name === "portrait") {
+        const st = await p.evaluate(() => {
+          const k = document.getElementById("t-keys");
+          const cs = getComputedStyle(k);
+          return { ta: cs.touchAction, us: cs.userSelect };
+        });
+        if (st.ta !== "none" || st.us !== "none") fail(tag + "the key bar does not own its touch: " + JSON.stringify(st));
+        const ints = () => p.evaluate(() => window.__sent.filter(x => /"s":"int"/.test(x)).length);
+        const fire = (type, x, y) => p.evaluate(([t, x, y]) => {
+          const b = document.querySelector("#t-keys [data-key=int]");
+          const r = b.getBoundingClientRect();
+          b.dispatchEvent(new PointerEvent(t, { bubbles: true, cancelable: true, pointerId: 7, pointerType: "touch",
+            clientX: r.left + r.width / 2 + x, clientY: r.top + r.height / 2 + y }));
+        }, [type, x, y]);
+        await p.evaluate(() => { window.__sent.length = 0; });
+        await fire("pointerdown", 0, 0); await p.waitForTimeout(150); await fire("pointerup", 0, 0);
+        await p.waitForTimeout(700);
+        if (await ints()) fail(tag + "a short tap on ^C interrupted");
+        await fire("pointerdown", 0, 0); await p.waitForTimeout(200); await fire("pointermove", 30, 0);
+        await p.waitForTimeout(700); await fire("pointerup", 30, 0);
+        if (await ints()) fail(tag + "a drag past the threshold still interrupted");
+        await fire("pointerdown", 0, 0); await p.waitForTimeout(200); await fire("pointercancel", 0, 0);
+        await p.waitForTimeout(700);
+        if (await ints()) fail(tag + "a cancelled press still interrupted");
+        await fire("pointerdown", 0, 0); await fire("pointermove", 3, 3);
+        await p.waitForTimeout(2000); await fire("pointerup", 0, 0);
+        if ((await ints()) !== 1) fail(tag + "a 2s hold did not interrupt exactly once: " + (await ints()));
+      }
+
+      // the header hidden on its own, saved per device
+      if (name === "portrait") {
+        const hd = () => vis(p, "header");
+        const ready = () => p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+        await p.evaluate(() => document.getElementById("hdr-hide").click());
+        if (await hd()) fail(tag + "the hide control left the header showing");
+        if (!(await vis(p, "#hdr-show"))) fail(tag + "no way back once the header is hidden");
+        await p.setViewportSize({ width: 844, height: 390 });
+        await p.waitForTimeout(300);
+        if (await hd()) fail(tag + "rotating to landscape brought the header back");
+        await p.setViewportSize({ width: 390, height: 844 });
+        await p.reload({ waitUntil: "domcontentloaded" });
+        await ready();
+        if (await hd()) fail(tag + "a reload brought the header back");
+        await p.evaluate(() => document.getElementById("hdr-show").click());
+        if (!(await hd())) fail(tag + "the handle did not show the header");
+        await p.reload({ waitUntil: "domcontentloaded" });
+        await ready();
+        if (!(await hd())) fail(tag + "the shown header did not stay shown after a reload");
+        await p.setViewportSize({ width: 844, height: 390 });
+        await p.waitForTimeout(300);
+        if (!(await hd())) fail(tag + "landscape auto-collapse overrode a saved shown header");
+      }
+      await ctx.close();
+    }
+  } finally {
+    tasksMode = was;
+  }
+  if (errors.length) fail("u016: the page threw: " + errors.join(" | "));
+}
+
+// ── focusing a phone terminal does not bounce or hide it (u-017) ──────────
+// On a phone, tapping the terminal focused xterm's helper textarea, which sat at the grid's top-left; the
+// browser scrolled the pane there, the cursor keep scrolled back, every frame. Headless Chromium does not
+// scroll a focused element into view the way iOS does, so the scroll is simulated (`browserFocusScroll`)
+// on focus and on every viewport change. Portrait and landscape, a keyboard-sized height, output for 2s.
+async function phoneFocusSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  landList = [LAND["land-live"]];
+  landPerms = [];
+  const errors = [];
+  const fakeSock = () => {
+    const Real = window.WebSocket;
+    window.__sent = [];
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
+        onopen: null, onclose: null, onmessage: null, onerror: null,
+        send(d) { window.__sent.push(String(d)); }, close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  };
+  try {
+    for (const c of [{ name: "portrait", w: 390, h: 844, kb: 460 }, { name: "landscape", w: 844, h: 390, kb: 390 }]) {
+      const tag = "phoneFocus " + c.name + ": ";
+      const ctx = await browser.newContext({ viewport: { width: c.w, height: c.h }, hasTouch: true, isMobile: true });
+      await ctx.addInitScript(() => {
+        localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true }));
+        localStorage.setItem("atrium.termphone", "1");
+      });
+      await ctx.addInitScript(fakeSock);
+      const p = await ctx.newPage();
+      p.on("pageerror", e => errors.push(String(e)));
+      await p.goto(base, { waitUntil: "domcontentloaded" });
+      await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+      await p.evaluate(() => attachTask("land-live"));
+      await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live",
+        null, { timeout: slow(10000) });
+      await p.evaluate(() => termSock.onmessage({ data: '{"t":"size","cols":132,"rows":41}' }));
+      await p.waitForTimeout(300);
+      // the browser's scroll-into-view: bring the focused textarea inside the pane, and the pane inside the page
+      await p.evaluate(() => {
+        window.__bfs = () => {
+          const ta = term.textarea, host = document.getElementById("t-screen");
+          const t = ta.getBoundingClientRect(), h = host.getBoundingClientRect();
+          if (t.top < h.top) host.scrollTop -= h.top - t.top;
+          else if (t.bottom > h.bottom) host.scrollTop += t.bottom - h.bottom;
+          if (t.left < h.left) host.scrollLeft -= h.left - t.left;
+          else if (t.right > h.right) host.scrollLeft += t.right - h.right;
+        };
+        term.textarea.addEventListener("focus", window.__bfs);
+      });
+      // a prompt near the top, so the cursor only moves down while output streams
+      await p.evaluate(() => termSock.onmessage({ data: "\x1b[2J\x1b[8;1Hprompt" }));
+      await p.waitForTimeout(200);
+      const box = await p.locator("#t-screen").boundingBox();
+      await p.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 3);
+      await p.evaluate(() => term.focus());
+      await p.setViewportSize({ width: c.w, height: c.kb });
+      await p.evaluate(() => { window.__bfs(); });
+      await p.evaluate(() => {
+        window.__samples = [];
+        const t0 = performance.now();
+        const host = document.getElementById("t-screen");
+        const tick = () => {
+          const vv = window.visualViewport;
+          window.__samples.push({ t: performance.now() - t0, sy: window.scrollY,
+            se: document.scrollingElement.scrollTop, vt: vv ? vv.offsetTop : 0, pan: host.scrollTop,
+            cy: term.buffer.active.cursorY });
+          if (performance.now() - t0 < 2200) requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+        let n = 0;
+        const feed = setInterval(() => {
+          termSock.onmessage({ data: "line " + (n++) + "\r\n" });
+          if (n === 20) { term.blur(); term.focus(); window.__bfs(); }
+          if (n >= 30) clearInterval(feed);
+        }, 60);
+      });
+      await p.waitForTimeout(2500);
+      const r = await p.evaluate(() => {
+        const host = document.getElementById("t-screen");
+        const vv = window.visualViewport;
+        const hb = host.getBoundingClientRect();
+        const ch = term._core._renderService.dimensions.css.cell.height;
+        const rowTop = hb.top + (parseFloat(getComputedStyle(host).paddingTop) || 0) +
+          term.buffer.active.cursorY * ch - host.scrollTop;
+        return { samples: window.__samples, rowTop, rowBottom: rowTop + ch, vvTop: vv.offsetTop,
+          vvBottom: vv.offsetTop + vv.height, cy: term.buffer.active.cursorY };
+      });
+      const S = r.samples;
+      const late = S.filter(s => s.t > 300);
+      const page = Math.max(...S.map(s => Math.max(Math.abs(s.sy), Math.abs(s.se), Math.abs(s.vt))));
+      let flips = 0, moves = 0, last = null, dir = 0;
+      for (const s of late) {
+        if (last !== null && s.pan !== last) {
+          moves++;
+          const d = s.pan > last ? 1 : -1;
+          if (dir && d !== dir) flips++;
+          dir = d;
+        }
+        last = s.pan;
+      }
+      // downward-only: any decrease at all is a bounce, since the cursor never moved up
+      let ups = 0;
+      for (let i = 1; i < late.length; i++) if (late[i].pan < late[i - 1].pan - 0.5) ups++;
+      console.log("phoneFocus " + c.name + ": frames=" + S.length + " pageMax=" + page + " panMoves=" + moves +
+        " flips=" + flips + " ups=" + ups + " cursorRow=" + r.cy);
+      if (S.length < 20) fail(tag + "too few frames sampled: " + S.length);
+      if (page > 0) fail(tag + "the page itself scrolled (max " + page + ")");
+      if (ups || flips) fail(tag + "the pan bounced: " + ups + " upward moves, " + flips + " direction flips");
+      if (r.rowTop < r.vvTop - 1 || r.rowBottom > r.vvBottom + 1)
+        fail(tag + "the cursor row is outside the visual viewport: " + JSON.stringify({ rowTop: r.rowTop,
+          rowBottom: r.rowBottom, vvTop: r.vvTop, vvBottom: r.vvBottom }));
+      await ctx.close();
+    }
+  } finally {
+    tasksMode = was;
+  }
+  if (errors.length) fail("phoneFocus: the page threw: " + errors.join(" | "));
+}
+
 // ── copy on select answers the pointer, not the find bar ──────────────────
 // Test plan BJ. The search addon shows a match by selecting it, so copy on
 // select used to copy every find keystroke, step and re-search. Typing in the
@@ -5152,10 +5489,14 @@ async function busyGuardSection(browser, base) {
         names.push(m[1]);
         window[m[1]] = () => fetch("/__busy/" + m[1], { method: "POST" });
       }
+      // Until nothing is held, not a fixed 200ms: a button outside a footer holds its whole dialog, and a
+      // request slower than the wait under load made the next button's click a refusal.
+      const held = () => document.querySelector("button[data-busy]");
       for (const b of buttons) {
         b.click();
         b.click();
         await new Promise(r => setTimeout(r, 200));
+        for (let i = 0; held() && i < 100; i++) await new Promise(r => setTimeout(r, 50));
       }
       return names;
     });
@@ -6910,6 +7251,133 @@ async function idleBudgetSection(browser, base) {
   }
 }
 
+// ── the last polls are gone (u-009b) ─────────────────────────────────────────
+//
+// The walk drawer's 3s read of the findings folder, the `rooms` event's follow-up fetch, and the settling
+// re-check of /v1/health. Each is now told by an event, and this proves none of them asks on a clock.
+async function pollsGoneSection(browser, base) {
+  const was = tasksMode, wasB = mockBroadcast, wasHub = hubMode, wasSgg = sggAttached;
+  const id = "land-pgone";
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "atrium-pgone-"));
+  fs.mkdirSync(path.join(dir, "findings"));
+  fs.writeFileSync(path.join(dir, "findings", "01-high-a.go-L10.txt"),
+    "HIGH a.go line 10: something\n\na comment\n\nEvidence\nx\n");
+  walkDirs[id] = dir;
+  tasksMode = "land";
+  mockBroadcast = false;
+  landList = [landCard(id, { supervised: true, worktree: "/walk/" + id })];
+  landPerms = [];
+  const errors = [];
+  try {
+    // (a) The walk drawer open for longer than the old 3s: no repeated request. An event for the card reads it.
+    const ctx = await landContext(browser);
+    const counts = countRequests(ctx);
+    await ctx.addInitScript(() => {
+      const Real = window.WebSocket;
+      window.WebSocket = function (url, protocols) {
+        if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+        const s = { url, readyState: 0, binaryType: "arraybuffer", onopen: null, onclose: null, onmessage: null,
+          onerror: null, send() {}, close() { this.readyState = 3; } };
+        setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+        return s;
+      };
+      Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+    });
+    try {
+      const p = await ctx.newPage();
+      p.on("pageerror", e => errors.push(String(e)));
+      await p.goto(base, { waitUntil: "domcontentloaded" });
+      await p.waitForSelector('#stack-list .stackrow[data-id="' + id + '"]', { state: "attached", timeout: slow(15000) });
+      await p.evaluate(x => attachTask(x), id);
+      await p.waitForSelector("#t-walk:not([hidden])", { timeout: slow(10000) });
+      await p.click("#t-walk");
+      await p.waitForSelector("#walk-drawer .wk-row", { timeout: slow(10000) });
+      await p.waitForTimeout(500);
+      const listed = () => (counts.get("/v1/tasks/" + id + "/files/list") || 0);
+      const n0 = listed();
+      await p.waitForTimeout(7000);
+      if (listed() !== n0) fail("pollsGone: the open walk drawer read the folder " + (listed() - n0) + " times in 7s with no event");
+      fs.writeFileSync(path.join(dir, "findings", "02-low-b.go-L2.txt"), "LOW b.go line 2: other\n\nanother\n\nEvidence\ny\n");
+      mockSay("task", JSON.stringify({ id }));
+      await p.waitForFunction(() => dock.items.length === 2, null, { timeout: slow(5000) })
+        .catch(() => fail("pollsGone: an event for the card did not make the drawer read the folder again"));
+    } finally {
+      await ctx.close();
+    }
+
+    // (b) `rooms` with a payload paints with no fetch, and without `attached` still fetches.
+    hubMode = true;
+    sggAttached = false;
+    const ctx2 = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+    const c2 = countRequests(ctx2);
+    try {
+      const p = await ctx2.newPage();
+      p.on("pageerror", e => errors.push(String(e)));
+      await p.goto(base, { waitUntil: "domcontentloaded" });
+      await p.waitForFunction(() => typeof hubRooms !== "undefined" && hubRooms.length === 1, null, { timeout: slow(15000) });
+      await p.waitForTimeout(2500);
+      c2.clear();
+      const inv = [Object.assign({ transport: "direct", attached: true, first_seen: "2026-09-19T06:00:00Z" }, ALPHA),
+        Object.assign({ transport: "direct", attached: true, first_seen: "2026-09-19T06:00:00Z" }, SGG)];
+      hubStreams.forEach(r => { try { r.write("event: rooms\ndata: " + JSON.stringify({
+        rooms: ["alpha", "sgg"], attached: [ALPHA, SGG], inventory: inv, durable: true }) + "\n\n"); } catch (e) {} });
+      await p.waitForFunction(() => hubRooms.length === 2, null, { timeout: slow(5000) })
+        .catch(() => fail("pollsGone: a rooms event with a payload did not paint the second room"));
+      await p.waitForTimeout(700);
+      if (c2.get("/_hub/rooms") || c2.get("/_hub/inventory")) {
+        fail("pollsGone: a rooms event with a payload still fetched: " + topCounts(c2));
+      }
+      await p.waitForTimeout(2500);
+      c2.clear();
+      hubStreams.forEach(r => { try { r.write("event: rooms\ndata: {}\n\n"); } catch (e) {} });
+      await p.waitForTimeout(1200);
+      if (!c2.get("/_hub/rooms")) fail("pollsGone: a rooms event without `attached` did not fall back to fetching");
+    } finally {
+      await ctx2.close();
+      hubMode = wasHub;
+      sggAttached = wasSgg;
+    }
+
+    // (c) `health`: halted shows the halt, settling then clear ends it, and nothing re-reads /v1/health.
+    mockBroadcast = false;
+    const ctx3 = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+    const c3 = countRequests(ctx3);
+    try {
+      const p = await ctx3.newPage();
+      p.on("pageerror", e => errors.push(String(e)));
+      await p.goto(base, { waitUntil: "domcontentloaded" });
+      await p.waitForSelector("#stack-list .stackrow", { state: "attached", timeout: slow(15000) });
+      await p.waitForTimeout(2500);
+      c3.clear();
+      const say = h => mockSay("health", JSON.stringify(h));
+      const halt = () => p.evaluate(() => { const e = document.getElementById("halted");
+        return e.style.display === "flex" ? e.textContent : ""; });
+      say({ halted: true, settling: false, cause: "disk full" });
+      await p.waitForFunction(() => document.getElementById("halted").style.display === "flex", null, { timeout: slow(5000) })
+        .catch(() => fail("pollsGone: a health event with halted showed no halt"));
+      if (!/disk full/.test(await halt())) fail("pollsGone: the halt did not say why");
+      say({ halted: false, settling: true });
+      await p.waitForFunction(() => document.getElementById("halted").style.display === "none", null, { timeout: slow(5000) })
+        .catch(() => fail("pollsGone: a health event without halted left the halt up"));
+      await p.waitForTimeout(6500);
+      say({ halted: false, settling: false });
+      await p.waitForTimeout(500);
+      if (c3.get("/v1/health")) fail("pollsGone: /v1/health was read " + c3.get("/v1/health") + " times while events said it all");
+    } finally {
+      await ctx3.close();
+    }
+  } finally {
+    tasksMode = was;
+    mockBroadcast = wasB;
+    hubMode = wasHub;
+    landList = [];
+    delete walkDirs[id];
+    try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e) {}
+  }
+  if (errors.length) fail("pollsGone: the page threw: " + errors.join(" | "));
+  console.log("pollsGone: ok");
+}
+
 // ── the walk drawer ───────────────────────────────────────────────────────────
 //
 // Drives the drawer over a TEMPORARY COPY of two real review folders (the mock above serves the copy, and nothing
@@ -6943,7 +7411,6 @@ async function walkSection(browser, base) {
   const ctx = await landContext(browser);
   await ctx.grantPermissions(["clipboard-read", "clipboard-write"], { origin: base }).catch(() => {});
   await ctx.addInitScript(() => {
-    window.__walkPollMs = 400;
     window.__sent = [];
     window.__links = [];
     const Real = window.WebSocket;
@@ -7094,15 +7561,19 @@ async function walkSection(browser, base) {
       const third = names[2];
       await p.waitForTimeout(50)
       write(third, read(third).replace("\n\nEvidence", "\n* edited elsewhere\n\nEvidence"));
+      // No poll: an event for the card is what makes the drawer read the folder again.
+      mockSay("task", JSON.stringify({ id: s.id }));
       await p.waitForSelector(S + ".wk-cl.flash", { timeout: slow(5000) })
         .catch(() => fail(nm + "an external edit did not flash."));
       const renamed = third.replace(/^\d+/, "97");
       fs.renameSync(path.join(dir, "findings", third), path.join(dir, "findings", renamed));
+      mockSay("task", JSON.stringify({ id: s.id }));
       await p.waitForFunction(n => dock.items.some(i => i.name === n), renamed, { timeout: slow(5000) });
       const after = await p.evaluate(() => dockCurrent().key);
       if (after !== before) fail(nm + "a renamed finding lost its place.");
       if (await p.$(S + ".wk-new")) fail(nm + "a renamed finding was marked new.");
       write("98-low-added.go-L1.txt", read(names[3]).replace(/^(.*\n)(\S+ \S+ line )\d+/, "$1$2" + "1").replace("Evidence", "Evidence\nId: added-1"));
+      mockSay("task", JSON.stringify({ id: s.id }));
       await p.waitForSelector(S + ".wk-new", { timeout: slow(5000) })
         .catch(() => fail(nm + "a new finding got no new chip."));
 
@@ -7300,6 +7771,116 @@ async function usageCacheReadsSection(browser, base) {
     await ctx.close();
   }
   if (errors.length) fail("usageCacheReads: the page threw: " + errors.join(" | "));
+}
+
+// The usage tab grouped by department or director, and tokens per accepted item (u-014).
+async function usageGroupsSection(browser, base) {
+  const errors = [];
+  const at = new Date(Math.floor(Date.now() / 900000) * 900000 - 900000).toISOString();
+  const mk = n => ({ rows: 1, replies: 1, input: n, output: 0, cache_write_5m: 0, cache_write_1h: 0, cache_read: n * 10, cost: 0 });
+  const total = mk(3000), sA = mk(2000), sB = mk(1000);
+  const groupsFor = g => g === "dept" ? { "": mk(500), eng: mk(2000), "@before": mk(1000) }
+    : { "": mk(700), atlas: mk(2300) };
+  const itemsBody = { items: [
+    { item: "u-005", title: "review tab design", counted: 2100000, cache_read: 88000000, cards: 3, split: 1 },
+    { item: "r-004", title: "worktree reaper fix", counted: 4800000, cache_read: 210000000, cards: 2, split: 2 },
+    { item: "t-002", title: "banner copies", counted: 1200000, cache_read: 40000000, cards: 1, split: 1 }], unlinked: 2 };
+  const run = async (opts, fn) => {
+    const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+    const sp = await ctx.newPage();
+    sp.on("pageerror", e => errors.push(String(e)));
+    const reads = [];
+    await ctx.route(/\/v1\/usage\?/, route => {
+      const u = new URL(route.request().url());
+      const g = u.searchParams.get("group") || "";
+      reads.push({ group: g, at: Date.now() });
+      const b = { t: at, total, cards: { "uc-a": sA, "uc-b": sB }, causes: { operator: total } };
+      if (g && !opts.old) b.groups = groupsFor(g);
+      route.fulfill({ json: { buckets: [b] } });
+    });
+    await ctx.route(/\/v1\/usage\/items/, route =>
+      opts.items404 ? route.fulfill({ status: 404, body: "not found" }) : route.fulfill({ json: itemsBody }));
+    await ctx.route("**/v1/settings", route => route.fulfill({ json: { usage_cache_reads: false, board_skin: "harbour", board_skins: SKINS } }));
+    try {
+      await sp.goto(base, { waitUntil: "domcontentloaded" });
+      await sp.waitForSelector("#stack-list .stackrow", { state: "attached", timeout: slow(15000) });
+      await sp.evaluate(() => switchView("usage"));
+      await sp.waitForSelector("#uc-body .ucchart[data-chart=burn] rect", { timeout: slow(10000) });
+      await sp.waitForTimeout(1500);
+      await fn(sp, reads);
+    } finally { await ctx.close(); }
+  };
+  const tiles = sp => sp.evaluate(() => [...document.querySelectorAll("#uc-body [data-role=groups] .ucmini")]
+    .map(m => m.querySelector(".uctitle").textContent));
+  const pick = async (sp, v) => {
+    await sp.selectOption("#uc-group", v);
+    await sp.waitForFunction(v => UC.group === v && !UC.inflight, v, { timeout: slow(5000) });
+    await sp.waitForTimeout(200);
+  };
+  await run({}, async (sp, reads) => {
+    if (await sp.$("#uc-body [data-role=groups]")) fail("usageGroups: card view draws group tiles.");
+    if (reads.some(r => r.group)) fail("usageGroups: card view sent a group.");
+    await sp.evaluate(() => { lastTasks = [
+      { id: "uc-a", display_title: "alpha", tags: ["dept:eng"] },
+      { id: "uc-b", display_title: "beta", tags: [], spawned_by: "atlas" }].concat(lastTasks || []); });
+    await pick(sp, "dept");
+    if (!reads.some(r => r.group === "dept")) fail("usageGroups: department sent no group=dept: " + JSON.stringify(reads.map(r => r.group)));
+    const t = await tiles(sp);
+    if (t.join("|") !== "eng|before grouping|no department") fail("usageGroups: dept tiles are " + t.join("|"));
+    await sp.click('#uc-body .ucmini[data-group="eng"]');
+    const cards = await sp.evaluate(() => [...document.querySelectorAll("#uc-body .ucmini[data-id]")].map(m => m.dataset.id));
+    if (cards.join() !== "uc-a") fail("usageGroups: a click on eng left cards " + cards);
+    await sp.click('#uc-body .ucmini[data-group="eng"]');
+    const all = await sp.evaluate(() => document.querySelectorAll("#uc-body .ucmini[data-id]").length);
+    if (all !== 2) fail("usageGroups: a second click did not clear the filter: " + all);
+    await pick(sp, "launcher");
+    if (!reads.some(r => r.group === "launcher")) fail("usageGroups: director sent no group=launcher.");
+    const l = await tiles(sp);
+    if (l.join("|") !== "atlas|clint") fail("usageGroups: director tiles are " + l.join("|"));
+    await sp.click('#uc-body .ucmini[data-group="atlas"]');
+    const c2 = await sp.evaluate(() => [...document.querySelectorAll("#uc-body .ucmini[data-id]")].map(m => m.dataset.id));
+    if (c2.join() !== "uc-b") fail("usageGroups: a click on atlas left cards " + c2);
+    await sp.evaluate(() => { UC.cacheReads = true; UC.groupKey = null; ucPaint(); });
+    if ((await tiles(sp)).join("|") !== "atlas|clint") fail("usageGroups: tiles lost their order with cache reads on.");
+    await sp.evaluate(() => { UC.cacheReads = false; });
+    await pick(sp, "card");
+    if (reads[reads.length - 1].group !== "") fail("usageGroups: back on card still sends a group.");
+    const items = await sp.evaluate(() => ({
+      text: (document.querySelector("#uc-body .ucitems") || {}).textContent || "",
+      n: document.querySelectorAll("#uc-body .ucitems > span:nth-child(4n+2)").length,
+      foot: (document.querySelector("#uc-body [data-role=items-foot]") || {}).textContent || "",
+      tips: [...document.querySelectorAll("#uc-body .ucitems > span[data-tip]")].map(s => s.getAttribute("data-tip")) }));
+    if (items.n !== 3) fail("usageGroups: the items table has " + items.n + " rows.");
+    if (!/median 2\.1M per item · 3 items accepted/.test(items.foot)) fail("usageGroups: the footer reads " + items.foot);
+    if (!/2 accepted items have no card on record/.test(items.foot)) fail("usageGroups: no unlinked line: " + items.foot);
+    if (items.tips.length !== 4 || !items.tips.every(t => /shared/.test(t))) fail("usageGroups: the split hint is " + JSON.stringify(items.tips));
+    if (items.text.indexOf("r-004") > items.text.indexOf("u-005")) fail("usageGroups: items are not biggest first.");
+  });
+  await run({ old: true }, async sp => {
+    await pick(sp, "dept");
+    const s = await sp.evaluate(() => ({ note: (document.querySelector("#uc-body [data-role=nogroups]") || {}).textContent || "",
+      tiles: document.querySelectorAll("#uc-body [data-role=groups] .ucmini").length,
+      cards: document.querySelectorAll("#uc-body .ucmini[data-id]").length }));
+    if (!/does not group usage yet/.test(s.note)) fail("usageGroups: a room without groups says " + s.note);
+    if (s.tiles !== 0 || s.cards !== 2) fail("usageGroups: a room without groups drew " + JSON.stringify(s));
+  });
+  await run({ items404: true }, async sp => {
+    const s = await sp.evaluate(() => ({ old: (document.querySelector("#uc-body [data-role=items-old]") || {}).textContent || "",
+      table: !!document.querySelector("#uc-body .ucitems") }));
+    if (!/too old/.test(s.old) || s.table) fail("usageGroups: a 404 on items gave " + JSON.stringify(s));
+  });
+  await run({}, async (sp, reads) => {
+    await pick(sp, "dept");
+    reads.length = 0;
+    for (let i = 0; i < 6; i++) {
+      await sp.evaluate(() => { for (let k = 0; k < 10; k++) onUsageEvent({ data: JSON.stringify({ task_id: "uc-a", ended_at: new Date().toISOString(), input: 1, output: 1, cause: "operator" }) }); });
+      await sp.waitForTimeout(1000);
+    }
+    await sp.waitForTimeout(500);
+    const n = reads.filter(r => r.group === "dept").length;
+    if (n !== 1) fail("usageGroups: a burst of usage events for 6.5s gave " + n + " re-reads, want 1.");
+  });
+  if (errors.length) fail("usageGroups: the page threw: " + errors.join(" | "));
 }
 
 // The rooms dashboard: the room menu's tiles, fed `room-stats` snapshots.
@@ -7543,6 +8124,143 @@ async function roomsDashSection(browser, base) {
 // The usage tab's polish: the too-old line with and without a build, the keep-alive
 // phrase on the cache line, the backfilled label, the fade and the grow on a live
 // event, and reduced motion turning them off.
+// The usage tab's limits: the bars, the 5h band, and the flameout. See js/usage-limits.js.
+async function usageLimitsSection(browser, base) {
+  const errors = [];
+  const at = new Date(Math.floor(Date.now() / 900000) * 900000 - 900000).toISOString();
+  const total = { rows: 2, replies: 9, input: 1000, output: 2000, cache_write_5m: 3000, cache_write_1h: 4000, cache_read: 90000, cost: 0 };
+  const iso = ms => new Date(Date.now() + ms).toISOString();
+  const MIN = 60000, HOUR = 3600000;
+  const run = async (limits, fn) => {
+    const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+    const sp = await ctx.newPage();
+    sp.on("pageerror", e => errors.push(String(e)));
+    const asked = [];
+    await ctx.route("**/v1/usage*", route => route.fulfill({ json: { buckets: [
+      { t: at, total, cards: { "uc-a": total }, causes: { operator: total } }] } }));
+    await ctx.route("**/v1/usage/limits*", route => { asked.push(route.request().url()); return limits(route); });
+    await ctx.route("**/v1/settings", route => route.fulfill({ json: { usage_cache_reads: false, board_skin: "harbour", board_skins: SKINS } }));
+    try {
+      await sp.goto(base, { waitUntil: "domcontentloaded" });
+      await sp.waitForSelector("#stack-list .stackrow", { state: "attached", timeout: slow(15000) });
+      await sp.evaluate(() => switchView("usage"));
+      await sp.waitForSelector("#uc-body .ucchart[data-chart=burn] rect", { timeout: slow(10000) });
+      await sp.waitForSelector("#uc-body #ul-limits", { timeout: slow(5000) });
+      await sp.waitForTimeout(1500); // the stream opening reloads the tab once
+      await fn(sp, asked);
+    } finally { await ctx.close(); }
+  };
+  const rowsText = sp => sp.evaluate(() => [...document.querySelectorAll("#ul-limits .ulrow")].map(r => ({
+    kind: r.dataset.kind, none: r.classList.contains("ulnone"), text: r.textContent, proj: (r.querySelector(".ulproj") || {}).textContent || "",
+    cls: (r.querySelector(".ulproj") || { className: "" }).className, tip: (r.querySelector(".ulproj") || { dataset: {} }).dataset.tip || "",
+    fill: (r.querySelector(".ulfill") || { style: {} }).style.width })));
+  // Readings from the room, in the shape internal/api/limits.go answers.
+  const reading = (agoMin, card, kind, pct, resetsInMs) => ({ at: iso(-agoMin * MIN), card, kind, pct,
+    ...(resetsInMs == null ? {} : { resets_at: iso(resetsInMs) }) });
+  const answer = readings => route => route.fulfill({ json: { readings } });
+  // The rows are drawn from what the page holds; a scenario sets that and repaints.
+  const set = (sp, rs) => sp.evaluate(rs => {
+    UL.readings = []; UL.last.clear(); UL.html = "";
+    for (const r of rs) ulAdd({ at: Date.now() - r.agoMin * 60000, room: "", card: r.card, kind: r.kind, pct: r.pct, reset: Date.now() + r.resetMs });
+    ucPaint();
+  }, rs);
+  const line = (n, pct, agoFirst, agoLast, resetMs) => {
+    const out = [];
+    for (let i = 0; i < n; i++) out.push({ agoMin: agoFirst + (agoLast - agoFirst) * i / (n - 1), card: "c1", kind: "five_hour", pct: Math.round(pct[0] + (pct[1] - pct[0]) * i / (n - 1)), resetMs });
+    return out;
+  };
+  const five = async sp => (await rowsText(sp)).find(x => x.kind === "five_hour");
+
+  // The bar, the card, the dash, and the band at 6h+ and not at 1h.
+  await run(answer([reading(3, "sa-orch", "five_hour", 64, 156 * MIN), reading(8, "u-005", "weekly", 31, 3 * 24 * HOUR)]), async (sp, asked) => {
+    if (!asked.some(u => /since=/.test(u))) fail("usageLimits: the readings were not asked for: " + asked);
+    const rows = await rowsText(sp);
+    const f = rows.find(r => r.kind === "five_hour"), week = rows.find(r => r.kind === "weekly");
+    if (!f || f.none || f.fill !== "64%" || !/64%/.test(f.text) || !/sa-orch/.test(f.text) || !/3m ago/.test(f.text) || !/resets .*\(in 2h 36m\)/.test(f.text))
+      fail("usageLimits: the 5h row reads " + JSON.stringify(f));
+    if (!week || week.none || !/31%/.test(week.text) || !/u-005/.test(week.text)) fail("usageLimits: the week row reads " + JSON.stringify(week));
+    const band = await sp.evaluate(() => ({ n: document.querySelectorAll("#uc-body .ulband").length, label: (document.querySelector("#uc-body .ulbandlab") || {}).textContent,
+      fill: document.querySelector("#uc-body .ulband") ? getComputedStyle(document.querySelector("#uc-body .ulband")).fill : "" }));
+    if (band.n !== 1 || band.label !== "5h window") fail("usageLimits: the 24h chart has no 5h band: " + JSON.stringify(band));
+    if (!/rgba?\(/.test(band.fill)) fail("usageLimits: the band has no fill: " + band.fill);
+    await sp.evaluate(() => { UC.range = "1h"; loadUsageTab(); });
+    await sp.waitForFunction(() => !UC.inflight && document.querySelector("#uc-body .ucchart"), null, { timeout: slow(5000) });
+    if (await sp.evaluate(() => document.querySelectorAll("#uc-body .ulband, #uc-body .ulbandlab").length)) fail("usageLimits: the 1h chart has a 5h band.");
+    await sp.evaluate(() => { UC.range = "6h"; loadUsageTab(); });
+    await sp.waitForFunction(() => !UC.inflight && document.querySelector("#uc-body .ulband"), null, { timeout: slow(5000) });
+  });
+
+  // Nothing recent is a dash on both rows, never a zero.
+  await run(answer([reading(90, "old", "five_hour", 50, 60 * MIN)]), async sp => {
+    const rows = await rowsText(sp);
+    if (rows.length !== 2 || !rows.every(r => r.none && /–/.test(r.text) && !/0%/.test(r.text))) fail("usageLimits: nothing recent should be two dashes: " + JSON.stringify(rows));
+    if (await sp.evaluate(() => document.querySelectorAll("#uc-body .ulband").length)) fail("usageLimits: a band with no recent reading.");
+  });
+
+  // Two reset times are two accounts and two rows, never summed or blended. The projections run on this page.
+  await run(answer([reading(3, "a1", "five_hour", 64, 156 * MIN), reading(4, "b1", "five_hour", 20, 250 * MIN)]), async sp => {
+    const rows = (await rowsText(sp)).filter(r => r.kind === "five_hour");
+    if (rows.length !== 2 || rows[0].fill !== "64%" || rows[1].fill !== "20%") fail("usageLimits: two resets should give two rows: " + JSON.stringify(rows));
+    if (await sp.evaluate(() => document.querySelectorAll("#uc-body .ulband").length) !== 2) fail("usageLimits: two windows should draw two bands.");
+
+    // Warn: 100% lands before the reset.
+    await set(sp, line(6, [40, 60], 60, 3, 156 * MIN));
+    let r = await five(sp);
+    if (!/at this pace: 100% at \d\d:\d\d, .* before the reset/.test(r.proj) || !/flameout before reset/.test(r.proj) || !/ulwarn/.test(r.cls) || /uldanger/.test(r.cls))
+      fail("usageLimits: warn line reads " + JSON.stringify(r));
+    if (!/it does not see the future/.test(r.tip) || !/spend outside atrium/.test(r.tip)) fail("usageLimits: the honesty text is missing: " + r.tip);
+    // Danger: within 30 minutes.
+    await set(sp, line(6, [65, 95], 60, 3, 156 * MIN));
+    r = await five(sp);
+    if (!/flameout before reset/.test(r.proj) || !/uldanger/.test(r.cls)) fail("usageLimits: danger line reads " + JSON.stringify(r));
+    // Not this window: slow, so 100% would land after the reset.
+    await set(sp, line(6, [45, 50], 60, 3, 120 * MIN));
+    r = await five(sp);
+    if (!/not this window/.test(r.proj) || /flameout/.test(r.proj) || /ulwarn|uldanger/.test(r.cls)) fail("usageLimits: not-this-window reads " + JSON.stringify(r));
+    // A flat pace projects nothing.
+    await set(sp, line(5, [50, 50], 40, 3, 156 * MIN));
+    r = await five(sp);
+    if (r.proj !== "no pace to project") fail("usageLimits: a flat pace reads " + JSON.stringify(r));
+    // Scattered readings say rough.
+    await set(sp, [[60, 30], [50, 55], [40, 35], [30, 70], [20, 45], [3, 80]].map(([m, p]) => ({ agoMin: m, card: "c1", kind: "five_hour", pct: p, resetMs: 156 * MIN })));
+    r = await five(sp);
+    if (!/rough/.test(r.proj)) fail("usageLimits: scattered readings should say rough: " + JSON.stringify(r));
+    // Too few readings: the token-burn fallback, marked as such. Every minute of the range holds 1000 counted tokens.
+    await sp.evaluate(() => {
+      UC.range = "6h"; UC.bw = 60; UC.since = Date.now() - 3 * 3600000;
+      const b = new Map();
+      for (let t = Math.floor(UC.since / 60000) * 60000; t <= Date.now(); t += 60000)
+        b.set(t, { t, total: Object.assign(ucSums(), { input: 1000 }), cards: {}, causes: {} });
+      UC.rooms = { "": { state: "ok", why: "", buckets: b } };
+    });
+    await set(sp, [{ agoMin: 40, card: "c1", kind: "five_hour", pct: 50, resetMs: 240 * MIN }, { agoMin: 2, card: "c1", kind: "five_hour", pct: 60, resetMs: 240 * MIN }]);
+    r = await five(sp);
+    if (!/\(estimated from token burn\)/.test(r.proj) || !/flameout before reset/.test(r.proj) || !/can only undercount/.test(r.tip))
+      fail("usageLimits: the fallback reads " + JSON.stringify(r));
+    // One reading has nothing to project.
+    await set(sp, [{ agoMin: 2, card: "c1", kind: "five_hour", pct: 60, resetMs: 240 * MIN }]);
+    r = await five(sp);
+    if (r.proj !== "no pace to project") fail("usageLimits: one reading reads " + JSON.stringify(r));
+    // Nothing notifies.
+    if (await sp.evaluate(() => document.querySelectorAll(".toast").length)) fail("usageLimits: the flameout raised a toast.");
+  });
+
+  // An older room answers 404: live telemetry only, and nothing says it is an error.
+  await run(route => route.fulfill({ status: 404, body: "404 page not found" }), async sp => {
+    let rows = await rowsText(sp);
+    if (!rows.every(r => r.none)) fail("usageLimits: a 404 should leave dashes: " + JSON.stringify(rows));
+    if (await sp.evaluate(() => document.querySelectorAll("#uc-body .ucmissing").length)) fail("usageLimits: a 404 from limits showed a message.");
+    await sp.evaluate(() => {
+      lastTasks = [{ id: "live-1", display_title: "livecard", status: "running", telemetry: { seconds: 5, five_hour: { pct: 42, resets_at: new Date(Date.now() + 2 * 3600000).toISOString() } } }];
+      ulOnCards();
+    });
+    rows = await rowsText(sp);
+    const f = rows.find(r => r.kind === "five_hour");
+    if (!f || f.none || f.fill !== "42%" || !/livecard/.test(f.text)) fail("usageLimits: live telemetry did not draw after a 404: " + JSON.stringify(rows));
+  });
+  if (errors.length) fail("usageLimits: the page threw: " + errors.join(" | "));
+}
+
 async function usagePolishSection(browser, base) {
   const errors = [];
   const at = new Date(Math.floor(Date.now() / 900000) * 900000 - 900000).toISOString();
@@ -7643,8 +8361,8 @@ async function main() {
       history: historySection, contextSize: contextSizeSection, peekEverywhere: peekEverywhereSection, cardRoute: cardRouteSection,
       quietDoer: quietDoerSection, looksIdle: looksIdleSection, notifyOff: notifyOffSection,
       questionsClick: questionsClickSection, walk: walkSection, linkReuse: linkReuseSection,
-      usageCacheReads: usageCacheReadsSection, roomsDash: roomsDashSection, phoneView: phoneViewSection, usagePolish: usagePolishSection,
-      eventDriven: eventDrivenSection, idleBudget: idleBudgetSection };
+      usageCacheReads: usageCacheReadsSection, roomsDash: roomsDashSection, phoneView: phoneViewSection, u016: u016Section, phoneFocus: phoneFocusSection, usagePolish: usagePolishSection, usageLimits: usageLimitsSection, usageGroups: usageGroupsSection,
+      eventDriven: eventDrivenSection, idleBudget: idleBudgetSection, pollsGone: pollsGoneSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -9574,9 +10292,14 @@ async function main() {
     await usageCacheReadsSection(browser, base);
     await roomsDashSection(browser, base);
     await phoneViewSection(browser, base);
+    await u016Section(browser, base);
+    await phoneFocusSection(browser, base);
     await eventDrivenSection(browser, base);
     await idleBudgetSection(browser, base);
+    await pollsGoneSection(browser, base);
     await usagePolishSection(browser, base);
+    await usageLimitsSection(browser, base);
+    await usageGroupsSection(browser, base);
     await reselectSection(browser, base);
     // ── over a terminal the toasts hang from the top right ─────────────────
     await toastsTopSection(browser, base);

@@ -277,7 +277,12 @@ fi
 # with mocked endpoints and drives headless Chromium. Skips itself, exit 0, when
 # Playwright or its browser is not installed, the same as the node guard above:
 # it is a check, not a build step.
-if ! node "$here/scripts/test-board-headless.js"; then
+#
+# SKIP_HEADLESS=1 leaves it out, for a caller that runs the headless run on its own (timed, or a few sections). It
+# is about 13 minutes of the check, and every other check here together is under two seconds.
+if [ "${SKIP_HEADLESS:-}" = "1" ]; then
+  echo "headless run skipped (SKIP_HEADLESS=1)."
+elif ! node "$here/scripts/test-board-headless.js"; then
   echo "the board blanks on a hung fetch, or does not paint its lists. see above." >&2
   fail=1
 fi

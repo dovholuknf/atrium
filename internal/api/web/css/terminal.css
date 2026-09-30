@@ -577,6 +577,10 @@
      fingers are the pinch (`wirePhonePinch`), so the browser's own pinch-zoom is off. */
   #t-screen.phone { overflow: auto; justify-content: flex-start; touch-action: pan-x pan-y; }
   .term-keys { display: none; }
+  /* The key bar owns its long press (held ^C), so the browser's callout, selection and touch handling stay off. */
+  .term-keys { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; touch-action: none; }
+  /* The grid: no iOS callout over a long press. Selection and panning are left to their own code. */
+  #t-screen { -webkit-touch-callout: none; }
   body.term-phone .term-keys {
     display: flex; gap: 4px; padding: 4px 6px;
     border-top: 1px solid var(--term-line, var(--stroke-dim));
@@ -604,7 +608,10 @@
      answer is to stop the element being somewhere that needs scrolling.
      Pinned to the top-left of the terminal, which is always in view. The cost is that an input method
      composes at the corner instead of at the cursor, which is all the original position bought. */
-  #t-screen .xterm-helper-textarea { top: 0 !important; left: 0 !important; }
+  /* u-017: not on a phone (`body.term-phone`). There the grid is panned to the cursor, so its top-left corner
+     is off screen and a focus scroll dragged the pane back to the top: the bounce. xterm's own inline top/left
+     park the textarea at the cursor, which is in view, so a focus has nothing to scroll to. */
+  body:not(.term-phone) #t-screen .xterm-helper-textarea { top: 0 !important; left: 0 !important; }
   .term-list .card .chip { white-space: nowrap; }
 
   /* Never set a width here. Color only. The fit addon works out how many columns fit by measuring the

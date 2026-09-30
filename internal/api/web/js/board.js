@@ -1713,6 +1713,7 @@ async function renderBoard(signal) {
   const all = everything.filter(t => !t.offline);
   const offline = everything.filter(t => t.offline);
   lastTasks = everything;
+  if (typeof ulOnCards === "function") ulOnCards();
   newCardNote(everything);
   paintWorking(all);
   const g = grouper();
