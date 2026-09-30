@@ -267,3 +267,40 @@ function cardUrlNotice(notes) {
   x.onclick = () => { box.hidden = true; };
   box.appendChild(x);
 }
+
+// ── a way out of a card's own window ─────────────────────────────────────
+//
+// A card opened by its address has no header and no list, so it had no way back but the address bar. Two controls:
+// "all cards" is a plain link to the board, and "cards" opens the switcher, the card picker this window still has.
+// One copy rides in the terminal bar, and a second floats over a phone's terminal, where the bar is a tray that stays
+// shut until it is pulled. CSS shows the one that fits. Not drawn for a pop-out opened by `#term=`, which is a
+// deliberately bare window, except on a phone, where there is no other way to the board.
+function cardUrlWayOut() {
+  if (document.getElementById("cardurl-way")) return;
+  if (!cardUrlIsCard() && !(typeof termNarrow === "function" && termNarrow())) return;
+  const make = id => {
+    const box = document.createElement("div");
+    if (id) box.id = id;
+    box.className = "cu-way";
+    const all = document.createElement("a");
+    all.className = "cu-all";
+    all.href = "/";
+    all.textContent = "\u2039 all cards";
+    const pick = document.createElement("button");
+    pick.type = "button";
+    pick.className = "cu-pick";
+    pick.textContent = "cards \u25BE";
+    pick.setAttribute("aria-label", "switch card");
+    pick.onclick = () => { if (typeof openSwitcher === "function") openSwitcher(); };
+    box.append(all, pick);
+    return box;
+  };
+  const bar = document.querySelector("#term-pane .term-bar");
+  const inBar = make("cardurl-way");
+  inBar.classList.add("in-bar");
+  if (bar) bar.prepend(inBar);
+  const float = make("");
+  float.classList.add("float");
+  document.body.appendChild(float);
+  document.body.classList.add("way");
+}

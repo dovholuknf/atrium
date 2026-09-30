@@ -72,10 +72,12 @@
 
   <section class="sheet" id="m-card" hidden aria-label="card">
     <div class="sheet-top">
-      <button type="button" id="m-card-back" class="back" aria-label="back"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></button>
+      <button type="button" id="m-card-back" class="back" aria-label="back"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg><span class="lbl">all cards</span></button>
       <span class="grow"></span>
+      <button type="button" id="m-card-pick" class="pick" aria-expanded="false" aria-controls="m-card-menu">cards <span aria-hidden="true">&#9662;</span></button>
       <a id="m-card-term" class="term" href="/">open terminal</a>
     </div>
+    <div class="pickmenu" id="m-card-menu" hidden></div>
     <div class="sheet-scroll" id="m-card-scroll">
       <div id="m-card-head" class="chead"></div>
       <div id="m-card-notices"></div>

@@ -20,3 +20,19 @@
   #cardurl-note .cu-x {
     position: absolute; top: 4px; right: 8px; background: none; border: 0; color: inherit; font-size: 16px; cursor: pointer;
   }
+
+  /* The way out of a card's own window. One copy in the terminal bar, one floating over a phone's terminal. */
+  .cu-way { display: none; align-items: center; gap: 8px; }
+  body.way .cu-way.in-bar { display: inline-flex; margin-right: 8px; }
+  .cu-way a, .cu-way button {
+    display: inline-flex; align-items: center; min-height: 32px; padding: 0 10px; box-sizing: border-box;
+    border: 1px solid var(--cardurl-line, var(--stroke-dim)); border-radius: 6px; background: var(--cardurl-way-bg, var(--shell-0));
+    color: var(--cardurl-link, var(--blue)); font: var(--fs-sm)/1 var(--mono); text-decoration: none; cursor: pointer; white-space: nowrap;
+  }
+  body.term-phone .cu-way.in-bar { display: none; }
+  body.term-phone .cu-way a, body.term-phone .cu-way button { min-height: 44px; }
+  body.term-phone.way .cu-way.float {
+    display: flex; position: fixed; z-index: 29; top: max(6px, env(safe-area-inset-top, 0px)); left: max(6px, env(safe-area-inset-left, 0px));
+  }
+  body.term-phone.way.tray-open .cu-way.float { display: none; }
+  body.term-phone.way .cu-way.float .cu-pick { display: none; }

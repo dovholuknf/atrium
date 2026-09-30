@@ -13128,6 +13128,111 @@ async function mHomeOrderSection(browser) {
   if (!bad) console.log("mHomeOrder ok");
 }
 
+// ── the way out of a card opened by its address ──────────────────────────
+// The page as a browser gets it (`/raw`), a card's own window has no header and no list. "all cards" goes to the board,
+// "cards" opens the picker, and Back works because the board was a page of its own.
+async function cardUrlWayOutSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landList = [];
+  landCard("land-a", { alias: "rnd", room: "claude-sg4", wire_name: "sparta/rnd-director" });
+  const raw = fs.readFileSync(path.join(WEB_ROOT, "index.html"));
+  try {
+    for (const v of [{ w: 1400, h: 900 }, { w: 390, h: 844, phone: true }]) {
+      const tag = "cardUrlWayOut " + v.w + ": ";
+      const ctx = await browser.newContext(v.phone
+        ? { viewport: { width: v.w, height: v.h }, hasTouch: true, isMobile: true }
+        : { viewport: { width: v.w, height: v.h } });
+      await ctx.addInitScript(() => localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true })));
+      const p = await ctx.newPage();
+      const errors = [];
+      p.on("pageerror", e => errors.push(String(e && e.message || e)));
+      await p.route("**/*", route => {
+        const rq = route.request();
+        const u = new URL(rq.url());
+        if (/^\/alias\/rnd$/.test(u.pathname) && rq.resourceType() === "document") return route.fulfill({ status: 200, contentType: "text/html", body: raw });
+        if (u.pathname === "/v1/tasks/rnd") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(LAND["land-a"]) });
+        return route.continue();
+      });
+      try {
+        await p.goto(base + "/raw", { waitUntil: "load" });
+        await p.goto(base + "/alias/rnd", { waitUntil: "load" });
+        await cuSolo(p, "land-a");
+        const shown = sel => p.evaluate(s => { const e = document.querySelector(s); if (!e) return false; const r = e.getBoundingClientRect(); const cs = getComputedStyle(e); return r.width > 0 && r.height > 0 && cs.visibility !== "hidden"; }, sel);
+        const all = v.phone ? ".cu-way.float .cu-all" : "#cardurl-way .cu-all";
+        if (!(await shown(all))) fail(tag + "no visible all-cards control on a card address");
+        // the picker
+        if (v.phone) {
+          await p.tap("#t-tray-handle");
+          await p.waitForFunction(() => document.body.classList.contains("tray-open"), null, { timeout: slow(5000) });
+          await p.tap("#t-pick");
+        } else {
+          await p.click("#cardurl-way .cu-pick");
+        }
+        await p.waitForFunction(() => { const d = document.getElementById("switcher"); return d && d.open; }, null, { timeout: slow(5000) })
+          .catch(() => fail(tag + "the card picker did not open"));
+        await p.keyboard.press("Escape");
+        if (v.phone) { await p.tap("#t-bar-toggle"); await p.waitForFunction(() => !document.body.classList.contains("tray-open"), null, { timeout: slow(5000) }); }
+        // all cards leaves for the board
+        await p.tap(all).catch(() => p.click(all));
+        await p.waitForFunction(() => location.pathname === "/", null, { timeout: slow(8000) })
+          .catch(() => fail(tag + "all cards did not go to the board: " + p.url()));
+        if (await p.evaluate(() => document.body.classList.contains("solo"))) fail(tag + "the board still wears the card window");
+        // Back from the board returns to the card
+        await p.goBack({ waitUntil: "load" });
+        await p.goBack({ waitUntil: "load" }).catch(() => {});
+        if (!/\/raw$/.test(new URL(p.url()).pathname)) fail(tag + "Back from a card opened from the board did not reach the board: " + p.url());
+      } finally { await ctx.close(); }
+      if (errors.length) fail(tag + "the page threw: " + errors.join(" | "));
+    }
+  } finally { tasksMode = was; }
+
+  // the phone page
+  const st = mServer({});
+  const ta = mCard("card-a", { alias: "solo", room: "claude-sg4", display_title: "on its own", status: "needs-input", waiting_since: mIso(7 * M_MIN) });
+  const tb = mCard("card-b", { alias: "other", room: "claude-sg4", display_title: "the other one", status: "running" });
+  st.tasks = [ta, tb];
+  await st.open();
+  try {
+    for (const vp of M_VIEWS) {
+      const tag = "cardUrlWayOut m " + vp.width + ": ";
+      const ctx = await browser.newContext({ viewport: vp, hasTouch: true, isMobile: true, deviceScaleFactor: 2 });
+      const p = await ctx.newPage();
+      const errors = [];
+      p.on("pageerror", e => errors.push(String(e)));
+      await p.route("**/*", route => {
+        const rq = route.request();
+        const u = new URL(rq.url());
+        if (/^\/m\/alias\//.test(u.pathname) && rq.resourceType() === "document") return route.fulfill({ status: 200, contentType: "text/html", body: fs.readFileSync(path.join(M_ROOT, "index.html")) });
+        if (u.pathname === "/v1/tasks/solo") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(ta) });
+        return route.continue();
+      });
+      try {
+        await p.goto(st.url + "/m/", { waitUntil: "domcontentloaded" });
+        await p.goto(st.url + "/m/alias/solo", { waitUntil: "domcontentloaded" });
+        await p.waitForSelector("#m-card.on", { timeout: slow(10000) });
+        if (!/all cards/.test(await p.innerText("#m-card-back"))) fail(tag + "the way back does not say where it goes");
+        await p.tap("#m-card-pick");
+        await p.waitForSelector("#m-card-menu:not([hidden]) .pm-row", { timeout: slow(5000) });
+        await p.tap('#m-card-menu .pm-row[data-id="card-b"]');
+        await p.waitForFunction(() => /the other one/.test(document.getElementById("m-card-head").textContent), null, { timeout: slow(8000) })
+          .catch(() => fail(tag + "the picker did not land on the other card"));
+        await p.tap("#m-card-back");
+        await p.waitForFunction(() => document.getElementById("m-card").hidden, null, { timeout: slow(5000) })
+          .catch(() => fail(tag + "the way back did not leave the card"));
+        // Back out of the list reaches the page we came from, through history entries
+        await p.goto(st.url + "/m/", { waitUntil: "domcontentloaded" });
+        await p.goto(st.url + "/m/alias/solo", { waitUntil: "domcontentloaded" });
+        await p.waitForSelector("#m-card.on", { timeout: slow(10000) });
+        await p.goBack({ waitUntil: "domcontentloaded" });
+        if (new URL(p.url()).pathname !== "/m/") fail(tag + "Back from a card address did not reach the list: " + p.url());
+      } finally { await ctx.close(); }
+      if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+    }
+  } finally { await st.close(); }
+  if (!bad) console.log("cardUrlWayOut ok");
+}
+
 async function main() {
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = "http://127.0.0.1:" + server.address().port;
@@ -13163,7 +13268,7 @@ async function main() {
       u001Audit: u001AuditSection,
       pasteStart: pasteStartSection, pasteDone: pasteDoneSection, pasteOldRoom: pasteOldRoomSection, pasteClose: pasteCloseSection,
       growlQuestionShots: growlQuestionShotsSection, growlQuestionBody: growlQuestionBodySection, growlReplyGrow: growlReplyGrowSection, growlChoices: growlChoicesSection, growlStable: growlStableSection, mGrowlQuestion: mGrowlQuestionSection,
-      bootClean: bootCleanSection, mHomeOrder: mHomeOrderSection };
+      bootClean: bootCleanSection, mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -15191,6 +15296,7 @@ async function main() {
     await mGrowlQuestionSection(browser);
     await bootCleanSection(browser, base);
     await mHomeOrderSection(browser);
+    await cardUrlWayOutSection(browser, base);
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e));
     if (process.env.DEBUG_HEADLESS) {
@@ -15352,6 +15458,8 @@ async function mHomeSection(browser) {
   try {
     for (const vp of M_VIEWS) {
       st.tasks = mNeedsCards();
+      // distinct last activity, so the newest-first order does not hang on the milliseconds the fixtures were made in
+      st.tasks.forEach((t, i) => { if (/^(new|old|rep|unread)-/.test(t.id)) t.last_activity_at = mIso((["new", "old", "rep", "unread"].indexOf(t.id.split("-")[0]) + 1) * M_MIN); });
       st.perms = M_PERMS();
       const { ctx, p, errors } = await mPage(browser, st, vp, "");
       const tag = "mHome " + vp.width + ": ";
