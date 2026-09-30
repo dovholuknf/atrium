@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/daemon"
 	"github.com/dovholuknf/atrium/internal/link"
 )
 
@@ -45,9 +46,6 @@ const (
 	roomParkWait = 90 * time.Second
 	// roomParkPoll is how often to ask whether they have settled.
 	roomParkPoll = 2 * time.Second
-	// roomParkIdleAfter is how many seconds without activity means a session is
-	// not working. See the same constant on the CLI control server.
-	roomParkIdleAfter = 120
 )
 
 // roomLaunch is everything that decides WHICH room `atrium room` becomes. The
@@ -263,23 +261,14 @@ func busyRoomAgents(boardURL string) map[string]string {
 	}
 	busy := map[string]string{}
 	for _, t := range body.Tasks {
-		if !t.Supervised {
-			continue
+		what := ""
+		if t.Activity != nil {
+			what = t.Activity.What
 		}
-		switch t.Status {
-		case "needs-input", "needs-permission", "done", "dead", "shelved":
-			continue
+		// The room's one rule, which the deploy hold's wait also asks.
+		if daemon.BusyCard(t.Supervised, t.Status, time.Duration(t.Idle)*time.Second, what) {
+			busy[t.ID] = t.DisplayTitle
 		}
-		// Stale activity is not activity: it is written when a tool starts and
-		// nothing writes when a turn ends, so a session that stopped an hour ago
-		// still reads as busy. A session thinking has nothing half written.
-		if t.Idle > roomParkIdleAfter {
-			continue
-		}
-		if t.Activity != nil && t.Activity.What == "thinking" {
-			continue
-		}
-		busy[t.ID] = t.DisplayTitle
 	}
 	return busy
 }

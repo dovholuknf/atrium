@@ -180,6 +180,11 @@ type Daemon struct {
 	// card's session last started. See restartwake.go.
 	wake *wakes
 
+	// holds is the room's deploy hold, copied from the store for the permission
+	// path, and build is the binary it was set against. See roomhold.go.
+	holds *holdState
+	build string
+
 	// nctx holds the new-context sequences under way and the failed ones nobody
 	// has dismissed. In memory. See newcontext.go.
 	nctx *newContexts
@@ -308,6 +313,8 @@ func New(opts Options) (*Daemon, error) {
 	}
 	d.pending = newPendingInjector(d)
 	d.wake = newWakes()
+	d.holds = newHoldState()
+	d.build = buildIdentity()
 	d.nctx = newNewContexts()
 	// Input-lag logging as the gear last left it, so a room that restarts keeps
 	// timing if it was timing. The variable still wins. See internal/inputlag.
@@ -366,6 +373,7 @@ func New(opts Options) (*Daemon, error) {
 	d.ap.RoomExit = d.handleRoomExit
 	d.ap.Report = d.handleReport
 	d.ap.RestartWake = d.handleRestartWake
+	d.ap.Hold = d.handleHold
 	d.ap.NewContext = d.handleNewContext
 	d.ap.Resume = d.handleResume
 	d.ap.SendNote = d.handleSendNote
@@ -519,6 +527,9 @@ func New(opts Options) (*Daemon, error) {
 	// The after-restart wake waiting on a card.
 	d.loadWakes()
 	api.RestartWakeOf = d.wakeFor
+	// The deploy hold, and which cards it holds. See roomhold.go.
+	d.loadHolds()
+	api.HeldOf = d.heldFor
 	api.NewContextOf = d.newContextFor
 	// The cache keep-alive: each card's switch and its current idle stretch,
 	// and the per-card switch the board flips. See keepalive.go.
@@ -535,6 +546,7 @@ func New(opts Options) (*Daemon, error) {
 	// Each card's context size, held the same way. See contextsize.go.
 	d.ctx = newContextSizes()
 	d.ka.holding = d.nctx.holding
+	d.ka.deployHeld = d.deployHeld
 	d.ka.session = d.ctx.sessionOf
 	d.auto = newAutoContexts()
 	api.ContextSizeOf = d.contextSizeFor
@@ -569,6 +581,9 @@ func (d *Daemon) launchFromJSON(body []byte) (*store.Task, error) {
 	// than read off the body so nothing on the wire can claim it.
 	req.Interactive = true
 	req.SpawnedBy = launcherFor(req)
+	if err := d.launchHeld(req); err != nil {
+		return nil, err
+	}
 	return d.Launch(req)
 }
 
@@ -832,6 +847,18 @@ func (d *Daemon) onPermRequest(req PermissionRequest) (string, *AutoDecision, er
 			return "", nil, err
 		}
 		return p.ID, &AutoDecision{Decision: "block", Reason: shelvedReason}, nil
+	}
+
+	// A room deploy hold refuses every held card's next call, so every agent is
+	// idle with nothing in flight when the room restarts. After shelved, whose own
+	// no is more specific, and before rules and auto mode, which it overrides. See
+	// roomhold.go.
+	if h := d.deployHold(); h.Holds(task.ID) {
+		reason := d.deployRefusal(h)
+		if _, err := d.st.DecidePermissionBy(p.ID, "block", reason, DecidedByDeployHold); err != nil {
+			return "", nil, err
+		}
+		return p.ID, &AutoDecision{Decision: "block", Reason: reason}, nil
 	}
 
 	// A standing rule short-circuits the human entirely. The request is still
@@ -1120,6 +1147,10 @@ func (d *Daemon) Run(ctx context.Context) error {
 		// IN THAT ORDER. A fixture card is on the reopen list too, and the
 		// fixture is what pins it, themes it and decides how it resumes. See
 		// `reopenSaved`.
+		// A deploy hold this room restarted under is lifted before any runner
+		// starts, so every wake it queues is newer than the runner that takes it.
+		// See roomhold.go.
+		d.liftAtStartup()
 		go func() {
 			// Cleared at the end of this function and nowhere else.
 			//
@@ -1171,6 +1202,8 @@ func (d *Daemon) Run(ctx context.Context) error {
 	// passive board brings nothing back, so it has nothing to type into.
 	if !d.opts.Passive {
 		go d.wakeLoop(ctx)
+		// A deploy hold nobody redeployed under is lifted when it runs out.
+		go d.holdLoop(ctx)
 		// Idle caches kept warm. A passive board spends nothing on anybody's
 		// behalf. See keepalive.go.
 		go d.ka.loop(ctx)

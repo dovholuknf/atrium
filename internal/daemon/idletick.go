@@ -136,7 +136,7 @@ func (d *Daemon) idleParkEligible(t *store.Task, wakes map[string]bool) bool {
 		return false
 	}
 	id := t.ID
-	if d.holdingMessages(id) || d.act.midTurn(id) || d.act.dialogOpen(id) || d.act.onSubagents(id) {
+	if d.holdingMessages(id) || d.deployHeld(id) || d.act.midTurn(id) || d.act.dialogOpen(id) || d.act.onSubagents(id) {
 		return false
 	}
 	// Work the last Stop said is still running: shells and the like. Subagents
