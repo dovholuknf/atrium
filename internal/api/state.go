@@ -28,6 +28,16 @@ import (
 // so the two halves cannot drift. What is persisted is what is sent, by
 // construction rather than by maintenance.
 //
+// ── plus the seen row, which is persisted too ───────────
+//
+// Each card goes out as its stored row with one key added, `seen`: the card's
+// row in the seen table, shaped by `Seen.View` exactly as the board's rows carry
+// it. That is stored state as much as the card is, and `Unseen` and the open
+// questions are worked out from its stored timestamps alone, so nothing true
+// only this second rides along. The hub's notifier needs it: without it, "a
+// question is waiting" and "a turn finished that you have not seen" can never
+// be told from the cache (f-023).
+//
 // ── and why it is not the board's business ──────────────
 //
 // Nothing in the board calls this. It exists for the link, which asks its own
@@ -44,16 +54,28 @@ func (s *Server) roomState(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	// NONE IS AN ANSWER AND MUST LOOK LIKE ONE. A nil slice marshals to `null`,
-	// which is indistinguishable from a body that never mentioned cards at all,
-	// and those mean opposite things to whoever is reading this: one is "the
-	// board here is clear" and the other is "I could not tell you". The hub
-	// takes an announcement whole, so the first empties its cache and the
-	// second must not.
-	if tasks == nil {
-		tasks = []*store.Task{}
+	// The seen rows are a decoration: a room whose seen table will not read
+	// still says what it holds, as withSeen does for the board.
+	seen, _ := s.st.SeenAll()
+	// NONE IS AN ANSWER AND MUST LOOK LIKE ONE, which is why this is made and
+	// never left nil. A nil slice marshals to `null`, which is
+	// indistinguishable from a body that never mentioned cards at all, and
+	// those mean opposite things to whoever is reading this: one is "the board
+	// here is clear" and the other is "I could not tell you". The hub takes an
+	// announcement whole, so the first empties its cache and the second must
+	// not.
+	cards := make([]stateCard, 0, len(tasks))
+	for _, t := range tasks {
+		cards = append(cards, stateCard{Task: t, Seen: seen[t.ID].View()})
 	}
-	// The stored rows, marshalled as themselves. No view, no wrapper per card,
-	// nothing computed.
-	writeJSON(w, http.StatusOK, map[string]any{"cards": tasks})
+	// The stored rows, marshalled as themselves, each with its seen row.
+	writeJSON(w, http.StatusOK, map[string]any{"cards": cards})
+}
+
+// stateCard is a stored card with its stored seen row. The embedded row
+// marshals as its own fields, so the payload is the card as stored plus one
+// key.
+type stateCard struct {
+	*store.Task
+	Seen *store.SeenView `json:"seen,omitempty"`
 }
