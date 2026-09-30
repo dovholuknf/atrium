@@ -32,10 +32,11 @@ function keepaliveTime(at) {
 // ── the cache chip ───────────────────────────────────────────────────────────
 //
 // ONE chip on every Claude card, drawn by `keepaliveChip` on the board, the stack
-// row, the terminals list, the attached terminal's header and the phone tray. The
-// answer is the visible text and never needs a hover: is this card's cache warm,
-// who is keeping it so, and if not, why. A card with no `keepalive` is not Claude
-// and draws nothing. See docs/backlog/ui/u-032.md.
+// row, the terminals list, the attached terminal's header and the phone tray. It is
+// a coloured dot and nothing else, because words there squeezed the title to one
+// letter. The words (is it warm, who keeps it so, until when, and if not, why) are
+// in the card's details, `peekCache`, and the tooltip. A card with no `keepalive` is
+// not Claude and draws nothing. See docs/backlog/ui/u-032.md.
 //
 // `kaModel` is the ONE function that decides what a card is. The chip and the
 // summary line both read it, so the two cannot disagree.
@@ -186,9 +187,8 @@ function kaModel(t, now) {
   return m;
 }
 
-// The chip. Both texts are in the markup and CSS shows the short one on a phone,
-// so the visible words are the answer without a hover, and a screen reader gets
-// the full ones from aria-label either way.
+// The chip: a dot. The words ride in a hidden span, so a repaint still compares
+// them and a screen reader gets them from aria-label.
 function keepaliveChip(t) {
   if (!t || !t.keepalive || over(t) || t.archived_at) return "";
   KA_SEEN.set(t.id, t);
@@ -198,7 +198,15 @@ function keepaliveChip(t) {
   const tip = m.tip.join(". ");
   return `<span class="chip keepalive cache ${m.cls}" data-cid="${esc(t.id)}" data-bucket="${m.bucket}"
     data-state="${esc(t.keepalive.state)}" role="img" aria-label="${esc(m.full + ". " + tip)}"
-    data-tip="${esc(tip)}"><span class="cfull">${esc(m.full)}</span><span class="cshort">${esc(m.short)}</span></span>`;
+    data-tip="${esc(m.full + ". " + tip)}"><span class="cfull">${esc(m.full)}</span></span>`;
+}
+
+// The words, for the card's details. Drawn from the same `kaModel` as the dot.
+function peekCache(t) {
+  const m = t && t.keepalive && !t.archived_at ? kaModel(t, kaNow()) : null;
+  if (!m) return "";
+  return `<div class="peek-cache ${m.cls}"><b>cache: ${esc(m.full)}</b>` +
+    m.tip.map(s => `<span>${esc(s)}.</span> `).join("") + `</div>`;
 }
 
 // ── keeping the words true without a fetch ───────────────────────────────────
