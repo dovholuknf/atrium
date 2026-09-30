@@ -170,6 +170,10 @@
   transition: opacity .15s ease, transform .15s ease;
   -webkit-tap-highlight-color: transparent;
 }
+/* The arrow is placed from the circle's centre, not left to the button's own layout, which some browsers do not
+   apply to a button's children. The glyph's box is symmetric about its own centre, so the two centres agree. */
+.mc-send { position: relative; }
+.mc-send svg { position: absolute; left: 50%; top: 50%; width: 22px; height: 22px; margin: -11px 0 0 -11px; display: block; }
 .mc-send:active:not(:disabled) { transform: scale(.92); }
 .mc-send:disabled { opacity: .28; }
 .mc.sending .mc-send { animation: mc-pulse 1s ease-in-out infinite; }
