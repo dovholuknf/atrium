@@ -18,13 +18,15 @@ clint.
 
 ## Where a worker runs
 
-Off sg4 (clint, 2026-09-30). sg3 first, m1mini once it is up. sg3's cap is 5, shared by every director.
+Off sg4 (clint, 2026-09-30), on whichever of `sg3` or `m1mini` has fewer running (check with `atrium_peers`). Each
+room's cap is 5, shared by every director. `<room>` below is the one chosen.
 
-1. `pwsh -File scripts/room-git.ps1 worktree sg3 claude/<id>` prints the remote worktree path, cut from `claude/main`.
-2. `atrium_launch` with `room=sg3` and `cwd=<that path>`.
-3. The work comes home with `atrium_git_collect room=sg3`, as `sg3/claude/<id>`.
+1. `pwsh -File scripts/room-git.ps1 worktree <room> claude/<id>` prints the remote worktree path, cut from
+   `claude/main`.
+2. `atrium_launch` with `room=<room>` and `cwd=<that path>`.
+3. The work comes home with `atrium_git_collect room=<room>`, as `<room>/claude/<id>`.
 
-If a launch on sg3 fails, tell orchestrator-sg4-control@sg4-control, and launch on sg4 meanwhile.
+If a launch there fails, tell orchestrator-sg4-control@sg4-control, and launch on sg4 meanwhile.
 
 ## How a design review is done
 
