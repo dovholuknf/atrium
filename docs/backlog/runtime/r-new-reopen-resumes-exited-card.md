@@ -42,9 +42,17 @@ matched by cwd.
 
 ## The fix
 
-- `startFixtures` does not start a fixture whose card is `done` at boot. The fixture's row says why, and starting it
-  from the fixtures page still works, because that is somebody asking now.
-- `reopenWanted` skips a `done` card too, for a runner still at its prompt when the daemon stopped.
+- An exit somebody asked for is recorded (`store.ExitAsked`, a `notified` event with `by: exit-asked`, written by
+  `StopRunner`, which the board's exit, `atrium_exit`, a cull and a stored "leave" action all go through). A launch
+  afterwards undoes it.
+- `startFixtures` does not start a fixture whose card was asked to exit, and `reopenWanted` does not reopen one. The
+  fixture's row says why, and starting it from the fixtures page still works, because that is somebody asking now.
+- `POST /v1/tasks/{id}/resume` starts a card that is neither parked nor running. It answered ok and started nothing.
+
+**The first fix keyed on `done`, and that broke every restart** (0b4e3f0d, deployed 12:58). A wind-down ends every
+session, each SessionEnd hook moves its card to `done`, so after the restart nothing came back. `done` says a session
+ended, never that somebody decided it should. Tests now stop a card at its prompt the way a wind-down does, restart,
+and check it is running again, for a plain card and a fixture.
 - A fixture's `latest` resume, and a reopen's resume, refuse a conversation another live card on this room holds, and
   log which. Binding one was already refused by `ClaimResumeID` (r-021 part 2).
 - NOT COVERED: a live holder on ANOTHER room on the same machine. A room cannot see another room's cards. The boot rule
