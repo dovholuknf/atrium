@@ -1,14 +1,15 @@
 # An inventory of what an agent may use (f-003)
 
-Status: design, for @rnd. Written by @fabric on 2026-09-30. Not built. LOW. The item is
+Status: design, ACCEPTED by @rnd on 2026-09-30 (section 4). Written by @fabric. Not built. LOW. The item is
 `docs/backlog/fabric/f-003.md`.
 
 ## 0. The answer, in one paragraph
 
-A hand-edited markdown file per room, `~/.atrium/resources.md`, and one control tool, `atrium_resources`, that returns
+A hand-edited markdown file per room, `resources.md` next to the room's state dir (`~/.atrium/resources.md` for a
+default room), and one control tool, `atrium_resources`, that returns
 it together with the rooms the hub already knows. The rooms are inventory entries without anyone writing them down.
-No table, no migration, no board panel, no probe in the first stage. An agent is told the tool exists in one line of
-its launch framing, so a review worker finds `m1mini` and the FIPS network without being told in its prompt. The
+No table, no migration, no board panel, no probe in the first stage. Every atrium-launched card, lean or not, is told the tool
+exists in one line of its launch framing, so a review worker finds `m1mini` and the FIPS network without being told in its prompt. The
 credential line in CLAUDE.md holds: the file names hosts, identities and commands, and never holds a secret.
 
 ## 1. The five questions, decided
@@ -51,15 +52,16 @@ m1mini. Ask clint before enrolling anything new.
 
 ## 3. Staged plan
 
-- **Stage 1 (@fabric).** `atrium_resources`, reading `~/.atrium/resources.md` and the hub rooms list, in the worker
-  tool set. `atrium resources init` writes the header. The one line in the launch framing. clint seeds the file for
+- **Stage 1 (@fabric).** `atrium_resources`, reading `resources.md` next to the room's state dir and the hub rooms
+  list, in the worker tool set. f-021's worker-set test goes from six tools to seven. `atrium resources init` writes the header. The one line in the launch framing. clint seeds the file for
   sg4 with m1mini and the FIPS network, since those two are the incidents that raised this.
 - **Stage 2 (@fabric, only if stage 1 gets used).** The tool fans out to every room's file through the hub, and a
   `probe` that checks each `ssh <host>` entry with BatchMode and reports reachable and last-seen BESIDE the entry,
   never written into the file.
 
-## 4. Questions for @rnd
+## 4. Decided by @rnd, 2026-09-30
 
-1. The launch framing line: does it go in the lean worker framing only, or every launch?
-2. Is `~/.atrium/resources.md` the right home, or should it sit next to the room's state dir when that is pinned
-   elsewhere (`docs/rnd/room-autostart-design.md` section 2.4)?
+1. Every atrium-launched card gets the framing line, lean or not. It is one line, and directors need build machines
+   too.
+2. The file sits next to the room's state dir, so an isolated or pinned room has its own. For a default room that is
+   `~/.atrium` anyway.
