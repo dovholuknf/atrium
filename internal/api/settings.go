@@ -58,6 +58,8 @@ func globalAutoView(s *Server) map[string]any {
 		store.SettingMergedCullGrace: "merged_cull_grace",
 		// How many minutes a room deploy hold may last. Empty is sixty.
 		store.SettingDeployHoldMax: "deploy_hold_max",
+		// Minutes a `when: done` message waits for the turn. Empty is fifteen.
+		store.SettingEscalateHeldAfter: "escalate_held_after",
 		// Not a timer, but read the same way and for the same reason: empty is
 		// a value here, and it means the open button is off.
 		SettingEditor: "editor_command",
@@ -234,6 +236,9 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		MergedCullGrace *string `json:"merged_cull_grace"`
 		// Minutes a room deploy hold may last before the room lifts it.
 		DeployHoldMax *string `json:"deploy_hold_max"`
+		// Minutes a `when: done` message waits for the turn to end before the next
+		// tool call carries it. Empty is fifteen.
+		EscalateHeldAfter *string `json:"escalate_held_after"`
 		// The command that opens a file, on the machine atrium is on. A
 		// pointer for the same reason as the timers: not mentioning it and
 		// clearing it are different requests, and clearing it is how the open
@@ -427,6 +432,17 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := s.st.SetSetting(store.SettingDeployHoldMax, v); err != nil {
+			writeErr(w, http.StatusInternalServerError, err)
+			return
+		}
+	}
+	if body.EscalateHeldAfter != nil {
+		v := strings.TrimSpace(*body.EscalateHeldAfter)
+		if n, err := strconv.Atoi(v); v != "" && (err != nil || n <= 0) {
+			writeErr(w, http.StatusBadRequest, fmt.Errorf("escalate_held_after is a number of minutes, or empty for 15"))
+			return
+		}
+		if err := s.st.SetSetting(store.SettingEscalateHeldAfter, v); err != nil {
 			writeErr(w, http.StatusInternalServerError, err)
 			return
 		}

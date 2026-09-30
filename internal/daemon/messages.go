@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -138,11 +139,20 @@ func (d *Daemon) takeMessages(taskID, via string) ([]*store.Message, error) {
 	// A message that waits for the turn is the Stop hook's. The permission hook
 	// fires mid-turn, and carrying it there is the interruption `when: "done"`
 	// asked not to have. See saywhen.go.
+	escalated := map[string]time.Duration{}
 	if via != "stop" {
+		// One that has waited past escalate_held_after is carried like any other,
+		// with a line in front of it. See escalate.go.
 		kept := msgs[:0:0]
 		for _, m := range msgs {
 			if !m.WaitTurn {
 				kept = append(kept, m)
+			} else if d.heldAged(taskID, m.CreatedAt) {
+				age := time.Since(m.CreatedAt)
+				c := *m
+				c.Text = escalationLine(age) + "\n" + m.Text
+				kept = append(kept, &c)
+				escalated[m.ID] = age
 			}
 		}
 		if msgs = kept; len(msgs) == 0 {
@@ -152,6 +162,11 @@ func (d *Daemon) takeMessages(taskID, via string) ([]*store.Message, error) {
 	ids := messageIDs(msgs)
 	if err := d.st.MarkDelivered(taskID, via, ids); err != nil {
 		return nil, err
+	}
+	for _, m := range msgs {
+		if age, ok := escalated[m.ID]; ok {
+			d.noteEscalated(taskID, m.ID, m.FromPeer, age)
+		}
 	}
 	// The hooks just drained the durable queue, so anything the injector was
 	// still retrying on screen has now landed. Clear its held set and the board
