@@ -101,3 +101,21 @@ func TestLaunchedNameSkipsADeadCardsName(t *testing.T) {
 		t.Fatalf("a title matching a done card got %q, want smoke-2", got)
 	}
 }
+
+// An ARCHIVED card holds its name too: List skips it, Register does not.
+func TestLaunchedNameSkipsAnArchivedCardsName(t *testing.T) {
+	d := testDaemon(t)
+	old, _, err := d.st.Register(store.Observed{WireName: "smoke", Worktree: "/work/smoke"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := d.st.SetStatus(old.ID, "done"); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.st.ArchiveCulled(old.ID, "test"); err != nil {
+		t.Fatal(err)
+	}
+	if got := d.launchedName("smoke", "/work/smoke"); got != "smoke-2" {
+		t.Fatalf("a title matching an archived card got %q, want smoke-2", got)
+	}
+}

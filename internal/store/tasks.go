@@ -1613,3 +1613,12 @@ func (s *Store) ListArchived(limit int) ([]*Task, error) {
 	})
 	return out, err
 }
+
+// WireNameHeld reports whether any card, archived or done included, already has
+// this wire name. Register matches on it at every status, so a launch that hands
+// out a held name gets that card back. The name is qualified as Register does.
+func (s *Store) WireNameHeld(name string) bool {
+	var one int
+	err := s.db.QueryRow(`SELECT 1 FROM task WHERE wire_name = ? LIMIT 1`, s.Qualify(name)).Scan(&one)
+	return err == nil
+}
