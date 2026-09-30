@@ -50,6 +50,9 @@ type Room struct {
 	// how held cross-room messages go the moment the hub is back rather than at
 	// the next tick. Nil does nothing. See relay.go.
 	OnAttach func()
+	// Git says this room takes git syncs, so it tells its hub in the hello. Set only when
+	// the room's handler serves /v1/git/sync. See git.go.
+	Git bool
 
 	// conns carries dialled connections to the listener's Accept. Buffered by
 	// one so a dial that wins a race is not thrown away.
@@ -60,6 +63,8 @@ type Room struct {
 	mu      sync.Mutex
 	session string
 	up      bool
+	// hubGit is whether the hub said, in its welcome, that it serves git.
+	hubGit  bool
 	since   time.Time
 	lastErr string
 	// taking makes sure one offer is acted on once, however many times the hub
@@ -215,6 +220,7 @@ func (r *Room) attach(ctx context.Context) error {
 		// Windows binary. See `upgrade.go`.
 		OS: runtime.GOOS, Arch: runtime.GOARCH,
 		Upgrades: r.Upgrades != nil && r.Upgrades.Accept,
+		Git:      r.Git,
 	})
 	if err != nil {
 		return err
@@ -222,6 +228,7 @@ func (r *Room) attach(ctx context.Context) error {
 
 	r.mu.Lock()
 	r.session, r.up, r.since, r.lastErr = w.Session, true, time.Now(), ""
+	r.hubGit = w.Git
 	r.mu.Unlock()
 	log.Printf("[link] attached to hub %s as %q", r.Dial.Describe(), r.Name)
 
@@ -362,7 +369,7 @@ func (r *Room) open(ctx context.Context, n int, session string) {
 func (r *Room) setDown(err error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.up, r.session = false, ""
+	r.up, r.session, r.hubGit = false, "", false
 	if err != nil {
 		r.lastErr = err.Error()
 	}

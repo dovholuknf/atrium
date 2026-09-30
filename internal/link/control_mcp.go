@@ -332,6 +332,8 @@ func (c *controlMCP) server(class ctlClass) *mcp.Server {
 			"cancel it.",
 	}, audited(c, "ctl-wake", describeWake, c.wakeHandler))
 
+	c.registerGit(s, class)
+
 	return s
 }
 

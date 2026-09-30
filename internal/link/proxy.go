@@ -17,6 +17,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/gitsync"
 )
 
 // What the hub actually answers with.
@@ -92,6 +94,9 @@ type Proxy struct {
 	// notify.go.
 	notify *Notifier
 
+	// gitHub is the hub's git side: mirror, sync, collect. Nil until SetGit wires it, and
+	// a hub without one answers /_hub/git 404. See git_hub.go.
+	gitHub *gitsync.Hub
 	// capStore holds the per-room launch caps. Nil until SetLaunchCaps wires
 	// it, and then every room gets the default cap. See launchcaps.go.
 	capStore HubSettings
@@ -440,6 +445,16 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
 		fmt.Fprint(w, `{"error":"a hub cannot stop a room. `+
 			`run atrium stop on the machine the room is on."}`)
+		return
+	}
+	// GIT SYNC IS BETWEEN THE HUB AND ITS ROOMS, NOT THE BOARD. A room serves its claude/*
+	// branches and takes sync requests at /v1/git/, and the hub reaches them through
+	// Hub.Transport, never through this proxy. Forwarding them would let anybody who can
+	// reach the board list and fetch every branch under the room's git root and start a sync.
+	if r.URL.Path == "/v1/git" || strings.HasPrefix(r.URL.Path, "/v1/git/") {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		fmt.Fprint(w, `{"error":"git on a room is reached by the hub's own sync and collect, never through the board"}`)
 		return
 	}
 	// A REQUEST THAT NAMES A CARD GOES WHERE THE CARD IS, whatever the header
@@ -1289,6 +1304,8 @@ func (p *Proxy) serveHubAPI(w http.ResponseWriter, r *http.Request) {
 		p.forgetInventory(w, r)
 	case "notify", "notify/test":
 		p.serveNotify(w, r, sub)
+	case "git/sync", "git/collect", "git/status":
+		p.serveGit(w, r, sub)
 	case "launch-caps":
 		p.serveLaunchCaps(w, r)
 	case "presence":
