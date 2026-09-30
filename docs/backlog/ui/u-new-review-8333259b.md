@@ -51,7 +51,18 @@ only, a hub-only deploy. The headless suite is @ui's and was not run here.
    `/alias/Foo` or `/alias/foo/` is not matched against `/alias/foo`, so the click goes to the board instead of
    raising that window. Normalise both sides the way `cardUrlShape` does.
 
-## Verdict
+## Follow-up 5954f802 (the medium's fix)
+
+Read `git diff 8333259b 5954f802`. `cardUrlPath` and the phone's `card.js` now fall back to `handle || alias`, and
+neither lowercases the handle, in the path it builds or in the `card` shape it reads. `matchCard` tries the wire
+name exactly, then bare, before any alias, so `/room/<room>/<handle>` reaches the done card even while a live card
+holds its alias. An alias typed in any case in the `card` form still resolves, because `matchCard` lowers it for the
+alias match. The chooser's candidate links and the 404's would-work links are unchanged and still resolve. Medium 1
+is closed. Lows 1 and 2 are parked in @ui's queue.
+
+**HUB DEPLOY OK 5954f802.**
+
+## Verdict (at 8333259b)
 
 **HOLD 8333259b** on medium 1. It is a small change to `cardUrlPath`, and after it this is **HUB DEPLOY OK** on
 review grounds. The lows can follow.
