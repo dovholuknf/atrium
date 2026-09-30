@@ -520,6 +520,11 @@ func hookArgs(t *testing.T, line string) []string {
 // payload on stdin, and returns the exit code.
 func runHookLine(t *testing.T, line, payload string) int {
 	t.Helper()
+	// The gate waits on a human by design, so a fake runner that fires it blocks
+	// forever. hook_permission_test.go covers it.
+	if strings.Contains(line, "--event permission") {
+		return 0
+	}
 	defer withStdin(t, payload)()
 	// The Stop hook writes its answer to stdout. Kept out of the test output.
 	devnull, err := os.Open(os.DevNull)
