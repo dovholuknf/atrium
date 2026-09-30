@@ -7818,3 +7818,36 @@ last CPU point rises. Minutes before the daemon started are null.
 1. Open the rooms dashboard.
 
 **Expected:** each room's MACHINE tile shows a cpu and mem percentage and a sparkline, not "cpu -" and "mem -".
+
+## GY. Provisioning defaults (46c)
+
+1. `provision-room.ps1 <room> -Restart` (no `-Yes`) against a room already provisioned without autostart still prints
+   its plan and changes nothing. A rerun of provision there keeps autostart off.
+2. `provision-room.ps1 <room> -Restart -User nosuchacct` prints `provision account fail ... an administrator runs:`
+   with the platform's command, and ends `provision done fail 11`. With the ssh login's own name it prints
+   `provision account ok`.
+3. On a NEW Windows machine, provision with no autostart flag: `provision autostart done logon task atrium`, and
+   `schtasks /Query /TN atrium /XML` shows an action that runs `room --detach`. Log off and on: the room is back
+   attached without anyone starting it.
+4. On a NEW Linux machine (cdzrok, user scope), the same: `provision autostart done systemd user unit`, reboot or
+   `systemctl --user restart atrium`, and the room attaches. `-Remove` afterwards.
+5. `-NoAutostart` on a new machine prints `provision start done in the background with room --detach, no autostart`
+   and registers nothing.
+6. `-SmokeOnly` against a room with no clone and no git remote runs in `~/.atrium/smoke`, not the home.
+
+## GZ. A room over ziti or zrok is named by its certificate (f-022)
+
+Needs a hub over ziti or zrok and two rooms, one joined before this build and one joined after.
+
+1. On the hub, `atrium rooms token <name>` for a new room. The string carries a secret and a pin. Join a room with it
+   over the overlay. It attaches, and the rooms list shows it `proven: true`. Its keys directory now holds room.crt.
+2. Say another name in that room's hello (edit the room's saved name). The hub still shows the room under the name in
+   its certificate.
+3. A room that joined with an OLD-form string, before this build, still attaches. The rooms list shows it
+   `proven: false`, `atrium rooms log` has one `room-unproven` line per attach naming the transport and the re-join
+   step, and the hub's startup warning says how many rooms are unproven.
+4. A room on an old-form join that has a stray room.crt in its keys directory still attaches raw, and is not wrapped.
+5. `atrium rooms legacy` shows `allow`. `atrium rooms legacy refuse`, then restart the old room's link. It is turned
+   away with the sentence telling it to re-join with a token from `atrium rooms token`. The proven room stays attached.
+6. `atrium rooms legacy allow`. The old room attaches again on its next try, with no hub restart.
+7. The board over zrok or ziti still opens in a browser with no client certificate, in both modes.
