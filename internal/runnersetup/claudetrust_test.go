@@ -2,7 +2,9 @@ package runnersetup
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -315,5 +317,65 @@ func TestConcurrentClaudeWritesKeepEveryChange(t *testing.T) {
 		if !projectTrusted(obj, keyFor(t, dir)) {
 			t.Fatalf("a trust entry was lost: %s", dir)
 		}
+	}
+}
+
+func TestLockBusy(t *testing.T) {
+	denied := &os.PathError{Op: "mkdir", Path: "x.lock", Err: fs.ErrPermission}
+	for _, c := range []struct {
+		name string
+		err  error
+		goos string
+		want bool
+	}{
+		{"exists linux", fs.ErrExist, "linux", true},
+		{"exists windows", fs.ErrExist, "windows", true},
+		{"denied windows", denied, "windows", true},
+		{"denied linux", denied, "linux", false},
+		{"denied darwin", denied, "darwin", false},
+		{"other windows", errors.New("disk full"), "windows", false},
+	} {
+		if got := lockBusy(c.err, c.goos); got != c.want {
+			t.Errorf("%s: lockBusy = %v, want %v", c.name, got, c.want)
+		}
+	}
+}
+
+// A busy mkdir is waited out, not returned. lockBusy reads the real platform
+// here: access denied on Windows, already exists elsewhere.
+func TestLockClaudeConfigRetriesThroughABusyMkdir(t *testing.T) {
+	path := filepath.Join(t.TempDir(), ".claude.json")
+	calls := 0
+	old := lockMkdir
+	lockMkdir = func(name string, perm os.FileMode) error {
+		calls++
+		if calls == 1 {
+			busy := fs.ErrExist
+			if runtime.GOOS == "windows" {
+				busy = fs.ErrPermission
+			}
+			return &os.PathError{Op: "mkdir", Path: name, Err: busy}
+		}
+		return old(name, perm)
+	}
+	defer func() { lockMkdir = old }()
+	unlock, err := lockClaudeConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unlock()
+	if calls != 2 {
+		t.Fatalf("mkdir called %d times, want 2", calls)
+	}
+}
+
+func TestLockClaudeConfigNamesTheErrorAtTheDeadline(t *testing.T) {
+	path := filepath.Join(t.TempDir(), ".claude.json")
+	oldMk, oldWait := lockMkdir, claudeLockWait
+	lockMkdir = func(name string, perm os.FileMode) error { return fs.ErrExist }
+	claudeLockWait = 50 * time.Millisecond
+	defer func() { lockMkdir, claudeLockWait = oldMk, oldWait }()
+	if _, err := lockClaudeConfig(path); !errors.Is(err, fs.ErrExist) {
+		t.Fatalf("want the busy error named, got %v", err)
 	}
 }
