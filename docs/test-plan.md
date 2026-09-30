@@ -7947,3 +7947,9 @@ Needs a hub with one room and two browsers on the board. `curl` stands in for th
 4. A card that ignores it gets the line once more at half of the capture limit (7.5 minutes), never a third time. At
    15 minutes the chip fails, and its reason names both times the card was asked.
 5. A card already between turns is never sent the line.
+
+## HG. A paste says when it is in (r-new-paste-done)
+
+1. On a board with the @ui half, paste 1 MB into a supervised card. The spinner runs until the room answers `in-done`
+   for that paste, then stops. The paste arrives as one `[Pasted text #1]`, not several.
+2. An older board (no `id` on its `in` frames) pastes as before and never shows `in-done` text in the terminal.
