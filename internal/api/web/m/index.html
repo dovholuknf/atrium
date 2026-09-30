@@ -46,6 +46,7 @@
         <button type="button" id="m-seg-all" role="tab" aria-selected="false">all <em>0</em></button>
       </div>
     </div>
+    <div class="growl" id="m-growl" hidden></div>
     <div class="skel" id="m-skel" aria-hidden="true"><div class="sk"></div><div class="sk"></div><div class="sk"></div></div>
     <div class="list" id="m-list"></div>
     <div class="empty" id="m-empty" hidden>
@@ -80,6 +81,7 @@
 <script src="/m/js/md.js"></script>
 <script src="/m/js/store.js"></script>
 <script src="/m/js/home.js"></script>
+<script src="/m/js/growl.js"></script>
 <script src="/m/js/card.js"></script>
 <script src="/m/js/compose.js" onerror="void 0"></script>
 <script src="/m/js/perms.js" onerror="void 0"></script>
@@ -91,6 +93,7 @@
     if (m && c) m.setAttribute("content", c);
   }
   window.mHome.init();
+  window.mGrowl.init();
   window.mCard.init();
   var live = document.getElementById("m-live"), room = document.getElementById("m-room");
   window.mNet.on("live", function () {

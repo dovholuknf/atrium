@@ -1,0 +1,599 @@
+// ── the persistent growler, the board's half ─────────────────────────────────
+//
+// Something waiting on a human that stays until it is handled, dismissed, or its reason ends. The hub holds the
+// state and says the WHOLE open set on every `growls` event, so this file keeps no state of its own that an event
+// does not replace. See docs/rnd/persistent-growler-design.md.
+//
+// NOTHING IS FETCHED. The hub sends one `growls` event when each stream opens, so the set arrives on load and on a
+// reopen without asking. A board whose stream never sends one (a room served alone) draws nothing and behaves as it
+// did before this file.
+//
+// It lives in the toast host, pinned above the toasts by `order`, and is `sticky` so the toast cap neither counts
+// nor evicts it. That is the `hubToast` exemption, and it keeps `raiseToasts` putting it inside an open modal.
+
+// The set as the hub last said it, open and snoozed rows, in the order the hub sorted them.
+let growlSet = [];
+// Whether an event has arrived yet. The first one seeds: a page load is not a pile of new growlers.
+let growlHeard = false;
+let growlOpen = false;
+let growlSnoozing = "";
+let growlPermAfter = 120;
+// What was typed into each reply field, so a redraw from an event does not eat it.
+const growlDrafts = new Map();
+// The undo toast for each dismissed growler, so one that comes back by another route takes it down.
+const growlUndo = new Map();
+
+const GROWL_NAME = {
+  permission: ["permission", "permissions"], halt: ["halt", "halts"], blocked: ["blocked", "blocked"],
+  question: ["question", "questions"], "deploy-hold": ["deploy-hold", "deploy-holds"]
+};
+const GROWL_URGENCY = { permission: 1, halt: 2, blocked: 3, question: 4, "deploy-hold": 5 };
+const GROWL_SNOOZES = [["15 min", 15], ["1 h", 60], ["until tomorrow 09:00", 0]];
+
+function growlUrgency(g) { return g.urgency || GROWL_URGENCY[g.reason] || 9; }
+
+// THE BOARD DRAWS EVERY GROWLER, including a popped-out card's, because a growler is state like the card's badges.
+// A pop-out draws only its own card's. Neither switch hides one. See the design, section 7.
+function growlMine(g) { return !inPopout() || sameCard(growlCard(g), popoutCard()); }
+function growlDrawn() { return growlSet.filter(g => g.state === "open" && growlMine(g)); }
+
+// Whether this window has an open growler drawn for a subject. The nag and keyed toasts ask.
+function growlHas(subject) {
+  return !!subject && growlDrawn().some(g => g.subject && sameCard(g.subject, subject));
+}
+
+// A popped-out card's reminders belong to its pop-out, so its switch and mute hold them back and the board does not
+// ring in their place. This is the board's view of that: the card is popped out and its window is quiet, read off
+// the two per-card keys in the same localStorage.
+function growlMutedInPopout(g) {
+  if (inPopout()) return false;
+  const card = growlCard(g);
+  if (!card || !poppedOut(card)) return false;
+  const id = bareId(card);
+  try {
+    return localStorage.getItem(NOTIFY_OFF_CARD_KEY + id) === "1" ||
+      !!JSON.parse(localStorage.getItem(SOUND_CARD_KEY + id) || "{}").muted;
+  } catch (e) { return false; }
+}
+addEventListener("storage", e => {
+  if (!e.key || !(e.key.startsWith(NOTIFY_OFF_CARD_KEY) || e.key.startsWith(SOUND_CARD_KEY))) return;
+  if (growlSet.length) { growlDraw(); growlAttention(); }
+});
+
+// The hub's event. `remind` is an array of ids on a reminder tick, which U2 turns into sound.
+function onGrowlsEvent(e) {
+  let d;
+  try { d = JSON.parse(e.data); } catch (err) { return; }
+  if (!d || !Array.isArray(d.growls)) return;
+  if (d.perm_after_seconds) growlPermAfter = d.perm_after_seconds;
+  growlApply(d.growls, !growlHeard, Array.isArray(d.remind) ? d.remind : []);
+  growlHeard = true;
+}
+
+function growlApply(next, seed, remind) {
+  const was = new Map(growlSet.map(g => [g.id, g]));
+  const now = new Map(next.map(g => [g.id, g]));
+  const raised = [];
+  if (!seed) {
+    next.forEach(g => {
+      const w = was.get(g.id);
+      if (g.state === "open" && (!w || w.state !== "open")) { growlLog("growler", g); raised.push(g); }
+      if (g.state === "snoozed" && w && w.state === "open") growlLog("growler snoozed", g);
+    });
+    growlSet.forEach(g => {
+      if (g.state === "open" && !now.has(g.id)) growlLog("growler ended", g);
+    });
+  }
+  growlSet = next;
+  growlUndo.forEach((el, id) => {
+    const g = now.get(id);
+    if (g && g.state === "open" && el.dismiss) { el.dismiss(); growlUndo.delete(id); }
+  });
+  if (growlPhoneUndo && (now.get(growlPhoneUndo.g.id) || {}).state === "open") growlPhoneUndo = null;
+  growlDraw();
+  growlReapNotes();
+  growlAttention();
+  if (!seed) growlAttend(raised, remind);
+}
+
+// EVERY OPEN WINDOW HEARS EVERY EVENT, and they share one localStorage and one toast log. A line or an alert
+// that every window made would be said once per window, so the first to claim a key says it. The key carries the
+// growler's `raised_at`, which the hub resets when a snooze ends, so a growler raised again is a new key.
+const GROWL_ONCE_KEY = "atrium.growl.once";
+function growlOnce(key) {
+  try {
+    const now = Date.now();
+    const seen = JSON.parse(localStorage.getItem(GROWL_ONCE_KEY) || "{}");
+    Object.keys(seen).forEach(k => { if (now - seen[k] > 60000) delete seen[k]; });
+    if (seen[key]) return false;
+    seen[key] = now;
+    localStorage.setItem(GROWL_ONCE_KEY, JSON.stringify(seen));
+  } catch (e) {}
+  return true;
+}
+
+function growlLog(what, g, extra) {
+  if (!growlOnce(what + "|" + g.id + "|" + g.raised_at + "|" + (extra || ""))) return;
+  if (typeof recordToLog === "function") recordToLog(what + ": " + g.title, g.body || "", "", null, null);
+}
+
+// The card in the form the board's own list uses: `room~id` once two rooms are attached, bare before.
+function growlCard(g) {
+  if (typeof cardRows !== "undefined" && g.card && cardRows.has(g.card)) return g.card;
+  if (typeof cardRows !== "undefined" && g.card_id && cardRows.has(g.card_id)) return g.card_id;
+  return g.card || g.card_id || "";
+}
+
+function growlPermID(g) {
+  const p = typeof permsLocal !== "undefined" ? permsLocal.find(x => sameCard(x.id, g.subject)) : null;
+  return p ? p.id : g.subject;
+}
+
+function growlCounts(rest) {
+  const n = {};
+  rest.forEach(g => { n[g.reason] = (n[g.reason] || 0) + 1; });
+  return Object.keys(GROWL_URGENCY).filter(k => n[k])
+    .map(k => `${n[k]} ${GROWL_NAME[k][n[k] === 1 ? 0 : 1]}`).join(", ");
+}
+
+function growlFirstLine(s) { return String(s || "").split("\n")[0]; }
+
+// The primary action of a row, as a button. Permission carries its own pair in the full face.
+function growlPrimary(g) {
+  switch (g.reason) {
+    case "permission": return `<button data-do="approve"${g.subject ? "" : " disabled"}>approve once</button>`;
+    case "halt": return `<button data-do="room">open the room</button>`;
+    case "deploy-hold": return `<button data-do="lift">lift</button>`;
+    default: return `<button data-do="open">open</button>`;
+  }
+}
+
+function growlFull(g) {
+  const off = (g.room_offline ? `<span class="gr-off">room offline</span>` : "") +
+    (growlMutedInPopout(g) ? `<span class="gr-off">muted in its window</span>` : "");
+  const perm = g.reason === "permission";
+  const text = perm
+    ? `<code class="gr-cmd">${esc(growlFirstLine(g.body))}</code>`
+    : `<div class="gr-line">${esc(growlFirstLine(g.body))}</div>`;
+  const dead = perm && !g.subject ? " disabled" : "";
+  let acts = "";
+  if (perm) acts += `<button data-do="approve"${dead}>approve once</button><button data-do="block"${dead}>block</button>`;
+  else if (g.reason === "halt") acts += `<button data-do="room">open the room</button>`;
+  else if (g.reason === "deploy-hold") acts += `<button data-do="lift">lift</button>`;
+  if (g.reason === "blocked" || g.reason === "question") {
+    acts += `<input class="gr-reply" placeholder="reply" aria-label="reply"><button data-do="reply">send</button>`;
+  }
+  acts += `<button data-do="open">open</button><button data-do="snooze">snooze</button>` +
+    `<button data-do="dismiss" data-tip="stops this alert. the ? chip on the card stays">dismiss this</button>`;
+  const snooze = growlSnoozing === g.id
+    ? `<div class="gr-snooze">${GROWL_SNOOZES.map(s => `<button data-snooze="${s[1]}">${s[0]}</button>`).join("")}</div>` : "";
+  return `<div class="gr-full" data-id="${esc(g.id)}" data-reason="${esc(g.reason)}">` +
+    `<div class="gr-head"><b>${esc(g.title)}</b>${off}</div>${text}<div class="gr-acts">${acts}</div>${snooze}</div>`;
+}
+
+function growlRow(g) {
+  return `<div class="gr-row" data-id="${esc(g.id)}" data-reason="${esc(g.reason)}"><span class="gr-t">${esc(g.title)}</span>` +
+    `${growlPrimary(g)}<button data-do="dismiss" data-tip="stops this alert. the ? chip on the card stays">&times;</button></div>`;
+}
+
+// One set of listeners for both faces. The drafts and the focus survive a redraw from an event.
+function growlWire(el) {
+  el.addEventListener("click", growlClick);
+  el.addEventListener("input", e => {
+    const row = e.target.closest(".gr-full");
+    if (row && e.target.classList.contains("gr-reply")) growlDrafts.set(row.dataset.id, e.target.value);
+  });
+  el.addEventListener("keydown", e => {
+    if (e.key === "Enter" && e.target.classList.contains("gr-reply")) growlAct(e.target.closest(".gr-full"), "reply");
+  });
+}
+
+function growlRestore(el, focused) {
+  el.querySelectorAll(".gr-full").forEach(full => {
+    const box = full.querySelector(".gr-reply");
+    if (!box) return;
+    box.value = growlDrafts.get(full.dataset.id) || "";
+    if (focused === full.dataset.id) box.focus();
+  });
+}
+
+function growlFocused(el) {
+  const a = document.activeElement;
+  return a && a.classList.contains("gr-reply") && el.contains(a) ? a.closest(".gr-full").dataset.id : "";
+}
+
+function growlDraw() {
+  const rows = growlDrawn();
+  const phone = innerWidth <= PHONE;
+  const desk = document.getElementById("growl");
+  const hand = document.getElementById("growl-phone");
+  if (phone) { if (desk) desk.remove(); } else if (hand) { hand.hidden = true; hand.innerHTML = ""; }
+  if (phone) { growlDrawPhone(rows, hand); return; }
+  const host = document.getElementById("toasts");
+  if (!host) return;
+  let el = desk;
+  if (!rows.length) {
+    if (el) el.remove();
+    growlOpen = false;
+    return;
+  }
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "growl";
+    el.className = "sticky";
+    growlWire(el);
+    host.appendChild(el);
+  }
+  const focused = growlFocused(el);
+  el.classList.toggle("open", growlOpen && rows.length > 1);
+  if (growlOpen && rows.length > 1) {
+    el.innerHTML = `<div class="gr-list">${rows.map(growlRow).join("")}</div>` +
+      `<button class="gr-strip" data-do="fold">fold</button>`;
+  } else {
+    growlOpen = false;
+    const rest = rows.slice(1);
+    el.innerHTML = growlFull(rows[0]) + (rest.length
+      ? `<button class="gr-strip" data-do="expand">+${rest.length} more: ${growlCounts(rest)}</button>` : "");
+    growlRestore(el, focused);
+  }
+  // The cap is half the window, and the list scrolls inside it.
+  el.style.setProperty("--gr-max", Math.floor(innerHeight / 2) + "px");
+  if (typeof raiseToasts === "function") raiseToasts();
+}
+
+// ON A PHONE the growler is one line pinned under the header, the one exception to the bell nudge, because the
+// bell's count is the signal that did not work. It is an ordinary flex item of the body, between the header and
+// `main`, so it takes its height out of `main` and never lies over the key bar or the composer. Tapping it opens
+// the stack in place, at most half the window.
+function growlDrawPhone(rows, el) {
+  if (!el) return;
+  const undo = growlPhoneUndo && Date.now() < growlPhoneUndo.until ? growlPhoneUndo.g : null;
+  if (!rows.length && !undo) { el.hidden = true; el.innerHTML = ""; growlOpen = false; return; }
+  if (!el.dataset.wired) { growlWire(el); el.dataset.wired = "1"; }
+  const focused = growlFocused(el);
+  el.hidden = false;
+  el.classList.toggle("open", growlOpen && rows.length > 0);
+  const gone = undo ? `<div class="gp-undo"><span>dismissed: ${esc(undo.title)}</span>` +
+    `<button data-do="undo">undo</button></div>` : "";
+  if (!rows.length) {
+    el.innerHTML = gone;
+  } else if (growlOpen) {
+    el.innerHTML = gone + `<button class="gp-line" data-do="fold"><b>fold</b></button>` +
+      `<div class="gp-list">${rows.map(growlFull).join("")}</div>`;
+  } else {
+    const top = rows[0];
+    el.innerHTML = gone + `<button class="gp-line" data-do="expand"><b>${esc(top.title)}</b>` +
+      (rows.length > 1 ? `<span class="gp-n">+${rows.length - 1}</span>` : "") + `</button>`;
+  }
+  growlRestore(el, focused);
+  el.style.setProperty("--gr-max", Math.floor(innerHeight / 2) + "px");
+}
+// The dismissed growler a phone offers to bring back, since a phone draws no toasts.
+let growlPhoneUndo = null;
+addEventListener("resize", () => { if (growlSet.length) growlDraw(); });
+
+function growlClick(e) {
+  const btn = e.target.closest("button");
+  if (!btn) return;
+  const row = btn.closest(".gr-full, .gr-row");
+  if (btn.dataset.snooze !== undefined) { growlSnoozeFor(row, Number(btn.dataset.snooze)); return; }
+  const what = btn.dataset.do;
+  if (what === "undo") {
+    const u = growlPhoneUndo;
+    growlPhoneUndo = null;
+    if (u) growlUndismiss(u.g);
+    growlDraw();
+    return;
+  }
+  if (what === "expand" || what === "fold") { growlOpen = what === "expand"; growlSnoozing = ""; growlDraw(); return; }
+  if (row) growlAct(row, what);
+}
+
+function growlByRow(row) { return growlSet.find(g => g.id === row.dataset.id); }
+
+async function growlAct(row, what) {
+  const g = row && growlByRow(row);
+  if (!g) return;
+  switch (what) {
+    case "approve": return growlDecide(g, "approve", "");
+    case "block": {
+      const reason = await askText("why not?",
+        "Handed straight back to the agent as the reason it was refused. " +
+        "Telling it what to do instead is more useful than a wall.",
+        "", "use a temp directory instead");
+      if (reason === null) return;
+      return growlDecide(g, "block", reason);
+    }
+    case "open": return growlOpenIt(g);
+    case "room": if (await closeOpenDialogs()) openRooms(); return;
+    case "lift": return growlLift(g);
+    case "reply": return growlReply(g, row);
+    case "snooze": growlSnoozing = growlSnoozing === g.id ? "" : g.id; growlDraw(); return;
+    case "dismiss": return growlPost(g, { do: "dismiss" }, true);
+  }
+}
+
+// Names the row's room to the hub, the way the launch dialog does: an explicit `X-Atrium-Room` wins over the
+// board's own scope in the fetch wrapper (js/rooms.js). The hub routes `/v1/permissions` and `/v1/hold` by this
+// header and not by an id, so on the merged view a write without it goes to the wrong room or to none.
+function growlHeaders(g) {
+  const h = { "Content-Type": "application/json" };
+  if (typeof hubIsHub !== "undefined" && hubIsHub && g.room) h["X-Atrium-Room"] = g.room;
+  return h;
+}
+
+// Approve and block answer the request and leave the growler alone. It ends because the request left.
+// The room's own id, since the hub does not untag a permission path.
+async function growlDecide(g, decision, reason) {
+  if (!g.subject) return;
+  try {
+    await api(`/v1/permissions/${encodeURIComponent(g.subject)}/decide`, {
+      method: "POST", headers: growlHeaders(g),
+      body: JSON.stringify({ decision, reason, forever: false, prefix: "", kind: "command", command: "" })
+    });
+  } catch (e) {
+    toast("too late", e.message);
+  }
+  if (typeof permsSoon === "function") permsSoon();
+}
+
+async function growlOpenIt(g) {
+  if (!await closeOpenDialogs()) return;
+  const perm = g.reason === "permission";
+  landOnAlert(growlCard(g), perm ? "perms" : "", perm ? growlPermID(g) : "");
+}
+
+async function growlLift(g) {
+  if (!await confirmUser("lift the deploy hold?",
+    `The hold on <b>${esc(g.room)}</b> ends and its agents carry on.`, "lift it")) return;
+  try {
+    await api("/v1/hold", {
+      method: "POST", headers: growlHeaders(g),
+      body: JSON.stringify({ action: "lift", outcome: "operator", by: "operator" })
+    });
+  } catch (e) {
+    toast("could not lift the hold", e.message);
+  }
+}
+
+// Through the operator message path, which queues. Never typed into a terminal a human may be typing in.
+async function growlReply(g, row) {
+  const box = row.querySelector(".gr-reply");
+  const text = box ? box.value.trim() : "";
+  const id = growlCard(g);
+  if (!text || !id) return;
+  try {
+    await api(`/v1/tasks/${id}/message`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, when: "done" })
+    });
+    growlDrafts.delete(g.id);
+    if (box) box.value = "";
+    toast("sent", `${g.title}: ${text.slice(0, 80)}`);
+  } catch (e) {
+    toast("not sent", e.message || String(e));
+  }
+}
+
+function growlSnoozeFor(row, minutes) {
+  const g = row && growlByRow(row);
+  if (!g) return;
+  if (!minutes) {
+    const t = new Date();
+    t.setDate(t.getDate() + 1);
+    t.setHours(9, 0, 0, 0);
+    minutes = Math.ceil((t - Date.now()) / 60000);
+  }
+  growlSnoozing = "";
+  growlPost(g, { do: "snooze", minutes: Math.min(10080, Math.max(1, minutes)) }, false);
+}
+
+// One call for dismiss, snooze and undismiss. A 409 means the reason ended first, and the row goes.
+async function growlPost(g, body, offerUndo) {
+  let res;
+  try {
+    res = await plainFetch("/_hub/growls/" + encodeURIComponent(g.id), {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(Object.assign({ via: innerWidth <= PHONE ? "phone" : "board", tab: typeof hubTabId === "string" ? hubTabId : "" }, body))
+    });
+  } catch (e) {
+    toast("could not reach atrium", e.message || String(e));
+    return null;
+  }
+  let d = {};
+  try { d = await res.json(); } catch (e) {}
+  if (res.status === 409) {
+    toast("already handled", g.title);
+    growlSet = growlSet.filter(x => x.id !== g.id);
+    growlDraw();
+    return null;
+  }
+  if (!res.ok) {
+    toast("could not do that", d.error || "atrium answered " + res.status);
+    return null;
+  }
+  if (d.growl) growlSet = growlSet.map(x => x.id === g.id ? d.growl : x);
+  growlDraw();
+  if (offerUndo && body.do === "dismiss") growlOfferUndo(g);
+  return d.growl || null;
+}
+
+// Undo for a dismissal: the hub answers with the row open again and its original raised_at, which goes back in the
+// set at once. The next `growls` event confirms it.
+async function growlUndismiss(g) {
+  const back = await growlPost(g, { do: "undismiss" }, false);
+  if (!back) return;
+  if (!growlSet.some(x => x.id === back.id)) growlSet.push(back);
+  growlSet.sort((a, c) => growlUrgency(a) - growlUrgency(c) || String(a.raised_at).localeCompare(String(c.raised_at)));
+  growlDraw();
+}
+
+function growlOfferUndo(g) {
+  if (growlDrawn().some(x => x.id === g.id)) return;
+  // A phone draws no toasts, so its undo is a line in the strip for as long as a toast would live.
+  if (innerWidth <= PHONE) {
+    const mine = { g, until: Date.now() + 10000 };
+    growlPhoneUndo = mine;
+    growlDraw();
+    setTimeout(() => { if (growlPhoneUndo === mine) { growlPhoneUndo = null; growlDraw(); } }, 10000);
+    return;
+  }
+  const el = toast("dismissed: " + g.title, "");
+  if (!el || !el.querySelector) return;
+  const b = document.createElement("button");
+  b.className = "gr-undo";
+  b.textContent = "undo";
+  b.addEventListener("click", async () => {
+    growlUndo.delete(g.id);
+    if (el.dismiss) el.dismiss();
+    growlUndismiss(g);
+  });
+  const body = el.querySelector(".body");
+  if (body) body.appendChild(b);
+  growlUndo.set(g.id, el);
+}
+
+// A keyed toast about a subject with an open growler says the same thing in two boxes. It is still logged, so
+// "what was I told" keeps one answer. Wraps the wrapper in toast-log.js, so this file loads after it.
+const growlRawToast = toast;
+// eslint-disable-next-line no-func-assign
+toast = function (title, body, goTo, key, taskFor) {
+  if (key && growlHas(key)) {
+    if (typeof recordToLog === "function") recordToLog(title, body, goTo, key, taskFor);
+    return phoneToastStub;
+  }
+  return growlRawToast(title, body, goTo, key, taskFor);
+};
+
+// ── asking for attention while the tab is not in front ───────────────────────
+// All of it follows the hub's `growls` event, so every screen agrees on when a reminder happened. The growler on
+// screen is state and is never held back by mute or the master switch. Sound and desktop notifications are, by
+// going through `alerting.play` and `notify`, which ask `notifyHeld` and the mute themselves.
+
+function growlIsOpen(id) { return growlSet.some(g => g.id === id && g.state === "open"); }
+
+// A raise or a reminder, said by one window. The one looking at the board plays the tone, and so does the one
+// picked when nobody is looking, which also raises the desktop notification. A window that knows another has the
+// focus says nothing.
+function growlAttend(raised, remind) {
+  const said = new Map();
+  (remind || []).forEach(id => {
+    const g = growlSet.find(x => x.id === id && x.state === "open");
+    if (g) said.set(id, [g, "remind"]);
+  });
+  raised.forEach(g => { if (!said.has(g.id)) said.set(g.id, [g, "raise"]); });
+  said.forEach(([g, kind]) => growlSay(g, kind));
+}
+
+function growlSay(g, kind) {
+  // The pop-out rings for its own card and for no other. The board does not ring for a card that is popped out,
+  // so the pop-out's switch and mute are what hold it back. Closing the pop-out hands it back to the board.
+  if (inPopout() ? !growlMine(g) : poppedOut(growlCard(g))) return;
+  if (focusIsElsewhere()) return;
+  const extra = kind === "remind" ? "r" + (g.reminders || 0) : "";
+  if (!growlOnce("say|" + kind + "|" + g.id + "|" + g.raised_at + "|" + extra)) return;
+  if (kind === "remind") growlLog("growler reminder", g, extra);
+  const perm = g.reason === "permission";
+  const card = typeof cardRows !== "undefined" ? cardRows.get(growlCard(g)) : null;
+  alerting.play(perm ? "permission" : "waiting", card ? soundForAlert(card) : "");
+  alerting.notify(g.title, growlFirstLine(g.body), perm ? "perms" : "", "", "growl:" + g.id,
+    growlCard(g), card ? card.icon || "" : "", "", {
+      growl: { id: g.id, key: perm ? growlPermID(g) : "", onShown: n => growlNotes.set(g.id, n) }
+    });
+}
+
+// The notifications this page made itself, for the browsers with no service worker.
+const growlNotes = new Map();
+
+// Closes every growler notification whose growler is no longer open, in this browser. Each browser gets the
+// event, so each takes down its own.
+function growlReapNotes() {
+  growlNotes.forEach((n, id) => { if (!growlIsOpen(id)) { try { n.close(); } catch (e) {} growlNotes.delete(id); } });
+  if (typeof swReg === "undefined" || !swReg || !swReg.getNotifications) return;
+  swReg.getNotifications().then(list => list.forEach(n => {
+    const s = (n.data || {}).subject || "";
+    if (s.indexOf("growl:") === 0 && !growlIsOpen(s.slice(6))) n.close();
+  })).catch(() => {});
+}
+
+// The poll's own sweep closes any notification whose subject is not pending, which a growler's never is.
+// Its ids are added to what counts as pending, and the event above does the closing.
+const growlRawReap = reapNotifications;
+// eslint-disable-next-line no-func-assign
+reapNotifications = function (liveKeys) {
+  const keys = new Set(liveKeys);
+  growlSet.forEach(g => { if (g.state === "open") keys.add("growl:" + g.id); });
+  return growlRawReap(keys);
+};
+
+// TAB TITLE AND FAVICON. The title alternates between what `retitle` wrote and the top growler while the tab is
+// not focused. It is a label tick and asks for nothing. The favicon wears an amber dot with the count for as long
+// as any growler is open, focused or not.
+let growlTick = 0;
+let growlTitleBase = "";
+let growlTitleAlt = false;
+let growlMark = "";
+
+function growlStopTitle() {
+  clearInterval(growlTick);
+  growlTick = 0;
+  if (growlTitleAlt) document.title = growlTitleBase;
+  growlTitleAlt = false;
+}
+
+function growlTitleStep() {
+  const top = growlDrawn()[0];
+  if (!top || document.hasFocus()) { growlStopTitle(); return; }
+  if (growlTitleAlt) {
+    document.title = growlTitleBase;
+    growlTitleAlt = false;
+  } else {
+    growlTitleBase = document.title;
+    document.title = "! " + top.title;
+    growlTitleAlt = true;
+  }
+}
+
+function growlMarkURL(n) {
+  const size = 64;
+  const c = document.createElement("canvas");
+  c.width = c.height = size;
+  const g = c.getContext("2d");
+  g.fillStyle = "#0B1B2E";
+  g.fillRect(0, 0, size, size);
+  drawAtriumA(g, size);
+  const warn = getComputedStyle(document.documentElement).getPropertyValue("--warn").trim() || "#e0a53a";
+  g.fillStyle = warn;
+  g.beginPath();
+  g.arc(size * 0.7, size * 0.3, size * 0.3, 0, Math.PI * 2);
+  g.fill();
+  g.fillStyle = "#0B1B2E";
+  g.font = "bold " + Math.round(size * 0.4) + "px sans-serif";
+  g.textAlign = "center";
+  g.textBaseline = "middle";
+  g.fillText(n > 9 ? "9+" : String(n), size * 0.7, size * 0.32);
+  return c.toDataURL("image/png");
+}
+
+function growlAttention() {
+  const n = growlDrawn().length;
+  const link = document.getElementById("favicon");
+  if (link) {
+    try {
+      if (n) {
+        if (growlMark !== String(n)) { link.href = growlMarkURL(n); growlMark = String(n); }
+      } else if (growlMark) {
+        growlMark = "";
+        wearTheMark();
+      }
+    } catch (e) {}
+  }
+  // A pop-out whose own switch is off keeps its title still.
+  if (n && !document.hasFocus() && !(inPopout() && popoutIsOff())) {
+    if (!growlTick) { growlTick = setInterval(growlTitleStep, 1500); growlTitleStep(); }
+  } else {
+    growlStopTitle();
+  }
+}
+addEventListener("focus", growlAttention);
+document.addEventListener("visibilitychange", growlAttention);

@@ -1,0 +1,59 @@
+  /* The persistent growler, pinned above the toasts in their host. `order` rather than DOM position, so a toast
+     appended after it still draws under it. Every colour is an existing skin variable with a default. */
+  #growl {
+    order: 100; pointer-events: auto;
+    max-height: var(--gr-max, 50vh);
+    background: linear-gradient(180deg, var(--card-0, #12293f), var(--card-1, #0a1a2b));
+    border: 1px solid var(--stroke, #2a4860); border-left: 3px solid var(--warn, #e0a53a);
+    border-radius: var(--r-md, 9px); padding: 12px 14px;
+    box-shadow: 0 18px 40px rgba(var(--shadow-rgb, 0,0,0), .7);
+  }
+  #growl, #growl-phone {
+    display: flex; flex-direction: column; gap: var(--sp-2, 6px); overflow-y: auto;
+    color: var(--body, #9fbdd4); font-size: var(--fs-sm, 12.5px);
+  }
+  :is(#growl, #growl-phone) .gr-head { display: flex; gap: var(--sp-3, 8px); align-items: baseline; }
+  :is(#growl, #growl-phone) .gr-head b { color: var(--head, #f2f8ff); flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  :is(#growl, #growl-phone) .gr-off { color: var(--warn, #e0a53a); font-size: var(--fs-xs, 11.5px); }
+  :is(#growl, #growl-phone) .gr-line, :is(#growl, #growl-phone) .gr-cmd { overflow-wrap: anywhere; }
+  :is(#growl, #growl-phone) .gr-cmd { display: block; color: var(--label, #7fa6c4); }
+  :is(#growl, #growl-phone) .gr-acts, :is(#growl, #growl-phone) .gr-snooze {
+    display: flex; flex-wrap: wrap; gap: var(--sp-2, 6px); align-items: center;
+  }
+  :is(#growl, #growl-phone) .gr-reply {
+    flex: 1; min-width: 120px; background: var(--bg-2, #040b14); color: var(--head, #f2f8ff);
+    border: 1px solid var(--stroke, #2a4860); border-radius: var(--r-sm, 6px); padding: 3px 6px;
+  }
+  :is(#growl, #growl-phone) button {
+    background: none; color: var(--body, #9fbdd4); border: 1px solid var(--stroke, #2a4860);
+    border-radius: var(--r-sm, 6px); padding: 3px 8px; cursor: pointer; font: inherit;
+  }
+  :is(#growl, #growl-phone) button:hover:not(:disabled) { border-color: var(--blue, #28c2ff); color: var(--head, #f2f8ff); }
+  :is(#growl, #growl-phone) button:disabled { opacity: .45; cursor: default; }
+  #growl .gr-strip { width: 100%; text-align: left; border-style: dashed; color: var(--label, #7fa6c4); }
+  #growl .gr-row { display: flex; gap: var(--sp-2, 6px); align-items: center; }
+  #growl .gr-row .gr-t { flex: 1; min-width: 0; color: var(--head, #f2f8ff); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .toast .gr-undo {
+    margin-left: var(--sp-3, 8px); background: none; color: var(--head, #f2f8ff);
+    border: 1px solid var(--stroke, #2a4860); border-radius: var(--r-sm, 6px); cursor: pointer; font: inherit;
+  }
+
+  /* On a phone: a flex item of the body between the header and `main`, so it is under the header, takes its
+     height out of `main`, and cannot lie over the terminal's key bar or the composer. One line closed, at most
+     half the window open. */
+  #growl-phone {
+    flex: none; max-height: var(--gr-max, 50vh); padding: 0 8px;
+    background: linear-gradient(180deg, var(--card-0, #12293f), var(--card-1, #0a1a2b));
+    border-bottom: 1px solid var(--stroke, #2a4860); border-left: 3px solid var(--warn, #e0a53a);
+  }
+  #growl-phone[hidden] { display: none; }
+  #growl-phone .gp-line {
+    display: flex; gap: var(--sp-3, 8px); align-items: center; width: 100%; min-height: 40px; text-align: left;
+    border: none; padding: 0; color: var(--head, #f2f8ff);
+  }
+  #growl-phone .gp-line b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #growl-phone .gp-n { color: var(--warn, #e0a53a); }
+  #growl-phone .gp-list { display: flex; flex-direction: column; gap: var(--sp-3, 8px); padding-bottom: 8px; }
+  #growl-phone .gr-full { display: flex; flex-direction: column; gap: var(--sp-2, 6px); }
+  #growl-phone .gr-acts button, #growl-phone .gp-undo button { min-height: 40px; }
+  #growl-phone .gp-undo { display: flex; gap: var(--sp-3, 8px); align-items: center; justify-content: space-between; padding: 4px 0; }

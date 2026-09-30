@@ -1,8 +1,8 @@
 // The phone page's data: the cards and the pending permissions, kept current from the same API and event stream the
 // board reads. Nothing here loads the board's scripts, so a desktop change cannot break the phone.
 //
-// `window.mStore` is the contract with compose.js and perms.js and is kept to exactly four methods. Everything else
-// this page needs from the network lives on `window.mNet`.
+// `window.mStore` is the contract with compose.js and perms.js: cards, perms and on, plus the growlers that
+// growl.js reads. Everything else this page needs from the network lives on `window.mNet`.
 //
 // EVENT DRIVEN. The stream says what changed and only that is re-read. The one poll is a safety resync of 60s while
 // the page is visible, for what a stream that dropped without closing cannot say.
@@ -19,7 +19,11 @@
   let loaded = false;
   let hub = false;
   let rooms = [];
-  const subs = { cards: new Set(), perms: new Set(), live: new Set(), rooms: new Set() };
+  // The hub's growlers, whole set each time. Nothing is fetched: the hub says the set when a stream opens and on
+  // every change, and a page with no hub never hears one.
+  let growls = [];
+  let growlsRemind = [];
+  const subs = { cards: new Set(), perms: new Set(), live: new Set(), rooms: new Set(), growls: new Set() };
 
   function roomNow() {
     try { return localStorage.getItem(ROOM_KEY) || ""; } catch (e) { return ""; }
@@ -63,7 +67,7 @@
   }
 
   // Changes are announced once per turn of the event loop, however many arrived together.
-  const dirty = { cards: false, perms: false, live: false, rooms: false };
+  const dirty = { cards: false, perms: false, live: false, rooms: false, growls: false };
   let flushing = false;
   function mark(kind) {
     dirty[kind] = true;
@@ -215,6 +219,14 @@
     src.addEventListener("task-removed", onRemoved);
     src.addEventListener("permission", () => permsSoon());
     src.addEventListener("rooms", () => { loadRooms(); tasksSoon(); });
+    src.addEventListener("growls", e => {
+      let d = null;
+      try { d = JSON.parse(e.data); } catch (err) { return; }
+      if (!d || !Array.isArray(d.growls)) return;
+      growls = d.growls;
+      growlsRemind = Array.isArray(d.remind) ? d.remind : [];
+      mark("growls");
+    });
   }
 
   // The safety resync, and a page coming back to the front reads everything again.
@@ -248,6 +260,23 @@
       return null;
     },
     perms() { return perms.slice(); },
+    // Open and snoozed rows in the hub's order, and the ids a reminder tick named.
+    growls() { return growls.slice(); },
+    remind() { return growlsRemind.slice(); },
+    // After the hub answered a dismiss or an undo, so the strip moves before the next event confirms it.
+    setGrowl(row) {
+      if (!row || !row.id) return;
+      const i = growls.findIndex(g => g.id === row.id);
+      if (i >= 0) growls[i] = row;
+      else growls.push(row);
+      growls.sort((a, c) => (a.urgency || 9) - (c.urgency || 9) || String(a.raised_at).localeCompare(String(c.raised_at)));
+      mark("growls");
+    },
+    dropGrowl(id) {
+      const n = growls.length;
+      growls = growls.filter(g => g.id !== id);
+      if (growls.length !== n) mark("growls");
+    },
     on(kind, fn) { return on(kind, fn); },
   };
 
