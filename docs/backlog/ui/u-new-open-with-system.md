@@ -1,7 +1,8 @@
 # u-new-open-with-system: open a folder in the file manager, a file in the system editor, or in atrium
 
-Status: parked (clint, 2026-09-30). @ui the menu, @runtime the endpoint. Design review by @rnd first: this starts
-processes on the room's machine, and `internal/api/fileopen.go` explains why that is fenced.
+Status: parked (clint, 2026-09-30). @ui the menu, @runtime the endpoint. Designed by @rnd:
+`docs/rnd/open-with-system-design.md`. This starts processes on the room's machine, and `internal/api/fileopen.go`
+explains why that is fenced.
 
 ## Why
 
