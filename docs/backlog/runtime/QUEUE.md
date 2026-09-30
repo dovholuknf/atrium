@@ -6,8 +6,12 @@ orchestrator reorders it by editing this file. An item leaves the list when it l
 
 ## Next
 
-HOLD (orchestrator, 2026-09-30 ~18:00): start nothing below until the hold lifts.
-
+1. **The a92bb5f7 review fix** on `claude/r-esc-fix`: the medium (an aged message reaches a runner with mid-turn
+   input off by the hook), lows 1 to 4, and a deadline on the test log's waitFor. Send the sha to @review.
+2. **r-new-hosts-setting** (`docs/backlog/runtime/r-new-hosts-setting.md`), with the two lows from
+   `r-new-review-e25a2c2f.md` folded in: the wildcard is safe only for a domain whose DNS one operator alone sets
+   (dynamic DNS like `*.duckdns.org` is not, and `*.co.uk` passes the bare-label guard), and an ignored entry logs
+   once instead of vanishing.
 4. **Held-message escalation R2** (section 4): over context mid-turn, told once, then once more at +50k.
 5. **Resume-says-continue R5** (`docs/rnd/resume-says-continue-design.md`): the deploy hold records who was working,
    and its lift wakes only those.
