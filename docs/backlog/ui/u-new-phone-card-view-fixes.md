@@ -13,3 +13,11 @@ Status: queued for @ui (clint via @runtime, 2026-09-30 evening). Board only unle
    up a new board build without the user clearing anything, and fix it if it does not.
 5. **The recap goes to the top.** Move it from the bottom of the card view to a "Recap" control at the top, and open
    it as a pop-up sheet on tap, not inline (`recapHTML` in `m/js/card.js`).
+6. **The /m home list is oldest first.** Default to newest first by last activity, and add a control for ordering,
+   grouping and filtering (at least: newest or oldest, by room or by project or none, needs-me only, hide finished
+   and subagents). Remember the choice on the device. Reuse the desktop board's sort and group rules rather than a
+   second copy.
+
+Found in the same session, also on the phone: no header shown, the card picker would not open and a card could not
+be left (likely the notify.js load-order failure, fixed first), a card opened by its card URL has no way back to
+the board, and the send button's arrow is off center.
