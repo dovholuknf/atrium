@@ -102,6 +102,22 @@ Tapping the line opens the stack in place, at most half the window, and the term
 clear of it. Approve, block, reply, open, snooze and dismiss this all work from it. After a dismiss the strip shows an
 undo line for 10 s.
 
+### @LETTER@16. A popped-out card's growler
+
+1. Pop out a card that has a growler. Open a second pop-out for a different card.
+
+**Expected:** the board draws the growler, the card's own pop-out draws it, and the other pop-out does not. A reminder
+rings in the card's pop-out only.
+
+2. Turn the pop-out's notifications off, or mute it, and wait for a reminder.
+
+**Expected:** nothing rings anywhere for that card. The board's growler says "muted in its window". The growler stays
+on screen in both.
+
+3. Close the pop-out.
+
+**Expected:** the label goes and the next reminder rings on the board.
+
 ### @LETTER@15. The phone home
 
 1. Open `/m` with a growler open.

@@ -244,6 +244,7 @@ if (soloBus) {
     }
     if (m.type === "solo-claim" && m.task) {
       soloHeld.set(m.task, Date.now());
+      if (typeof growlDraw === "function") growlDraw();
       // AND THE BOARD LETS GO OF IT.
       //
       // Every claim used to be for a card the board had just popped out, and
@@ -271,6 +272,8 @@ if (soloBus) {
       // so the handle outlives the claim, and the board would go on refusing to
       // attach and "raising" a window that is showing something else entirely.
       popOuts.delete(m.task);
+      // The board's growler for that card stops saying it is muted, and the board rings it again.
+      if (typeof growlDraw === "function") growlDraw();
     }
     // A popped-out window asking to be closed, because it cannot reliably
     // close itself.

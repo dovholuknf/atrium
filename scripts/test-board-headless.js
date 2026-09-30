@@ -11553,7 +11553,7 @@ async function main() {
       usageCacheReads: usageCacheReadsSection, roomsDash: roomsDashSection, phoneView: phoneViewSection, heldLine: heldLineSection, u016: u016Section, phoneHeader: phoneHeaderSection, phoneFocus: phoneFocusSection, phoneTermBar: phoneTermBarSection, phoneShare: phoneShareSection, phonePan: phonePanSection, phoneFollow: phoneFollowSection, phoneTap: phoneTapSection, phoneKeyboard: phoneKeyboardSection, phoneCompose: phoneComposeSection, mCompose: mComposeSection, mPerms: mPermsSection, usagePolish: usagePolishSection, usageLimits: usageLimitsSection, usageGroups: usageGroupsSection,
       eventDriven: eventDrivenSection, idleBudget: idleBudgetSection, pollsGone: pollsGoneSection,
       phoneListFit: phoneListFitSection, phoneNudge: phoneNudgeSection,
-      growlStack: growlStackSection, growlActions: growlActionsSection, growlModal: growlModalSection, growlQuiet: growlQuietSection, growlAttention: growlAttentionSection, growlPhone: growlPhoneSection, mGrowl: mGrowlSection,
+      growlStack: growlStackSection, growlActions: growlActionsSection, growlModal: growlModalSection, growlQuiet: growlQuietSection, growlAttention: growlAttentionSection, growlPhone: growlPhoneSection, mGrowl: mGrowlSection, growlPopout: growlPopoutSection,
       cacheChip: cacheChipSection, cacheLine: cacheLineSection, mHome: mHomeSection, mCard: mCardSection, mServe: mServeSection, phoneKeyLabel: phoneKeyLabelSection, phoneKeyLit: phoneKeyLitSection, shiftMenu: shiftMenuSection, notifyCommand: notifyCommandSection, presence: presenceSection, tallPty: tallPtySection, roomsMachine: roomsMachineSection, readyOnce: readyOnceSection, readyPopout: readyPopoutSection, popoutNotify: popoutNotifySection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
@@ -13556,6 +13556,7 @@ async function main() {
     await growlAttentionSection(browser, base);
     await growlPhoneSection(browser, base);
     await mGrowlSection(browser);
+    await growlPopoutSection(browser, base);
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e));
     if (process.env.DEBUG_HEADLESS) {
@@ -14449,6 +14450,122 @@ async function growlPhoneSection(browser, base) {
     if (h.errors.length) fail("growlPhone: page errors: " + h.errors.join(" | "));
   } finally { await h.close(); }
   if (!bad) console.log("growlPhone ok");
+}
+
+// A popped-out card's growler: the board draws every growler and a pop-out draws only its own card's. Its reminders
+// are the pop-out's to ring, so its switch and mute hold them back, the board does not ring in its place and says so
+// on the growler, and closing the pop-out hands the reminders back. See the design, section 7.
+async function growlPopoutSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landList = [];
+  landPerms = [];
+  const errors = [];
+  const ctx = await landContext(browser, true);
+  await ctx.addInitScript(() => {
+    window.__osc = 0;
+    window.AudioContext = class {
+      constructor() { this.state = "running"; this.currentTime = 0; this.destination = {}; }
+      resume() {}
+      createGain() {
+        const f = { setValueAtTime() {}, linearRampToValueAtTime() {}, exponentialRampToValueAtTime() {} };
+        return { gain: f, connect(x) { return x; } };
+      }
+      createOscillator() {
+        window.__osc++;
+        return { frequency: { setValueAtTime() {} }, connect(x) { return x; }, start() {}, stop() {} };
+      }
+    };
+  });
+  const open = async hash => {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base + hash, { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof alerting !== "undefined" && typeof growlDraw === "function" &&
+      document.getElementById("conn").classList.contains("live"), null, { timeout: slow(15000) });
+    await p.waitForTimeout(800);
+    await p.evaluate(() => document.dispatchEvent(new Event("pointerdown")));
+    return p;
+  };
+  const say = async (rows, extra) => {
+    const line = "event: growls\ndata: " + JSON.stringify(Object.assign({ growls: rows, perm_after_seconds: 120 }, extra || {})) + "\n\n";
+    openStreams.forEach(r => { try { if (!r.destroyed) r.write(line); } catch (e) {} });
+    await new Promise(r => setTimeout(r, 400));
+  };
+  const heard = p => p.evaluate(() => ({ osc: window.__osc, notes: window.__notes.filter(n => /atrium-growl:/.test(n.o.tag || "")).length }));
+  const text = (p, sel) => p.evaluate(s => (document.querySelector(s) || {}).textContent || "", sel);
+  try {
+    const pop = await open("/#term=land-live");
+    const other = await open("/#term=other-card");
+    const board = await open("/");
+    await board.waitForTimeout(800);
+    await board.evaluate(() => localStorage.clear());
+    await say([]);
+    const mine = GR("land-live", "permission", 1), theirs = GR("elsewhere", "question", 2);
+    await say([mine, theirs]);
+
+    // Drawing: the board draws both, the pop-out only its own card's, and the other pop-out none.
+    const both = await text(board, "#growl");
+    if (!/permission land-live/.test(both) || !/\+1 more/.test(both)) fail("growlPopout: the board did not draw both growlers: " + JSON.stringify(both));
+    const inPop = await text(pop, "#growl");
+    if (!/permission land-live/.test(inPop) || /question elsewhere|more:/.test(inPop)) fail("growlPopout: the pop-out drew " + JSON.stringify(inPop));
+    if (await other.$("#growl")) fail("growlPopout: a pop-out for another card drew a growler.");
+
+    // Ringing: a raise is the pop-out's alone. The board and the other pop-out stay quiet for that card.
+    let p1 = await heard(pop), b1 = await heard(board), o1 = await heard(other);
+    if (!p1.osc || p1.notes !== 1) fail("growlPopout: the pop-out did not ring for its card: " + JSON.stringify(p1));
+    if (o1.notes) fail("growlPopout: another pop-out notified for this card.");
+    // The board rings for the card that has no pop-out (the question), and not for the popped-out one.
+    if (b1.notes !== 1) fail("growlPopout: the board notified " + b1.notes + " times, not once for the unpopped card.");
+    const boardTitles = await board.evaluate(() => window.__notes.map(n => n.title));
+    if (boardTitles.some(t => /land-live/.test(t))) fail("growlPopout: the board rang for a popped-out card: " + JSON.stringify(boardTitles));
+
+    // The pop-out's switch off: a reminder rings nowhere for that card, and the board's growler says why.
+    await pop.evaluate(() => setNotifyOff(true));
+    await board.waitForFunction(() => /muted in its window/.test((document.getElementById("growl") || {}).textContent || ""), null, { timeout: slow(5000) })
+      .catch(() => fail("growlPopout: the board's growler did not say it is muted in its window."));
+    p1 = await heard(pop); b1 = await heard(board);
+    await say([Object.assign({}, mine, { reminders: 1 }), theirs], { remind: [mine.id] });
+    let p2 = await heard(pop), b2 = await heard(board);
+    if (p2.osc !== p1.osc || p2.notes !== p1.notes) fail("growlPopout: a switched-off pop-out rang a reminder: " + JSON.stringify([p1, p2]));
+    if (b2.osc !== b1.osc || b2.notes !== b1.notes) fail("growlPopout: the board rang a reminder for a popped-out card: " + JSON.stringify([b1, b2]));
+    if (!/permission land-live/.test(await text(pop, "#growl"))) fail("growlPopout: the switch hid the growler in the pop-out.");
+    if (/muted in its window/.test(await text(pop, "#growl"))) fail("growlPopout: the pop-out labelled its own growler as muted in its window.");
+    // Its mute holds a reminder back too, and the board says the same.
+    await pop.evaluate(() => { setNotifyOff(false); document.getElementById("sound").click(); });
+    await board.waitForTimeout(300);
+    if (!/muted in its window/.test(await text(board, "#growl"))) fail("growlPopout: the board did not say muted for the pop-out's mute.");
+    p1 = await heard(pop);
+    await say([Object.assign({}, mine, { reminders: 2 }), theirs], { remind: [mine.id] });
+    p2 = await heard(pop);
+    if (p2.osc !== p1.osc) fail("growlPopout: a muted pop-out played a reminder tone.");
+
+    // Both on again: the pop-out rings a reminder and the board does not, and the label goes.
+    await pop.evaluate(() => document.getElementById("sound").click());
+    await board.waitForFunction(() => !/muted in its window/.test((document.getElementById("growl") || {}).textContent || ""), null, { timeout: slow(5000) })
+      .catch(() => fail("growlPopout: the board kept saying muted after the pop-out came back on."));
+    p1 = await heard(pop); b1 = await heard(board);
+    await say([Object.assign({}, mine, { reminders: 3 }), theirs], { remind: [mine.id] });
+    p2 = await heard(pop); b2 = await heard(board);
+    if (p2.osc <= p1.osc || p2.notes !== p1.notes + 1) fail("growlPopout: the pop-out did not ring its reminder: " + JSON.stringify([p1, p2]));
+    if (b2.osc !== b1.osc || b2.notes !== b1.notes) fail("growlPopout: the board rang beside the pop-out: " + JSON.stringify([b1, b2]));
+
+    // Closing the pop-out hands the reminders back to the board, even with its switch left off.
+    await pop.evaluate(() => setNotifyOff(true));
+    await pop.close();
+    await board.waitForFunction(() => !poppedOut("alpha~land-live"), null, { timeout: slow(8000) })
+      .catch(() => fail("growlPopout: the board still thinks the card is popped out after the window closed."));
+    b1 = await heard(board);
+    await say([Object.assign({}, mine, { reminders: 4 }), theirs], { remind: [mine.id] });
+    b2 = await heard(board);
+    if (b2.osc <= b1.osc || b2.notes !== b1.notes + 1) fail("growlPopout: the board did not take the reminders back: " + JSON.stringify([b1, b2]));
+    if (/muted in its window/.test(await text(board, "#growl"))) fail("growlPopout: the board still says muted with the pop-out closed.");
+    if (errors.length) fail("growlPopout: page errors: " + errors.join(" | "));
+  } finally {
+    tasksMode = was;
+    await ctx.close();
+  }
+  if (!bad) console.log("growlPopout ok");
 }
 
 async function mGrowlSection(browser) {

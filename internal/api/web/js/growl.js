@@ -32,12 +32,33 @@ const GROWL_SNOOZES = [["15 min", 15], ["1 h", 60], ["until tomorrow 09:00", 0]]
 
 function growlUrgency(g) { return g.urgency || GROWL_URGENCY[g.reason] || 9; }
 
-function growlDrawn() { return growlSet.filter(g => g.state === "open"); }
+// THE BOARD DRAWS EVERY GROWLER, including a popped-out card's, because a growler is state like the card's badges.
+// A pop-out draws only its own card's. Neither switch hides one. See the design, section 7.
+function growlMine(g) { return !inPopout() || sameCard(growlCard(g), popoutCard()); }
+function growlDrawn() { return growlSet.filter(g => g.state === "open" && growlMine(g)); }
 
-// Whether a permission, or any subject, has an open growler. The nag and keyed toasts ask.
+// Whether this window has an open growler drawn for a subject. The nag and keyed toasts ask.
 function growlHas(subject) {
-  return !!subject && growlSet.some(g => g.state === "open" && g.subject && sameCard(g.subject, subject));
+  return !!subject && growlDrawn().some(g => g.subject && sameCard(g.subject, subject));
 }
+
+// A popped-out card's reminders belong to its pop-out, so its switch and mute hold them back and the board does not
+// ring in their place. This is the board's view of that: the card is popped out and its window is quiet, read off
+// the two per-card keys in the same localStorage.
+function growlMutedInPopout(g) {
+  if (inPopout()) return false;
+  const card = growlCard(g);
+  if (!card || !poppedOut(card)) return false;
+  const id = bareId(card);
+  try {
+    return localStorage.getItem(NOTIFY_OFF_CARD_KEY + id) === "1" ||
+      !!JSON.parse(localStorage.getItem(SOUND_CARD_KEY + id) || "{}").muted;
+  } catch (e) { return false; }
+}
+addEventListener("storage", e => {
+  if (!e.key || !(e.key.startsWith(NOTIFY_OFF_CARD_KEY) || e.key.startsWith(SOUND_CARD_KEY))) return;
+  if (growlSet.length) { growlDraw(); growlAttention(); }
+});
 
 // The hub's event. `remind` is an array of ids on a reminder tick, which U2 turns into sound.
 function onGrowlsEvent(e) {
@@ -128,7 +149,8 @@ function growlPrimary(g) {
 }
 
 function growlFull(g) {
-  const off = g.room_offline ? `<span class="gr-off">room offline</span>` : "";
+  const off = (g.room_offline ? `<span class="gr-off">room offline</span>` : "") +
+    (growlMutedInPopout(g) ? `<span class="gr-off">muted in its window</span>` : "");
   const perm = g.reason === "permission";
   const text = perm
     ? `<code class="gr-cmd">${esc(growlFirstLine(g.body))}</code>`
@@ -464,6 +486,9 @@ function growlAttend(raised, remind) {
 }
 
 function growlSay(g, kind) {
+  // The pop-out rings for its own card and for no other. The board does not ring for a card that is popped out,
+  // so the pop-out's switch and mute are what hold it back. Closing the pop-out hands it back to the board.
+  if (inPopout() ? !growlMine(g) : poppedOut(growlCard(g))) return;
   if (focusIsElsewhere()) return;
   const extra = kind === "remind" ? "r" + (g.reminders || 0) : "";
   if (!growlOnce("say|" + kind + "|" + g.id + "|" + g.raised_at + "|" + extra)) return;
@@ -563,7 +588,8 @@ function growlAttention() {
       }
     } catch (e) {}
   }
-  if (n && !document.hasFocus()) {
+  // A pop-out whose own switch is off keeps its title still.
+  if (n && !document.hasFocus() && !(inPopout() && popoutIsOff())) {
     if (!growlTick) { growlTick = setInterval(growlTitleStep, 1500); growlTitleStep(); }
   } else {
     growlStopTitle();
