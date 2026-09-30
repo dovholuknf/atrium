@@ -39,8 +39,8 @@ is live.
    Large, no migration (the design needs none). PAUSED 2026-09-30 19:30 (clint: UI only). All five stages are built,
    `m1mini/claude/49` 451b48ef..7f523835, collected into the main checkout and read by @fabric. The worker card has
    exited. Its worktree on m1mini stays until the branch lands. With @review. link and cli pass, and 49's daemon
-   tests pass. A full daemon run with `-timeout 40m` was started in `D:/worktrees/claude/atrium/49`, which is reset
-   to the branch, after the first run timed out at 10 minutes under load. To finish: that result, @review's pass,
+   tests pass, and so does the full daemon suite (587.7s with `-timeout 40m`, run in `D:/worktrees/claude/atrium/49`,
+   which is reset to the branch. It runs close to Go's 10-minute default). To finish: @review's pass,
    merge onto claude/main, `atrium_cull card=49@m1mini tip=7f523835`, and a hub deploy plus a room deploy, since
    both sides changed. Before it lands, from @review's name-capture question: index only cards with an empty
    `spawned_by`, so a worker that inherited atrium:everywhere from its launcher's tags does not answer bare names on
