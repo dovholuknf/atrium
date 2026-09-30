@@ -275,7 +275,11 @@ function askUser(opts) {
 
     // Escape cancels, enter takes the last button, which is always the
     // affirmative one. Same reflexes as the native dialog it replaces.
-    askDlg.onclose = () => settle(null);
+    // A CLOSE EVENT FOR A DIALOG THAT IS OPEN BELONGS TO THE QUESTION BEFORE.
+    // `close` is queued, not fired, so a question asked straight after another
+    // was answered can be open again by the time the first one's event lands,
+    // and it answered the new question with a cancel before anybody saw it.
+    askDlg.onclose = () => { if (!askDlg.open) settle(null); };
     askDlg.onkeydown = e => {
       if (e.key !== "Enter" || e.shiftKey) return;
       e.preventDefault();
