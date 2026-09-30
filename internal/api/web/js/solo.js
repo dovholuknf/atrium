@@ -710,11 +710,42 @@ function soloAlert(kind, now, item) {
   if (was === null) {
     if (kind === "perm") soloMark = "(!)";
     else if (!soloMark) soloMark = "*";
+    if (kind === "ready" && item) soloRung.add(item.waiting_since || "");
     return;
   }
   if (was) return;
 
   soloMark = kind === "perm" ? "(!)" : "*";
+  // A READY ALERT WAITS FOR QUIET, like the board's. Permissions ring at once.
+  if (kind === "ready") { soloHoldReady(item); return; }
+  soloSpeak(kind, item);
+}
+
+// The waits this window has rung for, by `waiting_since`: the same wait never
+// rings twice. Holds one card, so a set of one key per wait is the whole memory.
+const soloRung = new Set();
+let soloReadyTimer = 0;
+
+// Announce the ready edge only once the card has been quiet for the board's
+// quiet and is STILL ready. Activity is the task events and the pty output this
+// window attached to (see `feedReadyQuiet`). Dropped if the wait ended.
+function soloHoldReady(item) {
+  const since = (item && item.waiting_since) || "";
+  if (soloRung.has(since)) return;
+  clearTimeout(soloReadyTimer);
+  const heldAt = Date.now();
+  const settle = () => {
+    if (!soloKnown.ready) return;
+    const quiet = Math.min(Date.now() - heldAt, alerting.sinceActive(soloID));
+    const left = alerting.quietMs() - quiet;
+    if (left > 0) { soloReadyTimer = setTimeout(settle, left); return; }
+    soloRung.add(since);
+    soloSpeak("ready", soloRow || item);
+  };
+  soloReadyTimer = setTimeout(settle, alerting.quietMs());
+}
+
+function soloSpeak(kind, item) {
   const who = soloTask ? (soloTask.display_title || "this session") : "this session";
   const title = kind === "perm"
     ? `${who} needs permission`
@@ -725,6 +756,12 @@ function soloAlert(kind, now, item) {
 
   // A card an agent launched is logged and not said. The mark above stays.
   if (soloTask && quietDoer(kind, soloTask)) {
+    recordToLog(title, body, "stack", "", soloID);
+    return;
+  }
+  // A focused window on its own card has nothing to say about it, not even a
+  // toast. Logged. An unfocused one rings, since this window owns the card.
+  if (kind === "ready" && focusIsHere() && termWatching(soloID)) {
     recordToLog(title, body, "stack", "", soloID);
     return;
   }
