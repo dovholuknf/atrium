@@ -188,15 +188,19 @@ func (d *Daemon) spawnShell(taskID, cmdName string, args []string, cwd string) e
 	// up the size of the window it is about to be drawn in. See
 	// `launchWidthFor`.
 	cols, rows := d.launchSizeFor(taskID)
-	t, err := d.startTerm(cmdName, resolved, args, cwd, d.shellEnv(taskID), cols, rows)
+	t, err := d.startTerm(taskID, store.RunKindShell, cmdName, resolved, args, cwd, d.shellEnv(taskID), cols, rows)
 	if err != nil {
 		return err
+	}
+	// Its own start, not the card's runner's: a card holds both at once.
+	runID := store.NewRunID()
+	if ht, ok := t.(*hostTerm); ok {
+		runID = ht.runID
 	}
 
 	r := &runner{
 		taskID: taskID, started: time.Now(),
-		// Its own start, not the card's runner's: a card holds both at once.
-		runID:    store.NewRunID(),
+		runID:    runID,
 		buf:      newRingSized(api.ScrollbackBytes(d.st), cols, rows),
 		watchers: map[chan []byte]struct{}{},
 		done:     make(chan struct{}),
@@ -283,7 +287,13 @@ func (d *Daemon) awaitShellExit(r *runner) {
 	r.exitOnce.Do(func() { close(r.done) })
 	r.closeWatchers()
 	r.closePTY()
-	d.sup.removeShell(r.taskID)
+	d.sup.removeShellIf(r)
+	// The host link went with no exit seen: nothing exited, and a later daemon files it.
+	ht := hostOf(r)
+	if ht != nil && ht.Lost() {
+		log.Printf("[atrium] lost the pty host link for the shell of %s", r.taskID)
+		return
+	}
 	// Marked filed and nothing else: no event, no status. The mark is what lets
 	// a host's list tell an exit already seen from one nobody has.
 	if r.runID != "" {
@@ -291,6 +301,10 @@ func (d *Daemon) awaitShellExit(r *runner) {
 			TaskID: r.taskID, RunID: r.runID, Kind: store.RunKindShell,
 		}); err != nil {
 			log.Printf("[atrium] mark shell run %s filed: %v", r.runID, err)
+		} else if ht != nil {
+			if cerr := ht.Collect(); cerr != nil {
+				log.Printf("[atrium] collect shell run %s: %v", r.runID, cerr)
+			}
 		}
 	}
 	log.Printf("[atrium] shell for %s closed", r.taskID)
@@ -318,7 +332,7 @@ func (d *Daemon) CloseShell(taskID string) {
 	if r == nil {
 		return
 	}
-	d.sup.removeShell(taskID)
+	d.sup.removeShellIf(r)
 	r.closePTY()
 
 	select {

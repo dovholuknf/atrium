@@ -126,15 +126,17 @@ func (r *runner) adopt(t term) {
 //
 // `name` is what the operator typed, for the error, and `resolved` is what is
 // run. env is final: the caller has already decided what the child is told.
-func (d *Daemon) startTerm(name, resolved string, args []string, cwd string, env []string,
+//
+// `kind` is store.RunKindRunner or RunKindShell and only the host path uses it.
+// With `pty_host` on the terminal is asked of the host, see hostterm.go. A host
+// that cannot be reached falls through to the in-process start below, because
+// the setting must never be the reason a launch fails.
+func (d *Daemon) startTerm(taskID, kind, name, resolved string, args []string, cwd string, env []string,
 	cols, rows int) (term, error) {
-	// THE PTY HOST IS NOT BUILT YET. `pty_host` is read here because this is
-	// where the host path will branch: on, a terminal is asked of the host and
-	// the answer is a term that speaks to it. Until then the setting changes
-	// nothing and every terminal is in this process, so a machine that turns it
-	// on is running exactly what it ran before.
 	if d.st.PtyHostOn() {
-		log.Printf("[atrium] pty_host is on but no host is built yet, starting %s in this process", name)
+		if t, ok, err := d.startHostTerm(taskID, kind, name, resolved, args, cwd, env, cols, rows); ok {
+			return t, err
+		}
 	}
 
 	raise := d.beginPTYRaise()
@@ -166,10 +168,14 @@ func (d *Daemon) startTerm(name, resolved string, args []string, cwd string, env
 // halts the daemon on its own account. An exit for a run with no row still
 // files once, see store.FileExit.
 func (d *Daemon) recordRun(r *runner, kind string) {
+	// Empty: the terminal is in this process. A host puts its own address here.
+	host := ""
+	if ht := hostOf(r); ht != nil {
+		host = ht.host
+	}
 	if err := d.st.RecordRun(store.PtyRun{
 		RunID: r.runID, TaskID: r.taskID, Kind: kind,
-		// Empty: the terminal is in this process. A host puts its own name here.
-		Host:    "",
+		Host:    host,
 		Started: r.started,
 	}); err != nil {
 		log.Printf("[atrium] record the start of run %s for %s: %v", r.runID, r.taskID, err)

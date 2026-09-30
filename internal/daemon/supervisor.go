@@ -2004,15 +2004,20 @@ func (d *Daemon) spawnPTYResume(taskID, cmdName string, args []string, cwd strin
 	//
 	// That is a bad thing to leave to chance: the child is on a pseudo terminal
 	// this process opened, and whether it is a terminal is not in doubt.
-	t, err := d.startTerm(cmdName, resolved, args, cwd, declareATerminal(env), cols, rows)
+	t, err := d.startTerm(taskID, store.RunKindRunner, cmdName, resolved, args, cwd, declareATerminal(env), cols, rows)
 	if err != nil {
 		return 0, err
+	}
+	// The host assigns its own run id, and it is the one the host is addressed by.
+	runID := store.NewRunID()
+	if ht, ok := t.(*hostTerm); ok {
+		runID = ht.runID
 	}
 
 	r := &runner{
 		taskID: taskID, started: time.Now(),
 		pid:     t.Pid(),
-		runID:   store.NewRunID(),
+		runID:   runID,
 		resumed: resumed,
 		dir:     cwd,
 		spec:    fresh,
@@ -2125,7 +2130,8 @@ func (d *Daemon) awaitExit(r *runner) {
 	// twice more by `lastOutput`. See `ringBuffer.Tail`.
 	tail := lastOutput(r.buf.Tail(tailBytes), 12)
 	r.closePTY()
-	d.sup.remove(r.taskID)
+	// Only if it is still this runner: a late exit must not remove a newer start's entry.
+	d.sup.removeRunner(r)
 	// The process is gone, so nothing it was doing is still true. That includes
 	// a message held for its terminal: the retry is dropped now rather than at a
 	// backoff tick hours out, and the message stays queued for a resumed
@@ -2135,10 +2141,23 @@ func (d *Daemon) awaitExit(r *runner) {
 	}
 	d.act.forget(r.taskID)
 
-	d.fileExit(runExit{
+	// The link to the host ended and no exit was seen, so nothing is known to have exited. The process is
+	// still there, and the next daemon that reattaches files whatever happened.
+	ht := hostOf(r)
+	if ht != nil && ht.Lost() {
+		log.Printf("[atrium] lost the pty host link for %s, its runner may still be running", r.taskID)
+		return
+	}
+	_, err := d.fileExitChecked(runExit{
 		taskID: r.taskID, runID: r.runID, code: code, tail: tail, lived: lived,
 		resumed: r.resumed, spec: r.spec,
 	})
+	// Collected only after the filing committed. Ahead of it, a crash would lose an exit nobody had recorded.
+	if ht != nil && err == nil {
+		if cerr := ht.Collect(); cerr != nil {
+			log.Printf("[atrium] collect run %s: %v", r.runID, cerr)
+		}
+	}
 }
 
 // runExit is one runner's end, as much as filing it needs to know.
@@ -2159,6 +2178,9 @@ type runExit struct {
 	// instead. Nil spec means there is no fresh start to fall back to.
 	resumed bool
 	spec    *launchSpec
+	// superseded says the card has a different, live runner now, so this end is filed as history only. See
+	// reattachRuns.
+	superseded bool
 }
 
 // fileExit records a runner's end and marks its card dead, AT MOST ONCE per
@@ -2170,6 +2192,13 @@ type runExit struct {
 // the `exited` event. The rest (the lifecycle line, the resume retry, the dead
 // status) follows only for the call that claimed it.
 func (d *Daemon) fileExit(x runExit) bool {
+	filed, _ := d.fileExitChecked(x)
+	return filed
+}
+
+// fileExitChecked is fileExit that also says whether the filing itself failed. A host's terminal is collected only
+// when it did not: collecting is the host forgetting the exit, and it must not forget one that was never recorded.
+func (d *Daemon) fileExitChecked(x runExit) (bool, error) {
 	code, lived, tail := x.code, x.lived, x.tail
 	payload := map[string]any{
 		"exit_code": code, "by": "supervisor",
@@ -2181,7 +2210,10 @@ func (d *Daemon) fileExit(x runExit) bool {
 	why := ""
 	if lived < startupFailureWindow && tail != "" {
 		payload["output"] = tail
-		why = "failed to start: " + firstLine(tail)
+		// Not on a card that has a newer run alive: it did not fail to start, its old start did.
+		if !x.superseded {
+			why = "failed to start: " + firstLine(tail)
+		}
 	}
 	filed, err := d.st.FileExit(store.ExitFiling{
 		TaskID: x.taskID, RunID: x.runID, Kind: store.RunKindRunner, Payload: payload, Why: why,
@@ -2192,7 +2224,14 @@ func (d *Daemon) fileExit(x runExit) bool {
 		log.Printf("[atrium] record exit for %s: %v", x.taskID, err)
 	} else if !filed {
 		log.Printf("[atrium] exit of run %s for %s was already filed", x.runID, x.taskID)
-		return false
+		return false, nil
+	}
+	if x.superseded {
+		// Filed and marked, and that is all. The card has a newer live runner, so this old end must not mark it
+		// dead, retry a resume, or end a throwaway the live one is using.
+		log.Printf("[atrium] run %s for %s ended earlier and the card has a newer runner, filed as history",
+			x.runID, x.taskID)
+		return true, err
 	}
 
 	// The room announces the exit with its reason, which the hub cannot see: it
@@ -2237,7 +2276,7 @@ func (d *Daemon) fileExit(x runExit) bool {
 			log.Printf("[atrium] fresh start for %s failed too: %v", x.taskID, err)
 		} else {
 			d.publishTask(x.taskID)
-			return true
+			return true, err
 		}
 	}
 
@@ -2254,7 +2293,7 @@ func (d *Daemon) fileExit(x runExit) bool {
 	// Clean up throwaways after waiting for the process, when its working
 	// directory is no longer in use. All exit paths reach here. See throwaway.go.
 	d.endThrowaway(x.taskID)
-	return true
+	return true, err
 }
 
 // stopSupervised gives every owned runner a chance to finish, then closes its

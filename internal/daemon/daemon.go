@@ -118,6 +118,9 @@ type Daemon struct {
 	// sup holds the runners atrium owns, when a harness launches in pty mode.
 	sup *supervisor
 
+	// The pty host link. See hostterm.go.
+	ph hostLink
+
 	// humanTouched is when each card's human touch was last written, so a run
 	// of keystrokes costs one map lookup each and one store write a minute. See
 	// humanTouch in park.go.
@@ -696,6 +699,8 @@ func (d *Daemon) Close() error {
 // then close it a second time. The once makes both callers safe.
 func (d *Daemon) closeDB() error {
 	var err error
+	// The link first, so a daemon torn down leaves the host and its runners up.
+	d.ph.close()
 	d.closeOnce.Do(func() { err = d.st.Close() })
 	return err
 }
@@ -1193,6 +1198,11 @@ func (d *Daemon) Run(ctx context.Context) error {
 			// the board decides the restart is over. That instant is where the
 			// arrivals it was supposed to swallow actually land.
 			defer d.settle.arrived(settleBoot)
+			// Terminals a pty host kept while no daemon was here, BEFORE fixtures so a card that already has
+			// a live runner is not started a second time.
+			if d.st.PtyHostOn() {
+				d.reattachRuns()
+			}
 			d.startFixtures()
 			d.reopenSaved()
 			// Throwaways whose session ended when the last daemon did, so
