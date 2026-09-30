@@ -93,6 +93,13 @@ type controlMCP struct {
 	// and the sentence refusing it. Nil checks nothing. See deps.go.
 	gate func(ctx context.Context, title string) (string, bool)
 
+	// settings is the hub's own settings, where deploy requests and the deploy
+	// owner are kept. Nil on a hub with no store. deployMu serialises a room's
+	// requests, apart from mu so a launch never waits on a deploy call. See
+	// deploy_mcp.go.
+	settings func() HubSettings
+	deployMu sync.Mutex
+
 	// classMu guards classes, the per-caller class cache. See ctlclass.go.
 	classMu sync.Mutex
 	classes map[string]classEntry
@@ -343,6 +350,7 @@ func (c *controlMCP) server(class ctlClass) *mcp.Server {
 
 	c.registerGit(s, class)
 	c.registerDeps(s, class)
+	c.registerDeploy(s, class)
 
 	return s
 }

@@ -523,6 +523,9 @@ type keepalive struct {
 	// id lags. Both nil in a test that has no daemon.
 	holding func(taskID string) bool
 	session func(t *store.Task) string
+	// deployHeld says the card is held for a room deploy, which ends its runner
+	// and resumes it cold, so a refresh buys nothing. Nil in a test with no daemon.
+	deployHeld func(taskID string) bool
 
 	mu sync.Mutex
 	// lastMissCard is the card of the room's most recent attempt when that
@@ -673,6 +676,9 @@ func (k *keepalive) decide(t *store.Task, card *store.KeepaliveCard) verdict {
 	// Its context is about to be cleared, and after it the cache is a new one.
 	if k.holding != nil && k.holding(t.ID) {
 		return skip("new context running")
+	}
+	if k.deployHeld != nil && k.deployHeld(t.ID) {
+		return skip("room deploy hold")
 	}
 	h, err := k.st.Harness(t.Runner)
 	if err != nil || !isClaude(h) {

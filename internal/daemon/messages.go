@@ -112,6 +112,19 @@ func (d *Daemon) takeMessages(taskID, via string) ([]*store.Message, error) {
 	if err != nil || len(msgs) == 0 {
 		return nil, err
 	}
+	// HELD FOR A DEPLOY: another agent's words wait for the wake, and the
+	// operator's still go. See roomhold.go.
+	if d.deployHeld(taskID) {
+		kept := msgs[:0:0]
+		for _, m := range msgs {
+			if m.FromPeer == "" {
+				kept = append(kept, m)
+			}
+		}
+		if msgs = kept; len(msgs) == 0 {
+			return nil, nil
+		}
+	}
 	// A peer message waiting to be typed stays for the typist. It waits for an
 	// empty line and the end of the turn, and a hook that carried it mid-turn
 	// would skip that wait. In memory, so after a restart, or once the terminal
@@ -604,7 +617,10 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 	//
 	// NOR RIGHT AFTER A WAKE: the woken card gets its text through the ordinary
 	// queued path, whose hook delivery lands after the session has started.
-	holding := d.holdingMessages(taskID)
+	//
+	// NOR FROM ANOTHER AGENT WHILE THE CARD IS HELD FOR A DEPLOY. The operator's
+	// words still go. See roomhold.go.
+	holding := d.holdingFrom(taskID, from)
 	if run := d.sup.get(taskID); run != nil && !holding && !woke && !d.act.dialogOpen(taskID) && !d.turnHolds(taskID, waitTurn) {
 		wrote, err := d.typeThroughGate(run, taskID, from, body.Text)
 		if err != nil {
@@ -718,6 +734,9 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 		// Queued, never typed, whatever the hooks report about reach.
 		out["delivered"] = "queued"
 		out["warning"] = newContextHoldNote
+		if !d.holdingMessages(taskID) {
+			out["warning"] = d.deployHoldNote()
+		}
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(out)

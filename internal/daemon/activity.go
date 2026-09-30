@@ -245,6 +245,9 @@ const (
 	// HeldForNewContext is a new-context cycle in progress. It holds every
 	// message until its wake prompt has been typed. See newcontext.go.
 	HeldForNewContext = "new-context"
+	// HeldForDeploy is a room deploy hold. It holds another agent's messages
+	// until the card's wake has been typed. See roomhold.go.
+	HeldForDeploy = "deploy"
 )
 
 // Whose rule a turn wait is, as HeldTurn says it. The board names the one that

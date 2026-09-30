@@ -275,6 +275,10 @@ func (d *Daemon) sweepMergedCulls() {
 	go func() {
 		defer d.mergedCulling.Store(false)
 		for _, w := range due {
+			// A deploy is not what culls a worker. Its mark stays for after the wake.
+			if d.deployHeld(w.TaskID) {
+				continue
+			}
 			d.cullDue(w)
 		}
 	}()
