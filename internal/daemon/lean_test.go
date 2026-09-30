@@ -65,7 +65,7 @@ func count(args []string, flag string) int {
 func TestLeanArgsBuildsTheLeanFlagsAndKeepsThePromptLast(t *testing.T) {
 	in := []string{"--mcp-config", "C:/atrium/mcp.json", "--strict-mcp-config",
 		"--model", "claude-opus-5-5", "read BRIEF.md"}
-	got, err := leanArgs(in, []byte(leanTestSettings), "", nil,
+	got, err := leanArgs(in, []byte(leanTestSettings), "", nil, nil,
 		leanTestRead(map[string]string{"C:/atrium/mcp.json": leanTestMCP}))
 	if err != nil {
 		t.Fatal(err)
@@ -116,7 +116,7 @@ func TestLeanArgsKeepsAtriumControlAndMercuriusByDefault(t *testing.T) {
 		}
 		in := append([]string{"--mcp-config"}, config...)
 		in = append(in, "--strict-mcp-config")
-		got, err := leanArgs(in, nil, "", extra, read)
+		got, err := leanArgs(in, nil, "", extra, nil, read)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -142,7 +142,7 @@ func TestLeanArgsKeepsAtriumControlAndMercuriusByDefault(t *testing.T) {
 
 func TestLeanArgsRefusesAnMCPServerTheRunnerDoesNotHave(t *testing.T) {
 	in := []string{"--mcp-config", "C:/atrium/mcp.json"}
-	_, err := leanArgs(in, nil, "", []string{"nosuch"},
+	_, err := leanArgs(in, nil, "", []string{"nosuch"}, nil,
 		leanTestRead(map[string]string{"C:/atrium/mcp.json": leanTestMCP}))
 	if err == nil || !strings.Contains(err.Error(), "nosuch") || !strings.Contains(err.Error(), "mercurius") {
 		t.Fatalf("want a refusal naming the missing and the available servers, got %v", err)
@@ -193,21 +193,21 @@ func TestLeanSettingsAddsTheStopHookWhenAsked(t *testing.T) {
 }
 
 func TestLeanOptionsComeFromTheRequestOrTheCard(t *testing.T) {
-	if lean, _ := leanOptions(LaunchRequest{}, nil); lean {
+	if lean, _, _ := leanOptions(LaunchRequest{}, nil); lean {
 		t.Fatal("a plain launch is not lean")
 	}
 	on, off := true, false
-	lean, mcp := leanOptions(LaunchRequest{Lean: &on, MCP: []string{" ziti", "atrium-control", "mercurius", "ziti"}}, nil)
+	lean, mcp, _ := leanOptions(LaunchRequest{Lean: &on, MCP: []string{" ziti", "atrium-control", "mercurius", "ziti"}}, nil)
 	if !lean || len(mcp) != 1 || mcp[0] != "ziti" {
 		t.Fatalf("got %v %q", lean, mcp)
 	}
-	card := &store.Task{Tags: mergeTags([]string{"origin:agent"}, leanTags([]string{"ziti"}))}
-	lean, mcp = leanOptions(LaunchRequest{}, card)
+	card := &store.Task{Tags: mergeTags([]string{"origin:agent"}, leanTags([]string{"ziti"}, nil))}
+	lean, mcp, _ = leanOptions(LaunchRequest{}, card)
 	if !lean || len(mcp) != 1 || mcp[0] != "ziti" {
 		t.Fatalf("a reopen of a lean card should start lean with its servers, got %v %q", lean, mcp)
 	}
 	// Backlog-2 item 64: false wins over the card.
-	if lean, mcp = leanOptions(LaunchRequest{Lean: &off, MCP: []string{"ziti"}}, card); lean || len(mcp) != 0 {
+	if lean, mcp, _ = leanOptions(LaunchRequest{Lean: &off, MCP: []string{"ziti"}}, card); lean || len(mcp) != 0 {
 		t.Fatalf("lean: false on a lean card should start it with the full setup, got %v %q", lean, mcp)
 	}
 }
