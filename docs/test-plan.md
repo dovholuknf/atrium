@@ -7851,3 +7851,22 @@ Needs a hub over ziti or zrok and two rooms, one joined before this build and on
    away with the sentence telling it to re-join with a token from `atrium rooms token`. The proven room stays attached.
 6. `atrium rooms legacy allow`. The old room attaches again on its next try, with no hub restart.
 7. The board over zrok or ziti still opens in a browser with no client certificate, in both modes.
+
+## HA. The persistent growler, hub side (R1)
+
+Needs a hub with one room and two browsers on the board. `curl` stands in for the board until U1 lands.
+
+1. Make a card ask for permission and leave it. Before two minutes `GET /_hub/growls` has nothing. Within 30 s of the
+   two minute mark it has one row, reason `permission`, `subject` the request id and `body` the command's first line.
+2. Answer the request from the perms view. Within one announcement the row is gone from `GET /_hub/growls` and the
+   hub's `/v1/events/hub` stream said a `growls` event without it.
+3. End a turn on Open Questions. A `question` row appears at once. `POST /_hub/growls/<id>` with
+   `{"do":"dismiss","via":"board"}` answers 200 and a `growls` event without it. The same POST again answers 409 with
+   the row. `{"do":"undismiss","via":"board"}` answers 200, state open, the original `raised_at` kept.
+4. Snooze it for one minute. It leaves the set, and comes back open inside the next 30 s tick after the minute, with its
+   id in the event's `remind`.
+5. Reply to the questions. The row resolves. An undismiss or a snooze on it now answers 409, state `resolved`.
+6. Stop the room's link. Its growlers stay open with `room_offline: true`. Start it again and they are as they were.
+7. With notify on and no desktop tab visible, a growler's reminders at 1, 2, 5, 10, 30, 60 and 120 minutes each run the
+   notify command once, and nothing after the two hour step.
+8. Halt the room's store. Within 30 s a `halt` row names the room and the cause. Clear it and the row resolves.

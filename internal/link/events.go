@@ -522,6 +522,8 @@ func (p *Proxy) serveEvents(w http.ResponseWriter, r *http.Request, room string,
 
 	s := p.feeds.add(room)
 	defer p.feeds.drop(s)
+	// The growlers as they stand, first, so a fresh tab has them. See growl.go.
+	p.openGrowls(s)
 	// A DESKTOP TAB'S STREAM IS WHAT KEEPS ITS PRESENCE TRUE. When this request
 	// ends, whether by a closed tab, a crash or a sleeping laptop, the tab is no
 	// longer visible. See presence in notify.go.
