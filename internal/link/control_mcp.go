@@ -232,6 +232,10 @@ func (c *controlMCP) server(class ctlClass) *mcp.Server {
 			"Leave `card` empty to ask about your own card. Before telling the human your " +
 			"questions are still open, check this: if `unseen` is true they never read them, so " +
 			"repeat them in full rather than referring back.\n\n" +
+			"`notices: true` with `card` empty is how a card tagged `atrium:orchestrator` or " +
+			"`atrium:hold-notices` hears about its workers. Atrium never types their automatic notices " +
+			"(a silent stop, a context size, a session that ended without a report) into its terminal, " +
+			"and keeps them on its card instead. Reports still arrive as before.\n\n" +
 			"A card on ANOTHER ROOM is `name@room`, `alias@room` or `room~id`, as `atrium_say` " +
 			"takes it and as `atrium_launch` with `room` hands it back.",
 	}, c.taskHandler)
@@ -911,11 +915,24 @@ type taskInput struct {
 	// Events includes the recent history, which is what a card DID rather than
 	// where it is now.
 	Events bool `json:"events,omitempty" jsonschema:"include recent events"`
+	// Notices is what a launcher that holds its notices reads instead of having
+	// them typed. See holdsNotices in internal/daemon/a2a.go.
+	Notices bool `json:"notices,omitempty" jsonschema:"include the automatic notices held on the card, newest last"`
 }
 
 type taskEvent struct {
 	At   string `json:"at"`
 	Kind string `json:"kind"`
+}
+
+// heldNotice is one automatic notice atrium recorded on a card instead of typing
+// it: a worker's silent stop, context size, or end without a report.
+type heldNotice struct {
+	At     string `json:"at"`
+	Source string `json:"source"`
+	About  string `json:"about,omitempty"`
+	Card   string `json:"about_card,omitempty"`
+	Text   string `json:"text"`
 }
 
 type taskOutput struct {
@@ -930,6 +947,8 @@ type taskOutput struct {
 	Waiting int         `json:"waiting_seconds,omitempty"`
 	Owned   bool        `json:"atrium_owns_terminal"`
 	Events  []taskEvent `json:"events,omitempty"`
+	// Notices are the held notices, when asked for. The last 20.
+	Notices []heldNotice `json:"notices,omitempty"`
 	// Seen is whether the operator has seen this card's latest turn, and the
 	// Open Questions it asked that they have not answered. Absent when no turn has
 	// ended on it.
@@ -958,10 +977,11 @@ func (c *controlMCP) taskHandler(ctx context.Context, req *mcp.CallToolRequest, 
 	if err != nil {
 		return nil, out, err
 	}
-	t, events, err := c.readCard(ctx, scope, id, in.Events)
+	t, events, notices, err := c.readCard(ctx, scope, id, in.Events, in.Notices)
 	if err != nil {
 		return nil, out, err
 	}
+	out.Notices = notices
 	out.Card, out.Handle = namedFrom(room, scope, t.ID, t.Wire)
 	out.Title = t.Title
 	out.Status, out.Doing, out.Where, out.Why = t.Status, t.Activity.What, t.Worktree, t.Why
@@ -974,35 +994,65 @@ func (c *controlMCP) taskHandler(ctx context.Context, req *mcp.CallToolRequest, 
 	return nil, out, nil
 }
 
-// readCard reads one card on `scope`, and its recent events when asked.
-func (c *controlMCP) readCard(ctx context.Context, scope, id string, withEvents bool) (ctlCard, []taskEvent, error) {
+// readCard reads one card on `scope`, and its recent events and held notices
+// when asked.
+func (c *controlMCP) readCard(ctx context.Context, scope, id string, withEvents, withNotices bool) (
+	ctlCard, []taskEvent, []heldNotice, error) {
+
 	var t ctlCard
 	if err := c.ask(ctx, http.MethodGet, "/v1/tasks/"+url.PathEscape(id), scope, nil, &t); err != nil {
-		return t, nil, err
+		return t, nil, nil, err
 	}
-	if !withEvents {
-		return t, nil, nil
+	if !withEvents && !withNotices {
+		return t, nil, nil, nil
 	}
 	var body struct {
 		Events []struct {
-			At   string `json:"at"`
-			Kind string `json:"kind"`
+			At      string          `json:"at"`
+			Kind    string          `json:"kind"`
+			Payload json.RawMessage `json:"payload"`
 		} `json:"events"`
 	}
-	var events []taskEvent
+	// Decoded one event at a time: payloads differ by kind, and one that does not
+	// fit must not lose the rest.
+	type heldPayload struct {
+		Held   bool   `json:"held"`
+		Source string `json:"source"`
+		About  string `json:"about"`
+		Card   string `json:"about_card"`
+		Text   string `json:"text"`
+	}
+	var (
+		events  []taskEvent
+		notices []heldNotice
+	)
 	if err := c.ask(ctx, http.MethodGet,
 		"/v1/tasks/"+url.PathEscape(id)+"/events", scope, nil, &body); err == nil {
+		for _, e := range body.Events {
+			if withEvents {
+				events = append(events, taskEvent{At: e.At, Kind: e.Kind})
+			}
+			if !withNotices || e.Kind != "notified" {
+				continue
+			}
+			var p heldPayload
+			if json.Unmarshal(e.Payload, &p) == nil && p.Held {
+				notices = append(notices, heldNotice{At: e.At, Source: p.Source, About: p.About, Card: p.Card,
+					Text: p.Text})
+			}
+		}
 		// The tail, because the useful end of a history is the recent one and a
 		// card that has been up for days has hundreds.
-		from := 0
-		if len(body.Events) > 20 {
-			from = len(body.Events) - 20
-		}
-		for _, e := range body.Events[from:] {
-			events = append(events, taskEvent{At: e.At, Kind: e.Kind})
-		}
+		events, notices = lastN(events, 20), lastN(notices, 20)
 	}
-	return t, events, nil
+	return t, events, notices, nil
+}
+
+func lastN[T any](s []T, n int) []T {
+	if len(s) > n {
+		return s[len(s)-n:]
+	}
+	return s
 }
 
 // ── launch ──────────────────────────────────────────────────────────────────────

@@ -586,6 +586,10 @@ type Store struct {
 	// called after a row it named commits, to send it. See queueNotice.
 	RemoteArbiter func(worker *Task, text string) *RelaySpec
 	OnRelayHeld   func()
+	// HoldNotice says an arbiter reads a notice from `source` when it asks, rather
+	// than having it queued. Called inside the transaction, so it must not call back
+	// into the store. See queueNotice.
+	HoldNotice func(arbiter *Task, source string) bool
 
 	// hot serves Recent and takes every event synchronously, on the halt path.
 	// cold are write-only durability sinks fed best-effort. See eventsink.go.
