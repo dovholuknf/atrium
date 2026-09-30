@@ -78,14 +78,17 @@ type Request struct {
 // PtyInfo is one pty as `list` and `attach` report it. Exited and ExitCode are never omitted: an exit code of 0 and
 // a live runner must both be visible, and omitempty made them the same thing.
 type PtyInfo struct {
-	RunID     string `json:"run_id"`
-	ID        string `json:"id"`
-	Kind      string `json:"kind"`
-	Pid       int    `json:"pid"`
-	Cols      int    `json:"cols"`
-	Rows      int    `json:"rows"`
-	Started   string `json:"started"`
-	Exited    bool   `json:"exited"`
+	RunID   string `json:"run_id"`
+	ID      string `json:"id"`
+	Kind    string `json:"kind"`
+	Pid     int    `json:"pid"`
+	Cols    int    `json:"cols"`
+	Rows    int    `json:"rows"`
+	Started string `json:"started"`
+	Exited  bool   `json:"exited"`
+	// ExitedAt is when the runner ended (RFC3339Nano), empty while it lives. A daemon that was not connected when it
+	// happened has no other way to say how long the runner lived, which decides whether it died starting.
+	ExitedAt  string `json:"exited_at,omitempty"`
 	ExitCode  int    `json:"exit_code"`
 	RingStart int64  `json:"ring_start"`
 	OutOffset int64  `json:"out_offset"`

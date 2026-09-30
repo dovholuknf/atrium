@@ -108,13 +108,18 @@ type hpty struct {
 	subs     map[*client]struct{}
 	exited   bool
 	exitCode int
+	exitedAt time.Time
 }
 
 func (p *hpty) infoLocked() PtyInfo {
 	cols, rows := p.rg.size()
-	return PtyInfo{RunID: p.runID, ID: p.id, Kind: p.kind, Pid: p.pid, Cols: cols, Rows: rows,
+	info := PtyInfo{RunID: p.runID, ID: p.id, Kind: p.kind, Pid: p.pid, Cols: cols, Rows: rows,
 		Started: p.started.UTC().Format(time.RFC3339Nano), Exited: p.exited, ExitCode: p.exitCode,
 		RingStart: p.rg.start(), OutOffset: p.rg.total}
+	if p.exited {
+		info.ExitedAt = p.exitedAt.UTC().Format(time.RFC3339Nano)
+	}
+	return info
 }
 
 // Serve accepts connections on ln until the host closes or goes idle. It returns nil for both.
@@ -187,6 +192,16 @@ func (h *Host) Close() {
 		c.close("host closing")
 	}
 	for _, p := range ps {
+		// KILLED, not only closed. Closing a ConPTY does not end the process under it, so a host closed with a
+		// runner alive left that runner running with nobody to collect it: a test run left twenty behind. A
+		// running host never reaches here with a pty in it (the idle exit needs none), so this is a host being
+		// shut down on purpose, and its runners go with it as the doc above says.
+		p.mu.Lock()
+		gone := p.exited
+		p.mu.Unlock()
+		if !gone && p.cmd != nil && p.cmd.Process != nil {
+			_ = p.cmd.Process.Kill()
+		}
 		_ = p.closer.Close()
 	}
 	close(h.done)
@@ -581,7 +596,7 @@ wait:
 		}
 	}
 	p.mu.Lock()
-	p.exited, p.exitCode = true, code
+	p.exited, p.exitCode, p.exitedAt = true, code, time.Now()
 	ev := &Event{Ev: EvExit, RunID: p.runID, Exited: true, ExitCode: code}
 	for c := range p.subs {
 		c.push(ev, 0)
