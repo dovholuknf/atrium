@@ -31,11 +31,10 @@ yet.
 - `r-new-review-3c354ed4.md` 1: a websocket attach by name still guesses past a quiet room.
 - `r-new-review-f16ff0c8.md` 1-3: ziti with no `ATRIUM_HOSTS` is open to rebinding, names fixed at start, a
   Host-rewriting access proxy.
-- `r-new-review-f4466ea0.md` 1-3: `guard` halts on other foreign key failures, `bootResumes` key, `testDaemon`
-  should refuse unsaved harnesses.
+- `r-new-review-a1abed4f.md` 1: the event insert maps every constraint, a `CHECK` included, to "no card".
 - `u-new-review-5e68b83f.md` 2: quiet without the terminal attached is only the badge.
 
 ## Done
 
 2026-09-30: the security audit (16058425), ff747683, 0b4e3f0d, 5edc1821, a23a9034, 06b876bb, 54794900, 3c354ed4,
-5e68b83f, f16ff0c8, b144c66a, c184ae8c, f4466ea0 (ROOM DEPLOY OK).
+5e68b83f, f16ff0c8, b144c66a, c184ae8c, f4466ea0 (ROOM DEPLOY OK), befa812b and a1abed4f (ROOM DEPLOY OK).
