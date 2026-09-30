@@ -2615,6 +2615,90 @@ function phonePageHold() {
   if (document.body.scrollTop || document.body.scrollLeft) { document.body.scrollTop = 0; document.body.scrollLeft = 0; }
 }
 
+// TAP TO POSITION THE CURSOR (u-017c). A tap on a cell of the input moves the cursor there by sending arrow
+// keys, the way xterm's altClickMovesCursor does, in ONE `sendInput` so the runner sees a single frame.
+//
+// WHERE THE INPUT IS: Claude Code draws it between two horizontal rules (rows of ─), its first row starting
+// with a prompt marker ("> ") and every wrapped row indented by the same width. From the cursor row, walk up to
+// the rule above and down to the rule below; the input is the rows between them. No rule found on either side,
+// or no marker on the first row: the answer is "not an input" and a tap does nothing. Output above the rule is
+// never touched, so there a tap stays a pan or a select.
+//
+// WHERE THE TEXT ENDS on a row: xterm's own trimmed row text (trailing blanks are not text), never less than
+// the prompt width and never less than the cursor on the cursor's row. A tap past it lands on its end. The
+// arrow count is in CHARACTERS: a wide glyph fills two cells and is one arrow.
+//
+// ROWS: Up/Down once per row of difference, then Left/Right. Up/Down keep the column the app was at, clamped to
+// the shorter row, so the horizontal delta is worked out from that clamped column.
+const PHONE_TAP_MOVE = 10, PHONE_TAP_MS = 400;
+const phoneRuleRow = (t) => { const x = t.replace(/\s+/g, ""); return x.length >= 8 && (x.match(/─/g) || []).length >= x.length * 0.8; };
+
+function phoneTapKeys(row, col) {
+  if (!term) return "";
+  const b = term.buffer.active;
+  if (b.viewportY < b.baseY || term.hasSelection()) return "";
+  const line = (r) => b.getLine(b.viewportY + r);
+  const text = (r) => { const l = line(r); return l ? l.translateToString(true) : ""; };
+  const cy = b.cursorY;
+  let up = -1, down = -1;
+  for (let r = cy - 1; r >= 0; r--) if (phoneRuleRow(text(r))) { up = r; break; }
+  for (let r = cy + 1; r < term.rows; r++) if (phoneRuleRow(text(r))) { down = r; break; }
+  if (up < 0 || down < 0) return "";
+  const first = up + 1, last = down - 1;
+  if (row < first || row > last || cy < first || cy > last) return "";
+  const m = /^\s*[>❯›]\s/.exec(text(first));
+  if (!m) return "";
+  const pre = m[0].length;
+  const endOf = (r) => Math.max(pre, text(r).length, r === cy ? b.cursorX : 0);
+  const chars = (r, from, to) => {
+    const l = line(r); let n = 0;
+    for (let i = Math.min(from, to); i < Math.max(from, to); i++) {
+      const c = l && l.getCell(i);
+      if (!c || c.getWidth() !== 0) n++;
+    }
+    return n;
+  };
+  const target = Math.max(pre, Math.min(col, endOf(row)));
+  const app = !!(term.modes && term.modes.applicationCursorKeysMode);
+  const key = (c) => (app ? "\x1bO" : "\x1b[") + c;
+  let out = "";
+  const dy = row - cy;
+  if (dy) out += key(dy < 0 ? "A" : "B").repeat(Math.abs(dy));
+  const from = dy ? Math.min(b.cursorX, endOf(row)) : b.cursorX;
+  const n = chars(row, from, target);
+  if (n) out += key(target < from ? "D" : "C").repeat(n);
+  return out;
+}
+
+function wirePhoneTap() {
+  const host = document.getElementById("t-screen");
+  if (!host || host._phoneTap) return;
+  host._phoneTap = true;
+  let t0 = null;
+  host.addEventListener("touchstart", (e) => {
+    t0 = e.touches.length === 1 ? { x: e.touches[0].clientX, y: e.touches[0].clientY, t: performance.now(),
+      l: host.scrollLeft, tp: host.scrollTop } : null;
+  }, { passive: true });
+  host.addEventListener("touchmove", (e) => {
+    if (!t0) return;
+    if (e.touches.length !== 1 || Math.hypot(e.touches[0].clientX - t0.x, e.touches[0].clientY - t0.y) > PHONE_TAP_MOVE) t0 = null;
+  }, { passive: true });
+  host.addEventListener("touchend", (e) => {
+    const s = t0; t0 = null;
+    if (!s || !term || !termPhone() || phonePinch || e.touches.length) return;
+    if (performance.now() - s.t > PHONE_TAP_MS || host.scrollLeft !== s.l || host.scrollTop !== s.tp) return;
+    const scr = host.querySelector(".xterm-screen");
+    let cw = 0, ch = 0;
+    try { const d = term._core._renderService.dimensions.css.cell; cw = d.width; ch = d.height; } catch (err) {}
+    if (!scr || !cw || !ch) return;
+    const r = scr.getBoundingClientRect();
+    const col = Math.floor((s.x - r.left) / cw), row = Math.floor((s.y - r.top) / ch);
+    if (col < 0 || row < 0 || row >= term.rows || col >= term.cols) return;
+    const keys = phoneTapKeys(row, col);
+    if (keys) sendInput(keys, false);
+  }, { passive: true });
+}
+
 // Pinch: two fingers change the font by the ratio of their distance, and the
 // point between them stays under the fingers. One finger is left to the browser,
 // which scrolls the nearest scroller (xterm's history, then `#t-screen`).
@@ -2725,5 +2809,6 @@ function syncPhoneView() {
   wirePhoneKeys();
   wirePhonePinch();
   wirePhonePan();
+  wirePhoneTap();
   if (term) { markWide(); phoneZoomFit(); sizeTermHost(); }
 }

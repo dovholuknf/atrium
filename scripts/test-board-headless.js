@@ -5469,6 +5469,126 @@ async function phonePanSection(browser, base) {
   if (errors.length) fail("phonePan: the page threw: " + errors.join(" | "));
 }
 
+// ── tap to position the cursor on a phone (u-017c) ────────────────────────
+// A tap on the input's rows (between Claude Code's two rules) sends arrow keys in one frame; a tap on output,
+// a drag, and a long press send nothing; the helper textarea is focused at most once.
+async function phoneTapSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  landList = [LAND["land-live"]];
+  landPerms = [];
+  const errors = [];
+  const fakeSock = () => {
+    const Real = window.WebSocket;
+    window.__sent = [];
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
+        onopen: null, onclose: null, onmessage: null, onerror: null,
+        send(d) { window.__sent.push(String(d)); }, close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  };
+  try {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+    await ctx.addInitScript(() => {
+      localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true }));
+      localStorage.setItem("atrium.termphone", "1");
+    });
+    await ctx.addInitScript(fakeSock);
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e.stack || e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await p.evaluate(() => attachTask("land-live"));
+    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live",
+      null, { timeout: slow(10000) });
+    await p.evaluate(() => termSock.onmessage({ data: '{"t":"size","cols":132,"rows":41}' }));
+    await p.waitForTimeout(300);
+    const rule = "─".repeat(60);
+    await p.evaluate((rule) => {
+      window.__focus = 0;
+      term.textarea.addEventListener("focus", () => { window.__focus++; });
+      termSock.onmessage({ data: "\x1b[2J\x1b[2;1Hsome output above\x1b[5;1H" + rule +
+        "\x1b[6;1H> hello world first line\x1b[7;1H  wrapped second here\x1b[8;1H" + rule +
+        "\x1b[9;1Hstatus\x1b[7;22H" });
+    }, rule);
+    await p.waitForTimeout(300);
+    const cell = await p.evaluate(() => {
+      const r = document.querySelector("#t-screen .xterm-screen").getBoundingClientRect();
+      const d = term._core._renderService.dimensions.css.cell;
+      return { x: r.left, y: r.top, w: d.width, h: d.height, cx: term.buffer.active.cursorX, cy: term.buffer.active.cursorY };
+    });
+    if (cell.cy !== 6 || cell.cx !== 21) fail("phoneTap: the fixture cursor is at " + cell.cx + "," + cell.cy);
+    const at = (row, col) => [cell.x + (col + 0.5) * cell.w, cell.y + (row + 0.5) * cell.h];
+    const frames = () => p.evaluate(() => window.__sent.filter(x => /"t":"in"/.test(x)).map(x => JSON.parse(x).d));
+    const clear = () => p.evaluate(() => { window.__sent.length = 0; });
+    const L = "\x1b[D", U = "\x1b[A", R = "\x1b[C";
+    const expect = async (name, want) => {
+      const got = await frames();
+      if (JSON.stringify(got) !== JSON.stringify(want))
+        fail("phoneTap: " + name + " sent " + JSON.stringify(got) + ", wanted " + JSON.stringify(want));
+      await clear();
+    };
+    await clear();
+    // 5 cells left of the cursor, one frame
+    await p.touchscreen.tap(...at(6, 16));
+    await p.waitForTimeout(150);
+    await expect("a tap 5 cells left", [L.repeat(5)]);
+    // output above the rule
+    await p.touchscreen.tap(...at(1, 4));
+    await p.waitForTimeout(150);
+    await expect("a tap on output", []);
+    // a wrapped line above: Up, then horizontal from the clamped column
+    await p.touchscreen.tap(...at(5, 10));
+    await p.waitForTimeout(150);
+    await expect("a tap on the line above", [U + L.repeat(11)]);
+    // past the end of the line above: clamps to its end (24), 3 to the right of column 21
+    await p.touchscreen.tap(...at(5, 50));
+    await p.waitForTimeout(150);
+    await expect("a tap past the end of the line above", [U + R.repeat(3)]);
+    // a tap on a rule and on the status line send nothing
+    await p.touchscreen.tap(...at(4, 3));
+    await p.touchscreen.tap(...at(8, 3));
+    await p.waitForTimeout(150);
+    await expect("a tap on a rule and the status", []);
+    // application cursor mode uses SS3
+    await p.evaluate(() => termSock.onmessage({ data: "\x1b[?1h" }));
+    await p.touchscreen.tap(...at(6, 19));
+    await p.waitForTimeout(150);
+    await expect("a tap in application cursor mode", ["\x1bOD\x1bOD"]);
+    await p.evaluate(() => termSock.onmessage({ data: "\x1b[?1l" }));
+    // a drag on the prompt, and a long press, send nothing
+    const [dx, dy] = at(6, 16);
+    await p.evaluate(([x, y]) => {
+      const host = document.getElementById("t-screen");
+      const tch = (cx, cy) => new Touch({ identifier: 1, target: host, clientX: cx, clientY: cy });
+      host.dispatchEvent(new TouchEvent("touchstart", { bubbles: true, touches: [tch(x, y)], changedTouches: [tch(x, y)] }));
+      host.dispatchEvent(new TouchEvent("touchmove", { bubbles: true, touches: [tch(x + 40, y)], changedTouches: [tch(x + 40, y)] }));
+      host.dispatchEvent(new TouchEvent("touchend", { bubbles: true, touches: [], changedTouches: [tch(x + 40, y)] }));
+    }, [dx, dy]);
+    await p.waitForTimeout(150);
+    await expect("a drag", []);
+    await p.evaluate(([x, y]) => new Promise(res => {
+      const host = document.getElementById("t-screen");
+      const tch = () => new Touch({ identifier: 1, target: host, clientX: x, clientY: y });
+      host.dispatchEvent(new TouchEvent("touchstart", { bubbles: true, touches: [tch()], changedTouches: [tch()] }));
+      setTimeout(() => { host.dispatchEvent(new TouchEvent("touchend", { bubbles: true, touches: [], changedTouches: [tch()] })); res(); }, 600);
+    }), [dx, dy]);
+    await expect("a long press", []);
+    const focus = await p.evaluate(() => window.__focus);
+    console.log("phoneTap: helper textarea focus count " + focus);
+    if (focus > 1) fail("phoneTap: the helper textarea was focused " + focus + " times");
+    await ctx.close();
+  } finally {
+    tasksMode = was;
+  }
+  if (errors.length) fail("phoneTap: the page threw: " + errors.join(" | "));
+}
+
 // ── copy on select answers the pointer, not the find bar ──────────────────
 // Test plan BJ. The search addon shows a match by selecting it, so copy on
 // select used to copy every find keystroke, step and re-search. Typing in the
@@ -8585,7 +8705,7 @@ async function main() {
       history: historySection, contextSize: contextSizeSection, peekEverywhere: peekEverywhereSection, cardRoute: cardRouteSection,
       quietDoer: quietDoerSection, looksIdle: looksIdleSection, notifyOff: notifyOffSection,
       questionsClick: questionsClickSection, walk: walkSection, linkReuse: linkReuseSection,
-      usageCacheReads: usageCacheReadsSection, roomsDash: roomsDashSection, phoneView: phoneViewSection, heldLine: heldLineSection, u016: u016Section, phoneFocus: phoneFocusSection, phonePan: phonePanSection, usagePolish: usagePolishSection, usageLimits: usageLimitsSection, usageGroups: usageGroupsSection,
+      usageCacheReads: usageCacheReadsSection, roomsDash: roomsDashSection, phoneView: phoneViewSection, heldLine: heldLineSection, u016: u016Section, phoneFocus: phoneFocusSection, phonePan: phonePanSection, phoneTap: phoneTapSection, usagePolish: usagePolishSection, usageLimits: usageLimitsSection, usageGroups: usageGroupsSection,
       eventDriven: eventDrivenSection, idleBudget: idleBudgetSection, pollsGone: pollsGoneSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
@@ -10520,6 +10640,7 @@ async function main() {
     await u016Section(browser, base);
     await phoneFocusSection(browser, base);
     await phonePanSection(browser, base);
+    await phoneTapSection(browser, base);
     await eventDrivenSection(browser, base);
     await idleBudgetSection(browser, base);
     await pollsGoneSection(browser, base);
