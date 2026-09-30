@@ -1,7 +1,13 @@
 # f-new-defender-at-provision: Defender exclusions as part of install and room bring-up
 
-Status: queued for @fabric after the 2026-09-30 push (clint: "should prolly be part of the installation process
-or maybe part of room bring up. sg3 prolly needs something similar").
+Status: built, `scripts/room-defender.ps1` plus a `defender` step in `provision-room.ps1`. sg3 has GOTMPDIR set, and
+its exclusions wait on an administrator running `C:\Users\claude\.atrium\provision\defender-exclusions.ps1` there
+(the ssh login `claude` is not an administrator). sg4's file is at the same path. The elevated path is untested:
+no administrator login is reachable from here. (clint: "should prolly be part of the installation process or maybe
+part of room bring up. sg3 prolly needs something similar").
+
+"The local install script" is `room-defender.ps1 local`. `atrium-service.ps1 install` registers the logon task and
+is not changed.
 
 ## Why
 

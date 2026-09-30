@@ -9,11 +9,11 @@ is live.
 
 ## Queue
 
-0. **HELD until the orchestrator lifts the hold after clint's push. f-new-defender-at-provision.**
-   `docs/backlog/fabric/f-new-defender-at-provision.md` (d3179cbf). Defender exclusions in `provision-room.ps1` and
-   the local install, with the paths resolved as the room's runner user, `GOTMPDIR` set to a directory inside an
-   excluded path, an opt-out flag, and the excluded paths printed. Apply it to sg3 as well. m1mini is macOS, so it
-   needs nothing. clint asked for it.
+0. **f-new-defender-at-provision: built and landed, waiting on an administrator.**
+   `docs/backlog/fabric/f-new-defender-at-provision.md`. `scripts/room-defender.ps1`, and a `defender` step in
+   `provision-room.ps1`. sg3 has GOTMPDIR set. Its exclusions need an administrator on sg3 to run
+   `C:\Users\claude\.atrium\provision\defender-exclusions.ps1` elevated, and sg4's file is at the same path. Close
+   this when both have been run: `Get-MpPreference` in the elevated shell lists the five paths.
 1. **f-026's four review lows** (`docs/backlog/fabric/f-new-review-e738577e.md`). Two are fixed in the landing
    commit and two need no code. Open until the deploy has been checked:
    - Low 1, deploy note: claude-sg4, m1mini and sg3 have no `joined` line left, so they are unenrolled until their
@@ -34,6 +34,8 @@ is live.
 5. **f-004 stage 1.** The narrow hub op that carries a `claude/<branch>` from room to room, plus
    `scripts/move-card.ps1`. Prove it on sg3 and m1mini.
 6. **Later:** 46 stage 2 (the add-a-machine dialog), the f-025 hubstore notify test gaps, and 75's shared folder.
+   Also small: `room-toolchain.ps1 local` calls a bare `powershell.exe`, which is not on the PATH of sg4's agents.
+   `room-defender.ps1` uses the System32 path for the same call.
 
 ## Done
 

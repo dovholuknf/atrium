@@ -174,7 +174,21 @@ scans every file a Go build writes, every `*.test.exe` a test run produces, and 
 suite's chrome touches. On sg4 on 2026-09-30, `MsMpEng.exe` sat at 103% while two directors built and tested,
 above any single agent.
 
-Exclude the paths that only ever hold build output, caches and agent worktrees. Run this in an elevated shell
+`scripts/room-defender.ps1` does this for you, and `scripts/provision-room.ps1` runs it on every Windows room it
+provisions (`-NoDefender` skips it). Run it as the account the agents run as, not elevated:
+
+```powershell
+pwsh -File scripts\room-defender.ps1 local        # this machine
+pwsh -File scripts\room-defender.ps1 sg3          # a room, over ssh
+```
+
+It reads that account's Go caches, the clone's `build.claude` and the worktree root, and sets `GOTMPDIR` to
+`<GOCACHE>\tmp` with `go env -w`, so `go test` links its binaries inside an excluded path instead of `%TEMP%`. The
+exclusions themselves need elevation, so it writes them, with the paths spelled out, to
+`~\.atrium\provision\defender-exclusions.ps1` and prints the line an administrator runs. Run elevated with
+`-Runner <account>`, it applies them itself.
+
+By hand, exclude the paths that only ever hold build output, caches and agent worktrees. Run this in an elevated shell
 AS THE USER THE AGENTS RUN AS, or write that user's paths out by hand. `$env:LOCALAPPDATA` and `$env:USERPROFILE`
 expand to whoever runs the shell, so an admin shell opened as yourself excludes your own profile, not the
 agents'. On sg4 the agents run as `claude`:
@@ -189,7 +203,8 @@ Add-MpPreference -ExclusionProcess 'chrome-headless-shell.exe', 'go.exe'
 Keep the list to paths nothing downloads into from outside. A worktree holds code the agents wrote and cloned, so
 excluding it trusts that code the way you already trust it by running it. An exclusion cannot be read back
 without elevation: `Get-MpPreference` answers "Must be an administrator to view exclusions", so check it from the
-same elevated shell. Atrium does not run this for you, since it needs elevation and changes a security setting.
+same elevated shell. `room-defender.ps1` never elevates itself: it changes a security setting only in a shell that is
+already elevated.
 
 ## Limits / what this won't do
 

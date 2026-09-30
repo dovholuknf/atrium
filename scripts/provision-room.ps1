@@ -65,6 +65,12 @@
 # `sudo useradd -m localai`) and stops with exit 11. An account that exists but is
 # not the ssh login is exit 1: target `localai@host`.
 #
+# DEFENDER. On a Windows room, scripts/room-defender.ps1 runs after the clone: it reads the Go caches, the clone's
+# build.claude and the worktree root as the ssh login, sets GOTMPDIR inside the Go cache, and excludes those paths
+# from real-time protection when the login is elevated. Provisioning runs without admin, so usually it writes
+# ~\.atrium\provision\defender-exclusions.ps1 on the room instead and prints the one line an administrator runs.
+# `-NoDefender` skips it. -Remove does not undo it.
+#
 # THE SMOKE FOLDER is the room's clone, else the path from this repository's git
 # remote for the room, else `~/.atrium/smoke`, made when missing. Never the home.
 #
@@ -187,6 +193,8 @@ param(
 
     # 'none' skips the git clone that room-git.ps1 makes by push. Anything else makes it.
     [string] $Repo = 'atrium',
+    # Skip the Defender step on a Windows room: no exclusions, and GOTMPDIR left alone. See room-defender.ps1.
+    [switch] $NoDefender,
 
     # How long to wait for the room to show as attached on the hub, in seconds. 60 was too short on sg3 and sg4-wsl
     # (2026-09-29), even apart from the attach race the hub now fixes.
@@ -2176,6 +2184,18 @@ if ($Repo -ne 'none') { & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'room-g
 
 # The permission gate, after the hooks: room-gate.ps1 copies the one dotfiles script and registers it first.
 & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'room-gate.ps1') $Name -Target $Target -Ssh $Ssh @(if ($SshOption) { '-SshOption'; $SshOption -join ',' }) *>&1 | ForEach-Object { Write-Host $_ }; if ($LASTEXITCODE -ne 0) { Step 'gate' 'warn' "room-gate exited $LASTEXITCODE. rerun: room-gate.ps1 $Name -Target $Target" }
+
+# DEFENDER, on a Windows room, after the clone so its build folder and worktrees are known. room-defender.ps1 reads the
+# paths as the ssh login, which is the account the room runs as, sets GOTMPDIR, and excludes them when that login is
+# elevated. Otherwise it writes the command for an administrator and says so in a warn line.
+if ($os -eq 'windows') {
+    if ($NoDefender) {
+        Step 'defender' 'skip' '-NoDefender'
+    } else {
+        & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'room-defender.ps1') $Name -Target $Target -Ssh $Ssh @(if ($clonePath) { '-Clone'; $clonePath }) @(if ($User) { '-Runner'; $User }) @(if ($SshOption) { '-SshOption'; $SshOption -join ',' }) *>&1 | ForEach-Object { Write-Host $_ }
+        if ($LASTEXITCODE -ne 0) { Step 'defender' 'warn' "room-defender exited $LASTEXITCODE. rerun: room-defender.ps1 $Name -Target $Target" }
+    }
+}
 
 $authState = Test-ClaudeAuth
 
