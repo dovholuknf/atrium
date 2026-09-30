@@ -253,3 +253,40 @@
     }
   }
 
+
+  /* ── attach, header hide, landscape and full screen ─────────────────────
+     The picker and the full screen button are thumb sized wherever the phone view is. */
+  #hdr-strip, #hdr-hide { display: none; }
+  @media (max-width: 900px) {
+    #t-attach, #t-full, #t-keys-attach { min-width: 40px; min-height: 40px; box-sizing: border-box; }
+    #hdr-hide { display: inline-flex; min-width: 40px; }
+  }
+  #hdr-show {
+    width: 100%; min-height: 24px; padding: 2px; border: none; border-bottom: 1px solid var(--stroke-dim);
+    background: var(--shell-0); color: var(--dim); font-size: var(--fs-sm); cursor: pointer;
+  }
+  /* HEADER HIDDEN ON ITS OWN, on a touch device. A saved choice (body.hdr-hidden or body.hdr-shown, set from
+     localStorage) wins; with nothing saved a short, wide window (a phone in landscape) collapses it, because
+     the wrapped bar there eats the terminals. A strip stays in the flow as the way back. */
+  @media (pointer: coarse) {
+    body.hdr-hidden header { display: none; }
+    body.hdr-hidden #hdr-strip { display: block; }
+  }
+  @media (pointer: coarse) and (max-height: 500px) {
+    body:not(.hdr-shown) header { display: none; }
+    body:not(.hdr-shown) #hdr-strip { display: block; }
+  }
+
+  /* FULL SCREEN TERMINAL: one class on body. The pane grows, and the ResizeObserver on #t-screen re-fits
+     xterm. The terminal bar stays, since it holds the button back, and the phone key bar stays. */
+  body.term-full header,
+  body.term-full #hdr-strip,
+  body.term-full #board-bar,
+  body.term-full .term-list,
+  body.term-full .term-grip,
+  body.term-full .term-rail,
+  body.term-full .tabbridge,
+  body.term-full .term-help { display: none !important; }
+  body.term-full main { padding: 0; }
+  body.term-full .term-layout { gap: 0; height: 100%; min-height: 0; }
+  body.term-full .term-pane { border: none; border-radius: 0; }

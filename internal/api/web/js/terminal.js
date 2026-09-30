@@ -704,7 +704,7 @@ function openTerm(task) {
   // The phone view (t-003b): the key bar, the pinch, and the cursor kept in
   // view. All of it is a no-op on a desktop. See `termPhone`.
   syncPhoneView();
-  term.onWriteParsed(phoneKeepSoon);
+  term.onWriteParsed(() => { phoneSyncTextarea(); phoneKeepSoon(); });
   term.open(screen);
   // Before anything can write to it, so the trace starts at the first byte.
   traceTerm(term);
@@ -1014,6 +1014,10 @@ function wireTerminalPaste(screen) {
     if (!termTask || e.shiftKey || e.ctrlKey) return;
     e.preventDefault();
     e.stopPropagation();
+    // A LONG PRESS ON A PHONE IS NOT A RIGHT CLICK. Android fires `contextmenu` on one, and pasting the
+    // clipboard on a press that meant to select or scroll is the bug. The menu stays suppressed and nothing
+    // is pasted; paste on a phone is the paste box and the attach button.
+    if (window.matchMedia && window.matchMedia("(pointer: coarse)").matches) return;
     pasteIntoTerm();
   });
 }

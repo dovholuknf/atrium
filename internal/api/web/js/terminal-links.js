@@ -2477,16 +2477,65 @@ function keepCursorInView(host, t) {
   else if (colLeft < hostBox.left) host.scrollLeft -= hostBox.left - colLeft;
 }
 
-function phoneKeepCursor() {
-  if (!term || !termPhone()) return;
-  keepCursorInView(document.getElementById("t-screen"), term);
+// WHY THE PHONE BOUNCED (u-017). Focusing a terminal scrolls its helper textarea into view, and
+// terminal.css parked that textarea at the grid's top-left. Panned to the cursor, that corner is off
+// screen, so the browser scrolled `#t-screen` (and the page) back to the top, then this keep scrolled to
+// the cursor again, and the visualViewport resize/scroll those caused re-ran it, every frame. Three
+// rules stop it: the textarea sits AT the cursor on a phone (terminal.css), so there is nothing to
+// scroll to; the keep acts only when the cursor row or the visible box CHANGED (`phoneKeepKey`), so it
+// never answers its own scroll; and the page itself is held at 0 (`phonePageHold`).
+// xterm moves its helper textarea to the cursor only when it next renders, a frame after the write. A focus
+// in that gap would scroll to a stale row, so it is moved here, synchronously, on every parsed write.
+function phoneSyncTextarea() {
+  if (!term || !term.textarea || !termPhone()) return;
+  try {
+    const d = term._core._renderService.dimensions.css.cell, b = term.buffer.active;
+    if (!d.width || !d.height) return;
+    const ta = term.textarea, top = Math.round(b.cursorY * d.height) + "px", left = Math.round(b.cursorX * d.width) + "px";
+    if (ta.style.top !== top) ta.style.top = top;
+    if (ta.style.left !== left) ta.style.left = left;
+  } catch (e) {}
 }
 
-let phoneKeepQueued = false;
-function phoneKeepSoon() {
-  if (phoneKeepQueued || !termPhone()) return;
+let phoneKeepKey = "";
+function phoneKeepCursor(force) {
+  if (!term || !termPhone()) return;
+  const host = document.getElementById("t-screen");
+  if (!host) return;
+  const vv = window.visualViewport;
+  const hb = host.getBoundingClientRect();
+  const b = term.buffer.active;
+  const key = [b.cursorY, b.cursorX, b.viewportY, b.baseY, term.rows, term.options.fontSize,
+    Math.round(hb.top), Math.round(hb.bottom), Math.round(hb.left), Math.round(hb.right),
+    vv ? Math.round(vv.offsetTop) + "," + Math.round(vv.height) : ""].join("|");
+  if (!force && key === phoneKeepKey) return;
+  phoneKeepKey = key;
+  keepCursorInView(host, term);
+}
+
+let phoneKeepQueued = false, phoneKeepForce = false;
+function phoneKeepSoon(force) {
+  if (!termPhone()) return;
+  if (force === true) phoneKeepForce = true;
+  if (phoneKeepQueued) return;
   phoneKeepQueued = true;
-  requestAnimationFrame(() => { phoneKeepQueued = false; phoneKeepCursor(); });
+  requestAnimationFrame(() => {
+    const f = phoneKeepForce;
+    phoneKeepQueued = false; phoneKeepForce = false;
+    phoneKeepCursor(f);
+  });
+}
+
+// The page never scrolls in the terminal view: only `#t-screen` does. A browser's scroll to a focused
+// element can still move the overflow:hidden page, which on iOS shows as the top of the board with the
+// terminal gone. Undo it, writing only when it is off zero so it cannot loop.
+function phonePageHold() {
+  if (!termPhone()) return;
+  const t = document.getElementById("terms");
+  if (!t || t.hidden) return;
+  const se = document.scrollingElement;
+  if (window.scrollX || window.scrollY || (se && (se.scrollTop || se.scrollLeft))) window.scrollTo(0, 0);
+  if (document.body.scrollTop || document.body.scrollLeft) { document.body.scrollTop = 0; document.body.scrollLeft = 0; }
 }
 
 // Pinch: two fingers change the font by the ratio of their distance, and the
@@ -2548,16 +2597,33 @@ function wirePhoneKeys() {
   const hold = (e) => e.preventDefault();
   bar.addEventListener("pointerdown", hold);
   bar.addEventListener("mousedown", hold);
-  // ctrl-c interrupts a turn, so a stray tap must not: it needs a long press.
-  let intTimer = 0;
-  const intCancel = () => { clearTimeout(intTimer); intTimer = 0; const b = document.querySelector("#t-keys .hold"); if (b) b.classList.remove("hold"); };
+  // ctrl-c interrupts a turn, so a stray tap must not: it needs a long press. Pointer events with capture, so
+  // the press stays ours if the finger drifts off the key, and it is cancelled by a drag past 10px or by the
+  // browser taking the touch. It fires once at PHONE_INT_HOLD_MS and never again however long it is held.
+  // A short tap does nothing (the click handler below skips `int`).
+  let intTimer = 0, intId = -1, intX = 0, intY = 0;
+  const intCancel = () => {
+    clearTimeout(intTimer); intTimer = 0; intId = -1;
+    const b = document.querySelector("#t-keys .hold"); if (b) b.classList.remove("hold");
+  };
   bar.addEventListener("pointerdown", (e) => {
     const b = e.target.closest("button[data-key=int]");
     if (!b) return;
+    intCancel();
+    intId = e.pointerId; intX = e.clientX; intY = e.clientY;
+    try { b.setPointerCapture(e.pointerId); } catch (err) {}
     b.classList.add("hold");
-    intTimer = setTimeout(() => { intTimer = 0; b.classList.remove("hold"); phoneKey("int"); }, PHONE_INT_HOLD_MS);
+    intTimer = setTimeout(() => { intTimer = 0; intId = -1; b.classList.remove("hold"); phoneKey("int"); }, PHONE_INT_HOLD_MS);
   });
-  for (const ev of ["pointerup", "pointercancel", "pointerleave"]) bar.addEventListener(ev, intCancel);
+  bar.addEventListener("pointermove", (e) => {
+    if (e.pointerId !== intId) return;
+    if (Math.hypot(e.clientX - intX, e.clientY - intY) > 10) intCancel();
+  });
+  for (const ev of ["pointerup", "pointercancel", "lostpointercapture"]) bar.addEventListener(ev, (e) => {
+    if (e.pointerId === intId || ev === "pointercancel") intCancel();
+  });
+  // The browser's own long press on a key (a context menu, a callout) is not what a held key means.
+  bar.addEventListener("contextmenu", (e) => e.preventDefault());
   bar.addEventListener("click", (e) => {
     const b = e.target.closest("button[data-key]");
     if (b && b.dataset.key !== "int") phoneKey(b.dataset.key);
@@ -2569,8 +2635,15 @@ function syncPhoneView() {
   syncTermViewButton();
   if (window.visualViewport && !window._phoneVV) {
     window._phoneVV = true;
-    window.visualViewport.addEventListener("resize", phoneKeepSoon);
-    window.visualViewport.addEventListener("scroll", phoneKeepSoon);
+    window.visualViewport.addEventListener("resize", () => phoneKeepSoon());
+    window.visualViewport.addEventListener("scroll", () => { phonePageHold(); phoneKeepSoon(); });
+    window.addEventListener("scroll", phonePageHold, { passive: true });
+    // A tap focuses the terminal: whatever the browser scrolled for it, put the cursor back in view.
+    document.addEventListener("focusin", (e) => {
+      if (e.target && e.target.classList && e.target.classList.contains("xterm-helper-textarea")) {
+        phonePageHold(); phoneKeepSoon(true);
+      }
+    });
   }
   wirePhoneKeys();
   wirePhonePinch();
