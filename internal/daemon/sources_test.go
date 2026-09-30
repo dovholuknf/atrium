@@ -75,6 +75,7 @@ func helperSource(t *testing.T, id, out string) store.Source {
 func testDaemon(t *testing.T) *Daemon {
 	t.Helper()
 	dir := t.TempDir()
+	seedMigratedDB(t, filepath.Join(dir, "atrium.db"))
 	d, err := New(Options{
 		AgentAddr:    freePort(t),
 		HumanAddr:    freePort(t),
