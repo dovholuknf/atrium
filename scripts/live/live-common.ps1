@@ -290,11 +290,20 @@ function Backup([string]$Name) {
 }
 
 # Start-Hub starts the atrium detached, through cmd so the redirect appends and the caller's output can end.
+#
+# ATRIUM_HOSTS FROM THE USER ENVIRONMENT, never the caller's. It names the extra hosts the board answers to, the zrok
+# share's among them, and a deploy started from a session that lacks it brought the hub up without it (2026-09-30
+# 19:09, the share broke). Unset in the User environment means unset for the hub too. The value used is logged here
+# and in hub.err. @runtime's r-new-hosts-setting, a stored setting, replaces this.
 function Start-Hub {
   $line = "`"$AtriumBin`" $($HubArgs -join ' ') >> $Base\hub.out 2>> $Base\hub.err"
+  $hosts = [Environment]::GetEnvironmentVariable('ATRIUM_HOSTS', 'User')
+  $said = if ($hosts) { "ATRIUM_HOSTS=$hosts, from the User environment" } else { 'ATRIUM_HOSTS unset in the User environment' }
+  Say $said
   Invoke-Step "start hub: $AtriumBin $($HubArgs -join ' ')" {
     Clear-SessionEnv
-    Add-Content (Join-Path $Base 'hub.err') ("===== hub start {0} =====" -f (Get-Date -Format o))
+    if ($hosts) { $env:ATRIUM_HOSTS = $hosts } else { Remove-Item Env:ATRIUM_HOSTS -ErrorAction SilentlyContinue }
+    Add-Content (Join-Path $Base 'hub.err') ("===== hub start {0} ({1}) =====" -f (Get-Date -Format o), $said)
     Start-Process -FilePath 'cmd.exe' -WindowStyle Hidden -ArgumentList '/c', $line
   }
 }
