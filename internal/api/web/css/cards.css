@@ -353,6 +353,29 @@
   .chip.keepalive { border: 1px solid var(--chip-accent-stroke); color: var(--chip-accent-text); }
   .chip.keepalive.stopped { border-style: dashed; opacity: .85; }
   .chip.keepalive.watching { border-style: dotted; color: var(--label); }
+  /* u-032: the one cache chip. Visible words, never only a tooltip. Kept warm is filled teal, warm is teal
+     outline, cold is a dashed blue-grey, stopped is dashed amber, off is grey. The short text is for a phone. */
+  .chip.cache { white-space: nowrap; }
+  .chip.cache .cshort { display: none; }
+  .chip.cache.kept { background: rgba(var(--teal-rgb),.22); border: 1px solid var(--teal); color: var(--teal); }
+  .chip.cache.warm { background: transparent; border: 1px solid var(--teal); color: var(--teal); }
+  .chip.cache.cold { border: 1px dashed rgba(140,160,190,.7); color: rgb(150,170,200); background: transparent; }
+  .chip.cache.stopped { border: 1px dashed var(--warn); color: var(--warn); opacity: 1; background: transparent; }
+  .chip.cache.off { border: 1px solid rgba(150,150,150,.5); color: var(--label); background: transparent; }
+  .chip.cache.off.cold { opacity: .65; }
+  .chip.cache.none { border: 1px solid rgba(150,150,150,.3); color: var(--label); opacity: .6; background: transparent; }
+  @media (max-width: 640px) {
+    .chip.cache .cfull { display: none; }
+    .chip.cache .cshort { display: inline; }
+  }
+  /* The cache summary line over the stack and the terminals list. A button, so it can open the setting. */
+  .cacheline {
+    display: block; width: 100%; text-align: left; background: none; border: 0; padding: 2px 8px;
+    color: var(--label); font: inherit; font-size: .85em; cursor: pointer; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap;
+  }
+  .cacheline[hidden] { display: none; }
+  .cacheline:hover { color: var(--teal); }
   .chip.attach {
     background: var(--chip-accent); border: 1px solid var(--chip-accent-stroke);
     color: var(--chip-accent-text); cursor: pointer;
