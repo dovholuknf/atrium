@@ -775,6 +775,13 @@ func (s *Store) guard(op func() error) error {
 		if errors.Is(err, sql.ErrNoRows) {
 			return err
 		}
+		// A CONSTRAINT IS THE CALLER'S ERROR, not failed storage: a row naming a
+		// card that is not there, a duplicate, a CHECK. The database refused it
+		// exactly as designed, and halting the room over it turned a caller's
+		// mistake into an outage (r-new-review-c184ae8c, r-new-review-f4466ea0).
+		if constraint(err) {
+			return err
+		}
 		// Closed while this call was in flight. Late, not broken. See ErrClosed.
 		if s.closed.Load() {
 			return ErrClosed
@@ -855,3 +862,13 @@ func (s *Store) IncrementalVacuum() error {
 // disk. False for an existing database created before incremental mode, whose
 // file stays at its high water mark.
 func (s *Store) IncrementalVacuumOn() bool { return s.incrementalVacuum }
+
+// constraint reports whether an error is SQLite refusing a write on a
+// constraint: the SQLITE_CONSTRAINT family, told apart by its code, not its text.
+func constraint(err error) bool {
+	var se *sqlite.Error
+	if errors.As(err, &se) {
+		return se.Code()&0xff == sqlite3.SQLITE_CONSTRAINT
+	}
+	return false
+}

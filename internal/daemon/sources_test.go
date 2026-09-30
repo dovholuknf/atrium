@@ -87,6 +87,31 @@ func testDaemon(t *testing.T) *Daemon {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { d.Close() })
+	// EVERY RUNNER A TEST STARTED IS STOPPED WITH IT, before the store closes (a
+	// cleanup runs last in, first out). One that outlived its test daemon kept
+	// running on the machine.
+	t.Cleanup(func() {
+		// Only runners with a real process. A test that builds one by hand, a
+		// fake terminal and no process, cleans it up itself.
+		var real []*runner
+		for _, r := range d.sup.all() {
+			if r.cmd != nil && r.cmd.Process != nil {
+				real = append(real, r)
+				windDown(r, time.Second, d.exitKeysFor(r.taskID))
+			}
+		}
+		for end := time.Now().Add(10 * time.Second); time.Now().Before(end); time.Sleep(50 * time.Millisecond) {
+			left := 0
+			for _, r := range real {
+				if d.sup.get(r.taskID) == r {
+					left++
+				}
+			}
+			if left == 0 {
+				break
+			}
+		}
+	})
 	return d
 }
 
