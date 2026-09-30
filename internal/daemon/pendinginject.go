@@ -167,16 +167,27 @@ func (pi *pendingInjector) hold(taskID string, m pendingMsg) {
 }
 
 // heldFor says which condition is holding a message right now. Checked in the
-// order the retry checks them, so the chip names the one that has to clear
-// first.
+// order the retry checks them (the new-context cycle, a dialog, the turn, then
+// the line), so the chip names the one that has to clear first.
+//
+// It answers HeldForLine only when the typed-line gate is shut, the same gate
+// /typing reports. It is never the fallback: a message held with the gate open
+// and nothing else identifiable (a retry that lost a race and will succeed on
+// the next tick) answers "", which the board draws as a waiting message with
+// no reason named rather than blaming a line that is empty.
 func (pi *pendingInjector) heldFor(taskID string, m pendingMsg) string {
 	switch {
+	case pi.d.holdingMessages(taskID):
+		return HeldForNewContext
 	case pi.d.act.dialogOpen(taskID):
 		return HeldForDialog
 	case pi.d.turnHolds(taskID, m.waitTurn):
 		return HeldForTurn
 	}
-	return HeldForLine
+	if run := pi.d.sup.get(taskID); run != nil && !run.peerGateOpen() {
+		return HeldForLine
+	}
+	return ""
 }
 
 // noteHeld sets the board signal when a message is held and after each retry
@@ -295,6 +306,7 @@ func (pi *pendingInjector) attempt(taskID string) {
 			ht.timer.Reset(backoffSteps[step])
 		}
 		pi.mu.Unlock()
+		pi.noteHeld(taskID, HeldForNewContext)
 		return
 	}
 	// A dialog the runner put up itself must not be answered by a peer message's
@@ -383,7 +395,7 @@ func (pi *pendingInjector) attempt(taskID string) {
 		ht.timer.Reset(next)
 	}
 	pi.mu.Unlock()
-	pi.noteHeld(taskID, HeldForLine)
+	pi.noteHeld(taskID, pi.heldFor(taskID, entries[0]))
 
 	// Not in the first minute. The front of the backoff is seconds apart, and a
 	// message held that briefly is the gate working, not something to announce.
