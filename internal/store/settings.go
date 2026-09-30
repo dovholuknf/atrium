@@ -18,6 +18,11 @@ import (
 // without asking.
 const SettingGlobalAuto = "global_auto"
 
+// SettingEscalateTurnAfter is how many minutes one turn may run before its card is
+// flagged `long-turn` and its launcher told once. Empty is 45. See
+// docs/rnd/held-message-escalation-design.md, stage R3.
+const SettingEscalateTurnAfter = "escalate_turn_after"
+
 // SettingSweepDead is how long a dead card stays on the board before it is
 // ARCHIVED, in seconds. `off` means never, and unset means the default.
 //
@@ -38,6 +43,10 @@ const (
 	// before the room culls it, in seconds. `off` disables the mark and the
 	// cull, and unset means thirty minutes. See daemon/mergedcull.go.
 	SettingMergedCullGrace = "merged_cull_grace"
+	// SettingEscalateHeldAfter is how many minutes a `when: done` message waits for
+	// the turn to end before the next tool call carries it. Empty means fifteen. See
+	// daemon/escalate.go.
+	SettingEscalateHeldAfter = "escalate_held_after"
 )
 
 // SettingReplayMode picks how a card's history is turned back into a terminal.

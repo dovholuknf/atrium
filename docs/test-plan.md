@@ -7921,3 +7921,29 @@ Needs a hub with one room and two browsers on the board. `curl` stands in for th
 2. (R4) Lend a card. The address handed out is `<frontend>/room/<room>/<handle>`, and it opens the terminal. On that
    share, the card's alias page opens it too. Another card's alias and a made-up name both answer the same 403. Rename
    the lent card's alias on the board: the old alias answers 403, and the handed-out address still opens it.
+
+## HE. Held-message escalation
+
+1. (R1, room) Set `escalate_held_after` to 1 on the settings page. Send a card that is mid-turn a message with
+   `when: done`. Until a minute has passed, the card's next tool calls do not carry it. After that, the next tool call
+   delivers it with `[atrium] this message waited 1 minutes for your turn to end, so it is delivered now.` in front.
+   The card's timeline shows `held message escalated after 1m` and the sender's say shows the same note. Clear the
+   setting and the wait is 15 minutes again.
+2. (R3, room) Set `escalate_turn_after` to 1. Give a card a task that keeps it in one turn for over a minute. Its
+   card shows a `long-turn` escalation, and its launcher is told once for that turn, with the turn's length and its
+   tool calls in the last 10 minutes. A card that has also stopped silently or sits in one long tool call is reported
+   for that instead, not twice. Clear the setting and the limit is 45 minutes again.
+
+## HF. A new context on a card that never leaves running (r-new-new-context-mid-turn)
+
+1. Press new context on a director that is in a long turn (workers, watchers, background tasks). About a minute later
+   the terminal shows `[atrium] new context: a new context is waiting. Finish the step you are on, commit, and end
+   your turn.` typed mid-turn, and the chip's tooltip ends `waiting for the turn to end, asked the card to stop at
+   HH:MM`.
+2. While the cycle waits, `atrium tell` the card: the message is queued with the new-context hold note, as before. The
+   stop line is not held.
+3. The card ends its turn. The capture prompt is typed only then, and the cycle runs to the wake as usual. The chip
+   stops saying it is waiting.
+4. A card that ignores it gets the line once more at half of the capture limit (7.5 minutes), never a third time. At
+   15 minutes the chip fails, and its reason names both times the card was asked.
+5. A card already between turns is never sent the line.

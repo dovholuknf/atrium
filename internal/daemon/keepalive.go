@@ -454,8 +454,7 @@ type forkSpec struct {
 func runForkProcess(ctx context.Context, spec forkSpec) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, keepaliveForkTimeout)
 	defer cancel()
-	exe := spec.Exe
-	args := spec.Args
+	exe, args := agentFork(spec.Exe, spec.Args)
 	if resolved, err := exec.LookPath(exe); err == nil {
 		exe, args = viaShellIfScript(resolved, args)
 	}
@@ -1197,3 +1196,7 @@ func (d *Daemon) keepaliveSet(taskID string, on bool) (any, error) {
 	d.ka.mu.Unlock()
 	return d.ka.view(taskID), nil
 }
+
+// agentFork is agentSpawn for a keep-alive fork, which is a one-shot model call.
+// A test's TestMain makes it a command that fails at once.
+var agentFork = func(exe string, args []string) (string, []string) { return exe, args }

@@ -135,6 +135,15 @@ const newContextClear = "/clear"
 // newContextWake is what the new session is told, and reads the capture back.
 func newContextWake(file string) string { return "Read " + file + " and continue from it." }
 
+// newContextStop is the line typed MID-TURN when a step has waited `nudgeAfter`
+// for a turn to end. A card driving workers and watchers can stay running for
+// hours, and the capture is never typed into a turn (r-022), so without this the
+// cycle waits out captureEnd and fails having done nothing. The runner reads the
+// line at its next step. It is the cycle's own typing, so `holdingMessages`
+// does not hold it, and the message a sender would write to say the same thing
+// is held by the very cycle it is trying to unblock.
+const newContextStop = "a new context is waiting. Finish the step you are on, commit, and end your turn."
+
 // ncTiming is how long each step waits, and how often it looks. Variables so a
 // test can run the whole sequence in milliseconds rather than name the thing that
 // must not happen by waiting for it.
@@ -159,6 +168,9 @@ var ncTiming = struct {
 	// waits. The hook fires a moment before the input box is drawn, and bytes
 	// typed before then are lost. See wakeSettle.
 	sessionSettle time.Duration
+	// nudgeAfter is how long a step waits on a running card before it types
+	// `newContextStop`. The second is typed at half the step's limit.
+	nudgeAfter time.Duration
 }{
 	poll:          250 * time.Millisecond,
 	typeWait:      2 * time.Minute,
@@ -167,6 +179,7 @@ var ncTiming = struct {
 	turnSettle:    2 * time.Second,
 	clearWait:     time.Minute,
 	sessionSettle: wakeSettle,
+	nudgeAfter:    time.Minute,
 }
 
 // newContext is one card's sequence as the board draws it.
@@ -178,6 +191,8 @@ type newContext struct {
 	// conv is the conversation the run started in. A failed chip clears when a
 	// SessionStart names a different one, which is the proof the clear happened.
 	conv string
+	// asked is when this step typed `newContextStop`, at most twice.
+	asked []time.Time
 	// gen tells a run whether it is still the card's. A dismiss or a fresh run
 	// bumps it, and the goroutine it replaced stops without saying anything.
 	gen uint64
@@ -282,8 +297,35 @@ func (n *newContexts) advance(taskID string, gen uint64, step string) bool {
 	if cur == nil || cur.gen != gen {
 		return false
 	}
-	cur.step, cur.since = step, time.Now()
+	cur.step, cur.since, cur.asked = step, time.Now(), nil
 	return true
+}
+
+// nudged records a stop request typed on the run's current step. A zero time
+// forgets them: what they asked for happened.
+func (n *newContexts) nudged(taskID string, gen uint64, at time.Time) bool {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	cur := n.by[taskID]
+	if cur == nil || cur.gen != gen {
+		return false
+	}
+	if at.IsZero() {
+		cur.asked = nil
+	} else {
+		cur.asked = append(cur.asked, at)
+	}
+	return true
+}
+
+// askedAt is the clock times a step typed `newContextStop`, for the chip and a
+// failure's reason.
+func askedAt(asked []time.Time) string {
+	s := make([]string, len(asked))
+	for i, at := range asked {
+		s[i] = at.Format("15:04")
+	}
+	return strings.Join(s, " and ")
 }
 
 // fail leaves the chip on the step that stopped, saying why.
@@ -366,12 +408,18 @@ func newContextView(c *newContext) map[string]any {
 	case NewContextFailed:
 		label = "new context failed"
 	}
+	if len(c.asked) > 0 && c.step != NewContextFailed {
+		label += ", waiting for the turn to end, asked the card to stop at " + askedAt(c.asked)
+	}
 	out := map[string]any{"step": c.step, "n": n, "of": 3, "label": label, "file": c.file, "since": c.since}
 	if c.auto {
 		out["auto"], out["tokens"], out["threshold"] = true, c.tokens, c.threshold
 	}
 	if c.reason != "" {
 		out["reason"] = c.reason
+	}
+	if len(c.asked) > 0 {
+		out["asked"] = c.asked
 	}
 	return out
 }
@@ -700,10 +748,30 @@ func (d *Daemon) ncWait(taskID string, gen uint64, limit time.Duration, what str
 // wake, so nothing else types into the card during a run. What that could not
 // give was atomicity: a message already past its own check when the run began.
 // The lock gives it.
+//
+// A TURN THAT DOES NOT END IS ASKED TO. After `nudgeAfter` on a running card the
+// step types `newContextStop` mid-turn, and once more at half its limit, never a
+// third time. The step itself still waits for the turn to end. A failure names
+// both, so the chip says the card was asked and did not stop.
 func (d *Daemon) ncType(taskID string, gen uint64, label, text string, limit time.Duration) error {
-	return d.ncWait(taskID, gen, limit, "an empty line and no turn in progress", func() (bool, error) {
+	began, asked := time.Now(), 0
+	err := d.ncWait(taskID, gen, limit, "an empty line and no turn in progress", func() (bool, error) {
 		run := d.sup.get(taskID)
-		if run == nil || d.act.dialogOpen(taskID) || d.act.midTurn(taskID) || d.cardRunning(taskID) {
+		if run == nil || d.act.dialogOpen(taskID) {
+			return false, nil
+		}
+		if d.act.midTurn(taskID) || d.cardRunning(taskID) {
+			waited := time.Since(began)
+			if asked == 0 && waited >= ncTiming.nudgeAfter ||
+				asked == 1 && waited >= limit/2 && limit/2 > ncTiming.nudgeAfter {
+				wrote, err := d.ncNudge(run, taskID, gen)
+				if errors.Is(err, errNewContextGone) {
+					return false, err
+				}
+				if wrote {
+					asked++
+				}
+			}
 			return false, nil
 		}
 		gone := false
@@ -729,8 +797,48 @@ func (d *Daemon) ncType(taskID string, gen uint64, label, text string, limit tim
 		}); err != nil {
 			log.Printf("[atrium] could not record the new context prompt on %s: %v", taskID, err)
 		}
+		// The step is past the wait the stop requests were about.
+		d.nctx.nudged(taskID, gen, time.Time{})
 		return true, nil
 	})
+	if err != nil && !errors.Is(err, errNewContextGone) {
+		if cur := d.nctx.get(taskID); cur != nil && cur.gen == gen && len(cur.asked) > 0 {
+			err = fmt.Errorf("%w, and the card was asked to end its turn at %s and did not", err, askedAt(cur.asked))
+		}
+	}
+	return err
+}
+
+// ncNudge types `newContextStop` into a running card: through the operator's
+// gate like an immediate message, but not held, and with no turn check, since a
+// turn is why it is typed. It reports whether it wrote. A closed gate writes
+// nothing and the next poll tries again.
+func (d *Daemon) ncNudge(run *runner, taskID string, gen uint64) (bool, error) {
+	gone := false
+	ok := func() bool {
+		if !d.nctx.mine(taskID, gen) {
+			gone = true
+			return false
+		}
+		return !d.act.dialogOpen(taskID)
+	}
+	wrote, err := d.typeLabelledGuarded(run, taskID, newContextLabel, newContextStop, ok)
+	if gone {
+		return false, errNewContextGone
+	}
+	if err != nil || !wrote {
+		return false, err
+	}
+	at := time.Now()
+	d.nctx.nudged(taskID, gen, at)
+	log.Printf("[atrium] new context on %s is waiting on a turn, asked the card to end it", taskID)
+	if err := d.st.AppendEvent(taskID, store.EventPrompted, map[string]any{
+		"text": newContextStop, "via": "terminal", "from": newContextBy,
+	}); err != nil {
+		log.Printf("[atrium] could not record the new context stop request on %s: %v", taskID, err)
+	}
+	d.publishTask(taskID)
+	return true, nil
 }
 
 // handoffDir is the card's directory, or "" when it cannot be read from here,

@@ -200,6 +200,9 @@ func TestTheAddressRecordsWhichBinaryIsRunning(t *testing.T) {
 // cycle. If the two disagree, hooks are written naming a binary that is not the
 // daemon's, and they fail silently by design.
 func TestTheLocationPathAgreesWithTheHookResolver(t *testing.T) {
+	// The two DEFAULTS are what must agree. The test guard points
+	// ATRIUM_LOCATION at a dead file for every test, and only the daemon reads it.
+	t.Setenv("ATRIUM_LOCATION", "")
 	mine, err := LocationPath()
 	if err != nil {
 		t.Fatal(err)
