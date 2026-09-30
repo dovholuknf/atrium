@@ -7211,3 +7211,42 @@ back and the chip goes. Tapping "follow" does the same.
 ### FT1. Checks
 
 - `HEADLESS_ONLY=phoneHeader,phoneView,u016,roomsDash`. `phoneHeader` at 412x915 touch: collapsed header at most 60px with tabs and bell, no gear or new agent, chevron at least 44px; auto on shows in the slim row; tap opens, tap closes, the choice and `body.hdr-open` survive a reload and follow a `storage` event; with two rooms no chip on a terminal row extends past its card; desktop 1280x800 has the full header and no chevron. `u016` now checks the slim header and chevron instead of the old hide.
+
+## FU. room-git init -Check
+
+### FU1. A healthy room
+
+1. Run `pwsh -File scripts/room-git.ps1 init <room> -Check` against a room whose clone is current.
+2. Expect `remote`, `git`, `clone`, `checkout` and `fresh` all `ok`, the last line `room-git done ok`, exit 0.
+3. Nothing changed there: `git status` in the clone is clean and `git remote -v` here is the same as before.
+
+### FU2. A stale hub-main
+
+1. Advance `claude/main` here (or use a room that is behind).
+2. Run the check. Expect `fresh fail` naming `room-git.ps1 push-base <room>`, and exit 3.
+3. Run push-base, then the check again: exit 0.
+
+### FU3. No clone, no remote, no git, no ssh
+
+1. Check a reachable room with no git remote here: `remote fail` and `clone fail` name `room-git.ps1 init <room>`,
+   exit 3.
+2. Check a Windows room whose PATH has only a Cygwin or MSYS git: `git fail` names the Git for Windows install, exit 4.
+3. Check an unreachable target with `-Target`: exit 2.
+4. `-Check` with any verb but `init` is refused with exit 1.
+
+### FU4. atrium.requirements.yaml
+
+1. Run `atrium requirements atrium.requirements.yaml --json` at the repo root. It parses with no error.
+
+## FV. Runner pid on macOS
+
+### FV1. The walk finds claude
+
+On a mac, run `go test ./internal/cli/ -run 'ProcInfo|Argv0|RunnerPID' -v` with `ATRIUM_EXPECT_RUNNER=1` set, from a
+shell that a `claude` process started (for example by asking `claude -p` to run it). Expect
+`TestRunnerPIDUnderRunner` to PASS, logging a hop whose argv0 is `claude` and a nonzero `runnerPID`.
+
+### FV2. No runner above it
+
+Run the same test binary from a plain terminal without the env var. Expect the runner test to SKIP and the others to
+PASS.
