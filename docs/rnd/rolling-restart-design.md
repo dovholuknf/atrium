@@ -366,6 +366,40 @@ leaves the runners up, and `--runners` stops everything. (2) B over A. (3) The g
 restart, then fails open. (4) The host is opt-in, on one room first, before it becomes a default. These are
 acceptance lines of stage 2 (1 and 3) and stage 3 (4). Stages 0 and 1 are handed to @terminal.
 
+**Stage 0 gaps, answered by @rnd, 2026-09-30.** The spike is `docs/rnd/f-011-stage0-spike.md` (@terminal, f-011a
+c5b87a18). Its verdict holds: B stands. Checks 1 to 5 and 7 passed with a real claude on sg4. These answers are
+acceptance lines of stage 1, and stage 1 may be briefed with them.
+
+- **G1, a probe evicts the live daemon. ACCEPT.** Section 3.2's `hello` no longer evicts. A read-only `probe` answers
+  the host's build, protocol version and run list and changes nothing. `hello {takeover: true}` is the only frame that
+  replaces the connected daemon, and the host logs who took over. A second `hello` without takeover is refused with
+  "a daemon is already connected".
+- **G2, full duplex on a Windows pipe. ACCEPT go-winio** (`github.com/Microsoft/go-winio`). It is MIT, pure Go,
+  maintained by Microsoft and underneath Docker and containerd, and hand-rolled overlapped I/O is where the subtle bugs
+  in this design would come from. Conditions: a pinned version, imported only from a `_windows.go` file in the host
+  package, and its named-pipe security descriptor set explicitly (G6), never its default.
+- **G3, the resize-cut guarantee. ACCEPT the softer wording**: "a cut is never recorded AFTER bytes produced at the new
+  size". Today's supervisor has the same race, so this is no regression, and section 3.2 says so.
+- **G4, a slow reader. ACCEPT**, with the bound stated in bytes: each client has a bounded queue (4 MB), and on
+  overflow the host closes that client and logs it, and the client reattaches from its last offset, which the ring
+  replay already serves. A slow client never slows the pty drain or another client. The exit is published only after
+  the ring has drained to every connected client, so no client sees an exit before the last bytes.
+- **G5, a restart that ends the room's task kills a host that could not break away. ACCEPT, and it is the one that
+  matters most.** At start the host records whether it is inside the room task's job object (breakaway refused) or
+  outside it. The daemon reads that from `probe` and the board shows it on the room row ("pty host: survives a daemon
+  restart" or "pty host: dies with the room's task"). `restart_atrium`, `provision-room.ps1 -Restart` and the room
+  restart path REFUSE a daemon-only restart on a room whose host is in-job, with that sentence, rather than killing
+  every agent while promising not to. Turning the host on for a room (stage 3, opt-in) refuses the same way. A room
+  whose task allows breakaway is the only kind the feature is enabled on.
+- **G6, the pipe name. ACCEPT**: the name is a hash of the state directory plus the user's SID, so two atriums for two
+  users or two state dirs on one machine never meet, and the name reveals no path. One pipe instance is always left
+  waiting, so a reconnect never finds none. The DACL grants the owning user only.
+- **G7, closing. ACCEPT**: every handle (pty, pipe, client) closes through one `sync.Once`, and a test closes from two
+  goroutines at once under `-race`.
+- **Check 6 (a real scheduled task as the room's user) and check 8 (systemd) are not stage 1 blockers.** Stage 1
+  ships off by default. Both must pass before the host is turned on for a room of that kind: check 6 on a Windows room
+  whose task runs as a user (claudevm has one), check 8 on cdzrok or another Linux machine, and launchd on m1mini.
+
 The questions as they were asked:
 
 1. What `atrium stop` means by default: stop the daemon and leave the runners up (the upgrade case), or today's
