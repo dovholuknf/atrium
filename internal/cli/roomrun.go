@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/daemon"
+	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/link"
 	"github.com/spf13/cobra"
 )
@@ -344,9 +346,10 @@ func runRoom(keys link.Keys, db, human, agent string, restartAfter time.Duration
 	room := &link.Room{
 		Name:    saved.Room,
 		Dial:    dial,
-		Handler: d.BoardHandler(),
 		Version: Version,
 		Host:    hostname(),
+		// SAYS GIT in the hello, so the hub will ask this room to sync. See internal/gitsync.
+		Git: true,
 		// WHETHER THIS ROOM WILL TAKE A BUILD ITS HUB IS RUNNING, which is the
 		// operator's decision and is off unless they made it. A hub can always
 		// SAY what it has; nothing happens here unless this is on. See
@@ -370,6 +373,7 @@ func runRoom(keys link.Keys, db, human, agent string, restartAfter time.Duration
 	}
 	// MESSAGES TO OTHER ROOMS go through this link, and what is owed goes the
 	// moment it reattaches. See internal/daemon/relay.go.
+	room.Handler = roomHandler(d, room)
 	room.OnAttach = d.RelayAttached
 	d.SetRelay(linkRelay{room: room})
 	go func() {
@@ -385,7 +389,42 @@ func runRoom(keys link.Keys, db, human, agent string, restartAfter time.Duration
 	fmt.Println("  own board http://" + human + "   (for when the hub is down)")
 	fmt.Println()
 
+	// Git children hold ref locks, so they are cancelled and waited for as soon as the wind-down
+	// starts, inside the daemon's own bound.
+	go func() {
+		<-ctx.Done()
+		log.Printf("[git] stopping git children")
+		if !gitsync.Default.Stop(5 * time.Second) {
+			log.Printf("[git] a git child did not exit in 5s")
+		}
+	}()
 	return d.Run(ctx)
+}
+
+// roomHandler is the board with the room's git surface in front of it: /v1/git/ is sync,
+// its status, and upload-pack over the clones. Clones live under the git_root setting,
+// which is set on the room and never by the hub, and defaults to ~/git.
+func roomHandler(d *daemon.Daemon, room *link.Room) http.Handler {
+	sy := &gitsync.Syncer{Root: func() string {
+		if v, err := d.Store().Setting(gitsync.SettingGitRoot); err == nil && strings.TrimSpace(v) != "" {
+			return strings.TrimSpace(v)
+		}
+		return gitsync.DefaultRoot()
+	}}
+	gh := &gitsync.RoomHandler{Syncer: sy, Hub: func() (http.RoundTripper, error) {
+		if !room.HubServesGit() {
+			return nil, link.ErrNoGit
+		}
+		return room.GitTransport(), nil
+	}}
+	git, board := gh.Handler(), d.BoardHandler()
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/v1/git/") {
+			git.ServeHTTP(w, r)
+			return
+		}
+		board.ServeHTTP(w, r)
+	})
 }
 
 // defaultRoomName is the machine's name, because that is what somebody would
