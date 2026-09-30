@@ -3,7 +3,8 @@
 // A REAL TEXTAREA, so autocorrect, dictation, swipe typing, paste, tap-to-cursor and the magnifier are the
 // phone's own. Nothing here rewrites what the person types while they type it.
 //
-// SEND is the button. Enter inserts a newline, because a phone keyboard has no shift to say "this one is a
+// SEND is the button, and Enter too where there is a hardware keyboard: Enter sends and Shift+Enter is a newline.
+// On a touch-only device Enter inserts a newline, because a phone keyboard has no shift to say "this one is a
 // newline". The message goes through `POST /v1/tasks/{id}/message`, the same call the board's say box makes
 // (`sayNow` in js/settings-spine.js), and the answer is reported as the daemon gave it:
 //
@@ -245,6 +246,15 @@
     capability().then(hint);
 
     ta.addEventListener("input", () => { follow(state, ta.value); refresh(); hint(); });
+    // Enter sends and Shift+Enter is a newline, the chat convention. Not while a word is being composed, where Enter
+    // commits the word, and not on a device whose only pointer is a finger, whose keyboard cannot say Shift.
+    const hardKeys = () => { try { return window.matchMedia("(any-pointer: fine)").matches; } catch (err) { return false; } };
+    ta.addEventListener("keydown", e => {
+      if (e.key !== "Enter" || e.shiftKey || e.isComposing || e.keyCode === 229 || state.composing) return;
+      if (!hardKeys()) return;
+      e.preventDefault();
+      submit();
+    });
     ta.addEventListener("paste", e => {
       if (opts.canUpload && !opts.canUpload()) return;
       const dt = e.clipboardData;

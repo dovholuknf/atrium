@@ -10597,8 +10597,8 @@ const M_VIEWS = [{ width: 390, height: 844 }, { width: 412, height: 915 }];
 
 async function mHarness(browser, view, opts) {
   opts = opts || {};
-  const ctx = await browser.newContext({ viewport: view, hasTouch: true, isMobile: true,
-    reducedMotion: opts.reduced ? "reduce" : "no-preference" });
+  const ctx = await browser.newContext(Object.assign({ viewport: view, reducedMotion: opts.reduced ? "reduce" : "no-preference" },
+    opts.desktop ? {} : { hasTouch: true, isMobile: true }));
   const calls = { message: [], decide: [], harnesses: 0 };
   const mode = { message: "terminal", decide: "ok" };
   await ctx.route(M_ORIGIN + "/**", async route => {
@@ -13289,6 +13289,68 @@ async function phoneBootSection(browser, base) {
   if (!bad) console.log("phoneBoot ok");
 }
 
+// ── Enter sends in the message box ───────────────────────────────────────
+// Where there is a hardware keyboard Enter sends and Shift+Enter is a newline. A touch-only device keeps Enter as a newline.
+async function sayEnterSection(browser) {
+  const box = "#m-compose .mc-box";
+  for (const desktop of [true, false]) {
+    const tag = "sayEnter " + (desktop ? "desktop" : "touch") + ": ";
+    const { ctx, p, calls, errors } = await mHarness(browser, desktop ? { width: 1000, height: 800 } : M_VIEWS[0], { desktop });
+    await p.evaluate(() => mCompose.mount(document.getElementById("m-compose"), "c1"));
+    await p.click(box);
+    await p.keyboard.type("one");
+    await p.keyboard.down("Shift");
+    await p.keyboard.press("Enter");
+    await p.keyboard.up("Shift");
+    await p.keyboard.type("two");
+    if ((await p.$eval(box, t => t.value)) !== "one\ntwo") fail(tag + "Shift+Enter did not make a newline");
+    if (calls.message.length) fail(tag + "Shift+Enter sent");
+    await p.keyboard.press("Enter");
+    if (desktop) {
+      await p.waitForFunction(() => document.querySelector("#m-compose .mc-box").value === "", null, { timeout: slow(5000) })
+        .catch(() => fail(tag + "Enter did not send"));
+      if (calls.message.length !== 1 || calls.message[0].body.text !== "one\ntwo") fail(tag + "the message was " + JSON.stringify(calls.message));
+      // an empty box does not send
+      await p.keyboard.press("Enter");
+      await p.waitForTimeout(150);
+      if (calls.message.length !== 1) fail(tag + "Enter on an empty box sent");
+    } else {
+      await p.waitForTimeout(150);
+      if (calls.message.length) fail(tag + "Enter sent on a touch-only device");
+      if ((await p.$eval(box, t => t.value)) !== "one\ntwo\n") fail(tag + "Enter did not make a newline on touch");
+    }
+    await ctx.close();
+    if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+  }
+  if (!bad) console.log("sayEnter ok");
+}
+
+// ── the send arrow is centred in its circle ──────────────────────────────
+// The glyph's box and the circle's box share a centre to within a pixel, on the phone page and in the board's composer.
+async function sendArrowSection(browser) {
+  for (const desktop of [true, false]) {
+    const tag = "sendArrow " + (desktop ? "desktop" : "phone") + ": ";
+    const { ctx, p, errors } = await mHarness(browser, desktop ? { width: 1000, height: 800 } : M_VIEWS[0], { desktop });
+    await p.evaluate(() => mCompose.mount(document.getElementById("m-compose"), "c1"));
+    await p.fill("#m-compose .mc-box", "hi");
+    const d = await p.evaluate(() => {
+      const b = document.querySelector("#m-compose .mc-send").getBoundingClientRect();
+      const g = [...document.querySelectorAll("#m-compose .mc-send svg path")].map(e => e.getBoundingClientRect());
+      const l = Math.min(...g.map(r => r.left)), r = Math.max(...g.map(r => r.right));
+      const t = Math.min(...g.map(r => r.top)), bt = Math.max(...g.map(r => r.bottom));
+      return { dx: (l + r) / 2 - (b.left + b.right) / 2, dy: (t + bt) / 2 - (b.top + b.bottom) / 2 };
+    });
+    if (Math.abs(d.dx) > 1 || Math.abs(d.dy) > 1) fail(tag + "the arrow is off centre by " + d.dx.toFixed(2) + "," + d.dy.toFixed(2));
+    if (process.env.ARROW_SHOTS) {
+      fs.mkdirSync(process.env.ARROW_SHOTS, { recursive: true });
+      await (await p.$("#m-compose .mc-row")).screenshot({ path: path.join(process.env.ARROW_SHOTS, (desktop ? "desktop" : "phone") + ".png") });
+    }
+    await ctx.close();
+    if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+  }
+  if (!bad) console.log("sendArrow ok");
+}
+
 async function main() {
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = "http://127.0.0.1:" + server.address().port;
@@ -13324,7 +13386,7 @@ async function main() {
       u001Audit: u001AuditSection,
       pasteStart: pasteStartSection, pasteDone: pasteDoneSection, pasteOldRoom: pasteOldRoomSection, pasteClose: pasteCloseSection,
       growlQuestionShots: growlQuestionShotsSection, growlQuestionBody: growlQuestionBodySection, growlReplyGrow: growlReplyGrowSection, growlChoices: growlChoicesSection, growlStable: growlStableSection, mGrowlQuestion: mGrowlQuestionSection,
-      bootClean: bootCleanSection, mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection };
+      bootClean: bootCleanSection, mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -15354,6 +15416,8 @@ async function main() {
     await mHomeOrderSection(browser);
     await cardUrlWayOutSection(browser, base);
     await phoneBootSection(browser, base);
+    await sayEnterSection(browser);
+    await sendArrowSection(browser);
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e));
     if (process.env.DEBUG_HEADLESS) {
