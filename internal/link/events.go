@@ -549,9 +549,12 @@ func (p *Proxy) serveEvents(w http.ResponseWriter, r *http.Request, room string,
 			// room was attached would otherwise keep receiving bare ids after
 			// a second room joined, while `/v1/tasks` had started answering
 			// tagged ones, and every card it heard about would be a card it
-			// had never listed.
-			if tag && p.hub.Only() == "" {
-				data = tagEvent(e)
+			// had never listed. And through `merged`, the rule the lists use,
+			// because one room attached is not one room remembered.
+			if tag {
+				if _, merged := p.merged(); merged {
+					data = tagEvent(e)
+				}
 			}
 			if _, err := fmt.Fprintf(w, "event: %s\ndata: %s\n\n", e.Kind, data); err != nil {
 				return

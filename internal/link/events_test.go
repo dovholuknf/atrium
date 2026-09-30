@@ -236,6 +236,45 @@ func TestOneRoomStreamsUntagged(t *testing.T) {
 	}
 }
 
+// One room attached and another remembered is the merged view, so the list comes
+// back tagged and every event must be tagged to match. The stream once asked only
+// whether one room was attached, and the board drew every card twice: the list's
+// `testroom~card1` and the event's `card1`.
+func TestOneRoomLiveAndOneRememberedStreamsTagged(t *testing.T) {
+	seen := time.Now().Add(-time.Hour)
+	stock := &remembering{
+		rooms: []Known{{Name: "athens", FirstSeen: &seen, LastSeen: &seen}},
+		cards: map[string][]CardState{
+			"athens": {card("c1", "the work left on athens", "running")},
+		},
+	}
+	say := make(chan string, 4)
+	front, _, done := pairWith(t, streamer(say), func(p *Proxy) { p.SetInventory(stock) })
+	defer done()
+
+	for _, path := range []string{"/v1/events", "/v1/events/hub"} {
+		ch, shut := listen(t, front.URL+path)
+		stopSaying := make(chan struct{})
+		go func() {
+			for i := 0; i < 40; i++ {
+				select {
+				case <-stopSaying:
+					return
+				case say <- sse("task", `{"id":"card1"}`):
+				}
+				time.Sleep(100 * time.Millisecond)
+			}
+		}()
+		e := waitEvent(t, ch, "task")
+		close(stopSaying)
+		shut()
+		obj := fields(t, e.Data)
+		if obj["id"] != "testroom~card1" {
+			t.Fatalf("%s: the list is merged but the event was not tagged: %s", path, e.Data)
+		}
+	}
+}
+
 // The address the board has always used still works, and picks the right one
 // of the two behaviours.
 func TestThePlainEventsPathStillAnswers(t *testing.T) {

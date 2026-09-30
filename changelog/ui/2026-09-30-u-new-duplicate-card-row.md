@@ -1,0 +1,1 @@
+- A card no longer shows twice on the hub board when one room is attached and the hub still remembers another room's cards. The hub's event stream now tags ids by the same rule as `/v1/tasks`, so an event names the card its list row does. (u-new-duplicate-card-row)
