@@ -28,7 +28,40 @@
     background: none; color: var(--body, #9fbdd4); border: 1px solid var(--stroke, #2a4860);
     border-radius: var(--r-sm, 6px); padding: 3px 8px; cursor: pointer; font: inherit;
   }
-  :is(#growl, #growl-phone) button:hover:not(:disabled) { border-color: var(--blue, #28c2ff); color: var(--head, #f2f8ff); }
+  /* No lift on hover. The board's own button:hover raises it a pixel, and a pointer on the bottom edge then
+     leaves the button, which drops back, which hovers again: a flicker that reads as unreliable. */
+  :is(#growl, #growl-phone) button:hover:not(:disabled) { border-color: var(--blue, #28c2ff); color: var(--head, #f2f8ff); transform: none; }
+  :is(#growl, #growl-phone) button:active { transform: none; }
+
+  /* A question is read whole, in a box with its own scroll. Long paths and tokens wrap, a code block scrolls
+     sideways inside itself, and lists and paragraphs keep their spacing. */
+  :is(#growl, #growl-phone) .gr-body {
+    flex: 1 1 auto; min-height: 5em; max-height: min(30vh, 260px); overflow: auto; overflow-wrap: anywhere;
+    color: var(--label, #7fa6c4);
+  }
+  /* The card shrinks the body, not the buttons, when the window is short. */
+  :is(#growl, #growl-phone) .gr-full { flex: 0 1 auto; min-height: 0; }
+  :is(#growl, #growl-phone) .gr-body p { margin: 0 0 .6em; }
+  :is(#growl, #growl-phone) .gr-body ol, :is(#growl, #growl-phone) .gr-body ul { margin: 0 0 .6em; padding-left: 1.5em; }
+  :is(#growl, #growl-phone) .gr-body li { margin: 0 0 .2em; }
+  :is(#growl, #growl-phone) .gr-body pre {
+    margin: 0 0 .6em; padding: 6px 8px; overflow-x: auto; border-radius: var(--r-sm, 6px); background: var(--bg-2, #040b14);
+  }
+  :is(#growl, #growl-phone) .gr-body pre code { white-space: pre; overflow-wrap: normal; }
+  :is(#growl, #growl-phone) .gr-choices { display: flex; flex-wrap: wrap; gap: var(--sp-2, 6px); }
+  :is(#growl, #growl-phone) .gr-choices button { text-align: left; overflow-wrap: anywhere; }
+
+  /* The reply box grows with what is typed up to a cap, then scrolls. The bigger box is taller. */
+  :is(#growl, #growl-phone) .gr-replybox { display: flex; gap: var(--sp-2, 6px); align-items: flex-end; }
+  :is(#growl, #growl-phone) .gr-replybox .gr-reply {
+    flex: 1; min-width: 0; resize: none; font: inherit; line-height: 1.4; overflow-y: auto;
+    min-height: 2.2em; max-height: 9em;
+  }
+  :is(#growl, #growl-phone) .gr-replyacts { display: flex; gap: var(--sp-2, 6px); }
+  :is(#growl, #growl-phone) .gr-replybox.big { flex-direction: column; align-items: stretch; }
+  :is(#growl, #growl-phone) .gr-replybox.big .gr-reply { min-height: 22vh; max-height: 36vh; }
+  /* Writing a long answer needs the room the question was using, and the question stays readable above it. */
+  :is(#growl, #growl-phone) .gr-full:has(.gr-replybox.big) .gr-body { max-height: min(16vh, 140px); }
   :is(#growl, #growl-phone) button:disabled { opacity: .45; cursor: default; }
   #growl .gr-strip { width: 100%; text-align: left; border-style: dashed; color: var(--label, #7fa6c4); }
   #growl .gr-row { display: flex; gap: var(--sp-2, 6px); align-items: center; }

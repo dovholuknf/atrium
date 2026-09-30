@@ -49,18 +49,28 @@
   function full(g) {
     const perm = g.reason === "permission";
     const dead = perm && !g.subject ? " disabled" : "";
+    // A question is read whole, in a box that scrolls. Anything else keeps its one line.
+    const asks = g.reason === "blocked" || g.reason === "question";
+    const split = asks ? splitChoices(g.body) : { text: g.body, choices: [] };
     const text = perm
       ? '<code class="gm-cmd">' + U.esc(first(g.body)) + "</code>"
-      : '<div class="gm-line">' + U.esc(first(g.body)) + "</div>";
+      : asks ? '<div class="gm-body">' + bodyHTML(split.text) + "</div>"
+        : '<div class="gm-line">' + U.esc(first(g.body)) + "</div>";
+    const choices = split.choices.length
+      ? '<div class="gm-choices">' + split.choices.map(c => '<button data-choice="' + U.esc(c) + '">' + U.esc(c) + "</button>").join("") + "</div>" : "";
+    const big = compose === g.id;
+    let reply = "";
+    if (asks) {
+      reply = '<div class="gm-replybox' + (big ? " big" : "") + '"><textarea class="gm-reply" rows="1" placeholder="reply" aria-label="reply"></textarea>' +
+        '<div class="gm-replyacts"><button data-do="reply">send</button><button data-do="compose" aria-label="' +
+        (big ? "fold the reply box" : "open a bigger reply box") + '">' + (big ? "&#10514;" : "&#10530;") + "</button></div></div>";
+    }
     let acts = "";
     if (perm) acts += '<button data-do="approve"' + dead + ">approve once</button>" +
       '<button data-do="block"' + dead + ">block</button>";
     else if (g.reason === "halt") acts += '<a class="btn" href="/">open the room</a>';
     else if (g.reason === "deploy-hold") {
       acts += '<button data-do="lift">' + (liftArm === g.id ? "tap again to lift" : "lift") + "</button>";
-    }
-    if (g.reason === "blocked" || g.reason === "question") {
-      acts += '<input class="gm-reply" placeholder="reply" aria-label="reply">' + '<button data-do="reply">send</button>';
     }
     acts += '<button data-do="open">open</button><button data-do="snooze">snooze</button>' +
       '<button data-do="dismiss">dismiss this</button>';
@@ -71,8 +81,52 @@
         '<button data-do="sendblock">send block</button><button data-do="cancelblock">cancel</button></div>' : "";
     const off = g.room_offline ? '<span class="gm-off">room offline</span>' : "";
     return '<div class="gm-full" data-id="' + U.esc(g.id) + '"><div class="gm-head"><b>' + U.esc(g.title) + "</b>" + off +
-      "</div>" + text + '<div class="gm-acts">' + acts + "</div>" + snooze + block + "</div>";
+      "</div>" + text + choices + reply + '<div class="gm-acts">' + acts + "</div>" + snooze + block + "</div>";
   }
+
+  // `{choices}...{/choices}` is the agent offering a small set of answers, one per line. It is taken out of the text
+  // and drawn as buttons, and a press sends that line as the reply.
+  function splitChoices(body) {
+    const m = /\{choices\}([\s\S]*?)\{\/choices\}/.exec(String(body || ""));
+    if (!m) return { text: String(body || ""), choices: [] };
+    const choices = m[1].split("\n").map(l => l.trim()).filter(Boolean);
+    return { text: (String(body).slice(0, m.index) + String(body).slice(m.index + m[0].length)).trim(), choices };
+  }
+
+  // The same safe renderer the replies use: everything escaped, code scrolling sideways inside itself.
+  function bodyHTML(text) {
+    return window.mMd ? window.mMd.render(String(text || "")) : "<p>" + U.esc(text) + "</p>";
+  }
+
+  // Which growler's reply box is opened to full size. The text is the draft either way.
+  let compose = "";
+
+  // A reply box that grows with what is typed, up to the cap in the stylesheet, then scrolls.
+  function grow(box) {
+    box.style.height = "auto";
+    box.style.height = box.scrollHeight + "px";
+  }
+
+  // THE DRAWN NODES ARE KEPT WHEN THEIR MARKUP IS THE SAME. Every `growls` event asks for a draw, and replacing a node
+  // drops its `:hover` and whatever is typed in it. Only a part that changed is swapped. Answers the nodes it made.
+  const sigs = new WeakMap();
+  function reconcile(parts) {
+    const made = [];
+    parts.forEach((html, i) => {
+      const old = el.children[i];
+      if (old && sigs.get(old) === html) return;
+      const t = document.createElement("template");
+      t.innerHTML = html;
+      const n = t.content.firstElementChild;
+      sigs.set(n, html);
+      if (old) el.replaceChild(n, old);
+      else el.appendChild(n);
+      made.push(n);
+    });
+    while (el.children.length > parts.length) el.lastElementChild.remove();
+    return made;
+  }
+  let caret = [0, 0];
 
   function render() {
     if (!el) return;
@@ -82,26 +136,33 @@
     el.hidden = false;
     const a = document.activeElement;
     const focused = a && el.contains(a) && a.classList.contains("gm-reply") ? a.closest(".gm-full").dataset.id : "";
-    let html = note ? '<div class="gm-note">' + U.esc(note) + "</div>" : "";
-    if (gone) html += '<div class="gm-undo"><span>dismissed: ' + U.esc(gone.title) + '</span><button data-do="undo">undo</button></div>';
+    if (focused) caret = [a.selectionStart, a.selectionEnd];
+    const parts = [];
+    if (note) parts.push('<div class="gm-note">' + U.esc(note) + "</div>");
+    if (gone) parts.push('<div class="gm-undo"><span>dismissed: ' + U.esc(gone.title) + '</span><button data-do="undo">undo</button></div>');
     if (rows.length) {
       if (expanded && rows.length > 1) {
-        html += '<div class="gm-list">' + rows.map(full).join("") + "</div>" +
-          '<button class="gm-strip" data-do="fold">fold</button>';
+        rows.forEach(g => parts.push(full(g)));
+        parts.push('<button class="gm-strip" data-do="fold">fold</button>');
       } else {
         expanded = false;
         const rest = rows.slice(1);
-        html += full(rows[0]) + (rest.length
-          ? '<button class="gm-strip" data-do="expand">+' + rest.length + " more: " + counts(rest) + "</button>" : "");
+        parts.push(full(rows[0]));
+        if (rest.length) parts.push('<button class="gm-strip" data-do="expand">+' + rest.length + " more: " + counts(rest) + "</button>");
       }
     }
-    el.innerHTML = html;
-    el.querySelectorAll(".gm-full").forEach(f => {
-      const box = f.querySelector(".gm-reply");
-      if (box) {
+    reconcile(parts).forEach(n => {
+      const fulls = n.classList.contains("gm-full") ? [n] : [];
+      fulls.forEach(f => {
+        const box = f.querySelector(".gm-reply");
+        if (!box) return;
         box.value = drafts.get(f.dataset.id) || "";
-        if (focused === f.dataset.id) box.focus();
-      }
+        grow(box);
+        if (focused === f.dataset.id) {
+          box.focus();
+          try { box.setSelectionRange(caret[0], caret[1]); } catch (e) {}
+        }
+      });
     });
   }
 
@@ -142,6 +203,20 @@
     }
   }
 
+  // A reply typed, or a choice pressed. Both are the same message, through the operator message path.
+  async function sendReply(g, text, box) {
+    const id = cardId(g);
+    if (!text || !id) return;
+    try {
+      await window.mNet.api("/v1/tasks/" + encodeURIComponent(id) + "/message", {
+        method: "POST", body: JSON.stringify({ text, when: "done" }),
+      });
+      drafts.delete(g.id);
+      if (box) { box.value = ""; grow(box); }
+      say("sent");
+    } catch (e) { say("not sent: " + (e.message || e)); }
+  }
+
   async function act(g, what, row) {
     switch (what) {
       case "approve": return decide(g, "approve", "");
@@ -171,16 +246,16 @@
       }
       case "reply": {
         const box = row.querySelector(".gm-reply");
-        const text = box ? box.value.trim() : "";
-        const id = cardId(g);
-        if (!text || !id) return;
-        try {
-          await window.mNet.api("/v1/tasks/" + encodeURIComponent(id) + "/message", {
-            method: "POST", body: JSON.stringify({ text, when: "done" }),
-          });
-          drafts.delete(g.id);
-          say("sent");
-        } catch (e) { say("not sent: " + (e.message || e)); }
+        return sendReply(g, box ? box.value.trim() : "", box);
+      }
+      case "compose": {
+        // The text is the draft either way, and the box is rebuilt from it at the other size.
+        const box = row.querySelector(".gm-reply");
+        if (box) drafts.set(g.id, box.value);
+        compose = compose === g.id ? "" : g.id;
+        render();
+        const back = el.querySelector('.gm-full[data-id="' + CSS.escape(g.id) + '"] .gm-reply');
+        if (back) { caret = [back.value.length, back.value.length]; back.focus(); back.setSelectionRange(caret[0], caret[1]); }
         return;
       }
       case "dismiss": {
@@ -199,6 +274,11 @@
     if (!btn) return;
     const what = btn.dataset.do;
     const row = btn.closest(".gm-full");
+    if (btn.dataset.choice !== undefined && row) {
+      const g = window.mStore.growls().find(x => x.id === row.dataset.id);
+      if (g) sendReply(g, btn.dataset.choice, null);
+      return;
+    }
     if (btn.dataset.snooze !== undefined && row) {
       const g = window.mStore.growls().find(x => x.id === row.dataset.id);
       if (!g) return;
@@ -235,14 +315,21 @@
     el.addEventListener("click", onClick);
     el.addEventListener("input", e => {
       const row = e.target.closest(".gm-full");
-      if (row && e.target.classList.contains("gm-reply")) drafts.set(row.dataset.id, e.target.value);
+      if (row && e.target.classList.contains("gm-reply")) { drafts.set(row.dataset.id, e.target.value); grow(e.target); }
     });
+    // Enter sends and Shift+Enter is a newline. Escape folds a full-size box, keeping the text.
     el.addEventListener("keydown", e => {
-      if (e.key !== "Enter") return;
       const row = e.target.closest(".gm-full");
       const g = row && window.mStore.growls().find(x => x.id === row.dataset.id);
-      if (!g) return;
-      if (e.target.classList.contains("gm-reply")) act(g, "reply", row);
+      if (!g || e.isComposing) return;
+      if (e.key === "Escape" && e.target.classList.contains("gm-reply") && compose === g.id) {
+        e.preventDefault();
+        compose = "";
+        render();
+        return;
+      }
+      if (e.key !== "Enter") return;
+      if (e.target.classList.contains("gm-reply") && !e.shiftKey) { e.preventDefault(); act(g, "reply", row); }
       if (e.target.classList.contains("gm-why")) act(g, "sendblock", row);
     });
     window.mStore.on("growls", () => {
