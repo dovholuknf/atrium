@@ -3,8 +3,8 @@
 // It exists because nothing in atrium answered it. `internal/api/browse.go`
 // applies `filepath.Clean` to caller input and nothing else, which is fine for
 // a read-only directory picker on loopback and is not a containment check.
-// `docs/charon.md` assumed there was an answer in there to reuse; there was
-// not, and `docs/file-transfer-design.md` records the correction.
+// `docs/rnd/charon.md` assumed there was an answer in there to reuse; there was
+// not, and `docs/runtime/file-transfer-design.md` records the correction.
 //
 // Nothing here consults a card, a store or a request. One function, three
 // rules, and tests for each of the ways the rules get broken.

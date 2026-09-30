@@ -947,7 +947,7 @@ type Inventory interface {
 	Holding() ([]string, error)
 	// HubSkin is the skin the ALL view wears, which is the hub's own and not a
 	// room's. Empty means unset, read by the serving side as the default. See
-	// `hubSettings` in fanout.go and `docs/hub-room-requirements.md`.
+	// `hubSettings` in fanout.go and `docs/fabric/hub-room-requirements.md`.
 	HubSkin() (string, error)
 	// SetHubSkin records the skin the ALL view wears, which is how a skin saved
 	// while looking at all rooms lands somewhere instead of being refused for
@@ -957,7 +957,7 @@ type Inventory interface {
 	// when it stops (nil for no deadline). Board policy, held by the hub and
 	// enforced hub-side on the permission relay, so it reaches every session the
 	// instant a request appears, whatever room registered it. See
-	// `autoapprove.go` and `docs/auto-mode.md`.
+	// `autoapprove.go` and `docs/runtime/auto-mode.md`.
 	BoardAuto() (on bool, until *time.Time, err error)
 	// SetBoardAuto turns the hub-wide flag on (optionally with a deadline) or
 	// off, which is how the board's ALL view lands the toggle somewhere instead
@@ -967,7 +967,7 @@ type Inventory interface {
 	// the scheme ("updb", "oidc" or "" for none), the updb username and
 	// password, and the oidc provider. Board policy, so the hub's to hold, the
 	// same as the skin and the board-wide flag. See `hubSettings` in fanout.go
-	// and `docs/ziti-zrok-flow-design.md`.
+	// and `docs/fabric/ziti-zrok-flow-design.md`.
 	ShareAuth() (ShareAuth, error)
 	// SetShareAuth writes that login, which is how the settings screen's share
 	// user/pass field lands somewhere. The password is written only when a new

@@ -24,7 +24,7 @@ import (
 // `tool_use_id`, `stop_hook_active`, `agent_id`, `agent_type`. Two differ and
 // neither is read by atrium: the prompt arrives as `prompt` rather than
 // `user_input`, and a tool result as `tool_response` rather than
-// `tool_result`. `docs/other-runners.md` has the payloads.
+// `tool_result`. `docs/runtime/other-runners.md` has the payloads.
 type Target struct {
 	// ID is what atrium calls this runner, matching the harness id.
 	ID string `json:"id"`
@@ -87,7 +87,7 @@ var Claude = Target{
 // operator's own dotfiles rather than anything atrium writes. It works on
 // codex unchanged, on `PreToolUse`, which is where it already sits: codex
 // reads the same `hookSpecificOutput.permissionDecision` shape and blocks the
-// call. See `docs/other-runners.md`.
+// call. See `docs/runtime/other-runners.md`.
 //
 // `PostCompact` and `Interrupt` have no atrium subcommand behind them, and
 // offering a hook atrium does nothing with is a switch that reports success

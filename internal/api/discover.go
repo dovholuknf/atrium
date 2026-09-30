@@ -108,7 +108,7 @@ func LookPath(cmd string) string {
 // installed off the room process PATH still reports as available; otherwise Cmd
 // is resolved against PATH. exec.LookPath validates an absolute path too, so the
 // same "is it really there and runnable" check covers both. See
-// docs/runner-scoping-design.md.
+// docs/fabric/runner-scoping-design.md.
 func RunnerFound(h *store.Harness) string {
 	if p := strings.TrimSpace(h.BinPath); p != "" {
 		return LookPath(p)

@@ -17,7 +17,7 @@ import (
 )
 
 // A fake second room, as far as this room can tell: a Relay that records what
-// it was asked and answers what the test says. See docs/cross-room-say-design.md.
+// it was asked and answers what the test says. See docs/fabric/cross-room-say-design.md.
 type fakeRelay struct {
 	mu     sync.Mutex
 	got    []RelaySay

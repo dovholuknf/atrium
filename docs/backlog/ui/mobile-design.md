@@ -165,7 +165,7 @@ unsubscribe, a per-device switch in settings, the test notification) is about ha
 
 - **An outbound call.** The hub has never called out. A push goes to the browser vendor's push service (FCM for
   Brave and Chrome, Mozilla's for Firefox, Apple's for Safari). The payload is encrypted end to end, so the service
-  sees only that a push happened and its size. @rnd ruled that this does not cross the line in `docs/overlays.md`, on
+  sees only that a push happened and its size. @rnd ruled that this does not cross the line in `docs/fabric/overlays.md`, on
   conditions (see "What @rnd's research says"): atrium holds its OWN key, never somebody else's credential, and
   nothing comes back in.
 - **Brave's toggle.** Brave for Android ships with "Use Google services for push messaging" OFF. Without it, no push
@@ -227,13 +227,13 @@ From `docs/rnd/mobile-research.md` at claude/rnd 7688b98 (a read of docs and REA
 5. **`--remote-control` per claude card** is a cheap extra ("open in the Claude app"), not a replacement: atrium's
    PreToolUse gate runs first, and the Claude app will not show atrium's permission question.
 
-**On push**, @rnd rules that Web Push does NOT cross the line in `docs/overlays.md`, on three conditions: (a) off until
+**On push**, @rnd rules that Web Push does NOT cross the line in `docs/fabric/overlays.md`, on three conditions: (a) off until
 the phone's holder turns it on, (b) the payload is the card name and the reason only, (c) fire and forget, bounded,
 never delaying a card, the permission chain or a hook. Also: no push while clint is at the desktop board (the seen
 dwell and page visibility), as Claude Code does. **ntfy is worse as the primary**: ntfy.sh sees plaintext, and the
 topic is a bearer secret atrium would store. The better fallback is an operator-written **notify command**, run with
 the card and the reason, bounded like a source. atrium then holds the name of a command and never the credential, the
-same rule as `docs/scm-design.md`. That replaces G-ntfy, see below.
+same rule as `docs/runtime/scm-design.md`. That replaces G-ntfy, see below.
 
 **What this changes here.** @ui agrees with 1 to 3 and 5. Points 2 and 4 together are a different shape from B, C
 and F above: a conversation-first `/m` page rather than the board squeezed onto a phone. That is Path 2 in
@@ -353,4 +353,4 @@ command sink is the cheapest way to prove notifications on his actual phone befo
   would then hold what atrium was asked to run, even if encrypted. The local notification keeps its approve and block
   buttons, and the push opens the row.
 - Any login. The phone reaches the board over the overlay, and the published board's optional OIDC sign-in
-  (`docs/overlays.md`) is the only gate.
+  (`docs/fabric/overlays.md`) is the only gate.

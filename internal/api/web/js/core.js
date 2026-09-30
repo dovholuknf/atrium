@@ -34,7 +34,7 @@ const PHONE = 480;
 const COLUMNS = [
   {
     // Last in the DOM, first here, because reading order is what this array
-    // decides and an inbox is where you start. See docs/intake-design.md.
+    // decides and an inbox is where you start. See docs/runtime/intake-design.md.
     //
     // `accepts: false` for the usual reason plus one of its own: filing a
     // card back into the inbox would claim it had never been started, and the

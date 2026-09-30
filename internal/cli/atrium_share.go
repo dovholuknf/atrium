@@ -51,7 +51,7 @@ type boardShare struct {
 // (a username and password) or OIDC. A public share with neither is refused,
 // because a public zrok URL is reachable by anyone and reachability cannot be
 // the authorisation. A private share ignores the login entirely: the access
-// token is already the gate. See docs/ziti-zrok-flow-design.md, decisions 1-2.
+// token is already the gate. See docs/fabric/ziti-zrok-flow-design.md, decisions 1-2.
 func openBoardShare(mode string, auth hubstore.ShareAuth) (*boardShare, net.Listener, error) {
 	mode = strings.TrimSpace(mode)
 	if mode == "" {

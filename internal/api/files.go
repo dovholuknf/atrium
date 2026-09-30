@@ -17,7 +17,7 @@ import (
 
 // Moving files to and from a card's working directory.
 //
-// Designed in docs/file-transfer-design.md, which is worth reading before
+// Designed in docs/runtime/file-transfer-design.md, which is worth reading before
 // changing any of this. The short version of why it is shaped this way:
 //
 // UPLOAD takes no destination. The caller says which card and nothing else,

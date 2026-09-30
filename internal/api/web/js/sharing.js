@@ -163,7 +163,7 @@ function stopSharingChip(e, id) {
 //
 // OpenZiti gets a section and no options in it. Lending one session over ziti
 // is not the same shape as a zrok share: there is no link to send, a guest
-// needs an identity, and issuing one is the line `docs/overlays.md` says
+// needs an identity, and issuing one is the line `docs/fabric/overlays.md` says
 // atrium does not cross. It is named rather than omitted, because a machine
 // with ziti up and a menu that only mentions zrok is a machine whose operator
 // has no idea whether they missed a setting.

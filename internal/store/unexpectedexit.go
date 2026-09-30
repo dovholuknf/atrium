@@ -6,7 +6,7 @@ import (
 )
 
 // The unexpected-exit notice rides the restart wake's row. See
-// docs/unexpected-exit-wake.md.
+// docs/runtime/unexpected-exit-wake.md.
 //
 // ONE ROW PER CARD IS THE PRECEDENCE RULE. A card that queued its own wake keeps
 // it, and a card that already has a notice waiting does not get a second one, so

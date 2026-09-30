@@ -25,7 +25,7 @@
 #                    department merges those here. THIS SCRIPT NEVER MERGES.
 #
 # ALL GIT LIVES HERE, run by an operator or a director. The atrium binary never learns git or makes a worktree
-# (docs/remote-launch.md section 3).
+# (docs/fabric/remote-launch.md section 3).
 #
 # THE REMOTE runs plain `sh -s` on Unix and Windows PowerShell 5.1 (-EncodedCommand) on Windows, the way
 # provision-room.ps1 does. No pwsh is needed there, only git. When git is missing the script names the install and

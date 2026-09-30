@@ -1,7 +1,7 @@
 # Architecture v2: the daemon, the API, and the clients
 
 Status: design, not yet built. Supersedes the Mode A / Mode B framing in `CLAUDE.md` once implementation starts.
-Read `docs/state-of-the-art.md` first for where v1 actually sits.
+Read `docs/rnd/state-of-the-art.md` first for where v1 actually sits.
 
 ## Why v2 exists
 
@@ -71,7 +71,7 @@ the TUI talks to the daemon over loopback HTTP like everything else. If the TUI 
 exposes, the web UI can never be second class.
 
 `atrium hub` was to survive as a convenience that attached the TUI over loopback. It did not: Mode A, TUI
-included, was removed in `docs/one-atrium-plan.md` stage 1, and the board is the one client of the API.
+included, was removed in `docs/fabric/one-atrium-plan.md` stage 1, and the board is the one client of the API.
 
 ## Domain model
 
@@ -316,7 +316,7 @@ making no tool calls at all. Nothing queued means `{"continue":true}` and the tu
 **caller's** side. It rides `PreToolUse`, so a slow or stalled daemon would add latency to every tool call in
 every session. The hook gives it one second, ignores every failure, and nothing downstream reads its result. A
 session that never lands a single activity post behaves exactly as it did before the endpoint existed. See
-`docs/activity-design.md`.
+`docs/runtime/activity-design.md`.
 
 `/session` is posted by the harness's own session hooks rather than by the model, because a session sitting at its
 prompt has made no tool call and would otherwise be invisible, and asking the model to announce itself would spend
@@ -528,7 +528,7 @@ These v1 invariants are hook side and survive the split untouched. Do not regres
 
 The v1 list had four more, about the `atrium agent` submit loop: the LLM never sees a disconnect, never sees an
 empty prompt, burns no tokens while idle, and activates only on request. They went with Mode A, which
-`docs/one-atrium-plan.md` stage 1 removed. A supervised session gets the same quiet idle by owning the terminal,
+`docs/fabric/one-atrium-plan.md` stage 1 removed. A supervised session gets the same quiet idle by owning the terminal,
 not by parking a tool call.
 
 ## What v1 rules get retired
@@ -556,7 +556,7 @@ Each stage left `atrium hub` working, until Mode A was removed.
    first commit that touches storage. **Done.**
 4. **Human facing API.** Add the `/v1` endpoints and the SSE stream on top of the task model. **Done.**
 5. **Cut the pointer.** Rewrite the TUI against the HTTP API. Delete the privileged path. **Abandoned.** The TUI
-   was deleted instead, with the rest of Mode A, in `docs/one-atrium-plan.md` stage 1. Everything since stage 4
+   was deleted instead, with the rest of Mode A, in `docs/fabric/one-atrium-plan.md` stage 1. Everything since stage 4
    went into the board, which is the one client of the API.
 6. **Board.** Kanban, stack, permissions and runners against the same API. **Done**, as a plain page rather than
    the React SPA the decisions table names. The JSON plus SSE contract is unchanged, so swapping it is a client
@@ -604,11 +604,11 @@ These were not in the original plan and are worth recording, because two of them
   because you must act or because you decided something. What a runner is doing right now, thinking or running a
   named tool or waiting on subagents, is a fact about the runner and never needs a human, so it goes on the card.
   It is held in memory and never written down, because a stored activity is a lie the moment the daemon restarts.
-  `docs/activity-design.md`.
+  `docs/runtime/activity-design.md`.
 - **Auto mode, and the review that pays for it.** A session can be told to approve without asking while still
   recording everything, and the record is then readable: grouped by tool, identical calls folded, the ones nobody
   saw first. Auto mode sits last in the permission chain, so a `never` rule, a shelved card and a queued message
-  all still win. `docs/auto-mode.md`.
+  all still win. `docs/runtime/auto-mode.md`.
 - **Rules can cover a folder.** Expressing "let it work in here" as a command glob means writing a pattern that
   also accounts for the quoting around the path, and `rm -f "C:/x/*"` fails against `rm -f "C:/x/y.db"` over the
   closing quote alone, silently. A folder rule says what was meant.
@@ -621,7 +621,7 @@ These were not in the original plan and are worth recording, because two of them
   the terminal for the human. The operator overruled that, considering the pty shared between himself and the
   agents, so a peer message is typed when the terminal is free and queued when it is not. What is never done is
   typing into a line somebody is part way through, and the daemon knows because every operator keystroke has
-  already passed through it. See `docs/supervision-design.md` for the three states.
+  already passed through it. See `docs/terminal/supervision-design.md` for the three states.
 - **Stopping is not killing.** The daemon owns each pseudo terminal and closing one takes the attached process
   with it, so killing the daemon ends every runner it started at once. `atrium stop` and `POST /v1/shutdown` reach
   the narrated wind-down instead.
@@ -646,7 +646,7 @@ These were not in the original plan and are worth recording, because two of them
 - **The subagent count is also why auto mode grew a deadline.** It used to stay on until switched off, and
   "auto mode for the next hour" was named here as the shape it should have. It has that shape now: `auto_until`
   per card and board-wide, cleared server-side in the permission chain, which is the one moment auto mode means
-  anything. See `docs/auto-mode.md`.
+  anything. See `docs/runtime/auto-mode.md`.
 - ConPTY behavior under Go on Windows 11 is validated, with one trap: returning from `main` after tearing a
   pseudo terminal down yields exit 127. See "ConPTY was validated, and it has one trap" above.
 - Inferring status from output for non-cooperative runners is heuristic. Expect it to be wrong sometimes, and keep

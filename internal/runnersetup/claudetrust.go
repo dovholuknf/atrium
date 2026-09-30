@@ -11,7 +11,7 @@ import (
 )
 
 // Claude Code's folder trust, written at launch. See backlog-2 item 67 and
-// docs/runner-setup-design.md.
+// docs/runtime/runner-setup-design.md.
 //
 // A launch into a folder claude has never seen stops at "Do you trust the files
 // in this folder?", and the first thing typed into the card answers it "No,

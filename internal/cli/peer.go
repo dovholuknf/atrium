@@ -23,7 +23,7 @@ import (
 // matters because the sessions worth introducing to each other are not all
 // claude.
 //
-// The cost of that choice, stated plainly because `docs/charon.md` names it:
+// The cost of that choice, stated plainly because `docs/rnd/charon.md` names it:
 // their version makes listing MANDATORY before sending, enforced by the tool
 // description. A bare subcommand enforces nothing. So `tell` re-derives it: a
 // handle that does not resolve comes back with the list of ones that would

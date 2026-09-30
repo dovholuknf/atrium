@@ -502,7 +502,7 @@
   /* A group's own colour, from the same `--ghue` the stack's and the board's headings use, so one group reads as
      one colour on all three surfaces. The guide down the nest takes it too, which is what the panel edge does
      on the stack. Blended toward `--head` even at rest, unlike the stack: this name sits on the bare strip and
-     not on a wash, and the stack's fixed 72% lightness is the open nit 4 in `docs/css-nits.md` on a light skin.
+     not on a wash, and the stack's fixed 72% lightness is the open nit 4 in `docs/ui/css-nits.md` on a light skin.
      The blend darkens it on a light skin and lightens it on a dark one and it stays that group's hue. */
   .tgroup.hued .tgname { color: color-mix(in srgb, hsl(var(--ghue) 70% 60%) 70%, var(--head)); }
   .tgroup.hued .tcaret { color: hsl(var(--ghue) 65% 55%); }

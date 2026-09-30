@@ -9,7 +9,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
-// The daemon's half of the work ledger. See docs/work-ledger-design.md and
+// The daemon's half of the work ledger. See docs/runtime/work-ledger-design.md and
 // internal/store/ledger.go, which holds the rules.
 //
 // The store moves items and queues notices inside its transactions. What only

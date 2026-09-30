@@ -10,7 +10,7 @@ import (
 )
 
 // Whether the operator has seen a card's latest turn, and whether that turn
-// asked the operator questions they have not answered. See docs/seen-design.md.
+// asked the operator questions they have not answered. See docs/runtime/seen-design.md.
 //
 // DURABLE, UNLIKE ACTIVITY. What a runner is doing right now dies with the
 // daemon because it would be a lie after a restart. Whether a turn was read is

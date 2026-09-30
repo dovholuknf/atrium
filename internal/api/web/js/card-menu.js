@@ -302,7 +302,7 @@ async function resumeStart(id, t, where, pick, full) {
       cwd: t.worktree || "",
       resume: withResume,
       // AS HELD, `room~id` and all: the hub routes by the tag and strips it on
-      // the way into the room. See docs/card-room-routing.md.
+      // the way into the room. See docs/fabric/card-room-routing.md.
       task_id: id,
       // Onto the same card, so the title and everything else on it stay put.
       // Sending them again would let a stale copy of the row overwrite what
@@ -665,7 +665,7 @@ async function cardMenu(e, id) {
     { sep: true },
     // Running something in this card's directory, which is the answer to
     // "adopt": a session atrium started in a terminal cannot be taken over,
-    // because a pty cannot be adopted and `docs/supervision-design.md` records
+    // because a pty cannot be adopted and `docs/terminal/supervision-design.md` records
     // that there is no reattach on Windows. What CAN happen is a new runner,
     // owned by atrium, in the same place and onto the same card.
     //

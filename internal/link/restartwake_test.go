@@ -9,7 +9,7 @@ import (
 )
 
 // atrium_wake_after_restart queues on the CALLER's card and nobody else's, and
-// clears with DELETE. The room does the rest. See docs/restart-wake.md.
+// clears with DELETE. The room does the rest. See docs/runtime/restart-wake.md.
 func TestWakeAfterRestartQueuesOnTheCallersOwnCard(t *testing.T) {
 	var got struct {
 		method, path, room, by string

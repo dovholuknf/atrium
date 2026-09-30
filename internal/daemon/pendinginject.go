@@ -33,7 +33,7 @@ import (
 // daemon, and that is right: the message itself is durable in the store and the
 // hooks still deliver it, so a restart costs the on-screen retry and nothing
 // that was said. The board signal it raises is a fact about now, which
-// docs/activity-design.md says is never written down.
+// docs/runtime/activity-design.md says is never written down.
 
 // backoffSteps is how long to wait before each retry, widening so the warnings
 // that ride them thin out. Past the last it holds at four hours, so a message is

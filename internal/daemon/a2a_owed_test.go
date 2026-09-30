@@ -7,7 +7,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
-// Item 41, docs/owed-report-design.md. A card owes its launcher a report only
+// Item 41, docs/rnd/owed-report-design.md. A card owes its launcher a report only
 // for a prompt the launcher sent.
 
 // reportedWorker is a launched worker that has paid what its opening prompt

@@ -291,7 +291,7 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	// THE OPERATIONAL AUDIT LOG, over the hub's own store. Wired before
 	// SetControl and the attach/detach callbacks below, all of which
 	// record through the proxy so the line is persisted AND nudges any
-	// watching board. See docs/audit-design.md.
+	// watching board. See docs/fabric/audit-design.md.
 	proxy.SetAuditLog(auditLog{store: store})
 	// THE CONTROL MCP SERVER, mounted at /_hub/mcp so sessions open a
 	// connection instead of each spawning an atrium-control child. It
@@ -373,7 +373,7 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 			// The public share's login, from the hub's own store: the
 			// operator set it on the settings screen and it is applied
 			// when the share is created. A private share ignores it. See
-			// hubshare.go and docs/ziti-zrok-flow-design.md.
+			// hubshare.go and docs/fabric/ziti-zrok-flow-design.md.
 			shareAuth, err := store.ShareAuth()
 			if err != nil {
 				log.Printf("[hub] could not read the share login, "+
@@ -603,7 +603,7 @@ func advertiseFor(bind, override string) (string, error) {
 // loopbackBoard checks the board's bind address and pins it to loopback.
 //
 // THE BOARD HAS NO LOGIN. That is the invariant in the root CLAUDE.md and in
-// docs/overlays.md: loopback and no login stays true, and reaching the board
+// docs/fabric/overlays.md: loopback and no login stays true, and reaching the board
 // from elsewhere is an overlay's job, not a wide bind on a port with no auth.
 // This makes the invariant enforced rather than assumed.
 //

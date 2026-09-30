@@ -22,7 +22,7 @@ import (
 //
 // NOTHING LIVE IS STORED. The quiet case is decided from the activity tracker,
 // which lives in memory and dies with the daemon, exactly as
-// `docs/activity-design.md` requires. After a restart atrium has heard nothing
+// `docs/runtime/activity-design.md` requires. After a restart atrium has heard nothing
 // from anybody, so everything running reads as quiet, which is TRUE: atrium
 // does not know what those sessions are doing. It is not a stored claim that
 // went stale, it is the absence of one.

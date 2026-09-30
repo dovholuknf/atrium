@@ -401,7 +401,7 @@ type ctlCard struct {
 	Wait     int      `json:"wait_seconds"`
 	Superv   bool     `json:"supervised"`
 	Tags     []string `json:"tags"`
-	// What the card was launched with. See docs/launch-options-design.md.
+	// What the card was launched with. See docs/runtime/launch-options-design.md.
 	Model         string   `json:"model"`
 	Effort        string   `json:"effort"`
 	LaunchArgs    []string `json:"launch_args"`
@@ -414,7 +414,7 @@ type ctlCard struct {
 
 // ctlSeen is whether the operator has seen a card's latest turn and answered
 // its Open Questions. The room's `store.SeenView`, mirrored so internal/link
-// learns nothing of the store. See docs/seen-design.md.
+// learns nothing of the store. See docs/runtime/seen-design.md.
 type ctlSeen struct {
 	TurnEndedAt string `json:"turn_ended_at,omitempty"`
 	SeenAt      string `json:"seen_at,omitempty"`
@@ -745,7 +745,7 @@ func (c *controlMCP) sayHandler(ctx context.Context, req *mcp.CallToolRequest, i
 	room := roomOf(req)
 	// ANOTHER ROOM, named as `name@room`. Only for a caller with a room: one
 	// without keeps the aggregate list, where `room~id` already reaches
-	// anywhere. See docs/cross-room-say-design.md.
+	// anywhere. See docs/fabric/cross-room-say-design.md.
 	if room != "" {
 		name, target, err := SplitAddress(in.To)
 		if err != nil {
@@ -1121,7 +1121,7 @@ type launchInput struct {
 	Lean *bool    `json:"lean,omitempty" jsonschema:"start a claude worker lean: no user CLAUDE.md, memory, skills or agents, only its brief, the repo, atrium's hooks and the atrium-control and mercurius MCP servers. default true. false starts it with the operator's whole setup"`
 	MCP  []string `json:"mcp,omitempty" jsonschema:"extra MCP servers a lean worker keeps beside atrium-control and mercurius, by name from the runner's MCP config"`
 	// Model and Effort are mapped by the runner's harness row, Args and Env are
-	// passed as given. See docs/launch-options-design.md.
+	// passed as given. See docs/runtime/launch-options-design.md.
 	Model  string            `json:"model,omitempty" jsonschema:"which model the runner starts on, passed in the shape its runner row declares (claude and codex: --model). not checked against any list. empty is the runner's default. a runner with no way to take a model refuses"`
 	Effort string            `json:"effort,omitempty" jsonschema:"thinking effort, passed in the shape its runner row declares (claude: --effort, codex: -c model_reasoning_effort=). not checked: whatever the runner accepts, such as low, medium or high for claude. empty is the runner's default. a runner with no way to take one refuses"`
 	Args   []string          `json:"args,omitempty" jsonschema:"extra command-line arguments for the runner, one per element, added after the model and effort and before the prompt. used as given. shown on the card, so keep secrets out"`
@@ -1172,7 +1172,7 @@ func (c *controlMCP) launchHandler(ctx context.Context, req *mcp.CallToolRequest
 	room := roomOf(req)
 	// ANOTHER ROOM. The lineage then names the launcher as `me@myroom`, and its
 	// card as `myroom~id`, so the worker's reports and notices come back across
-	// to exactly this card. See docs/cross-room-say-design.md.
+	// to exactly this card. See docs/fabric/cross-room-say-design.md.
 	spawnedBy, spawnedByID := agentOf(req), ""
 	if r := strings.TrimSpace(in.Room); r != "" && !equalFold(r, room) {
 		if room != "" && spawnedBy != "" {
@@ -1223,7 +1223,7 @@ func (c *controlMCP) launchHandler(ctx context.Context, req *mcp.CallToolRequest
 	}
 	// WHO IS LAUNCHING, from the caller's own identity header, so the room can
 	// record the lineage and route the worker's reports back. See
-	// docs/a2a-reliability-design.md.
+	// docs/runtime/a2a-reliability-design.md.
 	//
 	// The prompt ends with the one line of the worker contract a launch prompt
 	// most often leaves out. A launch prompt that lists steps scopes the turn to
@@ -1272,7 +1272,7 @@ func (c *controlMCP) launchHandler(ctx context.Context, req *mcp.CallToolRequest
 
 // LaunchOptionsDropped names the launch options that were asked for and that
 // the card the room handed back does not carry, which is how an older room
-// that ignored them shows. See docs/launch-options-design.md "Version skew".
+// that ignored them shows. See docs/runtime/launch-options-design.md "Version skew".
 // Shared with the stdio control MCP in internal/cli, so the two cannot drift.
 func LaunchOptionsDropped(model, effort string, args []string, env map[string]string,
 	gotModel, gotEffort string, gotArgs, gotEnvKeys []string) []string {
@@ -1506,7 +1506,7 @@ type wakeOutput struct {
 
 // wakeHandler queues or clears the caller's own after-restart wake. Only its own
 // card: a wake on somebody else's card would be a forced turn, which this is
-// not. See docs/restart-wake.md. The room keeps the queue and does the typing.
+// not. See docs/runtime/restart-wake.md. The room keeps the queue and does the typing.
 func (c *controlMCP) wakeHandler(ctx context.Context, req *mcp.CallToolRequest, in wakeInput) (
 	*mcp.CallToolResult, wakeOutput, error) {
 

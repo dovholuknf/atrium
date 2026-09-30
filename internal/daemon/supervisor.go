@@ -804,7 +804,7 @@ type runner struct {
 	// peerSent is when atrium last submitted ANOTHER SESSION'S message here, or
 	// a labelled after-restart wake. The prompt that follows is not the operator, and
 	// must not mark the turn seen or its questions answered. See
-	// `promptWasPeer` and docs/seen-design.md.
+	// `promptWasPeer` and docs/runtime/seen-design.md.
 	peerSent time.Time
 	// peerCause is what that submission was, a say or a wake, for the usage
 	// record. See usage.go.
@@ -1303,7 +1303,7 @@ func (r *runner) promptWasPeer(at time.Time) bool {
 // when it differs from the size the pty is already at. A viewer narrower than
 // the current width drags freely and touches nobody. An attach or detach that
 // does not change the agreed size lays no mark and repaints no one. See
-// `docs/terminal-resize-decoupling-design.md`.
+// `docs/terminal/terminal-resize-decoupling-design.md`.
 //
 // A NEW HEIGHT HAS TO HOLD FOR HALF A SECOND FIRST. The inbox ConPTY answers a
 // row change with a bare `ESC [ H` repaint that files the top rows into its own
@@ -1656,7 +1656,7 @@ func (r *runner) deliverOutput(chunk []byte) {
 }
 
 // SHARED MULTI-PANE INPUT, and it is OFF by default. See
-// `docs/multi-pane-input-design.md`.
+// `docs/terminal/multi-pane-input-design.md`.
 //
 // The panes already share one pty and one output stream, so a peer sees
 // anything the RUNNER draws. What it does not see is a line still being typed:

@@ -12,7 +12,7 @@ import (
 )
 
 // The hub's half of agent-to-agent reliability. See
-// docs/a2a-reliability-design.md.
+// docs/runtime/a2a-reliability-design.md.
 
 // The room recognises an agent launch by the same string the hub stamps.
 func TestTheDirectorTagIsTheOneTheRoomReads(t *testing.T) {

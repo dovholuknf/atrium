@@ -43,7 +43,7 @@ build:
 # Every platform, named and hashed, ready for a package manifest to point at.
 #
 # Separate from `build` because it is slow and because it is the only target
-# whose output leaves this machine. See `docs/packaging.md`.
+# whose output leaves this machine. See `docs/release/packaging.md`.
 release:
 	bash scripts/release.sh $(VERSION)
 

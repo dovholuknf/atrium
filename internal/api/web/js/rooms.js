@@ -843,7 +843,7 @@ window.fetch = function (input, init) {
   // A WRITE NAMES A CARD if its url is `/v1/tasks/<id>` or deeper, or it is a
   // launch onto a card. `PATCH /v1/tasks/<id>` counts: a drag into a group
   // carried `writeRoom` to the wrong room and came back "no rows" (backlog-2
-  // item 63). See docs/card-room-routing.md.
+  // item 63). See docs/fabric/card-room-routing.md.
   const how = String((init && init.method) || (input && input.method) || "GET").toUpperCase();
   const url = (input && input.url) ? input.url : String(input);
   const cardScoped = namesACard(url, init);

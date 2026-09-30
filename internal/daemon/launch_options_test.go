@@ -9,7 +9,7 @@ import (
 )
 
 // Launch options: a model and an effort each runner row maps, and extra argv
-// and env passed as given. See docs/launch-options-design.md.
+// and env passed as given. See docs/runtime/launch-options-design.md.
 
 func claudeWithEffort() *store.Harness {
 	h := claudeWithModel()

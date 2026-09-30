@@ -16,7 +16,7 @@
 # ================================================================================
 #
 # The three candidates, and what each costs. The full write-up is in
-# docs/packaging.md; the short version is here because this is the file that
+# docs/release/packaging.md; the short version is here because this is the file that
 # implements the answer.
 #
 #   GITHUB RELEASES, .deb and .rpm as assets.  CHOSEN.
@@ -36,7 +36,7 @@
 #     key is the whole story: it has to be generated, kept somewhere that is not
 #     a repository, put in CI as a secret, published for people to trust, and
 #     rotated at some point by somebody who remembers how. It is the same class
-#     of cost as code signing, which docs/packaging.md already names as the
+#     of cost as code signing, which docs/release/packaging.md already names as the
 #     thing that gates Chocolatey and a pleasant Homebrew. Worth doing when
 #     there are users to upgrade. There are not yet.
 #

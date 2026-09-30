@@ -14,7 +14,7 @@ import (
 )
 
 // Parking, and the human touch that decides what is worth keeping up. See
-// docs/keepalive-policy-design.md sections 1, 4, 5 and 7.
+// docs/rnd/keepalive-policy-design.md sections 1, 4, 5 and 7.
 //
 // A PARKED CARD IS A FLAG, NOT A STATUS. `parked_at` is set, the status it had
 // is kept, its resume id is kept and no process runs. It sits in its column and

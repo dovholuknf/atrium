@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// Stage 1 of docs/work-ledger-design.md: the ledger records. Every transition
+// Stage 1 of docs/runtime/work-ledger-design.md: the ledger records. Every transition
 // stage 1 can reach, the crash path, one death counted once, the log cap, the
 // snapshot file and the backfill.
 

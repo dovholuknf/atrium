@@ -21,7 +21,7 @@ import (
 //
 // THE FAILURE THIS PREVENTS: atrium restarts itself constantly. Installing a
 // new daemon from inside a session it is running is a documented workflow
-// (`docs/reload-design.md`), and every restart destroys both copies of a
+// (`docs/runtime/reload-design.md`), and every restart destroys both copies of a
 // runner's scrollback at once. The ring buffer goes with the process that held
 // it, every pty is closed so every runner dies, and a fixture that comes back
 // is a NEW process with a NEW ring holding nothing. The only remaining copy is

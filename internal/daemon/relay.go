@@ -17,7 +17,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
-// A message to a card on another room. See docs/cross-room-say-design.md.
+// A message to a card on another room. See docs/fabric/cross-room-say-design.md.
 //
 // ── by way of the sender's room, always ─────────────────
 //
@@ -282,7 +282,7 @@ func (d *Daemon) sayAcross(ctx context.Context, from, name, room, text, when str
 	cctx, cancel := context.WithTimeout(ctx, relayWait)
 	defer cancel()
 	// The row, as far as this room can see the say. The other room writes its own
-	// when it lands. See docs/say-lifecycle-design.md.
+	// when it lands. See docs/runtime/say-lifecycle-design.md.
 	rec := store.Say{FromWire: wire, FromTask: d.senderTask(from), ToInput: to, ToWire: to, Via: "remote",
 		Room: room, Door: "say", When: whenWord(when == WhenDone), ReplyWant: reply}
 	res, err := rl.Say(cctx, RelaySay{From: wire, Room: room, To: name, Text: text, When: when})
@@ -301,7 +301,7 @@ func (d *Daemon) sayAcross(ctx context.Context, from, name, room, text, when str
 		}
 		d.reportedAcross(sender, to, "")
 		log.Printf("[atrium] %s's message to %s is held: %s", wire, to, why)
-		// Held on this room, and moved on by the drain. See docs/say-lifecycle-design.md.
+		// Held on this room, and moved on by the drain. See docs/runtime/say-lifecycle-design.md.
 		rec.State, rec.RelayID, rec.Note = store.SayHeld, held.ID, "not answering: "+why
 		return http.StatusOK, map[string]any{
 			"delivered": "held", "to": to, "when": whenWord(when == WhenDone),

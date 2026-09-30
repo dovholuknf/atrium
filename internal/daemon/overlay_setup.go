@@ -256,7 +256,7 @@ func (d *Daemon) EnrollZiti(token, name string) (string, string, error) {
 // EnrollZitiInto turns an enrollment token into an identity file under a given
 // directory. Split from EnrollZiti so `atrium2 join` can enroll a JWT during a
 // room join, before any daemon exists, keeping the identity on the room's own
-// disk. See docs/ziti-zrok-flow-design.md, "atrium2 join enrolling a JWT in
+// disk. See docs/fabric/ziti-zrok-flow-design.md, "atrium2 join enrolling a JWT in
 // place".
 func EnrollZitiInto(token, name, dir string) (string, string, error) {
 	token = strings.TrimSpace(token)

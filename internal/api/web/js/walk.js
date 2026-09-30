@@ -1,6 +1,6 @@
 // The walk drawer: a fixed list of items an agent produced, a rail beside the terminal, and one item at a time.
 //
-// docs/review-tab-design.md, stage 1. The drawer sits BESIDE the one xterm in the terms view and never builds a
+// docs/rnd/review-tab-design.md, stage 1. The drawer sits BESIDE the one xterm in the terms view and never builds a
 // second one, so every guard `openTerm` has still applies and a popped-out `#term=` window gets the drawer too.
 //
 // TWO HALVES, deliberately. The `dock*` functions are the drawer and the rail: open and close, the poll, the

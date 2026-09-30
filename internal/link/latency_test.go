@@ -24,7 +24,7 @@ import (
 //
 // The two probes below it are skipped unless asked for. They are how the
 // input-lag investigation was measured, kept so the next one starts from
-// numbers. See docs/input-lag-logging.md.
+// numbers. See docs/terminal/input-lag-logging.md.
 
 // echoWS answers every websocket message with itself.
 func echoWS(w http.ResponseWriter, r *http.Request) {

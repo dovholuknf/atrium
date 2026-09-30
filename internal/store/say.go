@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-// A say's lifecycle, on record. See docs/say-lifecycle-design.md.
+// A say's lifecycle, on record. See docs/runtime/say-lifecycle-design.md.
 //
 // One row per say from a session to a session. The operator's own channel is
 // not recorded: the lifecycle is about one session speaking to another. The
