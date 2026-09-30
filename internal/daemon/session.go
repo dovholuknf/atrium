@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"log"
 	"net/http"
@@ -60,6 +61,9 @@ type SessionEvent struct {
 	// the one moment someone can say what the session is for.
 	Title string `json:"title,omitempty"`
 	Why   string `json:"why,omitempty"`
+	// NameSource is "dir" when the hook made Agent up from its directory. See
+	// store.Observed.NameSource.
+	NameSource string `json:"name_source,omitempty"`
 }
 
 // EndsTheSession reports whether a SessionEnd reason is really the end.
@@ -145,6 +149,7 @@ func (d *Daemon) onSession(in SessionEvent) error {
 	obs.Runner = runner
 	obs.PID = in.PID
 	obs.Resume = in.Resume
+	obs.NameSource = in.NameSource
 	if in.Cwd != "" {
 		obs.Worktree = strings.ReplaceAll(in.Cwd, `\`, "/")
 	}
@@ -157,8 +162,32 @@ func (d *Daemon) onSession(in SessionEvent) error {
 			task = t
 		}
 	}
-	if task == nil {
+	bound := task != nil
+	if bound {
+		// A start that did not come from the card's own runner is a `claude`
+		// nested in its shell, carrying the inherited task id. It is dropped
+		// whole: taking its pid or its conversation would hand the parent
+		// somebody else's session.
+		starting := in.Event != "join" && in.Event != "leave" && in.Event != "compact" && in.Event != "end"
+		if starting && !d.ownsSession(task, in.PID) {
+			log.Printf("[atrium] dropped a session start for %s from pid %d, which is not its runner "+
+				"(a nested session?), resume %s", task.ID, in.PID, in.Resume)
+			return nil
+		}
+		// A name the hook guessed from its directory says nothing about which
+		// card this is, and must not rename the one it was bound to.
+		if in.NameSource == store.NameFromDir {
+			obs.WireName = ""
+		}
+	}
+	if !bound {
 		t, _, err := d.st.Register(obs)
+		if errors.Is(err, store.ErrStaleName) {
+			// Not an error: a directory name that only a finished card holds says
+			// nothing about which session this is. Recorded in the log and dropped.
+			log.Printf("[atrium] session %s from %q dropped: %v", in.Event, in.Agent, err)
+			return nil
+		}
 		if err != nil {
 			return err
 		}
@@ -213,7 +242,8 @@ func (d *Daemon) onSession(in SessionEvent) error {
 	if in.Resume != "" && in.Resume != task.ResumeID {
 		written := in.Resumable != nil && *in.Resumable
 		if written || task.ResumeID == "" {
-			if err := d.st.SetResumeID(task.ID, in.Resume); err != nil {
+			// Bound by task id outranks a name. See Store.ClaimResumeID.
+			if err := d.claimResume(task, in.Resume, "session hook", bound); err != nil {
 				return err
 			}
 		} else {
@@ -359,6 +389,7 @@ func (d *Daemon) onSession(in SessionEvent) error {
 		}
 		// The runner is up and its hooks are posting, which is what an
 		// after-restart wake waits for. See restartwake.go.
+		d.noteAnnounced(task.ID, in.Resume)
 		d.wakeSawSession(task.ID, in.Resume)
 		// The session its context is read from from now on, which after a
 		// `/clear` is not the resume id yet. See contextSizes.started.
