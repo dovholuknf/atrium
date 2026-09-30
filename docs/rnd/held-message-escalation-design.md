@@ -47,13 +47,17 @@ aged message for the turn (it still waits for an empty line and a quiet keyboard
 (`midTurnInputFor` false), the typist keeps waiting for the turn, because a line typed into it mid-turn is lost, and the
 hook route above is the only one used.
 
+**Not ahead of a deploy wake.** After a deploy hold's startup lift, a woken card's agents' messages wait until its
+wake is typed (`awaitingWake` in `roomhold.go`). The age rule keeps waiting while that is true, so an old message never
+lands ahead of the wake (`docs/rnd/resume-says-continue-design.md`, section 4).
+
 Recorded on the card as an event, `held message escalated after 23m`, and on the sender's say record. It fires once per
 message, because a delivered message is gone.
 
 *Acceptance test.* A `when: done` message to a card in a turn that keeps making tool calls is delivered at the first
 tool call after 15 minutes, with the framing line, and not before. The same message to a runner without mid-turn input
 is delivered by the hook route only. A message younger than 15 minutes at the turn's end is delivered by the Stop hook
-as today.
+as today. A 20-minute-old message to a card whose deploy wake is still to be typed waits for the wake.
 
 ## 4. Stage R2: over context, mid-turn, told once
 
