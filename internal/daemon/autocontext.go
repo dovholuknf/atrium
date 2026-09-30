@@ -460,35 +460,45 @@ func (d *Daemon) autoGaveUpNotice(taskID, reason string) {
 		"%s is at %dk and atrium could not cycle its context: %s. Not retrying.", t.WireName, tokens/1000, reason))
 }
 
-// autoFinished marks the wake typed. The result is written by the tick, when the next
-// context read from the new conversation comes back.
-func (d *Daemon) autoFinished(taskID string, gen uint64) {
+// autoFinished marks the wake typed, or takes the mark back when the chip was
+// dismissed first. The result is written by the tick, when the next context read from
+// the new conversation comes back.
+func (d *Daemon) autoFinished(taskID string, gen uint64, done bool) {
 	d.auto.update(taskID, func(s *autoState) {
 		if s.gen == gen {
-			s.finished = true
+			s.finished = done
 		}
 	})
-	d.autoIdleRelease(taskID, true)
 }
 
 // autoIdleHold keeps the cycle's own prompts from moving the card's idle clock: a
 // cycle is atrium's work and not the card's (decided question 3). It is the mark idle
-// parking takes for its own capture, so the same filter applies.
+// parking takes for its own capture, so the same filter applies. A handoff idle
+// parking already took is kept under it, for a failed cycle to put back.
 func (d *Daemon) autoIdleHold(t *store.Task) {
-	d.idle.put(t.ID, &handoffMark{base: d.idleSince(t), capturing: true, file: HandoffName(t)})
+	m := &handoffMark{base: d.idleSince(t), capturing: true, file: HandoffName(t)}
+	if prev := d.idle.get(t.ID); prev != nil && !prev.capturing {
+		prev.prev = nil
+		m.prev = prev
+	}
+	d.idle.put(t.ID, m)
 }
 
 // autoIdleRelease ends the hold. A cycle that got through leaves the mark as a handoff
-// taken, with its clock still the old one. A failed one leaves nothing.
+// taken, with its clock still the old one. A failed one leaves the mark it found.
 func (d *Daemon) autoIdleRelease(taskID string, ok bool) {
 	m := d.idle.get(taskID)
 	if m == nil {
 		return
 	}
 	if !ok {
-		d.idle.drop(taskID)
+		if m.prev != nil {
+			d.idle.put(taskID, m.prev)
+		} else {
+			d.idle.drop(taskID)
+		}
 		return
 	}
-	m.capturing, m.end, m.written = false, time.Now(), true
+	m.capturing, m.end, m.written, m.prev = false, time.Now(), true, nil
 	d.idle.put(taskID, m)
 }
