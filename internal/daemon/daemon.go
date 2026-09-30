@@ -94,6 +94,9 @@ type Daemon struct {
 	// windingDown is set when shutdown begins. A session ending after it is the
 	// wind-down, never somebody deciding. See the session hook's `end`.
 	windingDown atomic.Bool
+	// bootResumes is resume id to the card on the reopen list that takes it,
+	// for the length of one reopen pass. See reopenSaved.
+	bootResumes sync.Map
 
 	opts Options
 	st   *store.Store
