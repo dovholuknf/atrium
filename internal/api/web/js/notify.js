@@ -410,6 +410,25 @@ function paintNotifyOff() {
 window.addEventListener("storage", e => { if (e.key === NOTIFY_OFF_KEY) paintNotifyOff(); });
 addEventListener("DOMContentLoaded", paintNotifyOff);
 
+// Whether THIS window is showing this card's terminal right now: a pop-out for
+// it, or the board on the terminals view with it attached. Said to the ready
+// alert, which has nothing to tell someone reading the screen it is about.
+function termWatching(id) {
+  if (!id || !term || !termTask || !sameCard(termTask.id, id)) return false;
+  return termOnly() || isViewing("terms");
+}
+
+// PTY OUTPUT IS ACTIVITY, for the one card this window has attached. A ready
+// alert waits for quiet and the window reading a terminal is the one that sees
+// it move. At most once a second and it makes no request.
+let readyQuietFedAt = 0;
+function feedReadyQuiet() {
+  const now = Date.now();
+  if (now - readyQuietFedAt < 1000 || !termTask) return;
+  readyQuietFedAt = now;
+  alerting.activity(termTask.id);
+}
+
 const alerting = (() => {
   let ctx = null;
   let prefs = loadPrefs();
@@ -635,7 +654,7 @@ const alerting = (() => {
   const pending = {};
 
   return {
-    check, nag, play, preview, save, unlock, notify, settling, reseed, activity,
+    check, nag, play, preview, save, unlock, notify, settling, reseed, activity, sinceActive, quietMs,
     get: () => prefs,
     set: (patch) => { Object.assign(prefs, patch); save(); }
   };
@@ -853,6 +872,13 @@ const alerting = (() => {
     if (id) lastActive.set(bareId(id), Date.now());
   }
 
+  // Ms since this card was last heard doing anything, for a window that holds
+  // its own card and so has no held entry to measure from. Infinity if never.
+  function sinceActive(id) {
+    const at = lastActive.get(bareId(id));
+    return at ? Date.now() - at : Infinity;
+  }
+
   function holdWaits(fresh, describe) {
     fresh.forEach(i => {
       const k = rungKey("waiting", i);
@@ -933,6 +959,17 @@ const alerting = (() => {
     // notification from it is noise. Dropped before `play` and before the count
     // in the title, so a pile of three with one worker is a pile of two. The log
     // line stays, because it is the record that the event happened.
+    // A FOCUSED WINDOW SHOWING THE CARD SAYS NOTHING ABOUT IT, not even a toast.
+    // Logged, since the log is the record. An unfocused window keeps the rules
+    // above and below.
+    if (kind === "waiting" || kind === "looksidle") {
+      fresh = fresh.filter(i => {
+        if (!focusIsHere() || !termWatching(i.task_id || i.id)) return true;
+        const q = describe(i);
+        recordToLog(q.title, q.body, "stack", "", i.task_id || i.id);
+        return false;
+      });
+    }
     fresh = fresh.filter(i => {
       if (!quietDoer(kind, i)) return true;
       const q = describe(i);

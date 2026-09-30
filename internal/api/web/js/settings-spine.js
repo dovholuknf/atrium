@@ -1263,8 +1263,8 @@ function onTaskEvent(e) {
   let d = null;
   try { d = JSON.parse(e.data); } catch (err) {}
   if (typeof dockKick === "function") dockKick(d && d.id);
-  if (termOnly()) { soloTaskEvent(d); return; }
   hearActivity(d);
+  if (termOnly()) { soloTaskEvent(d); return; }
   if (cardRowComplete(d)) { upsertCard(d); paintSoon(); return; }
   tasksSoon();
 }
@@ -1275,7 +1275,7 @@ function onTaskEvent(e) {
 function hearActivity(d) {
   if (!d || !d.id || typeof alerting === "undefined") return;
   if (!cardRowComplete(d)) { alerting.activity(d.id); return; }
-  const was = cardRows.get(d.id);
+  const was = termOnly() ? soloRow : cardRows.get(d.id);
   const shape = a => JSON.stringify(a || null, (k, v) => /seconds$/.test(k) ? undefined : v);
   if (!was || shape(was.activity) !== shape(d.activity)) alerting.activity(d.id);
 }
