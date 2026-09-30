@@ -59,6 +59,62 @@
 }
 .mc-chip:active { transform: scale(.96); }
 
+/* ---- attached files (u-028): one chip per file, one row that scrolls sideways */
+.mc-files {
+  display: none;
+  gap: 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  padding: 0 2px 8px;
+}
+.mc-files::-webkit-scrollbar { display: none; }
+.mc-files.on { display: flex; }
+.mc-file {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 210px;
+  height: 44px;
+  box-sizing: border-box;
+  padding: 0 4px 0 4px;
+  border-radius: 22px;
+  background: var(--c-raised);
+  color: var(--c-text);
+  box-shadow: 0 1px 2px var(--c-shadow), 0 0 0 1px var(--c-line) inset;
+  font: 500 13px/1.1 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+.mc-thumb, .mc-glyph {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  object-fit: cover;
+  display: grid;
+  place-items: center;
+  background: var(--c-sink);
+  font-size: 18px;
+}
+.mc-fname { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mc-fstate { flex: none; max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--c-quiet); }
+.mc-file[data-state="up"] .mc-thumb, .mc-file[data-state="up"] .mc-glyph { animation: mc-pulse 1s ease-in-out infinite; }
+.mc-file[data-state="err"] { box-shadow: 0 0 0 1.5px var(--c-danger) inset; }
+.mc-file[data-state="err"] .mc-fstate { color: var(--c-danger-text); }
+.mc-fx {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--c-quiet);
+  font-size: 14px;
+  -webkit-tap-highlight-color: transparent;
+}
+.mc-fx:active { background: var(--c-sink); }
+
 .mc-note {
   min-height: 0;
   max-height: 0;
@@ -226,4 +282,19 @@ body.term-phone #t-compose:not([hidden]) { display: block; }
 }
 #t-compose .mc.compact .mc-row { padding: 0 0 0 12px; border-radius: 22px; box-shadow: 0 0 0 1px var(--term-line, var(--c-line)) inset; background: var(--term-bg, var(--c-raised)); }
 #t-compose .mc.compact .mc-box { color: var(--term-fg, var(--c-text)); padding: 11px 0; }
-#t-compose .mc.compact .mc-chips, #t-compose .mc.compact .mc-note:not(.on) { max-height: 0; padding: 0; }
+/* The chip row floats over the foot of the terminal, so the composer keeps its 48px budget and the pty is not
+   refitted when a file is attached. */
+#t-compose { position: relative; }
+#t-compose .mc.compact .mc-files {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 100%;
+  z-index: 3;
+  padding: 4px 6px;
+  background: var(--term-bg, var(--c-surface));
+}
+#t-compose .mc.compact .mc-file { height: 36px; max-width: 170px; }
+#t-compose .mc.compact .mc-thumb, #t-compose .mc.compact .mc-glyph { width: 28px; height: 28px; font-size: 15px; }
+#t-compose .mc.compact .mc-fx { width: 32px; height: 32px; }
+#t-compose .mc.compact .mc-chips,#t-compose .mc.compact .mc-note:not(.on) { max-height: 0; padding: 0; }
