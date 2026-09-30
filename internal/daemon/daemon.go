@@ -716,6 +716,15 @@ func (d *Daemon) onPermRequest(req PermissionRequest) (string, *AutoDecision, er
 	// The hook reports the runner's own pid and working directory. The pid is
 	// what makes free liveness checks possible.
 	obs.PID = req.PID
+	// A nested `claude` inherits the parent's name, and its own pid must not
+	// replace the parent's on the card. The request is still answered in full.
+	if req.PID > 0 {
+		if t, err := d.st.GetByWireName(req.Agent); err == nil && !d.ownsSession(t, req.PID) {
+			log.Printf("[atrium] permission for %s from pid %d, which is not its runner "+
+				"(a nested session?): gated, but its pid is not recorded", t.ID, req.PID)
+			obs.PID = 0
+		}
+	}
 	if req.Cwd != "" {
 		obs.Worktree = strings.ReplaceAll(req.Cwd, `\`, "/")
 	}
