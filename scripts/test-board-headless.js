@@ -11924,6 +11924,58 @@ async function mCardUrlSection(browser) {
   if (!bad) console.log("mCardUrl ok");
 }
 
+// A notification click finds a pop-out on a card's readable path. The board puts the path in the notification's data and
+// the worker matches a window whose address is that path, or whose fragment names the card, as it always did.
+async function cardUrlNotifySection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landList = [];
+  landCard("land-a", { alias: "rnd", room: "r1" });
+  landCard("land-n", { alias: "", wire_name: "", room: "r1" });
+  landList = [LAND["land-a"], LAND["land-n"]];
+  const r = await cuOpen(browser, base, "/", {}, null, true);
+  try {
+    await r.page.waitForFunction(() => typeof cardList === "function" && cardList().length >= 3, null, { timeout: slow(15000) });
+    const sent = await r.page.evaluate(() => {
+      const out = [];
+      swReg = { active: { postMessage: m => out.push(m) } };
+      showNotification("a", "b", "", "", "s", "", "land-a", "k");
+      showNotification("n", "b", "", "", "s", "", "land-n", "k");
+      return out.map(m => m.path);
+    });
+    if (sent.join() !== "/alias/rnd,") fail("cardUrlNotify: the notification paths are " + JSON.stringify(sent));
+  } finally { await r.ctx.close(); }
+
+  // The worker's click, run on its own source with a fake scope and windows.
+  const src = fs.readFileSync(path.join(WEB_ROOT, "sw.js"), "utf8");
+  const click = async (data, urls) => {
+    const listeners = {};
+    const focused = [];
+    const self = {
+      location: { origin: "http://x" }, addEventListener: (k, f) => { listeners[k] = f; },
+      registration: { showNotification: async () => {}, getNotifications: async () => [] },
+      skipWaiting() {}, clients: { claim() {}, openWindow: async u => { focused.push("open:" + u); },
+        matchAll: async () => urls.map(u => ({ url: u, focus: async () => { focused.push(u); }, postMessage() {} })) }
+    };
+    new Function("self", "caches", "fetch", src)(self, { match: async () => null, open: async () => ({}), keys: async () => [] }, async () => ({}));
+    const ps = [];
+    listeners.notificationclick({ action: "", notification: { data: Object.assign({ origin: "http://x" }, data), close() {} }, waitUntil: p => ps.push(p) });
+    await Promise.all(ps);
+    return focused.join();
+  };
+  try {
+    const wins = ["http://x/", "http://x/alias/rnd", "http://x/room/r1/other", "http://x/#term=land-b", "http://x/room/r1"];
+    if (await click({ taskFor: "land-a", path: "/alias/rnd" }, wins) !== "http://x/alias/rnd") fail("cardUrlNotify: a click did not find the pop-out on /alias/rnd");
+    if (await click({ taskFor: "land-b", path: "/alias/other" }, wins) !== "http://x/#term=land-b") fail("cardUrlNotify: the #term= window was not matched any more");
+    if (await click({ taskFor: "land-c", path: "/alias/none" }, wins) !== "http://x/") fail("cardUrlNotify: a click with no pop-out did not land on the board, not a card window");
+    if (await click({ taskFor: "land-n", path: "" }, ["http://x/alias/rnd", "http://x/"]) !== "http://x/") fail("cardUrlNotify: an empty path matched a card window");
+  } finally {
+    landList = []; landPerms = [];
+    tasksMode = was;
+  }
+  if (!bad) console.log("cardUrlNotify ok");
+}
+
 async function main() {
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = "http://127.0.0.1:" + server.address().port;
@@ -11947,7 +11999,7 @@ async function main() {
       eventDriven: eventDrivenSection, idleBudget: idleBudgetSection, pollsGone: pollsGoneSection,
       phoneListFit: phoneListFitSection, phoneNudge: phoneNudgeSection,
       cacheChip: cacheChipSection, cacheLine: cacheLineSection, mHome: mHomeSection, mCard: mCardSection, mServe: mServeSection, phoneKeyLabel: phoneKeyLabelSection, phoneKeyLit: phoneKeyLitSection, shiftMenu: shiftMenuSection, notifyCommand: notifyCommandSection, presence: presenceSection, tallPty: tallPtySection, roomsMachine: roomsMachineSection, readyOnce: readyOnceSection, readyPopout: readyPopoutSection, popoutNotify: popoutNotifySection,
-      cardUrlTable: cardUrlTableSection, cardUrlClash: cardUrlClashSection, cardUrlLinks: cardUrlLinksSection, cardUrlRoom: cardUrlRoomSection, mCardUrl: (b) => mCardUrlSection(b) };
+      cardUrlTable: cardUrlTableSection, cardUrlClash: cardUrlClashSection, cardUrlLinks: cardUrlLinksSection, cardUrlRoom: cardUrlRoomSection, mCardUrl: (b) => mCardUrlSection(b), cardUrlNotify: cardUrlNotifySection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -13947,6 +13999,7 @@ async function main() {
     await cardUrlLinksSection(browser, base);
     await cardUrlRoomSection(browser, base);
     await mCardUrlSection(browser);
+    await cardUrlNotifySection(browser, base);
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e));
     if (process.env.DEBUG_HEADLESS) {
