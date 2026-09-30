@@ -28,10 +28,10 @@ type Hub struct {
 	T Timings
 	// Enrol answers a room that is joining for the first time and has no
 	// certificate yet. Supplied by the transport, because what a credential IS
-	// is the transport's business and not this file's. Nil refuses enrolment,
-	// which is correct for a transport where identity comes from elsewhere:
-	// an OpenZiti service has already decided who may connect before a byte
-	// arrives here, so there is nothing to enrol.
+	// is the transport's business and not this file's. Nil refuses enrolment.
+	// Over ziti and zrok it is set too, and take() lets it run only inside
+	// TLS, so a room joining with a new-form string is named by the
+	// certificate it leaves with. An old-form room never calls it.
 	Enrol func(net.Conn, *bufio.Reader) (string, error)
 	// Authenticated reports whether a connection proved who it is. A transport
 	// that carries identity itself answers true. Nil means "yes", which is
