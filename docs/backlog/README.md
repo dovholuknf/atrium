@@ -11,7 +11,7 @@ never conflicts with another. Each director's folder is that director's backlog.
 | `fabric/` | @fabric | `f-` |
 | `release/` | @merge | `m-` |
 | `review/` | @review | none yet |
-| `rnd/` | @rnd | none yet |
+| `rnd/` | @rnd | `rd-` |
 
 Old numeric items (`1` to `96`, and `12a`) keep their numbers and sit in the folder of the area that owns the code
 each is about. They came from `docs/backlog-2.md`, which is now a one-line pointer here.
