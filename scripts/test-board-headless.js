@@ -10515,6 +10515,124 @@ async function phoneNudgeSection(browser, base) {
   if (errors.length) fail("phoneNudge: the page threw: " + errors.join(" | "));
 }
 
+// u-031: Shift+right click in the attached terminal opens termMenu at the pointer, with "new context".
+async function shiftMenuSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  landCard("land-busy", { supervised: true, created_at: "2026-09-19T12:01:00Z",
+    new_context: { step: "clearing", n: 2, of: 4, label: "clear" } });
+  landCard("land-bare", { supervised: false, pinned: true, created_at: "2026-09-19T12:02:00Z" });
+  landList = [LAND["land-live"], LAND["land-busy"], LAND["land-bare"]];
+  landPerms = [];
+  const errors = [];
+  const fakeSock = () => {
+    const Real = window.WebSocket;
+    window.__sent = [];
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
+        onopen: null, onclose: null, onmessage: null, onerror: null,
+        send(d) { window.__sent.push(String(d)); }, close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  };
+  try {
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+    await ctx.addInitScript(fakeSock);
+    const posts = [];
+    await ctx.route("**/v1/tasks/*/new-context", route => {
+      posts.push(new URL(route.request().url()).pathname + " " + route.request().method());
+      return route.fulfill({ status: 200, contentType: "application/json",
+        body: JSON.stringify({ new_context: { file: "HANDOFF.x.md" } }) });
+    });
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    const attach = async (id) => {
+      await p.evaluate(i => attachTask(i), id);
+      await p.waitForFunction(i => termSock && termSock.readyState === 1 && termTask && termTask.id === i,
+        id, { timeout: slow(10000) });
+      await p.waitForTimeout(300);
+    };
+    const fire = (opts) => p.evaluate(o => {
+      let pasted = 0;
+      const real = window.pasteIntoTerm;
+      window.pasteIntoTerm = () => { pasted++; };
+      const ev = new MouseEvent("contextmenu", Object.assign({ bubbles: true, cancelable: true, clientX: 210, clientY: 160 }, o));
+      document.querySelector("#t-screen .xterm-screen, #t-screen").dispatchEvent(ev);
+      window.pasteIntoTerm = real;
+      return { prevented: ev.defaultPrevented, pasted };
+    }, opts);
+    const menu = () => p.evaluate(() => {
+      const m = document.getElementById("cardmenu");
+      const r = m.getBoundingClientRect();
+      const shown = getComputedStyle(m).display !== "none" && r.width > 0;
+      return { shown, left: r.left, top: r.top,
+        labels: shown ? [...m.querySelectorAll("button")].map(b => b.textContent) : [] };
+    });
+    const closeMenu = async () => { await p.keyboard.press("Escape"); await p.evaluate(() => document.body.click()); await p.waitForTimeout(100); };
+    const has = (m) => m.labels.some(l => /new context/.test(l));
+
+    await attach("land-live");
+    // plain: paste, no menu
+    let r = await fire({});
+    if (!r.prevented || r.pasted !== 1) fail("shiftMenu: a plain right click no longer pastes: " + JSON.stringify(r));
+    let m = await menu();
+    if (m.shown) fail("shiftMenu: a plain right click opened a menu: " + JSON.stringify(m));
+    // shift: menu, no paste
+    r = await fire({ shiftKey: true });
+    if (r.pasted) fail("shiftMenu: shift right click pasted");
+    if (!r.prevented) fail("shiftMenu: shift right click left the browser's menu up");
+    await p.waitForFunction(() => { const m = document.getElementById("cardmenu"); return getComputedStyle(m).display !== "none" && m.querySelector("button"); },
+      null, { timeout: slow(5000) });
+    m = await menu();
+    if (!has(m)) fail("shiftMenu: no new context on the terminal menu: " + JSON.stringify(m));
+    if (!m.labels.some(l => /rename/.test(l))) fail("shiftMenu: this is not termMenu: " + JSON.stringify(m));
+    if (Math.abs(m.left - 210) > 40 || Math.abs(m.top - 160) > 40) fail("shiftMenu: the menu is not at the pointer: " + JSON.stringify(m));
+    // choose it
+    await p.evaluate(() => [...document.querySelectorAll("#cardmenu button")].find(b => /new context/.test(b.textContent)).click());
+    await p.waitForTimeout(400);
+    if (posts.length !== 1 || posts[0] !== "/v1/tasks/land-live/new-context POST")
+      fail("shiftMenu: choosing new context did not POST once: " + JSON.stringify(posts));
+    await closeMenu();
+    // ctrl still belongs to the browser
+    r = await fire({ ctrlKey: true });
+    if (r.prevented || r.pasted) fail("shiftMenu: ctrl right click was taken: " + JSON.stringify(r));
+
+    // mid-cycle card
+    await attach("land-busy");
+    await fire({ shiftKey: true });
+    await p.waitForFunction(() => document.querySelector("#cardmenu button"), null, { timeout: slow(5000) });
+    m = await menu();
+    if (has(m)) fail("shiftMenu: new context is offered mid-cycle: " + JSON.stringify(m));
+    await closeMenu();
+
+    // the row menu, on the list
+    await p.evaluate(() => { const b = document.querySelector("#term-list [oncontextmenu*=\"land-live\"]");
+      if (!b) throw new Error("no land-live row");
+      b.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 60, clientY: 60 })); });
+    await p.waitForFunction(() => document.querySelector("#cardmenu button"), null, { timeout: slow(5000) });
+    m = await menu();
+    if (!has(m)) fail("shiftMenu: the row menu has no new context: " + JSON.stringify(m));
+    await closeMenu();
+    // unsupervised row
+    await p.evaluate(() => { const b = document.querySelector("#term-list [oncontextmenu*=\"land-bare\"]");
+      if (!b) throw new Error("no land-bare row");
+      b.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 60, clientY: 60 })); });
+    await p.waitForFunction(() => document.querySelector("#cardmenu button"), null, { timeout: slow(5000) });
+    m = await menu();
+    if (has(m)) fail("shiftMenu: new context is offered on an unsupervised card: " + JSON.stringify(m));
+    await ctx.close();
+  } finally {
+    tasksMode = was;
+  }
+  if (errors.length) fail("shiftMenu: the page threw: " + errors.join(" | "));
+}
+
 async function main() {
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = "http://127.0.0.1:" + server.address().port;
@@ -10537,7 +10655,7 @@ async function main() {
       usageCacheReads: usageCacheReadsSection, roomsDash: roomsDashSection, phoneView: phoneViewSection, heldLine: heldLineSection, u016: u016Section, phoneHeader: phoneHeaderSection, phoneFocus: phoneFocusSection, phoneTermBar: phoneTermBarSection, phoneShare: phoneShareSection, phonePan: phonePanSection, phoneFollow: phoneFollowSection, phoneTap: phoneTapSection, phoneKeyboard: phoneKeyboardSection, phoneCompose: phoneComposeSection, mCompose: mComposeSection, mPerms: mPermsSection, usagePolish: usagePolishSection, usageLimits: usageLimitsSection, usageGroups: usageGroupsSection,
       eventDriven: eventDrivenSection, idleBudget: idleBudgetSection, pollsGone: pollsGoneSection,
       phoneListFit: phoneListFitSection, phoneNudge: phoneNudgeSection,
-      cacheChip: cacheChipSection, cacheLine: cacheLineSection, mHome: mHomeSection, mCard: mCardSection, mServe: mServeSection, phoneKeyLabel: phoneKeyLabelSection, phoneKeyLit: phoneKeyLitSection };
+      cacheChip: cacheChipSection, cacheLine: cacheLineSection, mHome: mHomeSection, mCard: mCardSection, mServe: mServeSection, phoneKeyLabel: phoneKeyLabelSection, phoneKeyLit: phoneKeyLitSection, shiftMenu: shiftMenuSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -12488,6 +12606,7 @@ async function main() {
     await mServeSection(browser);
     await phoneKeyLabelSection(browser, base);
     await phoneKeyLitSection(browser, base);
+    await shiftMenuSection(browser, base);
     await usagePolishSection(browser, base);
     await usageLimitsSection(browser, base);
     await usageGroupsSection(browser, base);
