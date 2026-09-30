@@ -86,8 +86,6 @@
 </script>
 </head>
 <body>
-<!-- The way back once the phone header is hidden. A strip in the flow, not an overlay, so it covers nothing. -->
-<div id="hdr-strip"><button type="button" id="hdr-show" onclick="phoneHeaderSet(false)">&#9662; show header</button></div>
 <header>
   <div class="bar">
     <h1 class="wordmark accent-text">Atrium</h1>
@@ -157,9 +155,10 @@
     <div class="rooms" id="rooms" hidden onclick="openRooms()">
       <span class="dot"></span><span id="rooms-t">rooms</span>
     </div>
-    <button type="button" id="hdr-hide" class="icon" onclick="phoneHeaderSet(true)"
-      aria-label="hide the header" data-tip="hide the header">&#9652;</button>
-    <div class="conn" id="conn"><span class="dot"></span><span id="conn-t">connecting</span></div>
+    <div class="conn" id="conn"><span class="dot"></span><span class="conn-n" id="conn-n" hidden></span><span id="conn-t">connecting</span></div>
+    <!-- Phone only (css/phone.css): the header is one slim row and this opens the rest. -->
+    <button type="button" id="hdr-toggle" class="icon" onclick="phoneHeaderOpenSet(!document.body.classList.contains('hdr-open'))"
+      aria-label="show the full header" aria-expanded="false">&#9662;</button>
   </div>
   <div class="rule"></div>
 </header>

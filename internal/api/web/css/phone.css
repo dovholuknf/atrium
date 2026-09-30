@@ -256,31 +256,49 @@
 
   /* ── attach, header hide, landscape and full screen ─────────────────────
      The picker and the full screen button are thumb sized wherever the phone view is. */
-  #hdr-strip, #hdr-hide { display: none; }
   @media (max-width: 900px) {
     #t-attach, #t-full, #t-keys-attach { min-width: 40px; min-height: 40px; box-sizing: border-box; }
-    #hdr-hide { display: inline-flex; min-width: 40px; }
   }
-  #hdr-show {
-    width: 100%; min-height: 24px; padding: 2px; border: none; border-bottom: 1px solid var(--stroke-dim);
-    background: var(--shell-0); color: var(--dim); font-size: var(--fs-sm); cursor: pointer;
-  }
-  /* HEADER HIDDEN ON ITS OWN, on a touch device. A saved choice (body.hdr-hidden or body.hdr-shown, set from
-     localStorage) wins; with nothing saved a short, wide window (a phone in landscape) collapses it, because
-     the wrapped bar there eats the terminals. A strip stays in the flow as the way back. */
-  @media (pointer: coarse) {
-    body.hdr-hidden header { display: none; }
-    body.hdr-hidden #hdr-strip { display: block; }
-  }
-  @media (pointer: coarse) and (max-height: 500px) {
-    body:not(.hdr-shown) header { display: none; }
-    body:not(.hdr-shown) #hdr-strip { display: block; }
+  /* THE PHONE HEADER, ONE SLIM ROW. On a phone the header is the tabs, the status dot with the working count,
+     the bell and a chevron; the rest (working chip, auto, new agent, sound, gear, rooms) sits behind the
+     chevron, which sets body.hdr-open (js/termfull.js, saved as atrium.phone.headerOpen). Auto mode ON keeps a
+     small AUTO marker in the slim row: the board approving by itself is never hidden. The landscape
+     auto-collapse and the old full hide are gone: a slim row does not need hiding. */
+  #hdr-toggle, .conn-n { display: none; }
+  @media (max-width: 900px) and (pointer: coarse) {
+    header { padding-top: env(safe-area-inset-top, 0px); }
+    #hdr-toggle { display: inline-flex; min-width: 44px; min-height: 44px; }
+    header .bar .conn { display: flex; }
+    body.hdr-open header .bar .newagent { display: inline-flex; }
+    body:not(.hdr-open) header .bar {
+      flex-wrap: nowrap; align-items: center; padding: 4px 8px; gap: var(--sp-2);
+    }
+    body:not(.hdr-open) header .bar > * { order: 5; }
+    body:not(.hdr-open) header .bar > nav { order: 1; flex: 1 1 0; width: auto; min-width: 0; }
+    body:not(.hdr-open) header .bar > .conn { order: 2; }
+    body:not(.hdr-open) header .bar > #gauto { order: 3; }
+    body:not(.hdr-open) header .bar > #toastlog-open { order: 4; }
+    body:not(.hdr-open) header .bar > #hdr-toggle { order: 6; }
+    body:not(.hdr-open) header .bar > :is(.wordmark, .grow, #working, #sharing, .newagent, #sound, #gear, #rooms) {
+      display: none;
+    }
+    body:not(.hdr-open) header .conn { gap: 4px; padding: 0 4px; min-height: 44px; }
+    body:not(.hdr-open) header .conn #conn-t { display: none; }
+    body:not(.hdr-open) header .conn .conn-n { display: inline; font-size: var(--fs-md); color: var(--teal); }
+    body:not(.hdr-open) header .conn .conn-n[hidden] { display: none; }
+    /* Only when it says something: asking is the quiet state. On, or unknown, it shrinks to a word. */
+    body:not(.hdr-open) #gauto:not(.on):not(.unknown) { display: none; }
+    body:not(.hdr-open) #gauto { font-size: 0; padding: 4px 8px; min-height: 32px; }
+    body:not(.hdr-open) #gauto::after { font-size: var(--fs-sm); content: "AUTO"; }
+    body:not(.hdr-open) #gauto.unknown::after { content: "AUTO?"; }
+    /* a room chip on a card row wraps under the title rather than clipping at the edge */
+    .term-list .card .card-line { flex-wrap: wrap; }
+    .term-list .card .card-line > .chips { flex-wrap: wrap; max-width: 100%; }
   }
 
   /* FULL SCREEN TERMINAL: one class on body. The pane grows, and the ResizeObserver on #t-screen re-fits
      xterm. The terminal bar stays, since it holds the button back, and the phone key bar stays. */
   body.term-full header,
-  body.term-full #hdr-strip,
   body.term-full #board-bar,
   body.term-full .term-list,
   body.term-full .term-grip,
