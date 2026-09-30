@@ -102,7 +102,7 @@ Tapping the line opens the stack in place, at most half the window, and the term
 clear of it. Approve, block, reply, open, snooze and dismiss this all work from it. After a dismiss the strip shows an
 undo line for 10 s.
 
-### @LETTER@16. A popped-out card's growler
+### @LETTER@15. A popped-out card's growler
 
 1. Pop out a card that has a growler. Open a second pop-out for a different card.
 
@@ -118,7 +118,7 @@ on screen in both.
 
 **Expected:** the label goes and the next reminder rings on the board.
 
-### @LETTER@15. The phone home
+### @LETTER@16. The phone home
 
 1. Open `/m` with a growler open.
 
