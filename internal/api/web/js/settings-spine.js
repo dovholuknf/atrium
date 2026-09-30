@@ -1264,8 +1264,20 @@ function onTaskEvent(e) {
   try { d = JSON.parse(e.data); } catch (err) {}
   if (typeof dockKick === "function") dockKick(d && d.id);
   if (termOnly()) { soloTaskEvent(d); return; }
+  hearActivity(d);
   if (cardRowComplete(d)) { upsertCard(d); paintSoon(); return; }
   tasksSoon();
+}
+
+// A card doing something, told to the ready alert so it can wait for quiet.
+// Whole rows count only when the live activity changed (its clocks tick and
+// would never be quiet), and a row without one counts because it cannot say.
+function hearActivity(d) {
+  if (!d || !d.id || typeof alerting === "undefined") return;
+  if (!cardRowComplete(d)) { alerting.activity(d.id); return; }
+  const was = cardRows.get(d.id);
+  const shape = a => JSON.stringify(a || null, (k, v) => /seconds$/.test(k) ? undefined : v);
+  if (!was || shape(was.activity) !== shape(d.activity)) alerting.activity(d.id);
 }
 
 // `task-removed`: with an id, that card goes. Without one it was the sweep,

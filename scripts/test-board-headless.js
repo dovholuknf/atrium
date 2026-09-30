@@ -11205,6 +11205,84 @@ async function roomsMachineSection(browser, base) {
   }
 }
 
+// ── a ready alert rings once per wait, and only after the card went quiet ────
+// The alert rang 17 times for one card. `check` diffed on id membership, so a card out of the set for
+// one pass came back fresh. Keyed on bare id plus waiting_since now, held for quiet first. The quiet is
+// shortened through window.__atriumReadyQuietMs so the test does not sit through five real seconds.
+async function readyOnceSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const page = await ctx.newPage();
+  const errors = [];
+  page.on("pageerror", e => errors.push(String(e)));
+  await page.addInitScript(() => {
+    window.__atriumReadyQuietMs = 600;
+    Document.prototype.hasFocus = () => true;
+  });
+  try {
+    await page.goto(base, { waitUntil: "domcontentloaded" });
+    await page.waitForFunction(() => typeof alerting !== "undefined", null, { timeout: slow(15000) });
+    await page.waitForTimeout(1500);
+    const got = await page.evaluate(async () => {
+      localStorage.removeItem("atrium.toastlog");
+      alerting.set({ debounce: 0, muted: true });
+      const sleep = ms => new Promise(r => setTimeout(r, ms));
+      const w = (id, since) => ({ id, task_id: id, status: "needs-input", waiting_since: since });
+      const say = t => ({ title: t.id + " ready", body: "done" });
+      const check = items => alerting.check("waiting", items, say);
+      const rings = title => toastLog().filter(e => e.title === title).reduce((n, e) => n + (e.n || 1), 0);
+      const out = {};
+      check([]);
+      // Leaves the set and comes back with the same wait.
+      check([w("ro-a", "S1")]);
+      out.heldAtOnce = rings("ro-a ready");
+      await sleep(900);
+      out.first = rings("ro-a ready");
+      check([]);
+      check([w("ro-a", "S1")]);
+      await sleep(900);
+      out.sameWait = rings("ro-a ready");
+      // A new wait.
+      check([]);
+      check([w("ro-a", "S2")]);
+      await sleep(900);
+      out.newWait = rings("ro-a ready");
+      // A wait that ends inside the quiet.
+      check([]);
+      check([w("ro-b", "S1")]);
+      await sleep(200);
+      check([]);
+      await sleep(900);
+      out.ended = rings("ro-b ready");
+      // Activity inside the quiet pushes the ring out.
+      check([w("ro-c", "S1")]);
+      await sleep(350);
+      alerting.activity("ro-c");
+      await sleep(400);
+      out.busy = rings("ro-c ready");
+      await sleep(500);
+      out.settled = rings("ro-c ready");
+      // Two quiet waits are one alert.
+      check([]);
+      check([w("ro-d", "S1"), w("ro-e", "S1")]);
+      await sleep(900);
+      out.pile = rings("2 agents are ready");
+      out.single = rings("ro-d ready") + rings("ro-e ready");
+      return out;
+    });
+    if (got.heldAtOnce !== 0) fail("readyOnce: a fresh wait rang at once: " + JSON.stringify(got));
+    if (got.first !== 1) fail("readyOnce: a quiet wait did not ring exactly once: " + JSON.stringify(got));
+    if (got.sameWait !== 1) fail("readyOnce: the same wait rang again after leaving and returning: " + JSON.stringify(got));
+    if (got.newWait !== 2) fail("readyOnce: a new waiting_since did not ring: " + JSON.stringify(got));
+    if (got.ended !== 0) fail("readyOnce: a wait that ended inside the quiet rang: " + JSON.stringify(got));
+    if (got.busy !== 0) fail("readyOnce: a wait with activity inside the quiet rang early: " + JSON.stringify(got));
+    if (got.settled !== 1) fail("readyOnce: a wait did not ring after the activity went quiet: " + JSON.stringify(got));
+    if (got.pile !== 1 || got.single !== 0) fail("readyOnce: two quiet waits were not one alert: " + JSON.stringify(got));
+    if (errors.length) fail("readyOnce: the page threw: " + errors.join(" | "));
+  } finally {
+    await ctx.close();
+  }
+}
+
 async function main() {
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = "http://127.0.0.1:" + server.address().port;
@@ -11227,7 +11305,7 @@ async function main() {
       usageCacheReads: usageCacheReadsSection, roomsDash: roomsDashSection, phoneView: phoneViewSection, heldLine: heldLineSection, u016: u016Section, phoneHeader: phoneHeaderSection, phoneFocus: phoneFocusSection, phoneTermBar: phoneTermBarSection, phoneShare: phoneShareSection, phonePan: phonePanSection, phoneFollow: phoneFollowSection, phoneTap: phoneTapSection, phoneKeyboard: phoneKeyboardSection, phoneCompose: phoneComposeSection, mCompose: mComposeSection, mPerms: mPermsSection, usagePolish: usagePolishSection, usageLimits: usageLimitsSection, usageGroups: usageGroupsSection,
       eventDriven: eventDrivenSection, idleBudget: idleBudgetSection, pollsGone: pollsGoneSection,
       phoneListFit: phoneListFitSection, phoneNudge: phoneNudgeSection,
-      cacheChip: cacheChipSection, cacheLine: cacheLineSection, mHome: mHomeSection, mCard: mCardSection, mServe: mServeSection, phoneKeyLabel: phoneKeyLabelSection, phoneKeyLit: phoneKeyLitSection, shiftMenu: shiftMenuSection, notifyCommand: notifyCommandSection, presence: presenceSection, tallPty: tallPtySection, roomsMachine: roomsMachineSection };
+      cacheChip: cacheChipSection, cacheLine: cacheLineSection, mHome: mHomeSection, mCard: mCardSection, mServe: mServeSection, phoneKeyLabel: phoneKeyLabelSection, phoneKeyLit: phoneKeyLitSection, shiftMenu: shiftMenuSection, notifyCommand: notifyCommandSection, presence: presenceSection, tallPty: tallPtySection, roomsMachine: roomsMachineSection, readyOnce: readyOnceSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -13217,6 +13295,7 @@ async function main() {
     await phoneNudgeSection(browser, base);
     await cacheChipSection(browser, base);
     await cacheLineSection(browser, base);
+    await readyOnceSection(browser, base);
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e));
     if (process.env.DEBUG_HEADLESS) {
