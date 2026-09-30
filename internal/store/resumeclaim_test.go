@@ -86,3 +86,19 @@ func TestRegisterWillNotMatchADoneCardByADirectoryName(t *testing.T) {
 		t.Fatalf("a live card should match a directory name: %v %v", got, err)
 	}
 }
+
+// r-042: a claimant that does not exist stores nothing and clears nothing.
+func TestClaimResumeIDMissingClaimantKeepsTheHolder(t *testing.T) {
+	s := openTestStore(t)
+	old := claimCard(t, s, "old")
+	if err := s.SetResumeID(old.ID, "conv-1"); err != nil {
+		t.Fatal(err)
+	}
+	res, err := s.ClaimResumeID("no-such-card", "conv-1", true, func(*Task) bool { return false })
+	if err != nil || res.Stored || len(res.Moved) != 0 || res.Refused != nil {
+		t.Fatalf("a missing claimant: %+v, %v", res, err)
+	}
+	if resumeOf(t, s, old.ID) != "conv-1" {
+		t.Fatal("a missing claimant cleared the holder")
+	}
+}
