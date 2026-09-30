@@ -176,11 +176,20 @@ func (s *Store) Register(obs Observed) (*Task, bool, error) {
 	var (
 		task    *Task
 		created bool
+		stale   bool
 	)
 	err := s.guard(func() error {
-		task, created = nil, false
+		task, created, stale = nil, false, false
+		derived := obs.NameSource == NameFromDir
 		if obs.WireName != "" {
-			t, err := s.getBy(`wire_name = ?`, obs.WireName)
+			where := `wire_name = ?`
+			if derived {
+				// A name the hook guessed from its directory never reaches a
+				// finished or archived card. Two cards in one checkout share
+				// that name, and the old one is the wrong answer.
+				where += ` AND status != 'done' AND archived_at = ''`
+			}
+			t, err := s.getBy(where, obs.WireName)
 			if err != nil && !errors.Is(err, sql.ErrNoRows) {
 				return err
 			}
@@ -193,6 +202,19 @@ func (s *Store) Register(obs Observed) (*Task, bool, error) {
 				return err
 			}
 			task = t
+		}
+		if task == nil && derived && obs.WireName != "" {
+			// wire_name is unique, so creating one under the taken name would
+			// fail anyway. Say why instead.
+			var n int
+			if err := s.db.QueryRow(`SELECT COUNT(*) FROM task WHERE wire_name = ?`,
+				obs.WireName).Scan(&n); err != nil {
+				return err
+			}
+			if n > 0 {
+				stale = true
+				return nil
+			}
 		}
 		if task != nil {
 			return s.refreshObserved(task, obs)
@@ -207,8 +229,15 @@ func (s *Store) Register(obs Observed) (*Task, bool, error) {
 	if err != nil {
 		return nil, false, err
 	}
+	if stale {
+		return nil, false, ErrStaleName
+	}
 	return task, created, nil
 }
+
+// ErrStaleName is Register declining a directory-derived name that only a
+// finished or archived card holds. A hook treats it like any other refusal.
+var ErrStaleName = errors.New("a name taken from the directory matches only a finished card")
 
 // SetWorktree moves a card to another directory on purpose. Not "following the
 // cd": callers are launch, where atrium or a human chose the directory.
@@ -772,6 +801,81 @@ func (s *Store) SetResumeID(id, resumeID string) error {
 		_, err := s.db.Exec(`UPDATE task SET resume_id = ? WHERE id = ?`, resumeID, id)
 		return err
 	})
+}
+
+// ResumeClaim is what ClaimResumeID did with a conversation id.
+type ResumeClaim struct {
+	// Stored is whether the id is now on the card.
+	Stored bool
+	// Moved are the cards it was cleared from, none of them live.
+	Moved []*Task
+	// Refused is the live card that holds it, when the claim was turned away.
+	Refused *Task
+}
+
+// ClaimResumeID stores a conversation id on a card, ranking who is asking.
+//
+// One conversation belongs to one card. `byID` says the claim came bound to the
+// card by its task id or by the supervised runner's pid, which outranks one
+// resolved by a name: two cards in one checkout can share a name, and a hook
+// that guessed it must not take another card's conversation.
+//
+//   - No other card holds the id: stored.
+//   - A bound claim and the other holder is not live (`live` says so): the id
+//     MOVES. It is cleared on the old card and stored on this one, which is what
+//     resuming onto a new card, unshelving and adopting a fixture all are.
+//   - Anything else: refused, and nothing changes. Refused is the live holder.
+//
+// A nil `live` counts every holder as live, which is the safe answer.
+func (s *Store) ClaimResumeID(id, resumeID string, byID bool, live func(*Task) bool) (ResumeClaim, error) {
+	var out ResumeClaim
+	resumeID = strings.TrimSpace(resumeID)
+	if resumeID == "" {
+		return out, nil
+	}
+	err := s.guard(func() error {
+		out = ResumeClaim{}
+		rows, err := s.db.Query(`SELECT id FROM task WHERE resume_id = ? AND id != ?`, resumeID, id)
+		if err != nil {
+			return err
+		}
+		var ids []string
+		for rows.Next() {
+			var h string
+			if err := rows.Scan(&h); err != nil {
+				rows.Close()
+				return err
+			}
+			ids = append(ids, h)
+		}
+		rows.Close()
+		var holders []*Task
+		for _, h := range ids {
+			t, err := s.getBy(`id = ?`, h)
+			if err != nil {
+				return err
+			}
+			holders = append(holders, t)
+		}
+		for _, h := range holders {
+			if !byID || live == nil || live(h) {
+				out.Refused = h
+				return nil
+			}
+		}
+		for _, h := range holders {
+			if _, err := s.db.Exec(`UPDATE task SET resume_id = '' WHERE id = ?`, h.ID); err != nil {
+				return err
+			}
+			out.Moved = append(out.Moved, h)
+		}
+		if _, err := s.db.Exec(`UPDATE task SET resume_id = ? WHERE id = ?`, resumeID, id); err != nil {
+			return err
+		}
+		out.Stored = true
+		return nil
+	})
+	return out, err
 }
 
 // SetModel records which model this card was launched on.

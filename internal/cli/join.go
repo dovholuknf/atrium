@@ -75,6 +75,24 @@ func agentName(override string) string {
 	return filepath.Base(cwd)
 }
 
+// hookAgent is agentName for a hook, which has the session's cwd to hand, and
+// says where the name came from: "dir" when it fell back to the directory.
+//
+// The daemon cannot tell a real name `atrium` from a directory called `atrium`
+// otherwise, and two cards in one checkout share the second (r-021).
+func hookAgent(name, cwd string) (agent, source string) {
+	if name != "" {
+		return name, ""
+	}
+	if v := os.Getenv("ATRIUM_AGENT_NAME"); v != "" {
+		return v, ""
+	}
+	if cwd != "" {
+		return filepath.Base(cwd), "dir"
+	}
+	return "", ""
+}
+
 // hubAddress works out where the daemon is, most explicit first.
 //
 // The recorded address is what lets `atrium hook` reach a daemon on a
