@@ -7478,3 +7478,12 @@ At desktop width the same toast still draws a toast, there is no corner badge an
 
 ### GE6. The hub restart gate still works on a phone
 The restart countdown and the paused toast with its resume button stay as toasts on a phone, since they are not made by `toast()` and hold the only pause and resume controls.
+
+## GF. Linux runner pid with a native claude install (f-018)
+
+1. On a Linux machine, cross-compile and run the test there:
+   `GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go test -c -o build.claude/cli-linux.test ./internal/cli/`, copy it over,
+   and run `cli-linux.test -test.run '^TestRunnerPIDFindsAClaudeNamedForItsVersion$' -test.v`. It passes. Before the
+   fix it answered `runner=0`.
+2. On a Linux room with a native claude install (`~/.local/share/claude/versions/<version>`), start a card and look
+   at its details on the board: the pid is the claude process, not 0, and `ps -o comm= -p <pid>` shows the version.
