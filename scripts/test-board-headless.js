@@ -13046,7 +13046,8 @@ async function main() {
       notifyCommand: notifyCommandSection, presence: presenceSection, shiftMenu: shiftMenuSection, tallPty: tallPtySection,
       cacheChip: cacheChipSection, cacheLine: cacheLineSection, roomsMachine: roomsMachineSection,
       u001Audit: u001AuditSection,
-      pasteStart: pasteStartSection, pasteDone: pasteDoneSection, pasteOldRoom: pasteOldRoomSection, pasteClose: pasteCloseSection };
+      pasteStart: pasteStartSection, pasteDone: pasteDoneSection, pasteOldRoom: pasteOldRoomSection, pasteClose: pasteCloseSection,
+      growlQuestionShots: growlQuestionShotsSection, growlQuestionBody: growlQuestionBodySection, growlReplyGrow: growlReplyGrowSection, growlChoices: growlChoicesSection, growlStable: growlStableSection, mGrowlQuestion: mGrowlQuestionSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -15067,6 +15068,11 @@ async function main() {
     await pasteDoneSection(browser, base);
     await pasteOldRoomSection(browser, base);
     await pasteCloseSection(browser, base);
+    await growlQuestionBodySection(browser, base);
+    await growlReplyGrowSection(browser, base);
+    await growlChoicesSection(browser, base);
+    await growlStableSection(browser, base);
+    await mGrowlQuestionSection(browser);
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e));
     if (process.env.DEBUG_HEADLESS) {
@@ -15921,7 +15927,7 @@ async function growlPhoneSection(browser, base) {
     await growlShot(p, "board-closed-390");
     // tap opens the stack, at most half the window, and never over the key bar
     await p.tap("#growl-phone .gp-line");
-    await p.waitForSelector("#growl-phone .gp-list .gr-full");
+    await p.waitForSelector("#growl-phone .gr-full");
     if ((await p.$$("#growl-phone .gr-full")).length !== 2) fail("growlPhone: the expanded stack did not list both.");
     const open = await rect("#growl-phone");
     if (open.h > 844 / 2 + 1) fail("growlPhone: the open stack is " + open.h + "px in an 844px window.");
@@ -16076,6 +16082,324 @@ async function growlPopoutSection(browser, base) {
     await ctx.close();
   }
   if (!bad) console.log("growlPopout ok");
+}
+
+// The worst question an agent asks: paragraphs, a numbered list, a fenced block, a long Windows path and a 200
+// character token with no break in it.
+const GR_TOKEN = "deadbeef".repeat(25);
+const GR_PATH = "C:\\Users\\claude\\AppData\\Local\\Temp\\claude\\D--worktrees-claude-atrium-ui\\8f3c1d2e-aaaa-bbbb-cccc-0123456789ab\\scratchpad\\something-long.ps1";
+const GR_BIG_BODY = [
+  "Which way do you want the migration to go? I read " + GR_PATH + " and the checksum is " + GR_TOKEN + ", which does not match what the build wrote.",
+  "",
+  "The first paragraph is the short version. The second is the long one: the script rewrites every row in place, so a failure half way leaves a mixed table, and the only way back is the backup, which is taken before the run and not after it.",
+  "",
+  "1. Run it now, in place, and keep the backup.",
+  "2. Run it on a copy, compare, and swap the tables if the copy is right.",
+  "3. Do not run it. Leave the old schema and open an item.",
+  "",
+  "```powershell",
+  "Get-ChildItem -Recurse -Path '" + GR_PATH + "' | Where-Object { $_.Length -gt 1048576 } | ForEach-Object { Write-Host $_.FullName $_.Length }",
+  "```",
+  "",
+  "Tell me which, and whether to delete the copy afterwards."
+].join("\n");
+
+// GROWL_SHOTS_DIR and GROWL_SHOTS_NAME write the review pictures as PNG: <name>.png, <name>-phone.png, <name>-m.png.
+async function growlQuestionShotsSection(browser, base) {
+  const dir = process.env.GROWL_SHOTS_DIR, name = process.env.GROWL_SHOTS_NAME || "growl-question";
+  if (!dir) { fail("growlQuestionShots: set GROWL_SHOTS_DIR."); return; }
+  fs.mkdirSync(dir, { recursive: true });
+  const q = GR("big", "question", 1, { title: "question big", body: GR_BIG_BODY });
+  for (const phone of [false, true]) {
+    const h = await growlBoard(browser, base, true, null, phone);
+    try {
+      await h.say([]);
+      await h.say([q]);
+      await h.p.waitForTimeout(400);
+      await h.p.screenshot({ path: path.join(dir, name + (phone ? "-phone" : "") + ".png") });
+    } finally { await h.close(); }
+  }
+  const st = mServer({});
+  st.tasks = [mCard("big", { display_title: "card big" })];
+  await st.open();
+  try {
+    const { ctx, p } = await mPage(browser, st, { width: 390, height: 844 }, "");
+    await p.waitForSelector("#m-skel[hidden]", { state: "attached", timeout: slow(8000) });
+    st.send("growls", { growls: [q], perm_after_seconds: 120 });
+    await p.waitForFunction(() => !document.getElementById("m-growl").hidden, null, { timeout: slow(4000) });
+    await p.waitForTimeout(400);
+    await p.screenshot({ path: path.join(dir, name + "-m.png") });
+    await ctx.close();
+  } finally { await st.close(); }
+  if (!bad) console.log("growlQuestionShots ok");
+}
+
+// The question growler as a person reads and answers it. Each section runs on the desktop stack and on the phone
+// board's strip, which draw the same face.
+async function growlQuestionFace(browser, base, phone, rows) {
+  const h = await growlBoard(browser, base, true, null, phone);
+  await h.say([]);
+  await h.say(rows);
+  // the phone strip is closed to one line, and its face is one tap away
+  if (phone) { await h.p.tap("#growl-phone .gp-line"); await h.p.waitForSelector("#growl-phone .gr-full"); }
+  h.root = phone ? "#growl-phone" : "#growl";
+  return h;
+}
+
+async function growlQuestionBodySection(browser, base) {
+  for (const phone of [false, true]) {
+    const tag = "growlQuestionBody " + (phone ? "phone" : "desktop") + ": ";
+    const h = await growlQuestionFace(browser, base, phone, [GR("big", "question", 1, { body: GR_BIG_BODY })]);
+    const { p, root } = h;
+    try {
+      const f = await p.evaluate(root => {
+        const r = document.querySelector(root), b = r.querySelector(".gr-body");
+        const pre = b.querySelector("pre"), para = b.querySelector("p");
+        const box = r.getBoundingClientRect();
+        return {
+          text: b.textContent, paras: b.querySelectorAll("p").length, ol: b.querySelectorAll("ol > li").length,
+          pre: !!pre, preScrolls: pre ? pre.scrollWidth > pre.clientWidth : false,
+          bodyH: b.clientHeight, bodyScrolls: b.scrollHeight > b.clientHeight,
+          bodyWide: b.scrollWidth > b.clientWidth + 1, rootWide: r.scrollWidth > r.clientWidth + 1,
+          rootScrolls: r.scrollHeight > r.clientHeight + 1,
+          gap: parseFloat(getComputedStyle(para).marginBottom), right: box.right, left: box.left, h: box.height,
+          win: innerHeight, winW: innerWidth
+        };
+      }, root);
+      for (const s of ["Which way do you want the migration", "deadbeefdeadbeef", "something-long.ps1", "1 ", "Tell me which"]) {
+        if (s !== "1 " && !f.text.includes(s)) fail(tag + "the body lost " + JSON.stringify(s));
+      }
+      if (f.paras < 3) fail(tag + "paragraphs were not kept apart: " + f.paras);
+      if (f.ol !== 3) fail(tag + "the numbered list drew " + f.ol + " items.");
+      if (!f.pre) fail(tag + "the code block did not draw.");
+      if (!f.preScrolls) fail(tag + "a long code line did not scroll sideways inside its block.");
+      if (f.gap < 4) fail(tag + "paragraphs have no spacing: " + f.gap);
+      if (f.bodyH > Math.min(f.win * 0.3, 260) + 1) fail(tag + "the body is " + f.bodyH + "px, past its cap.");
+      if (!f.bodyScrolls) fail(tag + "a long body did not scroll inside its own box.");
+      if (f.bodyWide) fail(tag + "the body scrolls sideways: a long path or token did not wrap.");
+      if (f.rootWide) fail(tag + "the card scrolls sideways.");
+      if (f.rootScrolls) fail(tag + "the buttons are scrolled out of the card: the body leaves no room for them.");
+      if (f.right > f.winW + 1 || f.left < -1) fail(tag + "the card runs off the window: " + JSON.stringify([f.left, f.right, f.winW]));
+      if (f.h > f.win / 2 + 1) fail(tag + "the card is " + f.h + "px in a " + f.win + "px window.");
+      if (!(await p.$(root + ' button[data-do="reply"]'))) fail(tag + "the buttons went missing under a long body.");
+      await growlShot(p, "question-body-" + (phone ? "phone" : "desktop"));
+      if (h.errors.length) fail(tag + "page errors: " + h.errors.join(" | "));
+    } finally { await h.close(); }
+  }
+  if (!bad) console.log("growlQuestionBody ok");
+}
+
+async function growlReplyGrowSection(browser, base) {
+  for (const phone of [false, true]) {
+    const tag = "growlReplyGrow " + (phone ? "phone" : "desktop") + ": ";
+    const q = GR("c", "question", 1, { body: "Which one?" });
+    const h = await growlQuestionFace(browser, base, phone, [q]);
+    const { p, root } = h;
+    const box = root + " .gr-reply";
+    const size = () => p.evaluate(s => { const e = document.querySelector(s); return { h: e.clientHeight, s: e.scrollHeight, max: parseFloat(getComputedStyle(e).maxHeight), v: e.value }; }, box);
+    try {
+      const one = await size();
+      await p.fill(box, "a\nb\nc\nd");
+      const four = await size();
+      if (four.h <= one.h + 10) fail(tag + "the reply box did not grow with its text: " + JSON.stringify([one, four]));
+      const lines = []; for (let i = 0; i < 40; i++) lines.push("line " + i);
+      await p.fill(box, lines.join("\n"));
+      const many = await size();
+      if (many.h > many.max + 1) fail(tag + "the reply box grew past its cap: " + JSON.stringify(many));
+      if (many.s <= many.h) fail(tag + "the reply box did not scroll past its cap.");
+      // Shift+Enter is a newline, Enter sends
+      await p.fill(box, "");
+      await p.focus(box);
+      await p.keyboard.type("first");
+      await p.keyboard.press("Shift+Enter");
+      await p.keyboard.type("second");
+      if ((await size()).v !== "first\nsecond") fail(tag + "Shift+Enter did not make a newline: " + JSON.stringify((await size()).v));
+      if (h.messages.length) fail(tag + "Shift+Enter sent.");
+      await p.keyboard.press("Enter");
+      await p.waitForTimeout(300);
+      if (h.messages.length !== 1 || h.messages[0].body.text !== "first\nsecond") fail(tag + "Enter sent " + JSON.stringify(h.messages));
+      if ((await size()).v !== "") fail(tag + "the box kept its text after sending.");
+      // the bigger box keeps the text, takes the focus, and folds with Escape or its control
+      await p.fill(box, "half a thought");
+      await p.click(root + ' button[data-do="compose"]');
+      await p.waitForSelector(root + " .gr-replybox.big");
+      const big = await size();
+      if (big.v !== "half a thought") fail(tag + "expanding lost the text: " + JSON.stringify(big.v));
+      if (big.h <= four.h) fail(tag + "the full-size box is no bigger: " + big.h);
+      if (!(await p.evaluate(s => document.activeElement === document.querySelector(s), box))) fail(tag + "the full-size box did not take the focus.");
+      await p.keyboard.type(" and more");
+      await p.keyboard.press("Escape");
+      await p.waitForFunction(r => !document.querySelector(r + " .gr-replybox.big"), root, { timeout: slow(3000) })
+        .catch(() => fail(tag + "Escape did not fold the full-size box."));
+      if ((await size()).v !== "half a thought and more") fail(tag + "folding lost the text: " + JSON.stringify((await size()).v));
+      await p.click(root + ' button[data-do="compose"]');
+      await p.waitForSelector(root + " .gr-replybox.big");
+      await p.click(root + ' button[data-do="compose"]');
+      await p.waitForFunction(r => !document.querySelector(r + " .gr-replybox.big"), root, { timeout: slow(3000) })
+        .catch(() => fail(tag + "the control did not fold the full-size box."));
+      if ((await size()).v !== "half a thought and more") fail(tag + "folding by the control lost the text.");
+      await growlShot(p, "reply-grow-" + (phone ? "phone" : "desktop"));
+      if (h.errors.length) fail(tag + "page errors: " + h.errors.join(" | "));
+    } finally { await h.close(); }
+  }
+  if (!bad) console.log("growlReplyGrow ok");
+}
+
+async function growlChoicesSection(browser, base) {
+  for (const phone of [false, true]) {
+    const tag = "growlChoices " + (phone ? "phone" : "desktop") + ": ";
+    const body = "Which?\n\n{choices}\n1. Run it now\n2. Run it on a copy\n3. Do not run it\n{/choices}";
+    const h = await growlQuestionFace(browser, base, phone, [GR("c", "blocked", 1, { body })]);
+    const { p, root } = h;
+    try {
+      const btns = await p.$$eval(root + " .gr-choices button", b => b.map(x => x.textContent));
+      if (btns.join("|") !== "1. Run it now|2. Run it on a copy|3. Do not run it") fail(tag + "the choices were " + JSON.stringify(btns));
+      if ((await p.textContent(root + " .gr-body")).includes("{choices}")) fail(tag + "the marker stayed in the text.");
+      await p.click(root + ' .gr-choices button:has-text("Run it on a copy")');
+      await p.waitForTimeout(300);
+      if (h.messages.length !== 1 || h.messages[0].body.text !== "2. Run it on a copy" || !/\/message$/.test(h.messages[0].url)) fail(tag + "a choice sent " + JSON.stringify(h.messages));
+      if (h.posts.length) fail(tag + "a choice posted to /_hub/growls.");
+      await growlShot(p, "choices-" + (phone ? "phone" : "desktop"));
+      if (h.errors.length) fail(tag + "page errors: " + h.errors.join(" | "));
+    } finally { await h.close(); }
+  }
+  if (!bad) console.log("growlChoices ok");
+}
+
+// The face is not rebuilt for news that is not about it. A rebuilt node drops its `:hover` and whatever is typed in it,
+// which is what made a button feel unreliable.
+async function growlStableSection(browser, base) {
+  for (const phone of [false, true]) {
+    const tag = "growlStable " + (phone ? "phone" : "desktop") + ": ";
+    const q = GR("c", "question", 1, { body: "Which one?" });
+    const h = await growlQuestionFace(browser, base, phone, [q]);
+    const { p, root } = h;
+    try {
+      const open = root + ' button[data-do="open"]';
+      await p.hover(open);
+      const bob = await p.$eval(open, b => getComputedStyle(b).transform);
+      if (bob !== "none") fail(tag + "a hovered button is lifted: " + bob);
+      await p.fill(root + " .gr-reply", "half typ");
+      await p.focus(root + " .gr-reply");
+      await p.evaluate(root => {
+        window.__node = document.querySelector(root + " .gr-full");
+        window.__btn = document.querySelector(root + ' button[data-do="open"]');
+        window.__mut = 0;
+        new MutationObserver(r => { window.__mut += r.length; }).observe(document.querySelector(root), { childList: true, subtree: true, characterData: true });
+      }, root);
+      // unrelated news: task and permission events, the same set said again, a pop-out's claim, redraws and a resize
+      for (let i = 0; i < 5; i++) {
+        openStreams.forEach(r => { try { r.write("event: task\ndata: {}\n\nevent: permission\ndata: {}\n\n"); } catch (e) {} });
+        await h.say([q]);
+        await p.evaluate(() => { growlDraw(); growlAttention(); window.dispatchEvent(new Event("resize")); });
+      }
+      await p.waitForTimeout(500);
+      const s = await p.evaluate(root => ({
+        same: window.__node === document.querySelector(root + " .gr-full") && window.__node.isConnected,
+        btn: window.__btn === document.querySelector(root + ' button[data-do="open"]'),
+        hover: window.__btn.matches(":hover"), mut: window.__mut,
+        v: document.querySelector(root + " .gr-reply").value,
+        focus: document.activeElement === document.querySelector(root + " .gr-reply")
+      }), root);
+      if (!s.same || !s.btn) fail(tag + "the face was rebuilt by unrelated news.");
+      if (!s.hover) fail(tag + "the hovered button lost its hover.");
+      if (s.mut) fail(tag + "the growler's DOM changed " + s.mut + " times for news that is not about it.");
+      if (s.v !== "half typ" || !s.focus) fail(tag + "a half-typed reply did not survive: " + JSON.stringify(s));
+      // news that is about another growler leaves this face's node alone too
+      await h.say([q, GR("z", "permission", 2)]);
+      await p.waitForTimeout(200);
+      const t = await p.evaluate(root => ({ same: window.__node === document.querySelector(root + " .gr-full"), v: document.querySelector(root + " .gr-reply").value }), root);
+      if (!t.same) fail(tag + "a second growler rebuilt the first one's face.");
+      if (t.v !== "half typ") fail(tag + "a second growler took the half-typed reply.");
+      if (h.errors.length) fail(tag + "page errors: " + h.errors.join(" | "));
+    } finally { await h.close(); }
+  }
+  if (!bad) console.log("growlStable ok");
+}
+
+async function mGrowlQuestionSection(browser) {
+  const st = mServer({});
+  st.tasks = [mCard("c", { display_title: "card c" })];
+  await st.open();
+  const tag = "mGrowlQuestion: ";
+  try {
+    const { ctx, p, errors } = await mPage(browser, st, { width: 390, height: 844 }, "");
+    const msgs = [];
+    await ctx.route("**/v1/tasks/*/message", route => { msgs.push(JSON.parse(route.request().postData() || "{}").text); return route.fulfill({ status: 200, contentType: "application/json", body: "{}" }); });
+    await p.waitForSelector("#m-skel[hidden]", { state: "attached", timeout: slow(8000) });
+    const body = GR_BIG_BODY + "\n\n{choices}\n1. Run it now\n2. Do not run it\n{/choices}";
+    const q = GR("c", "question", 1, { body });
+    st.send("growls", { growls: [q], perm_after_seconds: 120 });
+    await p.waitForFunction(() => !document.getElementById("m-growl").hidden && !!document.querySelector("#m-growl .gm-body"), null, { timeout: slow(4000) });
+    // the body
+    const f = await p.evaluate(() => {
+      const r = document.getElementById("m-growl"), b = r.querySelector(".gm-body"), pre = b.querySelector("pre");
+      return { text: b.textContent, pre: !!pre, preScrolls: pre ? pre.scrollWidth > pre.clientWidth : false,
+        bodyH: b.clientHeight, win: innerHeight, bodyWide: b.scrollWidth > b.clientWidth + 1, rootWide: r.scrollWidth > r.clientWidth + 1,
+        h: r.getBoundingClientRect().height, right: r.getBoundingClientRect().right, winW: innerWidth,
+        scrolls: r.scrollHeight > r.clientHeight + 1 };
+    });
+    if (f.scrolls) fail(tag + "the buttons are scrolled out of the strip: the body leaves no room for them.");
+    if (!f.text.includes("Tell me which") || f.text.includes("{choices}")) fail(tag + "the body is wrong: " + f.text.slice(0, 80));
+    if (!f.pre || !f.preScrolls) fail(tag + "the code block does not scroll inside itself.");
+    if (f.bodyH > Math.min(f.win * 0.3, 260) + 1) fail(tag + "the body is " + f.bodyH + "px.");
+    if (f.bodyWide || f.rootWide || f.right > f.winW + 1) fail(tag + "the card runs wide: " + JSON.stringify(f));
+    if (f.h > f.win / 2 + 1) fail(tag + "the strip is " + f.h + "px.");
+    await growlShot(p, "m-question-body");
+    // the reply box
+    const box = "#m-growl .gm-reply";
+    const size = () => p.evaluate(s => { const e = document.querySelector(s); return { h: e.clientHeight, s: e.scrollHeight, max: parseFloat(getComputedStyle(e).maxHeight), v: e.value }; }, box);
+    const one = await size();
+    await p.fill(box, "a\nb\nc\nd");
+    if ((await size()).h <= one.h + 10) fail(tag + "the reply box did not grow.");
+    const lines = []; for (let i = 0; i < 40; i++) lines.push("line " + i);
+    await p.fill(box, lines.join("\n"));
+    const many = await size();
+    if (many.h > many.max + 1 || many.s <= many.h) fail(tag + "the reply box is not capped and scrolling: " + JSON.stringify(many));
+    await p.fill(box, "");
+    await p.focus(box);
+    await p.keyboard.type("x");
+    await p.keyboard.press("Shift+Enter");
+    await p.keyboard.type("y");
+    if (msgs.length || (await size()).v !== "x\ny") fail(tag + "Shift+Enter: " + JSON.stringify([msgs, (await size()).v]));
+    await p.keyboard.press("Enter");
+    await p.waitForTimeout(300);
+    if (msgs.length !== 1 || msgs[0] !== "x\ny") fail(tag + "Enter sent " + JSON.stringify(msgs));
+    // the bigger box
+    await p.fill(box, "half a thought");
+    await p.tap('#m-growl button[data-do="compose"]');
+    await p.waitForSelector("#m-growl .gm-replybox.big");
+    if ((await size()).v !== "half a thought") fail(tag + "expanding lost the text.");
+    await p.keyboard.press("Escape");
+    await p.waitForFunction(() => !document.querySelector("#m-growl .gm-replybox.big"), null, { timeout: slow(3000) })
+      .catch(() => fail(tag + "Escape did not fold the box."));
+    if ((await size()).v !== "half a thought") fail(tag + "folding lost the text.");
+    // a choice sends its line
+    await p.tap('#m-growl .gm-choices button:has-text("Do not run it")');
+    await p.waitForTimeout(300);
+    if (msgs[msgs.length - 1] !== "2. Do not run it") fail(tag + "a choice sent " + JSON.stringify(msgs));
+    // the face is not rebuilt for unrelated news
+    await p.fill(box, "half typ");
+    await p.focus(box);
+    await p.evaluate(() => {
+      window.__node = document.querySelector("#m-growl .gm-full");
+      window.__mut = 0;
+      new MutationObserver(r => { window.__mut += r.length; }).observe(document.getElementById("m-growl"), { childList: true, subtree: true });
+    });
+    for (let i = 0; i < 5; i++) {
+      st.send("task", {});
+      st.send("permission", {});
+      st.send("growls", { growls: [q], perm_after_seconds: 120 });
+      await p.waitForTimeout(80);
+    }
+    await p.waitForTimeout(300);
+    const s = await p.evaluate(() => ({ same: window.__node === document.querySelector("#m-growl .gm-full"), mut: window.__mut, v: document.querySelector("#m-growl .gm-reply").value, focus: document.activeElement === document.querySelector("#m-growl .gm-reply") }));
+    if (!s.same || s.mut) fail(tag + "the face was rebuilt by unrelated news: " + JSON.stringify(s));
+    if (s.v !== "half typ" || !s.focus) fail(tag + "a half-typed reply did not survive.");
+    if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+    await ctx.close();
+  } finally { await st.close(); }
+  if (!bad) console.log("mGrowlQuestion ok");
 }
 
 async function mGrowlSection(browser) {

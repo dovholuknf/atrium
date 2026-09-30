@@ -152,23 +152,83 @@ function growlFull(g) {
   const off = (g.room_offline ? `<span class="gr-off">room offline</span>` : "") +
     (growlMutedInPopout(g) ? `<span class="gr-off">muted in its window</span>` : "");
   const perm = g.reason === "permission";
+  // A question is read whole, in a box that scrolls. Anything else keeps its one line.
+  const asks = g.reason === "blocked" || g.reason === "question";
+  const split = asks ? growlSplitChoices(g.body) : { text: g.body, choices: [] };
   const text = perm
     ? `<code class="gr-cmd">${esc(growlFirstLine(g.body))}</code>`
-    : `<div class="gr-line">${esc(growlFirstLine(g.body))}</div>`;
+    : asks ? `<div class="gr-body">${growlBodyHTML(split.text)}</div>`
+      : `<div class="gr-line">${esc(growlFirstLine(g.body))}</div>`;
+  const choices = split.choices.length
+    ? `<div class="gr-choices">${split.choices.map(c => `<button data-choice="${esc(c)}">${esc(c)}</button>`).join("")}</div>` : "";
+  const big = growlCompose === g.id;
   const dead = perm && !g.subject ? " disabled" : "";
   let acts = "";
   if (perm) acts += `<button data-do="approve"${dead}>approve once</button><button data-do="block"${dead}>block</button>`;
   else if (g.reason === "halt") acts += `<button data-do="room">open the room</button>`;
   else if (g.reason === "deploy-hold") acts += `<button data-do="lift">lift</button>`;
-  if (g.reason === "blocked" || g.reason === "question") {
-    acts += `<input class="gr-reply" placeholder="reply" aria-label="reply"><button data-do="reply">send</button>`;
+  let reply = "";
+  if (asks) {
+    reply = `<div class="gr-replybox${big ? " big" : ""}"><textarea class="gr-reply" rows="1" placeholder="reply" ` +
+      `aria-label="reply"></textarea><div class="gr-replyacts"><button data-do="reply">send</button>` +
+      `<button data-do="compose" aria-label="${big ? "fold the reply box" : "open a bigger reply box"}" ` +
+      `data-tip="${big ? "fold it. your text stays" : "a bigger box to write in"}">${big ? "&#10514;" : "&#10530;"}</button></div></div>`;
   }
   acts += `<button data-do="open">open</button><button data-do="snooze">snooze</button>` +
     `<button data-do="dismiss" data-tip="stops this alert. the ? chip on the card stays">dismiss this</button>`;
   const snooze = growlSnoozing === g.id
     ? `<div class="gr-snooze">${GROWL_SNOOZES.map(s => `<button data-snooze="${s[1]}">${s[0]}</button>`).join("")}</div>` : "";
   return `<div class="gr-full" data-id="${esc(g.id)}" data-reason="${esc(g.reason)}">` +
-    `<div class="gr-head"><b>${esc(g.title)}</b>${off}</div>${text}<div class="gr-acts">${acts}</div>${snooze}</div>`;
+    `<div class="gr-head"><b>${esc(g.title)}</b>${off}</div>${text}${choices}${reply}<div class="gr-acts">${acts}</div>${snooze}</div>`;
+}
+
+// A `{choices}...{/choices}` block is the agent offering a small set of answers, one per line. It is taken out of
+// the text and drawn as buttons, and a press sends that line as the reply.
+function growlSplitChoices(body) {
+  const m = /\{choices\}([\s\S]*?)\{\/choices\}/.exec(String(body || ""));
+  if (!m) return { text: String(body || ""), choices: [] };
+  const choices = m[1].split("\n").map(l => l.trim()).filter(Boolean);
+  return { text: (String(body).slice(0, m.index) + String(body).slice(m.index + m[0].length)).trim(), choices };
+}
+
+// The body as paragraphs, lists and code blocks, every character escaped first. No inline markup and no links: a
+// question is model output and some of it echoes what a tool read.
+function growlBodyHTML(text) {
+  const lines = String(text || "").replace(/\r/g, "").split("\n");
+  const out = [];
+  const num = /^\s*(\d+)[.)]\s+(.*)$/, dot = /^\s*[-*]\s+(.*)$/, fence = /^\s*```/;
+  for (let i = 0; i < lines.length;) {
+    const l = lines[i];
+    if (fence.test(l)) {
+      const code = [];
+      for (i++; i < lines.length && !fence.test(lines[i]); i++) code.push(lines[i]);
+      i++;
+      out.push(`<pre><code>${esc(code.join("\n"))}</code></pre>`);
+    } else if (!l.trim()) {
+      i++;
+    } else if (num.test(l) || dot.test(l)) {
+      const ordered = num.test(l), re = ordered ? num : dot, items = [];
+      const start = ordered ? Number(num.exec(l)[1]) : 0;
+      for (; i < lines.length && re.test(lines[i]); i++) items.push(`<li>${esc(re.exec(lines[i])[ordered ? 2 : 1])}</li>`);
+      out.push(ordered ? `<ol start="${start}">${items.join("")}</ol>` : `<ul>${items.join("")}</ul>`);
+    } else {
+      const para = [];
+      for (; i < lines.length && lines[i].trim() && !fence.test(lines[i]) && !num.test(lines[i]) && !dot.test(lines[i]); i++) {
+        para.push(esc(lines[i]));
+      }
+      out.push(`<p>${para.join("<br>")}</p>`);
+    }
+  }
+  return out.join("");
+}
+
+// Which growler's reply box is opened to full size. The text is the draft either way.
+let growlCompose = "";
+
+// A reply box that grows with what is typed, up to the cap in the stylesheet, and scrolls past it.
+function growlGrow(box) {
+  box.style.height = "auto";
+  box.style.height = box.scrollHeight + "px";
 }
 
 function growlRow(g) {
@@ -181,25 +241,68 @@ function growlWire(el) {
   el.addEventListener("click", growlClick);
   el.addEventListener("input", e => {
     const row = e.target.closest(".gr-full");
-    if (row && e.target.classList.contains("gr-reply")) growlDrafts.set(row.dataset.id, e.target.value);
+    if (row && e.target.classList.contains("gr-reply")) {
+      growlDrafts.set(row.dataset.id, e.target.value);
+      growlGrow(e.target);
+    }
   });
+  // Enter sends and Shift+Enter is a newline. Escape folds a full-size box, keeping the text.
   el.addEventListener("keydown", e => {
-    if (e.key === "Enter" && e.target.classList.contains("gr-reply")) growlAct(e.target.closest(".gr-full"), "reply");
+    if (!e.target.classList.contains("gr-reply") || e.isComposing) return;
+    const row = e.target.closest(".gr-full");
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); growlAct(row, "reply"); }
+    if (e.key === "Escape" && growlCompose === row.dataset.id) {
+      e.preventDefault();
+      e.stopPropagation();
+      growlCompose = "";
+      growlDraw();
+    }
   });
 }
 
-function growlRestore(el, focused) {
-  el.querySelectorAll(".gr-full").forEach(full => {
+// THE DRAWN NODES ARE KEPT WHEN THEIR MARKUP IS THE SAME. Every `growls` event, every claim from a pop-out and every
+// resize asks for a draw, and replacing a node drops its `:hover` and whatever is typed in it. So each part is
+// compared with the markup it was made from, and only a part that changed is swapped. Answers the nodes it made.
+const growlSigs = new WeakMap();
+function growlReconcile(el, parts) {
+  const made = [];
+  parts.forEach((html, i) => {
+    const old = el.children[i];
+    if (old && growlSigs.get(old) === html) return;
+    const t = document.createElement("template");
+    t.innerHTML = html;
+    const n = t.content.firstElementChild;
+    growlSigs.set(n, html);
+    if (old) el.replaceChild(n, old);
+    else el.appendChild(n);
+    made.push(n);
+  });
+  while (el.children.length > parts.length) el.lastElementChild.remove();
+  return made;
+}
+
+// What is focused in a reply box and where the caret is, so a redraw from an event does not move it.
+let growlCaret = [0, 0];
+
+// Only for nodes just made: an untouched node already holds its draft, and setting it again would move the caret.
+function growlRestore(nodes, focused) {
+  nodes.flatMap(n => n.matches(".gr-full") ? [n] : [...n.querySelectorAll(".gr-full")]).forEach(full => {
     const box = full.querySelector(".gr-reply");
     if (!box) return;
     box.value = growlDrafts.get(full.dataset.id) || "";
-    if (focused === full.dataset.id) box.focus();
+    growlGrow(box);
+    if (focused === full.dataset.id) {
+      box.focus();
+      try { box.setSelectionRange(growlCaret[0], growlCaret[1]); } catch (e) {}
+    }
   });
 }
 
 function growlFocused(el) {
   const a = document.activeElement;
-  return a && a.classList.contains("gr-reply") && el.contains(a) ? a.closest(".gr-full").dataset.id : "";
+  if (!(a && a.classList.contains("gr-reply") && el.contains(a))) return "";
+  growlCaret = [a.selectionStart, a.selectionEnd];
+  return a.closest(".gr-full").dataset.id;
 }
 
 function growlDraw() {
@@ -226,16 +329,17 @@ function growlDraw() {
   }
   const focused = growlFocused(el);
   el.classList.toggle("open", growlOpen && rows.length > 1);
+  let parts;
   if (growlOpen && rows.length > 1) {
-    el.innerHTML = `<div class="gr-list">${rows.map(growlRow).join("")}</div>` +
-      `<button class="gr-strip" data-do="fold">fold</button>`;
+    parts = [`<div class="gr-list">${rows.map(growlRow).join("")}</div>`,
+      `<button class="gr-strip" data-do="fold">fold</button>`];
   } else {
     growlOpen = false;
     const rest = rows.slice(1);
-    el.innerHTML = growlFull(rows[0]) + (rest.length
-      ? `<button class="gr-strip" data-do="expand">+${rest.length} more: ${growlCounts(rest)}</button>` : "");
-    growlRestore(el, focused);
+    parts = [growlFull(rows[0])];
+    if (rest.length) parts.push(`<button class="gr-strip" data-do="expand">+${rest.length} more: ${growlCounts(rest)}</button>`);
   }
+  growlRestore(growlReconcile(el, parts), focused);
   // The cap is half the window, and the list scrolls inside it.
   el.style.setProperty("--gr-max", Math.floor(innerHeight / 2) + "px");
   if (typeof raiseToasts === "function") raiseToasts();
@@ -253,19 +357,17 @@ function growlDrawPhone(rows, el) {
   const focused = growlFocused(el);
   el.hidden = false;
   el.classList.toggle("open", growlOpen && rows.length > 0);
-  const gone = undo ? `<div class="gp-undo"><span>dismissed: ${esc(undo.title)}</span>` +
-    `<button data-do="undo">undo</button></div>` : "";
-  if (!rows.length) {
-    el.innerHTML = gone;
-  } else if (growlOpen) {
-    el.innerHTML = gone + `<button class="gp-line" data-do="fold"><b>fold</b></button>` +
-      `<div class="gp-list">${rows.map(growlFull).join("")}</div>`;
-  } else {
+  const parts = [];
+  if (undo) parts.push(`<div class="gp-undo"><span>dismissed: ${esc(undo.title)}</span><button data-do="undo">undo</button></div>`);
+  if (rows.length && growlOpen) {
+    parts.push(`<button class="gp-line" data-do="fold"><b>fold</b></button>`);
+    rows.forEach(g => parts.push(growlFull(g)));
+  } else if (rows.length) {
     const top = rows[0];
-    el.innerHTML = gone + `<button class="gp-line" data-do="expand"><b>${esc(top.title)}</b>` +
-      (rows.length > 1 ? `<span class="gp-n">+${rows.length - 1}</span>` : "") + `</button>`;
+    parts.push(`<button class="gp-line" data-do="expand"><b>${esc(top.title)}</b>` +
+      (rows.length > 1 ? `<span class="gp-n">+${rows.length - 1}</span>` : "") + `</button>`);
   }
-  growlRestore(el, focused);
+  growlRestore(growlReconcile(el, parts), focused);
   el.style.setProperty("--gr-max", Math.floor(innerHeight / 2) + "px");
 }
 // The dismissed growler a phone offers to bring back, since a phone draws no toasts.
@@ -277,6 +379,11 @@ function growlClick(e) {
   if (!btn) return;
   const row = btn.closest(".gr-full, .gr-row");
   if (btn.dataset.snooze !== undefined) { growlSnoozeFor(row, Number(btn.dataset.snooze)); return; }
+  if (btn.dataset.choice !== undefined) {
+    const g = row && growlByRow(row);
+    if (g) growlSendReply(g, btn.dataset.choice, null);
+    return;
+  }
   const what = btn.dataset.do;
   if (what === "undo") {
     const u = growlPhoneUndo;
@@ -308,6 +415,16 @@ async function growlAct(row, what) {
     case "room": if (await closeOpenDialogs()) openRooms(); return;
     case "lift": return growlLift(g);
     case "reply": return growlReply(g, row);
+    case "compose": {
+      // The text is the draft either way, and the box is rebuilt from it at the other size.
+      const box = row.querySelector(".gr-reply");
+      if (box) growlDrafts.set(g.id, box.value);
+      growlCompose = growlCompose === g.id ? "" : g.id;
+      growlDraw();
+      const back = document.querySelector(`.gr-full[data-id="${CSS.escape(g.id)}"] .gr-reply`);
+      if (back) { growlCaret = [back.value.length, back.value.length]; back.focus(); back.setSelectionRange(growlCaret[0], growlCaret[1]); }
+      return;
+    }
     case "snooze": growlSnoozing = growlSnoozing === g.id ? "" : g.id; growlDraw(); return;
     case "dismiss": return growlPost(g, { do: "dismiss" }, true);
   }
@@ -357,9 +474,13 @@ async function growlLift(g) {
 }
 
 // Through the operator message path, which queues. Never typed into a terminal a human may be typing in.
-async function growlReply(g, row) {
+function growlReply(g, row) {
   const box = row.querySelector(".gr-reply");
-  const text = box ? box.value.trim() : "";
+  return growlSendReply(g, box ? box.value.trim() : "", box);
+}
+
+// A reply typed, or a choice pressed. Both are the same message.
+async function growlSendReply(g, text, box) {
   const id = growlCard(g);
   if (!text || !id) return;
   try {
@@ -368,7 +489,7 @@ async function growlReply(g, row) {
       body: JSON.stringify({ text, when: "done" })
     });
     growlDrafts.delete(g.id);
-    if (box) box.value = "";
+    if (box) { box.value = ""; growlGrow(box); }
     toast("sent", `${g.title}: ${text.slice(0, 80)}`);
   } catch (e) {
     toast("not sent", e.message || String(e));
