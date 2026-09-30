@@ -22,13 +22,15 @@ yet.
 
 ## Workers go off sg4
 
-Rule from clint, 2026-09-30. A review worker is launched on sg3 (m1mini once it is ready), never sg4:
+Rule from clint, 2026-09-30. A review worker is launched on sg3 or m1mini, whichever has fewer running (count with
+`atrium_peers rooms=true`), never sg4. `<room>` below is that one:
 
-1. `pwsh -File scripts/room-git.ps1 worktree sg3 claude/<id>` prints the remote worktree path, cut from `claude/main`.
-2. `atrium_launch` with `room=sg3` and `cwd=` that path.
-3. Its reports come home with `atrium_git_collect room=sg3`, as `sg3/claude/<id>`.
+1. `pwsh -File scripts/room-git.ps1 worktree <room> claude/<id>` prints the remote worktree path, cut from
+   `claude/main`.
+2. `atrium_launch` with `room=<room>` and `cwd=` that path.
+3. Its reports come home with `atrium_git_collect room=<room>`, as `<room>/claude/<id>`.
 
-sg3's cap is 5, shared by all directors. If a launch there fails, tell orchestrator@sg4-control and launch on sg4 in
+Each room's cap is 5, shared by all directors. If a launch fails, tell orchestrator@sg4-control and launch on sg4 in
 the meantime.
 
 ## Waiting
