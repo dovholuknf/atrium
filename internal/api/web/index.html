@@ -577,15 +577,15 @@ Exports honor whatever filter is applied.">?</span>
         <!-- PHONE ONLY: the composer, a real textarea, above the key bar. See js/tcompose.js. -->
         <div id="t-compose" hidden></div>
         <div class="term-keys" id="t-keys" role="toolbar" aria-label="terminal keys">
-          <button type="button" tabindex="-1" data-key="esc">Esc</button>
+          <button type="button" tabindex="-1" data-key="esc" aria-label="escape">Esc</button>
           <button type="button" tabindex="-1" data-key="left" aria-label="left">&larr;</button>
           <button type="button" tabindex="-1" data-key="down" aria-label="down">&darr;</button>
           <button type="button" tabindex="-1" data-key="up" aria-label="up">&uarr;</button>
           <button type="button" tabindex="-1" data-key="right" aria-label="right">&rarr;</button>
-          <button type="button" tabindex="-1" data-key="tab">Tab</button>
+          <button type="button" tabindex="-1" data-key="tab" aria-label="tab">Tab</button>
           <button type="button" tabindex="-1" data-key="btab" aria-label="shift tab">&#8676;</button>
           <button type="button" tabindex="-1" data-key="enter" aria-label="enter">&crarr;</button>
-          <button type="button" tabindex="-1" data-key="int" aria-label="ctrl c, hold to interrupt">^C</button>
+          <button type="button" tabindex="-1" data-key="int" aria-label="ctrl c, keep holding to interrupt">^C</button>
           <button type="button" tabindex="-1" id="t-keys-attach" aria-label="attach a file or photo" onclick="pickTermFiles()">&#128206;</button>
         </div>
         <div class="term-view" id="t-view" hidden>

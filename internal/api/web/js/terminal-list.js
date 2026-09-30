@@ -1179,10 +1179,19 @@ function termHeldTip(count, secs, why, turn) {
     turn: [theTurn, "They go in when the turn ends", "It goes in when the turn ends"],
     dialog: ["a dialog open in this terminal, which typing would answer",
       "Answer the dialog to dequeue " + these],
-  }[why] || ["input in this terminal", "Submit your text to dequeue " + these];
+    line: ["input in this terminal", "Submit your text to dequeue " + these],
+  }[why];
+  const waited = `${count} ${one ? "message has" : "messages have"} been waiting to be delivered to this agent ` +
+    `for ${termHeldAge(secs)}`;
+  // "new-context" is a card cycling its context, and "" or anything unknown is a hold the daemon cannot name,
+  // so neither is the operator's line.
+  if (why === "new-context") {
+    return `${waited} and ${one ? "is" : "are"} held while a new-context cycle is in progress. ` +
+      `${one ? "It goes" : "They go"} in after its wake prompt`;
+  }
+  if (!blocked) return `${waited} and ${one ? "is" : "are"} about to be retried`;
   const todo = one && blocked[2] ? blocked[2] : blocked[1];
-  return `${count} ${one ? "message has" : "messages have"} been waiting to be delivered to this agent ` +
-    `for ${termHeldAge(secs)} and ${one ? "is" : "are"} blocked by ${blocked[0]}. ${todo}`;
+  return `${waited} and ${one ? "is" : "are"} blocked by ${blocked[0]}. ${todo}`;
 }
 
 // The held age in full, hours, minutes and seconds, with the leading zero units
