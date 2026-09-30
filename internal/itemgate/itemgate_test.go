@@ -35,6 +35,12 @@ func TestItemOfTitleReadsTheIdBeforeTheColon(t *testing.T) {
 		"fix the build":          "",
 		"":                       "",
 		"a/b: x":                 "",
+		// r-new-review-7f4e76c0 item 4: a numbered id followed by a space counts, a word
+		// does not.
+		"r-037 fix the reaper": "r-037",
+		"r-037 - fix":          "r-037",
+		"91 the old one":       "91",
+		"atrium fix the build": "",
 	} {
 		if got := ItemOfTitle(in); got != want {
 			t.Errorf("ItemOfTitle(%q) = %q, want %q", in, got, want)

@@ -73,22 +73,48 @@ func canonical(t *sql.Tx, repo, id string) (string, error) {
 	return id, nil
 }
 
-// openEdges is every open item-on-item edge in a repo.
+// openEdges is every open edge from an item to an item in a repo, `live:<item>` included,
+// under the items' current names.
 func openEdges(t *sql.Tx, repo string) (map[string][]string, error) {
-	rows, err := t.Query(`SELECT item, target FROM item_gate WHERE repo = ? AND kind = 'item' AND met_at = ''`, repo)
+	rows, err := t.Query(`SELECT item, kind, target FROM item_gate WHERE repo = ? AND met_at = ''`, repo)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	edges := map[string][]string{}
+	type edge struct{ a, b string }
+	var all []edge
 	for rows.Next() {
-		var a, b string
-		if err := rows.Scan(&a, &b); err != nil {
+		var a, kind, target string
+		if err := rows.Scan(&a, &kind, &target); err != nil {
+			rows.Close()
 			return nil, err
 		}
-		edges[a] = append(edges[a], b)
+		if b := itemgate.WaitsOnItem(kind, target); b != "" {
+			all = append(all, edge{a, b})
+		}
 	}
-	return edges, rows.Err()
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	// Read after the rows are closed: the transaction has one connection.
+	edges := map[string][]string{}
+	for _, e := range all {
+		b, err := canonical(t, repo, e.b)
+		if err != nil {
+			return nil, err
+		}
+		edges[e.a] = append(edges[e.a], b)
+	}
+	return edges, nil
+}
+
+// loopThrough is the loop an item's own edges close, or nil.
+func loopThrough(edges map[string][]string, item string) []string {
+	for _, next := range edges[item] {
+		if loop := itemgate.FindPath(edges, next, item); loop != nil {
+			return append([]string{item}, loop...)
+		}
+	}
+	return nil
 }
 
 // AddGates records that `item` waits on each of `waits`. A gate already open answers the
@@ -128,13 +154,18 @@ func (s *Store) AddGates(repo, item string, waits []itemgate.Target, why, addedB
 				if target, err = canonical(t, repo, target); err != nil {
 					return err
 				}
-				if target == item {
+			}
+			if on := itemgate.WaitsOnItem(w.Kind, target); on != "" {
+				if on, err = canonical(t, repo, on); err != nil {
+					return err
+				}
+				if on == item {
 					return refuse(fmt.Errorf("%s cannot wait on itself", item))
 				}
-				if loop := itemgate.FindPath(edges, target, item); loop != nil {
+				if loop := itemgate.FindPath(edges, on, item); loop != nil {
 					return refuse(itemgate.LoopError(append([]string{item}, loop...)))
 				}
-				edges[item] = append(edges[item], target)
+				edges[item] = append(edges[item], on)
 			}
 			had, err := queryGates(t, `WHERE repo = ? AND item = ? AND kind = ? AND target = ? AND met_at = ''`,
 				repo, item, w.Kind, target)
@@ -324,6 +355,16 @@ func (s *Store) RenameItem(repo, from, to, by string) (int, error) {
 				return err
 			}
 			moved++
+		}
+		// The moved gates can close a loop that no single one of them does: r-900 on
+		// r-901 and r-902 on r-900, then r-901 renamed to r-902. Every such loop passes
+		// through the new name, and refusing it undoes the whole rename.
+		edges, err := openEdges(t, repo)
+		if err != nil {
+			return err
+		}
+		if loop := loopThrough(edges, end); loop != nil {
+			return refuse(fmt.Errorf("renaming %s to %s: %w", from, end, itemgate.LoopError(loop)))
 		}
 		return nil
 	})
