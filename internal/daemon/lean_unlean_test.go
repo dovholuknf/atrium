@@ -35,7 +35,7 @@ func unleanDaemon(t *testing.T) (*Daemon, *store.Task, http.Handler) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := d.st.SetTags(card.ID, mergeTags([]string{OriginAgentTag}, leanTags([]string{"ziti"}, nil))); err != nil {
+	if err := d.st.SetTags(card.ID, mergeTags([]string{OriginAgentTag}, leanTags([]string{"ziti"}, leanKit{}))); err != nil {
 		t.Fatal(err)
 	}
 	card, err = d.st.Get(card.ID)

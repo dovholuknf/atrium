@@ -65,7 +65,7 @@ func count(args []string, flag string) int {
 func TestLeanArgsBuildsTheLeanFlagsAndKeepsThePromptLast(t *testing.T) {
 	in := []string{"--mcp-config", "C:/atrium/mcp.json", "--strict-mcp-config",
 		"--model", "claude-opus-5-5", "read BRIEF.md"}
-	got, err := leanArgs(in, []byte(leanTestSettings), "", nil, nil,
+	got, err := leanArgs(in, []byte(leanTestSettings), "", nil, leanKit{},
 		leanTestRead(map[string]string{"C:/atrium/mcp.json": leanTestMCP}))
 	if err != nil {
 		t.Fatal(err)
@@ -116,7 +116,7 @@ func TestLeanArgsKeepsAtriumControlAndMercuriusByDefault(t *testing.T) {
 		}
 		in := append([]string{"--mcp-config"}, config...)
 		in = append(in, "--strict-mcp-config")
-		got, err := leanArgs(in, nil, "", extra, nil, read)
+		got, err := leanArgs(in, nil, "", extra, leanKit{}, read)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -142,7 +142,7 @@ func TestLeanArgsKeepsAtriumControlAndMercuriusByDefault(t *testing.T) {
 
 func TestLeanArgsRefusesAnMCPServerTheRunnerDoesNotHave(t *testing.T) {
 	in := []string{"--mcp-config", "C:/atrium/mcp.json"}
-	_, err := leanArgs(in, nil, "", []string{"nosuch"}, nil,
+	_, err := leanArgs(in, nil, "", []string{"nosuch"}, leanKit{},
 		leanTestRead(map[string]string{"C:/atrium/mcp.json": leanTestMCP}))
 	if err == nil || !strings.Contains(err.Error(), "nosuch") || !strings.Contains(err.Error(), "mercurius") {
 		t.Fatalf("want a refusal naming the missing and the available servers, got %v", err)
@@ -201,7 +201,7 @@ func TestLeanOptionsComeFromTheRequestOrTheCard(t *testing.T) {
 	if !lean || len(mcp) != 1 || mcp[0] != "ziti" {
 		t.Fatalf("got %v %q", lean, mcp)
 	}
-	card := &store.Task{Tags: mergeTags([]string{"origin:agent"}, leanTags([]string{"ziti"}, nil))}
+	card := &store.Task{Tags: mergeTags([]string{"origin:agent"}, leanTags([]string{"ziti"}, leanKit{}))}
 	lean, mcp, _ = leanOptions(LaunchRequest{}, card)
 	if !lean || len(mcp) != 1 || mcp[0] != "ziti" {
 		t.Fatalf("a reopen of a lean card should start lean with its servers, got %v %q", lean, mcp)

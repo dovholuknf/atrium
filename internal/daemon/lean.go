@@ -101,44 +101,53 @@ const leanSystemPrompt = `You are a worker launched by another agent through atr
 // that list, so a card whose tags no longer carry LeanTag starts with the full
 // setup.
 //
-// agents are the `lean_agents` the session keeps beside the Agent tool. A request
-// that names some replaces the card's list and starts lean; the launch refuses
-// one that also says `lean: false`.
-func leanOptions(req LaunchRequest, task *store.Task) (lean bool, mcp, agents []string) {
+// kit is the `lean_agents` and `lean_skills` the session keeps. A request that
+// names some replaces the card's list of that kind and starts lean; the launch
+// refuses one that also says `lean: false`.
+func leanOptions(req LaunchRequest, task *store.Task) (lean bool, mcp []string, kit leanKit) {
 	if req.Lean != nil && !*req.Lean {
-		return false, nil, nil
+		return false, nil, leanKit{}
 	}
 	lean = req.Lean != nil && *req.Lean
 	mcp = append(mcp, req.MCP...)
-	agents = cleanAgentNames(req.LeanAgents)
-	lean = lean || len(agents) > 0
+	kit = leanKit{Agents: cleanKitNames(req.LeanAgents), Skills: cleanKitNames(req.LeanSkills)}
+	lean = lean || !kit.empty()
 	if task != nil && hasTag(task.Tags, LeanTag) {
 		lean = true
-		var kept []string
+		var agents, skills []string
 		for _, t := range task.Tags {
 			t = strings.TrimSpace(t)
 			if name, ok := strings.CutPrefix(t, leanMCPTagPrefix); ok {
 				mcp = append(mcp, name)
 			}
 			if name, ok := strings.CutPrefix(t, leanAgentTagPrefix); ok {
-				kept = append(kept, name)
+				agents = append(agents, name)
+			}
+			if name, ok := strings.CutPrefix(t, leanSkillTagPrefix); ok {
+				skills = append(skills, name)
 			}
 		}
-		if len(agents) == 0 {
-			agents = cleanAgentNames(kept)
+		if len(kit.Agents) == 0 {
+			kit.Agents = cleanKitNames(agents)
+		}
+		if len(kit.Skills) == 0 {
+			kit.Skills = cleanKitNames(skills)
 		}
 	}
-	return lean, cleanNames(mcp), agents
+	return lean, cleanNames(mcp), kit
 }
 
 // leanTags are the tags that record a lean launch on its card.
-func leanTags(mcp, agents []string) []string {
+func leanTags(mcp []string, kit leanKit) []string {
 	out := []string{LeanTag}
 	for _, m := range mcp {
 		out = append(out, leanMCPTagPrefix+m)
 	}
-	for _, a := range agents {
+	for _, a := range kit.Agents {
 		out = append(out, leanAgentTagPrefix+a)
+	}
+	for _, sk := range kit.Skills {
+		out = append(out, leanSkillTagPrefix+sk)
 	}
 	return out
 }
@@ -149,7 +158,8 @@ func withoutLeanTags(tags []string) ([]string, bool) {
 	out := []string{}
 	for _, t := range tags {
 		c := strings.TrimSpace(t)
-		if c == LeanTag || strings.HasPrefix(c, leanMCPTagPrefix) || strings.HasPrefix(c, leanAgentTagPrefix) {
+		if c == LeanTag || strings.HasPrefix(c, leanMCPTagPrefix) || strings.HasPrefix(c, leanAgentTagPrefix) ||
+			strings.HasPrefix(c, leanSkillTagPrefix) {
 			continue
 		}
 		out = append(out, t)
@@ -190,9 +200,10 @@ func cleanNames(in []string) []string {
 // The harness's own MCP, settings-source and settings flags are taken out and
 // replaced, and the lean flags go IN FRONT, so the positional prompt stays last.
 //
-// agents are the named agents to keep. Non-empty, the Agent tool comes out of
-// --disallowedTools and `--agents` carries just those definitions.
-func leanArgs(args []string, userSettings []byte, stopHook string, mcp, agents []string,
+// kit is the named agents and skills to keep. Non-empty, the Agent tool (agents)
+// or the Skill tool (skills) comes out of --disallowedTools and `--plugin-dir`
+// carries just those files. See leanPluginDir.
+func leanArgs(args []string, userSettings []byte, stopHook string, mcp []string, kit leanKit,
 	readFile func(string) ([]byte, error)) ([]string, error) {
 
 	var kept, configs []string
@@ -223,15 +234,15 @@ func leanArgs(args []string, userSettings []byte, stopHook string, mcp, agents [
 		"--setting-sources", "project,local",
 		"--settings", settings,
 		"--strict-mcp-config", "--mcp-config", servers,
-		"--disallowedTools", strings.Join(leanDisallowedFor(agents), ","),
+		"--disallowedTools", strings.Join(leanDisallowedFor(kit), ","),
 		"--append-system-prompt", leanSystemPrompt,
 	}
-	if len(agents) > 0 {
-		defs, err := leanAgentsFlag(agents, readFile)
+	if !kit.empty() {
+		dir, err := leanPluginDir(kit)
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, "--agents", defs)
+		out = append(out, "--plugin-dir", dir)
 	}
 	return append(out, kept...), nil
 }

@@ -1,47 +1,70 @@
 package daemon
 
 import (
-	"encoding/json"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
-
-	"go.yaml.in/yaml/v3"
 )
 
 // A lean launch may keep the Agent tool and a NAMED list of the operator's
-// agents (`lean_agents`), so a lean review manager can start the reviewers it
-// exists to run. Everything else lean drops stays dropped.
+// agents (`lean_agents`), and the Skill tool and a named list of skills
+// (`lean_skills`), so a lean review manager can start the reviewers it exists to
+// run. Everything else lean drops stays dropped.
 
-// leanAgentTagPrefix marks each named agent a lean card asked to keep, as
-// `atrium:agent:<name>`. Tags, like `atrium:mcp:`, so a restart, a resume and
-// the keep-alive fork come back with the same list and no column is needed.
-const leanAgentTagPrefix = "atrium:agent:"
+// leanAgentTagPrefix and leanSkillTagPrefix mark each named agent and skill a
+// lean card asked to keep, as `atrium:agent:<name>` and `atrium:skill:<name>`.
+// Tags, like `atrium:mcp:`, so a restart, a resume and the keep-alive fork come
+// back with the same lists and no column is needed.
+const (
+	leanAgentTagPrefix = "atrium:agent:"
+	leanSkillTagPrefix = "atrium:skill:"
+)
 
-// agentNameRE is what a `lean_agents` name may be. It is a file name under the
-// operator's agents directory, so no separator or dot-dot gets through.
-var agentNameRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
+// leanPluginName is the session-only plugin the named files ride in. Claude Code
+// namespaces a plugin's agents and skills, so they are started as
+// `atrium:<name>`.
+const leanPluginName = "atrium"
 
-// leanAgentsMaxBytes caps the `--agents` value. It rides on the command line,
-// and Windows refuses one past 32767 characters, with the settings copy and the
-// rest of the lean flags already on it.
-const leanAgentsMaxBytes = 14000
+// leanKit is what a lean launch keeps beyond the default: the operator's agents
+// and skills, by name.
+type leanKit struct {
+	Agents, Skills []string
+}
 
-// userAgentsDir is the operator's agent definitions, or empty. A variable so a
-// test can say where.
-var userAgentsDir = func() string {
+func (k leanKit) empty() bool { return len(k.Agents) == 0 && len(k.Skills) == 0 }
+
+// nameRE is what a `lean_agents` or `lean_skills` name may be. It is a file or
+// directory name under the operator's ~/.claude, so no separator or dot-dot gets
+// through.
+var nameRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
+
+// The operator's definitions. Variables so a test can say where.
+var (
+	userAgentsDir = func() string { return userClaudeSub("agents") }
+	userSkillsDir = func() string { return userClaudeSub("skills") }
+)
+
+func userClaudeSub(sub string) string {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return ""
 	}
-	return filepath.Join(home, ".claude", "agents")
+	return filepath.Join(home, ".claude", sub)
 }
 
-// cleanAgentNames is names trimmed, without blanks and repeats, sorted.
-func cleanAgentNames(in []string) []string {
+// leanPluginRoot is where the plugin directories are written: in atrium's own
+// state, set from the database's directory when a daemon starts. Never a
+// worktree, which has to stay clean for the cull.
+var leanPluginRoot string
+
+// cleanKitNames is names trimmed, without blanks and repeats, sorted.
+func cleanKitNames(in []string) []string {
 	seen := map[string]bool{}
 	var out []string
 	for _, n := range in {
@@ -56,12 +79,13 @@ func cleanAgentNames(in []string) []string {
 	return out
 }
 
-// withoutAgentTags is tags without the `atrium:agent:` marks, for a launch that
-// names a new list.
-func withoutAgentTags(tags []string) []string {
+// withoutKitTags is tags without the agent and skill marks, for a launch that
+// names new lists.
+func withoutKitTags(tags []string) []string {
 	out := []string{}
 	for _, t := range tags {
-		if !strings.HasPrefix(strings.TrimSpace(t), leanAgentTagPrefix) {
+		c := strings.TrimSpace(t)
+		if !strings.HasPrefix(c, leanAgentTagPrefix) && !strings.HasPrefix(c, leanSkillTagPrefix) {
 			out = append(out, t)
 		}
 	}
@@ -69,132 +93,151 @@ func withoutAgentTags(tags []string) []string {
 }
 
 // leanDisallowedFor is leanDisallowed, less the Agent tool (and its old name,
-// Task) for a launch that names agents to keep.
-func leanDisallowedFor(agents []string) []string {
-	if len(agents) == 0 {
-		return leanDisallowed
-	}
+// Task) for a launch that names agents, and less Skill for one that names skills.
+func leanDisallowedFor(k leanKit) []string {
 	var out []string
 	for _, t := range leanDisallowed {
-		if t != "Agent" && t != "Task" {
-			out = append(out, t)
+		if (t == "Agent" || t == "Task") && len(k.Agents) > 0 {
+			continue
 		}
+		if t == "Skill" && len(k.Skills) > 0 {
+			continue
+		}
+		out = append(out, t)
 	}
 	return out
 }
 
-// leanAgentsFlag is the `--agents` value for the named agents: each one's
-// definition file under the operator's ~/.claude/agents, and nothing else in
-// that directory.
+// leanPluginDir writes the session-only plugin for kit and returns its
+// directory, for `--plugin-dir`.
 //
-// THE MECHANISM. Claude Code loads agents from the user source, which lean cuts
-// with `--setting-sources project,local`, and from `--agents`, a session-only
-// source of exactly the JSON it is given. A plugin directory would carry the
-// file untouched, but plugin agents are namespaced (`plugin:name`), so the
-// launcher's `go-security-reviewer` would stop being that name. A repo's own
-// .claude/agents still loads with the project source.
+// THE MECHANISM. Claude Code loads agents and skills from the user source, which
+// lean cuts with `--setting-sources project,local`. `--agents` takes them inline
+// only, and the real agents are tens of KB where a Windows command line takes
+// 32 KB in all. `--plugin-dir` loads a directory for one session, so the named
+// files are copied into one, byte for byte and following links, and nothing else
+// of ~/.claude comes with them. The price is the namespace: a plugin's agents
+// and skills are `atrium:<name>`.
+//
+// The directory is named by a hash of what it holds and is written once. Two
+// cards with the same kit share one, and a live session's directory is never
+// rewritten under it. A restart, a resume and the keep-alive fork all come here
+// again from the card's tags and find or rebuild it.
 //
 // A name with no file is REFUSED, like a missing MCP server: a review manager
 // told it has reviewers and started without them finds out mid-task.
-func leanAgentsFlag(names []string, readFile func(string) ([]byte, error)) (string, error) {
-	dir := userAgentsDir()
-	defs := map[string]any{}
+func leanPluginDir(k leanKit) (string, error) {
+	if leanPluginRoot == "" {
+		return "", fmt.Errorf("atrium has no state directory to write the lean plugin in")
+	}
+	files := map[string][]byte{
+		".claude-plugin/plugin.json": []byte(`{"name":"` + leanPluginName +
+			`","description":"named agents and skills for a lean atrium session","version":"1.0.0"}` + "\n"),
+	}
 	var missing []string
-	for _, name := range names {
-		if !agentNameRE.MatchString(name) {
+	for _, name := range k.Agents {
+		if !nameRE.MatchString(name) {
 			return "", fmt.Errorf("lean_agents name %q is not an agent's file name", name)
 		}
-		var raw []byte
-		var err error
-		if dir != "" {
-			raw, err = readFile(filepath.Join(dir, name+".md"))
-		}
-		if dir == "" || err != nil {
-			missing = append(missing, name)
+		b, err := os.ReadFile(filepath.Join(userAgentsDir(), name+".md"))
+		if err != nil {
+			missing = append(missing, "agent "+name)
 			continue
 		}
-		def, err := agentDefinition(raw)
-		if err != nil {
-			return "", fmt.Errorf("agent %s: %w", name, err)
+		files["agents/"+name+".md"] = b
+	}
+	for _, name := range k.Skills {
+		if !nameRE.MatchString(name) {
+			return "", fmt.Errorf("lean_skills name %q is not a skill's directory name", name)
 		}
-		defs[name] = def
+		if err := readTree(filepath.Join(userSkillsDir(), name), "skills/"+name, files); err != nil {
+			missing = append(missing, "skill "+name)
+		}
 	}
 	if len(missing) > 0 {
-		return "", fmt.Errorf("no agent named %s in %s. lean_agents names a file there, without .md",
-			strings.Join(missing, ", "), dir)
+		return "", fmt.Errorf("no %s in %s or %s. lean_agents names a file there without .md, lean_skills a directory",
+			strings.Join(missing, ", no "), userAgentsDir(), userSkillsDir())
 	}
-	b, err := json.Marshal(defs)
+	dir := filepath.Join(leanPluginRoot, pluginHash(files))
+	manifest := filepath.Join(dir, ".claude-plugin", "plugin.json")
+	if _, err := os.Stat(manifest); err == nil {
+		return dir, nil
+	}
+	if err := os.MkdirAll(leanPluginRoot, 0o755); err != nil {
+		return "", fmt.Errorf("could not write the lean plugin: %w", err)
+	}
+	tmp, err := os.MkdirTemp(leanPluginRoot, "tmp-")
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("could not write the lean plugin: %w", err)
 	}
-	if len(b) > leanAgentsMaxBytes {
-		return "", fmt.Errorf("the named agents come to %d bytes, over the %d a launch's command line can carry. name fewer",
-			len(b), leanAgentsMaxBytes)
+	defer os.RemoveAll(tmp)
+	for rel, b := range files {
+		p := filepath.Join(tmp, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			return "", err
+		}
+		if err := os.WriteFile(p, b, 0o644); err != nil {
+			return "", err
+		}
 	}
-	return string(b), nil
+	if err := os.Rename(tmp, dir); err != nil {
+		// Another launch wrote the same directory first, which holds the same bytes.
+		if _, serr := os.Stat(manifest); serr != nil {
+			return "", fmt.Errorf("could not write the lean plugin: %w", err)
+		}
+	}
+	return dir, nil
 }
 
-// agentDefinition turns an agent file (YAML frontmatter, then the prompt) into
-// the shape `--agents` takes. Only the fields that shape a subagent's run are
-// carried: description, tools, disallowedTools, model and maxTurns. Skills,
-// memory and the rest are what lean drops.
-func agentDefinition(raw []byte) (map[string]any, error) {
-	text := strings.ReplaceAll(string(raw), "\r\n", "\n")
-	text = strings.TrimPrefix(text, string([]byte{0xEF, 0xBB, 0xBF}))
-	front, body := "", text
-	if rest, ok := strings.CutPrefix(text, "---\n"); ok {
-		if f, b, found := strings.Cut(rest, "\n---"); found {
-			front = f
-			// Drop the rest of the closing fence's line.
-			if i := strings.Index(b, "\n"); i >= 0 {
-				b = b[i+1:]
-			} else {
-				b = ""
+// readTree reads every file under src into files, under rel, following links.
+// A skill is a directory with a SKILL.md, so the top of one without it is an error.
+func readTree(src, rel string, files map[string][]byte) error {
+	info, err := os.Stat(src)
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("%s is not a directory", src)
+	}
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		p := filepath.Join(src, e.Name())
+		st, err := os.Stat(p)
+		if err != nil {
+			return err
+		}
+		if st.IsDir() {
+			if err := readTree(p, path.Join(rel, e.Name()), files); err != nil {
+				return err
 			}
-			body = b
+			continue
 		}
-	}
-	var meta map[string]any
-	if strings.TrimSpace(front) != "" {
-		if err := yaml.Unmarshal([]byte(front), &meta); err != nil {
-			return nil, fmt.Errorf("frontmatter does not parse: %w", err)
+		b, err := os.ReadFile(p)
+		if err != nil {
+			return err
 		}
+		files[path.Join(rel, e.Name())] = b
 	}
-	desc, _ := meta["description"].(string)
-	if strings.TrimSpace(desc) == "" {
-		return nil, fmt.Errorf("has no description in its frontmatter")
+	if _, ok := files[path.Join(rel, "SKILL.md")]; !ok && strings.Count(rel, "/") == 1 {
+		return fmt.Errorf("%s has no SKILL.md", src)
 	}
-	def := map[string]any{"prompt": strings.TrimSpace(body), "description": desc}
-	for _, k := range []string{"tools", "disallowedTools"} {
-		if list := agentList(meta[k]); len(list) > 0 {
-			def[k] = list
-		}
-	}
-	if m, ok := meta["model"].(string); ok && strings.TrimSpace(m) != "" {
-		def["model"] = strings.TrimSpace(m)
-	}
-	if n, ok := meta["maxTurns"].(int); ok && n > 0 {
-		def["maxTurns"] = n
-	}
-	return def, nil
+	return nil
 }
 
-// agentList is a frontmatter list given as YAML or as "A, B".
-func agentList(v any) []string {
-	var out []string
-	switch x := v.(type) {
-	case string:
-		for _, p := range strings.Split(x, ",") {
-			if p = strings.TrimSpace(p); p != "" {
-				out = append(out, p)
-			}
-		}
-	case []any:
-		for _, e := range x {
-			if s, ok := e.(string); ok && strings.TrimSpace(s) != "" {
-				out = append(out, strings.TrimSpace(s))
-			}
-		}
+// pluginHash names a plugin directory by its contents.
+func pluginHash(files map[string][]byte) string {
+	names := make([]string, 0, len(files))
+	for n := range files {
+		names = append(names, n)
 	}
-	return out
+	sort.Strings(names)
+	h := sha256.New()
+	for _, n := range names {
+		fmt.Fprintf(h, "%s\x00%d\x00", n, len(files[n]))
+		h.Write(files[n])
+	}
+	return hex.EncodeToString(h.Sum(nil))[:16]
 }
