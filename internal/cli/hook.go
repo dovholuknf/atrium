@@ -152,7 +152,7 @@ func newHook() *cobra.Command {
 			// The permission gate speaks Claude Code's PreToolUse contract on
 			// stdout, so it is its own path. See hook_permission.go.
 			if strings.EqualFold(strings.TrimSpace(event), permissionEvent) {
-				if out := runPermissionHook(hubURL, readStdin(), runnerPID()); out != nil {
+				if out := permissionHook(hubURL, readStdin(), runnerPID); out != nil {
 					fmt.Fprintln(cmd.OutOrStdout(), string(out))
 				}
 				return nil
