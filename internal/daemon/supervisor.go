@@ -688,6 +688,10 @@ func fromLineStart(b []byte) []byte {
 
 // runner is one live supervised process.
 type runner struct {
+	// leaving is set when atrium types the exit itself (windDown). A SessionEnd
+	// after it is atrium's doing, never a person typing /exit.
+	leaving atomic.Bool
+
 	taskID string
 	pty    pty.Pty
 	cmd    *pty.Cmd
@@ -2305,6 +2309,9 @@ func windDown(r *runner, grace time.Duration, keys [][]byte) {
 	if r == nil || r.pty == nil {
 		return
 	}
+	// ATRIUM TYPED THIS EXIT, so the session's end is not a person deciding. The
+	// hook's /exit rule skips a runner marked here. See session.go.
+	r.leaving.Store(true)
 	for _, k := range keys {
 		_ = r.Write(k)
 		select {

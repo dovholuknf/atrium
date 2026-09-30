@@ -257,7 +257,8 @@ func (d *Daemon) reopenResume(t *store.Task) string {
 		log.Printf("[atrium] %s resumed conversation %s, which is gone. starting fresh", t.ID, id)
 		return ""
 	}
-	if d.resumeHeld(t.ID, id) {
+	if h := d.resumeHeld(t.ID, id); h != nil {
+		d.noteHeldResume(t.ID, "reopen", &heldResume{resume: id, holder: h})
 		return ""
 	}
 	return id

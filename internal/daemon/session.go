@@ -270,6 +270,10 @@ func (d *Daemon) onSession(in SessionEvent) error {
 				return err
 			}
 		}
+		// A join is a launch too: somebody is running it again.
+		if err := d.st.ClearExitAsked(task.ID); err != nil {
+			return err
+		}
 		if err := d.st.AppendEvent(task.ID, store.EventLaunched, map[string]any{
 			"by": "join", "pid": in.PID,
 		}); err != nil {
@@ -378,7 +382,8 @@ func (d *Daemon) onSession(in SessionEvent) error {
 		// /exit TYPED IN A SUPERVISED CARD'S OWN TERMINAL is somebody deciding, and
 		// stays down across a restart like an asked exit. A wind-down ends every
 		// session the same way, so only an ending outside one counts.
-		if in.Reason == "prompt_input_exit" && !d.windingDown.Load() && d.sup.get(task.ID) != nil {
+		if run := d.sup.get(task.ID); in.Reason == "prompt_input_exit" && !d.windingDown.Load() &&
+			run != nil && !run.leaving.Load() {
 			if err := d.st.SetExitAsked(task.ID); err != nil {
 				return err
 			}
