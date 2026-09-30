@@ -116,6 +116,7 @@ const wideSrc = lift("function fitTerm(", "\n}") + "\n" +
   lift("function ptyRowsFor(", "\n}") + "\n" +
   lift("function applyPtySize(", "\n}") + "\n" +
   lift("function markWide(", "\n}") + "\n" +
+  lift("function tallClip(", "\n}") + "\n" +
   lift("function sendResize(", "\n}");
 const wide = new Function(`
   let termFitCols = 0, termPtyCols = 0, resizeSettleTimer = 0;
@@ -132,14 +133,15 @@ const wide = new Function(`
   const classes = new Set();
   const xtermEl = { style: { width: "" } };
   const host = {
-    classList: { toggle: (c, on) => on ? classes.add(c) : classes.delete(c) },
+    scrollTop: 0,
+    classList: { toggle: (c, on) => on ? classes.add(c) : classes.delete(c), contains: c => classes.has(c) },
     querySelector: () => xtermEl,
   };
   const document = { getElementById: () => host };
   let proposed = { cols: 80, rows: 24 };
   const termFit = { proposeDimensions: () => proposed };
   const term = {
-    cols: 80, rows: 24,
+    cols: 80, rows: 24, buffer: { active: { viewportY: 0, baseY: 1 } },
     resize(c, r) { this.cols = c; this.rows = r; },
     _core: { _renderService: { clear() {}, dimensions: { css: { cell: { width: 8 } } } } },
   };
@@ -147,6 +149,7 @@ const wide = new Function(`
   return {
     fitTerm, applyPtySize, sendResize, sent, term, xtermEl,
     wide: () => classes.has("wide"),
+    tall: () => classes.has("tall"),
     setPty: c => { termPtyCols = c; },
     setPtyRows: r => { termPtyRows = r; },
     propose: (c, r) => { proposed = { cols: c, rows: r }; },
@@ -243,13 +246,25 @@ wide.applyPtySize();
 if (wide.term.rows !== 31) {
   fail("a pty that grew back did not give the window its rows back. rows " + wide.term.rows + ".");
 }
-// A window shorter than the pty draws its own rows, as before.
+// A window shorter than the pty draws the pty's rows and clips them (t-003c): rows follow the TALLEST viewer.
 wide.setPtyRows(40);
 wide.propose(120, 25);
 wide.fitTerm();
-if (wide.term.rows !== 25) {
-  fail("a window shorter than the pty drew more rows than it can show. rows " + wide.term.rows + ".");
+if (wide.term.rows !== 40 || !wide.tall()) {
+  fail("a window shorter than the pty did not draw the pty's rows in a clip. rows " + wide.term.rows + ".");
 }
+wide.sent.length = 0;
+wide.sendResize();
+if (wide.sent[0].rows !== 25) {
+  fail("a clipped window reported the pty's rows as its own. sent " + JSON.stringify(wide.sent) + ".");
+}
+// An old room never makes the pty taller than a viewer, so tall never switches on there.
+wide.setPtyRows(25);
+wide.applyPtySize();
+if (wide.tall()) fail("a pty as tall as the window switched tall on.");
+wide.setPtyRows(20);
+wide.applyPtySize();
+if (wide.tall() || wide.term.rows !== 20) fail("a pty shorter than the window switched tall on. rows " + wide.term.rows + ".");
 
 if (bad) process.exit(1);
 console.log("a window drag tells the runner its size once, after it settles, " +

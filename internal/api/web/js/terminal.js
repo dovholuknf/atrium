@@ -705,8 +705,10 @@ function openTerm(task) {
   // The phone view (t-003b): the key bar, the pinch, and the cursor kept in
   // view. All of it is a no-op on a desktop. See `termPhone`.
   syncPhoneView();
-  term.onWriteParsed(() => { phoneSyncTextarea(); phoneKeepSoon(); });
+  term.onWriteParsed(() => { phoneSyncTextarea(); phoneKeepSoon(); tallFollow(); });
+  term.onScroll(() => tallFollow());
   term.open(screen);
+  term.textarea.addEventListener("focus", () => { tallFollow(); requestAnimationFrame(tallFollow); });
   phoneInputMode();
   // Before anything can write to it, so the trace starts at the first byte.
   traceTerm(term);

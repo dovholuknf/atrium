@@ -5,7 +5,7 @@
 //
 //     localStorage.setItem("atrium.debug.inputlag", "1")
 //
-// What it prints, all under `[inputlag]`, is enough to tell the three causes
+// What it prints, all under `[atrium inputlag]`, is enough to tell the three causes
 // apart without anybody describing the lag:
 //
 //   the WIRE      the echo came back late but the page was idle
@@ -62,7 +62,7 @@ function lagKeyDown(report) {
   // A key that draws nothing, a modifier chord a TUI ignores, never gets an
   // echo. Without this the one pending sample would block timing for good.
   if (lagPending && !lagPending.echo && now - lagPending.t0 > LAG_NO_ECHO_MS) {
-    console.debug(`[inputlag] ${lagClock()} no output within ${LAG_NO_ECHO_MS}ms of a key, not timed`);
+    console.debug(`[atrium inputlag] ${lagClock()} no output within ${LAG_NO_ECHO_MS}ms of a key, not timed`);
     lagPending = null;
   }
   if (lagPending) { lagPending.coalesced++; return 0; }
@@ -104,7 +104,7 @@ function lagFinish(s) {
   if (lagSamples.length > LAG_WINDOW) lagSamples.shift();
   lagFresh++;
   const f = n => n.toFixed(1);
-  const line = `[inputlag] ${lagClock()} key ${f(total)}ms` +
+  const line = `[atrium inputlag] ${lagClock()} key ${f(total)}ms` +
     ` (send ${f(s.sent - s.t0)}, wire ${f(s.echo - s.sent)}, parse ${f(s.parsed - s.echo)},` +
     ` paint ${f(s.paint - s.parsed)})` +
     (stalled ? ` | main thread blocked ${f(stalled)}ms of it` : "") +
@@ -125,7 +125,7 @@ function lagFinish(s) {
 // `performance.now()` stamp and nothing more, and every hook is one boolean
 // test when the log is off.
 //
-//   [inputlag] 12:00:00.123 paste (paste event) 812ms, cleared by output:
+//   [atrium inputlag] 12:00:00.123 paste (paste event) 812ms, cleared by output:
 //     event 0, clipboard 3.1, sent 4.0, shown 4.2, drained 9.5, output 11.0, cleared 812.4
 let lagPaste = null;
 
@@ -147,7 +147,7 @@ function lagPasteDone(why) {
   lagPaste = null;
   const total = performance.now() - s.t0;
   const steps = s.marks.map(m => `${m[0]} ${m[1].toFixed(1)}`).join(", ");
-  console.info(`[inputlag] ${lagClock()} paste (${s.how}) ${total.toFixed(0)}ms, cleared by ${why}: ${steps}`);
+  console.info(`[atrium inputlag] ${lagClock()} paste (${s.how}) ${total.toFixed(0)}ms, cleared by ${why}: ${steps}`);
 }
 
 function lagPercentile(sorted, p) {
@@ -158,7 +158,7 @@ function lagSummary() {
   if (!lagFresh || !lagSamples.length) return;
   lagFresh = 0;
   const s = lagSamples.slice().sort((a, b) => a - b);
-  console.info(`[inputlag] ${lagClock()} last ${s.length} keys:` +
+  console.info(`[atrium inputlag] ${lagClock()} last ${s.length} keys:` +
     ` p50 ${lagPercentile(s, 0.5).toFixed(1)}ms,` +
     ` p95 ${lagPercentile(s, 0.95).toFixed(1)}ms,` +
     ` max ${s[s.length - 1].toFixed(1)}ms`);
@@ -168,7 +168,7 @@ function lagStall(start, dur, how) {
   lagStalls.push({ start, end: start + dur });
   const cutoff = performance.now() - 30000;
   while (lagStalls.length && lagStalls[0].end < cutoff) lagStalls.shift();
-  console.warn(`[inputlag] ${lagClock()} main thread blocked ${dur.toFixed(0)}ms (${how})` +
+  console.warn(`[atrium inputlag] ${lagClock()} main thread blocked ${dur.toFixed(0)}ms (${how})` +
     ` | ${lagFetches()}`);
 }
 
@@ -201,7 +201,7 @@ function lagWatchStalls() {
 function lagStart() {
   lagWatchStalls();
   lagTimer = setInterval(lagSummary, LAG_SUMMARY_EVERY);
-  console.info(`[inputlag] ${lagClock()} on. keystrokes, stalls and a summary every ` +
+  console.info(`[atrium inputlag] ${lagClock()} on. keystrokes, stalls and a summary every ` +
     `${LAG_SUMMARY_EVERY / 1000}s print here. switch off in settings.`);
 }
 
@@ -222,7 +222,7 @@ function toggleInputLag(on) {
   if (!!on === lagOn) return;
   lagOn = !!on;
   try { localStorage.setItem(LAG_KEY, lagOn ? "1" : "0"); } catch (e) {}
-  if (lagOn) lagStart(); else { lagStop(); console.info("[inputlag] off"); }
+  if (lagOn) lagStart(); else { lagStop(); console.info("[atrium inputlag] off"); }
 }
 
 // ONE CHECKBOX, EVERY HOP. The browser switches here, and the hub and the room

@@ -1990,9 +1990,12 @@ function fitTerm() {
   markWide();
 }
 
-// The rows to draw for a fit of `fit` rows: the pty's when it is shorter.
+// The rows to draw for a fit of `fit` rows: the pty's whenever the daemon has said one (t-003c). Rows follow the
+// TALLEST viewer, so a pane shorter than the pty draws all of it and `markWide` clips it (`tall`). A taller pane
+// keeps the grid on the footer as before. An old room never makes the pty taller than a viewer, so there the pty's
+// rows are never above the fit and `tall` never switches on.
 function ptyRowsFor(fit) {
-  return termPtyRows > 0 ? Math.min(fit, termPtyRows) : fit;
+  return termPtyRows > 0 ? termPtyRows : fit;
 }
 
 // applyPtySize re-sizes the grid after the daemon said the pty's size moved.
@@ -2028,12 +2031,61 @@ function markWide() {
   const wide = phone || (termFitCols > 0 && term.cols > termFitCols);
   host.classList.toggle("wide", wide);
   host.classList.toggle("phone", phone);
+  // The vertical twin (t-003c). Never on a phone, whose grid is bottom anchored and panned by `keepCursorInView`.
+  const tall = !phone && termFitRows > 0 && term.rows > termFitRows;
+  host.classList.toggle("tall", tall);
+  if (tall) tallClip(); else if (host.scrollTop && !phone) host.scrollTop = 0;
   if (!wide) { el.style.width = ""; return; }
   let cell = 0;
   try { cell = term._core._renderService.dimensions.css.cell.width; } catch (e) {}
   // The vertical scrollbar's room on top of the grid, the same allowance the
   // fit addon subtracts.
   el.style.width = cell ? Math.ceil(term.cols * cell + 16) + "px" : "";
+}
+
+// A GRID TALLER THAN THE PANE IS CLIPPED, and the clip follows the cursor (t-003c).
+//
+// Rows follow the tallest viewer, so a shorter pane draws the pty's full height. `.xterm` is sized to the grid
+// (`sizeTermHost`) and `#t-screen.tall` clips it with `overflow-y: hidden`, so xterm's own scrollbar stays the only
+// vertical one. The fit addon measures `#t-screen`, so it still proposes what the pane can show: no feedback loop.
+//
+// THE RULE (from @rnd): show the cursor row and every row below it down to the last non-blank one, as much as fits.
+// Claude Code draws 2 to 4 rows under the cursor (the input box border, the status line, the mode line). If that is
+// taller than the pane, the cursor row plus one wins. While xterm's own viewport is scrolled up nothing moves, so
+// the wheel brings the hidden rows into view the way it does everywhere else.
+//
+// The scroll is set in whole rows, so it is exact against the 6px padding above the grid and needs no measuring.
+function tallClip() {
+  if (!term) return;
+  const host = document.getElementById("t-screen");
+  if (!host || !host.classList.contains("tall")) return;
+  const b = term.buffer.active;
+  if (b.viewportY < b.baseY) return;
+  let ch = 0;
+  try { ch = term._core._renderService.dimensions.css.cell.height; } catch (e) {}
+  if (!ch) return;
+  const pad = parseFloat(getComputedStyle(host).paddingTop) || 0;
+  const show = Math.max(1, Math.floor((host.clientHeight - pad) / ch));
+  let last = Math.min(b.cursorY + 1, term.rows - 1);
+  for (let r = term.rows - 1; r > last; r--) {
+    const line = b.getLine(b.baseY + r);
+    if (line && line.translateToString(true).length) { last = r; break; }
+  }
+  if (last - b.cursorY + 1 > show) last = Math.min(b.cursorY + 1, term.rows - 1);
+  const top = Math.max(0, Math.min(term.rows - show, last - show + 1));
+  const want = Math.round(top * ch);
+  if (Math.abs(host.scrollTop - want) > 0.5) host.scrollTop = want;
+}
+
+// On a clipped desktop grid the helper textarea sits at the cursor (terminal.css), which the clip keeps in view, so
+// a focus has nothing to scroll to. xterm moves it only on its next render, so it is moved here on every parsed
+// write, and the clip is re-run at once. Also on a focus, as the last word on where the pane sits (u-017's fight).
+function tallFollow() {
+  if (!term) return;
+  const host = document.getElementById("t-screen");
+  if (!host || !host.classList.contains("tall")) return;
+  phoneSyncTextarea(true);
+  tallClip();
 }
 
 // A DRAG IS ONE RESIZE, not one per step.
@@ -2202,6 +2254,7 @@ function sizeTermHost() {
   // the host to zero.
   if (!cell) { el.style.height = ""; return; }
   el.style.height = Math.round(term.rows * cell) + "px";
+  tallClip();
 }
 
 // A RE-FIT COSTS NOTHING WHEN THE PANE'S PIXELS DID NOT MOVE, so do not pay it.
@@ -2500,8 +2553,8 @@ function keepCursorInView(host, t, noPan) {
 // never answers its own scroll; and the page itself is held at 0 (`phonePageHold`).
 // xterm moves its helper textarea to the cursor only when it next renders, a frame after the write. A focus
 // in that gap would scroll to a stale row, so it is moved here, synchronously, on every parsed write.
-function phoneSyncTextarea() {
-  if (!term || !term.textarea || !termPhone()) return;
+function phoneSyncTextarea(tall) {
+  if (!term || !term.textarea || (!tall && !termPhone())) return;
   try {
     const d = term._core._renderService.dimensions.css.cell, b = term.buffer.active;
     if (!d.width || !d.height) return;
