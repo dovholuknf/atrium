@@ -235,7 +235,8 @@ func (c *controlMCP) server(class ctlClass) *mcp.Server {
 			"`notices: true` with `card` empty is how a card tagged `atrium:orchestrator` or " +
 			"`atrium:hold-notices` hears about its workers. Atrium never types their automatic notices " +
 			"(a silent stop, a context size, a session that ended without a report) into its terminal, " +
-			"and keeps them on its card instead. Reports still arrive as before.\n\n" +
+			"and keeps them on its card instead. Under `atrium:hold-notices` its workers' reports are " +
+			"kept there too, with `source: report`.\n\n" +
 			"A card on ANOTHER ROOM is `name@room`, `alias@room` or `room~id`, as `atrium_say` " +
 			"takes it and as `atrium_launch` with `room` hands it back.",
 	}, c.taskHandler)

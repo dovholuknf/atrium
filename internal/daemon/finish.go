@@ -276,8 +276,9 @@ func (d *Daemon) finish(task *store.Task, in FinishRequest) (map[string]any, int
 	// the one who has to act on it, and a report nobody reads is the failure
 	// parking must not cause. The notice itself is queued by the ledger and typed
 	// or carried by a hook like any other, so it is never typed here. See park.go.
+	// A launcher that holds reports reads them when it asks, so it stays parked.
 	if write.Notice != nil {
-		if launcher, err := d.st.Get(write.Notice.ToID); err == nil && isParked(launcher) {
+		if launcher, err := d.st.Get(write.Notice.ToID); err == nil && isParked(launcher) && !holdsReports(launcher) {
 			if err := d.unpark(launcher.ID, "report"); err != nil {
 				log.Printf("[atrium] could not resume %s for a report: %v", launcher.DisplayTitle(), err)
 			}

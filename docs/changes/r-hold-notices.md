@@ -15,11 +15,14 @@ message. The board rings once with the worker's silent-stop text. From the launc
 and `notices: true` answers one notice, `source: silent-stop`, naming the worker. The worker's work item says
 `silent-stop notice held for <launcher>`.
 
-### @LETTER@2. A report still arrives
+### @LETTER@2. A report is held only under `atrium:hold-notices`
 
-1. Have the same worker call `atrium_report` with `status: done`.
+1. With the launcher tagged `atrium:hold-notices`, have the same worker call `atrium_report` with `status: done`.
+2. Tag the launcher `atrium:orchestrator` only, launch a second worker, and have it report the same way.
 
-**Expected:** the report is typed or queued for the launcher exactly as before. It is not held.
+**Expected:** under `atrium:hold-notices` nothing is typed or queued, and `notices: true` answers the report with
+`source: report`. A parked launcher stays parked. Under `atrium:orchestrator` alone the report is typed or queued for
+the launcher as before.
 
 ### @LETTER@3. A session that ends without a report is held too
 
@@ -41,7 +44,8 @@ A held notice is one server event on the room's stream, `notice`:
 {"task_id": "<launcher card>", "about_card": "<worker card>", "source": "silent-stop", "toast": "<the notice text>"}
 ```
 
-`source` is one of `silent-stop`, `long-tool`, `context-size`, `auto-new-context`, `ended`. The launcher's card is
+`source` is one of `silent-stop`, `long-tool`, `context-size`, `auto-new-context`, `ended`, `report`. The last is
+held only for a launcher tagged `atrium:hold-notices`. The launcher's card is
 republished alongside it. The board should ring its bell with `toast`, titled by `source`, and a click should land on
 `about_card`. The event is sent once per notice, and the room already deduplicates notices per worker and event, so the
 board needs no dedupe of its own. Until the board handles it, a held notice is on the launcher's card and on the
