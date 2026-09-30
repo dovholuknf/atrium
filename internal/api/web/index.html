@@ -354,6 +354,9 @@ Exports honor whatever filter is applied.">?</span>
             <span id="t-mark"></span>
             <strong id="t-title">nothing attached</strong>
           </span>
+          <!-- PHONE ONLY (body.term-phone, see phone.css): the bar is one slim row until this is tapped. -->
+          <button type="button" id="t-bar-toggle" class="icon" onclick="phoneHeaderOpenSet(!document.body.classList.contains('hdr-open'))"
+            aria-label="show the terminal's details and buttons" aria-expanded="false">&#9662;</button>
           <span class="chips" id="t-chips"></span>
           <!-- Hidden until the cog asks for it. On the bar rather than in a
                dialog because the terminal underneath IS the preview: a theme
@@ -575,8 +578,9 @@ Exports honor whatever filter is applied.">?</span>
           <button type="button" tabindex="-1" id="t-keys-attach" aria-label="attach a file or photo" onclick="pickTermFiles()">&#128206;</button>
         </div>
         <div class="term-view" id="t-view" hidden>
-          <button type="button" id="t-view-btn" tabindex="-1" onclick="toggleTermView()">fit this screen</button>
-          <span>fit this screen resizes the terminal for every window watching it</span>
+          <button type="button" id="t-view-btn" tabindex="-1" onclick="toggleTermView()"
+            data-tip="fit this screen resizes the terminal for every window watching it">fit this screen</button>
+          <span id="t-view-note">fit this screen resizes the terminal for every window watching it</span>
         </div>
         <!-- What atrium thinks is on the input line, and whether a say may be
              typed in. A debug readout, off unless switched on. See js/typing.js. -->
