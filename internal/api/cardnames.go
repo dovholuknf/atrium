@@ -3,6 +3,7 @@ package api
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -86,7 +87,7 @@ func (s *Server) byName(next http.Handler) http.Handler {
 		name := strings.TrimPrefix(seg, "@")
 		if i := strings.LastIndex(name, "@"); i >= 0 {
 			room := name[i+1:]
-			if !strings.EqualFold(room, s.st.Tenant()) {
+			if !strings.EqualFold(room, s.roomWord()) {
 				writeJSON(w, http.StatusNotFound, map[string]any{"error": "\"" + seg + "\" names room " + room +
 					". a room answers for its own cards only: ask the hub"})
 				return
@@ -113,8 +114,8 @@ func (s *Server) byName(next http.Handler) http.Handler {
 		}
 		w.Header().Set("X-Atrium-Card", t.ID)
 		handle := t.WireName
-		if tenant := s.st.Tenant(); tenant != "" && handle != "" {
-			handle += "@" + tenant
+		if room := s.roomWord(); room != "" && handle != "" {
+			handle += "@" + room
 		}
 		w.Header().Set("X-Atrium-Handle", handle)
 		next.ServeHTTP(w, r)
@@ -143,7 +144,20 @@ func (s *Server) noCardCalled(w http.ResponseWriter, seg string) {
 			work = append(work, name)
 		}
 	}
-	writeJSON(w, http.StatusNotFound, map[string]any{
-		"error": "no card called \"" + seg + "\" on this room", "would_work": work,
-	})
+	// Worded the way the room already words an unknown card when it knows its
+	// hub name (NotOnRoom), so a script reads one sentence whichever path it hit.
+	msg := "no card called \"" + seg + "\" on this room"
+	if s.Room != "" {
+		msg = fmt.Sprintf("card %s is not on room %s", seg, s.Room)
+	}
+	writeJSON(w, http.StatusNotFound, map[string]any{"error": msg, "would_work": work})
+}
+
+// roomWord is this room's name as a caller spells it: its hub name, else its
+// atrium name.
+func (s *Server) roomWord() string {
+	if s.Room != "" {
+		return s.Room
+	}
+	return s.st.Tenant()
 }
