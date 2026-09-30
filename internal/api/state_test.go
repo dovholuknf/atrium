@@ -66,6 +66,40 @@ func TestStateCarriesWhatTheNotifierReads(t *testing.T) {
 	}
 }
 
+// A CARD THAT HAS NEVER FINISHED A TURN DOES NOT NOTIFY INPUT, through the real
+// handler. It has no seen row until its first turn ends, so /v1/state has to
+// send an empty seen object for it, or the hub reads it as an older room and
+// notifies as before. After a turn ends, waiting for input notifies.
+func TestAFreshCardWaitingForInputDoesNotNotify(t *testing.T) {
+	srv, st, dir := fileServer(t)
+	fresh := cardIn(t, st, dir)
+	if err := st.SetStatus(fresh.ID, "needs-input"); err != nil {
+		t.Fatal(err)
+	}
+	cards := stateCards(t, srv)
+	var head struct {
+		Seen json.RawMessage `json:"seen"`
+	}
+	_ = json.Unmarshal(cards[fresh.ID], &head)
+	if len(head.Seen) == 0 || string(head.Seen) == "null" {
+		t.Fatalf("a card with no seen row was sent without one: %s", cards[fresh.ID])
+	}
+	if got, ok := link.NotifyIdentity(fresh.ID, cards[fresh.ID]); ok {
+		t.Fatalf("a card that has never finished a turn notified %+v", got)
+	}
+
+	if err := st.NoteTurnEnded(fresh.ID, store.TurnQuestions{Known: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetStatus(fresh.ID, "needs-input"); err != nil {
+		t.Fatal(err)
+	}
+	cards = stateCards(t, srv)
+	if got, ok := link.NotifyIdentity(fresh.ID, cards[fresh.ID]); !ok || got.Reason != link.ReasonInput {
+		t.Fatalf("after a finished turn, waiting for input notified %+v ok=%v. payload %s", got, ok, cards[fresh.ID])
+	}
+}
+
 // A room with no cards still answers a list, never null, which the hub reads
 // as "clear" rather than "could not tell".
 func TestStateWithNoCardsIsAnEmptyList(t *testing.T) {

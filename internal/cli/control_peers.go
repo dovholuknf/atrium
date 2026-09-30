@@ -114,6 +114,11 @@ func addPeerTools(s *mcp.Server) {
 			"Its permission requests go to the HUMAN, on their board, so an agent started here " +
 			"and left alone stops at the first gated command. Say who asked for it and why, " +
 			"because whoever finds the card later will want to know.\n\n" +
+			"`lean_agents` and `lean_skills` start a LEAN claude worker (no user CLAUDE.md, memory or " +
+			"other agents and skills) that keeps the Agent or Skill tool and the named ones only: files " +
+			"in ~/.claude/agents (no .md) and directories in ~/.claude/skills on the room. They are " +
+			"namespaced, so start `atrium:<name>`. A name with no file, or a runner that is not " +
+			"claude, refuses the launch. The card keeps the lists.\n\n" +
 			"Returns the card id. Use it with `atrium_task`, `atrium_say` and `atrium_exit`.",
 	}, launchHandler)
 
@@ -243,6 +248,7 @@ type card struct {
 	Effort        string   `json:"effort"`
 	LaunchArgs    []string `json:"launch_args"`
 	LaunchEnvKeys []string `json:"launch_env_keys"`
+	Tags          []string `json:"tags"`
 	Activity      struct {
 		What string `json:"what"`
 	} `json:"activity"`
@@ -575,6 +581,10 @@ type LaunchInput struct {
 	Effort string            `json:"effort,omitempty" jsonschema:"thinking effort, in the shape its runner row declares. not checked. empty is the runner's default"`
 	Args   []string          `json:"args,omitempty" jsonschema:"extra command-line arguments for the runner, used as given. shown on the card, so keep secrets out"`
 	Env    map[string]string `json:"env,omitempty" jsonschema:"extra environment for the runner, used as given. the card shows the names only"`
+	// LeanAgents, as the hub's atrium_launch takes it. The stdio server has no
+	// `lean` field, so this is the only way to a lean launch from here.
+	LeanAgents []string `json:"lean_agents,omitempty" jsonschema:"agents a lean claude worker can start, by name: the files in the operator's ~/.claude/agents on the room, without .md. it keeps the Agent tool and ONLY these, namespaced as atrium:<name>. a name with no file refuses the launch. implies lean. claude only. the card keeps the list"`
+	LeanSkills []string `json:"lean_skills,omitempty" jsonschema:"skills a lean claude worker can use, by name: the directories in the operator's ~/.claude/skills on the room. it keeps the Skill tool and ONLY these. a name with no directory refuses the launch. implies lean. claude only. the card keeps the list"`
 }
 
 type LaunchOutput struct {
@@ -673,6 +683,7 @@ func launchHandler(ctx context.Context, _ *mcp.CallToolRequest, in LaunchInput) 
 		"harness": harness, "cwd": in.Cwd, "title": in.Title,
 		"why": in.Why, "prompt": prompt, "tags": in.Tags,
 		"model": in.Model, "effort": in.Effort, "args": in.Args, "env": in.Env,
+		"lean_agents": in.LeanAgents, "lean_skills": in.LeanSkills,
 	}
 	var t card
 	if err := ask(ctx, http.MethodPost, "/v1/launch", req, &t); err != nil {
@@ -688,8 +699,10 @@ func launchHandler(ctx context.Context, _ *mcp.CallToolRequest, in LaunchInput) 
 		"stop at the first gated command unless somebody is watching."
 	out.Model, out.Effort = t.Model, t.Effort
 	// A room older than launch options drops the fields without a word.
-	out.Note = link.LaunchDroppedWarning(link.LaunchOptionsDropped(in.Model, in.Effort, in.Args, in.Env,
-		t.Model, t.Effort, t.LaunchArgs, t.LaunchEnvKeys)) + out.Note
+	missed := link.LaunchOptionsDropped(in.Model, in.Effort, in.Args, in.Env,
+		t.Model, t.Effort, t.LaunchArgs, t.LaunchEnvKeys)
+	missed = append(missed, link.LeanAgentsDropped(in.LeanAgents, in.LeanSkills, t.Tags)...)
+	out.Note = link.LaunchDroppedWarning(missed) + out.Note
 	return nil, out, nil
 }
 

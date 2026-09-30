@@ -18,11 +18,21 @@ each is about. They came from `docs/backlog-2.md`, which is now a one-line point
 
 ## Adding an item
 
-1. Take the next free number for your prefix: `ls docs/backlog/ui/u-*.md`.
-2. Write `docs/backlog/<dept>/<id>.md`. The first line is `# <id>. <title> (<kind>)`, where kind is bug, feature,
-   design, chore or housekeeping. The first paragraph starts `Status:`, which says where it stands and who owns it.
-   The body is whatever the item needs.
-3. Change `Status:` as the item moves. Nothing else has to be kept in step, because there is no shared table.
+1. **Do not pick a number.** Only @merge mints ids, when the item lands on `claude/main`, the same way test-plan
+   letters are handed out at the fold. Directors on different machines work from different bases, and two of them
+   picking "the next free number" is how cr48 got an id that two items claimed.
+2. Name the new item by a slug: `<prefix>new-<slug>`, for example `u-new-composer-paste`. The slug is lowercase
+   letters, digits and hyphens, and it is unique enough that nobody else would pick it.
+3. Write `docs/backlog/<dept>/<prefix>new-<slug>.md`. The first line is `# <prefix>new-<slug>. <title> (<kind>)`,
+   where kind is bug, feature, design, chore or housekeeping. The first paragraph starts `Status:`, which says
+   where it stands and who owns it. The body is whatever the item needs.
+4. Until the item lands, everything calls it by its slug: the worker's name, title and alias (`u-new-composer-paste:
+   <what>`), its branch and worktree, and its `docs/changes/` and `changelog/` files.
+5. When it lands, @merge gives it the next free number from `claude/main`, renames the file, rewrites the slug in
+   that branch's files, and tells the director the real id. From then on it is referred to only by the real id.
+6. Change `Status:` as the item moves. Nothing else has to be kept in step, because there is no shared table.
+
+A branch that adds a `docs/backlog/` file under an id already on `claude/main` is refused at merge.
 
 An item that moves to another area moves folders with `git mv`. Its id does not change.
 

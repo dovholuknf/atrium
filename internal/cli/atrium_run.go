@@ -257,13 +257,13 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 		}
 		return store.Seen(r.ID, host, ver)
 	}
+	// THE NOTIFY TRIGGER. Built here so the announcement hook below can call
+	// it, started and mounted once the context and the proxy exist.
+	notifier := link.NewNotifier(notifyStore{store})
 	// WHAT A ROOM SAYS IT IS HOLDING, TAKEN WHOLE. Anything the hub
 	// was keeping for that room and is not in this is discarded,
 	// because it is no longer there, and the discard is written down
 	// rather than being silent. See `Announce` in internal/hubstore.
-	// THE NOTIFY TRIGGER. Built here so the announcement hook below can call
-	// it, started and mounted once the context and the proxy exist.
-	notifier := link.NewNotifier(notifyStore{store})
 	h.Cached = func(name string, cards []link.CardState) error {
 		r, err := store.ByName(name)
 		if err != nil {
@@ -280,9 +280,7 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 			roomsChanged()
 			// AFTER THE CACHE IS WRITTEN AND NEVER WAITING ON THE SINK: the
 			// notifier stores identities and hands the changes to its own queue.
-			if notifier != nil {
-				notifier.Announced(name, cards)
-			}
+			notifier.Announced(name, cards)
 		}
 		return err
 	}
