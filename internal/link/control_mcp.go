@@ -214,7 +214,8 @@ func (c *controlMCP) server() *mcp.Server {
 			"takes it and as `atrium_launch` with `room` hands it back.",
 	}, c.taskHandler)
 
-	mcp.AddTool(s, &mcp.Tool{Name: "atrium_alias", Description: aliasToolDesc}, audited(c, "ctl-alias", describeAlias, c.aliasHandler))
+	mcp.AddTool(s, &mcp.Tool{Name: "atrium_alias", Description: aliasToolDesc},
+		audited(c, "ctl-alias", describeAlias, c.aliasHandler))
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "atrium_launch",

@@ -179,7 +179,13 @@ func describeAlias(req *mcp.CallToolRequest, in aliasInput, out aliasOutput) (st
 	if in.Clear {
 		what = "alias cleared on " + who
 	}
-	return roomOf(req), what, true
+	// The room of the card it names, like exit and cull, so a cross-room alias
+	// is written where the card is.
+	room := roomOf(req)
+	if strings.TrimSpace(in.Card) != "" {
+		room = cardRoom(req, in.Card)
+	}
+	return room, what, true
 }
 
 // describeSay records only a say that wakes a parked session, which costs a cold
