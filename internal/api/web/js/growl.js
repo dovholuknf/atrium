@@ -214,12 +214,22 @@ async function growlAct(row, what) {
   }
 }
 
+// Names the row's room to the hub, the way the launch dialog does: an explicit `X-Atrium-Room` wins over the
+// board's own scope in the fetch wrapper (js/rooms.js). The hub routes `/v1/permissions` and `/v1/hold` by this
+// header and not by an id, so on the merged view a write without it goes to the wrong room or to none.
+function growlHeaders(g) {
+  const h = { "Content-Type": "application/json" };
+  if (typeof hubIsHub !== "undefined" && hubIsHub && g.room) h["X-Atrium-Room"] = g.room;
+  return h;
+}
+
 // Approve and block answer the request and leave the growler alone. It ends because the request left.
+// The room's own id, since the hub does not untag a permission path.
 async function growlDecide(g, decision, reason) {
   if (!g.subject) return;
   try {
-    await api(`/v1/permissions/${growlPermID(g)}/decide`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
+    await api(`/v1/permissions/${encodeURIComponent(g.subject)}/decide`, {
+      method: "POST", headers: growlHeaders(g),
       body: JSON.stringify({ decision, reason, forever: false, prefix: "", kind: "command", command: "" })
     });
   } catch (e) {
@@ -239,7 +249,7 @@ async function growlLift(g) {
     `The hold on <b>${esc(g.room)}</b> ends and its agents carry on.`, "lift it")) return;
   try {
     await api("/v1/hold", {
-      method: "POST", headers: { "Content-Type": "application/json" },
+      method: "POST", headers: growlHeaders(g),
       body: JSON.stringify({ action: "lift", outcome: "operator", by: "operator" })
     });
   } catch (e) {
