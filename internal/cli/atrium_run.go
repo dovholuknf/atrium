@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/api"
+	"github.com/dovholuknf/atrium/internal/edge"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/hubstore"
 	"github.com/dovholuknf/atrium/internal/link"
@@ -404,8 +405,9 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	go store.VacuumLoop(ctx)
 
 	srv := &http.Server{
-		Addr:    board,
-		Handler: proxy,
+		Addr: board,
+		// The browser edge. See internal/edge.
+		Handler: edge.For(board, proxy),
 		// NO WRITE TIMEOUT. The event stream and the terminal are both
 		// meant to stay open for hours, and a write deadline would cut
 		// them with nothing to show for it.
@@ -517,7 +519,7 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 // the listener is obtained differs per overlay and stays at the call site, which
 // is the one thing that is not shared. `what` is only for the log line.
 func serveBoardOn(ctx context.Context, ln net.Listener, h http.Handler, what string) {
-	srv := &http.Server{Handler: h, ReadHeaderTimeout: 10 * time.Second}
+	srv := &http.Server{Handler: edge.Shared(h), ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		<-ctx.Done()
 		_ = srv.Close()

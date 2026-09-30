@@ -63,6 +63,9 @@ import (
 const (
 	settingGrowlPermAfter = "growl.perm_after"
 	settingGrowlHoldAfter = "growl.hold_after"
+	// settingGrowlSince is when growlers began on this hub. A question asked
+	// before it is history, not news, and raises nothing.
+	settingGrowlSince = "growl.since"
 )
 
 const (
@@ -142,6 +145,7 @@ type GrowlStore interface {
 	Reminded(id string, n int) error
 	Prune() error
 	Setting(name string) (string, error)
+	SetSetting(name, value string) error
 	Rooms() ([]string, error)
 	Cards(room string) ([]CardState, error)
 }
@@ -190,6 +194,7 @@ type Growler struct {
 	mu     sync.Mutex
 	last   string
 	pruned time.Time
+	since  time.Time
 	// filling is which rooms have a permission fill running, so a burst of
 	// announcements is one request to that room.
 	filling map[string]bool
@@ -220,10 +225,48 @@ func growlID(room, identity string) string { return room + "|" + identity }
 
 // derive is what a room's cards want right now, and the names of those cards
 // for a reminder to the phone.
+// growlSince is when growlers began here, written the first time it is asked.
+//
+// THE QUESTIONS ALREADY WAITING WHEN GROWLERS ARRIVED ARE NOT RAISED. The
+// first deploy turned eight unanswered Open Questions, some three days old,
+// into growlers at once, each reminding the phone on the backoff. So a question
+// older than this is left to its `?` chip, and a permission or a block, which
+// is an agent frozen now, still growls whenever it began.
+func (g *Growler) growlSince() time.Time {
+	g.mu.Lock()
+	since := g.since
+	g.mu.Unlock()
+	if !since.IsZero() {
+		return since
+	}
+	if v, err := g.st.Setting(settingGrowlSince); err == nil && v != "" {
+		if t, err := time.Parse(time.RFC3339Nano, v); err == nil {
+			since = t
+		}
+	}
+	if since.IsZero() {
+		since = g.now().UTC()
+		if err := g.st.SetSetting(settingGrowlSince, since.Format(time.RFC3339Nano)); err != nil {
+			return since
+		}
+	}
+	g.mu.Lock()
+	g.since = since
+	g.mu.Unlock()
+	return since
+}
+
 func (g *Growler) derive(room string, cards []CardState) (want []GrowlRow, present map[string]bool) {
 	present = map[string]bool{}
 	after := g.permAfter()
 	at := g.now()
+	since := g.growlSince()
+	// before is whether a reason began before growlers did. An unreadable time
+	// is taken as new.
+	before := func(ts string) bool {
+		t, err := time.Parse(time.RFC3339Nano, ts)
+		return err == nil && t.Before(since)
+	}
 	for _, c := range cards {
 		present[c.ID] = true
 		nc, ok := cardReason(c.ID, c.Payload)
@@ -241,7 +284,7 @@ func (g *Growler) derive(room string, cards []CardState) (want []GrowlRow, prese
 			}
 			row.Title = nc.Name + " wants permission"
 		case ReasonQuestion:
-			if nc.Agent {
+			if nc.Agent || before(nc.At) {
 				continue
 			}
 			row.Title = nc.Name + " asked a question"
@@ -254,7 +297,7 @@ func (g *Growler) derive(room string, cards []CardState) (want []GrowlRow, prese
 		case ReasonInput:
 			// A REPORT, which the notifier reads as input. The identity is the
 			// card, the report's status and when the card started waiting.
-			if nc.Report == "" || nc.Agent {
+			if nc.Report == "" || nc.Agent || (nc.Report == ReasonQuestion && before(nc.At)) {
 				continue
 			}
 			row.Reason = nc.Report
