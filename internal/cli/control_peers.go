@@ -283,6 +283,8 @@ type Peer struct {
 	// Owned is whether atrium holds this session's terminal, which decides
 	// whether a message is typed or queued.
 	Owned bool `json:"atrium_owns_terminal"`
+	// Everywhere marks a card that is listed because it carries atrium:everywhere.
+	Everywhere bool `json:"everywhere,omitempty"`
 }
 
 type PeersOutput struct {
@@ -340,6 +342,21 @@ func peersHandler(ctx context.Context, _ *mcp.CallToolRequest, in PeersInput) (
 			if more.Note != "" {
 				out.Note = more.Note
 			}
+		}
+	}
+	if !in.Rooms {
+		// THE CARDS TAGGED atrium:everywhere on other rooms, after this room's own.
+		// A room or a hub that predates them leaves the list as it is, and a hub
+		// that is not answering says so.
+		var more struct {
+			Peers []Peer `json:"peers"`
+		}
+		switch err := ask(ctx, http.MethodGet, "/v1/peers/rooms?everywhere=1", nil, &more); {
+		case olderRoom(err):
+		case err != nil:
+			out.Note = "cards on other rooms were not listed: " + err.Error()
+		default:
+			out.Peers = append(out.Peers, more.Peers...)
 		}
 	}
 	if out.Me == "" {
