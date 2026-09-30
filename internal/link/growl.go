@@ -26,11 +26,17 @@ import (
 //   - `permission`, once a request has waited growl.perm_after (two minutes).
 //     An origin:agent card growls here too, because a blocked agent is frozen
 //     whoever launched it.
-//   - `question`, at once. Not for an origin:agent card.
+//   - `question`, at once, for a turn that ended on Open Questions or an
+//     atrium_report with status `question`. Not for an origin:agent card.
+//   - `blocked`, at once, for an atrium_report with status `blocked`. Not for an
+//     origin:agent card either: its launcher is told.
 //   - `halt`, from a room's own /v1/health, asked on the ticker.
+//   - `deploy-hold`, from a room's own /v1/hold, once a deploy hold has been
+//     on for growl.hold_after (fifteen minutes). A deploy restarts its room in
+//     a minute or two, so a hold still there is a deploy that stalled, and
+//     every card it holds is frozen until somebody lifts it.
 //
-// `input` and `finished` never growl. `blocked` and `deploy-hold` are stages
-// R2 and R3.
+// `input` without a report and `finished` never growl.
 //
 // ── who writes, and when ────────────────────────────────
 //
@@ -54,11 +60,15 @@ import (
 // the permission is still answerable from the board.
 
 // Growl settings, in the hub_setting table.
-const settingGrowlPermAfter = "growl.perm_after"
+const (
+	settingGrowlPermAfter = "growl.perm_after"
+	settingGrowlHoldAfter = "growl.hold_after"
+)
 
 const (
 	growlTick         = 30 * time.Second
 	growlPermAfter    = 2 * time.Minute
+	growlHoldAfter    = 15 * time.Minute
 	growlPruneEvery   = time.Hour
 	growlBodyMax      = 200
 	growlSnoozeMaxMin = 7 * 24 * 60
@@ -74,12 +84,15 @@ var growlBackoff = []time.Duration{
 
 // growlUrgency orders the stack, most urgent first.
 var growlUrgency = map[string]int{
-	ReasonPermission: 1, "halt": 2, "blocked": 3, ReasonQuestion: 4, "deploy-hold": 5,
+	ReasonPermission: 1, "halt": 2, reasonBlocked: 3, ReasonQuestion: 4, "deploy-hold": 5,
 }
 
 // The card reasons R1 derives. Passed to the store, which touches no other
 // reason when it syncs a room's cards.
-var growlCardReasons = []string{ReasonPermission, ReasonQuestion}
+var growlCardReasons = []string{ReasonPermission, ReasonQuestion, reasonBlocked}
+
+// reasonBlocked is a growler reason and never a notify one.
+const reasonBlocked = "blocked"
 
 // ErrGrowlNotFound and ErrGrowlStale are what a GrowlStore answers an action
 // with. Stale carries the row as it is now.
@@ -118,8 +131,9 @@ type GrowlStore interface {
 	// Sync applies one room's card growlers for `reasons`. See
 	// hubstore.Store.GrowlSync.
 	Sync(room string, reasons []string, want []GrowlRow, present map[string]bool) (raised []string, changed bool, err error)
-	// Halt raises or ends a room's halt. See hubstore.Store.GrowlHalt.
-	Halt(room string, halted bool, g GrowlRow) (raised, changed bool, err error)
+	// Room raises or ends a room's halt or deploy hold. See
+	// hubstore.Store.GrowlRoom.
+	Room(room, reason string, on bool, g GrowlRow) (raised, changed bool, err error)
 	Fill(id, subject, body string) (bool, error)
 	Live() ([]GrowlRow, error)
 	// Act answers ErrGrowlNotFound, or ErrGrowlStale with the row.
@@ -140,6 +154,17 @@ type roomHealth struct {
 	cause  string
 }
 
+// roomHold is one room's answer to /v1/hold. ok is false for a room that did
+// not answer.
+type roomHold struct {
+	ok bool
+	// on is false for a room with no deploy hold.
+	on        bool
+	id, by    string
+	whys      []string
+	startedAt time.Time
+}
+
 // pendingPerm is one request a room is holding, as its /v1/permissions says.
 type pendingPerm struct {
 	ID          string    `json:"id"`
@@ -158,6 +183,7 @@ type Growler struct {
 	attached func(room string) bool
 	say      func(Event)
 	health   func(ctx context.Context, room string) roomHealth
+	hold     func(ctx context.Context, room string) roomHold
 	pending  func(ctx context.Context, room string) []pendingPerm
 	phone    func(Notice)
 
@@ -175,13 +201,18 @@ func NewGrowler(st GrowlStore) *Growler {
 }
 
 // permAfter is how long a permission waits before it growls.
-func (g *Growler) permAfter() time.Duration {
-	if v, err := g.st.Setting(settingGrowlPermAfter); err == nil && v != "" {
+func (g *Growler) permAfter() time.Duration { return g.after(settingGrowlPermAfter, growlPermAfter) }
+
+// holdAfter is how long a deploy hold lasts before it growls.
+func (g *Growler) holdAfter() time.Duration { return g.after(settingGrowlHoldAfter, growlHoldAfter) }
+
+func (g *Growler) after(name string, def time.Duration) time.Duration {
+	if v, err := g.st.Setting(name); err == nil && v != "" {
 		if d, err := time.ParseDuration(v); err == nil && d >= 0 {
 			return d
 		}
 	}
-	return growlPermAfter
+	return def
 }
 
 // growlID is the notify identity with the room in front.
@@ -220,6 +251,19 @@ func (g *Growler) derive(room string, cards []CardState) (want []GrowlRow, prese
 			if len(nc.Questions) > 0 {
 				row.Body = clip(nc.Questions[0])
 			}
+		case ReasonInput:
+			// A REPORT, which the notifier reads as input. The identity is the
+			// card, the report's status and when the card started waiting.
+			if nc.Report == "" || nc.Agent {
+				continue
+			}
+			row.Reason = nc.Report
+			row.ID = growlID(room, c.ID+"|"+nc.Report+"|"+nc.At)
+			row.Title = nc.Name + " is blocked"
+			if nc.Report == ReasonQuestion {
+				row.Title = nc.Name + " has a question"
+			}
+			row.Body = clip(nc.Ask)
 		default:
 			continue
 		}
@@ -359,7 +403,7 @@ func (g *Growler) tick(ctx context.Context) {
 			changed = true
 		}
 	}
-	if g.checkHealth(ctx, rooms) {
+	if g.checkRooms(ctx, rooms) {
 		changed = true
 	}
 	remind, err := g.st.Wake()
@@ -435,44 +479,67 @@ func dedupe(ids []string) []string {
 	return out
 }
 
-// checkHealth asks each attached room whether its store has halted. A room
-// that does not answer is left as it was, halted or not.
-func (g *Growler) checkHealth(ctx context.Context, rooms []string) bool {
-	if g.health == nil {
-		return false
-	}
+// checkRooms asks each attached room whether its store has halted and whether
+// a deploy hold has outlived its window. A room that does not answer is left
+// as it was: silence is neither healthy nor halted, held nor free.
+func (g *Growler) checkRooms(ctx context.Context, rooms []string) bool {
 	var ask []string
 	for _, room := range rooms {
 		if g.attached == nil || g.attached(room) {
 			ask = append(ask, room)
 		}
 	}
-	got := make([]roomHealth, len(ask))
+	type answer struct {
+		health roomHealth
+		hold   roomHold
+	}
+	got := make([]answer, len(ask))
 	var wg sync.WaitGroup
 	for i, room := range ask {
 		wg.Add(1)
 		go func(i int, room string) {
 			defer wg.Done()
-			got[i] = g.health(ctx, room)
+			if g.health != nil {
+				got[i].health = g.health(ctx, room)
+			}
+			if g.hold != nil {
+				got[i].hold = g.hold(ctx, room)
+			}
 		}(i, room)
 	}
 	wg.Wait()
 	changed := false
-	for i, room := range ask {
-		h := got[i]
-		if !h.ok {
-			continue
-		}
-		row := GrowlRow{
-			ID: room + "|halt|" + g.now().UTC().Format(time.RFC3339Nano), Room: room, Reason: "halt",
-			Title: room + " has halted", Body: clip(h.cause),
-		}
-		_, ch, err := g.st.Halt(room, h.halted, row)
+	record := func(room, reason string, on bool, row GrowlRow) {
+		_, ch, err := g.st.Room(room, reason, on, row)
 		if err != nil {
-			log.Printf("[hub] growlers could not record %q's health: %v", room, err)
-			continue
+			log.Printf("[hub] growlers could not record %q's %s: %v", room, reason, err)
+			return
 		}
 		changed = changed || ch
+	}
+	at := g.now()
+	for i, room := range ask {
+		if h := got[i].health; h.ok {
+			record(room, "halt", h.halted, GrowlRow{
+				ID: room + "|halt|" + at.UTC().Format(time.RFC3339Nano), Room: room, Reason: "halt",
+				Title: room + " has halted", Body: clip(h.cause),
+			})
+		}
+		if h := got[i].hold; h.ok {
+			// UNDER THE WINDOW IS NOT A HOLD YET, and not a hold ended either: a
+			// growler already raised for this hold stays until the hold lifts.
+			if h.on && at.Sub(h.startedAt) < g.holdAfter() {
+				continue
+			}
+			body := "held by " + h.by
+			if len(h.whys) > 0 {
+				body += ": " + strings.Join(h.whys, ", ")
+			}
+			record(room, "deploy-hold", h.on, GrowlRow{
+				ID: room + "|deploy-hold|" + h.id, Room: room, Reason: "deploy-hold",
+				Title: room + " is still held for a deploy", Body: clip(body), Subject: h.id,
+			})
+		}
 	}
 	return changed
 }
@@ -601,6 +668,7 @@ func (p *Proxy) SetGrowler(g *Growler) {
 	g.attached = p.hub.Has
 	g.say = p.feeds.broadcast
 	g.health = p.roomHealth
+	g.hold = p.roomHold
 	g.pending = p.roomPending
 	g.phone = func(x Notice) {
 		if n := p.notifier(); n != nil {
@@ -651,6 +719,25 @@ func (p *Proxy) roomHealth(ctx context.Context, room string) roomHealth {
 		h.cause = fmt.Sprint(body.Cause)
 	}
 	return h
+}
+
+func (p *Proxy) roomHold(ctx context.Context, room string) roomHold {
+	var body struct {
+		Hold *struct {
+			ID        string    `json:"id"`
+			By        string    `json:"by"`
+			Whys      []string  `json:"whys"`
+			StartedAt time.Time `json:"started_at"`
+		} `json:"hold"`
+	}
+	if !p.roomGet(ctx, room, "/v1/hold", &body) {
+		return roomHold{}
+	}
+	if body.Hold == nil {
+		return roomHold{ok: true}
+	}
+	return roomHold{ok: true, on: true, id: body.Hold.ID, by: body.Hold.By, whys: body.Hold.Whys,
+		startedAt: body.Hold.StartedAt}
 }
 
 func (p *Proxy) roomPending(ctx context.Context, room string) []pendingPerm {
