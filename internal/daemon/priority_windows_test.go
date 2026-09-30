@@ -26,6 +26,18 @@ func classOf(t *testing.T, pid uint32) uint32 {
 	return c
 }
 
+// defaultClass is the class a child of this test process starts at when
+// nothing raises it. CreateProcess hands a child its parent's class only when
+// that class is idle or below normal, and a CI runner runs tests below normal.
+func defaultClass(t *testing.T) uint32 {
+	t.Helper()
+	switch own := classOf(t, uint32(os.Getpid())); own {
+	case windows.IDLE_PRIORITY_CLASS, windows.BELOW_NORMAL_PRIORITY_CLASS:
+		return own
+	}
+	return windows.NORMAL_PRIORITY_CLASS
+}
+
 func spawnSleeper(t *testing.T, d *Daemon, name string) (uint32, map[uint32]bool) {
 	t.Helper()
 	dir := t.TempDir()
@@ -79,13 +91,14 @@ func TestRunnerPriorityNormalLeavesBothAlone(t *testing.T) {
 	if err := d.st.SetSetting(store.SettingRunnerPriority, "normal"); err != nil {
 		t.Fatal(err)
 	}
+	want := defaultClass(t)
 	pid, hosts := spawnSleeper(t, d, "normal")
-	if got := classOf(t, pid); got != windows.NORMAL_PRIORITY_CLASS {
-		t.Errorf("runner class = %#x, want normal", got)
+	if got := classOf(t, pid); got != want {
+		t.Errorf("runner class = %#x, want %#x, the class it was started at", got, want)
 	}
 	for h := range hosts {
-		if got := classOf(t, h); got != windows.NORMAL_PRIORITY_CLASS {
-			t.Errorf("console host %d class = %#x, want normal", h, got)
+		if got := classOf(t, h); got != want {
+			t.Errorf("console host %d class = %#x, want %#x, the class it was started at", h, got, want)
 		}
 	}
 }
@@ -96,8 +109,9 @@ func TestFailedRaiseDoesNotFailTheSpawn(t *testing.T) {
 	setPriorityClass = func(windows.Handle, uint32) error { return errors.New("refused") }
 	t.Cleanup(func() { setPriorityClass = old })
 	d := testDaemon(t)
+	want := defaultClass(t)
 	pid, _ := spawnSleeper(t, d, "refused")
-	if got := classOf(t, pid); got != windows.NORMAL_PRIORITY_CLASS {
-		t.Errorf("runner class = %#x, want normal since the raise was refused", got)
+	if got := classOf(t, pid); got != want {
+		t.Errorf("runner class = %#x, want %#x since the raise was refused", got, want)
 	}
 }
