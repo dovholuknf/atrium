@@ -128,11 +128,39 @@
   function readSent(id) {
     try { const a = JSON.parse(localStorage.getItem(sentKey(id)) || "[]"); return Array.isArray(a) ? a : []; } catch (e) { return []; }
   }
+  // Each message is cut at about 4 KB so a pasted log cannot fill the origin's quota, and what is kept is pruned on
+  // every write: messages past a week go, and only the newest 50 cards keep any.
+  const SENT_CUT = 4096;
+  const SENT_AGE = 7 * 24 * 3600 * 1000;
+  const SENT_CARDS = 50;
+  function pruneSent() {
+    try {
+      const rows = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.indexOf(SENT) === 0) rows.push(k);
+      }
+      const now = Date.now();
+      const live = [];
+      rows.forEach(k => {
+        let a = [];
+        try { a = JSON.parse(localStorage.getItem(k) || "[]"); } catch (e) {}
+        a = Array.isArray(a) ? a.filter(m => m && now - U.ts(m.at) < SENT_AGE) : [];
+        if (!a.length) { localStorage.removeItem(k); return; }
+        live.push({ k, last: U.ts(a[a.length - 1].at) });
+        localStorage.setItem(k, JSON.stringify(a));
+      });
+      live.sort((x, y) => y.last - x.last).slice(SENT_CARDS).forEach(r => localStorage.removeItem(r.k));
+    } catch (e) {}
+  }
   function noteSent(id, text) {
     if (!id || !text) return;
     const a = readSent(id);
-    a.push({ at: new Date().toISOString(), text: String(text) });
+    let t = String(text);
+    if (t.length > SENT_CUT) t = t.slice(0, SENT_CUT) + "\n[cut here, the rest was sent but is not kept]";
+    a.push({ at: new Date().toISOString(), text: t });
     try { localStorage.setItem(sentKey(id), JSON.stringify(a.slice(-SENT_KEEP))); } catch (e) {}
+    pruneSent();
     if (id === openId || (openId && window.mNet.bareId(id) === window.mNet.bareId(openId))) paintReplies();
   }
   window.addEventListener("m-sent", e => { const d = e.detail || {}; noteSent(d.id, d.text); });
