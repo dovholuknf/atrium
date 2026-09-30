@@ -299,6 +299,8 @@ function termTrayHTML(c) {
           ><span class="traysum">${esc(termTraySummary(c))}</span></button>
         ${termListButtons()}
       </div>
+      <button type="button" class="cacheline" id="cache-line-terms" hidden
+        onclick="openKeepaliveSetting()" data-tip="open the keep-alive setting"></button>
       <div class="traybody"${open ? "" : " inert"}><div class="trayinner"><div class="trayrows">
         <div class="trayrow"><span class="barlabel">sort</span>${sortSeg}</div>
         <div class="trayrow"><span class="barlabel">hide inactive</span>${termHideControlsHTML(c)}</div>
@@ -1083,7 +1085,8 @@ function termRowChips(t) {
   // run. See js/seen.js.
   const stuck = typeof stuckMark === "function" ? stuckMark(t) : "";
   const ncx = typeof newContextChip === "function" ? newContextChip(t) : "";
-  const inner = stuck + newCardChip(t) + ncx + seenChips(t) + held + room + popped;
+  const cache = typeof keepaliveChip === "function" ? keepaliveChip(t) : "";
+  const inner = stuck + newCardChip(t) + ncx + seenChips(t) + cache + held + room + popped;
   return inner ? `<div class="chips">${inner}</div>` : "";
 }
 
@@ -1609,6 +1612,7 @@ async function renderTermList() {
   // you were watching a terminal is announced whenever you next look at the
   // board, or not at all.
   lastTasks = all;
+  if (typeof cacheRefresh === "function") cacheRefresh(all);
   newCardNote(all);
   // The bar's alias, when it changed under the open terminal. See js/alias.js.
   if (typeof followTermAlias === "function") followTermAlias(all);
@@ -1761,6 +1765,8 @@ async function renderTermList() {
   // header at all, and the board's painter writes into whichever of its three
   // hosts it finds.
   if (typeof paintGroupSegs === "function") paintGroupSegs();
+  // The cache summary lives in the tray the paint above just rebuilt. See js/keepalive.js.
+  if (typeof paintCacheLine === "function") paintCacheLine("cache-line-terms", shown);
 }
 
 // The fold key for the pinned bucket.
