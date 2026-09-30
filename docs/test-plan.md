@@ -7929,6 +7929,10 @@ Needs a hub with one room and two browsers on the board. `curl` stands in for th
    delivers it with `[atrium] this message waited 1 minutes for your turn to end, so it is delivered now.` in front.
    The card's timeline shows `held message escalated after 1m` and the sender's say shows the same note. Clear the
    setting and the wait is 15 minutes again.
+2. (R3, room) Set `escalate_turn_after` to 1. Give a card a task that keeps it in one turn for over a minute. Its
+   director is told once that the card is on a `long-turn`, with the turn's length and its recent calls. A card that
+   has also stopped silently or sits in one long tool call is reported for that instead, not twice. Clear the setting
+   and the limit is 45 minutes again.
 
 ## HF. A new context on a card that never leaves running (r-new-new-context-mid-turn)
 
