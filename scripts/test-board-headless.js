@@ -4837,6 +4837,8 @@ async function heldLineSection(browser, base) {
       const g1 = await grid();
       if (g0.c !== g1.c || g0.r !== g1.r) fail(tag + "the grid changed");
       await setAct(p, { held_peer: true, held_for: "line", held_count: 1 });
+      // the repaint can land a frame late on a loaded machine
+      if (!phone) await p.waitForFunction(() => /1 message waiting/.test(document.getElementById("t-heldline").textContent), null, { timeout: slow(5000) }).catch(() => {});
       s = await state(p);
       if (phone) { if ((await mail()).n !== "1") fail(tag + "the envelope count did not follow"); }
       else if (!/1 message waiting/.test(s.text)) fail(tag + "singular wording: " + s.text);
