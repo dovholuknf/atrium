@@ -256,6 +256,26 @@ var migrations = []struct {
 			`CREATE INDEX IF NOT EXISTS growl_state ON growl (state)`,
 		},
 	},
+	{
+		// WHETHER THIS ROOM HAS EVER PROVED ITS NAME WITH A CERTIFICATE. The hub
+		// refuses the old, certificate-less overlay path for a name that has, so a
+		// peer the overlay admits cannot wear it (f-026). Set when a join secret is
+		// spent and when a room attaches with a certificate.
+		//
+		// BACKFILLED FROM THE `joined` AUDIT LINES, which were the only record
+		// before this. They are trimmed with the rest of the audit window, which
+		// is why this is a column: a record that ages out turns a proven name
+		// back into one anybody may claim. The backfill only fills an empty
+		// column, so running it twice changes nothing.
+		name: "0006_room_enrolled",
+		stmts: []string{
+			`ALTER TABLE room ADD COLUMN enrolled_at TEXT NOT NULL DEFAULT ''`,
+			`UPDATE room SET enrolled_at = (
+				SELECT MIN(a.at) FROM room_audit a WHERE a.room_id = room.id AND a.kind = 'joined')
+			  WHERE enrolled_at = ''
+			    AND EXISTS (SELECT 1 FROM room_audit a WHERE a.room_id = room.id AND a.kind = 'joined')`,
+		},
+	},
 }
 
 func (s *Store) migrate() error {

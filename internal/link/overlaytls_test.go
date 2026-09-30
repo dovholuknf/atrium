@@ -34,11 +34,17 @@ type rig struct {
 	secrets  map[string]string
 	refuse   bool
 	unproven []string
+	// enrolled stands in for the hubstore's `enrolled_at`, proved is what the
+	// hub reported as attaching with a certificate, and refused is every
+	// old-path claim on a proven name it reported.
+	enrolled map[string]bool
+	proved   []string
+	refused  []string
 }
 
 func newRig(t *testing.T) *rig {
 	t.Helper()
-	r := &rig{t: t, keys: hubKeys(t), secrets: map[string]string{}}
+	r := &rig{t: t, keys: hubKeys(t), secrets: map[string]string{}, enrolled: map[string]bool{}}
 	r.d = Direct{Keys: r.keys, Spend: func(secret string) (string, error) {
 		r.mu.Lock()
 		defer r.mu.Unlock()
@@ -72,6 +78,22 @@ func newRig(t *testing.T) *rig {
 		r.mu.Lock()
 		defer r.mu.Unlock()
 		r.unproven = append(r.unproven, name+"@"+over)
+	}
+	r.hub.Enrolled = func(name string) bool {
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		return r.enrolled[strings.ToLower(name)]
+	}
+	r.hub.Proved = func(name string) {
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		r.proved = append(r.proved, name)
+		r.enrolled[strings.ToLower(name)] = true
+	}
+	r.hub.OnUnprovenRefused = func(name, over, why string) {
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		r.refused = append(r.refused, name+"@"+over)
 	}
 	ctx, stop := context.WithCancel(context.Background())
 	r.stop = stop
@@ -397,5 +419,88 @@ func TestOverlayJoinStringForms(t *testing.T) {
 	}
 	if _, err := k.MintProvenOverlayToken("zrok", "sparta", "", "share1", ""); err == nil {
 		t.Fatal("a new-form string was minted with no secret")
+	}
+}
+
+func (r *rig) refusedLines() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]string(nil), r.refused...)
+}
+
+// f-026. AN OLD-PATH DIAL CANNOT BUMP A PROVEN ROOM OFF ITS NAME, under the
+// default allow, for control and for the kinds that act as the room.
+func TestOldPathCannotTakeAnAttachedProvenName(t *testing.T) {
+	r := newRig(t)
+	rk, err := r.enrol("alpha", r.secretFor("alpha"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.attach("alpha", Proven{Dialer: plain{addr: r.addr}, Keys: rk})
+	waitFor(t, 5*time.Second, func() bool { return r.hub.Has("alpha") })
+	for _, kind := range []string{"control", "data", relayKind, announceKind} {
+		w, err := r.rawHello(false, kind, "alpha")
+		if err != nil {
+			t.Fatalf("%s: %v", kind, err)
+		}
+		if w.OK || !strings.Contains(w.Error, "certificate") {
+			t.Fatalf("an old-path %s under a proven name was answered %+v", kind, w)
+		}
+	}
+	a, ok := r.attachedAs("alpha")
+	if !ok || !a.Proven {
+		t.Fatalf("the proven room was replaced: %+v %v", a, ok)
+	}
+	// ONE LINE, however many dials: whoever it is redials on a backoff.
+	if got := r.refusedLines(); len(got) != 1 || got[0] != "alpha@zrok" {
+		t.Fatalf("the refusals were reported as %v", got)
+	}
+}
+
+// The same dial while the proven room is away: the name is still proven.
+func TestOldPathCannotTakeADetachedEnrolledName(t *testing.T) {
+	r := newRig(t)
+	r.mu.Lock()
+	r.enrolled["alpha"] = true
+	r.mu.Unlock()
+	w, err := r.rawHello(false, "control", "Alpha")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w.OK || !strings.Contains(w.Error, "atrium rooms token") {
+		t.Fatalf("an old-path dial under an enrolled name was answered %+v", w)
+	}
+	if r.hub.Has("alpha") {
+		t.Fatal("an old-path dial attached under an enrolled name")
+	}
+	if got := r.refusedLines(); len(got) != 1 || got[0] != "Alpha@zrok" {
+		t.Fatalf("the refusal was reported as %v", got)
+	}
+}
+
+// A room attaching with a certificate is written down as enrolled, and an
+// old-path room that never enrolled is neither refused nor reported.
+func TestProvenAttachIsRecordedAndOldRoomsAreLeftAlone(t *testing.T) {
+	r := newRig(t)
+	rk, err := r.enrol("alpha", r.secretFor("alpha"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.attach("alpha", Proven{Dialer: plain{addr: r.addr}, Keys: rk})
+	r.attach("old", plain{addr: r.addr})
+	waitFor(t, 5*time.Second, func() bool { return r.hub.Has("alpha") && r.hub.Has("old") })
+	r.mu.Lock()
+	proved := append([]string(nil), r.proved...)
+	r.mu.Unlock()
+	if len(proved) == 0 || proved[0] != "alpha" {
+		t.Fatalf("the proven attach was reported as %v", proved)
+	}
+	for _, p := range proved {
+		if p == "old" {
+			t.Fatal("a room with no certificate was reported as proven")
+		}
+	}
+	if got := r.refusedLines(); len(got) != 0 {
+		t.Fatalf("a room that never enrolled was refused: %v", got)
 	}
 }

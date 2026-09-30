@@ -47,6 +47,21 @@ type Hub struct {
 	// certificate. It is how the operator learns who must re-join before the old
 	// path is switched off. Nil on a hub that records nothing.
 	OnUnproven func(name, transport string)
+	// Enrolled says whether a room by this name has ever proved itself with a
+	// certificate. A connection on the old path under such a name is refused,
+	// attached or not: the name is proven, and a peer the overlay merely admits
+	// must not be able to wear it. Nil means no name is, which is a hub with no
+	// store. See f-026.
+	Enrolled func(name string) bool
+	// Proved is told that a room attached with a certificate, so a name proven
+	// before its enrolment was written down is written down now. Nil records
+	// nothing.
+	Proved func(name string)
+	// OnUnprovenRefused is told that a connection on the old path claimed a
+	// proven name and was turned away, and why. At most once per name per
+	// `refusedEvery`, because whoever it is will redial on a backoff. Nil records
+	// nothing.
+	OnUnprovenRefused func(name, transport, why string)
 	// Attaching is asked before a room is adopted, and may refuse it.
 	//
 	// TWO THINGS AT ONCE, and they are the same thing seen from both ends.
@@ -91,6 +106,9 @@ type Hub struct {
 
 	mu    sync.Mutex
 	rooms map[string]*attached
+	// refused is when an old-path claim on a proven name was last reported, by
+	// folded name. See `OnUnprovenRefused`.
+	refused map[string]time.Time
 	// builds are the binaries this hub can hand out, one per platform. Empty
 	// means it offers nothing, which is the default until `Offers` is called.
 	// See `upgrade.go`.
@@ -289,6 +307,21 @@ func (h *Hub) take(ctx context.Context, conn net.Conn) {
 		return
 	}
 
+	// A PROVEN NAME IS NOT TAKEN ON THE OVERLAY'S WORD, for any kind. On the old
+	// path the name is only what the hello said, so without this any peer the
+	// overlay admits could replace a room with a certificate, or relay and
+	// announce as it. Refused whether or not that room is attached right now.
+	// A room that never enrolled keeps attaching as it always did.
+	if over, legacy := legacyTransport(conn); legacy {
+		if why := h.provenName(name); why != "" {
+			h.refuseUnproven(name, over, why)
+			_ = writeJSON(conn, welcome{OK: false, Error: "the name " + name + " belongs to a room " +
+				"with a certificate, so it cannot attach without one. " + RejoinSentence(name)})
+			conn.Close()
+			return
+		}
+	}
+
 	switch hi.Kind {
 	case "control":
 		h.control(ctx, name, hi, conn, br)
@@ -372,7 +405,9 @@ func (h *Hub) control(ctx context.Context, name string, hi hello, conn net.Conn,
 	}()
 	h.mu.Lock()
 	old, taken := h.rooms[keyOf(name)]
-	if taken && old.key != "" && a.key != "" && old.key != a.key {
+	// A KEYLESS DIAL CANNOT REPLACE A KEYED ROOM either: it has nothing to show
+	// that it is the same room. Before f-026 an empty key slipped past this.
+	if taken && old.key != "" && old.key != a.key {
 		h.mu.Unlock()
 		log.Printf("[hub] refused a second %q: a different certificate is already attached", name)
 		_ = writeJSON(conn, welcome{OK: false, Error: "a different room is already attached " +
@@ -399,6 +434,9 @@ func (h *Hub) control(ctx context.Context, name string, hi hello, conn net.Conn,
 	}
 	if a.unproven != "" && h.OnUnproven != nil {
 		h.OnUnproven(name, a.unproven)
+	}
+	if a.key != "" && h.Proved != nil {
+		h.Proved(name)
 	}
 
 	log.Printf("[hub] room %q attached from %s", name, conn.RemoteAddr())
@@ -708,6 +746,47 @@ type Attached struct {
 func unprovenOver(c net.Conn) string {
 	t, _ := legacyTransport(c)
 	return t
+}
+
+// refusedEvery bounds how often an old-path claim on one proven name is
+// reported. Whoever it is redials on a backoff, and a line a minute would push
+// the week's history out of an audit log that keeps a window.
+const refusedEvery = 10 * time.Minute
+
+// provenName says why a name cannot be used without a certificate, or nothing.
+func (h *Hub) provenName(name string) string {
+	h.mu.Lock()
+	a := h.rooms[keyOf(name)]
+	h.mu.Unlock()
+	if a != nil && a.key != "" {
+		return "a room with a certificate is attached under that name"
+	}
+	if h.Enrolled != nil && h.Enrolled(name) {
+		return "that name enrolled a certificate"
+	}
+	return ""
+}
+
+// refuseUnproven logs and reports a refused old-path claim, rate limited.
+func (h *Hub) refuseUnproven(name, over, why string) {
+	k := keyOf(name)
+	h.mu.Lock()
+	if h.refused == nil {
+		h.refused = map[string]time.Time{}
+	}
+	last, seen := h.refused[k]
+	quiet := seen && time.Since(last) < refusedEvery
+	if !quiet {
+		h.refused[k] = time.Now()
+	}
+	h.mu.Unlock()
+	if quiet {
+		return
+	}
+	log.Printf("[hub] refused %q over %s without a certificate: %s", name, over, why)
+	if h.OnUnprovenRefused != nil {
+		h.OnUnprovenRefused(name, over, why)
+	}
 }
 
 // Rooms lists what is attached, for the hub's own status endpoint.

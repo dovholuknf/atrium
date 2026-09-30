@@ -162,6 +162,11 @@ func (s *Store) Spend(secret string) (*Room, error) {
 	if !spent {
 		return nil, ErrBadSecret
 	}
+	// THE NAME IS PROVEN FROM HERE ON, and the old overlay path is closed to it.
+	// See `Enrolled`.
+	if err := s.MarkEnrolled(roomID); err != nil {
+		return nil, err
+	}
 
 	r, err := s.Get(roomID)
 	if err != nil {
