@@ -102,6 +102,14 @@ runner, and loopback TCP has no notion of which local user connected. The name i
 isolated rooms on one machine get two hosts (the state-dir pin in `docs/rnd/room-autostart-design.md` section 2.4 is
 the key).
 
+**Host names and generations.** The state-dir-derived name with no suffix is the PRIMARY host, and it is where a
+daemon looks first. A host started for a newer protocol (section 6) is a SECONDARY, named with its protocol as a
+suffix (`<name>.p2`), so the two never collide. Discovery at daemon start is: connect to the primary, then list the
+suffixed names that exist in the state dir and connect to each. Every pty is owned by exactly one host, the daemon
+keeps a `card -> host` map in memory built from each host's `list`, and the board shows each card's host. When the
+old primary exits empty, the newest secondary is not renamed. It stays suffixed and is found by the listing, so
+there is never a moment where two processes want one name.
+
 Framed messages, one connection per daemon, a control stream and multiplexed pty streams:
 
 - `hello {proto, build}` both ways. A daemon that needs a newer `proto` than the host speaks does not use that host
@@ -109,13 +117,25 @@ Framed messages, one connection per daemon, a control stream and multiplexed pty
 - `spawn {id, argv, env, cwd, cols, rows, ring}` answers `{pid}`.
 - `list` answers every pty: `{id, pid, cols, rows, started, exited, exit_code, ring_start, out_offset}`.
 - `attach {id, from}` streams output from an absolute byte offset. A `from` older than the ring's start gets the
-  whole ring and a `truncated` flag, which is the replay case.
-- `write {id, bytes}`, `resize {id, cols, rows}`, `signal {id, term|kill}`.
-- `collect {id}` acknowledges an exit, and only then does the host forget that pty.
+  whole ring and a `truncated` flag, which is the replay case. The answer carries the retained bytes WITH their size
+  cuts: the same `(offset, cols, rows)` marks `ringBuffer.ReplayCuts` returns today (`supervisor.go`, `sizeCut` in
+  `screen.go`), because a screen model rebuilt from bytes alone replays every resize at the wrong width. The host
+  therefore owns the cut list along with the ring.
+- `write {id, bytes}`, `signal {id, term|kill}`.
+- `resize {id, cols, rows}` records a cut at the current offset BEFORE applying the pty resize, as the ring does
+  today, so the cut and the first byte at the new size can never be out of order.
+- `collect {id}` acknowledges an exit, and only then does the host forget that pty and its ring.
 
 Absolute offsets make a reattach exact: the new daemon replays the ring from its start into a fresh screen model and
 then follows live, with no byte seen twice or skipped. The output is always at the width it was written at, because
-the pty was not resized during the gap, which is the problem `supervision-design.md` spends a section on.
+the cuts say what the width was, which is the problem `supervision-design.md` spends a section on.
+
+**The reattach order, for a runner that exited during the gap.** For every pty in `list`, exited or not, the daemon
+first attaches and replays the retained output and its cuts into a screen model. Only then does it file the exit:
+the event, the dead-card attribution and the tail it reads for a startup failure, exactly as a live exit is filed
+today. It sends `collect` only after that filing is durable in the store. A crash between the two leaves the pty
+listed, and the next daemon files it again. So filing an exit MUST be idempotent per card and runner start: stage 2
+checks that it is, and makes it so where it is not. Collecting first would lose the last screen and could attribute the death wrongly, so it is not allowed.
 
 ### 3.3 Its lifetime
 
@@ -216,7 +236,8 @@ Rare, because the host is small and its protocol is versioned. A daemon change n
 a new verb. When one does:
 
 1. The new daemon speaks the new `proto` and finds the running host speaking an older one it still supports. It keeps
-   the old host for the ptys already there and starts a SECOND host, on the new build, for new launches.
+   the old host for the ptys already there and starts a SECOND host, on the new build, for new launches. The second
+   host is a secondary with its protocol as a suffix (section 3.2, "Host names and generations").
 2. Each card on the old host moves when it is idle by r-007's rule (`idleParkEligible`, `idletick.go`): no turn, no
    permission, no question, no queued message, no background work or subagents, no live worker of its own, and not
    mid new-context. The move is `RestartRunner` with the new host as the target: exit keys, wait for the slot, then
