@@ -5,7 +5,7 @@ Open items only. Ranked by how good the thing is, not by how long it takes.
 **Effort is a note inside an entry and never the ordering.** Sorting by cost buries the thing that would change
 how the tool feels under a week of quiet plumbing, every time.
 
-Finished work is not here. `CHANGELOG.md` is what landed and `docs/status.md` is where each thing stands. A
+Finished work is not here. `CHANGELOG.md` is what landed and `docs/orchestrator/status.md` is where each thing stands. A
 backlog that also holds its own history is a backlog nobody reads to the bottom of, which is what this became
 before it was rewritten on 2026-09-06.
 
@@ -42,7 +42,7 @@ What is left is what makes it more than a status page:
 - **Permission requests from a room.** A card on another machine that is blocked waiting for a human is
   invisible unless somebody opens that room's own board, which defeats the point. The design is settled and it
   is the one thing the forum cannot answer on a leaf's behalf: the leaf holds the channel, so the hub forwards
-  the decision and the leaf unblocks its own request. `docs/federation-design-v2.md` has it.
+  the decision and the leaf unblocks its own request. `docs/rnd/federation-design-v2.md` has it.
 - **Attach by redirect.** A pty cannot leave the machine that made it and never will. What CAN happen is the
   board noticing a remote card and sending you to that room's own board with the right terminal already open.
   The row carries the address already, so this is a link that knows about `#term=`.
@@ -56,7 +56,7 @@ person, many machines, one place to look.
 
 ## 2. Starting a card from a ticket, an issue or a pull request
 
-Designed in `docs/scm-design.md`, reviewed, not built. A table of URL recognisers, one row each, that turns a
+Designed in `docs/runtime/scm-design.md`, reviewed, not built. A table of URL recognisers, one row each, that turns a
 pull request or a ticket into a filled-in launch dialog.
 
 **Why it is high.** It is the difference between atrium being where you watch work and atrium being where work
@@ -92,7 +92,7 @@ the tool its clarity. Worth deciding deliberately rather than drifting into.
 
 It builds, it installs, and it starts by itself on all three operating systems. Nothing has been published.
 
-Six commands, written out at the end of `docs/packaging.md`. Scoop first, because it exercises the release
+Six commands, written out at the end of `docs/release/packaging.md`. Scoop first, because it exercises the release
 shape end to end before anything harder depends on it.
 
 **Why it is here rather than higher.** It is the only thing on this list that lets somebody who is not the
@@ -153,7 +153,7 @@ Both open CSS nits are fixed, and one of them generalises into a rule worth enfo
 lightness in a fixed direction is wrong on half of twenty skins.** Anything meaning "more prominent" has to
 move relative to the skin's own text colour rather than toward white.
 
-`docs/css-nits.md` has the design for `scripts/check-contrast.js`: parse every skin out of the stylesheet,
+`docs/ui/css-nits.md` has the design for `scripts/check-contrast.js`: parse every skin out of the stylesheet,
 composite the `rgba` lifts against the surface they actually sit on, and fail below a WCAG floor. It catches
 "invisible" and "far too light", which is the whole nit list so far. It does not catch "ugly".
 
@@ -302,5 +302,5 @@ never `1`.
 one commit, so this is the document everybody has a reason to touch and nobody sees the conflict until merge.
 Adding a dated item is cheap, because it is a new file plus one row in the table. Rewriting a theme is not.
 
-**Finished work leaves, it is not struck through.** `CHANGELOG.md` is what landed and `docs/status.md` is where
+**Finished work leaves, it is not struck through.** `CHANGELOG.md` is what landed and `docs/orchestrator/status.md` is where
 each thing stands.

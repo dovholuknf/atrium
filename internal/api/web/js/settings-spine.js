@@ -834,7 +834,7 @@ async function attachTask(id) {
   // Already in a window of its own. Raise that rather than attaching here.
   //
   // Two views onto one terminal both taking input is the situation
-  // `docs/supervision-design.md` says nothing arbitrates, and popping out
+  // `docs/terminal/supervision-design.md` says nothing arbitrates, and popping out
   // detaches the board's pane for exactly that reason. Attaching again from
   // the switcher would put it straight back, quietly.
   if (poppedOut(id)) {

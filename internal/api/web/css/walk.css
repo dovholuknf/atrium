@@ -1,4 +1,4 @@
-/* The walk drawer (js/walk.js, docs/review-tab-design.md). Colours come from the existing tokens only, so every skin
+/* The walk drawer (js/walk.js, docs/rnd/review-tab-design.md). Colours come from the existing tokens only, so every skin
    wears it with no edit. The four severity properties derive from the channel triples, so a skin that moves
    --warn-rgb moves every MED chip with it. */
   :root {

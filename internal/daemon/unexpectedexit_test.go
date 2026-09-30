@@ -10,7 +10,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
-// The unexpected-exit notice. See docs/unexpected-exit-wake.md.
+// The unexpected-exit notice. See docs/runtime/unexpected-exit-wake.md.
 
 // roomOn opens a room on the database in dir, as a restart would.
 func roomOn(t *testing.T, dir string) *Daemon {

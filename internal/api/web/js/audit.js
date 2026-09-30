@@ -3,7 +3,7 @@
 // It answers "what happened to atrium", which nothing else did: a room
 // attaching, the hub starting, a launch refused by the cap, the board put on a
 // share. Those were scattered across logs and the per-card stream. See
-// docs/audit-design.md.
+// docs/fabric/audit-design.md.
 //
 // HUB-ONLY. `/_hub/audit` is a 404 on a plain daemon, so the tab reveals itself
 // only once the hub probe in rooms.js has found a hub, the same way the room

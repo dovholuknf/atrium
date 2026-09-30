@@ -1,6 +1,6 @@
 # How often an idle Claude session comes back, per idle hour, from Claude Code's own transcripts.
 #
-# The cache keep-alive's stop rule (docs/cache-keepalive-design.md, "The stop rule") rests on this table: a refresh at
+# The cache keep-alive's stop rule (docs/runtime/cache-keepalive-design.md, "The stop rule") rests on this table: a refresh at
 # idle hour t pays while hazard(t) x (W - R) > R. Re-run it as the data grows and compare with the design's table.
 #
 # Reads main-thread assistant replies (subagents excluded) from transcripts written in the last -Days days. An idle

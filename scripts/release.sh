@@ -168,4 +168,4 @@ echo
 echo "in $out"
 echo
 echo "not done here, on purpose: nothing is signed, nothing is published, and"
-echo "no tag was created. see docs/packaging.md for what each ecosystem needs."
+echo "no tag was created. see docs/release/packaging.md for what each ecosystem needs."

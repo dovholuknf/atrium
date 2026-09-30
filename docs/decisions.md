@@ -522,7 +522,7 @@ they come faster than that, keeps quiet periods fresh at no cost and stops a bus
 
 **THE HUB CACHES EXACTLY WHAT THE ROOM ITSELF PERSISTS, AND NEVER WHAT THE ROOM DECLINES TO PERSIST.**
 
-That line comes from a rule atrium already has. `docs/activity-design.md` says what a runner is doing right now
+That line comes from a rule atrium already has. `docs/runtime/activity-design.md` says what a runner is doing right now
 is never written down, because "it would be a lie the moment the daemon restarted". A hub writing it down would
 break that rule at one remove.
 
@@ -706,7 +706,7 @@ it turned out to mean.
 The room list says `sparta attached 1h30m` and not how it got here. It gets a small mark for the transport:
 zrok, OpenZiti, or mTLS.
 
-**A badge and nothing more**, which is what `docs/hub-room-requirements.md` already says: transport is
+**A badge and nothing more**, which is what `docs/fabric/hub-room-requirements.md` already says: transport is
 ancillary noise and must never become a concept in the UI. Worth seeing at a glance, never worth a column.
 
 ### The outcome
@@ -801,7 +801,7 @@ What survives of that sentence is the property it was protecting: **stopping the
 Sessions, terminals and agent processes stay on the rooms. A hub that is down means nothing lands and no new
 base is handed out until it is back, and every running card carries on.
 
-**It also retires "the forum holds nothing" in `docs/federation-design-v2.md`.** That rule was already false once
+**It also retires "the forum holds nothing" in `docs/rnd/federation-design-v2.md`.** That rule was already false once
 decision 11 built `internal/hubstore`, and this makes the hub's store hold more than configuration.
 
 ### What decision 17 still demands of it

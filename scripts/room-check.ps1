@@ -5,7 +5,7 @@
 #   pwsh -File scripts\room-check.ps1 sg3 -Fix
 #   pwsh -File scripts\room-check.ps1 sg3 -Fix -Yes         # clint's alone on a real room
 #
-# It reads the project's atrium.requirements.yaml (docs/room-requirements-design.md), checks what the room has against
+# It reads the project's atrium.requirements.yaml (docs/fabric/room-requirements-design.md), checks what the room has against
 # it, and with -Fix does what a script can do about the rest. The requirements are the design's section 4 table, one
 # `room-check` line each.
 #

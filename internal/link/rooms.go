@@ -14,7 +14,7 @@ import (
 //
 // AGGREGATE. No room is named, so the board is asking about all of them. The
 // hub fans out, merges, and hands back one answer. It has to understand the
-// payloads to do that, which is the thing `docs/federation-design-v2.md` warned
+// payloads to do that, which is the thing `docs/rnd/federation-design-v2.md` warned
 // against, and the operator overrode it deliberately: a hub that cannot show
 // four machines at once is not the thing they asked for.
 //

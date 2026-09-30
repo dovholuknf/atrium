@@ -11,7 +11,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// The hub's half of a message between rooms. See docs/cross-room-say-design.md.
+// The hub's half of a message between rooms. See docs/fabric/cross-room-say-design.md.
 //
 // Everything here goes through the hub's OWN board over loopback, scoped with
 // `X-Atrium-Room` to the target, exactly as a scoped board would. So a target

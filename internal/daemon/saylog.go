@@ -11,7 +11,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
-// A say's lifecycle on record. See docs/say-lifecycle-design.md.
+// A say's lifecycle on record. See docs/runtime/say-lifecycle-design.md.
 //
 // Every write here is best effort and logs its failure: a say is not held back
 // because its own bookkeeping failed.

@@ -14,7 +14,7 @@ import (
 // Atrium owns this and does not fill it. Whoever posts an item did the reading,
 // and atrium never learns what a `source` means: `github`, `zendesk` and `ci`
 // are strings that become a badge. That is the whole reason intake can serve a
-// system nobody has thought of yet. See docs/intake-design.md.
+// system nobody has thought of yet. See docs/runtime/intake-design.md.
 //
 // An offered card sits in `backlog`, which has existed since the first
 // migration and which nothing has ever created a card in. It is not a new
@@ -36,7 +36,7 @@ type IntakeItem struct {
 	// Why is the one line a human reads later.
 	//
 	// For a support case this should be short and say nothing a customer said.
-	// docs/intake-design.md has the rule and the reason: this lands in a
+	// docs/runtime/intake-design.md has the rule and the reason: this lands in a
 	// database with no encryption, behind a board with no login, reachable
 	// from elsewhere the moment a share is up.
 	Why string `json:"why"`

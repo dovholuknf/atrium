@@ -195,7 +195,7 @@ if (soloBus) {
     // It keeps the ledger anyway, and only for the cards that are not its own.
     // The switcher is why: a popped-out window can now move to another card,
     // and moving onto one that already has a window of its own is exactly the
-    // two-views-one-terminal situation `docs/supervision-design.md` says
+    // two-views-one-terminal situation `docs/terminal/supervision-design.md` says
     // nothing arbitrates. `soloSwitch` asks `poppedOut` the same question the
     // board asks, and it can only answer it if somebody wrote the claims down.
     if (termOnly()) {

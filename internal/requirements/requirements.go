@@ -2,7 +2,7 @@
 //
 // The binary is the ONE parser of that file, so the schema has one set of rules
 // and one set of error messages. scripts/room-check.ps1 reads the JSON this
-// prints and never the YAML. See docs/room-requirements-design.md, section 2.
+// prints and never the YAML. See docs/fabric/room-requirements-design.md, section 2.
 //
 // Three refusals do most of the work, because the file is read on machines that
 // are not the one it was written on:

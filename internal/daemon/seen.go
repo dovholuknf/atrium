@@ -8,7 +8,7 @@ import (
 )
 
 // Whether the operator has seen a card's latest turn, and answered what it
-// asked. See docs/seen-design.md.
+// asked. See docs/runtime/seen-design.md.
 //
 // The room decides every way of seeing it can observe for itself: a keystroke
 // over the attach socket, a prompt submitted, a message sent from the board.

@@ -7,7 +7,7 @@ import (
 // TouchHuman stamps the last moment a person did something to a card, and what
 // they did. Not a status change and not an event: it is a fact about the card,
 // read by keep-alive and by idle parking, and a keystroke must not cost a frame.
-// See docs/keepalive-policy-design.md section 1.
+// See docs/rnd/keepalive-policy-design.md section 1.
 func (s *Store) TouchHuman(id, via string, at time.Time) error {
 	return s.guard(func() error {
 		_, err := s.db.Exec(`UPDATE task SET human_at = ?, human_via = ? WHERE id = ?`, ts(at), via, id)

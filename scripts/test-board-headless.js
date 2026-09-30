@@ -66,7 +66,7 @@ const T1 = {
 const T2 = Object.assign({}, T1, { id: "t2", display_title: "second card" });
 // A card whose last turn nobody has seen, ending on two questions nobody has
 // answered. Its own card so the rest of this file's cards stay unmarked. See
-// docs/seen-design.md.
+// docs/runtime/seen-design.md.
 const SEEN = Object.assign({}, T1, {
   id: "seen1", display_title: "unread card",
   seen: { unseen: true, turn_ended_at: "2026-09-23T12:00:00.000Z", answered: false,
@@ -1697,7 +1697,7 @@ async function settingsOnceSection(browser, base) {
 
 // The hub restart gate, the board's half. The hub's events are written onto the
 // open streams the way the hub writes them, and the board's three calls are
-// counted by the mock. See docs/hub-restart-gate.md.
+// counted by the mock. See docs/fabric/hub-restart-gate.md.
 async function restartGateSection(browser, base) {
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
   const gp = await ctx.newPage();
@@ -6176,7 +6176,7 @@ const KA_CARDS = [
 // default for new cards and saves it, a suspension shows with a clear button,
 // each card draws the right chip, the card menu's switch posts to the card, and
 // a break-even stop pushed on the stream lands in the toast log. See
-// js/keepalive.js and docs/cache-keepalive-design.md.
+// js/keepalive.js and docs/runtime/cache-keepalive-design.md.
 async function keepaliveSection(browser, base) {
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
   const kp = await ctx.newPage();
@@ -7281,7 +7281,7 @@ async function looksIdleSection(browser, base) {
 // editor that was open. With three rooms, a start (`POST /v1/launch` with a
 // `task_id`) and a drag into a group (`PATCH /v1/tasks/<id>`) carried it to the
 // wrong room and came back "sql: no rows". See docs/backlog-2.md item 63 and
-// docs/card-room-routing.md. A write that names no card still carries it.
+// docs/fabric/card-room-routing.md. A write that names no card still carries it.
 async function cardRouteSection(browser, base) {
   hubMode = true;
   sggAttached = true;
@@ -8015,7 +8015,7 @@ async function pollsGoneSection(browser, base) {
 //
 // Drives the drawer over a TEMPORARY COPY of two real review folders (the mock above serves the copy, and nothing
 // here writes to the originals, which may have a walker in them). Skipped with a message when they are absent.
-// See js/walk.js and docs/review-tab-design.md.
+// See js/walk.js and docs/rnd/review-tab-design.md.
 const WALK_SAMPLES = [
   { id: "land-walka", dir: "D:/worktrees/claude/reviews/github-openziti-zrok/pr-1277-4f332b8", n: 15 },
   { id: "land-walkb", dir: "D:/worktrees/claude/reviews/github-openziti-ziti/pr-4397-990aa0c", n: 11 }

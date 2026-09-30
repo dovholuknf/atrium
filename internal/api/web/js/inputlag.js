@@ -15,7 +15,7 @@
 // A keystroke is timed from xterm's `onData` to the frame after its echo is
 // parsed. Only the FIRST unanswered keystroke is timed, the same rule the hub
 // and room use, so the three logs describe the same wait. Keys typed while one
-// is pending are counted, not timed. See docs/input-lag-logging.md.
+// is pending are counted, not timed. See docs/terminal/input-lag-logging.md.
 
 const LAG_KEY = "atrium.debug.inputlag";
 // A keystroke slower than this is logged as a warning with the fetch counts,

@@ -20,7 +20,7 @@ import (
 //
 // ONLY `atrium:subagent` CARDS, and only runners in the supervisor's `runners`
 // map. A human's terminal in a scratch directory, a fixture, or a shell is
-// never looked at. See docs/worktree-gone-design.md.
+// never looked at. See docs/runtime/worktree-gone-design.md.
 
 // windDownGrace is how long a runner asked to leave is given, the same as
 // shutdown gives each one.

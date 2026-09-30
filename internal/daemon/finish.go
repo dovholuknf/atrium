@@ -35,7 +35,7 @@ import (
 // door a launched claude session is told to use. It lands in `finish` below,
 // the same function this endpoint does, so the two cannot drift. A report is
 // validated, recorded, and queued to the launcher. See
-// docs/a2a-reliability-design.md.
+// docs/runtime/a2a-reliability-design.md.
 //
 // Same posture as every other agent-facing endpoint. It answers, it never
 // fails a session, and an unknown agent is not an error.

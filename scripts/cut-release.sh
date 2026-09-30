@@ -491,7 +491,7 @@ STILL YOURS, IN ORDER. None of it can be done from here, and each says why.
 
   3. INSTALL A LINUX PACKAGE ON A LINUX MACHINE. Nothing here has ever done it,
      so the postinstall's live path and KillMode=mixed in the unit are unproven.
-     See docs/packaging.md, "what was proved and what was not".
+     See docs/release/packaging.md, "what was proved and what was not".
 
   4. SIGNING. Nothing is signed. macOS will quarantine the darwin archives and
      Chocolatey will not take an unsigned package. Both need a certificate that

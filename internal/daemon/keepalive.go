@@ -21,7 +21,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
-// THE CACHE KEEP-ALIVE. See docs/cache-keepalive-design.md, which is the
+// THE CACHE KEEP-ALIVE. See docs/runtime/cache-keepalive-design.md, which is the
 // argument. This file is the mechanism.
 //
 // An idle Claude card's prompt cache expires an hour after its last request, and
@@ -757,7 +757,7 @@ func forkEffortArgs(h *store.Harness, t *store.Task) ([]string, error) {
 
 // forkCarried are the launch flags that shape the cached request, which is the
 // system prompt and the tool list. Everything else in a card's launch is dropped
-// from a fork on purpose: see docs/keepalive-fork-args-design.md.
+// from a fork on purpose: see docs/runtime/keepalive-fork-args-design.md.
 var forkCarried = map[string]bool{
 	"--append-system-prompt": true, "--system-prompt": true,
 	"--append-system-prompt-file": true, "--system-prompt-file": true,

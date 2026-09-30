@@ -5,7 +5,7 @@ import (
 )
 
 // Who idle parking applies to, and the orchestrator's rule. See
-// docs/keepalive-policy-design.md section 7 and r-007 in docs/backlog-2.md.
+// docs/rnd/keepalive-policy-design.md section 7 and r-007 in docs/backlog-2.md.
 //
 // This is the question only. The reaper tick that asks it, and the clock, are
 // the next stage.
