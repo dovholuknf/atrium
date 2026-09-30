@@ -80,6 +80,21 @@ func (d *Daemon) startFixtures() {
 		if i > 0 {
 			time.Sleep(fixtureGap)
 		}
+		// A CARD SOMEBODY ENDED STAYS ENDED ACROSS A RESTART. An exit is a
+		// human or a launcher saying "this is over", and a fixture bringing it
+		// back at the next boot undid that: on 2026-09-30 the orchestrator
+		// moved to another room, exited this card, and the 11:28 room deploy
+		// started it again as a second copy of the conversation it had moved
+		// to (r-new-reopen-resumes-exited-card). Starting it from the fixtures
+		// page still works: that is somebody asking now.
+		if why := d.fixtureEnded(f); why != "" {
+			log.Printf("[atrium] fixture %q not started: %s", fixtureName(f), why)
+			if err := d.st.NoteFixtureRun(f.ID, why); err != nil {
+				log.Printf("[atrium] could not record why fixture %q did not start: %v", fixtureName(f), err)
+			}
+			d.settle.arrived("fixture:" + f.ID)
+			continue
+		}
 		// Started or failed, this one is no longer something atrium is waiting
 		// to come back. A fixture whose worktree has gone would otherwise hold
 		// the window open to the backstop.
@@ -101,6 +116,19 @@ func (d *Daemon) startFixtures() {
 type FixtureFault struct {
 	Label  string `json:"label"`
 	Reason string `json:"reason"`
+}
+
+// fixtureEnded is why a fixture must not start at boot, or empty. Its card is
+// done: somebody exited it, or its session said the work was over.
+func (d *Daemon) fixtureEnded(f *store.Fixture) string {
+	if f.TaskID == "" {
+		return ""
+	}
+	t, err := d.st.Get(f.TaskID)
+	if err != nil || t.Status != store.StatusDone {
+		return ""
+	}
+	return "its card was ended, so a restart leaves it ended. start it here to bring it back"
 }
 
 // fixtureName is what to call one in a message. The label, or the directory
@@ -232,9 +260,11 @@ func (d *Daemon) fixtureResume(f *store.Fixture, onto string) string {
 		return id
 	}
 
-	// The default, and what `resume` on has always meant to a person.
+	// The default, and what `resume` on has always meant to a person. But not
+	// a conversation another live card is running: the newest in a shared
+	// checkout is often somebody else's.
 	if cwd != "" {
-		if id := api.LatestSession(cwd); id != "" {
+		if id := api.LatestSession(cwd); id != "" && !d.resumeHeld(onto, id) {
 			return id
 		}
 	}
@@ -244,7 +274,31 @@ func (d *Daemon) fixtureResume(f *store.Fixture, onto string) string {
 	if id != "" && cwd != "" && !api.SessionExists(cwd, id) {
 		return ""
 	}
+	if d.resumeHeld(onto, id) {
+		return ""
+	}
 	return id
+}
+
+// resumeHeld is whether a conversation belongs to a live card other than
+// `taskID`. Resuming it would open one conversation in two terminals, both
+// writing to it. Said out loud, because the runner would start fresh without a
+// word and nobody would know why.
+//
+// THIS ROOM ONLY. A card on another room on the same machine can hold it too,
+// and nothing here can see that room's cards. What closes that path is the
+// boot rule above: a fixture whose card was ended is not started.
+func (d *Daemon) resumeHeld(taskID, resumeID string) bool {
+	if resumeID == "" {
+		return false
+	}
+	h, err := d.st.ResumeHolder(resumeID, taskID)
+	if err != nil || h == nil || !d.runnerIsLive(h) {
+		return false
+	}
+	log.Printf("[atrium] not resuming conversation %s onto %s: %s (%s) holds it and is live",
+		resumeID, taskID, h.DisplayTitle(), h.ID)
+	return true
 }
 
 // resumeIDFor is the conversation to pick back up, when there is one.
