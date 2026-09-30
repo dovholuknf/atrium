@@ -150,6 +150,14 @@ func newHook() *cobra.Command {
 		FParseErrWhitelist: cobra.FParseErrWhitelist{UnknownFlags: true},
 		Annotations:        map[string]string{runnerHook: "true"},
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			// The permission gate speaks Claude Code's PreToolUse contract on
+			// stdout, so it is its own path. See hook_permission.go.
+			if strings.EqualFold(strings.TrimSpace(event), permissionEvent) {
+				if out := runPermissionHook(hubURL, readStdin(), runnerPID()); out != nil {
+					fmt.Fprintln(cmd.OutOrStdout(), string(out))
+				}
+				return nil
+			}
 			reportActivity(hubURL, event, name)
 			// Run at a prompt, silence is indistinguishable from a hang. Only
 			// when a human typed it: under Claude Code stdin is always a pipe,
@@ -170,7 +178,7 @@ func newHook() *cobra.Command {
 			return nil
 		},
 	}
-	c.Flags().StringVar(&event, "event", "", "tool-start, tool-end, prompt, subagent-start or subagent-end")
+	c.Flags().StringVar(&event, "event", "", "tool-start, tool-end, prompt, subagent-start, subagent-end or permission")
 	c.Flags().StringVar(&name, "name", "", "what this session calls itself (default: the directory name)")
 	c.Flags().StringVar(&hubURL, "url", "", "atrium agent address (default: $ATRIUM_HUB_URL or localhost:7777)")
 	// Every command a Named target writes carries this. Without it here,
