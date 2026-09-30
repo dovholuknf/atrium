@@ -7260,3 +7260,144 @@ PASS.
 **Expected:** step 1 answers `"source":"transcript"` with the last two replies, oldest first, text only (no tool calls,
 no thinking). Step 2 answers only the new conversation's reply. Step 3 answers `"source":"screen"` with the screen's
 text as one reply. An unknown id answers 404.
+
+## FX. room-check.ps1
+
+### FX1. Read-only against a healthy room
+
+1. Run `pwsh -File scripts/room-check.ps1 <room> -NoSmoke`.
+2. Expect one `room-check <requirement> <status> <detail>` line per row, ending `room-check done ok` or
+   `room-check done fail <code>`. Rows that wait on unbuilt work are `skip` and say what for.
+3. Nothing changed: `git status` in the room's clone, the settings.json and the runner rows are as before.
+
+### FX2. A stale hub-main and a bad gitfile
+
+1. With `hub-main` behind `claude/main`, expect `hub-main fail` naming `room-git.ps1 push-base`, exit 3.
+2. On a room with `/cygdrive/...` worktrees, expect `worktrees fail` and, with `-Fix`, `done` after
+   `git worktree repair` and `prune` with the toolchain's git.
+3. Rerun without `-Fix`: exit 0 for those rows.
+
+### FX3. Account scope and restart need -Yes
+
+1. On a room whose hooks are not wired, `-Fix` alone prints `hooks fail` with the change and backup path and
+   installs nothing. `-Fix -Yes` (clint's alone on a real room) installs them.
+2. A toolchain fix that changes the record prints `restart warn` and exits 5 unless `-Fix -Yes` restarts the room.
+
+### FX4. Smoke and the unreachable
+
+1. Without `-NoSmoke` a claude card runs on the room, reports and exits: `smoke.claude ok`.
+2. An unreachable target exits 2. A bad requirements file exits 1 with the parser's message.
+
+## FY. Smoke per runner
+
+### FY1. Both runners pass on a signed-in room
+`provision-room.ps1 <room> -Runners claude,codex -SmokeOnly -SmokeCwd <clone>`. Expect `smoke:claude ok` and
+`smoke:codex ok`, exit 0, and no smoke card left running on the room.
+
+### FY2. Choosing runners
+Add `-SmokeRunners codex`. Only `smoke:codex` appears. A runner named there but not in `-Runners` or `-Install` is
+`skip ... is not a runner for this room`.
+
+### FY3. No codex
+On a room without codex, `smoke:codex skip codex is not on PATH on <room>`, exit 0.
+
+### FY4. Not signed in
+With codex installed and signed out, `smoke:codex warn` naming `ssh -t <host> codex login --device-auth`, exit 0.
+
+### FY5. A runner with no case
+`-Install ollama` gives `smoke:ollama skip no smoke case`.
+
+### FY6. Rerun
+Run twice in a row. Both pass: each card's title carries its nonce, so the second run does not meet the first's card.
+
+## FZ. The hub's notify command
+
+### FZ1. Set it, test it
+
+1. `PUT /_hub/notify` with `{"enabled":true,"command":["<a program that appends its env to a file>"]}`. Expect 200 and
+   `enabled: true`. A command that does not resolve, an empty array or a non-array answers 400.
+2. `GET /_hub/notify` carries `enabled, command, last_run_at, last_ok_at, last_error, failures, disabled_reason, sent,
+   dropped, suppressed, visible_tabs`.
+3. `POST /_hub/notify/test`. Expect `ok true`, `exit_code 0`, and the file gaining one line with
+   `ATRIUM_NOTIFY_REASON=test`. It runs even with a desktop board tab open.
+
+### FZ2. What the command is given
+
+1. The command sees `ATRIUM_NOTIFY_NAME`, `_REASON`, `_CARD` (`room~id`) and `_ROOM`, and the same four as one JSON
+   line on stdin. Its argv is exactly what you set.
+2. Give a card a title with quotes, `$(x)` and a semicolon. It arrives intact in the env and stdin and nowhere else.
+
+### FZ3. No flood
+
+1. Leave a card waiting on a permission, then turn notify on. Nothing runs: turning it on stores what is already
+   waiting.
+2. Restart the hub with it on. Nothing runs for cards whose state did not change.
+
+### FZ4. Presence
+
+1. Open the desktop board (visible), then make a card ask a question. `GET /_hub/notify` shows `suppressed: true`
+   and `visible_tabs: 1`, and the command does not run.
+2. Close the tab. `visible_tabs` returns to 0 with no further call. A crashed tab or a sleeping laptop does the same
+   once its event stream ends, and a tab the hub cannot tie to a stream expires ten minutes after its last visible.
+
+### FZ5. Failure
+
+1. Point the command at a program that exits 1 with a line on stderr. After three notifications `enabled` is false,
+   `disabled_reason` names the stderr line, and it is still there after a hub restart.
+2. `PUT` it enabled again. The reason and the count clear.
+
+### FZ6. Live, after deploy
+
+1. Set a command that appends a line to a file. Close or minimise the desktop board.
+2. Make a card ask a question (`atrium_ask` or an open question on a test card). Expect exactly one line in the file
+   within a few seconds.
+3. Let the room republish (touch another card). Expect no second line for that card.
+4. Answer the question and ask another. Expect one more line.
+
+## GA. A conversation id stays on the card it belongs to
+
+### GA1. A live holder keeps it
+
+1. Have two cards in one checkout, one running with a live session holding a conversation.
+2. Start a session on the other card with `launch --resume` onto that same conversation.
+
+**Expected:** the running card keeps its conversation. Both cards show a note saying which card holds it and why the
+claim was refused.
+
+### GA2. A card with no live session gives it up
+
+1. Finish a card that holds a conversation, so it is done.
+2. Resume that conversation onto another card.
+
+**Expected:** the conversation moves. The old card no longer shows a resume id and both cards note the move.
+
+### GA3. A nested claude changes nothing
+
+1. In a running agent's shell, run `claude -p "hi"`.
+2. Look at the agent's card.
+
+**Expected:** its resume id is the same as before, and it did not move columns because of the nested session.
+
+### GA4. A directory name never reaches a done card
+
+1. Leave a done card whose name is the checkout's directory name.
+2. From a plain terminal in that directory, with no `ATRIUM_AGENT_NAME`, start a claude session.
+
+**Expected:** the done card is not revived and gains no resume id.
+
+## GB. The permission gate subcommand
+
+### GB1. Allow, deny and edit
+
+1. On a joined session, pipe a PreToolUse payload for a Bash call into `atrium hook --event permission`.
+2. Approve it on the board, then repeat and deny it with a reason, then repeat and edit the command before approving.
+
+**Expected:** stdout is a `hookSpecificOutput` with `permissionDecision` allow, then deny with the reason, then allow
+with `updatedInput` holding the edited command.
+
+### GB2. Fail open
+
+1. Stop the daemon, or set `ATRIUM_PERM_GATE=off`, and run the same command.
+2. Run it again with a tool named Read.
+
+**Expected:** no output and exit code 0 each time, and no card appears for the Read.
