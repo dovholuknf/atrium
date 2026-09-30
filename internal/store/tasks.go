@@ -862,7 +862,21 @@ func (s *Store) ClaimResumeID(id, resumeID string, byID bool, live func(*Task) b
 	}
 	err := s.guard(func() error {
 		out = ResumeClaim{}
-		rows, err := s.db.Query(`SELECT id FROM task WHERE resume_id = ? AND id != ?`, resumeID, id)
+		tx, err := s.db.Begin()
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback()
+		// A claimant that is not there stores nothing and, above all, clears
+		// nothing: moving the id onto a card that does not exist loses it.
+		var one int
+		if err := tx.QueryRow(`SELECT 1 FROM task WHERE id = ?`, id).Scan(&one); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return nil
+			}
+			return err
+		}
+		rows, err := tx.Query(`SELECT id FROM task WHERE resume_id = ? AND id != ?`, resumeID, id)
 		if err != nil {
 			return err
 		}
@@ -878,7 +892,7 @@ func (s *Store) ClaimResumeID(id, resumeID string, byID bool, live func(*Task) b
 		rows.Close()
 		var holders []*Task
 		for _, h := range ids {
-			t, err := s.getBy(`id = ?`, h)
+			t, err := getByOn(tx, `id = ?`, h)
 			if err != nil {
 				return err
 			}
@@ -890,13 +904,18 @@ func (s *Store) ClaimResumeID(id, resumeID string, byID bool, live func(*Task) b
 				return nil
 			}
 		}
+		// One holder per conversation: every other holder is cleared and this
+		// card set in one transaction, so a retry sees all of it or none.
 		for _, h := range holders {
-			if _, err := s.db.Exec(`UPDATE task SET resume_id = '' WHERE id = ?`, h.ID); err != nil {
+			if _, err := tx.Exec(`UPDATE task SET resume_id = '' WHERE id = ?`, h.ID); err != nil {
 				return err
 			}
 			out.Moved = append(out.Moved, h)
 		}
-		if _, err := s.db.Exec(`UPDATE task SET resume_id = ? WHERE id = ?`, resumeID, id); err != nil {
+		if _, err := tx.Exec(`UPDATE task SET resume_id = ? WHERE id = ?`, resumeID, id); err != nil {
+			return err
+		}
+		if err := tx.Commit(); err != nil {
 			return err
 		}
 		out.Stored = true
