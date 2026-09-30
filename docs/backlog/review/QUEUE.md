@@ -35,8 +35,6 @@ the meantime.
 
 ## Waiting
 
-- @runtime's fix for the medium in `docs/backlog/runtime/r-new-review-a92bb5f7.md`: R1 never reaches a supervised
-  runner with mid-turn input off.
 - M3 of `docs/rnd/machine-health-design.md` (the profiler agent's rules) before it ships, when it is built.
 
 ## Open lows, for when a fix names them
