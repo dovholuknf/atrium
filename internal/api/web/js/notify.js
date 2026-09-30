@@ -386,10 +386,12 @@ function paintNotifyOff() {
   if (bell) {
     const g = bell.querySelector(".glyph");
     if (g) g.textContent = off ? "\u{1F515}" : "\u{1F514}";
-    const tip = off ? "notifications are off. click to see what arrived" : "what the board has told you";
+    const tip = (off ? "notifications are off. click to see what arrived" : "what the board has told you") +
+      (typeof phoneBellAutoNote === "function" ? phoneBellAutoNote() : "");
     bell.dataset.tip = tip;
     bell.setAttribute("aria-label", tip);
     bell.classList.toggle("off", off);
+    if (typeof phoneBellPaint === "function") phoneBellPaint();
   }
   const t = document.getElementById("toastlog-toggle");
   if (t) {
