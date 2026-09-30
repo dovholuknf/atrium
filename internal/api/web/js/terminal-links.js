@@ -1007,6 +1007,7 @@ function connectTerm(taskID) {
     // on the next line scrolls a buffer that has not grown yet, which is the
     // same off-by-one-echo mistake `sendInput` was making on its own.
     noteScrollAct("output");
+    feedReadyQuiet();
     traceOut(e.data);
     // Output is binary, so text is the daemon. See `takeTermCaps`.
     if (typeof e.data === "string") {

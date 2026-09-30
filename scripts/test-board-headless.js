@@ -11205,6 +11205,159 @@ async function roomsMachineSection(browser, base) {
   }
 }
 
+// ── a ready alert rings once per wait, and only after the card went quiet ────
+// The alert rang 17 times for one card. `check` diffed on id membership, so a card out of the set for
+// one pass came back fresh. Keyed on bare id plus waiting_since now, held for quiet first. The quiet is
+// shortened through window.__atriumReadyQuietMs so the test does not sit through five real seconds.
+async function readyOnceSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const page = await ctx.newPage();
+  const errors = [];
+  page.on("pageerror", e => errors.push(String(e)));
+  await page.addInitScript(() => {
+    window.__atriumReadyQuietMs = 600;
+    Document.prototype.hasFocus = () => true;
+  });
+  try {
+    await page.goto(base, { waitUntil: "domcontentloaded" });
+    await page.waitForFunction(() => typeof alerting !== "undefined", null, { timeout: slow(15000) });
+    await page.waitForTimeout(1500);
+    const got = await page.evaluate(async () => {
+      localStorage.removeItem("atrium.toastlog");
+      alerting.set({ debounce: 0, muted: true });
+      const sleep = ms => new Promise(r => setTimeout(r, ms));
+      const w = (id, since) => ({ id, task_id: id, status: "needs-input", waiting_since: since });
+      const say = t => ({ title: t.id + " ready", body: "done" });
+      const check = items => alerting.check("waiting", items, say);
+      const rings = title => toastLog().filter(e => e.title === title).reduce((n, e) => n + (e.n || 1), 0);
+      const out = {};
+      check([]);
+      // Leaves the set and comes back with the same wait.
+      check([w("ro-a", "S1")]);
+      out.heldAtOnce = rings("ro-a ready");
+      await sleep(900);
+      out.first = rings("ro-a ready");
+      check([]);
+      check([w("ro-a", "S1")]);
+      await sleep(900);
+      out.sameWait = rings("ro-a ready");
+      // A new wait.
+      check([]);
+      check([w("ro-a", "S2")]);
+      await sleep(900);
+      out.newWait = rings("ro-a ready");
+      // A wait that ends inside the quiet.
+      check([]);
+      check([w("ro-b", "S1")]);
+      await sleep(200);
+      check([]);
+      await sleep(900);
+      out.ended = rings("ro-b ready");
+      // Activity inside the quiet pushes the ring out.
+      check([w("ro-c", "S1")]);
+      await sleep(350);
+      alerting.activity("ro-c");
+      await sleep(400);
+      out.busy = rings("ro-c ready");
+      await sleep(500);
+      out.settled = rings("ro-c ready");
+      // Two quiet waits are one alert.
+      check([]);
+      check([w("ro-d", "S1"), w("ro-e", "S1")]);
+      await sleep(900);
+      out.pile = rings("2 agents are ready");
+      out.single = rings("ro-d ready") + rings("ro-e ready");
+      return out;
+    });
+    if (got.heldAtOnce !== 0) fail("readyOnce: a fresh wait rang at once: " + JSON.stringify(got));
+    if (got.first !== 1) fail("readyOnce: a quiet wait did not ring exactly once: " + JSON.stringify(got));
+    if (got.sameWait !== 1) fail("readyOnce: the same wait rang again after leaving and returning: " + JSON.stringify(got));
+    if (got.newWait !== 2) fail("readyOnce: a new waiting_since did not ring: " + JSON.stringify(got));
+    if (got.ended !== 0) fail("readyOnce: a wait that ended inside the quiet rang: " + JSON.stringify(got));
+    if (got.busy !== 0) fail("readyOnce: a wait with activity inside the quiet rang early: " + JSON.stringify(got));
+    if (got.settled !== 1) fail("readyOnce: a wait did not ring after the activity went quiet: " + JSON.stringify(got));
+    if (got.pile !== 1 || got.single !== 0) fail("readyOnce: two quiet waits were not one alert: " + JSON.stringify(got));
+    if (errors.length) fail("readyOnce: the page threw: " + errors.join(" | "));
+  } finally {
+    await ctx.close();
+  }
+}
+
+// ── a window reading a card's terminal says nothing about its ready, and its quiet is pty quiet ──────────
+// A focused pop-out (or the board with the terminal attached and showing) gets no toast for its own card's
+// ready, only the log line. An unfocused one rings. Output inside the quiet delays it.
+async function readyPopoutSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const page = await ctx.newPage();
+  const errors = [];
+  page.on("pageerror", e => errors.push(String(e)));
+  await page.addInitScript(() => {
+    window.__atriumReadyQuietMs = 600;
+    window.__focus = true;
+    Document.prototype.hasFocus = () => window.__focus;
+  });
+  try {
+    await page.goto(base, { waitUntil: "domcontentloaded" });
+    await page.waitForFunction(() => typeof alerting !== "undefined" && typeof soloAlert === "function", null,
+      { timeout: slow(15000) });
+    await page.waitForTimeout(1500);
+    const got = await page.evaluate(async () => {
+      localStorage.removeItem("atrium.toastlog");
+      alerting.set({ debounce: 0, muted: true });
+      const sleep = ms => new Promise(r => setTimeout(r, ms));
+      const shown = t => [...document.querySelectorAll("#toasts .toast")].some(e => e.textContent.includes(t));
+      const logged = t => toastLog().some(e => e.title === t);
+      const out = {};
+      // A pop-out: its hash names the card, and it holds that terminal.
+      const popout = async (name, focus, activityAt) => {
+        window.__focus = focus;
+        soloID = name;
+        soloTask = { id: name, display_title: name };
+        soloKnown = { perm: null, ready: false };
+        term = {};
+        termTask = { id: name };
+        history.replaceState(null, "", "#term=" + name);
+        soloAlert("ready", true, { id: name, waiting_since: "W-" + name });
+        if (activityAt) { await sleep(activityAt); readyQuietFedAt = 0; feedReadyQuiet(); out[name + "Early"] = shown(name + " is ready"); await sleep(400); out[name + "Mid"] = shown(name + " is ready"); await sleep(500); }
+        else await sleep(900);
+        out[name] = shown(name + " is ready");
+        out[name + "Log"] = logged(name + " is ready");
+      };
+      await popout("pfocus", true, 0);
+      await popout("pblur", false, 0);
+      await popout("pbusy", false, 350);
+      // The board, with the card's terminal attached and on screen.
+      history.replaceState(null, "", "#");
+      document.getElementById("terms").hidden = false;
+      const w = id => ({ id, task_id: id, status: "needs-input", waiting_since: "S1" });
+      const say = t => ({ title: t.id + " ready", body: "done" });
+      termTask = { id: "bfocus" };
+      window.__focus = true;
+      alerting.check("waiting", [], say);
+      alerting.check("waiting", [w("bfocus")], say);
+      await sleep(900);
+      out.board = shown("bfocus ready");
+      out.boardLog = logged("bfocus ready");
+      termTask = { id: "bother" };
+      alerting.check("waiting", [], say);
+      alerting.check("waiting", [w("bfocus2")], say);
+      await sleep(900);
+      out.boardOther = shown("bfocus2 ready");
+      return out;
+    });
+    const j = JSON.stringify(got);
+    if (got.pfocus || !got.pfocusLog) fail("readyPopout: a focused pop-out toasted its own card or left no log line: " + j);
+    if (!got.pblur || !got.pblurLog) fail("readyPopout: an unfocused pop-out did not ring for its card: " + j);
+    if (got.pbusyEarly || got.pbusyMid) fail("readyPopout: pty output inside the quiet did not delay the ring: " + j);
+    if (!got.pbusy) fail("readyPopout: the ring never came after the output went quiet: " + j);
+    if (got.board || !got.boardLog) fail("readyPopout: the focused board toasted the card it shows: " + j);
+    if (!got.boardOther) fail("readyPopout: the board went quiet for a card it is not showing: " + j);
+    if (errors.length) fail("readyPopout: the page threw: " + errors.join(" | "));
+  } finally {
+    await ctx.close();
+  }
+}
+
 async function main() {
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = "http://127.0.0.1:" + server.address().port;
@@ -11227,7 +11380,7 @@ async function main() {
       usageCacheReads: usageCacheReadsSection, roomsDash: roomsDashSection, phoneView: phoneViewSection, heldLine: heldLineSection, u016: u016Section, phoneHeader: phoneHeaderSection, phoneFocus: phoneFocusSection, phoneTermBar: phoneTermBarSection, phoneShare: phoneShareSection, phonePan: phonePanSection, phoneFollow: phoneFollowSection, phoneTap: phoneTapSection, phoneKeyboard: phoneKeyboardSection, phoneCompose: phoneComposeSection, mCompose: mComposeSection, mPerms: mPermsSection, usagePolish: usagePolishSection, usageLimits: usageLimitsSection, usageGroups: usageGroupsSection,
       eventDriven: eventDrivenSection, idleBudget: idleBudgetSection, pollsGone: pollsGoneSection,
       phoneListFit: phoneListFitSection, phoneNudge: phoneNudgeSection,
-      cacheChip: cacheChipSection, cacheLine: cacheLineSection, mHome: mHomeSection, mCard: mCardSection, mServe: mServeSection, phoneKeyLabel: phoneKeyLabelSection, phoneKeyLit: phoneKeyLitSection, shiftMenu: shiftMenuSection, notifyCommand: notifyCommandSection, presence: presenceSection, tallPty: tallPtySection, roomsMachine: roomsMachineSection };
+      cacheChip: cacheChipSection, cacheLine: cacheLineSection, mHome: mHomeSection, mCard: mCardSection, mServe: mServeSection, phoneKeyLabel: phoneKeyLabelSection, phoneKeyLit: phoneKeyLitSection, shiftMenu: shiftMenuSection, notifyCommand: notifyCommandSection, presence: presenceSection, tallPty: tallPtySection, roomsMachine: roomsMachineSection, readyOnce: readyOnceSection, readyPopout: readyPopoutSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -13217,6 +13370,8 @@ async function main() {
     await phoneNudgeSection(browser, base);
     await cacheChipSection(browser, base);
     await cacheLineSection(browser, base);
+    await readyOnceSection(browser, base);
+    await readyPopoutSection(browser, base);
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e));
     if (process.env.DEBUG_HEADLESS) {
