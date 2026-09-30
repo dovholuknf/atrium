@@ -519,11 +519,11 @@ const server = http.createServer((req, res) => {
   }
   // The xterm bundle off disk, so a real terminal is built. Confined to
   // /vendor/ under the web root.
-  if (url.startsWith("/vendor/") && !url.includes("..")) {
+  if ((url.startsWith("/vendor/") || url.startsWith("/m/")) && !url.includes("..")) {
     const file = path.join(WEB_ROOT, url);
     fs.readFile(file, (err, body) => {
       if (err) { res.writeHead(404); res.end(""); return; }
-      const type = url.endsWith(".css") ? "text/css" : "application/javascript";
+      const type = url.endsWith(".css") ? "text/css" : "application/javascript"; // /m/ is the phone page's composer files
       res.writeHead(200, { "Content-Type": type });
       res.end(body);
     });
@@ -597,7 +597,7 @@ const server = http.createServer((req, res) => {
     // Ahead of the solo modes, which an earlier section can leave set: the
     // group sections read this card's tags for its menu.
     if (id === "filed1") { sendJSON(res, FILED); return; }
-    if (id.startsWith("land-") && !id.includes("/")) {
+    if ((id.startsWith("land-") || id.startsWith("cc-")) && !id.includes("/")) {
       if (LAND[id]) { sendJSON(res, LAND[id]); return; }
       res.writeHead(404, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ error: "no such card" }));
@@ -4816,13 +4816,22 @@ async function heldLineSection(browser, base) {
       const g0 = await grid();
       await setAct(p, { held_peer: true, held_for: "line", held_count: 2 });
       s = await state(p);
-      if (s.hidden || !/2 messages waiting, clear the line/.test(s.text)) fail(tag + "not shown for a line hold: " + JSON.stringify(s));
+      // u-026: a phone draws no notice box, the envelope on the bell carries the count and nudges
+      const mail = () => p.evaluate(() => {
+        const m = document.querySelector("#toastlog-open .hmsg");
+        return { hidden: m.hidden, n: m.querySelector(".pb-n").textContent, nudges: Number(m.dataset.nudges || 0) };
+      });
+      if (phone) {
+        const m = await mail();
+        if (!s.hidden || m.hidden || m.n !== "2" || m.nudges < 1) fail(tag + "the envelope did not take over from the box: " + JSON.stringify([s, m]));
+      } else if (s.hidden || !/2 messages waiting, clear the line/.test(s.text)) fail(tag + "not shown for a line hold: " + JSON.stringify(s));
       if (s.active !== before) fail(tag + "appearing moved focus: " + before + " -> " + s.active);
       const g1 = await grid();
       if (g0.c !== g1.c || g0.r !== g1.r) fail(tag + "the grid changed");
       await setAct(p, { held_peer: true, held_for: "line", held_count: 1 });
       s = await state(p);
-      if (!/1 message waiting/.test(s.text)) fail(tag + "singular wording: " + s.text);
+      if (phone) { if ((await mail()).n !== "1") fail(tag + "the envelope count did not follow"); }
+      else if (!/1 message waiting/.test(s.text)) fail(tag + "singular wording: " + s.text);
       // clear of a follow chip parked bottom right, and above the phone key bar
       const ov = await p.evaluate(() => {
         const pane = document.getElementById("term-pane");
@@ -4837,12 +4846,13 @@ async function heldLineSection(browser, base) {
         return { overlap: !(a.right <= b.left || a.left >= b.right || a.bottom <= b.top || a.top >= b.bottom),
           aboveKeys: !kv || a.bottom <= keys.top, keysShown: kv };
       });
-      if (ov.overlap) fail(tag + "overlaps the follow chip");
-      if (!ov.aboveKeys) fail(tag + "not above the key bar");
+      if (!phone && ov.overlap) fail(tag + "overlaps the follow chip");
+      if (!phone && !ov.aboveKeys) fail(tag + "not above the key bar");
       if (phone && !ov.keysShown) fail(tag + "key bar not showing");
       await setAct(p, null);
       s = await state(p);
       if (!s.hidden) fail(tag + "still shown after delivery");
+      if (phone && !(await mail()).hidden) fail(tag + "the envelope stays after delivery");
       await setAct(p, { held_peer: true, held_for: "turn", held_count: 3 });
       s = await state(p);
       if (!s.hidden) fail(tag + "shown for a turn hold");
@@ -5263,9 +5273,12 @@ async function phoneHeaderSection(browser, base) {
     // 2. auto mode on shows in the slim row
     if (await vis(p, "#gauto")) fail("phoneHeader: the auto marker shows while asking");
     await p.evaluate(() => { globalAuto = true; globalAutoStale = false; globalAutoRead = true; paintGlobalAuto(); });
-    if (!(await vis(p, "#gauto"))) fail("phoneHeader: auto mode on is hidden in the slim row");
-    if (await p.evaluate(() => getComputedStyle(document.getElementById("gauto"), "::after").content) !== '"AUTO"')
-      fail("phoneHeader: the slim auto marker does not say AUTO");
+    // u-026: auto mode is a dot on the bell now, with the words on the bell's label, not a chip that eats tab room.
+    if (await vis(p, "#gauto")) fail("phoneHeader: the AUTO chip still shows in the slim row");
+    if (await p.evaluate(() => getComputedStyle(document.getElementById("toastlog-open"), "::before").display) !== "block")
+      fail("phoneHeader: auto mode on has no dot on the bell");
+    if (!/auto mode is on/.test(await p.getAttribute("#toastlog-open", "aria-label")))
+      fail("phoneHeader: the bell's label does not say auto mode is on");
     if (shots) await p.screenshot({ path: path.join(shots, "collapsed-auto-412x915.png") });
     // 3. tap opens, tap closes, survives a reload
     await p.locator("#hdr-toggle").tap();
@@ -5320,6 +5333,192 @@ async function phoneHeaderSection(browser, base) {
 // scroll a focused element into view the way iOS does, so the scroll is simulated (`browserFocusScroll`)
 // on focus and on every viewport change. Portrait and landscape, a keyboard-sized height, output for 2s.
 // ── u-020: the terminal bar on a phone is one slim row, collapsed by default ──
+// u-023: on a phone, collapsed, the terminal output gets at least 75% of the screen height. Measured as the visible
+// part of xterm's screen element over the visual viewport height, on the terminals tab and in the pop-out.
+async function phoneShareSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  landCard("land-two", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  landList = [LAND["land-live"], LAND["land-two"]];
+  landPerms = [];
+  const errors = [];
+  const shots = process.env.PHONE_SHARE_SHOTS || "";
+  const fakeSock = () => {
+    const Real = window.WebSocket;
+    window.__sent = [];
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
+        onopen: null, onclose: null, onmessage: null, onerror: null,
+        send(d) { window.__sent.push(String(d)); }, close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  };
+  const share = (p) => p.evaluate(() => {
+    const sc = document.querySelector("#t-screen .xterm-screen");
+    const host = document.getElementById("t-screen");
+    const vv = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+    if (!sc || !host) return { share: 0, h: 0, vv };
+    const a = sc.getBoundingClientRect(), b = host.getBoundingClientRect();
+    const top = Math.max(a.top, b.top, 0), bot = Math.min(a.bottom, b.bottom, vv);
+    const h = Math.max(0, bot - top);
+    return { share: h / vv, h, vv };
+  });
+  const fill = (p) => p.evaluate(() => { for (let i = 1; i <= 6; i++) term.write("line " + i + " of the fixture output\r\n"); });
+  const check = async (p, tag) => {
+    await p.waitForTimeout(400);
+    const r = await share(p);
+    console.log("phoneShare " + tag + ": output is " + (r.share * 100).toFixed(1) + "% of the viewport (" + Math.round(r.h) + " of " + Math.round(r.vv) + "px)");
+    if (r.share < 0.75) fail("phoneShare " + tag + ": the output is " + (r.share * 100).toFixed(1) + "% of the viewport, under 75%");
+  };
+  const vis = (p, sel) => p.evaluate(s => { const e = document.querySelector(s); if (!e) return false;
+    const r = e.getBoundingClientRect(); const cs = getComputedStyle(e);
+    return cs.display !== "none" && cs.visibility !== "hidden" && r.width > 0 && r.height > 0; }, sel);
+  try {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+    await ctx.addInitScript(() => {
+      localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true }));
+      localStorage.setItem("atrium.termphone", "1");
+    });
+    await ctx.addInitScript(fakeSock);
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await p.evaluate(() => attachTask("land-live"));
+    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live",
+      null, { timeout: slow(10000) });
+    await fill(p);
+    await check(p, "terminals");
+    if (shots) await p.screenshot({ path: shots + "-terminals-390x844.png" });
+    if (!process.env.PHONE_SHARE_MEASURE_ONLY) {
+      const rect = (q, sel) => q.evaluate(s => { const r = document.querySelector(s).getBoundingClientRect(); return { t: r.top, b: r.bottom, l: r.left, r: r.right, w: r.width, h: r.height }; }, sel);
+      const grid = (q) => q.evaluate(() => ({ cols: term.cols, rows: term.rows }));
+      const barShown = (q) => q.evaluate(() => { const e = document.querySelector(".term-bar"); return getComputedStyle(e).visibility !== "hidden" && e.getBoundingClientRect().bottom > 0; });
+      // the tray is hidden: zero height, the terminal starts at the pane's top edge
+      if (await barShown(p)) fail("phoneShare: the tray shows by default");
+      let pane = await rect(p, "#term-pane"), scr = await rect(p, "#t-screen");
+      if (scr.t - pane.t > 2) fail("phoneShare: something sits above the terminal while the tray is hidden: " + JSON.stringify([pane, scr]));
+      if (await vis(p, ".termdrop")) fail("phoneShare: a separate card picker row shows");
+      const hd = await p.evaluate(() => { const e = document.getElementById("t-tray-handle"); const r = e.getBoundingClientRect();
+        return { w: r.width, h: r.height, grip: parseFloat(getComputedStyle(e, "::after").height), right: window.innerWidth - r.right }; });
+      if (hd.w < 44 || hd.h < 44 || hd.grip > 6 || hd.right < 44) fail("phoneShare: the handle is not a tiny grip in a 44px area clear of the top right: " + JSON.stringify(hd));
+      // nothing but the key bar sits below the terminal
+      const below = await p.evaluate(() => { const scr = document.getElementById("t-screen").getBoundingClientRect(), out = [];
+        for (const e of document.querySelectorAll("#term-pane *")) {
+          if (e.contains(document.getElementById("t-keys")) || e.closest("#t-keys") || e.id === "t-keys" || e.closest("#t-compose") || e.id === "t-compose") continue;
+          const r = e.getBoundingClientRect(), cs = getComputedStyle(e);
+          if (r.width > 0 && r.height > 0 && r.top >= scr.bottom - 1 && cs.display !== "none" && cs.visibility !== "hidden" && !e.closest("[hidden]")) out.push(e.id || e.className || e.tagName);
+        } return out; });
+      if (below.length) fail("phoneShare: something other than the key bar is below the terminal: " + below.join(","));
+      const g0 = await grid(p);
+      // open it: it overlays, so the terminal does not move or change its grid
+      await p.tap("#t-tray-handle");
+      await p.waitForTimeout(350);
+      if (!(await barShown(p))) fail("phoneShare: a tap on the handle did not open the tray");
+      const scr2 = await rect(p, "#t-screen"), g1 = await grid(p);
+      if (scr2.t !== scr.t || scr2.h !== scr.h || g1.cols !== g0.cols || g1.rows !== g0.rows) fail("phoneShare: opening the tray moved or resized the terminal: " + JSON.stringify([scr, scr2, g0, g1]));
+      if ((await p.evaluate(() => document.getElementById("t-view").parentElement.className)) !== "term-bar") fail("phoneShare: fit this screen is not in the tray");
+      if (!(await vis(p, "#t-view-btn"))) fail("phoneShare: fit this screen is not reachable in the tray");
+      if (!(await p.evaluate(() => document.getElementById("t-view-btn").dataset.tip))) fail("phoneShare: fit this screen lost its tooltip");
+      if (shots) await p.screenshot({ path: shots + "-terminals-tray-390x844.png" });
+      // the picker is in the tray: a real 44px control that opens the card list under it
+      const pk = await rect(p, "#t-pick");
+      if (pk.w < 44 || pk.h < 44) fail("phoneShare: the picker is under 44px: " + JSON.stringify(pk));
+      await p.tap("#t-pick");
+      await p.waitForTimeout(250);
+      if (!(await p.evaluate(() => document.getElementById("term-layout").classList.contains("tl-open")))) fail("phoneShare: the picker did not open the card list");
+      if (!(await barShown(p))) fail("phoneShare: opening the picker closed the tray");
+      const lt = await p.evaluate(() => document.querySelector("#term-layout .termbody").getBoundingClientRect().top);
+      const bb = await rect(p, ".term-bar");
+      if (lt < bb.b - 2) fail("phoneShare: the card list opens over the tray: " + JSON.stringify([lt, bb]));
+      await p.tap("#t-pick");
+      await p.waitForTimeout(350);
+      if (await p.evaluate(() => document.getElementById("term-layout").classList.contains("tl-open"))) fail("phoneShare: a second tap on the picker did not close the list");
+      if (await barShown(p)) fail("phoneShare: the tray stayed open after the picker closed");
+      // a swipe up closes it (touch events)
+      const swipe = (q, dy) => q.evaluate((dy) => { const bar = document.querySelector(".term-bar"), r = bar.getBoundingClientRect();
+        const mk = (y) => new Touch({ identifier: 1, target: bar, clientX: r.left + 100, clientY: y });
+        const y0 = r.top + r.height / 2;
+        bar.dispatchEvent(new TouchEvent("touchstart", { bubbles: true, cancelable: true, touches: [mk(y0)], targetTouches: [mk(y0)], changedTouches: [mk(y0)] }));
+        bar.dispatchEvent(new TouchEvent("touchend", { bubbles: true, cancelable: true, touches: [], targetTouches: [], changedTouches: [mk(y0 + dy)] })); }, dy);
+      await p.tap("#t-tray-handle");
+      await p.waitForTimeout(300);
+      await swipe(p, 8);
+      await p.waitForTimeout(300);
+      if (!(await barShown(p))) fail("phoneShare: a small drag closed the tray");
+      await swipe(p, -60);
+      await p.waitForTimeout(350);
+      if (await barShown(p)) fail("phoneShare: a swipe up did not close the tray");
+      // a pull down on the handle opens it
+      await p.evaluate(() => { const h = document.getElementById("t-tray-handle"), r = h.getBoundingClientRect();
+        const mk = (y) => new Touch({ identifier: 2, target: h, clientX: r.left + 40, clientY: y });
+        h.dispatchEvent(new TouchEvent("touchstart", { bubbles: true, cancelable: true, touches: [mk(r.top + 5)], changedTouches: [mk(r.top + 5)] }));
+        h.dispatchEvent(new TouchEvent("touchmove", { bubbles: true, cancelable: true, touches: [mk(r.top + 40)], changedTouches: [mk(r.top + 40)] })); });
+      await p.waitForTimeout(300);
+      if (!(await barShown(p))) fail("phoneShare: a pull down on the handle did not open the tray");
+      // a tap outside closes it
+      await p.tap("#t-screen", { position: { x: 200, y: 400 } });
+      await p.waitForTimeout(350);
+      if (await barShown(p)) fail("phoneShare: a tap outside did not close the tray");
+      const kh = await p.evaluate(() => Math.min(...[...document.querySelectorAll("#t-keys button")].map(b => b.getBoundingClientRect().height)));
+      if (kh < 44) fail("phoneShare: a key is " + kh + "px tall, under 44");
+    }
+    await ctx.close();
+    // the popped-out window
+    const sctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+    await sctx.addInitScript(() => {
+      localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true }));
+      localStorage.setItem("atrium.termphone", "1");
+    });
+    await sctx.addInitScript(fakeSock);
+    const sp = await sctx.newPage();
+    sp.on("pageerror", e => errors.push(String(e)));
+    await sp.goto(base + "/#term=land-live", { waitUntil: "domcontentloaded" });
+    await sp.waitForFunction(() => termSock && termSock.readyState === 1 && termTask, null, { timeout: slow(15000) });
+    await fill(sp);
+    await check(sp, "popout");
+    if (shots) await sp.screenshot({ path: shots + "-popout-390x844.png" });
+    if (!process.env.PHONE_SHARE_MEASURE_ONLY) {
+      if (await sp.evaluate(() => getComputedStyle(document.querySelector(".term-bar")).visibility !== "hidden")) fail("phoneShare popout: the tray shows by default");
+      await sp.tap("#t-tray-handle");
+      await sp.waitForTimeout(350);
+      if (await sp.evaluate(() => getComputedStyle(document.querySelector(".term-bar")).visibility === "hidden")) fail("phoneShare popout: the handle did not open the tray");
+      if (shots) await sp.screenshot({ path: shots + "-popout-tray-390x844.png" });
+      await sp.tap("#t-bar-toggle");
+      // u-023 bottom anchor: a 48-row pty is shorter than the pop-out, the spare height is above the grid, so nothing
+      // is blank under the cursor row and the follow button is hidden while the cursor is in view.
+      await sp.evaluate(() => {
+        termSock.onmessage({ data: '{"t":"size","cols":60,"rows":48}' });
+        termSock.onmessage({ data: "[2J[48;1Hprompt" });
+      });
+      await sp.waitForTimeout(400);
+      const an = await sp.evaluate(() => {
+        const host = document.getElementById("t-screen"), hb = host.getBoundingClientRect();
+        const g = host.querySelector(".xterm").getBoundingClientRect();
+        const ch = term._core._renderService.dimensions.css.cell.height;
+        const row = g.top + term.buffer.active.cursorY * ch;
+        // The bar under the terminal is the composer when u-025 mounts it, else the key bar.
+        const cmp = document.getElementById("t-compose");
+        const under = cmp && getComputedStyle(cmp).display !== "none" && cmp.getBoundingClientRect().height > 0 ? cmp : document.getElementById("t-keys");
+        const keys = under.getBoundingClientRect();
+        return { blankUnder: keys.top - (row + ch), above: g.top - hb.top, rows: term.rows, chip: !document.getElementById("t-follow").hidden, under: under.id };
+      });
+      if (an.rows !== 48) fail("phoneShare popout: the 48 row pty did not apply: " + JSON.stringify(an));
+      if (an.blankUnder > 20 || an.blankUnder < -1) fail("phoneShare popout: blank space under the cursor row: " + JSON.stringify(an));
+      if (an.above < 1) fail("phoneShare popout: the grid is not anchored to the bottom, no spare height above it: " + JSON.stringify(an));
+      if (an.chip) fail("phoneShare popout: the follow button shows while the cursor is in view: " + JSON.stringify(an));
+    }
+    await sctx.close();
+    if (errors.length) fail("phoneShare: the page threw: " + errors.join(" | "));
+  } finally {
+    tasksMode = was;
+  }
+}
+
 async function phoneTermBarSection(browser, base) {
   const was = tasksMode;
   tasksMode = "land";
@@ -5356,6 +5555,7 @@ async function phoneTermBarSection(browser, base) {
     return cs.display !== "none" && cs.visibility !== "hidden" && r.width > 0 && r.height > 0; }, sel);
   const box = (p, sel) => p.evaluate(s => { const r = document.querySelector(s).getBoundingClientRect(); return { w: r.width, h: r.height }; }, sel);
   try {
+    // u-023: the bar is the tray on a phone. Hidden by default, the handle opens it, the chevron hides it.
     const pctx = await browser.newContext({ viewport: { width: 412, height: 915 }, hasTouch: true, isMobile: true });
     await pctx.addInitScript(() => {
       localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true }));
@@ -5363,34 +5563,35 @@ async function phoneTermBarSection(browser, base) {
     });
     await pctx.addInitScript(fakeSock);
     const p = await open(pctx);
+    const shown = (q, sel) => q.evaluate(s => { const e = document.querySelector(s); return !!e && getComputedStyle(e).visibility !== "hidden" && e.getBoundingClientRect().bottom > 0; }, sel);
     for (const mode of ["normal", "full"]) {
       const tag = "phoneTermBar " + mode + ": ";
       if (mode === "full") { await p.evaluate(() => setTermFull(true)); await p.waitForTimeout(200); }
-      const shot = process.env.U020_SHOT;
-      if ((await box(p, ".term-bar")).h > 56) fail(tag + "the collapsed bar is not one row: " + JSON.stringify(await box(p, ".term-bar")));
-      for (const s of ["#t-chips .chip.path", "#t-chips", "#t-attach", "#t-cog"])
-        if (await vis(p, s)) fail(tag + s + " shows while collapsed");
-      if (!(await vis(p, "#t-full"))) fail(tag + "full screen is not in the collapsed bar");
+      if (await shown(p, ".term-bar")) fail(tag + "the tray shows by default");
+      if (!(await vis(p, "#t-tray-handle"))) fail(tag + "the handle is missing");
+      const hb = await box(p, "#t-tray-handle");
+      if (hb.w < 44 || hb.h < 44) fail(tag + "the handle is under 44px: " + JSON.stringify(hb));
+      const before = await p.evaluate(() => document.activeElement && document.activeElement.tagName);
+      await p.tap("#t-tray-handle");
+      await p.waitForTimeout(300);
+      if (!(await shown(p, ".term-bar"))) fail(tag + "a tap on the handle did not open the tray");
+      if (!(await vis(p, "#t-chips .chip.path"))) fail(tag + "the path chip is not in the open tray");
+      if (await vis(p, "#t-attach")) fail(tag + "the paperclip shows in the tray");
+      if (!(await vis(p, "#t-keys-attach"))) fail(tag + "the key bar's attach is gone");
+      if (!(await vis(p, "#t-full"))) fail(tag + "full screen is not in the tray");
+      if (await vis(p, "#t-view-note")) fail(tag + "the fit this screen sentence shows on a phone");
       const cb = await box(p, "#t-bar-toggle");
       if (cb.w < 44 || cb.h < 44) fail(tag + "the chevron is under 44px: " + JSON.stringify(cb));
-      if (await p.evaluate(() => document.getElementById("t-bar-toggle").getAttribute("aria-expanded")) !== "false") fail(tag + "aria-expanded not false");
-      if (shot) await p.screenshot({ path: shot + "-" + mode + "-collapsed.png" });
-      const before = await p.evaluate(() => document.activeElement && document.activeElement.tagName);
-      await p.tap("#t-bar-toggle");
-      await p.waitForTimeout(200);
-      if (!(await vis(p, "#t-chips .chip.path"))) fail(tag + "a tap on the chevron did not show the path chip");
-      if (await vis(p, "#t-attach")) fail(tag + "the paperclip shows in the expanded phone bar");
-      if (!(await vis(p, "#t-keys-attach"))) fail(tag + "the key bar's attach is gone");
-      if (await p.evaluate(() => document.getElementById("t-bar-toggle").getAttribute("aria-expanded")) !== "true") fail(tag + "aria-expanded not true");
-      if (await p.evaluate(() => document.activeElement && document.activeElement.tagName) !== before) fail(tag + "the toggle moved focus");
-      if (await vis(p, "#t-view-note")) fail(tag + "the fit this screen sentence still shows on a phone");
-      if (shot) await p.screenshot({ path: shot + "-" + mode + "-expanded.png" });
+      if (await p.evaluate(() => document.activeElement && document.activeElement.tagName) !== before) fail(tag + "the handle moved focus");
+      if (await p.evaluate(() => localStorage.getItem("atrium.phone.trayOpen")) !== "1") fail(tag + "the open choice was not saved");
+      if (process.env.U020_SHOT) await p.screenshot({ path: process.env.U020_SHOT + "-" + mode + "-open.png" });
       await p.reload({ waitUntil: "domcontentloaded" });
       await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
-      if (!(await p.evaluate(() => document.body.classList.contains("hdr-open")))) fail(tag + "the open choice did not survive a reload");
+      if (!(await p.evaluate(() => document.body.classList.contains("tray-open")))) fail(tag + "the open choice did not survive a reload");
       await p.tap("#t-bar-toggle");
-      await p.waitForTimeout(200);
-      if (await p.evaluate(() => document.body.classList.contains("hdr-open"))) fail(tag + "a second tap did not collapse");
+      await p.waitForTimeout(300);
+      if (await p.evaluate(() => document.body.classList.contains("tray-open"))) fail(tag + "the chevron did not hide the tray");
+      if (await p.evaluate(() => document.body.classList.contains("hdr-open"))) fail(tag + "the tray moved the board header's key");
       if (mode === "normal") {
         await p.evaluate(() => attachTask("land-live"));
         await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask, null, { timeout: slow(10000) });
@@ -5410,21 +5611,18 @@ async function phoneTermBarSection(browser, base) {
     await sp.goto(base + "/#term=land-live", { waitUntil: "domcontentloaded" });
     await sp.waitForFunction(() => termSock && termSock.readyState === 1 && termTask, null, { timeout: slow(15000) });
     await sp.waitForTimeout(300);
-    if ((await box(sp, ".term-bar")).h > 56) fail("phoneTermBar popout: the collapsed bar is not one row");
-    if (await vis(sp, "#t-chips .chip.path")) fail("phoneTermBar popout: the path shows while collapsed");
+    if (await shown(sp, ".term-bar")) fail("phoneTermBar popout: the tray shows by default");
+    await sp.tap("#t-tray-handle");
+    await sp.waitForTimeout(300);
+    if (!(await vis(sp, "#t-chips .chip.path"))) fail("phoneTermBar popout: a tap on the handle did not open the tray");
     const pb = await box(sp, "#t-bar-toggle");
     if (pb.w < 44 || pb.h < 44) fail("phoneTermBar popout: the chevron is under 44px");
-    if (process.env.U020_SHOT) await sp.screenshot({ path: process.env.U020_SHOT + "-popout-collapsed.png" });
-    await sp.tap("#t-bar-toggle");
-    await sp.waitForTimeout(200);
-    if (!(await vis(sp, "#t-chips .chip.path"))) fail("phoneTermBar popout: a tap did not expand");
-    if (process.env.U020_SHOT) await sp.screenshot({ path: process.env.U020_SHOT + "-popout-expanded.png" });
     await sctx.close();
     // desktop: unchanged
     const dctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
     await dctx.addInitScript(fakeSock);
     const dp = await open(dctx);
-    if (await vis(dp, "#t-bar-toggle")) fail("phoneTermBar: a chevron shows on a desktop");
+    if (await vis(dp, "#t-bar-toggle") || await vis(dp, "#t-tray-handle") || await vis(dp, "#t-pick")) fail("phoneTermBar: a phone control shows on a desktop");
     for (const s of ["#t-chips .chip.path", "#t-attach", "#t-full", "#t-cog"])
       if (!(await vis(dp, s))) fail("phoneTermBar: " + s + " is not shown on a desktop");
     await dctx.close();
@@ -5667,6 +5865,120 @@ async function phonePanSection(browser, base) {
   if (errors.length) fail("phonePan: the page threw: " + errors.join(" | "));
 }
 
+async function phoneFollowSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  landList = [LAND["land-live"]];
+  landPerms = [];
+  const errors = [];
+  const fakeSock = () => {
+    const Real = window.WebSocket;
+    window.__sent = [];
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
+        onopen: null, onclose: null, onmessage: null, onerror: null,
+        send(d) { window.__sent.push(String(d)); }, close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  };
+  try {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+    await ctx.addInitScript(() => {
+      localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true }));
+      localStorage.setItem("atrium.termphone", "1");
+    });
+    await ctx.addInitScript(fakeSock);
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e.stack||e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await p.evaluate(() => attachTask("land-live"));
+    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live",
+      null, { timeout: slow(10000) });
+    await p.evaluate(() => termSock.onmessage({ data: '{"t":"size","cols":60,"rows":80}' }));
+    await p.waitForTimeout(300);
+    const feed = (n, tag) => p.evaluate(({ n, tag }) => {
+      for (let i = 0; i < n; i++) termSock.onmessage({ data: tag + i + "\r\n" });
+    }, { n, tag });
+    await feed(79, "seed");
+    await p.waitForTimeout(300);
+    // the cursor row's position against the visible pane, in px (0 while inside)
+    const st = () => p.evaluate(() => {
+      const host = document.getElementById("t-screen"), hb = host.getBoundingClientRect();
+      const ch = term._core._renderService.dimensions.css.cell.height, b = term.buffer.active;
+      const vv = window.visualViewport;
+      const top = Math.max(hb.top, vv.offsetTop), bottom = Math.min(hb.bottom, vv.offsetTop + vv.height);
+      const rowTop = hb.top + (parseFloat(getComputedStyle(host).paddingTop) || 0) + b.cursorY * ch - host.scrollTop;
+      const c = document.getElementById("t-follow"), n = c.querySelector(".n");
+      return { st: host.scrollTop, sh: host.scrollHeight, ch: host.clientHeight, inView: rowTop >= top - 1 && rowTop + ch <= bottom + 1,
+        chip: !c.hidden, n: n && !n.hidden ? n.textContent : "", box: c.hidden ? null : (r => ({ x: r.x, y: r.y, w: r.width, h: r.height }))(c.getBoundingClientRect()),
+        vy: b.viewportY, by: b.baseY };
+    });
+    const pan = (to) => p.evaluate((to) => new Promise(res => {
+      const host = document.getElementById("t-screen");
+      host.dispatchEvent(new TouchEvent("touchstart", { bubbles: true }));
+      host.scrollTop = to;
+      requestAnimationFrame(() => requestAnimationFrame(() => { host.dispatchEvent(new TouchEvent("touchend", { bubbles: true })); res(); }));
+    }), to);
+    let s = await st();
+    if (s.sh <= s.ch + 100) fail("phoneFollow: the grid does not scroll vertically: " + JSON.stringify(s));
+    if (!s.inView || s.chip) fail("phoneFollow: the cursor is in view at the start but the button state is wrong: " + JSON.stringify(s));
+    // 1. pan away: the button shows with no count, then output raises it
+    await pan(0);
+    s = await st();
+    if (!s.chip || s.inView || s.n) fail("phoneFollow: panning away did not show a bare button: " + JSON.stringify(s));
+    await feed(7, "more");
+    await p.waitForTimeout(300);
+    s = await st();
+    if (!s.chip || s.n !== "7") fail("phoneFollow: the count did not rise to 7: " + JSON.stringify(s));
+    if (s.st > 2) fail("phoneFollow: output moved the pan: " + JSON.stringify(s));
+    // 2. a real tap on the button goes back to the cursor and hides it
+    await p.touchscreen.tap(s.box.x + s.box.w / 2, s.box.y + s.box.h / 2);
+    await p.waitForTimeout(900);
+    s = await st();
+    if (!s.inView || s.chip) fail("phoneFollow: a tap on the button did not follow: " + JSON.stringify(s));
+    // 3. streaming after that keeps the cursor row in view the whole time
+    const seen = await p.evaluate(() => new Promise(res => {
+      const bad = [];
+      let n = 0;
+      const tick = () => {
+        termSock.onmessage({ data: "flow" + n + "\r\n" });
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+          const host = document.getElementById("t-screen"), hb = host.getBoundingClientRect();
+          const ch = term._core._renderService.dimensions.css.cell.height;
+          const rowTop = hb.top + (parseFloat(getComputedStyle(host).paddingTop) || 0) + term.buffer.active.cursorY * ch - host.scrollTop;
+          if (rowTop < hb.top - 1 || rowTop + ch > Math.min(hb.bottom, window.visualViewport.height) + 1 || !document.getElementById("t-follow").hidden) bad.push(n);
+          if (++n < 20) tick(); else res(bad);
+        }));
+      };
+      tick();
+    }));
+    if (seen.length) fail("phoneFollow: while streaming the cursor left the view or the button showed at lines " + seen.join(","));
+    // 4. pan away, stream, then pan back to within a row: it follows with no tap
+    await pan(0);
+    await feed(20, "away");
+    await p.waitForTimeout(300);
+    s = await st();
+    if (!s.chip || s.n !== "20") fail("phoneFollow: the second pan away did not count 20: " + JSON.stringify(s));
+    await pan(s.sh);
+    await p.waitForTimeout(900);
+    s = await st();
+    if (s.chip || !s.inView) fail("phoneFollow: panning back to the cursor did not resume the follow: " + JSON.stringify(s));
+    await feed(3, "after");
+    await p.waitForTimeout(300);
+    s = await st();
+    if (!s.inView || s.chip) fail("phoneFollow: output after the auto resume did not follow: " + JSON.stringify(s));
+    await ctx.close();
+  } finally {
+    tasksMode = was;
+  }
+  if (errors.length) fail("phoneFollow: the page threw: " + errors.join(" | "));
+}
+
 // ── tap to position the cursor on a phone (u-017c) ────────────────────────
 // A tap on the input's rows (between Claude Code's two rules) sends arrow keys in one frame; a tap on output,
 // a drag, and a long press send nothing; the helper textarea is focused at most once.
@@ -5843,8 +6155,8 @@ async function phoneKeyboardSection(browser, base) {
       const vv = window.visualViewport, host = document.getElementById("t-screen");
       const hb = host.getBoundingClientRect(), kb = document.getElementById("t-keys").getBoundingClientRect();
       const ch = term._core._renderService.dimensions.css.cell.height;
-      const inner = parseFloat(getComputedStyle(host).paddingTop) || 0;
-      const rowTop = hb.top + inner + term.buffer.active.cursorY * ch - host.scrollTop;
+      // The grid is bottom anchored (u-023), so its top is read from the grid element, not from the pane's padding.
+      const rowTop = host.querySelector(".xterm").getBoundingClientRect().top + term.buffer.active.cursorY * ch;
       return { visBottom: vv.offsetTop + vv.height, keysBottom: kb.bottom, keysTop: kb.top, rowTop, rowBottom: rowTop + ch,
         hostTop: hb.top, resizes: window.__sent.filter(x => /"t":"resize"/.test(x)).length,
         bar: host.offsetHeight - host.clientHeight, barW: host.offsetWidth - host.clientWidth,
@@ -6159,7 +6471,7 @@ const KA_CARDS = [
     warm_until: "2026-09-27T17:42:00Z" } }),
   Object.assign({}, T1, { id: "ka-warm", display_title: "warm card", keepalive: {
     state: "on", state_at: "2026-09-27T10:00:00Z", refreshes: 3, spent: 0.18, budget: 0.3,
-    warm_until: "2026-09-27T19:00:00Z" } }),
+    warm_until: new Date(Date.now() + 30 * 60000).toISOString() } }),
   Object.assign({}, T1, { id: "ka-quiet", display_title: "quiet card", keepalive: {
     state: "on", state_at: "2026-09-27T10:00:00Z", why: "not due", refreshes: 0, spent: 0, budget: 0.3,
     warm_until: "2099-01-01T12:00:00Z" } }),
@@ -6243,11 +6555,11 @@ async function keepaliveSection(browser, base) {
       const box = document.createElement("div");
       box.innerHTML = cardHTML(t);
       const c = box.querySelector(".chip.keepalive");
-      return { id: t.id, text: c ? c.textContent.trim() : "", stopped: c ? c.classList.contains("stopped") : false,
+      return { id: t.id, text: c ? c.querySelector(".cfull").textContent.trim() : "", stopped: c ? c.classList.contains("stopped") : false,
         watching: c ? c.classList.contains("watching") : false, tip: c ? c.getAttribute("data-tip") : "" };
     }), KA_CARDS);
     const by = Object.fromEntries(chips.map(c => [c.id, c]));
-    if (!by["ka-stop"].stopped || !/cold/.test(by["ka-stop"].text)) {
+    if (!by["ka-stop"].stopped || !/stopped . not worth it/.test(by["ka-stop"].text)) {
       fail("a card stopped at break-even does not draw the stopped chip: " + JSON.stringify(by["ka-stop"]));
     }
     // No chip's tooltip carries a dollar figure (item 37b).
@@ -6255,24 +6567,22 @@ async function keepaliveSection(browser, base) {
     if (!/break-even/.test(by["ka-stop"].tip) || !/5 refreshes/.test(by["ka-stop"].tip)) {
       fail("the stopped chip's tooltip does not carry the refresh count: " + JSON.stringify(by["ka-stop"].tip));
     }
-    if (!/warm/.test(by["ka-warm"].text) || !/kept warm 3x/.test(by["ka-warm"].tip)) {
+    if (!/kept warm 3/.test(by["ka-warm"].text) || !/refreshed this card's cache 3 times/.test(by["ka-warm"].tip)) {
       fail("a card being kept warm does not say so: " + JSON.stringify(by["ka-warm"]));
     }
-    // Watched with nothing spent: its own chip, not the warm or the cold one,
-    // with the reason and the warm-until time in the tooltip.
+    // On, warm, nothing refreshed yet and just waiting: "warm", with the time in the words (u-032).
     const q = by["ka-quiet"];
-    if (!q.watching || q.stopped || !/watching/.test(q.text) || /warm|cold/.test(q.text)) {
-      fail("a watched card with nothing spent does not draw the watching chip: " + JSON.stringify(q));
+    if (q.stopped || !/^.\s?warm . /.test(q.text) || /watching|cold/.test(q.text)) {
+      fail("a warm card with nothing spent does not draw the warm chip: " + JSON.stringify(q));
     }
-    if (!/not due for a refresh yet/.test(q.tip) || !/warm until /.test(q.tip) || !/break-even budget/.test(q.tip)) {
-      fail("the watching chip's tooltip lacks the why, the warm-until or the budget: " + JSON.stringify(q.tip));
+    if (!/idle, and not due for a refresh yet/.test(q.tip) || !/warm until /.test(q.tip)) {
+      fail("the warm chip's tooltip lacks the why or the warm-until: " + JSON.stringify(q.tip));
     }
-    if (by["ka-warm"].watching || by["ka-stop"].watching) fail("the warm or the stopped chip reads as watching.");
     const m = by["ka-miss"];
     if (!m.stopped || !/missed the cache/.test(m.tip) || !/0 refreshes, 1 miss/.test(m.tip)) {
       fail("a card stopped on a miss does not show the miss: " + JSON.stringify(m));
     }
-    if (by["ka-off"].text) fail("a card with its switch off drew a keep-alive chip.");
+    if (!/off . cold/.test(by["ka-off"].text)) fail("a card with its switch off does not say off and cold: " + JSON.stringify(by["ka-off"]));
     if (by["ka-none"].text) fail("a card with no switch drew a keep-alive chip.");
 
     // The card menu's switch: offered on a Claude card, reads its state, and
@@ -6312,6 +6622,324 @@ async function keepaliveSection(browser, base) {
     kaSettings = {};
   }
   if (errors.length) fail("the keep-alive page threw: " + errors.join(" | "));
+}
+
+// ── u-032: the cache chip and the cache line ───────────────────────────────────────────────────────────
+// The table of states as `kaModel` answers it at a fixed clock, then the same chips drawn on the stack, the
+// terminals list, the board and the attached terminal's header, then a card whose cache runs out flipping
+// with no request, then a phone. The line counts with the chip's own bucket.
+function kaFix(id, ka, over) {
+  return landCard(id, Object.assign({ supervised: true, created_at: "2026-09-19T12:00:00Z",
+    keepalive: Object.assign({ state: "on", refreshes: 0, state_at: "2026-09-29T00:00:00Z" }, ka) }, over || {}));
+}
+
+async function cacheChipSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  const errors = [];
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const shots = process.env.CACHE_SHOTS || "";
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    kaFix("cc-seed", { why: "not due", warm_until: new Date(Date.now() + 3600000).toISOString() });
+    landList = [LAND["cc-seed"]];
+    landPerms = [];
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof kaModel === "function", null, { timeout: slow(15000) });
+
+    // 1. The table, at a fixed clock (local 03:00 on 2026-09-30), so every time is HH:MM.
+    const rows = await p.evaluate(() => {
+      const at = (d, h, m) => new Date(2026, 8, d, h, m, 0).getTime();
+      const iso = ms => new Date(ms).toISOString();
+      const now = at(30, 3, 0);
+      const card = ka => ({ id: "x", keepalive: Object.assign({ state: "on", refreshes: 0 }, ka) });
+      const out = [];
+      const add = (name, ka, n) => {
+        const m = kaModel(card(ka), n || now);
+        out.push({ name, full: m && m.full, short: m && m.short, tip: m && m.tip.join(". "), bucket: m && m.bucket });
+      };
+      const w = iso(at(30, 3, 32));
+      add("break-even", { state: "stopped:break-even", warm_until: w });
+      add("miss", { state: "stopped:miss", missed: 1 });
+      add("failing", { state: "stopped:failing" });
+      add("acted", { state: "stopped:acted" });
+      add("off warm", { state: "off", warm_until: w });
+      add("off cold", { state: "off", warm_until: iso(at(30, 2, 0)) });
+      add("off unknown", { state: "off" });
+      add("kept next", { refreshes: 3, why: "not due", warm_until: w });
+      add("kept next exact", { refreshes: 3, why: "not due", warm_until: w, next_refresh_at: iso(at(30, 3, 26)) });
+      add("kept busy", { refreshes: 3, why: "not idle", warm_until: w });
+      add("warm", { why: "not due", warm_until: w });
+      add("warm nowhy", { warm_until: w });
+      for (const why of ["not idle", "context under 50k", "not on the 1h cache", "local hooks",
+        "a permission dialog is open", "budget spent", "parked"]) add("wont " + why, { why, warm_until: w });
+      add("cold", { why: "parked", warm_until: iso(at(30, 2, 4)) });
+      add("cold yesterday", { warm_until: iso(at(29, 20, 4)) });
+      add("no cache", { why: "no session id yet" });
+      add("tomorrow", { why: "not due", warm_until: iso(at(31, 0, 10)), refreshes: 0 }, at(30, 23, 50));
+      add("far date", { warm_until: iso(at(30, 3, 32)) }, at(20, 3, 0));
+      out.push({ name: "not claude", full: kaModel({ id: "y" }, now) });
+      return out;
+    });
+    const by = Object.fromEntries(rows.map(r => [r.name, r]));
+    const want = (n, full, short) => {
+      const r = by[n];
+      if (!r || r.full !== full) fail("cacheChip table " + n + ": wanted " + JSON.stringify(full) + " got " + JSON.stringify(r && r.full));
+      if (short !== undefined && r.short !== short) fail("cacheChip table " + n + ": short wanted " + JSON.stringify(short) + " got " + JSON.stringify(r.short));
+    };
+    want("break-even", "\u2298 stopped \u00b7 not worth it", "\u2298 not worth it");
+    want("miss", "\u2298 stopped \u00b7 cache missed");
+    want("failing", "\u2298 stopped \u00b7 refresh failing");
+    want("acted", "\u2298 stopped \u00b7 refresh used a tool");
+    if (!/stopped:acted/.test(by.acted.tip) || !/stopped:break-even/.test(by["break-even"].tip)) fail("cacheChip: a stop's raw state is not in its tooltip");
+    want("off warm", "\u25cb off \u00b7 warm \u2192 03:32", "\u25cb off");
+    want("off cold", "\u25cb off \u00b7 cold");
+    want("off unknown", "\u25cb off \u00b7 cold");
+    want("kept next", "\u2744 kept warm 3\u00d7 \u00b7 next ~03:27", "\u2744 3\u00d7 next ~03:27");
+    want("kept next exact", "\u2744 kept warm 3\u00d7 \u00b7 next 03:26");
+    want("kept busy", "\u2744 kept warm 3\u00d7 \u2192 03:32 \u00b7 won't refresh: busy");
+    if (/next/.test(by["kept busy"].full)) fail("cacheChip: a busy card promises a next refresh");
+    want("warm", "\u2744 warm \u2192 03:32", "\u2744 \u2192 03:32");
+    want("warm nowhy", "\u2744 warm \u2192 03:32");
+    const words = { "not idle": "busy", "context under 50k": "small", "not on the 1h cache": "5m cache", "local hooks": "local hooks",
+      "a permission dialog is open": "dialog open", "budget spent": "budget spent", "parked": "parked" };
+    for (const [why, word] of Object.entries(words)) {
+      want("wont " + why, "\u2744 warm \u2192 03:32 \u00b7 won't refresh: " + word);
+      if (!by["wont " + why].tip.includes(why)) fail("cacheChip: the raw why " + why + " is not in the tooltip");
+    }
+    want("cold", "\u2744 cold since 02:04", "\u2744 cold");
+    want("cold yesterday", "\u2744 cold since yesterday 20:04");
+    want("no cache", "\u2744 no cache yet");
+    want("tomorrow", "\u2744 warm \u2192 tomorrow 00:10");
+    if (!/^\u2744 warm \u2192 [A-Z][a-z]{2} \d+ 03:32$/.test(by["far date"].full)) fail("cacheChip: a far time is not a date: " + by["far date"].full);
+    if (by["not claude"].full !== null) fail("cacheChip: a card with no keepalive has a model");
+    for (const [n, b] of [["warm", "warm"], ["kept next", "kept"], ["cold", "cold"], ["off warm", "warm"], ["no cache", "cold"]]) {
+      if (by[n].bucket !== b) fail("cacheChip: " + n + " is in bucket " + by[n].bucket + ", wanted " + b);
+    }
+
+    // 2. The drawn chips on every surface, with no hover.
+    const soon = m => new Date(Date.now() + m * 60000).toISOString();
+    kaFix("cc-kept", { refreshes: 3, why: "not due", warm_until: soon(30) });
+    kaFix("cc-warm", { why: "not idle", warm_until: soon(20) });
+    kaFix("cc-cold", { why: "parked", warm_until: soon(-30) });
+    kaFix("cc-stop", { state: "stopped:break-even", refreshes: 5, warm_until: soon(-10) });
+    kaFix("cc-off", { state: "off", warm_until: soon(-1) });
+    kaFix("cc-none", { why: "no session id yet" });
+    landCard("cc-shell", { supervised: true, created_at: "2026-09-19T12:00:00Z", runner: "shell" });
+    const ids = ["cc-kept", "cc-warm", "cc-cold", "cc-stop", "cc-off", "cc-none", "cc-shell"];
+    landList = ids.map(i => LAND[i]);
+    const reqs = [];
+    p.on("request", r => reqs.push(r.url()));
+    await p.reload({ waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await p.evaluate(() => setStackShow(new Set()));
+    const texts = sel => p.evaluate(s => {
+      const o = {};
+      document.querySelectorAll(s).forEach(row => {
+        o[row.dataset.id] = [...row.querySelectorAll(".chip.cache")].filter(e => e.getBoundingClientRect().width > 0)
+          .map(e => e.innerText.trim());
+      });
+      return o;
+    }, sel);
+    const expect = {
+      "cc-kept": /^\u2744 kept warm 3\u00d7 \u00b7 next ~\d\d:\d\d$/,
+      "cc-warm": /^\u2744 warm \u2192 \d\d:\d\d \u00b7 won't refresh: busy$/,
+      "cc-cold": /^\u2744 cold since \d\d:\d\d$/, "cc-stop": /^\u2298 stopped \u00b7 not worth it$/,
+      "cc-off": /^\u25cb off \u00b7 cold$/, "cc-none": /^\u2744 no cache yet$/
+    };
+    const check = (where, o) => {
+      for (const [id, re] of Object.entries(expect)) {
+        if (!o[id] || o[id].length !== 1 || !re.test(o[id][0])) fail("cacheChip " + where + ": " + id + " shows " + JSON.stringify(o[id]));
+      }
+      if (o["cc-shell"] && o["cc-shell"].length) fail("cacheChip " + where + ": a non-Claude card drew a chip " + JSON.stringify(o["cc-shell"]));
+    };
+    await p.waitForFunction(() => document.querySelectorAll("#stack-list .stackrow .chip.cache").length >= 6, null, { timeout: slow(10000) });
+    check("stack", await texts("#stack-list .stackrow"));
+    const tip = await p.evaluate(() => document.querySelector('#stack-list [data-cid="cc-warm"]').dataset.tip);
+    if (!/not idle/.test(tip) || !/busy/.test(tip)) fail("cacheChip: the tooltip lacks the raw why: " + tip);
+    if (shots) { fs.mkdirSync(shots, { recursive: true }); await p.screenshot({ path: path.join(shots, "u-032-stack-1400x900.png") }); }
+
+    await p.evaluate(() => switchView("terms"));
+    await p.waitForSelector(".term-list .card", { timeout: slow(10000) });
+    await p.waitForFunction(() => document.querySelectorAll(".term-list .card .chip.cache").length >= 6, null, { timeout: slow(10000) });
+    check("terminals list", await texts(".term-list .card"));
+    if (shots) await p.screenshot({ path: path.join(shots, "u-032-terms-1400x900.png") });
+
+    // The header: attach a card and its chip is in the bar. A fake socket, as the phone sections use.
+    await p.evaluate(() => {
+      const Real = window.WebSocket;
+      window.WebSocket = function (url, protocols) {
+        if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+        const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0, send() {}, close() { this.readyState = 3; } };
+        setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+        return s;
+      };
+      Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+      attachTask("cc-kept");
+    });
+    await p.waitForFunction(() => termTask && termTask.id === "cc-kept" && document.querySelector("#t-chips .chip.cache"), null, { timeout: slow(10000) });
+    const head = await p.evaluate(() => document.querySelector("#t-chips .chip.cache").innerText.trim());
+    if (!expect["cc-kept"].test(head)) fail("cacheChip header: " + JSON.stringify(head));
+    if (await p.evaluate(() => document.querySelectorAll("#t-chips .chip.cache").length) !== 1) fail("cacheChip header: more than one chip");
+
+    await p.evaluate(() => switchView("board"));
+    await p.waitForFunction(() => document.querySelectorAll("#board .chip.cache").length >= 6, null, { timeout: slow(10000) });
+    const bo = await p.evaluate(() => {
+      const o = {};
+      document.querySelectorAll("#board .card").forEach(c => { o[c.dataset.id] = [...c.querySelectorAll(".chip.cache")].map(e => e.innerText.trim()); });
+      return o;
+    });
+    check("board", bo);
+
+    // 3. A card 2 seconds from cold flips with no request, from one armed timer.
+    kaFix("cc-flip", { why: "not idle", warm_until: new Date(Date.now() + 2500).toISOString() });
+    landList = [LAND["cc-flip"]];
+    await p.evaluate(() => switchView("stack"));
+    await p.evaluate(() => tasksSoon());
+    await p.waitForSelector('#stack-list [data-cid="cc-flip"]', { timeout: slow(10000) });
+    const first = await p.evaluate(() => document.querySelector('#stack-list [data-cid="cc-flip"] .cfull').textContent);
+    if (!/^\u2744 warm/.test(first)) fail("cacheChip flip: starts as " + first);
+    const armed = await p.evaluate(() => kaTimer > 0);
+    if (!armed) fail("cacheChip flip: no timer is armed for the soonest card");
+    const n0 = reqs.length;
+    await p.waitForFunction(() => /cold since/.test(document.querySelector('#stack-list [data-cid="cc-flip"] .cfull').textContent),
+      null, { timeout: slow(8000) }).catch(() => fail("cacheChip flip: the chip did not flip to cold by itself"));
+    if (reqs.length !== n0) fail("cacheChip flip: the flip made " + (reqs.length - n0) + " requests: " + reqs.slice(n0).join(" "));
+    // A throttled tab is put right when it becomes visible again.
+    await p.evaluate(() => {
+      const t = KA_SEEN.get("cc-flip");
+      t.keepalive = Object.assign({}, t.keepalive, { warm_until: new Date(Date.now() + 90 * 60000).toISOString() });
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    if (!/^\u2744 warm/.test(await p.evaluate(() => document.querySelector('#stack-list [data-cid="cc-flip"] .cfull').textContent))) {
+      fail("cacheChip: visibilitychange did not repaint the chip");
+    }
+    await ctx.close();
+
+    // 4. A phone: the short text, and nothing runs off the right edge.
+    landList = ids.map(i => LAND[i]);
+    const pctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+    await pctx.addInitScript(() => localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true })));
+    const q = await pctx.newPage();
+    q.on("pageerror", e => errors.push(String(e)));
+    await q.goto(base, { waitUntil: "domcontentloaded" });
+    await q.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await q.evaluate(() => setStackShow(new Set()));
+    for (const view of ["stack", "terms"]) {
+      await q.evaluate(v => switchView(v), view);
+      const sel = view === "terms" ? ".term-list .card" : "#stack-list .stackrow";
+      await q.waitForFunction(s => document.querySelectorAll(s + " .chip.cache").length >= 6, sel, { timeout: slow(10000) });
+      if (shots) { fs.mkdirSync(shots, { recursive: true }); await q.screenshot({ path: path.join(shots, "u-032-" + view + "-390x844.png") }); }
+      const r = await q.evaluate(s => {
+        const vw = document.documentElement.clientWidth, bad = [], shorts = [];
+        document.querySelectorAll(s).forEach(c => {
+          const cr = c.getBoundingClientRect();
+          if (cr.right > vw + 0.5) bad.push("card");
+          c.querySelectorAll(".chip.cache").forEach(ch => {
+            const r = ch.getBoundingClientRect();
+            if (r.width && (r.right > cr.right + 0.5 || r.right > vw + 0.5)) bad.push("chip " + ch.innerText);
+            shorts.push(ch.innerText.trim());
+            if (ch.getAttribute("aria-label").indexOf(ch.querySelector(".cfull").textContent) !== 0) bad.push("aria " + ch.innerText);
+          });
+        });
+        return { bad, shorts, pg: document.documentElement.scrollWidth - innerWidth };
+      }, sel);
+      if (r.bad.length || r.pg > 0) fail("cacheChip phone " + view + ": " + JSON.stringify(r));
+      if (r.shorts.some(t => t.length > 16) || !r.shorts.includes("\u2744 cold") || !r.shorts.includes("\u25cb off")) {
+        fail("cacheChip phone " + view + ": the chips are not the short text " + JSON.stringify(r.shorts));
+      }
+    }
+    await pctx.close();
+  } finally {
+    tasksMode = was;
+    try { await ctx.close(); } catch (e) {}
+  }
+  if (errors.length) fail("cacheChip: the page threw: " + errors.join(" | "));
+}
+
+async function cacheLineSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  const errors = [];
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const wasSettings = kaSettings;
+  kaSettings = { cache_keepalive_default: true, cache_keepalive_week_refreshes: 83 };
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    const soon = m => new Date(Date.now() + m * 60000).toISOString();
+    kaFix("cl-warm1", { why: "not idle", warm_until: soon(20) });
+    kaFix("cl-warm2", { why: "not due", warm_until: soon(20) });
+    kaFix("cl-kept1", { refreshes: 2, why: "not due", warm_until: soon(30) });
+    kaFix("cl-cold1", { why: "parked", warm_until: soon(-30) });
+    kaFix("cl-cold2", { state: "stopped:miss", warm_until: soon(-5) });
+    kaFix("cl-cold3", { why: "no session id yet" });
+    kaFix("cl-off", { state: "off", warm_until: soon(10) });
+    kaFix("cl-arch", { why: "not idle", warm_until: soon(20) }, { archived_at: "2026-09-28T00:00:00Z" });
+    landCard("cl-shell", { supervised: true, created_at: "2026-09-19T12:00:00Z", runner: "shell" });
+    const ids = ["cl-warm1", "cl-warm2", "cl-kept1", "cl-cold1", "cl-cold2", "cl-cold3", "cl-off", "cl-arch", "cl-shell"];
+    landList = ids.map(i => LAND[i]);
+    landPerms = [];
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await p.evaluate(() => setStackShow(new Set()));
+    const read = id => p.evaluate(i => { const e = document.getElementById(i); return e && !e.hidden ? e.innerText.trim() : null; }, id);
+    const line = "cache: 3 warm \u00b7 1 kept warm \u00b7 3 cold \u00b7 keep-alive 83 refreshes this week";
+    await p.waitForFunction(l => { const e = document.getElementById("cache-line-stack"); return e && e.innerText.trim() === l; }, line,
+      { timeout: slow(10000) }).catch(async () => fail("cacheLine stack: reads " + JSON.stringify(await read("cache-line-stack")) + ", wanted " + line));
+    if (/tokens today/.test(await read("cache-line-stack") || "")) fail("cacheLine: a spend today was drawn with no field for it");
+    // The same state function: the line's counts are the chips' own buckets.
+    const agree = await p.evaluate(() => {
+      const c = { warm: 0, kept: 0, cold: 0 };
+      document.querySelectorAll("#stack-list .stackrow .chip.cache").forEach(e => c[e.dataset.bucket]++);
+      return c;
+    });
+    if (agree.warm !== 3 || agree.kept !== 1 || agree.cold !== 3) fail("cacheLine: the chips' buckets disagree with the line " + JSON.stringify(agree));
+    // A narrowed list counts only what it shows.
+    await p.evaluate(() => { const q = document.getElementById("stack-q"); q.value = "cl warm"; q.dispatchEvent(new Event("input")); });
+    await p.waitForFunction(() => /^cache: 2 warm \u00b7 0 kept warm \u00b7 0 cold/.test(document.getElementById("cache-line-stack").innerText.trim()),
+      null, { timeout: slow(5000) }).catch(async () => fail("cacheLine: a search did not narrow it: " + await read("cache-line-stack")));
+    await p.evaluate(() => { const q = document.getElementById("stack-q"); q.value = ""; q.dispatchEvent(new Event("input")); });
+
+    // A keepalive event moves a card: cl-warm1 goes cold. The line follows through the stream and the refetch.
+    LAND["cl-warm1"].keepalive = Object.assign({}, LAND["cl-warm1"].keepalive, { warm_until: soon(-2), why: "parked" });
+    openStreams.forEach(r => { try { r.write("event: keepalive\ndata: " + JSON.stringify({ task_id: "cl-warm1", state: "on" }) + "\n\n"); } catch (e) {} });
+    await p.waitForFunction(l => document.getElementById("cache-line-stack").innerText.trim() === l,
+      "cache: 2 warm \u00b7 1 kept warm \u00b7 4 cold \u00b7 keep-alive 83 refreshes this week",
+      { timeout: slow(10000) }).catch(async () => fail("cacheLine: an event did not move the line: " + await read("cache-line-stack")));
+    // A refresh outcome asks for the week's figure again, and the spend today when the daemon sends one.
+    kaSettings.cache_keepalive_week_refreshes = 84;
+    kaSettings.cache_keepalive_today_tokens = 365000;
+    openStreams.forEach(r => { try { r.write("event: keepalive\ndata: " + JSON.stringify({ task_id: "cl-warm1", outcome: "warmed" }) + "\n\n"); } catch (e) {} });
+    await p.waitForFunction(() => /84 refreshes this week \u00b7 365k tokens today$/.test(document.getElementById("cache-line-stack").innerText.trim()),
+      null, { timeout: slow(10000) }).catch(async () => fail("cacheLine: the week and today figures did not follow the settings: " + await read("cache-line-stack")));
+
+    // A card running out of cache moves the counts with no request.
+    kaFix("cl-tick", { why: "not idle", warm_until: new Date(Date.now() + 2500).toISOString() });
+    landList = [LAND["cl-tick"]];
+    await p.evaluate(() => tasksSoon());
+    await p.waitForFunction(() => /^cache: 1 warm/.test(document.getElementById("cache-line-stack").innerText.trim()), null, { timeout: slow(10000) });
+    const reqs = [];
+    p.on("request", r => reqs.push(r.url()));
+    await p.waitForFunction(() => /^cache: 0 warm \u00b7 0 kept warm \u00b7 1 cold/.test(document.getElementById("cache-line-stack").innerText.trim()),
+      null, { timeout: slow(8000) }).catch(() => fail("cacheLine: the line did not tick to cold by itself"));
+    if (reqs.length) fail("cacheLine: the tick made requests " + reqs.join(" "));
+
+    // The terminals list carries the same line, and a tap opens the gear on the keep-alive setting.
+    landList = ids.map(i => LAND[i]);
+    await p.evaluate(() => switchView("terms"));
+    await p.waitForFunction(() => { const e = document.getElementById("cache-line-terms"); return e && !e.hidden && /^cache: \d+ warm/.test(e.innerText.trim()); },
+      null, { timeout: slow(10000) }).catch(async () => fail("cacheLine terms: " + await read("cache-line-terms")));
+    await p.evaluate(() => document.getElementById("cache-line-terms").click());
+    await p.waitForFunction(() => { const f = document.getElementById("s-keepalive"); return f && f.getBoundingClientRect().width > 0; },
+      null, { timeout: slow(5000) }).catch(() => fail("cacheLine: a tap did not open the keep-alive setting"));
+  } finally {
+    tasksMode = was;
+    kaSettings = wasSettings;
+    await ctx.close();
+  }
+  if (errors.length) fail("cacheLine: the page threw: " + errors.join(" | "));
 }
 
 // ── the board skin follows the room-picker scope ────────────────────────
@@ -8390,8 +9018,16 @@ async function usageCacheReadsSection(browser, base) {
     const txt = await sp.textContent("#uc-body .uccacheline");
     if (!/cache reads 90k · not in these charts · 90% of input was served from the cache/.test(txt)) fail("usageCacheReads: the line reads " + txt);
     if (!/9 calls/.test(s.causes)) fail("usageCacheReads: a cause row does not show its calls: " + s.causes);
-    await sp.hover('#uc-body .ucchart[data-chart=burn] g[data-t] rect');
-    const read = await sp.textContent("#uc-body .ucread");
+    // A repaint of #uc-body between the hover and the read draws a fresh "hover a bar", so hover again until the
+    // readout answers (at most three times) rather than reading once.
+    let read = "";
+    for (let i = 0; i < 3; i++) {
+      await sp.hover('#uc-body .ucchart[data-chart=burn] g[data-t] rect', { position: { x: 1, y: 1 + i } });
+      read = await sp.waitForFunction(() => { const r = document.querySelector("#uc-body .ucread"); return r && r.textContent !== "hover a bar" && r.textContent; },
+        null, { timeout: slow(1500) }).then(h => h.jsonValue()).catch(() => "");
+      if (read) break;
+    }
+    if (!read) read = await sp.textContent("#uc-body .ucread");
     if (!/cache read 90k/.test(read) || (read.match(/ · /g) || []).length !== 5) fail("usageCacheReads: the hover does not list five kinds: " + read);
 
     await sp.click("#uc-cache");
@@ -8839,7 +9475,8 @@ async function usageLimitsSection(browser, base) {
     // Warn: 100% lands before the reset.
     await set(sp, line(6, [40, 60], 60, 3, 156 * MIN));
     let r = await five(sp);
-    if (!/at this pace: 100% at \d\d:\d\d, .* before the reset/.test(r.proj) || !/flameout before reset/.test(r.proj) || !/ulwarn/.test(r.cls) || /uldanger/.test(r.cls))
+    // A projection past midnight names the day ("100% at Wed 00:10"), so the day is optional.
+    if (!/at this pace: 100% at (\w{3} )?\d\d:\d\d, .* before the reset/.test(r.proj) || !/flameout before reset/.test(r.proj) || !/ulwarn/.test(r.cls) || /uldanger/.test(r.cls))
       fail("usageLimits: warn line reads " + JSON.stringify(r));
     if (!/it does not see the future/.test(r.tip) || !/spend outside atrium/.test(r.tip)) fail("usageLimits: the honesty text is missing: " + r.tip);
     // Danger: within 30 minutes.
@@ -8975,6 +9612,706 @@ async function usagePolishSection(browser, base) {
   if (errors.length) fail("usagePolish: the page threw: " + errors.join(" | "));
 }
 
+// ── the phone terminal's composer (u-025) ─────────────────────────────────
+// A real textarea above the key bar. An IME composition (swipe, dictation) sends the final text ONCE, as one
+// bracketed paste then Enter. Enter never sends. xterm's own textarea takes no soft keyboard (inputmode none)
+// but still takes hardware keys. A desktop has neither.
+async function phoneComposeSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  landList = [LAND["land-live"]];
+  landPerms = [];
+  const errors = [];
+  const fakeSock = () => {
+    const Real = window.WebSocket;
+    window.__sent = [];
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
+        onopen: null, onclose: null, onmessage: null, onerror: null,
+        send(d) { window.__sent.push(String(d)); }, close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  };
+  const open = async (phone) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: phone, isMobile: phone });
+    await ctx.addInitScript((ph) => {
+      localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true }));
+      if (ph) localStorage.setItem("atrium.termphone", "1");
+    }, phone);
+    await ctx.addInitScript(fakeSock);
+    const p = await ctx.newPage();
+    p.on("pageerror", e => { errors.push(String(e.stack || e)); });
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await p.evaluate(() => attachTask("land-live"));
+    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live",
+      null, { timeout: slow(10000) });
+    await p.waitForTimeout(300);
+    return { ctx, p };
+  };
+  const ins = (p) => p.evaluate(() => window.__sent.filter(x => /"t":"in"/.test(x)).map(x => JSON.parse(x).d));
+  try {
+    const { ctx, p } = await open(true);
+    await p.evaluate(() => new Promise(r => term.write("[?2004h", r)));
+    const box = "#t-compose textarea";
+    await p.waitForSelector(box, { timeout: slow(5000) });
+    const shown = await p.evaluate(() => getComputedStyle(document.getElementById("t-compose")).display);
+    if (shown === "none") fail("phoneCompose: the composer is not shown on a phone terminal");
+    const h0 = await p.evaluate(() => document.getElementById("t-compose").getBoundingClientRect().height);
+    if (h0 > 48) fail("phoneCompose: the empty composer is " + h0 + "px, want at most 48");
+    if (await p.evaluate(() => document.querySelector("#t-compose .mc-send").disabled) !== true) fail("phoneCompose: send is enabled when empty");
+    const im = await p.evaluate(() => document.querySelector("#t-screen textarea").getAttribute("inputmode"));
+    if (im !== "none") fail("phoneCompose: xterm's textarea inputmode is " + im + ", want none");
+
+    // A swiped word: composition, several updates, end, input. Nothing leaves until the button.
+    await p.evaluate((sel) => {
+      const ta = document.querySelector(sel);
+      ta.focus();
+      ta.dispatchEvent(new CompositionEvent("compositionstart", { data: "" }));
+      for (const w of ["h", "he", "hel", "hello"]) {
+        ta.value = w;
+        ta.dispatchEvent(new CompositionEvent("compositionupdate", { data: w }));
+        ta.dispatchEvent(new InputEvent("input", { data: w, inputType: "insertCompositionText", isComposing: true, bubbles: true }));
+      }
+      ta.dispatchEvent(new CompositionEvent("compositionend", { data: "hello" }));
+      ta.dispatchEvent(new InputEvent("input", { data: "hello", inputType: "insertText", bubbles: true }));
+      window.__sent.length = 0;
+    }, box);
+    await p.keyboard.press("Enter");
+    if ((await ins(p)).length) fail("phoneCompose: Enter sent something: " + JSON.stringify(await ins(p)));
+    await p.evaluate(() => { const ta = document.querySelector("#t-compose textarea"); ta.value = "hello"; ta.dispatchEvent(new Event("input", { bubbles: true })); });
+    await p.tap("#t-compose .mc-send");
+    await p.waitForTimeout(300);
+    const sent = await ins(p);
+    if (JSON.stringify(sent) !== JSON.stringify(["\x1b[200~hello\x1b[201~", "\r"])) fail("phoneCompose: the send was " + JSON.stringify(sent));
+    if (await p.evaluate(() => document.querySelector("#t-compose textarea").value) !== "") fail("phoneCompose: the box kept its text after a send");
+
+    // Grows to about four lines and no more.
+    await p.evaluate(() => { const ta = document.querySelector("#t-compose textarea"); ta.value = "a\nb\nc\nd\ne\nf\ng"; ta.dispatchEvent(new Event("input", { bubbles: true })); });
+    const h1 = await p.evaluate(() => document.querySelector("#t-compose textarea").getBoundingClientRect().height);
+    if (h1 < 60 || h1 > 4 * 22 + 30) fail("phoneCompose: a 7 line box is " + h1 + "px tall, want about 4 lines");
+    await p.evaluate(() => { const ta = document.querySelector("#t-compose textarea"); ta.value = ""; ta.dispatchEvent(new Event("input", { bubbles: true })); });
+
+    // A hardware key on the terminal's own textarea still reaches the pty.
+    await p.evaluate(() => { window.__sent.length = 0; document.querySelector("#t-screen textarea").focus(); });
+    await p.keyboard.press("x");
+    await p.waitForTimeout(150);
+    if (!(await ins(p)).some(d => d === "x")) fail("phoneCompose: a hardware key did not reach the pty: " + JSON.stringify(await ins(p)));
+
+    // Tapping the terminal does not focus the composer.
+    await p.evaluate(() => document.activeElement && document.activeElement.blur());
+    await p.tap("#t-screen");
+    if (await p.evaluate(() => !!document.activeElement.closest("#t-compose"))) fail("phoneCompose: tapping the terminal focused the composer");
+    // An upload from the key bar's paperclip puts its paths in the composer at the caret, writes nothing to the
+    // pty, and leaves the composer focused so the keyboard comes up. Text either side is kept.
+    let ups = 0;
+    await ctx.route("**/v1/tasks/*/files", route => {
+      if (route.request().method() !== "POST") return route.fallback();
+      ups++;
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ paths: ["/w/a.png", "/w/b.heic"] }) });
+    });
+    await p.evaluate(() => {
+      const ta = document.querySelector("#t-compose textarea");
+      ta.value = "look at  and fix"; ta.dispatchEvent(new Event("input", { bubbles: true }));
+      ta.setSelectionRange(8, 8);
+      document.activeElement && document.activeElement.blur();
+      window.__sent.length = 0;
+    });
+    const noAccept = await p.evaluate(() => document.getElementById("t-attach-in").hasAttribute("accept"));
+    if (noAccept) fail("phoneCompose: the file input has an accept filter");
+    await p.setInputFiles("#t-attach-in", [
+      { name: "a.png", mimeType: "image/png", buffer: Buffer.from("x") },
+      { name: "b.heic", mimeType: "image/heic", buffer: Buffer.from("y") }]);
+    await p.waitForFunction(() => document.querySelector("#t-compose textarea").value.includes("/w/a.png"), null, { timeout: slow(5000) });
+    const up = await p.evaluate(() => ({ v: document.querySelector("#t-compose textarea").value,
+      inbox: document.activeElement === document.querySelector("#t-compose textarea"),
+      ins: window.__sent.filter(x => /"t":"in"/.test(x)).length }));
+    if (ups !== 1) fail("phoneCompose: " + ups + " uploads");
+    if (up.v !== "look at /w/a.png /w/b.heic and fix") fail("phoneCompose: the text after an upload is " + JSON.stringify(up.v));
+    if (up.ins) fail("phoneCompose: an upload wrote to the pty before send");
+    if (!up.inbox) fail("phoneCompose: the composer is not focused after an upload");
+    await ctx.close();
+
+    // A desktop: hidden, and xterm's textarea keeps its own input mode.
+    const d = await open(false);
+    const dsk = await d.p.evaluate(() => ({ disp: getComputedStyle(document.getElementById("t-compose")).display,
+      hidden: document.getElementById("t-compose").hidden, im: document.querySelector("#t-screen textarea").getAttribute("inputmode"),
+      ta: !!document.querySelector("#t-compose textarea") }));
+    if (dsk.disp !== "none" || !dsk.hidden || dsk.im || dsk.ta) fail("phoneCompose: a desktop changed: " + JSON.stringify(dsk));
+    await d.ctx.close();
+  } finally {
+    tasksMode = was;
+  }
+  if (errors.length) fail("phoneCompose: the page threw: " + errors.join(" | "));
+}
+
+// ── the phone page's composer and permission rows (u-025) ─────────────────
+// Headless, with window.mStore stubbed and every endpoint answered by page.route on a fake origin, so this
+// needs neither u-024's page nor a daemon. Views 390x844 and 412x915 with touch.
+const M_ORIGIN = "http://m.test";
+const M_VIEWS = [{ width: 390, height: 844 }, { width: 412, height: 915 }];
+
+async function mHarness(browser, view, opts) {
+  opts = opts || {};
+  const ctx = await browser.newContext({ viewport: view, hasTouch: true, isMobile: true,
+    reducedMotion: opts.reduced ? "reduce" : "no-preference" });
+  const calls = { message: [], decide: [], harnesses: 0 };
+  const mode = { message: "terminal", decide: "ok" };
+  await ctx.route(M_ORIGIN + "/**", async route => {
+    const u = new URL(route.request().url());
+    const send = (status, body, type) => route.fulfill({ status, contentType: type || "application/json", body });
+    if (u.pathname === "/harness.html") {
+      return send(200, "<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1,viewport-fit=cover'>" +
+        "<link rel=stylesheet href=/m/compose.css><body style='margin:0;background:#0b1b2e'><div id=m-compose></div><section id=m-perms></section>" +
+        "<script>" +
+        "const L={cards:[],perms:[]};" +
+        "window.mStore={cards:()=>window.__cards,card:id=>window.__cards.find(c=>c.id===id)||null,perms:()=>window.__perms," +
+        "on:(k,f)=>{L[k].push(f);window.__subs=(window.__subs||0)+1;return()=>{L[k]=L[k].filter(x=>x!==f);window.__subs--}}};" +
+        "window.__cards=[{id:'c1',runner:'claude',status:'working',title:'Card one'},{id:'c2',runner:'gemini',status:'working',title:'Card two'}];" +
+        "window.__perms=[];window.__emit=k=>L[k].slice().forEach(f=>f());" +
+        "</script><script src=/m/js/compose.js></script><script src=/m/js/perms.js></script>", "text/html");
+    }
+    if (u.pathname.startsWith("/m/")) {
+      const file = path.join(WEB_ROOT, u.pathname);
+      return fs.readFile(file, (err, body) => err ? send(404, "") :
+        send(200, body, u.pathname.endsWith(".css") ? "text/css" : "application/javascript"));
+    }
+    if (u.pathname === "/v1/harnesses") {
+      calls.harnesses++;
+      return send(200, JSON.stringify({ harnesses: [{ id: "claude", bracketed_paste: true }, { id: "gemini", bracketed_paste: false }] }));
+    }
+    let m = u.pathname.match(/^\/v1\/tasks\/([^/]+)\/message$/);
+    if (m) {
+      const body = JSON.parse(route.request().postData() || "{}");
+      calls.message.push({ id: m[1], body });
+      if (mode.message === "fail") return send(500, JSON.stringify({ error: "the session is gone" }));
+      if (mode.message === "slow") await new Promise(r => setTimeout(r, 400));
+      const d = mode.message === "slow" ? "terminal" : mode.message;
+      return send(200, JSON.stringify({ delivered: d, warning: d === "parked" ? "no live session" : "" }));
+    }
+    m = u.pathname.match(/^(?:\/v1\/rooms\/([^/]+))?\/(?:v1\/)?permissions\/([^/]+)\/decide$/) ||
+      u.pathname.match(/^\/v1\/rooms\/([^/]+)\/permissions\/([^/]+)\/decide$/);
+    if (m || /\/decide$/.test(u.pathname)) {
+      calls.decide.push({ url: u.pathname, body: JSON.parse(route.request().postData() || "{}") });
+      if (mode.decide === "refuse") return send(409, JSON.stringify({ error: "already answered" }));
+      return send(204, "", "text/plain");
+    }
+    return send(404, "{}");
+  });
+  const p = await ctx.newPage();
+  const errors = [];
+  p.on("pageerror", e => errors.push(String(e.stack || e)));
+  await p.goto(M_ORIGIN + "/harness.html");
+  return { ctx, p, calls, mode, errors };
+}
+
+async function mComposeSection(browser) {
+  for (const view of M_VIEWS) {
+    const tag = "mCompose " + view.width + ": ";
+    const { ctx, p, calls, mode, errors } = await mHarness(browser, view);
+    const box = "#m-compose .mc-box", btn = "#m-compose .mc-send", note = "#m-compose .mc-note";
+    const mount = (id) => p.evaluate((i) => mCompose.mount(document.getElementById("m-compose"), i), id || "c1");
+    const type = async (text) => { await p.fill(box, text); };
+    const noteText = () => p.evaluate((s) => document.querySelector(s).textContent, note);
+    await mount();
+
+    // Send disabled when empty, 44px target, Enter inserts a newline.
+    if (!(await p.$eval(btn, b => b.disabled))) fail(tag + "send is enabled when empty");
+    const bb = await p.$eval(btn, b => { const r = b.getBoundingClientRect(); return [r.width, r.height]; });
+    if (bb[0] < 44 || bb[1] < 44) fail(tag + "send target is " + bb);
+    await p.click(box);
+    await p.keyboard.type("one");
+    await p.keyboard.press("Enter");
+    await p.keyboard.type("two");
+    if ((await p.$eval(box, t => t.value)) !== "one\ntwo") fail(tag + "Enter did not insert a newline");
+    if (calls.message.length) fail(tag + "Enter sent");
+
+    // Grows to about six lines then scrolls.
+    const h1 = await p.$eval(box, t => t.getBoundingClientRect().height);
+    await type("1\n2\n3\n4\n5\n6\n7\n8\n9\n10");
+    const h2 = await p.$eval(box, t => ({ h: t.getBoundingClientRect().height, sh: t.scrollHeight, ov: getComputedStyle(t).overflowY }));
+    if (h2.h < h1 || h2.h > 6 * 26 + 30 || h2.ov !== "auto" || h2.sh <= h2.h) fail(tag + "box did not cap at six lines and scroll: " + JSON.stringify([h1, h2]));
+
+    // A queued answer is never called sent. Text clears, note says queued.
+    mode.message = "queued";
+    await type("hello queued");
+    await p.tap(btn);
+    await p.waitForFunction((s) => /queued/.test(document.querySelector(s).textContent), note);
+    if (/(^|\W)sent(\W|$)/.test(await noteText())) fail(tag + "queued was called sent: " + await noteText());
+    if (await p.$eval(box, t => t.value)) fail(tag + "queued send kept the text");
+    // A typed one says sent.
+    mode.message = "terminal";
+    await type("hello typed");
+    await p.tap(btn);
+    await p.waitForFunction((s) => /^sent/.test(document.querySelector(s).textContent), note);
+    if (calls.message.length !== 2) fail(tag + "want 2 calls, got " + calls.message.length);
+    if (calls.message[1].body.text !== "hello typed" || calls.message[1].id !== "c1") fail(tag + "body " + JSON.stringify(calls.message[1]));
+
+    // Failure and parked keep the text and say why.
+    for (const md of ["fail", "parked"]) {
+      mode.message = md;
+      await type("keep me " + md);
+      await p.tap(btn);
+      await p.waitForFunction((s) => /not sent/.test(document.querySelector(s).textContent), note);
+      if ((await p.$eval(box, t => t.value)) !== "keep me " + md) fail(tag + md + " lost the text");
+      if (md === "fail" && !/gone/.test(await noteText())) fail(tag + "failure reason not shown: " + await noteText());
+    }
+
+    // No double send: two quick taps on a slow answer make one call.
+    mode.message = "slow";
+    await type("once");
+    const before = calls.message.length;
+    await p.tap(btn);
+    await p.evaluate((s) => document.querySelector(s).click(), btn);
+    await p.waitForFunction((s) => /^sent/.test(document.querySelector(s).textContent), note);
+    if (calls.message.length !== before + 1) fail(tag + "double send: " + (calls.message.length - before));
+
+    // Multi-line: kept for a paste runner (claude), joined with spaces for gemini, and the hint says so.
+    mode.message = "terminal";
+    await type("line a\nline b");
+    await p.tap(btn);
+    await p.waitForFunction((n) => true, 0);
+    await p.waitForTimeout(150);
+    if (calls.message[calls.message.length - 1].body.text !== "line a\nline b") fail(tag + "claude multi-line changed: " + JSON.stringify(calls.message[calls.message.length - 1]));
+    await mount("c2");
+    await p.waitForTimeout(100);
+    await type("line a\nline b");
+    if (!/joined with spaces/.test(await noteText())) fail(tag + "no join hint: " + await noteText());
+    await p.tap(btn);
+    await p.waitForTimeout(200);
+    const last = calls.message[calls.message.length - 1];
+    if (last.id !== "c2" || last.body.text !== "line a line b") fail(tag + "gemini not joined: " + JSON.stringify(last));
+
+    // Drafts: per card, survive remount and reload, and a throwing localStorage does not break it.
+    await mount("c1");
+    await type("draft one");
+    await mount("c2");
+    if (await p.$eval(box, t => t.value)) fail(tag + "card two shows card one's draft");
+    await mount("c1");
+    if ((await p.$eval(box, t => t.value)) !== "draft one") fail(tag + "draft lost on remount");
+    await p.reload();
+    await mount("c1");
+    if ((await p.$eval(box, t => t.value)) !== "draft one") fail(tag + "draft lost on reload");
+    await p.evaluate(() => { Storage.prototype.getItem = Storage.prototype.setItem = Storage.prototype.removeItem = () => { throw new Error("blocked"); }; });
+    await mount("c1");
+    await type("no storage");
+    if (!(await p.$eval(box, t => t.value === "no storage"))) fail(tag + "a throwing localStorage broke the box");
+    await p.reload();
+    await mount("c1");
+
+    // Chips only when the card is asking, and they fill without sending.
+    if (await p.$eval("#m-compose .mc-chips", c => c.classList.contains("on"))) fail(tag + "chips shown for a working card");
+    const n0 = calls.message.length;
+    await p.evaluate(() => { __cards[0].status = "needs-input"; __emit("cards"); });
+    await p.waitForSelector("#m-compose .mc-chips.on");
+    const cb = await p.$eval(".mc-chip", b => b.getBoundingClientRect().height);
+    if (cb < 44) fail(tag + "chip is " + cb + "px");
+    await p.tap(".mc-chip");
+    if (!(await p.$eval(box, t => t.value.length > 0)) || calls.message.length !== n0) fail(tag + "chip did not fill or it sent");
+
+    // The keyboard lifts the composer by the visual viewport gap.
+    await p.evaluate(() => {
+      const vv = window.visualViewport;
+      Object.defineProperty(vv, "height", { configurable: true, get: () => window.innerHeight - 300 });
+      vv.dispatchEvent(new Event("resize"));
+    });
+    await p.waitForTimeout(150);
+    const lift = await p.$eval("#m-compose .mc", e => e.style.getPropertyValue("--mc-lift"));
+    if (lift !== "300px") fail(tag + "lift is " + lift);
+
+    // Unmount drops the store subscription.
+    const s0 = await p.evaluate(() => window.__subs);
+    await p.evaluate(() => mCompose.unmount());
+    const s1 = await p.evaluate(() => window.__subs);
+    if (s1 >= s0) fail(tag + "unmount kept the subscription " + [s0, s1]);
+
+    if (process.env.M_SHOTS) {
+      for (const skin of ["dark", "light"]) {
+        await p.evaluate((sk) => {
+          delete window.visualViewport.height;
+          document.body.style.background = sk === "dark" ? "#0b1b2e" : "#f4f7fa";
+          const s = document.documentElement.style;
+          if (sk === "light") { s.setProperty("--m-danger-text", "#c0392b"); s.setProperty("--m-surface", "#f4f7fa"); s.setProperty("--m-raised", "#fff"); s.setProperty("--m-sink", "#e6edf3"); s.setProperty("--m-text", "#12293f"); s.setProperty("--m-quiet", "#4a6378"); s.setProperty("--m-dim", "#7c92a4"); s.setProperty("--m-line", "#cfdbe5"); s.setProperty("--m-accent", "#0a8f73"); s.setProperty("--m-on-accent", "#fff"); s.setProperty("--m-shadow", "rgba(20,40,60,.14)"); }
+          else ["surface", "raised", "sink", "text", "quiet", "dim", "line", "accent", "on-accent", "shadow"].forEach(k => s.removeProperty("--m-" + k));
+          mCompose.mount(document.getElementById("m-compose"), "c1");
+          document.querySelector(".mc-box").value = "Go ahead, and keep the tests green.";
+          document.querySelector(".mc-box").dispatchEvent(new Event("input"));
+        }, skin);
+        await p.waitForTimeout(400);
+        fs.mkdirSync(path.join(__dirname, "..", "docs", "backlog", "ui", "img", "m"), { recursive: true });
+        await p.screenshot({ path: path.join(__dirname, "..", "docs", "backlog", "ui", "img", "m", "compose-" + skin + "-" + view.width + ".png") });
+      }
+    }
+    if (errors.length) fail(tag + "the page threw: " + errors.join(" | "));
+    await ctx.close();
+  }
+}
+
+async function mPermsSection(browser) {
+  const perm = (id, task, extra) => Object.assign({ id, task_id: task, tool: "Bash", command: "rm -rf build && echo '<img src=x onerror=window.__xss=1>'",
+    agent: "worker", requested_at: new Date().toISOString() }, extra || {});
+  for (const view of M_VIEWS) {
+    const tag = "mPerms " + view.width + ": ";
+    for (const reduced of [false, true]) {
+      const { ctx, p, calls, mode, errors } = await mHarness(browser, view, { reduced });
+      const mount = (id) => p.evaluate((i) => mPerms.mount(document.getElementById("m-perms"), i), id);
+      const setPerms = (list) => p.evaluate((l) => { __perms = l; __emit("perms"); }, list);
+      await p.evaluate(() => { window.__perms = []; });
+      await mount("c1");
+      await setPerms([perm("p1", "c1"), perm("p2", "c2"), perm("p3", "c1", { room: "lab", perm_id: "r9", tool: "Edit", command: "/very/long/path/".repeat(12) + "file.txt" })]);
+      await p.waitForSelector(".mp-row");
+      const rows = await p.$$eval(".mp-row", r => r.map(x => x.dataset.id));
+      if (JSON.stringify(rows) !== '["p1","p3"]') fail(tag + "rows for c1: " + rows);
+      // Inert markup, monospace, wraps without widening the page.
+      if (await p.evaluate(() => window.__xss || !!document.querySelector(".mp-cmd img"))) fail(tag + "command markup ran");
+      const look = await p.evaluate(() => ({ ff: getComputedStyle(document.querySelector(".mp-cmd code")).fontFamily,
+        sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth }));
+      if (!/mono|Menlo|Consolas/i.test(look.ff)) fail(tag + "command font " + look.ff);
+      if (look.sw > look.cw) fail(tag + "page scrolls sideways " + [look.sw, look.cw]);
+      for (const b of await p.$$(".mp-row:first-child .mp-acts .mp-btn")) {
+        const r = await b.evaluate(x => { const q = x.getBoundingClientRect(); return q.height; });
+        if (r < 43.9) fail(tag + "a button is " + r + "px");
+      }
+      // Approve and deny bodies.
+      await p.tap('.mp-row[data-id="p1"] .mp-btn.approve');
+      await p.waitForFunction(() => true);
+      await p.waitForTimeout(100);
+      const a = calls.decide[0];
+      if (!a || a.url !== "/v1/permissions/p1/decide" || a.body.decision !== "approve" || a.body.forever !== false) fail(tag + "approve: " + JSON.stringify(a));
+      if (await p.$eval('.mp-row[data-id="p1"] .mp-btn.approve', b => !b.disabled)) fail(tag + "an answered row can be answered again");
+      // Answered elsewhere: the store drops it and the row leaves.
+      await setPerms([perm("p3", "c1", { room: "lab", perm_id: "r9", tool: "Edit", command: "x" })]);
+      await p.waitForFunction(() => !document.querySelector('.mp-row[data-id="p1"]'), null, { timeout: 2000 });
+      // Room request: room url, the daemon's own id, and a reason with the block.
+      await p.tap('.mp-row[data-id="p3"] .mp-btn.why');
+      await p.fill('.mp-row[data-id="p3"] .mp-reason-box', "use pnpm instead");
+      await setPerms([perm("p3", "c1", { room: "lab", perm_id: "r9", tool: "Edit", command: "x" }), perm("p4", "c1")]);
+      if ((await p.$eval('.mp-reason-box', t => t.value)) !== "use pnpm instead") fail(tag + "an update lost the typed reason");
+      await p.tap('.mp-row[data-id="p3"] .mp-reason .go');
+      await p.waitForTimeout(150);
+      const d = calls.decide[1];
+      if (!d || d.url !== "/v1/rooms/lab/permissions/r9/decide" || d.body.decision !== "block" || d.body.reason !== "use pnpm instead") fail(tag + "reason: " + JSON.stringify(d));
+      // Plain deny has no reason. A refused answer unlocks the row and says why.
+      mode.decide = "refuse";
+      await p.tap('.mp-row[data-id="p4"] .mp-btn.deny:not(.go)');
+      await p.waitForFunction(() => /already answered/.test(document.querySelector('.mp-row[data-id="p4"] .mp-err').textContent));
+      if (calls.decide[2].body.decision !== "block" || calls.decide[2].body.reason !== "") fail(tag + "deny: " + JSON.stringify(calls.decide[2]));
+      if (await p.$eval('.mp-row[data-id="p4"] .mp-btn.approve', b => b.disabled)) fail(tag + "a refused answer left the row locked");
+      // All-cards view and its empty state.
+      await p.evaluate(() => mPerms.mount(document.getElementById("m-perms"), null));
+      if ((await p.$$(".mp-row")).length !== 2) fail(tag + "all view shows " + (await p.$$(".mp-row")).length);
+      await setPerms([]);
+      await p.waitForFunction(() => !document.querySelector(".mp-empty").hidden, null, { timeout: 2000 });
+      await p.waitForTimeout(400);
+      if ((await p.$$(".mp-row")).length) fail(tag + "rows remained after the store emptied");
+      const s0 = await p.evaluate(() => window.__subs);
+      await p.evaluate(() => mPerms.unmount());
+      if ((await p.evaluate(() => window.__subs)) >= s0) fail(tag + "unmount kept the subscription");
+
+      if (process.env.M_SHOTS && !reduced) {
+        for (const skin of ["dark", "light"]) {
+          await p.evaluate((sk) => {
+            document.body.style.background = sk === "dark" ? "#0b1b2e" : "#f4f7fa";
+            const s = document.documentElement.style;
+            if (sk === "light") { s.setProperty("--m-danger-text", "#c0392b"); s.setProperty("--m-surface", "#f4f7fa"); s.setProperty("--m-raised", "#fff"); s.setProperty("--m-sink", "#e6edf3"); s.setProperty("--m-text", "#12293f"); s.setProperty("--m-quiet", "#4a6378"); s.setProperty("--m-dim", "#7c92a4"); s.setProperty("--m-line", "#cfdbe5"); s.setProperty("--m-accent", "#0a8f73"); s.setProperty("--m-on-accent", "#fff"); s.setProperty("--m-shadow", "rgba(20,40,60,.14)"); }
+            else ["surface", "raised", "sink", "text", "quiet", "dim", "line", "accent", "on-accent", "shadow"].forEach(k => s.removeProperty("--m-" + k));
+            window.__perms = [{ id: "s1", task_id: "c1", tool: "Bash", command: "npm run build && git status --short", agent: "worker", requested_at: new Date().toISOString(), details: "+ added line\n- removed line" }];
+            mPerms.mount(document.getElementById("m-perms"), "c1");
+          }, skin);
+          await p.waitForTimeout(400);
+          await p.screenshot({ path: path.join(__dirname, "..", "docs", "backlog", "ui", "img", "m", "perms-" + skin + "-" + view.width + ".png") });
+        }
+      }
+      if (errors.length) fail(tag + "the page threw: " + errors.join(" | "));
+      await ctx.close();
+    }
+  }
+}
+
+// ── u-026: on a phone the lists and the header tab row fit the screen ──────
+// Five fixture cards with long titles and paths, a room chip and a `? N` chip, three of them in one group. On the
+// terminals tab and the stack tab at 390px: nothing passes the right edge, the cards are one width, the summary
+// bar sits above the first card, and a card is no taller than its content plus a small padding. The header's tab
+// segments are equal, unclipped and clear of the other controls.
+async function phoneListFitSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  const long = [
+    ["claude-sg4~fit-1", "fabric: director of rooms, hub, cross-room review and a very long title that keeps going", "/home/clint/git/github/dovholuknf/atrium-worktrees/claude/fabric/some/deep/path/r-023", 2],
+    ["claude-sg4~fit-2", "ghsa-rg2j-wgmp-vxr5", "/home/clint/git/github/openziti/tlsuv-ghsa-rg2j-wgmp-vxr5-with-a-long-name", 0],
+    ["rg2~fit-3", "discourse-6101", "/home/clint/git/github/openziti/ziti/discourse-6101", 1],
+    ["m1mini~fit-4", "smoke: m1mini", "/Users/clint/git/smoke", 0],
+    ["fit-5", "nf-self-hosted", "/home/clint/git/github/openziti/ziti/nf-self-hosted-deployment-checks", 0]
+  ];
+  landList = long.map(([id, title, wt, q], i) => landCard(id, {
+    display_title: title, worktree: wt, repo: wt.split("/").pop(), branch: "b" + i, 
+    supervised: true, created_at: "2026-09-19T12:00:00Z", tags: i < 3 ? ["group:g1"] : [],
+    seen: q ? { unseen: false, turn_ended_at: "2026-09-29T09:00:00.000Z", questions_at: "2026-09-29T09:00:00.000Z",
+      answered: false, open_questions: Array.from({ length: q }, (_, k) => "q" + k) } : undefined
+  }));
+  landPerms = [];
+  const errors = [];
+  const shots = process.env.LISTFIT_SHOTS || "";
+  try {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+    await ctx.addInitScript(() => localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true })));
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await p.evaluate(() => { globalAuto = true; globalAutoStale = false; globalAutoRead = true; paintGlobalAuto(); });
+    const shot = async (n) => {
+      if (!shots) return;
+      fs.mkdirSync(shots, { recursive: true });
+      await p.screenshot({ path: path.join(shots, n + "-390x844.png") });
+    };
+    const head = await p.evaluate(() => {
+      const tabs = [...document.querySelectorAll("header nav .tab")].filter(t => t.getBoundingClientRect().width > 0);
+      const w = tabs.map(t => t.getBoundingClientRect().width);
+      const clipped = tabs.filter(t => t.scrollWidth > t.clientWidth + 1).map(t => t.textContent);
+      const ctl = [...document.querySelectorAll("header .bar > *")].filter(e => {
+        const r = e.getBoundingClientRect();
+        return r.width > 0 && r.height > 0 && getComputedStyle(e).display !== "none";
+      });
+      const boxes = ctl.map(e => ({ id: e.id || e.tagName.toLowerCase(), r: e.getBoundingClientRect() }));
+      const hit = [];
+      for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
+        const a = boxes[i].r, b = boxes[j].r;
+        if (a.left < b.right - 0.5 && b.left < a.right - 0.5 && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5) hit.push(boxes[i].id + "/" + boxes[j].id);
+      }
+      const hdr = document.querySelector("header");
+      return { n: tabs.length, min: Math.min(...w), max: Math.max(...w), clipped, hit,
+        hs: hdr.scrollWidth - hdr.clientWidth, pg: document.documentElement.scrollWidth - innerWidth,
+        rights: tabs.map(t => t.getBoundingClientRect().right).filter(r => r > innerWidth + 0.5) };
+    });
+    if (head.n < 3) fail("phoneListFit: fewer than three tabs are visible " + JSON.stringify(head));
+    if (head.max - head.min > 1) fail("phoneListFit: the tab segments are not equal width " + JSON.stringify(head));
+    if (head.clipped.length) fail("phoneListFit: a tab label is clipped " + JSON.stringify(head));
+    if (head.hit.length) fail("phoneListFit: header controls overlap " + JSON.stringify(head));
+    if (head.hs > 0 || head.pg > 0 || head.rights.length) fail("phoneListFit: the header overflows " + JSON.stringify(head));
+
+    for (const view of ["terms", "stack"]) {
+      await p.evaluate(v => switchView(v), view);
+      const sel = view === "terms" ? ".term-list .card" : "#stack-list .stackrow";
+      await p.waitForSelector(sel, { timeout: slow(10000) });
+      await p.waitForTimeout(300);
+      await shot("list-" + view);
+      const r = await p.evaluate(({ sel, view }) => {
+        const vw = document.documentElement.clientWidth;
+        const cards = [...document.querySelectorAll(sel)].filter(c => c.getBoundingClientRect().width > 0);
+        const list = document.querySelector(view === "terms" ? ".termscroll" : "#stack-list");
+        const bad = [];
+        cards.forEach(c => {
+          const cr = c.getBoundingClientRect();
+          if (cr.right > vw + 0.5 || cr.left < -0.5) bad.push("card " + Math.round(cr.right));
+          c.querySelectorAll(".chip").forEach(ch => {
+            const r = ch.getBoundingClientRect();
+            if (r.width && (r.right > cr.right + 0.5 || r.right > vw + 0.5)) bad.push("chip " + ch.textContent + " " + Math.round(r.right));
+          });
+        });
+        const ws = cards.map(c => Math.round(c.getBoundingClientRect().width * 2) / 2);
+        const tall = cards.map(c => {
+          const cr = c.getBoundingClientRect();
+          let bottom = 0;
+          [...c.querySelectorAll("*")].forEach(e => { const r = e.getBoundingClientRect(); if (r.height) bottom = Math.max(bottom, r.bottom); });
+          return { slack: Math.round(cr.bottom - bottom), h: Math.round(cr.height) };
+        });
+        const bar = document.querySelector(view === "terms" ? ".termtray" : ".filters");
+        const first = cards[0].getBoundingClientRect();
+        return { n: cards.length, bad, ws, tall, lsw: list ? list.scrollWidth - list.clientWidth : 0,
+          pg: document.documentElement.scrollWidth - innerWidth,
+          barBottom: bar ? bar.getBoundingClientRect().bottom : null, firstTop: first.top };
+      }, { sel, view });
+      const tag = "phoneListFit " + view + ": ";
+      if (r.n < 4) fail(tag + "only " + r.n + " cards drew");
+      if (r.bad.length) fail(tag + "something passes the right edge " + JSON.stringify(r.bad));
+      if (r.lsw > 0 || r.pg > 0) fail(tag + "the list or page scrolls sideways " + JSON.stringify(r));
+      if (Math.max(...r.ws) - Math.min(...r.ws) > 1) fail(tag + "the cards differ in width " + JSON.stringify(r.ws));
+      if (r.barBottom !== null && r.barBottom > r.firstTop + 0.5) fail(tag + "the summary bar overlaps the first card " + JSON.stringify(r));
+      // A card's padding is 6px a side and its border 1px, so 14px of slack under the last child is generous. The fault
+      // was a card twice as tall as its content.
+      const slack = r.tall.filter(t => t.slack > 14);
+      if (slack.length) fail(tag + "a card has empty space under its content " + JSON.stringify(r.tall));
+    }
+    await ctx.close();
+  } finally {
+    tasksMode = was;
+  }
+  if (errors.length) fail("phoneListFit: the page threw: " + errors.join(" | "));
+}
+
+// ── u-026: on a phone a toast is a nudge of the bell, and a held message a nudge of the envelope ─────────
+// At 390x844 with touch a toast draws no box, shakes the bell once, raises its count and lands in the log. With
+// the header hidden (the full screen terminal) the fixed `#phone-bell` takes over, so only one bell is ever on
+// screen, and tapping it opens the log. A held message nudges the envelope with its count and draws no notice.
+// At a desktop size the same toast still draws.
+async function phoneNudgeSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  landList = [LAND["land-live"]];
+  landPerms = [];
+  const errors = [];
+  const shots = process.env.LISTFIT_SHOTS || "";
+  const shown = (p, sel) => p.evaluate(s => {
+    const e = document.querySelector(s);
+    return !!e && !e.hidden && e.getClientRects().length > 0 && getComputedStyle(e).visibility !== "hidden";
+  }, sel);
+  try {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+    await ctx.addInitScript(() => {
+      localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true }));
+      localStorage.setItem("atrium.termphone", "1");
+      const Real = window.WebSocket;
+      window.WebSocket = function (url, protocols) {
+        if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+        const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
+          onopen: null, onclose: null, onmessage: null, onerror: null, send() {}, close() { this.readyState = 3; } };
+        setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+        return s;
+      };
+      Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+    });
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    // The terminal view, attached, which is where the alerts matter most.
+    await p.evaluate(() => attachTask("land-live"));
+    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live",
+      null, { timeout: slow(10000) });
+    await p.waitForTimeout(300);
+    const bell = () => p.evaluate(() => ({
+      n: Number(document.querySelector("#toastlog-open .count").textContent || 0),
+      nudges: Number(document.querySelector("#toastlog-open .glyph").dataset.nudges || 0),
+      boxes: document.querySelectorAll("#toasts .toast").length,
+    }));
+    const b0 = await bell();
+    await p.evaluate(() => toast("nudge one", "a body"));
+    const b1 = await bell();
+    if (b1.boxes !== 0) fail("phoneNudge: a toast drew a box on a phone");
+    if (b1.nudges !== b0.nudges + 1) fail("phoneNudge: the bell was not nudged " + JSON.stringify([b0, b1]));
+    if (!(await p.evaluate(() => document.querySelector("#toastlog-open .glyph").classList.contains("nudge"))))
+      fail("phoneNudge: the bell carries no nudge class");
+    if (b1.n !== b0.n + 1) fail("phoneNudge: the count did not go up " + JSON.stringify([b0, b1]));
+    if (!(await shown(p, "#toastlog-open"))) fail("phoneNudge: the header bell is not showing");
+    if (await shown(p, "#phone-bell")) fail("phoneNudge: two bells on screen, the badge shows beside the header's");
+    // the entry is in the log and the bell opens it
+    await p.locator("#toastlog-open").tap();
+    await p.waitForFunction(() => document.getElementById("toastlog").open);
+    if (!(await p.evaluate(() => /nudge one/.test(document.getElementById("toastlog-list").textContent))))
+      fail("phoneNudge: the toast is not in the log");
+    await p.evaluate(() => document.getElementById("toastlog").close());
+
+    // the header gone: the corner badge is the one bell
+    await p.evaluate(() => document.body.classList.add("term-full"));
+    await p.waitForFunction(() => !document.getElementById("phone-bell").hidden, null, { timeout: slow(5000) });
+    if (await shown(p, "#toastlog-open")) fail("phoneNudge: the header bell shows with the header hidden");
+    const geo = await p.locator("#phone-bell").boundingBox();
+    if (!geo || geo.width < 44 || geo.height < 44 || geo.x + geo.width < 388 || geo.y > 4)
+      fail("phoneNudge: the corner badge is not a 44px target at the top right " + JSON.stringify(geo));
+    await p.evaluate(() => toast("nudge two", "again"));
+    const pb = await p.evaluate(() => ({
+      nudges: Number(document.querySelector("#phone-bell .pb-bell").dataset.nudges || 0),
+      n: document.querySelector("#phone-bell .pb-bell .pb-n").textContent,
+      boxes: document.querySelectorAll("#toasts .toast").length,
+    }));
+    if (pb.boxes !== 0 || pb.nudges < 1) fail("phoneNudge: the corner bell was not nudged " + JSON.stringify(pb));
+    // opening the log marked the first entry read, so the second is the only unseen one
+    if (Number(pb.n) !== 1) fail("phoneNudge: the corner bell's count is wrong " + JSON.stringify(pb));
+
+    // a held message: the envelope nudges with its count and no notice box is drawn
+    await p.evaluate(() => {
+      followHeldLine([{ id: "land-live", supervised: true, activity: { held_peer: true, held_for: "line", held_count: 3 } }]);
+    });
+    const held = await p.evaluate(() => ({
+      box: !document.getElementById("t-heldline").hidden,
+      text: document.getElementById("t-heldline").textContent,
+      mailHidden: document.querySelector("#phone-bell .pb-mail").hidden,
+      n: document.querySelector("#phone-bell .pb-mail .pb-n").textContent,
+      nudges: Number(document.querySelector("#phone-bell .pb-mail").dataset.nudges || 0),
+    }));
+    if (held.box || held.text) fail("phoneNudge: a held message drew its notice box on a phone");
+    if (held.mailHidden || held.n !== "3" || held.nudges < 1) fail("phoneNudge: the envelope did not nudge with its count " + JSON.stringify(held));
+    if (shots) { fs.mkdirSync(shots, { recursive: true }); await p.screenshot({ path: path.join(shots, "bell-390x844.png") }); }
+    await p.locator("#phone-bell").tap();
+    await p.waitForFunction(() => document.getElementById("toastlog").open);
+    if (!(await p.evaluate(() => /nudge two/.test(document.getElementById("toastlog-list").textContent))))
+      fail("phoneNudge: the corner bell did not open the log");
+    await p.evaluate(() => document.getElementById("toastlog").close());
+    await p.evaluate(() => document.body.classList.remove("term-full"));
+    await p.waitForFunction(() => document.getElementById("phone-bell").hidden, null, { timeout: slow(5000) });
+    if (await p.evaluate(() => document.querySelector("#toastlog-open .hmsg").hidden))
+      fail("phoneNudge: the header bell does not carry the envelope");
+    // the width rule: a toast over a terminal cannot collapse when the pane's edge is far from the viewport's
+    // (hubShowPaused draws the one toast a phone still shows)
+    await p.evaluate(() => {
+      const pane = document.getElementById("term-pane");
+      pane.getBoundingClientRect = () => ({ top: 100, right: 60, left: 0, bottom: 500, height: 400, width: 60, x: 0, y: 100 });
+      hubShowPaused();
+      placeToasts();
+    });
+    let tw = await p.evaluate(() => [...document.querySelectorAll("#toasts .toast")].map(t => Math.round(t.getBoundingClientRect().width)));
+    if (!tw.length || tw.some(w => w < 200 || w > 390)) fail("phoneNudge: a phone toast is out of range " + JSON.stringify(tw));
+    await ctx.close();
+
+    // the pop-out on a phone: no box, the corner badge counts and opens the log
+    const octx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+    await octx.addInitScript(() => {
+      localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true }));
+      const Real = window.WebSocket;
+      window.WebSocket = function (url, protocols) {
+        if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+        const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
+          onopen: null, onclose: null, onmessage: null, onerror: null, send() {}, close() { this.readyState = 3; } };
+        setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+        return s;
+      };
+      Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+    });
+    const sp = await octx.newPage();
+    sp.on("pageerror", e => errors.push(String(e)));
+    await sp.goto(base + "/#term=land-live", { waitUntil: "domcontentloaded" });
+    await sp.waitForFunction(() => document.body.classList.contains("solo"), null, { timeout: slow(15000) });
+    await sp.waitForTimeout(500);
+    await sp.evaluate(() => toast("popout toast", "in the window"));
+    const so = await sp.evaluate(() => ({
+      boxes: [...document.querySelectorAll("#toasts .toast")].filter(t => t.getClientRects().length).length,
+      n: document.querySelector("#phone-bell .pb-bell .pb-n").textContent,
+      shown: !document.getElementById("phone-bell").hidden && document.getElementById("phone-bell").getClientRects().length > 0,
+    }));
+    if (so.boxes !== 0) fail("phoneNudge: the pop-out drew a toast box on a phone");
+    if (!so.shown || so.n !== "1") fail("phoneNudge: the pop-out has no corner badge with a count " + JSON.stringify(so));
+    await sp.locator("#phone-bell").tap();
+    await sp.waitForFunction(() => document.getElementById("toastlog").open, null, { timeout: slow(5000) });
+    if (!(await sp.evaluate(() => /popout toast/.test(document.getElementById("toastlog-list").textContent))))
+      fail("phoneNudge: the pop-out's badge did not open the log");
+    await octx.close();
+
+    // a desktop keeps its toasts
+    const dctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    await dctx.addInitScript(() => localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true })));
+    const dp = await dctx.newPage();
+    dp.on("pageerror", e => errors.push(String(e)));
+    await dp.goto(base, { waitUntil: "domcontentloaded" });
+    await dp.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await dp.evaluate(() => toast("desktop toast", "still a box"));
+    if ((await dp.evaluate(() => document.querySelectorAll("#toasts .toast").length)) !== 1)
+      fail("phoneNudge: a desktop toast was not drawn");
+    const dw = await dp.evaluate(() => [...document.querySelectorAll("#toasts .toast")].map(t => Math.round(t.getBoundingClientRect().width)));
+    if (dw.some(w => w < 200 || w > 1280)) fail("phoneNudge: a desktop toast is out of range " + JSON.stringify(dw));
+    if (await shown(dp, "#phone-bell")) fail("phoneNudge: the corner badge shows on a desktop");
+    await dctx.close();
+  } finally {
+    tasksMode = was;
+  }
+  if (errors.length) fail("phoneNudge: the page threw: " + errors.join(" | "));
+}
+
 async function main() {
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = "http://127.0.0.1:" + server.address().port;
@@ -8994,8 +10331,10 @@ async function main() {
       history: historySection, contextSize: contextSizeSection, peekEverywhere: peekEverywhereSection, cardRoute: cardRouteSection,
       quietDoer: quietDoerSection, looksIdle: looksIdleSection, notifyOff: notifyOffSection,
       questionsClick: questionsClickSection, walk: walkSection, linkReuse: linkReuseSection,
-      usageCacheReads: usageCacheReadsSection, roomsDash: roomsDashSection, phoneView: phoneViewSection, heldLine: heldLineSection, u016: u016Section, phoneHeader: phoneHeaderSection, phoneFocus: phoneFocusSection, phoneTermBar: phoneTermBarSection, phonePan: phonePanSection, phoneTap: phoneTapSection, phoneKeyboard: phoneKeyboardSection, usagePolish: usagePolishSection, usageLimits: usageLimitsSection, usageGroups: usageGroupsSection,
-      eventDriven: eventDrivenSection, idleBudget: idleBudgetSection, pollsGone: pollsGoneSection };
+      usageCacheReads: usageCacheReadsSection, roomsDash: roomsDashSection, phoneView: phoneViewSection, heldLine: heldLineSection, u016: u016Section, phoneHeader: phoneHeaderSection, phoneFocus: phoneFocusSection, phoneTermBar: phoneTermBarSection, phoneShare: phoneShareSection, phonePan: phonePanSection, phoneFollow: phoneFollowSection, phoneTap: phoneTapSection, phoneKeyboard: phoneKeyboardSection, phoneCompose: phoneComposeSection, mCompose: mComposeSection, mPerms: mPermsSection, usagePolish: usagePolishSection, usageLimits: usageLimitsSection, usageGroups: usageGroupsSection,
+      eventDriven: eventDrivenSection, idleBudget: idleBudgetSection, pollsGone: pollsGoneSection,
+      phoneListFit: phoneListFitSection, phoneNudge: phoneNudgeSection,
+      cacheChip: cacheChipSection, cacheLine: cacheLineSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -10930,9 +12269,14 @@ async function main() {
     await phoneHeaderSection(browser, base);
     await phoneFocusSection(browser, base);
     await phoneTermBarSection(browser, base);
+    await phoneShareSection(browser, base);
     await phonePanSection(browser, base);
+    await phoneFollowSection(browser, base);
     await phoneTapSection(browser, base);
     await phoneKeyboardSection(browser, base);
+    await phoneComposeSection(browser, base);
+    await mComposeSection(browser);
+    await mPermsSection(browser);
     await eventDrivenSection(browser, base);
     await idleBudgetSection(browser, base);
     await pollsGoneSection(browser, base);
@@ -10965,6 +12309,10 @@ async function main() {
     // ── every card shows its context size, warned past the gear's line ────
     await contextSizeSection(browser, base);
     await peekEverywhereSection(browser, base);
+    await phoneListFitSection(browser, base);
+    await phoneNudgeSection(browser, base);
+    await cacheChipSection(browser, base);
+    await cacheLineSection(browser, base);
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e));
     if (process.env.DEBUG_HEADLESS) {

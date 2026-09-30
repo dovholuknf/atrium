@@ -282,6 +282,31 @@ variables, and no xterm on it. What clint sees:
   a phone. A codex card has no transcript atrium reads, so it falls back to the screen's rows as text.
   It needs one small @runtime endpoint.
 
+**Build notes for Path 2, from @rnd's review of 6315bac,** so nobody building it has to guess:
+
+- **M2, `GET /v1/tasks/{id}/replies?n=`.** (a) It reads the conversation the runner LAST STARTED
+  (`d.ctx.sessionOf(t)`), never `t.ResumeID`, which after a `/clear` points at the old conversation until the next
+  Stop (r-021 part 1's bug). (b) Main-chain assistant TEXT only: no tool_use blocks, no subagent sidechains, no
+  thinking. (c) Bounded: `n` at most 10 (default 3), each reply cut at about 16 KB with a truncated flag, and the
+  transcript tail read bounded in bytes, as `readLastReply` already is. Today `readLastReply` returns metadata for the
+  keepalive, so returning text extends it. (d) The answer is `[{at, text, truncated}]` plus a `source` field,
+  `transcript` or `screen`, so the codex fallback is labelled rather than passed off as a reply.
+- **Rendering a reply.** The page renders the markdown SAFELY: escaped, no raw HTML, and links only through the
+  safe-link rule `internal/store/intake.go` uses. A reply is model output, and some of it echoes web content.
+- **M1, the composer.** (f) A multi-line message goes as a bracketed paste. On a runner without `bracketed_paste` a
+  raw newline submits early (@rnd's `newcontext.go` finding), so for those runners the page collapses the newlines
+  or refuses and says why. (g) `POST /v1/tasks/{id}/message` can answer QUEUED rather than typed, when the typing
+  gate is shut because someone is typing on the desktop. The page shows which, so "sent" never claims "typed" when
+  it was not.
+- **M1, permissions.** (h) Deny takes a reason on the row, not only approve and deny, since the reason is how a block
+  says "do X instead".
+- **M3, the dialog buttons.** (i) Shown ONLY while `act.dialogOpen` is true. Esc in claude mid-turn interrupts the
+  turn, so a stale Esc button is a hazard. It is labelled "cancel dialog", and the room checks `dialogOpen` again
+  when the key arrives.
+- **Home.** (j) clint's widened ask includes held messages and the envelope: reports waiting for him, and a say held
+  for a parked card. "Needs you" counts a card with a report waiting or a held say, and the card view shows both
+  above the replies.
+
 **Recommendation from @ui: Path 2.** It fixes typing and reading first instead of last, and it stops the desktop and
 the phone breaking each other, which is where most of today's phone bugs came from. Path 1's B and C would be built
 and then mostly replaced by it.
@@ -332,7 +357,22 @@ worker-days, and reading and typing are fixed in wave 1.
 Why this order: M1 alone already fixes typing (the composer) and finding what needs him. M2 fixes reading. The notify
 command sink is the cheapest way to prove notifications on his actual phone before anyone writes RFC 8291.
 
-## Open questions for clint
+## clint's answers (2026-09-29, through the orchestrator)
+
+- **Path 2**, the `/m` conversation page ("the sexiest one"). The bar is that it looks great, not only that it works.
+- "Needs you" counts a finished turn nobody has read, as well as questions, permissions, reports waiting and held
+  says.
+- Notifications start with the notify command (G-cmd, wave 1). Web Push is wave 2.
+- Wave 1 starts now: M1 on @ui's workers, M2 with @runtime, the notify-command sink with @fabric, in parallel.
+- Which means Proposal A's board manifest (`start_url: /`) is NOT built. The only manifest is `/m/manifest.webmanifest`,
+  linked only from `/m`, with `start_url` and `scope` `/m/` (mercurius round s_3Nj6QYZqNJ5u, Q2).
+- The last pushed identity per card lives in the hub's own database, in the migration f-017 adds (A1 of the same
+  round).
+- The terminal's title bar on a phone hides tray style: fully hidden by default, a drawer over the terminal from a
+  handle at the top edge, away again on a swipe up, a tap outside or after an action. It never resizes the terminal.
+  Shipped with u-023 in deploy 2b.
+
+## Open questions for clint (asked before his answers above)
 
 1. **Path 1 or Path 2?** (@ui recommends Path 2.) The questions below depend on it.
 2. Path 1 only: bottom tab bar (B), or icon tabs on top (B2)? And the compose box (E) as the default on a phone,

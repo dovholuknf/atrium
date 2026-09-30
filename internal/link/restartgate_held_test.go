@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -170,19 +171,37 @@ func exitOf(t *testing.T, code chan int, said chan string, within time.Duration)
 // once the board resumes.
 func TestTheGateScriptHoldsThroughAPauseThenGoes(t *testing.T) {
 	p := NewProxy(NewHub(Timings{}), nil, "", nil)
-	front := httptest.NewServer(p)
+	// Stopped until the pause, so the 0.3s countdown cannot run out and say go
+	// while the countdown event is still on its way to this test.
+	clock := stopClock(p.restart)
+	var polls atomic.Int64
+	front := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/_hub/restart" {
+			polls.Add(1)
+		}
+		p.ServeHTTP(w, r)
+	}))
 	defer front.Close()
 	events, shut := listen(t, front.URL+"/v1/events/hub")
 	defer shut()
 
+	const wait, hold = time.Second, 300 * time.Millisecond
 	code, said := runGateScript(t, front.URL, "-Countdown", "0.3", "-Idle", "0.05", "-Wait", "1", "-Hold", "0.3")
 	waitEvent(t, events, restartEvent)
 	p.restart.pause()
-	time.Sleep(3 * time.Second)
-	select {
-	case c := <-code:
-		t.Fatalf("the script exited %d during the pause: %s", c, <-said)
-	default:
+	clock.start()
+	// Held past its wait: the wait and a hold have gone by since the pause, and
+	// the script has polled again after that, so it did not stop at its wait.
+	paused, before := time.Now(), polls.Load()
+	for time.Since(paused) < wait+hold || polls.Load() < before+int64((wait+hold)/hold)+1 {
+		select {
+		case c := <-code:
+			t.Fatalf("the script exited %d during the pause: %s", c, <-said)
+		case <-time.After(20 * time.Millisecond):
+		}
+		if time.Since(paused) > 30*time.Second {
+			t.Fatalf("the script polled %d times in 30s of pause", polls.Load()-before)
+		}
 	}
 	p.restart.resume()
 	c, out := exitOf(t, code, said, 30*time.Second)

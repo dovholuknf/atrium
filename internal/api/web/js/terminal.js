@@ -615,6 +615,7 @@ function openTerm(task) {
     (roomOf(task.id) ? `<span class="chip room" style="--rhue:${roomHue(roomOf(task.id))}"
        data-tip="this card runs in room ${esc(roomOf(task.id))}"
        >${esc(roomOf(task.id))}</span>` : "") +
+    (typeof keepaliveChip === "function" ? keepaliveChip(task) : "") +
     (task.pid ? `<span class="chip">pid ${task.pid}</span>` : "") +
     // THE GLYPH COPIES, THE PATH DOES NOT. The whole chip used to be the
     // button, so a row-width target sat over the bar saying `click to copy`
@@ -706,6 +707,7 @@ function openTerm(task) {
   syncPhoneView();
   term.onWriteParsed(() => { phoneSyncTextarea(); phoneKeepSoon(); });
   term.open(screen);
+  phoneInputMode();
   // Before anything can write to it, so the trace starts at the first byte.
   traceTerm(term);
   useWebgl(term);
@@ -1272,7 +1274,9 @@ async function uploadIntoTerm(files) {
   // The preamble says what the path is for. A bare path is what a person types
   // when they mean "look at this", and it is not what they say.
   const pre = preambleOf(await pasteSettings());
-  if (paths) sendInput(pre + paths + " ", false, true);
+  // On a phone with the composer up the paths go into it, at its caret (js/tcompose.js).
+  if (paths && typeof tcomposeInsert === "function" && tcomposeInsert(paths)) pasteEnd("the paths going into the message box");
+  else if (paths) sendInput(pre + paths + " ", false, true);
   else pasteEnd("no path back");
   toast(pastePrefs && pastePrefs.paste_keep === "scrap"
     ? "in the scratch folder" : "in the working directory", paths);

@@ -2,6 +2,7 @@ package link
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"reflect"
@@ -9,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/dovholuknf/atrium/internal/gitsync"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 func gitPost(t *testing.T, url string, body any) (int, map[string]any) {
@@ -66,6 +68,29 @@ func TestTheHubGitRoutesAnswerAndRefuseWhatTheyShould(t *testing.T) {
 	res.Body.Close()
 	if res.StatusCode != 200 {
 		t.Fatalf("status = %d", res.StatusCode)
+	}
+}
+
+func TestTheGitToolsAreAudited(t *testing.T) {
+	var rows []string
+	c := &controlMCP{audit: func(room, kind, detail string) { rows = append(rows, room+"|"+kind+"|"+detail) }}
+	sync := audited(c, "ctl-git-sync", describeGitSync, func(context.Context, *mcp.CallToolRequest, gitSyncInput) (
+		*mcp.CallToolResult, gitSyncOutput, error) {
+		return nil, gitSyncOutput{}, nil
+	})
+	if _, _, err := sync(context.Background(), nil, gitSyncInput{Room: "sg3", Name: "github/o/r", Init: true}); err != nil {
+		t.Fatal(err)
+	}
+	col := audited(c, "ctl-git-collect", describeGitCollect, func(context.Context, *mcp.CallToolRequest, gitCollectInput) (
+		*mcp.CallToolResult, gitsync.CollectResult, error) {
+		return nil, gitsync.CollectResult{}, nil
+	})
+	if _, _, err := col(context.Background(), nil, gitCollectInput{Room: "sg3"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 2 || !strings.HasPrefix(rows[0], "sg3|ctl-git-sync|") || !strings.Contains(rows[0], "git sync github/o/r (init)") ||
+		!strings.HasPrefix(rows[1], "sg3|ctl-git-collect|") {
+		t.Fatalf("rows = %v", rows)
 	}
 }
 

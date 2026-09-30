@@ -125,9 +125,8 @@ document.addEventListener("click", e => {
   clearTermPane = function (switching) { setTermFull(false); return inner.apply(this, arguments); };
 })();
 
-// THE PHONE HEADERS, slim or open: the board header (u-021, #hdr-toggle) and the terminal bar (u-020,
-// #t-bar-toggle, in the pop-out too). ONE saved choice for both, per device: "1" open, anything else (or nothing
-// saved) slim. A class on body and the chevrons' aria state only, so nothing polls.
+// THE PHONE BOARD HEADER, slim or open (u-021, #hdr-toggle). ONE saved choice per device: "1" open, anything else
+// (or nothing saved) slim. A class on body and the chevron's aria state only, so nothing polls.
 const PHONE_HDR_KEY = "atrium.phone.headerOpen";
 function phoneHeaderOpenApply() {
   let v = null;
@@ -140,11 +139,6 @@ function phoneHeaderOpenApply() {
     h.setAttribute("aria-label", open ? "hide the rest of the header" : "show the full header");
     h.textContent = open ? "▴" : "▾";
   }
-  const t = document.getElementById("t-bar-toggle");
-  if (t) {
-    t.setAttribute("aria-expanded", open ? "true" : "false");
-    t.setAttribute("aria-label", open ? "hide the terminal's details and buttons" : "show the terminal's details and buttons");
-  }
 }
 function phoneHeaderOpenSet(open) {
   try { localStorage.setItem(PHONE_HDR_KEY, open ? "1" : "0"); } catch (e) {}
@@ -153,17 +147,94 @@ function phoneHeaderOpenSet(open) {
 // A pop-out window and the board follow each other. A null key is localStorage.clear().
 window.addEventListener("storage", e => { if (!e.key || e.key === PHONE_HDR_KEY) phoneHeaderOpenApply(); });
 (function () {
-  // A tap on either chevron must not move focus, so it neither pops the keyboard nor blurs the terminal.
-  for (const id of ["t-bar-toggle", "hdr-toggle"]) {
+  // A tap on a chevron or the handle must not move focus, so it neither pops the keyboard nor blurs the terminal.
+  for (const id of ["t-bar-toggle", "hdr-toggle", "t-tray-handle"]) {
     const b = document.getElementById(id);
     if (b) b.addEventListener("mousedown", e => e.preventDefault());
   }
-  // The terminal's slim row is a target too: a tap on bare bar (not a button, not the alias editor) opens it.
-  const bar = document.querySelector(".term-bar");
-  if (bar) bar.addEventListener("click", e => {
-    if (!document.body.classList.contains("term-phone") || document.body.classList.contains("hdr-open")) return;
-    if (e.target.closest("button, .can-alias, a, input, select")) return;
-    phoneHeaderOpenSet(true);
-  });
   phoneHeaderOpenApply();
+})();
+
+// THE PHONE TERMINAL TRAY (u-023). The terminal bar is fully hidden on a phone, zero height. It slides down OVER the
+// terminal, never pushing it, so the grid never changes size when it opens or closes. Opens from the handle at the
+// pane's top edge (a tap, or a pull down), closes on a swipe up, a tap outside, or any action in it. Its own saved
+// choice per device, in the board and the pop-out alike: "1" open, anything else hidden. Separate from
+// atrium.phone.headerOpen, which keeps driving only the board header. A class on body, so nothing polls.
+const PHONE_TRAY_KEY = "atrium.phone.trayOpen";
+function phoneTrayOpen() { return document.body.classList.contains("tray-open"); }
+function phoneTrayPlace() {
+  // The floating card list and the fit button hang off the tray's bottom edge.
+  const bar = document.querySelector(".term-bar");
+  const px = phoneTrayOpen() && bar ? Math.round(bar.getBoundingClientRect().height) : 0;
+  document.documentElement.style.setProperty("--trayh", px + "px");
+}
+function phoneTrayApply() {
+  let v = null;
+  try { v = localStorage.getItem(PHONE_TRAY_KEY); } catch (e) {}
+  const open = v === "1";
+  document.body.classList.toggle("tray-open", open);
+  const el = document.getElementById("t-tray-handle");
+  if (el) {
+    el.setAttribute("aria-expanded", open ? "true" : "false");
+    el.setAttribute("aria-label", open ? "hide the terminal's tray" : "show the terminal's tray");
+  }
+  phoneTrayPlace();
+  if (open) requestAnimationFrame(phoneTrayPlace);
+}
+function phoneTraySet(open) {
+  try { localStorage.setItem(PHONE_TRAY_KEY, open ? "1" : "0"); } catch (e) {}
+  phoneTrayApply();
+  if (!open && termListOpen && typeof setTermListOpen === "function") setTermListOpen(false);
+}
+window.addEventListener("storage", e => { if (!e.key || e.key === PHONE_TRAY_KEY) phoneTrayApply(); });
+(function () {
+  const phone = () => document.body.classList.contains("term-phone");
+  const handle = document.getElementById("t-tray-handle");
+  const bar = document.querySelector(".term-bar");
+  let y0 = null, x0 = 0;
+  // the handle: a tap opens, a pull down opens
+  if (handle) {
+    handle.addEventListener("click", () => phoneTraySet(true));
+    handle.addEventListener("touchstart", e => { y0 = e.touches[0].clientY; }, { passive: true });
+    handle.addEventListener("touchmove", e => {
+      if (y0 !== null && e.touches[0].clientY - y0 > 20) { y0 = null; phoneTraySet(true); }
+    }, { passive: true });
+    handle.addEventListener("touchend", () => { y0 = null; }, { passive: true });
+  }
+  if (bar) {
+    // a swipe up in the tray closes it
+    bar.addEventListener("touchstart", e => { y0 = e.touches[0].clientY; x0 = e.touches[0].clientX; }, { passive: true });
+    bar.addEventListener("touchend", e => {
+      if (y0 === null || !phone()) return;
+      const t = e.changedTouches[0], dy = t.clientY - y0, dx = t.clientX - x0;
+      y0 = null;
+      if (dy < -30 && Math.abs(dy) > Math.abs(dx)) phoneTraySet(false);
+    }, { passive: true });
+    // any action in it closes it, except the two that open more of it: the card picker and the theme cog
+    bar.addEventListener("click", e => {
+      if (!phone() || !phoneTrayOpen()) return;
+      const b = e.target.closest && e.target.closest("button, a");
+      if (!b || b.id === "t-pick" || b.id === "t-cog" || b.closest("#t-theme-wrap")) return;
+      phoneTraySet(false);
+    });
+  }
+  // a tap outside closes it. The tap still goes through to whatever it landed on.
+  document.addEventListener("pointerdown", e => {
+    if (!phone() || !phoneTrayOpen()) return;
+    if (e.target.closest && e.target.closest(".term-bar, #t-tray-handle, #term-list, #t-view, dialog")) return;
+    phoneTraySet(false);
+  }, true);
+  // picking a card closes the list, and that is the end of the picker's job
+  if (typeof setTermListOpen === "function") {
+    const inner = setTermListOpen;
+    setTermListOpen = function (open) {
+      const was = termListOpen;
+      const r = inner.apply(this, arguments);
+      const p = document.getElementById("t-pick");
+      if (p) p.setAttribute("aria-expanded", termListOpen ? "true" : "false");
+      if (was && !open && phone() && phoneTrayOpen()) phoneTraySet(false);
+      return r;
+    };
+  }
+  phoneTrayApply();
 })();

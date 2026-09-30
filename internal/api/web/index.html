@@ -63,6 +63,7 @@
 <link rel="stylesheet" href="/css/themes.css">
 <link rel="stylesheet" href="/css/expose2.css">
 <link rel="stylesheet" href="/css/expose3.css">
+<link rel="stylesheet" href="/m/compose.css">
 <!-- SWITCHING ROOMS IS A RELOAD, AND A RELOAD IS TWO VIEWS.
      The board comes up on the stack, because that is what the markup says, and
      then the script puts you back on the view you were reading. Between those
@@ -143,7 +144,7 @@
          address, a save that failed, a card that just asked for something.
          The badge counts what has arrived since this was last opened. -->
     <button id="toastlog-open" class="icon" onclick="openToastLog()"
-      aria-label="what the board has told you" data-tip="what the board has told you"><span class="glyph">&#128276;</span><span class="count"></span></button>
+      aria-label="what the board has told you" data-tip="what the board has told you"><span class="glyph">&#128276;</span><span class="count"></span><span class="hmsg" hidden>&#9993;&#xFE0E;<span class="pb-n"></span></span></button>
     <button id="sound" class="icon" aria-label="sound on. click to mute" data-tip="sound on. click to mute">&#9835;</button>
     <button id="gear" class="icon" aria-label="sound settings" data-tip="sound settings">&#9881;</button>
     <!-- WHICH ROOM, and it is a selector as much as a counter.
@@ -221,6 +222,10 @@
       <span class="barlabel">group</span>
       <div class="seg groupseg" id="stack-group"></div>
     </div>
+    <!-- The cache summary (u-032). One line over the rows below, and a button to
+         the keep-alive setting. Filled in by paintCacheLine. -->
+    <button type="button" class="cacheline" id="cache-line-stack" hidden
+      onclick="openKeepaliveSetting()" data-tip="open the keep-alive setting"></button>
     <div id="stack-list"></div>
   </div>
   <!-- Built once. Only the list bodies are refreshed, so a filter you are
@@ -344,6 +349,7 @@ Exports honor whatever filter is applied.">?</span>
       <!-- Keep one terminal pane and address it by id. check-terminal.js verifies
            the markup and lookups to catch duplicate panes. -->
       <section class="term-pane" id="term-pane">
+        <button type="button" id="t-tray-handle" aria-label="show the terminal's tray" aria-expanded="false"></button>
         <div class="term-bar">
           <!-- The mark and the name are one thing, so they are one element.
                As siblings in a wrapping flex row the runner's icon could end
@@ -353,9 +359,11 @@ Exports honor whatever filter is applied.">?</span>
             <span id="t-mark"></span>
             <strong id="t-title">nothing attached</strong>
           </span>
-          <!-- PHONE ONLY (body.term-phone, see phone.css): the bar is one slim row until this is tapped. -->
-          <button type="button" id="t-bar-toggle" class="icon" onclick="phoneHeaderOpenSet(!document.body.classList.contains('hdr-open'))"
-            aria-label="show the terminal's details and buttons" aria-expanded="false">&#9662;</button>
+          <!-- PHONE ONLY (body.term-phone, see phone.css): this bar is the tray. Hidden by default, it slides over the
+               terminal from the handle at the pane's top edge. The picker switches card, the chevron hides the tray. -->
+          <button type="button" id="t-pick" class="icon" onclick="termPickTap()" aria-label="switch card" aria-expanded="false">cards &#9662;</button>
+          <button type="button" id="t-bar-toggle" class="icon" onclick="phoneTraySet(false)"
+            aria-label="hide the terminal's tray">&#9652;</button>
           <span class="chips" id="t-chips"></span>
           <!-- Hidden until the cog asks for it. On the bar rather than in a
                dialog because the terminal underneath IS the preview: a theme
@@ -564,6 +572,8 @@ Exports honor whatever filter is applied.">?</span>
         </div>
         <!-- The phone's keys: a phone keyboard has no Esc or arrows. Shown only on a touch-first
              device. See `termPhone` in js/terminal-links.js. -->
+        <!-- PHONE ONLY: the composer, a real textarea, above the key bar. See js/tcompose.js. -->
+        <div id="t-compose" hidden></div>
         <div class="term-keys" id="t-keys" role="toolbar" aria-label="terminal keys">
           <button type="button" tabindex="-1" data-key="esc">Esc</button>
           <button type="button" tabindex="-1" data-key="left" aria-label="left">&larr;</button>
@@ -1042,6 +1052,11 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 </dialog>
 
 <div id="tip"></div>
+
+<!-- u-026: phone only, and only while the header has no bell of its own (the full screen terminal). See js/phone-bell.js. -->
+<button type="button" id="phone-bell" onclick="openToastLog()" hidden aria-label="what the board has told you"
+  data-tip="what the board has told you"><span class="pb-bell"><span class="glyph">&#128276;</span><span class="pb-n"></span></span><span
+  class="pb-mail" hidden>&#9993;&#xFE0E;<span class="pb-n"></span></span></button>
 
 <button id="held" onclick="applyHeld()"
   data-tip="atrium stopped refreshing so it would not overwrite what you are typing. something changed in the meantime.">
@@ -3254,6 +3269,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/keepalive.js"></script>
 <script src="/js/alias.js"></script>
 <script src="/js/heldline.js"></script>
+<script src="/js/phone-bell.js"></script>
 <script src="/js/settings.js"></script>
 <script src="/js/overlays.js"></script>
 <script src="/js/expose2.js"></script>
@@ -3272,6 +3288,8 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/seen.js"></script>
 <script src="/js/newcard.js"></script>
 <script src="/js/terminal-links.js"></script>
+<script src="/m/js/compose.js"></script>
+<script src="/js/tcompose.js"></script>
 <script src="/js/walk.js"></script>
 <script src="/js/terminal-debug.js"></script>
 <script src="/js/termfull.js"></script>

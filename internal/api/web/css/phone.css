@@ -321,22 +321,180 @@
   body.term-phone #t-screen.phone { scrollbar-width: none; }
   body.term-phone #t-screen.phone::-webkit-scrollbar { display: none; }
 
-  /* ── u-020: the terminal bar on a phone ─────────────────────────────────────
-     Collapsed by default to one slim row: the alias (or title), the chevron and full screen. Expanded shows
-     everything except the paperclip, which the key bar already has. Height and key bar rules are not here. */
-  #t-bar-toggle { display: none; }
+  /* ── u-023: THE TERMINAL TRAY ON A PHONE ─────────────────────────────────────────────────────────────────
+     The terminal bar is fully hidden by default (zero height, so the output takes the screen: the 75% bar in
+     `phoneShare`). It slides down OVER the terminal from a handle at the pane's top edge and never pushes it,
+     so xterm's rows and cols do not change when it opens or closes. State: body.tray-open (js/termfull.js,
+     saved as atrium.phone.trayOpen). The card picker (#t-pick) and fit this screen live in the tray. The
+     board header is the separate u-021 slim row and keeps its own key. */
+  #t-bar-toggle, #t-pick, #t-tray-handle { display: none; }
   body.term-phone .term-bar {
+    position: absolute; top: 0; left: 0; right: 0; z-index: 30; min-height: 48px;
     padding-left: max(10px, env(safe-area-inset-left, 0px)); padding-right: max(10px, env(safe-area-inset-right, 0px));
+    background-color: var(--shell-0);
+    visibility: hidden; transform: translateY(-110%);
+    transition: transform .18s ease, visibility 0s linear .18s;
   }
-  body.term-phone #t-bar-toggle {
-    display: inline-flex; align-items: center; justify-content: center;
-    min-width: 44px; min-height: 44px; box-sizing: border-box; margin-left: auto;
+  body.term-phone.tray-open .term-bar {
+    visibility: visible; transform: none; transition-delay: 0s;
+    box-shadow: 0 10px 24px rgba(var(--shadow-rgb), .5);
   }
-  body.term-phone.hdr-open #t-bar-toggle { transform: rotate(180deg); }
-  body.term-phone #t-attach { display: none; }
+  body.term-phone #t-bar-toggle, body.term-phone #t-pick {
+    display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; box-sizing: border-box;
+  }
+  body.term-phone #t-bar-toggle { margin-left: auto; }
   body.term-phone #t-full { min-width: 44px; min-height: 44px; }
-  body.term-phone .term-bar .term-who { flex: 1 1 0; }
-  body.term-phone:not(.hdr-open) .term-bar { flex-wrap: nowrap; min-height: 48px; max-height: 56px; padding-top: 2px; padding-bottom: 2px; }
-  body.term-phone:not(.hdr-open) .term-bar > :not(.term-who):not(#t-bar-toggle):not(#t-full) { display: none !important; }
-  body.term-phone.hdr-open .term-bar > .grow { display: none; }
-  body.term-phone #t-view-note { display: none; }
+  body.term-phone #t-attach, body.term-phone #t-view-note, body.term-phone .term-bar > .grow { display: none; }
+  body.term-phone .term-bar .term-who { flex: 1 1 0; min-height: 44px; }
+  /* the handle: a visible grip a few px tall, in a 96 by 44 touch area at top centre (the top right is the bell's) */
+  body.term-phone #t-tray-handle {
+    display: block; position: absolute; top: 0; left: 50%; width: 96px; height: 44px; margin-left: -48px; z-index: 6;
+    padding: 0; border: 0; background: transparent; touch-action: manipulation;
+  }
+  body.term-phone #t-tray-handle::after {
+    content: ""; position: absolute; top: 3px; left: 50%; width: 40px; height: 4px; margin-left: -20px;
+    border-radius: 2px; background: var(--term-fg, var(--dim)); opacity: .55;
+  }
+  body.term-phone.tray-open #t-tray-handle { display: none; }
+
+  /* the card picker moved into the tray, so the separate row above the terminal is gone */
+  body.term-phone .term-layout.has-term .termdrop { display: none; }
+  body.term-phone .term-layout.has-term .term-list { height: 0; padding: 0; }
+  body.term-phone .term-layout.has-term.tl-open .termbody { top: var(--trayh, 48px); }
+
+  /* fit this screen lives IN the tray on a phone (`phoneFitPlace` moves it there), so the key bar is the only bar at
+     the bottom. Its tooltip stays. */
+  body.term-phone .term-foot { position: static; }
+  body.term-phone .term-bar #t-view { padding: 0; }
+  body.term-phone #t-view button { min-height: 44px; box-sizing: border-box; display: inline-flex; align-items: center; padding: 0 12px; }
+
+  /* the frame around the grid, squeezed: no board padding above it, none between the bar and it, 44px keys */
+  body.term-phone:not(.term-full) main { padding: 0 12px 4px; }
+  body.term-phone .term-layout { gap: 0; }
+  body.term-phone #t-screen { margin: 0 4px; }
+  body.term-phone .term-keys { padding: 3px 4px; }
+  body.term-phone .term-keys button { min-height: 44px; }
+
+  /* u-023: BOTTOM ANCHOR. The phone never resizes the pty, so the grid is often shorter than the pane. The spare
+     height goes ABOVE the grid (margin-top auto keeps it scrollable, unlike flex-end), so the prompt sits on the key
+     bar and nothing is blank under the cursor row. */
+  body.term-phone #t-screen.phone .xterm { margin-top: auto; }
+
+  /* ── u-026: the phone's tab row, its lists, and the bell nudge ───────────────────────────────────────────
+     Kept in this one block so it merges cleanly beside the terminal view's rules. */
+
+  /* THE TAB ROW. Equal segments across the row, every label whole. Collapsed, the row carries the four tabs a
+     phone lives in (and the one you are on, if it is another). The rest wait behind the chevron, where the
+     nav becomes a grid of equal segments. AUTO is a dot on the bell, whose label says so. */
+  @media (max-width: 900px) and (pointer: coarse) {
+    body:not(.hdr-open) header .bar > nav {
+      display: flex; gap: 2px; overflow: hidden; scrollbar-width: none;
+    }
+    body:not(.hdr-open) header nav .tab {
+      flex: 1 1 0; min-width: 0; padding: 0 2px; position: relative; overflow: hidden;
+      font-size: 12.5px; letter-spacing: 0; text-align: center;
+    }
+    body:not(.hdr-open) header nav:has(.tab.on:not([data-view=stack]):not([data-view=board]):not([data-view=terms]):not([data-view=perms])) .tab {
+      font-size: 11px;
+    }
+    body:not(.hdr-open) header nav .tab:not(.on):not([data-view=stack]):not([data-view=board]):not([data-view=terms]):not([data-view=perms]) {
+      display: none;
+    }
+    /* A count is a corner badge, so it never takes width from the label. */
+    header nav .tab .count {
+      position: absolute; top: 1px; right: 1px; margin: 0; padding: 0 4px;
+      font-size: 9px; line-height: 14px; min-width: 14px; box-sizing: border-box; text-align: center;
+    }
+    /* The terminals count is the least urgent one and its label is the widest, so the badge stays for perms. */
+    body:not(.hdr-open) header nav .tab #c-term { display: none; }
+    body.hdr-open header .bar > nav {
+      display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; overflow: visible;
+    }
+    body.hdr-open header nav .tab {
+      min-width: 0; padding: 0 2px; position: relative; font-size: 13px; text-align: center; overflow: hidden;
+    }
+    /* Auto on: a dot on the bell, and the chip stays for the opened header. */
+    body:not(.hdr-open) #gauto { display: none; }
+    #toastlog-open::before {
+      content: ""; position: absolute; left: 4px; bottom: 6px; width: 9px; height: 9px; border-radius: 50%;
+      background: var(--warn); box-shadow: 0 0 0 2px var(--bg-2); display: none;
+    }
+    header .bar:has(#gauto.on) #toastlog-open::before { display: block; }
+    header .bar:has(#gauto.unknown) #toastlog-open::before { display: block; background: var(--dimmest); }
+    /* The header bell carries the held envelope too, since it is the bell in view while the header shows. */
+    #toastlog-open .hmsg { font-size: 10px; margin-left: 2px; color: var(--teal); }
+    #toastlog-open .hmsg[hidden] { display: none; }
+  }
+
+  /* THE BELL NUDGE. One shake, or a colour pulse for anyone who asked for less motion. */
+  @keyframes bell-nudge {
+    0%, 100% { transform: rotate(0); }
+    15% { transform: rotate(16deg); } 35% { transform: rotate(-14deg); }
+    55% { transform: rotate(9deg); } 75% { transform: rotate(-5deg); }
+  }
+  @keyframes bell-pulse { 0%, 100% { filter: none; } 40% { filter: drop-shadow(0 0 6px var(--teal)) brightness(1.4); } }
+  .nudge { animation: bell-nudge .7s ease-in-out; transform-origin: 50% 10%; display: inline-block; }
+  @media (prefers-reduced-motion: reduce) { .nudge { animation: bell-pulse .7s ease-in-out; } }
+
+  /* THE CORNER BADGE. Fixed, top right, a 44px target with a small face. Only shown while the header's own bell
+     has no box, so there is never a second bell beside it. */
+  #phone-bell {
+    position: fixed; z-index: 30; top: env(safe-area-inset-top, 0px); right: env(safe-area-inset-right, 0px);
+    min-width: 44px; min-height: 44px; box-sizing: border-box; padding: 0 12px 0 4px; margin: 0; gap: 10px;
+    display: flex; align-items: center; justify-content: center;
+    background: none; border: 0; color: var(--head); font-size: 17px; line-height: 1;
+    -webkit-tap-highlight-color: transparent;
+  }
+  #phone-bell[hidden] { display: none; }
+  #phone-bell .pb-bell, #phone-bell .pb-mail { position: relative; display: inline-flex; }
+  #phone-bell .pb-mail { font-size: 14px; color: var(--teal); }
+  #phone-bell .pb-n:empty { display: none; }
+  #phone-bell .pb-n {
+    position: absolute; top: -6px; right: -8px; min-width: 14px; padding: 0 3px; box-sizing: border-box;
+    border-radius: 7px; background: var(--teal); color: var(--bg-2); font: 600 9px/14px var(--sans); text-align: center;
+  }
+  @media (min-width: 901px), (pointer: fine) { #phone-bell { display: none; } }
+  /* With the header gone the terminal bar is the top row, so it leaves the corner to the badge. */
+  @media (max-width: 900px) and (pointer: coarse) { body.term-full .term-bar { padding-right: 88px; } }
+
+  /* THE LISTS. Nothing passes the right edge, every card is one width, a card is its content and no more.
+     Title over path, with the chips inline at the path's right end. */
+  @media (max-width: 520px) and (pointer: coarse) {
+    .termscroll { padding: 0 2px 6px; }
+    .tnest { margin-left: 0; padding-left: 5px; border-left-width: 2px; }
+    .tnest .tnest { margin-left: 1px; padding-left: 4px; }
+    .term-list .card { min-width: 0; width: 100%; box-sizing: border-box; padding: 5px 8px; }
+    .tgroup { max-width: 100%; min-width: 0; }
+    .term-list .card .card-line {
+      display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; column-gap: 6px; row-gap: 1px;
+      align-items: center; min-width: 0; width: 100%;
+    }
+    .term-list .card .title, .term-list .card .title .tstack { display: contents; }
+    .term-list .card .title .pin { grid-column: 1; grid-row: 1 / span 2; }
+    .term-list .card .title .rmark { grid-column: 2; grid-row: 1 / span 2; }
+    .term-list .card .title .tname { grid-column: 3 / -1; grid-row: 1; min-width: 0; }
+    .term-list .card .title .tpath { grid-column: 3; grid-row: 2; min-width: 0; }
+    .term-list .card .card-line > .chips {
+      grid-column: 4; grid-row: 2; min-width: 0; max-width: 58vw; flex-wrap: wrap; justify-content: flex-end;
+      overflow: visible; margin: 0;
+    }
+    /* A card with no separate path has its one line as the name, so the chips share that line. */
+    .term-list .card .card-line:has(.tname.aspath) > .chips { grid-row: 1; }
+    .term-list .card .card-line:has(.tname.aspath) .tname { grid-column: 3; }
+    .term-list .card .card-line > .chips .chip { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+
+    /* The stack: one line for the name and the age, the path under it, chips under that. */
+    .stackrow {
+      display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; column-gap: 8px; row-gap: 3px;
+      align-items: center; padding: 8px 10px; min-width: 0;
+    }
+    .stackrow > .pin { grid-column: 1; grid-row: 1; }
+    .stackrow > .rmark { grid-column: 2; grid-row: 1; width: 28px; height: 28px; }
+    .stackrow > .rmark svg { width: 18px; height: 18px; }
+    .stackrow > .who { grid-column: 3; grid-row: 1; min-width: 0; flex: none; }
+    .stackrow > .wait { grid-column: 4; grid-row: 1; min-width: 0; font-size: var(--fs-lg); align-self: start; }
+    .stackrow > .chips { grid-column: 1 / -1; grid-row: 2; justify-content: flex-start; min-width: 0; }
+    .stackrow > .chips:not(:has(*)) { display: none; }
+    .stackrow .who b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .stackrow .who .why { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+  }
