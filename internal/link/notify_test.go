@@ -357,14 +357,37 @@ func TestNotifySuppressedWhileATabIsVisibleButStored(t *testing.T) {
 
 func TestPresenceTabClearsWhenItsStreamCloses(t *testing.T) {
 	p := newPresence()
+	clock := time.Now()
+	p.now = func() time.Time { return clock }
 	end := p.Open("t1")
 	p.Set("t1", true)
 	if p.Count() != 1 {
 		t.Fatal("a visible tab is not counted")
 	}
 	end()
+	if p.Count() != 1 {
+		t.Fatal("a tab lost its visibility the instant its stream closed, before a reconnect could hold it")
+	}
+	clock = clock.Add(streamGrace + time.Second)
 	if p.Count() != 0 {
-		t.Fatal("a tab whose stream closed is still visible")
+		t.Fatal("a tab whose stream closed is still visible after the grace")
+	}
+}
+
+// A STREAM THAT RECONNECTS IS THE SAME TAB. The board does not post visible
+// again after a reconnect, so the tab has to survive the gap (f-025).
+func TestPresenceSurvivesAStreamReconnect(t *testing.T) {
+	p := newPresence()
+	clock := time.Now()
+	p.now = func() time.Time { return clock }
+	end := p.Open("t1")
+	p.Set("t1", true)
+	end()
+	clock = clock.Add(2 * time.Second)
+	p.Open("t1")
+	clock = clock.Add(time.Hour)
+	if p.Count() != 1 {
+		t.Fatal("a tab whose stream reconnected was dropped")
 	}
 }
 
@@ -673,6 +696,15 @@ func TestPresenceEndpointTakesTextPlainAndTheStreamClearsIt(t *testing.T) {
 		t.Fatalf("status %+v", s)
 	}
 	cancel()
+	until(t, "the closed stream to end", func() bool {
+		n.pres.mu.Lock()
+		defer n.pres.mu.Unlock()
+		return n.pres.streams["tab-9"] == 0
+	})
+	// Past the reconnect grace, the tab is gone.
+	n.pres.mu.Lock()
+	n.pres.now = func() time.Time { return time.Now().Add(streamGrace + time.Minute) }
+	n.pres.mu.Unlock()
 	until(t, "the closed stream to clear the tab", func() bool { return n.Status().VisibleTabs == 0 })
 }
 
