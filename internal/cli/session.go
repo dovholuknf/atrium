@@ -157,13 +157,7 @@ func reportSession(hubURL, event, name, runner string) sessionReport {
 	// A session atrium launched is told which card it belongs to. Anything
 	// else identifies itself by directory, matching the permission hook. Both
 	// have to agree or a session would appear twice under two names.
-	agent := name
-	if agent == "" {
-		agent = os.Getenv("ATRIUM_AGENT_NAME")
-	}
-	if agent == "" && cwd != "" {
-		agent = filepath.Base(cwd)
-	}
+	agent, nameSource := hookAgent(name, cwd)
 	if agent == "" {
 		return out
 	}
@@ -171,16 +165,18 @@ func reportSession(hubURL, event, name, runner string) sessionReport {
 	out.pid = runnerPID()
 
 	body, err := json.Marshal(map[string]any{
-		"agent":   agent,
-		"event":   event,
-		"runner":  whichRunner(runner),
-		"cwd":     filepath.ToSlash(cwd),
-		"pid":     out.pid,
-		"task_id": os.Getenv("ATRIUM_TASK_ID"),
-		"resume":  in.SessionID,
-		"source":  in.Source,
-		"reason":  in.Reason,
-		"trigger": in.Trigger,
+		"agent": agent,
+		"event": event,
+		// "dir" when the name above was made up from the directory. See hookAgent.
+		"name_source": nameSource,
+		"runner":      whichRunner(runner),
+		"cwd":         filepath.ToSlash(cwd),
+		"pid":         out.pid,
+		"task_id":     os.Getenv("ATRIUM_TASK_ID"),
+		"resume":      in.SessionID,
+		"source":      in.Source,
+		"reason":      in.Reason,
+		"trigger":     in.Trigger,
 		// Whether there is a conversation behind that id yet. Answered here
 		// rather than in the daemon, because the file is on this machine and
 		// the daemon may not be.

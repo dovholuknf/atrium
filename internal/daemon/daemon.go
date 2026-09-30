@@ -190,6 +190,13 @@ type Daemon struct {
 	// See contextsize.go.
 	ctx *contextSizes
 
+	// announced is every conversation id a SessionStart announced for a card
+	// (key "card|id"), and resumeNoted the refusals already written onto a
+	// card's history, so a Stop every turn does not repeat itself. See
+	// resumeclaim.go.
+	announced   sync.Map
+	resumeNoted sync.Map
+
 	// usage records every Claude card's token use, a row per turn. See usage.go.
 	usage *usageTracker
 

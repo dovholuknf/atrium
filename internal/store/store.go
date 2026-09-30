@@ -92,6 +92,12 @@ const (
 	// What is deliberately NOT recorded is what was lost. That would mean
 	// reading the transcript, and a per-agent transcript is out of scope.
 	EventCompacted = "compacted"
+	// ResumeMoved and ResumeRefused are the `by` of a `notified` event recording a
+	// conversation id that two cards claimed (the event kinds are a closed set, and
+	// a new one is a table rebuild). The payload carries the reason, since nobody
+	// reads the daemon log. See Store.ClaimResumeID.
+	ResumeMoved   = "resume-moved"
+	ResumeRefused = "resume-refused"
 )
 
 // ErrHalted is returned by every store call once the store has halted.
@@ -514,7 +520,14 @@ type Observed struct {
 	// It only lets a report with no pid tell whether the pid on file belongs to
 	// its own session (r-011).
 	Resume string `json:"-"`
+	// NameSource is "dir" when the hook made WireName up from its working
+	// directory, and empty when it was told (ATRIUM_AGENT_NAME or --name). A
+	// derived name is a guess, so Register will not let it match a finished card.
+	NameSource string `json:"-"`
 }
+
+// NameFromDir is the NameSource of a name a hook derived from its directory.
+const NameFromDir = "dir"
 
 // Event is one entry in a task's history.
 type Event struct {
