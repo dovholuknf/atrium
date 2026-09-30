@@ -59,8 +59,8 @@ const gateTimeout = 86400
 // dotfilesGateMarker names the script gate that predates atrium's own.
 const dotfilesGateMarker = "atrium-perm-hook"
 
-// dotfilesGateNote is what the board says while another gate holds the slot.
-const dotfilesGateNote = "the dotfiles gate is registered. atrium's own replaces it once that is agreed"
+// dotfilesGateNote is what the board says while the script holds the slot.
+const dotfilesGateNote = "the dotfiles gate is registered. installing replaces it with atrium's own"
 
 // WantedHooks are the hooks atrium can register, in the order they read best.
 //
@@ -309,31 +309,29 @@ func InspectTarget(t Target, exe string) (*HookReport, error) {
 
 	for _, w := range t.Wanted {
 		st := HookStatus{HookEvent: w, Want: hookCommand(t, exe, w)}
+		// With both gates registered the row describes atrium's, and the script
+		// is what install takes out.
+		both := twoGates(t, w, installed)
 		for _, cmd := range installed[w.Hook] {
-			if !reportsEventFor(t, cmd, w.Event) {
+			if !reportsEventFor(t, cmd, w.Event) || (both && isDotfilesGate(cmd)) {
 				continue
 			}
 			st.Installed = true
 			st.Found = cmd
 			st.Stale = !sameBinary(cmd, exe) || !saysWhichRunner(t, cmd)
 			st.TimeoutShort = w.Timeout > 0 && timeoutOf(doc, w.Hook, cmd) < float64(w.Timeout)
+			if isDotfilesGate(cmd) {
+				st.Other = dotfilesGateNote
+			}
 			break
 		}
-		// Another gate holding the permission slot counts as the slot being
-		// filled: present, not stale, not missing. See otherGate.
-		if other := otherGate(t, w, installed); other != "" {
-			st.TwoGates = st.Installed
-			rep.TwoGates = rep.TwoGates || st.TwoGates
-			st.Installed, st.Found, st.Stale, st.TimeoutShort = true, other, false, false
-			st.Other = dotfilesGateNote
-			rep.Hooks = append(rep.Hooks, st)
-			continue
-		}
+		st.TwoGates = both
+		rep.TwoGates = rep.TwoGates || both
 		// An optional hook that is not installed is not missing. It was never
 		// promised, and counting it would leave the board permanently offering
 		// to fix something that is off on purpose. A stale one still counts:
 		// somebody installed it, and it is now pointing at the wrong binary.
-		if (!st.Installed && !w.Optional) || st.Stale || st.TimeoutShort {
+		if (!st.Installed && !w.Optional) || st.Stale || st.TimeoutShort || st.TwoGates {
 			rep.Missing++
 		}
 		rep.Hooks = append(rep.Hooks, st)
@@ -409,15 +407,14 @@ func InstallOnlyTarget(t Target, exe string, events []string) (*HookReport, Inst
 		if len(wanted) == 0 && w.Optional {
 			continue
 		}
-		// Another gate holds the permission slot, so atrium's is never written
-		// beside it and never rewrites it. "Install all" passes over the row and
-		// naming it is an error, because two gates ask the human twice.
-		if other := otherGate(t, w, registeredCommands(doc)); other != "" {
-			if len(wanted) == 0 {
-				continue
+		// Both gates registered ask the human twice for every call. The script
+		// goes, and atrium's is then corrected like any other row. With only the
+		// script there, upsert rewrites it in place, keeping its timeout.
+		if twoGates(t, w, registeredCommands(doc)) {
+			if err := dropDotfilesGate(doc, w.Hook); err != nil {
+				return nil, none, err
 			}
-			return nil, none, fmt.Errorf("the dotfiles permission gate is already registered (%s), "+
-				"and a second gate would ask you twice for every tool call, so nothing was changed", other)
+			changed++
 		}
 		matched++
 		did, err := upsert(t, doc, w.Hook, exe, w.Event, w.Timeout)
@@ -602,26 +599,67 @@ func timeoutOf(doc map[string]json.RawMessage, hook, command string) float64 {
 	return best
 }
 
-// otherGate answers the command of ANOTHER permission gate holding the slot
-// this row would fill, or empty when there is none or the row is not the gate.
+// isDotfilesGate reports whether a command is the dotfiles script that
+// atrium's permission gate replaces.
 //
-// THE ONE PLACE THE COEXISTENCE DECISION LIVES. Today the dotfiles script
-// wins: a registered command containing `atrium-perm-hook` counts as the gate
-// being present, and atrium neither adds its own beside it nor rewrites it.
-// Whether atrium's row REPLACES the script is clint's call and is not made.
-// When it is, flip this to return "" (and let upsert treat the script as the
-// entry to correct, as it does for `atrium-session-hook.ps1`), and nothing
-// else in this package has to change.
-func otherGate(t Target, w HookEvent, installed map[string][]string) string {
+// THE REPLACEMENT DECISION (f-006, clint 2026-09-30). The script counts as the
+// gate installed but stale, the way `atrium-session-hook.ps1` counts for the
+// session row, so the board offers the fix and install rewrites it in place.
+// It used to stand aside for the script instead.
+func isDotfilesGate(command string) bool {
+	return strings.Contains(strings.ToLower(command), dotfilesGateMarker)
+}
+
+// twoGates reports whether the script AND atrium's own gate are both
+// registered for this row, which asks the human twice for every call.
+func twoGates(t Target, w HookEvent, installed map[string][]string) bool {
 	if t.ID != Claude.ID || w.Event != permissionEvent {
-		return ""
+		return false
 	}
+	script, ours := false, false
 	for _, cmd := range installed[w.Hook] {
-		if strings.Contains(strings.ToLower(cmd), dotfilesGateMarker) {
-			return cmd
+		switch {
+		case isDotfilesGate(cmd):
+			script = true
+		case reportsEventFor(t, cmd, w.Event):
+			ours = true
 		}
 	}
-	return ""
+	return script && ours
+}
+
+// dropDotfilesGate takes every script gate command out from under one hook
+// name. An entry left with no commands goes too, since an empty matcher entry
+// is noise in a file the operator reads.
+func dropDotfilesGate(doc map[string]json.RawMessage, hook string) error {
+	all := hooksSection(doc)
+	var kept []any
+	for _, entry := range all[hook] {
+		m, ok := entry.(map[string]any)
+		if !ok {
+			kept = append(kept, entry)
+			continue
+		}
+		list, _ := m["hooks"].([]any)
+		var rest []any
+		for _, h := range list {
+			if hm, ok := h.(map[string]any); ok {
+				if s, _ := hm["command"].(string); isDotfilesGate(s) {
+					continue
+				}
+			}
+			rest = append(rest, h)
+		}
+		if len(rest) != len(list) {
+			if len(rest) == 0 {
+				continue
+			}
+			m["hooks"] = rest
+		}
+		kept = append(kept, m)
+	}
+	all[hook] = kept
+	return store(doc, all)
 }
 
 func store(doc map[string]json.RawMessage, all map[string][]any) error {
@@ -665,6 +703,10 @@ func reportsEventFor(t Target, command, event string) bool {
 	w, ok := eventForTarget(t, event)
 	if !ok {
 		return hasEventArg(low, event)
+	}
+	// The script the permission gate replaces takes no --event argument.
+	if t.ID == Claude.ID && event == permissionEvent && isDotfilesGate(low) {
+		return true
 	}
 	if w.Sub == "session" {
 		// Ours when it runs the session subcommand, or when it is the script
