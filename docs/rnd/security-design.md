@@ -137,7 +137,8 @@ answering 403 to everything starts, runs a gated tool call through the native pr
   `POST /v1/board-code/redeem` with the code in the body, open to `all`, since the caller has nothing but the code. A
   code is good once, for 60 seconds, on the listener that minted it. The hub answers both itself for its own board
   and never proxies them. The cookie is `HttpOnly`, `SameSite=Strict`, scoped to the listener that set it, lasts 30
-  days and renews on use. The published board's OIDC or basic login sets the same operator cookie. The phone signs in on the share it uses.
+  days and renews on use. The published board's OIDC or basic login sets the same operator cookie. The phone signs in
+  on the share it uses.
 - **The operator token** is `%LOCALAPPDATA%\atrium\operator.token`, created with an explicit DACL naming only the
   current user. Go's `0o600` does nothing on Windows, so the DACL is set through the Windows API, and a start that finds
   a wider ACL narrows it and logs it. Atrium's own processes (a room calling its hub's `/_hub/nudge`, say) present it.
@@ -194,7 +195,10 @@ room's loopback port and through the hub. In `warn` every call succeeds and each
 right kind, including a `PATCH` carrying `auto_approve` and a launch carrying `env` from a `none` caller. In `enforce`
 operator succeeds everywhere and `none` succeeds only on `all` rows. A spoofed `X-Atrium-Scope` from a caller is
 stripped on the hub and on a room's loopback listener. `POST /v1/board-code/redeem` accepts a fresh code once and
-refuses it a second time and after 60 seconds. Every hook, with and without a token, still passes the stage 1 test.
+refuses it a second time and after 60 seconds. An authenticated request with a cookie older than a day comes back with
+a renewed cookie and a fresh 30-day expiry. A cookie issued by one listener (the hub's 7778, say) is refused by another
+(a room's 7781, or the published board), and a cookie set on the published board is refused on loopback. Every hook,
+with and without a token, still passes the stage 1 test.
 
 **Acceptance test for 2c** (card scope). Each `C`, `Cs` and `Co` row from a card, on its own room's port and through
 the hub from another room, for its own card, a card it launched, and a card it did not launch. The two body rules from
@@ -263,10 +267,19 @@ over ziti still attach. A dev build started with `--link 0.0.0.0:7799` is bound 
 **Stage 6, M4: what a room refuses from its hub.** The room enforces the appendix on what arrives over the link, using
 the forwarded scope. Whoever reaches 7778 without the operator cookie no longer drives every room. Shutdown and git
 stay refused through the hub. An upgrade offered by a hub stays opt-in (`--accept-upgrades`). Signed builds are named,
-not designed.
+not designed. Two halves, because card scope over the hub only exists once 2c does:
 
-*Acceptance test.* A request forwarded with `card` scope for an `operator` route is refused by the room. One with no
-scope header over the link is treated as `none`.
+- **6a, after 2a: operator and `none`.** The room enforces the table on link traffic for those two scopes. A forwarded
+  request with no scope header is `none`.
+- **6b, after 2c: card scope over the hub.** The room enforces `C`, `Cs` and `Co` on link traffic, checking self and
+  owned against the card the hub verified.
+
+*Acceptance test, 6a.* Over the link: a request forwarded as `operator` succeeds on an `O` route. One with no scope
+header is treated as `none` and refused on every route that is not `all`, in `enforce`, and recorded in `warn`.
+
+*Acceptance test, 6b.* The card-over-hub cases of the 2c test, sent through the hub to a room on another machine: a
+`card` scope on an `O` route is refused, a `Cs` route for another card is refused, a `Co` route for a card it launched
+succeeds, and a `card` scope whose card is on a third room is refused.
 
 **Stage 7, the lows.** L1: the daemon writes a per-start key into the ACL'd whereami file, and an answer to a hook
 carries an HMAC of the request under it. A hook that gets an answer without a good one treats it as unreachable
@@ -321,7 +334,8 @@ when that test passes on claude/main, not before.
 | 4 | inventory enforcement, forget means refuse, key DACLs | @runtime | S | M3 | nothing | hub |
 | 4b | one-year leaves renewed at half life | @runtime | S | M3 follow-up | 4 | hub, then rooms |
 | 5 | link bind, dev builds on loopback, `scripts/firewall-trim.ps1` | @runtime | S | M2 | nothing | hub |
-| 6 | the room enforcing scope on hub traffic | @runtime | S | M4 | 2a | room |
+| 6a | the room enforcing operator and `none` on hub traffic | @runtime | S | M4 | 2a | room |
+| 6b | the room enforcing card scope on hub traffic | @runtime | S | M4 | 2c, 6a | room |
 | 7 | hook answer HMAC, join from stdin | @runtime | S | L1, L2 | 1 | room and CLI |
 | W1 | the Web Push sink, VAPID, subscriptions | @runtime | M | growler phone reminders | 2a | hub |
 | W2 | subscribe on `/m`, the service worker's `push` handler | @ui | S | | W1 | hub |
@@ -345,8 +359,10 @@ in the day's questions-for-later list.
    two go on the list. Does anything of his launch with other arguments from inside a card?
 4. **Web Push through Google and Apple.** Four encrypted fields cross the phone vendor's push service. Acceptable, as
    the parked ntfy route would cross ntfy's server?
-5. **`restart_atrium` from a card.** The control MCP's restart tool exists for agents, so `POST /_hub/restart` stays
-   open to `card` scope, audited. Should it be `operator` only?
+5. **Restarting atrium from a card.** The default: `POST /_hub/restart` and `restart_atrium` are `operator` only, with
+   one exception, the deploy owner through the deploy-hold path (the appendix, "the deploy owner's exception"). That
+   keeps the orchestrator's deploys and `restart_atrium` working and nothing else. Should the exception exist at all,
+   or should every restart go through clint?
 
 ## Appendix: every route, and who may call it
 
@@ -384,8 +400,37 @@ a human looked, which is the fact seen exists to keep. `message` is `O` because 
 | --- | --- |
 | all | `/_hub/health`, the board's static files, `POST /v1/board-code/redeem` (answered by the hub, not proxied) |
 | C (read) | `/_hub/rooms`, `/_hub/inventory`, `GET /_hub/deps`, `GET /_hub/growls`, `GET /_hub/launch-caps`, `GET /_hub/deploy-owner`, `/v1/events/hub`, `/v1/events/room/<name>`, `/v1/events` |
-| C (as itself) | `/_hub/mcp` (tools by the verified card's class), `/_hub/deps/ready`, `/_hub/deps/rename`, `/_hub/deps/clear`, `POST /_hub/restart` (section 12, item 5), `POST /_hub/growls/{id}` |
+| C (as itself) | `/_hub/mcp` (tools by the verified card's class, except the restart and deploy tools below), `/_hub/deps/ready`, `/_hub/deps/rename`, `/_hub/deps/clear`, `POST /_hub/growls/{id}` |
+| O, with the deploy owner's exception | `POST /_hub/restart`, and on `/_hub/mcp` the tools `restart_atrium` and `atrium_deploy` with `start`, `wait` or `cancel`. `atrium_deploy request` and `status` stay `C` |
 | O | `POST /v1/board-code` (the mint, answered by the hub, not proxied), `/_hub/audit`, `/_hub/nudge` (atrium's own rooms present the operator token), `/_hub/inventory/mark`, `/_hub/inventory/forget`, `/_hub/notify`, `/_hub/notify/test`, `/_hub/git/sync`, `/_hub/git/collect`, `/_hub/git/status`, writes to `/_hub/launch-caps` and `/_hub/deploy-owner`, `/_hub/presence`, `/_hub/restart/pause`, `/_hub/restart/resume`, `/_hub/restart/input` |
 | as the room it names | every proxied `/v1/...` route, checked by the hub against the room table above and forwarded with its scope |
 
 The hub's loopback-only guards stay as they are, and they add to scope rather than replacing it.
+
+### The deploy owner's exception
+
+The one place a card may restart atrium. It exists because the orchestrator's deploys (`atrium_deploy`, the room deploy
+hold design) and `restart_atrium` depend on it. It is checked on the hub, at request time, and all three conditions
+must hold:
+
+1. **The caller is the deploy owner.** The verified card's handle or alias equals the `owner` that
+   `GET /_hub/deploy-owner` answers at that moment, compared the resolver's way (case, a leading `@`). Setting the owner
+   is `operator` only, so no card can name itself.
+2. **The call is on the deploy-hold path.**
+   - `atrium_deploy start`, `wait` and `cancel` need only condition 1. `start` is what sets the hold.
+   - `restart_atrium` for a room, and `POST /_hub/restart`, need a `deploy` hold that is active on the room being
+     restarted and was started by this card (`by_card` on the hold row). For `POST /_hub/restart`, which restarts the
+     hub rather than a room, that means an active `deploy` hold this card started on any room.
+3. **It is recorded.** The audit gets `restart-by-deploy-owner` or `deploy-by-deploy-owner` with the card, the hold and
+   the room.
+
+Anything else, including the deploy owner with no active hold of its own, is `operator` only. In `warn` a call that
+fails a condition is recorded as a `route` refusal naming the condition that failed.
+
+The stdio `atrium control` server's `--restart-now` swaps a binary as a local process and is not an HTTP route, so no
+table here can gate it. It sits behind the same limit as everything a same-user process can do (section 7).
+
+*Acceptance test* (in 2c, since it needs a verified card). The deploy owner with an active hold of its own restarts its
+room and the hub. The same card without a hold, with a hold another card started, or on a room it holds nothing on, is
+refused. A card that is not the owner is refused with a hold active. Changing the owner at `/_hub/deploy-owner` takes
+effect on the next call. Each accepted call has its audit line.
