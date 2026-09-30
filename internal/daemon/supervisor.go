@@ -691,6 +691,11 @@ type runner struct {
 	taskID string
 	pty    pty.Pty
 	cmd    *pty.Cmd
+	// pid is the process atrium started. announced is the pid its own session
+	// hook first reported, which differs from pid when the harness is a shim
+	// that starts the real runner. See ownsSession.
+	pid       int
+	announced atomic.Int64
 	// started separates "fell over on startup" from "finished". The first gets
 	// its last output put on the card.
 	started time.Time
@@ -1985,6 +1990,7 @@ func (d *Daemon) spawnPTYResume(taskID, cmdName string, args []string, cwd strin
 
 	r := &runner{
 		taskID: taskID, pty: p, cmd: c, started: time.Now(),
+		pid:     c.Process.Pid,
 		resumed: resumed,
 		dir:     cwd,
 		spec:    fresh,

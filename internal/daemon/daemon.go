@@ -190,6 +190,13 @@ type Daemon struct {
 	// See contextsize.go.
 	ctx *contextSizes
 
+	// announced is every conversation id a SessionStart announced for a card
+	// (key "card|id"), and resumeNoted the refusals already written onto a
+	// card's history, so a Stop every turn does not repeat itself. See
+	// resumeclaim.go.
+	announced   sync.Map
+	resumeNoted sync.Map
+
 	// usage records every Claude card's token use, a row per turn. See usage.go.
 	usage *usageTracker
 
@@ -357,7 +364,7 @@ func New(opts Options) (*Daemon, error) {
 	d.ap.HoldCull = d.HoldCull
 	d.ap.Merged = func(into string, branches []string) (any, error) { return d.Merged(into, branches) }
 	d.ap.MergeProof = func(dir, ref, into string) (any, error) { return d.MergeProof(dir, ref, into) }
-	d.ap.ArchiveWorkers =func(dryRun bool) (any, error) { return d.ArchiveWorkers(dryRun) }
+	d.ap.ArchiveWorkers = func(dryRun bool) (any, error) { return d.ArchiveWorkers(dryRun) }
 	d.ap.RestartRunner = d.RestartRunner
 	d.ap.Unshelve = d.Unshelve
 	d.ap.Overlays = d.overlayViews

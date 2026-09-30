@@ -158,6 +158,13 @@ func (d *Daemon) takeMessages(taskID, via string) ([]*store.Message, error) {
 func (d *Daemon) handleStop(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Agent string `json:"agent"`
+		// The card the runner was launched on, which binds this report to it by
+		// id. Empty from a hook older than the field, or a session atrium did
+		// not launch.
+		TaskID string `json:"task_id,omitempty"`
+		// "dir" when Agent was made up from the directory. See
+		// store.Observed.NameSource.
+		NameSource string `json:"name_source,omitempty"`
 		// The same two facts the permission and session hooks report. Without
 		// the worktree this would register a card with no directory, and a
 		// card is matched on more than its name: the session would show up
@@ -217,10 +224,29 @@ func (d *Daemon) handleStop(w http.ResponseWriter, r *http.Request) {
 	// Which conversation this is, so a report with no pid knows whether the pid
 	// on file is its own (r-011).
 	obs.Resume = in.Resume
-	task, _, err := d.st.Register(obs)
-	if err != nil {
-		nothing()
-		return
+	obs.NameSource = in.NameSource
+	var task *store.Task
+	var err error
+	bound := false
+	if in.TaskID != "" {
+		if t, gerr := d.st.Get(in.TaskID); gerr == nil {
+			// Onto the card it was launched on, never a name lookup.
+			if in.NameSource == store.NameFromDir {
+				obs.WireName = ""
+			}
+			if task, err = d.st.Observe(t.ID, obs); err != nil {
+				nothing()
+				return
+			}
+			bound = true
+		}
+	}
+	if task == nil {
+		task, _, err = d.st.Register(obs)
+		if err != nil {
+			nothing()
+			return
+		}
 	}
 	// The id that lets this conversation be resumed later. Recorded here as
 	// well as at session start, because a session atrium did not launch and
@@ -228,10 +254,23 @@ func (d *Daemon) handleStop(w http.ResponseWriter, r *http.Request) {
 	// it says so. Best effort: a turn must not fail over a resume id.
 	// Same rule as the session hook: replaced only by an id known to name a
 	// written conversation, or when there is nothing stored. See session.go.
+	rejected := false
 	if in.Resume != "" && in.Resume != task.ResumeID {
 		written := in.Resumable != nil && *in.Resumable
 		if written || task.ResumeID == "" {
-			if err := d.st.SetResumeID(task.ID, in.Resume); err != nil {
+			// A turn ending NEVER CHANGES a card's conversation to one no
+			// SessionStart for that card announced. A `claude` nested in the
+			// card's shell inherits its name and task id and ends turns of its
+			// own, and its session is not the card's. The one exception is a card
+			// nothing has spoken for and that holds nothing yet: a session that
+			// began before the session hook was wired has no other way to say.
+			announced := d.wasAnnounced(task.ID, in.Resume)
+			bare := task.ResumeID == "" && !d.anyAnnounced(task.ID) && d.sup.get(task.ID) == nil
+			if !announced && !bare {
+				rejected = true
+				log.Printf("[atrium] a turn on %s named conversation %s, which no session start "+
+					"announced for it, so the card keeps %q", task.ID, in.Resume, task.ResumeID)
+			} else if err := d.claimResume(task, in.Resume, "stop hook", bound); err != nil {
 				log.Printf("[atrium] could not record a resume id for %s: %v", task.ID, err)
 			}
 		}
@@ -252,7 +291,7 @@ func (d *Daemon) handleStop(w http.ResponseWriter, r *http.Request) {
 	// What the turn spent, read off its transcript once it settles. Every Stop
 	// ends a row, the one a message is about to continue included. See usage.go.
 	spent := *task
-	if in.Resume != "" {
+	if in.Resume != "" && !rejected {
 		spent.ResumeID = in.Resume
 	}
 	d.usage.stopped(&spent)
