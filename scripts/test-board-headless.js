@@ -5959,6 +5959,11 @@ async function phonePanSection(browser, base) {
       return { sl: host.scrollLeft, sw: host.scrollWidth, cw: host.clientWidth, cx: term.buffer.active.cursorX,
         inView: left >= hb.left - 1 && left + cw <= hb.right + 1, chip: !document.getElementById("t-follow").hidden };
     });
+    // Waits for the state an assertion is about, and lets the assertion say what it found if it never came.
+    const settled = async (ok) => {
+      const t0 = Date.now();
+      while (Date.now() - t0 < slow(8000) && !ok(await st())) await p.waitForTimeout(50);
+    };
     const swipe = (to) => p.evaluate((to) => new Promise(res => {
       const host = document.getElementById("t-screen");
       host.dispatchEvent(new TouchEvent("touchstart", { bubbles: true }));
@@ -5975,17 +5980,19 @@ async function phonePanSection(browser, base) {
     if (Math.abs(s.sl - 200) > 2 || !s.chip) fail("phonePan: the manual pan did not hold or the chip is missing: " + JSON.stringify(s));
     await p.evaluate(() => {
       window.__sl = [];
-      const host = document.getElementById("t-screen"), t0 = performance.now();
-      const tick = () => { window.__sl.push(host.scrollLeft); if (performance.now() - t0 < 5200) requestAnimationFrame(tick); };
+      window.__done = false;
+      const host = document.getElementById("t-screen");
+      const tick = () => { window.__sl.push(host.scrollLeft); if (!window.__done) requestAnimationFrame(tick); };
       requestAnimationFrame(tick);
       let n = 0;
       const feed = setInterval(() => {
         termSock.onmessage({ data: "x".repeat(6) + " " + n + "\r\n" + " ".repeat((n * 7) % 120) + "y" });
         if (n === 25) { term.blur(); term.focus(); window.__bfs(); }
-        if (++n >= 50) clearInterval(feed);
+        if (++n >= 50) { clearInterval(feed); term.write("", () => { window.__done = true; }); }
       }, 100);
     });
-    await p.waitForTimeout(5400);
+    // The feed takes as long as the machine lets its timer run, so wait for its last line to be parsed.
+    await p.waitForFunction(() => window.__done, null, { timeout: slow(30000) });
     const sl = await p.evaluate(() => window.__sl);
     const dev = Math.max(...sl.map(x => Math.abs(x - 200)));
     console.log("phonePan: frames=" + sl.length + " maxDeviation=" + dev);
@@ -5993,7 +6000,7 @@ async function phonePanSection(browser, base) {
     if (!(await st()).chip) fail("phonePan: the follow chip went away without input");
     // 2. typing brings the cursor back
     await p.evaluate(() => sendInput("a", false));
-    await p.waitForTimeout(300);
+    await settled(s => s.inView && !s.chip);
     s = await st();
     if (!s.inView || s.chip) fail("phonePan: typing did not follow the cursor: " + JSON.stringify(s));
     // 3. pan away again; the chip does the same
@@ -6001,7 +6008,7 @@ async function phonePanSection(browser, base) {
     s = await st();
     if (!s.chip || s.inView) fail("phonePan: a second manual pan did not hold: " + JSON.stringify(s));
     await p.locator("#t-follow").tap();
-    await p.waitForTimeout(300);
+    await settled(s => s.inView && !s.chip);
     s = await st();
     if (!s.inView || s.chip) fail("phonePan: the follow chip did not follow the cursor: " + JSON.stringify(s));
     await ctx.close();
