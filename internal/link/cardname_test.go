@@ -152,6 +152,17 @@ func TestAMissSaysWhatWouldHaveWorked(t *testing.T) {
 		body["served_by"] != "alpha" {
 		t.Fatalf("ui with one room quiet answered %d %v", code, body)
 	}
+	// A WRITE DOES NOT GUESS PAST THE QUIET ROOM: the card meant may be there.
+	code, _, body = ask(t, http.MethodPost, front.URL+"/v1/tasks/ui/exit", "{}")
+	cands, _ := body["candidates"].([]any)
+	if code != http.StatusConflict || len(cands) != 2 || !strings.Contains(fmt.Sprint(cands), "ui@beta (not answering)") {
+		t.Fatalf("a write with a room quiet answered %d %v, want 409 naming both", code, body)
+	}
+	// Named with its room, it goes.
+	if code, _, body := ask(t, http.MethodPost, front.URL+"/v1/tasks/ui@alpha/exit", "{}"); code != http.StatusOK ||
+		body["served_by"] != "alpha" {
+		t.Fatalf("ui@alpha with beta quiet answered %d %v", code, body)
+	}
 	// A name on a room that is not attached.
 	if code, _, _ := ask(t, http.MethodGet, front.URL+"/v1/tasks/ui@gamma", ""); code != http.StatusNotFound {
 		t.Fatalf("ui@gamma answered %d", code)
