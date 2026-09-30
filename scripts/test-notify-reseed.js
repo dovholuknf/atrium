@@ -59,6 +59,14 @@ const harness = new Function(`
   function announce(kind, fresh, describe) {
     announced.push({ kind, ids: fresh.map(f => f.id) });
   }
+  // The once-per-wait memory and the quiet hold are proved by the headless
+  // readyOnce section. Here a fresh card is said at once, so this test keeps
+  // asking only what the diff found new.
+  function trackWaits() {}
+  function rememberRung() {}
+  function rungHas() { return false; }
+  function holdWaits(fresh, describe) { announce("waiting", fresh, describe); }
+  function deliver(kind, fresh, describe) { announce(kind, fresh, describe); }
   ${checkSrc}
   ${reseedSrc}
   return { check, reseed, announced };
