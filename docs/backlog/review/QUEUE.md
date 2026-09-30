@@ -37,6 +37,8 @@ the meantime.
 
 - @runtime's fix for the medium in `docs/backlog/runtime/r-new-review-a92bb5f7.md`: R1 never reaches a supervised
   runner with mid-turn input off.
+- @fabric's fix for the two highs in `docs/backlog/fabric/f-new-review-53ccc3b4.md` (room-defender, HOLD).
+- M3 of `docs/rnd/machine-health-design.md` (the profiler agent's rules) before it ships, when it is built.
 
 ## Open lows, for when a fix names them
 
