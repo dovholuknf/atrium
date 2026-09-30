@@ -15,8 +15,7 @@ import (
 // turn's Stop was taken as the capture's.
 func TestACycleArmedWhileRunningWaitsForTheTurnToEnd(t *testing.T) {
 	fastNewContext(t)
-	d, _, cancel, _ := startDaemon(t)
-	defer cancel()
+	d := testDaemon(t)
 	task, f, _ := ncCard(t, d)
 	if err := d.st.SetStatus(task.ID, store.StatusRunning); err != nil {
 		t.Fatal(err)
