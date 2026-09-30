@@ -13,7 +13,7 @@ import (
 
 // A runner's setup, as something the board can see and fix. The report rides
 // on `GET /v1/harnesses`, and this is the fix half. See
-// docs/runner-setup-design.md.
+// docs/runtime/runner-setup-design.md.
 
 // setupEnv is what a check may look at for one row on this room.
 func (s *Server) setupEnv(h *store.Harness, found string) runnersetup.Env {

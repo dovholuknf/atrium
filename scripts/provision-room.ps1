@@ -1982,7 +1982,7 @@ foreach ($runner in @($Runners + $Install | Select-Object -Unique)) {
 # names, so a claude session on this room can call atrium_say, atrium_report and
 # atrium_peers, and answer a card on another room. The hub's own control MCP is
 # loopback only and cannot be reached from here. See
-# docs/cross-room-say-design.md.
+# docs/fabric/cross-room-say-design.md.
 #
 # A FILE THE RUNNER ROW NAMES, NOT `claude mcp add --scope user`. The claude row
 # passes --strict-mcp-config, so a launched session reads ONLY the servers an

@@ -11,7 +11,7 @@ import (
 
 // What agent-to-agent work needs written down: who launched a card, what the
 // card last told its launcher, and which of its hooks can carry a message.
-// See docs/a2a-reliability-design.md.
+// See docs/runtime/a2a-reliability-design.md.
 
 // HumanLauncher is the `spawned_by` of a card started from the board's own
 // launch dialog. A card carrying it has nobody to report back to but the board.
@@ -33,7 +33,7 @@ func (s *Store) SetLineage(id, handle, parentID string) error {
 	}
 	// A launcher on another room, `name@room`, is named the way THAT room
 	// names it, so it is not qualified with this one's tenant. See
-	// docs/cross-room-say-design.md.
+	// docs/fabric/cross-room-say-design.md.
 	if handle != "" && handle != HumanLauncher && !strings.Contains(handle, "@") {
 		handle = s.Qualify(handle)
 	}
@@ -148,7 +148,7 @@ func (s *Store) SawHook(id, which string) error {
 // The key names the one event that created the notice (the prompt that opened
 // an unreported turn, a tool call that ran too long), so a trigger seen on
 // every tick of the watchdog and again at the next turn end sends one notice,
-// not one per sighting. See docs/a2a-reliability-design.md.
+// not one per sighting. See docs/runtime/a2a-reliability-design.md.
 func (s *Store) RecordNotice(workerID, source, key string) (bool, error) {
 	fresh := false
 	err := s.guard(func() error {
@@ -192,7 +192,7 @@ func (t *Task) OwesReport() bool {
 // opening prompt names the session that asked for the launch as its sender, so
 // a reopen by the operator is not counted. The operator, a note, an action, atrium's own wake and a message
 // from any other session do not. Decided here, where the stamp is, so a door
-// written later cannot forget it. See docs/owed-report-design.md.
+// written later cannot forget it. See docs/rnd/owed-report-design.md.
 func promptOwes(q querier, s *Store, taskID string, payload []byte) (bool, error) {
 	var p struct {
 		FromPeer string `json:"from_peer"`

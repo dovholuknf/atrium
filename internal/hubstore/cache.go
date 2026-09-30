@@ -31,7 +31,7 @@ import (
 // THE HUB CACHES EXACTLY WHAT THE ROOM ITSELF PERSISTS, AND NEVER WHAT THE ROOM
 // DECLINES TO PERSIST.
 //
-// That comes from a rule atrium already has. docs/activity-design.md says what
+// That comes from a rule atrium already has. docs/runtime/activity-design.md says what
 // a runner is doing right now is never written down, because it would be a lie
 // the moment the daemon restarted, and a hub writing it down would break that
 // rule at one remove. So a card's title, status, tags, worktree and runner are

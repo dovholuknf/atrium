@@ -169,7 +169,7 @@ func (i inventory) SetHubSetting(name, value string) error { return i.store.SetH
 // share is created behind, held by the hub the same as the skin. This adapts
 // between the store's ShareAuth and the link package's identical copy, so
 // neither has to import the other. See `hubSettings` in internal/link and
-// `docs/ziti-zrok-flow-design.md`.
+// `docs/fabric/ziti-zrok-flow-design.md`.
 func (i inventory) ShareAuth() (link.ShareAuth, error) {
 	a, err := i.store.ShareAuth()
 	if err != nil {

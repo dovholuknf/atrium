@@ -204,7 +204,7 @@ func (d *Daemon) saveOverlay(kind string, body []byte) error {
 		// it is the whole internet with an extra step. The design says the public
 		// toggle is refused at configuration time, not discovered at share time,
 		// so the operator finds out while they are still in the panel that set it.
-		// See docs/ziti-zrok-flow-design.md, "zrok public without OIDC".
+		// See docs/fabric/ziti-zrok-flow-design.md, "zrok public without OIDC".
 		if c.Public {
 			if err := d.requireLoginForPublic(); err != nil {
 				return err
@@ -298,7 +298,7 @@ func (d *Daemon) startOverlay(kind string) error {
 // never configured. Those are accurate and they are answers to a different
 // question: they say what broke, not what to do.
 //
-// This is the same line `docs/overlays.md` draws everywhere else. Report the
+// This is the same line `docs/fabric/overlays.md` draws everywhere else. Report the
 // state honestly, offer the next command, never invent one. What is added here
 // is only that the state is checked BEFORE the attempt rather than inferred
 // from the wreckage of one.

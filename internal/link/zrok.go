@@ -41,7 +41,7 @@ import (
 // BOTH MACHINES NEED `zrok enable` ALREADY RUN. zrok is an account and an
 // environment before it is a share, and atrium does not create either: it holds
 // the NAME of a command that has a credential and never somebody else's
-// credential. That is the same line `docs/overlays.md` draws, and it is why the
+// credential. That is the same line `docs/fabric/overlays.md` draws, and it is why the
 // hub says what to run rather than trying to do it.
 
 // Zrok reaches a hub over a private zrok share.

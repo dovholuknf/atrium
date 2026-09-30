@@ -9,7 +9,7 @@ import (
 
 // SettingIdleParkAfter is how long a subject card sits idle before it is parked.
 // Whole seconds, or `off`. Empty means the default. See
-// docs/keepalive-policy-design.md section 7.
+// docs/rnd/keepalive-policy-design.md section 7.
 const SettingIdleParkAfter = "idle_park_after"
 
 const (

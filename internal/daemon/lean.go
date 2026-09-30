@@ -20,7 +20,7 @@ import (
 // and claude.ai skill, every agent type, the operator's prompt-time hook
 // reminders and every MCP server in the harness's config. Measured on 2.1.283,
 // that is ~40k tokens on the first request of a worker in a worktree, and ~27k
-// of it is setup the worker never reads. See docs/lean-workers-design.md.
+// of it is setup the worker never reads. See docs/runtime/lean-workers-design.md.
 //
 // What lean changes, and nothing else:
 //
@@ -273,7 +273,7 @@ var leanContextHooks = []string{"SessionStart", "UserPromptSubmit"}
 //
 // THE STATUS LINE IS KEPT (r-001). It costs no model tokens, since it runs
 // outside the conversation, and it is what posts a card's context figures to
-// atrium (docs/statusline-telemetry.md). Dropping it left every lean card, and so
+// atrium (docs/runtime/statusline-telemetry.md). Dropping it left every lean card, and so
 // every worker, with no status line and no context size on the board.
 func leanSettings(user []byte, stopHook string) (string, error) {
 	doc := map[string]json.RawMessage{}

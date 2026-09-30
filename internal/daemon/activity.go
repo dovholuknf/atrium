@@ -21,7 +21,7 @@ import (
 // Not stored. After a daemon restart a stored "running Bash" would describe a
 // process that no longer exists.
 //
-// See docs/activity-design.md.
+// See docs/runtime/activity-design.md.
 
 // Activity states. Status says what a card needs; these say what it is doing.
 // Waiting is absent: the column and the wait chip already carry it.
@@ -121,7 +121,7 @@ type Activity struct {
 	//
 	// IN MEMORY AND NEVER WRITTEN DOWN, like everything else here. It is true
 	// of a process rather than of a card, and it would be a lie the moment the
-	// daemon restarted. See docs/activity-design.md.
+	// daemon restarted. See docs/runtime/activity-design.md.
 	Dialog bool `json:"dialog,omitempty"`
 	// HeldPeer names the session whose message is waiting to be typed into this
 	// terminal, empty when nothing is held. HeldSeconds is how long it has
@@ -510,7 +510,7 @@ func (a *activityTracker) dialogOpen(taskID string) bool {
 // or compacting, with no Stop or Notification since. A peer message typed now
 // would not submit. Claude Code holds a prompt that arrives mid-turn until the
 // turn ends and then sends it together with whatever the operator typed in the
-// meantime. See docs/typing-race.md.
+// meantime. See docs/terminal/typing-race.md.
 //
 // READ PAST THE STALENESS CUTOFF, like `toolSince`. A build that runs twenty
 // minutes is still mid-turn, and typing into it is the race this guards. A card
@@ -781,7 +781,7 @@ func (d *Daemon) onActivity(in ActivityEvent) string {
 		// into the wait that follows.
 		//
 		// Best effort like everything else on this path. A failure to record
-		// it must not fail a tool call. See docs/activity-design.md.
+		// it must not fail a tool call. See docs/runtime/activity-design.md.
 		if IsAskingTool(in.Tool) {
 			if err := d.st.NoteAsked(taskID); err != nil {
 				log.Printf("[atrium] could not record a question from %s: %v", in.Agent, err)

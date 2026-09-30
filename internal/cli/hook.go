@@ -20,7 +20,7 @@ import (
 // can install the entries itself; a script in somebody's dotfiles holds a path
 // only their machine has.
 //
-// Everything in `docs/hooks.md` under "rules every atrium hook follows" is
+// Everything in `docs/runtime/hooks.md` under "rules every atrium hook follows" is
 // enforced here: exit 0 whatever happens, one attempt, one second, and silence
 // on success.
 

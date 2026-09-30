@@ -18,7 +18,7 @@ import (
 
 // A login in front of the board, and ONLY in front of the published one.
 //
-// This reverses a rule written in `CLAUDE.md` and `docs/overlays.md`:
+// This reverses a rule written in `CLAUDE.md` and `docs/fabric/overlays.md`:
 // authentication is out of scope, single machine, loopback only, and reaching
 // the board from elsewhere is an overlay's job rather than an auth layer
 // invented here.

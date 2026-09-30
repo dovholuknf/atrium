@@ -530,7 +530,7 @@ func (s *Store) GetByWireName(name string) (*Task, error) {
 //
 // The join a statusline needs. A statusline is handed the session id and
 // nothing else: no wire name, no card id, no way to be told one. See
-// `docs/statusline-telemetry.md`.
+// `docs/runtime/statusline-telemetry.md`.
 //
 // An empty id matches NOTHING rather than the first card with a blank
 // resume_id. Most cards have one, since not every runner reports an id, so a

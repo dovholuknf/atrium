@@ -28,7 +28,7 @@ import (
 // a runner, and it does not make a directory. Starting work is a decision and
 // the launch dialog already exists to take it. Making a worktree is `gwt`'s job
 // and atrium has no business owning a checkout layout. Where the directory is
-// missing, the answer is a sentence saying so. See docs/scm-design.md.
+// missing, the answer is a sentence saying so. See docs/runtime/scm-design.md.
 
 const (
 	// recogniserFetchLimit bounds what one fetch may print.

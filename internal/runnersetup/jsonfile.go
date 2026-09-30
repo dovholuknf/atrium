@@ -16,7 +16,7 @@ import (
 // The write is atomic, because a runner reading a half-written trust file stops
 // with a fatal error. And the backups are two named files, not one per write,
 // because launch-time trust writes once per new worktree and a timestamped copy
-// each time would bury the runner's directory. See docs/runner-setup-design.md.
+// each time would bury the runner's directory. See docs/runtime/runner-setup-design.md.
 
 // readJSONObject reads a file holding one JSON object. A missing file is an
 // empty object and existed is false.

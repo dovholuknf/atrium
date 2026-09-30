@@ -5,7 +5,7 @@
 // One adapter per runner, in one package, for the reason `claudeconf/target.go`
 // gives for hook targets: everything below "which file, which checks" is shared,
 // and two packages would be two places for the backup and parse rules to drift.
-// See docs/runner-setup-design.md, which also has the checklist for adding one.
+// See docs/runtime/runner-setup-design.md, which also has the checklist for adding one.
 package runnersetup
 
 import (

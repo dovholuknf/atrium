@@ -16,7 +16,7 @@
 //
 // Only a hop OVER the threshold is logged, so a healthy session stays quiet
 // and a slow one names the hop that added the delay. See
-// docs/input-lag-logging.md for how to read the lines.
+// docs/terminal/input-lag-logging.md for how to read the lines.
 package inputlag
 
 import (

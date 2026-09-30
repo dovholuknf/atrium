@@ -25,7 +25,7 @@ import (
 // message. That is a setting on its row on the runners page, seeded from
 // `runnerprofile`, because it is a fact about the runner and not the sender.
 //
-// Decided 2026-09-24. It reverses the N7 rule in docs/typing-race.md, which
+// Decided 2026-09-24. It reverses the N7 rule in docs/terminal/typing-race.md, which
 // held every peer message for the turn and so let a "stop now" sent to four
 // workers reach none of them.
 const (

@@ -534,7 +534,7 @@ const PAIRS = [
     what: "a project group name at rest",
     kind: "text", on: GROUP, hues: HUES,
     from: [".cardgroup.project > summary .gname", "color"],
-    floor: LABEL, nit: "docs/css-nits.md, open nit 4",
+    floor: LABEL, nit: "docs/ui/css-nits.md, open nit 4",
     // Exactly 1.00 on all four, at whichever hue crosses the wash in
     // luminance. Not "low": gone.
     pinned: { paper: 1.00, daylight: 1.00, linen: 1.00, frost: 1.00 },
@@ -543,7 +543,7 @@ const PAIRS = [
     what: "a stack group name at rest",
     kind: "text", on: [...COL, "hsl(var(--ghue) 60% 45% / var(--group-fill))"], hues: HUES,
     from: [".stackgroup > summary .gname", "color"],
-    floor: LABEL, nit: "docs/css-nits.md, open nit 4",
+    floor: LABEL, nit: "docs/ui/css-nits.md, open nit 4",
     // Exactly 1.00 on all four, at whichever hue crosses the wash in
     // luminance. Not "low": gone.
     pinned: { paper: 1.00, daylight: 1.00, linen: 1.00, frost: 1.00 },
@@ -851,5 +851,5 @@ console.log(`contrast: ${results.length} pairs across ${skins.size} skins, all a
 if (known.length > 0) {
   const what = [...new Set(known.map((r) => r.what))];
   console.log(`still open, pinned at the ratio it scores today: ${what.join("; ")} ` +
-    `(${known.length} skin/pair combinations). see docs/css-nits.md.`);
+    `(${known.length} skin/pair combinations). see docs/ui/css-nits.md.`);
 }

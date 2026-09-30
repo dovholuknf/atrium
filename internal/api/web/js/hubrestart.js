@@ -1,7 +1,7 @@
 // ── the hub restart gate, the board's half ───────────────
 //
 // A hub-only deploy asks the hub before it restarts it, and the hub answers once
-// nobody is using a board. See docs/hub-restart-gate.md. This file does the
+// nobody is using a board. See docs/fabric/hub-restart-gate.md. This file does the
 // three things only a board can:
 //
 //   - says when somebody is using it, so the hub knows what idle means

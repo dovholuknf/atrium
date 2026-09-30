@@ -82,7 +82,7 @@ func joinCmd() *cobra.Command {
 				// dial uses. This is the same shell-out the board-exposure path
 				// makes (internal/daemon.EnrollZiti); the identity name is the
 				// room's own so a machine with more than one is told them apart.
-				// See docs/ziti-zrok-flow-design.md, "atrium2 join enrolling a JWT
+				// See docs/fabric/ziti-zrok-flow-design.md, "atrium2 join enrolling a JWT
 				// in place".
 				dir := filepath.Join(keys.Dir, "identities")
 				path, out, err := daemon.EnrollZitiInto(jwt, j.Name, dir)

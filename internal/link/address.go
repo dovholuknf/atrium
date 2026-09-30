@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-// How a session names a card on another room. See docs/cross-room-say-design.md.
+// How a session names a card on another room. See docs/fabric/cross-room-say-design.md.
 //
 // `name` and `@name` stay in the sender's own room. `name@room` and
 // `@name@room` reach `name` on `room`, split on the LAST `@` so a handle that

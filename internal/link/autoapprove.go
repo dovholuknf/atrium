@@ -75,7 +75,7 @@ import (
 // standing `never` rule all decide a request inside `onPermRequest` before it can
 // ever become pending, so anything this sees in `/v1/permissions` has already
 // cleared them. Approving a pending request is therefore the same last-resort
-// answer `docs/auto-mode.md` describes, made from the hub instead of the room.
+// answer `docs/runtime/auto-mode.md` describes, made from the hub instead of the room.
 //
 // ── the record ───────────────────────────────────────────
 //
@@ -108,7 +108,7 @@ type autoApprover struct {
 	once sync.Once
 	// wake asks the loop to look at the switch now: it was just saved, on or off.
 	// Turning it on empties the queue at once, which is what a person expects from
-	// a button they just pressed. See `docs/auto-mode.md`, "turning it on empties
+	// a button they just pressed. See `docs/runtime/auto-mode.md`, "turning it on empties
 	// the queue".
 	wake chan struct{}
 

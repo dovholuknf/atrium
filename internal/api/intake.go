@@ -15,7 +15,7 @@ import (
 // One endpoint, one shape, and no knowledge of any external system. A hand
 // written script, a poller, a CI job and a future forum peer all post the same
 // item, and atrium renders `source` as a badge without ever learning what it
-// means. See docs/intake-design.md.
+// means. See docs/runtime/intake-design.md.
 
 // maxIntakeBody bounds one post.
 //

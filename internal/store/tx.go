@@ -5,7 +5,7 @@ import (
 	"database/sql"
 )
 
-// One change, one transaction. See docs/work-ledger-design.md, "Transactions".
+// One change, one transaction. See docs/runtime/work-ledger-design.md, "Transactions".
 //
 // `guard` retries contention and halts on anything else, and it is not a
 // transaction: a method that runs three statements through it commits each one

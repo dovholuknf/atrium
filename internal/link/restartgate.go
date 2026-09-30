@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-// The hub restart gate. See docs/hub-restart-gate.md.
+// The hub restart gate. See docs/fabric/hub-restart-gate.md.
 //
 // A HUB RESTART DROPS EVERY BOARD PANE, and the deploy that does it runs from a
 // script with no idea whether somebody is typing into one. So the script asks

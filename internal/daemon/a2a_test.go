@@ -13,7 +13,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
-// Stage 1 of docs/a2a-reliability-design.md: every failure mode it covers has
+// Stage 1 of docs/runtime/a2a-reliability-design.md: every failure mode it covers has
 // a test here. F1 silent stop, F5 an ambiguous report, F6 no loop, F7 a stuck
 // tool, F8 lineage, F13 notices not rate limited, F14 an unverified sha, F15 a
 // message nothing will deliver.

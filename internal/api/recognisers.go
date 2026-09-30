@@ -18,7 +18,7 @@ import (
 //
 // Atrium learns nothing about any source system here either. It matches a
 // pattern somebody wrote and substitutes into templates somebody wrote. See
-// docs/scm-design.md.
+// docs/runtime/scm-design.md.
 
 func (s *Server) listRecognisers(w http.ResponseWriter, r *http.Request) {
 	rows, err := s.st.Recognisers()

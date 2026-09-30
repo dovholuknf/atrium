@@ -4,7 +4,7 @@
 # different badge, and this script is deliberately worse at describing its items
 # than github-assigned.ps1 is.
 #
-# docs/intake-design.md, "Engineering and support are not the same shape", has
+# docs/runtime/intake-design.md, "Engineering and support are not the same shape", has
 # the argument. The short version, and the two rules it produces:
 #
 # 1. A support case names a customer and a symptom. It does not name a repo, so

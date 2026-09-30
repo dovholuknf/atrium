@@ -64,12 +64,12 @@ type LaunchRequest struct {
 	// EffortEnv say to. Args and Env are extra argv and environment for the
 	// runner, used as given. All three are sticky with respect to the card, as
 	// Model is, and none is checked against a list. See
-	// docs/launch-options-design.md.
+	// docs/runtime/launch-options-design.md.
 	Effort string            `json:"effort,omitempty"`
 	Args   []string          `json:"args,omitempty"`
 	Env    map[string]string `json:"env,omitempty"`
 	// Source, ExternalID and URL record where this work came from. See
-	// store.SetOrigin and docs/intake-design.md.
+	// store.SetOrigin and docs/runtime/intake-design.md.
 	Source     string `json:"source,omitempty"`
 	ExternalID string `json:"external_id,omitempty"`
 	URL        string `json:"url,omitempty"`
@@ -141,7 +141,7 @@ type LaunchRequest struct {
 	// SpawnedByID is the launcher's card on ANOTHER room, as `room~id`, sent by
 	// the hub when it launches here for a session on another room. Taken only
 	// in that tagged form, so it can never name a card on this room. See
-	// docs/cross-room-say-design.md.
+	// docs/fabric/cross-room-say-design.md.
 	SpawnedByID string `json:"spawned_by_id,omitempty"`
 	// Lean starts a claude session with only what a worker needs, and MCP names
 	// the servers from the runner's MCP config it keeps beside atrium-control.
@@ -210,7 +210,7 @@ func expandTemplate(tmpl []string, cwd, title, cmd string, args []string) []stri
 //
 // The two are not the same thing on purpose. A seed prompt is routinely longer
 // than everything else on the line put together, and a card raised from a
-// support case carries somebody else's words, which docs/intake-design.md says
+// support case carries somebody else's words, which docs/runtime/intake-design.md says
 // to keep out of atrium's own storage wherever it can be. What the log needs
 // to answer is "what was started here", and the prompt is on the card already.
 //
@@ -230,7 +230,7 @@ func runnerArgs(h *store.Harness, resume, rawPrompt, rawModel string) (args []st
 
 // launchOptions is what a launch passes to the runner beyond its prompt: the
 // two convenience fields each harness row maps, and extra argv used as given.
-// See docs/launch-options-design.md.
+// See docs/runtime/launch-options-design.md.
 type launchOptions struct {
 	Model, Effort string
 	Args          []string
@@ -368,7 +368,7 @@ func article(word string) string {
 
 // launchOptionEnv is the environment one launch adds over the harness's own: the
 // extra env as given, then the model and effort vars the row maps. See the env
-// order in docs/launch-options-design.md.
+// order in docs/runtime/launch-options-design.md.
 //
 // Three collisions are refused rather than settled by order, because each
 // would run the session on a value nobody can see was chosen. An `ATRIUM_` key
@@ -1202,7 +1202,7 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 	// go. Written once: `SetLineage` leaves a card that already has a parent
 	// alone, so a reopen cannot rename it. The parent's card is looked up here
 	// on a best-effort basis, and a handle that resolves to nothing still names
-	// it. See docs/a2a-reliability-design.md.
+	// it. See docs/runtime/a2a-reliability-design.md.
 	// The name is kept only on a card with no launcher yet, which is the one
 	// SetLineage below will write. A reopen names nothing new.
 	reportedTo := ""

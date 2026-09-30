@@ -18,9 +18,9 @@ import (
 // parsing, no cloning, no network call, and holds no credential. It answers one
 // question, "where does org/repo live", out of what somebody typed.
 //
-// The word `scm` is deliberately not used. `docs/scm-design.md` already owns it
+// The word `scm` is deliberately not used. `docs/runtime/scm-design.md` already owns it
 // for two other features, both built, and three things under one noun is how a
-// package grows a file nobody can describe. See `docs/providers-design.md`.
+// package grows a file nobody can describe. See `docs/runtime/providers-design.md`.
 
 // ProviderKinds is every type a provider may be.
 //

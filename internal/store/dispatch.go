@@ -107,7 +107,7 @@ type Dispatch struct {
 	// about what is configured on cdaws.
 	Harness string `json:"harness"`
 	// Cwd is a directory ON THAT ROOM, and it is optional on purpose. See
-	// `docs/remote-launch.md`: the ordinary case sends no directory at all and
+	// `docs/fabric/remote-launch.md`: the ordinary case sends no directory at all and
 	// lets the room's own harness row answer, because the room is the authority
 	// on its own filesystem and this hub has never seen it.
 	Cwd    string   `json:"cwd,omitempty"`
