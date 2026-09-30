@@ -361,6 +361,13 @@ Stage 2 is where clint gets the feature.
 
 ## 10. Open questions for clint
 
+**Decided 2026-09-30 through @orchestrator: every recommendation accepted.** (1) `atrium stop` stops the daemon and
+leaves the runners up, and `--runners` stops everything. (2) B over A. (3) The gate waits up to 30 seconds through a
+restart, then fails open. (4) The host is opt-in, on one room first, before it becomes a default. These are
+acceptance lines of stage 2 (1 and 3) and stage 3 (4). Stages 0 and 1 are handed to @terminal.
+
+The questions as they were asked:
+
 1. What `atrium stop` means by default: stop the daemon and leave the runners up (the upgrade case), or today's
    stop-everything with the other behind a flag. The recommendation is the first, with `--runners` for the second.
 2. B over A. Is "the agents never stop, and a daemon upgrade takes seconds" the product you meant, with the per-card
