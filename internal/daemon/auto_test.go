@@ -182,3 +182,24 @@ func TestAutoModeSurvivesAReopen(t *testing.T) {
 		t.Fatal("auto mode was not written down")
 	}
 }
+
+// r-042: a directory-named permission whose name only a finished card holds is
+// still recorded on a card, so it is asked and never fails open. Activity from
+// the same name stays a silent no-op.
+func TestStaleDirectoryNamePermissionStillLandsOnACard(t *testing.T) {
+	d := testDaemon(t)
+	done, _, err := d.st.Register(store.Observed{WireName: "checkout", Worktree: "/tmp/checkout", Runner: "claude"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := d.st.SetStatus(done.ID, store.StatusDone); err != nil {
+		t.Fatal(err)
+	}
+	id, _, err := d.onPermRequest(PermissionRequest{
+		Agent: "checkout", Tool: "Bash", Command: "ls", NameSource: store.NameFromDir,
+	})
+	if err != nil || id == "" {
+		t.Fatalf("the request was not recorded: id=%q err=%v", id, err)
+	}
+	d.onActivity(ActivityEvent{Agent: "checkout", NameSource: store.NameFromDir, Event: "tool-start", Tool: "Bash"})
+}
