@@ -350,6 +350,13 @@ function setTermListOpen(open) {
 }
 function toggleTermListOpen() { setTermListOpen(!termListOpen); }
 
+// u-023: the card picker of the phone tray (#t-pick in the terminal bar). Same list as the "atrium" row.
+function termPickTap() {
+  toggleTermListOpen();
+  const b = document.getElementById("t-pick");
+  if (b) b.setAttribute("aria-expanded", termListOpen ? "true" : "false");
+}
+
 // The collapsed trigger: the attached session's name and a caret that opens the
 // list. Hidden by CSS everywhere except a phone with a terminal attached, so it
 // is always rendered and never in the way.

@@ -68,6 +68,14 @@ func TestOnlyAnOverCardWithNoProcessIsGone(t *testing.T) {
 	}
 }
 
+// The fixtures' dead pid is dead on this platform too. Pid 1 passed on Windows
+// and failed on Linux, where it is init.
+func TestTheFixturePidIsDeadHere(t *testing.T) {
+	if processAlive(impossiblePID) {
+		t.Fatalf("pid %d is alive here, so cardFor's card has a process", impossiblePID)
+	}
+}
+
 // ITEM 83. A worker that reported done keeps running at its prompt, and a say to
 // it is delivered through the same path as a say to a running card, whatever pid
 // the card has recorded.
