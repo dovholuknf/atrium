@@ -167,6 +167,30 @@ A blocked session that asked a peer still shows as waiting, and the card names t
 a question for you. That is on purpose: it has stopped, and a peer that never answers otherwise looks exactly
 like a session nobody noticed.
 
+## Pattern 13: Windows Defender eating the machine
+
+On Windows, a room running several agents can lose more CPU to Defender than to the agents. Real-time protection
+scans every file a Go build writes, every `*.test.exe` a test run produces, and every file the headless board
+suite's chrome touches. On sg4 on 2026-09-30, `MsMpEng.exe` sat at 103% while two directors built and tested,
+above any single agent.
+
+Exclude the paths that only ever hold build output, caches and agent worktrees. Run this in an elevated shell
+AS THE USER THE AGENTS RUN AS, or write that user's paths out by hand. `$env:LOCALAPPDATA` and `$env:USERPROFILE`
+expand to whoever runs the shell, so an admin shell opened as yourself excludes your own profile, not the
+agents'. On sg4 the agents run as `claude`:
+
+```powershell
+# elevated. paths are the agent user's, from `go env GOCACHE GOMODCACHE` run as that user
+Add-MpPreference -ExclusionPath 'D:\git\github\dovholuknf\atrium\build.claude', 'D:\worktrees', `
+  'C:\Users\claude\AppData\Local\go-build', 'C:\Users\claude\go\pkg'
+Add-MpPreference -ExclusionProcess 'chrome-headless-shell.exe', 'go.exe'
+```
+
+Keep the list to paths nothing downloads into from outside. A worktree holds code the agents wrote and cloned, so
+excluding it trusts that code the way you already trust it by running it. An exclusion cannot be read back
+without elevation: `Get-MpPreference` answers "Must be an administrator to view exclusions", so check it from the
+same elevated shell. Atrium does not run this for you, since it needs elevation and changes a security setting.
+
 ## Limits / what this won't do
 
 - **No auth.** Single machine, localhost. If you bind to a non-loopback address, anything on your LAN can talk
