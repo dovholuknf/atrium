@@ -1,0 +1,1 @@
+D:/git/github/dovholuknf/dotagents/github/dovholuknf/atrium/internal/daemon/CLAUDE.md
