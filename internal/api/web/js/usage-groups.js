@@ -94,7 +94,7 @@ function ucGroups(series) {
       const i = Math.round((t - ax.first) / ax.ms);
       if (i < 0 || i >= ax.n || !(v > 0)) continue;
       const h = v / (m || 1) * (H - 2);
-      bars += `<rect class="uck-cost" x="${(i * bw).toFixed(2)}" y="${(H - h).toFixed(2)}" width="${Math.max(bw - 0.4, 0.4).toFixed(2)}" height="${h.toFixed(2)}"></rect>`;
+      bars += `<rect class="uck-bar" x="${(i * bw).toFixed(2)}" y="${(H - h).toFixed(2)}" width="${Math.max(bw - 0.4, 0.4).toFixed(2)}" height="${h.toFixed(2)}"></rect>`;
     }
     const sel = UC.groupKey === g.key;
     html += `<div class="ucmini${sel ? " sel" : ""}" data-group="${esc(g.key)}" data-tip="${esc(sel ? "Click again to show every group" : "Filter the card list to this group")}">` +

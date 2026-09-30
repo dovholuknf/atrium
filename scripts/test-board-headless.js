@@ -20,6 +20,72 @@ const os = require("os");
 const crypto = require("crypto");
 const { wholeBoard } = require("./board-source.js");
 
+// One clock for the whole suite, so no section depends on the time of day the
+// run happens to start. A fixture built from Date.now() and checked as HH:MM
+// broke whenever the real time sat near midnight, because the board then
+// rightly says "tomorrow 00:04". So the run is SHIFTED, not frozen: Date.now()
+// and a no-argument `new Date()` answer real time plus a constant, which keeps
+// timers, debounces and performance.now working while every run starts at noon,
+// twelve hours from either midnight. Node and every browser context take the
+// same offset, so a fixture built in Node agrees with the page reading it.
+//   HEADLESS_CLOCK=real    no shift at all, for debugging against the real time
+//   HEADLESS_CLOCK=23:58   start the run at that local time instead of noon
+// A context that must see the real clock says so: newContext(o, { realClock: true }).
+// Workers do not get it, and no section here runs one that reads the time.
+function clockOffset() {
+  const spec = process.env.HEADLESS_CLOCK || "12:00";
+  if (spec === "real") return 0;
+  const m = /^(\d{1,2}):(\d\d)$/.exec(spec);
+  if (!m || +m[1] > 23 || +m[2] > 59) {
+    console.error("HEADLESS_CLOCK is 'real' or HH:MM, not '" + spec + "'");
+    process.exit(2);
+  }
+  const now = new Date();
+  const target = new Date(now.getFullYear(), now.getMonth(), now.getDate(), +m[1], +m[2], 0, 0);
+  return target.getTime() - now.getTime();
+}
+const CLOCK_OFFSET = clockOffset();
+// Written as a function so the very same text runs in Node and, stringified, in
+// the page. A Proxy rather than a subclass keeps Date.prototype, instanceof and
+// Date.name exactly as they were: only construct, apply and now are answered here.
+function installClock(offset) {
+  if (!offset) return;
+  const Real = Date;
+  const shifted = () => Real.now() + offset;
+  const proxy = new Proxy(Real, {
+    construct(target, args, newTarget) {
+      return Reflect.construct(target, args.length ? args : [shifted()], newTarget);
+    },
+    apply() { return new Real(shifted()).toString(); },
+    get(target, key, recv) {
+      if (key === "now") return shifted;
+      return Reflect.get(target, key, target === recv ? target : recv);
+    },
+  });
+  globalThis.Date = proxy;
+}
+installClock(CLOCK_OFFSET);
+const CLOCK_INIT = "(" + installClock.toString() + ")(" + CLOCK_OFFSET + ");";
+// Wrap the browser so no section can forget the clock: it is the first init
+// script of every context, ahead of any a section adds. browser.newPage() makes
+// its own context, so it goes through the same door.
+function withClock(browser) {
+  const newContext = browser.newContext.bind(browser);
+  browser.newContext = async (opts, more) => {
+    const ctx = await newContext(opts || {});
+    if (!(more && more.realClock)) await ctx.addInitScript({ content: CLOCK_INIT });
+    return ctx;
+  };
+  browser.newPage = async opts => {
+    const ctx = await browser.newContext(opts);
+    const page = await ctx.newPage();
+    const close = page.close.bind(page);
+    page.close = async o => { try { await close(o); } finally { await ctx.close().catch(() => {}); } };
+    return page;
+  };
+  return browser;
+}
+
 // The board's xterm bundle, served off disk so a real Terminal is built. The
 // page loads these as `<script src="/vendor/...">`, which board-source leaves
 // external, and the attach-loop repro needs `openTerm` to build a real terminal
@@ -9293,6 +9359,216 @@ async function usageCacheReadsSection(browser, base) {
   if (errors.length) fail("usageCacheReads: the page threw: " + errors.join(" | "));
 }
 
+// u-027: the usage tab's neutral by-card colour, the toggle that says its state, and the cumulative line.
+// NOTHING HERE READS THE REAL CLOCK. Every fixture is built from one `now` chosen below and handed to the
+// functions that take it (ucCumulative(series, now), ucAxis(series, now), ucMidnight(now)) or set as UC.now,
+// which ucNow() answers for the whole tab. USAGE_SHOT=<file.png> also writes a screenshot of the tab.
+// A picture, not a check, so it may use the real clock: a day of turns, four cards, cache reads dominant.
+// It touches nothing that u-027 added, so USAGE_SHOT_ONLY=1 can take the "before" from the old board.
+async function usageShot(sp, file) {
+  await sp.evaluate(() => {
+    UC.cacheReads = false; UC.range = "24h"; UC.bw = 900; UC.group = "card";
+    UC.since = Math.floor((Date.now() - 86400000) / 1000) * 1000;
+    const last = Math.floor(Date.now() / 900000) * 900000;
+    const ids = ["atrium", "zrok-docs", "board-ui", "reviewer"];
+    const buckets = new Map();
+    for (let i = 1; i <= 90; i++) {
+      const t = last - i * 900000;
+      const cards = {}, total = ucSums();
+      ids.forEach((id, k) => {
+        if ((i * 7 + k * 13) % 5 === 0) return;
+        const v = 200 + ((i * 37 + k * 91) % 900) * (4 - k);
+        const s = { rows: 1, replies: 2, input: v, output: v / 2, cache_write_5m: v * 3, cache_write_1h: 0, cache_read: v * 40, cost: 0 };
+        cards[id] = ucAdd(ucSums(), s);
+        ucAdd(total, s);
+      });
+      buckets.set(t, { t, total, cards, causes: { operator: total }, groups: {} });
+    }
+    UC.now = 0;
+    UC.rooms = { "": { state: "ok", why: "", noGroups: false, buckets } };
+    ucPaint();
+  });
+  await sp.screenshot({ path: file });
+}
+
+async function usageTabSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const sp = await ctx.newPage();
+  const errors = [];
+  sp.on("pageerror", e => errors.push(String(e)));
+  let stored = false;
+  await ctx.route("**/v1/usage*", route => route.fulfill({ json: { buckets: [] } }));
+  await ctx.route("**/v1/settings", async route => {
+    const r = route.request();
+    if (r.method() === "POST") {
+      const body = JSON.parse(r.postData() || "{}");
+      if ("usage_cache_reads" in body) stored = body.usage_cache_reads;
+    }
+    await route.fulfill({ json: { usage_cache_reads: stored, board_skin: "harbour", board_skins: SKINS } });
+  });
+  try {
+    await sp.goto(base, { waitUntil: "domcontentloaded" });
+    await sp.waitForSelector("#stack-list .stackrow", { state: "attached", timeout: slow(15000) });
+    await sp.evaluate(() => switchView("usage"));
+    await sp.waitForFunction(() => document.getElementById("uc-body") && typeof ucPaint === "function", null, { timeout: slow(10000) });
+    await sp.waitForTimeout(400);
+    if (process.env.USAGE_SHOT_ONLY) { await usageShot(sp, process.env.USAGE_SHOT_ONLY); return; }
+
+    // by card and by group: one neutral fill, and totals that follow the toggle
+    const tiles = await sp.evaluate(() => {
+      const now = new Date(2026, 8, 15, 15, 30).getTime();
+      UC.now = now; UC.range = "24h"; UC.bw = 900; UC.since = now - 86400000; UC.group = "dept"; UC.groupKey = null;
+      const mk = (i, o, r) => ({ rows: 1, replies: 1, input: i, output: o, cache_write_5m: 0, cache_write_1h: 0, cache_read: r, cost: 0 });
+      const t0 = Math.floor(now / 900000) * 900000 - 900000;
+      const sA = mk(1000, 500, 90000), sB = mk(200, 100, 40000);
+      const bucket = t => ({ t, total: ucAdd(ucAdd(ucSums(), sA), sB), cards: { "uc-a": ucAdd(ucSums(), sA), "uc-b": ucAdd(ucSums(), sB) },
+        causes: { operator: ucAdd(ucAdd(ucSums(), sA), sB) }, groups: { eng: ucAdd(ucSums(), sA), ops: ucAdd(ucSums(), sB) } });
+      UC.rooms = { "": { state: "ok", why: "", buckets: new Map([[t0, bucket(t0)]]), noGroups: false } };
+      const out = {};
+      for (const on of [false, true]) {
+        UC.cacheReads = on;
+        ucPaint();
+        const q = sel => [...document.querySelectorAll(sel)];
+        const readFill = getComputedStyle(document.querySelector("#uc-body .uclegend .uck-read") || document.querySelector(".uck-read")).backgroundColor;
+        const cards = q('#uc-body .ucminis:not([data-role=groups]) .ucmini[data-id]');
+        const groups = q('#uc-body [data-role=groups] .ucmini');
+        const rects = q("#uc-body .ucmini svg rect");
+        out[on] = {
+          rectClasses: [...new Set(rects.map(r => r.getAttribute("class")))],
+          rectFills: [...new Set(rects.map(r => getComputedStyle(r).fill))],
+          readFill,
+          cardTotals: cards.map(c => c.querySelector("b").textContent),
+          groupTotals: groups.map(c => c.querySelector("b").textContent),
+          want: { a: on ? ucTokens(sA) : ucCounted(sA), b: on ? ucTokens(sB) : ucCounted(sB) },
+          fmt: usageTokens(on ? ucTokens(sA) : ucCounted(sA)) + "|" + usageTokens(on ? ucTokens(sB) : ucCounted(sB)),
+          nCards: cards.length, nGroups: groups.length,
+        };
+      }
+      return out;
+    });
+    for (const on of ["false", "true"]) {
+      const s = tiles[on];
+      if (s.nCards !== 2 || s.nGroups !== 2) fail("usageTab: cards " + s.nCards + " groups " + s.nGroups + " with cache reads " + on);
+      if (s.rectClasses.join() !== "uck-bar") fail("usageTab: by-card and group bars use " + s.rectClasses + " with cache reads " + on);
+      if (s.rectFills.includes(s.readFill) || s.rectFills.length !== 1 || !s.rectFills[0]) fail("usageTab: the bar fill " + s.rectFills + " is the cache read colour " + s.readFill);
+      if (s.cardTotals.join("|") !== s.fmt) fail("usageTab: card totals " + s.cardTotals + " want " + s.fmt + " with cache reads " + on);
+      if (s.groupTotals.join("|") !== s.fmt) fail("usageTab: group totals " + s.groupTotals + " want " + s.fmt + " with cache reads " + on);
+    }
+    if (tiles.false.cardTotals.join() === tiles.true.cardTotals.join()) fail("usageTab: the totals ignore the toggle.");
+
+    // the toggle says its state: on a click and on a settings event from another tab
+    const label = () => sp.evaluate(() => ({ t: document.getElementById("uc-cache-label").textContent,
+      p: document.getElementById("uc-cache").getAttribute("aria-pressed"), tip: document.getElementById("uc-cache").getAttribute("data-tip") }));
+    await sp.evaluate(() => { UC.cacheReads = false; ucPaint(); });
+    let l = await label();
+    if (l.t !== "cache reads hidden" || l.p !== "false" || !/counted apart/.test(l.tip)) fail("usageTab: off reads " + JSON.stringify(l));
+    await sp.click("#uc-cache");
+    await sp.waitForFunction(() => document.getElementById("uc-cache-label").textContent === "cache reads shown", null, { timeout: slow(5000) });
+    l = await label();
+    if (l.p !== "true" || !/drawn in the charts/.test(l.tip)) fail("usageTab: on reads " + JSON.stringify(l));
+    if (!(await sp.evaluate(() => !!document.querySelector("#uc-cache i.uck-read")))) fail("usageTab: the swatch is gone.");
+    await sp.evaluate(() => ucHaveSetting({ usage_cache_reads: false }));
+    l = await label();
+    if (l.t !== "cache reads hidden" || l.p !== "false") fail("usageTab: a settings event off reads " + JSON.stringify(l));
+    await sp.evaluate(() => ucHaveSetting({ usage_cache_reads: true }));
+    l = await label();
+    if (l.t !== "cache reads shown" || l.p !== "true") fail("usageTab: a settings event on reads " + JSON.stringify(l));
+
+    // the cumulative line, at an afternoon and at 23:50, with the projection worked out by hand
+    const cum = await sp.evaluate(() => {
+      const res = {};
+      const mk = i => ({ rows: 1, replies: 1, input: i, output: 0, cache_write_5m: 0, cache_write_1h: 0, cache_read: i * 10, cost: 0 });
+      // eight full 15 minute buckets before now, 3000 counted tokens each
+      const build = (now, ms, n, per) => {
+        const last = Math.floor(now / ms) * ms;
+        const series = [];
+        for (let i = n; i >= 1; i--) series.push({ t: last - i * ms, total: ucAdd(ucSums(), mk(per)) });
+        return series;
+      };
+      const read = (html) => {
+        const div = document.createElement("div");
+        div.innerHTML = html;
+        const paths = [...div.querySelectorAll("svg path")];
+        const ys = paths[0] ? [...paths[0].getAttribute("d").matchAll(/[ML]\S+ (\S+)/g)].map(m => Number(m[1])) : [];
+        return { n: paths.length, dashed: !!div.querySelector(".uck-proj"), ys,
+          axis: div.querySelector(".ucaxis").textContent, total: (div.querySelector("[data-n=cumtotal]") || {}).textContent,
+          proj: (div.querySelector("[data-n=cumproj]") || {}).textContent || "" };
+      };
+      UC.now = 0;
+      UC.cacheReads = false;
+      const run = (label, range, now, ms, n, per) => {
+        UC.range = range; UC.bw = ms / 1000; UC.since = now - { "1h": 3600000, "6h": 21600000, "24h": 86400000, "7d": 604800000 }[range];
+        res[label] = read(ucCumulative(build(now, ms, n, per), now));
+      };
+      const pm = new Date(2026, 8, 15, 15, 30).getTime();
+      const late = new Date(2026, 8, 15, 23, 50).getTime();
+      run("pm24", "24h", pm, 900000, 8, 3000);
+      run("late24", "24h", late, 900000, 8, 3000);
+      run("pm7d", "7d", pm, 3600000, 8, 3000);
+      run("pm1h", "1h", pm, 60000, 8, 3000);
+      run("pm6h", "6h", pm, 300000, 8, 3000);
+      // the last hour empty: a burst two hours back and nothing since
+      UC.range = "24h"; UC.bw = 900; UC.since = pm - 86400000;
+      const old = build(pm - 7200000, 900000, 4, 3000);
+      res.quiet = read(ucCumulative(old, pm));
+      UC.cacheReads = true;
+      res.shown = read(ucCumulative(build(pm, 900000, 8, 3000), pm));
+      UC.now = 0;
+      return res;
+    });
+    // 8 buckets x 3000 = 24000 so far. 3pm: buckets from 14:30 on are 4 x 3000 over the 60 minutes to 15:30 is
+    // 200 a minute, and 510 minutes to midnight adds 102000, so 126k. At 23:50 the hour reaches back to 22:45,
+    // 4 x 3000 over 65 minutes, and 10 minutes to midnight adds 1846: 25846, so 26k.
+    const mono = ys => ys.every((y, i) => i === 0 || y <= ys[i - 1]);
+    for (const k of ["pm24", "late24", "pm7d", "pm1h", "pm6h", "quiet"]) {
+      const c = cum[k];
+      if (!mono(c.ys)) fail("usageTab: the " + k + " line goes down: " + c.ys);
+      if (c.total !== (k === "quiet" ? "12k" : "24k")) fail("usageTab: " + k + " ends at " + c.total + " and the range total is 24k");
+    }
+    if (cum.pm24.proj !== "at this pace: 126k by midnight" || !cum.pm24.dashed || cum.pm24.n !== 2) fail("usageTab: 24h at 15:30 reads " + JSON.stringify(cum.pm24));
+    if (cum.late24.proj !== "at this pace: 26k by midnight" || !cum.late24.dashed) fail("usageTab: 24h at 23:50 reads " + JSON.stringify(cum.late24));
+    if (!/^0.*24k$/.test(cum.pm24.axis.replace(/at this pace.*midnight/, ""))) fail("usageTab: the axis reads " + cum.pm24.axis);
+    if (!/^at this pace: \d+k by midnight$/.test(cum.pm7d.proj) || !cum.pm7d.dashed) fail("usageTab: 7d reads " + JSON.stringify(cum.pm7d));
+    for (const k of ["pm1h", "pm6h", "quiet"]) if (cum[k].dashed || cum[k].proj) fail("usageTab: " + k + " has a projection: " + JSON.stringify(cum[k]));
+    if (cum.shown.total !== "264k") fail("usageTab: with cache reads shown the line ends at " + cum.shown.total + ", 24k counted plus 240k of reads is 264k");
+
+    // the last point of the line equals the range total on the by-kind line in a real paint
+    const paint = await sp.evaluate(() => {
+      const now = new Date(2026, 8, 15, 15, 30).getTime();
+      UC.now = now; UC.range = "24h"; UC.bw = 900; UC.since = now - 86400000; UC.group = "card";
+      // the same two cards again: the toggle above may have had the tab re-read, which is the empty answer
+      const mk = (i, o, r) => ({ rows: 1, replies: 1, input: i, output: o, cache_write_5m: 0, cache_write_1h: 0, cache_read: r, cost: 0 });
+      const t0 = Math.floor(now / 900000) * 900000 - 900000;
+      const sA = mk(1000, 500, 90000), sB = mk(200, 100, 40000);
+      const all = ucAdd(ucAdd(ucSums(), sA), sB);
+      UC.rooms = { "": { state: "ok", why: "", noGroups: false, buckets: new Map([[t0, { t: t0, total: all,
+        cards: { "uc-a": ucAdd(ucSums(), sA), "uc-b": ucAdd(ucSums(), sB) }, causes: { operator: all }, groups: {} }]]) } };
+      const out = [];
+      for (const on of [false, true]) {
+        UC.cacheReads = on;
+        ucPaint();
+        const kinds = [...document.querySelectorAll('#uc-body [data-n^="kind:"]')].map(e => e.textContent);
+        const h = [...document.querySelectorAll("#uc-body h4")].map(e => e.textContent.split(" ")[0] + " " + e.textContent.split(" ")[1]);
+        out.push({ total: (document.querySelector("#uc-body [data-n=cumtotal]") || {}).textContent, kinds, h,
+          want: usageTokens(on ? 131800 : 1800) });
+      }
+      UC.now = 0;
+      return out;
+    });
+    for (const [i, on] of ["off", "on"].entries()) {
+      const p = paint[i];
+      if (p.total !== p.want) fail("usageTab: the cumulative line ends at " + p.total + ", the range total is " + p.want + " with cache reads " + on);
+      const order = p.h.join("|");
+      if (!/tokens by|cumulative tokens|tokens by cause/.test(order) || order.indexOf("cumulative") < order.indexOf("tokens by") || order.lastIndexOf("cumulative") > order.lastIndexOf("tokens by")) fail("usageTab: heading order " + order);
+    }
+
+    if (process.env.USAGE_SHOT) await usageShot(sp, process.env.USAGE_SHOT);
+  } finally {
+    await ctx.close();
+  }
+  if (errors.length) fail("usageTab: the page threw: " + errors.join(" | "));
+}
+
 // The usage tab grouped by department or director, and tokens per accepted item (u-014).
 async function usageGroupsSection(browser, base) {
   const errors = [];
@@ -9998,6 +10274,292 @@ async function phoneComposeSection(browser, base) {
     tasksMode = was;
   }
   if (errors.length) fail("phoneCompose: the page threw: " + errors.join(" | "));
+}
+
+// ── files attached in the composer (u-028) ─────────────────────────────────
+// A 1x1 png, so an image chip's thumbnail is a real image.
+const COMPOSE_PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+
+// The board's phone terminal with the upload endpoint mocked. mode.up is ok, slow or fail, and calls counts requests.
+async function composeBoardOpen(browser, base, errors, mode, calls) {
+  landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  landList = [LAND["land-live"]];
+  landPerms = [];
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+  await ctx.addInitScript(() => {
+    localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true }));
+    localStorage.setItem("atrium.termphone", "1");
+    window.__revoked = 0;
+    const rev = URL.revokeObjectURL.bind(URL);
+    URL.revokeObjectURL = (u) => { window.__revoked++; return rev(u); };
+    const Real = window.WebSocket;
+    window.__sent = [];
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
+        onopen: null, onclose: null, onmessage: null, onerror: null,
+        send(d) { window.__sent.push(String(d)); }, close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  });
+  await ctx.route("**/v1/tasks/*/files", async route => {
+    if (route.request().method() !== "POST") return route.fallback();
+    calls.n++;
+    const names = [...(route.request().postDataBuffer() || Buffer.alloc(0)).toString("latin1").matchAll(/filename="([^"]*)"/g)].map(m => m[1]);
+    calls.names.push(names);
+    if (mode.up === "fail") return route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: "disk full" }) });
+    if (mode.up === "slow") await new Promise(r => setTimeout(r, 500));
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ paths: names.map(n => "/w/" + n) }) });
+  });
+  await ctx.addInitScript((png) => { window.__png = png; }, COMPOSE_PNG);
+  const p = await ctx.newPage();
+  p.on("pageerror", e => { errors.push(String(e.stack || e)); });
+  await p.goto(base, { waitUntil: "domcontentloaded" });
+  await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+  await p.evaluate(() => attachTask("land-live"));
+  await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live",
+    null, { timeout: slow(10000) });
+  await p.evaluate(() => new Promise(r => term.write("[?2004h", r)));
+  await p.waitForSelector("#t-compose textarea", { timeout: slow(5000) });
+  await p.waitForTimeout(300);
+  return { ctx, p };
+}
+
+async function composeImagesSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  const errors = [], mode = { up: "ok" }, calls = { n: 0, names: [] };
+  const png = (n) => ({ name: n, mimeType: "image/png", buffer: Buffer.from(COMPOSE_PNG, "base64") });
+  try {
+    const { ctx, p } = await composeBoardOpen(browser, base, errors, mode, calls);
+    const ta = "#t-compose textarea";
+    const val = () => p.evaluate((s) => document.querySelector(s).value, ta);
+    const setVal = (v, at) => p.evaluate(([s, v, at]) => {
+      const t = document.querySelector(s);
+      t.value = v; t.dispatchEvent(new Event("input", { bubbles: true }));
+      t.setSelectionRange(at, at);
+      document.activeElement && document.activeElement.blur();
+      window.__sent.length = 0;
+    }, [ta, v, at]);
+    const chips = () => p.evaluate(() => Array.from(document.querySelectorAll("#t-compose .mc-file")).map(c => ({
+      name: c.querySelector(".mc-fname").textContent, state: c.dataset.state, state_text: c.querySelector(".mc-fstate").textContent,
+      thumb: !!c.querySelector("img.mc-thumb") && /^blob:/.test(c.querySelector("img.mc-thumb").src),
+      glyph: !!c.querySelector(".mc-glyph") })));
+    const budget = async (tag) => {
+      const m = await p.evaluate(() => {
+        // What sits around the row of text: with chips floating over the terminal it is the padding only, so the
+        // empty composer's 48px budget holds. The box itself grows with its text, which is not the chips' doing.
+        const h = 48 + document.querySelector("#t-compose .mc").getBoundingClientRect().height -
+          document.querySelector("#t-compose .mc-row").getBoundingClientRect().height - 4;
+        const f =document.querySelector("#t-compose .mc-files").getBoundingClientRect();
+        const cs = Array.from(document.querySelectorAll("#t-compose .mc-file")).map(c => c.getBoundingClientRect().top);
+        const kids = Array.from(document.querySelector("#t-compose .mc").children).map(k => k.className + ":" + k.getBoundingClientRect().height);
+        return { h, kids, fh: f.height, fw: f.width, tops: cs, oneRow: cs.every(t => Math.abs(t - cs[0]) < 2) };
+      });
+      if (m.h > 48.5) fail("composeImages " + tag + ": the composer around its row is " + (m.h - 44) + "px taller than an empty one " + JSON.stringify(m.kids));
+      if (!m.oneRow) fail("composeImages " + tag + ": the chips wrapped onto more than one row: " + JSON.stringify(m));
+      if (m.fh > 48) fail("composeImages " + tag + ": the chip row is " + m.fh + "px tall");
+    };
+
+    // Two files at once: one request, both paths at the caret, a chip each, thumbnails on the images.
+    await setVal("look at  and fix", 8);
+    await p.setInputFiles("#t-attach-in", [png("a.png"), png("b.heic")]);
+    await p.waitForFunction(() => document.querySelector("#t-compose textarea").value.includes("/w/b.heic"), null, { timeout: slow(5000) });
+    if (calls.n !== 1 || calls.names[0].join() !== "a.png,b.heic") fail("composeImages: uploads " + JSON.stringify(calls));
+    if ((await val()) !== "look at /w/a.png /w/b.heic and fix") fail("composeImages: the text is " + JSON.stringify(await val()));
+    let c = await chips();
+    if (c.length !== 2 || c[0].name !== "a.png" || c[1].name !== "b.heic") fail("composeImages: chips " + JSON.stringify(c));
+    if (!c[0].thumb) fail("composeImages: the image chip has no thumbnail");
+    if (c[1].thumb && c[1].glyph) fail("composeImages: a chip has both " + JSON.stringify(c[1]));
+    if (c.some(x => x.state !== "ok")) fail("composeImages: chip states " + JSON.stringify(c));
+
+    // A file that is not an image wears a glyph and its name.
+    await p.setInputFiles("#t-attach-in", [{ name: "notes.txt", mimeType: "text/plain", buffer: Buffer.from("hi") }]);
+    await p.waitForFunction(() => document.querySelector("#t-compose textarea").value.includes("/w/notes.txt"), null, { timeout: slow(5000) });
+    c = await chips();
+    if (c.length !== 3 || !c[2].glyph || c[2].thumb || c[2].name !== "notes.txt") fail("composeImages: the file chip " + JSON.stringify(c[2]));
+    await budget("three chips");
+
+    // A slow upload says so on its chip, and send waits for it.
+    mode.up = "slow";
+    await p.setInputFiles("#t-attach-in", [png("slow.png")]);
+    await p.waitForFunction(() => document.querySelector("#t-compose .mc-file[data-state=up]"), null, { timeout: slow(3000) });
+    const upn = await p.evaluate(() => ({ t: document.querySelector("#t-compose .mc-file[data-state=up] .mc-fstate").textContent,
+      send: document.querySelector("#t-compose .mc-send").disabled }));
+    if (upn.t !== "uploading" || !upn.send) fail("composeImages: an upload in flight showed " + JSON.stringify(upn));
+    await p.waitForFunction(() => !document.querySelector("#t-compose .mc-file[data-state=up]"), null, { timeout: slow(5000) });
+    mode.up = "ok";
+
+    // The X removes its chip and exactly its path, even after the text around it was edited.
+    let before = await val();
+    await setVal("PRE " + before + " tail", 4);
+    const rev0 = await p.evaluate(() => window.__revoked);
+    await p.tap("#t-compose .mc-file:nth-child(2) .mc-fx");
+    const after = await val();
+    const want = ("PRE " + before + " tail").replace("/w/b.heic", "");
+    if (after !== want) fail("composeImages: removing a chip left " + JSON.stringify(after) + ", want " + JSON.stringify(want));
+    c = await chips();
+    if (c.length !== 3 || c.some(x => x.name === "b.heic")) fail("composeImages: chips after a remove " + JSON.stringify(c));
+    if ((await p.evaluate(() => window.__revoked)) <= rev0) fail("composeImages: the removed chip's object URL was not revoked");
+
+    // A failed upload shows its reason on its chip and inserts nothing.
+    mode.up = "fail";
+    before = await val();
+    await p.setInputFiles("#t-attach-in", [png("bad.png")]);
+    await p.waitForFunction(() => document.querySelector("#t-compose .mc-file[data-state=err]"), null, { timeout: slow(5000) });
+    const bad = await p.evaluate(() => document.querySelector("#t-compose .mc-file[data-state=err] .mc-fstate").textContent);
+    if (!/disk full/.test(bad)) fail("composeImages: the failed chip says " + JSON.stringify(bad));
+    if ((await val()) !== before) fail("composeImages: a failed upload changed the text");
+    await budget("a failed chip");
+    if (process.env.U028_SHOTS) {
+      await p.screenshot({ path: path.join(process.env.U028_SHOTS, "u-028-failed-390x844.png") });
+    }
+    mode.up = "ok";
+    await p.tap("#t-compose .mc-file[data-state=err] .mc-fx");
+    if ((await val()) !== before) fail("composeImages: removing a failed chip changed the text");
+
+    // Send clears the chips.
+    await p.evaluate(() => window.__sent.length = 0);
+    await p.tap("#t-compose .mc-send");
+    await p.waitForTimeout(300);
+    if ((await chips()).length) fail("composeImages: chips after a send " + JSON.stringify(await chips()));
+    if (!(await p.evaluate(() => window.__sent.some(x => /\/w\/a\.png/.test(x))))) fail("composeImages: nothing was sent: " + JSON.stringify(await p.evaluate(() => ({ s: window.__sent,
+      note: document.querySelector("#t-compose .mc-note").textContent, dis: document.querySelector("#t-compose .mc-send").disabled,
+      v: document.querySelector("#t-compose textarea").value }))));
+
+    // Two images and one file, for the screenshot.
+    await setVal("", 0);
+    // The "sent" note holds height until it clears, and it is not the chips' doing.
+    await p.waitForFunction(() => document.querySelector("#t-compose .mc-note").getBoundingClientRect().height === 0, null, { timeout: slow(6000) });
+    await p.setInputFiles("#t-attach-in", [png("one.png"), png("two.png"), { name: "report.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF") }]);
+    await p.waitForFunction(() => document.querySelector("#t-compose textarea").value.includes("report.pdf"), null, { timeout: slow(5000) });
+    await budget("the shot");
+    if (process.env.U028_SHOTS) {
+      await p.screenshot({ path: path.join(process.env.U028_SHOTS, "u-028-chips-390x844.png") });
+    }
+    await ctx.close();
+  } finally {
+    tasksMode = was;
+  }
+  if (errors.length) fail("composeImages: the page threw: " + errors.join(" | "));
+}
+
+async function composePasteSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  const errors = [], mode = { up: "ok" }, calls = { n: 0, names: [] };
+  try {
+    const { ctx, p } = await composeBoardOpen(browser, base, errors, mode, calls);
+    const ta = "#t-compose textarea";
+    // A paste with the given parts, and whether the composer took it over.
+    const paste = (parts) => p.evaluate(([s, parts]) => {
+      const t = document.querySelector(s);
+      t.focus();
+      const dt = new DataTransfer();
+      for (const x of parts) {
+        if (x.text != null) dt.setData("text/plain", x.text);
+        else {
+          const b = Uint8Array.from(atob(window.__png), ch => ch.charCodeAt(0));
+          dt.items.add(new File([b], x.file, { type: "image/png" }));
+        }
+      }
+      const e = new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true });
+      t.dispatchEvent(e);
+      return e.defaultPrevented;
+    }, [ta, parts]);
+
+    // A text paste is left to the browser: nothing uploaded, nothing taken over.
+    if (await paste([{ text: "hello" }])) fail("composePaste: a text paste was taken over");
+    await p.waitForTimeout(200);
+    if (calls.n) fail("composePaste: a text paste uploaded");
+    // An image with text alongside is still a text paste.
+    if (await paste([{ text: "words" }, { file: "img.png" }])) fail("composePaste: an image with text was taken over");
+    await p.waitForTimeout(200);
+    if (calls.n) fail("composePaste: an image with text uploaded");
+
+    // An image alone uploads ONCE and its path goes in.
+    if (!(await paste([{ file: "shot.png" }]))) fail("composePaste: an image paste was not taken over");
+    await p.waitForFunction(() => document.querySelector("#t-compose textarea").value.includes("/w/shot.png"), null, { timeout: slow(5000) });
+    await p.waitForTimeout(300);
+    if (calls.n !== 1) fail("composePaste: the image uploaded " + calls.n + " times");
+    const v = await p.evaluate((s) => document.querySelector(s).value, ta);
+    if (v.trim() !== "/w/shot.png") fail("composePaste: the text is " + JSON.stringify(v));
+    const n = await p.evaluate(() => document.querySelectorAll("#t-compose .mc-file").length);
+    if (n !== 1) fail("composePaste: " + n + " chips");
+    await ctx.close();
+  } finally {
+    tasksMode = was;
+  }
+  if (errors.length) fail("composePaste: the page threw: " + errors.join(" | "));
+}
+
+// The same composer on the /m page's mount.
+async function mComposeImagesSection(browser) {
+  const tag = "mComposeImages: ";
+  const { ctx, p, calls, errors } = await mHarness(browser, M_VIEWS[0]);
+  const up = { mode: "ok", n: 0 };
+  await ctx.route(M_ORIGIN + "/v1/tasks/*/files", async route => {
+    up.n++;
+    const names = [...(route.request().postDataBuffer() || Buffer.alloc(0)).toString("latin1").matchAll(/filename="([^"]*)"/g)].map(m => m[1]);
+    if (up.mode === "fail") return route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: "no room" }) });
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ paths: names.map(n => "/w/" + n) }) });
+  });
+  await p.evaluate(() => { window.__revoked = 0; const r = URL.revokeObjectURL.bind(URL); URL.revokeObjectURL = (u) => { window.__revoked++; return r(u); }; });
+  await p.evaluate(() => mCompose.mount(document.getElementById("m-compose"), "c1"));
+  const box = "#m-compose .mc-box";
+  const val = () => p.$eval(box, t => t.value);
+  const mk = (names) => p.evaluate((names) => {
+    const b = Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="), c => c.charCodeAt(0));
+    return mCompose.attach(names.map(n => new File([b], n, { type: /\.png$/.test(n) ? "image/png" : "text/plain" })));
+  }, names);
+
+  await mk(["a.png", "b.txt"]);
+  if (up.n !== 1) fail(tag + up.n + " uploads for two files");
+  if ((await val()).trim() !== "/w/a.png /w/b.txt") fail(tag + "text " + JSON.stringify(await val()));
+  const c = await p.evaluate(() => Array.from(document.querySelectorAll("#m-compose .mc-file")).map(x => ({
+    thumb: !!x.querySelector("img.mc-thumb"), glyph: !!x.querySelector(".mc-glyph"), name: x.querySelector(".mc-fname").textContent })));
+  if (c.length !== 2 || !c[0].thumb || !c[1].glyph) fail(tag + "chips " + JSON.stringify(c));
+  const oneRow = await p.evaluate(() => { const r = document.querySelector("#m-compose .mc-files"); return r.getBoundingClientRect().height <= 60; });
+  if (!oneRow) fail(tag + "the chip row is more than one row");
+
+  // The X removes its own path only.
+  await p.tap("#m-compose .mc-file:nth-child(1) .mc-fx");
+  if ((await val()).trim() !== "/w/b.txt") fail(tag + "after remove " + JSON.stringify(await val()));
+  if ((await p.evaluate(() => window.__revoked)) < 1) fail(tag + "the thumbnail was not revoked");
+
+  // A failed upload shows its reason and inserts nothing.
+  up.mode = "fail";
+  const before = await val();
+  await mk(["bad.png"]);
+  const bad = await p.evaluate(() => (document.querySelector("#m-compose .mc-file[data-state=err] .mc-fstate") || {}).textContent);
+  if (!/no room/.test(bad || "")) fail(tag + "failed chip says " + JSON.stringify(bad));
+  if ((await val()) !== before) fail(tag + "a failed upload changed the text");
+  up.mode = "ok";
+
+  // A pasted image goes up once.
+  const n0 = up.n;
+  const took = await p.evaluate(() => {
+    const t = document.querySelector("#m-compose .mc-box");
+    const b = Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="), c => c.charCodeAt(0));
+    const dt = new DataTransfer();
+    dt.items.add(new File([b], "pasted.png", { type: "image/png" }));
+    const e = new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true });
+    t.dispatchEvent(e);
+    return e.defaultPrevented;
+  });
+  await p.waitForFunction(() => document.querySelector("#m-compose .mc-box").value.includes("/w/pasted.png"), null, { timeout: slow(5000) });
+  await p.waitForTimeout(200);
+  if (!took || up.n !== n0 + 1) fail(tag + "the paste uploaded " + (up.n - n0) + " times");
+
+  // Send clears the chips.
+  await p.tap("#m-compose .mc-send");
+  await p.waitForTimeout(300);
+  if (await p.evaluate(() => document.querySelectorAll("#m-compose .mc-file").length)) fail(tag + "chips after a send");
+  if (calls.message.length !== 1) fail(tag + "sends " + calls.message.length);
+  await ctx.close();
+  if (errors.length) fail(tag + "the page threw: " + errors.join(" | "));
 }
 
 // ── the phone page's composer and permission rows (u-025) ─────────────────
@@ -12095,11 +12657,112 @@ async function cardUrlNotifySection(browser, base) {
   if (!bad) console.log("cardUrlNotify ok");
 }
 
+// The suite's one clock (see CLOCK_OFFSET at the top). The page starts the run at
+// noon or at HEADLESS_CLOCK, a window the page opens agrees, Node and the page
+// read the same time, and the clock still advances. A context that asked for the
+// real clock does not get the shift.
+async function clockSection(browser, base) {
+  const spec = process.env.HEADLESS_CLOCK || "12:00";
+  const want = spec === "real" ? null : spec.split(":").map(Number);
+  // Minutes past midnight, compared round the clock so 23:58 and 00:01 are near.
+  const near = (h, m) => {
+    const d = Math.abs((h * 60 + m) - (want[0] * 60 + want[1]));
+    return Math.min(d, 1440 - d) <= 10;
+  };
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const p = await ctx.newPage();
+  try {
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    const read = pg => pg.evaluate(() => ({
+      h: new Date().getHours(), m: new Date().getMinutes(), now: Date.now(),
+      inst: new Date() instanceof Date, name: Date.name, str: typeof Date(),
+      dated: new Date(0).getTime(), parsed: Date.parse("2026-01-01T00:00:00Z"),
+      proto: Object.getPrototypeOf(new Date()) === Date.prototype,
+    }));
+    const a = await read(p);
+    if (want && !near(a.h, a.m)) fail("clock: the page reads " + a.h + ":" + a.m + ", not near " + spec);
+    if (Math.abs(a.now - Date.now()) > 2000) fail("clock: the page and Node disagree by " + (a.now - Date.now()) + "ms");
+    if (!a.inst || a.name !== "Date" || a.str !== "string" || a.dated !== 0 || !a.proto ||
+        a.parsed !== Date.UTC(2026, 0, 1)) fail("clock: Date is not itself any more: " + JSON.stringify(a));
+    const popup = p.waitForEvent("popup", { timeout: slow(10000) });
+    await p.evaluate(b => { window.open(b + "/#term=s1"); }, base);
+    const w = await popup;
+    const wa = await read(w);
+    if (want && !near(wa.h, wa.m)) fail("clock: a pop-out window reads " + wa.h + ":" + wa.m + ", not near " + spec);
+    if (Math.abs(wa.now - Date.now()) > 2000) fail("clock: a pop-out window disagrees with Node by " + (wa.now - Date.now()) + "ms");
+    await p.waitForTimeout(400);
+    const b = await read(p);
+    if (b.now - a.now < 300 || b.now - a.now > 3000) fail("clock: time did not advance sanely: " + (b.now - a.now) + "ms in 400ms");
+    if (CLOCK_OFFSET) {
+      const rctx = await browser.newContext({ viewport: { width: 800, height: 600 } }, { realClock: true });
+      const rp = await rctx.newPage();
+      await rp.goto(base, { waitUntil: "domcontentloaded" });
+      const r = await rp.evaluate(() => Date.now());
+      await rctx.close();
+      const drift = Math.abs(r - (Date.now() - CLOCK_OFFSET));
+      if (drift > 2000) fail("clock: a realClock context was shifted, off by " + drift + "ms");
+    }
+  } finally {
+    await ctx.close();
+  }
+}
+
+// ── u-001: the worst phone findings, as checks that FAIL today ─────────────
+// Not in the default run: `HEADLESS_ONLY=u001Audit` only. Each one is a finding in
+// docs/backlog/ui/u-001-audit.md, and the wave that fixes it turns it green.
+async function u001AuditSection(browser, base) {
+  const was = tasksMode;
+  const errors = [];
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+  await ctx.addInitScript(() => localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true })));
+  const p = await ctx.newPage();
+  p.on("pageerror", e => errors.push(String(e)));
+  try {
+    // R1. One tap on `? N` throws the questions away unread: their text lives only in the chip's tooltip.
+    tasksMode = "qclick";
+    qDismissed.clear(); qDismissWrites = []; qDismissMode = "ok";
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    const chip = '#stack-list .stackrow[data-id="qc1"] .chip.questions';
+    await p.waitForSelector(chip, { timeout: slow(15000) });
+    await p.locator(chip).tap({ force: true });
+    await p.waitForTimeout(600);
+    if (qDismissWrites.length) fail("u001Audit R1: a tap on the ? chip on a phone dismissed the questions without showing them");
+
+    // E1. The show, sort and group pills are the most common target on the board, and a thumb needs 44px.
+    const pill = await p.evaluate(() => Math.min(...[...document.querySelectorAll("#stack .seg button")]
+      .map(b => b.getBoundingClientRect().height).filter(h => h > 0)));
+    if (pill < 44) fail("u001Audit E1: the stack's filter pills are " + Math.round(pill) + "px tall on a phone, under 44");
+
+    // R2. Editing a permission's command with the keyboard up leaves no way to approve without closing it.
+    tasksMode = "land";
+    landList = [];
+    landPerms = [{ id: "u1p", perm_id: "u1p", task_id: "t1", agent: "first card", tool: "Bash",
+      command: "go test ./internal/api/... -run TestCompose -count=1", requested_at: new Date().toISOString() }];
+    await p.evaluate(() => { permsLoaded = false; return runRefresh(); });
+    await p.evaluate(() => switchView("perms"));
+    await p.waitForSelector("#perms-list .row.perm textarea.cmd", { timeout: slow(10000) });
+    await p.locator("#perms-list .row.perm textarea.cmd").tap();
+    await p.setViewportSize({ width: 390, height: 506 });
+    await p.evaluate(() => document.activeElement.scrollIntoView({ block: "nearest" }));
+    await p.waitForTimeout(300);
+    const kb = await p.evaluate(() => {
+      const a = document.querySelector('#perms-list .row.perm [data-do="approve"]').getBoundingClientRect();
+      return { top: Math.round(a.top), bottom: Math.round(a.bottom), H: innerHeight };
+    });
+    if (kb.bottom > kb.H || kb.top < 0) fail("u001Audit R2: approve is off screen while the command is edited with the keyboard up: " + JSON.stringify(kb));
+  } finally {
+    tasksMode = was;
+    landPerms = [];
+    await ctx.close();
+  }
+  if (errors.length) fail("u001Audit: the page threw: " + errors.join(" | "));
+}
+
 async function main() {
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = "http://127.0.0.1:" + server.address().port;
 
-  const browser = await chromium.launch();
+  const browser = withClock(await chromium.launch());
   // HEADLESS_ONLY=termWear,bridge runs just those sections, for working on one.
   if (process.env.HEADLESS_ONLY) {
     const only = { termWear: termWearSection, bridge: bridgeSection, settingsOnce: settingsOnceSection,
@@ -12119,7 +12782,15 @@ async function main() {
       phoneListFit: phoneListFitSection, phoneNudge: phoneNudgeSection,
       growlStack: growlStackSection, growlActions: growlActionsSection, growlModal: growlModalSection, growlQuiet: growlQuietSection, growlAttention: growlAttentionSection, growlPhone: growlPhoneSection, mGrowl: mGrowlSection, growlPopout: growlPopoutSection,
       cacheChip: cacheChipSection, cacheLine: cacheLineSection, mHome: mHomeSection, mCard: mCardSection, mServe: mServeSection, phoneKeyLabel: phoneKeyLabelSection, phoneKeyLit: phoneKeyLitSection, shiftMenu: shiftMenuSection, notifyCommand: notifyCommandSection, presence: presenceSection, tallPty: tallPtySection, roomsMachine: roomsMachineSection, readyOnce: readyOnceSection, readyPopout: readyPopoutSection, popoutNotify: popoutNotifySection, readyTwoWindows: readyTwoWindowsSection,
-      cardUrlTable: cardUrlTableSection, cardUrlClash: cardUrlClashSection, cardUrlLinks: cardUrlLinksSection, cardUrlRoom: cardUrlRoomSection, mCardUrl: (b) => mCardUrlSection(b), cardUrlNotify: cardUrlNotifySection };
+      cardUrlTable: cardUrlTableSection, cardUrlClash: cardUrlClashSection, cardUrlLinks: cardUrlLinksSection, cardUrlRoom: cardUrlRoomSection, mCardUrl: (b) => mCardUrlSection(b), cardUrlNotify: cardUrlNotifySection,
+      clock: clockSection,
+      composeImages: composeImagesSection, composePaste: composePasteSection, mComposeImages: mComposeImagesSection,
+      usageTab: usageTabSection,
+      mHome: mHomeSection, mCard: mCardSection, mServe: mServeSection,
+      phoneKeyLabel: phoneKeyLabelSection, phoneKeyLit: phoneKeyLitSection,
+      notifyCommand: notifyCommandSection, presence: presenceSection, shiftMenu: shiftMenuSection, tallPty: tallPtySection,
+      cacheChip: cacheChipSection, cacheLine: cacheLineSection, roomsMachine: roomsMachineSection,
+      u001Audit: u001AuditSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -14130,6 +14801,11 @@ async function main() {
     await cardUrlRoomSection(browser, base);
     await mCardUrlSection(browser);
     await cardUrlNotifySection(browser, base);
+    await clockSection(browser, base);
+    await composeImagesSection(browser, base);
+    await composePasteSection(browser, base);
+    await mComposeImagesSection(browser);
+    await usageTabSection(browser, base);
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e));
     if (process.env.DEBUG_HEADLESS) {
