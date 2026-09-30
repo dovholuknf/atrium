@@ -6900,3 +6900,52 @@ with an `x`. Numbers and sparklines change every couple of seconds. One room sho
 - `HEADLESS_ONLY=usagePolish,usageCacheReads node scripts/test-board-headless.js`: the too-old line with and without a build, the keep-alive phrase, `backfilled`, every number hinted, fade and grow on a live row, animations off under reduced motion.
 - `bash scripts/check-board.sh`, `bash scripts/check-skins.sh`.
 - By hand: on a hub with an old room, open the usage tab and read the line; with a card kept warm, read the cache reads line and hover it.
+
+## FD. The board's last polls, driven by events
+
+Headless (mocked endpoints), `HEADLESS_ONLY='pollsGone,eventDriven,idleBudget,walk'` with
+`NODE_PATH=D:/worktrees/claude/atrium/attach-loop/node_modules`, then `bash scripts/check-board.sh` and
+`bash scripts/check-skins.sh`.
+
+1. `pollsGone`: the walk drawer open for 7s makes no `files/list` request, and a `task` event for the card makes it
+   read the folder and show a new finding.
+2. `pollsGone`: a `rooms` event with `attached` and `inventory` paints the second room with no `/_hub/rooms` or
+   `/_hub/inventory` request, and one with `{}` still fetches `/_hub/rooms`.
+3. `pollsGone`: a `health` event with `halted` shows the halt and its cause, one without clears it, settling then
+   not-settling makes no `/v1/health` request.
+4. `walk`: external edits, a rename and a new file are picked up after a `task` event instead of the old poll.
+5. `eventDriven` and `idleBudget` are unchanged and must still pass.
+
+## FE. The usage tab's limits, the 5h band, and flameout
+- Headless section `usageLimits` (scripts/test-board-headless.js): the bar and card and age, the dash, two resets giving two rows and two bands, the band at 6h and not at 1h, warn, danger, not this window, the token fallback, a flat pace, rough, and a 404.
+- Run `HEADLESS_ONLY=usageLimits,usageCacheReads,usagePolish node scripts/test-board-headless.js`, `SKIP_HEADLESS=1 bash scripts/check-board.sh`, `bash scripts/check-skins.sh`.
+
+## FF. The usage tab grouped by department and director
+
+1. Run `HEADLESS_ONLY=usageGroups,usageCacheReads,usagePolish node scripts/test-board-headless.js`.
+2. Run `bash scripts/check-board.sh` and `bash scripts/check-skins.sh`.
+3. By hand on a room with usage: pick department, then director; tiles sort by counted tokens, cache reads toggle reorders; click a tile, the card list narrows; click again, it clears.
+4. Against an older room: no groups line, and no items table (one dim line).
+
+## FG. Phone header hide, landscape collapse, full screen terminal, attach
+
+Headless section `u016` (run with `HEADLESS_ONLY=u016,phoneView`), at 390x844, 844x390 and 1280x720:
+
+- The attach control is at least 40px and topmost at its centre; choosing a file (twice, the same one) posts to the files endpoint.
+- Landscape: header at most 20% of the height, pane at least 60%.
+- Full screen: chrome hidden, pane fills the viewport, key bar stays on phones, the button and Esc leave it, `requestFullscreen` is called on phones, `fullscreenchange` leaves the mode, nothing is saved.
+- Header hide: hidden in portrait, still hidden after rotating and after a reload; shown again it stays shown after a reload and through landscape.
+- By hand on a phone: pick a photo from the camera and the library, and rotate with the header hidden and shown.
+- Long press: short tap, drag, cancel and 2s hold on ^C (once only); the grid contextmenu is swallowed and does not paste on the phone contexts and still pastes on desktop.
+
+## FH. Phone terminal focus no longer bounces or hides the text
+
+Automated: `HEADLESS_ONLY=phoneFocus,phoneView node scripts/test-board-headless.js` (`phoneFocus`, portrait and
+landscape, focus scroll simulated). Landscape does not shrink the height, because the landscape layout leaves the
+terminal pane about 10px tall (u-016's header collapse).
+
+Manual, on a real phone:
+1. Open a terminal, tap it. The keyboard opens and the cursor row stays visible; the view does not jump to the top.
+2. Type while output streams. The view follows the cursor down with no up-and-down bounce.
+3. Tap elsewhere in the terminal, dismiss and reopen the keyboard. The page never shows the board header scrolled away.
+4. Rotate; repeat. Open the same terminal in the pop-out window and on desktop: unchanged.
