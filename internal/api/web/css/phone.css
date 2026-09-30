@@ -290,3 +290,23 @@
   body.term-full main { padding: 0; }
   body.term-full .term-layout { gap: 0; height: 100%; min-height: 0; }
   body.term-full .term-pane { border: none; border-radius: 0; }
+
+/* ── u-020: the terminal bar on a phone ─────────────────────────────────────
+   Collapsed by default to one slim row: the alias (or title), the chevron and full screen. Expanded shows
+   everything except the paperclip, which the key bar already has. Height and key bar rules are not here. */
+#t-bar-toggle { display: none; }
+body.term-phone .term-bar {
+  padding-left: max(10px, env(safe-area-inset-left, 0px)); padding-right: max(10px, env(safe-area-inset-right, 0px));
+}
+body.term-phone #t-bar-toggle {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 44px; min-height: 44px; box-sizing: border-box; margin-left: auto;
+}
+body.term-phone.hdr-open #t-bar-toggle { transform: rotate(180deg); }
+body.term-phone #t-attach { display: none; }
+body.term-phone #t-full { min-width: 44px; min-height: 44px; }
+body.term-phone .term-bar .term-who { flex: 1 1 0; }
+body.term-phone:not(.hdr-open) .term-bar { flex-wrap: nowrap; min-height: 48px; max-height: 56px; padding-top: 2px; padding-bottom: 2px; }
+body.term-phone:not(.hdr-open) .term-bar > :not(.term-who):not(#t-bar-toggle):not(#t-full) { display: none !important; }
+body.term-phone.hdr-open .term-bar > .grow { display: none; }
+body.term-phone #t-view-note { display: none; }
