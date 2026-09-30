@@ -89,6 +89,10 @@ type controlMCP struct {
 	// launchcaps.go.
 	capFor func(room string) int
 
+	// gate answers whether a launch with this title is for an item with an open gate,
+	// and the sentence refusing it. Nil checks nothing. See deps.go.
+	gate func(ctx context.Context, title string) (string, bool)
+
 	// classMu guards classes, the per-caller class cache. See ctlclass.go.
 	classMu sync.Mutex
 	classes map[string]classEntry
@@ -333,6 +337,7 @@ func (c *controlMCP) server(class ctlClass) *mcp.Server {
 	}, audited(c, "ctl-wake", describeWake, c.wakeHandler))
 
 	c.registerGit(s, class)
+	c.registerDeps(s, class)
 
 	return s
 }
@@ -1240,6 +1245,15 @@ func (c *controlMCP) launchHandler(ctx context.Context, req *mcp.CallToolRequest
 			spawnedBy += "@" + room
 		}
 		room = r
+	}
+
+	// AN ITEM THAT WAITS ON OTHER WORK does not start, before any slot is reserved. A
+	// worker's title starts with its item id, so a director cannot start blocked work by
+	// accident. There is no override: a human clears the gate on the board first.
+	if c.gate != nil {
+		if msg, blocked := c.gate(ctx, in.Title); blocked {
+			return nil, out, &refusedError{msg}
+		}
 	}
 
 	// THE HARD CAP. Count the live sessions already running plus the launches

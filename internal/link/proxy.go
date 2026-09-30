@@ -100,6 +100,12 @@ type Proxy struct {
 	// capStore holds the per-room launch caps. Nil until SetLaunchCaps wires
 	// it, and then every room gets the default cap. See launchcaps.go.
 	capStore HubSettings
+	// deps is the item gates. Nil until SetDeps wires it, and a hub without one answers
+	// /_hub/deps 404 and checks no launch. See deps.go.
+	deps *deps
+	// ctl is the control tools' state, kept so the gate ticker can tell a waiter through
+	// the same path atrium_say takes. Nil until SetControl.
+	ctl *controlMCP
 }
 
 // NewProxy wires a hub, its board and a room chooser into one handler.
@@ -1234,7 +1240,12 @@ func (p *Proxy) SetControl(boardAddr string) {
 	// Read at each launch rather than copied, so a PUT to /_hub/launch-caps
 	// takes effect on the next launch, and SetLaunchCaps may come later.
 	c.capFor = func(room string) int { return p.launchCaps().For(room) }
+	// Read at each launch too, so SetDeps may come later. See deps.go.
+	c.gate = p.launchGate
 	p.control = c.handler()
+	p.mu.Lock()
+	p.ctl = c
+	p.mu.Unlock()
 	// THE SAME TOOLS CARRY A MESSAGE BETWEEN ROOMS, through the same loopback
 	// board, so a relayed message is resolved and delivered exactly the way a
 	// hub-side atrium_say is. See control_relay.go.
@@ -1324,6 +1335,8 @@ func (p *Proxy) serveHubAPI(w http.ResponseWriter, r *http.Request) {
 		p.serveGit(w, r, sub)
 	case "launch-caps":
 		p.serveLaunchCaps(w, r)
+	case "deps", "deps/clear", "deps/rename", "deps/ready":
+		p.serveDeps(w, r, sub)
 	case "presence":
 		p.servePresence(w, r)
 	case "audit":

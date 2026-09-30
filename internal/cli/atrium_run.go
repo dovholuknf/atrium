@@ -370,6 +370,11 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	}
 	gitHub.Start(ctx, 10*time.Second)
 
+	// WORK THAT WAITS ON OTHER WORK, checked against the integration branch and this
+	// hub's own build commit. See internal/link/deps.go.
+	proxy.SetDeps(store, Commit)
+	go proxy.RunDeps(ctx)
+
 	go func() {
 		if err := h.Serve(ctx, ln); err != nil && ctx.Err() == nil {
 			log.Printf("[hub] the room listener stopped: %v", err)
