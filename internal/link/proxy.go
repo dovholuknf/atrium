@@ -17,6 +17,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/gitsync"
 )
 
 // What the hub actually answers with.
@@ -91,6 +93,10 @@ type Proxy struct {
 	// notify is the trigger and its sink. Nil until SetNotify wires it. See
 	// notify.go.
 	notify *Notifier
+
+	// gitHub is the hub's git side: mirror, sync, collect. Nil until SetGit wires it, and
+	// a hub without one answers /_hub/git 404. See git_hub.go.
+	gitHub *gitsync.Hub
 }
 
 // NewProxy wires a hub, its board and a room chooser into one handler.
@@ -1277,6 +1283,8 @@ func (p *Proxy) serveHubAPI(w http.ResponseWriter, r *http.Request) {
 		p.forgetInventory(w, r)
 	case "notify", "notify/test":
 		p.serveNotify(w, r, sub)
+	case "git/sync", "git/collect", "git/status":
+		p.serveGit(w, r, sub)
 	case "presence":
 		p.servePresence(w, r)
 	case "audit":
