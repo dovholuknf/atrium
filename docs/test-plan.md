@@ -7921,3 +7921,17 @@ Needs a hub with one room and two browsers on the board. `curl` stands in for th
 2. (R4) Lend a card. The address handed out is `<frontend>/room/<room>/<handle>`, and it opens the terminal. On that
    share, the card's alias page opens it too. Another card's alias and a made-up name both answer the same 403. Rename
    the lent card's alias on the board: the old alias answers 403, and the handed-out address still opens it.
+
+## HF. A new context on a card that never leaves running (r-new-new-context-mid-turn)
+
+1. Press new context on a director that is in a long turn (workers, watchers, background tasks). About a minute later
+   the terminal shows `[atrium] new context: a new context is waiting. Finish the step you are on, commit, and end
+   your turn.` typed mid-turn, and the chip's tooltip ends `waiting for the turn to end, asked the card to stop at
+   HH:MM`.
+2. While the cycle waits, `atrium tell` the card: the message is queued with the new-context hold note, as before. The
+   stop line is not held.
+3. The card ends its turn. The capture prompt is typed only then, and the cycle runs to the wake as usual. The chip
+   stops saying it is waiting.
+4. A card that ignores it gets the line once more at half of the capture limit (7.5 minutes), never a third time. At
+   15 minutes the chip fails, and its reason names both times the card was asked.
+5. A card already between turns is never sent the line.
