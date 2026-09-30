@@ -35,6 +35,14 @@ the meantime.
 
 ## Waiting
 
+- Board landings from @ui come FIRST (clint, via the orchestrator, 2026-09-30 19:25), read only and fast, ahead of
+  everything below.
+- @fabric item 49 (atrium:everywhere, m1mini/claude/49 451b48ef..7f523835), PARKED mid-review for the board work.
+  Read so far: link everywhere.go, events.go, everywhere_http.go, proxy wiring. Locks hold (f.mu then e.mu only,
+  sends non-blocking). `/_hub/everywhere` needs no gate (no guest listener serves `/_hub/`). Open question to raise:
+  name capture, a card on any room tagged atrium:everywhere with an alias or handle suffix answers a bare-name miss
+  from every other room. Not read yet: daemon relay.go and peers.go, link control_mcp.go and control_relay.go, the
+  cli files, and the tests.
 - M3 of `docs/rnd/machine-health-design.md` (the profiler agent's rules) before it ships, when it is built.
 
 ## Open lows, for when a fix names them
