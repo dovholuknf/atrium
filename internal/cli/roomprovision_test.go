@@ -34,6 +34,9 @@ func TestRoomsTokenOverZrokReadsTheRunningHubsShare(t *testing.T) {
 	if err := writeZrokShare(keys, "sharetoken123"); err != nil {
 		t.Fatal(err)
 	}
+	if err := keys.EnsureCA(nil); err != nil {
+		t.Fatal(err)
+	}
 	line, err := joinStringFor(keys, store, r, "", "", "zrok", "")
 	if err != nil {
 		t.Fatal(err)
