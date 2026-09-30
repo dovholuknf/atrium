@@ -1242,6 +1242,12 @@ func (p *Proxy) SetControl(boardAddr string) {
 	c.capFor = func(room string) int { return p.launchCaps().For(room) }
 	// Read at each launch too, so SetDeps may come later. See deps.go.
 	c.gate = p.launchGate
+	// The same store the launch caps are kept in. See deploy_mcp.go.
+	c.settings = func() HubSettings {
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		return p.capStore
+	}
 	p.control = c.handler()
 	p.mu.Lock()
 	p.ctl = c
@@ -1335,6 +1341,8 @@ func (p *Proxy) serveHubAPI(w http.ResponseWriter, r *http.Request) {
 		p.serveGit(w, r, sub)
 	case "launch-caps":
 		p.serveLaunchCaps(w, r)
+	case "deploy-owner":
+		p.serveDeployOwner(w, r)
 	case "deps", "deps/clear", "deps/rename", "deps/ready":
 		p.serveDeps(w, r, sub)
 	case "presence":

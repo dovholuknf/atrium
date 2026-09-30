@@ -21,6 +21,10 @@ import (
 // SettingRoomHold is the key the holds are kept under, as JSON.
 const SettingRoomHold = "room_hold"
 
+// SettingDeployHoldMax is how long a deploy hold may last, in minutes, before the
+// room lifts it on its own. Empty is sixty.
+const SettingDeployHoldMax = "deploy_hold_max"
+
 // HoldDeploy is the kind a deploy owner sets. It is the only kind built so far.
 const HoldDeploy = "deploy"
 
