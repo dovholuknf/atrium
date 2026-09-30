@@ -84,6 +84,11 @@ type Hub struct {
 	// reach the other rooms through. See relay.go.
 	Relay func(ctx context.Context, from string, req RelayRequest) RelayAnswer
 
+	// Git serves the hub's repositories, as plain HTTP, to a room that dialled the `git`
+	// kind. Nil means this hub does not say Git in its welcome and refuses the kind. It is
+	// served on that kind and nowhere else, never on the board listener. See git.go.
+	Git http.Handler
+
 	mu    sync.Mutex
 	rooms map[string]*attached
 	// builds are the binaries this hub can hand out, one per platform. Empty
@@ -145,7 +150,9 @@ type attached struct {
 	// name is only what it said. Empty for a room the hub's certificate names.
 	unproven string
 	session  string
-	since    time.Time
+	// git is whether this room said, in its hello, that it takes git syncs.
+	git   bool
+	since time.Time
 	// key identifies the credential this room attached with, so a reconnect
 	// can be told from somebody else claiming the same name. Empty on a
 	// transport that carries no key of its own, where the network has already
@@ -304,6 +311,11 @@ func (h *Hub) take(ctx context.Context, conn net.Conn) {
 		// the room, answered once, closed. See `relay.go`.
 		defer conn.Close()
 		h.serveRelay(ctx, name, conn, br)
+	case gitKind:
+		// A ROOM FETCHING A REPOSITORY, as HTTP on this connection. Dialled by the room
+		// after the hub said Git. See `git.go`.
+		defer conn.Close()
+		h.serveGit(name, hi.Session, conn, br)
 	}
 }
 
@@ -324,7 +336,7 @@ func (h *Hub) control(ctx context.Context, name string, hi hello, conn net.Conn,
 	session := newSession()
 	a := &attached{
 		name: name, version: hi.Version, host: hi.Host, session: session,
-		os: hi.OS, arch: hi.Arch,
+		os: hi.OS, arch: hi.Arch, git: hi.Git,
 		since: time.Now(), control: conn,
 		unproven: unprovenOver(conn),
 		// Room for a burst plus the terminals a board is likely to hold open.
@@ -395,6 +407,7 @@ func (h *Hub) control(ctx context.Context, name string, hi hello, conn net.Conn,
 	_ = conn.SetWriteDeadline(time.Now().Add(handshakeWait))
 	err := writeJSON(conn, welcome{
 		OK: true, Session: session, Warm: h.T.Warm, Caches: h.Cached != nil,
+		Git: h.Git != nil,
 	})
 	_ = conn.SetWriteDeadline(time.Time{})
 	welcomed = true
@@ -687,6 +700,8 @@ type Attached struct {
 	// certificate, so what it is called is only what it said. That is how an
 	// operator finds who must re-join before the old path is refused.
 	Proven bool `json:"proven"`
+	// Git is whether the room said it takes git syncs.
+	Git bool `json:"git,omitempty"`
 }
 
 // unprovenOver names the overlay a connection took the old path on, or "".
@@ -707,7 +722,7 @@ func (h *Hub) Rooms() []Attached {
 		out = append(out, Attached{
 			Name: a.name, Version: a.version, Host: a.host,
 			Since: a.since, Idle: len(a.idle), Beat: beat,
-			OS: a.os, Arch: a.arch, Proven: a.unproven == "",
+			OS: a.os, Arch: a.arch, Proven: a.unproven == "", Git: a.git,
 		})
 	}
 	return out

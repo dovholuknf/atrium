@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/api"
+	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/hubstore"
 	"github.com/dovholuknf/atrium/internal/link"
 	"github.com/spf13/cobra"
@@ -215,6 +216,16 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	if what := saysWhatItHas(builds); what != "" {
 		log.Printf("[hub] builds on offer, for rooms that asked: %s", what)
 	}
+	// THE HUB'S REPOSITORIES, mirrored from the operator's checkouts into bare copies under
+	// the hub's directory and served to rooms on the `git` link kind and nowhere else. Set
+	// here so the welcome says Git. See internal/gitsync and docs/rnd/git-sync-design.md.
+	gitHub := &gitsync.Hub{Dir: keys.Dir, Repos: store.GitRepos, Rooms: h.GitRooms(), SelfHost: hostname()}
+	h.Git = gitHub.Backend()
+	if _, err := store.GitRepos(); err != nil {
+		// SAID AT STARTUP, and the hub then mirrors nothing rather than mirror a branch it
+		// should not.
+		log.Printf("[hub] git_repos is refused, so this hub mirrors nothing: %v", err)
+	}
 	h.Enrol = side.enrol
 	// Every room proves who it is with a certificate this hub signed.
 	h.Authenticated = side.auth
@@ -306,6 +317,8 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	// connection instead of each spawning an atrium-control child. It
 	// reaches this hub's own board over loopback derived from `board`.
 	proxy.SetControl(board)
+	proxy.SetGit(gitHub)
+	gitHub.Audit = proxy.RecordAudit
 	// THE LAUNCH CAP PER ROOM, kept in the hub's settings. See launchcaps.go.
 	proxy.SetLaunchCaps(store)
 	// ATTACH AND DETACH AS OPERATIONAL LINES, recorded once each. Set
@@ -347,6 +360,15 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 
 	notifier.Start(ctx)
 	proxy.SetNotify(notifier)
+
+	// A room attaching is synced and collected, off the attach path. The timers stop and the
+	// git children are cancelled within ten seconds of the hub stopping.
+	attachedBefore := h.OnAttach
+	h.OnAttach = func(name, host, ver string) {
+		attachedBefore(name, host, ver)
+		gitHub.Attached(ctx, name)
+	}
+	gitHub.Start(ctx, 10*time.Second)
 
 	go func() {
 		if err := h.Serve(ctx, ln); err != nil && ctx.Err() == nil {

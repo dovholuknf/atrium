@@ -43,7 +43,7 @@ func hubRoomsCmd(use, prefix string) *cobra.Command {
 			"pastes it does not choose what it is called.",
 	}
 	c.AddCommand(roomAddCmd(prefix), roomListCmd(prefix), roomTokenCmd(prefix), roomMarkCmd(prefix),
-		roomRemoveCmd(prefix), roomLogCmd(prefix), roomLegacyCmd(prefix))
+		roomRemoveCmd(prefix), roomLogCmd(prefix), roomLegacyCmd(prefix), roomGitCmd(prefix))
 	return c
 }
 

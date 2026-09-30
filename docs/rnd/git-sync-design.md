@@ -214,11 +214,21 @@ init -Check` answered by ssh.
 
 The room serves `/v1/git/<name>.git/` on its handler, with the same environment-only configuration as section 4.4
 (upload-pack only, `http.getanyfile=false`, protocol v0), and
-`uploadpack.hideRefs=refs` then `uploadpack.hideRefs=!refs/heads/claude/` then `uploadpack.hideRefs=refs/heads/claude/main`.
-So it offers `claude/*` except `claude/main`, which came from the hub in the first place.
+`uploadpack.hideRefs=HEAD`, `uploadpack.hideRefs=refs`, then `uploadpack.hideRefs=!refs/heads/claude/` then
+`uploadpack.hideRefs=refs/heads/claude/main`. So it offers `claude/*` except `claude/main`, which came from the hub in
+the first place.
 
-That endpoint sits where `/v1/files` sits: reachable through the hub's board and on the room's own loopback. It offers
-less than `/v1/files` already does, since a card's directory is readable there, `.git` included.
+**That endpoint is link-only.** It does NOT sit where `/v1/files` sits. An earlier draft of this section said it
+could be reached through the hub's board and on the room's own loopback, and review found the flaw: anyone who can
+reach the board could list every `claude/*` branch under the room's `git_root` and start a sync. So:
+
+- The hub's board proxy answers 403 for everything under `/v1/git/` ("git on a room is reached by the hub's own sync
+  and collect, never through the board"). The hub's own sync and collect reach the room through `Hub.Transport`, the
+  data connections the room dialled, and never through the proxy.
+- The room mounts `/v1/git/` on the handler it gives the link and nowhere else. Its own human listener, a lent
+  session's guest listener and the agent listener have no such route and answer 404 or 403.
+- The room serves only a repository the hub has synced since the room started, and only when that sync fetched
+  (`ok` or `behind`). A name the hub never asked about, or a clone a sync refused, is 404 even to the hub.
 
 The hub collects with
 `git -C <bare> fetch --no-tags --prune <url> +refs/heads/claude/*:refs/rooms/<room>/claude/*`, then delivers
