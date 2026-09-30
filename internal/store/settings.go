@@ -38,6 +38,10 @@ const (
 	// before the room culls it, in seconds. `off` disables the mark and the
 	// cull, and unset means thirty minutes. See daemon/mergedcull.go.
 	SettingMergedCullGrace = "merged_cull_grace"
+	// SettingEscalateHeldAfter is how many minutes a `when: done` message waits for
+	// the turn to end before the next tool call carries it. Empty means fifteen. See
+	// daemon/escalate.go.
+	SettingEscalateHeldAfter = "escalate_held_after"
 )
 
 // SettingReplayMode picks how a card's history is turned back into a terminal.
