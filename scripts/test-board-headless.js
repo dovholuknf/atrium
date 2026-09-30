@@ -8702,8 +8702,16 @@ async function usageCacheReadsSection(browser, base) {
     const txt = await sp.textContent("#uc-body .uccacheline");
     if (!/cache reads 90k · not in these charts · 90% of input was served from the cache/.test(txt)) fail("usageCacheReads: the line reads " + txt);
     if (!/9 calls/.test(s.causes)) fail("usageCacheReads: a cause row does not show its calls: " + s.causes);
-    await sp.hover('#uc-body .ucchart[data-chart=burn] g[data-t] rect');
-    const read = await sp.textContent("#uc-body .ucread");
+    // A repaint of #uc-body between the hover and the read draws a fresh "hover a bar", so hover again until the
+    // readout answers (at most three times) rather than reading once.
+    let read = "";
+    for (let i = 0; i < 3; i++) {
+      await sp.hover('#uc-body .ucchart[data-chart=burn] g[data-t] rect', { position: { x: 1, y: 1 + i } });
+      read = await sp.waitForFunction(() => { const r = document.querySelector("#uc-body .ucread"); return r && r.textContent !== "hover a bar" && r.textContent; },
+        null, { timeout: slow(1500) }).then(h => h.jsonValue()).catch(() => "");
+      if (read) break;
+    }
+    if (!read) read = await sp.textContent("#uc-body .ucread");
     if (!/cache read 90k/.test(read) || (read.match(/ · /g) || []).length !== 5) fail("usageCacheReads: the hover does not list five kinds: " + read);
 
     await sp.click("#uc-cache");
@@ -9151,7 +9159,8 @@ async function usageLimitsSection(browser, base) {
     // Warn: 100% lands before the reset.
     await set(sp, line(6, [40, 60], 60, 3, 156 * MIN));
     let r = await five(sp);
-    if (!/at this pace: 100% at \d\d:\d\d, .* before the reset/.test(r.proj) || !/flameout before reset/.test(r.proj) || !/ulwarn/.test(r.cls) || /uldanger/.test(r.cls))
+    // A projection past midnight names the day ("100% at Wed 00:10"), so the day is optional.
+    if (!/at this pace: 100% at (\w{3} )?\d\d:\d\d, .* before the reset/.test(r.proj) || !/flameout before reset/.test(r.proj) || !/ulwarn/.test(r.cls) || /uldanger/.test(r.cls))
       fail("usageLimits: warn line reads " + JSON.stringify(r));
     if (!/it does not see the future/.test(r.tip) || !/spend outside atrium/.test(r.tip)) fail("usageLimits: the honesty text is missing: " + r.tip);
     // Danger: within 30 minutes.
