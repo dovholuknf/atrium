@@ -357,7 +357,7 @@ func New(opts Options) (*Daemon, error) {
 	d.ap.HoldCull = d.HoldCull
 	d.ap.Merged = func(into string, branches []string) (any, error) { return d.Merged(into, branches) }
 	d.ap.MergeProof = func(dir, ref, into string) (any, error) { return d.MergeProof(dir, ref, into) }
-	d.ap.ArchiveWorkers =func(dryRun bool) (any, error) { return d.ArchiveWorkers(dryRun) }
+	d.ap.ArchiveWorkers = func(dryRun bool) (any, error) { return d.ArchiveWorkers(dryRun) }
 	d.ap.RestartRunner = d.RestartRunner
 	d.ap.Unshelve = d.Unshelve
 	d.ap.Overlays = d.overlayViews
@@ -527,6 +527,7 @@ func New(opts Options) (*Daemon, error) {
 		return err
 	}
 	d.ap.UsageOf = d.usageFor
+	d.ap.Replies = func(id string, n int) (any, error) { return d.repliesFor(id, n) }
 	// Starting a fixture is spawning a process, which the daemon owns.
 	api.StartFixture = d.StartFixtureNow
 	// Which turns are unread, carried across the restart. See seen.go.
