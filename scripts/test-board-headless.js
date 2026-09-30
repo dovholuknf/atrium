@@ -12674,6 +12674,8 @@ async function cardUrlNotifySection(browser, base) {
   try {
     const wins = ["http://x/", "http://x/alias/rnd", "http://x/room/r1/other", "http://x/#term=land-b", "http://x/room/r1"];
     if (await click({ taskFor: "land-a", path: "/alias/rnd" }, wins) !== "http://x/alias/rnd") fail("cardUrlNotify: a click did not find the pop-out on /alias/rnd");
+    if (await click({ taskFor: "land-a", path: "/alias/rnd/" }, wins) !== "http://x/alias/rnd") fail("cardUrlNotify: a path with a trailing slash missed the pop-out");
+    if (await click({ taskFor: "land-a", path: "/alias/rnd" }, ["http://x/", "http://x/alias/rnd/"]) !== "http://x/alias/rnd/") fail("cardUrlNotify: a window with a trailing slash was missed");
     if (await click({ taskFor: "land-b", path: "/alias/other" }, wins) !== "http://x/#term=land-b") fail("cardUrlNotify: the #term= window was not matched any more");
     if (await click({ taskFor: "land-c", path: "/alias/none" }, wins) !== "http://x/") fail("cardUrlNotify: a click with no pop-out did not land on the board, not a card window");
     if (await click({ taskFor: "land-n", path: "" }, ["http://x/alias/rnd", "http://x/"]) !== "http://x/") fail("cardUrlNotify: an empty path matched a card window");
