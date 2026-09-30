@@ -135,7 +135,13 @@ Framed messages, one connection per daemon, a control stream and multiplexed pty
   cuts: the same `(offset, cols, rows)` marks `ringBuffer.ReplayCuts` returns today (`supervisor.go`, `sizeCut` in
   `screen.go`), because a screen model rebuilt from bytes alone replays every resize at the wrong width. The host
   therefore owns the cut list along with the ring.
-- `write {run_id, bytes}`, `signal {run_id, term|kill}`.
+- `write {run_id, bytes}`, `signal {run_id, term|kill}`. Every write to a pty, whatever its source (browser input, a
+  peer injection, a restart wake, exit keys), goes through the daemon's existing per-runner input path and its locks
+  (`pasteMu`, `typeMu`, `writeOperatorInput`, `injectPeerIf` in `supervisor.go`) before it becomes a frame, exactly
+  as it reaches the pty today. The host adds no ordering of its own: it writes the frames for a `run_id` in the order
+  the connection carried them, each frame whole and never split or merged with another. It serves one daemon at a
+  time, and a new `hello` closes the older connection before the new one's first frame is read, so two daemons can
+  never interleave writes during a restart.
 - `resize {run_id, cols, rows}` records a cut at the current offset BEFORE applying the pty resize, as the ring does
   today, so the cut and the first byte at the new size can never be out of order.
 - `collect {run_id}` acknowledges an exit, and only then does the host forget that pty and its ring. Because the
@@ -263,7 +269,10 @@ a new verb. When one does:
 2. Each card on the old host moves when it is idle by r-007's rule (`idleParkEligible`, `idletick.go`): no turn, no
    permission, no question, no queued message, no background work or subagents, no live worker of its own, and not
    mid new-context. The move is `RestartRunner` with the new host as the target: exit keys, wait for the slot, then
-   resume the same conversation in the same directory on the same card.
+   resume the same conversation in the same directory on the same card. `RestartRunner` gains a target host option
+   for this. Without it, which is every ordinary restart (the board's button, `restart_session`, a new context), a
+   card relaunches on the host it is on now, so no restart moves a card except the idle move, which is the only
+   caller that passes the option. A brand new card goes to the newest host.
 3. When the old host holds nothing it exits by itself (section 3.3).
 
 This is f-011's idea, and it is safe here for the reason it was hard there: it happens inside ONE room. Same
@@ -322,7 +331,8 @@ If B is refused, A is buildable, and these are the answers it would need. Each i
   behave exactly as today and every existing supervisor, attach and restart test passes unchanged. With it on, the
   same tests pass, plus host tests for reattach replay, a resize after reattach, a card with both a runner and a
   shell where each verb reaches only the `run_id` it names, and an exit filed exactly once, on the live path and
-  across a daemon crash between filing and `collect`.
+  across a daemon crash between filing and `collect`. A runner that dies inside the startup-failure window while no
+  daemon is connected records the same tail and reason as the live exit path does.
 - **Stage 2, the restart that leaves runners up (@runtime).** The gate and the re-derivation list in section 5, the
   line-unknown rule, `atrium stop` versus `atrium stop --runners`, and the gate's 30-second retry, which needs f-006.
 - **Stage 3, rooms (@fabric).** `restart_atrium` and `provision-room.ps1 -Restart` use it. Plus the systemd and Task
