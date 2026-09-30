@@ -615,6 +615,7 @@ function openTerm(task) {
     (roomOf(task.id) ? `<span class="chip room" style="--rhue:${roomHue(roomOf(task.id))}"
        data-tip="this card runs in room ${esc(roomOf(task.id))}"
        >${esc(roomOf(task.id))}</span>` : "") +
+    (typeof keepaliveChip === "function" ? keepaliveChip(task) : "") +
     (task.pid ? `<span class="chip">pid ${task.pid}</span>` : "") +
     // THE GLYPH COPIES, THE PATH DOES NOT. The whole chip used to be the
     // button, so a row-width target sat over the bar saying `click to copy`

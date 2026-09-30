@@ -29,48 +29,318 @@ function keepaliveTime(at) {
   return new Date(at).toLocaleTimeString();
 }
 
-// The chip on a card, on every card keep-alive watches. Three looks, so a
-// glance tells them apart:
-//   - watching: the switch is on and nothing has been refreshed yet. The
-//     tooltip says why not, and until when the cache is warm.
-//   - warm: it has refreshed this card in its current idle stretch.
-//   - cold: it stopped, and the tooltip says why and how many refreshes it took.
-// A card with the switch off, or with no switch, draws nothing.
-function keepaliveChip(t) {
-  const k = t.keepalive;
-  if (!k || over(t)) return "";
-  if (KEEPALIVE_STOPPED[k.state]) {
-    const parts = [KEEPALIVE_STOPPED[k.state]];
-    if (k.refreshes || k.missed) {
-      parts.push(`${k.refreshes} refresh${k.refreshes === 1 ? "" : "es"}` +
-        (k.missed ? `, ${k.missed} miss${k.missed === 1 ? "" : "es"}` : "") +
-        "");
+// ── the cache chip ───────────────────────────────────────────────────────────
+//
+// ONE chip on every Claude card, drawn by `keepaliveChip` on the board, the stack
+// row, the terminals list, the attached terminal's header and the phone tray. The
+// answer is the visible text and never needs a hover: is this card's cache warm,
+// who is keeping it so, and if not, why. A card with no `keepalive` is not Claude
+// and draws nothing. See docs/backlog/ui/u-032.md.
+//
+// `kaModel` is the ONE function that decides what a card is. The chip and the
+// summary line both read it, so the two cannot disagree.
+
+// What the daemon's `why` means, in one word after "won't refresh:". A why not
+// listed here draws no word and stays in the tooltip.
+const KA_WONT = {
+  "not idle": "busy",
+  "context under 50k": "small",
+  "not on the 1h cache": "5m cache",
+  "local hooks": "local hooks",
+  "a permission dialog is open": "dialog open",
+  "budget spent": "budget spent",
+  "parked": "parked",
+  "fast mode": "fast mode",
+  "no transcript": "no transcript"
+};
+
+// A stopped card in words. The raw state goes in the tooltip.
+const KA_STOP_WORD = {
+  "stopped:break-even": "not worth it",
+  "stopped:miss": "cache missed",
+  "stopped:failing": "refresh failing",
+  "stopped:acted": "refresh used a tool"
+};
+
+// The daemon's `keepaliveMargin`, used only until it sends `next_refresh_at`.
+const KA_MARGIN_MS = 5 * 60 * 1000;
+
+// Every card a chip or a line has drawn, by id, so a tick can redraw a chip from
+// what it was drawn from. Cold ones are dropped when the timer is re-armed.
+const KA_SEEN = new Map();
+const KA_LINES = new Map();
+const KA_LINE_IDS = new Set();
+
+function kaNow() { return Date.now(); }
+
+function kaPad(n) { return String(n).padStart(2, "0"); }
+
+// Local HH:MM, with the day when it is not today.
+function kaClock(ms, now) {
+  const d = new Date(ms), n = new Date(now);
+  const hm = kaPad(d.getHours()) + ":" + kaPad(d.getMinutes());
+  const day = x => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diff = Math.round((day(d) - day(n)) / 86400000);
+  if (diff === 0) return hm;
+  if (diff === 1) return "tomorrow " + hm;
+  if (diff === -1) return "yesterday " + hm;
+  return d.toLocaleDateString([], { month: "short", day: "numeric" }) + " " + hm;
+}
+
+function kaWhen(v) {
+  const ms = v ? Date.parse(v) : NaN;
+  return isNaN(ms) ? 0 : ms;
+}
+
+// What a card's cache is at `now`, or null for a card with no keepalive.
+// `bucket` is what the summary line counts: "kept", "warm" or "cold".
+// `flip` is when its words next change on their own, 0 for never.
+function kaModel(t, now) {
+  const k = t && t.keepalive;
+  if (!k) return null;
+  now = now || kaNow();
+  const wu = kaWhen(k.warm_until);
+  const warm = wu > now;
+  const n = k.refreshes || 0;
+  const why = k.why || "";
+  const on = k.state === "on";
+  const m = {
+    bucket: warm ? (on && n > 0 ? "kept" : "warm") : "cold",
+    warm, wu, flip: warm ? wu : 0, cls: "", full: "", short: "", tip: []
+  };
+  const rawWhy = why ? "the daemon's last reason: " + why : "";
+  if (KA_STOP_WORD[k.state]) {
+    m.cls = "stopped";
+    m.full = "⊘ stopped · " + KA_STOP_WORD[k.state];
+    m.short = "⊘ " + KA_STOP_WORD[k.state];
+    m.tip.push(KEEPALIVE_STOPPED[k.state]);
+    if (n || k.missed) {
+      m.tip.push(`${n} refresh${n === 1 ? "" : "es"}` +
+        (k.missed ? `, ${k.missed} miss${k.missed === 1 ? "" : "es"}` : ""));
     }
-    if (k.missed) parts.push("a miss writes the whole context again, about eight times the budget");
-    if (k.warm_until) parts.push("cache went cold at " + keepaliveTime(k.warm_until));
-    parts.push("it starts again on this card's next turn" +
+    if (k.missed) m.tip.push("a miss writes the whole context again, about eight times the budget");
+    if (wu) m.tip.push((warm ? "cache warm until " : "cache went cold at ") + kaClock(wu, now));
+    m.tip.push("it starts again on this card's next turn" +
       (k.state === "stopped:acted" ? " only if you turn it back on" : ", or when you turn it on by hand"));
-    return `<span class="chip keepalive stopped" data-state="${esc(k.state)}"
-      data-tip="${esc(parts.join(". "))}">&#10052; cold</span>`;
+    m.tip.push("state: " + k.state);
+    return m;
   }
-  if (k.state === "on" && k.refreshes > 0) {
-    return `<span class="chip keepalive" data-tip="${esc(
-      `kept warm ${k.refreshes}x` +
-      (k.warm_until ? ". warm until " + keepaliveTime(k.warm_until) : ""))}"
-      >&#10052; warm</span>`;
+  if (!on) {
+    if (k.state !== "off") return null;
+    m.cls = warm ? "off" : "off cold";
+    m.full = warm ? "○ off · warm → " + kaClock(wu, now) : "○ off · cold";
+    m.short = "○ off";
+    m.tip.push("keep-alive is off for this card, so nothing refreshes its cache");
+    m.tip.push(warm ? "its cache is still warm until " + kaClock(wu, now) : "its cache is cold or unknown");
+    m.tip.push("turn it on in the card's menu: keep its cache warm");
+    return m;
   }
-  if (k.state === "on") {
-    const why = k.why || "";
-    const parts = ["keep-alive is watching this card", KEEPALIVE_WHY[why] || why];
-    if (k.warm_until) {
-      parts.push((new Date(k.warm_until) > new Date() ? "warm until " : "cache went cold at ") +
-        keepaliveTime(k.warm_until));
+  if (!wu) {
+    m.cls = "none";
+    m.full = "❄ no cache yet";
+    m.short = "❄ no cache";
+    m.tip.push("keep-alive is on, but this card has no cache to keep yet");
+    if (why) m.tip.push(KEEPALIVE_WHY[why] || why);
+    return m;
+  }
+  if (!warm) {
+    m.cls = "cold";
+    m.full = "❄ cold since " + kaClock(wu, now);
+    m.short = "❄ cold";
+    m.tip.push("its cache has expired, so the next turn rewrites the whole context");
+    if (why) m.tip.push(KEEPALIVE_WHY[why] || why);
+    if (rawWhy) m.tip.push(rawWhy);
+    return m;
+  }
+  // Warm and on. A refresh fires only when every gate in the daemon's `decide`
+  // passes, so "next" is promised only for a card that is just waiting for its
+  // time. Any other reason is said as a word instead. The tick is once a minute,
+  // hence the tilde on the inferred time.
+  const exact = kaWhen(k.next_refresh_at);
+  const next = exact || (why === "not due" ? wu - KA_MARGIN_MS : 0);
+  const waiting = next > now && (exact || why === "not due");
+  const wont = !waiting && why && why !== "not due" ? (KA_WONT[why] || "") : "";
+  const base = n > 0 ? `❄ kept warm ${n}×` : "❄ warm";
+  const until = kaClock(wu, now);
+  if (waiting && n > 0) {
+    const nx = (exact ? "" : "~") + kaClock(next, now);
+    m.full = `${base} · next ${nx}`;
+    m.short = `❄ ${n}× next ${nx}`;
+  } else {
+    m.full = `${base} → ${until}` + (wont ? ` · won't refresh: ${wont}` : "");
+    m.short = `❄ → ${until}`;
+  }
+  m.cls = n > 0 ? "kept" : "warm";
+  m.next = waiting ? next : 0;
+  m.tip.push(n > 0
+    ? `atrium has refreshed this card's cache ${n} time${n === 1 ? "" : "s"} this idle stretch`
+    : "its cache is warm, so the next turn reads it instead of rewriting it");
+  m.tip.push("warm until " + until);
+  if (waiting) {
+    m.tip.push("next refresh " + (exact ? "at " : "about ") + kaClock(next, now) +
+      (exact ? "" : ", checked once a minute"));
+  }
+  if (why) m.tip.push(KEEPALIVE_WHY[why] || why);
+  if (wont) m.tip.push("it will not refresh while: " + wont);
+  if (rawWhy) m.tip.push(rawWhy);
+  return m;
+}
+
+// The chip. Both texts are in the markup and CSS shows the short one on a phone,
+// so the visible words are the answer without a hover, and a screen reader gets
+// the full ones from aria-label either way.
+function keepaliveChip(t) {
+  if (!t || !t.keepalive || over(t) || t.archived_at) return "";
+  KA_SEEN.set(t.id, t);
+  kaSchedule();
+  const m = kaModel(t, kaNow());
+  if (!m) return "";
+  const tip = m.tip.join(". ");
+  return `<span class="chip keepalive cache ${m.cls}" data-cid="${esc(t.id)}" data-bucket="${m.bucket}"
+    data-state="${esc(t.keepalive.state)}" role="img" aria-label="${esc(m.full + ". " + tip)}"
+    data-tip="${esc(tip)}"><span class="cfull">${esc(m.full)}</span><span class="cshort">${esc(m.short)}</span></span>`;
+}
+
+// ── keeping the words true without a fetch ───────────────────────────────────
+//
+// ONE timeout, for the soonest moment a drawn card's words change, re-armed after
+// every repaint. It redraws chips and lines from what they already hold: a label
+// tick, no request. Never an interval. A background tab throttles timers, so a tab
+// that becomes visible repaints too, and so does every card list.
+
+let kaTimer = 0;
+let kaQueued = false;
+
+// Arm after the paint in progress, once however many chips it drew.
+function kaSchedule() {
+  if (kaQueued) return;
+  kaQueued = true;
+  queueMicrotask(() => { kaQueued = false; kaArm(); });
+}
+
+function kaArm() {
+  if (kaTimer) { clearTimeout(kaTimer); kaTimer = 0; }
+  const now = kaNow();
+  let soonest = 0;
+  const soon = ms => { if (ms > now && (!soonest || ms < soonest)) soonest = ms; };
+  for (const [id, t] of KA_SEEN) {
+    const m = kaModel(t, now);
+    if (!m || !m.flip) {
+      if (!KA_LINE_IDS.has(id)) KA_SEEN.delete(id);
+      continue;
     }
-    parts.push("refreshes about 5 minutes before expiry, until it reaches its break-even budget");
-    return `<span class="chip keepalive watching" data-why="${esc(why)}"
-      data-tip="${esc(parts.join(". "))}">&#9678; watching</span>`;
+    soon(m.flip);
+    soon(m.next);
   }
-  return "";
+  if (!soonest) return;
+  kaTimer = setTimeout(kaTick, Math.min(Math.max(soonest - now + 50, 250), 2147483000));
+}
+
+// Redraw every chip and line in place from the cards they were drawn from.
+function kaRepaint() {
+  document.querySelectorAll(".chip.cache[data-cid]").forEach(el => {
+    const t = KA_SEEN.get(el.dataset.cid);
+    if (!t) return;
+    const html = keepaliveChip(t);
+    if (!html) { el.remove(); return; }
+    const tpl = document.createElement("template");
+    tpl.innerHTML = html.trim();
+    const fresh = tpl.content.firstElementChild;
+    if (fresh && fresh.outerHTML !== el.outerHTML) el.replaceWith(fresh);
+  });
+  for (const [id, list] of KA_LINES) paintCacheLine(id, list, true);
+}
+
+function kaTick() {
+  kaTimer = 0;
+  kaRepaint();
+  kaArm();
+}
+
+// A card list arrived: remember it for the header chip and repaint what is drawn.
+function cacheRefresh(cards) {
+  for (const t of cards || []) if (t && t.keepalive) KA_SEEN.set(t.id, t);
+  // The attached terminal's header was drawn from the card as it was when it
+  // attached, which may have had no switch yet.
+  const head = document.getElementById("t-chips");
+  const mine = typeof termTask !== "undefined" && termTask && KA_SEEN.get(termTask.id);
+  if (head && mine && !head.querySelector(".chip.cache") && !document.getElementById("term-pane")?.classList.contains("dead")) {
+    head.insertAdjacentHTML("afterbegin", keepaliveChip(mine));
+  }
+  kaRepaint();
+  kaArm();
+}
+
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) kaTick();
+});
+
+// ── the summary line ─────────────────────────────────────────────────────────
+//
+// `cache: 5 warm · 2 kept warm · 9 cold · keep-alive 83 refreshes this week`, over
+// the Claude cards a list shows, not archived. Counted from `kaModel`'s bucket, the
+// same value the chip carries, so the two cannot disagree. The week figure is the
+// daemon's setting. The spend today is drawn only when the daemon sends it as
+// `cache_keepalive_today_tokens`: the board holds no usage for today without a fetch.
+
+function cacheLineText(list) {
+  const c = { warm: 0, kept: 0, cold: 0 };
+  let any = 0;
+  const now = kaNow();
+  for (const t of list || []) {
+    if (!t || !t.keepalive || over(t) || t.archived_at || t.offline) continue;
+    const m = kaModel(t, now);
+    if (!m) continue;
+    any++;
+    c[m.bucket]++;
+  }
+  if (!any) return "";
+  const s = typeof pastePrefs !== "undefined" && pastePrefs ? pastePrefs : {};
+  const parts = [`${c.warm} warm`, `${c.kept} kept warm`, `${c.cold} cold`];
+  const wk = s.cache_keepalive_week_refreshes;
+  if (typeof wk === "number") parts.push(`keep-alive ${wk} refresh${wk === 1 ? "" : "es"} this week`);
+  const today = s.cache_keepalive_today_tokens;
+  if (typeof today === "number") {
+    parts.push(`${typeof usageTokens === "function" ? usageTokens(today) : today} tokens today`);
+  }
+  return "cache: " + parts.join(" · ");
+}
+
+// Writes the line into `#id`, which may not exist yet: the terminals list is
+// rebuilt on every paint, so the same call is made after it.
+function paintCacheLine(id, list, quiet) {
+  KA_LINES.set(id, list);
+  for (const t of list || []) {
+    if (t && t.keepalive) { KA_SEEN.set(t.id, t); KA_LINE_IDS.add(t.id); }
+  }
+  // The week figure lives in the settings, which nothing loads at boot. Asked once, cached by
+  // `pasteSettings`, then the lines are painted again with it.
+  if (typeof pastePrefs !== "undefined" && !pastePrefs && typeof pasteSettings === "function" && !quiet) {
+    pasteSettings().then(() => kaRepaint());
+  }
+  const el = document.getElementById(id);
+  if (el) {
+    const txt = cacheLineText(list);
+    if (el.textContent !== txt) el.textContent = txt;
+    el.hidden = !txt;
+  }
+  if (!quiet) kaSchedule();
+}
+
+// The line opens the gear on the keep-alive setting.
+function openKeepaliveSetting() {
+  const gear = document.getElementById("gear");
+  if (gear) gear.click();
+  const field = document.getElementById("s-keepalive");
+  const pane = field && field.closest(".pane");
+  if (pane && typeof showSettingsPane === "function") showSettingsPane(pane.dataset.name);
+  if (!field) return;
+  const box = field.closest(".field") || field;
+  box.scrollIntoView({ block: "center" });
+  box.classList.remove("flash");
+  void box.offsetWidth;
+  box.classList.add("flash");
+  field.focus();
 }
 
 // The card menu's switch. Null for a card with no switch, which is every card
@@ -167,4 +437,11 @@ function onKeepaliveEvent(e) {
     toast(title, d.toast, "", "", d.task_id || "");
   }
   if (d.suspended && typeof loadHousekeeping === "function") loadHousekeeping();
+  // A refresh finished, so the week's count moved. Asked for on the event, never
+  // on a timer, and the cards themselves come from the `tasksSoon` beside this.
+  if (d.outcome && typeof api === "function") {
+    api("/v1/settings").then(s => {
+      if (s && typeof pastePrefs !== "undefined") { pastePrefs = s; kaRepaint(); }
+    }).catch(() => {});
+  }
 }
