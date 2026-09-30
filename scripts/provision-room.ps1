@@ -917,7 +917,17 @@ function Invoke-SmokeCase {
     function Get-SmokeCwd {
         if ($SmokeCwd) { return $SmokeCwd }
         if ($script:clonePath) { return $script:clonePath }
-        $hs = if ($os -eq 'windows') { '"home=$HOME"' } else { 'echo "home=$HOME"' }
+        # -SMOKEONLY MAKES NO CLONE, but room-git init left this repository a remote
+        # named for the room, and its url is the clone's path there. The home is
+        # the last resort: item 67 refuses to start a card in it.
+        $url = & git -C (Split-Path $PSScriptRoot) remote get-url $Name 2>$null
+        if ($LASTEXITCODE -eq 0 -and $url) {
+            $url = "$url".Trim()
+            if ($url -match '^[^/:]+:([A-Za-z]:/.*)$') { return $Matches[1] }
+            if ($url -match '^ssh://[^/]+/([A-Za-z]:/.*)$') { return $Matches[1] }
+            if ($url -match '^ssh://[^/]+(/.*)$') { return $Matches[1] }
+        }
+        $hs =if ($os -eq 'windows') { '"home=$HOME"' } else { 'echo "home=$HOME"' }
         (ConvertFrom-KeyValue (Invoke-Remote $hs).Out).home
     }
 
