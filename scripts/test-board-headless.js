@@ -48,23 +48,34 @@ const CLOCK_OFFSET = clockOffset();
 // Written as a function so the very same text runs in Node and, stringified, in
 // the page. A Proxy rather than a subclass keeps Date.prototype, instanceof and
 // Date.name exactly as they were: only construct, apply and now are answered here.
+// A section that replaces Date.now (to jump past a cap) replaces the proxy's `now`, never the real one, or the
+// shifted clock would call the replacement that calls it back.
 function installClock(offset) {
   if (!offset) return;
   const Real = Date;
-  const shifted = () => Real.now() + offset;
+  const realNow = Real.now.bind(Real);
+  const shifted = () => realNow() + offset;
+  let now = shifted;
   const proxy = new Proxy(Real, {
     construct(target, args, newTarget) {
       return Reflect.construct(target, args.length ? args : [shifted()], newTarget);
     },
     apply() { return new Real(shifted()).toString(); },
     get(target, key, recv) {
-      if (key === "now") return shifted;
+      if (key === "now") return now;
       return Reflect.get(target, key, target === recv ? target : recv);
+    },
+    set(target, key, value) {
+      if (key === "now") { now = value; return true; }
+      return Reflect.set(target, key, value);
     },
   });
   globalThis.Date = proxy;
 }
 installClock(CLOCK_OFFSET);
+// When the run started, on the shifted clock. The clock section runs late in a long run, so it checks the start here
+// and the page against Node's clock now.
+const RUN_T0 = Date.now();
 const CLOCK_INIT = "(" + installClock.toString() + ")(" + CLOCK_OFFSET + ");";
 // Wrap the browser so no section can forget the clock: it is the first init
 // script of every context, ahead of any a section adds. browser.newPage() makes
@@ -12665,10 +12676,13 @@ async function clockSection(browser, base) {
   const spec = process.env.HEADLESS_CLOCK || "12:00";
   const want = spec === "real" ? null : spec.split(":").map(Number);
   // Minutes past midnight, compared round the clock so 23:58 and 00:01 are near.
-  const near = (h, m) => {
-    const d = Math.abs((h * 60 + m) - (want[0] * 60 + want[1]));
-    return Math.min(d, 1440 - d) <= 10;
-  };
+  const apart = (h, m, h2, m2) => { const d = Math.abs((h * 60 + m) - (h2 * 60 + m2)); return Math.min(d, 1440 - d); };
+  const t0 = new Date(RUN_T0);
+  if (want && apart(t0.getHours(), t0.getMinutes(), want[0], want[1]) > 1) {
+    fail("clock: the run started at " + t0.getHours() + ":" + t0.getMinutes() + ", not " + spec);
+  }
+  // The page against Node's shifted clock now, since this section runs however far into the run it falls.
+  const near = (h, m) => { const n = new Date(); return apart(h, m, n.getHours(), n.getMinutes()) <= 1; };
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
   const p = await ctx.newPage();
   try {
