@@ -412,6 +412,14 @@ func recordingCommand(t *testing.T) (CommandSink, string) {
 	out := filepath.Join(t.TempDir(), "out.jsonl")
 	t.Setenv("ATRIUM_NOTIFY_HELPER", "record")
 	t.Setenv("ATRIUM_NOTIFY_OUT", out)
+	// THE HELPER IS THIS WHOLE TEST BINARY, started as a child, and on a loaded
+	// machine that start alone can pass the sink's ten seconds. These tests are
+	// about what the command is given, not how long it may take, so the bound is
+	// taken out of the way. The timeout has its own test. Safe to change here
+	// because t.Setenv above already rules out a parallel test.
+	was := notifyTimeout
+	notifyTimeout = 2 * time.Minute
+	t.Cleanup(func() { notifyTimeout = was })
 	return CommandSink{Argv: func() []string { return []string{os.Args[0]} }}, out
 }
 
