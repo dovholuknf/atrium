@@ -27,7 +27,7 @@ func endedCard(t *testing.T, d *Daemon, name, dir string) *store.Task {
 	}
 	// What StopRunner writes when somebody asks. `done` alone is what every
 	// wind-down leaves behind, and is not an ending.
-	if err := d.st.AppendEvent(task.ID, store.EventNotified, map[string]any{"by": store.ExitAskedBy}); err != nil {
+	if err := d.st.SetExitAsked(task.ID); err != nil {
 		t.Fatal(err)
 	}
 	return task

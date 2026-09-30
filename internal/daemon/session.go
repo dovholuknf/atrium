@@ -375,6 +375,14 @@ func (d *Daemon) onSession(in SessionEvent) error {
 		}); err != nil {
 			return err
 		}
+		// /exit TYPED IN A SUPERVISED CARD'S OWN TERMINAL is somebody deciding, and
+		// stays down across a restart like an asked exit. A wind-down ends every
+		// session the same way, so only an ending outside one counts.
+		if in.Reason == "prompt_input_exit" && !d.windingDown.Load() && d.sup.get(task.ID) != nil {
+			if err := d.st.SetExitAsked(task.ID); err != nil {
+				return err
+			}
+		}
 		// A card put down by hand stays where it was put.
 		if task.Status != store.StatusShelved && task.Status != store.StatusDone {
 			if err := d.st.SetStatus(task.ID, endedAs(task)); err != nil {

@@ -251,7 +251,13 @@ func (d *Daemon) handleResume(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if _, err := d.Launch(d.reopenRequest(t)); err != nil {
-			writeJSONErr(w, http.StatusInternalServerError, err)
+			// Mapped the way `api.launch` maps it: a conversation held by another
+			// card is a 409, anything else is the request's problem, never a 500.
+			code := http.StatusBadRequest
+			if _, busy := err.(interface{ ResumeConflict() map[string]any }); busy {
+				code = http.StatusConflict
+			}
+			writeJSONErr(w, code, err)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
