@@ -10634,6 +10634,170 @@ async function shiftMenuSection(browser, base) {
   if (errors.length) fail("shiftMenu: the page threw: " + errors.join(" | "));
 }
 
+// ── the hub's notify command in the gear (u-030) ────────────────────────────
+//
+// The mock server answers 404 to /_hub/notify, so each case routes it in the browser context.
+async function notifyCommandSection(browser, base) {
+  const errors = [];
+  const note = { enabled: true, command: ["ntfy", "publish", "my topic"], last_run_at: "2026-09-30T10:00:00Z",
+    last_ok_at: "2026-09-30T09:00:00Z", last_error: "exit 2", failures: 3, disabled_reason: "three failures",
+    sent: 7, dropped: 2, suppressed: 5, visible_tabs: 2 };
+  const puts = [], tests = [], gets = [];
+  const open = async (ctx, hub) => {
+    await ctx.route("**/_hub/notify**", route => {
+      const req = route.request(), u = new URL(req.url());
+      if (!hub) return route.fulfill({ status: 404, body: "not a hub" });
+      if (u.pathname === "/_hub/notify/test") {
+        tests.push(1);
+        return route.fulfill({ contentType: "application/json",
+          body: JSON.stringify({ ok: false, exit_code: 2, output: "no such topic", took_ms: 41 }) });
+      }
+      if (req.method() === "PUT") {
+        const b = JSON.parse(req.postData());
+        puts.push(b);
+        return route.fulfill({ contentType: "application/json", body: JSON.stringify(Object.assign({}, note, b)) });
+      }
+      gets.push(1);
+      return route.fulfill({ contentType: "application/json", body: JSON.stringify(note) });
+    });
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow, #term-list .card.tab", { state: "attached", timeout: slow(15000) });
+    return p;
+  };
+
+  // (a) On a hub the row draws every field.
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  try {
+    const p = await open(ctx, true);
+    await p.click("#gear");
+    await p.waitForFunction(() => !document.getElementById("s-hn-row").hidden, null, { timeout: slow(10000) });
+    await p.evaluate(() => showSettingsPane && showSettingsPane("notifications"));
+    const shown = await p.evaluate(() => ({
+      on: document.getElementById("s-hn-enabled").checked,
+      cmd: document.getElementById("s-hn-command").value,
+      status: document.getElementById("s-hn-status").textContent,
+      help: document.getElementById("s-hn-row").textContent
+    }));
+    if (!shown.on) fail("notifyCommand: the enabled box was not checked");
+    if (shown.cmd !== "ntfy\npublish\nmy topic") fail("notifyCommand: the argv is not one per line: " + JSON.stringify(shown.cmd));
+    for (const w of ["failures in a row: 3", "exit 2", "three failures", "7 sent, 2 dropped, 5 held back",
+      "2 board tabs visible now", "last ok:"]) {
+      if (!shown.status.includes(w)) fail("notifyCommand: the status did not say '" + w + "': " + shown.status);
+    }
+    if (!/ON THE HUB MACHINE/.test(shown.help) || !/no credential/.test(shown.help)) {
+      fail("notifyCommand: the row does not say where it runs and that atrium holds no credential");
+    }
+    // (b) Save PUTs the argv, blank lines dropped.
+    await p.fill("#s-hn-command", "curl\n\n-d\nhello world\n");
+    await p.evaluate(() => { document.getElementById("s-hn-enabled").checked = false; });
+    await p.evaluate(() => saveHubNotify());
+    await p.waitForFunction(() => document.getElementById("s-hn-msg").textContent === "saved", null, { timeout: slow(10000) });
+    const put = puts[puts.length - 1];
+    if (!put || put.enabled !== false || JSON.stringify(put.command) !== JSON.stringify(["curl", "-d", "hello world"])) {
+      fail("notifyCommand: save PUT the wrong body: " + JSON.stringify(put));
+    }
+    // (c) A test POSTs and shows the answer inline, and leaves an unsaved edit alone.
+    await p.fill("#s-hn-command", "unsaved");
+    await p.evaluate(() => testHubNotify());
+    await p.waitForFunction(() => /exit code 2/.test(document.getElementById("s-hn-test").textContent), null,
+      { timeout: slow(10000) });
+    const t = await p.textContent("#s-hn-test");
+    if (!/failed/.test(t) || !/41 ms/.test(t) || !/no such topic/.test(t)) fail("notifyCommand: the test answer is incomplete: " + t);
+    if (!tests.length) fail("notifyCommand: the test never POSTed");
+    if (await p.inputValue("#s-hn-command") !== "unsaved") fail("notifyCommand: a test threw away an unsaved edit");
+  } finally { await ctx.close(); }
+
+  // (d) No hub, no row.
+  const ctx2 = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  try {
+    const p = await open(ctx2, false);
+    await p.click("#gear");
+    await p.waitForTimeout(500);
+    const vis = await p.evaluate(() => { const r = document.getElementById("s-hn-row"); return r.hidden || r.offsetParent === null; });
+    if (!vis) fail("notifyCommand: a 404 from the hub still drew the row");
+  } finally { await ctx2.close(); }
+
+  // (e) A guest board draws no row and never asks the hub.
+  const ctx3 = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const hubCalls = [];
+  try {
+    await ctx3.route("**/v1/tasks", r => r.fulfill({ status: 403, body: "this link is one terminal." }));
+    // The rooms probe is the board's own and older than this. Only what this feature adds is counted.
+    ctx3.on("request", r => { if (/^\/_hub\/(notify|presence)/.test(new URL(r.url()).pathname)) hubCalls.push(r.url()); });
+    const p = await ctx3.newPage();
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => document.body.classList.contains("guestonly"), null, { timeout: slow(15000) });
+    await p.waitForTimeout(500);
+    const row = await p.evaluate(() => { const r = document.getElementById("s-hn-row"); return !r || r.hidden || r.offsetParent === null; });
+    if (!row) fail("notifyCommand: a guest board drew the row");
+    if (hubCalls.length) fail("notifyCommand: a guest board called the hub: " + hubCalls.join(" "));
+  } finally { await ctx3.close(); }
+  if (errors.length) fail("notifyCommand: the page threw: " + errors.join(" | "));
+}
+
+// ── the board's presence (u-030) ────────────────────────────────────────────
+async function presenceSection(browser, base) {
+  const errors = [];
+  const posts = [], streams = [];
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  await ctx.addInitScript(() => {
+    window.__hide = false;
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true, get: () => (window.__hide ? "hidden" : "visible")
+    });
+    window.__beacons = [];
+    navigator.sendBeacon = (url, data) => { window.__beacons.push({ url, type: data && data.type }); return true; };
+  });
+  let status = 200;
+  await ctx.route("**/_hub/presence", route => {
+    posts.push(JSON.parse(route.request().postData()));
+    route.fulfill({ status, contentType: "application/json", body: status === 200 ? '{"ok":true}' : "not a hub" });
+  });
+  ctx.on("request", r => { if (new URL(r.url()).pathname.startsWith("/v1/events")) streams.push(r.url()); });
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow, #term-list .card.tab", { state: "attached", timeout: slow(15000) });
+    await p.waitForTimeout(500);
+    const tab = await p.evaluate(() => hubTabId);
+    if (!tab) fail("presence: no tab id");
+    if (!streams.length || !streams.every(u => new URL(u).searchParams.get("tab") === tab)) {
+      fail("presence: the event stream URL does not carry tab=" + tab + ": " + streams.join(" "));
+    }
+    if (!posts.length || posts[0].visible !== true || posts[0].tab !== tab) fail("presence: load did not post visible true: " + JSON.stringify(posts));
+    // hidden
+    const n0 = posts.length;
+    await p.evaluate(() => { window.__hide = true; document.dispatchEvent(new Event("visibilitychange")); });
+    await p.waitForTimeout(300);
+    const last = posts[posts.length - 1];
+    if (posts.length !== n0 + 1 || last.visible !== false) fail("presence: hidden did not post visible false: " + JSON.stringify(posts.slice(n0)));
+    // pagehide goes by beacon, as text/plain, and not by fetch.
+    const n1 = posts.length;
+    await p.evaluate(() => window.dispatchEvent(new Event("pagehide")));
+    const beacons = await p.evaluate(() => window.__beacons);
+    if (beacons.length !== 1 || beacons[0].url !== "/_hub/presence" || !/^text\/plain/.test(beacons[0].type)) {
+      fail("presence: pagehide did not sendBeacon as text/plain: " + JSON.stringify(beacons));
+    }
+    if (posts.length !== n1) fail("presence: pagehide also fetched");
+    // A 404 stops it: the next post is the last.
+    status = 404;
+    await p.evaluate(() => { window.__hide = false; document.dispatchEvent(new Event("visibilitychange")); });
+    await p.waitForTimeout(300);
+    const n2 = posts.length;
+    await p.evaluate(() => { window.__hide = true; document.dispatchEvent(new Event("visibilitychange")); });
+    await p.evaluate(() => { window.__hide = false; document.dispatchEvent(new Event("visibilitychange")); });
+    await p.waitForTimeout(300);
+    if (posts.length !== n2) fail("presence: posts continued after a 404: " + (posts.length - n2) + " more");
+    const reloaded = await p.evaluate(() => sessionStorage.getItem("atrium.tab"));
+    if (reloaded !== tab) fail("presence: the tab id is not in sessionStorage");
+  } finally { await ctx.close(); }
+  if (errors.length) fail("presence: the page threw: " + errors.join(" | "));
+  // And an idle board adds no request per minute: idleBudget is run beside this one and still has to pass.
+}
+
 async function main() {
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = "http://127.0.0.1:" + server.address().port;
@@ -10656,7 +10820,7 @@ async function main() {
       usageCacheReads: usageCacheReadsSection, roomsDash: roomsDashSection, phoneView: phoneViewSection, heldLine: heldLineSection, u016: u016Section, phoneHeader: phoneHeaderSection, phoneFocus: phoneFocusSection, phoneTermBar: phoneTermBarSection, phoneShare: phoneShareSection, phonePan: phonePanSection, phoneFollow: phoneFollowSection, phoneTap: phoneTapSection, phoneKeyboard: phoneKeyboardSection, phoneCompose: phoneComposeSection, mCompose: mComposeSection, mPerms: mPermsSection, usagePolish: usagePolishSection, usageLimits: usageLimitsSection, usageGroups: usageGroupsSection,
       eventDriven: eventDrivenSection, idleBudget: idleBudgetSection, pollsGone: pollsGoneSection,
       phoneListFit: phoneListFitSection, phoneNudge: phoneNudgeSection,
-      cacheChip: cacheChipSection, cacheLine: cacheLineSection, mHome: mHomeSection, mCard: mCardSection, mServe: mServeSection, phoneKeyLabel: phoneKeyLabelSection, phoneKeyLit: phoneKeyLitSection, shiftMenu: shiftMenuSection };
+      cacheChip: cacheChipSection, cacheLine: cacheLineSection, mHome: mHomeSection, mCard: mCardSection, mServe: mServeSection, phoneKeyLabel: phoneKeyLabelSection, phoneKeyLit: phoneKeyLitSection, shiftMenu: shiftMenuSection, notifyCommand: notifyCommandSection, presence: presenceSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -12608,6 +12772,8 @@ async function main() {
     await phoneKeyLabelSection(browser, base);
     await phoneKeyLitSection(browser, base);
     await shiftMenuSection(browser, base);
+    await notifyCommandSection(browser, base);
+    await presenceSection(browser, base);
     await usagePolishSection(browser, base);
     await usageLimitsSection(browser, base);
     await usageGroupsSection(browser, base);
