@@ -1355,25 +1355,15 @@ func (d *Daemon) launchedName(title, cwd string) string {
 	return launchedName(title, cwd, d.wireNameTaken())
 }
 
-// wireNameTaken reports, for a local name, whether a live session already wears
-// it. Compared against LocalName because the argument is the unqualified name a
+// wireNameTaken reports, for a local name, whether any card, live, done or archived, wears
+// it. The store qualifies the name, because the argument is the unqualified name a
 // launch is about to hand out, while a stored wire name carries this atrium's
 // tenant prefix.
-func (d *Daemon) wireNameTaken() func(string) bool {
-	taken := map[string]bool{}
-	if tasks, err := d.st.List(); err == nil {
-		for _, t := range tasks {
-			if d.runnerIsLive(t) {
-				taken[store.LocalName(t.WireName)] = true
-			}
-		}
-	}
-	return func(name string) bool { return taken[name] }
-}
+func (d *Daemon) wireNameTaken() func(string) bool { return d.st.WireNameHeld }
 
 // launchedName is the testable core of the method above: base from the title
 // when there is one, otherwise the directory leaf, then a numeric suffix until
-// nothing live holds it.
+// no card holds it.
 func launchedName(title, cwd string, taken func(string) bool) string {
 	base := nameSlug(title)
 	if base == "" {
