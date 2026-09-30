@@ -11227,6 +11227,7 @@ async function main() {
       usageCacheReads: usageCacheReadsSection, roomsDash: roomsDashSection, phoneView: phoneViewSection, heldLine: heldLineSection, u016: u016Section, phoneHeader: phoneHeaderSection, phoneFocus: phoneFocusSection, phoneTermBar: phoneTermBarSection, phoneShare: phoneShareSection, phonePan: phonePanSection, phoneFollow: phoneFollowSection, phoneTap: phoneTapSection, phoneKeyboard: phoneKeyboardSection, phoneCompose: phoneComposeSection, mCompose: mComposeSection, mPerms: mPermsSection, usagePolish: usagePolishSection, usageLimits: usageLimitsSection, usageGroups: usageGroupsSection,
       eventDriven: eventDrivenSection, idleBudget: idleBudgetSection, pollsGone: pollsGoneSection,
       phoneListFit: phoneListFitSection, phoneNudge: phoneNudgeSection,
+      growlStack: growlStackSection, growlActions: growlActionsSection, growlModal: growlModalSection, growlQuiet: growlQuietSection,
       cacheChip: cacheChipSection, cacheLine: cacheLineSection, mHome: mHomeSection, mCard: mCardSection, mServe: mServeSection, phoneKeyLabel: phoneKeyLabelSection, phoneKeyLit: phoneKeyLitSection, shiftMenu: shiftMenuSection, notifyCommand: notifyCommandSection, presence: presenceSection, tallPty: tallPtySection, roomsMachine: roomsMachineSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
@@ -13217,6 +13218,11 @@ async function main() {
     await phoneNudgeSection(browser, base);
     await cacheChipSection(browser, base);
     await cacheLineSection(browser, base);
+    // ── the persistent growler: stack, actions, over a modal, and quiet ────
+    await growlStackSection(browser, base);
+    await growlActionsSection(browser, base);
+    await growlModalSection(browser, base);
+    await growlQuietSection(browser, base);
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e));
     if (process.env.DEBUG_HEADLESS) {
@@ -13585,4 +13591,315 @@ async function mServeSection(browser) {
     await b.ctx.close();
   } finally { await st.close(); }
   if (!bad) console.log("mServe ok");
+}
+
+// ── the persistent growler ───────────────────────────────────────────────────
+// The hub half is not built here. `growls` events are written onto the open streams the way the hub writes them,
+// and `/_hub/growls/{id}` is answered from the page's own routes, in the shape @runtime agreed: the whole set per
+// event, `remind` an array, `card_id` raw and `card` tagged, POST 200/409/404/400.
+const GR_T0 = Date.parse("2026-09-30T10:00:00Z");
+const GR_URG = { permission: 1, halt: 2, blocked: 3, question: 4, "deploy-hold": 5 };
+function GR(id, reason, n, x) {
+  return Object.assign({
+    id: "alpha|" + id + "|" + reason, room: "alpha", card_id: id, card: "alpha~" + id, reason,
+    title: reason + " " + id, body: reason === "permission" ? "Bash: rm -rf build\nsecond line" : "body of " + id,
+    subject: reason === "permission" ? "perm-" + id : "", raised_at: new Date(GR_T0 + n * 60000).toISOString(),
+    state: "open", until: "", reminders: 0, changed_at: "", changed_via: "", changed_tab: "",
+    urgency: GR_URG[reason], room_offline: false
+  }, x || {});
+}
+
+async function growlBoard(browser, base, hub) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const p = await ctx.newPage();
+  const h = { ctx, p, errors: [], posts: [], gets: 0, decides: [], messages: [], answer: null, wasHub: hubMode };
+  p.on("pageerror", e => h.errors.push(String(e)));
+  hubMode = hub;
+  await ctx.route("**/_hub/growls**", async route => {
+    const r = route.request();
+    if (r.method() === "GET") { h.gets++; return route.fulfill({ status: 404, body: "" }); }
+    const body = JSON.parse(r.postData() || "{}");
+    const id = decodeURIComponent(new URL(r.url()).pathname.replace(/^\/_hub\/growls\//, ""));
+    h.posts.push({ id, body });
+    const row = h.rows.find(g => g.id === id);
+    const out = h.answer ? h.answer(id, body, row) : null;
+    if (out) return route.fulfill({ status: out.status, contentType: "application/json", body: JSON.stringify(out.json) });
+    const state = { dismiss: "dismissed", snooze: "snoozed", acted: "acted", undismiss: "open" }[body.do];
+    return route.fulfill({ status: 200, contentType: "application/json",
+      body: JSON.stringify({ growl: Object.assign({}, row, { state }) }) });
+  });
+  await ctx.route("**/v1/permissions/*/decide", route => {
+    h.decides.push({ url: new URL(route.request().url()).pathname, body: JSON.parse(route.request().postData() || "{}") });
+    return route.fulfill({ status: 204, body: "" });
+  });
+  await ctx.route("**/v1/tasks/*/message", route => {
+    h.messages.push({ url: new URL(route.request().url()).pathname, body: JSON.parse(route.request().postData() || "{}") });
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ delivered: "queued", when: "done" }) });
+  });
+  h.rows = [];
+  h.say = async (rows, extra) => {
+    h.rows = rows;
+    const line = "event: growls\ndata: " + JSON.stringify(Object.assign({ growls: rows, perm_after_seconds: 120 }, extra || {})) + "\n\n";
+    openStreams.forEach(r => { try { if (!r.destroyed) r.write(line); } catch (e) {} });
+    await p.waitForTimeout(150);
+  };
+  h.close = async () => { hubMode = h.wasHub; await ctx.close(); };
+  await p.goto(base, { waitUntil: "domcontentloaded" });
+  await p.waitForFunction(() => document.getElementById("conn").classList.contains("live"), null, { timeout: slow(15000) });
+  if (hub) await p.waitForFunction(() => typeof hubIsHub !== "undefined" && hubIsHub, null, { timeout: slow(15000) });
+  return h;
+}
+
+async function growlStackSection(browser, base) {
+  const h = await growlBoard(browser, base, true);
+  const { p } = h;
+  const drawn = () => p.evaluate(() => ({
+    full: [...document.querySelectorAll("#growl .gr-full b")].map(b => b.textContent),
+    rows: [...document.querySelectorAll("#growl .gr-row .gr-t")].map(b => b.textContent),
+    strip: (document.querySelector("#growl .gr-strip") || {}).textContent || ""
+  }));
+  try {
+    await h.say([]);
+    if (await p.$("#growl")) fail("growlStack: an empty set drew a growler.");
+    // Fed in the hub's order: urgency, then oldest first.
+    const rows = [GR("a", "permission", 1), GR("b", "permission", 2), GR("c", "question", 0), GR("d", "deploy-hold", 0),
+      GR("z", "halt", 0, { state: "snoozed", until: "2026-09-30T12:00:00Z" })];
+    await h.say(rows);
+    let d = await drawn();
+    if (d.full.length !== 1 || d.full[0] !== "permission a") fail("growlStack: the full growler was " + JSON.stringify(d.full));
+    if (d.strip !== "+3 more: 1 permission, 1 question, 1 deploy-hold") fail("growlStack: the strip said " + JSON.stringify(d.strip));
+    // The command's first line, not its second.
+    const cmd = await p.textContent("#growl .gr-cmd");
+    if (cmd !== "Bash: rm -rf build") fail("growlStack: the command line was " + JSON.stringify(cmd));
+    // Pinned above the toasts, and outside their cap.
+    await p.evaluate(() => { for (let i = 0; i < 5; i++) toast("filler " + i, "x"); });
+    await p.waitForTimeout(100);
+    const pin = await p.evaluate(() => {
+      const g = document.getElementById("growl"), t = document.querySelector("#toasts .toast");
+      return { above: g.getBoundingClientRect().bottom <= t.getBoundingClientRect().top + 1,
+        plain: document.querySelectorAll("#toasts .toast:not(.sticky)").length };
+    });
+    if (!pin.above) fail("growlStack: the growler is not above the toasts.");
+    if (pin.plain !== 3) fail("growlStack: the growler changed the toast cap, " + pin.plain + " shown.");
+    // Expand in place, then fold.
+    await p.click("#growl .gr-strip");
+    d = await drawn();
+    if (d.rows.join() !== "permission a,permission b,question c,deploy-hold d") fail("growlStack: expanded rows were " + JSON.stringify(d.rows));
+    if (d.full.length) fail("growlStack: expanded still drew a full growler.");
+    if (await p.$('#growl .gr-row[data-id*="|z|"]')) fail("growlStack: a snoozed row was drawn.");
+    await p.click("#growl .gr-strip");
+    d = await drawn();
+    if (d.full.length !== 1 || d.rows.length) fail("growlStack: folding did not return to one growler.");
+    // A late event keeps the stack folded and replaces the set.
+    await h.say(rows.slice(1));
+    d = await drawn();
+    if (d.full[0] !== "permission b" || !/^\+2 more: 1 question, 1 deploy-hold$/.test(d.strip)) fail("growlStack: a replaced set drew " + JSON.stringify(d));
+    // The cap: half the window, then it scrolls.
+    const many = []; for (let i = 0; i < 40; i++) many.push(GR("m" + i, "question", i));
+    await h.say(many);
+    await p.click("#growl .gr-strip");
+    const box = await p.evaluate(() => { const e = document.getElementById("growl"); return { h: e.getBoundingClientRect().height, s: e.scrollHeight, c: e.clientHeight, win: innerHeight }; });
+    if (box.h > box.win / 2 + 1) fail("growlStack: the expanded stack was " + box.h + "px in a " + box.win + "px window.");
+    if (box.s <= box.c) fail("growlStack: forty rows did not scroll inside the cap.");
+    await h.say([]);
+    if (await p.$("#growl")) fail("growlStack: the growler stayed after the set emptied.");
+    if (h.errors.length) fail("growlStack: page errors: " + h.errors.join(" | "));
+  } finally { await h.close(); }
+  if (!bad) console.log("growlStack ok");
+}
+
+async function growlActionsSection(browser, base) {
+  const h = await growlBoard(browser, base, true);
+  const { p } = h;
+  const toasts = () => p.evaluate(() => [...document.querySelectorAll("#toasts .toast")].map(t => t.textContent));
+  try {
+    await h.say([]);
+    const perm = GR("a", "permission", 1), q = GR("c", "question", 2);
+    await h.say([perm, q]);
+    // approve and block answer the request and never touch the growler's own endpoint
+    await p.click('#growl .gr-full button[data-do="approve"]');
+    await p.waitForFunction(() => true);
+    await p.waitForTimeout(200);
+    if (h.decides.length !== 1 || !/\/v1\/permissions\/perm-a\/decide$/.test(h.decides[0].url) || h.decides[0].body.decision !== "approve") {
+      fail("growlActions: approve posted " + JSON.stringify(h.decides));
+    }
+    await p.click('#growl .gr-full button[data-do="block"]');
+    await p.waitForSelector("#ask[open]", { timeout: slow(5000) });
+    await p.fill("#ask-input", "use pnpm instead");
+    await p.click('#ask-actions button:has-text("ok")');
+    await p.waitForTimeout(300);
+    const blk = h.decides[1];
+    if (!blk || blk.body.decision !== "block" || blk.body.reason !== "use pnpm instead") fail("growlActions: block posted " + JSON.stringify(blk));
+    if (h.posts.length) fail("growlActions: approve and block posted to /_hub/growls: " + JSON.stringify(h.posts));
+    // a permission row with no subject yet cannot be answered
+    await h.say([GR("e", "permission", 1, { subject: "", body: "" })]);
+    if (!(await p.isDisabled('#growl .gr-full button[data-do="approve"]')) || !(await p.isDisabled('#growl .gr-full button[data-do="block"]'))) {
+      fail("growlActions: approve and block were live with no subject.");
+    }
+    // open lands through landOnAlert, in the form the card list uses
+    await h.say([perm, q]);
+    await p.evaluate(() => { window.__lands = []; window.landOnAlert = (...a) => { window.__lands.push(a); }; });
+    await p.click('#growl .gr-full button[data-do="open"]');
+    await p.waitForTimeout(200);
+    let lands = await p.evaluate(() => window.__lands);
+    if (lands.length !== 1 || lands[0][1] !== "perms" || lands[0][2] !== "perm-a" || !/c$|a$/.test(String(lands[0][0]))) fail("growlActions: open landed " + JSON.stringify(lands));
+    // reply goes through the message path
+    await h.say([q]);
+    await p.fill("#growl .gr-reply", "yes, do it");
+    await p.click('#growl button[data-do="reply"]');
+    await p.waitForTimeout(300);
+    if (h.messages.length !== 1 || !/\/v1\/tasks\/(alpha~)?c\/message$/.test(h.messages[0].url) || h.messages[0].body.text !== "yes, do it") {
+      fail("growlActions: reply posted " + JSON.stringify(h.messages));
+    }
+    if (h.posts.length) fail("growlActions: reply posted to /_hub/growls.");
+    // snooze: 15 min, and the body carries the board's tab and via
+    await p.click('#growl button[data-do="snooze"]');
+    await p.click('#growl .gr-snooze button[data-snooze="15"]');
+    await p.waitForTimeout(300);
+    let last = h.posts[h.posts.length - 1];
+    if (!last || last.id !== q.id || last.body.do !== "snooze" || last.body.minutes !== 15 || last.body.via !== "board" || !last.body.tab) {
+      fail("growlActions: snooze posted " + JSON.stringify(h.posts));
+    }
+    if (await p.$("#growl")) fail("growlActions: a snoozed growler is still drawn.");
+    // until tomorrow 09:00 is worked out here, in whole minutes
+    await h.say([q]);
+    await p.click('#growl button[data-do="snooze"]');
+    await p.click('#growl .gr-snooze button[data-snooze="0"]');
+    await p.waitForTimeout(300);
+    last = h.posts[h.posts.length - 1];
+    if (!(last.body.minutes >= 1 && last.body.minutes <= 2 * 24 * 60 - 1) || last.body.minutes % 1) fail("growlActions: tomorrow snooze sent " + last.body.minutes);
+    // a 409 says already handled and drops the row
+    await h.say([q]);
+    h.answer = (id, body, row) => ({ status: 409, json: { growl: Object.assign({}, row, { state: "resolved" }) } });
+    await p.click('#growl button[data-do="dismiss"]');
+    await p.waitForTimeout(300);
+    if (!(await toasts()).some(t => /already handled/.test(t))) fail("growlActions: a 409 did not say already handled: " + JSON.stringify(await toasts()));
+    if (await p.$("#growl")) fail("growlActions: a 409 left the row up.");
+    // a 400 toasts the error text
+    await h.say([q]);
+    h.answer = () => ({ status: 400, json: { error: "minutes out of range" } });
+    await p.click('#growl button[data-do="dismiss"]');
+    await p.waitForTimeout(300);
+    if (!(await toasts()).some(t => /minutes out of range/.test(t))) fail("growlActions: a 400 did not toast its error.");
+    // dismiss, then undo inside the window puts it straight back
+    h.answer = null;
+    await p.evaluate(() => { document.getElementById("toasts").querySelectorAll(".toast").forEach(t => t.remove()); });
+    await h.say([perm, q]);
+    await p.click('#growl .gr-full button[data-do="dismiss"]');
+    await p.waitForSelector(".toast .gr-undo", { timeout: slow(3000) });
+    last = h.posts[h.posts.length - 1];
+    if (last.body.do !== "dismiss" || last.body.via !== "board") fail("growlActions: dismiss posted " + JSON.stringify(last));
+    if ((await p.textContent("#growl .gr-full b")) !== "question c") fail("growlActions: dismiss left the dismissed row on top.");
+    await p.click(".toast .gr-undo");
+    await p.waitForTimeout(300);
+    last = h.posts[h.posts.length - 1];
+    if (last.body.do !== "undismiss") fail("growlActions: undo posted " + JSON.stringify(last));
+    if ((await p.textContent("#growl .gr-full b")) !== "permission a") fail("growlActions: undo did not restore the growler at once.");
+    // a 409 undo says already handled
+    await p.click('#growl .gr-full button[data-do="dismiss"]');
+    await p.waitForSelector(".toast .gr-undo", { timeout: slow(3000) });
+    h.answer = (id, body, row) => body.do === "undismiss" ? { status: 409, json: { growl: Object.assign({}, row, { state: "resolved" }) } } : null;
+    await p.click(".toast .gr-undo");
+    await p.waitForTimeout(300);
+    if (!(await toasts()).some(t => /already handled/.test(t))) fail("growlActions: a 409 undo did not say already handled.");
+    // the undo toast is gone after its window, and one for a growler already back is taken down
+    h.answer = null;
+    await h.say([perm, q]);
+    await p.click('#growl .gr-full button[data-do="dismiss"]');
+    await p.waitForSelector(".toast .gr-undo", { timeout: slow(3000) });
+    await h.say([perm, q]);
+    await p.waitForFunction(() => !document.querySelector(".toast .gr-undo"), null, { timeout: slow(2000) })
+      .catch(() => fail("growlActions: the undo toast stayed after the growler came back another way."));
+    await p.evaluate(() => { document.getElementById("toasts").querySelectorAll(".toast").forEach(t => t.remove()); });
+    await p.click('#growl .gr-full button[data-do="dismiss"]');
+    await p.waitForSelector(".toast .gr-undo", { timeout: slow(3000) });
+    // not hovering it: a hovered toast is held
+    await p.mouse.move(5, 5);
+    await p.waitForFunction(() => !document.querySelector(".toast .gr-undo"), null, { timeout: slow(11000) })
+      .catch(() => fail("growlActions: the undo toast outlived its window."));
+    if (h.errors.length) fail("growlActions: page errors: " + h.errors.join(" | "));
+  } finally { await h.close(); }
+  if (!bad) console.log("growlActions ok");
+}
+
+async function growlModalSection(browser, base) {
+  const h = await growlBoard(browser, base, true);
+  const { p } = h;
+  try {
+    await h.say([]);
+    await p.evaluate(() => document.getElementById("settings").showModal());
+    await h.say([GR("a", "permission", 1)]);
+    const inside = await p.evaluate(() => document.getElementById("settings").contains(document.getElementById("growl")));
+    if (!inside) fail("growlModal: the growler was not drawn inside the open dialog.");
+    await p.click('#growl .gr-full button[data-do="approve"]', { timeout: slow(3000) })
+      .catch(() => fail("growlModal: approve could not be clicked over the settings dialog."));
+    await p.waitForTimeout(200);
+    if (h.decides.length !== 1) fail("growlModal: the click over the dialog did not reach the decide call.");
+    await p.click('#growl .gr-full button[data-do="dismiss"]', { timeout: slow(3000) })
+      .catch(() => fail("growlModal: dismiss could not be clicked over the settings dialog."));
+    await p.waitForTimeout(200);
+    if (h.posts.length !== 1) fail("growlModal: dismiss over the dialog posted " + h.posts.length + " times.");
+    if (!(await p.evaluate(() => document.getElementById("settings").open))) fail("growlModal: the settings dialog closed under the growler.");
+    if (h.errors.length) fail("growlModal: page errors: " + h.errors.join(" | "));
+  } finally { await h.close(); }
+  if (!bad) console.log("growlModal ok");
+}
+
+async function growlQuietSection(browser, base) {
+  const h = await growlBoard(browser, base, true);
+  const { p } = h;
+  const log = () => p.evaluate(() => toastLog().map(e => e.title));
+  const shown = () => p.evaluate(() => [...document.querySelectorAll("#toasts .toast")].map(t => t.dataset.key || t.textContent));
+  try {
+    await h.say([]);
+    await p.evaluate(() => { document.getElementById("toasts").querySelectorAll(".toast").forEach(t => t.remove()); localStorage.removeItem("atrium.toastlog"); });
+    const row = GR("a", "permission", 1);
+    await h.say([row]);
+    // a growler appearing is one log line, and so is it leaving
+    let l = await log();
+    if (l.filter(t => t === "growler: permission a").length !== 1) fail("growlQuiet: raising logged " + JSON.stringify(l));
+    // the nag steps aside for a permission with a growler
+    const old = { id: "perm-a", requested_at: new Date(Date.now() - 3 * 60000).toISOString(), tool: "Bash", command: "rm -rf build", agent: "x", task_id: "a" };
+    const before = l.length;
+    await p.evaluate(p0 => alerting.nag([p0]), old);
+    await p.waitForTimeout(200);
+    if ((await shown()).length || (await log()).length !== before) fail("growlQuiet: the nag raised something for a growler's permission.");
+    // and does not when there is none
+    await p.evaluate(p0 => alerting.nag([p0]), Object.assign({}, old, { id: "perm-other" }));
+    await p.waitForTimeout(300);
+    if ((await log()).length === before) fail("growlQuiet: the nag went quiet for a permission with no growler.");
+    await p.evaluate(() => { document.getElementById("toasts").querySelectorAll(".toast").forEach(t => t.remove()); });
+    // a keyed toast for that subject is logged and not drawn
+    const n0 = (await log()).length;
+    await p.evaluate(() => toast("needs you", "Bash: rm", "perms", "perm-a"));
+    await p.evaluate(() => toast("other", "Bash: ls", "perms", "perm-z"));
+    await p.waitForTimeout(200);
+    const s = await shown();
+    if (s.includes("perm-a")) fail("growlQuiet: a keyed toast was drawn beside its growler.");
+    if (!s.includes("perm-z")) fail("growlQuiet: a keyed toast for another subject was not drawn.");
+    if ((await log()).length !== n0 + 2) fail("growlQuiet: the keyed toasts were not both logged.");
+    // leaving the set is one line
+    await h.say([]);
+    l = await log();
+    if (l.filter(t => t === "growler ended: permission a").length !== 1) fail("growlQuiet: ending logged " + JSON.stringify(l));
+    // a snooze coming back open is raised again
+    await h.say([Object.assign({}, row, { state: "snoozed" })]);
+    await h.say([row], { remind: [row.id] });
+    l = await log();
+    if (l.filter(t => t === "growler: permission a").length !== 2) fail("growlQuiet: a snooze ending did not log a new raise: " + JSON.stringify(l));
+    // a hub never asks for the set, at load or later
+    await p.waitForTimeout(1500);
+    if (h.gets) fail("growlQuiet: the board fetched /_hub/growls " + h.gets + " times.");
+    if (h.errors.length) fail("growlQuiet: page errors: " + h.errors.join(" | "));
+  } finally { await h.close(); }
+
+  // a board with no hub: no growlers, and no request for them, on a timer or otherwise
+  const b = await growlBoard(browser, base, false);
+  try {
+    await b.p.waitForTimeout(3500);
+    if (await b.p.$("#growl")) fail("growlQuiet: a board with no hub drew a growler.");
+    if (b.gets || b.posts.length) fail("growlQuiet: a board with no hub asked for growlers " + b.gets + " times.");
+    if (b.errors.length) fail("growlQuiet: no-hub page errors: " + b.errors.join(" | "));
+  } finally { await b.close(); }
+  if (!bad) console.log("growlQuiet ok");
 }
