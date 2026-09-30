@@ -7906,3 +7906,6 @@ Needs a hub with one room and two browsers on the board. `curl` stands in for th
 6. (R2, room) On a room's own board port, `curl -s -i http://127.0.0.1:7781/v1/tasks/<alias>` answers the card with
    `X-Atrium-Card` and `X-Atrium-Handle`. A qualified wire name goes as `tenant%2Fname`. `<alias>@<other-room>`
    answers 404 saying to ask the hub. A miss answers 404 with `would_work`.
+7. (C1, CLI) `atrium task rnd`, `atrium task rnd@claude-sg4 --json`, `atrium exit <alias>`, `atrium new-context <alias>`
+   and `atrium launch --onto <alias>` each reach the card and print the handle they reached. A miss prints what would
+   have worked. A name on two rooms prints both.
