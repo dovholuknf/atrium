@@ -236,6 +236,28 @@ func (d *Daemon) watchAutoContext(t *store.Task, tokens int64, now time.Time) {
 	}
 }
 
+// autoRetryUnread is the tick for a card that reads as nothing: cleared, and its new
+// conversation has no reply yet. Only the wake retry is due there, and it is the retry
+// that gets the card a reply, so it cannot wait for a size to read.
+func (d *Daemon) autoRetryUnread(t *store.Task, now time.Time) {
+	s := d.auto.get(t.ID)
+	if s == nil || s.state != autoFired || s.retryAt.IsZero() || !s.wakeOnly {
+		return
+	}
+	if cur := d.nctx.get(t.ID); cur == nil || !cur.auto || cur.step != NewContextFailed {
+		// The chip was dismissed or replaced. A person chose, so the retry is off.
+		d.auto.update(t.ID, func(s *autoState) { s.state, s.attempts, s.retryAt = autoArmed, 0, time.Time{} })
+		return
+	}
+	if !d.autoContextSubject(t, d.st.AutoNewContextMode()) || d.sup.get(t.ID) == nil ||
+		now.Sub(d.auto.born) < autoTiming.startGrace || now.Before(s.retryAt) {
+		return
+	}
+	if d.autoReady(t, false, now) {
+		d.startAuto(t, s.tokens, s.threshold, autoHuman(t), true, s.attempts+1)
+	}
+}
+
 // settleAuto moves a card's arm state on what the tick sees, and returns it. Nothing
 // here depends on the setting: a run in flight is finished being recorded whatever the
 // setting says now.
