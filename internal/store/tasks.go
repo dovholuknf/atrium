@@ -830,6 +830,15 @@ func (s *Store) SetResumeID(id, resumeID string) error {
 	})
 }
 
+// ClearResumeID forgets the card's resume id. `SetResumeID` ignores a blank on
+// purpose, so this is the one way to drop an id known to be bad.
+func (s *Store) ClearResumeID(id string) error {
+	return s.guard(func() error {
+		_, err := s.db.Exec(`UPDATE task SET resume_id = '' WHERE id = ?`, id)
+		return err
+	})
+}
+
 // ResumeClaim is what ClaimResumeID did with a conversation id.
 type ResumeClaim struct {
 	// Stored is whether the id is now on the card.

@@ -139,3 +139,18 @@ func TestRegisterDirectoryNameFallsBackToThePidHint(t *testing.T) {
 		t.Fatalf("a finished card matched by pid: %v %v %v", got, created, err)
 	}
 }
+
+// r-042: SetResumeID ignores a blank, so ClearResumeID is the way to drop a bad id.
+func TestClearResumeIDDropsTheId(t *testing.T) {
+	s := openTestStore(t)
+	c := claimCard(t, s, "c")
+	if err := s.SetResumeID(c.ID, "conv-1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetResumeID(c.ID, ""); err != nil || resumeOf(t, s, c.ID) != "conv-1" {
+		t.Fatal("a blank SetResumeID must stay a no-op")
+	}
+	if err := s.ClearResumeID(c.ID); err != nil || resumeOf(t, s, c.ID) != "" {
+		t.Fatalf("the id was not cleared: %v", err)
+	}
+}

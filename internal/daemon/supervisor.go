@@ -2169,7 +2169,7 @@ func (d *Daemon) awaitExit(r *runner) {
 		}
 		// The stored id is known bad. Left in place it would be tried again on
 		// the next start, which is the same failure tomorrow.
-		if err := d.st.SetResumeID(r.taskID, ""); err != nil {
+		if err := d.st.ClearResumeID(r.taskID); err != nil {
 			log.Printf("[atrium] clear stale resume for %s: %v", r.taskID, err)
 		}
 		if err := d.st.SetWhy(r.taskID, ""); err != nil {
