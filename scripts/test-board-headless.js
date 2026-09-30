@@ -4150,6 +4150,42 @@ async function aliasSection(browser, base) {
   if (errors.length) fail("the alias page threw: " + errors.join(" | "));
 }
 
+// ── a question asked straight after another was answered ──────────────────
+// `close` is queued, so the first question's close event can land after the
+// second one is open. It used to answer the second with a cancel before anybody
+// saw it: the alias from the terminal bar was lost that way in a loaded full run.
+async function askAgainSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const p = await ctx.newPage();
+  const errors = [];
+  p.on("pageerror", e => errors.push(String(e)));
+  try {
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof askText === "function", null, { timeout: slow(15000) });
+    const got = await p.evaluate(async () => {
+      const first = askText("one", "", "a", "");
+      document.querySelector("#ask-actions button.go").click();
+      const a = await first;
+      // Still inside the task that closed the first, so its close event is queued behind this.
+      let b = "(pending)";
+      const second = askText("two", "", "b", "").then(v => { b = v; });
+      await new Promise(r => setTimeout(r, 100));
+      const waited = { b, open: document.getElementById("ask").open };
+      document.querySelector("#ask-actions button.go").click();
+      await second;
+      return { a, waited, b };
+    });
+    if (got.a !== "a") fail("askAgain: the first question did not answer with its value: " + JSON.stringify(got));
+    if (got.waited.b !== "(pending)" || !got.waited.open) {
+      fail("askAgain: the first question's close cancelled the second: " + JSON.stringify(got));
+    }
+    if (got.b !== "b") fail("askAgain: the second question did not answer with its value: " + JSON.stringify(got));
+  } finally {
+    await ctx.close();
+  }
+  if (errors.length) fail("askAgain: the page threw: " + errors.join(" | "));
+}
+
 // ── a big paste shows the spinner too ─────────────────────────────────────
 // Test plan BQ. The socket here behaves like Chromium's over loopback: `send`
 // holds the main thread about 7ms per MB and the frame drains about 25ms per MB
@@ -11182,7 +11218,7 @@ async function main() {
       groupDrag: groupDragSection, tooltip: tooltipSection, linkTip: linkTipSection,popoutTagFlip: popoutTagFlipSection, idleRate: idleRateSection, foldStill: foldStillSection,
       untaggedSort: untaggedSortSection, newCard: newCardSection, themePreview: themePreviewSection, land: landSection, reselect: reselectSection,
       toastsTop: toastsTopSection, sayWhen: sayWhenSection, pasteSpinner: pasteSpinnerSection,
-      pasteBig: pasteBigSection, pasteBusy: pasteBusySection, typing: typingSection, alias: aliasSection, copySelect: copySelectSection, busyGuard: busyGuardSection, keepalive: keepaliveSection,
+      pasteBig: pasteBigSection, pasteBusy: pasteBusySection, typing: typingSection, alias: aliasSection, askAgain: askAgainSection, copySelect: copySelectSection, busyGuard: busyGuardSection, keepalive: keepaliveSection,
       stuck: stuckSection, carryLink: carryLinkSection,
       skinScope: skinScopeSection, skinHeal: skinHealSection, toastLives: toastLivesSection,
       history: historySection, contextSize: contextSizeSection, peekEverywhere: peekEverywhereSection, cardRoute: cardRouteSection,
@@ -13163,6 +13199,7 @@ async function main() {
     await typingSection(browser, base);
     // ── a card wears its alias, and the menu sets it ────────────────────────
     await aliasSection(browser, base);
+    await askAgainSection(browser, base);
     // ── copy on select answers the pointer, not the find bar ───────────────
     await copySelectSection(browser, base);
     // ── the not-replayed notice opens or loads the pre-restart history ─────
