@@ -93,6 +93,10 @@ type Daemon struct {
 	st   *store.Store
 	ap   *api.Server
 
+	// mergedCulling is set while the sweep is culling due workers, so a slow
+	// exit is not started twice by the next tick. See mergedcull.go.
+	mergedCulling atomic.Bool
+
 	// perms holds the hook connections parked on a permission answer. See
 	// permwait.go.
 	perms *permWait
@@ -349,7 +353,11 @@ func New(opts Options) (*Daemon, error) {
 	d.ap.Preflight = d.handlePreflight
 	d.ap.Shelve = d.Shelve
 	d.ap.StopRunner = d.StopRunner
-	d.ap.Cull = func(id, into string) (any, error) { return d.Cull(id, into) }
+	d.ap.Cull = func(id, into, tip string) (any, error) { return d.CullProved(id, into, tip) }
+	d.ap.HoldCull = d.HoldCull
+	d.ap.Merged = func(into string, branches []string) (any, error) { return d.Merged(into, branches) }
+	d.ap.MergeProof = func(dir, ref, into string) (any, error) { return d.MergeProof(dir, ref, into) }
+	d.ap.ArchiveWorkers =func(dryRun bool) (any, error) { return d.ArchiveWorkers(dryRun) }
 	d.ap.RestartRunner = d.RestartRunner
 	d.ap.Unshelve = d.Unshelve
 	d.ap.Overlays = d.overlayViews

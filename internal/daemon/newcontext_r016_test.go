@@ -102,7 +102,7 @@ func TestFailedChipSurvivesATurnStart(t *testing.T) {
 	d.act.set(id, ActivityThinking, "")
 	d.act.promptSeen(id)
 	d.turnResumed(id)
-	d.act.set(id, ActivityIdle, "")
+	ncTurnEnds(d, id)
 	time.Sleep(30 * time.Millisecond)
 	if failedWith(d, id) == "" {
 		t.Fatal("a turn start cleared the failed chip")
@@ -133,7 +133,7 @@ func TestWakeWaitsOutATurnInProgress(t *testing.T) {
 	if strings.Contains(f.written(), ncWakeMark) {
 		t.Fatalf("the wake was typed into a turn: %q", f.written())
 	}
-	d.act.set(id, ActivityIdle, "")
+	ncTurnEnds(d, id)
 	until(t, "the wake prompt", func() bool { return strings.Contains(f.written(), ncWakeMark) })
 	until(t, "the chip to go", func() bool { return d.newContextFor(id) == nil })
 }
@@ -217,7 +217,7 @@ func TestInjectorDuringTurnSettleTypesClearFirst(t *testing.T) {
 		t.Fatal(err)
 	}
 	time.Sleep(50 * time.Millisecond)
-	d.act.set(id, ActivityIdle, "")
+	ncTurnEnds(d, id)
 
 	// Inside the settle gap the injector is kicked repeatedly.
 	sayViaMessage(t, d, "alice", id, heldSay)
@@ -258,7 +258,7 @@ func TestQueuedMessageAndCaptureEndTogetherTypeClearAlone(t *testing.T) {
 	time.Sleep(60 * time.Millisecond)
 	// At the same moment.
 	sayViaMessage(t, d, "alice", id, heldSay)
-	d.act.set(id, ActivityIdle, "")
+	ncTurnEnds(d, id)
 	d.pending.reset(id)
 
 	until(t, "/clear", func() bool { return strings.Contains(f.written(), "/clear") })

@@ -41,9 +41,21 @@ func ncCard(t *testing.T, d *Daemon) (*store.Task, *fakePTY, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Between turns, where a real card sits when a cycle is typed into it (r-022).
+	if err := d.st.SetStatus(task.ID, store.StatusNeedsInput); err != nil {
+		t.Fatal(err)
+	}
 	_, f := typedRunner(t, d, task.ID)
 	t.Cleanup(func() { d.pending.stopAll(); d.nctx.stopAll() })
 	return task, f, dir
+}
+
+// ncTurnEnds is what a Stop does to a card: its activity goes idle and its
+// status leaves running. The cycle waits on both (r-022), since a card whose
+// status still says running is not between turns whatever its activity says.
+func ncTurnEnds(d *Daemon, id string) {
+	d.act.set(id, ActivityIdle, "")
+	_ = d.st.SetStatus(id, store.StatusNeedsInput)
 }
 
 // until waits for cond, failing the test with what if it never holds.
@@ -99,7 +111,7 @@ func TestNewContextCapturesClearsAndWakes(t *testing.T) {
 	if strings.Contains(f.written(), "/clear") {
 		t.Fatalf("/clear was typed while the capture turn was still running: %q", f.written())
 	}
-	d.act.set(id, ActivityIdle, "")
+	ncTurnEnds(d, id)
 
 	// 2. The turn ended, so /clear goes, and nothing else yet.
 	until(t, "/clear", func() bool { return strings.Contains(f.written(), "/clear") })
@@ -181,7 +193,7 @@ func TestNewContextDoesNotClearOverAMissingHandoff(t *testing.T) {
 	until(t, "the capture prompt", func() bool { return strings.Contains(f.written(), "HANDOFF.") })
 	d.act.set(task.ID, ActivityThinking, "")
 	time.Sleep(20 * time.Millisecond)
-	d.act.set(task.ID, ActivityIdle, "")
+	ncTurnEnds(d, task.ID)
 
 	until(t, "the chip to fail", func() bool { return failedWith(d, task.ID) != "" })
 	if r := failedWith(d, task.ID); !strings.Contains(r, HandoffName(task)) || !strings.Contains(r, filepath.ToSlash(dir)) {
@@ -213,7 +225,7 @@ func TestNewContextDoesNotTrustAStaleHandoff(t *testing.T) {
 	until(t, "the capture prompt", func() bool { return strings.Contains(f.written(), "HANDOFF.") })
 	d.act.set(task.ID, ActivityThinking, "")
 	time.Sleep(20 * time.Millisecond)
-	d.act.set(task.ID, ActivityIdle, "")
+	ncTurnEnds(d, task.ID)
 	until(t, "the chip to fail", func() bool { return failedWith(d, task.ID) != "" })
 	if strings.Contains(f.written(), "/clear") {
 		t.Fatalf("cleared on the strength of an old handoff: %q", f.written())
@@ -232,7 +244,7 @@ func TestNewContextStopsWhenNoSessionStartsAfterTheClear(t *testing.T) {
 	d.act.set(task.ID, ActivityThinking, "")
 	_ = os.WriteFile(filepath.Join(dir, HandoffName(task)), []byte("state"), 0o644)
 	time.Sleep(20 * time.Millisecond)
-	d.act.set(task.ID, ActivityIdle, "")
+	ncTurnEnds(d, task.ID)
 	until(t, "/clear", func() bool { return strings.Contains(f.written(), "/clear") })
 
 	// No SessionStart ever comes.
@@ -259,7 +271,7 @@ func TestNewContextIgnoresASessionStartFromBeforeTheClear(t *testing.T) {
 	d.act.set(task.ID, ActivityThinking, "")
 	_ = os.WriteFile(filepath.Join(dir, HandoffName(task)), []byte("state"), 0o644)
 	time.Sleep(20 * time.Millisecond)
-	d.act.set(task.ID, ActivityIdle, "")
+	ncTurnEnds(d, task.ID)
 	until(t, "the chip to fail", func() bool { return failedWith(d, task.ID) != "" })
 	if strings.Contains(f.written(), newContextWake(HandoffName(task))) {
 		t.Fatalf("took an old SessionStart for the new session: %q", f.written())
@@ -280,7 +292,7 @@ func TestNewContextWaitsOutATurnAlreadyRunning(t *testing.T) {
 	if f.written() != "" {
 		t.Fatalf("typed the capture prompt into a running turn: %q", f.written())
 	}
-	d.act.set(task.ID, ActivityIdle, "")
+	ncTurnEnds(d, task.ID)
 	until(t, "the capture prompt", func() bool { return strings.Contains(f.written(), "HANDOFF.") })
 }
 
@@ -392,7 +404,7 @@ func TestTurnsBegunCountsAFastTurn(t *testing.T) {
 	before := d.act.turnsBegun("c1")
 	d.act.set("c1", ActivityThinking, "")
 	d.act.set("c1", ActivityTool, "Bash") // still the same turn
-	d.act.set("c1", ActivityIdle, "")
+	ncTurnEnds(d, "c1")
 	if got := d.act.turnsBegun("c1"); got != before+1 {
 		t.Fatalf("one turn counted as %d", got-before)
 	}

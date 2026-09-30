@@ -60,7 +60,7 @@ func finishCycle(t *testing.T, d *Daemon, id, dir string, f *fakePTY) {
 		t.Fatal(err)
 	}
 	time.Sleep(60 * time.Millisecond)
-	d.act.set(id, ActivityIdle, "")
+	ncTurnEnds(d, id)
 	until(t, "/clear", func() bool { return strings.Contains(f.written(), "/clear") })
 }
 

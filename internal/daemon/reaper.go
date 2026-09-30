@@ -229,6 +229,9 @@ func (d *Daemon) reap(ctx context.Context, every time.Duration) {
 		if err := d.sweepLedger(); err != nil {
 			log.Printf("[atrium] work ledger sweep: %v", err)
 		}
+		// Merged workers whose grace has run out. Same tick, and the culling
+		// itself runs off it. See mergedcull.go.
+		d.sweepMergedCulls()
 		// Dead cards go on their own. Same ticker as the reaper, because it is
 		// the same question at the same rate and a second ticker is a second
 		// thing to get wrong at shutdown.
