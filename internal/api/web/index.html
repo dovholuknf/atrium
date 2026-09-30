@@ -1700,6 +1700,28 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         seems large. Never touches shelved cards or the inbox.</span>
     </div>
 
+    <!-- The terminal list's controls (they were a tray above the list). Filled in by
+         paintTermGear and paintCacheLine, on each list render and when the gear opens.
+         The group pills are the same setting the board and the stack have. -->
+    <h3 class="s-section">terminal list</h3>
+    <div class="field">
+      <span class="eyebrow">sort</span>
+      <div class="seg trayseg" id="gear-term-sort"></div>
+    </div>
+    <div class="field">
+      <span class="eyebrow">hide inactive</span>
+      <div id="gear-term-hide"></div>
+    </div>
+    <div class="field">
+      <span class="eyebrow">group</span>
+      <div class="seg trayseg groupseg" id="term-group"></div>
+    </div>
+    <div class="field">
+      <span class="eyebrow">cache</span>
+      <span class="hintline" id="cache-line-gear" hidden></span>
+      <span class="hintline">The keep-alive default is in the next section.</span>
+    </div>
+
     <!-- The cache keep-alive. The default for NEW Claude cards, never applied to
          a card that is already open: each card has its own switch in its menu.
          See docs/runtime/cache-keepalive-design.md. -->
