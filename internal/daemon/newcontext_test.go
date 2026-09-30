@@ -104,7 +104,7 @@ func TestNewContextCapturesClearsAndWakes(t *testing.T) {
 	// The turn runs. It writes the file, and goes on for a while: /clear must not
 	// be typed into it.
 	d.act.set(id, ActivityThinking, "")
-	if err := os.WriteFile(filepath.Join(dir, HandoffName(task)), []byte("state"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, HandoffName(task)), handoffBody, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	time.Sleep(150 * time.Millisecond)
@@ -242,7 +242,7 @@ func TestNewContextStopsWhenNoSessionStartsAfterTheClear(t *testing.T) {
 	}
 	until(t, "the capture prompt", func() bool { return strings.Contains(f.written(), "HANDOFF.") })
 	d.act.set(task.ID, ActivityThinking, "")
-	_ = os.WriteFile(filepath.Join(dir, HandoffName(task)), []byte("state"), 0o644)
+	_ = os.WriteFile(filepath.Join(dir, HandoffName(task)), handoffBody, 0o644)
 	time.Sleep(20 * time.Millisecond)
 	ncTurnEnds(d, task.ID)
 	until(t, "/clear", func() bool { return strings.Contains(f.written(), "/clear") })
@@ -269,7 +269,7 @@ func TestNewContextIgnoresASessionStartFromBeforeTheClear(t *testing.T) {
 	}
 	until(t, "the capture prompt", func() bool { return strings.Contains(f.written(), "HANDOFF.") })
 	d.act.set(task.ID, ActivityThinking, "")
-	_ = os.WriteFile(filepath.Join(dir, HandoffName(task)), []byte("state"), 0o644)
+	_ = os.WriteFile(filepath.Join(dir, HandoffName(task)), handoffBody, 0o644)
 	time.Sleep(20 * time.Millisecond)
 	ncTurnEnds(d, task.ID)
 	until(t, "the chip to fail", func() bool { return failedWith(d, task.ID) != "" })

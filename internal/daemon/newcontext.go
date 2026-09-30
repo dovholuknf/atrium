@@ -1,9 +1,12 @@
 package daemon
 
 import (
+	"bytes"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -67,16 +70,41 @@ var newContextLabel = atriumLabel("new context:")
 
 // newContextCapture is what the session is asked to do before its context goes.
 //
+// The token is matched as a SUBSTRING of the file's first 4 KB, not as a whole line:
+// a model writing markdown puts it in backticks, a bullet or bold, and refusing a
+// fresh capture for that is the failure this exists to fix. The token is random per
+// run, so a substring is as unforgeable as an exact line.
+//
 // ONE LINE. It is typed and submitted like any prompt, and the model gets the
 // whole of it. It says what happens next, so a session that would otherwise
 // carry on working after writing the file knows to stop.
-func newContextCapture(file string) string {
+func newContextCapture(file, token string) string {
 	return "Your context is about to be cleared. First commit or stash any work in " +
 		"progress. Then write everything a fresh session needs to carry on to " + file + " in the current " +
 		"directory: what you are doing and why, what is done, what is left, decisions made and the reasons, " +
 		"branches, commits and files involved, how to check the work, and anything you were waiting on. " +
+		"Put the line " + captureLine(token) + " near the top of the file, also when it is already written. " +
 		"When it is written, reply with one line saying so and stop. Do not start anything else. You will " +
 		"be told to read " + file + " back once the context is clear."
+}
+
+// captureLine is the line a card puts in its handoff file to say it is this run's.
+func captureLine(token string) string { return captureMarker + token }
+
+// captureMarker leads the line. handoffWritten looks for the whole line, token and all.
+const captureMarker = "atrium-capture: "
+
+// handoffFloor is the fewest bytes a handoff may be. A token alone is not one.
+const handoffFloor = 200
+
+// handoffHead is how much of the file is read looking for the token. Never all of it.
+const handoffHead = 4096
+
+// captureToken is unique to one capture run: the run's generation and a random id.
+func captureToken(gen uint64) string {
+	var b [6]byte
+	_, _ = rand.Read(b[:])
+	return fmt.Sprintf("%d-%x", gen, b)
 }
 
 // HandoffName is the file a card's new-context cycle writes and reads: its alias
@@ -508,6 +536,7 @@ func (d *Daemon) runNewContext(taskID string, gen uint64) {
 // after it, so a card is asked to write its handoff without losing its context.
 func (d *Daemon) ncCapture(taskID string, gen uint64, file string) (string, error) {
 	started := time.Now()
+	token := captureToken(gen)
 	// NOTHING IS TYPED WHILE THE CARD IS RUNNING (r-022). `ncType` waits for the
 	// card's status to leave running as well as for its activity to go idle. A
 	// cycle armed while the card was running used to type the capture into a turn
@@ -516,7 +545,7 @@ func (d *Daemon) ncCapture(taskID string, gen uint64, file string) (string, erro
 	// twice). With the card between turns when the prompt is typed, the count
 	// taken here is before the capture's own turn and after every other.
 	turns := d.act.turnsBegun(taskID)
-	if err := d.ncType(taskID, gen, newContextLabel, newContextCapture(file), ncTiming.captureEnd); err != nil {
+	if err := d.ncType(taskID, gen, newContextLabel, newContextCapture(file, token), ncTiming.captureEnd); err != nil {
 		return "could not type the capture prompt", err
 	}
 	err := d.ncWait(taskID, gen, ncTiming.captureBegin, "the capture prompt to start a turn",
@@ -538,7 +567,7 @@ func (d *Daemon) ncCapture(taskID string, gen uint64, file string) (string, erro
 	if err != nil {
 		return "the capture did not finish", err
 	}
-	if err := d.handoffWritten(taskID, file, started); err != nil {
+	if err := d.handoffWritten(taskID, file, started, token); err != nil {
 		return "nothing cleared", err
 	}
 	return "", nil
@@ -667,22 +696,41 @@ func (d *Daemon) handoffExists(taskID, file string) error {
 	return nil
 }
 
-// handoffWritten checks the capture left this card's file, written since it began.
-func (d *Daemon) handoffWritten(taskID, file string, since time.Time) error {
+// handoffWritten checks the capture left this card's file. Two ways through: the
+// file carries this run's `atrium-capture: <token>` line in its first 4 KB, which
+// a card that wrote its notes a minute ago can add, or it was written during the
+// capture turn. Under 200 bytes is refused either way. Each refusal says what the
+// card should have done, in one sentence, because the chip shows it.
+func (d *Daemon) handoffWritten(taskID, file string, since time.Time, token string) error {
 	dir, err := d.handoffDir(taskID)
 	if err != nil || dir == "" {
 		return err
 	}
-	info, err := os.Stat(filepath.Join(dir, file))
+	f, err := os.Open(filepath.Join(dir, file))
 	if err != nil {
-		return fmt.Errorf("the capture turn ended without %s in %s", file, dir)
+		return fmt.Errorf("the capture turn ended without %s in %s, so the card should have written it and added the line %s",
+			file, dir, captureLine(token))
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return fmt.Errorf("could not read %s in %s: %v", file, dir, err)
+	}
+	if info.Size() < handoffFloor {
+		return fmt.Errorf("%s in %s is only %d bytes, so the card should have written its whole handoff, at least %d bytes",
+			file, dir, info.Size(), handoffFloor)
 	}
 	// A little slack for file systems that round a modified time down.
-	if info.ModTime().Before(since.Add(-2 * time.Second)) {
-		return fmt.Errorf("%s in %s was not updated by the capture turn, so it is from an "+
-			"earlier session", file, dir)
+	if !info.ModTime().Before(since.Add(-2 * time.Second)) {
+		return nil
 	}
-	return nil
+	head := make([]byte, handoffHead)
+	n, _ := io.ReadFull(f, head)
+	if bytes.Contains(head[:n], []byte(captureLine(token))) {
+		return nil
+	}
+	return fmt.Errorf("%s in %s is older than the capture and lacks the line %s in its first 4 KB, so the card should have added it",
+		file, dir, captureLine(token))
 }
 
 // handleNewContext is `/v1/tasks/{id}/new-context`: POST starts the sequence,

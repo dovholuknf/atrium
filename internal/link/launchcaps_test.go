@@ -192,6 +192,29 @@ func TestTheLaunchCapsAreSetOnTheHub(t *testing.T) {
 	}
 }
 
+// Setting the caps from off the machine is refused, and reading them is not.
+func TestTheLaunchCapsAreSetFromTheHubsMachineOnly(t *testing.T) {
+	p := NewProxy(NewHub(Timings{}), nil, "", nil)
+	st := &fakeSettings{m: map[string]string{}}
+	p.SetLaunchCaps(st)
+	from := func(method, body string) int {
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(method, "/_hub/launch-caps", strings.NewReader(body))
+		r.RemoteAddr = "192.0.2.7:5555"
+		p.ServeHTTP(w, r)
+		return w.Code
+	}
+	if code := from(http.MethodPut, `{"default":50}`); code != http.StatusForbidden {
+		t.Errorf("a PUT from elsewhere answered %d, not 403", code)
+	}
+	if st.m[SettingLaunchCaps] != "" {
+		t.Errorf("a refused PUT wrote %q", st.m[SettingLaunchCaps])
+	}
+	if code := from(http.MethodGet, ""); code != http.StatusOK {
+		t.Errorf("a GET from elsewhere answered %d, not 200", code)
+	}
+}
+
 // A hub with no store for the caps answers the route 404, like notify.
 func TestTheLaunchCapsRouteNeedsAStore(t *testing.T) {
 	front := httptest.NewServer(NewProxy(NewHub(Timings{}), nil, "", nil))

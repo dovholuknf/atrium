@@ -168,7 +168,7 @@ func os_WriteHandoff(d *Daemon, id, dir string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(dir, HandoffName(task)), []byte("state"), 0o644)
+	return os.WriteFile(filepath.Join(dir, HandoffName(task)), handoffBody, 0o644)
 }
 
 // A prompt event a moment ago means the runner is taking input: wait it out.

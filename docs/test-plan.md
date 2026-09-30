@@ -7608,7 +7608,8 @@ point `ATRIUM_HOOK_EXE` at the atrium binary.
    is set.
 2. `curl -s -X PUT -H 'Content-Type: application/json' -d '{"default":5,"rooms":{"claude-sg4":10,"sg3":5,"m1mini":5}}'
    http://127.0.0.1:7778/_hub/launch-caps` answers the same caps back. A GET after a hub restart still does.
-3. A PUT with a cap of -1 or 1000, a blank room name, or not JSON answers 400 and changes nothing.
+3. A PUT with a cap of -1 or 1000, a blank room name, or not JSON answers 400 and changes nothing. A PUT from another
+   machine, through the board's overlay address, answers 403, and a GET from there answers the caps.
 4. With sg3 at 5 live `atrium:subagent` workers, `atrium_launch room=sg3` is refused with "at the launch cap of 5
    running workers on room sg3", and a launch onto claude-sg4 with fewer than 10 there goes through.
 5. Directors and parked workers (no live terminal) do not count on either room.
@@ -7679,3 +7680,141 @@ At 390px the chips read `❄ → 03:32`, `❄ 3× next ~03:27`, `❄ cold`, `⊘
 
 **Expected:** the board is not halted. Card `y` keeps its name and its pid and directory are refreshed. The finished
 card `x` still holds `x`. A name that was told, not guessed, still matches the finished card as before.
+
+## GQ. A prune from the all-rooms view reaches every room (92)
+
+1. With two rooms attached, each holding done cards, `curl -s -X POST -H 'Content-Type: application/json' -d
+   '{"statuses":["done"]}' http://127.0.0.1:7778/v1/tasks/prune` with no `X-Atrium-Room` answers `removed` equal to
+   the done cards on both rooms together, and both rooms' done columns are empty.
+2. The same with `-H 'X-Atrium-Room: <one room>'` clears that room only. The other keeps its done cards.
+3. Stop one room's link, then prune with no room named. The answer is 200 with the stopped room in `unreached`, within
+   a few seconds.
+4. After @ui's half lands: on the board's all-rooms view, "clear" on the done column empties it on every room.
+
+## GR. A worker is shown a worker's control tools (f-021)
+
+1. Launch a worker with `atrium_launch` and `tags: ["atrium:subagent"]`. In its Claude Code, `/mcp` on atrium-control
+   lists six tools: `atrium_status`, `atrium_peers`, `atrium_say`, `atrium_report`, `atrium_task`, `atrium_alias`.
+2. In a director (tagged `atrium:director`), in a session tagged both, and in a session a human started with no tags,
+   `/mcp` lists every tool, including `atrium_launch`, `atrium_exit`, `atrium_cull`, `restart_atrium` and
+   `atrium_wake_after_restart`.
+3. From the worker, ask it to call `atrium_cull`. It answers unknown tool, and nothing is audited.
+4. Retag a running worker as a director. Its list does not change until it is restarted, then it shows every tool.
+5. Stop the room, then start a worker while the hub cannot reach it. The worker's list is the full one, since a failed
+   lookup fails open.
+6. A director's `atrium_launch` still writes one `kind=ctl-launch` line to `/_hub/audit`.
+
+## GS. Notify, the cr48 lows (f-025)
+
+1. With notify on, rename a card so its name holds a control character (for example via the API with `\u0000`). Its
+   notification still runs, and the command's `ATRIUM_NOTIFY_NAME` has the name without the NUL.
+2. Set a command, turn notify on, then remove that program from the PATH. `PUT /_hub/notify {"enabled":false,
+   "command":[<the same>]}` answers 200 and notify is off. Turning it back on with the same command answers 400.
+3. Open the board with notify on and the tab visible, then stop and restart the hub's event stream (drop the network
+   for a few seconds). `GET /_hub/notify` still says `suppressed: true` once the stream is back.
+4. Turn notify off, let several cards start waiting, turn it on. No burst of notifications for what was already
+   waiting, and the next new wait notifies once.
+
+## GT. A lean launch keeps only the agents and skills it names
+
+### GT1. Named agents are available and nothing else is
+
+1. Put `demo-a.md` and `demo-b.md` (frontmatter with a `description`, then a prompt) in `~/.claude/agents` on the room.
+2. `atrium_launch` a claude worker in a scratch directory with `lean_agents: ["demo-a"]` and the prompt "list the
+   subagent types you can start, names only".
+
+**Expected:** the answer lists `atrium:demo-a` (plugin agents are namespaced) and does not list `demo-b`. Only Claude
+Code's built-in types appear beside it. The card's tags include `atrium:lean` and `atrium:agent:demo-a`. The scratch
+directory holds no new files: the plugin is under `lean-plugins/` in atrium's state.
+
+### GT2. Named skills
+
+1. Put a skill `demo-skill` (a directory with `SKILL.md`) in `~/.claude/skills`.
+2. Launch with `lean_skills: ["demo-skill"]` and ask for the skill names available to the Skill tool.
+
+**Expected:** `atrium:demo-skill` is listed and none of the operator's other skills. The card has `atrium:skill:demo-skill`.
+
+### GT3. Everything else lean drops stays dropped
+
+1. In a worker from step 1 ask what skills, memory and CLAUDE.md instructions it has.
+
+**Expected:** none of the operator's skills, memory index or global CLAUDE.md. The status line still shows.
+
+### GT4. A restart keeps the lists
+
+1. Restart the room, or exit the worker and reopen its card.
+
+**Expected:** it comes back with the Agent tool and `atrium:demo-a` only.
+
+### GT5. Refusals
+
+1. Launch with `lean_agents: ["no-such-agent"]`, then with `lean_skills: ["no-such-skill"]`.
+2. Launch with `lean_agents: ["../settings"]`.
+3. Launch a codex runner with `lean_agents: ["demo-a"]`.
+4. Launch a claude worker with `lean: false` and `lean_agents: ["demo-a"]`.
+
+**Expected:** each launch is refused with an error, the first two naming the missing name, and no card is left behind.
+
+## GU. Task events coalesce per card
+
+### GU1. A burst shows the final state
+Open the board and a card that is running. Trigger several changes to it in quick succession (for example, answer three asks or rename it three times inside a second).
+Watch the card on the board.
+
+**Expected:** the card shows the final state within about a fifth of a second of the last change. Nothing stale flashes back.
+
+### GU2. A deleted card stays gone
+Change a card, then delete it straight away (within a fraction of a second).
+
+**Expected:** the card leaves the board and does not reappear.
+
+### GU3. A restart wake still shows every card
+Restart the room with several cards on the board.
+
+**Expected:** every card appears with its ask counts, replies owed and seen state, and the room shuts down promptly when stopped again.
+
+## GV. New context accepts a handoff written before the capture
+
+### GV1. An already written handoff plus the token
+
+1. On a supervised card, have it write its HANDOFF file (at least 200 bytes) and wait a minute.
+2. Press new context. The typed capture prompt includes a line `atrium-capture: <token>`.
+3. Let the card reply "already written" after adding that line to the top of the file.
+
+**Expected:** the cycle goes on to `/clear` and the wake. It does not fail on the file's age.
+
+### GV2. A stale file without the token
+
+1. Leave an old HANDOFF file of 200 bytes or more, and have the card answer without touching it.
+
+**Expected:** the chip fails with one sentence naming the file, the directory and the line to add. Nothing is cleared.
+
+### GV3. A file under 200 bytes
+
+1. Have the card write a file holding only the `atrium-capture:` line.
+
+**Expected:** the chip fails saying the file is too small. Nothing is cleared.
+
+## GW. A room reports machine CPU and memory
+
+### GW1. The machine object arrives on the stats push
+
+1. Start a daemon and read `GET /v1/room/stats` at once, then again after about 20 seconds.
+
+**Expected:** the first read has `machine.mem_used_bytes`, `mem_total_bytes` and `mem_series_pct`, and no `cpu_pct`
+yet. The second also has `cpu_pct` (0 to 100) and `cpu_series_pct`. On macOS `cpu_pct` and `cpu_series_pct` stay
+absent. `mem_used_bytes` matches Task Manager, `free -b` (total minus available) or Activity Monitor.
+
+### GW2. The series line up with the token series
+
+1. Compare the length of `machine.cpu_series_pct` and `machine.mem_series_pct` with `tokens.series_per_min`.
+2. Generate CPU load on the machine for a minute.
+
+**Expected:** all three have 60 points, oldest first, the last point being the minute `tokens.series_end` names. The
+last CPU point rises. Minutes before the daemon started are null.
+
+### GW3. The rooms dashboard shows it
+
+1. Open the rooms dashboard.
+
+**Expected:** each room's MACHINE tile shows a cpu and mem percentage and a sparkline, not "cpu -" and "mem -".

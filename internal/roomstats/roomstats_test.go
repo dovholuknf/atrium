@@ -1,6 +1,7 @@
 package roomstats
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"os"
@@ -62,6 +63,7 @@ func fullSources(s *store.Store, clk Clock, out *[][]byte) Sources {
 		Disk:         func() (string, uint64, uint64, error) { return "C:/x", 392, 512, nil },
 		DBBytes:      func() (int64, error) { return 740, nil },
 		Worktrees:    func() (int, error) { return 38, nil },
+		Machine:      (&machineSeq{}).read,
 		Runners: func() ([]Runner, error) {
 			return []Runner{{"claude", true}, {"ollama", false}}, nil
 		},
@@ -92,9 +94,13 @@ func TestSnapshotShape(t *testing.T) {
 			t.Errorf("missing %q in %v", k, keys(got))
 		}
 	}
-	// Second wave: ABSENT, not zero and not null.
-	if _, ok := got["machine"]; ok {
-		t.Error("machine must be absent in wave one")
+	// One tick has memory but no CPU delta yet.
+	mach := got["machine"].(map[string]any)
+	if _, ok := mach["cpu_pct"]; ok {
+		t.Error("cpu_pct needs two samples")
+	}
+	if _, ok := mach["mem_used_bytes"]; !ok {
+		t.Error("mem_used_bytes missing after one sample")
 	}
 	if got["v"].(float64) != 1 || got["room"] != "sg3" || got["at"] != "2026-09-29T19:04:10Z" {
 		t.Errorf("header wrong: %v", got)
@@ -130,6 +136,238 @@ func TestSnapshotShape(t *testing.T) {
 	}
 	if proc["cpu_pct"].(float64) != 0.1 { // 3s of cpu over one hour
 		t.Errorf("cpu_pct %v", proc["cpu_pct"])
+	}
+}
+
+// machineSeq feeds successive readings, or an error while fail is set.
+type machineSeq struct {
+	n    uint64
+	fail bool
+}
+
+func (m *machineSeq) read() (MachineReading, error) {
+	if m.fail {
+		return MachineReading{}, errors.New("boom")
+	}
+	m.n++
+	// each reading: 100 more ticks, 25 of them idle, so 75% busy
+	return MachineReading{HasCPU: true, CPUIdle: m.n * 25, CPUTotal: m.n * 100, MemUsed: 4 << 30, MemTotal: 16 << 30}, nil
+}
+
+func TestMachineAbsentThenPresentWithAllFields(t *testing.T) {
+	st := openStore(t)
+	clk := newClock(t0)
+	seq := &machineSeq{}
+	src := fullSources(st, clk, new([][]byte))
+	src.Machine = seq.read
+	sm := New(src)
+	if sm.Bytes() != nil {
+		t.Fatal("bytes before any sample")
+	}
+	sm.Tick()
+	clk.set(t0.Add(10 * time.Second))
+	sm.Tick()
+	var got map[string]any
+	json.Unmarshal(sm.Bytes(), &got)
+	m := got["machine"].(map[string]any)
+	for _, k := range []string{"cpu_pct", "cpu_series_pct", "mem_used_bytes", "mem_total_bytes", "mem_series_pct"} {
+		if _, ok := m[k]; !ok {
+			t.Errorf("machine.%s missing", k)
+		}
+	}
+	if m["cpu_pct"].(float64) != 75 || m["mem_used_bytes"].(float64) != 4<<30 {
+		t.Errorf("machine %v", m)
+	}
+	tok := got["tokens"].(map[string]any)
+	for _, k := range []string{"cpu_series_pct", "mem_series_pct"} {
+		s := m[k].([]any)
+		if len(s) != len(tok["series_per_min"].([]any)) {
+			t.Errorf("%s length %d", k, len(s))
+		}
+	}
+	// Both end on series_end's minute: 19:04, this minute's average.
+	if last := m["cpu_series_pct"].([]any)[59].(float64); last != 75 {
+		t.Errorf("cpu series end %v", last)
+	}
+	if last := m["mem_series_pct"].([]any)[59].(float64); last != 25 {
+		t.Errorf("mem series end %v", last)
+	}
+	if _, ok := m["stale_since"]; ok {
+		t.Error("fresh machine must not be stale")
+	}
+}
+
+func TestMachineSeriesFollowsTheMinuteGrid(t *testing.T) {
+	st := openStore(t)
+	clk := newClock(t0)
+	seq := &machineSeq{}
+	src := fullSources(st, clk, new([][]byte))
+	src.Machine = seq.read
+	sm := New(src)
+	// Ticks at 19:04 to 19:07. The first has memory but no CPU delta, so
+	// memory has 4 points and CPU 3. Every other minute is null, not 0.
+	for i := 0; i < 4; i++ {
+		clk.set(t0.Add(time.Duration(i) * time.Minute))
+		sm.Tick()
+	}
+	var snap Snapshot
+	json.Unmarshal(sm.Bytes(), &snap)
+	if snap.Tokens.SeriesEnd != "2026-09-29T19:07:00Z" {
+		t.Fatalf("series_end %s", snap.Tokens.SeriesEnd)
+	}
+	check := func(name string, s []*float64, points int, want float64) {
+		t.Helper()
+		if len(s) != 60 {
+			t.Fatalf("%s length %d", name, len(s))
+		}
+		for i, p := range s {
+			if i < 60-points {
+				if p != nil {
+					t.Errorf("%s[%d] = %v, want null", name, i, *p)
+				}
+			} else if p == nil || *p != want {
+				t.Errorf("%s[%d] = %v, want %v", name, i, p, want)
+			}
+		}
+	}
+	check("cpu", snap.Machine.CPUSeriesPct, 3, 75)
+	check("mem", snap.Machine.MemSeriesPct, 4, 25)
+	if !bytes.Contains(sm.Bytes(), []byte(`"cpu_series_pct":[null,`)) {
+		t.Error("an unsampled minute must be JSON null")
+	}
+}
+
+func TestMachineFailureKeepsValuesAndMarksStale(t *testing.T) {
+	st := openStore(t)
+	clk := newClock(t0)
+	seq := &machineSeq{}
+	src := fullSources(st, clk, new([][]byte))
+	src.Machine = seq.read
+	sm := New(src)
+	sm.Tick()
+	clk.set(t0.Add(10 * time.Second))
+	sm.Tick()
+	seq.fail = true
+	clk.set(t0.Add(20 * time.Second))
+	sm.Tick()
+	clk.set(t0.Add(30 * time.Second))
+	sm.Tick()
+	var snap Snapshot
+	json.Unmarshal(sm.Bytes(), &snap)
+	m := snap.Machine
+	if m == nil || m.CPUPct == nil || *m.CPUPct != 75 || m.MemTotal != 16<<30 {
+		t.Fatalf("machine lost its last good values: %+v", m)
+	}
+	if m.StaleSince != "2026-09-29T19:04:30Z" {
+		t.Errorf("stale_since %q, want the first failed sample", m.StaleSince)
+	}
+	seq.fail = false
+	clk.set(t0.Add(40 * time.Second))
+	sm.Tick()
+	snap = Snapshot{}
+	json.Unmarshal(sm.Bytes(), &snap)
+	if snap.Machine.StaleSince != "" {
+		t.Error("a good sample clears the stale mark")
+	}
+}
+
+func TestMachineNeverSampledIsAbsent(t *testing.T) {
+	src := Sources{Room: "r", Clock: newClock(t0),
+		Machine: func() (MachineReading, error) { return MachineReading{}, errors.New("no") }}
+	sm := New(src)
+	sm.Tick()
+	var got map[string]any
+	json.Unmarshal(sm.Bytes(), &got)
+	if _, ok := got["machine"]; ok {
+		t.Errorf("machine must be absent, got %v", got["machine"])
+	}
+}
+
+func TestMachineWithoutCPUKeepsMemory(t *testing.T) {
+	src := Sources{Room: "r", Clock: newClock(t0),
+		Machine: func() (MachineReading, error) { return MachineReading{MemUsed: 1, MemTotal: 4}, nil }}
+	sm := New(src)
+	sm.Tick()
+	sm.Tick()
+	var got map[string]any
+	json.Unmarshal(sm.Bytes(), &got)
+	m := got["machine"].(map[string]any)
+	if _, ok := m["cpu_pct"]; ok {
+		t.Error("cpu_pct must be absent where the platform has none")
+	}
+	if _, ok := m["cpu_series_pct"]; ok {
+		t.Error("cpu_series_pct must be absent where the platform has none")
+	}
+	if m["mem_series_pct"].([]any)[59].(float64) != 25 {
+		t.Errorf("mem series %v", m["mem_series_pct"])
+	}
+}
+
+func TestCPUBusyPctArithmetic(t *testing.T) {
+	cases := []struct {
+		pi, pt, i, t uint64
+		want         float64
+		ok           bool
+	}{
+		{0, 0, 25, 100, 75, true},
+		{100, 200, 150, 300, 50, true},
+		{100, 200, 100, 300, 100, true},
+		{100, 200, 200, 300, 0, true},
+		{100, 200, 100, 200, 0, false}, // did not advance
+		{100, 200, 90, 300, 0, false},  // idle went backwards
+		{100, 200, 300, 250, 0, false}, // more idle than time
+		{100, 200, 101, 203, 66.7, true},
+	}
+	for _, c := range cases {
+		got, ok := cpuBusyPct(c.pi, c.pt, c.i, c.t)
+		if ok != c.ok || got != c.want {
+			t.Errorf("%+v: got %v %v", c, got, ok)
+		}
+	}
+}
+
+const procStatFixture = `cpu  4705 150 1120 16250 520 30 45 10 0 0
+cpu0 1175 30 280 4060 130 8 11 2 0 0
+intr 12345 0 0
+ctxt 999
+`
+
+func TestParseProcStat(t *testing.T) {
+	idle, total, err := parseProcStat(procStatFixture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if idle != 16250+520 || total != 4705+150+1120+16250+520+30+45+10 {
+		t.Errorf("idle %d total %d", idle, total)
+	}
+	if _, _, err := parseProcStat("cpu0 1 2 3 4 5\n"); err == nil {
+		t.Error("no aggregate line must be an error")
+	}
+	if _, _, err := parseProcStat("cpu  1 2 x 4 5\n"); err == nil {
+		t.Error("a garbled field must be an error")
+	}
+	// An old kernel with fewer columns still parses.
+	if idle, total, err = parseProcStat("cpu  10 0 5 80 5\n"); err != nil || idle != 85 || total != 100 {
+		t.Errorf("short line: %d %d %v", idle, total, err)
+	}
+}
+
+const meminfoFixture = `MemTotal:       16384000 kB
+MemFree:          812000 kB
+MemAvailable:    8192000 kB
+Buffers:          100000 kB
+`
+
+func TestParseMeminfo(t *testing.T) {
+	total, avail, err := parseMeminfo(meminfoFixture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if total != 16384000*1024 || avail != 8192000*1024 {
+		t.Errorf("total %d avail %d", total, avail)
+	}
+	if _, _, err := parseMeminfo("MemTotal: 1 kB\nMemFree: 1 kB\n"); err == nil {
+		t.Error("missing MemAvailable must be an error, not a guess from MemFree")
 	}
 }
 

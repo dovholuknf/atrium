@@ -152,6 +152,14 @@ type LaunchRequest struct {
 	// it, so its next reopen is not lean either.
 	Lean *bool    `json:"lean,omitempty"`
 	MCP  []string `json:"mcp,omitempty"`
+	// LeanAgents keeps the Agent tool on a lean launch and makes just these
+	// agents (the operator's ~/.claude/agents/<name>.md) available to it, and
+	// LeanSkills the Skill tool and these skills (~/.claude/skills/<name>/). A
+	// name with no file refuses the launch. Claude only, and either starts lean.
+	// Recorded on the card as `atrium:agent:` and `atrium:skill:` tags. See
+	// lean_agents.go.
+	LeanAgents []string `json:"lean_agents,omitempty"`
+	LeanSkills []string `json:"lean_skills,omitempty"`
 	// ReportTo is who this card's reports go to: a handle, alias or card id on
 	// this room, resolved as `atrium_say` resolves one. The card's launcher is
 	// set to that card, and the name is kept as given and resolved again at each
@@ -933,7 +941,15 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 	// are seen, and still does NOT get the agent marker.
 	agent := hasTag(req.Tags, OriginAgentTag) || agentLaunched(task) || reportTo != "" ||
 		(task != nil && d.reportsToLauncher(task))
-	lean, leanMCP := leanOptions(req, task)
+	if len(cleanKitNames(req.LeanAgents)) > 0 || len(cleanKitNames(req.LeanSkills)) > 0 {
+		if !isClaude(h) {
+			return nil, fmt.Errorf("%s has no agents or skills. lean_agents and lean_skills are claude launch options", h.Label)
+		}
+		if req.Lean != nil && !*req.Lean {
+			return nil, fmt.Errorf("lean_agents and lean_skills keep them on a lean launch, and this one says lean: false")
+		}
+	}
+	lean, leanMCP, kit := leanOptions(req, task)
 	if lean && !isClaude(h) {
 		return nil, fmt.Errorf("%s cannot start lean. lean is a claude launch option", h.Label)
 	}
@@ -947,7 +963,7 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 		if agent {
 			stop = stopHookCommand()
 		}
-		return leanArgs(a, readUserSettings(), stop, leanMCP, os.ReadFile)
+		return leanArgs(a, readUserSettings(), stop, leanMCP, kit, os.ReadFile)
 	}
 	if args, err = finishArgs(args); err != nil {
 		return nil, err
@@ -955,13 +971,17 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 	// retag writes req.Tags even when it came out empty, which is a lean card
 	// whose only tag was the lean one.
 	retag := false
-	if req.Lean != nil {
+	if req.Lean != nil || len(req.LeanAgents) > 0 || len(req.LeanSkills) > 0 {
 		base := req.Tags
 		if len(base) == 0 && task != nil {
 			base = task.Tags
 		}
-		if *req.Lean {
-			req.Tags = mergeTags(base, leanTags(leanMCP))
+		if req.Lean == nil || *req.Lean {
+			// A new list replaces the card's, so the old marks come off first.
+			if len(req.LeanAgents) > 0 || len(req.LeanSkills) > 0 {
+				base = withoutKitTags(base)
+			}
+			req.Tags = mergeTags(base, leanTags(leanMCP, kit))
 		} else if kept, cut := withoutLeanTags(base); cut {
 			req.Tags, retag = kept, true
 		}
@@ -1284,7 +1304,7 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 		"source": source, "external_id": req.ExternalID, "window": req.Window,
 		// `cmd` is the command before the lean flags, which carry the whole
 		// settings copy. These two say what was added.
-		"lean": lean, "mcp": leanMCP,
+		"lean": lean, "mcp": leanMCP, "lean_agents": kit.Agents, "lean_skills": kit.Skills,
 		// `cmd` carries the effort and extra args already. The env is keys
 		// only, because its values never leave the room's database.
 		"effort": effort, "env_keys": sortedKeys(extraEnv),

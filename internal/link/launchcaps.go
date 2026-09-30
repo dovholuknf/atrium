@@ -121,6 +121,13 @@ func (p *Proxy) serveLaunchCaps(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		_ = json.NewEncoder(w).Encode(p.launchCapsView())
 	case http.MethodPut:
+		// SET FROM THE HUB'S MACHINE ONLY, like the notify command (f-024). A cap
+		// is the backstop on how many workers a room may run, so raising it is
+		// not something a board reached over an overlay decides. Reading stays open.
+		if !loopbackRemote(r.RemoteAddr) {
+			fail(http.StatusForbidden, "launch caps are set only from the machine the hub runs on")
+			return
+		}
 		var lc LaunchCaps
 		if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&lc); err != nil {
 			fail(http.StatusBadRequest, "could not read that: "+err.Error())
