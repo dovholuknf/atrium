@@ -244,6 +244,14 @@ func (c *controlMCP) server() *mcp.Server {
 			"`env` extra environment, passed as given for anything the two fields do not cover. " +
 			"Empty means the runner's default. The card keeps all four, so a restart comes back " +
 			"the same, and shows them in its details (env by name only).\n\n" +
+			"AGENTS AND SKILLS A LEAN WORKER KEEPS. A lean claude worker has no Agent or Skill tool. " +
+			"`lean_agents` (names of files in the operator's ~/.claude/agents on the room, without .md) " +
+			"keeps the Agent tool and exposes ONLY those, and `lean_skills` (directories in " +
+			"~/.claude/skills) keeps the Skill tool and ONLY those, so a review manager can run its " +
+			"reviewers without the rest of the operator's setup. They ride in a session-only plugin " +
+			"named `atrium`, so they are NAMESPACED: start `atrium:go-security-reviewer`, not " +
+			"`go-security-reviewer`. Either implies lean. Claude only, and a name with no file refuses " +
+			"the launch. The card keeps the lists.\n\n" +
 			"Returns the card id. Use it with `atrium_task`, `atrium_say` and `atrium_exit`, on another room too.",
 	}, audited(c, "ctl-launch", describeLaunch, c.launchHandler))
 
@@ -1145,6 +1153,9 @@ type launchInput struct {
 	// Lean is on unless the caller turns it off. See leanLaunch.
 	Lean *bool    `json:"lean,omitempty" jsonschema:"start a claude worker lean: no user CLAUDE.md, memory, skills or agents, only its brief, the repo, atrium's hooks and the atrium-control and mercurius MCP servers. default true. false starts it with the operator's whole setup"`
 	MCP  []string `json:"mcp,omitempty" jsonschema:"extra MCP servers a lean worker keeps beside atrium-control and mercurius, by name from the runner's MCP config"`
+	// LeanAgents starts the worker lean and keeps its Agent tool plus these agents.
+	LeanAgents []string `json:"lean_agents,omitempty" jsonschema:"agents a lean claude worker can start, by name: the files in the operator's ~/.claude/agents on the room, without .md. it keeps the Agent tool and ONLY these, namespaced as atrium:<name>. a name with no file refuses the launch. implies lean. claude only. the card keeps the list"`
+	LeanSkills []string `json:"lean_skills,omitempty" jsonschema:"skills a lean claude worker can use, by name: the directories in the operator's ~/.claude/skills on the room. it keeps the Skill tool and ONLY these. a name with no directory refuses the launch. implies lean. claude only. the card keeps the list"`
 	// Model and Effort are mapped by the runner's harness row, Args and Env are
 	// passed as given. See docs/runtime/launch-options-design.md.
 	Model  string            `json:"model,omitempty" jsonschema:"which model the runner starts on, passed in the shape its runner row declares (claude and codex: --model). not checked against any list. empty is the runner's default. a runner with no way to take a model refuses"`
@@ -1163,7 +1174,9 @@ func leanLaunch(in launchInput, harness string) bool {
 	if in.Lean != nil {
 		return *in.Lean
 	}
-	return harness == "claude"
+	// lean_agents keeps agents on a lean launch, so it is lean whatever the runner.
+	// A runner with no lean mode refuses it.
+	return harness == "claude" || len(in.LeanAgents) > 0 || len(in.LeanSkills) > 0
 }
 
 type launchOutput struct {
@@ -1263,7 +1276,7 @@ func (c *controlMCP) launchHandler(ctx context.Context, req *mcp.CallToolRequest
 		"why": in.Why, "prompt": prompt,
 		"brief": strings.TrimSpace(in.Brief), "tags": tags,
 		"theme": strings.TrimSpace(in.Theme), "spawned_by": spawnedBy,
-		"lean": leanLaunch(in, harness), "mcp": in.MCP,
+		"lean": leanLaunch(in, harness), "mcp": in.MCP, "lean_agents": in.LeanAgents, "lean_skills": in.LeanSkills,
 		"model": strings.TrimSpace(in.Model), "effort": strings.TrimSpace(in.Effort),
 		"args": in.Args, "env": in.Env,
 	}
@@ -1291,9 +1304,34 @@ func (c *controlMCP) launchHandler(ctx context.Context, req *mcp.CallToolRequest
 	out.Note = "started. its permission requests go to the human on their board, so it will " +
 		"stop at the first gated command unless somebody is watching."
 	// A room older than launch options drops the fields without a word.
-	out.Note = LaunchDroppedWarning(LaunchOptionsDropped(in.Model, in.Effort, in.Args, in.Env,
-		t.Model, t.Effort, t.LaunchArgs, t.LaunchEnvKeys)) + out.Note
+	missed := LaunchOptionsDropped(in.Model, in.Effort, in.Args, in.Env,
+		t.Model, t.Effort, t.LaunchArgs, t.LaunchEnvKeys)
+	missed = append(missed, LeanAgentsDropped(in.LeanAgents, in.LeanSkills, t.Tags)...)
+	out.Note = LaunchDroppedWarning(missed) + out.Note
 	return nil, out, nil
+}
+
+// LeanAgentsDropped names "lean_agents" and "lean_skills" when they were asked
+// for and the card the room handed back carries no `atrium:agent:` or
+// `atrium:skill:` tag, which is how a room that ignored the fields shows. Shared
+// with the stdio control MCP.
+func LeanAgentsDropped(agents, skills, gotTags []string) []string {
+	has := func(prefix string) bool {
+		for _, t := range gotTags {
+			if strings.HasPrefix(strings.TrimSpace(t), prefix) {
+				return true
+			}
+		}
+		return false
+	}
+	var missed []string
+	if len(agents) > 0 && !has("atrium:agent:") {
+		missed = append(missed, "lean_agents")
+	}
+	if len(skills) > 0 && !has("atrium:skill:") {
+		missed = append(missed, "lean_skills")
+	}
+	return missed
 }
 
 // LaunchOptionsDropped names the launch options that were asked for and that

@@ -316,6 +316,8 @@ func New(opts Options) (*Daemon, error) {
 	// this setting is that the pictures are gone, not that they were deleted
 	// tidily.
 	api.ScrapDir = filepath.Join(filepath.Dir(opts.DBPath), "scrap")
+	// Where the lean plugin directories go, in atrium's own state and not a worktree.
+	leanPluginRoot = filepath.Join(filepath.Dir(opts.DBPath), "lean-plugins")
 	if err := os.RemoveAll(api.ScrapDir); err != nil {
 		log.Printf("[atrium] could not empty %s: %v", api.ScrapDir, err)
 	}

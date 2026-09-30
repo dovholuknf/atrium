@@ -40,6 +40,7 @@ func (d *Daemon) startRoomStats(ctx context.Context) {
 		Started:      time.Now(),
 		Usage:        d.st.UsageBuckets,
 		ProcessTimes: roomstats.ProcessTimes,
+		Machine:      roomstats.ReadMachine,
 		Disk: func() (string, uint64, uint64, error) {
 			return roomstats.DiskOf(d.worktreeVolume())
 		},

@@ -68,7 +68,7 @@ func TestNewContextUsesOneNameThroughTheCycle(t *testing.T) {
 	}
 	until(t, "the capture prompt", func() bool { return strings.Contains(f.written(), "HANDOFF.first.md") })
 	d.act.set(task.ID, ActivityThinking, "")
-	if err := os.WriteFile(filepath.Join(dir, "HANDOFF.first.md"), []byte("state"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "HANDOFF.first.md"), handoffBody, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	time.Sleep(20 * time.Millisecond)
@@ -92,22 +92,22 @@ func TestHandoffWrittenIsPerCard(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, HandoffName(b)), []byte("b"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := d.handoffWritten(a.ID, HandoffName(a), since); err == nil {
+	if err := d.handoffWritten(a.ID, HandoffName(a), since, "tok"); err == nil {
 		t.Fatal("card B's handoff satisfied card A")
 	}
 	if err := os.WriteFile(filepath.Join(dir, "HANDOFF.md"), []byte("plain"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := d.handoffWritten(a.ID, HandoffName(a), since); err == nil {
+	if err := d.handoffWritten(a.ID, HandoffName(a), since, "tok"); err == nil {
 		t.Fatal("a plain HANDOFF.md satisfied card A")
 	}
 	if err := d.handoffExists(a.ID, HandoffName(a)); err == nil || !strings.Contains(err.Error(), HandoffName(a)) {
 		t.Fatalf("the wake check did not fail naming the expected file: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, HandoffName(a)), []byte("a"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, HandoffName(a)), handoffBody, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := d.handoffWritten(a.ID, HandoffName(a), since); err != nil {
+	if err := d.handoffWritten(a.ID, HandoffName(a), since, "tok"); err != nil {
 		t.Fatalf("A's own file was refused: %v", err)
 	}
 }
