@@ -1,6 +1,7 @@
 # Git for a room, run from THIS side: the clone is made by PUSH, and its work comes back by FETCH.
 #
 #   pwsh -File scripts\room-git.ps1 init      m1mini [-Target user@host] [-Repo <path>] [-Path <remote path>]
+#   pwsh -File scripts\room-git.ps1 init      m1mini -Check [-Path <remote path>] [-From claude/main]
 #   pwsh -File scripts\room-git.ps1 push-base m1mini [-From claude/main]
 #   pwsh -File scripts\room-git.ps1 fetch     m1mini
 #   pwsh -File scripts\room-git.ps1 worktree  m1mini fb02-proof [-Base hub-main] [-Root <remote dir>]
@@ -50,6 +51,17 @@
 #   3  git is not on the remote. The fail line names the install
 #   4  a remote step failed: init, config, checkout or worktree
 #   5  a push or fetch failed, most often a remote work tree that is dirty: see the output under the fail line
+#
+# init -Check WRITES NOTHING, here or there, so it is safe against a room in use. It reports one line per fact:
+# remote (the git remote is an ssh url), git (on the remote, and Git for Windows on Windows: a Cygwin or MSYS git
+# counts as missing), clone (present, receive.denyCurrentBranch=updateInstead), checkout (hub-main is checked out),
+# fresh (hub-main there equals -From here), and a warn when the clone's work tree is dirty. Every fail names its fix.
+# Its exit codes are its own, and scripts/room-check.ps1 calls exactly this:
+#   0  every fact holds
+#   1  a local problem, as above
+#   2  ssh could not reach the target
+#   3  something is unmet and `init` or `push-base` would fix it
+#   4  something is unmet and a human is needed: no git (or the wrong git) on the remote
 
 param(
     [Parameter(Position = 0)] [string] $Command,
@@ -70,6 +82,8 @@ param(
     [string] $Root,
     # remove: take the clone even when it holds a branch or stash that is not on this machine.
     [switch] $Force,
+    # init: write nothing anywhere, report what init and push-base would have to fix.
+    [switch] $Check,
     [string] $Ssh = 'ssh',
     [string[]] $SshOption = @()
 )
@@ -105,6 +119,7 @@ if ($Command -notin $commands -or -not $Room -or ($Command -eq 'worktree' -and -
     Write-Host '       room-git.ps1 worktree <room> <name> [-Base hub-main] [-Root remote dir]'
     exit 1
 }
+if ($Check -and $Command -ne 'init') { Fail 'args' 1 '-Check goes with init only' }
 if ($Room -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]*$') { Fail 'args' 1 "bad room name '$Room'" }
 if ($Name -and $Name -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]*$') { Fail 'args' 1 "bad worktree name '$Name'" }
 if ($Base -notmatch '^[A-Za-z0-9][A-Za-z0-9._/-]*$') { Fail 'args' 1 "bad -Base '$Base'" }
@@ -292,7 +307,122 @@ function Invoke-PushBase {
     Step 'push-base' 'done' "hub-main on $Room is now $($want.Substring(0, 9)) ($From)"
 }
 
+function Invoke-InitCheck {
+    $origin = (Invoke-Git @('remote', 'get-url', 'origin')).Out | Select-Object -First 1
+    if (-not $Path -and -not ($existing -and $existing.Path) -and $origin -notmatch '[:/]([^/:]+)/([^/]+?)(\.git)?\s*$') {
+        Fail 'repo' 1 "cannot read an owner and repo from origin ($origin). pass -Path"
+    }
+    $owner = $Matches[1]; $repoName = $Matches[2]
+    $sha = Invoke-Git @('rev-parse', '--verify', '-q', "refs/heads/$From^{commit}")
+    if ($sha.Code -ne 0) { Fail 'fresh' 1 "no branch $From here to compare hub-main with" }
+    $want = $sha.Out[0].Trim()
+
+    $fixable = 0
+    $human = 0
+    Test-Ssh
+
+    # The remote here. Not made, only read.
+    if (-not $existing) {
+        Step 'remote' 'fail' "this repository has no git remote called $Room. run: room-git.ps1 init $Room"
+        $fixable++
+    } elseif (-not $existing.Host) {
+        Step 'remote' 'fail' "$Room is $($existing.Url), not an ssh url. run: room-git.ps1 init $Room"
+        $fixable++
+    } else {
+        Step 'remote' 'ok' "$Room = $($existing.Url)"
+    }
+
+    # git on the remote, and the right git on Windows.
+    $s = if ($script:remoteOS -eq 'windows') {
+        @'
+$g = (Get-Command git -ErrorAction SilentlyContinue).Source
+if (-not $g) { exit 3 }
+"git=$(git --version)"
+"path=$g"
+'@
+    } else {
+        'if git --version >/dev/null 2>&1; then echo "git=$(git --version)"; else exit 3; fi'
+    }
+    $r = Invoke-Remote $s
+    if ($r.Code -ne 0) {
+        Step 'git' 'fail' "git is not on $($script:sshTarget). install it there, then rerun: $(Get-GitInstallHint)"
+        Finish 4
+    }
+    $gk = ConvertFrom-KeyValue $r.Out
+    if ($script:remoteOS -eq 'windows' -and ($gk.git -notmatch '\.windows\.' -or $gk.path -match 'cygwin|msys')) {
+        Step 'git' 'fail' "$($gk.git) at $($gk.path) is not Git for Windows, which counts as missing. install it there, then rerun: $(Get-GitInstallHint)"
+        Finish 4
+    }
+    Step 'git' 'ok' "$($gk.git) on $($script:sshTarget)"
+
+    $home_ = Get-RemoteHome
+    $clone = if ($Path) { $Path -replace '\\', '/' } elseif ($existing -and $existing.Path) { $existing.Path } else { "$home_/git/github/$owner/$repoName" }
+    if ($clone -eq '~') { $clone = $home_ } elseif ($clone.StartsWith('~/')) { $clone = $home_ + $clone.Substring(1) }
+    if ($clone -notmatch '^(/|[A-Za-z]:/)') { Fail 'repo' 1 "the remote path must be absolute: $clone" }
+
+    # The clone, READ ONLY: no git init, no config, no checkout.
+    $c = if ($script:remoteOS -eq 'windows') {
+        "`$C = $(Quote-Ps $clone)`n" + @'
+if (-not (Test-Path -LiteralPath (Join-Path $C '.git'))) { 'clone=missing'; exit 0 }
+Set-Location $C
+'clone=present'
+"deny=$(git config receive.denyCurrentBranch 2>$null)"
+"branch=$(git symbolic-ref --short -q HEAD 2>$null)"
+"hubmain=$(git rev-parse --verify -q 'refs/heads/hub-main^{commit}' 2>$null)"
+"dirty=$(if (git status --porcelain 2>$null) { 'yes' } else { 'no' })"
+'@
+    } else {
+        "C=$(Quote-Sh $clone)`n" + @'
+if [ ! -e "$C/.git" ]; then echo clone=missing; exit 0; fi
+cd "$C" || exit 4
+echo clone=present
+echo "deny=$(git config receive.denyCurrentBranch 2>/dev/null)"
+echo "branch=$(git symbolic-ref --short -q HEAD 2>/dev/null)"
+echo "hubmain=$(git rev-parse --verify -q 'refs/heads/hub-main^{commit}' 2>/dev/null)"
+if [ -n "$(git status --porcelain 2>/dev/null)" ]; then echo dirty=yes; else echo dirty=no; fi
+'@
+    }
+    $r = Invoke-Remote $c
+    if ($r.Code -ne 0) { Fail 'clone' 4 "could not read the clone at $clone on $($script:sshTarget)" $r.Out }
+    $kv = ConvertFrom-KeyValue $r.Out
+    $initFix = "run: room-git.ps1 init $Room"
+    if ($kv.clone -ne 'present') {
+        Step 'clone' 'fail' "no clone at $clone on $($script:sshTarget). $initFix"
+        Step 'checkout' 'skip' 'no clone'
+        Step 'fresh' 'skip' 'no clone'
+        $fixable++
+    } else {
+        if ($kv.deny -eq 'updateInstead') { Step 'clone' 'ok' "$clone, receive.denyCurrentBranch=updateInstead" }
+        else {
+            Step 'clone' 'fail' "$clone has receive.denyCurrentBranch='$($kv.deny)', not updateInstead. $initFix"
+            $fixable++
+        }
+        if ($kv.branch -eq 'hub-main') { Step 'checkout' 'ok' 'hub-main' }
+        elseif (-not $kv.hubmain) {
+            Step 'checkout' 'fail' "hub-main does not exist at $clone (checked out: '$($kv.branch)'). run: room-git.ps1 init $Room, which pushes it and checks it out"
+            $fixable++
+        } else {
+            Step 'checkout' 'fail' "$clone has '$($kv.branch)' checked out, not hub-main. $initFix"
+            $fixable++
+        }
+        if (-not $kv.hubmain) {
+            Step 'fresh' 'fail' "no hub-main at $clone. run: room-git.ps1 push-base $Room -From $From"
+            $fixable++
+        } elseif ($kv.hubmain -eq $want) {
+            Step 'fresh' 'ok' "hub-main is $($want.Substring(0, 9)), equal to $From here"
+        } else {
+            Step 'fresh' 'fail' "hub-main is $($kv.hubmain.Substring(0, 9)) there, $From is $($want.Substring(0, 9)) here. run: room-git.ps1 push-base $Room -From $From"
+            $fixable++
+        }
+        if ($kv.dirty -eq 'yes') { Step 'worktree' 'warn' "the work tree at $clone is not clean, so a push-base would be refused. clean it there (git status)" }
+    }
+    if ($human) { Finish 4 }
+    if ($fixable) { Finish 3 }
+    Finish 0
+}
+
 function Invoke-Init {
+    if ($Check) { Invoke-InitCheck; return }
     $origin = (Invoke-Git @('remote', 'get-url', 'origin')).Out | Select-Object -First 1
     if (-not $Path -and $origin -notmatch '[:/]([^/:]+)/([^/]+?)(\.git)?\s*$') {
         Fail 'repo' 1 "cannot read an owner and repo from origin ($origin). pass -Path"
