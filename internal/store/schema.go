@@ -1904,6 +1904,26 @@ var migrations = []struct {
 				ORDER BY e.at DESC, e.id DESC LIMIT 1) = 'notified'`,
 		},
 	},
+	{
+		// One row per terminal start, so an exit is filed once. A table rather than
+		// columns on task because a card holds a runner and a shell at once and is
+		// started again many times: the key is the start, not the card. filed_at is
+		// marked in the same transaction as the exit event. No foreign key: a row
+		// for a card that was pruned is harmless and a host may report one late.
+		// See ptyrun.go.
+		name: "0077_pty_run",
+		stmts: []string{
+			`CREATE TABLE IF NOT EXISTS pty_run (
+				run_id     TEXT PRIMARY KEY,
+				task_id    TEXT NOT NULL,
+				kind       TEXT NOT NULL CHECK (kind IN ('runner','shell')),
+				host       TEXT NOT NULL DEFAULT '',
+				started_at TEXT NOT NULL,
+				filed_at   TEXT NOT NULL DEFAULT ''
+			)`,
+			`CREATE INDEX IF NOT EXISTS pty_run_task ON pty_run (task_id, started_at)`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the

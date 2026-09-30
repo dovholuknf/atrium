@@ -175,6 +175,9 @@ func globalAutoView(s *Server) map[string]any {
 	// Whether a runner the room's exit interrupted mid-turn is told so when it
 	// comes back. On unless switched off. See docs/runtime/unexpected-exit-wake.md.
 	out["unexpected_exit_wake"] = s.st.UnexpectedExitOn()
+	// Whether new terminals go to a pty host. Off, and nothing reads it yet
+	// beyond the one place a terminal is spawned. See internal/daemon/term.go.
+	out["pty_host"] = s.st.PtyHostOn()
 	// Whether the usage tab draws cache reads. Off unless switched on.
 	out["usage_cache_reads"] = s.usageCacheReads()
 	// The cache keep-alive: the default for new Claude cards, whether the room
@@ -302,6 +305,7 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		// Whether this room types the unexpected-exit notice. Stored as `on` or
 		// `off`, and read at the next stop, start or delivery.
 		UnexpectedExit *bool `json:"unexpected_exit_wake"`
+		PtyHost        *bool `json:"pty_host"`
 		// Whether a NEW Claude card starts with the cache keep-alive on. Never
 		// applied to a card that already exists. See keepalive.go.
 		KeepaliveDefault *bool `json:"cache_keepalive_default"`
@@ -753,6 +757,17 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 			v = "on"
 		}
 		if err := s.st.SetSetting(store.SettingUnexpectedExit, v); err != nil {
+			s.fail(w, err)
+			return
+		}
+	}
+
+	if body.PtyHost != nil {
+		v := "off"
+		if *body.PtyHost {
+			v = "on"
+		}
+		if err := s.st.SetSetting(store.SettingPtyHost, v); err != nil {
 			s.fail(w, err)
 			return
 		}
