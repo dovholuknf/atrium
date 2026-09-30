@@ -7487,3 +7487,280 @@ The restart countdown and the paused toast with its resume button stay as toasts
    fix it answered `runner=0`.
 2. On a Linux room with a native claude install (`~/.local/share/claude/versions/<version>`), start a card and look
    at its details on the board: the pid is the claude process, not 0, and `ps -o comm= -p <pid>` shows the version.
+
+## GG. The permission gate hook row (f-006)
+
+Use a scratch HOME so nothing touches the real settings. Set `HOME` and `USERPROFILE` to an empty temp directory and
+point `ATRIUM_HOOK_EXE` at the atrium binary.
+
+**GG1. The gate row and its timeout.**
+1. Run `atrium hook status`. The PreToolUse `permission` row reads `not wired`.
+2. Run `atrium hook install`. Open `.claude/settings.json`: the `hook --event permission` command has `"timeout":
+   86400` and no other atrium command has a timeout.
+3. Change that timeout to 60 and run `atrium hook status`, then `GET /v1/hooks`. The row reports `timeout_short` and
+   `missing` counts it.
+4. Run `atrium hook install --event permission`. The timeout is 86400 again and the matcher on the entry is kept. Set
+   it to 90000 and run it again: nothing is written and there is no new `.bak` file.
+
+**GG2. The dotfiles gate holds the slot.**
+1. Start from a settings file whose PreToolUse has `pwsh -NoProfile -File C:/x/atrium-perm-hook.ps1`, timeout 86400.
+2. `atrium hook status` shows the permission row as wired, and `GET /v1/hooks` carries an `other` line for it and does
+   not count it in `missing`.
+3. `atrium hook install` writes the other hooks and leaves the script row alone. No `hook --event permission` command
+   is added.
+4. `atrium hook install --event permission` fails, saying two gates would ask twice.
+
+**GG3. Both gates.** Add `atrium hook --event permission` beside the script. `GET /v1/hooks` reports
+`two_gates` true, on the row and on the report. Nothing rewrites either entry.
+
+## GH. Mutating control calls are audited (f-020)
+
+1. From a session on a room, `atrium_launch` a worker, then `atrium_cull` it once merged. `curl -s
+   'http://127.0.0.1:7778/_hub/audit?kind=ctl-launch'` and `...?kind=ctl-cull` each show one line on that room, reading
+   `by <you>@<room> (claimed): launch claude as <card>, ok` and `... cull <card> into claude/main, ok`.
+2. `atrium_exit` a card, set an alias with `atrium_alias`, then only read one. `kind=ctl-exit` and `kind=ctl-alias`
+   show one line each for the exit and the set, and none for the read.
+3. `atrium_say` a live session, then a parked one with `wake` true. Only the wake shows, as `kind=ctl-wake-say`.
+   `atrium_report` and `atrium_status` write nothing.
+4. `atrium_launch` with the room at its cap. `kind=ctl-launch` shows `... refused: at the launch cap of N running
+   workers on room <room>`, and no `launch-refused` line is written.
+5. `atrium_cull` a card that is not merged. The line ends with the room's refusal, cut to its first line.
+6. From room A, `atrium_launch room=B`. The line is on room B (`?room=B`), and its text says `by <you>@A`. Room A has
+   no copy.
+7. Read every `ctl-*` line back: none contains a prompt, brief, message text, args or env values.
+
+## GI. Notify fires for a question and for an unseen finished turn (f-023)
+
+1. On a room running this build: `curl -s http://127.0.0.1:7778/v1/state` shows each card with a `seen` object beside
+   its stored fields (`turn_ended_at`, `unseen`, and `open_questions` while a question is owed).
+2. With the hub's notify turned on (`PUT /_hub/notify`, from the hub's machine), have a card end a turn with an
+   `## Open Questions` block while no board tab is visible. One notification arrives with the reason "question".
+3. Answer it, then let a card finish a turn with no board open. One notification arrives with the reason "finished".
+   Look at the card, and no second one comes for the same turn.
+4. A room on an older build still notifies for permission and input, and never for question or finished.
+
+## GJ. The notify command is set and tested from the hub's machine only (f-024)
+
+1. On the hub's machine, `curl -s http://127.0.0.1:7778/_hub/notify` answers the setting, and a PUT of
+   `{"enabled":false,"command":["cmd"]}` answers 200.
+2. From another machine, through the board's overlay address (zrok or ziti), the same GET answers 200, and the PUT
+   and `POST /_hub/notify/test` answer 403 with "set and tested only from the machine the hub runs on". The setting
+   is unchanged afterwards.
+3. `POST /_hub/presence {"visible":true,"tab":"x"}` from the other machine still answers ok.
+
+## GK. The launch cap per room (room-launch-cap)
+
+1. On the hub: `curl -s http://127.0.0.1:7778/_hub/launch-caps` answers `{"default":10,"rooms":{}}` before anything
+   is set.
+2. `curl -s -X PUT -H 'Content-Type: application/json' -d '{"default":5,"rooms":{"claude-sg4":10,"sg3":5,"m1mini":5}}'
+   http://127.0.0.1:7778/_hub/launch-caps` answers the same caps back. A GET after a hub restart still does.
+3. A PUT with a cap of -1 or 1000, a blank room name, or not JSON answers 400 and changes nothing. A PUT from another
+   machine, through the board's overlay address, answers 403, and a GET from there answers the caps.
+4. With sg3 at 5 live `atrium:subagent` workers, `atrium_launch room=sg3` is refused with "at the launch cap of 5
+   running workers on room sg3", and a launch onto claude-sg4 with fewer than 10 there goes through.
+5. Directors and parked workers (no live terminal) do not count on either room.
+
+## GL. Cache chip and cache line on every Claude card
+
+### GL1. Every Claude card shows its cache state without hover
+Look at the stack, the terminals list, the board and an attached terminal's header. Each Claude card carries one chip: `❄ warm → 03:32`, `❄ kept warm 3× · next ~03:27`, `❄ cold since 02:04`, `❄ no cache yet`, `○ off · cold` or `⊘ stopped · not worth it`. A shell card draws no chip. Hover adds the raw why and state, never the answer.
+
+### GL2. A card that will not refresh says why
+A warm card the daemon is not going to refresh reads `❄ warm → 03:32 · won't refresh: busy` (or small, 5m cache, local hooks, dialog open, budget spent, parked). "next ~HH:MM" appears only when the card is simply not due yet.
+
+### GL3. The chip flips without a reload
+Watch a card whose cache runs out in a few seconds. It changes from warm to cold on its own, with no request in the network log.
+
+### GL4. The summary line
+The stack and the terminals list show `cache: 5 warm · 2 kept warm · 9 cold · keep-alive 83 refreshes this week` over the Claude cards they show, not archived. Search narrows the counts. A keep-alive event moves them. Tapping the line opens the gear on the keep-alive setting.
+
+### GL5. A phone uses the short text
+At 390px the chips read `❄ → 03:32`, `❄ 3× next ~03:27`, `❄ cold`, `⊘ not worth it`, `○ off`, and no row overflows. The full words are in the tooltip.
+
+## GM. A held message names what holds it
+
+### GM1. Held by a new-context cycle
+
+1. Start a new-context cycle on a card and, during its capture step, send it a message from another card.
+2. Look at the card's held chip and GET /v1/tasks/<id>/typing.
+
+**Expected:** the chip says the message waits for the new-context cycle, not the line, and /typing shows the line empty.
+
+### GM2. Held by a shut line
+
+1. Type half a sentence into a card's terminal without sending it.
+2. Send that card a message from another card.
+
+**Expected:** the chip says the line is holding it, and clears when the line is submitted or emptied.
+
+## GN. Cull with an abbreviated tip
+
+1. In a throwaway room, make a worker card whose branch is merged, and note its head with `git rev-parse HEAD`.
+2. Call `atrium_cull card=<id> tip=<first 7 characters of the head>`.
+   **Expected:** the card is culled, exactly as with the full 40-character sha.
+3. On another throwaway worker, call `atrium_cull` with `tip=deadbeefdeadbeef`.
+   **Expected:** refused with "the tip deadbeefdeadbeef is not a commit in this room's repository", not "new commits".
+4. Commit once more on a throwaway worker after noting its head, then cull with the old head abbreviated.
+   **Expected:** refused with "new commits since the merged branch was fetched", both shas 10 characters long.
+
+## GO. A launch with a used title starts a new card
+
+### GO1. Same title after the card finished
+
+1. Launch a session with title `smoke`. Finish it so its card is done.
+2. Launch again with title `smoke`.
+
+**Expected:** a new card named `smoke-2` starts, the old card is untouched and is not re-prompted.
+
+### GO2. Explicit card id still reuses
+
+1. Launch onto the done card by its id.
+
+**Expected:** that card starts again under its own name.
+
+## GP. A directory-named hook and a finished card (r-040)
+
+1. Finish a card named `x`. Start a second card `y` in a checkout, with a pid.
+2. Post a session event for that same pid and checkout naming the session `x` with the name taken from the directory.
+3. Look at the board and the daemon log.
+
+**Expected:** the board is not halted. Card `y` keeps its name and its pid and directory are refreshed. The finished
+card `x` still holds `x`. A name that was told, not guessed, still matches the finished card as before.
+
+## GQ. A prune from the all-rooms view reaches every room (92)
+
+1. With two rooms attached, each holding done cards, `curl -s -X POST -H 'Content-Type: application/json' -d
+   '{"statuses":["done"]}' http://127.0.0.1:7778/v1/tasks/prune` with no `X-Atrium-Room` answers `removed` equal to
+   the done cards on both rooms together, and both rooms' done columns are empty.
+2. The same with `-H 'X-Atrium-Room: <one room>'` clears that room only. The other keeps its done cards.
+3. Stop one room's link, then prune with no room named. The answer is 200 with the stopped room in `unreached`, within
+   a few seconds.
+4. After @ui's half lands: on the board's all-rooms view, "clear" on the done column empties it on every room.
+
+## GR. A worker is shown a worker's control tools (f-021)
+
+1. Launch a worker with `atrium_launch` and `tags: ["atrium:subagent"]`. In its Claude Code, `/mcp` on atrium-control
+   lists six tools: `atrium_status`, `atrium_peers`, `atrium_say`, `atrium_report`, `atrium_task`, `atrium_alias`.
+2. In a director (tagged `atrium:director`), in a session tagged both, and in a session a human started with no tags,
+   `/mcp` lists every tool, including `atrium_launch`, `atrium_exit`, `atrium_cull`, `restart_atrium` and
+   `atrium_wake_after_restart`.
+3. From the worker, ask it to call `atrium_cull`. It answers unknown tool, and nothing is audited.
+4. Retag a running worker as a director. Its list does not change until it is restarted, then it shows every tool.
+5. Stop the room, then start a worker while the hub cannot reach it. The worker's list is the full one, since a failed
+   lookup fails open.
+6. A director's `atrium_launch` still writes one `kind=ctl-launch` line to `/_hub/audit`.
+
+## GS. Notify, the cr48 lows (f-025)
+
+1. With notify on, rename a card so its name holds a control character (for example via the API with `\u0000`). Its
+   notification still runs, and the command's `ATRIUM_NOTIFY_NAME` has the name without the NUL.
+2. Set a command, turn notify on, then remove that program from the PATH. `PUT /_hub/notify {"enabled":false,
+   "command":[<the same>]}` answers 200 and notify is off. Turning it back on with the same command answers 400.
+3. Open the board with notify on and the tab visible, then stop and restart the hub's event stream (drop the network
+   for a few seconds). `GET /_hub/notify` still says `suppressed: true` once the stream is back.
+4. Turn notify off, let several cards start waiting, turn it on. No burst of notifications for what was already
+   waiting, and the next new wait notifies once.
+
+## GT. A lean launch keeps only the agents and skills it names
+
+### GT1. Named agents are available and nothing else is
+
+1. Put `demo-a.md` and `demo-b.md` (frontmatter with a `description`, then a prompt) in `~/.claude/agents` on the room.
+2. `atrium_launch` a claude worker in a scratch directory with `lean_agents: ["demo-a"]` and the prompt "list the
+   subagent types you can start, names only".
+
+**Expected:** the answer lists `atrium:demo-a` (plugin agents are namespaced) and does not list `demo-b`. Only Claude
+Code's built-in types appear beside it. The card's tags include `atrium:lean` and `atrium:agent:demo-a`. The scratch
+directory holds no new files: the plugin is under `lean-plugins/` in atrium's state.
+
+### GT2. Named skills
+
+1. Put a skill `demo-skill` (a directory with `SKILL.md`) in `~/.claude/skills`.
+2. Launch with `lean_skills: ["demo-skill"]` and ask for the skill names available to the Skill tool.
+
+**Expected:** `atrium:demo-skill` is listed and none of the operator's other skills. The card has `atrium:skill:demo-skill`.
+
+### GT3. Everything else lean drops stays dropped
+
+1. In a worker from step 1 ask what skills, memory and CLAUDE.md instructions it has.
+
+**Expected:** none of the operator's skills, memory index or global CLAUDE.md. The status line still shows.
+
+### GT4. A restart keeps the lists
+
+1. Restart the room, or exit the worker and reopen its card.
+
+**Expected:** it comes back with the Agent tool and `atrium:demo-a` only.
+
+### GT5. Refusals
+
+1. Launch with `lean_agents: ["no-such-agent"]`, then with `lean_skills: ["no-such-skill"]`.
+2. Launch with `lean_agents: ["../settings"]`.
+3. Launch a codex runner with `lean_agents: ["demo-a"]`.
+4. Launch a claude worker with `lean: false` and `lean_agents: ["demo-a"]`.
+
+**Expected:** each launch is refused with an error, the first two naming the missing name, and no card is left behind.
+
+## GU. Task events coalesce per card
+
+### GU1. A burst shows the final state
+Open the board and a card that is running. Trigger several changes to it in quick succession (for example, answer three asks or rename it three times inside a second).
+Watch the card on the board.
+
+**Expected:** the card shows the final state within about a fifth of a second of the last change. Nothing stale flashes back.
+
+### GU2. A deleted card stays gone
+Change a card, then delete it straight away (within a fraction of a second).
+
+**Expected:** the card leaves the board and does not reappear.
+
+### GU3. A restart wake still shows every card
+Restart the room with several cards on the board.
+
+**Expected:** every card appears with its ask counts, replies owed and seen state, and the room shuts down promptly when stopped again.
+
+## GV. New context accepts a handoff written before the capture
+
+### GV1. An already written handoff plus the token
+
+1. On a supervised card, have it write its HANDOFF file (at least 200 bytes) and wait a minute.
+2. Press new context. The typed capture prompt includes a line `atrium-capture: <token>`.
+3. Let the card reply "already written" after adding that line to the top of the file.
+
+**Expected:** the cycle goes on to `/clear` and the wake. It does not fail on the file's age.
+
+### GV2. A stale file without the token
+
+1. Leave an old HANDOFF file of 200 bytes or more, and have the card answer without touching it.
+
+**Expected:** the chip fails with one sentence naming the file, the directory and the line to add. Nothing is cleared.
+
+### GV3. A file under 200 bytes
+
+1. Have the card write a file holding only the `atrium-capture:` line.
+
+**Expected:** the chip fails saying the file is too small. Nothing is cleared.
+
+## GW. A room reports machine CPU and memory
+
+### GW1. The machine object arrives on the stats push
+
+1. Start a daemon and read `GET /v1/room/stats` at once, then again after about 20 seconds.
+
+**Expected:** the first read has `machine.mem_used_bytes`, `mem_total_bytes` and `mem_series_pct`, and no `cpu_pct`
+yet. The second also has `cpu_pct` (0 to 100) and `cpu_series_pct`. On macOS `cpu_pct` and `cpu_series_pct` stay
+absent. `mem_used_bytes` matches Task Manager, `free -b` (total minus available) or Activity Monitor.
+
+### GW2. The series line up with the token series
+
+1. Compare the length of `machine.cpu_series_pct` and `machine.mem_series_pct` with `tokens.series_per_min`.
+2. Generate CPU load on the machine for a minute.
+
+**Expected:** all three have 60 points, oldest first, the last point being the minute `tokens.series_end` names. The
+last CPU point rises. Minutes before the daemon started are null.
+
+### GW3. The rooms dashboard shows it
+
+1. Open the rooms dashboard.
+
+**Expected:** each room's MACHINE tile shows a cpu and mem percentage and a sparkline, not "cpu -" and "mem -".

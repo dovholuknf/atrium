@@ -56,7 +56,7 @@ func finishCycle(t *testing.T, d *Daemon, id, dir string, f *fakePTY) {
 		t.Fatal(err)
 	}
 	// The card's own file (item 91): a plain HANDOFF.md no longer counts.
-	if err := os.WriteFile(filepath.Join(dir, HandoffName(task)), []byte("state"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, HandoffName(task)), handoffBody, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	time.Sleep(60 * time.Millisecond)
