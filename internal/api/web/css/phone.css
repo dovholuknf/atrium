@@ -264,11 +264,16 @@
      chevron, which sets body.hdr-open (js/termfull.js, saved as atrium.phone.headerOpen). Auto mode ON keeps a
      small AUTO marker in the slim row: the board approving by itself is never hidden. The landscape
      auto-collapse and the old full hide are gone: a slim row does not need hiding. */
-  #hdr-toggle, .conn-n { display: none; }
+  #hdr-toggle, .conn-n, .mlink { display: none; }
   @media (max-width: 900px) and (pointer: coarse) {
     header { padding-top: env(safe-area-inset-top, 0px); }
     #hdr-toggle { display: inline-flex; min-width: 44px; min-height: 44px; }
     header .bar .conn { display: flex; }
+    /* The way to /m, the phone page. A quiet word in the slim row, thumb sized. */
+    header .bar > .mlink {
+      display: inline-flex; align-items: center; min-height: 44px; padding: 0 8px; order: 5;
+      font-size: var(--fs-sm); color: var(--teal); text-decoration: none; white-space: nowrap;
+    }
     body.hdr-open header .bar .newagent { display: inline-flex; }
     body:not(.hdr-open) header .bar {
       flex-wrap: nowrap; align-items: center; padding: 4px 8px; gap: var(--sp-2);
