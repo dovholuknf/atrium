@@ -33,6 +33,14 @@ function cardUrlIsCard() {
   return !!s && s.kind !== "room";
 }
 
+// termOnly reports whether this window is a popped-out terminal.
+// An old `#term=` link wins over a path, so every link already sent keeps working.
+//
+// HERE, AND THIS FILE LOADS RIGHT AFTER core.js, because a dozen files ask it and some ask from a callback. Between
+// two script tags the browser runs whatever network callback is ready, so a fetch answered before solo.js had loaded
+// threw "termOnly is not defined" now and then. Nothing in this file runs at load.
+function termOnly() { return /^#term=/.test(location.hash) || cardUrlIsCard(); }
+
 // `/room/<room>` scopes the board the way picking the room in the header does. Written before anything asks for the
 // room, so there is no reload. A card remembered from another room goes with it, as `pickRoom` does.
 function cardUrlScope() {
