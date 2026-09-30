@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"os"
 	"runtime"
 	"testing"
 	"time"
@@ -26,13 +27,27 @@ func shellCard(t *testing.T, d *Daemon) *store.Task {
 		Cmd: cmd, Args: args, LaunchMode: store.LaunchPTY}); err != nil {
 		t.Fatal(err)
 	}
-	task, err := d.Launch(LaunchRequest{Harness: "shelltest", Cwd: t.TempDir()})
+	// NOT t.TempDir: on Windows the console host lets go of the directory a moment
+	// after the shell exits, and TempDir fails the test when it cannot remove it.
+	dir, err := os.MkdirTemp("", "atrium-reopen-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Best effort, and never a failure: a directory the console host still holds
+	// is left in the temp directory.
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	task, err := d.Launch(LaunchRequest{Harness: "shelltest", Cwd: dir})
 	if err != nil {
 		t.Skipf("could not spawn a test runner on this machine: %v", err)
 	}
+	// Waited out, not just asked: on Windows the shell holds its directory, and
+	// the test's TempDir cannot be removed while it does.
 	t.Cleanup(func() {
 		if r := d.sup.get(task.ID); r != nil {
 			windDown(r, time.Second, d.exitKeysFor(task.ID))
+		}
+		for end := time.Now().Add(10 * time.Second); time.Now().Before(end) && d.sup.get(task.ID) != nil; {
+			time.Sleep(50 * time.Millisecond)
 		}
 	})
 	return task

@@ -99,6 +99,12 @@ func (s *Server) byName(next http.Handler) http.Handler {
 			t, err = s.st.GetByAlias(name)
 		}
 		switch {
+		case errors.Is(err, sql.ErrNoRows) && strings.EqualFold(r.Header.Get("Upgrade"), "websocket"):
+			// A TERMINAL IS THE HANDLER'S TO ANSWER. The attach knows cards the
+			// store does not list yet (a runner coming up), and a JSON 404 is no
+			// answer to a websocket handshake anyway.
+			next.ServeHTTP(w, r)
+			return
 		case errors.Is(err, sql.ErrNoRows):
 			s.noCardCalled(w, seg)
 			return
