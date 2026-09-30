@@ -7890,3 +7890,16 @@ Needs a hub with one room and two browsers on the board. `curl` stands in for th
 4. (H1) A name nothing holds answers 404 with `would_work` listing the live handles, and names a room that did not answer.
 5. (H1) The board still opens, attaches terminals and drags cards: every board request names an id and asks no room
    for its list.
+
+## HC. The browser edge (security stage 0 and 1)
+
+1. `curl -s -o NUL -w "%{http_code}" -X POST -H "Origin: https://evil.example" -H "Sec-Fetch-Site: cross-site"
+   http://127.0.0.1:7778/v1/launch` answers 403. The same without the two headers answers as before. Repeat on the
+   room's own board port and on the agent port.
+2. `curl -s -o NUL -w "%{http_code}" -H "Host: evil.example" http://127.0.0.1:7778/` answers 403. `localhost` and
+   `127.0.0.1` answer 200.
+3. A websocket upgrade to `/v1/tasks/<id>/attach` with `Origin: https://evil.example` answers 403, on the hub and on the
+   room's own port. The board's own terminals still attach, through the hub and on the room's own port.
+4. The board still works over a zrok share and a lent session: launch, drag, attach.
+5. With the agent listener answering 403 to everything, a session starts, runs a gated tool call through Claude Code's
+   own prompt, and ends.

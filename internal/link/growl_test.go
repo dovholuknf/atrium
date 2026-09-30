@@ -90,6 +90,7 @@ func (g testGrowlStore) Wake() ([]string, error)          { return g.s.GrowlWake
 func (g testGrowlStore) Reminded(id string, n int) error  { return g.s.GrowlReminded(id, n) }
 func (g testGrowlStore) Prune() error                     { _, err := g.s.GrowlPrune(); return err }
 func (g testGrowlStore) Setting(n string) (string, error) { return g.s.Setting(n) }
+func (g testGrowlStore) SetSetting(n, v string) error     { return g.s.SetSetting(n, v) }
 
 func (g testGrowlStore) Rooms() ([]string, error) {
 	rooms, err := g.s.Rooms()
@@ -136,6 +137,10 @@ func newGrowlRig(t *testing.T) *growlRig {
 	}
 	t.Cleanup(func() { st.Close() })
 	if _, err := st.Add("sparta", hubstore.TransportDirect); err != nil {
+		t.Fatal(err)
+	}
+	// Growlers began long ago, so every question in these tests is news.
+	if err := st.SetSetting(settingGrowlSince, "2000-01-01T00:00:00Z"); err != nil {
 		t.Fatal(err)
 	}
 	rig := &growlRig{st: st, clock: time.Now().UTC(), online: true}
@@ -515,5 +520,48 @@ func TestGrowlDeployHold(t *testing.T) {
 	rig.g.tick(context.Background())
 	if len(rig.live(t)) != 0 {
 		t.Fatalf("a lifted hold kept its growler")
+	}
+}
+
+// A QUESTION OLDER THAN THE GROWLERS IS HISTORY. It raises nothing, one already
+// raised ends, and a permission that old still growls.
+func TestGrowlSinceSkipsOldQuestions(t *testing.T) {
+	rig := newGrowlRig(t)
+	rig.announce(t, growlQuestionCard("q"))
+	if len(rig.live(t)) != 1 {
+		t.Fatal("the question did not growl before the seed moved")
+	}
+	if err := rig.st.SetSetting(settingGrowlSince, "2026-09-30T12:00:00Z"); err != nil {
+		t.Fatal(err)
+	}
+	rig.g.mu.Lock()
+	rig.g.since = time.Time{}
+	rig.g.mu.Unlock()
+	now := rig.g.now()
+	rig.announce(t, growlQuestionCard("q"), growlPermCard("p", now.Add(-72*time.Hour)))
+	rows := rig.live(t)
+	if len(rows) != 1 || rows[0].CardID != "p" {
+		t.Fatalf("after the seed the growlers are %+v, want only the permission", rows)
+	}
+}
+
+// THE SEED IS WRITTEN THE FIRST TIME, and read back after.
+func TestGrowlSinceIsWrittenOnce(t *testing.T) {
+	rig := newGrowlRig(t)
+	_ = rig.st.SetSetting(settingGrowlSince, "")
+	rig.g.mu.Lock()
+	rig.g.since = time.Time{}
+	rig.g.mu.Unlock()
+	first := rig.g.growlSince()
+	v, _ := rig.st.Setting(settingGrowlSince)
+	if v == "" || first.IsZero() {
+		t.Fatalf("the seed was not written: %q", v)
+	}
+	rig.advance(time.Hour)
+	rig.g.mu.Lock()
+	rig.g.since = time.Time{}
+	rig.g.mu.Unlock()
+	if again := rig.g.growlSince(); !again.Equal(first) {
+		t.Fatalf("the seed moved from %v to %v", first, again)
 	}
 }
