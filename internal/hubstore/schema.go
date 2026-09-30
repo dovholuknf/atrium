@@ -186,6 +186,41 @@ var migrations = []struct {
 			)`,
 		},
 	},
+	{
+		// WORK THAT WAITS ON OTHER WORK. See deps.go and
+		// docs/runtime/item-dependencies-design.md. On the hub because the hub sees
+		// every room and the integration branch, so a gate across rooms is one row.
+		//
+		// The partial index is what lets a met gate be added again: only OPEN rows
+		// are unique. SQLite and Postgres both have partial indexes.
+		name: "0004_item_gate",
+		stmts: []string{
+			`CREATE TABLE IF NOT EXISTS item_gate (
+				id        TEXT PRIMARY KEY,
+				repo      TEXT NOT NULL,
+				item      TEXT NOT NULL,
+				kind      TEXT NOT NULL CHECK (kind IN ('item','cond')),
+				target    TEXT NOT NULL,
+				why       TEXT NOT NULL DEFAULT '',
+				added_by  TEXT NOT NULL,
+				added_at  TEXT NOT NULL,
+				met_at    TEXT NOT NULL DEFAULT '',
+				met_by    TEXT NOT NULL DEFAULT '' CHECK (met_by IN ('','atrium','human')),
+				met_why   TEXT NOT NULL DEFAULT '',
+				told_at   TEXT NOT NULL DEFAULT ''
+			)`,
+			`CREATE UNIQUE INDEX IF NOT EXISTS item_gate_open ON item_gate (repo, item, kind, target) WHERE met_at = ''`,
+			`CREATE INDEX IF NOT EXISTS item_gate_item ON item_gate (repo, item)`,
+			`CREATE TABLE IF NOT EXISTS item_rename (
+				repo    TEXT NOT NULL,
+				from_id TEXT NOT NULL,
+				to_id   TEXT NOT NULL,
+				at      TEXT NOT NULL,
+				by      TEXT NOT NULL,
+				PRIMARY KEY (repo, from_id)
+			)`,
+		},
+	},
 }
 
 func (s *Store) migrate() error {
