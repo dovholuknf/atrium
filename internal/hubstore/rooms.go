@@ -249,6 +249,35 @@ func (s *Store) ByName(name string) (*Room, error) {
 	return s.one(`WHERE name_key = ?`, fold(name))
 }
 
+// MarkEnrolled records that this room has proved its name with a certificate.
+// Only the first time is kept, so it says when the name became proven.
+func (s *Store) MarkEnrolled(id string) error {
+	return s.guard(func() error {
+		_, err := s.db.Exec(`UPDATE room SET enrolled_at = ? WHERE id = ? AND enrolled_at = ''`,
+			ts(now()), id)
+		return err
+	})
+}
+
+// Enrolled reports whether the room called this has ever proved its name with a
+// certificate. The hub refuses the old overlay path for a name that has.
+//
+// A NAME WITH NO ROW IS NOT ENROLLED, and the attach is refused for having no
+// row instead. A room forced out and added again is a new row, and starts
+// unproven: it is a different room that happens to share the name.
+func (s *Store) Enrolled(name string) (bool, error) {
+	var at string
+	err := s.guard(func() error {
+		err := s.db.QueryRow(`SELECT enrolled_at FROM room WHERE name_key = ?`, fold(name)).Scan(&at)
+		if errors.Is(err, sql.ErrNoRows) {
+			at = ""
+			return nil
+		}
+		return err
+	})
+	return at != "", err
+}
+
 const roomCols = `SELECT id, name, self_name, transport, state, created_at,
 	first_seen_at, last_seen_at, version, cleared_at`
 

@@ -351,6 +351,25 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 			" without a certificate. re-join it with a new join string from `"+
 			atriumCmd("rooms token")+" "+name+"`")
 	}
+	// A PROVEN NAME CLAIMED ON THE OLD PATH, which is either somebody else or a
+	// room dialling with a join string older than its certificate. The same
+	// `room-unproven` kind, so `rooms log` shows it beside the attaches. See f-026.
+	h.OnUnprovenRefused = func(name, over, why string) {
+		proxy.RecordAudit(name, "room-unproven", "refused over "+over+" without a certificate: "+why+
+			". if this is that room, check it dials with the certificate `"+atriumCmd("room join")+"` left it")
+	}
+	h.Enrolled = func(name string) bool {
+		enrolled, err := store.Enrolled(name)
+		// A STORE THAT CANNOT ANSWER REFUSES the old path for this one name, unlike
+		// `LegacyRefused`, which turns everyone away. A store that errors halts, and
+		// the listener closes behind it in any case.
+		return err != nil || enrolled
+	}
+	h.Proved = func(name string) {
+		if r, err := store.ByName(name); err == nil {
+			_ = store.MarkEnrolled(r.ID)
+		}
+	}
 	h.OnDetach = func(name, why string) {
 		proxy.RecordAudit(name, "room-detached", why)
 	}
