@@ -1,6 +1,8 @@
 package daemon
 
 import (
+	"errors"
+	"strings"
 	"testing"
 
 	"github.com/dovholuknf/atrium/internal/store"
@@ -13,15 +15,15 @@ import (
 // normal case, not an unlucky one.
 func TestLaunchedNameDisambiguatesACollision(t *testing.T) {
 	live := map[string]bool{}
-	taken := func(n string) bool { return live[n] }
+	taken := func(n string) (bool, error) { return live[n], nil }
 
-	first := launchedName("", "/work/atrium", taken)
+	first, _ := launchedName("", "/work/atrium", taken)
 	if first != "atrium" {
 		t.Fatalf("first launch got %q, want the directory leaf %q", first, "atrium")
 	}
 	live[first] = true
 
-	second := launchedName("", "/work/atrium", taken)
+	second, _ := launchedName("", "/work/atrium", taken)
 	if second == first {
 		t.Fatalf("a second launch in the same dir reused %q", second)
 	}
@@ -33,8 +35,8 @@ func TestLaunchedNameDisambiguatesACollision(t *testing.T) {
 // A run of collisions keeps counting up rather than sticking at -2 forever.
 func TestLaunchedNameCountsPastTheFirstCollision(t *testing.T) {
 	live := map[string]bool{"atrium": true, "atrium-2": true, "atrium-3": true}
-	taken := func(n string) bool { return live[n] }
-	got := launchedName("", "/work/atrium", taken)
+	taken := func(n string) (bool, error) { return live[n], nil }
+	got, _ := launchedName("", "/work/atrium", taken)
 	if got != "atrium-4" {
 		t.Fatalf("with -2 and -3 taken the next name was %q, want %q", got, "atrium-4")
 	}
@@ -43,8 +45,8 @@ func TestLaunchedNameCountsPastTheFirstCollision(t *testing.T) {
 // A LAUNCH TITLE IS PREFERRED OVER THE DIRECTORY LEAF, because the board shows
 // the title and a name slugged from it reads as the same work.
 func TestLaunchedNamePrefersTheTitle(t *testing.T) {
-	free := func(string) bool { return false }
-	got := launchedName("Fix the flaky attach test", "/work/atrium", free)
+	free := func(string) (bool, error) { return false, nil }
+	got, _ := launchedName("Fix the flaky attach test", "/work/atrium", free)
 	if got != "fix-the-flaky-attach-test" {
 		t.Fatalf("title-derived name was %q", got)
 	}
@@ -54,8 +56,8 @@ func TestLaunchedNamePrefersTheTitle(t *testing.T) {
 // the same directory get distinct names.
 func TestLaunchedNameDisambiguatesADuplicateTitle(t *testing.T) {
 	live := map[string]bool{"review-the-pr": true}
-	taken := func(n string) bool { return live[n] }
-	got := launchedName("review the PR", "/work/atrium", taken)
+	taken := func(n string) (bool, error) { return live[n], nil }
+	got, _ := launchedName("review the PR", "/work/atrium", taken)
 	if got != "review-the-pr-2" {
 		t.Fatalf("duplicate title was named %q, want %q", got, "review-the-pr-2")
 	}
@@ -97,7 +99,7 @@ func TestLaunchedNameSkipsADeadCardsName(t *testing.T) {
 	if err := d.st.SetStatus(old.ID, "done"); err != nil {
 		t.Fatal(err)
 	}
-	if got := d.launchedName("smoke", "/work/smoke"); got != "smoke-2" {
+	if got, _ := d.launchedName("smoke", "/work/smoke"); got != "smoke-2" {
 		t.Fatalf("a title matching a done card got %q, want smoke-2", got)
 	}
 }
@@ -115,7 +117,45 @@ func TestLaunchedNameSkipsAnArchivedCardsName(t *testing.T) {
 	if err := d.st.ArchiveCulled(old.ID, "test"); err != nil {
 		t.Fatal(err)
 	}
-	if got := d.launchedName("smoke", "/work/smoke"); got != "smoke-2" {
+	if got, _ := d.launchedName("smoke", "/work/smoke"); got != "smoke-2" {
 		t.Fatalf("a title matching an archived card got %q, want smoke-2", got)
+	}
+}
+
+// A HALTED STORE FAILS THE LAUNCH, it does not loop. WireNameHeld used to answer
+// true on any error, so a store that halted mid-launch spun launchedName forever
+// while holding the launch path. r-044.
+func TestLaunchedNameFailsOnAHaltedStore(t *testing.T) {
+	d := testDaemon(t)
+	d.st.Close()
+	got, err := d.launchedName("smoke", "/work/smoke")
+	if err == nil {
+		t.Fatalf("a closed store named the launch %q instead of failing", got)
+	}
+}
+
+// The cap is the backstop: a taken func that says true forever fails at it.
+func TestLaunchedNameGivesUpAtTheCap(t *testing.T) {
+	calls := 0
+	always := func(string) (bool, error) { calls++; return true, nil }
+	got, err := launchedName("smoke", "/work/smoke", always)
+	if err == nil {
+		t.Fatalf("an always-held name produced %q", got)
+	}
+	if !strings.Contains(err.Error(), "smoke") {
+		t.Fatalf("error %q does not name the base", err)
+	}
+	if calls > maxNameSuffix+1 {
+		t.Fatalf("asked %d times, cap is %d", calls, maxNameSuffix)
+	}
+}
+
+// A store error from taken is returned, wrapped, and stops the search.
+func TestLaunchedNameReturnsTheStoreError(t *testing.T) {
+	boom := errors.New("disk gone")
+	calls := 0
+	failing := func(string) (bool, error) { calls++; return false, boom }
+	if _, err := launchedName("smoke", "/work/smoke", failing); !errors.Is(err, boom) || calls != 1 {
+		t.Fatalf("err=%v calls=%d, want the store error after one call", err, calls)
 	}
 }
