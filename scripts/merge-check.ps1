@@ -21,6 +21,7 @@
 .EXAMPLE
   pwsh scripts/merge-check.ps1                 # after a merge commit: Base is HEAD^1
   pwsh scripts/merge-check.ps1 -SkipGo -NoBoard
+  pwsh scripts/merge-check.ps1 -NoUI           # the merger's run: go and build only, no board, no headless, no skins
 #>
 param(
   [string]$NodePath = $env:ATRIUM_NODE_PATH,
@@ -30,6 +31,7 @@ param(
   [switch]$SkipGo,
   [switch]$SkipHeadless,
   [switch]$SkipBuild,
+  [switch]$NoUI,
   [string]$WorktreeRoot = 'D:/worktrees/claude/atrium',
   # Tests known to fail under `go test ./...` load and pass alone. Regexes on the top-level test name.
   [string[]]$Flaky = @()
@@ -133,44 +135,50 @@ if ($SkipGo) {
 }
 
 # ---- 2. board
-$np = $null
-if ($SkipHeadless) {
-  $summary.Add('board headless skipped')
-} else {
-  $np = Find-NodePath
-  if (-not $np) {
-    Fail 'playwright not found' ("no node_modules with playwright anywhere. pass -NodePath or set ATRIUM_NODE_PATH, run scripts/setup-merge-worktree.ps1, or pass -SkipHeadless to say the headless run is meant to be skipped.")
-  }
-}
-if ($SkipHeadless -or $np) {
-  if ($np) { $env:NODE_PATH = $np }
-  $out = & bash scripts/check-board.sh 2>&1 | Out-String
-  $rc = $LASTEXITCODE
-  $headless = ($SkipHeadless -or $out -notmatch 'so the headless board\s+check is skipped|headless board check is skipped')
-  if ($rc -ne 0) {
-    Fail 'check-board.sh' $out
-  } elseif (-not $headless) {
-    Fail 'check-board.sh passed but the headless run skipped itself (playwright or chromium missing)' $out
+# -NoUI SKIPS BOTH, check-board.sh included and not only its headless run. The merger does not run the UI tests: @ui
+# runs them on claude/main on its own schedule, and a merge or a hub deploy does not wait for them.
+if (-not $NoUI) {
+  $np = $null
+  if ($SkipHeadless) {
+    $summary.Add('board headless skipped')
   } else {
-    $summary.Add($(if ($SkipHeadless) { 'board ok (no headless)' } else { "board ok (headless ran, NODE_PATH=$np)" }))
+    $np = Find-NodePath
+    if (-not $np) {
+      Fail 'playwright not found' ("no node_modules with playwright anywhere. pass -NodePath or set ATRIUM_NODE_PATH, run scripts/setup-merge-worktree.ps1, or pass -SkipHeadless to say the headless run is meant to be skipped.")
+    }
   }
-}
+  if ($SkipHeadless -or $np) {
+    if ($np) { $env:NODE_PATH = $np }
+    $out = & bash scripts/check-board.sh 2>&1 | Out-String
+    $rc = $LASTEXITCODE
+    $headless = ($SkipHeadless -or $out -notmatch 'so the headless board\s+check is skipped|headless board check is skipped')
+    if ($rc -ne 0) {
+      Fail 'check-board.sh' $out
+    } elseif (-not $headless) {
+      Fail 'check-board.sh passed but the headless run skipped itself (playwright or chromium missing)' $out
+    } else {
+      $summary.Add($(if ($SkipHeadless) { 'board ok (no headless)' } else { "board ok (headless ran, NODE_PATH=$np)" }))
+    }
+  }
 
-# ---- 3. skins
-$runSkins = $false
-if ($Board) { $runSkins = $true }
-elseif ($NoBoard) { $runSkins = $false }
-else {
-  $names = git diff --name-only "$Base...HEAD" 2>$null
-  if ($LASTEXITCODE -ne 0) { $runSkins = $true; [Console]::Error.WriteLine("merge-check: could not diff against $Base, running skins") }
-  elseif ($names -match '^internal/api/web/') { $runSkins = $true }
-}
-if ($runSkins) {
-  $out = & bash scripts/check-skins.sh 2>&1 | Out-String
-  if ($LASTEXITCODE -ne 0) { Fail 'check-skins.sh' $out }
-  else { $summary.Add(($out.Trim() -split "`n" | Select-Object -Last 1).Trim()) }
+  # ---- 3. skins
+  $runSkins = $false
+  if ($Board) { $runSkins = $true }
+  elseif ($NoBoard) { $runSkins = $false }
+  else {
+    $names = git diff --name-only "$Base...HEAD" 2>$null
+    if ($LASTEXITCODE -ne 0) { $runSkins = $true; [Console]::Error.WriteLine("merge-check: could not diff against $Base, running skins") }
+    elseif ($names -match '^internal/api/web/') { $runSkins = $true }
+  }
+  if ($runSkins) {
+    $out = & bash scripts/check-skins.sh 2>&1 | Out-String
+    if ($LASTEXITCODE -ne 0) { Fail 'check-skins.sh' $out }
+    else { $summary.Add(($out.Trim() -split "`n" | Select-Object -Last 1).Trim()) }
+  } else {
+    $summary.Add('skins skipped (board unchanged)')
+  }
 } else {
-  $summary.Add('skins skipped (board unchanged)')
+  $summary.Add('board and skins not run (-NoUI, @ui runs them on claude/main)')
 }
 
 # ---- 4. build

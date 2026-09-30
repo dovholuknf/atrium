@@ -11,6 +11,7 @@ $LiveTag = 'HUBONLY'
 $LiveLog = Join-Path $Base 'deploy.log'
 
 if (-not (Test-Path $AtriumNew)) { Say "FATAL: no new build at $AtriumNew"; exit 1 }
+if (-not (Test-NewBuildStamped)) { exit 1 }
 
 # Gate: wait for an idle board, count down in a toast clint can click to pause (docs/hub-restart-gate.md).
 # Exit 0 means go (or a hub too old to ask), anything else means leave the hub alone.
@@ -29,11 +30,15 @@ Stop-Hub
 if (-not (Install-Atrium)) { exit 1 }
 
 # 3. Start the hub with its exact wide args (the room dials this link).
+$hubStart = Get-Date
 Start-Hub
 
-# 4. Verify: hub up on the NEW build, room still attached.
+# 4. Verify: hub up on the NEW build, and THIS room back on it and staying there. A room count is not that.
 if (-not $WhatIf) {
   $h = Wait-Hub 25
-  if ($h) { Say "hub up build $($h.build) only=$($h.only) rooms=$($h.rooms)" }
-  else { Say 'FATAL: hub did not come healthy' }
+  if (-not $h) { Say 'FATAL: hub did not come healthy'; exit 1 }
+  Say "hub up build $($h.build) only=$($h.only) rooms=$($h.rooms)"
+  $r = Wait-RoomAttached $hubStart
+  if (-not $r) { Say "HUB DEPLOY FAILED: $RoomName is not back on the hub. room link: '$(Get-RoomLink)'"; exit 2 }
+  Say "room $RoomName attached and held since $($r.since)"
 }

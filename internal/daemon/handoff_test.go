@@ -72,7 +72,7 @@ func TestNewContextUsesOneNameThroughTheCycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	time.Sleep(20 * time.Millisecond)
-	d.act.set(task.ID, ActivityIdle, "")
+	ncTurnEnds(d, task.ID)
 	until(t, "/clear", func() bool { return strings.Contains(f.written(), "/clear") })
 	d.wake.sawSession(task.ID, time.Now())
 	until(t, "the wake", func() bool { return strings.Contains(f.written(), "Read HANDOFF.first.md and continue") })

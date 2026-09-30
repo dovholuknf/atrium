@@ -42,19 +42,24 @@ if (-not $WhatIf) {
 
 # 5. Start the room with its exact args, then wait for it to reattach.
 Backup 'room.err'
+$roomStart = Get-Date
 $null = Start-Room
+$attached = $false
 if (-not $WhatIf) {
-  $h = Wait-Hub 60 1
-  $ok = [bool]$h
-  Say "room reattached: $ok build $($h.build) rooms=$($h.rooms)"
-  if (-not $ok) {
-    Say 'room did not reattach. last lines of room.err:'
+  # THIS room, by name, seen by the hub and by the room, and still attached 30s later. Not a room count.
+  $r = Wait-RoomAttached $roomStart
+  $attached = [bool]$r
+  $h = Wait-Hub 5
+  Say "room $RoomName attached and held: $attached since $($r.since) build $($h.build) rooms=$($h.rooms)"
+  if (-not $attached) {
+    Say "room $RoomName did not attach and stay attached. room link: '$(Get-RoomLink)'. last lines of room.err:"
     Get-Content (Join-Path $Base 'room.err') -Tail 20 | ForEach-Object { Say "  $_" }
   }
 }
 
 # 6. The room is healthy only when it answers from its store, now and again after the startup sweep and the reopen.
 #    Reattached is not enough: the link attaches before the sweep, and a frozen store still answers /v1/health.
+#    And serving is not enough either: /v1/settings is the room's own answer, given whether or not the hub has it.
 if (-not $WhatIf) {
   $serves = Test-RoomServes
   Say "room serves ${RoomServes}: $serves"
@@ -72,10 +77,18 @@ if (-not $WhatIf) {
     if (-not (Install-Atrium $revert)) { Say 'FATAL: revert install failed. nothing is running'; exit 1 }
     Start-Hub
     $null = Wait-Hub 25
+    $revertStart = Get-Date
     $null = Start-Room
-    $null = Wait-Hub 60 1
-    Say "reverted. room serves ${RoomServes}: $(Test-RoomServes)"
+    $back = [bool](Wait-RoomAttached $revertStart)
+    Say "reverted. room serves ${RoomServes}: $(Test-RoomServes), $RoomName attached and held: $back"
     exit 1
+  }
+  # SERVING BUT NOT ATTACHED IS A FAILURE, NOT A REVERT. The room works for its own agents and its own board at
+  # $RoomServes, and a revert would restart every card a second time for what may be the hub refusing it. Said loudly,
+  # with its own exit code, so nobody reads the board going quiet as a finished deploy.
+  if (-not $attached) {
+    Say "BATCH DEPLOY FAILED: $RoomName serves locally but is not on the hub. nothing reverted"
+    exit 2
   }
 }
 Say 'batch deploy done.'

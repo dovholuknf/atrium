@@ -105,6 +105,41 @@ func TestCullRemovesAMergedWorkersWorktreeAndBranch(t *testing.T) {
 	}
 }
 
+// A cull takes the card off the board with an event saying why, and never files
+// it as dead: that would put a death in the ledger for accepted work.
+func TestCullArchivesTheCardWithoutKillingIt(t *testing.T) {
+	d := testDaemon(t)
+	r := newCullRepo(t, true)
+	task := cullCard(t, d, r.wt, OriginAgentTag, SubagentTag)
+
+	if _, err := d.Cull(task.ID, ""); err != nil {
+		t.Fatalf("cull: %v", err)
+	}
+	got, err := d.st.Get(task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ArchivedAt == nil {
+		t.Fatal("the culled card is still on the board")
+	}
+	if got.Status != store.StatusDone {
+		t.Errorf("status = %s, want done: a cull is not a death", got.Status)
+	}
+	evs, err := d.st.Events(task.ID, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, e := range evs {
+		if e.Kind == store.EventNotified && strings.Contains(string(e.Payload), "culled") {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("no event says why the card was archived")
+	}
+}
+
 // An unmerged branch refuses the whole cull and touches nothing.
 func TestCullRefusesAnUnmergedBranch(t *testing.T) {
 	d := testDaemon(t)
