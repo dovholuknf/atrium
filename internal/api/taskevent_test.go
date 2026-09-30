@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -127,16 +128,20 @@ func TestTaskEventEqualsListRow(t *testing.T) {
 	}
 }
 
-func TestTaskEventSurvivesFailedDecoration(t *testing.T) {
+func TestTaskEventFromAClosedStoreSendsNothing(t *testing.T) {
 	srv, st, work := fileServer(t)
 	card := cardIn(t, st, work)
-	sc := eventStream(t, srv)
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+	resp, err := http.Get(ts.URL + "/v1/events")
+	if err != nil {
+		t.Fatal(err)
+	}
 	time.Sleep(100 * time.Millisecond)
 	st.Close()
 	srv.PublishTask(card)
-	ev := nextTaskEvent(t, sc)
-	if !strings.Contains(ev, card.ID) {
-		t.Fatalf("event lost the card: %s", ev)
+	if evs := readTaskEvents(resp, 3*taskCoalesce); len(evs) != 0 {
+		t.Fatalf("a card the store cannot read was sent: %v", evs)
 	}
 }
 
@@ -154,5 +159,118 @@ func TestNoTaskBroadcastOutsideTheHelper(t *testing.T) {
 		if n > 0 && !strings.HasSuffix(filepath.ToSlash(f), "api/api.go") || n > 1 {
 			t.Errorf("%s has %d Broadcast(\"task\" call(s)", f, n)
 		}
+	}
+}
+
+func readTaskEvents(resp *http.Response, d time.Duration) []string {
+	var (
+		mu  sync.Mutex
+		got []string
+	)
+	done := make(chan struct{})
+	go func() {
+		sc := bufio.NewScanner(resp.Body)
+		kind := ""
+		for sc.Scan() {
+			line := sc.Text()
+			if strings.HasPrefix(line, "event: ") {
+				kind = strings.TrimPrefix(line, "event: ")
+			}
+			if strings.HasPrefix(line, "data: ") && kind == "task" {
+				mu.Lock()
+				got = append(got, strings.TrimPrefix(line, "data: "))
+				mu.Unlock()
+			}
+			select {
+			case <-done:
+				return
+			default:
+			}
+		}
+	}()
+	time.Sleep(d)
+	close(done)
+	resp.Body.Close()
+	mu.Lock()
+	defer mu.Unlock()
+	return got
+}
+
+func TestPublishTaskCoalescesABurstToTheLatestState(t *testing.T) {
+	srv, st, work := fileServer(t)
+	card := cardIn(t, st, work)
+	other := filepath.Join(work, "other")
+	if err := os.MkdirAll(other, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	card2, _, err := st.Register(store.Observed{WireName: "second", Worktree: filepath.ToSlash(other), Runner: "claude"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+	resp, err := http.Get(ts.URL + "/v1/events")
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(100 * time.Millisecond)
+	for i := 0; i < 10; i++ {
+		if _, err := st.AddAsk(card.ID, "q?", ""); err != nil {
+			t.Fatal(err)
+		}
+		got, _ := st.Get(card.ID)
+		srv.PublishTask(got)
+	}
+	got2, _ := st.Get(card2.ID)
+	srv.PublishTask(got2)
+
+	evs := readTaskEvents(resp, 3*taskCoalesce)
+	if len(evs) != 2 {
+		t.Fatalf("want one event per card (2), got %d: %v", len(evs), evs)
+	}
+	for _, ev := range evs {
+		if strings.Contains(ev, card.ID) && !strings.Contains(ev, `"asks_open":10`) {
+			t.Fatalf("burst event is not the latest state: %s", ev)
+		}
+	}
+}
+
+func TestPublishTaskForADeletedCardSendsNoTaskEvent(t *testing.T) {
+	srv, st, work := fileServer(t)
+	card := cardIn(t, st, work)
+	ts := httptest.NewServer(srv.Handler())
+	defer ts.Close()
+	resp, err := http.Get(ts.URL + "/v1/events")
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(100 * time.Millisecond)
+	srv.PublishTask(card)
+	if err := st.Forget(card.ID); err != nil {
+		t.Fatal(err)
+	}
+	if evs := readTaskEvents(resp, 3*taskCoalesce); len(evs) != 0 {
+		t.Fatalf("a deleted card was sent again: %v", evs)
+	}
+}
+
+func TestPublishTaskPendingStopsWithTheServer(t *testing.T) {
+	srv, st, work := fileServer(t)
+	card := cardIn(t, st, work)
+	srv.PublishTask(card)
+	srv.Close()
+	srv.pend.mu.Lock()
+	n := len(srv.pend.timers)
+	srv.pend.mu.Unlock()
+	if n != 0 {
+		t.Fatalf("%d timers left after Close", n)
+	}
+	srv.PublishTask(card) // no panic, no timer
+	srv.pend.mu.Lock()
+	n = len(srv.pend.timers)
+	srv.pend.mu.Unlock()
+	if n != 0 {
+		t.Fatal("a publish after Close armed a timer")
 	}
 }
