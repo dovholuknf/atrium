@@ -7962,3 +7962,10 @@ Needs a hub with one room and two browsers on the board. `curl` stands in for th
 3. Reload the board on a phone over the share. The network panel shows 304s, and the board opens in about a second.
 4. Rebuild with a changed script and restart the hub. The open board reloads itself on the new build id and gets the
    new script, not a cached one.
+
+## HI. A card says when its transcript gained a reply (r-new-output-at)
+
+1. A Claude card on a long turn: `curl -s http://127.0.0.1:7778/v1/tasks | jq '.[] | {title, output_at}'`. After the
+   card writes a reply with text, mid-turn, `output_at` moves within a second, and a `task` event carries it.
+2. A tool call with no text, or a subagent's reply, does not move it.
+3. /m open on that card re-reads its replies when `output_at` moves (the @ui half).
