@@ -197,7 +197,15 @@ type activityTracker struct {
 	busyAt map[string]time.Time
 	// looksIdle is each card flagged by the looks-idle watch. See looksidle.go.
 	looksIdle map[string]idleMark
+	// turnAt is when each card's current turn began, and calls the tool calls
+	// it made in the last callWindow. Both for the long-turn escalation (a2a.go),
+	// and in memory like the rest: a restart is a new turn anyway.
+	turnAt map[string]time.Time
+	calls  map[string][]time.Time
 }
+
+// callWindow is how far back the tool-call count for a long turn looks.
+const callWindow = 10 * time.Minute
 
 // heldPeer is a queued injection waiting on the operator's line to clear, on
 // the turn to end, or on a dialog.
@@ -273,6 +281,8 @@ func newActivityTracker() *activityTracker {
 		turns:      map[string]int{},
 		busyAt:     map[string]time.Time{},
 		looksIdle:  map[string]idleMark{},
+		turnAt:     map[string]time.Time{},
+		calls:      map[string][]time.Time{},
 	}
 }
 
@@ -451,6 +461,24 @@ func (a *activityTracker) set(taskID, what, tool string) {
 	if !midTurnState(cur.What) && midTurnState(what) {
 		a.turns[taskID]++
 		a.busyAt[taskID] = a.now()
+		if a.turnAt != nil {
+			a.turnAt[taskID] = a.now()
+		}
+	}
+	if midTurnState(cur.What) && !midTurnState(what) && a.turnAt != nil {
+		delete(a.turnAt, taskID)
+	}
+	if what == ActivityTool && a.calls != nil {
+		keep := a.calls[taskID][:0]
+		for _, at := range a.calls[taskID] {
+			if a.now().Sub(at) < callWindow {
+				keep = append(keep, at)
+			}
+		}
+		if len(keep) < 1000 {
+			keep = append(keep, a.now())
+		}
+		a.calls[taskID] = keep
 	}
 	cur.What, cur.Tool = what, tool
 	// Any hook event is the runner speaking for itself, which settles the guess.
@@ -661,6 +689,8 @@ func (a *activityTracker) forget(taskID string) {
 	delete(a.background, taskID)
 	delete(a.looksIdle, taskID)
 	delete(a.bgWork, taskID)
+	delete(a.turnAt, taskID)
+	delete(a.calls, taskID)
 }
 
 // bgHold is what a card's last Stop said about background work that is not a
@@ -881,4 +911,29 @@ func (d *Daemon) activityFor(taskID string) any {
 		return nil
 	}
 	return a
+}
+
+// turnSince is when a card's current turn began, while it is in one.
+func (a *activityTracker) turnSince(taskID string) (time.Time, bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	cur := a.by[taskID]
+	at, ok := a.turnAt[taskID]
+	if !ok || cur == nil || !midTurnState(cur.What) {
+		return time.Time{}, false
+	}
+	return at, true
+}
+
+// callsLately is how many tool calls a card made in the last callWindow.
+func (a *activityTracker) callsLately(taskID string) int {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	n := 0
+	for _, at := range a.calls[taskID] {
+		if a.now().Sub(at) < callWindow {
+			n++
+		}
+	}
+	return n
 }

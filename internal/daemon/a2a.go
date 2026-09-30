@@ -12,6 +12,7 @@ import (
 
 	"github.com/dovholuknf/atrium/internal/claudeconf"
 	"github.com/dovholuknf/atrium/internal/store"
+	"strconv"
 )
 
 // Work handed from one session to another, and making sure nobody is left
@@ -46,6 +47,9 @@ const (
 	NoticeReport     = "report"
 	NoticeSilentStop = "silent-stop"
 	NoticeLongTool   = "long-tool"
+	// NoticeLongTurn is one turn running past the long-turn setting. See
+	// longTurn.
+	NoticeLongTurn = "long-turn"
 )
 
 // The thresholds. Each has an environment override that takes a Go duration,
@@ -540,7 +544,7 @@ func deliveredWord(reach string) string {
 // Escalation is a worker the board should hear about, served on the card. The
 // board rings each time Count goes up.
 type Escalation struct {
-	// Source is `silent-stop` or `long-tool`.
+	// Source is `silent-stop`, `long-tool` or `long-turn`.
 	Source string `json:"source"`
 	// Since is when it became stuck. The backoff counts from here.
 	Since time.Time `json:"since"`
@@ -642,11 +646,15 @@ func (d *Daemon) watchWorkers(now time.Time) error {
 	}
 	live := map[string]bool{}
 	for _, t := range tasks {
-		if !d.reportsToLauncher(t) {
-			continue
+		var x *Escalation
+		if d.reportsToLauncher(t) {
+			x = d.stuckNow(t, now)
+		} else {
+			// A LONG TURN IS SHOWN ON EVERY CARD, clint's own included. Only a
+			// card with a launcher has somebody to tell.
+			x = d.longTurn(t, now)
 		}
 		live[t.ID] = true
-		x := d.stuckNow(t, now)
 		if d.esc.put(t.ID, x) {
 			d.publishTask(t.ID)
 		}
@@ -685,5 +693,57 @@ func (d *Daemon) stuckNow(t *store.Task, now time.Time) *Escalation {
 			}
 		}
 	}
-	return nil
+	return d.longTurn(t, now)
+}
+
+// longTurnDefault is how long one turn may run before it is a long turn.
+const longTurnDefault = 45 * time.Minute
+
+// turnAfter is the long-turn setting, in minutes, empty for the default.
+func (d *Daemon) turnAfter() time.Duration {
+	v, err := d.st.Setting(store.SettingEscalateTurnAfter)
+	if err != nil {
+		return longTurnDefault
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(v))
+	if err != nil || n <= 0 {
+		return longTurnDefault
+	}
+	return time.Duration(n) * time.Minute
+}
+
+// longTurn is a running card whose turn has run past the setting: flagged on the
+// card, and its launcher told once per turn with how many tool calls the last ten
+// minutes held. A REPORT, NEVER AN ACTION: a long test run and a runaway look the
+// same from here, and the rate is what lets whoever reads it tell them apart.
+// Last in the priority, after a silent stop and one long tool call, which are the
+// more specific facts.
+func (d *Daemon) longTurn(t *store.Task, now time.Time) *Escalation {
+	if t.Status != store.StatusRunning {
+		return nil
+	}
+	began, ok := d.act.turnSince(t.ID)
+	after := d.turnAfter()
+	if !ok || now.Sub(began) < after {
+		return nil
+	}
+	mins := int(now.Sub(began) / time.Minute)
+	calls := d.act.callsLately(t.ID)
+	doing := ""
+	if tool, since, ok := d.act.toolSince(t.ID); ok {
+		doing = fmt.Sprintf(", now in %s for %d minutes", tool, int(now.Sub(since)/time.Minute))
+	}
+	if d.reportsToLauncher(t) {
+		// Keyed on the turn's start, so a second pass of the same turn says
+		// nothing and the next turn says it again.
+		d.notifyLauncher(t, NoticeLongTurn, began.UTC().Format(time.RFC3339Nano), fmt.Sprintf(
+			"%s has been in one turn for %d minutes. %d tool calls in the last 10 minutes%s. a report, "+
+				"not an action. card %s", t.WireName, mins, calls, doing, t.ID))
+	}
+	since := began.Add(after)
+	return &Escalation{
+		Source: NoticeLongTurn, Since: since, Count: escalationStep(now.Sub(since)), Minutes: mins,
+		Text: fmt.Sprintf("%s has been in one turn for %d minutes, %d tool calls in the last 10", t.DisplayTitle(),
+			mins, calls),
+	}
 }

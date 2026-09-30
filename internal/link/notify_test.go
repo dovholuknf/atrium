@@ -14,6 +14,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/testguard"
 )
 
 // TestMain doubles as the notify command: the test binary run with
@@ -23,7 +25,14 @@ func TestMain(m *testing.M) {
 	if mode := os.Getenv("ATRIUM_NOTIFY_HELPER"); mode != "" {
 		os.Exit(notifyHelper(mode))
 	}
-	os.Exit(m.Run())
+	// No ATRIUM_* pointer from the shell this ran in reaches a test. After the
+	// helper check, which is this binary run as a child with its own variables.
+	dir := testguard.Scrub()
+	code := m.Run()
+	if dir != "" {
+		_ = os.RemoveAll(dir)
+	}
+	os.Exit(code)
 }
 
 func notifyHelper(mode string) int {

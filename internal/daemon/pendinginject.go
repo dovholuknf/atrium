@@ -69,6 +69,8 @@ type pendingMsg struct {
 	body   string // text plus any bracketed-paste markers, what actually types
 	// waitTurn holds it while the runner is mid-turn. See saywhen.go.
 	waitTurn bool
+	// at is when it was held, for escalate_held_after. See escalate.go.
+	at time.Time
 	// byRunner is a turn wait the runner imposed, because it does not take
 	// input mid-turn, as opposed to one the sender asked for. Read once when
 	// the message is held, for the chip's reason. See HeldTurnRunner.
@@ -126,6 +128,7 @@ func (d *Daemon) deferPeerInjection(taskID, msgID, from, text string, waitTurn b
 		banner:   banner,
 		body:     body,
 		waitTurn: waitTurn,
+		at:       time.Now(),
 		byRunner: waitTurn && !d.midTurnInputFor(taskID),
 	})
 }
@@ -183,7 +186,7 @@ func (pi *pendingInjector) heldFor(taskID string, m pendingMsg) string {
 		return HeldForDeploy
 	case pi.d.act.dialogOpen(taskID):
 		return HeldForDialog
-	case pi.d.turnHolds(taskID, m.waitTurn):
+	case pi.d.turnHoldsAged(taskID, m.waitTurn, m.at):
 		return HeldForTurn
 	}
 	if run := pi.d.sup.get(taskID); run != nil && !run.peerGateOpen() {
@@ -349,10 +352,11 @@ func (pi *pendingInjector) attempt(taskID string) {
 	delivered := map[string]bool{}
 	turnWait := false
 	for _, e := range entries {
-		if pi.d.turnHolds(taskID, e.waitTurn) {
+		if pi.d.turnHoldsAged(taskID, e.waitTurn, e.at) {
 			turnWait = true
 			break
 		}
+		escalated := pi.d.escalatesByTyping(taskID, e.waitTurn, e.at)
 		wrote, err := run.injectPeer(e.banner, e.body)
 		if err != nil {
 			log.Printf("[atrium] retrying a held message into %s failed: %v", taskID, err)
@@ -365,6 +369,9 @@ func (pi *pendingInjector) attempt(taskID string) {
 			log.Printf("[atrium] typed a held message into %s but could not mark it delivered: %v", taskID, err)
 		}
 		pi.d.notePeerTyped(taskID, e.from, e.text, "typed and sent after waiting for your line to clear")
+		if escalated {
+			pi.d.noteEscalated(taskID, e.msgID, e.from, time.Since(e.at))
+		}
 		delivered[e.msgID] = true
 	}
 

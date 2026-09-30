@@ -1951,6 +1951,7 @@ func (d *Daemon) spawnPTYResume(taskID, cmdName string, args []string, cwd strin
 	// Resolve on PATH before setting a working directory. go-pty resolves the
 	// command relative to Dir, so a bare `claude` or `cmd.exe` would be looked
 	// for inside the repo being worked in and reported as missing.
+	cmdName, args = agentSpawn(cmdName, args)
 	resolved, err := exec.LookPath(cmdName)
 	if err != nil {
 		return 0, fmt.Errorf("%s is not on PATH: %w", cmdName, err)
@@ -2355,3 +2356,9 @@ func windDown(r *runner, grace time.Duration, keys [][]byte) {
 		}
 	}
 }
+
+// agentSpawn is what a runner's command becomes just before it is started. The
+// command itself in production. A test's TestMain swaps an agent for a shell, so
+// no test can start a real runner that bills a model and runs the machine's own
+// hooks (internal/testguard).
+var agentSpawn = func(exe string, args []string) (string, []string) { return exe, args }

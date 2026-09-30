@@ -192,6 +192,15 @@ func markSaysDelivered(db *sql.DB, via string, ids []string) error {
 	return nil
 }
 
+// NoteSayEscalated sets the note on the say that queued a message, when the
+// message was one. No row is no error: not every message is a say.
+func (s *Store) NoteSayEscalated(messageID, note string) error {
+	return s.guard(func() error {
+		_, err := s.db.Exec(`UPDATE say SET note = ? WHERE message_id = ?`, cutRunes(note, sayNoteLen), messageID)
+		return err
+	})
+}
+
 // SaysFor lists the says a card sent or received, newest first.
 func (s *Store) SaysFor(taskID string, limit int) ([]Say, error) {
 	if limit <= 0 || limit > 100 {
