@@ -1,5 +1,13 @@
 # Federation v2: a forum, and the atria that report to it
 
+> **Out of date on one point: the forum holding nothing.** The hub has its own store, `internal/hubstore`, since
+> decision 11 in `docs/decisions.md` (2026-09-17): rooms, names, transports, secrets, deletion state, a cache of
+> each room's cards, an audit log and tiered backups. It halts on a failed store like a room does. Decision 19
+> (2026-09-29) goes further and makes the hub the owner of the integration branches, which moves code between
+> rooms. Sections 1, 6(c) and 10 are corrected below. What still holds from them is that **stopping the hub costs
+> nobody a session**, because sessions, terminals and agents stay on the rooms, and that the card cache is never
+> authoritative.
+
 This supersedes `docs/federation-design.md` in its recommendation and keeps most of its analysis. That document is
 left in place because its inventory of what breaks is still the best list of the hard parts, and because being able
 to read the earlier reasoning next to the correction is worth more than a clean file. Where the two disagree, this
@@ -36,6 +44,10 @@ detail is in section 4, and it comes with a cost the previous document did not h
 **Verdict.** Build a storeless forum that leaves dial out to. Keep client-side federation as the fallback for the
 case where the operator's browser is already an overlay endpoint and one hop of latency on attach matters. Never
 build the mirroring aggregator.
+
+**Corrected.** "Storeless" did not survive building it: see decisions 11 and 19. The forum that leaves dial out to
+is what got built, and it keeps a store. The ban on a mirroring aggregator stands, because the cache the hub keeps
+is never authoritative and a connected room is always asked.
 
 ## 2. What the operator asked for, restated
 
@@ -337,6 +349,11 @@ halt rule or a daemon the halt rule breaks. Neither is shippable.
 forum is not an `atrium daemon` with a flag. It is a different thing with no sqlite, no migrations, no cards, and no
 `WORKTREE_ROOT`.
 
+**Superseded.** The derivation above assumed a halted forum takes the only pane of glass down. Decision 11
+accepted that cost for a reason this section did not weigh: a hub that cannot remember which rooms exist will mint
+a second room under a forgotten name. So the hub halts like a room, and decision 17 is why the halt costs little:
+it restarts in seconds and every room redials. Decision 19 adds the integration branches to what it stores.
+
 ## 7. The hard parts, re-tested
 
 Each row compares hub-out against client-side federation, not against today.
@@ -610,7 +627,10 @@ name its identity carries, and passing a different `--as` does not change which 
 
 Stated separately so they can be checked against a diff rather than inferred from prose.
 
-1. **The forum has no database.** Not sqlite, not a file, not a cache on disk. Derived in section 6(c).
+1. **Stopping the forum costs nobody a session.** Sessions, terminals, agent processes and the permission gate stay
+   on the rooms. The forum has a store (decision 11), which holds its configuration, a cache that is never
+   authoritative, and the integration branches (decision 19). It halts on a failed store and restarts freely
+   (decision 17). This replaces "the forum has no database", which section 6(c) derived and decision 11 overturned.
 2. **An atrium works alone.** Its board, its gate, its store and its ptys are unaffected by whether a forum exists,
    is reachable, or has ever been configured.
 3. **Agent traffic never leaves the machine.** Hooks and runners keep talking to `localhost:7777` through

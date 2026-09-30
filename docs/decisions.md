@@ -768,3 +768,60 @@ is calling. `certs.go` says the same where those tokens are minted. Nothing clai
 keeping.
 
 ------------
+
+## 19. Does the hub own the integration branches?
+
+**Asked 2026-09-29 by clint. Settled in direction. The design is owed, as f-019.**
+
+### How it came up
+
+The m1mini room had no `claude/main`, and fixing it needed two pushes from this checkout. The agent that owns
+`claude/main` could not run them, because its tool hook refuses any git command that reaches a remote, and
+running `scripts/room-git.ps1` would only have got round the same rule. So every transfer of code between rooms
+went through a person, or through an agent spending tokens on git plumbing.
+
+### The design
+
+**Yes. The hub owns the integration branches, and atrium moves code between rooms. An agent never does.**
+
+- The hub holds a bare repository for each repo a room works in, and in it the integration branch
+  (`claude/main` today). That branch is the hub's truth, the way decision 11 made the room list its truth.
+- A room fetches its base from the hub when it launches a card. When a card's work is done, the room offers the
+  card's branch and the hub fetches it. Git travels over the link the room already dialled, so nothing needs a
+  route into a room, which keeps "leaves dial out" true.
+- Landing a branch on the integration branch is the hub's job, in order, with its checks. That is f-002's merge
+  queue, moved from the room to the hub.
+- An agent commits on its own `claude/*` branch and finishes. Its hook can go on refusing every push, pull and
+  fetch, and a person holds that rule in atrium's code rather than in each agent's restraint.
+
+### What it changes
+
+**This reverses one sentence of decision 11: "the hub still holds no WORK".** The integration branches are work.
+What survives of that sentence is the property it was protecting: **stopping the hub costs nobody a session.**
+Sessions, terminals and agent processes stay on the rooms. A hub that is down means nothing lands and no new
+base is handed out until it is back, and every running card carries on.
+
+**It also retires "the forum holds nothing" in `docs/federation-design-v2.md`.** That rule was already false once
+decision 11 built `internal/hubstore`, and this makes the hub's store hold more than configuration.
+
+### What decision 17 still demands of it
+
+The hub still restarts freely. So:
+
+- the repositories are bare and every update is a git ref update, which is atomic, so a restart mid-fetch leaves
+  the old ref or the new one and never half of each
+- the merge queue is rows in the hub's store, not memory, because "no mutation queue exists to be lost" is only
+  true of a queue that is written down
+- a room that reconnects says which branches it has, so a restart converges the same way the card cache does
+
+### What is not settled
+
+The f-019 design answers these, and @rnd reviews it before anything is built:
+
+- whether the hub's repositories live under its `--atrium-dir` and how they are backed up, since `VACUUM INTO`
+  covers `hub.db` and not a directory of git objects
+- the git transport over the link: smart HTTP through the hub's existing proxy, or a bundle per transfer
+- what a room keeps: a clone per repo with a worktree per card (f-002's shape), fed from the hub
+- what becomes of `scripts/room-git.ps1`, and the order the checks run in before a branch lands
+
+------------
