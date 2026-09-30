@@ -260,6 +260,8 @@ function paintGlobalAuto() {
           ? "every session is approved without asking, until this runs out. click to start asking again."
           : "every session is approved without asking, with no deadline. click to start asking again.")
       : "requests are gated. click to approve everything from every session.");
+  // The phone shows auto mode as a dot on the bell, so the bell repaints its words too.
+  if (typeof paintNotifyOff === "function") paintNotifyOff();
 }
 
 // Time left, rounded the way a person reads it. Rounded UP for minutes, so
