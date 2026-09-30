@@ -109,7 +109,9 @@ function peekFoot(t) {
     parts.push(t.idle_seconds < 5 ? "active now" : "idle " + ago(t.idle_seconds));
   }
   const leaf = String(t.worktree || "").split(/[\\/]/).filter(Boolean).pop() || "";
-  return `<div class="peek-foot"><span>${esc(parts.join(" · "))}</span><span>${esc(leaf)}</span></div>`;
+  // The cache's words live here, and the rows carry only its dot. See js/keepalive.js.
+  const cache = typeof peekCache === "function" ? peekCache(t) : "";
+  return cache + `<div class="peek-foot"><span>${esc(parts.join(" · "))}</span><span>${esc(leaf)}</span></div>`;
 }
 
 // Fills `box` with card `id`'s details: the card at once, the numbers when

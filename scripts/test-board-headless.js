@@ -6738,7 +6738,7 @@ async function cacheChipSection(browser, base) {
       const o = {};
       document.querySelectorAll(s).forEach(row => {
         o[row.dataset.id] = [...row.querySelectorAll(".chip.cache")].filter(e => e.getBoundingClientRect().width > 0)
-          .map(e => e.innerText.trim());
+          .map(e => e.querySelector(".cfull").textContent.trim());
       });
       return o;
     }, sel);
@@ -6756,6 +6756,13 @@ async function cacheChipSection(browser, base) {
     };
     await p.waitForFunction(() => document.querySelectorAll("#stack-list .stackrow .chip.cache").length >= 6, null, { timeout: slow(10000) });
     check("stack", await texts("#stack-list .stackrow"));
+    // A dot, never words: clint saw the chip squeeze a title to one letter. The words are in the details.
+    const dot = await p.evaluate(() => [...document.querySelectorAll("#stack-list .chip.cache")].map(e => {
+      const r = e.getBoundingClientRect(); return { w: r.width, h: r.height, text: e.innerText.trim() };
+    }).filter(d => d.w > 12 || d.h > 12 || d.text));
+    if (dot.length) fail("cacheChip: chips are not dots " + JSON.stringify(dot));
+    const peekWords = await p.evaluate(() => { const d = document.createElement("div"); d.innerHTML = peekFoot(KA_SEEN.get("cc-warm")); return d.innerText; });
+    if (!/won't refresh: busy/.test(peekWords) || !/not idle/.test(peekWords)) fail("cacheChip: the details lack the words " + JSON.stringify(peekWords));
     const tip = await p.evaluate(() => document.querySelector('#stack-list [data-cid="cc-warm"]').dataset.tip);
     if (!/not idle/.test(tip) || !/busy/.test(tip)) fail("cacheChip: the tooltip lacks the raw why: " + tip);
     if (shots) { fs.mkdirSync(shots, { recursive: true }); await p.screenshot({ path: path.join(shots, "u-032-stack-1400x900.png") }); }
@@ -6779,7 +6786,7 @@ async function cacheChipSection(browser, base) {
       attachTask("cc-kept");
     });
     await p.waitForFunction(() => termTask && termTask.id === "cc-kept" && document.querySelector("#t-chips .chip.cache"), null, { timeout: slow(10000) });
-    const head = await p.evaluate(() => document.querySelector("#t-chips .chip.cache").innerText.trim());
+    const head = await p.evaluate(() => document.querySelector("#t-chips .chip.cache .cfull").textContent.trim());
     if (!expect["cc-kept"].test(head)) fail("cacheChip header: " + JSON.stringify(head));
     if (await p.evaluate(() => document.querySelectorAll("#t-chips .chip.cache").length) !== 1) fail("cacheChip header: more than one chip");
 
@@ -6787,7 +6794,7 @@ async function cacheChipSection(browser, base) {
     await p.waitForFunction(() => document.querySelectorAll("#board .chip.cache").length >= 6, null, { timeout: slow(10000) });
     const bo = await p.evaluate(() => {
       const o = {};
-      document.querySelectorAll("#board .card").forEach(c => { o[c.dataset.id] = [...c.querySelectorAll(".chip.cache")].map(e => e.innerText.trim()); });
+      document.querySelectorAll("#board .card").forEach(c => { o[c.dataset.id] = [...c.querySelectorAll(".chip.cache")].map(e => e.querySelector(".cfull").textContent.trim()); });
       return o;
     });
     check("board", bo);
@@ -6840,14 +6847,15 @@ async function cacheChipSection(browser, base) {
             const r = ch.getBoundingClientRect();
             if (r.width && (r.right > cr.right + 0.5 || r.right > vw + 0.5)) bad.push("chip " + ch.innerText);
             shorts.push(ch.innerText.trim());
+            if (r.width > 12 || r.height > 12) bad.push("chip is " + r.width + "x" + r.height + ", not a dot");
             if (ch.getAttribute("aria-label").indexOf(ch.querySelector(".cfull").textContent) !== 0) bad.push("aria " + ch.innerText);
           });
         });
         return { bad, shorts, pg: document.documentElement.scrollWidth - innerWidth };
       }, sel);
       if (r.bad.length || r.pg > 0) fail("cacheChip phone " + view + ": " + JSON.stringify(r));
-      if (r.shorts.some(t => t.length > 16) || !r.shorts.includes("\u2744 cold") || !r.shorts.includes("\u25cb off")) {
-        fail("cacheChip phone " + view + ": the chips are not the short text " + JSON.stringify(r.shorts));
+      if (r.shorts.some(t => t !== "")) {
+        fail("cacheChip phone " + view + ": a chip shows words " + JSON.stringify(r.shorts));
       }
     }
     await pctx.close();
