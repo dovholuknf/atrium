@@ -2707,12 +2707,34 @@ function wirePhoneKeys() {
   });
 }
 
+// THE KEYBOARD SIZES THE LAYOUT (u-019). `--vvh` and `--vvt` are the visual viewport's height and offset, and the
+// phone layout (`body.term-phone`, `body.term-full`, phone.css) is that tall, so the key bar stays just above the
+// keyboard. Set on a visualViewport RESIZE only, once per frame, and never on its scroll: a scroll is the page
+// being panned under the keyboard, not a new height, and answering it would refit for nothing.
+let phoneVVQueued = false, phoneVVLast = "";
+function phoneVVSoon() {
+  if (phoneVVQueued) return;
+  phoneVVQueued = true;
+  requestAnimationFrame(() => {
+    phoneVVQueued = false;
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const v = Math.round(vv.height) + "|" + Math.round(vv.offsetTop);
+    if (v === phoneVVLast) return;
+    phoneVVLast = v;
+    const st = document.documentElement.style;
+    st.setProperty("--vvh", Math.round(vv.height) + "px");
+    st.setProperty("--vvt", Math.round(vv.offsetTop) + "px");
+  });
+}
+
 function syncPhoneView() {
   document.body.classList.toggle("term-phone", termPhone());
   syncTermViewButton();
   if (window.visualViewport && !window._phoneVV) {
     window._phoneVV = true;
-    window.visualViewport.addEventListener("resize", () => phoneKeepSoon());
+    phoneVVSoon();
+    window.visualViewport.addEventListener("resize", () => { phoneVVSoon(); phoneKeepSoon(); });
     window.visualViewport.addEventListener("scroll", () => { phonePageHold(); phoneKeepSoon(); });
     window.addEventListener("scroll", phonePageHold, { passive: true });
     // A tap focuses the terminal: whatever the browser scrolled for it, put the cursor back in view.

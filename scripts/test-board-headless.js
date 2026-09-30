@@ -5469,6 +5469,97 @@ async function phonePanSection(browser, base) {
   if (errors.length) fail("phonePan: the page threw: " + errors.join(" | "));
 }
 
+// ── the on-screen keyboard sizes the phone layout (u-019) ─────────────────
+// The keyboard is emulated by shadowing the real visualViewport's height and offsetTop and dispatching its
+// resize. The key bar and the cursor row stay above its bottom edge, in the normal phone view and in full
+// screen, and restoring the height puts things back.
+async function phoneKeyboardSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  landList = [LAND["land-live"]];
+  landPerms = [];
+  const errors = [];
+  const fakeSock = () => {
+    const Real = window.WebSocket;
+    window.__sent = [];
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
+        onopen: null, onclose: null, onmessage: null, onerror: null,
+        send(d) { window.__sent.push(String(d)); }, close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  };
+  try {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+    await ctx.addInitScript(() => {
+      localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true }));
+      localStorage.setItem("atrium.termphone", "1");
+    });
+    await ctx.addInitScript(fakeSock);
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e.stack || e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await p.evaluate(() => attachTask("land-live"));
+    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live",
+      null, { timeout: slow(10000) });
+    await p.evaluate(() => termSock.onmessage({ data: '{"t":"size","cols":132,"rows":41}' }));
+    await p.waitForTimeout(300);
+    await p.evaluate(() => {
+      // Cursor on the last row, where the keyboard would cover it.
+      termSock.onmessage({ data: "[2J[41;1Hprompt" });
+      const vv = window.visualViewport;
+      window.__kb = (px) => new Promise(res => {
+        Object.defineProperty(vv, "height", { configurable: true, get: () => window.innerHeight - px });
+        Object.defineProperty(vv, "offsetTop", { configurable: true, get: () => 0 });
+        vv.dispatchEvent(new Event("resize"));
+        requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(res, 150)));
+      });
+    });
+    await p.waitForTimeout(200);
+    const st = () => p.evaluate(() => {
+      const vv = window.visualViewport, host = document.getElementById("t-screen");
+      const hb = host.getBoundingClientRect(), kb = document.getElementById("t-keys").getBoundingClientRect();
+      const ch = term._core._renderService.dimensions.css.cell.height;
+      const inner = parseFloat(getComputedStyle(host).paddingTop) || 0;
+      const rowTop = hb.top + inner + term.buffer.active.cursorY * ch - host.scrollTop;
+      return { visBottom: vv.offsetTop + vv.height, keysBottom: kb.bottom, keysTop: kb.top, rowTop, rowBottom: rowTop + ch,
+        hostTop: hb.top, resizes: window.__sent.filter(x => /"t":"resize"/.test(x)).length,
+        bar: host.offsetHeight - host.clientHeight, barW: host.offsetWidth - host.clientWidth,
+        sbw: getComputedStyle(host).scrollbarWidth };
+    });
+    const check = (name, s) => {
+      if (s.keysBottom > s.visBottom + 1) fail("phoneKeyboard " + name + ": the key bar is under the keyboard: " + JSON.stringify(s));
+      if (s.rowBottom > s.keysTop + 1 || s.rowTop < s.hostTop - 1)
+        fail("phoneKeyboard " + name + ": the cursor row is not above the key bar: " + JSON.stringify(s));
+      if (s.rowBottom < s.keysTop - 200) fail("phoneKeyboard " + name + ": the cursor row is a keyboard height above the key bar: " + JSON.stringify(s));
+      if (s.bar !== 0 && s.sbw !== "none") fail("phoneKeyboard " + name + ": the pan container shows a horizontal scrollbar: " + JSON.stringify(s));
+    };
+    for (const mode of ["phone", "full"]) {
+      if (mode === "full") { await p.evaluate(() => setTermFull(true)); await p.waitForTimeout(300); }
+      const label = mode === "full" ? "full screen" : "phone view";
+      const base0 = await st();
+      check(label + " (no keyboard)", base0);
+      await p.evaluate(() => window.__kb(300));
+      const up = await st();
+      check(label + " (keyboard up)", up);
+      if (up.keysBottom > base0.keysBottom - 250) fail("phoneKeyboard " + label + ": the key bar did not move up with the keyboard: " + JSON.stringify([base0, up]));
+      await p.evaluate(() => window.__kb(0));
+      const back = await st();
+      check(label + " (keyboard down)", back);
+      if (Math.abs(back.keysBottom - base0.keysBottom) > 2) fail("phoneKeyboard " + label + ": restoring the height did not restore the layout: " + JSON.stringify([base0, back]));
+      if (back.resizes) fail("phoneKeyboard " + label + ": the keyboard sent " + back.resizes + " resize frame(s)");
+    }
+  } finally {
+    tasksMode = was;
+  }
+  if (errors.length) fail("phoneKeyboard: the page threw: " + errors.join(" | "));
+}
+
 // ── copy on select answers the pointer, not the find bar ──────────────────
 // Test plan BJ. The search addon shows a match by selecting it, so copy on
 // select used to copy every find keystroke, step and re-search. Typing in the
@@ -8585,7 +8676,7 @@ async function main() {
       history: historySection, contextSize: contextSizeSection, peekEverywhere: peekEverywhereSection, cardRoute: cardRouteSection,
       quietDoer: quietDoerSection, looksIdle: looksIdleSection, notifyOff: notifyOffSection,
       questionsClick: questionsClickSection, walk: walkSection, linkReuse: linkReuseSection,
-      usageCacheReads: usageCacheReadsSection, roomsDash: roomsDashSection, phoneView: phoneViewSection, heldLine: heldLineSection, u016: u016Section, phoneFocus: phoneFocusSection, phonePan: phonePanSection, usagePolish: usagePolishSection, usageLimits: usageLimitsSection, usageGroups: usageGroupsSection,
+      usageCacheReads: usageCacheReadsSection, roomsDash: roomsDashSection, phoneView: phoneViewSection, heldLine: heldLineSection, u016: u016Section, phoneFocus: phoneFocusSection, phonePan: phonePanSection, phoneKeyboard: phoneKeyboardSection, usagePolish: usagePolishSection, usageLimits: usageLimitsSection, usageGroups: usageGroupsSection,
       eventDriven: eventDrivenSection, idleBudget: idleBudgetSection, pollsGone: pollsGoneSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
@@ -10520,6 +10611,7 @@ async function main() {
     await u016Section(browser, base);
     await phoneFocusSection(browser, base);
     await phonePanSection(browser, base);
+    await phoneKeyboardSection(browser, base);
     await eventDrivenSection(browser, base);
     await idleBudgetSection(browser, base);
     await pollsGoneSection(browser, base);
