@@ -6,8 +6,23 @@ orchestrator reorders it by editing this file. An item leaves the list when it l
 
 ## Next
 
-1. **The a92bb5f7 review fix** on `claude/r-esc-fix`: the medium (an aged message reaches a runner with mid-turn
-   input off by the hook), lows 1 to 4, and a deadline on the test log's waitFor. Send the sha to @review.
+UI ONLY (clint, via the orchestrator, 2026-09-30 ~19:30): only work that serves the board and /m. Everything under
+"Parked" waits for the orchestrator to lift this.
+
+1. **r-new-board-gzip** on `claude/r-board-gzip` 78ff92a7: gzip and ETags for every board file, hub and room. With
+   @review. Hub and room deploy.
+2. **@ui ask, room side, `output_at`** (was 8): a nice-to-have after the compression fix, since clint finds replies at
+   turn end fine on /m. When a card's transcript gains an assistant reply, mid-turn too, publish the card with
+   `output_at` on the stream the board reads, so /m re-reads `/replies`. @ui's worker B builds the page half.
+3. **@ui ask, hub side** (was 7): the 409 for an alias clash (`placeByName`, `internal/link/cardroute.go`) carries each
+   candidate's `status`, `activity` and `created_at` beside its name, so the board's chooser need not fetch each one.
+   Say to ui-director-of-the-board-on-claude-ui-2 when it is on claude/main.
+
+## Parked
+
+1. **The a92bb5f7 review fix** on `claude/r-esc-fix` 5f1058dc: @review ROOM DEPLOY OK, one low to add first (a test
+   that a hook-delivered message is not typed again at turn end), and widen the settle window in
+   TestALaunchMakesTheItemAndAFailedStartEndsItOnce. See `r-new-review-5f1058dc.md`.
 2. **r-new-hosts-setting** (`docs/backlog/runtime/r-new-hosts-setting.md`), with the two lows from
    `r-new-review-e25a2c2f.md` folded in: the wildcard is safe only for a domain whose DNS one operator alone sets
    (dynamic DNS like `*.duckdns.org` is not, and `*.co.uk` passes the bare-label guard), and an ignored entry logs
@@ -16,11 +31,6 @@ orchestrator reorders it by editing this file. An item leaves the list when it l
 5. **Resume-says-continue R5** (`docs/rnd/resume-says-continue-design.md`): the deploy hold records who was working,
    and its lift wakes only those.
 6. **Resume-says-continue R6**: `scripts/live/deploy-batch.ps1` takes a hold.
-7. **@ui ask, hub side:** the 409 for an alias clash (`placeByName`, `internal/link/cardroute.go`) carries each
-   candidate's `status`, `activity` and `created_at` beside its name, so the board's chooser need not fetch each one.
-   Say to ui-director-of-the-board-on-claude-ui-2 when it is on claude/main.
-8. **@ui ask, room side:** the card view carries `output_at` (RFC3339, last pty output, absent when not supervised),
-   re-sent on the card's change events only when the wait starts.
 
 Workers go to sg3 or m1mini, whichever has fewer running (`scripts/room-git.ps1 worktree <room> claude/<id>`, then a
 launch on that room). At most two heavy jobs of mine on sg4 at once.

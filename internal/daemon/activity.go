@@ -894,6 +894,10 @@ func (d *Daemon) onActivity(in ActivityEvent) string {
 		return ""
 	}
 
+	// A hook follows a reply, so the transcript may have a new one. Only a timer
+	// here. See outputat.go.
+	d.outputSoon(taskID)
+
 	// The card's row has not changed, so there is nothing to publish from the
 	// store. Push the activity itself.
 	if a := d.act.get(taskID); a != nil {

@@ -42,7 +42,8 @@ the meantime.
   sends non-blocking). `/_hub/everywhere` needs no gate (no guest listener serves `/_hub/`). Open question to raise:
   name capture, a card on any room tagged atrium:everywhere with an alias or handle suffix answers a bare-name miss
   from every other room. Not read yet: daemon relay.go and peers.go, link control_mcp.go and control_relay.go, the
-  cli files, and the tests.
+  cli files, and the tests. @fabric: the full daemon suite passes on it with -timeout 40m (587.7s), and the name
+  capture is narrowed to cards a human launched (spawned_by empty), to be built on resume.
 - M3 of `docs/rnd/machine-health-design.md` (the profiler agent's rules) before it ships, when it is built.
 
 ## Open lows, for when a fix names them
