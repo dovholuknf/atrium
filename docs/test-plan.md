@@ -7877,3 +7877,8 @@ Needs a hub with one room and two browsers on the board. `curl` stands in for th
 10. (R3) Set a deploy hold on a room (`POST /v1/hold` with `{"action":"start",...}`) and leave it. Before fifteen
     minutes (`growl.hold_after`) nothing. After, a `deploy-hold` row names the room, who held it and why, with the
     hold id as `subject`. Stop the room's link: the row stays. Lift the hold. The row resolves inside 30 s.
+
+## HB. A card by its handle, over HTTP (r-new-handle-addressed-http)
+
+1. (R1, room) `curl -s -o NUL -w "%{http_code}" http://127.0.0.1:7777/v1/tasks/01a0ffff-ffff-7fff-bfff-ffffffffffff`
+   on a room's own board port answers 404 with `{"error":"no such card"}`, not 500. The same for `/files/text`.
