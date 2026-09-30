@@ -99,8 +99,12 @@ func (d *Daemon) ledgerChanged(taskID string) {
 // queue. It is typed when the arbiter's terminal is free, exactly as a peer's
 // message is, and the hooks carry it otherwise.
 func (d *Daemon) ledgerNotice(n store.LedgerNotice) {
-	d.publishTask(n.ArbiterID)
-	d.deferPeerInjection(n.ArbiterID, n.MessageID, n.From, n.Text, d.waitsForTurn(n.ArbiterID, WhenImmediate))
+	if n.Held {
+		d.ringHeld(n.ArbiterID, n.TaskID, n.Source, n.Text)
+	} else {
+		d.publishTask(n.ArbiterID)
+		d.deferPeerInjection(n.ArbiterID, n.MessageID, n.From, n.Text, d.waitsForTurn(n.ArbiterID, WhenImmediate))
+	}
 	if n.Source == store.NoticeEnded {
 		d.emitLifecycle("work-ended", n.Text)
 	}
