@@ -4749,6 +4749,117 @@ async function linkTipSection(browser, base) {
   }
 }
 
+// ── "messages waiting, clear the line" (u-018) ────────────────────────────
+// The notice shows only while the operator's own line holds queued peer messages, is driven by the card list
+// (no timer, no request), and never takes focus or moves the grid.
+async function heldLineSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  landList = [LAND["land-live"]];
+  landPerms = [];
+  const errors = [];
+  const fakeSock = () => {
+    const Real = window.WebSocket;
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
+        onopen: null, onclose: null, onmessage: null, onerror: null, send() {}, close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  };
+  const open = async (ctx) => {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await p.evaluate(() => attachTask("land-live"));
+    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live",
+      null, { timeout: slow(10000) });
+    await p.waitForTimeout(300);
+    return p;
+  };
+  const setAct = async (p, a) => {
+    // What a whole-row task event does: the map takes the row, the terminals view repaints from it.
+    await p.evaluate(async (a) => {
+      const row = Object.assign({}, cardList().find(x => x.id === "land-live"));
+      if (a) row.activity = a; else delete row.activity;
+      upsertCard(row);
+      await renderTermList();
+    }, a);
+  };
+  const state = (p) => p.evaluate(() => {
+    const el = document.getElementById("t-heldline");
+    const r = el.getBoundingClientRect();
+    return { hidden: el.hidden, text: el.textContent, rect: { t: r.top, b: r.bottom, l: r.left, r: r.right },
+      active: document.activeElement && (document.activeElement.id || document.activeElement.tagName) };
+  });
+  try {
+    for (const phone of [false, true]) {
+      const tag = "heldLine" + (phone ? " (phone)" : "") + ": ";
+      const ctx = await browser.newContext(phone
+        ? { viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true }
+        : { viewport: { width: 1280, height: 800 } });
+      await ctx.addInitScript((ph) => {
+        localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true }));
+        if (ph) localStorage.setItem("atrium.termphone", "1");
+      }, phone);
+      await ctx.addInitScript(fakeSock);
+      const p = await open(ctx);
+      await setAct(p, null);
+      let s = await state(p);
+      if (!s.hidden) fail(tag + "shown with no activity");
+      const before = s.active;
+      const grid = () => p.evaluate(() => ({ c: term.cols, r: term.rows }));
+      const g0 = await grid();
+      await setAct(p, { held_peer: true, held_for: "line", held_count: 2 });
+      s = await state(p);
+      if (s.hidden || !/2 messages waiting, clear the line/.test(s.text)) fail(tag + "not shown for a line hold: " + JSON.stringify(s));
+      if (s.active !== before) fail(tag + "appearing moved focus: " + before + " -> " + s.active);
+      const g1 = await grid();
+      if (g0.c !== g1.c || g0.r !== g1.r) fail(tag + "the grid changed");
+      await setAct(p, { held_peer: true, held_for: "line", held_count: 1 });
+      s = await state(p);
+      if (!/1 message waiting/.test(s.text)) fail(tag + "singular wording: " + s.text);
+      // clear of a follow chip parked bottom right, and above the phone key bar
+      const ov = await p.evaluate(() => {
+        const pane = document.getElementById("term-pane");
+        const f = document.createElement("div");
+        f.id = "t-follow"; f.textContent = "follow";
+        f.style.cssText = "position:absolute;right:14px;bottom:60px;padding:4px 10px;z-index:5";
+        pane.appendChild(f);
+        const a = document.getElementById("t-heldline").getBoundingClientRect(), b = f.getBoundingClientRect();
+        const keys = document.getElementById("t-keys").getBoundingClientRect();
+        const kv = getComputedStyle(document.getElementById("t-keys")).display !== "none";
+        f.remove();
+        return { overlap: !(a.right <= b.left || a.left >= b.right || a.bottom <= b.top || a.top >= b.bottom),
+          aboveKeys: !kv || a.bottom <= keys.top, keysShown: kv };
+      });
+      if (ov.overlap) fail(tag + "overlaps the follow chip");
+      if (!ov.aboveKeys) fail(tag + "not above the key bar");
+      if (phone && !ov.keysShown) fail(tag + "key bar not showing");
+      await setAct(p, null);
+      s = await state(p);
+      if (!s.hidden) fail(tag + "still shown after delivery");
+      await setAct(p, { held_peer: true, held_for: "turn", held_count: 3 });
+      s = await state(p);
+      if (!s.hidden) fail(tag + "shown for a turn hold");
+      await setAct(p, { held_peer: true, held_for: "dialog", held_count: 3 });
+      s = await state(p);
+      if (!s.hidden) fail(tag + "shown for a dialog hold");
+      await setAct(p, { held_for: "line", held_count: 3 });
+      s = await state(p);
+      if (!s.hidden) fail(tag + "shown with no held_peer");
+      await ctx.close();
+    }
+    if (errors.length) fail("heldLine threw: " + errors.join(" | "));
+  } finally {
+    tasksMode = was;
+  }
+}
+
 // ── a phone view never resizes the pty (t-003b) ───────────────────────────
 // A touch-first device attaches without ever sending a resize, draws the pty's
 // exact grid, zooms by font size, and has a key bar. A desktop is unchanged.
@@ -4979,7 +5090,7 @@ async function u016Section(browser, base) {
 
       if (phone) {
         const a = await p.evaluate(() => {
-          const b = document.getElementById("t-attach"); const r = b.getBoundingClientRect();
+          const b = document.getElementById("t-keys-attach"); const r = b.getBoundingClientRect();
           const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
           return { w: r.width, h: r.height, shown: r.width > 0, top: !!top && (top === b || b.contains(top)),
             inView: r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight };
@@ -5089,28 +5200,21 @@ async function u016Section(browser, base) {
         if ((await ints()) !== 1) fail(tag + "a 2s hold did not interrupt exactly once: " + (await ints()));
       }
 
-      // the header hidden on its own, saved per device
+      // the header is slim by default and opens behind a chevron, saved per device (u-021 replaced the full hide)
       if (name === "portrait") {
         const hd = () => vis(p, "header");
         const ready = () => p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
-        await p.evaluate(() => document.getElementById("hdr-hide").click());
-        if (await hd()) fail(tag + "the hide control left the header showing");
-        if (!(await vis(p, "#hdr-show"))) fail(tag + "no way back once the header is hidden");
+        if (!(await hd())) fail(tag + "the slim header is not showing");
+        if (await vis(p, "#gear")) fail(tag + "the gear shows in the slim header");
+        await p.evaluate(() => document.getElementById("hdr-toggle").click());
+        if (!(await vis(p, "#gear"))) fail(tag + "the chevron did not open the header");
         await p.setViewportSize({ width: 844, height: 390 });
         await p.waitForTimeout(300);
-        if (await hd()) fail(tag + "rotating to landscape brought the header back");
+        if (!(await hd())) fail(tag + "rotating to landscape hid the header");
         await p.setViewportSize({ width: 390, height: 844 });
         await p.reload({ waitUntil: "domcontentloaded" });
         await ready();
-        if (await hd()) fail(tag + "a reload brought the header back");
-        await p.evaluate(() => document.getElementById("hdr-show").click());
-        if (!(await hd())) fail(tag + "the handle did not show the header");
-        await p.reload({ waitUntil: "domcontentloaded" });
-        await ready();
-        if (!(await hd())) fail(tag + "the shown header did not stay shown after a reload");
-        await p.setViewportSize({ width: 844, height: 390 });
-        await p.waitForTimeout(300);
-        if (!(await hd())) fail(tag + "landscape auto-collapse overrode a saved shown header");
+        if (!(await vis(p, "#gear"))) fail(tag + "the open header did not stay open after a reload");
       }
       await ctx.close();
     }
@@ -5120,11 +5224,216 @@ async function u016Section(browser, base) {
   if (errors.length) fail("u016: the page threw: " + errors.join(" | "));
 }
 
+// ── u-021: the phone board header is one slim row behind a chevron ─────────
+async function phoneHeaderSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landCard("a~land-one", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  landCard("b~land-two", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  landList = [LAND["a~land-one"], LAND["b~land-two"]];
+  landPerms = [];
+  const errors = [];
+  const shots = process.env.PHONE_HEADER_SHOTS || "";
+  const vis = (p, sel) => p.evaluate(s => {
+    const e = document.querySelector(s);
+    if (!e) return false;
+    const r = e.getBoundingClientRect();
+    return getComputedStyle(e).display !== "none" && r.width > 0 && r.height > 0;
+  }, sel);
+  const ready = (p) => p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+  try {
+    const ctx = await browser.newContext({ viewport: { width: 412, height: 915 }, hasTouch: true, isMobile: true });
+    await ctx.addInitScript(() => localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true })));
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await ready(p);
+    const hh = () => p.evaluate(() => document.querySelector("header").getBoundingClientRect().height);
+    // 1. collapsed by default
+    let h = await hh();
+    if (h > 60) fail("phoneHeader: the collapsed header is " + h + "px tall");
+    if (!(await vis(p, "header nav .tab")) || !(await vis(p, "#toastlog-open"))) fail("phoneHeader: tabs or bell missing from the slim row");
+    if ((await vis(p, "#gear")) || (await vis(p, "button.newagent"))) fail("phoneHeader: gear or new agent show while collapsed");
+    const tb = await p.locator("#hdr-toggle").boundingBox();
+    if (!tb || tb.width < 44 || tb.height < 44) fail("phoneHeader: the chevron is under 44px: " + JSON.stringify(tb));
+    if (await p.getAttribute("#hdr-toggle", "aria-expanded") !== "false") fail("phoneHeader: aria-expanded is not false");
+    const over = await p.evaluate(() => document.documentElement.scrollWidth > innerWidth);
+    if (over) fail("phoneHeader: the page scrolls sideways");
+    if (shots) { fs.mkdirSync(shots, { recursive: true }); await p.screenshot({ path: path.join(shots, "collapsed-412x915.png") }); }
+    // 2. auto mode on shows in the slim row
+    if (await vis(p, "#gauto")) fail("phoneHeader: the auto marker shows while asking");
+    await p.evaluate(() => { globalAuto = true; globalAutoStale = false; globalAutoRead = true; paintGlobalAuto(); });
+    if (!(await vis(p, "#gauto"))) fail("phoneHeader: auto mode on is hidden in the slim row");
+    if (await p.evaluate(() => getComputedStyle(document.getElementById("gauto"), "::after").content) !== '"AUTO"')
+      fail("phoneHeader: the slim auto marker does not say AUTO");
+    if (shots) await p.screenshot({ path: path.join(shots, "collapsed-auto-412x915.png") });
+    // 3. tap opens, tap closes, survives a reload
+    await p.locator("#hdr-toggle").tap();
+    if (!(await p.evaluate(() => document.body.classList.contains("hdr-open")))) fail("phoneHeader: a tap did not open");
+    if (!(await vis(p, "#gear")) || !(await vis(p, "button.newagent"))) fail("phoneHeader: opened header lacks gear or new agent");
+    if (await p.evaluate(() => localStorage.getItem("atrium.phone.headerOpen")) !== "1") fail("phoneHeader: the choice was not saved");
+    if (shots) await p.screenshot({ path: path.join(shots, "expanded-412x915.png") });
+    await p.reload({ waitUntil: "domcontentloaded" });
+    await ready(p);
+    if (!(await p.evaluate(() => document.body.classList.contains("hdr-open")))) fail("phoneHeader: open did not survive a reload");
+    await p.locator("#hdr-toggle").tap();
+    if (await p.evaluate(() => document.body.classList.contains("hdr-open"))) fail("phoneHeader: a second tap did not collapse");
+    await p.evaluate(() => localStorage.setItem("atrium.phone.headerOpen", "1"));
+    await p.evaluate(() => window.dispatchEvent(new StorageEvent("storage", { key: "atrium.phone.headerOpen", newValue: "1" })));
+    if (!(await p.evaluate(() => document.body.classList.contains("hdr-open")))) fail("phoneHeader: the storage event was not followed");
+    await p.evaluate(() => phoneHeaderOpenSet(false));
+    await p.reload({ waitUntil: "domcontentloaded" });
+    await ready(p);
+    if (await p.evaluate(() => document.body.classList.contains("hdr-open"))) fail("phoneHeader: collapsed did not survive a reload");
+    // 4. the room chip is inside its row
+    await p.evaluate(() => switchView("terms"));
+    await p.waitForSelector(".term-list .card .chip.room", { timeout: slow(10000) });
+    const clip = await p.evaluate(() => [...document.querySelectorAll(".term-list .card")].flatMap(c => {
+      const cr = c.getBoundingClientRect();
+      return [...c.querySelectorAll(".chip")].filter(ch => ch.getBoundingClientRect().width > 0)
+        .filter(ch => ch.getBoundingClientRect().right > cr.right + 0.5 || ch.scrollWidth > ch.clientWidth + 1)
+        .map(ch => ({ chip: ch.textContent, right: ch.getBoundingClientRect().right, card: cr.right }));
+    }));
+    if (clip.length) fail("phoneHeader: a chip clips on a card row: " + JSON.stringify(clip));
+    if (shots) await p.screenshot({ path: path.join(shots, "terminals-412x915.png") });
+    await ctx.close();
+    // 5. desktop unchanged
+    const dctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    await dctx.addInitScript(() => localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true })));
+    const dp = await dctx.newPage();
+    dp.on("pageerror", e => errors.push(String(e)));
+    await dp.goto(base, { waitUntil: "domcontentloaded" });
+    await ready(dp);
+    if (await vis(dp, "#hdr-toggle")) fail("phoneHeader: a desktop shows the chevron");
+    if (!(await vis(dp, "#gear")) || !(await vis(dp, "button.newagent")) || !(await vis(dp, "h1.wordmark")))
+      fail("phoneHeader: the desktop header lost a control");
+    await dctx.close();
+  } finally {
+    tasksMode = was;
+  }
+  if (errors.length) fail("phoneHeader: the page threw: " + errors.join(" | "));
+}
+
 // ── focusing a phone terminal does not bounce or hide it (u-017) ──────────
 // On a phone, tapping the terminal focused xterm's helper textarea, which sat at the grid's top-left; the
 // browser scrolled the pane there, the cursor keep scrolled back, every frame. Headless Chromium does not
 // scroll a focused element into view the way iOS does, so the scroll is simulated (`browserFocusScroll`)
 // on focus and on every viewport change. Portrait and landscape, a keyboard-sized height, output for 2s.
+// ── u-020: the terminal bar on a phone is one slim row, collapsed by default ──
+async function phoneTermBarSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  landList = [LAND["land-live"]];
+  landPerms = [];
+  const errors = [];
+  const fakeSock = () => {
+    const Real = window.WebSocket;
+    window.__sent = [];
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
+        onopen: null, onclose: null, onmessage: null, onerror: null,
+        send(d) { window.__sent.push(String(d)); }, close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  };
+  const open = async (ctx) => {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await p.evaluate(() => attachTask("land-live"));
+    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live",
+      null, { timeout: slow(10000) });
+    await p.waitForTimeout(300);
+    return p;
+  };
+  const vis = (p, sel) => p.evaluate(s => { const e = document.querySelector(s); if (!e) return false;
+    const r = e.getBoundingClientRect(); const cs = getComputedStyle(e);
+    return cs.display !== "none" && cs.visibility !== "hidden" && r.width > 0 && r.height > 0; }, sel);
+  const box = (p, sel) => p.evaluate(s => { const r = document.querySelector(s).getBoundingClientRect(); return { w: r.width, h: r.height }; }, sel);
+  try {
+    const pctx = await browser.newContext({ viewport: { width: 412, height: 915 }, hasTouch: true, isMobile: true });
+    await pctx.addInitScript(() => {
+      localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true }));
+      localStorage.setItem("atrium.termphone", "1");
+    });
+    await pctx.addInitScript(fakeSock);
+    const p = await open(pctx);
+    for (const mode of ["normal", "full"]) {
+      const tag = "phoneTermBar " + mode + ": ";
+      if (mode === "full") { await p.evaluate(() => setTermFull(true)); await p.waitForTimeout(200); }
+      const shot = process.env.U020_SHOT;
+      if ((await box(p, ".term-bar")).h > 56) fail(tag + "the collapsed bar is not one row: " + JSON.stringify(await box(p, ".term-bar")));
+      for (const s of ["#t-chips .chip.path", "#t-chips", "#t-attach", "#t-cog"])
+        if (await vis(p, s)) fail(tag + s + " shows while collapsed");
+      if (!(await vis(p, "#t-full"))) fail(tag + "full screen is not in the collapsed bar");
+      const cb = await box(p, "#t-bar-toggle");
+      if (cb.w < 44 || cb.h < 44) fail(tag + "the chevron is under 44px: " + JSON.stringify(cb));
+      if (await p.evaluate(() => document.getElementById("t-bar-toggle").getAttribute("aria-expanded")) !== "false") fail(tag + "aria-expanded not false");
+      if (shot) await p.screenshot({ path: shot + "-" + mode + "-collapsed.png" });
+      const before = await p.evaluate(() => document.activeElement && document.activeElement.tagName);
+      await p.tap("#t-bar-toggle");
+      await p.waitForTimeout(200);
+      if (!(await vis(p, "#t-chips .chip.path"))) fail(tag + "a tap on the chevron did not show the path chip");
+      if (await vis(p, "#t-attach")) fail(tag + "the paperclip shows in the expanded phone bar");
+      if (!(await vis(p, "#t-keys-attach"))) fail(tag + "the key bar's attach is gone");
+      if (await p.evaluate(() => document.getElementById("t-bar-toggle").getAttribute("aria-expanded")) !== "true") fail(tag + "aria-expanded not true");
+      if (await p.evaluate(() => document.activeElement && document.activeElement.tagName) !== before) fail(tag + "the toggle moved focus");
+      if (await vis(p, "#t-view-note")) fail(tag + "the fit this screen sentence still shows on a phone");
+      if (shot) await p.screenshot({ path: shot + "-" + mode + "-expanded.png" });
+      await p.reload({ waitUntil: "domcontentloaded" });
+      await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+      if (!(await p.evaluate(() => document.body.classList.contains("hdr-open")))) fail(tag + "the open choice did not survive a reload");
+      await p.tap("#t-bar-toggle");
+      await p.waitForTimeout(200);
+      if (await p.evaluate(() => document.body.classList.contains("hdr-open"))) fail(tag + "a second tap did not collapse");
+      if (mode === "normal") {
+        await p.evaluate(() => attachTask("land-live"));
+        await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask, null, { timeout: slow(10000) });
+        await p.waitForTimeout(300);
+      }
+    }
+    await pctx.close();
+    // the popped-out window (#term=, no board header at all), and the two follow each other through storage
+    const sctx = await browser.newContext({ viewport: { width: 412, height: 915 }, hasTouch: true, isMobile: true });
+    await sctx.addInitScript(() => {
+      localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true }));
+      localStorage.setItem("atrium.termphone", "1");
+    });
+    await sctx.addInitScript(fakeSock);
+    const sp = await sctx.newPage();
+    sp.on("pageerror", e => errors.push(String(e)));
+    await sp.goto(base + "/#term=land-live", { waitUntil: "domcontentloaded" });
+    await sp.waitForFunction(() => termSock && termSock.readyState === 1 && termTask, null, { timeout: slow(15000) });
+    await sp.waitForTimeout(300);
+    if ((await box(sp, ".term-bar")).h > 56) fail("phoneTermBar popout: the collapsed bar is not one row");
+    if (await vis(sp, "#t-chips .chip.path")) fail("phoneTermBar popout: the path shows while collapsed");
+    const pb = await box(sp, "#t-bar-toggle");
+    if (pb.w < 44 || pb.h < 44) fail("phoneTermBar popout: the chevron is under 44px");
+    if (process.env.U020_SHOT) await sp.screenshot({ path: process.env.U020_SHOT + "-popout-collapsed.png" });
+    await sp.tap("#t-bar-toggle");
+    await sp.waitForTimeout(200);
+    if (!(await vis(sp, "#t-chips .chip.path"))) fail("phoneTermBar popout: a tap did not expand");
+    if (process.env.U020_SHOT) await sp.screenshot({ path: process.env.U020_SHOT + "-popout-expanded.png" });
+    await sctx.close();
+    // desktop: unchanged
+    const dctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    await dctx.addInitScript(fakeSock);
+    const dp = await open(dctx);
+    if (await vis(dp, "#t-bar-toggle")) fail("phoneTermBar: a chevron shows on a desktop");
+    for (const s of ["#t-chips .chip.path", "#t-attach", "#t-full", "#t-cog"])
+      if (!(await vis(dp, s))) fail("phoneTermBar: " + s + " is not shown on a desktop");
+    await dctx.close();
+    if (errors.length) fail("phoneTermBar: the page threw: " + errors.join(" | "));
+  } finally {
+    tasksMode = was;
+  }
+}
+
 async function phoneFocusSection(browser, base) {
   const was = tasksMode;
   tasksMode = "land";
@@ -5243,6 +5552,330 @@ async function phoneFocusSection(browser, base) {
     tasksMode = was;
   }
   if (errors.length) fail("phoneFocus: the page threw: " + errors.join(" | "));
+}
+
+// ── a manual pan on a phone wins over the cursor follow (u-017b) ──────────
+// Panning sideways used to be snapped back by "the pan follows the cursor". Now: while a touch is down and
+// after the reader pans by hand, output never moves the pane; typing or the follow chip brings the cursor back.
+async function phonePanSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  landList = [LAND["land-live"]];
+  landPerms = [];
+  const errors = [];
+  const fakeSock = () => {
+    const Real = window.WebSocket;
+    window.__sent = [];
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
+        onopen: null, onclose: null, onmessage: null, onerror: null,
+        send(d) { window.__sent.push(String(d)); }, close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  };
+  try {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+    await ctx.addInitScript(() => {
+      localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true }));
+      localStorage.setItem("atrium.termphone", "1");
+    });
+    await ctx.addInitScript(fakeSock);
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e.stack||e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await p.evaluate(() => attachTask("land-live"));
+    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live",
+      null, { timeout: slow(10000) });
+    await p.evaluate(() => termSock.onmessage({ data: '{"t":"size","cols":132,"rows":41}' }));
+    await p.waitForTimeout(300);
+    await p.evaluate(() => {
+      window.__bfs = () => {
+        const ta = term.textarea, host = document.getElementById("t-screen");
+        const t = ta.getBoundingClientRect(), h = host.getBoundingClientRect();
+        if (t.left < h.left) host.scrollLeft -= h.left - t.left;
+        else if (t.right > h.right) host.scrollLeft += t.right - h.right;
+      };
+      term.textarea.addEventListener("focus", window.__bfs);
+      termSock.onmessage({ data: "\x1b[2J\x1b[8;1Hprompt" });
+    });
+    await p.waitForTimeout(200);
+    const box = await p.locator("#t-screen").boundingBox();
+    await p.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 3);
+    await p.evaluate(() => term.focus());
+    await p.waitForTimeout(200);
+    const st = () => p.evaluate(() => {
+      const host = document.getElementById("t-screen"), hb = host.getBoundingClientRect();
+      const cw = term._core._renderService.dimensions.css.cell.width;
+      const left = hb.left + term.buffer.active.cursorX * cw - host.scrollLeft;
+      return { sl: host.scrollLeft, sw: host.scrollWidth, cw: host.clientWidth, cx: term.buffer.active.cursorX,
+        inView: left >= hb.left - 1 && left + cw <= hb.right + 1, chip: !document.getElementById("t-follow").hidden };
+    });
+    const swipe = (to) => p.evaluate((to) => new Promise(res => {
+      const host = document.getElementById("t-screen");
+      host.dispatchEvent(new TouchEvent("touchstart", { bubbles: true }));
+      host.scrollLeft = to;
+      requestAnimationFrame(() => requestAnimationFrame(() => { host.dispatchEvent(new TouchEvent("touchend", { bubbles: true })); res(); }));
+    }), to);
+
+    let s = await st();
+    if (s.sw <= s.cw + 50) fail("phonePan: the grid does not scroll sideways: " + JSON.stringify(s));
+    if (s.chip) fail("phonePan: the follow chip shows before any manual pan");
+    // 1. pan by hand, then 5s of output that moves the cursor right and down
+    await swipe(200);
+    s = await st();
+    if (Math.abs(s.sl - 200) > 2 || !s.chip) fail("phonePan: the manual pan did not hold or the chip is missing: " + JSON.stringify(s));
+    await p.evaluate(() => {
+      window.__sl = [];
+      const host = document.getElementById("t-screen"), t0 = performance.now();
+      const tick = () => { window.__sl.push(host.scrollLeft); if (performance.now() - t0 < 5200) requestAnimationFrame(tick); };
+      requestAnimationFrame(tick);
+      let n = 0;
+      const feed = setInterval(() => {
+        termSock.onmessage({ data: "x".repeat(6) + " " + n + "\r\n" + " ".repeat((n * 7) % 120) + "y" });
+        if (n === 25) { term.blur(); term.focus(); window.__bfs(); }
+        if (++n >= 50) clearInterval(feed);
+      }, 100);
+    });
+    await p.waitForTimeout(5400);
+    const sl = await p.evaluate(() => window.__sl);
+    const dev = Math.max(...sl.map(x => Math.abs(x - 200)));
+    console.log("phonePan: frames=" + sl.length + " maxDeviation=" + dev);
+    if (dev > 2) fail("phonePan: output moved a manual pan by " + dev + "px");
+    if (!(await st()).chip) fail("phonePan: the follow chip went away without input");
+    // 2. typing brings the cursor back
+    await p.evaluate(() => sendInput("a", false));
+    await p.waitForTimeout(300);
+    s = await st();
+    if (!s.inView || s.chip) fail("phonePan: typing did not follow the cursor: " + JSON.stringify(s));
+    // 3. pan away again; the chip does the same
+    await swipe(0);
+    s = await st();
+    if (!s.chip || s.inView) fail("phonePan: a second manual pan did not hold: " + JSON.stringify(s));
+    await p.locator("#t-follow").tap();
+    await p.waitForTimeout(300);
+    s = await st();
+    if (!s.inView || s.chip) fail("phonePan: the follow chip did not follow the cursor: " + JSON.stringify(s));
+    await ctx.close();
+  } finally {
+    tasksMode = was;
+  }
+  if (errors.length) fail("phonePan: the page threw: " + errors.join(" | "));
+}
+
+// ── tap to position the cursor on a phone (u-017c) ────────────────────────
+// A tap on the input's rows (between Claude Code's two rules) sends arrow keys in one frame; a tap on output,
+// a drag, and a long press send nothing; the helper textarea is focused at most once.
+async function phoneTapSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  landList = [LAND["land-live"]];
+  landPerms = [];
+  const errors = [];
+  const fakeSock = () => {
+    const Real = window.WebSocket;
+    window.__sent = [];
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
+        onopen: null, onclose: null, onmessage: null, onerror: null,
+        send(d) { window.__sent.push(String(d)); }, close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  };
+  try {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+    await ctx.addInitScript(() => {
+      localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true }));
+      localStorage.setItem("atrium.termphone", "1");
+    });
+    await ctx.addInitScript(fakeSock);
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e.stack || e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await p.evaluate(() => attachTask("land-live"));
+    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live",
+      null, { timeout: slow(10000) });
+    await p.evaluate(() => termSock.onmessage({ data: '{"t":"size","cols":132,"rows":41}' }));
+    await p.waitForTimeout(300);
+    const rule = "─".repeat(60);
+    await p.evaluate((rule) => {
+      window.__focus = 0;
+      term.textarea.addEventListener("focus", () => { window.__focus++; });
+      termSock.onmessage({ data: "\x1b[2J\x1b[2;1Hsome output above\x1b[5;1H" + rule +
+        "\x1b[6;1H> hello world first line\x1b[7;1H  wrapped second here\x1b[8;1H" + rule +
+        "\x1b[9;1Hstatus\x1b[7;22H" });
+    }, rule);
+    await p.waitForTimeout(300);
+    const cell = await p.evaluate(() => {
+      const r = document.querySelector("#t-screen .xterm-screen").getBoundingClientRect();
+      const d = term._core._renderService.dimensions.css.cell;
+      return { x: r.left, y: r.top, w: d.width, h: d.height, cx: term.buffer.active.cursorX, cy: term.buffer.active.cursorY };
+    });
+    if (cell.cy !== 6 || cell.cx !== 21) fail("phoneTap: the fixture cursor is at " + cell.cx + "," + cell.cy);
+    const at = (row, col) => [cell.x + (col + 0.5) * cell.w, cell.y + (row + 0.5) * cell.h];
+    const frames = () => p.evaluate(() => window.__sent.filter(x => /"t":"in"/.test(x)).map(x => JSON.parse(x).d));
+    const clear = () => p.evaluate(() => { window.__sent.length = 0; });
+    const L = "\x1b[D", U = "\x1b[A", R = "\x1b[C";
+    const expect = async (name, want) => {
+      const got = await frames();
+      if (JSON.stringify(got) !== JSON.stringify(want))
+        fail("phoneTap: " + name + " sent " + JSON.stringify(got) + ", wanted " + JSON.stringify(want));
+      await clear();
+    };
+    await clear();
+    // 5 cells left of the cursor, one frame
+    await p.touchscreen.tap(...at(6, 16));
+    await p.waitForTimeout(150);
+    await expect("a tap 5 cells left", [L.repeat(5)]);
+    // output above the rule
+    await p.touchscreen.tap(...at(1, 4));
+    await p.waitForTimeout(150);
+    await expect("a tap on output", []);
+    // a wrapped line above: Up, then horizontal from the clamped column
+    await p.touchscreen.tap(...at(5, 10));
+    await p.waitForTimeout(150);
+    await expect("a tap on the line above", [U + L.repeat(11)]);
+    // past the end of the line above: clamps to its end (24), 3 to the right of column 21
+    await p.touchscreen.tap(...at(5, 50));
+    await p.waitForTimeout(150);
+    await expect("a tap past the end of the line above", [U + R.repeat(3)]);
+    // a tap on a rule and on the status line send nothing
+    await p.touchscreen.tap(...at(4, 3));
+    await p.touchscreen.tap(...at(8, 3));
+    await p.waitForTimeout(150);
+    await expect("a tap on a rule and the status", []);
+    // application cursor mode uses SS3
+    await p.evaluate(() => termSock.onmessage({ data: "\x1b[?1h" }));
+    await p.touchscreen.tap(...at(6, 19));
+    await p.waitForTimeout(150);
+    await expect("a tap in application cursor mode", ["\x1bOD\x1bOD"]);
+    await p.evaluate(() => termSock.onmessage({ data: "\x1b[?1l" }));
+    // a drag on the prompt, and a long press, send nothing
+    const [dx, dy] = at(6, 16);
+    await p.evaluate(([x, y]) => {
+      const host = document.getElementById("t-screen");
+      const tch = (cx, cy) => new Touch({ identifier: 1, target: host, clientX: cx, clientY: cy });
+      host.dispatchEvent(new TouchEvent("touchstart", { bubbles: true, touches: [tch(x, y)], changedTouches: [tch(x, y)] }));
+      host.dispatchEvent(new TouchEvent("touchmove", { bubbles: true, touches: [tch(x + 40, y)], changedTouches: [tch(x + 40, y)] }));
+      host.dispatchEvent(new TouchEvent("touchend", { bubbles: true, touches: [], changedTouches: [tch(x + 40, y)] }));
+    }, [dx, dy]);
+    await p.waitForTimeout(150);
+    await expect("a drag", []);
+    await p.evaluate(([x, y]) => new Promise(res => {
+      const host = document.getElementById("t-screen");
+      const tch = () => new Touch({ identifier: 1, target: host, clientX: x, clientY: y });
+      host.dispatchEvent(new TouchEvent("touchstart", { bubbles: true, touches: [tch()], changedTouches: [tch()] }));
+      setTimeout(() => { host.dispatchEvent(new TouchEvent("touchend", { bubbles: true, touches: [], changedTouches: [tch()] })); res(); }, 600);
+    }), [dx, dy]);
+    await expect("a long press", []);
+    const focus = await p.evaluate(() => window.__focus);
+    console.log("phoneTap: helper textarea focus count " + focus);
+    if (focus > 1) fail("phoneTap: the helper textarea was focused " + focus + " times");
+    await ctx.close();
+  } finally {
+    tasksMode = was;
+  }
+  if (errors.length) fail("phoneTap: the page threw: " + errors.join(" | "));
+}
+
+// ── the on-screen keyboard sizes the phone layout (u-019) ─────────────────
+// The keyboard is emulated by shadowing the real visualViewport's height and offsetTop and dispatching its
+// resize. The key bar and the cursor row stay above its bottom edge, in the normal phone view and in full
+// screen, and restoring the height puts things back.
+async function phoneKeyboardSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  landList = [LAND["land-live"]];
+  landPerms = [];
+  const errors = [];
+  const fakeSock = () => {
+    const Real = window.WebSocket;
+    window.__sent = [];
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
+        onopen: null, onclose: null, onmessage: null, onerror: null,
+        send(d) { window.__sent.push(String(d)); }, close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  };
+  try {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+    await ctx.addInitScript(() => {
+      localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true }));
+      localStorage.setItem("atrium.termphone", "1");
+    });
+    await ctx.addInitScript(fakeSock);
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e.stack || e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await p.evaluate(() => attachTask("land-live"));
+    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live",
+      null, { timeout: slow(10000) });
+    await p.evaluate(() => termSock.onmessage({ data: '{"t":"size","cols":132,"rows":41}' }));
+    await p.waitForTimeout(300);
+    await p.evaluate(() => {
+      // Cursor on the last row, where the keyboard would cover it.
+      termSock.onmessage({ data: "[2J[41;1Hprompt" });
+      const vv = window.visualViewport;
+      window.__kb = (px) => new Promise(res => {
+        Object.defineProperty(vv, "height", { configurable: true, get: () => window.innerHeight - px });
+        Object.defineProperty(vv, "offsetTop", { configurable: true, get: () => 0 });
+        vv.dispatchEvent(new Event("resize"));
+        requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(res, 150)));
+      });
+    });
+    await p.waitForTimeout(200);
+    const st = () => p.evaluate(() => {
+      const vv = window.visualViewport, host = document.getElementById("t-screen");
+      const hb = host.getBoundingClientRect(), kb = document.getElementById("t-keys").getBoundingClientRect();
+      const ch = term._core._renderService.dimensions.css.cell.height;
+      const inner = parseFloat(getComputedStyle(host).paddingTop) || 0;
+      const rowTop = hb.top + inner + term.buffer.active.cursorY * ch - host.scrollTop;
+      return { visBottom: vv.offsetTop + vv.height, keysBottom: kb.bottom, keysTop: kb.top, rowTop, rowBottom: rowTop + ch,
+        hostTop: hb.top, resizes: window.__sent.filter(x => /"t":"resize"/.test(x)).length,
+        bar: host.offsetHeight - host.clientHeight, barW: host.offsetWidth - host.clientWidth,
+        sbw: getComputedStyle(host).scrollbarWidth };
+    });
+    const check = (name, s) => {
+      if (s.keysBottom > s.visBottom + 1) fail("phoneKeyboard " + name + ": the key bar is under the keyboard: " + JSON.stringify(s));
+      if (s.rowBottom > s.keysTop + 1 || s.rowTop < s.hostTop - 1)
+        fail("phoneKeyboard " + name + ": the cursor row is not above the key bar: " + JSON.stringify(s));
+      if (s.rowBottom < s.keysTop - 200) fail("phoneKeyboard " + name + ": the cursor row is a keyboard height above the key bar: " + JSON.stringify(s));
+      if (s.bar !== 0 && s.sbw !== "none") fail("phoneKeyboard " + name + ": the pan container shows a horizontal scrollbar: " + JSON.stringify(s));
+    };
+    for (const mode of ["phone", "full"]) {
+      if (mode === "full") { await p.evaluate(() => setTermFull(true)); await p.waitForTimeout(300); }
+      const label = mode === "full" ? "full screen" : "phone view";
+      const base0 = await st();
+      check(label + " (no keyboard)", base0);
+      await p.evaluate(() => window.__kb(300));
+      const up = await st();
+      check(label + " (keyboard up)", up);
+      if (up.keysBottom > base0.keysBottom - 250) fail("phoneKeyboard " + label + ": the key bar did not move up with the keyboard: " + JSON.stringify([base0, up]));
+      await p.evaluate(() => window.__kb(0));
+      const back = await st();
+      check(label + " (keyboard down)", back);
+      if (Math.abs(back.keysBottom - base0.keysBottom) > 2) fail("phoneKeyboard " + label + ": restoring the height did not restore the layout: " + JSON.stringify([base0, back]));
+      if (back.resizes) fail("phoneKeyboard " + label + ": the keyboard sent " + back.resizes + " resize frame(s)");
+    }
+  } finally {
+    tasksMode = was;
+  }
+  if (errors.length) fail("phoneKeyboard: the page threw: " + errors.join(" | "));
 }
 
 // ── copy on select answers the pointer, not the find bar ──────────────────
@@ -8361,7 +8994,7 @@ async function main() {
       history: historySection, contextSize: contextSizeSection, peekEverywhere: peekEverywhereSection, cardRoute: cardRouteSection,
       quietDoer: quietDoerSection, looksIdle: looksIdleSection, notifyOff: notifyOffSection,
       questionsClick: questionsClickSection, walk: walkSection, linkReuse: linkReuseSection,
-      usageCacheReads: usageCacheReadsSection, roomsDash: roomsDashSection, phoneView: phoneViewSection, u016: u016Section, phoneFocus: phoneFocusSection, usagePolish: usagePolishSection, usageLimits: usageLimitsSection, usageGroups: usageGroupsSection,
+      usageCacheReads: usageCacheReadsSection, roomsDash: roomsDashSection, phoneView: phoneViewSection, heldLine: heldLineSection, u016: u016Section, phoneHeader: phoneHeaderSection, phoneFocus: phoneFocusSection, phoneTermBar: phoneTermBarSection, phonePan: phonePanSection, phoneTap: phoneTapSection, phoneKeyboard: phoneKeyboardSection, usagePolish: usagePolishSection, usageLimits: usageLimitsSection, usageGroups: usageGroupsSection,
       eventDriven: eventDrivenSection, idleBudget: idleBudgetSection, pollsGone: pollsGoneSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
@@ -10292,8 +10925,14 @@ async function main() {
     await usageCacheReadsSection(browser, base);
     await roomsDashSection(browser, base);
     await phoneViewSection(browser, base);
+    await heldLineSection(browser, base);
     await u016Section(browser, base);
+    await phoneHeaderSection(browser, base);
     await phoneFocusSection(browser, base);
+    await phoneTermBarSection(browser, base);
+    await phonePanSection(browser, base);
+    await phoneTapSection(browser, base);
+    await phoneKeyboardSection(browser, base);
     await eventDrivenSection(browser, base);
     await idleBudgetSection(browser, base);
     await pollsGoneSection(browser, base);

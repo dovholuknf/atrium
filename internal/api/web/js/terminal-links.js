@@ -1656,6 +1656,7 @@ function sendInput(text, quiet, pasted) {
   if (pasted && !quiet) pasteBegin(d.length); // before the send
   send({ t: "in", d });
   if (quiet) return;
+  phoneFollow();
   if (term) term.scrollToBottom();
   followScrollUntil = Date.now() + followScrollFor;
   if (pasted) lagPasteMark("sent");
@@ -2448,7 +2449,10 @@ function phoneZoomFit() {
 // may resize (a resize moves the pty), so the rows under the keyboard are reached
 // by scrolling the pan container. It gets bottom padding for the part of it the
 // keyboard covers, or the last rows could never scroll clear of it.
-function keepCursorInView(host, t) {
+// Where this code last left the pane, so its own scroll event is recognised and is not read as the reader.
+let phoneOwn = { l: 0, t: 0 };
+
+function keepCursorInView(host, t, noPan) {
   if (!host || !t) return;
   const b = t.buffer.active;
   if (b.viewportY < b.baseY) return;
@@ -2467,6 +2471,7 @@ function keepCursorInView(host, t) {
   const pad = (covered ? Math.ceil(covered + ch * 2) : 0) + "px";
   if (host.style.paddingBottom !== pad) host.style.paddingBottom = pad;
   // The pane's own top padding, then the rows above the cursor.
+  if (noPan) return;
   const inner = parseFloat(getComputedStyle(host).paddingTop) || 0;
   const rowTop = hostBox.top + inner + b.cursorY * ch - host.scrollTop;
   const rowBottom = rowTop + ch * 2;
@@ -2475,6 +2480,7 @@ function keepCursorInView(host, t) {
   const colLeft = hostBox.left + b.cursorX * cw - host.scrollLeft;
   if (colLeft + cw > hostBox.right) host.scrollLeft += colLeft + cw - hostBox.right;
   else if (colLeft < hostBox.left) host.scrollLeft -= hostBox.left - colLeft;
+  phoneOwn = { l: host.scrollLeft, t: host.scrollTop };
 }
 
 // WHY THE PHONE BOUNCED (u-017). Focusing a terminal scrolls its helper textarea into view, and
@@ -2497,6 +2503,74 @@ function phoneSyncTextarea() {
   } catch (e) {}
 }
 
+// MANUAL PAN STATE (u-017b). `phoneTouching`: a finger is on the pane. `phoneManual`: the reader scrolled it
+// by hand, so the cursor follow is off until `phoneFollow` (typing, the key bar, a paste, or the follow chip).
+let phoneTouching = false, phoneManual = false, phoneManualPos = null;
+
+// The pane opened another card or detached: the pan state belongs to the card it was made on.
+function phoneManualReset() {
+  phoneTouching = false; phoneManual = false; phoneManualPos = null;
+  phoneOwn = { l: 0, t: 0 }; phoneKeepKey = "";
+  phoneFollowChip(false);
+}
+
+function phoneFollowChip(on) {
+  const c = document.getElementById("t-follow");
+  if (c) c.hidden = !on;
+}
+
+// The reader typed or tapped follow: the cursor is followed again, and brought into view now.
+function phoneFollow() {
+  if (!phoneManual) return;
+  phoneManual = false; phoneManualPos = null;
+  phoneFollowChip(false);
+  phoneKeepSoon(true);
+}
+
+// The reader moved the pane. A scroll that is exactly where this code left it is its own echo.
+function phoneManualScroll(host) {
+  if (!termPhone()) return;
+  if (host.scrollLeft === phoneOwn.l && host.scrollTop === phoneOwn.t) return;
+  // Once the pan is manual EVERY scroll that is not our echo updates the remembered spot, touching or not:
+  // a fling keeps scrolling after touchend, and a focus must restore where it ended, not where it began.
+  if (!phoneTouching && !phoneManual) return;
+  phoneManual = true;
+  phoneManualPos = { l: host.scrollLeft, t: host.scrollTop };
+  phoneFollowChip(true);
+}
+
+function wirePhonePan() {
+  const host = document.getElementById("t-screen");
+  if (!host || host._phonePan) return;
+  host._phonePan = true;
+  host.addEventListener("touchstart", () => { phoneTouching = true; }, { passive: true });
+  const up = () => { phoneTouching = false; };
+  host.addEventListener("touchend", up, { passive: true });
+  host.addEventListener("touchcancel", up, { passive: true });
+  host.addEventListener("scroll", () => phoneManualScroll(host), { passive: true });
+  // a wheel or trackpad (the desktop-size override on a laptop) is a reader panning too
+  host.addEventListener("wheel", () => { phoneTouching = true; requestAnimationFrame(() => { phoneManualScroll(host); phoneTouching = false; }); }, { passive: true });
+  // In .term-body, whose bottom is the screen's, so the chip rides just above the phone key bar (and in full
+  // screen) without a measurement.
+  const pane = host.parentElement;
+  if (pane && !document.getElementById("t-follow")) {
+    const c = document.createElement("button");
+    c.id = "t-follow"; c.type = "button"; c.hidden = true; c.textContent = "follow";
+    c.addEventListener("pointerdown", (e) => e.preventDefault());
+    c.addEventListener("click", phoneFollow);
+    pane.appendChild(c);
+  }
+  // A focus scroll the browser did for the textarea must not move a pan the reader chose.
+  document.addEventListener("focusin", (e) => {
+    if (!phoneManual || !phoneManualPos || !e.target || !e.target.classList || !e.target.classList.contains("xterm-helper-textarea")) return;
+    requestAnimationFrame(() => {
+      if (!phoneManual || !phoneManualPos) return;
+      host.scrollLeft = phoneManualPos.l; host.scrollTop = phoneManualPos.t;
+      phoneOwn = { l: host.scrollLeft, t: host.scrollTop };
+    });
+  });
+}
+
 let phoneKeepKey = "";
 function phoneKeepCursor(force) {
   if (!term || !termPhone()) return;
@@ -2510,7 +2584,10 @@ function phoneKeepCursor(force) {
     vv ? Math.round(vv.offsetTop) + "," + Math.round(vv.height) : ""].join("|");
   if (!force && key === phoneKeepKey) return;
   phoneKeepKey = key;
-  keepCursorInView(host, term);
+  // A MANUAL PAN WINS (u-017b). While a finger is down, and after the reader has panned by hand, the pane
+  // is never moved (only its bottom padding is kept). It follows the cursor again only on the reader's input
+  // (`phoneFollow`), never on output.
+  keepCursorInView(host, term, phoneTouching || phoneManual);
 }
 
 let phoneKeepQueued = false, phoneKeepForce = false;
@@ -2536,6 +2613,90 @@ function phonePageHold() {
   const se = document.scrollingElement;
   if (window.scrollX || window.scrollY || (se && (se.scrollTop || se.scrollLeft))) window.scrollTo(0, 0);
   if (document.body.scrollTop || document.body.scrollLeft) { document.body.scrollTop = 0; document.body.scrollLeft = 0; }
+}
+
+// TAP TO POSITION THE CURSOR (u-017c). A tap on a cell of the input moves the cursor there by sending arrow
+// keys, the way xterm's altClickMovesCursor does, in ONE `sendInput` so the runner sees a single frame.
+//
+// WHERE THE INPUT IS: Claude Code draws it between two horizontal rules (rows of ─), its first row starting
+// with a prompt marker ("> ") and every wrapped row indented by the same width. From the cursor row, walk up to
+// the rule above and down to the rule below; the input is the rows between them. No rule found on either side,
+// or no marker on the first row: the answer is "not an input" and a tap does nothing. Output above the rule is
+// never touched, so there a tap stays a pan or a select.
+//
+// WHERE THE TEXT ENDS on a row: xterm's own trimmed row text (trailing blanks are not text), never less than
+// the prompt width and never less than the cursor on the cursor's row. A tap past it lands on its end. The
+// arrow count is in CHARACTERS: a wide glyph fills two cells and is one arrow.
+//
+// ROWS: Up/Down once per row of difference, then Left/Right. Up/Down keep the column the app was at, clamped to
+// the shorter row, so the horizontal delta is worked out from that clamped column.
+const PHONE_TAP_MOVE = 10, PHONE_TAP_MS = 400;
+const phoneRuleRow = (t) => { const x = t.replace(/\s+/g, ""); return x.length >= 8 && (x.match(/─/g) || []).length >= x.length * 0.8; };
+
+function phoneTapKeys(row, col) {
+  if (!term) return "";
+  const b = term.buffer.active;
+  if (b.viewportY < b.baseY || term.hasSelection()) return "";
+  const line = (r) => b.getLine(b.viewportY + r);
+  const text = (r) => { const l = line(r); return l ? l.translateToString(true) : ""; };
+  const cy = b.cursorY;
+  let up = -1, down = -1;
+  for (let r = cy - 1; r >= 0; r--) if (phoneRuleRow(text(r))) { up = r; break; }
+  for (let r = cy + 1; r < term.rows; r++) if (phoneRuleRow(text(r))) { down = r; break; }
+  if (up < 0 || down < 0) return "";
+  const first = up + 1, last = down - 1;
+  if (row < first || row > last || cy < first || cy > last) return "";
+  const m = /^\s*[>❯›]\s/.exec(text(first));
+  if (!m) return "";
+  const pre = m[0].length;
+  const endOf = (r) => Math.max(pre, text(r).length, r === cy ? b.cursorX : 0);
+  const chars = (r, from, to) => {
+    const l = line(r); let n = 0;
+    for (let i = Math.min(from, to); i < Math.max(from, to); i++) {
+      const c = l && l.getCell(i);
+      if (!c || c.getWidth() !== 0) n++;
+    }
+    return n;
+  };
+  const target = Math.max(pre, Math.min(col, endOf(row)));
+  const app = !!(term.modes && term.modes.applicationCursorKeysMode);
+  const key = (c) => (app ? "\x1bO" : "\x1b[") + c;
+  let out = "";
+  const dy = row - cy;
+  if (dy) out += key(dy < 0 ? "A" : "B").repeat(Math.abs(dy));
+  const from = dy ? Math.min(b.cursorX, endOf(row)) : b.cursorX;
+  const n = chars(row, from, target);
+  if (n) out += key(target < from ? "D" : "C").repeat(n);
+  return out;
+}
+
+function wirePhoneTap() {
+  const host = document.getElementById("t-screen");
+  if (!host || host._phoneTap) return;
+  host._phoneTap = true;
+  let t0 = null;
+  host.addEventListener("touchstart", (e) => {
+    t0 = e.touches.length === 1 ? { x: e.touches[0].clientX, y: e.touches[0].clientY, t: performance.now(),
+      l: host.scrollLeft, tp: host.scrollTop } : null;
+  }, { passive: true });
+  host.addEventListener("touchmove", (e) => {
+    if (!t0) return;
+    if (e.touches.length !== 1 || Math.hypot(e.touches[0].clientX - t0.x, e.touches[0].clientY - t0.y) > PHONE_TAP_MOVE) t0 = null;
+  }, { passive: true });
+  host.addEventListener("touchend", (e) => {
+    const s = t0; t0 = null;
+    if (!s || !term || !termPhone() || phonePinch || e.touches.length) return;
+    if (performance.now() - s.t > PHONE_TAP_MS || host.scrollLeft !== s.l || host.scrollTop !== s.tp) return;
+    const scr = host.querySelector(".xterm-screen");
+    let cw = 0, ch = 0;
+    try { const d = term._core._renderService.dimensions.css.cell; cw = d.width; ch = d.height; } catch (err) {}
+    if (!scr || !cw || !ch) return;
+    const r = scr.getBoundingClientRect();
+    const col = Math.floor((s.x - r.left) / cw), row = Math.floor((s.y - r.top) / ch);
+    if (col < 0 || row < 0 || row >= term.rows || col >= term.cols) return;
+    const keys = phoneTapKeys(row, col);
+    if (keys) sendInput(keys, false);
+  }, { passive: true });
 }
 
 // Pinch: two fingers change the font by the ratio of their distance, and the
@@ -2630,12 +2791,34 @@ function wirePhoneKeys() {
   });
 }
 
+// THE KEYBOARD SIZES THE LAYOUT (u-019). `--vvh` and `--vvt` are the visual viewport's height and offset, and the
+// phone layout (`body.term-phone`, `body.term-full`, phone.css) is that tall, so the key bar stays just above the
+// keyboard. Set on a visualViewport RESIZE only, once per frame, and never on its scroll: a scroll is the page
+// being panned under the keyboard, not a new height, and answering it would refit for nothing.
+let phoneVVQueued = false, phoneVVLast = "";
+function phoneVVSoon() {
+  if (phoneVVQueued) return;
+  phoneVVQueued = true;
+  requestAnimationFrame(() => {
+    phoneVVQueued = false;
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const v = Math.round(vv.height) + "|" + Math.round(vv.offsetTop);
+    if (v === phoneVVLast) return;
+    phoneVVLast = v;
+    const st = document.documentElement.style;
+    st.setProperty("--vvh", Math.round(vv.height) + "px");
+    st.setProperty("--vvt", Math.round(vv.offsetTop) + "px");
+  });
+}
+
 function syncPhoneView() {
   document.body.classList.toggle("term-phone", termPhone());
   syncTermViewButton();
   if (window.visualViewport && !window._phoneVV) {
     window._phoneVV = true;
-    window.visualViewport.addEventListener("resize", () => phoneKeepSoon());
+    phoneVVSoon();
+    window.visualViewport.addEventListener("resize", () => { phoneVVSoon(); phoneKeepSoon(); });
     window.visualViewport.addEventListener("scroll", () => { phonePageHold(); phoneKeepSoon(); });
     window.addEventListener("scroll", phonePageHold, { passive: true });
     // A tap focuses the terminal: whatever the browser scrolled for it, put the cursor back in view.
@@ -2647,5 +2830,7 @@ function syncPhoneView() {
   }
   wirePhoneKeys();
   wirePhonePinch();
+  wirePhonePan();
+  wirePhoneTap();
   if (term) { markWide(); phoneZoomFit(); sizeTermHost(); }
 }

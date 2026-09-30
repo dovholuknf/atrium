@@ -1605,6 +1605,8 @@ async function renderTermList() {
   newCardNote(all);
   // The bar's alias, when it changed under the open terminal. See js/alias.js.
   if (typeof followTermAlias === "function") followTermAlias(all);
+  // And the "clear the line" notice, from the same list. See js/heldline.js.
+  if (typeof followHeldLine === "function") followHeldLine(all);
 
   // Terminals, AND the pinned bucket whether or not it is running.
   //

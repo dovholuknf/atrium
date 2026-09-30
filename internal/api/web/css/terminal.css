@@ -612,6 +612,14 @@
      is off screen and a focus scroll dragged the pane back to the top: the bounce. xterm's own inline top/left
      park the textarea at the cursor, which is in view, so a focus has nothing to scroll to. */
   body:not(.term-phone) #t-screen .xterm-helper-textarea { top: 0 !important; left: 0 !important; }
+  /* u-017b: the follow chip, shown only while a manual pan has switched the cursor follow off. */
+  .term-body { position: relative; }
+  #t-follow {
+    position: absolute; right: 22px; bottom: 8px; z-index: 5; padding: 6px 12px; min-height: 32px;
+    border: 1px solid var(--term-line, var(--stroke-dim)); border-radius: var(--r-sm);
+    background: var(--term-bg, var(--bg-2)); color: var(--term-fg, var(--dim)); font: var(--fs-md)/1 var(--mono);
+    opacity: .9; touch-action: manipulation;
+  }
   .term-list .card .chip { white-space: nowrap; }
 
   /* Never set a width here. Color only. The fit addon works out how many columns fit by measuring the
@@ -755,3 +763,15 @@
   .term-list .card.on.bare .title .tpath { color: var(--dim); opacity: 1; }
   /* An exited row that keeps its theme needs no rule of its own: `.cold`'s fade in notify.css, over the worn
      row, is the pale, still-tinted look. A wash of `--shell-0` laid over it instead darkened it on a light skin. */
+
+  /* The "clear the line" notice. Top-right of the grid, away from the prompt at the bottom-left, and out of flow so
+     it never changes the grid or triggers a fit. It takes no pointer events, so it cannot take a click or focus
+     from the terminal. On a phone `.term-body` ends above the key bar, so it is above it by construction. */
+  .term-body { position: relative; }
+  .heldline {
+    position: absolute; top: 6px; right: 14px; z-index: 5; max-width: calc(100% - 28px);
+    pointer-events: none; padding: 4px 10px;
+    border: 1px solid var(--warn-stroke); border-radius: var(--r-sm);
+    background: linear-gradient(var(--warn-bg), var(--warn-bg)), var(--bg-1); color: var(--head);
+    font: var(--fs-xs)/1.3 var(--mono);
+  }
