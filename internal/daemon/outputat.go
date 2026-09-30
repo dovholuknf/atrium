@@ -124,7 +124,12 @@ func (d *Daemon) outputMoved(t *store.Task) bool {
 		return false
 	case have && info.Size() > prev.offset:
 		start = prev.offset
-	case info.Size() > transcriptTail:
+	}
+	// NEVER MORE THAN THE TAIL, a first read or not. Only the newest reply
+	// matters, and a pasted image stored in one line can put megabytes between
+	// two checks. A window that starts mid-line skips that line, which does not
+	// parse.
+	if info.Size()-start > transcriptTail {
 		start = info.Size() - transcriptTail
 	}
 	f, err := os.Open(path)
@@ -141,10 +146,9 @@ func (d *Daemon) outputMoved(t *store.Task) bool {
 	}
 	// Complete lines only. The rest is read again next time.
 	chunk = chunk[:bytes.LastIndexByte(chunk, '\n')+1]
-	replies, err := scanReplyText(bytes.NewReader(chunk))
-	if err != nil {
-		return false
-	}
+	// A scan that fails still moves the offset past what it was given, or the
+	// same bytes would fail on every check and output_at would never move again.
+	replies, _ := scanReplyText(bytes.NewReader(chunk))
 	next := outputSeen{path: path, offset: start + int64(len(chunk))}
 	if have {
 		next.at = prev.at
