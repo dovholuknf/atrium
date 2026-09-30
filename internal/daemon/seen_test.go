@@ -323,10 +323,11 @@ loop:
 			break loop
 		}
 	}
-	// Two: turnEnded moves the card to needs-input and publishes, and the seen
-	// step publishes once, after the mark, so there is no publish of an unseen turn.
-	if got != 2 {
-		t.Fatalf("the Stop published the worker %d times, want the status move and one seen publish", got)
+	// One: turnEnded moves the card to needs-input and publishes, the seen step
+	// publishes after the mark, and the two land inside one coalescing window, so
+	// the single event is sent from the row as it stands, already seen.
+	if got != 1 {
+		t.Fatalf("the Stop published the worker %d times, want one coalesced publish", got)
 	}
 	if v := seenCard(t, d, worker.ID); v == nil || v.Unseen || v.SeenVia != store.SeenLauncher {
 		t.Fatalf("card after the Stop: %+v", v)
