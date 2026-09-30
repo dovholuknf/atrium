@@ -13032,6 +13032,157 @@ async function pasteCloseSection(browser, base) {
 // A script that throws while the page loads takes every function it would have defined after that line with it, and
 // the board still draws, so nothing else notices. notify.js called into cardurl.js before it had loaded and alerts,
 // the growler reap and the settings stream went quiet. The board, a pop-out by fragment and one by readable path.
+// ── the /m card view: the live working line, the operator's own messages, the recap sheet ──
+async function mWorkingSection(browser) {
+  const st = mServer({});
+  const run = mCard("run-1", { alias: "worker", display_title: "worker", status: "running", activity: { what: "thinking", seconds: 1 },
+    seen: { turn_ended_at: mIso(9 * M_MIN) }, recap: "Earlier **recap**.", recap_at: mIso(30 * M_MIN) });
+  st.tasks = [run];
+  st.replies["run-1"] = { source: "transcript", replies: [{ at: mIso(9 * M_MIN), text: "The previous answer, from the last turn." }] };
+  await st.open();
+  try {
+    for (const vp of M_VIEWS) {
+      const { ctx, p, errors } = await mPage(browser, st, vp, "");
+      const tag = "mWorking " + vp.width + ": ";
+      await p.waitForSelector("#m-seg-all", { timeout: slow(10000) });
+      await p.tap("#m-seg-all");
+      await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
+      await p.tap('#m-list .row[data-id="run-1"]');
+      await p.waitForSelector("#m-card.on", { timeout: slow(5000) });
+      const box = () => p.evaluate(() => {
+        const w = document.getElementById("m-working"), r = w.getBoundingClientRect(), c = document.getElementById("m-compose").getBoundingClientRect();
+        return { hidden: w.hidden, text: w.textContent.trim(), h: r.height, bottom: r.bottom, composeTop: c.top, inChips: !!w.closest(".c-state"),
+          fs: parseFloat(getComputedStyle(w).fontSize), anim: getComputedStyle(w.querySelector(".wk-spin") || w).animationName,
+          chipText: document.querySelector(".c-state").textContent, sw: document.documentElement.scrollWidth, iw: window.innerWidth };
+      });
+      let b = await box();
+      if (b.hidden || b.text !== "thinking") fail(tag + "no thinking line: " + JSON.stringify(b));
+      if (b.inChips || /thinking/.test(b.chipText)) fail(tag + "the working text is in the chip row: " + b.chipText);
+      if (b.fs < 18 || b.h < 40) fail(tag + "the line is small: " + JSON.stringify(b));
+      if (b.anim !== "wk-turn") fail(tag + "the spinner does not animate: " + b.anim);
+      if (b.bottom > b.composeTop + 1 || b.composeTop - b.bottom > 40) fail(tag + "the line is not pinned just above the composer: " + JSON.stringify(b));
+      if (b.sw > b.iw + 1) fail(tag + "the card scrolls sideways");
+      await mShot(p, "working-thinking-" + vp.width);
+      // a tool event shows the tool's name, from the stream
+      st.send("task", Object.assign({}, run, { row: 1, activity: { what: "tool", tool: "Bash", seconds: 2 } }));
+      await p.waitForFunction(() => /Bash/.test(document.getElementById("m-working").textContent), null, { timeout: slow(5000) });
+      b = await box();
+      if (b.hidden || !/running\s+Bash/.test(b.text)) fail(tag + "the tool name is not shown: " + b.text);
+      // idle takes it away
+      st.send("task", Object.assign({}, run, { row: 1, status: "needs-input", activity: { what: "idle" } }));
+      await p.waitForFunction(() => document.getElementById("m-working").hidden, null, { timeout: slow(5000) });
+      // and back
+      st.send("task", Object.assign({}, run, { row: 1, activity: { what: "thinking" } }));
+      await p.waitForFunction(() => !document.getElementById("m-working").hidden, null, { timeout: slow(5000) });
+      // the stream drops and reconnects, and the line follows the new events
+      const n = st.streams.length;
+      st.streams.forEach(x => { try { x.destroy(); } catch (e) {} });
+      st.streams = [];
+      await p.waitForFunction(() => document.getElementById("m-live").classList.contains("on") === false, null, { timeout: slow(5000) }).catch(() => {});
+      const t0 = Date.now();
+      while (!st.streams.length && Date.now() - t0 < slow(15000)) await p.waitForTimeout(200);
+      if (!st.streams.length) fail(tag + "the stream did not reopen (" + n + " before)");
+      st.send("task", Object.assign({}, run, { row: 1, status: "needs-input", activity: { what: "idle" } }));
+      await p.waitForFunction(() => document.getElementById("m-working").hidden, null, { timeout: slow(5000) });
+      // the old thinking badge is gone from the chip row in every state
+      if (await p.$(".c-state .doing")) fail(tag + "the old badge is still in the chip row");
+      if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+      await ctx.close();
+    }
+  } finally { await st.close(); }
+  if (!bad) console.log("mWorking ok");
+}
+
+async function mOwnMessagesSection(browser) {
+  const st = mServer({});
+  const c = mCard("own-1", { alias: "talker", display_title: "talker", status: "needs-input", waiting_since: mIso(2 * M_MIN), seen: { turn_ended_at: mIso(20 * M_MIN) } });
+  st.tasks = [c];
+  st.replies["own-1"] = { source: "transcript", replies: [
+    { at: mIso(30 * M_MIN), text: "Old reply." }, { at: mIso(10 * M_MIN), text: "Newest reply." }] };
+  await st.open();
+  try {
+    for (const vp of M_VIEWS) {
+      const { ctx, p, errors } = await mPage(browser, st, vp, "");
+      const tag = "mOwnMessages " + vp.width + ": ";
+      await p.route("**/v1/tasks/own-1/message", r => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ delivered: "terminal" }) }));
+      await p.waitForSelector("#m-seg-all", { timeout: slow(10000) });
+      await p.tap("#m-seg-all");
+      await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
+      await p.tap('#m-list .row[data-id="own-1"]');
+      await p.waitForSelector("#m-replies .reply", { timeout: slow(5000) });
+      await p.waitForSelector("#m-compose textarea", { timeout: slow(5000) });
+      await p.fill("#m-compose textarea", "my own words, sent from the phone");
+      await p.evaluate(() => document.querySelector("#m-compose textarea").dispatchEvent(new Event("input", { bubbles: true })));
+      await p.tap("#m-compose .mc-send");
+      await p.waitForSelector("#m-replies .reply.mine", { timeout: slow(5000) });
+      const order = await p.$$eval("#m-replies .reply", els => els.map(e => e.classList.contains("mine") ? "mine:" + e.querySelector(".own").textContent : e.textContent.slice(0, 12)));
+      if (order.length !== 3 || order[2] !== "mine:my own words, sent from the phone") fail(tag + "own message not last in order: " + JSON.stringify(order));
+      if (!/you/.test(await p.textContent("#m-replies .reply.mine .src"))) fail(tag + "the message is not marked as the operator's");
+      // kept on the device: a reload and a reopen still show it
+      await p.goto(st.url + "/m/", { waitUntil: "domcontentloaded" });
+      await p.waitForSelector("#m-seg-all", { timeout: slow(10000) });
+      await p.tap("#m-seg-all");
+      await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
+      await p.tap('#m-list .row[data-id="own-1"]');
+      await p.waitForSelector("#m-replies .reply.mine", { timeout: slow(5000) });
+      await mShot(p, "own-messages-" + vp.width);
+      if (await mNoSideways(p)) fail(tag + "the card scrolls sideways");
+      if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+      await ctx.close();
+    }
+  } finally { await st.close(); }
+  if (!bad) console.log("mOwnMessages ok");
+}
+
+async function mRecapSheetSection(browser) {
+  const st = mServer({});
+  const fresh = mCard("rc-fresh", { alias: "fresh", display_title: "fresh", status: "needs-input", waiting_since: mIso(M_MIN),
+    recap: "A **current** recap.", recap_at: mIso(2 * M_MIN), seen: { turn_ended_at: mIso(5 * M_MIN) } });
+  const stale = mCard("rc-stale", { alias: "stale", display_title: "stale", status: "needs-input", waiting_since: mIso(2 * M_MIN),
+    recap: "An **old** recap.", recap_at: mIso(120 * M_MIN), seen: { turn_ended_at: mIso(5 * M_MIN) } });
+  st.tasks = [fresh, stale];
+  st.replies["rc-fresh"] = { source: "transcript", replies: [{ at: mIso(M_MIN), text: "A reply." }] };
+  st.replies["rc-stale"] = { source: "transcript", replies: [{ at: mIso(M_MIN), text: "A reply." }] };
+  await st.open();
+  try {
+    for (const vp of M_VIEWS) {
+      const { ctx, p, errors } = await mPage(browser, st, vp, "");
+      const tag = "mRecapSheet " + vp.width + ": ";
+      await p.waitForSelector("#m-seg-all", { timeout: slow(10000) });
+      await p.tap("#m-seg-all");
+      await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
+      await p.tap('#m-list .row[data-id="rc-fresh"]');
+      await p.waitForSelector("#m-recap-open", { timeout: slow(5000) });
+      const top = await p.evaluate(() => { const r = document.getElementById("m-recap-open").getBoundingClientRect(); return { y: r.top, h: innerHeight, inBody: !!document.querySelector("#m-card-extras .md") }; });
+      if (top.y > 260 || top.inBody) fail(tag + "the Recap control is not at the top: " + JSON.stringify(top));
+      if (!(await p.evaluate(() => document.getElementById("m-recap").hidden))) fail(tag + "the sheet is open before a tap");
+      await p.tap("#m-recap-open");
+      await p.waitForSelector("#m-recap:not([hidden]) .recap-sheet", { timeout: slow(3000) });
+      const sh = await p.textContent("#m-recap");
+      if (!/current recap/.test(sh) || !/from \d/.test(sh)) fail(tag + "the sheet lacks the recap or its time: " + sh);
+      if (/before the last turn/.test(sh)) fail(tag + "a current recap is marked stale");
+      await mShot(p, "recap-sheet-" + vp.width);
+      await p.tap("#m-recap-close");
+      await p.waitForFunction(() => document.getElementById("m-recap").hidden, null, { timeout: slow(3000) });
+      await p.tap("#m-card-back");
+      await p.waitForFunction(() => document.getElementById("m-card").hidden, null, { timeout: slow(5000) });
+      // a recap older than the last turn is folded
+      await p.tap('#m-list .row[data-id="rc-stale"]');
+      await p.waitForSelector("#m-recap-open.stale", { timeout: slow(5000) });
+      await p.tap("#m-recap-open");
+      await p.waitForSelector("#m-recap:not([hidden]) .recap-sheet", { timeout: slow(3000) });
+      if (!/before the last turn/.test(await p.textContent("#m-recap"))) fail(tag + "a stale recap does not say so");
+      if (!(await p.$("#m-recap .md.stale"))) fail(tag + "a stale recap is not dimmed");
+      // a tap on the backdrop closes it
+      await p.tap("#m-recap-back", { position: { x: 20, y: 20 } });
+      await p.waitForFunction(() => document.getElementById("m-recap").hidden, null, { timeout: slow(3000) });
+      if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+      await ctx.close();
+    }
+  } finally { await st.close(); }
+  if (!bad) console.log("mRecapSheet ok");
+}
+
 async function bootCleanSection(browser, base) {
   const raw = fs.readFileSync(path.join(WEB_ROOT, "index.html"));
   const views = [{ w: 1400, h: 900 }, { w: 390, h: 844, phone: true }, { w: 412, h: 915, phone: true }];
@@ -13095,7 +13246,7 @@ async function main() {
       u001Audit: u001AuditSection,
       pasteStart: pasteStartSection, pasteDone: pasteDoneSection, pasteOldRoom: pasteOldRoomSection, pasteClose: pasteCloseSection,
       growlQuestionShots: growlQuestionShotsSection, growlQuestionBody: growlQuestionBodySection, growlReplyGrow: growlReplyGrowSection, growlChoices: growlChoicesSection, growlStable: growlStableSection, mGrowlQuestion: mGrowlQuestionSection,
-      bootClean: bootCleanSection };
+      bootClean: bootCleanSection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mRecapSheet: mRecapSheetSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -15122,6 +15273,9 @@ async function main() {
     await growlStableSection(browser, base);
     await mGrowlQuestionSection(browser);
     await bootCleanSection(browser, base);
+    await mWorkingSection(browser);
+    await mOwnMessagesSection(browser);
+    await mRecapSheetSection(browser);
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e));
     if (process.env.DEBUG_HEADLESS) {
@@ -15407,9 +15561,12 @@ async function mCardSection(browser) {
       await p.tap('#m-list .row[data-id="card-c"]');
       await p.waitForSelector("#m-card.on", { timeout: slow(5000) });
       await p.waitForFunction(() => !document.querySelector("#m-replies .loading"), null, { timeout: slow(5000) });
-      const fb = await p.textContent("#m-card-scroll");
+      await p.tap("#m-recap-open");
+      await p.waitForSelector("#m-recap:not([hidden])", { timeout: slow(3000) });
+      const fb = await p.textContent("#m-card-scroll") + await p.textContent("#m-recap");
       if (!/A recap stands in/.test(fb) || !/abcdef1/.test(fb)) fail(tag + "the 404 fallback lacks the recap or the last report: " + fb.slice(0, 200));
       await mShot(p, "card-fallback-dark-" + vp.width);
+      await p.tap("#m-recap-close");
       if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
       await ctx.close();
       // compose.js and perms.js (u-025) are mounted on open and released on leave. The page loads the real ones,

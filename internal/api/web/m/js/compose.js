@@ -332,6 +332,8 @@
         ok = o.kind !== "refused";
         say(o.kind, o.text + (ok && joined ? " (line breaks joined)" : ""));
         if (ok) {
+          // card.js keeps the operator's side of the thread, since the room returns only the session's replies.
+          try { window.dispatchEvent(new CustomEvent("m-sent", { detail: { id: cardId, text } })); } catch (e) {}
           ta.value = "";
           writeDraft(cardId, "");
           clearAtts(state);
