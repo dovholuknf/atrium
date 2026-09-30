@@ -82,6 +82,8 @@ toast = function (title, body, goTo, key, taskFor) {
   // screen is still in the list. The list is the durable half and the toast is
   // the interruption.
   recordToLog(title, body, goTo, key, taskFor);
+  // A phone nudges the bell instead of drawing a box over the terminal. See js/phone-bell.js.
+  if (phoneToasts()) { nudgeBell("bell"); return phoneToastStub; }
   return rawToast(title, body, goTo, key, taskFor);
 };
 
@@ -102,6 +104,7 @@ function paintToastLogBadge() {
   btn.classList.toggle("has", unseen > 0);
   const n = btn.querySelector(".count");
   if (n) n.textContent = unseen > 99 ? "99+" : (unseen || "");
+  if (typeof phoneBellPaint === "function") phoneBellPaint();
 }
 
 // The row's copy icon says it worked by changing colour, not by toasting. A
