@@ -160,6 +160,11 @@ stores `run_id` with the runner start, and the exit event and the dead-card attr
 second filing of the same exit is a no-op and the exit of a later start is never taken for it. The pid and the start
 time are not the key, because a pid is reused and two implementers would pick different clocks. All of this is
 stage 1: the column, and every exit path keyed on the pair, the live exit and the exit found at reattach alike.
+While that filing is in flight, an exited pty is held by the daemon as `exiting`: never runnable, never offered to
+attach input, never counted by the idle rules, and never shown as live on the board. Only when the filing commits
+does the card's status publish and `collect` run. The start side is the mirror: `spawn` returns and the daemon writes
+`(task_id, kind, run_id, host)` durably before it treats the launch as complete, so a pty a crashed daemon had just
+started is still claimed by its card when the next daemon lists it.
 Collecting first would lose the last screen and could attribute the death wrongly, so it is not allowed.
 
 ### 3.3 Its lifetime
@@ -202,8 +207,11 @@ runners together, and the next start resumes them as today.
      to Claude's own prompt in the terminal. MUST: the gate treats ANY answer that is not a decision as retryable:
      a refused or reset connection, a timeout, a non-2xx status (a daemon closing its store, or a new one not yet
      migrated), or a 2xx with no decision in it. It retries with the SAME dedup key (`tool_use_id`) for up to 30
-     seconds, then fails open to the runner's own prompt without recording an allow anywhere. The request row is
-     durable, so the new daemon re-surfaces it and chain step 1 (a replayed decision) answers it once. That keeps
+     seconds, then fails open to the runner's own prompt without recording an allow anywhere. The daemon
+     upserts the request row by `tool_use_id` BEFORE it waits or answers, so a request that reached a working store
+     is durable, the new daemon re-surfaces it and chain step 1 (a replayed decision) answers it once. A request
+     whose row could never be written is not on the board, and the design does not claim it is: that case retries
+     and then fails open like any other, and the terminal prompt is where it is answered. That keeps
      the fail-open guarantee (a bounded wait, then open) and keeps the question on the board. f-006 moves the gate
      into Go (`atrium hook --event permission`), which is where this retry belongs, so f-011 stage 2 depends on
      f-006.
@@ -272,7 +280,10 @@ a new verb. When one does:
    resume the same conversation in the same directory on the same card. `RestartRunner` gains a target host option
    for this. Without it, which is every ordinary restart (the board's button, `restart_session`, a new context), a
    card relaunches on the host it is on now, so no restart moves a card except the idle move, which is the only
-   caller that passes the option. A brand new card goes to the newest host.
+   caller that passes the option. "The host it is on now" is captured by `RestartRunner` from the old runner BEFORE
+   wind-down and carried through to the relaunch, because in the gap between stop and start there is no live
+   runner to read it from, and `launchLocked`'s own default (the newest host) must never be what decides it. A brand new
+   card goes to the newest host.
 3. When the old host holds nothing it exits by itself (section 3.3).
 
 This is f-011's idea, and it is safe here for the reason it was hard there: it happens inside ONE room. Same
@@ -340,7 +351,8 @@ If B is refused, A is buildable, and these are the answers it would need. Each i
 - **Stage 4, host upgrade (@runtime with @terminal).** Section 6: the second host and the per-card idle move. It is
   only needed the first time the protocol changes, so it can wait for that. Acceptance: restart the daemon while cards
   run on both the primary host and a `.pN` secondary, then check that attach, write, resize, exit filing and
-  `collect` reach the right host for each card, and that a new launch goes to the newest host.
+  `collect` reach the right host for each card, that an ordinary restart of an old-host card stays on the old host,
+  and that a new launch goes to the newest host.
 
 clint's answers to section 10 become acceptance lines of the stage they touch (stage 2 for the stop default and the
 retry, stage 3 for on by default). They do not hold stages 0 and 1.
