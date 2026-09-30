@@ -339,9 +339,12 @@ func TestInstallReplacesTheOldScript(t *testing.T) {
 	if strings.Contains(joined, "atrium-activity-hook.ps1") {
 		t.Fatalf("the old activity script is still registered:\n%s", joined)
 	}
-	// The permission hook is somebody else's and must be untouched.
-	if !strings.Contains(joined, "atrium-perm-hook.ps1") {
-		t.Fatalf("the permission hook was removed:\n%s", joined)
+	// The permission script is replaced by atrium's own gate (f-006).
+	if strings.Contains(joined, "atrium-perm-hook.ps1") {
+		t.Fatalf("the old permission script is still registered:\n%s", joined)
+	}
+	if n := strings.Count(joined, "hook --event permission"); n != 1 {
+		t.Fatalf("the gate is registered %d times, want exactly one:\n%s", n, joined)
 	}
 	// The timeout the operator set on the entry survives.
 	if !strings.Contains(string(mustJSON(t, doc)), `"timeout"`) {
@@ -486,11 +489,11 @@ func TestInstallKeepsTheOperatorsOwnScripts(t *testing.T) {
 
 	joined := allCommands(t, path)
 
-	// Four scripts that are not atrium's business.
+	// Three scripts that are not atrium's business. The permission script is
+	// (f-006), and is replaced like the session one below.
 	keep := []string{
 		"session-bootstrap.ps1",
 		"set-session-state.ps1",
-		"atrium-perm-hook.ps1",
 		"pre-tool-use-hook.ps1",
 	}
 	for _, want := range keep {
