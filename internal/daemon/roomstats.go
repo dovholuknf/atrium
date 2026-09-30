@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/dovholuknf/atrium/internal/api"
 	"github.com/dovholuknf/atrium/internal/roomstats"
 )
 
@@ -63,7 +62,7 @@ func (d *Daemon) startRoomStats(ctx context.Context) {
 			}
 			out := make([]roomstats.Runner, 0, len(hs))
 			for _, h := range hs {
-				out = append(out, roomstats.Runner{Kind: h.ID, Resolves: api.RunnerFound(h) != ""})
+				out = append(out, roomstats.Runner{Kind: h.ID, Resolves: runnerFound(h) != ""})
 			}
 			return out, nil
 		},
