@@ -54,7 +54,7 @@ func (h *RoomHandler) Handler() http.Handler {
 		// Everything, then claude/* back, then claude/main out again: the room offers what its
 		// workers made and not what came from the hub in the first place.
 		// HEAD too: it is not under refs, and the clone's HEAD may be any branch at all.
-		Hide: []string{"HEAD", "refs","!refs/heads/claude/", "refs/heads/claude/main"},
+		Hide: []string{"HEAD", "refs", "!refs/heads/claude/", "refs/heads/claude/main"},
 	})
 	return mux
 }
