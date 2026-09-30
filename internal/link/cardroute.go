@@ -187,7 +187,11 @@ func (p *Proxy) placeByName(w http.ResponseWriter, r *http.Request, seg, name, t
 	}
 	switch {
 	case errors.As(err, &amb):
-		cardAnswer(w, http.StatusConflict, map[string]any{"error": err.Error(), "candidates": amb.candidates})
+		// `choices` carries each card's status, activity and age beside its name,
+		// so the board's chooser need not fetch each one. `candidates` stays for
+		// every caller that reads the names.
+		cardAnswer(w, http.StatusConflict, map[string]any{
+			"error": err.Error(), "candidates": amb.candidates, "choices": amb.choices})
 		return r, false
 	case errors.As(err, &none):
 		// ONE ROOM ANSWERS FOR ITSELF. A segment no list carries goes on as it
