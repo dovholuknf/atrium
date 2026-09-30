@@ -1,0 +1,1 @@
+- docs/rnd/competitor-features.md: a feature matrix over eighteen competitors, what changed since the survey, and ten ranked features atrium lacks. Sections 2 and 7 are marked NOT FINISHED where the atrium side was not traced in code.
