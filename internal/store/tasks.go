@@ -1587,7 +1587,7 @@ func (s *Store) appendEventOn(q querier, taskID, kind string, payload any) (*Eve
 			// does not know, so a timeline note naming a card that was never made
 			// or was removed halted the room (r-new-review-c184ae8c). Returned as
 			// no rows, which `guard` hands back and never halts on.
-			if strings.Contains(strings.ToLower(err.Error()), "foreign key constraint failed") {
+			if constraint(err) {
 				return nil, fmt.Errorf("no card %q to record %s on: %w", taskID, kind, sql.ErrNoRows)
 			}
 			return nil, err

@@ -1083,6 +1083,7 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 		// name baked into its own command line.
 		"ATRIUM_RUNNER": h.ID,
 	}
+	d.tellWhereIAm(atrium)
 	// WHICH ROOM THIS SESSION BELONGS TO, so its HTTP control MCP registration
 	// resolves ${ATRIUM_ROOM} and the hub scopes control calls to this room.
 	// Only set when this daemon is a room: a plain daemon with no hub has no

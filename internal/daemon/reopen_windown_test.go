@@ -3,6 +3,7 @@ package daemon
 import (
 	"os"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -24,8 +25,14 @@ func shellCard(t *testing.T, d *Daemon) *store.Task {
 		// /d: no AutoRun, so nothing in the machine's own cmd setup runs here.
 		cmd, args = "cmd.exe", []string{"/d", "/k"}
 	}
+	// SEALED, whatever this shell's own environment holds: a home with no hooks
+	// in it, and no daemon to reach. The daemon adds its own ATRIUM_LOCATION
+	// (tellWhereIAm), which names the test daemon's file.
+	home := t.TempDir()
+	sealed := map[string]string{"HOME": home, "USERPROFILE": home, "ATRIUM_HUB_URL": "http://127.0.0.1:1",
+		"ATRIUM_BOARD_URL": "http://127.0.0.1:1"}
 	if _, err := d.st.SaveHarness(store.Harness{ID: "shelltest", Label: "shell test", Enabled: true,
-		Cmd: cmd, Args: args, LaunchMode: store.LaunchPTY}); err != nil {
+		Cmd: cmd, Args: args, LaunchMode: store.LaunchPTY, Env: sealed}); err != nil {
 		t.Fatal(err)
 	}
 	// NOT t.TempDir: on Windows the console host lets go of the directory a moment
@@ -191,5 +198,26 @@ func TestAnAskedExitStaysDown(t *testing.T) {
 	}
 	if asked, _ := d.st.ExitAsked(task.ID); asked {
 		t.Fatal("a launch after the exit did not undo it")
+	}
+}
+
+// A DAEMON TELLS ITS CHILDREN WHERE IT IS when it keeps its own address file, so
+// their hooks reach it and never the machine's shared file, which names the live
+// room. A test daemon is exactly that daemon.
+func TestAChildIsToldWhereItsDaemonIs(t *testing.T) {
+	d := testDaemon(t)
+	env := map[string]string{}
+	d.tellWhereIAm(env)
+	if env["ATRIUM_LOCATION"] == "" || env["ATRIUM_LOCATION"] != d.opts.LocationFile {
+		t.Fatalf("a runner is told %q, want the daemon's own file %q", env["ATRIUM_LOCATION"], d.opts.LocationFile)
+	}
+	found := ""
+	for _, kv := range d.shellEnv("card") {
+		if strings.HasPrefix(kv, "ATRIUM_LOCATION=") {
+			found = strings.TrimPrefix(kv, "ATRIUM_LOCATION=")
+		}
+	}
+	if found != d.opts.LocationFile {
+		t.Fatalf("a card's shell is told %q, want %q", found, d.opts.LocationFile)
 	}
 }
