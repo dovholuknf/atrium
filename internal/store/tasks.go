@@ -879,23 +879,48 @@ func (s *Store) ClearExitAsked(taskID string) error {
 	})
 }
 
-// ResumeHolder is a card other than `except` whose resume id is `resumeID`, or
-// nil. The newest when several do, which is the one most likely to be in use.
-func (s *Store) ResumeHolder(resumeID, except string) (*Task, error) {
+// ResumeHolders is every card other than `except` whose resume id is
+// `resumeID`, newest first. All of them, because a newer dead holder must not
+// hide an older live one.
+func (s *Store) ResumeHolders(resumeID, except string) ([]*Task, error) {
 	resumeID = strings.TrimSpace(resumeID)
 	if resumeID == "" {
 		return nil, nil
 	}
-	var t *Task
+	var out []*Task
 	err := s.guard(func() error {
-		got, err := s.getBy(`resume_id = ? AND id != ? ORDER BY created_at DESC`, resumeID, except)
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil
+		out = nil
+		rows, err := s.db.Query(`SELECT id FROM task WHERE resume_id = ? AND id != ? ORDER BY created_at DESC`,
+			resumeID, except)
+		if err != nil {
+			return err
 		}
-		t = got
-		return err
+		var ids []string
+		for rows.Next() {
+			var id string
+			if err := rows.Scan(&id); err != nil {
+				rows.Close()
+				return err
+			}
+			ids = append(ids, id)
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return err
+		}
+		for _, id := range ids {
+			t, err := s.getBy(`id = ?`, id)
+			if errors.Is(err, sql.ErrNoRows) {
+				continue
+			}
+			if err != nil {
+				return err
+			}
+			out = append(out, t)
+		}
+		return nil
 	})
-	return t, err
+	return out, err
 }
 
 // ResumeClaim is what ClaimResumeID did with a conversation id.

@@ -107,6 +107,30 @@ func TestAFixtureDoesNotResumeAConversationALiveCardHolds(t *testing.T) {
 	if got := d.fixtureResume(f, mine.ID); got != "" {
 		t.Fatalf("the fixture resumed %q, which a live card holds", got)
 	}
+	// A NEWER DEAD HOLDER DOES NOT HIDE THE OLDER LIVE ONE (r-new-review-0b4e3f0d).
+	stale, _, _ := d.st.Register(store.Observed{WireName: "stale-copy", Worktree: dir, Runner: "claude"})
+	// Registered after the live holder, so it is the newer of the two.
+	if err := d.st.SetResumeID(stale.ID, theirs); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.st.SetStatus(stale.ID, store.StatusDead); err != nil {
+		t.Fatal(err)
+	}
+	if got := d.fixtureResume(f, mine.ID); got != "" {
+		t.Fatalf("a newer dead holder hid the live one, and the fixture resumed %q", got)
+	}
+	// Said on the card, not only in the log.
+	evs, _ := d.st.Events(mine.ID, 50)
+	said := false
+	for _, e := range evs {
+		said = said || strings.Contains(string(e.Payload), "started fresh rather than resume")
+	}
+	if !said {
+		t.Fatal("the refused resume is not on the card's timeline")
+	}
+	if err := d.st.ClearResumeID(stale.ID); err != nil {
+		t.Fatal(err)
+	}
 	// Once that card is gone, the conversation is the directory's again.
 	d.sup.remove(other.ID)
 	if err := d.st.SetStatus(other.ID, store.StatusDead); err != nil {
@@ -114,5 +138,46 @@ func TestAFixtureDoesNotResumeAConversationALiveCardHolds(t *testing.T) {
 	}
 	if got := d.fixtureResume(f, mine.ID); got != theirs {
 		t.Fatalf("with its holder gone the fixture resumed %q, want %s", got, theirs)
+	}
+}
+
+// ONE CONVERSATION, ONE CARD, OVER THE WHOLE REOPEN LIST: the first card on it
+// takes the conversation and the second, which would have found the first not
+// running yet, starts fresh.
+func TestTwoCardsOnTheReopenListShareNoConversation(t *testing.T) {
+	d := reopenDaemon(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	dir := t.TempDir()
+	proj := filepath.Join(home, ".claude", "projects", strings.Map(func(r rune) rune {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' {
+			return r
+		}
+		return '-'
+	}, dir))
+	if err := os.MkdirAll(proj, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	const conv = "0b4e3f0d-0000-4000-8000-000000000001"
+	if err := os.WriteFile(filepath.Join(proj, conv+".jsonl"), []byte("{}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	a, _, _ := d.st.Register(store.Observed{WireName: "first", Worktree: dir, Runner: "claude"})
+	b, _, _ := d.st.Register(store.Observed{WireName: "second", Worktree: dir, Runner: "claude"})
+	for _, id := range []string{a.ID, b.ID} {
+		if err := d.st.SetResumeID(id, conv); err != nil {
+			t.Fatal(err)
+		}
+	}
+	a, _ = d.st.Get(a.ID)
+	b, _ = d.st.Get(b.ID)
+	d.bootResumes.Store(conv, a.ID)
+	defer d.bootResumes.Clear()
+	if got := d.reopenResume(a); got != conv {
+		t.Fatalf("the first card on the list resumed %q, want %s", got, conv)
+	}
+	if got := d.reopenResume(b); got != "" {
+		t.Fatalf("the second card on the list resumed %q too", got)
 	}
 }

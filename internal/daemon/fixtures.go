@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"fmt"
 	"log"
 	"strings"
 	"time"
@@ -292,13 +293,29 @@ func (d *Daemon) resumeHeld(taskID, resumeID string) bool {
 	if resumeID == "" {
 		return false
 	}
-	h, err := d.st.ResumeHolder(resumeID, taskID)
-	if err != nil || h == nil || !d.runnerIsLive(h) {
+	holders, err := d.st.ResumeHolders(resumeID, taskID)
+	if err != nil {
 		return false
 	}
-	log.Printf("[atrium] not resuming conversation %s onto %s: %s (%s) holds it and is live",
-		resumeID, taskID, h.DisplayTitle(), h.ID)
-	return true
+	for _, h := range holders {
+		// A holder coming back in this same boot pass is live too, though it has
+		// no runner yet. See reopenSaved.
+		first, _ := d.bootResumes.Load(resumeID)
+		if !d.runnerIsLive(h) && first != h.ID {
+			continue
+		}
+		log.Printf("[atrium] not resuming conversation %s onto %s: %s (%s) holds it and is live",
+			resumeID, taskID, h.DisplayTitle(), h.ID)
+		// On the card, where somebody looks, and not only in the log: the runner
+		// starts a fresh conversation without a word.
+		d.noteResume(taskID, store.ResumeRefused, map[string]any{
+			"resume": resumeID, "holder": h.ID, "via": "reopen",
+			"reason": fmt.Sprintf("started fresh rather than resume conversation %s: %q holds it and is live",
+				resumeID, h.DisplayTitle()),
+		})
+		return true
+	}
+	return false
 }
 
 // resumeIDFor is the conversation to pick back up, when there is one.
