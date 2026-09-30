@@ -61,6 +61,17 @@ func escalationLine(age time.Duration) string {
 		"finish the step you are on, then read it.", int(age.Minutes()))
 }
 
+// escalatedBody is what the typist types for an escalated message: the same line
+// the hook puts in front of one, then the text. A space and not a newline joins
+// them, because without bracketed paste a newline would submit the line early.
+func (d *Daemon) escalatedBody(taskID string, e pendingMsg) string {
+	text := escalationLine(time.Since(e.at)) + " " + e.text
+	if d.bracketedPasteFor(taskID, false) {
+		return "\x1b[200~" + text + "\x1b[201~"
+	}
+	return text
+}
+
 // noteEscalated records an escalated message on the card and on the say that sent it.
 func (d *Daemon) noteEscalated(taskID, msgID, from string, age time.Duration) {
 	what := fmt.Sprintf("held message escalated after %dm", int(age.Minutes()))

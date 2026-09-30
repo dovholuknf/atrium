@@ -357,7 +357,11 @@ func (pi *pendingInjector) attempt(taskID string) {
 			break
 		}
 		escalated := pi.d.escalatesByTyping(taskID, e.waitTurn, e.at)
-		wrote, err := run.injectPeer(e.banner, e.body)
+		body := e.body
+		if escalated {
+			body = pi.d.escalatedBody(taskID, e)
+		}
+		wrote, err := run.injectPeer(e.banner, body)
 		if err != nil {
 			log.Printf("[atrium] retrying a held message into %s failed: %v", taskID, err)
 			break
@@ -465,17 +469,28 @@ func (pi *pendingInjector) drop(taskID string) {
 // withoutHeldPeers drops from a hook's batch the peer messages this card is
 // holding for the terminal, so the hook leaves them to be typed. The operator's
 // own held text still rides the hooks.
+//
+// An aged message the typist may not type mid-turn leaves the held set: on a
+// runner that does not take input mid-turn the typist waits for the turn, so the
+// hook is the only route that escalates it. See escalate.go.
 func (pi *pendingInjector) withoutHeldPeers(taskID string, msgs []*store.Message) []*store.Message {
 	pi.mu.Lock()
-	held := map[string]bool{}
+	var peers []pendingMsg
 	if ht := pi.by[taskID]; ht != nil {
 		for _, e := range ht.entries {
 			if e.from != "" {
-				held[e.msgID] = true
+				peers = append(peers, e)
 			}
 		}
 	}
 	pi.mu.Unlock()
+	held := map[string]bool{}
+	for _, e := range peers {
+		if e.waitTurn && !pi.d.midTurnInputFor(taskID) && pi.d.heldAged(taskID, e.at) {
+			continue
+		}
+		held[e.msgID] = true
+	}
 	if len(held) == 0 {
 		return msgs
 	}

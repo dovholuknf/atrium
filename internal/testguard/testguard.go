@@ -58,6 +58,14 @@ func Home(dir string) {
 	for _, k := range []string{"HOME", "USERPROFILE"} {
 		_ = os.Setenv(k, home)
 	}
+	// On Windows atrium's own files, daemon.json among them, live under these and
+	// not under the home directory.
+	for k, sub := range map[string]string{"APPDATA": "AppData/Roaming", "LOCALAPPDATA": "AppData/Local"} {
+		p := filepath.Join(home, filepath.FromSlash(sub))
+		if err := os.MkdirAll(p, 0o755); err == nil {
+			_ = os.Setenv(k, p)
+		}
+	}
 }
 
 // Agents are the runners a test must never start for real: each one bills a
