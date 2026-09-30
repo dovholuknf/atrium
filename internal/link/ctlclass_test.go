@@ -111,10 +111,10 @@ func toolNames(t *testing.T, s *mcp.ClientSession) []string {
 
 var workerSix = []string{"atrium_alias", "atrium_peers", "atrium_report", "atrium_say", "atrium_status", "atrium_task"}
 
-// fullFourteen is f-021's eleven, f-019's two git tools and atrium_deps, all full-only.
-var fullFourteen = []string{"atrium_alias", "atrium_cull", "atrium_deps", "atrium_exit", "atrium_git_collect",
-	"atrium_git_sync", "atrium_launch", "atrium_peers", "atrium_report", "atrium_say", "atrium_status", "atrium_task",
-	"atrium_wake_after_restart", "restart_atrium"}
+// fullFifteen is f-021's eleven, f-019's two git tools, atrium_deps and atrium_deploy, all full-only.
+var fullFifteen = []string{"atrium_alias", "atrium_cull", "atrium_deploy", "atrium_deps", "atrium_exit",
+	"atrium_git_collect", "atrium_git_sync", "atrium_launch", "atrium_peers", "atrium_report", "atrium_say",
+	"atrium_status", "atrium_task", "atrium_wake_after_restart", "restart_atrium"}
 
 func sameNames(t *testing.T, who string, got, want []string) {
 	t.Helper()
@@ -145,20 +145,20 @@ func TestWorkerSeesSixToolsAndCullIsUnknown(t *testing.T) {
 func TestDirectorUntaggedAndBothGetEveryTool(t *testing.T) {
 	h := newClassHarness(t, classTasks)
 	for _, who := range []string{"boss", "human", "both"} {
-		sameNames(t, who, toolNames(t, h.connect(t, who, "alpha")), fullFourteen)
+		sameNames(t, who, toolNames(t, h.connect(t, who, "alpha")), fullFifteen)
 	}
 }
 
 func TestUnknownAgentAndNoHeaderGetEveryTool(t *testing.T) {
 	h := newClassHarness(t, classTasks)
-	sameNames(t, "unknown agent", toolNames(t, h.connect(t, "nobody", "alpha")), fullFourteen)
-	sameNames(t, "no header", toolNames(t, h.connect(t, "", "")), fullFourteen)
+	sameNames(t, "unknown agent", toolNames(t, h.connect(t, "nobody", "alpha")), fullFifteen)
+	sameNames(t, "no header", toolNames(t, h.connect(t, "", "")), fullFifteen)
 }
 
 func TestFailedLookupFailsOpenToEveryTool(t *testing.T) {
 	h := newClassHarness(t, classTasks)
 	h.board.Close()
-	sameNames(t, "board down", toolNames(t, h.connect(t, "worker1", "alpha")), fullFourteen)
+	sameNames(t, "board down", toolNames(t, h.connect(t, "worker1", "alpha")), fullFifteen)
 }
 
 // A found answer is remembered for a minute and looked up again after that.
