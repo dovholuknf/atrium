@@ -2284,6 +2284,10 @@ func (d *Daemon) exitKeysFor(taskID string) [][]byte {
 	return fallback
 }
 
+// windDownKeyGap is the moment each exit key is given to take effect before
+// the next is sent. A variable only so tests can shorten it.
+var windDownKeyGap = 600 * time.Millisecond
+
 // windDown asks a runner to stop, then insists.
 //
 // `keys` is the runner's own way of being asked, one write per keystroke,
@@ -2307,7 +2311,7 @@ func windDown(r *runner, grace time.Duration, keys [][]byte) {
 		case <-r.done:
 			log.Printf("[atrium] runner for %s exited when asked", r.taskID)
 			return
-		case <-time.After(600 * time.Millisecond):
+		case <-time.After(windDownKeyGap):
 		}
 	}
 

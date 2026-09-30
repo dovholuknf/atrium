@@ -30,7 +30,7 @@ func asExitError(err error, target **exec.ExitError) bool {
 // settleWindow is how long a launched runner has to prove it did not fall over
 // on startup. Long enough to resolve, load and fail; short enough not to be
 // noticed. Past it, the reaper takes over.
-const settleWindow = 2 * time.Second
+var settleWindow = 2 * time.Second
 
 // startupFailureWindow is how long a runner has to live before its final output
 // stops being read as a startup failure.
