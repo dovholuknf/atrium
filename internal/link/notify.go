@@ -152,17 +152,25 @@ type notifyCard struct {
 // origin:agent cards are skipped: an agent started another agent, and the
 // operator is told about the one that started it (item 44).
 func NotifyIdentity(id string, payload json.RawMessage) (notifyCard, bool) {
+	// THE SEEN FIELDS ARE UNDER `seen`, the room's seen row as /v1/state sends
+	// it beside the stored card (internal/api/state.go). They were read at the
+	// top level, where no payload ever carried them, so a question and a finished
+	// turn never notified (f-023). A room on an older build sends no `seen`, and
+	// its cards still notify for permission and input.
 	var p struct {
-		Title         string   `json:"title"`
-		Alias         string   `json:"alias"`
-		Status        string   `json:"status"`
-		Tags          []string `json:"tags"`
-		WaitingSince  string   `json:"waiting_since"`
-		LastActivity  string   `json:"last_activity_at"`
-		QuestionsAt   string   `json:"questions_at"`
-		OpenQuestions []string `json:"open_questions"`
-		TurnEndedAt   string   `json:"turn_ended_at"`
-		Unseen        bool     `json:"unseen"`
+		Title        string   `json:"title"`
+		Alias        string   `json:"alias"`
+		Status       string   `json:"status"`
+		Tags         []string `json:"tags"`
+		WaitingSince string   `json:"waiting_since"`
+		LastActivity string   `json:"last_activity_at"`
+		Seen         struct {
+			QuestionsAt       string   `json:"questions_at"`
+			OpenQuestions     []string `json:"open_questions"`
+			QuestionsUnparsed bool     `json:"questions_unparsed"`
+			TurnEndedAt       string   `json:"turn_ended_at"`
+			Unseen            bool     `json:"unseen"`
+		} `json:"seen"`
 	}
 	if err := json.Unmarshal(payload, &p); err != nil {
 		return notifyCard{}, false
@@ -180,12 +188,12 @@ func NotifyIdentity(id string, payload json.RawMessage) (notifyCard, bool) {
 	switch {
 	case p.Status == "needs-permission":
 		reason, at = ReasonPermission, waited
-	case p.QuestionsAt != "" && len(p.OpenQuestions) > 0:
-		reason, at = ReasonQuestion, p.QuestionsAt
+	case p.Seen.QuestionsAt != "" && (len(p.Seen.OpenQuestions) > 0 || p.Seen.QuestionsUnparsed):
+		reason, at = ReasonQuestion, p.Seen.QuestionsAt
 	case p.Status == "needs-input":
 		reason, at = ReasonInput, waited
-	case p.TurnEndedAt != "" && p.Unseen:
-		reason, at = ReasonFinished, p.TurnEndedAt
+	case p.Seen.TurnEndedAt != "" && p.Seen.Unseen:
+		reason, at = ReasonFinished, p.Seen.TurnEndedAt
 	default:
 		return notifyCard{}, false
 	}
