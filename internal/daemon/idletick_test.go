@@ -330,7 +330,7 @@ func TestIdleHandoffBeforeCold(t *testing.T) {
 		t.Fatal("parked at the handoff mark")
 	}
 	d.act.set(task.ID, ActivityThinking, "")
-	if err := os.WriteFile(filepath.Join(dir, HandoffName(task)), []byte("state"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, HandoffName(task)), handoffBody, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	ncTurnEnds(d, task.ID)
