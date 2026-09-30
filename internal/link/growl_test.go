@@ -54,12 +54,12 @@ func (g testGrowlStore) Sync(room string, reasons []string, want []GrowlRow, pre
 	return g.s.GrowlSync(id, reasons, out, present)
 }
 
-func (g testGrowlStore) Halt(room string, halted bool, row GrowlRow) (bool, bool, error) {
+func (g testGrowlStore) Room(room, reason string, on bool, row GrowlRow) (bool, bool, error) {
 	id, err := g.id(room)
 	if err != nil {
 		return false, false, err
 	}
-	return g.s.GrowlHalt(id, halted, toHub(row))
+	return g.s.GrowlRoom(id, reason, on, toHub(row))
 }
 
 func (g testGrowlStore) Fill(id, subject, body string) (bool, error) {
@@ -124,6 +124,7 @@ type growlRig struct {
 	events []map[string]any
 	phoned []Notice
 	health roomHealth
+	hold   roomHold
 	perms  []pendingPerm
 }
 
@@ -165,6 +166,11 @@ func newGrowlRig(t *testing.T) *growlRig {
 		rig.mu.Lock()
 		defer rig.mu.Unlock()
 		return rig.health
+	}
+	g.hold = func(context.Context, string) roomHold {
+		rig.mu.Lock()
+		defer rig.mu.Unlock()
+		return rig.hold
 	}
 	g.pending = func(context.Context, string) []pendingPerm {
 		rig.mu.Lock()
@@ -437,5 +443,77 @@ func TestGrowlEndpoints(t *testing.T) {
 	_, _ = do(http.MethodPost, path, `{"do":"dismiss","via":"board"}`)
 	if code, _ := do(http.MethodPost, path, `{"do":"reopen","via":"board"}`); code != 200 {
 		t.Fatalf("reopen answered %d", code)
+	}
+}
+
+func growlReportCard(id, report, since string, tags ...string) CardState {
+	b, _ := json.Marshal(map[string]any{"title": "worker " + id, "status": "needs-input", "tags": tags,
+		"waiting_since": since, "waiting_reason": report, "recap": "did a thing\n\nneeds: the prod token",
+		"seen": map[string]any{}})
+	return growlCard(id, string(b))
+}
+
+// A REPORT GROWLS. blocked and a report's question at once, never an agent's,
+// and the growler ends when the card stops waiting.
+func TestGrowlFromAReport(t *testing.T) {
+	rig := newGrowlRig(t)
+	since := "2026-09-30T10:00:00.000Z"
+	rig.announce(t, growlReportCard("b", "blocked", since), growlReportCard("q", "question", since),
+		growlReportCard("ab", "blocked", since, "origin:agent"))
+	got := map[string]GrowlRow{}
+	for _, r := range rig.live(t) {
+		got[r.CardID] = r
+	}
+	if len(got) != 2 {
+		t.Fatalf("growlers for %v, want b and q", got)
+	}
+	if b := got["b"]; b.Reason != "blocked" || b.Urgency != 3 || b.Body != "the prod token" ||
+		b.ID != "sparta|b|blocked|"+since || b.Title != "worker b is blocked" {
+		t.Fatalf("the blocked growler is %+v", b)
+	}
+	if q := got["q"]; q.Reason != ReasonQuestion || q.Title != "worker q has a question" {
+		t.Fatalf("the report question growler is %+v", q)
+	}
+	// Replied to: the card runs again, and both end.
+	running := growlCard("b", `{"status":"running","seen":{}}`)
+	rig.announce(t, running, growlCard("q", `{"status":"running","seen":{}}`))
+	if rows := rig.live(t); len(rows) != 0 {
+		t.Fatalf("a card that stopped waiting kept %+v", rows)
+	}
+	// And the notifier still says input for a reported card, even one whose first
+	// turn has not ended.
+	nc, ok := NotifyIdentity("b", growlReportCard("b", "blocked", since).Payload)
+	if !ok || nc.Reason != ReasonInput {
+		t.Fatalf("a reported card notifies %+v %v, want input", nc, ok)
+	}
+}
+
+// A DEPLOY HOLD GROWLS ONCE IT OUTLIVES ITS WINDOW, and ends when the room says
+// it lifted. A room that does not answer changes nothing.
+func TestGrowlDeployHold(t *testing.T) {
+	rig := newGrowlRig(t)
+	now := rig.g.now()
+	rig.hold = roomHold{ok: true, on: true, id: "h1", by: "merge", whys: []string{"r-growler"},
+		startedAt: now.Add(-5 * time.Minute)}
+	rig.g.tick(context.Background())
+	if rows := rig.live(t); len(rows) != 0 {
+		t.Fatalf("a five minute hold growled: %+v", rows)
+	}
+	rig.advance(11 * time.Minute)
+	rig.g.tick(context.Background())
+	rows := rig.live(t)
+	if len(rows) != 1 || rows[0].Reason != "deploy-hold" || rows[0].Subject != "h1" || rows[0].Urgency != 5 ||
+		rows[0].Body != "held by merge: r-growler" || rows[0].CardID != "" {
+		t.Fatalf("a sixteen minute hold's growlers are %+v", rows)
+	}
+	rig.hold = roomHold{}
+	rig.g.tick(context.Background())
+	if len(rig.live(t)) != 1 {
+		t.Fatalf("a room that did not answer ended its hold")
+	}
+	rig.hold = roomHold{ok: true}
+	rig.g.tick(context.Background())
+	if len(rig.live(t)) != 0 {
+		t.Fatalf("a lifted hold kept its growler")
 	}
 }

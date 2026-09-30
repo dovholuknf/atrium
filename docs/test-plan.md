@@ -7870,3 +7870,10 @@ Needs a hub with one room and two browsers on the board. `curl` stands in for th
 7. With notify on and no desktop tab visible, a growler's reminders at 1, 2, 5, 10, 30, 60 and 120 minutes each run the
    notify command once, and nothing after the two hour step.
 8. Halt the room's store. Within 30 s a `halt` row names the room and the cause. Clear it and the row resolves.
+9. (R2) A session reports `atrium_report` status `blocked` with an ask, on a card without the `origin:agent` tag. A
+   `blocked` row appears at once, titled "<name> is blocked", with the ask as its body. Say something to the card. It
+   runs again and the row resolves. The same with status `question` gives a `question` row, "<name> has a question".
+   A worker tagged `origin:agent` that reports blocked raises nothing, and its launcher is told as before.
+10. (R3) Set a deploy hold on a room (`POST /v1/hold` with `{"action":"start",...}`) and leave it. Before fifteen
+    minutes (`growl.hold_after`) nothing. After, a `deploy-hold` row names the room, who held it and why, with the
+    hold id as `subject`. Stop the room's link: the row stays. Lift the hold. The row resolves inside 30 s.

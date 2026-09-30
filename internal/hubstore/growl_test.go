@@ -80,7 +80,7 @@ func TestGrowlSyncKeepsOtherReasonsAndFilledSubjects(t *testing.T) {
 	s := open(t)
 	r := added(t, s, "sparta")
 	h := Growl{ID: "sparta|halt|1", Reason: GrowlHalt, Title: "sparta has halted"}
-	if raised, _, err := s.GrowlHalt(r.ID, true, h); err != nil || !raised {
+	if raised, _, err := s.GrowlRoom(r.ID, GrowlHalt, true, h); err != nil || !raised {
 		t.Fatalf("a halt was not raised (%v)", err)
 	}
 	a := growlFor("sparta", "a", GrowlPermission, "1")
@@ -104,19 +104,19 @@ func TestGrowlSyncKeepsOtherReasonsAndFilledSubjects(t *testing.T) {
 func TestGrowlHaltKeepsItsIDUntilHealthy(t *testing.T) {
 	s := open(t)
 	r := added(t, s, "sparta")
-	_, _, _ = s.GrowlHalt(r.ID, true, Growl{ID: "sparta|halt|1", Title: "halted", Body: "disk"})
-	raised, changed, _ := s.GrowlHalt(r.ID, true, Growl{ID: "sparta|halt|2", Title: "halted", Body: "disk"})
+	_, _, _ = s.GrowlRoom(r.ID, GrowlHalt, true, Growl{ID: "sparta|halt|1", Title: "halted", Body: "disk"})
+	raised, changed, _ := s.GrowlRoom(r.ID, GrowlHalt, true, Growl{ID: "sparta|halt|2", Title: "halted", Body: "disk"})
 	if raised || changed {
 		t.Fatalf("a halt still going raised a second growler")
 	}
 	if live := liveIDs(t, s); len(live) != 1 || live["sparta|halt|1"] == "" {
 		t.Fatalf("live %v, want the first halt", live)
 	}
-	_, changed, _ = s.GrowlHalt(r.ID, false, Growl{})
+	_, changed, _ = s.GrowlRoom(r.ID, GrowlHalt, false, Growl{})
 	if !changed || len(liveIDs(t, s)) != 0 {
 		t.Fatalf("a healthy room kept its halt")
 	}
-	raised, _, _ = s.GrowlHalt(r.ID, true, Growl{ID: "sparta|halt|3", Title: "halted"})
+	raised, _, _ = s.GrowlRoom(r.ID, GrowlHalt, true, Growl{ID: "sparta|halt|3", Title: "halted"})
 	if !raised {
 		t.Fatalf("halting again did not raise a new growler")
 	}
