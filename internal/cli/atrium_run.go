@@ -250,6 +250,9 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	// was keeping for that room and is not in this is discarded,
 	// because it is no longer there, and the discard is written down
 	// rather than being silent. See `Announce` in internal/hubstore.
+	// THE NOTIFY TRIGGER. Built here so the announcement hook below can call
+	// it, started and mounted once the context and the proxy exist.
+	notifier := link.NewNotifier(notifyStore{store})
 	h.Cached = func(name string, cards []link.CardState) error {
 		r, err := store.ByName(name)
 		if err != nil {
@@ -264,6 +267,11 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 		_, err = store.Announce(r.ID, out)
 		if err == nil {
 			roomsChanged()
+			// AFTER THE CACHE IS WRITTEN AND NEVER WAITING ON THE SINK: the
+			// notifier stores identities and hands the changes to its own queue.
+			if notifier != nil {
+				notifier.Announced(name, cards)
+			}
 		}
 		return err
 	}
@@ -308,6 +316,9 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	ctx, stop := signal.NotifyContext(context.Background(),
 		os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	notifier.Start(ctx)
+	proxy.SetNotify(notifier)
 
 	go func() {
 		if err := h.Serve(ctx, ln); err != nil && ctx.Err() == nil {

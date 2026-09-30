@@ -87,6 +87,10 @@ type Proxy struct {
 	// restart is the gate a hub-only deploy asks before it restarts this hub.
 	// See restartgate.go.
 	restart *restartGate
+
+	// notify is the trigger and its sink. Nil until SetNotify wires it. See
+	// notify.go.
+	notify *Notifier
 }
 
 // NewProxy wires a hub, its board and a room chooser into one handler.
@@ -1271,6 +1275,10 @@ func (p *Proxy) serveHubAPI(w http.ResponseWriter, r *http.Request) {
 		p.changeInventory(w, r)
 	case "inventory/forget":
 		p.forgetInventory(w, r)
+	case "notify", "notify/test":
+		p.serveNotify(w, r, sub)
+	case "presence":
+		p.servePresence(w, r)
 	case "audit":
 		// THE OPERATIONAL FEED, newest first, filterable. Read-only: the board
 		// shows what happened and never writes here. See audit.go.
