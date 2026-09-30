@@ -16,10 +16,9 @@ is live.
    GOTMPDIR set. Its exclusions need the line in `notes/director-reports.md` (18:53) pasted into an elevated shell on
    sg3. sg4 the same, with the line `room-defender.ps1 local` prints. Close this when `Get-MpPreference` in that shell
    lists the paths.
-0b. **room-defender low from @review's re-read** (`f-new-review-53ccc3b4.md`): any folder strictly inside the runner's
-   profile passes, so `GOCACHE=C:\Users\claude\Downloads` is accepted and printed. Hold the Go paths to
-   `<profile>\AppData\Local` and `<profile>\go`, both from the HKLM profile path and never the runner's env, or
-   inside the worktree root or build folder. Small. Through @review before it lands.
+0b. **room-defender nit** from @review's pass of 7d1625cc: the header line ending "So GOCACHE=C:\ excludes nothing."
+   runs past 120 characters. Rewrap it with the next room-defender change, through @review. (The low itself, Go paths
+   held to AppData\Local and ~\go, landed as 8b6afd3c.)
 1. **f-026's four review lows** (`docs/backlog/fabric/f-new-review-e738577e.md`). Two are fixed in the landing
    commit and two need no code. Open until the deploy has been checked:
    - Low 1, deploy note: claude-sg4, m1mini and sg3 have no `joined` line left, so they are unenrolled until their
