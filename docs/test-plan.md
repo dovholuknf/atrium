@@ -7909,3 +7909,9 @@ Needs a hub with one room and two browsers on the board. `curl` stands in for th
 7. (C1, CLI) `atrium task rnd`, `atrium task rnd@claude-sg4 --json`, `atrium exit <alias>`, `atrium new-context <alias>`
    and `atrium launch --onto <alias>` each reach the card and print the handle they reached. A miss prints what would
    have worked. A name on two rooms prints both.
+
+## HD. A card's readable address (card URLs R3, R4)
+
+1. (R3) On the hub and on a room's own port, `GET /alias/<alias>`, `/room/<room>` and `/room/<room>/<name>` answer the
+   board page, and `/m/alias/<alias>` and `/m/room/<room>/<name>` the phone page. `/alias/` and `/room/a/b/c` answer a
+   404 page listing the shapes. Every `/v1/` route answers as before.
