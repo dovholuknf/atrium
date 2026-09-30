@@ -568,6 +568,7 @@ async function bootTerminalOnly() {
   // alt-tab shows.
   paintSoloTitle();
   openTerm(task);
+  cardUrlWayOut();
   if (found) cardUrlNotice(found.notes);
 
   // Coming back to the window IS reading the alert, so the mark clears without

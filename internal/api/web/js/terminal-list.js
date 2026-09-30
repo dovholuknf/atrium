@@ -350,6 +350,8 @@ function toggleTermListOpen() { setTermListOpen(!termListOpen); }
 
 // u-023: the card picker of the phone tray (#t-pick in the terminal bar). Same list as the "atrium" row.
 function termPickTap() {
+  // A card's own window has no list to open, so the picker there is the switcher.
+  if (typeof termOnly === "function" && termOnly() && typeof openSwitcher === "function") { openSwitcher(); return; }
   toggleTermListOpen();
   const b = document.getElementById("t-pick");
   if (b) b.setAttribute("aria-expanded", termListOpen ? "true" : "false");

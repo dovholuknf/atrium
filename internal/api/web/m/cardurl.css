@@ -12,3 +12,13 @@
   display: block; padding: 12px; border: 1px solid var(--cardurl-line, var(--stroke-dim)); border-radius: 8px;
   color: var(--cardurl-link, var(--blue)); text-decoration: none; word-break: break-all;
 }
+
+/* The way out of a card opened by its address: the back chevron says where it goes, and the picker lists the other cards. */
+#m-card .back .lbl { display: none; margin-left: 2px; font-size: 14px; }
+#m-card.direct .back .lbl { display: inline; }
+#m-card .sheet-top .pick { min-height: 40px; padding: 0 12px; border: 1px solid var(--cardurl-line, var(--stroke)); border-radius: 10px; background: none; color: var(--cardurl-link, var(--label)); font-size: 14px; cursor: pointer; }
+#m-card-menu { flex: none; max-height: 50dvh; overflow-y: auto; margin: 0 max(8px, env(safe-area-inset-left, 0px)) 6px; padding: 6px; border-radius: 12px; background: var(--lift); }
+#m-card-menu[hidden] { display: none; }
+#m-card-menu .pm-row { display: flex; justify-content: space-between; gap: 10px; width: 100%; min-height: 44px; align-items: center; padding: 0 10px; border: 0; background: none; color: var(--body); text-align: left; cursor: pointer; }
+#m-card-menu .pm-row span { color: var(--dim); font-size: 13px; }
+#m-card.direct .back { width: auto; display: inline-flex; align-items: center; padding: 0 10px 0 6px; }
