@@ -89,6 +89,23 @@ if ($LASTEXITCODE -ne 0) {
   exit 1
 }
 
+# ---- 0b. no backlog id claimed twice
+# Ids are minted by @merge at landing (docs/backlog/README.md). A branch adding an id that the base already has, in
+# any folder, was numbered from a stale base.
+$baseIds = @{}
+git ls-tree -r --name-only $Base -- docs/backlog 2>$null | ForEach-Object {
+  if ($_ -match '^docs/backlog/[^/]+/([^/]+)\.md$') { $baseIds[$Matches[1]] = $_ }
+}
+$dupes = @(git diff --name-only --diff-filter=A "$Base...HEAD" -- docs/backlog 2>$null | ForEach-Object {
+    if ($_ -match '^docs/backlog/[^/]+/([^/]+)\.md$' -and $Matches[1] -notmatch '^(README|HISTORY)$' -and $baseIds.ContainsKey($Matches[1]) -and $baseIds[$Matches[1]] -ne $_) {
+      "  $_ (base has $($baseIds[$Matches[1]]))"
+    }
+  })
+if ($dupes.Count) {
+  Fail "branch adds a backlog id the base already has" ($dupes -join "`n")
+  exit 1
+}
+
 # ---- 1. go test
 if ($SkipGo) {
   $summary.Add('go skipped')
