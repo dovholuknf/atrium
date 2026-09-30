@@ -1,6 +1,7 @@
 # rd-new-room-deploy-hold. "Room deploy needed": every agent holds, the room redeploys, every agent resumes
 
-Status: not started. Owned by @rnd, design today (clint, 2026-09-30). Replaces the restart-window idea, which clint
+Status: designed 2026-09-30 in `docs/rnd/room-deploy-hold-design.md`, ready to build (@runtime, @ui for the banner).
+Shares the hold step with r-037. Owned by @rnd, design today (clint, 2026-09-30). Replaces the restart-window idea, which clint
 rejected, and the "wait until everything is idle for 10 seconds" rule, which almost never fires with ten agents.
 
 ## What clint wants
