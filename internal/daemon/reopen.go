@@ -206,6 +206,11 @@ func (d *Daemon) reopenWanted() []*store.Task {
 		if t.Status == store.StatusShelved {
 			continue
 		}
+		// Ended is ended. A runner still at its prompt when the daemon stopped
+		// is on the list, and a restart must not undo the exit that ended it.
+		if t.Status == store.StatusDone {
+			continue
+		}
 		// Parked is put down the same way: it wakes when something asks it to.
 		if isParked(t) {
 			continue
@@ -240,6 +245,9 @@ func (d *Daemon) reopenResume(t *store.Task) string {
 	}
 	if !api.SessionExists(t.Worktree, id) {
 		log.Printf("[atrium] %s resumed conversation %s, which is gone. starting fresh", t.ID, id)
+		return ""
+	}
+	if d.resumeHeld(t.ID, id) {
 		return ""
 	}
 	return id

@@ -839,6 +839,25 @@ func (s *Store) ClearResumeID(id string) error {
 	})
 }
 
+// ResumeHolder is a card other than `except` whose resume id is `resumeID`, or
+// nil. The newest when several do, which is the one most likely to be in use.
+func (s *Store) ResumeHolder(resumeID, except string) (*Task, error) {
+	resumeID = strings.TrimSpace(resumeID)
+	if resumeID == "" {
+		return nil, nil
+	}
+	var t *Task
+	err := s.guard(func() error {
+		got, err := s.getBy(`resume_id = ? AND id != ? ORDER BY created_at DESC`, resumeID, except)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		t = got
+		return err
+	})
+	return t, err
+}
+
 // ResumeClaim is what ClaimResumeID did with a conversation id.
 type ResumeClaim struct {
 	// Stored is whether the id is now on the card.
