@@ -12,10 +12,14 @@ is live.
 
 ## Queue
 
-0. **f-new-defender-at-provision: @review's HIGH on 53ccc3b4 fixed on claude/fabric, with @review.** Land it only
-   after @review passes it. Then it waits on an administrator: sg3 has GOTMPDIR set, and its exclusions need the line
-   `room-defender.ps1 sg3` prints pasted into an elevated shell there. sg4 the same, with `room-defender.ps1 local`.
-   Close this when `Get-MpPreference` in that shell lists the paths.
+0. **f-new-defender-at-provision: landed, 5bfbb1a2 (@review passed it as 08779d34), waiting on clint.** sg3 has
+   GOTMPDIR set. Its exclusions need the line in `notes/director-reports.md` (18:53) pasted into an elevated shell on
+   sg3. sg4 the same, with the line `room-defender.ps1 local` prints. Close this when `Get-MpPreference` in that shell
+   lists the paths.
+0b. **room-defender low from @review's re-read** (`f-new-review-53ccc3b4.md`): any folder strictly inside the runner's
+   profile passes, so `GOCACHE=C:\Users\claude\Downloads` is accepted and printed. Hold the Go paths to
+   `<profile>\AppData\Local` and `<profile>\go`, both from the HKLM profile path and never the runner's env, or
+   inside the worktree root or build folder. Small. Through @review before it lands.
 1. **f-026's four review lows** (`docs/backlog/fabric/f-new-review-e738577e.md`). Two are fixed in the landing
    commit and two need no code. Open until the deploy has been checked:
    - Low 1, deploy note: claude-sg4, m1mini and sg3 have no `joined` line left, so they are unenrolled until their
@@ -28,8 +32,9 @@ is live.
    - Low 4, fixed: `TestAKeylessAttachCannotReplaceAKeyedRoom` tests the `Hub.control` keyless-over-keyed refusal by
      itself.
 2. **49: the hub half of atrium:everywhere.** `docs/rnd/everywhere-card-design.md`, `docs/backlog/fabric/49.md`.
-   Large. A hubstore migration (it would be 0007) needs the orchestrator's OK. Reuse worktree
-   `D:/worktrees/claude/atrium/49`, merging claude/main into it first. Its first run died.
+   Large, no migration (the design needs none). Worker `49` on m1mini, card `m1mini~01a0f484-68f0-7a58-96d6-c42e60df6649`,
+   branch `claude/49` in `/Users/claude/git/github/dovholuknf/atrium-worktrees/49`, launched 2026-09-30 18:50 with
+   five stages. It says the sha after each stage. Collect, review, then @review, then land.
 3. **f-003 stage 1.** The `atrium_resources` tool (ctlclass.go, the worker set goes 6 to 7), `resources.md` by the
    state dir, `atrium resources init`, and one framing line on every card.
 4. **The Linux autostart proof on cdzrok.** Check that the machine is up first.
