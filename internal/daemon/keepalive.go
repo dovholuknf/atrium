@@ -518,6 +518,11 @@ type keepalive struct {
 	record func(*store.KeepaliveRefresh) error
 	// spent saves one refresh's row in the card's usage record. See usage.go.
 	spent func(*store.SessionUsage) error
+	// holding says a new-context cycle is under way on the card, and session is the
+	// session its runner last started, which moves on at a `/clear` while the resume
+	// id lags. Both nil in a test that has no daemon.
+	holding func(taskID string) bool
+	session func(t *store.Task) string
 
 	mu sync.Mutex
 	// lastMissCard is the card of the room's most recent attempt when that
@@ -642,12 +647,32 @@ func (k *keepalive) stretchState(taskID string, card *store.KeepaliveCard, r *la
 	return anchor, rows, spent, count, missed, warm.Add(r.TTL), last
 }
 
+// followSession is the card with its resume id moved to the session its runner last
+// started. After a new context the cache worth keeping warm is the new session's, and
+// the stored id names the old one until the next Stop.
+func (k *keepalive) followSession(t *store.Task) *store.Task {
+	if k.session == nil {
+		return t
+	}
+	s := k.session(t)
+	if s == "" || s == t.ResumeID {
+		return t
+	}
+	cp := *t
+	cp.ResumeID = s
+	return &cp
+}
+
 // decide applies the design's seven rules to one card. It reads, and writes
 // nothing.
 func (k *keepalive) decide(t *store.Task, card *store.KeepaliveCard) verdict {
 	skip := func(why string) verdict { return verdict{act: "skip", why: why} }
 	if card == nil || card.State != store.KeepaliveOn {
 		return skip("")
+	}
+	// Its context is about to be cleared, and after it the cache is a new one.
+	if k.holding != nil && k.holding(t.ID) {
+		return skip("new context running")
 	}
 	h, err := k.st.Harness(t.Runner)
 	if err != nil || !isClaude(h) {
@@ -844,6 +869,7 @@ func (k *keepalive) tick(ctx context.Context) {
 		if err != nil || t == nil {
 			continue
 		}
+		t = k.followSession(t)
 		card = k.clearOnRealTurn(t, card)
 		v := k.decide(t, card)
 		k.mu.Lock()
