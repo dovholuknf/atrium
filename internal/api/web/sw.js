@@ -111,6 +111,8 @@ self.addEventListener("message", event => {
       // Where a click on the body lands: the card, and the request on it. See
       // `landOnAlert` in js/toasts.js.
       taskFor: m.taskFor || "", key: m.key || "",
+      // The card's readable path, so a window on it is found. See `soloCard`.
+      path: m.path || "",
       // What this notification is about: a request, or the card that went
       // ready. Carried so an open page can take it down once that has been
       // answered, which permId alone could not do for anything but a
@@ -160,6 +162,19 @@ function soloCard(url) {
   return i < 0 ? "" : decodeURIComponent(url.slice(i + "#term=".length))
 }
 
+// The path of a window's address, where a card's readable path lives. See js/cardurl.js.
+function pathOf(url) {
+  try { return new URL(url).pathname } catch (e) { return "" }
+}
+
+// Whether a window is one terminal: a `#term=` address or a card's readable path.
+// `/room/<room>` alone is a scoped board.
+function isSolo(url) {
+  if (soloCard(url)) return true
+  const p = pathOf(url).replace(/\/$/, "").split("/")
+  return (p[1] === "alias" && p.length === 3) || (p[1] === "room" && p.length === 4)
+}
+
 // Bring an existing window forward rather than piling up new ones, and land
 // the click where `landOnAlert` says.
 //
@@ -167,15 +182,16 @@ function soloCard(url) {
 // click can bring a window forward, and this is the click. Otherwise a board,
 // never a popped-out window, since one of those cannot become a board. With no
 // board open, one is opened carrying where to land.
-async function openBoard(origin, goTo, taskFor, key) {
+async function openBoard(origin, goTo, taskFor, key, path) {
   const all = await self.clients.matchAll({ type: "window", includeUncontrolled: true })
   const mine = all.filter(c => c.url.startsWith(origin))
-  const solo = taskFor && mine.find(c => bareId(soloCard(c.url)) === bareId(taskFor))
+  const solo = taskFor && mine.find(c => (soloCard(c.url) && bareId(soloCard(c.url)) === bareId(taskFor)) ||
+    (path && isSolo(c.url) && pathOf(c.url) === path))
   if (solo) {
     await solo.focus()
     return
   }
-  const board = mine.find(c => !soloCard(c.url))
+  const board = mine.find(c => !isSolo(c.url))
   if (board) {
     await board.focus()
     board.postMessage({ type: "goTo", view: goTo || "", taskFor: taskFor || "", key: key || "" })
@@ -213,5 +229,5 @@ self.addEventListener("notificationclick", event => {
       }))
     return
   }
-  event.waitUntil(openBoard(origin, data.goTo, data.taskFor, data.key || data.permId))
+  event.waitUntil(openBoard(origin, data.goTo, data.taskFor, data.key || data.permId, data.path))
 })

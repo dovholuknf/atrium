@@ -1,0 +1,14 @@
+/* What a card's address says on the phone when it opens nothing, and the choice between two rooms. See js/card.js. */
+#m-cardurl {
+  position: fixed; inset: 0; z-index: 30; box-sizing: border-box; overflow-y: auto;
+  padding: calc(env(safe-area-inset-top) + 24px) 16px 24px;
+  background: var(--cardurl-bg, var(--bg-0)); color: var(--cardurl-fg, var(--head));
+}
+#m-cardurl[hidden] { display: none; }
+#m-cardurl h1 { font-size: 18px; line-height: 1.3; margin: 0 0 8px; }
+#m-cardurl .home { color: var(--cardurl-link, var(--blue)); }
+#m-cardurl .cu-list { display: flex; flex-direction: column; gap: 8px; margin-top: 16px; }
+#m-cardurl .cu-row {
+  display: block; padding: 12px; border: 1px solid var(--cardurl-line, var(--stroke-dim)); border-radius: 8px;
+  color: var(--cardurl-link, var(--blue)); text-decoration: none; word-break: break-all;
+}

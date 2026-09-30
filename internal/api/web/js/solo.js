@@ -247,7 +247,8 @@ async function popOutTask(id) {
 
   // The card id, so the new window resolves the session itself rather than
   // being handed a name that may be stale by the time it loads.
-  const url = location.pathname + "#term=" + encodeURIComponent(id);
+  const known = cardList().find(t => sameCard(t.id, id)) || (termTask && sameCard(termTask.id, id) ? termTask : null);
+  const url = known ? cardUrlFor(known) : "/#term=" + encodeURIComponent(id);
   const size = popOutSize(id);
   // Named per card, which is the first line of defence against a second one.
   const win = window.open(url, "atrium-term-" + bareId(id),
@@ -361,7 +362,8 @@ function rememberPopOutSize(id, w, h, alsoDefault) {
 }
 
 // termOnly reports whether this window is a popped-out terminal.
-function termOnly() { return /^#term=/.test(location.hash); }
+// An old `#term=` link wins over a path, so every link already sent keeps working. See js/cardurl.js.
+function termOnly() { return /^#term=/.test(location.hash) || cardUrlIsCard(); }
 
 // Strips the page down to one terminal.
 //
@@ -460,11 +462,13 @@ const soloReconnectMax = 5000;
 // stops on: the room answering that the card is not there, or naming no room
 // when several are attached. Those are final, and only they let the caller show
 // the dead-end modal.
-async function soloFetchCard(id) {
+//
+// `path` is for a card named by its address rather than its id, see `cardUrlOpen`. The same waits apply.
+async function soloFetchCard(id, path) {
   let wait = soloReconnectMin, said = false;
   while (true) {
     try {
-      return await api("/v1/tasks/" + encodeURIComponent(id));
+      return await api(path || "/v1/tasks/" + encodeURIComponent(id));
     } catch (e) {
       // A real missing card, not a hub that is a moment from answering. Final.
       if (e.status === 404 || e.status === 409) throw e;
@@ -485,8 +489,16 @@ async function soloFetchCard(id) {
 }
 
 async function bootTerminalOnly() {
-  const want = decodeURIComponent(location.hash.slice("#term=".length));
   document.body.classList.add("solo");
+  // A card named by its address is looked up first, and its id is what everything below runs on. See js/cardurl.js.
+  let want, found = null;
+  if (/^#term=/.test(location.hash)) {
+    want = decodeURIComponent(location.hash.slice("#term=".length));
+  } else {
+    found = await cardUrlOpen(cardUrlShape());
+    if (!found) return;
+    want = found.id;
+  }
 
   // ONE VIEW PER TERMINAL, AND THIS IS THE DOOR THAT WAS LEFT OPEN.
   //
@@ -535,7 +547,7 @@ async function bootTerminalOnly() {
 
   let task;
   try {
-    task = await soloFetchCard(soloID);
+    task = found ? found.task : await soloFetchCard(soloID);
   } catch (e) {
     // ONLY A GENUINE MISSING CARD REACHES HERE. A hub-only deploy restarts the
     // hub, and for about a second the hub has no room and answers this poll with
@@ -556,6 +568,7 @@ async function bootTerminalOnly() {
   // alt-tab shows.
   paintSoloTitle();
   openTerm(task);
+  if (found) cardUrlNotice(found.notes);
 
   // Coming back to the window IS reading the alert, so the mark clears without
   // touching anything. Leaving it up until the next poll meant a title that
