@@ -449,6 +449,8 @@ func (d *Daemon) handleTell(w http.ResponseWriter, r *http.Request) {
 	}
 	if d.holdingMessages(target.ID) {
 		note = newContextHoldNote
+	} else if d.deployHeld(target.ID) {
+		note = d.deployHoldNote()
 	}
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"queued": true, "to": to, "note": note, "reachable": reach, "when": whenWord(waitTurn),
@@ -564,8 +566,9 @@ func (d *Daemon) tellByTyping(target *store.Task, from, text string, waitTurn bo
 	if !target.PeerTyping {
 		return false, ""
 	}
-	// Held for a new-context cycle: queued, delivered after the wake prompt.
-	if d.holdingMessages(target.ID) {
+	// Held for a new-context cycle or a room deploy: queued, delivered after the
+	// wake prompt.
+	if d.holdingFrom(target.ID, from) {
 		return false, ""
 	}
 	run := d.sup.get(target.ID)

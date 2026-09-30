@@ -179,6 +179,8 @@ func (pi *pendingInjector) heldFor(taskID string, m pendingMsg) string {
 	switch {
 	case pi.d.holdingMessages(taskID):
 		return HeldForNewContext
+	case pi.d.holdingFrom(taskID, m.from):
+		return HeldForDeploy
 	case pi.d.act.dialogOpen(taskID):
 		return HeldForDialog
 	case pi.d.turnHolds(taskID, m.waitTurn):
@@ -307,6 +309,18 @@ func (pi *pendingInjector) attempt(taskID string) {
 		}
 		pi.mu.Unlock()
 		pi.noteHeld(taskID, HeldForNewContext)
+		return
+	}
+	// A card held for a room deploy holds everything retried here the same way,
+	// the operator's own text included, which the hooks still carry. wakeTyped
+	// re-arms the retry once the wake is in.
+	if pi.d.deployHeld(taskID) {
+		pi.mu.Lock()
+		if ht := pi.by[taskID]; ht != nil && ht.timer != nil {
+			ht.timer.Reset(backoffSteps[step])
+		}
+		pi.mu.Unlock()
+		pi.noteHeld(taskID, HeldForDeploy)
 		return
 	}
 	// A dialog the runner put up itself must not be answered by a peer message's
