@@ -7918,3 +7918,6 @@ Needs a hub with one room and two browsers on the board. `curl` stands in for th
 1. (R3) On the hub and on a room's own port, `GET /alias/<alias>`, `/room/<room>` and `/room/<room>/<name>` answer the
    board page, and `/m/alias/<alias>` and `/m/room/<room>/<name>` the phone page. `/alias/` and `/room/a/b/c` answer a
    404 page listing the shapes. Every `/v1/` route answers as before.
+2. (R4) Lend a card. The address handed out is `<frontend>/room/<room>/<handle>`, and it opens the terminal. On that
+   share, the card's alias page opens it too. Another card's alias and a made-up name both answer the same 403. Rename
+   the lent card's alias on the board: the old alias answers 403, and the handed-out address still opens it.
