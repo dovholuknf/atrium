@@ -7402,13 +7402,13 @@ with `updatedInput` holding the edited command.
 
 **Expected:** no output and exit code 0 each time, and no card appears for the Read.
 
-## GM. Git sync over the hub and rooms
+## GX. Git sync over the hub and rooms
 
 The automated coverage is `internal/gitsync`, `internal/link/git*_test.go` and `internal/cli/atrium_rooms_git_test.go`,
 which run real git in temporary directories. These are the parts a person checks on a live hub and room. The design is
 `docs/rnd/git-sync-design.md`.
 
-### GM1. The hub mirrors and a room follows
+### GX1. The hub mirrors and a room follows
 
 1. On the hub, `atrium rooms git repos add github/<owner>/<repo> <the checkout @merge writes>`, then
    `atrium rooms git repos ls`.
@@ -7422,7 +7422,7 @@ which run real git in temporary directories. These are the parts a person checks
 `claude/main` and `hub-main` are at it. After step 4 the room follows with nobody running anything, including the
 non fast-forward move. A room whose clone is missing answers `absent` until `--init`.
 
-### GM2. Refusals
+### GX2. Refusals
 
 1. `atrium rooms git repos add` cannot take a branch. Write `git_repos` by hand with a `claude/ui` branch.
 2. Start the hub with that setting in place.
@@ -7431,7 +7431,7 @@ non fast-forward move. A room whose clone is missing answers `absent` until `--i
 **Expected:** step 1 has no flag for a branch and the hub refuses the value, naming the integration branch. Step 2
 logs `git_repos is refused, so this hub mirrors nothing` and mirrors nothing. Step 3 answers `behind`, not a forced move.
 
-### GM3. Collecting
+### GX3. Collecting
 
 1. On a room, make a commit on `claude/<something>` in its clone. `atrium rooms git collect <room>`.
 2. In the hub's checkout, `git for-each-ref refs/remotes/<room>`.
@@ -7440,7 +7440,15 @@ logs `git_repos is refused, so this hub mirrors nothing` and mirrors nothing. St
 **Expected:** step 2 shows `refs/remotes/<room>/claude/<something>` at the room's sha, and nothing new under
 `refs/heads`. The room's `claude/main` is never there. After step 3 the branch is gone from the hub's checkout.
 
-### GM4. Old builds
+### GX4. Git is not on the board
+
+1. Against the hub's board, `GET /v1/git/status` and `GET /v1/git/github/<owner>/<repo>.git/info/refs?service=git-upload-pack`.
+2. The same against a room's own board on :7778, and on a lent session's share.
+
+**Expected:** the hub answers 403 "git on a room is reached by the hub's own sync and collect, never through the
+board". The room's own board and a share answer 404 or 403. `atrium rooms git sync` still works.
+
+### GX5. Old builds
 
 1. Attach a room built before f-019, then run `atrium rooms git sync <room>` and `atrium rooms git collect <room>`.
 2. Attach a new room to a hub built before f-019.
