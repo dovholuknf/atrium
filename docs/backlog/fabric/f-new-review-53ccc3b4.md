@@ -72,3 +72,13 @@ pasted. It widens what Defender skips only inside a profile the runner already w
 to `%LOCALAPPDATA%` and `~\go` under the profile? Not needed for this landing.
 
 PASS 08779d34
+
+## Re-read of 7d1625cc (claude/fabric), 2026-09-30
+
+The low is closed. The Go roots are now `<profile>\AppData\Local` and `<profile>\go`, with the profile still read by
+SID, plus the worktree root and build.claude. A Go path must be strictly inside one of them. `AppData\Local\<vendor>`
+still passes. I leave that open: holding Go to its default folder names would refuse a GOCACHE someone moved on
+purpose, and the administrator reads the printed paths before pasting them. Nit: the header line that ends "So
+GOCACHE=C:\ excludes nothing." now runs past 120 characters.
+
+PASS 7d1625cc
