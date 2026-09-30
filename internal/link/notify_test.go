@@ -209,6 +209,9 @@ func TestNotifyIdentityPerReasonAndPriority(t *testing.T) {
 		// A card that has never finished a turn is not news: whoever launched it
 		// is already there or gave it its prompt.
 		{"input before any turn", `{"status":"needs-input","waiting_since":"T2","seen":{"unseen":false}}`, "", ""},
+		// A room that could not read its seen table sends null, which is "cannot
+		// say", so input notifies rather than going quiet.
+		{"input with seen null", `{"status":"needs-input","waiting_since":"T2","seen":null}`, "input", "a|input|T2"},
 		{"input after a turn", `{"status":"needs-input","waiting_since":"T2","seen":{"turn_ended_at":"T1"}}`,
 			"input", "a|input|T2"},
 		// Permission is asked whatever the turns say.
