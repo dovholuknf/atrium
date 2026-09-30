@@ -214,13 +214,7 @@ func turnEnded(hubURL, event, name, runner string) string {
 	}
 	// The same name the permission and session hooks use. All three have to
 	// agree or one session appears on the board three times.
-	agent := name
-	if agent == "" {
-		agent = os.Getenv("ATRIUM_AGENT_NAME")
-	}
-	if agent == "" && cwd != "" {
-		agent = filepath.Base(cwd)
-	}
+	agent, nameSource := hookAgent(name, cwd)
 	if agent == "" {
 		return keepGoing
 	}
@@ -229,6 +223,8 @@ func turnEnded(hubURL, event, name, runner string) string {
 	questions, block, known := turnQuestions(in)
 	body, err := json.Marshal(map[string]any{
 		"agent":           agent,
+		"name_source":     nameSource,
+		"task_id":         os.Getenv("ATRIUM_TASK_ID"),
 		"runner":          whichRunner(runner),
 		"cwd":             filepath.ToSlash(cwd),
 		"resume":          in.SessionID,
