@@ -14,6 +14,7 @@ import (
 
 	zroksdk "github.com/openziti/zrok/v2/sdk/golang/sdk"
 
+	"github.com/dovholuknf/atrium/internal/edge"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -403,7 +404,7 @@ func (d *Daemon) bindCardShare(title string, rec *store.CardShare) (*guestShare,
 		Since: time.Now().Format(time.RFC3339), Token: shr.Token,
 		Name: rec.Name,
 	}
-	srv := &http.Server{Handler: d.guestHandler(taskID)}
+	srv := &http.Server{Handler: edge.Shared(d.guestHandler(taskID))}
 	g.srv, g.ln = srv, ln
 	d.guests.put(g)
 

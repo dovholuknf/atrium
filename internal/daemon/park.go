@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/dovholuknf/atrium/internal/edge"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -192,7 +193,7 @@ func (d *Daemon) sayGate(t *store.Task) string {
 // up, and the socket closes as a restart so the board reattaches to the runner
 // the ordinary way rather than this function growing a second copy of attach.
 func (d *Daemon) attachParked(w http.ResponseWriter, r *http.Request, t *store.Task) {
-	c, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
+	c, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: edge.ViaLink(r)})
 	if err != nil {
 		log.Printf("[atrium] attach parked %s: %v", t.ID, err)
 		return
