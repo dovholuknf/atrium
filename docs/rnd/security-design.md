@@ -185,6 +185,10 @@ process name when the port lookup finds one. The gear shows the count and the li
 scripts move to `atrium` verbs or `atrium token` while the count falls. `enforce` is clint's to switch on (section 12,
 item 1).
 
+**In `warn` the board may show its sign-in page, and the API still refuses nothing.** A browser with no cookie is
+offered the sign-in so clint can get a cookie before `enforce`, but it can dismiss the page and carry on, and every API
+call answers as it does today. `warn` only records what `enforce` would refuse.
+
 **Until 2c lands, every agent is `none`.** 2a has no card tokens, so a session's hooks, CLI calls and MCP calls carry
 no credential, and `warn` counts them. So `enforce` must not be switched on before 2c passes its test. The setting
 refuses `enforce` while card tokens are not being minted, and says why.
@@ -198,7 +202,10 @@ stripped on the hub and on a room's loopback listener. `POST /v1/board-code/rede
 refuses it a second time and after 60 seconds. An authenticated request with a cookie older than a day comes back with
 a renewed cookie and a fresh 30-day expiry. A cookie issued by one listener (the hub's 7778, say) is refused by another
 (a room's 7781, or the published board), and a cookie set on the published board is refused on loopback. Every hook,
-with and without a token, still passes the stage 1 test.
+with and without a token, still passes the stage 1 test. **The table matches the muxes**: a Go test walks the routes
+registered on the room's board mux, the agent listener's mux and the hub's `serveHubAPI` switch, and fails when a
+registered route has no line in the scope table, or a line in the table names a route nothing registers. A new route
+fails the build until somebody gives it a scope on purpose.
 
 **Acceptance test for 2c** (card scope). Each `C`, `Cs` and `Co` row from a card, on its own room's port and through
 the hub from another room, for its own card, a card it launched, and a card it did not launch. The two body rules from
