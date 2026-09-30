@@ -497,6 +497,11 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			p.fanMinCols(w, r, payload)
 			return
 		}
+		// Clearing a column from the ALL view clears it on every room. See prune.go.
+		if payload, ok := pruneIn(r); ok {
+			p.fanPrune(w, r, payload)
+			return
+		}
 		if r.URL.Path == "/v1/health" {
 			p.health(w, r)
 			return
