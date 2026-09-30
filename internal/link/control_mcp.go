@@ -177,7 +177,7 @@ func (c *controlMCP) server() *mcp.Server {
 			"`held` means the hub or that room is not answering: it is kept on your room and sent " +
 			"when they are, for up to a day. `unconfirmed` means it may or may not have arrived, " +
 			"so ask before sending it again.",
-	}, c.sayHandler)
+	}, audited(c, "ctl-wake-say", describeSay, c.sayHandler))
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "atrium_report",
@@ -214,7 +214,8 @@ func (c *controlMCP) server() *mcp.Server {
 			"takes it and as `atrium_launch` with `room` hands it back.",
 	}, c.taskHandler)
 
-	mcp.AddTool(s, &mcp.Tool{Name: "atrium_alias", Description: aliasToolDesc}, c.aliasHandler)
+	mcp.AddTool(s, &mcp.Tool{Name: "atrium_alias", Description: aliasToolDesc},
+		audited(c, "ctl-alias", describeAlias, c.aliasHandler))
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "atrium_launch",
@@ -244,7 +245,7 @@ func (c *controlMCP) server() *mcp.Server {
 			"Empty means the runner's default. The card keeps all four, so a restart comes back " +
 			"the same, and shows them in its details (env by name only).\n\n" +
 			"Returns the card id. Use it with `atrium_task`, `atrium_say` and `atrium_exit`, on another room too.",
-	}, c.launchHandler)
+	}, audited(c, "ctl-launch", describeLaunch, c.launchHandler))
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "atrium_exit",
@@ -256,7 +257,7 @@ func (c *controlMCP) server() *mcp.Server {
 			"leaves mid-task.\n\n" +
 			"A card on ANOTHER ROOM is `name@room`, `alias@room` or `room~id`, as `atrium_say` " +
 			"takes it and as `atrium_launch` with `room` hands it back.",
-	}, c.exitHandler)
+	}, audited(c, "ctl-exit", describeExit, c.exitHandler))
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "atrium_cull",
@@ -275,7 +276,7 @@ func (c *controlMCP) server() *mcp.Server {
 			"and culls it after a grace period (30 minutes by default) unless it has a new turn or " +
 			"is held, and tells its launcher once. `hold=true` keeps a worker for good: the mark is " +
 			"dropped and nothing marks it again, only an explicit cull removes it.",
-	}, c.cullHandler)
+	}, audited(c, "ctl-cull", describeCull, c.cullHandler))
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "restart_atrium",
@@ -290,7 +291,7 @@ func (c *controlMCP) server() *mcp.Server {
 			"OTHER AGENTS ARE PARKED FIRST. Any supervised session that is working is told what is " +
 			"coming and given time to stop. Pass `force` to restart even if some are still busy.\n\n" +
 			"To be prompted when you come back, call `atrium_wake_after_restart` first.",
-	}, c.restartHandler)
+	}, audited(c, "ctl-restart", describeRestart, c.restartHandler))
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "atrium_wake_after_restart",
@@ -303,7 +304,7 @@ func (c *controlMCP) server() *mcp.Server {
 			"ONE PER CARD. A second call replaces the first. It waits however long your runner takes " +
 			"to come back, and is typed behind a grey `[atrium] restart wake:` label. Pass `clear` to " +
 			"cancel it.",
-	}, c.wakeHandler)
+	}, audited(c, "ctl-wake", describeWake, c.wakeHandler))
 
 	return s
 }
@@ -1187,7 +1188,7 @@ func (c *controlMCP) launchHandler(ctx context.Context, req *mcp.CallToolRequest
 
 	out := launchOutput{}
 	if strings.TrimSpace(in.Cwd) == "" {
-		return nil, out, fmt.Errorf("say where to run it. atrium does not create the directory")
+		return nil, out, &refusedError{"say where to run it. atrium does not create the directory"}
 	}
 	harness := strings.TrimSpace(in.Runner)
 	if harness == "" {
@@ -1225,12 +1226,9 @@ func (c *controlMCP) launchHandler(ctx context.Context, req *mcp.CallToolRequest
 			if room == "" {
 				where = "every room together"
 			}
-			if c.audit != nil {
-				c.audit(room, "launch-refused", fmt.Sprintf(
-					"at the cap of %d running workers on %s", limit, where))
-			}
-			return nil, out, fmt.Errorf("at the launch cap of %d running workers on %s. wait for one "+
-				"to finish, exit one, or launch on another room", limit, where)
+			// A refusal, so `audited` writes it as `refused: ...` on ctl-launch.
+			return nil, out, &refusedError{fmt.Sprintf("at the launch cap of %d running workers on %s. "+
+				"wait for one to finish, exit one, or launch on another room", limit, where)}
 		}
 	}
 
