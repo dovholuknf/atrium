@@ -67,8 +67,8 @@
 #
 # DEFENDER. On a Windows room, scripts/room-defender.ps1 runs after the clone: it reads the Go caches, the clone's
 # build.claude and the worktree root as the ssh login, sets GOTMPDIR inside the Go cache, and excludes those paths
-# from real-time protection when the login is elevated. Provisioning runs without admin, so usually it writes
-# ~\.atrium\provision\defender-exclusions.ps1 on the room instead and prints the one line an administrator runs.
+# from real-time protection when the login is elevated. Provisioning runs without admin, so usually it prints the
+# one line an administrator pastes into an elevated shell, and writes nothing for them to run.
 # `-NoDefender` skips it. -Remove does not undo it.
 #
 # THE SMOKE FOLDER is the room's clone, else the path from this repository's git
@@ -2187,7 +2187,7 @@ if ($Repo -ne 'none') { & pwsh -NoProfile -File (Join-Path $PSScriptRoot 'room-g
 
 # DEFENDER, on a Windows room, after the clone so its build folder and worktrees are known. room-defender.ps1 reads the
 # paths as the ssh login, which is the account the room runs as, sets GOTMPDIR, and excludes them when that login is
-# elevated. Otherwise it writes the command for an administrator and says so in a warn line.
+# elevated. Otherwise it prints the line for an administrator in a warn line.
 if ($os -eq 'windows') {
     if ($NoDefender) {
         Step 'defender' 'skip' '-NoDefender'

@@ -184,9 +184,11 @@ pwsh -File scripts\room-defender.ps1 sg3          # a room, over ssh
 
 It reads that account's Go caches, the clone's `build.claude` and the worktree root, and sets `GOTMPDIR` to
 `<GOCACHE>\tmp` with `go env -w`, so `go test` links its binaries inside an excluded path instead of `%TEMP%`. The
-exclusions themselves need elevation, so it writes them, with the paths spelled out, to
-`~\.atrium\provision\defender-exclusions.ps1` and prints the line an administrator runs. Run elevated with
-`-Runner <account>`, it applies them itself.
+exclusions need elevation, so it prints one `Add-MpPreference` line, with the paths spelled out, for an administrator
+to paste into an elevated shell. It writes no script for them to run: the agents' account could change a script it
+owns. Every path is checked first, since an agent can set its own `GOCACHE`: it must lie inside that account's
+profile, the worktree root or the build folder, and a drive root, a wildcard or a quote is left out with a warning.
+Run elevated with `-Runner <account>`, it applies them itself.
 
 By hand, exclude the paths that only ever hold build output, caches and agent worktrees. Run this in an elevated shell
 AS THE USER THE AGENTS RUN AS, or write that user's paths out by hand. `$env:LOCALAPPDATA` and `$env:USERPROFILE`
