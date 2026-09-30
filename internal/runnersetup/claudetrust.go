@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -111,6 +113,20 @@ func tooWideToTrust(env Env, cwd string) bool {
 	return false
 }
 
+// lockMkdir is the mkdir the lock is taken with, a seam for tests.
+var lockMkdir = os.Mkdir
+
+// lockBusy is whether a failed lock mkdir means another holder has the lock,
+// so the caller waits. On Windows a directory another holder just removed is
+// still pending delete, and Mkdir on it returns ERROR_ACCESS_DENIED rather than
+// ERROR_ALREADY_EXISTS. Elsewhere a permission error is real.
+func lockBusy(err error, goos string) bool {
+	if errors.Is(err, os.ErrExist) {
+		return true
+	}
+	return goos == "windows" && errors.Is(err, fs.ErrPermission)
+}
+
 // lockClaudeConfig takes claude's own lock on its config file, the way
 // proper-lockfile does: a directory beside it, made atomically. A lock older
 // than claude's stale limit belongs to a session that died holding it.
@@ -119,11 +135,11 @@ func lockClaudeConfig(path string) (unlock func(), err error) {
 	deadline := time.Now().Add(claudeLockWait)
 	wait := 20 * time.Millisecond
 	for {
-		err := os.Mkdir(lock, 0o700)
+		err := lockMkdir(lock, 0o700)
 		if err == nil {
 			return func() { _ = os.Remove(lock) }, nil
 		}
-		if !errors.Is(err, os.ErrExist) {
+		if !lockBusy(err, runtime.GOOS) {
 			return nil, err
 		}
 		if fi, serr := os.Stat(lock); serr == nil && time.Since(fi.ModTime()) > claudeLockStale {
@@ -131,7 +147,7 @@ func lockClaudeConfig(path string) (unlock func(), err error) {
 			continue
 		}
 		if time.Now().After(deadline) {
-			return nil, fmt.Errorf("a claude session held %s for %s", filepath.ToSlash(lock), claudeLockWait)
+			return nil, fmt.Errorf("a claude session held %s for %s: %w", filepath.ToSlash(lock), claudeLockWait, err)
 		}
 		time.Sleep(wait)
 		if wait < 200*time.Millisecond {
