@@ -297,11 +297,13 @@ func inspectCullProved(wt, into, tip string) (*cullPlan, error) {
 
 // resolveTip turns the tip a caller typed, possibly an abbreviated sha, into the
 // full commit sha in this worktree's repository, so it compares like for like.
-// A tip that is not a commit here is refused by name; that is not the same as the
-// branch having moved past a known tip.
+// A tip that is not a commit here is refused by name. That is not the same as the
+// branch having moved past a known tip. Only a hex sha is accepted, because a
+// ref such as HEAD would resolve to the branch head and always match.
 func resolveTip(wt, tip string) (string, error) {
-	if strings.HasPrefix(tip, "-") {
-		return "", fmt.Errorf("%q is not a commit", tip)
+	tip = strings.ToLower(tip)
+	if !isHexSha(tip) {
+		return "", fmt.Errorf("the tip %q is not a sha. give the 7 to 40 hex characters of the commit that was checked", tip)
 	}
 	full, err := gitIn(wt, "rev-parse", "--verify", tip+"^{commit}")
 	if err != nil {
@@ -312,6 +314,19 @@ func resolveTip(wt, tip string) (string, error) {
 			"or it is not a commit", tip)
 	}
 	return full, nil
+}
+
+// isHexSha is 7 to 40 lowercase hex characters.
+func isHexSha(s string) bool {
+	if len(s) < 7 || len(s) > 40 {
+		return false
+	}
+	for _, c := range s {
+		if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 // protectedBranch is a branch a cull never deletes, whatever the worktree says.
