@@ -221,6 +221,40 @@ var migrations = []struct {
 			)`,
 		},
 	},
+	{
+		// SOMETHING WAITING ON A HUMAN, SHARED BY EVERY SCREEN. See growl.go and
+		// docs/rnd/persistent-growler-design.md. The id is the notify identity
+		// with the room in front, so a republished card is the same row. No
+		// foreign key, for the reason room_audit has none: the record of a
+		// dismissal outlives the room it was about until the prune takes it.
+		//
+		// `ended_at` is not in the design's table. It is when the REASON ended,
+		// which is a different fact from the state: a growler dismissed an hour
+		// ago whose permission was answered just now is still `dismissed`, and it
+		// still has to stop being the current halt or the current waiting spell.
+		name: "0005_growl",
+		stmts: []string{
+			`CREATE TABLE IF NOT EXISTS growl (
+				id          TEXT PRIMARY KEY,
+				room_id     TEXT NOT NULL,
+				card_id     TEXT NOT NULL DEFAULT '',
+				reason      TEXT NOT NULL CHECK (reason IN ('permission','halt','blocked','question','deploy-hold')),
+				title       TEXT NOT NULL,
+				body        TEXT NOT NULL DEFAULT '',
+				subject     TEXT NOT NULL DEFAULT '',
+				raised_at   TEXT NOT NULL,
+				state       TEXT NOT NULL CHECK (state IN ('open','snoozed','dismissed','acted','resolved')),
+				until       TEXT NOT NULL DEFAULT '',
+				reminders   INTEGER NOT NULL DEFAULT 0,
+				changed_at  TEXT NOT NULL,
+				changed_via TEXT NOT NULL DEFAULT '',
+				changed_tab TEXT NOT NULL DEFAULT '',
+				ended_at    TEXT NOT NULL DEFAULT ''
+			)`,
+			`CREATE INDEX IF NOT EXISTS growl_room ON growl (room_id, reason, ended_at)`,
+			`CREATE INDEX IF NOT EXISTS growl_state ON growl (state)`,
+		},
+	},
 }
 
 func (s *Store) migrate() error {

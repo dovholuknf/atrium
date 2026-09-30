@@ -95,6 +95,10 @@ type Proxy struct {
 	// notify.go.
 	notify *Notifier
 
+	// growl is the persistent growlers. Nil until SetGrowler wires it, and a hub
+	// without one answers /_hub/growls 404. See growl.go.
+	growl *Growler
+
 	// gitHub is the hub's git side: mirror, sync, collect. Nil until SetGit wires it, and
 	// a hub without one answers /_hub/git 404. See git_hub.go.
 	gitHub *gitsync.Hub
@@ -1336,6 +1340,10 @@ func (p *Proxy) serveHubAPI(w http.ResponseWriter, r *http.Request) {
 		p.serveRestart(w, r, strings.TrimPrefix(strings.TrimPrefix(sub, "restart"), "/"))
 		return
 	}
+	if strings.HasPrefix(sub, "growls/") {
+		p.serveGrowls(w, r, sub)
+		return
+	}
 	switch sub {
 	case "rooms":
 		// ATTACHED ONLY, and every other pane on the board depends on that.
@@ -1366,6 +1374,8 @@ func (p *Proxy) serveHubAPI(w http.ResponseWriter, r *http.Request) {
 		p.serveDeps(w, r, sub)
 	case "presence":
 		p.servePresence(w, r)
+	case "growls":
+		p.serveGrowls(w, r, sub)
 	case "audit":
 		// THE OPERATIONAL FEED, newest first, filterable. Read-only: the board
 		// shows what happened and never writes here. See audit.go.
