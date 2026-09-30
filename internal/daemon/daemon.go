@@ -668,7 +668,10 @@ func (d *Daemon) decidedBy(permID string) string {
 func (d *Daemon) Store() *store.Store { return d.st }
 
 // Close releases the database.
-func (d *Daemon) Close() error { return d.closeDB() }
+func (d *Daemon) Close() error {
+	d.stopOutput()
+	return d.closeDB()
+}
 
 // closeDB releases the store at most once.
 //
