@@ -719,8 +719,8 @@ binary goes to `~\.atrium\bin` on Windows or `~/.local/bin` elsewhere.
 signed in is a `warn` naming `ssh -t <target> claude auth login`, which prints a URL and so works over ssh. The
 script never reads or carries a credential, and the room is fine without it. `smoke` is last: it launches a small
 claude worker on the room through the hub (`-SmokeCwd`, `-SmokeTo`, `-SmokeTimeout` 180), waits for its report to
-carry a nonce, exits the card and confirms it left. It runs in the clone `room-git.ps1 init` made, or the remote home
-when there is none. It is skipped when auth warned or with `-NoSmoke`, and a smoke that does not report is exit 8.
+carry a nonce, exits the card and confirms it left. It runs in the clone `room-git.ps1 init` made, else the path from this
+repository's git remote for the room, else `~/.atrium/smoke`, which it makes. Never the remote home. It is skipped when auth warned or with `-NoSmoke`, and a smoke that does not report is exit 8.
 `-SmokeOnly` runs just `auth` and `smoke` against a room already provisioned. It stops before anything is written,
 so it is the one form that is safe against a room in use.
 
@@ -742,11 +742,21 @@ user's own logon task). **Linux PATH.** The user unit's ExecStart runs through a
   which takes the operator's account token, so when the remote has no environment the script stops with exit 7 and
   names that command.
 
-**Running it.** By default the room starts with `atrium room --detach`, through a login shell on Unix so it has the
-PATH a terminal has. It runs until the machine restarts or the user logs out, and has no autostart. `-Autostart`
-also installs the logon task, user unit or LaunchAgent through the service scripts, with the `room` verb
-(`atrium-service.ps1 -Verb room`, `ATRIUM_SERVICE_VERB=room atrium-service.sh`). `atrium-service.sh` now leaves
-lingering off unless `ATRIUM_LINGER=1`, which `-Linger` passes. The package postinstall is unchanged.
+**Running it.** A new provision installs autostart: the logon task, user unit or LaunchAgent, through the service
+scripts with the `room` verb (`atrium-service.ps1 -Verb room`, `ATRIUM_SERVICE_VERB=room atrium-service.sh`), so the
+room comes back after a reboot. On Windows the task's action is `room --detach`, run by Windows PowerShell after it
+dot-sources `~\.atrium\toolchain\room-env.ps1` when that file exists, so a room started by hand, by provision or by a
+logon is one path. `-NoAutostart` opts out: the room starts with `atrium room --detach` (through a login shell on Unix
+so it has the PATH a terminal has), registers nothing, and runs until the machine restarts or the user logs out.
+`-Autostart` is still accepted and does nothing on a new provision. **A rerun keeps the mode the manifest records**, so
+a room provisioned without autostart stays that way, and only an explicit `-Autostart` on the rerun registers it.
+`atrium-service.sh` leaves lingering off unless `ATRIUM_LINGER=1`, which `-Linger` passes. The package postinstall is
+unchanged.
+
+**The account.** `-User localai` names the account the room must run as. It is checked over the ssh login and never
+created, because making one needs admin. A missing account prints the command (`net user localai /add` on Windows,
+`sysadminctl -addUser localai` on macOS, `sudo useradd -m localai` on Linux) and stops with exit 11 before anything is
+changed. An account that exists but is not the ssh login is exit 1: target `localai@host`.
 
 **Checking it.** It waits for the hub's live `/_hub/rooms` list to show a connection made after the start, and still
 there five seconds later, then runs each runner's `--version` on the remote.
