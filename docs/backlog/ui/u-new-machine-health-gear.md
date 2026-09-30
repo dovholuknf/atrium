@@ -1,6 +1,7 @@
 # u-new-machine-health-gear: a machine health section in the gear, with "profile this machine"
 
-Status: parked (clint, 2026-09-30). @ui owns the board half, @runtime the room half. Design review by @rnd first.
+Status: parked (clint, 2026-09-30). @ui owns the board half, @runtime the room half. Designed by @rnd:
+`docs/rnd/machine-health-design.md`.
 
 ## Why
 
