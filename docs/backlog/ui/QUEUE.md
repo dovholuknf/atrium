@@ -8,23 +8,21 @@ live.
 
 ## Queue
 
-1. **Cross-window silence for the ready alert.** @review's medium on 5e68b83f
-   (`docs/backlog/ui/u-new-review-5e68b83f.md`): a focused window showing a card silences that card's ready alert in
-   EVERY window, forwarded toasts and sound included. Worker `u-ready-spam`, branch `claude/u-ready-spam`, 32fceb70
-   committed, finishing its tests. Then full suite, land, hub-only deploy, report line.
-2. **Growler U1, U2, U3 with the pop-out rules.** `docs/rnd/persistent-growler-design.md` sections 4 to 8 and 10, plus
-   `docs/backlog/ui/u-new-growler-popout.md`. Worker `u-growler`, branch `claude/u-growler`: U1 04b391fd, U2 f0678829,
-   U3 719df4ba, now merging claude/main and adding the pop-out rules. Hub side R1 to R3 is live. Then full suite,
-   land, hub-only deploy, one report line per stage.
-3. **Card URLs U1 and U2.** `docs/rnd/card-urls-design.md` section 9. U1: the board reads `/alias/...` and
+1. **Card URLs U1 and U2.** `docs/rnd/card-urls-design.md` section 9. U1: the board reads `/alias/...` and
    `/room/...`, the lookup, the clash chooser, the per-path last id, the links the board builds. U2: the phone paths.
-   R3 is live on the hub, R4 (the guest allowlist) is coming. Not started.
+   Worker `u-card-urls` on m1mini, branch `claude/u-card-urls` 8333259b done and reviewed. Then full suite, land,
+   hub-only deploy, report line.
 
 ## Filed, not queued
 
-- `docs/backlog/ui/u-new-suite-flakes-0930.md`: heldLine and cacheChip fail in the full run only.
+- `docs/backlog/ui/u-new-suite-flakes-0930.md`: cacheChip fails in the full run only. heldLine is fixed (fcf3b974).
+- A popped-out card's growler reminder makes no sound while the board window has focus: the board skips a popped-out
+  card and the pop-out skips when focus is elsewhere. Low.
 
 ## Done
+
+- 2026-09-30 17:11, cross-window silence for the ready alert: claude/main 23fa4602, hub board 2bb25a14.
+- 2026-09-30 17:11, growler U1, U2, U3 with the pop-out rules: claude/main eb94e016, hub board 2bb25a14.
 
 - 2026-09-30 15:08, ready-alert spam fix (once per wait, 5 s quiet, focused window silent): claude/main 5e68b83f,
   hub build 19e2f84-7931c7d0.
