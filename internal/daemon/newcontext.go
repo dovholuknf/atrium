@@ -482,10 +482,11 @@ func (d *Daemon) runNewContext(taskID string, gen uint64) {
 		if auto {
 			// What an automatic failure leads to is decided before the chip is written,
 			// since the chip says whether it will be tried again.
-			if !d.nctx.mine(taskID, gen) {
+			// One read, not mine then get: a dismissal between the two left cur nil.
+			cur := d.nctx.get(taskID)
+			if cur == nil || cur.gen != gen {
 				return
 			}
-			cur := d.nctx.get(taskID)
 			var attempt int
 			reason, attempt, giveUp = d.autoFailing(taskID, gen, cur.step, step, reason)
 			by, extra = autoContextBy, map[string]any{"attempt": attempt}
@@ -580,13 +581,20 @@ func (d *Daemon) runNewContext(taskID string, gen uint64) {
 		fail("could not type the wake prompt", err)
 		return
 	}
+	// Marked finished before the chip goes, so a tick between the two cannot read the
+	// run as dismissed and lose its result.
+	if auto {
+		d.autoFinished(taskID, gen, true)
+	}
 	if d.nctx.finish(taskID, gen) {
 		log.Printf("[atrium] new context on %s done", taskID)
 		if auto {
-			d.autoFinished(taskID, gen)
+			d.autoIdleRelease(taskID, true)
 		}
 		d.publishTask(taskID)
 		d.releaseHeld(taskID)
+	} else if auto {
+		d.autoFinished(taskID, gen, false)
 	}
 }
 

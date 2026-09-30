@@ -1084,7 +1084,11 @@ func (k *keepalive) view(taskID string) any {
 	out.Why = k.why[taskID]
 	k.mu.Unlock()
 	t, err := k.st.Get(taskID)
-	if err != nil || t == nil || t.ResumeID == "" {
+	if err != nil || t == nil {
+		return out
+	}
+	// As tick does, so the view after a new context reads the new session.
+	if t = k.followSession(t); t.ResumeID == "" {
 		return out
 	}
 	path := k.transcript(t.Worktree, t.ResumeID)
