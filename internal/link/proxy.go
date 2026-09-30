@@ -126,6 +126,9 @@ func NewProxy(hub *Hub, board fs.FS, boardID string, room func() string) *Proxy 
 		p.assets = webasset.New(board)
 	}
 	p.feeds = newFeeds(p)
+	hub.every.mu.Lock()
+	hub.every.onChange = p.feeds.everywhereChanged
+	hub.every.mu.Unlock()
 	// A ROOM'S STREAM COMING UP is when the board-wide approver sweeps that room.
 	// See autoapprove.go.
 	p.feeds.connected = func(room string) {
@@ -1351,6 +1354,8 @@ func (p *Proxy) serveHubAPI(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"rooms": p.attachedView()})
 	case "nudge":
 		p.serveNudge(w, r)
+	case "everywhere":
+		p.serveEverywhere(w, r)
 	case "inventory":
 		p.serveInventory(w, r)
 	case "inventory/mark":

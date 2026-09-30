@@ -56,6 +56,9 @@ type everywhere struct {
 	// live is the rooms the hub still holds a record of, folded. Nil means all
 	// of them. See `holding`.
 	live func() map[string]bool
+	// onChange is told, outside the lock, when a replace or a drop changed what
+	// is indexed. Nil tells nobody.
+	onChange func()
 }
 
 func newEverywhere() *everywhere {
@@ -99,6 +102,14 @@ func indexed(room string, cards []CardState) []everyCard {
 // replace swaps one room's cards for what it just announced, and says whether
 // that changed the index.
 func (e *everywhere) replace(room string, cards []CardState) bool {
+	changed := e.swap(room, cards)
+	if changed {
+		e.changed()
+	}
+	return changed
+}
+
+func (e *everywhere) swap(room string, cards []CardState) bool {
 	next := indexed(room, cards)
 	key := keyOf(room)
 	e.mu.Lock()
@@ -117,6 +128,41 @@ func (e *everywhere) replace(room string, cards []CardState) bool {
 		a, b := prev[i], next[i]
 		if a.ID != b.ID || a.Wire != b.Wire || a.Alias != b.Alias || a.Status != b.Status ||
 			string(a.Payload) != string(b.Payload) {
+			return true
+		}
+	}
+	return false
+}
+
+// changed tells whoever watches the index that it moved.
+func (e *everywhere) changed() {
+	e.mu.Lock()
+	f := e.onChange
+	e.mu.Unlock()
+	if f != nil {
+		f()
+	}
+}
+
+// holds is whether a room has an indexed card, and has is whether it is this
+// one. Memory only, since the stream asks on every event.
+func (e *everywhere) holds(room string) bool {
+	if e == nil {
+		return false
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return len(e.byRoom[keyOf(room)]) > 0
+}
+
+func (e *everywhere) has(room, id string) bool {
+	if e == nil {
+		return false
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	for _, c := range e.byRoom[keyOf(room)] {
+		if c.ID == id {
 			return true
 		}
 	}
@@ -158,11 +204,14 @@ func (e *everywhere) all(besides string) []everyCard {
 // drop forgets one room's cards, for a room whose record has just gone.
 func (e *everywhere) drop(room string) bool {
 	e.mu.Lock()
-	defer e.mu.Unlock()
 	key := keyOf(room)
 	_, had := e.byRoom[key]
 	delete(e.byRoom, key)
 	delete(e.names, key)
+	e.mu.Unlock()
+	if had {
+		e.changed()
+	}
 	return had
 }
 
