@@ -164,7 +164,7 @@ function soloCard(url) {
 
 // The path of a window's address, where a card's readable path lives. See js/cardurl.js.
 function pathOf(url) {
-  try { return new URL(url).pathname } catch (e) { return "" }
+  try { return new URL(url).pathname.replace(/\/$/, "") } catch (e) { return "" }
 }
 
 // Whether a window is one terminal: a `#term=` address or a card's readable path.
@@ -186,7 +186,7 @@ async function openBoard(origin, goTo, taskFor, key, path) {
   const all = await self.clients.matchAll({ type: "window", includeUncontrolled: true })
   const mine = all.filter(c => c.url.startsWith(origin))
   const solo = taskFor && mine.find(c => (soloCard(c.url) && bareId(soloCard(c.url)) === bareId(taskFor)) ||
-    (path && isSolo(c.url) && pathOf(c.url) === path))
+    (path && isSolo(c.url) && pathOf(c.url) === path.replace(/\/$/, "")))
   if (solo) {
     await solo.focus()
     return
