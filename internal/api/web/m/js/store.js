@@ -36,11 +36,13 @@
     return fetch(path, opts).then(async res => {
       if (res.status === 401) throw new Error("sign in again");
       if (!res.ok && res.status !== 204) {
-        let msg = "";
+        let msg = "", body = null;
         try { msg = await res.text(); } catch (e) {}
-        try { msg = JSON.parse(msg).error || msg; } catch (e) {}
+        try { body = JSON.parse(msg); msg = body.error || msg; } catch (e) {}
         const err = new Error(String(msg).trim() || res.statusText || ("HTTP " + res.status));
         err.status = res.status;
+        // The rest of a refusal, for the one that has somewhere to go: a name two rooms hold lists them.
+        if (body && typeof body === "object") err.body = body;
         throw err;
       }
       if (res.status === 204) return null;

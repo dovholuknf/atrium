@@ -11819,6 +11819,111 @@ async function cardUrlRoomSection(browser, base) {
   if (!bad) console.log("cardUrlRoom ok");
 }
 
+// ── card urls on the phone ───────────────────────────────────────────────────
+// u-card-urls U2. `/m/alias/<a>` and `/m/room/<room>/<name>` open the card sheet, a clash shows the list, a miss says
+// what would have worked, and opening a card from the list puts its readable path in the bar. The lookups are mocked.
+async function mCardUrlSection(browser) {
+  const st = mServer({});
+  const ta = mCard("card-a", { alias: "builder", room: "claude-sg4", wire_name: "sparta/builder-1", display_title: "the builder", status: "needs-input", waiting_since: mIso(5 * M_MIN) });
+  const tb = mCard("card-b", { room: "claude-sg4", wire_name: "sparta/handled", display_title: "only a handle", status: "needs-input", waiting_since: mIso(6 * M_MIN) });
+  const tc = mCard("card-c", { alias: "builder", room: "r2", display_title: "the other builder", status: "running" });
+  const td = mCard("card-d", { alias: "solo", room: "claude-sg4", display_title: "on its own", status: "needs-input", waiting_since: mIso(7 * M_MIN) });
+  st.tasks = [ta, tb, tc, td];
+  await st.open();
+  const open = async (pathname, lookups, setup) => {
+    const ctx = await browser.newContext({ viewport: M_VIEWS[0], hasTouch: true, isMobile: true, deviceScaleFactor: 2 });
+    const p = await ctx.newPage();
+    const errors = [], hits = [];
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.route("**/*", route => {
+      const rq = route.request();
+      const u = new URL(rq.url());
+      if (/^\/m\/(alias|room)\//.test(u.pathname) && rq.resourceType() === "document") {
+        return route.fulfill({ status: 200, contentType: "text/html", body: fs.readFileSync(path.join(M_ROOT, "index.html")) });
+      }
+      const m = /^\/v1\/tasks\/([^/]+)$/.exec(u.pathname);
+      const key = m ? decodeURIComponent(m[1]) : "";
+      if (key && lookups[key]) {
+        hits.push(key);
+        const l = lookups[key];
+        return route.fulfill({ status: l.status || 200, contentType: "application/json", body: JSON.stringify(l.body) });
+      }
+      return route.continue();
+    });
+    if (setup) { await p.goto(st.url + "/m/", { waitUntil: "domcontentloaded" }); await p.evaluate(setup); }
+    await p.goto(st.url + pathname, { waitUntil: "domcontentloaded" });
+    return { ctx, p, errors, hits };
+  };
+  const said = p => p.evaluate(() => { const e = document.getElementById("m-cardurl"); return e && !e.hidden ? e.textContent : ""; });
+  const links = p => p.evaluate(() => [...document.querySelectorAll("#m-cardurl a.cu-row")].map(a => a.getAttribute("href")));
+  const pathNow = p => p.evaluate(() => location.pathname);
+  try {
+    // an alias address opens the card, keeps the path, and closing leaves for the list
+    let r = await open("/m/alias/solo", { solo: { body: td } });
+    try {
+      await r.p.waitForSelector("#m-card.on", { timeout: slow(10000) });
+      if (!/on its own/.test(await r.p.textContent("#m-card-head"))) fail("mCardUrl: the sheet is not the card the alias names");
+      if (await pathNow(r.p) !== "/m/alias/solo") fail("mCardUrl: the path was rewritten to " + await pathNow(r.p));
+      if (r.hits.length !== 1) fail("mCardUrl: " + r.hits.length + " lookups for one open");
+      if (await r.p.evaluate(() => localStorage.getItem("atrium.cardurl.alias:solo")) !== "card-d") fail("mCardUrl: the last id was not kept");
+      if (await r.p.getAttribute("#m-card-term", "href") !== "/alias/solo") fail("mCardUrl: open terminal is not the readable board path");
+      await r.p.tap("#m-card-back");
+      await r.p.waitForFunction(() => document.getElementById("m-card").hidden, null, { timeout: slow(5000) });
+      if (await pathNow(r.p) !== "/m/") fail("mCardUrl: closing a card opened from its address left the path at " + await pathNow(r.p));
+      if (r.errors.length) fail("mCardUrl: the page threw: " + r.errors.join(" | "));
+    } finally { await r.ctx.close(); }
+
+    // the qualified address, by handle
+    r = await open("/m/room/claude-sg4/handled", { "handled@claude-sg4": { body: tb } });
+    try {
+      await r.p.waitForSelector("#m-card.on", { timeout: slow(10000) });
+      if (!/only a handle/.test(await r.p.textContent("#m-card-head"))) fail("mCardUrl: /m/room/<room>/<name> opened the wrong card");
+    } finally { await r.ctx.close(); }
+
+    // opening a card from the list pushes its readable path, and back closes it
+    r = await open("/m/", {});
+    try {
+      await r.p.waitForSelector("#m-list .row", { timeout: slow(10000) });
+      const pushed = async id => {
+        await r.p.tap('#m-list .row[data-id="' + id + '"]');
+        await r.p.waitForSelector("#m-card.on", { timeout: slow(5000) });
+        const at = await pathNow(r.p);
+        await r.p.goBack();
+        await r.p.waitForFunction(() => document.getElementById("m-card").hidden, null, { timeout: slow(5000) });
+        if (await pathNow(r.p) !== "/m/") fail("mCardUrl: back did not return to the list from " + at);
+        return at;
+      };
+      const got = [await pushed("card-d"), await pushed("card-a"), await pushed("card-b")];
+      if (got.join() !== "/m/alias/solo,/m/room/claude-sg4/builder,/m/room/claude-sg4/handled") fail("mCardUrl: the pushed paths are " + got.join());
+    } finally { await r.ctx.close(); }
+
+    // a miss says what would have worked, as links to this page
+    r = await open("/m/alias/ghost", { ghost: { status: 404, body: { error: "no card called \"ghost\"", would_work: ["builder-1@claude-sg4 (@builder)", "plain@claude-sg4"] } } });
+    try {
+      await r.p.waitForFunction(() => { const e = document.getElementById("m-cardurl"); return e && !e.hidden; }, null, { timeout: slow(10000) });
+      if (!/no card called ghost/.test(await said(r.p))) fail("mCardUrl: a miss says: " + await said(r.p));
+      if ((await links(r.p)).join() !== "/m/alias/builder,/m/room/claude-sg4/plain") fail("mCardUrl: the miss links are " + (await links(r.p)).join());
+      if (await r.p.evaluate(() => !document.getElementById("m-card").hidden)) fail("mCardUrl: a sheet opened on a miss");
+    } finally { await r.ctx.close(); }
+
+    // a clash: the list, then a remembered card opens
+    const clash = { status: 409, body: { error: "two", candidates: ["builder@claude-sg4 (claude-sg4~card-a)", "builder@r2 (r2~card-c)"] } };
+    const lookups = { builder: clash, "claude-sg4~card-a": { body: ta }, "r2~card-c": { body: tc } };
+    r = await open("/m/alias/builder", lookups);
+    try {
+      await r.p.waitForFunction(() => document.querySelectorAll("#m-cardurl a.cu-row").length === 2, null, { timeout: slow(10000) });
+      if ((await links(r.p)).join() !== "/m/room/r2/builder,/m/room/claude-sg4/builder" && (await links(r.p)).join() !== "/m/room/claude-sg4/builder,/m/room/r2/builder") fail("mCardUrl: the clash links are " + (await links(r.p)).join());
+      if (await r.p.evaluate(() => !document.getElementById("m-card").hidden)) fail("mCardUrl: a sheet opened with two candidates");
+    } finally { await r.ctx.close(); }
+    r = await open("/m/alias/builder", lookups, () => localStorage.setItem("atrium.cardurl.alias:builder", "card-a"));
+    try {
+      await r.p.waitForSelector("#m-card.on", { timeout: slow(10000) });
+      if (!/the builder/.test(await r.p.textContent("#m-card-head"))) fail("mCardUrl: the remembered card did not open");
+    } finally { await r.ctx.close(); }
+  } finally { await st.close(); }
+  if (!bad) console.log("mCardUrl ok");
+}
+
 async function main() {
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = "http://127.0.0.1:" + server.address().port;
@@ -11842,7 +11947,7 @@ async function main() {
       eventDriven: eventDrivenSection, idleBudget: idleBudgetSection, pollsGone: pollsGoneSection,
       phoneListFit: phoneListFitSection, phoneNudge: phoneNudgeSection,
       cacheChip: cacheChipSection, cacheLine: cacheLineSection, mHome: mHomeSection, mCard: mCardSection, mServe: mServeSection, phoneKeyLabel: phoneKeyLabelSection, phoneKeyLit: phoneKeyLitSection, shiftMenu: shiftMenuSection, notifyCommand: notifyCommandSection, presence: presenceSection, tallPty: tallPtySection, roomsMachine: roomsMachineSection, readyOnce: readyOnceSection, readyPopout: readyPopoutSection, popoutNotify: popoutNotifySection,
-      cardUrlTable: cardUrlTableSection, cardUrlClash: cardUrlClashSection, cardUrlLinks: cardUrlLinksSection, cardUrlRoom: cardUrlRoomSection };
+      cardUrlTable: cardUrlTableSection, cardUrlClash: cardUrlClashSection, cardUrlLinks: cardUrlLinksSection, cardUrlRoom: cardUrlRoomSection, mCardUrl: (b) => mCardUrlSection(b) };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -13841,6 +13946,7 @@ async function main() {
     await cardUrlClashSection(browser, base);
     await cardUrlLinksSection(browser, base);
     await cardUrlRoomSection(browser, base);
+    await mCardUrlSection(browser);
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e));
     if (process.env.DEBUG_HEADLESS) {
@@ -14100,7 +14206,7 @@ async function mCardSection(browser) {
       if (pre.sw <= pre.cw || pre.ox !== "auto") fail(tag + "the code block does not scroll inside itself: " + JSON.stringify(pre));
       if (await mNoSideways(p)) fail(tag + "the card scrolls sideways");
       if (!/which port/.test(await p.textContent("#m-card-extras"))) fail(tag + "the open questions are missing");
-      if (await p.getAttribute("#m-card-term", "href") !== "/#term=card-a") fail(tag + "open terminal does not point at the pop-out");
+      if (await p.getAttribute("#m-card-term", "href") !== "/alias/builder") fail(tag + "open terminal does not point at the card's readable board path");
       if (st.hits.filter(h => h === "card-a?3").length !== 1) fail(tag + "replies fetched " + st.hits.join(","));
       await mShot(p, "card-dark-" + vp.width);
       // refetch only when the turn ends
