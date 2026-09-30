@@ -7402,13 +7402,13 @@ with `updatedInput` holding the edited command.
 
 **Expected:** no output and exit code 0 each time, and no card appears for the Read.
 
-## GC. Git sync over the hub and rooms
+## GM. Git sync over the hub and rooms
 
 The automated coverage is `internal/gitsync`, `internal/link/git*_test.go` and `internal/cli/atrium_rooms_git_test.go`,
 which run real git in temporary directories. These are the parts a person checks on a live hub and room. The design is
 `docs/rnd/git-sync-design.md`.
 
-### GC1. The hub mirrors and a room follows
+### GM1. The hub mirrors and a room follows
 
 1. On the hub, `atrium rooms git repos add github/<owner>/<repo> <the checkout @merge writes>`, then
    `atrium rooms git repos ls`.
@@ -7422,7 +7422,7 @@ which run real git in temporary directories. These are the parts a person checks
 `claude/main` and `hub-main` are at it. After step 4 the room follows with nobody running anything, including the
 non fast-forward move. A room whose clone is missing answers `absent` until `--init`.
 
-### GC2. Refusals
+### GM2. Refusals
 
 1. `atrium rooms git repos add` cannot take a branch. Write `git_repos` by hand with a `claude/ui` branch.
 2. Start the hub with that setting in place.
@@ -7431,7 +7431,7 @@ non fast-forward move. A room whose clone is missing answers `absent` until `--i
 **Expected:** step 1 has no flag for a branch and the hub refuses the value, naming the integration branch. Step 2
 logs `git_repos is refused, so this hub mirrors nothing` and mirrors nothing. Step 3 answers `behind`, not a forced move.
 
-### GC3. Collecting
+### GM3. Collecting
 
 1. On a room, make a commit on `claude/<something>` in its clone. `atrium rooms git collect <room>`.
 2. In the hub's checkout, `git for-each-ref refs/remotes/<room>`.
@@ -7440,10 +7440,184 @@ logs `git_repos is refused, so this hub mirrors nothing` and mirrors nothing. St
 **Expected:** step 2 shows `refs/remotes/<room>/claude/<something>` at the room's sha, and nothing new under
 `refs/heads`. The room's `claude/main` is never there. After step 3 the branch is gone from the hub's checkout.
 
-### GC4. Old builds
+### GM4. Old builds
 
 1. Attach a room built before f-019, then run `atrium rooms git sync <room>` and `atrium rooms git collect <room>`.
 2. Attach a new room to a hub built before f-019.
 
 **Expected:** step 1 says the room's build predates git sync (`unsupported`, and the collect is refused) and the room
 is never sent a request. In step 2 the room's sync fails saying the hub predates git sync and never dials the `git` kind.
+
+## GC. Terminal output share on a phone
+
+### GC1. Terminals tab
+At 390x844 portrait with a card attached and the headers collapsed, the terminal output fills at least 75% of the screen height (the test measures 85.5%, it was 64.9%). No separate card picker row shows above the terminal.
+
+### GC2. Pop-out
+Open the card with `#term=`. The output fills at least 75% of the screen (92.3%, it was 81.0%).
+
+### GC3. Tray
+The terminal bar is hidden. A small grip at the top centre (44px touch area, clear of the top right corner) opens it by tap or by pulling down. Swipe up, a tap outside, or the chevron closes it. Opening it does not move or resize the terminal. It holds the card picker button, the other buttons and "fit this screen". The key bar (44px keys) is the only bar at the bottom.
+
+### GC4. Card picker
+In the tray, the card name button (44px) opens the card list under the tray. A second tap closes the list and the tray.
+
+## GC. Follow button
+
+### GC1. Pan away
+On a long scrollback, drag up. A round down button shows bottom right with no count. New output raises the count and never moves the view.
+
+### GC2. Tap the button
+It scrolls back to the cursor and hides. While output streams the cursor row stays in view and the button stays hidden.
+
+### GC3. Pan back
+Pan away, let output arrive, then pan back down to within a row of the cursor. The button hides and follow resumes with no tap, including when the pan ends at exactly the spot the board last scrolled to.
+
+### GC4. Run
+`HEADLESS_ONLY=phoneShare,phoneFollow,phoneHeader,phoneTermBar,phoneKeyboard,phoneTap,phonePan,phoneFocus,phoneView,u016,heldLine node scripts/test-board-headless.js`.
+
+## GC. Bottom anchor
+
+### GC1. Pop-out with a short pty
+Open a card with a 48-row pty in the pop-out at 390x844. The prompt sits just above the key bar with no blank rows under the cursor row. Any spare height is a plain band above the grid, and the follow button is hidden while the cursor is in view. The pty size is never changed.
+
+### GC2. Terminals tab and keyboard
+The same on the terminals tab, and with the on-screen keyboard up or down the cursor row stays just above the key bar.
+
+## GD. Phone terminal composer
+
+### GD1. Type into a real box
+On a phone, open a terminal card. Above the key bar is a one line message box. Swipe-type or dictate a sentence, then tap the arrow. It reaches the session once, as one paste then Enter, with no doubled or garbled words. Enter in the box adds a new line and sends nothing.
+
+### GD2. Hardware keyboard and desktop
+With a hardware keyboard attached, tap the terminal and type. The keys reach the session and no soft keyboard rises. On a desktop the box is not there.
+
+## GD. Phone page composer and permission rows
+
+### GD1. Message a session from /m
+Open a card on the phone page. Type in the box, tap the arrow. A typed message says "sent", one held back says "queued, delivered when the line is clear". A failed send keeps your text and says why. Leave and come back and the draft is still there.
+
+### GD2. Answer a permission
+A pending request shows the tool and the command. Approve, deny, or deny with a reason (the reason goes to the session). One answered on the desktop slides away.
+
+## GD. Attach on the phone terminal
+
+### GD1. Paths land in the message box
+On a phone terminal, type "look at  and fix" with the caret between the words, tap the key bar paperclip and pick two photos. Both paths appear at the caret with your words either side kept, nothing reaches the session yet, and the message box has focus so the keyboard comes up. Tap the arrow to send.
+
+## GE. Phone lists, tab row and bell nudge
+
+### GE1. The tab row fits at 390px
+On a phone at 390px the header shows stack, board, terminals and perms as equal segments with every label whole. AUTO is a dot on the bell and the bell's label says auto mode is on. The chevron sits at the end. Nothing overlaps. Opening the chevron shows all tabs as a grid of equal segments.
+
+### GE2. The terminals and stack lists fit
+Open the terminals tab and the stack tab. Every card is the same width, nothing passes the right edge, titles and paths ellipsize, the room and `? N` chips stay inside their card, the summary bar sits above the first card and the group nesting is a thin edge.
+
+### GE3. A toast is a nudge of the bell
+On a phone trigger any toast. No box is drawn, the bell shakes once and its count goes up, and the entry is in the log the bell opens. With the terminal full screen the corner bell `#phone-bell` shows instead of the header's, and only one bell is ever on screen.
+
+### GE4. A held message nudges the envelope
+With a message held behind your typed line the envelope on the bell nudges with its count and no notice box is drawn in the pane.
+
+### GE5. A desktop is unchanged
+At desktop width the same toast still draws a toast, there is no corner badge and the header has all its tabs.
+
+### GE6. The hub restart gate still works on a phone
+The restart countdown and the paused toast with its resume button stay as toasts on a phone, since they are not made by `toast()` and hold the only pause and resume controls.
+
+## GF. Linux runner pid with a native claude install (f-018)
+
+1. On a Linux machine, cross-compile and run the test there:
+   `GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go test -c -o build.claude/cli-linux.test ./internal/cli/`, copy it over,
+   and run `cli-linux.test -test.run '^TestRunnerPIDFindsAClaudeNamedForItsVersion$' -test.v`. It passes. Before the
+   fix it answered `runner=0`.
+2. On a Linux room with a native claude install (`~/.local/share/claude/versions/<version>`), start a card and look
+   at its details on the board: the pid is the claude process, not 0, and `ps -o comm= -p <pid>` shows the version.
+
+## GG. The permission gate hook row (f-006)
+
+Use a scratch HOME so nothing touches the real settings. Set `HOME` and `USERPROFILE` to an empty temp directory and
+point `ATRIUM_HOOK_EXE` at the atrium binary.
+
+**GG1. The gate row and its timeout.**
+1. Run `atrium hook status`. The PreToolUse `permission` row reads `not wired`.
+2. Run `atrium hook install`. Open `.claude/settings.json`: the `hook --event permission` command has `"timeout":
+   86400` and no other atrium command has a timeout.
+3. Change that timeout to 60 and run `atrium hook status`, then `GET /v1/hooks`. The row reports `timeout_short` and
+   `missing` counts it.
+4. Run `atrium hook install --event permission`. The timeout is 86400 again and the matcher on the entry is kept. Set
+   it to 90000 and run it again: nothing is written and there is no new `.bak` file.
+
+**GG2. The dotfiles gate holds the slot.**
+1. Start from a settings file whose PreToolUse has `pwsh -NoProfile -File C:/x/atrium-perm-hook.ps1`, timeout 86400.
+2. `atrium hook status` shows the permission row as wired, and `GET /v1/hooks` carries an `other` line for it and does
+   not count it in `missing`.
+3. `atrium hook install` writes the other hooks and leaves the script row alone. No `hook --event permission` command
+   is added.
+4. `atrium hook install --event permission` fails, saying two gates would ask twice.
+
+**GG3. Both gates.** Add `atrium hook --event permission` beside the script. `GET /v1/hooks` reports
+`two_gates` true, on the row and on the report. Nothing rewrites either entry.
+
+## GH. Mutating control calls are audited (f-020)
+
+1. From a session on a room, `atrium_launch` a worker, then `atrium_cull` it once merged. `curl -s
+   'http://127.0.0.1:7778/_hub/audit?kind=ctl-launch'` and `...?kind=ctl-cull` each show one line on that room, reading
+   `by <you>@<room> (claimed): launch claude as <card>, ok` and `... cull <card> into claude/main, ok`.
+2. `atrium_exit` a card, set an alias with `atrium_alias`, then only read one. `kind=ctl-exit` and `kind=ctl-alias`
+   show one line each for the exit and the set, and none for the read.
+3. `atrium_say` a live session, then a parked one with `wake` true. Only the wake shows, as `kind=ctl-wake-say`.
+   `atrium_report` and `atrium_status` write nothing.
+4. `atrium_launch` with the room at its cap. `kind=ctl-launch` shows `... refused: at the launch cap of N running
+   workers on room <room>`, and no `launch-refused` line is written.
+5. `atrium_cull` a card that is not merged. The line ends with the room's refusal, cut to its first line.
+6. From room A, `atrium_launch room=B`. The line is on room B (`?room=B`), and its text says `by <you>@A`. Room A has
+   no copy.
+7. Read every `ctl-*` line back: none contains a prompt, brief, message text, args or env values.
+
+## GI. Notify fires for a question and for an unseen finished turn (f-023)
+
+1. On a room running this build: `curl -s http://127.0.0.1:7778/v1/state` shows each card with a `seen` object beside
+   its stored fields (`turn_ended_at`, `unseen`, and `open_questions` while a question is owed).
+2. With the hub's notify turned on (`PUT /_hub/notify`, from the hub's machine), have a card end a turn with an
+   `## Open Questions` block while no board tab is visible. One notification arrives with the reason "question".
+3. Answer it, then let a card finish a turn with no board open. One notification arrives with the reason "finished".
+   Look at the card, and no second one comes for the same turn.
+4. A room on an older build still notifies for permission and input, and never for question or finished.
+
+## GJ. The notify command is set and tested from the hub's machine only (f-024)
+
+1. On the hub's machine, `curl -s http://127.0.0.1:7778/_hub/notify` answers the setting, and a PUT of
+   `{"enabled":false,"command":["cmd"]}` answers 200.
+2. From another machine, through the board's overlay address (zrok or ziti), the same GET answers 200, and the PUT
+   and `POST /_hub/notify/test` answer 403 with "set and tested only from the machine the hub runs on". The setting
+   is unchanged afterwards.
+3. `POST /_hub/presence {"visible":true,"tab":"x"}` from the other machine still answers ok.
+
+## GK. The launch cap per room (room-launch-cap)
+
+1. On the hub: `curl -s http://127.0.0.1:7778/_hub/launch-caps` answers `{"default":10,"rooms":{}}` before anything
+   is set.
+2. `curl -s -X PUT -H 'Content-Type: application/json' -d '{"default":5,"rooms":{"claude-sg4":10,"sg3":5,"m1mini":5}}'
+   http://127.0.0.1:7778/_hub/launch-caps` answers the same caps back. A GET after a hub restart still does.
+3. A PUT with a cap of -1 or 1000, a blank room name, or not JSON answers 400 and changes nothing.
+4. With sg3 at 5 live `atrium:subagent` workers, `atrium_launch room=sg3` is refused with "at the launch cap of 5
+   running workers on room sg3", and a launch onto claude-sg4 with fewer than 10 there goes through.
+5. Directors and parked workers (no live terminal) do not count on either room.
+
+## GL. Cache chip and cache line on every Claude card
+
+### GL1. Every Claude card shows its cache state without hover
+Look at the stack, the terminals list, the board and an attached terminal's header. Each Claude card carries one chip: `❄ warm → 03:32`, `❄ kept warm 3× · next ~03:27`, `❄ cold since 02:04`, `❄ no cache yet`, `○ off · cold` or `⊘ stopped · not worth it`. A shell card draws no chip. Hover adds the raw why and state, never the answer.
+
+### GL2. A card that will not refresh says why
+A warm card the daemon is not going to refresh reads `❄ warm → 03:32 · won't refresh: busy` (or small, 5m cache, local hooks, dialog open, budget spent, parked). "next ~HH:MM" appears only when the card is simply not due yet.
+
+### GL3. The chip flips without a reload
+Watch a card whose cache runs out in a few seconds. It changes from warm to cold on its own, with no request in the network log.
+
+### GL4. The summary line
+The stack and the terminals list show `cache: 5 warm · 2 kept warm · 9 cold · keep-alive 83 refreshes this week` over the Claude cards they show, not archived. Search narrows the counts. A keep-alive event moves them. Tapping the line opens the gear on the keep-alive setting.
+
+### GL5. A phone uses the short text
+At 390px the chips read `❄ → 03:32`, `❄ 3× next ~03:27`, `❄ cold`, `⊘ not worth it`, `○ off`, and no row overflows. The full words are in the tooltip.

@@ -1,0 +1,229 @@
+/* The composer and the permission rows of the phone page. Loaded after m.css.
+
+   COLOURS come from the skin variables the board defines (css/tokens.css and css/themes.css), read through
+   local names with a fallback each, so this file looks right under any skin and still draws if m.css names
+   its own. Nothing here is a literal colour outside a fallback. */
+.mc, .mp {
+  --c-surface: var(--m-surface, var(--shell-0, #12293f));
+  --c-raised: var(--m-raised, var(--card-0, #16324d));
+  --c-sink: var(--m-sink, var(--bg-2, #040b14));
+  --c-text: var(--m-text, var(--head, #f2f8ff));
+  --c-quiet: var(--m-quiet, var(--body, #9fbdd4));
+  --c-dim: var(--m-dim, var(--dim, #5e819c));
+  --c-accent: var(--m-accent, var(--teal, #00e3b0));
+  --c-on-accent: var(--m-on-accent, var(--bg-0, #0b1b2e));
+  --c-danger: var(--m-danger, var(--danger, #ff6b6b));
+  --c-danger-text: var(--m-danger-text, var(--danger-text, #ffc3c9));
+  --c-warn: var(--m-warn, var(--warn, #ffc64d));
+  --c-line: var(--m-line, var(--stroke-dim, #25506f));
+  --c-shadow: var(--m-shadow, rgba(var(--shadow-rgb, 2, 6, 9), .35));
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color: var(--c-text);
+}
+
+/* ---- the composer */
+.mc {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  padding: 8px 12px calc(10px + env(safe-area-inset-bottom, 0px));
+  /* Lifted by the keyboard on a browser whose layout viewport does not shrink with it. See compose.js. */
+  transform: translateY(calc(-1 * var(--mc-lift, 0px)));
+  background: linear-gradient(to top, var(--c-surface) 72%, transparent);
+}
+.mc.lifted { padding-bottom: 10px; }
+
+.mc-chips {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: 0 2px;
+  max-height: 0;
+  opacity: 0;
+  transition: max-height .22s ease, opacity .18s ease, padding .22s ease;
+}
+.mc-chips::-webkit-scrollbar { display: none; }
+.mc-chips.on { max-height: 52px; opacity: 1; padding: 2px 2px 8px; }
+.mc-chip {
+  flex: none;
+  min-height: 44px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 22px;
+  background: var(--c-raised);
+  color: var(--c-text);
+  font: 500 15px/1 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  box-shadow: 0 1px 2px var(--c-shadow);
+  -webkit-tap-highlight-color: transparent;
+}
+.mc-chip:active { transform: scale(.96); }
+
+.mc-note {
+  min-height: 0;
+  max-height: 0;
+  overflow: hidden;
+  padding: 0 6px;
+  font-size: 13px;
+  line-height: 1.35;
+  color: var(--c-quiet);
+  opacity: 0;
+  transition: max-height .2s ease, opacity .2s ease, padding .2s ease;
+}
+.mc-note.on { max-height: 4.5em; opacity: 1; padding: 0 6px 6px; }
+.mc-note[data-kind="sent"] { color: var(--c-accent); }
+.mc-note[data-kind="queued"] { color: var(--c-warn); }
+.mc-note[data-kind="refused"] { color: var(--c-danger-text); }
+
+.mc-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 6px 6px 6px 16px;
+  border-radius: 26px;
+  background: var(--c-raised);
+  box-shadow: 0 6px 22px var(--c-shadow), 0 0 0 1px var(--c-line) inset;
+  transition: box-shadow .18s ease;
+}
+.mc-row:focus-within { box-shadow: 0 6px 22px var(--c-shadow), 0 0 0 1.5px var(--c-accent) inset; }
+.mc-box {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  padding: 9px 0;
+  border: 0;
+  outline: 0;
+  resize: none;
+  background: transparent;
+  color: var(--c-text);
+  /* 16px is the floor that stops iOS zooming the page on focus. */
+  font: 400 16px/22px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  overflow-y: hidden;
+}
+.mc-box::placeholder { color: var(--c-dim); }
+.mc-send {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: var(--c-accent);
+  color: var(--c-on-accent);
+  transition: opacity .15s ease, transform .15s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.mc-send:active:not(:disabled) { transform: scale(.92); }
+.mc-send:disabled { opacity: .28; }
+.mc.sending .mc-send { animation: mc-pulse 1s ease-in-out infinite; }
+@keyframes mc-pulse { 50% { opacity: .55; } }
+
+/* ---- the permission rows */
+.mp { display: flex; flex-direction: column; gap: 12px; }
+.mp-empty { padding: 20px 4px; text-align: center; color: var(--c-quiet); font-size: 15px; }
+
+.mp-row {
+  display: block;
+  min-width: 0;
+  padding: 14px 14px 12px;
+  border-radius: 18px;
+  background: var(--c-raised);
+  box-shadow: 0 4px 16px var(--c-shadow), 0 0 0 1px var(--c-line) inset;
+  overflow: hidden;
+  animation: mp-in .28s ease both;
+  transition: height .24s ease, opacity .2s ease, margin .24s ease, padding .24s ease;
+}
+.mp-row.gone { height: 0 !important; opacity: 0; margin-top: -12px; padding-top: 0; padding-bottom: 0; }
+.mp-row.answered { opacity: .55; }
+@keyframes mp-in { from { opacity: 0; transform: translateY(6px); } }
+
+.mp-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin-bottom: 8px; }
+.mp-tool { font-size: 17px; font-weight: 650; letter-spacing: -.01em; }
+.mp-meta { font-size: 12.5px; color: var(--c-dim); min-width: 0; overflow-wrap: anywhere; }
+
+.mp-cmd {
+  margin: 0 0 12px;
+  padding: 11px 12px;
+  border-radius: 12px;
+  background: var(--c-sink);
+  max-height: 11.5em;
+  overflow: auto;
+}
+.mp-cmd code {
+  font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--c-text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.mp-changes { margin: -2px 0 12px; }
+.mp-changes summary { min-height: 44px; display: flex; align-items: center; color: var(--c-quiet); font-size: 14px; }
+.mp-diff {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--c-sink);
+  max-height: 14em;
+  overflow: auto;
+  font: 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+.mp-dl { display: block; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--c-quiet); }
+.mp-dl.add { color: var(--c-accent); }
+.mp-dl.del { color: var(--c-danger-text); }
+
+.mp-acts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.mp-btn {
+  min-height: 44px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--c-sink);
+  color: var(--c-text);
+  font: 600 15px/1.1 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform .12s ease, opacity .15s ease;
+}
+.mp-btn:active:not(:disabled) { transform: scale(.97); }
+.mp-btn:disabled { opacity: .4; }
+.mp-btn.approve { background: var(--c-accent); color: var(--c-on-accent); }
+.mp-btn.deny { color: var(--c-danger-text); }
+.mp-btn.why { grid-column: 1 / -1; background: transparent; color: var(--c-quiet); font-weight: 500; }
+.mp-btn.why[aria-expanded="true"] { color: var(--c-text); }
+
+.mp-reason { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; animation: mp-in .2s ease both; }
+.mp-reason[hidden] { display: none; }
+.mp-reason-box {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 11px 12px;
+  border: 0;
+  border-radius: 12px;
+  outline: 0;
+  resize: none;
+  background: var(--c-sink);
+  color: var(--c-text);
+  font: 400 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+.mp-reason-box:focus { box-shadow: 0 0 0 1.5px var(--c-accent) inset; }
+.mp-err { min-height: 0; margin-top: 0; font-size: 13px; color: var(--c-danger-text); }
+.mp-err:not(:empty) { margin-top: 8px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .mc-chips, .mc-note, .mc-send, .mp-row, .mp-btn, .mp-reason { transition: none; animation: none; }
+  .mc.sending .mc-send { animation: none; }
+}
+
+/* ---- the board's phone terminal (js/tcompose.js): one line, flat, in the terminal's own colours */
+#t-compose { display: none; }
+body.term-phone #t-compose:not([hidden]) { display: block; }
+#t-compose[hidden] { display: none; }
+#t-compose .mc.compact {
+  position: static;
+  transform: none;
+  padding: 2px 6px;
+  background: var(--term-bg, var(--c-surface));
+  color: var(--term-fg, var(--c-text));
+}
+#t-compose .mc.compact .mc-row { padding: 0 0 0 12px; border-radius: 22px; box-shadow: 0 0 0 1px var(--term-line, var(--c-line)) inset; background: var(--term-bg, var(--c-raised)); }
+#t-compose .mc.compact .mc-box { color: var(--term-fg, var(--c-text)); padding: 11px 0; }
+#t-compose .mc.compact .mc-chips, #t-compose .mc.compact .mc-note:not(.on) { max-height: 0; padding: 0; }

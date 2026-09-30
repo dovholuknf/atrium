@@ -33,6 +33,77 @@ func newGateUnderTest(boards int) *gateUnderTest {
 	return t
 }
 
+// gateClock is the time a gate reads, which a test can stop.
+//
+// A STOPPED CLOCK IS WHAT MAKES THESE TESTS SAFE ON A LOADED MACHINE. With a
+// running one, a test that sleeps between keystrokes or reacts to a countdown
+// is racing the gate: a goroutine held back past the idle window or the
+// countdown lets the gate see quiet, or finish, before the test acts. While the
+// clock is stopped the gate still wakes on its real timers but sees no time
+// pass, so nothing counts down until the test says so.
+type gateClock struct {
+	mu      sync.Mutex
+	stopped bool
+	at      time.Time
+	offset  time.Duration
+	reads   int
+}
+
+// stopClock gives a gate a clock stopped at the real time now.
+func stopClock(g *restartGate) *gateClock {
+	c := &gateClock{stopped: true, at: time.Now()}
+	g.now = c.now
+	return c
+}
+
+func (c *gateClock) now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.reads++
+	if c.stopped {
+		return c.at
+	}
+	return time.Now().Add(c.offset)
+}
+
+// advance moves a stopped clock on by d.
+func (c *gateClock) advance(d time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.at = c.at.Add(d)
+}
+
+// start lets the clock run from where it stopped.
+func (c *gateClock) start() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.offset = c.at.Sub(time.Now())
+	c.stopped = false
+}
+
+// waitRead waits for the clock to be read more than n times, which is the gate
+// taking another look.
+func (c *gateClock) waitRead(tb testing.TB, n int) {
+	tb.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		c.mu.Lock()
+		reads := c.reads
+		c.mu.Unlock()
+		if reads > n {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	tb.Fatalf("the gate never looked at the clock again after %d reads", n)
+}
+
+func (c *gateClock) readCount() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.reads
+}
+
 func (t *gateUnderTest) said() []string {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -117,16 +188,23 @@ func TestAQuietBoardIsCountedDownThenRestarted(t *testing.T) {
 // countdown yet, however long the typing goes on.
 func TestTypingHoldsTheCountdownBack(t *testing.T) {
 	gt := newGateUnderTest(1)
+	clock := stopClock(gt.g)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	// Typing before the ask, so the gate's first look already sees it.
+	gt.g.input()
 	ch := gt.ask(ctx, 100*time.Millisecond, 300*time.Millisecond, time.Minute)
+	// A keystroke every 100ms for 800ms of the gate's time, well past the 300ms
+	// idle window, and the gate takes a look between each.
 	for i := 0; i < 8; i++ {
+		clock.advance(100 * time.Millisecond)
 		gt.g.input()
-		time.Sleep(100 * time.Millisecond)
+		clock.waitRead(t, clock.readCount())
 	}
 	if len(gt.said()) != 0 {
 		t.Fatalf("a board being typed into was told %v", gt.said())
 	}
+	clock.start()
 	if a := got(t, ch); a.said != "go" {
 		t.Fatalf("once the typing stopped the gate said %q", a.said)
 	}
@@ -136,10 +214,15 @@ func TestTypingHoldsTheCountdownBack(t *testing.T) {
 // pausing anything.
 func TestTypingDuringTheCountdownStartsTheWaitAgain(t *testing.T) {
 	gt := newGateUnderTest(1)
+	// Stopped, so the countdown cannot finish before the keystroke lands.
+	clock := stopClock(gt.g)
 	ch := gt.ask(context.Background(), 400*time.Millisecond, 50*time.Millisecond, time.Minute)
 	gt.waitSaid(t, "countdown")
+	// A keystroke after the countdown started, not at the same instant.
+	clock.advance(time.Millisecond)
 	gt.g.input()
 	gt.waitSaid(t, "cancelled")
+	clock.start()
 	if a := got(t, ch); a.said != "go" {
 		t.Fatalf("after the typing stopped the gate said %q", a.said)
 	}

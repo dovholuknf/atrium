@@ -150,8 +150,26 @@ const gitCollectToolDesc = "Ask the hub to fetch a room's claude/* branches now,
 
 // registerGit adds the two tools to the control server.
 func (c *controlMCP) registerGit(s *mcp.Server) {
-	mcp.AddTool(s, &mcp.Tool{Name: "atrium_git_sync", Description: gitSyncToolDesc}, c.gitSyncHandler)
-	mcp.AddTool(s, &mcp.Tool{Name: "atrium_git_collect", Description: gitCollectToolDesc}, c.gitCollectHandler)
+	mcp.AddTool(s, &mcp.Tool{Name: "atrium_git_sync", Description: gitSyncToolDesc},
+		audited(c, "ctl-git-sync", describeGitSync, c.gitSyncHandler))
+	mcp.AddTool(s, &mcp.Tool{Name: "atrium_git_collect", Description: gitCollectToolDesc},
+		audited(c, "ctl-git-collect", describeGitCollect, c.gitCollectHandler))
+}
+
+// describeGitSync names the room and repository, and whether it may have made a clone.
+func describeGitSync(_ *mcp.CallToolRequest, in gitSyncInput, _ gitSyncOutput) (string, string, bool) {
+	what := "git sync"
+	if n := strings.TrimSpace(in.Name); n != "" {
+		what += " " + n
+	}
+	if in.Init {
+		what += " (init)"
+	}
+	return in.Room, what, true
+}
+
+func describeGitCollect(_ *mcp.CallToolRequest, in gitCollectInput, _ gitsync.CollectResult) (string, string, bool) {
+	return in.Room, "git collect", true
 }
 
 func (c *controlMCP) longClient() *controlMCP {

@@ -83,13 +83,19 @@ type controlMCP struct {
 	reservations []reservation
 	// resSeq numbers reservations so each has a distinct id.
 	resSeq int
+
+	// capFor is the launch cap for one room. Nil means launchCap() for every
+	// room, which is what a test that builds this directly gets. See
+	// launchcaps.go.
+	capFor func(room string) int
 }
 
-// reservation is one in-flight launch holding a slot against the cap until its
-// card appears in the live count or it expires.
+// reservation is one in-flight launch holding a slot against its room's cap
+// until its card appears in the live count or it expires.
 type reservation struct {
-	id string
-	at time.Time
+	id   string
+	room string
+	at   time.Time
 }
 
 // newControlHandler builds the hub-side control MCP server as an http.Handler,
@@ -171,7 +177,7 @@ func (c *controlMCP) server() *mcp.Server {
 			"`held` means the hub or that room is not answering: it is kept on your room and sent " +
 			"when they are, for up to a day. `unconfirmed` means it may or may not have arrived, " +
 			"so ask before sending it again.",
-	}, c.sayHandler)
+	}, audited(c, "ctl-wake-say", describeSay, c.sayHandler))
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "atrium_report",
@@ -208,7 +214,8 @@ func (c *controlMCP) server() *mcp.Server {
 			"takes it and as `atrium_launch` with `room` hands it back.",
 	}, c.taskHandler)
 
-	mcp.AddTool(s, &mcp.Tool{Name: "atrium_alias", Description: aliasToolDesc}, c.aliasHandler)
+	mcp.AddTool(s, &mcp.Tool{Name: "atrium_alias", Description: aliasToolDesc},
+		audited(c, "ctl-alias", describeAlias, c.aliasHandler))
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "atrium_launch",
@@ -238,7 +245,7 @@ func (c *controlMCP) server() *mcp.Server {
 			"Empty means the runner's default. The card keeps all four, so a restart comes back " +
 			"the same, and shows them in its details (env by name only).\n\n" +
 			"Returns the card id. Use it with `atrium_task`, `atrium_say` and `atrium_exit`, on another room too.",
-	}, c.launchHandler)
+	}, audited(c, "ctl-launch", describeLaunch, c.launchHandler))
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "atrium_exit",
@@ -250,7 +257,7 @@ func (c *controlMCP) server() *mcp.Server {
 			"leaves mid-task.\n\n" +
 			"A card on ANOTHER ROOM is `name@room`, `alias@room` or `room~id`, as `atrium_say` " +
 			"takes it and as `atrium_launch` with `room` hands it back.",
-	}, c.exitHandler)
+	}, audited(c, "ctl-exit", describeExit, c.exitHandler))
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "atrium_cull",
@@ -269,7 +276,7 @@ func (c *controlMCP) server() *mcp.Server {
 			"and culls it after a grace period (30 minutes by default) unless it has a new turn or " +
 			"is held, and tells its launcher once. `hold=true` keeps a worker for good: the mark is " +
 			"dropped and nothing marks it again, only an explicit cull removes it.",
-	}, c.cullHandler)
+	}, audited(c, "ctl-cull", describeCull, c.cullHandler))
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "restart_atrium",
@@ -284,7 +291,7 @@ func (c *controlMCP) server() *mcp.Server {
 			"OTHER AGENTS ARE PARKED FIRST. Any supervised session that is working is told what is " +
 			"coming and given time to stop. Pass `force` to restart even if some are still busy.\n\n" +
 			"To be prompted when you come back, call `atrium_wake_after_restart` first.",
-	}, c.restartHandler)
+	}, audited(c, "ctl-restart", describeRestart, c.restartHandler))
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "atrium_wake_after_restart",
@@ -297,7 +304,7 @@ func (c *controlMCP) server() *mcp.Server {
 			"ONE PER CARD. A second call replaces the first. It waits however long your runner takes " +
 			"to come back, and is typed behind a grey `[atrium] restart wake:` label. Pass `clear` to " +
 			"cancel it.",
-	}, c.wakeHandler)
+	}, audited(c, "ctl-wake", describeWake, c.wakeHandler))
 
 	c.registerGit(s)
 
@@ -1038,9 +1045,22 @@ func launchCap() int {
 	return DefaultLaunchCap
 }
 
-// runningForCap counts the sessions that count against the launch cap: live
-// supervised runners tagged SubagentTag, aggregated across every room the hub
-// can see because the machine load they put on the box is shared.
+// capOf is the launch cap for one room.
+func (c *controlMCP) capOf(room string) int {
+	if c.capFor != nil {
+		return c.capFor(room)
+	}
+	return launchCap()
+}
+
+// runningForCap counts the sessions that count against a room's launch cap:
+// live supervised runners tagged SubagentTag, on THAT ROOM ONLY.
+//
+// PER ROOM, because a room is a machine and the cap is about the load on it.
+// This used to count the aggregate over every room the hub could see, so five
+// workers on sg3 and five on sg4 refused a launch onto either. An empty room is
+// a caller the hub cannot place, and gets the aggregate, which can only ever be
+// more cautious.
 //
 // ONLY SUBAGENTS. OriginTag is on every atrium_launch card, orchestrators and
 // the resident merger as much as their workers, so it is not what the cap
@@ -1048,13 +1068,11 @@ func launchCap() int {
 // it. A done/dead/shelved card has no running runner and a backlog card has not
 // started one, so none of them count, and the launch being attempted is not
 // present yet so it is never counted.
-func (c *controlMCP) runningForCap(ctx context.Context) (int, error) {
+func (c *controlMCP) runningForCap(ctx context.Context, room string) (int, error) {
 	var body struct {
 		Tasks []ctlCard `json:"tasks"`
 	}
-	// Empty room is the aggregate view over every attached room, which is what a
-	// shared-machine cap wants rather than one room's slice.
-	if err := c.ask(ctx, http.MethodGet, "/v1/tasks", "", nil, &body); err != nil {
+	if err := c.ask(ctx, http.MethodGet, "/v1/tasks", room, nil, &body); err != nil {
 		return 0, err
 	}
 	n := 0
@@ -1085,23 +1103,30 @@ func (c *controlMCP) runningForCap(ctx context.Context) (int, error) {
 // The count is done here under the lock rather than at the call site so the
 // check and the record are one indivisible step. Expired reservations are swept
 // on the way in, which is the only place they need collecting.
-func (c *controlMCP) reserveSlot(live, limit int) (id string, ok bool) {
+//
+// Reservations are per room, like the count: a launch in flight to sg3 holds
+// nothing against sg4.
+func (c *controlMCP) reserveSlot(room string, live, limit int) (id string, ok bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	now := time.Now()
 	kept := c.reservations[:0]
+	pending := 0
 	for _, r := range c.reservations {
 		if now.Sub(r.at) < reservationTTL {
 			kept = append(kept, r)
+			if equalFold(r.room, room) {
+				pending++
+			}
 		}
 	}
 	c.reservations = kept
-	if live+len(c.reservations) >= limit {
+	if live+pending >= limit {
 		return "", false
 	}
 	c.resSeq++
 	id = strconv.Itoa(c.resSeq) + "@" + now.Format(time.RFC3339Nano)
-	c.reservations = append(c.reservations, reservation{id: id, at: now})
+	c.reservations = append(c.reservations, reservation{id: id, room: room, at: now})
 	return id, true
 }
 
@@ -1165,7 +1190,7 @@ func (c *controlMCP) launchHandler(ctx context.Context, req *mcp.CallToolRequest
 
 	out := launchOutput{}
 	if strings.TrimSpace(in.Cwd) == "" {
-		return nil, out, fmt.Errorf("say where to run it. atrium does not create the directory")
+		return nil, out, &refusedError{"say where to run it. atrium does not create the directory"}
 	}
 	harness := strings.TrimSpace(in.Runner)
 	if harness == "" {
@@ -1196,15 +1221,16 @@ func (c *controlMCP) launchHandler(ctx context.Context, req *mcp.CallToolRequest
 	// room, the board mid-restart), not a reason to brick launching, so allow the
 	// launch rather than wrongly refuse. The soft nudge in the redirect hook is
 	// the first line of defence and a stuck count must not become a launch outage.
-	limit := launchCap()
-	if n, err := c.runningForCap(ctx); err == nil {
-		if _, ok := c.reserveSlot(n, limit); !ok {
-			if c.audit != nil {
-				c.audit(room, "launch-refused", fmt.Sprintf(
-					"at the cap of %d running sessions", limit))
+	limit := c.capOf(room)
+	if n, err := c.runningForCap(ctx, room); err == nil {
+		if _, ok := c.reserveSlot(room, n, limit); !ok {
+			where := "room " + room
+			if room == "" {
+				where = "every room together"
 			}
-			return nil, out, fmt.Errorf("at the launch cap of %d running sessions. wait for one to "+
-				"finish, or exit one, before launching another", limit)
+			// A refusal, so `audited` writes it as `refused: ...` on ctl-launch.
+			return nil, out, &refusedError{fmt.Sprintf("at the launch cap of %d running workers on %s. "+
+				"wait for one to finish, exit one, or launch on another room", limit, where)}
 		}
 	}
 

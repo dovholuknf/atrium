@@ -6,7 +6,7 @@
 #
 #   pwsh -File scripts\room-git.ps1 init      m1mini [-Target user@host] [-Repo <path>] [-Path <remote path>]
 #   pwsh -File scripts\room-git.ps1 init      m1mini -Check [-Path <remote path>] [-From claude/main]
-#   pwsh -File scripts\room-git.ps1 push-base m1mini [-From claude/main]
+#   pwsh -File scripts\room-git.ps1 push-base m1mini [-From claude/main]   anything but claude/main needs -Force
 #   pwsh -File scripts\room-git.ps1 fetch     m1mini
 #   pwsh -File scripts\room-git.ps1 worktree  m1mini fb02-proof [-Base hub-main] [-Root <remote dir>]
 #   pwsh -File scripts\room-git.ps1 remove    m1mini [-Force]   undo init, keeping the clone when it holds unpushed work
@@ -127,6 +127,10 @@ if ($Check -and $Command -ne 'init') { Fail 'args' 1 '-Check goes with init only
 if ($Room -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]*$') { Fail 'args' 1 "bad room name '$Room'" }
 if ($Name -and $Name -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]*$') { Fail 'args' 1 "bad worktree name '$Name'" }
 if ($Base -notmatch '^[A-Za-z0-9][A-Za-z0-9._/-]*$') { Fail 'args' 1 "bad -Base '$Base'" }
+# Before anything is written, so an init refused here has not already added a remote. See Invoke-PushBase.
+if ($Command -in 'init', 'push-base' -and -not $Check -and $From -ne 'claude/main' -and -not $Force) {
+    Fail 'args' 1 "hub-main mirrors claude/main only, and -From is $From. rerun with -Force if that is really meant"
+}
 
 # ── this side ───────────────────────────────────────────────────────────────
 
@@ -290,6 +294,12 @@ function Get-ClonePath {
 # ── init ────────────────────────────────────────────────────────────────────
 
 function Invoke-PushBase {
+    # HUB-MAIN MIRRORS CLAUDE/MAIN AND NOTHING ELSE. Every worker on the room branches from it, so pointing it at an
+    # unmerged department branch starts every other department's workers on work that has not landed (sg3, 09-29).
+    # The refusal without -Force is at the top, before init writes anything.
+    if ($From -ne 'claude/main') {
+        Step 'push-base' 'warn' "-Force: hub-main on $Room will mirror $From, not claude/main. every worker there branches from it"
+    }
     $sha = Invoke-Git @('rev-parse', '--verify', '-q', "refs/heads/$From^{commit}")
     if ($sha.Code -ne 0) { Fail 'push-base' 1 "no branch $From here to mirror" }
     $want = $sha.Out[0].Trim()

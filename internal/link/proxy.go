@@ -97,6 +97,9 @@ type Proxy struct {
 	// gitHub is the hub's git side: mirror, sync, collect. Nil until SetGit wires it, and
 	// a hub without one answers /_hub/git 404. See git_hub.go.
 	gitHub *gitsync.Hub
+	// capStore holds the per-room launch caps. Nil until SetLaunchCaps wires
+	// it, and then every room gets the default cap. See launchcaps.go.
+	capStore HubSettings
 }
 
 // NewProxy wires a hub, its board and a room chooser into one handler.
@@ -1197,6 +1200,9 @@ func (p *Proxy) forgetInventory(w http.ResponseWriter, r *http.Request) {
 // Optional: a hub that never calls this answers /_hub/mcp with 404.
 func (p *Proxy) SetControl(boardAddr string) {
 	c := newControl(loopbackBase(boardAddr), p.hub, p.RecordAudit)
+	// Read at each launch rather than copied, so a PUT to /_hub/launch-caps
+	// takes effect on the next launch, and SetLaunchCaps may come later.
+	c.capFor = func(room string) int { return p.launchCaps().For(room) }
 	p.control = c.handler()
 	// THE SAME TOOLS CARRY A MESSAGE BETWEEN ROOMS, through the same loopback
 	// board, so a relayed message is resolved and delivered exactly the way a
@@ -1285,6 +1291,8 @@ func (p *Proxy) serveHubAPI(w http.ResponseWriter, r *http.Request) {
 		p.serveNotify(w, r, sub)
 	case "git/sync", "git/collect", "git/status":
 		p.serveGit(w, r, sub)
+	case "launch-caps":
+		p.serveLaunchCaps(w, r)
 	case "presence":
 		p.servePresence(w, r)
 	case "audit":

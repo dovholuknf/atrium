@@ -204,20 +204,26 @@ func TestNotifyIdentityPerReasonAndPriority(t *testing.T) {
 	}{
 		{"permission", `{"status":"needs-permission","waiting_since":"T1"}`, "permission", "a|permission|T1"},
 		{"input", `{"status":"needs-input","waiting_since":"T2"}`, "input", "a|input|T2"},
-		{"question", `{"status":"running","questions_at":"T3","open_questions":["q?"]}`, "question", "a|question|T3"},
-		{"finished", `{"status":"done","turn_ended_at":"T4","unseen":true}`, "finished", "a|finished|T4"},
+		{"question", `{"status":"running","seen":{"questions_at":"T3","open_questions":["q?"]}}`, "question", "a|question|T3"},
+		// Questions whose text could not be read are still owed.
+		{"unparsed questions", `{"status":"running","seen":{"questions_at":"T3","questions_unparsed":true}}`,
+			"question", "a|question|T3"},
+		{"finished", `{"status":"done","seen":{"turn_ended_at":"T4","unseen":true}}`, "finished", "a|finished|T4"},
 		// A question with nothing open is not a question.
-		{"empty questions", `{"status":"done","questions_at":"T3","open_questions":[]}`, "", ""},
+		{"empty questions", `{"status":"done","seen":{"questions_at":"T3","open_questions":[]}}`, "", ""},
 		// A finished turn already seen is not news.
-		{"seen", `{"status":"done","turn_ended_at":"T4","unseen":false}`, "", ""},
+		{"seen", `{"status":"done","seen":{"turn_ended_at":"T4","unseen":false}}`, "", ""},
 		{"running", `{"status":"running"}`, "", ""},
+		// The shape this used to read: the fields at the top level, which no
+		// payload carries. Nothing fires from them.
+		{"top level is not read", `{"status":"done","turn_ended_at":"T4","unseen":true}`, "", ""},
 		// Priority: permission over question over input over finished.
-		{"all four", `{"status":"needs-permission","waiting_since":"T1","questions_at":"T3",` +
-			`"open_questions":["q"],"turn_ended_at":"T4","unseen":true}`, "permission", "a|permission|T1"},
-		{"question over input", `{"status":"needs-input","waiting_since":"T2","questions_at":"T3",` +
-			`"open_questions":["q"]}`, "question", "a|question|T3"},
-		{"input over finished", `{"status":"needs-input","waiting_since":"T2","turn_ended_at":"T4",` +
-			`"unseen":true}`, "input", "a|input|T2"},
+		{"all four", `{"status":"needs-permission","waiting_since":"T1","seen":{"questions_at":"T3",` +
+			`"open_questions":["q"],"turn_ended_at":"T4","unseen":true}}`, "permission", "a|permission|T1"},
+		{"question over input", `{"status":"needs-input","waiting_since":"T2","seen":{"questions_at":"T3",` +
+			`"open_questions":["q"]}}`, "question", "a|question|T3"},
+		{"input over finished", `{"status":"needs-input","waiting_since":"T2","seen":{"turn_ended_at":"T4",` +
+			`"unseen":true}}`, "input", "a|input|T2"},
 		// The item 44 rule.
 		{"origin agent", `{"status":"needs-permission","waiting_since":"T1","tags":["dept:x","origin:agent"]}`, "", ""},
 	}
