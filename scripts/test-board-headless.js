@@ -10342,7 +10342,7 @@ async function main() {
       usageCacheReads: usageCacheReadsSection, roomsDash: roomsDashSection, phoneView: phoneViewSection, heldLine: heldLineSection, u016: u016Section, phoneHeader: phoneHeaderSection, phoneFocus: phoneFocusSection, phoneTermBar: phoneTermBarSection, phoneShare: phoneShareSection, phonePan: phonePanSection, phoneFollow: phoneFollowSection, phoneTap: phoneTapSection, phoneKeyboard: phoneKeyboardSection, phoneCompose: phoneComposeSection, mCompose: mComposeSection, mPerms: mPermsSection, usagePolish: usagePolishSection, usageLimits: usageLimitsSection, usageGroups: usageGroupsSection,
       eventDriven: eventDrivenSection, idleBudget: idleBudgetSection, pollsGone: pollsGoneSection,
       phoneListFit: phoneListFitSection, phoneNudge: phoneNudgeSection,
-      cacheChip: cacheChipSection, cacheLine: cacheLineSection };
+      cacheChip: cacheChipSection, cacheLine: cacheLineSection, mHome: mHomeSection, mCard: mCardSection, mServe: mServeSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -12288,6 +12288,9 @@ async function main() {
     await eventDrivenSection(browser, base);
     await idleBudgetSection(browser, base);
     await pollsGoneSection(browser, base);
+    await mHomeSection(browser);
+    await mCardSection(browser);
+    await mServeSection(browser);
     await usagePolishSection(browser, base);
     await usageLimitsSection(browser, base);
     await usageGroupsSection(browser, base);
@@ -12386,3 +12389,300 @@ async function main() {
 }
 
 main().catch(e => { console.error(e); process.exit(1); });
+
+// ── the phone page, /m (u-024) ─────────────────────────────────────────────
+// Each section runs its own tiny server: the page, its stylesheet and scripts off disk, the board's tokens and
+// themes, and mocks for the four endpoints the page reads. `base` is not used.
+const M_ROOT = path.join(WEB_ROOT, "m");
+const M_TYPES = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".png": "image/png",
+  ".webmanifest": "application/manifest+json" };
+const M_MIN = 60 * 1000;
+function mIso(msAgo) { return new Date(Date.now() - msAgo).toISOString(); }
+function mCard(id, over) {
+  return Object.assign({ id, title: id, display_title: id, status: "running", created_at: mIso(3600000),
+    last_activity_at: mIso(M_MIN), seen: {}, activity: {} }, over || {});
+}
+function mServer(state) {
+  state.tasks = state.tasks || [];
+  state.perms = state.perms || [];
+  state.replies = state.replies || {};
+  state.hits = [];
+  state.streams = [];
+  state.skin = state.skin || "";
+  const srv = http.createServer((req, res) => {
+    const u = new URL(req.url, "http://x");
+    const p = u.pathname;
+    const json = (code, o) => { res.writeHead(code, { "Content-Type": "application/json" }); res.end(JSON.stringify(o)); };
+    if (p === "/v1/tasks") return json(200, { tasks: state.tasks });
+    if (p === "/v1/permissions") return json(200, { permissions: state.perms });
+    if (p === "/v1/settings") return json(200, { board_skins: ["default", "daylight"], board_skin: state.skin || "default" });
+    if (p === "/_hub/rooms") return json(404, { error: "not a hub" });
+    if (p === "/v1/events") {
+      res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" });
+      res.write(": hi\n\n");
+      state.streams.push(res);
+      req.on("close", () => { state.streams = state.streams.filter(s => s !== res); });
+      return;
+    }
+    const m = p.match(/^\/v1\/tasks\/([^/]+)\/replies$/);
+    if (m) {
+      state.hits.push(decodeURIComponent(m[1]) + "?" + u.searchParams.get("n"));
+      const r = state.replies[decodeURIComponent(m[1])];
+      if (!r || r === 404) return json(404, { error: "not found" });
+      return json(200, r);
+    }
+    let file = null;
+    if (p === "/m/" || p === "/m") file = path.join(M_ROOT, "index.html");
+    else if (p.startsWith("/m/")) file = path.join(M_ROOT, p.slice(3));
+    else if (p.startsWith("/css/")) file = path.join(WEB_ROOT, p);
+    if (file && !path.relative(WEB_ROOT, file).startsWith("..") && fs.existsSync(file) && fs.statSync(file).isFile()) {
+      res.writeHead(200, { "Content-Type": M_TYPES[path.extname(file)] || "application/octet-stream" });
+      return res.end(fs.readFileSync(file));
+    }
+    res.writeHead(404); res.end("nope");
+  });
+  state.send = (kind, o) => state.streams.forEach(s => s.write("event: " + kind + "\ndata: " + JSON.stringify(o) + "\n\n"));
+  state.open = () => new Promise(r => srv.listen(0, "127.0.0.1", () => { state.url = "http://127.0.0.1:" + srv.address().port; r(state.url); }));
+  state.close = () => new Promise(r => { state.streams.forEach(s => { try { s.destroy(); } catch (e) {} }); srv.close(r); srv.closeAllConnections && srv.closeAllConnections(); });
+  return state;
+}
+const M_VIEWS = [{ width: 390, height: 844 }, { width: 412, height: 915 }];
+async function mPage(browser, state, vp, skin) {
+  state.skin = skin || "";
+  const ctx = await browser.newContext({ viewport: vp, hasTouch: true, isMobile: true, deviceScaleFactor: 2 });
+  if (skin) await ctx.addInitScript(s => { try { localStorage.setItem("atrium.skin", s); } catch (e) {} }, skin);
+  const p = await ctx.newPage();
+  const errors = [];
+  p.on("pageerror", e => errors.push(String(e)));
+  await p.goto(state.url + "/m/", { waitUntil: "domcontentloaded" });
+  return { ctx, p, errors };
+}
+const mNoSideways = (p) => p.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
+async function mShot(p, name) {
+  const dir = process.env.M_SHOTS;
+  if (dir) {
+    // Let the fade, the slide and the stream settle, so the picture is the resting state.
+    await p.waitForFunction(() => document.getElementById("m-live").classList.contains("on"), null, { timeout: slow(8000) }).catch(() => {});
+    await p.waitForTimeout(900);
+    fs.mkdirSync(dir, { recursive: true }); await p.screenshot({ path: path.join(dir, name + ".png") }); }
+}
+function mNeedsCards() {
+  return [
+    mCard("new-1", { alias: "newest", display_title: "the newest wait", status: "needs-permission", waiting_since: mIso(2 * M_MIN) }),
+    mCard("old-1", { alias: "oldest", display_title: "the oldest wait", status: "needs-input", waiting_since: mIso(50 * M_MIN), waiting_reason: "turn",
+      seen: { answered: false, open_questions: ["which one?", "and this?"], questions_at: mIso(50 * M_MIN) } }),
+    mCard("unread-1", { display_title: "read me", seen: { unseen: true, turn_ended_at: mIso(4 * M_MIN) } }),
+    mCard("rep-1", { display_title: "reporter", spawned_by: "@human", reported_at: mIso(9 * M_MIN), human_at: mIso(30 * M_MIN) }),
+    mCard("busy-1", { display_title: "just working", activity: { what: "tool", tool: "Read", seconds: 3 } }),
+    mCard("idle-1", { display_title: "resting", status: "done" }),
+  ];
+}
+const M_PERMS = () => [{ id: "p1", task_id: "new-1", tool: "Bash", command: "go test ./...", requested_at: mIso(2 * M_MIN) }];
+
+async function mHomeSection(browser) {
+  const st = mServer({});
+  await st.open();
+  try {
+    for (const vp of M_VIEWS) {
+      st.tasks = mNeedsCards();
+      st.perms = M_PERMS();
+      const { ctx, p, errors } = await mPage(browser, st, vp, "");
+      const tag = "mHome " + vp.width + ": ";
+      await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
+      const names = await p.$$eval("#m-list .row .name b", e => e.map(x => x.textContent));
+      if (names.join(",") !== "oldest,reporter,read me,newest") fail(tag + "needs-you order is not oldest wait first: " + names.join(","));
+      const why = await p.$$eval("#m-list .row .why", e => e.map(x => x.textContent));
+      if (!/asks 2 questions/.test(why[0])) fail(tag + "first reason is " + why[0]);
+      if (!why.some(w => /wants to run go test \.\/\.\.\./.test(w))) fail(tag + "the permission reason is missing: " + why.join("|"));
+      if (!why.some(w => /finished 4m ago, not read/.test(w))) fail(tag + "the unread reason is missing");
+      if (!why.some(w => /report waiting/.test(w))) fail(tag + "the report reason is missing");
+      if (await p.$(".row .room")) fail(tag + "a room tag shows with one room");
+      if (await mNoSideways(p)) fail(tag + "the home scrolls sideways");
+      const h = await p.$eval("#m-list .row", e => e.getBoundingClientRect().height);
+      if (h < 44) fail(tag + "a row is " + h + "px tall");
+      await mShot(p, "home-needs-dark-" + vp.width);
+      await p.tap("#m-seg-all");
+      await p.waitForSelector("#m-list h2.grp", { timeout: slow(5000) });
+      const grp = await p.$$eval("#m-list h2.grp", e => e.map(x => x.textContent.replace(/\s+/g, " ").trim()));
+      if (!/^Working/.test(grp[0]) || !/^Waiting/.test(grp[1]) || !/^Idle/.test(grp[2])) fail(tag + "all is not grouped working, waiting, idle: " + grp.join("|"));
+      if (await mNoSideways(p)) fail(tag + "all scrolls sideways");
+      await mShot(p, "home-all-dark-" + vp.width);
+      await p.tap("#m-seg-needs");
+      await p.waitForFunction(() => document.querySelectorAll("#m-list .row").length === 4, null, { timeout: slow(5000) });
+      // one stops needing you and leaves smoothly
+      st.tasks = st.tasks.filter(t => t.id !== "old-1");
+      st.send("task-removed", { id: "old-1" });
+      await p.waitForFunction(() => { const e = document.querySelector('[data-key="c:old-1"]'); return !e || e.classList.contains("leaving"); }, null, { timeout: slow(5000) });
+      await p.waitForFunction(() => !document.querySelector('[data-key="c:old-1"]'), null, { timeout: slow(5000) });
+      if ((await p.$$("#m-list .row")).length !== 3) fail(tag + "the row that stopped needing you is still listed");
+      // the designed empty state
+      st.tasks = st.tasks.filter(t => t.id === "busy-1" || t.id === "idle-1");
+      st.perms = [];
+      st.send("task-removed", {});
+      await p.waitForSelector("#m-empty:not([hidden])", { timeout: slow(8000) });
+      if (!/Nothing needs you/.test(await p.textContent("#m-empty"))) fail(tag + "the empty state has the wrong words");
+      await mShot(p, "home-empty-dark-" + vp.width);
+      if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+      await ctx.close();
+      // light
+      const lt = await mPage(browser, st, vp, "daylight");
+      await lt.p.waitForSelector("#m-empty:not([hidden])", { timeout: slow(8000) });
+      await mShot(lt.p, "home-empty-light-" + vp.width);
+      await lt.ctx.close();
+      st.tasks = mNeedsCards();
+      st.perms = M_PERMS();
+      const l2 = await mPage(browser, st, vp, "daylight");
+      await l2.p.waitForSelector("#m-list .row", { timeout: slow(8000) });
+      await mShot(l2.p, "home-needs-light-" + vp.width);
+      await l2.p.tap("#m-seg-all");
+      await l2.p.waitForSelector("#m-list h2.grp", { timeout: slow(5000) });
+      await mShot(l2.p, "home-all-light-" + vp.width);
+      await l2.ctx.close();
+    }
+  } finally { await st.close(); }
+  if (!bad) console.log("mHome ok");
+}
+
+async function mCardSection(browser) {
+  const st = mServer({});
+  const ta = mCard("card-a", { alias: "builder", display_title: "the builder", status: "needs-input", waiting_since: mIso(5 * M_MIN),
+    recap: "It is **halfway** through the change.", seen: { turn_ended_at: mIso(3 * M_MIN), unseen: true, answered: false, open_questions: ["which port?", "keep the flag?"] },
+    activity: { what: "tool", tool: "Read", seconds: 2 } });
+  const tb = mCard("card-b", { display_title: "on the screen", status: "needs-input", waiting_since: mIso(6 * M_MIN), seen: { turn_ended_at: mIso(9 * M_MIN) } });
+  const tc = mCard("card-c", { display_title: "no replies yet", status: "needs-input", waiting_since: mIso(8 * M_MIN), recap: "A recap stands in.",
+    reported_at: mIso(20 * M_MIN), report_sha: "abcdef1234567", seen: { turn_ended_at: mIso(7 * M_MIN) } });
+  st.tasks = [ta, tb, tc];
+  const evil = "# Plan\n\nA <script>window.__pwn = 1</script> line with **bold**, `inline` and [bad](javascript:window.__pwn=1) and [good](https://example.com/x).\n\n- one\n- two\n\n```\n" +
+    "x".repeat(400) + "\n```\n";
+  const twoReplies = () => ({ source: "transcript", replies: [
+    { at: mIso(9 * M_MIN), text: "First reply, plain." },
+    { at: mIso(4 * M_MIN), text: evil, truncated: true } ] });
+  st.replies["card-a"] = twoReplies();
+  st.replies["card-b"] = { source: "screen", replies: [{ at: mIso(M_MIN), text: "$ go test ./...\nok  \tpkg\t0.3s", truncated: false }] };
+  st.replies["card-c"] = 404;
+  await st.open();
+  try {
+    for (const vp of M_VIEWS) {
+      st.replies["card-a"] = twoReplies();
+      const { ctx, p, errors } = await mPage(browser, st, vp, "");
+      const tag = "mCard " + vp.width + ": ";
+      await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
+      st.hits.length = 0;
+      // compose.js and perms.js do not exist yet, and the sheet still opens
+      await p.tap('#m-list .row[data-id="card-a"]');
+      await p.waitForSelector("#m-card.on", { timeout: slow(5000) });
+      await p.waitForSelector("#m-replies .reply", { timeout: slow(5000) });
+      if (!/builder/.test(await p.textContent("#m-card-head"))) fail(tag + "the head does not carry the name");
+      if ((await p.$$("#m-replies .reply")).length !== 2) fail(tag + "two replies are not shown");
+      if (await p.evaluate(() => window.__pwn)) fail(tag + "a script in a reply ran");
+      if (await p.$("#m-replies script")) fail(tag + "a script element reached the DOM");
+      if (await p.$('#m-replies a[href^="javascript:"]')) fail(tag + "a javascript: link survived");
+      if (!(await p.$('#m-replies a[href="https://example.com/x"]'))) fail(tag + "the safe link was dropped");
+      if (!/cut short/.test(await p.textContent("#m-replies"))) fail(tag + "a truncated reply does not say so");
+      const pre = await p.$eval("#m-replies pre", e => ({ sw: e.scrollWidth, cw: e.clientWidth, ox: getComputedStyle(e).overflowX }));
+      if (pre.sw <= pre.cw || pre.ox !== "auto") fail(tag + "the code block does not scroll inside itself: " + JSON.stringify(pre));
+      if (await mNoSideways(p)) fail(tag + "the card scrolls sideways");
+      if (!/which port/.test(await p.textContent("#m-card-extras"))) fail(tag + "the open questions are missing");
+      if (await p.getAttribute("#m-card-term", "href") !== "/#term=card-a") fail(tag + "open terminal does not point at the pop-out");
+      if (st.hits.filter(h => h === "card-a?3").length !== 1) fail(tag + "replies fetched " + st.hits.join(","));
+      await mShot(p, "card-dark-" + vp.width);
+      // refetch only when the turn ends
+      st.send("task", Object.assign({}, ta, { row: 1, last_activity_at: mIso(1000) }));
+      await p.waitForTimeout(600);
+      if (st.hits.filter(h => h === "card-a?3").length !== 1) fail(tag + "replies refetched without a new turn: " + st.hits.join(","));
+      st.replies["card-a"] = { source: "transcript", replies: [{ at: mIso(1000), text: "A fresh reply." }] };
+      st.send("task", Object.assign({}, ta, { row: 1, seen: Object.assign({}, ta.seen, { turn_ended_at: mIso(500) }) }));
+      await p.waitForFunction(() => /A fresh reply/.test(document.getElementById("m-replies").textContent), null, { timeout: slow(5000) });
+      if (st.hits.filter(h => h === "card-a?3").length !== 2) fail(tag + "the turn end did not refetch once: " + st.hits.join(","));
+      // the browser back button closes the sheet
+      await p.goBack();
+      await p.waitForFunction(() => document.getElementById("m-card").hidden, null, { timeout: slow(5000) });
+      if (!(await p.$("#m-list .row"))) fail(tag + "the home is gone after back");
+      // a screen source
+      await p.tap('#m-list .row[data-id="card-b"]');
+      await p.waitForSelector("#m-replies pre.screen", { timeout: slow(5000) });
+      if (!/from the screen/.test(await p.textContent("#m-replies"))) fail(tag + "a screen reply is not labelled");
+      await mShot(p, "card-screen-dark-" + vp.width);
+      await p.tap("#m-card-back");
+      await p.waitForFunction(() => document.getElementById("m-card").hidden, null, { timeout: slow(5000) });
+      // a 404 falls back to the recap and the last report
+      await p.tap('#m-list .row[data-id="card-c"]');
+      await p.waitForSelector("#m-card.on", { timeout: slow(5000) });
+      await p.waitForFunction(() => !document.querySelector("#m-replies .loading"), null, { timeout: slow(5000) });
+      const fb = await p.textContent("#m-card-scroll");
+      if (!/A recap stands in/.test(fb) || !/abcdef1/.test(fb)) fail(tag + "the 404 fallback lacks the recap or the last report: " + fb.slice(0, 200));
+      await mShot(p, "card-fallback-dark-" + vp.width);
+      if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+      await ctx.close();
+      // when the two files of the other worker exist they are mounted and released
+      const c2 = await browser.newContext({ viewport: vp, hasTouch: true, isMobile: true });
+      await c2.addInitScript(() => {
+        window.__mounts = [];
+        window.mCompose = { mount: (el, id) => window.__mounts.push("compose:" + id), unmount() { window.__mounts.push("compose-off"); } };
+        window.mPerms = { mount: (el, id) => window.__mounts.push("perms:" + id), unmount() { window.__mounts.push("perms-off"); } };
+      });
+      const p2 = await c2.newPage();
+      await p2.goto(st.url + "/m/", { waitUntil: "domcontentloaded" });
+      await p2.waitForSelector("#m-list .row", { timeout: slow(10000) });
+      await p2.tap('#m-list .row[data-id="card-a"]');
+      await p2.waitForSelector("#m-card.on", { timeout: slow(5000) });
+      await p2.goBack();
+      await p2.waitForFunction(() => document.getElementById("m-card").hidden, null, { timeout: slow(5000) });
+      const mounts = await p2.evaluate(() => window.__mounts.join(","));
+      if (!/perms:card-a/.test(mounts) || !/compose:card-a/.test(mounts) || !/perms-off/.test(mounts)) fail(tag + "the mounts were not called and released: " + mounts);
+      await c2.close();
+      // light
+      st.replies["card-a"] = twoReplies();
+      const lt = await mPage(browser, st, vp, "daylight");
+      await lt.p.waitForSelector("#m-list .row", { timeout: slow(8000) });
+      await lt.p.tap('#m-list .row[data-id="card-a"]');
+      await lt.p.waitForSelector("#m-replies .reply", { timeout: slow(5000) });
+      await lt.p.waitForTimeout(500);
+      await mShot(lt.p, "card-light-" + vp.width);
+      await lt.ctx.close();
+    }
+  } finally { await st.close(); }
+  if (!bad) console.log("mCard ok");
+}
+
+async function mServeSection(browser) {
+  const st = mServer({});
+  await st.open();
+  try {
+    const { ctx, p, errors } = await mPage(browser, st, M_VIEWS[0], "");
+    const tag = "mServe: ";
+    await p.waitForSelector("#m-skel[hidden]", { state: "attached", timeout: slow(10000) });
+    const head = await p.evaluate(() => ({
+      manifest: (document.querySelector('link[rel="manifest"]') || {}).href,
+      vp: document.querySelector('meta[name="viewport"]').content,
+      apple: !!document.querySelector('meta[name="apple-mobile-web-app-capable"]'),
+      touch: (document.querySelector('link[rel="apple-touch-icon"]') || {}).href,
+      board: !!window.Terminal,
+    }));
+    if (!/\/m\/manifest\.webmanifest$/.test(head.manifest || "")) fail(tag + "no manifest link");
+    if (!/viewport-fit=cover/.test(head.vp) || !/interactive-widget=resizes-content/.test(head.vp)) fail(tag + "viewport meta: " + head.vp);
+    if (!head.apple || !head.touch) fail(tag + "the iOS meta tags are missing");
+    if (head.board) fail(tag + "the phone page loaded xterm");
+    const man = await (await fetch(head.manifest)).json();
+    if (man.display !== "standalone" || man.start_url !== "/m/" || man.scope !== "/m/" || man.name !== "atrium") fail(tag + "manifest fields: " + JSON.stringify(man));
+    if (!man.theme_color || !man.background_color) fail(tag + "manifest colours are missing");
+    if (!(man.icons || []).some(i => i.purpose === "maskable")) fail(tag + "no maskable icon");
+    for (const i of man.icons) {
+      const r = await fetch(st.url + i.src);
+      if (r.status !== 200 || r.headers.get("content-type") !== "image/png") fail(tag + i.src + " answered " + r.status);
+    }
+    if (!(await p.$('a.board[href="/"]'))) fail(tag + "no link back to the board");
+    const cs = await p.evaluate(() => { const b = getComputedStyle(document.body); return { ov: b.overflow, disp: b.display }; });
+    if (cs.disp === "flex" || cs.ov === "hidden") fail(tag + "the board's body rules leaked in: " + JSON.stringify(cs));
+    await p.waitForFunction(() => document.getElementById("m-live").classList.contains("on"), null, { timeout: slow(8000) });
+    if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+    await ctx.close();
+    // the stream dropping turns the live dot off
+    const b = await mPage(browser, st, M_VIEWS[1], "");
+    await b.p.waitForFunction(() => document.getElementById("m-live").classList.contains("on"), null, { timeout: slow(8000) });
+    st.streams.forEach(s => s.destroy());
+    await b.p.waitForFunction(() => !document.getElementById("m-live").classList.contains("on"), null, { timeout: slow(8000) });
+    await b.ctx.close();
+  } finally { await st.close(); }
+  if (!bad) console.log("mServe ok");
+}
