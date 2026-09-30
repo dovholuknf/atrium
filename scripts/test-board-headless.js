@@ -588,6 +588,21 @@ const server = http.createServer((req, res) => {
     });
     return;
   }
+  // THE PAGE AS A BROWSER GETS IT, one <script src> per file. HTML above is every script inlined as one, where a
+  // function declaration hoists across files, so a file calling one that loads later works here and throws live.
+  // Only `bootClean` asks for this. `/raw/<anything>` is the same page, for a pop-out or card path.
+  if (url === "/raw" || url.startsWith("/raw/")) {
+    res.writeHead(200, { "Content-Type": "text/html" });
+    res.end(fs.readFileSync(path.join(WEB_ROOT, "index.html")));
+    return;
+  }
+  if (/^\/(js|css)\/[A-Za-z0-9_.-]+\.(js|css)$/.test(url)) {
+    return fs.readFile(path.join(WEB_ROOT, url), (err, body) => {
+      if (err) { res.writeHead(404); res.end(""); return; }
+      res.writeHead(200, { "Content-Type": url.endsWith(".js") ? "application/javascript" : "text/css" });
+      res.end(body);
+    });
+  }
   if (url === "/" || url === "/index.html") {
     if (page502) { res.writeHead(502, { "Content-Type": "text/plain" }); res.end("bad gateway"); return; }
     res.writeHead(200, { "Content-Type": "text/html" });
@@ -13013,6 +13028,38 @@ async function pasteCloseSection(browser, base) {
   tasksMode = was;
 }
 
+// ── the board boots with nothing uncaught ────────────────────────────────
+// A script that throws while the page loads takes every function it would have defined after that line with it, and
+// the board still draws, so nothing else notices. notify.js called into cardurl.js before it had loaded and alerts,
+// the growler reap and the settings stream went quiet. The board, a pop-out by fragment and one by readable path.
+async function bootCleanSection(browser, base) {
+  const raw = fs.readFileSync(path.join(WEB_ROOT, "index.html"));
+  const views = [{ w: 1400, h: 900 }, { w: 390, h: 844, phone: true }, { w: 412, h: 915, phone: true }];
+  for (const v of views) {
+    for (const at of ["/raw", "/raw#term=s1", "/alias/rnd"]) {
+      const ctx = await browser.newContext(v.phone
+        ? { viewport: { width: v.w, height: v.h }, hasTouch: true, isMobile: true }
+        : { viewport: { width: v.w, height: v.h } });
+      const p = await ctx.newPage();
+      await p.route(/\/alias\/rnd$/, r => r.fulfill({ status: 200, contentType: "text/html", body: raw }));
+      const errors = [];
+      p.on("pageerror", e => errors.push(String(e && e.message || e)));
+      const tag = "bootClean " + v.w + " " + at + ": ";
+      try {
+        await p.goto(base + at, { waitUntil: "load" });
+        await p.waitForTimeout(1500);
+        const missing = await p.evaluate(() => ["alerting", "swReg", "cardUrlIsCard", "growlDraw", "termOnly"]
+          .filter(n => { try { return typeof eval(n) === "undefined"; } catch (e) { return true; } }));
+        if (missing.length) fail(tag + "booted without " + missing.join(", "));
+      } finally {
+        await ctx.close();
+      }
+      if (errors.length) fail(tag + "threw while booting: " + errors.join(" | "));
+    }
+  }
+  if (!bad) console.log("bootClean ok");
+}
+
 async function main() {
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = "http://127.0.0.1:" + server.address().port;
@@ -13047,7 +13094,8 @@ async function main() {
       cacheChip: cacheChipSection, cacheLine: cacheLineSection, roomsMachine: roomsMachineSection,
       u001Audit: u001AuditSection,
       pasteStart: pasteStartSection, pasteDone: pasteDoneSection, pasteOldRoom: pasteOldRoomSection, pasteClose: pasteCloseSection,
-      growlQuestionShots: growlQuestionShotsSection, growlQuestionBody: growlQuestionBodySection, growlReplyGrow: growlReplyGrowSection, growlChoices: growlChoicesSection, growlStable: growlStableSection, mGrowlQuestion: mGrowlQuestionSection };
+      growlQuestionShots: growlQuestionShotsSection, growlQuestionBody: growlQuestionBodySection, growlReplyGrow: growlReplyGrowSection, growlChoices: growlChoicesSection, growlStable: growlStableSection, mGrowlQuestion: mGrowlQuestionSection,
+      bootClean: bootCleanSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -15073,6 +15121,7 @@ async function main() {
     await growlChoicesSection(browser, base);
     await growlStableSection(browser, base);
     await mGrowlQuestionSection(browser);
+    await bootCleanSection(browser, base);
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e));
     if (process.env.DEBUG_HEADLESS) {
