@@ -66,7 +66,17 @@ func (s *Server) roomState(w http.ResponseWriter, r *http.Request) {
 	// not.
 	cards := make([]stateCard, 0, len(tasks))
 	for _, t := range tasks {
-		cards = append(cards, stateCard{Task: t, Seen: seen[t.ID].View()})
+		// ALWAYS A SEEN OBJECT, empty when the card has no row yet. Only a
+		// finished turn makes a row, so a card that has never finished one had
+		// none, the key was left out, and the hub could not tell that card from
+		// a room on an older build that sends no seen at all. The notifier needs
+		// exactly that difference to keep quiet about a session that has only
+		// just started.
+		v := seen[t.ID].View()
+		if v == nil {
+			v = &store.SeenView{}
+		}
+		cards = append(cards, stateCard{Task: t, Seen: v})
 	}
 	// The stored rows, marshalled as themselves, each with its seen row.
 	writeJSON(w, http.StatusOK, map[string]any{"cards": cards})
@@ -74,8 +84,8 @@ func (s *Server) roomState(w http.ResponseWriter, r *http.Request) {
 
 // stateCard is a stored card with its stored seen row. The embedded row
 // marshals as its own fields, so the payload is the card as stored plus one
-// key.
+// key, always present. See roomState.
 type stateCard struct {
 	*store.Task
-	Seen *store.SeenView `json:"seen,omitempty"`
+	Seen *store.SeenView `json:"seen"`
 }
