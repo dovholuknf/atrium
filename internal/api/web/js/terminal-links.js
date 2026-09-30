@@ -1001,7 +1001,8 @@ function connectTerm(taskID) {
   // afterwards. Writing it would put a runner's output into a terminal that is
   // now showing something else, or into the same one twice.
   termSock.onmessage = e => {
-    if (termSock !== sock || !term) return;    // The scroll goes in the WRITE CALLBACK, not after the call. `term.write`
+    if (termSock !== sock || !term) return;
+    // The scroll goes in the WRITE CALLBACK, not after the call. `term.write`
     // is asynchronous: it queues the bytes and parses them later, so scrolling
     // on the next line scrolls a buffer that has not grown yet, which is the
     // same off-by-one-echo mistake `sendInput` was making on its own.
