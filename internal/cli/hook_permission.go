@@ -55,6 +55,14 @@ type permissionPayload struct {
 // runPermissionHook does the whole job and returns the bytes to print, or nil
 // to print nothing. It never returns an error because nothing could act on one.
 func runPermissionHook(hubURL string, stdin []byte, pid int) []byte {
+	return permissionHook(hubURL, stdin, func() int { return pid })
+}
+
+// permissionHook is runPermissionHook with the runner's pid asked for only when
+// there is something to post. Finding it walks the process table, and this is the
+// hot path: every tool call in every session runs it, and most of them have
+// nothing to do (gate off, no payload, a read-only tool, no gate on the room).
+func permissionHook(hubURL string, stdin []byte, pidOf func() int) []byte {
 	gate := strings.ToLower(strings.TrimSpace(os.Getenv("ATRIUM_PERM_GATE")))
 	if gate == "off" {
 		return nil
@@ -104,7 +112,7 @@ func runPermissionHook(hubURL string, stdin []byte, pid int) []byte {
 		"name_source": nameSource,
 		"tool":        in.ToolName,
 		"command":     summary,
-		"pid":         pid,
+		"pid":         pidOf(),
 		"cwd":         in.CWD,
 		"details":     permDetails(input),
 		"dedup_key":   key,
