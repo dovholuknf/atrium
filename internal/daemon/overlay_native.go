@@ -263,7 +263,9 @@ func (d *Daemon) startZrokNative(cfg ZrokConfig) error {
 
 	d.overlayStep("zrok", "done", address)
 	log.Printf("[atrium] serving the board on a %s zrok share at %s", mode, address)
-	d.nat(OverlayZrok).serveOn(ln, edge.Shared(d.authGuard(d.ap.Handler())), address, shr.Token)
+	// The share's own frontend is the one name it answers besides loopback, which is
+	// where a private share's `zrok access private` proxy listens.
+	d.nat(OverlayZrok).serveOn(ln, edge.Named(d.authGuard(d.ap.Handler()), shr.FrontendEndpoints...), address, shr.Token)
 	return nil
 }
 
@@ -306,6 +308,19 @@ func (d *Daemon) startZitiNative(cfg ZitiConfig) error {
 	// network, and the service name is the whole identifier.
 	// A ziti service is administered on the network and atrium never created
 	// it, so there is nothing here to release.
-	d.nat(OverlayZiti).serveOn(ln, edge.Shared(d.authGuard(d.ap.Handler())), "ziti service "+service, "")
+	d.nat(OverlayZiti).serveOn(ln, zitiEdge(d.authGuard(d.ap.Handler()), service), "ziti service "+service, "")
 	return nil
+}
+
+// zitiEdge is the browser edge for a ziti service. The name a browser uses is
+// the service's intercept address, which is configured on the network and not
+// here, so it answers the names in $ATRIUM_HOSTS. With none it checks origins
+// and not hosts, and says so, because that leaves DNS rebinding open on it.
+func zitiEdge(h http.Handler, service string) http.Handler {
+	if len(edge.EnvNames()) == 0 {
+		log.Printf("[atrium] the ziti service %q answers any Host. set %s to its intercept address "+
+			"to refuse a rebound one", service, edge.EnvHosts)
+		return edge.Unnamed(h)
+	}
+	return edge.Named(h)
 }
