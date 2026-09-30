@@ -1,4 +1,4 @@
-//go:build !windows
+//go:build !windows && !darwin
 
 package cli
 
@@ -10,10 +10,6 @@ import (
 
 // See ancestry_windows.go for what this is for. Here the process table is
 // /proc, so there is nothing to snapshot: each hop is one small read.
-
-var runnerNames = map[string]bool{"claude": true, "node": true}
-
-const maxHops = 6
 
 func runnerPID() int {
 	walk := os.Getpid()
