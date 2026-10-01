@@ -1,7 +1,7 @@
 // ── opt-in: how long a keystroke takes to come back ─────
 //
 // OFF UNLESS ASKED FOR, and when off every hook below is one boolean test.
-// Switched on from settings ("log terminal input lag") or in the console:
+// Switched on from the terminal's details, under "debug" (see js/peek-debug.js), or in the console:
 //
 //     localStorage.setItem("atrium.debug.inputlag", "1")
 //
@@ -202,7 +202,7 @@ function lagStart() {
   lagWatchStalls();
   lagTimer = setInterval(lagSummary, LAG_SUMMARY_EVERY);
   console.info(`[atrium inputlag] ${lagClock()} on. keystrokes, stalls and a summary every ` +
-    `${LAG_SUMMARY_EVERY / 1000}s print here. switch off in settings.`);
+    `${LAG_SUMMARY_EVERY / 1000}s print here. switch off in the terminal's details, under debug.`);
 }
 
 function lagStop() {
@@ -223,7 +223,18 @@ function toggleInputLag(on) {
   lagOn = !!on;
   try { localStorage.setItem(LAG_KEY, lagOn ? "1" : "0"); } catch (e) {}
   if (lagOn) lagStart(); else { lagStop(); console.info("[atrium inputlag] off"); }
+  const box = document.getElementById("s-inputlag");
+  if (box) box.checked = lagOn;
 }
+
+// Another window of this browser switched it. The storage event reaches every other open window at once, so a
+// popped-out terminal stops timing when the box is unticked anywhere.
+addEventListener("storage", e => {
+  if (e.key !== null && e.key !== LAG_KEY) return;
+  let on = false;
+  try { on = localStorage.getItem(LAG_KEY) === "1"; } catch (err) {}
+  toggleInputLag(on);
+});
 
 // ONE CHECKBOX, EVERY HOP. The browser switches here, and the hub and the room
 // switch from the setting with no restart. In the ALL view the hub passes the

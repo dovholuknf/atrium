@@ -641,6 +641,28 @@ Exports honor whatever filter is applied.">?</span>
         <div class="term-foot">
         <div class="term-drawer" id="t-drawer" aria-hidden="true">
           <div class="peek-body" id="t-drawer-body"></div>
+          <!-- The debug section: the live typing gate and the two debug switches. Only on this drawer.
+               See js/peek-debug.js. -->
+          <div class="peek-body peek-debug" id="t-drawer-debug" hidden>
+            <div class="peek-debug-head">debug</div>
+            <div class="peek-debug-gate" id="t-dbg-gate" role="status"></div>
+            <div class="peek-debug-rows" id="t-dbg-rows"></div>
+            <label class="check peek-debug-sw">
+              <input type="checkbox" id="s-typing" onchange="toggleTypingReadout(this.checked)">
+              <span>show the typing gate line</span>
+            </label>
+            <span class="hintline">A line above the shortcut strip while a message waits behind your
+              input line. This browser only, every window.</span>
+            <label class="check peek-debug-sw">
+              <input type="checkbox" id="s-inputlag" onchange="saveInputLag(this.checked)">
+              <span>log terminal input lag</span>
+            </label>
+            <span class="hintline">Times every keystroke to its echo and prints it to this browser's
+              console. The hub and the room log their hops too, with no restart.</span>
+            <span class="hintline" id="s-inputlag-pinned" hidden>ATRIUM_DEBUG_INPUTLAG is set on the
+              machine, so the hub and the room log as that says and this box reaches this browser
+              only.</span>
+          </div>
         </div>
         <!-- The phone's keys: a phone keyboard has no Esc or arrows. Shown only on a touch-first
              device. See `termPhone` in js/terminal-links.js. -->
@@ -1385,32 +1407,11 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         while you are typing into a box. Leaving the pane leaves the focus in the session.</span>
     </div>
 
-    <!-- Input-lag logging is a diagnostic, off by default. See js/inputlag.js. -->
+    <!-- The two terminal debug switches (input lag, typing gate readout) live in the terminal's
+         details drawer, under "debug". See js/peek-debug.js. -->
     <div class="field">
-      <label class="check">
-        <input type="checkbox" id="s-inputlag" onchange="saveInputLag(this.checked)">
-        <span>log terminal input lag</span>
-      </label>
-      <span class="hintline">Times every keystroke from the key to its echo on screen and prints it
-        to this browser's console, with a summary every ten seconds and a warning whenever the page
-        itself froze. The hub and the room log their own hops to their logs at the same time, from
-        the moment you tick it, with no restart. For finding out why typing lags. It stays on until
-        you switch it off.</span>
-      <span class="hintline" id="s-inputlag-pinned" hidden>ATRIUM_DEBUG_INPUTLAG is set on the
-        machine, so the hub and the room log as that says and this box reaches this browser
-        only.</span>
-    </div>
-
-    <!-- The typing gate readout is a diagnostic, off by default. See js/typing.js. -->
-    <div class="field">
-      <label class="check">
-        <input type="checkbox" id="s-typing" onchange="toggleTypingReadout(this.checked)">
-        <span>show the typing gate readout</span>
-      </label>
-      <span class="hintline">A line above the terminal's shortcut strip showing what atrium thinks
-        is on the session's input line, how long since the last keystroke, and whether a message
-        from another session may be typed in now or why it is held. For when a say waits behind a
-        line that looks empty. This browser only.</span>
+      <span class="hintline">The input lag log and the typing gate readout are in a terminal's
+        details, under debug.</span>
     </div>
 
     <!-- Grouping. The rule is the operator's, because their worktree layout
@@ -3453,6 +3454,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/termfull.js"></script>
 <script src="/js/inputlag.js"></script>
 <script src="/js/typing.js"></script>
+<script src="/js/peek-debug.js"></script>
 <script src="/js/termtrace.js"></script>
 <script src="/js/runners.js"></script>
 <script src="/js/fixtures.js"></script>
