@@ -199,6 +199,16 @@ pre.screen { margin: 0; font: 12px/1.4 var(--mono); color: var(--head); overflow
 .md .tbl tr:last-child td { border-bottom: 0; }
 .md .tbl th:first-child, .md .tbl td:first-child { position: sticky; left: 0; z-index: 1; max-width: 40vw; border-right: 1px solid var(--stroke-dim); }
 .md .tbl th:first-child { background: var(--bg-2); }
+.md .codebox { position: relative; margin: 0 0 10px; }
+.md .codebox pre.code { margin: 0; padding-top: 30px; }
+.md .code-copy { position: absolute; top: 6px; right: 8px; min-height: 28px; padding: 0 10px; border: 1px solid var(--stroke-dim); border-radius: 8px; background: var(--bg-1); color: var(--label); font-size: 12px; cursor: pointer; }
+.md .md-img { display: inline-block; max-width: 100%; margin: 2px 0; padding: 0; border: 1px solid var(--stroke-dim); border-radius: 10px; background: var(--bg-2); color: var(--dim); font-size: 12px; cursor: zoom-in; overflow: hidden; vertical-align: top; }
+.md .md-img .md-img-note { display: block; padding: 24px 12px; }
+.md .md-img img { display: block; max-width: 100%; max-height: 220px; }
+.md .md-file { min-height: 32px; padding: 0 10px; border: 1px solid var(--stroke-dim); border-radius: 8px; background: var(--bg-2); color: var(--teal); font: inherit; font-size: .92em; cursor: pointer; overflow-wrap: anywhere; text-align: left; }
+.md .md-gone { padding: 0; border: 0; background: none; font: inherit; color: var(--dim); font-style: italic; }
+.md-lightbox { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 16px; background: rgba(0, 0, 0, .86); }
+.md-lightbox img { max-width: 100%; max-height: 100%; object-fit: contain; }
 .md blockquote { margin: 0 0 10px; padding-left: 12px; border-left: 3px solid var(--stroke-dim); color: var(--label); }
 
 @media (prefers-reduced-motion: reduce) {
