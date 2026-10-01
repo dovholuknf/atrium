@@ -284,6 +284,115 @@ func TestAModelSwitchFollowsTheMidTurnRule(t *testing.T) {
 	d.modelWaits.Delete(target.ID)
 }
 
+// CLAUDE IS DECIDED BY THE HARNESS, not its id. A `claude-worker` row that runs the
+// claude command takes `/model`, and a row named claude-something that runs another
+// program does not.
+func TestAModelSwitchTakesAnyHarnessThatRunsClaude(t *testing.T) {
+	d := testDaemon(t)
+	for _, h := range []store.Harness{
+		{ID: "claude-worker", Label: "claude worker", Cmd: "claude", Enabled: true, LaunchMode: store.LaunchPTY},
+		{ID: "claude-lookalike", Label: "lookalike", Cmd: "codex", Enabled: true, LaunchMode: store.LaunchPTY},
+	} {
+		if _, err := d.st.SaveHarness(h); err != nil {
+			t.Fatal(err)
+		}
+	}
+	card := func(name, runner string) (*store.Task, *fakePTY) {
+		task, _, err := d.st.Register(store.Observed{
+			WireName: name, Worktree: "d:/git/atrium", Runner: runner, PID: impossiblePID,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, f := typedRunner(t, d, task.ID)
+		return task, f
+	}
+
+	worker, wf := card("a-worker", "claude-worker")
+	if code, out := switchModel(t, d, worker.ID, `{"model":"opus"}`); code != http.StatusOK || out["typed"] != true {
+		t.Fatalf("a claude-worker card answered %d %v, want typed", code, out)
+	}
+	if wf.written() != "/model opus\r" {
+		t.Fatalf("the claude-worker terminal got %q", wf.written())
+	}
+
+	other, of := card("a-lookalike", "claude-lookalike")
+	if code, _ := switchModel(t, d, other.ID, `{"model":"opus"}`); code != http.StatusConflict {
+		t.Fatalf("a harness named claude-* running codex answered %d, want 409", code)
+	}
+	if of.written() != "" {
+		t.Fatalf("typed into a non-claude runner: %q", of.written())
+	}
+}
+
+// THE RACE. A waiter checked that it was the current wait, and before it typed a
+// newer request went in. The card's lock makes the check and the typing one step,
+// so the waiter either sees it was replaced or goes first.
+func TestAWaiterNeverTypesAnOlderModelAfterANewerOne(t *testing.T) {
+	oldEvery := modelRetryEvery
+	modelRetryEvery = 10 * time.Millisecond
+	t.Cleanup(func() { modelRetryEvery = oldEvery })
+
+	d := testDaemon(t)
+	target, r, f := peerPair(t, d)
+	r.noteOperatorTyped([]byte("git comm"))
+	switchModel(t, d, target.ID, `{"model":"haiku"}`)
+
+	// Open the gate, then hold the card's lock as a handler in the middle of a
+	// switch does, so the waiter is parked on it with the old wait still stored.
+	r.noteOperatorTyped([]byte("\r"))
+	r.typeMu.Lock()
+	r.lastTyped = time.Now().Add(-peerGateIdle - time.Second)
+	r.typeMu.Unlock()
+	mu := d.modelLock(target.ID)
+	mu.Lock()
+	time.Sleep(100 * time.Millisecond)
+
+	// The handler's step: replace the wait and type the newer model.
+	d.modelWaits.Delete(target.ID)
+	if typed, err := d.typeModel(target.ID, "opus", false); err != nil || !typed {
+		mu.Unlock()
+		t.Fatalf("the newer model did not type: %v %v", typed, err)
+	}
+	mu.Unlock()
+
+	time.Sleep(300 * time.Millisecond)
+	if got := f.written(); got != "/model opus\r" {
+		t.Fatalf("the terminal got %q, want only the newer /model opus", got)
+	}
+}
+
+// GIVING UP IS RECORDED. The wait ends, the card keeps the model, and the timeline
+// says the live session never took it.
+func TestAWaitThatGivesUpIsRecorded(t *testing.T) {
+	oldEvery, oldMax := modelRetryEvery, modelWaitMax
+	modelRetryEvery, modelWaitMax = 10*time.Millisecond, 80*time.Millisecond
+	t.Cleanup(func() { modelRetryEvery, modelWaitMax = oldEvery, oldMax })
+
+	d := testDaemon(t)
+	target, r, f := peerPair(t, d)
+	r.noteOperatorTyped([]byte("git comm"))
+	switchModel(t, d, target.ID, `{"model":"haiku"}`)
+
+	deadline := time.Now().Add(5 * time.Second)
+	for len(modelEvents(t, d, target.ID)) < 2 && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	evs := modelEvents(t, d, target.ID)
+	if len(evs) != 2 || evs[1]["state"] != "gave up waiting" || evs[1]["to"] != "haiku" {
+		t.Fatalf("events = %v, want waiting then gave up waiting", evs)
+	}
+	if _, still := d.modelWaits.Load(target.ID); still {
+		t.Fatal("the wait outlived its give-up")
+	}
+	if f.written() != "" {
+		t.Fatalf("typed into a part written line: %q", f.written())
+	}
+	if got, _ := d.st.Get(target.ID); got.Model != "haiku" {
+		t.Fatalf("the card dropped its model on giving up: %q", got.Model)
+	}
+}
+
 // A `/model <id>` TYPED BY HAND is a switch the card remembers, so the room
 // restart's resume does not put it back. This is what happened on @fabric.
 func TestAHandTypedModelSwitchIsRecorded(t *testing.T) {
