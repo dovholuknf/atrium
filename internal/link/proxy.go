@@ -9,7 +9,6 @@ import (
 	"io"
 	"io/fs"
 	"log"
-	"mime"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -21,6 +20,7 @@ import (
 
 	"github.com/dovholuknf/atrium/internal/cardurl"
 	"github.com/dovholuknf/atrium/internal/gitsync"
+	"github.com/dovholuknf/atrium/internal/webasset"
 )
 
 // What the hub actually answers with.
@@ -43,8 +43,9 @@ import (
 
 // Proxy serves the board from a hub.
 type Proxy struct {
-	hub   *Hub
-	board fs.FS
+	hub    *Hub
+	board  fs.FS
+	assets *webasset.Server
 	// boardID is the hash of THIS hub's board tree. See `rewriteHealth` for why
 	// it is here and not taken from the room.
 	boardID string
@@ -120,6 +121,9 @@ type Proxy struct {
 // which is right for a test and wrong for a running hub.
 func NewProxy(hub *Hub, board fs.FS, boardID string, room func() string) *Proxy {
 	p := &Proxy{hub: hub, board: board, boardID: boardID, room: room}
+	if board != nil {
+		p.assets = webasset.New(board)
+	}
 	p.feeds = newFeeds(p)
 	// A ROOM'S STREAM COMING UP is when the board-wide approver sweeps that room.
 	// See autoapprove.go.
@@ -669,9 +673,6 @@ func (p *Proxy) readWait() time.Duration {
 	return roomReadWait
 }
 
-// The same type the room's file server gives the phone page's manifest. See webHandler in internal/api/web.go.
-func init() { _ = mime.AddExtensionType(".webmanifest", "application/manifest+json") }
-
 // asset decides whether the hub has this file.
 func (p *Proxy) asset(urlPath string) (string, bool) {
 	if p.board == nil {
@@ -709,41 +710,11 @@ func (p *Proxy) asset(urlPath string) (string, bool) {
 }
 
 func (p *Proxy) serveAsset(w http.ResponseWriter, r *http.Request, name string) {
-	f, err := p.board.Open(name)
-	if err != nil {
+	// The same server the room's own board uses: gzip, ETags, and the same
+	// caching rules. See internal/webasset.
+	if !p.assets.Serve(w, r, name) {
 		http.NotFound(w, r)
-		return
 	}
-	defer f.Close()
-	st, err := f.Stat()
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	// The same two rules the daemon's own file server uses, for the same
-	// reasons. See `webHandler` in internal/api/web.go: a vendored library
-	// never changes, and a cached copy of everything else after a restart looks
-	// exactly like a fix that did not work.
-	if strings.HasPrefix(r.URL.Path, "/vendor/") {
-		w.Header().Set("Cache-Control", "public, max-age=86400")
-	} else {
-		w.Header().Set("Cache-Control", "no-store, must-revalidate")
-	}
-	if rs, ok := f.(io.ReadSeeker); ok {
-		http.ServeContent(w, r, name, st.ModTime(), rs)
-		return
-	}
-	// An fs.FS is not obliged to give a seeker. Range requests are lost, which
-	// costs nothing for a stylesheet.
-	http.ServeContent(w, r, name, st.ModTime(), bytes.NewReader(readAll(f)))
-}
-
-func readAll(f fs.File) []byte {
-	raw, err := io.ReadAll(f)
-	if err != nil {
-		return nil
-	}
-	return raw
 }
 
 // rewriteHealth replaces the room's board hash with the hub's.

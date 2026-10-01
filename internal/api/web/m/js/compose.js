@@ -39,10 +39,6 @@
 
   const DRAFT = "atrium.m.draft.";
   const MAX_LINES = 6;
-  // What a chip fills the box with. They fill, they never send.
-  const QUICK = ["yes", "go ahead", "no", "stop"];
-  // Statuses in which the card is waiting on the person, so quick replies make sense.
-  const WAITING = ["needs-input", "needs-permission", "waiting"];
 
   let cur = null; // the one mounted composer
   let harnesses = null; // a Promise of { runner id: bracketed_paste }
@@ -71,14 +67,6 @@
 
   function cardOf(id) {
     return guard(() => window.mStore && window.mStore.card(id)) || null;
-  }
-
-  // A card with something open for the person: a question, or a waiting status.
-  function isAsking(card) {
-    if (!card) return false;
-    const q = card.questions || card.open_questions;
-    if (Array.isArray(q) && q.length) return true;
-    return WAITING.includes(card.status);
   }
 
   function el(tag, cls, text) {
@@ -162,16 +150,6 @@
     const root = el("div", "mc" + (opts.compact ? " compact" : ""));
     root.dataset.card = cardId;
 
-    const chips = el("div", "mc-chips");
-    chips.setAttribute("role", "group");
-    chips.setAttribute("aria-label", "quick replies");
-    for (const q of QUICK) {
-      const b = el("button", "mc-chip", q);
-      b.type = "button";
-      b.dataset.q = q;
-      chips.appendChild(b);
-    }
-
     const note = el("div", "mc-note");
     note.setAttribute("role", "status");
     note.setAttribute("aria-live", "polite");
@@ -198,7 +176,7 @@
       '<path d="M12 19V5M6 11l6-6 6 6" fill="none" stroke="currentColor" stroke-width="2.4" ' +
       'stroke-linecap="round" stroke-linejoin="round"/></svg>';
     row.append(ta, send);
-    root.append(files, chips, note, row);
+    root.append(files, note, row);
     host.replaceChildren(root);
 
     const state = {
@@ -230,9 +208,6 @@
       } else if (note.dataset.kind === "hint") {
         say("", "");
       }
-    };
-    const showChips = () => {
-      chips.classList.toggle("on", isAsking(cardOf(cardId)));
     };
 
     // The runner's paste capability, for the line-break note and for the send.
@@ -271,16 +246,6 @@
       if (!got.length || dt.getData("text/plain")) return;
       e.preventDefault();
       attach(got);
-    });
-    chips.addEventListener("click", e => {
-      const b = e.target.closest(".mc-chip");
-      if (!b) return;
-      const have = ta.value.trim();
-      ta.value = have ? have + " " + b.dataset.q : b.dataset.q;
-      refresh();
-      ta.focus();
-      const n = ta.value.length;
-      try { ta.setSelectionRange(n, n); } catch (err) {}
     });
     files.addEventListener("click", e => {
       const x = e.target.closest(".mc-fx");
@@ -342,6 +307,8 @@
         ok = o.kind !== "refused";
         say(o.kind, o.text + (ok && joined ? " (line breaks joined)" : ""));
         if (ok) {
+          // card.js keeps the operator's side of the thread, since the room returns only the session's replies.
+          try { window.dispatchEvent(new CustomEvent("m-sent", { detail: { id: cardId, text } })); } catch (e) {}
           ta.value = "";
           writeDraft(cardId, "");
           clearAtts(state);
@@ -357,13 +324,11 @@
       }
     }
 
-    if (window.mStore) offs.push(window.mStore.on("cards", showChips));
     if (opts.follow !== false) offs.push(followKeyboard(root));
 
     ta.value = readDraft(cardId);
     state.last = ta.value;
     refresh();
-    showChips();
     if (ta.value && !opts.compact) say("hint", "Draft kept.");
   }
 
