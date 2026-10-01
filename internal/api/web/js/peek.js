@@ -349,6 +349,7 @@ function toggleTermDrawer(force) {
   drawer.setAttribute("aria-hidden", open ? "false" : "true");
   if (btn) btn.setAttribute("aria-expanded", open ? "true" : "false");
   const id = typeof termTask !== "undefined" && termTask ? termTask.id : null;
+  if (typeof dbgDrawer === "function") dbgDrawer(open && !!id);
   if (!open || !id) { termDrawerSeq++; return; }
   const seq = ++termDrawerSeq;
   peekFill(document.getElementById("t-drawer-body"), id, () => seq === termDrawerSeq && termDrawerOpen);
