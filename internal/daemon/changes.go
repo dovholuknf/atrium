@@ -38,7 +38,6 @@ const (
 	// untrackedReadMax is the biggest untracked file read to count its lines.
 	untrackedReadMax = 8 << 20
 	// listMax bounds the file lists git prints, which are paths and counts and never hunks.
-	listMax = 16 << 20
 	// patchMax is what is read of one patch: the total hunk bound, a file that would be cut anyway, and slack.
 	patchMax = changesHunksMax + changesFileMax + 64<<10
 	// argvMax is how many characters of paths go on one command line. Windows stops at 32767.
@@ -115,6 +114,9 @@ func (g gitAt) capped(max int, args ...string) (string, error) {
 	full := append([]string{"--no-optional-locks", "-c", "core.fsmonitor=false"}, args...)
 	return g.run.GitCapped(g.ctx, g.dir, []string{"GIT_LITERAL_PATHSPECS=1"}, max, full...)
 }
+
+// listMax is a variable so a test can use a small cap.
+var listMax = 16 << 20
 
 // changesFor answers the endpoint for one card.
 func (d *Daemon) changesFor(ctx context.Context, taskID, against string, turn time.Time) (any, error) {
@@ -527,28 +529,32 @@ func untracked(g gitAt, dir string, paths []string) []ChangeFile {
 		args = append(args, "--")
 		args = append(args, paths...)
 	}
+	// A listing stopped at the cap ends mid-name, so each one is cut back to its last whole name.
+	list := func(args ...string) (string, bool) {
+		o, err := g.capped(listMax, args...)
+		if errors.Is(err, gitsync.ErrOutputCap) {
+			return o[:strings.LastIndexByte(o, 0)+1], true
+		}
+		return o, err == nil
+	}
 	var out string
-	var err error
 	if len(paths) == 0 {
-		out, err = g.capped(listMax, args...)
+		o, ok := list(args...)
+		if !ok {
+			return nil
+		}
+		out = o
 	} else {
 		head := args[:len(args)-len(paths)-1]
 		for _, chunk := range chunkPaths(paths) {
-			var o string
-			o, err = g.capped(listMax, append(append(append([]string{}, head...), "--"), chunk...)...)
-			if err != nil && !errors.Is(err, gitsync.ErrOutputCap) {
-				break
+			o, ok := list(append(append(append([]string{}, head...), "--"), chunk...)...)
+			if !ok {
+				return nil
 			}
 			out += o
 		}
 	}
-	if err != nil && !errors.Is(err, gitsync.ErrOutputCap) {
-		return nil
-	}
 	toks := strings.Split(out, "\x00")
-	if errors.Is(err, gitsync.ErrOutputCap) {
-		toks = toks[:len(toks)-1] // the last one is cut mid-name
-	}
 	var files []ChangeFile
 	for _, p := range toks {
 		if p == "" {
