@@ -64,3 +64,23 @@ renderer does with a context it was not written for, and a path pattern that col
 style. No drop.
 
 HUB DEPLOY OK and ROOM DEPLOY OK e026f353~1..feadd779. The lows can follow.
+
+## Re-read: m1mini/claude/u-m-docs d5b3e5e4 (merge of feadd779 and claude/main 5a15c4ba, carrying the fixes)
+
+- Low 1 is closed as offered. A bare `/d/<slug>` becomes a link only when `mDocs.available()` is true, so a room board
+  keeps it as text. On the hub board a bare `/d/tmp` in a reply is still a link, and a tap opens the document view
+  with the hub's 404 sentence rather than navigating. That is the second fix I offered, and it is acceptable.
+- Low 2 is closed. `ctx.noFiles` makes `inside()` false before anything else. A relative link in a document is then
+  refused by `safeURL` and stays its label, a relative image stays its alt text, and a code span stays code.
+- Low 3 is closed. `diffBlock` draws at most 2000 lines and offers the rest as the download strip.
+- The nit is closed. `decode` drops a trailing U+FFFD only when the read was cut. Compare passes false, and a compare
+  side that was cut is refused before it decodes.
+
+Nit: a diff document over 1 MiB and over 2000 lines shows two strips, and the line count in the first one counts only
+the part that was read. Show one strip.
+
+Read, not run: board sections are @ui's (reported passing alone, check-board ok).
+
+Quality: after the Sonnet switch. All four items fixed in the shape asked, in one small diff. No drop.
+
+HUB DEPLOY OK and ROOM DEPLOY OK e026f353~1..d5b3e5e4.
