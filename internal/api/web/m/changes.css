@@ -1,0 +1,39 @@
+/* the changes sheet and the chip that opens it. Diff colours are variables with defaults, so a skin may set them. */
+.chg-chip { margin: 8px 0 0; min-height: 36px; padding: 0 12px; border: 1px solid var(--stroke); border-radius: 18px; background: none; color: var(--teal); font-size: 13px; cursor: pointer; }
+.changes { position: absolute; left: 0; right: 0; top: 0; bottom: 0; z-index: 7; display: flex; flex-direction: column; background: var(--bg-0); }
+.changes[hidden] { display: none; }
+.changes .v-scroll { padding-bottom: 12px; }
+.cg-head { padding: 4px 0 8px; }
+.cg-sub { color: var(--head); font-size: 15px; font-weight: 600; }
+.cg-toggle { display: inline-flex; gap: 6px; margin-top: 8px; }
+.cg-toggle button, .cg-all, .cg-open, .cg-more { min-height: 40px; padding: 0 12px; border: 1px solid var(--stroke); border-radius: 10px; background: none; color: var(--label); font-size: 14px; cursor: pointer; }
+.cg-toggle button[aria-pressed="true"] { color: var(--head); border-color: var(--teal); background: color-mix(in srgb, var(--teal) 14%, transparent); }
+.cg-all { border: 0; padding: 0; color: var(--teal); }
+.cg-open { margin: 8px 0; color: var(--teal); }
+.cg-more { width: 100%; border: 0; border-top: 1px solid var(--stroke-dim); border-radius: 0; color: var(--teal); }
+.cg-note { margin: 10px 0; color: var(--label); font-size: 14px; overflow-wrap: anywhere; }
+.cg-grey { color: var(--dim); font-size: 13px; }
+.cg-err { color: var(--warn); }
+.cg-files { border-top: 1px solid var(--stroke-dim); }
+.cg-file { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; width: 100%; padding: 12px 0; border: 0; border-bottom: 1px solid var(--stroke-dim); background: none; color: var(--body); text-align: left; cursor: pointer; }
+.cg-path { font-family: var(--mono, monospace); font-size: calc(var(--m-fs, 14px) * .95); color: var(--head); overflow-wrap: anywhere; }
+.cg-stat { color: var(--label); font-size: 13px; white-space: nowrap; }
+.cg-status { grid-column: 1 / -1; color: var(--dim); font-size: 13px; overflow-wrap: anywhere; }
+.cg-bar { grid-column: 1 / -1; display: flex; height: 4px; }
+.cg-bar i { display: block; height: 4px; }
+.cg-add { background: var(--diff-add, var(--teal)); }
+.cg-del { background: var(--diff-del, var(--danger, #e5534b)); }
+.cg-fpath { color: var(--head); font-family: var(--mono, monospace); font-size: calc(var(--m-fs, 14px) * .95); overflow-wrap: anywhere; }
+.cg-hunk { margin: 0 0 12px; border: 1px solid var(--stroke-dim); border-radius: 10px; overflow: hidden; }
+.cg-hh { display: flex; justify-content: space-between; gap: 8px; padding: 4px 8px; background: var(--bg-2); color: var(--dim); font: 12px/1.4 var(--mono, monospace); }
+.cg-row { display: grid; grid-template-columns: 3.2ch 1.2ch 1fr; gap: 6px; padding: 1px 6px; font: var(--m-fs, 14px)/1.4 var(--mono, monospace); cursor: pointer; }
+.cg-row code { font: inherit; white-space: pre-wrap; overflow-wrap: anywhere; background: none; padding: 0; }
+.cg-ln { color: var(--dim); text-align: right; font-size: .8em; }
+.cg-sg { color: var(--dim); }
+
+.cg-row.cg-add { background: var(--diff-add-bg, color-mix(in srgb, var(--teal) 13%, transparent)); }
+.cg-row.cg-del { background: var(--diff-del-bg, color-mix(in srgb, var(--danger, #e5534b) 15%, transparent)); }
+.cg-row mark { background: var(--diff-mark, color-mix(in srgb, var(--warn) 35%, transparent)); color: inherit; border-radius: 3px; }
+.cg-row.on { outline: 2px solid var(--warn); outline-offset: -2px; background: var(--diff-sel, color-mix(in srgb, var(--warn) 18%, transparent)); }
+.cg-row.cg-add .cg-sg { color: var(--teal); }
+.cg-row.cg-del .cg-sg { color: var(--danger, #e5534b); }

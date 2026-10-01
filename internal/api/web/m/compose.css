@@ -311,3 +311,6 @@ body.term-phone #t-compose:not([hidden]) { display: block; }
   color: var(--c-dim); -webkit-tap-highlight-color: transparent;
 }
 .mc-attach:active { background: var(--c-sink); color: var(--c-text); }
+
+/* a review comment chip: the line of a diff that will go in the message */
+.mc-cmt .mc-fname { padding-left: 10px; font-family: var(--mono, ui-monospace, monospace); }

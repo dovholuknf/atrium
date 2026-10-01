@@ -211,7 +211,7 @@
 
     const state = {
       el: root, host, id: cardId, offs, sending: 0, pasteOK: null, ta, refresh: () => refresh(),
-      atts: [], uploading: 0, last: "", opts, files
+      atts: [], uploading: 0, last: "", opts, files, cmts: []
     };
     cur = state;
 
@@ -227,7 +227,7 @@
     const refresh = () => {
       // Not while a file is still going up: the message would leave without its path.
       // The terminal's bar waits for its files. The phone page lets the message go and waits for them itself.
-      send.disabled = opts.compact ? !ta.value.trim() || state.uploading > 0 : !ta.value.trim() && !state.atts.some(a => a.status === "up");
+      send.disabled = opts.compact ? !ta.value.trim() || state.uploading > 0 : !ta.value.trim() && !state.atts.some(a => a.status === "up") && !state.cmts.length;
       writeDraft(cardId, ta.value);
       grow(ta, maxLines);
     };
@@ -316,9 +316,15 @@
       let text = ta.value.trim();
       // Files still going up leave with the message: it waits for them, with its pending row, and the box is free.
       const held = state.atts.filter(a => a.status === "up");
-      if (!text && !held.length) return;
+      // Review comments (the file viewer's tapped lines) are chips that go in this one message, each as a header, the quoted
+      // diff line and then what was typed.
+      const cm = state.cmts.slice();
+      if (!text && !held.length && !cm.length) return;
       const key = cardId + ":" + (++sendSeq);
       const typed = text;
+      state.cmts = [];
+      cm.forEach(c => c.el.remove());
+      state.files.classList.toggle("on", state.atts.length > 0);
       held.forEach(a => { a.held = true; });
       // The settled chips leave with the message and come back with its text if it fails.
       const settled = state.atts.filter(a => a.status !== "up");
@@ -331,7 +337,7 @@
       say("busy", held.length ? "sending when the upload finishes" : "sending");
       refresh();
       ta.focus({ preventScroll: true });
-      tell("m-send", { id: cardId, key, text: typed || held.map(a => a.name).join(" "), state: "pending" });
+      tell("m-send", { id: cardId, key, text: typed || (cm.length ? cm.length + " review comment" + (cm.length > 1 ? "s" : "") : held.map(a => a.name).join(" ")), state: "pending" });
       let ok = false, why = "";
       try {
         if (held.length) {
@@ -342,6 +348,7 @@
           const add = held.filter(a => a.status === "ok").map(a => a.path).filter(pth => typed.indexOf(pth) < 0);
           text = (typed + " " + add.join(" ")).trim();
         }
+        if (cm.length) text = quoteAll(cm) + (text ? "\n" + text : "");
         // An unknown capability is read as "cannot", so a send never guesses a paste into a runner that
         // submits on a raw newline.
         const paste = state.pasteOK == null ? await capability() : state.pasteOK;
@@ -369,6 +376,9 @@
         say("refused", "not sent: " + (e && e.message ? e.message : e));
         tell("m-send", { id: cardId, key, text: typed || held.map(a => a.name).join(" "), state: "failed" });
       } finally {
+        // The comments are not lost with a message that did not go: their chips come back.
+        if (!ok) cm.slice().reverse().forEach(c => { state.cmts.unshift(c); state.files.insertBefore(c.el, state.files.firstChild); });
+        state.files.classList.toggle("on", state.atts.length > 0 || state.cmts.length > 0);
         state.sending--;
         if (!state.sending) root.classList.remove("sending");
         held.forEach(a => { a.held = false; });
@@ -458,6 +468,55 @@
   function landAtts(state, landed) {
     let at = place(state, landed.map(a => a.path).join(" "));
     for (const a of landed) { a.start = at; a.end = at + a.path.length; at = a.end + 1; }
+  }
+
+  // ── review comments ──────────────────────────────────────────────────────
+  // One comment is a line of a diff: { path, line, kind: "+" | "-" | " ", text, where, head }. `where` says which view it
+  // was read in ("turn 21:14", "uncommitted", "since base") and `head` is the short sha the diff was against. The message
+  // always names the repo-relative path, never the basename, so it can be acted on without knowing which card.
+  const baseOf = p => String(p).split("/").pop();
+  const cmtKey = c => c.path + "\u0000" + c.kind + "\u0000" + c.line;
+
+  function quoteOne(c) {
+    const at = "line " + c.line + (c.kind === "-" ? ", removed" : "");
+    const head = "review comment on " + c.path + " " + at + " (" + c.where + ", head " + c.head + "):";
+    // Indented, with its +/-, so it reads as a quotation and not as the instruction. A context line has a space there.
+    return head + "\n    " + (c.kind === "-" || c.kind === "+" ? c.kind : " ") + c.text;
+  }
+
+  function quoteAll(list) { return list.map(quoteOne).join("\n"); }
+
+  // Adds a chip for a tapped line. Tapping the same line again takes it off. False when no composer is mounted.
+  function addComment(c) {
+    const state = cur;
+    if (!state) return false;
+    const i = state.cmts.findIndex(x => cmtKey(x) === cmtKey(c));
+    if (i >= 0) { removeComment(state, state.cmts[i]); return true; }
+    const chip = el("div", "mc-file mc-cmt");
+    const name = el("span", "mc-fname", baseOf(c.path) + ":" + c.line + (c.kind === "-" ? " removed" : ""));
+    const x = el("button", "mc-fx", "✕");
+    x.type = "button";
+    x.setAttribute("aria-label", "remove the comment on " + baseOf(c.path) + " line " + c.line);
+    x.addEventListener("pointerdown", e => e.preventDefault());
+    x.addEventListener("click", () => removeComment(state, c));
+    chip.append(name, x);
+    c.el = chip;
+    state.cmts.push(c);
+    state.files.appendChild(chip);
+    state.files.classList.add("on");
+    state.files.scrollLeft = state.files.scrollWidth;
+    state.refresh();
+    return true;
+  }
+
+  function removeComment(state, c) {
+    const i = state.cmts.indexOf(c);
+    if (i < 0) return;
+    state.cmts.splice(i, 1);
+    c.el.remove();
+    state.files.classList.toggle("on", state.atts.length > 0 || state.cmts.length > 0);
+    state.refresh();
+    try { window.dispatchEvent(new CustomEvent("m-comment-removed", { detail: { key: cmtKey(c) } })); } catch (e) {}
   }
 
   function chipOf(a) {
@@ -633,5 +692,5 @@
 
   // Whether a send or an upload is in flight on the mounted card, which a page reload would lose.
   const busy = () => !!cur && (cur.sending > 0 || cur.uploading > 0);
-  window.mCompose = { mount, unmount, insert, attach, busy };
+  window.mCompose = { mount, unmount, insert, attach, busy, addComment, quoteAll };
 })();
