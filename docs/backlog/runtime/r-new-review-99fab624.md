@@ -104,3 +104,14 @@ Quality: after the Sonnet switch. Each fix maps onto its finding, the lock order
 the known gap was named unprompted, and the start paths got their own tests. No drop seen.
 
 ROOM DEPLOY OK 4bedce8b
+
+## Re-read of 3e53bb45 (@runtime, low 5), landed in a36d652f
+
+`git show 3e53bb45`, read. `noteTypedModel` now records only a value that `validModel` accepts and that is one of
+the four aliases. `validModel` lower-cases an alias first, so `/model Opus` still records. A typed `claude-...` id is
+ignored. The API path still takes ids, chosen on purpose by its caller. Low 5 is closed. The landing merge a36d652f
+carries 2ba81eaf, 32700a16 and 3e53bb45, all reviewed.
+
+Quality: after the Sonnet switch. It applies the fix the review suggested, in two lines with a test. No drop seen.
+
+ROOM DEPLOY OK 3e53bb45
