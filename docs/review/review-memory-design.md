@@ -406,7 +406,9 @@ are in `general.md` on dotagents branch `claude/review/director/2026-09-29-walk-
     Where it disagrees, the review-manager reads the code, decides, and writes why. It never reads a reviewer file.
     Which model is a setting: Mercurius by default, or a runner card on `codex` or `gemini`, named by clint when he
     asks for a review, and named in the report. Skill step 8 is the procedure. `general.md` lists the room's runners
-    and what each is chosen for.
+    and what each is chosen for. A card waiting on a second opinion that runs async never ends its turn to wait: it
+    polls for the result, or it starts the walk and folds the result in when it lands. Nothing wakes a card that ended
+    its turn, and the tlsuv 378 card sat idle from 12:19 on 2026-10-01 that way until the orchestrator told it to go.
 30. Every review-manager and walker is tagged `atrium:subagent`, `dept:review`, `review` and `pr`.
 
 **The walk's shape.** From clint through @orchestrator, 2026-09-29. In `general.md` on the walk-rules branch.
