@@ -3,6 +3,7 @@ package daemon
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -36,10 +37,16 @@ const (
 	changesFileMax  = 256 << 10
 	// untrackedReadMax is the biggest untracked file read to count its lines.
 	untrackedReadMax = 8 << 20
-	changesBound     = 30 * time.Second
-	emptyTree        = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
-	notAWorktree     = "this card's directory is not a git worktree"
-	shellNotCounted  = "changes made by a shell command are not included"
+	// listMax bounds the file lists git prints, which are paths and counts and never hunks.
+	listMax = 16 << 20
+	// patchMax is what is read of one patch: the total hunk bound, a file that would be cut anyway, and slack.
+	patchMax = changesHunksMax + changesFileMax + 64<<10
+	// argvMax is how many characters of paths go on one command line. Windows stops at 32767.
+	argvMax         = 12000
+	changesBound    = 30 * time.Second
+	emptyTree       = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+	notAWorktree    = "this card's directory is not a git worktree"
+	shellNotCounted = "changes made by a shell command are not included"
 )
 
 // ChangeFile is one file in an answer.
@@ -102,6 +109,12 @@ func (g gitAt) git(args ...string) (string, error) {
 }
 
 func refused(status int, msg string) error { return &api.ChangesError{Status: status, Msg: msg} }
+
+// capped is git with a bound on its output, which is stopped at it. See gitsync.Runner.GitCapped.
+func (g gitAt) capped(max int, args ...string) (string, error) {
+	full := append([]string{"--no-optional-locks", "-c", "core.fsmonitor=false"}, args...)
+	return g.run.GitCapped(g.ctx, g.dir, []string{"GIT_LITERAL_PATHSPECS=1"}, max, full...)
+}
 
 // changesFor answers the endpoint for one card.
 func (d *Daemon) changesFor(ctx context.Context, taskID, against string, turn time.Time) (any, error) {
@@ -220,7 +233,9 @@ func (d *Daemon) turnChanges(g gitAt, t *store.Task, v *ChangesView, ref string,
 
 	// A file with no uncommitted change may have been committed by the turn. Commits are
 	// found by their date in the turn's window, and a Bash `git commit` is never parsed.
-	if len(rest) > 0 && v.Head != "" {
+	// With no prompt before the reply there is no window, and every commit in history would count,
+	// so a turn with a zero start has no committed changes to find.
+	if len(rest) > 0 && v.Head != "" && !start.IsZero() {
 		cf, rewritten, err := committedInTurn(g, rest, start, end)
 		if err != nil {
 			return nil, err
@@ -339,7 +354,42 @@ func committedInTurn(g gitAt, paths []string, start, end time.Time) ([]ChangeFil
 // order git printed them. head is the subcommand (diff, or show --format=), tail the commit or
 // ref, and paths limit it, or nothing when nil.
 func fileDiff(g gitAt, head, tail, paths []string) ([]ChangeFile, error) {
-	run := func(mode ...string) (string, error) {
+	if len(paths) == 0 {
+		return fileDiffOne(g, head, tail, nil)
+	}
+	var all []ChangeFile
+	for _, chunk := range chunkPaths(paths) {
+		fs, err := fileDiffOne(g, head, tail, chunk)
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, fs...)
+	}
+	return all, nil
+}
+
+// chunkPaths cuts paths into groups that fit on one command line. Git has no way to read a
+// pathspec from standard input for diff, show or ls-files, so they are batched.
+func chunkPaths(paths []string) [][]string {
+	var out [][]string
+	var cur []string
+	n := 0
+	for _, p := range paths {
+		if len(cur) > 0 && n+len(p)+1 > argvMax {
+			out = append(out, cur)
+			cur, n = nil, 0
+		}
+		cur = append(cur, p)
+		n += len(p) + 1
+	}
+	if len(cur) > 0 {
+		out = append(out, cur)
+	}
+	return out
+}
+
+func fileDiffOne(g gitAt, head, tail, paths []string) ([]ChangeFile, error) {
+	run := func(max int, mode ...string) (string, error) {
 		args := append([]string{}, head...)
 		args = append(args, "--relative", "-M", "--no-ext-diff", "--no-textconv", "--no-color")
 		args = append(args, mode...)
@@ -348,13 +398,20 @@ func fileDiff(g gitAt, head, tail, paths []string) ([]ChangeFile, error) {
 			args = append(args, "--")
 			args = append(args, paths...)
 		}
-		return g.git(args...)
+		return g.capped(max, args...)
 	}
-	ns, err := run("--name-status", "-z")
+	tooMany := refused(http.StatusRequestEntityTooLarge, "this card changed too many files to list")
+	ns, err := run(listMax, "--name-status", "-z")
+	if errors.Is(err, gitsync.ErrOutputCap) {
+		return nil, tooMany
+	}
 	if err != nil {
 		return nil, err
 	}
-	num, err := run("--numstat", "-z")
+	num, err := run(listMax, "--numstat", "-z")
+	if errors.Is(err, gitsync.ErrOutputCap) {
+		return nil, tooMany
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -406,11 +463,28 @@ func fileDiff(g gitAt, head, tail, paths []string) ([]ChangeFile, error) {
 		files[n].Added, _ = strconv.Atoi(parts[0])
 		files[n].Removed, _ = strconv.Atoi(parts[1])
 	}
-	patch, err := run()
+	patch, err := run(patchMax)
+	blocks := splitPatch(patch)
+	if errors.Is(err, gitsync.ErrOutputCap) {
+		// Git was stopped partway. The last block is incomplete and the files after the complete ones
+		// have no hunks, which the cut says.
+		if len(blocks) > 0 {
+			blocks = blocks[:len(blocks)-1]
+		}
+		for i := range files {
+			switch {
+			case files[i].Status == "binary":
+			case i < len(blocks):
+				files[i].Hunks = blocks[i]
+			default:
+				files[i].HunksCut = true
+			}
+		}
+		return files, nil
+	}
 	if err != nil {
 		return nil, err
 	}
-	blocks := splitPatch(patch)
 	if len(blocks) == len(files) {
 		for i := range files {
 			if files[i].Status != "binary" {
@@ -453,13 +527,36 @@ func untracked(g gitAt, dir string, paths []string) []ChangeFile {
 		args = append(args, "--")
 		args = append(args, paths...)
 	}
-	out, err := g.git(args...)
-	if err != nil {
+	var out string
+	var err error
+	if len(paths) == 0 {
+		out, err = g.capped(listMax, args...)
+	} else {
+		head := args[:len(args)-len(paths)-1]
+		for _, chunk := range chunkPaths(paths) {
+			var o string
+			o, err = g.capped(listMax, append(append(append([]string{}, head...), "--"), chunk...)...)
+			if err != nil && !errors.Is(err, gitsync.ErrOutputCap) {
+				break
+			}
+			out += o
+		}
+	}
+	if err != nil && !errors.Is(err, gitsync.ErrOutputCap) {
 		return nil
 	}
+	toks := strings.Split(out, "\x00")
+	if errors.Is(err, gitsync.ErrOutputCap) {
+		toks = toks[:len(toks)-1] // the last one is cut mid-name
+	}
 	var files []ChangeFile
-	for _, p := range strings.Split(out, "\x00") {
+	for _, p := range toks {
 		if p == "" {
+			continue
+		}
+		if len(files) >= changesFilesMax {
+			// The list is cut at this many, so reading more files would only be thrown away.
+			files = append(files, ChangeFile{Path: p, Status: "added", HunksCut: true})
 			continue
 		}
 		files = append(files, newFile(dir, p))
