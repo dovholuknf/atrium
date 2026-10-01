@@ -106,6 +106,8 @@ type Daemon struct {
 	opts Options
 	st   *store.Store
 	ap   *api.Server
+	// prr runs pull request reviews. See prrunner.go.
+	prr *prRunner
 
 	// mergedCulling is set while the sweep is culling due workers, so a slow
 	// exit is not started twice by the next tick. See mergedcull.go.
@@ -379,6 +381,8 @@ func New(opts Options) (*Daemon, error) {
 	d.ap.Kill = d.Kill
 	d.ap.RunSource = d.RunSourceNow
 	d.ap.Recognise = d.Recognise
+	d.prr = newPRRunner(st, d.ap.PublishPR)
+	d.ap.PRRunner = d.prr
 	d.ap.RunAction = d.handleRunAction
 	d.ap.CancelPending = d.CancelPending
 	d.ap.Settling = d.Settling
@@ -690,6 +694,9 @@ func (d *Daemon) Store() *store.Store { return d.st }
 
 // Close releases the database.
 func (d *Daemon) Close() error {
+	if d.prr != nil {
+		d.prr.Stop()
+	}
 	d.stopOutput()
 	return d.closeDB()
 }

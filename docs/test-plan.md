@@ -8305,3 +8305,35 @@ build before `atrium_publish path` works, since an older room cannot say what a 
    `internal/api/prsdrawer_test.go`.
 7. `POST walker` launches once with the tags `atrium:subagent dept:review review pr pr:<org>/<repo>#<n>`, a second call
    returns the live one, and `set` and `clear` change `walker_task`.
+
+## IA. The pulls runner (r-pr-run)
+
+1. `POST /v1/prs` on a room with `gh`, `git` and `claude`: the row goes `fetching`, then `running` with `run_state`
+   `prime panel verify critics merge write`, then `ready`, and no card appears on the board. The folder moves from
+   `pr-<n>-pending` to `pr-<n>-<head7>` and the row's `run_dir` follows. Covered by `TestPRRunnerHappyRun`.
+2. The run folder holds `pr.json`, `pr.diff`, `src/`, `bundle.md`, `steps/<step>/prompt.md` and `out.json`, the
+   finding files, `walk.txt`, `review.json` and `run.log` (one `start`, `end <cost>` or `error` line per step).
+3. `review.json` records the head, the panel, cost per step and per fork, timings, and `cache.prime_write` against
+   `cache.fork_reads`. The row's `cost_usd` equals review.json's. `permission_denials` is 0, which is how a run
+   shows no fork waited on a permission.
+4. The prime keeps its session. Every fork is `--resume <prime> --fork-session --no-session-persistence --max-turns`
+   with `--tools Read,Grep,Glob`, runs in `src/`, and has `ATRIUM_PERM_GATE=off`.
+5. `gh pr view` failing leaves the row `failed` with `fetch: <first line of stderr>`. `retry` runs again. Covered by
+   `TestPRRunnerFetchFailure`.
+6. A recipe `budget_usd` the run reaches stops it before the next step with `failed` and `budget: spent ...`. `retry`
+   keeps the prime and the finished steps and raises the cap once, and a second stop stays failed. Covered by
+   `TestPRRunnerBudgetStopsAndRetryRaisesOnce`.
+7. `abort` while a fork runs: the fork is killed, the row stays `aborted` with no `failed` written over it, and
+   nothing rebuilds the folder. Covered by `TestPRRunnerAbortMidStepLeavesAborted`.
+8. A finding the renderer refuses (two fixes in one, a MED with no exposure) goes back to the merge fork once with the
+   rule quoted. A second refusal of a hard rule fails the run at `merge`. Covered by `TestPRRunnerResendRound` and
+   `TestPRRunnerFailsMergeAfterOneResend`.
+9. `Suggested fix:` appears only on a finding whose `proven` is `code` and that a verifier confirmed. Covered by
+   `TestPRRunnerProvenOnlyWhenVerified`.
+10. A PR that carries `.claude/settings.json` with hooks: no call runs in `src/`, none has a project or local setting
+    source, and `src/` is reached by `--add-dir`. No hook runs. Covered by `TestPRRunnerNeverRunsInThePRsCheckout`.
+11. A retry after merge finished replays `steps/merge/findings.json` (the list the renderer accepted, not the claude
+    receipt) and writes the same findings with no new merge call, and `review.json` lists the panel once. Covered by
+    `TestPRRunnerRetryAfterMergeKeepsTheFindings` and `TestPRRunnerReplaysTheResentListAfterARetry`.
+12. Live acceptance, by @runtime: `POST /v1/prs` with openziti/tlsuv 378 at ad5ddf4 in a throwaway room: under 10
+    minutes, under $2 in review.json, no card, the 6 med of 378's run covered, no `Suggested fix:` on `proven: no`.
