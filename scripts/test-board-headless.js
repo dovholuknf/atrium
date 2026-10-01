@@ -13817,7 +13817,7 @@ async function mHomeOrderSection(browser) {
   const cards = () => [
     mCard("a-1", { alias: "alpha", worktree: "/g/github/o/one", last_activity_at: mIso(5 * M_MIN) }),
     mCard("b-1", { alias: "bravo", worktree: "/g/github/o/two", status: "done", last_activity_at: mIso(1 * M_MIN) }),
-    mCard("c-1", { alias: "charlie", worktree: "/g/github/o/one", tags: ["origin:agent"], last_activity_at: mIso(30 * M_MIN) }),
+    mCard("c-1", { display_title: "charlie", worktree: "/g/github/o/one", tags: ["origin:agent"], last_activity_at: mIso(30 * M_MIN) }),
     mCard("d-1", { alias: "delta", worktree: "/g/github/o/two", status: "needs-input", waiting_since: mIso(10 * M_MIN), last_activity_at: mIso(10 * M_MIN) }),
   ];
   const names = p => p.$$eval("#m-list .row .name b", e => e.map(x => x.textContent));
@@ -14788,6 +14788,66 @@ async function phoneRedirectSection(browser, base) {
   if (!bad) console.log("phoneRedirect ok");
 }
 
+// ── the cards a /m home does not show, and why ───────────────────────────
+// A room the page is scoped to is said on the page and can be left. Filters that hide rows say how many, and a tap shows
+// them. Hide subagents keeps a running card that has an alias.
+async function mHiddenSection(browser) {
+  const st = mServer({});
+  st.tasks = [
+    mCard("orch-1", { alias: "orchestrator", display_title: "orchestrator", status: "running", room: "sg4-control", tags: ["atrium:hold-notices", "atrium:subagent", "orchestrators", "origin:agent"] }),
+    mCard("help-1", { display_title: "helper", status: "running", room: "sg4-control", tags: ["origin:agent"] }),
+    mCard("done-1", { display_title: "finished", status: "done", room: "sg4-control" }),
+    mCard("far-1", { alias: "far", display_title: "far", status: "running", room: "other" }),
+  ];
+  await st.open();
+  try {
+    for (const vp of M_VIEWS) {
+      const tag = "mHidden " + vp.width + ": ";
+      const names = p => p.$$eval("#m-list .row .name b", e => e.map(x => x.textContent).sort());
+      const vis = (p, sel) => p.evaluate(s => { const e = document.querySelector(s); return !!e && !e.hidden && e.getClientRects().length > 0; }, sel);
+      // (1) scoped to a room
+      let ctx = await browser.newContext({ viewport: vp, hasTouch: true, isMobile: true });
+      await ctx.addInitScript(() => { if (!sessionStorage.getItem("seeded")) { sessionStorage.setItem("seeded", "1"); localStorage.setItem("atrium.room", "other"); } });
+      let p = await ctx.newPage();
+      const errors = [];
+      p.on("pageerror", e => errors.push(String(e)));
+      await p.goto(st.url + "/m/", { waitUntil: "domcontentloaded" });
+      await p.tap("#m-seg-all");
+      await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
+      if ((await names(p)).join() !== "far") fail(tag + "a scoped page lists " + (await names(p)).join());
+      if (!(await vis(p, "#m-room-chip")) || !/room: other/.test(await p.textContent("#m-room-chip"))) fail(tag + "the scope is not said on the page");
+      await p.tap("#m-room-all");
+      await p.waitForFunction(() => document.querySelectorAll("#m-list .row").length === 4, null, { timeout: slow(8000) })
+        .catch(async () => fail(tag + "all rooms did not list every card: " + (await names(p)).join()));
+      if (await vis(p, "#m-room-chip")) fail(tag + "the room chip stayed after all rooms");
+      if (await p.evaluate(() => localStorage.getItem("atrium.room"))) fail(tag + "all rooms did not clear the stored room");
+      await ctx.close();
+      // (2) and (3) filters
+      ctx = await browser.newContext({ viewport: vp, hasTouch: true, isMobile: true });
+      await ctx.addInitScript(() => localStorage.setItem("atrium.m.homeopts", JSON.stringify({ order: "newest", group: "none", needsMe: false, hideDone: true, hideSubs: true })));
+      p = await ctx.newPage();
+      p.on("pageerror", e => errors.push(String(e)));
+      await p.goto(st.url + "/m/", { waitUntil: "domcontentloaded" });
+      await p.tap("#m-seg-all");
+      await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
+      const n = await names(p);
+      if (n.indexOf("orchestrator") < 0) fail(tag + "hide subagents hid a running card that has an alias: " + n.join());
+      if (n.indexOf("helper") >= 0 || n.indexOf("finished") >= 0) fail(tag + "the filters did not hide what they name: " + n.join());
+      if (!/^2 hidden by filters/.test(await p.textContent("#m-hidden"))) fail(tag + "the hidden line says " + await p.textContent("#m-hidden"));
+      await p.tap("#m-hidden");
+      await p.waitForFunction(() => document.querySelectorAll("#m-list .row").length === 4, null, { timeout: slow(5000) })
+        .catch(async () => fail(tag + "the tap did not show the hidden rows: " + (await names(p)).join()));
+      await p.tap("#m-hidden");
+      await p.waitForFunction(() => document.querySelectorAll("#m-list .row").length === 2, null, { timeout: slow(5000) })
+        .catch(() => fail(tag + "the second tap did not hide them again"));
+      if (await mNoSideways(p)) fail(tag + "the home scrolls sideways");
+      if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+      await ctx.close();
+    }
+  } finally { await st.close(); }
+  if (!bad) console.log("mHidden ok");
+}
+
 async function main() {
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = "http://127.0.0.1:" + server.address().port;
@@ -14826,6 +14886,7 @@ async function main() {
       bootClean: bootCleanSection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mRecapSheet: mRecapSheetSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, phoneRedirect: phoneRedirectSection,
+      mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, mHidden: mHiddenSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
       gearTermList: gearTermListSection, growlLinks: growlLinksSection, growlChoiceOnce: growlChoiceOnceSection,
       mOutputAt: mOutputAtSection, mStickBottom: mStickBottomSection, mSendFree: mSendFreeSection, mCardUpload: mCardUploadSection, mCompact: mCompactSection, mPinch: mPinchSection, mPrompts: mPromptsSection,
       cardUrlWinName: cardUrlWinNameSection,
@@ -16807,6 +16868,7 @@ async function main() {
     await mMarkdownSection(browser);
     await mHostileSection(browser);
     await mPicturesSection(browser);
+    await mHiddenSection(browser);
     await soundPhoneSection(browser, base);
     await phoneBellSection(browser, base);
     await mBellSection(browser);
@@ -16912,7 +16974,11 @@ function mServer(state) {
     const u = new URL(req.url, "http://x");
     const p = u.pathname;
     const json = (code, o) => { res.writeHead(code, { "Content-Type": "application/json" }); res.end(JSON.stringify(o)); };
-    if (p === "/v1/tasks") return json(200, { tasks: state.tasks });
+    if (p === "/v1/tasks") {
+      // A page scoped to a room asks with that room in a header, and the hub answers with that room's cards.
+      const rm = req.headers["x-atrium-room"];
+      return json(200, { tasks: rm ? state.tasks.filter(t => !t.room || t.room === rm) : state.tasks });
+    }
     if (p === "/v1/permissions") return json(200, { permissions: state.perms });
     if (p === "/v1/settings") return json(200, { board_skins: ["default", "daylight"], board_skin: state.skin || "default" });
     if (p === "/_hub/rooms") return json(404, { error: "not a hub" });

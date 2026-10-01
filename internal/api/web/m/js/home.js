@@ -137,11 +137,17 @@
   function isFinished(t) { return t.status === "done" || t.status === "dead"; }
 
   // The filters that apply to a row. Needs-me only is how the needs list is already made, so it changes the all list.
+  // Hide subagents never hides a running card that has an alias: somebody named it, so it is not an anonymous helper.
+  function isSub(t) { return isDoer(t) && !(t.status === "running" && t.alias); }
+
+  // Whether the filters keep a row. `revealed` is the tap on "hidden by filters", which shows what they hide until the
+  // filters change.
+  let revealed = false;
   function keepRow(r, forAll) {
     const t = r.card;
     if (forAll && opts.needsMe && !r.reasons.length) return false;
     if (opts.hideDone && isFinished(t)) return false;
-    if (opts.hideSubs && isDoer(t)) return false;
+    if (opts.hideSubs && isSub(t)) return false;
     return true;
   }
 
@@ -269,10 +275,14 @@
     const loaded = net.loaded();
     els.skel.hidden = loaded;
     const entries = [];
+    let hidden = 0;
     if (loaded) {
       const forAll = mode === "all";
       // The needs list is a queue of answers owed, oldest wait first, so the order control leaves it alone.
-      const kept = (forAll ? allList(cards, perms, now) : needs).filter(r => keepRow(r, forAll));
+      const listed = forAll ? allList(cards, perms, now) : needs;
+      const passing = listed.filter(r => keepRow(r, forAll));
+      hidden = listed.length - passing.length;
+      const kept = revealed ? listed : passing;
       const rows = forAll ? sortRows(kept) : kept;
       sections(rows, forAll).forEach(s => {
         if (s.label) {
@@ -290,7 +300,8 @@
     // The designed empty states.
     const none = loaded && entries.length === 0;
     els.empty.hidden = !(none && mode === "needs");
-    els.none.hidden = !(none && mode === "all");
+    els.none.hidden = !(none && mode === "all" && all === 0);
+    paintChips(hidden);
     if (none && mode === "needs") {
       els.emptyAll.hidden = all === 0;
       els.emptyAll.textContent = all === 1 ? "1 session is working or resting" : all + " sessions are working or resting";
@@ -311,7 +322,19 @@
     });
   }
 
+  // The two things that can make the list look short: the room this page is scoped to, and the filters.
+  function paintChips(hidden) {
+    const room = window.mNet.room();
+    els.room.hidden = !room;
+    if (room) els.roomName.textContent = "room: " + room;
+    els.hidden.hidden = !hidden;
+    if (hidden) {
+      els.hidden.textContent = revealed ? "showing " + hidden + " hidden by filters. hide them again" : hidden + " hidden by filters. show";
+    }
+  }
+
   function setOpt(k, v) {
+    revealed = false;
     opts[k] = v;
     saveOpts();
     // A different order or grouping is a different arrangement, not a move, so rows are not animated across it.
@@ -341,6 +364,11 @@
     els.empty = q("m-empty");
     els.emptyAll = q("m-empty-all");
     els.none = q("m-none");
+    els.room = q("m-room-chip");
+    els.roomName = q("m-room-name");
+    els.hidden = q("m-hidden");
+    q("m-room-all").addEventListener("click", () => window.mNet.clearRoom());
+    els.hidden.addEventListener("click", () => { revealed = !revealed; render(); });
     els.opts = q("m-opts");
     els.optsBtn = q("m-opts-btn");
     els.optsBtn.addEventListener("click", () => { els.opts.hidden = !els.opts.hidden; paintOpts(); });
