@@ -49,3 +49,35 @@ be hub-ok and room-ok as for test tooling. Board checks are @ui's: I read the ca
 
 Quality: after the Sonnet switch, the cleanup is careful and complete: every removed call is accounted for. The miss
 is the second-order one. The guard was tested where it is raised and not where it is read.
+
+## Re-read d33bd3b5..466cf478 (merge of claude/main 566ea29c, fix 466cf478): OK hub and room
+
+The merge is clean: `range-diff` shows 1c31d0ea `=`. The fix commit is unsigned (sg3 has no key), noted.
+
+- **Medium closed.** `listUnits()` now exits 1 with the harness's stderr when the JSON line is there and the exit is
+  not zero. Proven with proof-466cf478.ps1 (beside land-review.ps1) in a scratch worktree at 466cf478: a clean tip
+  lists with exit 0, a bare `pasteStartSection` after the liveHome unit makes `sharded --list --local` exit 1 with
+  "sections no unit owns: pasteStartSection".
+- **Nit 1 closed.** The regex is `^\s*await \w+Section\(`. The same bare call inside an `if` block at 8 spaces also
+  fails `--list` (proven, same script). It now reads the whole file, not only main(), so a section awaited inside a
+  helper would also count as bare. None does today: the clean tip lists clean.
+- **Nit 2 closed** by the merge.
+
+### LOW (new, proven): check-suite-units.js fails everywhere except on the suite room
+
+`check-suite-units.js` runs `test-board-sharded.js --list` without `--local`. Since 2dd365ba `--list` dispatches
+to sg3 (`dispatchRemote`, test-board-sharded.js:187), and `BOARD_HEADLESS_FILE` does not travel there, so sg3 lists
+the real harness, exits 0, and the check reports "a bare section in main() did not fail --list" (exit 1). From my
+worktree at 466cf478 (remotes claudevm, m1mini, origin, sg3): as shipped, exit 1. With `ATRIUM_SUITE_LOCAL=1`,
+"check-suite-units ok", exit 0. On sg3 itself it passes, which is why @ui saw ok. It fails safe (never a false pass)
+and nothing calls it yet, so it does not hold. Fix: pass `--local` in `list()`. The probe file is removed either way.
+
+### NIT
+
+- With the bare call planted, `--list` also prints "FAIL: the headless run threw: Cannot read properties of null
+  (reading 'newContext')" before the guard's line. It reads like a crash. The exit and the guard message are right.
+
+Verdict: OK hub and room d33bd3b5..466cf478. Test tooling, nothing served. I ran the list paths only, not the suite.
+
+Quality: after the Sonnet switch, the fold is complete and came with its own proof. The miss is the same shape as
+round 1: the proof was run only on the machine where the dispatch stays local.
