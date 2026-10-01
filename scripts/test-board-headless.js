@@ -14164,7 +14164,7 @@ async function mReplyPage(browser, st, vp, id) {
   await ctx.route(url => !/^http:\/\/127\.0\.0\.1[:/]/.test(url.href), r => { remote.push(r.request().url()); return r.abort(); });
   const p = await ctx.newPage();
   const errors = [];
-  p.on("pageerror", e => errors.push(String(e)));
+  p.on("pageerror", e => errors.push(String(e) + (process.env.BOOT_STACK ? " " + e.stack : "")));
   await p.goto(st.url + "/m/", { waitUntil: "domcontentloaded" });
   await p.waitForSelector("#m-seg-all", { timeout: slow(10000) });
   await p.tap("#m-seg-all");
@@ -14587,6 +14587,126 @@ async function mBellSection(browser) {
   if (!bad) console.log("mBell ok");
 }
 
+// ── the file viewer on /m ────────────────────────────────────────────────
+async function mViewerSection(browser) {
+  const st = mServer({});
+  const c = mCard("vw-1", { alias: "viewer", display_title: "viewer", worktree: "/w/card", status: "needs-input", waiting_since: mIso(2 * M_MIN), seen: { turn_ended_at: mIso(20 * M_MIN) } });
+  st.tasks = [c];
+  const big = Buffer.from("line of text that repeats\n".repeat(60000));
+  st.files = {
+    "/w/card/notes/plan.md": Buffer.from("# The plan\n\n## Steps\n\n- one\n- see [other](/w/card/a.txt)\n\n<script>window.__pwn = 1</script>\n"),
+    "/w/card/a.txt": Buffer.from("plain text\n  indented <b>not bold</b>\n"),
+    "/w/card/data.json": Buffer.from('{"a":1,"b":[1,2]}'),
+    "notes/shot.png": M_PNG,
+    "/w/card/big.log": big,
+    "/w/card/pack.zip": Buffer.concat([Buffer.from([80, 75, 3, 4, 0, 0]), Buffer.alloc(3000, 7)]),
+    "/w/card/bin.log": Buffer.concat([Buffer.from("text then "), Buffer.from([0, 1, 2]), Buffer.from(" binary")]),
+    "/w/card/code.html": Buffer.from("<script>window.__pwn = 2</script><p>hi</p>"),
+  };
+  st.missing = ["notes/missing.md"];
+  const filler = Array.from({ length: 40 }, (_, i) => "Filler paragraph " + i + " so that the thread scrolls.").join("\n\n");
+  const text = filler + "\n\nFiles: /w/card/notes/plan.md and /w/card/a.txt and /w/card/data.json and [a shot](notes/shot.png) and /w/card/big.log and " +
+    "/w/card/pack.zip and /w/card/bin.log and /w/card/code.html and [gone](notes/gone.md) and [missing](notes/missing.md).";
+  st.replies["vw-1"] = { source: "transcript", replies: [{ at: mIso(10 * M_MIN), text }] };
+  await st.open();
+  try {
+    for (const vp of M_VIEWS) {
+      const tag = "mViewer " + vp.width + ": ";
+      const { ctx, p, errors } = await mReplyPage(browser, st, vp, "vw-1");
+      await p.waitForSelector("#m-replies .md-file", { timeout: slow(8000) });
+      const file = name => '#m-replies .md-file[data-path$="' + name + '"]';
+      const viewer = () => p.evaluate(() => { const v = document.getElementById("m-viewer"); return { open: !v.hidden, title: document.getElementById("m-viewer-title").textContent,
+        text: document.getElementById("m-viewer-body").textContent, state: history.state && history.state.mview || "" }; });
+      const openFile = async sel => { await p.evaluate(s => document.querySelector(s).scrollIntoView({ block: "center" }), sel); await p.tap(sel); await p.waitForFunction(() => !document.getElementById("m-viewer").hidden, null, { timeout: slow(5000) }); };
+      const settle = () => p.waitForFunction(() => !/^loading$/.test(document.getElementById("m-viewer-body").textContent), null, { timeout: slow(8000) });
+      const back = async () => { await p.goBack(); await p.waitForFunction(() => document.getElementById("m-viewer").hidden, null, { timeout: slow(5000) }); };
+      // markdown, through the safe renderer, and Back restores the thread's scroll
+      await p.evaluate(() => { const sc = document.getElementById("m-card-scroll"); sc.dispatchEvent(new Event("wheel")); sc.scrollTop = 300; });
+      await p.waitForTimeout(150);
+      const before = await p.evaluate(() => document.getElementById("m-card-scroll").scrollTop);
+      await p.evaluate(s => document.querySelector(s).click(), file("plan.md"));
+      await settle();
+      let v = await viewer();
+      if (!v.open || v.title !== "plan.md" || v.state !== "/w/card/notes/plan.md") fail(tag + "the markdown file did not open as an entry: " + JSON.stringify(v));
+      if (!(await p.$("#m-viewer-body .md h3"))) fail(tag + "markdown was not rendered: " + await p.evaluate(() => document.getElementById("m-viewer-body").innerHTML.slice(0, 300)));
+      if ((await p.evaluate(() => window.__pwn)) !== undefined || await p.$("#m-viewer-body script")) fail(tag + "script in a file ran");
+      if (!/<script>window.__pwn = 1<\/script>/.test(v.text)) fail(tag + "script in markdown is not shown as text");
+      // a file named in a file opens in turn, and Back steps through them
+      await p.evaluate(() => document.querySelector("#m-viewer-body .md-file").click());
+      await p.waitForFunction(() => document.getElementById("m-viewer-title").textContent === "a.txt", null, { timeout: slow(5000) }).catch(() => fail(tag + "a file named in a file did not open"));
+      await settle();
+      if (!/indented <b>not bold<\/b>/.test((await viewer()).text)) fail(tag + "text is not shown as text");
+      await p.goBack();
+      await p.waitForFunction(() => document.getElementById("m-viewer-title").textContent === "plan.md", null, { timeout: slow(5000) }).catch(() => fail(tag + "Back did not return to the file before"));
+      await back();
+      const after = await p.evaluate(() => document.getElementById("m-card-scroll").scrollTop);
+      if (Math.abs(after - before) > 2) fail(tag + "Back did not restore the thread's scroll: " + before + " then " + after);
+      // json, pretty
+      await p.evaluate(s => document.querySelector(s).click(), file("data.json"));
+      await settle();
+      if (!/\{\n  "a": 1/.test((await viewer()).text)) fail(tag + "json is not pretty printed");
+      // text size follows the thread's variable
+      await p.evaluate(() => document.getElementById("m-card").style.setProperty("--m-fs", "20px"));
+      const fs = await p.evaluate(() => parseFloat(getComputedStyle(document.querySelector("#m-viewer-body pre")).fontSize));
+      if (Math.abs(fs - 20) > 1) fail(tag + "the text size does not follow --m-fs: " + fs);
+      if (await mNoSideways(p)) fail(tag + "the viewer scrolls the page sideways");
+      await back();
+      // an image
+      await p.evaluate(s => document.querySelector(s).click(), file("notes/shot.png"));
+      await p.waitForSelector("#m-viewer-body img.v-img", { timeout: slow(5000) }).catch(() => fail(tag + "the image did not show"));
+      if (!(await p.evaluate(() => document.querySelector("#m-viewer-body img.v-img").naturalWidth > 0))) fail(tag + "the image is broken");
+      await back();
+      // a long log stops at the cap and offers the rest
+      await p.evaluate(s => document.querySelector(s).click(), file("big.log"));
+      await settle();
+      v = await viewer();
+      if (!/showing the first 1(\.0)? MB of 1\.5 MB/.test(v.text) || !/download the rest/.test(v.text)) fail(tag + "the cap line says: " + v.text.slice(-80));
+      if (v.text.length > 1048576 + 200) fail(tag + "more than the cap was shown: " + v.text.length);
+      const ranged = (st.fileReqs || []).some(r => r.path.endsWith("big.log") && /^bytes=0-1048575$/.test(r.range));
+      if (!ranged) fail(tag + "the long file was not read with a range");
+      await back();
+      // an unknown type is asked about and not downloaded
+      st.fileReqs = [];
+      await p.evaluate(s => document.querySelector(s).click(), file("pack.zip"));
+      await settle();
+      v = await viewer();
+      if (!/Can't preview pack\.zip \(2\.9 KB\)\. Download\?/.test(v.text)) fail(tag + "the question says: " + v.text);
+      await p.waitForTimeout(200);
+      if (st.fileReqs.some(r => r.method === "GET")) fail(tag + "the file was read before the question was answered");
+      const dl = p.waitForEvent("download", { timeout: slow(5000) });
+      await p.tap("#m-viewer-body .v-btn");
+      const d = await dl.catch(() => null);
+      if (!d || d.suggestedFilename() !== "pack.zip") fail(tag + "yes did not download the file");
+      await back();
+      // a binary named as text is asked about too
+      await p.evaluate(s => document.querySelector(s).click(), file("bin.log"));
+      await settle();
+      if (!/Can't preview bin\.log/.test((await viewer()).text)) fail(tag + "a binary named .log was shown as text");
+      await back();
+      // html is shown as text, never run
+      await p.evaluate(s => document.querySelector(s).click(), file("code.html"));
+      await settle();
+      if ((await p.evaluate(() => window.__pwn)) !== undefined || !/<script>window.__pwn = 2<\/script>/.test((await viewer()).text)) fail(tag + "html was not shown as text");
+      await back();
+      // the two refusals
+      await p.evaluate(() => [...document.querySelectorAll("#m-replies .md-file")].find(b => /gone/.test(b.textContent)).click());
+      await settle();
+      if (!/not in this card's folder/.test((await viewer()).text)) fail(tag + "outside the card says " + (await viewer()).text);
+      await back();
+      await p.evaluate(() => [...document.querySelectorAll("#m-replies .md-file")].find(b => /missing/.test(b.textContent)).click());
+      await settle();
+      if (!/no such file/.test((await viewer()).text)) fail(tag + "a missing file says " + (await viewer()).text);
+      // the chevron leaves the same way
+      await p.tap("#m-viewer-back");
+      await p.waitForFunction(() => document.getElementById("m-viewer").hidden, null, { timeout: slow(5000) }).catch(() => fail(tag + "the chevron did not close the viewer"));
+      if (!(await p.evaluate(() => !document.getElementById("m-card").hidden))) fail(tag + "closing the viewer closed the card");
+      if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+      await ctx.close();
+    }
+  } finally { await st.close(); }
+  if (!bad) console.log("mViewer ok");
+}
+
 async function main() {
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = "http://127.0.0.1:" + server.address().port;
@@ -14623,7 +14743,7 @@ async function main() {
       pasteStart: pasteStartSection, pasteDone: pasteDoneSection, pasteOldRoom: pasteOldRoomSection, pasteClose: pasteCloseSection,
       growlQuestionShots: growlQuestionShotsSection, growlQuestionBody: growlQuestionBodySection, growlReplyGrow: growlReplyGrowSection, growlChoices: growlChoicesSection, growlStable: growlStableSection, mGrowlQuestion: mGrowlQuestionSection,
       bootClean: bootCleanSection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mRecapSheet: mRecapSheetSection,
-      mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
+      mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, mViewer: mViewerSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
       gearTermList: gearTermListSection, growlLinks: growlLinksSection, growlChoiceOnce: growlChoiceOnceSection,
       mOutputAt: mOutputAtSection, mStickBottom: mStickBottomSection, mSendFree: mSendFreeSection, mCardUpload: mCardUploadSection, mCompact: mCompactSection, mPinch: mPinchSection, mPrompts: mPromptsSection,
       cardUrlWinName: cardUrlWinNameSection };
@@ -16604,6 +16724,7 @@ async function main() {
     await mMarkdownSection(browser);
     await mHostileSection(browser);
     await mPicturesSection(browser);
+    await mViewerSection(browser);
     await soundPhoneSection(browser, base);
     await phoneBellSection(browser, base);
     await mBellSection(browser);
@@ -16719,12 +16840,22 @@ function mServer(state) {
       return;
     }
     const fm = p.match(/^\/v1\/tasks\/([^/]+)\/files$/);
-    if (fm && req.method === "GET") {
+    if (fm && (req.method === "GET" || req.method === "HEAD")) {
       const want = u.searchParams.get("path");
       (state.fileHits = state.fileHits || []).push(want);
+      (state.fileReqs = state.fileReqs || []).push({ method: req.method, path: want, range: req.headers.range || "" });
+      if ((state.missing || []).indexOf(want) >= 0) { res.writeHead(404, { "Content-Type": "application/json" }); return res.end(JSON.stringify({ error: "no such file" })); }
       const body = (state.files || {})[want];
-      if (!body) return json(403, { error: "that path is outside the card" });
-      res.writeHead(200, { "Content-Type": "application/octet-stream", "X-Content-Type-Options": "nosniff" });
+      if (!body) { res.writeHead(403, { "Content-Type": "application/json" }); return res.end(req.method === "HEAD" ? "" : JSON.stringify({ error: "that path is outside the card" })); }
+      const head = { "Content-Type": "application/octet-stream", "X-Content-Type-Options": "nosniff" };
+      if (req.method === "HEAD") { res.writeHead(200, Object.assign(head, { "Content-Length": body.length })); return res.end(); }
+      const rg = /^bytes=(\d+)-(\d+)$/.exec(req.headers.range || "");
+      if (rg && Number(rg[1]) < body.length) {
+        const to = Math.min(Number(rg[2]), body.length - 1), part = body.slice(Number(rg[1]), to + 1);
+        res.writeHead(206, Object.assign(head, { "Content-Range": "bytes " + rg[1] + "-" + to + "/" + body.length, "Content-Length": part.length }));
+        return res.end(part);
+      }
+      res.writeHead(200, head);
       return res.end(body);
     }
     const m = p.match(/^\/v1\/tasks\/([^/]+)\/replies$/);
