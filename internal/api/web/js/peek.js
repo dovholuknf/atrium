@@ -105,8 +105,10 @@ function peekFoot(t) {
   if (!t) return "";
   const parts = [];
   if (t.runner) parts.push(t.runner);
-  if (typeof t.idle_seconds === "number" && t.idle_seconds >= 0) {
-    parts.push(t.idle_seconds < 5 ? "active now" : "idle " + ago(t.idle_seconds));
+  // Only for a card that says when it last did anything, by either field. The same number the sorts place it by.
+  if (isFinite(cardIdleSeconds(t))) {
+    const idle = cardIdleAge(t);
+    parts.push(idle < 5 ? "active now" : "idle " + ago(idle));
   }
   const leaf = String(t.worktree || "").split(/[\\/]/).filter(Boolean).pop() || "";
   // The cache's words live here, and the rows carry only its dot. See js/keepalive.js.

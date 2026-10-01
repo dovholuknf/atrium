@@ -1542,7 +1542,7 @@ function termOrder(tasks) {
       if (act) return act;
       const w = (isWaiting(b) ? 1 : 0) - (isWaiting(a) ? 1 : 0);
       if (w) return w;
-      return (a.idle_seconds || 0) - (b.idle_seconds || 0) || cardTieBreak(a, b);
+      return cardActivityCmp(a, b) || cardTieBreak(a, b);
     });
   } else {
     // Sort by the name the row leads with, which is `display_title` and then
