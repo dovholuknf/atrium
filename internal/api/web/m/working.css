@@ -42,3 +42,16 @@
 
 .reply.mine { align-self: flex-end; max-width: 92%; border-radius: 18px 18px 6px 18px; background: var(--mine-bg, var(--chip)); }
 .reply .own { color: var(--head); font-size: 15.5px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.reply.mine.pending { opacity: .7; }
+.reply.mine.failed { outline: 1px solid var(--warn); }
+.reply .tag { font-weight: 600; color: var(--label); }
+.reply.mine.failed .tag { color: var(--warn); }
+
+.jump-wrap { flex: none; position: relative; height: 0; z-index: 4; }
+.jump {
+  position: absolute; right: max(16px, env(safe-area-inset-right, 0px)); bottom: 10px; min-height: 40px; padding: 0 16px; border-radius: 99px;
+  border: 1px solid var(--working-line, var(--teal)); background: var(--card-0); color: var(--working-fg, var(--teal));
+  font: inherit; font-size: 14px; font-weight: 650; box-shadow: 0 6px 18px rgba(var(--shadow-rgb), .45); cursor: pointer;
+}
+.jump[hidden] { display: none; }
