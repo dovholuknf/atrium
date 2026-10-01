@@ -18,6 +18,17 @@ right now it's janky and clunky and not working and not token efficient nor fast
 - Duplicated text in the final summary (the Fit block printed twice).
 - Token cost: a director relaying, a card announcing, four full sessions each reading the whole diff, a summary pass.
 
+- After the restart, the walk opened at 12:39 with "Mercurius is not available: the session is gone", so the second
+  opinion was lost. The review card had ended its turn at 12:19 waiting on that round, and nothing woke it.
+- The review card launched four more helpers (verify a and b, coverage critic, consumer impact) at 12:12. All
+  stayed alive after reporting, and clint asked a second time why the other pr-tlsuv-378 cards were still open.
+- clint on the walk's first item: "and not ordered? this sucks". Item 1 of 17 was a LOW on engine.c line 227. The
+  verify pass had downgraded all six mediums, so 17 items sat in one flat severity band sorted by file name and line,
+  with nothing ranking them by impact. That order does not follow how the diff reads, nor how much an item matters.
+  The design must say what order a walk takes, and test it with clint on 378.
+- The item header carries noise clint has not asked for: "Item 1 of 17, file findings/01-low-engine.c-L227.txt".
+  It also says "Suggested fix:" for a problem no test proved, which walk rule 7 forbids.
+
 ## What clint asked for
 
 - A dedicated place on the board for pull requests: a "pulls" (or "scm") view, not cards mixed into the agent list.
