@@ -8015,5 +8015,6 @@ the hub routing and the control tool.
 6. As the orchestrator, call `atrium_model` with a card and a model. A worker session does not list the tool, and the
    room's audit log shows a `ctl-model` line.
 7. Switch a card, then park and resume it. It comes back on the new model.
-8. **Not verified by tests:** whether Claude Code accepts `/model` while a turn is running. Try it on a busy card and
+8. Type `/model claude-sonnet-5-5` by hand in the card's terminal. The board shows the new model and the timeline has a `typed by hand` entry. Restart the room: the card resumes on that model (`--model` is in its launched command). A bare `/model` that opens the picker records nothing.
+9. **Not verified by tests:** whether Claude Code accepts `/model` while a turn is running. Try it on a busy card and
    note whether the switch lands now or after the turn.

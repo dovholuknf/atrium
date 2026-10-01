@@ -153,6 +153,40 @@ func (d *Daemon) handleModel(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(out)
 }
 
+// noteTypedModel records a `/model <id>` the operator sent from the terminal.
+//
+// A SWITCH MADE BY HAND IS THE SAME SWITCH. Left unrecorded, the next resume,
+// including the room restart's, launches on whatever the card was started on and
+// the model goes back without anybody asking. Only a line that is exactly
+// `/model` and one alias or id is taken. A bare `/model` opens Claude's picker and
+// names nothing, so it records nothing.
+func (d *Daemon) noteTypedModel(taskID, line string) {
+	f := strings.Fields(line)
+	if len(f) != 2 || !strings.EqualFold(f[0], "/model") {
+		return
+	}
+	model, ok := validModel(f[1])
+	if !ok {
+		return
+	}
+	t, err := d.st.Get(taskID)
+	if err != nil || !strings.EqualFold(t.Runner, "claude") || t.Model == model {
+		return
+	}
+	if err := d.st.SetModel(taskID, model); err != nil {
+		log.Printf("[atrium] %s was switched to %s by hand but the card could not record it: %v", taskID, model, err)
+		return
+	}
+	// A typed switch supersedes one still waiting for the line.
+	d.modelWaits.Delete(taskID)
+	if err := d.st.AppendEvent(taskID, store.EventNotified, map[string]any{
+		"by": modelSwitchBy, "asked_by": "the operator", "from": t.Model, "to": model, "state": "typed by hand",
+	}); err != nil {
+		log.Printf("[atrium] switched %s to %s by hand but could not record it: %v", taskID, model, err)
+	}
+	d.publishTask(taskID)
+}
+
 // typeModel types `/model <model>` and Enter through the say gate. False and no
 // error when the gate was shut and nothing was written.
 func (d *Daemon) typeModel(taskID, model string, waitTurn bool) (bool, error) {
