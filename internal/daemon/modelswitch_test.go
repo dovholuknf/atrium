@@ -284,6 +284,51 @@ func TestAModelSwitchFollowsTheMidTurnRule(t *testing.T) {
 	d.modelWaits.Delete(target.ID)
 }
 
+// A `/model <id>` TYPED BY HAND is a switch the card remembers, so the room
+// restart's resume does not put it back. This is what happened on @fabric.
+func TestAHandTypedModelSwitchIsRecorded(t *testing.T) {
+	d := testDaemon(t)
+	target, r, _ := peerPair(t, d)
+
+	r.noteOperatorTyped([]byte("/model claude-sonnet-5-5\r"))
+	line := r.takeSubmitted()
+	if line != "/model claude-sonnet-5-5" {
+		t.Fatalf("the submitted line is %q", line)
+	}
+	if again := r.takeSubmitted(); again != "" {
+		t.Fatalf("a line was handed over twice: %q", again)
+	}
+	d.noteTypedModel(target.ID, line)
+	if got, _ := d.st.Get(target.ID); got.Model != "claude-sonnet-5-5" {
+		t.Fatalf("the card's model is %q after a hand typed switch", got.Model)
+	}
+	evs := modelEvents(t, d, target.ID)
+	if len(evs) != 1 || evs[0]["state"] != "typed by hand" || evs[0]["to"] != "claude-sonnet-5-5" {
+		t.Fatalf("events = %v", evs)
+	}
+}
+
+// Only an exact `/model <one value>` counts. The picker, other commands, a bad
+// value and a line atrium could not follow record nothing.
+func TestOnlyAnExactHandTypedModelLineIsRecorded(t *testing.T) {
+	d := testDaemon(t)
+	target, r, _ := peerPair(t, d)
+
+	for _, line := range []string{"/model", "/model opus extra", "/modelx opus", "hello /model opus",
+		"/model gpt-5", "/clear"} {
+		d.noteTypedModel(target.ID, line)
+	}
+	if got, _ := d.st.Get(target.ID); got.Model != "" {
+		t.Fatalf("a line that is not a switch recorded %q", got.Model)
+	}
+	// A line edited in a way atrium cannot follow is not trusted.
+	r.noteOperatorTyped([]byte("/model opus\x1b[D"))
+	r.noteOperatorTyped([]byte("\r"))
+	if got := r.takeSubmitted(); got != "" {
+		t.Fatalf("an unfollowed line was handed over: %q", got)
+	}
+}
+
 // THE ROUTE IS ON THE BOARD'S HANDLER, and a card by its handle reaches it too.
 func TestTheModelRouteIsServedAndTakesAHandle(t *testing.T) {
 	d := testDaemon(t)

@@ -1023,6 +1023,16 @@ func (r *runner) noteOperatorTyped(p []byte) bool {
 	return true
 }
 
+// takeSubmitted is the line the operator last sent with Enter, once. Empty when
+// there is none, or when atrium could not follow the line exactly.
+func (r *runner) takeSubmitted() string {
+	r.typeMu.Lock()
+	defer r.typeMu.Unlock()
+	s := r.line.submitted
+	r.line.submitted = ""
+	return s
+}
+
 // peerQuiet is how long after the operator's last keystroke a terminal is
 // still considered theirs.
 //
