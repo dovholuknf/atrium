@@ -218,12 +218,18 @@ func (p *Proxy) readyReport(ctx context.Context, fresh bool) deployready.Report 
 	}
 
 	st.mu.Lock()
-	defer st.mu.Unlock()
 	st.inflight = false
 	st.last, st.haveRep = rep, true
 	st.lastAt = time.Now()
 	if timedOut {
 		st.lastAt = time.Time{} // the next ask reads again at once rather than reusing a give-up
+	}
+	// Whoever ran the pass tells the watching boards, so a pill that sat on unknown does not wait for the minute tick.
+	changed := st.sig != rep.Signature()
+	st.sig = rep.Signature()
+	st.mu.Unlock()
+	if changed {
+		p.deployReadyChanged()
 	}
 	return rep
 }
@@ -287,14 +293,7 @@ func (p *Proxy) deployReadyTick(ctx context.Context) {
 	if st == nil || p.feeds.watchers() == 0 {
 		return
 	}
-	rep := p.readyReport(ctx, true)
-	st.mu.Lock()
-	changed := st.sig != rep.Signature()
-	st.sig = rep.Signature()
-	st.mu.Unlock()
-	if changed {
-		p.deployReadyChanged()
-	}
+	p.readyReport(ctx, true) // announces the answer itself when it moved
 }
 
 func (p *Proxy) deployReadyChanged() {
