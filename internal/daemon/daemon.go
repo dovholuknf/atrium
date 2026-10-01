@@ -574,7 +574,7 @@ func New(opts Options) (*Daemon, error) {
 		return err
 	}
 	d.ap.UsageOf = d.usageFor
-	d.ap.Replies = func(id string, n int) (any, error) { return d.repliesFor(id, n) }
+	d.ap.Replies = func(id string, n int, before time.Time) (any, error) { return d.repliesPage(id, n, before) }
 	// Starting a fixture is spawning a process, which the daemon owns.
 	api.StartFixture = d.StartFixtureNow
 	// Which turns are unread, carried across the restart. See seen.go.
