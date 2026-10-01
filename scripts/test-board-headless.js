@@ -15380,7 +15380,7 @@ async function cardUrlWayOutSection(browser, base) {
         if (v.phone) { await p.tap("#t-bar-toggle"); await p.waitForFunction(() => !document.body.classList.contains("tray-open"), null, { timeout: slow(5000) }); }
         // all cards leaves for the board
         await p.tap(all).catch(() => p.click(all));
-        await p.waitForFunction(() => location.pathname === "/", null, { timeout: slow(8000) })
+        await p.waitForFunction(() => location.pathname === "/" && !!document.body, null, { timeout: slow(8000) })
           .catch(() => fail(tag + "all cards did not go to the board: " + p.url()));
         if (await p.evaluate(() => document.body.classList.contains("solo"))) fail(tag + "the board still wears the card window");
         // Back from the board returns to the card
@@ -20185,72 +20185,10 @@ async function main() {
     await unit("pulls", () => pullsSection(browser, base));
     await unit("pullsAbsent", () => pullsAbsentSection(browser, base));
     await unit("oneTooltip", () => oneTooltipSection(browser, base));
-    await pasteStartSection(browser, base);
-    await pasteDoneSection(browser, base);
-    await pasteOldRoomSection(browser, base);
-    await pasteCloseSection(browser, base);
-    await growlQuestionBodySection(browser, base);
-    await growlReplyGrowSection(browser, base);
-    await growlChoicesSection(browser, base);
-    await growlStableSection(browser, base);
-    await mGrowlQuestionSection(browser);
-    await bootCleanSection(browser, base);
-    await mWorkingSection(browser);
-    await mOwnMessagesSection(browser);
-    await mRecapSheetSection(browser);
-    await mHomeOrderSection(browser);
-    await cardUrlWayOutSection(browser, base);
-    await phoneBootSection(browser, base);
-    await sayEnterSection(browser);
-    await sendArrowSection(browser);
-    await mTablesSection(browser);
-    await mMarkdownSection(browser);
-    await mHostileSection(browser);
-    await mPicturesSection(browser);
-    await mHiddenSection(browser);
-    await mViewerSection(browser);
-    await mChangesSection(browser);
-    await mChangesRealSection(browser);
-    await deployReadySection(browser, base);
-    await mHomeLiveSection(browser);
-    await soundPhoneSection(browser, base);
-    await boardDocsSection(browser, base);
-    await phoneBoardCompactSection(browser, base);
-    await phoneBellSection(browser, base);
-    await mBellSection(browser);
-    await phoneRedirectSection(browser, base);
-    await gearTermListSection(browser, base);
-    await growlLinksSection(browser, base);
-    await growlChoiceOnceSection(browser, base);
-    await mOutputAtSection(browser);
-    await mStickBottomSection(browser);
-    await mSendFreeSection(browser);
-    await mCardUploadSection(browser);
-    await mCompactSection(browser);
-    await mPinchSection(browser);
-    await mTypeSteadySection(browser);
-    await mOlderSection(browser);
-    await mFollowSection(browser);
-    await mDocsSection(browser);
-    await mSwitcherSection(browser);
-    await mPullSection(browser);
-    await mPromptsSection(browser);
-    await cardUrlWinNameSection(browser, base);
-    await gearHostsSection(browser, base);
-    await joinedLiveSection(browser, base);
-    await coverPollSection(browser, base);
-    await coverStepsSection(browser, base);
-    await termBoxSection(browser, base);
-    await termDebugSection(browser, base);
-    await termSortStartedSection(browser, base);
-    await noReadyChildrenSection(browser, base);
-    await childUnderParentSection(browser, base);
-    await topNavSection(browser, base);
-    await childFoldSection(browser, base);
-    await liveHomeSection(browser, base);
-    await pullsSection(browser, base);
-    await pullsAbsentSection(browser, base);
-    await oneTooltipSection(browser, base);
+    await unit("noReadyChildren", () => noReadyChildrenSection(browser, base));
+    await unit("childUnderParent", () => childUnderParentSection(browser, base));
+    await unit("childFold", () => childFoldSection(browser, base));
+    await unit("liveHome", () => liveHomeSection(browser, base));
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e));
     if (process.env.DEBUG_HEADLESS && page) {
@@ -20279,6 +20217,16 @@ async function main() {
     const known = new Set(Object.keys(mockVars()).concat(["chromium", "exePath", "bad", "currentUnit", "stuckStep", "peekReads", "mockInit", "lastUnit"]));
     const missing = lets.filter(n => !known.has(n));
     if (missing.length) console.error("mockVars() is missing " + missing.join(", ") + ": a shard will not reset them between units.");
+    // A section called bare from main() runs in every shard, outside any unit. Every section belongs to one unit, bar these.
+    const notUnits = new Set(["u001AuditSection", "groupRemoveSection", "growlQuestionShotsSection", "linkTipSection"]);
+    const src = fs.readFileSync(__filename, "utf8");
+    const bare = (src.match(/^\s*await \w+Section\(/gm) || []).map(l => l.trim().slice(6, -1));
+    const owned = new Set((src.match(/unit\("\w+", \(\) => \w+Section/g) || []).map(l => l.replace(/^.*=> /, "")));
+    const loose = (src.match(/^async function \w+Section/gm) || []).map(l => l.split(" ")[2]).filter(n => !owned.has(n) && !notUnits.has(n));
+    if (bare.length || loose.length) {
+      console.error("sections no unit owns: " + bare.concat(loose).join(", ") + ". Register each as await unit(name, ...) in main().");
+      process.exitCode = 1;
+    }
     console.log(JSON.stringify({ units: unitOrder, pins: PIN_GROUPS }));
     return;
   }
@@ -21669,7 +21617,8 @@ async function growlStableSection(browser, base) {
         focus: document.activeElement === document.querySelector(root + " .gr-reply")
       }), root);
       if (!s.same || !s.btn) fail(tag + "the face was rebuilt by unrelated news.");
-      if (!s.hover) fail(tag + "the hovered button lost its hover.");
+      // a touch context keeps no mouse hover: Chromium drops it within a frame with the board doing nothing, so only a mouse can lose it here
+      if (!phone && !s.hover) fail(tag + "the hovered button lost its hover.");
       if (s.mut) fail(tag + "the growler's DOM changed " + s.mut + " times for news that is not about it.");
       if (s.v !== "half typ" || !s.focus) fail(tag + "a half-typed reply did not survive: " + JSON.stringify(s));
       // news that is about another growler leaves this face's node alone too
