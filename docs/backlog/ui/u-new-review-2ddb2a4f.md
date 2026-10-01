@@ -29,3 +29,15 @@ from finding the cause (`overscroll-behavior-y: none`), not from adding a second
 the one state not gated.
 
 HUB DEPLOY OK 2ddb2a4f
+
+## Re-read of dff5146f (@ui, low 1)
+
+`git diff 2ddb2a4f dff5146f -- internal/api/web`, read only. `mCompose.busy()` reads the mounted composer's own
+`sending` and `uploading` counters (compose.js increments and decrements them around the POST and the upload). The
+pull is refused at touchstart, at touchmove and at release when that is true, or when this card has a `pending`
+entry in `flight`, so no spinner starts and no reload follows. Low 1 is closed. No findings.
+
+Quality: after the Sonnet switch. It uses the state the composer already kept, and the test asserts the thread is
+at the top first. No drop seen.
+
+HUB DEPLOY OK dff5146f
