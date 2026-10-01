@@ -196,6 +196,31 @@
     send.innerHTML = '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">' +
       '<path d="M12 19V5M6 11l6-6 6 6" fill="none" stroke="currentColor" stroke-width="2.4" ' +
       'stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    // The file picker and the camera, on the phone page only. The terminal's compact bar takes pastes and drops.
+    // Two inputs, because `capture` asks for the camera and leaves the library out.
+    if (!opts.compact && !(opts.canUpload && !opts.canUpload())) {
+      const pick = (label, svg, accept, capture) => {
+        const input = el("input", "mc-input");
+        input.type = "file";
+        input.hidden = true;
+        input.accept = accept;
+        if (capture) input.setAttribute("capture", capture); else input.multiple = true;
+        const btn = el("button", "mc-attach " + (capture ? "mc-cam" : "mc-pick"));
+        btn.type = "button";
+        btn.setAttribute("aria-label", label);
+        btn.innerHTML = svg;
+        btn.addEventListener("pointerdown", e => e.preventDefault());
+        btn.addEventListener("click", () => input.click());
+        input.addEventListener("change", () => { const got = Array.from(input.files || []); input.value = ""; if (got.length) attach(got); });
+        return [btn, input];
+      };
+      const ico = d => '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="' + d + '" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+      const file = pick("attach a file or image", ico("M21 12.5l-8.5 8.5a5.5 5.5 0 0 1-8-8L13 4.5a3.7 3.7 0 0 1 5.2 5.2l-8.6 8.6a1.8 1.8 0 0 1-2.6-2.6l8-8"),
+        "image/*,application/pdf,text/*,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.md,.json,.csv,.log", "");
+      const cam = pick("take a photo", ico("M4 8h3l2-3h6l2 3h3v11H4zM12 17a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z"), "image/*", "environment");
+      row.append(file[0], cam[0], file[1], cam[1]);
+      row.classList.add("with-attach");
+    }
     row.append(ta, send);
     root.append(files, chips, note, row);
     host.replaceChildren(root);
@@ -217,7 +242,8 @@
     };
     const refresh = () => {
       // Not while a file is still going up: the message would leave without its path.
-      send.disabled = !ta.value.trim() || state.uploading > 0;
+      // The terminal's bar waits for its files. The phone page lets the message go and waits for them itself.
+      send.disabled = opts.compact ? !ta.value.trim() || state.uploading > 0 : !ta.value.trim() && !state.atts.some(a => a.status === "up");
       writeDraft(cardId, ta.value);
       grow(ta, maxLines);
     };
@@ -308,21 +334,34 @@
     const tell = (name, detail) => { try { window.dispatchEvent(new CustomEvent(name, { detail })); } catch (e) {} };
     async function submit() {
       let text = ta.value.trim();
-      if (!text) return;
+      // Files still going up leave with the message: it waits for them, with its pending row, and the box is free.
+      const held = state.atts.filter(a => a.status === "up");
+      if (!text && !held.length) return;
       const key = cardId + ":" + (++sendSeq);
       const typed = text;
+      held.forEach(a => { a.held = true; });
+      // The settled chips leave with the message and come back with its text if it fails.
+      const settled = state.atts.filter(a => a.status !== "up");
       ta.value = "";
       state.last = "";
       writeDraft(cardId, "");
-      clearAtts(state);
+      settled.forEach(a => dropAtt(state, a, true));
       state.sending++;
       root.classList.add("sending");
-      say("busy", "sending");
+      say("busy", held.length ? "sending when the upload finishes" : "sending");
       refresh();
       ta.focus({ preventScroll: true });
-      tell("m-send", { id: cardId, key, text: typed, state: "pending" });
-      let ok = false;
+      tell("m-send", { id: cardId, key, text: typed || held.map(a => a.name).join(" "), state: "pending" });
+      let ok = false, why = "";
       try {
+        if (held.length) {
+          await Promise.all(held.map(a => a.batch));
+          // A file whose chip was taken off while it went up is not part of the message.
+          const bad = held.filter(a => a.status !== "ok" && a.status !== "gone");
+          if (bad.length) { why = bad.map(a => a.name + " did not upload: " + (a.err || "failed")).join("; "); throw new Error(why); }
+          const add = held.filter(a => a.status === "ok").map(a => a.path).filter(pth => typed.indexOf(pth) < 0);
+          text = (typed + " " + add.join(" ")).trim();
+        }
         // An unknown capability is read as "cannot", so a send never guesses a paste into a runner that
         // submits on a raw newline.
         const paste = state.pasteOK == null ? await capability() : state.pasteOK;
@@ -348,14 +387,28 @@
         tell("m-send", { id: cardId, key, text, state: ok ? o.kind : "failed" });
       } catch (e) {
         say("refused", "not sent: " + (e && e.message ? e.message : e));
-        tell("m-send", { id: cardId, key, text: typed, state: "failed" });
+        tell("m-send", { id: cardId, key, text: typed || held.map(a => a.name).join(" "), state: "failed" });
       } finally {
         state.sending--;
         if (!state.sending) root.classList.remove("sending");
-        if (!ok) {
-          // Back in the box, ahead of anything typed since.
+        held.forEach(a => { a.held = false; });
+        if (ok) {
+          held.forEach(a => dropAtt(state, a));
+          settled.forEach(revoke);
+        } else {
+          // Back in the box, ahead of anything typed since, with the chips and the paths of the files that went up.
           ta.value = typed + (ta.value ? "\n" + ta.value : "");
           state.last = ta.value;
+          for (const a of settled.slice().reverse()) {
+            state.atts.push(a);
+            state.files.insertBefore(a.el, state.files.firstChild);
+            const at = a.path ? ta.value.indexOf(a.path) : -1;
+            a.broken = at < 0;
+            if (at >= 0) { a.start = at; a.end = at + a.path.length; }
+          }
+          state.files.classList.toggle("on", state.atts.length > 0);
+          const landed = held.filter(a => a.status === "ok" && state.atts.includes(a));
+          if (landed.length) landAtts(state, landed);
         }
         refresh();
       }
@@ -413,6 +466,22 @@
     state.files.classList.remove("on");
   }
 
+  // What a send takes with it: every settled chip goes, and a chip still going up stays to show its progress until its
+  // message has left. A thumbnail kept for a chip that may come back is revoked once the message is out.
+  function dropAtt(state, a, keepThumb) {
+    const i = state.atts.indexOf(a);
+    if (i >= 0) state.atts.splice(i, 1);
+    if (!keepThumb) revoke(a);
+    if (a.el) a.el.remove();
+    state.files.classList.toggle("on", state.atts.length > 0);
+  }
+
+  // Paths put in the box, each remembered by position so its chip's X can take it out again.
+  function landAtts(state, landed) {
+    let at = place(state, landed.map(a => a.path).join(" "));
+    for (const a of landed) { a.start = at; a.end = at + a.path.length; at = a.end + 1; }
+  }
+
   function chipOf(a) {
     const c = el("div", "mc-file");
     let mark;
@@ -439,7 +508,7 @@
   }
 
   function paintChip(a) {
-    const word = a.status === "up" ? "uploading" : a.status === "err" ? a.err : "";
+    const word = a.status === "up" ? "uploading" + (a.pct != null ? " " + a.pct + "%" : "") : a.status === "err" ? a.err : "";
     a.el.dataset.state = a.status;
     a.stEl.textContent = word;
     a.el.setAttribute("aria-label", a.name + (word ? ": " + word : ""));
@@ -488,17 +557,25 @@
     state.refresh();
   }
 
-  async function defaultUpload(id, list) {
+  // One request for the batch. XHR rather than fetch, because only it reports how much has gone up.
+  function defaultUpload(id, list, progress) {
     const form = new FormData();
     for (const f of list) form.append("file", f, f.name);
-    const headers = {};
     const room = guard(() => localStorage.getItem("atrium.room"));
-    if (room) headers["X-Atrium-Room"] = room;
-    const r = await fetch("/v1/tasks/" + encodeURIComponent(id) + "/files", { method: "POST", headers, body: form });
-    let body = null, raw = "";
-    try { raw = await r.text(); body = JSON.parse(raw); } catch (e) {}
-    if (!r.ok) throw new Error((body && body.error) || raw.trim() || r.statusText || "failed");
-    return body || {};
+    return new Promise((resolve, reject) => {
+      const x = new XMLHttpRequest();
+      x.open("POST", "/v1/tasks/" + encodeURIComponent(id) + "/files");
+      if (room) x.setRequestHeader("X-Atrium-Room", room);
+      if (progress && x.upload) x.upload.onprogress = e => { if (e.lengthComputable && e.total) progress(Math.min(100, Math.round(e.loaded * 100 / e.total))); };
+      x.onerror = () => reject(new Error("the upload could not reach the room"));
+      x.onload = () => {
+        let body = null;
+        try { body = JSON.parse(x.responseText); } catch (e) {}
+        if (x.status < 200 || x.status >= 300) return reject(new Error((body && body.error) || String(x.responseText || "").trim() || x.statusText || "failed"));
+        resolve(body || {});
+      };
+      x.send(form);
+    });
   }
 
   // Uploads a batch as one request and returns once every chip has settled, with the paths that went in.
@@ -519,9 +596,22 @@
     state.files.scrollLeft = state.files.scrollWidth;
     state.uploading++;
     state.refresh();
-    let res = null, failed = "";
+    // A send made while this is going up waits on `batch`.
+    let done;
+    const batch = new Promise(r => { done = r; });
+    mine.forEach(a => { a.batch = batch; });
     try {
-      res = await (state.opts.upload ? state.opts.upload(list) : defaultUpload(state.id, list));
+      return await run(state, list, mine);
+    } finally {
+      done();
+    }
+  }
+
+  async function run(state, list, mine) {
+    let res = null, failed = "";
+    const progress = pct => { for (const a of mine) { a.pct = pct; if (a.status === "up" && a.el) paintChip(a); } };
+    try {
+      res = await (state.opts.upload ? state.opts.upload(list) : defaultUpload(state.id, list, progress));
     } catch (e) {
       failed = e && e.message ? e.message : String(e || "failed");
     }
@@ -530,14 +620,15 @@
     const paths = (res && res.paths) || [];
     const landed = [];
     mine.forEach((a, i) => {
-      if (!state.atts.includes(a)) return; // its chip was removed while it was going up
+      if (!state.atts.includes(a)) { a.status = "gone"; return; } // its chip was removed while it was going up
       if (failed || !paths[i]) { a.status = "err"; a.err = failed || "no path came back"; }
       else { a.status = "ok"; a.path = String(paths[i]); landed.push(a); }
       paintChip(a);
     });
-    if (landed.length) {
-      let at = place(state, landed.map(a => a.path).join(" "));
-      for (const a of landed) { a.start = at; a.end = at + a.path.length; at = a.end + 1; }
+    // A message already waiting on these takes their paths itself.
+    const loose = landed.filter(a => !a.held);
+    if (loose.length) {
+      landAtts(state, loose);
     } else {
       state.refresh();
     }

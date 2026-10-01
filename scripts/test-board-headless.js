@@ -13127,7 +13127,8 @@ async function mOwnMessagesSection(browser) {
       const order = await p.$$eval("#m-replies .reply", els => els.map(e => e.classList.contains("mine") ? "mine:" + e.querySelector(".own").textContent : e.textContent.slice(0, 12)));
       if (order.length !== 3 || order[2] !== "mine:my own words, sent from the phone") fail(tag + "own message not last in order: " + JSON.stringify(order));
       if (!/you/.test(await p.textContent("#m-replies .reply.mine .src"))) fail(tag + "the message is not marked as the operator's");
-      // kept on the device: a reload and a reopen still show it
+      // kept on the device: a reload and a reopen still show it, once the room has answered
+      await p.waitForFunction(() => /delivered/.test(document.getElementById("m-replies").textContent), null, { timeout: slow(5000) });
       await p.goto(st.url + "/m/", { waitUntil: "domcontentloaded" });
       await p.waitForSelector("#m-seg-all", { timeout: slow(10000) });
       await p.tap("#m-seg-all");
@@ -13396,6 +13397,124 @@ async function mSendFreeSection(browser) {
   if (!bad) console.log("mSendFree ok");
 }
 
+async function mCardUploadSection(browser) {
+  const st = mServer({});
+  const c = mCard("up-1", { alias: "upl", display_title: "upl", status: "needs-input", waiting_since: mIso(M_MIN), seen: { turn_ended_at: mIso(20 * M_MIN) } });
+  st.tasks = [c];
+  st.replies["up-1"] = { source: "transcript", replies: [{ at: mIso(10 * M_MIN), text: "A reply." }] };
+  await st.open();
+  const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
+  try {
+    for (const vp of M_VIEWS) {
+      const { ctx, p, errors } = await mPage(browser, st, vp, "");
+      const tag = "mCardUpload " + vp.width + ": ";
+      const up = { gate: null, mode: "ok", n: 0 }, msg = { mode: "ok", posts: [] };
+      await p.route("**/v1/tasks/up-1/files", async r => {
+        up.n++;
+        const names = [...(r.request().postDataBuffer() || Buffer.alloc(0)).toString("latin1").matchAll(/filename="([^"]*)"/g)].map(m => m[1]);
+        if (up.gate) await up.gate;
+        if (up.mode === "fail") return r.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: "disk full" }) });
+        return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ paths: names.map(n => "/w/in/" + n) }) });
+      });
+      await p.route("**/v1/tasks/up-1/message", r => {
+        msg.posts.push(JSON.parse(r.request().postData() || "{}").text);
+        if (msg.mode === "fail") return r.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: "room down" }) });
+        return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ delivered: "terminal" }) });
+      });
+      await p.waitForSelector("#m-seg-all", { timeout: slow(10000) });
+      await p.tap("#m-seg-all");
+      await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
+      await p.tap('#m-list .row[data-id="up-1"]');
+      await p.waitForSelector("#m-compose textarea", { timeout: slow(5000) });
+      const ta = "#m-compose textarea";
+      const val = () => p.$eval(ta, t => t.value);
+      const type = async txt => {
+        await p.fill(ta, txt);
+        await p.evaluate(() => document.querySelector("#m-compose textarea").dispatchEvent(new Event("input", { bubbles: true })));
+      };
+      const chips = () => p.evaluate(() => Array.from(document.querySelectorAll("#m-compose .mc-file")).map(x => ({ name: x.querySelector(".mc-fname").textContent, st: x.dataset.state, word: x.querySelector(".mc-fstate").textContent })));
+      // the file picker and the camera are both there, and the camera asks for the camera
+      const ins = await p.evaluate(() => Array.from(document.querySelectorAll("#m-compose input.mc-input")).map(i => ({ accept: i.accept, capture: i.getAttribute("capture"), multiple: i.multiple })));
+      if (ins.length !== 2 || !ins.some(i => i.multiple && /image/.test(i.accept) && /pdf/.test(i.accept) && i.capture === null) || !ins.some(i => i.capture === "environment" && i.accept === "image/*")) fail(tag + "picker or camera inputs wrong: " + JSON.stringify(ins));
+      const btns = await p.$$eval("#m-compose .mc-attach", bs => bs.map(b => { const r = b.getBoundingClientRect(); return [r.width, r.height]; }));
+      if (btns.length !== 2 || btns.some(b => b[0] < 36 || b[1] < 40)) fail(tag + "attach buttons are missing or too small: " + JSON.stringify(btns));
+      if (await mNoSideways(p)) fail(tag + "the card scrolls sideways");
+      await mShot(p, "upload-row-" + vp.width);
+      // two files from the picker and a pasted image, held in flight
+      let release; up.gate = new Promise(r => { release = r; });
+      await p.setInputFiles("#m-compose input.mc-input[multiple]", [
+        { name: "a.png", mimeType: "image/png", buffer: PNG }, { name: "b.txt", mimeType: "text/plain", buffer: Buffer.from("hi") }]);
+      await p.waitForFunction(() => document.querySelectorAll("#m-compose .mc-file[data-state=up]").length === 2, null, { timeout: slow(3000) });
+      await p.evaluate(() => {
+        const dt = new DataTransfer();
+        dt.items.add(new File([Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="), c => c.charCodeAt(0))], "pasted.png", { type: "image/png" }));
+        document.querySelector("#m-compose textarea").dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
+      });
+      await p.waitForFunction(() => document.querySelectorAll("#m-compose .mc-file").length === 3, null, { timeout: slow(3000) });
+      const prog = await chips();
+      if (prog.length !== 3 || prog.some(x => x.st !== "up" || !/uploading/.test(x.word))) fail(tag + "chips show no progress: " + JSON.stringify(prog));
+      await mShot(p, "upload-progress-" + vp.width);
+      // send while they go up: the box frees at once, the row is pending, and the message waits
+      await type("look at these");
+      await p.tap("#m-compose .mc-send");
+      await p.waitForSelector("#m-replies .reply.mine.pending", { timeout: slow(2000) });
+      if ((await val()) !== "") fail(tag + "the box was not freed while the files went up");
+      if (msg.posts.length) fail(tag + "the message left before the files finished");
+      if ((await chips()).length !== 3) fail(tag + "the chips went before their upload finished");
+      release();
+      await p.waitForFunction(() => /delivered/.test(document.getElementById("m-replies").textContent), null, { timeout: slow(5000) });
+      if (msg.posts.length !== 1 || up.n !== 2) fail(tag + "posts " + JSON.stringify(msg.posts) + " uploads " + up.n + " (the picker batch and the paste are two requests)");
+      const sent = msg.posts[0] || "";
+      for (const f of ["look at these", "/w/in/a.png", "/w/in/b.txt", "/w/in/pasted.png"]) if (sent.indexOf(f) < 0) fail(tag + "the message lacks " + f + ": " + sent);
+      if ((await chips()).length) fail(tag + "chips stayed after the message left");
+      // a failed upload keeps the text and says which file
+      up.gate = null; up.mode = "fail";
+      await p.setInputFiles("#m-compose input.mc-input[multiple]", [{ name: "big.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF") }]);
+      await p.waitForFunction(() => document.querySelector("#m-compose .mc-file[data-state=err]"), null, { timeout: slow(3000) });
+      await type("with the pdf");
+      msg.posts.length = 0;
+      up.mode = "ok";
+      // the chip failed on its own: a send now carries the text only
+      await p.tap("#m-compose .mc-send");
+      await p.waitForFunction(() => /delivered/.test(document.getElementById("m-replies").textContent) && document.querySelectorAll("#m-replies .reply.mine").length >= 2, null, { timeout: slow(5000) });
+      // an upload that fails while the message waits on it: text back, the file named
+      let rel2; up.gate = new Promise(r => { rel2 = r; }); up.mode = "fail";
+      await p.setInputFiles("#m-compose input.mc-input[multiple]", [{ name: "doomed.png", mimeType: "image/png", buffer: PNG }]);
+      await type("this needs the image");
+      await p.tap("#m-compose .mc-send");
+      await p.waitForSelector("#m-replies .reply.mine.pending", { timeout: slow(2000) });
+      rel2();
+      await p.waitForSelector("#m-replies .reply.mine.failed", { timeout: slow(5000) });
+      if (!/this needs the image/.test(await val())) fail(tag + "a failed upload lost the text: " + JSON.stringify(await val()));
+      const note = await p.textContent("#m-compose .mc-note");
+      if (!/doomed\.png did not upload/.test(note) || !/disk full/.test(note)) fail(tag + "the note does not name the file: " + note);
+      const kept = await chips();
+      if (kept.length !== 1 || kept[0].name !== "doomed.png" || kept[0].st !== "err") fail(tag + "the failed file's chip: " + JSON.stringify(kept));
+      await p.tap("#m-compose .mc-file .mc-fx");
+      // a send that fails after the upload: the chips come back with the text
+      up.gate = null; up.mode = "ok"; msg.mode = "fail";
+      await p.fill(ta, "");
+      await p.setInputFiles("#m-compose input.mc-input[multiple]", [{ name: "x.png", mimeType: "image/png", buffer: PNG }, { name: "y.txt", mimeType: "text/plain", buffer: Buffer.from("y") }]);
+      await p.waitForFunction(() => document.querySelectorAll("#m-compose .mc-file[data-state=ok]").length === 2, null, { timeout: slow(3000) });
+      await type("check " + await val());
+      await p.tap("#m-compose .mc-send");
+      await p.waitForSelector("#m-replies .reply.mine.failed", { timeout: slow(5000) });
+      await p.waitForFunction(() => document.querySelector("#m-compose textarea").value !== "", null, { timeout: slow(3000) });
+      const back = await chips();
+      const text = await val();
+      if (back.length !== 2 || back.some(x => x.st !== "ok") || text.indexOf("/w/in/x.png") < 0 || text.indexOf("/w/in/y.txt") < 0) fail(tag + "after a failed send the chips did not come back: " + JSON.stringify(back) + " " + JSON.stringify(text));
+      // and the X on a restored chip still takes its own path out
+      await p.tap("#m-compose .mc-file:nth-child(1) .mc-fx");
+      const after = await val();
+      if (after.indexOf("/w/in/x.png") >= 0 || after.indexOf("/w/in/y.txt") < 0) fail(tag + "removing a restored chip: " + JSON.stringify(after));
+      if (await mNoSideways(p)) fail(tag + "the card scrolls sideways");
+      if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+      await ctx.close();
+    }
+  } finally { await st.close(); }
+  if (!bad) console.log("mCardUpload ok");
+}
+
 async function bootCleanSection(browser, base) {
   const raw = fs.readFileSync(path.join(WEB_ROOT, "index.html"));
   const views = [{ w: 1400, h: 900 }, { w: 390, h: 844, phone: true }, { w: 412, h: 915, phone: true }];
@@ -13459,7 +13578,7 @@ async function main() {
       u001Audit: u001AuditSection,
       pasteStart: pasteStartSection, pasteDone: pasteDoneSection, pasteOldRoom: pasteOldRoomSection, pasteClose: pasteCloseSection,
       growlQuestionShots: growlQuestionShotsSection, growlQuestionBody: growlQuestionBodySection, growlReplyGrow: growlReplyGrowSection, growlChoices: growlChoicesSection, growlStable: growlStableSection, mGrowlQuestion: mGrowlQuestionSection,
-      bootClean: bootCleanSection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mRecapSheet: mRecapSheetSection, mOutputAt: mOutputAtSection, mStickBottom: mStickBottomSection, mSendFree: mSendFreeSection };
+      bootClean: bootCleanSection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mRecapSheet: mRecapSheetSection, mOutputAt: mOutputAtSection, mStickBottom: mStickBottomSection, mSendFree: mSendFreeSection, mCardUpload: mCardUploadSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -15492,6 +15611,7 @@ async function main() {
     await mOutputAtSection(browser);
     await mStickBottomSection(browser);
     await mSendFreeSection(browser);
+    await mCardUploadSection(browser);
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e));
     if (process.env.DEBUG_HEADLESS) {

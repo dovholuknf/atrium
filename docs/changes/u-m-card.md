@@ -23,3 +23,12 @@ Open a card with a long thread on /m, at 390 and 412.
 ### @LETTER@5. Sending never blocks
 Send on /m over a slow link.
 **Expected:** the box clears at once and takes the next message while the first is in flight. The thread shows your message as `sending`, then `delivered` or `queued`. If the send fails the text goes back in the box ahead of anything typed since, and the row says `not sent`.
+
+### @LETTER@6. Upload from the card view
+Screenshots: `upload-row-390.jpg`, `upload-progress-390.jpg` in `docs/backlog/ui/img/u-m-card/`.
+On /m open a card. Tap the paperclip, pick two files, paste an image, then type a line and send while they go up.
+**Expected:** each chip shows `uploading N%`. The box frees at once, the thread shows your message as `sending`, and it leaves with the uploaded paths when the files finish. The camera button opens the phone camera.
+
+### @LETTER@7. A failed upload or send keeps everything
+Fail an upload, then fail a send.
+**Expected:** a failed upload puts your text back and the note names the file and the reason. A failed send puts the text back and the chips come back with their paths, and a chip's X still removes only its own path.
