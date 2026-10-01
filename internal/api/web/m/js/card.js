@@ -582,6 +582,14 @@
   }
 
   async function openFromPath() {
+    // `/m/#term=<id>` is where the board sends a card it only knows by id.
+    const hm = /^#term=(.+)$/.exec(location.hash);
+    if (hm && !shapeOf(location.pathname)) {
+      const id = dec(hm[1]);
+      try { history.replaceState({ mcard: id, direct: true }, "", "/m/"); } catch (e) {}
+      whenHeld(id, () => open(id, true));
+      return;
+    }
     const s = shapeOf(location.pathname);
     if (!s) return;
     const who = s.kind === "alias" ? s.alias : s.name;

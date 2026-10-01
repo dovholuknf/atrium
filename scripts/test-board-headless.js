@@ -85,6 +85,8 @@ function withClock(browser) {
   browser.newContext = async (opts, more) => {
     const ctx = await newContext(opts || {});
     if (!(more && more.realClock)) await ctx.addInitScript({ content: CLOCK_INIT });
+    // A phone-sized test context would be sent to /m by the board root. Every context opts out unless it is the redirect's own.
+    if (!(more && more.redirect)) await ctx.addInitScript(() => { try { localStorage.setItem("atrium.m.desktop", "1"); } catch (e) {} });
     return ctx;
   };
   browser.newPage = async opts => {
@@ -14493,6 +14495,12 @@ async function soundPhoneSection(browser, base) {
 
 // ── the bell on the phone board, in every view ───────────────────────────
 async function phoneBellSection(browser, base) {
+}
+
+// ── a phone's board root lands on /m ─────────────────────────────────────
+// A coarse pointer and a short side under 600px is a phone. A tablet, a desktop, a pop-out window and a phone that opted
+// out are left alone, and the card paths map to their /m twins.
+async function phoneRedirectSection(browser, base) {
   const was = tasksMode;
   tasksMode = "land";
   landList = [];
@@ -14682,6 +14690,104 @@ async function gearHostsSection(browser, base) {
   if (!bad) console.log("gearHosts ok");
 }
 
+// ── a phone's board root lands on /m ─────────────────────────────────────
+// A coarse pointer and a short side under 600px is a phone. A tablet, a desktop, a pop-out window and a phone that opted
+// out are left alone, and the card paths map to their /m twins.
+async function phoneRedirectSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landList = [];
+  landPerms = [];
+  landCard("land-a", { alias: "rnd", room: "claude-sg4", wire_name: "sparta/rnd-director", supervised: true });
+  const raw = fs.readFileSync(path.join(WEB_ROOT, "index.html"));
+  const open = async (view, at, setup) => {
+    const ctx = await browser.newContext(view, { redirect: true });
+    await ctx.addInitScript(() => localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true })));
+    if (setup) await ctx.addInitScript(setup);
+    const p = await ctx.newPage();
+    const errors = [];
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.route("**/*", route => {
+      const rq = route.request();
+      const u = new URL(rq.url());
+      if (/^\/m\//.test(u.pathname) && rq.resourceType() === "document") return route.fulfill({ status: 200, contentType: "text/html", body: "<!doctype html><title>m</title>phone page" });
+      if (/^\/(alias|room)\//.test(u.pathname) && rq.resourceType() === "document") return route.fulfill({ status: 200, contentType: "text/html", body: raw });
+      if (u.pathname === "/v1/tasks/rnd") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(LAND["land-a"]) });
+      return route.continue();
+    });
+    await p.goto(base + at, { waitUntil: "load" });
+    await p.waitForTimeout(400);
+    const u = new URL(p.url());
+    return { ctx, p, errors, where: u.pathname + u.hash, search: u.search };
+  };
+  const phone = { viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true };
+  try {
+    const cases = [["/?land=land-a&view=stack&key=k1", "/m/#term=land-a"], ["/?land=a%20b", "/m/#term=a%20b"], ["/?view=perms&key=k2", "/m/"], ["/?land=land-a&x=1", "/m/?x=1#term=land-a"],
+      ["/", "/m/"], ["/alias/rnd", "/m/alias/rnd"], ["/room/claude-sg4/rnd", "/m/room/claude-sg4/rnd"], ["/#term=land-a", "/m/#term=land-a"], ["/room/claude-sg4", "/m/"]];
+    for (const [from, to] of cases) {
+      const r = await open(phone, from);
+      if (r.where !== to && !(r.where === to.replace("?x=1", "") && /x=1/.test(r.search))) fail("phoneRedirect: a phone at " + from + " ended on " + r.where + ", not " + to);
+      if (from === "/room/claude-sg4" && (await r.p.evaluate(() => localStorage.getItem("atrium.room"))) !== "claude-sg4") fail("phoneRedirect: the room scope was lost");
+      if (r.errors.length) fail("phoneRedirect " + from + ": " + r.errors.join(" | "));
+      await r.ctx.close();
+    }
+    // a phone at 412, and a phone turned on its side (its short side is still under 600)
+    for (const v of [{ viewport: { width: 412, height: 915 }, hasTouch: true, isMobile: true }, { viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true }]) {
+      const r = await open(v, "/");
+      if (r.where !== "/m/") fail("phoneRedirect: a phone " + v.viewport.width + "x" + v.viewport.height + " ended on " + r.where);
+      await r.ctx.close();
+    }
+    // the opt-out keeps the board, shows the way back, and the way back clears it
+    let r = await open(phone, "/", () => { if (!sessionStorage.getItem("seeded")) { sessionStorage.setItem("seeded", "1"); localStorage.setItem("atrium.m.desktop", "1"); } });
+    if (r.where !== "/") fail("phoneRedirect: an opted-out phone was sent to " + r.where);
+    await r.p.evaluate(() => openToastLog());
+    if (!(await r.p.isVisible("#toastlog-phone"))) fail("phoneRedirect: no way back to the phone view");
+    else {
+      await r.p.tap("#toastlog-phone");
+      await r.p.waitForFunction(() => location.pathname === "/m/", null, { timeout: slow(5000) }).catch(() => fail("phoneRedirect: phone view did not go to /m"));
+      if (await r.p.evaluate(() => localStorage.getItem("atrium.m.desktop"))) fail("phoneRedirect: phone view did not clear the opt-out");
+    }
+    await r.ctx.close();
+    // a pop-out window by its name, and by its opener
+    r = await open(phone, "/#term=land-a", () => { window.name = "atrium-term-land-a"; });
+    if (r.where !== "/#term=land-a") fail("phoneRedirect: a pop-out was sent to " + r.where);
+    await r.ctx.close();
+    // a desktop and a tablet are untouched, and so is a desktop browser window made narrow
+    for (const [name, v] of [["desktop", { viewport: { width: 1400, height: 900 } }], ["tablet", { viewport: { width: 820, height: 1180 }, hasTouch: true, isMobile: true }],
+      ["narrow desktop", { viewport: { width: 400, height: 800 } }]]) {
+      const x = await open(v, "/");
+      if (x.where !== "/") fail("phoneRedirect: a " + name + " was sent to " + x.where);
+      const y = await open(v, "/alias/rnd");
+      if (y.where !== "/alias/rnd") fail("phoneRedirect: a " + name + " card address was sent to " + y.where);
+      await x.ctx.close();
+      await y.ctx.close();
+    }
+  } finally { tasksMode = was; }
+  // the link on /m sets the opt-out and does not bounce back
+  const st = mServer({});
+  st.tasks = [mCard("r-1", { alias: "a", display_title: "a" })];
+  await st.open();
+  try {
+    const ctx = await browser.newContext({ viewport: M_VIEWS[0], hasTouch: true, isMobile: true }, { redirect: true });
+    const p = await ctx.newPage();
+    await p.route(st.url + "/", route => route.fulfill({ status: 200, contentType: "text/html", body: raw }));
+    await p.goto(st.url + "/m/", { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#m-desktop", { timeout: slow(8000) });
+    if (new URL(p.url()).pathname !== "/m/") fail("phoneRedirect: /m left itself for " + p.url());
+    await p.tap("#m-desktop");
+    await p.waitForFunction(() => location.pathname === "/", null, { timeout: slow(8000) }).catch(() => fail("phoneRedirect: the desktop board link did not leave /m"));
+    await p.waitForTimeout(400);
+    if (new URL(p.url()).pathname !== "/") fail("phoneRedirect: the desktop board link bounced back to " + p.url());
+    if ((await p.evaluate(() => localStorage.getItem("atrium.m.desktop"))) !== "1") fail("phoneRedirect: the link did not set the opt-out");
+    // a card the board knew only by id opens on /m from the fragment
+    const q = await ctx.newPage();
+    await q.goto(st.url + "/m/#term=r-1", { waitUntil: "domcontentloaded" });
+    await q.waitForSelector("#m-card.on", { timeout: slow(8000) }).catch(() => fail("phoneRedirect: /m/#term=<id> did not open the card"));
+    await ctx.close();
+  } finally { await st.close(); }
+  if (!bad) console.log("phoneRedirect ok");
+}
+
 async function main() {
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = "http://127.0.0.1:" + server.address().port;
@@ -14719,6 +14825,7 @@ async function main() {
       growlQuestionShots: growlQuestionShotsSection, growlQuestionBody: growlQuestionBodySection, growlReplyGrow: growlReplyGrowSection, growlChoices: growlChoicesSection, growlStable: growlStableSection, mGrowlQuestion: mGrowlQuestionSection,
       bootClean: bootCleanSection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mRecapSheet: mRecapSheetSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
+      mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, phoneRedirect: phoneRedirectSection,
       gearTermList: gearTermListSection, growlLinks: growlLinksSection, growlChoiceOnce: growlChoiceOnceSection,
       mOutputAt: mOutputAtSection, mStickBottom: mStickBottomSection, mSendFree: mSendFreeSection, mCardUpload: mCardUploadSection, mCompact: mCompactSection, mPinch: mPinchSection, mPrompts: mPromptsSection,
       cardUrlWinName: cardUrlWinNameSection,
@@ -16703,6 +16810,7 @@ async function main() {
     await soundPhoneSection(browser, base);
     await phoneBellSection(browser, base);
     await mBellSection(browser);
+    await phoneRedirectSection(browser, base);
     await gearTermListSection(browser, base);
     await growlLinksSection(browser, base);
     await growlChoiceOnceSection(browser, base);
