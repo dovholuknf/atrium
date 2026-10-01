@@ -92,7 +92,7 @@ const foldKey = page.slice(foldKeyAt, page.indexOf("\n", foldKeyAt));
 // `let` between two of them and comes along with the one above it.
 const names = ["shortLabel", "termPathOf", "termExtraName", "termRowName",
   "termNoteDuplicates", "termTree", "workingNow", "termRunnerMark", "termHeldAge", "termHeldTip", "termHeldChip",
-  "termRoomChip", "termRowChips", "termCold", "termRow",
+  "termRoomChip", "termRowChips", "termCold", "termJoined", "termRow",
   "termHeading", "termFolded", "termNodeHTML", "termCount", "termGroupsHTML",
   "termFlatGroupsHTML"];
 // Whatever sits between two functions comes along with the one above it, so
