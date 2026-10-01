@@ -325,6 +325,104 @@ func TestDeployReadyTickTellsAWatchingBoardOnlyWhenTheAnswerMoves(t *testing.T) 
 	}
 }
 
+// slowGit never answers until its context ends, which is what a git on a huge history looks like from outside.
+type slowGit struct {
+	mu    sync.Mutex
+	calls int
+}
+
+func (g *slowGit) Git(ctx context.Context, _ string, _ ...string) (string, error) {
+	g.mu.Lock()
+	g.calls++
+	g.mu.Unlock()
+	<-ctx.Done()
+	return "", ctx.Err()
+}
+
+func (g *slowGit) GitInput(ctx context.Context, dir string, _ []byte, a ...string) (string, error) {
+	return g.Git(ctx, dir, a...)
+}
+
+func TestDeployReadyAnswersUnknownAtTheBoundAndNeverMakesASecondCallerWait(t *testing.T) {
+	old := deployReadyBound
+	deployReadyBound = 400 * time.Millisecond
+	defer func() { deployReadyBound = old }()
+
+	r := newReadyRepo(t)
+	base := r.commit("base", map[string]string{"internal/a.go": "a"})
+	p, _ := readyProxy(t, r, base, scriptFile(t))
+	st := p.deployReady()
+	slow := &slowGit{}
+	st.checker = &deployready.Checker{Git: slow, Dir: r.dir, Branch: "claude/main"}
+
+	first := make(chan deployReadyView, 1)
+	go func() { first <- getReady(t, p) }()
+	// Wait until the first caller is inside git.
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		slow.mu.Lock()
+		n := slow.calls
+		slow.mu.Unlock()
+		if n > 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the first caller never reached git")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	start := time.Now()
+	second := getReady(t, p)
+	if d := time.Since(start); d > 200*time.Millisecond {
+		t.Fatalf("the second caller waited %s", d)
+	}
+	if second.State != deployready.StateUnknown || second.Ready || second.Error == "" {
+		t.Fatalf("second = %+v", second.Report)
+	}
+
+	select {
+	case v := <-first:
+		if v.State != deployready.StateUnknown || v.Ready || !strings.Contains(v.Error, "timed out") {
+			t.Fatalf("first = %+v", v.Report)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("the first caller was not answered at the bound")
+	}
+
+	// The give-up is not reused: the next ask reads again at once.
+	st.mu.Lock()
+	inflight, reuse := st.inflight, !st.lastAt.IsZero()
+	st.mu.Unlock()
+	if inflight || reuse {
+		t.Fatalf("inflight = %v, reusable = %v", inflight, reuse)
+	}
+}
+
+func TestDeployReadyHandsBackTheLastAnswerStaleWhileANewerReadRuns(t *testing.T) {
+	r := newReadyRepo(t)
+	base := r.commit("base", map[string]string{"internal/a.go": "a"})
+	r.commit("code", map[string]string{"internal/hubstore/a.go": "1"})
+	p, _ := readyProxy(t, r, base, scriptFile(t))
+	if v := getReady(t, p); v.State != deployready.StateBlocked {
+		t.Fatalf("warm-up = %+v", v.Report)
+	}
+	st := p.deployReady()
+	st.mu.Lock()
+	st.inflight = true
+	st.mu.Unlock()
+
+	v := getReady(t, p)
+	if !v.Stale || v.Ready || v.State != deployready.StateBlocked {
+		t.Fatalf("view = %+v", v.Report)
+	}
+	rec := postDeploy(p, loopbackReq(http.MethodPost, "/_hub/deploy-ready/deploy",
+		`{"tip":"`+strings.Repeat("a", 40)+`"}`))
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("a click during a read = %d %s", rec.Code, rec.Body)
+	}
+}
+
 func TestParseVersionCommit(t *testing.T) {
 	out := "atrium dev\ncommit 7a38c1f2deadbeef0123456789abcdef01234567 (modified)\nboard  0123abcd\nplatform windows/amd64\n"
 	if got := parseVersionCommit(out); got != "7a38c1f2deadbeef0123456789abcdef01234567" {
