@@ -8060,7 +8060,7 @@ on the board port. The body replaces the set, so read the card's tags first.
    with `not cycled: this card has no directory the room can read ...`, nothing is typed, and the launcher is not
    told a cycle began.
 
-## HQ. A card's changes, and one reply's (r-changes)
+## HR. A card's changes, and one reply's (r-changes)
 
 1. On a card whose worktree has uncommitted edits and an untracked file, `curl -s
    'http://127.0.0.1:7778/v1/tasks/<id>/changes' | jq '{against,head,dirty,total,files:[.files[]|{path,status,added,removed}]}'`.
