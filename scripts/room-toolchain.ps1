@@ -48,6 +48,11 @@
 #                     & $Bin room --detach
 #                 scripts/atrium-autostart.ps1 does that for its logon task when room-env.ps1 exists. The one-line
 #                 hook for provision-room.ps1's start step is in docs/changes/fabric-1-toolchain.md.
+#                 A SESSION'S Bash tool is a login bash (Cygwin's, on a room that has it), and that profile puts
+#                 Cygwin's git ahead of the record, which cannot read a C:/ worktree path, and sets TMP to Cygwin's own
+#                 /tmp. So a block in ~/.bash_profile, between `# >>> atrium toolchain` and `# <<< atrium toolchain <<<`,
+#                 puts the record first again and points TMP at the user's own Temp. It is replaced in place when this
+#                 script changes it, and a session reads it at its start, so no room restart.
 # A room that is running already has the old PATH. This never restarts it. When the room answers on 7781 after a
 # change, a `restart warn` line says so.
 #
@@ -238,6 +243,7 @@ function Tell { param($tools)
 #@probe
     "arch=$(if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE })"
     "prefix=$Prefix"; "rec=$((Rec) -join ';')"; "hook=$(Test-Path -LiteralPath $EF)"
+    $BP = Join-Path $HOME '.bash_profile'; "bashhook=$([bool]((Test-Path -LiteralPath $BP) -and (Select-String -LiteralPath $BP -SimpleMatch 'Cygwin points TMP' -Quiet)))"
     Tell ($Names -split ',')
     try { $null = Invoke-WebRequest 'http://127.0.0.1:7781/v1/health' -UseBasicParsing -TimeoutSec 3; 'room=up' } catch { 'room=down' }
 #@install
@@ -279,6 +285,25 @@ function Tell { param($tools)
         "if (Test-Path -LiteralPath `$f) { `$d = @(Get-Content -LiteralPath `$f | Where-Object { `$_.Trim() }); if (`$d) { `$env:Path = (`$d -join ';') + ';' + `$env:Path } }`r`n"
     if (-not (Test-Path -LiteralPath $EF) -or (Get-Content -LiteralPath $EF -Raw) -ne $env1) { [IO.File]::WriteAllText($EF, $env1); 'hook=changed' } else { 'hook=same' }
     "envfile=$EF"
+    # A session's Bash tool is a LOGIN bash, whose profile puts Cygwin's git (which cannot read a C:/ worktree path) ahead of
+    # whatever the room was started with, and no pwsh at all. So the record goes in front again from ~/.bash_profile.
+    $BP = Join-Path $HOME '.bash_profile'
+    $blk = (@('# >>> atrium toolchain (room-toolchain.ps1) >>>',
+        '# Puts what room-toolchain.ps1 installed ahead of the system git and pwsh, as the room itself sees them.',
+        ('f=$(cygpath -u ''' + $PF + ''' 2>/dev/null)'),
+        'if [ -r "$f" ]; then',
+        '  pre=''''',
+        '  while IFS= read -r d; do d=$(cygpath -u "${d%$''\r''}" 2>/dev/null); [ -n "$d" ] && pre="$pre$d:"; done < "$f"',
+        '  PATH="$pre$PATH"',
+        'fi',
+        '# Cygwin points TMP at its own /tmp, which a Windows git cannot make a directory in, and go test lives in TMP.',
+        't=$(cygpath -u "$LOCALAPPDATA\\Temp" 2>/dev/null); [ -d "$t" ] && export TMP="$t" TEMP="$t"',
+        'unset f pre d t',
+        '# <<< atrium toolchain <<<') -join "`n")
+    $cur = if (Test-Path -LiteralPath $BP) { (Get-Content -LiteralPath $BP -Raw) -replace "`r`n", "`n" } else { '' }
+    $rx = '(?s)# >>> atrium toolchain.*?# <<< atrium toolchain <<<\n?'
+    $next = if ($cur -match $rx) { [regex]::Replace($cur, $rx, [Text.RegularExpressions.MatchEvaluator]{ param($m) $blk + "`n" }) } else { $cur + $(if ($cur -and -not $cur.EndsWith("`n")) { "`n" }) + $blk + "`n" }
+    if ($next -ne $cur) { [IO.File]::WriteAllText($BP, $next); 'bashprofile=changed' } else { 'bashprofile=same' }
 #@verify
 Tell ($Names -split ',')
 '@
@@ -578,8 +603,12 @@ if ($script:rc -ne 0 -and -not $Check) {
 $installedDirs = @($newDirs | Where-Object { $_ })
 $hookNow = $kv.hook -eq 'True'
 $recNow = @("$($kv.rec)" -split ';' | Where-Object { $_ })
+# Windows only: the login bash of a session needs the record too, or Cygwin's git comes first (see the record payload).
+$bashMissing = $script:remoteOS -eq 'windows' -and $kv.bashhook -ne 'True'
 if ($Check) {
-    if ($installedDirs) {
+    if ($recNow -and $bashMissing -and $hookNow -and -not $installedDirs) {
+        Step 'path' 'warn' "the record lists $($recNow -join ', '), but ~/.bash_profile does not put it first, so a session's Bash tool gets Cygwin's git. a run without -Check writes it"
+    } elseif ($installedDirs) {
         Step 'path' 'warn' "would record $($installedDirs -join ', ') in ~/.atrium/toolchain/path.txt$(if ($script:remoteOS -eq 'windows') { ' and write room-env.ps1, which the room start dot-sources. the user and machine Path are not touched' } else { " and add one line to $($kv.profile)" })"
     } elseif ($recNow -and -not $hookNow) {
         Step 'path' 'warn' "the record lists $($recNow -join ', '), but $(if ($script:remoteOS -eq 'windows') { 'room-env.ps1 is missing' } else { "$($kv.profile) has no line reading it" }). a run without -Check writes it"
@@ -588,7 +617,7 @@ if ($Check) {
     } else {
         Step 'path' 'skip' 'this script installed nothing here, so there is nothing to record'
     }
-} elseif ($installedDirs -or ($recNow -and -not $hookNow)) {
+} elseif ($installedDirs -or ($recNow -and (-not $hookNow -or $bashMissing))) {
     $rr = Invoke-Remote (Get-Payload 'record' @{ NewDirs = ($installedDirs -join ';') })
     $rk = ConvertFrom-KeyValue $rr.Out
     if ($rr.Code -ne 0) {
@@ -598,8 +627,10 @@ if ($Check) {
     } else {
         $did = ($rk.pathfile -eq 'changed' -or $rk.hook -eq 'changed')
         $changed = $changed -or $did
-        $via = if ($script:remoteOS -eq 'windows') { "written for the room start: dot-source $($rk.envfile). the user and machine Path are not touched" } else { "$($rk.profile) reads ~/.atrium/toolchain/path.sh" }
-        Step 'path' $(if ($did) { 'done' } else { 'ok' }) "$($installedDirs -join ', ') in ~/.atrium/toolchain/path.txt, $via"
+        # ~/.bash_profile is read by the next session, not the room, so it does not make the room's PATH stale.
+        $didBash = $rk.bashprofile -eq 'changed'
+        $via = if ($script:remoteOS -eq 'windows') { "written for the room start: dot-source $($rk.envfile). the user and machine Path are not touched$(if ($didBash) { '. ~/.bash_profile now puts it first for a session''s login bash' })" } else { "$($rk.profile) reads ~/.atrium/toolchain/path.sh" }
+        Step 'path' $(if ($did -or $didBash) { 'done' } else { 'ok' }) "$(if ($installedDirs) { $installedDirs -join ', ' } else { $recNow -join ', ' }) in ~/.atrium/toolchain/path.txt, $via"
     }
 } elseif ($recNow) {
     Step 'path' 'ok' "the record lists $($recNow -join ', ')"
