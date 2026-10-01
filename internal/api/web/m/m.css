@@ -245,3 +245,19 @@ pre.screen { margin: 0; font: 12px/1.4 var(--mono); color: var(--head); overflow
 .roomchip button { min-height: 40px; padding: 0 12px; border: 0; background: none; color: var(--teal); font-size: 14px; cursor: pointer; }
 .hiddenline { min-height: 36px; padding: 0; border: 0; background: none; color: var(--warn); font-size: 14px; text-align: left; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
 .hiddenline[hidden] { display: none; }
+/* the file viewer: a sheet over the thread, in the thread's own text size */
+.viewer { position: absolute; inset: 0; z-index: 8; display: flex; flex-direction: column; background: var(--bg-0); }
+.viewer[hidden] { display: none; }
+.v-top { flex: none; display: flex; align-items: center; gap: 8px; padding: calc(env(safe-area-inset-top, 0px) + 4px) max(8px, env(safe-area-inset-right, 0px)) 4px max(8px, env(safe-area-inset-left, 0px)); min-height: calc(52px + env(safe-area-inset-top, 0px)); }
+.v-title { flex: 1; min-width: 0; color: var(--head); font-size: 15px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.v-scroll { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; touch-action: pan-y; padding: 4px max(16px, env(safe-area-inset-right, 0px)) 32px max(16px, env(safe-area-inset-left, 0px)); }
+.viewer .md, .viewer pre.v-text { font-size: var(--m-fs, 14px); line-height: 1.45; }
+.viewer pre.v-text { margin: 0; padding: 12px 14px; border-radius: 12px; background: var(--bg-2); overflow-x: auto; }
+.viewer pre.v-text code { font-size: calc(var(--m-fs, 14px) * .9); white-space: pre; background: none; padding: 0; }
+.viewer .v-img { display: block; max-width: 100%; height: auto; margin: 8px auto; border-radius: 10px; }
+.viewer .v-note { margin: 24px 0; color: var(--dim); text-align: center; }
+.viewer .v-err { color: var(--warn); }
+.viewer .v-ask { margin: 24px 0; text-align: center; color: var(--body); }
+.viewer .v-row, .viewer .v-cut { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: center; margin-top: 12px; color: var(--dim); font-size: 13px; }
+.viewer .v-btn { min-height: 44px; padding: 0 16px; border: 1px solid var(--stroke); border-radius: 12px; background: none; color: var(--teal); font-size: 15px; cursor: pointer; }
+.viewer .v-btn:disabled { color: var(--dim); }
