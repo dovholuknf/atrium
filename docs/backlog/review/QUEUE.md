@@ -37,6 +37,11 @@ the meantime.
 
 - Board landings from @ui come FIRST (clint, via the orchestrator, 2026-09-30 19:25), read only and fast, ahead of
   everything below.
+- r-deploy-ready f82abf78 is on HOLD (`r-new-review-f82abf78.md`): re-read the link room-side fix and the click's
+  build-equals-tip and `ATRIUM_NEW_BUILD` fix. When it lands, re-stamp with `room-ok` every board landing since the
+  installed build. Two rules from now on: a board review carries `hub-ok` AND `room-ok`, and an `internal/link`
+  review carries `room-ok` too, since the room runs it. A re-read's OK range starts at the ORIGINAL base, so it covers
+  the held patch.
 - u-m-changes 7e496aa8 is on HOLD (`u-new-review-7e496aa8.md`): re-read the `quoteOne` control-character fix when
   @ui sends it. Owed lows, no hold: u-m-typefix pen `pointercancel` (`u-new-review-7b70705e.md`), and @runtime's
   defense in depth, dropping `\x1b[201~` inside any wrapped paste.
