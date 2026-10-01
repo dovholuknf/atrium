@@ -55,14 +55,24 @@
     return { id: openId, worktree: t && t.worktree || "" };
   }
 
-  function replyHTML(r, screen) {
-    const when = r.at ? U.ago(Date.now() - U.ts(r.at)) : "";
+  // One header line per message: who, how long ago, and the delivery state when there is one.
+  function agoOf(at) {
+    const a = U.ago(Date.now() - U.ts(at));
+    return a === "now" ? "now" : a;
+  }
+  function headerHTML(who, at, tag, note) {
+    return '<header class="rh"><span class="src">' + U.esc(who) + "</span>" + (note ? '<span class="note">' + U.esc(note) + "</span>" : "") +
+      (at ? '<time datetime="' + U.esc(at) + '">' + U.esc(agoOf(at)) + "</time>" : "") + (tag ? '<b class="tag">' + U.esc(tag) + "</b>" : "") + "</header>";
+  }
+  function whoOf(t) {
+    const nm = U.cardName(t);
+    const room = window.mNet.roomOf(t.id) || t.room || "";
+    return nm.main + (room ? "@" + room : "");
+  }
+  function replyHTML(r, screen, who) {
     const body = screen ? '<pre class="screen">' + U.esc(r.text) + "</pre>" : '<div class="md">' + MD.render(r.text, mdCtx()) + "</div>";
-    return '<article class="reply' + (screen ? " from-screen" : "") + '">' +
-      (screen ? '<span class="src">from the screen</span>' : "") + body +
-      (r.truncated ? '<p class="cut">cut short here. the rest is in the terminal</p>' : "") +
-      (when ? '<time datetime="' + U.esc(r.at) + '">' + U.esc(when === "now" ? "just now" : when + " ago") + "</time>" : "") +
-      "</article>";
+    return '<article class="reply' + (screen ? " from-screen" : "") + '">' + headerHTML(who, r.at, "", screen ? "from the screen" : "") + body +
+      (r.truncated ? '<p class="cut">cut short here. the rest is in the terminal</p>' : "") + "</article>";
   }
 
   function fallbackHTML(t) {
@@ -188,11 +198,9 @@
 
   const OWN_TAG = { pending: "sending", failed: "not sent, back in the box", sent: "delivered", queued: "queued" };
   function ownHTML(m) {
-    const when = U.ago(Date.now() - U.ts(m.at));
     const st = m.state || m.kind || "";
-    return '<article class="reply mine' + (st === "pending" || st === "failed" ? " " + st : "") + '"><span class="src">you</span><div class="own">' + U.esc(m.text) + "</div>" +
-      '<time datetime="' + U.esc(m.at) + '">' + U.esc(when === "now" ? "just now" : when + " ago") +
-      (OWN_TAG[st] ? ' <b class="tag">' + OWN_TAG[st] + "</b>" : "") + "</time></article>";
+    return '<article class="reply mine' + (st === "pending" || st === "failed" ? " " + st : "") + '">' + headerHTML("you", m.at, OWN_TAG[st] || "") +
+      '<div class="own">' + U.esc(m.text) + "</div></article>";
   }
 
   function questionsHTML(t) {
@@ -212,6 +220,7 @@
   }
 
   function repliesHTML(t, got) {
+    const who = whoOf(t);
     if (!got) return '<div class="replies loading" aria-busy="true"><div class="sk"></div><div class="sk s2"></div></div>';
     if (got.failed) {
       // The endpoint is not on this room yet, or it failed. The recap and the last report stand in for it.
@@ -223,7 +232,7 @@
     const list = got.replies || [];
     const items = mergeOwn(t, list.map(r => ({ r, at: U.ts(r.at) })), list.length ? U.ts(list[0].at) : 0);
     if (!items.length) return '<div class="replies">' + fallbackHTML(t) + "</div>";
-    return '<div class="replies">' + items.map(i => i.mine ? ownHTML(i.mine) : replyHTML(i.r, screen)).join("") + "</div>";
+    return '<div class="replies">' + items.map(i => i.mine ? ownHTML(i.mine) : replyHTML(i.r, screen, who)).join("") + "</div>";
   }
 
   // ── painting ─────────────────────────────────────────────────────────────
@@ -273,6 +282,42 @@
   // fire scroll events, and none of them is a decision to stop following. A touch, wheel, key or drag marks the
   // scrolls that follow it as the operator's, and a finger's momentum is covered by the window after it.
   let userAt = 0;
+  // ── pinch is text size ───────────────────────────────────────────────────
+  // The browser's own pinch is off (viewport and touch-action). Two fingers on the thread change --m-fs, the message
+  // font size, within 11 to 24 px, kept on this device. The text reflows, the header, composer and buttons keep their
+  // size, and the message under the fingers stays where it is.
+  const FS_KEY = "atrium.mfs", FS_MIN = 11, FS_MAX = 24, FS_DEF = 14;
+  function setFs(px) {
+    const v = Math.max(FS_MIN, Math.min(FS_MAX, Math.round(px * 10) / 10));
+    q("m-card").style.setProperty("--m-fs", v + "px");
+    return v;
+  }
+  function pinchInit() {
+    try { const v = parseFloat(localStorage.getItem(FS_KEY)); if (v) setFs(v); } catch (e) {}
+    const dist = t => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+    let g = null;
+    els.scroll.addEventListener("touchstart", e => {
+      if (e.touches.length !== 2) { g = null; return; }
+      const t = e.touches, my = (t[0].clientY + t[1].clientY) / 2;
+      const at = document.elementFromPoint((t[0].clientX + t[1].clientX) / 2, my);
+      const anchor = at && at.closest && at.closest(".reply");
+      g = { d: dist(t), fs: parseFloat(getComputedStyle(q("m-card")).getPropertyValue("--m-fs")) || FS_DEF, anchor, y: my };
+      stick = false;
+    }, { passive: true });
+    els.scroll.addEventListener("touchmove", e => {
+      if (!g || e.touches.length !== 2) return;
+      e.preventDefault();
+      const was = g.anchor ? g.anchor.getBoundingClientRect().top : 0;
+      const v = setFs(g.fs * dist(e.touches) / (g.d || 1));
+      if (g.anchor) els.scroll.scrollTop += g.anchor.getBoundingClientRect().top - was;
+      g.last = v;
+    }, { passive: false });
+    const end = () => { if (g && g.last) { try { localStorage.setItem(FS_KEY, String(g.last)); } catch (e) {} } g = null; };
+    els.scroll.addEventListener("touchend", end);
+    els.scroll.addEventListener("touchcancel", end);
+    ["gesturestart", "gesturechange"].forEach(n => els.scroll.addEventListener(n, e => e.preventDefault()));
+  }
+
   function byHand() { userAt = Date.now(); }
   function onScroll() {
     if (!els || !openId) return;
@@ -579,6 +624,7 @@
       const ro = new ResizeObserver(() => { if (stick && openId) toEnd(); });
       [els.scroll, els.head, els.notices, els.replies, els.extras, els.perms].forEach(e => ro.observe(e));
     }
+    pinchInit();
     els.scroll.addEventListener("load", () => { if (stick && openId) toEnd(); }, true);
     els.jump.addEventListener("click", () => { stick = true; toEnd(); });
     if (window.visualViewport) window.visualViewport.addEventListener("resize", () => { if (openId) settle(); });
