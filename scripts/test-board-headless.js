@@ -20190,7 +20190,8 @@ async function main() {
     await unit("childFold", () => childFoldSection(browser, base));
     await unit("liveHome", () => liveHomeSection(browser, base));
   } catch (e) {
-    fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e));
+    // a listing has no browser, so a bare section call throws here, and the guard below names it
+    if (!LIST_MODE) fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e));
     if (process.env.DEBUG_HEADLESS && page) {
       try {
         const diag = await page.evaluate(() => ({
