@@ -13342,6 +13342,50 @@ async function mPinchSection(browser) {
   if (!bad) console.log("mPinch ok");
 }
 
+async function mPromptsSection(browser) {
+  const st = mServer({});
+  const c = mCard("pr-1", { alias: "prompter", display_title: "prompter", status: "needs-input", waiting_since: mIso(2 * M_MIN), seen: { turn_ended_at: mIso(20 * M_MIN) } });
+  st.tasks = [c];
+  st.replies["pr-1"] = { source: "transcript", replies: [
+    { at: mIso(30 * M_MIN), text: "Old reply." }, { at: mIso(5 * M_MIN), text: "Newest reply." }],
+    prompts: [
+      { at: mIso(25 * M_MIN), text: "operator says <b>hi</b>", truncated: false, kind: "operator" },
+      { at: mIso(20 * M_MIN), text: "[atrium] scout says: found it", truncated: false, kind: "peer" },
+      { at: mIso(15 * M_MIN), text: "/compact", truncated: false, kind: "command" },
+      { at: mIso(10 * M_MIN), text: "a very long paste", truncated: true, kind: "operator" },
+      { at: mIso(8 * M_MIN), text: "sent from this phone", truncated: false, kind: "operator" }] };
+  await st.open();
+  try {
+    for (const vp of M_VIEWS) {
+      const { ctx, p, errors } = await mPage(browser, st, vp, "");
+      const tag = "mPrompts " + vp.width + ": ";
+      await p.evaluate(() => localStorage.setItem("atrium.msent.pr-1", JSON.stringify([{ at: new Date(Date.now() - 8 * 60000 + 20000).toISOString(), text: "sent from this phone", kind: "sent" }])));
+      await p.waitForSelector("#m-seg-all", { timeout: slow(10000) });
+      await p.tap("#m-seg-all");
+      await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
+      await p.tap('#m-list .row[data-id="pr-1"]');
+      await p.waitForSelector("#m-replies .reply.prompt", { timeout: slow(5000) });
+      const rows = await p.$$eval("#m-replies .reply", els => els.map(e => ({
+        cls: e.className, src: (e.querySelector(".src") || {}).textContent || "", text: (e.querySelector(".own, .md") || {}).textContent || "",
+        cut: !!e.querySelector(".cut"), html: e.innerHTML })));
+      const texts = rows.map(r => r.text.trim());
+      const want = ["Old reply.", "operator says <b>hi</b>", "found it", "/compact", "a very long paste", "sent from this phone", "Newest reply."];
+      if (JSON.stringify(texts) !== JSON.stringify(want)) fail(tag + "thread order or content wrong: " + JSON.stringify(texts));
+      if (rows[1].src !== "you" || !/mine/.test(rows[1].cls)) fail(tag + "operator prompt not marked as you");
+      if (rows[1].html.indexOf("<b>") >= 0) fail(tag + "prompt text was not escaped");
+      if (rows[2].src !== "scout" || !/peer/.test(rows[2].cls)) fail(tag + "peer prompt not named: " + rows[2].src);
+      if (!/command/.test(rows[3].cls)) fail(tag + "command prompt not a command row");
+      if (!rows[4].cut || rows[1].cut) fail(tag + "cut marker wrong");
+      if (rows.filter(r => r.text.trim() === "sent from this phone").length !== 1) fail(tag + "the local own row was not dropped");
+      await mShot(p, "prompts-" + vp.width);
+      if (await mNoSideways(p)) fail(tag + "the card scrolls sideways");
+      if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+      await ctx.close();
+    }
+  } finally { await st.close(); }
+  if (!bad) console.log("mPrompts ok");
+}
+
 async function mRecapSheetSection(browser) {
   const st = mServer({});
   const fresh = mCard("rc-fresh", { alias: "fresh", display_title: "fresh", status: "needs-input", waiting_since: mIso(M_MIN),
@@ -14408,7 +14452,7 @@ async function main() {
       bootClean: bootCleanSection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mRecapSheet: mRecapSheetSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection,
       gearTermList: gearTermListSection, growlLinks: growlLinksSection, growlChoiceOnce: growlChoiceOnceSection,
-      mOutputAt: mOutputAtSection, mStickBottom: mStickBottomSection, mSendFree: mSendFreeSection, mCardUpload: mCardUploadSection, mCompact: mCompactSection, mPinch: mPinchSection,
+      mOutputAt: mOutputAtSection, mStickBottom: mStickBottomSection, mSendFree: mSendFreeSection, mCardUpload: mCardUploadSection, mCompact: mCompactSection, mPinch: mPinchSection, mPrompts: mPromptsSection,
       cardUrlWinName: cardUrlWinNameSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
@@ -16396,6 +16440,7 @@ async function main() {
     await mCardUploadSection(browser);
     await mCompactSection(browser);
     await mPinchSection(browser);
+    await mPromptsSection(browser);
     await cardUrlWinNameSection(browser, base);
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e));

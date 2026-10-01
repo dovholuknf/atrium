@@ -95,3 +95,7 @@
 #m-card #m-compose .mc-box { padding: 6px 0; }
 #m-card #m-compose .mc-send { width: 36px; height: 36px; }
 #m-card #m-compose .mc-note[data-kind="sent"] { display: none; }
+.reply.prompt.peer { opacity: .75; }
+.reply.prompt.peer .own { font-size: 14px; }
+.reply.prompt.command { align-self: flex-end; background: none; padding: 0 4px; opacity: .7; }
+.reply.prompt.command .own { font-size: 12.5px; font-family: var(--mono, ui-monospace, monospace); }
