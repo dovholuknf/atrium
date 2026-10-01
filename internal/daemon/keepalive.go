@@ -392,10 +392,15 @@ func readLastReply(path string) (*lastReply, error) {
 // forkReceipt is the part of `claude -p --output-format json` a refresh reads.
 type forkReceipt struct {
 	Subtype           string            `json:"subtype"`
+	IsError           bool              `json:"is_error"`
+	Result            string            `json:"result"`
 	NumTurns          int               `json:"num_turns"`
 	SessionID         string            `json:"session_id"`
 	PermissionDenials []json.RawMessage `json:"permission_denials"`
-	Usage             *struct {
+	// ModelUsage is keyed by the model that answered, so a caller that did not
+	// choose the model can still price the call.
+	ModelUsage map[string]json.RawMessage `json:"modelUsage"`
+	Usage      *struct {
 		Input      int64 `json:"input_tokens"`
 		CacheWrite int64 `json:"cache_creation_input_tokens"`
 		CacheRead  int64 `json:"cache_read_input_tokens"`
@@ -448,11 +453,20 @@ type forkSpec struct {
 	Args []string
 	Dir  string
 	Env  []string
+	// Stdin is the prompt for a caller whose prompt is too long for a command
+	// line. Nil for keep-alive.
+	Stdin []byte
+	// Timeout bounds the run. Zero is keepaliveForkTimeout.
+	Timeout time.Duration
 }
 
 // runForkProcess runs a fork and returns its stdout. The default fork runner.
 func runForkProcess(ctx context.Context, spec forkSpec) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(ctx, keepaliveForkTimeout)
+	timeout := keepaliveForkTimeout
+	if spec.Timeout > 0 {
+		timeout = spec.Timeout
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	exe, args := agentFork(spec.Exe, spec.Args)
 	if resolved, err := exec.LookPath(exe); err == nil {
@@ -462,6 +476,9 @@ func runForkProcess(ctx context.Context, spec forkSpec) ([]byte, error) {
 	cmd.Dir = spec.Dir
 	cmd.Env = spec.Env
 	cmd.Stdin = nil
+	if spec.Stdin != nil {
+		cmd.Stdin = bytes.NewReader(spec.Stdin)
+	}
 	var out, errb bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &errb
