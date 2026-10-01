@@ -14902,6 +14902,15 @@ async function phoneRedirectSection(browser, base) {
       if (new URL(b.url()).pathname !== "/m/") fail("phoneRedirect: a new tab did not go to /m after another tab opted out");
       await ctx.close();
     }
+    // a touch laptop with a small window on a big screen is not a phone, and a 412x915 phone is
+    {
+      const lap = await open({ viewport: { width: 500, height: 800 }, screen: { width: 1920, height: 1080 }, hasTouch: true }, "/");
+      if (lap.where !== "/") fail("phoneRedirect: a touch laptop with a 500px window was sent to " + lap.where);
+      await lap.ctx.close();
+      const ph = await open({ viewport: { width: 412, height: 915 }, screen: { width: 412, height: 915 }, hasTouch: true, isMobile: true }, "/");
+      if (ph.where !== "/m/") fail("phoneRedirect: a 412x915 phone was sent to " + ph.where);
+      await ph.ctx.close();
+    }
     // touch points alone make a phone, when the media queries do not say coarse
     {
       const x = await open({ viewport: { width: 390, height: 844 }, hasTouch: true }, "/");
