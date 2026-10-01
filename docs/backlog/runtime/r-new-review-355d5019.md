@@ -34,3 +34,10 @@ were checked against this session's own transcript with jq (read only).
   starts with `[atrium] ` is marked `peer`. Both are rare.
 
 ROOM DEPLOY OK 355d5019
+
+## Re-read of 7aa8dfe4, 2026-09-30
+
+The low is closed. Each text block that starts with `<` is dropped on its own, before the blocks are joined, and
+the test carries an injected `<system-reminder>` block.
+
+ROOM DEPLOY OK 7aa8dfe4
