@@ -13219,6 +13219,35 @@ async function mCompactCount(p) {
   });
 }
 
+// The composer's buttons and the jump control: no overlap, one line with the input, 40px hit areas, nothing over a message.
+async function mCompactButtons(p, tag) {
+  const r = await p.evaluate(() => {
+    const box = e => { const b = e.getBoundingClientRect(); return { x: b.left, y: b.top, w: b.width, h: b.height, cy: b.top + b.height / 2 }; };
+    const btns = [...document.querySelectorAll("#m-compose .mc-attach, #m-compose .mc-send, #m-jump:not([hidden])")].map(e => ({ n: e.className || e.id, ...box(e) }));
+    const ta = box(document.querySelector("#m-compose textarea"));
+    const sc = document.getElementById("m-card-scroll").getBoundingClientRect();
+    const jump = document.querySelector("#m-jump:not([hidden])");
+    const over = jump ? [...document.querySelectorAll("#m-replies .reply")].some(e => {
+      const r0 = e.getBoundingClientRect(), j = jump.getBoundingClientRect();
+      const b = { left: r0.left, right: r0.right, top: Math.max(r0.top, sc.top), bottom: Math.min(r0.bottom, sc.bottom) };
+      return b.bottom > b.top && b.left < j.right && b.right > j.left && b.top < j.bottom && b.bottom > j.top; }) : false;
+    const row = document.querySelector("#m-compose .mc-row").getBoundingClientRect();
+    return { btns, ta, over, rowH: Math.round(row.height), cam: !!document.querySelector("#m-compose .mc-cam"), sw: document.documentElement.scrollWidth - innerWidth };
+  });
+  if (r.cam) fail(tag + "a camera button is there");
+  if (r.btns.some(b => b.w < 39.5 || b.h < 39.5)) fail(tag + "a button has a tap target under 40px: " + JSON.stringify(r.btns));
+  r.btns.forEach((a, i) => r.btns.slice(i + 1).forEach(b => {
+    if (a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h) fail(tag + "buttons overlap: " + a.n + " and " + b.n);
+  }));
+  r.btns.filter(b => /mc-attach|mc-send/.test(b.n)).forEach(b => {
+    if (Math.abs(b.cy - r.ta.cy) > 2) fail(tag + b.n + " is not on one line with the input: " + Math.round(b.cy) + " vs " + Math.round(r.ta.cy));
+    if (b.x + b.w > r.ta.x && b.x < r.ta.x + r.ta.w) fail(tag + b.n + " overlaps the input");
+  });
+  if (r.over) fail(tag + "the jump control covers a message");
+  if (r.rowH > 46) fail(tag + "the composer is " + r.rowH + "px high when empty");
+  return r;
+}
+
 async function mCompactSection(browser) {
   const st = mServer({});
   const c = mCard("cp-1", { alias: "packer", display_title: "packer", status: "needs-input", waiting_since: mIso(2 * M_MIN), seen: { turn_ended_at: mIso(20 * M_MIN) } });
@@ -13273,9 +13302,47 @@ async function mCompactSection(browser) {
     if (row.boxes !== 1) fail(tag + "more than one activity block: " + row.boxes);
     if (row.border !== "0px" || !/^rgba\(0, 0, 0, 0\)|transparent/.test(row.bg)) fail(tag + "the activity row is still a box: " + JSON.stringify(row));
     if (row.h > 24) fail(tag + "the activity row is not one line: " + row.h);
+    await mCompactButtons(p, tag + "390: ");
+    // the composer text follows the thread's size, with no 16px floor, and the send circle sits inside the border evenly
+    const sz = await p.evaluate(() => {
+      const ta = document.querySelector("#m-compose textarea"), md = document.querySelector("#m-replies .md");
+      const f = () => [parseFloat(getComputedStyle(ta).fontSize), parseFloat(getComputedStyle(md).fontSize)];
+      const a = f();
+      document.getElementById("m-card").style.setProperty("--m-fs", "19px");
+      const b = f();
+      document.getElementById("m-card").style.removeProperty("--m-fs");
+      const row = document.querySelector("#m-compose .mc-row").getBoundingClientRect(), sd = document.querySelector("#m-compose .mc-send"), sb = sd.getBoundingClientRect();
+      const pad = parseFloat(getComputedStyle(sd).paddingLeft);
+      const bg = getComputedStyle(sd).backgroundClip;
+      const svg = sd.querySelector("svg").getBoundingClientRect();
+      return { a, b, right: Math.round(row.right - (sb.right - pad)), top: Math.round((sb.top + pad) - row.top), bottom: Math.round(row.bottom - (sb.bottom - pad)), bg,
+        dx: Math.abs((svg.left + svg.width / 2) - (sb.left + sb.width / 2)), dy: Math.abs((svg.top + svg.height / 2) - (sb.top + sb.height / 2)),
+        edge: getComputedStyle(document.querySelector("#m-replies .reply")).boxShadow };
+    });
+    if (sz.a[0] !== sz.a[1] || sz.b[0] !== 19 || sz.b[1] !== 19) fail(tag + "the composer and thread text sizes differ: " + JSON.stringify(sz));
+    if (Math.abs(sz.right - sz.top) > 1 || Math.abs(sz.top - sz.bottom) > 1 || sz.top < 4) fail(tag + "the send circle inset is uneven: " + JSON.stringify(sz));
+    if (sz.dx > 0.6 || sz.dy > 0.6) fail(tag + "the send arrow is off centre: " + JSON.stringify(sz));
+    if (!/rgb/.test(sz.edge) || /none/.test(sz.edge)) fail(tag + "a bubble has no edge: " + sz.edge);
     if (await mNoSideways(p)) fail(tag + "the card scrolls sideways");
     if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
     await ctx.close();
+    // a narrow phone, scrolled up so the jump control shows
+    st.tasks = [mCard("cp-2", { alias: "longer", display_title: "longer", status: "needs-input", waiting_since: mIso(2 * M_MIN), seen: { turn_ended_at: mIso(20 * M_MIN) } })];
+    st.replies["cp-2"] = { source: "transcript", replies: [1, 2, 3, 4, 5, 6].map(i => ({ at: mIso((30 - i * 4) * M_MIN), text: "Reply " + i + ". " + body.repeat(4) })) };
+    const n = await mPage(browser, st, { width: 360, height: 640 }, "");
+    await n.p.waitForSelector("#m-seg-all", { timeout: slow(10000) });
+    await n.p.tap("#m-seg-all");
+    await n.p.waitForSelector("#m-list .row", { timeout: slow(10000) });
+    await n.p.tap('#m-list .row[data-id="cp-2"]');
+    await n.p.waitForSelector("#m-replies .reply", { timeout: slow(5000) });
+    await n.p.waitForSelector("#m-compose textarea", { timeout: slow(5000) });
+    await n.p.evaluate(() => { const e = document.getElementById("m-card-scroll"); e.dispatchEvent(new WheelEvent("wheel", { deltaY: -100 })); e.scrollTop = 0; });
+    await n.p.waitForTimeout(600);
+    await n.p.waitForFunction(() => !document.getElementById("m-jump").hidden, null, { timeout: slow(3000) });
+    await mCompactButtons(n.p, tag + "360: ");
+    await mShot(n.p, "compact-jump-360");
+    if (await mNoSideways(n.p)) fail(tag + "360: the card scrolls sideways");
+    await n.ctx.close();
   } finally { await st.close(); }
   if (!bad) console.log("mCompact ok");
 }
@@ -13405,6 +13472,65 @@ async function mPromptsSection(browser) {
     }
   } finally { await st.close(); }
   if (!bad) console.log("mPrompts ok");
+}
+
+// Typing a long message must not move the thread: not on a keystroke, not when the composer grows a line, not when the
+// keyboard comes and goes.
+async function mTypeSteadySection(browser) {
+  const st = mServer({});
+  const c = mCard("ty-1", { alias: "typist", display_title: "typist", status: "needs-input", waiting_since: mIso(2 * M_MIN), seen: { turn_ended_at: mIso(20 * M_MIN) } });
+  st.tasks = [c];
+  st.replies["ty-1"] = { source: "transcript", replies: Array.from({ length: 10 }, (_, i) => ({ at: mIso((60 - i * 4) * M_MIN), text: "Reply " + i + ". " + "words go here and wrap onto more lines. ".repeat(8) })) };
+  await st.open();
+  try {
+    const { ctx, p, errors } = await mPage(browser, st, M_VIEWS[0], "");
+    const tag = "mTypeSteady: ";
+    await p.waitForSelector("#m-seg-all", { timeout: slow(10000) });
+    await p.tap("#m-seg-all");
+    await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
+    await p.tap('#m-list .row[data-id="ty-1"]');
+    await p.waitForSelector("#m-replies .reply", { timeout: slow(5000) });
+    await p.waitForSelector("#m-compose textarea", { timeout: slow(5000) });
+    await p.waitForTimeout(600);
+    const look = () => p.evaluate(() => {
+      const sc = document.getElementById("m-card-scroll"), r = sc.getBoundingClientRect();
+      const first = [...document.querySelectorAll("#m-replies .reply")].find(e => e.getBoundingClientRect().bottom > r.top + 1);
+      return { top: sc.scrollTop, first: first ? first.textContent.slice(0, 14) : "", firstY: first ? Math.round(first.getBoundingClientRect().top - r.top) : 0,
+        boxH: Math.round(document.querySelector("#m-compose textarea").getBoundingClientRect().height) };
+    });
+    for (const where of ["bottom", "middle"]) {
+      if (where === "middle") await p.evaluate(() => { const e = document.getElementById("m-card-scroll"); e.dispatchEvent(new WheelEvent("wheel", { deltaY: -100 })); e.scrollTop = Math.round(e.scrollHeight / 3); });
+      await p.waitForTimeout(300);
+      await p.tap("#m-compose textarea");
+      await p.waitForTimeout(200);
+      const base = await look();
+      const steps = [];
+      for (let line = 0; line < 10; line++) {
+        for (const ch of "line " + line + " of a long message") {
+          await p.keyboard.type(ch);
+          const now = await look();
+          if (now.top !== base.top || now.first !== base.first || now.firstY !== base.firstY) { steps.push({ line, ch, now }); break; }
+        }
+        if (steps.length) break;
+        await p.keyboard.press("Shift+Enter");
+        if (line === 3) await p.setViewportSize({ width: 390, height: 844 - 320 });
+        if (line === 7) await p.setViewportSize({ width: 390, height: 844 });
+        await p.waitForTimeout(60);
+      }
+      if (steps.length) fail(tag + where + ": the thread moved " + JSON.stringify({ base, step: steps[0] }));
+      const end = await look();
+      if (end.boxH > 6 * 20 + 24) fail(tag + where + ": the composer grew past its cap: " + end.boxH);
+      const sc = await p.$eval("#m-compose textarea", t => t.scrollHeight > t.clientHeight && getComputedStyle(t).overflowY === "auto");
+      if (!sc) fail(tag + where + ": a ten line message does not scroll inside the composer");
+      await p.fill("#m-compose textarea", "");
+      await p.evaluate(() => document.querySelector("#m-compose textarea").dispatchEvent(new Event("input", { bubbles: true })));
+      await p.evaluate(() => document.activeElement && document.activeElement.blur());
+    }
+    if (await mNoSideways(p)) fail(tag + "the card scrolls sideways");
+    if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+    await ctx.close();
+  } finally { await st.close(); }
+  if (!bad) console.log("mTypeSteady ok");
 }
 
 async function mRecapSheetSection(browser) {
@@ -13700,11 +13826,12 @@ async function mCardUploadSection(browser) {
         await p.evaluate(() => document.querySelector("#m-compose textarea").dispatchEvent(new Event("input", { bubbles: true })));
       };
       const chips = () => p.evaluate(() => Array.from(document.querySelectorAll("#m-compose .mc-file")).map(x => ({ name: x.querySelector(".mc-fname").textContent, st: x.dataset.state, word: x.querySelector(".mc-fstate").textContent })));
-      // the file picker and the camera are both there, and the camera asks for the camera
+      // the file picker is there, takes images and files, and there is no camera button
       const ins = await p.evaluate(() => Array.from(document.querySelectorAll("#m-compose input.mc-input")).map(i => ({ accept: i.accept, capture: i.getAttribute("capture"), multiple: i.multiple })));
-      if (ins.length !== 2 || !ins.some(i => i.multiple && /image/.test(i.accept) && /pdf/.test(i.accept) && i.capture === null) || !ins.some(i => i.capture === "environment" && i.accept === "image/*")) fail(tag + "picker or camera inputs wrong: " + JSON.stringify(ins));
+      if (ins.length !== 1 || !(ins[0].multiple && /image/.test(ins[0].accept) && /pdf/.test(ins[0].accept) && ins[0].capture === null)) fail(tag + "picker input wrong: " + JSON.stringify(ins));
+      if (await p.$("#m-compose .mc-cam")) fail(tag + "the camera button is still there");
       const btns = await p.$$eval("#m-compose .mc-attach", bs => bs.map(b => { const r = b.getBoundingClientRect(); return [r.width, r.height]; }));
-      if (btns.length !== 2 || btns.some(b => b[0] < 36 || b[1] < 40)) fail(tag + "attach buttons are missing or too small: " + JSON.stringify(btns));
+      if (btns.length !== 1 || btns.some(b => b[0] < 40 || b[1] < 40)) fail(tag + "the attach button is missing or too small: " + JSON.stringify(btns));
       if (await mNoSideways(p)) fail(tag + "the card scrolls sideways");
       await mShot(p, "upload-row-" + vp.width);
       // two files from the picker and a pasted image, held in flight
@@ -14890,7 +15017,8 @@ async function main() {
       gearTermList: gearTermListSection, growlLinks: growlLinksSection, growlChoiceOnce: growlChoiceOnceSection,
       mOutputAt: mOutputAtSection, mStickBottom: mStickBottomSection, mSendFree: mSendFreeSection, mCardUpload: mCardUploadSection, mCompact: mCompactSection, mPinch: mPinchSection, mPrompts: mPromptsSection,
       cardUrlWinName: cardUrlWinNameSection,
-      gearHosts: gearHostsSection };
+      gearHosts: gearHostsSection,
+      mTypeSteady: mTypeSteadySection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -16882,6 +17010,7 @@ async function main() {
     await mCardUploadSection(browser);
     await mCompactSection(browser);
     await mPinchSection(browser);
+    await mTypeSteadySection(browser);
     await mPromptsSection(browser);
     await cardUrlWinNameSection(browser, base);
     await gearHostsSection(browser, base);
