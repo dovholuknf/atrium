@@ -93,3 +93,43 @@ HOLD e502b215..97c99ef0 for finding 1. Re-read e502b215..tip. The verdict will b
 Quality: after the Sonnet switch, no drop seen in what it set out to do. The contract is followed route by route,
 containment is careful, and the tests are broad. The misses are at the edges of what it built against: the renderer's
 blocking word and spaced names, both of which changed after the contract was written.
+
+## Re-read: 852e5c74 (2026-10-01)
+
+Range e502b215..852e5c74 on claude/r-pr-store. The branch was rebased onto d77d21d0: `git range-diff` shows all eight
+reviewed commits `=`, so the new reading is the one fix commit, 852e5c74.
+
+Tests at 852e5c74 in a scratch worktree: vet clean on store, api and prreview. store and prreview/render ok. Both
+proofs from proof-97c99ef0/ now PASS (a blocking finding counts as `High:1`, and a mark on `01-low-a b.c-L3.txt`
+reads back as done with one line in walk.txt). The api PR, pull, finding and walk tests pass at `-count=3`, and the
+whole api package passes once. The daemon package was not rerun, as @runtime said.
+
+### Closed
+
+- Medium: `blocking` is in `findingName` and `labelLine`, counted as `high`, with an additive `blocking` bool on the
+  finding. The contract says both.
+- Low: walk.txt is read through one parser, `render.WalkLine`, in `parseWalkLine`, `replaceWalkLine` and `started`.
+- The other lows are taken: `tailLog` resolves the folder in the root and `run.log` in the folder through safepath,
+  `<n>` is substituted at launch, `reviews_root` says that a change orphans rows (store, settings and the contract),
+  and the folder is made after the row.
+- New and right: `MovePR` and `ResetPR` put the state check in the UPDATE's WHERE, and `whyNoRows` tells a missing
+  row from a wrong state outside the guard, so a 409 never halts the store. `prOpMu` serialises start, retry, abort
+  and post, and `startPR` reads the row again under it. A paste with no head finds a live review by the pull request
+  rather than by the `pending` folder. A halted store inside the recogniser is the halt.
+
+### New
+
+- NIT: `gofmt -l` names internal/api/prsdrawer.go. The `Blocking` field broke the struct's alignment (`Path    string`).
+- LOW, for the runner that is not built yet: abort now marks the row `aborted` before it calls `Abort`. Today
+  `unbuiltPRRunner.Abort` does nothing, so the order is harmless. A real runner that writes `failed` or `ready` as it
+  winds down would overwrite `aborted`. Its own moves should go through `MovePR` with a `from` list.
+- NIT: a retry of a failed row keeps the row's `run_dir`, but `RunFolderOn` makes the folder that the current root and
+  head name. After a `reviews_root` change those two differ, and the folder made is not the one the row uses. The row
+  is orphaned then anyway, which the new note already says.
+
+### Verdict
+
+OK room e502b215..852e5c74. The gofmt nit should go in before landing, but it changes no behaviour.
+
+Quality: after the Sonnet switch, the fix is complete and went further than asked. The race work is careful, and the
+store keeps its halt rule. The one miss is gofmt on a file it edited.
