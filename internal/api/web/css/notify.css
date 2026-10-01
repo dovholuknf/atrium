@@ -159,7 +159,9 @@
   .chip.tag {
     background: hsl(var(--ghue) 60% 50% / .16);
     border: 1px solid hsl(var(--ghue) 60% 55% / .38);
-    color: hsl(var(--ghue) 70% 76%); cursor: pointer;
+    /* The tag's hue, pulled toward the skin's own heading colour, so the text keeps its contrast on a light skin
+       as well as a dark one. A fixed pale lightness read as pale on pale. */
+    color: color-mix(in srgb, hsl(var(--ghue) 75% 52%) 30%, var(--head)); cursor: pointer;
   }
   .chip.tag:hover { background: hsl(var(--ghue) 60% 50% / .3); }
   /* Where the work came from. Not coloured per source: atrium does not know what a source is, and a palette per
