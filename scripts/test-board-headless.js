@@ -13557,6 +13557,108 @@ async function mTypeSteadySection(browser) {
   if (!bad) console.log("mTypeSteady ok");
 }
 
+// A reader holding the thread (a finger down, dragging slowly up) is never pulled back to the bottom, whatever arrives.
+async function mFollowSection(browser) {
+  const st = mServer({});
+  const c = mCard("fo-1", { alias: "reader", display_title: "reader", status: "running", activity: { what: "thinking" }, seen: { turn_ended_at: mIso(20 * M_MIN) }, output_at: mIso(30 * M_MIN) });
+  st.tasks = [c];
+  const rep = (i, min) => ({ at: mIso(min * M_MIN), text: "Reply " + i + ". " + "a long reply that wraps over several lines on a phone. ".repeat(14) });
+  let n = 8;
+  const replies = () => Array.from({ length: n }, (_, i) => rep(i, 120 - (n - i) * 3));
+  st.replies["fo-1"] = { source: "transcript", replies: replies() };
+  await st.open();
+  try {
+    const ctx = await browser.newContext({ viewport: { width: 412, height: 915 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2 });
+    const p = await ctx.newPage();
+    const errors = [];
+    p.on("pageerror", e => errors.push(String(e)));
+    st.skin = "";
+    await p.goto(st.url + "/m/", { waitUntil: "domcontentloaded" });
+    const tag = "mFollow: ";
+    await p.waitForSelector("#m-seg-all", { timeout: slow(10000) });
+    await p.tap("#m-seg-all");
+    await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
+    await p.tap('#m-list .row[data-id="fo-1"]');
+    await p.waitForSelector("#m-replies .reply", { timeout: slow(5000) });
+    await p.waitForFunction(() => document.getElementById("m-live").classList.contains("on"), null, { timeout: slow(10000) });
+    const t1 = Date.now();
+    while (!st.streams.length && Date.now() - t1 < slow(10000)) await p.waitForTimeout(100);
+    await p.waitForTimeout(500);
+    const gap = () => p.evaluate(() => { const e = document.getElementById("m-card-scroll"); return Math.round(e.scrollHeight - e.scrollTop - e.clientHeight); });
+    const look = () => p.evaluate(() => {
+      const sc = document.getElementById("m-card-scroll"), r = sc.getBoundingClientRect();
+      const a = [...document.querySelectorAll("#m-replies [data-k]")].find(e => e.getBoundingClientRect().top > r.top + 20 && e.getBoundingClientRect().bottom < r.bottom);
+      return { top: sc.scrollTop, k: a ? a.dataset.k : "", y: a ? a.getBoundingClientRect().top : 0 };
+    });
+    let tick = 0;
+    const output = async () => {
+      tick++;
+      const kind = tick % 3;
+      if (kind === 1) { n++; st.replies["fo-1"] = { source: "transcript", replies: replies() }; st.send("task", Object.assign({}, c, { row: 1, output_at: mIso(Math.max(0.1, 30 - tick)) })); }
+      else if (kind === 2) st.send("task", Object.assign({}, c, { row: 1, activity: { what: "tool", tool: "Tool" + tick, seconds: tick } }));
+      else { st.replies["fo-1"] = { source: "transcript", replies: replies() }; st.send("task", Object.assign({}, c, { row: 1, seen: { turn_ended_at: mIso(10000 - tick) } })); }
+    };
+    if ((await gap()) > 4) fail(tag + "did not open at the bottom: " + await gap());
+    // a finger goes down and drags slowly up for 20 s while output arrives every 2 s
+    const cdp = await ctx.newCDPSession(p);
+    const X = 200;
+    let y = 600;
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: X, y }] });
+    await p.waitForTimeout(150);
+    const t0 = Date.now();
+    let base = null, bad1 = null, last = null, nextOut = t0 + 1000;
+    while (Date.now() - t0 < 20000) {
+      y += 1.2;
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: X, y: Math.round(y) }] });
+      await p.waitForTimeout(100);
+      if (Date.now() >= nextOut) { nextOut += 2000; await output(); }
+      const s = await look();
+      if (!base && s.k) base = s;
+      if (base && !bad1) {
+        const drift = Math.abs((s.y - base.y) - (base.top - s.top));
+        if (s.k === base.k && drift > 2) bad1 = "the bubble drifted by " + drift.toFixed(1) + "px: " + JSON.stringify({ base, s });
+        if (last && s.top > last.top + 2) bad1 = "the thread jumped down " + (s.top - last.top) + "px: " + JSON.stringify({ last, s });
+      }
+      last = s;
+    }
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    if (bad1) fail(tag + bad1);
+    if (!base) fail(tag + "no bubble to hold " + JSON.stringify(await p.evaluate(() => { const sc = document.getElementById("m-card-scroll"); return [sc.scrollTop, sc.scrollHeight, sc.clientHeight, document.querySelectorAll("#m-replies [data-k]").length, [...document.querySelectorAll("#m-replies [data-k]")].map(e => Math.round(e.getBoundingClientRect().height))]; })));
+    // after the finger lifts, a reader above the bottom still keeps still, through more output
+    await p.waitForTimeout(700);
+    const rest = await look();
+    for (let i = 0; i < 3; i++) { await output(); await p.waitForTimeout(700); }
+    const after = await look();
+    if (after.k === rest.k && (Math.abs(after.top - rest.top) > 2 || Math.abs(after.y - rest.y) > 2)) fail(tag + "a reader who let go was moved: " + JSON.stringify({ rest, after }));
+    // parked 100 px above the bottom: replies arrive and nothing moves
+    await p.evaluate(() => { const e = document.getElementById("m-card-scroll"); e.dispatchEvent(new WheelEvent("wheel", { deltaY: -100 })); e.scrollTop = e.scrollHeight - e.clientHeight - 100; });
+    await p.waitForTimeout(500);
+    const park = await look();
+    for (let i = 0; i < 3; i++) { await output(); await p.waitForTimeout(700); }
+    const parked = await look();
+    if (Math.abs(parked.top - park.top) > 2) fail(tag + "a reader parked 100px above the bottom was moved: " + JSON.stringify({ park, parked }));
+    if ((await gap()) < 90) fail(tag + "the thread went back to the bottom under a parked reader: " + await gap());
+    // the jump arrow resumes following
+    await p.tap("#m-jump");
+    await p.waitForTimeout(500);
+    if ((await gap()) > 3) fail(tag + "the jump arrow did not reach the bottom: " + await gap());
+    await output(); await p.waitForTimeout(900);
+    if ((await gap()) > 3) fail(tag + "following did not resume after the jump arrow: " + await gap());
+    // scrolling back to the very bottom by hand resumes it too, and a little way up does not
+    await p.evaluate(() => { const e = document.getElementById("m-card-scroll"); e.dispatchEvent(new WheelEvent("wheel", { deltaY: -100 })); e.scrollTop = e.scrollTop - 300; });
+    await p.waitForTimeout(500);
+    await output(); await p.waitForTimeout(900);
+    if ((await gap()) < 250) fail(tag + "a reader 300px up was pulled down: " + await gap());
+    await p.evaluate(() => { const e = document.getElementById("m-card-scroll"); e.dispatchEvent(new WheelEvent("wheel", { deltaY: 100 })); e.scrollTop = e.scrollHeight; });
+    await p.waitForTimeout(600);
+    await output(); await p.waitForTimeout(900);
+    if ((await gap()) > 3) fail(tag + "scrolling to the very bottom did not resume following: " + await gap());
+    if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+    await ctx.close();
+  } finally { await st.close(); }
+  if (!bad) console.log("mFollow ok");
+}
+
 async function mRecapSheetSection(browser) {
   const st = mServer({});
   const fresh = mCard("rc-fresh", { alias: "fresh", display_title: "fresh", status: "needs-input", waiting_since: mIso(M_MIN),
@@ -13734,9 +13836,18 @@ async function mStickBottomSection(browser) {
       await p.tap("#m-compose .mc-send");
       await p.waitForSelector("#m-replies .reply.mine", { timeout: slow(5000) });
       await settled("own message");
-      // closing the recap sheet lands on the newest
+      // closing the recap sheet gives back what the reader had: a reader at the top stays there
       await p.evaluate(() => { const e = document.getElementById("m-card-scroll"); e.dispatchEvent(new WheelEvent("wheel", { deltaY: -100 })); e.scrollTop = 0; });
+      await p.waitForTimeout(400);
       await p.tap("#m-recap-open");
+      await p.waitForSelector("#m-recap:not([hidden])", { timeout: slow(3000) });
+      await p.tap("#m-recap-close");
+      await p.waitForTimeout(500);
+      if ((await p.evaluate(() => document.getElementById("m-card-scroll").scrollTop)) > 4) fail(tag + "closing the recap moved a reader at the top");
+      // and one following the end still follows
+      await p.tap("#m-jump");
+      await settled("jump after recap");
+      await p.evaluate(() => document.getElementById("m-recap-open").click());
       await p.waitForSelector("#m-recap:not([hidden])", { timeout: slow(3000) });
       await p.tap("#m-recap-close");
       await settled("recap closed");
@@ -15554,7 +15665,7 @@ async function main() {
       mOutputAt: mOutputAtSection, mStickBottom: mStickBottomSection, mSendFree: mSendFreeSection, mCardUpload: mCardUploadSection, mCompact: mCompactSection, mPinch: mPinchSection, mPrompts: mPromptsSection,
       cardUrlWinName: cardUrlWinNameSection,
       gearHosts: gearHostsSection,
-      mTypeSteady: mTypeSteadySection };
+      mTypeSteady: mTypeSteadySection, mFollow: mFollowSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -17550,6 +17661,7 @@ async function main() {
     await mCompactSection(browser);
     await mPinchSection(browser);
     await mTypeSteadySection(browser);
+    await mFollowSection(browser);
     await mPromptsSection(browser);
     await cardUrlWinNameSection(browser, base);
     await gearHostsSection(browser, base);
