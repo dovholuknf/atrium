@@ -13741,8 +13741,10 @@ async function mPullSection(browser) {
     await p.evaluate(() => document.querySelector("#m-compose textarea").dispatchEvent(new Event("input", { bubbles: true })));
     await p.tap("#m-compose .mc-send");
     await p.waitForFunction(() => /sending/.test(document.getElementById("m-replies").textContent), null, { timeout: slow(5000) });
-    await p.evaluate(() => { document.getElementById("m-card-scroll").scrollTop = 0; });
-    await p.waitForTimeout(300);
+    await p.evaluate(() => { const e = document.getElementById("m-card-scroll"); e.dispatchEvent(new WheelEvent("wheel", { deltaY: -100 })); e.scrollTop = 0; });
+    await p.waitForTimeout(500);
+    const at0 = await p.evaluate(() => document.getElementById("m-card-scroll").scrollTop);
+    if (at0 !== 0) fail(tag + "the thread was not at its top for the in-flight case: " + at0);
     await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: 200, y: 200 }] });
     for (let i = 1; i <= 8; i++) { await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: 200, y: 200 + i * 15 }] }); await p.waitForTimeout(25); }
     if (await p.$eval("#m-pull", e => !e.hidden)) fail(tag + "the spinner started while a send was in flight");
