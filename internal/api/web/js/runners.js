@@ -653,7 +653,7 @@ function historyRow(t) {
     ${originChip(t)}
     ${roomChip(t)}
     ${t.recap
-      ? `<span class="chip recap" data-tip="${esc(t.recap)}">recap</span>`
+      ? `<span class="chip recap">recap</span>`
       : `<span class="by" data-tip="no account of what this session did">&mdash;</span>`}
     <span class="chip" data-tip="${esc(t.status)}">${esc(statusLabel(t.status))}</span>
     ${gone}
