@@ -6,6 +6,8 @@ import (
 	"io"
 	"net/http"
 	"strings"
+
+	"github.com/dovholuknf/atrium/internal/edge"
 )
 
 // The launch cap, PER ROOM.
@@ -124,8 +126,8 @@ func (p *Proxy) serveLaunchCaps(w http.ResponseWriter, r *http.Request) {
 		// SET FROM THE HUB'S MACHINE ONLY, like the notify command (f-024). A cap
 		// is the backstop on how many workers a room may run, so raising it is
 		// not something a board reached over an overlay decides. Reading stays open.
-		if !loopbackRemote(r.RemoteAddr) {
-			fail(http.StatusForbidden, "launch caps are set only from the machine the hub runs on")
+		if !edge.LocalOperator(r) {
+			fail(http.StatusForbidden, "launch caps are set only from the machine the hub runs on"+edge.ProxyNote(r))
 			return
 		}
 		var lc LaunchCaps

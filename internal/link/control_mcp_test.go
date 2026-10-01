@@ -834,14 +834,26 @@ func TestLoopbackBase(t *testing.T) {
 	}
 }
 
-func TestLoopbackRemote(t *testing.T) {
-	if !loopbackRemote("127.0.0.1:5555") {
-		t.Errorf("127.0.0.1 should be loopback")
-	}
-	if !loopbackRemote("[::1]:5555") {
-		t.Errorf("::1 should be loopback")
-	}
-	if loopbackRemote("203.0.113.7:5555") {
-		t.Errorf("a public address is not loopback")
+// A HAND-STARTED SHARE IS NOT THE OPERATOR. zrok's proxy connects from loopback
+// with the public Host and forwarding headers, and every operator-only route
+// refuses it, saying why. See edge.LocalOperator.
+func TestOperatorRoutesRefuseALocalProxy(t *testing.T) {
+	p := NewProxy(NewHub(Timings{}), nil, "", nil)
+	p.SetLaunchCaps(&fakeSettings{m: map[string]string{}})
+	for _, route := range []struct{ method, path, body string }{
+		{http.MethodPut, "/_hub/launch-caps", `{"default":50}`},
+		{http.MethodPut, "/_hub/hosts", `{"hosts":["*.example.org"]}`},
+		{http.MethodPost, "/_hub/restart", `{}`},
+	} {
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(route.method, route.path, strings.NewReader(route.body))
+		r.RemoteAddr = "127.0.0.1:50123"
+		r.Host = "atrium.shares.zrok.io"
+		r.Header.Set("X-Forwarded-For", "198.51.100.4")
+		r.Header.Set("X-Proxy", "zrok")
+		p.ServeHTTP(w, r)
+		if w.Code != http.StatusForbidden || !strings.Contains(w.Body.String(), "came through a proxy") {
+			t.Errorf("%s %s through a share answered %d %s", route.method, route.path, w.Code, w.Body.String())
+		}
 	}
 }
