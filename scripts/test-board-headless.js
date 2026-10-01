@@ -13718,7 +13718,7 @@ async function mSwitcherSection(browser) {
     await p.fill("#m-card-menu .pm-search", "");
     await p.tap('#m-card-menu .pm-chip[data-f="all"]');
     if ((await names()).length !== 19) fail(tag + "all should list every other card: " + (await names()).length);
-    await p.tap('#m-card-menu .pm-chip[data-f="all"]');
+    for (const f of ["running", "needs", "done"]) await p.tap('#m-card-menu .pm-chip[data-f="' + f + '"]');
     // the choice is remembered on this device
     await p.goto(st.url + "/m/", { waitUntil: "domcontentloaded" });
     await open();
@@ -13727,7 +13727,7 @@ async function mSwitcherSection(browser) {
     const kept = await p.$$eval("#m-card-menu .pm-chip", e => e.map(x => x.getAttribute("aria-pressed")).join(","));
     if (kept !== "true,true,false,true,false") fail(tag + "the chips were not remembered: " + kept);
     // a tap on the backdrop closes it, and a tap on the pick button does too
-    await p.tap("#m-card-menu-back", { position: { x: 200, y: 300 } });
+    await p.tap("#m-card-menu-back", { position: { x: 200, y: 800 } });
     await p.waitForFunction(() => document.getElementById("m-card-menu").hidden, null, { timeout: slow(3000) });
     if (!(await p.$eval("#m-card-menu-back", e => e.hidden))) fail(tag + "the backdrop stayed after closing");
     if (await mNoSideways(p)) fail(tag + "the card scrolls sideways");
