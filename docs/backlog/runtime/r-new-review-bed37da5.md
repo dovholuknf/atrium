@@ -82,3 +82,42 @@ buffer, argv length), not correctness. No drop.
 
 HUB DEPLOY OK and ROOM DEPLOY OK bed37da5~1..6ce359ee. Low 1 should follow soon, since the cards that read /replies
 most are the long-running ones.
+
+## Re-read of 49282d43 at edda5910 (2026-10-01)
+
+Only the fix was read. All four lows and the nit are closed:
+
+1. **Incremental scan.** `turnsOf` keeps the offset of the first unread byte and the 256 bytes before it. It reads
+   only the tail when the file has grown and the fingerprint still matches, and rescans from zero otherwise. A
+   line with no newline yet is left for the next read. The cached index is cloned before it is appended to, so a
+   reader holding the old one is never written under.
+2. **`Runner.GitCapped`.** `capWriter` keeps up to the cap, cancels the command's context past it, and keeps
+   draining so git cannot block on a full pipe. `*Error` unwraps to `ErrOutputCap`. When the patch is cut, its last
+   block is dropped as incomplete. Blocks still line up with files by index, because binary and rename-only files
+   print a `diff --git` block too. A file list over the cap answers 413.
+3. **A zero start** finds no committed changes.
+4. **Paths are chunked** at 12 000 characters. That `--pathspec-from-file` is refused by diff, show and ls-files in
+   git 2.45 is accepted as the reason.
+
+The merge of claude/main 58d7ec48 resolves `docs/test-plan.md` with no markers left (HO, then this as HQ, then HP).
+`gofmt -l` on the four files is clean, and `go vet` on daemon, api, gitsync and link is clean. The targeted daemon
+tests, gitsync and api: ok.
+
+### Before landing
+
+- **The test-plan letter collides again.** D1 landed on claude/main after this merge (6f3c6676..682c26f9) and took
+  **HQ** for hub documents. Merge claude/main again and make this section **HR**.
+
+### Nits
+
+- `untracked`: across chunks, only the last chunk's error decides whether the trailing token is dropped. A chunk
+  that hits the cap followed by one that does not leaves a half name, which is listed as an empty `added` file.
+  Trim each chunk's output on its own error.
+- `scanTurnsFrom` uses `ReadBytes('\n')`, which holds a whole line however long. `feed` drops anything over 8 MiB,
+  but only after it has been read. A pasted image a few MB long is fine, and a 100 MB line would be a spike.
+
+Quality: every low is fixed in the way suggested or a better one, with the reason given where it is not (no
+pathspec file). No drop.
+
+HUB DEPLOY OK and ROOM DEPLOY OK bed37da5~1..edda5910, once the test-plan section is renamed HR. That is a docs-only
+merge and needs no re-read.
