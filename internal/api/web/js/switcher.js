@@ -257,7 +257,7 @@ function switcherRows() {
     if (a.r !== b.r) return a.r - b.r;
     const w = (isWaiting(b.t) ? 1 : 0) - (isWaiting(a.t) ? 1 : 0);
     if (w) return w;
-    return (a.t.idle_seconds || 0) - (b.t.idle_seconds || 0);
+    return cardActivityCmp(a.t, b.t);
   });
   // Where you already are, last. It is still listed, because a switcher that
   // hides a session makes you wonder whether it is gone.

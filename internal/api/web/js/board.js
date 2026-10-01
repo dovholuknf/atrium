@@ -721,7 +721,7 @@ function fmtTokens(n) {
 // being believed.
 const NO_CONTACT_AFTER_SECONDS = 20 * 60;
 const isOutOfContact = (t) =>
-  t.status === "running" && !t.pid && (t.idle_seconds || 0) > NO_CONTACT_AFTER_SECONDS;
+  t.status === "running" && !t.pid && cardIdleAge(t) > NO_CONTACT_AFTER_SECONDS;
 
 // The runner is a mark rather than the word. "claude" on every card in a
 // column of claude sessions spent the widest chip there saying nothing.
@@ -781,12 +781,12 @@ function cardHTML(t) {
         ? `<span class="chip warn" data-tip="${t.status === "needs-permission"
               ? "how long this agent has been frozen waiting to be answered"
               : "how long since it finished its turn and asked for you"}"
-             >${esc(statusLabel(t.status))} ${ago(t.wait_seconds)}</span>`
+             >${esc(statusLabel(t.status))} ${ago(cardSecs(cardWaitSeconds(t)))}</span>`
         : `<span class="chip" data-tip="${t.status === "dead" ? "how long since this stopped"
              : t.status === "done" ? "how long since you marked it done"
              : t.status === "running" ? "how long since it last did anything"
              : "how long since anything was heard from it"}"
-             >${esc(statusLabel(t.status))} ${ago(t.idle_seconds)}</span>`}
+             >${esc(statusLabel(t.status))} ${ago(cardIdleAge(t))}</span>`}
       ${t.auto_approve ? `<span class="chip auto"
         data-tip="auto mode: requests from this session are approved without asking, and recorded"
         >auto</span>` : ""}
@@ -1906,7 +1906,7 @@ function columnOrder(cards) {
   if (mode === "manual") return cards;
   const by = mode === "name"
     ? (a, b) => (a.display_title || "").localeCompare(b.display_title || "")
-    : (a, b) => (a.idle_seconds || 0) - (b.idle_seconds || 0);
+    : cardActivityCmp;
   // `cardTieBreak` is the shared one. Two cards at the same age with no
   // tiebreak swap places between polls, which reads as the board twitching.
   return cards.slice().sort((a, b) => by(a, b) || cardTieBreak(a, b));
