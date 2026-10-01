@@ -13723,6 +13723,34 @@ async function mHostileSection(browser) {
   if (!bad) console.log("mHostile ok");
 }
 
+// ── many pictures in one card ────────────────────────────────────────────
+// Past the cache size a drawn thumbnail keeps its picture, so enlarging it still works.
+async function mPicturesSection(browser) {
+  const st = mServer({});
+  const c = mCard("pic-1", { alias: "pics", display_title: "pics", worktree: "/w/card", status: "needs-input", waiting_since: mIso(2 * M_MIN), seen: { turn_ended_at: mIso(20 * M_MIN) } });
+  st.tasks = [c];
+  st.files = {};
+  const lines = [];
+  for (let n = 0; n < 45; n++) { st.files["/w/card/p" + n + ".png"] = M_PNG; lines.push("![p" + n + "](/w/card/p" + n + ".png)"); }
+  st.replies["pic-1"] = { source: "transcript", replies: [{ at: mIso(10 * M_MIN), text: lines.join("\n\n") }] };
+  await st.open();
+  try {
+    const tag = "mPictures: ";
+    const { ctx, p, errors } = await mReplyPage(browser, st, M_VIEWS[0], "pic-1");
+    await p.evaluate(() => { window.__revoked = 0; const r = URL.revokeObjectURL; URL.revokeObjectURL = u => { window.__revoked++; return r.call(URL, u); }; });
+    await p.waitForFunction(() => document.querySelectorAll("#m-replies .md-img img").length === 45, null, { timeout: slow(15000) })
+      .catch(() => fail(tag + "not every picture was drawn"));
+    if ((await p.evaluate(() => window.__revoked)) !== 0) fail(tag + "a picture still on screen was revoked");
+    await p.evaluate(() => document.querySelector("#m-replies .md-img").scrollIntoView());
+    await p.tap("#m-replies .md-img");
+    await p.waitForFunction(() => { const i = document.querySelector(".md-lightbox img"); return i && i.complete && i.naturalWidth > 0; }, null, { timeout: slow(3000) })
+      .catch(() => fail(tag + "the first picture does not enlarge"));
+    if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+    await ctx.close();
+  } finally { await st.close(); }
+  if (!bad) console.log("mPictures ok");
+}
+
 async function main() {
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = "http://127.0.0.1:" + server.address().port;
@@ -13759,7 +13787,7 @@ async function main() {
       pasteStart: pasteStartSection, pasteDone: pasteDoneSection, pasteOldRoom: pasteOldRoomSection, pasteClose: pasteCloseSection,
       growlQuestionShots: growlQuestionShotsSection, growlQuestionBody: growlQuestionBodySection, growlReplyGrow: growlReplyGrowSection, growlChoices: growlChoicesSection, growlStable: growlStableSection, mGrowlQuestion: mGrowlQuestionSection,
       bootClean: bootCleanSection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mRecapSheet: mRecapSheetSection,
-      mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection };
+      mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -15797,6 +15825,7 @@ async function main() {
     await mTablesSection(browser);
     await mMarkdownSection(browser);
     await mHostileSection(browser);
+    await mPicturesSection(browser);
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e));
     if (process.env.DEBUG_HEADLESS) {

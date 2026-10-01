@@ -236,6 +236,14 @@
     cache.delete(key);
     if (v && v.url) URL.revokeObjectURL(v.url);
   }
+  // Oldest first, and never one still being fetched or one a drawn thumbnail shows, since revoking either breaks it.
+  function evict() {
+    for (const [key, v] of cache) {
+      if (cache.size <= CACHE_MAX) return;
+      const shown = v.url && [...document.querySelectorAll(".md-img img")].some(i => i.src === v.url);
+      if (v.settled && !shown) cacheDrop(key);
+    }
+  }
   function release() { [...cache.keys()].forEach(cacheDrop); }
 
   // The picture of a card file, once. Resolves { url } or { url: "" } when it is not available.
@@ -244,13 +252,14 @@
     let v = cache.get(key);
     if (v) { cache.delete(key); cache.set(key, v); return v.ready; }
     const ext = (/\.(\w+)$/.exec(path) || [])[1] || "";
-    v = { url: "", ready: null };
+    v = { url: "", ready: null, settled: false };
     v.ready = getFile(card, path).then(blob => {
       v.url = URL.createObjectURL(new Blob([blob], { type: TYPE[ext.toLowerCase()] || "application/octet-stream" }));
+      v.settled = true;
       return v;
-    }).catch(() => v);
+    }).catch(() => { v.settled = true; return v; });
     cache.set(key, v);
-    while (cache.size > CACHE_MAX) cacheDrop(cache.keys().next().value);
+    evict();
     return v.ready;
   }
 
