@@ -14646,6 +14646,18 @@ async function phoneBoardCompactSection(browser, base) {
       return { tag: e ? e.tagName + "." + e.className : "", inList: !!(e && e.closest("#stack-list")) };
     });
     if (!under.inList) fail(tag + "the pill is not over a card row in this setup: " + JSON.stringify(under));
+    // a press that slides off the pill and lets go elsewhere takes the pill down, and opens nothing
+    const pb = await p.locator("#sound-hint").boundingBox();
+    await p.evaluate(() => { window.__row = 0; document.addEventListener("click", ev => { if (ev.target.closest && ev.target.closest("#stack-list .stackrow, #stack-list .card")) window.__row++; }, true); });
+    await p.mouse.move(pb.x + pb.width / 2, pb.y + pb.height / 2);
+    await p.mouse.down();
+    await p.mouse.move(pb.x + pb.width / 2, pb.y - 120, { steps: 4 });
+    await p.mouse.up();
+    await p.waitForTimeout(250);
+    const slid = await p.evaluate(() => ({ hidden: document.getElementById("sound-hint").hidden, press: document.getElementById("sound-hint").dataset.press || "", row: window.__row }));
+    if (!slid.hidden || slid.press) fail(tag + "a press that slid off the pill kept it up: " + JSON.stringify(slid));
+    if (slid.row) fail(tag + "a press that slid off the pill clicked the row under it: " + JSON.stringify(slid));
+    await p.evaluate(() => { document.getElementById("sound-hint").hidden = false; window.__under = 0; });
     await p.tap("#sound-hint");
     await p.waitForTimeout(250);
     const after = await p.evaluate(() => ({ n: window.__under, hidden: document.getElementById("sound-hint").hidden, url: location.pathname + location.hash }));
