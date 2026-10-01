@@ -574,6 +574,10 @@ type Store struct {
 	// runners. It must not call back into the store.
 	OnHalt func(cause error)
 
+	// DefaultReviewsRoot is where PR review run folders go when the
+	// `reviews_root` setting is empty. The daemon sets it beside the database.
+	DefaultReviewsRoot string
+
 	// OnLedgerChange is called after a change to a work item commits, and
 	// OnLedgerNotice after a notice the ledger queued commits. The daemon
 	// rewrites the snapshot file and types the notice when it can. Both run

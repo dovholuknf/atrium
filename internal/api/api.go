@@ -69,6 +69,9 @@ type Server struct {
 	// an operator-written command, and looking at the directory the templates
 	// named needs the daemon's filesystem rather than the browser's.
 	Recognise func(url string) (*store.Resolved, error)
+	// PRRunner runs pull request reviews. Nil means the stub that fails every run
+	// as `runner not built`. See prs.go.
+	PRRunner PRRunner
 	// Settling reports whether the daemon is still bringing back the sessions
 	// it had before it restarted. Supplied by the daemon, which is the only
 	// thing that knows it is mid-boot. Nil in a build without it, which reads
@@ -520,6 +523,17 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /v1/recognisers/{id}", s.saveRecogniser)
 	mux.HandleFunc("DELETE /v1/recognisers/{id}", s.deleteRecogniser)
 	mux.HandleFunc("POST /v1/recognise", s.recognise)
+	// Pull request reviews. docs/rnd/pulls-api.md is the contract.
+	mux.HandleFunc("POST /v1/prs", s.postPR)
+	mux.HandleFunc("GET /v1/prs", s.listPRs)
+	mux.HandleFunc("GET /v1/prs/{id}", s.getPR)
+	mux.HandleFunc("POST /v1/prs/{id}/retry", s.retryPR)
+	mux.HandleFunc("POST /v1/prs/{id}/abort", s.abortPR)
+	mux.HandleFunc("POST /v1/prs/{id}/start", s.startPR)
+	mux.HandleFunc("GET /v1/prs/{id}/findings", s.getPRFindings)
+	mux.HandleFunc("PUT /v1/prs/{id}/findings/{key}", s.putPRFinding)
+	mux.HandleFunc("POST /v1/prs/{id}/findings/{key}/walk", s.walkPRFinding)
+	mux.HandleFunc("POST /v1/prs/{id}/walker", s.walkerPR)
 	// WHERE A REPOSITORY LIVES ON THIS MACHINE, declared rather than guessed.
 	// A provider is a root and a layout, and it holds no credential, makes no
 	// network call and clones nothing. See `docs/runtime/providers-design.md`, and note

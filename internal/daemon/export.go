@@ -134,6 +134,7 @@ var exportedSettings = []string{
 	store.SettingSweepDead,
 	store.SettingPruneAfter,
 	api.SettingBrowseRoots,
+	store.SettingReviewsRoot,
 	api.SettingBoardSkin,
 	api.SettingScrollbackLines,
 	api.SettingTerminalMinCols,

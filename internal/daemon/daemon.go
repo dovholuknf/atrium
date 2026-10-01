@@ -322,6 +322,9 @@ func New(opts Options) (*Daemon, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Review run folders live beside the database unless the reviews_root setting
+	// says otherwise.
+	st.DefaultReviewsRoot = filepath.Join(filepath.Dir(opts.DBPath), "reviews")
 	d := &Daemon{
 		opts: opts, st: st, perms: newPermWait(), ap: api.New(st),
 		sup: newSupervisor(), act: newActivityTracker(), stop: newStopper(),

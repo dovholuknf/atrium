@@ -266,15 +266,25 @@ func (e *WalkStartedError) Error() string {
 	return "walk started, a rewrite would lose it: " + strings.Join(e.Lines, ", ")
 }
 
-var walkLineRe = regexp.MustCompile(`^(.*?\.txt)\s+(\S+)`)
+var walkLineRe = regexp.MustCompile(`^(.*?\.txt)\s+(\S+)(?:\s+(.*?))?\s*$`)
 
-// started lists the walk.txt lines whose state is not open. The name ends at the first ".txt" followed by space, since
-// a name can hold a space (git quotes one) and a state line can carry a time and a URL after the state.
+// WalkLine splits one walk.txt line into the finding's file name, its state, and whatever follows the state (a time
+// and a URL). The name ends at the first ".txt" followed by space, since a name can hold a space (git quotes one). ok
+// is false for a line with no name and state.
+func WalkLine(line string) (name, state, rest string, ok bool) {
+	m := walkLineRe.FindStringSubmatch(strings.TrimRight(line, "\r"))
+	if m == nil {
+		return "", "", "", false
+	}
+	return m[1], m[2], m[3], true
+}
+
+// started lists the walk.txt lines whose state is not open.
 func started(walkTxt string) []string {
 	var out []string
 	for _, l := range strings.Split(walkTxt, "\n") {
-		if m := walkLineRe.FindStringSubmatch(l); m != nil && m[2] != "open" {
-			out = append(out, m[1]+" "+m[2])
+		if name, state, _, ok := WalkLine(l); ok && state != "open" {
+			out = append(out, name+" "+state)
 		}
 	}
 	return out
