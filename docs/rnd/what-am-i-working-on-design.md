@@ -3,6 +3,10 @@
 Written by @rnd on 2026-10-01, for `docs/backlog/rnd/rnd-new-what-am-i-working-on.md`. Design only. Nothing here is
 built.
 
+**Status, 2026-10-01: closed.** clint rejected option B, the "you, now" section, so W1 and its `hands_at` column are
+not built. Option D, the "by started" sort, is his own ask and went to @ui as `claude/term-sort-started`. Options A
+and C were not taken. The rest of this document is kept as the record of what was weighed.
+
 ## The answer
 
 - **A "you, now" section at the top of the terminal list,** above every group and in every group mode. It holds the
