@@ -402,6 +402,26 @@ func TestBlockingKeepsItsOwnLabel(t *testing.T) {
 	}
 }
 
+// A file name can hold a space (git quotes one), and the state is not the second field then.
+func TestAWalkWithASpacedNameIsReadByItsState(t *testing.T) {
+	dir := t.TempDir()
+	files := []File{{Name: "01-low-a b.c-L3.txt", Text: "a"}}
+	if err := Write(dir, Result{Files: files, Walk: walk(files)}); err != nil {
+		t.Fatal(err)
+	}
+	if err := Write(dir, Result{Files: files, Walk: walk(files)}); err != nil {
+		t.Fatalf("an untouched walk with a spaced name was refused: %v", err)
+	}
+	started := files[0].Name + "  done  2026-10-01T10:00Z  https://github.com/x/pull/1#r2\n"
+	if err := os.WriteFile(filepath.Join(dir, "walk.txt"), []byte(started), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var ws *WalkStartedError
+	if err := Write(dir, Result{Files: files, Walk: walk(files)}); !errors.As(err, &ws) || ws.Lines[0] != files[0].Name+" done" {
+		t.Fatalf("a done line with a spaced name was not seen: %v", err)
+	}
+}
+
 func TestWriteMakesTheFolderTheDrawerOpens(t *testing.T) {
 	res, _, _ := Render(clean(t))
 	dir := t.TempDir()

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 )
@@ -265,13 +266,15 @@ func (e *WalkStartedError) Error() string {
 	return "walk started, a rewrite would lose it: " + strings.Join(e.Lines, ", ")
 }
 
-// started lists the walk.txt lines whose state is not open.
+var walkLineRe = regexp.MustCompile(`^(.*?\.txt)\s+(\S+)`)
+
+// started lists the walk.txt lines whose state is not open. The name ends at the first ".txt" followed by space, since
+// a name can hold a space (git quotes one) and a state line can carry a time and a URL after the state.
 func started(walkTxt string) []string {
 	var out []string
 	for _, l := range strings.Split(walkTxt, "\n") {
-		f := strings.Fields(l)
-		if len(f) >= 2 && f[1] != "open" {
-			out = append(out, f[0]+" "+f[1])
+		if m := walkLineRe.FindStringSubmatch(l); m != nil && m[2] != "open" {
+			out = append(out, m[1]+" "+m[2])
 		}
 	}
 	return out
