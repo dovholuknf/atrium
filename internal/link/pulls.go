@@ -337,8 +337,12 @@ func (p *Proxy) pullsList(w http.ResponseWriter, r *http.Request) bool {
 		quiet, without = append([]string{}, quiet...), append([]string{}, without...)
 		sort.Strings(quiet)
 		sort.Strings(without)
+		msg := "no attached room serves the pulls view"
+		if len(without) == 0 {
+			msg = "no attached room answered the pulls request"
+		}
 		writeJSONBody(w, http.StatusNotFound, map[string]any{
-			"error": "no attached room serves the pulls view", "code": "not_found",
+			"error": msg, "code": "not_found",
 			"rooms_quiet": quiet, "rooms_without": without,
 		})
 		return true
