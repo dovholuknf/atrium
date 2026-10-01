@@ -50,3 +50,27 @@ the poll is bounded to the cover as the order asked, and the CPU point was handl
 
 **HUB DEPLOY OK and ROOM DEPLOY OK 727ebe27..f4f40983.** Finding 1 should be folded in before a phone that old meets a
 restart. It does not affect desktop Chrome, Edge or Firefox.
+
+## Re-read c8dba21b (2026-10-01)
+
+Range 727ebe27..c8dba21b, two commits: f4f40983 (reviewed above) and c8dba21b.
+
+- **Low 1 closed.** The `fetch` is now built inside `Promise.resolve().then(...)`, so any throw while building it
+  lands in the existing `.catch(() => null)`, and the following `.then` clears `hubChecking`. The signal is passed
+  only when `typeof AbortSignal.timeout === "function"`. Both halves are needed, and both are there: the guard keeps
+  the check asking on an old browser, and the chain keeps a throw from wedging the poll. Even a browser with no
+  `AbortSignal` at all fails safe now, because the `typeof` read throws inside the chain.
+- **The new coverPoll case discriminates.** It deletes `AbortSignal.timeout`, then requires one ask and a cleared
+  cover. Against the old line, the throw leaves `hubChecking` true and `asked(1)` fails. Against the chain without
+  the guard, every check throws before a request goes out, so `asked(1)` fails too. I read the case and did not run
+  it, since board checks are @ui's.
+- **Nit closed.** The trailing comment is on its own line.
+- **Residual, note only.** On a browser without `AbortSignal.timeout`, a check that hangs rather than fails still
+  holds `hubChecking` until the request ends, which is the behaviour before f4f40983. The 30s reload covers it.
+
+No new findings. Low 2 stays a note.
+
+Quality: after the Sonnet switch, no drop. The fold took the fix offered and added the chain as well, and the case
+fails on both weaker versions.
+
+**HUB DEPLOY OK and ROOM DEPLOY OK 727ebe27..c8dba21b.**
