@@ -13487,6 +13487,8 @@ async function mTypeSteadySection(browser) {
   try {
     const { ctx, p, errors } = await mPage(browser, st, M_VIEWS[0], "");
     const tag = "mTypeSteady: ";
+    // TY_THROTTLE=4 slows the page's CPU, which is how a slower machine's timing is reproduced here
+    if (process.env.TY_THROTTLE) { const cs = await ctx.newCDPSession(p); await cs.send("Emulation.setCPUThrottlingRate", { rate: Number(process.env.TY_THROTTLE) }); }
     await p.waitForSelector("#m-seg-all", { timeout: slow(10000) });
     await p.tap("#m-seg-all");
     await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
@@ -13723,6 +13725,8 @@ async function mFollowSection(browser) {
     st.skin = "";
     await p.goto(st.url + "/m/", { waitUntil: "domcontentloaded" });
     const tag = "mFollow: ";
+    // TY_THROTTLE=4 slows the page's CPU, the way a slower machine's timing is reproduced here
+    if (process.env.TY_THROTTLE) { const cs0 = await ctx.newCDPSession(p); await cs0.send("Emulation.setCPUThrottlingRate", { rate: Number(process.env.TY_THROTTLE) }); }
     await p.waitForSelector("#m-seg-all", { timeout: slow(10000) });
     await p.tap("#m-seg-all");
     await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
@@ -13756,7 +13760,7 @@ async function mFollowSection(browser) {
     const t0 = Date.now();
     let base = null, bad1 = null, last = null, nextOut = t0 + 1000;
     while (Date.now() - t0 < 20000) {
-      y += 1.2;
+      y += Number(process.env.FOLLOW_STEP || 0.5);
       await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: X, y: Math.round(y) }] });
       await p.waitForTimeout(100);
       if (Date.now() >= nextOut) { nextOut += 2000; await output(); }
@@ -13950,7 +13954,7 @@ async function mPullSection(browser) {
     await p.waitForTimeout(700);
     if (!(await kept()) || loads) fail(tag + "a pull from mid-thread reloaded the page");
     // from the composer, and from the viewer over the card
-    await p.evaluate(() => { document.getElementById("m-card-scroll").scrollTop = 0; });
+    await p.evaluate(() => { const e = document.getElementById("m-card-scroll"); e.dispatchEvent(new WheelEvent("wheel", { deltaY: -100 })); e.scrollTop = 0; });
     await drag(200, 870, 900, 6);
     await p.waitForTimeout(500);
     if (!(await kept()) || loads) fail(tag + "a pull from the composer reloaded the page");
@@ -13964,7 +13968,7 @@ async function mPullSection(browser) {
     await p.evaluate(() => window.mViewer.close && window.mViewer.close());
     // a short pull at the top does nothing, and the spinner goes away
     await p.waitForTimeout(400);
-    await p.evaluate(() => { document.getElementById("m-card-scroll").scrollTop = 0; });
+    await p.evaluate(() => { const e = document.getElementById("m-card-scroll"); e.dispatchEvent(new WheelEvent("wheel", { deltaY: -100 })); e.scrollTop = 0; });
     await p.waitForTimeout(200);
     await drag(200, 200, 240, 4);
     await p.waitForTimeout(600);
@@ -13989,7 +13993,7 @@ async function mPullSection(browser) {
     if (!(await kept()) || loads) fail(tag + "a pull reloaded the page with a send in flight");
     release();
     await p.waitForFunction(() => /delivered/.test(document.getElementById("m-replies").textContent), null, { timeout: slow(5000) });
-    await p.evaluate(() => { document.getElementById("m-card-scroll").scrollTop = 0; });
+    await p.evaluate(() => { const e = document.getElementById("m-card-scroll"); e.dispatchEvent(new WheelEvent("wheel", { deltaY: -100 })); e.scrollTop = 0; });
     await p.waitForTimeout(500);
     // a pull at the very top shows a spinner and reloads
     await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: 200, y: 200 }] });

@@ -37,9 +37,10 @@ the meantime.
 
 - Board landings from @ui come FIRST (clint, via the orchestrator, 2026-09-30 19:25), read only and fast, ahead of
   everything below.
-- Lows owed with fixes to follow: r-fyi-kind 1 and 3 (`r-new-review-e9aa0ee5.md`).
-- When @ui lands its combined /m batch plus 3d9b5f67: check the landed `onScroll` in `m/js/card.js` keeps load older's
-  `nearTop()`, pull's gates, and 3d9b5f67's reader gate (`u-new-review-3d9b5f67.md`).
+- When @ui lands 3d9b5f67 (typefix): check the landed `onScroll` in `m/js/card.js` takes its reader gate
+  (`moved < -1 && reader`, `progTop`) and still keeps load older's `nearTop()` (`scrollTop < 40`) and pull's
+  `touching`. The /m batch itself landed at cb72814f (2026-10-01): it carries only reviewed commits (6ea17b9c is
+  inside the 2ddb2a4f..dff5146f re-read), and its `onScroll` keeps `nearTop()` and pull's gates.
 - From cc3bd954 on, @ui, @runtime and @fabric run Sonnet (orchestrator, 6h test): every review of theirs carries a
   "Quality:" line.
 - M3 of `docs/rnd/machine-health-design.md` (the profiler agent's rules) before it ships, when it is built.
