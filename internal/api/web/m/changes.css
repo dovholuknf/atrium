@@ -33,6 +33,7 @@
 
 .cg-row.cg-add { background: var(--diff-add-bg, color-mix(in srgb, var(--teal) 13%, transparent)); }
 .cg-row.cg-del { background: var(--diff-del-bg, color-mix(in srgb, var(--danger, #e5534b) 15%, transparent)); }
+.cg-ctl { color: var(--warn); font-size: .85em; }
 .cg-row mark { background: var(--diff-mark, color-mix(in srgb, var(--warn) 35%, transparent)); color: inherit; border-radius: 3px; }
 .cg-row.on { outline: 2px solid var(--warn); outline-offset: -2px; background: var(--diff-sel, color-mix(in srgb, var(--warn) 18%, transparent)); }
 .cg-row.cg-add .cg-sg { color: var(--teal); }

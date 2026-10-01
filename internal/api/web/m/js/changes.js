@@ -93,13 +93,27 @@
     }
   }
 
+  // Bidirectional controls would draw a line in an order other than the one it is typed in, which in a review view hides what
+  // the code does. Each is shown as its own code point, in place, and not acted on.
+  const BIDI = /[\u202A-\u202E\u2066-\u2069]/;
+  function appendText(into, text) {
+    if (!BIDI.test(text)) { into.append(text); return; }
+    text.split(/([\u202A-\u202E\u2066-\u2069])/).forEach(part => {
+      if (part && BIDI.test(part) && part.length === 1) into.appendChild(el("span", "cg-ctl", "<U+" + part.charCodeAt(0).toString(16).toUpperCase() + ">"));
+      else if (part) into.append(part);
+    });
+  }
+
   function textEl(row) {
     const code = el("code", "cg-t");
     if (row.mark && row.mark[1] > row.mark[0]) {
-      code.append(row.text.slice(0, row.mark[0]));
-      code.appendChild(el("mark", "", row.text.slice(row.mark[0], row.mark[1])));
-      code.append(row.text.slice(row.mark[1]));
-    } else code.textContent = row.text === "" ? " " : row.text;
+      appendText(code, row.text.slice(0, row.mark[0]));
+      const m = el("mark");
+      appendText(m, row.text.slice(row.mark[0], row.mark[1]));
+      code.appendChild(m);
+      appendText(code, row.text.slice(row.mark[1]));
+    } else if (row.text === "") code.textContent = " ";
+    else appendText(code, row.text);
     return code;
   }
 
@@ -150,10 +164,17 @@
     // Said once, at the top, and not on the chip: the agent is still going, or a turn's list may be missing command changes.
     if (card && card.status === "running") body.appendChild(note("the agent is still working"));
     if (v.kind === "turn" && d.partial) body.appendChild(note(PARTIAL, "cg-grey"));
+    // What the room said about this answer, such as commits that may be missing, is its own line.
+    if (v.kind === "turn" && d.why && d.why !== PARTIAL) body.appendChild(note(d.why, "cg-grey"));
     if (d.note) body.appendChild(note(d.note, "cg-grey"));
     if (d.outside > 0) body.appendChild(note(plural(d.outside, "edit") + " outside this card's folder " + (d.outside === 1 ? "is" : "are") + " not shown", "cg-grey"));
-    if (d.cut && d.cut.files > 0) body.appendChild(note(plural(d.cut.files, "more file") + " not listed" + (d.cut.why ? " (" + d.cut.why + ")" : ""), "cg-grey"));
-    if (d.cut && d.cut.hunks > 0) body.appendChild(note(plural(d.cut.hunks, "file") + " show counts only" + (d.cut.why ? " (" + d.cut.why + ")" : ""), "cg-grey"));
+    // One line for what the bounds cut, with the reason once.
+    if (d.cut && (d.cut.files > 0 || d.cut.hunks > 0)) {
+      const parts = [];
+      if (d.cut.files > 0) parts.push(plural(d.cut.files, "more file") + " not listed");
+      if (d.cut.hunks > 0) parts.push(plural(d.cut.hunks, "file") + " show counts only");
+      body.appendChild(note(parts.join(", ") + (d.cut.why ? " (" + d.cut.why + ")" : ""), "cg-grey"));
+    }
     if (!files.length) { body.appendChild(note("no changes")); return; }
     const max = Math.max(1, ...files.map(f => (f.added || 0) + (f.removed || 0)));
     const list = el("div", "cg-files");

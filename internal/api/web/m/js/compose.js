@@ -475,13 +475,26 @@
   // was read in ("turn 21:14", "uncommitted", "since base") and `head` is the short sha the diff was against. The message
   // always names the repo-relative path, never the basename, so it can be acted on without knowing which card.
   const baseOf = p => String(p).split("/").pop();
+
+  // The quote goes into the agent's terminal, and a file's name or a line of it can carry bytes that act there: an ESC that ends
+  // the paste early (ESC [ 2 0 1 ~), a ^C, a newline that starts another message. So every C0 and C1 control but tab, and the
+  // Unicode line separators, are put in as a visible form that shows what is in the file without doing it.
+  function visible(s) {
+    return String(s).replace(/[\u0000-\u0008\u000a-\u001f\u007f-\u009f\u2028\u2029]/g, ch => {
+      const n = ch.charCodeAt(0);
+      if (n < 0x20) return String.fromCharCode(0x2400 + n);
+      if (n === 0x7f) return "\u2421";
+      if (n === 0x2028 || n === 0x2029) return "\u23ce";
+      return "\\x" + n.toString(16);
+    });
+  }
   const cmtKey = c => c.path + "\u0000" + c.kind + "\u0000" + c.line;
 
   function quoteOne(c) {
     const at = "line " + c.line + (c.kind === "-" ? ", removed" : "");
-    const head = "review comment on " + c.path + " " + at + " (" + c.where + ", head " + c.head + "):";
+    const head = "review comment on " + visible(c.path) + " " + at + " (" + visible(c.where) + ", head " + visible(c.head) + "):";
     // Indented, with its +/-, so it reads as a quotation and not as the instruction. A context line has a space there.
-    return head + "\n    " + (c.kind === "-" || c.kind === "+" ? c.kind : " ") + c.text;
+    return head + "\n    " + (c.kind === "-" || c.kind === "+" ? c.kind : " ") + visible(c.text);
   }
 
   function quoteAll(list) { return list.map(quoteOne).join("\n"); }
@@ -493,7 +506,7 @@
     const i = state.cmts.findIndex(x => cmtKey(x) === cmtKey(c));
     if (i >= 0) { removeComment(state, state.cmts[i]); return true; }
     const chip = el("div", "mc-file mc-cmt");
-    const name = el("span", "mc-fname", baseOf(c.path) + ":" + c.line + (c.kind === "-" ? " removed" : ""));
+    const name = el("span", "mc-fname", visible(baseOf(c.path)) + ":" + c.line + (c.kind === "-" ? " removed" : ""));
     const x = el("button", "mc-fx", "✕");
     x.type = "button";
     x.setAttribute("aria-label", "remove the comment on " + baseOf(c.path) + " line " + c.line);
