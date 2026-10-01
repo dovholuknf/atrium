@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -570,5 +572,35 @@ func TestChangesAHugeTrackedDiffIsStoppedWhileRead(t *testing.T) {
 	}
 	if z := fileOf(v, "z-after.txt"); z == nil || z.Hunks == "" {
 		t.Fatalf("a small file after it lost its hunks: %+v", z)
+	}
+}
+
+func TestUntrackedTrimsEachCappedListingToWholeNames(t *testing.T) {
+	f := newChangesFix(t)
+	var paths []string
+	for i := 0; i < 40; i++ {
+		name := fmt.Sprintf("untracked-name-%03d.txt", i)
+		writeF(t, filepath.Join(f.repo, name), "x\n")
+		paths = append(paths, name)
+	}
+	old := listMax
+	listMax = 100
+	t.Cleanup(func() { listMax = old })
+	g := gitAt{ctx: context.Background(), run: gitsync.Default, dir: f.repo}
+	// Chunks of one name each: every chunk is under the cap, then chunks of all names at once are not.
+	for _, ps := range [][]string{paths[:3], paths} {
+		for _, file := range untracked(g, f.repo, ps) {
+			if _, err := os.Stat(filepath.Join(f.repo, file.Path)); err != nil {
+				t.Fatalf("a name cut mid-way was listed: %q", file.Path)
+			}
+		}
+	}
+	if got := untracked(g, f.repo, nil); len(got) == 0 || len(got) >= 40 {
+		t.Fatalf("a listing past the cap should be cut to its whole names, got %d", len(got))
+	}
+	for _, file := range untracked(g, f.repo, nil) {
+		if _, err := os.Stat(filepath.Join(f.repo, file.Path)); err != nil {
+			t.Fatalf("a name cut mid-way was listed: %q", file.Path)
+		}
 	}
 }
