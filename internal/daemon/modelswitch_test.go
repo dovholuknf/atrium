@@ -393,27 +393,47 @@ func TestAWaitThatGivesUpIsRecorded(t *testing.T) {
 	}
 }
 
-// A `/model <id>` TYPED BY HAND is a switch the card remembers, so the room
+// A `/model <alias>` TYPED BY HAND is a switch the card remembers, so the room
 // restart's resume does not put it back. This is what happened on @fabric.
 func TestAHandTypedModelSwitchIsRecorded(t *testing.T) {
 	d := testDaemon(t)
 	target, r, _ := peerPair(t, d)
 
-	r.noteOperatorTyped([]byte("/model claude-sonnet-5-5\r"))
+	r.noteOperatorTyped([]byte("/model Sonnet\r"))
 	line := r.takeSubmitted()
-	if line != "/model claude-sonnet-5-5" {
+	if line != "/model Sonnet" {
 		t.Fatalf("the submitted line is %q", line)
 	}
 	if again := r.takeSubmitted(); again != "" {
 		t.Fatalf("a line was handed over twice: %q", again)
 	}
 	d.noteTypedModel(target.ID, line)
-	if got, _ := d.st.Get(target.ID); got.Model != "claude-sonnet-5-5" {
+	if got, _ := d.st.Get(target.ID); got.Model != "sonnet" {
 		t.Fatalf("the card's model is %q after a hand typed switch", got.Model)
 	}
 	evs := modelEvents(t, d, target.ID)
-	if len(evs) != 1 || evs[0]["state"] != "typed by hand" || evs[0]["to"] != "claude-sonnet-5-5" {
+	if len(evs) != 1 || evs[0]["state"] != "typed by hand" || evs[0]["to"] != "sonnet" {
 		t.Fatalf("events = %v", evs)
+	}
+}
+
+// A TYPED FULL ID RECORDS NOTHING. It is unchecked, and a mistyped one stored on
+// the card would fail every later resume. The endpoint still takes ids, because
+// a caller chose one on purpose.
+func TestAHandTypedFullIDIsNotRecorded(t *testing.T) {
+	d := testDaemon(t)
+	target, _, _ := peerPair(t, d)
+
+	d.noteTypedModel(target.ID, "/model claude-sonnet-5-5")
+	d.noteTypedModel(target.ID, "/model claude-sonet-5-5")
+	if got, _ := d.st.Get(target.ID); got.Model != "" {
+		t.Fatalf("a typed id recorded %q", got.Model)
+	}
+	if evs := modelEvents(t, d, target.ID); len(evs) != 0 {
+		t.Fatalf("a typed id wrote events %v", evs)
+	}
+	if code, out := switchModel(t, d, target.ID, `{"model":"claude-sonnet-5-5"}`); code != http.StatusOK {
+		t.Fatalf("the endpoint refused an id: %d %v", code, out)
 	}
 }
 
