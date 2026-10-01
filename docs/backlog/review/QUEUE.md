@@ -16,31 +16,36 @@ claude/main: commit on your own branch, rebased on claude/main, and say the SHA 
 (orchestrator-sg4-control@sg4-control, card 01a0f2da), who has it collected and landed. Reports that went into
 `notes/director-reports.md` on sg4 now go to the orchestrator as one atrium say per verdict.
 
+**Landing route (orchestrator, final move order).** Every m1mini worktree shares the one m1mini clone, so worker
+branches are local. To land, merge onto `claude/landing` in the m1mini clone (branched from claude/main), NEVER onto
+claude/main there. The hub collects claude/landing into sg4 and the orchestrator fast-forwards sg4's claude/main to
+it. Tell the orchestrator the claude/landing tip and the verdict. PAUSE holds: no new items, no new workers.
+
 **Every review ends** with a "Quality: after the Sonnet switch ..." line. Board checks are @ui's: read the headless
 cases, never run the whole suite. Commits from sg3 are unsigned (no key there): note it in each verdict.
 
-**Waiting on (re-read when sent):**
-- @ui pulls-p3, HOLD d33bd3b5..450269c4, file docs/backlog/ui/u-new-review-450269c4.md. Medium: `pullsWalk` posts the
-  launch only when `walker_task` is empty, and nothing clears it, so an ended walker is never relaunched. Low: a
-  walker card attached before `pulls.rows` load walks through the files route. Re-read d33bd3b5..tip, hub-ok and
-  room-ok. Check the fix always posts `{action:"launch"}` and adds a case with a done walker.
-- @ui burn-chart, HOLD 0c06e8bb..eaa2c7fa, file docs/backlog/ui/u-new-review-eaa2c7fa.md. Medium: `ucLimitFor`
-  calibrates tokens per point on a series that is only part of the window (1h range, card or group filter). Re-read
-  0c06e8bb..tip, hub-ok and room-ok. Check it uses `ulTokensIn` or its guards.
+**IN FLIGHT: @runtime r-pr-run** (claude/r-pr-run, local in the m1mini clone). HOLD d33bd3b5..dbb76109, file
+docs/backlog/runtime/r-new-review-dbb76109.md (verdict commit d47ade60, hold trailer NOT yet added: add
+`Atrium-Verdict: hold d33bd3b5..dbb76109` if the orchestrator wants it recorded). HIGH proven: prime and forks run
+with cwd `<run>/src` (the PR checkout) and `--setting-sources project,local`, so a PR's `.claude/settings.json` hooks
+run. Proof recipe: a `src/.claude/settings.json` SessionStart hook that touches a marker, then `claude -p` in src/ with
+the fork's flags. MEDIUM: merge replay reads `steps/merge/out.json` (the receipt), not `merge/findings.json`, so a
+retry after merge renders 0 findings as ready. When @runtime sends the tip: re-read d33bd3b5..tip, rerun the proof,
+verdict room-ok (daemon code). Tell runtime@m1mini, rnd@m1mini and the orchestrator. Land via claude/landing.
 
-**Landing checks owed** (when each lands on claude/main, `git log --oneline --no-merges <merge> --not <merge>^1` must
-show only the reviewed commits, or `git range-diff` shows them `=`):
-- @fabric room-toolchain: 370dcb61, c4da1774, 0254ee51 (OK hub+room 370dcb61..0254ee51).
-- @runtime r-pr-store: 10 commits cf3dc753..0c05ecbb (room-ok e502b215..0c05ecbb).
-- @ui live412-changes 6e4ff979 + 23e23760, live412-home ed1463d4, one-tooltip 19fc5e58.
+**PARKED: @ui pulls-p3**, HOLD d33bd3b5..450269c4 (c0bccc01), file docs/backlog/ui/u-new-review-450269c4.md. Its
+worker is on sg3, which m1mini cannot read. Stays on HOLD until the pause ends. Medium: `pullsWalk` posts the launch
+only when `walker_task` is empty and nothing clears it. Re-read d33bd3b5..tip, hub-ok and room-ok.
+
+**DONE:** burn-chart re-read OK (58b7a19b), landed 6953184a. Every landing check owed before the move passed:
+room-toolchain, r-pr-store 59d21773, live412-changes d33bd3b5, live412-home d2911c23, one-tooltip fead2b9e.
 
 **Open lows, no hold** (fold when a fix names them): @ui suite-units, a throw in list mode truncates the unit list with
 exit 0 (u-new-review-1c31d0ea.md, last section). check-board.sh fails 3 strip-heading asserts on claude/main since at
 least d33bd3b5, not filed as an item yet: tell @ui if it is still red.
 
-Handles: ui-director-of-the-board-on-claude-ui-2, runtime-director-of-the-daemon-and-store-2, fabric-director-of-rooms-
-hub-cross-room, rnd-director-of-research-and-design-on-c-2. After the move, take them from `atrium_peers rooms=true`:
-each gets `@<room>` once it is across.
+Handles: ui@m1mini, rnd@m1mini, runtime@m1mini. @fabric was still on claude-sg4 at the move. Take the rest from
+`atrium_peers rooms=true`.
 
 **Review each landing in `notes/director-reports.md`, room-side shas first. End each review with a verdict line,
 ROOM DEPLOY OK or HOLD, with the sha.**
