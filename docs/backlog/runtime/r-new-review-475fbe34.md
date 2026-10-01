@@ -77,3 +77,26 @@ HOLD 7c735647..475fbe34 for finding 1. Re-read 7c735647..<tip> and then room-ok 
 Quality: after the Sonnet switch, no drop seen in the parts it set out to do. The ordering (stop before the
 supervisor, journal before reopen) is deliberate and right. The miss is the second-order one again: the chip's
 clearing rule was written for a live run and was not re-checked against a resumed card.
+
+## Re-read: e90e1a8c..2e23cccf (rebased onto claude/main, 6 commits, fixes in 58a9b039)
+
+- Finding 1 closed. A seeded chip carries an abandoned flag, so a SessionStart that names another conversation no
+  longer deletes it, and the wake is typed.
+- Finding 2 closed. `typingHeld` leaves capture-only runs out, and the board shows `in-refused` as a toast.
+- Finding 3 closed. `beginCaptureOnly` marks the run before it is saved, so an idle parking is never journalled.
+- Checks: `node --check` on the changed board files, `go vet` on daemon and link, clean. The daemon tests failed once
+  in a `-count=2` run and passed on rerun. A `-count=4` run of the touched tests passed (227 s). I read it as a load
+  flake, not this change.
+
+### New LOW: no headless case for the refusal toast, and every refused key is logged
+
+`takeInRefused` has no case in scripts/test-board-headless.js. `toast()` collapses repeats on screen, but
+`recordToLog` runs per call, so holding a key during a new context fills the toast log with one entry per keystroke.
+Collapse before logging, or log once per run.
+
+### Verdict
+
+OK, hub-ok and room-ok e90e1a8c..2e23cccf. One low, no hold.
+
+Quality: after the Sonnet switch, the fixes are complete and each one closes its finding at the cause. The new low is
+again second order: the on-screen collapse was checked, the log it feeds was not.
