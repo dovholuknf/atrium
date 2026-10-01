@@ -1,0 +1,21 @@
+{
+ "note": "Units known to fail now and then. test-board-sharded.js runs every failed unit once more, alone, and labels one of these flaky when it passes the second time. A listed unit that fails both tries still fails the run. kind is race-in-test (the section reads before the state it asserts, fix the wait) or load-sensitive (it passes alone and fails when the machine is busy, cause not pinned down). Read the section before adding one, and do not list a unit to hide a failure that is real.",
+ "flaky": {
+  "atriumDown": {
+   "kind": "load-sensitive",
+   "reason": "reload got ERR_EMPTY_RESPONSE. Passes alone and in a sharded run, fails 4 of 10 with ten copies at once. The first failure is always the reload with atrium down: the page got the socket's empty response and not the worker's down.html, so the worker did not answer that navigation, and every check after it fails in a cascade. The test waits for a controlling worker and a kept down.html and then reloads. A worker that is not answering navigations at that moment (a new sw.js taking over, say) is the likely gap, and is a guess, not confirmed. Not seen as a product failure on an idle machine."
+  },
+  "shiftMenu": {
+   "kind": "race-in-test",
+   "reason": "no new-context entry in the row menu: termMenu is async (a GET of the card, then loadHarnesses) and the row-menu check waits only for any `#cardmenu button`, which the previous menu's buttons already satisfy, so a slow answer reads the stale, closed menu. Wait for the menu to be shown, as the shift-click check above it does."
+  },
+  "boardDocs": {
+   "kind": "load-sensitive",
+   "reason": "the documents panel is still open after its back button (waitForFunction timeout, line 16151). Read in the page after the failure: history.state is {mdocs:{v:\"list\"}}, so back from a document returned to the list and the panel stayed open, which the check does not expect. Passes alone (7 of 7) and 8 of 8 with two copies at once, fails 1 of 3 with three and 6 of 6 with six, so what the browser does with history.back() depends on how busy it is. The test and the panel disagree about what back from a document does and timing picks the winner. Not diagnosed further, one for @ui."
+  },
+  "phoneNudge": {
+   "kind": "race-in-test",
+   "reason": "the header bell does not carry the envelope. Failed once in the first serial run on sg3 and passed alone (4 of 4), in the second serial run, in every sharded run and in ten copies at once. The check reads `#toastlog-open .hmsg` right after waiting on a different element (#phone-bell hidden), with no wait for the envelope the header draws on its own tick, so a late tick reads it hidden. Wait for the state the check asserts."
+  }
+ }
+}

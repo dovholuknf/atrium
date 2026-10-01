@@ -8207,3 +8207,30 @@ build before `atrium_publish path` works, since an older room cannot say what a 
 3. Provision a Windows room whose only bash is `C:/Program Files/Git/bin/bash.exe`. The command in settings.json is
    quoted in both parts, room-check runs it with `{}` on stdin and says `ok`. With no jq for that bash both the
    provision step and the room-check row name jq. A `bash.exe` under `System32` or `WindowsApps` is never chosen.
+
+## HV. The headless board suite, sharded (u-suite-shard)
+
+1. Run `node scripts/test-board-sharded.js`. It starts several processes of `scripts/test-board-headless.js`, each with
+   its own mock server and its own headless browser, each running a slice of the suite's units. It prints one merged
+   report: every unit with its time, slowest first, then the failures named, the total wall time and the CPU it used.
+   The exit code is nonzero if any unit failed both tries (see 4) or did not run.
+2. `--shards N` sets the shard count (the default is three quarters of the cores), `--units a,b` runs just those,
+   `--list` prints the plan, `--save-weights` refreshes `scripts/board-suite-weights.json` from the run. The balance is
+   greedy, longest unit first, from that file, so refresh it after a section is added or grows.
+3. A unit is a section, or one of the inline blocks of `main()` that share a page or the mock's state (`core`, `core2`,
+   `gauto`, `switches`). Units that must share a process stay on one shard, in the suite's order: the harness names
+   them in `PIN_GROUPS`. Today that is `core`, `history` and `core2`, which drive one page. Any other unit can run on
+   any shard. A section that comes to share something new with another goes in there.
+4. Every failed unit is run once more, alone, two at a time. `scripts/board-suite-flaky.json` names the units known to
+   fail now and then, each with the reason: one of those that passes the second time is labelled flaky and does not
+   fail the run, and one that fails both tries still does. A unit that is not on the list and passes the second time is
+   shown in its own block, since it failed only under the load of the shards, and does not fail the run either. Do not
+   list a unit to hide a real failure: a reason that says the test is racing is a bug to fix, not a pass.
+5. The plain run, `node scripts/test-board-headless.js`, is the serial run it always was. `HEADLESS_ONLY=a,b` is
+   unchanged. `HEADLESS_UNITS=a,b` is the same filter over the unit list that the sharded runner uses, with each unit's
+   failure kept to itself, and `HEADLESS_RESULTS=file` writes what each took. `HEADLESS_LIST=1` prints the units. In
+   the filtered mode every unit starts with the mock's module state put back to how the process started, so a unit that
+   leaves one set (`core2` leaves `soloMode` at `gone`) cannot break the next. `HEADLESS_LEAKS=1` prints what each unit
+   leaves changed.
+6. The sharded result should match the serial one: the same units pass and fail, apart from the flaky ones. Check a
+   change to the harness with both.

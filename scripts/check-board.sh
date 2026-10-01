@@ -280,8 +280,15 @@ fi
 #
 # SKIP_HEADLESS=1 leaves it out, for a caller that runs the headless run on its own (timed, or a few sections). It
 # is about 13 minutes of the check, and every other check here together is under two seconds.
+# HEADLESS_SHARDED=1 runs it as parallel shards instead (scripts/test-board-sharded.js), with one merged report.
 if [ "${SKIP_HEADLESS:-}" = "1" ]; then
   echo "headless run skipped (SKIP_HEADLESS=1)."
+elif [ "${HEADLESS_SHARDED:-}" = "1" ]; then
+  # the same suite in parallel shards, one merged report: scripts/test-board-sharded.js (docs/test-plan.md, HV)
+  if ! node "$here/scripts/test-board-sharded.js"; then
+    echo "the sharded headless board run failed. see above." >&2
+    fail=1
+  fi
 elif ! node "$here/scripts/test-board-headless.js"; then
   echo "the board blanks on a hung fetch, or does not paint its lists. see above." >&2
   fail=1

@@ -926,7 +926,14 @@ const mockWatch = setInterval(() => {
 mockWatch.unref();
 
 let bad = 0;
-function fail(msg) { console.error("FAIL: " + msg); bad++; }
+// The unit running now, and what failed in it. See unit() in main.
+let currentUnit = "";
+const unitFails = {};
+function fail(msg) {
+  console.error("FAIL: " + msg);
+  bad++;
+  if (currentUnit) (unitFails[currentUnit] = unitFails[currentUnit] || []).push(String(msg));
+}
 
 // Every worn card on the page, scored in the page. For each one: its computed
 // background, and the contrast of its title, its path and every chip against
@@ -17444,11 +17451,76 @@ async function deployReadySection(browser, base) {
   if (!bad) console.log("deployReady ok");
 }
 
-async function main() {
-  await new Promise(r => server.listen(0, "127.0.0.1", r));
-  const base = "http://127.0.0.1:" + server.address().port;
+// ── units, and running the suite in shards ────────────────────────────────────────────────────────────────────────
+// The default run is a list of UNITS in a fixed order: every section, plus the inline blocks of main() that share one
+// page (core, core2) or one mock state (gauto, switches). A unit is the smallest thing that can move to another process.
+//   HEADLESS_UNITS=a,b,c      run just those units, in the suite's own order, each one's failure kept to itself
+//   HEADLESS_LIST=1           print the units and their pin groups as JSON and stop, with no browser
+//   HEADLESS_RESULTS=file     write { unit: { ms, ok, fails } } there when the run ends
+// scripts/test-board-sharded.js is the caller: it splits the units over several processes of this file and merges what
+// they write. With none of these set the run is the plain serial one, one throw ends it, as it always did.
+//
+// Units that share state stay in one process. A pin group is run together, in suite order, on one shard:
+const PIN_GROUPS = {
+  // core and core2 drive ONE page (main's `page`) that is left on the view and the mock state the last block set,
+  // and history sits between them on the same mock server, so it keeps its place.
+  core: { units: ["core", "history", "core2"], why: "one shared page and the mock state each block leaves for the next" },
+};
+const UNIT_FILTER = process.env.HEADLESS_UNITS ? new Set(process.env.HEADLESS_UNITS.split(",").filter(Boolean)) : null;
+const LIST_MODE = !!process.env.HEADLESS_LIST;
+const unitOrder = [];
+const unitResults = {};
+// The mock's own state: every module-level `let` above that a section sets. A unit can leave one set (soloMode "gone" after
+// core2, say) and break whichever unit runs next in the same process, which is what a shard changes. So a shard
+// puts them all back to how the process started before each unit, except between the members of a pin group, which
+// are meant to see each other's state. The plain serial run does not: it keeps what each unit leaves, as it always did.
+// A new `let` of this kind goes in here too. The list is checked against the file when the units are listed.
+const mockVars = () => ({ qDismissMode, qHeldQuiet, qDismissWrites, histMany, histManyLive, untaggedExtra, untaggedDown, untaggedEmpty, untaggedTag, landList, landPerms, typingAnswer, typingPolls, aliasWrites, boardDocs, tasksMode, wornTasks, loopListSupervised, soloMode, hubMode, sggAttached, hubHasRoom, gatePaused, gateCountdownLeft, gateBoot, hubAway, gateRestartMode, gateAsked, gateSlowMs, healthBuild, serveSW, page502, auditLive, auditMany, auditManyLive, skinFor, kaSettings, kaWrites, gautoOn, roomSettingsDown, settingsReads, settingsDelay, switchFail, switchWrites, roomStallUntil, stalledCount, mockBroadcast, waitingReads, mockSaid });
+const mockSet = s => { ({ qDismissMode, qHeldQuiet, qDismissWrites, histMany, histManyLive, untaggedExtra, untaggedDown, untaggedEmpty, untaggedTag, landList, landPerms, typingAnswer, typingPolls, aliasWrites, boardDocs, tasksMode, wornTasks, loopListSupervised, soloMode, hubMode, sggAttached, hubHasRoom, gatePaused, gateCountdownLeft, gateBoot, hubAway, gateRestartMode, gateAsked, gateSlowMs, healthBuild, serveSW, page502, auditLive, auditMany, auditManyLive, skinFor, kaSettings, kaWrites, gautoOn, roomSettingsDown, settingsReads, settingsDelay, switchFail, switchWrites, roomStallUntil, stalledCount, mockBroadcast, waitingReads, mockSaid } = s); };
+let mockInit = null, lastUnit = "";
+const pinnedTogether = (a, b) => Object.values(PIN_GROUPS).some(g => g.units.includes(a) && g.units.includes(b));
+function mockSnapshot() {
+  const s = mockVars();
+  const out = {};
+  for (const k of Object.keys(s)) { try { out[k] = JSON.stringify(s[k]); } catch (e) { out[k] = "?"; } }
+  return out;
+}
+// HEADLESS_LEAKS=1 prints, after each unit, the mock variables it left different from how it found them.
+async function unit(name, fn) {
+  unitOrder.push(name);
+  if (LIST_MODE || (UNIT_FILTER && !UNIT_FILTER.has(name))) return;
+  if (UNIT_FILTER) {
+    if (!mockInit) mockInit = structuredClone(mockVars());
+    else if (!pinnedTogether(lastUnit, name)) mockSet(structuredClone(mockInit));
+    lastUnit = name;
+  }
+  const before = bad, t0 = Date.now();
+  const snap0 = process.env.HEADLESS_LEAKS ? mockSnapshot() : null;
+  currentUnit = name;
+  try { await fn(); }
+  catch (e) {
+    if (!UNIT_FILTER) throw e;
+    fail(name + ": the unit threw: " + (e && e.message ? e.message : e) + threwAt(e));
+  } finally { currentUnit = ""; }
+  const ms = Date.now() - t0;
+  if (snap0) {
+    const snap1 = mockSnapshot();
+    for (const k of Object.keys(snap1)) if (snap1[k] !== snap0[k]) console.log("LEAK " + name + " " + k + ": " + String(snap0[k]).slice(0, 60) + " -> " + String(snap1[k]).slice(0, 60));
+  }
+  unitResults[name] = { ms, ok: bad === before, fails: unitFails[name] || [] };
+  console.log("TIMING " + name + " " + ms);
+}
+function writeUnitResults() {
+  if (!process.env.HEADLESS_RESULTS) return;
+  try { fs.writeFileSync(process.env.HEADLESS_RESULTS, JSON.stringify({ units: unitResults, order: unitOrder, bad })); }
+  catch (e) { console.error("could not write HEADLESS_RESULTS: " + e.message); }
+}
 
-  const browser = withClock(await chromium.launch());
+async function main() {
+  if (!LIST_MODE) await new Promise(r => server.listen(0, "127.0.0.1", r));
+  const base = LIST_MODE ? "" : "http://127.0.0.1:" + server.address().port;
+
+  const browser = LIST_MODE ? null : withClock(await chromium.launch());
   // HEADLESS_ONLY=termWear,bridge runs just those sections, for working on one.
   if (process.env.HEADLESS_ONLY) {
     const only = { boardDocs: boardDocsSection, phoneBoardCompact: phoneBoardCompactSection, termWear: termWearSection, bridge: bridgeSection, settingsOnce: settingsOnceSection,
@@ -17503,28 +17575,34 @@ async function main() {
     console.log("the sections asked for passed: " + process.env.HEADLESS_ONLY);
     return;
   }
-  const page = await browser.newPage();
+  // The shared page is made when the first unit that drives it asks, so a shard without core never opens it.
+  let page = null;
   const consoleErrors = [];
-  page.on("pageerror", e => consoleErrors.push(String(e)));
-  if (process.env.DEBUG_HEADLESS) {
-    page.on("console", m => console.error("[console] " + m.type() + ": " + m.text()));
-    page.on("requestfailed", r =>
-      console.error("[reqfail] " + r.url() + " " + (r.failure() || {}).errorText));
-  }
+  const needPage = async () => {
+    if (page) return;
+    page = await browser.newPage();
+    page.on("pageerror", e => consoleErrors.push(String(e)));
+    if (process.env.DEBUG_HEADLESS) {
+      page.on("console", m => console.error("[console] " + m.type() + ": " + m.text()));
+      page.on("requestfailed", r =>
+        console.error("[reqfail] " + r.url() + " " + (r.failure() || {}).errorText));
+    }
 
-  // Shorten the watchdog so the unwedge is provable in seconds, not the 30 a
-  // real board waits. A plain board never sets this.
-  await page.addInitScript(() => { window.__atriumRunTimeout = 2000; });
-  // The width-floor notice is a modal, and a narrow terminal pane in this run
-  // would raise it over every later click. It is tested on its own below.
-  await page.addInitScript(() => {
-    let all = {};
-    try { all = JSON.parse(localStorage.getItem("atrium.skipconfirm") || "{}"); } catch (e) {}
-    all["width-floor"] = true;
-    localStorage.setItem("atrium.skipconfirm", JSON.stringify(all));
-  });
+    // Shorten the watchdog so the unwedge is provable in seconds, not the 30 a
+    // real board waits. A plain board never sets this.
+    await page.addInitScript(() => { window.__atriumRunTimeout = 2000; });
+    // The width-floor notice is a modal, and a narrow terminal pane in this run
+    // would raise it over every later click. It is tested on its own below.
+    await page.addInitScript(() => {
+      let all = {};
+      try { all = JSON.parse(localStorage.getItem("atrium.skipconfirm") || "{}"); } catch (e) {}
+      all["width-floor"] = true;
+      localStorage.setItem("atrium.skipconfirm", JSON.stringify(all));
+    });
+  };
 
   try {
+    await unit("core", async () => { await needPage();
     await page.goto(base, { waitUntil: "domcontentloaded" });
 
     // ── the task list paints (not blank) ──────────────────────────────────
@@ -17568,10 +17646,12 @@ async function main() {
     if (seenMarks.tab === false) fail("the terminal strip row did not draw the unread dot");
     tasksMode = "first";
     await page.evaluate(() => runRefresh());
+    });
 
     // ── the history view paints rows ──────────────────────────────────────
-    await historySection(browser, base);
+    await unit("history", () => historySection(browser, base));
 
+    await unit("core2", async () => { await needPage();
     // ── changing runners pane goes back to the top ────────────────────────
     // `#runners` is the scroll box, not main. A short window so the page has
     // something to scroll.
@@ -19052,18 +19132,20 @@ async function main() {
       hubMode = false;
       sggAttached = false;
     }
+    });
 
     // ── the board skin follows the room-picker scope ────────────────────────
-    await skinScopeSection(browser, base);
+    await unit("skinScope", () => skinScopeSection(browser, base));
 
     // ── a persisted skin heals when a room attaches, with no reload ──────────
-    await skinHealSection(browser, base);
+    await unit("skinHeal", () => skinHealSection(browser, base));
 
     // ── a write that names a card goes by the card, not writeRoom ──────────
-    await cardRouteSection(browser, base);
+    await unit("cardRoute", () => cardRouteSection(browser, base));
     // ── a running card the room says looks idle wears the guess ────────────
-    await looksIdleSection(browser, base);
+    await unit("looksIdle", () => looksIdleSection(browser, base));
 
+    await unit("gauto", async () => {
     // ── the global auto button is never blank ────────────────────────────────
     // `#gauto` has no class and no text in the markup, and only a settings read
     // that landed ever painted it. A deploy restarts the hub, the board reloads
@@ -19187,7 +19269,9 @@ async function main() {
       hubMode = false;
       hubHasRoom = true;
     }
+    });
 
+    await unit("switches", async () => {
     // ── the on/off switch: runners and fixtures ──────────────────────────────
     // Every enable/disable on the runners page is the row's own on/off pill. No
     // separate enable button; a click writes the row with `enabled` flipped; a
@@ -19314,6 +19398,7 @@ async function main() {
       await swCtx.close();
       resetSwitches();
     }
+    });
 
     // ── cards wear their terminal colours ───────────────────────────────────
     // The board setting that draws every card in its own terminal theme, with
@@ -19324,197 +19409,197 @@ async function main() {
     // WCAG AA (4.5:1) against the surface it is on, on every shipped theme.
     // Measured off computed styles, so what is scored is what the browser
     // painted, not what the code meant to paint.
-    await wornSection(browser, base);
+    await unit("worn", () => wornSection(browser, base));
     // ── the terminals list's three theme switches ───────────────────────────
-    await termWearSection(browser, base);
+    await unit("termWear", () => termWearSection(browser, base));
     // ── the attached row's bridge into the terminal, and the terminal's frame ─
-    await bridgeSection(browser, base);
+    await unit("bridge", () => bridgeSection(browser, base));
     // ── a load reads settings once ──────────────────────────────────────────
-    await settingsOnceSection(browser, base);
+    await unit("settingsOnce", () => settingsOnceSection(browser, base));
     // ── the website skin's effects stay inside the website skin ─────────────
-    await websiteSkinSection(browser, base);
+    await unit("websiteSkin", () => websiteSkinSection(browser, base));
     // ── the hub restart gate: countdown, pause, resume and the modal ────────
-    await restartGateSection(browser, base);
-    await restartStaysSection(browser, base);
-    await atriumDownSection(browser, base);
-    await toastStaysSection(browser, base);
+    await unit("restartGate", () => restartGateSection(browser, base));
+    await unit("restartStays", () => restartStaysSection(browser, base));
+    await unit("atriumDown", () => atriumDownSection(browser, base));
+    await unit("toastStays", () => toastStaysSection(browser, base));
     // ── a toast lives its whole life whatever happens around it ────────────
-    await toastLivesSection(browser, base);
+    await unit("toastLives", () => toastLivesSection(browser, base));
     // ── the styled tooltip, and no native title anywhere on the board ───────
-    await tooltipSection(browser, base);
+    await unit("tooltip", () => tooltipSection(browser, base));
     // ── group colours on every surface, and dragging group headings ─────────
-    await groupColorSection(browser, base);
-    await groupDragSection(browser, base);
+    await unit("groupColor", () => groupColorSection(browser, base));
+    await unit("groupDrag", () => groupDragSection(browser, base));
     // ── a popped-out card stays spoken for across a room-set change ─────────
-    await popoutTagFlipSection(browser, base);
+    await unit("popoutTagFlip", () => popoutTagFlipSection(browser, base));
     // ── an idle board stays idle, and a silent room cannot fill the fetch cap ─
-    await idleRateSection(browser, base);
+    await unit("idleRate", () => idleRateSection(browser, base));
     // ── a group opened by hand stays put, and idle windows write nothing ───
-    await foldStillSection(browser, base);
+    await unit("foldStill", () => foldStillSection(browser, base));
     // ── untagged follows the sort pill in all three views ──────────────────
-    await untaggedSortSection(browser, base);
+    await unit("untaggedSort", () => untaggedSortSection(browser, base));
     // ── a card this window has not seen says so, once ──────────────────────
-    await newCardSection(browser, base);
+    await unit("newCard", () => newCardSection(browser, base));
     // ── a theme preview recolours the card everywhere it shows ─────────────
-    await themePreviewSection(browser, base);
+    await unit("themePreview", () => themePreviewSection(browser, base));
     // ── a click on an alert lands where the alert is about ─────────────────
-    await landSection(browser, base);
-    await quietDoerSection(browser, base);
-    await notifyOffSection(browser, base);
-    await questionsClickSection(browser, base);
-    await walkSection(browser, base);
-    await linkReuseSection(browser, base);
-    await usageCacheReadsSection(browser, base);
-    await roomsDashSection(browser, base);
-    await phoneViewSection(browser, base);
-    await heldLineSection(browser, base);
-    await u016Section(browser, base);
-    await phoneHeaderSection(browser, base);
-    await phoneFocusSection(browser, base);
-    await phoneTermBarSection(browser, base);
-    await phoneShareSection(browser, base);
-    await phonePanSection(browser, base);
-    await phoneFollowSection(browser, base);
-    await phoneTapSection(browser, base);
-    await phoneKeyboardSection(browser, base);
-    await phoneComposeSection(browser, base);
-    await mComposeSection(browser);
-    await mPermsSection(browser);
-    await eventDrivenSection(browser, base);
-    await idleBudgetSection(browser, base);
-    await pollsGoneSection(browser, base);
-    await roomsMachineSection(browser, base);
-    await mHomeSection(browser);
-    await mCardSection(browser);
-    await mServeSection(browser);
-    await phoneKeyLabelSection(browser, base);
-    await phoneKeyLitSection(browser, base);
-    await shiftMenuSection(browser, base);
-    await notifyCommandSection(browser, base);
-    await presenceSection(browser, base);
-    await tallPtySection(browser, base);
-    await usagePolishSection(browser, base);
-    await usageLimitsSection(browser, base);
-    await usageGroupsSection(browser, base);
-    await reselectSection(browser, base);
+    await unit("land", () => landSection(browser, base));
+    await unit("quietDoer", () => quietDoerSection(browser, base));
+    await unit("notifyOff", () => notifyOffSection(browser, base));
+    await unit("questionsClick", () => questionsClickSection(browser, base));
+    await unit("walk", () => walkSection(browser, base));
+    await unit("linkReuse", () => linkReuseSection(browser, base));
+    await unit("usageCacheReads", () => usageCacheReadsSection(browser, base));
+    await unit("roomsDash", () => roomsDashSection(browser, base));
+    await unit("phoneView", () => phoneViewSection(browser, base));
+    await unit("heldLine", () => heldLineSection(browser, base));
+    await unit("u016", () => u016Section(browser, base));
+    await unit("phoneHeader", () => phoneHeaderSection(browser, base));
+    await unit("phoneFocus", () => phoneFocusSection(browser, base));
+    await unit("phoneTermBar", () => phoneTermBarSection(browser, base));
+    await unit("phoneShare", () => phoneShareSection(browser, base));
+    await unit("phonePan", () => phonePanSection(browser, base));
+    await unit("phoneFollow", () => phoneFollowSection(browser, base));
+    await unit("phoneTap", () => phoneTapSection(browser, base));
+    await unit("phoneKeyboard", () => phoneKeyboardSection(browser, base));
+    await unit("phoneCompose", () => phoneComposeSection(browser, base));
+    await unit("mCompose", () => mComposeSection(browser));
+    await unit("mPerms", () => mPermsSection(browser));
+    await unit("eventDriven", () => eventDrivenSection(browser, base));
+    await unit("idleBudget", () => idleBudgetSection(browser, base));
+    await unit("pollsGone", () => pollsGoneSection(browser, base));
+    await unit("roomsMachine", () => roomsMachineSection(browser, base));
+    await unit("mHome", () => mHomeSection(browser));
+    await unit("mCard", () => mCardSection(browser));
+    await unit("mServe", () => mServeSection(browser));
+    await unit("phoneKeyLabel", () => phoneKeyLabelSection(browser, base));
+    await unit("phoneKeyLit", () => phoneKeyLitSection(browser, base));
+    await unit("shiftMenu", () => shiftMenuSection(browser, base));
+    await unit("notifyCommand", () => notifyCommandSection(browser, base));
+    await unit("presence", () => presenceSection(browser, base));
+    await unit("tallPty", () => tallPtySection(browser, base));
+    await unit("usagePolish", () => usagePolishSection(browser, base));
+    await unit("usageLimits", () => usageLimitsSection(browser, base));
+    await unit("usageGroups", () => usageGroupsSection(browser, base));
+    await unit("reselect", () => reselectSection(browser, base));
     // ── over a terminal the toasts hang from the top right ─────────────────
-    await toastsTopSection(browser, base);
+    await unit("toastsTop", () => toastsTopSection(browser, base));
     // ── say immediately, or when the turn is done ──────────────────────────
-    await sayWhenSection(browser, base);
+    await unit("sayWhen", () => sayWhenSection(browser, base));
     // ── any paste still in flight after 20ms shows the spinner ─────────────
-    await pasteSpinnerSection(browser, base);
-    await pasteBigSection(browser, base);
-    await pasteBusySection(browser, base);
+    await unit("pasteSpinner", () => pasteSpinnerSection(browser, base));
+    await unit("pasteBig", () => pasteBigSection(browser, base));
+    await unit("pasteBusy", () => pasteBusySection(browser, base));
     // ── the typing gate readout, off until switched on ─────────────────────
-    await typingSection(browser, base);
+    await unit("typing", () => typingSection(browser, base));
     // ── a card wears its alias, and the menu sets it ────────────────────────
-    await aliasSection(browser, base);
-    await askAgainSection(browser, base);
+    await unit("alias", () => aliasSection(browser, base));
+    await unit("askAgain", () => askAgainSection(browser, base));
     // ── copy on select answers the pointer, not the find bar ───────────────
-    await copySelectSection(browser, base);
+    await unit("copySelect", () => copySelectSection(browser, base));
     // ── the not-replayed notice opens or loads the pre-restart history ─────
-    await carryLinkSection(browser, base);
+    await unit("carryLink", () => carryLinkSection(browser, base));
     // ── a second press fires nothing ──────────────────────────────────────
-    await busyGuardSection(browser, base);
+    await unit("busyGuard", () => busyGuardSection(browser, base));
     // ── keep-alive chips, the card switch, and the break-even toast ────────
-    await keepaliveSection(browser, base);
+    await unit("keepalive", () => keepaliveSection(browser, base));
     // ── a stuck card wears a mark, and the gear decides whether it rings ───
-    await stuckSection(browser, base);
+    await unit("stuck", () => stuckSection(browser, base));
     // ── every card shows its context size, warned past the gear's line ────
-    await contextSizeSection(browser, base);
-    await peekEverywhereSection(browser, base);
-    await phoneListFitSection(browser, base);
-    await phoneNudgeSection(browser, base);
-    await cacheChipSection(browser, base);
-    await cacheLineSection(browser, base);
-    await readyOnceSection(browser, base);
-    await readyPopoutSection(browser, base);
+    await unit("contextSize", () => contextSizeSection(browser, base));
+    await unit("peekEverywhere", () => peekEverywhereSection(browser, base));
+    await unit("phoneListFit", () => phoneListFitSection(browser, base));
+    await unit("phoneNudge", () => phoneNudgeSection(browser, base));
+    await unit("cacheChip", () => cacheChipSection(browser, base));
+    await unit("cacheLine", () => cacheLineSection(browser, base));
+    await unit("readyOnce", () => readyOnceSection(browser, base));
+    await unit("readyPopout", () => readyPopoutSection(browser, base));
     // ── a pop-out's bell is its own: the card's switch and mute, never the board's ──
-    await popoutNotifySection(browser, base);
-    await readyTwoWindowsSection(browser, base);
+    await unit("popoutNotify", () => popoutNotifySection(browser, base));
+    await unit("readyTwoWindows", () => readyTwoWindowsSection(browser, base));
     // ── the persistent growler: stack, actions, over a modal, and quiet ────
-    await growlStackSection(browser, base);
-    await growlActionsSection(browser, base);
-    await growlModalSection(browser, base);
-    await growlQuietSection(browser, base);
-    await growlAttentionSection(browser, base);
-    await growlPhoneSection(browser, base);
-    await mGrowlSection(browser);
-    await growlPopoutSection(browser, base);
+    await unit("growlStack", () => growlStackSection(browser, base));
+    await unit("growlActions", () => growlActionsSection(browser, base));
+    await unit("growlModal", () => growlModalSection(browser, base));
+    await unit("growlQuiet", () => growlQuietSection(browser, base));
+    await unit("growlAttention", () => growlAttentionSection(browser, base));
+    await unit("growlPhone", () => growlPhoneSection(browser, base));
+    await unit("mGrowl", () => mGrowlSection(browser));
+    await unit("growlPopout", () => growlPopoutSection(browser, base));
     // ── card urls: a card has an address made of names ──
-    await cardUrlTableSection(browser, base);
-    await cardUrlClashSection(browser, base);
-    await cardUrlLinksSection(browser, base);
-    await cardUrlRoomSection(browser, base);
-    await mCardUrlSection(browser);
-    await cardUrlNotifySection(browser, base);
-    await clockSection(browser, base);
-    await composeImagesSection(browser, base);
-    await composePasteSection(browser, base);
-    await mComposeImagesSection(browser);
-    await usageTabSection(browser, base);
+    await unit("cardUrlTable", () => cardUrlTableSection(browser, base));
+    await unit("cardUrlClash", () => cardUrlClashSection(browser, base));
+    await unit("cardUrlLinks", () => cardUrlLinksSection(browser, base));
+    await unit("cardUrlRoom", () => cardUrlRoomSection(browser, base));
+    await unit("mCardUrl", () => mCardUrlSection(browser));
+    await unit("cardUrlNotify", () => cardUrlNotifySection(browser, base));
+    await unit("clock", () => clockSection(browser, base));
+    await unit("composeImages", () => composeImagesSection(browser, base));
+    await unit("composePaste", () => composePasteSection(browser, base));
+    await unit("mComposeImages", () => mComposeImagesSection(browser));
+    await unit("usageTab", () => usageTabSection(browser, base));
     // ── the paste spinner stops on the room's word ──
-    await pasteStartSection(browser, base);
-    await pasteDoneSection(browser, base);
-    await pasteOldRoomSection(browser, base);
-    await pasteCloseSection(browser, base);
-    await growlQuestionBodySection(browser, base);
-    await growlReplyGrowSection(browser, base);
-    await growlChoicesSection(browser, base);
-    await growlStableSection(browser, base);
-    await mGrowlQuestionSection(browser);
-    await bootCleanSection(browser, base);
-    await mWorkingSection(browser);
-    await mOwnMessagesSection(browser);
-    await mRecapSheetSection(browser);
-    await mHomeOrderSection(browser);
-    await cardUrlWayOutSection(browser, base);
-    await phoneBootSection(browser, base);
-    await sayEnterSection(browser);
-    await sendArrowSection(browser);
-    await mTablesSection(browser);
-    await mMarkdownSection(browser);
-    await mHostileSection(browser);
-    await mPicturesSection(browser);
-    await mHiddenSection(browser);
-    await mViewerSection(browser);
-    await mChangesSection(browser);
-    await mChangesRealSection(browser);
-    await deployReadySection(browser, base);
-    await mHomeLiveSection(browser);
-    await soundPhoneSection(browser, base);
-    await boardDocsSection(browser, base);
-    await phoneBoardCompactSection(browser, base);
-    await phoneBellSection(browser, base);
-    await mBellSection(browser);
-    await phoneRedirectSection(browser, base);
-    await gearTermListSection(browser, base);
-    await growlLinksSection(browser, base);
-    await growlChoiceOnceSection(browser, base);
-    await mOutputAtSection(browser);
-    await mStickBottomSection(browser);
-    await mSendFreeSection(browser);
-    await mCardUploadSection(browser);
-    await mCompactSection(browser);
-    await mPinchSection(browser);
-    await mTypeSteadySection(browser);
-    await mOlderSection(browser);
-    await mFollowSection(browser);
-    await mDocsSection(browser);
-    await mSwitcherSection(browser);
-    await mPullSection(browser);
-    await mPromptsSection(browser);
-    await cardUrlWinNameSection(browser, base);
-    await gearHostsSection(browser, base);
-    await joinedLiveSection(browser, base);
-    await coverPollSection(browser, base);
-    await coverStepsSection(browser, base);
-    await termBoxSection(browser, base);
-    await termDebugSection(browser, base);
-    await termSortStartedSection(browser, base);
+    await unit("pasteStart", () => pasteStartSection(browser, base));
+    await unit("pasteDone", () => pasteDoneSection(browser, base));
+    await unit("pasteOldRoom", () => pasteOldRoomSection(browser, base));
+    await unit("pasteClose", () => pasteCloseSection(browser, base));
+    await unit("growlQuestionBody", () => growlQuestionBodySection(browser, base));
+    await unit("growlReplyGrow", () => growlReplyGrowSection(browser, base));
+    await unit("growlChoices", () => growlChoicesSection(browser, base));
+    await unit("growlStable", () => growlStableSection(browser, base));
+    await unit("mGrowlQuestion", () => mGrowlQuestionSection(browser));
+    await unit("bootClean", () => bootCleanSection(browser, base));
+    await unit("mWorking", () => mWorkingSection(browser));
+    await unit("mOwnMessages", () => mOwnMessagesSection(browser));
+    await unit("mRecapSheet", () => mRecapSheetSection(browser));
+    await unit("mHomeOrder", () => mHomeOrderSection(browser));
+    await unit("cardUrlWayOut", () => cardUrlWayOutSection(browser, base));
+    await unit("phoneBoot", () => phoneBootSection(browser, base));
+    await unit("sayEnter", () => sayEnterSection(browser));
+    await unit("sendArrow", () => sendArrowSection(browser));
+    await unit("mTables", () => mTablesSection(browser));
+    await unit("mMarkdown", () => mMarkdownSection(browser));
+    await unit("mHostile", () => mHostileSection(browser));
+    await unit("mPictures", () => mPicturesSection(browser));
+    await unit("mHidden", () => mHiddenSection(browser));
+    await unit("mViewer", () => mViewerSection(browser));
+    await unit("mChanges", () => mChangesSection(browser));
+    await unit("mChangesReal", () => mChangesRealSection(browser));
+    await unit("deployReady", () => deployReadySection(browser, base));
+    await unit("mHomeLive", () => mHomeLiveSection(browser));
+    await unit("soundPhone", () => soundPhoneSection(browser, base));
+    await unit("boardDocs", () => boardDocsSection(browser, base));
+    await unit("phoneBoardCompact", () => phoneBoardCompactSection(browser, base));
+    await unit("phoneBell", () => phoneBellSection(browser, base));
+    await unit("mBell", () => mBellSection(browser));
+    await unit("phoneRedirect", () => phoneRedirectSection(browser, base));
+    await unit("gearTermList", () => gearTermListSection(browser, base));
+    await unit("growlLinks", () => growlLinksSection(browser, base));
+    await unit("growlChoiceOnce", () => growlChoiceOnceSection(browser, base));
+    await unit("mOutputAt", () => mOutputAtSection(browser));
+    await unit("mStickBottom", () => mStickBottomSection(browser));
+    await unit("mSendFree", () => mSendFreeSection(browser));
+    await unit("mCardUpload", () => mCardUploadSection(browser));
+    await unit("mCompact", () => mCompactSection(browser));
+    await unit("mPinch", () => mPinchSection(browser));
+    await unit("mTypeSteady", () => mTypeSteadySection(browser));
+    await unit("mOlder", () => mOlderSection(browser));
+    await unit("mFollow", () => mFollowSection(browser));
+    await unit("mDocs", () => mDocsSection(browser));
+    await unit("mSwitcher", () => mSwitcherSection(browser));
+    await unit("mPull", () => mPullSection(browser));
+    await unit("mPrompts", () => mPromptsSection(browser));
+    await unit("cardUrlWinName", () => cardUrlWinNameSection(browser, base));
+    await unit("gearHosts", () => gearHostsSection(browser, base));
+    await unit("joinedLive", () => joinedLiveSection(browser, base));
+    await unit("coverPoll", () => coverPollSection(browser, base));
+    await unit("coverSteps", () => coverStepsSection(browser, base));
+    await unit("termBox", () => termBoxSection(browser, base));
+    await unit("termDebug", () => termDebugSection(browser, base));
+    await unit("termSortStarted", () => termSortStartedSection(browser, base));
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e));
-    if (process.env.DEBUG_HEADLESS) {
+    if (process.env.DEBUG_HEADLESS && page) {
       try {
         const diag = await page.evaluate(() => ({
           bodyClass: document.body.className,
@@ -19531,11 +19616,21 @@ async function main() {
   } finally {
     hungResponses.forEach(r => { try { r.destroy(); } catch (e) {} });
     openStreams.forEach(r => { try { r.destroy(); } catch (e) {} });
-    await browser.close();
-    await new Promise(r => server.close(r));
+    if (browser) await browser.close();
+    if (!LIST_MODE) await new Promise(r => server.close(r));
   }
 
+  if (LIST_MODE) {
+    const lets = fs.readFileSync(__filename, "utf8").split("\n").filter(l => /^let [A-Za-z_]/.test(l)).map(l => /^let ([A-Za-z_]\w*)/.exec(l)[1]);
+    const known = new Set(Object.keys(mockVars()).concat(["chromium", "exePath", "bad", "currentUnit", "stuckStep", "peekReads", "mockInit", "lastUnit"]));
+    const missing = lets.filter(n => !known.has(n));
+    if (missing.length) console.error("mockVars() is missing " + missing.join(", ") + ": a shard will not reset them between units.");
+    console.log(JSON.stringify({ units: unitOrder, pins: PIN_GROUPS }));
+    return;
+  }
+  writeUnitResults();
   if (bad) process.exit(1);
+  if (UNIT_FILTER) { console.log("the units asked for passed: " + [...UNIT_FILTER].join(",")); return; }
   console.log("a terminated pinned terminal can be dismissed from its right-click " +
     "menu and stays gone on the next render, " +
     "the two independent hide-inactive toggles drop inactive agents (dead, no live " +
