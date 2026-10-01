@@ -1,6 +1,6 @@
 # Room handoff: `atrium move`, a card and its work from one room to another
 
-Status: design by @rnd, 2026-10-01. Revised for @review's HOLD (dc12038d, docs/backlog/rnd/rd-new-review-4ea18bd7.md), for a re-read. Nothing built. Backlog:
+Status: design by @rnd, 2026-10-01. @review OK at b56ca32f (docs/backlog/rnd/rd-new-review-4ea18bd7.md), with its M3 conditions and lows folded in. Nothing built. Backlog:
 `docs/backlog/rnd/rnd-new-room-handoff.md` (HIGH, from the 2026-10-01 director move), with
 `docs/backlog/runtime/r-new-move-card-between-rooms.md` (same machine, 2026-09-30) folded in.
 
@@ -111,7 +111,9 @@ repeat returns the same card; writes on B overwrite; a re-sent say carries its i
 
 A frozen card also carries a lease (default 30 minutes, renewed by the hub while the move runs). If the hub is gone
 past the lease and no cut-over began, A undoes the card on its own: unparks it, unfreezes it and replays its queue.
-A hub that comes back to such a record ends the successor on B.
+A hub that comes back to such a record ends the successor on B. The self-undo and the hub's `moved_to` set (3.3
+step 1) are one transaction on A: once the lease has run out a `moved_to` set is refused, and once `moved_to` is set
+the self-undo is refused, so the two can never both happen.
 
 ### 3.2 Phase 2: prepare every card
 
@@ -145,7 +147,8 @@ For each card in the list, in order:
    card's lineage, and `moved_from = A~<old id>`. Its first prompt is one paragraph: you moved from A to B, your
    worktree is now `<path>`, paths in your history under `<old path>` are now under it, read `HANDOFF.<alias>.md`,
    and answer this with `atrium_say`. The hub waits for that say (default 3 minutes). The successor holds no alias
-   yet and is told not to act on anything until the cut-over note.
+   yet and is told not to act on anything until the cut-over note. It is launched gated with nothing
+   auto-approved, whatever the old card had. The carried gate and auto-approve settings are applied at 3.3 step 6.
 
 If any card fails at any step, the hub undoes every card in the list, newest first: it ends the successor on B,
 unparks the old card on A (the ordinary resume of its own transcript), unfreezes it, and replays its freeze queue
@@ -161,12 +164,13 @@ Only when every card in the list is prepared. For each card, in this order, each
    names. So a say by alias reaches the successor from this moment, with no gap. Then pins, `pin_order` and the pin
    group, through B's pin-order endpoint.
 3. **Forward the queue.** A sends its freeze queue to B through the hub relay, each say with its id. B delivers in
-   order, dedups by id, and acks each one. A drops a say only on its ack.
+   order, dedups by id, and acks each one. A drops a say only on its ack. The freeze queue stays open, and anything
+   that arrives for the old card up to the end of step 5 is forwarded the same way.
 4. **Re-point children.** The hub calls `SetLauncher` for every child whose `spawned_by_id` is `A~<old id>`, on any
    room.
 5. **Close the old card.** A releases its alias with `alias_note` "moved to B~<id>", marks the card done, and keeps
    its handle reserved while `moved_to` is set, so no later card on A takes it.
-6. **Tell.** The successor is told it is live. The hub posts one line to the old card's launcher and to the mover:
+6. **Tell.** The successor is told it is live, and the carried gate and auto-approve settings are applied. The hub posts one line to the old card's launcher and to the mover:
    `<alias> moved A~<old> to B~<new>`.
 
 If the successor dies after it answered and before step 1, the record undoes the card as in 3.2, and the list's other
@@ -234,6 +238,13 @@ halfway.
      be covered by an `Atrium-Verdict` OK range (the trailer `internal/deployready` already reads), or be a verdict
      commit itself, or touch only `docs/backlog/*/QUEUE.md` (the queue exemption). Anything uncovered refuses the
      landing and names the commits. It is not the orchestrator's eye.
+     - Design and doc reviews get their own trailer kind, `Atrium-Verdict: doc-ok <base>..<tip>`, which @review writes
+       from now on. Without it this rule would refuse every doc commit, this design included.
+     - A merge commit is accepted only if its tree equals `git merge-tree` of its parents, so an evil merge cannot
+       carry unreviewed content.
+     - A trailer is text, and anyone on an unsigned room can write one. A verdict counts only from a commit that
+       touches only review files (`docs/backlog/*/rd-new-review-*.md`, `docs/backlog/review/**`). That makes a
+       forged verdict visible in the diff, not impossible. Signing @review's commits is what makes it a guarantee.
   4. **One room at a time.** Under the lock, a room's landing is cut from the current `claude/main`. A branch that
      is no longer a fast-forward is refused, not rebased by the op. Its director rebases, which changes the SHAs, so
      @review re-stamps the verdict for the new range before it lands.
