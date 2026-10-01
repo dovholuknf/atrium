@@ -1,0 +1,16 @@
+https://github.com/openziti/tlsuv/pull/378
+MED src/tls_engine.c line 412: if (sess->resumed) {
+https://github.com/openziti/tlsuv/pull/378/files#diff-64ce848c22686039573f08e989dbe7dac15227c46510d64a60f73614f72acbd6R412
+
+* LLM review says sess is freed on line 415 while the resumed branch still holds it.
+* Suggested fix: Move the free in `src/tls_engine.c` below the branch: `free(sess);` goes after the closing brace.
+* Add a test to `test/engine_test.c`: resume, then stop, expect no use after free.
+
+Evidence
+Id: f88d982e
+Cause: introduced
+Found: traced, by reading the code. Nothing was run.
+Raised by: c-systems-reviewer
+Exposure: who: every client that resumes. Likely: on every resume. Opt-in: no.
+Impact: a use after free on every resumed session
+Leak: one session struct per resume, 312 bytes, no stack (external state)

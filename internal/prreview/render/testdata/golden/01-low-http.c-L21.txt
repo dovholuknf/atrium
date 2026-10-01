@@ -1,0 +1,15 @@
+https://github.com/openziti/tlsuv/pull/378
+LOW src/http.c line 21: rc = use(fd);
+https://github.com/openziti/tlsuv/pull/378/files#diff-4b8a915e7a0661ce6c35078f460d190a3d7212e7bf57113a26e25b74f3d4e41bR21
+
+* LLM review says fd is used without a check that dup succeeded.
+* Could we test `fd` against -1 before the call?
+
+Evidence
+Id: 8e54f6b4
+Cause: introduced
+Found: traced
+Raised by: codebase-steward
+Impact: a failed dup is passed on as a descriptor
+Second opinion: disputes. dup only fails at the descriptor limit, which the caller has already hit.
+Settled: left for clint

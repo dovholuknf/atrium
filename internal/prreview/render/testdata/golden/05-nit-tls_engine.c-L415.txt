@@ -1,0 +1,13 @@
+https://github.com/openziti/tlsuv/pull/378
+NIT src/tls_engine.c line 415: free(sess);
+https://github.com/openziti/tlsuv/pull/378/files#diff-64ce848c22686039573f08e989dbe7dac15227c46510d64a60f73614f72acbd6R415
+
+* LLM review says the free has no comment saying why it sits last.
+
+Evidence
+Id: ad34afa8
+Cause: introduced
+Found: traced
+Raised by: codebase-steward
+Impact: a reader may move it
+Fix dropped, it is not a "Could we ...?" question and was not proven (rule 43): Add a comment above it.
