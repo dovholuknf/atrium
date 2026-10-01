@@ -12,6 +12,11 @@ is live.
 
 ## Queue
 
+0z. **D1, hub documents, the hub half** (orchestrator, 2026-09-30 ~22:00: clint approved building it, exempt from the
+   UI-only order). Spec `docs/rnd/hub-documents-design.md` (@review OK 1f142d27). Contract for @ui's D2 is
+   `docs/backlog/fabric/hub-documents-api.md`. Worker `d1` (card 01a0f57c on m1mini, branch `claude/d1`), four stages.
+   Migration is `0007_docs` in hubstore, @runtime reviews it. Then @review, then land, then a hub deploy. First use
+   once live: publish `notes\USAGE-2026-09-29-30.md` and the factory evals so clint can read them on the phone.
 0. **f-new-defender-at-provision: landed, 5bfbb1a2 (@review passed it as 08779d34), waiting on clint.** sg3 has
    GOTMPDIR set. Its exclusions need the line in `notes/director-reports.md` (18:53) pasted into an elevated shell on
    sg3. sg4 the same, with the line `room-defender.ps1 local` prints. Close this when `Get-MpPreference` in that shell

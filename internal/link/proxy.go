@@ -21,6 +21,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/cardurl"
 	"github.com/dovholuknf/atrium/internal/edge"
 	"github.com/dovholuknf/atrium/internal/gitsync"
+	"github.com/dovholuknf/atrium/internal/hubstore"
 	"github.com/dovholuknf/atrium/internal/webasset"
 )
 
@@ -117,6 +118,9 @@ type Proxy struct {
 	// ready is the "deploy ready" state. Nil until SetDeployReady, and a hub without one answers
 	// /_hub/deploy-ready 404. See deployready.go.
 	ready *deployReadyState
+	// docs is the hub's documents. Nil until SetDocs wires it, and a hub without one answers
+	// /_hub/docs 404. See docs_api.go.
+	docs *hubstore.Store
 }
 
 // NewProxy wires a hub, its board and a room chooser into one handler.
@@ -535,6 +539,18 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// room's own file server does, so a typed /m lands on it.
 	if r.URL.Path == "/m" && p.board != nil {
 		http.Redirect(w, r, "/m/", http.StatusMovedPermanently)
+		return
+	}
+	// A DOCUMENT'S ADDRESS, /d/<slug> and /d/<slug>@<n>, is the phone page: the same /m shell,
+	// which reads the path and asks /_hub/docs for the rest. No new HTML. The hub does not look
+	// the slug up, so a deleted or unknown one answers with the shell too and the page says what
+	// the metadata call does. See docs_api.go.
+	if strings.HasPrefix(r.URL.Path, "/d/") && p.board != nil && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
+		if _, _, ok := ParseDocPath(r.URL.Path); !ok {
+			http.NotFound(w, r)
+			return
+		}
+		p.serveAsset(w, r, "m/index.html")
 		return
 	}
 	// A CARD'S READABLE ADDRESS is the board page, and the page resolves the
@@ -1272,6 +1288,7 @@ func (p *Proxy) SetControl(boardAddr string) {
 		defer p.mu.Unlock()
 		return p.capStore
 	}
+	c.docs = p.docStore
 	p.control = c.handler()
 	p.mu.Lock()
 	p.ctl = c
@@ -1339,6 +1356,10 @@ func (p *Proxy) serveHubAPI(w http.ResponseWriter, r *http.Request) {
 	sub := strings.TrimPrefix(r.URL.Path, "/_hub/")
 	if sub == "restart" || strings.HasPrefix(sub, "restart/") {
 		p.serveRestart(w, r, strings.TrimPrefix(strings.TrimPrefix(sub, "restart"), "/"))
+		return
+	}
+	if sub == "docs" || strings.HasPrefix(sub, "docs/") {
+		p.serveDocs(w, r, sub)
 		return
 	}
 	if strings.HasPrefix(sub, "growls/") {

@@ -340,6 +340,8 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	gitHub.Audit = proxy.RecordAudit
 	// THE LAUNCH CAP PER ROOM, kept in the hub's settings. See launchcaps.go.
 	proxy.SetLaunchCaps(store)
+	// THE HUB'S DOCUMENTS, rows in the store and bytes beside it. See link/docs_api.go.
+	proxy.SetDocs(store)
 	// THE NAMES THE HUB ANSWERS, beside $ATRIUM_HOSTS, from the same store. Before
 	// any listener is up. See hosts.go.
 	link.LoadExtraHosts(store)

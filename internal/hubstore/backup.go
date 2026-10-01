@@ -235,6 +235,12 @@ func Prune(dir string) (int, error) {
 // thing that protects it.
 func (s *Store) BackUp(ctx context.Context, dir string) {
 	take := func() {
+		// THE DOCUMENT BLOBS, once a day. A failure is logged like a snapshot's.
+		if n, err := s.CopyDocs(dir); err != nil {
+			log.Printf("[hub] could not copy the document store: %v", err)
+		} else if n > 0 {
+			log.Printf("[hub] copied %d document file(s) next to the snapshots", n)
+		}
 		b, err := s.Snapshot(dir)
 		if err != nil {
 			log.Printf("[hub] could not back up its store: %v", err)

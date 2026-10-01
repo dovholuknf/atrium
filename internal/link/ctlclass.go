@@ -46,6 +46,8 @@ var workerTools = map[string]bool{
 	"atrium_report": true,
 	"atrium_task":   true,
 	"atrium_alias":  true,
+	// Workers write the reports, so a worker publishes. See docs_mcp.go.
+	"atrium_publish": true,
 }
 
 // inClass reports whether a tool is served to a class.
@@ -148,11 +150,23 @@ func (c *controlMCP) lookupClass(ctx context.Context, room, agent string) (ctlCl
 	if err := c.ask(ctx, http.MethodGet, "/v1/tasks", room, nil, &body); err != nil {
 		return classFull, false
 	}
-	// A wire name can be reused by a card that has since died. Prefer a live one,
-	// then the newest, which is how resolvePeer orders an alias.
+	best := pickCard(body.Tasks, agent)
+	if best == nil {
+		return classFull, false
+	}
+	if hasTag(best.Tags, SubagentTag) && !hasTag(best.Tags, DirectorTag) {
+		return classWorker, true
+	}
+	return classFull, true
+}
+
+// pickCard is the card a wire name belongs to. A wire name can be reused by a card that has
+// since died, so a live one is preferred, then the newest, which is how resolvePeer orders an
+// alias. Nil when no card answers to it.
+func pickCard(tasks []ctlCard, agent string) *ctlCard {
 	var best *ctlCard
-	for i := range body.Tasks {
-		t := &body.Tasks[i]
+	for i := range tasks {
+		t := &tasks[i]
 		if t.Wire != agent {
 			continue
 		}
@@ -163,11 +177,5 @@ func (c *controlMCP) lookupClass(ctx context.Context, room, agent string) (ctlCl
 			best = t
 		}
 	}
-	if best == nil {
-		return classFull, false
-	}
-	if hasTag(best.Tags, SubagentTag) && !hasTag(best.Tags, DirectorTag) {
-		return classWorker, true
-	}
-	return classFull, true
+	return best
 }
