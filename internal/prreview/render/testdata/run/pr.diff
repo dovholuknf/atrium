@@ -1,0 +1,23 @@
+diff --git a/src/tls_engine.c b/src/tls_engine.c
+index 1111111..2222222 100644
+--- a/src/tls_engine.c
++++ b/src/tls_engine.c
+@@ -410,3 +410,7 @@ int engine_start(void) {
+   if (ready) {
+     log();
++    if (sess->resumed) {
++      reuse(sess);
++    }
++    free(sess);
+   }
+diff --git a/src/http.c b/src/http.c
+index 3333333..4444444 100644
+--- a/src/http.c
++++ b/src/http.c
+@@ -18,3 +18,6 @@ int http_open(void) {
+   int rc = 0;
+   int fd = -1;
++  fd = dup(sock);
++  rc = use(fd);
++  return rc;
+ }

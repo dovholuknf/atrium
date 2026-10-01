@@ -1,0 +1,15 @@
+https://github.com/openziti/tlsuv/pull/378
+MED src/tls_engine.c line 413: reuse(sess);
+https://github.com/openziti/tlsuv/pull/378/files#diff-64ce848c22686039573f08e989dbe7dac15227c46510d64a60f73614f72acbd6R413
+
+* LLM review says a session that resumed is reused after the engine started closing it.
+* Could we check `sess->closing` before the reuse, so a closing session is never handed back?
+* Add a test to `test/engine_test.c`: drop the link mid-resume, expect no reuse of the old session.
+
+Evidence
+Id: f9ab15e1
+Cause: introduced
+Found: traced, by reading the code. Nothing was run.
+Raised by: c-systems-reviewer
+Exposure: who: every client that reconnects. Likely: on any network drop. Opt-in: no.
+Impact: a reconnect reuses a closing session

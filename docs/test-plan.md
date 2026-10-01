@@ -8263,3 +8263,19 @@ build before `atrium_publish path` works, since an older room cannot say what a 
 5. Restart the room mid-wake, then let the card's new conversation start. The failed chip stays until dismissed or
    rerun. Covered by `newcontext_review_test.go`. The idle parking's capture is not journalled and does not refuse
    typing. The board shows a "Typing dropped" toast when typing is refused.
+
+## HY. The pulls-view renderer (r-pr-render)
+
+`go test ./internal/prreview/...` with `ATRIUM_LOCATION` and `ATRIUM_DEBUG_INPUTLAG` cleared. No daemon, no network.
+
+1. `TestGolden` renders a fixture run folder and merged-findings JSON and compares every file and `walk.txt` with
+   `testdata/golden`. After an intended change, run it with `-update` and read the diff.
+2. `TestWalkOrder`: a dispute left for clint is first, then HIGH, MED, LOW, NIT, then `rank`, then `pr.diff` file
+   order, then line. File name never decides.
+3. Rule 5 (`TestRule5...`): a leak any reviewer raised and the final list lacks is a `Resend`, then a `merge` failure
+   naming it once `Resent` is set. Rules 8 and 35, and 26, fail the same way. A context line is not a changed line.
+4. Rules 34, 36, 40 and 43: a `Resend` first, then the lead-in is removed, the fix bullet is dropped, the path is
+   flagged in Evidence, or the unproven fix is dropped, each with a line in Evidence saying why.
+5. `Suggested fix:` appears only on a finding whose `proven` is `code`.
+6. Open a folder written by `render.Write` in the walk drawer: the rail shows every finding in walk order, each opens
+   with the label line, the code and link, the bullets, and a folded Evidence. Not automated yet, it needs the runner.

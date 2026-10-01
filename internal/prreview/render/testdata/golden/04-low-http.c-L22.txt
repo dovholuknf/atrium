@@ -1,0 +1,15 @@
+https://github.com/openziti/tlsuv/pull/378
+LOW src/http.c line 22: return rc;
+https://github.com/openziti/tlsuv/pull/378/files#diff-4b8a915e7a0661ce6c35078f460d190a3d7212e7bf57113a26e25b74f3d4e41bR22
+
+* LLM review says the result is returned without logging, and that hides failures in `src/nothere.c`.
+
+Evidence
+Id: 5923e9d0
+Cause: introduced
+Found: traced
+Raised by: codebase-steward
+Impact: a failure is silent
+Settled: kept at LOW. The caller does not log either.
+Path not in src/: src/nothere.c
+Fix dropped, it offered more than one change (rule 36): Log the result here, or return it through `out`.
