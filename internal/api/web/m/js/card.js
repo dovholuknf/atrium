@@ -62,7 +62,7 @@
     return a === "now" ? "now" : a;
   }
   // A stable key for a drawn entry, so older pages can be deduped against what is on screen and the viewport can find
-  // the bubble it was anchored to after a prepend.
+  // the bubble it was anchored to after a prepend or a redraw.
   function entryKey(at, text) {
     const t = String(at || "") + "|" + String(text || "");
     let h = 5381;
@@ -119,11 +119,15 @@
       '<div class="md' + (stale ? " stale" : "") + '">' + MD.render(recap, mdCtx()) + "</div></div>";
   }
 
+  // The recap sheet covers the thread. Closing it gives back what the reader had: following if they were, the place they
+  // were reading if not.
+  let recapStick = true;
   function openRecap() {
     if (!els || !els.recap.innerHTML) return;
+    recapStick = stick;
     els.recap.hidden = false;
   }
-  function closeRecap() { if (!els) return; els.recap.hidden = true; stick = true; settle(); }
+  function closeRecap() { if (!els) return; els.recap.hidden = true; stick = recapStick; syncAnchor(); settle(); }
 
   // ── the working line ─────────────────────────────────────────────────────
   // What the card is doing right now, from the activity on its task row. Nothing when it is idle or waiting.
@@ -200,7 +204,7 @@
     a.push({ at: new Date().toISOString(), text: t, kind: kind === "queued" ? "queued" : "sent" });
     try { localStorage.setItem(sentKey(id), JSON.stringify(a.slice(-SENT_KEEP))); } catch (e) {}
     pruneSent();
-    if (isOpen(id)) { stick = true; paintReplies(); paintWorkingNow(); }
+    if (isOpen(id)) { stick = true; syncAnchor(); paintReplies(); paintWorkingNow(); toEnd(true); }
   }
   function isOpen(id) { return !!openId && window.mNet.bareId(id) === window.mNet.bareId(openId); }
   window.addEventListener("m-sent", e => { const d = e.detail || {}; noteSent(d.id, d.text, d.kind); });
@@ -216,7 +220,7 @@
     const list = (flight.get(bare) || []).filter(x => x.key !== d.key && !(x.state === "failed" && x.text === d.text));
     if (d.state === "pending" || d.state === "failed") list.push({ key: d.key, text: d.text, state: d.state, at: new Date().toISOString() });
     flight.set(bare, list);
-    if (isOpen(d.id)) { if (d.state === "pending") stick = true; paintReplies(); paintWorkingNow(); }
+    if (isOpen(d.id)) { if (d.state === "pending") { stick = true; syncAnchor(); } paintReplies(); paintWorkingNow(); if (d.state === "pending") toEnd(true); }
   });
 
   const OWN_TAG = { pending: "sending", failed: "not sent, back in the box", sent: "delivered", queued: "queued" };
@@ -341,12 +345,26 @@
   }
 
   // ── staying at the newest message ────────────────────────────────────────
-  // The thread follows its end until the operator scrolls up on purpose, then a jump control brings it back.
+  // THE RULE. The thread follows its end only while the reader is at the very bottom. The moment a finger, wheel, key or
+  // pointer touches the thread, or it is more than LEAVE px above the bottom, following STOPS and stays stopped until
+  // the reader is back at the very bottom (within AT_END px) themselves or taps the jump arrow. Nothing the page does
+  // moves a reader: output arriving, a reply re-read, the activity row, images, the pinch size. And nothing scrolls the
+  // thread while a touch is down, for about 300 ms after it lifts (a finger's momentum), or while a scroll is running.
   let stick = true;
-  const NEAR = 80;
-  function toEnd() {
+  const LEAVE = 24, AT_END = 2, MOMENTUM = 300;
+  let touching = false, touchEndAt = 0, lastScrollAt = 0, progUntil = 0, progAt = 0, lastTop = 0;
+  function active() { const n = Date.now(); return touching || n - touchEndAt < MOMENTUM || n - lastScrollAt < 120; }
+  // Scroll anchoring is the browser's own way of holding a reader still when something above them grows (an image
+  // loading, a bubble reflowing). It is on while not following and off while following, where toEnd does the job.
+  function syncAnchor() { if (els) els.scroll.style.overflowAnchor = stick ? "none" : "auto"; }
+  function gapOf() { return els.scroll.scrollHeight - els.scroll.scrollTop - els.scroll.clientHeight; }
+  // `force` is for what the reader asked for: the jump arrow, their own message going out.
+  // Every move the page makes itself goes through here, so its scroll event is not mistaken for the reader's.
+  function setTop(v) { progAt = Date.now(); progUntil = progAt + 80; els.scroll.scrollTop = v; lastTop = els.scroll.scrollTop; }
+  function toEnd(force) {
     if (!els) return;
-    els.scroll.scrollTop = els.scroll.scrollHeight;
+    if (!force && (!stick || active())) return;
+    setTop(els.scroll.scrollHeight);
     els.jump.hidden = true;
   }
   // While a message is being typed the thread holds still. The composer growing a line, the keyboard coming or going
@@ -354,12 +372,14 @@
   // when typing began (or where the operator last scrolled it to) is put back after each of those, and stick-to-bottom
   // is not run. Sending, the jump control, leaving the box and emptying it end it, and the next input pins again.
   let typing = false, pinTop = 0;
-  function pinned() { if (typing && els && els.scroll.scrollTop !== pinTop) els.scroll.scrollTop = pinTop; return typing; }
+  function pinned() { if (typing && els && !active() && els.scroll.scrollTop !== pinTop) setTop(pinTop); return typing; }
   function typingOn() { if (!typing && els) { typing = true; pinTop = els.scroll.scrollTop; } }
   function typingOff() { typing = false; }
+  let settleLater = 0;
   function settle() {
     if (pinned()) return;
     if (!stick || !els) return;
+    if (active()) { if (!settleLater) settleLater = setTimeout(() => { settleLater = 0; settle(); }, 130); return; }
     toEnd();
     requestAnimationFrame(() => { if (stick && els) toEnd(); });
   }
@@ -394,7 +414,7 @@
       e.preventDefault();
       const was = g.anchor ? g.anchor.getBoundingClientRect().top : 0;
       const v = setFs(g.fs * dist(e.touches) / (g.d || 1));
-      if (g.anchor) els.scroll.scrollTop += g.anchor.getBoundingClientRect().top - was;
+      if (g.anchor) setTop(els.scroll.scrollTop + g.anchor.getBoundingClientRect().top - was);
       g.last = v;
     }, { passive: false });
     const end = () => { if (g && g.last) { try { localStorage.setItem(FS_KEY, String(g.last)); } catch (e) {} } g = null; };
@@ -422,24 +442,60 @@
     ["gesturestart", "gesturechange"].forEach(n => el.addEventListener(n, e => e.preventDefault()));
   }
 
-  function byHand() { userAt = Date.now(); }
+  // A touch, pointer, wheel or key in the thread lets go of the end at once, before any scroll event.
+  function byHand(e) {
+    userAt = Date.now();
+    if (!els) return;
+    if (e && (e.type === "touchstart" || e.type === "pointerdown")) touching = true;
+    if (e && e.type === "touchstart" && e.touches && e.touches.length) touching = true;
+    stick = false;
+    syncAnchor();
+    if (gapOf() > AT_END) els.jump.hidden = false;
+  }
+  function byHandEnd() { touching = false; touchEndAt = Date.now(); setTimeout(onScroll, MOMENTUM + 20); }
   function onScroll() {
     if (!els || !openId) return;
-    if (typing) { if (Date.now() - userAt < 1500) pinTop = els.scroll.scrollTop; else pinned(); }
-    if (els.scroll.scrollTop < 40 && Date.now() - userAt < 1500) nearTop();
-    const gap = els.scroll.scrollHeight - els.scroll.scrollTop - els.scroll.clientHeight;
-    if (gap < NEAR) { stick = true; els.jump.hidden = true; return; }
-    if (Date.now() - userAt < 1500) { stick = false; els.jump.hidden = false; }
+    // A scroll event the page made itself is not the reader's. It does not make the thread look busy and does not
+    // let go of the end. A reader's scroll up does: past LEAVE px from the bottom.
+    const mine = Date.now() < progUntil && userAt <= progAt;
+    const moved = els.scroll.scrollTop - lastTop;
+    lastTop = els.scroll.scrollTop;
+    if (mine) return;
+    lastScrollAt = Date.now();
+    if (els.scroll.scrollTop < 40) nearTop();
+    if (typing) { if (active() || Date.now() - userAt < 1500) pinTop = els.scroll.scrollTop; else pinned(); }
+    const gap = gapOf();
+    if (gap > LEAVE && moved < 0) { stick = false; els.jump.hidden = false; }
+    else if (gap > LEAVE && !stick) els.jump.hidden = false;
+    else if (gap <= AT_END && !touching) { stick = true; els.jump.hidden = true; }
+    syncAnchor();
   }
 
+  // The thread is redrawn only when nobody's finger is on it, and a reader keeps the bubble they were reading where it
+  // was: the first bubble in view is found again after the redraw and the scroll is moved by exactly what it shifted.
+  let paintLater = 0;
   function paintReplies() {
     const t = window.mStore.card(openId);
     if (!t) return;
     const html = repliesHTML(t, cache.get(openId));
     if (els.replies.dataset.sig === html) { settle(); return; }
+    if (!stick && active()) {
+      if (!paintLater) paintLater = setTimeout(() => { paintLater = 0; if (els && openId) paintReplies(); }, 150);
+      return;
+    }
     const first = !els.replies.dataset.sig;
+    let hold = null;
+    if (!stick && !first) {
+      const top = els.scroll.getBoundingClientRect().top;
+      const el = Array.from(els.replies.querySelectorAll("[data-k]")).find(e => e.getBoundingClientRect().bottom > top + 1);
+      if (el) hold = { k: el.dataset.k, y: el.getBoundingClientRect().top };
+    }
     els.replies.innerHTML = html;
     els.replies.dataset.sig = html;
+    if (hold) {
+      const el = Array.from(els.replies.querySelectorAll("[data-k]")).find(e => e.dataset.k === hold.k);
+      if (el) { const d = el.getBoundingClientRect().top - hold.y; if (d) setTop(els.scroll.scrollTop + d); }
+    }
     if (!first) els.replies.classList.add("fresh");
     setTimeout(() => els.replies.classList.remove("fresh"), 400);
     settle();
@@ -483,10 +539,7 @@
     o.busy = false;
     if (id !== openId) return;
     if (!r) { o.failed = true; paintReplies(); return; }
-    // the bubble at the top of the view stays where it is
-    const sc = els.scroll, top = sc.getBoundingClientRect().top;
-    const first = Array.from(els.replies.querySelectorAll("[data-k]")).find(e => e.getBoundingClientRect().bottom > top + 1);
-    const was = first ? { k: first.dataset.k, y: first.getBoundingClientRect().top } : null;
+    // paintReplies holds the bubble at the top of the view where it is, so the prepend does not move a reader
     o.replies = r.replies.concat(o.replies);
     o.prompts = (Array.isArray(r.prompts) ? r.prompts : []).concat(o.prompts);
     o.more = !!r.more;
@@ -494,10 +547,6 @@
     if (r.more && !o.next) o.more = false;
     o.pages++;
     paintReplies();
-    if (was && !stick) {
-      const el = Array.from(els.replies.querySelectorAll("[data-k]")).find(e => e.dataset.k === was.k);
-      if (el) { sc.scrollTop += el.getBoundingClientRect().top - was.y; if (typing) pinTop = sc.scrollTop; }
-    }
   }
   // Reaching the top asks once, after a short wait, and never while a read is in flight.
   let topTimer = 0;
@@ -546,7 +595,7 @@
     els.sheet.hidden = false;
     menuClose();
     els.sheet.classList.toggle("direct", !!(history.state && history.state.direct));
-    els.scroll.scrollTop = 0;
+    setTop(0);
     els.head.dataset.sig = els.notices.dataset.sig = els.extras.dataset.sig = els.replies.dataset.sig = els.recap.dataset.sig = els.working.dataset.sig = "";
     els.recap.hidden = true;
     stick = true;
@@ -784,12 +833,13 @@
     // The first open lays out late: the Recap button, the permission rows, fonts and any image in a reply move the end
     // after the first scroll. While following, every size change of the thread and the box around it goes to the end again.
     if (window.ResizeObserver) {
-      const ro = new ResizeObserver(() => { if (pinned()) return; if (stick && openId) toEnd(); });
+      const ro = new ResizeObserver(() => { if (pinned()) return; if (openId) toEnd(); });
       [els.scroll, els.head, els.notices, els.replies, els.extras, els.perms].forEach(e => ro.observe(e));
     }
     pinchInit();
-    els.scroll.addEventListener("load", () => { if (stick && openId) toEnd(); }, true);
-    els.jump.addEventListener("click", () => { typingOff(); stick = true; toEnd(); });
+    els.scroll.addEventListener("load", () => { if (openId) toEnd(); }, true);
+    els.jump.addEventListener("click", () => { typingOff(); stick = true; syncAnchor(); toEnd(true); });
+    ["touchend", "touchcancel", "pointerup", "pointercancel"].forEach(n => els.scroll.addEventListener(n, byHandEnd, { passive: true }));
     if (window.visualViewport) window.visualViewport.addEventListener("resize", () => { if (openId) settle(); });
     els.sheet.addEventListener("input", e => { if (e.target && e.target.classList && e.target.classList.contains("mc-box")) { if (e.target.value) typingOn(); else { typingOff(); settle(); } } }, true);
     els.sheet.addEventListener("focusout", e => { if (e.target && e.target.classList && e.target.classList.contains("mc-box")) typingOff(); });
