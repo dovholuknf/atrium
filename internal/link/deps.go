@@ -424,6 +424,7 @@ func (p *Proxy) RunDeps(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-t.C:
+			p.deployReadyTick(ctx)
 			p.depsTick(ctx)
 		}
 	}
