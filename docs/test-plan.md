@@ -8224,8 +8224,10 @@ build before `atrium_publish path` works, since an older room cannot say what a 
 4. Every failed unit is run once more, alone, two at a time. `scripts/board-suite-flaky.json` names the units known to
    fail now and then, each with the reason: one of those that passes the second time is labelled flaky and does not
    fail the run, and one that fails both tries still does. A unit that is not on the list and passes the second time is
-   shown in its own block, since it failed only under the load of the shards, and does not fail the run either. Do not
-   list a unit to hide a real failure: a reason that says the test is racing is a bug to fix, not a pass.
+   shown in its own block, since it failed only under the load of the shards, and still fails the run: fix its wait or
+   list it with the reason. A failure outside every unit, or a shard that exits nonzero with nothing failed, fails the
+   run too, and so does any failure under `--no-retry`. Do not list a unit to hide a real failure: a reason that says the
+   test is racing is a bug to fix, not a pass.
 5. The plain run, `node scripts/test-board-headless.js`, is the serial run it always was. `HEADLESS_ONLY=a,b` is
    unchanged. `HEADLESS_UNITS=a,b` is the same filter over the unit list that the sharded runner uses, with each unit's
    failure kept to itself, and `HEADLESS_RESULTS=file` writes what each took. `HEADLESS_LIST=1` prints the units. In

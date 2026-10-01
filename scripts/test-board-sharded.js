@@ -6,7 +6,7 @@
 //   node scripts/test-board-sharded.js --units mHome,phonePan    just those units (a pin group comes with its members)
 //   node scripts/test-board-sharded.js --save-weights     after the run, write what each unit took to the weight file
 //   node scripts/test-board-sharded.js --list             print the shard plan and stop
-//   node scripts/test-board-sharded.js --no-retry         do not run a flaky failure a second time
+//   node scripts/test-board-sharded.js --no-retry         do not run a failure a second time (every failure then fails the run)
 //   node scripts/test-board-sharded.js --logs dir         keep each shard's output in dir (default: a temp dir, kept on failure)
 //
 // Each shard is a separate node process with its own mock server on an ephemeral port and its own headless browser,
@@ -18,8 +18,8 @@
 // on a quiet machine. A unit named in scripts/board-suite-flaky.json that fails both tries is reported as flaky and
 // still fails the run, one that passes the second time is labelled flaky and does not. A unit NOT on the list that
 // passes the second time is shown in its own block (it failed under the load of the shards, not on its own, so it
-// wants fixing or listing) and does not fail the run either. A unit that fails both tries fails the run, as does any
-// unit that did not run at all.
+// wants fixing or listing) and still fails the run, so a race is never passed quietly. A unit that fails both tries
+// fails the run, as does any unit that did not run, any failure outside every unit, and, with --no-retry, any failure.
 // With no flags test-board-headless.js is still the plain serial run.
 
 const { spawn, spawnSync } = require("child_process");
@@ -137,7 +137,7 @@ function runShard(label, units, dir) {
       runShard.children.delete(child);
       fs.closeSync(out);
       const r = readJSON(results, null);
-      resolve({ label, units, code, ms: Date.now() - t0, results: r ? r.units : {}, log, wrote: !!r });
+      resolve({ label, units, code, ms: Date.now() - t0, results: r ? r.units : {}, bad: r ? r.bad : 0, log, wrote: !!r });
     });
     child.on("error", e => { fs.closeSync(out); resolve({ label, units, code: -1, ms: 0, results: {}, log, wrote: false, error: e.message }); });
   });
@@ -183,9 +183,19 @@ async function main() {
 
   const cpu = cpuSampler();
   const t0 = Date.now();
+  // a fail() outside every unit counts in the shard's total and in no unit, and a crash after the results were written
+  // leaves a nonzero exit with nothing failed: neither may read as a pass
+  const stray = [];
+  const strays = r => {
+    if (!r.wrote) return;
+    const inUnits = Object.values(r.results).reduce((s, x) => s + x.fails.length, 0);
+    if (r.bad > inUnits) stray.push(r.label + ": " + (r.bad - inUnits) + " failure(s) outside any unit. see " + r.log);
+    else if (r.code !== 0 && !r.bad) stray.push(r.label + ": exit " + r.code + " with nothing failed. see " + r.log);
+  };
   const runs = await Promise.all(shards.map((s, i) => runShard("shard-" + (i + 1), unitsOf(s, list.units), dir).then(r => {
     const bad = r.units.filter(u => !(r.results[u] && r.results[u].ok)).length;
     console.log(r.label + " finished in " + fmt(r.ms) + ": " + r.units.length + " units" + (bad ? ", " + bad + " not passing" : ""));
+    strays(r);
     return r;
   })));
 
@@ -207,6 +217,7 @@ async function main() {
     const rr = [];
     for (let i = 0; i < again.length; i += pool)
       rr.push(...await Promise.all(again.slice(i, i + pool).map((g, j) => runShard("retry-" + (i + j + 1), g.units, dir))));
+    rr.forEach(strays);
     for (const r of rr) for (const u of r.units) {
       if (!failed(u) || got[u].tries === 2) continue;
       const x = r.results[u];
@@ -229,17 +240,20 @@ async function main() {
     else status = x.notRun ? "NOT RUN" : (flaky[u] ? "FLAKY (failed, not retried)" : "FAIL");
     return Object.assign({ unit: u, status }, x);
   });
-  const hard = rows.filter(r => r.status === "FAIL" || r.status === "NOT RUN" || r.status === "FLAKY (failed every try)");
+  const hard = rows.filter(r => r.status === "FAIL" || r.status === "NOT RUN" || r.status === "FLAKY (failed every try)" ||
+    r.status === "FLAKY (failed, not retried)" || r.status === "LOAD (passed on retry)");
   const soft = rows.filter(r => r.status.startsWith("FLAKY") && !hard.includes(r));
   const load_ = rows.filter(r => r.status === "LOAD (passed on retry)");
+  const failed_ = hard.filter(r => !load_.includes(r));
 
   console.log("\nunit".padEnd(26) + "time".padStart(9) + "  result");
   for (const r of rows.slice().sort((a, b) => b.ms - a.ms)) console.log(r.unit.padEnd(25) + fmt(r.ms).padStart(9) + "  " + r.status + "  " + r.shard + (r.retryMs ? "  (retry " + fmt(r.retryMs) + ")" : ""));
 
-  if (hard.length) {
-    console.log("\nFAILED (" + hard.length + "):");
-    for (const r of hard) {
-      console.log("  " + r.unit + (r.status === "FLAKY (failed every try)" ? "  [flaky, failed both tries]" : ""));
+  if (failed_.length) {
+    console.log("\nFAILED (" + failed_.length + "):");
+    for (const r of failed_) {
+      console.log("  " + r.unit + (r.status === "FLAKY (failed every try)" ? "  [flaky, failed both tries]" :
+        r.status === "FLAKY (failed, not retried)" ? "  [flaky, not retried]" : ""));
       for (const m of r.fails.slice(0, 6)) console.log("    " + m.split("\n")[0].slice(0, 300));
       if (r.fails.length > 6) console.log("    ... and " + (r.fails.length - 6) + " more");
     }
@@ -253,19 +267,25 @@ async function main() {
   }
 
   if (load_.length) {
-    console.log("\nFAILED IN THE SHARDS, PASSED ALONE, AND NOT ON THE FLAKY LIST (" + load_.length + "). Not failing the run. Fix the wait or list it:");
+    console.log("\nFAILED IN THE SHARDS, PASSED ALONE, AND NOT ON THE FLAKY LIST (" + load_.length + "). These fail the run. Fix the wait, or list it with its reason:");
     for (const r of load_) {
       console.log("  " + r.unit);
       for (const m of r.fails.slice(0, 3)) console.log("    first try: " + m.split("\n")[0].slice(0, 300));
     }
   }
 
+  if (stray.length) {
+    console.log("\nFAILED OUTSIDE ANY UNIT (" + stray.length + "):");
+    for (const s of stray) console.log("  " + s);
+  }
+
   const sum = rows.reduce((s, r) => s + r.ms, 0);
   console.log("\n" + rows.filter(r => r.status === "PASS").length + " of " + rows.length + " units passed" +
-    (soft.length ? ", " + soft.length + " flaky" : "") + (load_.length ? ", " + load_.length + " passed only on retry" : "") + (hard.length ? ", " + hard.length + " failed" : "") + ".");
+    (soft.length ? ", " + soft.length + " flaky" : "") + (load_.length ? ", " + load_.length + " passed only on retry (failing the run)" : "") +
+    (failed_.length ? ", " + failed_.length + " failed" : "") + (stray.length ? ", " + stray.length + " outside any unit" : "") + ".");
   console.log("wall time " + fmt(wall) + " on " + shards.length + " shards (the units add up to " + fmt(sum) + " run one after another)." +
     " cpu " + load.avg.toFixed(0) + "% average, " + load.peak.toFixed(0) + "% peak.");
-  const keep = hard.length || opt.logs;
+  const keep = hard.length || stray.length || opt.logs;
   if (keep) console.log("shard output: " + dir);
 
   if (opt.saveWeights) {
@@ -279,7 +299,7 @@ async function main() {
     console.log("weights written to " + path.relative(process.cwd(), WEIGHTS));
   }
   if (!keep) { try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e) {} }
-  return hard.length ? 1 : 0;
+  return hard.length || stray.length ? 1 : 0;
 }
 
 main().then(code => process.exit(code), e => { console.error(e); process.exit(1); });
