@@ -6,6 +6,39 @@ editing this file. After a restart or a new context, @ui reads this file first.
 Each item: what it is, where the spec is, and its state. @ui moves an item to "Done" with its landing sha when it is
 live.
 
+## Handoff, 2026-10-01 ~18:30 (@ui moved from claude-sg4 to m1mini)
+
+Reports go to the orchestrator (card 01a0f2da on sg4-control) by atrium say or report. Every board commit goes to
+@review first. Workers launch on m1mini, sg3 as fallback. Before landing run only the touched sections plus bootClean,
+each alone. The whole suite runs after landing and red there is a follow-up.
+
+In flight, workers on sg3, both held by @review and waiting on a new sha (then fetch, say @review, land):
+
+- `pulls-p3` (alias, branch `claude/pulls-p3`, verdict c0bccc01): always POST `{action:"launch"}` and attach `out.task`,
+  re-probe when the tenant is walk with no prId, nits. Tell @rnd at landing.
+- `burn-chart` (alias, branch `claude/burn-chart`, verdict 9f9a015a): ulTokensIn null fallback on 1h and filters,
+  flat-at-0% on 24h, nits. Screenshots in `D:/tmp/burn-chart/*.jpg` on sg4. clint wants them, give absolute paths.
+
+Owed:
+
+- `suite-units` worker (idle, merged) owes a low from @review 4b117286: in list mode a throw in `main()` stops later
+  `unit()` calls and exits 0. Set `process.exitCode=1` and name where it stopped. Give it once pulls-p3 clears.
+- @fabric's TypeError `Cannot read properties of undefined (reading 'rooms')` in groupDrag, growlActions,
+  peekEverywhere, termDebug, contextSize, reselect during a full `--save-weights` at 404f6def. Pass alone. Not found.
+  Suspect `x.rooms` on an empty mock reply under load. Tell @fabric when fixed.
+- clint asked for the terminals bridge fix, `u-new-terminals-css-row-bleed-resize.md` (`placeTabBridge()` in
+  `js/terminal-list.js`): the attached row stops at the list's right edge, no bridge. clint has not confirmed. Ask
+  once, then a worker, @review, report LIVE-READY.
+- Live-412 cleanup: write `live-412-findings.md`, publish hub doc `/d/live-412-findings`, exit the live412 and
+  one-tooltip and pulls-p2 workers, remove merged worktrees and branches, scratch card `live412-scratch`, ask an
+  operator to purge tombstoned docs `test-d-upload` and `test-d-card-doc`.
+- Next after that: `u-new-resume-spinner.md`.
+- Lows to file: child-fold uses `atrium.folded` not the terminal list key, top-nav nits, one-tooltip nits (runner name
+  nowhere, newline join), `m/js/card.js` 891/894 `mNet.rooms()` read as objects, pulls `restoreWhereYouWere` reopens a
+  hidden pulls view, `textScan.feed` firstAt nit.
+
+Landed today and reported: top nav, child fold, Live-412 home and changes, pulls P2, one tooltip, suite-units.
+
 ## Queue
 
 Running now, four workers at once (clint, 2026-09-30 evening: "focus on ui only, go to 4 ui workers"):
