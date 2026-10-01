@@ -13485,6 +13485,8 @@ async function mTypeSteadySection(browser) {
   try {
     const { ctx, p, errors } = await mPage(browser, st, M_VIEWS[0], "");
     const tag = "mTypeSteady: ";
+    // TY_THROTTLE=4 slows the page's CPU, which is how a slower machine's timing is reproduced here
+    if (process.env.TY_THROTTLE) { const cs = await ctx.newCDPSession(p); await cs.send("Emulation.setCPUThrottlingRate", { rate: Number(process.env.TY_THROTTLE) }); }
     await p.waitForSelector("#m-seg-all", { timeout: slow(10000) });
     await p.tap("#m-seg-all");
     await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
