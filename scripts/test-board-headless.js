@@ -15411,6 +15411,31 @@ async function joinedLiveSection(browser, base) {
     if (/ cold/.test(r.joinedRow) || !/cannot attach/.test(r.joinedRow) || /attachTask\(/.test(r.joinedRow)) {
       fail("joinedLive: the joined row is grey, or offers an attach it cannot do.");
     }
+    // The whole strip, over unpinned cards: a joined live one is listed, an exited one is not.
+    const s = await p.evaluate(async () => {
+      const card = (id, status, extra) => ({ id, status, supervised: false, pinned: false, title: id,
+        display_title: id, tags: [], ...extra });
+      const cards = [card("jl", "needs-input"), card("xd", "done"), card("pk2", "needs-input", { parked_at: "2026-09-30T10:00:00Z" }),
+        card("sv", "running", { supervised: true })];
+      boardCards = async () => cards;
+      const row = id => document.querySelector('#term-list .card.tab[data-id="' + id + '"]');
+      const seen = () => ["jl", "xd", "pk2", "sv"].filter(id => row(id));
+      setHideAgents("none");
+      await renderTermList();
+      const off = seen();
+      const chip = row("jl") ? row("jl").textContent.includes("joined") : false;
+      const click = row("jl") ? row("jl").getAttribute("onclick") : null;
+      setHideAgents("on");
+      await renderTermList();
+      const on = seen();
+      setHideAgents("none");
+      return { off, on, chip, click };
+    });
+    if (!s.off.includes("jl") || s.off.includes("xd") || s.off.includes("pk2") || !s.off.includes("sv")) {
+      fail("joinedLive: the strip does not list exactly the joined and supervised cards: " + JSON.stringify(s));
+    }
+    if (!s.chip || s.click) fail("joinedLive: the unpinned joined row lacks its chip or still has a click: " + JSON.stringify(s));
+    if (!s.on.includes("jl") || !s.on.includes("sv")) fail("joinedLive: hide agents dropped a live row: " + JSON.stringify(s));
     if (errors.length) fail("joinedLive: page errors: " + errors.join(" | "));
   } finally { await ctx.close(); }
   if (!bad) console.log("joinedLive ok");
