@@ -20,6 +20,22 @@ From clint by the orchestrator, 2026-09-30 evening, on the phone. One item, afte
 An earlier version of this request asked for pinch zoom with `user-scalable=no` absent. clint corrected it: the
 text-size pinch above replaces it.
 
+## Correction: vertical space first (clint's screenshot, 21:06)
+
+`.atrium/incoming/20260930-210641-Screenshot_20260930_210634_Brave.jpg`, a phone on bc49d82c: a full screen shows
+about 2.5 messages. What eats the space, all of it in scope:
+
+- big bubble padding and margins: tighten them
+- "YOU" and "just now delivered" on lines of their own: one header line, speaker, age and delivery state
+- a large "thinking" box: a thin one-line strip, or folded into the header
+- a separate "sent" line above the composer: drop it
+- a tall composer and a tall header row: slimmer
+- horizontal whitespace: his own bubbles start about 70px in, and every bubble has wide side margins and inner
+  padding. Near-full-width bubbles for both speakers, told apart by tint and the header line rather than indent
+
+The history count is a separate cause: /m asked for 3 replies (now 10), and the room caps at 10 (@runtime asked for
+50 plus a `before` cursor for "load older").
+
 ## Tests
 
 Headless sections: the header is one line at phone width for an agent message and for "you". A synthetic two-finger
