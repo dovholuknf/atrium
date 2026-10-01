@@ -63,6 +63,32 @@ func (r *Runner) Stop(wait time.Duration) bool {
 	}
 }
 
+// ErrOutputCap is what a capped command answers when its output went past the cap.
+var ErrOutputCap = errors.New("git output went past the bound and git was stopped")
+
+// capWriter keeps what it is given up to max (0 means no cap) and, past it, stops the command.
+type capWriter struct {
+	buf  *bytes.Buffer
+	max  int
+	stop context.CancelFunc
+	over bool
+}
+
+func (w *capWriter) Write(p []byte) (int, error) {
+	if w.max <= 0 {
+		return w.buf.Write(p)
+	}
+	room := w.max - w.buf.Len()
+	if room > 0 {
+		w.buf.Write(p[:min(room, len(p))])
+	}
+	if len(p) > room && !w.over {
+		w.over = true
+		w.stop()
+	}
+	return len(p), nil
+}
+
 // ErrStopped is what a command answers once the runner has been stopped.
 var ErrStopped = errors.New("git sync is shutting down")
 
@@ -119,17 +145,29 @@ func (r *Runner) Git(ctx context.Context, dir string, args ...string) (string, e
 	return r.git(ctx, dir, nil, args...)
 }
 
+// GitEnv is Git with extra environment, applied after every GIT_* variable is stripped. For a
+// setting that has to hold for one command, such as GIT_LITERAL_PATHSPECS=1.
+func (r *Runner) GitEnv(ctx context.Context, dir string, extraEnv []string, args ...string) (string, error) {
+	return r.git(ctx, dir, extraEnv, args...)
+}
+
+// GitCapped is GitEnv that stops reading at `max` bytes of output and kills git, so a very large
+// diff is never held whole. What was read so far comes back with an *Error wrapping ErrOutputCap.
+func (r *Runner) GitCapped(ctx context.Context, dir string, extraEnv []string, max int, args ...string) (string, error) {
+	return r.gitWith(ctx, dir, extraEnv, nil, max, args...)
+}
+
 // GitInput is Git with `stdin` fed to the command, for a batch read such as
 // `cat-file --batch` that takes its list on standard input.
 func (r *Runner) GitInput(ctx context.Context, dir string, stdin []byte, args ...string) (string, error) {
-	return r.gitWith(ctx, dir, nil, stdin, args...)
+	return r.gitWith(ctx, dir, nil, stdin, 0, args...)
 }
 
 func (r *Runner) git(ctx context.Context, dir string, extraEnv []string, args ...string) (string, error) {
-	return r.gitWith(ctx, dir, extraEnv, nil, args...)
+	return r.gitWith(ctx, dir, extraEnv, nil, 0, args...)
 }
 
-func (r *Runner) gitWith(ctx context.Context, dir string, extraEnv []string, stdin []byte, args ...string) (string, error) {
+func (r *Runner) gitWith(ctx context.Context, dir string, extraEnv []string, stdin []byte, maxOut int, args ...string) (string, error) {
 	r.mu.Lock()
 	if r.stopped {
 		r.mu.Unlock()
@@ -154,7 +192,8 @@ func (r *Runner) gitWith(ctx context.Context, dir string, extraEnv []string, std
 	cmd.Dir = dir
 	cmd.Env = CleanEnv(extraEnv...)
 	var stdout, stderr bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	capped := &capWriter{buf: &stdout, max: maxOut, stop: cancel}
+	cmd.Stdout, cmd.Stderr = capped, &stderr
 	if stdin != nil {
 		cmd.Stdin = bytes.NewReader(stdin)
 	}
@@ -176,6 +215,9 @@ func (r *Runner) gitWith(ctx context.Context, dir string, extraEnv []string, std
 		if t != nil {
 			t.close()
 		}
+	}
+	if capped.over {
+		return stdout.String(), &Error{Args: args, Stderr: stderr.String(), Err: ErrOutputCap}
 	}
 	if err != nil {
 		if ctx.Err() != nil {

@@ -588,6 +588,7 @@ func New(opts Options) (*Daemon, error) {
 		d.auto.noteRead(id)
 		return d.repliesPage(id, n, before)
 	}
+	d.ap.Changes = d.changesFor
 	// Starting a fixture is spawning a process, which the daemon owns.
 	api.StartFixture = d.StartFixtureNow
 	// Which turns are unread, carried across the restart. See seen.go.
