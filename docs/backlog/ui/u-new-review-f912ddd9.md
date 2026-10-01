@@ -56,3 +56,29 @@ than inventing one, and the design note answers the item's questions. The gap is
 "leaves the set" path only, never on "the reason went away", which is the usual miss for a hide-while rule.
 
 Verdict: HOLD ff5def61..f912ddd9. A re-read starts at ff5def61, hub-ok and room-ok.
+
+## Re-read at 79b20421 (2026-10-01, m1mini): OK ff5def61..79b20421
+
+One commit over f912ddd9. Unsigned.
+
+- **The medium is closed.** `growlRecheck` (growl.js:56) lets out every quiet id whose growler has left, is no
+  longer open, or no longer meets `growlOnIt`. It then calls `growlDraw()` and `growlAttention()`. `growlAttention`
+  only sets the favicon count and the title blink, and plays no sound or notification, so "no ring" holds. It runs
+  on window `focus`, `blur` and `visibilitychange`, and on every `atrium-solo` message. That includes `win-blur`,
+  which a pop-out sends on `pagehide` (notify.js:140), so closing a focused pop-out releases at once. A 1 s tick
+  covers the rest.
+- **The 1 s tick is acceptable. Keep it.** It returns at once while nothing is quiet, and `readySilenced` is a few
+  field reads. Event-only would mean hooks in attach, detach, `switchView` and the 12 s claim expiry
+  (`focusClaimFor`, notify.js:90), with a new miss each time someone adds a way to change the view. The tick is the
+  backstop for exactly that. A hidden tab throttles it, and `visibilitychange` covers that case. The second
+  `BroadcastChannel("atrium-solo")` also hears this window's own posts, which is harmless: it only re-checks. If a
+  re-check runs before notify.js has applied the same message, the next tick catches it.
+- **Tests.** `growlOnIt` now covers six ways of leaving, none with a reminder: blur, hidden tab, another card
+  attached, the terminals view left, pop-out blur, and a focused pop-out closed. Each waits for the growler to be
+  drawn and checks that the tone and notification counts did not move. The earlier test gap (the claim-only
+  assertion) is fixed. I read the cases and did not run them.
+
+Quality: after the Sonnet switch, the fix is small and covers every exit the review named. The comment says why the
+tick exists, and the test asserts both the drawing and the silence.
+
+Verdict: OK ff5def61..79b20421, hub-ok and room-ok. No room deploy during the pause.
