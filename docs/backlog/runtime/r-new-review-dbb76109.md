@@ -100,3 +100,23 @@ Quality: after the Sonnet switch, the fix is tight and targeted, and its test pi
 spelling. `user` was picked without checking what that source brings in: the one gap.
 
 Verdict: ROOM DEPLOY OK d33bd3b5..8c9b17d7. The setting-sources medium is to be fixed in the next r-pr-run patch.
+
+## Re-read at a2a1909d (2026-10-01, m1mini): ROOM DEPLOY OK d33bd3b5..a2a1909d
+
+One commit over b07cbfb2 (claude/landing merged in first). Unsigned.
+
+- **The setting-source medium is closed.** `forkCommon` sets `--setting-sources ""` (prrunner.go:777). Forks start
+  through `exec.CommandContext` with an argv (keepalive.go:475), so the empty value arrives intact on macOS and
+  Windows. Proven on m1mini with the real login: from `work/` with `""`, the fork reads `src/file.txt` through
+  `--add-dir`, and no src/ marker or canary appears. Hooks passed through `--settings` still fire, and the user
+  settings.json's own hooks do not (the throwaway `CLAUDE_CONFIG_DIR` run above).
+- **The rename low is closed.** A failed revert keeps `pr.dir` on the folder that exists and returns an error naming
+  both failures (prrunner.go:625).
+- Nit: the test asserts the value only when `--setting-sources` is present. If it were ever dropped, every source
+  would load and the test would still pass. leanArgs always emits it today.
+
+Tests: `go vet ./internal/daemon/` clean, `go test ./internal/daemon/ -run TestPRRunner` 10 of 10.
+
+Quality: after the Sonnet switch, both fixes are minimal and match the review exactly, and the comment says why.
+
+Verdict: ROOM DEPLOY OK d33bd3b5..a2a1909d.
