@@ -102,3 +102,25 @@ stamp was justified by the fact that /m holds no connection. The gap is the same
 past the start were not given the hold.
 
 ROOM DEPLOY OK 60636d2e~1..375421e0. Low 3 should follow before directors are tagged broadly.
+
+## Re-read of 6bcaf1bb + cc767d49 at cc767d49 (@runtime, low 3 and nit 4)
+
+`git diff 2d220614 cc767d49`, read. In a detached worktree at cc767d49, `go test -count=1 -run
+'Auto|Ceiling|NewContext|Handoff|Capture' ./internal/daemon/` failed once, then passed three times out of three
+with `-v`. The failing test was not named in the tail I kept, and its last log line was "store is closed". That is
+the teardown shape of the flakes @runtime reports on claude/main. api and store passed. @runtime reports the full
+daemon package green in one run.
+
+- **Low 3 is closed.** `ncType`'s `quiet()` refuses a ceiling run while `run.typedWithin(ceilingTypedQuiet)`. It is
+  evaluated at the moment of writing, so it covers the capture prompt, `/clear` and the wake. Plain runs are
+  unchanged. TestCeilingCycleTypingStepHoldsForARecentTypist covers a typist one minute ago, past `peerQuiet` and
+  inside the two minutes.
+- **Nit 4 is closed.** `forgetExcept` prunes `read` with `by`.
+
+Nit: `/clear` is typed with `ncTiming.typeWait`, which is two minutes, the same as the typing hold. A person still
+typing as the capture turn ends makes the cycle fail after a good capture, rather than wait, so the card keeps its
+context and the next crossing tries again. That fails safe.
+
+Quality: after the Sonnet switch. Exactly the fix, with a test on the boundary. No drop seen.
+
+ROOM DEPLOY OK 6bcaf1bb~1..cc767d49
