@@ -123,6 +123,7 @@ function hideModeFrom(key, dflt) {
 function setHideMode(key, mode) {
   if (!HIDE_MODES.includes(mode)) mode = "none";
   try { localStorage.setItem(termDeviceKey(key), mode); } catch (e) {}
+  paintTermGear();
   renderTermList();
 }
 // The subagents side defaults ON, the agents side OFF: see the note above.

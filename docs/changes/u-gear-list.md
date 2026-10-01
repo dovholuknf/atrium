@@ -31,3 +31,17 @@ desktop's: the review file does not argue against it, and a question is model ou
 
 Double press a choice. One message goes, every choice button is disabled until the send answers, and a failed send
 lights them again. Run `growlChoiceOnce`.
+
+## @LETTER@. The hub's host names in the gear
+
+### @LETTER@6. Add and remove a host name
+
+On a hub, open the gear, "expose the board". The row "host names the hub answers" lists the names. Add one and
+remove one: each is a PUT and the list reads back. A name the hub ignores (a dynamic DNS wildcard) shows with its
+reason. `$ATRIUM_HOSTS` names are listed read-only. The row says these are the hub's names, that rooms do not read
+them, and that a wildcard is safe only for a domain one operator controls.
+
+### @LETTER@7. From another machine it is read-only
+
+When the PUT answers 403 the row loses its add box and remove buttons and says "Set on the hub's machine". A board
+with no hub draws no row. Run `HEADLESS_ONLY=gearHosts node scripts/test-board-headless.js`.
