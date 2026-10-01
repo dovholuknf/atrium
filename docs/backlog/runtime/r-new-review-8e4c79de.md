@@ -67,3 +67,46 @@ machine, is missed.
 
 **HOLD b36e0390..8e4c79de.** Mediums 1 and 2. A re-read of `b36e0390..<tip>` after the rebase (patch-id keeps the
 range valid). Verdict will be ROOM DEPLOY OK only: no board or hub code is touched.
+
+## Re-read f7298fc0
+
+Rebased onto the re-signed claude/main: 2fb82b25 is 8e4c79de with the same patch-id (checked), on 0da8c949. The fix
+is f7298fc0 on top. The verdict range is `0da8c949..f7298fc0`, which holds both, on the new history.
+
+- **Medium 1 closed.** `$slCmd` is `"<bash>" "<script>"`, and the idempotent check compares that quoted form. An
+  unquoted command from 8e4c79de reads as different and is rewritten once, with a backup. HU 3 covers a room whose
+  only bash is under Program Files.
+- **Medium 2 closed.** Provision probes `command -v jq` with the bash it chose (Windows) or `/bin/bash` (Unix), under
+  `ErrorActionPreference = 'Continue'` so a native stderr line cannot throw on Windows PowerShell, and warns by name
+  with where jq.exe goes for git-bash. room-check says the same as `human`.
+- **Low 3 closed.** room-check parses `statusLine.command` from the JSON, splits it into a bash and a script (quoted
+  or bare), runs it once with `{}` on stdin, and requires exit 0 and output. The script ends in `printf`, so a good
+  run exits 0, and an empty `session_id` makes `log_usage` return before it writes, so the check leaves no usage-log
+  line. A command it cannot split is `human`, which is right for a hand-written one.
+- **Low 4 closed.** An existing file with no `bak=1` is not rewritten, and the step says so.
+- **Low 5 closed.** The PATH probe skips `\WindowsApps\` as well as `\Windows\System32\`.
+- **Nit 7 closed.** The round-trip reformatting is said in the step's comment. Nit 6 (cygwin non-login PATH) is
+  partly answered: the jq probe runs through that bash, so a cygwin bash missing `/usr/bin` now warns by name.
+
+## New findings
+
+1. **Low. A bash found on PATH is written by name, not by path.** When `Get-Command bash.exe -All` finds a
+   non-WSL bash, the probe says `bash=bash.exe`, so the command is `"bash.exe" "<script>"`. The probe skipped the
+   System32 one, but the written command does not: whatever runs it resolves `bash.exe` by its own PATH order, and
+   System32 usually comes before Git. room-check's `& 'bash.exe'` from PowerShell does the same, so on a room with WSL
+   installed it can run WSL bash with a `C:/Users/...` path and report a good line as broken. If Claude Code runs
+   the command inside git-bash, `/usr/bin` comes first and it resolves right. I have not confirmed which shell it
+   uses, which is why this is low. Fix:
+   write `bash=$($b.Source -replace '\\', '/')`, the path the probe actually chose.
+2. **Low. Both probes see the ssh session's PATH, not the runner's.** jq on a PATH that only the room's logon task
+   or a shell profile sets (for example Homebrew's `/opt/homebrew/bin` on a Mac before macOS 15, which has no
+   `/usr/bin/jq`) reads as missing, and the reverse is possible. This is true of every room-check row that probes over
+   ssh, so it is a note, not a fix here.
+3. **Nit.** The Windows probe ends with `$ErrorActionPreference = 'Stop'`, which may not be what it started as. Save
+   the old value and restore it.
+
+Quality: after the Sonnet switch, no drop on this pass. Every finding is fixed in the shape asked, with a test-plan
+line, and the runtime check goes one step further than asked (it parses the real command, not a pattern).
+
+**ROOM DEPLOY OK 0da8c949..f7298fc0.** Not run live by @runtime or by me: HU 1 to 3 on a throwaway room before
+relying on it on sg3 and m1mini.
