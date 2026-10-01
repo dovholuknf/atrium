@@ -1725,13 +1725,3 @@ func loopbackBase(addr string) string {
 	}
 	return "http://" + net.JoinHostPort(host, port)
 }
-
-// loopbackRemote reports whether a request came from this machine.
-func loopbackRemote(remote string) bool {
-	host, _, err := net.SplitHostPort(remote)
-	if err != nil {
-		host = remote
-	}
-	ip := net.ParseIP(host)
-	return ip != nil && ip.IsLoopback()
-}

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+
+	"github.com/dovholuknf/atrium/internal/edge"
 )
 
 // The hub's notify endpoints, under /_hub/ like audit and nudge.
@@ -59,9 +61,9 @@ func (p *Proxy) serveNotify(w http.ResponseWriter, r *http.Request, sub string) 
 	// reachable over an overlay, however the board got there. Reading the
 	// setting is harmless and stays open. See the note at the top of this file.
 	if (sub == "notify" && r.Method == http.MethodPut) || sub == "notify/test" {
-		if !loopbackRemote(r.RemoteAddr) {
+		if !edge.LocalOperator(r) {
 			fail(http.StatusForbidden, "the notify command is set and tested only from the machine the hub "+
-				"runs on. it is not reachable over an overlay.")
+				"runs on. it is not reachable over an overlay"+edge.ProxyNote(r))
 			return
 		}
 	}

@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/edge"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/itemgate"
 )
@@ -554,8 +555,8 @@ func (p *Proxy) serveDeps(w http.ResponseWriter, r *http.Request, sub string) {
 		fail(http.StatusMethodNotAllowed, "that has to be a GET or a POST")
 		return
 	}
-	if write && !loopbackRemote(r.RemoteAddr) {
-		fail(http.StatusForbidden, "gates are changed only from the machine the hub runs on")
+	if write && !edge.LocalOperator(r) {
+		fail(http.StatusForbidden, "gates are changed only from the machine the hub runs on"+edge.ProxyNote(r))
 		return
 	}
 	body := func(v any) bool {
