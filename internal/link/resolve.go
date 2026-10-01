@@ -61,20 +61,25 @@ type errAmbiguous struct {
 // choice is one card in a 409, as the board's chooser draws it.
 type choice struct {
 	// Spelled is the candidate string, as in `candidates`.
-	Spelled  string `json:"spelled"`
-	Card     string `json:"card"`
-	Room     string `json:"room"`
-	Handle   string `json:"handle"`
+	Spelled string `json:"spelled"`
+	Card    string `json:"card"`
+	Room    string `json:"room"`
+	// Handle is absent on a card with no session, which has no wire name.
+	Handle   string `json:"handle,omitempty"`
 	Status   string `json:"status"`
 	Activity string `json:"activity,omitempty"`
 	Created  string `json:"created_at"`
 }
 
 func (c candidate) choice() choice {
-	return choice{
-		Spelled: c.spelled(), Card: tagFor(c.Room, c.Card.ID), Room: c.Room, Handle: c.Card.Wire + "@" + c.Room,
+	out := choice{
+		Spelled: c.spelled(), Card: tagFor(c.Room, c.Card.ID), Room: c.Room,
 		Status: c.Card.Status, Activity: c.Card.Activity.What, Created: c.Card.Created,
 	}
+	if c.Card.Wire != "" {
+		out.Handle = c.Card.Wire + "@" + c.Room
+	}
+	return out
 }
 
 func (e *errAmbiguous) Error() string {
