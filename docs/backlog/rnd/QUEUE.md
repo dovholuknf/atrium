@@ -44,4 +44,5 @@ Nothing. From 2026-09-30 evening, UI work only (clint): design what feeds @ui, t
 escalation (64fadc33, 178362d1), resume says continue (bae9c707), review of u-popout-notify (ac94fa51), lean context
 cycle (81a1fd5c), Defender advice (0c442bee), machine health (60adacbb), open with the system
 (f0e0d97e), reply suggestions (`docs/rnd/reply-suggestions-design.md`), local proxy trust (e0b6c860), factory shape
-and hub orchestration (`docs/rnd/factory-shape.md`, clint via the orchestrator, design only).
+and hub orchestration (`docs/rnd/factory-shape.md`, clint via the orchestrator, design only), Web Push for the phone
+(`docs/rnd/web-push-design.md`, same).
