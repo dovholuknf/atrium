@@ -66,3 +66,47 @@ fail-open posture is stated, not left to chance. The miss is the gate's fourth e
 easy to miss when reading only the fields `editedInput` names.
 
 Verdict: HOLD 610819c1..4ea3dc66. A re-read starts at 610819c1, room-ok and hub-ok (test tooling and the hook).
+
+## Re-read at 6bce194f (2026-10-01, m1mini): OK 610819c1..6bce194f
+
+This time the patch was rebuilt on a scratch branch off 610819c1. Every file matches the blob hash in the patch's
+`index` lines: ancestry.go 7872775c, ci.sh 63e355e8, ancestry_windows_test.go b05aa99e, atrium.js e1dc09a6,
+atrium.test.mjs 8d974de9. So what was tested is 6bce194f byte for byte. Unsigned.
+
+**A correction to my first review.** The gofmt low was wrong. The paste had turned the test file's tabs into spaces.
+The real blob b05aa99e is tab-indented, and `gofmt -l internal/cli` is empty. `gofmt -l` lists only
+`internal/daemon/fyi_test.go`, which this patch does not touch. It fails on 610819c1 too, so the gofmt step in
+`scripts/ci.sh` is red on claude/main as it stands. That one belongs to @runtime.
+
+- **The medium is closed.** `applyEdit` maps the whole `updatedInput` back through the inverse arg names, in place,
+  and drops the keys the edit dropped. It then checks every key it wanted landed. Anything it cannot apply throws, so
+  the edit runs or nothing does. That covers a JSON fallback edit (patch, MCP tools), a `file_path`→`filePath`
+  edit, and a non-object, array or null edit, which is refused. A frozen args object throws inside the try, so
+  `applyEdit` returns false and the call is refused.
+- **The patch double send is closed.** The `content` alias is gone, and the test checks the board gets `patchText`
+  once, as Edit.
+- **Tests.** `node --test --experimental-test-module-mocks scripts/opencode/atrium.test.mjs` passes 8 of 8 on node
+  24.21. `go vet ./internal/cli/` is clean on darwin and with `GOOS=windows`. The Windows ancestry test was not run
+  (macOS).
+
+**The fallback: acceptable, with one thing named.** The worker is right that `ask` would put a second, unanswerable
+prompt behind every approval. But the plugin lets a tool run on more than an unreachable atrium.
+`permissionHook` prints nothing whenever the gate is not engaged for the session: the probe fails, gate `off`, or
+not joined and no MCP wired (hook_permission.go:85-92). A Claude card falls back to Claude's own prompt in the
+terminal, which the board shows. An opencode card falls back to running bash and edits unprompted. That is no worse
+than opencode without the plugin, since the plugin only adds a gate, so it holds nothing. clint should know that
+an opencode card with the gate off is effectively a skip-permissions card. One line on the runner row or in the
+launch docs is enough. A later option, his call: when the hook prints nothing, the plugin denies Bash, Edit and Write
+with "atrium is not gating this session".
+
+**Should `editedInput` returning nil be an item? Yes, a medium for @runtime.** hook_permission.go:157-163: an
+approval whose edit does not parse back (a JSON fallback edit with a typo) gets no `updatedInput` and is still sent
+as `allow`. So Claude runs the original the human edited, which is the same bug this review held for opencode. The
+board does not validate the JSON before it sends. Fix: when `ans.Command` differs from the summary and
+`editedInput` is nil, answer `deny` with "the edit did not parse, nothing was run", or refuse the approval on the
+board. Test: approve a raw-JSON summary with invalid JSON and expect a deny.
+
+Quality: after the Sonnet switch, a clean fix. It checks its own write, and its tests fail on the old code for the
+reason held. The pushback on the gofmt claim was right and checked.
+
+Verdict: OK 610819c1..6bce194f, hub-ok and room-ok. The orchestrator lands it on sg4.
