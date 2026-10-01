@@ -54,3 +54,25 @@ Verdict: HOLD 0c06e8bb..eaa2c7fa. Re-read 0c06e8bb..tip, hub-ok and room-ok.
 
 Quality: after the Sonnet switch, the chart is careful and the screenshots match the code. The miss is the one the
 existing `ulTokensIn` comment already names: the calibration assumes the chart holds the account's whole window.
+
+## Re-read 0c06e8bb..e3d99ebc: OK hub and room
+
+e3d99ebc is a merge of claude/main (9f9a015a) into eaa2c7fa, and the fix is folded into the merge itself. Read with
+`git show e3d99ebc -- internal/api/web/js/usage-charts.js` (the combined diff). Unsigned, noted.
+
+- **Medium closed.** `ucLimitFor` returns null when `ulTokensIn(start, now)` does, which is a card filter or a range
+  that does not reach the window start (`from < UC.since`, so the 1h range on a 5h window). It also returns null with
+  cache reads shown. The chart then falls back to the token line.
+- **Correction to the hold.** I named a group filter as a third case. It is not one: `ucGroupParam()` only asks the
+  rooms to split each bucket by group, and the totals stay the account's. `ucGroupFilter` narrows the card table, not
+  the series. Nothing to fix there.
+- **Low closed.** In percent the line starts at the window start, `M X(lim.start) Y(base)`, and skips the points before
+  it. The hover before the window says "before the 5h window". The header says "since the 5h window began", and the
+  right-hand total is the window's tokens, so the label and the line now agree.
+- **Nits closed.** Each coming reset label carries its time, and a label sits at `ymax` when it is above 100%. Two
+  accounts' reset labels are still not told apart. Leave it.
+
+NIT (new): a fix folded into a merge does not show in `git show` without the combined diff, or in `git log -p`. Put
+it in its own commit next time.
+
+Verdict: OK hub and room 0c06e8bb..e3d99ebc. I read the burnChart case and did not run the suite.
