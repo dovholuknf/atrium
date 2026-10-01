@@ -83,7 +83,8 @@ boundary applies to all three.
 - **Read-only ops run freely**: `room-check` without `-Fix`, a toolchain report, a worktree list. **Ops that change a
   machine go through the calling card's permission gate**, shown as `room_op sg3 provision` with its full argv: `-Fix`,
   `provision-room`, a `room-toolchain` install, a worktree create or remove. They are never auto-approved, by a
-  standing rule or by `global_auto`.
+  standing rule or by `global_auto`. A machine-changing op from a card whose gate is off (`ATRIUM_PERM_GATE=off`, as PR runner
+  forks run) is refused, because there is no live human gate to ask.
 - **The hub authorizes the caller** by its room certificate and its card, and logs every op on the hub and on the
   card.
 
