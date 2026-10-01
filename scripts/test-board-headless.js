@@ -16003,6 +16003,202 @@ async function mHomeLiveSection(browser) {
   if (!bad) console.log("mHomeLive ok");
 }
 
+// ── the /m changes sheet ─────────────────────────────────────────────────
+// The chip on a reply (from `edited`, no git number, no per-reply fetch), one ?turn= call when it is tapped, the list and a
+// file's hunks as two history entries, a tapped line as a chip in the composer and as a quoted block in the sent message, and
+// every limit said. The endpoint is a room's, so it is a mock here, in the shape internal/daemon/changes.go answers.
+async function mChangesSection(browser) {
+  const st = mServer({});
+  const c1 = mCard("cg-1", { alias: "coder", display_title: "coder", runner: "claude", worktree: "/w/card", status: "needs-input", waiting_since: mIso(2 * M_MIN), seen: { turn_ended_at: mIso(20 * M_MIN) } });
+  const c2 = mCard("cg-2", { alias: "plain", display_title: "plain", worktree: "/w/plain", status: "needs-input", waiting_since: mIso(3 * M_MIN), seen: { turn_ended_at: mIso(20 * M_MIN) } });
+  st.tasks = [c1, c2];
+  const at1 = new Date(Date.now() - 30 * 60000).toISOString(), at2 = new Date(Date.now() - 20 * 60000).toISOString(), at3 = new Date(Date.now() - 10 * 60000).toISOString();
+  st.replies["cg-1"] = { source: "transcript", replies: [{ at: at3, text: "third", edited: 1 }, { at: at2, text: "second" }, { at: at1, text: Array.from({ length: 30 }, (_, i) => "Filler paragraph " + i + " so the thread scrolls.").join("\n\n"), edited: 2 }] };
+  st.replies["cg-2"] = { source: "transcript", replies: [{ at: at1, text: "plain card" }] };
+  const hunk = "diff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -10,7 +10,7 @@ function f() {\n const U = window.mUtil;\n const MD = window.mMd;\n-const REPLIES_N = 3;\n+const REPLIES_N = 10;\n let openId = \"\";\n let els = null;\n let seq = 0;\n";
+  const longHunk = "@@ -1,60 +1,60 @@\n" + Array.from({ length: 60 }, (_, i) => " line " + (i + 1)).join("\n") + "\n";
+  const files = [
+    { path: "internal/api/web/m/js/card.js", status: "modified", added: 1, removed: 1, hunks: hunk, via: "edits", cumulative: true },
+    { path: "docs/shot.png", status: "binary", added: 0, removed: 0, hunks: "" },
+    { path: "src/big.js", status: "modified", added: 900, removed: 3, hunks: "", hunks_cut: true },
+    { path: "notes/new.txt", status: "added", added: 2, removed: 0, hunks: "@@ -0,0 +1,2 @@\n+one\n+two\n" },
+    { path: "old/gone.go", status: "deleted", added: 0, removed: 3, hunks: "@@ -1,3 +0,0 @@\n-a\n-b\n-c\n" },
+    { path: "src/long.txt", status: "modified", added: 0, removed: 0, hunks: longHunk },
+    // a name with a newline and an ESC, and lines that hold an ESC that ends a paste, a ^C, a NEL, a line separator and a bidi control
+    { path: "evil\nname\u001b[201~.txt", status: "modified", added: 1, removed: 1, hunks: "@@ -1,2 +1,2 @@\n-old\u001b[201~\u001b[Z\u0003 \u0085\u2028 end\n+new \u202eevil\u2066 text\n ctx\n" },
+  ];
+  st.changesFor = (card, q) => {
+    if (card !== "cg-1") return { status: 404, body: { error: "this card's directory is not a git worktree" } };
+    if (q.get("turn")) return { status: 200, body: { against: "turn", base: "aaaaaaa1", head: "1a2b3c4d5e", dirty: true, total: files.length, files, partial: true, why: "a commit in the turn's window has an author date outside it, so commits may be missing", outside: 2 } };
+    if (q.get("against") === "base") return { status: 200, body: { against: "base", base: "bbbbbbb2", head: "1a2b3c4d5e", dirty: false, total: 1, files: [files[3]] } };
+    return { status: 200, body: { against: "head", base: "aaaaaaa1", head: "1a2b3c4d5e", dirty: true, total: 403, files: files.slice(0, 2), cut: { files: 401, hunks: 2, why: "over 400 files" } } };
+  };
+  st.files = { "docs/shot.png": M_PNG, "src/big.js": Buffer.from("x\n") };
+  await st.open();
+  try {
+    for (const vp of M_VIEWS) {
+      const tag = "mChanges " + vp.width + ": ";
+      const { ctx, p, errors } = await mReplyPage(browser, st, vp, "cg-1");
+      const posted = [];
+      await p.route("**/v1/tasks/cg-1/message", r => { posted.push(JSON.parse(r.request().postData() || "{}")); return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ delivered: "terminal" }) }); });
+      st.changeReqs = [];
+      await p.waitForSelector(".chg-chip", { timeout: slow(8000) });
+      // the chip: from `edited`, no git numbers, and no call until it is tapped
+      const chips = await p.$$eval(".chg-chip", e => e.map(x => x.textContent));
+      if (chips.slice().sort().join("|") !== "1 file edited|2 files edited") fail(tag + "the chips read " + chips.join("|"));
+      if (chips.some(t => /[+-]\d/.test(t))) fail(tag + "a chip carries git counts: " + chips.join("|"));
+      if (await p.$$eval(".reply", e => e.length) !== 3 || st.changeReqs.length) fail(tag + "the thread asked for changes before a tap: " + st.changeReqs.length);
+      const sheet = () => p.evaluate(() => { const s = document.getElementById("m-changes"); return { open: !s.hidden, title: document.getElementById("m-changes-title").textContent, text: document.getElementById("m-changes-body").textContent, state: history.state && history.state.mchg || "" }; });
+      const wait = fn => p.waitForFunction(fn, null, { timeout: slow(6000) });
+      const back = async () => { await p.goBack(); await p.waitForTimeout(150); };
+      await p.evaluate(() => { const sc = document.getElementById("m-card-scroll"); sc.dispatchEvent(new Event("wheel")); sc.scrollTop = 120; });
+      await p.waitForTimeout(150);
+      const before = await p.evaluate(() => document.getElementById("m-card-scroll").scrollTop);
+      // the turn
+      const chipFor = at => '.chg-chip[data-at="' + at + '"]';
+      await p.evaluate(s => document.querySelector(s).click(), chipFor(at1));
+      await wait(() => document.querySelectorAll("#m-changes-body .cg-file").length === 7);
+      if (st.changeReqs.length !== 1 || st.changeReqs[0].search !== "?turn=" + encodeURIComponent(at1)) fail(tag + "the chip made " + JSON.stringify(st.changeReqs));
+      let sh = await sheet();
+      if (!sh.open || sh.state !== "list" || !/^Turn \d\d:\d\d$/.test(sh.title)) fail(tag + "the sheet is " + JSON.stringify({ open: sh.open, state: sh.state, title: sh.title }));
+      if (!/^7 files edited \+904 -8/.test(sh.text)) fail(tag + "the totals say " + sh.text.slice(0, 40));
+      if ((sh.text.match(/may miss changes made by commands \(sed, generate, checkout\)/g) || []).length !== 1) fail(tag + "the partial line is not said exactly once");
+      if (!/2 edits outside this card's folder are not shown/.test(sh.text)) fail(tag + "outside is not said");
+      if (/all uncommitted edits/.test(sh.text)) fail(tag + "cumulative shows in the list");
+      if ((sh.text.match(/commits may be missing/g) || []).length !== 1) fail(tag + "the room's why is not shown once: " + sh.text.slice(0, 200));
+      if (await mNoSideways(p)) fail(tag + "the list scrolls sideways");
+      // back from the list leaves for the thread at its scroll, and the chip opens it again with one more call
+      await back();
+      await wait(() => document.getElementById("m-changes").hidden);
+      const after = await p.evaluate(() => document.getElementById("m-card-scroll").scrollTop);
+      if (Math.abs(after - before) > 2) fail(tag + "Back did not restore the thread's scroll: " + before + " then " + after);
+      await p.evaluate(s => document.querySelector(s).click(), chipFor(at1));
+      await wait(() => document.querySelectorAll("#m-changes-body .cg-file").length === 7);
+      // a file: its own entry, cumulative on its header, a gutter that numbers new on + and context and old on -
+      await p.evaluate(() => document.querySelector('#m-changes-body .cg-file[data-path$="card.js"]').click());
+      await wait(() => document.querySelectorAll("#m-changes-body .cg-row").length > 0);
+      sh = await sheet();
+      if (sh.state !== "file" || !/all uncommitted edits to this file, not only this turn/.test(sh.text)) fail(tag + "the file header says " + sh.text.slice(0, 120));
+      const rows = await p.$$eval("#m-changes-body .cg-row", e => e.map(r => r.querySelector(".cg-ln").textContent + r.querySelector(".cg-sg").textContent));
+      if (rows.join(",") !== "10,11,12-,12+,13,14,15") fail(tag + "the gutter reads " + rows.join(","));
+      if (!(await p.$("#m-changes-body mark"))) fail(tag + "the changed words are not marked");
+      // tapping lines: chips in the composer, then the message
+      await p.evaluate(() => { const r = [...document.querySelectorAll("#m-changes-body .cg-row")]; r[2].click(); r[3].click(); r[0].click(); });
+      const labels = await p.$$eval("#m-compose .mc-cmt .mc-fname", e => e.map(x => x.textContent));
+      if (labels.join("|") !== "card.js:12 removed|card.js:12|card.js:10") fail(tag + "the chips read " + labels.join("|"));
+      if ((await p.$$eval("#m-changes-body .cg-row.on", e => e.length)) !== 3) fail(tag + "tapped lines are not marked");
+      // a second tap takes a line off, and so does its chip
+      await p.evaluate(() => document.querySelectorAll("#m-changes-body .cg-row")[0].click());
+      if ((await p.$$eval("#m-compose .mc-cmt", e => e.length)) !== 2) fail(tag + "tapping a line twice did not take its chip off");
+      await p.fill("#m-compose textarea", "why 10?");
+      await p.evaluate(() => document.querySelector("#m-compose textarea").dispatchEvent(new Event("input", { bubbles: true })));
+      await p.tap("#m-compose .mc-send");
+      await p.waitForFunction(() => true);
+      await p.waitForTimeout(300);
+      const hh = new Date(at1).getHours().toString().padStart(2, "0") + ":" + new Date(at1).getMinutes().toString().padStart(2, "0");
+      const want = "review comment on internal/api/web/m/js/card.js line 12, removed (turn " + hh + ", head 1a2b3c4):\n    -const REPLIES_N = 3;\n" +
+        "review comment on internal/api/web/m/js/card.js line 12 (turn " + hh + ", head 1a2b3c4):\n    +const REPLIES_N = 10;\nwhy 10?";
+      if (posted.length !== 1 || posted[0].text !== want) fail(tag + "the message was " + JSON.stringify(posted));
+      if ((await p.$$eval("#m-compose .mc-cmt", e => e.length)) !== 0 || (await p.$$eval("#m-changes-body .cg-row.on", e => e.length)) !== 0) fail(tag + "chips or marks stayed after the send");
+      // a context line quotes with a space where the sign is
+      await p.evaluate(() => document.querySelectorAll("#m-changes-body .cg-row")[0].click());
+      await p.fill("#m-compose textarea", "ok");
+      await p.evaluate(() => document.querySelector("#m-compose textarea").dispatchEvent(new Event("input", { bubbles: true })));
+      await p.tap("#m-compose .mc-send");
+      await p.waitForTimeout(300);
+      if (posted.length !== 2 || !posted[1].text.includes("line 10 (turn " + hh + ", head 1a2b3c4):\n     const U = window.mUtil;\nok")) fail(tag + "a context line was quoted as " + JSON.stringify(posted[1]));
+      // text size
+      await p.evaluate(() => document.getElementById("m-card").style.setProperty("--m-fs", "20px"));
+      if (Math.abs(await p.evaluate(() => parseFloat(getComputedStyle(document.querySelector("#m-changes-body .cg-row")).fontSize)) - 20) > 1) fail(tag + "the text size does not follow --m-fs");
+      if (await mNoSideways(p)) fail(tag + "the hunks scroll the page sideways");
+      // All files is history.back
+      await p.evaluate(() => document.querySelector(".cg-all").click());
+      await wait(() => document.querySelectorAll("#m-changes-body .cg-file").length === 7);
+      sh = await sheet();
+      if (sh.state !== "list") fail(tag + "All files left the state at " + sh.state);
+      // binary: not shown, and open goes to the viewer
+      await p.evaluate(() => document.querySelector('#m-changes-body .cg-file[data-path$="shot.png"]').click());
+      await wait(() => /binary, not shown/.test(document.getElementById("m-changes-body").textContent));
+      await p.evaluate(() => document.querySelector("#m-changes-body .cg-open").click());
+      await wait(() => !document.getElementById("m-viewer").hidden);
+      await wait(() => document.querySelector("#m-viewer-body img.v-img"));
+      await back();
+      await wait(() => document.getElementById("m-viewer").hidden);
+      if (!/binary, not shown/.test((await sheet()).text)) fail(tag + "Back from the viewer did not return to the file");
+      await back();
+      // too large, and deleted has no open
+      await p.evaluate(() => document.querySelector('#m-changes-body .cg-file[data-path$="big.js"]').click());
+      await wait(() => /too large to show here/.test(document.getElementById("m-changes-body").textContent));
+      if (!/\+900 -3, too large to show here/.test((await sheet()).text) || !(await p.$("#m-changes-body .cg-open"))) fail(tag + "a file over the bound is not offered to open: " + (await sheet()).text);
+      await back();
+      await p.evaluate(() => document.querySelector('#m-changes-body .cg-file[data-path$="gone.go"]').click());
+      await wait(() => document.querySelectorAll("#m-changes-body .cg-row").length === 3);
+      if (await p.$("#m-changes-body .cg-open")) fail(tag + "a deleted file can be opened");
+      await back();
+      // a long hunk is folded
+      await p.evaluate(() => document.querySelector('#m-changes-body .cg-file[data-path$="long.txt"]').click());
+      await wait(() => document.querySelectorAll("#m-changes-body .cg-row").length === 40);
+      await p.evaluate(() => document.querySelector("#m-changes-body .cg-more").click());
+      if ((await p.$$eval("#m-changes-body .cg-row", e => e.length)) !== 60) fail(tag + "show full hunk did not show the rest");
+      await back();
+      // a hostile name and hostile lines: shown as text, and quoted into the message as visible forms, never raw
+      await p.evaluate(() => document.querySelector('#m-changes-body .cg-file[data-path^="evil"]').click());
+      await wait(() => document.querySelectorAll("#m-changes-body .cg-row").length === 3);
+      const shown = await p.evaluate(() => ({ ctl: [...document.querySelectorAll("#m-changes-body .cg-ctl")].map(e => e.textContent), raw: /[\u202a-\u202e\u2066-\u2069]/.test(document.getElementById("m-changes-body").textContent) }));
+      if (shown.ctl.join() !== "<U+202E>,<U+2066>" || shown.raw) fail(tag + "bidi controls are not marked: " + JSON.stringify(shown));
+      posted.length = 0;
+      await p.evaluate(() => document.querySelectorAll("#m-changes-body .cg-row")[0].click());
+      await p.fill("#m-compose textarea", "danger");
+      await p.evaluate(() => document.querySelector("#m-compose textarea").dispatchEvent(new Event("input", { bubbles: true })));
+      await p.tap("#m-compose .mc-send");
+      await p.waitForTimeout(300);
+      const evil = (posted[0] || {}).text || "";
+      if (/[\u0000-\u0009\u000b-\u001f\u007f-\u009f\u2028\u2029]/.test(evil)) fail(tag + "a control character reached the message: " + JSON.stringify(evil));
+      if (evil.split("\n").length !== 3) fail(tag + "the message split into " + evil.split("\n").length + " lines: " + JSON.stringify(evil));
+      if (!evil.includes("evil\u240aname\u241b[201~.txt") || !evil.includes("-old\u241b[201~\u241b[Z\u2403 \\x85\u23ce end")) fail(tag + "the quote is not the visible form: " + JSON.stringify(evil));
+      await p.evaluate(() => document.querySelector(".cg-all").click());
+      await wait(() => document.querySelectorAll("#m-changes-body .cg-file").length === 7);
+      // back from the list leaves for the thread
+      await back();
+      await wait(() => document.getElementById("m-changes").hidden);
+      // the card's own changes: uncommitted, a toggle, what was cut said
+      st.changeReqs = [];
+      await p.tap("#m-card-changes");
+      await wait(() => document.querySelectorAll("#m-changes-body .cg-file").length === 2);
+      sh = await sheet();
+      if (st.changeReqs.length !== 1 || st.changeReqs[0].search !== "?against=head" || sh.title !== "Changes") fail(tag + "the card's changes asked " + JSON.stringify(st.changeReqs));
+      if (!/401 more files not listed, 2 files show counts only \(over 400 files\)/.test(sh.text) || (sh.text.match(/over 400 files/g) || []).length !== 1) fail(tag + "what was cut is not said once: " + sh.text);
+      if (/may miss changes/.test(sh.text)) fail(tag + "the card view carries the turn's partial line");
+      await p.evaluate(() => [...document.querySelectorAll(".cg-toggle button")].find(b => /since base/.test(b.textContent)).click());
+      await wait(() => document.querySelectorAll("#m-changes-body .cg-file").length === 1);
+      if (st.changeReqs.length !== 2 || st.changeReqs[1].search !== "?against=base") fail(tag + "since base asked " + JSON.stringify(st.changeReqs));
+      // refreshed when the card stops, and said while it works
+      st.tasks[0] = Object.assign({}, c1, { status: "running", activity: { what: "tool", tool: "Edit", seconds: 1 } });
+      st.send("task", Object.assign({ row: 1 }, st.tasks[0]));
+      await wait(() => /the agent is still working/.test(document.getElementById("m-changes-body").textContent));
+      const n = st.changeReqs.length;
+      await p.waitForTimeout(300);
+      if (st.changeReqs.length !== n) fail(tag + "the sheet asked again while the card was running");
+      st.tasks[0] = Object.assign({}, c1, { status: "needs-input", seen: { turn_ended_at: new Date().toISOString() } });
+      st.send("task", Object.assign({ row: 1 }, st.tasks[0]));
+      await wait(() => !/the agent is still working/.test(document.getElementById("m-changes-body").textContent));
+      await p.waitForTimeout(200);
+      if (st.changeReqs.length !== n + 1) fail(tag + "the card's Stop made " + (st.changeReqs.length - n) + " reads, not one");
+      await back();
+      if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+      await ctx.close();
+      // a card that is not a git worktree says so, and shows no empty diff
+      const w = await mReplyPage(browser, st, vp, "cg-2");
+      await w.p.tap("#m-card-changes");
+      await w.p.waitForFunction(() => /not a git worktree/.test(document.getElementById("m-changes-body").textContent), null, { timeout: slow(6000) })
+        .catch(() => fail(tag + "a non-git card did not say so"));
+      if (await w.p.$("#m-changes-body .cg-file") || /no changes/.test(await w.p.textContent("#m-changes-body"))) fail(tag + "a non-git card shows an empty diff");
+      await w.ctx.close();
+    }
+  } finally { await st.close(); }
+  if (!bad) console.log("mChanges ok");
+}
+
 async function main() {
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = "http://127.0.0.1:" + server.address().port;
@@ -16042,7 +16238,7 @@ async function main() {
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, phoneRedirect: phoneRedirectSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, mHidden: mHiddenSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
-      mViewer: mViewerSection, mHomeLive: mHomeLiveSection,
+      mViewer: mViewerSection, mHomeLive: mHomeLiveSection, mChanges: mChangesSection,
       gearTermList: gearTermListSection, growlLinks: growlLinksSection, growlChoiceOnce: growlChoiceOnceSection,
       mOutputAt: mOutputAtSection, mStickBottom: mStickBottomSection, mSendFree: mSendFreeSection, mCardUpload: mCardUploadSection, mCompact: mCompactSection, mPinch: mPinchSection, mPrompts: mPromptsSection,
       cardUrlWinName: cardUrlWinNameSection,
@@ -18029,6 +18225,7 @@ async function main() {
     await mPicturesSection(browser);
     await mHiddenSection(browser);
     await mViewerSection(browser);
+    await mChangesSection(browser);
     await mHomeLiveSection(browser);
     await soundPhoneSection(browser, base);
     await phoneBoardCompactSection(browser, base);
@@ -18155,6 +18352,14 @@ function mServer(state) {
       state.streams.push(res);
       req.on("close", () => { state.streams = state.streams.filter(s => s !== res); });
       return;
+    }
+    if (p === "/v1/harnesses") return json(200, { harnesses: [{ id: "claude", bracketed_paste: true }] });
+    const cgm = p.match(/^\/v1\/tasks\/([^/]+)\/changes$/);
+    if (cgm && req.method === "GET") {
+      (state.changeReqs = state.changeReqs || []).push({ card: decodeURIComponent(cgm[1]), search: u.search });
+      const out = state.changesFor ? state.changesFor(decodeURIComponent(cgm[1]), u.searchParams) : { status: 404, body: { error: "not found" } };
+      res.writeHead(out.status, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+      return res.end(JSON.stringify(out.body));
     }
     const tm = p.match(/^\/v1\/tasks\/([^/]+)\/files\/text$/);
     if (tm && req.method === "GET") {
