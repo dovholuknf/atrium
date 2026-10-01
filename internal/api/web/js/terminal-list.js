@@ -68,8 +68,8 @@ function termDeviceKey(base) { return termNarrow() ? base + ".mobile" : base; }
 //     idle, waiting on input, OR exited. The subagents toggle keeps ONLY the ones
 //     actively computing, since a board fills with atrium's launched doers and
 //     the operator wants to see the ones doing something, not the idle husks.
-//   - An AGENT is inactive when it has EXITED - no live connection
-//     (`supervised`). The agents toggle keeps every live one, EVEN idle or
+//   - An AGENT is inactive when it has EXITED (`termCold`: not supervised and
+//     not running, ready or asking). The agents toggle keeps every live one, EVEN idle or
 //     waiting on you (connected at a prompt is still a session you can go to), and
 //     drops only the dead ones.
 // `none` shows every session of that kind. The attached one is never hidden by
@@ -157,7 +157,17 @@ function workingNow(t) {
 // toggle takes out. Two copies of the test let them drift: the toggle hid on
 // "not supervised" while exempting every pinned row, and since only a pinned row
 // can be cold in the strip, it hid nothing the operator could see was grey.
-function termCold(t) { return !(t && t.supervised); }
+//
+// COLD MEANS GONE, NOT "ATRIUM DOES NOT OWN THE TERMINAL". A session joined from
+// the operator's own terminal (`atrium join`) is live and asking for input with
+// `supervised` false, so it counts as live by its status and stays out of the hide.
+const TERM_LIVE_STATUS = ["running", "needs-input", "needs-permission"];
+function termCold(t) {
+  if (t && t.supervised) return false;
+  return !(t && TERM_LIVE_STATUS.includes(t.status));
+}
+// Live but not attachable: joined from a terminal atrium does not hold.
+function termJoined(t) { return !!t && !t.supervised && !termCold(t); }
 
 // Whether this session is hidden by its kind's toggle, honouring what is never
 // hidden (see `renderTermList`): the attached one, and whatever its kind's rule
@@ -1007,11 +1017,12 @@ function termRow(t, deep) {
            // the session again where it was.
            termCold(t) ? " cold" : ""}${wear.cls}${newCardClass(t)}"
          data-id="${t.id}"
-         data-tip="${termCold(t) ? "this one has exited. click to start it again here" : ""}"
+         data-tip="${termCold(t) ? "this one has exited. click to start it again here"
+           : termJoined(t) ? "joined from your own terminal. atrium cannot attach to it" : ""}"
          style="${style}"
          onclick="${termCold(t)
            ? `resumePinned('${t.id}')`
-           : `attachTask('${t.id}')`}"
+           : termJoined(t) ? "" : `attachTask('${t.id}')`}"
          oncontextmenu="termMenu(event, '${t.id}')">
       <div class="card-line">
         <div class="title">
@@ -1053,7 +1064,9 @@ function termRowChips(t) {
   const stuck = typeof stuckMark === "function" ? stuckMark(t) : "";
   const ncx = typeof newContextChip === "function" ? newContextChip(t) : "";
   const cache = typeof keepaliveChip === "function" ? keepaliveChip(t) : "";
-  const inner = stuck + newCardChip(t) + ncx + seenChips(t) + cache + held + room + popped;
+  const joined = termJoined(t)
+    ? `<span class="chip" data-tip="joined from your own terminal. atrium cannot attach to it">joined</span>` : "";
+  const inner = stuck + newCardChip(t) + ncx + seenChips(t) + cache + held + room + popped + joined;
   return inner ? `<div class="chips">${inner}</div>` : "";
 }
 
