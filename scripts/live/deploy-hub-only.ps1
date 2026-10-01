@@ -13,6 +13,11 @@ $LiveLog = Join-Path $Base 'deploy.log'
 if (-not (Test-Path $AtriumNew)) { Say "FATAL: no new build at $AtriumNew"; exit 1 }
 if (-not (Test-NewBuildStamped)) { exit 1 }
 
+# A new context under way is waited out first. Not asked under -WhatIf, which changes nothing.
+if (-not $WhatIf) {
+  if (-not (Wait-NewContextsDone)) { Say 'a new context is still under way, nothing changed'; exit 0 }
+} else { Say 'WHATIF: wait for every new context under way to finish' }
+
 # Gate: wait for an idle board, count down in a toast clint can click to pause (docs/fabric/hub-restart-gate.md).
 # Exit 0 means go (or a hub too old to ask), anything else means leave the hub alone.
 if (-not $WhatIf) {

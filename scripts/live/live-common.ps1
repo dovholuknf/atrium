@@ -51,6 +51,25 @@ function Say($m) {
   $line | Tee-Object -FilePath $LiveLog -Append | Write-Host
 }
 
+# Wait-NewContextsDone holds a deploy while any card has a new context under way, the way the restart gate holds it
+# for a busy board. A restart cuts a clear off between its steps and leaves the card half cycled. Names each card
+# while it waits. Returns $true when none is left, $false when -MaxSeconds ran out, and $true when the hub does not
+# answer, since a hub that is down is not running a clear and a deploy held forever by it is worse.
+$HubNewContexts = 'http://127.0.0.1:7778/_hub/new-contexts'
+function Wait-NewContextsDone([int]$MaxSeconds = 1200) {
+  $deadline = (Get-Date).AddSeconds($MaxSeconds)
+  $said = ''
+  while ($true) {
+    try { $r = Invoke-RestMethod -Uri $HubNewContexts -TimeoutSec 15 } catch { return $true }
+    $runs = @($r.under_way)
+    if ($runs.Count -eq 0) { return $true }
+    $names = ($runs | ForEach-Object { "$($_.name)@$($_.room) step $($_.n) of 3 ($($_.step))" }) -join ', '
+    if ($names -ne $said) { Say "waiting for a new context to finish on: $names"; $said = $names }
+    if ((Get-Date) -gt $deadline) { return $false }
+    Start-Sleep -Seconds 5
+  }
+}
+
 # Invoke-Step runs one step that changes something, or under -WhatIf says what it would do and changes nothing.
 function Invoke-Step([string]$What, [scriptblock]$Do) {
   if ($WhatIf) { Say "WHATIF: $What"; return }
