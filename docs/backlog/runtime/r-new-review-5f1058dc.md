@@ -36,3 +36,8 @@ it is a load flake on the settle window and not this change.
    end the turn after the hook delivery and assert that `f.written()` stays empty past the first retry step?
 
 ROOM DEPLOY OK 5f1058dc
+
+## Carried over 2026-10-01: 063885aa on 7c735647
+
+063885aa is 5f1058dc rebased after the history re-sign. Its `git patch-id --stable` matches (e4aad905), so the
+verdict above applies to 7c735647..063885aa unchanged. ROOM DEPLOY OK 063885aa.
