@@ -312,7 +312,7 @@
   // While a message is being typed the thread holds still. The composer growing a line, the keyboard coming or going
   // and every keystroke change the room around the thread, and none of them is a reason to move it. The place it had
   // when typing began (or where the operator last scrolled it to) is put back after each of those, and stick-to-bottom
-  // is not run. Sending, the jump control and leaving the box end it.
+  // is not run. Sending, the jump control, leaving the box and emptying it end it, and the next input pins again.
   let typing = false, pinTop = 0;
   function pinned() { if (typing && els && els.scroll.scrollTop !== pinTop) els.scroll.scrollTop = pinTop; return typing; }
   function typingOn() { if (!typing && els) { typing = true; pinTop = els.scroll.scrollTop; } }
@@ -674,7 +674,7 @@
     els.scroll.addEventListener("load", () => { if (stick && openId) toEnd(); }, true);
     els.jump.addEventListener("click", () => { typingOff(); stick = true; toEnd(); });
     if (window.visualViewport) window.visualViewport.addEventListener("resize", () => { if (openId) settle(); });
-    els.sheet.addEventListener("input", e => { if (e.target && e.target.classList && e.target.classList.contains("mc-box")) typingOn(); }, true);
+    els.sheet.addEventListener("input", e => { if (e.target && e.target.classList && e.target.classList.contains("mc-box")) { if (e.target.value) typingOn(); else { typingOff(); settle(); } } }, true);
     els.sheet.addEventListener("focusout", e => { if (e.target && e.target.classList && e.target.classList.contains("mc-box")) typingOff(); });
     window.addEventListener("m-send", e => { if (e.detail && e.detail.state === "pending") typingOff(); });
     els.head.addEventListener("click", e => { if (e.target.closest && e.target.closest("#m-recap-open")) openRecap(); });
