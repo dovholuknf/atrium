@@ -24,6 +24,10 @@ Waiting: item 3 (which bubbles do not work) needs clint's answer.
 
 Next, after u-m-card and u-m-home land (clint, 2026-09-30 evening, by the orchestrator):
 
+0. **Code review on the phone** (`u-new-m-code-review.md`, clint 2026-09-30 night): a "N files changed" chip per
+   reply opening a diff in the viewer sheet, a card-level changes view, tap a line to quote it. A mock first, then
+   @rnd, then build. After the scroll-yank fix.
+
 5. **/m takes less vertical space** (`u-new-m-compact.md`): a one-line message header (speaker and age), smaller
    default type, and a pinch that changes the text size only, with native page zoom off.
 6. **Read a card's files on the phone** (`u-new-m-file-viewer.md`): a file path in a message opens a read-only viewer
