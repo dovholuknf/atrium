@@ -53,3 +53,21 @@ HOLD 5b0fb4b1..ef3ba730 for finding 1. Re-read 5b0fb4b1..<tip>, then room-ok.
 Quality: after the Sonnet switch, no drop seen in the parts built. The ordering against the launcher's notice was
 thought through and tested. The miss is the second-order one again: "done" was taken from the status field alone
 when the same file already says an ask changes what a done report means.
+
+## Re-read c70b0d19..fe4bfb30: ROOM OK
+
+Rebased onto c70b0d19. 2c64d8cb is 9683dd5f with the HW test-plan commit folded in (`git range-diff`), and
+fe4bfb30 is the fix. `go vet` passes, `go test -count=3 -run 'Report|Finish|Exit|Launch|Typed' ./internal/daemon/` ok
+(110 s).
+
+- **Medium, fixed.** `exitsOnReport` takes the request and returns false on a non-blank `Ask`. The done-with-ask
+  case is in `TestAQuestionProgressOrBlockedReportLeavesTheCardRunning`.
+- **Low 2, fixed.** `exitAfterReport` skips the exit when `typedWithin(ceilingTypedQuiet)`. `lastTyped` is set only
+  in `noteOperatorTyped`, so a typed say or peer message does not count. `TestATypedInCardIsNotExitedAfterItsReport`
+  covers it.
+- **Low 3, accepted in the spec.** `atrium:park-idle` and `atrium:hold-notices` exempt a card too, and an untagged
+  agent-launched resident is exited on its first done, by decision.
+
+ROOM DEPLOY OK fe4bfb30.
+
+Quality: after the Sonnet switch, no drop seen. Each finding was fixed where it was named, with a test.
