@@ -13732,12 +13732,17 @@ async function mPicturesSection(browser) {
   st.files = {};
   const lines = [];
   for (let n = 0; n < 45; n++) { st.files["/w/card/p" + n + ".png"] = M_PNG; lines.push("![p" + n + "](/w/card/p" + n + ".png)"); }
-  st.replies["pic-1"] = { source: "transcript", replies: [{ at: mIso(10 * M_MIN), text: lines.join("\n\n") }] };
+  const first = lines.slice(0, 40), more = lines.slice(40);
+  st.replies["pic-1"] = { source: "transcript", replies: [{ at: mIso(10 * M_MIN), text: first.join("\n\n") }] };
   await st.open();
   try {
     const tag = "mPictures: ";
     const { ctx, p, errors } = await mReplyPage(browser, st, M_VIEWS[0], "pic-1");
     await p.evaluate(() => { window.__revoked = 0; const r = URL.revokeObjectURL; URL.revokeObjectURL = u => { window.__revoked++; return r.call(URL, u); }; });
+    await p.waitForFunction(() => document.querySelectorAll("#m-replies .md-img img").length === 40, null, { timeout: slow(15000) })
+      .catch(() => fail(tag + "the first forty were not drawn"));
+    // five more arrive once the cache is full, which is when eviction runs
+    await p.evaluate(md => document.getElementById("m-replies").insertAdjacentHTML("beforeend", window.mMd.render(md, { id: "pic-1", worktree: "/w/card" })), more.join("\n\n"));
     await p.waitForFunction(() => document.querySelectorAll("#m-replies .md-img img").length === 45, null, { timeout: slow(15000) })
       .catch(() => fail(tag + "not every picture was drawn"));
     if ((await p.evaluate(() => window.__revoked)) !== 0) fail(tag + "a picture still on screen was revoked");
