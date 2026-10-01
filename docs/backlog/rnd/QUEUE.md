@@ -76,7 +76,7 @@ director as `docs/backlog/<dept>/<d>-new-<name>.md`, or fold them into the desig
 
 ## Waiting
 
-HELD by the PAUSE: do not start until the orchestrator ends it. Take them in this order:
+clint lifted the hold on rnd DESIGN work only (designs, nothing built or deployed). Work 1 to 3 in order, one at a time: doc on claude/rnd, then @review, then tell the orchestrator the tip, the verdict and clint's open questions. At most 2 research workers, on m1mini. Item 4 and rnd-new-scm-forge (on sg4) stay held for clint. Take them in this order:
 
 1. `docs/backlog/rnd/rnd-new-room-handoff.md`: move a card and its work between rooms (`atrium move`), from the 2026-10-01 director move.
 2. `docs/backlog/rnd/rnd-new-room-to-room-access.md`: a SPIKE on how one room reaches another's machine (direct ssh, a zrok private share, or OpenZiti), opt-in per room pair. Its output is a spike doc and a recommendation.
