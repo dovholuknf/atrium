@@ -13627,6 +13627,16 @@ async function mOlderSection(browser) {
     if (fs !== 19) fail(tag + "the pinch size does not reach the older bubbles: " + fs);
     await p.evaluate(() => document.getElementById("m-card").style.removeProperty("--m-fs"));
     await mShot(p, "older-390");
+    // the newest window moves on with new entries after a load: nothing that fell out of it goes missing
+    await p.waitForFunction(() => document.getElementById("m-live").classList.contains("on"), null, { timeout: slow(10000) });
+    const ts = Date.now();
+    while (!st.streams.length && Date.now() - ts < slow(10000)) await p.waitForTimeout(100);
+    const fresh = [1, 2, 3].map(i => ({ at: mIso((10 - i) * 0.5 * M_MIN), text: "Fresh " + i + ". " + "newer words. ".repeat(4) }));
+    st.replies["ol-1"] = { source: "transcript", replies: latest.slice(3).concat(fresh), prompts: [], more: true, next_before: "cur-A" };
+    st.send("task", Object.assign({}, c, { row: 1, output_at: mIso(0.2 * M_MIN) }));
+    await p.waitForFunction(() => /Fresh 3/.test(document.getElementById("m-replies").textContent), null, { timeout: slow(5000) });
+    const kept = await p.evaluate(() => { const t = [...document.querySelectorAll("#m-replies .reply")].map(e => (e.querySelector(".md, .own") || {}).textContent || ""); return { r2: t.filter(x => /^Reply 2\./.test(x)).length, r3: t.filter(x => /^Reply 3\./.test(x)).length, r112: t.filter(x => /^Reply 112\./.test(x)).length, fresh: t.filter(x => /^Fresh/.test(x)).length }; });
+    if (kept.r2 !== 1 || kept.r3 !== 1 || kept.r112 !== 1 || kept.fresh !== 3) fail(tag + "a refreshed window left a gap or a repeat: " + JSON.stringify(kept));
     // a failure shows a retry row, makes no further request of its own, and the retry goes on
     await p.evaluate(() => { const e = document.getElementById("m-card-scroll"); e.dispatchEvent(new WheelEvent("wheel", { deltaY: -100 })); e.scrollTop = 0; });
     const t1 = Date.now();
@@ -13639,6 +13649,15 @@ async function mOlderSection(browser) {
     if (olderHits("cur-C") !== 2) fail(tag + "the retry did not ask again: " + st.hits.join(","));
     if (await p.$("#m-older")) fail(tag + "more=false left the row");
     if (!/Reply 200/.test(await p.textContent("#m-replies"))) fail(tag + "the last page was not drawn");
+    // closing the card drops what it paged in: reopened, it starts from its newest window again
+    await p.evaluate(() => document.getElementById("m-card-back").click());
+    await p.waitForFunction(() => document.getElementById("m-card").hidden, null, { timeout: slow(5000) });
+    st.replies["ol-1"] = { source: "transcript", replies: latest.slice(3).concat(fresh), prompts: [], more: true, next_before: "cur-A" };
+    await p.tap('#m-list .row[data-id="ol-1"]');
+    await p.waitForSelector("#m-replies .reply", { timeout: slow(5000) });
+    await p.waitForSelector("#m-older", { timeout: slow(5000) });
+    const again = await p.evaluate(() => [...document.querySelectorAll("#m-replies .reply")].map(e => (e.querySelector(".md, .own") || {}).textContent || "").filter(x => /^Reply 1(12|)\./.test(x) || /^Reply 20/.test(x)).length);
+    if (again) fail(tag + "a reopened card still shows what an earlier visit paged in");
     if (await mNoSideways(p)) fail(tag + "the card scrolls sideways");
     if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
     await ctx.close();
