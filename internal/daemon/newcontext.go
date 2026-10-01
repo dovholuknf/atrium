@@ -472,6 +472,11 @@ func (d *Daemon) StartNewContext(taskID string) error {
 	}
 	gen, ok := d.nctx.begin(taskID, HandoffName(task), d.conversationOf(task))
 	if !ok {
+		if cur := d.nctx.get(taskID); cur != nil {
+			v := newContextView(cur)
+			return fmt.Errorf("%w, stuck on step %v of 3 (%s) for %s", errNewContextBusy, v["n"], cur.step,
+				time.Since(cur.since).Round(time.Second))
+		}
 		return errNewContextBusy
 	}
 	log.Printf("[atrium] new context started on %s", task.DisplayTitle())
@@ -720,6 +725,40 @@ func (d *Daemon) cardRunning(taskID string) bool {
 	return err == nil && t != nil && t.Status == store.StatusRunning
 }
 
+// ncBusy is whether the card is inside a turn as far as typing is concerned: the
+// activity says so or the status says running, and the screen does not show a
+// settled prompt. A card whose Stop never landed, or whose daemon restarted
+// under a status of running, reads busy to both and will never end a turn it is
+// not taking, so the step waited for a turn end that could not come. The screen
+// is the tiebreak, the same signature `watchLooksIdle` flags on.
+func (d *Daemon) ncBusy(taskID string) bool {
+	if !d.act.midTurn(taskID) && !d.cardRunning(taskID) {
+		return false
+	}
+	return !d.atIdlePrompt(taskID)
+}
+
+// atIdlePrompt is whether a claude card is flagged looks-idle or shows a settled
+// prompt on a pty silent for LooksIdleAfter, with no dialog and no subagents.
+func (d *Daemon) atIdlePrompt(taskID string) bool {
+	run := d.sup.get(taskID)
+	if run == nil || d.act.dialogOpen(taskID) || d.act.onSubagents(taskID) {
+		return false
+	}
+	if _, on := d.act.looksIdleMark(taskID); on {
+		return true
+	}
+	if t, err := d.st.Get(taskID); err != nil || t == nil || !strings.EqualFold(t.Runner, "claude") {
+		return false
+	}
+	if time.Since(run.lastOutputAt()) < LooksIdleAfter || run.buf == nil {
+		return false
+	}
+	cols, rows := run.buf.CurrentSize()
+	idle, _ := classifyFrame(run.buf.Tail(frameTailBytes), cols, rows)
+	return idle
+}
+
 // ncWait polls cond until it is true, the run is replaced, the terminal goes, or
 // the time is up.
 func (d *Daemon) ncWait(taskID string, gen uint64, limit time.Duration, what string, cond func() (bool, error)) error {
@@ -782,7 +821,7 @@ func (d *Daemon) ncType(taskID string, gen uint64, label, text string, limit tim
 		if run == nil || d.act.dialogOpen(taskID) {
 			return false, nil
 		}
-		if d.act.midTurn(taskID) || d.cardRunning(taskID) {
+		if d.ncBusy(taskID) {
 			waited := time.Since(began)
 			// A runner that does not take input mid-turn would lose the line, so it
 			// is not nudged and the cycle waits for its turn as it always did.
@@ -813,7 +852,7 @@ func (d *Daemon) ncType(taskID string, gen uint64, label, text string, limit tim
 			if ceiling && run.typedWithin(autoTiming.ceilingTypedQuiet) {
 				return false
 			}
-			return !d.act.dialogOpen(taskID) && !d.act.midTurn(taskID) && !d.cardRunning(taskID) &&
+			return !d.act.dialogOpen(taskID) && !d.ncBusy(taskID) &&
 				d.act.sinceBusy(taskID) >= ncTiming.turnSettle
 		}
 		wrote, err := d.typeLabelledGuarded(run, taskID, label, text, quiet)

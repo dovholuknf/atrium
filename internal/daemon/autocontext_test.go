@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -621,7 +622,7 @@ func TestAutoContextNeverTwice(t *testing.T) {
 	autoQuiet()
 	r.tick()
 	r.tick()
-	if err := r.d.StartNewContext(r.id()); err != errNewContextBusy {
+	if err := r.d.StartNewContext(r.id()); !errors.Is(err, errNewContextBusy) {
 		t.Fatalf("a press over the automatic run: %v", err)
 	}
 	r.capturePrompted()
