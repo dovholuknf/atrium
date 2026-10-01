@@ -62,6 +62,12 @@ var autoTiming = struct {
 	// typing. The card is not a human card, so the human rule's attach check does not
 	// reach it, and a ceiling cycle starts mid-turn, where a person may be typing.
 	ceilingTypedQuiet time.Duration
+	// ceilingCardRead is how long after the card's replies were last fetched a phone
+	// card page counts as open.
+	ceilingCardRead time.Duration
+	// ceilingMaxWait is how long past the crossing a ceiling card waits for a watcher to
+	// leave. Past it a watcher no longer holds the cycle and typing still does.
+	ceilingMaxWait time.Duration
 }{
 	startGrace: 5 * time.Minute,
 	minGap:     30 * time.Minute,
@@ -71,6 +77,8 @@ var autoTiming = struct {
 	idleUnit:   time.Second,
 
 	ceilingTypedQuiet: 2 * time.Minute,
+	ceilingCardRead:   2 * time.Minute,
+	ceilingMaxWait:    30 * time.Minute,
 }
 
 // The arm states.
@@ -98,17 +106,40 @@ type autoState struct {
 	tokens, threshold                 int64
 	gen                               uint64
 	file                              string
+	// crossedAt is when a ceiling card was first seen over its line, and deferNoted that
+	// the wait for a watcher to leave was said. Both reset when the card is under the line,
+	// and not when a run starts: a run dropped for a watcher keeps the wait it has served.
+	crossedAt  time.Time
+	deferNoted bool
 }
 
 type autoContexts struct {
 	mu sync.Mutex
 	by map[string]*autoState
+	// read is when each card's conversation was last fetched over HTTP, which is all an
+	// open /m card page does: it holds no connection the daemon could count.
+	read map[string]time.Time
 	// born is when this daemon began, for the restart grace.
 	born time.Time
 }
 
 func newAutoContexts() *autoContexts {
-	return &autoContexts{by: map[string]*autoState{}, born: time.Now()}
+	return &autoContexts{by: map[string]*autoState{}, read: map[string]time.Time{}, born: time.Now()}
+}
+
+// noteRead records that somebody read the card's replies.
+func (a *autoContexts) noteRead(id string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.read[id] = time.Now()
+}
+
+// readWithin is whether the card's replies were fetched in the last d.
+func (a *autoContexts) readWithin(id string, d time.Duration) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	at, ok := a.read[id]
+	return ok && time.Since(at) < d
 }
 
 func (a *autoContexts) get(id string) *autoState {
@@ -225,7 +256,7 @@ func (d *Daemon) autoReady(t *store.Task, human bool, now time.Time) bool {
 	if n, _ := d.act.backgroundWork(id); n > 0 {
 		return false
 	}
-	if ceiling && ceilingPersonTyping(run) {
+	if ceiling && d.ceilingHeld(t, run, now) {
 		return false
 	}
 	if human {
@@ -248,11 +279,61 @@ func (d *Daemon) autoReady(t *store.Task, human bool, now time.Time) bool {
 	return d.nctx.sameDirBusy(d, t) == ""
 }
 
-// ceilingPersonTyping is a person attached to the card who has typed recently. A
-// director somebody is talking to is not nudged or cleared mid-conversation.
-func ceilingPersonTyping(run *runner) bool {
-	return run.watching() && run.typedWithin(autoTiming.ceilingTypedQuiet)
+// ceilingHeld is whether a person is using a ceiling card, and the cycle waits for them to
+// leave. A card somebody is talking to is not nudged or cleared mid-conversation.
+//
+//   - Typing holds without limit. A person who keeps typing keeps the card.
+//   - A terminal attached, or the phone card page open (its replies fetched lately), holds
+//     until `ceilingMaxWait` past the crossing. After that a watcher alone no longer holds,
+//     because a tab left open must not turn the ceiling off for good. Chosen over holding
+//     forever for that reason, and over proceeding regardless because a watcher who is
+//     reading may start typing the moment the card is nudged.
+func (d *Daemon) ceilingHeld(t *store.Task, run *runner, now time.Time) bool {
+	if run.typedWithin(autoTiming.ceilingTypedQuiet) {
+		return true
+	}
+	if !run.watching() && !d.auto.readWithin(t.ID, autoTiming.ceilingCardRead) {
+		return false
+	}
+	s := d.auto.get(t.ID)
+	return s == nil || s.crossedAt.IsZero() || now.Sub(s.crossedAt) < autoTiming.ceilingMaxWait
 }
+
+// ceilingCrossing keeps when a ceiling card went over its line, and says once per crossing
+// that the cycle is waiting for a person to leave.
+func (d *Daemon) ceilingCrossing(t *store.Task, tokens, threshold int64, now time.Time) {
+	s := d.auto.get(t.ID)
+	if tokens < threshold {
+		if s != nil && !s.crossedAt.IsZero() {
+			d.auto.update(t.ID, func(s *autoState) { s.crossedAt, s.deferNoted = time.Time{}, false })
+		}
+		return
+	}
+	if s == nil || s.crossedAt.IsZero() {
+		d.auto.update(t.ID, func(s *autoState) { s.crossedAt = now })
+	}
+}
+
+// ceilingWaitNote says, once per crossing, that a held cycle is waiting for you to leave.
+func (d *Daemon) ceilingWaitNote(t *store.Task, tokens int64) {
+	s := d.auto.get(t.ID)
+	if s == nil || s.deferNoted {
+		return
+	}
+	d.auto.update(t.ID, func(s *autoState) { s.deferNoted = true })
+	if err := d.st.AppendEvent(t.ID, store.EventNotified, map[string]any{
+		"by": autoContextBy, "waiting": ceilingWaitingText, "tokens": tokens,
+	}); err != nil {
+		log.Printf("[atrium] could not record the ceiling wait on %s: %v", t.ID, err)
+	}
+	if d.reportsToLauncher(t) {
+		d.notifyLauncher(t, NoticeAutoContext, "waiting:"+d.ctx.sessionOf(t), fmt.Sprintf(
+			"%s is at %dk, past its context ceiling, and atrium is %s.", t.WireName, tokens/1000, ceilingWaitingText))
+	}
+}
+
+// ceilingWaitingText is what the event and the notice say a held ceiling cycle is doing.
+const ceilingWaitingText = "waiting for you to leave before cycling its context"
 
 // watchAutoContext is called by watchContext for each live Claude card with the size
 // it just read, on every tick and not only when the size changed: the gates move on
@@ -263,6 +344,11 @@ func (d *Daemon) watchAutoContext(t *store.Task, tokens int64, now time.Time) {
 	mode := d.st.AutoNewContextMode()
 	if !d.autoContextSubject(t, mode) || d.sup.get(t.ID) == nil {
 		return
+	}
+	ceiling := hasTag(t.Tags, ContextCeilingTag)
+	if ceiling {
+		d.ceilingCrossing(t, tokens, threshold, now)
+		s = d.auto.get(t.ID)
 	}
 	if now.Sub(d.auto.born) < autoTiming.startGrace {
 		return
@@ -281,6 +367,12 @@ func (d *Daemon) watchAutoContext(t *store.Task, tokens int64, now time.Time) {
 	case s == nil || s.state == autoArmed:
 		if tokens < threshold || (s != nil && !s.firedAt.IsZero() && now.Sub(s.firedAt) < autoTiming.minGap) {
 			return
+		}
+		if ceiling {
+			if run := d.sup.get(t.ID); run != nil && d.ceilingHeld(t, run, now) {
+				d.ceilingWaitNote(t, tokens)
+				return
+			}
 		}
 		if d.autoReady(t, human, now) {
 			d.startAuto(t, tokens, threshold, human, false, 1)
@@ -456,7 +548,7 @@ func (d *Daemon) autoStillOK(taskID string) bool {
 	}
 	if hasTag(t.Tags, ContextCeilingTag) {
 		run := d.sup.get(taskID)
-		return run != nil && !ceilingPersonTyping(run)
+		return run != nil && !d.ceilingHeld(t, run, time.Now())
 	}
 	return true
 }
