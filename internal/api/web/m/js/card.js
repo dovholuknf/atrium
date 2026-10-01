@@ -82,7 +82,9 @@
   function replyHTML(r, screen, who) {
     const body = screen ? '<pre class="screen">' + U.esc(r.text) + "</pre>" : '<div class="md">' + MD.render(r.text, mdCtx()) + "</div>";
     return '<article class="reply' + (screen ? " from-screen" : "") + '" data-k="' + U.esc(entryKey(r.at, r.text)) + '">' + headerHTML(who, r.at, "", screen ? "from the screen" : "") + body +
-      (r.truncated ? '<p class="cut">cut short here. the rest is in the terminal</p>' : "") + "</article>";
+      (r.truncated ? '<p class="cut">cut short here. the rest is in the terminal</p>' : "") +
+      // How many files this turn's edit calls named, from /replies and with no git number: the diff is read when this is tapped.
+      (r.edited > 0 ? '<button type="button" class="chg-chip" data-at="' + U.esc(r.at) + '">' + r.edited + (r.edited === 1 ? " file" : " files") + " edited</button>" : "") + "</article>";
   }
 
   function fallbackHTML(t) {
@@ -683,6 +685,7 @@
 
   function finishClose() {
     if (window.mViewer) window.mViewer.reset();
+    if (window.mChanges) window.mChanges.reset();
     if (MD.release) MD.release();
     els.sheet.hidden = true;
     els.head.innerHTML = els.notices.innerHTML = els.replies.innerHTML = els.extras.innerHTML = els.recap.innerHTML = "";
@@ -960,6 +963,12 @@
     document.addEventListener("keydown", e => { if (e.key === "Escape" && els && !els.recap.hidden) closeRecap(); });
     els.back.addEventListener("click", close);
     els.pick.addEventListener("click", menuToggle);
+    // The card's changes, and the chip on a reply that edited files. Both open the changes sheet over the thread.
+    q("m-card-changes").addEventListener("click", () => { if (openId && window.mChanges) window.mChanges.openCard(openId); });
+    els.replies.addEventListener("click", e => {
+      const c = e.target.closest && e.target.closest(".chg-chip");
+      if (c && openId && window.mChanges) window.mChanges.openTurn(openId, c.dataset.at);
+    });
     els.menuBack = q("m-card-menu-back");
     if (els.menuBack) els.menuBack.addEventListener("click", menuClose);
     els.menu.addEventListener("input", e => { if (e.target.classList && e.target.classList.contains("pm-search")) menuPaint(); });
