@@ -66,3 +66,26 @@ Then it goes to clint. A re-read is sections 0, 1, 2 and 3 and Q2 to Q4. No trai
 
 Quality: clear and well sourced. Section 1 is a good inventory, and "zrok and ziti replace the route, not the login"
 is the right catch. The one factual slip, a deny rule that does not ship, is the one the security case rested on.
+
+## Re-read at 020f0cfd (2026-10-01, m1mini): OK, doc-ok
+
+- **High 1, closed.** Section 0 says a hub op is command execution on the hub. Section 3.1 has fixed, typed
+  signatures with the room taken from the inventory, fields by pattern, and argv built by the hub with no
+  passthrough. `-Ssh`, `-SshOption`, `-Target`, `-Path`, `-Repo` and `-Force` are named as never reachable, and each
+  script's ssh call is checked before its op is exposed. Read-only ops are free. Machine-changing ops go through the
+  gate with their full argv and are never auto-approved. The caller is authorized by its certificate and card, and
+  every op is logged. Q2 matches.
+- **High 2, closed.** Section 1 now says no deny rule ships and that the missing credential is what stops a push.
+  3.2 makes it a hook matcher tested against the bypass list, named as a guard against mistakes and not
+  containment. Sections 0 and 2 state the credential boundary, so a grant is only between machines of one operator
+  account. Q3 and Q4 match.
+- **Lows, closed.** The dry run uses the grant's alias, the gate shows the full command, reach output is treated as
+  untrusted, and the board shows "grant removed, key still authorized".
+- **The handoff glob is fixed** in the same commit (`*-new-review-*.md` plus `docs/backlog/review/**`).
+
+One low for the build, not a hold: "through the calling card's permission gate" has to hold when that card's gate
+is off. Some cards run with `ATRIUM_PERM_GATE=off`, the PR runner's forks among them (prrunner.go `forkCommon`).
+A machine-changing op from a card with no live human gate is refused, never let through. That gate-off posture is
+the one the opencode review found everywhere.
+
+Verdict: OK, doc-ok 7bf10158^..020f0cfd. It goes to clint with Q1 to Q4.
