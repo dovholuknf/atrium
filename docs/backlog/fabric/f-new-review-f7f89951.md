@@ -65,3 +65,23 @@ drawer that landed today (26ffba86).
 Quality: after the Sonnet switch, no drop seen. The harness work is careful (the lazy page, the reset, the listing
 check, the pin reasoning), the flaky reasons are diagnosed rather than guessed, and the one miss is the second-order
 gate rule, which matches the pattern noted before.
+
+## Re-read 7c735647..74f1bc16: OK hub and room
+
+49522c29 is f7f89951 rebased onto 7c735647 (`git range-diff` shows `=`). 74f1bc16 is the fix.
+
+- **Medium, fixed.** `LOAD (passed on retry)` is in `hard`, so the run exits 1. The block still prints, now saying it
+  fails the run, and `failed_` keeps LOAD rows out of the FAILED list so they are not shown twice. test-plan.md step 4
+  and the runner header say the same.
+- **Low 1, fixed.** `strays()` compares the shard's `bad` (written by `writeUnitResults`, line 17516) with the sum of
+  unit failures, and flags a nonzero exit with `bad` zero. It runs on the first shards and on the retries. A shard
+  that throws in `finally` before writing results has `wrote` false, so its units read NOT RUN, which was already
+  hard.
+- **Low 2, fixed.** `FLAKY (failed, not retried)` is hard and labelled in the FAILED list. An unlisted failure under
+  `--no-retry` was already `FAIL`.
+- **Low 3, fixed.** The comment names the mutated consts.
+
+Nit: the new comment line in test-board-headless.js (~17478) runs past 120 characters, and it names `HON and FON`
+but not `HOFF`/`FOFF`.
+
+Quality: after the Sonnet switch, no drop seen. Each finding is fixed at the point named, with nothing extra.
