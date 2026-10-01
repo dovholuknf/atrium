@@ -496,6 +496,8 @@ async function bootTerminalOnly() {
     found = await cardUrlOpen(cardUrlShape());
     if (!found) return;
     want = found.id;
+    // The window may have reloaded onto another card, so its name follows the card the board looks for.
+    window.name = "atrium-term-" + bareId(want);
   }
 
   // ONE VIEW PER TERMINAL, AND THIS IS THE DOOR THAT WAS LEFT OPEN.

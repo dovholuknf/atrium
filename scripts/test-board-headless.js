@@ -5959,6 +5959,11 @@ async function phonePanSection(browser, base) {
       return { sl: host.scrollLeft, sw: host.scrollWidth, cw: host.clientWidth, cx: term.buffer.active.cursorX,
         inView: left >= hb.left - 1 && left + cw <= hb.right + 1, chip: !document.getElementById("t-follow").hidden };
     });
+    // Waits for the state an assertion is about, and lets the assertion say what it found if it never came.
+    const settled = async (ok) => {
+      const t0 = Date.now();
+      while (Date.now() - t0 < slow(8000) && !ok(await st())) await p.waitForTimeout(50);
+    };
     const swipe = (to) => p.evaluate((to) => new Promise(res => {
       const host = document.getElementById("t-screen");
       host.dispatchEvent(new TouchEvent("touchstart", { bubbles: true }));
@@ -5975,17 +5980,19 @@ async function phonePanSection(browser, base) {
     if (Math.abs(s.sl - 200) > 2 || !s.chip) fail("phonePan: the manual pan did not hold or the chip is missing: " + JSON.stringify(s));
     await p.evaluate(() => {
       window.__sl = [];
-      const host = document.getElementById("t-screen"), t0 = performance.now();
-      const tick = () => { window.__sl.push(host.scrollLeft); if (performance.now() - t0 < 5200) requestAnimationFrame(tick); };
+      window.__done = false;
+      const host = document.getElementById("t-screen");
+      const tick = () => { window.__sl.push(host.scrollLeft); if (!window.__done) requestAnimationFrame(tick); };
       requestAnimationFrame(tick);
       let n = 0;
       const feed = setInterval(() => {
         termSock.onmessage({ data: "x".repeat(6) + " " + n + "\r\n" + " ".repeat((n * 7) % 120) + "y" });
         if (n === 25) { term.blur(); term.focus(); window.__bfs(); }
-        if (++n >= 50) clearInterval(feed);
+        if (++n >= 50) { clearInterval(feed); term.write("", () => { window.__done = true; }); }
       }, 100);
     });
-    await p.waitForTimeout(5400);
+    // The feed takes as long as the machine lets its timer run, so wait for its last line to be parsed.
+    await p.waitForFunction(() => window.__done, null, { timeout: slow(30000) });
     const sl = await p.evaluate(() => window.__sl);
     const dev = Math.max(...sl.map(x => Math.abs(x - 200)));
     console.log("phonePan: frames=" + sl.length + " maxDeviation=" + dev);
@@ -5993,7 +6000,7 @@ async function phonePanSection(browser, base) {
     if (!(await st()).chip) fail("phonePan: the follow chip went away without input");
     // 2. typing brings the cursor back
     await p.evaluate(() => sendInput("a", false));
-    await p.waitForTimeout(300);
+    await settled(s => s.inView && !s.chip);
     s = await st();
     if (!s.inView || s.chip) fail("phonePan: typing did not follow the cursor: " + JSON.stringify(s));
     // 3. pan away again; the chip does the same
@@ -6001,7 +6008,7 @@ async function phonePanSection(browser, base) {
     s = await st();
     if (!s.chip || s.inView) fail("phonePan: a second manual pan did not hold: " + JSON.stringify(s));
     await p.locator("#t-follow").tap();
-    await p.waitForTimeout(300);
+    await settled(s => s.inView && !s.chip);
     s = await st();
     if (!s.inView || s.chip) fail("phonePan: the follow chip did not follow the cursor: " + JSON.stringify(s));
     await ctx.close();
@@ -7133,17 +7140,30 @@ async function cacheChipSection(browser, base) {
     });
     check("board", bo);
 
-    // 3. A card 2 seconds from cold flips with no request, from one armed timer.
-    kaFix("cc-flip", { why: "not idle", warm_until: new Date(Date.now() + 2500).toISOString() });
+    // 3. A card 2 seconds from cold flips with no request, from one armed timer. The card arrives warm for an hour, through
+    // the real paint, and its time is brought to two seconds from now in the page once that paint and its fetch are done,
+    // since a busy machine can spend the two seconds on the way here.
+    kaFix("cc-flip", { why: "not idle", warm_until: new Date(Date.now() + 3600000).toISOString() });
     landList = [LAND["cc-flip"]];
     await p.evaluate(() => switchView("stack"));
+    const fetched = p.waitForResponse(r => /\/v1\/tasks(\?|$)/.test(r.url()), { timeout: slow(10000) });
     await p.evaluate(() => tasksSoon());
-    await p.waitForSelector('#stack-list [data-cid="cc-flip"]', { timeout: slow(10000) });
-    const first = await p.evaluate(() => document.querySelector('#stack-list [data-cid="cc-flip"] .cfull').textContent);
+    await fetched;
+    await p.waitForFunction(() => { const e = document.querySelector('#stack-list [data-cid="cc-flip"] .cfull'); return e && /^\u2744 warm/.test(e.textContent); }, null, { timeout: slow(10000) });
+    // No read left to come: a late one would bring the hour back over the time set below.
+    await p.waitForFunction(() => !tasksTimer && !refreshTimer && !refreshInFlight && !refreshDirty && !want.tasks, null, { timeout: slow(15000) });
+    await p.waitForFunction(() => kaTimer > 0, null, { timeout: slow(5000) });
+    const n0 = reqs.length;
+    const first = await p.evaluate(() => {
+      KA_SEEN.get("cc-flip").keepalive.warm_until = new Date(Date.now() + 2500).toISOString();
+      kaRepaint();
+      const now = document.querySelector('#stack-list [data-cid="cc-flip"] .cfull').textContent;
+      kaArm();
+      return now;
+    });
     if (!/^\u2744 warm/.test(first)) fail("cacheChip flip: starts as " + first);
     const armed = await p.evaluate(() => kaTimer > 0);
     if (!armed) fail("cacheChip flip: no timer is armed for the soonest card");
-    const n0 = reqs.length;
     await p.waitForFunction(() => /cold since/.test(document.querySelector('#stack-list [data-cid="cc-flip"] .cfull').textContent),
       null, { timeout: slow(8000) }).catch(() => fail("cacheChip flip: the chip did not flip to cold by itself"));
     if (reqs.length !== n0) fail("cacheChip flip: the flip made " + (reqs.length - n0) + " requests: " + reqs.slice(n0).join(" "));
@@ -12670,6 +12690,8 @@ async function cardUrlNotifySection(browser, base) {
   try {
     const wins = ["http://x/", "http://x/alias/rnd", "http://x/room/r1/other", "http://x/#term=land-b", "http://x/room/r1"];
     if (await click({ taskFor: "land-a", path: "/alias/rnd" }, wins) !== "http://x/alias/rnd") fail("cardUrlNotify: a click did not find the pop-out on /alias/rnd");
+    if (await click({ taskFor: "land-a", path: "/alias/rnd/" }, wins) !== "http://x/alias/rnd") fail("cardUrlNotify: a path with a trailing slash missed the pop-out");
+    if (await click({ taskFor: "land-a", path: "/alias/rnd" }, ["http://x/", "http://x/alias/rnd/"]) !== "http://x/alias/rnd/") fail("cardUrlNotify: a window with a trailing slash was missed");
     if (await click({ taskFor: "land-b", path: "/alias/other" }, wins) !== "http://x/#term=land-b") fail("cardUrlNotify: the #term= window was not matched any more");
     if (await click({ taskFor: "land-c", path: "/alias/none" }, wins) !== "http://x/") fail("cardUrlNotify: a click with no pop-out did not land on the board, not a card window");
     if (await click({ taskFor: "land-n", path: "" }, ["http://x/alias/rnd", "http://x/"]) !== "http://x/") fail("cardUrlNotify: an empty path matched a card window");
@@ -12678,6 +12700,32 @@ async function cardUrlNotifySection(browser, base) {
     tasksMode = was;
   }
   if (!bad) console.log("cardUrlNotify ok");
+}
+
+// A pop-out that reloads onto another card takes that card's window name, so the board's one-window-per-card rule finds it.
+async function cardUrlWinNameSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landList = [];
+  landCard("land-a", { alias: "rnd", room: "r1" });
+  landCard("land-b", { alias: "other", room: "r1" });
+  const lookups = { rnd: { body: LAND["land-a"] }, other: { body: LAND["land-b"] } };
+  try {
+    const r = await cuOpen(browser, base, "/alias/rnd", lookups, () => { window.name = "atrium-term-stale"; });
+    try {
+      await cuSolo(r.page, "land-a");
+      const n1 = await r.page.evaluate(() => window.name);
+      if (n1 !== "atrium-term-land-a") fail("cardUrlWinName: the window is named " + n1 + " on /alias/rnd");
+      await r.page.goto(base + "/alias/other", { waitUntil: "domcontentloaded" });
+      await cuSolo(r.page, "land-b");
+      const n2 = await r.page.evaluate(() => window.name);
+      if (n2 !== "atrium-term-land-b") fail("cardUrlWinName: after the reload onto another card the window is named " + n2);
+    } finally { await r.ctx.close(); }
+  } finally {
+    landList = []; landPerms = [];
+    tasksMode = was;
+  }
+  if (!bad) console.log("cardUrlWinName ok");
 }
 
 // The suite's one clock (see CLOCK_OFFSET at the top). The page starts the run at
@@ -14220,7 +14268,8 @@ async function main() {
       bootClean: bootCleanSection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mRecapSheet: mRecapSheetSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection,
       gearTermList: gearTermListSection, growlLinks: growlLinksSection, growlChoiceOnce: growlChoiceOnceSection,
-      mOutputAt: mOutputAtSection, mStickBottom: mStickBottomSection, mSendFree: mSendFreeSection, mCardUpload: mCardUploadSection };
+      mOutputAt: mOutputAtSection, mStickBottom: mStickBottomSection, mSendFree: mSendFreeSection, mCardUpload: mCardUploadSection,
+      cardUrlWinName: cardUrlWinNameSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -16205,6 +16254,7 @@ async function main() {
     await mStickBottomSection(browser);
     await mSendFreeSection(browser);
     await mCardUploadSection(browser);
+    await cardUrlWinNameSection(browser, base);
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e));
     if (process.env.DEBUG_HEADLESS) {
@@ -17211,6 +17261,27 @@ async function growlPopoutSection(browser, base) {
     p2 = await heard(pop); b2 = await heard(board);
     if (p2.osc <= p1.osc || p2.notes !== p1.notes + 1) fail("growlPopout: the pop-out did not ring its reminder: " + JSON.stringify([p1, p2]));
     if (b2.osc !== b1.osc || b2.notes !== b1.notes) fail("growlPopout: the board rang beside the pop-out: " + JSON.stringify([b1, b2]));
+
+    // The board has the focus: the pop-out still rings its own card's reminder, under its own switch and mute, and the
+    // board still does not ring for that card.
+    await pop.evaluate(() => { focusedElsewhere = { win: "board-win", at: Date.now(), watch: "" }; });
+    p1 = await heard(pop); b1 = await heard(board);
+    await say([Object.assign({}, mine, { reminders: 31 }), theirs], { remind: [mine.id] });
+    p2 = await heard(pop); b2 = await heard(board);
+    // The tone is the pop-out's. The message itself goes to the board as a toast, as it does for any alert.
+    if (p2.osc <= p1.osc) fail("growlPopout: the pop-out did not ring with the board focused: " + JSON.stringify([p1, p2]));
+    if (b2.osc !== b1.osc || b2.notes !== b1.notes) fail("growlPopout: the board rang for a popped-out card while focused: " + JSON.stringify([b1, b2]));
+    await pop.evaluate(() => setNotifyOff(true));
+    p1 = await heard(pop);
+    await say([Object.assign({}, mine, { reminders: 32 }), theirs], { remind: [mine.id] });
+    p2 = await heard(pop);
+    if (p2.osc !== p1.osc || p2.notes !== p1.notes) fail("growlPopout: a switched-off pop-out rang with the board focused: " + JSON.stringify([p1, p2]));
+    await pop.evaluate(() => { setNotifyOff(false); document.getElementById("sound").click(); });
+    p1 = await heard(pop);
+    await say([Object.assign({}, mine, { reminders: 33 }), theirs], { remind: [mine.id] });
+    p2 = await heard(pop);
+    if (p2.osc !== p1.osc) fail("growlPopout: a muted pop-out played a tone with the board focused.");
+    await pop.evaluate(() => { document.getElementById("sound").click(); focusedElsewhere = { win: "", at: 0 }; });
 
     // Closing the pop-out hands the reminders back to the board, even with its switch left off.
     await pop.evaluate(() => setNotifyOff(true));
