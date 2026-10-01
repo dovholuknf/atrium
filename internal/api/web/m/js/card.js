@@ -10,7 +10,8 @@
 
   const U = window.mUtil;
   const MD = window.mMd;
-  const REPLIES_N = 10;
+  const REPLIES_N = 50;
+  const OLDER_N = 50;
 
   let openId = "";
   let els = null;
@@ -60,6 +61,14 @@
     const a = U.ago(Date.now() - U.ts(at));
     return a === "now" ? "now" : a;
   }
+  // A stable key for a drawn entry, so older pages can be deduped against what is on screen and the viewport can find
+  // the bubble it was anchored to after a prepend.
+  function entryKey(at, text) {
+    const t = String(at || "") + "|" + String(text || "");
+    let h = 5381;
+    for (let i = 0; i < t.length; i++) h = ((h << 5) + h + t.charCodeAt(i)) | 0;
+    return String(at || "") + "~" + (h >>> 0).toString(36) + t.length;
+  }
   function headerHTML(who, at, tag, note) {
     return '<header class="rh"><span class="src">' + U.esc(who) + "</span>" + (note ? '<span class="note">' + U.esc(note) + "</span>" : "") +
       (at ? '<time datetime="' + U.esc(at) + '">' + U.esc(agoOf(at)) + "</time>" : "") + (tag ? '<b class="tag">' + U.esc(tag) + "</b>" : "") + "</header>";
@@ -71,7 +80,7 @@
   }
   function replyHTML(r, screen, who) {
     const body = screen ? '<pre class="screen">' + U.esc(r.text) + "</pre>" : '<div class="md">' + MD.render(r.text, mdCtx()) + "</div>";
-    return '<article class="reply' + (screen ? " from-screen" : "") + '">' + headerHTML(who, r.at, "", screen ? "from the screen" : "") + body +
+    return '<article class="reply' + (screen ? " from-screen" : "") + '" data-k="' + U.esc(entryKey(r.at, r.text)) + '">' + headerHTML(who, r.at, "", screen ? "from the screen" : "") + body +
       (r.truncated ? '<p class="cut">cut short here. the rest is in the terminal</p>' : "") + "</article>";
   }
 
@@ -213,7 +222,7 @@
   const OWN_TAG = { pending: "sending", failed: "not sent, back in the box", sent: "delivered", queued: "queued" };
   function ownHTML(m) {
     const st = m.state || m.kind || "";
-    return '<article class="reply mine' + (st === "pending" || st === "failed" ? " " + st : "") + '">' + headerHTML("you", m.at, OWN_TAG[st] || "") +
+    return '<article class="reply mine' + (st === "pending" || st === "failed" ? " " + st : "") + '" data-k="' + U.esc(entryKey(m.at, m.text)) + '">' + headerHTML("you", m.at, OWN_TAG[st] || "") +
       '<div class="own">' + U.esc(m.text) + "</div></article>";
   }
 
@@ -238,18 +247,49 @@
   function promptHTML(p) {
     const cut = p.truncated ? '<p class="cut">cut</p>' : "";
     const text = String(p.text || "");
+    const dk = ' data-k="' + U.esc(entryKey(p.at, p.text)) + '"';
     const body = t => '<div class="own">' + U.esc(t) + "</div>" + cut + "</article>";
-    if (p.kind === "command") return '<article class="reply prompt command">' + headerHTML("command", p.at, "") + body(text);
+    if (p.kind === "command") return '<article class="reply prompt command"' + dk + '>' + headerHTML("command", p.at, "") + body(text);
     if (p.kind === "peer") {
       const m = /^\[atrium\] (.+?) says:\s*/.exec(text);
-      return '<article class="reply prompt peer">' + headerHTML(m ? m[1] : "a peer", p.at, "") + body(m ? text.slice(m[0].length) : text);
+      return '<article class="reply prompt peer"' + dk + '>' + headerHTML(m ? m[1] : "a peer", p.at, "") + body(m ? text.slice(m[0].length) : text);
     }
-    return '<article class="reply mine prompt">' + headerHTML("you", p.at, "") + body(text);
+    return '<article class="reply mine prompt"' + dk + '>' + headerHTML("you", p.at, "") + body(text);
   }
   const sameText = (a, b) => String(a).trim().slice(0, 200) === String(b).trim().slice(0, 200);
 
+  // ── older replies ──────────────────────────────────────────────────────
+  // Per card: the pages read before the latest window, the room's cursor for the next one, and whether a read is in
+  // flight or failed. The cursor is passed back exactly as the room gave it, never worked out from a timestamp.
+  const olderOf = new Map();
+  function older(id) {
+    const b = window.mNet.bareId(id);
+    if (!olderOf.has(b)) olderOf.set(b, { replies: [], prompts: [], more: false, next: "", pages: 0, busy: false, failed: false });
+    return olderOf.get(b);
+  }
+  // The latest window with every older page in front of it, in time order, nothing twice.
+  function withOlder(id, got) {
+    const o = older(id);
+    if (!o.replies.length && !o.prompts.length) return got;
+    const seen = new Set();
+    const uniq = (list) => list.filter(x => { const k = entryKey(x.at, x.text); if (seen.has(k)) return false; seen.add(k); return true; });
+    const rs = uniq((got.replies || []).slice().concat(o.replies).sort((a, b) => U.ts(a.at) - U.ts(b.at)));
+    seen.clear();
+    const ps = uniq((Array.isArray(got.prompts) ? got.prompts : []).slice().concat(o.prompts).sort((a, b) => U.ts(a.at) - U.ts(b.at)));
+    return Object.assign({}, got, { replies: rs, prompts: ps });
+  }
+  function olderRowHTML(id) {
+    const o = older(id);
+    if (!o.more) return "";
+    if (o.busy) return '<button type="button" id="m-older" class="older busy" disabled>loading older&hellip;</button>';
+    if (o.failed) return '<button type="button" id="m-older" class="older failed">could not load older. tap to retry</button>';
+    return '<button type="button" id="m-older" class="older">load older</button>';
+  }
+
   function repliesHTML(t, got) {
     const who = whoOf(t);
+    if (got && !got.failed) got = withOlder(openId, got);
+    const row = got && !got.failed ? olderRowHTML(openId) : "";
     if (!got) return '<div class="replies loading" aria-busy="true"><div class="sk"></div><div class="sk s2"></div></div>';
     if (got.failed) {
       // The endpoint is not on this room yet, or it failed. The recap and the last report stand in for it.
@@ -267,8 +307,8 @@
       .filter(i => !i.mine || !ops.some(p => sameText(p.text, i.mine.text) && Math.abs(U.ts(p.at) - U.ts(i.mine.at)) <= 60000))
       .concat(prompts.filter(p => U.ts(p.at) >= since).map(p => ({ p, at: U.ts(p.at) })))
       .sort((a, b) => a.at - b.at);
-    if (!items.length) return '<div class="replies">' + fallbackHTML(t) + "</div>";
-    return '<div class="replies">' + items.map(i => i.p ? promptHTML(i.p) : i.mine ? ownHTML(i.mine) : replyHTML(i.r, screen, who)).join("") + "</div>";
+    if (!items.length) return '<div class="replies">' + row + fallbackHTML(t) + "</div>";
+    return '<div class="replies">' + row + items.map(i => i.p ? promptHTML(i.p) : i.mine ? ownHTML(i.mine) : replyHTML(i.r, screen, who)).join("") + "</div>";
   }
 
   // ── painting ─────────────────────────────────────────────────────────────
@@ -386,6 +426,7 @@
   function onScroll() {
     if (!els || !openId) return;
     if (typing) { if (Date.now() - userAt < 1500) pinTop = els.scroll.scrollTop; else pinned(); }
+    if (els.scroll.scrollTop < 40 && Date.now() - userAt < 1500) nearTop();
     const gap = els.scroll.scrollHeight - els.scroll.scrollTop - els.scroll.clientHeight;
     if (gap < NEAR) { stick = true; els.jump.hidden = true; return; }
     if (Date.now() - userAt < 1500) { stick = false; els.jump.hidden = false; }
@@ -419,7 +460,55 @@
     }
     if (mine !== seq || id !== openId) return;
     cache.set(id, got);
+    const o = older(id);
+    if (!got.failed && !o.pages) { o.more = !!got.more; o.next = got.next_before || ""; o.failed = false; }
     paintReplies();
+  }
+
+  // One request per click or scroll to the top, never a loop: a read can cover a lot of transcript. A page with more
+  // may be empty, and the cursor still moves on to the next click. Only more=false ends it.
+  async function loadOlder() {
+    const id = openId;
+    if (!id || !els) return;
+    const o = older(id);
+    if (o.busy || !o.more || !o.next) return;
+    o.busy = true; o.failed = false;
+    paintReplies();
+    const mine = seq;
+    let r = null;
+    try {
+      r = await window.mNet.api("/v1/tasks/" + encodeURIComponent(id) + "/replies?n=" + OLDER_N + "&before=" + encodeURIComponent(o.next));
+      if (!r || !Array.isArray(r.replies)) r = null;
+    } catch (e) { r = null; }
+    o.busy = false;
+    if (id !== openId) return;
+    if (!r) { o.failed = true; paintReplies(); return; }
+    // the bubble at the top of the view stays where it is
+    const sc = els.scroll, top = sc.getBoundingClientRect().top;
+    const first = Array.from(els.replies.querySelectorAll("[data-k]")).find(e => e.getBoundingClientRect().bottom > top + 1);
+    const was = first ? { k: first.dataset.k, y: first.getBoundingClientRect().top } : null;
+    o.replies = r.replies.concat(o.replies);
+    o.prompts = (Array.isArray(r.prompts) ? r.prompts : []).concat(o.prompts);
+    o.more = !!r.more;
+    o.next = r.more ? (r.next_before || "") : "";
+    if (r.more && !o.next) o.more = false;
+    o.pages++;
+    paintReplies();
+    if (was && !stick) {
+      const el = Array.from(els.replies.querySelectorAll("[data-k]")).find(e => e.dataset.k === was.k);
+      if (el) { sc.scrollTop += el.getBoundingClientRect().top - was.y; if (typing) pinTop = sc.scrollTop; }
+    }
+  }
+  // Reaching the top asks once, after a short wait, and never while a read is in flight.
+  let topTimer = 0;
+  function nearTop() {
+    if (topTimer || !els || !openId) return;
+    const o = older(openId);
+    if (!o.more || o.busy || o.failed) return;
+    topTimer = setTimeout(() => {
+      topTimer = 0;
+      if (els && openId && els.scroll.scrollTop < 40) loadOlder();
+    }, 350);
   }
 
   function onCards() {
@@ -706,6 +795,7 @@
     els.sheet.addEventListener("focusout", e => { if (e.target && e.target.classList && e.target.classList.contains("mc-box")) typingOff(); });
     window.addEventListener("m-send", e => { if (e.detail && e.detail.state === "pending") typingOff(); });
     els.head.addEventListener("click", e => { if (e.target.closest && e.target.closest("#m-recap-open")) openRecap(); });
+    els.replies.addEventListener("click", e => { if (e.target.closest && e.target.closest("#m-older")) loadOlder(); });
     els.recap.addEventListener("click", e => {
       if (e.target.id === "m-recap-back" || (e.target.closest && e.target.closest("#m-recap-close"))) closeRecap();
     });
