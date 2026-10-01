@@ -13726,6 +13726,16 @@ async function mSwitcherSection(browser) {
     await p.waitForSelector("#m-card-menu:not([hidden])", { timeout: slow(3000) });
     const kept = await p.$$eval("#m-card-menu .pm-chip", e => e.map(x => x.getAttribute("aria-pressed")).join(","));
     if (kept !== "true,true,false,true,false") fail(tag + "the chips were not remembered: " + kept);
+    // a stored choice that holds only keys this page does not know falls back to the default, not an empty list
+    await p.evaluate(() => localStorage.setItem("atrium.mswitch", JSON.stringify(["gone", "alsogone"])));
+    await p.tap("#m-card-pick");
+    await p.waitForFunction(() => document.getElementById("m-card-menu").hidden, null, { timeout: slow(3000) });
+    await p.tap("#m-card-pick");
+    await p.waitForSelector("#m-card-menu:not([hidden])", { timeout: slow(3000) });
+    const fall = (await names()).sort();
+    if (JSON.stringify(fall) !== JSON.stringify(["need-1", "need-2", "need-3", "run-2", "run-3"])) fail(tag + "unknown stored keys did not fall back to the default: " + fall.join(","));
+    const fallChips = await p.$$eval("#m-card-menu .pm-chip", e => e.map(x => x.getAttribute("aria-pressed")).join(","));
+    if (fallChips !== "true,true,false,false,false") fail(tag + "the default chips were not shown: " + fallChips);
     // a tap on the backdrop closes it, and a tap on the pick button does too
     await p.tap("#m-card-menu-back", { position: { x: 200, y: 800 } });
     await p.waitForFunction(() => document.getElementById("m-card-menu").hidden, null, { timeout: slow(3000) });

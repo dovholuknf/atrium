@@ -584,7 +584,8 @@
   function pickSet() {
     try {
       const a = JSON.parse(localStorage.getItem(PICK_KEY) || "null");
-      if (Array.isArray(a) && a.length) return new Set(a.filter(k => PICK_CHIPS.some(c => c[0] === k)));
+      const known = Array.isArray(a) ? a.filter(k => PICK_CHIPS.some(c => c[0] === k)) : [];
+      if (known.length) return new Set(known);
     } catch (e) {}
     return new Set(["running", "needs"]);
   }
