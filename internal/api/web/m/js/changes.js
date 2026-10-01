@@ -16,6 +16,7 @@
 
   const U = window.mUtil;
   const HUNK_SHOW = 40;   // a hunk longer than this is folded with a "show full hunk" under it
+  const BAR_MIN = 6;      // the least width, in percent, a bar with any change in it is drawn at
   const PARTIAL = "may miss changes made by commands (sed, generate, checkout)";
 
   let els = null;
@@ -163,19 +164,22 @@
     body.appendChild(head);
     // Said once, at the top, and not on the chip: the agent is still going, or a turn's list may be missing command changes.
     if (card && card.status === "running") body.appendChild(note("the agent is still working"));
-    if (v.kind === "turn" && d.partial) body.appendChild(note(PARTIAL, "cg-grey"));
+    // The room's own `why` already starts with the shell-command sentence, so ours is left out when it is there.
+    const whySaysIt = !!d.why && /shell command/.test(d.why);
+    if (v.kind === "turn" && d.partial && !whySaysIt) body.appendChild(note(PARTIAL, "cg-grey"));
     // What the room said about this answer, such as commits that may be missing, is its own line.
-    if (v.kind === "turn" && d.why && d.why !== PARTIAL) body.appendChild(note(d.why, "cg-grey"));
+    if (v.kind === "turn" && d.why) body.appendChild(note(d.why, "cg-grey"));
     if (d.note) body.appendChild(note(d.note, "cg-grey"));
     if (d.outside > 0) body.appendChild(note(plural(d.outside, "edit") + " outside this card's folder " + (d.outside === 1 ? "is" : "are") + " not shown", "cg-grey"));
     // One line for what the bounds cut, with the reason once.
     if (d.cut && (d.cut.files > 0 || d.cut.hunks > 0)) {
       const parts = [];
       if (d.cut.files > 0) parts.push(plural(d.cut.files, "more file") + " not listed");
-      if (d.cut.hunks > 0) parts.push(plural(d.cut.hunks, "file") + " show counts only");
+      if (d.cut.hunks > 0) parts.push(d.cut.hunks + (d.cut.hunks === 1 ? " file shows" : " files show") + " counts only");
       body.appendChild(note(parts.join(", ") + (d.cut.why ? " (" + d.cut.why + ")" : ""), "cg-grey"));
     }
     if (!files.length) { body.appendChild(note("no changes")); return; }
+    // Bars run on a square root scale with a floor, so one huge file leaves the small ones a bar. The numbers beside them are exact.
     const max = Math.max(1, ...files.map(f => (f.added || 0) + (f.removed || 0)));
     const list = el("div", "cg-files");
     files.forEach(f => {
@@ -186,9 +190,9 @@
       row.appendChild(el("span", "cg-stat", f.status === "binary" ? "binary" : "+" + (f.added || 0) + " -" + (f.removed || 0)));
       row.appendChild(el("span", "cg-status", f.status + (f.old_path ? " from " + f.old_path : "")));
       const bar = el("span", "cg-bar");
-      const w = ((f.added || 0) + (f.removed || 0)) / max * 100;
-      const add = el("i", "cg-add"), del = el("i", "cg-del");
       const tot = (f.added || 0) + (f.removed || 0);
+      const w = tot ? Math.max(BAR_MIN, Math.sqrt(tot / max) * 100) : 0;
+      const add = el("i", "cg-add"), del = el("i", "cg-del");
       add.style.width = (tot ? w * (f.added || 0) / tot : 0) + "%";
       del.style.width = (tot ? w * (f.removed || 0) / tot : f.status === "binary" ? 8 : 0) + "%";
       bar.append(add, del);
@@ -270,10 +274,12 @@
   // A tapped line goes to the composer as a chip, and the line shows it. Tapping it again takes the chip off.
   function comment(v, f, r, row) {
     if (!window.mCompose || !window.mCompose.addComment) return;
+    // Read before addComment: taking a chip off fires m-comment-removed, whose handler clears the key and the mark itself.
+    const k = row.dataset.key;
+    const was = v.sel.has(k);
     const ok = window.mCompose.addComment({ path: f.path, line: r.no, kind: r.k, text: r.text, where: cmtWhere(v), head: headSha(v) });
     if (!ok) return;
-    const k = row.dataset.key;
-    if (v.sel.has(k)) { v.sel.delete(k); row.classList.remove("on"); }
+    if (was) { v.sel.delete(k); row.classList.remove("on"); }
     else { v.sel.add(k); row.classList.add("on"); }
   }
 

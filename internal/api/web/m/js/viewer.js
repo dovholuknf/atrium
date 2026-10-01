@@ -211,6 +211,7 @@
     } catch (e) { say("could not read that file", "v-err"); return; }
     if (mine !== seq) return;
     const cut = !!buf && (total != null ? total > buf.length : over);
+    if (text === "" && !cut) { say("empty file (0 bytes)"); return; }
     const wrap = el("div", "v-doc");
     if (kind === "markdown") {
       const holder = el("div", "md");

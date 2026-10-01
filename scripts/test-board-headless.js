@@ -17270,6 +17270,7 @@ async function mViewerSection(browser) {
   st.files = {
     "/w/card/notes/plan.md": Buffer.from("# The plan\n\n## Steps\n\n- one\n- see [other](/w/card/a.txt)\n\n<script>window.__pwn = 1</script>\n"),
     "/w/card/a.txt": Buffer.from("plain text\n  indented <b>not bold</b>\n"),
+    "/w/card/empty.txt": Buffer.alloc(0),
     "/w/card/data.json": Buffer.from('{"a":1,"b":[1,2]}'),
     "notes/shot.png": M_PNG,
     "/w/card/big.log": big,
@@ -17287,7 +17288,7 @@ async function mViewerSection(browser) {
   st.noSize = ["notes/huge.png"];
   const filler = Array.from({ length: 40 }, (_, i) => "Filler paragraph " + i + " so that the thread scrolls.").join("\n\n");
   const text = filler + "\n\nFiles: /w/card/notes/plan.md and /w/card/a.txt and /w/card/data.json and [a shot](notes/shot.png) and /w/card/big.log and /w/card/mid.log and /w/card/accent.txt and /w/card/latin.txt and /w/card/ignores.log and [huge](notes/huge.png) and " +
-    "/w/card/pack.zip and /w/card/bin.log and /w/card/code.html and [gone](notes/gone.md) and [missing](notes/missing.md).";
+    "/w/card/pack.zip and /w/card/bin.log and /w/card/code.html and /w/card/empty.txt and [gone](notes/gone.md) and [missing](notes/missing.md).";
   st.replies["vw-1"] = { source: "transcript", replies: [{ at: mIso(10 * M_MIN), text }] };
   await st.open();
   try {
@@ -17414,6 +17415,10 @@ async function mViewerSection(browser) {
       await p.evaluate(() => [...document.querySelectorAll("#m-replies .md-file")].find(b => /gone/.test(b.textContent)).click());
       await settle();
       if (!/not in this card's folder, or not readable/.test((await viewer()).text)) fail(tag + "outside the card says " + (await viewer()).text);
+      await back();
+      await p.evaluate(s => document.querySelector(s).click(), file("empty.txt"));
+      await settle();
+      if (!/empty file/.test((await viewer()).text) || await p.$("#m-viewer-body pre")) fail(tag + "an empty file shows " + JSON.stringify((await viewer()).text));
       await back();
       await p.evaluate(() => [...document.querySelectorAll("#m-replies .md-file")].find(b => /missing/.test(b.textContent)).click());
       await settle();
@@ -17583,8 +17588,8 @@ async function mChangesSection(browser) {
   ];
   st.changesFor = (card, q) => {
     if (card !== "cg-1") return { status: 404, body: { error: "this card's directory is not a git worktree" } };
-    if (q.get("turn")) return { status: 200, body: { against: "turn", base: "aaaaaaa1", head: "1a2b3c4d5e", dirty: true, total: files.length, files, partial: true, why: "a commit in the turn's window has an author date outside it, so commits may be missing", outside: 2 } };
-    if (q.get("against") === "base") return { status: 200, body: { against: "base", base: "bbbbbbb2", head: "1a2b3c4d5e", dirty: false, total: 1, files: [files[3]] } };
+    if (q.get("turn")) return { status: 200, body: { against: "turn", base: "aaaaaaa1", head: "1a2b3c4d5e", dirty: true, total: files.length, files, partial: true, why: "changes made by a shell command are not included; a commit in the turn's window has an author date outside it, so commits may be missing", outside: 2 } };
+    if (q.get("against") === "base") return { status: 200, body: { against: "base", base: "bbbbbbb2", head: "1a2b3c4d5e", dirty: false, total: 1, files: [files[3]], cut: { files: 0, hunks: 1, why: "a file over 256 KB is not sent" } } };
     return { status: 200, body: { against: "head", base: "aaaaaaa1", head: "1a2b3c4d5e", dirty: true, total: 403, files: files.slice(0, 2), cut: { files: 401, hunks: 2, why: "over 400 files" } } };
   };
   st.files = { "docs/shot.png": M_PNG, "src/big.js": Buffer.from("x\n") };
@@ -17616,7 +17621,12 @@ async function mChangesSection(browser) {
       let sh = await sheet();
       if (!sh.open || sh.state !== "list" || !/^Turn \d\d:\d\d$/.test(sh.title)) fail(tag + "the sheet is " + JSON.stringify({ open: sh.open, state: sh.state, title: sh.title }));
       if (!/^7 files edited \+904 -8/.test(sh.text)) fail(tag + "the totals say " + sh.text.slice(0, 40));
-      if ((sh.text.match(/may miss changes made by commands \(sed, generate, checkout\)/g) || []).length !== 1) fail(tag + "the partial line is not said exactly once");
+      if (/may miss changes made by commands/.test(sh.text) || (sh.text.match(/shell command/g) || []).length !== 1) fail(tag + "the partial fact is not said exactly once: " + sh.text.slice(0, 300));
+      // 5f: a file that dwarfs the rest leaves the small ones a visible bar, and the numbers stay exact
+      const bars = await p.$$eval("#m-changes-body .cg-file", e => e.map(r => ({ p: r.dataset.path, w: [...r.querySelectorAll(".cg-bar i")].reduce((a, i) => a + parseFloat(i.style.width || 0), 0), s: r.querySelector(".cg-stat").textContent })));
+      const small = bars.filter(b => /card\.js|new\.txt|gone\.go/.test(b.p));
+      if (small.length !== 3 || small.some(b => b.w < 5)) fail(tag + "a small file has no visible bar next to a big one: " + JSON.stringify(bars));
+      if (!bars.some(b => /big\.js/.test(b.p) && b.s === "+900 -3") || !bars.some(b => /card\.js/.test(b.p) && b.s === "+1 -1")) fail(tag + "the counts are not exact: " + JSON.stringify(bars));
       if (!/2 edits outside this card's folder are not shown/.test(sh.text)) fail(tag + "outside is not said");
       if (/all uncommitted edits/.test(sh.text)) fail(tag + "cumulative shows in the list");
       if ((sh.text.match(/commits may be missing/g) || []).length !== 1) fail(tag + "the room's why is not shown once: " + sh.text.slice(0, 200));
@@ -17644,6 +17654,11 @@ async function mChangesSection(browser) {
       // a second tap takes a line off, and so does its chip
       await p.evaluate(() => document.querySelectorAll("#m-changes-body .cg-row")[0].click());
       if ((await p.$$eval("#m-compose .mc-cmt", e => e.length)) !== 2) fail(tag + "tapping a line twice did not take its chip off");
+      // 5l: and the line is unmarked, so the marks say what will be sent, and a third tap quotes it again
+      if ((await p.$$eval("#m-changes-body .cg-row.on", e => e.length)) !== 2 || (await p.$eval("#m-changes-body .cg-row", e => e.classList.contains("on")))) fail(tag + "the line stayed marked after its second tap");
+      await p.evaluate(() => document.querySelectorAll("#m-changes-body .cg-row")[0].click());
+      if ((await p.$$eval("#m-compose .mc-cmt", e => e.length)) !== 3 || (await p.$$eval("#m-changes-body .cg-row.on", e => e.length)) !== 3) fail(tag + "the third tap did not quote the line again and mark it");
+      await p.evaluate(() => document.querySelectorAll("#m-changes-body .cg-row")[0].click());
       await p.fill("#m-compose textarea", "why 10?");
       await p.evaluate(() => document.querySelector("#m-compose textarea").dispatchEvent(new Event("input", { bubbles: true })));
       await p.tap("#m-compose .mc-send");
@@ -17726,6 +17741,8 @@ async function mChangesSection(browser) {
       await p.evaluate(() => [...document.querySelectorAll(".cg-toggle button")].find(b => /since base/.test(b.textContent)).click());
       await wait(() => document.querySelectorAll("#m-changes-body .cg-file").length === 1);
       if (st.changeReqs.length !== 2 || st.changeReqs[1].search !== "?against=base") fail(tag + "since base asked " + JSON.stringify(st.changeReqs));
+      // 5g: one file cut reads "1 file shows counts only", the reason once and no count inside it
+      if (!/1 file shows counts only \(a file over 256 KB is not sent\)/.test((await sheet()).text) || /1 files/.test((await sheet()).text)) fail(tag + "the singular cut note reads " + (await sheet()).text);
       // refreshed when the card stops, and said while it works
       st.tasks[0] = Object.assign({}, c1, { status: "running", activity: { what: "tool", tool: "Edit", seconds: 1 } });
       st.send("task", Object.assign({ row: 1 }, st.tasks[0]));

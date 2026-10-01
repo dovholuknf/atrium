@@ -137,6 +137,10 @@ func (x *turnIndex) feed(line []byte) {
 	if len(line) > 8<<20 {
 		return
 	}
+	if p, ok := queuedPromptOf(line); ok {
+		x.prompts = append(x.prompts, p.At)
+		return
+	}
 	user := bytes.Contains(line, []byte(`"user"`))
 	if !user && !bytes.Contains(line, []byte(`"assistant"`)) {
 		return
