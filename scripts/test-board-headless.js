@@ -15638,41 +15638,101 @@ async function termBoxSection(browser, base) {
     await p.goto(base + "/", { waitUntil: "domcontentloaded" });
     await p.waitForFunction(() => typeof termTrayHTML === "function" && typeof renderTermList === "function",
       null, { timeout: slow(15000) });
-    const out = await p.evaluate(async () => {
-      const card = (id, status, extra) => ({ id, status, supervised: false, pinned: false, title: id,
-        display_title: id, tags: [], ...extra });
-      const sets = {
-        none: [],
-        supervisedOnly: [card("sv", "running", { supervised: true })],
-        joinedUnpinned: [card("jn", "needs-input")],
-        someHidden: [card("sv", "running", { supervised: true }), card("xp", "done", { pinned: true }),
-          card("jn", "needs-input")],
-        allHidden: [card("x1", "done", { pinned: true }), card("x2", "dead", { pinned: true })]
-      };
-      const res = {};
-      for (const hide of ["none", "on"]) {
-        for (const [name, cards] of Object.entries(sets)) {
-          boardCards = async () => cards;
-          setHideAgents(hide);
-          await renderTermList();
-          const bar = document.querySelector("#term-list .traybar");
-          res[hide + "/" + name] = bar ? {
-            pills: [...bar.querySelectorAll(".tbarhide button")].map(b => b.textContent.trim()),
-            lit: bar.querySelectorAll(".tbarhide button.on").length
-          } : null;
+    await p.evaluate(() => switchView("terms"));
+    for (const w of [260, 150]) {
+      const out = await p.evaluate(async (w) => {
+        const card = (id, status, extra) => ({ id, status, supervised: false, pinned: false, title: id,
+          display_title: id, tags: [], ...extra });
+        const sets = {
+          supervisedOnly: [card("sv", "running", { supervised: true })],
+          joinedUnpinned: [card("jn", "needs-input")],
+          someHidden: [card("sv", "running", { supervised: true }), card("xp", "done", { pinned: true }),
+            card("jn", "needs-input")],
+          allHidden: [card("x1", "done", { pinned: true }), card("x2", "dead", { pinned: true })]
+        };
+        localStorage.setItem(termDeviceKey("atrium.termtray"), "open");
+        const res = {};
+        for (const hide of ["none", "on"]) {
+          for (const group of [true, false]) {
+            for (const [name, cards] of Object.entries(sets)) {
+              boardCards = async () => cards;
+              setHideAgents(hide);
+              setHideSubagents(hide);
+              setGroupMode(group ? "project" : "off");
+              await renderTermList();
+              setTermW(w);
+              await new Promise(r => requestAnimationFrame(r));
+              const tray = document.querySelector("#term-list .termtray");
+              const r = el => el.getBoundingClientRect();
+              const tb = tray ? r(tray) : null;
+              const toggle = tray && tray.querySelector(".traytoggle");
+              const arrows = tray ? [...tray.querySelectorAll(".tlcycle")] : [];
+              const btns = tray ? [...tray.querySelectorAll(".trayrows button")] : [];
+              res[`${hide}/${group ? "grouped" : "flat"}/${name}`] = tray ? {
+                sum: (tray.querySelector(".traysum") || {}).textContent || "",
+                sort: tray.querySelectorAll(".trayrow .seg:not(.termhide):not(.groupseg) button").length,
+                hide: tray.querySelectorAll(".termhide button").length,
+                group: tray.querySelectorAll("#term-group-tray button").length,
+                arrows: arrows.length,
+                overrun: btns.filter(b => r(b).right > tb.right + 1 || r(b).left < tb.left - 1).length,
+                summaryOverArrow: toggle && arrows.length ? r(toggle).right > r(arrows[0]).left + 1 : false,
+                arrowOut: arrows.some(a => r(a).right > tb.right + 1),
+                wide: Math.round(tb.width)
+              } : null;
+            }
+          }
         }
+        setHideAgents("none"); setHideSubagents("none"); setGroupMode("project");
+        return res;
+      }, w);
+      for (const [k, v] of Object.entries(out)) {
+        const tag = "termBox " + w + "px " + k + ": ";
+        if (!v) { fail(tag + "no tray is drawn."); continue; }
+        if (!/^sorted by/.test(v.sum)) fail(tag + "the summary line is missing: " + JSON.stringify(v.sum));
+        if (v.sort !== 2 || v.hide !== 2 || v.group < 6) fail(tag + "the tray lacks sort, hide or group: " + JSON.stringify(v));
+        if (!v.arrows) fail(tag + "the width buttons are gone.");
+        if (w === 150 && v.wide > 160) fail(tag + "the list is not at its narrowest, so the overrun check proves nothing: " + v.wide);
+        if (v.overrun || v.summaryOverArrow || v.arrowOut) fail(tag + "the tray overruns the box or the shrink button: " + JSON.stringify(v));
+        if (k.startsWith("on/") && k.endsWith("allHidden") && !/hiding inactive agents, subagents \(2\)/.test(v.sum)) {
+          fail(tag + "the summary does not count what is hidden: " + JSON.stringify(v.sum));
+        }
+        if (k.startsWith("none/") && !/hiding nothing/.test(v.sum)) fail(tag + "the summary says something is hidden: " + JSON.stringify(v.sum));
+        if (k.includes("/flat/") && !/ungrouped/.test(v.sum)) fail(tag + "the summary does not say ungrouped: " + JSON.stringify(v.sum));
       }
-      setHideAgents("none");
-      return res;
+    }
+    // The tray's controls drive the same state the gear's copy shows, and the summary folds the tray.
+    const click = await p.evaluate(async () => {
+      boardCards = async () => [{ id: "sv", status: "running", supervised: true, pinned: false, title: "sv",
+        display_title: "sv", tags: [] }];
+      setHideAgents("none"); setHideSubagents("none"); setGroupMode("project");
+      if (sortByActivity) toggleTermSort();
+      await renderTermList();
+      const tray = () => document.querySelector("#term-list .termtray");
+      const press = async (sel, text) => {
+        [...tray().querySelectorAll(sel)].find(b => b.textContent.trim().startsWith(text)).click();
+        await new Promise(r => setTimeout(r, 50));
+      };
+      await press(".trayrow button", "activity");
+      const sort = sortByActivity;
+      await press(".termhide button", "agents");
+      const hide = hideAgentsMode();
+      await press("#term-group-tray button", "off");
+      const grouped = groupingPrefs().on;
+      paintTermGear();
+      const gear = {
+        sort: sortByActivity === ([...document.querySelectorAll("#gear-term-sort button.on")][0] || { textContent: "" })
+          .textContent.trim().startsWith("activity"),
+        hide: document.querySelectorAll("#gear-term-hide button.on").length
+      };
+      const was = termTrayOpen();
+      tray().querySelector(".traytoggle").click();
+      const folded = termTrayOpen() !== was;
+      setHideAgents("none"); setGroupMode("project"); if (sortByActivity) toggleTermSort();
+      return { sort, hide, grouped, gear, folded };
     });
-    for (const [k, v] of Object.entries(out)) {
-      if (k.endsWith("/none")) continue;
-      if (!v || v.pills.length !== 2) fail("termBox: the list's box has no hide controls with " + k + ": " + JSON.stringify(v));
+    if (!click.sort || click.hide !== "on" || click.grouped || !click.gear.sort || click.gear.hide < 1 || !click.folded) {
+      fail("termBox: the tray's clicks do not drive the same state as the gear: " + JSON.stringify(click));
     }
-    if (out["on/allHidden"] && out["on/allHidden"].pills[0] !== "agents (2)") {
-      fail("termBox: the box does not count the hidden agents: " + JSON.stringify(out["on/allHidden"]));
-    }
-    if (out["on/someHidden"] && out["on/someHidden"].lit < 1) fail("termBox: a lit pill is not lit in the box.");
     if (errors.length) fail("termBox: page errors: " + errors.join(" | "));
   } finally { await ctx.close(); }
   if (!bad) console.log("termBox ok");
@@ -15697,7 +15757,7 @@ async function gearTermListSection(browser, base) {
         hide: document.querySelectorAll("#gear-term-hide button").length,
         group: document.querySelectorAll("#term-group button").length,
         cache: !!document.getElementById("cache-line-gear"),
-        inList: document.querySelectorAll("#term-list .traysum, #term-list .cacheline, #term-list .trayseg").length
+        inList: document.querySelectorAll("#term-list .cacheline").length
       }));
       if (!f.shown || f.sort !== 2 || f.hide !== 2 || f.group < 6 || !f.cache) fail(tag + "the section is wrong: " + JSON.stringify(f));
       if (f.inList) fail(tag + "the list still has the old row or line.");
@@ -17702,7 +17762,10 @@ async function main() {
         listOverflow: getComputedStyle(list).overflowY,
         scrollOverflow: scroll ? getComputedStyle(scroll).overflowY : "",
         widthBtns: tray ? tray.querySelectorAll(".traybar .tlcycle").length : 0,
-        leftovers: list.querySelectorAll(".traysum, .traytoggle, .traybody, .cacheline, .trayseg, #term-group, .trayrow").length
+        cacheLine: list.querySelectorAll(".cacheline").length,
+        folded: !!list.querySelector(".termtray:not(.open)"),
+        sum: ((tray && tray.querySelector(".traysum")) || {}).textContent || "",
+        bodyInert: !!list.querySelector(".termtray .traybody[inert]")
       };
     });
     if (!trayShut.tray || !trayShut.scroll || trayShut.trayInScroll || !trayShut.trayFirst) {
@@ -17712,8 +17775,11 @@ async function main() {
         trayShut.scrollOverflow !== "auto") {
       fail("the list still scrolls under its bar: " + JSON.stringify(trayShut));
     }
-    if (trayShut.leftovers) {
-      fail("the list still carries the sort, hide, group or cache controls: " + JSON.stringify(trayShut));
+    if (!trayShut.folded || !/^sorted by/.test(trayShut.sum) || !trayShut.bodyInert) {
+      fail("the tray is not folded to its summary line by default: " + JSON.stringify(trayShut));
+    }
+    if (trayShut.cacheLine) {
+      fail("the list still carries the cache line, which lives in the gear: " + JSON.stringify(trayShut));
     }
     if (trayShut.widthBtns < 1) {
       fail("the list's width buttons are not on its bar: " + JSON.stringify(trayShut));
