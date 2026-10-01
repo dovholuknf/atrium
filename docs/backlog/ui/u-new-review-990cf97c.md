@@ -48,3 +48,20 @@ Quality: after the Sonnet switch. The paging contract is followed exactly, inclu
 (the refreshed window and the accumulated pages) with nothing keeping the seam between them closed.
 
 HOLD 5786991e
+
+## Re-read of 22157cc3 (@ui, medium 1)
+
+`git diff 990cf97c 22157cc3 -- internal/api/web`, read only.
+
+- `loadReplies` folds the window it is about to replace into `o.replies` and `o.prompts`, deduped by time and text
+  and sorted, once the card has older pages. Nothing that was on screen leaves the thread when a refresh moves the
+  newest window on. Before the first older page, nothing is folded and the thread is the newest 50, as before.
+- `finishClose` deletes the card's `olderOf` entry, so a reopen starts from its own first window and cursor. A
+  `loadOlder` still in flight at the close returns on `id !== openId`, or writes only into the dropped object.
+- Two `mOlder` cases cover both paths, and each fails without the fix.
+
+Medium 1 is closed. Nit 2 stands.
+
+Quality: after the Sonnet switch. The fix is exactly the seam named, with a test for each path. No drop seen.
+
+HUB DEPLOY OK 5786991e~1..22157cc3
