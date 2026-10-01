@@ -21,7 +21,7 @@ A **version**:
 ```
 
 - `origin` is `local`, `share` or `card`. `card` is present only for `card` and is `room~id`, the card URL form.
-- `by` is the card's handle for `card`, and the word `operator` for `local` and `share`. Show the ORIGIN, not `by`,
+- `by` is the card's handle for `card`, and the word `operator` for `local` and `share` for a share. Show the ORIGIN, not `by`,
   when deciding how much to trust a version. Only `local` may be called clint.
 - `kind` is `markdown`, `text`, `image`, `diff` or `other`. `mime` is what the hub worked out. `name` is the file name
   the author gave, possibly empty.
@@ -35,7 +35,8 @@ A **document summary** (list rows):
  "latest": { ...a version... }, "deleted": null}
 ```
 
-`deleted` is `null` or `{"at": "...", "by": "operator"}`.
+`deleted` is `null` or `{"at": "...", "by": "operator"}`. `by` follows the same rule as a version's: `share` when the
+tombstone came over the share.
 
 ## Routes
 
@@ -49,7 +50,7 @@ A **document summary** (list rows):
 | `POST /_hub/docs/<slug>/title` | any | JSON `{"title": "..."}`. Renames. The slug never changes. |
 | `POST /_hub/docs/<slug>/delete` | any | Tombstone. `{"ok": true}`. |
 | `POST /_hub/docs/<slug>/restore` | any, but see below | Undo a tombstone. A document with a PURGED version is restored by the operator only. |
-| `POST /_hub/docs/<slug>/purge?v=<n>` | operator only | Delete the bytes of version n, or of every version without `v`. Metadata stays, `purged` becomes true. |
+| `POST /_hub/docs/<slug>/purge?v=<n>` | operator only | Delete the bytes of version n, or of every version without `v`. Metadata stays, `purged` becomes true. Versions with the same bytes share one file, so the answer carries `"also": []`, the other versions purged with it as `slug@n`. |
 | `GET /_hub/docs/settings` | any | `{"operator": true, "enabled": true, "caps": {"text": 5242880, "other": 20971520, "total": 2147483648, "per_card_hour": 30}, "usage": {"bytes": N, "docs": N, "versions": N}, "largest": [{"slug", "title", "bytes"}]}`. `operator` says whether THIS request may change settings and purge, so the gear can grey the controls. |
 | `PUT /_hub/docs/settings` | operator only | `{"enabled": bool, "caps": {...}}`, any subset. Answers the same shape as the GET. |
 
@@ -84,11 +85,11 @@ Every refusal is JSON `{"error": "<a sentence>"}` and the status says the kind. 
 | 400 | unreadable form, no file, an empty file, a title that leaves no text |
 | 403 | not the operator for purge, settings or an override. A cross-origin write (`Origin` another host or `Sec-Fetch-Site: cross-site`). From `atrium_publish`, a path outside the card or through a symlink |
 | 404 | an unknown slug or version |
-| 410 | raw bytes of a tombstoned, missing or purged version |
+| 410 | raw bytes of a tombstoned, missing or purged version, and a new version to a tombstoned document (restore it first) |
 | 413 | over the size cap for the kind: 5 MiB of text, 20 MiB of anything else |
 | 422 | a secret rule: `{"error": "...", "rule": "pem-private-key"}`. Rules: `secret-file-name`, `pem-private-key`, `github-token`, `aws-access-key`, `slack-token`, `jwt`, `zrok-token`. Applies to a board upload too |
 | 429 | a card past 30 publishes an hour (publish only, not board uploads) |
-| 503 | publishing turned off by the operator, with the reason |
+| 503 | publishing turned off by the operator. The sentence is fixed, there is no reason field |
 | 507 | the store is at its total cap |
 
 ## Concurrency and the browser
