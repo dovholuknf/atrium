@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dovholuknf/atrium/internal/prreview/render"
+	prrender "github.com/dovholuknf/atrium/internal/prreview/render"
 	"github.com/dovholuknf/atrium/internal/store"
 )
 
@@ -24,7 +24,7 @@ import (
 // folder, primes ONE claude session with the whole bundle, and then every
 // reviewer, verifier and critic is a one-shot fork of that session, the way
 // keep-alive forks a card (keepalive.go). Reviewers return JSON, and step 8 is
-// Go: render.Render writes the finding files and walk.txt.
+// Go: prrender.Render writes the finding files and walk.txt.
 //
 // Every move of the row goes through store.MovePR with the states it may come
 // from. An abort marks the row `aborted` before it calls Abort, so a runner that
@@ -248,12 +248,13 @@ type prRun struct {
 	spent   float64
 	cap     float64
 
-	common []string
-	env    []string
-	files  []prFile
-	raw    []render.Finding
-	verd   []prVerdict
-	final  []render.Finding
+	commonMu sync.Mutex
+	common   []string
+	env      []string
+	files    []prFile
+	raw      []prrender.Finding
+	verd     []prVerdict
+	final    []prrender.Finding
 }
 
 type prFile struct {
@@ -738,6 +739,8 @@ func (r *prRunner) agentBody(name string) (string, error) {
 // forkCommon is the part of the command line the prime and every fork share, so
 // they share a cache prefix: the lean flags, and read-only tools.
 func (pr *prRun) forkCommon() error {
+	pr.commonMu.Lock()
+	defer pr.commonMu.Unlock()
 	if pr.common != nil {
 		return nil
 	}
@@ -938,7 +941,7 @@ func (pr *prRun) prime() error {
 // ---- 3 panel ----
 
 type prFindings struct {
-	Findings []render.Finding `json:"findings"`
+	Findings []prrender.Finding `json:"findings"`
 }
 
 func (pr *prRun) panel() error {
@@ -984,7 +987,7 @@ func (pr *prRun) panel() error {
 		pr.review.Panel = append(pr.review.Panel, j.agent)
 	}
 	pr.mu.Unlock()
-	got := make([][]render.Finding, len(jobs))
+	got := make([][]prrender.Finding, len(jobs))
 	errs := parallel(len(jobs), func(i int) error {
 		text, err := pr.fork("panel", jobs[i].agent, "panel/"+jobs[i].agent, jobs[i].prompt)
 		if err != nil {
@@ -1015,7 +1018,7 @@ func (pr *prRun) panel() error {
 	if failed == len(jobs) {
 		return fmt.Errorf("every reviewer failed: %v", firstErr(errs))
 	}
-	var all []render.Finding
+	var all []prrender.Finding
 	n := 0
 	for _, fs := range got {
 		for _, f := range fs {
@@ -1087,7 +1090,7 @@ func (pr *prRun) verify() error {
 	}
 	at := map[string]int{"high": 0, "med": 1, "low": 2}
 	limit, on := at[pr.recipe.VerifyAt]
-	var eligible []render.Finding
+	var eligible []prrender.Finding
 	if on {
 		for _, f := range pr.raw {
 			if sevRank(f.Sev) <= limit {
@@ -1169,11 +1172,11 @@ func (pr *prRun) critics() error {
 		return fmt.Errorf("the recipe's critics: %w", err)
 	}
 	if len(names) == 0 {
-		return pr.writeJSON("steps/critics/out.json", prFindings{Findings: []render.Finding{}})
+		return pr.writeJSON("steps/critics/out.json", prFindings{Findings: []prrender.Finding{}})
 	}
 	consumers := pr.knownConsumers()
 	list, _ := json.MarshalIndent(pr.raw, "", " ")
-	got := make([][]render.Finding, len(names))
+	got := make([][]prrender.Finding, len(names))
 	errs := parallel(len(names), func(i int) error {
 		ask, ok := prCriticAsk[names[i]]
 		if !ok {
@@ -1205,7 +1208,7 @@ func (pr *prRun) critics() error {
 			pr.logf("critics %s failed %s", names[i], firstLine(e.Error()))
 		}
 	}
-	var all []render.Finding
+	var all []prrender.Finding
 	n := 0
 	for _, fs := range got {
 		for _, f := range fs {
@@ -1278,14 +1281,14 @@ func (pr *prRun) merge() error {
 
 // enforceProven is spec 5.6: a reviewer sets proven and verify must agree, so a
 // `code` that no verdict confirms becomes `no`.
-func (pr *prRun) enforceProven(fs []render.Finding) []render.Finding {
+func (pr *prRun) enforceProven(fs []prrender.Finding) []prrender.Finding {
 	ok := map[string]bool{}
 	for _, v := range pr.verd {
 		if (v.Verdict == "holds" || v.Verdict == "holds_at") && v.Proven == "code" {
 			ok[v.ID] = true
 		}
 	}
-	out := make([]render.Finding, len(fs))
+	out := make([]prrender.Finding, len(fs))
 	copy(out, fs)
 	for i := range out {
 		if out[i].Proven != "code" || !ok[out[i].ID] {
@@ -1298,7 +1301,7 @@ func (pr *prRun) enforceProven(fs []render.Finding) []render.Finding {
 // ---- 8 write ----
 
 // resendPrompt asks the merge fork once to fix what the renderer refused.
-func resendPrompt(final []render.Finding, rs []render.Resend) string {
+func resendPrompt(final []prrender.Finding, rs []prrender.Resend) string {
 	list, _ := json.MarshalIndent(final, "", " ")
 	var b strings.Builder
 	b.WriteString("The renderer refused some of your merged findings. Fix each one as asked, change nothing else, " +
@@ -1317,8 +1320,8 @@ func (pr *prRun) render() error {
 	if err != nil {
 		return err
 	}
-	in := render.Input{PRURL: pr.prURL(), Diff: string(diff), RunDir: pr.dir, Findings: pr.final, Raw: pr.raw}
-	res, resends, err := render.Render(in)
+	in := prrender.Input{PRURL: pr.prURL(), Diff: string(diff), RunDir: pr.dir, Findings: pr.final, Raw: pr.raw}
+	res, resends, err := prrender.Render(in)
 	if err == nil && len(resends) > 0 {
 		pr.logf("write: the renderer sent %d finding(s) back to merge", len(resends))
 		text, ferr := pr.fork("merge", "merge-resend", "merge/resend", resendPrompt(pr.final, resends))
@@ -1331,12 +1334,12 @@ func (pr *prRun) render() error {
 		}
 		pr.final = pr.enforceProven(out.Findings)
 		in.Findings, in.Resent = pr.final, true
-		res, resends, err = render.Render(in)
+		res, resends, err = prrender.Render(in)
 		if err == nil && len(resends) > 0 {
-			err = &render.FailMergeError{Checks: resends[0].Checks}
+			err = &prrender.FailMergeError{Checks: resends[0].Checks}
 		}
 	}
-	var fm *render.FailMergeError
+	var fm *prrender.FailMergeError
 	if errors.As(err, &fm) {
 		return &stepErr{"merge", errors.New(strings.TrimPrefix(fm.Error(), "merge: "))}
 	}
@@ -1346,7 +1349,7 @@ func (pr *prRun) render() error {
 	if pr.ctx.Err() != nil {
 		return errStopped
 	}
-	if err := render.Write(pr.dir, res); err != nil {
+	if err := prrender.Write(pr.dir, res); err != nil {
 		return err
 	}
 	return nil
