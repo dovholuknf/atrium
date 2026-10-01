@@ -30,7 +30,7 @@ daemon fails with "say hello first". One daemon at a time.
 | `probe` | none | `proto`, `build`, `pid`, `daemon` (one is connected), `in_job`, `ptys`. Evicts nothing |
 | `hello` | `proto`, `build`, `takeover` | `proto`, `build`, `pid`, `in_job`, `took_over`. Refused with "a daemon is already connected" unless `takeover` |
 | `spawn` | `id`, `kind` (`runner` or `shell`), `argv`, `env` (whole environment, absent means the host's), `cwd`, `cols`, `rows`, `ring` (bytes) | `pid`, `run_id` |
-| `list` | none | `list`: every pty as `{run_id, id, kind, pid, cols, rows, started, exited, exit_code, ring_start, out_offset}`. `exited` and `exit_code` are never omitted |
+| `list` | none | `list`: every pty as `{run_id, id, kind, pid, cols, rows, started, exited, exited_at, exit_code, ring_start, out_offset}`. `exited` and `exit_code` are never omitted. `exited_at` (RFC3339Nano) is empty while the runner lives, and is how a daemon that was not connected at the time tells whether it died starting |
 | `attach` | `run_id`, `from` | `info` (as in list), `from` (effective), `truncated`, `cuts`, `data` (replay bytes). Live events follow |
 | `write` | `run_id`, `data` | ok |
 | `resize` | `run_id`, `cols`, `rows` | `cut` `{off, cols, rows}`, recorded before the resize is applied |
