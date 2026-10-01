@@ -37,9 +37,9 @@ the meantime.
 
 - Board landings from @ui come FIRST (clint, via the orchestrator, 2026-09-30 19:25), read only and fast, ahead of
   everything below.
-- @runtime r-director-ceiling.
-- @ui: the four desktop sorts still on `idle_seconds` (low 3 of `docs/backlog/ui/u-new-review-1094ba62.md`), and the
-  desktop suite result for 03cca53f.
+- Lows owed with fixes to follow: r-fyi-kind 1 and 3 (`r-new-review-e9aa0ee5.md`).
+- When @ui lands its combined /m batch plus 3d9b5f67: check the landed `onScroll` in `m/js/card.js` keeps load older's
+  `nearTop()`, pull's gates, and 3d9b5f67's reader gate (`u-new-review-3d9b5f67.md`).
 - From cc3bd954 on, @ui, @runtime and @fabric run Sonnet (orchestrator, 6h test): every review of theirs carries a
   "Quality:" line.
 - M3 of `docs/rnd/machine-health-design.md` (the profiler agent's rules) before it ships, when it is built.
