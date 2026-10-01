@@ -48,3 +48,24 @@ low are both covered, but the sibling check written for the removal was missed, 
 
 **HOLD c5023d7a..bae7d3f3.** The board code itself would be HUB and ROOM OK. The hold is for the red suite only. A
 re-read of `c5023d7a..<tip>` needs only the test change.
+
+## Re-read e3ae6c5a
+
+One commit on top of bae7d3f3, `scripts/test-board-headless.js` only. The board code is unchanged from the reviewed
+bae7d3f3.
+
+- **Finding 1 closed.** The leftovers count is gone. The tray-shut block now asserts what is true: a
+  `.termtray:not(.open)`, a `.traysum` whose text starts with "sorted by" (it is the bare `termTraySummary` text, whose
+  first part is always "sorted by activity" or "sorted by name"), and a `.traybody[inert]`. The cache line check stays
+  on its own, which is right: `.cacheline` is still the gear's alone. The block's first comment ("rolls up to one
+  summary line (the default)") is true again and needed no change.
+- **Nit 2 closed.** The block removes `atrium.termtray` (the name `TERM_TRAY_KEY` holds) before it renders, so the
+  folded assertion is a pin of the default, not of a state an earlier set wrote.
+- No other assertion in the suite expects the tray absent: the only other `.traysum`, `.trayrow` and `.trayrows`
+  readers are the termBox section, which opens the tray on purpose.
+
+I did not run the whole board: that is @ui's, and the fix should be confirmed by one whole run, not the sections.
+
+Quality: after the Sonnet switch, no drop. The fix takes the shape the review asked for and folds the nit into it.
+
+**HUB DEPLOY OK and ROOM DEPLOY OK c5023d7a..e3ae6c5a.**
