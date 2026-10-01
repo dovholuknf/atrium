@@ -61,3 +61,46 @@ In a detached worktree at 86240e3a, with `ATRIUM_LOCATION` and `ATRIUM_DEBUG_INP
    unit tests cannot show which happens.
 
 HUB DEPLOY OK and ROOM DEPLOY OK 86240e3a
+
+## Re-read of 2ba81eaf + 32700a16 at 4bedce8b (@runtime, the lows, and hand-typed /model)
+
+`git diff 2ba81eaf~1 32700a16`, read. In a detached worktree at 4bedce8b: `go vet ./internal/daemon/ ./internal/link/
+./internal/api/` was clean, `go test -count=1 -run 'Model|Reopen|StartPath|Typed|Submitted' ./internal/daemon/` was ok,
+and `-run 'Model|CtlClass|CtlAudit|Ctl' ./internal/link/` was ok. `-race` still cannot run here.
+
+**32700a16 closes all three lows and nit 4.**
+
+- `runsClaude` decides by the harness row (`isClaude`) and falls back to the id only when there is no row.
+- `modelLock` is held across "replace the wait, type, store the new wait" in the handler, across "still current?
+  type, delete" in the waiter, and across the store write in `noteTypedModel`. The order is always the model lock
+  first and the runner's `typeMu` second, inside `injectPeer`. `takeSubmitted` takes `typeMu` alone. Nothing takes
+  them the other way round, so there is no deadlock.
+- A give-up writes a "gave up waiting" event and one log line, but only if it is still the current wait.
+- An `injectPeer` failure logs once per wait.
+
+**2ba81eaf: hand-typed `/model`.** Only operator bytes reach `typedLine` (`noteOperatorTyped` is the only caller of
+`feed`), so neither a say nor atrium's own `/model` typing ever sets `submitted`. `submitted` is set on Enter only
+when the line was followed exactly (`unsure` empty, nothing dropped), and `takeSubmitted` clears it on read, so each
+line is acted on once. `noteTypedModel` takes exactly two fields with `/model` first and runs the second through
+`validModel`, the same check the API uses. It skips a non-claude card and a model the card already has, and it drops
+a waiting API switch. A bare `/model`, extra words, and `opus[1m]` record nothing. The start-path tests pin
+`launch`, `reopenSaved` and resume to `task.Model`.
+
+### Low
+
+5. **A mistyped full id is stored and breaks the next start.** This is @runtime's own known gap, and hand typing is
+   where it will happen. `/model claude-opus-4-8` passes `validModel`, Claude refuses it on screen, and atrium still
+   stores it. Unless the operator types a correct one afterwards, the next resume (a room restart included) launches
+   with that id and the card does not come back. Possible fixes: record only the four aliases from a typed line, or
+   store an id only once the statusline's display name shows the switch happened.
+
+### Nit
+
+6. `modelLocks` keeps one mutex per card for the daemon's life. They are small.
+7. A `/model x` sent as a message (the /m composer, the board's send) goes through the message path, not the attach
+   path, so it is not recorded. Only keys at the attached terminal are.
+
+Quality: after the Sonnet switch. Each fix maps onto its finding, the lock order is consistent in all three places,
+the known gap was named unprompted, and the start paths got their own tests. No drop seen.
+
+ROOM DEPLOY OK 4bedce8b
