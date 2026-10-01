@@ -194,12 +194,28 @@ can be undone with a setting or a relaunch.
 `scripts/live/auto-hub-deploy.ps1`, which can be run by hand with `-WhatIf`. It calls today's
 `deploy-hub-only.ps1`. It deploys tip T of claude/main only when all of these are true:
 
-1. Every non-merge code commit between the installed build's commit and T has a verdict. The installed binary is
-   also what the room starts on its next restart, and an unplanned restart, such as a Windows Update reboot, counts.
-   A ROOM-SIDE commit with no ROOM DEPLOY OK therefore blocks even a hub deploy.
-2. The verdict is recorded so that a machine can read it. @review adds a trailer to its review commit,
-   `Atrium-Verdict: hub-ok <sha>`, `room-ok <sha>` or `hold <sha>`. Today the verdict is prose in an untracked
-   file, so step one of (a) depends on this.
+1. Every code commit between the installed build's commit and T has a verdict that covers it. The installed binary
+   is also what the room starts on its next restart, and an unplanned restart, such as a Windows Update reboot,
+   counts. A ROOM-SIDE commit with no ROOM DEPLOY OK therefore blocks even a hub deploy.
+   - **A code commit** touches at least one path outside `docs/`, `changelog/` and top-level `*.md`. Scripts, tests
+     and the board's files all count. A merge counts only when it carries its own change: a conflict resolution,
+     which `git show --remerge-diff` shows as non-empty. A merge with no change of its own is skipped.
+   - **Covers means the same patch, not the same SHA.** Landings rebase, and item 49 landed under three sets of
+     SHAs. A commit is covered when its `git patch-id --stable` equals the patch-id of a commit inside a verdict's
+     range. A patch that changed on the way, a rebase that resolved a conflict, gets a new patch-id, and that counts
+     as no verdict. That is the safe answer, because the reviewed code is not the code that landed.
+2. The verdict is recorded so that a machine can read it. @review adds a trailer to its review commit:
+   `Atrium-Verdict: <hub-ok|room-ok|hold> <base>..<tip>`, or `<sha>` for a single commit.
+   - **A range** covers the commits in `git rev-list --first-parent <base>..<tip>`, which matches how @review
+     reviews: one verdict over a branch tip. A merge in that walk is covered only for its own change, its
+     remerge-diff. Commits reached through a merge's second parent need verdicts of their own. Without
+     `--first-parent`, a verdict would cover every claude/main commit merged into the branch, none of which @review
+     read: on r-card-model, `108ced12~1..86240e3a` is 70 commits, and the review covered 4.
+   - **The newest trailer wins** for each patch, in claude/main's order, so a HOLD that is later followed by an OK
+     ends as OK, and an OK that is later followed by a HOLD ends as HOLD.
+   - **A conditional OK counts as OK.** The condition is @review's to enforce, with a HOLD if it is not met.
+   - Today the verdict is prose in an untracked file, so step one of (a) depends on this. @review starts writing
+     trailers once these rules are settled.
 3. The package-scoped gate is green on T: the Go tests of the packages touched since the last deploy, and @ui's
    headless sections when the board changed. One verdict per commit cannot catch two commits that are each fine
    alone and break together. A gate on the tip can.
@@ -214,7 +230,9 @@ can be undone with a setting or a relaunch.
    binary (`Save-Revert` already keeps it). It then tells the orchestrator. A failure is the one case that wakes it.
 
 **Step one:** the board shows "hub deploy ready: T, N commits, all verdicts in, gate green", with a deploy button
-for clint or the orchestrator. **Step two,** after a week with no bad one-click deploy: a switch in the gear turns
+for clint or the orchestrator. When the deploy is not ready, the line names what is missing: each commit with no
+verdict by its short SHA and subject, each commit under a HOLD, and a red gate. **Step two,** after a week with no
+bad one-click deploy: a switch in the gear turns
 on the timer. It is off by default.
 
 Room deploys do not change. The hold, then deploy when the room is idle.
