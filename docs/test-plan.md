@@ -8196,3 +8196,11 @@ build before `atrium_publish path` works, since an older room cannot say what a 
 1. Type or send a message holding `ESC[201~` then `ESC[Z`, through the board message box, `atrium tell` and a held peer
    message. The terminal receives one opener and one closer, at the ends, and the permission mode does not cycle.
    Covered by `pastewrap_test.go`, one test per path.
+
+## HU. Every room shows the status line (r-statusline)
+
+1. Provision a throwaway room. The output has `provision statusline done` and the account's `.claude/settings.json` has
+   a `statusLine` whose command runs `statusline-command.sh`, every other key unchanged, and a
+   `settings.json.statusline-<stamp>.bak` beside it. Rerun: `provision statusline ok`, no new backup.
+2. Remove the `statusLine` key on a room and run `room-check.ps1 <room>`. The `statusline` row is `human` and names
+   provision. Restore it and the row is `ok`. The requirement parses in `requirements_test.go`.

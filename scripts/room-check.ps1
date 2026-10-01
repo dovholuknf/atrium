@@ -662,6 +662,18 @@ true
             Unmet 'human'
         }
     }
+    # the status line is an account fact too: the room's runner settings.json has a statusLine key, or it shows none
+    if ($spec.statusline -eq 'required' -and -not $script:statuslineDone) {
+        $script:statuslineDone = $true
+        $sc = if ($script:remoteOS -eq 'windows') {
+            "`$f = Join-Path `$HOME '.claude\settings.json'`nif ((Test-Path -LiteralPath `$f) -and ((Get-Content -Raw -LiteralPath `$f) -match '`"statusLine`"\s*:\s*\{')) { 'has=1' }"
+        } else { "grep -Eq '\`"statusLine\`"[[:space:]]*:[[:space:]]*\{' `"`$HOME/.claude/settings.json`" 2>/dev/null && echo has=1; true" }
+        if ((ConvertFrom-KeyValue (Invoke-Remote $sc).Out).has) { Row 'statusline' 'ok' "the account's .claude/settings.json has a statusLine" }
+        else {
+            Row 'statusline' 'human' "the account's .claude/settings.json has no statusLine, so every agent on $Room shows none. run: pwsh -File scripts\provision-room.ps1 $Target -Name $Room, whose statusline step installs it (the operator)"
+            Unmet 'human'
+        }
+    }
 }
 
 # ── 7. rows waiting on what is not built ────────────────────────────────────

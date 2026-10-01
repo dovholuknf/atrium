@@ -31,6 +31,20 @@ func TestTheDesignsOwnFileParsesToTheExpectedJSON(t *testing.T) {
 	}
 }
 
+func TestStatuslineRequirementParsesAndRefusesOtherValues(t *testing.T) {
+	f, err := Parse([]byte("version: 1\nrunners:\n  claude:\n    statusline: required\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f.Runners["claude"].Statusline != "required" {
+		t.Errorf("runner: %+v", f.Runners["claude"])
+	}
+	_, err = Parse([]byte("version: 1\nrunners:\n  claude:\n    statusline: ./x.sh\n"))
+	if err == nil || !strings.Contains(err.Error(), `runners.claude.statusline: "./x.sh" is not one of: required`) {
+		t.Errorf("a command was accepted or misreported: %v", err)
+	}
+}
+
 func TestDefaultsAndPlainValuesKeepTheirText(t *testing.T) {
 	f, err := Parse([]byte("version: 1\ngit: { base: main }\ntoolchain:\n  go: { min: 1.30 }\nenv:\n  TZ: UTC\n  KEY_NAME: { required: true }\n"))
 	if err != nil {
