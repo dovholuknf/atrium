@@ -47,3 +47,40 @@ Against a mock of the `/_hub/docs` routes in the headless server, at 390 and 412
 1. Is a document sheet over the board, with the `/m/` shell only for a direct `/d/` link, the right reading of "one link works on the phone and the desktop"?
 2. The `published N documents` line costs one request per opened card. Acceptable, or should the hub add a count to the task row?
 3. Is a client diff capped at 5000 lines and 400 KB the right bound, or should the hub diff?
+
+## What changed from the note, after @rnd's nine changes
+
+- `/m/docs` is a real address the hub serves (no trailing slash), so the list is built as an address.
+- The documents door, the tab and the card line are hidden on any failure of `GET /_hub/docs/settings`, with no toast, since a room's own board has no hub documents.
+- The document view has delete (asked twice), restore and new version (`.../versions`, file only). Every non-2xx shows the hub's own `error` sentence, with `(rule)` added on a 422, and no fixed list of statuses.
+- Text over 1 MiB is shown cut at 1 MiB as text with `download the rest`. A dropped cut character is handled as in the file viewer. Images are typed by their own first bytes, never octet-stream, and their blob URL is revoked when the sheet closes or the version changes.
+- A `card` origin links to the card by its card URL, and is plain text when the lookup fails.
+- A same-origin `/d/` link anywhere opens the panel, but only when the path matches `^/d/[a-z0-9-]{1,60}(@[1-9][0-9]*)?$` exactly (so `@01`, upper case and deeper paths keep today's rules). Markdown renders such a link, and a bare `/d/slug` in text, as one.
+- The compare trims the common start and end of each side, then runs Myers' O((N+M)D), and refuses with one sentence past 2000 changed lines. Each side is read up to 5 MiB. A diff document colours `+` and `-` lines except the `+++` and `---` headers, and `@@` lines are hunk strips.
+- The card line is asked once when a card opens and at most once every 30 seconds after that. The board shows it in the card's details popover, not on the stack rows.
+
+## Test plan
+
+## @LETTER@. Hub documents on /m and the board
+
+Screenshots: `docs/backlog/ui/img/u-m-docs/`.
+
+### @LETTER@1. The list
+Open /m on a hub with documents. Tap `documents`.
+**Expected:** the address is `/m/docs`. Documents are newest first, each with its kind, version count, age and who wrote the latest version. Typing in the filter narrows the list by title. The `deleted` chip lists tombstones, and `restore` brings one back. On a room's own board the button is not there at all.
+
+### @LETTER@2. Upload
+Tap `upload`, pick a file, optionally type a title.
+**Expected:** `uploading N%`, then `uploaded` with `open it`. A refused upload shows the hub's own sentence, with the rule in brackets for a secret. Only on the operator's own machine is `upload anyway` offered.
+
+### @LETTER@3. One document
+Open `/d/<slug>` from the list, from the address bar, or from a link in a reply.
+**Expected:** the newest version, with its origin (`you, at the machine`, `uploaded over the share`, or the card's name, linked when the card exists). The version control changes the address to `/d/<slug>@<n>`. History lists every version. Back returns to where it came from. Markdown, text and diffs are drawn, a png is shown, anything else, SVG included, is a download. A version whose bytes are missing or purged says so.
+
+### @LETTER@4. Compare, delete, new version
+Choose `compare`, pick two versions.
+**Expected:** changed lines coloured with unchanged runs folded. A compare of two unrelated big files says it is too big instead of freezing. `delete` asks again, then shows `deleted on ...` with `restore`. `new version` adds a version and shows the hub's sentence if the document was deleted meanwhile.
+
+### @LETTER@5. On a card
+Open a card that published documents.
+**Expected:** `published N documents` under its name. Tapping it lists just that card's documents. On the board, the same line is in the card's details popover, and the `documents` tab behind the header chevron opens the same panel.
