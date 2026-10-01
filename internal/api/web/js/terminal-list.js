@@ -164,6 +164,8 @@ function workingNow(t) {
 const TERM_LIVE_STATUS = ["running", "needs-input", "needs-permission"];
 function termCold(t) {
   if (t && t.supervised) return false;
+  // A parked card keeps its status but its process is gone.
+  if (t && t.parked_at) return true;
   return !(t && TERM_LIVE_STATUS.includes(t.status));
 }
 // Live but not attachable: joined from a terminal atrium does not hold.
