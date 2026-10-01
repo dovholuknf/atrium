@@ -423,6 +423,27 @@ func TestDeployReadyHandsBackTheLastAnswerStaleWhileANewerReadRuns(t *testing.T)
 	}
 }
 
+func TestDeployReadyGetThatRunsThePassTellsWatchingBoards(t *testing.T) {
+	r := newReadyRepo(t)
+	base := r.commit("base", map[string]string{"internal/a.go": "a"})
+	r.commit("code", map[string]string{"internal/hubstore/a.go": "1"})
+	p, _ := readyProxy(t, r, base, scriptFile(t))
+	s := p.feeds.add("")
+	defer p.feeds.drop(s)
+	getReady(t, p)
+	timeout := time.After(time.Second)
+	for {
+		select {
+		case e := <-s.ch:
+			if e.Kind == deployReadyEvent {
+				return
+			}
+		case <-timeout:
+			t.Fatal("a GET that ran the pass announced nothing")
+		}
+	}
+}
+
 func TestParseVersionCommit(t *testing.T) {
 	out := "atrium dev\ncommit 7a38c1f2deadbeef0123456789abcdef01234567 (modified)\nboard  0123abcd\nplatform windows/amd64\n"
 	if got := parseVersionCommit(out); got != "7a38c1f2deadbeef0123456789abcdef01234567" {
