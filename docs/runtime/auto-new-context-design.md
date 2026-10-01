@@ -199,6 +199,21 @@ Hysteresis, so it does not loop. Each card has an in memory arm state.
   After a daemon restart a still large card meets the restart grace and is judged again. That can give one extra cycle
   across a restart, which is what a person pressing the button would get anyway.
 
+### The ceiling tag (r-director-ceiling)
+
+A card tagged `atrium:context-ceiling` is held to `context_ceiling_k` (default 150, never below `context_threshold_k`)
+whatever `auto_new_context` says, `off` included. It is a second trigger beside the global line, so a card with both
+is cycled at the lower. `atrium:no-auto-new-context` still excludes it, and it gets the agent idle rule, not the human
+one.
+
+It is allowed to start MID-TURN, which no other card is. A director sits in turns that last hours, driving workers and
+watchers, so a gate that waits for an idle prompt never opens on one, and a director paid $1.19 a relay at 416k
+against $0.35 at 101k. The cycle already knows what to do with a running card: the capture step types the one
+labelled line asking it to finish its step, commit and end its turn, at a minute and again at half the limit, and
+types nothing else until the turn is over. So the only gates dropped are mid-turn and running (and the idle quiet,
+which is about a card between turns). Pending permission, an open dialog, subagents, background work, held messages,
+the same-directory check and the minimum gap all stay. The orchestrator tags directors. Workers never tag themselves.
+
 ## 5. When the card cannot write a handoff, or capture times out
 
 Nothing is cleared without a verified handoff. That rule is the cycle's and stays.

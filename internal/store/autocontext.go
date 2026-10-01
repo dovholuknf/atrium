@@ -17,6 +17,9 @@ const (
 	SettingAutoNewContextK = "auto_new_context_k"
 	// SettingAutoNewContextIdleS is how long an agent card sits idle first, in seconds.
 	SettingAutoNewContextIdleS = "auto_new_context_idle_s"
+	// SettingContextCeilingK is the size, in thousands of tokens, at which a card tagged
+	// atrium:context-ceiling is cycled, mid-turn included, whatever the mode above says.
+	SettingContextCeilingK = "context_ceiling_k"
 )
 
 // The values of SettingAutoNewContext.
@@ -30,6 +33,10 @@ const (
 	DefaultAutoNewContextK = 300
 	MinAutoNewContextK     = 50
 	MaxAutoNewContextK     = 2000
+
+	DefaultContextCeilingK = 150
+	MinContextCeilingK     = 50
+	MaxContextCeilingK     = 2000
 
 	DefaultAutoNewContextIdleS = 45
 	MinAutoNewContextIdleS     = 10
@@ -53,6 +60,11 @@ func (s *Store) AutoNewContextMode() string {
 // AutoNewContextK reads the threshold, in thousands of tokens. Unusable reads as the default.
 func (s *Store) AutoNewContextK() int {
 	return s.intSetting(SettingAutoNewContextK, DefaultAutoNewContextK, MinAutoNewContextK, MaxAutoNewContextK)
+}
+
+// ContextCeilingK reads the ceiling, in thousands of tokens. Unusable reads as the default.
+func (s *Store) ContextCeilingK() int {
+	return s.intSetting(SettingContextCeilingK, DefaultContextCeilingK, MinContextCeilingK, MaxContextCeilingK)
 }
 
 // AutoNewContextIdleS reads the idle quiet, in seconds. Unusable reads as the default.
@@ -86,6 +98,11 @@ func CheckAutoNewContext(v string) (string, error) {
 // default. The check against context_threshold_k needs that setting and is made by the caller.
 func CheckAutoNewContextK(v string) (string, error) {
 	return checkInt("auto_new_context_k", "thousands of tokens", v, MinAutoNewContextK, MaxAutoNewContextK)
+}
+
+// CheckContextCeilingK validates a typed ceiling. The check against context_threshold_k is the caller's.
+func CheckContextCeilingK(v string) (string, error) {
+	return checkInt("context_ceiling_k", "thousands of tokens", v, MinContextCeilingK, MaxContextCeilingK)
 }
 
 // CheckAutoNewContextIdleS validates a typed idle quiet, in seconds.

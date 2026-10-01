@@ -135,6 +135,12 @@ const newContextClear = "/clear"
 // newContextWake is what the new session is told, and reads the capture back.
 func newContextWake(file string) string { return "Read " + file + " and continue from it." }
 
+// newContextWakeCeiling is the wake for a card cycled at its ceiling. It starts with
+// newContextWake, and says why the context went.
+func newContextWakeCeiling(file string) string {
+	return newContextWake(file) + " Your context was cycled at the context ceiling."
+}
+
 // newContextStop is the line typed MID-TURN when a step has waited `nudgeAfter`
 // for a turn to end. A card driving workers and watchers can stay running for
 // hours, and the capture is never typed into a turn (r-022), so without this the
@@ -202,6 +208,8 @@ type newContext struct {
 	auto              bool
 	human, wakeOnly   bool
 	tokens, threshold int64
+	// ceiling marks a run on a card wearing ContextCeilingTag, which the wake says.
+	ceiling bool
 }
 
 type newContexts struct {
@@ -226,9 +234,9 @@ func (n *newContexts) begin(taskID, file, conv string) (uint64, bool) {
 }
 
 // beginAuto is begin for a run the daemon starts. A wake-only run starts on the wake step.
-func (n *newContexts) beginAuto(taskID, file, conv string, tokens, threshold int64, human, wakeOnly bool) (uint64, bool) {
+func (n *newContexts) beginAuto(taskID, file, conv string, tokens, threshold int64, human, wakeOnly, ceiling bool) (uint64, bool) {
 	c := &newContext{step: NewContextCapture, file: file, conv: conv, auto: true, human: human, wakeOnly: wakeOnly,
-		tokens: tokens, threshold: threshold}
+		ceiling: ceiling, tokens: tokens, threshold: threshold}
 	if wakeOnly {
 		c.step = NewContextWake
 	}
@@ -517,9 +525,13 @@ var (
 // and types nothing further.
 func (d *Daemon) runNewContext(taskID string, gen uint64) {
 	// Recorded at begin, so an alias change mid-cycle cannot split the three uses.
-	file, auto, wakeOnly := "", false, false
+	file, auto, wakeOnly, ceiling := "", false, false, false
 	if cur := d.nctx.get(taskID); cur != nil {
-		file, auto, wakeOnly = cur.file, cur.auto, cur.wakeOnly
+		file, auto, wakeOnly, ceiling = cur.file, cur.auto, cur.wakeOnly, cur.ceiling
+	}
+	wake := newContextWake(file)
+	if ceiling {
+		wake = newContextWakeCeiling(file)
 	}
 	fail := func(step string, err error) {
 		if errors.Is(err, errNewContextGone) {
@@ -625,7 +637,7 @@ func (d *Daemon) runNewContext(taskID string, gen uint64) {
 	// A turn in progress is waited out like the capture's, not for typeWait: the new
 	// session may already be taking a turn on something else (r-016, @ui), and the
 	// cycle fails only if no gap opens in captureEnd.
-	if err := d.ncType(taskID, gen, newContextLabel, newContextWake(file), ncTiming.captureEnd); err != nil {
+	if err := d.ncType(taskID, gen, newContextLabel, wake, ncTiming.captureEnd); err != nil {
 		fail("could not type the wake prompt", err)
 		return
 	}
