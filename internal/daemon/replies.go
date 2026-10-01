@@ -70,6 +70,10 @@ type RepliesView struct {
 	// More is true when replies or prompts older than the oldest in this page
 	// may exist. Never set for the screen.
 	More bool `json:"more"`
+	// NextBefore is the `before` of the next page, RFC3339Nano, set when More is
+	// true. Both lists are complete down to it, so a client passes it back as it
+	// is and never works out a cursor from the entries.
+	NextBefore string `json:"next_before,omitempty"`
 }
 
 // Prompt kinds. See promptOf.
@@ -123,18 +127,20 @@ func (d *Daemon) repliesPage(taskID string, n int, before time.Time) (*RepliesVi
 		if session != "" {
 			if path := d.usage.transcript(t.Worktree, session); path != "" {
 				var (
-					replies []Reply
-					prompts []Prompt
-					more    bool
-					err     error
+					pg  replyPage
+					err error
 				)
 				if before.IsZero() {
-					replies, prompts, more, err = readTranscriptPage(path, n)
+					pg, err = readTranscriptPage(path, n)
 				} else {
-					replies, prompts, more, err = readTranscriptBefore(path, n, before)
+					pg, err = readTranscriptBefore(path, n, before)
 				}
 				if err == nil {
-					return &RepliesView{Source: "transcript", Replies: replies, Prompts: prompts, More: more}, nil
+					v := &RepliesView{Source: "transcript", Replies: pg.replies, Prompts: pg.prompts, More: pg.more}
+					if pg.more {
+						v.NextBefore = pg.next.UTC().Format(time.RFC3339Nano)
+					}
+					return v, nil
 				}
 				logRepliesFallback(path, err)
 			}
@@ -183,7 +189,82 @@ type repliesCached struct {
 	mtime   time.Time
 	replies []Reply  // the last repliesMax, oldest first
 	prompts []Prompt // the same, for what was said to the card
-	older   bool     // the window did not start at byte 0, or entries were dropped
+	floor   time.Time // zero when everything older is held, else complete down to here. See finishPage
+}
+
+// replyPage is one answer: the replies and prompts, and where the next page starts.
+type replyPage struct {
+	replies []Reply
+	prompts []Prompt
+	more    bool
+	next    time.Time // the `before` of the next page, set when more is true
+}
+
+// finishPage cuts a page from rs and ps, every entry older than the request's
+// before, oldest first. floor is the oldest time the read is complete down to
+// (zero when it reached the start of the file with nothing cut).
+//
+// Each list keeps its n newest. A list that had more than n puts its oldest kept
+// `at` in as a floor too, and the page is cut at the NEWEST floor, in both lists:
+// the page is complete down to there, so the next page asks strictly older than
+// it and nothing is lost or shown twice. Entries sharing the cut's time stay
+// together on this page.
+func finishPage(rs []Reply, ps []Prompt, n int, floor time.Time) replyPage {
+	cut := floor
+	rs, rcut := trimReplies(rs, n)
+	ps, pcut := trimPrompts(ps, n)
+	for _, c := range []time.Time{rcut, pcut} {
+		if c.After(cut) {
+			cut = c
+		}
+	}
+	if cut.IsZero() {
+		return replyPage{replies: rs, prompts: ps}
+	}
+	for len(rs) > 0 && rs[0].At.Before(cut) {
+		rs = rs[1:]
+	}
+	for len(ps) > 0 && ps[0].At.Before(cut) {
+		ps = ps[1:]
+	}
+	return replyPage{replies: rs, prompts: ps, more: true, next: cut}
+}
+
+// trimReplies keeps the n newest, plus any older ones at the same time as the
+// oldest kept. The second result is that oldest time when something was cut.
+func trimReplies(x []Reply, n int) ([]Reply, time.Time) {
+	i := len(x) - n
+	if i <= 0 {
+		return x, time.Time{}
+	}
+	for i > 0 && x[i-1].At.Equal(x[i].At) {
+		i--
+	}
+	if i == 0 {
+		return x, time.Time{}
+	}
+	return x[i:], x[i].At
+}
+
+func trimPrompts(x []Prompt, n int) ([]Prompt, time.Time) {
+	i := len(x) - n
+	if i <= 0 {
+		return x, time.Time{}
+	}
+	for i > 0 && x[i-1].At.Equal(x[i].At) {
+		i--
+	}
+	if i == 0 {
+		return x, time.Time{}
+	}
+	return x[i:], x[i].At
+}
+
+func laterOf(a, b time.Time) time.Time {
+	if b.After(a) {
+		return b
+	}
+	return a
 }
 
 // readReplies is the last n main-chain assistant replies with text in a
@@ -196,15 +277,16 @@ func readReplies(path string, n int) ([]Reply, error) {
 // readTranscriptText is the last n replies and the last n prompts in a
 // transcript, each oldest first.
 func readTranscriptText(path string, n int) ([]Reply, []Prompt, error) {
-	replies, prompts, _, err := readTranscriptPage(path, n)
-	return replies, prompts, err
+	pg, err := readTranscriptPage(path, n)
+	return pg.replies, pg.prompts, err
 }
 
-// readTranscriptPage is readTranscriptText and whether anything older may exist.
-func readTranscriptPage(path string, n int) ([]Reply, []Prompt, bool, error) {
+// readTranscriptPage is the first page: the newest n of each, from the cached
+// read of the file's last repliesWindow bytes.
+func readTranscriptPage(path string, n int) (replyPage, error) {
 	info, err := os.Stat(path)
 	if err != nil {
-		return nil, nil, false, err
+		return replyPage{}, err
 	}
 	repliesCache.mu.Lock()
 	c, ok := repliesCache.m[path]
@@ -212,33 +294,37 @@ func readTranscriptPage(path string, n int) ([]Reply, []Prompt, bool, error) {
 	if !ok || c.size != info.Size() || !c.mtime.Equal(info.ModTime()) {
 		f, err := os.Open(path)
 		if err != nil {
-			return nil, nil, false, err
+			return replyPage{}, err
 		}
 		defer f.Close()
-		older := false
-		if info.Size() > repliesWindow {
-			older = true
+		mid := info.Size() > repliesWindow
+		if mid {
 			if _, err := f.Seek(info.Size()-repliesWindow, io.SeekStart); err != nil {
-				return nil, nil, false, err
+				return replyPage{}, err
 			}
 		}
-		replies, prompts, err := scanTranscriptText(f)
+		replies, prompts, firstAt, err := scanTranscriptWindow(f)
 		if err != nil {
-			return nil, nil, false, err
+			return replyPage{}, err
+		}
+		var floor time.Time
+		if mid {
+			floor = boundaryAt(f, info.Size()-repliesWindow, firstAt)
 		}
 		if len(replies) > repliesMax {
 			replies = replies[len(replies)-repliesMax:]
-			older = true
-		} else if older && len(replies) > 1 {
+			floor = laterOf(floor, replies[0].At)
+		} else if mid && len(replies) > 1 && !replies[0].At.Equal(replies[1].At) {
 			// The oldest may have lost its earlier blocks to the cut, and a `before`
 			// page would then return it again whole. It is the next page's first.
 			replies = replies[1:]
+			floor = laterOf(floor, replies[0].At)
 		}
 		if len(prompts) > repliesMax {
 			prompts = prompts[len(prompts)-repliesMax:]
-			older = true
+			floor = laterOf(floor, prompts[0].At)
 		}
-		c = repliesCached{size: info.Size(), mtime: info.ModTime(), replies: replies, prompts: prompts, older: older}
+		c = repliesCached{size: info.Size(), mtime: info.ModTime(), replies: replies, prompts: prompts, floor: floor}
 		repliesCache.mu.Lock()
 		if len(repliesCache.m) > 400 {
 			repliesCache.m = map[string]repliesCached{}
@@ -246,17 +332,22 @@ func readTranscriptPage(path string, n int) ([]Reply, []Prompt, bool, error) {
 		repliesCache.m[path] = c
 		repliesCache.mu.Unlock()
 	}
-	replies, prompts := c.replies, c.prompts
-	more := c.older
-	if len(replies) > n {
-		replies = replies[len(replies)-n:]
-		more = true
+	pg := finishPage(c.replies, c.prompts, n, c.floor)
+	pg.replies, pg.prompts = append([]Reply{}, pg.replies...), append([]Prompt{}, pg.prompts...)
+	return pg, nil
+}
+
+// boundaryAt is the time a read starting at offset start is complete down to:
+// the first record in it, else the first timestamped line, else now, which makes
+// the next page ask for everything and read back from the end.
+func boundaryAt(f *os.File, start int64, firstAt time.Time) time.Time {
+	if !firstAt.IsZero() {
+		return firstAt
 	}
-	if len(prompts) > n {
-		prompts = prompts[len(prompts)-n:]
-		more = true
+	if _, at, ok := probeLine(f, start-1); ok {
+		return at
 	}
-	return append([]Reply{}, replies...), append([]Prompt{}, prompts...), more, nil
+	return time.Now().UTC()
 }
 
 // readTranscriptBefore is the n replies and n prompts strictly older than
@@ -268,17 +359,18 @@ func readTranscriptPage(path string, n int) ([]Reply, []Prompt, bool, error) {
 // A step starts mid-line, so its first partial line is carried and put back on
 // the end of the next step, which makes a line read whole once. A reply whose
 // message id spans steps is joined as the forward scan joins it.
-func readTranscriptBefore(path string, n int, before time.Time) ([]Reply, []Prompt, bool, error) {
+func readTranscriptBefore(path string, n int, before time.Time) (replyPage, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return nil, nil, false, err
+		return replyPage{}, err
 	}
 	defer f.Close()
 	info, err := f.Stat()
 	if err != nil {
-		return nil, nil, false, err
+		return replyPage{}, err
 	}
 	var (
+		firstAt time.Time // the oldest record read
 		replies []Reply
 		ids     []string
 		byID    = map[string]int{}
@@ -315,7 +407,7 @@ func readTranscriptBefore(path string, n int, before time.Time) ([]Reply, []Prom
 		start := pos - step
 		buf := make([]byte, int(step)+len(carry))
 		if _, err := f.ReadAt(buf[:step], start); err != nil && !errors.Is(err, io.EOF) {
-			return nil, nil, false, err
+			return replyPage{}, err
 		}
 		copy(buf[step:], carry)
 		carry = nil
@@ -337,6 +429,9 @@ func readTranscriptBefore(path string, n int, before time.Time) ([]Reply, []Prom
 				buf = nil
 			}
 			s.feed(line)
+		}
+		if !s.firstAt.IsZero() {
+			firstAt = s.firstAt
 		}
 		// This step is older than everything held. A reply already held under the
 		// same id takes this step's blocks in front of its own.
@@ -370,10 +465,12 @@ func readTranscriptBefore(path string, n int, before time.Time) ([]Reply, []Prom
 			}
 		}
 	}
-	// Short of the start, the oldest reply may lack blocks that lie further back.
-	// Leave it for the next page, which finds it whole.
-	if pos > 0 && len(replies) > 1 {
-		replies = replies[1:]
+	// Short of the start the read is complete only down to its oldest record, and
+	// the oldest reply may lack blocks that lie further back. Leave it for the
+	// next page, which finds it whole.
+	var floor time.Time
+	if pos > 0 {
+		floor = boundaryAt(f, pos, firstAt)
 	}
 	var rs []Reply
 	for _, r := range replies {
@@ -387,17 +484,19 @@ func readTranscriptBefore(path string, n int, before time.Time) ([]Reply, []Prom
 			ps = append(ps, p)
 		}
 	}
-	more := pos > 0 || len(rs) > n || len(ps) > n
-	if len(rs) > n {
-		rs = rs[len(rs)-n:]
+	// Only when another reply is left to set the cut. Dropped alone, it would lie
+	// between the cut and the page and no page would carry it.
+	if pos > 0 && len(rs) > 1 && !rs[0].At.Equal(rs[1].At) {
+		rs = rs[1:]
+		floor = laterOf(floor, rs[0].At)
 	}
-	if len(ps) > n {
-		ps = ps[len(ps)-n:]
+	pg := finishPage(rs, ps, n, floor)
+	pg.replies = append([]Reply{}, pg.replies...)
+	for i := range pg.replies {
+		pg.replies[i].Text, pg.replies[i].Truncated = keepHead(pg.replies[i].Text, replyTextMax)
 	}
-	for i := range rs {
-		rs[i].Text, rs[i].Truncated = keepHead(rs[i].Text, replyTextMax)
-	}
-	return append([]Reply{}, rs...), append([]Prompt{}, ps...), more, nil
+	pg.prompts = append([]Prompt{}, pg.prompts...)
+	return pg, nil
 }
 
 // lineBefore is an offset at the start of a line, past which every line is at or
@@ -468,17 +567,26 @@ func scanReplyText(r io.Reader) ([]Reply, error) {
 func scanTranscriptText(r io.Reader) ([]Reply, []Prompt, error) {
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 0, 64<<10), 8<<20)
+	replies, prompts, _, err := scanTranscriptWindow(r)
+	return replies, prompts, err
+}
+
+// scanTranscriptWindow is scanTranscriptText and the time of the first record
+// it read.
+func scanTranscriptWindow(r io.Reader) ([]Reply, []Prompt, time.Time, error) {
+	sc := bufio.NewScanner(r)
+	sc.Buffer(make([]byte, 0, 64<<10), 8<<20)
 	s := newTextScan()
 	for sc.Scan() {
 		s.feed(sc.Bytes())
 	}
 	if err := sc.Err(); err != nil {
-		return nil, nil, err
+		return nil, nil, time.Time{}, err
 	}
 	for i := range s.out {
 		s.out[i].Text, s.out[i].Truncated = keepHead(s.out[i].Text, replyTextMax)
 	}
-	return s.out, s.prompts, nil
+	return s.out, s.prompts, s.firstAt, nil
 }
 
 // textScan accumulates replies and prompts from transcript lines in file order.
@@ -488,6 +596,7 @@ type textScan struct {
 	ids     []string
 	prompts []Prompt
 	index   map[string]int // message id to its place in out
+	firstAt time.Time      // the first record with a time, which a read starting mid-file is complete down to
 }
 
 func newTextScan() *textScan { return &textScan{index: map[string]int{}} }
@@ -512,10 +621,16 @@ func (s *textScan) feed(line []byte) {
 				Content any    `json:"content"`
 			} `json:"message"`
 		}
-		if json.Unmarshal(line, &rec) != nil || rec.Sidechain {
+		if json.Unmarshal(line, &rec) != nil {
 			return
 		}
 		at, _ := time.Parse(time.RFC3339Nano, rec.Timestamp)
+		if s.firstAt.IsZero() && !at.IsZero() {
+			s.firstAt = at.UTC()
+		}
+		if rec.Sidechain {
+			return
+		}
 		if rec.Type == "user" {
 			if rec.Meta || (rec.Origin != nil && rec.Origin.Kind != "" && rec.Origin.Kind != "human") {
 				return
