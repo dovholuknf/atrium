@@ -18,11 +18,15 @@ func NoticesReadKey(taskID string) string { return "notices_read:" + taskID }
 // newest one it was handed, and reports whether that moved the count. NEVER NOW: a notice
 // held between the read and this stamp is newer than `through`, so it stays unread. The
 // marker only moves forward, so a late or repeated stamp cannot unread anything. A
-// `through` that is empty or not a time changes nothing.
+// `through` that is empty or not an RFC3339 time changes nothing.
 func (s *Store) MarkNoticesRead(taskID, through string) (bool, error) {
-	if _, err := parseTS(through); err != nil {
+	// An event's `at` comes back from a JSON round trip as RFC3339Nano, which drops trailing
+	// zeros, so it is parsed as that and rewritten in the store's fixed width.
+	parsed, err := time.Parse(time.RFC3339Nano, through)
+	if err != nil {
 		return false, nil
 	}
+	through = ts(parsed)
 	stored, err := s.Setting(NoticesReadKey(taskID))
 	if err != nil {
 		return false, err
