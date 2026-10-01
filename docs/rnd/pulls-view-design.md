@@ -139,6 +139,7 @@ run cost and how long it took. The states are:
 | `ready to walk` | finding files and `walk.txt` written, nothing walked |
 | `walking N of M` | some walked. The walker card, when there is one, is named |
 | `walked` | every finding done or skipped, none deferred (review-tab 1.6) |
+| `aborted` | clint stopped the run. The run folder is deleted (rule 44), and the row stays until archived |
 | `failed: <step>` | a step failed or the budget stopped it. `retry` reruns from that step, `log` opens `run.log` |
 
 The `stage` of the row is a fact about the run, observed by the daemon from the run folder and the runner, never
@@ -256,11 +257,17 @@ Every step after prime returns JSON, never prose:
 {"findings": [{"sev": "med", "path": "src/tls_engine.c", "line": 412, "code": "if (sess->resumed) {",
   "says": "...", "fix": "...", "test_ask": "Add a test to ...: ..., expect ...", "proven": "no",
   "impact": "a reconnect after resume reuses a freed session", "rank": 3,
+  "exposure": {"who": "every client that reconnects", "likely": "on any network drop", "opt_in": "no"},
   "cause": "introduced", "found": "traced", "leak": "", "raised_by": "c-systems-reviewer"}]}
 ```
 
+`exposure` is rule 26's three answers, rendered as the `Exposure:` line in Evidence. `impact` is one sentence for the
+rank, and the two are not the same field.
+
 - **Verify** forks get the findings at or above `verify_at` and answer per finding `holds`, `does not hold, because`,
   or `holds at <sev>`, with what they read or ran.
+- **The `consumers` critic** reads rule 27's list from the repo's reviewer file, under `## Known consumers`, and
+  greps the local checkouts it names. The fork's `Read` and `Grep` reach those paths, which sit outside `src/`.
 - **Merge** is one fork. It gets every reviewer's and verifier's JSON, dedupes findings about the same defect,
   ranks them (section 5.6), and returns the final list. It is the only step that judges across reviewers, so it is
   the only step that needs to.
@@ -296,7 +303,9 @@ clint on item 1 of 378: "and not ordered? this sucks". It was a LOW on `engine.c
 mediums, so 17 items sat in one band sorted by file name and line. Severity alone cannot order a walk, because one
 pass of verify can flatten it, and file name says nothing about how much an item matters or how the diff reads.
 
-**The order is fixed in step 5 and never changes after** (rule 14), and it is:
+**The order is fixed in step 5 and never changes after** (rule 14). It AMENDS rule 6 (severity, then file, then
+line) and rule 10 (`NN` is that table's order). @review changes both in the rules doc when P2 lands, so the walker
+brief and the renderer never disagree. The order is:
 
 1. Disputes left for clint, as decided (review-tab question 12).
 2. Then by severity band.
@@ -319,12 +328,31 @@ shows a file name outside its menu.
 
 **"Suggested fix:" only when `proven` says so.** Rule 43 allows the label only for a problem proven by a test we
 wrote or settled by the code, and on 378 it was a sentence in a brief that the panel ignored. Here it is a field.
-`proven` is `test`, `code` or `no`, set by the reviewer and corrected by verify. Step 8 writes `Suggested fix:` only
-for `test` or `code`. For `no`, the `fix` field must be a question (rule 43's "Could we ...?" form, one condition,
-one consequence, rule 38), and a `fix` that is not one is sent back to the merge fork once with the rule quoted.
-If it is still not one, the file is written without a fix bullet and Evidence says why. The other rules of the
-shape (33, 34, 36, 40) are checked the same way where a check is mechanical: one "LLM review says", one fix and no
-"X, or Y", every path in a bullet present in `src/`.
+`proven` is `code` or `no`. A reviewer sets it and verify must agree: a `code` that verify does not confirm becomes
+`no`. There is no `test` value, because every fork is read-only (5.3) and no step writes or runs a test, so a
+reviewer claiming one would be claiming something no step did. `test` is added when a step can run one, and the
+renderer then accepts it only when that step's folder holds the test and its output.
+
+Step 8 writes `Suggested fix:` only for `code`. For `no`, the `fix` field must be a question (rule 43's "Could we
+...?" form, one condition, one consequence, rule 38), and a `fix` that is not one is sent back to the merge fork once
+with the rule quoted. If it is still not one, the file is written without a fix bullet and Evidence says why.
+
+**The renderer's checks.** Each is mechanical, and each sends the finding back to the merge fork once with the rule
+quoted before acting:
+
+| rule | check | if it still fails |
+| --- | --- | --- |
+| 5 | every finding with a non-empty `leak` that any reviewer raised is in the final list, whatever merge or settle did | the run fails `merge`, naming the missing leaks. A leak is never dropped by a model |
+| 8, 35 | the line is one the PR adds or changes at the head, read from `pr.diff` | the run fails `merge` naming the finding. It is never moved to a line by the renderer |
+| 26 | a MED or higher has all three `exposure` answers | the run fails `merge` naming the finding. Its severity is never changed by the renderer |
+| 34 | "LLM review says" once | the duplicate lead-in is removed |
+| 36 | one fix, no "X, or Y" | the fix bullet is dropped and Evidence says why |
+| 40 | every path in a bullet exists in `src/` | the finding is written with the path flagged in Evidence |
+| 43 | `Suggested fix:` only for `proven: code` | as above |
+
+**The head at walk start (rule 17).** Until P3 builds the head check, the walker brief keeps rule 17's
+`gh pr view <n> --json headRefOid` step at the start of every walk. From P3 the daemon runs it when the drawer
+opens, and the brief's step goes.
 
 ## 6. Intake: three doors, one endpoint
 
@@ -359,7 +387,9 @@ Review-tab stage 1 built the drawer, and it stays as it is. Two things change.
 - **The walker is launched on demand,** from the recipe's `walker_brief`, when clint presses `walk`. Its cwd is the
   run folder, so the drawer's file endpoints reach it through `internal/safepath` as they do today. It is the only
   live session in a review, and it costs only when clint is walking. This answers review-tab question 10: the board
-  launches the walker itself, from a stored brief.
+  launches the walker itself, from a stored brief. It carries rule 30's tags (`atrium:subagent`, `dept:review`,
+  `review`, `pr`) and `pr:<org>/<repo>#<n>`. The brief holds rule 29 as amended at ff815049, so a Mercurius round the
+  walker offers never holds the walk either.
 - **The walk can happen in the pulls view without a walker at all.** done, skip, defer and comment already write
   `walk.txt` and the finding's file from the drawer. The walker is for the conversation ("do we care? do we know?"),
   which is the part clint called useful, and `a` still asks it about the finding on screen.
@@ -406,12 +436,16 @@ throwaway room with its own `ATRIUM_LOCATION` and fixtures off.
 - `reviews_root`, the run folder, the three fetch commands, `bundle.md`.
 - The runner: prime, forks per step through `runForkProcess`, JSON in `steps/`, the budget check, `run.log`,
   `review.json`, and step 8's renderer.
-- `POST /v1/prs`, `GET /v1/prs`, `POST /v1/prs/{id}/retry`, on the human listener.
+- `POST /v1/prs`, `GET /v1/prs`, `POST /v1/prs/{id}/retry`, `POST /v1/prs/{id}/abort`, on the human listener.
+- The renderer's checks of 5.6, each with a test.
 - **Acceptance:** `POST /v1/prs` with 378's URL produces a run folder that the built walk drawer opens, with finding
   files in clint's shape and `walk.txt`, in under 10 minutes, under $2 as recorded in `review.json`, with no card
   made and nobody asked anything. Its findings cover at least the 6 med of 378's run, judged by @review. No
   `Suggested fix:` on a finding whose `proven` is `no`. `review.json` records the forks' cache reads against the
-  prime's write, which is the fork measurement review-memory decision 1 asked for.
+  prime's write, which is the fork measurement review-memory decision 1 asked for. No fork waits on a permission:
+  a fork's PreToolUse hook reports for an agent atrium has never heard of, as keep-alive forks do, and the run
+  shows it never blocked. An aborted run follows rule 44: the daemon deletes the run folder, `steps/` and
+  `review.json` with it, and the row says `aborted`.
 
 ### P2: the pulls view. @ui, after P1's API.
 
@@ -455,6 +489,9 @@ Pending-review posting (review-tab option C), and Mercurius as a step once it ha
 - **Atrium posts nothing to GitHub** before P4, and P4 is a pending review clint submits.
 - **The review-panel skill stays** for targets that are not a PR (a branch, a local diff) and for a person who wants
   a review in chat. The recipe is the skill's steps moved into atrium for PRs, and the two share agent definitions.
+- **A recipe run is read-only, so it does not cover testing rules 1 to 4** (real hardware, three builds per repro,
+  environment details asked up front, external failures apart). A review asked for with hardware or repros is a
+  walker's job or a separate card, and the row says "read-only review" so nobody reads it as having run anything.
 - **No reviewer is a card.** A step that needs a conversation is the walker's job, and there is one walker.
 
 ## 11. Decided
