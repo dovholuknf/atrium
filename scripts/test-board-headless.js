@@ -85,6 +85,8 @@ function withClock(browser) {
   browser.newContext = async (opts, more) => {
     const ctx = await newContext(opts || {});
     if (!(more && more.realClock)) await ctx.addInitScript({ content: CLOCK_INIT });
+    // A phone-sized test context would be sent to /m by the board root. Every context opts out unless it is the redirect's own.
+    if (!(more && more.redirect)) await ctx.addInitScript(() => { try { localStorage.setItem("atrium.m.desktop", "1"); } catch (e) {} });
     return ctx;
   };
   browser.newPage = async opts => {
@@ -8770,7 +8772,7 @@ async function eventDrivenSection(browser, base) {
     // ask for nothing.
     counts.clear();
     const clicks = await p.evaluate(() => {
-      const strip = () => document.getElementById("terms").innerHTML;
+      const strip = () => document.getElementById("terms").innerHTML + document.getElementById("gear-term-sort").innerHTML;
       const oneFrame = (act, read) => new Promise(done => {
         const before = read();
         act();
@@ -13217,6 +13219,35 @@ async function mCompactCount(p) {
   });
 }
 
+// The composer's buttons and the jump control: no overlap, one line with the input, 40px hit areas, nothing over a message.
+async function mCompactButtons(p, tag) {
+  const r = await p.evaluate(() => {
+    const box = e => { const b = e.getBoundingClientRect(); return { x: b.left, y: b.top, w: b.width, h: b.height, cy: b.top + b.height / 2 }; };
+    const btns = [...document.querySelectorAll("#m-compose .mc-attach, #m-compose .mc-send, #m-jump:not([hidden])")].map(e => ({ n: e.className || e.id, ...box(e) }));
+    const ta = box(document.querySelector("#m-compose textarea"));
+    const sc = document.getElementById("m-card-scroll").getBoundingClientRect();
+    const jump = document.querySelector("#m-jump:not([hidden])");
+    const over = jump ? [...document.querySelectorAll("#m-replies .reply")].some(e => {
+      const r0 = e.getBoundingClientRect(), j = jump.getBoundingClientRect();
+      const b = { left: r0.left, right: r0.right, top: Math.max(r0.top, sc.top), bottom: Math.min(r0.bottom, sc.bottom) };
+      return b.bottom > b.top && b.left < j.right && b.right > j.left && b.top < j.bottom && b.bottom > j.top; }) : false;
+    const row = document.querySelector("#m-compose .mc-row").getBoundingClientRect();
+    return { btns, ta, over, rowH: Math.round(row.height), cam: !!document.querySelector("#m-compose .mc-cam"), sw: document.documentElement.scrollWidth - innerWidth };
+  });
+  if (r.cam) fail(tag + "a camera button is there");
+  if (r.btns.some(b => b.w < 39.5 || b.h < 39.5)) fail(tag + "a button has a tap target under 40px: " + JSON.stringify(r.btns));
+  r.btns.forEach((a, i) => r.btns.slice(i + 1).forEach(b => {
+    if (a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h) fail(tag + "buttons overlap: " + a.n + " and " + b.n);
+  }));
+  r.btns.filter(b => /mc-attach|mc-send/.test(b.n)).forEach(b => {
+    if (Math.abs(b.cy - r.ta.cy) > 2) fail(tag + b.n + " is not on one line with the input: " + Math.round(b.cy) + " vs " + Math.round(r.ta.cy));
+    if (b.x + b.w > r.ta.x && b.x < r.ta.x + r.ta.w) fail(tag + b.n + " overlaps the input");
+  });
+  if (r.over) fail(tag + "the jump control covers a message");
+  if (r.rowH > 46) fail(tag + "the composer is " + r.rowH + "px high when empty");
+  return r;
+}
+
 async function mCompactSection(browser) {
   const st = mServer({});
   const c = mCard("cp-1", { alias: "packer", display_title: "packer", status: "needs-input", waiting_since: mIso(2 * M_MIN), seen: { turn_ended_at: mIso(20 * M_MIN) } });
@@ -13271,9 +13302,47 @@ async function mCompactSection(browser) {
     if (row.boxes !== 1) fail(tag + "more than one activity block: " + row.boxes);
     if (row.border !== "0px" || !/^rgba\(0, 0, 0, 0\)|transparent/.test(row.bg)) fail(tag + "the activity row is still a box: " + JSON.stringify(row));
     if (row.h > 24) fail(tag + "the activity row is not one line: " + row.h);
+    await mCompactButtons(p, tag + "390: ");
+    // the composer text follows the thread's size, with no 16px floor, and the send circle sits inside the border evenly
+    const sz = await p.evaluate(() => {
+      const ta = document.querySelector("#m-compose textarea"), md = document.querySelector("#m-replies .md");
+      const f = () => [parseFloat(getComputedStyle(ta).fontSize), parseFloat(getComputedStyle(md).fontSize)];
+      const a = f();
+      document.getElementById("m-card").style.setProperty("--m-fs", "19px");
+      const b = f();
+      document.getElementById("m-card").style.removeProperty("--m-fs");
+      const row = document.querySelector("#m-compose .mc-row").getBoundingClientRect(), sd = document.querySelector("#m-compose .mc-send"), sb = sd.getBoundingClientRect();
+      const pad = parseFloat(getComputedStyle(sd).paddingLeft);
+      const bg = getComputedStyle(sd).backgroundClip;
+      const svg = sd.querySelector("svg").getBoundingClientRect();
+      return { a, b, right: Math.round(row.right - (sb.right - pad)), top: Math.round((sb.top + pad) - row.top), bottom: Math.round(row.bottom - (sb.bottom - pad)), bg,
+        dx: Math.abs((svg.left + svg.width / 2) - (sb.left + sb.width / 2)), dy: Math.abs((svg.top + svg.height / 2) - (sb.top + sb.height / 2)),
+        edge: getComputedStyle(document.querySelector("#m-replies .reply")).boxShadow };
+    });
+    if (sz.a[0] !== sz.a[1] || sz.b[0] !== 19 || sz.b[1] !== 19) fail(tag + "the composer and thread text sizes differ: " + JSON.stringify(sz));
+    if (Math.abs(sz.right - sz.top) > 1 || Math.abs(sz.top - sz.bottom) > 1 || sz.top < 4) fail(tag + "the send circle inset is uneven: " + JSON.stringify(sz));
+    if (sz.dx > 0.6 || sz.dy > 0.6) fail(tag + "the send arrow is off centre: " + JSON.stringify(sz));
+    if (!/rgb/.test(sz.edge) || /none/.test(sz.edge)) fail(tag + "a bubble has no edge: " + sz.edge);
     if (await mNoSideways(p)) fail(tag + "the card scrolls sideways");
     if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
     await ctx.close();
+    // a narrow phone, scrolled up so the jump control shows
+    st.tasks = [mCard("cp-2", { alias: "longer", display_title: "longer", status: "needs-input", waiting_since: mIso(2 * M_MIN), seen: { turn_ended_at: mIso(20 * M_MIN) } })];
+    st.replies["cp-2"] = { source: "transcript", replies: [1, 2, 3, 4, 5, 6].map(i => ({ at: mIso((30 - i * 4) * M_MIN), text: "Reply " + i + ". " + body.repeat(4) })) };
+    const n = await mPage(browser, st, { width: 360, height: 640 }, "");
+    await n.p.waitForSelector("#m-seg-all", { timeout: slow(10000) });
+    await n.p.tap("#m-seg-all");
+    await n.p.waitForSelector("#m-list .row", { timeout: slow(10000) });
+    await n.p.tap('#m-list .row[data-id="cp-2"]');
+    await n.p.waitForSelector("#m-replies .reply", { timeout: slow(5000) });
+    await n.p.waitForSelector("#m-compose textarea", { timeout: slow(5000) });
+    await n.p.evaluate(() => { const e = document.getElementById("m-card-scroll"); e.dispatchEvent(new WheelEvent("wheel", { deltaY: -100 })); e.scrollTop = 0; });
+    await n.p.waitForTimeout(600);
+    await n.p.waitForFunction(() => !document.getElementById("m-jump").hidden, null, { timeout: slow(3000) });
+    await mCompactButtons(n.p, tag + "360: ");
+    await mShot(n.p, "compact-jump-360");
+    if (await mNoSideways(n.p)) fail(tag + "360: the card scrolls sideways");
+    await n.ctx.close();
   } finally { await st.close(); }
   if (!bad) console.log("mCompact ok");
 }
@@ -13403,6 +13472,65 @@ async function mPromptsSection(browser) {
     }
   } finally { await st.close(); }
   if (!bad) console.log("mPrompts ok");
+}
+
+// Typing a long message must not move the thread: not on a keystroke, not when the composer grows a line, not when the
+// keyboard comes and goes.
+async function mTypeSteadySection(browser) {
+  const st = mServer({});
+  const c = mCard("ty-1", { alias: "typist", display_title: "typist", status: "needs-input", waiting_since: mIso(2 * M_MIN), seen: { turn_ended_at: mIso(20 * M_MIN) } });
+  st.tasks = [c];
+  st.replies["ty-1"] = { source: "transcript", replies: Array.from({ length: 10 }, (_, i) => ({ at: mIso((60 - i * 4) * M_MIN), text: "Reply " + i + ". " + "words go here and wrap onto more lines. ".repeat(8) })) };
+  await st.open();
+  try {
+    const { ctx, p, errors } = await mPage(browser, st, M_VIEWS[0], "");
+    const tag = "mTypeSteady: ";
+    await p.waitForSelector("#m-seg-all", { timeout: slow(10000) });
+    await p.tap("#m-seg-all");
+    await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
+    await p.tap('#m-list .row[data-id="ty-1"]');
+    await p.waitForSelector("#m-replies .reply", { timeout: slow(5000) });
+    await p.waitForSelector("#m-compose textarea", { timeout: slow(5000) });
+    await p.waitForTimeout(600);
+    const look = () => p.evaluate(() => {
+      const sc = document.getElementById("m-card-scroll"), r = sc.getBoundingClientRect();
+      const first = [...document.querySelectorAll("#m-replies .reply")].find(e => e.getBoundingClientRect().bottom > r.top + 1);
+      return { top: sc.scrollTop, first: first ? first.textContent.slice(0, 14) : "", firstY: first ? Math.round(first.getBoundingClientRect().top - r.top) : 0,
+        boxH: Math.round(document.querySelector("#m-compose textarea").getBoundingClientRect().height) };
+    });
+    for (const where of ["bottom", "middle"]) {
+      if (where === "middle") await p.evaluate(() => { const e = document.getElementById("m-card-scroll"); e.dispatchEvent(new WheelEvent("wheel", { deltaY: -100 })); e.scrollTop = Math.round(e.scrollHeight / 3); });
+      await p.waitForTimeout(300);
+      await p.tap("#m-compose textarea");
+      await p.waitForTimeout(200);
+      const base = await look();
+      const steps = [];
+      for (let line = 0; line < 10; line++) {
+        for (const ch of "line " + line + " of a long message") {
+          await p.keyboard.type(ch);
+          const now = await look();
+          if (now.top !== base.top || now.first !== base.first || now.firstY !== base.firstY) { steps.push({ line, ch, now }); break; }
+        }
+        if (steps.length) break;
+        await p.keyboard.press("Shift+Enter");
+        if (line === 3) await p.setViewportSize({ width: 390, height: 844 - 320 });
+        if (line === 7) await p.setViewportSize({ width: 390, height: 844 });
+        await p.waitForTimeout(60);
+      }
+      if (steps.length) fail(tag + where + ": the thread moved " + JSON.stringify({ base, step: steps[0] }));
+      const end = await look();
+      if (end.boxH > 6 * 20 + 24) fail(tag + where + ": the composer grew past its cap: " + end.boxH);
+      const sc = await p.$eval("#m-compose textarea", t => t.scrollHeight > t.clientHeight && getComputedStyle(t).overflowY === "auto");
+      if (!sc) fail(tag + where + ": a ten line message does not scroll inside the composer");
+      await p.fill("#m-compose textarea", "");
+      await p.evaluate(() => document.querySelector("#m-compose textarea").dispatchEvent(new Event("input", { bubbles: true })));
+      await p.evaluate(() => document.activeElement && document.activeElement.blur());
+    }
+    if (await mNoSideways(p)) fail(tag + "the card scrolls sideways");
+    if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+    await ctx.close();
+  } finally { await st.close(); }
+  if (!bad) console.log("mTypeSteady ok");
 }
 
 async function mRecapSheetSection(browser) {
@@ -13698,11 +13826,12 @@ async function mCardUploadSection(browser) {
         await p.evaluate(() => document.querySelector("#m-compose textarea").dispatchEvent(new Event("input", { bubbles: true })));
       };
       const chips = () => p.evaluate(() => Array.from(document.querySelectorAll("#m-compose .mc-file")).map(x => ({ name: x.querySelector(".mc-fname").textContent, st: x.dataset.state, word: x.querySelector(".mc-fstate").textContent })));
-      // the file picker and the camera are both there, and the camera asks for the camera
+      // the file picker is there, takes images and files, and there is no camera button
       const ins = await p.evaluate(() => Array.from(document.querySelectorAll("#m-compose input.mc-input")).map(i => ({ accept: i.accept, capture: i.getAttribute("capture"), multiple: i.multiple })));
-      if (ins.length !== 2 || !ins.some(i => i.multiple && /image/.test(i.accept) && /pdf/.test(i.accept) && i.capture === null) || !ins.some(i => i.capture === "environment" && i.accept === "image/*")) fail(tag + "picker or camera inputs wrong: " + JSON.stringify(ins));
+      if (ins.length !== 1 || !(ins[0].multiple && /image/.test(ins[0].accept) && /pdf/.test(ins[0].accept) && ins[0].capture === null)) fail(tag + "picker input wrong: " + JSON.stringify(ins));
+      if (await p.$("#m-compose .mc-cam")) fail(tag + "the camera button is still there");
       const btns = await p.$$eval("#m-compose .mc-attach", bs => bs.map(b => { const r = b.getBoundingClientRect(); return [r.width, r.height]; }));
-      if (btns.length !== 2 || btns.some(b => b[0] < 36 || b[1] < 40)) fail(tag + "attach buttons are missing or too small: " + JSON.stringify(btns));
+      if (btns.length !== 1 || btns.some(b => b[0] < 40 || b[1] < 40)) fail(tag + "the attach button is missing or too small: " + JSON.stringify(btns));
       if (await mNoSideways(p)) fail(tag + "the card scrolls sideways");
       await mShot(p, "upload-row-" + vp.width);
       // two files from the picker and a pasted image, held in flight
@@ -13815,7 +13944,7 @@ async function mHomeOrderSection(browser) {
   const cards = () => [
     mCard("a-1", { alias: "alpha", worktree: "/g/github/o/one", last_activity_at: mIso(5 * M_MIN) }),
     mCard("b-1", { alias: "bravo", worktree: "/g/github/o/two", status: "done", last_activity_at: mIso(1 * M_MIN) }),
-    mCard("c-1", { alias: "charlie", worktree: "/g/github/o/one", tags: ["origin:agent"], last_activity_at: mIso(30 * M_MIN) }),
+    mCard("c-1", { display_title: "charlie", worktree: "/g/github/o/one", tags: ["origin:agent"], last_activity_at: mIso(30 * M_MIN) }),
     mCard("d-1", { alias: "delta", worktree: "/g/github/o/two", status: "needs-input", waiting_since: mIso(10 * M_MIN), last_activity_at: mIso(10 * M_MIN) }),
   ];
   const names = p => p.$$eval("#m-list .row .name b", e => e.map(x => x.textContent));
@@ -14493,6 +14622,12 @@ async function soundPhoneSection(browser, base) {
 
 // ── the bell on the phone board, in every view ───────────────────────────
 async function phoneBellSection(browser, base) {
+}
+
+// ── a phone's board root lands on /m ─────────────────────────────────────
+// A coarse pointer and a short side under 600px is a phone. A tablet, a desktop, a pop-out window and a phone that opted
+// out are left alone, and the card paths map to their /m twins.
+async function phoneRedirectSection(browser, base) {
   const was = tasksMode;
   tasksMode = "land";
   landList = [];
@@ -14587,6 +14722,259 @@ async function mBellSection(browser) {
   if (!bad) console.log("mBell ok");
 }
 
+// The gear's hub hosts row: the list, add and remove, ignored with why, $ATRIUM_HOSTS read-only, a 403 PUT makes it
+// read-only, and a board with no /_hub/hosts draws no row.
+async function gearHostsSection(browser, base) {
+  const tag = "gearHosts: ";
+  const open = async (mode) => {
+    const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+    const st = { hosts: ["*.shares.zrok.io", "*.duckdns.org"], puts: [], gets: 0 };
+    await ctx.route("**/_hub/hosts", route => {
+      const req = route.request();
+      if (mode === "none") return route.fulfill({ status: 404, body: "" });
+      if (req.method() === "PUT") {
+        if (mode === "remote") return route.fulfill({ status: 403, contentType: "application/json", body: JSON.stringify({ error: "only from the hub's machine" }) });
+        const b = JSON.parse(req.postData());
+        st.puts.push(b.hosts);
+        st.hosts = b.hosts;
+      } else st.gets++;
+      return route.fulfill({ contentType: "application/json", body: JSON.stringify({
+        hosts: st.hosts,
+        ignored: st.hosts.includes("*.duckdns.org") ? [{ name: "*.duckdns.org", why: "dynamic DNS" }] : [],
+        env: ["envhost.example.com"]
+      }) });
+    });
+    const errors = [];
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow, #term-list .card.tab", { state: "attached", timeout: slow(15000) });
+    return { ctx, p, st, errors };
+  };
+  let h = await open("hub");
+  try {
+    const { p, st } = h;
+    await p.click("#gear");
+    await p.evaluate(() => showSettingsPane("expose the board"));
+    await p.waitForFunction(() => !document.getElementById("s-hh-row").hidden, null, { timeout: slow(10000) });
+    const a = await p.evaluate(() => ({
+      items: [...document.querySelectorAll("#s-hh-list .hh-item code")].map(c => c.textContent),
+      why: document.getElementById("s-hh-list").textContent,
+      env: document.getElementById("s-hh-env").textContent,
+      help: document.getElementById("s-hh-row").textContent
+    }));
+    if (a.items.join("|") !== "*.shares.zrok.io|*.duckdns.org") fail(tag + "the list was " + JSON.stringify(a.items));
+    if (!/dynamic DNS/.test(a.why)) fail(tag + "an ignored entry shows no reason: " + a.why);
+    if (!/envhost\.example\.com/.test(a.env)) fail(tag + "the env names are missing: " + a.env);
+    if (await p.$("#s-hh-env button")) fail(tag + "the env names are editable.");
+    if (!/HUB's names/.test(a.help) || !/Rooms do not read them/.test(a.help) || !/wildcard is safe only for a\s+domain one operator controls/.test(a.help)) fail(tag + "the row does not say whose names and when a wildcard is safe.");
+    await p.fill("#s-hh-name", "box.example.org");
+    await p.click("#s-hh-add button");
+    await p.waitForFunction(() => document.querySelectorAll("#s-hh-list .hh-item").length === 3, null, { timeout: slow(5000) })
+      .catch(() => fail(tag + "an added name did not appear."));
+    if (JSON.stringify(st.puts[0]) !== JSON.stringify(["*.shares.zrok.io", "*.duckdns.org", "box.example.org"])) fail(tag + "add PUT " + JSON.stringify(st.puts));
+    await p.click('#s-hh-list button[data-remove="*.duckdns.org"]');
+    await p.waitForFunction(() => document.querySelectorAll("#s-hh-list .hh-item").length === 2, null, { timeout: slow(5000) })
+      .catch(() => fail(tag + "a removed name stayed."));
+    if (JSON.stringify(st.puts[1]) !== JSON.stringify(["*.shares.zrok.io", "box.example.org"])) fail(tag + "remove PUT " + JSON.stringify(st.puts));
+    if (/dynamic DNS/.test((await p.textContent("#s-hh-list")) + (await p.textContent("#s-hh-ignored")))) fail(tag + "the reason stayed after the entry went.");
+    const gets = st.gets;
+    await p.evaluate(() => document.getElementById("settings").close());
+    await p.click("#gear");
+    await p.evaluate(() => showSettingsPane("expose the board"));
+    await p.waitForTimeout(400);
+    if (st.gets <= gets) fail(tag + "opening the gear did not read the hosts again.");
+    if (h.errors.length) fail(tag + "page errors: " + h.errors.join(" | "));
+  } finally { await h.ctx.close(); }
+
+  h = await open("remote");
+  try {
+    const { p } = h;
+    await p.click("#gear");
+    await p.evaluate(() => showSettingsPane("expose the board"));
+    await p.waitForFunction(() => !document.getElementById("s-hh-row").hidden, null, { timeout: slow(10000) });
+    await p.fill("#s-hh-name", "x.example.org");
+    await p.click("#s-hh-add button");
+    await p.waitForFunction(() => !document.getElementById("s-hh-ro").hidden, null, { timeout: slow(5000) })
+      .catch(() => fail(tag + "a 403 did not make the row read-only."));
+    const r = await p.evaluate(() => ({
+      add: getComputedStyle(document.getElementById("s-hh-add")).display,
+      removes: document.querySelectorAll("#s-hh-list button").length,
+      said: document.getElementById("s-hh-ro").textContent
+    }));
+    if (r.add !== "none" || r.removes || !/hub's machine/.test(r.said)) fail(tag + "the read-only row is wrong: " + JSON.stringify(r));
+  } finally { await h.ctx.close(); }
+
+  h = await open("none");
+  try {
+    const { p } = h;
+    await p.click("#gear");
+    await p.evaluate(() => showSettingsPane("expose the board"));
+    await p.waitForTimeout(600);
+    const hidden = await p.evaluate(() => { const r = document.getElementById("s-hh-row"); return r.hidden || r.offsetParent === null; });
+    if (!hidden) fail(tag + "a board with no hub draws the row.");
+  } finally { await h.ctx.close(); }
+  if (!bad) console.log("gearHosts ok");
+}
+
+// ── a phone's board root lands on /m ─────────────────────────────────────
+// A coarse pointer and a short side under 600px is a phone. A tablet, a desktop, a pop-out window and a phone that opted
+// out are left alone, and the card paths map to their /m twins.
+async function phoneRedirectSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landList = [];
+  landPerms = [];
+  landCard("land-a", { alias: "rnd", room: "claude-sg4", wire_name: "sparta/rnd-director", supervised: true });
+  const raw = fs.readFileSync(path.join(WEB_ROOT, "index.html"));
+  const open = async (view, at, setup) => {
+    const ctx = await browser.newContext(view, { redirect: true });
+    await ctx.addInitScript(() => localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true })));
+    if (setup) await ctx.addInitScript(setup);
+    const p = await ctx.newPage();
+    const errors = [];
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.route("**/*", route => {
+      const rq = route.request();
+      const u = new URL(rq.url());
+      if (/^\/m\//.test(u.pathname) && rq.resourceType() === "document") return route.fulfill({ status: 200, contentType: "text/html", body: "<!doctype html><title>m</title>phone page" });
+      if (/^\/(alias|room)\//.test(u.pathname) && rq.resourceType() === "document") return route.fulfill({ status: 200, contentType: "text/html", body: raw });
+      if (u.pathname === "/v1/tasks/rnd") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(LAND["land-a"]) });
+      return route.continue();
+    });
+    await p.goto(base + at, { waitUntil: "load" });
+    await p.waitForTimeout(400);
+    const u = new URL(p.url());
+    return { ctx, p, errors, where: u.pathname + u.hash, search: u.search };
+  };
+  const phone = { viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true };
+  try {
+    const cases = [["/?land=land-a&view=stack&key=k1", "/m/#term=land-a"], ["/?land=a%20b", "/m/#term=a%20b"], ["/?view=perms&key=k2", "/m/"], ["/?land=land-a&x=1", "/m/?x=1#term=land-a"],
+      ["/", "/m/"], ["/alias/rnd", "/m/alias/rnd"], ["/room/claude-sg4/rnd", "/m/room/claude-sg4/rnd"], ["/#term=land-a", "/m/#term=land-a"], ["/room/claude-sg4", "/m/"]];
+    for (const [from, to] of cases) {
+      const r = await open(phone, from);
+      if (r.where !== to && !(r.where === to.replace("?x=1", "") && /x=1/.test(r.search))) fail("phoneRedirect: a phone at " + from + " ended on " + r.where + ", not " + to);
+      if (from === "/room/claude-sg4" && (await r.p.evaluate(() => localStorage.getItem("atrium.room"))) !== "claude-sg4") fail("phoneRedirect: the room scope was lost");
+      if (r.errors.length) fail("phoneRedirect " + from + ": " + r.errors.join(" | "));
+      await r.ctx.close();
+    }
+    // a phone at 412, and a phone turned on its side (its short side is still under 600)
+    for (const v of [{ viewport: { width: 412, height: 915 }, hasTouch: true, isMobile: true }, { viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true }]) {
+      const r = await open(v, "/");
+      if (r.where !== "/m/") fail("phoneRedirect: a phone " + v.viewport.width + "x" + v.viewport.height + " ended on " + r.where);
+      await r.ctx.close();
+    }
+    // the opt-out keeps the board, shows the way back, and the way back clears it
+    let r = await open(phone, "/", () => { if (!sessionStorage.getItem("seeded")) { sessionStorage.setItem("seeded", "1"); localStorage.setItem("atrium.m.desktop", "1"); } });
+    if (r.where !== "/") fail("phoneRedirect: an opted-out phone was sent to " + r.where);
+    await r.p.evaluate(() => openToastLog());
+    if (!(await r.p.isVisible("#toastlog-phone"))) fail("phoneRedirect: no way back to the phone view");
+    else {
+      await r.p.tap("#toastlog-phone");
+      await r.p.waitForFunction(() => location.pathname === "/m/", null, { timeout: slow(5000) }).catch(() => fail("phoneRedirect: phone view did not go to /m"));
+      if (await r.p.evaluate(() => localStorage.getItem("atrium.m.desktop"))) fail("phoneRedirect: phone view did not clear the opt-out");
+    }
+    await r.ctx.close();
+    // a pop-out window by its name, and by its opener
+    r = await open(phone, "/#term=land-a", () => { window.name = "atrium-term-land-a"; });
+    if (r.where !== "/#term=land-a") fail("phoneRedirect: a pop-out was sent to " + r.where);
+    await r.ctx.close();
+    // a desktop and a tablet are untouched, and so is a desktop browser window made narrow
+    for (const [name, v] of [["desktop", { viewport: { width: 1400, height: 900 } }], ["tablet", { viewport: { width: 820, height: 1180 }, hasTouch: true, isMobile: true }],
+      ["narrow desktop", { viewport: { width: 400, height: 800 } }]]) {
+      const x = await open(v, "/");
+      if (x.where !== "/") fail("phoneRedirect: a " + name + " was sent to " + x.where);
+      const y = await open(v, "/alias/rnd");
+      if (y.where !== "/alias/rnd") fail("phoneRedirect: a " + name + " card address was sent to " + y.where);
+      await x.ctx.close();
+      await y.ctx.close();
+    }
+  } finally { tasksMode = was; }
+  // the link on /m sets the opt-out and does not bounce back
+  const st = mServer({});
+  st.tasks = [mCard("r-1", { alias: "a", display_title: "a" })];
+  await st.open();
+  try {
+    const ctx = await browser.newContext({ viewport: M_VIEWS[0], hasTouch: true, isMobile: true }, { redirect: true });
+    const p = await ctx.newPage();
+    await p.route(st.url + "/", route => route.fulfill({ status: 200, contentType: "text/html", body: raw }));
+    await p.goto(st.url + "/m/", { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#m-desktop", { timeout: slow(8000) });
+    if (new URL(p.url()).pathname !== "/m/") fail("phoneRedirect: /m left itself for " + p.url());
+    await p.tap("#m-desktop");
+    await p.waitForFunction(() => location.pathname === "/", null, { timeout: slow(8000) }).catch(() => fail("phoneRedirect: the desktop board link did not leave /m"));
+    await p.waitForTimeout(400);
+    if (new URL(p.url()).pathname !== "/") fail("phoneRedirect: the desktop board link bounced back to " + p.url());
+    if ((await p.evaluate(() => localStorage.getItem("atrium.m.desktop"))) !== "1") fail("phoneRedirect: the link did not set the opt-out");
+    // a card the board knew only by id opens on /m from the fragment
+    const q = await ctx.newPage();
+    await q.goto(st.url + "/m/#term=r-1", { waitUntil: "domcontentloaded" });
+    await q.waitForSelector("#m-card.on", { timeout: slow(8000) }).catch(() => fail("phoneRedirect: /m/#term=<id> did not open the card"));
+    await ctx.close();
+  } finally { await st.close(); }
+  if (!bad) console.log("phoneRedirect ok");
+}
+
+// ── the cards a /m home does not show, and why ───────────────────────────
+// A room the page is scoped to is said on the page and can be left. Filters that hide rows say how many, and a tap shows
+// them. Hide subagents keeps a running card that has an alias.
+async function mHiddenSection(browser) {
+  const st = mServer({});
+  st.tasks = [
+    mCard("orch-1", { alias: "orchestrator", display_title: "orchestrator", status: "running", room: "sg4-control", tags: ["atrium:hold-notices", "atrium:subagent", "orchestrators", "origin:agent"] }),
+    mCard("help-1", { display_title: "helper", status: "running", room: "sg4-control", tags: ["origin:agent"] }),
+    mCard("done-1", { display_title: "finished", status: "done", room: "sg4-control" }),
+    mCard("far-1", { alias: "far", display_title: "far", status: "running", room: "other" }),
+  ];
+  await st.open();
+  try {
+    for (const vp of M_VIEWS) {
+      const tag = "mHidden " + vp.width + ": ";
+      const names = p => p.$$eval("#m-list .row .name b", e => e.map(x => x.textContent).sort());
+      const vis = (p, sel) => p.evaluate(s => { const e = document.querySelector(s); return !!e && !e.hidden && e.getClientRects().length > 0; }, sel);
+      // (1) scoped to a room
+      let ctx = await browser.newContext({ viewport: vp, hasTouch: true, isMobile: true });
+      await ctx.addInitScript(() => { if (!sessionStorage.getItem("seeded")) { sessionStorage.setItem("seeded", "1"); localStorage.setItem("atrium.room", "other"); } });
+      let p = await ctx.newPage();
+      const errors = [];
+      p.on("pageerror", e => errors.push(String(e)));
+      await p.goto(st.url + "/m/", { waitUntil: "domcontentloaded" });
+      await p.tap("#m-seg-all");
+      await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
+      if ((await names(p)).join() !== "far") fail(tag + "a scoped page lists " + (await names(p)).join());
+      if (!(await vis(p, "#m-room-chip")) || !/room: other/.test(await p.textContent("#m-room-chip"))) fail(tag + "the scope is not said on the page");
+      await p.tap("#m-room-all");
+      await p.waitForFunction(() => document.querySelectorAll("#m-list .row").length === 4, null, { timeout: slow(8000) })
+        .catch(async () => fail(tag + "all rooms did not list every card: " + (await names(p)).join()));
+      if (await vis(p, "#m-room-chip")) fail(tag + "the room chip stayed after all rooms");
+      if (await p.evaluate(() => localStorage.getItem("atrium.room"))) fail(tag + "all rooms did not clear the stored room");
+      await ctx.close();
+      // (2) and (3) filters
+      ctx = await browser.newContext({ viewport: vp, hasTouch: true, isMobile: true });
+      await ctx.addInitScript(() => localStorage.setItem("atrium.m.homeopts", JSON.stringify({ order: "newest", group: "none", needsMe: false, hideDone: true, hideSubs: true })));
+      p = await ctx.newPage();
+      p.on("pageerror", e => errors.push(String(e)));
+      await p.goto(st.url + "/m/", { waitUntil: "domcontentloaded" });
+      await p.tap("#m-seg-all");
+      await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
+      const n = await names(p);
+      if (n.indexOf("orchestrator") < 0) fail(tag + "hide subagents hid a running card that has an alias: " + n.join());
+      if (n.indexOf("helper") >= 0 || n.indexOf("finished") >= 0) fail(tag + "the filters did not hide what they name: " + n.join());
+      if (!/^2 hidden by filters/.test(await p.textContent("#m-hidden"))) fail(tag + "the hidden line says " + await p.textContent("#m-hidden"));
+      await p.tap("#m-hidden");
+      await p.waitForFunction(() => document.querySelectorAll("#m-list .row").length === 4, null, { timeout: slow(5000) })
+        .catch(async () => fail(tag + "the tap did not show the hidden rows: " + (await names(p)).join()));
+      await p.tap("#m-hidden");
+      await p.waitForFunction(() => document.querySelectorAll("#m-list .row").length === 2, null, { timeout: slow(5000) })
+        .catch(() => fail(tag + "the second tap did not hide them again"));
+      if (await mNoSideways(p)) fail(tag + "the home scrolls sideways");
+      if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+      await ctx.close();
+    }
+  } finally { await st.close(); }
+  if (!bad) console.log("mHidden ok");
+}
+
 async function main() {
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = "http://127.0.0.1:" + server.address().port;
@@ -14624,9 +15012,13 @@ async function main() {
       growlQuestionShots: growlQuestionShotsSection, growlQuestionBody: growlQuestionBodySection, growlReplyGrow: growlReplyGrowSection, growlChoices: growlChoicesSection, growlStable: growlStableSection, mGrowlQuestion: mGrowlQuestionSection,
       bootClean: bootCleanSection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mRecapSheet: mRecapSheetSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
+      mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, phoneRedirect: phoneRedirectSection,
+      mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, mHidden: mHiddenSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
       gearTermList: gearTermListSection, growlLinks: growlLinksSection, growlChoiceOnce: growlChoiceOnceSection,
       mOutputAt: mOutputAtSection, mStickBottom: mStickBottomSection, mSendFree: mSendFreeSection, mCardUpload: mCardUploadSection, mCompact: mCompactSection, mPinch: mPinchSection, mPrompts: mPromptsSection,
-      cardUrlWinName: cardUrlWinNameSection };
+      cardUrlWinName: cardUrlWinNameSection,
+      gearHosts: gearHostsSection,
+      mTypeSteady: mTypeSteadySection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -14872,7 +15264,7 @@ async function main() {
     const hideState = () => page.evaluate(() => {
       const has = id => !!document.querySelector(`#term-list .card.tab[data-id="${id}"]`);
       const seg = which => {
-        const btns = [...document.querySelectorAll("#term-list .termhide button")];
+        const btns = [...document.querySelectorAll("#gear-term-hide .termhide button")];
         return btns.find(b => new RegExp("^" + which + "\\b").test(b.textContent.trim())) || null;
       };
       const a = seg("agents"), s = seg("subagents");
@@ -14897,8 +15289,8 @@ async function main() {
         agentLabel: a ? a.textContent.trim() : "",
         subLabel: s ? s.textContent.trim() : "",
         subTitle: s ? s.dataset.tip || "" : "",
-        onePill: document.querySelectorAll("#term-list .termhide").length === 1,
-        segCount: document.querySelectorAll("#term-list .termhide button").length
+        onePill: document.querySelectorAll("#gear-term-hide .termhide").length === 1,
+        segCount: document.querySelectorAll("#gear-term-hide .termhide button").length
       };
     });
 
@@ -16604,9 +16996,11 @@ async function main() {
     await mMarkdownSection(browser);
     await mHostileSection(browser);
     await mPicturesSection(browser);
+    await mHiddenSection(browser);
     await soundPhoneSection(browser, base);
     await phoneBellSection(browser, base);
     await mBellSection(browser);
+    await phoneRedirectSection(browser, base);
     await gearTermListSection(browser, base);
     await growlLinksSection(browser, base);
     await growlChoiceOnceSection(browser, base);
@@ -16616,8 +17010,10 @@ async function main() {
     await mCardUploadSection(browser);
     await mCompactSection(browser);
     await mPinchSection(browser);
+    await mTypeSteadySection(browser);
     await mPromptsSection(browser);
     await cardUrlWinNameSection(browser, base);
+    await gearHostsSection(browser, base);
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e));
     if (process.env.DEBUG_HEADLESS) {
@@ -16707,7 +17103,11 @@ function mServer(state) {
     const u = new URL(req.url, "http://x");
     const p = u.pathname;
     const json = (code, o) => { res.writeHead(code, { "Content-Type": "application/json" }); res.end(JSON.stringify(o)); };
-    if (p === "/v1/tasks") return json(200, { tasks: state.tasks });
+    if (p === "/v1/tasks") {
+      // A page scoped to a room asks with that room in a header, and the hub answers with that room's cards.
+      const rm = req.headers["x-atrium-room"];
+      return json(200, { tasks: rm ? state.tasks.filter(t => !t.room || t.room === rm) : state.tasks });
+    }
     if (p === "/v1/permissions") return json(200, { permissions: state.perms });
     if (p === "/v1/settings") return json(200, { board_skins: ["default", "daylight"], board_skin: state.skin || "default" });
     if (p === "/_hub/rooms") return json(404, { error: "not a hub" });
