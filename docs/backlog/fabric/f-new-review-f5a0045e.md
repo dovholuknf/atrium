@@ -67,3 +67,32 @@ nothing served, so the verdict will be hub-ok and room-ok as for test tooling.
 
 Quality: after the Sonnet switch, the design is careful (temporary index, nothing staged, refs and worktree removed,
 exit codes kept). The miss is the classic pwsh one: native failures do not throw, and nothing checked them.
+
+## Re-read: cf30cb51 (2026-10-01)
+
+Range adcd5d1a..cf30cb51 on claude/fabric. The branch was rebased: `git range-diff` shows 9bdbf6c3 = b0dc2af9 and
+f5a0045e = 8a408fe2. The new reading is cf30cb51.
+
+- Medium closed. Every snapshot step runs through `Step`, which exits 3 with git's own output and names `--local`. The
+  `exit` runs the `finally`, so the temporary index is removed. I ran the tip's board-suite-remote.ps1 in
+  D:/worktrees/claude/atrium/review, which has an untracked `NUL`: `board-suite fail git add -A exited 128` with
+  git's errors, the hint line, exit 3, nothing pushed, and the real index untouched (`git status` unchanged).
+- Low closed: the arguments go as base64 of one per line and run as `& node ... --local @suiteArgs`. No
+  `Invoke-Expression` is left.
+- Low closed: each run first removes `suite-*` worktrees and `refs/suite/*` older than a day, then prunes. Only
+  day-old ones are touched, so a concurrent run is safe.
+- Nits closed: `-Clone` is quoted, `opt.argv` is gone.
+
+### New, nits only
+
+- `Step` merges stderr into what it returns (`2>&1`), and `$tree` and `$sha` are read from that. A warning from
+  `write-tree` or `commit-tree` would then be read as part of the hash. Neither prints one today. Keep stderr apart
+  for those two, or take the last line.
+- `-Clone '$clone'` relies on sg3's ssh default shell being PowerShell. Under cmd.exe, `powershell -File` keeps single
+  quotes in the value. Your run on sg3 shows it works there. Double quotes would work under either shell.
+- The JS side still joins the arguments with spaces and the script splits them on whitespace, so one argument cannot
+  hold a space. No flag the suite takes needs one.
+
+OK hub and room adcd5d1a..cf30cb51.
+
+Quality: after the Sonnet switch, every finding was taken and each fix was proven live. Good.
