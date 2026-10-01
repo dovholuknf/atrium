@@ -160,7 +160,7 @@ function growlFull(g) {
     : asks ? `<div class="gr-body">${growlBodyHTML(split.text)}</div>`
       : `<div class="gr-line">${esc(growlFirstLine(g.body))}</div>`;
   const choices = split.choices.length
-    ? `<div class="gr-choices">${split.choices.map(c => `<button data-choice="${esc(c)}">${esc(c)}</button>`).join("")}</div>` : "";
+    ? `<div class="gr-choices">${split.choices.map(c => `<button data-choice="${esc(c)}"${growlChoiceSent.get(g.id) === g.body ? " disabled" : ""}>${esc(c)}</button>`).join("")}</div>` : "";
   const big = growlCompose === g.id;
   const dead = perm && !g.subject ? " disabled" : "";
   let acts = "";
@@ -181,6 +181,10 @@ function growlFull(g) {
   return `<div class="gr-full" data-id="${esc(g.id)}" data-reason="${esc(g.reason)}">` +
     `<div class="gr-head"><b>${esc(g.title)}</b>${off}</div>${text}${choices}${reply}<div class="gr-acts">${acts}</div>${snooze}</div>`;
 }
+
+// The growlers whose choice is in flight or answered, by the body they answered, so a redraw keeps the
+// buttons disabled and a new question on the same growler gets live ones.
+const growlChoiceSent = new Map();
 
 // A `{choices}...{/choices}` block is the agent offering a small set of answers, one per line. It is taken out of
 // the text and drawn as buttons, and a press sends that line as the reply.
@@ -381,7 +385,7 @@ function growlClick(e) {
   if (btn.dataset.snooze !== undefined) { growlSnoozeFor(row, Number(btn.dataset.snooze)); return; }
   if (btn.dataset.choice !== undefined) {
     const g = row && growlByRow(row);
-    if (g) growlSendReply(g, btn.dataset.choice, null);
+    if (g) growlSendChoice(g, row, btn.dataset.choice);
     return;
   }
   const what = btn.dataset.do;
@@ -479,10 +483,24 @@ function growlReply(g, row) {
   return growlSendReply(g, box ? box.value.trim() : "", box);
 }
 
-// A reply typed, or a choice pressed. Both are the same message.
+// A choice is one answer: every button of the question is disabled until the send answers, and lit again
+// only if it failed, so a double press cannot send twice.
+async function growlSendChoice(g, row, text) {
+  if (growlChoiceSent.get(g.id) === g.body) return;
+  growlChoiceSent.set(g.id, g.body);
+  const btns = [...row.querySelectorAll(".gr-choices button")];
+  btns.forEach(b => { b.disabled = true; });
+  const ok = await growlSendReply(g, text, null);
+  if (!ok) {
+    growlChoiceSent.delete(g.id);
+    btns.forEach(b => { b.disabled = false; });
+  }
+}
+
+// A reply typed, or a choice pressed. Both are the same message. True when it was sent.
 async function growlSendReply(g, text, box) {
   const id = growlCard(g);
-  if (!text || !id) return;
+  if (!text || !id) return false;
   try {
     await api(`/v1/tasks/${id}/message`, {
       method: "POST", headers: { "Content-Type": "application/json" },
@@ -491,8 +509,10 @@ async function growlSendReply(g, text, box) {
     growlDrafts.delete(g.id);
     if (box) { box.value = ""; growlGrow(box); }
     toast("sent", `${g.title}: ${text.slice(0, 80)}`);
+    return true;
   } catch (e) {
     toast("not sent", e.message || String(e));
+    return false;
   }
 }
 
