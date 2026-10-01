@@ -40,6 +40,37 @@
     return s.replace(/\u0000(\d+)\u0000/g, (m, i) => hold[+i]);
   }
 
+  // Cells of one table row. A pipe inside a code span or escaped with a backslash belongs to the cell.
+  function cells(line) {
+    let s = line.trim();
+    if (s[0] === "|") s = s.slice(1);
+    if (s.endsWith("|") && !s.endsWith("\\|")) s = s.slice(0, -1);
+    const out = [];
+    let cur = "", tick = false;
+    for (let k = 0; k < s.length; k++) {
+      const c = s[k];
+      if (c === "\\" && s[k + 1] === "|") { cur += "|"; k++; continue; }
+      if (c === "`") tick = !tick;
+      if (c === "|" && !tick) { out.push(cur.trim()); cur = ""; continue; }
+      cur += c;
+    }
+    out.push(cur.trim());
+    return out;
+  }
+
+  const DELIM = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
+
+  // A header row, a delimiter row and the rows under it, as a table in a box that scrolls sideways when it must.
+  // Alignment colons are kept, and a short row is padded to the header's width.
+  function table(head, delim, rows) {
+    const n = head.length;
+    const al = delim.map(d => /^:-+:$/.test(d) ? "center" : /-:$/.test(d) ? "right" : /^:-/.test(d) ? "left" : "");
+    const cell = (tag, t, k) => "<" + tag + (al[k] ? ' style="text-align:' + al[k] + '"' : "") + ">" + inline(t) + "</" + tag + ">";
+    const row = (tag, r) => "<tr>" + Array.from({ length: n }, (x, k) => cell(tag, r[k] || "", k)).join("") + "</tr>";
+    return '<div class="tbl"><table><thead>' + row("th", head) + "</thead><tbody>" + rows.map(r => row("td", r)).join("") +
+      "</tbody></table></div>";
+  }
+
   function render(src) {
     const lines = String(src == null ? "" : src).replace(/\r\n?/g, "\n").split("\n");
     const out = [];
@@ -64,6 +95,16 @@
         continue;
       }
       if (/^\s*$/.test(line)) { flush(); i++; continue; }
+      if (line.includes("|") && i + 1 < lines.length && DELIM.test(lines[i + 1]) && lines[i + 1].includes("-") &&
+          cells(lines[i + 1]).length === cells(line).length) {
+        flush();
+        const head = cells(line), delim = cells(lines[i + 1]);
+        const rows = [];
+        i += 2;
+        while (i < lines.length && lines[i].includes("|") && !/^\s*$/.test(lines[i])) rows.push(cells(lines[i++]));
+        out.push(table(head, delim, rows));
+        continue;
+      }
       const h = /^(#{1,6})\s+(.*?)\s*#*\s*$/.exec(line);
       if (h) {
         flush();
