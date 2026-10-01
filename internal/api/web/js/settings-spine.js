@@ -1646,6 +1646,7 @@ function connect() {
     if (typeof paintRooms === "function") paintRooms();
     loadGlobalAuto();
     if (typeof loadHubHosts === "function") loadHubHosts();
+    if (typeof loadDeployReady === "function") loadDeployReady();
     // Assume the daemon is coming up until it says otherwise.
     //
     // The tasks and the health poll are two requests that do not arrive in a
@@ -1756,6 +1757,8 @@ function connect() {
   });
   // THE HUB IS ABOUT TO RESTART, or has been asked to and is waiting. The
   // countdown, the pause and the cover. See js/hubrestart.js.
+  // The hub's deploy-ready answer changed, or a deploy started or ended: read it again. See js/deployready.js.
+  es.addEventListener("deploy-ready", () => { if (typeof loadDeployReady === "function") loadDeployReady(); });
   es.addEventListener("hub-restart", e => {
     let d = {};
     try { d = JSON.parse(e.data) || {}; } catch (err) { return; }
