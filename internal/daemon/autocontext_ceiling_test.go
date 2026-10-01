@@ -171,39 +171,80 @@ func TestCeilingCardStillWaitsOutTheProtectingGates(t *testing.T) {
 	}
 }
 
-// A director a person is attached to and has typed in recently is not nudged or cleared.
-func TestCeilingCardHoldsWhileAPersonAttachedIsTyping(t *testing.T) {
+// A terminal attached holds the cycle until the person leaves, and says so once.
+func TestCeilingCardWaitsForAWatcherToLeave(t *testing.T) {
 	r := newAutoRig(t, "", directorTags...)
 	ceilingBusy(r)
 	r.size(200)
 	autoQuiet()
 
 	detach := r.viewer()
-	r.run.noteOperatorTyped([]byte("\r"))
-	r.wantNone("with a person attached who just typed")
+	r.wantNone("with a terminal attached")
 	r.wantNone("on the next tick")
-
-	// Attached, and quiet for longer than the window.
+	if n := len(r.notified(autoContextBy)); n != 1 || r.notified(autoContextBy)[0]["waiting"] != ceilingWaitingText {
+		t.Fatalf("want one waiting event, got %v", r.notified(autoContextBy))
+	}
+	waits := 0
+	for _, m := range pendingFrom(t, r.d, r.launcher.ID) {
+		if strings.Contains(m.Text, "waiting for you to leave") {
+			waits++
+		}
+	}
+	if waits != 1 {
+		t.Fatalf("the launcher was told %d times", waits)
+	}
 	detach()
-	r.run.typeMu.Lock()
-	r.run.lastTyped = time.Now().Add(-peerGateIdle - time.Second)
-	r.run.typeMu.Unlock()
-	autoTiming.ceilingTypedQuiet = time.Millisecond
-	r.viewer()
-	r.wantStart("with a person attached who has stopped typing")
+	r.wantStart("once the person left")
 }
 
-// Typed but nobody attached: the keystroke alone does not hold it.
-func TestCeilingCardNotHeldByTypingWithNobodyAttached(t *testing.T) {
+// An open phone card page, which is only a recent read of the replies, holds it too.
+func TestCeilingCardWaitsForAnOpenCardPage(t *testing.T) {
 	r := newAutoRig(t, "", directorTags...)
 	ceilingBusy(r)
 	r.size(200)
 	autoQuiet()
+	r.d.auto.noteRead(r.id())
+	r.wantNone("with the card page just read")
+	autoTiming.ceilingCardRead = time.Millisecond
+	autoQuiet()
+	r.wantStart("once the card page has not been read for a while")
+}
+
+// Past the maximum wait a watcher alone no longer holds it, and typing still does.
+func TestCeilingCardWaitIsBoundedAndTypingNeverTimesOut(t *testing.T) {
+	r := newAutoRig(t, "", directorTags...)
+	ceilingBusy(r)
+	r.size(200)
+	autoTiming.ceilingMaxWait = 40 * time.Millisecond
+	autoQuiet()
+
+	r.viewer()
 	r.run.noteOperatorTyped([]byte("\r"))
+	r.wantNone("inside the wait")
+	time.Sleep(60 * time.Millisecond)
+	r.wantNone("past the wait with a person still typing")
+
 	r.run.typeMu.Lock()
 	r.run.lastTyped = time.Now().Add(-peerGateIdle - time.Second)
 	r.run.typeMu.Unlock()
-	r.wantStart("with nobody attached")
+	autoTiming.ceilingTypedQuiet = time.Millisecond
+	r.wantStart("past the wait with a watcher who has stopped typing")
+}
+
+// Dropping under the line ends the wait, so the next crossing waits afresh.
+func TestCeilingCardWaitStartsAtEachCrossing(t *testing.T) {
+	r := newAutoRig(t, "", directorTags...)
+	ceilingBusy(r)
+	r.size(200)
+	autoTiming.ceilingMaxWait = 40 * time.Millisecond
+	autoQuiet()
+	r.viewer()
+	r.wantNone("inside the wait")
+	time.Sleep(60 * time.Millisecond)
+	r.size(100)
+	r.tick()
+	r.size(200)
+	r.wantNone("on a new crossing, inside its own wait")
 }
 
 // A person who starts typing after the cycle began is not sent the stop line.

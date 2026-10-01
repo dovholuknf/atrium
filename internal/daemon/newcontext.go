@@ -841,7 +841,13 @@ func (d *Daemon) ncNudge(run *runner, taskID string, gen uint64) (bool, error) {
 			gone = true
 			return false
 		}
-		return !d.act.dialogOpen(taskID) && !(d.ceilingRun(taskID) && ceilingPersonTyping(run))
+		if d.act.dialogOpen(taskID) {
+			return false
+		}
+		if t, err := d.st.Get(taskID); d.ceilingRun(taskID) && err == nil && d.ceilingHeld(t, run, time.Now()) {
+			return false
+		}
+		return true
 	}
 	wrote, err := d.typeLabelledGuarded(run, taskID, newContextLabel, newContextStop, ok)
 	if gone {
