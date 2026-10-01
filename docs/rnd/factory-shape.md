@@ -206,8 +206,11 @@ can be undone with a setting or a relaunch.
      as no verdict. That is the safe answer, because the reviewed code is not the code that landed.
 2. The verdict is recorded so that a machine can read it. @review adds a trailer to its review commit:
    `Atrium-Verdict: <hub-ok|room-ok|hold> <base>..<tip>`, or `<sha>` for a single commit.
-   - **A range** covers every commit in `git rev-list <base>..<tip>`, the merges in it included. That matches how
-     @review reviews: one verdict over a branch tip.
+   - **A range** covers the commits in `git rev-list --first-parent <base>..<tip>`, which matches how @review
+     reviews: one verdict over a branch tip. A merge in that walk is covered only for its own change, its
+     remerge-diff. Commits reached through a merge's second parent need verdicts of their own. Without
+     `--first-parent`, a verdict would cover every claude/main commit merged into the branch, none of which @review
+     read: on r-card-model, `108ced12~1..86240e3a` is 70 commits, and the review covered 4.
    - **The newest trailer wins** for each patch, in claude/main's order, so a HOLD that is later followed by an OK
      ends as OK, and an OK that is later followed by a HOLD ends as HOLD.
    - **A conditional OK counts as OK.** The condition is @review's to enforce, with a HOLD if it is not met.
