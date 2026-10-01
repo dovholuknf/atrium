@@ -161,7 +161,7 @@ func TestDeployReadyNamesWhatBlocksAndClearsWhenReviewed(t *testing.T) {
 func TestDeployClickRefusals(t *testing.T) {
 	r := newReadyRepo(t)
 	base := r.commit("base", map[string]string{"internal/a.go": "a"})
-	code := r.commit("code", map[string]string{"internal/link/a.go": "1"})
+	code := r.commit("code", map[string]string{"internal/hubstore/a.go": "1"})
 	p, started := readyProxy(t, r, base, scriptFile(t))
 	body := `{"tip":"` + code + `"}`
 
@@ -204,7 +204,7 @@ func TestDeployClickRefusals(t *testing.T) {
 func TestDeployClickStartsOneScriptWithTheTipItWasShown(t *testing.T) {
 	r := newReadyRepo(t)
 	base := r.commit("base", map[string]string{"internal/a.go": "a"})
-	code := r.commit("code", map[string]string{"internal/link/a.go": "1"})
+	code := r.commit("code", map[string]string{"internal/hubstore/a.go": "1"})
 	r.commit("Review\n\nAtrium-Verdict: hub-ok "+code, map[string]string{"docs/backlog/rt/r-new-review-a.md": "ok"})
 	tip := r.git("rev-parse", "HEAD")
 	script := scriptFile(t)
@@ -260,7 +260,7 @@ func TestDeployClickStartsOneScriptWithTheTipItWasShown(t *testing.T) {
 func TestDeployClickWithNoScriptSaysSo(t *testing.T) {
 	r := newReadyRepo(t)
 	base := r.commit("base", map[string]string{"internal/a.go": "a"})
-	code := r.commit("code", map[string]string{"internal/link/a.go": "1"})
+	code := r.commit("code", map[string]string{"internal/hubstore/a.go": "1"})
 	r.commit("Review\n\nAtrium-Verdict: hub-ok "+code, map[string]string{"docs/backlog/rt/r-new-review-a.md": "ok"})
 	tip := r.git("rev-parse", "HEAD")
 	p, started := readyProxy(t, r, base, filepath.Join(t.TempDir(), "missing.ps1"))
@@ -286,7 +286,7 @@ func TestDeployReadyUnknownWhenTheInstalledBuildCannotBeRead(t *testing.T) {
 func TestDeployReadyTickTellsAWatchingBoardOnlyWhenTheAnswerMoves(t *testing.T) {
 	r := newReadyRepo(t)
 	base := r.commit("base", map[string]string{"internal/a.go": "a"})
-	code := r.commit("code", map[string]string{"internal/link/a.go": "1"})
+	code := r.commit("code", map[string]string{"internal/hubstore/a.go": "1"})
 	p, _ := readyProxy(t, r, base, scriptFile(t))
 
 	// Nobody watching: nothing is read and nothing is sent.
