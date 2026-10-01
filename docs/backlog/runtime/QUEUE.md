@@ -11,7 +11,9 @@ orchestrator reorders it by editing this file. An item leaves the list when it l
    TestALaunchMakesTheItemAndAFailedStartEndsItOnce. See `r-new-review-5f1058dc.md`.
 2. **Design question, the loopback write gate** (`r-new-review-df724652.md` low a): `/_hub/hosts`, launch caps and
    the notify command take writes from loopback only, but a separate `zrok share` process proxying to 127.0.0.1
-   arrives from loopback, so every share user passes. One answer for all three. Needs @rnd before code.
+   arrives from loopback, so every share user passes. One answer for all three. Needs @rnd before code. Sent to @rnd
+   2026-09-30 ~20:40 as a design item, with the eleven RemoteAddr gates found so far. Build when @rnd's design is
+   approved. Ahead of item 1 then, since item 1 waits on UI only being lifted.
 
 ## Parked
 
