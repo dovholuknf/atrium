@@ -137,6 +137,10 @@ func (x *turnIndex) feed(line []byte) {
 	if len(line) > 8<<20 {
 		return
 	}
+	if p, ok := queuedPromptOf(line); ok {
+		x.prompts = append(x.prompts, p.At)
+		return
+	}
 	user := bytes.Contains(line, []byte(`"user"`))
 	if !user && !bytes.Contains(line, []byte(`"assistant"`)) {
 		return
@@ -166,10 +170,7 @@ func (x *turnIndex) feed(line []byte) {
 	at = at.UTC()
 	switch rec.Type {
 	case "user":
-		// Any real words start a turn, whatever the origin tag says: a quote sent from the phone is not tagged human,
-		// and a turn that reached back over it would claim the edits of the turn before. A notification is not words
-		// and promptOf drops it.
-		if rec.Meta {
+		if rec.Meta || (rec.Origin != nil && rec.Origin.Kind != "" && rec.Origin.Kind != "human") {
 			return
 		}
 		var content any

@@ -641,6 +641,11 @@ func newTextScan() *textScan { return &textScan{index: map[string]int{}} }
 
 // feed takes one line. Reply text is not cut here, the caller cuts it once joined.
 func (s *textScan) feed(line []byte) {
+	if p, ok := queuedPromptOf(line); ok {
+		p.Text, p.Truncated = keepHead(p.Text, replyTextMax)
+		s.prompts = append(s.prompts, p)
+		return
+	}
 	{
 		isUser := bytes.Contains(line, []byte(`"user"`))
 		if !isUser && !bytes.Contains(line, []byte(`"assistant"`)) {
@@ -695,6 +700,39 @@ func (s *textScan) feed(line []byte) {
 		s.out = append(s.out, Reply{At: at.UTC(), Text: text})
 		s.ids = append(s.ids, rec.Message.ID)
 	}
+}
+
+// queuedPromptOf is the prompt in a line Claude Code wrote for a message typed while a turn was running:
+// {"type":"attachment","attachment":{"type":"queued_command","commandMode":"prompt","prompt":...}}. It is a
+// user line in all but its shape, and the reply to it is a new turn. Only the main chain's count.
+func queuedPromptOf(line []byte) (Prompt, bool) {
+	if !bytes.Contains(line, []byte(`queued_command`)) {
+		return Prompt{}, false
+	}
+	var rec struct {
+		Type       string `json:"type"`
+		Sidechain  bool   `json:"isSidechain"`
+		Timestamp  string `json:"timestamp"`
+		Attachment struct {
+			Type        string `json:"type"`
+			CommandMode string `json:"commandMode"`
+			Prompt      any    `json:"prompt"`
+		} `json:"attachment"`
+	}
+	if json.Unmarshal(line, &rec) != nil || rec.Type != "attachment" || rec.Sidechain ||
+		rec.Attachment.Type != "queued_command" || (rec.Attachment.CommandMode != "" && rec.Attachment.CommandMode != "prompt") {
+		return Prompt{}, false
+	}
+	at, err := time.Parse(time.RFC3339Nano, rec.Timestamp)
+	if err != nil {
+		return Prompt{}, false
+	}
+	p, ok := promptOf(rec.Attachment.Prompt)
+	if !ok {
+		return Prompt{}, false
+	}
+	p.At = at.UTC()
+	return p, true
 }
 
 // promptOf is a user line's text and kind, or false for a line that is not
