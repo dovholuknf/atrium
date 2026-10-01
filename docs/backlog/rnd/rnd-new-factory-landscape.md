@@ -1,6 +1,6 @@
 # rnd-new-factory-landscape: other software factories, and what atrium takes from them (SPIKE)
 
-Status: not started. A SPIKE. Owned by @rnd. Filed by the orchestrator 2026-10-01, from clint: atrium is "moving past
+Status: SPIKE WRITTEN, docs/rnd/factory-landscape.md. Owned by @rnd. Filed by the orchestrator 2026-10-01, from clint: atrium is "moving past
 being an agent harness aggregator/orchestrator" toward a software factory, and he asked what else is out there,
 OPEN SOURCE first.
 
