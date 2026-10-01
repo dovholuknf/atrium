@@ -133,7 +133,7 @@ run cost and how long it took. The states are:
 
 | state | meaning |
 | --- | --- |
-| `queued` | known, not started. Only a source-filled PR waits here (section 9, question 1) |
+| `queued` | known, not started. Only a source-found PR without clint's review requested waits here (section 6) |
 | `fetching` | diff and checkout at the head |
 | `reviewing N of M` | the recipe's steps, with the current step named on the right |
 | `ready to walk` | finding files and `walk.txt` written, nothing walked |
@@ -338,12 +338,19 @@ is no second intake.
 2. **Paste.** `+ paste a PR` on the pulls view, and the recogniser's `deliver_to` from review-tab 1.1, which now
    delivers to `/v1/prs` rather than to @review's card.
 3. **A source.** `gh search prs --review-requested=@me --json url,title,repository` as a source row
-   (`internal/store/sources.go`, built). Its items land in the pulls view as `queued` rows rather than in the inbox.
-   Whether a queued row starts on its own is question 1.
+   (`internal/store/sources.go`, built), or any other source that lists PRs. Its items land in the pulls view as
+   rows rather than in the inbox.
+
+**A source-found PR is reviewed on arrival when clint's review is requested on it, and on a click otherwise**
+(decided, clint, 2026-10-01). The test is per PR, not per source, so a source listing every open PR in a repo works
+too. The fetch step's `gh pr view` asks for `reviewRequests` as well, and the daemon compares it with the login
+`gh api user --jq .login` answers, read once per daemon start and kept in memory. A match starts the recipe. No
+match, or a login check that failed, leaves the row `queued` with a `review` button. A queued row whose review is
+requested later starts on the next source tick that sees the request.
 
 **A PR clint asked for is never held by a pause.** A board pause stops directors from picking work. A recipe run is
-not a director's work and has no director, so the pause does not apply to doors 1 and 2. A source-filled row follows
-the answer to question 1.
+not a director's work and has no director, so the pause does not apply to doors 1 and 2, nor to a source-found PR
+with clint's review requested.
 
 ## 7. The walk
 
@@ -385,7 +392,8 @@ The target in the acceptance below is the measured run, not this table.
 ## 9. Built where, staged, with owners
 
 Everything runs in the ROOM daemon: it has `gh`, `git`, `claude`, the filesystem and the reviews root. The hub
-proxies the board's `/v1/prs` routes as it proxies `/v1/tasks`, and needs a check that it does, not code. The store
+proxies the board's `/v1/prs` routes as it proxies `/v1/tasks`. That is @fabric's part, a check with a test and code
+only where the proxy names routes rather than passing a prefix. The store
 holds the index (`pr_review`, `pr_recipe`), never a finding: the folder stays the source of truth (review-tab 3.1).
 
 Each stage is useful alone. Every acceptance is measured by running the stage against 378 at `ad5ddf4` in a
@@ -419,7 +427,22 @@ throwaway room with its own `ATRIUM_LOCATION` and fixtures off.
   source row in `scripts/`.
 - Step 6 and step 7, and a recipe editor in settings (@ui).
 - The head check and moved-head marks of review-tab 2.6 and 3.2.
-- **Acceptance:** gwt on 378 shows a row with no card, a dispute settled before the walk, and a moved head marked.
+- The review-requested test of section 6: `reviewRequests` against the `gh` login, on arrival or `queued`.
+- **Acceptance:** gwt on 378 shows a row with no card, a dispute settled before the walk, and a moved head marked. A
+  source-found PR with clint's review requested starts by itself, and one without waits on `review`.
+
+### Hub. @fabric, beside P2.
+
+- `/v1/prs` and its SSE event reach a room's board through the hub, on the phone too.
+- **Acceptance:** the pulls view of a room, opened through the hub, shows 378's row and opens its walk.
+
+### E2E: the test that closes the design. @rnd.
+
+A real PR, not 378 replayed, goes in through a door (gwt, or the review-requested source), runs the recipe, and is
+walked in the pulls view on the live board. Recorded in `review.json` and the row: open to walk-ready wall time, cost,
+fork cache reads, finding count, and whether a human or director was waited on (it must be none). It passes at under
+10 minutes and under $2, against 378's 1h49m and about $7, with clint's read of the walk order taken. A pass is
+reported with those numbers. A miss is reported with them too, and the stage that missed is reopened.
 
 ### P4: only on clint's ask.
 
@@ -434,13 +457,10 @@ Pending-review posting (review-tab option C), and Mercurius as a step once it ha
   a review in chat. The recipe is the skill's steps moved into atrium for PRs, and the two share agent definitions.
 - **No reviewer is a card.** A step that needs a conversation is the walker's job, and there is one walker.
 
-## 11. Open question for clint
+## 11. Decided
 
-Open Questions:
-
----
-
-1. **A PR a source finds (`review-requested=@me`): review it on arrival, or wait for a click?** On arrival means a
-   row is ready to walk by the time you look, at about $1.50 a PR, including PRs you never walk. A click means
-   `queued` rows that start when you press `review`. The recommendation is on arrival, with the recipe's budget as
-   the cap, since a review nobody walks is cheaper than a review clint waits ten minutes for.
+1. **A source-found PR** is reviewed on arrival when clint's review is requested on it, and on a click otherwise
+   (clint, 2026-10-01). Section 6 says how the daemon tells.
+2. **Delivery** is @rnd's: each stage goes to its owner in order, and the design is done when the end-to-end test
+   passes. A real PR goes from intake through the recipe to a walk in the pulls view, measured against 378's 1h49m
+   and about $7 (clint, 2026-10-01).
