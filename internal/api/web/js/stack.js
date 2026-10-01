@@ -24,8 +24,10 @@ const STACK_SORTS = {
     // which outranks any amount of waiting. The middle rank is a card stopped
     // on a peer: it still belongs above twenty that merely finished, because
     // a peer that never answers looks exactly like a session nobody noticed.
-    cmp: (a, b) => askRank(a) - askRank(b) ||
-      (b.wait_seconds || 0) - (a.wait_seconds || 0)
+    cmp: (a, b) => {
+      const now = Date.now();
+      return askRank(a) - askRank(b) || cardWaitSeconds(b, now) - cardWaitSeconds(a, now);
+    }
   },
   status: {
     label: "status",
@@ -35,7 +37,7 @@ const STACK_SORTS = {
         : t.status === "needs-input" ? 1
         : t.status === "running" ? 2
         : t.status === "shelved" ? 3 : 4;
-      return rank(a) - rank(b) || (a.idle_seconds || 0) - (b.idle_seconds || 0);
+      return rank(a) - rank(b) || cardActivityCmp(a, b);
     }
   },
   name: {
@@ -369,10 +371,10 @@ function stackGroupsHTML(list, g) {
 // Sorting by a quantity now shows that quantity, so the column is always
 // monotonic under the active sort. Sorting by something that is not a duration
 // falls back to the old rule, since there is no sorted quantity to agree with.
-function bigNumber(t) {
-  if (stackSort === "activity") return t.idle_seconds;
-  if (stackSort === "waited") return t.wait_seconds;
-  return isWaiting(t) ? t.wait_seconds : t.idle_seconds;
+function bigNumber(t, now) {
+  if (stackSort === "activity") return cardIdleSeconds(t, now);
+  if (stackSort === "waited") return cardWaitSeconds(t, now);
+  return isWaiting(t) ? cardWaitSeconds(t, now) : cardIdleSeconds(t, now);
 }
 
 function bigNumberMeans(t) {
@@ -455,7 +457,7 @@ function stackRow(t) {
     ${pinStar(t)}
     ${runnerMark(t.runner)}
     <div class="wait ${w ? "" : "quiet"}" data-tip="${esc(bigNumberMeans(t))}"
-      >${ago(bigNumber(t))}</div>
+      >${ago(cardSecs(bigNumber(t)))}</div>
     <div class="who">
       <b>${w ? '<span class="pulse"></span>' : ""}${esc(t.display_title)}</b>
       <span>${esc(t.worktree || "no directory")}</span>
@@ -509,8 +511,10 @@ function stackRow(t) {
 // second fact that nothing else on the row carries. Compared rather than
 // assumed, so this stays right if either rule changes.
 function stateChip(t, w) {
-  const dur = w ? t.wait_seconds : t.idle_seconds;
-  const said = bigNumber(t) === dur;
+  // One `now` for both, so the two are compared as the same instant.
+  const now = Date.now();
+  const dur = w ? cardWaitSeconds(t, now) : cardIdleSeconds(t, now);
+  const said = bigNumber(t, now) === dur;
   // A question asked says so, in place of the status. `ready` is true of both
   // kinds and is the less useful half: an agent that stopped will wait
   // forever without costing anything, and a question has somebody's work

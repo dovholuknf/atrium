@@ -433,7 +433,7 @@ async function openTask(id) {
     `<span class="chip" data-tip="${esc(current.status)}">${esc(statusLabel(current.status))}</span>`,
     current.pid ? `<span class="chip">pid ${current.pid}</span>` : "",
     current.worktree ? `<span class="chip">${esc(current.worktree)}</span>` : "",
-    `<span class="chip">idle ${ago(current.idle_seconds)}</span>`,
+    `<span class="chip">idle ${ago(cardIdleAge(current))}</span>`,
     current.created_at
       ? `<span class="chip" data-tip="${esc(current.created_at)}">first seen ${
           esc(firstSeen(current.created_at))}</span>`
