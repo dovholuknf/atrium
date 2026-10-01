@@ -8018,3 +8018,16 @@ the hub routing and the control tool.
 8. Type `/model sonnet` (or opus, haiku, fable) by hand in the card's terminal. The board shows the new model and the timeline has a `typed by hand` entry. Restart the room: the card resumes on that model (`--model` is in its launched command). A typed full id such as `/model claude-sonnet-5-5` and a bare `/model` that opens the picker record nothing, so a mistyped id cannot fail the next resume.
 9. **Not verified by tests:** whether Claude Code accepts `/model` while a turn is running. Try it on a busy card and
    note whether the switch lands now or after the turn.
+
+## HN. Older replies, a page at a time (r-replies-paging)
+
+1. On a Claude card with more than 50 replies, `curl -s 'http://127.0.0.1:7778/v1/tasks/<id>/replies?n=50' | jq
+   '.replies|length, .more, .next_before'` answers 50, `true` and a time. `n=80` answers 50 too.
+2. Ask again with `&before=<next_before>` (URL-encoded), passed back as it came. The page is the replies and prompts
+   strictly older, oldest first. Both lists are complete down to `next_before`, so one may hold fewer than n.
+3. Keep going on `next_before` alone. The last page answers `more: false` with no `next_before`, and no reply or
+   prompt shows twice or goes missing, including on a card where prompts are dense early and replies dense late.
+4. `&before=yesterday` answers 400. A codex card (source `screen`) answers `more: false`.
+5. Through the hub, `GET /v1/tasks/<room>~<id>/replies?n=50&before=<at>` answers the same as on the room.
+6. On a transcript over 16MB with replies spread through it, a deep page still answers: the 16MB bound counts from
+   the `before` position, not from the end of the file.
