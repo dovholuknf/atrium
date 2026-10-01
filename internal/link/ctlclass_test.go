@@ -111,10 +111,11 @@ func toolNames(t *testing.T, s *mcp.ClientSession) []string {
 
 var workerSix = []string{"atrium_alias", "atrium_peers", "atrium_report", "atrium_say", "atrium_status", "atrium_task"}
 
-// fullFifteen is f-021's eleven, f-019's two git tools, atrium_deps and atrium_deploy, all full-only.
+// fullFifteen is f-021's eleven, f-019's two git tools, atrium_deps and atrium_deploy, and atrium_model,
+// all full-only. The name is the count it had before atrium_model.
 var fullFifteen = []string{"atrium_alias", "atrium_cull", "atrium_deploy", "atrium_deps", "atrium_exit",
-	"atrium_git_collect", "atrium_git_sync", "atrium_launch", "atrium_peers", "atrium_report", "atrium_say",
-	"atrium_status", "atrium_task", "atrium_wake_after_restart", "restart_atrium"}
+	"atrium_git_collect", "atrium_git_sync", "atrium_launch", "atrium_model", "atrium_peers", "atrium_report",
+	"atrium_say", "atrium_status", "atrium_task", "atrium_wake_after_restart", "restart_atrium"}
 
 func sameNames(t *testing.T, who string, got, want []string) {
 	t.Helper()
@@ -135,10 +136,12 @@ func TestWorkerSeesSixToolsAndCullIsUnknown(t *testing.T) {
 	s := h.connect(t, "worker1", "alpha")
 	sameNames(t, "worker", toolNames(t, s), workerSix)
 
-	_, err := s.CallTool(context.Background(), &mcp.CallToolParams{Name: "atrium_cull",
-		Arguments: map[string]any{"card": "x"}})
-	if err == nil || !strings.Contains(strings.ToLower(err.Error()), "unknown tool") {
-		t.Fatalf("cull by a worker: err = %v, want unknown tool", err)
+	for _, tool := range []string{"atrium_cull", "atrium_model"} {
+		_, err := s.CallTool(context.Background(), &mcp.CallToolParams{Name: tool,
+			Arguments: map[string]any{"card": "x", "model": "opus"}})
+		if err == nil || !strings.Contains(strings.ToLower(err.Error()), "unknown tool") {
+			t.Fatalf("%s by a worker: err = %v, want unknown tool", tool, err)
+		}
 	}
 }
 

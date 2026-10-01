@@ -97,6 +97,9 @@ type Daemon struct {
 	// bootResumes is resume id to the card on the reopen list that takes it,
 	// for the length of one reopen pass. See reopenSaved.
 	bootResumes sync.Map
+	// modelWaits is card id to a /model switch the input gate has not let through
+	// yet. See modelswitch.go.
+	modelWaits sync.Map
 
 	opts Options
 	st   *store.Store
@@ -387,6 +390,7 @@ func New(opts Options) (*Daemon, error) {
 	d.ap.NewContext = d.handleNewContext
 	d.ap.Resume = d.handleResume
 	d.ap.SendNote = d.handleSendNote
+	d.ap.SwitchModel = d.handleModel
 	d.ap.Shutdown = d.handleShutdown
 	d.ap.Preflight = d.handlePreflight
 	d.ap.Shelve = d.Shelve

@@ -29,6 +29,11 @@ func ctlAuditHarness(t *testing.T, tasks []map[string]any) (*controlMCP, *[]audi
 			_ = json.NewEncoder(w).Encode(map[string]any{"exited": true, "worktree_removed": true, "branch_deleted": true})
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/restart-wake"):
 			_ = json.NewEncoder(w).Encode(map[string]any{"queued": true})
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/model"):
+			var in struct{ Model, From string }
+			_ = json.NewDecoder(r.Body).Decode(&in)
+			_ = json.NewEncoder(w).Encode(map[string]any{"model": in.Model, "from": "sonnet", "typed": true,
+				"delivered": "terminal", "when": "immediate", "saw_from": in.From})
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/message"):
 			_ = json.NewEncoder(w).Encode(map[string]any{"delivered": "queued"})
 		case r.Method == http.MethodPatch:
@@ -101,6 +106,14 @@ func TestAuditedToolsWriteOneLineEach(t *testing.T) {
 		{"alias", "ctl-alias", "by orch@beta (claimed): alias set to x on w1, ok", func(c *controlMCP) error {
 			_, _, err := audited(c, "ctl-alias", describeAlias, c.aliasHandler)(ctx, ctlReq("orch", "beta"),
 				aliasInput{Card: "sa36", Alias: "x"})
+			return err
+		}},
+		{"model", "ctl-model", "by orch@beta (claimed): model w1 to opus, ok", func(c *controlMCP) error {
+			_, out, err := audited(c, "ctl-model", describeModel, c.modelHandler)(ctx, ctlReq("orch", "beta"),
+				modelInput{Card: "sa36", Model: "opus"})
+			if err == nil && (!out.Typed || out.Model != "opus" || out.Was != "sonnet" || out.Delivered != "terminal") {
+				t.Errorf("model answer = %+v", out)
+			}
 			return err
 		}},
 		{"say wake", "ctl-wake-say", "by orch@beta (claimed): say with wake to sa36, ok", func(c *controlMCP) error {

@@ -1,0 +1,4 @@
+- **A live card's model switches with one call.** `POST /v1/tasks/{id}/model` takes `sonnet`, `opus`, `haiku`, `fable` or
+  a `claude-...` id, types `/model <id>` into the card's terminal through the same gate an immediate say uses, records
+  the model on the card so a resume keeps it, and writes a timeline entry. A closed gate waits and the answer says so.
+  The orchestrator gets it as `atrium_model`. Room side, needs a room deploy. (r-card-model)
