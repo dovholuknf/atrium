@@ -16693,7 +16693,7 @@ async function deployReadySection(browser, base) {
       p.on("pageerror", e => errors.push(String(e)));
       dm.gets = 0;
       dm.posts = [];
-      await p.route("**/_hub/deploy-ready", r => { dm.gets++; const g = typeof dm.get === "function" ? dm.get() : dm.get; return r.fulfill({ status: g.status, contentType: "application/json", body: JSON.stringify(g.body) }); });
+      await p.route("**/_hub/deploy-ready", r => { dm.gets++; if (dm.abort) return r.abort(); const g = typeof dm.get === "function" ? dm.get() : dm.get; return r.fulfill({ status: g.status, contentType: "application/json", body: JSON.stringify(g.body) }); });
       await p.route("**/_hub/deploy-ready/deploy", r => { dm.posts.push(JSON.parse(r.request().postData() || "{}")); const q = dm.post; if (q.status === 202) dm.get = { status: 200, body: report({ deploy: q.body.deploy }) }; return r.fulfill({ status: q.status, contentType: "application/json", body: JSON.stringify(q.body) }); });
       await p.goto(base + "/", { waitUntil: "domcontentloaded" });
       await p.waitForFunction(() => typeof loadDeployReady === "function" && typeof alerting !== "undefined", null, { timeout: slow(15000) });
@@ -16808,6 +16808,33 @@ async function deployReadySection(browser, base) {
     mockSay("deploy-ready", "{}");
     await wait(p, () => /exit 3/.test(document.getElementById("dr-body").textContent));
     if (!/the installed binary is not the tip/.test(await p.textContent("#dr-body"))) fail("deployReady: a failed deploy does not say why");
+    await ctx.close();
+
+    // a read that fails with the dialog open: the old report is not kept, the reason is said, and Deploy is off
+    dm = { get: { status: 200, body: report() }, post: { status: 202, body: { deploy: { state: "running", tip: TIP } } } };
+    ({ ctx, p, errors } = await open(dm));
+    await wait(p, () => !document.getElementById("deploy-pill").hidden);
+    await p.click("#deploy-pill");
+    await wait(p, () => document.getElementById("deployready").open);
+    v = await dlg(p);
+    if (v.disabled !== false || !/3 commits reviewed/.test(v.text)) fail("deployReady: the report was not shown before the failure: " + JSON.stringify(v));
+    dm.get = { status: 500, body: { error: "git failed" } };
+    mockSay("deploy-ready", "{}");
+    await wait(p, () => /no report: git failed/.test(document.getElementById("dr-body").textContent));
+    v = await dlg(p);
+    if (v.disabled !== true || /3 commits reviewed|installed 89abcdef/.test(v.text)) fail("deployReady: the old report was kept after a failed read: " + JSON.stringify(v));
+    let pl = await pill(p);
+    if (pl.text !== "no report" || pl.state !== "unknown") fail("deployReady: the pill after a failed read is " + JSON.stringify(pl));
+    // the hub unreachable says so too, and a good read brings the report back
+    dm.abort = true;
+    mockSay("deploy-ready", "{}");
+    await wait(p, () => /no report: could not reach the hub/.test(document.getElementById("dr-body").textContent));
+    dm.abort = false;
+    dm.get = { status: 200, body: report() };
+    mockSay("deploy-ready", "{}");
+    await wait(p, () => /3 commits reviewed/.test(document.getElementById("dr-body").textContent) && !document.getElementById("dr-deploy").disabled);
+    pl = await pill(p);
+    if (pl.text !== report().line || pl.state !== "ready") fail("deployReady: the pill did not come back: " + JSON.stringify(pl));
     await ctx.close();
 
     // a daemon that is not a hub: nothing is drawn

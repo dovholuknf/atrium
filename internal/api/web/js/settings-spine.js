@@ -1755,10 +1755,10 @@ function connect() {
     try { why = (JSON.parse(e.data) || {}).why || ""; } catch (err) {}
     armRestart(why);
   });
-  // THE HUB IS ABOUT TO RESTART, or has been asked to and is waiting. The
-  // countdown, the pause and the cover. See js/hubrestart.js.
   // The hub's deploy-ready answer changed, or a deploy started or ended: read it again. See js/deployready.js.
   es.addEventListener("deploy-ready", () => { if (typeof loadDeployReady === "function") loadDeployReady(); });
+  // THE HUB IS ABOUT TO RESTART, or has been asked to and is waiting. The
+  // countdown, the pause and the cover. See js/hubrestart.js.
   es.addEventListener("hub-restart", e => {
     let d = {};
     try { d = JSON.parse(e.data) || {}; } catch (err) { return; }

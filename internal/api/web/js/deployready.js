@@ -18,6 +18,7 @@
 let drReport = null;     // the last answer
 let drNote = "";         // what the last refusal said
 let drRemote = "";       // set when the hub said a deploy is only started from its own machine
+let drErr = "";          // why the last read failed, "" when it did not. The dialog then has no report to show.
 let drPosting = false;
 
 // A board served from the hub's own machine. The hub checks it again and has the last word.
@@ -31,12 +32,35 @@ async function loadDeployReady() {
   if (!pill) return;
   if (typeof isGuest === "function" && isGuest()) { pill.hidden = true; return; }
   let r;
-  try { r = await plainFetch("/_hub/deploy-ready"); } catch (e) { return; }
-  if (!r.ok) { drReport = null; pill.hidden = true; return; }
+  try { r = await plainFetch("/_hub/deploy-ready"); } catch (e) { return drFailed("could not reach the hub"); }
+  if (r.status === 404) { drReport = null; drErr = ""; pill.hidden = true; return; }   // a daemon that is not a hub
+  if (!r.ok) {
+    let why = "the hub answered " + r.status;
+    try { why = (await r.json()).error || why; } catch (e) {}
+    return drFailed(why);
+  }
   let v;
-  try { v = await r.json(); } catch (e) { return; }
+  try { v = await r.json(); } catch (e) { return drFailed("the answer could not be read"); }
   drReport = v;
+  drErr = "";
   paintDeployReady();
+}
+
+// A read that failed leaves no report: the old one is not kept, since it may no longer be true, and the Deploy button goes
+// with it. The pill says so, and an open dialog says why.
+function drFailed(why) {
+  drReport = null;
+  drErr = String(why || "unknown");
+  const pill = document.getElementById("deploy-pill");
+  if (pill) {
+    pill.hidden = false;
+    pill.textContent = "no report";
+    pill.dataset.state = "unknown";
+    pill.dataset.tip = "no report: " + drErr;
+    pill.setAttribute("aria-label", "deploy: no report: " + drErr);
+  }
+  const dlg = document.getElementById("deployready");
+  if (dlg && dlg.open) paintDeployDialog();
 }
 
 function drLine(v) { return String((v && v.line) || (v && v.state) || ""); }
@@ -48,6 +72,8 @@ function paintDeployReady() {
   pill.hidden = false;
   pill.textContent = run.state === "running" ? "deploying " + String(run.tip || "").slice(0, 8) : drLine(v);
   pill.dataset.state = run.state === "running" ? "running" : String(v.state || "unknown");
+  // `data-tip` is the board's tooltip (js/tooltips.js), and here it is the line in full, which the pill cuts short. It is not the
+  // report's git `tip`.
   pill.dataset.tip = drLine(v);
   pill.setAttribute("aria-label", "deploy: " + drLine(v));
   const dlg = document.getElementById("deployready");
@@ -93,7 +119,24 @@ function drWhen(at) {
 
 function paintDeployDialog() {
   const host = document.getElementById("dr-body");
-  if (!host || !drReport) return;
+  if (!host) return;
+  if (!drReport) {
+    // Nothing is known, so nothing is claimed, and there is no deploy to start.
+    const box = drEl("div", "dr");
+    box.appendChild(drEl("div", "dr-err", "no report: " + (drErr || "not read yet")));
+    const row = drEl("div", "dr-act");
+    const go = drEl("button", "go", "Deploy");
+    go.id = "dr-deploy";
+    go.type = "button";
+    go.disabled = true;
+    row.appendChild(go);
+    const m = drEl("span", "dr-why-not", "no report");
+    m.id = "dr-msg";
+    row.appendChild(m);
+    box.appendChild(row);
+    host.replaceChildren(box);
+    return;
+  }
   const v = drReport, run = v.deploy || { state: "idle" };
   const box = drEl("div", "dr");
   const head = drEl("div", "dr-head");
