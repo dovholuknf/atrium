@@ -121,3 +121,20 @@ pathspec file). No drop.
 
 HUB DEPLOY OK and ROOM DEPLOY OK bed37da5~1..edda5910, once the test-plan section is renamed HR. That is a docs-only
 merge and needs no re-read.
+
+## Re-read of 4443256a, 33eb8111 and 93fa530f (2026-10-01)
+
+- **4443256a** cuts every capped untracked listing back to its last NUL, chunk by chunk, so no half name is ever
+  listed. Any other error drops the untracked list, as before. `TestUntrackedTrimsEachCappedListingToWholeNames`
+  covers a single listing and a chunked one under a 100-byte cap. gofmt and vet are clean, and the daemon
+  `Change|Untracked|Turn|Repl|Edited` tests pass.
+- **33eb8111** merges claude/main. Over main, the branch touches only its own files. At this tip the section is
+  still `HQ`, beside D1's `HQ`. **93fa530f** renames it `HR` (one line, docs only).
+
+Nits, no re-read needed:
+
+- The comment `// listMax bounds the file lists git prints ...` stayed in the `const` block when `listMax` moved to
+  a `var`, so it now sits above `patchMax` and documents the wrong name.
+- The sections in `test-plan.md` read HO, HR, HP, HQ. Order follows merge order, not letter order.
+
+HUB DEPLOY OK and ROOM DEPLOY OK bed37da5~1..93fa530f.
