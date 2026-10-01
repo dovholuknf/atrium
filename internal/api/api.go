@@ -217,9 +217,9 @@ type Server struct {
 	// daemon. See internal/daemon/usage.go.
 	UsageOf func(taskID string, limit int) (any, error)
 	// Replies is a card's last n replies as text, for the phone's conversation
-	// page (r-024). Owned by the daemon, which reads the transcript. See
-	// internal/daemon/replies.go.
-	Replies func(taskID string, n int) (any, error)
+	// page (r-024), or the n older than before when it is not zero. Owned by the
+	// daemon, which reads the transcript. See internal/daemon/replies.go.
+	Replies func(taskID string, n int, before time.Time) (any, error)
 	// RoomStats is the last `room-stats` snapshot the sampler pushed, as JSON,
 	// or nil before the first. Does no work of its own. Owned by the daemon.
 	// See internal/roomstats.
