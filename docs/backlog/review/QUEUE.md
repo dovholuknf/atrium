@@ -37,8 +37,6 @@ the meantime.
 
 - Board landings from @ui come FIRST (clint, via the orchestrator, 2026-09-30 19:25), read only and fast, ahead of
   everything below.
-- @fabric item 49 follow-up: the human-launched rule (index only `spawned_by` empty) for low 1 of
-  `docs/backlog/fabric/f-new-review-7f523835.md`. 7f523835 itself is reviewed, HUB and ROOM DEPLOY OK.
 - M3 of `docs/rnd/machine-health-design.md` (the profiler agent's rules) before it ships, when it is built.
 
 ## Open lows, for when a fix names them
