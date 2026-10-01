@@ -1,0 +1,206 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Design B: file list, then change cards</title>
+<!-- Design B: "file list first" combined with "summary first" cards and stacked before/after.
+     Why: on a 412px screen a unified diff spends two gutter columns on line numbers and interleaves -/+ lines that
+     are nearly identical, so the eye hunts for the changed words across wrapped rows. Here the page opens on a file
+     list (name, counts, a thin green/red bar), so a 6-file commit is one glance and one tap per file. Inside a file,
+     each hunk is a card with the changed lines plus 2 lines of context, and no gutter columns, so code uses the full
+     width. "Show full hunk" expands the card. Because deletions come first and additions second, a changed pair reads
+     as before then after, with the changed words marked in both. The line number shows only after a tap, in the bar. -->
+<style>
+:root { --m-fs: 14px; --bg:#fff; --fg:#1f2328; --mut:#656d76; --line:#d0d7de; --hdr:#f6f8fa;
+  --addbg:#e6ffec; --addmk:#abf2bc; --delbg:#ffebe9; --delmk:#ffc1ba; --hunk:#ddf4ff; --hunkfg:#0969da; --sel:#fff8c5;
+  --add:#1a7f37; --del:#cf222e; }
+:root.dark { --bg:#0d1117; --fg:#e6edf3; --mut:#8b949e; --line:#30363d; --hdr:#161b22;
+  --addbg:#12261e; --addmk:#1f6f3a; --delbg:#2d1517; --delmk:#8e2a30; --hunk:#121d2f; --hunkfg:#79c0ff; --sel:#3d3515;
+  --add:#3fb950; --del:#f85149; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.4 system-ui, sans-serif; padding-bottom: 96px;
+  -webkit-text-size-adjust: 100%; }
+.code { font: var(--m-fs)/1.4 ui-monospace, Menlo, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+mark { background: var(--addmk); color: inherit; border-radius: 2px; }
+.del mark { background: var(--delmk); }
+body .code.sel { background: var(--sel); outline: 2px solid #d4a72c; outline-offset: -2px; }
+.top { position: sticky; top: 0; z-index: 3; background: var(--hdr); border-bottom: 1px solid var(--line); padding: 8px 12px; }
+.top b { display: block; } .top span { color: var(--mut); font-size: 12px; overflow-wrap: anywhere; }
+.cnt .a { color: var(--add); } .cnt .d { color: var(--del); }
+#bar { position: fixed; left: 0; right: 0; bottom: 52px; background: var(--hdr); border-top: 1px solid var(--line);
+  padding: 4px 12px; font: 12px ui-monospace, Menlo, Consolas, monospace; color: var(--mut); z-index: 4; }
+#composer { position: fixed; left: 0; right: 0; bottom: 0; height: 52px; background: var(--bg);
+  border-top: 1px solid var(--line); display: flex; align-items: center; gap: 4px; padding: 0 8px 0 12px; z-index: 4;
+  font-size: 15px; }
+#quote.has { background: var(--hunk); color: var(--hunkfg); border-radius: 4px; padding: 2px 4px;
+  font-family: ui-monospace, Menlo, Consolas, monospace; white-space: pre; }
+.caret { width: 1px; height: 18px; background: var(--fg); } .ph { color: var(--mut); flex: 1; }
+#quote.has ~ .ph { display: none; }
+#composer button { margin-left: auto; border: 0; background: #1f6feb; color: #fff; border-radius: 6px; padding: 8px 14px; }
+
+.fl { display: block; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+.fl .r { display: flex; gap: 8px; align-items: baseline; }
+.fl .p { flex: 1; font: 600 13px ui-monospace, Menlo, Consolas, monospace; overflow-wrap: anywhere; }
+.bar { display: flex; height: 4px; margin-top: 6px; border-radius: 2px; overflow: hidden; }
+.bar i:first-child { background: var(--add); } .bar i:last-child { background: var(--del); }
+.fl .st { color: var(--mut); font-size: 12px; }
+.back { padding: 8px 12px; color: var(--hunkfg); border-bottom: 1px solid var(--line); background: var(--hdr); font-size: 13px; }
+.card { margin: 8px; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.card .lab { background: var(--hunk); color: var(--hunkfg); font: 11px ui-monospace, Menlo, Consolas, monospace;
+  padding: 3px 8px; display: flex; justify-content: space-between; gap: 8px; }
+.row { padding: 2px 8px 2px 22px; position: relative; }
+.row::before { content: attr(data-m); position: absolute; left: 8px; color: var(--mut); }
+.row.add { background: var(--addbg); } .row.del { background: var(--delbg); }
+.row.add::before { color: var(--add); } .row.del::before { color: var(--del); } .row.ctx { color: var(--mut); }
+.more { padding: 6px 8px; font-size: 12px; color: var(--hunkfg); border-top: 1px solid var(--line); background: var(--hdr); }
+.bin { padding: 10px 12px; color: var(--mut); }
+</style></head><body>
+<div class="top"><b id="title"></b><span id="sum"></span></div><div id="root"></div>
+<script>window.DIFFS = {"small":{"title":"d3a16dd3 REPLIES_N","text":"commit d3a16dd308f84760f9a0ede118e1bd09ab88e22f\nAuthor: dovholuknf \u003c46322585+dovholuknf@users.noreply.github.com>\nDate:   Wed Sep 30 21:08:29 2026 -0400\n\n    m card: read the last 10 replies instead of 3\n\ndiff --git a/internal/api/web/m/js/card.js b/internal/api/web/m/js/card.js\nindex ffcbe761..f1796b32 100644\n--- a/internal/api/web/m/js/card.js\n+++ b/internal/api/web/m/js/card.js\n@@ -10,7 +10,7 @@\n \n   const U = window.mUtil;\n   const MD = window.mMd;\n-  const REPLIES_N = 3;\n+  const REPLIES_N = 10;\n \n   let openId = \"\";\n   let els = null;\ndiff --git a/scripts/test-board-headless.js b/scripts/test-board-headless.js\nindex 0297775d..9af69fdb 100644\n--- a/scripts/test-board-headless.js\n+++ b/scripts/test-board-headless.js\n@@ -13271,7 +13271,7 @@ async function mOutputAtSection(browser) {\n       await p.waitForFunction(() => document.getElementById(\"m-live\").classList.contains(\"on\"), null, { timeout: slow(10000) });\n       const t1 = Date.now();\n       while (!st.streams.length && Date.now() - t1 \u003c slow(10000)) await p.waitForTimeout(100);\n-      const reads = () => st.hits.filter(h => h === \"out-1?3\").length;\n+      const reads = () => st.hits.filter(h => h === \"out-1?10\").length;\n       st.hits.length = 0;\n       // a newer output_at re-reads once\n       const at2 = mIso(2 * M_MIN);\n@@ -16524,16 +16524,16 @@ async function mCardSection(browser) {\n       if (await mNoSideways(p)) fail(tag + \"the card scrolls sideways\");\n       if (!/which port/.test(await p.textContent(\"#m-card-extras\"))) fail(tag + \"the open questions are missing\");\n       if (await p.getAttribute(\"#m-card-term\", \"href\") !== \"/alias/builder\") fail(tag + \"open terminal does not point at the card's readable board path\");\n-      if (st.hits.filter(h => h === \"card-a?3\").length !== 1) fail(tag + \"replies fetched \" + st.hits.join(\",\"));\n+      if (st.hits.filter(h => h === \"card-a?10\").length !== 1) fail(tag + \"replies fetched \" + st.hits.join(\",\"));\n       await mShot(p, \"card-dark-\" + vp.width);\n       // refetch only when the turn ends\n       st.send(\"task\", Object.assign({}, ta, { row: 1, last_activity_at: mIso(1000) }));\n       await p.waitForTimeout(600);\n-      if (st.hits.filter(h => h === \"card-a?3\").length !== 1) fail(tag + \"replies refetched without a new turn: \" + st.hits.join(\",\"));\n+      if (st.hits.filter(h => h === \"card-a?10\").length !== 1) fail(tag + \"replies refetched without a new turn: \" + st.hits.join(\",\"));\n       st.replies[\"card-a\"] = { source: \"transcript\", replies: [{ at: mIso(1000), text: \"A fresh reply.\" }] };\n       st.send(\"task\", Object.assign({}, ta, { row: 1, seen: Object.assign({}, ta.seen, { turn_ended_at: mIso(500) }) }));\n       await p.waitForFunction(() => /A fresh reply/.test(document.getElementById(\"m-replies\").textContent), null, { timeout: slow(5000) });\n-      if (st.hits.filter(h => h === \"card-a?3\").length !== 2) fail(tag + \"the turn end did not refetch once: \" + st.hits.join(\",\"));\n+      if (st.hits.filter(h => h === \"card-a?10\").length !== 2) fail(tag + \"the turn end did not refetch once: \" + st.hits.join(\",\"));\n       // the browser back button closes the sheet\n       await p.goBack();\n       await p.waitForFunction(() => document.getElementById(\"m-card\").hidden, null, { timeout: slow(5000) });\n"},"big":{"title":"12bcc03c m card: compact thread","text":"commit 12bcc03c318c7e4cabd8556c80d527f770938420\nAuthor: dovholuknf \u003c46322585+dovholuknf@users.noreply.github.com>\nDate:   Wed Sep 30 21:13:03 2026 -0400\n\n    m card: compact thread, one header line per message, full-width bubbles, pinch sets text size\n\ndiff --git a/docs/backlog/ui/img/u-m-card/compact-after-390.jpg b/docs/backlog/ui/img/u-m-card/compact-after-390.jpg\nnew file mode 100644\nindex 00000000..d9149ce9\nBinary files /dev/null and b/docs/backlog/ui/img/u-m-card/compact-after-390.jpg differ\ndiff --git a/docs/backlog/ui/img/u-m-card/compact-before-390.jpg b/docs/backlog/ui/img/u-m-card/compact-before-390.jpg\nnew file mode 100644\nindex 00000000..199c5982\nBinary files /dev/null and b/docs/backlog/ui/img/u-m-card/compact-before-390.jpg differ\ndiff --git a/internal/api/web/m/index.html b/internal/api/web/m/index.html\nindex 9a558d95..3567c96a 100644\n--- a/internal/api/web/m/index.html\n+++ b/internal/api/web/m/index.html\n@@ -2,7 +2,7 @@\n \u003chtml lang=\"en\">\n \u003chead>\n \u003cmeta charset=\"utf-8\">\n-\u003cmeta name=\"viewport\" content=\"width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content\">\n+\u003cmeta name=\"viewport\" content=\"width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content\">\n \u003cmeta name=\"referrer\" content=\"no-referrer\">\n \u003cmeta name=\"theme-color\" content=\"#0B1B2E\">\n \u003cmeta name=\"apple-mobile-web-app-capable\" content=\"yes\">\ndiff --git a/internal/api/web/m/js/card.js b/internal/api/web/m/js/card.js\nindex f1796b32..b26206cf 100644\n--- a/internal/api/web/m/js/card.js\n+++ b/internal/api/web/m/js/card.js\n@@ -55,14 +55,24 @@\n     return { id: openId, worktree: t && t.worktree || \"\" };\n   }\n \n-  function replyHTML(r, screen) {\n-    const when = r.at ? U.ago(Date.now() - U.ts(r.at)) : \"\";\n+  // One header line per message: who, how long ago, and the delivery state when there is one.\n+  function agoOf(at) {\n+    const a = U.ago(Date.now() - U.ts(at));\n+    return a === \"now\" ? \"now\" : a;\n+  }\n+  function headerHTML(who, at, tag, note) {\n+    return '\u003cheader class=\"rh\">\u003cspan class=\"src\">' + U.esc(who) + \"\u003c/span>\" + (note ? '\u003cspan class=\"note\">' + U.esc(note) + \"\u003c/span>\" : \"\") +\n+      (at ? '\u003ctime datetime=\"' + U.esc(at) + '\">' + U.esc(agoOf(at)) + \"\u003c/time>\" : \"\") + (tag ? '\u003cb class=\"tag\">' + U.esc(tag) + \"\u003c/b>\" : \"\") + \"\u003c/header>\";\n+  }\n+  function whoOf(t) {\n+    const nm = U.cardName(t);\n+    const room = window.mNet.roomOf(t.id) || t.room || \"\";\n+    return nm.main + (room ? \"@\" + room : \"\");\n+  }\n+  function replyHTML(r, screen, who) {\n     const body = screen ? '\u003cpre class=\"screen\">' + U.esc(r.text) + \"\u003c/pre>\" : '\u003cdiv class=\"md\">' + MD.render(r.text, mdCtx()) + \"\u003c/div>\";\n-    return '\u003carticle class=\"reply' + (screen ? \" from-screen\" : \"\") + '\">' +\n-      (screen ? '\u003cspan class=\"src\">from the screen\u003c/span>' : \"\") + body +\n-      (r.truncated ? '\u003cp class=\"cut\">cut short here. the rest is in the terminal\u003c/p>' : \"\") +\n-      (when ? '\u003ctime datetime=\"' + U.esc(r.at) + '\">' + U.esc(when === \"now\" ? \"just now\" : when + \" ago\") + \"\u003c/time>\" : \"\") +\n-      \"\u003c/article>\";\n+    return '\u003carticle class=\"reply' + (screen ? \" from-screen\" : \"\") + '\">' + headerHTML(who, r.at, \"\", screen ? \"from the screen\" : \"\") + body +\n+      (r.truncated ? '\u003cp class=\"cut\">cut short here. the rest is in the terminal\u003c/p>' : \"\") + \"\u003c/article>\";\n   }\n \n   function fallbackHTML(t) {\n@@ -188,11 +198,9 @@\n \n   const OWN_TAG = { pending: \"sending\", failed: \"not sent, back in the box\", sent: \"delivered\", queued: \"queued\" };\n   function ownHTML(m) {\n-    const when = U.ago(Date.now() - U.ts(m.at));\n     const st = m.state || m.kind || \"\";\n-    return '\u003carticle class=\"reply mine' + (st === \"pending\" || st === \"failed\" ? \" \" + st : \"\") + '\">\u003cspan class=\"src\">you\u003c/span>\u003cdiv class=\"own\">' + U.esc(m.text) + \"\u003c/div>\" +\n-      '\u003ctime datetime=\"' + U.esc(m.at) + '\">' + U.esc(when === \"now\" ? \"just now\" : when + \" ago\") +\n-      (OWN_TAG[st] ? ' \u003cb class=\"tag\">' + OWN_TAG[st] + \"\u003c/b>\" : \"\") + \"\u003c/time>\u003c/article>\";\n+    return '\u003carticle class=\"reply mine' + (st === \"pending\" || st === \"failed\" ? \" \" + st : \"\") + '\">' + headerHTML(\"you\", m.at, OWN_TAG[st] || \"\") +\n+      '\u003cdiv class=\"own\">' + U.esc(m.text) + \"\u003c/div>\u003c/article>\";\n   }\n \n   function questionsHTML(t) {\n@@ -212,6 +220,7 @@\n   }\n \n   function repliesHTML(t, got) {\n+    const who = whoOf(t);\n     if (!got) return '\u003cdiv class=\"replies loading\" aria-busy=\"true\">\u003cdiv class=\"sk\">\u003c/div>\u003cdiv class=\"sk s2\">\u003c/div>\u003c/div>';\n     if (got.failed) {\n       // The endpoint is not on this room yet, or it failed. The recap and the last report stand in for it.\n@@ -223,7 +232,7 @@\n     const list = got.replies || [];\n     const items = mergeOwn(t, list.map(r => ({ r, at: U.ts(r.at) })), list.length ? U.ts(list[0].at) : 0);\n     if (!items.length) return '\u003cdiv class=\"replies\">' + fallbackHTML(t) + \"\u003c/div>\";\n-    return '\u003cdiv class=\"replies\">' + items.map(i => i.mine ? ownHTML(i.mine) : replyHTML(i.r, screen)).join(\"\") + \"\u003c/div>\";\n+    return '\u003cdiv class=\"replies\">' + items.map(i => i.mine ? ownHTML(i.mine) : replyHTML(i.r, screen, who)).join(\"\") + \"\u003c/div>\";\n   }\n \n   // ── painting ─────────────────────────────────────────────────────────────\n@@ -273,6 +282,42 @@\n   // fire scroll events, and none of them is a decision to stop following. A touch, wheel, key or drag marks the\n   // scrolls that follow it as the operator's, and a finger's momentum is covered by the window after it.\n   let userAt = 0;\n+  // ── pinch is text size ───────────────────────────────────────────────────\n+  // The browser's own pinch is off (viewport and touch-action). Two fingers on the thread change --m-fs, the message\n+  // font size, within 11 to 24 px, kept on this device. The text reflows, the header, composer and buttons keep their\n+  // size, and the message under the fingers stays where it is.\n+  const FS_KEY = \"atrium.mfs\", FS_MIN = 11, FS_MAX = 24, FS_DEF = 14;\n+  function setFs(px) {\n+    const v = Math.max(FS_MIN, Math.min(FS_MAX, Math.round(px * 10) / 10));\n+    q(\"m-card\").style.setProperty(\"--m-fs\", v + \"px\");\n+    return v;\n+  }\n+  function pinchInit() {\n+    try { const v = parseFloat(localStorage.getItem(FS_KEY)); if (v) setFs(v); } catch (e) {}\n+    const dist = t => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);\n+    let g = null;\n+    els.scroll.addEventListener(\"touchstart\", e => {\n+      if (e.touches.length !== 2) { g = null; return; }\n+      const t = e.touches, my = (t[0].clientY + t[1].clientY) / 2;\n+      const at = document.elementFromPoint((t[0].clientX + t[1].clientX) / 2, my);\n+      const anchor = at && at.closest && at.closest(\".reply\");\n+      g = { d: dist(t), fs: parseFloat(getComputedStyle(q(\"m-card\")).getPropertyValue(\"--m-fs\")) || FS_DEF, anchor, y: my };\n+      stick = false;\n+    }, { passive: true });\n+    els.scroll.addEventListener(\"touchmove\", e => {\n+      if (!g || e.touches.length !== 2) return;\n+      e.preventDefault();\n+      const was = g.anchor ? g.anchor.getBoundingClientRect().top : 0;\n+      const v = setFs(g.fs * dist(e.touches) / (g.d || 1));\n+      if (g.anchor) els.scroll.scrollTop += g.anchor.getBoundingClientRect().top - was;\n+      g.last = v;\n+    }, { passive: false });\n+    const end = () => { if (g && g.last) { try { localStorage.setItem(FS_KEY, String(g.last)); } catch (e) {} } g = null; };\n+    els.scroll.addEventListener(\"touchend\", end);\n+    els.scroll.addEventListener(\"touchcancel\", end);\n+    [\"gesturestart\", \"gesturechange\"].forEach(n => els.scroll.addEventListener(n, e => e.preventDefault()));\n+  }\n+\n   function byHand() { userAt = Date.now(); }\n   function onScroll() {\n     if (!els || !openId) return;\n@@ -579,6 +624,7 @@\n       const ro = new ResizeObserver(() => { if (stick && openId) toEnd(); });\n       [els.scroll, els.head, els.notices, els.replies, els.extras, els.perms].forEach(e => ro.observe(e));\n     }\n+    pinchInit();\n     els.scroll.addEventListener(\"load\", () => { if (stick && openId) toEnd(); }, true);\n     els.jump.addEventListener(\"click\", () => { stick = true; toEnd(); });\n     if (window.visualViewport) window.visualViewport.addEventListener(\"resize\", () => { if (openId) settle(); });\ndiff --git a/internal/api/web/m/working.css b/internal/api/web/m/working.css\nindex bedfe3ad..9bf4373a 100644\n--- a/internal/api/web/m/working.css\n+++ b/internal/api/web/m/working.css\n@@ -55,3 +55,43 @@\n   font: inherit; font-size: 14px; font-weight: 650; box-shadow: 0 6px 18px rgba(var(--shadow-rgb), .45); cursor: pointer;\n }\n .jump[hidden] { display: none; }\n+\n+/* Compact card view: one header line per message, near-full-width bubbles, a thin working strip, a slim composer.\n+   Message text follows --m-fs, which a two-finger pinch changes (see js/card.js). Nothing else scales. */\n+#m-card { --m-fs: 14px; touch-action: pan-y; }\n+#m-card .sheet-scroll { touch-action: pan-y; padding: 2px max(6px, env(safe-area-inset-right, 0px)) 10px max(6px, env(safe-area-inset-left, 0px)); }\n+#m-card .sheet-top { min-height: calc(40px + env(safe-area-inset-top, 0px)); padding-top: calc(env(safe-area-inset-top, 0px) + 2px); padding-bottom: 2px; }\n+#m-card .back { width: 40px; height: 40px; }\n+#m-card .term { min-height: 40px; }\n+#m-card .chead { padding-bottom: 0; }\n+#m-card .c-name { margin: 0; font-size: 19px; }\n+#m-card .c-sub { margin: 0 0 4px; font-size: 12.5px; }\n+#m-card .c-state { margin: 2px 0 0; gap: 6px; }\n+#m-card .pill { padding: 1px 8px; font-size: 11.5px; }\n+#m-card .recap-btn { min-height: 28px; margin: 4px 0 0; padding: 0 10px; border-radius: 9px; font-size: 12.5px; }\n+#m-card .notice { margin: 6px 0 0; padding: 6px 10px; border-radius: 10px; font-size: 12.5px; }\n+#m-card .notice b { font-size: 13px; }\n+#m-card .conv { margin-top: 6px; }\n+#m-card .replies { gap: 4px; }\n+#m-card .reply { padding: 4px 8px 5px; border-radius: 10px; box-shadow: none; }\n+#m-card .reply.mine { align-self: stretch; max-width: none; border-radius: 10px; }\n+#m-card .rh { display: flex; align-items: baseline; gap: 6px; min-width: 0; margin: 0 0 1px; font-size: 11px; line-height: 1.3; color: var(--dim); white-space: nowrap; }\n+#m-card .rh .src { display: block; flex: 0 1 auto; min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; font-size: 11px; font-weight: 650; letter-spacing: 0; text-transform: none; color: var(--label); }\n+#m-card .reply.mine .rh .src { color: var(--teal); }\n+#m-card .rh .note { opacity: .75; }\n+#m-card .rh time { display: inline; margin: 0; font-size: 11px; }\n+#m-card .rh .tag { margin-left: auto; font-size: 11px; font-weight: 600; }\n+#m-card .reply .cut { margin: 2px 0 0; font-size: 11.5px; }\n+#m-card .md, #m-card .reply .own { font-size: var(--m-fs); line-height: 1.4; }\n+#m-card .md p { margin: 0 0 6px; }\n+#m-card .md ul, #m-card .md ol { margin: 0 0 6px; }\n+#m-card .md pre code { font-size: calc(var(--m-fs) * .85); }\n+#m-card pre.screen { font-size: calc(var(--m-fs) * .85); }\n+#m-card .reply.prompt.peer, #m-card .reply.prompt.command { padding-top: 2px; padding-bottom: 2px; }\n+#m-card .working { gap: 8px; margin: 0 max(6px, env(safe-area-inset-right, 0px)) 2px max(6px, env(safe-area-inset-left, 0px)); padding: 2px 10px; border-radius: 8px; font-size: 12.5px; font-weight: 600; }\n+#m-card .wk-spin { width: 11px; height: 11px; border-width: 2px; }\n+#m-card #m-compose .mc { padding: 3px 6px calc(4px + env(safe-area-inset-bottom, 0px)); }\n+#m-card #m-compose .mc-row { padding: 3px 3px 3px 12px; border-radius: 20px; gap: 6px; }\n+#m-card #m-compose .mc-box { padding: 6px 0; }\n+#m-card #m-compose .mc-send { width: 36px; height: 36px; }\n+#m-card #m-compose .mc-note[data-kind=\"sent\"] { display: none; }\ndiff --git a/scripts/test-board-headless.js b/scripts/test-board-headless.js\nindex 9af69fdb..7945f8ee 100644\n--- a/scripts/test-board-headless.js\n+++ b/scripts/test-board-headless.js\n@@ -13104,7 +13104,7 @@ async function mWorkingSection(browser) {\n       let b = await box();\n       if (b.hidden || b.text !== \"thinking\") fail(tag + \"no thinking line: \" + JSON.stringify(b));\n       if (b.inChips || /thinking/.test(b.chipText)) fail(tag + \"the working text is in the chip row: \" + b.chipText);\n-      if (b.fs \u003c 18 || b.h \u003c 40) fail(tag + \"the line is small: \" + JSON.stringify(b));\n+      if (b.h > 32 || b.fs \u003c 12) fail(tag + \"the line is not a thin strip: \" + JSON.stringify(b));\n       if (b.anim !== \"wk-turn\") fail(tag + \"the spinner does not animate: \" + b.anim);\n       if (b.bottom > b.composeTop + 1 || b.composeTop - b.bottom > 40) fail(tag + \"the line is not pinned just above the composer: \" + JSON.stringify(b));\n       if (b.sw > b.iw + 1) fail(tag + \"the card scrolls sideways\");\n@@ -13202,6 +13202,146 @@ async function mOwnMessagesSection(browser) {\n   if (!bad) console.log(\"mOwnMessages ok\");\n }\n \n+// How many messages fit on the 390x844 phone at once, how wide they are, and what a send leaves behind.\n+async function mCompactCount(p) {\n+  return p.evaluate(() => {\n+    const sc = document.getElementById(\"m-card-scroll\"), r = sc.getBoundingClientRect();\n+    const rs = [...document.querySelectorAll(\"#m-replies .reply\")];\n+    const th = document.getElementById(\"m-replies\").getBoundingClientRect().width;\n+    return { total: rs.length, visible: rs.filter(e => { const b = e.getBoundingClientRect(); return b.top >= r.top - 1 && b.bottom \u003c= r.bottom + 1; }).length,\n+      minW: Math.min(...rs.map(e => e.getBoundingClientRect().width / th)),\n+      mineW: Math.min(...rs.filter(e => e.classList.contains(\"mine\")).map(e => e.getBoundingClientRect().width / th)),\n+      head: rs.map(e => { const h = e.querySelector(\".rh\"); return h ? Math.round(h.getBoundingClientRect().height) : -1; }),\n+      note: (document.querySelector(\"#m-compose .mc-note\") || { offsetHeight: 0 }).offsetHeight,\n+      font: parseFloat(getComputedStyle(document.querySelector(\"#m-replies .reply .md, #m-replies .reply .own\")).fontSize) };\n+  });\n+}\n+\n+async function mCompactSection(browser) {\n+  const st = mServer({});\n+  const c = mCard(\"cp-1\", { alias: \"packer\", display_title: \"packer\", status: \"needs-input\", waiting_since: mIso(2 * M_MIN), seen: { turn_ended_at: mIso(20 * M_MIN) } });\n+  st.tasks = [c];\n+  const body = \"Two lines of an answer here so the bubble is not a single row, it wraps once on a phone.\";\n+  st.replies[\"cp-1\"] = { source: \"transcript\", replies: [1, 2, 3, 4, 5, 6].map(i => ({ at: mIso((30 - i * 4) * M_MIN), text: \"Reply \" + i + \". \" + body })) };\n+  await st.open();\n+  try {\n+    const { ctx, p, errors } = await mPage(browser, st, M_VIEWS[0], \"\");\n+    const tag = \"mCompact: \";\n+    await p.route(\"**/v1/tasks/cp-1/message\", r => r.fulfill({ status: 200, contentType: \"application/json\", body: JSON.stringify({ delivered: \"terminal\" }) }));\n+    await p.evaluate(() => localStorage.setItem(\"atrium.msent.cp-1\", JSON.stringify([\n+      { at: new Date(Date.now() - 17 * 60000).toISOString(), text: \"my first ask, also long enough to wrap onto a second line on the phone\", kind: \"sent\" },\n+      { at: new Date(Date.now() - 9 * 60000).toISOString(), text: \"my second ask, also long enough to wrap onto a second line on the phone\", kind: \"sent\" }])));\n+    await p.waitForSelector(\"#m-seg-all\", { timeout: slow(10000) });\n+    await p.tap(\"#m-seg-all\");\n+    await p.waitForSelector(\"#m-list .row\", { timeout: slow(10000) });\n+    await p.tap('#m-list .row[data-id=\"cp-1\"]');\n+    await p.waitForSelector(\"#m-replies .reply.mine\", { timeout: slow(5000) });\n+    await p.waitForTimeout(500);\n+    const k = await mCompactCount(p);\n+    console.log(\"mCompact count: \" + JSON.stringify(k));\n+    await mShot(p, \"compact-390\");\n+    if (k.visible \u003c Number(process.env.M_COMPACT_MIN || 5)) fail(tag + \"only \" + k.visible + \" of \" + k.total + \" messages fit\");\n+    if (k.minW \u003c 0.915 || k.mineW \u003c 0.915) fail(tag + \"bubbles are too narrow: \" + JSON.stringify(k));\n+    if (k.head.some(h => h \u003c 0 || h > 20)) fail(tag + \"a message has no one-line header: \" + JSON.stringify(k.head));\n+    const lone = await p.$$eval(\"#m-replies .reply\", els => els.filter(e => [...e.children].some(c => c.tagName === \"TIME\" || (c.classList.contains(\"tag\")))).length);\n+    if (lone) fail(tag + \"a time or state sits outside the header\");\n+    if (k.font > 15) fail(tag + \"the default font is \" + k.font);\n+    await p.fill(\"#m-compose textarea\", \"one more\");\n+    await p.evaluate(() => document.querySelector(\"#m-compose textarea\").dispatchEvent(new Event(\"input\", { bubbles: true })));\n+    await p.tap(\"#m-compose .mc-send\");\n+    await p.waitForFunction(() => /delivered/.test(document.getElementById(\"m-replies\").textContent), null, { timeout: slow(5000) });\n+    await p.waitForTimeout(400);\n+    if ((await mCompactCount(p)).note > 0) fail(tag + \"a sent line is still above the composer\");\n+    if (await mNoSideways(p)) fail(tag + \"the card scrolls sideways\");\n+    if (errors.length) fail(tag + \"page errors: \" + errors.join(\" | \"));\n+    await ctx.close();\n+  } finally { await st.close(); }\n+  if (!bad) console.log(\"mCompact ok\");\n+}\n+\n+async function mPinchSection(browser) {\n+  const st = mServer({});\n+  const c = mCard(\"pn-1\", { alias: \"zoomer\", display_title: \"zoomer\", status: \"needs-input\", waiting_since: mIso(2 * M_MIN), seen: { turn_ended_at: mIso(20 * M_MIN) } });\n+  st.tasks = [c];\n+  st.replies[\"pn-1\"] = { source: \"transcript\", replies: Array.from({ length: 10 }, (_, i) => ({ at: mIso((60 - i * 4) * M_MIN), text: \"Reply \" + i + \". \" + \"words go here and wrap. \".repeat(6) })) };\n+  await st.open();\n+  try {\n+    const { ctx, p, errors } = await mPage(browser, st, M_VIEWS[0], \"\");\n+    const tag = \"mPinch: \";\n+    await p.waitForSelector(\"#m-seg-all\", { timeout: slow(10000) });\n+    await p.tap(\"#m-seg-all\");\n+    await p.waitForSelector(\"#m-list .row\", { timeout: slow(10000) });\n+    await p.tap('#m-list .row[data-id=\"pn-1\"]');\n+    await p.waitForSelector(\"#m-replies .reply\", { timeout: slow(5000) });\n+    await p.waitForTimeout(500);\n+    const meta = await p.$eval('meta[name=viewport]', m => m.content);\n+    if (!/user-scalable=no/.test(meta) || !/maximum-scale=1/.test(meta)) fail(tag + \"the browser pinch is not off: \" + meta);\n+    if (await p.$eval(\"#m-card-scroll\", e => getComputedStyle(e).touchAction) !== \"pan-y\") fail(tag + \"touch-action does not stop the browser pinch\");\n+    const state = () => p.evaluate(() => {\n+      const sc = document.getElementById(\"m-card-scroll\"), r = sc.getBoundingClientRect();\n+      const mid = [...document.querySelectorAll(\"#m-replies .reply\")].find(e => { const b = e.getBoundingClientRect(); return b.top > r.top + 150 && b.bottom \u003c r.bottom - 100; });\n+      return { fs: parseFloat(getComputedStyle(document.querySelector(\"#m-replies .md\")).fontSize), mid: mid ? mid.textContent.slice(0, 20) : \"\",\n+        midTop: mid ? Math.round(mid.getBoundingClientRect().top) : 0, comp: Math.round(document.querySelector(\"#m-compose .mc-send\").getBoundingClientRect().width),\n+        head: Math.round(document.querySelector(\"#m-replies .rh\").getBoundingClientRect().height), sw: sc.scrollWidth - sc.clientWidth,\n+        key: localStorage.getItem(\"atrium.mfs\") };\n+    });\n+    const pinch = (from, to) => p.evaluate(({ from, to }) => {\n+      const sc = document.getElementById(\"m-card-scroll\"), r = sc.getBoundingClientRect(), cy = r.top + r.height / 2, cx = r.left + r.width / 2;\n+      const mk = (type, d) => {\n+        const ts = [-1, 1].map((k, i) => new Touch({ identifier: i + 1, target: sc, clientX: cx + k * d / 2, clientY: cy }));\n+        const ev = new TouchEvent(type, { touches: type === \"touchend\" ? [] : ts, targetTouches: ts, changedTouches: ts, bubbles: true, cancelable: true });\n+        sc.dispatchEvent(ev);\n+        return ev.defaultPrevented;\n+      };\n+      mk(\"touchstart\", from);\n+      let prevented = false;\n+      for (let i = 1; i \u003c= 8; i++) prevented = mk(\"touchmove\", from + (to - from) * i / 8);\n+      mk(\"touchend\", to);\n+      return prevented;\n+    }, { from, to });\n+    const a = await state();\n+    if (!a.mid) fail(tag + \"no message in the middle to hold\");\n+    const prevented = await pinch(100, 200);\n+    if (!prevented) fail(tag + \"the pinch was not caught\");\n+    await p.waitForTimeout(200);\n+    const b = await state();\n+    if (b.fs \u003c= a.fs + 3) fail(tag + \"spreading did not grow the text: \" + a.fs + \" to \" + b.fs);\n+    if (b.comp !== a.comp || b.head !== a.head) fail(tag + \"the composer or header changed size: \" + JSON.stringify([a, b]));\n+    if (b.sw > 0) fail(tag + \"the card scrolls sideways after the pinch\");\n+    if (b.key !== String(b.fs)) fail(tag + \"the size was not kept: \" + b.key);\n+    await pinch(300, 10);\n+    const lo = await state();\n+    if (lo.fs !== 11) fail(tag + \"the floor is 11 px, got \" + lo.fs);\n+    await pinch(10, 900);\n+    const hi = await state();\n+    if (hi.fs !== 24) fail(tag + \"the ceiling is 24 px, got \" + hi.fs);\n+    // the size survives a reload, and the message under the fingers stays put while it changes\n+    await p.goto(st.url + \"/m/\", { waitUntil: \"domcontentloaded\" });\n+    await p.waitForSelector(\"#m-seg-all\", { timeout: slow(10000) });\n+    await p.tap(\"#m-seg-all\");\n+    await p.waitForSelector(\"#m-list .row\", { timeout: slow(10000) });\n+    await p.tap('#m-list .row[data-id=\"pn-1\"]');\n+    await p.waitForSelector(\"#m-replies .reply\", { timeout: slow(5000) });\n+    await p.waitForTimeout(400);\n+    if ((await state()).fs !== 24) fail(tag + \"the size did not survive a reload\");\n+    await p.evaluate(() => { document.getElementById(\"m-card-scroll\").scrollTop = 600; });\n+    await p.waitForTimeout(300);\n+    const held = await p.evaluate(() => {\n+      const sc = document.getElementById(\"m-card-scroll\"), r = sc.getBoundingClientRect(), cy = r.top + r.height / 2, cx = r.left + r.width / 2;\n+      const at = document.elementFromPoint(cx, cy).closest(\".reply\");\n+      const before = at.getBoundingClientRect().top;\n+      const t = d => [-1, 1].map((k, i) => new Touch({ identifier: i + 1, target: at, clientX: cx + k * d / 2, clientY: cy }));\n+      const fire = (type, d) => sc.dispatchEvent(new TouchEvent(type, { touches: t(d), targetTouches: t(d), changedTouches: t(d), bubbles: true, cancelable: true }));\n+      fire(\"touchstart\", 200); fire(\"touchmove\", 120); fire(\"touchmove\", 100);\n+      return Math.abs(at.getBoundingClientRect().top - before);\n+    });\n+    if (held > 3) fail(tag + \"the message under the pinch moved by \" + held + \" px\");\n+    if (errors.length) fail(tag + \"page errors: \" + errors.join(\" | \"));\n+    await ctx.close();\n+  } finally { await st.close(); }\n+  if (!bad) console.log(\"mPinch ok\");\n+}\n+\n async function mRecapSheetSection(browser) {\n   const st = mServer({});\n   const fresh = mCard(\"rc-fresh\", { alias: \"fresh\", display_title: \"fresh\", status: \"needs-input\", waiting_since: mIso(M_MIN),\n@@ -14268,7 +14408,7 @@ async function main() {\n       bootClean: bootCleanSection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mRecapSheet: mRecapSheetSection,\n       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection,\n       gearTermList: gearTermListSection, growlLinks: growlLinksSection, growlChoiceOnce: growlChoiceOnceSection,\n-      mOutputAt: mOutputAtSection, mStickBottom: mStickBottomSection, mSendFree: mSendFreeSection, mCardUpload: mCardUploadSection,\n+      mOutputAt: mOutputAtSection, mStickBottom: mStickBottomSection, mSendFree: mSendFreeSection, mCardUpload: mCardUploadSection, mCompact: mCompactSection, mPinch: mPinchSection,\n       cardUrlWinName: cardUrlWinNameSection };\n     try {\n       for (const n of process.env.HEADLESS_ONLY.split(\",\")) await only[n](browser, base);\n@@ -16254,6 +16394,8 @@ async function main() {\n     await mStickBottomSection(browser);\n     await mSendFreeSection(browser);\n     await mCardUploadSection(browser);\n+    await mCompactSection(browser);\n+    await mPinchSection(browser);\n     await cardUrlWinNameSection(browser, base);\n   } catch (e) {\n     fail(\"the headless run threw: \" + (e && e.message ? e.message : e) + threwAt(e));\n"}};</script>
+<script>
+// Shared by both designs: parse unified diffs, pair changed lines, word-level diff, tap-to-quote.
+const DIFFS = window.DIFFS;
+function parseDiff(text) {
+  const files = [];
+  let f = null, h = null, o = 0, n = 0;
+  for (const raw of text.split("\n")) {
+    if (raw.startsWith("diff --git ")) {
+      const m = /^diff --git a\/(.+) b\/(.+)$/.exec(raw);
+      f = { path: m[2], status: "modified", add: 0, del: 0, hunks: [], binary: false };
+      files.push(f); h = null; continue;
+    }
+    if (!f) continue;
+    if (raw.startsWith("new file mode")) f.status = "added";
+    else if (raw.startsWith("deleted file mode")) f.status = "deleted";
+    else if (raw.startsWith("Binary files")) f.binary = true;
+    else if (raw.startsWith("@@")) {
+      const m = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@ ?(.*)$/.exec(raw);
+      o = +m[1]; n = +m[2];
+      h = { head: raw, ctx: m[3], lines: [] }; f.hunks.push(h);
+    } else if (h && /^[ +\-]/.test(raw)) {
+      const t = raw[0], s = raw.slice(1);
+      if (t === "+") { f.add++; h.lines.push({ t, s, n: n++ }); }
+      else if (t === "-") { f.del++; h.lines.push({ t, s, o: o++ }); }
+      else h.lines.push({ t: " ", s, o: o++, n: n++ });
+    }
+  }
+  return files.sort((p, q) => p.binary - q.binary);
+}
+function toks(s) { return s.match(/\w+|\s+|[^\w\s]/g) || []; }
+// Token LCS; returns [oldHtml, newHtml] with <mark> around the tokens that differ.
+function wordDiff(a, b) {
+  const x = toks(a), y = toks(b);
+  const L = Array.from({ length: x.length + 1 }, () => new Int32Array(y.length + 1));
+  for (let i = x.length - 1; i >= 0; i--)
+    for (let j = y.length - 1; j >= 0; j--)
+      L[i][j] = x[i] === y[j] ? L[i + 1][j + 1] + 1 : Math.max(L[i + 1][j], L[i][j + 1]);
+  let i = 0, j = 0, ra = "", rb = "", ma = "", mb = "";
+  const flush = () => {
+    if (ma) ra += "<mark>" + ma + "</mark>";
+    if (mb) rb += "<mark>" + mb + "</mark>";
+    ma = mb = "";
+  };
+  while (i < x.length || j < y.length) {
+    if (i < x.length && j < y.length && x[i] === y[j]) { flush(); ra += esc(x[i]); rb += esc(y[j]); i++; j++; }
+    else if (j >= y.length || (i < x.length && L[i + 1][j] >= L[i][j + 1])) ma += esc(x[i++]);
+    else mb += esc(y[j++]);
+  }
+  flush();
+  return [ra, rb];
+}
+function esc(s) { return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+// Set .html on each line; pair the i-th deletion with the i-th addition of a change run.
+function annotate(file) {
+  for (const h of file.hunks) {
+    const ls = h.lines;
+    for (let i = 0; i < ls.length;) {
+      if (ls[i].t === " ") { ls[i].html = esc(ls[i].s); i++; continue; }
+      let d = i; while (d < ls.length && ls[d].t === "-") d++;
+      let a = d; while (a < ls.length && ls[a].t === "+") a++;
+      const nd = d - i, na = a - d;
+      for (let k = 0; k < Math.max(nd, na); k++) {
+        const del = k < nd ? ls[i + k] : null, add = k < na ? ls[d + k] : null;
+        if (del && add) { const [r, w] = wordDiff(del.s, add.s); del.html = r; add.html = w; }
+        else { const l = del || add; l.html = esc(l.s); }
+      }
+      i = a;
+    }
+  }
+}
+// Tap a line: highlight it, show path:line in the bar, quote basename:line into the composer.
+let selected = null;
+function pick(el, path, ln) {
+  if (selected) selected.classList.remove("sel");
+  selected = el; el.classList.add("sel");
+  document.getElementById("barpath").textContent = path + ":" + ln;
+  document.getElementById("quote").textContent = path.split("/").pop() + ":" + ln + " ";
+  document.getElementById("quote").classList.add("has");
+}
+function chrome() {
+  return '<div id="bar"><span id="barpath">tap a line to quote it</span></div>' +
+    '<div id="composer"><span id="quote"></span><span class="caret"></span><span class="ph">Message...</span>' +
+    '<button type="button">Send</button></div>';
+}
+function which() { return DIFFS[new URLSearchParams(location.search).get("d") === "big" ? "big" : "small"]; }
+function skin() {
+  if (new URLSearchParams(location.search).get("skin") === "dark") document.documentElement.classList.add("dark");
+}
+
+skin(); document.body.insertAdjacentHTML("beforeend", chrome());
+const D = which(), files = parseDiff(D.text), root = document.getElementById("root"), CTX = 2;
+files.forEach(annotate);
+document.getElementById("title").textContent = D.title;
+const mx = Math.max(1, ...files.map(f => f.add + f.del));
+function list() {
+  window.scrollTo(0, 0);
+  document.getElementById("sum").textContent = files.length + " files changed";
+  root.innerHTML = "";
+  for (const f of files) {
+    const a = document.createElement("a"); a.className = "fl";
+    const w = (f.add + f.del) / mx * 100, pa = f.add + f.del ? f.add / (f.add + f.del) * 100 : 0;
+    a.innerHTML = '<div class="r"><span class="p">' + esc(f.path) + '</span><span class="cnt"><span class="a">+' + f.add +
+      '</span> <span class="d">-' + f.del + '</span></span></div><div class="st">' + (f.binary ? "binary" : f.status) +
+      '</div><div class="bar" style="width:' + Math.max(w, 8) + '%"><i style="width:' + pa + '%"></i><i style="width:' +
+      (100 - pa) + '%"></i></div>';
+    a.onclick = () => open(f); root.appendChild(a);
+  }
+}
+// Keep changed lines plus CTX lines around them; the rest of the hunk hides behind a tap.
+function visible(h) {
+  const out = h.lines.map(l => l.t !== " ");
+  h.lines.forEach((l, i) => {
+    if (l.t !== " ") for (let d = -CTX; d <= CTX; d++) if (i + d >= 0 && i + d < out.length) out[i + d] = true;
+  });
+  return out;
+}
+function open(f) {
+  window.scrollTo(0, 0);
+  document.getElementById("sum").textContent = f.path;
+  root.innerHTML = '<div class="back">&#8249; All files</div>'; root.firstChild.onclick = list;
+  if (f.binary) root.insertAdjacentHTML("beforeend", '<div class="bin">Binary file, not shown</div>');
+  for (const h of f.hunks) {
+    const card = document.createElement("div"); card.className = "card";
+    const vis = visible(h); let full = false;
+    const render = () => {
+      card.innerHTML = '<div class="lab"><span>' + esc(h.ctx || "hunk") + '</span><span>' +
+        esc(h.head.replace(/ @@.*/, " @@")) + '</span></div>';
+      let hidden = 0;
+      h.lines.forEach((l, i) => {
+        if (!full && !vis[i]) { hidden++; return; }
+        const r = document.createElement("div");
+        r.className = "row code " + (l.t === "+" ? "add" : l.t === "-" ? "del" : "ctx");
+        r.dataset.m = l.t === " " ? "" : l.t;
+        r.innerHTML = l.html; r.onclick = () => pick(r, f.path, l.n ?? l.o);
+        card.appendChild(r);
+      });
+      if (hidden) {
+        const m = document.createElement("div"); m.className = "more";
+        m.textContent = "Show full hunk (" + hidden + " more lines)";
+        m.onclick = () => { full = true; render(); }; card.appendChild(m);
+      }
+    };
+    render(); root.appendChild(card);
+  }
+}
+list();
+// ?open=N goes straight into file N (used for the screenshots).
+const op = new URLSearchParams(location.search).get("open");
+if (op !== null) open(files[+op]);
+</script></body></html>
