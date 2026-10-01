@@ -36,3 +36,20 @@ second-order misses: the hint's wording did not change with its new behaviour, a
 handler strings.
 
 HUB DEPLOY OK d4260769
+
+## Re-read of 2d56c866 (@ui, low 1 and nit 2)
+
+`git diff d4260769 2d56c866 -- internal/api/web`, read only. The pill is a target again, 40 px tall. Its click calls
+`preventDefault` and `stopPropagation`, then unlocks and hides it. A press on the pill is marked from the window's
+capture phase before the unlock listeners run, and `paintSoundHint` will not hide a pill mid-press, so the click
+cannot land on the row that was under it. The badge reads `data-group` and `data-sort`, which `paintGroupSegs` and
+`paintBoardSort` now write from their own static keys. Both closed.
+
+Nit: a press that starts on the pill and slides off before release sends `pointerup` and no click or cancel, so
+`data-press` stays set. The pill then stays up after sound has unlocked, until it is tapped. Releasing on
+`pointerup` from the same window listener as the press would cover that.
+
+Quality: after the Sonnet switch. @ui found the second-order case itself (the hide on pointerup that let the click
+fall through) and wrote a test that puts the pill over a row. No drop seen.
+
+HUB DEPLOY OK 2d56c866
