@@ -278,10 +278,30 @@ func TestAMarkedRoomRefusesANewPullReviewAndNothingElse(t *testing.T) {
 		t.Fatal("the refused review reached the room")
 	}
 	for _, path := range []string{"/v1/prs/pr_01k8x2m4q7/retry", "/v1/prs/pr_01k8x2m4q7/abort",
-		"/v1/prs/pr_01k8x2m4q7/start", "/v1/prs/pr_01k8x2m4q7/walker"} {
+		"/v1/prs/pr_01k8x2m4q7/start"} {
 		if code, body, _ := pullsDo(t, http.MethodPost, front.URL+path, "", nil); code >= 400 {
 			t.Fatalf("%s on a marked room = %d %s, want the room's answer", path, code, body)
 		}
+	}
+	// A walker LAUNCH makes a card, so it is new work: an empty body is a launch, as is an explicit one. `set` and
+	// `clear` only record a card that exists and carry on.
+	const walker = "/v1/prs/pr_01k8x2m4q7/walker"
+	for _, body := range []string{"", `{"action":"launch"}`, `{}`} {
+		code, answer, _ := pullsDo(t, http.MethodPost, front.URL+walker, body, nil)
+		if code != http.StatusConflict || !strings.Contains(answer, "marked for deletion") {
+			t.Fatalf("walker launch %q on a marked room = %d %s", body, code, answer)
+		}
+	}
+	if room.count(http.MethodPost, walker) != 0 {
+		t.Fatal("a refused walker launch reached the room")
+	}
+	for _, body := range []string{`{"action":"set","task":"card-1"}`, `{"action":"clear"}`} {
+		if code, answer, _ := pullsDo(t, http.MethodPost, front.URL+walker, body, nil); code >= 400 {
+			t.Fatalf("walker %s on a marked room = %d %s, want the room's answer", body, code, answer)
+		}
+	}
+	if room.count(http.MethodPost, walker) != 2 {
+		t.Fatalf("set and clear did not both reach the room with their bodies: %+v", room.requests())
 	}
 	if code, _, _ := pullsDo(t, http.MethodGet, front.URL+"/v1/prs", "", nil); code != 200 {
 		t.Fatalf("the list on a marked room = %d", code)
@@ -524,6 +544,36 @@ func TestAQuietPullsRoomDoesNotEmptyTheList(t *testing.T) {
 	}
 	if w, _ := obj["rooms_without"].([]any); len(w) != 1 || w[0] != "beta" {
 		t.Errorf("rooms_without = %v, want beta", obj["rooms_without"])
+	}
+}
+
+// With no room answering 200 there is no pulls view, and the board opens the tab on any 200 with a `prs` array, so the
+// answer is the contract's 404 and names the rooms asked. Two rooms without the store, and two that error, are both it.
+func TestNoRoomServingPullsIsA404NotAnEmptyList(t *testing.T) {
+	a, b := allPulls()
+	a.old, b.old = true, true
+	front, _, done := two(t, a, b)
+	code, body, _ := pullsDo(t, http.MethodGet, front.URL+"/v1/prs", "", nil)
+	done()
+	obj := jsonOf(t, body)
+	if code != http.StatusNotFound || obj["code"] != "not_found" || obj["error"] == "" || obj["prs"] != nil {
+		t.Fatalf("two rooms without pulls = %d %s", code, body)
+	}
+	if w, _ := obj["rooms_without"].([]any); len(w) != 2 || w[0] != "alpha" || w[1] != "beta" {
+		t.Errorf("rooms_without = %v, want alpha and beta", obj["rooms_without"])
+	}
+	if q, ok := obj["rooms_quiet"].([]any); !ok || len(q) != 0 {
+		t.Errorf("rooms_quiet = %v, want an empty list", obj["rooms_quiet"])
+	}
+
+	a, b = allPulls()
+	a.sick, b.sick = true, true
+	front, _, done = two(t, a, b)
+	defer done()
+	code, body, _ = pullsDo(t, http.MethodGet, front.URL+"/v1/prs", "", nil)
+	obj = jsonOf(t, body)
+	if q, _ := obj["rooms_quiet"].([]any); code != http.StatusNotFound || len(q) != 2 {
+		t.Fatalf("two sick rooms = %d %s", code, body)
 	}
 }
 
