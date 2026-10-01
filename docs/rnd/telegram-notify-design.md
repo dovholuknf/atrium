@@ -42,6 +42,13 @@ CLAUDE.md's rule: atrium may hold the NAME of a command that has a credential, a
 - **Recommended: the token lives in the script.** clint's script reads it from his own file or keychain and calls
   `https://api.telegram.org/bot<token>/sendMessage`. Atrium stores the argv of the script and nothing else. This
   is the shape `notify.go` documents.
+- **The token must never be in the command's argv.** The easy setup is a one-line `curl` with `bot<token>` in the
+  URL as the command. That argv is stored as `notify.command` in `hub_setting`, which is atrium's store, and
+  `GET /_hub/notify` serves it back, over the overlay too. A token in the argv is the rejected option below by
+  another route. The command names a script, and the script reads the token.
+- **The script must never print the URL or the token.** The hub keeps the first stderr line as `last_error`,
+  persisted and served by `GET /_hub/notify`, and `POST /_hub/notify/test` returns the command's output. Whatever the
+  script prints is something atrium holds.
 - **Rejected: the token in atrium's store or settings.** That is atrium holding a credential, and a leaked atrium
   database would then let anybody post as the bot and read its updates.
 - **Rejected: a Telegram sink inside atrium,** even one that reads the token from the keychain. It is new code and a
@@ -66,6 +73,8 @@ A reply in Telegram that answers a card means:
   calls ends that.
 - **It adds nothing the phone board lacks.** `/m` over the share already answers questions and permissions, with
   the command in view.
+- **A reply that is only a message is no safer.** A reply that does not approve anything still steers an agent that
+  holds tools, so it reaches the same machine through the same Telegram account.
 
 clint could still write such a poller against the loopback API, and atrium cannot stop him. Atrium will not ship
 one, document one as supported, or add an endpoint to make one easier.
@@ -88,18 +97,23 @@ on. Telegram is an even swap for ntfy.sh, with a chat history that ntfy does not
 
 - **The recommended shape:** about 15 minutes of clint's time. A 10-line script holding the token, then
   `PUT /_hub/notify` with the script's argv and `enabled: true` from loopback. No atrium change and no review.
-- **A sketch of that script,** for whoever writes it. It reads the token from a file only clint can read and sends
-  the card name and reason, with the card's `/m` link on the share:
+- **A sketch of that script,** for whoever writes it. It reads the token from a file only clint can read. By
+  default it sends the fixed line and the reason, with the card's `/m` link on the share. The card name goes in
+  only when `ATRIUM_TELEGRAM_NAMES` is set. A failure prints a fixed line, never the URL:
 
   ```powershell
   $in    = [Console]::In.ReadLine() | ConvertFrom-Json
-  $token = Get-Content "$HOME/.config/atrium-telegram/token" -Raw
-  $chat  = Get-Content "$HOME/.config/atrium-telegram/chat" -Raw
-  $text  = "$($in.name): $($in.reason)`nhttps://<share>/m/$($in.card)"
-  Invoke-RestMethod "https://api.telegram.org/bot$($token.Trim())/sendMessage" -Method Post `
-      -Body @{ chat_id = $chat.Trim(); text = $text; disable_web_page_preview = 'true' }
+  $token = (Get-Content "$HOME/.config/atrium-telegram/token" -Raw).Trim()
+  $chat  = (Get-Content "$HOME/.config/atrium-telegram/chat" -Raw).Trim()
+  $who   = if ($env:ATRIUM_TELEGRAM_NAMES) { $in.name } else { 'atrium: a card' }
+  $link  = 'https://<share>/m/#term=' + [uri]::EscapeDataString($in.card)
+  try {
+      Invoke-RestMethod "https://api.telegram.org/bot$token/sendMessage" -Method Post -ErrorAction Stop `
+          -Body @{ chat_id = $chat; text = "$who`: $($in.reason)`n$link"; disable_web_page_preview = 'true' } |
+          Out-Null
+  } catch { [Console]::Error.WriteLine('telegram send failed'); exit 1 }
   ```
 
-  The stdin fields `name`, `reason`, `card` and `room` are the ones `notify.go` sends. The link opens the card on
-  the share. Swap in whichever `/m` path form the board uses for a card id. `POST /_hub/notify/test` runs it once.
+  The stdin fields `name`, `reason`, `card` and `room` are the ones `notify.go` sends, and `/m/#term=<escaped id>`
+  is the board's card link. `POST /_hub/notify/test` runs it once.
 - **Two-way:** not offered at any cost.
