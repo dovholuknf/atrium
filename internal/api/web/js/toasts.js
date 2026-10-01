@@ -172,6 +172,8 @@ function placeToasts() {
   const host = document.getElementById("toasts");
   const pane = document.getElementById("term-pane");
   if (!host) return;
+  // A resize can land between two script loads, before solo.js and board.js have defined these. Boot places them again.
+  if (typeof termOnly !== "function" || typeof isViewing !== "function") return;
   const onTerm = !!pane && (termOnly() || isViewing("terms"));
   host.classList.toggle("top", onTerm);
   if (!onTerm) return;

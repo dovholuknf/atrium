@@ -608,6 +608,8 @@ type peer struct {
 	// not answered. `atrium_task` has the questions themselves.
 	Unseen        bool `json:"unseen,omitempty"`
 	OpenQuestions int  `json:"open_questions,omitempty"`
+	// Everywhere marks a card that is listed because it carries atrium:everywhere.
+	Everywhere bool `json:"everywhere,omitempty"`
 }
 
 type peersOutput struct {
@@ -662,6 +664,12 @@ func (c *controlMCP) peersHandler(ctx context.Context, req *mcp.CallToolRequest,
 		}
 		if len(quiet) > 0 {
 			out.Note = "not answering, so not listed: " + strings.Join(quiet, ", ")
+		}
+	} else if room != "" && c.hub != nil {
+		// WITHOUT `rooms`, the cards tagged atrium:everywhere on other rooms,
+		// after the local ones, so they can be told to by name.
+		for _, e := range c.hub.every.all(room) {
+			out.Peers = append(out.Peers, e.asPeer())
 		}
 	}
 	if out.Me == "" {
@@ -783,7 +791,7 @@ type sayInput struct {
 	// When is `immediate` (the default) or `done`. See internal/daemon/saywhen.go.
 	When string `json:"when,omitempty" jsonschema:"immediate (the default): typed as soon as the line is empty, even mid-turn. done: wait for that session's turn to end"`
 	// Wake resumes a parked card so this reaches it.
-	Wake bool `json:"wake,omitempty" jsonschema:"true to resume a PARKED session (idle, no process) and deliver this. it costs a cold start, so leave it off unless the message is worth it. without it a say to a parked session is refused and nothing is queued"`
+	Wake bool `json:"wake,omitempty" jsonschema:"true to resume a PARKED session (idle, no process) and deliver this. it costs a cold start, so leave it off unless the message is worth it. without it a say to a parked session is refused and nothing is queued. local only: a card on another room, named as name@room or reached by a bare name on every room, is never woken"`
 }
 
 type sayOutput struct {
@@ -822,7 +830,14 @@ func (c *controlMCP) sayHandler(ctx context.Context, req *mcp.CallToolRequest, i
 	}
 	id, handle, err := c.resolvePeer(ctx, room, in.To)
 	if err != nil {
-		return nil, out, err
+		// A BARE NAME THAT MISSED ON THE CALLER'S OWN ROOM, looked for among the
+		// cards tagged atrium:everywhere on the others. One match goes on as if
+		// `handle@room` had been typed. See everywhere.go.
+		card, ferr := c.everywhereFallthrough(room, in.To, err)
+		if ferr != nil {
+			return nil, out, ferr
+		}
+		return c.sayAcross(ctx, req, room, card.sendName(), card.Room, in)
 	}
 	out.To, out.Card = handle, id
 
@@ -993,6 +1008,16 @@ func (c *controlMCP) taskHandler(ctx context.Context, req *mcp.CallToolRequest, 
 		id, _, err = c.resolvePeer(ctx, room, who)
 	} else {
 		scope, id, _, err = c.resolveCard(ctx, room, who)
+		if err != nil && !strings.Contains(who, "@") && !strings.Contains(who, idJoin) {
+			// A READ, SO IT FALLS THROUGH like a say does, to the one card on
+			// another room that answers to this bare name. Continues as the
+			// read of that card, named across, exactly as `room~id` would.
+			card, ferr := c.everywhereFallthrough(room, who, err)
+			if ferr != nil {
+				return nil, out, ferr
+			}
+			scope, id, err = card.Room, card.ID, nil
+		}
 	}
 	if err != nil {
 		return nil, out, err
@@ -1789,14 +1814,4 @@ func loopbackBase(addr string) string {
 		host = "127.0.0.1"
 	}
 	return "http://" + net.JoinHostPort(host, port)
-}
-
-// loopbackRemote reports whether a request came from this machine.
-func loopbackRemote(remote string) bool {
-	host, _, err := net.SplitHostPort(remote)
-	if err != nil {
-		host = remote
-	}
-	ip := net.ParseIP(host)
-	return ip != nil && ip.IsLoopback()
 }

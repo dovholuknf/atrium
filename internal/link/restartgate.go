@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/edge"
 )
 
 // The hub restart gate. See docs/fabric/hub-restart-gate.md.
@@ -504,13 +506,13 @@ func (p *Proxy) serveRestart(w http.ResponseWriter, r *http.Request, sub string)
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
-		// THE ASK IS LOOPBACK ONLY. It restarts nothing itself, but it is the
+		// THE ASK IS THE MACHINE'S OWN USER'S ONLY. It restarts nothing itself, but it is the
 		// deploy script's door and nothing reached over an overlay is a deploy
 		// script. Pausing is not guarded the same way: a pause only ever holds a
 		// restart back, and the phone board is exactly where one gets clicked.
-		if !loopbackRemote(r.RemoteAddr) {
+		if !edge.LocalOperator(r) {
 			w.WriteHeader(http.StatusForbidden)
-			fmt.Fprint(w, `{"error":"a hub restart is asked for from the machine the hub runs on"}`)
+			fmt.Fprintf(w, `{"error":%q}`, "a hub restart is asked for from the machine the hub runs on"+edge.ProxyNote(r))
 			return
 		}
 		var body struct {

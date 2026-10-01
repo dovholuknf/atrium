@@ -110,6 +110,62 @@
     return rows;
   }
 
+  // The device's view of the list: order, grouping and filters, remembered in localStorage. Sorting, grouping and the
+  // subagent test are the board's own rules from js/cardrules.js.
+  const OPTS_KEY = "atrium.m.homeopts";
+  const OPT_DEFAULTS = { order: "newest", group: "none", needsMe: false, hideDone: false, hideSubs: false };
+  function loadOpts() {
+    try {
+      const o = JSON.parse(localStorage.getItem(OPTS_KEY) || "{}");
+      return {
+        order: o.order === "oldest" ? "oldest" : "newest",
+        group: o.group === "room" || o.group === "project" ? o.group : "none",
+        needsMe: o.needsMe === true, hideDone: o.hideDone === true, hideSubs: o.hideSubs === true,
+      };
+    } catch (e) { return Object.assign({}, OPT_DEFAULTS); }
+  }
+  let opts = loadOpts();
+  function saveOpts() { try { localStorage.setItem(OPTS_KEY, JSON.stringify(opts)); } catch (e) {} }
+
+  // Newest or oldest by last activity, the board's "last active" rule with its tie break.
+  function sortRows(rows) {
+    rows.sort((a, b) => cardActivityCmp(a.card, b.card) || cardTieBreak(a.card, b.card));
+    if (opts.order === "oldest") rows.reverse();
+    return rows;
+  }
+
+  function isFinished(t) { return t.status === "done" || t.status === "dead"; }
+
+  // The filters that apply to a row. Needs-me only is how the needs list is already made, so it changes the all list.
+  function keepRow(r, forAll) {
+    const t = r.card;
+    if (forAll && opts.needsMe && !r.reasons.length) return false;
+    if (opts.hideDone && isFinished(t)) return false;
+    if (opts.hideSubs && isDoer(t)) return false;
+    return true;
+  }
+
+  function groupName(t) {
+    if (opts.group === "room") return window.mNet.roomOf(t.id) || t.room || "";
+    return cardProjectOf(t);
+  }
+
+  // The rows as [{key, label, rows}] sections. No label means no heading.
+  function sections(rows, forAll) {
+    if (opts.group !== "none") {
+      const by = new Map();
+      rows.forEach(r => {
+        const g = groupName(r.card);
+        if (!by.has(g)) by.set(g, []);
+        by.get(g).push(r);
+      });
+      return [...by.keys()].sort(cardGroupCmp).map(g => ({ key: (opts.group === "room" ? "r:" : "p:") + g,
+        label: g || (opts.group === "room" ? "no room" : "no project"), rows: by.get(g) }));
+    }
+    if (!forAll) return [{ key: "", label: "", rows }];
+    return GROUPS.map(([g, label]) => ({ key: g, label, rows: rows.filter(r => groupOf(r.card) === g) })).filter(s => s.rows.length);
+  }
+
   // All mode: working, waiting, idle.
   function groupOf(t) {
     if (t.status === "running") return "working";
@@ -121,13 +177,7 @@
   function allList(cards, perms, now) {
     const rows = [];
     cards.forEach(t => { if (!t.archived_at) rows.push({ card: t, reasons: reasons(t, perms, now) }); });
-    const by = { working: [], waiting: [], idle: [] };
-    rows.forEach(r => by[groupOf(r.card)].push(r));
-    const last = r => U.ts(r.card.last_activity_at);
-    by.working.sort((a, b) => last(b) - last(a));
-    by.waiting.sort((a, b) => (U.ts(a.card.waiting_since) || Infinity) - (U.ts(b.card.waiting_since) || Infinity));
-    by.idle.sort((a, b) => last(b) - last(a));
-    return by;
+    return rows;
   }
 
   // ── the view ─────────────────────────────────────────────────────────────
@@ -214,28 +264,26 @@
     els.segNeeds.setAttribute("aria-selected", String(mode === "needs"));
     els.segAll.setAttribute("aria-selected", String(mode === "all"));
     els.seg.dataset.mode = mode;
+    paintOpts();
 
     const loaded = net.loaded();
     els.skel.hidden = loaded;
     const entries = [];
     if (loaded) {
-      if (mode === "needs") {
-        needs.forEach(n => {
-          const html = rowHTML(n, false, many);
+      const forAll = mode === "all";
+      // The needs list is a queue of answers owed, oldest wait first, so the order control leaves it alone.
+      const kept = (forAll ? allList(cards, perms, now) : needs).filter(r => keepRow(r, forAll));
+      const rows = forAll ? sortRows(kept) : kept;
+      sections(rows, forAll).forEach(s => {
+        if (s.label) {
+          const html = '<h2 class="grp">' + U.esc(s.label) + " <em>" + s.rows.length + "</em></h2>";
+          entries.push({ key: "h:" + s.key, html, sig: html, head: true });
+        }
+        s.rows.forEach(n => {
+          const html = rowHTML(n, forAll, many);
           entries.push({ key: "c:" + n.card.id, html, sig: html });
         });
-      } else {
-        const by = allList(cards, perms, now);
-        GROUPS.forEach(([g, label]) => {
-          if (!by[g].length) return;
-          const html = '<h2 class="grp">' + label + " <em>" + by[g].length + "</em></h2>";
-          entries.push({ key: "h:" + g, html, sig: html, head: true });
-          by[g].forEach(n => {
-            const html = rowHTML(n, true, many);
-            entries.push({ key: "c:" + n.card.id, html, sig: html });
-          });
-        });
-      }
+      });
     }
     reconcile(entries);
 
@@ -248,6 +296,28 @@
       els.emptyAll.textContent = all === 1 ? "1 session is working or resting" : all + " sessions are working or resting";
     }
     document.title = (needs.length ? "(" + needs.length + ") " : "") + "atrium";
+  }
+
+  // The view control: one button that opens a panel of order, grouping and filters.
+  function paintOpts() {
+    if (!els.opts) return;
+    els.optsBtn.setAttribute("aria-expanded", String(!els.opts.hidden));
+    const on = (opts.order !== "newest" ? 1 : 0) + (opts.group !== "none" ? 1 : 0) + (opts.needsMe ? 1 : 0) + (opts.hideDone ? 1 : 0) + (opts.hideSubs ? 1 : 0);
+    els.optsBtn.dataset.on = String(on);
+    els.opts.querySelectorAll("[data-opt]").forEach(b => {
+      const v = b.dataset.val;
+      const cur = v === undefined ? opts[b.dataset.opt] : opts[b.dataset.opt] === v;
+      b.setAttribute("aria-pressed", String(cur));
+    });
+  }
+
+  function setOpt(k, v) {
+    opts[k] = v;
+    saveOpts();
+    // A different order or grouping is a different arrangement, not a move, so rows are not animated across it.
+    nodes.forEach(el => el.remove());
+    nodes.clear();
+    render();
   }
 
   function setMode(m) {
@@ -271,6 +341,15 @@
     els.empty = q("m-empty");
     els.emptyAll = q("m-empty-all");
     els.none = q("m-none");
+    els.opts = q("m-opts");
+    els.optsBtn = q("m-opts-btn");
+    els.optsBtn.addEventListener("click", () => { els.opts.hidden = !els.opts.hidden; paintOpts(); });
+    els.opts.addEventListener("click", e => {
+      const b = e.target.closest("[data-opt]");
+      if (!b) return;
+      const k = b.dataset.opt;
+      setOpt(k, b.dataset.val === undefined ? !opts[k] : b.dataset.val);
+    });
     els.segNeeds.addEventListener("click", () => setMode("needs"));
     els.segAll.addEventListener("click", () => setMode("all"));
     els.list.addEventListener("click", e => {
@@ -285,5 +364,5 @@
     render();
   }
 
-  window.mHome = { init, render, reasons, needsList, allList, mode: () => mode, setMode };
+  window.mHome = { init, render, reasons, needsList, allList, mode: () => mode, setMode, opts: () => Object.assign({}, opts) };
 })();

@@ -170,6 +170,10 @@
   transition: opacity .15s ease, transform .15s ease;
   -webkit-tap-highlight-color: transparent;
 }
+/* The arrow is placed from the circle's centre, not left to the button's own layout, which some browsers do not
+   apply to a button's children. The glyph's box is symmetric about its own centre, so the two centres agree. */
+.mc-send { position: relative; }
+.mc-send svg { position: absolute; left: 50%; top: 50%; width: 22px; height: 22px; margin: -11px 0 0 -11px; display: block; }
 .mc-send:active:not(:disabled) { transform: scale(.92); }
 .mc-send:disabled { opacity: .28; }
 .mc.sending .mc-send { animation: mc-pulse 1s ease-in-out infinite; }
@@ -298,3 +302,12 @@ body.term-phone #t-compose:not([hidden]) { display: block; }
 #t-compose .mc.compact .mc-thumb, #t-compose .mc.compact .mc-glyph { width: 28px; height: 28px; font-size: 15px; }
 #t-compose .mc.compact .mc-fx { width: 32px; height: 32px; }
 #t-compose .mc.compact .mc-chips,#t-compose .mc.compact .mc-note:not(.on) { max-height: 0; padding: 0; }
+
+/* ---- the file picker and the camera on the phone page */
+.mc-row.with-attach { padding-left: 6px; gap: 4px; }
+.mc-row.with-attach .mc-box { padding-left: 4px; }
+.mc-attach {
+  flex: none; width: 40px; height: 44px; display: grid; place-items: center; border: 0; border-radius: 50%; background: transparent;
+  color: var(--c-dim); -webkit-tap-highlight-color: transparent;
+}
+.mc-attach:active { background: var(--c-sink); color: var(--c-text); }

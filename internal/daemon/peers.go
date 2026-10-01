@@ -386,6 +386,25 @@ func (d *Daemon) handleTell(w http.ResponseWriter, r *http.Request) {
 	if !checkPeerText(w, text, "there is nothing to say") {
 		return
 	}
+	// A BARE NAME THAT IS NOT ON THIS ROOM, looked for among the cards tagged
+	// atrium:everywhere on the others. Only a name that is nobody here.
+	if d.localTarget(in.To) == nil && from != to {
+		raw := strings.TrimSpace(in.From)
+		done, note := d.sayEverywhere(w, r.Context(), raw, strings.TrimSpace(in.To), text, in.When, in.Reply,
+			func(code int, body map[string]any) {
+				if code < 400 {
+					body["typed"] = body["delivered"] == "terminal"
+					body["queued"] = body["delivered"] != "terminal"
+				}
+			})
+		if done {
+			return
+		}
+		if note != "" {
+			d.writeMissNote(w, from, to, "tell", text, in.When, in.Reply, note)
+			return
+		}
+	}
 	target := d.resolvePeerSayWake(w, from, to, "tell", text, in.When, in.Reply, in.Wake)
 	if target == nil {
 		return

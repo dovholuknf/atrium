@@ -7985,9 +7985,21 @@ Needs a hub with one room and two browsers on the board. `curl` stands in for th
 3. The same PUT from another machine answers 403. A GET from anywhere lists the hosts, `ignored` and `env`.
 4. `{"hosts":["*.duckdns.org"]}` is saved, listed under `ignored` with why, and answers nothing under it.
 
+## HL. A local proxy is not the operator (r-local-operator)
+
+1. On the hub's machine: `curl -s -X PUT http://127.0.0.1:7778/_hub/notify -d '{}'` gets past the gate (anything
+   but 403). The same call with `-H 'X-Forwarded-For: 1.2.3.4'` answers 403, and the body says the request came
+   through a proxy and to run it on the machine itself.
+2. From the zrok share, the gear's notify row (set and test) answers 403 with the same line. Pause, resume, input,
+   launch and every other board action still work over the share.
+3. The step 1 call with `-H 'Host: example.com'` answers 403: a loopback source with a foreign `Host` is not the
+   operator.
+4. On a room: `atrium stop` still stops it. A `POST /v1/shutdown` carrying `X-Forwarded-For` answers 403 unless it
+   carries the shutdown token.
+
 ## HM. A live card's model switches with one call (r-card-model)
 
-HL needs a room built from this change and a room restart, with a supervised Claude card. Go tests in
+HM needs a room built from this change and a room restart, with a supervised Claude card. Go tests in
 `internal/daemon/modelswitch_test.go` and `internal/link/modelroute_test.go` cover the endpoint, the wait, the refusals,
 the hub routing and the control tool.
 

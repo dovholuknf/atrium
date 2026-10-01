@@ -496,6 +496,8 @@ async function bootTerminalOnly() {
     found = await cardUrlOpen(cardUrlShape());
     if (!found) return;
     want = found.id;
+    // The window may have reloaded onto another card, so its name follows the card the board looks for.
+    window.name = "atrium-term-" + bareId(want);
   }
 
   // ONE VIEW PER TERMINAL, AND THIS IS THE DOOR THAT WAS LEFT OPEN.
@@ -566,6 +568,7 @@ async function bootTerminalOnly() {
   // alt-tab shows.
   paintSoloTitle();
   openTerm(task);
+  cardUrlWayOut();
   if (found) cardUrlNotice(found.notes);
 
   // Coming back to the window IS reading the alert, so the mark clears without
