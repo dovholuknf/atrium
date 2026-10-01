@@ -17026,7 +17026,7 @@ async function growlReplyGrowSection(browser, base) {
       await p.focus(box);
       await p.keyboard.type("first");
       await p.keyboard.press("Shift+Enter");
-      await p.keyboard.type("land b");
+      await p.keyboard.type("second");
       if ((await size()).v !== "first\nsecond") fail(tag + "Shift+Enter did not make a newline: " + JSON.stringify((await size()).v));
       if (h.messages.length) fail(tag + "Shift+Enter sent.");
       await p.keyboard.press("Enter");
