@@ -20220,7 +20220,7 @@ async function main() {
     // A section called bare from main() runs in every shard, outside any unit. Every section belongs to one unit, bar these.
     const notUnits = new Set(["u001AuditSection", "groupRemoveSection", "growlQuestionShotsSection", "linkTipSection"]);
     const src = fs.readFileSync(__filename, "utf8");
-    const bare = (src.match(/^ {4}await \w+Section\(/gm) || []).map(l => l.trim().slice(6, -1));
+    const bare = (src.match(/^\s*await \w+Section\(/gm) || []).map(l => l.trim().slice(6, -1));
     const owned = new Set((src.match(/unit\("\w+", \(\) => \w+Section/g) || []).map(l => l.replace(/^.*=> /, "")));
     const loose = (src.match(/^async function \w+Section/gm) || []).map(l => l.split(" ")[2]).filter(n => !owned.has(n) && !notUnits.has(n));
     if (bare.length || loose.length) {
