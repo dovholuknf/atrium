@@ -122,7 +122,11 @@ func walk(t *testing.T, path string, n int) ([]Reply, []Prompt, int) {
 		if pages > 2000 {
 			t.Fatal("the walk does not end")
 		}
-		pg, err = readTranscriptBefore(path, n, pg.next)
+		before := pg.next
+		pg, err = readTranscriptBefore(path, n, before)
+		if err == nil && pg.more && !pg.next.Before(before) {
+			t.Fatalf("page %d: next_before %v is not older than before %v", pages+1, pg.next, before)
+		}
 	}
 }
 
@@ -278,6 +282,73 @@ func TestRepliesBeforeWalksUnevenLists(t *testing.T) {
 		if len(replies) != 73 || len(prompts) != 73 {
 			t.Fatalf("reach: n=%d: %d replies and %d prompts, want 73 each", n, len(replies), len(prompts))
 		}
+	}
+}
+
+// A stretch of the file with no record in it, longer than the reach: the page reads
+// on past the reach to stand on a record, and the cursor advances. Past the hard cap
+// it answers no more, never a cursor that stays where it was.
+func TestRepliesBeforeReadsPastTheReachToFindARecord(t *testing.T) {
+	var sb strings.Builder
+	at := func(i int) time.Time { return pagingBase.Add(time.Duration(i) * time.Second) }
+	for k := 0; k < 5; k++ {
+		sb.WriteString(pagingPromptLine(at(2*k), fmt.Sprintf("old-p%d", k)))
+		sb.WriteString(pagingReplyLine(fmt.Sprintf("o%d", k), at(2*k+1), fmt.Sprintf("old-r%d", k)))
+	}
+	for k := 0; sb.Len() < 320<<10; k++ {
+		sb.WriteString(`{"type":"summary","summary":"` + strings.Repeat("s", 280) + `"}` + "\n")
+	}
+	for k := 0; k < 5; k++ {
+		sb.WriteString(pagingPromptLine(at(100+2*k), fmt.Sprintf("new-p%d", k)))
+		sb.WriteString(pagingReplyLine(fmt.Sprintf("n%d", k), at(100+2*k+1), fmt.Sprintf("new-r%d", k)))
+	}
+	path := writePaging(t, sb.String())
+	between := at(50)
+	withWindows(t, 4096, 4096)
+
+	pg, err := readTranscriptBefore(path, 50, between)
+	if err != nil || len(pg.replies) != 5 || len(pg.prompts) != 5 || pg.more {
+		t.Fatalf("got %d replies %d prompts more=%v %v", len(pg.replies), len(pg.prompts), pg.more, err)
+	}
+	// the whole file by next_before alone: each cursor strictly older than the last.
+	if replies, prompts, _ := walk(t, path, 3); len(replies) != 10 || len(prompts) != 10 {
+		t.Fatalf("walk: %d replies and %d prompts, want 10 each", len(replies), len(prompts))
+	}
+
+	// a cap shorter than the gap: no record older than before is within it.
+	c := repliesCap
+	repliesCap = 100 << 10
+	t.Cleanup(func() { repliesCap = c })
+	pg, err = readTranscriptBefore(path, 50, between)
+	if err != nil || pg.more || !pg.next.IsZero() || len(pg.replies) != 0 || len(pg.prompts) != 0 {
+		t.Fatalf("past the cap the answer is no more: %+v %v", pg, err)
+	}
+}
+
+// The first page's 50-cap keeps a tie together: the entry cut off at the floor's
+// time would be on neither page.
+func TestRepliesFirstPageCapKeepsTies(t *testing.T) {
+	var sb strings.Builder
+	for k := 0; k < 56; k++ {
+		sb.WriteString(pagingReplyLine(fmt.Sprintf("m%d", k), pagingBase.Add(time.Duration(k/2)*time.Second),
+			fmt.Sprintf("r%d", k)))
+	}
+	path := writePaging(t, sb.String())
+	pg, err := readTranscriptPage(path, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 56 replies, pairs sharing a time. The 50 newest start at r6, which ties r7's pair.
+	if !pg.more || pg.replies[0].Text != "r6" || len(pg.replies) != 50 {
+		t.Fatalf("got %d replies from %q more=%v", len(pg.replies), pg.replies[0].Text, pg.more)
+	}
+	if replies, _, _ := walk(t, path, 50); len(replies) != 56 {
+		t.Fatalf("walk: %d replies, want 56", len(replies))
+	}
+	// an odd cut: 7 newest of pairs would start mid-pair, so the pair stays whole.
+	pg, _ = readTranscriptPage(path, 7)
+	if pg.replies[0].Text != "r48" || len(pg.replies) != 8 {
+		t.Fatalf("n=7 gave %d replies from %q", len(pg.replies), pg.replies[0].Text)
 	}
 }
 
