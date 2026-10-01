@@ -154,10 +154,11 @@ if (window.MutationObserver) {
 
 // The cover. A modal, so everything under it is inert: nothing typed into a
 // terminal while the hub is away can land half way.
-// A restart takes a few seconds. Past this the line under the headline stops
-// promising that and says it is still waiting, so a slow one does not read as
-// a hang with a cheerful sentence on it.
-const HUB_RESTART_SLOW = 30000;
+// A restart takes a few seconds. Past `WRONG` the line under the headline stops
+// promising that and says something is wrong, and the animations stop. Past
+// `RELOAD` the cover offers a reload.
+const HUB_RESTART_WRONG = 10000;
+const HUB_RESTART_RELOAD = 30000;
 let hubRestartClock = 0;
 
 // THE COVER OUTLIVES A RELOAD. A new board build reloads the page the moment the
@@ -184,16 +185,24 @@ function hubShowRestarting(at, from) {
   } catch (e) {}
   const line = document.getElementById("hubrestart-t");
   const clock = document.getElementById("hubrestart-el");
+  const reload = document.getElementById("hubrestart-reload");
   const paint = () => {
     const ms = Date.now() - hubRestarting;
-    line.textContent = ms < HUB_RESTART_SLOW
+    const stalled = ms >= HUB_RESTART_WRONG;
+    line.textContent = !stalled
       ? "back in a few seconds. your agents keep running, and this page picks up where you left off."
-      : "this is taking longer than usual. your agents keep running while atrium comes back.";
+      : "something is wrong. atrium has not come back. your agents keep running, and this page keeps trying.";
+    // The look stays and the motion stops: a blur under two infinite animations
+    // repaints every frame, and a cover this late may be up a long time.
+    dlg.classList.toggle("stalled", stalled);
+    if (reload) reload.hidden = ms < HUB_RESTART_RELOAD;
     if (clock) clock.textContent = Math.floor(ms / 1000) + "s";
   };
   paint();
   clearInterval(hubRestartClock);
   hubRestartClock = setInterval(paint, 1000);
+  clearInterval(hubCoverPoll);
+  hubCoverPoll = setInterval(hubCheckBack, HUB_COVER_POLL);
   if (!dlg.open) dlg.showModal();
   const since = hubRestarting;
   setTimeout(() => {
@@ -218,35 +227,48 @@ function hubClearRestarting() {
   hubSettleFrom = 0;
   clearInterval(hubRestartClock);
   hubRestartClock = 0;
+  clearInterval(hubCoverPoll);
+  hubCoverPoll = 0;
   try { sessionStorage.removeItem(HUB_RESTART_KEY); } catch (e) {}
   const dlg = document.getElementById("hubrestart");
+  if (dlg) dlg.classList.remove("stalled");
+  const reload = document.getElementById("hubrestart-reload");
+  if (reload) reload.hidden = true;
   if (dlg && dlg.open) dlg.close();
 }
 
 // IS THIS THE NEW HUB. Asked on every stream open while the cover is up, and
-// again each second while the answer does not come. A stream reopening is not
+// again each second until the answer comes. A stream reopening is not
 // the answer on its own: the old hub's stream can blip and come back before the
 // old hub goes, and that reopen took the cover down with the hub still to go.
 // Only a hub that names itself differently from the one that said
 // `restarting` is the new one. A plain daemon has no gate and nothing to wait
 // for.
+//
+// THE ONE POLL THE BOARD ALLOWS ITSELF. The stream is a hint, not the only chance:
+// a check can meet the old hub, or be swallowed by one already in flight, and a
+// cover that waits for the next reopen stays up until `HUB_RESTART_STALE`. So
+// while the cover is up, `hubCoverPoll` asks once a second whatever the stream
+// or `#conn` do, and `hubClearRestarting` stops it. It exists only while the
+// cover does.
+const HUB_COVER_POLL = 1000;
+// A check that has not answered by now is given up on, so one hung request
+// cannot hold `hubChecking` and with it the whole poll.
+const HUB_CHECK_TIMEOUT = 3000;
+let hubCoverPoll = 0;
 let hubChecking = false;
 function hubCheckBack() {
   if (!hubRestarting || hubSettleFrom || hubChecking) return;
   hubChecking = true;
-  plainFetch("/_hub/restart").then(r => {
+  // Built inside the chain so a throw here still reaches the `catch` and clears
+  // `hubChecking`. Without `AbortSignal.timeout` the check runs with no abort.
+  Promise.resolve().then(() => plainFetch("/_hub/restart",
+    typeof AbortSignal.timeout === "function" ? { signal: AbortSignal.timeout(HUB_CHECK_TIMEOUT) } : {})).then(r => {
     if (r.status === 404) return { plain: true };
     return r.ok ? r.json() : null;
   }).catch(() => null).then(st => {
     hubChecking = false;
-    if (!hubRestarting || hubSettleFrom) return;
-    if (!st) {
-      setTimeout(() => {
-        const conn = document.getElementById("conn");
-        if (conn && conn.classList.contains("live")) hubCheckBack();
-      }, 1000);
-      return;
-    }
+    if (!hubRestarting || hubSettleFrom || !st) return;
     if (st.boot) hubBoot = st.boot;
     const back = st.plain || (hubRestartFrom ? !!st.boot && st.boot !== hubRestartFrom : hubDropped);
     if (back) hubSettle();

@@ -314,6 +314,10 @@
     margin-top: 12px; font: var(--fs-xs)/1.4 var(--sans); color: var(--dim); text-align: left;
   }
   .wc-clock { font-family: var(--mono); color: var(--label); white-space: nowrap; }
+  /* THE COVER HAS RUN LONG (js/hubrestart.js): the look stays, the motion stops. */
+  .waitcard.stalled .wc-ring, .waitcard.stalled .wc-bar::after { animation: none; }
+  .wc-reload { margin-top: 14px; }
+  .wc-reload[hidden] { display: none; }
   /* ATRIUM IS DOWN, with nobody having said it would be (#atriumdown, and the offline page `down.html`
      copies this). The same card in the warning colours, because it is the one wait that needs you. */
   .waitcard.down {

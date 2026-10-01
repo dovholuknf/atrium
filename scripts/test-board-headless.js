@@ -339,6 +339,9 @@ let gateCountdownLeft = 0;
 // restartStaysSection.
 let gateBoot = "boot-a";
 let hubAway = false;
+let gateRestartMode = "";
+let gateAsked = 0;
+let gateSlowMs = 1500;
 // The board build `/v1/health` reports. A change makes the board reload.
 let healthBuild = "test";
 // Whether the service worker and its offline page are served, and whether the
@@ -867,8 +870,14 @@ const server = http.createServer((req, res) => {
     if (sub === "/input") gateCalls.input++;
     if (sub === "/pause") { gateCalls.pause++; gatePaused = true; }
     if (sub === "/resume") { gateCalls.resume++; gatePaused = false; }
-    sendJSON(res, { paused: gatePaused, waiting: false, countdown_left: gateCountdownLeft, boards: 1,
-      boot: gateBoot });
+    const answer = { paused: gatePaused, waiting: false, countdown_left: gateCountdownLeft, boards: 1,
+      boot: gateBoot };
+    if (sub === "") gateAsked++;
+    // `gateRestartMode` shapes only the board's `GET /_hub/restart`: `fail` answers 503, and
+    // `slow` holds the answer back, naming the hub as it was when it was asked.
+    if (sub === "" && gateRestartMode === "fail") { res.writeHead(503); res.end("{}"); return; }
+    if (sub === "" && gateRestartMode === "slow") { setTimeout(() => sendJSON(res, answer), gateSlowMs); return; }
+    sendJSON(res, answer);
     return;
   }
   // The operational audit feed, newest first and filterable by room and kind the
@@ -2145,6 +2154,184 @@ async function restartStaysSection(browser, base) {
     hubAway = false;
     gateBoot = "boot-a";
     healthBuild = "test";
+    await ctx.close();
+  }
+}
+
+// THE COVER ASKS UNTIL IT IS ANSWERED. A stream reopening is a hint, not the only chance: the check it
+// starts can meet the old hub, or be swallowed by one already in flight, and a cover that waits for the
+// next reopen stays up until `HUB_RESTART_STALE` (a 1 second hub restart left it for 10 minutes).
+async function coverPollSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const gp = await ctx.newPage();
+  const errors = [];
+  gp.on("pageerror", e => errors.push(String(e)));
+  const wasHub = hubMode;
+  hubMode = true;
+  gatePaused = false;
+  gateBoot = "boot-a";
+  gateRestartMode = "";
+  healthBuild = "test";
+  const say = state => {
+    const line = "event: hub-restart\ndata: " + JSON.stringify(state) + "\n\n";
+    openStreams.forEach(r => { try { if (!r.destroyed) r.write(line); } catch (e) {} });
+  };
+  const drop = () => openStreams.splice(0).forEach(r => { try { r.destroy(); } catch (e) {} });
+  const coverUp = () => gp.evaluate(() => document.getElementById("hubrestart").open);
+  // Drops every stream and waits until the board has opened them all again. `live` alone is not enough:
+  // `#conn` still reads live until the board notices the drop. `already` is for a drop made just before.
+  let streamsWere = 0;
+  const blip = async already => {
+    const n = streamsWere;
+    if (!already) drop();
+    for (const end = Date.now() + 15000; openStreams.filter(r => !r.destroyed).length < n && Date.now() < end;) {
+      await gp.waitForTimeout(50);
+    }
+  };
+  const cleared =(why, ms) => gp.waitForFunction(() => !document.getElementById("hubrestart").open, null,
+    { timeout: slow(ms || 9000) }).catch(async () => {
+      fail(why);
+      await gp.evaluate(() => hubClearRestarting());
+    });
+  const asked = async n => {
+    for (const end = Date.now() + 15000; gateAsked < n && Date.now() < end;) await gp.waitForTimeout(50);
+  };
+  const cover = async () => {
+    // The board knows the hub it last heard from. A case that failed leaves it naming an older one.
+    await gp.evaluate(b => { hubBoot = b; }, gateBoot);
+    say({ state: "restarting" });
+    await gp.waitForFunction(() => document.getElementById("hubrestart").open, null, { timeout: slow(5000) })
+      .catch(() => fail("restarting drew no cover."));
+  };
+  try {
+    await gp.goto(base, { waitUntil: "domcontentloaded" });
+    await gp.waitForFunction(() => typeof hubIsHub !== "undefined" && hubIsHub &&
+      document.getElementById("conn").classList.contains("live"), null, { timeout: slow(15000) });
+    await gp.waitForTimeout(500);
+    streamsWere = openStreams.filter(r => !r.destroyed).length;
+
+    // The reopen meets the OLD hub, which has not gone yet. No later stream event comes, and the cover
+    // clears when the new hub shows itself anyway.
+    await cover();
+    gateAsked = 0;
+    await blip();
+    await asked(1);
+    await gp.waitForTimeout(1200);
+    if (!(await coverUp())) fail("the cover came down when the OLD hub answered the check.");
+    gateBoot = "boot-b";
+    await cleared("the cover stayed up after the new hub named itself, with no stream event to ask again.");
+
+    // A check already in flight swallows the new hub's stream open, and its answer is the old hub's.
+    gateBoot = "boot-a";
+    gateRestartMode = "slow";
+    gateSlowMs = 8000;
+    await cover();
+    gateAsked = 0;
+    await blip();
+    await asked(1);
+    gateBoot = "boot-b";
+    gateRestartMode = "";
+    await blip();
+    await cleared("the cover stayed up when a check in flight ate the new hub's stream open.", 15000);
+    gateRestartMode = "";
+
+    // A check that fails while the stream is down is asked again, not dropped. This one holds on the
+    // old code as well, and stays as the guard.
+    gateBoot = "boot-a";
+    gateRestartMode = "fail";
+    await cover();
+    gateAsked = 0;
+    await blip();
+    await asked(1);
+    drop();
+    gateBoot = "boot-b";
+    gateRestartMode = "";
+    await blip(true);
+    await cleared("the cover stayed up after a failed check and a stream blip.", 15000);
+
+    // A browser without `AbortSignal.timeout` still asks: a throw building the check must not leave it
+    // marked in flight for good.
+    await gp.evaluate(() => { delete AbortSignal.timeout; });
+    gateBoot = "boot-d";
+    await cover();
+    gateAsked = 0;
+    await blip();
+    await asked(1);
+    gateBoot = "boot-e";
+    await cleared("the cover stayed up in a browser with no AbortSignal.timeout.");
+    if (errors.length) fail("the cover poll page threw: " + errors.join(" | "));
+    if (!bad) console.log("coverPoll ok");
+  } finally {
+    hubMode = wasHub;
+    gateBoot = "boot-a";
+    gateRestartMode = "";
+    await ctx.close();
+  }
+}
+
+// A COVER UP PAST 10 SECONDS IS A FAILURE, and past 30 it offers a reload. Once it says so the animations
+// stop: a blur under two infinite animations repaints every frame, and a stuck cover is up a long time.
+async function coverStepsSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const gp = await ctx.newPage();
+  const errors = [];
+  gp.on("pageerror", e => errors.push(String(e)));
+  const wasHub = hubMode;
+  hubMode = true;
+  gateBoot = "boot-a";
+  gateRestartMode = "";
+  healthBuild = "test";
+  const state = () => gp.evaluate(() => {
+    const dlg = document.getElementById("hubrestart");
+    const anim = el => getComputedStyle(el).animationName;
+    const btn = document.getElementById("hubrestart-reload");
+    return {
+      open: dlg.open,
+      stalled: dlg.classList.contains("stalled"),
+      say: document.getElementById("hubrestart-t").textContent,
+      ring: anim(dlg.querySelector(".wc-ring")),
+      bar: getComputedStyle(dlg.querySelector(".wc-bar"), "::after").animationName,
+      reload: !!btn && !btn.hidden && btn.getClientRects().length > 0
+    };
+  });
+  try {
+    await gp.goto(base, { waitUntil: "domcontentloaded" });
+    await gp.waitForFunction(() => typeof hubIsHub !== "undefined" && hubIsHub &&
+      document.getElementById("conn").classList.contains("live"), null, { timeout: slow(15000) });
+    await gp.waitForTimeout(500);
+    openStreams.forEach(r => { try { r.write("event: hub-restart\ndata: {\"state\":\"restarting\"}\n\n"); } catch (e) {} });
+    await gp.waitForFunction(() => document.getElementById("hubrestart").open, null, { timeout: slow(5000) })
+      .catch(() => fail("restarting drew no cover."));
+    hubAway = true;
+    openStreams.splice(0).forEach(r => { try { r.destroy(); } catch (e) {} });
+    await gp.waitForTimeout(6000);
+    const early = await state();
+    if (early.stalled || early.reload || !/few seconds/.test(early.say)) {
+      fail("at 6s the cover already said something was wrong: " + JSON.stringify(early));
+    }
+    if (early.ring === "none" || early.bar === "none") fail("at 6s the cover's animations were already off.");
+    await gp.waitForFunction(() => document.getElementById("hubrestart").classList.contains("stalled"), null,
+      { timeout: slow(8000) }).catch(() => fail("past 10s the cover did not say something was wrong."));
+    const wrong = await state();
+    if (!/wrong/.test(wrong.say)) fail("past 10s the cover said: " + wrong.say);
+    if (wrong.ring !== "none" || wrong.bar !== "none") fail("past 10s the cover still animated: " + JSON.stringify(wrong));
+    if (wrong.reload) fail("the reload button showed before 30s.");
+    await gp.waitForFunction(() => { const b = document.getElementById("hubrestart-reload"); return b && !b.hidden; },
+      null, { timeout: slow(25000) }).catch(() => fail("past 30s the cover offered no reload."));
+    // The hub comes back and the reload lands on a cover that clears: the written-down cover carries on.
+    gateBoot = "boot-b";
+    hubAway = false;
+    const reloaded = gp.waitForEvent("domcontentloaded", { timeout: slow(15000) }).then(() => true, () => false);
+    await gp.click("#hubrestart-reload", { timeout: slow(2000) }).catch(() => {});
+    if (!(await reloaded)) fail("the reload button did not reload the page.");
+    await gp.waitForFunction(() => !document.getElementById("hubrestart").open, null, { timeout: slow(15000) })
+      .catch(() => fail("the cover did not clear after the reload found the new hub."));
+    if (errors.length) fail("the cover steps page threw: " + errors.join(" | "));
+    if (!bad) console.log("coverSteps ok");
+  } finally {
+    hubMode = wasHub;
+    hubAway = false;
+    gateBoot = "boot-a";
     await ctx.close();
   }
 }
@@ -16959,7 +17146,8 @@ async function main() {
       gearHosts: gearHostsSection,
       mTypeSteady: mTypeSteadySection, mOlder: mOlderSection, mFollow: mFollowSection, mDocs: mDocsSection,
       mSwitcher: mSwitcherSection,
-      mPull: mPullSection, joinedLive: joinedLiveSection };
+      mPull: mPullSection, joinedLive: joinedLiveSection,
+      coverPoll: coverPollSection, coverSteps: coverStepsSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -18968,6 +19156,8 @@ async function main() {
     await cardUrlWinNameSection(browser, base);
     await gearHostsSection(browser, base);
     await joinedLiveSection(browser, base);
+    await coverPollSection(browser, base);
+    await coverStepsSection(browser, base);
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e));
     if (process.env.DEBUG_HEADLESS) {
