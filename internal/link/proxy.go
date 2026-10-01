@@ -21,6 +21,7 @@ import (
 	"github.com/dovholuknf/atrium/internal/cardurl"
 	"github.com/dovholuknf/atrium/internal/edge"
 	"github.com/dovholuknf/atrium/internal/gitsync"
+	"github.com/dovholuknf/atrium/internal/hubstore"
 	"github.com/dovholuknf/atrium/internal/webasset"
 )
 
@@ -114,6 +115,9 @@ type Proxy struct {
 	// ctl is the control tools' state, kept so the gate ticker can tell a waiter through
 	// the same path atrium_say takes. Nil until SetControl.
 	ctl *controlMCP
+	// docs is the hub's documents. Nil until SetDocs wires it, and a hub without one answers
+	// /_hub/docs 404. See docs_api.go.
+	docs *hubstore.Store
 }
 
 // NewProxy wires a hub, its board and a room chooser into one handler.
@@ -1336,6 +1340,10 @@ func (p *Proxy) serveHubAPI(w http.ResponseWriter, r *http.Request) {
 	sub := strings.TrimPrefix(r.URL.Path, "/_hub/")
 	if sub == "restart" || strings.HasPrefix(sub, "restart/") {
 		p.serveRestart(w, r, strings.TrimPrefix(strings.TrimPrefix(sub, "restart"), "/"))
+		return
+	}
+	if sub == "docs" || strings.HasPrefix(sub, "docs/") {
+		p.serveDocs(w, r, sub)
 		return
 	}
 	if strings.HasPrefix(sub, "growls/") {
