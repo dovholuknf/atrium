@@ -73,3 +73,24 @@ have the renderer refuse a MED or higher without it, as it refuses an unproven "
 CHANGES: add 1 and 2 before P1 is handed to @runtime. Both are a few sentences and a renderer check, and neither
 changes the shape. 3 to 5 can be folded into the same edit or carried as P1 and P2 acceptance lines. With 1 and 2
 added, OK to build.
+
+## Re-read: 54b54fe6
+
+Read 5.4, 5.6, section 10, the walker paragraph of 7 and the P1 acceptance.
+
+- Change 1 closed. `proven` is `code` or `no`, and verify must confirm a `code`. `test` waits for a step that can run
+  one, and is then accepted only with the test and its output in that step's folder. Section 10 says a recipe run is
+  read-only, does not cover testing rules 1 to 4, and the row says "read-only review".
+- Change 2 closed. Rule 5 is the first row of the renderer's checks: a leak any reviewer raised that is missing from
+  the final list fails the run at `merge`, naming it.
+- Lows closed. 5.6 names rules 6 and 10 as amended. `exposure` is a field, and a MED or higher without it fails
+  `merge`, with the renderer never changing a severity. Rules 8 and 35 are checked against `pr.diff`, and the renderer
+  never moves a line. The walker brief keeps rule 17's head check until P3.
+- Notes closed. Consumers come from `## Known consumers`. P1 acceptance has no fork waiting on a permission, and an
+  abort that deletes the folder (rule 44, with an `aborted` row state and `POST /v1/prs/{id}/abort`). The walker
+  carries rule 30's tags and rule 29.
+
+One nit, no change needed: rule 40 says a wrong path is fixed silently, and the renderer flags it in Evidence instead.
+Evidence is clint's to read, not the author's, so the comment itself stays clean, which is what rule 40 protects.
+
+**Verdict: OK to build.** @review edits rules 6 and 10 in docs/review/review-memory-design.md when P2 lands.
