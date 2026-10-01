@@ -17762,7 +17762,10 @@ async function main() {
         listOverflow: getComputedStyle(list).overflowY,
         scrollOverflow: scroll ? getComputedStyle(scroll).overflowY : "",
         widthBtns: tray ? tray.querySelectorAll(".traybar .tlcycle").length : 0,
-        leftovers: list.querySelectorAll(".traysum, .traytoggle, .traybody, .cacheline, .trayseg, #term-group, .trayrow").length
+        cacheLine: list.querySelectorAll(".cacheline").length,
+        folded: !!list.querySelector(".termtray:not(.open)"),
+        sum: ((tray && tray.querySelector(".traysum")) || {}).textContent || "",
+        bodyInert: !!list.querySelector(".termtray .traybody[inert]")
       };
     });
     if (!trayShut.tray || !trayShut.scroll || trayShut.trayInScroll || !trayShut.trayFirst) {
@@ -17772,8 +17775,11 @@ async function main() {
         trayShut.scrollOverflow !== "auto") {
       fail("the list still scrolls under its bar: " + JSON.stringify(trayShut));
     }
-    if (trayShut.leftovers) {
-      fail("the list still carries the sort, hide, group or cache controls: " + JSON.stringify(trayShut));
+    if (!trayShut.folded || !/^sorted by/.test(trayShut.sum) || !trayShut.bodyInert) {
+      fail("the tray is not folded to its summary line by default: " + JSON.stringify(trayShut));
+    }
+    if (trayShut.cacheLine) {
+      fail("the list still carries the cache line, which lives in the gear: " + JSON.stringify(trayShut));
     }
     if (trayShut.widthBtns < 1) {
       fail("the list's width buttons are not on its bar: " + JSON.stringify(trayShut));
