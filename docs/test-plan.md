@@ -8100,8 +8100,9 @@ build before `atrium_publish path` works, since an older room cannot say what a 
 2. `curl -s http://127.0.0.1:7778/_hub/docs/usage-2026-09-29` lists the version with `origin` `local`, `by` `operator`,
    a `kind`, a `mime`, the `name` and the `sha`. Post `-F file=@v2.md` to `/_hub/docs/usage-2026-09-29/versions`
    and it adds version 2 and keeps the title. `raw?v=1` still returns the first bytes.
-3. The same upload with `-H 'X-Forwarded-For: 1.2.3.4'` records origin `share`. Through the zrok share it records
-   `share` too. A form field named `origin`, `by` or `card` changes nothing.
+3. The same upload with `-H 'X-Forwarded-For: 1.2.3.4'` records origin `share` and `by` `share`, where a plain
+   loopback one records `local` and `operator`. Through the zrok share it records `share` too. A form field named
+   `origin`, `by` or `card` changes nothing.
 4. `raw` always answers `Content-Type: application/octet-stream`, `X-Content-Type-Options: nosniff` and
    `Content-Disposition: attachment`, for an `.html` or `.svg` document as well. Upload a title with a line break in it,
    such as `$'a\r\nX-Injected: 1'`. The raw answer has one `Content-Disposition` header, an ASCII `filename=` and a
@@ -8121,10 +8122,14 @@ build before `atrium_publish path` works, since an older room cannot say what a 
    board's own page is let through.
 9. `POST .../delete` from the share tombstones the document. It leaves `GET /_hub/docs` and appears under `?deleted=1`.
    `GET /_hub/docs/<slug>` answers 200 with `deleted` set, `raw` answers 410, and `/d/<slug>` still answers with the
-   `/m` page. `POST .../restore` brings it back.
+   `/m` page. `deleted.by` is `operator` from the machine and `share` from the share, and the audit log has a
+   `doc-deleted` line. A new version posted to the tombstoned slug answers 410 until it is restored.
+   `POST .../restore` brings it back.
 10. `POST .../purge?v=1` on the machine answers 200, the version shows `purged: true`, its file is gone from `docs/`,
     and `raw?v=1` answers 410 `the bytes are missing`. The same call with `X-Forwarded-For` set answers 403 and says
-    to run it on the machine. After a purge, a restore through the share answers 403 and one on the machine works.
+    to run it on the machine. Two documents with the same bytes share one file: purging one answers `also` with the
+    other's `slug@n`, and the `doc-purged` audit line names it. After a purge, a restore through the share answers 403
+    and one on the machine works.
     Delete a file from `docs/` by hand: the version shows `missing: true`, the list still loads, and `raw` answers
     410.
 11. `GET /_hub/docs/settings` answers `operator`, `enabled`, `caps`, `usage` and `largest`, and `operator` is false over
@@ -8138,8 +8143,9 @@ build before `atrium_publish path` works, since an older room cannot say what a 
     `GET /_hub/docs?card=<room>~<id>` lists it. The worker's tool list includes `atrium_publish`.
 14. `atrium_publish` with `path` set to a file in the card's directory stores it with the file's name. A path outside
     the directory, `../` out of it and a link to a file outside all answer 403. A link `notes.md -> .env`, `.ENV`,
-    `deploy/server.PEM`, `id_rsa` and anything under `.git/` or `.ssh/` answer 422 `secret-file-name`, including
-    through a directory link. A harmless name holding a private key block answers 422 `pem-private-key`.
+    `deploy/server.PEM`, `id_rsa`, `.htpasswd`, `*.kdbx` and anything under `.git/`, `.ssh/`, `.aws/`, `.kube/`,
+    `.gnupg/`, `.docker/` or `.zrok/` answer 422 `secret-file-name`, including through a directory link. A harmless
+    name holding a private key block answers 422 `pem-private-key`.
 15. Call `atrium_publish` 31 times in an hour from one card. The 31st answers 429 and another card is not held up. Board
     uploads are not counted. A call with `slug` of an existing document adds a version, and an unknown `slug` is 404.
 16. Wait for the daily copy or call `CopyDocs`. `backups/docs/` holds the blob files and `backups/docs.copied` stamps

@@ -79,6 +79,16 @@ const docFormOverhead = 1 << 20
 var docsCrossOrigin = http.NewCrossOriginProtection()
 
 // docOrigin is what a request is, decided from the request alone.
+// docBy is who a write says it was by. `operator` only for a request the machine's own user made,
+// and `share` for anything that came in another way, so the history never calls a share upload
+// the operator. Show the origin all the same: this is the word beside it.
+func docBy(r *http.Request) string {
+	if edge.LocalOperator(r) {
+		return "operator"
+	}
+	return "share"
+}
+
 func docOrigin(r *http.Request) string {
 	if edge.LocalOperator(r) {
 		return "local"
@@ -215,10 +225,12 @@ func (p *Proxy) serveDocs(w http.ResponseWriter, r *http.Request, sub string) {
 			case "title":
 				p.docsRetitle(w, r, st, slug)
 			case "delete":
-				if err := st.DocDelete(slug, "operator"); err != nil {
+				by := docBy(r)
+				if err := st.DocDelete(slug, by); err != nil {
 					docFail(w, err)
 					return
 				}
+				p.RecordAudit("", "doc-deleted", slug+" by "+by)
 				docJSON(w, http.StatusOK, map[string]any{"ok": true})
 			case "restore":
 				// Anybody may undo a tombstone, unless the document has a purged version,
@@ -329,13 +341,23 @@ func (p *Proxy) docsPurge(w http.ResponseWriter, r *http.Request, st *hubstore.S
 			return
 		}
 	}
-	count, err := st.DocPurge(slug, n)
+	res, err := st.DocPurge(slug, n)
 	if err != nil {
 		docFail(w, err)
 		return
 	}
-	p.RecordAudit("", "doc-purged", fmt.Sprintf("%s v=%d", slug, n))
-	docJSON(w, http.StatusOK, map[string]any{"ok": true, "purged": count})
+	// A BLOB IS ONE FILE FOR EVERY VERSION WITH THE SAME BYTES, so a purge can reach documents it
+	// was not pointed at, and the line says which.
+	detail := fmt.Sprintf("%s v=%d", slug, n)
+	if len(res.Also) > 0 {
+		detail += ", also purged the same bytes in " + strings.Join(res.Also, ", ")
+	}
+	p.RecordAudit("", "doc-purged", detail)
+	also := res.Also
+	if also == nil {
+		also = []string{}
+	}
+	docJSON(w, http.StatusOK, map[string]any{"ok": true, "purged": res.Blobs, "also": also})
 }
 
 // docsRaw serves the bytes, and ALWAYS as an attachment of octet-stream with nosniff. The
@@ -547,7 +569,7 @@ func (p *Proxy) docsUpload(w http.ResponseWriter, r *http.Request, st *hubstore.
 	}
 	in := hubstore.DocInput{
 		Slug: slug, Name: fileName, Data: data, Override: override,
-		Origin: docOrigin(r), By: "operator",
+		Origin: docOrigin(r), By: docBy(r),
 	}
 	if slug == "" {
 		in.Title = title

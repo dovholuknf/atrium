@@ -183,6 +183,10 @@ func TestPublishRefusesASecretFileNameOnTheResolvedTarget(t *testing.T) {
 	h.write(".git/config", "harmless")
 	h.write(".ssh/known_hosts", "harmless")
 	h.write("sub/Credentials.json", "harmless")
+	h.write(".kube/config", "harmless")
+	h.write(".zrok/environment.json", "harmless")
+	h.write("keys/vault.KDBX", "harmless")
+	h.write(".htpasswd", "harmless")
 	h.write("fine.md", "fine")
 	for link, target := range map[string]string{
 		"notes.md":        ".env",
@@ -203,7 +207,8 @@ func TestPublishRefusesASecretFileNameOnTheResolvedTarget(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for _, p := range []string{".env", ".ENV", "./.Env", "deploy/server.PEM", "id_rsa", ".git/config",
+	for _, p := range []string{".kube/config", ".zrok/environment.json", "keys/vault.KDBX", ".htpasswd",
+		".env", ".ENV", "./.Env", "deploy/server.PEM", "id_rsa", ".git/config",
 		".ssh/known_hosts", "sub/Credentials.json",
 		"notes.md", "upper.md", "report.md", "viagitdir.md", "nested/link.txt", "pub/known_hosts"} {
 		_, err := h.publish(publishInput{Title: "t " + p, Path: p})

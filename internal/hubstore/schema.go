@@ -285,6 +285,13 @@ var migrations = []struct {
 		// The slug is the key and never changes. A rename changes only `title`. No
 		// foreign key on the card, for the reason room_audit has none: a document
 		// outlives the card that wrote it, which is the point.
+		//
+		// ON DELETE CASCADE ON doc_version IS INERT. Nothing deletes a `doc` row: a delete
+		// is a tombstone, and a purge removes bytes and leaves rows. Foreign keys are ON for
+		// the store's one connection (Open sets the pragma), but a cascade is not relied on
+		// anywhere, and a future delete of a doc must remove its versions itself. The flags
+		// below are 0 or 1 by CHECK because they are read as `= 1`, and a 2 would be both
+		// not purged and not live.
 		name: "0007_docs",
 		stmts: []string{
 			`CREATE TABLE IF NOT EXISTS doc (
@@ -310,9 +317,9 @@ var migrations = []struct {
 				name     TEXT NOT NULL DEFAULT '',
 				sha      TEXT NOT NULL,
 				-- The operator deleted the bytes. The row stays.
-				purged   INTEGER NOT NULL DEFAULT 0,
+				purged   INTEGER NOT NULL DEFAULT 0 CHECK (purged IN (0,1)),
 				-- The operator let this one past a secret rule.
-				override INTEGER NOT NULL DEFAULT 0,
+				override INTEGER NOT NULL DEFAULT 0 CHECK (override IN (0,1)),
 				PRIMARY KEY (doc, n)
 			)`,
 			`CREATE INDEX IF NOT EXISTS doc_version_sha ON doc_version (sha)`,

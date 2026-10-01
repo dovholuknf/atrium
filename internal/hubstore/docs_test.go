@@ -285,21 +285,30 @@ func TestCapsMustBePositive(t *testing.T) {
 
 // EVERY SECRET RULE, ON CONTENT, through the one door DocAdd is.
 func TestSecretContentIsRefusedWithTheRuleNamed(t *testing.T) {
-	cases := map[string]string{
-		RulePEM:    "notes\n-----BEGIN OPENSSH PRIVATE KEY-----\nabc\n-----END OPENSSH PRIVATE KEY-----\n",
-		RuleGitHub: "token ghp_" + strings.Repeat("a1", 20),
-		RuleAWS:    "key AKIAIOSFODNN7EXAMPLE here",
-		RuleSlack:  "slack xoxb-123456789012-abcdefghij",
-		RuleJWT:    "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0In0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U",
-		RuleZrok:   "run: zrok enable ZcyXhMTX6HQe0",
+	type c struct{ rule, body string }
+	cases := []c{
+		{RulePEM, "notes\n-----BEGIN OPENSSH PRIVATE KEY-----\nabc\n-----END OPENSSH PRIVATE KEY-----\n"},
+		{RuleGitHub, "token ghp_" + strings.Repeat("a1", 20)},
+		{RuleGitHub, "github_pat_" + strings.Repeat("A", 30)},
+		{RuleAWS, "key AKIAIOSFODNN7EXAMPLE here"},
+		{RuleSlack, "slack xoxb-123456789012-abcdefghij"},
+		{RuleJWT, "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0In0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U"},
+		{RuleZrok, "run: zrok enable ZcyXhMTX6HQe0"},
 	}
-	cases[RuleGitHub+"-pat"] = "github_pat_" + strings.Repeat("A", 30)
+	// Every spelling of the zrok hint, since the pattern is case-insensitive.
+	for _, b := range []string{"ZROK ENABLE abcDEF123xyz", "Zrok Enable abcDEF123xyz", "ZROK_TOKEN=abcDEF123xyz",
+		"zRoK_account_token: abcDEF123xyz"} {
+		cases = append(cases, c{RuleZrok, b})
+	}
+	// Every Slack prefix the tokens come in.
+	for _, k := range "abeoprs" {
+		cases = append(cases, c{RuleSlack, "xox" + string(k) + "-123456789012-abcdefghij"})
+	}
 	s := open(t)
-	for name, body := range cases {
-		want := strings.TrimSuffix(name, "-pat")
-		_, err := s.DocAdd(docIn("S", "s.md", body))
-		if de := wantKind(t, err, DocSecret); de.Rule != want {
-			t.Errorf("%s: rule %q", name, de.Rule)
+	for i, cs := range cases {
+		_, err := s.DocAdd(docIn("S"+string(rune('a'+i)), "s.md", cs.body))
+		if de := wantKind(t, err, DocSecret); de.Rule != cs.rule {
+			t.Errorf("%q: rule %q, want %s", cs.body, de.Rule, cs.rule)
 		}
 	}
 	// Plain prose, and a JWT-ish word with two segments, are not refused.
@@ -309,7 +318,7 @@ func TestSecretContentIsRefusedWithTheRuleNamed(t *testing.T) {
 		}
 	}
 	// An override lets one through and records it.
-	in := docIn("Overridden", "o.md", cases[RuleAWS])
+	in := docIn("Overridden", "o.md", "key AKIAIOSFODNN7EXAMPLE here")
 	in.Override = true
 	r := mustAdd(t, s, in)
 	if d, _ := s.DocGet(r.Slug); !d.Versions[0].Override {
@@ -320,13 +329,15 @@ func TestSecretContentIsRefusedWithTheRuleNamed(t *testing.T) {
 // A SECRET FILE NAME IS REFUSED, case-insensitively, on the path it was resolved to.
 func TestSecretFileNames(t *testing.T) {
 	for _, n := range []string{".env", ".ENV", ".env.local", "deploy/.Env.prod", "prod.env", "server.PEM", "a/b/tls.key",
-		"id_rsa", "id_rsa.pub", "x.p12", "x.pfx", ".npmrc", ".NETRC", "credentials", "Credentials.json",
+		"id_rsa", "id_rsa.pub", "id_dsa", "ID_DSA.pub", ".htpasswd", ".HTPASSWD", "vault.kdbx", "Pass.KDBX",
+		".zrok/environment.json", "home/.zrok2/x", ".aws/credentials", ".AWS/config", ".kube/config", "a/.gnupg/pubring.kbx",
+		".docker/config.json", "x.p12", "x.pfx", ".npmrc", ".NETRC", "credentials", "Credentials.json",
 		".git/config", "sub/.git/hooks/x", ".ssh/known_hosts", "a/.SSH/id", "zrok-share", "room.json", "ca.key"} {
 		if !SecretFileName(n) {
 			t.Errorf("%q was allowed", n)
 		}
 	}
-	for _, n := range []string{"notes.md", "environment.md", "docs/key-ideas.md", "keyboard.txt", "report.md", ".gitignore", "env.md", "git/readme.md"} {
+	for _, n := range []string{"notes.md", "environment.md", "docs/key-ideas.md", "keyboard.txt", "awsome.md", "zrok-notes.md", "docker.md", "report.md", ".gitignore", "env.md", "git/readme.md"} {
 		if SecretFileName(n) {
 			t.Errorf("%q was refused", n)
 		}
@@ -563,6 +574,178 @@ func TestARefusedWriteLeavesNothing(t *testing.T) {
 		ents, _ := os.ReadDir(s.docsDir)
 		if len(ents) != 0 {
 			t.Fatalf("blobs %v", ents)
+		}
+	}
+}
+
+// A MULTIBYTE CHARACTER ACROSS BYTE 8192 DOES NOT MAKE MARKDOWN "other". The check reads the first
+// 8 KiB, and a cut through a character used to be judged invalid because the back-up loop compared
+// against the whole document. Both probes from the review: 8191 ASCII plus é, and 8190.
+func TestTextWithAMultibyteCharacterAtTheBoundaryIsStillText(t *testing.T) {
+	tail := strings.Repeat("z", 3000)
+	for _, c := range []struct {
+		name, ch string
+		pad      int
+	}{
+		{"2-byte at 8191", "é", 8191},
+		{"2-byte at 8190", "é", 8190},
+		{"2-byte at 8192", "é", 8192},
+		{"3-byte at 8190", "€", 8190},
+		{"3-byte at 8191", "€", 8191},
+		{"4-byte at 8189", "😀", 8189},
+		{"4-byte at 8190", "😀", 8190},
+		{"4-byte at 8191", "😀", 8191},
+	} {
+		body := strings.Repeat("a", c.pad) + c.ch + tail
+		if k, m := DocKind("report.md", []byte(body)); k != "markdown" || m != "text/markdown" {
+			t.Errorf("%s: %s %s, want markdown", c.name, k, m)
+		}
+		if k, _ := DocKind("report.txt", []byte(body)); k != "text" {
+			t.Errorf("%s as .txt: %s", c.name, k)
+		}
+	}
+	// A document with a NUL in the part read is still other, and so is one with invalid bytes there.
+	if k, _ := DocKind("x.md", []byte("ab\x00cd")); k != "other" {
+		t.Errorf("NUL: %s", k)
+	}
+	if k, _ := DocKind("x.md", append([]byte("ok "), 0xff, 0xfe, 'z')); k != "other" {
+		t.Errorf("invalid UTF-8: %s", k)
+	}
+}
+
+// A NEW VERSION OF A TOMBSTONED DOCUMENT IS REFUSED, 410, and nothing is written.
+func TestAVersionOfATombstonedDocumentIsGone(t *testing.T) {
+	s := open(t)
+	r := mustAdd(t, s, docIn("Doc", "d.md", "one"))
+	if err := s.DocDelete(r.Slug, "operator"); err != nil {
+		t.Fatal(err)
+	}
+	in := docIn("", "d.md", "two")
+	in.Slug = r.Slug
+	_, err := s.DocAdd(in)
+	wantKind(t, err, DocGone)
+	if d, _ := s.DocGet(r.Slug); len(d.Versions) != 1 {
+		t.Fatalf("a version was added to a tombstone: %+v", d.Versions)
+	}
+	s.DocRestore(r.Slug, true)
+	mustAdd(t, s, in)
+}
+
+// A PURGE RACING A WRITE OF THE SAME BYTES CANNOT LEAVE THE NEW VERSION MISSING. DocAdd and DocPurge
+// share one lock, so the file is never removed under a version that just referenced it. The hook
+// holds the purge in the gap after its commit, which is where a write of the same bytes used to land:
+// it saw the file, skipped writing it, and the purge then removed it.
+func TestPurgeRacingAnAddOfTheSameBytesKeepsTheNewVersion(t *testing.T) {
+	s := open(t)
+	first := mustAdd(t, s, docIn("Racer", "r.md", "the shared bytes"))
+	var added DocResult
+	var addErr error
+	addDone := make(chan struct{})
+	afterPurgeCommit = func() {
+		go func() {
+			defer close(addDone)
+			added, addErr = s.DocAdd(docIn("Racer copy", "r.md", "the shared bytes"))
+		}()
+		// Long enough for an unserialised write to finish inside the gap.
+		time.Sleep(300 * time.Millisecond)
+	}
+	defer func() { afterPurgeCommit = nil }()
+	if _, err := s.DocPurge(first.Slug, 0); err != nil {
+		t.Fatal(err)
+	}
+	<-addDone
+	if addErr != nil {
+		t.Fatal(addErr)
+	}
+	d, _ := s.DocGet(added.Slug)
+	v := d.Versions[0]
+	if v.Purged || v.Missing {
+		t.Fatalf("the new version lost its bytes: %+v", v)
+	}
+	f, _, err := s.DocOpen(added.Slug, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+}
+
+// A PURGE THAT COULD NOT REMOVE ITS FILE IS RETRIED BY THE NEXT COPY PASS, which is the Windows case of
+// a reader holding the blob open. No sweeper beyond that.
+func TestAStuckPurgedFileIsRemovedOnTheNextCopyPass(t *testing.T) {
+	s := open(t)
+	r := mustAdd(t, s, docIn("Stuck", "s.md", "held open"))
+	d, _ := s.DocGet(r.Slug)
+	sha := d.Versions[0].SHA
+	res, err := s.DocPurge(r.Slug, 0)
+	if err != nil || res.Blobs != 1 {
+		t.Fatalf("purge %+v %v", res, err)
+	}
+	// The file the purge could not remove.
+	if err := os.WriteFile(s.blobPath(sha), []byte("held open"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(t.TempDir(), "backups")
+	// A stamp from a minute ago: the daily copy is not due, the retry still runs.
+	os.MkdirAll(dir, 0o700)
+	os.WriteFile(filepath.Join(dir, docsStamp), []byte("x"), 0o600)
+	if _, err := s.CopyDocs(dir); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(s.blobPath(sha)); err == nil {
+		t.Fatal("the purged file is still in the live folder")
+	}
+	// A file that an unpurged version still uses is never swept.
+	live := mustAdd(t, s, docIn("Live", "l.md", "still wanted"))
+	ld, _ := s.DocGet(live.Slug)
+	s.CopyDocs(dir)
+	if _, err := os.Stat(s.blobPath(ld.Versions[0].SHA)); err != nil {
+		t.Fatal("a live blob was swept")
+	}
+}
+
+// A PURGE NAMES THE OTHER DOCUMENTS A SHARED SHA REACHED, for the audit line, and not the ones it was
+// pointed at.
+func TestAPurgeNamesWhatTheSharedBytesReached(t *testing.T) {
+	s := open(t)
+	a := mustAdd(t, s, docIn("Alpha", "a.md", "identical bytes"))
+	b := mustAdd(t, s, docIn("Bravo", "b.md", "identical bytes"))
+	in := docIn("", "a.md", "different bytes")
+	in.Slug = a.Slug
+	mustAdd(t, s, in)
+	res, err := s.DocPurge(a.Slug, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Blobs != 1 || len(res.Also) != 1 || res.Also[0] != b.Slug+"@1" {
+		t.Fatalf("%+v", res)
+	}
+	// Bravo is purged with it, and Alpha's version 2 is not.
+	if d, _ := s.DocGet(b.Slug); !d.Versions[0].Purged {
+		t.Fatal("bravo kept bytes that were deleted")
+	}
+	if d, _ := s.DocGet(a.Slug); d.Versions[1].Purged {
+		t.Fatal("version 2 was purged")
+	}
+	// Purging the whole of a document names only the others.
+	c := mustAdd(t, s, docIn("Charlie", "c.md", "third"))
+	d2 := mustAdd(t, s, docIn("Delta", "d.md", "third"))
+	res, _ = s.DocPurge(c.Slug, 0)
+	if len(res.Also) != 1 || res.Also[0] != d2.Slug+"@1" {
+		t.Fatalf("%+v", res)
+	}
+	if res, _ := s.DocPurge(c.Slug, 0); len(res.Also) != 0 {
+		t.Fatalf("purging again reached %v", res.Also)
+	}
+}
+
+// purged AND override ARE 0 OR 1, BY CHECK.
+func TestTheFlagsAreZeroOrOne(t *testing.T) {
+	s := open(t)
+	r := mustAdd(t, s, docIn("Flags", "f.md", "x"))
+	for _, col := range []string{"purged", "override"} {
+		_, err := s.db.Exec(`UPDATE doc_version SET `+col+` = 2 WHERE doc = ?`, r.Slug)
+		if err == nil {
+			t.Errorf("%s = 2 was accepted", col)
 		}
 	}
 }
