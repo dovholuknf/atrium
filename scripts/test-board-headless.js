@@ -10598,8 +10598,8 @@ const M_VIEWS = [{ width: 390, height: 844 }, { width: 412, height: 915 }];
 
 async function mHarness(browser, view, opts) {
   opts = opts || {};
-  const ctx = await browser.newContext({ viewport: view, hasTouch: true, isMobile: true,
-    reducedMotion: opts.reduced ? "reduce" : "no-preference" });
+  const ctx = await browser.newContext(Object.assign({ viewport: view, reducedMotion: opts.reduced ? "reduce" : "no-preference" },
+    opts.desktop ? {} : { hasTouch: true, isMobile: true }));
   const calls = { message: [], decide: [], harnesses: 0 };
   const mode = { message: "terminal", decide: "ok" };
   await ctx.route(M_ORIGIN + "/**", async route => {
@@ -10744,15 +10744,10 @@ async function mComposeSection(browser) {
     await p.reload();
     await mount("c1");
 
-    // Chips only when the card is asking, and they fill without sending.
-    if (await p.$eval("#m-compose .mc-chips", c => c.classList.contains("on"))) fail(tag + "chips shown for a working card");
-    const n0 = calls.message.length;
+    // The fixed quick replies are gone, for a working card and for one that is asking.
     await p.evaluate(() => { __cards[0].status = "needs-input"; __emit("cards"); });
-    await p.waitForSelector("#m-compose .mc-chips.on");
-    const cb = await p.$eval(".mc-chip", b => b.getBoundingClientRect().height);
-    if (cb < 44) fail(tag + "chip is " + cb + "px");
-    await p.tap(".mc-chip");
-    if (!(await p.$eval(box, t => t.value.length > 0)) || calls.message.length !== n0) fail(tag + "chip did not fill or it sent");
+    await p.waitForTimeout(150);
+    if (await p.$(".mc-chip, .mc-chips")) fail(tag + "quick reply buttons are still drawn");
 
     // The keyboard lifts the composer by the visual viewport gap.
     await p.evaluate(() => {
@@ -13218,7 +13213,7 @@ async function bootCleanSection(browser, base) {
       const p = await ctx.newPage();
       await p.route(/\/alias\/rnd$/, r => r.fulfill({ status: 200, contentType: "text/html", body: raw }));
       const errors = [];
-      p.on("pageerror", e => errors.push(String(e && e.message || e)));
+      p.on("pageerror", e => errors.push(String(e && e.message || e) + (process.env.BOOT_STACK ? " " + e.stack : "")));
       const tag = "bootClean " + v.w + " " + at + ": ";
       try {
         await p.goto(base + at, { waitUntil: "load" });
@@ -13233,6 +13228,533 @@ async function bootCleanSection(browser, base) {
     }
   }
   if (!bad) console.log("bootClean ok");
+}
+
+// ── the /m home order, grouping and filters ──────────────────────────────
+async function mHomeOrderSection(browser) {
+  const st = mServer({});
+  await st.open();
+  const cards = () => [
+    mCard("a-1", { alias: "alpha", worktree: "/g/github/o/one", last_activity_at: mIso(5 * M_MIN) }),
+    mCard("b-1", { alias: "bravo", worktree: "/g/github/o/two", status: "done", last_activity_at: mIso(1 * M_MIN) }),
+    mCard("c-1", { alias: "charlie", worktree: "/g/github/o/one", tags: ["origin:agent"], last_activity_at: mIso(30 * M_MIN) }),
+    mCard("d-1", { alias: "delta", worktree: "/g/github/o/two", status: "needs-input", waiting_since: mIso(10 * M_MIN), last_activity_at: mIso(10 * M_MIN) }),
+  ];
+  const names = p => p.$$eval("#m-list .row .name b", e => e.map(x => x.textContent));
+  const heads = p => p.$$eval("#m-list h2.grp", e => e.map(x => x.textContent.replace(/\s+/g, " ").trim()));
+  const pick = async (p, sel) => { await p.tap(sel); await p.waitForTimeout(150); };
+  try {
+    for (const vp of M_VIEWS) {
+      st.tasks = cards();
+      st.perms = [];
+      const { ctx, p, errors } = await mPage(browser, st, vp, "");
+      const tag = "mHomeOrder " + vp.width + ": ";
+      await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
+      // newest first by default, in the needs list too
+      let n = await names(p);
+      if (n.join(",") !== "delta") fail(tag + "needs list is " + n.join(","));
+      await p.tap("#m-seg-all");
+      await p.waitForSelector("#m-list h2.grp", { timeout: slow(5000) });
+      n = await names(p);
+      if (n.join(",") !== "alpha,charlie,delta,bravo") fail(tag + "default is not newest first inside each status group: " + n.join(","));
+      await p.tap("#m-opts-btn");
+      await pick(p, '[data-opt="order"][data-val="oldest"]');
+      n = await names(p);
+      if (n.join(",") !== "charlie,alpha,delta,bravo") fail(tag + "oldest first is " + n.join(","));
+      await pick(p, '[data-opt="group"][data-val="project"]');
+      let h = await heads(p);
+      n = await names(p);
+      if (h.length !== 2 || !/^o\/one/.test(h[0]) || !/^o\/two/.test(h[1])) fail(tag + "project groups are " + h.join("|"));
+      if (n.join(",") !== "charlie,alpha,delta,bravo") fail(tag + "project grouped oldest first is " + n.join(","));
+      await pick(p, '[data-opt="group"][data-val="room"]');
+      h = await heads(p);
+      if (h.length !== 1 || !/^no room/.test(h[0])) fail(tag + "room groups are " + h.join("|"));
+      await pick(p, '[data-opt="group"][data-val="none"]');
+      await pick(p, '[data-opt="order"][data-val="newest"]');
+      await pick(p, '[data-opt="hideSubs"]');
+      n = await names(p);
+      if (n.indexOf("charlie") >= 0 || n.length !== 3) fail(tag + "hide subagents left " + n.join(","));
+      await pick(p, '[data-opt="hideDone"]');
+      n = await names(p);
+      if (n.indexOf("bravo") >= 0 || n.length !== 2) fail(tag + "hide finished left " + n.join(","));
+      await pick(p, '[data-opt="needsMe"]');
+      n = await names(p);
+      if (n.join(",") !== "delta") fail(tag + "needs me only left " + n.join(","));
+      // remembered across a reload
+      await p.reload({ waitUntil: "domcontentloaded" });
+      await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
+      const o = await p.evaluate(() => window.mHome.opts());
+      if (!o.hideSubs || !o.hideDone || !o.needsMe || o.order !== "newest" || o.group !== "none") fail(tag + "the choice was not remembered: " + JSON.stringify(o));
+      await p.tap("#m-opts-btn");
+      await pick(p, '[data-opt="order"][data-val="oldest"]');
+      await p.reload({ waitUntil: "domcontentloaded" });
+      await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
+      if ((await p.evaluate(() => window.mHome.opts())).order !== "oldest") fail(tag + "oldest was not remembered");
+      if (await mNoSideways(p)) fail(tag + "the home scrolls sideways");
+      if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+      await ctx.close();
+    }
+  } finally { await st.close(); }
+  if (!bad) console.log("mHomeOrder ok");
+}
+
+// ── the way out of a card opened by its address ──────────────────────────
+// The page as a browser gets it (`/raw`), a card's own window has no header and no list. "all cards" goes to the board,
+// "cards" opens the picker, and Back works because the board was a page of its own.
+async function cardUrlWayOutSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landList = [];
+  landCard("land-a", { alias: "rnd", room: "claude-sg4", wire_name: "sparta/rnd-director" });
+  const raw = fs.readFileSync(path.join(WEB_ROOT, "index.html"));
+  try {
+    for (const v of [{ w: 1400, h: 900 }, { w: 390, h: 844, phone: true }]) {
+      const tag = "cardUrlWayOut " + v.w + ": ";
+      const ctx = await browser.newContext(v.phone
+        ? { viewport: { width: v.w, height: v.h }, hasTouch: true, isMobile: true }
+        : { viewport: { width: v.w, height: v.h } });
+      await ctx.addInitScript(() => localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true })));
+      const p = await ctx.newPage();
+      const errors = [];
+      p.on("pageerror", e => errors.push(String(e && e.message || e)));
+      await p.route("**/*", route => {
+        const rq = route.request();
+        const u = new URL(rq.url());
+        if (/^\/alias\/rnd$/.test(u.pathname) && rq.resourceType() === "document") return route.fulfill({ status: 200, contentType: "text/html", body: raw });
+        if (u.pathname === "/v1/tasks/rnd") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(LAND["land-a"]) });
+        return route.continue();
+      });
+      try {
+        await p.goto(base + "/raw", { waitUntil: "load" });
+        await p.goto(base + "/alias/rnd", { waitUntil: "load" });
+        await cuSolo(p, "land-a");
+        const shown = sel => p.evaluate(s => { const e = document.querySelector(s); if (!e) return false; const r = e.getBoundingClientRect(); const cs = getComputedStyle(e); return r.width > 0 && r.height > 0 && cs.visibility !== "hidden"; }, sel);
+        const all = v.phone ? ".cu-way.float .cu-all" : "#cardurl-way .cu-all";
+        if (!(await shown(all))) fail(tag + "no visible all-cards control on a card address");
+        // the picker
+        if (v.phone) {
+          await p.tap("#t-tray-handle");
+          await p.waitForFunction(() => document.body.classList.contains("tray-open"), null, { timeout: slow(5000) });
+          await p.tap("#t-pick");
+        } else {
+          await p.click("#cardurl-way .cu-pick");
+        }
+        await p.waitForFunction(() => { const d = document.getElementById("switcher"); return d && d.open; }, null, { timeout: slow(5000) })
+          .catch(() => fail(tag + "the card picker did not open"));
+        await p.keyboard.press("Escape");
+        if (v.phone) { await p.tap("#t-bar-toggle"); await p.waitForFunction(() => !document.body.classList.contains("tray-open"), null, { timeout: slow(5000) }); }
+        // all cards leaves for the board
+        await p.tap(all).catch(() => p.click(all));
+        await p.waitForFunction(() => location.pathname === "/", null, { timeout: slow(8000) })
+          .catch(() => fail(tag + "all cards did not go to the board: " + p.url()));
+        if (await p.evaluate(() => document.body.classList.contains("solo"))) fail(tag + "the board still wears the card window");
+        // Back from the board returns to the card
+        await p.goBack({ waitUntil: "load" });
+        await p.goBack({ waitUntil: "load" }).catch(() => {});
+        if (!/\/raw$/.test(new URL(p.url()).pathname)) fail(tag + "Back from a card opened from the board did not reach the board: " + p.url());
+      } finally { await ctx.close(); }
+      if (errors.length) fail(tag + "the page threw: " + errors.join(" | "));
+    }
+  } finally { tasksMode = was; }
+
+  // the phone page
+  const st = mServer({});
+  const ta = mCard("card-a", { alias: "solo", room: "claude-sg4", display_title: "on its own", status: "needs-input", waiting_since: mIso(7 * M_MIN) });
+  const tb = mCard("card-b", { alias: "other", room: "claude-sg4", display_title: "the other one", status: "running" });
+  st.tasks = [ta, tb];
+  await st.open();
+  try {
+    for (const vp of M_VIEWS) {
+      const tag = "cardUrlWayOut m " + vp.width + ": ";
+      const ctx = await browser.newContext({ viewport: vp, hasTouch: true, isMobile: true, deviceScaleFactor: 2 });
+      const p = await ctx.newPage();
+      const errors = [];
+      p.on("pageerror", e => errors.push(String(e)));
+      await p.route("**/*", route => {
+        const rq = route.request();
+        const u = new URL(rq.url());
+        if (/^\/m\/alias\//.test(u.pathname) && rq.resourceType() === "document") return route.fulfill({ status: 200, contentType: "text/html", body: fs.readFileSync(path.join(M_ROOT, "index.html")) });
+        if (u.pathname === "/v1/tasks/solo") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(ta) });
+        return route.continue();
+      });
+      try {
+        await p.goto(st.url + "/m/", { waitUntil: "domcontentloaded" });
+        await p.goto(st.url + "/m/alias/solo", { waitUntil: "domcontentloaded" });
+        await p.waitForSelector("#m-card.on", { timeout: slow(10000) });
+        if (!/all cards/.test(await p.innerText("#m-card-back"))) fail(tag + "the way back does not say where it goes");
+        await p.tap("#m-card-pick");
+        await p.waitForSelector("#m-card-menu:not([hidden]) .pm-row", { timeout: slow(5000) });
+        await p.tap('#m-card-menu .pm-row[data-id="card-b"]');
+        await p.waitForFunction(() => /the other one/.test(document.getElementById("m-card-head").textContent), null, { timeout: slow(8000) })
+          .catch(() => fail(tag + "the picker did not land on the other card"));
+        await p.tap("#m-card-back");
+        await p.waitForFunction(() => document.getElementById("m-card").hidden, null, { timeout: slow(5000) })
+          .catch(() => fail(tag + "the way back did not leave the card"));
+        // Back out of the list reaches the page we came from, through history entries
+        await p.goto(st.url + "/m/", { waitUntil: "domcontentloaded" });
+        await p.goto(st.url + "/m/alias/solo", { waitUntil: "domcontentloaded" });
+        await p.waitForSelector("#m-card.on", { timeout: slow(10000) });
+        await p.goBack({ waitUntil: "domcontentloaded" });
+        if (new URL(p.url()).pathname !== "/m/") fail(tag + "Back from a card address did not reach the list: " + p.url());
+      } finally { await ctx.close(); }
+      if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+    }
+  } finally { await st.close(); }
+  if (!bad) console.log("cardUrlWayOut ok");
+}
+
+// ── the board on a phone, on the real page ───────────────────────────────
+// The header shows on the board, and a card's own window has the way out and a picker that opens and switches. On the
+// page as a browser loads it (one script tag per file), at both phone widths.
+async function phoneBootSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landList = [];
+  landCard("land-a", { alias: "rnd", room: "claude-sg4", wire_name: "sparta/rnd-director", supervised: true });
+  landCard("land-b", { alias: "second", room: "claude-sg4", wire_name: "sparta/second", supervised: true });
+  landList = [LAND["land-a"], LAND["land-b"]];
+  const raw = fs.readFileSync(path.join(WEB_ROOT, "index.html"));
+  try {
+    for (const w of [390, 412]) {
+      for (const at of ["/raw", "/raw#term=land-a", "/alias/rnd"]) {
+        const tag = "phoneBoot " + w + " " + at + ": ";
+        const ctx = await browser.newContext({ viewport: { width: w, height: 844 }, hasTouch: true, isMobile: true });
+        await ctx.addInitScript(() => localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true })));
+        const p = await ctx.newPage();
+        const errors = [];
+        p.on("pageerror", e => errors.push(String(e && e.message || e)));
+        await p.route("**/*", route => {
+          const rq = route.request();
+          const u = new URL(rq.url());
+          if (u.pathname === "/alias/rnd" && rq.resourceType() === "document") return route.fulfill({ status: 200, contentType: "text/html", body: raw });
+          if (u.pathname === "/v1/tasks/rnd") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(LAND["land-a"]) });
+          return route.continue();
+        });
+        try {
+          await p.goto(base + at, { waitUntil: "load" });
+          await p.waitForTimeout(1200);
+          const solo = at !== "/raw";
+          if (!solo) {
+            const h = await p.evaluate(() => { const e = document.querySelector("header"); const r = e && e.getBoundingClientRect(); return r ? { h: r.height, vis: getComputedStyle(e).visibility !== "hidden" && getComputedStyle(e).display !== "none" } : null; });
+            if (!h || !h.vis || h.h < 20) fail(tag + "no header: " + JSON.stringify(h));
+            continue;
+          }
+          await cuSolo(p, "land-a");
+          const way = await p.evaluate(() => { const e = document.querySelector(".cu-way.float .cu-all"); if (!e) return false; const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; });
+          if (!way) fail(tag + "no way out is shown");
+          await p.tap("#t-tray-handle");
+          await p.waitForFunction(() => document.body.classList.contains("tray-open"), null, { timeout: slow(5000) });
+          await p.tap("#t-pick");
+          await p.waitForFunction(() => { const d = document.getElementById("switcher"); return d && d.open; }, null, { timeout: slow(5000) })
+            .catch(() => fail(tag + "the card picker did not open"));
+          await p.waitForFunction(() => document.querySelectorAll("#sw-list .sw-row, #switcher .row").length > 0 || swRows.length > 1, null, { timeout: slow(5000) }).catch(() => {});
+          await p.keyboard.press("Enter");
+          await p.waitForFunction(() => soloID === "land-b", null, { timeout: slow(8000) })
+            .catch(async () => fail(tag + "switching did not land on the other card " + JSON.stringify(await p.evaluate(() => ({ id: soloID, rows: swRows.map(t => t.id), q: swQuery, tasks: swTasks.map(t => t.id + ":" + t.supervised), open: document.getElementById("switcher").open })))));
+        } finally { await ctx.close(); }
+        if (errors.length) fail(tag + "threw: " + errors.join(" | "));
+      }
+    }
+  } finally { tasksMode = was; }
+  if (!bad) console.log("phoneBoot ok");
+}
+
+// ── Enter sends in the message box ───────────────────────────────────────
+// Where there is a hardware keyboard Enter sends and Shift+Enter is a newline. A touch-only device keeps Enter as a newline.
+async function sayEnterSection(browser) {
+  const box = "#m-compose .mc-box";
+  for (const desktop of [true, false]) {
+    const tag = "sayEnter " + (desktop ? "desktop" : "touch") + ": ";
+    const { ctx, p, calls, errors } = await mHarness(browser, desktop ? { width: 1000, height: 800 } : M_VIEWS[0], { desktop });
+    await p.evaluate(() => mCompose.mount(document.getElementById("m-compose"), "c1"));
+    await p.click(box);
+    await p.keyboard.type("one");
+    await p.keyboard.down("Shift");
+    await p.keyboard.press("Enter");
+    await p.keyboard.up("Shift");
+    await p.keyboard.type("two");
+    if ((await p.$eval(box, t => t.value)) !== "one\ntwo") fail(tag + "Shift+Enter did not make a newline");
+    if (calls.message.length) fail(tag + "Shift+Enter sent");
+    await p.keyboard.press("Enter");
+    if (desktop) {
+      await p.waitForFunction(() => document.querySelector("#m-compose .mc-box").value === "", null, { timeout: slow(5000) })
+        .catch(() => fail(tag + "Enter did not send"));
+      if (calls.message.length !== 1 || calls.message[0].body.text !== "one\ntwo") fail(tag + "the message was " + JSON.stringify(calls.message));
+      // an empty box does not send
+      await p.keyboard.press("Enter");
+      await p.waitForTimeout(150);
+      if (calls.message.length !== 1) fail(tag + "Enter on an empty box sent");
+    } else {
+      await p.waitForTimeout(150);
+      if (calls.message.length) fail(tag + "Enter sent on a touch-only device");
+      if ((await p.$eval(box, t => t.value)) !== "one\ntwo\n") fail(tag + "Enter did not make a newline on touch");
+    }
+    await ctx.close();
+    if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+  }
+  if (!bad) console.log("sayEnter ok");
+}
+
+// ── the send arrow is centred in its circle ──────────────────────────────
+// The glyph's box and the circle's box share a centre to within a pixel, on the phone page and in the board's composer.
+async function sendArrowSection(browser) {
+  for (const desktop of [true, false]) {
+    const tag = "sendArrow " + (desktop ? "desktop" : "phone") + ": ";
+    const { ctx, p, errors } = await mHarness(browser, desktop ? { width: 1000, height: 800 } : M_VIEWS[0], { desktop });
+    await p.evaluate(() => mCompose.mount(document.getElementById("m-compose"), "c1"));
+    await p.fill("#m-compose .mc-box", "hi");
+    const d = await p.evaluate(() => {
+      const b = document.querySelector("#m-compose .mc-send").getBoundingClientRect();
+      const g = [...document.querySelectorAll("#m-compose .mc-send svg path")].map(e => e.getBoundingClientRect());
+      const l = Math.min(...g.map(r => r.left)), r = Math.max(...g.map(r => r.right));
+      const t = Math.min(...g.map(r => r.top)), bt = Math.max(...g.map(r => r.bottom));
+      return { dx: (l + r) / 2 - (b.left + b.right) / 2, dy: (t + bt) / 2 - (b.top + b.bottom) / 2 };
+    });
+    if (Math.abs(d.dx) > 1 || Math.abs(d.dy) > 1) fail(tag + "the arrow is off centre by " + d.dx.toFixed(2) + "," + d.dy.toFixed(2));
+    if (process.env.ARROW_SHOTS) {
+      fs.mkdirSync(process.env.ARROW_SHOTS, { recursive: true });
+      await (await p.$("#m-compose .mc-row")).screenshot({ path: path.join(process.env.ARROW_SHOTS, (desktop ? "desktop" : "phone") + ".png") });
+    }
+    await ctx.close();
+    if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+  }
+  if (!bad) console.log("sendArrow ok");
+}
+
+// ── markdown tables in a reply ───────────────────────────────────────────
+// A table of long cells scrolls inside its own box and keeps its first column in view. The page does not scroll sideways.
+async function mTablesSection(browser) {
+  const st = mServer({});
+  const c = mCard("tbl-1", { alias: "tabler", display_title: "tabler", status: "needs-input", waiting_since: mIso(2 * M_MIN), seen: { turn_ended_at: mIso(20 * M_MIN) } });
+  st.tasks = [c];
+  const long = "a long cell that keeps going well past what fits in a column on a phone screen";
+  const md = "Here is the table:\n\n| Name | Details | Owner | Notes |\n|:--|---|--:|:-:|\n" +
+    "| first " + long + " | `code|with pipe` " + long + " | right " + long + " | centre " + long + " |\n" +
+    "| second | <script>window.__pwn = 1</script> | x |\n" +
+    "| third " + long + " | " + long + " | " + long + " | " + long + " |\n\nAfter it.";
+  st.replies["tbl-1"] = { source: "transcript", replies: [{ at: mIso(10 * M_MIN), text: md }] };
+  await st.open();
+  try {
+    for (const vp of M_VIEWS) {
+      const tag = "mTables " + vp.width + ": ";
+      const { ctx, p, errors } = await mPage(browser, st, vp, "");
+      await p.waitForSelector("#m-seg-all", { timeout: slow(10000) });
+      await p.tap("#m-seg-all");
+      await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
+      await p.tap('#m-list .row[data-id="tbl-1"]');
+      await p.waitForSelector("#m-replies .tbl table", { timeout: slow(5000) });
+      const d = await p.evaluate(() => {
+        const box = document.querySelector("#m-replies .tbl");
+        const rows = [...box.querySelectorAll("tr")].map(r => r.children.length);
+        const code = box.querySelector("td code");
+        const out = {
+          page: document.documentElement.scrollWidth - window.innerWidth,
+          inner: box.scrollWidth - box.clientWidth,
+          rows, code: code ? code.textContent : "",
+          script: !!document.querySelector("#m-replies script"), pwn: window.__pwn === 1,
+          text: box.textContent.includes("<script>window.__pwn = 1</script>"),
+          align: box.querySelector("tbody tr td:nth-child(3)").style.textAlign + "," + box.querySelector("tbody tr td:nth-child(4)").style.textAlign,
+          after: /After it/.test(document.getElementById("m-replies").textContent),
+        };
+        box.scrollLeft = 200;
+        const f = box.querySelector("tbody td:first-child").getBoundingClientRect();
+        out.firstLeft = f.left - box.getBoundingClientRect().left;
+        out.scrolled = box.scrollLeft;
+        return out;
+      });
+      if (d.page > 1) fail(tag + "the page scrolls sideways by " + d.page);
+      if (d.inner <= 0) fail(tag + "the table does not scroll inside itself");
+      if (d.rows.join() !== "4,4,4,4") fail(tag + "a short row was not padded: " + d.rows.join());
+      if (d.code !== "code|with pipe") fail(tag + "code in a cell is " + JSON.stringify(d.code));
+      if (d.script || d.pwn || !d.text) fail(tag + "a cell holding script is not plain text");
+      if (d.align !== "right,center") fail(tag + "alignment is " + d.align);
+      if (!d.after) fail(tag + "the text after the table is gone");
+      if (d.scrolled <= 0 || Math.abs(d.firstLeft) > 2) fail(tag + "the first column moved to " + d.firstLeft + " after scrolling " + d.scrolled);
+      await mShot(p, "table-" + vp.width);
+      if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+      await ctx.close();
+    }
+  } finally { await st.close(); }
+  if (!bad) console.log("mTables ok");
+}
+
+// ── markdown in a reply: every construct, and a hostile reply ────────────
+const M_PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
+async function mReplyPage(browser, st, vp, id) {
+  const ctx = await browser.newContext({ viewport: vp, hasTouch: true, isMobile: true, deviceScaleFactor: 2 });
+  const remote = [];
+  await ctx.route(url => !/^http:\/\/127\.0\.0\.1[:/]/.test(url.href), r => { remote.push(r.request().url()); return r.abort(); });
+  const p = await ctx.newPage();
+  const errors = [];
+  p.on("pageerror", e => errors.push(String(e)));
+  await p.goto(st.url + "/m/", { waitUntil: "domcontentloaded" });
+  await p.waitForSelector("#m-seg-all", { timeout: slow(10000) });
+  await p.tap("#m-seg-all");
+  await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
+  await p.tap('#m-list .row[data-id="' + id + '"]');
+  await p.waitForSelector("#m-replies .md", { timeout: slow(5000) });
+  return { ctx, p, errors, remote };
+}
+
+async function mMarkdownSection(browser) {
+  const st = mServer({});
+  const c = mCard("md-1", { alias: "writer", display_title: "writer", worktree: "/w/card", status: "needs-input", waiting_since: mIso(2 * M_MIN), seen: { turn_ended_at: mIso(20 * M_MIN) } });
+  const cw = mCard("md-2", { alias: "winner", display_title: "winner", worktree: "D:/Work/Card", status: "needs-input", waiting_since: mIso(3 * M_MIN), seen: { turn_ended_at: mIso(20 * M_MIN) } });
+  st.tasks = [c, cw];
+  st.files = { "/w/card/.atrium/incoming/shot.png": M_PNG, "/w/card/notes/plan.md": Buffer.from("# plan"),
+    "D:/Work/Card/shot.png": M_PNG, "d:/work/CARD/notes/plan.md": Buffer.from("# plan") };
+  st.replies["md-2"] = { source: "transcript", replies: [{ at: mIso(10 * M_MIN), text:
+    "inside: D:\\Work\\Card\\shot.png and mixed case d:/work/CARD/notes/plan.md and outside E:/other/x.png and C:\\Windows\\win.ini and ![z](d:foo.png)" }] };
+  const md = "# Title\n\n## Sub\n\nSome **bold**, *italic*, `inline code` and a [link](https://example.com/a).\n\n- one\n- two\n\n1. first\n2. second\n\n" +
+    "```js\nconst a = 'a very long line of code that will not fit on a phone screen without scrolling sideways inside its block';\n```\n\n" +
+    "A shot: /w/card/.atrium/incoming/shot.png and a gone one ![missing](/w/card/notes/missing.png) and a file /w/card/notes/plan.md here.\n\n" +
+    "| A | B |\n|---|---|\n| 1 | 2 |\n";
+  st.replies["md-1"] = { source: "transcript", replies: [{ at: mIso(10 * M_MIN), text: md }] };
+  await st.open();
+  try {
+    for (const vp of M_VIEWS) {
+      const tag = "mMarkdown " + vp.width + ": ";
+      const { ctx, p, errors, remote } = await mReplyPage(browser, st, vp, "md-1");
+      await p.waitForFunction(() => document.querySelector("#m-replies .md-img img") && document.querySelector("#m-replies .md-gone"), null, { timeout: slow(8000) })
+        .catch(() => fail(tag + "the image did not load or the refused one did not say so"));
+      const d = await p.evaluate(() => {
+        const q = s => document.querySelector("#m-replies " + s);
+        const pre = q("pre.code");
+        const a = q('a[href="https://example.com/a"]');
+        return {
+          h: !!q("h3") && !!q("h4"), strong: !!q("strong"), em: !!q("em"), code: !!q("p code"), ul: !!q("ul li"), ol: !!q("ol li"),
+          link: a ? [a.target, a.rel] : null, scroll: pre.scrollWidth - pre.clientWidth, copy: !!q(".code-copy"),
+          img: q(".md-img img") ? q(".md-img img").naturalWidth : 0, file: !!q(".md-file"), gone: q(".md-gone").textContent,
+          table: !!q(".tbl table"), page: document.documentElement.scrollWidth - window.innerWidth,
+        };
+      });
+      for (const k of ["h", "strong", "em", "code", "ul", "ol", "copy", "file", "table"]) if (!d[k]) fail(tag + k + " is missing");
+      if (!d.link || d.link[0] !== "_blank" || d.link[1] !== "noopener noreferrer") fail(tag + "the link is " + JSON.stringify(d.link));
+      if (d.scroll <= 0) fail(tag + "the code does not scroll inside its block");
+      if (d.img < 1) fail(tag + "the image is not drawn");
+      if (d.gone !== "not available") fail(tag + "the refused image says " + d.gone);
+      if (d.page > 1) fail(tag + "the page scrolls sideways by " + d.page);
+      await p.tap("#m-replies .md-img");
+      await p.waitForSelector(".md-lightbox img", { timeout: slow(3000) }).catch(() => fail(tag + "tapping the thumbnail did not enlarge it"));
+      await p.tap(".md-lightbox").catch(() => {});
+      await p.tap("#m-replies .code-copy");
+      await p.waitForFunction(() => /copied|not copied/.test(document.querySelector("#m-replies .code-copy").textContent), null, { timeout: slow(3000) })
+        .catch(() => fail(tag + "the copy button did nothing"));
+      if (remote.length) fail(tag + "something remote was requested: " + remote.join(","));
+      // a redraw uses the cached picture, and closing the card revokes it
+      st.fileHits = [];
+      await p.evaluate(() => { window.__revoked = 0; const r = URL.revokeObjectURL; URL.revokeObjectURL = u => { window.__revoked++; return r.call(URL, u); };
+        const h = document.getElementById("m-replies"); h.innerHTML = h.innerHTML; });
+      await p.waitForFunction(() => document.querySelector("#m-replies .md-img img"), null, { timeout: slow(3000) }).catch(() => fail(tag + "a redraw lost the picture"));
+      if ((st.fileHits || []).filter(x => /shot\.png$/.test(x)).length) fail(tag + "a redraw fetched the picture again: " + st.fileHits.join());
+      await p.tap("#m-card-back");
+      await p.waitForFunction(() => window.__revoked > 0, null, { timeout: slow(3000) }).catch(() => fail(tag + "closing the card did not revoke its pictures"));
+      if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+      await mShot(p, "markdown-" + vp.width);
+      await ctx.close();
+      // a Windows card: a drive path inside renders, the same in another case, others on any drive stay text
+      const w = await mReplyPage(browser, st, vp, "md-2");
+      try {
+        await w.p.waitForFunction(() => document.querySelector("#m-replies .md-img img"), null, { timeout: slow(8000) }).catch(() => fail(tag + "the drive-letter image did not load"));
+        const wd = await w.p.evaluate(() => ({ c: [...document.querySelectorAll("#m-replies .md-img, #m-replies .md-file")].map(e => e.dataset.path),
+          t: document.getElementById("m-replies").textContent }));
+        if (wd.c.join() !== "D:/Work/Card/shot.png,d:/work/CARD/notes/plan.md") fail(tag + "drive controls are " + wd.c.join());
+        if (!/E:\/other\/x\.png/.test(wd.t) || !/C:\\Windows\\win\.ini/.test(wd.t)) fail(tag + "paths on another drive are not shown as text");
+      } finally { await w.ctx.close(); }
+    }
+  } finally { await st.close(); }
+  if (!bad) console.log("mMarkdown ok");
+}
+
+async function mHostileSection(browser) {
+  const st = mServer({});
+  const c = mCard("ev-1", { alias: "evil", display_title: "evil", worktree: "/w/card", status: "needs-input", waiting_since: mIso(2 * M_MIN), seen: { turn_ended_at: mIso(20 * M_MIN) } });
+  const cw = mCard("ev-2", { alias: "winevil", display_title: "winevil", worktree: "D:/Work/Card", status: "needs-input", waiting_since: mIso(3 * M_MIN), seen: { turn_ended_at: mIso(20 * M_MIN) } });
+  st.tasks = [c, cw];
+  st.files = { "/w/card/ok.png": M_PNG, "D:/Work/Card/ok.png": M_PNG, "d:/work/card/ok.png": M_PNG };
+  st.replies["ev-2"] = { source: "transcript", replies: [{ at: mIso(10 * M_MIN), text:
+    "ok: d:\\work\\card\\ok.png other drive: E:/Work/Card/ok.png up: D:/Work/Card/../x.png ![a](javascript:alert(1).png) ![b](ftp://h/x.png) ![c](c:x.png) http://evil.example/x" }] };
+  const md = "<script>window.__pwn = 1</script>\n\n<img src=x onerror=\"window.__pwn = 2\">\n\n[click](javascript:window.__pwn=3) and [file](file:///etc/passwd)\n\n" +
+    "![d](data:image/png;base64,AAAA)\n\n![r](https://evil.example/p.png)\n\n<!-- hidden note -->\n\n" +
+    "outside: /etc/passwd and ![o](/etc/shadow.png) and /w/other/secret.png and /w/card/../other/x.png and ![t](../../x.png)\n\n" +
+    "inside: /w/card/ok.png";
+  st.replies["ev-1"] = { source: "transcript", replies: [{ at: mIso(10 * M_MIN), text: md }] };
+  await st.open();
+  try {
+    for (const vp of M_VIEWS) {
+      const tag = "mHostile " + vp.width + ": ";
+      st.fileHits = [];
+      const { ctx, p, errors, remote } = await mReplyPage(browser, st, vp, "ev-1");
+      await p.waitForFunction(() => document.querySelector("#m-replies .md-img img"), null, { timeout: slow(8000) }).catch(() => fail(tag + "the inside image did not load"));
+      await p.waitForTimeout(400);
+      const d = await p.evaluate(() => {
+        const r = document.getElementById("m-replies");
+        return {
+          pwn: window.__pwn, script: !!r.querySelector("script"), onerror: !!r.querySelector("[onerror]"),
+          js: !!r.querySelector('a[href^="javascript:"], a[href^="file:"]'), dataImg: !!r.querySelector('img[src^="data:"]'),
+          remoteImg: [...r.querySelectorAll("img")].some(i => /^https?:/.test(i.src)),
+          text: r.textContent, hrefs: [...r.querySelectorAll("a")].map(a => a.getAttribute("href")),
+          controls: [...r.querySelectorAll(".md-img, .md-file")].map(e => e.dataset.path),
+        };
+      });
+      if (d.pwn !== undefined) fail(tag + "script ran: " + d.pwn);
+      if (d.script || d.onerror) fail(tag + "a script or handler is in the page");
+      if (d.js || d.dataImg || d.remoteImg) fail(tag + "an unsafe link or image is in the page");
+      if (!d.text.includes("<script>") || !d.text.includes("hidden note")) fail(tag + "hostile markup is not shown as text");
+      if (d.hrefs.join() !== "https://evil.example/p.png") fail(tag + "links are " + d.hrefs.join());
+      if (d.controls.join() !== "/w/card/ok.png") fail(tag + "file controls are " + d.controls.join());
+      if (!/\/etc\/passwd/.test(d.text) || !/\/w\/other\/secret\.png/.test(d.text)) fail(tag + "the outside paths are not shown as text");
+      if (remote.length) fail(tag + "something remote was requested: " + remote.join(","));
+      if (st.fileHits.join() !== "/w/card/ok.png") fail(tag + "the download endpoint was asked for " + st.fileHits.join());
+      if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+      await ctx.close();
+      // a Windows card
+      st.fileHits = [];
+      const w = await mReplyPage(browser, st, vp, "ev-2");
+      await w.p.waitForFunction(() => document.querySelector("#m-replies .md-img img"), null, { timeout: slow(8000) }).catch(() => fail(tag + "the drive-letter image did not load"));
+      const wd = await w.p.evaluate(() => ({ c: [...document.querySelectorAll("#m-replies .md-img, #m-replies .md-file")].map(e => e.dataset.path),
+        h: [...document.querySelectorAll("#m-replies a")].map(a => a.getAttribute("href")), imgs: [...document.querySelectorAll("#m-replies img")].length }));
+      if (wd.c.join() !== "D:/Work/Card/ok.png" && wd.c.join() !== "d:/work/card/ok.png") fail(tag + "drive controls are " + wd.c.join());
+      if (wd.h.length) fail(tag + "drive links are " + wd.h.join());
+      if (wd.imgs !== 1) fail(tag + "drive images drawn: " + wd.imgs);
+      if (st.fileHits.length !== 1) fail(tag + "the drive card asked for " + st.fileHits.join());
+      await w.ctx.close();
+    }
+  } finally { await st.close(); }
+  if (!bad) console.log("mHostile ok");
+}
+
+// ── many pictures in one card ────────────────────────────────────────────
+// Past the cache size a drawn thumbnail keeps its picture, so enlarging it still works.
+async function mPicturesSection(browser) {
+  const st = mServer({});
+  const c = mCard("pic-1", { alias: "pics", display_title: "pics", worktree: "/w/card", status: "needs-input", waiting_since: mIso(2 * M_MIN), seen: { turn_ended_at: mIso(20 * M_MIN) } });
+  st.tasks = [c];
+  st.files = {};
+  const lines = [];
+  for (let n = 0; n < 45; n++) { st.files["/w/card/p" + n + ".png"] = M_PNG; lines.push("![p" + n + "](/w/card/p" + n + ".png)"); }
+  const first = lines.slice(0, 40), more = lines.slice(40);
+  st.replies["pic-1"] = { source: "transcript", replies: [{ at: mIso(10 * M_MIN), text: first.join("\n\n") }] };
+  await st.open();
+  try {
+    const tag = "mPictures: ";
+    const { ctx, p, errors } = await mReplyPage(browser, st, M_VIEWS[0], "pic-1");
+    await p.evaluate(() => { window.__revoked = 0; const r = URL.revokeObjectURL; URL.revokeObjectURL = u => { window.__revoked++; return r.call(URL, u); }; });
+    await p.waitForFunction(() => document.querySelectorAll("#m-replies .md-img img").length === 40, null, { timeout: slow(15000) })
+      .catch(() => fail(tag + "the first forty were not drawn"));
+    // five more arrive once the cache is full, which is when eviction runs
+    await p.evaluate(md => document.getElementById("m-replies").insertAdjacentHTML("beforeend", window.mMd.render(md, { id: "pic-1", worktree: "/w/card" })), more.join("\n\n"));
+    await p.waitForFunction(() => document.querySelectorAll("#m-replies .md-img img").length === 45, null, { timeout: slow(15000) })
+      .catch(() => fail(tag + "not every picture was drawn"));
+    if ((await p.evaluate(() => window.__revoked)) !== 0) fail(tag + "a picture still on screen was revoked");
+    await p.evaluate(() => document.querySelector("#m-replies .md-img").scrollIntoView());
+    await p.tap("#m-replies .md-img");
+    await p.waitForFunction(() => { const i = document.querySelector(".md-lightbox img"); return i && i.complete && i.naturalWidth > 0; }, null, { timeout: slow(3000) })
+      .catch(() => fail(tag + "the first picture does not enlarge"));
+    if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+    await ctx.close();
+  } finally { await st.close(); }
+  if (!bad) console.log("mPictures ok");
 }
 
 // The phone and the desktop draw a question's body the same way: text only, no links, no inline markup.
@@ -13369,6 +13891,7 @@ async function main() {
       pasteStart: pasteStartSection, pasteDone: pasteDoneSection, pasteOldRoom: pasteOldRoomSection, pasteClose: pasteCloseSection,
       growlQuestionShots: growlQuestionShotsSection, growlQuestionBody: growlQuestionBodySection, growlReplyGrow: growlReplyGrowSection, growlChoices: growlChoicesSection, growlStable: growlStableSection, mGrowlQuestion: mGrowlQuestionSection,
       bootClean: bootCleanSection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mRecapSheet: mRecapSheetSection,
+      mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection,
       gearTermList: gearTermListSection, growlLinks: growlLinksSection, growlChoiceOnce: growlChoiceOnceSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
@@ -15338,6 +15861,15 @@ async function main() {
     await mWorkingSection(browser);
     await mOwnMessagesSection(browser);
     await mRecapSheetSection(browser);
+    await mHomeOrderSection(browser);
+    await cardUrlWayOutSection(browser, base);
+    await phoneBootSection(browser, base);
+    await sayEnterSection(browser);
+    await sendArrowSection(browser);
+    await mTablesSection(browser);
+    await mMarkdownSection(browser);
+    await mHostileSection(browser);
+    await mPicturesSection(browser);
     await gearTermListSection(browser, base);
     await growlLinksSection(browser, base);
     await growlChoiceOnceSection(browser, base);
@@ -15441,6 +15973,15 @@ function mServer(state) {
       req.on("close", () => { state.streams = state.streams.filter(s => s !== res); });
       return;
     }
+    const fm = p.match(/^\/v1\/tasks\/([^/]+)\/files$/);
+    if (fm && req.method === "GET") {
+      const want = u.searchParams.get("path");
+      (state.fileHits = state.fileHits || []).push(want);
+      const body = (state.files || {})[want];
+      if (!body) return json(403, { error: "that path is outside the card" });
+      res.writeHead(200, { "Content-Type": "application/octet-stream", "X-Content-Type-Options": "nosniff" });
+      return res.end(body);
+    }
     const m = p.match(/^\/v1\/tasks\/([^/]+)\/replies$/);
     if (m) {
       state.hits.push(decodeURIComponent(m[1]) + "?" + u.searchParams.get("n"));
@@ -15451,7 +15992,7 @@ function mServer(state) {
     let file = null;
     if (p === "/m/" || p === "/m") file = path.join(M_ROOT, "index.html");
     else if (p.startsWith("/m/")) file = path.join(M_ROOT, p.slice(3));
-    else if (p.startsWith("/css/")) file = path.join(WEB_ROOT, p);
+    else if (p.startsWith("/css/") || p === "/js/cardrules.js") file = path.join(WEB_ROOT, p);
     if (file && !path.relative(WEB_ROOT, file).startsWith("..") && fs.existsSync(file) && fs.statSync(file).isFile()) {
       res.writeHead(200, { "Content-Type": M_TYPES[path.extname(file)] || "application/octet-stream" });
       return res.end(fs.readFileSync(file));

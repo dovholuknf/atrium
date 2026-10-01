@@ -41,11 +41,7 @@ function termDeviceKey(base) { return termNarrow() ? base + ".mobile" : base; }
 // and the hub agree on what a doer is rather than keeping a second definition
 // that can drift. A tag, not a dedicated field, because that is the durable
 // structural signal the board actually receives per card.
-const DOER_TAG = "origin:agent";
-function isDoer(t) {
-  return !!(t && Array.isArray(t.tags) &&
-    t.tags.some(x => String(x).trim().toLowerCase() === DOER_TAG));
-}
+// DOER_TAG and isDoer live in js/cardrules.js.
 
 // HIDE, NOT COLLAPSE-INTO-A-GROUP, and here is why the plainer of the two won.
 // A collapsed "N doers" group would have to be a heading, and the strip already
@@ -310,6 +306,8 @@ function toggleTermListOpen() { setTermListOpen(!termListOpen); }
 
 // u-023: the card picker of the phone tray (#t-pick in the terminal bar). Same list as the "atrium" row.
 function termPickTap() {
+  // A card's own window has no list to open, so the picker there is the switcher.
+  if (typeof termOnly === "function" && termOnly() && typeof openSwitcher === "function") { openSwitcher(); return; }
   toggleTermListOpen();
   const b = document.getElementById("t-pick");
   if (b) b.setAttribute("aria-expanded", termListOpen ? "true" : "false");

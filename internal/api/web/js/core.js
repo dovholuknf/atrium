@@ -123,13 +123,7 @@ const STATUS_LABEL = {
 };
 const statusLabel = (s) => STATUS_LABEL[s] || s;
 
-// Break sorting ties by creation time, then id, so rows stay in the same
-// order even when polls return them in a different sequence. Both the stack
-// and terminal strip use this.
-function cardTieBreak(a, b) {
-  return (a.created_at || "").localeCompare(b.created_at || "") ||
-    (a.id || "").localeCompare(b.id || "");
-}
+// cardTieBreak is in js/cardrules.js.
 
 // Tell extensions to leave the board's text boxes alone.
 //

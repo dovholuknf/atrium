@@ -42,7 +42,16 @@
 
   <main class="home" id="m-home">
     <div class="titlebar">
-      <h1 id="m-h1">Needs you</h1>
+      <div class="h1row">
+        <h1 id="m-h1">Needs you</h1>
+        <button type="button" id="m-opts-btn" class="optsbtn" aria-expanded="false" aria-controls="m-opts" data-on="0"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M7 12h10M10 17h4"/></svg><span>view</span></button>
+      </div>
+      <div class="opts" id="m-opts" hidden>
+        <div class="orow"><span>order</span><button type="button" data-opt="order" data-val="newest">newest</button><button type="button" data-opt="order" data-val="oldest">oldest</button></div>
+        <p class="quiet ohint">order applies to the all list. needs you stays oldest wait first.</p>
+        <div class="orow"><span>group</span><button type="button" data-opt="group" data-val="none">none</button><button type="button" data-opt="group" data-val="room">room</button><button type="button" data-opt="group" data-val="project">project</button></div>
+        <div class="orow"><span>show</span><button type="button" data-opt="needsMe">needs me only</button><button type="button" data-opt="hideDone">hide finished</button><button type="button" data-opt="hideSubs">hide subagents</button></div>
+      </div>
       <div class="seg" id="m-seg" data-mode="needs" role="tablist">
         <button type="button" id="m-seg-needs" role="tab" aria-selected="true">needs you <em>0</em></button>
         <button type="button" id="m-seg-all" role="tab" aria-selected="false">all <em>0</em></button>
@@ -65,10 +74,12 @@
 
   <section class="sheet" id="m-card" hidden aria-label="card">
     <div class="sheet-top">
-      <button type="button" id="m-card-back" class="back" aria-label="back"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></button>
+      <button type="button" id="m-card-back" class="back" aria-label="back"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg><span class="lbl">all cards</span></button>
       <span class="grow"></span>
+      <button type="button" id="m-card-pick" class="pick" aria-expanded="false" aria-controls="m-card-menu">cards <span aria-hidden="true">&#9662;</span></button>
       <a id="m-card-term" class="term" href="/">open terminal</a>
     </div>
+    <div class="pickmenu" id="m-card-menu" hidden></div>
     <div class="sheet-scroll" id="m-card-scroll">
       <div id="m-card-head" class="chead"></div>
       <div id="m-card-notices"></div>
@@ -81,6 +92,7 @@
     <div id="m-recap" class="recap" hidden></div>
   </section>
 </div>
+<script src="/js/cardrules.js"></script>
 <script src="/m/js/util.js"></script>
 <script src="/m/js/md.js"></script>
 <script src="/m/js/store.js"></script>

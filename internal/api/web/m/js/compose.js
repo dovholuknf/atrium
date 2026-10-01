@@ -3,7 +3,8 @@
 // A REAL TEXTAREA, so autocorrect, dictation, swipe typing, paste, tap-to-cursor and the magnifier are the
 // phone's own. Nothing here rewrites what the person types while they type it.
 //
-// SEND is the button. Enter inserts a newline, because a phone keyboard has no shift to say "this one is a
+// SEND is the button, and Enter too where there is a hardware keyboard: Enter sends and Shift+Enter is a newline.
+// On a touch-only device Enter inserts a newline, because a phone keyboard has no shift to say "this one is a
 // newline". The message goes through `POST /v1/tasks/{id}/message`, the same call the board's say box makes
 // (`sayNow` in js/settings-spine.js), and the answer is reported as the daemon gave it:
 //
@@ -38,10 +39,6 @@
 
   const DRAFT = "atrium.m.draft.";
   const MAX_LINES = 6;
-  // What a chip fills the box with. They fill, they never send.
-  const QUICK = ["yes", "go ahead", "no", "stop"];
-  // Statuses in which the card is waiting on the person, so quick replies make sense.
-  const WAITING = ["needs-input", "needs-permission", "waiting"];
 
   let cur = null; // the one mounted composer
   let harnesses = null; // a Promise of { runner id: bracketed_paste }
@@ -70,14 +67,6 @@
 
   function cardOf(id) {
     return guard(() => window.mStore && window.mStore.card(id)) || null;
-  }
-
-  // A card with something open for the person: a question, or a waiting status.
-  function isAsking(card) {
-    if (!card) return false;
-    const q = card.questions || card.open_questions;
-    if (Array.isArray(q) && q.length) return true;
-    return WAITING.includes(card.status);
   }
 
   function el(tag, cls, text) {
@@ -161,16 +150,6 @@
     const root = el("div", "mc" + (opts.compact ? " compact" : ""));
     root.dataset.card = cardId;
 
-    const chips = el("div", "mc-chips");
-    chips.setAttribute("role", "group");
-    chips.setAttribute("aria-label", "quick replies");
-    for (const q of QUICK) {
-      const b = el("button", "mc-chip", q);
-      b.type = "button";
-      b.dataset.q = q;
-      chips.appendChild(b);
-    }
-
     const note = el("div", "mc-note");
     note.setAttribute("role", "status");
     note.setAttribute("aria-live", "polite");
@@ -197,7 +176,7 @@
       '<path d="M12 19V5M6 11l6-6 6 6" fill="none" stroke="currentColor" stroke-width="2.4" ' +
       'stroke-linecap="round" stroke-linejoin="round"/></svg>';
     row.append(ta, send);
-    root.append(files, chips, note, row);
+    root.append(files, note, row);
     host.replaceChildren(root);
 
     const state = {
@@ -230,9 +209,6 @@
         say("", "");
       }
     };
-    const showChips = () => {
-      chips.classList.toggle("on", isAsking(cardOf(cardId)));
-    };
 
     // The runner's paste capability, for the line-break note and for the send.
     const capability = async () => {
@@ -245,6 +221,15 @@
     capability().then(hint);
 
     ta.addEventListener("input", () => { follow(state, ta.value); refresh(); hint(); });
+    // Enter sends and Shift+Enter is a newline, the chat convention. Not while a word is being composed, where Enter
+    // commits the word, and not on a device whose only pointer is a finger, whose keyboard cannot say Shift.
+    const hardKeys = () => { try { return window.matchMedia("(any-pointer: fine)").matches; } catch (err) { return false; } };
+    ta.addEventListener("keydown", e => {
+      if (e.key !== "Enter" || e.shiftKey || e.isComposing || e.keyCode === 229 || state.composing) return;
+      if (!hardKeys()) return;
+      e.preventDefault();
+      submit();
+    });
     ta.addEventListener("paste", e => {
       if (opts.canUpload && !opts.canUpload()) return;
       const dt = e.clipboardData;
@@ -261,16 +246,6 @@
       if (!got.length || dt.getData("text/plain")) return;
       e.preventDefault();
       attach(got);
-    });
-    chips.addEventListener("click", e => {
-      const b = e.target.closest(".mc-chip");
-      if (!b) return;
-      const have = ta.value.trim();
-      ta.value = have ? have + " " + b.dataset.q : b.dataset.q;
-      refresh();
-      ta.focus();
-      const n = ta.value.length;
-      try { ta.setSelectionRange(n, n); } catch (err) {}
     });
     files.addEventListener("click", e => {
       const x = e.target.closest(".mc-fx");
@@ -349,13 +324,11 @@
       }
     }
 
-    if (window.mStore) offs.push(window.mStore.on("cards", showChips));
     if (opts.follow !== false) offs.push(followKeyboard(root));
 
     ta.value = readDraft(cardId);
     state.last = ta.value;
     refresh();
-    showChips();
     if (ta.value && !opts.compact) say("hint", "Draft kept.");
   }
 

@@ -48,9 +48,14 @@
     return out.join("");
   }
 
+  function mdCtx() {
+    const t = openId && window.mStore.card(openId);
+    return { id: openId, worktree: t && t.worktree || "" };
+  }
+
   function replyHTML(r, screen) {
     const when = r.at ? U.ago(Date.now() - U.ts(r.at)) : "";
-    const body = screen ? '<pre class="screen">' + U.esc(r.text) + "</pre>" : '<div class="md">' + MD.render(r.text) + "</div>";
+    const body = screen ? '<pre class="screen">' + U.esc(r.text) + "</pre>" : '<div class="md">' + MD.render(r.text, mdCtx()) + "</div>";
     return '<article class="reply' + (screen ? " from-screen" : "") + '">' +
       (screen ? '<span class="src">from the screen</span>' : "") + body +
       (r.truncated ? '<p class="cut">cut short here. the rest is in the terminal</p>' : "") +
@@ -90,7 +95,7 @@
     return '<div class="recap-back" id="m-recap-back"></div><div class="recap-sheet" role="dialog" aria-label="Recap">' +
       '<div class="recap-top"><h2>Recap</h2>' + (at ? '<span class="recap-at">from ' + U.esc(at) + (stale ? ", before the last turn" : "") + "</span>" : "") +
       '<button type="button" class="recap-x" id="m-recap-close" aria-label="close">&times;</button></div>' +
-      '<div class="md' + (stale ? " stale" : "") + '">' + MD.render(recap) + "</div></div>";
+      '<div class="md' + (stale ? " stale" : "") + '">' + MD.render(recap, mdCtx()) + "</div></div>";
   }
 
   function openRecap() {
@@ -288,6 +293,8 @@
     openId = id;
     turnKey = id + "@" + turnOf(window.mStore.card(id));
     els.sheet.hidden = false;
+    menuClose();
+    els.sheet.classList.toggle("direct", !!(history.state && history.state.direct));
     els.scroll.scrollTop = 0;
     els.head.dataset.sig = els.notices.dataset.sig = els.extras.dataset.sig = els.replies.dataset.sig = els.recap.dataset.sig = els.working.dataset.sig = "";
     els.recap.hidden = true;
@@ -306,6 +313,7 @@
   }
 
   function finishClose() {
+    if (MD.release) MD.release();
     els.sheet.hidden = true;
     els.head.innerHTML = els.notices.innerHTML = els.replies.innerHTML = els.extras.innerHTML = els.recap.innerHTML = "";
     els.working.hidden = true;
@@ -337,6 +345,42 @@
       closeNow();
     } else if (history.state && history.state.mcard) history.back(); // popstate does the closing
     else closeNow();
+  }
+
+  // ── the card picker: every other card, newest first, one tap to go there ──
+  function menuClose() {
+    els.menu.hidden = true;
+    els.pick.setAttribute("aria-expanded", "false");
+  }
+
+  function menuToggle() {
+    if (!els.menu.hidden) { menuClose(); return; }
+    const cards = window.mStore.cards().filter(t => !t.archived_at && t.id !== openId);
+    cards.sort((a, b) => cardActivityCmp(a, b) || cardTieBreak(a, b));
+    els.menu.innerHTML = cards.length ? cards.map(t => {
+      const nm = U.cardName(t);
+      return '<button type="button" class="pm-row" data-id="' + U.esc(t.id) + '"><b>' + U.esc(nm.main) + "</b>" +
+        '<span>' + U.esc(U.statusLabel(t)) + "</span></button>";
+    }).join("") : '<p class="quiet">no other cards</p>';
+    els.menu.hidden = false;
+    els.pick.setAttribute("aria-expanded", "true");
+  }
+
+  // Leaves this card without the slide and opens another, which writes its own history entry.
+  function goTo(id) {
+    menuClose();
+    offs.forEach(f => f());
+    offs = [];
+    unmountAll();
+    seq++;
+    document.body.classList.remove("sheet-open");
+    els.sheet.classList.remove("on");
+    finishClose();
+    // The entry this card was opened on now shows the other one, so the way back still leaves for the list.
+    const direct = !!(history.state && history.state.direct);
+    open(id, true);
+    const at = pathFor(window.mStore.card(id), "/m");
+    try { history.replaceState({ mcard: id, direct }, "", at || location.href); } catch (e) {}
   }
 
   // ── the card's address ───────────────────────────────────────────────────
@@ -470,7 +514,7 @@
     els = {
       sheet: q("m-card"), scroll: q("m-card-scroll"), head: q("m-card-head"), notices: q("m-card-notices"),
       replies: q("m-replies"), extras: q("m-card-extras"), perms: q("m-perms"), compose: q("m-compose"),
-      back: q("m-card-back"), term: q("m-card-term"), working: q("m-working"), recap: q("m-recap"),
+      back: q("m-card-back"), term: q("m-card-term"), pick: q("m-card-pick"), menu: q("m-card-menu"), working: q("m-working"), recap: q("m-recap"),
     };
     els.head.addEventListener("click", e => { if (e.target.closest && e.target.closest("#m-recap-open")) openRecap(); });
     els.recap.addEventListener("click", e => {
@@ -478,6 +522,11 @@
     });
     document.addEventListener("keydown", e => { if (e.key === "Escape" && els && !els.recap.hidden) closeRecap(); });
     els.back.addEventListener("click", close);
+    els.pick.addEventListener("click", menuToggle);
+    els.menu.addEventListener("click", e => {
+      const b = e.target.closest(".pm-row");
+      if (b) goTo(b.dataset.id);
+    });
     window.addEventListener("popstate", e => {
       const id = e.state && e.state.mcard;
       if (id) open(id, true);
