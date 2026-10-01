@@ -33,7 +33,17 @@ Written by @rnd on 2026-09-30, at clint's request through the orchestrator. Desi
 
 - **A title, a slug, and a list of versions.** The slug is made from the title when the document is created, and
   it never changes. A later rename changes only the title, so a link never breaks.
-- **One version is the bytes at one moment,** with who wrote them, when, a size, a SHA-256, and a type.
+- **One version is the bytes at one moment,** with who wrote them, when, a size, a SHA-256, a type, and an
+  ORIGIN.
+- **The origin is one of three, recorded at write time:**
+  - `local`: an upload that `edge.LocalOperator` accepted, which means clint at the machine
+  - `share`: an upload over the zrok share or an overlay, which means anyone past its password
+  - `card <id>`: an `atrium_publish` call
+
+  The origin is shown in the history, and stage 2 names it to a model (see "Attaching").
+- **The slug** uses only `[a-z0-9-]`, at most 60 characters, because `@<n>` follows it in a URL. It is made from
+  the title by lowering the case and turning every other run of characters into one `-`. A collision gets `-2`,
+  `-3` and so on. A title that leaves nothing gets `doc-<first 8 of the sha>`.
 - **Types in stage 1:**
   - markdown and plain text: rendered by `md.js`
   - raster images (png, jpeg, gif and webp): shown by `viewer.js`
@@ -59,7 +69,9 @@ Written by @rnd on 2026-09-30, at clint's request through the orchestrator. Desi
 - `/d/<slug>` is the newest version. `/d/<slug>@<n>` is version n, and it never changes.
 - **The page is the `/m` shell.** It fetches `GET /_hub/docs/<slug>` (metadata and versions) and
   `GET /_hub/docs/<slug>/raw?v=<n>` (the bytes, sent as an attachment and octet-stream with nosniff, the same rule
-  as the files endpoint). Nothing is ever served inline as HTML.
+  as the files endpoint). Nothing is ever served inline as HTML. The download name in `Content-Disposition` is
+  encoded by RFC 6266: an ASCII `filename=` with CR, LF, `"` and `\` stripped, plus `filename*=UTF-8''<percent
+  encoded>`. A title is text a model wrote, and a raw CR/LF in it would split the header.
 - **The history** lists each version with its author, its time and its size. For text, it can compare any two
   versions as a diff, rendered on the client from the two raw versions.
 - **Delete is a tombstone.** The document leaves the list and its URL answers "deleted on <date> by <who>", and
@@ -83,7 +95,11 @@ Written by @rnd on 2026-09-30, at clint's request through the orchestrator. Desi
   - It is written to `<worktree>/.atrium/docs/<slug>.md` on the room, and `.atrium/` is added to
     `.git/info/exclude` when it is written. The 09-29 evaluation found working notes that had leaked into a branch
     through a tracked file.
-  - The launch prompt names the files and says who wrote each one: "written by card r-031, not by clint".
+  - The launch prompt names the files and gives each one's origin as recorded: "written by card r-031", "uploaded
+    over the share", or "uploaded by clint at the machine". Only `local` may be called clint. A share upload
+    framed as clint would hand anyone with the share's password the most trusted voice a model hears.
+  - **An attachment is pinned to a version.** The card gets the version that was attached, and never "the
+    newest", so a later version written by somebody else cannot change what a running card was given.
 - **Why a file and not prompt text:** a document an agent published is text a model wrote. Typed into another
   card's prompt, it would read as clint speaking. As a named file with its author, it reads as material, and the
   card's model can weigh it as such. This is the same reason the peer bus frames a say as another agent speaking.
@@ -126,13 +142,19 @@ Written by @rnd on 2026-09-30, at clint's request through the orchestrator. Desi
   - upload
   - add a version
   - delete, which is a tombstone, so it can be undone
+- **Every write sits behind the board's cross-origin check.** `POST /_hub/docs`, adding a version, the tombstone
+  and the restore all go through the same CrossOriginProtection and `upgradeCheck` as the board's other writes. A
+  page on another origin cannot upload into atrium through clint's logged-in browser.
 - **Secrets leaving a worktree.** `atrium_publish path` is the new way bytes leave a card, so it gets three checks:
   1. **`safepath` containment,** with the same symlink rules as the download endpoint.
-  2. **A refusal by name:** `.env*`, `*.pem`, `*.key`, `id_rsa*`, `*.p12`, `*.pfx`, `.npmrc`, `.netrc`, any
-     `credentials*`, anything under `.git/` or `.ssh/`, and atrium's own token files.
+  2. **A refusal by name, run on the RESOLVED target and compared case-insensitively.** Checking the asked path is
+     not enough: a link `notes.md -> .env` inside the card passes containment and passes a name check on
+     `notes.md`. The names refused are `.env*`, `*.pem`, `*.key`, `id_rsa*`, `*.p12`, `*.pfx`, `.npmrc`, `.netrc`,
+     any `credentials*`, anything under `.git/` or `.ssh/`, and atrium's own token files.
   3. **A refusal by content,** for the shapes that are unambiguous: a PEM private key block, `ghp_` and
      `github_pat_`, `AKIA` followed by 16 characters, `xox[bp]-`, a JWT with three segments, and the zrok token
-     format.
+     format. **It runs on every way in:** `path`, `content` and a board upload. An agent can read `.env` itself and
+     pass it as `content`, so a check on `path` alone would be a door left open beside a locked one.
 
   The refusal names the rule, and the operator can override it for one document. **This is a speed bump, not a
   guarantee.** It cannot see a secret in a screenshot, and the doc says so on the publish tool.
@@ -189,6 +211,14 @@ Public links are common, and atrium leaves them out on purpose.
   - A sixth MiB of text is refused.
   - A purge with `X-Forwarded-For` set is 403.
   - Versions keep their bytes after a new version is written.
+  - A link `notes.md -> .env` inside the card is refused by name, and so is `.ENV`.
+  - A PEM key block passed as `content`, or in a board upload, is refused.
+  - An upload with `X-Forwarded-For` set records origin `share`, a plain loopback upload records `local`, and a
+    publish records `card <id>`.
+  - A title holding CR/LF gives one `Content-Disposition` header with the CR/LF gone.
+  - `Ab Ab` twice gives the slugs `ab-ab` and `ab-ab-2`.
+  - A `POST /_hub/docs` with a foreign `Origin` or `Sec-Fetch-Site: cross-site` is refused, and so are the version,
+    tombstone and restore routes.
 
 **D2, the views.**
 
