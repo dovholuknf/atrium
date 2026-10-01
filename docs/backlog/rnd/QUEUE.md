@@ -76,14 +76,16 @@ director as `docs/backlog/<dept>/<d>-new-<name>.md`, or fold them into the desig
 
 ## Waiting
 
-clint lifted the hold on rnd DESIGN work only (designs, nothing built or deployed). Work 1 to 3 in order, one at a time: doc on claude/rnd, then @review, then tell the orchestrator the tip, the verdict and clint's open questions. At most 2 research workers, on m1mini. Item 4 and rnd-new-scm-forge (on sg4) stay held for clint. Take them in this order:
+Designs 1 to 3 of 2026-10-01 are DONE, @review OK, and landed on claude/landing (m1mini). Their questions are with clint
+through the orchestrator:
 
-1. `docs/backlog/rnd/rnd-new-room-handoff.md`: move a card and its work between rooms (`atrium move`), from the 2026-10-01 director move.
-2. `docs/backlog/rnd/rnd-new-room-to-room-access.md`: a SPIKE on how one room reaches another's machine (direct ssh, a zrok private share, or OpenZiti), opt-in per room pair. Its output is a spike doc and a recommendation.
-3. `docs/backlog/rnd/rnd-new-factory-landscape.md`: a SPIKE on other software factories, open source first. Its output is a landscape doc and a ranked list of what to borrow.
-4. `docs/backlog/rnd/rnd-new-backlog-in-atrium.md`: a SPIKE on a pluggable backlog (files, atrium's store, GitHub, GitLab or Bitbucket issues). The output is a short spike doc with a recommendation, and nothing gets built. Do NOT start it until clint says so, even after the pause ends.
+1. DONE `docs/rnd/room-handoff-design.md` (review OK b56ca32f and 0b415bb5, landing 4274da27). Q1 to Q6.
+2. DONE `docs/rnd/room-to-room-access-spike.md` (review OK a493132b, landing 1ebbabbd). Q1 to Q4.
+3. DONE `docs/rnd/factory-landscape.md` (review OK 06409cc0, landing bd190b28). Q1 to Q4. Row 10, if filed, goes to
+   @review as a design.
+4. HELD for clint by name: `docs/backlog/rnd/rnd-new-backlog-in-atrium.md`, the pluggable backlog spike.
 
-All four were filed by the orchestrator from clint on 2026-10-01.
+Also held for clint: rnd-new-scm-forge, on sg4. Only designs are allowed: nothing built, nothing deployed.
 
 ## Done
 
