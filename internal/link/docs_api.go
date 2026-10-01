@@ -21,7 +21,7 @@ import (
 )
 
 // Hub documents, the HTTP half. The design is docs/rnd/hub-documents-design.md and the
-// contract @ui builds to is docs/fabric/hub-documents-api.md.
+// contract @ui builds to is docs/backlog/fabric/hub-documents-api.md in @fabric's worktree.
 //
 //	GET  /_hub/docs?q=&deleted=1&card=   the list and the store's usage
 //	POST /_hub/docs                      upload a NEW document, multipart
