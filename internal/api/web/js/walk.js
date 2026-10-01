@@ -13,6 +13,11 @@
 // same file, the line survives a renumbering, and it sits under Evidence so it is never copied into a comment.
 // Every write goes through `PUT files/text` carrying the hash it read, which is the daemon's refusal of a stale
 // write. Nothing here posts to GitHub.
+//
+// A REVIEW THE PULLS VIEW KNOWS IS READ AND WRITTEN THROUGH `/v1/prs/{id}`. When the attached card is the walker of
+// a pulls row, the findings come from `GET findings`, an edit is `PUT findings/{key}` with the hash it read, and a
+// mark is `POST findings/{key}/walk`, which the daemon keeps in walk.txt. The card's own files are only read for a
+// findings folder no pulls row names. Same drawer either way.
 
 // ── the drawer and the rail ─────────────────────────────
 
@@ -354,6 +359,32 @@ function walkLocate(it, files) {
   return { warns: ["unchanged line, GitHub will not take a comment here"], hunk: null };
 }
 
+// The pulls row whose walker is this card, from the rows the pulls view holds.
+function walkPrOf(taskId) {
+  if (typeof pulls === "undefined" || !taskId) return null;
+  return pulls.rows.find(r => r.walker_task === taskId) || null;
+}
+
+// The API's walk words and the drawer's: done is posted.
+function walkUiState(s) { return s === "done" ? "posted" : s === "skipped" || s === "deferred" ? s : ""; }
+
+// One finding of `GET /v1/prs/{id}/findings` as a drawer item. Its hunk becomes a one-file diff, so the code view
+// is the one the file source draws.
+function walkPrItem(f) {
+  const it = walkParseFinding(f.file, f.text || "", f.hash, "\n", null);
+  it.key = f.key;
+  it.num = String(f.position).padStart(2, "0");
+  it.sev = f.sev;
+  it.path = f.path || it.path;
+  it.line = f.line || 0;
+  it.link = f.link || "";
+  it.leak = !!f.leak;
+  const w = f.walk || {};
+  it.state = walkUiState(w.state); it.stateAt = w.at || ""; it.stateUrl = w.url || "";
+  it.diff = f.hunk ? walkParseDiff(`diff --git a/${it.path} b/${it.path}\n+++ b/${it.path}\n${f.hunk}`) : null;
+  return it;
+}
+
 const walkTenant = {
   name: "walk",
   empty: "no findings in this folder",
@@ -362,19 +393,24 @@ const walkTenant = {
   cache: new Map(),    // file name -> item, so an unchanged mtime costs nothing
   ctx: { key: "", above: 3, below: 3 },
   evOpen: new Set(),   // keys whose Evidence is unfolded
+  prId: "",            // the pulls row this card walks, "" for a bare findings folder
 
   reset() {
+    this.prId = "";
     this.diff = null; this.diffNote = ""; this.cache = new Map();
     this.ctx = { key: "", above: 3, below: 3 };
   },
 
   async probe(task) {
+    const row = walkPrOf(task.id);
+    if (row) { this.prId = row.id; return true; }
     if (!task.worktree) return false;
     const res = await api(`/v1/tasks/${task.id}/files/list?path=findings`);
     return (res.entries || []).some(e => !e.dir && walkParseName(e.name));
   },
 
   async opened(d) {
+    if (this.prId) { this.diff = null; this.diffNote = ""; return; }
     // The diff is read when the drawer opens, and not on the poll: it is the head as reviewed, and does not move.
     this.diff = null; this.diffNote = "";
     try {
@@ -387,7 +423,23 @@ const walkTenant = {
     }
   },
 
+  // The findings of a pulls row. The text is parsed here the way a file is, and what the daemon already worked
+  // out (key, place, walk state, the hunk) is laid over it.
+  async loadPr(d) {
+    const out = await api(`/v1/prs/${encodeURIComponent(this.prId)}/findings`);
+    if (out && out.pr && typeof pullsApplyRow === "function") { pullsApplyRow(out.pr); pullsChanged(); }
+    const next = (out.findings || []).map(f => walkPrItem(f));
+    const prev = new Map(d.items.map(i => [i.key, i]));
+    for (const it of next) {
+      const before = prev.get(it.key);
+      if (before) it.isNew = before.isNew;
+      else if (d.items.length) it.isNew = true;
+    }
+    return { items: next };
+  },
+
   async load(task, d) {
+    if (this.prId) return this.loadPr(d);
     const res = await api(`/v1/tasks/${task.id}/files/list?path=findings`);
     const entries = (res.entries || []).filter(e => !e.dir && walkParseName(e.name))
       .sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
@@ -461,7 +513,9 @@ const walkTenant = {
   summary(items) {
     const posted = items.filter(i => i.state === "posted").length;
     const skipped = items.filter(i => i.state === "skipped").length;
-    return `${posted + skipped} of ${items.length}` + (posted || skipped ? `: ${posted} posted, ${skipped} skipped` : "");
+    const deferred = items.filter(i => i.state === "deferred").length;
+    return `${posted + skipped} of ${items.length}` + (posted || skipped || deferred
+      ? `: ${posted} posted, ${skipped} skipped` + (deferred ? `, ${deferred} deferred` : "") : "");
   },
 
   segments(items) {
@@ -469,7 +523,7 @@ const walkTenant = {
   },
 
   railRow(it, i, d) {
-    const glyph = it.state === "posted" ? "✓" : it.state === "skipped" ? "─" : "";
+    const glyph = it.state === "posted" ? "✓" : it.state === "skipped" ? "─" : it.state === "deferred" ? "…" : "";
     const prev = d.items[i - 1];
     return `<button type="button" class="wk-row s-${it.sev}${it.key === d.cur ? " cur" : ""}${it.state ? " " + it.state : ""}${
         prev && prev.sev !== it.sev ? " brk" : ""}" data-i="${i}" role="option"
@@ -483,9 +537,10 @@ const walkTenant = {
   // The finding: header, code at the head, comment as raw markdown, Evidence folded, the keys.
   pane(it, d) {
     if (d.conflict && d.conflict.key === it.key) return this.compare(it, d.conflict);
-    const loc = walkLocate(it, this.diff);
+    const files = it.diff !== undefined ? it.diff : this.diff;
+    const loc = walkLocate(it, files);
     const warns = loc.warns.slice();
-    if (!this.diff && this.diffNote) warns.push(this.diffNote);
+    if (!files && this.diffNote) warns.push(this.diffNote);
     const state = it.state
       ? `<span class="wk-state ${it.state}">${it.state} ${esc(it.stateAt)}${it.stateUrl ? " " + esc(it.stateUrl) : ""}</span>` : "";
     return `
@@ -506,7 +561,8 @@ const walkTenant = {
         <button type="button" data-act="c" data-tip="copy the comment (c). C copies then opens the line">c copy</button>
         <button type="button" data-act="o" data-tip="open the line on GitHub (o)"${it.link ? "" : " disabled"}>o open</button>
         <button type="button" data-act="p" data-tip="mark posted (p)">p posted</button>
-        <button type="button" data-act="s" data-tip="skip (s)">s skip</button>
+        <button type="button" data-act="s" data-tip="skip (s)">s skip</button>${this.prId
+          ? `<button type="button" data-act="d" data-tip="come back to it later (d)">d defer</button>` : ""}
         <button type="button" data-act="u" data-tip="undo the last posted or skipped (u)"${it.state ? "" : " disabled"}>u undo</button>
       </div>`;
   },
@@ -555,6 +611,7 @@ const walkTenant = {
   compare(it, c) {
     return `
       <div class="wk-fhead"><span class="wk-num">${esc(it.num)}</span><span class="wk-where">this file changed while you were editing it</span></div>
+      ${c.said ? `<div class="wk-warns"><div class="wk-warn">${esc(c.said)}</div></div>` : ""}
       <div class="wk-cmp">
         <div><div class="wk-cmph">yours</div><pre id="walk-cmp-mine">${esc(c.mine)}</pre></div>
         <div><div class="wk-cmph">on disk</div><pre id="walk-cmp-disk">${esc(c.diskComment)}</pre></div>
@@ -573,7 +630,7 @@ function walkKeydown(e) {
   const t = e.target;
   if (t && (t.tagName === "TEXTAREA" || t.tagName === "INPUT" || t.tagName === "SELECT")) return;
   const k = e.key;
-  if (!"aAecCopsujkg".includes(k) || k.length !== 1) return;
+  if (!"aAecCopsdujkg".includes(k) || k.length !== 1) return;
   if (dock.editing || dock.conflict) return;
   e.preventDefault();
   e.stopPropagation();
@@ -604,10 +661,13 @@ async function walkAct(k) {
       return;
     case "o": return walkOpenLink(it);
     case "p": return walkPosted(it);
-    case "s": return void walkWriteState(it, `Walk: skipped ${walkNow()}`);
+    case "s": return void walkWriteState(it, `Walk: skipped ${walkNow()}`, "skipped");
+    case "d":
+      if (!walkTenant.prId) return;
+      return void walkWriteState(it, null, "deferred");
     case "u":
       if (!it.state) { toast("nothing to undo", "this finding is neither posted nor skipped"); return; }
-      return void walkWriteState(it, null);
+      return void walkWriteState(it, null, "open");
   }
 }
 
@@ -660,10 +720,17 @@ async function walkPosted(it) {
   });
   if (url === null) return;
   const u = String(url).trim();
-  return void walkWriteState(it, `Walk: posted ${walkNow()}${u ? " " + u : ""}`);
+  return void walkWriteState(it, `Walk: posted ${walkNow()}${u ? " " + u : ""}`, "done", u);
 }
 
-async function walkPut(taskId, name, text, hash, eol) {
+// The one write of a finding's text. A pulls row's finding is named by its key, a file by its name.
+async function walkPut(taskId, name, text, hash, eol, it) {
+  if (walkTenant.prId && it) {
+    return api(`/v1/prs/${encodeURIComponent(walkTenant.prId)}/findings/${encodeURIComponent(it.key)}`, {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, hash, eol })
+    });
+  }
   return api(`/v1/tasks/${taskId}/files/text?path=${encodeURIComponent("findings/" + name)}`, {
     method: "PUT", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ text, hash, eol })
@@ -672,20 +739,30 @@ async function walkPut(taskId, name, text, hash, eol) {
 
 // Takes the new text into the item and the cache without waiting for the poll. The mtime is left alone on
 // purpose, so the poll still re-reads it, and `wrote` lets that read know the change was ours.
-function walkAdopt(it, text, hash) {
+function walkAdopt(it, text, hash, key) {
   const fresh = walkParseFinding(it.name, text, hash, it.eol, { mtime: it.mtime, size: it.size });
   fresh.wrote = hash;
   fresh.key = it.key;
   fresh.isNew = it.isNew;
+  if (walkTenant.prId) {
+    // The walk state is not in the text here, and the daemon may have given an edited finding a new key.
+    fresh.key = key || it.key;
+    if (dock.cur === it.key) dock.cur = fresh.key;
+    fresh.diff = it.diff;
+    fresh.num = it.num;
+    fresh.link = it.link;
+    fresh.state = it.state; fresh.stateAt = it.stateAt; fresh.stateUrl = it.stateUrl;
+  }
   const i = dock.items.indexOf(it);
   if (i >= 0) dock.items[i] = fresh;
-  walkTenant.cache.set(it.name, fresh);
+  if (!walkTenant.prId) walkTenant.cache.set(it.name, fresh);
   return fresh;
 }
 
 // posted, skipped, undo. Only the Walk line changes, so when the file has moved on it is safe to say the same
 // thing again on what the daemon hands back, once. An edit is not like that and goes through the compare.
-async function walkWriteState(it, line) {
+async function walkWriteState(it, line, state, url) {
+  if (walkTenant.prId) return walkMark(it, state, url);
   let text = it.text, hash = it.hash;
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
@@ -701,6 +778,25 @@ async function walkWriteState(it, line) {
     }
   }
   return false;
+}
+
+// A mark on a pulls row's finding: the daemon replaces that finding's line in walk.txt and answers the counts, which
+// the row in the pulls view takes at once.
+async function walkMark(it, state, url) {
+  try {
+    const body = { state };
+    if (url) body.url = url;
+    const out = await pullsPost(`/v1/prs/${encodeURIComponent(walkTenant.prId)}/findings/${encodeURIComponent(it.key)}/walk`, body);
+    const w = (out && out.walk) || { state, at: "", url: "" };
+    it.state = walkUiState(w.state); it.stateAt = w.at || ""; it.stateUrl = w.url || "";
+    const row = pulls.rows.find(r => r.id === walkTenant.prId);
+    if (row && out && out.counts) { row.walk = out.counts; pullsChanged(); }
+    dockPaint();
+    return true;
+  } catch (e) {
+    toast("could not mark it", e.message);
+    return false;
+  }
 }
 
 function walkEdit(it) {
@@ -733,8 +829,8 @@ async function walkSave() {
   const mine = document.getElementById("walk-edit-text").value;
   const out = walkRebuild(ed.text, mine);
   try {
-    const res = await walkPut(dock.taskId, it.name, out, ed.hash, it.eol);
-    walkAdopt(it, out, res.hash);
+    const res = await walkPut(dock.taskId, it.name, out, ed.hash, it.eol, it);
+    walkAdopt(it, out, res.hash, res.key);
     toast("saved", it.name);
     walkEditDone();
   } catch (e) {
@@ -742,7 +838,8 @@ async function walkSave() {
       // Nothing was written. Both sides are kept on screen and it is clint's call which one stands.
       const disk = walkParseFinding(it.name, e.body.text, e.body.hash, it.eol);
       dock.editing = null;
-      dock.conflict = { key: it.key, mine, disk: e.body.text, diskHash: e.body.hash, diskComment: disk.comment };
+      dock.conflict = { key: it.key, mine, disk: e.body.text, diskHash: e.body.hash, diskComment: disk.comment,
+        said: walkTenant.prId ? e.message : "" };
       dockPaint();
       return;
     }
@@ -755,8 +852,8 @@ async function walkKeepMine(it) {
   if (!c) return;
   const out = walkRebuild(c.disk, c.mine);
   try {
-    const res = await walkPut(dock.taskId, it.name, out, c.diskHash, it.eol);
-    walkAdopt(it, out, res.hash);
+    const res = await walkPut(dock.taskId, it.name, out, c.diskHash, it.eol, it);
+    walkAdopt(it, out, res.hash, res.key);
     dock.conflict = null;
     toast("kept yours", it.name);
     dockPaint();

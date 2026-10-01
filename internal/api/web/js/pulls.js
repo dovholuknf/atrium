@@ -16,8 +16,6 @@ const pulls = {
   loaded: false,
   loading: false,
   note: "",          // a sentence under the header: a refusal, or the halted word
-  open: "",          // the row whose findings are showing
-  findings: {},      // row id -> the findings answer, for the open row
   logs: {},          // row id -> run_log text, for a failed row whose log was opened
   filterState: "open",
   filterRepo: ""
@@ -67,6 +65,8 @@ function pullsRecount() {
 function pullsChanged() {
   pullsRecount();
   pullsPaint();
+  // A walker's card that was attached before its row was known gets its drawer now.
+  if (typeof termTask !== "undefined" && termTask && !dock.tenant && walkPrOf(termTask.id)) walkProbe(termTask);
 }
 
 function pullsSay(text) {
@@ -117,6 +117,8 @@ function onPrEvent(ev) {
   if (!d || !d.pr) return;
   pullsApplyRow(d.pr);
   pullsChanged();
+  // The walk drawer is open on this review: the findings may have moved.
+  if (typeof walkTenant !== "undefined" && walkTenant.prId === d.pr.id && typeof dockKick === "function") dockKick(dock.taskId);
 }
 
 // The stream opened: events may have been missed while it was down, so read the index again.
@@ -190,11 +192,10 @@ function pullRowHTML(r) {
   if (r.state === "failed" || r.state === "aborted") acts.push(pullBtn("retry", r.id, "retry"));
   if (r.state === "failed") acts.push(pullBtn("log", r.id, "log", "the tail of run.log"));
   if (r.state === "ready") {
-    acts.push(pullBtn("open", r.id, pulls.open === r.id ? "close" : "walk", "the findings of this review"));
-    acts.push(pullBtn("walker", r.id, r.walker_task ? "walker" : "launch walker",
-      r.walker_task ? "a walker is on this review: " + r.walker_task : "start a session to talk the findings through"));
+    acts.push(pullBtn("walk", r.id, "walk", r.walker_task
+      ? "open the walker's terminal with the findings beside it"
+      : "start a walker session and open the findings beside it"));
   }
-  const open = pulls.open === r.id && r.state === "ready";
   return '<div class="pull" data-id="' + esc(r.id) + '" data-state="' + esc(r.state) + '">' +
     '<div class="pull-main">' +
       '<div class="pull-who"><span class="pull-repo">' + esc(r.org_repo) + " #" + esc(r.number) + "</span>" +
@@ -211,27 +212,7 @@ function pullRowHTML(r) {
       '<span class="pull-acts">' + acts.join("") + "</span>" +
     "</div>" +
     (pulls.logs[r.id] != null && r.state === "failed" ? '<pre class="pull-log">' + esc(pulls.logs[r.id]) + "</pre>" : "") +
-    (open ? pullFindingsHTML(r) : "") +
   "</div>";
-}
-
-function pullFindingsHTML(r) {
-  const body = pulls.findings[r.id];
-  if (!body) return '<div class="pull-findings"><span class="pull-empty">reading the findings</span></div>';
-  if (body.error) return '<div class="pull-findings"><span class="pull-empty">' + esc(body.error) + "</span></div>";
-  if (!body.findings.length) return '<div class="pull-findings"><span class="pull-empty">no findings</span></div>';
-  return '<div class="pull-findings">' + body.findings.map(f => {
-    const st = (f.walk && f.walk.state) || "open";
-    const b = (state, label) => '<button type="button" class="pull-btn' + (st === state ? " on" : "") +
-      '" data-act="mark" data-id="' + esc(r.id) + '" data-key="' + esc(f.key) + '" data-state="' + state + '">' + label + "</button>";
-    return '<div class="pull-finding" data-key="' + esc(f.key) + '" data-walk="' + esc(st) + '">' +
-      '<span class="pull-sev sev-' + esc(f.sev) + '">' + esc(f.sev) + "</span>" +
-      '<span class="pull-loc">' + esc(f.path) + (f.line ? ":" + esc(f.line) : "") + "</span>" +
-      (f.leak ? '<span class="pull-leak">leak</span>' : "") +
-      '<span class="pull-code">' + esc(f.code) + "</span>" +
-      '<span class="pull-marks">' + b("done", "done") + b("skipped", "skip") + b("deferred", "defer") + b("open", "open") + "</span>" +
-    "</div>";
-  }).join("") + "</div>";
 }
 
 // ── drawing ─────────────────────────────────────────────
@@ -310,43 +291,29 @@ async function pullsPaste() {
   }
 }
 
-async function pullsToggleFindings(id) {
-  if (pulls.open === id) { pulls.open = ""; pullsPaint(); return; }
-  pulls.open = id;
-  delete pulls.findings[id];
-  pullsPaint();
+// The walk button: the findings are read and walked in the walk drawer beside the walker's terminal (js/walk.js),
+// so this makes sure there is a walker, attaches its terminal and asks for the drawer.
+async function pullsWalk(id) {
+  const row = pulls.rows.find(r => r.id === id);
+  if (!row) return;
+  let task = row.walker_task;
   try {
-    pulls.findings[id] = await api("/v1/prs/" + encodeURIComponent(id) + "/findings");
-    if (pulls.findings[id].pr) pullsApplyRow(pulls.findings[id].pr);
-  } catch (e) {
-    pulls.findings[id] = { error: pullsErr(e) };
-  }
-  pullsChanged();
-}
-
-async function pullsMark(id, key, state) {
-  try {
-    const out = await pullsPost("/v1/prs/" + encodeURIComponent(id) + "/findings/" + encodeURIComponent(key) + "/walk", { state });
-    const f = ((pulls.findings[id] || {}).findings || []).find(x => x.key === key);
-    if (f && out && out.walk) f.walk = out.walk;
-    const row = pulls.rows.find(r => r.id === id);
-    if (row && out && out.counts) row.walk = out.counts;
+    if (!task) {
+      const out = await pullsPost("/v1/prs/" + encodeURIComponent(id) + "/walker", { action: "launch" });
+      if (out && out.pr) pullsApplyRow(out.pr);
+      task = (out && out.task) || (out && out.pr && out.pr.walker_task) || "";
+      pullsChanged();
+    }
     pullsSay("");
   } catch (e) {
     pullsSay(pullsErr(e));
+    return;
   }
-  pullsChanged();
-}
-
-async function pullsWalker(id) {
-  try {
-    const out = await pullsPost("/v1/prs/" + encodeURIComponent(id) + "/walker", { action: "launch" });
-    if (out && out.pr) pullsApplyRow(out.pr);
-    pullsSay("");
-    pullsChanged();
-  } catch (e) {
-    pullsSay(pullsErr(e));
-  }
+  if (!task) return;
+  dock.want = task;
+  await attachTask(task);
+  // Already attached to this card, or the row reached the board after the attach: ask the drawer again.
+  if (!dock.open && typeof termTask !== "undefined" && termTask && termTask.id === task) walkProbe(termTask);
 }
 
 async function pullsLog(id) {
@@ -370,9 +337,7 @@ document.addEventListener("DOMContentLoaded", () => {
       case "start": pullsRowAction(id, "start"); break;
       case "retry": pullsRowAction(id, "retry"); break;
       case "abort": pullsRowAction(id, "abort"); break;
-      case "open": pullsToggleFindings(id); break;
-      case "mark": pullsMark(id, b.dataset.key, b.dataset.state); break;
-      case "walker": pullsWalker(id); break;
+      case "walk": pullsWalk(id); break;
       case "log": pullsLog(id); break;
     }
   });
