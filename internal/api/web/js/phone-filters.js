@@ -13,15 +13,15 @@
     const sort = on("stack-sort")[0];
     if (sort && sort.dataset.sort !== "activity") n++;
     const g = on("stack-group")[0];
-    if (g && !/setGroupMode\('project'\)/.test(g.getAttribute("onclick") || "")) n++;
+    if (g && g.dataset.group !== "project") n++;
     return n;
   }
   function boardCount() {
     let n = 0;
     const s = on("board-sort")[0];
-    if (s && !/setBoardSort\('activity'\)/.test(s.getAttribute("onclick") || "")) n++;
+    if (s && s.dataset.sort !== "activity") n++;
     const g = on("board-group")[0];
-    if (g && !/setGroupMode\('project'\)/.test(g.getAttribute("onclick") || "")) n++;
+    if (g && g.dataset.group !== "project") n++;
     return n;
   }
 

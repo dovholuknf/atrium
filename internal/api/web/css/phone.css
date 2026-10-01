@@ -455,9 +455,9 @@
   /* Shown while the browser keeps sound locked, until the first touch lets it start. See js/notify.js. */
   #sound-hint {
     position: fixed; z-index: 40; left: 50%; transform: translateX(-50%); bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
-    /* A hint, not a control: touches go through it, to whatever is under, and the first one unlocks the sound. At the
-       bottom edge so it is never over the search box at the top or the terminal tray handle. */
-    pointer-events: none; min-height: 28px; display: flex; align-items: center; padding: 0 12px; opacity: .92; border: 1px solid var(--sound-hint-line, var(--stroke-dim)); border-radius: 18px;
+    /* At the bottom edge so it is never over the search box at the top or the terminal tray handle. A tap on it
+       enables sound and goes no further (js/notify.js), so it never opens the row under it. */
+    min-height: 40px; display: flex; align-items: center; padding: 0 12px; opacity: .92; border: 1px solid var(--sound-hint-line, var(--stroke-dim)); border-radius: 18px;
     background: var(--sound-hint-bg, var(--shell-0)); color: var(--sound-hint-fg, var(--warn)); font: var(--fs-xs)/1 var(--mono);
   }
   #sound-hint[hidden] { display: none; }

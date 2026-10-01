@@ -200,7 +200,7 @@ function paintGroupSegs() {
     ["off", "off", "one flat list, in the order the sort above put them"]
   ];
   const html = opts.map(([v, label, title]) =>
-    `<button class="${v === mode ? "on" : ""}" onclick="setGroupMode('${v}')"
+    `<button class="${v === mode ? "on" : ""}" data-group="${v}" onclick="setGroupMode('${v}')"
        data-tip="${esc(title)}">${esc(label)}</button>`).join("");
   // A `+ new group` button rides beside the picker when `custom` is on.
   // Drawn in the same host as the picker so it sits alongside the mode

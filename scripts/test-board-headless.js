@@ -14632,9 +14632,27 @@ async function phoneBoardCompactSection(browser, base) {
         return { shown: true, hit, pe: getComputedStyle(h).pointerEvents, bottom: Math.round(innerHeight - hb.bottom) };
       });
       if (!r.shown) fail(tag + "the sound hint is not up in " + where);
-      else if (r.hit.length || r.pe !== "none") fail(tag + "the sound hint covers " + JSON.stringify(r) + " in " + where);
+      else if (r.hit.length) fail(tag + "the sound hint covers " + JSON.stringify(r) + " in " + where);
     };
     await hint("stack");
+    // the pill is a real target: a tap on it enables sound and opens nothing, even over a card row
+    const under = await p.evaluate(() => {
+      const h = document.getElementById("sound-hint"), b = h.getBoundingClientRect();
+      h.style.pointerEvents = "none";
+      const e = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
+      h.style.pointerEvents = "";
+      window.__under = 0;
+      document.addEventListener("click", ev => { if (ev.target !== h) window.__under++; }, true);
+      return { tag: e ? e.tagName + "." + e.className : "", inList: !!(e && e.closest("#stack-list")) };
+    });
+    if (!under.inList) fail(tag + "the pill is not over a card row in this setup: " + JSON.stringify(under));
+    await p.tap("#sound-hint");
+    await p.waitForTimeout(250);
+    const after = await p.evaluate(() => ({ n: window.__under, hidden: document.getElementById("sound-hint").hidden, url: location.pathname + location.hash }));
+    if (after.n) fail(tag + "a tap on the sound pill reached what is under it: " + JSON.stringify(after));
+    if (!after.hidden) fail(tag + "a tap on the sound pill did not enable sound");
+    await p.evaluate(() => alerting.play("waiting"));
+    if ((await p.evaluate(() => window.__osc || 0)) < 1) fail(tag + "the sound did not play after tapping the pill");
     // tag chips read in every skin: 4.5:1 for the text over what is behind it
     const skins = await p.evaluate(async () => {
       const css = await (await fetch("/css/themes.css")).text();
