@@ -30,6 +30,7 @@
 <link rel="stylesheet" href="/m/changes.css">
 <link rel="stylesheet" href="/m/cardurl.css">
 <link rel="stylesheet" href="/m/working.css">
+<link rel="stylesheet" href="/m/docs.css">
 </head>
 <body class="m">
 <div class="app">
@@ -39,6 +40,7 @@
     <span class="grow"></span>
     <span class="live" id="m-live" role="status" aria-label="connecting"></span>
     <button type="button" id="m-bell" class="bell" aria-label="notifications"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 16V11a6 6 0 0112 0v5l1.5 2h-15z"/><path d="M10 21h4"/><path class="slash" d="M4 4l16 16"/></svg><span class="n" id="m-bell-n"></span></button>
+    <button type="button" id="m-docs-btn" class="docsbtn" hidden>documents</button>
     <a class="board" id="m-desktop" href="/" aria-label="open the desktop board">desktop board</a>
   </header>
 
@@ -95,6 +97,7 @@
     <div class="pickmenu" id="m-card-menu" hidden></div>
     <div class="sheet-scroll" id="m-card-scroll">
       <div id="m-card-head" class="chead"></div>
+      <button type="button" id="m-card-docs" class="c-docs" hidden></button>
       <div id="m-card-notices"></div>
       <div id="m-replies" class="conv"></div>
       <div id="m-card-extras"></div>
@@ -132,6 +135,7 @@
 <script src="/m/js/card.js"></script>
 <script src="/m/js/viewer.js"></script>
 <script src="/m/js/changes.js"></script>
+<script src="/m/js/docs.js"></script>
 <script src="/m/js/compose.js" onerror="void 0"></script>
 <script src="/m/js/perms.js" onerror="void 0"></script>
 <script>

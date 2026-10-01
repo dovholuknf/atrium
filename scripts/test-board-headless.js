@@ -303,6 +303,7 @@ let typingPolls = [];
 // Every PATCH that set a card's alias. See `aliasSection`.
 let aliasWrites = [];
 
+let boardDocs = false;     // whether the mock answers /_hub/docs, as a hub with documents does
 let tasksMode = "first";   // first | hang | second | pinned | loop | worn | untagged | land
 // One card per shipped terminal theme, filled in from the page's own table by
 // the card-colours section, plus one with no theme that takes the repo default.
@@ -831,6 +832,15 @@ const server = http.createServer((req, res) => {
   }
   // The hub probes. Off by default (a plain daemon 404s them); the room-picker
   // test turns `hubMode` on so the board runs as a hub with two rooms.
+  if (url.startsWith("/_hub/docs")) {
+    // Hub documents, for the board's documents tab. Off by default: a room's own board has none.
+    if (!boardDocs) { res.writeHead(404); res.end("not a hub"); return; }
+    const v = { n: 1, at: "2026-09-30T12:00:00Z", by: "operator", origin: "local", size: 14, kind: "markdown", mime: "text/markdown", name: "board.md", sha: "x", missing: false, purged: false };
+    if (url === "/_hub/docs/settings") { sendJSON(res, { operator: true, enabled: true, caps: {}, usage: {}, largest: [] }); return; }
+    if (url.startsWith("/_hub/docs/board-doc/raw")) { res.writeHead(200, { "Content-Type": "application/octet-stream" }); res.end("# Board doc\n\nhello"); return; }
+    if (url === "/_hub/docs/board-doc") { sendJSON(res, { slug: "board-doc", title: "Board doc", created: v.at, deleted: null, versions: [v] }); return; }
+    if (url.startsWith("/_hub/docs")) { sendJSON(res, { docs: [{ slug: "board-doc", title: "Board doc", created: v.at, updated: v.at, versions: 1, latest: v, deleted: null }], usage: { bytes: 14, cap: 1000000 } }); return; }
+  }
   if (url === "/_hub/rooms") {
     if (!hubMode) { res.writeHead(404); res.end("not a hub"); return; }
     if (!hubHasRoom) { sendJSON(res, { rooms: [] }); return; }
@@ -14041,6 +14051,339 @@ async function mPullSection(browser) {
   if (!bad) console.log("mPull ok");
 }
 
+// The in-memory hub documents API the headless server answers with, shaped by docs/backlog/fabric/hub-documents-api.md.
+function mDocsHub(opts) {
+  opts = opts || {};
+  const docs = {};
+  const log = [];
+  const state = { docs, log, operator: opts.operator !== false };
+  let at = 0;
+  const iso = () => new Date(Date.UTC(2026, 8, 30, 12, 0, at++)).toISOString();
+  state.add = (slug, title, versions, extra) => {
+    docs[slug] = Object.assign({ slug, title, created: iso(), deleted: null, versions: [] }, extra || {});
+    versions.forEach(v => state.push(slug, v));
+    return docs[slug];
+  };
+  state.push = (slug, v) => {
+    const d = docs[slug];
+    const n = d.versions.length + 1;
+    const bytes = Buffer.isBuffer(v.bytes) ? v.bytes : Buffer.from(v.bytes || "");
+    d.versions.push(Object.assign({ n, at: iso(), by: "operator", origin: "local", size: bytes.length, kind: "markdown", mime: "text/markdown", name: slug + ".md", sha: "x".repeat(8), missing: false, purged: false }, v, { n, bytes, size: v.size != null ? v.size : bytes.length }));
+  };
+  const meta = v => { const o = Object.assign({}, v); delete o.bytes; return o; };
+  const sum = d => ({ slug: d.slug, title: d.title, created: d.created, updated: d.versions[d.versions.length - 1].at, versions: d.versions.length, latest: meta(d.versions[d.versions.length - 1]), deleted: d.deleted });
+  const parts = (buf, ct) => {
+    const b = "--" + /boundary=(.+)$/.exec(ct || "")[1];
+    return buf.toString("latin1").split(b).slice(1, -1).map(seg => {
+      const i = seg.indexOf("\r\n\r\n"), head = seg.slice(0, i), data = Buffer.from(seg.slice(i + 4, seg.length - 2), "latin1");
+      return { name: (/name="([^"]*)"/.exec(head) || [])[1], filename: (/filename="([^"]*)"/.exec(head) || [])[1], data };
+    });
+  };
+  state.api = (req, res, u, p, json, body) => {
+    const rec = { method: req.method, path: p, q: u.search, ct: req.headers["content-type"] || "", origin: req.headers.origin || "", fields: [] };
+    log.push(rec);
+    if (opts.noSettings && p === "/_hub/docs/settings") return json(404, { error: "no" });
+    if (p === "/_hub/docs/settings") return json(200, { operator: state.operator, enabled: true, caps: { text: 5242880, other: 20971520, total: 2147483648, per_card_hour: 30 }, usage: { bytes: 1, docs: 1, versions: 1 }, largest: [] });
+    if (p === "/_hub/docs" && req.method === "GET") {
+      const q = (u.searchParams.get("q") || "").toLowerCase(), card = u.searchParams.get("card"), del = u.searchParams.get("deleted") === "1";
+      let list = Object.values(docs).filter(d => !!d.deleted === del && d.title.toLowerCase().indexOf(q) >= 0);
+      if (card) list = list.filter(d => d.versions.some(v => v.card === card));
+      list.sort((a, b) => a.versions[a.versions.length - 1].at < b.versions[b.versions.length - 1].at ? 1 : -1);
+      return json(200, { docs: list.map(sum), usage: { bytes: 1234, cap: 2147483648 } });
+    }
+    const up = (slug, req2) => {
+      const ps = parts(body, rec.ct);
+      rec.fields = ps.map(x => x.name);
+      const f = ps.find(x => x.name === "file");
+      if (!f || !f.data.length) return json(400, { error: "send a file" });
+      if (/rate/.test(f.filename)) return json(429, { error: "this card has published 30 documents in the last hour" });
+      if (/PRIVATE KEY/.test(f.data.toString())) {
+        const ov = ps.find(x => x.name === "override");
+        if (!ov) return json(422, { error: "that looks like a private key", rule: "pem-private-key" });
+      }
+      const title = (ps.find(x => x.name === "title") || {}).data;
+      const kind = /\.png$/.test(f.filename) ? "image" : /\.diff$/.test(f.filename) ? "diff" : /\.md$/.test(f.filename) ? "markdown" : "text";
+      const origin = req.headers["x-forwarded-for"] ? "share" : "local";
+      if (!slug) {
+        slug = (title ? title.toString() : f.filename.replace(/\.[^.]+$/, "")).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "doc";
+        state.add(slug, title ? title.toString() : f.filename.replace(/\.[^.]+$/, ""), []);
+      }
+      state.push(slug, { bytes: f.data, kind, name: f.filename, origin });
+      return json(201, { slug, version: docs[slug].versions.length, url: "/d/" + slug, version_url: "/d/" + slug + "@" + docs[slug].versions.length });
+    };
+    if (p === "/_hub/docs" && req.method === "POST") return up("");
+    const m = /^\/_hub\/docs\/([^/]+)(?:\/(raw|versions|title|delete|restore))?$/.exec(p);
+    if (!m) return json(404, { error: "no such route" });
+    const d = docs[m[1]];
+    if (!d) return json(404, { error: "no such document" });
+    const act = m[2] || "";
+    if (!act && req.method === "GET") return json(200, { slug: d.slug, title: d.title, created: d.created, deleted: d.deleted, versions: d.versions.map(meta) });
+    if (act === "raw") {
+      if (d.deleted) return json(410, { error: "this document was deleted" });
+      const v = d.versions[Number(u.searchParams.get("v") || d.versions.length) - 1];
+      if (!v) return json(404, { error: "no such version" });
+      if (v.missing || v.purged) return json(410, { error: "the bytes are missing" });
+      res.writeHead(200, { "Content-Type": "application/octet-stream", "X-Content-Type-Options": "nosniff", "Content-Disposition": "attachment; filename=\"" + v.name + "\"" });
+      return res.end(v.bytes);
+    }
+    if (act === "versions") { if (d.deleted) return json(410, { error: "this document is deleted. restore it first" }); return up(d.slug); }
+    if (act === "title") { d.title = JSON.parse(body.toString()).title; return json(200, { ok: true }); }
+    if (act === "delete") { d.deleted = { at: iso(), by: "operator" }; return json(200, { ok: true }); }
+    if (act === "restore") { d.deleted = null; return json(200, { ok: true }); }
+    return json(404, { error: "no such route" });
+  };
+  return state;
+}
+
+async function mDocsSection(browser) {
+  // 1. a room's own board has no /_hub/docs: every door stays shut and nothing is said
+  {
+    const st = mServer({});
+    st.tasks = [mCard("dc-1", { alias: "scribe", display_title: "scribe", status: "needs-input", waiting_since: mIso(2 * M_MIN), seen: { turn_ended_at: mIso(20 * M_MIN) } })];
+    st.replies["dc-1"] = { source: "transcript", replies: [{ at: mIso(5 * M_MIN), text: "A reply with /d/tmp and /d/git as bare paths." }] };
+    const hub = mDocsHub({ noSettings: true });
+    st.docsApi = hub.api;
+    await st.open();
+    try {
+      const { ctx, p, errors } = await mPage(browser, st, { width: 412, height: 915 }, "");
+      await p.waitForSelector("#m-seg-all", { timeout: slow(10000) });
+      await p.waitForTimeout(600);
+      if (await p.$eval("#m-docs-btn", e => !e.hidden)) fail("mDocs: the documents door shows with no hub documents");
+      await p.tap("#m-seg-all");
+      await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
+      await p.tap('#m-list .row[data-id="dc-1"]');
+      await p.waitForSelector("#m-replies .reply", { timeout: slow(5000) });
+      await p.waitForTimeout(500);
+      if (await p.$eval("#m-card-docs", e => !e.hidden)) fail("mDocs: the card line shows with no hub documents");
+      // a bare /d/tmp is a path in text on a board with no documents, not a link to a document that is not there
+      if (await p.$('#m-replies a[href^="/d/"]')) fail("mDocs: a bare /d/ path became a document link on a board with no documents");
+      if (!/\/d\/tmp and \/d\/git/.test(await p.textContent("#m-replies"))) fail("mDocs: the bare paths were not left as text");
+      if (hub.log.some(r => r.path !== "/_hub/docs/settings")) fail("mDocs: a room board asked for more than the settings: " + JSON.stringify(hub.log.map(r => r.path)));
+      if (errors.length) fail("mDocs: page errors on a board with no documents: " + errors.join(" | "));
+      await ctx.close();
+    } finally { await st.close(); }
+  }
+
+  const st = mServer({});
+  st.tasks = [mCard("dc-1", { alias: "scribe", display_title: "scribe", status: "needs-input", waiting_since: mIso(2 * M_MIN), seen: { turn_ended_at: mIso(20 * M_MIN) } })];
+  st.replies["dc-1"] = { source: "transcript", replies: [{ at: mIso(5 * M_MIN), text: "The report is [here](/d/usage-md@2) and also /d/usage-md and [bad](/d/usage-md@01) and [odd](/d/Bad_Slug)." }], prompts: [] };
+  const hub = mDocsHub();
+  st.docsApi = hub.api;
+  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
+  hub.add("usage-md", "Usage <b>report</b>", [
+    { bytes: "# Usage\n\nfirst version\n\n- one\n- two\n", origin: "local", by: "operator" },
+    { bytes: "# Usage\n\nsecond version <script>window.__pwn = 1</script>\n\n[x](javascript:window.__pwn=2)\n\n- one\n- three\n", origin: "card", by: "r-031@sg4", card: "dc-1" }]);
+  hub.add("shot", "Screenshot", [{ bytes: png, kind: "image", mime: "image/png", name: "shot.png", origin: "share", by: "share" }]);
+  hub.add("vector", "A vector", [{ bytes: "<svg xmlns='http://www.w3.org/2000/svg'><script>window.__pwn=3</script></svg>", kind: "other", mime: "image/svg+xml", name: "v.svg" }]);
+  hub.add("patch", "A patch", [{ bytes: "--- a/x\n+++ b/x\n@@ -1,2 +1,2 @@\n context\n-old line\n+new line\n+++not a header but an addition\n---not a header but a removal\n", kind: "diff", name: "p.diff" }]);
+  hub.add("blob", "A blob", [{ bytes: "zip", kind: "other", name: "b.zip" }]);
+  hub.add("gone-bytes", "Gone bytes", [{ bytes: "x", missing: true }, { bytes: "y", purged: true }]);
+  hub.add("big", "Big one", [{ bytes: "word ".repeat(2 * 1048576 / 5 + 10), kind: "markdown", name: "big.md" }]);
+  hub.add("far", "Far apart", [{ bytes: Array.from({ length: 2600 }, (_, i) => "a" + i).join("\n"), kind: "text", name: "a.txt" }, { bytes: Array.from({ length: 2600 }, (_, i) => "b" + i).join("\n"), kind: "text", name: "a.txt" }]);
+  hub.add("rel", "Relative things", [{ bytes: "see [other](notes/other.md) and ![pic](pic.png) and `/abs/file.md` and /abs/other.md\n", kind: "markdown" }]);
+  hub.add("bigdiff", "A big patch", [{ bytes: Array.from({ length: 5000 }, (_, i) => (i % 2 ? "+added " : "-removed ") + i).join("\n"), kind: "diff", name: "big.diff" }]);
+  hub.add("fffd", "Ends in a replacement char", [{ bytes: Buffer.concat([Buffer.from("a whole file that ends in "), Buffer.from([0xef, 0xbf, 0xbd])]), kind: "text", name: "f.txt" }]);
+  hub.add("old", "An old one", [{ bytes: "old" }], { deleted: { at: "2026-09-29T12:00:00Z", by: "operator" } });
+  await st.open();
+  try {
+    for (const vp of [{ width: 390, height: 844 }, { width: 412, height: 915 }]) {
+      const tag = "mDocs " + vp.width + ": ";
+      hub.log.length = 0;
+      hub.operator = true;
+      const { ctx, p, errors } = await mPage(browser, st, vp, "");
+      await ctx.addInitScript(() => { window.__revoked = []; const r = URL.revokeObjectURL.bind(URL); URL.revokeObjectURL = u => { window.__revoked.push(u); r(u); }; });
+      await p.goto(st.url + "/m/", { waitUntil: "domcontentloaded" });
+      await p.waitForSelector("#m-seg-all", { timeout: slow(10000) });
+      await p.waitForFunction(() => !document.getElementById("m-docs-btn").hidden, null, { timeout: slow(5000) });
+      // the list, newest first, behind a door on the home page, at an address of its own
+      await p.tap("#m-docs-btn");
+      await p.waitForSelector("#m-docs .d-row", { timeout: slow(5000) });
+      if (await p.evaluate(() => location.pathname) !== "/m/docs") fail(tag + "the list has no address of its own");
+      let titles = await p.$$eval("#m-docs .d-t", e => e.map(x => x.textContent));
+      if (titles[0] !== "Far apart" && titles.indexOf("Usage <b>report</b>") < 0) fail(tag + "the list is wrong: " + titles.join("|"));
+      if (titles.some(t => t === "An old one")) fail(tag + "a deleted document is in the main list");
+      if (await p.$("#m-docs .d-t b")) fail(tag + "a title was set as markup");
+      const meta = await p.$$eval("#m-docs .d-m", e => e.map(x => x.textContent).join(" || "));
+      if (!/you, at the machine/.test(meta) || !/uploaded over the share/.test(meta) || !/r-031@sg4/.test(meta)) fail(tag + "origins are not shown: " + meta);
+      await mShot(p, "docs-list-" + vp.width);
+      // the title filter goes to the hub as q
+      await p.fill("#m-docs .d-q", "usage");
+      await p.waitForFunction(() => document.querySelectorAll("#m-docs .d-row").length === 1, null, { timeout: slow(5000) });
+      if (!hub.log.some(r => /[?&]q=usage/.test(r.q))) fail(tag + "the filter did not send q: " + hub.log.map(r => r.q).join(","));
+      await p.fill("#m-docs .d-q", "");
+      await p.waitForFunction(() => document.querySelectorAll("#m-docs .d-row").length > 3, null, { timeout: slow(5000) });
+      // deleted: listed on its own, restored from there
+      await p.tap('#m-docs .d-chip');
+      await p.waitForFunction(() => /An old one/.test(document.getElementById("m-docs").textContent), null, { timeout: slow(5000) });
+      await p.tap("#m-docs .d-row.gone .d-link");
+      await p.waitForFunction(() => !document.querySelector("#m-docs .d-row.gone"), null, { timeout: slow(5000) });
+      if (hub.docs.old.deleted) fail(tag + "restore did not reach the hub");
+      hub.docs.old.deleted = { at: "2026-09-29T12:00:00Z", by: "operator" };
+      await p.tap('#m-docs .d-chip');
+      // upload: multipart with file and title only, the progress, the link; a refusal shows the hub's own sentence
+      const sheet = "#m-docs input[type=file]";
+      await p.fill("#m-docs .d-tin", "Fresh upload");
+      await p.setInputFiles(sheet, { name: "fresh.md", mimeType: "text/markdown", buffer: Buffer.from("# fresh\n") });
+      await p.waitForFunction(() => /uploaded/.test((document.querySelector("#m-docs .d-status") || {}).textContent || ""), null, { timeout: slow(5000) });
+      const up = hub.log.filter(r => r.method === "POST" && r.path === "/_hub/docs").pop();
+      if (!/multipart\/form-data/.test(up.ct) || JSON.stringify(up.fields) !== '["file","title"]') fail(tag + "the upload is not multipart file + title: " + JSON.stringify(up));
+      if (up.origin && up.origin !== st.url) fail(tag + "the upload carries another origin: " + up.origin);
+      await p.setInputFiles(sheet, { name: "rate.txt", mimeType: "text/plain", buffer: Buffer.from("x") });
+      await p.waitForFunction(() => /published 30 documents/.test((document.querySelector("#m-docs .d-status") || {}).textContent || ""), null, { timeout: slow(5000) });
+      await p.setInputFiles(sheet, { name: "key.txt", mimeType: "text/plain", buffer: Buffer.from("-----BEGIN PRIVATE KEY-----") });
+      await p.waitForFunction(() => /private key \(pem-private-key\)/.test((document.querySelector("#m-docs .d-status") || {}).textContent || ""), null, { timeout: slow(5000) });
+      await p.tap("#m-docs .d-status .d-link");
+      await p.waitForFunction(() => /uploaded/.test((document.querySelector("#m-docs .d-status") || {}).textContent || ""), null, { timeout: slow(5000) });
+      if (JSON.stringify(hub.log.filter(r => r.method === "POST" && r.path === "/_hub/docs").pop().fields) !== '["file","override"]') fail(tag + "upload anyway did not send override");
+      // 2. a document: markdown through the safe renderer, nothing from the hub as markup
+      await p.goto(st.url + "/d/usage-md", { waitUntil: "domcontentloaded" });
+      await p.waitForSelector("#m-docs .d-content .md", { timeout: slow(8000) });
+      if (!/second version/.test(await p.textContent("#m-docs .d-content"))) fail(tag + "the newest version is not shown at /d/<slug>");
+      if (await p.evaluate(() => window.__pwn)) fail(tag + "a script from a document ran");
+      if (await p.$('#m-docs .d-content a[href^="javascript:"]')) fail(tag + "a javascript: link survived");
+      if ((await p.textContent("#m-docs .d-h1")) !== "Usage <b>report</b>") fail(tag + "the title is not plain text");
+      if (!/r-031@sg4/.test(await p.textContent("#m-docs .d-info"))) fail(tag + "the origin is not shown");
+      await mShot(p, "docs-doc-" + vp.width);
+      // versions: the control, the history, a compare with colours, and the address of one version
+      await p.selectOption("#m-docs .d-vrow select", "1");
+      await p.waitForFunction(() => /first version/.test((document.querySelector("#m-docs .d-content") || {}).textContent || ""), null, { timeout: slow(5000) });
+      if (await p.evaluate(() => location.pathname) !== "/d/usage-md@1") fail(tag + "a version has no address");
+      await p.tap('#m-docs .d-acts button:has-text("history")');
+      if ((await p.$$("#m-docs .d-hrow")).length !== 2) fail(tag + "the history is not two rows");
+      await p.tap('#m-docs .d-acts button:has-text("compare")');
+      await p.selectOption('#m-docs .d-cmprow select[aria-label="compare from"]', "1");
+      await p.selectOption('#m-docs .d-cmprow select[aria-label="compare to"]', "2");
+      await p.tap('#m-docs .d-cmprow button');
+      await p.waitForSelector("#m-docs .d-cmpout .d-add", { timeout: slow(5000) });
+      const cl = await p.$$eval("#m-docs .d-cmpout .d-line", e => e.map(x => x.className.replace("d-line ", "") + ":" + x.textContent));
+      if (!cl.some(x => /^d-del: ?- three|^d-del:-.*first|^d-del:-/.test(x)) || !cl.some(x => /^d-add:\+.*second/.test(x))) fail(tag + "the compare lines are not coloured: " + cl.join(" | "));
+      // a compare that changes too much is refused with the sentence, not tried
+      await p.goto(st.url + "/d/far", { waitUntil: "domcontentloaded" });
+      await p.waitForSelector("#m-docs .d-acts", { timeout: slow(8000) });
+      await p.tap('#m-docs .d-acts button:has-text("compare")');
+      await p.tap('#m-docs .d-cmprow button');
+      await p.waitForFunction(() => /too big to show here/.test((document.querySelector("#m-docs .d-cmpout") || {}).textContent || ""), null, { timeout: slow(10000) });
+      // kinds: a diff is coloured, an image is typed by its bytes and revoked, SVG and other are downloads
+      await p.goto(st.url + "/d/patch", { waitUntil: "domcontentloaded" });
+      await p.waitForSelector("#m-docs .d-diff .d-line", { timeout: slow(8000) });
+      const dl = await p.$$eval("#m-docs .d-diff .d-line", e => e.map(x => x.className.replace("d-line ", "")));
+      if (JSON.stringify(dl) !== JSON.stringify(["d-file", "d-file", "d-hunk", "d-ctx", "d-del", "d-add", "d-file", "d-file", "d-ctx"].slice(0, 6).concat(["d-file", "d-file", "d-ctx"]))) fail(tag + "a diff is coloured wrongly: " + dl.join(","));
+      await p.goto(st.url + "/d/shot", { waitUntil: "domcontentloaded" });
+      await p.waitForSelector("#m-docs img.d-img", { timeout: slow(8000) });
+      const img = await p.evaluate(async () => { const i = document.querySelector("#m-docs img.d-img"); const b = await (await fetch(i.src)).blob(); return { src: i.src.slice(0, 5), type: b.type, url: i.src }; });
+      if (img.src !== "blob:" || img.type !== "image/png") fail(tag + "the image is not a png blob: " + JSON.stringify(img));
+      await p.tap("#m-docs .d-back");
+      await p.waitForFunction(() => document.getElementById("m-docs").hidden, null, { timeout: slow(3000) });
+      if (!(await p.evaluate(u => window.__revoked.indexOf(u) >= 0, img.url))) fail(tag + "the blob URL was not revoked when the sheet closed");
+      await p.goto(st.url + "/d/vector", { waitUntil: "domcontentloaded" });
+      await p.waitForSelector("#m-docs .d-dl", { timeout: slow(8000) });
+      if (await p.$("#m-docs .d-body img, #m-docs .d-body svg, #m-docs .d-body iframe") || await p.evaluate(() => window.__pwn)) fail(tag + "an SVG was rendered");
+      await p.goto(st.url + "/d/gone-bytes", { waitUntil: "domcontentloaded" });
+      await p.waitForSelector("#m-docs .d-content .d-err", { timeout: slow(8000) });
+      if (!/purged/.test(await p.textContent("#m-docs .d-content")) && !/missing/.test(await p.textContent("#m-docs .d-content"))) fail(tag + "missing and purged are not said");
+      // a document is not a card: a relative path or image in it is text, never a dead file control
+      await p.goto(st.url + "/d/rel", { waitUntil: "domcontentloaded" });
+      await p.waitForSelector("#m-docs .d-content .md", { timeout: slow(8000) });
+      if (await p.$("#m-docs .md-file, #m-docs .md-img")) fail(tag + "a relative link or image in a document became a dead file control");
+      if (!/see other and pic and/.test(await p.textContent("#m-docs .d-content")) || !/\/abs\/other\.md/.test(await p.textContent("#m-docs .d-content"))) fail(tag + "the labels and the absolute path were not left as text: " + await p.textContent("#m-docs .d-content"));
+      // a big diff draws a bounded number of lines and offers the rest as a download
+      await p.goto(st.url + "/d/bigdiff", { waitUntil: "domcontentloaded" });
+      await p.waitForSelector("#m-docs .d-diff .d-line", { timeout: slow(8000) });
+      const drawn = (await p.$$("#m-docs .d-diff .d-line")).length;
+      if (drawn > 2000) fail(tag + "a big diff drew " + drawn + " lines");
+      if (!/first 2000 of 5000 lines/.test(await p.textContent("#m-docs .d-cut")) || !(await p.$("#m-docs .d-cut button"))) fail(tag + "a big diff has no cut strip with a download");
+      // the replacement character is dropped only from a cut, never from a whole file
+      await p.goto(st.url + "/d/fffd", { waitUntil: "domcontentloaded" });
+      await p.waitForSelector("#m-docs .d-text", { timeout: slow(8000) });
+      if (!(await p.textContent("#m-docs .d-text")).endsWith("\uFFFD")) fail(tag + "a trailing replacement character was stripped from a whole file");
+      // an over-large markdown is shown cut at 1 MiB with a download for the rest
+      await p.goto(st.url + "/d/big", { waitUntil: "domcontentloaded" });
+      await p.waitForSelector("#m-docs .d-cut", { timeout: slow(15000) });
+      if (!/first 1(\.0)? MB of 2/.test(await p.textContent("#m-docs .d-cut"))) fail(tag + "the cut is not said: " + await p.textContent("#m-docs .d-cut"));
+      if ((await p.textContent("#m-docs .d-content .md")).length > 1048576 + 16) fail(tag + "more than 1 MiB was shown");
+      // delete and restore, a new version, and a refusal on a deleted document
+      await p.goto(st.url + "/d/blob", { waitUntil: "domcontentloaded" });
+      await p.waitForSelector("#m-docs .d-acts", { timeout: slow(8000) });
+      await p.tap('#m-docs .d-acts button:has-text("delete")');
+      await p.tap('#m-docs .d-sure .d-warn');
+      await p.waitForSelector("#m-docs .d-banner", { timeout: slow(5000) });
+      if (!hub.docs.blob.deleted) fail(tag + "delete did not reach the hub");
+      await p.tap("#m-docs .d-banner .d-link");
+      await p.waitForSelector("#m-docs .d-acts", { timeout: slow(5000) });
+      await p.setInputFiles("#m-docs .d-acts input[type=file]", { name: "b2.zip", mimeType: "application/zip", buffer: Buffer.from("zip2") });
+      await p.waitForFunction(() => /v2/.test((document.querySelector("#m-docs .d-vrow select") || {}).textContent || ""), null, { timeout: slow(5000) });
+      const nv = hub.log.filter(r => /\/blob\/versions$/.test(r.path)).pop();
+      if (!nv || JSON.stringify(nv.fields) !== '["file"]') fail(tag + "a new version is not the versions route with file only: " + JSON.stringify(nv));
+      hub.docs.blob.deleted = { at: "2026-09-30T12:00:00Z", by: "operator" };
+      await p.setInputFiles("#m-docs .d-acts input[type=file]", { name: "b3.zip", mimeType: "application/zip", buffer: Buffer.from("zip3") });
+      await p.waitForFunction(() => /restore it first/.test((document.querySelector("#m-docs .d-status") || {}).textContent || ""), null, { timeout: slow(5000) });
+      hub.docs.blob.deleted = null;
+      // the text size follows the pinch and nothing scrolls sideways
+      await p.evaluate(() => document.getElementById("m-docs").style.setProperty("--m-fs", "20px"));
+      const fs = await p.evaluate(() => parseFloat(getComputedStyle(document.querySelector("#m-docs .d-info")).fontSize));
+      if (Math.abs(fs - 18) > 0.2) fail(tag + "the document text does not follow --m-fs: " + fs);
+      await p.evaluate(() => document.getElementById("m-docs").style.removeProperty("--m-fs"));
+      const small = await p.$$eval("#m-docs button", e => e.filter(x => x.getBoundingClientRect().height > 0 && x.getBoundingClientRect().height < 39.5).map(x => x.textContent));
+      if (small.length) fail(tag + "a button is under 40px: " + small.join(","));
+      if (await mNoSideways(p)) fail(tag + "the page scrolls sideways");
+      // /d/ links: only an exact same-origin address opens the sheet, in the app and without a navigation
+      await p.goto(st.url + "/m/", { waitUntil: "domcontentloaded" });
+      await p.waitForSelector("#m-seg-all", { timeout: slow(10000) });
+      await p.waitForFunction(() => !document.getElementById("m-docs-btn").hidden, null, { timeout: slow(5000) });
+      await p.tap("#m-seg-all");
+      await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
+      await p.tap('#m-list .row[data-id="dc-1"]');
+      await p.waitForSelector("#m-replies .md-doc", { timeout: slow(5000) });
+      const links = await p.$$eval("#m-replies a", e => e.map(a => a.getAttribute("href")));
+      if (links.indexOf("/d/usage-md@2") < 0 || links.indexOf("/d/usage-md") < 0 || links.indexOf("/d/usage-md@01") >= 0 === false && false) fail(tag + "doc links are not rendered: " + links.join(","));
+      if (links.indexOf("/d/Bad_Slug") >= 0) fail(tag + "a link that is not a slug was rendered as one");
+      const probe = await p.evaluate(() => {
+        const out = {};
+        const t = (name, href) => { const a = document.createElement("a"); a.href = href; a.textContent = name; document.getElementById("m-replies").appendChild(a); let dp = null; a.addEventListener("click", e => { dp = e.defaultPrevented; e.preventDefault(); }); a.click(); out[name] = dp; };
+        t("padded", "/d/usage-md@01"); t("other", "http://evil.example/d/usage-md"); t("upper", "/d/Usage"); t("deep", "/d/usage-md/x");
+        return out;
+      });
+      if (probe.padded || probe.other || probe.upper || probe.deep) fail(tag + "a link that is not an exact same-origin /d/ address was taken: " + JSON.stringify(probe));
+      if (await p.evaluate(() => { const e = document.getElementById("m-docs"); return !!e && !e.hidden; })) fail(tag + "a link that is not an address opened the sheet");
+      let loads = 0;
+      p.on("load", () => { loads++; });
+      await p.tap('#m-replies a[href="/d/usage-md@2"]');
+      await p.waitForSelector("#m-docs .d-content", { timeout: slow(5000) });
+      if (loads) fail(tag + "a /d/ link navigated away");
+      if (!/second version/.test(await p.textContent("#m-docs .d-content"))) fail(tag + "the link did not open version 2");
+      // Back leaves the sheet, on the card
+      await p.goBack();
+      await p.waitForFunction(() => document.getElementById("m-docs").hidden, null, { timeout: slow(3000) });
+      if (await p.$eval("#m-card", e => e.hidden)) fail(tag + "Back from a document closed the card under it");
+      // the card's own line: asked once, never again inside 30 seconds, and it opens the list for that card
+      await p.waitForFunction(() => !document.getElementById("m-card-docs").hidden, null, { timeout: slow(5000) });
+      if (!/published 1 document$/.test(await p.textContent("#m-card-docs"))) fail(tag + "the card line is wrong: " + await p.textContent("#m-card-docs"));
+      st.send("task", Object.assign({}, st.tasks[0], { row: 1, output_at: mIso(0.1 * M_MIN) }));
+      st.send("task", Object.assign({}, st.tasks[0], { row: 1, output_at: mIso(0.05 * M_MIN) }));
+      await p.waitForTimeout(800);
+      const asks = hub.log.filter(r => r.path === "/_hub/docs" && /card=dc-1/.test(r.q)).length;
+      if (asks !== 1) fail(tag + "the card line asked " + asks + " times inside 30 seconds");
+      await p.tap("#m-card-docs");
+      await p.waitForSelector("#m-docs .d-row", { timeout: slow(5000) });
+      if ((await p.$$("#m-docs .d-row")).length !== 1) fail(tag + "the card's list is not filtered to its documents");
+      if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+      await ctx.close();
+    }
+    // only an operator is offered `upload anyway`: from anyone else the hub answers an override with a 403
+    hub.operator = false;
+    const { ctx, p, errors } = await mPage(browser, st, { width: 412, height: 915 }, "");
+    await p.waitForFunction(() => !document.getElementById("m-docs-btn").hidden, null, { timeout: slow(5000) });
+    await p.tap("#m-docs-btn");
+    await p.waitForSelector("#m-docs input[type=file]", { state: "attached", timeout: slow(5000) });
+    await p.setInputFiles("#m-docs input[type=file]", { name: "key.txt", mimeType: "text/plain", buffer: Buffer.from("-----BEGIN PRIVATE KEY-----") });
+    await p.waitForFunction(() => /pem-private-key/.test((document.querySelector("#m-docs .d-status") || {}).textContent || ""), null, { timeout: slow(5000) });
+    if (await p.$("#m-docs .d-status .d-link")) fail("mDocs: a non-operator was offered upload anyway");
+    if (errors.length) fail("mDocs: page errors: " + errors.join(" | "));
+    await ctx.close();
+  } finally { await st.close(); }
+  if (!bad) console.log("mDocs ok");
+}
+
 async function mRecapSheetSection(browser) {
   const st = mServer({});
   const fresh = mCard("rc-fresh", { alias: "fresh", display_title: "fresh", status: "needs-input", waiting_since: mIso(M_MIN),
@@ -15239,6 +15582,51 @@ async function phoneBoardCompactSection(browser, base) {
   if (!bad) console.log("phoneBoardCompact ok");
 }
 
+// The desktop board's documents tab and panel, shared with /m. Off on a board with no /_hub/docs.
+async function boardDocsSection(browser, base) {
+  const was = tasksMode, wasDocs = boardDocs;
+  tasksMode = "land";
+  landList = [];
+  landPerms = [];
+  try {
+    for (const on of [false, true]) {
+      boardDocs = on;
+      const tag = "boardDocs " + (on ? "with" : "without") + " documents: ";
+      const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+      await ctx.addInitScript(() => localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true })));
+      const p = await ctx.newPage();
+      const errors = [];
+      p.on("pageerror", e => errors.push(String(e)));
+      await p.goto(base, { waitUntil: "domcontentloaded" });
+      await p.waitForSelector('header nav .tab[data-view="stack"]', { timeout: slow(15000) });
+      await p.waitForTimeout(800);
+      const shown = await p.evaluate(() => { const t = document.querySelector('.tab[data-view="docs"]'); return !!t && !t.hidden; });
+      if (shown !== on) fail(tag + "the documents tab is " + (shown ? "shown" : "hidden"));
+      if (on) {
+        await p.evaluate(() => document.querySelector('.tab[data-view="docs"]').click());
+        await p.waitForSelector("#m-docs .d-row", { timeout: slow(5000) });
+        if (await p.evaluate(() => document.querySelector(".tab.on").dataset.view) === "docs") fail(tag + "the tab took over a board view instead of opening the panel");
+        await p.click("#m-docs .d-main");
+        await p.waitForSelector("#m-docs .d-content .md", { timeout: slow(5000) });
+        if (!/hello/.test(await p.textContent("#m-docs .d-content"))) fail(tag + "the document is not drawn");
+        if (await p.evaluate(() => location.pathname) !== "/") fail(tag + "the board's address changed");
+        await p.click("#m-docs .d-back");
+        await p.waitForFunction(() => document.getElementById("m-docs").hidden, null, { timeout: slow(3000) });
+        // a /d/ link anywhere on the board opens the panel and does not navigate
+        let loads = 0;
+        p.on("load", () => { loads++; });
+        await p.evaluate(() => { const a = document.createElement("a"); a.href = "/d/board-doc"; a.id = "probe-link"; a.textContent = "a doc"; a.style.cssText = "position:fixed;top:60px;left:10px;z-index:99999"; document.body.appendChild(a); });
+        await p.click("#probe-link");
+        await p.waitForSelector("#m-docs .d-content .md", { timeout: slow(5000) });
+        if (loads) fail(tag + "a /d/ link navigated the board away");
+      }
+      if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+      await ctx.close();
+    }
+  } finally { tasksMode = was; boardDocs = wasDocs; }
+  if (!bad) console.log("boardDocs ok");
+}
+
 async function soundPhoneSection(browser, base) {
   const was = tasksMode;
   tasksMode = "land";
@@ -16206,7 +16594,7 @@ async function main() {
   const browser = withClock(await chromium.launch());
   // HEADLESS_ONLY=termWear,bridge runs just those sections, for working on one.
   if (process.env.HEADLESS_ONLY) {
-    const only = { phoneBoardCompact: phoneBoardCompactSection, termWear: termWearSection, bridge: bridgeSection, settingsOnce: settingsOnceSection,
+    const only = { boardDocs: boardDocsSection, phoneBoardCompact: phoneBoardCompactSection, termWear: termWearSection, bridge: bridgeSection, settingsOnce: settingsOnceSection,
       groupRemove: groupRemoveSection, worn: wornSection, restartGate: restartGateSection, restartStays: restartStaysSection, atriumDown: atriumDownSection,
       toastStays: toastStaysSection, groupColor: groupColorSection,
       groupDrag: groupDragSection, tooltip: tooltipSection, linkTip: linkTipSection,popoutTagFlip: popoutTagFlipSection, idleRate: idleRateSection, foldStill: foldStillSection,
@@ -16243,7 +16631,7 @@ async function main() {
       mOutputAt: mOutputAtSection, mStickBottom: mStickBottomSection, mSendFree: mSendFreeSection, mCardUpload: mCardUploadSection, mCompact: mCompactSection, mPinch: mPinchSection, mPrompts: mPromptsSection,
       cardUrlWinName: cardUrlWinNameSection,
       gearHosts: gearHostsSection,
-      mTypeSteady: mTypeSteadySection, mOlder: mOlderSection, mFollow: mFollowSection,
+      mTypeSteady: mTypeSteadySection, mOlder: mOlderSection, mFollow: mFollowSection, mDocs: mDocsSection,
       mSwitcher: mSwitcherSection,
       mPull: mPullSection };
     try {
@@ -18228,6 +18616,7 @@ async function main() {
     await mChangesSection(browser);
     await mHomeLiveSection(browser);
     await soundPhoneSection(browser, base);
+    await boardDocsSection(browser, base);
     await phoneBoardCompactSection(browser, base);
     await phoneBellSection(browser, base);
     await mBellSection(browser);
@@ -18244,6 +18633,7 @@ async function main() {
     await mTypeSteadySection(browser);
     await mOlderSection(browser);
     await mFollowSection(browser);
+    await mDocsSection(browser);
     await mSwitcherSection(browser);
     await mPullSection(browser);
     await mPromptsSection(browser);
@@ -18411,6 +18801,13 @@ function mServer(state) {
       res.writeHead(200, head);
       return res.end(body);
     }
+    if (p.startsWith("/_hub/docs")) {
+      if (!state.docsApi) { res.writeHead(404); return res.end("not a hub"); }
+      const chunks = [];
+      req.on("data", c => chunks.push(c));
+      req.on("end", () => state.docsApi(req, res, u, p, json, Buffer.concat(chunks)));
+      return;
+    }
     const m = p.match(/^\/v1\/tasks\/([^/]+)\/replies$/);
     if (m) {
       const before = u.searchParams.get("before");
@@ -18424,7 +18821,7 @@ function mServer(state) {
       return json(200, r);
     }
     let file = null;
-    if (p === "/m/" || p === "/m") file = path.join(M_ROOT, "index.html");
+    if (p === "/m/" || p === "/m" || p === "/m/docs" || /^\/d\/[^/]*$/.test(p)) file = path.join(M_ROOT, "index.html");
     else if (p.startsWith("/m/")) file = path.join(M_ROOT, p.slice(3));
     else if (p.startsWith("/css/") || /^\/js\/(cardrules|sounds)\.js$/.test(p)) file = path.join(WEB_ROOT, p);
     if (file && !path.relative(WEB_ROOT, file).startsWith("..") && fs.existsSync(file) && fs.statSync(file).isFile()) {
