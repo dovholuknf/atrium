@@ -219,7 +219,8 @@ the typing of the stop line and the capture, so a director somebody is talking t
 means a terminal attached, or the phone card page open (the page holds no connection, so it is read off the card's
 replies being fetched in the last `ceilingCardRead`, two minutes), and that wait is bounded: `ceilingMaxWait` (30
 minutes) past the crossing, a watcher alone stops holding, so a tab left open does not turn the ceiling off for good.
-TYPING NEVER TIMES OUT. A keystroke in the last `ceilingTypedQuiet` (two minutes) holds for as long as it keeps coming,
+TYPING NEVER TIMES OUT. A keystroke in the last `ceilingTypedQuiet` (two minutes) holds every step the cycle types
+(capture, `/clear`, wake), not only the start, since the typing gate's own quiet is seconds. It holds for as long as it keeps coming,
 because a watcher who is only reading may be cleared at the bound and a person mid-sentence may not. The wait is
 said once per crossing, as an event on the card and a launcher notice: "waiting for you to leave before cycling its
 context". And a card with no directory the room can
