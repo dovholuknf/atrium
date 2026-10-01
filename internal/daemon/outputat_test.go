@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"testing"
@@ -87,6 +88,35 @@ func appendRaw(t *testing.T, path string, b []byte) {
 	defer fh.Close()
 	if _, err := fh.Write(b); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// A LINE OVER THE SCANNER'S LIMIT, a pasted image stored base64, does not freeze
+// output_at: the read is capped at the tail and moves past it.
+func TestOutputAtGetsPastAHugeLine(t *testing.T) {
+	f := newUsageFix(t)
+	d := &Daemon{st: f.st, usage: f.u, ctx: newContextSizes()}
+	transcriptReply(t, f.path, "m1", f.base, false, textBlock("before the paste"))
+	if !d.outputMoved(f.task) {
+		t.Fatal("the first reply did not move output_at")
+	}
+	huge := append([]byte(`{"type":"user","message":{"content":"`), bytes.Repeat([]byte("A"), 9<<20)...)
+	appendRaw(t, f.path, append(huge, []byte("\"}}\n")...))
+	if d.outputMoved(f.task) {
+		t.Fatal("a user line moved output_at")
+	}
+	transcriptReply(t, f.path, "m2", f.base.Add(time.Minute), false, textBlock("after the paste"))
+	if !d.outputMoved(f.task) {
+		t.Fatal("the reply after a 9 MB line never moved output_at")
+	}
+	if got := d.outputAtFor(f.task.ID); got != f.base.Add(time.Minute).UTC().Format(time.RFC3339Nano) {
+		t.Fatalf("output_at is %q", got)
+	}
+	d.output.mu.Lock()
+	off := d.output.seen[f.task.ID].offset
+	d.output.mu.Unlock()
+	if info, _ := os.Stat(f.path); off != info.Size() {
+		t.Fatalf("the offset is %d of %d", off, info.Size())
 	}
 }
 
