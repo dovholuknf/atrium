@@ -1,6 +1,6 @@
 # u-new-no-toast-on-focused-terminal. No question toast for the terminal you are typing in
 
-Status: approved by clint as a pause exception, 2026-10-01. Owned by @ui. Filed by the orchestrator, from clint.
+Status: built on claude/u-no-toast (headless units `growlOnIt` and `growlActions`, test plan IB), the director lands. Approved by clint as a pause exception, 2026-10-01. Owned by @ui. Filed by the orchestrator, from clint.
 
 Screenshots: `D:\git\github\dovholuknf\atrium\.atrium\incoming\20261001-100246-pasted.png` and
 `...\20261001-165122-pasted.png` on sg4.
