@@ -59,3 +59,14 @@ those words: send me the SHA and I check only the diff. Nothing is built, so the
 Quality: after the Sonnet switch, careful and correct against the code. The miss is the second-order one again: the
 doc rules out the token in the store, without seeing that the obvious setup puts it in the store by the argv, and on
 an open route as well.
+
+## Fold: 324db7f8 (2026-10-01)
+
+Diff 82bdceea..324db7f8, the design doc only. Everything is folded: the token-never-in-argv bullet (hub_setting, open
+`GET /_hub/notify`), the print-nothing bullet (`last_error`, the test output), and the message-only line under
+two-way. The sketch now defaults to a fixed line and makes the name opt-in through `ATRIUM_TELEGRAM_NAMES`. It links
+`/m/#term=` with the escaped id and prints only `telegram send failed` on a failed send. Its `-ErrorAction Stop`
+makes the catch see the HTTP error, so nothing from the library reaches stderr. A failed token-file read prints the
+file's path, never the token.
+
+OK. Design accepted. Nothing to build in atrium, and so nothing to deploy.
