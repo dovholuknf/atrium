@@ -66,3 +66,28 @@ comparison, the `Infinity` tie, and the dropped clamp with the live data that ju
 scope again. The change was framed as fixing the shared sort, but four desktop sorts never used the shared function.
 
 HUB DEPLOY OK 03cca53f (low 3 to follow; it only matters where rows were read at different times)
+
+## Re-read of 6f701eba (@ui, low 3: every read goes through the shared rules)
+
+`git diff 03cca53f 6f701eba -- internal/api/web`, read only.
+
+- **Sorts.** `columnOrder`, `termOrder`, the switcher's rows and the stack's status tie break all call
+  `cardActivityCmp`. The waited sort uses `cardWaitSeconds` with one `now` per comparison.
+- **Waiting time** gets the same treatment as idle: `cardWaitSeconds` prefers `waiting_since` and falls back to
+  `wait_seconds`, which the daemon makes the same stale way (api.go). It feeds the waited sort, `bigNumber` and the
+  state chip.
+- **Shown ages** go through `cardIdleAge` and `cardSecs`: never negative, never infinite, and 0 with no stamp. The
+  board's chips, `isOutOfContact` (unchanged for a card with no stamp, which reads 0 as before), the peek's foot,
+  the task header and the stack's big number all use them.
+- `stateChip` takes one `now` for both of its numbers, so "the big number already says this" is compared at a
+  single instant, and `Infinity === Infinity` holds for a card with no stamp.
+- **Left alone, correctly.** `board.js:547` reads `activity.idle_seconds`, the pty-quiet figure from
+  `daemon/looksidle.go`, which is a different fact.
+
+Low 3 is closed. No findings.
+
+Quality: after the Sonnet switch. The sweep was taken to its end (sorts, keys, chips and shown ages), and the one
+read left was judged a different fact, which it is. This answers the scope note on the last two reviews. No drop
+seen.
+
+HUB DEPLOY OK 6f701eba
