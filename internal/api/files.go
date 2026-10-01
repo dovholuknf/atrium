@@ -6,6 +6,7 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -323,5 +324,32 @@ func (s *Server) downloadFile(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Content-Disposition",
 		`attachment; filename="`+safepath.SafeName(filepath.Base(real))+`"`)
+	// WHAT THE PATH RESOLVED TO, relative to the card, so the hub can run a secret name check
+	// on the file that is really being read and not on the name it was asked for. A link
+	// `notes.md -> .env` passes containment and the filename above has lost its leading dot.
+	// See hubstore.SecretFileName and atrium_publish.
+	if rel, ok := realRelative(task.Worktree, real); ok {
+		w.Header().Set(RealPathHeader, url.PathEscape(rel))
+	}
 	http.ServeContent(w, r, "", fi.ModTime(), f)
+}
+
+// RealPathHeader carries a download's resolved path, relative to the card, path-escaped.
+const RealPathHeader = "X-Atrium-Real-Path"
+
+// realRelative is real, which safepath already resolved, as a slash path under the card's
+// resolved directory. False when it cannot be worked out, and the header is left off.
+func realRelative(worktree, real string) (string, bool) {
+	root, err := filepath.Abs(filepath.FromSlash(worktree))
+	if err != nil {
+		return "", false
+	}
+	if r, err := filepath.EvalSymlinks(root); err == nil {
+		root = r
+	}
+	rel, err := filepath.Rel(root, real)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", false
+	}
+	return filepath.ToSlash(rel), true
 }

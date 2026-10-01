@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/hubstore"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -98,6 +99,9 @@ type controlMCP struct {
 	// requests, apart from mu so a launch never waits on a deploy call. See
 	// deploy_mcp.go.
 	settings func() HubSettings
+	// docs is the hub's document store, read at each call so SetDocs may come later. Nil on a
+	// hub without one. See docs_mcp.go.
+	docs     func() *hubstore.Store
 	deployMu sync.Mutex
 
 	// classMu guards classes, the per-caller class cache. See ctlclass.go.
@@ -373,6 +377,7 @@ func (c *controlMCP) server(class ctlClass) *mcp.Server {
 
 	c.registerGit(s, class)
 	c.registerDeps(s, class)
+	c.registerDocs(s, class)
 	c.registerDeploy(s, class)
 
 	return s
