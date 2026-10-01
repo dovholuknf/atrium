@@ -82,22 +82,31 @@ function pullsErr(e) {
   return (e && e.message) || "that did not work";
 }
 
+// The tab stays hidden until the index answers 200 with a prs array: a daemon with no /v1/prs (an older build, a hub
+// that does not proxy it) gets no tab. A read asked for while one is in flight runs again when it ends.
 async function loadPulls() {
-  if (pulls.loading) return;
+  if (pulls.loading) { pulls.again = true; return; }
   pulls.loading = true;
   try {
     const all = pulls.filterState === "all";
     const body = await api("/v1/prs" + (all ? "?archived=1" : ""));
-    pullsSetRows(body && body.prs);
+    if (!body || !Array.isArray(body.prs)) throw new Error("no pulls here");
+    pullsSetRows(body.prs);
     pulls.loaded = true;
-    pullsSay("");
+    const tab = document.querySelector('.tab[data-view="pulls"]');
+    if (tab) tab.hidden = false;
+    // Only a note this read itself raised is cleared: a refusal that asked for this read stays on screen.
+    if (pulls.loadFailed) pullsSay("");
+    pulls.loadFailed = false;
     // nav_count is what the daemon counted. The held rows say the same, and say it again after every event.
     pullsChanged();
   } catch (e) {
+    pulls.loadFailed = true;
     pullsSay(pullsErr(e));
     pullsPaint();
   } finally {
     pulls.loading = false;
+    if (pulls.again) { pulls.again = false; loadPulls(); }
   }
 }
 
@@ -236,8 +245,14 @@ function pullsPaintFilters() {
   if (!sel) return;
   const repos = [...new Set(pulls.rows.map(r => r.org_repo))].sort();
   if (pulls.filterRepo && !repos.includes(pulls.filterRepo)) repos.push(pulls.filterRepo);
-  sel.innerHTML = '<option value="">all repos</option>' +
+  // Only when the set changes, so an open select is not closed by every event.
+  const key = repos.join("|");
+  if (sel.dataset.repos !== key) {
+    sel.dataset.repos = key;
+    sel.innerHTML = '<option value="">all repos</option>' +
     repos.map(n => '<option value="' + esc(n) + '"' + (n === pulls.filterRepo ? " selected" : "") + ">" + esc(n) + "</option>").join("");
+  }
+  sel.value = pulls.filterRepo;
   const st = document.getElementById("pulls-state");
   if (st) st.value = pulls.filterState;
 }

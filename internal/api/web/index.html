@@ -160,7 +160,7 @@
       <div class="tab" data-view="board">board</div>
       <div class="tab" data-view="terms">terminals<span class="count zero" id="c-term"
            data-tip="terminals atrium is supervising"></span></div>
-      <div class="tab" data-view="pulls">pulls<span class="count zero" id="c-pulls"
+      <div class="tab" data-view="pulls" hidden>pulls<span class="count zero" id="c-pulls"
            data-tip="reviews that are ready to walk or failed"></span></div>
       <div class="tab" data-view="history">history</div>
       <div class="tab" data-view="usage">usage</div>
@@ -778,7 +778,7 @@ Tokens only: no dollar figure is worked out.">?</span>
   <div id="pulls" hidden>
     <div class="col-head" style="margin:0 0 10px"><span>pull requests under review</span></div>
     <div class="filters">
-      <select id="pulls-state"><option value="open">open</option><option value="all">all</option></select>
+      <select id="pulls-state"><option value="open">open (not archived)</option><option value="all">all</option></select>
       <select id="pulls-repo"></select>
       <input id="pulls-url" type="text" placeholder="https://github.com/org/repo/pull/123" aria-label="pull request URL">
       <input id="pulls-why" type="text" placeholder="why (optional)" aria-label="why">

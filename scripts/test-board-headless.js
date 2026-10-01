@@ -16231,6 +16231,8 @@ async function pullsSection(browser, base) {
     p.on("pageerror", e => errors.push(e.message));
     await p.goto(base + "/", { waitUntil: "domcontentloaded" });
     await p.waitForFunction(() => typeof pullsPaint === "function" && typeof switchView === "function", null, { timeout: slow(15000) });
+    await p.waitForFunction(() => !document.querySelector('.tab[data-view="pulls"]').hidden, null, { timeout: slow(10000) })
+      .catch(() => fail("pulls: the tab did not appear once /v1/prs answered"));
     await p.evaluate(() => switchView("pulls"));
     await p.waitForFunction(() => document.querySelectorAll("#pulls-list .pull").length > 0, null, { timeout: slow(10000) });
     return p;
@@ -16367,6 +16369,26 @@ async function pullsSection(browser, base) {
     if (errors.length) fail("pulls: page errors: " + errors.join(" | "));
   } finally { await ctx.close(); }
   if (!bad) console.log("pulls ok");
+}
+
+// The daemon answers /v1/prs with a plain-text 404 (nothing serves it yet): the tab stays hidden and nothing throws.
+async function pullsAbsentSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const errors = [];
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(e.message));
+    let asked = 0;
+    p.on("request", r => { if (new URL(r.url()).pathname === "/v1/prs") asked++; });
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof pullsPaint === "function", null, { timeout: slow(15000) });
+    await p.waitForFunction(() => !pulls.loading, null, { timeout: slow(10000) });
+    await p.waitForTimeout(500);
+    if (!asked) fail("pullsAbsent: the board never asked for /v1/prs");
+    if (await p.evaluate(() => !document.querySelector('.tab[data-view="pulls"]').hidden)) fail("pullsAbsent: the pulls tab shows with no /v1/prs");
+    if (errors.length) fail("pullsAbsent: page errors: " + errors.join(" | "));
+  } finally { await ctx.close(); }
+  if (!bad) console.log("pullsAbsent ok");
 }
 
 async function termBoxSection(browser, base) {
@@ -18065,7 +18087,7 @@ async function main() {
       coverPoll: coverPollSection, coverSteps: coverStepsSection, termBox: termBoxSection,
       termDebug: termDebugSection, termSortStarted: termSortStartedSection,
       noReadyChildren: noReadyChildrenSection, childUnderParent: childUnderParentSection, topNav: topNavSection,
-      childFold: childFoldSection, pulls: pullsSection };
+      childFold: childFoldSection, pulls: pullsSection, pullsAbsent: pullsAbsentSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -20100,6 +20122,7 @@ async function main() {
     await unit("termSortStarted", () => termSortStartedSection(browser, base));
     await unit("topNav", () => topNavSection(browser, base));
     await unit("pulls", () => pullsSection(browser, base));
+    await unit("pullsAbsent", () => pullsAbsentSection(browser, base));
     await pasteStartSection(browser, base);
     await pasteDoneSection(browser, base);
     await pasteOldRoomSection(browser, base);
@@ -20163,6 +20186,7 @@ async function main() {
     await topNavSection(browser, base);
     await childFoldSection(browser, base);
     await pullsSection(browser, base);
+    await pullsAbsentSection(browser, base);
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e));
     if (process.env.DEBUG_HEADLESS && page) {
