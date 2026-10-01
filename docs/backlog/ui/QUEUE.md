@@ -24,6 +24,13 @@ Waiting: item 3 (which bubbles do not work) needs clint's answer.
 
 Next, after u-m-card and u-m-home land (clint, 2026-09-30 evening, by the orchestrator):
 
+00. **Hub documents D2, the views** (`docs/rnd/hub-documents-design.md`, stage D2, clint approved building stage 1
+    on 2026-09-30 night). `/d/<slug>` and `/d/<slug>@<n>` on the /m shell and the board, the documents list with a
+    title filter, upload from /m, history with a text diff, "published N documents" on a card. Reuse the file viewer,
+    `mMd` and the diff colouring. Against @fabric's D1 API (`GET` and `POST /_hub/docs`, raw bytes, tombstone and
+    restore). Build on mocked endpoints until D1 lands. Review first, then land. After the current /m landing and the
+    diff mockups.
+
 0. **Code review on the phone** (`u-new-m-code-review.md`, clint 2026-09-30 night): a "N files changed" chip per
    reply opening a diff in the viewer sheet, a card-level changes view, tap a line to quote it. A mock first, then
    @rnd, then build. After the scroll-yank fix.
