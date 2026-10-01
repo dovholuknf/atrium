@@ -24,14 +24,10 @@ it. Tell the orchestrator the claude/landing tip and the verdict. PAUSE holds: n
 **Every review ends** with a "Quality: after the Sonnet switch ..." line. Board checks are @ui's: read the headless
 cases, never run the whole suite. Commits from sg3 are unsigned (no key there): note it in each verdict.
 
-**IN FLIGHT: @runtime r-pr-run** (claude/r-pr-run, local in the m1mini clone). HOLD d33bd3b5..dbb76109, file
-docs/backlog/runtime/r-new-review-dbb76109.md (verdict commit d47ade60, hold trailer NOT yet added: add
-`Atrium-Verdict: hold d33bd3b5..dbb76109` if the orchestrator wants it recorded). HIGH proven: prime and forks run
-with cwd `<run>/src` (the PR checkout) and `--setting-sources project,local`, so a PR's `.claude/settings.json` hooks
-run. Proof recipe: a `src/.claude/settings.json` SessionStart hook that touches a marker, then `claude -p` in src/ with
-the fork's flags. MEDIUM: merge replay reads `steps/merge/out.json` (the receipt), not `merge/findings.json`, so a
-retry after merge renders 0 findings as ready. When @runtime sends the tip: re-read d33bd3b5..tip, rerun the proof,
-verdict room-ok (daemon code). Tell runtime@m1mini, rnd@m1mini and the orchestrator. Land via claude/landing.
+**DONE on m1mini: @runtime r-pr-run** re-read OK d33bd3b5..8c9b17d7 (ebc2b5f5), on claude/landing b07cbfb2, the
+orchestrator told. The HOLD's high is closed and proven. Open medium for the next patch: `--setting-sources user` should be
+`""` (r-new-review-dbb76109.md, last section). No atrium_alias tool on m1mini: alias "review" not set, the sg4 card
+was asked.
 
 **PARKED: @ui pulls-p3**, HOLD d33bd3b5..450269c4 (c0bccc01), file docs/backlog/ui/u-new-review-450269c4.md. Its
 worker is on sg3, which m1mini cannot read. Stays on HOLD until the pause ends. Medium: `pullsWalk` posts the launch
