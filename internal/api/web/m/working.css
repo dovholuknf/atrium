@@ -99,3 +99,9 @@
 .reply.prompt.peer .own { font-size: 14px; }
 .reply.prompt.command { align-self: flex-end; background: none; padding: 0 4px; opacity: .7; }
 .reply.prompt.command .own { font-size: 12.5px; font-family: var(--mono, ui-monospace, monospace); }
+
+/* The activity is not a box of its own: it shares the small row above the composer with how the last message went. */
+#m-card .working { background: none; border: 0; border-radius: 0; padding: 1px 12px; color: var(--dim); gap: 6px; font-size: 11.5px; font-weight: 500; }
+#m-card .working .wk-sent { flex: none; color: var(--teal); font-weight: 650; }
+#m-card .working .wk-dot { flex: none; }
+#m-card .working .wk-what { color: var(--working-fg, var(--teal)); }

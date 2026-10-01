@@ -126,14 +126,27 @@
     return a.what && a.what !== "thinking" ? String(a.what) : "thinking";
   }
 
+  // The one small row above the composer: how the last message went, and what the card is doing, on one line.
+  function sentOf(t) {
+    const bare = window.mNet.bareId(t.id);
+    const mine = readSent(t.id).concat(flight.get(bare) || []).sort((x, y) => U.ts(x.at) - U.ts(y.at)).pop();
+    if (!mine) return "";
+    const got = cache.get(openId);
+    const reps = got && got.replies || [];
+    if (reps.length && U.ts(reps[reps.length - 1].at) > U.ts(mine.at)) return "";
+    const st = mine.state || mine.kind;
+    return st === "pending" ? "sending" : st === "failed" ? "not sent" : st === "queued" ? "queued" : "sent";
+  }
+
   function paintWorking(t) {
-    const w = workingOf(t);
-    const sig = w ? (t.activity && t.activity.what === "tool" ? "tool:" : "") + w : "";
+    const w = workingOf(t), sent = sentOf(t);
+    const tool = t.activity && t.activity.what === "tool";
+    const sig = sent + "|" + (w ? (tool ? "tool:" : "") + w : "");
     if (els.working.dataset.sig === sig) return;
     els.working.dataset.sig = sig;
-    els.working.hidden = !w;
-    els.working.innerHTML = w ? '<span class="wk-spin" aria-hidden="true"></span><span class="wk-what">' +
-      (t.activity && t.activity.what === "tool" ? '<span class="wk-verb">running</span> ' : "") + U.esc(w) + "</span>" : "";
+    els.working.hidden = !w && !sent;
+    els.working.innerHTML = (sent ? '<span class="wk-sent">' + U.esc(sent) + "</span>" : "") + (sent && w ? '<span class="wk-dot">&middot;</span>' : "") +
+      (w ? '<span class="wk-spin" aria-hidden="true"></span><span class="wk-what">' + (tool ? '<span class="wk-verb">running</span> ' : "") + U.esc(w) + "</span>" : "");
   }
 
   // ── what the operator sent ───────────────────────────────────────────────
@@ -178,7 +191,7 @@
     a.push({ at: new Date().toISOString(), text: t, kind: kind === "queued" ? "queued" : "sent" });
     try { localStorage.setItem(sentKey(id), JSON.stringify(a.slice(-SENT_KEEP))); } catch (e) {}
     pruneSent();
-    if (isOpen(id)) { stick = true; paintReplies(); }
+    if (isOpen(id)) { stick = true; paintReplies(); paintWorkingNow(); }
   }
   function isOpen(id) { return !!openId && window.mNet.bareId(id) === window.mNet.bareId(openId); }
   window.addEventListener("m-sent", e => { const d = e.detail || {}; noteSent(d.id, d.text, d.kind); });
@@ -186,6 +199,7 @@
   // A message on its way, in memory only: pending while the room has not answered, and not sent when it failed, with
   // its text back in the composer. An answered one becomes the kept row above, carrying delivered or queued.
   const flight = new Map();
+  function paintWorkingNow() { const t = openId && window.mStore.card(openId); if (t && els) paintWorking(t); }
   window.addEventListener("m-send", e => {
     const d = e.detail || {};
     if (!d.id || !d.key) return;
@@ -193,7 +207,7 @@
     const list = (flight.get(bare) || []).filter(x => x.key !== d.key && !(x.state === "failed" && x.text === d.text));
     if (d.state === "pending" || d.state === "failed") list.push({ key: d.key, text: d.text, state: d.state, at: new Date().toISOString() });
     flight.set(bare, list);
-    if (isOpen(d.id)) { if (d.state === "pending") stick = true; paintReplies(); }
+    if (isOpen(d.id)) { if (d.state === "pending") stick = true; paintReplies(); paintWorkingNow(); }
   });
 
   const OWN_TAG = { pending: "sending", failed: "not sent, back in the box", sent: "delivered", queued: "queued" };

@@ -13104,7 +13104,7 @@ async function mWorkingSection(browser) {
       let b = await box();
       if (b.hidden || b.text !== "thinking") fail(tag + "no thinking line: " + JSON.stringify(b));
       if (b.inChips || /thinking/.test(b.chipText)) fail(tag + "the working text is in the chip row: " + b.chipText);
-      if (b.h > 32 || b.fs < 12) fail(tag + "the line is not a thin strip: " + JSON.stringify(b));
+      if (b.h > 32 || b.fs < 11) fail(tag + "the line is not a thin strip: " + JSON.stringify(b));
       if (b.anim !== "wk-turn") fail(tag + "the spinner does not animate: " + b.anim);
       if (b.bottom > b.composeTop + 1 || b.composeTop - b.bottom > 40) fail(tag + "the line is not pinned just above the composer: " + JSON.stringify(b));
       if (b.sw > b.iw + 1) fail(tag + "the card scrolls sideways");
@@ -13252,6 +13252,25 @@ async function mCompactSection(browser) {
     await p.waitForFunction(() => /delivered/.test(document.getElementById("m-replies").textContent), null, { timeout: slow(5000) });
     await p.waitForTimeout(400);
     if ((await mCompactCount(p)).note > 0) fail(tag + "a sent line is still above the composer");
+    // the activity shares the row above the composer with the send state, and has no box of its own
+    const act = mCard("cp-1", { alias: "packer", display_title: "packer", status: "running", activity: { what: "tool", tool: "Bash" }, seen: { turn_ended_at: mIso(20 * M_MIN) } });
+    await p.waitForFunction(() => document.getElementById("m-live").classList.contains("on"), null, { timeout: slow(10000) });
+    const t1 = Date.now();
+    while (!st.streams.length && Date.now() - t1 < slow(10000)) await p.waitForTimeout(100);
+    st.send("task", Object.assign({}, act, { row: 1 }));
+    await p.waitForFunction(() => /Bash/.test(document.getElementById("m-working").textContent), null, { timeout: slow(5000) });
+    const row = await p.evaluate(() => {
+      const w = document.getElementById("m-working");
+      return { hidden: w.hidden, text: w.textContent.replace(/\s+/g, " ").trim(), spin: !!w.querySelector(".wk-spin"), h: Math.round(w.getBoundingClientRect().height),
+        bg: getComputedStyle(w).backgroundColor, border: getComputedStyle(w).borderTopWidth,
+        boxes: document.querySelectorAll("#m-card .working, #m-card .activity, #m-card .thinking").length };
+    });
+    console.log("mCompact row: " + JSON.stringify(row));
+    if (!/^sent\s*·\s*running\s+Bash$/.test(row.text) || !row.spin) fail(tag + "the row does not show both the send state and the activity: " + JSON.stringify(row));
+    await mShot(p, "compact-activity-390");
+    if (row.boxes !== 1) fail(tag + "more than one activity block: " + row.boxes);
+    if (row.border !== "0px" || !/^rgba\(0, 0, 0, 0\)|transparent/.test(row.bg)) fail(tag + "the activity row is still a box: " + JSON.stringify(row));
+    if (row.h > 24) fail(tag + "the activity row is not one line: " + row.h);
     if (await mNoSideways(p)) fail(tag + "the card scrolls sideways");
     if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
     await ctx.close();
