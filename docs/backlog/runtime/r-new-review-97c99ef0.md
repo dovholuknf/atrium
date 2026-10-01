@@ -133,3 +133,11 @@ OK room e502b215..852e5c74. The gofmt nit should go in before landing, but it ch
 
 Quality: after the Sonnet switch, the fix is complete and went further than asked. The race work is careful, and the
 store keeps its halt rule. The one miss is gofmt on a file it edited.
+
+## Stamp: 0c05ecbb (2026-10-01)
+
+Rebased on claude/main 69b82d6a. `git range-diff` shows the nine reviewed commits `=`. 0c05ecbb is the gofmt fold of
+internal/api/prsdrawer.go (`git diff -w` is empty, so whitespace only) and the two runner notes, added to the changelog.
+The gofmt nit is closed. The low and the other nit are now written down for the runner worker.
+
+OK room e502b215..0c05ecbb.
