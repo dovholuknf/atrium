@@ -13577,6 +13577,117 @@ async function mTablesSection(browser) {
   if (!bad) console.log("mTables ok");
 }
 
+// ── markdown in a reply: every construct, and a hostile reply ────────────
+const M_PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
+async function mReplyPage(browser, st, vp, id) {
+  const ctx = await browser.newContext({ viewport: vp, hasTouch: true, isMobile: true, deviceScaleFactor: 2 });
+  const remote = [];
+  await ctx.route(url => !/^http:\/\/127\.0\.0\.1[:/]/.test(url.href), r => { remote.push(r.request().url()); return r.abort(); });
+  const p = await ctx.newPage();
+  const errors = [];
+  p.on("pageerror", e => errors.push(String(e)));
+  await p.goto(st.url + "/m/", { waitUntil: "domcontentloaded" });
+  await p.waitForSelector("#m-seg-all", { timeout: slow(10000) });
+  await p.tap("#m-seg-all");
+  await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
+  await p.tap('#m-list .row[data-id="' + id + '"]');
+  await p.waitForSelector("#m-replies .md", { timeout: slow(5000) });
+  return { ctx, p, errors, remote };
+}
+
+async function mMarkdownSection(browser) {
+  const st = mServer({});
+  const c = mCard("md-1", { alias: "writer", display_title: "writer", worktree: "/w/card", status: "needs-input", waiting_since: mIso(2 * M_MIN), seen: { turn_ended_at: mIso(20 * M_MIN) } });
+  st.tasks = [c];
+  st.files = { "/w/card/.atrium/incoming/shot.png": M_PNG, "/w/card/notes/plan.md": Buffer.from("# plan") };
+  const md = "# Title\n\n## Sub\n\nSome **bold**, *italic*, `inline code` and a [link](https://example.com/a).\n\n- one\n- two\n\n1. first\n2. second\n\n" +
+    "```js\nconst a = 'a very long line of code that will not fit on a phone screen without scrolling sideways inside its block';\n```\n\n" +
+    "A shot: /w/card/.atrium/incoming/shot.png and a gone one ![missing](/w/card/notes/missing.png) and a file /w/card/notes/plan.md here.\n\n" +
+    "| A | B |\n|---|---|\n| 1 | 2 |\n";
+  st.replies["md-1"] = { source: "transcript", replies: [{ at: mIso(10 * M_MIN), text: md }] };
+  await st.open();
+  try {
+    for (const vp of M_VIEWS) {
+      const tag = "mMarkdown " + vp.width + ": ";
+      const { ctx, p, errors, remote } = await mReplyPage(browser, st, vp, "md-1");
+      await p.waitForFunction(() => document.querySelector("#m-replies .md-img img") && document.querySelector("#m-replies .md-gone"), null, { timeout: slow(8000) })
+        .catch(() => fail(tag + "the image did not load or the refused one did not say so"));
+      const d = await p.evaluate(() => {
+        const q = s => document.querySelector("#m-replies " + s);
+        const pre = q("pre.code");
+        const a = q('a[href="https://example.com/a"]');
+        return {
+          h: !!q("h3") && !!q("h4"), strong: !!q("strong"), em: !!q("em"), code: !!q("p code"), ul: !!q("ul li"), ol: !!q("ol li"),
+          link: a ? [a.target, a.rel] : null, scroll: pre.scrollWidth - pre.clientWidth, copy: !!q(".code-copy"),
+          img: q(".md-img img") ? q(".md-img img").naturalWidth : 0, file: !!q(".md-file"), gone: q(".md-gone").textContent,
+          table: !!q(".tbl table"), page: document.documentElement.scrollWidth - window.innerWidth,
+        };
+      });
+      for (const k of ["h", "strong", "em", "code", "ul", "ol", "copy", "file", "table"]) if (!d[k]) fail(tag + k + " is missing");
+      if (!d.link || d.link[0] !== "_blank" || d.link[1] !== "noopener noreferrer") fail(tag + "the link is " + JSON.stringify(d.link));
+      if (d.scroll <= 0) fail(tag + "the code does not scroll inside its block");
+      if (d.img < 1) fail(tag + "the image is not drawn");
+      if (d.gone !== "not available") fail(tag + "the refused image says " + d.gone);
+      if (d.page > 1) fail(tag + "the page scrolls sideways by " + d.page);
+      await p.tap("#m-replies .md-img");
+      await p.waitForSelector(".md-lightbox img", { timeout: slow(3000) }).catch(() => fail(tag + "tapping the thumbnail did not enlarge it"));
+      await p.tap(".md-lightbox").catch(() => {});
+      await p.tap("#m-replies .code-copy");
+      await p.waitForFunction(() => /copied|not copied/.test(document.querySelector("#m-replies .code-copy").textContent), null, { timeout: slow(3000) })
+        .catch(() => fail(tag + "the copy button did nothing"));
+      if (remote.length) fail(tag + "something remote was requested: " + remote.join(","));
+      if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+      await mShot(p, "markdown-" + vp.width);
+      await ctx.close();
+    }
+  } finally { await st.close(); }
+  if (!bad) console.log("mMarkdown ok");
+}
+
+async function mHostileSection(browser) {
+  const st = mServer({});
+  const c = mCard("ev-1", { alias: "evil", display_title: "evil", worktree: "/w/card", status: "needs-input", waiting_since: mIso(2 * M_MIN), seen: { turn_ended_at: mIso(20 * M_MIN) } });
+  st.tasks = [c];
+  st.files = { "/w/card/ok.png": M_PNG };
+  const md = "<script>window.__pwn = 1</script>\n\n<img src=x onerror=\"window.__pwn = 2\">\n\n[click](javascript:window.__pwn=3) and [file](file:///etc/passwd)\n\n" +
+    "![d](data:image/png;base64,AAAA)\n\n![r](https://evil.example/p.png)\n\n<!-- hidden note -->\n\n" +
+    "outside: /etc/passwd and ![o](/etc/shadow.png) and /w/other/secret.png and /w/card/../other/x.png and ![t](../../x.png)\n\n" +
+    "inside: /w/card/ok.png";
+  st.replies["ev-1"] = { source: "transcript", replies: [{ at: mIso(10 * M_MIN), text: md }] };
+  await st.open();
+  try {
+    for (const vp of M_VIEWS) {
+      const tag = "mHostile " + vp.width + ": ";
+      st.fileHits = [];
+      const { ctx, p, errors, remote } = await mReplyPage(browser, st, vp, "ev-1");
+      await p.waitForFunction(() => document.querySelector("#m-replies .md-img img"), null, { timeout: slow(8000) }).catch(() => fail(tag + "the inside image did not load"));
+      await p.waitForTimeout(400);
+      const d = await p.evaluate(() => {
+        const r = document.getElementById("m-replies");
+        return {
+          pwn: window.__pwn, script: !!r.querySelector("script"), onerror: !!r.querySelector("[onerror]"),
+          js: !!r.querySelector('a[href^="javascript:"], a[href^="file:"]'), dataImg: !!r.querySelector('img[src^="data:"]'),
+          remoteImg: [...r.querySelectorAll("img")].some(i => /^https?:/.test(i.src)),
+          text: r.textContent, hrefs: [...r.querySelectorAll("a")].map(a => a.getAttribute("href")),
+          controls: [...r.querySelectorAll(".md-img, .md-file")].map(e => e.dataset.path),
+        };
+      });
+      if (d.pwn !== undefined) fail(tag + "script ran: " + d.pwn);
+      if (d.script || d.onerror) fail(tag + "a script or handler is in the page");
+      if (d.js || d.dataImg || d.remoteImg) fail(tag + "an unsafe link or image is in the page");
+      if (!d.text.includes("<script>") || !d.text.includes("hidden note")) fail(tag + "hostile markup is not shown as text");
+      if (d.hrefs.join() !== "https://evil.example/p.png") fail(tag + "links are " + d.hrefs.join());
+      if (d.controls.join() !== "/w/card/ok.png") fail(tag + "file controls are " + d.controls.join());
+      if (!/\/etc\/passwd/.test(d.text) || !/\/w\/other\/secret\.png/.test(d.text)) fail(tag + "the outside paths are not shown as text");
+      if (remote.length) fail(tag + "something remote was requested: " + remote.join(","));
+      if (st.fileHits.join() !== "/w/card/ok.png") fail(tag + "the download endpoint was asked for " + st.fileHits.join());
+      if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+      await ctx.close();
+    }
+  } finally { await st.close(); }
+  if (!bad) console.log("mHostile ok");
+}
+
 async function main() {
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = "http://127.0.0.1:" + server.address().port;
@@ -13613,7 +13724,7 @@ async function main() {
       pasteStart: pasteStartSection, pasteDone: pasteDoneSection, pasteOldRoom: pasteOldRoomSection, pasteClose: pasteCloseSection,
       growlQuestionShots: growlQuestionShotsSection, growlQuestionBody: growlQuestionBodySection, growlReplyGrow: growlReplyGrowSection, growlChoices: growlChoicesSection, growlStable: growlStableSection, mGrowlQuestion: mGrowlQuestionSection,
       bootClean: bootCleanSection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mRecapSheet: mRecapSheetSection,
-      mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection };
+      mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -15649,6 +15760,8 @@ async function main() {
     await sayEnterSection(browser);
     await sendArrowSection(browser);
     await mTablesSection(browser);
+    await mMarkdownSection(browser);
+    await mHostileSection(browser);
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e));
     if (process.env.DEBUG_HEADLESS) {
@@ -15748,6 +15861,15 @@ function mServer(state) {
       state.streams.push(res);
       req.on("close", () => { state.streams = state.streams.filter(s => s !== res); });
       return;
+    }
+    const fm = p.match(/^\/v1\/tasks\/([^/]+)\/files$/);
+    if (fm && req.method === "GET") {
+      const want = u.searchParams.get("path");
+      (state.fileHits = state.fileHits || []).push(want);
+      const body = (state.files || {})[want];
+      if (!body) return json(403, { error: "that path is outside the card" });
+      res.writeHead(200, { "Content-Type": "application/octet-stream", "X-Content-Type-Options": "nosniff" });
+      return res.end(body);
     }
     const m = p.match(/^\/v1\/tasks\/([^/]+)\/replies$/);
     if (m) {

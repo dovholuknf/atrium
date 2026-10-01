@@ -48,9 +48,14 @@
     return out.join("");
   }
 
+  function mdCtx() {
+    const t = openId && window.mStore.card(openId);
+    return { id: openId, worktree: t && t.worktree || "" };
+  }
+
   function replyHTML(r, screen) {
     const when = r.at ? U.ago(Date.now() - U.ts(r.at)) : "";
-    const body = screen ? '<pre class="screen">' + U.esc(r.text) + "</pre>" : '<div class="md">' + MD.render(r.text) + "</div>";
+    const body = screen ? '<pre class="screen">' + U.esc(r.text) + "</pre>" : '<div class="md">' + MD.render(r.text, mdCtx()) + "</div>";
     return '<article class="reply' + (screen ? " from-screen" : "") + '">' +
       (screen ? '<span class="src">from the screen</span>' : "") + body +
       (r.truncated ? '<p class="cut">cut short here. the rest is in the terminal</p>' : "") +
@@ -90,7 +95,7 @@
     return '<div class="recap-back" id="m-recap-back"></div><div class="recap-sheet" role="dialog" aria-label="Recap">' +
       '<div class="recap-top"><h2>Recap</h2>' + (at ? '<span class="recap-at">from ' + U.esc(at) + (stale ? ", before the last turn" : "") + "</span>" : "") +
       '<button type="button" class="recap-x" id="m-recap-close" aria-label="close">&times;</button></div>' +
-      '<div class="md' + (stale ? " stale" : "") + '">' + MD.render(recap) + "</div></div>";
+      '<div class="md' + (stale ? " stale" : "") + '">' + MD.render(recap, mdCtx()) + "</div></div>";
   }
 
   function openRecap() {
