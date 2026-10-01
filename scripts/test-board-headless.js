@@ -15752,16 +15752,14 @@ async function mHomeSection(browser) {
   try {
     for (const vp of M_VIEWS) {
       st.tasks = mNeedsCards();
-      // distinct last activity, so the newest-first order does not hang on the milliseconds the fixtures were made in
-      st.tasks.forEach((t, i) => { if (/^(new|old|rep|unread)-/.test(t.id)) t.last_activity_at = mIso((["new", "old", "rep", "unread"].indexOf(t.id.split("-")[0]) + 1) * M_MIN); });
       st.perms = M_PERMS();
       const { ctx, p, errors } = await mPage(browser, st, vp, "");
       const tag = "mHome " + vp.width + ": ";
       await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
       const names = await p.$$eval("#m-list .row .name b", e => e.map(x => x.textContent));
-      if (names.join(",") !== "newest,oldest,reporter,read me") fail(tag + "needs-you order is not newest activity first, then the tie break: " + names.join(","));
+      if (names.join(",") !== "oldest,reporter,read me,newest") fail(tag + "needs-you order is not oldest wait first: " + names.join(","));
       const why = await p.$$eval("#m-list .row .why", e => e.map(x => x.textContent));
-      if (!why.some(w => /asks 2 questions/.test(w))) fail(tag + "the questions reason is missing: " + why.join("|"));
+      if (!/asks 2 questions/.test(why[0])) fail(tag + "first reason is " + why[0]);
       if (!why.some(w => /wants to run go test \.\/\.\.\./.test(w))) fail(tag + "the permission reason is missing: " + why.join("|"));
       if (!why.some(w => /finished 4m ago, not read/.test(w))) fail(tag + "the unread reason is missing");
       if (!why.some(w => /report waiting/.test(w))) fail(tag + "the report reason is missing");

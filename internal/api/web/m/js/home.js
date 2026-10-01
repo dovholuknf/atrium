@@ -271,7 +271,9 @@
     const entries = [];
     if (loaded) {
       const forAll = mode === "all";
-      const rows = sortRows((forAll ? allList(cards, perms, now) : needs).filter(r => keepRow(r, forAll)));
+      // The needs list is a queue of answers owed, oldest wait first, so the order control leaves it alone.
+      const kept = (forAll ? allList(cards, perms, now) : needs).filter(r => keepRow(r, forAll));
+      const rows = forAll ? sortRows(kept) : kept;
       sections(rows, forAll).forEach(s => {
         if (s.label) {
           const html = '<h2 class="grp">' + U.esc(s.label) + " <em>" + s.rows.length + "</em></h2>";
