@@ -260,7 +260,10 @@ let hubChecking = false;
 function hubCheckBack() {
   if (!hubRestarting || hubSettleFrom || hubChecking) return;
   hubChecking = true;
-  plainFetch("/_hub/restart", { signal: AbortSignal.timeout(HUB_CHECK_TIMEOUT) }).then(r => {
+  // Built inside the chain so a throw here still reaches the `catch` and clears
+  // `hubChecking`. Without `AbortSignal.timeout` the check runs with no abort.
+  Promise.resolve().then(() => plainFetch("/_hub/restart",
+    typeof AbortSignal.timeout === "function" ? { signal: AbortSignal.timeout(HUB_CHECK_TIMEOUT) } : {})).then(r => {
     if (r.status === 404) return { plain: true };
     return r.ok ? r.json() : null;
   }).catch(() => null).then(st => {

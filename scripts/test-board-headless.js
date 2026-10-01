@@ -2248,6 +2248,17 @@ async function coverPollSection(browser, base) {
     gateRestartMode = "";
     await blip(true);
     await cleared("the cover stayed up after a failed check and a stream blip.", 15000);
+
+    // A browser without `AbortSignal.timeout` still asks: a throw building the check must not leave it
+    // marked in flight for good.
+    await gp.evaluate(() => { delete AbortSignal.timeout; });
+    gateBoot = "boot-d";
+    await cover();
+    gateAsked = 0;
+    await blip();
+    await asked(1);
+    gateBoot = "boot-e";
+    await cleared("the cover stayed up in a browser with no AbortSignal.timeout.");
     if (errors.length) fail("the cover poll page threw: " + errors.join(" | "));
     if (!bad) console.log("coverPoll ok");
   } finally {
@@ -2306,7 +2317,8 @@ async function coverStepsSection(browser, base) {
     if (wrong.ring !== "none" || wrong.bar !== "none") fail("past 10s the cover still animated: " + JSON.stringify(wrong));
     if (wrong.reload) fail("the reload button showed before 30s.");
     await gp.waitForFunction(() => { const b = document.getElementById("hubrestart-reload"); return b && !b.hidden; },
-      null, { timeout: slow(25000) }).catch(() => fail("past 30s the cover offered no reload."));    // The hub comes back and the reload lands on a cover that clears: the written-down cover carries on.
+      null, { timeout: slow(25000) }).catch(() => fail("past 30s the cover offered no reload."));
+    // The hub comes back and the reload lands on a cover that clears: the written-down cover carries on.
     gateBoot = "boot-b";
     hubAway = false;
     const reloaded = gp.waitForEvent("domcontentloaded", { timeout: slow(15000) }).then(() => true, () => false);
