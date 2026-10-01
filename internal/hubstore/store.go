@@ -70,6 +70,8 @@ type Store struct {
 	db *sql.DB
 	// docsDir is where document bytes live, beside the database. See docs.go.
 	docsDir string
+	// docMu serialises a document write with a purge. See DocAdd.
+	docMu sync.Mutex
 
 	mu        sync.RWMutex
 	haltCause error

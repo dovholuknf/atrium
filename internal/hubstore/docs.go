@@ -1,6 +1,7 @@
 package hubstore
 
 import (
+	"bytes"
 	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
@@ -9,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -396,13 +398,15 @@ func DocKind(name string, data []byte) (kind, mime string) {
 func isText(b []byte) bool {
 	head := b
 	if len(head) > 8192 {
-		head = head[:8192]
-		// A cut can land in the middle of a character. Back up to a boundary.
-		for len(head) > 0 && !utf8.Valid(head) && len(b)-len(head) < 4 {
-			head = b[:len(head)-1]
+		// A cut can land in the middle of a character. Back up to where one starts, so a long
+		// document with a multibyte character at the boundary is not judged by half of it.
+		n := 8192
+		for n > 0 && !utf8.RuneStart(b[n]) {
+			n--
 		}
+		head = b[:n]
 	}
-	return utf8.Valid(head) && !strings.ContainsRune(string(head), 0)
+	return utf8.Valid(head) && !bytes.ContainsRune(head, 0)
 }
 
 // ── blobs ───────────────────────────────────────────────
@@ -534,16 +538,26 @@ func (s *Store) DocAdd(in DocInput) (DocResult, error) {
 		}
 	}
 
+	// SERIALISED WITH PURGE. The blob is written inside the transaction below, and a purge removes
+	// files after its own commit. Without one lock over both, a purge could commit, this write
+	// could see the old file and skip rewriting it, and the purge could then delete it under the
+	// version that just referenced it.
+	s.docMu.Lock()
+	defer s.docMu.Unlock()
 	err = s.tx(func(t *sql.Tx) error {
 		res = DocResult{}
 		slug := in.Slug
 		if slug != "" {
-			var n int
-			if err := t.QueryRow(`SELECT COUNT(*) FROM doc WHERE slug = ?`, slug).Scan(&n); err != nil {
+			var deleted string
+			err := t.QueryRow(`SELECT deleted_at FROM doc WHERE slug = ?`, slug).Scan(&deleted)
+			if err == sql.ErrNoRows {
+				return docRefuse(DocNone, "there is no document called "+slug)
+			}
+			if err != nil {
 				return err
 			}
-			if n == 0 {
-				return docRefuse(DocNone, "there is no document called "+slug)
+			if deleted != "" {
+				return docRefuse(DocGone, "that document was deleted on "+deleted+". restore it to add a version")
 			}
 		}
 		// THE TOTAL, counting a blob once however many versions hold it, and not
@@ -697,14 +711,32 @@ func (s *Store) docExec(slug, q string, args ...any) error {
 	})
 }
 
-// DocPurge deletes the bytes of version n, or of every version when n is zero.
-// The rows stay and say purged. A blob is one file for every version with the
-// same bytes, so those versions are purged with it: they have no bytes left to
-// show.
-func (s *Store) DocPurge(slug string, n int) (int, error) {
+// afterPurgeCommit is a test's way into the gap between a purge's commit and its file removal.
+var afterPurgeCommit func()
+
+// DocPurgeResult is what a purge did.
+type DocPurgeResult struct {
+	// Blobs is how many distinct byte files were purged.
+	Blobs int `json:"purged"`
+	// Also names the versions, as slug@n, that were purged because they hold the same bytes as
+	// one that was asked for and were not themselves asked for. Two documents with the same
+	// bytes are one file, so purging one purges the other, and the audit line says so.
+	Also []string `json:"also,omitempty"`
+}
+
+// DocPurge deletes the bytes of version n, or of every version when n is zero. The rows stay
+// and say purged. A blob is one file for every version with the same bytes, so those versions
+// are purged with it: they have no bytes left to show.
+//
+// A file that cannot be removed, which is what a reader holding it open does on Windows, is
+// logged and not an error: the rows say purged and the next CopyDocs removes it.
+func (s *Store) DocPurge(slug string, n int) (DocPurgeResult, error) {
+	s.docMu.Lock()
+	defer s.docMu.Unlock()
+	var res DocPurgeResult
 	var shas []string
 	err := s.tx(func(t *sql.Tx) error {
-		shas = nil
+		shas, res.Also = nil, nil
 		if err := docThere(t, slug); err != nil {
 			return err
 		}
@@ -733,6 +765,30 @@ func (s *Store) DocPurge(slug string, n int) (int, error) {
 			return docRefuse(DocNone, fmt.Sprintf("there is no version %d of %s", n, slug))
 		}
 		for _, sha := range shas {
+			// What this purge reaches that it was not asked for, before it is marked.
+			q := `SELECT doc, n FROM doc_version WHERE sha = ? AND purged = 0 AND doc <> ?`
+			args := []any{sha, slug}
+			if n > 0 {
+				q = `SELECT doc, n FROM doc_version WHERE sha = ? AND purged = 0 AND NOT (doc = ? AND n = ?)`
+				args = append(args, n)
+			}
+			or, err := t.Query(q, args...)
+			if err != nil {
+				return err
+			}
+			for or.Next() {
+				var d string
+				var vn int
+				if err := or.Scan(&d, &vn); err != nil {
+					or.Close()
+					return err
+				}
+				res.Also = append(res.Also, fmt.Sprintf("%s@%d", d, vn))
+			}
+			or.Close()
+			if err := or.Err(); err != nil {
+				return err
+			}
 			if _, err := t.Exec(`UPDATE doc_version SET purged = 1 WHERE sha = ?`, sha); err != nil {
 				return err
 			}
@@ -740,14 +796,51 @@ func (s *Store) DocPurge(slug string, n int) (int, error) {
 		return nil
 	})
 	if err != nil {
-		return 0, err
+		return DocPurgeResult{}, err
+	}
+	res.Blobs = len(shas)
+	sort.Strings(res.Also)
+	if afterPurgeCommit != nil {
+		afterPurgeCommit()
 	}
 	for _, sha := range shas {
 		if err := os.Remove(s.blobPath(sha)); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return len(shas), fmt.Errorf("purged the rows but could not remove %s: %w", sha, err)
+			log.Printf("[hub] purged %s but could not remove its file yet, the next backup pass will: %v", sha, err)
 		}
 	}
-	return len(shas), nil
+	return res, nil
+}
+
+// removePurgedBlobs deletes live blob files that no unpurged version refers to. It is the retry
+// for a purge whose removal failed, and runs at the top of every CopyDocs. Under docMu, so a write
+// of the same bytes cannot land between the question and the removal.
+func (s *Store) removePurgedBlobs() {
+	s.docMu.Lock()
+	defer s.docMu.Unlock()
+	var purged []string
+	if err := s.guard(func() error {
+		purged = nil
+		rows, err := s.db.Query(`SELECT sha FROM doc_version GROUP BY sha HAVING MIN(purged) = 1`)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var sha string
+			if err := rows.Scan(&sha); err != nil {
+				return err
+			}
+			purged = append(purged, sha)
+		}
+		return rows.Err()
+	}); err != nil {
+		return
+	}
+	for _, sha := range purged {
+		if err := os.Remove(s.blobPath(sha)); err != nil && !errors.Is(err, os.ErrNotExist) {
+			log.Printf("[hub] could not yet remove the purged file %s: %v", sha, err)
+		}
+	}
 }
 
 // ── reading ─────────────────────────────────────────────
@@ -943,6 +1036,8 @@ const docsStamp = "docs.copied"
 // merely missing from the live folder is NOT removed from the copy: that is the
 // disaster the copy is for.
 func (s *Store) CopyDocs(dir string) (copied int, err error) {
+	// A PURGE THAT COULD NOT REMOVE ITS FILE is retried here, on every pass and not once a day.
+	s.removePurgedBlobs()
 	stamp := filepath.Join(dir, docsStamp)
 	if st, err := os.Stat(stamp); err == nil && time.Since(st.ModTime()) < docsCopyEvery {
 		return 0, nil

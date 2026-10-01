@@ -170,8 +170,10 @@ func TestUploadOriginIsRecordedByTheHub(t *testing.T) {
 	} {
 		w := h.upload("/_hub/docs", map[string]string{"title": "origin " + name}, "x "+name, "o.md", c.more...)
 		m := wantCode(t, w, 201)
-		if got := h.latest(m["slug"].(string))["origin"]; got != c.want {
-			t.Errorf("%s recorded origin %v, want %s", name, got, c.want)
+		v := h.latest(m["slug"].(string))
+		wantBy := map[string]string{"local": "operator", "share": "share"}[c.want]
+		if v["origin"] != c.want || v["by"] != wantBy {
+			t.Errorf("%s recorded origin %v by %v, want %s by %s", name, v["origin"], v["by"], c.want, wantBy)
 		}
 	}
 	// A page cannot claim local, or card, or a name, by saying so in the form.
@@ -179,7 +181,7 @@ func TestUploadOriginIsRecordedByTheHub(t *testing.T) {
 	w := h.do(req{method: "POST", path: "/_hub/docs", body: body, ctype: ct, header: map[string]string{"X-Forwarded-For": "1.2.3.4"}})
 	m := wantCode(t, w, 201)
 	v := h.latest(m["slug"].(string))
-	if v["origin"] != "share" || v["by"] != "operator" || v["card"] != nil {
+	if v["origin"] != "share" || v["by"] != "share" || v["card"] != nil {
 		t.Fatalf("the form was believed: %+v", v)
 	}
 }
@@ -586,7 +588,7 @@ func TestListDeleteRestore(t *testing.T) {
 	}
 	d := asJSON(t, h.do(req{method: "GET", path: "/_hub/docs/" + a}))
 	del := d["deleted"].(map[string]any)
-	if del["by"] != "operator" || del["at"] == "" {
+	if del["by"] != "share" || del["at"] == "" {
 		t.Fatalf("tombstone %+v", del)
 	}
 	wantCode(t, h.do(req{method: "GET", path: "/_hub/docs/" + a + "/raw"}), 410)
@@ -673,5 +675,77 @@ func TestDocURLsAnswerWithThePhoneShell(t *testing.T) {
 	h.ServeHTTP(w, httptest.NewRequest("POST", "http://127.0.0.1/d/x", nil))
 	if strings.Contains(w.Body.String(), "the phone page") {
 		t.Fatal("a POST got the shell")
+	}
+}
+
+// A DELETE FROM A SHARE SAYS SHARE, one from the machine says operator, and the audit log has a
+// doc-deleted line either way.
+func TestDeleteRecordsWhoAndIsAudited(t *testing.T) {
+	h := newDocsHub(t)
+	fa := &fakeAudit{}
+	h.p.SetAuditLog(fa)
+	a := h.newDoc("From the machine", "a.md", "1")
+	b := h.newDoc("From the share", "b.md", "2")
+	wantCode(t, h.do(req{method: "POST", path: "/_hub/docs/" + a + "/delete"}), 200)
+	wantCode(t, h.do(req{method: "POST", path: "/_hub/docs/" + b + "/delete", header: map[string]string{"X-Forwarded-For": "1.2.3.4"}}), 200)
+	for slug, by := range map[string]string{a: "operator", b: "share"} {
+		d := asJSON(t, h.do(req{method: "GET", path: "/_hub/docs/" + slug}))
+		if got := d["deleted"].(map[string]any)["by"]; got != by {
+			t.Errorf("%s deleted by %v, want %s", slug, got, by)
+		}
+	}
+	var lines []string
+	for _, r := range fa.records {
+		if r.kind == "doc-deleted" {
+			lines = append(lines, r.detail)
+		}
+	}
+	if len(lines) != 2 || lines[0] != a+" by operator" || lines[1] != b+" by share" {
+		t.Fatalf("audit lines %v", lines)
+	}
+}
+
+// A NEW VERSION TO A TOMBSTONED SLUG IS 410, and a restore lets it through.
+func TestAVersionToATombstonedDocumentIs410(t *testing.T) {
+	h := newDocsHub(t)
+	slug := h.newDoc("Tomb", "t.md", "one")
+	wantCode(t, h.do(req{method: "POST", path: "/_hub/docs/" + slug + "/delete"}), 200)
+	m := wantCode(t, h.upload("/_hub/docs/"+slug+"/versions", nil, "two", "t.md"), 410)
+	if !strings.Contains(m["error"].(string), "restore") {
+		t.Fatalf("does not say what to do: %v", m["error"])
+	}
+	if d := asJSON(t, h.do(req{method: "GET", path: "/_hub/docs/" + slug})); len(d["versions"].([]any)) != 1 {
+		t.Fatal("a version was added to a tombstone")
+	}
+	wantCode(t, h.do(req{method: "POST", path: "/_hub/docs/" + slug + "/restore"}), 200)
+	wantCode(t, h.upload("/_hub/docs/"+slug+"/versions", nil, "two", "t.md"), 201)
+}
+
+// A PURGE'S AUDIT LINE NAMES THE OTHER DOCUMENTS THE SAME BYTES REACHED.
+func TestPurgeAuditNamesWhatTheSharedBytesReached(t *testing.T) {
+	h := newDocsHub(t)
+	fa := &fakeAudit{}
+	h.p.SetAuditLog(fa)
+	a := h.newDoc("Alpha", "a.md", "identical")
+	b := h.newDoc("Bravo", "b.md", "identical")
+	m := wantCode(t, h.do(req{method: "POST", path: "/_hub/docs/" + a + "/purge"}), 200)
+	also, _ := m["also"].([]any)
+	if len(also) != 1 || also[0] != b+"@1" || m["purged"] != float64(1) {
+		t.Fatalf("answer %+v", m)
+	}
+	var got string
+	for _, r := range fa.records {
+		if r.kind == "doc-purged" {
+			got = r.detail
+		}
+	}
+	if !strings.Contains(got, a) || !strings.Contains(got, b+"@1") {
+		t.Fatalf("audit line %q", got)
+	}
+	// A purge that reached nothing else says so with an empty list, not null.
+	c := h.newDoc("Charlie", "c.md", "alone")
+	m = wantCode(t, h.do(req{method: "POST", path: "/_hub/docs/" + c + "/purge"}), 200)
+	if l, ok := m["also"].([]any); !ok || len(l) != 0 {
+		t.Fatalf("also %+v", m["also"])
 	}
 }
