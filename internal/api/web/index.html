@@ -64,6 +64,7 @@
 <link rel="stylesheet" href="/css/expose2.css">
 <link rel="stylesheet" href="/css/expose3.css">
 <link rel="stylesheet" href="/css/hubnotify.css">
+<link rel="stylesheet" href="/css/hubhosts.css">
 <link rel="stylesheet" href="/css/growl.css">
 <link rel="stylesheet" href="/css/cardurl.css">
 <link rel="stylesheet" href="/m/compose.css">
@@ -1497,6 +1498,25 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         nobody.</b> That is deliberate: "anyone the provider authenticated" is, on a provider
         with open registration, the whole internet with an extra step.</span>
       <span class="hintline" id="auth-said"></span>
+    </div>
+
+    <!-- The names the hub answers besides its own. Hidden until the hub answers, so a board with no hub never
+         draws it. See js/hubhosts.js. -->
+    <div class="field" id="s-hh-row" hidden>
+      <span class="eyebrow">host names the hub answers</span>
+      <div id="s-hh-list"></div>
+      <div id="s-hh-ignored" hidden></div>
+      <div id="s-hh-env" hidden></div>
+      <div class="picker" id="s-hh-add">
+        <input type="text" id="s-hh-name" placeholder="a name, or *.example.com" spellcheck="false"
+          onkeydown="if (event.key === 'Enter') addHubHost()">
+        <button type="button" onclick="addHubHost()">add</button>
+      </div>
+      <span class="hintline" id="s-hh-ro" hidden>Set on the hub's machine.</span>
+      <span class="hintline" id="s-hh-msg"></span>
+      <span class="hintline">These are the HUB's names. Rooms do not read them. A wildcard is safe only for a
+        domain one operator controls: a dynamic DNS domain is refused, and shows above as ignored with its reason.
+        Applied from the next request, no restart.</span>
     </div>
 
     <!-- THE REDO SURFACE, a coexisting alternate to `expose the board` above.
@@ -3342,6 +3362,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/peek.js"></script>
 <script src="/js/settings-spine.js"></script>
 <script src="/js/hubnotify.js"></script>
+<script src="/js/hubhosts.js"></script>
 <script src="/js/themes.js"></script>
 <script src="/js/terminal.js"></script>
 <script src="/js/termcursor.js"></script>
