@@ -575,3 +575,34 @@ func readErr(err error) error {
 	}
 	return &hubstore.DocError{Kind: hubstore.DocBad, Msg: "could not read that form: " + err.Error()}
 }
+
+// ParseDocPath reads /d/<slug> and /d/<slug>@<n>. The split is on the LAST `@`, and a slug
+// never holds one. n is 0 for the newest. False for anything else.
+func ParseDocPath(p string) (slug string, n int, ok bool) {
+	rest, found := strings.CutPrefix(p, "/d/")
+	if !found || rest == "" {
+		return "", 0, false
+	}
+	slug = rest
+	if i := strings.LastIndex(rest, "@"); i >= 0 {
+		slug = rest[:i]
+		ver := rest[i+1:]
+		if ver == "" || ver[0] == '0' {
+			return "", 0, false
+		}
+		for _, c := range ver {
+			if c < '0' || c > '9' {
+				return "", 0, false
+			}
+		}
+		v, err := strconv.Atoi(ver)
+		if err != nil || v < 1 {
+			return "", 0, false
+		}
+		n = v
+	}
+	if !hubstore.ValidDocSlug(slug) {
+		return "", 0, false
+	}
+	return slug, n, true
+}

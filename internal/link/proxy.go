@@ -538,6 +538,18 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/m/", http.StatusMovedPermanently)
 		return
 	}
+	// A DOCUMENT'S ADDRESS, /d/<slug> and /d/<slug>@<n>, is the phone page: the same /m shell,
+	// which reads the path and asks /_hub/docs for the rest. No new HTML. The hub does not look
+	// the slug up, so a deleted or unknown one answers with the shell too and the page says what
+	// the metadata call does. See docs_api.go.
+	if strings.HasPrefix(r.URL.Path, "/d/") && p.board != nil && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
+		if _, _, ok := ParseDocPath(r.URL.Path); !ok {
+			http.NotFound(w, r)
+			return
+		}
+		p.serveAsset(w, r, "m/index.html")
+		return
+	}
 	// A CARD'S READABLE ADDRESS is the board page, and the page resolves the
 	// name. See internal/cardurl.
 	if p.board != nil && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
@@ -1273,6 +1285,7 @@ func (p *Proxy) SetControl(boardAddr string) {
 		defer p.mu.Unlock()
 		return p.capStore
 	}
+	c.docs = p.docStore
 	p.control = c.handler()
 	p.mu.Lock()
 	p.ctl = c

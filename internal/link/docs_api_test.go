@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/fstest"
 
 	"github.com/dovholuknf/atrium/internal/edge"
 	"github.com/dovholuknf/atrium/internal/hubstore"
@@ -639,4 +640,38 @@ func TestMissingBlobOverHTTP(t *testing.T) {
 		t.Fatalf("%v", m["error"])
 	}
 	wantCode(t, h.do(req{method: "GET", path: "/_hub/docs"}), 200)
+}
+
+// /d/<slug> AND /d/<slug>@<n> ANSWER WITH THE /m SHELL, and the hub does not look the slug up, so a
+// deleted or unknown one gets the shell too. Wrong shapes are 404.
+func TestDocURLsAnswerWithThePhoneShell(t *testing.T) {
+	board := fstest.MapFS{
+		"index.html":   &fstest.MapFile{Data: []byte("<!doctype html>the board")},
+		"m/index.html": &fstest.MapFile{Data: []byte("<!doctype html>the phone page")},
+	}
+	h := NewProxy(NewHub(Timings{}), board, "", nil)
+	get := func(path string) *httptest.ResponseRecorder {
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, httptest.NewRequest("GET", "http://127.0.0.1"+path, nil))
+		return w
+	}
+	for _, ok := range []string{"/d/usage-2026-09-29", "/d/usage-2026-09-29@2", "/d/a", "/d/a-b-2@10", "/d/gone-doc"} {
+		if w := get(ok); w.Code != 200 || !strings.Contains(w.Body.String(), "the phone page") {
+			t.Errorf("%s answered %d %q", ok, w.Code, w.Body.String())
+		}
+	}
+	for _, bad := range []string{"/d/", "/d/Bad_Slug", "/d/x@0", "/d/x@", "/d/x@abc", "/d/x@01", "/d/a@1@2", "/d/x/y", "/d/@1", "/d/x@-1", "/d/" + strings.Repeat("a", 61)} {
+		if w := get(bad); w.Code != 404 {
+			t.Errorf("%s answered %d, want 404", bad, w.Code)
+		}
+	}
+	if slug, n, ok := ParseDocPath("/d/my-doc@12"); !ok || slug != "my-doc" || n != 12 {
+		t.Fatalf("parsed %q %d %v", slug, n, ok)
+	}
+	// A write to /d/ is not the shell.
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest("POST", "http://127.0.0.1/d/x", nil))
+	if strings.Contains(w.Body.String(), "the phone page") {
+		t.Fatal("a POST got the shell")
+	}
 }
