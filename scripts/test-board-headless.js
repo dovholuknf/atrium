@@ -21049,6 +21049,15 @@ async function growlActionsSection(browser, base) {
     await p.waitForTimeout(200);
     let lands = await p.evaluate(() => window.__lands);
     if (lands.length !== 1 || lands[0][1] !== "perms" || lands[0][2] !== "perm-a" || !/c$|a$/.test(String(lands[0][0]))) fail("growlActions: open landed " + JSON.stringify(lands));
+    // and then dismisses the growler the way "dismiss this" does: one post, the board's own, with the undo offered
+    await p.waitForSelector(".toast .gr-undo", { timeout: slow(3000) })
+      .catch(() => fail("growlActions: open offered no undo, so it did not dismiss the way dismiss this does."));
+    if (h.posts.length !== 1 || h.posts[0].id !== perm.id || h.posts[0].body.do !== "dismiss" || h.posts[0].body.via !== "board") {
+      fail("growlActions: open posted " + JSON.stringify(h.posts));
+    }
+    if ((await p.textContent("#growl .gr-full b")) !== "question c") fail("growlActions: open left the opened row on top.");
+    h.posts.length = 0;
+    await p.evaluate(() => { document.getElementById("toasts").querySelectorAll(".toast").forEach(t => t.remove()); });
     // reply goes through the message path
     await h.say([q]);
     await p.fill("#growl .gr-reply", "yes, do it");

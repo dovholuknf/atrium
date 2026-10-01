@@ -461,7 +461,9 @@ async function growlDecide(g, decision, reason) {
 async function growlOpenIt(g) {
   if (!await closeOpenDialogs()) return;
   const perm = g.reason === "permission";
-  landOnAlert(growlCard(g), perm ? "perms" : "", perm ? growlPermID(g) : "");
+  await landOnAlert(growlCard(g), perm ? "perms" : "", perm ? growlPermID(g) : "");
+  // Open is an answer to the alert, so it goes the way "dismiss this" does, with the same undo.
+  return growlPost(g, { do: "dismiss" }, true);
 }
 
 async function growlLift(g) {
