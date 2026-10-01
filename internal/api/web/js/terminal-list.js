@@ -204,7 +204,7 @@ function sessionHiddenBy(t, keep) {
 //
 // ALWAYS DRAWN. It lives in the gear's `terminal list` section (see
 // `paintTermGear`). Its caption is the field's label.
-function termHideControlsHTML(c) {
+function termHideControlsHTML(c, cls) {
   const aOn = hideAgentsMode() !== "none";
   const sOn = hideSubagentsMode() !== "none";
   const seg = (name, on, hidden, fn, title) => {
@@ -232,7 +232,7 @@ function termHideControlsHTML(c) {
     : "hide the inactive subagents (idle, waiting, or exited - not working right " +
       "now). only actively-working subagents and the attached one stay") +
     ". " + subNote;
-  return `<div class="seg trayseg termhide">${
+  return `<div class="${cls || "seg trayseg termhide"}">${
       seg("agents", aOn, c.agentHidden, "toggleHideAgents()", agentTitle)
     }${
       seg("subagents", sOn, c.subHidden, "toggleHideSubagents()", subTitle)
@@ -275,8 +275,12 @@ function paintTermGear(c) {
 
 // The bar: the list's width buttons, drawn in every state since they are about
 // the list and not about the controls.
-function termTrayHTML() {
-  return `<div class="termtray"><div class="traybar">${termListButtons()}</div></div>`;
+//
+// THE HIDE PAIR IS HERE TOO, so the box is never an empty frame with one arrow in it
+// at full width. It is the same control the gear draws, with the same counts.
+function termTrayHTML(counts) {
+  return `<div class="termtray"><div class="traybar">${
+    termHideControlsHTML(counts || termGearCounts, "seg termhide tbarhide")}${termListButtons()}</div></div>`;
 }
 
 // ── the phone dropdown ───────────────────────────────────────────────────────
@@ -1729,7 +1733,7 @@ async function renderTermList() {
   // this list is a switcher, and what it drops (the status chip, the duration)
   // it drops because the board says those better.
   setHTML(host, tasks.length
-    ? termDropHTML() + `<div class="termbody">` + termTrayHTML() +
+    ? termDropHTML() + `<div class="termbody">` + termTrayHTML(hideCounts) +
       `<div class="termscroll">` +
       termBucketHTML(pinnedTasks, tasks.filter(t => t.pinned).length,
         termFolded().has(PINNED_FOLD)) +
