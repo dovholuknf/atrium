@@ -1,6 +1,7 @@
 # Software factories: the landscape, and what atrium takes from it (SPIKE)
 
-Status: spike by @rnd, 2026-10-01. Nothing built. Backlog: `docs/backlog/rnd/rnd-new-factory-landscape.md`. Clint:
+Status: spike by @rnd, 2026-10-01, revised for @review's HOLD (`docs/backlog/rnd/rd-new-review-8b9ede4f.md`). Nothing
+built. Backlog: `docs/backlog/rnd/rnd-new-factory-landscape.md`. Clint:
 atrium is "moving past being an agent harness aggregator/orchestrator" toward a software factory. Open source first.
 
 Method: researched 2026-10-01 from READMEs, project docs and the GitHub API (stars, licence, last release). Nothing
@@ -11,9 +12,9 @@ Those are harness aggregators. This file is about factories: systems that take w
 
 ## 0. The answer
 
-- **Nobody else combines atrium's four traits**: live terminals a human can take over, for several harnesses, on
-  several of your own machines, with a rule that the tool holds no credential. Each trait exists somewhere. The
-  combination does not. The closest are OpenHands Agent Canvas (multi-backend, but its servers store secrets),
+- **None of the 23 surveyed combines atrium's four traits**: live terminals a human can take over, for several
+  harnesses, on several of your own machines, holding no third-party account credential it acts through. Each trait
+  exists somewhere. The combination does not among these. The closest are OpenHands Agent Canvas (multi-backend, but its servers store secrets),
   Agent Orchestrator (no credentials, many agents, but one host) and Nimbalyst (local-first, multi-harness, but one
   desktop).
 - **What the factories have that atrium lacks** is the factory half: work that enters from a tracker, a plan gate
@@ -79,10 +80,14 @@ different trust model from atrium's.
   factories run headless agents or one vendor's agent.
 - Several of your own machines as rooms, joined by a hub over an overlay, with one board and the phone. Only OpenHands
   Canvas (backends), kandev (SSH executors) and ai-maestro (a mesh) are multi-machine at all.
-- No credential held anywhere in the tool, across all of those machines. loki-mode, Agent Orchestrator, Vibe Kanban,
-  Finn-loop, Conductor and Nimbalyst share the rule on one host. OpenHands, Open Agents, Open-Inspect, Paperclip and
-  Devin all store secrets server-side.
-- Directors that review one another's work, with verdicts as commit trailers that a deploy reads.
+- No third-party account credential that atrium acts through, across all of those machines: no SCM token and no
+  LLM key, and `gh`, zrok and ziti keep their own. **Atrium does hold its own trust fabric's keys**: the share password
+  (hub.db), the OIDC secret and the cookie HMAC key (atrium.db), its CA key, the room certificates, the ziti
+  identities, and whatever values a card is launched with in its env. loki-mode, Agent Orchestrator, Vibe Kanban,
+  Finn-loop, Conductor and Nimbalyst share the third-party rule on one host. OpenHands, Open Agents, Open-Inspect,
+  Paperclip and Devin store third-party secrets server-side.
+- A review department (@review) that reviews every director's work, with verdicts as commit trailers that the deploy
+  enforces (`internal/deployready`).
 - A PR review run that forks one cached prime per reviewer, under a budget cap (`docs/rnd/pulls-view-design.md`).
 
 **What they do that atrium does not:**
@@ -93,8 +98,9 @@ different trust model from atrium's.
   lines are typed and go stale.
 - One fixed outcome and an evidence bundle per run (loki-mode's VERIFIED, BLOCKED, STALLED or BUDGET_STOP with a
   "NOT PROVEN" line, ESF's patch, logs and manifest). Atrium's `atrium_report` is a summary in prose.
-- Landing rules as policy (Copilot: the agent cannot approve its own PR, nor can the person who asked). Atrium's are
-  habit, which the room-handoff design starts to write down.
+- Landing rules as policy (Copilot: the agent cannot approve its own PR, nor can the person who asked). Atrium's
+  deploy verdicts are already enforced by `internal/deployready`. Its landing is habit, which the room-handoff
+  design's landing op starts to write down.
 - Sandboxes: microVMs (ESF), containers, cloud VMs. Atrium runs on the host with a worktree, which, as Conductor says
   of its own, is not a security boundary.
 
@@ -103,7 +109,7 @@ different trust model from atrium's.
 | # | Borrow | From | Atrium today | Cost | Value | Lands in |
 | --- | --- | --- | --- | --- | --- | --- |
 | 1 | **Status derived from facts**: an item's state comes from its card, branch, verdict and landing commit, never typed | Agent Orchestrator, Finn-loop's labels | stale status lines | M | high | the backlog spike (`rnd-new-backlog-in-atrium`), which already asks for it |
-| 2 | **Landing rules as policy**: a verdict's author is never the change's author, the requester cannot approve, and a commit carries a link to its session | Copilot coding agent | habit. The handoff design's landing op has four rules | S | high | the M3 landing op of `docs/rnd/room-handoff-design.md`, and @review's rules |
+| 2 | **Landing rules as policy**: the card that wrote a change never clears it, the card that requests a landing cannot approve it, and a commit carries a link to its session. Identity is the hub's collection record and the landing op's requesting card, never the git author: every commit is `dovholuknf` and rooms are unsigned. Scoped to cards, so @review does not clear its own code | Copilot coding agent | landing is habit, deploys are enforced (`deployready`). The handoff design's landing op has four rules | S | high | the M3 landing op of `docs/rnd/room-handoff-design.md`, and @review's rules |
 | 3 | **An outcome and evidence on every report**: `atrium_report` gains a fixed outcome (verified, blocked, stalled, budget) and a "not proven" line that is never empty | loki-mode, ESF | prose summaries. `review.json` does it for PR runs | S | high | @runtime, `atrium_report` |
 | 4 | **A plan gate**: a card can stop at "plan proposed", and a director or clint approves it before code | Jules, Automaker, Factory | a tool-call gate only | S to M | high | @runtime and @ui, a card state |
 | 5 | **Hidden characters stripped** from issue, PR and comment text before an agent reads it | Copilot coding agent | none | S | medium | the PR runner's fetch, and intake |
@@ -111,7 +117,7 @@ different trust model from atrium's.
 | 7 | **CI and review comments routed back to the owning worker** | Agent Orchestrator, Devin | `docs/rnd/pr-ci-state-design.md` covers part | M | medium | that design |
 | 8 | **An egress posture check**: a room refuses to start agents with open egress unless the operator acknowledges it | ESF's `factory doctor` | none | M | medium | `docs/rnd/room-to-room-access-spike.md`'s line, and room-check |
 | 9 | **Workflows as data**: a YAML graph of steps and gates, like `pr_recipe` but for any work | Archon, Overcut playbooks | `pr_recipe` for PR runs only | L | medium | later, after 1 to 4 |
-| 10 | **Risk-rated confirmation**: a model rates each action and only the high-risk ones wait for a human | OpenHands | a gate and auto-approve rules | M | medium, and a security question | needs @review before anything. A model deciding what is risky is itself attackable |
+| 10 | **Risk-rated escalation**, filed as a design @review owns, not a borrow: a model rates each action, and may only turn an auto-approve into an ask, never an ask into an allow. It fails closed (an error or a timeout means ask), unlike the hook's fail-open posture. The rater reads attacker-controlled text and can be walked past with benign-looking steps, which is why it may only escalate | OpenHands | a gate and auto-approve rules | M | medium | a design by @review |
 
 Already designed, not new: a budget hard stop (Paperclip) is `docs/rnd/freeze-budget-design.md`. A durable,
 resumable run (Open Agents) is the PR runner's run folder.
