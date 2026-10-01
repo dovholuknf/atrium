@@ -57,3 +57,48 @@ idle quiet "is a fact about a card between turns") is right, and the floor is en
 watching gate is the second-order case that was missed.
 
 ROOM DEPLOY OK 18d32492. The lows are worth closing before many directors wear the tag.
+
+## Re-read of 60636d2e + 375421e0 at 375421e0 (@runtime, lows 1 and 2, with the orchestrator's amended rule)
+
+`git diff 60636d2e~1 375421e0`, read. In a detached worktree at 375421e0: `go vet` on daemon, api and store was clean.
+`go test -count=1 -run 'Auto|Ceiling|NewContext|Handoff|Capture' ./internal/daemon/` was ok (41s), as were the api and
+store tests. @runtime reports that `TestIdleParkWorkersFirst` flakes on claude/main itself (7 of 30), which is
+unrelated.
+
+**Low 2 is closed.** A ceiling run on a card with no readable directory is refused at the top of `runNewContext`,
+before anything is typed or the launcher is told. `handoffWritten` also refuses one, as a backstop. The chip says
+why.
+
+**Low 1 is closed as the amended rule states it, with one gap.** `ceilingHeld` holds without limit while a key
+landed in the last 2 minutes. It holds while a terminal is attached or the /m card page fetched replies in the last
+2 minutes, for up to 30 minutes past the crossing. It is checked at the start (`watchAutoContext`, `autoReady`),
+before the launcher is told (`autoPrepare` through `autoStillOK`), and before each nudge (`ncNudge`).
+
+- **The replies stamp.** Only the /m card page fetches `/replies` (`card.js` on open and refresh, and on load
+  older). No hub tool and no board view does. A phone holds a director only while that director's own card page is
+  open and refetching, and a hidden tab stops refetching, so the stamp ages out in 2 minutes. That is acceptable.
+- **The crossing reset.** `crossedAt` resets only when the card is under its line, not when a run starts, so a run
+  dropped for a watcher keeps the wait it has served. A daemon restart starts the wait over, since it is in memory.
+  That is fine.
+
+### Low
+
+3. **The capture prompt and `/clear` are not held by recent typing.** Typing is checked at the start, in
+   `autoPrepare` and before each nudge. The capture prompt (`ncCapture`, then `ncType`) and `/clear` are typed
+   through `typeLabelledGuarded`, which waits only for the operator gate's short quiet (`peerQuiet`, seconds). A
+   person who submits a message, reads the answer for more than `peerQuiet`, and is still inside the 2-minute
+   typing hold can have the capture typed in front of them, then their conversation cleared once the capture turn
+   ends. Adding `!(ceilingRun && run.typedWithin(ceilingTypedQuiet))` to `ncType`'s `quiet()` for ceiling runs
+   would make "typing holds without limit" true through to the clear. The step then waits, or fails at `captureEnd`
+   with nothing typed, which is the safe failure.
+
+### Nit
+
+4. `autoContexts.read` is never pruned. `forgetExcept` drops `by` but not `read`, so it keeps one entry per card id
+   for the daemon's life. Prune it in the same loop.
+
+Quality: after the Sonnet switch. The rule is implemented where it is stated, the reset reasoning is right, and the
+stamp was justified by the fact that /m holds no connection. The gap is the same shape as before: the typed steps
+past the start were not given the hold.
+
+ROOM DEPLOY OK 60636d2e~1..375421e0. Low 3 should follow before directors are tagged broadly.
