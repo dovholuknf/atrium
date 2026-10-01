@@ -650,3 +650,97 @@ func TestAPlainPullIdFindsItsRoom(t *testing.T) {
 		t.Fatalf("an unheld id = %d %s", code, body)
 	}
 }
+
+// ── the acceptance test ──────────────────────────────────
+
+// withEvents is a fake room that serves the pulls routes and a stream that says what it is told to.
+func withEvents(say <-chan string, room *pullsRoom) http.Handler {
+	stream := streamer(say)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/events" {
+			stream.ServeHTTP(w, r)
+			return
+		}
+		room.ServeHTTP(w, r)
+	})
+}
+
+// A PR'S ROW OPENS ITS WALK THROUGH THE HUB. One fake room holds the review of openziti/tlsuv#378. Through the hub,
+// scoped to that room and then in the ALL view with a second room attached, the list shows the row, the detail opens,
+// the findings open with their ETag and answer 304 on a repeat, the `pr` event arrives with the right id, and a write
+// quoting a stale hash gets the room's 409 body back unchanged.
+func TestAPullsRowOpensItsWalkThroughTheHub(t *testing.T) {
+	const prURL = "https://github.com/openziti/tlsuv/pull/378"
+	row := pullsRow("pr_01k8x2m4q7", "ready", "2026-10-01T14:02:10Z")
+	row["url"], row["title"] = prURL, "tls engine: session resumption on reconnect"
+	alpha := &pullsRoom{rows: []map[string]any{row}}
+	beta := &pullsRoom{}
+	sayA, sayB := make(chan string, 4), make(chan string, 4)
+	front, _, done := two(t, withEvents(sayA, alpha), withEvents(sayB, beta))
+	defer done()
+
+	const stale = `{"text":"a && b < c","hash":"stale","eol":"\n"}`
+	const staleBody = `{"error":"that file changed while you were editing it. nothing was written.",` +
+		`"code":"changed","text":"a && b < c\nnow","hash":"9e02"}`
+
+	// walk is the whole path, against one spelling of the row's id and one way of naming the room. `id` is what
+	// the list handed the board, and `hdr` is how the board names its room, if it does.
+	walk := func(t *testing.T, hdr map[string]string, events, wantID string) {
+		t.Helper()
+		// The list shows the row.
+		code, body, _ := pullsDo(t, http.MethodGet, front.URL+"/v1/prs", "", hdr)
+		if code != 200 || !strings.Contains(body, prURL) {
+			t.Fatalf("the list = %d %s", code, body)
+		}
+		listed := jsonOf(t, body)["prs"].([]any)[0].(map[string]any)
+		id, _ := listed["id"].(string)
+		if id != wantID {
+			t.Fatalf("the list handed out the id %q, want %q", id, wantID)
+		}
+		// The detail opens from that id and says whose it is.
+		code, body, _ = pullsDo(t, http.MethodGet, front.URL+"/v1/prs/"+id, "", hdr)
+		detail := jsonOf(t, body)
+		if code != 200 || detail["pr"].(map[string]any)["id"] != wantID || detail["run_log"] == nil {
+			t.Fatalf("the detail = %d %s", code, body)
+		}
+		// The findings open with their ETag and answer 304 on a repeat.
+		code, body, h := pullsDo(t, http.MethodGet, front.URL+"/v1/prs/"+id+"/findings", "", hdr)
+		if code != 200 || h.Get("ETag") != findingsETag || !strings.Contains(body, `"hash":"7f1c"`) {
+			t.Fatalf("the findings = %d etag %q %s", code, h.Get("ETag"), body)
+		}
+		hdr304 := map[string]string{"If-None-Match": h.Get("ETag")}
+		for k, v := range hdr {
+			hdr304[k] = v
+		}
+		if code, body, _ = pullsDo(t, http.MethodGet, front.URL+"/v1/prs/"+id+"/findings", "", hdr304); code != http.StatusNotModified || body != "" {
+			t.Fatalf("the repeat = %d %q, want a 304", code, body)
+		}
+		// A write on a stale hash is the room's 409, byte for byte.
+		code, body, _ = pullsDo(t, http.MethodPut, front.URL+"/v1/prs/"+id+"/findings/f-3a9c01d4e2", stale, hdr)
+		if code != http.StatusConflict || body != staleBody {
+			t.Fatalf("the stale write = %d %s", code, body)
+		}
+		// The event arrives with the id the list used, so the board replaces the row it holds.
+		ch, shut := listen(t, front.URL+events)
+		defer shut()
+		stop := pump(sayA, sse("pr", `{"pr":{"id":"pr_01k8x2m4q7","state":"running","run_state":"panel"}}`))
+		defer stop()
+		ev := waitEvent(t, ch, "pr")
+		if got := fields(t, ev.Data)["pr"].(map[string]any)["id"]; got != wantID {
+			t.Fatalf("the event named %v, want %q", got, wantID)
+		}
+	}
+
+	t.Run("scoped to the room", func(t *testing.T) {
+		walk(t, map[string]string{RoomHeader: "alpha"}, "/v1/events/room/alpha", "pr_01k8x2m4q7")
+	})
+	t.Run("in the all view with a second room", func(t *testing.T) {
+		walk(t, nil, "/v1/events/hub", "alpha~pr_01k8x2m4q7")
+		// The other room holds nothing and was not asked to open this row.
+		for _, q := range beta.requests() {
+			if strings.Contains(q.URI, "pr_01k8x2m4q7/") || q.Method == http.MethodPut {
+				t.Errorf("beta was asked about alpha's row: %+v", q)
+			}
+		}
+	})
+}
