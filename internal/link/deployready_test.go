@@ -334,3 +334,13 @@ func TestParseVersionCommit(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
+
+func TestDeployEnvDropsAtriumVariables(t *testing.T) {
+	in := []string{"PATH=/bin", "ATRIUM_NEW_BUILD=other.exe", "atrium_location=private", "ATRIUMX=1", "HOME=/h",
+		"GIT_TERMINAL_PROMPT=0"}
+	got := deployEnv(in)
+	want := []string{"PATH=/bin", "ATRIUMX=1", "HOME=/h", "GIT_TERMINAL_PROMPT=0"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("deployEnv = %v, want %v", got, want)
+	}
+}

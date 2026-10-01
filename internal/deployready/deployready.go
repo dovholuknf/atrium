@@ -123,7 +123,8 @@ var (
 	testOnly = []string{"scripts/test-board-headless.js"}
 	// hubOnly are the packages only the hub runs. A commit inside them is covered by a hub verdict alone. Any other
 	// Go or board file also runs in the room, which restarts on this binary, so it needs a room verdict too.
-	hubOnly  = []string{"internal/link/", "internal/hubstore/"}
+	// internal/link is NOT here: the room runs link.Join, Dialer, Direct, RelayRequest, Keys, Zrok and Ziti.
+	hubOnly  = []string{"internal/hubstore/"}
 	imageExt = map[string]bool{".png": true, ".jpg": true, ".jpeg": true, ".gif": true, ".svg": true, ".ico": true,
 		".webp": true}
 )

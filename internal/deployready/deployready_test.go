@@ -121,7 +121,8 @@ func TestRoomSide(t *testing.T) {
 		"internal/daemon/daemon.go":        true,
 		"internal/api/web/index.html":      true,
 		"cmd/atrium/main.go":               true,
-		"internal/link/hub.go":             false,
+		"internal/link/hub.go":             true,
+		"internal/link/dialer.go":          true,
 		"internal/hubstore/store.go":       false,
 		"scripts/live/deploy-hub-only.ps1": false,
 	}
@@ -159,7 +160,7 @@ func TestNothingLandedIsCurrent(t *testing.T) {
 func TestCodeWithoutVerdictBlocksAndNamesTheCommit(t *testing.T) {
 	r := newRepo(t)
 	base := r.commit("base", map[string]string{"internal/a.go": "a"})
-	code := r.commit("change the hub", map[string]string{"internal/link/a.go": "b"})
+	code := r.commit("change the hub", map[string]string{"internal/hubstore/a.go": "b"})
 	r.commit("docs", map[string]string{"docs/x.md": "x"})
 	rep := r.checker().Check(context.Background(), base)
 	wantState(t, rep, StateBlocked)
@@ -178,7 +179,7 @@ func TestCodeWithoutVerdictBlocksAndNamesTheCommit(t *testing.T) {
 func TestVerdictByRangeMakesItReady(t *testing.T) {
 	r := newRepo(t)
 	base := r.commit("base", map[string]string{"internal/a.go": "a"})
-	r.commit("one", map[string]string{"internal/link/a.go": "1"})
+	r.commit("one", map[string]string{"internal/hubstore/a.go": "1"})
 	tip := r.commit("two", map[string]string{"scripts/live/x.ps1": "2"})
 	r.review("rt", "Atrium-Verdict: hub-ok "+base+".."+tip)
 	rep := r.checker().Check(context.Background(), base)
@@ -194,8 +195,8 @@ func TestVerdictByRangeMakesItReady(t *testing.T) {
 func TestVerdictByRangeCoversOnlyTheRange(t *testing.T) {
 	r := newRepo(t)
 	base := r.commit("base", map[string]string{"internal/a.go": "a"})
-	one := r.commit("one", map[string]string{"internal/link/a.go": "1"})
-	r.commit("two", map[string]string{"internal/link/b.go": "2"})
+	one := r.commit("one", map[string]string{"internal/hubstore/a.go": "1"})
+	r.commit("two", map[string]string{"internal/hubstore/b.go": "2"})
 	r.review("rt", "Atrium-Verdict: hub-ok "+base+".."+one)
 	rep := r.checker().Check(context.Background(), base)
 	wantState(t, rep, StateBlocked)
@@ -207,7 +208,7 @@ func TestVerdictByRangeCoversOnlyTheRange(t *testing.T) {
 func TestSingleCommitVerdict(t *testing.T) {
 	r := newRepo(t)
 	base := r.commit("base", map[string]string{"internal/a.go": "a"})
-	one := r.commit("one", map[string]string{"internal/link/a.go": "1"})
+	one := r.commit("one", map[string]string{"internal/hubstore/a.go": "1"})
 	r.review("rt", "Atrium-Verdict: hub-ok "+one)
 	wantState(t, r.checker().Check(context.Background(), base), StateReady)
 }
@@ -245,8 +246,8 @@ func TestVerdictSurvivesARebase(t *testing.T) {
 	r := newRepo(t)
 	base := r.commit("base", map[string]string{"internal/a.go": "a"})
 	r.git("checkout", "-q", "-b", "feature")
-	f1 := r.commit("f1", map[string]string{"internal/link/f1.go": "1"})
-	f2 := r.commit("f2", map[string]string{"internal/link/f2.go": "2"})
+	f1 := r.commit("f1", map[string]string{"internal/hubstore/f1.go": "1"})
+	f2 := r.commit("f2", map[string]string{"internal/hubstore/f2.go": "2"})
 	r.git("checkout", "-q", "claude/main")
 	// The branch moved while it was being read, so the landing is not a fast-forward.
 	moved := r.commit("moved on", map[string]string{"docs/moved.md": "m"})
@@ -263,11 +264,11 @@ func TestVerdictDoesNotSurviveAnAlteredPatch(t *testing.T) {
 	r := newRepo(t)
 	base := r.commit("base", map[string]string{"internal/a.go": "a"})
 	r.git("checkout", "-q", "-b", "feature")
-	f1 := r.commit("f1", map[string]string{"internal/link/f1.go": "reviewed"})
+	f1 := r.commit("f1", map[string]string{"internal/hubstore/f1.go": "reviewed"})
 	r.git("checkout", "-q", "claude/main")
 	r.review("feature", "Atrium-Verdict: hub-ok "+base+".."+f1)
 	r.git("cherry-pick", "-n", f1)
-	r.write("internal/link/f1.go", "changed on the way")
+	r.write("internal/hubstore/f1.go", "changed on the way")
 	r.git("add", "-A")
 	r.git("commit", "-q", "-m", "f1 landed")
 	rep := r.checker().Check(context.Background(), base)
@@ -280,7 +281,7 @@ func TestVerdictDoesNotSurviveAnAlteredPatch(t *testing.T) {
 func TestNewestVerdictWins(t *testing.T) {
 	r := newRepo(t)
 	base := r.commit("base", map[string]string{"internal/a.go": "a"})
-	code := r.commit("code", map[string]string{"internal/link/a.go": "1"})
+	code := r.commit("code", map[string]string{"internal/hubstore/a.go": "1"})
 
 	r.review("one", "Atrium-Verdict: hold "+code)
 	rep := r.checker().Check(context.Background(), base)
@@ -318,7 +319,7 @@ func TestHoldThenHubOkOnlyStillHoldsTheRoom(t *testing.T) {
 func TestConditionalOKCountsAsOK(t *testing.T) {
 	r := newRepo(t)
 	base := r.commit("base", map[string]string{"internal/a.go": "a"})
-	code := r.commit("code", map[string]string{"internal/link/a.go": "1"})
+	code := r.commit("code", map[string]string{"internal/hubstore/a.go": "1"})
 	r.commit("Review: OK, low to follow, given the gate\n\nAtrium-Verdict: hub-ok "+code,
 		map[string]string{"docs/backlog/rt/r-new-review-cond.md": "ok, low to follow"})
 	wantState(t, r.checker().Check(context.Background(), base), StateReady)
@@ -327,7 +328,7 @@ func TestConditionalOKCountsAsOK(t *testing.T) {
 func TestVerdictFoldedIntoACodeCommitIsRefused(t *testing.T) {
 	r := newRepo(t)
 	base := r.commit("base", map[string]string{"internal/a.go": "a"})
-	code := r.commit("code\n\nAtrium-Verdict: hub-ok HEAD", map[string]string{"internal/link/a.go": "1"})
+	code := r.commit("code\n\nAtrium-Verdict: hub-ok HEAD", map[string]string{"internal/hubstore/a.go": "1"})
 	rep := r.checker().Check(context.Background(), base)
 	wantState(t, rep, StateBlocked)
 	if len(rep.Notes) == 0 || !strings.Contains(rep.Notes[0], code[:8]) {
@@ -336,14 +337,14 @@ func TestVerdictFoldedIntoACodeCommitIsRefused(t *testing.T) {
 
 	// Mixed with a review file is not a review commit either.
 	r.commit("review and code\n\nAtrium-Verdict: hub-ok "+code, map[string]string{
-		"docs/backlog/rt/r-new-review-x.md": "x", "internal/link/b.go": "2"})
+		"docs/backlog/rt/r-new-review-x.md": "x", "internal/hubstore/b.go": "2"})
 	wantState(t, r.checker().Check(context.Background(), base), StateBlocked)
 }
 
 func TestVerdictOnAnUnknownRangeIsIgnoredWithANote(t *testing.T) {
 	r := newRepo(t)
 	base := r.commit("base", map[string]string{"internal/a.go": "a"})
-	r.commit("code", map[string]string{"internal/link/a.go": "1"})
+	r.commit("code", map[string]string{"internal/hubstore/a.go": "1"})
 	r.review("rt", "Atrium-Verdict: hub-ok deadbeef..cafebabe")
 	rep := r.checker().Check(context.Background(), base)
 	wantState(t, rep, StateBlocked)
@@ -358,12 +359,12 @@ func TestRangeIsFirstParentOnly(t *testing.T) {
 	r := newRepo(t)
 	base := r.commit("base", map[string]string{"internal/a.go": "a"})
 	r.git("checkout", "-q", "-b", "feature")
-	r.commit("f1", map[string]string{"internal/link/f1.go": "1"})
+	r.commit("f1", map[string]string{"internal/hubstore/f1.go": "1"})
 	r.git("checkout", "-q", "claude/main")
-	r.commit("m1 unreviewed", map[string]string{"internal/link/m1.go": "m"})
+	r.commit("m1 unreviewed", map[string]string{"internal/hubstore/m1.go": "m"})
 	r.git("checkout", "-q", "feature")
 	r.git("merge", "-q", "--no-ff", "-m", "Merge claude/main into feature", "claude/main")
-	f2 := r.commit("f2", map[string]string{"internal/link/f2.go": "2"})
+	f2 := r.commit("f2", map[string]string{"internal/hubstore/f2.go": "2"})
 	r.review("feature", "Atrium-Verdict: hub-ok "+base+".."+f2)
 	r.git("checkout", "-q", "claude/main")
 	r.git("merge", "-q", "--no-ff", "-m", "Merge feature", "feature")
@@ -378,11 +379,11 @@ func TestRangeIsFirstParentOnly(t *testing.T) {
 // A merge counts as code only when it carries a change of its own.
 func TestMergeNeedsAVerdictOnlyForItsResolution(t *testing.T) {
 	r := newRepo(t)
-	base := r.commit("base", map[string]string{"internal/link/c.go": "base\n"})
+	base := r.commit("base", map[string]string{"internal/hubstore/c.go": "base\n"})
 	r.git("checkout", "-q", "-b", "side")
-	side := r.commit("side", map[string]string{"internal/link/c.go": "side\n"})
+	side := r.commit("side", map[string]string{"internal/hubstore/c.go": "side\n"})
 	r.git("checkout", "-q", "claude/main")
-	mainSide := r.commit("main", map[string]string{"internal/link/c.go": "main\n"})
+	mainSide := r.commit("main", map[string]string{"internal/hubstore/c.go": "main\n"})
 	r.review("both", "Atrium-Verdict: hub-ok "+base+".."+mainSide, "Atrium-Verdict: hub-ok "+base+".."+side)
 
 	cmd := exec.Command("git", "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false",
@@ -392,7 +393,7 @@ func TestMergeNeedsAVerdictOnlyForItsResolution(t *testing.T) {
 	if out, err := cmd.CombinedOutput(); err == nil {
 		t.Fatalf("expected a conflict: %s", out)
 	}
-	r.write("internal/link/c.go", "resolved\n")
+	r.write("internal/hubstore/c.go", "resolved\n")
 	r.git("add", "-A")
 	r.git("commit", "-q", "-m", "Merge side")
 
@@ -405,11 +406,11 @@ func TestMergeNeedsAVerdictOnlyForItsResolution(t *testing.T) {
 
 func TestCleanMergeIsNotCode(t *testing.T) {
 	r := newRepo(t)
-	base := r.commit("base", map[string]string{"internal/link/c.go": "base\n"})
+	base := r.commit("base", map[string]string{"internal/hubstore/c.go": "base\n"})
 	r.git("checkout", "-q", "-b", "side")
-	side := r.commit("side", map[string]string{"internal/link/s.go": "s\n"})
+	side := r.commit("side", map[string]string{"internal/hubstore/s.go": "s\n"})
 	r.git("checkout", "-q", "claude/main")
-	m := r.commit("main", map[string]string{"internal/link/m.go": "m\n"})
+	m := r.commit("main", map[string]string{"internal/hubstore/m.go": "m\n"})
 	r.review("both", "Atrium-Verdict: hub-ok "+m, "Atrium-Verdict: hub-ok "+side)
 	r.git("merge", "-q", "--no-ff", "-m", "Merge side", "side")
 	rep := r.checker().Check(context.Background(), base)
@@ -452,7 +453,7 @@ func TestMissingBranchIsUnknown(t *testing.T) {
 func TestSignatureMovesWithTheAnswer(t *testing.T) {
 	r := newRepo(t)
 	base := r.commit("base", map[string]string{"internal/a.go": "a"})
-	code := r.commit("code", map[string]string{"internal/link/a.go": "1"})
+	code := r.commit("code", map[string]string{"internal/hubstore/a.go": "1"})
 	c := r.checker()
 	before := c.Check(context.Background(), base)
 	again := c.Check(context.Background(), base)
