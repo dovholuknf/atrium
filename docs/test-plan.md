@@ -8250,3 +8250,6 @@ build before `atrium_publish path` works, since an older room cannot say what a 
    `internal/link/newcontexts_test.go`.
 4. Type in the board terminal during a new context. Nothing reaches the pty, a paste is acked, and ctrl-c still works.
    Once the cycle ends, typing reaches the pty. Covered by `attach_newcontext_test.go`.
+5. Restart the room mid-wake, then let the card's new conversation start. The failed chip stays until dismissed or
+   rerun. Covered by `newcontext_review_test.go`. The idle parking's capture is not journalled and does not refuse
+   typing. The board shows a "Typing dropped" toast when typing is refused.
