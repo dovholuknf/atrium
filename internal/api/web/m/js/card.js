@@ -10,11 +10,13 @@
 
   const U = window.mUtil;
   const MD = window.mMd;
-  const REPLIES_N = 10;
+  const REPLIES_N = 50;
+  const OLDER_N = 50;
 
   let openId = "";
   let els = null;
   let seq = 0;
+  let closeTok = 0;
   let turnKey = "";
   // The room's `output_at`: the last reply with text, mid-turn too. Absent keeps the last one seen.
   let outAt = "";
@@ -60,7 +62,8 @@
     const a = U.ago(Date.now() - U.ts(at));
     return a === "now" ? "now" : a;
   }
-  // A stable key for a drawn entry, so the viewport can find the bubble it was anchored to after a redraw.
+  // A stable key for a drawn entry, so older pages can be deduped against what is on screen and the viewport can find
+  // the bubble it was anchored to after a prepend or a redraw.
   function entryKey(at, text) {
     const t = String(at || "") + "|" + String(text || "");
     let h = 5381;
@@ -260,8 +263,45 @@
   }
   const sameText = (a, b) => String(a).trim().slice(0, 200) === String(b).trim().slice(0, 200);
 
+  // ── older replies ──────────────────────────────────────────────────────
+  // Per card: the pages read before the latest window, the room's cursor for the next one, and whether a read is in
+  // flight or failed. The cursor is passed back exactly as the room gave it, never worked out from a timestamp.
+  const olderOf = new Map();
+  function older(id) {
+    const b = window.mNet.bareId(id);
+    if (!olderOf.has(b)) olderOf.set(b, { replies: [], prompts: [], more: false, next: "", pages: 0, busy: false, failed: false });
+    return olderOf.get(b);
+  }
+  function foldInto(o, win) {
+    const seen = new Set();
+    const merge = list => list.filter(x => { const k = entryKey(x.at, x.text); if (seen.has(k)) return false; seen.add(k); return true; }).sort((a, b) => U.ts(a.at) - U.ts(b.at));
+    o.replies = merge((win.replies || []).concat(o.replies));
+    seen.clear();
+    o.prompts = merge((Array.isArray(win.prompts) ? win.prompts : []).concat(o.prompts));
+  }
+  // The latest window with every older page in front of it, in time order, nothing twice.
+  function withOlder(id, got) {
+    const o = older(id);
+    if (!o.replies.length && !o.prompts.length) return got;
+    const seen = new Set();
+    const uniq = (list) => list.filter(x => { const k = entryKey(x.at, x.text); if (seen.has(k)) return false; seen.add(k); return true; });
+    const rs = uniq((got.replies || []).slice().concat(o.replies).sort((a, b) => U.ts(a.at) - U.ts(b.at)));
+    seen.clear();
+    const ps = uniq((Array.isArray(got.prompts) ? got.prompts : []).slice().concat(o.prompts).sort((a, b) => U.ts(a.at) - U.ts(b.at)));
+    return Object.assign({}, got, { replies: rs, prompts: ps });
+  }
+  function olderRowHTML(id) {
+    const o = older(id);
+    if (!o.more) return "";
+    if (o.busy) return '<button type="button" id="m-older" class="older busy" disabled>loading older&hellip;</button>';
+    if (o.failed) return '<button type="button" id="m-older" class="older failed">could not load older. tap to retry</button>';
+    return '<button type="button" id="m-older" class="older">load older</button>';
+  }
+
   function repliesHTML(t, got) {
     const who = whoOf(t);
+    if (got && !got.failed) got = withOlder(openId, got);
+    const row = got && !got.failed ? olderRowHTML(openId) : "";
     if (!got) return '<div class="replies loading" aria-busy="true"><div class="sk"></div><div class="sk s2"></div></div>';
     if (got.failed) {
       // The endpoint is not on this room yet, or it failed. The recap and the last report stand in for it.
@@ -279,8 +319,8 @@
       .filter(i => !i.mine || !ops.some(p => sameText(p.text, i.mine.text) && Math.abs(U.ts(p.at) - U.ts(i.mine.at)) <= 60000))
       .concat(prompts.filter(p => U.ts(p.at) >= since).map(p => ({ p, at: U.ts(p.at) })))
       .sort((a, b) => a.at - b.at);
-    if (!items.length) return '<div class="replies">' + fallbackHTML(t) + "</div>";
-    return '<div class="replies">' + items.map(i => i.p ? promptHTML(i.p) : i.mine ? ownHTML(i.mine) : replyHTML(i.r, screen, who)).join("") + "</div>";
+    if (!items.length) return '<div class="replies">' + row + fallbackHTML(t) + "</div>";
+    return '<div class="replies">' + row + items.map(i => i.p ? promptHTML(i.p) : i.mine ? ownHTML(i.mine) : replyHTML(i.r, screen, who)).join("") + "</div>";
   }
 
   // ── painting ─────────────────────────────────────────────────────────────
@@ -430,6 +470,7 @@
     lastTop = els.scroll.scrollTop;
     if (mine) return;
     lastScrollAt = Date.now();
+    if (els.scroll.scrollTop < 40) nearTop();
     if (typing) { if (active() || Date.now() - userAt < 1500) pinTop = els.scroll.scrollTop; else pinned(); }
     const gap = gapOf();
     if (gap > LEAVE && moved < 0) { stick = false; els.jump.hidden = false; }
@@ -482,8 +523,53 @@
       got = { failed: true };
     }
     if (mine !== seq || id !== openId) return;
+    const o = older(id);
+    // The newest window moves on with every refresh, pushing its oldest entries out of reach of the cursor the older
+    // pages were read with. Once a card has older pages, the window being replaced is folded into them first.
+    const prev = cache.get(id);
+    if (prev && !prev.failed && !got.failed && (o.pages || o.replies.length || o.prompts.length)) foldInto(o, prev);
     cache.set(id, got);
+    if (!got.failed && !o.pages) { o.more = !!got.more; o.next = got.next_before || ""; o.failed = false; }
     paintReplies();
+  }
+
+  // One request per click or scroll to the top, never a loop: a read can cover a lot of transcript. A page with more
+  // may be empty, and the cursor still moves on to the next click. Only more=false ends it.
+  async function loadOlder() {
+    const id = openId;
+    if (!id || !els) return;
+    const o = older(id);
+    if (o.busy || !o.more || !o.next) return;
+    o.busy = true; o.failed = false;
+    paintReplies();
+    const mine = seq;
+    let r = null;
+    try {
+      r = await window.mNet.api("/v1/tasks/" + encodeURIComponent(id) + "/replies?n=" + OLDER_N + "&before=" + encodeURIComponent(o.next));
+      if (!r || !Array.isArray(r.replies)) r = null;
+    } catch (e) { r = null; }
+    o.busy = false;
+    if (id !== openId) return;
+    if (!r) { o.failed = true; paintReplies(); return; }
+    // paintReplies holds the bubble at the top of the view where it is, so the prepend does not move a reader
+    o.replies = r.replies.concat(o.replies);
+    o.prompts = (Array.isArray(r.prompts) ? r.prompts : []).concat(o.prompts);
+    o.more = !!r.more;
+    o.next = r.more ? (r.next_before || "") : "";
+    if (r.more && !o.next) o.more = false;
+    o.pages++;
+    paintReplies();
+  }
+  // Reaching the top asks once, after a short wait, and never while a read is in flight.
+  let topTimer = 0;
+  function nearTop() {
+    if (topTimer || !els || !openId) return;
+    const o = older(openId);
+    if (!o.more || o.busy || o.failed) return;
+    topTimer = setTimeout(() => {
+      topTimer = 0;
+      if (els && openId && els.scroll.scrollTop < 40) loadOlder();
+    }, 350);
   }
 
   function onCards() {
@@ -515,6 +601,7 @@
   function open(id, fromHistory) {
     if (!els || !id) return;
     if (openId) return;
+    closeTok++;
     openId = id;
     turnKey = id + "@" + turnOf(window.mStore.card(id));
     outAt = (window.mStore.card(id) || {}).output_at || "";
@@ -547,6 +634,7 @@
     els.head.innerHTML = els.notices.innerHTML = els.replies.innerHTML = els.extras.innerHTML = els.recap.innerHTML = "";
     els.working.hidden = true;
     els.recap.hidden = true;
+    olderOf.delete(window.mNet.bareId(openId));
     openId = "";
   }
 
@@ -559,9 +647,10 @@
     seq++;
     document.body.classList.remove("sheet-open");
     els.sheet.classList.remove("on");
-    const id = openId;
+    const id = openId, tok = ++closeTok;
     if (reduced()) { finishClose(); return; }
-    const done = () => { if (openId === id && !els.sheet.classList.contains("on")) finishClose(); };
+    // A close that was overtaken by a reopen of the same card (a quick tap on a slow machine) must not close the new one.
+    const done = () => { if (tok === closeTok && openId === id && !els.sheet.classList.contains("on")) finishClose(); };
     els.sheet.addEventListener("transitionend", done, { once: true });
     setTimeout(done, 400);
   }
@@ -771,6 +860,7 @@
     els.sheet.addEventListener("focusout", e => { if (e.target && e.target.classList && e.target.classList.contains("mc-box")) typingOff(); });
     window.addEventListener("m-send", e => { if (e.detail && e.detail.state === "pending") typingOff(); });
     els.head.addEventListener("click", e => { if (e.target.closest && e.target.closest("#m-recap-open")) openRecap(); });
+    els.replies.addEventListener("click", e => { if (e.target.closest && e.target.closest("#m-older")) loadOlder(); });
     els.recap.addEventListener("click", e => {
       if (e.target.id === "m-recap-back" || (e.target.closest && e.target.closest("#m-recap-close"))) closeRecap();
     });

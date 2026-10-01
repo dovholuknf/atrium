@@ -13557,6 +13557,152 @@ async function mTypeSteadySection(browser) {
   if (!bad) console.log("mTypeSteady ok");
 }
 
+// "load older": paging back through a long thread on the room's cursor, one request per click or scroll to the top.
+async function mOlderRun(browser, cfg) {
+  const st = mServer({});
+  const c = mCard("ol-1", { alias: "elder", display_title: "elder", status: "needs-input", waiting_since: mIso(2 * M_MIN), seen: { turn_ended_at: mIso(20 * M_MIN) } });
+  st.tasks = [c];
+  const rep = (i, min) => ({ at: mIso(min * M_MIN), text: "Reply " + i + ". " + "words that wrap onto a second line on the phone. ".repeat(10) });
+  // enough tall bubbles that the thread overflows its box on any machine, whatever its font metrics
+  const latest = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(i => rep(i, 60 - (10 - i) * 4));
+  st.replies["ol-1"] = { source: "transcript", replies: latest, prompts: [], more: true, next_before: "cur-A" };
+  const pageB = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(i => rep(100 + i, 200 - (12 - i) * 5)).concat([latest[0]]);
+  let cFails = 1;
+  st.pages = { "ol-1": before => {
+    if (before === "cur-A") return { body: { source: "transcript", replies: [], prompts: [], more: true, next_before: "cur-B" } };
+    if (before === "cur-B") return { body: { source: "transcript", replies: pageB.sort((a, b) => a.at < b.at ? -1 : 1),
+      prompts: [{ at: mIso(150 * M_MIN), text: "an older operator prompt", truncated: false, kind: "operator" }], more: true, next_before: "cur-C" } };
+    if (before === "cur-C") { if (cFails-- > 0) return { status: 500, body: { error: "boom" } }; return { body: { source: "transcript", replies: [rep(200, 400), rep(201, 395)], prompts: [], more: false } }; }
+    return { status: 404, body: {} };
+  } };
+  await st.open();
+  try {
+    const { ctx, p, errors } = await mPage(browser, st, { width: 412, height: cfg.h }, "");
+    const tag = "mOlder " + cfg.h + (cfg.fs ? " fs" + cfg.fs : "") + ": ";
+    const olderHits = b => st.hits.filter(h => h === "ol-1?50&before=" + b).length;
+    await p.waitForSelector("#m-seg-all", { timeout: slow(10000) });
+    await p.tap("#m-seg-all");
+    await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
+    await p.tap('#m-list .row[data-id="ol-1"]');
+    await p.waitForSelector("#m-replies .reply", { timeout: slow(5000) });
+    await p.waitForSelector("#m-older", { timeout: slow(5000) });
+    if (cfg.fs) await p.evaluate(f => document.getElementById("m-card").style.setProperty("--m-fs", f + "px"), cfg.fs);
+    await p.waitForTimeout(300);
+    const ov = await p.evaluate(() => { const e = document.getElementById("m-card-scroll"); return [e.scrollHeight, e.clientHeight]; });
+    if (ov[0] <= ov[1] + 40) fail(tag + "the thread does not overflow its box, so the top cannot be reached: " + ov.join(" in "));
+    if (!st.hits.includes("ol-1?50")) fail(tag + "the first page was not asked for with n=50: " + st.hits.join(","));
+    if (!/load older/.test(await p.textContent("#m-older"))) fail(tag + "no load older row while more is true");
+    const top = () => p.evaluate(() => {
+      const sc = document.getElementById("m-card-scroll"), r = sc.getBoundingClientRect();
+      const first = [...document.querySelectorAll("#m-replies [data-k]")].find(e => e.getBoundingClientRect().bottom > r.top + 1);
+      return { k: first ? first.dataset.k : "", y: first ? Math.round(first.getBoundingClientRect().top) : 0, st: sc.scrollTop, n: document.querySelectorAll("#m-replies [data-k]").length };
+    });
+    // reaching the top asks once, after a short wait, and an empty page with more=true does not end it
+    await p.evaluate(() => { const e = document.getElementById("m-card-scroll"); e.dispatchEvent(new WheelEvent("wheel", { deltaY: -100 })); e.scrollTop = 0; });
+    await p.waitForFunction(h => h, olderHits("cur-A") > 0, { timeout: 100 }).catch(() => {});
+    const t0 = Date.now();
+    while (olderHits("cur-A") < 1 && Date.now() - t0 < slow(4000)) await p.waitForTimeout(50);
+    await p.waitForTimeout(900);
+    if (olderHits("cur-A") !== 1) fail(tag + "reaching the top asked " + olderHits("cur-A") + " times: " + st.hits.join(","));
+    if (olderHits("cur-B") !== 0) fail(tag + "the empty page led to a loop: " + st.hits.join(","));
+    if (!(await p.$("#m-older"))) fail(tag + "an empty page with more=true removed the row");
+    const before = await top();
+    // a click follows next_before unchanged, and the bubble at the top stays put
+    await p.tap("#m-older");
+    await p.waitForFunction(() => document.querySelectorAll("#m-replies [data-k]").length > 8, null, { timeout: slow(5000) });
+    if (olderHits("cur-B") !== 1) fail(tag + "the click did not follow next_before: " + st.hits.join(","));
+    await p.waitForTimeout(300);
+    const after = await p.evaluate(k => { const e = [...document.querySelectorAll("#m-replies [data-k]")].find(x => x.dataset.k === k); return e ? Math.round(e.getBoundingClientRect().top) : null; }, before.k);
+    if (after === null || Math.abs(after - before.y) > 2) fail(tag + "the bubble at the top moved: " + JSON.stringify({ before, after }));
+    await p.waitForTimeout(900);
+    if (olderHits("cur-C") !== 0) fail(tag + "a click went on to ask for the next page by itself: " + st.hits.join(","));
+    const o = await p.evaluate(() => {
+      const times = [...document.querySelectorAll("#m-replies .reply time")].map(t => Date.parse(t.getAttribute("datetime")));
+      const texts = [...document.querySelectorAll("#m-replies .reply")].map(e => (e.querySelector(".md, .own") || {}).textContent || "");
+      const th = document.getElementById("m-replies").getBoundingClientRect().width;
+      return { sorted: times.every((t, i) => !i || t >= times[i - 1]), dupe: texts.filter(t => /^Reply 1\./.test(t)).length, prompt: texts.some(t => /older operator prompt/.test(t)),
+        minW: Math.min(...[...document.querySelectorAll("#m-replies .reply")].map(e => e.getBoundingClientRect().width / th)), n: texts.length };
+    });
+    if (!o.sorted) fail(tag + "older entries are not in time order");
+    if (o.dupe !== 1) fail(tag + "a reply that was already drawn is drawn " + o.dupe + " times");
+    if (!o.prompt) fail(tag + "an older prompt was not merged in");
+    if (o.minW < 0.915) fail(tag + "the older bubbles are not compact: " + o.minW);
+    await p.evaluate(() => document.getElementById("m-card").style.setProperty("--m-fs", "19px"));
+    const fs = await p.$eval("#m-replies .reply .md", e => parseFloat(getComputedStyle(e).fontSize));
+    if (fs !== 19) fail(tag + "the pinch size does not reach the older bubbles: " + fs);
+    await p.evaluate(() => document.getElementById("m-card").style.removeProperty("--m-fs"));
+    await mShot(p, "older-390");
+    // the newest window moves on with new entries after a load: nothing that fell out of it goes missing
+    await p.waitForFunction(() => document.getElementById("m-live").classList.contains("on"), null, { timeout: slow(10000) });
+    const ts = Date.now();
+    while (!st.streams.length && Date.now() - ts < slow(10000)) await p.waitForTimeout(100);
+    const fresh = [1, 2, 3].map(i => ({ at: mIso((10 - i) * 0.5 * M_MIN), text: "Fresh " + i + ". " + "newer words. ".repeat(4) }));
+    st.replies["ol-1"] = { source: "transcript", replies: latest.slice(3).concat(fresh), prompts: [], more: true, next_before: "cur-A" };
+    st.send("task", Object.assign({}, c, { row: 1, output_at: mIso(0.2 * M_MIN) }));
+    await p.waitForFunction(() => /Fresh 3/.test(document.getElementById("m-replies").textContent), null, { timeout: slow(5000) });
+    const kept = await p.evaluate(() => { const t = [...document.querySelectorAll("#m-replies .reply")].map(e => (e.querySelector(".md, .own") || {}).textContent || ""); return { r2: t.filter(x => /^Reply 2\./.test(x)).length, r3: t.filter(x => /^Reply 3\./.test(x)).length, r112: t.filter(x => /^Reply 112\./.test(x)).length, fresh: t.filter(x => /^Fresh/.test(x)).length }; });
+    if (kept.r2 !== 1 || kept.r3 !== 1 || kept.r112 !== 1 || kept.fresh !== 3) fail(tag + "a refreshed window left a gap or a repeat: " + JSON.stringify(kept));
+    // a failure shows a retry row, makes no further request of its own, and the retry goes on
+    await p.evaluate(() => { const e = document.getElementById("m-card-scroll"); e.dispatchEvent(new WheelEvent("wheel", { deltaY: -100 })); e.scrollTop = 0; });
+    const t1 = Date.now();
+    while (olderHits("cur-C") < 1 && Date.now() - t1 < slow(4000)) await p.waitForTimeout(50);
+    await p.waitForFunction(() => /retry/.test((document.getElementById("m-older") || {}).textContent || ""), null, { timeout: slow(5000) });
+    await p.waitForTimeout(900);
+    if (olderHits("cur-C") !== 1) fail(tag + "a failure was asked again on its own: " + st.hits.join(","));
+    await p.tap("#m-older");
+    await p.waitForFunction(() => !document.getElementById("m-older"), null, { timeout: slow(5000) });
+    if (olderHits("cur-C") !== 2) fail(tag + "the retry did not ask again: " + st.hits.join(","));
+    if (await p.$("#m-older")) fail(tag + "more=false left the row");
+    if (!/Reply 200/.test(await p.textContent("#m-replies"))) fail(tag + "the last page was not drawn");
+    // closing the card drops what it paged in: reopened, it starts from its newest window again
+    await p.evaluate(() => document.getElementById("m-card-back").click());
+    await p.waitForFunction(() => document.getElementById("m-card").hidden, null, { timeout: slow(5000) });
+    st.replies["ol-1"] = { source: "transcript", replies: latest.slice(3).concat(fresh), prompts: [], more: true, next_before: "cur-A" };
+    await p.tap('#m-list .row[data-id="ol-1"]');
+    await p.waitForSelector("#m-replies .reply", { timeout: slow(5000) });
+    await p.waitForSelector("#m-older", { timeout: slow(5000) });
+    const again = await p.evaluate(() => [...document.querySelectorAll("#m-replies .reply")].map(e => (e.querySelector(".md, .own") || {}).textContent || "").filter(x => /^Reply 1(12|)\./.test(x) || /^Reply 20/.test(x)).length);
+    if (again) fail(tag + "a reopened card still shows what an earlier visit paged in");
+    if (await mNoSideways(p)) fail(tag + "the card scrolls sideways");
+    if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+    await ctx.close();
+  } finally { await st.close(); }
+}
+
+// A thread that does not overflow its box still shows the load older row, and a click on it works.
+async function mOlderShort(browser) {
+  const st = mServer({});
+  const c = mCard("ol-2", { alias: "brief", display_title: "brief", status: "needs-input", waiting_since: mIso(2 * M_MIN), seen: { turn_ended_at: mIso(20 * M_MIN) } });
+  st.tasks = [c];
+  st.replies["ol-2"] = { source: "transcript", replies: [{ at: mIso(5 * M_MIN), text: "Only reply." }], prompts: [], more: true, next_before: "s-A" };
+  st.pages = { "ol-2": before => before === "s-A" ? { body: { source: "transcript", replies: [{ at: mIso(50 * M_MIN), text: "An older reply." }, { at: mIso(40 * M_MIN), text: "Another older reply." }], prompts: [], more: false } } : { status: 404, body: {} } };
+  await st.open();
+  try {
+    const { ctx, p, errors } = await mPage(browser, st, { width: 412, height: 915 }, "");
+    const tag = "mOlder short: ";
+    await p.waitForSelector("#m-seg-all", { timeout: slow(10000) });
+    await p.tap("#m-seg-all");
+    await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
+    await p.tap('#m-list .row[data-id="ol-2"]');
+    await p.waitForSelector("#m-older", { timeout: slow(5000) });
+    const ov = await p.evaluate(() => { const e = document.getElementById("m-card-scroll"); return [e.scrollHeight, e.clientHeight]; });
+    if (ov[0] > ov[1] + 1) fail(tag + "this thread was meant not to overflow: " + ov.join(" in "));
+    await p.tap("#m-older");
+    await p.waitForFunction(() => /Another older reply/.test(document.getElementById("m-replies").textContent), null, { timeout: slow(5000) });
+    if (!st.hits.includes("ol-2?50&before=s-A")) fail(tag + "the click did not ask with the cursor: " + st.hits.join(","));
+    await p.waitForFunction(() => !document.getElementById("m-older"), null, { timeout: slow(3000) });
+    if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+    await ctx.close();
+  } finally { await st.close(); }
+}
+
+// "load older" at two viewport heights and at the smallest and largest pinch sizes, so it does not rest on one machine's layout.
+async function mOlderSection(browser) {
+  for (const cfg of [{ h: 915, fs: 0 }, { h: 700, fs: 0 }, { h: 915, fs: 11 }, { h: 700, fs: 24 }]) await mOlderRun(browser, cfg);
+  await mOlderShort(browser);
+  if (!bad) console.log("mOlder ok");
+}
+
 // A reader holding the thread (a finger down, dragging slowly up) is never pulled back to the bottom, whatever arrives.
 async function mFollowSection(browser) {
   const st = mServer({});
@@ -13728,7 +13874,7 @@ async function mOutputAtSection(browser) {
       await p.waitForFunction(() => document.getElementById("m-live").classList.contains("on"), null, { timeout: slow(10000) });
       const t1 = Date.now();
       while (!st.streams.length && Date.now() - t1 < slow(10000)) await p.waitForTimeout(100);
-      const reads = () => st.hits.filter(h => h === "out-1?10").length;
+      const reads = () => st.hits.filter(h => h === "out-1?50").length;
       st.hits.length = 0;
       // a newer output_at re-reads once
       const at2 = mIso(2 * M_MIN);
@@ -15665,7 +15811,7 @@ async function main() {
       mOutputAt: mOutputAtSection, mStickBottom: mStickBottomSection, mSendFree: mSendFreeSection, mCardUpload: mCardUploadSection, mCompact: mCompactSection, mPinch: mPinchSection, mPrompts: mPromptsSection,
       cardUrlWinName: cardUrlWinNameSection,
       gearHosts: gearHostsSection,
-      mTypeSteady: mTypeSteadySection, mFollow: mFollowSection };
+      mTypeSteady: mTypeSteadySection, mOlder: mOlderSection, mFollow: mFollowSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -17661,6 +17807,7 @@ async function main() {
     await mCompactSection(browser);
     await mPinchSection(browser);
     await mTypeSteadySection(browser);
+    await mOlderSection(browser);
     await mFollowSection(browser);
     await mPromptsSection(browser);
     await cardUrlWinNameSection(browser, base);
@@ -17821,7 +17968,12 @@ function mServer(state) {
     }
     const m = p.match(/^\/v1\/tasks\/([^/]+)\/replies$/);
     if (m) {
-      state.hits.push(decodeURIComponent(m[1]) + "?" + u.searchParams.get("n"));
+      const before = u.searchParams.get("before");
+      state.hits.push(decodeURIComponent(m[1]) + "?" + u.searchParams.get("n") + (before ? "&before=" + before : ""));
+      if (before && state.pages && state.pages[decodeURIComponent(m[1])]) {
+        const pg = state.pages[decodeURIComponent(m[1])](before);
+        return json(pg.status || 200, pg.body || {});
+      }
       const r = state.replies[decodeURIComponent(m[1])];
       if (!r || r === 404) return json(404, { error: "not found" });
       return json(200, r);
@@ -17979,16 +18131,16 @@ async function mCardSection(browser) {
       if (await mNoSideways(p)) fail(tag + "the card scrolls sideways");
       if (!/which port/.test(await p.textContent("#m-card-extras"))) fail(tag + "the open questions are missing");
       if (await p.getAttribute("#m-card-term", "href") !== "/alias/builder") fail(tag + "open terminal does not point at the card's readable board path");
-      if (st.hits.filter(h => h === "card-a?10").length !== 1) fail(tag + "replies fetched " + st.hits.join(","));
+      if (st.hits.filter(h => h === "card-a?50").length !== 1) fail(tag + "replies fetched " + st.hits.join(","));
       await mShot(p, "card-dark-" + vp.width);
       // refetch only when the turn ends
       st.send("task", Object.assign({}, ta, { row: 1, last_activity_at: mIso(1000) }));
       await p.waitForTimeout(600);
-      if (st.hits.filter(h => h === "card-a?10").length !== 1) fail(tag + "replies refetched without a new turn: " + st.hits.join(","));
+      if (st.hits.filter(h => h === "card-a?50").length !== 1) fail(tag + "replies refetched without a new turn: " + st.hits.join(","));
       st.replies["card-a"] = { source: "transcript", replies: [{ at: mIso(1000), text: "A fresh reply." }] };
       st.send("task", Object.assign({}, ta, { row: 1, seen: Object.assign({}, ta.seen, { turn_ended_at: mIso(500) }) }));
       await p.waitForFunction(() => /A fresh reply/.test(document.getElementById("m-replies").textContent), null, { timeout: slow(5000) });
-      if (st.hits.filter(h => h === "card-a?10").length !== 2) fail(tag + "the turn end did not refetch once: " + st.hits.join(","));
+      if (st.hits.filter(h => h === "card-a?50").length !== 2) fail(tag + "the turn end did not refetch once: " + st.hits.join(","));
       // the browser back button closes the sheet
       await p.goBack();
       await p.waitForFunction(() => document.getElementById("m-card").hidden, null, { timeout: slow(5000) });
