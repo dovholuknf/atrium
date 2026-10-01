@@ -29,3 +29,11 @@ checkout, so it is not reviewed here.
    anyway. That is harmless, since the upload is bounded by the endpoint, but a docx path in a prompt helps no agent.
 
 HUB DEPLOY OK 1036e180 de951162
+
+## 872b8e7c, 2026-09-30
+
+Read `git show 872b8e7c`. Following stops only on a scroll within 1.5 s of a wheel, touch, pointer or key event on
+the thread, and reaching the end always sticks again. A ResizeObserver on the thread and its parts, and a captured
+`load` (images), go to the end while following. There is no markup and no data path, so nothing to escape.
+
+HUB DEPLOY OK 872b8e7c
