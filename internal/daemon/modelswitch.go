@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/store"
@@ -100,7 +101,7 @@ func (d *Daemon) handleModel(w http.ResponseWriter, r *http.Request) {
 		writeJSONErr(w, http.StatusNotFound, err)
 		return
 	}
-	if !strings.EqualFold(t.Runner, "claude") {
+	if !d.runsClaude(t) {
 		writeJSONErr(w, http.StatusConflict, fmt.Errorf("%s runs %q and only a claude card takes /model",
 			t.WireName, t.Runner))
 		return
@@ -117,14 +118,23 @@ func (d *Daemon) handleModel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	waitTurn := d.waitsForTurn(taskID, WhenImmediate)
+	// ONE SWITCH AT A TIME PER CARD. The wait it replaces, the typing and the new
+	// wait are one step: a waiter that checked it was current a moment ago must
+	// not type its older model after this one went in.
+	mu := d.modelLock(taskID)
+	mu.Lock()
 	d.modelWaits.Delete(taskID)
 	typed, err := d.typeModel(taskID, model, waitTurn)
-	if err != nil {
-		writeJSONErr(w, http.StatusInternalServerError, err)
-		return
+	if err == nil {
+		err = d.st.SetModel(taskID, model)
 	}
-
-	if err := d.st.SetModel(taskID, model); err != nil {
+	var mw *modelWait
+	if err == nil && !typed {
+		mw = &modelWait{model: model, by: by}
+		d.modelWaits.Store(taskID, mw)
+	}
+	mu.Unlock()
+	if err != nil {
 		writeJSONErr(w, http.StatusInternalServerError, err)
 		return
 	}
@@ -137,8 +147,8 @@ func (d *Daemon) handleModel(w http.ResponseWriter, r *http.Request) {
 	}); err != nil {
 		log.Printf("[atrium] switched %s to %s but could not record it: %v", taskID, model, err)
 	}
-	if !typed {
-		d.waitForModel(taskID, &modelWait{model: model, by: by})
+	if mw != nil {
+		d.waitForModel(taskID, mw)
 	}
 	d.publishTask(taskID)
 
@@ -153,6 +163,46 @@ func (d *Daemon) handleModel(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(out)
 }
 
+// noteTypedModel records a `/model <id>` the operator sent from the terminal.
+//
+// A SWITCH MADE BY HAND IS THE SAME SWITCH. Left unrecorded, the next resume,
+// including the room restart's, launches on whatever the card was started on and
+// the model goes back without anybody asking. Only a line that is exactly
+// `/model` and one alias (sonnet, opus, haiku, fable) is taken. A bare `/model` opens Claude's picker and
+// names nothing, so it records nothing.
+func (d *Daemon) noteTypedModel(taskID, line string) {
+	f := strings.Fields(line)
+	if len(f) != 2 || !strings.EqualFold(f[0], "/model") {
+		return
+	}
+	// ALIASES ONLY. A typed id is unchecked, and a mistyped one stored on the card
+	// fails every later resume. A caller of the endpoint chose its id on purpose.
+	model, ok := validModel(f[1])
+	if !ok || !modelAliases[model] {
+		return
+	}
+	t, err := d.st.Get(taskID)
+	if err != nil || !d.runsClaude(t) || t.Model == model {
+		return
+	}
+	mu := d.modelLock(taskID)
+	mu.Lock()
+	err = d.st.SetModel(taskID, model)
+	// A typed switch supersedes one still waiting for the line.
+	d.modelWaits.Delete(taskID)
+	mu.Unlock()
+	if err != nil {
+		log.Printf("[atrium] %s was switched to %s by hand but the card could not record it: %v", taskID, model, err)
+		return
+	}
+	if err := d.st.AppendEvent(taskID, store.EventNotified, map[string]any{
+		"by": modelSwitchBy, "asked_by": "the operator", "from": t.Model, "to": model, "state": "typed by hand",
+	}); err != nil {
+		log.Printf("[atrium] switched %s to %s by hand but could not record it: %v", taskID, model, err)
+	}
+	d.publishTask(taskID)
+}
+
 // typeModel types `/model <model>` and Enter through the say gate. False and no
 // error when the gate was shut and nothing was written.
 func (d *Daemon) typeModel(taskID, model string, waitTurn bool) (bool, error) {
@@ -165,39 +215,82 @@ func (d *Daemon) typeModel(taskID, model string, waitTurn bool) (bool, error) {
 	return run.injectPeer("", "/model "+model)
 }
 
+// modelLock is the card's switch lock. The handler holds it across replacing a wait,
+// typing and storing the new one, and a waiter holds it across checking it is still
+// the current wait and typing, so the two cannot interleave.
+func (d *Daemon) modelLock(taskID string) *sync.Mutex {
+	mu, _ := d.modelLocks.LoadOrStore(taskID, &sync.Mutex{})
+	return mu.(*sync.Mutex)
+}
+
+// runsClaude says whether a card's runner is Claude Code, which is the one runner
+// that takes `/model`. DECIDED BY THE HARNESS ROW, not its id, so a `claude-worker`
+// or `claude-fable` row that runs the claude command counts. A runner with no row
+// falls back to the id.
+func (d *Daemon) runsClaude(t *store.Task) bool {
+	if t.Runner == "" {
+		return false
+	}
+	if h, err := d.st.Harness(t.Runner); err == nil && h != nil {
+		return isClaude(h)
+	}
+	return strings.EqualFold(t.Runner, "claude")
+}
+
 // waitForModel retries a switch the gate refused, until it types, is replaced by a
-// newer request, the runner goes, or modelWaitMax passes.
+// newer request, the runner goes, or modelWaitMax passes. The caller has already
+// stored mw in modelWaits under the card's lock.
+//
+// GIVING UP IS RECORDED, once on the card and once in the log: the model is on the
+// card and a later start uses it, but the live session never switched.
 func (d *Daemon) waitForModel(taskID string, mw *modelWait) {
-	d.modelWaits.Store(taskID, mw)
 	deadline := time.Now().Add(modelWaitMax)
 	go func() {
+		failed := false
 		for {
 			time.Sleep(modelRetryEvery)
-			cur, ok := d.modelWaits.Load(taskID)
-			if !ok || cur != mw || d.windingDown.Load() || time.Now().After(deadline) {
+			if d.windingDown.Load() {
+				return
+			}
+			if time.Now().After(deadline) {
+				d.giveUpOnModel(taskID, mw)
+				return
+			}
+			mu := d.modelLock(taskID)
+			mu.Lock()
+			if cur, ok := d.modelWaits.Load(taskID); !ok || cur != mw {
+				mu.Unlock()
 				return
 			}
 			run := d.sup.get(taskID)
-			if run == nil {
-				d.modelWaits.CompareAndDelete(taskID, mw)
-				return
+			gone := run == nil
+			if !gone {
+				select {
+				case <-run.done:
+					gone = true
+				default:
+				}
 			}
-			select {
-			case <-run.done:
+			if gone {
 				d.modelWaits.CompareAndDelete(taskID, mw)
+				mu.Unlock()
 				return
-			default:
 			}
 			typed, err := d.typeModel(taskID, mw.model, d.waitsForTurn(taskID, WhenImmediate))
+			if typed {
+				d.modelWaits.CompareAndDelete(taskID, mw)
+			}
+			mu.Unlock()
 			if err != nil {
-				log.Printf("[atrium] typing /model into %s failed: %v", taskID, err)
+				// Once per wait, not every retry.
+				if !failed {
+					log.Printf("[atrium] typing /model into %s failed, will keep trying: %v", taskID, err)
+					failed = true
+				}
 				continue
 			}
 			if !typed {
 				continue
-			}
-			if !d.modelWaits.CompareAndDelete(taskID, mw) {
-				return
 			}
 			if err := d.st.AppendEvent(taskID, store.EventNotified, map[string]any{
 				"by": modelSwitchBy, "asked_by": mw.by, "to": mw.model, "state": "typed after waiting",
@@ -208,4 +301,24 @@ func (d *Daemon) waitForModel(taskID string, mw *modelWait) {
 			return
 		}
 	}()
+}
+
+// giveUpOnModel ends a wait that ran out of time, if it is still the current one.
+func (d *Daemon) giveUpOnModel(taskID string, mw *modelWait) {
+	mu := d.modelLock(taskID)
+	mu.Lock()
+	still := d.modelWaits.CompareAndDelete(taskID, mw)
+	mu.Unlock()
+	if !still {
+		return
+	}
+	log.Printf("[atrium] gave up typing /model %s into %s after %s: the card holds it for the next start",
+		mw.model, taskID, modelWaitMax)
+	if err := d.st.AppendEvent(taskID, store.EventNotified, map[string]any{
+		"by": modelSwitchBy, "asked_by": mw.by, "to": mw.model, "state": "gave up waiting",
+		"waited": modelWaitMax.String(),
+	}); err != nil {
+		log.Printf("[atrium] could not record the give-up on %s: %v", taskID, err)
+	}
+	d.publishTask(taskID)
 }

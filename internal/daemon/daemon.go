@@ -100,6 +100,8 @@ type Daemon struct {
 	// modelWaits is card id to a /model switch the input gate has not let through
 	// yet. See modelswitch.go.
 	modelWaits sync.Map
+	// modelLocks is card id to the mutex one switch holds. See modelLock.
+	modelLocks sync.Map
 
 	opts Options
 	st   *store.Store

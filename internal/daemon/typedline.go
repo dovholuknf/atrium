@@ -48,6 +48,10 @@ type typedLine struct {
 	// the last lone Esc landed. See `loneEsc`.
 	escClears bool
 	escAt     time.Time
+	// submitted is the line the last Enter sent, when atrium followed it exactly,
+	// and empty when it did not. Read once by `takeSubmitted`, so a line is acted
+	// on once. See modelswitch.go, which reads a hand typed `/model`.
+	submitted string
 }
 
 // typedLineCap is how much of the line's text is kept. A long paste is still
@@ -203,6 +207,10 @@ func (l *typedLine) feed(p []byte) (keyed bool) {
 func (l *typedLine) control(b byte) {
 	switch b {
 	case '\r': // Enter
+		l.submitted = ""
+		if l.unsure == "" && l.dropped == 0 {
+			l.submitted = string(l.text)
+		}
 		l.clear()
 	case '\n': // the board's ctrl-enter, a newline in the prompt
 		l.add('\n')
