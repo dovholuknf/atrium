@@ -29,7 +29,11 @@ Next, after u-m-card and u-m-home land (clint, 2026-09-30 evening, by the orches
     title filter, upload from /m, history with a text diff, "published N documents" on a card. Reuse the file viewer,
     `mMd` and the diff colouring. Against @fabric's D1 API (`GET` and `POST /_hub/docs`, raw bytes, tombstone and
     restore). Build on mocked endpoints until D1 lands. Review first, then land. After the current /m landing and the
-    diff mockups.
+    diff mockups. The D1 contract is `docs/backlog/fabric/hub-documents-api.md` (on @fabric's branch until D1 lands):
+    routes under `/_hub/docs`, multipart upload (`file`, `title`), 201 `{slug,version,url,version_url}`, errors
+    `{error}` with 400, 403, 404, 410, 413, 422 `{error,rule}`, 429, 503, 507. The raw route is always an attachment, so
+    the page renders from `kind`. No ETag in stage 1. Show `origin`, never `by`, and only `local` may be called clint.
+    URLs `/d/<slug>` and `/d/<slug>@<n>`, split on the last `@`.
 
 0. **Code review on the phone** (`u-new-m-code-review.md`, clint 2026-09-30 night): a "N files changed" chip per
    reply opening a diff in the viewer sheet, a card-level changes view, tap a line to quote it. A mock first, then
