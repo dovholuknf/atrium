@@ -17,8 +17,21 @@
 #m-card .back .lbl { display: none; margin-left: 2px; font-size: 14px; }
 #m-card.direct .back .lbl { display: inline; }
 #m-card .sheet-top .pick { min-height: 40px; padding: 0 12px; border: 1px solid var(--cardurl-line, var(--stroke)); border-radius: 10px; background: none; color: var(--cardurl-link, var(--label)); font-size: 14px; cursor: pointer; }
-#m-card-menu { flex: none; max-height: 50dvh; overflow-y: auto; margin: 0 max(8px, env(safe-area-inset-left, 0px)) 6px; padding: 6px; border-radius: 12px; background: var(--lift); }
+/* The picker opens over the thread: a solid surface with an edge, on a backdrop that dims the thread and closes it on a tap.
+   Its text follows --m-fs (the pinch size) along with the header it hangs from, so they scale together. */
+#m-card-menu-back { position: absolute; z-index: 6; left: 0; right: 0; bottom: 0; top: calc(env(safe-area-inset-top, 0px) + 44px); background: rgba(var(--shadow-rgb), .6); }
+#m-card-menu-back[hidden] { display: none; }
+#m-card-menu { position: absolute; z-index: 7; left: max(8px, env(safe-area-inset-left, 0px)); right: max(8px, env(safe-area-inset-right, 0px)); top: calc(env(safe-area-inset-top, 0px) + 46px);
+  max-height: 70dvh; overflow-y: auto; overscroll-behavior: contain; box-sizing: border-box; padding: 6px; border-radius: 12px;
+  background: var(--card-0); border: 1px solid var(--stroke); box-shadow: 0 12px 32px rgba(var(--shadow-rgb), .55); }
 #m-card-menu[hidden] { display: none; }
-#m-card-menu .pm-row { display: flex; justify-content: space-between; gap: 10px; width: 100%; min-height: 44px; align-items: center; padding: 0 10px; border: 0; background: none; color: var(--body); text-align: left; cursor: pointer; }
-#m-card-menu .pm-row span { color: var(--dim); font-size: 13px; }
+#m-card-menu .pm-chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 2px 6px; }
+#m-card-menu .pm-chip { min-height: 40px; padding: 0 12px; border: 1px solid var(--stroke-dim); border-radius: 20px; background: none; color: var(--label); font: inherit; font-size: calc(var(--m-fs, 14px) * .9); cursor: pointer; }
+#m-card-menu .pm-chip[aria-pressed="true"] { background: var(--teal-bg); border-color: var(--teal); color: var(--head); }
+#m-card-menu .pm-search { display: block; width: 100%; box-sizing: border-box; min-height: 40px; margin: 0 0 6px; padding: 0 12px; border: 1px solid var(--stroke-dim); border-radius: 10px; background: var(--bg-2); color: var(--head); font: inherit; font-size: var(--m-fs, 14px); }
+#m-card-menu .pm-search[hidden] { display: none; }
+#m-card-menu .pm-row { display: flex; justify-content: space-between; gap: 10px; width: 100%; min-height: 44px; align-items: center; padding: 0 10px; border: 0; background: none; color: var(--body); text-align: left; font-size: var(--m-fs, 14px); cursor: pointer; }
+#m-card-menu .pm-row span { color: var(--dim); font-size: calc(var(--m-fs, 14px) * .9); }
+#m-card-menu .quiet { margin: 8px; font-size: var(--m-fs, 14px); }
+#m-card .sheet-top .pick, #m-card .back .lbl, #m-card .term { font-size: var(--m-fs, 14px); }
 #m-card.direct .back { width: auto; display: inline-flex; align-items: center; padding: 0 10px 0 6px; }

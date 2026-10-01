@@ -665,21 +665,59 @@
     else closeNow();
   }
 
-  // ── the card picker: every other card, newest first, one tap to go there ──
+  // ── the card picker: the other cards, filtered, one tap to go there ──
+  // Running and needs-you by default, so a long list of finished cards does not bury the live ones. The chips at the top
+  // change that, and the choice is kept on this device. A search box shows when the list is long.
+  const PICK_KEY = "atrium.mswitch", PICK_LONG = 12;
+  const PICK_CHIPS = [["running", "running"], ["needs", "needs you"], ["ready", "ready"], ["done", "done"], ["all", "all"]];
+  function pickSet() {
+    try {
+      const a = JSON.parse(localStorage.getItem(PICK_KEY) || "null");
+      const known = Array.isArray(a) ? a.filter(k => PICK_CHIPS.some(c => c[0] === k)) : [];
+      if (known.length) return new Set(known);
+    } catch (e) {}
+    return new Set(["running", "needs"]);
+  }
+  function pickSave(set) { try { localStorage.setItem(PICK_KEY, JSON.stringify(Array.from(set))); } catch (e) {} }
+  function pickMatches(t, set) {
+    if (set.has("all")) return true;
+    const rs = window.mHome.reasons(t, window.mStore.perms());
+    return (set.has("running") && t.status === "running") || (set.has("needs") && rs.some(r => r.kind !== "ready")) ||
+      (set.has("ready") && t.status === "needs-input") || (set.has("done") && (t.status === "done" || t.status === "dead" || t.status === "shelved"));
+  }
+
   function menuClose() {
     els.menu.hidden = true;
+    if (els.menuBack) els.menuBack.hidden = true;
     els.pick.setAttribute("aria-expanded", "false");
+  }
+
+  function menuPaint() {
+    const set = pickSet();
+    const chips = els.menu.querySelector(".pm-chips"), search = els.menu.querySelector(".pm-search"), list = els.menu.querySelector(".pm-list");
+    chips.innerHTML = PICK_CHIPS.map(c => '<button type="button" class="pm-chip" data-f="' + c[0] + '" aria-pressed="' + (set.has(c[0]) ? "true" : "false") + '">' + U.esc(c[1]) + "</button>").join("");
+    let cards = window.mStore.cards().filter(t => !t.archived_at && t.id !== openId && pickMatches(t, set));
+    cards.sort((a, b) => cardActivityCmp(a, b) || cardTieBreak(a, b));
+    search.hidden = cards.length <= PICK_LONG && !search.value;
+    const q = search.value.trim().toLowerCase();
+    if (q) cards = cards.filter(t => { const nm = U.cardName(t); return (nm.main + " " + (nm.sub || "") + " " + U.statusLabel(t)).toLowerCase().indexOf(q) >= 0; });
+    list.innerHTML = cards.length ? cards.map(t => {
+      const nm = U.cardName(t);
+      return '<button type="button" class="pm-row" data-id="' + U.esc(t.id) + '"><b>' + U.esc(nm.main) + "</b>" +
+        '<span>' + U.esc(U.statusLabel(t)) + "</span></button>";
+    }).join("") : '<p class="quiet">no cards here. try another chip</p>';
   }
 
   function menuToggle() {
     if (!els.menu.hidden) { menuClose(); return; }
-    const cards = window.mStore.cards().filter(t => !t.archived_at && t.id !== openId);
-    cards.sort((a, b) => cardActivityCmp(a, b) || cardTieBreak(a, b));
-    els.menu.innerHTML = cards.length ? cards.map(t => {
-      const nm = U.cardName(t);
-      return '<button type="button" class="pm-row" data-id="' + U.esc(t.id) + '"><b>' + U.esc(nm.main) + "</b>" +
-        '<span>' + U.esc(U.statusLabel(t)) + "</span></button>";
-    }).join("") : '<p class="quiet">no other cards</p>';
+    if (!els.menu.querySelector(".pm-list")) {
+      els.menu.innerHTML = '<div class="pm-chips" role="group" aria-label="which cards"></div>' +
+        '<input type="search" class="pm-search" placeholder="search cards" aria-label="search cards" spellcheck="false" autocomplete="off" hidden>' +
+        '<div class="pm-list"></div>';
+    }
+    els.menu.querySelector(".pm-search").value = "";
+    menuPaint();
+    if (els.menuBack) els.menuBack.hidden = false;
     els.menu.hidden = false;
     els.pick.setAttribute("aria-expanded", "true");
   }
@@ -867,7 +905,19 @@
     document.addEventListener("keydown", e => { if (e.key === "Escape" && els && !els.recap.hidden) closeRecap(); });
     els.back.addEventListener("click", close);
     els.pick.addEventListener("click", menuToggle);
+    els.menuBack = q("m-card-menu-back");
+    if (els.menuBack) els.menuBack.addEventListener("click", menuClose);
+    els.menu.addEventListener("input", e => { if (e.target.classList && e.target.classList.contains("pm-search")) menuPaint(); });
     els.menu.addEventListener("click", e => {
+      const ch = e.target.closest(".pm-chip");
+      if (ch) {
+        const set = pickSet(), f = ch.dataset.f;
+        if (f === "all") { set.clear(); set.add("all"); }
+        else { set.delete("all"); if (set.has(f)) set.delete(f); else set.add(f); if (!set.size) { set.add("running"); set.add("needs"); } }
+        pickSave(set);
+        menuPaint();
+        return;
+      }
       const b = e.target.closest(".pm-row");
       if (b) goTo(b.dataset.id);
     });
