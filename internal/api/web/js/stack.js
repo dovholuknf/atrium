@@ -8,7 +8,7 @@ const STACK_SORTS = {
   activity: {
     label: "last active",
     first: "most recently active first", last: "quietest first",
-    cmp: (a, b) => (a.idle_seconds || 0) - (b.idle_seconds || 0)
+    cmp: cardActivityCmp
   },
   waited: {
     label: "waiting on you",
