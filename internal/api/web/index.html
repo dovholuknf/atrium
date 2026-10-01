@@ -64,6 +64,7 @@
 <link rel="stylesheet" href="/css/expose2.css">
 <link rel="stylesheet" href="/css/expose3.css">
 <link rel="stylesheet" href="/css/hubnotify.css">
+<link rel="stylesheet" href="/css/deployready.css">
 <link rel="stylesheet" href="/css/hubhosts.css">
 <link rel="stylesheet" href="/css/growl.css">
 <link rel="stylesheet" href="/css/cardurl.css">
@@ -217,6 +218,9 @@
     <div class="rooms" id="rooms" hidden onclick="openRooms()">
       <span class="dot"></span><span id="rooms-t">rooms</span>
     </div>
+    <!-- The hub's deploy-ready line, and a click opens what is holding it up and the Deploy button. Hidden unless the hub
+         answers. See js/deployready.js. -->
+    <button id="deploy-pill" class="deploypill" type="button" hidden onclick="openDeployReady()"></button>
     <div class="conn" id="conn"><span class="dot"></span><span class="conn-n" id="conn-n" hidden></span><span id="conn-t">connecting</span></div>
     <!-- Phone only (css/phone.css): the conversation page at /m, a separate page that never loads the board. -->
     <a id="m-link" class="mlink" href="/m/" aria-label="open the phone view">phone view</a>
@@ -1050,6 +1054,13 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
      nothing typed while the hub is away lands half way. data-guard keeps a
      click outside from dismissing it. See js/hubrestart.js. One of the wait
      family with #switching: see `.waitcard` in css/dialogs.css. -->
+<dialog id="deployready">
+  <div class="dlg-head">
+    <div class="grow"><div class="dlg-eyebrow">the hub</div><h2>deploy</h2></div>
+    <button onclick="closeDeployReady()">close</button>
+  </div>
+  <div class="dlg-body"><div id="dr-body"></div></div>
+</dialog>
 <dialog id="hubrestart" class="waitcard" data-guard>
   <div class="wc-ring"></div>
   <div class="wc-eyebrow">installing an update</div>
@@ -3450,6 +3461,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/solo.js"></script>
 <script src="/js/switcher.js"></script>
 <script src="/js/hubrestart.js"></script>
+<script src="/js/deployready.js"></script>
 <script src="/js/down.js"></script>
 <script src="/js/boot.js"></script>
 </body>

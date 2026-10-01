@@ -1,0 +1,2 @@
+On a hub the board header shows the hub's deploy-ready line (ready, blocked, current, unknown, or deploying). A click opens what is holding it up, with commit subjects as text, the notes, the state of the last deploy and a Deploy button.
+Deploy asks first, posts the full tip, and is enabled only when ready and the board is on the hub's own machine. A refusal (403 over a share, 409 not ready or the tip moved) is said and the report read again. It is read at load, on a stream reopen and on the hub's deploy-ready event (u-deploy-ready).

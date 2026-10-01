@@ -1,0 +1,31 @@
+/* The hub's deploy-ready pill in the header and its dialog. See js/deployready.js. Colours are skin variables with defaults. */
+  .deploypill {
+    max-width: 30ch; min-height: 24px; padding: 0 10px; border: 1px solid var(--deploy-line, var(--stroke-dim)); border-radius: 12px;
+    background: none; color: var(--deploy-fg, var(--dim)); font: var(--fs-sm)/1 var(--mono); cursor: pointer;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .deploypill[hidden] { display: none; }
+  .deploypill[data-state="ready"] { color: var(--deploy-ready, var(--teal)); border-color: var(--deploy-ready, var(--teal)); }
+  .deploypill[data-state="blocked"] { color: var(--deploy-blocked, var(--warn)); border-color: var(--deploy-blocked, var(--warn)); }
+  .deploypill[data-state="running"] { color: var(--deploy-running, var(--blue)); border-color: var(--deploy-running, var(--blue)); }
+  @media (max-width: 900px) { .deploypill { display: none; } }
+
+  #deployready { width: min(640px, 92vw); }
+  #deployready .dr { display: flex; flex-direction: column; gap: 12px; }
+  #deployready .dr-head { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+  #deployready .dr-state { padding: 1px 8px; border: 1px solid var(--stroke-dim); border-radius: 10px; font: var(--fs-xs)/1.5 var(--mono); text-transform: uppercase; }
+  #deployready .dr-line { color: var(--head); overflow-wrap: anywhere; }
+  #deployready .dr-facts { color: var(--dim); font: var(--fs-sm)/1.5 var(--mono); }
+  #deployready .dr-err { color: var(--warn); }
+  #deployready .dr-h { color: var(--dim); font: var(--fs-xs)/1.5 var(--mono); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 4px; }
+  #deployready .dr-blocker { border: 1px solid var(--stroke-dim); border-radius: 8px; padding: 6px 10px; margin-bottom: 6px; }
+  #deployready .dr-blocker summary { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; cursor: pointer; }
+  #deployready .dr-sha { color: var(--blue); }
+  #deployready .dr-subject { color: var(--head); overflow-wrap: anywhere; }
+  #deployready .dr-why { color: var(--warn); font-size: var(--fs-sm); }
+  #deployready .dr-detail, #deployready .dr-note { margin: 6px 0 0; color: var(--body); overflow-wrap: anywhere; }
+  #deployready .dr-deploy { display: flex; gap: 10px; align-items: baseline; color: var(--dim); font-size: var(--fs-sm); }
+  #deployready .dr-dstate { padding: 0 8px; border: 1px solid var(--stroke-dim); border-radius: 10px; font: var(--fs-xs)/1.5 var(--mono); }
+  #deployready .dr-deploy[data-state="running"] .dr-dstate { color: var(--blue); border-color: var(--blue); }
+  #deployready .dr-act { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  #deployready .dr-why-not { color: var(--dim); font-size: var(--fs-sm); overflow-wrap: anywhere; }
