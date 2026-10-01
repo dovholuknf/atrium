@@ -54,3 +54,25 @@ In a detached worktree at 7f523835, with `ATRIUM_LOCATION` and `ATRIUM_DEBUG_INP
 4. No test covers a `done` card keeping its tag and dropping out of `find`. `indexed` handles it with `cardLive`.
 
 HUB DEPLOY OK and ROOM DEPLOY OK 7f523835. Low 1 gets a re-read when the human-launched rule lands.
+
+## Re-read of 7725078d (@fabric, the lows)
+
+`git diff 7f523835 7725078d`, read. In fabric's worktree at 7725078d: `go vet ./internal/link/ ./internal/cli/` was
+clean. `go test -count=1 -run 'Everywhere|Find|HubSide|RelayPeers|Stdio' ./internal/link/ ./internal/cli/` was ok.
+@fabric reports the full link (206s) and cli (20s) packages ok. No daemon code changed.
+
+- **Low 1 is closed.** `indexed` skips a card whose `spawned_by` is neither empty nor `@human` (equal to
+  `store.HumanLauncher`, and `spawned_by` is the announced row's field), and any card tagged `origin:agent`. The
+  origin tag wins whatever order the tags are in. This is broader than "empty only", because it keeps launches from
+  the board dialog, and those are human launches. An agent can still call the loopback API by hand and claim
+  `@human`, but the loopback API was never a boundary against an agent. The rule exists to stop accidents, and it
+  does.
+- **Low 2 is closed.** `asPeer` and the `RelayPeers` everywhere branch carry the bare alias and the title. The title
+  is part of the payload that `swap` already compares, so a rename still counts as a change.
+- **Both nits are closed.** The wake description says local only, in link and cli, and
+  `TestEverywhereADoneCardDropsOutOfFind` covers the done card.
+
+Nit: `humanLauncher` copies `store.HumanLauncher` rather than importing it. A test that compares the two would catch
+drift.
+
+HUB DEPLOY OK and ROOM DEPLOY OK 7725078d
