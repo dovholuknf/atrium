@@ -92,13 +92,13 @@ const foldKey = page.slice(foldKeyAt, page.indexOf("\n", foldKeyAt));
 // `let` between two of them and comes along with the one above it.
 const names = ["shortLabel", "termPathOf", "termExtraName", "termRowName",
   "termNoteDuplicates", "termTree", "workingNow", "termRunnerMark", "termHeldAge", "termHeldTip", "termHeldChip",
-  "termRoomChip", "termRowChips", "termCold", "termJoined", "termRow",
+  "termRoomChip", "termRowChips", "termCold", "termJoined", "termRow", "termKidsKey", "termKidWaits", "termKidsToggle",
   "termHeading", "termFolded", "termNodeHTML", "termCount", "termGroupsHTML",
   "termFlatGroupsHTML"];
 // Whatever sits between two functions comes along with the one above it, so
 // the key may already be in there. Declaring it twice is a syntax error, which
 // is a confusing way to be told the file was reordered.
-const lifted = [liftFn("roomOf"), liftFn("roomHue"), ...names.map(lift)].join("\n");
+const lifted = [liftFn("bareId"), liftFn("roomOf"),liftFn("roomHue"), ...names.map(lift)].join("\n");
 const src = (lifted.includes("const TERM_FOLDED =") ? "" : foldKey + "\n") + lifted;
 
 // The globals the strip reaches for. Everything here is either a browser thing
@@ -133,11 +133,11 @@ const terminalParts = (t) => {
 // same reason: an unread mark is not a heading.
 const built = new Function("localStorage", "esc", "terminalLabel", "terminalParts",
   "themeFor", "termWear", "runnerMark", "poppedOut", "termTask", "isWaiting", "over", "seenChips",
-  "newCardClass", "newCardChip",
+  "newCardClass", "newCardChip", "isFolded",
   src + "\nreturn { termGroupsHTML, termPathOf, termRoomChip, roomOf };")(
   localStorage, esc, terminalLabel, terminalParts,
   () => ({ cursor: "#fff", background: "#000" }), () => ({ cls: "", style: "" }), () => "", () => false, null,
-  () => false, () => false, () => "", () => "", () => "");
+  () => false, () => false, () => "", () => "", () => "", () => false);
 const { termGroupsHTML, termPathOf, termRoomChip, roomOf } = built;
 
 // ── enough html parsing to see the nesting ──────────────

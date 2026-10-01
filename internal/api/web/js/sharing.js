@@ -789,8 +789,10 @@ async function pruneColumnNow(status) {
 // Which columns are collapsed, remembered so the board opens the way you left
 // it rather than re-drowning you in the big one every reload.
 function foldedColumns() {
-  try { return JSON.parse(localStorage.getItem("atrium.folded") || "[]"); }
-  catch (e) { return []; }
+  try {
+    const list = JSON.parse(localStorage.getItem("atrium.folded") || "[]");
+    return Array.isArray(list) ? list : [];
+  } catch (e) { return []; }
 }
 
 function toggleColumn(id) {
