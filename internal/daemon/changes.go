@@ -639,11 +639,11 @@ func bound(files []ChangeFile) ([]ChangeFile, *ChangesCut) {
 	}
 	var why []string
 	if cut.Files > 0 {
-		why = append(why, fmt.Sprintf("%d files past the first %d are not listed", cut.Files, changesFilesMax))
+		why = append(why, fmt.Sprintf("only the first %d files are listed", changesFilesMax))
 	}
 	if cut.Hunks > 0 {
-		why = append(why, fmt.Sprintf("%d files show counts only, because a file over %d KB or hunks past %d MB are not sent",
-			cut.Hunks, changesFileMax>>10, changesHunksMax>>20))
+		why = append(why, fmt.Sprintf("a file over %d KB or hunks past %d MB are not sent",
+			changesFileMax>>10, changesHunksMax>>20))
 	}
 	cut.Why = strings.Join(why, "; ")
 	return files, cut

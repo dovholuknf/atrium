@@ -166,7 +166,10 @@ func (x *turnIndex) feed(line []byte) {
 	at = at.UTC()
 	switch rec.Type {
 	case "user":
-		if rec.Meta || (rec.Origin != nil && rec.Origin.Kind != "" && rec.Origin.Kind != "human") {
+		// Any real words start a turn, whatever the origin tag says: a quote sent from the phone is not tagged human,
+		// and a turn that reached back over it would claim the edits of the turn before. A notification is not words
+		// and promptOf drops it.
+		if rec.Meta {
 			return
 		}
 		var content any
