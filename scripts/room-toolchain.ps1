@@ -51,8 +51,12 @@
 #                 A SESSION'S Bash tool is a login bash (Cygwin's, on a room that has it), and that profile puts
 #                 Cygwin's git ahead of the record, which cannot read a C:/ worktree path, and sets TMP to Cygwin's own
 #                 /tmp. So a block in ~/.bash_profile, between `# >>> atrium toolchain` and `# <<< atrium toolchain <<<`,
-#                 puts the record first again and points TMP at the user's own Temp. It is replaced in place when this
-#                 script changes it, and a session reads it at its start, so no room restart.
+#                 puts the record first again and points TMP at the user's own Temp. A login bash reads only the first of
+#                 .bash_profile, .bash_login and .profile, so the block goes in whichever of them exists first, and a new
+#                 .bash_profile is made only when none does (a new one would hide an existing .profile). It is replaced
+#                 in place when this script changes it, and a session reads it at its start, so no room restart. The
+#                 block also sets TMP and TEMP to the user's Temp: Cygwin points them at its own /tmp, where a Windows
+#                 git cannot make a directory, and go test lives in TMP.
 # A room that is running already has the old PATH. This never restarts it. When the room answers on 7781 after a
 # change, a `restart warn` line says so.
 #
@@ -230,6 +234,7 @@ function Rec { if (Test-Path -LiteralPath $PF) { @(Get-Content -LiteralPath $PF 
 function Dirs { $x = @(Rec); foreach ($s in 'Machine', 'User') { $x += @([Environment]::GetEnvironmentVariable('Path', $s) -split ';') }
     @($x | Where-Object { $_ } | ForEach-Object { [Environment]::ExpandEnvironmentVariables($_.Trim('"')) }) }
 function First([string]$n) { foreach ($d in Dirs) { $p = Join-Path $d "$n.exe"; if (Test-Path -LiteralPath $p -PathType Leaf) { return $p } } }
+function Bp { foreach ($n in '.bash_profile', '.bash_login', '.profile') { $p = Join-Path $HOME $n; if (Test-Path -LiteralPath $p) { return $p } }; Join-Path $HOME '.bash_profile' }
 function Raw($t, $exe) {
     $p = $env:Path; $env:Path = (@(Split-Path -Parent $exe) + (Dirs)) -join ';'
     try { $a = @{ go = 'version'; node = '--version'; git = '--version'; pwsh = '--version' }[$t]
@@ -243,7 +248,7 @@ function Tell { param($tools)
 #@probe
     "arch=$(if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE })"
     "prefix=$Prefix"; "rec=$((Rec) -join ';')"; "hook=$(Test-Path -LiteralPath $EF)"
-    $BP = Join-Path $HOME '.bash_profile'; "bashhook=$([bool]((Test-Path -LiteralPath $BP) -and (Select-String -LiteralPath $BP -SimpleMatch 'Cygwin points TMP' -Quiet)))"
+    $BP = Bp; "bashhook=$([bool]((Test-Path -LiteralPath $BP) -and (Select-String -LiteralPath $BP -SimpleMatch '>>> atrium toolchain v2' -Quiet)))"
     Tell ($Names -split ',')
     try { $null = Invoke-WebRequest 'http://127.0.0.1:7781/v1/health' -UseBasicParsing -TimeoutSec 3; 'room=up' } catch { 'room=down' }
 #@install
@@ -285,18 +290,14 @@ function Tell { param($tools)
         "if (Test-Path -LiteralPath `$f) { `$d = @(Get-Content -LiteralPath `$f | Where-Object { `$_.Trim() }); if (`$d) { `$env:Path = (`$d -join ';') + ';' + `$env:Path } }`r`n"
     if (-not (Test-Path -LiteralPath $EF) -or (Get-Content -LiteralPath $EF -Raw) -ne $env1) { [IO.File]::WriteAllText($EF, $env1); 'hook=changed' } else { 'hook=same' }
     "envfile=$EF"
-    # A session's Bash tool is a LOGIN bash, whose profile puts Cygwin's git (which cannot read a C:/ worktree path) ahead of
-    # whatever the room was started with, and no pwsh at all. So the record goes in front again from ~/.bash_profile.
-    $BP = Join-Path $HOME '.bash_profile'
-    $blk = (@('# >>> atrium toolchain (room-toolchain.ps1) >>>',
-        '# Puts what room-toolchain.ps1 installed ahead of the system git and pwsh, as the room itself sees them.',
-        ('f=$(cygpath -u ''' + $PF + ''' 2>/dev/null)'),
+    $BP = Bp
+    $blk = (@('# >>> atrium toolchain v2 (room-toolchain.ps1) >>>',
+        ('f=$(cygpath -u ''' + ($PF -replace "'", "'\''") + ''' 2>/dev/null)'),
         'if [ -r "$f" ]; then',
         '  pre=''''',
         '  while IFS= read -r d; do d=$(cygpath -u "${d%$''\r''}" 2>/dev/null); [ -n "$d" ] && pre="$pre$d:"; done < "$f"',
         '  PATH="$pre$PATH"',
         'fi',
-        '# Cygwin points TMP at its own /tmp, which a Windows git cannot make a directory in, and go test lives in TMP.',
         't=$(cygpath -u "$LOCALAPPDATA\\Temp" 2>/dev/null); [ -d "$t" ] && export TMP="$t" TEMP="$t"',
         'unset f pre d t',
         '# <<< atrium toolchain <<<') -join "`n")
