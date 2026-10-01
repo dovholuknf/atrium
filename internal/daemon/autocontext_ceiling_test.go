@@ -231,6 +231,19 @@ func TestCeilingCardWaitIsBoundedAndTypingNeverTimesOut(t *testing.T) {
 	r.wantStart("past the wait with a watcher who has stopped typing")
 }
 
+// Attached and idle holds inside the wait and proceeds past it.
+func TestCeilingCardAttachedAndIdleProceedsPastTheMaxWait(t *testing.T) {
+	r := newAutoRig(t, "", directorTags...)
+	ceilingBusy(r)
+	r.size(200)
+	autoTiming.ceilingMaxWait = 40 * time.Millisecond
+	autoQuiet()
+	r.viewer()
+	r.wantNone("attached and idle, inside the wait")
+	time.Sleep(60 * time.Millisecond)
+	r.wantStart("attached and idle, past the max wait")
+}
+
 // Dropping under the line ends the wait, so the next crossing waits afresh.
 func TestCeilingCardWaitStartsAtEachCrossing(t *testing.T) {
 	r := newAutoRig(t, "", directorTags...)
