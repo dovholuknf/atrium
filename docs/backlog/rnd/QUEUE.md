@@ -76,10 +76,12 @@ director as `docs/backlog/<dept>/<d>-new-<name>.md`, or fold them into the desig
 
 ## Waiting
 
-HELD by the PAUSE: do not start until the orchestrator ends it. Both are HIGH, take them in this order:
+HELD by the PAUSE: do not start until the orchestrator ends it. Take them in this order:
 
 1. `docs/backlog/rnd/rnd-new-room-handoff.md`: move a card and its work between rooms (`atrium move`), from the 2026-10-01 director move.
-2. `docs/backlog/rnd/rnd-new-backlog-in-atrium.md`: a SPIKE on a pluggable backlog (files, atrium's store, GitHub, GitLab or Bitbucket issues). The output is a short spike doc with a recommendation, and nothing gets built. Do NOT start it until clint says so, even after the pause ends.
+2. `docs/backlog/rnd/rnd-new-room-to-room-access.md`: a SPIKE on how one room reaches another's machine (direct ssh, a zrok private share, or OpenZiti), opt-in per room pair. Its output is a spike doc and a recommendation.
+3. `docs/backlog/rnd/rnd-new-factory-landscape.md`: a SPIKE on other software factories, open source first. Its output is a landscape doc and a ranked list of what to borrow.
+4. `docs/backlog/rnd/rnd-new-backlog-in-atrium.md`: a SPIKE on a pluggable backlog (files, atrium's store, GitHub, GitLab or Bitbucket issues). The output is a short spike doc with a recommendation, and nothing gets built. Do NOT start it until clint says so, even after the pause ends.
 
 Both were filed by the orchestrator from clint on 2026-10-01.
 
