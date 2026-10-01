@@ -80,3 +80,30 @@ Neither is visible from the diff alone. No drop.
 
 HOLD f82abf78~1..3802baca on findings 1 and 2. Lows 3 to 5 need no code from you, except the one line of contract in
 low 4.
+
+## Re-read: claude/r-deploy-ready d8be085e (fixes 03d6f16e and 26de2f87 over 3802baca)
+
+- Medium 1 is closed. `hubOnly` is `internal/hubstore/` alone, and TestRoomSide now expects `internal/link/hub.go` and
+  `internal/link/dialer.go` to need a room verdict. The tests that used a link path as the hub-only example moved to
+  hubstore, so each still tests what it says.
+- Medium 2 is closed, in two layers. `deployEnv` drops every `ATRIUM_*` (case folded, `ATRIUMX` kept) from the
+  spawned script's environment, with a test. `deploy-ready.ps1` removes `ATRIUM_NEW_BUILD` before it dot-sources
+  `live-common.ps1`, which is where the variable used to replace the install path. After the build, it refuses
+  unless `build.claude\atrium.exe version` reports a commit that is a prefix of -Tip. build-deploy.ps1 already
+  refuses a modified tree and stamps the full commit, so the prefix test is a full-sha compare in practice. The
+  script still reads only `ATRIUM_HOSTS`, and from the User environment, so stripping the rest costs nothing.
+- The script check had never run, so I ran its three lines against the installed binary
+  (C:/Users/claude/.atrium/bin/atrium.exe, commit aa22351c). The matching tip installs, and eff2fb8e and a made-up
+  tip are refused.
+- Lows 4 and 5 are in the changelog.
+
+Tests at d8be085e, ATRIUM_LOCATION and ATRIUM_DEBUG_INPUTLAG cleared: `go vet` and `go test -count=1` of
+`./internal/deployready/` (59s) and `./internal/link/` (168s), both ok. Not run: the daemon package (nothing in it
+changed in the fixes) and a real click.
+
+No new findings.
+
+Quality: after the Sonnet switch. Both mediums fixed at the root, with the env stripped in Go and in the script, and
+the moved tests kept meaningful. No drop.
+
+HUB DEPLOY OK and ROOM DEPLOY OK f82abf78~1..d8be085e.
