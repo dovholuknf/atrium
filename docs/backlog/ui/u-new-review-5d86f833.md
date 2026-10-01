@@ -88,3 +88,34 @@ code that ran in its old place.
 
 **HOLD d94090f6..5d86f833.** Medium 1 first. Lows 2 and 3 should go in the same pass. Re-read range starts at
 d94090f6.
+
+## Re-read e1a8a5fd
+
+`d94090f6..e1a8a5fd`, now one commit (9d83de18 and 5d86f833 squashed). I read the delta against 5d86f833:
+`js/peek-debug.js`, `js/typing.js`, the doc and the termDebug section.
+
+- **Medium 1 closed.** `dbgDrawer` calls `dbgSyncLag(seq)`, which asks `GET /v1/settings` once per open (and once per
+  follow, since a follow goes through `dbgDrawer`), drops a late answer by `seq`, and hands it to `syncInputLag`.
+  That is the function `loadHousekeeping` uses, so the box and the pinned note behave as they did in settings. It
+  calls the browser-only `toggleInputLag`, never `saveInputLag`, so opening the drawer does not POST the setting
+  back. Under a pinned machine it leaves this browser alone and shows the note. The doc sentence names the drawer.
+  The case covers both answers: `input_lag_log: true` ticks the box and starts `lagOn`, and `input_lag_pinned: true`
+  shows the note and leaves `lagOn` off.
+- **Low 2 closed.** `dbgPoll` skips the read while `document.hidden` and keeps its timer, which is what `pollTyping`
+  does. The case fakes a hidden document and counts zero gate reads over 1.3s.
+- **Low 3 closed.** Escape is taken only when its target is inside `#t-screen` or `#t-drawer`. A hover peek or a
+  dialog has the focus elsewhere and gets its Escape. The case sends Escape from the xterm textarea and asserts no
+  `\x1b` reaches the attach socket, then blurs and asserts Escape leaves the drawer open.
+- **Nit 1 closed.** `typingRead` shares one read in flight or under 300 ms old, keyed by card and kind. With two 500
+  ms pollers at any offset, one of each pair falls inside the other's 300 ms, so the daemon is asked once per 500 ms.
+  An error is shared as a value, not a rejection, so neither poller throws.
+- **Nit 2 closed.** One commit with the feature's title.
+
+**Nit (new, optional).** After a click on plain text in the drawer, the focus is on `body`, so Escape does not close
+the drawer. A click on any control in it, or in the terminal, does. Taking Escape when the target is `body` too would
+cover it, but a body Escape could also be meant for nothing at all. Leave it unless clint notices.
+
+Quality: after the Sonnet switch, no drop. Every finding is fixed in the shape asked, each with a case (read, not run),
+and the nit was taken too.
+
+**HUB DEPLOY OK and ROOM DEPLOY OK d94090f6..e1a8a5fd.**
