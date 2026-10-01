@@ -98,7 +98,14 @@
         return;
       }
       var to = "";
-      if (p === "/" || p === "/index.html") to = /^#term=/.test(h) ? "/m/" + h : "/m/";
+      if (p === "/" || p === "/index.html") {
+        // A notification tap is `/?land=<card>&view=&key=`. The card is the point, so it becomes the fragment /m opens, and the
+        // rest of the query goes along with what the notification set removed.
+        var q = new URLSearchParams(location.search), land = q.get("land");
+        q.delete("land"); q.delete("view"); q.delete("key");
+        var rest = q.toString();
+        to = "/m/" + (rest ? "?" + rest : "") + (land ? "#term=" + encodeURIComponent(land) : /^#term=/.test(h) ? h : "");
+      }
       else if (/^\/alias\/[^/]+\/?$/.test(p) || /^\/room\/[^/]+\/[^/]+\/?$/.test(p)) to = "/m" + p;
       else if ((m = /^\/room\/([^/]+)\/?$/.exec(p))) { localStorage.setItem("atrium.room", decodeURIComponent(m[1])); to = "/m/"; }
       if (to) location.replace(to);

@@ -14260,14 +14260,15 @@ async function phoneRedirectSection(browser, base) {
     await p.goto(base + at, { waitUntil: "load" });
     await p.waitForTimeout(400);
     const u = new URL(p.url());
-    return { ctx, p, errors, where: u.pathname + u.hash };
+    return { ctx, p, errors, where: u.pathname + u.hash, search: u.search };
   };
   const phone = { viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true };
   try {
-    const cases = [["/", "/m/"], ["/alias/rnd", "/m/alias/rnd"], ["/room/claude-sg4/rnd", "/m/room/claude-sg4/rnd"], ["/#term=land-a", "/m/#term=land-a"], ["/room/claude-sg4", "/m/"]];
+    const cases = [["/?land=land-a&view=stack&key=k1", "/m/#term=land-a"], ["/?land=a%20b", "/m/#term=a%20b"], ["/?view=perms&key=k2", "/m/"], ["/?land=land-a&x=1", "/m/?x=1#term=land-a"],
+      ["/", "/m/"], ["/alias/rnd", "/m/alias/rnd"], ["/room/claude-sg4/rnd", "/m/room/claude-sg4/rnd"], ["/#term=land-a", "/m/#term=land-a"], ["/room/claude-sg4", "/m/"]];
     for (const [from, to] of cases) {
       const r = await open(phone, from);
-      if (r.where !== to) fail("phoneRedirect: a phone at " + from + " ended on " + r.where + ", not " + to);
+      if (r.where !== to && !(r.where === to.replace("?x=1", "") && /x=1/.test(r.search))) fail("phoneRedirect: a phone at " + from + " ended on " + r.where + ", not " + to);
       if (from === "/room/claude-sg4" && (await r.p.evaluate(() => localStorage.getItem("atrium.room"))) !== "claude-sg4") fail("phoneRedirect: the room scope was lost");
       if (r.errors.length) fail("phoneRedirect " + from + ": " + r.errors.join(" | "));
       await r.ctx.close();
