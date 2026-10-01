@@ -7,7 +7,7 @@ const path = require("path");
 const HERE = __dirname;
 const real = path.join(HERE, "test-board-headless.js");
 const probe = path.join(HERE, "_unit-guard-probe.js");
-const list = env => spawnSync(process.execPath, [path.join(HERE, "test-board-sharded.js"), "--list"], { env: Object.assign({}, process.env, env), encoding: "utf8" });
+const list = env => spawnSync(process.execPath, [path.join(HERE, "test-board-sharded.js"), "--list", "--local"], { env: Object.assign({}, process.env, env), encoding: "utf8" });
 try {
   const src = fs.readFileSync(real, "utf8");
   const at = src.indexOf('    await unit("oneTooltip"');
