@@ -44,3 +44,19 @@ Quality: after the Sonnet switch, no drop. Every server string is text, and the 
 rather than duplicated.
 
 **HUB DEPLOY OK and ROOM DEPLOY OK c5be337f..addbde02.**
+
+## Re-read of 20c8e7c8 (u-deploy-ready-low, off b1f88b4c)
+
+- Low 1 closed. A thrown fetch, a non-404 failure and an unreadable body all go to `drFailed`, which nulls
+  `drReport`, says "no report" on the pill, and repaints an open dialog. With no report the dialog draws
+  "no report: <why>" and a Deploy button that is disabled and has no click handler. `deployNow` still returns on a null
+  report. A 404 still hides the pill, so a daemon that is not a hub is unchanged. The `why` text is the hub's `error`
+  field, set through `textContent` and the tooltip's `textContent`.
+- Nit 2 was mine and wrong: `data-tip` is the board's tooltip (`js/tooltips.js`), not a git tip. @ui kept it and
+  added a comment saying so, which is correct.
+- Nit 3 closed. The hub-restart comment sits above its own listener again.
+- `scripts/check-board.sh` passes at 20c8e7c8.
+
+No new findings. Quality: after the Sonnet switch, no drop.
+
+**HUB DEPLOY OK and ROOM DEPLOY OK c5be337f..20c8e7c8.**
