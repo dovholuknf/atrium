@@ -76,3 +76,16 @@ sections 0, 3 and 4. doc-ok on OK.
 
 Quality: careful sourcing, honest `unverified` marks, and claims that check out. The one overreach is about atrium
 itself, which the spike did not check against today's audit.
+
+## Re-read at d0c9dfe0 (2026-10-01, m1mini): OK, doc-ok
+
+- **The High is closed.** The trait is now "no third-party account credential atrium acts through", and section 3
+  lists what atrium does hold of its own trust fabric, matching the audit review.
+- **The wordings are fixed.** It says "none of the 23 surveyed", "@review reviews every director's work", and that
+  deploy verdicts are enforced by deployready while only landing is habit.
+- **Row 2.** Identity comes from the hub's collection record and the requesting card, never the git author.
+  Approval is scoped to cards, and the session link stays.
+- **Row 10.** It is a design @review owns, escalate-only and fail-closed, with the reasons in the row.
+
+Verdict: OK, doc-ok 020f0cfd..d0c9dfe0. It goes to clint with Q1 to Q4. Row 10, if filed, comes to @review as a
+design.
