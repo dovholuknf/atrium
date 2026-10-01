@@ -1355,13 +1355,22 @@ async function copyPath(el) {
 // Sorting by most recent activity, so whichever agent just asked for something
 // or just finished rises to the top. On by default: with several running, the
 // one that moved is the one you want.
-let sortByActivity = localStorage.getItem("atrium.termSort") !== "0";
+//
+// A third order, `started`, is newest card first. It is stored under the same key as the word "started", beside
+// "1" for activity and "0" for name, and any other stored value reads as the activity default.
+let termSortStarted = localStorage.getItem("atrium.termSort") === "started";
+let sortByActivity = !termSortStarted && localStorage.getItem("atrium.termSort") !== "0";
 
-function toggleTermSort() {
-  sortByActivity = !sortByActivity;
-  localStorage.setItem("atrium.termSort", sortByActivity ? "1" : "0");
+function setTermSortMode(mode) {
+  termSortStarted = mode === "started";
+  sortByActivity = mode === "activity";
+  localStorage.setItem("atrium.termSort", termSortStarted ? "started" : sortByActivity ? "1" : "0");
   // The gear's pills in this frame, since the list repaints after its cards load.
   if (typeof paintTermGear === "function") paintTermGear();
   renderTermList();
+}
+
+function toggleTermSort() {
+  setTermSortMode(sortByActivity ? "name" : "activity");
 }
 
