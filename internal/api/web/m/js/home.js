@@ -113,12 +113,13 @@
   // The device's view of the list: order, grouping and filters, remembered in localStorage. Sorting, grouping and the
   // subagent test are the board's own rules from js/cardrules.js.
   const OPTS_KEY = "atrium.m.homeopts";
-  const OPT_DEFAULTS = { order: "newest", group: "none", needsMe: false, hideDone: false, hideSubs: false };
+  const OPT_DEFAULTS = { order: "newest", orderNeeds: "oldest", group: "none", needsMe: false, hideDone: false, hideSubs: false };
   function loadOpts() {
     try {
       const o = JSON.parse(localStorage.getItem(OPTS_KEY) || "{}");
       return {
         order: o.order === "oldest" ? "oldest" : "newest",
+        orderNeeds: o.orderNeeds === "newest" ? "newest" : "oldest",
         group: o.group === "room" || o.group === "project" ? o.group : "none",
         needsMe: o.needsMe === true, hideDone: o.hideDone === true, hideSubs: o.hideSubs === true,
       };
@@ -127,18 +128,37 @@
   let opts = loadOpts();
   function saveOpts() { try { localStorage.setItem(OPTS_KEY, JSON.stringify(opts)); } catch (e) {} }
 
-  // Newest or oldest by last activity, the board's "last active" rule with its tie break.
+  // When a card last did something, in ms. `last_activity_at` is a fact about the card, where `idle_seconds` is a count taken
+  // when the row was read, so rows read at different times (a list a minute old and a row an event just replaced) cannot be
+  // compared by it. It is the fallback for a card that has no stamp.
+  function activityMs(t) {
+    const at = Date.parse(t.last_activity_at);
+    return isNaN(at) ? Date.now() - (Number(t.idle_seconds) || 0) * 1000 : at;
+  }
+
+  // Newest or oldest by last activity, with the board's tie break. Oldest is the whole newest order reversed.
   function sortRows(rows) {
-    rows.sort((a, b) => cardActivityCmp(a.card, b.card) || cardTieBreak(a.card, b.card));
+    rows.sort((a, b) => activityMs(b.card) - activityMs(a.card) || cardTieBreak(a.card, b.card));
     if (opts.order === "oldest") rows.reverse();
     return rows;
   }
+
+  // Each list has its own order and the control shows the one on screen. The all list goes by last activity, newest first
+  // unless asked. The needs list is a queue of answers owed and goes by when each wait began, oldest first unless asked.
+  const orderKey = () => mode === "needs" ? "orderNeeds" : "order";
 
   function isFinished(t) { return t.status === "done" || t.status === "dead"; }
 
   // The filters that apply to a row. Needs-me only is how the needs list is already made, so it changes the all list.
   // Hide subagents never hides a running card that has an alias: somebody named it, so it is not an anonymous helper.
-  function isSub(t) { return isDoer(t) && !(t.status === "running" && t.alias); }
+  // The board's isDoer stays the board's. Here a director and the orchestrator are not subagents either, whatever they are
+  // tagged, since they are who the operator talks to.
+  const NOT_SUB = ["atrium:director", "atrium:orchestrator", "orchestrators", "atrium:hold-notices"];
+  function isSub(t) {
+    if (!isDoer(t)) return false;
+    if (t.status === "running" && t.alias) return false;
+    return !(t.tags || []).some(x => NOT_SUB.indexOf(String(x).trim().toLowerCase()) >= 0);
+  }
 
   // Whether the filters keep a row. `revealed` is the tap on "hidden by filters", which shows what they hide until the
   // filters change.
@@ -278,12 +298,11 @@
     let hidden = 0;
     if (loaded) {
       const forAll = mode === "all";
-      // The needs list is a queue of answers owed, oldest wait first, so the order control leaves it alone.
       const listed = forAll ? allList(cards, perms, now) : needs;
       const passing = listed.filter(r => keepRow(r, forAll));
       hidden = listed.length - passing.length;
       const kept = revealed ? listed : passing;
-      const rows = forAll ? sortRows(kept) : kept;
+      const rows = forAll ? sortRows(kept) : (opts.orderNeeds === "newest" ? kept.slice().reverse() : kept);
       sections(rows, forAll).forEach(s => {
         if (s.label) {
           const html = '<h2 class="grp">' + U.esc(s.label) + " <em>" + s.rows.length + "</em></h2>";
@@ -313,11 +332,12 @@
   function paintOpts() {
     if (!els.opts) return;
     els.optsBtn.setAttribute("aria-expanded", String(!els.opts.hidden));
-    const on = (opts.order !== "newest" ? 1 : 0) + (opts.group !== "none" ? 1 : 0) + (opts.needsMe ? 1 : 0) + (opts.hideDone ? 1 : 0) + (opts.hideSubs ? 1 : 0);
+    const on = (opts.order !== "newest" ? 1 : 0) + (opts.orderNeeds !== "oldest" ? 1 : 0) + (opts.group !== "none" ? 1 : 0) + (opts.needsMe ? 1 : 0) + (opts.hideDone ? 1 : 0) + (opts.hideSubs ? 1 : 0);
     els.optsBtn.dataset.on = String(on);
     els.opts.querySelectorAll("[data-opt]").forEach(b => {
       const v = b.dataset.val;
-      const cur = v === undefined ? opts[b.dataset.opt] : opts[b.dataset.opt] === v;
+      const key = b.dataset.opt === "order" ? orderKey() : b.dataset.opt;
+      const cur = v === undefined ? opts[key] : opts[key] === v;
       b.setAttribute("aria-pressed", String(cur));
     });
   }
@@ -335,7 +355,7 @@
 
   function setOpt(k, v) {
     revealed = false;
-    opts[k] = v;
+    opts[k === "order" ? orderKey() : k] = v;
     saveOpts();
     // A different order or grouping is a different arrangement, not a move, so rows are not animated across it.
     nodes.forEach(el => el.remove());
