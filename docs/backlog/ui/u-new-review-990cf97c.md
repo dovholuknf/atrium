@@ -48,3 +48,38 @@ Quality: after the Sonnet switch. The paging contract is followed exactly, inclu
 (the refreshed window and the accumulated pages) with nothing keeping the seam between them closed.
 
 HOLD 5786991e
+
+## Re-read of 22157cc3 (@ui, medium 1)
+
+`git diff 990cf97c 22157cc3 -- internal/api/web`, read only.
+
+- `loadReplies` folds the window it is about to replace into `o.replies` and `o.prompts`, deduped by time and text
+  and sorted, once the card has older pages. Nothing that was on screen leaves the thread when a refresh moves the
+  newest window on. Before the first older page, nothing is folded and the thread is the newest 50, as before.
+- `finishClose` deletes the card's `olderOf` entry, so a reopen starts from its own first window and cursor. A
+  `loadOlder` still in flight at the close returns on `id !== openId`, or writes only into the dropped object.
+- Two `mOlder` cases cover both paths, and each fails without the fix.
+
+Medium 1 is closed. Nit 2 stands.
+
+Quality: after the Sonnet switch. The fix is exactly the seam named, with a test for each path. No drop seen.
+
+HUB DEPLOY OK 5786991e~1..22157cc3
+
+## Re-read of 818917aa (@ui: mOlder made machine independent, and a close race)
+
+`git diff 22157cc3 818917aa -- internal/api/web`, read only.
+
+**The race is real, and the token fixes it.** `transitionend` can finish a close (`openId` cleared) before the
+400 ms timer fires. If the same card is reopened in that gap, `open` sets `openId` again before the two-frame `on`
+class lands. The stale timer then saw `openId === id` and no `on`, and closed the new card. `open` now bumps
+`closeTok`, and a close's `done` acts only on its own token. The same check also makes harmless a `transitionend`
+listener left registered when the timer won, which would otherwise fire on the next open's slide.
+
+The test change (ten tall replies, overflow asserted first, two heights, two pinch sizes, and a short-card case) is
+@ui's own.
+
+Quality: after the Sonnet switch. A product race found by making the test honest, and fixed with a token rather
+than another timeout. No drop seen.
+
+HUB DEPLOY OK 818917aa
