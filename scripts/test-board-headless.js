@@ -13217,6 +13217,35 @@ async function mCompactCount(p) {
   });
 }
 
+// The composer's buttons and the jump control: no overlap, one line with the input, 40px hit areas, nothing over a message.
+async function mCompactButtons(p, tag) {
+  const r = await p.evaluate(() => {
+    const box = e => { const b = e.getBoundingClientRect(); return { x: b.left, y: b.top, w: b.width, h: b.height, cy: b.top + b.height / 2 }; };
+    const btns = [...document.querySelectorAll("#m-compose .mc-attach, #m-compose .mc-send, #m-jump:not([hidden])")].map(e => ({ n: e.className || e.id, ...box(e) }));
+    const ta = box(document.querySelector("#m-compose textarea"));
+    const sc = document.getElementById("m-card-scroll").getBoundingClientRect();
+    const jump = document.querySelector("#m-jump:not([hidden])");
+    const over = jump ? [...document.querySelectorAll("#m-replies .reply")].some(e => {
+      const r0 = e.getBoundingClientRect(), j = jump.getBoundingClientRect();
+      const b = { left: r0.left, right: r0.right, top: Math.max(r0.top, sc.top), bottom: Math.min(r0.bottom, sc.bottom) };
+      return b.bottom > b.top && b.left < j.right && b.right > j.left && b.top < j.bottom && b.bottom > j.top; }) : false;
+    const row = document.querySelector("#m-compose .mc-row").getBoundingClientRect();
+    return { btns, ta, over, rowH: Math.round(row.height), cam: !!document.querySelector("#m-compose .mc-cam"), sw: document.documentElement.scrollWidth - innerWidth };
+  });
+  if (r.cam) fail(tag + "a camera button is there");
+  if (r.btns.some(b => b.w < 39.5 || b.h < 39.5)) fail(tag + "a button has a tap target under 40px: " + JSON.stringify(r.btns));
+  r.btns.forEach((a, i) => r.btns.slice(i + 1).forEach(b => {
+    if (a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h) fail(tag + "buttons overlap: " + a.n + " and " + b.n);
+  }));
+  r.btns.filter(b => /mc-attach|mc-send/.test(b.n)).forEach(b => {
+    if (Math.abs(b.cy - r.ta.cy) > 2) fail(tag + b.n + " is not on one line with the input: " + Math.round(b.cy) + " vs " + Math.round(r.ta.cy));
+    if (b.x + b.w > r.ta.x && b.x < r.ta.x + r.ta.w) fail(tag + b.n + " overlaps the input");
+  });
+  if (r.over) fail(tag + "the jump control covers a message");
+  if (r.rowH > 46) fail(tag + "the composer is " + r.rowH + "px high when empty");
+  return r;
+}
+
 async function mCompactSection(browser) {
   const st = mServer({});
   const c = mCard("cp-1", { alias: "packer", display_title: "packer", status: "needs-input", waiting_since: mIso(2 * M_MIN), seen: { turn_ended_at: mIso(20 * M_MIN) } });
@@ -13271,9 +13300,27 @@ async function mCompactSection(browser) {
     if (row.boxes !== 1) fail(tag + "more than one activity block: " + row.boxes);
     if (row.border !== "0px" || !/^rgba\(0, 0, 0, 0\)|transparent/.test(row.bg)) fail(tag + "the activity row is still a box: " + JSON.stringify(row));
     if (row.h > 24) fail(tag + "the activity row is not one line: " + row.h);
+    await mCompactButtons(p, tag + "390: ");
     if (await mNoSideways(p)) fail(tag + "the card scrolls sideways");
     if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
     await ctx.close();
+    // a narrow phone, scrolled up so the jump control shows
+    st.tasks = [mCard("cp-2", { alias: "longer", display_title: "longer", status: "needs-input", waiting_since: mIso(2 * M_MIN), seen: { turn_ended_at: mIso(20 * M_MIN) } })];
+    st.replies["cp-2"] = { source: "transcript", replies: [1, 2, 3, 4, 5, 6].map(i => ({ at: mIso((30 - i * 4) * M_MIN), text: "Reply " + i + ". " + body.repeat(4) })) };
+    const n = await mPage(browser, st, { width: 360, height: 640 }, "");
+    await n.p.waitForSelector("#m-seg-all", { timeout: slow(10000) });
+    await n.p.tap("#m-seg-all");
+    await n.p.waitForSelector("#m-list .row", { timeout: slow(10000) });
+    await n.p.tap('#m-list .row[data-id="cp-2"]');
+    await n.p.waitForSelector("#m-replies .reply", { timeout: slow(5000) });
+    await n.p.waitForSelector("#m-compose textarea", { timeout: slow(5000) });
+    await n.p.evaluate(() => { const e = document.getElementById("m-card-scroll"); e.dispatchEvent(new WheelEvent("wheel", { deltaY: -100 })); e.scrollTop = 0; });
+    await n.p.waitForTimeout(600);
+    await n.p.waitForFunction(() => !document.getElementById("m-jump").hidden, null, { timeout: slow(3000) });
+    await mCompactButtons(n.p, tag + "360: ");
+    await mShot(n.p, "compact-jump-360");
+    if (await mNoSideways(n.p)) fail(tag + "360: the card scrolls sideways");
+    await n.ctx.close();
   } finally { await st.close(); }
   if (!bad) console.log("mCompact ok");
 }
@@ -13698,11 +13745,12 @@ async function mCardUploadSection(browser) {
         await p.evaluate(() => document.querySelector("#m-compose textarea").dispatchEvent(new Event("input", { bubbles: true })));
       };
       const chips = () => p.evaluate(() => Array.from(document.querySelectorAll("#m-compose .mc-file")).map(x => ({ name: x.querySelector(".mc-fname").textContent, st: x.dataset.state, word: x.querySelector(".mc-fstate").textContent })));
-      // the file picker and the camera are both there, and the camera asks for the camera
+      // the file picker is there, takes images and files, and there is no camera button
       const ins = await p.evaluate(() => Array.from(document.querySelectorAll("#m-compose input.mc-input")).map(i => ({ accept: i.accept, capture: i.getAttribute("capture"), multiple: i.multiple })));
-      if (ins.length !== 2 || !ins.some(i => i.multiple && /image/.test(i.accept) && /pdf/.test(i.accept) && i.capture === null) || !ins.some(i => i.capture === "environment" && i.accept === "image/*")) fail(tag + "picker or camera inputs wrong: " + JSON.stringify(ins));
+      if (ins.length !== 1 || !(ins[0].multiple && /image/.test(ins[0].accept) && /pdf/.test(ins[0].accept) && ins[0].capture === null)) fail(tag + "picker input wrong: " + JSON.stringify(ins));
+      if (await p.$("#m-compose .mc-cam")) fail(tag + "the camera button is still there");
       const btns = await p.$$eval("#m-compose .mc-attach", bs => bs.map(b => { const r = b.getBoundingClientRect(); return [r.width, r.height]; }));
-      if (btns.length !== 2 || btns.some(b => b[0] < 36 || b[1] < 40)) fail(tag + "attach buttons are missing or too small: " + JSON.stringify(btns));
+      if (btns.length !== 1 || btns.some(b => b[0] < 40 || b[1] < 40)) fail(tag + "the attach button is missing or too small: " + JSON.stringify(btns));
       if (await mNoSideways(p)) fail(tag + "the card scrolls sideways");
       await mShot(p, "upload-row-" + vp.width);
       // two files from the picker and a pasted image, held in flight
