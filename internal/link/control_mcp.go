@@ -205,7 +205,11 @@ func (c *controlMCP) server(class ctlClass) *mcp.Server {
 			"delivered the same way. The recipient sees you as `you@yourroom` and answers to that. " +
 			"`held` means the hub or that room is not answering: it is kept on your room and sent " +
 			"when they are, for up to a day. `unconfirmed` means it may or may not have arrived, " +
-			"so ask before sending it again.",
+			"so ask before sending it again.\n\n" +
+			"`kind` is `fyi` for news the receiver need not act on, or `needs` (the default) for " +
+			"anything that wants an answer or an action. A receiver that holds its notices keeps an " +
+			"`fyi` on its card and is not interrupted, so say `needs` for anything you want read now. " +
+			"On the same room only.",
 	}, audited(c, "ctl-wake-say", describeSay, c.sayHandler))
 
 	addTool(s, class, &mcp.Tool{
@@ -221,7 +225,10 @@ func (c *controlMCP) server(class ctlClass) *mcp.Server {
 			"- `question`: you need an answer to go on. Give `ask`.\n" +
 			"- `progress`: you are stopping on purpose while something runs.\n\n" +
 			"`summary` is what happened, in your words. It reaches your launcher verbatim. An " +
-			"incomplete report is refused with what is missing, so fix it and call again.",
+			"incomplete report is refused with what is missing, so fix it and call again.\n\n" +
+			"`kind` is `fyi` for news your launcher need not act on, or `needs` (the default) for " +
+			"anything that wants an answer or an action. A launcher that holds its notices keeps " +
+			"an `fyi` on its card and is not interrupted. `blocked` and `question` are always `needs`.",
 	}, c.reportHandler)
 
 	addTool(s, class, &mcp.Tool{
@@ -243,7 +250,9 @@ func (c *controlMCP) server(class ctlClass) *mcp.Server {
 			"`atrium:hold-notices` hears about its workers. Atrium never types their automatic notices " +
 			"(a silent stop, a context size, a session that ended without a report) into its terminal, " +
 			"and keeps them on its card instead. Under `atrium:hold-notices` its workers' reports are " +
-			"kept there too, with `source: report`.\n\n" +
+			"kept there too, with `source: report`. An `fyi` report or say sent to such a card is kept " +
+			"there as well, with `kind: fyi` and the sender in `about`. Reading your own notices marks " +
+			"them read, which clears the `held_notices` count on your card's row.\n\n" +
 			"A card on ANOTHER ROOM is `name@room`, `alias@room` or `room~id`, as `atrium_say` " +
 			"takes it and as `atrium_launch` with `room` hands it back.",
 	}, c.taskHandler)
@@ -792,6 +801,8 @@ type sayInput struct {
 	When string `json:"when,omitempty" jsonschema:"immediate (the default): typed as soon as the line is empty, even mid-turn. done: wait for that session's turn to end"`
 	// Wake resumes a parked card so this reaches it.
 	Wake bool `json:"wake,omitempty" jsonschema:"true to resume a PARKED session (idle, no process) and deliver this. it costs a cold start, so leave it off unless the message is worth it. without it a say to a parked session is refused and nothing is queued. local only: a card on another room, named as name@room or reached by a bare name on every room, is never woken"`
+	// Kind is `fyi` or `needs`. See internal/daemon/fyi.go.
+	Kind string `json:"kind,omitempty" jsonschema:"needs (the default): wants an answer or an action. fyi: news the receiver need not act on, which a receiver that holds its notices keeps on its card instead of being interrupted"`
 }
 
 type sayOutput struct {
@@ -862,6 +873,9 @@ func (c *controlMCP) sayHandler(ctx context.Context, req *mcp.CallToolRequest, i
 	if in.Wake {
 		body["wake"] = true
 	}
+	if k := strings.TrimSpace(in.Kind); k != "" {
+		body["kind"] = k
+	}
 	if err := c.ask(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(id)+"/message", room,
 		body, &res); err != nil {
 		return nil, out, err
@@ -891,6 +905,7 @@ type reportInput struct {
 	SHA      string `json:"sha,omitempty" jsonschema:"for done: the commit the work landed as"`
 	NoCommit string `json:"no_commit,omitempty" jsonschema:"for done with no commit: why there is none"`
 	Ask      string `json:"ask,omitempty" jsonschema:"for blocked or question: what you need, and from whom"`
+	Kind     string `json:"kind,omitempty" jsonschema:"needs (the default): wants an answer or an action. fyi: news your launcher need not act on, which it reads when it next asks instead of being interrupted"`
 }
 
 type reportOutput struct {
@@ -926,7 +941,7 @@ func (c *controlMCP) reportHandler(ctx context.Context, req *mcp.CallToolRequest
 	if err := c.ask(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(id)+"/report", room,
 		map[string]string{
 			"status": strings.TrimSpace(in.Status), "recap": in.Summary, "sha": strings.TrimSpace(in.SHA),
-			"no_commit": in.NoCommit, "ask": in.Ask,
+			"no_commit": in.NoCommit, "ask": in.Ask, "kind": strings.TrimSpace(in.Kind),
 		}, &res); err != nil {
 		return nil, out, err
 	}
@@ -965,6 +980,9 @@ type taskEvent struct {
 type heldNotice struct {
 	At     string `json:"at"`
 	Source string `json:"source"`
+	// Kind is `fyi` for news a worker or peer sent you with kind fyi, and absent for
+	// an automatic notice. About says who sent it.
+	Kind   string `json:"kind,omitempty"`
 	About  string `json:"about,omitempty"`
 	Card   string `json:"about_card,omitempty"`
 	Text   string `json:"text"`
@@ -1027,6 +1045,11 @@ func (c *controlMCP) taskHandler(ctx context.Context, req *mcp.CallToolRequest, 
 		return nil, out, err
 	}
 	out.Notices = notices
+	if in.Notices && strings.TrimSpace(in.Card) == "" {
+		// A READ, so the held count on this card's row drops. Best effort: a notice
+		// that stays counted is a nag, and a failed read must not fail the answer.
+		_ = c.ask(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(id)+"/notices-read", scope, nil, nil)
+	}
 	out.Card, out.Handle = namedFrom(room, scope, t.ID, t.Wire)
 	out.Title = t.Title
 	out.Status, out.Doing, out.Where, out.Why = t.Status, t.Activity.What, t.Worktree, t.Why
@@ -1082,8 +1105,12 @@ func (c *controlMCP) readCard(ctx context.Context, scope, id string, withEvents,
 			}
 			var p heldPayload
 			if json.Unmarshal(e.Payload, &p) == nil && p.Held {
-				notices = append(notices, heldNotice{At: e.At, Source: p.Source, About: p.About, Card: p.Card,
-					Text: p.Text})
+				n := heldNotice{At: e.At, Source: p.Source, About: p.About, Card: p.Card, Text: p.Text}
+				if p.Source == "fyi" {
+					n.Kind = "fyi"
+					n.Text = "fyi from " + p.About + ": " + p.Text
+				}
+				notices = append(notices, n)
 			}
 		}
 		// The tail, because the useful end of a history is the recent one and a
