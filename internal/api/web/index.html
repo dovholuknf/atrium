@@ -80,37 +80,59 @@
      anything is drawn.
      Only when a switch is in flight. An ordinary reload is not covered up,
      because an ordinary reload is not going anywhere. -->
-<!-- A PHONE LANDS ON THE PHONE PAGE. A coarse pointer and a short side under 600px, which a tablet and a desktop are
-     not, sends the board root and a card's address to the matching /m page, with `replace` so Back does not loop. A
-     pop-out window (it has a name made for its card, or an opener) is never sent, and neither is a phone that chose the
-     desktop board: `atrium.m.desktop` is set by the "desktop board" link on /m and cleared by "phone view" in the drawer.
-     In the HEAD so nothing of the board is drawn first. -->
+<!-- A PHONE LANDS ON THE PHONE PAGE. A touch screen (a coarse pointer, or any touch points) whose shortest side, window or
+     screen, is under 600px, which a tablet and a desktop are not, sends the board root and a card's address to the matching
+     /m page, with `replace` so Back does not loop. A pop-out window (it has a name made for its card, or an opener) is never
+     sent, and neither is a tab that chose the desktop board: `atrium.m.desktop` lives in sessionStorage, so it is that tab's
+     choice and a new tab or a restart goes to /m again. It is set by the "desktop board" link on /m and cleared by "phone
+     view" in the drawer. An old localStorage value from the first version is removed and ignored. `?why=1` writes the reason
+     for what happened into the page. In the HEAD so nothing of the board is drawn first. -->
 <script>
   (function () {
+    var diag = /[?&]why=1(&|$)/.test(location.search);
+    function why(t) {
+      if (!diag) return;
+      addEventListener("DOMContentLoaded", function () {
+        var d = document.createElement("div");
+        d.id = "redirect-why";
+        d.textContent = "redirect: " + t;
+        d.style.cssText = "position:fixed;z-index:9999;left:0;right:0;top:0;padding:6px 10px;background:var(--shell-0,#111);" +
+          "color:var(--warn,#fc0);font:12px/1.3 monospace;overflow-wrap:anywhere";
+        document.body.appendChild(d);
+      });
+    }
     try {
       var p = location.pathname, h = location.hash, m;
-      if (/^\/m(\/|$)/.test(p) || window.opener || /^atrium-term-/.test(window.name)) return;
-      var phone = matchMedia("(pointer: coarse)").matches && Math.min(innerWidth, innerHeight) < 600;
-      if (!phone) return;
-      if (localStorage.getItem("atrium.m.desktop") === "1") {
+      if (/^\/m(\/|$)/.test(p)) return;
+      try { localStorage.removeItem("atrium.m.desktop"); } catch (e) {}
+      if (window.opener) return why("not redirected, this window has an opener");
+      if (/^atrium-term-/.test(window.name)) return why("not redirected, a pop-out window (" + window.name + ")");
+      var coarse = matchMedia("(pointer: coarse)").matches, anyCoarse = matchMedia("(any-pointer: coarse)").matches;
+      var touch = navigator.maxTouchPoints || 0, shortest = Math.min(innerWidth, innerHeight, screen.width);
+      var seen = "coarse=" + coarse + " any-coarse=" + anyCoarse + " touch-points=" + touch + " shortest-side=" + shortest;
+      if (!(coarse || anyCoarse || touch > 0) || shortest >= 600) return why("not redirected, not a phone (" + seen + ")");
+      if (sessionStorage.getItem("atrium.m.desktop") === "1") {
         // The way back, a button in the notification drawer that this mark shows. Not drawn over the board, where it would
         // cover the terminal's keys.
         document.documentElement.setAttribute("data-opted-out", "1");
-        return;
+        return why("not redirected, this tab chose the desktop board (" + seen + ")");
       }
       var to = "";
       if (p === "/" || p === "/index.html") {
         // A notification tap is `/?land=<card>&view=&key=`. The card is the point, so it becomes the fragment /m opens, and the
         // rest of the query goes along with what the notification set removed.
         var q = new URLSearchParams(location.search), land = q.get("land");
-        q.delete("land"); q.delete("view"); q.delete("key");
+        q.delete("land"); q.delete("view"); q.delete("key"); q.delete("why");
         var rest = q.toString();
         to = "/m/" + (rest ? "?" + rest : "") + (land ? "#term=" + encodeURIComponent(land) : /^#term=/.test(h) ? h : "");
       }
       else if (/^\/alias\/[^/]+\/?$/.test(p) || /^\/room\/[^/]+\/[^/]+\/?$/.test(p)) to = "/m" + p;
       else if ((m = /^\/room\/([^/]+)\/?$/.exec(p))) { localStorage.setItem("atrium.room", decodeURIComponent(m[1])); to = "/m/"; }
-      if (to) location.replace(to);
-    } catch (e) {}
+      if (!to) return why("not redirected, no /m page for " + p + " (" + seen + ")");
+      // With ?why=1 the line is left up for a few seconds first, since the page is about to be replaced.
+      if (diag) { why("going to " + to + " (" + seen + ")"); setTimeout(function () { location.replace(to); }, 4000); }
+      else location.replace(to);
+    } catch (e) { why("not redirected, an error: " + e); }
   })();
 </script>
 <script>
@@ -1053,7 +1075,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
     <span id="toastlog-scope" class="hintline" hidden></span>
     <button id="toastlog-toggle" onclick="notifyToggle()">turn off</button>
     <button id="toastlog-sound" onclick="document.getElementById('sound').click()">sound on</button>
-    <button id="toastlog-phone" onclick="try { localStorage.removeItem('atrium.m.desktop'); } catch (e) {} location.replace('/m/')">phone view</button>
+    <button id="toastlog-phone" onclick="try { sessionStorage.removeItem('atrium.m.desktop'); } catch (e) {} location.replace('/m/')">phone view</button>
     <button onclick="clearToastLog()">clear</button>
     <button onclick="document.getElementById('toastlog').close()">close</button>
   </div>
