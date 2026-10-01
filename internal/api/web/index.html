@@ -79,6 +79,32 @@
      anything is drawn.
      Only when a switch is in flight. An ordinary reload is not covered up,
      because an ordinary reload is not going anywhere. -->
+<!-- A PHONE LANDS ON THE PHONE PAGE. A coarse pointer and a short side under 600px, which a tablet and a desktop are
+     not, sends the board root and a card's address to the matching /m page, with `replace` so Back does not loop. A
+     pop-out window (it has a name made for its card, or an opener) is never sent, and neither is a phone that chose the
+     desktop board: `atrium.m.desktop` is set by the "desktop board" link on /m and cleared by "phone view" in the drawer.
+     In the HEAD so nothing of the board is drawn first. -->
+<script>
+  (function () {
+    try {
+      var p = location.pathname, h = location.hash, m;
+      if (/^\/m(\/|$)/.test(p) || window.opener || /^atrium-term-/.test(window.name)) return;
+      var phone = matchMedia("(pointer: coarse)").matches && Math.min(innerWidth, innerHeight) < 600;
+      if (!phone) return;
+      if (localStorage.getItem("atrium.m.desktop") === "1") {
+        // The way back, a button in the notification drawer that this mark shows. Not drawn over the board, where it would
+        // cover the terminal's keys.
+        document.documentElement.setAttribute("data-opted-out", "1");
+        return;
+      }
+      var to = "";
+      if (p === "/" || p === "/index.html") to = /^#term=/.test(h) ? "/m/" + h : "/m/";
+      else if (/^\/alias\/[^/]+\/?$/.test(p) || /^\/room\/[^/]+\/[^/]+\/?$/.test(p)) to = "/m" + p;
+      else if ((m = /^\/room\/([^/]+)\/?$/.exec(p))) { localStorage.setItem("atrium.room", decodeURIComponent(m[1])); to = "/m/"; }
+      if (to) location.replace(to);
+    } catch (e) {}
+  })();
+</script>
 <script>
   try {
     var to = sessionStorage.getItem("atrium.switching");
@@ -1018,6 +1044,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
     <div class="grow"><div class="dlg-eyebrow">the tray</div><h2>notifications</h2></div>
     <span id="toastlog-scope" class="hintline" hidden></span>
     <button id="toastlog-toggle" onclick="notifyToggle()">turn off</button>
+    <button id="toastlog-phone" onclick="try { localStorage.removeItem('atrium.m.desktop'); } catch (e) {} location.replace('/m/')">phone view</button>
     <button onclick="clearToastLog()">clear</button>
     <button onclick="document.getElementById('toastlog').close()">close</button>
   </div>
