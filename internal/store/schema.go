@@ -1924,6 +1924,72 @@ var migrations = []struct {
 			`CREATE INDEX IF NOT EXISTS pty_run_task ON pty_run (task_id, started_at)`,
 		},
 	},
+	{
+		// The pulls index: one row per PR review run. An index over a run folder,
+		// never a finding. See prs.go and docs/rnd/pulls-view-design.md.
+		name: "0078_pr_review",
+		stmts: []string{
+			`CREATE TABLE IF NOT EXISTS pr_review (
+				id             TEXT PRIMARY KEY,
+				run_dir        TEXT NOT NULL UNIQUE,
+				url            TEXT NOT NULL DEFAULT '',
+				why            TEXT NOT NULL DEFAULT '',
+				host           TEXT NOT NULL,
+				org            TEXT NOT NULL,
+				repo           TEXT NOT NULL,
+				number         INTEGER NOT NULL,
+				reviewed_head  TEXT NOT NULL DEFAULT '',
+				observed_head  TEXT NOT NULL DEFAULT '',
+				observed_state TEXT NOT NULL DEFAULT ''
+					CHECK (observed_state IN ('', 'open', 'merged', 'closed')),
+				observed_title TEXT NOT NULL DEFAULT '',
+				observed_author TEXT NOT NULL DEFAULT '',
+				checked_at     TEXT NOT NULL DEFAULT '',
+				check_error    TEXT NOT NULL DEFAULT '',
+				walker_task    TEXT NOT NULL DEFAULT '',
+				archived_at    TEXT NOT NULL DEFAULT '',
+				state          TEXT NOT NULL DEFAULT 'queued'
+					CHECK (state IN ('queued', 'fetching', 'running', 'ready', 'failed', 'aborted')),
+				run_state      TEXT NOT NULL DEFAULT '',
+				run_error      TEXT NOT NULL DEFAULT '',
+				cost_usd       REAL NOT NULL DEFAULT 0,
+				started_at     TEXT NOT NULL DEFAULT '',
+				ready_at       TEXT NOT NULL DEFAULT '',
+				second_state   TEXT NOT NULL DEFAULT 'none'
+					CHECK (second_state IN ('none', 'pending', 'done', 'failed')),
+				second_summary TEXT NOT NULL DEFAULT '',
+				second_error   TEXT NOT NULL DEFAULT '',
+				created_at     TEXT NOT NULL
+			)`,
+			`CREATE INDEX IF NOT EXISTS pr_review_pr ON pr_review (host, org, repo, number)`,
+		},
+	},
+	{
+		// The review recipe, with a seeded default so a fresh database reviews with
+		// no setup. INSERT OR IGNORE: a recipe the operator edited or deleted is
+		// not put back by a later start, because this migration never runs twice.
+		name: "0079_pr_recipe",
+		stmts: []string{
+			`CREATE TABLE IF NOT EXISTS pr_recipe (
+				name         TEXT PRIMARY KEY,
+				match        TEXT NOT NULL DEFAULT '',
+				harness      TEXT NOT NULL,
+				panel        TEXT NOT NULL,
+				verify_at    TEXT NOT NULL DEFAULT 'med' CHECK (verify_at IN ('high', 'med', 'low', 'none')),
+				critics      TEXT NOT NULL DEFAULT '[]',
+				second       TEXT NOT NULL DEFAULT '',
+				walker_brief TEXT NOT NULL,
+				budget_usd   REAL NOT NULL DEFAULT 3.0,
+				turns_cap    INTEGER NOT NULL DEFAULT 12,
+				updated_at   TEXT NOT NULL
+			)`,
+			`INSERT OR IGNORE INTO pr_recipe
+				(name, match, harness, panel, verify_at, critics, second, walker_brief,
+				 budget_usd, turns_cap, updated_at)
+			 VALUES ('default', '', 'claude', '` + DefaultPRPanel + `', 'med', '[]', '',
+				'` + DefaultWalkerBrief + `', 3.0, 12, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the
