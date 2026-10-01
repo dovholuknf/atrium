@@ -268,15 +268,17 @@ function toggleTermTray() {
 
 // The sort as a pair rather than a chip that names its own state.
 function setTermSort(byActivity) {
-  if (sortByActivity !== !!byActivity) toggleTermSort();
+  if (sortByActivity !== !!byActivity || termSortStarted) setTermSortMode(byActivity ? "activity" : "name");
 }
 
 function termSortHTML() {
-  return `<button class="${sortByActivity ? "" : "on"}" onclick="setTermSort(false)"
+  return `<button class="${sortByActivity || termSortStarted ? "" : "on"}" onclick="setTermSort(false)"
         data-tip="alphabetical by name">name</button>
       <button class="${sortByActivity ? "on" : ""}" onclick="setTermSort(true)"
         data-tip="working sessions first, then anything waiting on you, then newest activity"
-        >activity</button>`;
+        >activity</button>
+      <button class="${termSortStarted ? "on" : ""}" onclick="setTermSortMode('started')"
+        data-tip="newest card first, by when it was started">started</button>`;
 }
 
 // What the folded tray says: the sort, the grouping, and what is being hidden,
@@ -290,7 +292,7 @@ function termTraySummary(c) {
   if (hideSubagentsMode() !== "none") hid.push("subagents");
   const n = c.agentHidden + c.subHidden;
   return [
-    sortByActivity ? "sorted by activity" : "sorted by name",
+    termSortStarted ? "sorted by started" : sortByActivity ? "sorted by activity" : "sorted by name",
     mode === "off" ? "ungrouped" : "by " + (TRAY_GROUP_WORDS[mode] || mode),
     hid.length ? `hiding inactive ${hid.join(", ")}${n ? ` (${n})` : ""}` : "hiding nothing"
   ].join(" · ");
@@ -322,7 +324,7 @@ function termTrayHTML(c) {
         ${termListButtons()}
       </div>
       <div class="traybody"${open ? "" : " inert"}><div class="trayinner"><div class="trayrows">
-        <div class="trayrow"><span class="barlabel">sort</span><div class="seg trayseg">${termSortHTML()}</div></div>
+        <div class="trayrow"><span class="barlabel">sort</span><div class="seg trayseg sortseg">${termSortHTML()}</div></div>
         <div class="trayrow"><span class="barlabel">hide inactive</span>${termHideControlsHTML(c)}</div>
         <div class="trayrow termgroups"><span class="barlabel">group</span
           ><div class="seg trayseg groupseg" id="term-group-tray"></div></div>
@@ -1592,7 +1594,12 @@ function termCount(node) {
 // Sort the strip in place before grouping or rendering. Keeping this separate
 // lets test-sort-order.js check stability across different input orders.
 function termOrder(tasks) {
-  if (sortByActivity) {
+  if (termSortStarted) {
+    // NEWEST CARD FIRST, whatever the card is doing. The card id breaks a tie, so two polls with the same data
+    // give the same order. Grouping keeps this order inside each heading.
+    tasks.sort((a, b) => (b.created_at || "").localeCompare(a.created_at || "") ||
+      (a.id || "").localeCompare(b.id || ""));
+  } else if (sortByActivity) {
     // WORKING NOW SITS ON TOP. "Sorted by activity" is about which sessions are
     // doing something, so the live signal leads: a card running a tool or
     // thinking (`workingNow`, the same badge the mark animates) outranks one

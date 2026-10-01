@@ -91,7 +91,7 @@
   /* Every pill in the tray and the gear's terminal list section the same size: a grid of equal cells rather than pills as wide as their words. The
      sort and hide pairs are two cells, the grouping three, so its six modes are two even rows. */
   .seg.trayseg { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
-  .seg.trayseg.groupseg { grid-template-columns: repeat(3, 1fr); }
+  .seg.trayseg.groupseg, .seg.trayseg.sortseg { grid-template-columns: repeat(3, 1fr); }
   .seg.trayseg button {
     padding: 5px 6px; font-size: var(--fs-xs); text-align: center; min-width: 0;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;

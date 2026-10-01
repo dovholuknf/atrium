@@ -15798,6 +15798,72 @@ async function joinedLiveSection(browser, base) {
 }
 
 // The gear's terminal list section: the list's controls, and the cache summary that follows the list on an event.
+// The terminals list's third sort, `started`: newest card first, a stable tiebreak on the id, remembered, and held
+// inside every group mode. The gear's sort row offers it.
+async function termSortStartedSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const p = await ctx.newPage();
+  const errors = [];
+  p.on("pageerror", e => errors.push(e.message));
+  try {
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof setTermSortMode === "function" && typeof renderTermList === "function",
+      null, { timeout: slow(15000) });
+    await p.evaluate(() => { switchView("terms"); localStorage.removeItem("atrium.termSort"); });
+    const out = await p.evaluate(async () => {
+      const card = (id, at, wt) => ({ id, status: "running", supervised: true, pinned: false, title: id,
+        display_title: id, tags: [], created_at: at, worktree: wt });
+      const cards = [
+        card("a-old", "2026-09-01T10:00:00Z", "/r/pa"), card("b-new", "2026-09-30T10:00:00Z", "/r/pb"),
+        card("c-mid", "2026-09-15T10:00:00Z", "/r/pa"), card("e-tie", "2026-09-20T10:00:00Z", "/r/pb"),
+        card("d-tie", "2026-09-20T10:00:00Z", "/r/pa")
+      ];
+      boardCards = async () => cards;
+      const order = () => [...document.querySelectorAll("#term-list .card.tab")].map(c => c.dataset.id);
+      const res = {};
+      setGroupMode("off");
+      setTermSortMode("started");
+      await renderTermList();
+      res.flat = order();
+      await renderTermList();
+      res.flatAgain = order();
+      setGroupMode("project");
+      await renderTermList();
+      res.grouped = order();
+      res.stored = localStorage.getItem("atrium.termSort");
+      res.gearBtns = [...document.querySelectorAll("#gear-term-sort button")].map(b => b.textContent.trim() +
+        (b.classList.contains("on") ? "*" : ""));
+      res.summary = (document.querySelector("#term-list .traysum") || {}).textContent || "";
+      setGroupMode("project");
+      return res;
+    });
+    const want = ["b-new", "d-tie", "e-tie", "c-mid", "a-old"];
+    if (out.flat.join() !== want.join()) fail("termSortStarted: not newest first with an id tiebreak: " + out.flat.join());
+    if (out.flatAgain.join() !== out.flat.join()) fail("termSortStarted: two renders of one list differ: " + out.flatAgain.join());
+    const at = id => out.grouped.indexOf(id);
+    if (out.grouped.length !== 5 || !(at("d-tie") < at("c-mid") && at("c-mid") < at("a-old") && at("b-new") < at("e-tie"))) {
+      fail("termSortStarted: newest first does not hold inside project groups: " + out.grouped.join());
+    }
+    if (out.stored !== "started") fail("termSortStarted: the choice is not stored under atrium.termSort: " + out.stored);
+    if (out.gearBtns.join("|") !== "name|activity|started*") fail("termSortStarted: the gear's sort row is wrong: " + out.gearBtns.join("|"));
+    if (!/^sorted by started/.test(out.summary)) fail("termSortStarted: the summary does not say it: " + out.summary);
+
+    // Remembered across a reload, and a stored value that means nothing falls back to activity.
+    await p.reload({ waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof setTermSortMode === "function", null, { timeout: slow(15000) });
+    const back = await p.evaluate(() => ({ started: termSortStarted, act: sortByActivity }));
+    if (!back.started || back.act) fail("termSortStarted: the choice did not survive a reload: " + JSON.stringify(back));
+    await p.evaluate(() => localStorage.setItem("atrium.termSort", "bogus"));
+    await p.reload({ waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof setTermSortMode === "function", null, { timeout: slow(15000) });
+    const bad_ = await p.evaluate(() => ({ started: termSortStarted, act: sortByActivity }));
+    if (bad_.started || !bad_.act) fail("termSortStarted: a stored nonsense value is not the activity default: " + JSON.stringify(bad_));
+    await p.evaluate(() => localStorage.removeItem("atrium.termSort"));
+    if (errors.length) fail("termSortStarted: page errors: " + errors.join(" | "));
+  } finally { await ctx.close(); }
+  if (!bad) console.log("termSortStarted ok");
+}
+
 async function termBoxSection(browser, base) {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
   const p = await ctx.newPage();
@@ -15858,7 +15924,7 @@ async function termBoxSection(browser, base) {
         const tag = "termBox " + w + "px " + k + ": ";
         if (!v) { fail(tag + "no tray is drawn."); continue; }
         if (!/^sorted by/.test(v.sum)) fail(tag + "the summary line is missing: " + JSON.stringify(v.sum));
-        if (v.sort !== 2 || v.hide !== 2 || v.group < 6) fail(tag + "the tray lacks sort, hide or group: " + JSON.stringify(v));
+        if (v.sort !== 3 || v.hide !== 2 || v.group < 6) fail(tag + "the tray lacks sort, hide or group: " + JSON.stringify(v));
         if (!v.arrows) fail(tag + "the width buttons are gone.");
         if (w === 150 && v.wide > 160) fail(tag + "the list is not at its narrowest, so the overrun check proves nothing: " + v.wide);
         if (v.overrun || v.summaryOverArrow || v.arrowOut) fail(tag + "the tray overruns the box or the shrink button: " + JSON.stringify(v));
@@ -15928,7 +15994,7 @@ async function gearTermListSection(browser, base) {
         cache: !!document.getElementById("cache-line-gear"),
         inList: document.querySelectorAll("#term-list .cacheline").length
       }));
-      if (!f.shown || f.sort !== 2 || f.hide !== 2 || f.group < 6 || !f.cache) fail(tag + "the section is wrong: " + JSON.stringify(f));
+      if (!f.shown || f.sort !== 3 || f.hide !== 2 || f.group < 6 || !f.cache) fail(tag + "the section is wrong: " + JSON.stringify(f));
       if (f.inList) fail(tag + "the list still has the old row or line.");
       const a = await p.evaluate(() => {
         const was = sortByActivity;
@@ -17426,7 +17492,7 @@ async function main() {
       mSwitcher: mSwitcherSection,
       mPull: mPullSection, joinedLive: joinedLiveSection,
       coverPoll: coverPollSection, coverSteps: coverStepsSection, termBox: termBoxSection,
-      termDebug: termDebugSection };
+      termDebug: termDebugSection, termSortStarted: termSortStartedSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -19445,6 +19511,7 @@ async function main() {
     await coverStepsSection(browser, base);
     await termBoxSection(browser, base);
     await termDebugSection(browser, base);
+    await termSortStartedSection(browser, base);
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e));
     if (process.env.DEBUG_HEADLESS) {

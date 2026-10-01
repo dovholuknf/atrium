@@ -103,8 +103,8 @@ for (const mode of Object.keys(STACK_SORTS)) {
 // reads the same live badge the sort now leads with; here it answers off a
 // fixture field so the tie fixtures, which carry none, all read as not working.
 const strip = new Function("isWaiting", "workingNow", "terminalLabel", "mode",
-  tieBreak + "\n" + activity + "\n" + lift("function termOrder(", "\n}") +
-  "\nreturn (tasks) => { sortByActivity = mode.on; return termOrder(tasks); };")(
+  "var termSortStarted = false;\n" + tieBreak + "\n" + activity + "\n" + lift("function termOrder(", "\n}") +
+  "\nreturn (tasks) => { termSortStarted = mode.on === \"started\"; sortByActivity = mode.on === true; return termOrder(tasks); };")(
   (t) => t.status === "needs-input", (t) => !!t.working,
   (t) => t.label || "", (globalThis.__mode = { on: true }));
 
@@ -115,9 +115,9 @@ const mode = globalThis.__mode;
 
 const stripOrder = (list) => strip(tied(list).slice()).map(t => t.id).join("");
 
-for (const on of [true, false]) {
+for (const on of [true, false, "started"]) {
   mode.on = on;
-  const what = on ? "by activity" : "by name";
+  const what = on === "started" ? "by started" : on ? "by activity" : "by name";
   const forwards = stripOrder(arrived);
   const backwards = stripOrder([...arrived].reverse());
   if (forwards !== backwards) {
@@ -125,7 +125,8 @@ for (const on of [true, false]) {
       `${forwards} one way, ${backwards} the other. The strip reshuffles between two ` +
       `polls that said the same thing, under a cursor already on its way to a tab.`);
   }
-  if (forwards !== TIED_ORDER) {
+  // `started` is newest first, so the oldest-first expectation is for the other two.
+  if (on !== "started" && forwards !== TIED_ORDER) {
     fail(`the strip sorted ${what} came out ${forwards}, expected ${TIED_ORDER}: ` +
       `oldest first, then by id.`);
   }
