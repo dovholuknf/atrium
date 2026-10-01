@@ -5,6 +5,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -351,5 +352,35 @@ func TestDownloadingNeedsAPath(t *testing.T) {
 	s.downloadFile(w, downloadReq(task.ID, ""))
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("answered %d", w.Code)
+	}
+}
+
+// THE DOWNLOAD SAYS WHAT THE PATH RESOLVED TO, so the hub can refuse a link `notes.md -> .env` by
+// the name of the file that is really being read.
+func TestDownloadSaysWhatItResolvedTo(t *testing.T) {
+	s, st, work := fileServer(t)
+	task := cardIn(t, st, work)
+	if err := os.WriteFile(filepath.Join(work, ".env"), []byte("TOKEN=1"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(work, "sub dir"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(work, "sub dir", "r.md"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(".env", filepath.Join(work, "notes.md")); err != nil {
+		t.Skip("no symlinks here:", err)
+	}
+	for ask, want := range map[string]string{"notes.md": ".env", "sub%20dir/r.md": "sub dir/r.md", ".env": ".env"} {
+		w := httptest.NewRecorder()
+		s.downloadFile(w, downloadReq(task.ID, ask))
+		if w.Code != http.StatusOK {
+			t.Fatalf("%s answered %d: %s", ask, w.Code, w.Body.String())
+		}
+		got, err := url.PathUnescape(w.Header().Get(RealPathHeader))
+		if err != nil || got != want {
+			t.Errorf("%s resolved to %q (%v), want %q", ask, got, err, want)
+		}
 	}
 }

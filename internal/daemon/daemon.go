@@ -349,6 +349,7 @@ func New(opts Options) (*Daemon, error) {
 		log.Printf("[atrium] could not empty %s: %v", api.ScrapDir, err)
 	}
 	st.OnHalt = d.onHalt
+	api.HeldNoticesOf = d.heldNoticesFor
 	d.ledgerDirty = make(chan struct{}, 1)
 	st.OnLedgerChange = d.ledgerChanged
 	st.OnLedgerNotice = d.ledgerNotice
@@ -356,6 +357,9 @@ func New(opts Options) (*Daemon, error) {
 	st.HoldNotice = func(arbiter *store.Task, source string) bool {
 		if source == NoticeReport {
 			return holdsReports(arbiter)
+		}
+		if source == NoticeFYI {
+			return holdsNotices(arbiter)
 		}
 		return holdsNotices(arbiter)
 	}
@@ -584,6 +588,7 @@ func New(opts Options) (*Daemon, error) {
 		d.auto.noteRead(id)
 		return d.repliesPage(id, n, before)
 	}
+	d.ap.Changes = d.changesFor
 	// Starting a fixture is spawning a process, which the daemon owns.
 	api.StartFixture = d.StartFixtureNow
 	// Which turns are unread, carried across the restart. See seen.go.

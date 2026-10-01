@@ -22,6 +22,7 @@ type ReportInput struct {
 	SHA      string `json:"sha,omitempty" jsonschema:"for done: the commit the work landed as"`
 	NoCommit string `json:"no_commit,omitempty" jsonschema:"for done with no commit: why there is none"`
 	Ask      string `json:"ask,omitempty" jsonschema:"for blocked or question: what you need, and from whom"`
+	Kind     string `json:"kind,omitempty" jsonschema:"needs (the default): wants an answer or an action. fyi: news your launcher need not act on, which it reads when it next asks instead of being interrupted"`
 }
 
 type ReportOutput struct {
@@ -54,6 +55,7 @@ func reportHandler(ctx context.Context, _ *mcp.CallToolRequest, in ReportInput) 
 	if err := ask(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(id)+"/report", map[string]string{
 		"status": strings.TrimSpace(in.Status), "recap": in.Summary, "sha": strings.TrimSpace(in.SHA),
 		"no_commit": in.NoCommit, "ask": in.Ask,
+		"kind": strings.TrimSpace(in.Kind),
 	}, &res); err != nil {
 		return nil, out, err
 	}
