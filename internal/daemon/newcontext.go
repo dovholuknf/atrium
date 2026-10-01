@@ -216,6 +216,9 @@ type newContext struct {
 	// capOnly marks the idle parking's capture, which clears nothing and is not
 	// journalled: a restart that cuts it off has nothing to report.
 	capOnly bool
+	// abandoned marks a failed chip seeded at startup from the journal. A
+	// SessionStart cannot clear it: see sessionStarted.
+	abandoned bool
 }
 
 type newContexts struct {
@@ -296,7 +299,7 @@ func (n *newContexts) sessionStarted(taskID, conv string) bool {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	cur := n.by[taskID]
-	if cur == nil || cur.step != NewContextFailed || cur.conv == "" || cur.conv == conv {
+	if cur == nil || cur.step != NewContextFailed || cur.abandoned || cur.conv == "" || cur.conv == conv {
 		return false
 	}
 	delete(n.by, taskID)

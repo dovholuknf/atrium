@@ -32,14 +32,23 @@ type ncJournalRow struct {
 	Since time.Time `json:"since"`
 }
 
-// captureOnly marks a run as the idle parking's, which is never journalled.
-func (n *newContexts) captureOnly(taskID string, gen uint64) {
-	n.mu.Lock()
-	if cur := n.by[taskID]; cur != nil && cur.gen == gen {
-		cur.capOnly = true
+// beginCaptureOnly is begin for the idle parking's run. It is marked before the
+// claim saves, so it is never journalled, not even for a moment.
+func (n *newContexts) beginCaptureOnly(taskID, file, conv string) (uint64, bool) {
+	return n.claim(taskID, &newContext{step: NewContextCapture, file: file, conv: conv, capOnly: true})
+}
+
+// typingHeld reports whether board typing is refused: a new context is typing into
+// the terminal itself. The idle parking's capture is not one, so a person can still
+// type while it waits.
+func (n *newContexts) typingHeld(taskID string) bool {
+	if n == nil {
+		return false
 	}
-	n.mu.Unlock()
-	n.save()
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	cur := n.by[taskID]
+	return cur != nil && cur.step != NewContextFailed && !cur.capOnly
 }
 
 // save hands persist the runs now in flight. A failed chip is not in flight.
@@ -117,6 +126,9 @@ func (n *newContexts) seedFailed(taskID string, row ncJournalRow, reason string)
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	n.gens++
+	// abandoned: the run began in row.Conv, and after a /clear the card resumes on
+	// another, so its SessionStart would otherwise read as proof the clear happened
+	// and delete this chip seconds after startup. See sessionStarted.
 	n.by[taskID] = &newContext{step: NewContextFailed, file: row.File, conv: row.Conv, reason: reason,
-		since: time.Now(), gen: n.gens}
+		since: time.Now(), gen: n.gens, abandoned: true}
 }
