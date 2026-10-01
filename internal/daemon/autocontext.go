@@ -30,6 +30,9 @@ const (
 	AutoContextTag = "atrium:auto-new-context"
 	// NoAutoContextTag always excludes a card, whatever else is set.
 	NoAutoContextTag = "atrium:no-auto-new-context"
+	// ContextCeilingTag holds a card to `context_ceiling_k`, whatever the mode says, and
+	// lets the cycle start on it mid-turn. It is put on directors, by the orchestrator.
+	ContextCeilingTag = "atrium:context-ceiling"
 	// NoticeAutoContext is the launcher's notice for this: one when a run begins, one
 	// when it gives up, one when it left the card large. Keyed in the store per
 	// session, so a restart does not say it twice.
@@ -137,11 +140,22 @@ func (a *autoContexts) forgetExcept(open map[string]bool) {
 
 // autoContextSubject is whether the setting reaches a card at all. Never a fixture, a
 // throwaway or a card with a lent session, whatever the setting.
+//
+// A card wearing ContextCeilingTag is subject whatever the mode, `off` included: the
+// ceiling is its own switch.
 func (d *Daemon) autoContextSubject(t *store.Task, mode string) bool {
-	if t == nil || mode == store.AutoNewContextOff || t.Throwaway || d.fixtureCards()[t.ID] || d.guests.get(t.ID) != nil {
+	if t == nil || t.Throwaway || d.fixtureCards()[t.ID] || d.guests.get(t.ID) != nil {
 		return false
 	}
 	if hasTag(t.Tags, NoAutoContextTag) {
+		return false
+	}
+	return hasTag(t.Tags, ContextCeilingTag) || autoModeSubject(t, mode)
+}
+
+// autoModeSubject is whether the global mode alone reaches a card.
+func autoModeSubject(t *store.Task, mode string) bool {
+	if mode == store.AutoNewContextOff {
 		return false
 	}
 	if hasTag(t.Tags, AutoContextTag) {
@@ -154,8 +168,17 @@ func (d *Daemon) autoContextSubject(t *store.Task, mode string) bool {
 // percent of the window its statusline last reported, whichever is lower. The
 // statusline is used for the window and nothing else. The 30 percent left is room for
 // the capture turn, which costs context and must not be the turn that compacts.
+//
+// A ceiling card is held to the ceiling, and to the global line as well when the mode
+// reaches it too: the lower of the two.
 func (d *Daemon) autoThreshold(t *store.Task) int64 {
 	limit := int64(api.EffectiveAutoNewContextK(d.st)) * 1000
+	if hasTag(t.Tags, ContextCeilingTag) {
+		ceiling := int64(api.EffectiveContextCeilingK(d.st)) * 1000
+		if !autoModeSubject(t, d.st.AutoNewContextMode()) || ceiling < limit {
+			limit = ceiling
+		}
+	}
 	if tel := d.act.telemetry(t.ID); tel != nil && tel.Window > 0 {
 		if w := int64(tel.Window) * 70 / 100; w < limit {
 			limit = w
@@ -164,20 +187,33 @@ func (d *Daemon) autoThreshold(t *store.Task) int64 {
 	return limit
 }
 
-// autoHuman is a card no agent launched. It is subject only when tagged.
-func autoHuman(t *store.Task) bool { return !hasTag(t.Tags, OriginAgentTag) }
+// autoHuman is a card no agent launched. It is subject only when tagged. A ceiling card is
+// never one: the tag is put on directors, which an agent launched, and gets the agent rule.
+func autoHuman(t *store.Task) bool {
+	return !hasTag(t.Tags, OriginAgentTag) && !hasTag(t.Tags, ContextCeilingTag)
+}
 
 // autoReady is the state gates of design section 4, read at the tick.
+//
+// A ceiling card is not held back for being mid-turn or running, since a director sits in
+// long turns and a gate that waits for a prompt never opens on one. The capture asks it to
+// end the turn instead. Every other gate holds. The idle quiet is a fact about a card
+// between turns, so it cannot be asked of one in a turn.
 func (d *Daemon) autoReady(t *store.Task, human bool, now time.Time) bool {
 	id := t.ID
+	ceiling := hasTag(t.Tags, ContextCeilingTag)
 	run := d.sup.get(id)
-	if run == nil || isParked(t) || t.Status != store.StatusNeedsInput {
+	if run == nil || isParked(t) {
+		return false
+	}
+	if t.Status != store.StatusNeedsInput && !(ceiling && t.Status == store.StatusRunning) {
 		return false
 	}
 	if perms, err := d.st.PendingForTask(id); err != nil || len(perms) > 0 {
 		return false
 	}
-	if d.act.midTurn(id) || d.act.dialogOpen(id) || d.act.onSubagents(id) || d.cardRunning(id) {
+	busy := d.act.midTurn(id) || d.cardRunning(id)
+	if (busy && !ceiling) || d.act.dialogOpen(id) || d.act.onSubagents(id) {
 		return false
 	}
 	if n, _ := d.act.backgroundWork(id); n > 0 {
@@ -187,7 +223,8 @@ func (d *Daemon) autoReady(t *store.Task, human bool, now time.Time) bool {
 		if run.watching() || now.Sub(d.rawIdleSince(t)) < autoTiming.humanQuiet {
 			return false
 		}
-	} else if d.act.sinceBusy(id) < time.Duration(d.st.AutoNewContextIdleS())*autoTiming.idleUnit {
+	} else if !(ceiling && busy) &&
+		d.act.sinceBusy(id) < time.Duration(d.st.AutoNewContextIdleS())*autoTiming.idleUnit {
 		return false
 	}
 	if msgs, err := d.st.PendingMessages(id); err != nil || len(msgs) > 0 {
@@ -330,7 +367,8 @@ func (d *Daemon) startAuto(t *store.Task, tokens, threshold int64, human, wakeOn
 		return
 	}
 	file := HandoffName(t)
-	gen, ok := d.nctx.beginAuto(id, file, d.conversationOf(t), tokens, threshold, human, wakeOnly)
+	gen, ok := d.nctx.beginAuto(id, file, d.conversationOf(t), tokens, threshold, human, wakeOnly,
+		hasTag(t.Tags, ContextCeilingTag))
 	if !ok {
 		return
 	}
@@ -379,9 +417,13 @@ func (d *Daemon) autoPrepare(taskID string, gen uint64) error {
 		log.Printf("[atrium] could not record the automatic new context start on %s: %v", taskID, err)
 	}
 	if d.reportsToLauncher(t) {
+		at := "reached"
+		if cur := d.nctx.get(taskID); cur != nil && cur.ceiling {
+			at = "passed its context ceiling at"
+		}
 		d.notifyLauncher(t, NoticeAutoContext, d.ctx.sessionOf(t), fmt.Sprintf(
-			"%s reached %dk and atrium is cycling its context (handoff %s). It will wake and read it, no action needed.",
-			t.WireName, s.tokens/1000, s.file))
+			"%s %s %dk and atrium is cycling its context (handoff %s). It will wake and read it, no action needed.",
+			t.WireName, at, s.tokens/1000, s.file))
 	}
 	return nil
 }

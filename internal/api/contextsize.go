@@ -60,6 +60,16 @@ func checkAutoNewContextK(st *store.Store, value string, typedNotice *string) (s
 	if err != nil || v == "" {
 		return v, err
 	}
+	notice := noticeFloor(st, typedNotice)
+	if n, _ := strconv.Atoi(v); n < notice {
+		return "", fmt.Errorf("auto_new_context_k is %d, below context_threshold_k at %d: the launcher is told at the "+
+			"lower number, so the automatic new context cannot come before it", n, notice)
+	}
+	return v, nil
+}
+
+// noticeFloor is the context threshold in force, or the one typed in the same request.
+func noticeFloor(st *store.Store, typedNotice *string) int {
 	notice := contextThresholdK(st)
 	if typedNotice != nil {
 		tv, terr := checkContextThresholdK(*typedNotice)
@@ -71,11 +81,32 @@ func checkAutoNewContextK(st *store.Store, value string, typedNotice *string) (s
 			notice, _ = strconv.Atoi(tv)
 		}
 	}
-	if n, _ := strconv.Atoi(v); n < notice {
-		return "", fmt.Errorf("auto_new_context_k is %d, below context_threshold_k at %d: the launcher is told at the "+
-			"lower number, so the automatic new context cannot come before it", n, notice)
+	return notice
+}
+
+// checkContextCeilingK validates a typed ceiling, with the same floor as the automatic threshold.
+func checkContextCeilingK(st *store.Store, value string, typedNotice *string) (string, error) {
+	v, err := store.CheckContextCeilingK(value)
+	if err != nil || v == "" {
+		return v, err
+	}
+	if notice := noticeFloor(st, typedNotice); mustAtoi(v) < notice {
+		return "", fmt.Errorf("context_ceiling_k is %s, below context_threshold_k at %d: the launcher is told at the "+
+			"lower number, so the ceiling cannot come before it", v, notice)
 	}
 	return v, nil
+}
+
+func mustAtoi(s string) int { n, _ := strconv.Atoi(s); return n }
+
+// EffectiveContextCeilingK is the ceiling in force, in thousands of tokens, never below the context
+// threshold, for the same reason as EffectiveAutoNewContextK.
+func EffectiveContextCeilingK(st *store.Store) int {
+	k := st.ContextCeilingK()
+	if floor := contextThresholdK(st); k < floor {
+		k = floor
+	}
+	return k
 }
 
 // autoNewContextView is the automatic new context as stored, and what is in force.
@@ -84,10 +115,15 @@ func autoNewContextView(st *store.Store, out map[string]any) {
 		store.SettingAutoNewContext:      "auto_new_context",
 		store.SettingAutoNewContextK:     "auto_new_context_k",
 		store.SettingAutoNewContextIdleS: "auto_new_context_idle_s",
+		store.SettingContextCeilingK:     "context_ceiling_k",
 	} {
 		v, _ := st.Setting(key)
 		out[field] = v
 	}
+	out["context_ceiling_k_now"] = EffectiveContextCeilingK(st)
+	out["context_ceiling_k_default"] = store.DefaultContextCeilingK
+	out["context_ceiling_k_min"] = store.MinContextCeilingK
+	out["context_ceiling_k_max"] = store.MaxContextCeilingK
 	out["auto_new_context_now"] = st.AutoNewContextMode()
 	out["auto_new_context_modes"] = []string{store.AutoNewContextOff, store.AutoNewContextTagged, store.AutoNewContextAgents}
 	out["auto_new_context_k_now"] = EffectiveAutoNewContextK(st)
