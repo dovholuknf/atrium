@@ -101,6 +101,12 @@
   }
 
   function grow(ta, maxLines) {
+    // Measuring the box takes it to its natural height for a moment, which lets the thread above it grow and clamp its
+    // scroll position. The thread's place is put back, so typing never moves it.
+    const sc = document.getElementById("m-card-scroll"), top = sc ? sc.scrollTop : 0;
+    try { growNow(ta, maxLines); } finally { if (sc && sc.scrollTop !== top) sc.scrollTop = top; }
+  }
+  function growNow(ta, maxLines) {
     ta.style.height = "auto";
     const cs = getComputedStyle(ta);
     const line = parseFloat(cs.lineHeight) || 22;
