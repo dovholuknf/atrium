@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/edge"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -59,8 +60,8 @@ func (p *Proxy) serveGit(w http.ResponseWriter, r *http.Request, sub string) {
 		w.WriteHeader(code)
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": msg})
 	}
-	if !loopbackRemote(r.RemoteAddr) {
-		fail(http.StatusForbidden, "git sync is started only from the machine the hub runs on")
+	if !edge.LocalOperator(r) {
+		fail(http.StatusForbidden, "git sync is started only from the machine the hub runs on"+edge.ProxyNote(r))
 		return
 	}
 	if sub == "git/status" {

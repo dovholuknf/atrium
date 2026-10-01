@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/cardurl"
+	"github.com/dovholuknf/atrium/internal/edge"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/webasset"
 )
@@ -1290,11 +1291,11 @@ func (p *Proxy) serveControl(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if !loopbackRemote(r.RemoteAddr) {
+	if !edge.LocalOperator(r) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusForbidden)
-		fmt.Fprint(w, `{"error":"the control server is reachable only from the machine the `+
-			`hub runs on. it is not exposed over an overlay."}`)
+		fmt.Fprintf(w, `{"error":%q}`, "the control server is reachable only from the machine the "+
+			"hub runs on. it is not exposed over an overlay"+edge.ProxyNote(r))
 		return
 	}
 	p.control.ServeHTTP(w, r)
@@ -1315,9 +1316,9 @@ func (p *Proxy) serveNudge(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, `{"error":%q}`, "that has to be a POST")
 		return
 	}
-	if !loopbackRemote(r.RemoteAddr) {
+	if !edge.LocalOperator(r) {
 		w.WriteHeader(http.StatusForbidden)
-		fmt.Fprintf(w, `{"error":%q}`, "only the machine the hub runs on can tell it its store changed")
+		fmt.Fprintf(w, `{"error":%q}`, "only the machine the hub runs on can tell it its store changed"+edge.ProxyNote(r))
 		return
 	}
 	p.feeds.roomsChanged()
