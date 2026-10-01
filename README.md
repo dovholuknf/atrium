@@ -251,6 +251,11 @@ board having lost everything. The daemon says so loudly when the database is not
 | `atrium peers` / `tell` | The other sessions this one can address, and saying something to one. Queued, never typed. |
 | `atrium name [<name>]` | Name this atrium once, so two machines cannot claim each other's cards. |
 
+Not a subcommand, but the same kind of reference: `POST /v1/tasks/{id}/model` with `{"model":"sonnet|opus|haiku|fable|claude-..."}`
+switches a live Claude card's model. Atrium types `/model <id>` into the terminal it owns, with no new context and no
+relaunch, and records the model on the card so a resume keeps it. A card with no atrium terminal, or that is not Claude,
+answers 409. The control tool `atrium_model` makes the same call.
+
 ## Scope, and what is not built
 
 This is a personal tool. The parts that are missing are missing on purpose, or are simply next.

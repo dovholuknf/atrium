@@ -25,7 +25,7 @@ func switchModel(t *testing.T, d *Daemon, id, body string) (int, map[string]any)
 	return rec.Code, out
 }
 
-// modelEvents are the card's model-switch events, oldest first.
+// modelEvents are the card's model-switch events, oldest first (as Events returns them).
 func modelEvents(t *testing.T, d *Daemon, id string) []map[string]any {
 	t.Helper()
 	evs, err := d.st.Events(id, 50)
@@ -33,7 +33,7 @@ func modelEvents(t *testing.T, d *Daemon, id string) []map[string]any {
 		t.Fatal(err)
 	}
 	var out []map[string]any
-	for i := len(evs) - 1; i >= 0; i-- {
+	for i := range evs {
 		if evs[i].Kind != store.EventNotified {
 			continue
 		}
@@ -195,7 +195,7 @@ func TestAModelSwitchWaitsForTheLineAndThenTypes(t *testing.T) {
 	r.typeMu.Unlock()
 
 	deadline := time.Now().Add(5 * time.Second)
-	for f.written() == "" && time.Now().Before(deadline) {
+	for !strings.HasSuffix(f.written(), "") && time.Now().Before(deadline) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	if got := f.written(); got != "/model haiku\r" {
@@ -233,7 +233,7 @@ func TestANewerModelSwitchReplacesAWaitingOne(t *testing.T) {
 	r.typeMu.Unlock()
 
 	deadline := time.Now().Add(5 * time.Second)
-	for f.written() == "" && time.Now().Before(deadline) {
+	for !strings.HasSuffix(f.written(), "") && time.Now().Before(deadline) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	time.Sleep(100 * time.Millisecond)
