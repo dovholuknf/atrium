@@ -69,3 +69,36 @@ HOLD e502b215..6e4ff979 on the medium. Re-read e502b215..tip, hub-ok and room-ok
 Quality: after the Sonnet switch, the JS items are careful and complete. The Go fix rests on a cause the commit says was
 inferred without reading a live transcript, and the test was written to the inferred shape, so it passes without
 showing the bug was ever reproduced.
+
+## Re-read: 23e23760 (2026-10-01)
+
+Range e502b215..23e23760, one new commit on top of 6e4ff979. Unsigned, noted.
+
+`queuedPromptOf` reads a main-chain `attachment` line whose `attachment.type` is `queued_command` and whose
+`commandMode` is `prompt` (or empty), and passes `attachment.prompt` through `promptOf`. Both `turnIndex.feed` and
+`textScan.feed` call it first. The origin filter in turns.go is back as it was, so the two files agree again and the
+low is closed.
+
+Checked against this machine's transcripts (about 4,400 queued_command lines):
+
+- `commandMode` `task-notification` lines (about 1,250) are refused by the mode test. Their text also starts with `<`.
+- `peer` prompts start with `<` and `promptOf` drops them, the same as a peer user line, which is `isMeta`.
+- The `coordinator` ones are all sidechain and refused.
+- A prompt can be an array (87 lines), which `promptOf` already reads.
+- In 15 transcripts, no queued prompt also appears later as a user line, so a quote is not listed twice.
+
+Tests at 23e23760: vet clean. Every daemon test matching Queued, Changes, Turn, Replies or Prompt passes, and so does my
+proof from proof-6e4ff979. `gofmt -l` names internal/daemon/fyi_test.go, which this range does not touch.
+
+### New
+
+- NIT: `textScan.feed` returns before it sets `firstAt`, so when the first timed line of a tail read is a queued prompt,
+  `firstAt` comes from the line after it. The window is then said to be complete from a little later than it is. That
+  errs safe and costs at most one prompt at a page seam.
+
+### Verdict
+
+OK hub and room e502b215..23e23760.
+
+Quality: after the Sonnet switch, the round-2 fix is the one asked for, in both readers, with a test of the real line
+shape that fails on the old code. Good.
