@@ -499,6 +499,8 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 		// Without it a say to a parked card is refused with nothing queued. The
 		// operator's own say (no `from`) wakes it regardless.
 		Wake bool `json:"wake"`
+		// Kind is `fyi` or `needs`. See fyi.go.
+		Kind string `json:"kind"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&body); err != nil {
 		writeJSONErr(w, http.StatusBadRequest, err)
@@ -535,6 +537,19 @@ func (d *Daemon) handleMessage(w http.ResponseWriter, r *http.Request) {
 				"%s has sent %d messages in the last minute, which is the limit",
 				from, peerSendsPerMinute))
 			return
+		}
+		// AN FYI TO A CARD THAT HOLDS ITS NOTICES waits on that card. Not typed, not queued.
+		if parseKind(body.Kind) == KindFYI && !body.Reply {
+			if target, err := d.st.Get(taskID); err == nil {
+				if sender := d.fyiSender(from, target); sender != nil {
+					d.holdFyi(sender, target, "say", strings.TrimSpace(body.Text))
+					writeJSONCode(w, http.StatusOK, map[string]any{
+						"delivered": "held", "reachable": "held", "when": whenWord(waitTurn),
+						"note": "held on the card as an fyi. it reads it with atrium_task notices.",
+					})
+					return
+				}
+			}
 		}
 	}
 

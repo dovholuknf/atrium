@@ -69,6 +69,8 @@ type FinishRequest struct {
 	NoCommit string `json:"no_commit,omitempty"`
 	// Ask is what a `blocked` or `question` needs. Required for both.
 	Ask string `json:"ask,omitempty"`
+	// Kind is `fyi` or `needs`. See fyi.go. Anything but fyi is needs.
+	Kind string `json:"kind,omitempty"`
 }
 
 // handleFinish answers a session declaring its work over.
@@ -261,9 +263,18 @@ func (d *Daemon) finish(task *store.Task, in FinishRequest) (map[string]any, int
 	// The launcher hears it, verbatim, queued in the same transaction so a
 	// crash cannot record the report and lose the notice. Keyed on the moment,
 	// so every report is sent once. A card nobody launched has nobody to tell.
-	if launcher := d.launcherOf(task); launcher != nil {
+	launcher := d.launcherOf(task)
+	// AN FYI THAT THE LAUNCHER HOLDS is held like any notice. A blocked or a question report
+	// is never news, whatever it was labelled.
+	heldFYI := parseKind(in.Kind) == KindFYI && in.Status != ReportBlocked && in.Status != ReportQuestion &&
+		holdsNotices(launcher)
+	if launcher != nil {
+		source := NoticeReport
+		if heldFYI {
+			source = NoticeFYI
+		}
 		write.Notice = &store.NoticeSpec{
-			ToID: launcher.ID, From: task.WireName, Source: NoticeReport,
+			ToID: launcher.ID, From: task.WireName, Source: source,
 			Key:  time.Now().UTC().Format(time.RFC3339Nano),
 			Text: truncatePeer(reportBody(task, in.Status, sha, unverified, recap)),
 		}
@@ -278,7 +289,7 @@ func (d *Daemon) finish(task *store.Task, in FinishRequest) (map[string]any, int
 	// or carried by a hook like any other, so it is never typed here. See park.go.
 	// A launcher that holds reports reads them when it asks, so it stays parked.
 	if write.Notice != nil {
-		if launcher, err := d.st.Get(write.Notice.ToID); err == nil && isParked(launcher) && !holdsReports(launcher) {
+		if launcher, err := d.st.Get(write.Notice.ToID); err == nil && isParked(launcher) && !holdsReports(launcher) && !heldFYI {
 			if err := d.unpark(launcher.ID, "report"); err != nil {
 				log.Printf("[atrium] could not resume %s for a report: %v", launcher.DisplayTitle(), err)
 			}

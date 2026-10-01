@@ -982,10 +982,10 @@ type heldNotice struct {
 	Source string `json:"source"`
 	// Kind is `fyi` for news a worker or peer sent you with kind fyi, and absent for
 	// an automatic notice. About says who sent it.
-	Kind   string `json:"kind,omitempty"`
-	About  string `json:"about,omitempty"`
-	Card   string `json:"about_card,omitempty"`
-	Text   string `json:"text"`
+	Kind  string `json:"kind,omitempty"`
+	About string `json:"about,omitempty"`
+	Card  string `json:"about_card,omitempty"`
+	Text  string `json:"text"`
 }
 
 type taskOutput struct {
