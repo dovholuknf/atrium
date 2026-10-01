@@ -933,7 +933,7 @@ func (r *runner) Say(text string) error {
 // This keeps long peer messages together even if the PTY delivers chunks
 // (B2-47). Other runners get plain text to avoid displaying escape sequences.
 func (r *runner) SayPasted(text string) error {
-	if err := r.Write([]byte("\x1b[200~" + text + "\x1b[201~")); err != nil {
+	if err := r.Write([]byte(bracketedPaste(text))); err != nil {
 		return err
 	}
 	time.Sleep(sayThenEnter)
