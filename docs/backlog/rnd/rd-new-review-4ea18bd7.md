@@ -111,3 +111,54 @@ section 2, 3, 5 and 6 changes.
 Quality: strong. It is grounded in file:line facts, takes over f-004 section 3 cleanly, and answers the 2026-10-01
 failure directly. The gap is concurrency: the old card is treated as still while the move runs, and the hub as
 never restarting.
+
+## Re-read at 3195e7c0 (2026-10-01, m1mini): OK
+
+One commit over 4ea18bd7, the design only. Every point of the HOLD is answered.
+
+- **High 1, closed.** 3.2 waits for idle (1), freezes (2), checks idle and clean again (3), and captures (4) before
+  the branch carry (5). The tree is final when it is carried.
+- **High 2, closed.** The freeze runs from 3.2 step 2 to the cut-over. It refuses input as a new context does, and
+  says, reports, notices, nags and wakes all go to one queue with ids, so nothing is typed in. Parking the old runner
+  (step 7) before the successor resumes (step 8) means one live session per conversation at every moment. That is
+  stronger than I asked for.
+- **The list, closed.** Prepare all, then cut all over, and a failure in phase 2 undoes every card newest first. The
+  cost is a whole list frozen together, now Q6 for clint.
+- **Re-checks, closed.** A per-row "checked again" column. Row 11 fails closed for any worktree card unless
+  `--no-land`, so it no longer depends on a tag.
+- **Step 7, closed.** B takes the alias first, and `resolvePeer` prefers the card a `moved_to` names, so there is no
+  gap. Forwarding is by id, with dedup and an ack before A drops. The move record has idempotent steps (the
+  successor's `task_id` comes from the move id), resume or undo at start, a lease so A can undo itself, and a rule
+  each side of `moved_to` for a successor that dies.
+- **Section 5, closed.** One lookup for `sayGate`, `currentLauncher` and the fallback, 8 hops, a cycle check, and the
+  handle reserved.
+- **Lower, closed.** The memory folder is carried, B writes through safepath and an allowlist, and per-card env is
+  stated as not reproduced.
+
+### Conditions on M3 (the landing op), not a hold on the design
+
+1. **Design and doc commits have no verdict trailer.** Section 6 rule 3 refuses any commit not covered by an
+   `Atrium-Verdict` OK range, except QUEUE.md. @review's rule is that design and doc reviews carry no trailers, so
+   this design, the backlog filings in this range and every later doc commit could never land through the op. Add a
+   trailer kind for them, for example `Atrium-Verdict: doc-ok <base>..<tip>`, and @review starts writing it. A wider
+   exemption would also do it, but it is the weaker fix.
+2. **"Every non-merge commit" lets a merge carry unreviewed content.** A merge whose tree differs from the clean
+   merge of its parents (a hand conflict resolution, or an amended merge) adds changes no verdict covers. The check
+   accepts a merge only if its tree equals `git merge-tree` of its parents. Otherwise its own diff needs coverage.
+3. **State the trust.** Trailers are text, and m1mini and sg3 commits are unsigned, so any director can write one.
+   The check catches mistakes, not a hostile director. Count a verdict only from a commit that touches nothing but
+   `docs/backlog/*/*-new-review-*.md` (or `review-new-*.md`), and say that signing @review's commits is what would
+   make it a guarantee.
+
+### Lows
+
+- The lease against `moved_to`: A's self-undo when the lease lapses, and the hub's step 1, race. A refuses to set
+  `moved_to` once its lease has lapsed, and undoes only while `moved_to` is unset, both under one lock on A.
+- In step 8 the successor is a live session with tools, told not to act until the cut-over note. Launch it
+  with the gate on and nothing auto-approved until the cut-over, so being "told" is not the only guard.
+- Between 3.3 step 3 and step 5 the old card is not done yet. Say that anything arriving then still enters the
+  queue and is forwarded. The text says "from now on its freeze queue forwards", which covers it if the queue stays
+  open until step 5.
+
+Verdict: OK. The design can go to clint with Q1 to Q6. M3's landing op must take conditions 1 to 3. The doc commits
+in claude/main..claude/rnd are OK as filed.
