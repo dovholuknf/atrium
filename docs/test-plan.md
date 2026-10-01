@@ -7969,3 +7969,10 @@ Needs a hub with one room and two browsers on the board. `curl` stands in for th
    card writes a reply with text, mid-turn, `output_at` moves within a second, and a `task` event carries it.
 2. A tool call with no text, or a subagent's reply, does not move it.
 3. /m open on that card re-reads its replies when `output_at` moves (the @ui half).
+
+## HJ. A card's replies carry what was said to it (r-new-replies-prompts)
+
+1. Type a line at a Claude card's terminal, send one from the desktop board, and `atrium tell` it something.
+   `curl -s 'http://127.0.0.1:7778/v1/tasks/<id>/replies?n=5' | jq .prompts`: the first two are `operator`, the
+   third `peer`, oldest first. A `/clear` shows as one `command` line.
+2. No tool result, `<task-notification>` or subagent prompt appears in `prompts`. `replies` is as before.
