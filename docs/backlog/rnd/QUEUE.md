@@ -43,4 +43,5 @@ Nothing. From 2026-09-30 evening, UI work only (clint): design what feeds @ui, t
 (f82f3284), card URLs (f7110c24, 5a98ea61), security design (2d4e19b1, codex rounds to a85f2c10), held-message
 escalation (64fadc33, 178362d1), resume says continue (bae9c707), review of u-popout-notify (ac94fa51), lean context
 cycle (81a1fd5c), Defender advice (0c442bee), machine health (60adacbb), open with the system
-(f0e0d97e), reply suggestions (`docs/rnd/reply-suggestions-design.md`).
+(f0e0d97e), reply suggestions (`docs/rnd/reply-suggestions-design.md`), local proxy trust (e0b6c860), factory shape
+and hub orchestration (`docs/rnd/factory-shape.md`, clint via the orchestrator, design only).
