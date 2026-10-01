@@ -227,6 +227,7 @@
        Both controls sit here rather than in the gear: they change what you are
        looking at, and a control that does that belongs next to the thing. -->
   <div class="filters" id="board-bar" hidden>
+    <button type="button" class="filtersbtn" data-for="board" aria-expanded="false">filters <b class="fcount" hidden></b></button>
     <span class="barlabel">group</span>
     <div class="seg groupseg" id="board-group"></div>
     <span class="barlabel">sort</span>
@@ -252,6 +253,7 @@
       <input type="search" id="stack-q"
         placeholder="name, path, runner or tag. #tag for one tag"
         spellcheck="false">
+      <button type="button" class="filtersbtn" data-for="stack" aria-expanded="false">filters <b class="fcount" hidden></b></button>
       <span class="matchcount" id="stack-match"></span>
     </div>
     <!-- Sort and group are two different questions, so two controls. Sorting
@@ -3384,6 +3386,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/alias.js"></script>
 <script src="/js/heldline.js"></script>
 <script src="/js/phone-bell.js"></script>
+<script src="/js/phone-filters.js"></script>
 <script src="/js/settings.js"></script>
 <script src="/js/overlays.js"></script>
 <script src="/js/expose2.js"></script>
