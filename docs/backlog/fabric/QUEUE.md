@@ -10,6 +10,31 @@ landed unreviewed with a HIGH). Land only what @review has passed, at the sha it
 Each item: what it is, where the spec is, and its state. @fabric moves an item to "Done" with its landing sha when it
 is live.
 
+## Handoff, 2026-10-01 ~19:00, the move from claude-sg4 to m1mini
+
+@fabric moves to m1mini. Read `HANDOFF.fabric.md` in the worktree for the long version. In short:
+
+- **In flight:** nothing. Everything of mine has landed, the last being the burn-chart merge 6953184a (relay for @ui).
+- **Pause holds** (clint, 2026-10-01): no new item and no new worker until the orchestrator lifts it.
+- **Landing from m1mini:** merge onto `claude/landing` in the m1mini clone, branched from claude/main, never onto
+  claude/main there. The hub collects claude/landing into sg4 and the orchestrator fast-forwards sg4's claude/main to
+  it. Tell the orchestrator the claude/landing tip and the @review verdict. Land only the sha @review passed.
+- **Relay duty is over:** m1mini worktrees share one clone, so a director reads any m1mini branch locally. A branch
+  that lives on sg3 is not readable from m1mini, so such work parks until the git route is settled.
+- **Waiting on clint:** Defender exclusions on sg3 and sg4 (item 0), `hooks.claude` on m1mini and sg3, auto-login for
+  user `claude` on m1mini.
+- **Waiting on @ui:** the `'rooms'` TypeError in groupDrag, growlActions, peekEverywhere, termDebug and the
+  context-size page. Then I rerun `node scripts/test-board-sharded.js --save-weights` (runs local, needs NODE_PATH at
+  a worktree with node_modules) and send only `scripts/board-suite-weights.json` through @review.
+- **Open nits:** @review's D1 nits (cap the isText back-up loop at 3 steps in hubstore, a docOrigin comment above
+  docBy in internal/link/docs_api.go, `/m/docs/` trailing slash 404), the line over 120 chars in room-defender (0b),
+  and board-suite-remote args that cannot hold a space.
+- **Owed by the orchestrator:** a hub deploy for d77d21d0, 0963c4c6 (pulls view) and 370dcb61 (pulls 404 text).
+- **Reports** go to the orchestrator as an atrium say (card 01a0f2da on sg4-control). `notes\director-reports.md` on
+  sg4 is not reachable from m1mini.
+- **Hooks:** scripts, not typed git, for anything the branch guard refuses. The guard reads the shell's starting
+  directory, so a detached HEAD there blocks `rebase`, `add` and `switch` for later calls.
+
 ## Queue
 
 0z. **D1, hub documents, the hub half** (orchestrator, 2026-09-30 ~22:00: clint approved building it, exempt from the
