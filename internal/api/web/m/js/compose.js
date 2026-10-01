@@ -201,7 +201,7 @@
     host.replaceChildren(root);
 
     const state = {
-      el: root, host, id: cardId, offs, sending: false, pasteOK: null, ta, refresh: () => refresh(),
+      el: root, host, id: cardId, offs, sending: 0, pasteOK: null, ta, refresh: () => refresh(),
       atts: [], uploading: 0, last: "", opts, files
     };
     cur = state;
@@ -217,7 +217,7 @@
     };
     const refresh = () => {
       // Not while a file is still going up: the message would leave without its path.
-      send.disabled = !ta.value.trim() || state.sending || state.uploading > 0;
+      send.disabled = !ta.value.trim() || state.uploading > 0;
       writeDraft(cardId, ta.value);
       grow(ta, maxLines);
     };
@@ -300,14 +300,27 @@
       }
     }
 
+    // A SEND FREES THE BOX AT ONCE. The text leaves the box, the draft and the chips as soon as it is sent, the box
+    // takes the next message while this one is in flight, and the answer only decides what the note says. A send
+    // that fails puts its text back in front of whatever has been typed since. `m-send` tells card.js, which
+    // draws the message in the thread as pending and then as delivered, queued or not sent.
+    let sendSeq = 0;
+    const tell = (name, detail) => { try { window.dispatchEvent(new CustomEvent(name, { detail })); } catch (e) {} };
     async function submit() {
-      if (state.sending) return;
       let text = ta.value.trim();
       if (!text) return;
-      state.sending = true;
-      send.disabled = true;
+      const key = cardId + ":" + (++sendSeq);
+      const typed = text;
+      ta.value = "";
+      state.last = "";
+      writeDraft(cardId, "");
+      clearAtts(state);
+      state.sending++;
       root.classList.add("sending");
       say("busy", "sending");
+      refresh();
+      ta.focus({ preventScroll: true });
+      tell("m-send", { id: cardId, key, text: typed, state: "pending" });
       let ok = false;
       try {
         // An unknown capability is read as "cannot", so a send never guesses a paste into a runner that
@@ -331,21 +344,20 @@
         if (!o || !o.kind) o = { kind: "sent", text: "sent" };
         ok = o.kind !== "refused";
         say(o.kind, o.text + (ok && joined ? " (line breaks joined)" : ""));
-        if (ok) {
-          // card.js keeps the operator's side of the thread, since the room returns only the session's replies.
-          try { window.dispatchEvent(new CustomEvent("m-sent", { detail: { id: cardId, text } })); } catch (e) {}
-          ta.value = "";
-          writeDraft(cardId, "");
-          clearAtts(state);
-        }
+        if (ok) tell("m-sent", { id: cardId, text, kind: o.kind });
+        tell("m-send", { id: cardId, key, text, state: ok ? o.kind : "failed" });
       } catch (e) {
-        // The text stays where it is.
         say("refused", "not sent: " + (e && e.message ? e.message : e));
+        tell("m-send", { id: cardId, key, text: typed, state: "failed" });
       } finally {
-        state.sending = false;
-        root.classList.remove("sending");
+        state.sending--;
+        if (!state.sending) root.classList.remove("sending");
+        if (!ok) {
+          // Back in the box, ahead of anything typed since.
+          ta.value = typed + (ta.value ? "\n" + ta.value : "");
+          state.last = ta.value;
+        }
         refresh();
-        if (ok) ta.focus();
       }
     }
 
