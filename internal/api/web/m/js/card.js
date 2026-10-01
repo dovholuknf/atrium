@@ -411,6 +411,43 @@
   }
 
   // A touch, pointer, wheel or key in the thread lets go of the end at once, before any scroll event.
+  // ── pull down at the very top to reload ──────────────────────────────────
+  // The thread keeps the browser's own pull-to-refresh out (overscroll is contained so a drag at its top does not chain to
+  // the page), so the card has its own: a single finger that goes down at scrollTop 0 and is dragged down far enough
+  // reloads the page. Never from mid-thread, never while older entries are being read, never with a sheet or the picker
+  // open, and it never moves the thread, so it cannot meet the follow rules.
+  const PULL_AT = 80;
+  function olderBusy() { return typeof older === "function" && !!openId && older(openId).busy; }
+  function pullInit() {
+    const ind = q("m-pull");
+    if (!ind) return;
+    let g = null;
+    const reset = () => { g = null; ind.hidden = true; ind.classList.remove("go"); ind.style.removeProperty("--pull"); ind.style.transform = ""; };
+    els.scroll.addEventListener("touchstart", e => {
+      g = null;
+      if (e.touches.length !== 1 || els.scroll.scrollTop > 0 || olderBusy() || !els.recap.hidden || !els.menu.hidden || typing) return;
+      g = { y: e.touches[0].clientY, d: 0 };
+    }, { passive: true });
+    els.scroll.addEventListener("touchmove", e => {
+      if (!g) return;
+      if (e.touches.length !== 1 || els.scroll.scrollTop > 0 || olderBusy()) { reset(); return; }
+      const dy = e.touches[0].clientY - g.y;
+      if (dy <= 0) { g.d = 0; ind.hidden = true; return; }
+      g.d = dy;
+      e.preventDefault();
+      ind.hidden = false;
+      ind.style.setProperty("--pull", String(Math.min(100, Math.round(dy / PULL_AT * 100))));
+      ind.style.transform = "translateY(" + Math.min(dy, PULL_AT + 20) * 0.6 + "px)";
+      ind.classList.toggle("go", dy >= PULL_AT);
+    }, { passive: false });
+    const end = () => {
+      const go = g && g.d >= PULL_AT && els.scroll.scrollTop <= 0 && !olderBusy();
+      if (go) { ind.classList.add("go"); setTimeout(() => location.reload(), 120); } else reset();
+    };
+    els.scroll.addEventListener("touchend", end);
+    els.scroll.addEventListener("touchcancel", reset);
+  }
+
   function byHand(e) {
     userAt = Date.now();
     if (!els) return;
@@ -763,6 +800,7 @@
       [els.scroll, els.head, els.notices, els.replies, els.extras, els.perms].forEach(e => ro.observe(e));
     }
     pinchInit();
+    pullInit();
     els.scroll.addEventListener("load", () => { if (openId) toEnd(); }, true);
     els.jump.addEventListener("click", () => { typingOff(); stick = true; syncAnchor(); toEnd(true); });
     ["touchend", "touchcancel", "pointerup", "pointercancel"].forEach(n => els.scroll.addEventListener(n, byHandEnd, { passive: true }));
