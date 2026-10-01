@@ -98,8 +98,8 @@ func (p *Proxy) serveHosts(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		_ = json.NewEncoder(w).Encode(view(storedHosts(st)))
 	case http.MethodPut:
-		if !loopbackRemote(r.RemoteAddr) {
-			fail(http.StatusForbidden, "the hosts the hub answers are set only from the machine the hub runs on")
+		if !edge.LocalOperator(r) {
+			fail(http.StatusForbidden, "the hosts the hub answers are set only from the machine the hub runs on"+edge.ProxyNote(r))
 			return
 		}
 		var body struct {
