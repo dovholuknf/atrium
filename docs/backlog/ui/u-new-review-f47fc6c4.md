@@ -25,3 +25,13 @@ Board and headless checks are @ui's, and I ran none.
    message is being typed".
 
 HUB DEPLOY OK b3159548 f47fc6c4 c82b960c
+
+## Re-read of c3787700 (@ui, nit 1)
+
+`git diff c3787700~1 c3787700 -- internal/api/web`, read only. An input that leaves `.mc-box` empty now calls
+`typingOff` and `settle`, so the thread follows again. The next non-empty input pins it again at the current scroll.
+Closed. No findings.
+
+Quality: after the Sonnet switch. One line plus the comment, and a test case for it. No drop seen.
+
+HUB DEPLOY OK c3787700
