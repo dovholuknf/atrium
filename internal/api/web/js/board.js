@@ -341,7 +341,7 @@ function firstSeen(iso) {
 
 const isWaiting = (t) => t.status === "needs-input" || t.status === "needs-permission";
 
-const VIEWS = ["board", "stack", "perms", "runners", "terms", "history", "usage", "audit"];
+const VIEWS = ["board", "stack", "perms", "runners", "terms", "history", "usage", "audit", "pulls"];
 
 // BACK AND FORWARD, over the board's own moves.
 //
@@ -448,6 +448,8 @@ function switchView(name) {
   // worth polling while you are reading something else. It also refreshes on an
   // `audit` delta and on stream reconnect. See js/audit.js.
   if (name === "audit" && typeof loadAudit === "function") loadAudit();
+  // Read once. The rows are kept current by `pr` events and by the stream reopening. See js/pulls.js.
+  if (name === "pulls" && typeof loadPulls === "function" && !pulls.loaded) loadPulls();
   // Where you were, so a reload puts you back. A restart of the daemon
   // reloads every board it is serving, and landing on the board every time
   // meant two clicks to get back to the terminal you were reading.

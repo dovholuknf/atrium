@@ -309,10 +309,15 @@ async function confirmTestShown(tag) {
 }
 
 // Title carries the count so a background tab still tells you.
+let titleParts = [0, 0];
 function retitle(waiting, perms) {
-  const n = (waiting || 0) + (perms || 0);
+  titleParts = [waiting, perms];
+  const n = (waiting || 0) + (perms || 0) + (typeof pullsNavN === "number" ? pullsNavN : 0);
   document.title = n ? `(${n}) atrium` : "atrium";
 }
+
+// The title again, for a count that moved without a refresh pass: the pulls rows.
+function retitleAgain() { retitle(titleParts[0], titleParts[1]); }
 
 function badge(id, n) {
   const el = document.getElementById(id);
@@ -1164,7 +1169,9 @@ function repaintLists(signal, fromStore) {
     // The audit pane is live by its own `audit` delta (see `onAuditEvent`), so a
     // board event has nothing to repaint there. Without a line it logged "no
     // renderer" on every refresh pass while the pane was open.
-    audit: () => Promise.resolve()
+    audit: () => Promise.resolve(),
+    // Live by its own `pr` events, like the audit pane. See js/pulls.js.
+    pulls: () => { pullsPaint(); return Promise.resolve(); }
   }[view];
   // A VIEW NOBODY WIRED UP MUST NOT STOP THE REPAINT. Every other list on the
   // page is behind this call, and one unknown tab name would silently freeze
@@ -1674,6 +1681,8 @@ function connect() {
     // Rows written while the stream was down were never announced, so an open
     // usage tab reads again.
     if (typeof onUsageStreamOpen === "function") onUsageStreamOpen();
+    // Same for the pulls rows: an event may have been missed. See js/pulls.js.
+    if (typeof onPullsStreamOpen === "function") onPullsStreamOpen();
     // A hub restart cover comes down on the stream coming back, and a pause is
     // re-read. See js/hubrestart.js.
     if (typeof onHubStreamOpen === "function") onHubStreamOpen();
@@ -1728,6 +1737,10 @@ function connect() {
   // is open, so a closed pane pays nothing. The pane also re-fetches on this
   // stream reopening via `refreshSoon`'s siblings and on being switched to. See
   // js/audit.js.
+  // A review row changed: the whole row, which replaces the one held. See js/pulls.js.
+  es.addEventListener("pr", e => {
+    if (typeof onPrEvent === "function") onPrEvent(e);
+  });
   es.addEventListener("audit", () => {
     if (typeof onAuditEvent === "function") onAuditEvent();
   });
