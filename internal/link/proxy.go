@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/cardurl"
+	"github.com/dovholuknf/atrium/internal/edge"
 	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/webasset"
 )
@@ -125,6 +126,9 @@ func NewProxy(hub *Hub, board fs.FS, boardID string, room func() string) *Proxy 
 		p.assets = webasset.New(board)
 	}
 	p.feeds = newFeeds(p)
+	hub.every.mu.Lock()
+	hub.every.onChange = p.feeds.everywhereChanged
+	hub.every.mu.Unlock()
 	// A ROOM'S STREAM COMING UP is when the board-wide approver sweeps that room.
 	// See autoapprove.go.
 	p.feeds.connected = func(room string) {
@@ -1056,6 +1060,7 @@ type ShareAuth struct {
 // permission chain is then whatever each room's own gate does, exactly as
 // before. See autoapprove.go.
 func (p *Proxy) SetInventory(s Inventory) {
+	p.hub.every.setHolding(s)
 	p.mu.Lock()
 	p.stock = s
 	if p.approver == nil {
@@ -1240,6 +1245,7 @@ func (p *Proxy) forgetInventory(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, `{"error":%q}`, err.Error())
 		return
 	}
+	p.hub.every.drop(body.Name)
 	p.feeds.roomsChanged()
 	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
 }
@@ -1290,11 +1296,11 @@ func (p *Proxy) serveControl(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if !loopbackRemote(r.RemoteAddr) {
+	if !edge.LocalOperator(r) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusForbidden)
-		fmt.Fprint(w, `{"error":"the control server is reachable only from the machine the `+
-			`hub runs on. it is not exposed over an overlay."}`)
+		fmt.Fprintf(w, `{"error":%q}`, "the control server is reachable only from the machine the "+
+			"hub runs on. it is not exposed over an overlay"+edge.ProxyNote(r))
 		return
 	}
 	p.control.ServeHTTP(w, r)
@@ -1315,9 +1321,9 @@ func (p *Proxy) serveNudge(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, `{"error":%q}`, "that has to be a POST")
 		return
 	}
-	if !loopbackRemote(r.RemoteAddr) {
+	if !edge.LocalOperator(r) {
 		w.WriteHeader(http.StatusForbidden)
-		fmt.Fprintf(w, `{"error":%q}`, "only the machine the hub runs on can tell it its store changed")
+		fmt.Fprintf(w, `{"error":%q}`, "only the machine the hub runs on can tell it its store changed"+edge.ProxyNote(r))
 		return
 	}
 	p.feeds.roomsChanged()
@@ -1348,6 +1354,8 @@ func (p *Proxy) serveHubAPI(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"rooms": p.attachedView()})
 	case "nudge":
 		p.serveNudge(w, r)
+	case "everywhere":
+		p.serveEverywhere(w, r)
 	case "inventory":
 		p.serveInventory(w, r)
 	case "inventory/mark":

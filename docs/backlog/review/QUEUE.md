@@ -50,6 +50,8 @@ the meantime.
 - `u-new-review-8333259b.md` L1 L2, parked in @ui's QUEUE.
 - `u-new-review-eb94e016.md` 1.
 - `r-new-review-e25a2c2f.md` 1-2: a wildcard over a public suffix or a dynamic DNS domain, an ignored entry is silent.
+- `r-new-review-7065bd6f.md` 1: a hand-passed non-loopback `--board-addr` for `atrium rooms` is refused (on @runtime's
+  queue).
 - `u-new-review-8b316172.md` 1-2: phone question links against none on the desktop, a choice press can send twice.
 
 ## Done
