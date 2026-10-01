@@ -59,6 +59,9 @@ func (b *safeBuf) String() string {
 // there is stopped by go test's own timeout, which prints the goroutines.
 func (b *safeBuf) waitFor(t *testing.T, want string) {
 	t.Helper()
+	// A daemon that never logs the line would otherwise hold the whole package
+	// until go test's own timeout, which once took 33 minutes.
+	deadline := time.After(time.Minute)
 	for {
 		b.mu.Lock()
 		if strings.Contains(b.buf.String(), want) {
@@ -70,7 +73,11 @@ func (b *safeBuf) waitFor(t *testing.T, want string) {
 		}
 		ch := b.wake
 		b.mu.Unlock()
-		<-ch
+		select {
+		case <-ch:
+		case <-deadline:
+			t.Fatalf("no %q in the log after a minute:\n%s", want, b.String())
+		}
 	}
 }
 

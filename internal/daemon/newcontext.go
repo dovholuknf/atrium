@@ -784,8 +784,10 @@ func (d *Daemon) ncType(taskID string, gen uint64, label, text string, limit tim
 		}
 		if d.act.midTurn(taskID) || d.cardRunning(taskID) {
 			waited := time.Since(began)
-			if asked == 0 && waited >= ncTiming.nudgeAfter ||
-				asked == 1 && waited >= limit/2 && limit/2 > ncTiming.nudgeAfter {
+			// A runner that does not take input mid-turn would lose the line, so it
+			// is not nudged and the cycle waits for its turn as it always did.
+			if d.midTurnInputFor(taskID) && (asked == 0 && waited >= ncTiming.nudgeAfter ||
+				asked == 1 && waited >= limit/2 && limit/2 > ncTiming.nudgeAfter) {
 				wrote, err := d.ncNudge(run, taskID, gen)
 				if errors.Is(err, errNewContextGone) {
 					return false, err

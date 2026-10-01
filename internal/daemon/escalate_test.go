@@ -166,6 +166,9 @@ func TestTheTypistStopsHoldingAnAgedMessageMidTurn(t *testing.T) {
 	if got := f.written(); !strings.Contains(got, "neither matrix exists") {
 		t.Fatalf("the aged message was not typed mid-turn: %q", got)
 	}
+	if got := f.written(); !strings.Contains(got, "waited 20 minutes for your turn to end") {
+		t.Fatalf("the typed escalation has no framing line: %q", got)
+	}
 	evs, _ := d.st.Events(target.ID, 50)
 	found := false
 	for _, e := range evs {
@@ -203,9 +206,8 @@ func TestARunnerWithoutMidTurnInputGetsAnAgedMessageByTheHookOnly(t *testing.T) 
 	if f.written() != "" {
 		t.Fatalf("typed mid-turn into a runner that does not take it: %q", f.written())
 	}
-	// The injector holds the message for the terminal, so the hook skips it until
-	// the terminal route is given up. Here the hook's own filter is what is tested.
-	d.pending.stopAll()
+	// The injector still holds the message, and the typist will not type it
+	// mid-turn, so the hook is the route that carries it.
 	msgs, _ := d.takeMessages(target.ID, "permission")
 	if len(msgs) != 1 || !strings.Contains(msgs[0].Text, "waited 20 minutes") {
 		t.Fatalf("the hook route did not deliver the aged message: %+v", msgs)

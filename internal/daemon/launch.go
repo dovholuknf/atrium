@@ -1180,7 +1180,7 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 		// file that is on PATH.
 		cmdName, cmdArgs := agentSpawn(h.Exe(), args)
 		if resolved, err := exec.LookPath(cmdName); err == nil {
-			cmdName, cmdArgs = viaShellIfScript(resolved, args)
+			cmdName, cmdArgs = viaShellIfScript(resolved, cmdArgs)
 		}
 		argv := expandTemplate(TerminalTemplate, cwd, title, cmdName, cmdArgs)
 		cmd := exec.Command(argv[0], argv[1:]...)
