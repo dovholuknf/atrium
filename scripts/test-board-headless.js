@@ -13659,6 +13659,84 @@ async function mFollowSection(browser) {
   if (!bad) console.log("mFollow ok");
 }
 
+// The card switcher: filtered by default, chips remembered, a search box when long, a solid sheet with a backdrop.
+async function mSwitcherSection(browser) {
+  const st = mServer({});
+  const mk = (id, status, over) => mCard(id, Object.assign({ alias: id, display_title: id, status, waiting_since: mIso(2 * M_MIN), seen: { turn_ended_at: mIso(20 * M_MIN) } }, over || {}));
+  st.tasks = [mk("run-1", "running"), mk("run-2", "running"), mk("run-3", "running"),
+    mk("need-1", "needs-permission"), mk("need-2", "needs-permission"), mk("need-3", "needs-permission"),
+    ...[1, 2, 3, 4].map(i => mk("ready-" + i, "needs-input")), ...Array.from({ length: 10 }, (_, i) => mk("done-" + (i + 1), "done"))];
+  st.replies["run-1"] = { source: "transcript", replies: [{ at: mIso(5 * M_MIN), text: "Open card reply." }] };
+  await st.open();
+  try {
+    const { ctx, p, errors } = await mPage(browser, st, { width: 412, height: 915 }, "");
+    const tag = "mSwitcher: ";
+    const open = async () => {
+      await p.waitForSelector("#m-seg-all", { timeout: slow(10000) });
+      await p.tap("#m-seg-all");
+      await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
+      await p.tap('#m-list .row[data-id="run-1"]');
+      await p.waitForSelector("#m-replies .reply", { timeout: slow(5000) });
+    };
+    const names = () => p.$$eval("#m-card-menu .pm-row b", e => e.map(x => x.textContent));
+    await open();
+    await p.tap("#m-card-pick");
+    await p.waitForSelector("#m-card-menu:not([hidden])", { timeout: slow(3000) });
+    // running and needs you by default, chips at the top, no search while short
+    let got = (await names()).sort();
+    if (JSON.stringify(got) !== JSON.stringify(["need-1", "need-2", "need-3", "run-2", "run-3"])) fail(tag + "the default list is wrong: " + got.join(","));
+    const chips = await p.$$eval("#m-card-menu .pm-chip", e => e.map(x => x.textContent + ":" + x.getAttribute("aria-pressed")));
+    if (JSON.stringify(chips) !== JSON.stringify(["running:true", "needs you:true", "ready:false", "done:false", "all:false"])) fail(tag + "the chips are wrong: " + chips.join(","));
+    if (await p.$eval("#m-card-menu .pm-search", e => !e.hidden)) fail(tag + "a search box on a short list");
+    await mShot(p, "switcher-412");
+    // the sheet is solid, has an edge, and a backdrop dims the thread
+    const look = await p.evaluate(() => {
+      const m = document.getElementById("m-card-menu"), b = document.getElementById("m-card-menu-back"), cs = getComputedStyle(m), bs = getComputedStyle(b);
+      const col = cs.backgroundColor.match(/[\d.]+/g).map(Number);
+      return { pos: cs.position, alpha: col.length > 3 ? col[3] : 1, edge: cs.borderTopWidth, shadow: cs.boxShadow, back: !b.hidden, backBg: bs.backgroundColor, backH: Math.round(b.getBoundingClientRect().height) };
+    });
+    if (look.pos !== "absolute" || look.alpha < 1) fail(tag + "the sheet is not a solid surface over the thread: " + JSON.stringify(look));
+    if (look.edge !== "1px" && look.shadow === "none") fail(tag + "the sheet has no edge: " + JSON.stringify(look));
+    if (!look.back || look.backH < 300) fail(tag + "no backdrop over the thread: " + JSON.stringify(look));
+    // the size follows the pinch, and the header, rows and chips scale together
+    await p.evaluate(() => document.getElementById("m-card").style.setProperty("--m-fs", "20px"));
+    const sz = await p.evaluate(() => { const f = s => parseFloat(getComputedStyle(document.querySelector(s)).fontSize); return { row: f("#m-card-menu .pm-row"), chip: f("#m-card-menu .pm-chip"), pick: f("#m-card-pick"), term: f("#m-card-term"), msg: f("#m-replies .md") }; });
+    if (sz.row !== 20 || sz.pick !== 20 || sz.term !== 20 || sz.msg !== 20 || Math.abs(sz.chip - 18) > 0.1) fail(tag + "the switcher does not follow the pinch size: " + JSON.stringify(sz));
+    const mini = await p.evaluate(() => { document.getElementById("m-card").style.setProperty("--m-fs", "11px"); return parseFloat(getComputedStyle(document.querySelector("#m-card-menu .pm-row")).fontSize); });
+    if (mini !== 11) fail(tag + "the switcher did not shrink with the pinch: " + mini);
+    const hit = await p.$$eval("#m-card-menu .pm-chip, #m-card-menu .pm-row, #m-card-pick", e => e.map(x => Math.round(x.getBoundingClientRect().height)));
+    if (hit.some(h => h < 40)) fail(tag + "a tap target is under 40px at the smallest size: " + hit.join(","));
+    await p.evaluate(() => document.getElementById("m-card").style.removeProperty("--m-fs"));
+    // a chip adds its cards, a long list gets the search box, and a search narrows it
+    await p.tap('#m-card-menu .pm-chip[data-f="done"]');
+    got = await names();
+    if (got.length !== 15) fail(tag + "adding done gave " + got.length + " rows");
+    if (await p.$eval("#m-card-menu .pm-search", e => e.hidden)) fail(tag + "no search box on a long list");
+    await p.fill("#m-card-menu .pm-search", "done-3");
+    got = await names();
+    if (got.length !== 1 || got[0] !== "done-3") fail(tag + "the search did not narrow: " + got.join(","));
+    await p.fill("#m-card-menu .pm-search", "");
+    await p.tap('#m-card-menu .pm-chip[data-f="all"]');
+    if ((await names()).length !== 19) fail(tag + "all should list every other card: " + (await names()).length);
+    await p.tap('#m-card-menu .pm-chip[data-f="all"]');
+    // the choice is remembered on this device
+    await p.goto(st.url + "/m/", { waitUntil: "domcontentloaded" });
+    await open();
+    await p.tap("#m-card-pick");
+    await p.waitForSelector("#m-card-menu:not([hidden])", { timeout: slow(3000) });
+    const kept = await p.$$eval("#m-card-menu .pm-chip", e => e.map(x => x.getAttribute("aria-pressed")).join(","));
+    if (kept !== "true,true,false,true,false") fail(tag + "the chips were not remembered: " + kept);
+    // a tap on the backdrop closes it, and a tap on the pick button does too
+    await p.tap("#m-card-menu-back", { position: { x: 200, y: 300 } });
+    await p.waitForFunction(() => document.getElementById("m-card-menu").hidden, null, { timeout: slow(3000) });
+    if (!(await p.$eval("#m-card-menu-back", e => e.hidden))) fail(tag + "the backdrop stayed after closing");
+    if (await mNoSideways(p)) fail(tag + "the card scrolls sideways");
+    if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+    await ctx.close();
+  } finally { await st.close(); }
+  if (!bad) console.log("mSwitcher ok");
+}
+
 async function mRecapSheetSection(browser) {
   const st = mServer({});
   const fresh = mCard("rc-fresh", { alias: "fresh", display_title: "fresh", status: "needs-input", waiting_since: mIso(M_MIN),
@@ -15665,7 +15743,7 @@ async function main() {
       mOutputAt: mOutputAtSection, mStickBottom: mStickBottomSection, mSendFree: mSendFreeSection, mCardUpload: mCardUploadSection, mCompact: mCompactSection, mPinch: mPinchSection, mPrompts: mPromptsSection,
       cardUrlWinName: cardUrlWinNameSection,
       gearHosts: gearHostsSection,
-      mTypeSteady: mTypeSteadySection, mFollow: mFollowSection };
+      mTypeSteady: mTypeSteadySection, mFollow: mFollowSection, mSwitcher: mSwitcherSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -17662,6 +17740,7 @@ async function main() {
     await mPinchSection(browser);
     await mTypeSteadySection(browser);
     await mFollowSection(browser);
+    await mSwitcherSection(browser);
     await mPromptsSection(browser);
     await cardUrlWinNameSection(browser, base);
     await gearHostsSection(browser, base);
