@@ -26,6 +26,44 @@ func TestEverywhereIndexesOnlyTaggedCardsThatAreNotEnded(t *testing.T) {
 	}
 }
 
+// Only a card a human launched answers on every room. A worker inherits its
+// launcher's tags, and an agent can pass the tag to atrium_launch.
+func TestEverywhereIndexesOnlyCardsAHumanLaunched(t *testing.T) {
+	launched := func(id, by string, tags ...string) CardState {
+		p, _ := json.Marshal(map[string]any{"id": id, "status": "running", "wire_name": "atrium-" + id,
+			"tags": tags, "spawned_by": by})
+		return CardState{ID: id, Status: "running", Payload: p}
+	}
+	h := NewHub(Timings{})
+	h.IndexEverywhere("sg4", []CardState{
+		launched("hand", "", EverywhereTag),
+		launched("board", "@human", EverywhereTag),
+		launched("worker", "orchestrator@sg4", EverywhereTag),
+		launched("agent", "", EverywhereTag, OriginTag),
+		launched("agent2", "", OriginTag, EverywhereTag),
+	})
+	got := map[string]bool{}
+	for _, c := range h.every.all("") {
+		got[c.ID] = true
+	}
+	if len(got) != 2 || !got["hand"] || !got["board"] {
+		t.Fatalf("index = %v, wanted the hand-started card and the board's", got)
+	}
+}
+
+// A card that ends keeps its tag as a record and stops answering to it.
+func TestEverywhereADoneCardDropsOutOfFind(t *testing.T) {
+	h := NewHub(Timings{})
+	h.IndexEverywhere("sg4", []CardState{everyRow("a", "running", "atrium-1", "orchestrator", EverywhereTag)})
+	if got := h.every.find("sg3", "orchestrator"); len(got) != 1 {
+		t.Fatalf("find before = %+v, wanted one", got)
+	}
+	h.IndexEverywhere("sg4", []CardState{everyRow("a", "done", "atrium-1", "orchestrator", EverywhereTag)})
+	if got := h.every.find("sg3", "orchestrator"); len(got) != 0 {
+		t.Fatalf("find after done = %+v, wanted none", got)
+	}
+}
+
 func TestEverywhereAnnouncementReplacesOnlyThatRoom(t *testing.T) {
 	h := NewHub(Timings{})
 	h.IndexEverywhere("sg4", []CardState{everyRow("a", "running", "atrium-1", "", EverywhereTag)})

@@ -187,7 +187,8 @@ func TestHubSidePeersAppendTheEverywhereCards(t *testing.T) {
 		t.Fatal(err)
 	}
 	last := out.Peers[len(out.Peers)-1]
-	if last.Handle != "atrium-87300@sg4" || last.Card != "sg4~s1" || last.Room != "sg4" || !last.Everywhere {
+	if last.Handle != "atrium-87300@sg4" || last.Alias != "orchestrator" || last.Card != "sg4~s1" ||
+		last.Room != "sg4" || !last.Everywhere {
 		t.Fatalf("peers = %+v", out.Peers)
 	}
 	for _, p := range out.Peers[:len(out.Peers)-1] {
@@ -205,7 +206,8 @@ func TestRelayPeersEverywhereAnswersOnlyTheTaggedCards(t *testing.T) {
 
 	ans, err := x.miniR.Relay(relayCtx(t), RelayRequest{Op: RelayPeers, Everywhere: true})
 	if err != nil || !ans.OK || len(ans.Peers) != 1 || !ans.Peers[0].Everywhere ||
-		ans.Peers[0].Handle != "atrium-87300@sg4" || ans.Peers[0].Card != "sg4~s1" {
+		ans.Peers[0].Handle != "atrium-87300@sg4" || ans.Peers[0].Alias != "orchestrator" ||
+		ans.Peers[0].Card != "sg4~s1" {
 		t.Fatalf("peers = %+v, %v", ans, err)
 	}
 }

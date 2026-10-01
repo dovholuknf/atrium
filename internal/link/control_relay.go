@@ -64,8 +64,8 @@ func (c *controlMCP) relay(ctx context.Context, from string, req RelayRequest) R
 			peers := []RelayPeer{}
 			for _, e := range c.hub.every.all(from) {
 				p := e.asPeer()
-				peers = append(peers, RelayPeer{Handle: p.Handle, Card: p.Card, Room: p.Room,
-					Status: p.Status, Everywhere: true})
+				peers = append(peers, RelayPeer{Handle: p.Handle, Alias: p.Alias, Card: p.Card, Room: p.Room,
+					Title: p.Title, Status: p.Status, Everywhere: true})
 			}
 			return RelayAnswer{OK: true, Peers: peers}
 		}
