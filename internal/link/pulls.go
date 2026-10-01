@@ -48,6 +48,31 @@ func prIDIn(path string) string {
 	return rest
 }
 
+// walkerLaunch reports whether r is `POST /v1/prs/<id>/walker` asking to LAUNCH, which makes a card and so is new work.
+// `action` is `launch` by default, and an empty body is a launch. `set` and `clear` only record a card that exists.
+// The body is read and put back for the room. A body that is not JSON is left to the room to refuse, and is not a launch.
+func walkerLaunch(r *http.Request) bool {
+	if r.Method != http.MethodPost || !strings.HasPrefix(r.URL.Path, "/v1/prs/") || !strings.HasSuffix(r.URL.Path, "/walker") ||
+		strings.Count(strings.TrimPrefix(r.URL.Path, "/v1/prs/"), "/") != 1 {
+		return false
+	}
+	var raw []byte
+	if r.Body != nil {
+		raw, _ = io.ReadAll(io.LimitReader(r.Body, 64<<10))
+		r.Body = io.NopCloser(io.MultiReader(bytes.NewReader(raw), r.Body))
+	}
+	if len(bytes.TrimSpace(raw)) == 0 {
+		return true
+	}
+	var body struct {
+		Action string `json:"action"`
+	}
+	if json.Unmarshal(raw, &body) != nil {
+		return false
+	}
+	return body.Action == "" || body.Action == "launch"
+}
+
 // placePR routes a request that names a row to the room that holds it. The pulls twin of `placeCard`.
 //
 //  1. `room~pr_...` names the room outright. The answer is tagged on the way back, as a tagged card's is.
@@ -304,6 +329,23 @@ func (p *Proxy) pullsList(w http.ResponseWriter, r *http.Request) bool {
 		}
 		n, _ := a.body["nav_count"].(float64)
 		nav += n
+	}
+	// NO ROOM ANSWERED 200, so there is no pulls view to show. The board opens the pulls tab on any 200 with a `prs`
+	// array, and a hub over rooms without the store would otherwise show an empty tab. 404 in the contract's error
+	// shape, with the rooms that were asked and why each did not answer.
+	if len(quiet)+len(without) == len(out) {
+		quiet, without = append([]string{}, quiet...), append([]string{}, without...)
+		sort.Strings(quiet)
+		sort.Strings(without)
+		msg := "no attached room serves the pulls view"
+		if len(without) == 0 {
+			msg = "no attached room answered the pulls request"
+		}
+		writeJSONBody(w, http.StatusNotFound, map[string]any{
+			"error": msg, "code": "not_found",
+			"rooms_quiet": quiet, "rooms_without": without,
+		})
+		return true
 	}
 	sort.SliceStable(all, func(i, j int) bool {
 		a, _ := all[i]["created_at"].(string)

@@ -49,3 +49,24 @@ OK hub and room, a3fc844f..0d81572b, 2 lows.
 
 Quality: after the Sonnet switch, no drop seen. The raw-JSON retag is the careful answer to a hash precondition, and
 each route shape has its test.
+
+## Follow-up: 7f063740 (2026-10-01)
+
+One commit on d77d21d0 (0d81572b as landed, range-diff `=`). Both lows are closed:
+
+- `pullsList` answers `404 {error, code: not_found, rooms_quiet, rooms_without}`, sorted, when no room answered 200.
+  The zero-room case still returns false before any of this, so a hub with no rooms is unchanged. The board's
+  `loadPulls` treats the 404 as "no pulls here". It never hides a tab it has already shown, so a blip does not take the
+  tab away mid-use.
+- `walkerLaunch` puts `POST /v1/prs/<id>/walker` with an empty body, `{}` or `action: launch` behind the marked-room
+  refusal. It reads at most 64 KiB and puts the body back in front of the rest, so the room gets it whole. A body that
+  is not JSON goes to the room to refuse. `set` and `clear` pass. The test asserts that the refused launches never
+  reach the room and that set and clear both do.
+
+Tests at 7f063740: gofmt and vet clean on internal/link, `go test ./internal/link` ok.
+
+NIT: when every room is sick rather than without the store, the 404 says "no attached room serves the pulls view",
+which on the board reads as if the feature were missing. `rooms_quiet` tells the two apart, so the error text could
+too.
+
+OK hub and room d77d21d0..7f063740.

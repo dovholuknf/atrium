@@ -15380,7 +15380,7 @@ async function cardUrlWayOutSection(browser, base) {
         if (v.phone) { await p.tap("#t-bar-toggle"); await p.waitForFunction(() => !document.body.classList.contains("tray-open"), null, { timeout: slow(5000) }); }
         // all cards leaves for the board
         await p.tap(all).catch(() => p.click(all));
-        await p.waitForFunction(() => location.pathname === "/", null, { timeout: slow(8000) })
+        await p.waitForFunction(() => location.pathname === "/" && !!document.body, null, { timeout: slow(8000) })
           .catch(() => fail(tag + "all cards did not go to the board: " + p.url()));
         if (await p.evaluate(() => document.body.classList.contains("solo"))) fail(tag + "the board still wears the card window");
         // Back from the board returns to the card
@@ -16413,7 +16413,9 @@ async function pullsDrawerSection(browser, base) {
   tasksMode = "land";
   landList = [
     landCard("land-pw1", { supervised: true, worktree: "/pr/walker" }),
-    landCard("land-pw2", { supervised: true, worktree: "/pr/walker2" })
+    landCard("land-pw2", { supervised: true, worktree: "/pr/walker2" }),
+    landCard("land-pw3", { supervised: true, worktree: "/pr/walker3" }),
+    landCard("land-pw4", { supervised: true, worktree: "/pr/walker4" })
   ];
   landPerms = [];
   const errors = [];
@@ -16433,12 +16435,18 @@ async function pullsDrawerSection(browser, base) {
     findings: { high: 0, med: 1, low: 1, nit: 0, leak: 0 }, walk: { done: 0, skipped: 0, deferred: 0, open: 2 }, walker_task: ""
   }, extra);
   const st = {
-    rows: [row("pr_w", { walker_task: "land-pw1", number: 1 }), row("pr_l", { number: 2, created_at: "2026-10-01T08:00:00Z" })],
+    rows: [row("pr_w", { walker_task: "land-pw1", number: 1 }), row("pr_l", { number: 2, created_at: "2026-10-01T08:00:00Z" }),
+      // its walker's card is done, which the row does not know
+      row("pr_d", { number: 3, walker_task: "land-pwdead", created_at: "2026-10-01T07:00:00Z" }),
+      row("pr_x", { number: 4, walker_task: "land-pw4", created_at: "2026-10-01T06:00:00Z" })],
     f: {}, puts: [], posts: [], files: 0, findingGets: 0
   };
   const fresh = () => [mk("f-1", 1, "med", "a/b.go", 7, "x = 1", "* first bullet"), mk("f-2", 2, "low", "c.go", 20, "y = 2", "* second bullet")];
   st.f.pr_w = fresh();
   st.f.pr_l = fresh();
+  st.f.pr_d = fresh();
+  st.f.pr_x = fresh();
+  st.gate = null;
   const counts = id => {
     const c = { done: 0, skipped: 0, deferred: 0, open: 0 };
     for (const f of st.f[id]) c[f.walk.state]++;
@@ -16457,12 +16465,16 @@ async function pullsDrawerSection(browser, base) {
     };
     Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
   });
+  const entry = { name: "01-med-b.go-L7.txt", dir: false, mtime: "2026-10-01T09:00:00Z", size: 10 };
+  await ctx.route(/\/v1\/tasks\/land-pw4\/files\/list/, route => json(route, 200, { entries: [entry] }));
+  await ctx.route(/\/v1\/tasks\/land-pw4\/files\/text/, route => json(route, 200, { text: st.f.pr_x[0].text, hash: "h", eol: "\n" }));
   await ctx.route(/\/v1\/tasks\/land-pw[12]\/files\//, async route => { st.files++; return json(route, 404, { error: "no files here" }); });
   await ctx.route(/\/v1\/prs(\/|\?|$)/, async route => {
     const req = route.request();
     const m = req.method();
     const p = new URL(req.url()).pathname;
     if (m === "GET" && p === "/v1/prs") {
+      if (st.gate) await st.gate;
       st.rows.forEach(r => { r.walk = counts(r.id); });
       return json(route, 200, { prs: st.rows, counts: { queued: 0, fetching: 0, running: 0, ready: 2, failed: 0, aborted: 0 }, nav_count: 2 });
     }
@@ -16498,8 +16510,10 @@ async function pullsDrawerSection(browser, base) {
       return json(route, 200, { ok: true, walk: f.walk, counts: counts(id) });
     }
     if (m === "POST" && rest === "/walker") {
-      cur.walker_task = "land-pw2";
-      return json(route, 201, { pr: cur, task: "land-pw2", launched: true });
+      // a live walker is answered as it is, a done one is replaced
+      if (cur.walker_task && cur.walker_task !== "land-pwdead") return json(route, 200, { pr: cur, task: cur.walker_task, launched: false });
+      cur.walker_task = cur.id === "pr_d" ? "land-pw3" : "land-pw2";
+      return json(route, 201, { pr: cur, task: cur.walker_task, launched: true });
     }
     return json(route, 404, { error: "no route", code: "not_found" });
   });
@@ -16592,6 +16606,32 @@ async function pullsDrawerSection(browser, base) {
     if (!st.posts.some(x => x === 'POST /v1/prs/pr_l/walker {"action":"launch"}')) fail("pullsDrawer: no walker launch was posted: " + st.posts.join(" | "));
     await p.waitForFunction(() => document.querySelectorAll("#walk-rail .wk-row").length === 2, null, { timeout: slow(10000) })
       .catch(() => fail("pullsDrawer: the launched walker's drawer has no findings"));
+    // the walker of a row finished: the daemon replaces a done walker and answers a live one as it is
+    await p.evaluate(() => switchView("pulls"));
+    await p.click('#pulls-list .pull[data-id="pr_d"] button[data-act="walk"]');
+    await p.waitForFunction(() => termTask && termTask.id === "land-pw3" && !document.getElementById("walk-drawer").hidden, null, { timeout: slow(10000) })
+      .catch(() => fail("pullsDrawer: walk on a row whose walker is done did not reach a new walker"));
+    await p.evaluate(() => switchView("pulls"));
+    await p.click('#pulls-list .pull[data-id="pr_d"] button[data-act="walk"]');
+    await p.waitForTimeout(300);
+    if (st.posts.filter(x => x === 'POST /v1/prs/pr_d/walker {"action":"launch"}').length !== 2) fail("pullsDrawer: walk did not ask the daemon for the walker every time");
+    if (await p.evaluate(() => termTask.id) !== "land-pw3") fail("pullsDrawer: a live walker was replaced");
+    await p.close();
+
+    // a walker's card attached before the rows are known is re-probed when they arrive, so its marks go to walk.txt
+    let release;
+    st.gate = new Promise(r => { release = r; });
+    const q = await ctx.newPage();
+    q.on("pageerror", e => errors.push(String(e)));
+    await q.goto(base, { waitUntil: "domcontentloaded" });
+    await q.waitForSelector('#stack-list .stackrow[data-id="land-pw4"]', { state: "attached", timeout: slow(15000) });
+    await q.evaluate(() => attachTask("land-pw4"));
+    await q.waitForSelector("#t-walk:not([hidden])", { timeout: slow(10000) });
+    if (await q.evaluate(() => walkTenant.prId)) fail("pullsDrawer: the review was known before the rows were");
+    st.gate = null;
+    release();
+    await q.waitForFunction(() => walkTenant.prId === "pr_x", null, { timeout: slow(10000) })
+      .catch(() => fail("pullsDrawer: a walker attached before the rows loaded stayed on the files source"));
     if (errors.length) fail("pullsDrawer: the page threw: " + errors.join(" | "));
   } finally {
     await ctx.close();
@@ -20395,76 +20435,14 @@ async function main() {
     await unit("pulls", () => pullsSection(browser, base));
     await unit("pullsAbsent", () => pullsAbsentSection(browser, base));
     await unit("oneTooltip", () => oneTooltipSection(browser, base));
+    await unit("noReadyChildren", () => noReadyChildrenSection(browser, base));
+    await unit("childUnderParent", () => childUnderParentSection(browser, base));
+    await unit("childFold", () => childFoldSection(browser, base));
+    await unit("liveHome", () => liveHomeSection(browser, base));
     await unit("pullsDrawer", () => pullsDrawerSection(browser, base));
-    await pasteStartSection(browser, base);
-    await pasteDoneSection(browser, base);
-    await pasteOldRoomSection(browser, base);
-    await pasteCloseSection(browser, base);
-    await growlQuestionBodySection(browser, base);
-    await growlReplyGrowSection(browser, base);
-    await growlChoicesSection(browser, base);
-    await growlStableSection(browser, base);
-    await mGrowlQuestionSection(browser);
-    await bootCleanSection(browser, base);
-    await mWorkingSection(browser);
-    await mOwnMessagesSection(browser);
-    await mRecapSheetSection(browser);
-    await mHomeOrderSection(browser);
-    await cardUrlWayOutSection(browser, base);
-    await phoneBootSection(browser, base);
-    await sayEnterSection(browser);
-    await sendArrowSection(browser);
-    await mTablesSection(browser);
-    await mMarkdownSection(browser);
-    await mHostileSection(browser);
-    await mPicturesSection(browser);
-    await mHiddenSection(browser);
-    await mViewerSection(browser);
-    await mChangesSection(browser);
-    await mChangesRealSection(browser);
-    await deployReadySection(browser, base);
-    await mHomeLiveSection(browser);
-    await soundPhoneSection(browser, base);
-    await boardDocsSection(browser, base);
-    await phoneBoardCompactSection(browser, base);
-    await phoneBellSection(browser, base);
-    await mBellSection(browser);
-    await phoneRedirectSection(browser, base);
-    await gearTermListSection(browser, base);
-    await growlLinksSection(browser, base);
-    await growlChoiceOnceSection(browser, base);
-    await mOutputAtSection(browser);
-    await mStickBottomSection(browser);
-    await mSendFreeSection(browser);
-    await mCardUploadSection(browser);
-    await mCompactSection(browser);
-    await mPinchSection(browser);
-    await mTypeSteadySection(browser);
-    await mOlderSection(browser);
-    await mFollowSection(browser);
-    await mDocsSection(browser);
-    await mSwitcherSection(browser);
-    await mPullSection(browser);
-    await mPromptsSection(browser);
-    await cardUrlWinNameSection(browser, base);
-    await gearHostsSection(browser, base);
-    await joinedLiveSection(browser, base);
-    await coverPollSection(browser, base);
-    await coverStepsSection(browser, base);
-    await termBoxSection(browser, base);
-    await termDebugSection(browser, base);
-    await termSortStartedSection(browser, base);
-    await noReadyChildrenSection(browser, base);
-    await childUnderParentSection(browser, base);
-    await topNavSection(browser, base);
-    await childFoldSection(browser, base);
-    await liveHomeSection(browser, base);
-    await pullsSection(browser, base);
-    await pullsAbsentSection(browser, base);
-    await oneTooltipSection(browser, base);
-    await pullsDrawerSection(browser, base);
   } catch (e) {
-    fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e));
+    // a listing has no browser, so a bare section call throws here, and the guard below names it
+    if (!LIST_MODE) fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e));
     if (process.env.DEBUG_HEADLESS && page) {
       try {
         const diag = await page.evaluate(() => ({
@@ -20491,6 +20469,16 @@ async function main() {
     const known = new Set(Object.keys(mockVars()).concat(["chromium", "exePath", "bad", "currentUnit", "stuckStep", "peekReads", "mockInit", "lastUnit"]));
     const missing = lets.filter(n => !known.has(n));
     if (missing.length) console.error("mockVars() is missing " + missing.join(", ") + ": a shard will not reset them between units.");
+    // A section called bare from main() runs in every shard, outside any unit. Every section belongs to one unit, bar these.
+    const notUnits = new Set(["u001AuditSection", "groupRemoveSection", "growlQuestionShotsSection", "linkTipSection"]);
+    const src = fs.readFileSync(__filename, "utf8");
+    const bare = (src.match(/^\s*await \w+Section\(/gm) || []).map(l => l.trim().slice(6, -1));
+    const owned = new Set((src.match(/unit\("\w+", \(\) => \w+Section/g) || []).map(l => l.replace(/^.*=> /, "")));
+    const loose = (src.match(/^async function \w+Section/gm) || []).map(l => l.split(" ")[2]).filter(n => !owned.has(n) && !notUnits.has(n));
+    if (bare.length || loose.length) {
+      console.error("sections no unit owns: " + bare.concat(loose).join(", ") + ". Register each as await unit(name, ...) in main().");
+      process.exitCode = 1;
+    }
     console.log(JSON.stringify({ units: unitOrder, pins: PIN_GROUPS }));
     return;
   }
@@ -21881,7 +21869,8 @@ async function growlStableSection(browser, base) {
         focus: document.activeElement === document.querySelector(root + " .gr-reply")
       }), root);
       if (!s.same || !s.btn) fail(tag + "the face was rebuilt by unrelated news.");
-      if (!s.hover) fail(tag + "the hovered button lost its hover.");
+      // a touch context keeps no mouse hover: Chromium drops it within a frame with the board doing nothing, so only a mouse can lose it here
+      if (!phone && !s.hover) fail(tag + "the hovered button lost its hover.");
       if (s.mut) fail(tag + "the growler's DOM changed " + s.mut + " times for news that is not about it.");
       if (s.v !== "half typ" || !s.focus) fail(tag + "a half-typed reply did not survive: " + JSON.stringify(s));
       // news that is about another growler leaves this face's node alone too

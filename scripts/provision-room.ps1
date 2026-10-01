@@ -2001,10 +2001,10 @@ elif launchctl print "gui/$(id -u)/io.github.dovholuknf.atrium" >/dev/null 2>&1;
 elif curl -fs --max-time 3 http://127.0.0.1:7781/v1/health >/dev/null 2>&1; then
   echo "start=ok the room answers. the LaunchAgent loads at a desktop login, so a reboot with nobody logged in leaves it down until auto-login is on"
 else
-  /bin/zsh -l -c 'exec "$0" room --detach --db "$HOME/.atrium/atrium.db"' "$Bin" >/dev/null 2>&1
+  last=$(/bin/zsh -l -c 'exec "$0" room --detach --db "$HOME/.atrium/atrium.db"' "$Bin" 2>&1 | tail -n 1)
   if curl -fs --max-time 3 http://127.0.0.1:7781/v1/health >/dev/null 2>&1; then
-    echo "start=done started detached, since the LaunchAgent needs a desktop login. a reboot with nobody logged in leaves the room down until auto-login is on"
-  else echo "start=warn the LaunchAgent is not loaded (it needs a desktop login) and a detached start did not answer"
+    echo "start=done started detached, since the LaunchAgent needs a desktop login. a reboot with nobody logged in leaves the room down until auto-login is on, and a later login loads the LaunchAgent, whose room finds the port taken and is restarted every 10s while this one runs"
+  else echo "start=warn the LaunchAgent is not loaded (it needs a desktop login) and a detached start did not answer: $last"
   fi
 fi
 '@

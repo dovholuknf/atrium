@@ -8236,6 +8236,12 @@ build before `atrium_publish path` works, since an older room cannot say what a 
    leaves changed.
 6. The sharded result should match the serial one: the same units pass and fail, apart from the flaky ones. Check a
    change to the harness with both.
+7. By default the runner hands the whole run to sg3 (`scripts/board-suite-remote.ps1`) and streams the report and exit
+   code back. The remote half runs this tree as it is now, committed or not. Check that a tree with an uncommitted edit
+   to a unit shows that edit's result, that the line `board suite: running on sg3` is printed, and that `--local`,
+   `ATRIUM_SUITE_LOCAL=1`, `--save-weights` and `--logs` each print `running here (...)` and run on this machine. A
+   repository with no git remote named sg3 (a worker on m1mini) runs here with that reason. `ATRIUM_SUITE_ROOM` names
+   another Windows room. The room's clone and `refs/suite/*` are left as they were.
 
 ## HW. A launched worker that reports done exits by itself (r-exit-on-report)
 

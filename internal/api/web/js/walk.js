@@ -666,7 +666,7 @@ async function walkAct(k) {
       if (!walkTenant.prId) return;
       return void walkWriteState(it, null, "deferred");
     case "u":
-      if (!it.state) { toast("nothing to undo", "this finding is neither posted nor skipped"); return; }
+      if (!it.state) { toast("nothing to undo", "this finding is still open"); return; }
       return void walkWriteState(it, null, "open");
   }
 }

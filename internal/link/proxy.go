@@ -1152,13 +1152,16 @@ func (p *Proxy) startsNothing(w http.ResponseWriter, r *http.Request) bool {
 	switch r.URL.Path {
 	case "/v1/launch", "/v1/tasks", "/v1/intake", "/v1/dispatch",
 		// A PULL REVIEW IS NEW WORK, so a new one is refused like a launch is: it puts a run, a
-		// checkout and forks on the machine somebody is decommissioning. ONLY `POST /v1/prs`, the
-		// door that makes a row. A retry, an abort, a start, a walk mark and a walker belong to a
-		// row already on that machine, which is work in flight and is worked out normally, the
-		// same as a card's restart or exit. See pulls.go.
+		// checkout and forks on the machine somebody is decommissioning. `POST /v1/prs`, the door
+		// that makes a row, and a walker LAUNCH, which makes a card. A retry, an abort, a start, a
+		// walk mark, and a walker `set` or `clear` belong to a row already on that machine, which is
+		// work in flight and is worked out normally, the same as a card's restart or exit.
+		// See pulls.go.
 		"/v1/prs":
 	default:
-		return false
+		if !walkerLaunch(r) {
+			return false
+		}
 	}
 	stock := p.inventory()
 	if stock == nil {

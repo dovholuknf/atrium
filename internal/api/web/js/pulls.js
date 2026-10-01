@@ -66,7 +66,7 @@ function pullsChanged() {
   pullsRecount();
   pullsPaint();
   // A walker's card that was attached before its row was known gets its drawer now.
-  if (typeof termTask !== "undefined" && termTask && !dock.tenant && walkPrOf(termTask.id)) walkProbe(termTask);
+  if (typeof termTask !== "undefined" && termTask && (!dock.tenant || !walkTenant.prId) && walkPrOf(termTask.id)) walkProbe(termTask);
 }
 
 function pullsSay(text) {
@@ -296,14 +296,13 @@ async function pullsPaste() {
 async function pullsWalk(id) {
   const row = pulls.rows.find(r => r.id === id);
   if (!row) return;
-  let task = row.walker_task;
+  let task = "";
   try {
-    if (!task) {
-      const out = await pullsPost("/v1/prs/" + encodeURIComponent(id) + "/walker", { action: "launch" });
-      if (out && out.pr) pullsApplyRow(out.pr);
-      task = (out && out.task) || (out && out.pr && out.pr.walker_task) || "";
-      pullsChanged();
-    }
+    // Always asked: the daemon answers the live walker as it is and starts a new one only when the old card is done.
+    const out = await pullsPost("/v1/prs/" + encodeURIComponent(id) + "/walker", { action: "launch" });
+    if (out && out.pr) pullsApplyRow(out.pr);
+    task = (out && out.task) || (out && out.pr && out.pr.walker_task) || "";
+    pullsChanged();
     pullsSay("");
   } catch (e) {
     pullsSay(pullsErr(e));
