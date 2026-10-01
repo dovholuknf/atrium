@@ -45,3 +45,21 @@ because it renders model output. Hub side. Board and headless checks are @ui's, 
    That is cheap, but observing the replies box alone would do.
 
 HUB DEPLOY OK 2fd77402 ab758324
+
+## Re-read of 94774247, 2026-09-30
+
+Both lows are closed.
+
+- (a) A `D:/` or `D:\` path counts as absolute after slashing, and is compared case-insensitively when the worktree
+  has a drive. A `/`-rooted path against a drive worktree, or the reverse, is refused, and so are a `c:x` with no
+  slash and any real scheme. The server's safepath is still the boundary.
+- (b) Pictures are cached by card and path, capped at 40, and revoked on drop and on card close. A redraw does not
+  fetch again. The save URL is revoked after 10 s.
+- Both nits are closed: the observer is on `m-replies` and `m-recap` only, and copy falls back to `execCommand`
+  over a selected textarea.
+
+Nit: an eviction revokes a URL that a drawn thumbnail may still show, so a tap to enlarge that one fails. A fetch
+still in flight when its key is evicted creates a URL that nothing holds, which leaks it. Both need more than 40
+pictures in one card, so they are rare.
+
+HUB DEPLOY OK 94774247
