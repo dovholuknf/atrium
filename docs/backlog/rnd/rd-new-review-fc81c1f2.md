@@ -56,3 +56,10 @@ findings 1 and 2 is enough for OK.
 
 Quality: after the Sonnet switch, no drop seen. The doc is careful about marking estimates, and missed the
 one place where the repo's own record answered the question.
+
+## Re-read of the fold 79860a5d (fc81c1f2..79860a5d): OK
+
+All four findings are folded. The Linux risk is restated as the steps unproven off WSL, in both the Recommendation and
+the OS section, and open question 1 matches. The second-room line cites the exit 6 refusal. The suite line names
+`ATRIUM_SUITE_ROOM` and pwsh. The `Restart=on-failure` to-do is gone. Not folded, and not needed for OK: which sg4
+benchmark ran `--local` (finding 3's last sentence). Nothing new found.
