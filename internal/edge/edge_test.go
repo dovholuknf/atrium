@@ -113,6 +113,46 @@ func TestEnvHostsWildcard(t *testing.T) {
 	}
 }
 
+// A WILDCARD OVER A PUBLIC SUFFIX IS IGNORED, because anybody can own a name
+// under one and point it anywhere: a dynamic DNS domain, a second-level country
+// domain, a pages host. Listed exactly, a name under one still works.
+func TestAWildcardOverAPublicSuffixIsIgnored(t *testing.T) {
+	t.Setenv(EnvHosts, "*.duckdns.org, *.co.uk, *.github.io, me.duckdns.org")
+	h := Named(ok)
+	for host, want := range map[string]int{
+		"evil.duckdns.org": 403,
+		"evil.co.uk":       403,
+		"evil.github.io":   403,
+		"me.duckdns.org":   200,
+	} {
+		if got := status(h, http.MethodGet, host, nil); got != want {
+			t.Errorf("%s answered %d, want %d", host, got, want)
+		}
+	}
+	ig := CheckNames([]string{"*.duckdns.org", "*.shares.zrok.io", "*.", "a*b.com"})
+	if len(ig) != 3 || ig[0].Name != "*.duckdns.org" {
+		t.Fatalf("ignored %+v", ig)
+	}
+}
+
+// SetExtra reaches a listener built before it, from the next request.
+func TestSetExtraReachesEveryNamedListener(t *testing.T) {
+	t.Cleanup(func() { SetExtra(nil) })
+	t.Setenv(EnvHosts, "")
+	h := Named(ok)
+	if status(h, http.MethodGet, "abc.shares.zrok.io", nil) != 403 {
+		t.Fatal("answered before it was set")
+	}
+	SetExtra([]string{"*.shares.zrok.io"})
+	if status(h, http.MethodGet, "abc.shares.zrok.io", nil) != 200 {
+		t.Fatal("not answered after SetExtra")
+	}
+	SetExtra(nil)
+	if status(h, http.MethodGet, "abc.shares.zrok.io", nil) != 403 {
+		t.Fatal("still answered after the setting was cleared")
+	}
+}
+
 // UNNAMED CHECKS ORIGINS, NOT HOSTS, for a ziti service nobody named.
 func TestUnnamedChecksOriginsOnly(t *testing.T) {
 	h := Unnamed(ok)

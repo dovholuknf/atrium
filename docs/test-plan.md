@@ -7969,3 +7969,11 @@ Needs a hub with one room and two browsers on the board. `curl` stands in for th
    card writes a reply with text, mid-turn, `output_at` moves within a second, and a `task` event carries it.
 2. A tool call with no text, or a subagent's reply, does not move it.
 3. /m open on that card re-reads its replies when `output_at` moves (the @ui half).
+
+## HK. The hub's hosts are a setting (r-new-hosts-setting)
+
+1. Share the board over zrok with a random name. It answers 403 and the error says to add the name in the gear.
+2. On the hub's machine: `curl -s -X PUT http://127.0.0.1:7778/_hub/hosts -d '{"hosts":["*.shares.zrok.io"]}'`. The
+   share answers at once, with no restart. A restart keeps it.
+3. The same PUT from another machine answers 403. A GET from anywhere lists the hosts, `ignored` and `env`.
+4. `{"hosts":["*.duckdns.org"]}` is saved, listed under `ignored` with why, and answers nothing under it.
