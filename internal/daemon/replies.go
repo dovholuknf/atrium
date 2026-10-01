@@ -49,6 +49,9 @@ var (
 	repliesWindow int64 = transcriptTail
 	// repliesReach is the most a `before` page reads.
 	repliesReach int64 = 16 << 20
+	// repliesCap is the most a `before` page reads when the reach found no record
+	// older than before to stand on. Past it the page answers more=false.
+	repliesCap int64 = 64 << 20
 )
 
 // Reply is one reply as the page draws it.
@@ -260,6 +263,21 @@ func trimPrompts(x []Prompt, n int) ([]Prompt, time.Time) {
 	return x[i:], x[i].At
 }
 
+// dropOldestGroup drops the oldest reply and every reply tied with it, which may
+// lack blocks further back. False when nothing newer is left to set the cut, and
+// then nothing is dropped: dropped alone, it would lie between the cut and the
+// page and no page would carry it.
+func dropOldestGroup(x []Reply) ([]Reply, bool) {
+	i := 1
+	for i < len(x) && x[i].At.Equal(x[0].At) {
+		i++
+	}
+	if i >= len(x) {
+		return x, false
+	}
+	return x[i:], true
+}
+
 func laterOf(a, b time.Time) time.Time {
 	if b.After(a) {
 		return b
@@ -311,18 +329,19 @@ func readTranscriptPage(path string, n int) (replyPage, error) {
 		if mid {
 			floor = boundaryAt(f, info.Size()-repliesWindow, firstAt)
 		}
-		if len(replies) > repliesMax {
-			replies = replies[len(replies)-repliesMax:]
-			floor = laterOf(floor, replies[0].At)
-		} else if mid && len(replies) > 1 && !replies[0].At.Equal(replies[1].At) {
+		// The cap keeps ties together, as a page's own cut does: an entry cut off
+		// at the floor's time would be on neither page.
+		var capped time.Time
+		if replies, capped = trimReplies(replies, repliesMax); !capped.IsZero() {
+			floor = laterOf(floor, capped)
+		} else if rest, ok := dropOldestGroup(replies); mid && ok {
 			// The oldest may have lost its earlier blocks to the cut, and a `before`
 			// page would then return it again whole. It is the next page's first.
-			replies = replies[1:]
+			replies = rest
 			floor = laterOf(floor, replies[0].At)
 		}
-		if len(prompts) > repliesMax {
-			prompts = prompts[len(prompts)-repliesMax:]
-			floor = laterOf(floor, prompts[0].At)
+		if prompts, capped = trimPrompts(prompts, repliesMax); !capped.IsZero() {
+			floor = laterOf(floor, capped)
 		}
 		c = repliesCached{size: info.Size(), mtime: info.ModTime(), replies: replies, prompts: prompts, floor: floor}
 		repliesCache.mu.Lock()
@@ -457,6 +476,14 @@ func readTranscriptBefore(path string, n int, before time.Time) (replyPage, erro
 			}
 		}
 		if pos > 0 {
+			// The cursor is the oldest record read, so it must be older than before.
+			// Until one is, read on past the reach, up to repliesCap.
+			if standing := firstAt.Before(before) && !firstAt.IsZero(); !standing {
+				if read >= repliesCap {
+					break
+				}
+				continue
+			}
 			if read >= repliesReach {
 				break
 			}
@@ -465,12 +492,17 @@ func readTranscriptBefore(path string, n int, before time.Time) (replyPage, erro
 			}
 		}
 	}
+	if pos > 0 && (firstAt.IsZero() || !firstAt.Before(before)) {
+		// Nothing older than before within the cap. There is no cursor that
+		// advances, so the answer is that there is no more.
+		return replyPage{}, nil
+	}
 	// Short of the start the read is complete only down to its oldest record, and
 	// the oldest reply may lack blocks that lie further back. Leave it for the
 	// next page, which finds it whole.
 	var floor time.Time
 	if pos > 0 {
-		floor = boundaryAt(f, pos, firstAt)
+		floor = firstAt
 	}
 	var rs []Reply
 	for _, r := range replies {
@@ -484,10 +516,8 @@ func readTranscriptBefore(path string, n int, before time.Time) (replyPage, erro
 			ps = append(ps, p)
 		}
 	}
-	// Only when another reply is left to set the cut. Dropped alone, it would lie
-	// between the cut and the page and no page would carry it.
-	if pos > 0 && len(rs) > 1 && !rs[0].At.Equal(rs[1].At) {
-		rs = rs[1:]
+	if rest, ok := dropOldestGroup(rs); pos > 0 && ok {
+		rs = rest
 		floor = laterOf(floor, rs[0].At)
 	}
 	pg := finishPage(rs, ps, n, floor)
@@ -505,6 +535,9 @@ func readTranscriptBefore(path string, n int, before time.Time) (replyPage, erro
 // than the reach could never be answered. Transcript lines are written in time
 // order, so it bisects on their timestamps. Anything it cannot read answers the
 // file's end, which is always correct and only costs the reach.
+//
+// It RELIES ON TIME-ORDERED LINES. Claude Code writes them in order today. If that
+// ever stopped being true, the bisection would skip a region without saying so.
 func lineBefore(f *os.File, size int64, before time.Time) int64 {
 	lo, hi := int64(0), size
 	for hi-lo > repliesWindow {
