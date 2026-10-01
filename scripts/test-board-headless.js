@@ -8770,7 +8770,7 @@ async function eventDrivenSection(browser, base) {
     // ask for nothing.
     counts.clear();
     const clicks = await p.evaluate(() => {
-      const strip = () => document.getElementById("terms").innerHTML;
+      const strip = () => document.getElementById("terms").innerHTML + document.getElementById("gear-term-sort").innerHTML;
       const oneFrame = (act, read) => new Promise(done => {
         const before = read();
         act();
@@ -14587,6 +14587,101 @@ async function mBellSection(browser) {
   if (!bad) console.log("mBell ok");
 }
 
+// The gear's hub hosts row: the list, add and remove, ignored with why, $ATRIUM_HOSTS read-only, a 403 PUT makes it
+// read-only, and a board with no /_hub/hosts draws no row.
+async function gearHostsSection(browser, base) {
+  const tag = "gearHosts: ";
+  const open = async (mode) => {
+    const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+    const st = { hosts: ["*.shares.zrok.io", "*.duckdns.org"], puts: [], gets: 0 };
+    await ctx.route("**/_hub/hosts", route => {
+      const req = route.request();
+      if (mode === "none") return route.fulfill({ status: 404, body: "" });
+      if (req.method() === "PUT") {
+        if (mode === "remote") return route.fulfill({ status: 403, contentType: "application/json", body: JSON.stringify({ error: "only from the hub's machine" }) });
+        const b = JSON.parse(req.postData());
+        st.puts.push(b.hosts);
+        st.hosts = b.hosts;
+      } else st.gets++;
+      return route.fulfill({ contentType: "application/json", body: JSON.stringify({
+        hosts: st.hosts,
+        ignored: st.hosts.includes("*.duckdns.org") ? [{ name: "*.duckdns.org", why: "dynamic DNS" }] : [],
+        env: ["envhost.example.com"]
+      }) });
+    });
+    const errors = [];
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow, #term-list .card.tab", { state: "attached", timeout: slow(15000) });
+    return { ctx, p, st, errors };
+  };
+  let h = await open("hub");
+  try {
+    const { p, st } = h;
+    await p.click("#gear");
+    await p.evaluate(() => showSettingsPane("expose the board"));
+    await p.waitForFunction(() => !document.getElementById("s-hh-row").hidden, null, { timeout: slow(10000) });
+    const a = await p.evaluate(() => ({
+      items: [...document.querySelectorAll("#s-hh-list .hh-item code")].map(c => c.textContent),
+      why: document.getElementById("s-hh-list").textContent,
+      env: document.getElementById("s-hh-env").textContent,
+      help: document.getElementById("s-hh-row").textContent
+    }));
+    if (a.items.join("|") !== "*.shares.zrok.io|*.duckdns.org") fail(tag + "the list was " + JSON.stringify(a.items));
+    if (!/dynamic DNS/.test(a.why)) fail(tag + "an ignored entry shows no reason: " + a.why);
+    if (!/envhost\.example\.com/.test(a.env)) fail(tag + "the env names are missing: " + a.env);
+    if (await p.$("#s-hh-env button")) fail(tag + "the env names are editable.");
+    if (!/HUB's names/.test(a.help) || !/Rooms do not read them/.test(a.help) || !/wildcard is safe only for a\s+domain one operator controls/.test(a.help)) fail(tag + "the row does not say whose names and when a wildcard is safe.");
+    await p.fill("#s-hh-name", "box.example.org");
+    await p.click("#s-hh-add button");
+    await p.waitForFunction(() => document.querySelectorAll("#s-hh-list .hh-item").length === 3, null, { timeout: slow(5000) })
+      .catch(() => fail(tag + "an added name did not appear."));
+    if (JSON.stringify(st.puts[0]) !== JSON.stringify(["*.shares.zrok.io", "*.duckdns.org", "box.example.org"])) fail(tag + "add PUT " + JSON.stringify(st.puts));
+    await p.click('#s-hh-list button[data-remove="*.duckdns.org"]');
+    await p.waitForFunction(() => document.querySelectorAll("#s-hh-list .hh-item").length === 2, null, { timeout: slow(5000) })
+      .catch(() => fail(tag + "a removed name stayed."));
+    if (JSON.stringify(st.puts[1]) !== JSON.stringify(["*.shares.zrok.io", "box.example.org"])) fail(tag + "remove PUT " + JSON.stringify(st.puts));
+    if (/dynamic DNS/.test((await p.textContent("#s-hh-list")) + (await p.textContent("#s-hh-ignored")))) fail(tag + "the reason stayed after the entry went.");
+    const gets = st.gets;
+    await p.evaluate(() => document.getElementById("settings").close());
+    await p.click("#gear");
+    await p.evaluate(() => showSettingsPane("expose the board"));
+    await p.waitForTimeout(400);
+    if (st.gets <= gets) fail(tag + "opening the gear did not read the hosts again.");
+    if (h.errors.length) fail(tag + "page errors: " + h.errors.join(" | "));
+  } finally { await h.ctx.close(); }
+
+  h = await open("remote");
+  try {
+    const { p } = h;
+    await p.click("#gear");
+    await p.evaluate(() => showSettingsPane("expose the board"));
+    await p.waitForFunction(() => !document.getElementById("s-hh-row").hidden, null, { timeout: slow(10000) });
+    await p.fill("#s-hh-name", "x.example.org");
+    await p.click("#s-hh-add button");
+    await p.waitForFunction(() => !document.getElementById("s-hh-ro").hidden, null, { timeout: slow(5000) })
+      .catch(() => fail(tag + "a 403 did not make the row read-only."));
+    const r = await p.evaluate(() => ({
+      add: getComputedStyle(document.getElementById("s-hh-add")).display,
+      removes: document.querySelectorAll("#s-hh-list button").length,
+      said: document.getElementById("s-hh-ro").textContent
+    }));
+    if (r.add !== "none" || r.removes || !/hub's machine/.test(r.said)) fail(tag + "the read-only row is wrong: " + JSON.stringify(r));
+  } finally { await h.ctx.close(); }
+
+  h = await open("none");
+  try {
+    const { p } = h;
+    await p.click("#gear");
+    await p.evaluate(() => showSettingsPane("expose the board"));
+    await p.waitForTimeout(600);
+    const hidden = await p.evaluate(() => { const r = document.getElementById("s-hh-row"); return r.hidden || r.offsetParent === null; });
+    if (!hidden) fail(tag + "a board with no hub draws the row.");
+  } finally { await h.ctx.close(); }
+  if (!bad) console.log("gearHosts ok");
+}
+
 async function main() {
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = "http://127.0.0.1:" + server.address().port;
@@ -14626,7 +14721,8 @@ async function main() {
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
       gearTermList: gearTermListSection, growlLinks: growlLinksSection, growlChoiceOnce: growlChoiceOnceSection,
       mOutputAt: mOutputAtSection, mStickBottom: mStickBottomSection, mSendFree: mSendFreeSection, mCardUpload: mCardUploadSection, mCompact: mCompactSection, mPinch: mPinchSection, mPrompts: mPromptsSection,
-      cardUrlWinName: cardUrlWinNameSection };
+      cardUrlWinName: cardUrlWinNameSection,
+      gearHosts: gearHostsSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -14872,7 +14968,7 @@ async function main() {
     const hideState = () => page.evaluate(() => {
       const has = id => !!document.querySelector(`#term-list .card.tab[data-id="${id}"]`);
       const seg = which => {
-        const btns = [...document.querySelectorAll("#term-list .termhide button")];
+        const btns = [...document.querySelectorAll("#gear-term-hide .termhide button")];
         return btns.find(b => new RegExp("^" + which + "\\b").test(b.textContent.trim())) || null;
       };
       const a = seg("agents"), s = seg("subagents");
@@ -14897,8 +14993,8 @@ async function main() {
         agentLabel: a ? a.textContent.trim() : "",
         subLabel: s ? s.textContent.trim() : "",
         subTitle: s ? s.dataset.tip || "" : "",
-        onePill: document.querySelectorAll("#term-list .termhide").length === 1,
-        segCount: document.querySelectorAll("#term-list .termhide button").length
+        onePill: document.querySelectorAll("#gear-term-hide .termhide").length === 1,
+        segCount: document.querySelectorAll("#gear-term-hide .termhide button").length
       };
     });
 
@@ -16618,6 +16714,7 @@ async function main() {
     await mPinchSection(browser);
     await mPromptsSection(browser);
     await cardUrlWinNameSection(browser, base);
+    await gearHostsSection(browser, base);
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e));
     if (process.env.DEBUG_HEADLESS) {
