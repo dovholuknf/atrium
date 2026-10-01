@@ -1632,7 +1632,9 @@ async function renderTermList() {
   // cold row whose whole purpose is to start the session again on a machine
   // that is not there. `supervised` never survives the cache, so the live rows
   // were already safe; this is about the pinned ones.
-  const tasks = all.filter(t => !t.offline && (t.supervised || t.pinned));
+  // A live joined card (see `termJoined`) is listed too, unattachable. A parked
+  // or exited one is cold, so only a pin keeps it here.
+  const tasks = all.filter(t => !t.offline && (t.supervised || t.pinned || termJoined(t)));
   // The badge counts what is actually attachable, since it is a count of live
   // terminals rather than of rows. It counts over the WHOLE set, before the
   // doers are hidden: the nav badge is a fact about the board, not about how
