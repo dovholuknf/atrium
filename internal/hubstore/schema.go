@@ -276,6 +276,56 @@ var migrations = []struct {
 			    AND EXISTS (SELECT 1 FROM room_audit a WHERE a.room_id = room.id AND a.kind = 'joined')`,
 		},
 	},
+	{
+		// HUB DOCUMENTS, the rows half. See docs.go and docs/rnd/hub-documents-design.md.
+		// The BYTES ARE NOT HERE: they are files named for their SHA-256 under
+		// `<hub data dir>/docs/`, so the ten-minute snapshots stay small. A version row
+		// whose file is gone says so and does not fail the page.
+		//
+		// The slug is the key and never changes. A rename changes only `title`. No
+		// foreign key on the card, for the reason room_audit has none: a document
+		// outlives the card that wrote it, which is the point.
+		//
+		// ON DELETE CASCADE ON doc_version IS INERT. Nothing deletes a `doc` row: a delete
+		// is a tombstone, and a purge removes bytes and leaves rows. Foreign keys are ON for
+		// the store's one connection (Open sets the pragma), but a cascade is not relied on
+		// anywhere, and a future delete of a doc must remove its versions itself. The flags
+		// below are 0 or 1 by CHECK because they are read as `= 1`, and a 2 would be both
+		// not purged and not live.
+		name: "0007_docs",
+		stmts: []string{
+			`CREATE TABLE IF NOT EXISTS doc (
+				slug       TEXT PRIMARY KEY,
+				title      TEXT NOT NULL,
+				created_at TEXT NOT NULL,
+				-- A tombstone, not a removal. Empty means live.
+				deleted_at TEXT NOT NULL DEFAULT '',
+				deleted_by TEXT NOT NULL DEFAULT ''
+			)`,
+			`CREATE TABLE IF NOT EXISTS doc_version (
+				doc      TEXT NOT NULL REFERENCES doc(slug) ON DELETE CASCADE,
+				n        INTEGER NOT NULL,
+				at       TEXT NOT NULL,
+				by       TEXT NOT NULL,
+				-- Decided by the hub from the request and never read from a form.
+				origin   TEXT NOT NULL CHECK (origin IN ('local','share','card')),
+				-- room~id, the card URL form. Empty unless origin is card.
+				card     TEXT NOT NULL DEFAULT '',
+				size     INTEGER NOT NULL,
+				kind     TEXT NOT NULL CHECK (kind IN ('markdown','text','image','diff','other')),
+				mime     TEXT NOT NULL,
+				name     TEXT NOT NULL DEFAULT '',
+				sha      TEXT NOT NULL,
+				-- The operator deleted the bytes. The row stays.
+				purged   INTEGER NOT NULL DEFAULT 0 CHECK (purged IN (0,1)),
+				-- The operator let this one past a secret rule.
+				override INTEGER NOT NULL DEFAULT 0 CHECK (override IN (0,1)),
+				PRIMARY KEY (doc, n)
+			)`,
+			`CREATE INDEX IF NOT EXISTS doc_version_sha ON doc_version (sha)`,
+			`CREATE INDEX IF NOT EXISTS doc_version_card ON doc_version (card, at)`,
+		},
+	},
 }
 
 func (s *Store) migrate() error {
