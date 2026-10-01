@@ -772,7 +772,21 @@ func TestRepliesReachTheOwningRoomWithTheQueryIntact(t *testing.T) {
 	front, _, done := two(t, room("alpha", "acard"), room("beta", "bcard"))
 	defer done()
 	for _, path := range []string{"/v1/tasks/beta~bcard/replies?n=3", "/v1/tasks/bcard/replies?n=3"} {
-		res, err := http.Get(front.URL + path)
+		checkReplies(t, front.URL, path, "n=3")
+	}
+	// r-replies-paging: `before` rides along with `n`, colons and all.
+	for _, path := range []string{
+		"/v1/tasks/beta~bcard/replies?n=50&before=2026-09-30T08:00:00.5Z",
+		"/v1/tasks/bcard/replies?n=50&before=2026-09-30T08:00:00.5Z",
+	} {
+		checkReplies(t, front.URL, path, "n=50&before=2026-09-30T08:00:00.5Z")
+	}
+}
+
+func checkReplies(t *testing.T, base, path, wantQuery string) {
+	t.Helper()
+	{
+		res, err := http.Get(base + path)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -781,7 +795,7 @@ func TestRepliesReachTheOwningRoomWithTheQueryIntact(t *testing.T) {
 		var plain map[string]string
 		_ = json.Unmarshal(raw, &plain)
 		if res.StatusCode != http.StatusOK || plain["served_by"] != "beta" ||
-			plain["path"] != "/v1/tasks/bcard/replies" || plain["query"] != "n=3" {
+			plain["path"] != "/v1/tasks/bcard/replies" || plain["query"] != wantQuery {
 			t.Fatalf("%s answered %d %s", path, res.StatusCode, raw)
 		}
 	}

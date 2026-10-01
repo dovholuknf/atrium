@@ -64,6 +64,7 @@
 <link rel="stylesheet" href="/css/expose2.css">
 <link rel="stylesheet" href="/css/expose3.css">
 <link rel="stylesheet" href="/css/hubnotify.css">
+<link rel="stylesheet" href="/css/hubhosts.css">
 <link rel="stylesheet" href="/css/growl.css">
 <link rel="stylesheet" href="/css/cardurl.css">
 <link rel="stylesheet" href="/m/compose.css">
@@ -79,6 +80,61 @@
      anything is drawn.
      Only when a switch is in flight. An ordinary reload is not covered up,
      because an ordinary reload is not going anywhere. -->
+<!-- A PHONE LANDS ON THE PHONE PAGE. A touch screen (a coarse pointer, or any touch points) whose screen is under 600px on its shorter
+     side (the screen, not the window, so a small window on a big touch screen stays on the board), which a tablet and a desktop are not, sends the board root and a card's address to the matching
+     /m page, with `replace` so Back does not loop. A pop-out window (it has a name made for its card, or an opener) is never
+     sent, and neither is a tab that chose the desktop board: `atrium.m.desktop` lives in sessionStorage, so it is that tab's
+     choice and a new tab or a restart goes to /m again. It is set by the "desktop board" link on /m and cleared by "phone
+     view" in the drawer. An old localStorage value from the first version is removed and ignored. `?why=1` writes the reason
+     for what happened into the page. In the HEAD so nothing of the board is drawn first. -->
+<script>
+  (function () {
+    var diag = /[?&]why=1(&|$)/.test(location.search);
+    function why(t) {
+      if (!diag) return;
+      addEventListener("DOMContentLoaded", function () {
+        var d = document.createElement("div");
+        d.id = "redirect-why";
+        d.textContent = "redirect: " + t;
+        d.style.cssText = "position:fixed;z-index:9999;left:0;right:0;top:0;padding:6px 10px;background:var(--shell-0,#111);" +
+          "color:var(--warn,#fc0);font:12px/1.3 monospace;overflow-wrap:anywhere";
+        document.body.appendChild(d);
+      });
+    }
+    try {
+      var p = location.pathname, h = location.hash, m;
+      if (/^\/m(\/|$)/.test(p)) return;
+      try { localStorage.removeItem("atrium.m.desktop"); } catch (e) {}
+      if (window.opener) return why("not redirected, this window has an opener");
+      if (/^atrium-term-/.test(window.name)) return why("not redirected, a pop-out window (" + window.name + ")");
+      var coarse = matchMedia("(pointer: coarse)").matches, anyCoarse = matchMedia("(any-pointer: coarse)").matches;
+      var touch = navigator.maxTouchPoints || 0, shortest = Math.min(screen.width, screen.height);
+      var seen = "coarse=" + coarse + " any-coarse=" + anyCoarse + " touch-points=" + touch + " shortest-side=" + shortest;
+      if (!(coarse || anyCoarse || touch > 0) || shortest >= 600) return why("not redirected, not a phone (" + seen + ")");
+      if (sessionStorage.getItem("atrium.m.desktop") === "1") {
+        // The way back, a button in the notification drawer that this mark shows. Not drawn over the board, where it would
+        // cover the terminal's keys.
+        document.documentElement.setAttribute("data-opted-out", "1");
+        return why("not redirected, this tab chose the desktop board (" + seen + ")");
+      }
+      var to = "";
+      if (p === "/" || p === "/index.html") {
+        // A notification tap is `/?land=<card>&view=&key=`. The card is the point, so it becomes the fragment /m opens, and the
+        // rest of the query goes along with what the notification set removed.
+        var q = new URLSearchParams(location.search), land = q.get("land");
+        q.delete("land"); q.delete("view"); q.delete("key"); q.delete("why");
+        var rest = q.toString();
+        to = "/m/" + (rest ? "?" + rest : "") + (land ? "#term=" + encodeURIComponent(land) : /^#term=/.test(h) ? h : "");
+      }
+      else if (/^\/alias\/[^/]+\/?$/.test(p) || /^\/room\/[^/]+\/[^/]+\/?$/.test(p)) to = "/m" + p;
+      else if ((m = /^\/room\/([^/]+)\/?$/.exec(p))) { localStorage.setItem("atrium.room", decodeURIComponent(m[1])); to = "/m/"; }
+      if (!to) return why("not redirected, no /m page for " + p + " (" + seen + ")");
+      // With ?why=1 the line is left up for a few seconds first, since the page is about to be replaced.
+      if (diag) { why("going to " + to + " (" + seen + ")"); setTimeout(function () { location.replace(to); }, 4000); }
+      else location.replace(to);
+    } catch (e) { why("not redirected, an error: " + e); }
+  })();
+</script>
 <script>
   try {
     var to = sessionStorage.getItem("atrium.switching");
@@ -193,6 +249,7 @@
        Both controls sit here rather than in the gear: they change what you are
        looking at, and a control that does that belongs next to the thing. -->
   <div class="filters" id="board-bar" hidden>
+    <button type="button" class="filtersbtn" data-for="board" aria-expanded="false">filters <b class="fcount" hidden></b></button>
     <span class="barlabel">group</span>
     <div class="seg groupseg" id="board-group"></div>
     <span class="barlabel">sort</span>
@@ -218,6 +275,7 @@
       <input type="search" id="stack-q"
         placeholder="name, path, runner or tag. #tag for one tag"
         spellcheck="false">
+      <button type="button" class="filtersbtn" data-for="stack" aria-expanded="false">filters <b class="fcount" hidden></b></button>
       <span class="matchcount" id="stack-match"></span>
     </div>
     <!-- Sort and group are two different questions, so two controls. Sorting
@@ -1018,6 +1076,8 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
     <div class="grow"><div class="dlg-eyebrow">the tray</div><h2>notifications</h2></div>
     <span id="toastlog-scope" class="hintline" hidden></span>
     <button id="toastlog-toggle" onclick="notifyToggle()">turn off</button>
+    <button id="toastlog-sound" onclick="document.getElementById('sound').click()">sound on</button>
+    <button id="toastlog-phone" onclick="try { sessionStorage.removeItem('atrium.m.desktop'); } catch (e) {} location.replace('/m/')">phone view</button>
     <button onclick="clearToastLog()">clear</button>
     <button onclick="document.getElementById('toastlog').close()">close</button>
   </div>
@@ -1496,6 +1556,25 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         nobody.</b> That is deliberate: "anyone the provider authenticated" is, on a provider
         with open registration, the whole internet with an extra step.</span>
       <span class="hintline" id="auth-said"></span>
+    </div>
+
+    <!-- The names the hub answers besides its own. Hidden until the hub answers, so a board with no hub never
+         draws it. See js/hubhosts.js. -->
+    <div class="field" id="s-hh-row" hidden>
+      <span class="eyebrow">host names the hub answers</span>
+      <div id="s-hh-list"></div>
+      <div id="s-hh-ignored" hidden></div>
+      <div id="s-hh-env" hidden></div>
+      <div class="picker" id="s-hh-add">
+        <input type="text" id="s-hh-name" placeholder="a name, or *.example.com" spellcheck="false"
+          onkeydown="if (event.key === 'Enter') addHubHost()">
+        <button type="button" onclick="addHubHost()">add</button>
+      </div>
+      <span class="hintline" id="s-hh-ro" hidden>Set on the hub's machine.</span>
+      <span class="hintline" id="s-hh-msg"></span>
+      <span class="hintline">These are the HUB's names. Rooms do not read them. A wildcard is safe only for a
+        domain one operator controls: a dynamic DNS domain is refused, and shows above as ignored with its reason.
+        Applied from the next request, no restart.</span>
     </div>
 
     <!-- THE REDO SURFACE, a coexisting alternate to `expose the board` above.
@@ -3302,6 +3381,8 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
   <div class="dlg-body" id="rev-body"></div>
 </dialog>
 
+<script src="/js/cardrules.js"></script>
+<script src="/js/sounds.js"></script>
 <script src="/js/core.js"></script>
 <!-- cardurl.js second: it defines termOnly and cardUrlIsCard, which a dozen later files ask, some from a network
      callback that can run between two script tags. It runs nothing at load. -->
@@ -3327,6 +3408,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/alias.js"></script>
 <script src="/js/heldline.js"></script>
 <script src="/js/phone-bell.js"></script>
+<script src="/js/phone-filters.js"></script>
 <script src="/js/settings.js"></script>
 <script src="/js/overlays.js"></script>
 <script src="/js/expose2.js"></script>
@@ -3339,6 +3421,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/peek.js"></script>
 <script src="/js/settings-spine.js"></script>
 <script src="/js/hubnotify.js"></script>
+<script src="/js/hubhosts.js"></script>
 <script src="/js/themes.js"></script>
 <script src="/js/terminal.js"></script>
 <script src="/js/termcursor.js"></script>

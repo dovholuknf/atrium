@@ -94,7 +94,9 @@ let hadFocus = false;
 
 // This window's own answer is a fact. Every other window's is a report, and
 // reports go stale.
-function focusIsHere() { return document.hasFocus(); }
+// A page that is not visible is not looked at, whatever `hasFocus` says. A phone with the screen off or another app on top can
+// keep answering true, and its alerts were then taken for ones the operator was already reading.
+function focusIsHere() { return document.hasFocus() && document.visibilityState !== "hidden"; }
 function focusIsElsewhere() {
   if (focusIsHere() || !focusedElsewhere.win) return "";
   if (Date.now() - focusedElsewhere.at > focusClaimFor) return "";
@@ -551,6 +553,9 @@ const alerting = (() => {
       ? (muted() ? "muted for this window. click for sound" : "sound on. click to mute this window")
       : (muted() ? "muted. click for sound" : "sound on. click to mute");
     btn.setAttribute("aria-label", btn.dataset.tip);
+    // The same switch from the bell's drawer, which is where a phone reaches it with the header folded away.
+    const dt = document.getElementById("toastlog-sound");
+    if (dt) dt.textContent = muted() ? "sound off" : "sound on";
   };
   paint();
   window.addEventListener("storage", e => {
@@ -563,17 +568,26 @@ const alerting = (() => {
   };
 
   // Browsers refuse to make noise until the page has been interacted with, so
-  // the context is built on the first gesture and reused after that.
+  // the context is built on a gesture and reused after that. WHICH EVENTS COUNT IS A BROWSER RULE: a touch's
+  // pointerdown and touchstart do not activate the page, its touchend, pointerup and click do, and iOS only lets
+  // a context start from inside one of those. So every one of them tries, and the first that the browser accepts
+  // wins. Listening to pointerdown alone left a phone locked until its second touch, or for good.
   const unlock = () => {
     if (!ctx) {
       const AC = window.AudioContext || window.webkitAudioContext;
-      if (AC) ctx = new AC();
+      if (AC) {
+        ctx = new AC();
+        if (ctx.addEventListener) ctx.addEventListener("statechange", () => paintAudioState());
+      }
     }
-    if (ctx && ctx.state === "suspended") ctx.resume();
+    if (ctx && ctx.state === "suspended") {
+      const r = ctx.resume();
+      if (r && r.then) r.then(paintAudioState, () => {});
+    }
     paintAudioState();
   };
-  document.addEventListener("pointerdown", unlock, { once: false });
-  document.addEventListener("keydown", unlock, { once: false });
+  ["pointerdown", "pointerup", "touchend", "click", "keydown"].forEach(t =>
+    document.addEventListener(t, unlock, { capture: true, passive: true }));
   // A reload resets the audio context, and a browser will not let it start
   // until the page has been interacted with. Without a visible signal, silence
   // looks like a broken feature rather than a browser rule.
@@ -588,6 +602,39 @@ const alerting = (() => {
     const el = document.getElementById("sound");
     el.classList.toggle("blocked", audioBlocked());
     if (audioBlocked()) el.dataset.tip = "click anywhere on the page once to let the browser play sound";
+    paintSoundHint(audioBlocked());
+  }
+  // A touch device has no hover and may not show the sound button, so it is told in words while the context is locked.
+  function paintSoundHint(blocked) {
+    let h = document.getElementById("sound-hint");
+    const want = blocked && typeof phoneToasts === "function" && phoneToasts();
+    if (!want) { if (h && !h.dataset.press) h.hidden = true; return; }
+    if (!h) {
+      h = document.createElement("button");
+      h.type = "button";
+      h.id = "sound-hint";
+      h.textContent = "tap to enable sound";
+      // A tap on the pill enables sound and does nothing else. It is a real target, so a tap does not fall through to
+      // the card row, key bar or composer under it. The capture listeners above have already unlocked by now.
+      // The press is marked from the window's capture phase, ahead of the unlock listeners, because unlocking takes
+      // the pill down on pointerup and the click would then land on the row that was under it.
+      const release = () => { delete h.dataset.press; };
+      const press = e => { if (e.target === h) h.dataset.press = "1"; else if (h.dataset.press) { release(); paintSoundHint(audioBlocked()); } };
+      ["pointerdown", "touchstart", "mousedown"].forEach(t => window.addEventListener(t, press, true));
+      // A press that slides off the pill gets a pointerup but no click, so the mark would stay and keep the pill up.
+      // Let go of it when the release is outside the pill, and only then: a release on the pill is followed by its click.
+      const lift = e => {
+        if (!h.dataset.press) return;
+        const pt = e.changedTouches && e.changedTouches[0] || e, b = h.getBoundingClientRect();
+        if (pt.clientX < b.left || pt.clientX > b.right || pt.clientY < b.top || pt.clientY > b.bottom) { release(); paintSoundHint(audioBlocked()); }
+      };
+      ["pointerup", "touchend", "mouseup"].forEach(t => window.addEventListener(t, lift, true));
+      h.addEventListener("pointercancel", release);
+      h.addEventListener("touchcancel", release);
+      h.addEventListener("click", e => { e.preventDefault(); e.stopPropagation(); release(); unlock(); h.hidden = true; });
+      document.body.appendChild(h);
+    }
+    h.hidden = false;
   }
   // First paint, and again shortly after load in case the context settles.
   setTimeout(paintAudioState, 300);

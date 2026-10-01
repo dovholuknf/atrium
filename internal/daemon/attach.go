@@ -356,6 +356,11 @@ func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, s
 					// A person at a real key: the human touch that keeps an
 					// idle card up. See park.go.
 					d.humanTouch(taskID, ViaTyped)
+					// A `/model <id>` sent by hand is a switch the card must
+					// remember too. See modelswitch.go.
+					if line := run.takeSubmitted(); line != "" {
+						go d.noteTypedModel(taskID, line)
+					}
 				}
 				// Typing into it is looking at it. One map lookup when the
 				// turn is already seen. A shell is another screen, and the
