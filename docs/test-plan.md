@@ -8032,7 +8032,26 @@ the hub routing and the control tool.
 6. On a transcript over 16MB with replies spread through it, a deep page still answers: the 16MB bound counts from
    the `before` position, not from the end of the file.
 
-## HO. fyi and needs, and held notices as board state (r-fyi-kind)
+
+## HO. A director held to a context ceiling (r-director-ceiling)
+
+Tagging is the orchestrator's job, never a worker's. There is no `atrium tag` command. Use the board's tag editor, or
+send the whole tag set to the card: `PATCH /v1/tasks/{id}` with `{"tags":[...existing tags..., "atrium:context-ceiling"]}`
+on the board port. The body replaces the set, so read the card's tags first.
+
+1. Tag a director `atrium:context-ceiling`, with `auto_new_context` off. Let it grow past 150k while it is in a long
+   turn. Within a tick the chip shows the new context at step 1, and a minute later the terminal shows `[atrium] new
+   context: a new context is waiting. Finish the step you are on, commit, and end your turn.`
+2. The director ends its turn. The capture prompt is typed, then `/clear`, then the wake, which ends `Your context was
+   cycled at the context ceiling.` The launcher has one notice, `passed its context ceiling at NNNk`.
+3. A director with a pending permission, an open dialog, subagents out, background work or a queued message is not
+   started until that clears. A director also tagged `atrium:no-auto-new-context` is never started.
+4. Set `context_ceiling_k` to 200 in settings. The director is left alone at 180k and cycled at 200k. With
+   `auto_new_context` on `agents` and `auto_new_context_k` at 180, it is cycled at 180k, the lower line.
+5. Setting `context_ceiling_k` below `context_threshold_k` is refused. A card without the tag, mid-turn past the global
+   line, is left alone as before.
+
+## HP. fyi and needs, and held notices as board state (r-fyi-kind)
 
 1. From a worker launched by a card tagged `atrium:orchestrator` (and again with `atrium:hold-notices`), call
    `atrium_report` with `status: done`, `kind: fyi`. Nothing is typed into the launcher's terminal and nothing is queued
