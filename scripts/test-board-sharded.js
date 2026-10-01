@@ -50,7 +50,7 @@ function defaultShards() {
 }
 
 function parseArgs(argv) {
-  const o = { shards: 0, units: null, retry: true, saveWeights: false, list: false, logs: "", local: false, argv: argv };
+  const o = { shards: 0, units: null, retry: true, saveWeights: false, list: false, logs: "", local: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     const val = () => { if (i + 1 >= argv.length) { console.error(a + " needs a value"); process.exit(2); } return argv[++i]; };

@@ -35,12 +35,23 @@ $head = (git rev-parse HEAD).Trim()
 
 # The working tree as a commit, on a temporary index so the real one is never touched.
 $idx = Join-Path ([IO.Path]::GetTempPath()) "suite-index-$id"
+# pwsh 7 does not throw when a native command fails, and a failed `git add -A` leaves write-tree answering with HEAD's
+# tree, so the suite would run without the changes it was asked to test and report green. Every step is checked.
+function Step([string] $what, [scriptblock] $run) {
+    $out = & $run 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "board-suite fail git $what exited $LASTEXITCODE`: $(($out | Out-String).Trim())"
+        Write-Host "board-suite an untracked file git cannot read (a file named NUL, made by a bash '> NUL') is the usual cause. --local runs the suite here"
+        exit 3
+    }
+    $out
+}
 try {
     $env:GIT_INDEX_FILE = $idx
-    git read-tree HEAD
-    git add -A
-    $tree = (git write-tree).Trim()
-    $sha = (git commit-tree $tree -p $head -m "board suite snapshot $id").Trim()
+    Step 'read-tree' { git read-tree HEAD } | Out-Null
+    Step 'add -A' { git add -A } | Out-Null
+    $tree = (Step 'write-tree' { git write-tree } | Out-String).Trim()
+    $sha = (Step 'commit-tree' { git commit-tree $tree -p $head -m "board suite snapshot $id" } | Out-String).Trim()
 } finally {
     Remove-Item Env:GIT_INDEX_FILE -ErrorAction SilentlyContinue
     Remove-Item $idx -Force -ErrorAction SilentlyContinue
@@ -61,7 +72,10 @@ if ($LASTEXITCODE -ne 0) { Write-Host "board-suite fail could not copy the remot
 
 # The room's clone path is the remote url's path part, `host:C:/.../atrium` on Windows.
 $clone = ($url -replace '^[^:]+:', '' -replace '^//[^/]+', '')
-# A leading `A` keeps the value from being empty, which ssh would drop and the remote parameter would then miss.
-$enc = 'A' + [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($SuiteArgs))
-& $ssh $Room "powershell -NoProfile -ExecutionPolicy Bypass -File board-suite-run.ps1 -Clone $clone -Id $id -Sha $sha -ArgsB64 $enc"
+# The suite's arguments travel as base64 of one argument per line, and the room passes them to node as an array, so
+# nothing in them is ever read as PowerShell. A leading `A` keeps the value from being empty, which ssh would drop and
+# the remote parameter would then miss.
+$argv = @($SuiteArgs -split '\s+' | Where-Object { $_ })
+$enc = 'A' + [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($argv -join "`n"))
+& $ssh $Room "powershell -NoProfile -ExecutionPolicy Bypass -File board-suite-run.ps1 -Clone '$clone' -Id $id -Sha $sha -ArgsB64 $enc"
 exit $LASTEXITCODE
