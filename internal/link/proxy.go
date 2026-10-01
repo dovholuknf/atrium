@@ -550,6 +550,11 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		p.serveAsset(w, r, "m/index.html")
 		return
 	}
+	// THE DOCUMENT LIST, /m/docs, is the same shell, so a reload on the phone's list is not a 404.
+	if r.URL.Path == "/m/docs" && p.board != nil && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
+		p.serveAsset(w, r, "m/index.html")
+		return
+	}
 	// A CARD'S READABLE ADDRESS is the board page, and the page resolves the
 	// name. See internal/cardurl.
 	if p.board != nil && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
