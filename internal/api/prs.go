@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/dovholuknf/atrium/internal/safepath"
 	"github.com/dovholuknf/atrium/internal/store"
@@ -53,6 +54,12 @@ func (s *Server) prRunner() PRRunner {
 	}
 	return unbuiltPRRunner{s.st}
 }
+
+// prOpMu serialises the operations that start, restart or stop a run. Each is
+// short: Start returns once the row is in the state the runner left it. The
+// conditional UPDATEs in the store are what refuse a second caller, and this lock
+// is what makes the row the runner moved visible to that caller's check.
+var prOpMu sync.Mutex
 
 // prView is a row with the counts that are read from its run folder.
 type prView struct {
@@ -149,6 +156,11 @@ func (s *Server) postPR(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
+		// A halted store inside the recogniser is the halt, not a bad url.
+		if halted, _ := s.st.Halted(); halted {
+			s.fail(w, err)
+			return
+		}
 		prError(w, http.StatusBadRequest, "bad_request", err.Error(), nil)
 		return
 	}
@@ -159,13 +171,32 @@ func (s *Server) postPR(w http.ResponseWriter, r *http.Request) {
 			"that url matched a recogniser, but it is not a pull request: it has to capture host, org, repo and num", nil)
 		return
 	}
-	dir, err := s.st.RunFolderOn(host, org, repo, num, body.Head)
+	prOpMu.Lock()
+	defer prOpMu.Unlock()
+	// With no head the folder is named `pending` and the fetch step moves it, so a
+	// second paste would name a folder no row has. The pull request is the identity
+	// while a review of it is under way.
+	if body.Head == "" {
+		live, err := s.st.LivePR(host, org, repo, num)
+		if err != nil {
+			s.prFail(w, err)
+			return
+		}
+		if live != nil {
+			s.prAnswer(w, http.StatusOK, live.ID, map[string]any{"created": false})
+			return
+		}
+	}
+	// The folder is only named here. It is made after the row is, so a refused
+	// create leaves nothing behind.
+	root := s.st.ReviewsRoot()
+	named, err := store.RunFolderPath(root, host, org, repo, num, body.Head)
 	if err != nil {
-		s.fail(w, err)
+		prError(w, http.StatusBadRequest, "bad_request", err.Error(), nil)
 		return
 	}
 	row, created, err := s.st.CreatePR(store.NewPR{URL: body.URL, Why: body.Why, Host: host, Org: org,
-		Repo: repo, Number: num, Head: body.Head, RunDir: dir})
+		Repo: repo, Number: num, Head: body.Head, RunDir: named})
 	if err != nil {
 		if halted, _ := s.st.Halted(); halted {
 			s.fail(w, err)
@@ -174,17 +205,28 @@ func (s *Server) postPR(w http.ResponseWriter, r *http.Request) {
 		prError(w, http.StatusBadRequest, "bad_request", err.Error(), nil)
 		return
 	}
+	if created || row.State == store.PRFailed || row.State == store.PRAborted {
+		if _, err := s.st.RunFolderOn(host, org, repo, num, body.Head); err != nil {
+			s.st.SetPRState(row.ID, store.PRFailed, "", "folder: "+err.Error())
+			s.prAnswer(w, http.StatusInternalServerError, row.ID, map[string]any{"created": created})
+			return
+		}
+	}
 	if created {
 		s.prRunner().Start(row.ID)
 		s.prAnswer(w, http.StatusCreated, row.ID, map[string]any{"created": true})
 		return
 	}
 	if row.State == store.PRFailed || row.State == store.PRAborted {
-		if _, err := s.st.ResetPR(row.ID, dir); err != nil {
+		switch _, err := s.st.ResetPR(row.ID, named, store.PRFailed, store.PRAborted); {
+		case err == nil:
+			s.prRunner().Start(row.ID)
+		case errors.Is(err, store.ErrPRState):
+			// Somebody else retried it first. Theirs is the run.
+		default:
 			s.prFail(w, err)
 			return
 		}
-		s.prRunner().Start(row.ID)
 	}
 	s.prAnswer(w, http.StatusOK, row.ID, map[string]any{"created": false})
 }
@@ -230,7 +272,7 @@ func (s *Server) getPR(w http.ResponseWriter, r *http.Request) {
 		s.prFail(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"pr": viewPR(p), "run_log": tailLog(p.RunDir, 8<<10)})
+	writeJSON(w, http.StatusOK, map[string]any{"pr": viewPR(p), "run_log": tailLog(s.st.ReviewsRoot(), p.RunDir, 8<<10)})
 }
 
 // POST /v1/prs/{id}/retry
@@ -240,32 +282,58 @@ func (s *Server) retryPR(w http.ResponseWriter, r *http.Request) {
 		s.prFail(w, err)
 		return
 	}
-	if p.State != store.PRFailed && p.State != store.PRAborted {
-		prError(w, http.StatusConflict, "not_retryable", "only a failed or aborted row can be retried",
-			map[string]any{"state": p.State})
-		return
-	}
+	prOpMu.Lock()
+	defer prOpMu.Unlock()
 	dir := p.RunDir
 	if p.State == store.PRAborted {
 		// An abort deleted the folder, so a retry makes a new one.
-		head := p.Head
-		if dir, err = s.st.RunFolderOn(p.Host, p.Org, p.Repo, p.Number, head); err != nil {
+		if dir, err = store.RunFolderPath(s.st.ReviewsRoot(), p.Host, p.Org, p.Repo, p.Number, p.Head); err != nil {
 			s.fail(w, err)
 			return
 		}
 	}
-	if _, err := s.st.ResetPR(p.ID, dir); err != nil {
-		s.prFail(w, err)
+	// The state check and the reset are one statement. A second retry of the same
+	// row finds it queued by then and gets the 409.
+	if _, err := s.st.ResetPR(p.ID, dir, store.PRFailed, store.PRAborted); err != nil {
+		s.prStateConflict(w, p.ID, err, "not_retryable", "only a failed or aborted row can be retried")
+		return
+	}
+	if _, err := s.st.RunFolderOn(p.Host, p.Org, p.Repo, p.Number, p.Head); err != nil {
+		s.st.SetPRState(p.ID, store.PRFailed, "", "folder: "+err.Error())
+		s.prAnswer(w, http.StatusInternalServerError, p.ID, nil)
 		return
 	}
 	s.prRunner().Start(p.ID)
 	s.prAnswer(w, http.StatusAccepted, p.ID, nil)
 }
 
+// prStateConflict answers the store's refusal to move a row that was in the wrong
+// state as a 409 carrying the state it is in, and anything else as the usual
+// failure.
+func (s *Server) prStateConflict(w http.ResponseWriter, id string, err error, code, msg string) {
+	if !errors.Is(err, store.ErrPRState) {
+		s.prFail(w, err)
+		return
+	}
+	state := ""
+	if now, gerr := s.st.PRByID(id); gerr == nil {
+		state = now.State
+	}
+	prError(w, http.StatusConflict, code, msg, map[string]any{"state": state})
+}
+
 // POST /v1/prs/{id}/start
 func (s *Server) startPR(w http.ResponseWriter, r *http.Request) {
 	p, err := s.st.PRByID(r.PathValue("id"))
 	if err != nil {
+		s.prFail(w, err)
+		return
+	}
+	prOpMu.Lock()
+	defer prOpMu.Unlock()
+	// Read again under the lock: Start moves the row out of queued before it
+	// returns, so a second click that waited here sees that and gets the 409.
+	if p, err = s.st.PRByID(p.ID); err != nil {
 		s.prFail(w, err)
 		return
 	}
@@ -285,19 +353,17 @@ func (s *Server) abortPR(w http.ResponseWriter, r *http.Request) {
 		s.prFail(w, err)
 		return
 	}
-	switch p.State {
-	case store.PRQueued, store.PRFetching, store.PRRunning:
-	default:
-		prError(w, http.StatusConflict, "not_abortable",
-			"only a queued, fetching or running row can be aborted", map[string]any{"state": p.State})
+	prOpMu.Lock()
+	defer prOpMu.Unlock()
+	// The row is claimed first, in one statement that names the states it may be
+	// in. A run that finished between the read and here is ready, and is refused.
+	if _, err := s.st.MovePR(p.ID, []string{store.PRQueued, store.PRFetching, store.PRRunning},
+		store.PRAborted, "", ""); err != nil {
+		s.prStateConflict(w, p.ID, err, "not_abortable", "only a queued, fetching or running row can be aborted")
 		return
 	}
 	s.prRunner().Abort(p.ID)
 	s.removeRunFolder(p)
-	if _, err := s.st.SetPRState(p.ID, store.PRAborted, "", ""); err != nil {
-		s.prFail(w, err)
-		return
-	}
 	s.prAnswer(w, http.StatusOK, p.ID, nil)
 }
 

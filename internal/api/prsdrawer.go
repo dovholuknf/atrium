@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/prreview/render"
 	"github.com/dovholuknf/atrium/internal/safepath"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -61,7 +62,10 @@ type PRFinding struct {
 	Position int               `json:"position"`
 	File     string            `json:"file"`
 	Sev      string            `json:"sev"`
-	Path     string            `json:"path"`
+	// Blocking is true when the finding is named and labelled BLOCKING. Its sev is
+	// `high`. Additive: a client that does not know it loses nothing.
+	Blocking bool   `json:"blocking"`
+	Path    string            `json:"path"`
 	Line     int               `json:"line"`
 	Code     string            `json:"code"`
 	Link     string            `json:"link"`
@@ -81,7 +85,7 @@ type PRFindingWalk struct {
 	URL   string `json:"url"`
 }
 
-var labelLine = regexp.MustCompile(`^(?i:high|medium|med|low|nit)\s+(\S+)\s+line\s+(\d+):\s*(.*)$`)
+var labelLine = regexp.MustCompile(`^(?i:high|blocking|medium|med|low|nit)\s+(\S+)\s+line\s+(\d+):\s*(.*)$`)
 
 func sha256Hex(b []byte) string {
 	sum := sha256.Sum256(b)
@@ -224,6 +228,7 @@ func loadFindings(dir string) ([]PRFinding, error) {
 			continue
 		}
 		f := parseFinding(e.Name(), pos, sev, raw)
+		f.Blocking = findingBlocking(e.Name())
 		f.Hunk = hunkAround(diff, f.Path, f.Line)
 		if wl, ok := walk[e.Name()]; ok {
 			f.Walk = PRFindingWalk{State: wl.State, At: wl.At, URL: wl.URL}
@@ -450,7 +455,7 @@ func replaceWalkLine(path, file, line string) error {
 		if strings.TrimSpace(l) == "" {
 			continue
 		}
-		if f := strings.Fields(l); len(f) > 0 && f[0] == file {
+		if name, _, _, ok := render.WalkLine(l); ok && name == file {
 			if !replaced {
 				out = append(out, line)
 				replaced = true
@@ -542,7 +547,7 @@ func (s *Server) launchWalker(w http.ResponseWriter, p *store.PRReview) {
 		"harness": rec.Harness,
 		"cwd":     filepath.ToSlash(dir),
 		"title":   fmt.Sprintf("walk %s#%d", p.OrgRepo, p.Number),
-		"prompt":  rec.WalkerBrief,
+		"prompt":  strings.ReplaceAll(rec.WalkerBrief, "<n>", strconv.Itoa(p.Number)),
 		"url":     p.URL,
 		"tags": []string{"atrium:subagent", "dept:review", "review", "pr",
 			fmt.Sprintf("pr:%s#%d", p.OrgRepo, p.Number)},

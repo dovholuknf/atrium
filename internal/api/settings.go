@@ -87,7 +87,8 @@ func globalAutoView(s *Server) map[string]any {
 		// and its callers are the same person.
 		SettingSharedLocation: "shared_location",
 		// Where pull request review run folders are made. Empty means the default
-		// under the daemon's data directory.
+		// under the daemon's data directory. Changing it orphans existing rows:
+		// they keep the folder they were made in, which is then outside the root.
 		store.SettingReviewsRoot: "reviews_root",
 		// WHICH SHELL A PANE OPENS. Empty means the one `shellpick` found.
 		//

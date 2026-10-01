@@ -26,6 +26,11 @@ import (
 
 // SettingReviewsRoot is where run folders are made. Empty means the default
 // under the daemon's data directory.
+//
+// CHANGING IT ORPHANS EXISTING ROWS. A row stores the folder it was made in, and
+// nothing moves the folders when the setting changes. The drawer routes refuse a
+// row whose folder is outside the new root (403 outside), so its findings stop
+// opening until the folders are moved back or the setting is.
 const SettingReviewsRoot = "reviews_root"
 
 // The states of a row, in the order a run goes through them.
@@ -164,6 +169,29 @@ func (st *Store) CreatePR(in NewPR) (*PRReview, bool, error) {
 	return out, created, err
 }
 
+// LivePR returns the newest row for a pull request that is queued, fetching or
+// running, or nil. A paste with no head names a folder that the fetch step moves,
+// so the folder cannot say the review already exists: the pull request does.
+func (st *Store) LivePR(host, org, repo string, number int) (*PRReview, error) {
+	var out *PRReview
+	err := st.guard(func() error {
+		out = nil
+		got, err := scanPR(st.db.QueryRow(`SELECT `+prColumns+` FROM pr_review
+			WHERE host = ? AND org = ? AND repo = ? AND number = ? AND archived_at = ''
+			AND state IN ('queued', 'fetching', 'running')
+			ORDER BY created_at DESC, id DESC LIMIT 1`, host, org, repo, number))
+		if err == sql.ErrNoRows {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		out = got
+		return nil
+	})
+	return out, err
+}
+
 // PRByID returns one row. A missing row is sql.ErrNoRows.
 func (st *Store) PRByID(id string) (*PRReview, error) {
 	var out *PRReview
@@ -262,6 +290,49 @@ func validPRState(s string) bool {
 // ready_at when it becomes ready. runErr belongs to failed and is cleared by
 // every other state.
 func (st *Store) SetPRState(id, state, runState, runErr string) (*PRReview, error) {
+	return st.MovePR(id, nil, state, runState, runErr)
+}
+
+// ErrPRState is what a move answers when the row was not in any of the states the
+// caller allowed. The row exists: a caller that wants its state reads it.
+var ErrPRState = errors.New("the review is not in a state that allows that")
+
+// stateGuard is the SQL that limits an UPDATE to rows in one of from, and its
+// arguments. Empty from is no limit.
+func stateGuard(from []string) (string, []any) {
+	if len(from) == 0 {
+		return "", nil
+	}
+	args := make([]any, len(from))
+	for i, f := range from {
+		args[i] = f
+	}
+	return ` AND state IN (?` + strings.Repeat(`,?`, len(from)-1) + `)`, args
+}
+
+// whyNoRows tells a row that is not there from one that was in the wrong state,
+// after an UPDATE touched nothing.
+//
+// It runs OUTSIDE the guard that made the UPDATE. guard halts the store on any
+// error it does not know, and a wrong state is the caller's answer, not storage
+// failing.
+func (st *Store) whyNoRows(id string) error {
+	var n int
+	if err := st.guard(func() error {
+		return st.db.QueryRow(`SELECT COUNT(*) FROM pr_review WHERE id = ?`, id).Scan(&n)
+	}); err != nil {
+		return err
+	}
+	if n == 0 {
+		return sql.ErrNoRows
+	}
+	return ErrPRState
+}
+
+// MovePR is SetPRState limited to rows currently in one of from. The check and
+// the update are one statement, so two callers racing for the same row cannot both
+// win: the second touches nothing and gets ErrPRState. Empty from allows any.
+func (st *Store) MovePR(id string, from []string, state, runState, runErr string) (*PRReview, error) {
 	if !validPRState(state) {
 		return nil, fmt.Errorf("%q is not a review state", state)
 	}
@@ -269,20 +340,26 @@ func (st *Store) SetPRState(id, state, runState, runErr string) (*PRReview, erro
 		runErr = ""
 	}
 	n := ts(now())
+	guardSQL, guardArgs := stateGuard(from)
+	missed := false
 	err := st.guard(func() error {
+		args := append([]any{state, runState, runErr, state, n, state, n, id}, guardArgs...)
 		res, err := st.db.Exec(`UPDATE pr_review SET state = ?, run_state = ?, run_error = ?,
 			started_at = CASE WHEN started_at = '' AND ? IN ('fetching', 'running') THEN ? ELSE started_at END,
 			ready_at   = CASE WHEN ? = 'ready' THEN ? ELSE '' END
-			WHERE id = ?`,
-			state, runState, runErr, state, n, state, n, id)
+			WHERE id = ?`+guardSQL, args...)
 		if err != nil {
 			return err
 		}
+		missed = false
 		if k, _ := res.RowsAffected(); k == 0 {
-			return sql.ErrNoRows
+			missed = true
 		}
 		return nil
 	})
+	if err == nil && missed {
+		err = st.whyNoRows(id)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -337,21 +414,30 @@ func (st *Store) SetPRFetched(id, head, title, author, runDir string) (*PRReview
 // ResetPR puts a row back to the start for a rerun in runDir: queued, nothing
 // observed about the old run left on it. The head, title and author stay, since
 // they say what the review is of.
-func (st *Store) ResetPR(id, runDir string) (*PRReview, error) {
+//
+// Given from, only a row in one of those states is reset, and any other answers
+// ErrPRState. Two retries racing for a failed row cannot both reset it.
+func (st *Store) ResetPR(id, runDir string, from ...string) (*PRReview, error) {
+	guardSQL, guardArgs := stateGuard(from)
+	missed := false
 	err := st.guard(func() error {
+		args := append([]any{runDir, runDir, id}, guardArgs...)
 		res, err := st.db.Exec(`UPDATE pr_review SET state = 'queued', run_state = '',
 			run_error = '', cost_usd = 0, started_at = '', ready_at = '',
 			second_state = 'none', second_summary = '', second_error = '',
-			run_dir = CASE WHEN ? = '' THEN run_dir ELSE ? END WHERE id = ?`,
-			runDir, runDir, id)
+			run_dir = CASE WHEN ? = '' THEN run_dir ELSE ? END WHERE id = ?`+guardSQL, args...)
 		if err != nil {
 			return err
 		}
+		missed = false
 		if k, _ := res.RowsAffected(); k == 0 {
-			return sql.ErrNoRows
+			missed = true
 		}
 		return nil
 	})
+	if err == nil && missed {
+		err = st.whyNoRows(id)
+	}
 	if err != nil {
 		return nil, err
 	}

@@ -112,13 +112,19 @@ Answers:
 | status | when | body |
 | --- | --- | --- |
 | `201` | a row was made | `{"pr": <row>, "created": true}` |
-| `200` | the same PR at the same head already has a row that is `queued fetching running` or `ready` | `{"pr": <row>, "created": false}`, nothing started |
+| `200` | no `head` was sent and the PR already has a row that is `queued`, `fetching` or `running` (the folder moved off `pending`, so the pull request is the identity), or the same PR at the same head already has a row that is `queued fetching running` or `ready` | `{"pr": <row>, "created": false}`, nothing started |
 | `200` | the same PR at the same head has a row that is `failed` or `aborted` | that row, reset and started again as `retry` does: `{"pr": <row>, "created": false}` |
 | `400` | the body is not JSON, `url` is empty, `head` is not hex, or `why` is over 2000 characters | `{"error": "...", "code": "bad_request"}` |
 | `422` | no recogniser matches the URL | `{"error": "no recogniser matches this", "code": "no_recogniser"}` |
 | `422` | a recogniser matched and did not capture host, org, repo and a numeric `num` | `{"error": "...", "code": "not_a_pr"}` |
 | `501` | the daemon wired no recogniser | `{"error": "no daemon wired", "code": "not_wired"}` |
 | `503` | the store is halted | the halted body above |
+
+`reviews_root` is a daemon setting. Changing it orphans existing rows: a row keeps the folder it was made in, and the
+drawer routes answer `403 outside` for a folder outside the new root until the folders or the setting are moved back.
+
+The state checks of `retry` and `abort` are made in the same statement that changes the row, and `start` is serialised
+with them, so two racing requests for one row get one success and a `409` carrying the state it is now in.
 
 ## GET /v1/prs
 
@@ -223,7 +229,8 @@ Every finding of the run, parsed, in walk order. Answers `200`:
 | `key` | stable across renumbering and re-anchoring: `f-` plus the `Id:` line of Evidence when there is one, else `f-` plus the first 10 hex of SHA-256 over `path`, a newline and `code` |
 | `position` | 1-based place in the walk, the file's `NN` prefix |
 | `file` | the file name now, which changes when the walker renumbers. Never shown outside a menu |
-| `sev` | `high`, `med`, `low` or `nit` |
+| `sev` | `high`, `med`, `low` or `nit`. A finding named `NN-blocking-...` and labelled BLOCKING is `high` here and counts under `high` |
+| `blocking` | bool, additive. `true` only for a BLOCKING finding, so the board can tell it from a plain `high` |
 | `path`, `line`, `code`, `link` | from the label line and the deep link line. `line` is `0` and `link` is `""` when the file has none |
 | `comment` | the bullets, verbatim, before Evidence |
 | `evidence` | each `Key: value` line of Evidence, keys as written, in an object. `{}` when there is no Evidence |

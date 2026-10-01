@@ -233,15 +233,31 @@ func TestARowReadsItsFolderForCountsAndLog(t *testing.T) {
 }
 
 func TestTheRunLogTailStartsAtALine(t *testing.T) {
-	dir := t.TempDir()
+	root := t.TempDir()
+	dir := filepath.Join(root, "run")
+	os.MkdirAll(dir, 0o755)
 	os.WriteFile(filepath.Join(dir, "run.log"), []byte("aaaa\nbbbb\ncccc\n"), 0o644)
-	if got := tailLog(filepath.ToSlash(dir), 8); got != "cccc\n" {
+	if got := tailLog(filepath.ToSlash(root), filepath.ToSlash(dir), 8); got != "cccc\n" {
 		t.Fatalf("%q", got)
 	}
-	if got := tailLog(filepath.ToSlash(dir), 1000); got != "aaaa\nbbbb\ncccc\n" {
+	if got := tailLog(filepath.ToSlash(root), filepath.ToSlash(dir), 1000); got != "aaaa\nbbbb\ncccc\n" {
 		t.Fatalf("%q", got)
 	}
-	if tailLog(filepath.ToSlash(t.TempDir()), 10) != "" {
+	// A folder outside the root has no log to read.
+	if tailLog(filepath.ToSlash(t.TempDir()), filepath.ToSlash(dir), 1000) != "" {
+		t.Fatal("read a log outside the root")
+	}
+	// A run.log that links out of the folder is not followed.
+	secret := filepath.Join(t.TempDir(), "secret.txt")
+	os.WriteFile(secret, []byte("secret\n"), 0o644)
+	linked := filepath.Join(root, "linked")
+	os.MkdirAll(linked, 0o755)
+	if err := os.Symlink(secret, filepath.Join(linked, "run.log")); err == nil {
+		if got := tailLog(filepath.ToSlash(root), filepath.ToSlash(linked), 1000); got != "" {
+			t.Fatalf("followed a link out: %q", got)
+		}
+	}
+	if tailLog(filepath.ToSlash(root), filepath.ToSlash(t.TempDir()), 10) != "" {
 		t.Fatal("no log")
 	}
 }

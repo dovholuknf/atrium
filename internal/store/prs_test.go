@@ -332,3 +332,53 @@ func TestReviewersForMatchesBaseNames(t *testing.T) {
 		t.Fatalf("header file: %v", got)
 	}
 }
+
+func TestMovePRRefusesAWrongStateWithoutHaltingTheStore(t *testing.T) {
+	st := openPRStore(t)
+	p := newTestPR(t, st, "")
+	if _, err := st.MovePR(p.ID, []string{PRFailed}, PRRunning, "", ""); !errors.Is(err, ErrPRState) {
+		t.Fatalf("a queued row moved from failed: %v", err)
+	}
+	if halted, _ := st.Halted(); halted {
+		t.Fatal("a wrong state halted the store")
+	}
+	if _, err := st.MovePR("nope", []string{PRQueued}, PRRunning, "", ""); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("missing row: %v", err)
+	}
+	got, err := st.MovePR(p.ID, []string{PRQueued, PRFailed}, PRRunning, "panel", "")
+	if err != nil || got.State != PRRunning {
+		t.Fatalf("%v %+v", err, got)
+	}
+	if _, err := st.ResetPR(p.ID, "", PRFailed, PRAborted); !errors.Is(err, ErrPRState) {
+		t.Fatalf("reset of a running row: %v", err)
+	}
+	if got, _ := st.PRByID(p.ID); got.State != PRRunning {
+		t.Fatalf("a refused reset changed the row: %+v", got)
+	}
+	st.SetPRState(p.ID, PRFailed, "", "boom")
+	if got, err := st.ResetPR(p.ID, "", PRFailed, PRAborted); err != nil || got.State != PRQueued {
+		t.Fatalf("%v %+v", err, got)
+	}
+}
+
+func TestLivePRFindsTheRunningReviewOfAPullRequest(t *testing.T) {
+	st := openPRStore(t)
+	if got, err := st.LivePR("github.com", "openziti", "tlsuv", 378); err != nil || got != nil {
+		t.Fatalf("empty index: %v %v", err, got)
+	}
+	p := newTestPR(t, st, "")
+	// The fetch step moves the run off its pending folder.
+	dir, _ := st.RunFolder("openziti", "tlsuv", 378, "ad5ddf4")
+	st.SetPRFetched(p.ID, "ad5ddf4", "t", "a", dir)
+	got, err := st.LivePR("github.com", "openziti", "tlsuv", 378)
+	if err != nil || got == nil || got.ID != p.ID {
+		t.Fatalf("%v %v", err, got)
+	}
+	st.SetPRState(p.ID, PRReady, "", "")
+	if got, _ := st.LivePR("github.com", "openziti", "tlsuv", 378); got != nil {
+		t.Fatal("a ready review is not live")
+	}
+	if got, _ := st.LivePR("github.com", "openziti", "tlsuv", 379); got != nil {
+		t.Fatal("another pull request")
+	}
+}

@@ -6,6 +6,9 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/dovholuknf/atrium/internal/prreview/render"
+	"github.com/dovholuknf/atrium/internal/safepath"
 )
 
 // Reading a review's run folder. The index never holds a finding, so every count
@@ -31,7 +34,11 @@ type PRWalkCounts struct {
 
 // findingName splits NN-<sev>-<rest>.txt. `medium` is accepted for `med` because
 // the files a person wrote by hand before the daemon rendered them use it.
-var findingName = regexp.MustCompile(`^(\d+)-(high|medium|med|low|nit)-.+\.txt$`)
+//
+// `blocking` is the renderer's own word for a finding that blocks the merge (rule 10
+// lists it beside HIGH). It is counted and reported as `high`, and the finding says
+// it was blocking in its own `blocking` field.
+var findingName = regexp.MustCompile(`^(\d+)-(high|blocking|medium|med|low|nit)-.+\.txt$`)
 
 // findingSev returns the position and normalised severity a file name carries.
 func findingSev(name string) (pos int, sev string, ok bool) {
@@ -43,10 +50,19 @@ func findingSev(name string) (pos int, sev string, ok bool) {
 		pos = pos*10 + int(c-'0')
 	}
 	sev = m[2]
-	if sev == "medium" {
+	switch sev {
+	case "medium":
 		sev = "med"
+	case "blocking":
+		sev = "high"
 	}
 	return pos, sev, true
+}
+
+// findingBlocking reports whether a finding file is named for a blocking finding.
+func findingBlocking(name string) bool {
+	m := findingName.FindStringSubmatch(name)
+	return m != nil && m[2] == "blocking"
 }
 
 // hasLeakLine reports whether a finding file carries a `Leak:` line.
@@ -94,23 +110,22 @@ type walkLine struct {
 	URL   string
 }
 
+// parseWalkLine reads one line through the renderer's parser, so the daemon and
+// the renderer cannot disagree about where a file name ends. A name can hold a
+// space.
 func parseWalkLine(s string) (walkLine, bool) {
-	f := strings.Fields(s)
-	if len(f) < 2 {
+	name, state, rest, ok := render.WalkLine(s)
+	if !ok {
 		return walkLine{}, false
 	}
-	l := walkLine{File: f[0], State: f[1]}
-	switch l.State {
+	switch state {
 	case "open", "done", "skipped", "deferred":
 	default:
 		return walkLine{}, false
 	}
-	if len(f) > 2 {
-		l.At = f[2]
-	}
-	if len(f) > 3 {
-		l.URL = f[3]
-	}
+	l := walkLine{File: name, State: state}
+	l.At, l.URL, _ = strings.Cut(rest, " ")
+	l.URL = strings.TrimSpace(l.URL)
 	return l, true
 }
 
@@ -163,12 +178,22 @@ func readPRCounts(dir string) (PRFindingCounts, PRWalkCounts) {
 	return fc, wc
 }
 
-// tailLog returns the last max bytes of run.log, cut at a line start.
-func tailLog(dir string, max int64) string {
-	if dir == "" {
+// tailLog returns the last max bytes of run.log, cut at a line start. dir has to
+// be inside root and run.log inside dir, both through safepath, since a symlinked
+// run.log is the one way a log request could read some other file.
+func tailLog(root, dir string, max int64) string {
+	if dir == "" || root == "" {
 		return ""
 	}
-	f, err := os.Open(filepath.Join(filepath.FromSlash(dir), "run.log"))
+	inRoot, err := safepath.Contained(filepath.FromSlash(root), filepath.FromSlash(dir))
+	if err != nil {
+		return ""
+	}
+	logPath, err := safepath.Contained(inRoot, "run.log")
+	if err != nil {
+		return ""
+	}
+	f, err := os.Open(logPath)
 	if err != nil {
 		return ""
 	}
