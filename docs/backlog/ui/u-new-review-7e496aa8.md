@@ -64,3 +64,23 @@ drop.
 
 HOLD 7e496aa8~1..7e496aa8 on finding 1. The fix is a small sanitiser in `quoteOne` plus a test case. Lows 2 and 3 can
 come in the same pass.
+
+## Re-read of 7ab1eacb (2026-10-01)
+
+Only the fix was read (`git show 7ab1eacb -- internal/api/web`). Everything else after 7e496aa8 is a merge of
+claude/main.
+
+1. **Closed.** `visible()` maps C0 controls but tab to U+2400 + n (ESC becomes U+241B, LF becomes U+240A), DEL to
+   U+2421, C1 to `\xNN`, and U+2028 and U+2029 to U+23CE. It is applied to `path`, `text`, `where` and `head` in
+   `quoteOne`, and to the chip's basename. No byte from the file can end the paste, send a key, or start a new line
+   in the message. @ui reports that the evil-name mChanges case fails when `visible` is the identity function.
+2. **Closed.** The room's `why` is its own grey line on a turn.
+3. **Closed.** Bidi controls show in place as `<U+202E>`-style spans in `textEl`, inside a mark too.
+4. **Closed.** The cut reason prints once, on one line.
+
+Defense in depth on the daemon side (`\x1b[201~` inside any wrapped paste) stays with @runtime. It was filed, and is
+not a condition of this verdict.
+
+Quality: each finding is fixed as asked, and the test was shown to fail without the fix. No drop.
+
+HUB DEPLOY OK and ROOM DEPLOY OK 7e496aa8~1..7ab1eacb. The room verdict is there because the room serves the board too.
