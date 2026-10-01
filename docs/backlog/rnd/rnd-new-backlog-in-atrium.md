@@ -1,7 +1,33 @@
-# rnd-new-backlog-in-atrium: atrium holds the backlog, not markdown files
+# rnd-new-backlog-in-atrium: a pluggable backlog that atrium drives (SPIKE)
 
-Status: not started. HIGH priority, after `rnd-new-room-handoff`. Owned by @rnd (design). Filed by the orchestrator
-2026-10-01, from clint: "atrium should drive backlog instead of files".
+Status: not started, do not start until clint says. A SPIKE, not a design yet. HIGH priority, after
+`rnd-new-room-handoff`. Owned by @rnd. Filed by the orchestrator 2026-10-01, from clint: "atrium should drive backlog
+instead of files", then: "backlog should be 'pluggable' too... maybe files, maybe atrium, maybe github issues, gitlab
+issues, bitbucket".
+
+## The spike
+
+Atrium drives the backlog through one interface, and where the items live is a backend chosen per repo or per board:
+
+- markdown files in the repo (what exists today),
+- atrium's own store (the rows described below),
+- GitHub issues, GitLab issues, Bitbucket issues, and say what else is worth naming (Jira, Linear).
+
+Answer before any design:
+
+- The smallest interface every backend can meet: list, get, file, change status, order, link to a card. Which of
+  those a tracker cannot do (ordering a queue, a status atrium derives) and what atrium keeps on its side for them.
+- Credentials. Atrium never holds a provider credential (`CLAUDE.md`, `docs/runtime/intake-design.md`). A tracker
+  backend has to go through a command that already holds one (`gh`, `glab`, a script), the way `docs/scm-design.md`
+  and the intake sources already do. Say whether that is enough for writes, not only reads.
+- Whether the backend is atrium's store with the others syncing to it, or the backend is the truth and atrium caches.
+- Overlap with `docs/scm-design.md` (URL recognisers) and `docs/intake-design.md` (sources, the inbox). Reuse or say
+  why not.
+- Which backend clint's own atrium uses first, and the cost of each to build.
+
+Output: a short spike doc and a recommendation, reviewed by @review. Nothing built.
+
+## The atrium-store backend, as first filed
 
 ## How it works today
 

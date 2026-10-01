@@ -79,7 +79,7 @@ director as `docs/backlog/<dept>/<d>-new-<name>.md`, or fold them into the desig
 HELD by the PAUSE: do not start until the orchestrator ends it. Both are HIGH, take them in this order:
 
 1. `docs/backlog/rnd/rnd-new-room-handoff.md`: move a card and its work between rooms (`atrium move`), from the 2026-10-01 director move.
-2. `docs/backlog/rnd/rnd-new-backlog-in-atrium.md`: the hub holds backlog items, queues and reports as rows, not markdown files.
+2. `docs/backlog/rnd/rnd-new-backlog-in-atrium.md`: a SPIKE on a pluggable backlog (files, atrium's store, GitHub, GitLab or Bitbucket issues). The output is a short spike doc with a recommendation, and nothing gets built. Do NOT start it until clint says so, even after the pause ends.
 
 Both were filed by the orchestrator from clint on 2026-10-01.
 
