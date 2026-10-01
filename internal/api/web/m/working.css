@@ -105,3 +105,19 @@
 #m-card .working .wk-sent { flex: none; color: var(--teal); font-weight: 650; }
 #m-card .working .wk-dot { flex: none; }
 #m-card .working .wk-what { color: var(--working-fg, var(--teal)); }
+
+/* The jump control is a small round arrow in a strip of its own, between the thread and the composer, so it never covers
+   a message. The strip has no height until the control shows. Hit areas stay 40px through the padding. */
+#m-card .jump-wrap { height: auto; display: flex; justify-content: flex-end; padding: 0 max(2px, env(safe-area-inset-right, 0px)) 0 0; position: static; }
+#m-card .jump { position: static; width: 40px; height: 40px; min-height: 0; padding: 6px; box-sizing: border-box; display: grid; place-items: center; border-radius: 50%;
+  background: var(--card-0) content-box; background-clip: content-box; box-shadow: none; border: 6px solid transparent; }
+#m-card .jump svg { width: 16px; height: 16px; }
+/* The composer: a small paperclip tight to the left, one line high when empty, growing with the text. */
+#m-card #m-compose .mc-row { padding: 2px 2px 2px 4px; gap: 2px; border-radius: 22px; align-items: center; }
+#m-card #m-compose .mc-row.with-attach { padding-left: 2px; gap: 0; }
+#m-card #m-compose .mc-attach { width: 40px; height: 40px; }
+#m-card #m-compose .mc-attach svg { width: 18px; height: 18px; }
+#m-card #m-compose .mc-row.with-attach .mc-box { padding-left: 2px; }
+#m-card #m-compose .mc-box { padding: 10px 0; font-size: 16px; line-height: 20px; }
+#m-card #m-compose .mc-send { width: 40px; height: 40px; }
+#m-card #m-compose .mc-send svg { width: 20px; height: 20px; margin: -10px 0 0 -10px; }
