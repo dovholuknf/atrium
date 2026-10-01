@@ -129,3 +129,10 @@
 #m-card #m-compose .mc-row { padding: 2px 2px 2px 2px; }
 #m-card #m-compose .mc-send { width: 40px; height: 40px; padding: 3px; box-sizing: border-box; background: var(--c-accent) content-box; background-clip: content-box; }
 #m-card #m-compose .mc-send svg { width: 18px; height: 18px; margin: -9px 0 0 -9px; }
+
+/* Pull down at the very top of a card to reload the page. A small spinner follows the finger, and turns once it is far enough. */
+#m-card .pull { position: absolute; z-index: 5; left: 50%; top: calc(env(safe-area-inset-top, 0px) + 44px); width: 32px; height: 32px; margin: -40px 0 0 -16px;
+  display: grid; place-items: center; border-radius: 50%; background: var(--card-0); box-shadow: 0 0 0 1px var(--stroke), 0 6px 16px rgba(var(--shadow-rgb), .4); pointer-events: none; }
+#m-card .pull[hidden] { display: none; }
+#m-card .pull-spin { width: 16px; height: 16px; box-sizing: border-box; border-radius: 50%; border: 2px solid var(--stroke-dim); border-top-color: var(--teal); transform: rotate(calc(var(--pull, 0) * 3.6deg)); }
+#m-card .pull.go .pull-spin { animation: wk-turn .7s linear infinite; }
