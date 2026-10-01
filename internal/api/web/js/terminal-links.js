@@ -1011,7 +1011,7 @@ function connectTerm(taskID) {
     traceOut(e.data);
     // Output is binary, so text is the daemon. See `takeTermCaps`.
     if (typeof e.data === "string") {
-      if (takeTermCaps(e.data) || takeTermSize(e.data) || takePasteDone(e.data, sock)) return;
+      if (takeTermCaps(e.data) || takeTermSize(e.data) || takePasteDone(e.data, sock) || takeInRefused(e.data)) return;
       pasteSawOutput();
       term.write(e.data, lagOnOutput(followScroll));
       return;
@@ -1846,6 +1846,17 @@ function takePasteDone(data, sock) {
     f.done = true;
     if (Date.now() >= f.t0 + pasteHoldMs) pasteEnd("the room's word");
   }
+  return true;
+}
+
+// `{"t":"in-refused","why":...}`: the room dropped typing because a new context is
+// under way. Said once per key, so a held key does not stack toasts.
+function takeInRefused(data) {
+  if (!data || data[0] !== "{") return false;
+  let msg;
+  try { msg = JSON.parse(data); } catch (e) { return false; }
+  if (!msg || msg.t !== "in-refused") return false;
+  toast("Typing dropped", msg.why || "input is refused during a new context", null, "in-refused");
   return true;
 }
 

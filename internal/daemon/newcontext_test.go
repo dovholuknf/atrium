@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -329,7 +330,7 @@ func TestNewContextIsRefusedWithoutATerminalAndWhileRunning(t *testing.T) {
 	if err := d.StartNewContext(task.ID); err != nil {
 		t.Fatal(err)
 	}
-	if err := d.StartNewContext(task.ID); err != errNewContextBusy {
+	if err := d.StartNewContext(task.ID); !errors.Is(err, errNewContextBusy) {
 		t.Fatalf("started a second sequence over the first: %v", err)
 	}
 }

@@ -76,6 +76,8 @@ type deployReadyState struct {
 	// Seams for a test. In production both are the real thing.
 	installed func(ctx context.Context, p *Proxy) (string, error)
 	spawn     func(script, tip string) (*deployProc, error)
+	// clearing is the new contexts under way. Nil means ask the attached rooms.
+	clearing func(ctx context.Context) []newContextRun
 
 	checker *deployready.Checker
 	last    deployready.Report
@@ -396,6 +398,17 @@ func (p *Proxy) startDeploy(w http.ResponseWriter, r *http.Request, st *deployRe
 	script, err := p.scriptFor()
 	if err != nil {
 		fail(http.StatusConflict, err.Error(), nil)
+		return
+	}
+	// A DEPLOY RESTARTS THE ROOM, which cuts a clear off between its steps. The click is refused and can be
+	// pressed again once the card has its wake.
+	clearing := st.clearing
+	if clearing == nil {
+		clearing = p.newContextsUnderWay
+	}
+	if runs := clearing(r.Context()); len(runs) > 0 {
+		fail(http.StatusConflict, "a new context is under way on "+newContextNames(runs)+", so the deploy waits for it",
+			map[string]any{"new_contexts": runs})
 		return
 	}
 

@@ -1,0 +1,68 @@
+package daemon
+
+import (
+	"errors"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/dovholuknf/atrium/internal/store"
+)
+
+// A card at its idle prompt whose Stop never landed reads running and mid-turn. The
+// capture must not wait for a turn end that cannot come (r-clear-vs-restart).
+
+func staleRunningCard(t *testing.T, d *Daemon, frame string) (*store.Task, *fakePTY) {
+	t.Helper()
+	task, f, _ := ncCard(t, d)
+	if err := d.st.SetStatus(task.ID, store.StatusRunning); err != nil {
+		t.Fatal(err)
+	}
+	d.act.set(task.ID, ActivityThinking, "")
+	run := d.sup.get(task.ID)
+	_, _ = run.buf.Write([]byte(frame))
+	run.lastOut.Store(time.Now().Add(-time.Minute).UnixNano())
+	return task, f
+}
+
+func TestNewContextTypesTheCaptureAtOnceOnAnIdleCardWithALostStop(t *testing.T) {
+	fastNewContext(t)
+	d := testDaemon(t)
+	task, f := staleRunningCard(t, d, idleFrame)
+
+	if err := d.StartNewContext(task.ID); err != nil {
+		t.Fatal(err)
+	}
+	until(t, "the capture prompt", func() bool { return strings.Contains(f.written(), "HANDOFF.") })
+}
+
+func TestNewContextStillWaitsOnAScreenThatIsWorking(t *testing.T) {
+	fastNewContext(t)
+	d := testDaemon(t)
+	task, f := staleRunningCard(t, d, workingFrame)
+
+	if err := d.StartNewContext(task.ID); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(150 * time.Millisecond)
+	if got := f.written(); got != "" {
+		t.Fatalf("typed into a card whose screen shows a turn: %q", got)
+	}
+}
+
+func TestNewContextBusyNamesTheStepAndHowLong(t *testing.T) {
+	fastNewContext(t)
+	d := testDaemon(t)
+	task, _ := staleRunningCard(t, d, workingFrame)
+
+	if err := d.StartNewContext(task.ID); err != nil {
+		t.Fatal(err)
+	}
+	err := d.StartNewContext(task.ID)
+	if !errors.Is(err, errNewContextBusy) {
+		t.Fatalf("wanted busy, got %v", err)
+	}
+	if msg := err.Error(); !strings.Contains(msg, "step 1 of 3 (capture) for ") {
+		t.Fatalf("the refusal does not name the step and how long: %q", msg)
+	}
+}

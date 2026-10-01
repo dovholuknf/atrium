@@ -8246,3 +8246,20 @@ build before `atrium_publish path` works, since an older room cannot say what a 
 3. Have a card tagged `atrium:director` report `done`. It keeps running. So does a card nobody launched.
 4. Covered by `exitonreport_test.go`, which also checks that the launcher's copy is queued before the exit is asked
    for and that a failed exit leaves the report landed.
+
+## HX. A new context finishes or ends with a reason (r-clear-vs-restart)
+
+1. Leave a claude card idle at its prompt with its Stop hook never fired, then start a new context. The capture begins
+   at once. A card busy in a real turn answers 409 "stuck on step N of 3 (step) for D". Covered by
+   `newcontext_idle_test.go`.
+2. Start a new context on a throwaway room and restart the room mid-step. The card shows a failed chip "the room
+   restarted during step N of 3" and a new-context event, and the journal is empty. Covered by
+   `newcontext_journal_test.go`.
+3. With a new context under way, press the one-click hub deploy: 409 naming the card. Run `deploy-hub-only.ps1`: it
+   waits, then proceeds when the context ends, or exits 0 "nothing changed" on timeout. Covered by
+   `internal/link/newcontexts_test.go`.
+4. Type in the board terminal during a new context. Nothing reaches the pty, a paste is acked, and ctrl-c still works.
+   Once the cycle ends, typing reaches the pty. Covered by `attach_newcontext_test.go`.
+5. Restart the room mid-wake, then let the card's new conversation start. The failed chip stays until dismissed or
+   rerun. Covered by `newcontext_review_test.go`. The idle parking's capture is not journalled and does not refuse
+   typing. The board shows a "Typing dropped" toast when typing is refused.

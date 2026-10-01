@@ -42,9 +42,12 @@ import (
 //
 // ONLY WHERE ATRIUM OWNS THE TERMINAL. There is nothing to type into otherwise.
 //
-// IN MEMORY. Like the activity it watches, a step describes a process that is
-// running now, and a restart ends the terminal it was typing into. A failed
-// chip does not survive one either: it described a sequence nobody is running.
+// THE STEP IS IN MEMORY, THE FACT OF A RUN IS NOT. Like the activity it watches, a
+// step describes a process that is running now, and a restart ends the terminal it
+// was typing into. A failed chip does not survive one either: it described a
+// sequence nobody is running. But a run the restart cut off must not vanish without
+// a word, so the runs in flight are journalled (newcontext_journal.go) and the next
+// start ends each with a failed chip saying where it was cut off.
 //
 // A FAILED STEP STAYS ON THE CARD with its reason until the clear is PROVEN (a
 // SessionStart naming a conversation other than the run's), the action is run
@@ -210,6 +213,12 @@ type newContext struct {
 	tokens, threshold int64
 	// ceiling marks a run on a card wearing ContextCeilingTag, which the wake says.
 	ceiling bool
+	// capOnly marks the idle parking's capture, which clears nothing and is not
+	// journalled: a restart that cuts it off has nothing to report.
+	capOnly bool
+	// abandoned marks a failed chip seeded at startup from the journal. A
+	// SessionStart cannot clear it: see sessionStarted.
+	abandoned bool
 }
 
 type newContexts struct {
@@ -219,6 +228,11 @@ type newContexts struct {
 	// stop ends every run in flight, at shutdown.
 	stop     chan struct{}
 	stopOnce sync.Once
+	// persist writes the runs in flight somewhere a restart can find them. See
+	// newcontext_journal.go. Nil in a test that does not care.
+	persist func(map[string]ncJournalRow)
+	// saveMu keeps two snapshots from reaching persist out of order.
+	saveMu sync.Mutex
 }
 
 func newNewContexts() *newContexts {
@@ -245,14 +259,17 @@ func (n *newContexts) beginAuto(taskID, file, conv string, tokens, threshold int
 
 func (n *newContexts) claim(taskID string, c *newContext) (uint64, bool) {
 	n.mu.Lock()
-	defer n.mu.Unlock()
 	if cur := n.by[taskID]; cur != nil && cur.step != NewContextFailed {
+		n.mu.Unlock()
 		return 0, false
 	}
 	n.gens++
 	c.since, c.gen = time.Now(), n.gens
 	n.by[taskID] = c
-	return n.gens, true
+	gen := n.gens
+	n.mu.Unlock()
+	n.save()
+	return gen, true
 }
 
 // conversationOf is the conversation a card's session is in now: the id its last
@@ -282,7 +299,7 @@ func (n *newContexts) sessionStarted(taskID, conv string) bool {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	cur := n.by[taskID]
-	if cur == nil || cur.step != NewContextFailed || cur.conv == "" || cur.conv == conv {
+	if cur == nil || cur.step != NewContextFailed || cur.abandoned || cur.conv == "" || cur.conv == conv {
 		return false
 	}
 	delete(n.by, taskID)
@@ -300,12 +317,14 @@ func (n *newContexts) mine(taskID string, gen uint64) bool {
 // advance moves a run to its next step.
 func (n *newContexts) advance(taskID string, gen uint64, step string) bool {
 	n.mu.Lock()
-	defer n.mu.Unlock()
 	cur := n.by[taskID]
 	if cur == nil || cur.gen != gen {
+		n.mu.Unlock()
 		return false
 	}
 	cur.step, cur.since, cur.asked = step, time.Now(), nil
+	n.mu.Unlock()
+	n.save()
 	return true
 }
 
@@ -339,32 +358,37 @@ func askedAt(asked []time.Time) string {
 // fail leaves the chip on the step that stopped, saying why.
 func (n *newContexts) fail(taskID string, gen uint64, reason string) bool {
 	n.mu.Lock()
-	defer n.mu.Unlock()
 	cur := n.by[taskID]
 	if cur == nil || cur.gen != gen {
+		n.mu.Unlock()
 		return false
 	}
 	cur.step, cur.reason, cur.since = NewContextFailed, reason, time.Now()
+	n.mu.Unlock()
+	n.save()
 	return true
 }
 
 // finish takes the chip off: the wake prompt landed.
 func (n *newContexts) finish(taskID string, gen uint64) bool {
 	n.mu.Lock()
-	defer n.mu.Unlock()
 	if cur := n.by[taskID]; cur == nil || cur.gen != gen {
+		n.mu.Unlock()
 		return false
 	}
 	delete(n.by, taskID)
+	n.mu.Unlock()
+	n.save()
 	return true
 }
 
 // clear removes a card's chip whatever it says and stops its run.
 func (n *newContexts) clear(taskID string) bool {
 	n.mu.Lock()
-	defer n.mu.Unlock()
 	_, had := n.by[taskID]
 	delete(n.by, taskID)
+	n.mu.Unlock()
+	n.save()
 	return had
 }
 
@@ -472,6 +496,11 @@ func (d *Daemon) StartNewContext(taskID string) error {
 	}
 	gen, ok := d.nctx.begin(taskID, HandoffName(task), d.conversationOf(task))
 	if !ok {
+		if cur := d.nctx.get(taskID); cur != nil {
+			v := newContextView(cur)
+			return fmt.Errorf("%w, stuck on step %v of 3 (%s) for %s", errNewContextBusy, v["n"], cur.step,
+				time.Since(cur.since).Round(time.Second))
+		}
 		return errNewContextBusy
 	}
 	log.Printf("[atrium] new context started on %s", task.DisplayTitle())
@@ -720,6 +749,40 @@ func (d *Daemon) cardRunning(taskID string) bool {
 	return err == nil && t != nil && t.Status == store.StatusRunning
 }
 
+// ncBusy is whether the card is inside a turn as far as typing is concerned: the
+// activity says so or the status says running, and the screen does not show a
+// settled prompt. A card whose Stop never landed, or whose daemon restarted
+// under a status of running, reads busy to both and will never end a turn it is
+// not taking, so the step waited for a turn end that could not come. The screen
+// is the tiebreak, the same signature `watchLooksIdle` flags on.
+func (d *Daemon) ncBusy(taskID string) bool {
+	if !d.act.midTurn(taskID) && !d.cardRunning(taskID) {
+		return false
+	}
+	return !d.atIdlePrompt(taskID)
+}
+
+// atIdlePrompt is whether a claude card is flagged looks-idle or shows a settled
+// prompt on a pty silent for LooksIdleAfter, with no dialog and no subagents.
+func (d *Daemon) atIdlePrompt(taskID string) bool {
+	run := d.sup.get(taskID)
+	if run == nil || d.act.dialogOpen(taskID) || d.act.onSubagents(taskID) {
+		return false
+	}
+	if _, on := d.act.looksIdleMark(taskID); on {
+		return true
+	}
+	if t, err := d.st.Get(taskID); err != nil || t == nil || !strings.EqualFold(t.Runner, "claude") {
+		return false
+	}
+	if time.Since(run.lastOutputAt()) < LooksIdleAfter || run.buf == nil {
+		return false
+	}
+	cols, rows := run.buf.CurrentSize()
+	idle, _ := classifyFrame(run.buf.Tail(frameTailBytes), cols, rows)
+	return idle
+}
+
 // ncWait polls cond until it is true, the run is replaced, the terminal goes, or
 // the time is up.
 func (d *Daemon) ncWait(taskID string, gen uint64, limit time.Duration, what string, cond func() (bool, error)) error {
@@ -782,7 +845,7 @@ func (d *Daemon) ncType(taskID string, gen uint64, label, text string, limit tim
 		if run == nil || d.act.dialogOpen(taskID) {
 			return false, nil
 		}
-		if d.act.midTurn(taskID) || d.cardRunning(taskID) {
+		if d.ncBusy(taskID) {
 			waited := time.Since(began)
 			// A runner that does not take input mid-turn would lose the line, so it
 			// is not nudged and the cycle waits for its turn as it always did.
@@ -813,7 +876,7 @@ func (d *Daemon) ncType(taskID string, gen uint64, label, text string, limit tim
 			if ceiling && run.typedWithin(autoTiming.ceilingTypedQuiet) {
 				return false
 			}
-			return !d.act.dialogOpen(taskID) && !d.act.midTurn(taskID) && !d.cardRunning(taskID) &&
+			return !d.act.dialogOpen(taskID) && !d.ncBusy(taskID) &&
 				d.act.sinceBusy(taskID) >= ncTiming.turnSettle
 		}
 		wrote, err := d.typeLabelledGuarded(run, taskID, label, text, quiet)

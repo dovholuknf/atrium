@@ -76,6 +76,13 @@ type attachInDone struct {
 	ID string `json:"id"`
 }
 
+// attachInRefused tells the browser its typing was dropped because the card is
+// inside a new context. A frame an older board does not know is ignored.
+type attachInRefused struct {
+	T   string `json:"t"`
+	Why string `json:"why"`
+}
+
 // attachSize is the size the pty is running at, sent before the backlog, so
 // the board sizes its grid before the replay lands, and again every time it
 // changes. See `tellSize` in `attach`.
@@ -347,6 +354,20 @@ func (d *Daemon) attach(w http.ResponseWriter, r *http.Request, taskID string, s
 			}
 			switch in.T {
 			case "in":
+				// A new context is typing into this terminal itself. Bytes from a
+				// board or phone would land between its steps, so they are dropped.
+				// The ack still goes out so a paste does not hang.
+				if !shell && d.nctx.typingHeld(taskID) {
+					if in.ID != "" {
+						if msg, err := json.Marshal(attachInDone{T: "in-done", ID: in.ID}); err == nil {
+							_ = c.Write(ctx, websocket.MessageText, msg)
+						}
+					}
+					if msg, err := json.Marshal(attachInRefused{T: "in-refused", Why: "input is refused during a new context"}); err == nil {
+						_ = c.Write(ctx, websocket.MessageText, msg)
+					}
+					continue
+				}
 				// THE ONE PLACE THE OPERATOR'S OWN KEYSTROKES ARRIVE, which is
 				// what makes the record trustworthy. `Say` and the peer bus
 				// also reach `Write`, so counting bytes there would have

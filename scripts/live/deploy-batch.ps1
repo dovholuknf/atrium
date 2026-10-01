@@ -20,6 +20,11 @@ if (-not (Test-Path $AtriumNew)) { Say "FATAL: no new build at $AtriumNew"; exit
 if (-not (Test-NewBuildStamped)) { exit 1 }
 if (-not $NoLagLog) { $env:ATRIUM_DEBUG_INPUTLAG = '1' }
 
+# A new context under way is waited out first: stopping the room cuts a clear off between its steps.
+if (-not $WhatIf) {
+  if (-not (Wait-NewContextsDone)) { Say 'a new context is still under way, nothing changed'; exit 0 }
+} else { Say 'WHATIF: wait for every new context under way to finish' }
+
 # 0. Snapshot the outgoing binary under its build id.
 $revert = Save-Revert
 

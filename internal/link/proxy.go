@@ -1403,6 +1403,8 @@ func (p *Proxy) serveHubAPI(w http.ResponseWriter, r *http.Request) {
 		p.serveDeployOwner(w, r)
 	case "deploy-ready", "deploy-ready/deploy":
 		p.serveDeployReady(w, r, sub)
+	case "new-contexts":
+		p.serveNewContexts(w, r)
 	case "deps", "deps/clear", "deps/rename", "deps/ready":
 		p.serveDeps(w, r, sub)
 	case "presence":
