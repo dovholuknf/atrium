@@ -348,21 +348,23 @@ function ucMidnight(now) {
 
 // The limit the cumulative chart is read against: the 5h window on the day ranges, the weekly one on 7d. The
 // card that reported the highest percentage sets it. Its tokens per point come from the counted tokens the
-// chart holds for that window, so 100% is the tokens one point took times a hundred. Null with no reading.
+// chart holds for that window, so 100% is the tokens one point took times a hundred. Null with no reading,
+// and null when the chart does not hold the whole account's window: a 1h range, a card filter, cache reads shown.
 const UC_LIMIT_NAME = { five_hour: "5h", weekly: "weekly" };
 function ucLimitFor(series, now) {
-  if (typeof ulGroups !== "function") return null;
+  if (typeof ulGroups !== "function" || UC.cacheReads) return null;
   const kind = UC.range === "7d" ? "weekly" : "five_hour";
   const gs = ulGroups(kind, now).filter(g => g.reset > now && g.best.pct > 0);
   if (!gs.length) return null;
   const g = gs.reduce((a, b) => b.best.pct > a.best.pct ? b : a);
   const start = g.reset - UL_WINDOW[kind], ms = UC.bw * 1000;
+  if (ulTokensIn(start, now) == null) return null;
   let tok = 0;
   for (const s of series) {
     const o = Math.min(now, s.t + ms) - Math.max(start, s.t);
     if (o > 0) tok += ucShown(s.total) * o / ms;
   }
-  return tok > 0 ? { kind, name: UC_LIMIT_NAME[kind], reset: g.reset, pct: g.best.pct, perPct: tok / g.best.pct } : null;
+  return tok > 0 ? { kind, name: UC_LIMIT_NAME[kind], reset: g.reset, start, pct: g.best.pct, perPct: tok / g.best.pct } : null;
 }
 
 // Where the time axis puts its labels: hours on the day ranges, local midnights on the week.
@@ -423,12 +425,13 @@ function ucCumulative(series, now) {
   } else {
     Y = v => H - 2 - v / (proj || 1) * (H - 4);
   }
-  let d = `M0 ${Y(0).toFixed(2)}`;
-  for (const [t, v] of pts) d += ` L${X(Math.min(t, nowMs)).toFixed(2)} ${Y(v).toFixed(2)}`;
+  // In percent the line is the window's own, so it starts where the window did and not at the range's edge.
+  let d = lim ? `M${X(lim.start).toFixed(2)} ${Y(base).toFixed(2)}` : `M0 ${Y(0).toFixed(2)}`;
+  for (const [t, v] of pts) if (!lim || t > lim.start) d += ` L${X(Math.min(t, nowMs)).toFixed(2)} ${Y(v).toFixed(2)}`;
   let svg = "", over = "", yax = "", phrase = "";
   const left = t => ((t - ax.first) / span * 100).toFixed(2) + "%";
   if (lim) {
-    for (const p of [0, 25, 50, 75, 100]) {
+    for (const p of [0, 25, 50, 75, 100].concat(ymax > 100 ? [ymax] : [])) {
       const y = Y(base + p * lim.perPct);
       svg += `<line class="${p === 100 ? "ulcap" : "ulgrid"}" x1="0" x2="${W}" y1="${y.toFixed(2)}" y2="${y.toFixed(2)}"></line>`;
       yax += `<span class="ucy${p === 100 ? " ucy100" : ""}" data-pct="${p}" style="top:${(y / H * 100).toFixed(2)}%">${p}%<small> ${usageTokens(Math.round(p * lim.perPct))}</small></span>`;
@@ -442,7 +445,7 @@ function ucCumulative(series, now) {
           if (t > end) continue;
           const x = X(t).toFixed(2);
           svg += `<line class="ulresetln" data-reset="${kind}" data-at="${t}" x1="${x}" x2="${x}" y1="0" y2="${H}"></line>`;
-          if (k === 0 && t > now) over += `<span class="ulresetlab" data-reset="${kind}" style="left:${left(t)}">${UC_LIMIT_NAME[kind]} reset</span>`;
+          if (k === 0 && t > now) over += `<span class="ulresetlab" data-reset="${kind}" style="left:${left(t)}">${UC_LIMIT_NAME[kind]} reset ${esc(ulClock(t, now))}</span>`;
         }
       }
     }
@@ -470,10 +473,10 @@ function ucCumulative(series, now) {
   over += `<span class="ucnowlab" style="left:${left(nowMs)}">now</span>`;
   const times = ucTicks(ax.first, end).map(([t, lab]) => `<span style="left:${left(t)}">${lab}</span>`).join("");
   UC.cum = { first: ax.first, end, nowMs, now, pts, run, rate, lim, base };
-  return `<h4 class="uch">cumulative tokens <span class="ucnote">${UC.cacheReads ? "" : "counted, "}running total over the range${lim ? `, as percent of the ${lim.name} limit` : ""}</span></h4>` +
+  return `<h4 class="uch">cumulative tokens <span class="ucnote">${UC.cacheReads ? "" : "counted, "}${lim ? `since the ${lim.name} window began, as percent of its limit` : "running total over the range"}</span></h4>` +
     `<div class="ucchart${lim ? " uclim" : ""}" data-chart="cumulative"><div class="ucplot">${yax}<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" ` +
     `aria-label="running total of tokens over time">${svg}</svg>${over}<i class="uchov" hidden></i><div class="uctimes">${times}</div></div>` +
-    `<div class="ucaxis"><span>0</span>${phrase}<span data-n="cumtotal" data-tip="${esc(USAGE_TIPS.cumTotal)}">${usageTokens(run)}</span></div>` +
+    `<div class="ucaxis"><span>0</span>${phrase}<span data-n="cumtotal" data-tip="${esc(USAGE_TIPS.cumTotal)}">${usageTokens(lim ? Math.round(lim.pct * lim.perPct) : run)}</span></div>` +
     `<div class="ucread" aria-live="off">hover the line</div></div>`;
 }
 
@@ -747,6 +750,10 @@ document.addEventListener("mousemove", ev => {
     }
   } else {
     v = c.run + c.rate * (t - c.nowMs);
+  }
+  if (c.lim && t < c.lim.start) {
+    plot.parentNode.querySelector(".ucread").textContent = ulClock(t, c.now) + ` · before the ${c.lim.name} window`;
+    return;
   }
   const pct = c.lim ? Math.max(0, (v - c.base) / c.lim.perPct) : null;
   plot.parentNode.querySelector(".ucread").textContent = ulClock(t, c.now) + " · " + usageTokens(Math.round(v)) + " tokens" +

@@ -575,6 +575,9 @@ func TestNoRoomServingPullsIsA404NotAnEmptyList(t *testing.T) {
 	if q, _ := obj["rooms_quiet"].([]any); code != http.StatusNotFound || len(q) != 2 {
 		t.Fatalf("two sick rooms = %d %s", code, body)
 	}
+	if msg, _ := obj["error"].(string); !strings.Contains(msg, "answered") || strings.Contains(msg, "serves") {
+		t.Errorf("sick rooms were reported as a missing feature: %q", msg)
+	}
 }
 
 // With every room empty the answer is the contract's empty index, never null.

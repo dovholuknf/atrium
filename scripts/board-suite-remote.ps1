@@ -38,9 +38,14 @@ $idx = Join-Path ([IO.Path]::GetTempPath()) "suite-index-$id"
 # pwsh 7 does not throw when a native command fails, and a failed `git add -A` leaves write-tree answering with HEAD's
 # tree, so the suite would run without the changes it was asked to test and report green. Every step is checked.
 function Step([string] $what, [scriptblock] $run) {
-    $out = & $run 2>&1
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "board-suite fail git $what exited $LASTEXITCODE`: $(($out | Out-String).Trim())"
+    $errFile = "$idx.err"
+    # stderr goes to a file so a git warning can never end up inside the hash read from stdout.
+    $out = & $run 2>$errFile
+    $code = $LASTEXITCODE
+    $err = (Get-Content $errFile -Raw -ErrorAction SilentlyContinue | Out-String).Trim()
+    Remove-Item $errFile -Force -ErrorAction SilentlyContinue
+    if ($code -ne 0) {
+        Write-Host "board-suite fail git $what exited ${code}: $err"
         Write-Host "board-suite an untracked file git cannot read (a file named NUL, made by a bash '> NUL') is the usual cause. --local runs the suite here"
         exit 3
     }
@@ -77,5 +82,5 @@ $clone = ($url -replace '^[^:]+:', '' -replace '^//[^/]+', '')
 # the remote parameter would then miss.
 $argv = @($SuiteArgs -split '\s+' | Where-Object { $_ })
 $enc = 'A' + [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($argv -join "`n"))
-& $ssh $Room "powershell -NoProfile -ExecutionPolicy Bypass -File board-suite-run.ps1 -Clone '$clone' -Id $id -Sha $sha -ArgsB64 $enc"
+& $ssh $Room "powershell -NoProfile -ExecutionPolicy Bypass -File board-suite-run.ps1 -Clone `"$clone`" -Id $id -Sha $sha -ArgsB64 $enc"
 exit $LASTEXITCODE

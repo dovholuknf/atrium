@@ -15380,7 +15380,7 @@ async function cardUrlWayOutSection(browser, base) {
         if (v.phone) { await p.tap("#t-bar-toggle"); await p.waitForFunction(() => !document.body.classList.contains("tray-open"), null, { timeout: slow(5000) }); }
         // all cards leaves for the board
         await p.tap(all).catch(() => p.click(all));
-        await p.waitForFunction(() => location.pathname === "/", null, { timeout: slow(8000) })
+        await p.waitForFunction(() => location.pathname === "/" && !!document.body, null, { timeout: slow(8000) })
           .catch(() => fail(tag + "all cards did not go to the board: " + p.url()));
         if (await p.evaluate(() => document.body.classList.contains("solo"))) fail(tag + "the board still wears the card window");
         // Back from the board returns to the card
@@ -18163,7 +18163,7 @@ async function burnChartSection(browser, base) {
     // for 70 points, so 857 a point. The last hour is 20000 tokens, 23.3 points an hour, so 100% is 77 minutes away: 16:47.
     const day = { hotN: 20, hot: 5000, cold: 1000, readings: [{ kind: "five_hour", pct: 70, resetMs: 2 * HOUR }] };
     let r = await draw("24h", day);
-    if (r.pcts.join() !== "0,25,50,75,100" || !/^100%/.test(r.ys[4])) fail("burnChart: the y axis reads " + r.ys);
+    if (r.pcts.join() !== "0,25,50,75,100,120" || !/^100%/.test(r.ys[4])) fail("burnChart: the y axis reads " + r.ys);
     if (!(r.cap != null && r.zero != null && r.cap < r.zero && r.cap > 0)) fail("burnChart: the 100% line is at " + r.cap + " and 0% at " + r.zero);
     if (r.times.join() !== "18:00,21:00,00:00,03:00,06:00,09:00,12:00,15:00") fail("burnChart: the day's hour ticks read " + r.times);
     if (!r.nowLine || r.nowLeft !== ((86400000 / (r.end - r.first)) * 100).toFixed(2) + "%") fail("burnChart: now is marked at " + r.nowLeft);
@@ -18173,8 +18173,8 @@ async function burnChartSection(browser, base) {
     const marks = r.resets.map(m => m[1]);
     if (r.resets.some(m => m[0] !== "five_hour") || marks[0] !== r.now + 2 * HOUR || marks[1] !== r.now - 3 * HOUR || marks.length !== 6)
       fail("burnChart: the 5h resets are " + marks.map(t => (t - r.now) / HOUR));
-    if (r.resetLabs.join() !== "5h reset") fail("burnChart: the reset labels read " + r.resetLabs);
-    if (!r.dashed || !/percent of the 5h limit/.test(r.note)) fail("burnChart: the heading reads " + r.note);
+    if (r.resetLabs.join() !== "5h reset 17:30") fail("burnChart: the reset labels read " + r.resetLabs);
+    if (!r.dashed || !/percent of its limit/.test(r.note)) fail("burnChart: the heading reads " + r.note);
     await shot("day-hits-limit");
 
     // The same day at 40%: the projection stays under the limit, so the chart says where it ends at the reset.
@@ -18188,7 +18188,7 @@ async function burnChartSection(browser, base) {
     r = await draw("7d", week);
     if (r.times.length !== 9) fail("burnChart: the week's date ticks are " + r.times);
     if (r.resets.length !== 2 || r.resets.some(m => m[0] !== "weekly") || r.resets[0][1] !== r.now + 48 * HOUR || r.resets[1][1] !== r.now - 120 * HOUR) fail("burnChart: the week's resets are " + JSON.stringify(r.resets));
-    if (r.resetLabs.join() !== "weekly reset") fail("burnChart: the week's reset labels read " + r.resetLabs);
+    if (!/^weekly reset [A-Za-z]{3} 15:30$/.test(r.resetLabs.join())) fail("burnChart: the week's reset labels read " + r.resetLabs);
     if (!/^at this pace: 63% of the weekly limit at reset$/.test(r.phrase)) fail("burnChart: the week reads " + r.phrase);
     await shot("week");
 
@@ -18206,6 +18206,28 @@ async function burnChartSection(browser, base) {
     await sp.mouse.move(box.x + box.width * 0.97, box.y + box.height / 2);
     read = await sp.textContent('#uc-body .ucchart[data-chart=cumulative] .ucread');
     if (!/ · \d+% of the 5h limit · projected$/.test(read)) fail("burnChart: hovering past now reads " + read);
+
+    // The 24h line starts where the 5h window did: 12:30, 3h before now, and the first point is not at the range's edge.
+    r = await draw("24h", day);
+    const winX = (r.now - 3 * HOUR - r.first) / (r.end - r.first) * 600;
+    const startX2 = await sp.evaluate(() => Number(document.querySelector("#uc-body .ucchart[data-chart=cumulative] path.uck-line").getAttribute("d").match(/^M([^ ]+) /)[1]));
+    if (Math.abs(startX2 - winX) > 0.1) fail("burnChart: the line starts at x " + startX2 + ", the window began at " + winX.toFixed(2));
+    if ((await sp.textContent("#uc-body .ucchart[data-chart=cumulative] [data-n=cumtotal]")) !== "60k") fail("burnChart: the total beside the line is not the window 60k: " + await sp.textContent("#uc-body .ucchart[data-chart=cumulative] [data-n=cumtotal]"));
+    // hovering before the window says so
+    let b2 = await (await sp.$('#uc-body .ucchart[data-chart=cumulative] .ucplot svg')).boundingBox();
+    await sp.mouse.move(b2.x + b2.width * 0.2, b2.y + b2.height / 2);
+    read = await sp.textContent('#uc-body .ucchart[data-chart=cumulative] .ucread');
+    if (!/before the 5h window$/.test(read)) fail("burnChart: hovering before the window reads " + read);
+
+    // A 1h range holds one hour of a 5h window, and a card filter holds one card of the account: neither can say what a
+    // point of the limit weighs, so both keep the token chart and invent no crossing.
+    r = await draw("24h", day);
+    await sp.evaluate(() => { UC.range = "1h"; UC.bw = 60; UC.since = UC.now - 3600000; });
+    r = await sp.evaluate(() => { ucPaint(); const ch = document.querySelector("#uc-body .ucchart[data-chart=cumulative]"); return { ys: ch.querySelectorAll(".ucy").length, phrase: (ch.querySelector("[data-n=cumproj]") || {}).textContent || "" }; });
+    if (r.ys || /limit/.test(r.phrase)) fail("burnChart: a 1h range reads " + JSON.stringify(r));
+    await draw("24h", day);
+    r = await sp.evaluate(() => { UC.card = { room: "", id: "c1" }; ucPaint(); const ch = document.querySelector("#uc-body .ucchart[data-chart=cumulative]"); const o = { ys: ch.querySelectorAll(".ucy").length, phrase: (ch.querySelector("[data-n=cumproj]") || {}).textContent || "" }; UC.card = null; return o; });
+    if (r.ys || /limit/.test(r.phrase)) fail("burnChart: a card filter reads " + JSON.stringify(r));
 
     // No reading, no percent: the old picture keeps its token axis and gains the time axis and now.
     r = await draw("24h", { ...day, readings: [] });
@@ -20303,76 +20325,14 @@ async function main() {
     await unit("pulls", () => pullsSection(browser, base));
     await unit("pullsAbsent", () => pullsAbsentSection(browser, base));
     await unit("oneTooltip", () => oneTooltipSection(browser, base));
+    await unit("noReadyChildren", () => noReadyChildrenSection(browser, base));
+    await unit("childUnderParent", () => childUnderParentSection(browser, base));
+    await unit("childFold", () => childFoldSection(browser, base));
+    await unit("liveHome", () => liveHomeSection(browser, base));
     await unit("burnChart", () => burnChartSection(browser, base));
-    await pasteStartSection(browser, base);
-    await pasteDoneSection(browser, base);
-    await pasteOldRoomSection(browser, base);
-    await pasteCloseSection(browser, base);
-    await growlQuestionBodySection(browser, base);
-    await growlReplyGrowSection(browser, base);
-    await growlChoicesSection(browser, base);
-    await growlStableSection(browser, base);
-    await mGrowlQuestionSection(browser);
-    await bootCleanSection(browser, base);
-    await mWorkingSection(browser);
-    await mOwnMessagesSection(browser);
-    await mRecapSheetSection(browser);
-    await mHomeOrderSection(browser);
-    await cardUrlWayOutSection(browser, base);
-    await phoneBootSection(browser, base);
-    await sayEnterSection(browser);
-    await sendArrowSection(browser);
-    await mTablesSection(browser);
-    await mMarkdownSection(browser);
-    await mHostileSection(browser);
-    await mPicturesSection(browser);
-    await mHiddenSection(browser);
-    await mViewerSection(browser);
-    await mChangesSection(browser);
-    await mChangesRealSection(browser);
-    await deployReadySection(browser, base);
-    await mHomeLiveSection(browser);
-    await soundPhoneSection(browser, base);
-    await boardDocsSection(browser, base);
-    await phoneBoardCompactSection(browser, base);
-    await phoneBellSection(browser, base);
-    await mBellSection(browser);
-    await phoneRedirectSection(browser, base);
-    await gearTermListSection(browser, base);
-    await growlLinksSection(browser, base);
-    await growlChoiceOnceSection(browser, base);
-    await mOutputAtSection(browser);
-    await mStickBottomSection(browser);
-    await mSendFreeSection(browser);
-    await mCardUploadSection(browser);
-    await mCompactSection(browser);
-    await mPinchSection(browser);
-    await mTypeSteadySection(browser);
-    await mOlderSection(browser);
-    await mFollowSection(browser);
-    await mDocsSection(browser);
-    await mSwitcherSection(browser);
-    await mPullSection(browser);
-    await mPromptsSection(browser);
-    await cardUrlWinNameSection(browser, base);
-    await gearHostsSection(browser, base);
-    await joinedLiveSection(browser, base);
-    await coverPollSection(browser, base);
-    await coverStepsSection(browser, base);
-    await termBoxSection(browser, base);
-    await termDebugSection(browser, base);
-    await termSortStartedSection(browser, base);
-    await noReadyChildrenSection(browser, base);
-    await childUnderParentSection(browser, base);
-    await topNavSection(browser, base);
-    await childFoldSection(browser, base);
-    await liveHomeSection(browser, base);
-    await pullsSection(browser, base);
-    await pullsAbsentSection(browser, base);
-    await oneTooltipSection(browser, base);
-    await burnChartSection(browser, base);
   } catch (e) {
-    fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e));
+    // a listing has no browser, so a bare section call throws here, and the guard below names it
+    if (!LIST_MODE) fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e));
     if (process.env.DEBUG_HEADLESS && page) {
       try {
         const diag = await page.evaluate(() => ({
@@ -20399,6 +20359,16 @@ async function main() {
     const known = new Set(Object.keys(mockVars()).concat(["chromium", "exePath", "bad", "currentUnit", "stuckStep", "peekReads", "mockInit", "lastUnit"]));
     const missing = lets.filter(n => !known.has(n));
     if (missing.length) console.error("mockVars() is missing " + missing.join(", ") + ": a shard will not reset them between units.");
+    // A section called bare from main() runs in every shard, outside any unit. Every section belongs to one unit, bar these.
+    const notUnits = new Set(["u001AuditSection", "groupRemoveSection", "growlQuestionShotsSection", "linkTipSection"]);
+    const src = fs.readFileSync(__filename, "utf8");
+    const bare = (src.match(/^\s*await \w+Section\(/gm) || []).map(l => l.trim().slice(6, -1));
+    const owned = new Set((src.match(/unit\("\w+", \(\) => \w+Section/g) || []).map(l => l.replace(/^.*=> /, "")));
+    const loose = (src.match(/^async function \w+Section/gm) || []).map(l => l.split(" ")[2]).filter(n => !owned.has(n) && !notUnits.has(n));
+    if (bare.length || loose.length) {
+      console.error("sections no unit owns: " + bare.concat(loose).join(", ") + ". Register each as await unit(name, ...) in main().");
+      process.exitCode = 1;
+    }
     console.log(JSON.stringify({ units: unitOrder, pins: PIN_GROUPS }));
     return;
   }
@@ -21789,7 +21759,8 @@ async function growlStableSection(browser, base) {
         focus: document.activeElement === document.querySelector(root + " .gr-reply")
       }), root);
       if (!s.same || !s.btn) fail(tag + "the face was rebuilt by unrelated news.");
-      if (!s.hover) fail(tag + "the hovered button lost its hover.");
+      // a touch context keeps no mouse hover: Chromium drops it within a frame with the board doing nothing, so only a mouse can lose it here
+      if (!phone && !s.hover) fail(tag + "the hovered button lost its hover.");
       if (s.mut) fail(tag + "the growler's DOM changed " + s.mut + " times for news that is not about it.");
       if (s.v !== "half typ" || !s.focus) fail(tag + "a half-typed reply did not survive: " + JSON.stringify(s));
       // news that is about another growler leaves this face's node alone too

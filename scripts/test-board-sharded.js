@@ -36,7 +36,7 @@ const os = require("os");
 const path = require("path");
 
 const HERE = __dirname;
-const HEADLESS = path.join(HERE, "test-board-headless.js");
+const HEADLESS = process.env.BOARD_HEADLESS_FILE || path.join(HERE, "test-board-headless.js");
 const WEIGHTS = path.join(HERE, "board-suite-weights.json");
 const FLAKY = path.join(HERE, "board-suite-flaky.json");
 const DEFAULT_WEIGHT_MS = 8000;
@@ -77,6 +77,8 @@ function listUnits() {
   const r = spawnSync(process.execPath, [HEADLESS], { env: Object.assign({}, process.env, { HEADLESS_LIST: "1" }),
     encoding: "utf8", maxBuffer: 1 << 24 });
   const line = String(r.stdout || "").split("\n").reverse().find(l => l.startsWith("{"));
+  // the harness refuses a list with a section no unit owns, and that exit is not dropped because the JSON is there too
+  if (line && r.status !== 0) { console.error(String(r.stderr || "").trim() || "the harness failed to list its units"); process.exit(1); }
   if (!line) {
     // Playwright or its browser is not installed: the harness says so and exits 0, as check-board.sh treats it.
     console.log(String(r.stdout || "").trim() || String(r.stderr || "").trim() || "the harness listed no units");
