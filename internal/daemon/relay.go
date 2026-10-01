@@ -179,6 +179,8 @@ type sayIn struct {
 	Reply bool `json:"reply"`
 	// Wake resumes a parked card so the message can be delivered. Local only.
 	Wake bool `json:"wake"`
+	// Kind is `fyi` or `needs`. See fyi.go. Local targets only.
+	Kind string `json:"kind"`
 }
 
 // handleSay is `POST /v1/say`: a message to a card on this room or another,
@@ -216,7 +218,7 @@ func (d *Daemon) handleSay(w http.ResponseWriter, r *http.Request) {
 	// THE SAME HANDLER, over the same body, so there is one way a local message
 	// is delivered. Its answer gains who it went to.
 	raw, _ := json.Marshal(map[string]any{"text": in.Text, "from": strings.TrimSpace(in.From), "when": in.When,
-		"reply": in.Reply, "wake": in.Wake})
+		"reply": in.Reply, "wake": in.Wake, "kind": in.Kind})
 	inner, err := http.NewRequestWithContext(withSayTrace(r.Context(), name, via), http.MethodPost,
 		"/v1/tasks/"+target.ID+"/message", bytes.NewReader(raw))
 	if err != nil {
