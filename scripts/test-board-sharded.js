@@ -8,7 +8,15 @@
 //   node scripts/test-board-sharded.js --list             print the shard plan and stop
 //   node scripts/test-board-sharded.js --no-retry         do not run a failure a second time (every failure then fails the run)
 //   node scripts/test-board-sharded.js --logs dir         keep each shard's output in dir (default: a temp dir, kept on failure)
+//   node scripts/test-board-sharded.js --local            run here instead of on sg3 (see below)
 //
+// WHERE IT RUNS. By default on sg3 (ATRIUM_SUITE_ROOM names another room), through scripts/board-suite-remote.ps1,
+// which runs this tree as it is now, committed or not, and streams the report back with the suite's exit code. The
+// suite drives up to 15 browsers and lagged sg4, the machine a person works at, where sg3 and m1mini did not, at the
+// same wall time. It runs HERE, with a line saying why, when --local or ATRIUM_SUITE_LOCAL=1 is given, when this
+// machine is that room, when this repository has no git remote of that name (a worker on m1mini has none), or with
+// --save-weights or --logs, which are about this machine's files.
+
 // Each shard is a separate node process with its own mock server on an ephemeral port and its own headless browser,
 // started with HEADLESS_UNITS=<its units>. The harness names the units and the groups that must stay together (see
 // PIN_GROUPS there). The balancing is greedy, longest first, from scripts/board-suite-weights.json, which a run with
@@ -42,7 +50,7 @@ function defaultShards() {
 }
 
 function parseArgs(argv) {
-  const o = { shards: 0, units: null, retry: true, saveWeights: false, list: false, logs: "" };
+  const o = { shards: 0, units: null, retry: true, saveWeights: false, list: false, logs: "", local: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     const val = () => { if (i + 1 >= argv.length) { console.error(a + " needs a value"); process.exit(2); } return argv[++i]; };
@@ -52,6 +60,7 @@ function parseArgs(argv) {
     else if (a === "--save-weights") o.saveWeights = true;
     else if (a === "--list") o.list = true;
     else if (a === "--logs") o.logs = val();
+    else if (a === "--local") o.local = true;
     else if (a === "-h" || a === "--help") { console.log(fs.readFileSync(__filename, "utf8").split("\n").slice(1, 20).map(l => l.replace(/^\/\/ ?/, "")).join("\n")); process.exit(0); }
     else { console.error("unknown flag " + a); process.exit(2); }
   }
@@ -158,8 +167,33 @@ function cpuSampler() {
 
 const fmt = ms => ms >= 60000 ? Math.floor(ms / 60000) + "m" + String(Math.round((ms % 60000) / 1000)).padStart(2, "0") + "s" : (ms / 1000).toFixed(1) + "s";
 
+// Hand the whole run to another room's machine and return its exit code, or null when this run stays here, saying why.
+function dispatchRemote(opt) {
+  const room = process.env.ATRIUM_SUITE_ROOM || "sg3";
+  const here = why => { console.log("board suite: running here (" + why + ")"); return null; };
+  if (opt.local) return here("--local");
+  if (process.env.ATRIUM_SUITE_LOCAL === "1") return here("ATRIUM_SUITE_LOCAL=1");
+  if (process.env.ATRIUM_SUITE_REMOTE === "1") return here("this is the remote half");
+  if (opt.saveWeights || opt.logs) return here("--save-weights and --logs are about this machine's files");
+  if (os.hostname().toLowerCase().split(".")[0] === room.toLowerCase()) return here("this machine is " + room);
+  const remote = spawnSync("git", ["remote", "get-url", room], { cwd: path.dirname(HERE), encoding: "utf8" });
+  if (remote.status !== 0) return here("no git remote named " + room + " in this repository");
+  const args = [];
+  if (opt.shards) args.push("--shards", String(opt.shards));
+  if (opt.units) args.push("--units", opt.units.join(","));
+  if (!opt.retry) args.push("--no-retry");
+  if (opt.list) args.push("--list");
+  console.log("board suite: running on " + room + " (--local runs it here)");
+  const r = spawnSync("pwsh", ["-NoProfile", "-File", path.join(HERE, "board-suite-remote.ps1"), "-Room", room,
+    "-SuiteArgs", args.join(" ")], { stdio: "inherit" });
+  if (r.error) { console.error("board suite: could not start pwsh for the remote run: " + r.error.message + ". --local runs it here"); return 4; }
+  return r.status === null ? 1 : r.status;
+}
+
 async function main() {
   const opt = parseArgs(process.argv.slice(2));
+  const remoteCode = dispatchRemote(opt);
+  if (remoteCode !== null) return remoteCode;
   const list = listUnits();
   const groups = makeGroups(list, opt.units);
   const weights = (readJSON(WEIGHTS, {}) || {}).ms || {};
