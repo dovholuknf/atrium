@@ -238,7 +238,7 @@ pre.screen { margin: 0; font: 12px/1.4 var(--mono); color: var(--head); overflow
 .bl-row i { font-style: normal; color: var(--dim); }
 .bl-row span { grid-column: 1; color: var(--label); font-size: 14px; overflow-wrap: anywhere; }
 .bl-row time { grid-row: 1; grid-column: 2; color: var(--dim); font-size: 12px; }
-#m-sound-hint { position: fixed; z-index: 40; left: 50%; transform: translateX(-50%); top: calc(env(safe-area-inset-top, 0px) + 56px); min-height: 36px; padding: 0 14px; border: 1px solid var(--stroke); border-radius: 18px; background: var(--bg-1); color: var(--warn); font-size: 13px; }
+#m-sound-hint { position: fixed; z-index: 40; left: 50%; transform: translateX(-50%); bottom: calc(env(safe-area-inset-bottom, 0px) + 6px); pointer-events: none; min-height: 36px; padding: 0 14px; border: 1px solid var(--stroke); border-radius: 18px; background: var(--bg-1); color: var(--warn); font-size: 13px; }
 #m-sound-hint[hidden] { display: none; }
 
 /* what can make the home look short: the room it is scoped to, and the filters that hide rows */

@@ -526,6 +526,9 @@
     .filtersbtn[aria-expanded="true"] { border-color: var(--teal); color: var(--head); }
     .filtersbtn .fcount { min-width: 18px; padding: 1px 5px; box-sizing: border-box; border-radius: 9px; background: var(--teal); color: var(--bg-2); font: 700 11px/16px var(--sans); text-align: center; }
     .filtersbtn .fcount[hidden] { display: none; }
+    /* The pills keep their look and grow a 40px hit area: the pad is a transparent layer of the button itself. */
+    .seg button { position: relative; }
+    .seg button::after { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 40px; transform: translateY(-50%); }
     /* Closed, the pill rows are gone: the search box and the button are all that is left above the first card. */
     body:not(.filters-open) :is(#stack, #board-bar) .barlabel,
     body:not(.filters-open) :is(#stack, #board-bar) .seg { display: none; }

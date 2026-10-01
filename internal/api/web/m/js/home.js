@@ -142,13 +142,13 @@
   function isFinished(t) { return t.status === "done" || t.status === "dead"; }
 
   // The filters that apply to a row. Needs-me only is how the needs list is already made, so it changes the all list.
-  // Hide subagents never hides a running card that has an alias: somebody named it, so it is not an anonymous helper.
+  // Hide subagents never hides a live card that has an alias: somebody named it, so it is not an anonymous helper.
   // The board's isDoer stays the board's. Here a director and the orchestrator are not subagents either, whatever they are
   // tagged, since they are who the operator talks to.
-  const NOT_SUB = ["atrium:director", "atrium:orchestrator", "orchestrators", "atrium:hold-notices"];
+  const NOT_SUB = ["atrium:director", "atrium:orchestrator", "orchestrators", "atrium:hold-notices", "atrium:context-ceiling"];
   function isSub(t) {
     if (!isDoer(t)) return false;
-    if (t.status === "running" && t.alias) return false;
+    if (t.alias && !isFinished(t)) return false;
     return !(t.tags || []).some(x => NOT_SUB.indexOf(String(x).trim().toLowerCase()) >= 0);
   }
 

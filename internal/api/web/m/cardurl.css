@@ -33,5 +33,10 @@
 #m-card-menu .pm-row { display: flex; justify-content: space-between; gap: 10px; width: 100%; min-height: 44px; align-items: center; padding: 0 10px; border: 0; background: none; color: var(--body); text-align: left; font-size: var(--m-fs, 14px); cursor: pointer; }
 #m-card-menu .pm-row span { color: var(--dim); font-size: calc(var(--m-fs, 14px) * .9); }
 #m-card-menu .quiet { margin: 8px; font-size: var(--m-fs, 14px); }
-#m-card .sheet-top .pick, #m-card .back .lbl, #m-card .term { font-size: var(--m-fs, 14px); }
+#m-card .sheet-top .pick, #m-card .back .lbl, #m-card .term { font-size: min(var(--m-fs, 14px), 15px); }
+/* One line at every pinch size: the title row never wraps, the spacer gives way first and the buttons trim their padding. */
+#m-card .sheet-top { flex-wrap: nowrap; gap: 4px; overflow: hidden; }
+#m-card .sheet-top > * { flex: none; white-space: nowrap; }
+#m-card .sheet-top > .grow { flex: 1 1 0; min-width: 0; }
+#m-card .sheet-top .pick { padding: 0 8px; }
 #m-card.direct .back { width: auto; display: inline-flex; align-items: center; padding: 0 10px 0 6px; }

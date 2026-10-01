@@ -669,8 +669,17 @@
   // ── "published N documents" on a card ────────────────────────────────────
   // One request when a card opens, and at most one every 30 seconds while it stays open, however often its output moves.
   const counts = new Map();
+  // The hub files a card's documents under `room~id`, and the card page holds the bare id while one room is attached.
+  function filedId(id) {
+    if (String(id).indexOf("~") > 0) return id;
+    const t = window.mStore && window.mStore.card(id);
+    const rooms = window.mNet.rooms();
+    const room = (t && t.room) || window.mNet.room() || (rooms.length === 1 ? rooms[0] : "");
+    return room ? room + "~" + id : id;
+  }
   async function paintCard(node, cardId) {
     if (!node || !cardId) return;
+    cardId = filedId(cardId);
     node.hidden = true;
     if (!(await ready())) return;
     const c = counts.get(cardId) || { n: -1, at: 0, busy: false };

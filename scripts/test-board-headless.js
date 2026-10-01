@@ -14357,10 +14357,10 @@ async function mSwitcherSection(browser) {
     if (look.pos !== "absolute" || look.alpha < 1) fail(tag + "the sheet is not a solid surface over the thread: " + JSON.stringify(look));
     if (look.edge !== "1px" && look.shadow === "none") fail(tag + "the sheet has no edge: " + JSON.stringify(look));
     if (!look.back || look.backH < 300) fail(tag + "no backdrop over the thread: " + JSON.stringify(look));
-    // the size follows the pinch, and the header, rows and chips scale together
+    // the size follows the pinch, and the rows and chips scale together. The header buttons stop at 15px so the bar stays on one line
     await p.evaluate(() => document.getElementById("m-card").style.setProperty("--m-fs", "20px"));
     const sz = await p.evaluate(() => { const f = s => parseFloat(getComputedStyle(document.querySelector(s)).fontSize); return { row: f("#m-card-menu .pm-row"), chip: f("#m-card-menu .pm-chip"), pick: f("#m-card-pick"), term: f("#m-card-term"), msg: f("#m-replies .md") }; });
-    if (sz.row !== 20 || sz.pick !== 20 || sz.term !== 20 || sz.msg !== 20 || Math.abs(sz.chip - 18) > 0.1) fail(tag + "the switcher does not follow the pinch size: " + JSON.stringify(sz));
+    if (sz.row !== 20 || sz.pick !== 15 || sz.term !== 15 || sz.msg !== 20 || Math.abs(sz.chip - 18) > 0.1) fail(tag + "the switcher does not follow the pinch size: " + JSON.stringify(sz));
     const mini = await p.evaluate(() => { document.getElementById("m-card").style.setProperty("--m-fs", "11px"); return parseFloat(getComputedStyle(document.querySelector("#m-card-menu .pm-row")).fontSize); });
     if (mini !== 11) fail(tag + "the switcher did not shrink with the pinch: " + mini);
     const hit = await p.$$eval("#m-card-menu .pm-chip, #m-card-menu .pm-row, #m-card-pick", e => e.map(x => Math.round(x.getBoundingClientRect().height)));
@@ -17166,8 +17166,8 @@ async function mHomeLiveSection(browser) {
     if (t.status === "needs-input" && !out.length) out.push(ms(t.waiting_since) || 0);
     return out.length ? Math.min(...out.filter(Boolean).concat(out.some(Boolean) ? [] : [Infinity])) : null;
   };
-  const NOT_SUB = ["atrium:director", "atrium:orchestrator", "orchestrators", "atrium:hold-notices"];
-  const isSub = t => t.tags.includes("origin:agent") && !(t.status === "running" && t.alias) && !t.tags.some(x => NOT_SUB.includes(x));
+  const NOT_SUB = ["atrium:director", "atrium:orchestrator", "orchestrators", "atrium:hold-notices", "atrium:context-ceiling"];
+  const isSub = t => t.tags.includes("origin:agent") && !(t.alias && t.status !== "done" && t.status !== "dead") && !t.tags.some(x => NOT_SUB.includes(x));
   const project = t => {
     const w = (t.worktree || "").replace(/\\/g, "/");
     if (!w) return "";
@@ -17848,7 +17848,7 @@ async function main() {
       coverPoll: coverPollSection, coverSteps: coverStepsSection, termBox: termBoxSection,
       termDebug: termDebugSection, termSortStarted: termSortStartedSection,
       noReadyChildren: noReadyChildrenSection, childUnderParent: childUnderParentSection, topNav: topNavSection,
-      childFold: childFoldSection };
+      childFold: childFoldSection, liveHome: liveHomeSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -19944,6 +19944,7 @@ async function main() {
     await childUnderParentSection(browser, base);
     await topNavSection(browser, base);
     await childFoldSection(browser, base);
+    await liveHomeSection(browser, base);
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e));
     if (process.env.DEBUG_HEADLESS && page) {
@@ -20028,6 +20029,85 @@ const M_TYPES = { ".html": "text/html", ".js": "text/javascript", ".css": "text/
   ".webmanifest": "application/manifest+json" };
 const M_MIN = 60 * 1000;
 function mIso(msAgo) { return new Date(Date.now() - msAgo).toISOString(); }
+// ── fixes from the live phone test: home filters, the sound hint, the card top bar, the docs line, the chips ─────
+async function liveHomeSection(browser, base) {
+  const st = mServer({});
+  st.tasks = [
+    mCard("lh-dir", { alias: "ui", display_title: "ui", status: "needs-input", waiting_since: mIso(2 * M_MIN), room: "sg4", tags: ["atrium:context-ceiling", "atrium:subagent", "origin:agent"], seen: { turn_ended_at: mIso(20 * M_MIN) } }),
+    mCard("lh-help", { display_title: "helper", status: "running", room: "sg4", tags: ["atrium:subagent", "origin:agent"] }),
+  ];
+  st.replies["lh-dir"] = { source: "transcript", replies: [{ at: mIso(5 * M_MIN), text: "A reply." }] };
+  const hub = mDocsHub();
+  st.docsApi = hub.api;
+  hub.add("lh-doc", "Published", [{ bytes: "# hi\n", origin: "card", by: "ui@sg4", card: "sg4~lh-dir" }]);
+  await st.open();
+  try {
+    const tag = "liveHome: ";
+    // hide subagents keeps a director that carries only the context-ceiling tag, and still hides the helper
+    {
+      const ctx = await browser.newContext({ viewport: M_VIEWS[0], hasTouch: true, isMobile: true });
+      await ctx.addInitScript(() => localStorage.setItem("atrium.m.homeopts", JSON.stringify({ order: "newest", group: "none", needsMe: false, hideDone: false, hideSubs: true })));
+      const p = await ctx.newPage();
+      await p.goto(st.url + "/m/", { waitUntil: "domcontentloaded" });
+      // checked before the first tap, which unlocks sound and takes the hint down
+      await p.waitForFunction(() => { const h = document.getElementById("m-sound-hint"); return h && !h.hidden; }, null, { timeout: slow(8000) })
+        .then(async () => {
+          const hit = await p.evaluate(() => { const h = document.getElementById("m-sound-hint").getBoundingClientRect(); const e = document.elementFromPoint(h.left + h.width / 2, h.top + h.height / 2); return e && e.id; });
+          if (hit === "m-sound-hint") fail(tag + "the sound hint takes taps from the page under it");
+        }, () => fail(tag + "the sound hint did not show in a fresh page"));
+      await p.tap("#m-seg-all");
+      await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
+      const n = await p.$$eval("#m-list .row .name b", e => e.map(x => x.textContent));
+      if (n.indexOf("ui") < 0) fail(tag + "hide subagents hid a live director: " + n.join());
+      if (n.indexOf("helper") >= 0) fail(tag + "hide subagents kept the helper: " + n.join());
+      await ctx.close();
+    }
+    // the top bar stays on one line, inside the screen, at the largest pinch size
+    for (const size of [14, 19.8, 24]) {
+      const ctx = await browser.newContext({ viewport: M_VIEWS[0], hasTouch: true, isMobile: true });
+      await ctx.addInitScript(s => localStorage.setItem("atrium.mfs", String(s)), size);
+      const p = await ctx.newPage();
+      await p.goto(st.url + "/m/", { waitUntil: "domcontentloaded" });
+      await p.tap("#m-seg-all");
+      await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
+      await p.tap('#m-list .row[data-id="lh-dir"]');
+      await p.waitForSelector("#m-replies .reply", { timeout: slow(5000) });
+      await p.waitForTimeout(400);
+      const m = await p.evaluate(() => {
+        const bar = document.querySelector("#m-card .sheet-top"), w = window.innerWidth;
+        const kids = [...bar.children].filter(e => e.getClientRects().length).map(e => e.getBoundingClientRect());
+        return { h: bar.getBoundingClientRect().height, right: Math.max(...kids.map(r => r.right)), tall: Math.max(...kids.map(r => r.height)), w };
+      });
+      if (m.right > m.w + 0.5) fail(tag + "the top bar runs off the screen at " + size + "px: " + JSON.stringify(m));
+      if (m.tall > 48 || m.h > 70) fail(tag + "the top bar wraps at " + size + "px: " + JSON.stringify(m));
+      if (size === 24) {
+        // "published N documents": the card's documents are filed under room~id
+        await p.waitForFunction(() => !document.getElementById("m-card-docs").hidden, null, { timeout: slow(5000) })
+          .catch(() => fail(tag + "the card line did not show for a document filed under room~id"));
+      }
+      await ctx.close();
+    }
+    // the filter pills on the board at phone size have a 40px hit area
+    {
+      const ctx = await browser.newContext({ viewport: M_VIEWS[0], hasTouch: true, isMobile: true });
+      await ctx.addInitScript(() => { try { sessionStorage.setItem("atrium.m.desktop", "1"); } catch (e) {} });
+      const p = await ctx.newPage();
+      await p.goto(base, { waitUntil: "domcontentloaded" });
+      await p.waitForSelector(".seg button", { state: "attached", timeout: slow(10000) });
+      const r = await p.evaluate(() => {
+        const b = document.querySelector(".seg button");
+        if (!b) return null;
+        const q = b.getBoundingClientRect(), cs = getComputedStyle(b, "::after");
+        return { h: q.height, pad: parseFloat(cs.height), pos: getComputedStyle(b).position };
+      });
+      if (!r) { fail(tag + "no visible filter pill on the board"); }
+      else if (r.pad < 40 || r.pos !== "relative") fail(tag + "the filter pill has no 40px hit area: " + JSON.stringify(r));
+      await ctx.close();
+    }
+  } finally { await st.close(); }
+  if (!bad) console.log("liveHome ok");
+}
+
 function mCard(id, over) {
   return Object.assign({ id, title: id, display_title: id, status: "running", created_at: mIso(3600000),
     last_activity_at: mIso(M_MIN), seen: {}, activity: {} }, over || {});
