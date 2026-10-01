@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -43,8 +45,20 @@ func TestNoticesReadClearsTheHeldCountOnTheRow(t *testing.T) {
 		t.Fatalf("one held: %+v", v)
 	}
 
+	// No stamp is no read: the marker is never "now".
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/tasks/"+card.ID+"/notices-read", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("notices-read answered %d: %s", rec.Code, rec.Body)
+	}
+	if v := row(); v.HeldNotices != 1 {
+		t.Fatalf("a read with no stamp cleared the count: %+v", v)
+	}
+
+	through := time.Now().Add(time.Minute).UTC().Format(store.TimeFormat)
+	rec = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/tasks/"+card.ID+"/notices-read",
+		strings.NewReader(`{"through":"`+through+`"}`)))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("notices-read answered %d: %s", rec.Code, rec.Body)
 	}

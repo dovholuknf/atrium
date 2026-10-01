@@ -2,6 +2,7 @@ package link
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -93,11 +94,19 @@ func TestTaskNoticesLabelsAnFYIWithItsSender(t *testing.T) {
 
 // Reading your own notices posts the read marker, and reading another card's does not.
 func TestTaskNoticesMarksOwnNoticesRead(t *testing.T) {
-	var posted []string
+	var (
+		posted  []string
+		through string
+	)
 	board := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.Method == http.MethodPost {
 			posted = append(posted, r.URL.Path)
+			var b struct {
+				Through string `json:"through"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&b)
+			through = b.Through
 			fmt.Fprint(w, `{"ok":true}`)
 			return
 		}
@@ -108,7 +117,9 @@ func TestTaskNoticesMarksOwnNoticesRead(t *testing.T) {
 		case "/v1/tasks/o1", "/v1/tasks/w1":
 			fmt.Fprintf(w, `{"id":%q,"wire_name":"orch","status":"needs-input"}`, r.URL.Path[len("/v1/tasks/"):])
 		case "/v1/tasks/o1/events", "/v1/tasks/w1/events":
-			fmt.Fprint(w, `{"events":[]}`)
+			fmt.Fprint(w, `{"events":[
+				{"at":"2026-09-30T10:00:00.000Z","kind":"notified","payload":{"held":true,"source":"fyi","text":"a"}},
+				{"at":"2026-09-30T10:05:00.000Z","kind":"notified","payload":{"held":true,"source":"fyi","text":"b"}}]}`)
 		default:
 			http.NotFound(w, r)
 		}
@@ -122,6 +133,9 @@ func TestTaskNoticesMarksOwnNoticesRead(t *testing.T) {
 	}
 	if len(posted) != 1 || posted[0] != "/v1/tasks/o1/notices-read" {
 		t.Fatalf("own notices posted = %v, want the read marker", posted)
+	}
+	if through != "2026-09-30T10:05:00.000Z" {
+		t.Fatalf("read stamped through %q, want the newest notice handed back", through)
 	}
 	posted = nil
 	if _, _, err := c.taskHandler(context.Background(), req, taskInput{Notices: true, Card: "w1"}); err != nil {

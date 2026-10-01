@@ -14,17 +14,35 @@ import (
 // NoticesReadKey is the setting that holds when a card last read its held notices.
 func NoticesReadKey(taskID string) string { return "notices_read:" + taskID }
 
-// MarkNoticesRead records that a card read its held notices just now, and reports whether
-// that moved the count: a card with none unread changes nothing.
-func (s *Store) MarkNoticesRead(taskID string) (bool, error) {
+// MarkNoticesRead records that a card read its held notices up to `through`, the `at` of the
+// newest one it was handed, and reports whether that moved the count. NEVER NOW: a notice
+// held between the read and this stamp is newer than `through`, so it stays unread. The
+// marker only moves forward, so a late or repeated stamp cannot unread anything. A
+// `through` that is empty or not a time changes nothing.
+func (s *Store) MarkNoticesRead(taskID, through string) (bool, error) {
+	if _, err := parseTS(through); err != nil {
+		return false, nil
+	}
+	stored, err := s.Setting(NoticesReadKey(taskID))
+	if err != nil {
+		return false, err
+	}
 	n, _, err := s.HeldNoticeStats(taskID)
 	if err != nil {
 		return false, err
 	}
-	if err := s.SetSetting(NoticesReadKey(taskID), ts(now())); err != nil {
+	// Fixed-width UTC text, so the larger string is the later time.
+	if through <= stored {
+		return false, nil
+	}
+	if err := s.SetSetting(NoticesReadKey(taskID), through); err != nil {
 		return false, err
 	}
-	return n > 0, nil
+	after, _, err := s.HeldNoticeStats(taskID)
+	if err != nil {
+		return false, err
+	}
+	return after < n, nil
 }
 
 // HeldNoticeStats is how many held notices a card has not read, and when the oldest of

@@ -669,16 +669,32 @@ func (d *Daemon) watchWorkers(now time.Time) error {
 	return nil
 }
 
-// wakeStep is the escalation step after which a stuck card wakes a launcher that holds
-// its notices. The second step of EscalationBackoff.
-const wakeStep = 2
+// The escalation step after which a stuck card wakes a launcher that holds its notices. A
+// long tool call is already LongToolAfter old when it escalates, so its second step is
+// the wake. A silent stop is told to the launcher at SilentStopNotifyAfter, the second
+// step, so waking there would wake on every one: it waits for the fourth, ten minutes.
+const (
+	wakeStep       = 2
+	wakeStepSilent = 4
+)
 
 // wakeLauncher types one notice to a launcher that holds them, once a card it launched has
-// been stuck past the second step of the backoff. Every earlier stuck notice stays held.
+// been stuck past its wake step. Every earlier stuck notice stays held.
 // Only a silent stop or a long tool call is stuck: a long turn is a report, not an alarm.
 // Once per stuck episode, keyed on when it began.
 func (d *Daemon) wakeLauncher(t *store.Task, x *Escalation) {
-	if x == nil || x.Count < wakeStep || (x.Source != NoticeSilentStop && x.Source != NoticeLongTool) {
+	if x == nil {
+		return
+	}
+	step := wakeStep
+	switch x.Source {
+	case NoticeSilentStop:
+		step = wakeStepSilent
+	case NoticeLongTool:
+	default:
+		return
+	}
+	if x.Count < step {
 		return
 	}
 	launcher := d.launcherOf(t)

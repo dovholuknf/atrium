@@ -264,9 +264,11 @@ func (d *Daemon) finish(task *store.Task, in FinishRequest) (map[string]any, int
 	// crash cannot record the report and lose the notice. Keyed on the moment,
 	// so every report is sent once. A card nobody launched has nobody to tell.
 	launcher := d.launcherOf(task)
-	// AN FYI THAT THE LAUNCHER HOLDS is held like any notice. A blocked or a question report
-	// is never news, whatever it was labelled.
-	heldFYI := parseKind(in.Kind) == KindFYI && in.Status != ReportBlocked && in.Status != ReportQuestion &&
+	// AN FYI THAT THE LAUNCHER HOLDS is held like any notice. Only a progress report is
+	// news, whatever the rest were labelled: a blocked or a question report wants an
+	// answer, one carrying an ask wants one too, and a done report waits on acceptance and
+	// a merge, which a held notice nobody is woken for would leave sitting.
+	heldFYI := parseKind(in.Kind) == KindFYI && in.Status == ReportProgress && strings.TrimSpace(in.Ask) == "" &&
 		holdsNotices(launcher)
 	if launcher != nil {
 		source := NoticeReport
