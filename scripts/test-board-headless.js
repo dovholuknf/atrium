@@ -13815,6 +13815,35 @@ async function mFollowSection(browser) {
     await p.waitForTimeout(600);
     await output(); await p.waitForTimeout(900);
     if ((await gap()) > 3) fail(tag + "scrolling to the very bottom did not resume following: " + await gap());
+    // a touch is over only when the last finger lifts: touchend with another finger still down keeps it
+    await p.evaluate(() => {
+      const sc = document.getElementById("m-card-scroll"), t = i => new Touch({ identifier: i, target: sc, clientX: 100 + i * 60, clientY: 300 });
+      sc.dispatchEvent(new TouchEvent("touchstart", { touches: [t(1)], targetTouches: [t(1)], changedTouches: [t(1)], bubbles: true, cancelable: true }));
+      sc.dispatchEvent(new TouchEvent("touchend", { touches: [t(2)], targetTouches: [t(2)], changedTouches: [t(1)], bubbles: true, cancelable: true }));
+      sc.scrollTop = sc.scrollHeight;
+    });
+    await p.waitForTimeout(700);
+    const nBefore = await p.evaluate(() => document.querySelectorAll("#m-replies [data-k]").length);
+    n++; st.replies["fo-1"] = { source: "transcript", replies: replies() }; st.send("task", Object.assign({}, c, { row: 1, output_at: mIso(0.05) }));
+    await p.waitForTimeout(1200);
+    const nDuring = await p.evaluate(() => document.querySelectorAll("#m-replies [data-k]").length);
+    if (nDuring !== nBefore) fail(tag + "a finger still down was treated as lifted, the thread was redrawn under it: " + nBefore + " to " + nDuring);
+    await p.evaluate(() => { const sc = document.getElementById("m-card-scroll"); sc.dispatchEvent(new TouchEvent("touchend", { touches: [], targetTouches: [], changedTouches: [], bubbles: true, cancelable: true })); });
+    await p.waitForTimeout(700);
+    // a pen dragged on a touch screen ends with pointercancel and no pointerup: the thread must still stick again at the bottom
+    await p.evaluate(() => {
+      const sc = document.getElementById("m-card-scroll");
+      sc.dispatchEvent(new PointerEvent("pointerdown", { pointerType: "pen", pointerId: 7, bubbles: true }));
+      sc.dispatchEvent(new PointerEvent("pointercancel", { pointerType: "pen", pointerId: 7, bubbles: true }));
+      sc.scrollTop = sc.scrollHeight;
+    });
+    await p.waitForTimeout(700);
+    const nPen = await p.evaluate(() => document.querySelectorAll("#m-replies [data-k]").length);
+    n++; st.replies["fo-1"] = { source: "transcript", replies: replies() }; st.send("task", Object.assign({}, c, { row: 1, output_at: mIso(0.04) }));
+    await p.waitForTimeout(1500);
+    const nPen2 = await p.evaluate(() => document.querySelectorAll("#m-replies [data-k]").length);
+    if (nPen2 <= nPen) fail(tag + "after a pen's pointercancel the thread still counts as held, nothing new was drawn: " + nPen + " to " + nPen2);
+    if ((await gap()) > 3) fail(tag + "after a pen's pointercancel the thread never stuck to the bottom again: " + await gap());
     if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
     await ctx.close();
   } finally { await st.close(); }
