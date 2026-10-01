@@ -299,6 +299,21 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 		}
 		return err
 	}
+	// THE EVERYWHERE INDEX, built from the cache, since the rooms announce again
+	// only when something changes. A room announcing replaces its own part.
+	if rooms, err := store.Rooms(); err == nil {
+		for _, r := range rooms {
+			held, err := store.Cards(r.ID)
+			if err != nil {
+				continue
+			}
+			cards := make([]link.CardState, 0, len(held))
+			for _, c := range held {
+				cards = append(cards, link.CardState{ID: c.ID, Status: c.Status, Payload: c.Payload})
+			}
+			h.IndexEverywhere(r.Name, cards)
+		}
+	}
 
 	// The board this hub serves. From disk when told to, so the loop is
 	// edit, save, reload, with no rebuild at all.

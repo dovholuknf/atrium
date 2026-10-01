@@ -120,6 +120,8 @@ type Hub struct {
 	// be listening: a hub with no board open leaves the token sitting there, and
 	// the next reconciler starts by looking at the truth anyway.
 	changed chan struct{}
+	// every is the everywhere index. See everywhere.go.
+	every *everywhere
 }
 
 // Changes is the channel that fires when the set of attached rooms may have
@@ -204,7 +206,7 @@ type attached struct {
 
 // NewHub makes an empty hub.
 func NewHub(t Timings) *Hub {
-	return &Hub{T: t.fill(), rooms: map[string]*attached{}, changed: make(chan struct{}, 1)}
+	return &Hub{T: t.fill(), rooms: map[string]*attached{}, changed: make(chan struct{}, 1), every: newEverywhere()}
 }
 
 // Serve accepts connections until the listener closes.
