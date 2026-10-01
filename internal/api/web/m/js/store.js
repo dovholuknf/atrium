@@ -289,6 +289,18 @@
     hub() { return hub; },
     rooms() { return rooms.slice(); },
     room: roomNow,
+    // Leaves the room this page was scoped to, and reads everything again: the cards, the permissions and the stream,
+    // which is addressed by room.
+    clearRoom() {
+      try { localStorage.removeItem(ROOM_KEY); } catch (e) {}
+      cards.clear();
+      loaded = false;
+      mark("cards");
+      mark("rooms");
+      connect();
+      tasksSoon(0);
+      permsSoon(0);
+    },
     roomOf,
     bareId,
     on(kind, fn) { return on(kind, fn); },
