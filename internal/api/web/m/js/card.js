@@ -264,11 +264,16 @@
     toEnd();
     requestAnimationFrame(() => { if (stick && els) toEnd(); });
   }
+  // Only a scroll the operator made lets go of the end. Layout growth, a restored position or scroll anchoring also
+  // fire scroll events, and none of them is a decision to stop following. A touch, wheel, key or drag marks the
+  // scrolls that follow it as the operator's, and a finger's momentum is covered by the window after it.
+  let userAt = 0;
+  function byHand() { userAt = Date.now(); }
   function onScroll() {
     if (!els || !openId) return;
     const gap = els.scroll.scrollHeight - els.scroll.scrollTop - els.scroll.clientHeight;
-    stick = gap < NEAR;
-    els.jump.hidden = stick;
+    if (gap < NEAR) { stick = true; els.jump.hidden = true; return; }
+    if (Date.now() - userAt < 1500) { stick = false; els.jump.hidden = false; }
   }
 
   function paintReplies() {
@@ -522,6 +527,14 @@
       back: q("m-card-back"), term: q("m-card-term"), working: q("m-working"), recap: q("m-recap"), jump: q("m-jump"),
     };
     els.scroll.addEventListener("scroll", onScroll, { passive: true });
+    ["wheel", "touchstart", "touchmove", "pointerdown", "keydown"].forEach(n => els.scroll.addEventListener(n, byHand, { passive: true }));
+    // The first open lays out late: the Recap button, the permission rows, fonts and any image in a reply move the end
+    // after the first scroll. While following, every size change of the thread and the box around it goes to the end again.
+    if (window.ResizeObserver) {
+      const ro = new ResizeObserver(() => { if (stick && openId) toEnd(); });
+      [els.scroll, els.head, els.notices, els.replies, els.extras, els.perms].forEach(e => ro.observe(e));
+    }
+    els.scroll.addEventListener("load", () => { if (stick && openId) toEnd(); }, true);
     els.jump.addEventListener("click", () => { stick = true; toEnd(); });
     if (window.visualViewport) window.visualViewport.addEventListener("resize", () => { if (openId) settle(); });
     els.head.addEventListener("click", e => { if (e.target.closest && e.target.closest("#m-recap-open")) openRecap(); });

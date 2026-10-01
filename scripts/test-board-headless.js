@@ -13272,7 +13272,7 @@ async function mStickBottomSection(browser) {
       const jump = () => p.evaluate(() => !document.getElementById("m-jump").hidden);
       const settled = async (what) => {
         try { await p.waitForFunction(() => { const e = document.getElementById("m-card-scroll"); return e.scrollHeight - e.scrollTop - e.clientHeight < 3; }, null, { timeout: slow(4000) }); }
-        catch (e) { fail(tag + what + ": not at the newest message, gap " + await gap()); }
+        catch (e) { fail(tag + what + ": not at the newest message, gap " + await gap() + " " + JSON.stringify(await p.evaluate(() => { const e = document.getElementById("m-card-scroll"); return [e.scrollTop, e.scrollHeight, e.clientHeight, document.getElementById("m-jump").hidden]; }))); }
       };
       await p.waitForSelector("#m-seg-all", { timeout: slow(10000) });
       await p.tap("#m-seg-all");
@@ -13281,6 +13281,24 @@ async function mStickBottomSection(browser) {
       await p.waitForSelector("#m-replies .reply", { timeout: slow(5000) });
       if (await p.evaluate(() => document.getElementById("m-card-scroll").scrollHeight <= document.getElementById("m-card-scroll").clientHeight + 50)) fail(tag + "the thread is not long enough to test");
       await settled("on open");
+      // the first open again, with an image that loads late and tall: the thread still ends up at the newest
+      await p.route("**/late-*.svg", async r => {
+        await new Promise(res => setTimeout(res, 700));
+        return r.fulfill({ status: 200, contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="300" height="700"/>' });
+      });
+      await p.waitForSelector("#m-card.on", { timeout: slow(5000) });
+      await p.goBack();
+      await p.waitForFunction(() => document.getElementById("m-card").hidden, null, { timeout: slow(5000) });
+      await p.tap('#m-list .row[data-id="sb-1"]');
+      await p.waitForSelector("#m-replies .reply", { timeout: slow(5000) });
+      await p.evaluate(() => {
+        const last = document.querySelector("#m-replies .reply:last-child .md");
+        const im = new Image(); im.src = "/m/late-" + Date.now() + ".svg"; im.style.display = "block"; im.style.width = "300px"; im.style.height = "700px";
+        last.appendChild(im);
+      });
+      await settled("first open with a late image");
+      await p.waitForFunction(() => Array.from(document.querySelectorAll("#m-replies img")).every(i => i.complete), null, { timeout: slow(5000) });
+      await settled("after the late image loaded");
       await p.waitForFunction(() => document.getElementById("m-live").classList.contains("on"), null, { timeout: slow(10000) });
       const t1 = Date.now();
       while (!st.streams.length && Date.now() - t1 < slow(10000)) await p.waitForTimeout(100);
@@ -13293,7 +13311,7 @@ async function mStickBottomSection(browser) {
       await p.evaluate(() => { document.documentElement.style.setProperty("--vvh", "460px"); window.visualViewport.dispatchEvent(new Event("resize")); });
       await settled("keyboard open");
       // scrolled up on purpose: no following, and a jump control
-      await p.evaluate(() => { document.getElementById("m-card-scroll").scrollTop = 0; });
+      await p.evaluate(() => { const e = document.getElementById("m-card-scroll"); e.dispatchEvent(new WheelEvent("wheel", { deltaY: -100 })); e.scrollTop = 0; });
       await p.waitForFunction(() => !document.getElementById("m-jump").hidden, null, { timeout: slow(3000) });
       st.replies["sb-1"] = { source: "transcript", replies: long(8).concat([{ at: mIso(M_MIN), text: "NEWEST " + "tail ".repeat(100) }, { at: mIso(1000), text: "LATER one " + "x ".repeat(100) }]) };
       st.send("task", Object.assign({}, c, { row: 1, seen: { turn_ended_at: mIso(500) } }));
@@ -13309,7 +13327,7 @@ async function mStickBottomSection(browser) {
       await settled("jump to latest");
       if (await jump()) fail(tag + "the jump control stayed after jumping");
       // your own message lands you on it, even from far up
-      await p.evaluate(() => { document.getElementById("m-card-scroll").scrollTop = 0; });
+      await p.evaluate(() => { const e = document.getElementById("m-card-scroll"); e.dispatchEvent(new WheelEvent("wheel", { deltaY: -100 })); e.scrollTop = 0; });
       await p.waitForFunction(() => !document.getElementById("m-jump").hidden, null, { timeout: slow(3000) });
       await p.waitForSelector("#m-compose textarea", { timeout: slow(5000) });
       await p.fill("#m-compose textarea", "my line");
@@ -13318,7 +13336,7 @@ async function mStickBottomSection(browser) {
       await p.waitForSelector("#m-replies .reply.mine", { timeout: slow(5000) });
       await settled("own message");
       // closing the recap sheet lands on the newest
-      await p.evaluate(() => { document.getElementById("m-card-scroll").scrollTop = 0; });
+      await p.evaluate(() => { const e = document.getElementById("m-card-scroll"); e.dispatchEvent(new WheelEvent("wheel", { deltaY: -100 })); e.scrollTop = 0; });
       await p.tap("#m-recap-open");
       await p.waitForSelector("#m-recap:not([hidden])", { timeout: slow(3000) });
       await p.tap("#m-recap-close");
