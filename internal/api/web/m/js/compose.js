@@ -631,5 +631,7 @@
     return true;
   }
 
-  window.mCompose = { mount, unmount, insert, attach };
+  // Whether a send or an upload is in flight on the mounted card, which a page reload would lose.
+  const busy = () => !!cur && (cur.sending > 0 || cur.uploading > 0);
+  window.mCompose = { mount, unmount, insert, attach, busy };
 })();

@@ -13895,6 +13895,119 @@ async function mSwitcherSection(browser) {
   if (!bad) console.log("mSwitcher ok");
 }
 
+// Pull down at the very top of a card reloads the page. Not from mid-thread, the composer or the viewer.
+async function mPullSection(browser) {
+  const st = mServer({});
+  const mk = (id, over) => mCard(id, Object.assign({ alias: id, display_title: id, worktree: "/w/card", status: "needs-input", waiting_since: mIso(2 * M_MIN), seen: { turn_ended_at: mIso(20 * M_MIN) } }, over || {}));
+  st.tasks = [mk("pl-1"), mk("pl-2")];
+  st.files = { "/w/card/a.txt": Buffer.from("plain text\n") };
+  st.replies["pl-1"] = { source: "transcript", replies: [{ at: mIso(5 * M_MIN), text: "A short thread." }] };
+  st.replies["pl-2"] = { source: "transcript", replies: Array.from({ length: 8 }, (_, i) => ({ at: mIso((60 - i * 4) * M_MIN), text: "Reply " + i + ". " + "words that wrap onto many lines on a phone. ".repeat(14) })) };
+  await st.open();
+  try {
+    const ctx = await browser.newContext({ viewport: { width: 412, height: 915 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2 });
+    const p = await ctx.newPage();
+    const errors = [];
+    p.on("pageerror", e => errors.push(String(e)));
+    st.skin = "";
+    const tag = "mPull: ";
+    let loads = 0;
+    p.on("load", () => { loads++; });
+    const cdp = await ctx.newCDPSession(p);
+    const drag = async (x, y0, y1, steps) => {
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y: y0 }] });
+      for (let i = 1; i <= steps; i++) {
+        await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x, y: Math.round(y0 + (y1 - y0) * i / steps) }] });
+        await p.waitForTimeout(25);
+      }
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    };
+    const openCard = async id => {
+      await p.goto(st.url + "/m/", { waitUntil: "domcontentloaded" });
+      await p.waitForSelector("#m-seg-all", { timeout: slow(10000) });
+      await p.tap("#m-seg-all");
+      await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
+      await p.tap('#m-list .row[data-id="' + id + '"]');
+      await p.waitForSelector("#m-replies .reply", { timeout: slow(5000) });
+      await p.waitForSelector("#m-compose textarea", { timeout: slow(5000) });
+      await p.waitForTimeout(600);
+      await p.evaluate(() => { window.__pullMarker = 1; });
+      loads = 0;
+    };
+    const kept = () => p.evaluate(() => window.__pullMarker === 1);
+    // the home list leaves the browser's own pull-to-refresh alone, a card sheet does not
+    await p.goto(st.url + "/m/", { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#m-seg-all", { timeout: slow(10000) });
+    const oHome = await p.evaluate(() => getComputedStyle(document.body).overscrollBehaviorY);
+    if (oHome === "none") fail(tag + "the home list blocks the browser's pull-to-refresh: " + oHome);
+    await openCard("pl-2");
+    const oCard = await p.evaluate(() => getComputedStyle(document.body).overscrollBehaviorY);
+    if (oCard !== "none") fail(tag + "behind a card the page should not pull: " + oCard);
+    // from mid-thread: the thread scrolls up under the finger and nothing reloads
+    await p.evaluate(() => { const e = document.getElementById("m-card-scroll"); e.scrollTop = 500; });
+    await p.waitForTimeout(300);
+    await drag(200, 300, 520, 12);
+    await p.waitForTimeout(700);
+    if (!(await kept()) || loads) fail(tag + "a pull from mid-thread reloaded the page");
+    // from the composer, and from the viewer over the card
+    await p.evaluate(() => { document.getElementById("m-card-scroll").scrollTop = 0; });
+    await drag(200, 870, 900, 6);
+    await p.waitForTimeout(500);
+    if (!(await kept()) || loads) fail(tag + "a pull from the composer reloaded the page");
+    await p.evaluate(() => window.mViewer.open("pl-2", "/w/card/a.txt"));
+    await p.waitForFunction(() => window.mViewer.isOpen(), null, { timeout: slow(5000) });
+    await p.waitForTimeout(500);
+    await drag(200, 200, 420, 12);
+    await p.waitForTimeout(700);
+    if (!(await kept()) || loads) fail(tag + "a pull from the viewer reloaded the page");
+    if (!(await p.evaluate(() => window.mViewer.isOpen()))) fail(tag + "a pull closed the viewer");
+    await p.evaluate(() => window.mViewer.close && window.mViewer.close());
+    // a short pull at the top does nothing, and the spinner goes away
+    await p.waitForTimeout(400);
+    await p.evaluate(() => { document.getElementById("m-card-scroll").scrollTop = 0; });
+    await p.waitForTimeout(200);
+    await drag(200, 200, 240, 4);
+    await p.waitForTimeout(600);
+    if (!(await kept()) || loads) fail(tag + "a short pull reloaded the page");
+    if (await p.$eval("#m-pull", e => !e.hidden)) fail(tag + "the spinner stayed after a short pull");
+    // a send in flight is not lost to a pull: no spinner and no reload until the room has answered
+    let release; const gate = new Promise(r => { release = r; });
+    await p.route("**/v1/tasks/pl-2/message", async r => { await gate; await r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ delivered: "terminal" }) }); });
+    await p.fill("#m-compose textarea", "a message that must not be lost");
+    await p.evaluate(() => document.querySelector("#m-compose textarea").dispatchEvent(new Event("input", { bubbles: true })));
+    await p.tap("#m-compose .mc-send");
+    await p.waitForFunction(() => /sending/.test(document.getElementById("m-replies").textContent), null, { timeout: slow(5000) });
+    await p.evaluate(() => { const e = document.getElementById("m-card-scroll"); e.dispatchEvent(new WheelEvent("wheel", { deltaY: -100 })); e.scrollTop = 0; });
+    await p.waitForTimeout(500);
+    const at0 = await p.evaluate(() => document.getElementById("m-card-scroll").scrollTop);
+    if (at0 !== 0) fail(tag + "the thread was not at its top for the in-flight case: " + at0);
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: 200, y: 200 }] });
+    for (let i = 1; i <= 8; i++) { await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: 200, y: 200 + i * 15 }] }); await p.waitForTimeout(25); }
+    if (await p.$eval("#m-pull", e => !e.hidden)) fail(tag + "the spinner started while a send was in flight");
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    await p.waitForTimeout(800);
+    if (!(await kept()) || loads) fail(tag + "a pull reloaded the page with a send in flight");
+    release();
+    await p.waitForFunction(() => /delivered/.test(document.getElementById("m-replies").textContent), null, { timeout: slow(5000) });
+    await p.evaluate(() => { document.getElementById("m-card-scroll").scrollTop = 0; });
+    await p.waitForTimeout(500);
+    // a pull at the very top shows a spinner and reloads
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: 200, y: 200 }] });
+    for (let i = 1; i <= 8; i++) { await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: 200, y: 200 + i * 15 }] }); await p.waitForTimeout(25); }
+    const spin = await p.evaluate(() => { const e = document.getElementById("m-pull"); return { shown: !e.hidden, go: e.classList.contains("go") }; });
+    if (!spin.shown || !spin.go) fail(tag + "no spinner while pulling at the top: " + JSON.stringify(spin));
+    await mShot(p, "pull-412");
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    const t0 = Date.now();
+    while (await kept() && Date.now() - t0 < slow(5000)) await p.waitForTimeout(100).catch(() => {});
+    await p.waitForTimeout(500);
+    if (await kept().catch(() => false)) fail(tag + "a pull at the top did not reload the page");
+    if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+    await ctx.close();
+  } finally { await st.close(); }
+  if (!bad) console.log("mPull ok");
+}
+
 async function mRecapSheetSection(browser) {
   const st = mServer({});
   const fresh = mCard("rc-fresh", { alias: "fresh", display_title: "fresh", status: "needs-input", waiting_since: mIso(M_MIN),
@@ -15902,7 +16015,8 @@ async function main() {
       cardUrlWinName: cardUrlWinNameSection,
       gearHosts: gearHostsSection,
       mTypeSteady: mTypeSteadySection, mOlder: mOlderSection, mFollow: mFollowSection,
-      mSwitcher: mSwitcherSection };
+      mSwitcher: mSwitcherSection,
+      mPull: mPullSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -17901,6 +18015,7 @@ async function main() {
     await mOlderSection(browser);
     await mFollowSection(browser);
     await mSwitcherSection(browser);
+    await mPullSection(browser);
     await mPromptsSection(browser);
     await cardUrlWinNameSection(browser, base);
     await gearHostsSection(browser, base);

@@ -134,3 +134,9 @@
 .older { display: block; width: 100%; min-height: 40px; margin: 0 0 4px; padding: 0 12px; border: 0; border-radius: 10px; background: var(--chip); color: var(--label); font: 600 13px/1 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
 .older.busy { opacity: .6; }
 .older.failed { color: var(--warn); outline: 1px solid var(--warn); }
+/* Pull down at the very top of a card to reload the page. A small spinner follows the finger, and turns once it is far enough. */
+#m-card .pull { position: absolute; z-index: 5; left: 50%; top: calc(env(safe-area-inset-top, 0px) + 44px); width: 32px; height: 32px; margin: -40px 0 0 -16px;
+  display: grid; place-items: center; border-radius: 50%; background: var(--card-0); box-shadow: 0 0 0 1px var(--stroke), 0 6px 16px rgba(var(--shadow-rgb), .4); pointer-events: none; }
+#m-card .pull[hidden] { display: none; }
+#m-card .pull-spin { width: 16px; height: 16px; box-sizing: border-box; border-radius: 50%; border: 2px solid var(--stroke-dim); border-top-color: var(--teal); transform: rotate(calc(var(--pull, 0) * 3.6deg)); }
+#m-card .pull.go .pull-spin { animation: wk-turn .7s linear infinite; }
