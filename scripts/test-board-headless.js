@@ -13271,7 +13271,7 @@ async function mOutputAtSection(browser) {
       await p.waitForFunction(() => document.getElementById("m-live").classList.contains("on"), null, { timeout: slow(10000) });
       const t1 = Date.now();
       while (!st.streams.length && Date.now() - t1 < slow(10000)) await p.waitForTimeout(100);
-      const reads = () => st.hits.filter(h => h === "out-1?3").length;
+      const reads = () => st.hits.filter(h => h === "out-1?10").length;
       st.hits.length = 0;
       // a newer output_at re-reads once
       const at2 = mIso(2 * M_MIN);
@@ -16524,16 +16524,16 @@ async function mCardSection(browser) {
       if (await mNoSideways(p)) fail(tag + "the card scrolls sideways");
       if (!/which port/.test(await p.textContent("#m-card-extras"))) fail(tag + "the open questions are missing");
       if (await p.getAttribute("#m-card-term", "href") !== "/alias/builder") fail(tag + "open terminal does not point at the card's readable board path");
-      if (st.hits.filter(h => h === "card-a?3").length !== 1) fail(tag + "replies fetched " + st.hits.join(","));
+      if (st.hits.filter(h => h === "card-a?10").length !== 1) fail(tag + "replies fetched " + st.hits.join(","));
       await mShot(p, "card-dark-" + vp.width);
       // refetch only when the turn ends
       st.send("task", Object.assign({}, ta, { row: 1, last_activity_at: mIso(1000) }));
       await p.waitForTimeout(600);
-      if (st.hits.filter(h => h === "card-a?3").length !== 1) fail(tag + "replies refetched without a new turn: " + st.hits.join(","));
+      if (st.hits.filter(h => h === "card-a?10").length !== 1) fail(tag + "replies refetched without a new turn: " + st.hits.join(","));
       st.replies["card-a"] = { source: "transcript", replies: [{ at: mIso(1000), text: "A fresh reply." }] };
       st.send("task", Object.assign({}, ta, { row: 1, seen: Object.assign({}, ta.seen, { turn_ended_at: mIso(500) }) }));
       await p.waitForFunction(() => /A fresh reply/.test(document.getElementById("m-replies").textContent), null, { timeout: slow(5000) });
-      if (st.hits.filter(h => h === "card-a?3").length !== 2) fail(tag + "the turn end did not refetch once: " + st.hits.join(","));
+      if (st.hits.filter(h => h === "card-a?10").length !== 2) fail(tag + "the turn end did not refetch once: " + st.hits.join(","));
       // the browser back button closes the sheet
       await p.goBack();
       await p.waitForFunction(() => document.getElementById("m-card").hidden, null, { timeout: slow(5000) });
