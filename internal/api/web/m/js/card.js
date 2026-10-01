@@ -418,6 +418,12 @@
   // open, and it never moves the thread, so it cannot meet the follow rules.
   const PULL_AT = 80;
   function olderBusy() { return typeof older === "function" && !!openId && older(openId).busy; }
+  // A message going out or a file going up is lost by a reload: the box is already empty and nothing is left to retry.
+  function sending() {
+    const pending = (flight.get(window.mNet.bareId(openId)) || []).some(x => x.state === "pending");
+    return pending || !!(window.mCompose && window.mCompose.busy && window.mCompose.busy());
+  }
+  function pullBlocked() { return olderBusy() || sending(); }
   function pullInit() {
     const ind = q("m-pull");
     if (!ind) return;
@@ -425,12 +431,12 @@
     const reset = () => { g = null; ind.hidden = true; ind.classList.remove("go"); ind.style.removeProperty("--pull"); ind.style.transform = ""; };
     els.scroll.addEventListener("touchstart", e => {
       g = null;
-      if (e.touches.length !== 1 || els.scroll.scrollTop > 0 || olderBusy() || !els.recap.hidden || !els.menu.hidden || typing) return;
+      if (e.touches.length !== 1 || els.scroll.scrollTop > 0 || pullBlocked() || !els.recap.hidden || !els.menu.hidden || typing) return;
       g = { y: e.touches[0].clientY, d: 0 };
     }, { passive: true });
     els.scroll.addEventListener("touchmove", e => {
       if (!g) return;
-      if (e.touches.length !== 1 || els.scroll.scrollTop > 0 || olderBusy()) { reset(); return; }
+      if (e.touches.length !== 1 || els.scroll.scrollTop > 0 || pullBlocked()) { reset(); return; }
       const dy = e.touches[0].clientY - g.y;
       if (dy <= 0) { g.d = 0; ind.hidden = true; return; }
       g.d = dy;
@@ -441,7 +447,7 @@
       ind.classList.toggle("go", dy >= PULL_AT);
     }, { passive: false });
     const end = () => {
-      const go = g && g.d >= PULL_AT && els.scroll.scrollTop <= 0 && !olderBusy();
+      const go = g && g.d >= PULL_AT && els.scroll.scrollTop <= 0 && !pullBlocked();
       if (go) { ind.classList.add("go"); setTimeout(() => location.reload(), 120); } else reset();
     };
     els.scroll.addEventListener("touchend", end);

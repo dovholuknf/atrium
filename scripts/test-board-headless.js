@@ -13734,6 +13734,25 @@ async function mPullSection(browser) {
     await p.waitForTimeout(600);
     if (!(await kept()) || loads) fail(tag + "a short pull reloaded the page");
     if (await p.$eval("#m-pull", e => !e.hidden)) fail(tag + "the spinner stayed after a short pull");
+    // a send in flight is not lost to a pull: no spinner and no reload until the room has answered
+    let release; const gate = new Promise(r => { release = r; });
+    await p.route("**/v1/tasks/pl-2/message", async r => { await gate; await r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ delivered: "terminal" }) }); });
+    await p.fill("#m-compose textarea", "a message that must not be lost");
+    await p.evaluate(() => document.querySelector("#m-compose textarea").dispatchEvent(new Event("input", { bubbles: true })));
+    await p.tap("#m-compose .mc-send");
+    await p.waitForFunction(() => /sending/.test(document.getElementById("m-replies").textContent), null, { timeout: slow(5000) });
+    await p.evaluate(() => { document.getElementById("m-card-scroll").scrollTop = 0; });
+    await p.waitForTimeout(300);
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: 200, y: 200 }] });
+    for (let i = 1; i <= 8; i++) { await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: 200, y: 200 + i * 15 }] }); await p.waitForTimeout(25); }
+    if (await p.$eval("#m-pull", e => !e.hidden)) fail(tag + "the spinner started while a send was in flight");
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    await p.waitForTimeout(800);
+    if (!(await kept()) || loads) fail(tag + "a pull reloaded the page with a send in flight");
+    release();
+    await p.waitForFunction(() => /delivered/.test(document.getElementById("m-replies").textContent), null, { timeout: slow(5000) });
+    await p.evaluate(() => { document.getElementById("m-card-scroll").scrollTop = 0; });
+    await p.waitForTimeout(500);
     // a pull at the very top shows a spinner and reloads
     await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: 200, y: 200 }] });
     for (let i = 1; i <= 8; i++) { await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: 200, y: 200 + i * 15 }] }); await p.waitForTimeout(25); }
