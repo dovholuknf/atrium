@@ -115,7 +115,7 @@ func (d *Daemon) deferPeerInjection(taskID, msgID, from, text string, waitTurn b
 	}
 	body := text
 	if d.bracketedPasteFor(taskID, false) {
-		body = "\x1b[200~" + text + "\x1b[201~"
+		body = bracketedPaste(text)
 	}
 	banner := ""
 	if from != "" {
