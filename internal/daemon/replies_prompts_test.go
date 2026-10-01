@@ -40,7 +40,8 @@ func TestRepliesCarryThePromptsFromEverySource(t *testing.T) {
 	transcriptUser(t, f.path, at(6), "<task-notification>\n<task-id>x</task-id>", map[string]any{"origin": map[string]any{"kind": "task-notification"}})
 	transcriptUser(t, f.path, at(7), "[atrium] review says: ROOM DEPLOY OK", human)
 	transcriptUser(t, f.path, at(8), "a subagent's brief", map[string]any{"isSidechain": true})
-	transcriptUser(t, f.path, at(9), []any{textBlock("look at this"), map[string]any{"type": "image"}}, human)
+	transcriptUser(t, f.path, at(9), []any{textBlock("look at this"), map[string]any{"type": "image"},
+		textBlock("<system-reminder>injected</system-reminder>")}, human)
 
 	d := &Daemon{st: f.st, usage: f.u, ctx: newContextSizes()}
 	v, err := d.repliesFor(f.task.ID, 10)

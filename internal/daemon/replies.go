@@ -308,8 +308,12 @@ func promptOf(content any) (Prompt, bool) {
 			if m["type"] == "tool_result" {
 				return Prompt{}, false
 			}
-			if s, ok := m["text"].(string); ok && m["type"] == "text" && strings.TrimSpace(s) != "" {
-				parts = append(parts, strings.TrimSpace(s))
+			// A block Claude Code injected beside the operator's text, a
+			// <system-reminder> say, is not his words.
+			if s, ok := m["text"].(string); ok && m["type"] == "text" {
+				if s = strings.TrimSpace(s); s != "" && !strings.HasPrefix(s, "<") {
+					parts = append(parts, s)
+				}
 			}
 		}
 		text = strings.Join(parts, "\n\n")
