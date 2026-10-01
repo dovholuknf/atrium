@@ -1,6 +1,6 @@
 # rnd-new-room-to-room-access: a room may reach another room's machine, by a route the operator picks (SPIKE)
 
-Status: not started. A SPIKE. Owned by @rnd. Filed by the orchestrator 2026-10-01, from clint: "atrium rooms feel
+Status: SPIKE WRITTEN, docs/rnd/room-to-room-access-spike.md. Owned by @rnd. Filed by the orchestrator 2026-10-01, from clint: "atrium rooms feel
 like they should provide ssh capability to other rooms if they want to. consider if m1mini wanted to modify sg3, or
 sg4. in those cases you would need those keys, but all this should just be able to be 'direct ssh if you want that'
 or 'via zrok private share' or 'via openziti'."

@@ -1,0 +1,103 @@
+# Room-to-room access: a room reaching another room's machine (SPIKE)
+
+Status: spike by @rnd, 2026-10-01. Nothing built. Backlog: `docs/backlog/rnd/rnd-new-room-to-room-access.md`. It puts
+reach between machines, so @review reads it for security before anything is built.
+
+## 0. The recommendation
+
+**Most of what a director needs from another machine is an op the hub already runs with the operator's own ssh, so
+make those ops callable from any room first. That needs no new key at all.** Raw room-to-room ssh comes second,
+off by default, granted per ordered pair of rooms, and always through a named command atrium holds by name only.
+
+1. **Hub-run ops (first).** The things that sent work back to sg4 on 2026-10-01 are scripts the hub machine runs over
+   the operator's ssh: `room-toolchain.ps1`, `room-check.ps1 -Fix`, `provision-room.ps1`, `room-git.ps1 worktree`.
+   Expose each as a hub op, `atrium_room_op <room> <op> [args]`, that a director on any room can ask for. The hub
+   runs the script, with its own ssh, and returns the output. A director on m1mini fixes sg3's toolchain without m1mini
+   ever reaching sg3. No key moves, and the op list is the whole of what can be done.
+2. **A reach grant (second, only for what no op covers).** The hub holds grants `{from room, to room, route, name}`,
+   default none. A room with a grant may run `atrium reach <to> -- <command>`. That goes through the human's
+   permission gate like any tool call, and is logged on the card. The route is one of the three below, and atrium
+   holds only the name of the thing the machine's own tooling set up.
+
+## 1. What is there today
+
+- **Atrium runs no ssh itself.** No Go code calls `ssh`. Every ssh use is a script run on the hub's side, with the
+  operator's `ssh` and its config, and no key passed (`scripts/room-git.ps1:75-92`, `:147`, and the same pattern in
+  `provision-room.ps1:271`, `room-gate.ps1` and `room-toolchain.ps1`). Key choice is the operator's `~/.ssh/config`.
+- **Rooms dial the hub. The hub dials no room.** One join string, transport `direct`, `ziti` or `zrok`
+  (`internal/link/certs.go:193-221`). sg3 and m1mini attach direct over the LAN (`docs/backlog/fabric/f-022.md:23`).
+  The hub's ssh to rooms is the operator's, outside atrium.
+- **The credential line.** "Atrium may hold the NAME of a command or host that has a credential, never the
+  credential" (`docs/backlog/fabric/f-003.md:23`, quoting `CLAUDE.md`). `docs/fabric/overlays.md:18-23, :79`: atrium
+  never decides who may connect, never issues an identity, never creates a service or writes a policy.
+- **The pattern to copy.** `internal/daemon/overlay_reserve.go:42-71` reserves a zrok share name with the account
+  token that `zrok enable` left in `~/.zrok2`, read per call and never stored or shown.
+- **Per-room opt-ins already exist in the hello.** `Upgrades` and `Git` are bools a room declares, and "the hub never
+  asks a room that did not say so" (`internal/link/protocol.go:26-55`). Per-room hub settings exist too:
+  `launch_caps` holds `{"default", "rooms": {...}}` (`internal/link/launchcaps.go`).
+- **The remote-git refusal is dotfiles' hook, and rooms do not have it.** It matches
+  `\bgit\s+(?:-\S+\s+)*(push|pull|fetch)\b` in `claude/hooks/pre-tool-use-hook.ps1` (`docs/rnd/git-sync-design.md:15-21`).
+  `scripts/room-gate.ps1:13` copies nothing else from dotfiles to a room, "least of all the footgun guard". So on
+  sg3 and m1mini an agent's `git push` is stopped only by atrium's own deny rule `Bash(git push*)`
+  (`internal/claudeconf`), and an `ssh` is stopped by nothing but the permission gate.
+
+## 2. The three routes, each held by name
+
+| Route | What the operator sets up, outside atrium | What atrium holds | Auth | Revoke |
+| --- | --- | --- | --- | --- |
+| Direct ssh | a key on the source machine, its public half in the target's `authorized_keys`, a `Host` alias in the source's `~/.ssh/config` | the alias name | the ssh key | remove the line from `authorized_keys`. Dropping the grant stops atrium offering it, not the key |
+| zrok private | the target runs `zrok share private --backend-mode tcpTunnel localhost:22` on a reserved name. The source runs `zrok access private <name>` | the share name. The token stays in `~/.zrok2`, used by zrok itself | still an ssh key, because zrok gives reach, not a login | release the share, or remove the key |
+| OpenZiti | a service `ssh-<room>`, a bind on the target's identity, a dial policy for the source's identity, made by whoever runs the controller | the service name and the identity file's path | the ziti identity for reach, and an ssh key or zssh for the login | remove the dial policy |
+
+**Yes, atrium can drive every route holding only names**, the way `overlay_reserve.go` does. Note that **zrok and
+OpenZiti replace the network route, not the login.** Each still needs an ssh credential on the target, unless
+OpenZiti's zssh is used. "No key exchange outside ssh's own" is true, but ssh's own key is still a key the operator
+places.
+
+## 3. Answers
+
+- **Default: off.** No grant, and no hello field, means no reach. Turning it on is two things the operator does: set
+  up the route on both machines (section 2), then add the grant on the hub (`atrium hub reach add m1mini sg3 ssh
+  sg3-claude`). Provision gains `-Reach <room>=<route>:<name>`, which prints what to set up on each side and never
+  carries a key, as its ziti and zrok blocks already do (`provision-room.ps1:106-115`). The board shows a room's
+  grants on its room card.
+- **A room says what it can reach** in its hello: `Reach: [{to, route, name}]`, checked at attach by a dry run of the
+  route (`ssh -o BatchMode=yes <alias> true`, a zrok access, a ziti dial). The hub keeps what it was told, and only
+  a grant that is configured on the hub AND proven by the room counts.
+- **It is a room capability the hub knows**, so it feeds the room-handoff check (`docs/rnd/room-handoff-design.md`
+  section 2): a card that needs reach to X refuses a room with no proven grant to X. A hub op (section 0, item 1)
+  needs no grant, because the hub runs it.
+- **The hook rule.** ssh to another room is the same class as remote git: it leaves the room. For an agent it is
+  refused unless it goes through `atrium reach`. That command checks the grant, runs the named route, and goes
+  through the permission gate, so the human sees `reach sg3: <command>` before it runs. Raw `ssh` stays refused by
+  atrium's own deny rules, the way `Bash(git push*)` is, so it does not depend on dotfiles' hook, which rooms do not
+  have.
+- **What an agent may do there** is clint's call (question 2). The default here: hub ops freely, `atrium reach` only
+  through the gate, raw ssh never.
+
+## 4. Cost, and which first for clint's rooms
+
+| Piece | Owner | Size | Needs |
+| --- | --- | --- | --- |
+| Hub ops for the existing scripts (`atrium_room_op`) | @fabric | 1 to 2 days | nothing new. The hub machine's ssh already reaches every room |
+| Grants on the hub, the hello field, the dry run | @fabric | 1 day | |
+| `atrium reach` with the gate, and the deny rule for raw ssh | @runtime | 1 day | |
+| Direct ssh route | the operator | minutes per pair, n×(n-1) pairs | a key per source room |
+| zrok private route | @fabric | 2 days | the share reservation exists. The access lifecycle (start, port, stop) is new |
+| OpenZiti route | @fabric | 3 days or more | a controller admin outside atrium makes the service and policies |
+
+**For clint's rooms: hub ops first.** They cover every case from 2026-10-01 and need no key. Then direct ssh for the
+LAN rooms (sg3, m1mini, sg4), if a case comes up that no op covers. zrok private for a room off the LAN, since clint
+already runs zrok. OpenZiti only for a room already on a ziti network (sgg).
+
+## 5. Questions for clint
+
+1. **Hub ops first, raw reach later?** **Default: yes.** Hub ops cover toolchain, provision, room-check and worktrees
+   with no new key.
+2. **What may an agent do on another room?** Hub ops only. Or `atrium reach` through the gate as well. Or nothing.
+   **Default: hub ops freely, reach through the gate, raw ssh never.**
+3. **A key per source room, or per pair?** **Default: one key per source room,** authorized on each target it may
+   reach. Fewer keys, and revoking a pair is removing one line on the target.
+4. **Rooms have no remote-git guard** beyond atrium's own deny rules (`room-gate.ps1:13`). Should atrium's deny rules
+   carry the whole remote-git and ssh refusal, so it no longer depends on dotfiles' hook? **Default: yes,** and
+   @review owns the rule set.
