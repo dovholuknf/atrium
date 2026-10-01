@@ -271,6 +271,13 @@
     if (!olderOf.has(b)) olderOf.set(b, { replies: [], prompts: [], more: false, next: "", pages: 0, busy: false, failed: false });
     return olderOf.get(b);
   }
+  function foldInto(o, win) {
+    const seen = new Set();
+    const merge = list => list.filter(x => { const k = entryKey(x.at, x.text); if (seen.has(k)) return false; seen.add(k); return true; }).sort((a, b) => U.ts(a.at) - U.ts(b.at));
+    o.replies = merge((win.replies || []).concat(o.replies));
+    seen.clear();
+    o.prompts = merge((Array.isArray(win.prompts) ? win.prompts : []).concat(o.prompts));
+  }
   // The latest window with every older page in front of it, in time order, nothing twice.
   function withOlder(id, got) {
     const o = older(id);
@@ -515,8 +522,12 @@
       got = { failed: true };
     }
     if (mine !== seq || id !== openId) return;
-    cache.set(id, got);
     const o = older(id);
+    // The newest window moves on with every refresh, pushing its oldest entries out of reach of the cursor the older
+    // pages were read with. Once a card has older pages, the window being replaced is folded into them first.
+    const prev = cache.get(id);
+    if (prev && !prev.failed && !got.failed && (o.pages || o.replies.length || o.prompts.length)) foldInto(o, prev);
+    cache.set(id, got);
     if (!got.failed && !o.pages) { o.more = !!got.more; o.next = got.next_before || ""; o.failed = false; }
     paintReplies();
   }
@@ -621,6 +632,7 @@
     els.head.innerHTML = els.notices.innerHTML = els.replies.innerHTML = els.extras.innerHTML = els.recap.innerHTML = "";
     els.working.hidden = true;
     els.recap.hidden = true;
+    olderOf.delete(window.mNet.bareId(openId));
     openId = "";
   }
 
