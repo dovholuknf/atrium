@@ -13598,8 +13598,12 @@ async function mReplyPage(browser, st, vp, id) {
 async function mMarkdownSection(browser) {
   const st = mServer({});
   const c = mCard("md-1", { alias: "writer", display_title: "writer", worktree: "/w/card", status: "needs-input", waiting_since: mIso(2 * M_MIN), seen: { turn_ended_at: mIso(20 * M_MIN) } });
-  st.tasks = [c];
-  st.files = { "/w/card/.atrium/incoming/shot.png": M_PNG, "/w/card/notes/plan.md": Buffer.from("# plan") };
+  const cw = mCard("md-2", { alias: "winner", display_title: "winner", worktree: "D:/Work/Card", status: "needs-input", waiting_since: mIso(3 * M_MIN), seen: { turn_ended_at: mIso(20 * M_MIN) } });
+  st.tasks = [c, cw];
+  st.files = { "/w/card/.atrium/incoming/shot.png": M_PNG, "/w/card/notes/plan.md": Buffer.from("# plan"),
+    "D:/Work/Card/shot.png": M_PNG, "d:/work/CARD/notes/plan.md": Buffer.from("# plan") };
+  st.replies["md-2"] = { source: "transcript", replies: [{ at: mIso(10 * M_MIN), text:
+    "inside: D:\\Work\\Card\\shot.png and mixed case d:/work/CARD/notes/plan.md and outside E:/other/x.png and C:\\Windows\\win.ini and ![z](d:foo.png)" }] };
   const md = "# Title\n\n## Sub\n\nSome **bold**, *italic*, `inline code` and a [link](https://example.com/a).\n\n- one\n- two\n\n1. first\n2. second\n\n" +
     "```js\nconst a = 'a very long line of code that will not fit on a phone screen without scrolling sideways inside its block';\n```\n\n" +
     "A shot: /w/card/.atrium/incoming/shot.png and a gone one ![missing](/w/card/notes/missing.png) and a file /w/card/notes/plan.md here.\n\n" +
@@ -13636,9 +13640,26 @@ async function mMarkdownSection(browser) {
       await p.waitForFunction(() => /copied|not copied/.test(document.querySelector("#m-replies .code-copy").textContent), null, { timeout: slow(3000) })
         .catch(() => fail(tag + "the copy button did nothing"));
       if (remote.length) fail(tag + "something remote was requested: " + remote.join(","));
+      // a redraw uses the cached picture, and closing the card revokes it
+      st.fileHits = [];
+      await p.evaluate(() => { window.__revoked = 0; const r = URL.revokeObjectURL; URL.revokeObjectURL = u => { window.__revoked++; return r.call(URL, u); };
+        const h = document.getElementById("m-replies"); h.innerHTML = h.innerHTML; });
+      await p.waitForFunction(() => document.querySelector("#m-replies .md-img img"), null, { timeout: slow(3000) }).catch(() => fail(tag + "a redraw lost the picture"));
+      if ((st.fileHits || []).filter(x => /shot\.png$/.test(x)).length) fail(tag + "a redraw fetched the picture again: " + st.fileHits.join());
+      await p.tap("#m-card-back");
+      await p.waitForFunction(() => window.__revoked > 0, null, { timeout: slow(3000) }).catch(() => fail(tag + "closing the card did not revoke its pictures"));
       if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
       await mShot(p, "markdown-" + vp.width);
       await ctx.close();
+      // a Windows card: a drive path inside renders, the same in another case, others on any drive stay text
+      const w = await mReplyPage(browser, st, vp, "md-2");
+      try {
+        await w.p.waitForFunction(() => document.querySelector("#m-replies .md-img img"), null, { timeout: slow(8000) }).catch(() => fail(tag + "the drive-letter image did not load"));
+        const wd = await w.p.evaluate(() => ({ c: [...document.querySelectorAll("#m-replies .md-img, #m-replies .md-file")].map(e => e.dataset.path),
+          t: document.getElementById("m-replies").textContent }));
+        if (wd.c.join() !== "D:/Work/Card/shot.png,d:/work/CARD/notes/plan.md") fail(tag + "drive controls are " + wd.c.join());
+        if (!/E:\/other\/x\.png/.test(wd.t) || !/C:\\Windows\\win\.ini/.test(wd.t)) fail(tag + "paths on another drive are not shown as text");
+      } finally { await w.ctx.close(); }
     }
   } finally { await st.close(); }
   if (!bad) console.log("mMarkdown ok");
@@ -13647,8 +13668,11 @@ async function mMarkdownSection(browser) {
 async function mHostileSection(browser) {
   const st = mServer({});
   const c = mCard("ev-1", { alias: "evil", display_title: "evil", worktree: "/w/card", status: "needs-input", waiting_since: mIso(2 * M_MIN), seen: { turn_ended_at: mIso(20 * M_MIN) } });
-  st.tasks = [c];
-  st.files = { "/w/card/ok.png": M_PNG };
+  const cw = mCard("ev-2", { alias: "winevil", display_title: "winevil", worktree: "D:/Work/Card", status: "needs-input", waiting_since: mIso(3 * M_MIN), seen: { turn_ended_at: mIso(20 * M_MIN) } });
+  st.tasks = [c, cw];
+  st.files = { "/w/card/ok.png": M_PNG, "D:/Work/Card/ok.png": M_PNG, "d:/work/card/ok.png": M_PNG };
+  st.replies["ev-2"] = { source: "transcript", replies: [{ at: mIso(10 * M_MIN), text:
+    "ok: d:\\work\\card\\ok.png other drive: E:/Work/Card/ok.png up: D:/Work/Card/../x.png ![a](javascript:alert(1).png) ![b](ftp://h/x.png) ![c](c:x.png) http://evil.example/x" }] };
   const md = "<script>window.__pwn = 1</script>\n\n<img src=x onerror=\"window.__pwn = 2\">\n\n[click](javascript:window.__pwn=3) and [file](file:///etc/passwd)\n\n" +
     "![d](data:image/png;base64,AAAA)\n\n![r](https://evil.example/p.png)\n\n<!-- hidden note -->\n\n" +
     "outside: /etc/passwd and ![o](/etc/shadow.png) and /w/other/secret.png and /w/card/../other/x.png and ![t](../../x.png)\n\n" +
@@ -13683,6 +13707,17 @@ async function mHostileSection(browser) {
       if (st.fileHits.join() !== "/w/card/ok.png") fail(tag + "the download endpoint was asked for " + st.fileHits.join());
       if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
       await ctx.close();
+      // a Windows card
+      st.fileHits = [];
+      const w = await mReplyPage(browser, st, vp, "ev-2");
+      await w.p.waitForFunction(() => document.querySelector("#m-replies .md-img img"), null, { timeout: slow(8000) }).catch(() => fail(tag + "the drive-letter image did not load"));
+      const wd = await w.p.evaluate(() => ({ c: [...document.querySelectorAll("#m-replies .md-img, #m-replies .md-file")].map(e => e.dataset.path),
+        h: [...document.querySelectorAll("#m-replies a")].map(a => a.getAttribute("href")), imgs: [...document.querySelectorAll("#m-replies img")].length }));
+      if (wd.c.join() !== "D:/Work/Card/ok.png" && wd.c.join() !== "d:/work/card/ok.png") fail(tag + "drive controls are " + wd.c.join());
+      if (wd.h.length) fail(tag + "drive links are " + wd.h.join());
+      if (wd.imgs !== 1) fail(tag + "drive images drawn: " + wd.imgs);
+      if (st.fileHits.length !== 1) fail(tag + "the drive card asked for " + st.fileHits.join());
+      await w.ctx.close();
     }
   } finally { await st.close(); }
   if (!bad) console.log("mHostile ok");

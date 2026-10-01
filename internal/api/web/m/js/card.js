@@ -313,6 +313,7 @@
   }
 
   function finishClose() {
+    if (MD.release) MD.release();
     els.sheet.hidden = true;
     els.head.innerHTML = els.notices.innerHTML = els.replies.innerHTML = els.extras.innerHTML = els.recap.innerHTML = "";
     els.working.hidden = true;
