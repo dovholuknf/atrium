@@ -1645,6 +1645,7 @@ function connect() {
     // disagree about whether the board is connected. See `paintRooms`.
     if (typeof paintRooms === "function") paintRooms();
     loadGlobalAuto();
+    if (typeof loadHubHosts === "function") loadHubHosts();
     // Assume the daemon is coming up until it says otherwise.
     //
     // The tasks and the health poll are two requests that do not arrive in a
