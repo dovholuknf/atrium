@@ -618,9 +618,17 @@ const alerting = (() => {
       // the card row, key bar or composer under it. The capture listeners above have already unlocked by now.
       // The press is marked from the window's capture phase, ahead of the unlock listeners, because unlocking takes
       // the pill down on pointerup and the click would then land on the row that was under it.
-      const press = e => { if (e.target === h) h.dataset.press = "1"; };
-      ["pointerdown", "touchstart", "mousedown"].forEach(t => window.addEventListener(t, press, true));
       const release = () => { delete h.dataset.press; };
+      const press = e => { if (e.target === h) h.dataset.press = "1"; else if (h.dataset.press) { release(); paintSoundHint(audioBlocked()); } };
+      ["pointerdown", "touchstart", "mousedown"].forEach(t => window.addEventListener(t, press, true));
+      // A press that slides off the pill gets a pointerup but no click, so the mark would stay and keep the pill up.
+      // Let go of it when the release is outside the pill, and only then: a release on the pill is followed by its click.
+      const lift = e => {
+        if (!h.dataset.press) return;
+        const pt = e.changedTouches && e.changedTouches[0] || e, b = h.getBoundingClientRect();
+        if (pt.clientX < b.left || pt.clientX > b.right || pt.clientY < b.top || pt.clientY > b.bottom) { release(); paintSoundHint(audioBlocked()); }
+      };
+      ["pointerup", "touchend", "mouseup"].forEach(t => window.addEventListener(t, lift, true));
       h.addEventListener("pointercancel", release);
       h.addEventListener("touchcancel", release);
       h.addEventListener("click", e => { e.preventDefault(); e.stopPropagation(); release(); unlock(); h.hidden = true; });
