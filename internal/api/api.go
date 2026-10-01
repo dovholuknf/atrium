@@ -161,6 +161,10 @@ type Server struct {
 	// SendNote turns a card's note into one message and clears it. Owned by
 	// the daemon, which owns delivery.
 	SendNote http.HandlerFunc
+	// SwitchModel types `/model <id>` into a live claude card and records the
+	// choice, `POST /v1/tasks/{id}/model`. Owned by the daemon, which owns the
+	// terminal. See daemon/modelswitch.go.
+	SwitchModel http.HandlerFunc
 	// DrainAuto approves everything already waiting, when auto mode is turned
 	// on with a full queue. Supplied by the daemon for the same reason Decide
 	// is: each waiting agent is parked on an in-memory reply channel, and a
@@ -613,6 +617,9 @@ func (s *Server) Handler() http.Handler {
 	}
 	if s.Message != nil {
 		mux.HandleFunc("POST /v1/tasks/{id}/message", s.Message)
+	}
+	if s.SwitchModel != nil {
+		mux.HandleFunc("POST /v1/tasks/{id}/model", s.SwitchModel)
 	}
 	if s.Say != nil {
 		mux.HandleFunc("POST /v1/say", s.Say)
