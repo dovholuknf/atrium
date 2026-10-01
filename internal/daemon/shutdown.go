@@ -3,10 +3,10 @@ package daemon
 import (
 	"crypto/subtle"
 	"log"
-	"net"
 	"net/http"
-	"strings"
 	"sync"
+
+	"github.com/dovholuknf/atrium/internal/edge"
 )
 
 // Stopping the daemon from somewhere other than its own terminal.
@@ -43,20 +43,6 @@ func (s *stopper) why() string {
 	return s.reason
 }
 
-// isLoopback reports whether a request came from this machine.
-//
-// The board has no authentication by design: atrium is single-machine and
-// everything it exposes is as sensitive as this. Loopback keeps the endpoint
-// off a network the daemon was never meant to be on.
-func isLoopback(r *http.Request) bool {
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		host = r.RemoteAddr
-	}
-	ip := net.ParseIP(strings.Trim(host, "[]"))
-	return ip != nil && ip.IsLoopback()
-}
-
 // handleShutdown asks the daemon to wind down.
 //
 // With no token configured, the request must come from loopback. Configuring
@@ -81,8 +67,11 @@ func (d *Daemon) handleShutdown(w http.ResponseWriter, r *http.Request) {
 				http.StatusForbidden)
 			return
 		}
-		if !isLoopback(r) {
-			http.Error(w, "shutdown is loopback only unless a token is configured", http.StatusForbidden)
+		// The machine's own user, not anybody a hand-started share proxies in,
+		// which d.sharing() cannot know about. See edge.LocalOperator.
+		if !edge.LocalOperator(r) {
+			http.Error(w, "shutdown is for the machine's own user unless a token is configured"+edge.ProxyNote(r),
+				http.StatusForbidden)
 			return
 		}
 	} else {

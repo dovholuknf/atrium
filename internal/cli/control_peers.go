@@ -283,6 +283,8 @@ type Peer struct {
 	// Owned is whether atrium holds this session's terminal, which decides
 	// whether a message is typed or queued.
 	Owned bool `json:"atrium_owns_terminal"`
+	// Everywhere marks a card that is listed because it carries atrium:everywhere.
+	Everywhere bool `json:"everywhere,omitempty"`
 }
 
 type PeersOutput struct {
@@ -342,6 +344,21 @@ func peersHandler(ctx context.Context, _ *mcp.CallToolRequest, in PeersInput) (
 			}
 		}
 	}
+	if !in.Rooms {
+		// THE CARDS TAGGED atrium:everywhere on other rooms, after this room's own.
+		// A room or a hub that predates them leaves the list as it is, and a hub
+		// that is not answering says so.
+		var more struct {
+			Peers []Peer `json:"peers"`
+		}
+		switch err := ask(ctx, http.MethodGet, "/v1/peers/rooms?everywhere=1", nil, &more); {
+		case olderRoom(err):
+		case err != nil:
+			out.Note = "cards on other rooms were not listed: " + err.Error()
+		default:
+			out.Peers = append(out.Peers, more.Peers...)
+		}
+	}
 	if out.Me == "" {
 		out.Note = "this session is not on the board, so it has no handle. a peer cannot " +
 			"answer you: ask it to leave its reply somewhere you can read instead."
@@ -363,7 +380,7 @@ type SayInput struct {
 	// Reply marks the say as needing an answer, so it shows as owed on the receiving card.
 	Reply bool `json:"reply,omitempty" jsonschema:"true when you need an answer, not just a delivery. it shows as owed on that session until it says something back"`
 	// Wake resumes a parked card so this reaches it. Without it a say to a parked card is refused.
-	Wake bool `json:"wake,omitempty" jsonschema:"true to resume a PARKED session (idle, no process) and deliver this. it costs a cold start, so leave it off unless the message is worth it. without it a say to a parked session is refused and nothing is queued"`
+	Wake bool `json:"wake,omitempty" jsonschema:"true to resume a PARKED session (idle, no process) and deliver this. it costs a cold start, so leave it off unless the message is worth it. without it a say to a parked session is refused and nothing is queued. local only: a card on another room, named as name@room or reached by a bare name on every room, is never woken"`
 }
 
 type SayOutput struct {
