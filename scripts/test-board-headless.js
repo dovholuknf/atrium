@@ -13104,7 +13104,7 @@ async function mWorkingSection(browser) {
       let b = await box();
       if (b.hidden || b.text !== "thinking") fail(tag + "no thinking line: " + JSON.stringify(b));
       if (b.inChips || /thinking/.test(b.chipText)) fail(tag + "the working text is in the chip row: " + b.chipText);
-      if (b.fs < 18 || b.h < 40) fail(tag + "the line is small: " + JSON.stringify(b));
+      if (b.h > 32 || b.fs < 12) fail(tag + "the line is not a thin strip: " + JSON.stringify(b));
       if (b.anim !== "wk-turn") fail(tag + "the spinner does not animate: " + b.anim);
       if (b.bottom > b.composeTop + 1 || b.composeTop - b.bottom > 40) fail(tag + "the line is not pinned just above the composer: " + JSON.stringify(b));
       if (b.sw > b.iw + 1) fail(tag + "the card scrolls sideways");
@@ -13200,6 +13200,146 @@ async function mOwnMessagesSection(browser) {
     }
   } finally { await st.close(); }
   if (!bad) console.log("mOwnMessages ok");
+}
+
+// How many messages fit on the 390x844 phone at once, how wide they are, and what a send leaves behind.
+async function mCompactCount(p) {
+  return p.evaluate(() => {
+    const sc = document.getElementById("m-card-scroll"), r = sc.getBoundingClientRect();
+    const rs = [...document.querySelectorAll("#m-replies .reply")];
+    const th = document.getElementById("m-replies").getBoundingClientRect().width;
+    return { total: rs.length, visible: rs.filter(e => { const b = e.getBoundingClientRect(); return b.top >= r.top - 1 && b.bottom <= r.bottom + 1; }).length,
+      minW: Math.min(...rs.map(e => e.getBoundingClientRect().width / th)),
+      mineW: Math.min(...rs.filter(e => e.classList.contains("mine")).map(e => e.getBoundingClientRect().width / th)),
+      head: rs.map(e => { const h = e.querySelector(".rh"); return h ? Math.round(h.getBoundingClientRect().height) : -1; }),
+      note: (document.querySelector("#m-compose .mc-note") || { offsetHeight: 0 }).offsetHeight,
+      font: parseFloat(getComputedStyle(document.querySelector("#m-replies .reply .md, #m-replies .reply .own")).fontSize) };
+  });
+}
+
+async function mCompactSection(browser) {
+  const st = mServer({});
+  const c = mCard("cp-1", { alias: "packer", display_title: "packer", status: "needs-input", waiting_since: mIso(2 * M_MIN), seen: { turn_ended_at: mIso(20 * M_MIN) } });
+  st.tasks = [c];
+  const body = "Two lines of an answer here so the bubble is not a single row, it wraps once on a phone.";
+  st.replies["cp-1"] = { source: "transcript", replies: [1, 2, 3, 4, 5, 6].map(i => ({ at: mIso((30 - i * 4) * M_MIN), text: "Reply " + i + ". " + body })) };
+  await st.open();
+  try {
+    const { ctx, p, errors } = await mPage(browser, st, M_VIEWS[0], "");
+    const tag = "mCompact: ";
+    await p.route("**/v1/tasks/cp-1/message", r => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ delivered: "terminal" }) }));
+    await p.evaluate(() => localStorage.setItem("atrium.msent.cp-1", JSON.stringify([
+      { at: new Date(Date.now() - 17 * 60000).toISOString(), text: "my first ask, also long enough to wrap onto a second line on the phone", kind: "sent" },
+      { at: new Date(Date.now() - 9 * 60000).toISOString(), text: "my second ask, also long enough to wrap onto a second line on the phone", kind: "sent" }])));
+    await p.waitForSelector("#m-seg-all", { timeout: slow(10000) });
+    await p.tap("#m-seg-all");
+    await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
+    await p.tap('#m-list .row[data-id="cp-1"]');
+    await p.waitForSelector("#m-replies .reply.mine", { timeout: slow(5000) });
+    await p.waitForTimeout(500);
+    const k = await mCompactCount(p);
+    console.log("mCompact count: " + JSON.stringify(k));
+    await mShot(p, "compact-390");
+    if (k.visible < Number(process.env.M_COMPACT_MIN || 5)) fail(tag + "only " + k.visible + " of " + k.total + " messages fit");
+    if (k.minW < 0.915 || k.mineW < 0.915) fail(tag + "bubbles are too narrow: " + JSON.stringify(k));
+    if (k.head.some(h => h < 0 || h > 20)) fail(tag + "a message has no one-line header: " + JSON.stringify(k.head));
+    const lone = await p.$$eval("#m-replies .reply", els => els.filter(e => [...e.children].some(c => c.tagName === "TIME" || (c.classList.contains("tag")))).length);
+    if (lone) fail(tag + "a time or state sits outside the header");
+    if (k.font > 15) fail(tag + "the default font is " + k.font);
+    await p.fill("#m-compose textarea", "one more");
+    await p.evaluate(() => document.querySelector("#m-compose textarea").dispatchEvent(new Event("input", { bubbles: true })));
+    await p.tap("#m-compose .mc-send");
+    await p.waitForFunction(() => /delivered/.test(document.getElementById("m-replies").textContent), null, { timeout: slow(5000) });
+    await p.waitForTimeout(400);
+    if ((await mCompactCount(p)).note > 0) fail(tag + "a sent line is still above the composer");
+    if (await mNoSideways(p)) fail(tag + "the card scrolls sideways");
+    if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+    await ctx.close();
+  } finally { await st.close(); }
+  if (!bad) console.log("mCompact ok");
+}
+
+async function mPinchSection(browser) {
+  const st = mServer({});
+  const c = mCard("pn-1", { alias: "zoomer", display_title: "zoomer", status: "needs-input", waiting_since: mIso(2 * M_MIN), seen: { turn_ended_at: mIso(20 * M_MIN) } });
+  st.tasks = [c];
+  st.replies["pn-1"] = { source: "transcript", replies: Array.from({ length: 10 }, (_, i) => ({ at: mIso((60 - i * 4) * M_MIN), text: "Reply " + i + ". " + "words go here and wrap. ".repeat(6) })) };
+  await st.open();
+  try {
+    const { ctx, p, errors } = await mPage(browser, st, M_VIEWS[0], "");
+    const tag = "mPinch: ";
+    await p.waitForSelector("#m-seg-all", { timeout: slow(10000) });
+    await p.tap("#m-seg-all");
+    await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
+    await p.tap('#m-list .row[data-id="pn-1"]');
+    await p.waitForSelector("#m-replies .reply", { timeout: slow(5000) });
+    await p.waitForTimeout(500);
+    const meta = await p.$eval('meta[name=viewport]', m => m.content);
+    if (!/user-scalable=no/.test(meta) || !/maximum-scale=1/.test(meta)) fail(tag + "the browser pinch is not off: " + meta);
+    if (await p.$eval("#m-card-scroll", e => getComputedStyle(e).touchAction) !== "pan-y") fail(tag + "touch-action does not stop the browser pinch");
+    const state = () => p.evaluate(() => {
+      const sc = document.getElementById("m-card-scroll"), r = sc.getBoundingClientRect();
+      const mid = [...document.querySelectorAll("#m-replies .reply")].find(e => { const b = e.getBoundingClientRect(); return b.top > r.top + 150 && b.bottom < r.bottom - 100; });
+      return { fs: parseFloat(getComputedStyle(document.querySelector("#m-replies .md")).fontSize), mid: mid ? mid.textContent.slice(0, 20) : "",
+        midTop: mid ? Math.round(mid.getBoundingClientRect().top) : 0, comp: Math.round(document.querySelector("#m-compose .mc-send").getBoundingClientRect().width),
+        head: Math.round(document.querySelector("#m-replies .rh").getBoundingClientRect().height), sw: sc.scrollWidth - sc.clientWidth,
+        key: localStorage.getItem("atrium.mfs") };
+    });
+    const pinch = (from, to) => p.evaluate(({ from, to }) => {
+      const sc = document.getElementById("m-card-scroll"), r = sc.getBoundingClientRect(), cy = r.top + r.height / 2, cx = r.left + r.width / 2;
+      const mk = (type, d) => {
+        const ts = [-1, 1].map((k, i) => new Touch({ identifier: i + 1, target: sc, clientX: cx + k * d / 2, clientY: cy }));
+        const ev = new TouchEvent(type, { touches: type === "touchend" ? [] : ts, targetTouches: ts, changedTouches: ts, bubbles: true, cancelable: true });
+        sc.dispatchEvent(ev);
+        return ev.defaultPrevented;
+      };
+      mk("touchstart", from);
+      let prevented = false;
+      for (let i = 1; i <= 8; i++) prevented = mk("touchmove", from + (to - from) * i / 8);
+      mk("touchend", to);
+      return prevented;
+    }, { from, to });
+    const a = await state();
+    if (!a.mid) fail(tag + "no message in the middle to hold");
+    const prevented = await pinch(100, 200);
+    if (!prevented) fail(tag + "the pinch was not caught");
+    await p.waitForTimeout(200);
+    const b = await state();
+    if (b.fs <= a.fs + 3) fail(tag + "spreading did not grow the text: " + a.fs + " to " + b.fs);
+    if (b.comp !== a.comp || b.head !== a.head) fail(tag + "the composer or header changed size: " + JSON.stringify([a, b]));
+    if (b.sw > 0) fail(tag + "the card scrolls sideways after the pinch");
+    if (b.key !== String(b.fs)) fail(tag + "the size was not kept: " + b.key);
+    await pinch(300, 10);
+    const lo = await state();
+    if (lo.fs !== 11) fail(tag + "the floor is 11 px, got " + lo.fs);
+    await pinch(10, 900);
+    const hi = await state();
+    if (hi.fs !== 24) fail(tag + "the ceiling is 24 px, got " + hi.fs);
+    // the size survives a reload, and the message under the fingers stays put while it changes
+    await p.goto(st.url + "/m/", { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#m-seg-all", { timeout: slow(10000) });
+    await p.tap("#m-seg-all");
+    await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
+    await p.tap('#m-list .row[data-id="pn-1"]');
+    await p.waitForSelector("#m-replies .reply", { timeout: slow(5000) });
+    await p.waitForTimeout(400);
+    if ((await state()).fs !== 24) fail(tag + "the size did not survive a reload");
+    await p.evaluate(() => { document.getElementById("m-card-scroll").scrollTop = 600; });
+    await p.waitForTimeout(300);
+    const held = await p.evaluate(() => {
+      const sc = document.getElementById("m-card-scroll"), r = sc.getBoundingClientRect(), cy = r.top + r.height / 2, cx = r.left + r.width / 2;
+      const at = document.elementFromPoint(cx, cy).closest(".reply");
+      const before = at.getBoundingClientRect().top;
+      const t = d => [-1, 1].map((k, i) => new Touch({ identifier: i + 1, target: at, clientX: cx + k * d / 2, clientY: cy }));
+      const fire = (type, d) => sc.dispatchEvent(new TouchEvent(type, { touches: t(d), targetTouches: t(d), changedTouches: t(d), bubbles: true, cancelable: true }));
+      fire("touchstart", 200); fire("touchmove", 120); fire("touchmove", 100);
+      return Math.abs(at.getBoundingClientRect().top - before);
+    });
+    if (held > 3) fail(tag + "the message under the pinch moved by " + held + " px");
+    if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+    await ctx.close();
+  } finally { await st.close(); }
+  if (!bad) console.log("mPinch ok");
 }
 
 async function mRecapSheetSection(browser) {
@@ -14268,7 +14408,7 @@ async function main() {
       bootClean: bootCleanSection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mRecapSheet: mRecapSheetSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection,
       gearTermList: gearTermListSection, growlLinks: growlLinksSection, growlChoiceOnce: growlChoiceOnceSection,
-      mOutputAt: mOutputAtSection, mStickBottom: mStickBottomSection, mSendFree: mSendFreeSection, mCardUpload: mCardUploadSection,
+      mOutputAt: mOutputAtSection, mStickBottom: mStickBottomSection, mSendFree: mSendFreeSection, mCardUpload: mCardUploadSection, mCompact: mCompactSection, mPinch: mPinchSection,
       cardUrlWinName: cardUrlWinNameSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
@@ -16254,6 +16394,8 @@ async function main() {
     await mStickBottomSection(browser);
     await mSendFreeSection(browser);
     await mCardUploadSection(browser);
+    await mCompactSection(browser);
+    await mPinchSection(browser);
     await cardUrlWinNameSection(browser, base);
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e));
