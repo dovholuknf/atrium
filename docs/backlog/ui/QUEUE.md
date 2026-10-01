@@ -8,17 +8,19 @@ live.
 
 ## Queue
 
-1. **Paste spinner that works** (clint, top priority, exception to the hold): starts on the paste itself, stops on the
-   room's `in-done` frame (@runtime's `claude/r-paste-done` 6ca9e81f), falls back to today's guess on an old daemon.
-   Branch, land after clint's push, room deploy for the daemon half.
-2. **Growler question card** (clint, exception to the hold): full body in a scroll box, auto-grow reply, expand to a
-   full compose area, `{choices}` as buttons, no hover bob. Worker `u-growler`, branch `claude/u-growl-reply`. Land
-   after clint's push.
-3. **After the push: the headless suite without software WebGL.** From the orchestrator, 2026-09-30. In the 17:25
-   run the gpu-process (`--use-angle=swiftshader-webgl`) used 5 min of CPU at 96%, because the board loads
-   xterm-addon-webgl (`terminal-list.js`) and headless chrome renders it on the CPU through SwiftShader. Skip the
-   addon under test (a flag or query param, so xterm uses its DOM renderer), or launch with `--disable-gpu` if xterm
-   falls back cleanly. Measure CPU time for one full run before and after.
+Running now, four workers at once (clint, 2026-09-30 evening: "focus on ui only, go to 4 ui workers"):
+
+1. **/m card view** (`u-new-phone-card-view-fixes.md` items 1, 2, 5, 7, 8): a live working indicator first, clint's
+   own messages in the thread, the recap as a dated sheet at the top. Worker `u-m-card` on m1mini.
+2. **/m home and ways out** (item 6, and the session's other phone findings): newest first with order, group and
+   filter controls, a way back from a card URL, the phone header and picker checked on the real page, Enter sends,
+   the send arrow centred. Worker `u-m-home` on m1mini.
+3. **The terminal list's controls move into the gear**, plus the growler reply's two lows (one link rule on desktop and
+   phone, a choice cannot send twice). Worker `u-gear-list` on sg3.
+4. **The headless suite without software WebGL** (measured before and after), and item 4, /m picking up a new build
+   with nothing cleared. Worker `u-suite-webgl` on sg3.
+
+Waiting: item 3 (which bubbles do not work) needs clint's answer.
 
 ## Filed, not queued
 
@@ -32,6 +34,14 @@ live.
   card and the pop-out skips when focus is elsewhere. Low.
 
 ## Done
+
+- 2026-09-30 19:45, the board boots again: cardurl.js before notify.js, and `bootClean` boots the real page:
+  claude/main 23f71411.
+- 2026-09-30 19:40, growler question card (full body, growing reply, choices, steady hover): claude/main 8ad0e98f.
+  Headless clock fix: 2cbfa197.
+- 2026-09-30 19:09, paste spinner stops on the room's `in-done`: claude/main dd97c0f6 (with @runtime's half).
+- 2026-09-30 18:40, card audit: u-039, u-028, u-027, u-001 landed in a06ca6ce. u-023, u-025, u-026, u-032 and the
+  mobile-design docs were already on main. u-015 superseded.
 
 - 2026-09-30 17:58, card URLs U1 and U2 (`/alias/`, `/room/`, `/m/` paths, clash chooser, readable links): claude/main
   afae3703, hub build afae370-aa1059bb.

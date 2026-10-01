@@ -1,9 +1,10 @@
 // The card view: a full-height sheet opened by a tap. The browser's back button closes it, through history state, so
 // the back gesture feels native.
 //
-// Top to bottom: the name and what it is doing, anything held or reported for the operator, the last replies as a
-// conversation, the recap and the open questions, the permission rows (`#m-perms`, perms.js), and the composer pinned
-// under it all (`#m-compose`, compose.js). Those two files are another worker's, so every call to them is guarded.
+// Top to bottom: the name and the Recap control, anything held or reported for the operator, the last replies as a
+// conversation (with the operator's own messages among them), the open questions, the permission rows (`#m-perms`, perms.js), and the composer pinned
+// under it all (`#m-compose`, compose.js). The live "working" line (`#m-working`) sits between the thread and the
+// composer, where the eye lands. Those two files are another worker's, so every call to them is guarded.
 (function () {
   "use strict";
 
@@ -28,12 +29,10 @@
   function headHTML(t) {
     const nm = U.cardName(t);
     const room = window.mNet.manyRooms() ? window.mNet.roomOf(t.id) || t.room || "" : "";
-    const doing = U.activityText(t);
     return '<h1 class="c-name">' + U.esc(nm.main) + "</h1>" +
       (nm.sub ? '<p class="c-sub">' + U.esc(nm.sub) + "</p>" : "") +
       '<p class="c-state"><span class="pill s-' + U.esc(t.status) + '">' + U.esc(U.statusLabel(t)) + "</span>" +
-      (room ? '<span class="pill room">' + U.esc(room) + "</span>" : "") +
-      (doing ? '<span class="doing">' + U.esc(doing) + "</span>" : "") + "</p>";
+      (room ? '<span class="pill room">' + U.esc(room) + "</span>" : "") + "</p>" + recapBtnHTML(t);
   }
 
   function noticesHTML(t) {
@@ -64,13 +63,112 @@
     return recap ? "" : '<p class="quiet">Nothing to read here yet.</p>';
   }
 
-  function recapHTML(t) {
+  function clock(iso) {
+    const n = U.ts(iso);
+    if (!n) return "";
+    return new Date(n).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  }
+
+  // A recap older than the card's last turn describes a turn that is over.
+  function recapStale(t) {
+    const r = U.ts(t.recap_at), e = U.ts(turnOf(t));
+    return !!(r && e && r < e);
+  }
+
+  function recapBtnHTML(t) {
+    if (!String(t.recap || "").trim()) return "";
+    const at = clock(t.recap_at);
+    return '<button type="button" class="recap-btn' + (recapStale(t) ? " stale" : "") + '" id="m-recap-open" aria-haspopup="dialog">Recap' +
+      (at ? "<em>" + U.esc(at) + "</em>" : "") + "</button>";
+  }
+
+  function recapSheetHTML(t) {
     const recap = String(t.recap || "").trim();
-    let h = "";
-    if (recap) {
-      h += '<section class="block"><h2>Recap</h2><div class="md">' + MD.render(recap) + "</div></section>";
-    }
-    return h;
+    if (!recap) return "";
+    const at = clock(t.recap_at);
+    const stale = recapStale(t);
+    return '<div class="recap-back" id="m-recap-back"></div><div class="recap-sheet" role="dialog" aria-label="Recap">' +
+      '<div class="recap-top"><h2>Recap</h2>' + (at ? '<span class="recap-at">from ' + U.esc(at) + (stale ? ", before the last turn" : "") + "</span>" : "") +
+      '<button type="button" class="recap-x" id="m-recap-close" aria-label="close">&times;</button></div>' +
+      '<div class="md' + (stale ? " stale" : "") + '">' + MD.render(recap) + "</div></div>";
+  }
+
+  function openRecap() {
+    if (!els || !els.recap.innerHTML) return;
+    els.recap.hidden = false;
+  }
+  function closeRecap() { if (els) els.recap.hidden = true; }
+
+  // ── the working line ─────────────────────────────────────────────────────
+  // What the card is doing right now, from the activity on its task row. Nothing when it is idle or waiting.
+  function workingOf(t) {
+    if (!t || t.status !== "running") return "";
+    const a = t.activity || {};
+    if (a.what === "idle" || a.dialog) return "";
+    if (a.what === "tool") return a.tool || "a tool";
+    return a.what && a.what !== "thinking" ? String(a.what) : "thinking";
+  }
+
+  function paintWorking(t) {
+    const w = workingOf(t);
+    const sig = w ? (t.activity && t.activity.what === "tool" ? "tool:" : "") + w : "";
+    if (els.working.dataset.sig === sig) return;
+    els.working.dataset.sig = sig;
+    els.working.hidden = !w;
+    els.working.innerHTML = w ? '<span class="wk-spin" aria-hidden="true"></span><span class="wk-what">' +
+      (t.activity && t.activity.what === "tool" ? '<span class="wk-verb">running</span> ' : "") + U.esc(w) + "</span>" : "";
+  }
+
+  // ── what the operator sent ───────────────────────────────────────────────
+  // The replies endpoint returns the session's own text only, so the operator's messages are kept on this device, per
+  // card, from what compose.js sent, and put among the replies by time.
+  const SENT = "atrium.msent.";
+  const SENT_KEEP = 20;
+  function sentKey(id) { return SENT + window.mNet.bareId(id); }
+  function readSent(id) {
+    try { const a = JSON.parse(localStorage.getItem(sentKey(id)) || "[]"); return Array.isArray(a) ? a : []; } catch (e) { return []; }
+  }
+  // Each message is cut at about 4 KB so a pasted log cannot fill the origin's quota, and what is kept is pruned on
+  // every write: messages past a week go, and only the newest 50 cards keep any.
+  const SENT_CUT = 4096;
+  const SENT_AGE = 7 * 24 * 3600 * 1000;
+  const SENT_CARDS = 50;
+  function pruneSent() {
+    try {
+      const rows = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.indexOf(SENT) === 0) rows.push(k);
+      }
+      const now = Date.now();
+      const live = [];
+      rows.forEach(k => {
+        let a = [];
+        try { a = JSON.parse(localStorage.getItem(k) || "[]"); } catch (e) {}
+        a = Array.isArray(a) ? a.filter(m => m && now - U.ts(m.at) < SENT_AGE) : [];
+        if (!a.length) { localStorage.removeItem(k); return; }
+        live.push({ k, last: U.ts(a[a.length - 1].at) });
+        localStorage.setItem(k, JSON.stringify(a));
+      });
+      live.sort((x, y) => y.last - x.last).slice(SENT_CARDS).forEach(r => localStorage.removeItem(r.k));
+    } catch (e) {}
+  }
+  function noteSent(id, text) {
+    if (!id || !text) return;
+    const a = readSent(id);
+    let t = String(text);
+    if (t.length > SENT_CUT) t = t.slice(0, SENT_CUT) + "\n[cut here, the rest was sent but is not kept]";
+    a.push({ at: new Date().toISOString(), text: t });
+    try { localStorage.setItem(sentKey(id), JSON.stringify(a.slice(-SENT_KEEP))); } catch (e) {}
+    pruneSent();
+    if (id === openId || (openId && window.mNet.bareId(id) === window.mNet.bareId(openId))) paintReplies();
+  }
+  window.addEventListener("m-sent", e => { const d = e.detail || {}; noteSent(d.id, d.text); });
+
+  function ownHTML(m) {
+    const when = U.ago(Date.now() - U.ts(m.at));
+    return '<article class="reply mine"><span class="src">you</span><div class="own">' + U.esc(m.text) + "</div>" +
+      '<time datetime="' + U.esc(m.at) + '">' + U.esc(when === "now" ? "just now" : when + " ago") + "</time></article>";
   }
 
   function questionsHTML(t) {
@@ -83,18 +181,25 @@
       : '<p class="quiet">Its last turn asked questions atrium could not read. Look at the terminal.</p>') + "</section>";
   }
 
+  // The operator's messages from the oldest reply shown on, in time order with the replies.
+  function mergeOwn(t, items, since) {
+    const own = readSent(t.id).filter(m => U.ts(m.at) >= since).map(m => ({ mine: m, at: U.ts(m.at) }));
+    return items.concat(own).sort((a, b) => a.at - b.at);
+  }
+
   function repliesHTML(t, got) {
     if (!got) return '<div class="replies loading" aria-busy="true"><div class="sk"></div><div class="sk s2"></div></div>';
     if (got.failed) {
       // The endpoint is not on this room yet, or it failed. The recap and the last report stand in for it.
       const rep = t.reported_at ? '<p class="quiet">Last report ' + U.esc(U.ago(Date.now() - U.ts(t.reported_at))) +
         " ago" + (t.report_sha ? ", commit " + U.esc(String(t.report_sha).slice(0, 7)) : "") + ".</p>" : "";
-      return '<div class="replies">' + rep + fallbackHTML(t) + "</div>";
+      return '<div class="replies">' + rep + fallbackHTML(t) + mergeOwn(t, [], 0).map(i => ownHTML(i.mine)).join("") + "</div>";
     }
     const screen = got.source === "screen";
     const list = got.replies || [];
-    if (!list.length) return '<div class="replies">' + fallbackHTML(t) + "</div>";
-    return '<div class="replies">' + list.map(r => replyHTML(r, screen)).join("") + "</div>";
+    const items = mergeOwn(t, list.map(r => ({ r, at: U.ts(r.at) })), list.length ? U.ts(list[0].at) : 0);
+    if (!items.length) return '<div class="replies">' + fallbackHTML(t) + "</div>";
+    return '<div class="replies">' + items.map(i => i.mine ? ownHTML(i.mine) : replyHTML(i.r, screen)).join("") + "</div>";
   }
 
   // ── painting ─────────────────────────────────────────────────────────────
@@ -104,14 +209,23 @@
     if (!t) {
       els.head.innerHTML = '<h1 class="c-name">This card is gone</h1><p class="c-sub">It was removed or its room went away.</p>';
       els.notices.innerHTML = els.replies.innerHTML = els.extras.innerHTML = "";
+      els.working.hidden = true;
+      els.working.dataset.sig = "";
       return;
     }
     const head = headHTML(t);
     if (els.head.dataset.sig !== head) { els.head.innerHTML = head; els.head.dataset.sig = head; }
     const not = noticesHTML(t);
     if (els.notices.dataset.sig !== not) { els.notices.innerHTML = not; els.notices.dataset.sig = not; }
-    const ex = recapHTML(t) + questionsHTML(t);
+    const ex = questionsHTML(t);
     if (els.extras.dataset.sig !== ex) { els.extras.innerHTML = ex; els.extras.dataset.sig = ex; }
+    const rc = recapSheetHTML(t);
+    if (els.recap.dataset.sig !== rc) {
+      els.recap.innerHTML = rc;
+      els.recap.dataset.sig = rc;
+      if (!rc) els.recap.hidden = true;
+    }
+    paintWorking(t);
     els.term.href = pathFor(t, "") || "/#term=" + encodeURIComponent(t.id);
     if (full) paintReplies();
   }
@@ -128,7 +242,8 @@
     setTimeout(() => els.replies.classList.remove("fresh"), 400);
   }
 
-  // The last replies. Read on open and when the card's turn ends, never on a timer.
+  // The last replies. Read on open and when the card's turn ends, never on a timer. The working line follows the task
+  // events, through the store.
   async function loadReplies() {
     const id = openId;
     if (!id) return;
@@ -176,7 +291,8 @@
     menuClose();
     els.sheet.classList.toggle("direct", !!(history.state && history.state.direct));
     els.scroll.scrollTop = 0;
-    els.head.dataset.sig = els.notices.dataset.sig = els.extras.dataset.sig = els.replies.dataset.sig = "";
+    els.head.dataset.sig = els.notices.dataset.sig = els.extras.dataset.sig = els.replies.dataset.sig = els.recap.dataset.sig = els.working.dataset.sig = "";
+    els.recap.hidden = true;
     paint(true);
     mountFor(id);
     // A frame later, so the slide has a start to move from.
@@ -193,7 +309,9 @@
 
   function finishClose() {
     els.sheet.hidden = true;
-    els.head.innerHTML = els.notices.innerHTML = els.replies.innerHTML = els.extras.innerHTML = "";
+    els.head.innerHTML = els.notices.innerHTML = els.replies.innerHTML = els.extras.innerHTML = els.recap.innerHTML = "";
+    els.working.hidden = true;
+    els.recap.hidden = true;
     openId = "";
   }
 
@@ -390,8 +508,13 @@
     els = {
       sheet: q("m-card"), scroll: q("m-card-scroll"), head: q("m-card-head"), notices: q("m-card-notices"),
       replies: q("m-replies"), extras: q("m-card-extras"), perms: q("m-perms"), compose: q("m-compose"),
-      back: q("m-card-back"), term: q("m-card-term"), pick: q("m-card-pick"), menu: q("m-card-menu"),
+      back: q("m-card-back"), term: q("m-card-term"), pick: q("m-card-pick"), menu: q("m-card-menu"), working: q("m-working"), recap: q("m-recap"),
     };
+    els.head.addEventListener("click", e => { if (e.target.closest && e.target.closest("#m-recap-open")) openRecap(); });
+    els.recap.addEventListener("click", e => {
+      if (e.target.id === "m-recap-back" || (e.target.closest && e.target.closest("#m-recap-close"))) closeRecap();
+    });
+    document.addEventListener("keydown", e => { if (e.key === "Escape" && els && !els.recap.hidden) closeRecap(); });
     els.back.addEventListener("click", close);
     els.pick.addEventListener("click", menuToggle);
     els.menu.addEventListener("click", e => {

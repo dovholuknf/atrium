@@ -807,6 +807,11 @@ type view struct {
 	// and never stored, and whether it is past the threshold. Absent on a card
 	// that is not Claude or has no transcript yet. See docs/runtime/activity-design.md.
 	ContextSize any `json:"context_size,omitempty"`
+	// OutputAt is when the card's transcript last gained an assistant reply with
+	// text, mid-turn too, RFC3339. The phone re-reads the card's replies when it
+	// moves. Absent when not known: not Claude, no transcript, or not read since
+	// the daemon started. Never stored. See internal/daemon/outputat.go.
+	OutputAt string `json:"output_at,omitempty"`
 	// AsksOpen is how many questions this card has outstanding.
 	//
 	// `Task.Ask` is the OLDEST of them and is what the row draws. That was the
@@ -887,6 +892,10 @@ var NewContextOf func(taskID string) any
 // daemon.
 var KeepaliveOf func(taskID string) any
 
+// OutputAtOf returns when a card's transcript last gained a reply, RFC3339, or
+// "". Supplied by the daemon, which holds it in memory.
+var OutputAtOf func(taskID string) string
+
 func toView(t *store.Task) view {
 	v := view{
 		Task:         t,
@@ -925,6 +934,9 @@ func toView(t *store.Task) view {
 	}
 	if ContextSizeOf != nil {
 		v.ContextSize = ContextSizeOf(t.ID)
+	}
+	if OutputAtOf != nil {
+		v.OutputAt = OutputAtOf(t.ID)
 	}
 	if t.WaitingSince != nil {
 		v.WaitSeconds = int64(time.Since(*t.WaitingSince).Seconds())
