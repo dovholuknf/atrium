@@ -12,12 +12,11 @@ Reports go to the orchestrator (card 01a0f2da on sg4-control) by atrium say or r
 @review first. Workers launch on m1mini, sg3 as fallback. Before landing run only the touched sections plus bootClean,
 each alone. The whole suite runs after landing and red there is a follow-up.
 
-In flight, workers on sg3, both held by @review and waiting on a new sha (then fetch, say @review, land):
+In flight, worker on sg3, held by @review and waiting on a new sha (then fetch, say @review, land):
 
 - `pulls-p3` (alias, branch `claude/pulls-p3`, verdict c0bccc01): always POST `{action:"launch"}` and attach `out.task`,
   re-probe when the tenant is walk with no prId, nits. Tell @rnd at landing.
-- `burn-chart` (alias, branch `claude/burn-chart`, verdict 9f9a015a): ulTokensIn null fallback on 1h and filters,
-  flat-at-0% on 24h, nits. Screenshots in `D:/tmp/burn-chart/*.jpg` on sg4. clint wants them, give absolute paths.
+- `burn-chart` landed, see Done.
 
 Owed:
 
@@ -90,6 +89,8 @@ Next, after u-m-card and u-m-home land (clint, 2026-09-30 evening, by the orches
 
 ## Done
 
+- 2026-10-01, burn-chart (ulTokensIn null fallback, flat-at-0% on 24h, nits): claude/main 6953184a, merge of e3d99ebc,
+  review OK 58b7a19b. Landed by @fabric on sg4. Screenshots in `D:/tmp/burn-chart/*.jpg` on sg4.
 - 2026-09-30 19:45, the board boots again: cardurl.js before notify.js, and `bootClean` boots the real page:
   claude/main 23f71411.
 - 2026-09-30 19:40, growler question card (full body, growing reply, choices, steady hover): claude/main 8ad0e98f.
