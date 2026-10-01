@@ -670,6 +670,13 @@ func TestDocURLsAnswerWithThePhoneShell(t *testing.T) {
 	if slug, n, ok := ParseDocPath("/d/my-doc@12"); !ok || slug != "my-doc" || n != 12 {
 		t.Fatalf("parsed %q %d %v", slug, n, ok)
 	}
+	// The phone's document list is the shell at exactly /m/docs, and nothing under it.
+	if w := get("/m/docs"); w.Code != 200 || !strings.Contains(w.Body.String(), "the phone page") {
+		t.Errorf("/m/docs answered %d %q", w.Code, w.Body.String())
+	}
+	if w := get("/m/docs/x"); strings.Contains(w.Body.String(), "the phone page") {
+		t.Errorf("/m/docs/x got the shell")
+	}
 	// A write to /d/ is not the shell.
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, httptest.NewRequest("POST", "http://127.0.0.1/d/x", nil))
