@@ -110,3 +110,20 @@ line, and the runtime check goes one step further than asked (it parses the real
 
 **ROOM DEPLOY OK 0da8c949..f7298fc0.** Not run live by @runtime or by me: HU 1 to 3 on a throwaway room before
 relying on it on sg3 and m1mini.
+
+## Follow-up b3991606 (r-statusline-2)
+
+r-statusline landed as 9c721e42, which carries only 2fb82b25 and f7298fc0 (checked). b3991606 sits on it, one
+commit, `scripts/provision-room.ps1` only.
+
+- **Low 1 closed.** A bash found on PATH is written as `$b.Source` with forward slashes, so the quoted command names
+  the bash the probe chose, and room-check's split runs that same file. A room provisioned with `"bash.exe"` reads as
+  different on the next run and is rewritten once, with a backup.
+- **Nit 3 closed.** The probe saves `$ErrorActionPreference` and restores it.
+- The header comment now names both WSL launcher homes and says the path is written in full.
+
+No new findings. Low 2 (the ssh PATH) stays a note.
+
+Quality: after the Sonnet switch, no drop. The fix is the one asked, and nothing else moved.
+
+**ROOM DEPLOY OK 9c721e42..b3991606.** Not run live.
