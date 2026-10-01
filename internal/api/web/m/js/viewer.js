@@ -240,7 +240,8 @@
     els.sheet.hidden = false;
     document.body.classList.add("viewer-open");
     // One entry per file. A reader going on to a file named in this one steps through them with Back.
-    try { history.pushState({ mcard: card, mview: path }, "", location.href); } catch (e) {}
+    const here = history.state || {};
+    try { history.pushState({ mcard: card, mview: path, mchg: here.mchg, mfile: here.mfile }, "", location.href); } catch (e) {}
     if (!was) els.scroll.scrollTop = 0;
     render(card, path);
   }

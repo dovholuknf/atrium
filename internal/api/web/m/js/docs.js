@@ -81,8 +81,9 @@
     }
     return { bytes: out, over };
   }
-  // A cut can fall inside a character. It decodes to U+FFFD at the end, which is dropped.
-  const decode = bytes => new TextDecoder("utf-8", { fatal: false }).decode(bytes).replace(/�+$/, "");
+  // A cut can fall inside a character, which decodes to U+FFFD at the end. That is dropped only when something WAS cut: a
+  // whole file that really ends in U+FFFD keeps it.
+  const decode = (bytes, cut) => { const t = new TextDecoder("utf-8", { fatal: false }).decode(bytes); return cut ? t.replace(/\uFFFD+$/, "") : t; };
 
   function upload(url, file, fields, onprog) {
     return new Promise(resolve => {
@@ -334,10 +335,22 @@
     if (line.startsWith("-")) return "d-del";
     return "d-ctx";
   }
-  function diffBlock(text) {
+  // One div per line is drawn up to MAX_LINES, and the rest is a download, the same strip a cut text has.
+  const MAX_LINES = 2000;
+  function diffBlock(text, slug, v) {
+    const wrap = el("div", "d-diffwrap");
     const pre = el("div", "d-diff");
-    text.split(/\r?\n/).forEach(line => pre.appendChild(el("div", "d-line " + diffClass(line), line || " ")));
-    return pre;
+    const lines = text.split(/\r?\n/);
+    lines.slice(0, MAX_LINES).forEach(line => pre.appendChild(el("div", "d-line " + diffClass(line), line || "\u00a0")));
+    wrap.appendChild(pre);
+    if (lines.length > MAX_LINES) {
+      const cut = el("div", "d-cut");
+      cut.appendChild(el("span", "", "showing the first " + MAX_LINES + " of " + lines.length + " lines"));
+      const more = btn("download the rest", () => download(slug, v, v.name, more));
+      cut.appendChild(more);
+      wrap.appendChild(cut);
+    }
+    return wrap;
   }
 
   async function renderDoc(st) {
@@ -534,13 +547,13 @@
       const got = await readCapped(r, CAP);
       if (mine !== seq) return;
       if (got.bytes.indexOf(0) >= 0) { downloadOnly(into, slug, v, "this does not look like text"); return; }
-      const text = decode(got.bytes);
+      const text = decode(got.bytes, got.over);
       if (v.kind === "markdown") {
         const holder = el("div", "md");
-        holder.innerHTML = window.mMd.render(text, { id: "", worktree: "" });
+        holder.innerHTML = window.mMd.render(text, { id: "", worktree: "", noFiles: true });
         into.appendChild(holder);
       } else if (v.kind === "diff") {
-        into.appendChild(diffBlock(text));
+        into.appendChild(diffBlock(text, slug, v));
       } else {
         const pre = el("pre", "code d-text");
         pre.appendChild(el("code", "", text));
@@ -626,7 +639,7 @@
         if (!r.ok) { let b = null; try { b = await r.json(); } catch (e) {} throw new Error(sentence(r.status, b)); }
         const got = await readCapped(r, TEXT_CAP);
         if (got.over) throw new Error(SAME);
-        return decode(got.bytes).split(/\r?\n/);
+        return decode(got.bytes, false).split(/\r?\n/);
       };
       try {
         const [a, b] = await Promise.all([side(from.value), side(to.value)]);
