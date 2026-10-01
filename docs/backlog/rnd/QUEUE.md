@@ -26,7 +26,7 @@ none). Pass: under 10 minutes and under $2, and clint's read of the walk order. 
 | --- | --- | --- |
 | P1a r-pr-render | @runtime | LANDED 58461561 |
 | P1b r-pr-store | @runtime | LANDED 59d21773 (@review c5c759f5). Needs a room deploy, the orchestrator's |
-| P1c r-pr-run | @runtime | LANDED on claude/main b07cbfb2 (sg4 fast-forwarded, synced to m1mini). Fix 8c9b17d7 (@review ROOM DEPLOY OK ebc2b5f5, landing tip b07cbfb2). Open: medium `--setting-sources user` should be "" (with @runtime), and the 378 acceptance replay (@runtime, after the pause). Not room-deployed yet (no deploys during the pause). Then P3 can go, once the pause ends |
+| P1c r-pr-run | @runtime | LANDED on claude/main b07cbfb2 (sg4 fast-forwarded, synced to m1mini). Fix 8c9b17d7 (@review ROOM DEPLOY OK ebc2b5f5, landing tip b07cbfb2). Follow-up a2a1909d (setting sources) is on claude/landing ff5def61, @review OK. Open: the 378 acceptance replay (@runtime, after the pause). Not room-deployed yet (no deploys during the pause). Then P3 can go, once the pause ends |
 | P2 pulls view | @ui | LANDED b6edcfd6 (@review c9284027) |
 | P2 follow-up | @ui | IN FLIGHT: PUT findings/{key}, walk.js re-point, unmock drawer findings, walk marks, walker, start. @ui tells @rnd at landing |
 | Hub | @fabric | LANDED d77d21d0, lows 370dcb61. Needs a hub deploy |
