@@ -302,3 +302,12 @@ body.term-phone #t-compose:not([hidden]) { display: block; }
 #t-compose .mc.compact .mc-thumb, #t-compose .mc.compact .mc-glyph { width: 28px; height: 28px; font-size: 15px; }
 #t-compose .mc.compact .mc-fx { width: 32px; height: 32px; }
 #t-compose .mc.compact .mc-chips,#t-compose .mc.compact .mc-note:not(.on) { max-height: 0; padding: 0; }
+
+/* ---- the file picker and the camera on the phone page */
+.mc-row.with-attach { padding-left: 6px; gap: 4px; }
+.mc-row.with-attach .mc-box { padding-left: 4px; }
+.mc-attach {
+  flex: none; width: 40px; height: 44px; display: grid; place-items: center; border: 0; border-radius: 50%; background: transparent;
+  color: var(--c-dim); -webkit-tap-highlight-color: transparent;
+}
+.mc-attach:active { background: var(--c-sink); color: var(--c-text); }

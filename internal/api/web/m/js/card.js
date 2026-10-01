@@ -16,6 +16,8 @@
   let els = null;
   let seq = 0;
   let turnKey = "";
+  // The room's `output_at`: the last reply with text, mid-turn too. Absent keeps the last one seen.
+  let outAt = "";
   let offs = [];
   // Replies already read, so a card opened again paints at once and is refreshed behind it.
   const cache = new Map();
@@ -102,7 +104,7 @@
     if (!els || !els.recap.innerHTML) return;
     els.recap.hidden = false;
   }
-  function closeRecap() { if (els) els.recap.hidden = true; }
+  function closeRecap() { if (!els) return; els.recap.hidden = true; stick = true; settle(); }
 
   // ── the working line ─────────────────────────────────────────────────────
   // What the card is doing right now, from the activity on its task row. Nothing when it is idle or waiting.
@@ -158,22 +160,39 @@
       live.sort((x, y) => y.last - x.last).slice(SENT_CARDS).forEach(r => localStorage.removeItem(r.k));
     } catch (e) {}
   }
-  function noteSent(id, text) {
+  function noteSent(id, text, kind) {
     if (!id || !text) return;
     const a = readSent(id);
     let t = String(text);
     if (t.length > SENT_CUT) t = t.slice(0, SENT_CUT) + "\n[cut here, the rest was sent but is not kept]";
-    a.push({ at: new Date().toISOString(), text: t });
+    a.push({ at: new Date().toISOString(), text: t, kind: kind === "queued" ? "queued" : "sent" });
     try { localStorage.setItem(sentKey(id), JSON.stringify(a.slice(-SENT_KEEP))); } catch (e) {}
     pruneSent();
-    if (id === openId || (openId && window.mNet.bareId(id) === window.mNet.bareId(openId))) paintReplies();
+    if (isOpen(id)) { stick = true; paintReplies(); }
   }
-  window.addEventListener("m-sent", e => { const d = e.detail || {}; noteSent(d.id, d.text); });
+  function isOpen(id) { return !!openId && window.mNet.bareId(id) === window.mNet.bareId(openId); }
+  window.addEventListener("m-sent", e => { const d = e.detail || {}; noteSent(d.id, d.text, d.kind); });
 
+  // A message on its way, in memory only: pending while the room has not answered, and not sent when it failed, with
+  // its text back in the composer. An answered one becomes the kept row above, carrying delivered or queued.
+  const flight = new Map();
+  window.addEventListener("m-send", e => {
+    const d = e.detail || {};
+    if (!d.id || !d.key) return;
+    const bare = window.mNet.bareId(d.id);
+    const list = (flight.get(bare) || []).filter(x => x.key !== d.key && !(x.state === "failed" && x.text === d.text));
+    if (d.state === "pending" || d.state === "failed") list.push({ key: d.key, text: d.text, state: d.state, at: new Date().toISOString() });
+    flight.set(bare, list);
+    if (isOpen(d.id)) { if (d.state === "pending") stick = true; paintReplies(); }
+  });
+
+  const OWN_TAG = { pending: "sending", failed: "not sent, back in the box", sent: "delivered", queued: "queued" };
   function ownHTML(m) {
     const when = U.ago(Date.now() - U.ts(m.at));
-    return '<article class="reply mine"><span class="src">you</span><div class="own">' + U.esc(m.text) + "</div>" +
-      '<time datetime="' + U.esc(m.at) + '">' + U.esc(when === "now" ? "just now" : when + " ago") + "</time></article>";
+    const st = m.state || m.kind || "";
+    return '<article class="reply mine' + (st === "pending" || st === "failed" ? " " + st : "") + '"><span class="src">you</span><div class="own">' + U.esc(m.text) + "</div>" +
+      '<time datetime="' + U.esc(m.at) + '">' + U.esc(when === "now" ? "just now" : when + " ago") +
+      (OWN_TAG[st] ? ' <b class="tag">' + OWN_TAG[st] + "</b>" : "") + "</time></article>";
   }
 
   function questionsHTML(t) {
@@ -188,7 +207,7 @@
 
   // The operator's messages from the oldest reply shown on, in time order with the replies.
   function mergeOwn(t, items, since) {
-    const own = readSent(t.id).filter(m => U.ts(m.at) >= since).map(m => ({ mine: m, at: U.ts(m.at) }));
+    const own = readSent(t.id).concat(flight.get(window.mNet.bareId(t.id)) || []).filter(m => U.ts(m.at) >= since).map(m => ({ mine: m, at: U.ts(m.at) }));
     return items.concat(own).sort((a, b) => a.at - b.at);
   }
 
@@ -231,23 +250,51 @@
       if (!rc) els.recap.hidden = true;
     }
     paintWorking(t);
+    settle();
     els.term.href = pathFor(t, "") || "/#term=" + encodeURIComponent(t.id);
     if (full) paintReplies();
+  }
+
+  // ── staying at the newest message ────────────────────────────────────────
+  // The thread follows its end until the operator scrolls up on purpose, then a jump control brings it back.
+  let stick = true;
+  const NEAR = 80;
+  function toEnd() {
+    if (!els) return;
+    els.scroll.scrollTop = els.scroll.scrollHeight;
+    els.jump.hidden = true;
+  }
+  function settle() {
+    if (!stick || !els) return;
+    toEnd();
+    requestAnimationFrame(() => { if (stick && els) toEnd(); });
+  }
+  // Only a scroll the operator made lets go of the end. Layout growth, a restored position or scroll anchoring also
+  // fire scroll events, and none of them is a decision to stop following. A touch, wheel, key or drag marks the
+  // scrolls that follow it as the operator's, and a finger's momentum is covered by the window after it.
+  let userAt = 0;
+  function byHand() { userAt = Date.now(); }
+  function onScroll() {
+    if (!els || !openId) return;
+    const gap = els.scroll.scrollHeight - els.scroll.scrollTop - els.scroll.clientHeight;
+    if (gap < NEAR) { stick = true; els.jump.hidden = true; return; }
+    if (Date.now() - userAt < 1500) { stick = false; els.jump.hidden = false; }
   }
 
   function paintReplies() {
     const t = window.mStore.card(openId);
     if (!t) return;
     const html = repliesHTML(t, cache.get(openId));
-    if (els.replies.dataset.sig === html) return;
+    if (els.replies.dataset.sig === html) { settle(); return; }
     const first = !els.replies.dataset.sig;
     els.replies.innerHTML = html;
     els.replies.dataset.sig = html;
     if (!first) els.replies.classList.add("fresh");
     setTimeout(() => els.replies.classList.remove("fresh"), 400);
+    settle();
   }
 
-  // The last replies. Read on open and when the card's turn ends, never on a timer. The working line follows the task
+  // The last replies. Read on open, when the card's turn ends and when its `output_at` moves, never on a timer. The working line follows the task
   // events, through the store.
   async function loadReplies() {
     const id = openId;
@@ -267,9 +314,13 @@
 
   function onCards() {
     if (!openId) return;
+    const t = window.mStore.card(openId);
     paint(false);
-    const key = openId + "@" + turnOf(window.mStore.card(openId));
-    if (key !== turnKey) { turnKey = key; loadReplies(); }
+    const key = openId + "@" + turnOf(t);
+    const out = (t && t.output_at) || "";
+    const moved = !!out && out !== outAt;
+    if (out) outAt = out;
+    if (key !== turnKey || moved) { turnKey = key; loadReplies(); }
   }
 
   function mountFor(id) {
@@ -292,12 +343,15 @@
     if (openId) return;
     openId = id;
     turnKey = id + "@" + turnOf(window.mStore.card(id));
+    outAt = (window.mStore.card(id) || {}).output_at || "";
     els.sheet.hidden = false;
     menuClose();
     els.sheet.classList.toggle("direct", !!(history.state && history.state.direct));
     els.scroll.scrollTop = 0;
     els.head.dataset.sig = els.notices.dataset.sig = els.extras.dataset.sig = els.replies.dataset.sig = els.recap.dataset.sig = els.working.dataset.sig = "";
     els.recap.hidden = true;
+    stick = true;
+    els.jump.hidden = true;
     paint(true);
     mountFor(id);
     // A frame later, so the slide has a start to move from.
@@ -515,7 +569,19 @@
       sheet: q("m-card"), scroll: q("m-card-scroll"), head: q("m-card-head"), notices: q("m-card-notices"),
       replies: q("m-replies"), extras: q("m-card-extras"), perms: q("m-perms"), compose: q("m-compose"),
       back: q("m-card-back"), term: q("m-card-term"), pick: q("m-card-pick"), menu: q("m-card-menu"), working: q("m-working"), recap: q("m-recap"),
+      jump: q("m-jump"),
     };
+    els.scroll.addEventListener("scroll", onScroll, { passive: true });
+    ["wheel", "touchstart", "touchmove", "pointerdown", "keydown"].forEach(n => els.scroll.addEventListener(n, byHand, { passive: true }));
+    // The first open lays out late: the Recap button, the permission rows, fonts and any image in a reply move the end
+    // after the first scroll. While following, every size change of the thread and the box around it goes to the end again.
+    if (window.ResizeObserver) {
+      const ro = new ResizeObserver(() => { if (stick && openId) toEnd(); });
+      [els.scroll, els.head, els.notices, els.replies, els.extras, els.perms].forEach(e => ro.observe(e));
+    }
+    els.scroll.addEventListener("load", () => { if (stick && openId) toEnd(); }, true);
+    els.jump.addEventListener("click", () => { stick = true; toEnd(); });
+    if (window.visualViewport) window.visualViewport.addEventListener("resize", () => { if (openId) settle(); });
     els.head.addEventListener("click", e => { if (e.target.closest && e.target.closest("#m-recap-open")) openRecap(); });
     els.recap.addEventListener("click", e => {
       if (e.target.id === "m-recap-back" || (e.target.closest && e.target.closest("#m-recap-close"))) closeRecap();
