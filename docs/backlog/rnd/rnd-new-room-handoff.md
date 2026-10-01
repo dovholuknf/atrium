@@ -1,6 +1,6 @@
 # rnd-new-room-handoff: move a card, and the work it holds, from one room to another
 
-Status: not started. HIGH priority. Owned by @rnd (design). Filed by the orchestrator 2026-10-01, from clint: "atrium
+Status: DESIGN WRITTEN, docs/rnd/room-handoff-design.md, at @review. HIGH priority. Owned by @rnd (design). Filed by the orchestrator 2026-10-01, from clint: "atrium
 should support room handoff better".
 
 ## What happened on 2026-10-01
