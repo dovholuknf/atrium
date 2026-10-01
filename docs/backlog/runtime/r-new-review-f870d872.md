@@ -1,0 +1,66 @@
+# Review: r-pr-render f870d872 (@runtime)
+
+Range 66694076..f870d872, one commit on claude/r-pr-render. The pulls-view P1 step 8 renderer, a pure package
+`internal/prreview/render`. It is not wired to anything, so no deploy is needed. Read against
+docs/rnd/pulls-view-design.md 5.4 and 5.6 (at 54b54fe6) and the rules in docs/review/review-memory-design.md.
+
+Tests: `go vet` clean. The package's 13 tests pass. My three scratch tests, in
+D:/worktrees/claude/reviews/github-dovholuknf-atrium/proof-f870d872/zz_scratch_review_test.go (copied into the package
+in a detached worktree, since removed), fail as stated below.
+
+## What holds
+
+- The order is 5.6's: left for clint, then band, then rank, then diff position and line. File name is never a key,
+  and `NN` is the walk position.
+- The hard rules (shape, 5, 8/35, 26) fail the run only after the merge fork has had its one resend. The soft ones
+  (34, 36, 40, 43) act on the second pass the way the design's table says. Each resend quotes the rule.
+- Rule 43: "Suggested fix:" only for `proven: code`. `no` needs the "Could we / What if we / Should we" form with one
+  question mark, and any other `proven` value is refused. There is no `test`.
+- Rule 5: a leak raised before the merge must reach the final list by path and line, or by path and code.
+- The diff parser reads `+++` only outside a hunk, counts context and added lines, and skips `/dev/null`.
+
+## Findings
+
+### 1. MEDIUM: a partial path passes rule 8 and gets a wrong deep link (proven)
+
+`diffInfo.file` matches a finding path to a diff name by suffix (`tls_engine.c` to `src/tls_engine.c`), so the line
+check passes. But `link` and the label line use the finding's own `Path`, so the link hashes `tls_engine.c` and lands
+nowhere on GitHub. Rule 28 says a link is checked against the diff and never guessed. Proof: `TestScratchShortPathLink`.
+
+The same suffix match picks the first of two files with one base name (`a/util.c`, `b/util.c`) for a finding that
+says `util.c`, which can put the finding on the wrong file.
+
+Fix: after the checks, rewrite each finding's `Path` to the diff's name `file` returned, before the label, link and
+file name are made. Treat a suffix that matches more than one diff file as a rule 8 failure, so it goes back to merge.
+
+### 2. MEDIUM: a second `Write` loses walk progress and leaves stale files (proven)
+
+5.5 retries rerun step 6 and step 7 over the same folder, which renders again. `Write` overwrites `walk.txt` with every
+line `open` and writes the new files beside the old ones. A walk clint had started loses its `done`, `skipped` and
+`deferred` states, and finding files he edited in place stay beside new ones with other `NN`, so `ls findings/` is no
+longer the walk. Proof: `TestScratchRewrite` (3 files after a rewrite to 1, and the `done` gone).
+
+Fix in the package, since `Write` is its contract: refuse when `walk.txt` already has a line that is not `open`
+(a typed error the runner can show as "walk started, retry would lose it"), and otherwise remove the
+`findings/*.txt` this render did not produce before writing.
+
+### 3. LOW: a finding with no rank walks first in its band (proven)
+
+`Rank` 0 sorts ahead of 1. The merge fork is asked for a rank, but a missing one should not put a finding at the top.
+Sort 0 last, or refuse it under rule 0. Proof: `TestScratchZeroRank`.
+
+### 4. NITS
+
+- `blocking` and `critical` both render as `HIGH`. Rule 10 lists `BLOCKING` as a label of its own.
+- The leak match by path and line, or path and code, refuses a leak that merge re-anchored onto a different PR line
+  (rule 15). That is the safe direction. Say so in the comment, so nobody loosens it later.
+- `+++ "b/a b.c"` (git quotes a path with spaces) is read with the quotes kept.
+
+## Verdict
+
+HOLD 66694076..f870d872 for findings 1 and 2. Both are small and both have a proof to turn into a test. Re-read
+66694076..tip.
+
+Quality: after the Sonnet switch, no drop seen in what it set out to do. Every rule has its test and the golden file
+is exact. The misses are the second-order ones: the suffix match was written for the check and not followed into the
+link, and `Write` was written for the first render only.
