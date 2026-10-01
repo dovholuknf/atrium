@@ -111,19 +111,29 @@ func tooWideToTrust(env Env, cwd string) bool {
 	return false
 }
 
+// mkdirLock is os.Mkdir; tests replace it to reproduce the Windows answers.
+var mkdirLock = os.Mkdir
+
 // lockClaudeConfig takes claude's own lock on its config file, the way
 // proper-lockfile does: a directory beside it, made atomically. A lock older
 // than claude's stale limit belongs to a session that died holding it.
+//
+// On Windows a directory that was just removed stays "delete pending" while
+// another handle to it is open, and Mkdir on that name answers ACCESS_DENIED
+// (not EEXIST) for that moment. A waiter's own os.Stat of the lock opens such a
+// handle. So a denied Mkdir is a lock still being released: it is retried
+// inside the same wait, and only if it is still denied when the wait ends is it
+// reported, as the permission error it then is.
 func lockClaudeConfig(path string) (unlock func(), err error) {
 	lock := path + ".lock"
 	deadline := time.Now().Add(claudeLockWait)
 	wait := 20 * time.Millisecond
 	for {
-		err := os.Mkdir(lock, 0o700)
+		err := mkdirLock(lock, 0o700)
 		if err == nil {
 			return func() { _ = os.Remove(lock) }, nil
 		}
-		if !errors.Is(err, os.ErrExist) {
+		if !errors.Is(err, os.ErrExist) && !errors.Is(err, os.ErrPermission) {
 			return nil, err
 		}
 		if fi, serr := os.Stat(lock); serr == nil && time.Since(fi.ModTime()) > claudeLockStale {
@@ -131,6 +141,9 @@ func lockClaudeConfig(path string) (unlock func(), err error) {
 			continue
 		}
 		if time.Now().After(deadline) {
+			if !errors.Is(err, os.ErrExist) {
+				return nil, err
+			}
 			return nil, fmt.Errorf("a claude session held %s for %s", filepath.ToSlash(lock), claudeLockWait)
 		}
 		time.Sleep(wait)
