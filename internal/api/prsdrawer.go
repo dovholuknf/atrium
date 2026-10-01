@@ -58,14 +58,14 @@ func (s *Server) prFolder(w http.ResponseWriter, p *store.PRReview) (string, boo
 
 // PRFinding is one finding file, parsed.
 type PRFinding struct {
-	Key      string            `json:"key"`
-	Position int               `json:"position"`
-	File     string            `json:"file"`
-	Sev      string            `json:"sev"`
+	Key      string `json:"key"`
+	Position int    `json:"position"`
+	File     string `json:"file"`
+	Sev      string `json:"sev"`
 	// Blocking is true when the finding is named and labelled BLOCKING. Its sev is
 	// `high`. Additive: a client that does not know it loses nothing.
-	Blocking bool   `json:"blocking"`
-	Path    string            `json:"path"`
+	Blocking bool              `json:"blocking"`
+	Path     string            `json:"path"`
 	Line     int               `json:"line"`
 	Code     string            `json:"code"`
 	Link     string            `json:"link"`
