@@ -299,6 +299,7 @@ function ulRefresh() {
   const fresh = tmp.querySelector("#ul-limits");
   if (fresh) box.innerHTML = fresh.innerHTML;
   ulPaintBand();
+  if (typeof ucPaintCum === "function") ucPaintCum();
 }
 
 // The band, redrawn in the chart that is there.
