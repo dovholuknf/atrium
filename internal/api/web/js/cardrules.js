@@ -51,6 +51,22 @@ function cardIdleSeconds(t, now) {
   return Infinity;
 }
 
+// Seconds the card has been waiting for the operator, as of `now`. The daemon makes `wait_seconds` the same way it makes
+// `idle_seconds` (time since a stamp, at the moment the row is serialised), so it goes stale the same way. `waiting_since` is the
+// stamp and is preferred. A card that is not waiting has neither and reads 0.
+function cardWaitSeconds(t, now) {
+  const at = Date.parse(t && t.waiting_since);
+  if (!isNaN(at)) return ((now == null ? Date.now() : now) - at) / 1000;
+  return t && typeof t.wait_seconds === "number" ? t.wait_seconds : 0;
+}
+
+// A count of seconds for display: never negative, and 0 where there is nothing to count.
+function cardSecs(x) { return isFinite(x) ? Math.max(0, x) : 0; }
+
+// The idle age to show a person or to decide on: the same number the sort placed the card by, as a plain count of seconds
+// that is never negative or infinite. A card with no stamp at all reads 0.
+function cardIdleAge(t, now) { return cardSecs(cardIdleSeconds(t, now)); }
+
 // Most recently active first, the board's "last active" sort and the phone page's. One `now` for both cards of a comparison,
 // so two cards with the same stamp tie exactly and the caller's tie break decides.
 function cardActivityCmp(a, b) {

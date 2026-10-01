@@ -28,7 +28,7 @@ function lift(start, end) {
 
 const tieBreak = lift("function cardTieBreak(", "\n}");
 // The activity rule is shared with the phone page, so it lives in js/cardrules.js.
-const activity = lift("function cardIdleSeconds(", "\n}") + "\n" + lift("function cardActivityCmp(", "\n}");
+const activity = lift("function cardIdleSeconds(", "\n}") + "\n" + lift("function cardWaitSeconds(", "\n}") + "\n" + lift("function cardActivityCmp(", "\n}");
 
 // Tie every sort field and vary creation time against input order, so the
 // expected result requires the tiebreak.
@@ -103,7 +103,7 @@ for (const mode of Object.keys(STACK_SORTS)) {
 // reads the same live badge the sort now leads with; here it answers off a
 // fixture field so the tie fixtures, which carry none, all read as not working.
 const strip = new Function("isWaiting", "workingNow", "terminalLabel", "mode",
-  tieBreak + "\n" + lift("function termOrder(", "\n}") +
+  tieBreak + "\n" + activity + "\n" + lift("function termOrder(", "\n}") +
   "\nreturn (tasks) => { sortByActivity = mode.on; return termOrder(tasks); };")(
   (t) => t.status === "needs-input", (t) => !!t.working,
   (t) => t.label || "", (globalThis.__mode = { on: true }));
