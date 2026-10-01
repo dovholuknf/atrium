@@ -266,7 +266,9 @@ const AGDEAD = Object.assign({}, SUBLIVE, {
 // shape of the screenshot: named cards whose dim second line is the path.
 const untaggedCard = (id, title, worktree, idle) => Object.assign({}, T1, {
   id, display_title: title, worktree, repo: worktree.split("/").pop(), branch: "b",
-  idle_seconds: idle, supervised: true
+  idle_seconds: idle, supervised: true,
+  // last_activity_at is the stamp the sort goes by, so it says the same as idle_seconds
+  last_activity_at: new Date(Date.now() - idle * 1000).toISOString()
 });
 const UNTAGGED_CARDS = [
   untaggedCard("u-sa67", "sa67 stages", "/w/claude/atrium/one", 30),

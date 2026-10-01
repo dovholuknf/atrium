@@ -28,7 +28,7 @@ function lift(start, end) {
 
 const tieBreak = lift("function cardTieBreak(", "\n}");
 // The activity rule is shared with the phone page, so it lives in js/cardrules.js.
-const activity = lift("function cardIdleSeconds(", "\n}") + "\n" + lift("function cardActivityCmp(", "\n");
+const activity = lift("function cardIdleSeconds(", "\n}") + "\n" + lift("function cardWaitSeconds(", "\n}") + "\n" + lift("function cardActivityCmp(", "\n}");
 
 // Tie every sort field and vary creation time against input order, so the
 // expected result requires the tiebreak.
@@ -78,13 +78,32 @@ for (const mode of Object.keys(STACK_SORTS)) {
   }
 }
 
+// THE ACTIVITY RULE, shared with the phone page (js/cardrules.js). `last_activity_at` is a fact about the card and wins over
+// `idle_seconds`, a count taken when the row was read, so a stale row cannot outrank a newer one.
+{
+  const cmp = STACK_SORTS.activity.cmp;
+  const ago = s => new Date(Date.now() - s * 1000).toISOString();
+  const fresh = { id: "fresh", last_activity_at: ago(10), idle_seconds: 5000 };   // read long ago, active 10s ago
+  const stale = { id: "stale", last_activity_at: ago(900), idle_seconds: 1 };      // read a moment ago, active 15m ago
+  if (!(cmp(fresh, stale) < 0)) fail("the activity sort followed a stale idle_seconds over last_activity_at");
+  const stamp = ago(60);
+  for (let i = 0; i < 200; i++) {
+    if (cmp({ id: "x", last_activity_at: stamp }, { id: "y", last_activity_at: stamp }) !== 0) { fail("two cards with one stamp did not tie exactly"); break; }
+  }
+  const none = { id: "none" };
+  if (!(cmp(none, fresh) > 0) || !(cmp(fresh, none) < 0) || cmp(none, { id: "none2" }) !== 0) fail("a card with neither field is not the quietest, steadily");
+  if (!(cmp({ id: "a", idle_seconds: 3 }, { id: "b", idle_seconds: 9 }) < 0)) fail("idle_seconds is not the fallback for a card with no stamp");
+  const sorted = [none, fresh, stale, { id: "idle", idle_seconds: 30 }].sort((a, b) => cmp(a, b) || cardTieBreak(a, b)).map(t => t.id).join();
+  if (sorted !== "fresh,idle,stale,none") fail("the activity sort came out " + sorted + ", wanted fresh,idle,stale,none");
+}
+
 // Pass sort mode in a mutable object so tests can toggle it. Stub waiting
 // state, live-activity and labels, whose own behavior is tested elsewhere (the
 // activity ordering itself is covered by the headless strip test). `workingNow`
 // reads the same live badge the sort now leads with; here it answers off a
 // fixture field so the tie fixtures, which carry none, all read as not working.
 const strip = new Function("isWaiting", "workingNow", "terminalLabel", "mode",
-  tieBreak + "\n" + lift("function termOrder(", "\n}") +
+  tieBreak + "\n" + activity + "\n" + lift("function termOrder(", "\n}") +
   "\nreturn (tasks) => { sortByActivity = mode.on; return termOrder(tasks); };")(
   (t) => t.status === "needs-input", (t) => !!t.working,
   (t) => t.label || "", (globalThis.__mode = { on: true }));

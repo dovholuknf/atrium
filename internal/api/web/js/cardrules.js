@@ -39,15 +39,40 @@ function cardProjectOf(task) {
   try { return String(cardProjectRule(task) ?? ""); } catch (e) { return ""; }
 }
 
-// Seconds since the card last did anything: the list's `idle_seconds`, else worked out from `last_activity_at`.
-function cardIdleSeconds(t) {
-  if (t && typeof t.idle_seconds === "number") return t.idle_seconds;
+// Seconds since the card last did anything, as of `now`. `last_activity_at` is a fact about the card and is preferred.
+// `idle_seconds` is a count taken when the row was read, so rows read at different times (a list a minute old beside a row an
+// event just replaced) cannot be compared by it. It is the fallback for a card with no stamp, and a card with neither is
+// the quietest there is.
+function cardIdleSeconds(t, now) {
   const at = Date.parse(t && t.last_activity_at);
-  return isNaN(at) ? Infinity : Math.max(0, (Date.now() - at) / 1000);
+  // Not clamped: a stamp a little ahead of this clock is still ordered ahead of one a little behind it.
+  if (!isNaN(at)) return ((now == null ? Date.now() : now) - at) / 1000;
+  if (t && typeof t.idle_seconds === "number") return t.idle_seconds;
+  return Infinity;
 }
 
-// Most recently active first, the board's "last active" sort.
-function cardActivityCmp(a, b) { return cardIdleSeconds(a) - cardIdleSeconds(b); }
+// Seconds the card has been waiting for the operator, as of `now`. The daemon makes `wait_seconds` the same way it makes
+// `idle_seconds` (time since a stamp, at the moment the row is serialised), so it goes stale the same way. `waiting_since` is the
+// stamp and is preferred. A card that is not waiting has neither and reads 0.
+function cardWaitSeconds(t, now) {
+  const at = Date.parse(t && t.waiting_since);
+  if (!isNaN(at)) return ((now == null ? Date.now() : now) - at) / 1000;
+  return t && typeof t.wait_seconds === "number" ? t.wait_seconds : 0;
+}
+
+// A count of seconds for display: never negative, and 0 where there is nothing to count.
+function cardSecs(x) { return isFinite(x) ? Math.max(0, x) : 0; }
+
+// The idle age to show a person or to decide on: the same number the sort placed the card by, as a plain count of seconds
+// that is never negative or infinite. A card with no stamp at all reads 0.
+function cardIdleAge(t, now) { return cardSecs(cardIdleSeconds(t, now)); }
+
+// Most recently active first, the board's "last active" sort and the phone page's. One `now` for both cards of a comparison,
+// so two cards with the same stamp tie exactly and the caller's tie break decides.
+function cardActivityCmp(a, b) {
+  const now = Date.now(), x = cardIdleSeconds(a, now), y = cardIdleSeconds(b, now);
+  return x === y ? 0 : x - y;
+}
 
 // Two group names in the default order, alphabetical with anything ungrouped last.
 let cardGroupRule;
