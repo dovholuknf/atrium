@@ -171,6 +171,10 @@ func NewProxy(hub *Hub, board fs.FS, boardID string, room func() string) *Proxy 
 			// bare id and knows nothing about `room~id`, so sending the tagged
 			// form would be a 404 on every card clicked from an aggregate list.
 			r.Out.URL.Path = untag(r.Out.URL.Path)
+			// A TAGGED PULL ANSWER IS READ AND REWRITTEN, so it must not arrive compressed. See retagPR.
+			if t, _ := r.Out.Context().Value(taggedKey{}).(string); t != "" && prIDIn(r.Out.URL.Path) != "" {
+				r.Out.Header.Del("Accept-Encoding")
+			}
 			// The browser's Host is forwarded, so anything building a link
 			// builds one pointing at the hub, which is the address a browser
 			// can reach. Nothing in the room reads it today, which is what
@@ -272,6 +276,9 @@ func (p *Proxy) roomFor(r *http.Request) (name string, named bool) {
 	if room, _ := splitTag(cardIDIn(r.URL.Path)); room != "" {
 		return room, true
 	}
+	if room, _ := splitTag(prIDIn(r.URL.Path)); room != "" {
+		return room, true
+	}
 	if v := strings.TrimSpace(r.Header.Get(RoomHeader)); v != "" {
 		return v, true
 	}
@@ -345,6 +352,13 @@ func cardIDIn(path string) string {
 // untag rewrites `/v1/tasks/room~id/...` back to `/v1/tasks/id/...` on the way
 // to a room, so the room sees the id it minted and needs to know nothing.
 func untag(path string) string {
+	// A pull row's `room~pr_...` comes off the same way. See pulls.go.
+	if id := prIDIn(path); id != "" {
+		if room, bare := splitTag(id); room != "" {
+			return strings.Replace(path, "/v1/prs/"+id, "/v1/prs/"+bare, 1)
+		}
+		return path
+	}
 	id := cardIDIn(path)
 	if id == "" {
 		return path
@@ -515,6 +529,10 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r, placed = p.placeCard(w, r); !placed {
 		return
 	}
+	// A REQUEST THAT NAMES A PULL REVIEW GOES WHERE THE REVIEW IS. See pulls.go.
+	if r, placed = p.placePR(w, r); !placed {
+		return
+	}
 	// A ROOM ON ITS WAY OUT STARTS NOTHING NEW.
 	//
 	// That is the whole difference between marking a room for deletion and
@@ -618,6 +636,10 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// lands on the hub rather than being refused for want of a room. Anything
 		// else about `/v1/settings` falls through to the borrow below unchanged.
 		if p.hubSettings(w, r) {
+			return
+		}
+		// The pulls index is merged at the hub, with counts. See pulls.go.
+		if p.pullsList(w, r) {
 			return
 		}
 		if p.aggregate(w, r, r.URL.Path) {
@@ -775,6 +797,10 @@ func (p *Proxy) rewrite(res *http.Response) error {
 	}
 	if err := p.rewriteOldRoom(res); err != nil {
 		return err
+	}
+	// A pull row's answer has its own `pr` object to tag and a findings list that must not be re-marshalled.
+	if res.Request != nil && prIDIn(res.Request.URL.Path) != "" {
+		return p.retagPR(res)
 	}
 	return p.retagCard(res)
 }

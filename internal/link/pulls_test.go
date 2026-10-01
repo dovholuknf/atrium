@@ -412,3 +412,241 @@ func TestTheFanInCarriesAnEventKindItDoesNotKnow(t *testing.T) {
 		t.Errorf("a bare row came out %s", p.Data)
 	}
 }
+
+// ── the ALL view ─────────────────────────────────────────
+
+// jsonOf decodes a body into an object.
+func jsonOf(t *testing.T, raw string) map[string]any {
+	t.Helper()
+	var obj map[string]any
+	if err := json.Unmarshal([]byte(raw), &obj); err != nil {
+		t.Fatalf("not an object: %s", raw)
+	}
+	return obj
+}
+
+// listIDs is the ids of a merged list, in order.
+func listIDs(t *testing.T, obj map[string]any) []string {
+	t.Helper()
+	var ids []string
+	rows, _ := obj["prs"].([]any)
+	for _, r := range rows {
+		ids = append(ids, r.(map[string]any)["id"].(string))
+	}
+	return ids
+}
+
+func allPulls() (*pullsRoom, *pullsRoom) {
+	a := &pullsRoom{rows: []map[string]any{
+		pullsRow("pr_a1", "ready", "2026-10-01T14:00:00Z"),
+		pullsRow("pr_a2", "running", "2026-10-01T16:00:00Z"),
+	}}
+	a.rows[1]["walker_task"] = "card-a2"
+	b := &pullsRoom{rows: []map[string]any{
+		pullsRow("pr_b1", "failed", "2026-10-01T14:00:00Z"),
+		pullsRow("pr_b2", "ready", "2026-10-01T15:00:00Z"),
+	}}
+	return a, b
+}
+
+// THE ALL VIEW'S LIST: every room's rows with the room and a tagged id, a walker's card id tagged, the counts and the
+// nav count summed, newest first with the tagged id breaking a tie, and the query sent to every room as it came.
+func TestTheAllViewMergesEveryRoomsPulls(t *testing.T) {
+	a, b := allPulls()
+	front, _, done := two(t, a, b)
+	defer done()
+
+	code, body, _ := pullsDo(t, http.MethodGet, front.URL+"/v1/prs?state=ready&state=running&archived=1", "", nil)
+	if code != 200 {
+		t.Fatalf("list = %d %s", code, body)
+	}
+	obj := jsonOf(t, body)
+	// pr_a2 16:00, pr_b2 15:00, then the 14:00 tie, where the larger tagged id comes first.
+	want := []string{"alpha~pr_a2", "beta~pr_b2", "beta~pr_b1", "alpha~pr_a1"}
+	if got := listIDs(t, obj); strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("order = %v, want %v", got, want)
+	}
+	rows := obj["prs"].([]any)
+	first := rows[0].(map[string]any)
+	if first["room"] != "alpha" || first["walker_task"] != "alpha~card-a2" {
+		t.Errorf("the first row = %v", first)
+	}
+	if second := rows[1].(map[string]any); second["room"] != "beta" || second["walker_task"] != "" {
+		t.Errorf("an empty walker_task was touched: %v", second)
+	}
+	counts := obj["counts"].(map[string]any)
+	if counts["ready"] != float64(2) || counts["running"] != float64(1) || counts["failed"] != float64(1) ||
+		counts["queued"] != float64(0) || counts["aborted"] != float64(0) || counts["fetching"] != float64(0) {
+		t.Errorf("counts = %v", counts)
+	}
+	if obj["nav_count"] != float64(3) {
+		t.Errorf("nav_count = %v, want ready + failed over both rooms", obj["nav_count"])
+	}
+	if _, has := obj["rooms_quiet"]; has {
+		t.Errorf("a room was called quiet: %v", obj["rooms_quiet"])
+	}
+	const q = "/v1/prs?state=ready&state=running&archived=1"
+	if a.count(http.MethodGet, q) != 1 || b.count(http.MethodGet, q) != 1 {
+		t.Errorf("the query did not reach both rooms as sent: %+v %+v", a.requests(), b.requests())
+	}
+}
+
+// A room that errors is quiet and the rest draws. A room on a build with no pulls answers 404, which is an answer: it
+// adds nothing, is not quiet, and is named apart.
+func TestAQuietPullsRoomDoesNotEmptyTheList(t *testing.T) {
+	a, b := allPulls()
+	b.sick = true
+	front, _, done := two(t, a, b)
+	code, body, _ := pullsDo(t, http.MethodGet, front.URL+"/v1/prs", "", nil)
+	done()
+	obj := jsonOf(t, body)
+	if code != 200 || strings.Join(listIDs(t, obj), ",") != "alpha~pr_a2,alpha~pr_a1" {
+		t.Fatalf("a sick room emptied the list: %d %s", code, body)
+	}
+	if q, _ := obj["rooms_quiet"].([]any); len(q) != 1 || q[0] != "beta" {
+		t.Errorf("rooms_quiet = %v, want beta", obj["rooms_quiet"])
+	}
+	if obj["counts"].(map[string]any)["failed"] != float64(0) || obj["nav_count"] != float64(1) {
+		t.Errorf("a quiet room was counted: %v", obj)
+	}
+
+	a, b = allPulls()
+	b.old = true
+	front, _, done = two(t, a, b)
+	defer done()
+	_, body, _ = pullsDo(t, http.MethodGet, front.URL+"/v1/prs", "", nil)
+	obj = jsonOf(t, body)
+	if strings.Join(listIDs(t, obj), ",") != "alpha~pr_a2,alpha~pr_a1" {
+		t.Fatalf("a room with no pulls changed the list: %s", body)
+	}
+	if _, has := obj["rooms_quiet"]; has {
+		t.Errorf("a 404 was called quiet: %v", obj["rooms_quiet"])
+	}
+	if w, _ := obj["rooms_without"].([]any); len(w) != 1 || w[0] != "beta" {
+		t.Errorf("rooms_without = %v, want beta", obj["rooms_without"])
+	}
+}
+
+// With every room empty the answer is the contract's empty index, never null.
+func TestAnEmptyAllViewPullsListIsNotNull(t *testing.T) {
+	front, _, done := two(t, &pullsRoom{}, &pullsRoom{})
+	defer done()
+	_, body, _ := pullsDo(t, http.MethodGet, front.URL+"/v1/prs", "", nil)
+	if !strings.Contains(body, `"prs":[]`) || !strings.Contains(body, `"nav_count":0`) {
+		t.Fatalf("empty list = %s", body)
+	}
+}
+
+// A new review with no room named is the room question, as a new card is. Never fanned out, never guessed.
+func TestANewReviewInTheAllViewAsksWhichRoom(t *testing.T) {
+	a, b := allPulls()
+	front, _, done := two(t, a, b)
+	defer done()
+	code, body, _ := pullsDo(t, http.MethodPost, front.URL+"/v1/prs", `{"url":"https://github.com/openziti/tlsuv/pull/378"}`, nil)
+	obj := jsonOf(t, body)
+	if code != http.StatusConflict || obj["rooms"] == nil || !strings.Contains(body, "pick a room first") {
+		t.Fatalf("post = %d %s", code, body)
+	}
+	if a.count(http.MethodPost, "/v1/prs")+b.count(http.MethodPost, "/v1/prs") != 0 {
+		t.Fatal("a review with no room named reached a room")
+	}
+	// Named, it lands on that room alone.
+	code, _, _ = pullsDo(t, http.MethodPost, front.URL+"/v1/prs", `{"url":"u"}`, map[string]string{RoomHeader: "beta"})
+	if code != http.StatusCreated || b.count(http.MethodPost, "/v1/prs") != 1 || a.count(http.MethodPost, "/v1/prs") != 0 {
+		t.Fatalf("a named room did not get it alone: %d", code)
+	}
+}
+
+// A TAGGED ROW GOES TO ITS ROOM WITH THE BARE ID, and what comes back is tagged. Its findings, its hash and its
+// error bodies are the room's bytes.
+func TestATaggedPullGoesToItsRoomAndComesBackTagged(t *testing.T) {
+	a, b := allPulls()
+	front, _, done := two(t, a, b)
+	defer done()
+
+	code, body, _ := pullsDo(t, http.MethodGet, front.URL+"/v1/prs/beta~pr_b1", "", nil)
+	if code != 200 {
+		t.Fatalf("detail = %d %s", code, body)
+	}
+	row := jsonOf(t, body)["pr"].(map[string]any)
+	if row["id"] != "beta~pr_b1" || row["room"] != "beta" {
+		t.Errorf("the row came back %v", row)
+	}
+	if b.count(http.MethodGet, "/v1/prs/pr_b1") != 1 || len(a.requests()) != 0 {
+		t.Fatalf("the click did not land on beta alone, with the bare id: a %+v b %+v", a.requests(), b.requests())
+	}
+
+	// The findings: pr tagged, everything else the room's bytes (the `&&` and `<` a re-marshal would escape).
+	code, body, h := pullsDo(t, http.MethodGet, front.URL+"/v1/prs/beta~pr_b1/findings", "", nil)
+	if code != 200 || h.Get("ETag") != findingsETag {
+		t.Fatalf("findings = %d etag %q", code, h.Get("ETag"))
+	}
+	const list = `"findings":[{"key":"f-3a9c01d4e2","text":"a && b < c","hash":"7f1c","position":1}]`
+	if !strings.Contains(body, list) {
+		t.Fatalf("the findings were rewritten: %s", body)
+	}
+	if pr := jsonOf(t, body)["pr"].(map[string]any); pr["id"] != "beta~pr_b1" || pr["walker_task"] != "" || pr["room"] != "beta" {
+		t.Errorf("findings pr = %v", pr)
+	}
+	// The repeat is a bare 304, ETag and all.
+	code, body, h = pullsDo(t, http.MethodGet, front.URL+"/v1/prs/beta~pr_b1/findings", "",
+		map[string]string{"If-None-Match": findingsETag})
+	if code != http.StatusNotModified || body != "" || h.Get("ETag") != findingsETag {
+		t.Fatalf("repeat = %d %q %q", code, h.Get("ETag"), body)
+	}
+
+	// A stale write: the room's 409 body unchanged, and the room's request body unchanged.
+	put := `{"text":"a && b < c","hash":"stale","eol":"\r\n"}`
+	code, body, _ = pullsDo(t, http.MethodPut, front.URL+"/v1/prs/beta~pr_b1/findings/f-3a9c01d4e2", put, nil)
+	if code != http.StatusConflict || !strings.Contains(body, `"hash":"9e02"`) || !strings.Contains(body, `"text":"a && b < c\nnow"`) {
+		t.Fatalf("stale put = %d %s", code, body)
+	}
+	if got := b.requests()[len(b.requests())-1]; got.Method != http.MethodPut ||
+		got.URI != "/v1/prs/pr_b1/findings/f-3a9c01d4e2" || got.Body != put {
+		t.Fatalf("beta got %+v", got)
+	}
+
+	// A walker answer tags the row and the card.
+	code, body, _ = pullsDo(t, http.MethodPost, front.URL+"/v1/prs/beta~pr_b1/walker", `{"action":"launch"}`, nil)
+	obj := jsonOf(t, body)
+	if code != http.StatusCreated || obj["task"] != "beta~0f3a-card" ||
+		obj["pr"].(map[string]any)["walker_task"] != "beta~0f3a-card" {
+		t.Fatalf("walker = %d %s", code, body)
+	}
+}
+
+// A PLAIN ID WITH TWO ROOMS IS LOOKED FOR, once: the holder is cached, so a repeat asks nobody. A header names the
+// room outright and asks nobody. An id no room holds is a 404 naming the rooms asked.
+func TestAPlainPullIdFindsItsRoom(t *testing.T) {
+	a, b := allPulls()
+	front, _, done := two(t, a, b)
+	defer done()
+
+	for i := 0; i < 3; i++ {
+		code, body, _ := pullsDo(t, http.MethodGet, front.URL+"/v1/prs/pr_b2", "", nil)
+		if code != 200 || jsonOf(t, body)["pr"].(map[string]any)["id"] != "pr_b2" {
+			t.Fatalf("detail = %d %s", code, body)
+		}
+	}
+	// One probe per room to find it, then the three requests themselves on beta. Alpha was asked once.
+	if got := a.count(http.MethodGet, "/v1/prs/pr_b2"); got > 1 {
+		t.Errorf("alpha was asked %d times, want the holder cached after one lookup", got)
+	}
+	if got := b.count(http.MethodGet, "/v1/prs/pr_b2"); got < 3 {
+		t.Errorf("beta got %d requests for the row", got)
+	}
+
+	before := len(a.requests())
+	code, _, _ := pullsDo(t, http.MethodGet, front.URL+"/v1/prs/pr_a1", "", map[string]string{RoomHeader: "alpha"})
+	if code != 200 || len(a.requests()) != before+1 {
+		t.Errorf("a named room was searched: %d, alpha saw %d", code, len(a.requests())-before)
+	}
+
+	code, body, _ := pullsDo(t, http.MethodGet, front.URL+"/v1/prs/pr_nowhere/retry", "", nil)
+	obj := jsonOf(t, body)
+	if code != http.StatusNotFound || obj["code"] != "not_found" ||
+		!strings.Contains(obj["error"].(string), "pr_nowhere") || !strings.Contains(obj["error"].(string), "alpha") ||
+		!strings.Contains(obj["error"].(string), "beta") {
+		t.Fatalf("an unheld id = %d %s", code, body)
+	}
+}
