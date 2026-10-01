@@ -37,7 +37,7 @@
     <span class="room" id="m-room" hidden></span>
     <span class="grow"></span>
     <span class="live" id="m-live" role="status" aria-label="connecting"></span>
-    <a class="board" href="/" aria-label="open the full board">board</a>
+    <a class="board" id="m-desktop" href="/" aria-label="open the desktop board">desktop board</a>
   </header>
 
   <main class="home" id="m-home">
@@ -123,6 +123,8 @@
     room.hidden = !many;
     if (many) room.textContent = window.mNet.room() || "";
   });
+  // Remembered, so the board root does not send this phone straight back. The board's "phone view" button clears it.
+  document.getElementById("m-desktop").addEventListener("click", function () { try { localStorage.setItem("atrium.m.desktop", "1"); } catch (e) {} });
   window.addEventListener("m-skin", themeColor);
   window.mNet.start();
   themeColor();
