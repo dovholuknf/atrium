@@ -452,6 +452,13 @@
     -webkit-tap-highlight-color: transparent;
   }
   #phone-bell[hidden] { display: none; }
+  /* Shown while the browser keeps sound locked, until the first touch lets it start. See js/notify.js. */
+  #sound-hint {
+    position: fixed; z-index: 40; left: 50%; transform: translateX(-50%); top: calc(env(safe-area-inset-top, 0px) + 56px);
+    min-height: 36px; padding: 0 14px; border: 1px solid var(--sound-hint-line, var(--stroke-dim)); border-radius: 18px;
+    background: var(--sound-hint-bg, var(--shell-0)); color: var(--sound-hint-fg, var(--warn)); font: var(--fs-sm)/1 var(--mono);
+  }
+  #sound-hint[hidden] { display: none; }
   #phone-bell .pb-bell, #phone-bell .pb-mail { position: relative; display: inline-flex; }
   #phone-bell .pb-mail { font-size: 14px; color: var(--teal); }
   #phone-bell .pb-n:empty { display: none; }
