@@ -86,7 +86,7 @@ function withClock(browser) {
     const ctx = await newContext(opts || {});
     if (!(more && more.realClock)) await ctx.addInitScript({ content: CLOCK_INIT });
     // A phone-sized test context would be sent to /m by the board root. Every context opts out unless it is the redirect's own.
-    if (!(more && more.redirect)) await ctx.addInitScript(() => { try { localStorage.setItem("atrium.m.desktop", "1"); } catch (e) {} });
+    if (!(more && more.redirect)) await ctx.addInitScript(() => { try { sessionStorage.setItem("atrium.m.desktop", "1"); } catch (e) {} });
     return ctx;
   };
   browser.newPage = async opts => {
@@ -14865,20 +14865,82 @@ async function phoneRedirectSection(browser, base) {
       await r.ctx.close();
     }
     // the opt-out keeps the board, shows the way back, and the way back clears it
-    let r = await open(phone, "/", () => { if (!sessionStorage.getItem("seeded")) { sessionStorage.setItem("seeded", "1"); localStorage.setItem("atrium.m.desktop", "1"); } });
+    let r = await open(phone, "/", () => { if (!sessionStorage.getItem("seeded")) { sessionStorage.setItem("seeded", "1"); sessionStorage.setItem("atrium.m.desktop", "1"); } });
     if (r.where !== "/") fail("phoneRedirect: an opted-out phone was sent to " + r.where);
     await r.p.evaluate(() => openToastLog());
     if (!(await r.p.isVisible("#toastlog-phone"))) fail("phoneRedirect: no way back to the phone view");
     else {
       await r.p.tap("#toastlog-phone");
       await r.p.waitForFunction(() => location.pathname === "/m/", null, { timeout: slow(5000) }).catch(() => fail("phoneRedirect: phone view did not go to /m"));
-      if (await r.p.evaluate(() => localStorage.getItem("atrium.m.desktop"))) fail("phoneRedirect: phone view did not clear the opt-out");
+      if (await r.p.evaluate(() => sessionStorage.getItem("atrium.m.desktop"))) fail("phoneRedirect: phone view did not clear the opt-out");
     }
     await r.ctx.close();
     // a pop-out window by its name, and by its opener
     r = await open(phone, "/#term=land-a", () => { window.name = "atrium-term-land-a"; });
     if (r.where !== "/#term=land-a") fail("phoneRedirect: a pop-out was sent to " + r.where);
     await r.ctx.close();
+    // the opt-out belongs to the tab: another tab goes to /m again, and an old localStorage value is ignored and removed
+    {
+      const ctx = await browser.newContext(phone, { redirect: true });
+      await ctx.addInitScript(() => { try { if (!localStorage.getItem("seen-old")) { localStorage.setItem("seen-old", "1"); localStorage.setItem("atrium.m.desktop", "1"); } } catch (e) {} });
+      const route = async p => p.route("**/*", rt => /^\/m\//.test(new URL(rt.request().url()).pathname) && rt.request().resourceType() === "document"
+        ? rt.fulfill({ status: 200, contentType: "text/html", body: "<!doctype html><title>m</title>phone page" }) : rt.continue());
+      const a = await ctx.newPage();
+      await route(a);
+      await a.goto(base + "/", { waitUntil: "load" });
+      await a.waitForTimeout(300);
+      if (new URL(a.url()).pathname !== "/m/") fail("phoneRedirect: an old localStorage opt-out was obeyed");
+      if (await a.evaluate(() => localStorage.getItem("atrium.m.desktop"))) fail("phoneRedirect: the old localStorage opt-out was not removed");
+      await a.evaluate(() => sessionStorage.setItem("atrium.m.desktop", "1"));
+      await a.goto(base + "/", { waitUntil: "load" });
+      await a.waitForTimeout(300);
+      if (new URL(a.url()).pathname !== "/") fail("phoneRedirect: the tab's own opt-out was not kept");
+      const b = await ctx.newPage();
+      await route(b);
+      await b.goto(base + "/", { waitUntil: "load" });
+      await b.waitForTimeout(300);
+      if (new URL(b.url()).pathname !== "/m/") fail("phoneRedirect: a new tab did not go to /m after another tab opted out");
+      await ctx.close();
+    }
+    // touch points alone make a phone, when the media queries do not say coarse
+    {
+      const x = await open({ viewport: { width: 390, height: 844 }, hasTouch: true }, "/");
+      if (x.where !== "/m/") fail("phoneRedirect: a touch screen with no coarse pointer ended on " + x.where);
+      await x.ctx.close();
+    }
+    // ?why=1 says what happened on every path
+    const reason = async (view, at, setup, expect) => {
+      const x = await open(view, at, setup);
+      const said = await x.p.evaluate(() => { const d = document.getElementById("redirect-why"); return d ? d.textContent : ""; });
+      if (!expect.test(said)) fail("phoneRedirect: " + at + " said " + JSON.stringify(said) + ", wanted " + expect);
+      await x.ctx.close();
+      return x;
+    };
+    await reason({ viewport: { width: 1400, height: 900 } }, "/?why=1", null, /^redirect: not redirected, not a phone \(coarse=false any-coarse=false touch-points=0 shortest-side=900\)/);
+    await reason(phone, "/?why=1#term=land-a", () => { window.name = "atrium-term-land-a"; }, /^redirect: not redirected, a pop-out window \(atrium-term-land-a\)/);
+    await reason(phone, "/?why=1", () => { if (!sessionStorage.getItem("seeded")) { sessionStorage.setItem("seeded", "1"); sessionStorage.setItem("atrium.m.desktop", "1"); } }, /^redirect: not redirected, this tab chose the desktop board/);
+    await reason(phone, "/raw?why=1", null, /^redirect: not redirected, no \/m page for \/raw/);
+    {
+      const x = await open(phone, "/?why=1");
+      const said = await x.p.evaluate(() => (document.getElementById("redirect-why") || {}).textContent || "");
+      if (!/^redirect: going to \/m\/ \(coarse=true/.test(said)) fail("phoneRedirect: a redirect said " + JSON.stringify(said));
+      await x.p.waitForFunction(() => location.pathname === "/m/", null, { timeout: slow(9000) }).catch(() => fail("phoneRedirect: the redirect with ?why=1 never happened"));
+      await x.ctx.close();
+    }
+    {
+      // an opener: a window opened by a page of ours
+      const ctx = await browser.newContext(phone, { redirect: true });
+      const parent = await ctx.newPage();
+      await parent.route("**/*", rt => rt.continue());
+      await parent.goto(base + "/raw", { waitUntil: "load" });
+      const [pop] = await Promise.all([ctx.waitForEvent("page"), parent.evaluate(b => window.open(b + "/?why=1"), base)]);
+      await pop.waitForLoadState("load");
+      await pop.waitForTimeout(300);
+      const said = await pop.evaluate(() => (document.getElementById("redirect-why") || {}).textContent || "");
+      if (!/^redirect: not redirected, this window has an opener/.test(said)) fail("phoneRedirect: a window with an opener said " + JSON.stringify(said));
+      if (new URL(pop.url()).pathname !== "/") fail("phoneRedirect: a window with an opener was sent to " + pop.url());
+      await ctx.close();
+    }
     // a desktop and a tablet are untouched, and so is a desktop browser window made narrow
     for (const [name, v] of [["desktop", { viewport: { width: 1400, height: 900 } }], ["tablet", { viewport: { width: 820, height: 1180 }, hasTouch: true, isMobile: true }],
       ["narrow desktop", { viewport: { width: 400, height: 800 } }]]) {
@@ -14905,7 +14967,7 @@ async function phoneRedirectSection(browser, base) {
     await p.waitForFunction(() => location.pathname === "/", null, { timeout: slow(8000) }).catch(() => fail("phoneRedirect: the desktop board link did not leave /m"));
     await p.waitForTimeout(400);
     if (new URL(p.url()).pathname !== "/") fail("phoneRedirect: the desktop board link bounced back to " + p.url());
-    if ((await p.evaluate(() => localStorage.getItem("atrium.m.desktop"))) !== "1") fail("phoneRedirect: the link did not set the opt-out");
+    if ((await p.evaluate(() => sessionStorage.getItem("atrium.m.desktop"))) !== "1") fail("phoneRedirect: the link did not set the opt-out");
     // a card the board knew only by id opens on /m from the fragment
     const q = await ctx.newPage();
     await q.goto(st.url + "/m/#term=r-1", { waitUntil: "domcontentloaded" });

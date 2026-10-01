@@ -136,8 +136,8 @@
     room.hidden = !many;
     if (many) room.textContent = window.mNet.room() || "";
   });
-  // Remembered, so the board root does not send this phone straight back. The board's "phone view" button clears it.
-  document.getElementById("m-desktop").addEventListener("click", function () { try { localStorage.setItem("atrium.m.desktop", "1"); } catch (e) {} });
+  // Remembered for this tab, so the board root does not send it straight back. The board's "phone view" button clears it.
+  document.getElementById("m-desktop").addEventListener("click", function () { try { sessionStorage.setItem("atrium.m.desktop", "1"); } catch (e) {} });
   window.addEventListener("m-skin", themeColor);
   window.mNet.start();
   themeColor();
