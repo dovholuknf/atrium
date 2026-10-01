@@ -1063,7 +1063,10 @@ function termRow(t, deep, kid) {
   const secondary = named ? path : "";
   // The hover keeps the whole address and the name whatever the row had room to draw.
   const hover = named ? named + " · " + full + tail : full + tail;
-  const kids = (termKids.get(t.id) || []).map(k => termRow(k, false, true)).join("");
+  const allKids = termKids.get(t.id) || [];
+  const shut = allKids.length > 0 && isFolded(termKidsKey(t));
+  const shown = shut ? allKids.filter(termKidWaits) : allKids;
+  const kids = shown.map(k => termRow(k, false, true)).join("");
   return `
     <div class="card tab ${on ? "on" : ""}${kid ? " kid" : ""}${
            // COLD, NOT GONE. Only ever a pinned row, since an unpinned one
@@ -1098,13 +1101,48 @@ function termRow(t, deep, kid) {
                 : ""
             }</span>
         </div>
-        ${termRowChips(t)}
+        ${termRowChips(t)}${termKidsToggle(t, allKids.length, allKids.length - shown.length, shut)}
       </div>
-    </div>${kids ? `<div class="tkids">${kids}</div>` : ""}`;
+    </div>${kids ?`<div class="tkids">${kids}</div>` : ""}`;
 }
 
 // The spawned cards drawn under each parent row, by parent id. Rebuilt on every render by `termNest`.
 let termKids = new Map();
+
+// A parent's fold lives in the same list as the group folds, keyed by the bare id so a room-set change keeps it.
+// Like the groups it records what is NOT as it comes: a parent comes expanded, so an entry means folded.
+function termKidsKey(t) { return "kids:" + bareId(t.id); }
+
+// Does this child, or anything nested under it, need the human? A folded parent still shows those, so a question is
+// findable without unfolding.
+function termKidWaits(k) {
+  return isWaiting(k) || (termKids.get(k.id) || []).some(termKidWaits);
+}
+
+// The chevron on a parent row. A real button so it takes focus and Enter/Space. Folded, it says how many children
+// are hidden, and a waiting child stays drawn under the row rather than being counted away.
+function termKidsToggle(t, total, hidden, shut) {
+  if (!total) return "";
+  const tip = shut ? "show the cards this one launched" : "hide the cards this one launched";
+  return `<button type="button" class="tkidfold${shut ? " shut" : ""}" aria-expanded="${shut ? "false" : "true"}"
+    aria-label="${tip}" data-tip="${tip}"
+    onclick="event.stopPropagation();toggleKids('${t.id}')"
+    ><span class="tcaret">${shut ? "&#9656;" : "&#9662;"}</span>${shut && hidden ? `<span class="tkidn">${hidden}</span>` : ""}</button>`;
+}
+
+function toggleKids(id) {
+  const key = termKidsKey({ id });
+  const list = foldedColumns();
+  const i = list.indexOf(key);
+  if (i >= 0) list.splice(i, 1); else list.push(key);
+  localStorage.setItem("atrium.folded", JSON.stringify(list));
+  repaintLists();
+}
+
+// A second window follows, as the grouping does. The browser fires this in every OTHER window.
+addEventListener("storage", e => {
+  if (!e.key || e.key === "atrium.folded") repaintLists();
+});
 
 // SPAWNED CARDS FILE UNDER THEIR PARENT, whatever the sort or the grouping. A card tagged atrium:subagent with a
 // spawned_by_id whose parent is in the list is drawn inside the parent's row, so it cannot sit beside it under the

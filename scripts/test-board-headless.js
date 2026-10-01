@@ -16080,6 +16080,78 @@ async function childUnderParentSection(browser, base) {
   if (!bad) console.log("childUnderParent ok");
 }
 
+// A parent row folds its spawned cards. A card that needs the human stays drawn, the fold is remembered per card and
+// followed by a second window, and a bad stored value reads as expanded.
+async function childFoldSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const errors = [];
+  const open = async () => {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(e.message));
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof setTermSortMode === "function" && typeof renderTermList === "function",
+      null, { timeout: slow(15000) });
+    await p.evaluate(() => {
+      const card = (id, at, extra) => ({ id, status: "running", supervised: true, pinned: false, title: id,
+        display_title: id, tags: [], created_at: at, worktree: "/r/p", ...extra });
+      const sub = (id, at, by, status) => card(id, at, { tags: ["atrium:subagent"], spawned_by_id: by, status });
+      const cards = [card("par", "2026-09-01T10:00:00Z"), sub("kid-a", "2026-09-30T10:00:00Z", "par"),
+        sub("kid-b", "2026-09-29T10:00:00Z", "par"), sub("kid-p", "2026-09-28T10:00:00Z", "par", "needs-permission"),
+        card("lone", "2026-09-27T10:00:00Z")];
+      boardCards = async () => cards;
+      switchView("terms");
+    });
+    return p;
+  };
+  const look = p => p.evaluate(async () => {
+    await renderTermList();
+    const row = id => document.querySelector(`#term-list .card.tab[data-id="${id}"]`);
+    const btn = row("par") && row("par").querySelector("button.tkidfold");
+    return {
+      kids: [...document.querySelectorAll("#term-list .tkids .card.tab")].map(c => c.dataset.id).sort().join(),
+      expanded: btn ? btn.getAttribute("aria-expanded") : "none",
+      count: btn ? (btn.querySelector(".tkidn") || {}).textContent || "" : "",
+      loneBtn: !!(row("lone") && row("lone").querySelector("button.tkidfold")),
+      tag: btn ? btn.tagName : ""
+    };
+  });
+  try {
+    const p = await open();
+    let v = await look(p);
+    if (v.expanded !== "true" || v.kids !== "kid-a,kid-b,kid-p") fail("childFold: not expanded by default: " + JSON.stringify(v));
+    if (v.loneBtn) fail("childFold: a chevron on a card with no children");
+    if (v.tag !== "BUTTON") fail("childFold: the chevron is not a button");
+    // Keyboard: focus the button and press Enter.
+    await p.evaluate(() => document.querySelector("#term-list button.tkidfold").focus());
+    await p.keyboard.press("Enter");
+    v = await look(p);
+    if (v.expanded !== "false" || v.kids !== "kid-p") fail("childFold: fold did not hide the running kids: " + JSON.stringify(v));
+    if (v.count !== "2") fail("childFold: folded count is " + JSON.stringify(v.count));
+    // A second window sees it through the storage event.
+    const q = await open();
+    v = await look(q);
+    if (v.expanded !== "false") fail("childFold: the fold did not survive a reload: " + JSON.stringify(v));
+    await p.evaluate(() => document.querySelector("#term-list button.tkidfold").click());
+    await q.waitForFunction(() => document.querySelector("#term-list button.tkidfold").getAttribute("aria-expanded") === "true",
+      null, { timeout: slow(5000) }).catch(() => fail("childFold: a second window did not follow the unfold"));
+    // Every sort.
+    await p.evaluate(() => document.querySelector("#term-list button.tkidfold").click());
+    for (const sort of ["name", "activity", "started"]) {
+      await p.evaluate(s => setTermSortMode(s), sort);
+      v = await look(p);
+      if (v.expanded !== "false" || v.kids !== "kid-p") fail("childFold " + sort + ": " + JSON.stringify(v));
+    }
+    // A bogus stored value reads as expanded.
+    for (const val of ["not json", "{\"a\":1}", "5", "null"]) {
+      await p.evaluate(b => localStorage.setItem("atrium.folded", b), val);
+      v = await look(p);
+      if (v.expanded !== "true" || v.kids !== "kid-a,kid-b,kid-p") fail("childFold: bogus " + val + " gave " + JSON.stringify(v));
+    }
+    if (errors.length) fail("childFold: page errors: " + errors.join(" | "));
+  } finally { await ctx.close(); }
+  if (!bad) console.log("childFold ok");
+}
+
 async function termBoxSection(browser, base) {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
   const p = await ctx.newPage();
@@ -17775,7 +17847,8 @@ async function main() {
       mPull: mPullSection, joinedLive: joinedLiveSection,
       coverPoll: coverPollSection, coverSteps: coverStepsSection, termBox: termBoxSection,
       termDebug: termDebugSection, termSortStarted: termSortStartedSection,
-      noReadyChildren: noReadyChildrenSection, childUnderParent: childUnderParentSection, topNav: topNavSection };
+      noReadyChildren: noReadyChildrenSection, childUnderParent: childUnderParentSection, topNav: topNavSection,
+      childFold: childFoldSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -19870,6 +19943,7 @@ async function main() {
     await noReadyChildrenSection(browser, base);
     await childUnderParentSection(browser, base);
     await topNavSection(browser, base);
+    await childFoldSection(browser, base);
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e));
     if (process.env.DEBUG_HEADLESS && page) {
