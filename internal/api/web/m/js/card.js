@@ -363,6 +363,25 @@
     ["gesturestart", "gesturechange"].forEach(n => els.scroll.addEventListener(n, e => e.preventDefault()));
   }
 
+  // The same pinch on another scroller that sits inside the card, the file viewer's, with no message to hold in place.
+  function bindPinch(el) {
+    const dist = t => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+    let g = null;
+    el.addEventListener("touchstart", e => {
+      if (e.touches.length !== 2) { g = null; return; }
+      g = { d: dist(e.touches), fs: parseFloat(getComputedStyle(q("m-card")).getPropertyValue("--m-fs")) || FS_DEF };
+    }, { passive: true });
+    el.addEventListener("touchmove", e => {
+      if (!g || e.touches.length !== 2) return;
+      e.preventDefault();
+      g.last = setFs(g.fs * dist(e.touches) / (g.d || 1));
+    }, { passive: false });
+    const end = () => { if (g && g.last) { try { localStorage.setItem(FS_KEY, String(g.last)); } catch (e) {} } g = null; };
+    el.addEventListener("touchend", end);
+    el.addEventListener("touchcancel", end);
+    ["gesturestart", "gesturechange"].forEach(n => el.addEventListener(n, e => e.preventDefault()));
+  }
+
   function byHand() { userAt = Date.now(); }
   function onScroll() {
     if (!els || !openId) return;
@@ -458,6 +477,7 @@
   }
 
   function finishClose() {
+    if (window.mViewer) window.mViewer.reset();
     if (MD.release) MD.release();
     els.sheet.hidden = true;
     els.head.innerHTML = els.notices.innerHTML = els.replies.innerHTML = els.extras.innerHTML = els.recap.innerHTML = "";
@@ -709,5 +729,5 @@
     openFromPath();
   }
 
-  window.mCard = { init, open, close, isOpen: () => !!openId, current: () => openId };
+  window.mCard = { init, open, close, bindPinch, isOpen: () => !!openId, current: () => openId };
 })();

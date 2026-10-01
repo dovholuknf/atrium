@@ -333,7 +333,7 @@
     const t = e.target.closest && e.target.closest(".md-img, .md-file, .code-copy");
     if (!t) return;
     if (t.classList.contains("code-copy")) copy(t);
-    else if (t.classList.contains("md-file")) saveFile(t);
+    else if (t.classList.contains("md-file")) { if (window.mViewer) window.mViewer.open(t.dataset.card, t.dataset.path); else saveFile(t); }
     else if (t.dataset.state === "ready") { const i = t.querySelector("img"); if (i) enlarge(i.src, i.alt); }
   });
   // A reply is drawn by innerHTML, so a thumbnail is filled when it arrives. Only where replies are drawn.
@@ -344,5 +344,5 @@
     });
   }
 
-  window.mMd = { render, safeURL, inline, hydrate, release };
+  window.mMd = { render, safeURL, inline, hydrate, release, saveBlob: (blob, name) => { const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 10000); } };
 })();
