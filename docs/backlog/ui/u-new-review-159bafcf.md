@@ -60,3 +60,26 @@ Quality: after the Sonnet switch, the fix is exact and the test covers the case 
 reason from the code was right.
 
 **HUB DEPLOY OK and ROOM DEPLOY OK 727ebe27..d93076a2.**
+
+## Follow-up: 39302b51, the strip lists an unpinned joined card
+
+Range `d93076a2..39302b51`, one commit. The strip filter is now `supervised || pinned || termJoined(t)`, and
+`!t.offline` still comes first.
+
+- `termJoined` is the existing predicate, so a parked or exited card that is not pinned stays out, and a live joined
+  card is listed with its chip and no click. `joinedLive` drives `renderTermList` over unpinned cards with hide
+  agents off and on. It fails on the old filter.
+- Any unlaunched claude session whose SessionStart hook reaches atrium gets a card (`session.go:185`, `Register`),
+  so "joined" here means every live session atrium does not supervise, not only `atrium join`. That is the order's
+  intent, since each such session can ask a question. The volume is small: a read-only GET of the live room board
+  (7781) found one such card.
+- A joined session that ends without a SessionEnd leaves through the reaper: dead when its pid is gone, or after 15
+  quiet minutes with no pid (`reaper.go`). Its row then turns cold, and the filter drops it because it is not pinned.
+- Other readers of the row: dragging and filing read `lastTasks` by id and work for any row. The badge counts
+  `supervised` alone. `reconcileAttached` keys on `supervised`.
+
+No findings. Not run: the headless suite, which is @ui's.
+
+Quality: after the Sonnet switch, this closes the gap @ui named itself, and @ui checked the callers.
+
+**HUB DEPLOY OK and ROOM DEPLOY OK d93076a2..39302b51.**
