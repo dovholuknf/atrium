@@ -2189,8 +2189,8 @@ echo "bin=$Bin"
 # settings.json is round-tripped through ConvertFrom-Json and ConvertTo-Json, so the whole file may be reformatted
 # (indent, spacing) and an ISO date string may change form. The backup holds the original.
 #
-# THE BASH. Windows: `bash.exe` when one is on PATH that is not the WSL launcher in System32, else the first of the
-# usual git-bash and cygwin installs, named in full. macOS and Linux: /bin/bash.
+# THE BASH. Windows: the `bash.exe` on PATH that is not a WSL launcher (System32, WindowsApps), else the first of the
+# usual git-bash and cygwin installs. Either way it is written to settings.json by its full path. macOS and Linux: /bin/bash.
 if (@($Runners + $Install) -contains 'claude') {
     $slSrc = Join-Path $PSScriptRoot 'statusline-command.sh'
     if (-not (Test-Path -LiteralPath $slSrc)) {
@@ -2202,17 +2202,18 @@ if (@($Runners + $Install) -contains 'claude') {
 New-Item -ItemType Directory -Force (Join-Path $HOME '.claude') | Out-Null
 $b = Get-Command bash.exe -All -ErrorAction SilentlyContinue | Where-Object { $_.Source -notmatch '\\(Windows\\System32|WindowsApps)\\' } | Select-Object -First 1
 $bp = $null
-if ($b) { 'bash=bash.exe'; $bp = $b.Source }
+if ($b) { $bp = $b.Source -replace '\\', '/'; "bash=$bp" }
 else {
     foreach ($c in 'C:/Program Files/Git/bin/bash.exe', 'C:/work/tools/cygwin/bin/bash.exe', 'C:/cygwin64/bin/bash.exe', 'C:/msys64/usr/bin/bash.exe') {
         if (Test-Path -LiteralPath $c) { "bash=$c"; $bp = $c; break }
     }
 }
 if ($bp) {
+    $eap = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
     & $bp -c 'command -v jq' 2>&1 | Out-Null
     "jq=$(if ($LASTEXITCODE -eq 0) { 1 } else { 0 })"
-    $ErrorActionPreference = 'Stop'
+    $ErrorActionPreference = $eap
 }
 $f = Join-Path $HOME '.claude\settings.json'
 if (Test-Path -LiteralPath $f) { 'file=' + [Convert]::ToBase64String([IO.File]::ReadAllBytes($f)) }
