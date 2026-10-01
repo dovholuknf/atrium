@@ -46,8 +46,9 @@ cannot land on the row that was under it. The badge reads `data-group` and `data
 `paintBoardSort` now write from their own static keys. Both closed.
 
 Nit: a press that starts on the pill and slides off before release sends `pointerup` and no click or cancel, so
-`data-press` stays set. The pill then stays up after sound has unlocked, until it is tapped. Releasing on
-`pointerup` from the same window listener as the press would cover that.
+`data-press` stays set. The pill then stays up after sound has unlocked, until it is tapped. Releasing it on a
+`pointerup` whose target is not the pill (a slide-off), or on the next press anywhere else, would cover that.
+Releasing on every `pointerup` would bring back the fall-through this commit fixed.
 
 Quality: after the Sonnet switch. @ui found the second-order case itself (the hide on pointerup that let the click
 fall through) and wrote a test that puts the pill over a row. No drop seen.
