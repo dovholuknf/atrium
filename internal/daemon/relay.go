@@ -45,7 +45,13 @@ const relayWait = 45 * time.Second
 // internal/cli, because this package does not import internal/link.
 type Relay interface {
 	Say(ctx context.Context, s RelaySay) (RelayResult, error)
-	Peers(ctx context.Context, all bool) ([]RemotePeer, string, error)
+	// Peers lists the sessions on other rooms. With everywhere it asks for the
+	// cards tagged atrium:everywhere and nothing else.
+	Peers(ctx context.Context, all, everywhere bool) ([]RemotePeer, string, error)
+	// Find looks a bare name up among the cards tagged atrium:everywhere on other
+	// rooms. A read: the result's To and Card name the one match, or it is a
+	// refusal. See docs/rnd/everywhere-card-design.md.
+	Find(ctx context.Context, name string) (RelayResult, error)
 	// Card reads `to` on `room`, and Exit asks it to leave. The result's Task
 	// is the card, and To and Card name it across.
 	Card(ctx context.Context, room, to string, events bool) (RelayResult, error)
@@ -107,6 +113,9 @@ type RemotePeer struct {
 	Where   string `json:"where,omitempty"`
 	Waiting int    `json:"waiting_seconds,omitempty"`
 	Owned   bool   `json:"atrium_owns_terminal"`
+	// Everywhere is set by a hub that knows cards on every room, on the rows that
+	// are there because of it. An older hub never sets it.
+	Everywhere bool `json:"everywhere,omitempty"`
 }
 
 // The three failures a Relay reports, which decide what is held.
@@ -197,7 +206,11 @@ func (d *Daemon) handleSay(w http.ResponseWriter, r *http.Request) {
 	}
 	target, via := d.localTargetVia(name)
 	if target == nil {
-		d.writeMiss(w, strings.TrimSpace(in.From), name, "say", in.Text, in.When, in.Reply)
+		from := strings.TrimSpace(in.From)
+		done, note := d.sayEverywhere(w, r.Context(), from, name, in.Text, in.When, in.Reply, nil)
+		if !done {
+			d.writeMissNote(w, from, name, "say", in.Text, in.When, in.Reply, note)
+		}
 		return
 	}
 	// THE SAME HANDLER, over the same body, so there is one way a local message
@@ -560,12 +573,16 @@ func (d *Daemon) handleRoomPeers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	all := r.URL.Query().Get("all") != "" && r.URL.Query().Get("all") != "0"
+	everywhere := r.URL.Query().Get("everywhere") != "" && r.URL.Query().Get("everywhere") != "0"
 	ctx, cancel := context.WithTimeout(r.Context(), relayWait)
 	defer cancel()
-	list, note, err := rl.Peers(ctx, all)
+	list, note, err := rl.Peers(ctx, all, everywhere)
 	if err != nil {
 		writeJSONErr(w, http.StatusBadGateway, err)
 		return
+	}
+	if everywhere {
+		list = onlyEverywhere(list)
 	}
 	if list == nil {
 		list = []RemotePeer{}
@@ -575,6 +592,88 @@ func (d *Daemon) handleRoomPeers(w http.ResponseWriter, r *http.Request) {
 		body["note"] = note
 	}
 	writeJSONCode(w, http.StatusOK, body)
+}
+
+// onlyEverywhere keeps the rows that carry the flag. A hub that predates the
+// field ignores the ask and answers every room's sessions, none of them marked,
+// and this is what keeps those out of the list.
+func onlyEverywhere(list []RemotePeer) []RemotePeer {
+	var out []RemotePeer
+	for _, p := range list {
+		if p.Everywhere {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// ── a bare name on another room ─────────────────────────────────────────────
+
+// What a miss says when the hub could not be asked.
+const (
+	hubSilentNote = "the hub is not answering, so no card on another room was looked for."
+	hubOldNote    = "the hub is older than cards on every room, so no card on another room was looked for."
+)
+
+// findEverywhere asks the hub for the card tagged atrium:everywhere that `name`
+// means. On a match `room` and `handle` name it. Otherwise `code` is 409 for
+// two or more, and `note` is what to tell the sender: the hub's own sentence for
+// a miss or a 409, or why it could not be asked. Nothing is held, since a name
+// this room cannot resolve may be a typo.
+func (d *Daemon) findEverywhere(ctx context.Context, name string) (room, handle string, code int, note string) {
+	rl := d.relay()
+	if rl == nil {
+		return "", "", 0, ""
+	}
+	cctx, cancel := context.WithTimeout(ctx, relayWait)
+	defer cancel()
+	res, err := rl.Find(cctx, name)
+	switch {
+	case errors.Is(err, ErrRelayOld):
+		return "", "", 0, hubOldNote
+	case err != nil:
+		return "", "", 0, hubSilentNote
+	case !res.OK && strings.Contains(res.Error, "does not know the relay op"):
+		return "", "", 0, hubOldNote
+	case !res.OK && res.Unreachable:
+		return "", "", 0, hubSilentNote
+	case !res.OK:
+		return "", "", res.Code, res.Error
+	}
+	i := strings.LastIndex(res.To, "@")
+	if i <= 0 || i == len(res.To)-1 {
+		return "", "", 0, ""
+	}
+	return res.To[i+1:], res.To[:i], 0, ""
+}
+
+// sayEverywhere is the fall-through of a say or a tell whose bare name missed on
+// this room. One match goes on through sayAcross with its room written out, so
+// holding, `unconfirmed` and the outbox are what they are for a typed
+// `name@room`. Two or more is a 409. It reports whether it answered, and
+// otherwise leaves the miss to the caller, with the note to put on it.
+func (d *Daemon) sayEverywhere(w http.ResponseWriter, ctx context.Context, from, name, text, when string,
+	reply bool, after func(int, map[string]any)) (bool, string) {
+
+	// A say with no sender or no words is refused by sayAcross as it would be
+	// for a typed address, and is not worth a trip to the hub to find out.
+	if from == "" || strings.TrimSpace(text) == "" {
+		return false, ""
+	}
+	room, handle, code, note := d.findEverywhere(ctx, name)
+	switch {
+	case room != "":
+		c, body := d.sayAcross(ctx, from, handle, room, text, when, reply)
+		if after != nil {
+			after(c, body)
+		}
+		writeJSONCode(w, c, body)
+		return true, ""
+	case code == http.StatusConflict:
+		writeJSONCode(w, code, errBody(note))
+		return true, ""
+	}
+	return false, note
 }
 
 // ── one card on another room ────────────────────────────────────────────────

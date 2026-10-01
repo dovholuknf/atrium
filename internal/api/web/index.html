@@ -64,6 +64,7 @@
 <link rel="stylesheet" href="/css/expose2.css">
 <link rel="stylesheet" href="/css/expose3.css">
 <link rel="stylesheet" href="/css/hubnotify.css">
+<link rel="stylesheet" href="/css/hubhosts.css">
 <link rel="stylesheet" href="/css/growl.css">
 <link rel="stylesheet" href="/css/cardurl.css">
 <link rel="stylesheet" href="/m/compose.css">
@@ -79,6 +80,39 @@
      anything is drawn.
      Only when a switch is in flight. An ordinary reload is not covered up,
      because an ordinary reload is not going anywhere. -->
+<!-- A PHONE LANDS ON THE PHONE PAGE. A coarse pointer and a short side under 600px, which a tablet and a desktop are
+     not, sends the board root and a card's address to the matching /m page, with `replace` so Back does not loop. A
+     pop-out window (it has a name made for its card, or an opener) is never sent, and neither is a phone that chose the
+     desktop board: `atrium.m.desktop` is set by the "desktop board" link on /m and cleared by "phone view" in the drawer.
+     In the HEAD so nothing of the board is drawn first. -->
+<script>
+  (function () {
+    try {
+      var p = location.pathname, h = location.hash, m;
+      if (/^\/m(\/|$)/.test(p) || window.opener || /^atrium-term-/.test(window.name)) return;
+      var phone = matchMedia("(pointer: coarse)").matches && Math.min(innerWidth, innerHeight) < 600;
+      if (!phone) return;
+      if (localStorage.getItem("atrium.m.desktop") === "1") {
+        // The way back, a button in the notification drawer that this mark shows. Not drawn over the board, where it would
+        // cover the terminal's keys.
+        document.documentElement.setAttribute("data-opted-out", "1");
+        return;
+      }
+      var to = "";
+      if (p === "/" || p === "/index.html") {
+        // A notification tap is `/?land=<card>&view=&key=`. The card is the point, so it becomes the fragment /m opens, and the
+        // rest of the query goes along with what the notification set removed.
+        var q = new URLSearchParams(location.search), land = q.get("land");
+        q.delete("land"); q.delete("view"); q.delete("key");
+        var rest = q.toString();
+        to = "/m/" + (rest ? "?" + rest : "") + (land ? "#term=" + encodeURIComponent(land) : /^#term=/.test(h) ? h : "");
+      }
+      else if (/^\/alias\/[^/]+\/?$/.test(p) || /^\/room\/[^/]+\/[^/]+\/?$/.test(p)) to = "/m" + p;
+      else if ((m = /^\/room\/([^/]+)\/?$/.exec(p))) { localStorage.setItem("atrium.room", decodeURIComponent(m[1])); to = "/m/"; }
+      if (to) location.replace(to);
+    } catch (e) {}
+  })();
+</script>
 <script>
   try {
     var to = sessionStorage.getItem("atrium.switching");
@@ -1018,6 +1052,8 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
     <div class="grow"><div class="dlg-eyebrow">the tray</div><h2>notifications</h2></div>
     <span id="toastlog-scope" class="hintline" hidden></span>
     <button id="toastlog-toggle" onclick="notifyToggle()">turn off</button>
+    <button id="toastlog-sound" onclick="document.getElementById('sound').click()">sound on</button>
+    <button id="toastlog-phone" onclick="try { localStorage.removeItem('atrium.m.desktop'); } catch (e) {} location.replace('/m/')">phone view</button>
     <button onclick="clearToastLog()">clear</button>
     <button onclick="document.getElementById('toastlog').close()">close</button>
   </div>
@@ -1496,6 +1532,25 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         nobody.</b> That is deliberate: "anyone the provider authenticated" is, on a provider
         with open registration, the whole internet with an extra step.</span>
       <span class="hintline" id="auth-said"></span>
+    </div>
+
+    <!-- The names the hub answers besides its own. Hidden until the hub answers, so a board with no hub never
+         draws it. See js/hubhosts.js. -->
+    <div class="field" id="s-hh-row" hidden>
+      <span class="eyebrow">host names the hub answers</span>
+      <div id="s-hh-list"></div>
+      <div id="s-hh-ignored" hidden></div>
+      <div id="s-hh-env" hidden></div>
+      <div class="picker" id="s-hh-add">
+        <input type="text" id="s-hh-name" placeholder="a name, or *.example.com" spellcheck="false"
+          onkeydown="if (event.key === 'Enter') addHubHost()">
+        <button type="button" onclick="addHubHost()">add</button>
+      </div>
+      <span class="hintline" id="s-hh-ro" hidden>Set on the hub's machine.</span>
+      <span class="hintline" id="s-hh-msg"></span>
+      <span class="hintline">These are the HUB's names. Rooms do not read them. A wildcard is safe only for a
+        domain one operator controls: a dynamic DNS domain is refused, and shows above as ignored with its reason.
+        Applied from the next request, no restart.</span>
     </div>
 
     <!-- THE REDO SURFACE, a coexisting alternate to `expose the board` above.
@@ -3303,6 +3358,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 </dialog>
 
 <script src="/js/cardrules.js"></script>
+<script src="/js/sounds.js"></script>
 <script src="/js/core.js"></script>
 <!-- cardurl.js second: it defines termOnly and cardUrlIsCard, which a dozen later files ask, some from a network
      callback that can run between two script tags. It runs nothing at load. -->
@@ -3340,6 +3396,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/peek.js"></script>
 <script src="/js/settings-spine.js"></script>
 <script src="/js/hubnotify.js"></script>
+<script src="/js/hubhosts.js"></script>
 <script src="/js/themes.js"></script>
 <script src="/js/terminal.js"></script>
 <script src="/js/termcursor.js"></script>

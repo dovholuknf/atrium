@@ -22,6 +22,13 @@ Running now, four workers at once (clint, 2026-09-30 evening: "focus on ui only,
 
 Waiting: item 3 (which bubbles do not work) needs clint's answer.
 
+Next, after u-m-card and u-m-home land (clint, 2026-09-30 evening, by the orchestrator):
+
+5. **/m takes less vertical space** (`u-new-m-compact.md`): a one-line message header (speaker and age), smaller
+   default type, and a pinch that changes the text size only, with native page zoom off.
+6. **Read a card's files on the phone** (`u-new-m-file-viewer.md`): a file path in a message opens a read-only viewer
+   through the card files endpoint. Design to @rnd first.
+
 ## Filed, not queued
 
 - `docs/backlog/ui/u-new-suite-flakes-0930.md`: cacheChip fails in the full run only. heldLine is fixed (fcf3b974).

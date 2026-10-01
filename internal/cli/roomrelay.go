@@ -26,8 +26,8 @@ func (l linkRelay) Say(ctx context.Context, s daemon.RelaySay) (daemon.RelayResu
 	}, nil
 }
 
-func (l linkRelay) Peers(ctx context.Context, all bool) ([]daemon.RemotePeer, string, error) {
-	ans, err := l.room.Relay(ctx, link.RelayRequest{Op: link.RelayPeers, All: all})
+func (l linkRelay) Peers(ctx context.Context, all, everywhere bool) ([]daemon.RemotePeer, string, error) {
+	ans, err := l.room.Relay(ctx, link.RelayRequest{Op: link.RelayPeers, All: all, Everywhere: everywhere})
 	if err != nil {
 		return nil, "", relayErr(err)
 	}
@@ -38,10 +38,14 @@ func (l linkRelay) Peers(ctx context.Context, all bool) ([]daemon.RemotePeer, st
 	for _, p := range ans.Peers {
 		out = append(out, daemon.RemotePeer{
 			Handle: p.Handle, Alias: p.Alias, Card: p.Card, Room: p.Room, Title: p.Title, Status: p.Status,
-			Doing: p.Doing, Where: p.Where, Waiting: p.Waiting, Owned: p.Owned,
+			Doing: p.Doing, Where: p.Where, Waiting: p.Waiting, Owned: p.Owned, Everywhere: p.Everywhere,
 		})
 	}
 	return out, ans.Warning, nil
+}
+
+func (l linkRelay) Find(ctx context.Context, name string) (daemon.RelayResult, error) {
+	return l.reach(ctx, link.RelayRequest{Op: link.RelayFind, To: name})
 }
 
 func (l linkRelay) Card(ctx context.Context, room, to string, events bool) (daemon.RelayResult, error) {

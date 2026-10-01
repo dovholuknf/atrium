@@ -85,6 +85,8 @@ function withClock(browser) {
   browser.newContext = async (opts, more) => {
     const ctx = await newContext(opts || {});
     if (!(more && more.realClock)) await ctx.addInitScript({ content: CLOCK_INIT });
+    // A phone-sized test context would be sent to /m by the board root. Every context opts out unless it is the redirect's own.
+    if (!(more && more.redirect)) await ctx.addInitScript(() => { try { localStorage.setItem("atrium.m.desktop", "1"); } catch (e) {} });
     return ctx;
   };
   browser.newPage = async opts => {
@@ -8770,7 +8772,7 @@ async function eventDrivenSection(browser, base) {
     // ask for nothing.
     counts.clear();
     const clicks = await p.evaluate(() => {
-      const strip = () => document.getElementById("terms").innerHTML;
+      const strip = () => document.getElementById("terms").innerHTML + document.getElementById("gear-term-sort").innerHTML;
       const oneFrame = (act, read) => new Promise(done => {
         const before = read();
         act();
@@ -13104,7 +13106,7 @@ async function mWorkingSection(browser) {
       let b = await box();
       if (b.hidden || b.text !== "thinking") fail(tag + "no thinking line: " + JSON.stringify(b));
       if (b.inChips || /thinking/.test(b.chipText)) fail(tag + "the working text is in the chip row: " + b.chipText);
-      if (b.fs < 18 || b.h < 40) fail(tag + "the line is small: " + JSON.stringify(b));
+      if (b.h > 32 || b.fs < 11) fail(tag + "the line is not a thin strip: " + JSON.stringify(b));
       if (b.anim !== "wk-turn") fail(tag + "the spinner does not animate: " + b.anim);
       if (b.bottom > b.composeTop + 1 || b.composeTop - b.bottom > 40) fail(tag + "the line is not pinned just above the composer: " + JSON.stringify(b));
       if (b.sw > b.iw + 1) fail(tag + "the card scrolls sideways");
@@ -13202,6 +13204,359 @@ async function mOwnMessagesSection(browser) {
   if (!bad) console.log("mOwnMessages ok");
 }
 
+// How many messages fit on the 390x844 phone at once, how wide they are, and what a send leaves behind.
+async function mCompactCount(p) {
+  return p.evaluate(() => {
+    const sc = document.getElementById("m-card-scroll"), r = sc.getBoundingClientRect();
+    const rs = [...document.querySelectorAll("#m-replies .reply")];
+    const th = document.getElementById("m-replies").getBoundingClientRect().width;
+    return { total: rs.length, visible: rs.filter(e => { const b = e.getBoundingClientRect(); return b.top >= r.top - 1 && b.bottom <= r.bottom + 1; }).length,
+      minW: Math.min(...rs.map(e => e.getBoundingClientRect().width / th)),
+      mineW: Math.min(...rs.filter(e => e.classList.contains("mine")).map(e => e.getBoundingClientRect().width / th)),
+      head: rs.map(e => { const h = e.querySelector(".rh"); return h ? Math.round(h.getBoundingClientRect().height) : -1; }),
+      note: (document.querySelector("#m-compose .mc-note") || { offsetHeight: 0 }).offsetHeight,
+      font: parseFloat(getComputedStyle(document.querySelector("#m-replies .reply .md, #m-replies .reply .own")).fontSize) };
+  });
+}
+
+// The composer's buttons and the jump control: no overlap, one line with the input, 40px hit areas, nothing over a message.
+async function mCompactButtons(p, tag) {
+  const r = await p.evaluate(() => {
+    const box = e => { const b = e.getBoundingClientRect(); return { x: b.left, y: b.top, w: b.width, h: b.height, cy: b.top + b.height / 2 }; };
+    const btns = [...document.querySelectorAll("#m-compose .mc-attach, #m-compose .mc-send, #m-jump:not([hidden])")].map(e => ({ n: e.className || e.id, ...box(e) }));
+    const ta = box(document.querySelector("#m-compose textarea"));
+    const sc = document.getElementById("m-card-scroll").getBoundingClientRect();
+    const jump = document.querySelector("#m-jump:not([hidden])");
+    const over = jump ? [...document.querySelectorAll("#m-replies .reply")].some(e => {
+      const r0 = e.getBoundingClientRect(), j = jump.getBoundingClientRect();
+      const b = { left: r0.left, right: r0.right, top: Math.max(r0.top, sc.top), bottom: Math.min(r0.bottom, sc.bottom) };
+      return b.bottom > b.top && b.left < j.right && b.right > j.left && b.top < j.bottom && b.bottom > j.top; }) : false;
+    const row = document.querySelector("#m-compose .mc-row").getBoundingClientRect();
+    return { btns, ta, over, rowH: Math.round(row.height), cam: !!document.querySelector("#m-compose .mc-cam"), sw: document.documentElement.scrollWidth - innerWidth };
+  });
+  if (r.cam) fail(tag + "a camera button is there");
+  if (r.btns.some(b => b.w < 39.5 || b.h < 39.5)) fail(tag + "a button has a tap target under 40px: " + JSON.stringify(r.btns));
+  r.btns.forEach((a, i) => r.btns.slice(i + 1).forEach(b => {
+    if (a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h) fail(tag + "buttons overlap: " + a.n + " and " + b.n);
+  }));
+  r.btns.filter(b => /mc-attach|mc-send/.test(b.n)).forEach(b => {
+    if (Math.abs(b.cy - r.ta.cy) > 2) fail(tag + b.n + " is not on one line with the input: " + Math.round(b.cy) + " vs " + Math.round(r.ta.cy));
+    if (b.x + b.w > r.ta.x && b.x < r.ta.x + r.ta.w) fail(tag + b.n + " overlaps the input");
+  });
+  if (r.over) fail(tag + "the jump control covers a message");
+  if (r.rowH > 46) fail(tag + "the composer is " + r.rowH + "px high when empty");
+  return r;
+}
+
+async function mCompactSection(browser) {
+  const st = mServer({});
+  const c = mCard("cp-1", { alias: "packer", display_title: "packer", status: "needs-input", waiting_since: mIso(2 * M_MIN), seen: { turn_ended_at: mIso(20 * M_MIN) } });
+  st.tasks = [c];
+  const body = "Two lines of an answer here so the bubble is not a single row, it wraps once on a phone.";
+  st.replies["cp-1"] = { source: "transcript", replies: [1, 2, 3, 4, 5, 6].map(i => ({ at: mIso((30 - i * 4) * M_MIN), text: "Reply " + i + ". " + body })) };
+  await st.open();
+  try {
+    const { ctx, p, errors } = await mPage(browser, st, M_VIEWS[0], "");
+    const tag = "mCompact: ";
+    await p.route("**/v1/tasks/cp-1/message", r => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ delivered: "terminal" }) }));
+    await p.evaluate(() => localStorage.setItem("atrium.msent.cp-1", JSON.stringify([
+      { at: new Date(Date.now() - 17 * 60000).toISOString(), text: "my first ask, also long enough to wrap onto a second line on the phone", kind: "sent" },
+      { at: new Date(Date.now() - 9 * 60000).toISOString(), text: "my second ask, also long enough to wrap onto a second line on the phone", kind: "sent" }])));
+    await p.waitForSelector("#m-seg-all", { timeout: slow(10000) });
+    await p.tap("#m-seg-all");
+    await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
+    await p.tap('#m-list .row[data-id="cp-1"]');
+    await p.waitForSelector("#m-replies .reply.mine", { timeout: slow(5000) });
+    await p.waitForTimeout(500);
+    const k = await mCompactCount(p);
+    console.log("mCompact count: " + JSON.stringify(k));
+    await mShot(p, "compact-390");
+    if (k.visible < Number(process.env.M_COMPACT_MIN || 5)) fail(tag + "only " + k.visible + " of " + k.total + " messages fit");
+    if (k.minW < 0.915 || k.mineW < 0.915) fail(tag + "bubbles are too narrow: " + JSON.stringify(k));
+    if (k.head.some(h => h < 0 || h > 20)) fail(tag + "a message has no one-line header: " + JSON.stringify(k.head));
+    const lone = await p.$$eval("#m-replies .reply", els => els.filter(e => [...e.children].some(c => c.tagName === "TIME" || (c.classList.contains("tag")))).length);
+    if (lone) fail(tag + "a time or state sits outside the header");
+    if (k.font > 15) fail(tag + "the default font is " + k.font);
+    await p.fill("#m-compose textarea", "one more");
+    await p.evaluate(() => document.querySelector("#m-compose textarea").dispatchEvent(new Event("input", { bubbles: true })));
+    await p.tap("#m-compose .mc-send");
+    await p.waitForFunction(() => /delivered/.test(document.getElementById("m-replies").textContent), null, { timeout: slow(5000) });
+    await p.waitForTimeout(400);
+    if ((await mCompactCount(p)).note > 0) fail(tag + "a sent line is still above the composer");
+    // the activity shares the row above the composer with the send state, and has no box of its own
+    const act = mCard("cp-1", { alias: "packer", display_title: "packer", status: "running", activity: { what: "tool", tool: "Bash" }, seen: { turn_ended_at: mIso(20 * M_MIN) } });
+    await p.waitForFunction(() => document.getElementById("m-live").classList.contains("on"), null, { timeout: slow(10000) });
+    const t1 = Date.now();
+    while (!st.streams.length && Date.now() - t1 < slow(10000)) await p.waitForTimeout(100);
+    st.send("task", Object.assign({}, act, { row: 1 }));
+    await p.waitForFunction(() => /Bash/.test(document.getElementById("m-working").textContent), null, { timeout: slow(5000) });
+    const row = await p.evaluate(() => {
+      const w = document.getElementById("m-working");
+      return { hidden: w.hidden, text: w.textContent.replace(/\s+/g, " ").trim(), spin: !!w.querySelector(".wk-spin"), h: Math.round(w.getBoundingClientRect().height),
+        bg: getComputedStyle(w).backgroundColor, border: getComputedStyle(w).borderTopWidth,
+        boxes: document.querySelectorAll("#m-card .working, #m-card .activity, #m-card .thinking").length };
+    });
+    console.log("mCompact row: " + JSON.stringify(row));
+    if (!/^sent\s*·\s*running\s+Bash$/.test(row.text) || !row.spin) fail(tag + "the row does not show both the send state and the activity: " + JSON.stringify(row));
+    await mShot(p, "compact-activity-390");
+    if (row.boxes !== 1) fail(tag + "more than one activity block: " + row.boxes);
+    if (row.border !== "0px" || !/^rgba\(0, 0, 0, 0\)|transparent/.test(row.bg)) fail(tag + "the activity row is still a box: " + JSON.stringify(row));
+    if (row.h > 24) fail(tag + "the activity row is not one line: " + row.h);
+    await mCompactButtons(p, tag + "390: ");
+    // the composer text follows the thread's size, with no 16px floor, and the send circle sits inside the border evenly
+    const sz = await p.evaluate(() => {
+      const ta = document.querySelector("#m-compose textarea"), md = document.querySelector("#m-replies .md");
+      const f = () => [parseFloat(getComputedStyle(ta).fontSize), parseFloat(getComputedStyle(md).fontSize)];
+      const a = f();
+      document.getElementById("m-card").style.setProperty("--m-fs", "19px");
+      const b = f();
+      document.getElementById("m-card").style.removeProperty("--m-fs");
+      const row = document.querySelector("#m-compose .mc-row").getBoundingClientRect(), sd = document.querySelector("#m-compose .mc-send"), sb = sd.getBoundingClientRect();
+      const pad = parseFloat(getComputedStyle(sd).paddingLeft);
+      const bg = getComputedStyle(sd).backgroundClip;
+      const svg = sd.querySelector("svg").getBoundingClientRect();
+      return { a, b, right: Math.round(row.right - (sb.right - pad)), top: Math.round((sb.top + pad) - row.top), bottom: Math.round(row.bottom - (sb.bottom - pad)), bg,
+        dx: Math.abs((svg.left + svg.width / 2) - (sb.left + sb.width / 2)), dy: Math.abs((svg.top + svg.height / 2) - (sb.top + sb.height / 2)),
+        edge: getComputedStyle(document.querySelector("#m-replies .reply")).boxShadow };
+    });
+    if (sz.a[0] !== sz.a[1] || sz.b[0] !== 19 || sz.b[1] !== 19) fail(tag + "the composer and thread text sizes differ: " + JSON.stringify(sz));
+    if (Math.abs(sz.right - sz.top) > 1 || Math.abs(sz.top - sz.bottom) > 1 || sz.top < 4) fail(tag + "the send circle inset is uneven: " + JSON.stringify(sz));
+    if (sz.dx > 0.6 || sz.dy > 0.6) fail(tag + "the send arrow is off centre: " + JSON.stringify(sz));
+    if (!/rgb/.test(sz.edge) || /none/.test(sz.edge)) fail(tag + "a bubble has no edge: " + sz.edge);
+    if (await mNoSideways(p)) fail(tag + "the card scrolls sideways");
+    if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+    await ctx.close();
+    // a narrow phone, scrolled up so the jump control shows
+    st.tasks = [mCard("cp-2", { alias: "longer", display_title: "longer", status: "needs-input", waiting_since: mIso(2 * M_MIN), seen: { turn_ended_at: mIso(20 * M_MIN) } })];
+    st.replies["cp-2"] = { source: "transcript", replies: [1, 2, 3, 4, 5, 6].map(i => ({ at: mIso((30 - i * 4) * M_MIN), text: "Reply " + i + ". " + body.repeat(4) })) };
+    const n = await mPage(browser, st, { width: 360, height: 640 }, "");
+    await n.p.waitForSelector("#m-seg-all", { timeout: slow(10000) });
+    await n.p.tap("#m-seg-all");
+    await n.p.waitForSelector("#m-list .row", { timeout: slow(10000) });
+    await n.p.tap('#m-list .row[data-id="cp-2"]');
+    await n.p.waitForSelector("#m-replies .reply", { timeout: slow(5000) });
+    await n.p.waitForSelector("#m-compose textarea", { timeout: slow(5000) });
+    await n.p.evaluate(() => { const e = document.getElementById("m-card-scroll"); e.dispatchEvent(new WheelEvent("wheel", { deltaY: -100 })); e.scrollTop = 0; });
+    await n.p.waitForTimeout(600);
+    await n.p.waitForFunction(() => !document.getElementById("m-jump").hidden, null, { timeout: slow(3000) });
+    await mCompactButtons(n.p, tag + "360: ");
+    await mShot(n.p, "compact-jump-360");
+    if (await mNoSideways(n.p)) fail(tag + "360: the card scrolls sideways");
+    await n.ctx.close();
+  } finally { await st.close(); }
+  if (!bad) console.log("mCompact ok");
+}
+
+async function mPinchSection(browser) {
+  const st = mServer({});
+  const c = mCard("pn-1", { alias: "zoomer", display_title: "zoomer", status: "needs-input", waiting_since: mIso(2 * M_MIN), seen: { turn_ended_at: mIso(20 * M_MIN) } });
+  st.tasks = [c];
+  st.replies["pn-1"] = { source: "transcript", replies: Array.from({ length: 10 }, (_, i) => ({ at: mIso((60 - i * 4) * M_MIN), text: "Reply " + i + ". " + "words go here and wrap. ".repeat(6) })) };
+  await st.open();
+  try {
+    const { ctx, p, errors } = await mPage(browser, st, M_VIEWS[0], "");
+    const tag = "mPinch: ";
+    await p.waitForSelector("#m-seg-all", { timeout: slow(10000) });
+    await p.tap("#m-seg-all");
+    await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
+    await p.tap('#m-list .row[data-id="pn-1"]');
+    await p.waitForSelector("#m-replies .reply", { timeout: slow(5000) });
+    await p.waitForTimeout(500);
+    const meta = await p.$eval('meta[name=viewport]', m => m.content);
+    if (!/user-scalable=no/.test(meta) || !/maximum-scale=1/.test(meta)) fail(tag + "the browser pinch is not off: " + meta);
+    if (await p.$eval("#m-card-scroll", e => getComputedStyle(e).touchAction) !== "pan-y") fail(tag + "touch-action does not stop the browser pinch");
+    const state = () => p.evaluate(() => {
+      const sc = document.getElementById("m-card-scroll"), r = sc.getBoundingClientRect();
+      const mid = [...document.querySelectorAll("#m-replies .reply")].find(e => { const b = e.getBoundingClientRect(); return b.top > r.top + 150 && b.bottom < r.bottom - 100; });
+      return { fs: parseFloat(getComputedStyle(document.querySelector("#m-replies .md")).fontSize), mid: mid ? mid.textContent.slice(0, 20) : "",
+        midTop: mid ? Math.round(mid.getBoundingClientRect().top) : 0, comp: Math.round(document.querySelector("#m-compose .mc-send").getBoundingClientRect().width),
+        head: Math.round(document.querySelector("#m-replies .rh").getBoundingClientRect().height), sw: sc.scrollWidth - sc.clientWidth,
+        key: localStorage.getItem("atrium.mfs") };
+    });
+    const pinch = (from, to) => p.evaluate(({ from, to }) => {
+      const sc = document.getElementById("m-card-scroll"), r = sc.getBoundingClientRect(), cy = r.top + r.height / 2, cx = r.left + r.width / 2;
+      const mk = (type, d) => {
+        const ts = [-1, 1].map((k, i) => new Touch({ identifier: i + 1, target: sc, clientX: cx + k * d / 2, clientY: cy }));
+        const ev = new TouchEvent(type, { touches: type === "touchend" ? [] : ts, targetTouches: ts, changedTouches: ts, bubbles: true, cancelable: true });
+        sc.dispatchEvent(ev);
+        return ev.defaultPrevented;
+      };
+      mk("touchstart", from);
+      let prevented = false;
+      for (let i = 1; i <= 8; i++) prevented = mk("touchmove", from + (to - from) * i / 8);
+      mk("touchend", to);
+      return prevented;
+    }, { from, to });
+    const a = await state();
+    if (!a.mid) fail(tag + "no message in the middle to hold");
+    const prevented = await pinch(100, 200);
+    if (!prevented) fail(tag + "the pinch was not caught");
+    await p.waitForTimeout(200);
+    const b = await state();
+    if (b.fs <= a.fs + 3) fail(tag + "spreading did not grow the text: " + a.fs + " to " + b.fs);
+    if (b.comp !== a.comp || b.head !== a.head) fail(tag + "the composer or header changed size: " + JSON.stringify([a, b]));
+    if (b.sw > 0) fail(tag + "the card scrolls sideways after the pinch");
+    if (b.key !== String(b.fs)) fail(tag + "the size was not kept: " + b.key);
+    await pinch(300, 10);
+    const lo = await state();
+    if (lo.fs !== 11) fail(tag + "the floor is 11 px, got " + lo.fs);
+    await pinch(10, 900);
+    const hi = await state();
+    if (hi.fs !== 24) fail(tag + "the ceiling is 24 px, got " + hi.fs);
+    // the size survives a reload, and the message under the fingers stays put while it changes
+    await p.goto(st.url + "/m/", { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#m-seg-all", { timeout: slow(10000) });
+    await p.tap("#m-seg-all");
+    await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
+    await p.tap('#m-list .row[data-id="pn-1"]');
+    await p.waitForSelector("#m-replies .reply", { timeout: slow(5000) });
+    await p.waitForTimeout(400);
+    if ((await state()).fs !== 24) fail(tag + "the size did not survive a reload");
+    await p.evaluate(() => { document.getElementById("m-card-scroll").scrollTop = 600; });
+    await p.waitForTimeout(300);
+    const held = await p.evaluate(() => {
+      const sc = document.getElementById("m-card-scroll"), r = sc.getBoundingClientRect(), cy = r.top + r.height / 2, cx = r.left + r.width / 2;
+      const at = document.elementFromPoint(cx, cy).closest(".reply");
+      const before = at.getBoundingClientRect().top;
+      const t = d => [-1, 1].map((k, i) => new Touch({ identifier: i + 1, target: at, clientX: cx + k * d / 2, clientY: cy }));
+      const fire = (type, d) => sc.dispatchEvent(new TouchEvent(type, { touches: t(d), targetTouches: t(d), changedTouches: t(d), bubbles: true, cancelable: true }));
+      fire("touchstart", 200); fire("touchmove", 120); fire("touchmove", 100);
+      return Math.abs(at.getBoundingClientRect().top - before);
+    });
+    if (held > 3) fail(tag + "the message under the pinch moved by " + held + " px");
+    if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+    await ctx.close();
+  } finally { await st.close(); }
+  if (!bad) console.log("mPinch ok");
+}
+
+async function mPromptsSection(browser) {
+  const st = mServer({});
+  const c = mCard("pr-1", { alias: "prompter", display_title: "prompter", status: "needs-input", waiting_since: mIso(2 * M_MIN), seen: { turn_ended_at: mIso(20 * M_MIN) } });
+  st.tasks = [c];
+  st.replies["pr-1"] = { source: "transcript", replies: [
+    { at: mIso(30 * M_MIN), text: "Old reply." }, { at: mIso(5 * M_MIN), text: "Newest reply." }],
+    prompts: [
+      { at: mIso(25 * M_MIN), text: "operator says <b>hi</b>", truncated: false, kind: "operator" },
+      { at: mIso(20 * M_MIN), text: "[atrium] scout says: found it", truncated: false, kind: "peer" },
+      { at: mIso(15 * M_MIN), text: "/compact", truncated: false, kind: "command" },
+      { at: mIso(10 * M_MIN), text: "a very long paste", truncated: true, kind: "operator" },
+      { at: mIso(8 * M_MIN), text: "sent from this phone", truncated: false, kind: "operator" }] };
+  await st.open();
+  try {
+    for (const vp of M_VIEWS) {
+      const { ctx, p, errors } = await mPage(browser, st, vp, "");
+      const tag = "mPrompts " + vp.width + ": ";
+      await p.evaluate(() => localStorage.setItem("atrium.msent.pr-1", JSON.stringify([{ at: new Date(Date.now() - 8 * 60000 + 20000).toISOString(), text: "sent from this phone", kind: "sent" }])));
+      await p.waitForSelector("#m-seg-all", { timeout: slow(10000) });
+      await p.tap("#m-seg-all");
+      await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
+      await p.tap('#m-list .row[data-id="pr-1"]');
+      await p.waitForSelector("#m-replies .reply.prompt", { timeout: slow(5000) });
+      const rows = await p.$$eval("#m-replies .reply", els => els.map(e => ({
+        cls: e.className, src: (e.querySelector(".src") || {}).textContent || "", text: (e.querySelector(".own, .md") || {}).textContent || "",
+        cut: !!e.querySelector(".cut"), html: e.innerHTML })));
+      const texts = rows.map(r => r.text.trim());
+      const want = ["Old reply.", "operator says <b>hi</b>", "found it", "/compact", "a very long paste", "sent from this phone", "Newest reply."];
+      if (JSON.stringify(texts) !== JSON.stringify(want)) fail(tag + "thread order or content wrong: " + JSON.stringify(texts));
+      if (rows[1].src !== "you" || !/mine/.test(rows[1].cls)) fail(tag + "operator prompt not marked as you");
+      if (rows[1].html.indexOf("<b>") >= 0) fail(tag + "prompt text was not escaped");
+      if (rows[2].src !== "scout" || !/peer/.test(rows[2].cls)) fail(tag + "peer prompt not named: " + rows[2].src);
+      if (!/command/.test(rows[3].cls)) fail(tag + "command prompt not a command row");
+      if (!rows[4].cut || rows[1].cut) fail(tag + "cut marker wrong");
+      if (rows.filter(r => r.text.trim() === "sent from this phone").length !== 1) fail(tag + "the local own row was not dropped");
+      await mShot(p, "prompts-" + vp.width);
+      if (await mNoSideways(p)) fail(tag + "the card scrolls sideways");
+      if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+      await ctx.close();
+    }
+  } finally { await st.close(); }
+  if (!bad) console.log("mPrompts ok");
+}
+
+// Typing a long message must not move the thread: not on a keystroke, not when the composer grows a line, not when the
+// keyboard comes and goes.
+async function mTypeSteadySection(browser) {
+  const st = mServer({});
+  const c = mCard("ty-1", { alias: "typist", display_title: "typist", status: "needs-input", waiting_since: mIso(2 * M_MIN), seen: { turn_ended_at: mIso(20 * M_MIN) } });
+  st.tasks = [c];
+  st.replies["ty-1"] = { source: "transcript", replies: Array.from({ length: 10 }, (_, i) => ({ at: mIso((60 - i * 4) * M_MIN), text: "Reply " + i + ". " + "words go here and wrap onto more lines. ".repeat(8) })) };
+  await st.open();
+  try {
+    const { ctx, p, errors } = await mPage(browser, st, M_VIEWS[0], "");
+    const tag = "mTypeSteady: ";
+    await p.waitForSelector("#m-seg-all", { timeout: slow(10000) });
+    await p.tap("#m-seg-all");
+    await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
+    await p.tap('#m-list .row[data-id="ty-1"]');
+    await p.waitForSelector("#m-replies .reply", { timeout: slow(5000) });
+    await p.waitForSelector("#m-compose textarea", { timeout: slow(5000) });
+    await p.waitForTimeout(600);
+    const look = () => p.evaluate(() => {
+      const sc = document.getElementById("m-card-scroll"), r = sc.getBoundingClientRect();
+      const first = [...document.querySelectorAll("#m-replies .reply")].find(e => e.getBoundingClientRect().bottom > r.top + 1);
+      return { top: sc.scrollTop, first: first ? first.textContent.slice(0, 14) : "", firstY: first ? Math.round(first.getBoundingClientRect().top - r.top) : 0,
+        boxH: Math.round(document.querySelector("#m-compose textarea").getBoundingClientRect().height) };
+    });
+    for (const where of ["bottom", "middle"]) {
+      if (where === "middle") await p.evaluate(() => { const e = document.getElementById("m-card-scroll"); e.dispatchEvent(new WheelEvent("wheel", { deltaY: -100 })); e.scrollTop = Math.round(e.scrollHeight / 3); });
+      await p.waitForTimeout(300);
+      await p.tap("#m-compose textarea");
+      await p.waitForTimeout(200);
+      const base = await look();
+      const steps = [];
+      for (let line = 0; line < 10; line++) {
+        for (const ch of "line " + line + " of a long message") {
+          await p.keyboard.type(ch);
+          const now = await look();
+          if (now.top !== base.top || now.first !== base.first || now.firstY !== base.firstY) { steps.push({ line, ch, now }); break; }
+        }
+        if (steps.length) break;
+        await p.keyboard.press("Shift+Enter");
+        if (line === 3) await p.setViewportSize({ width: 390, height: 844 - 320 });
+        if (line === 7) await p.setViewportSize({ width: 390, height: 844 });
+        await p.waitForTimeout(60);
+      }
+      if (steps.length) fail(tag + where + ": the thread moved " + JSON.stringify({ base, step: steps[0] }));
+      const end = await look();
+      if (end.boxH > 6 * 20 + 24) fail(tag + where + ": the composer grew past its cap: " + end.boxH);
+      const sc = await p.$eval("#m-compose textarea", t => t.scrollHeight > t.clientHeight && getComputedStyle(t).overflowY === "auto");
+      if (!sc) fail(tag + where + ": a ten line message does not scroll inside the composer");
+      await p.fill("#m-compose textarea", "");
+      await p.evaluate(() => document.querySelector("#m-compose textarea").dispatchEvent(new Event("input", { bubbles: true })));
+      await p.evaluate(() => document.activeElement && document.activeElement.blur());
+    }
+    // typing a word and deleting it frees the thread to follow again, with the box still focused
+    await p.evaluate(() => { const e = document.getElementById("m-card-scroll"); e.scrollTop = e.scrollHeight; });
+    await p.waitForFunction(() => document.getElementById("m-jump").hidden, null, { timeout: slow(3000) });
+    await p.tap("#m-compose textarea");
+    await p.keyboard.type("word");
+    for (let i = 0; i < 4; i++) await p.keyboard.press("Backspace");
+    if (await p.$eval("#m-compose textarea", t => t.value)) fail(tag + "the box did not empty");
+    await p.waitForFunction(() => document.getElementById("m-live").classList.contains("on"), null, { timeout: slow(10000) });
+    const t1 = Date.now();
+    while (!st.streams.length && Date.now() - t1 < slow(10000)) await p.waitForTimeout(100);
+    const at2 = mIso(1 * M_MIN);
+    st.replies["ty-1"] = { source: "transcript", replies: st.replies["ty-1"].replies.concat([{ at: at2, text: "A new reply that must be followed. " + "more ".repeat(60) }]) };
+    st.send("task", Object.assign({}, c, { row: 1, output_at: at2 }));
+    await p.waitForFunction(() => /must be followed/.test(document.getElementById("m-replies").textContent), null, { timeout: slow(5000) });
+    await p.waitForTimeout(300);
+    const gap = await p.evaluate(() => { const e = document.getElementById("m-card-scroll"); return e.scrollHeight - e.scrollTop - e.clientHeight; });
+    if (gap > 4) fail(tag + "an emptied but focused box still holds the thread, gap " + gap);
+    // and the next input pins again
+    await p.keyboard.type("x");
+    const pin = await look();
+    await p.keyboard.type("yz");
+    await p.keyboard.press("Shift+Enter");
+    const pin2 = await look();
+    if (pin2.top !== pin.top) fail(tag + "typing again did not pin the thread: " + JSON.stringify([pin, pin2]));
+    if (await mNoSideways(p)) fail(tag + "the card scrolls sideways");
+    if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+    await ctx.close();
+  } finally { await st.close(); }
+  if (!bad) console.log("mTypeSteady ok");
+}
+
 async function mRecapSheetSection(browser) {
   const st = mServer({});
   const fresh = mCard("rc-fresh", { alias: "fresh", display_title: "fresh", status: "needs-input", waiting_since: mIso(M_MIN),
@@ -13271,7 +13626,7 @@ async function mOutputAtSection(browser) {
       await p.waitForFunction(() => document.getElementById("m-live").classList.contains("on"), null, { timeout: slow(10000) });
       const t1 = Date.now();
       while (!st.streams.length && Date.now() - t1 < slow(10000)) await p.waitForTimeout(100);
-      const reads = () => st.hits.filter(h => h === "out-1?3").length;
+      const reads = () => st.hits.filter(h => h === "out-1?10").length;
       st.hits.length = 0;
       // a newer output_at re-reads once
       const at2 = mIso(2 * M_MIN);
@@ -13495,11 +13850,12 @@ async function mCardUploadSection(browser) {
         await p.evaluate(() => document.querySelector("#m-compose textarea").dispatchEvent(new Event("input", { bubbles: true })));
       };
       const chips = () => p.evaluate(() => Array.from(document.querySelectorAll("#m-compose .mc-file")).map(x => ({ name: x.querySelector(".mc-fname").textContent, st: x.dataset.state, word: x.querySelector(".mc-fstate").textContent })));
-      // the file picker and the camera are both there, and the camera asks for the camera
+      // the file picker is there, takes images and files, and there is no camera button
       const ins = await p.evaluate(() => Array.from(document.querySelectorAll("#m-compose input.mc-input")).map(i => ({ accept: i.accept, capture: i.getAttribute("capture"), multiple: i.multiple })));
-      if (ins.length !== 2 || !ins.some(i => i.multiple && /image/.test(i.accept) && /pdf/.test(i.accept) && i.capture === null) || !ins.some(i => i.capture === "environment" && i.accept === "image/*")) fail(tag + "picker or camera inputs wrong: " + JSON.stringify(ins));
+      if (ins.length !== 1 || !(ins[0].multiple && /image/.test(ins[0].accept) && /pdf/.test(ins[0].accept) && ins[0].capture === null)) fail(tag + "picker input wrong: " + JSON.stringify(ins));
+      if (await p.$("#m-compose .mc-cam")) fail(tag + "the camera button is still there");
       const btns = await p.$$eval("#m-compose .mc-attach", bs => bs.map(b => { const r = b.getBoundingClientRect(); return [r.width, r.height]; }));
-      if (btns.length !== 2 || btns.some(b => b[0] < 36 || b[1] < 40)) fail(tag + "attach buttons are missing or too small: " + JSON.stringify(btns));
+      if (btns.length !== 1 || btns.some(b => b[0] < 40 || b[1] < 40)) fail(tag + "the attach button is missing or too small: " + JSON.stringify(btns));
       if (await mNoSideways(p)) fail(tag + "the card scrolls sideways");
       await mShot(p, "upload-row-" + vp.width);
       // two files from the picker and a pasted image, held in flight
@@ -13612,7 +13968,7 @@ async function mHomeOrderSection(browser) {
   const cards = () => [
     mCard("a-1", { alias: "alpha", worktree: "/g/github/o/one", last_activity_at: mIso(5 * M_MIN) }),
     mCard("b-1", { alias: "bravo", worktree: "/g/github/o/two", status: "done", last_activity_at: mIso(1 * M_MIN) }),
-    mCard("c-1", { alias: "charlie", worktree: "/g/github/o/one", tags: ["origin:agent"], last_activity_at: mIso(30 * M_MIN) }),
+    mCard("c-1", { display_title: "charlie", worktree: "/g/github/o/one", tags: ["origin:agent"], last_activity_at: mIso(30 * M_MIN) }),
     mCard("d-1", { alias: "delta", worktree: "/g/github/o/two", status: "needs-input", waiting_since: mIso(10 * M_MIN), last_activity_at: mIso(10 * M_MIN) }),
   ];
   const names = p => p.$$eval("#m-list .row .name b", e => e.map(x => x.textContent));
@@ -13961,7 +14317,7 @@ async function mReplyPage(browser, st, vp, id) {
   await ctx.route(url => !/^http:\/\/127\.0\.0\.1[:/]/.test(url.href), r => { remote.push(r.request().url()); return r.abort(); });
   const p = await ctx.newPage();
   const errors = [];
-  p.on("pageerror", e => errors.push(String(e)));
+  p.on("pageerror", e => errors.push(String(e) + (process.env.BOOT_STACK ? " " + e.stack : "")));
   await p.goto(st.url + "/m/", { waitUntil: "domcontentloaded" });
   await p.waitForSelector("#m-seg-all", { timeout: slow(10000) });
   await p.tap("#m-seg-all");
@@ -14230,6 +14586,589 @@ async function gearTermListSection(browser, base) {
   if (!bad) console.log("gearTermList ok");
 }
 
+// ── sound on a phone ─────────────────────────────────────────────────────
+// A mobile browser starts audio only from a touch that ENDS or a click, never from one that begins, and it stays locked
+// until then. The fake context follows that rule: resume() works inside touchend, pointerup, click or keydown, and
+// and NOT afterwards and not inside pointerdown or touchstart, which is how iOS behaves (Chrome also lets a later call
+// through once the page has been touched). `__osc` counts the notes that reached it.
+const SOUND_POLICY = () => {
+  window.__osc = 0;
+  let active = 0;
+  ["touchend", "pointerup", "click", "keydown"].forEach(t => addEventListener(t, () => { active++; setTimeout(() => active--, 0); }, true));
+  window.AudioContext = class {
+    constructor() { this.state = "suspended"; this.currentTime = 0; this.destination = {}; this.l = []; }
+    addEventListener(t, f) { this.l.push(f); }
+    resume() { if (active) { this.state = "running"; this.l.forEach(f => f()); return Promise.resolve(); } return Promise.reject(new Error("blocked")); }
+    createGain() { const f = { setValueAtTime() {}, linearRampToValueAtTime() {}, exponentialRampToValueAtTime() {} }; return { gain: f, connect(x) { return x; } }; }
+    createOscillator() { window.__osc++; return { frequency: { setValueAtTime() {} }, connect(x) { return x; }, start() {}, stop() {} }; }
+  };
+};
+
+async function soundPhoneSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landList = [];
+  landPerms = [];
+  try {
+    const tag = "soundPhone: ";
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+    await ctx.addInitScript(SOUND_POLICY);
+    await ctx.addInitScript(() => localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true })));
+    const p = await ctx.newPage();
+    const errors = [];
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base + "/raw", { waitUntil: "load" });
+    await p.waitForFunction(() => typeof alerting !== "undefined", null, { timeout: slow(15000) });
+    await p.waitForTimeout(500);
+    const shown = sel => p.evaluate(s => { const e = document.querySelector(s); return !!e && !e.hidden && e.getClientRects().length > 0; }, sel);
+    if (!(await shown("#sound-hint"))) fail(tag + "no tap-to-enable hint while sound is locked");
+    // one touch is enough
+    await p.tap("body", { position: { x: 195, y: 400 } });
+    await p.waitForTimeout(200);
+    if (await shown("#sound-hint")) fail(tag + "the hint is still up after a touch");
+    await p.evaluate(() => alerting.play("waiting"));
+    if ((await p.evaluate(() => window.__osc)) < 1) fail(tag + "the sound did not play after one touch");
+    // a page the operator cannot see is not one they are reading, whatever hasFocus says
+    const hidden = await p.evaluate(() => {
+      const f = Object.getOwnPropertyDescriptor(Document.prototype, "visibilityState");
+      Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "hidden" });
+      const was = document.hasFocus; document.hasFocus = () => true;
+      const out = focusIsHere();
+      delete document.visibilityState; document.hasFocus = was;
+      return out;
+    });
+    if (hidden) fail(tag + "a hidden page counted as the window being looked at");
+    if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+    await ctx.close();
+  } finally { tasksMode = was; }
+  if (!bad) console.log("soundPhone ok");
+}
+
+// ── the bell on the phone board, in every view ───────────────────────────
+async function phoneBellSection(browser, base) {
+}
+
+// ── a phone's board root lands on /m ─────────────────────────────────────
+// A coarse pointer and a short side under 600px is a phone. A tablet, a desktop, a pop-out window and a phone that opted
+// out are left alone, and the card paths map to their /m twins.
+async function phoneRedirectSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landList = [];
+  landPerms = [];
+  landCard("land-a", { alias: "rnd", room: "claude-sg4", wire_name: "sparta/rnd-director", supervised: true });
+  const raw = fs.readFileSync(path.join(WEB_ROOT, "index.html"));
+  try {
+    for (const at of ["/raw", "/raw#term=land-a", "/alias/rnd"]) {
+      const tag = "phoneBell " + at + ": ";
+      const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+      await ctx.addInitScript(SOUND_POLICY);
+      await ctx.addInitScript(() => localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true })));
+      const p = await ctx.newPage();
+      const errors = [];
+      p.on("pageerror", e => errors.push(String(e)));
+      await p.route("**/*", route => {
+        const rq = route.request();
+        const u = new URL(rq.url());
+        if (u.pathname === "/alias/rnd" && rq.resourceType() === "document") return route.fulfill({ status: 200, contentType: "text/html", body: raw });
+        if (u.pathname === "/v1/tasks/rnd") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(LAND["land-a"]) });
+        return route.continue();
+      });
+      try {
+        await p.goto(base + at, { waitUntil: "load" });
+        await p.waitForTimeout(1200);
+        await p.evaluate(() => recordToLog("a thing", "it happened", "", "", ""));
+        const bell = await p.evaluate(() => [...document.querySelectorAll("#toastlog-open, #phone-bell")].find(e => e.getClientRects().length > 0 && !e.hidden) ? true : false);
+        if (!bell) { fail(tag + "no bell is on screen"); continue; }
+        const count = await p.evaluate(() => [...document.querySelectorAll("#toastlog-open .count, #phone-bell .pb-n")].map(e => e.textContent).join("|"));
+        if (!/1/.test(count)) fail(tag + "the bell shows no unread count: " + count);
+        await p.evaluate(() => openToastLog());
+        await p.waitForSelector("#toastlog[open]", { timeout: slow(3000) });
+        const t = () => p.evaluate(() => ({ label: document.getElementById("toastlog-sound").textContent, muted: JSON.parse(localStorage.getItem(/^#term=|^\/alias\//.test(location.hash) || location.pathname.startsWith("/alias/") ? "atrium.sound.card:land-a" : "atrium.sound") || "{}").muted === true }));
+        const a = await t();
+        await p.tap("#toastlog-sound");
+        const b = await t();
+        if (a.muted || !b.muted || b.label !== "sound off") fail(tag + "the mute toggle did not flip the sound state: " + JSON.stringify([a, b]));
+        await p.tap("#toastlog-sound");
+        if ((await t()).muted) fail(tag + "the mute toggle did not flip back");
+      } finally { await ctx.close(); }
+      if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+    }
+  } finally { tasksMode = was; }
+  if (!bad) console.log("phoneBell ok");
+}
+
+// ── the bell and the sound on /m ─────────────────────────────────────────
+async function mBellSection(browser) {
+  const st = mServer({});
+  st.tasks = [mCard("b-1", { alias: "alpha", display_title: "alpha", status: "running" })];
+  await st.open();
+  try {
+    for (const vp of M_VIEWS) {
+      const tag = "mBell " + vp.width + ": ";
+      const ctx = await browser.newContext({ viewport: vp, hasTouch: true, isMobile: true });
+      await ctx.addInitScript(SOUND_POLICY);
+      const p = await ctx.newPage();
+      const errors = [];
+      p.on("pageerror", e => errors.push(String(e)));
+      await p.goto(st.url + "/m/", { waitUntil: "domcontentloaded" });
+      await p.waitForSelector("#m-list .row, #m-seg-all", { timeout: slow(10000) });
+      await p.waitForFunction(() => window.mNet.loaded(), null, { timeout: slow(8000) });
+      const vis = sel => p.evaluate(s => { const e = document.querySelector(s); return !!e && !e.hidden && e.getClientRects().length > 0; }, sel);
+      if (!(await vis("#m-bell"))) fail(tag + "no bell in the header");
+      if (!(await vis("#m-sound-hint"))) fail(tag + "no tap-to-enable hint while sound is locked");
+      await p.tap("#m-seg-all");
+      await p.waitForTimeout(150);
+      if (await vis("#m-sound-hint")) fail(tag + "the hint is still up after a touch");
+      // a request arrives: the sound plays and the bell counts it
+      st.perms = [{ id: "px" + vp.width, task_id: "b-1", tool: "Bash", command: "ls", requested_at: mIso(0) }];
+      st.send("permission", {});
+      await p.waitForFunction(() => window.__osc > 0, null, { timeout: slow(8000) }).catch(() => fail(tag + "no sound for a new request"));
+      await p.waitForFunction(() => document.getElementById("m-bell-n").textContent === "1", null, { timeout: slow(3000) })
+        .catch(() => fail(tag + "the bell count is " + "not 1"));
+      await p.tap("#m-bell");
+      await p.waitForSelector("#m-log:not([hidden]) .bl-row", { timeout: slow(3000) });
+      if (!/permission needed/.test(await p.textContent("#m-log-list"))) fail(tag + "the log does not list the request");
+      if ((await p.textContent("#m-bell-n")) !== "") fail(tag + "the count did not clear on open");
+      // the mute is the board's own switch, and a muted page stays quiet
+      await p.tap("#m-log-mute");
+      if (!(await p.evaluate(() => JSON.parse(localStorage.getItem("atrium.sound") || "{}").muted === true))) fail(tag + "the mute did not write the shared sound state");
+      const before = await p.evaluate(() => window.__osc);
+      st.perms = [{ id: "py" + vp.width, task_id: "b-1", tool: "Bash", command: "pwd", requested_at: mIso(0) }];
+      st.send("permission", {});
+      await p.waitForFunction(() => document.getElementById("m-log-list") && true, null, { timeout: slow(1000) });
+      await p.waitForTimeout(500);
+      if ((await p.evaluate(() => window.__osc)) !== before) fail(tag + "a muted page made a sound");
+      if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+      await ctx.close();
+    }
+  } finally { await st.close(); }
+  if (!bad) console.log("mBell ok");
+}
+
+// The gear's hub hosts row: the list, add and remove, ignored with why, $ATRIUM_HOSTS read-only, a 403 PUT makes it
+// read-only, and a board with no /_hub/hosts draws no row.
+async function gearHostsSection(browser, base) {
+  const tag = "gearHosts: ";
+  const open = async (mode) => {
+    const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+    const st = { hosts: ["*.shares.zrok.io", "*.duckdns.org"], puts: [], gets: 0 };
+    await ctx.route("**/_hub/hosts", route => {
+      const req = route.request();
+      if (mode === "none") return route.fulfill({ status: 404, body: "" });
+      if (req.method() === "PUT") {
+        if (mode === "remote") return route.fulfill({ status: 403, contentType: "application/json", body: JSON.stringify({ error: "only from the hub's machine" }) });
+        const b = JSON.parse(req.postData());
+        st.puts.push(b.hosts);
+        st.hosts = b.hosts;
+      } else st.gets++;
+      return route.fulfill({ contentType: "application/json", body: JSON.stringify({
+        hosts: st.hosts,
+        ignored: st.hosts.includes("*.duckdns.org") ? [{ name: "*.duckdns.org", why: "dynamic DNS" }] : [],
+        env: ["envhost.example.com"]
+      }) });
+    });
+    const errors = [];
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow, #term-list .card.tab", { state: "attached", timeout: slow(15000) });
+    return { ctx, p, st, errors };
+  };
+  let h = await open("hub");
+  try {
+    const { p, st } = h;
+    await p.click("#gear");
+    await p.evaluate(() => showSettingsPane("expose the board"));
+    await p.waitForFunction(() => !document.getElementById("s-hh-row").hidden, null, { timeout: slow(10000) });
+    const a = await p.evaluate(() => ({
+      items: [...document.querySelectorAll("#s-hh-list .hh-item code")].map(c => c.textContent),
+      why: document.getElementById("s-hh-list").textContent,
+      env: document.getElementById("s-hh-env").textContent,
+      help: document.getElementById("s-hh-row").textContent
+    }));
+    if (a.items.join("|") !== "*.shares.zrok.io|*.duckdns.org") fail(tag + "the list was " + JSON.stringify(a.items));
+    if (!/dynamic DNS/.test(a.why)) fail(tag + "an ignored entry shows no reason: " + a.why);
+    if (!/envhost\.example\.com/.test(a.env)) fail(tag + "the env names are missing: " + a.env);
+    if (await p.$("#s-hh-env button")) fail(tag + "the env names are editable.");
+    if (!/HUB's names/.test(a.help) || !/Rooms do not read them/.test(a.help) || !/wildcard is safe only for a\s+domain one operator controls/.test(a.help)) fail(tag + "the row does not say whose names and when a wildcard is safe.");
+    await p.fill("#s-hh-name", "box.example.org");
+    await p.click("#s-hh-add button");
+    await p.waitForFunction(() => document.querySelectorAll("#s-hh-list .hh-item").length === 3, null, { timeout: slow(5000) })
+      .catch(() => fail(tag + "an added name did not appear."));
+    if (JSON.stringify(st.puts[0]) !== JSON.stringify(["*.shares.zrok.io", "*.duckdns.org", "box.example.org"])) fail(tag + "add PUT " + JSON.stringify(st.puts));
+    await p.click('#s-hh-list button[data-remove="*.duckdns.org"]');
+    await p.waitForFunction(() => document.querySelectorAll("#s-hh-list .hh-item").length === 2, null, { timeout: slow(5000) })
+      .catch(() => fail(tag + "a removed name stayed."));
+    if (JSON.stringify(st.puts[1]) !== JSON.stringify(["*.shares.zrok.io", "box.example.org"])) fail(tag + "remove PUT " + JSON.stringify(st.puts));
+    if (/dynamic DNS/.test((await p.textContent("#s-hh-list")) + (await p.textContent("#s-hh-ignored")))) fail(tag + "the reason stayed after the entry went.");
+    const gets = st.gets;
+    await p.evaluate(() => document.getElementById("settings").close());
+    await p.click("#gear");
+    await p.evaluate(() => showSettingsPane("expose the board"));
+    await p.waitForTimeout(400);
+    if (st.gets <= gets) fail(tag + "opening the gear did not read the hosts again.");
+    if (h.errors.length) fail(tag + "page errors: " + h.errors.join(" | "));
+  } finally { await h.ctx.close(); }
+
+  h = await open("remote");
+  try {
+    const { p } = h;
+    await p.click("#gear");
+    await p.evaluate(() => showSettingsPane("expose the board"));
+    await p.waitForFunction(() => !document.getElementById("s-hh-row").hidden, null, { timeout: slow(10000) });
+    await p.fill("#s-hh-name", "x.example.org");
+    await p.click("#s-hh-add button");
+    await p.waitForFunction(() => !document.getElementById("s-hh-ro").hidden, null, { timeout: slow(5000) })
+      .catch(() => fail(tag + "a 403 did not make the row read-only."));
+    const r = await p.evaluate(() => ({
+      add: getComputedStyle(document.getElementById("s-hh-add")).display,
+      removes: document.querySelectorAll("#s-hh-list button").length,
+      said: document.getElementById("s-hh-ro").textContent
+    }));
+    if (r.add !== "none" || r.removes || !/hub's machine/.test(r.said)) fail(tag + "the read-only row is wrong: " + JSON.stringify(r));
+  } finally { await h.ctx.close(); }
+
+  h = await open("none");
+  try {
+    const { p } = h;
+    await p.click("#gear");
+    await p.evaluate(() => showSettingsPane("expose the board"));
+    await p.waitForTimeout(600);
+    const hidden = await p.evaluate(() => { const r = document.getElementById("s-hh-row"); return r.hidden || r.offsetParent === null; });
+    if (!hidden) fail(tag + "a board with no hub draws the row.");
+  } finally { await h.ctx.close(); }
+  if (!bad) console.log("gearHosts ok");
+}
+
+// ── a phone's board root lands on /m ─────────────────────────────────────
+// A coarse pointer and a short side under 600px is a phone. A tablet, a desktop, a pop-out window and a phone that opted
+// out are left alone, and the card paths map to their /m twins.
+async function phoneRedirectSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landList = [];
+  landPerms = [];
+  landCard("land-a", { alias: "rnd", room: "claude-sg4", wire_name: "sparta/rnd-director", supervised: true });
+  const raw = fs.readFileSync(path.join(WEB_ROOT, "index.html"));
+  const open = async (view, at, setup) => {
+    const ctx = await browser.newContext(view, { redirect: true });
+    await ctx.addInitScript(() => localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true })));
+    if (setup) await ctx.addInitScript(setup);
+    const p = await ctx.newPage();
+    const errors = [];
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.route("**/*", route => {
+      const rq = route.request();
+      const u = new URL(rq.url());
+      if (/^\/m\//.test(u.pathname) && rq.resourceType() === "document") return route.fulfill({ status: 200, contentType: "text/html", body: "<!doctype html><title>m</title>phone page" });
+      if (/^\/(alias|room)\//.test(u.pathname) && rq.resourceType() === "document") return route.fulfill({ status: 200, contentType: "text/html", body: raw });
+      if (u.pathname === "/v1/tasks/rnd") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(LAND["land-a"]) });
+      return route.continue();
+    });
+    await p.goto(base + at, { waitUntil: "load" });
+    await p.waitForTimeout(400);
+    const u = new URL(p.url());
+    return { ctx, p, errors, where: u.pathname + u.hash, search: u.search };
+  };
+  const phone = { viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true };
+  try {
+    const cases = [["/?land=land-a&view=stack&key=k1", "/m/#term=land-a"], ["/?land=a%20b", "/m/#term=a%20b"], ["/?view=perms&key=k2", "/m/"], ["/?land=land-a&x=1", "/m/?x=1#term=land-a"],
+      ["/", "/m/"], ["/alias/rnd", "/m/alias/rnd"], ["/room/claude-sg4/rnd", "/m/room/claude-sg4/rnd"], ["/#term=land-a", "/m/#term=land-a"], ["/room/claude-sg4", "/m/"]];
+    for (const [from, to] of cases) {
+      const r = await open(phone, from);
+      if (r.where !== to && !(r.where === to.replace("?x=1", "") && /x=1/.test(r.search))) fail("phoneRedirect: a phone at " + from + " ended on " + r.where + ", not " + to);
+      if (from === "/room/claude-sg4" && (await r.p.evaluate(() => localStorage.getItem("atrium.room"))) !== "claude-sg4") fail("phoneRedirect: the room scope was lost");
+      if (r.errors.length) fail("phoneRedirect " + from + ": " + r.errors.join(" | "));
+      await r.ctx.close();
+    }
+    // a phone at 412, and a phone turned on its side (its short side is still under 600)
+    for (const v of [{ viewport: { width: 412, height: 915 }, hasTouch: true, isMobile: true }, { viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true }]) {
+      const r = await open(v, "/");
+      if (r.where !== "/m/") fail("phoneRedirect: a phone " + v.viewport.width + "x" + v.viewport.height + " ended on " + r.where);
+      await r.ctx.close();
+    }
+    // the opt-out keeps the board, shows the way back, and the way back clears it
+    let r = await open(phone, "/", () => { if (!sessionStorage.getItem("seeded")) { sessionStorage.setItem("seeded", "1"); localStorage.setItem("atrium.m.desktop", "1"); } });
+    if (r.where !== "/") fail("phoneRedirect: an opted-out phone was sent to " + r.where);
+    await r.p.evaluate(() => openToastLog());
+    if (!(await r.p.isVisible("#toastlog-phone"))) fail("phoneRedirect: no way back to the phone view");
+    else {
+      await r.p.tap("#toastlog-phone");
+      await r.p.waitForFunction(() => location.pathname === "/m/", null, { timeout: slow(5000) }).catch(() => fail("phoneRedirect: phone view did not go to /m"));
+      if (await r.p.evaluate(() => localStorage.getItem("atrium.m.desktop"))) fail("phoneRedirect: phone view did not clear the opt-out");
+    }
+    await r.ctx.close();
+    // a pop-out window by its name, and by its opener
+    r = await open(phone, "/#term=land-a", () => { window.name = "atrium-term-land-a"; });
+    if (r.where !== "/#term=land-a") fail("phoneRedirect: a pop-out was sent to " + r.where);
+    await r.ctx.close();
+    // a desktop and a tablet are untouched, and so is a desktop browser window made narrow
+    for (const [name, v] of [["desktop", { viewport: { width: 1400, height: 900 } }], ["tablet", { viewport: { width: 820, height: 1180 }, hasTouch: true, isMobile: true }],
+      ["narrow desktop", { viewport: { width: 400, height: 800 } }]]) {
+      const x = await open(v, "/");
+      if (x.where !== "/") fail("phoneRedirect: a " + name + " was sent to " + x.where);
+      const y = await open(v, "/alias/rnd");
+      if (y.where !== "/alias/rnd") fail("phoneRedirect: a " + name + " card address was sent to " + y.where);
+      await x.ctx.close();
+      await y.ctx.close();
+    }
+  } finally { tasksMode = was; }
+  // the link on /m sets the opt-out and does not bounce back
+  const st = mServer({});
+  st.tasks = [mCard("r-1", { alias: "a", display_title: "a" })];
+  await st.open();
+  try {
+    const ctx = await browser.newContext({ viewport: M_VIEWS[0], hasTouch: true, isMobile: true }, { redirect: true });
+    const p = await ctx.newPage();
+    await p.route(st.url + "/", route => route.fulfill({ status: 200, contentType: "text/html", body: raw }));
+    await p.goto(st.url + "/m/", { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#m-desktop", { timeout: slow(8000) });
+    if (new URL(p.url()).pathname !== "/m/") fail("phoneRedirect: /m left itself for " + p.url());
+    await p.tap("#m-desktop");
+    await p.waitForFunction(() => location.pathname === "/", null, { timeout: slow(8000) }).catch(() => fail("phoneRedirect: the desktop board link did not leave /m"));
+    await p.waitForTimeout(400);
+    if (new URL(p.url()).pathname !== "/") fail("phoneRedirect: the desktop board link bounced back to " + p.url());
+    if ((await p.evaluate(() => localStorage.getItem("atrium.m.desktop"))) !== "1") fail("phoneRedirect: the link did not set the opt-out");
+    // a card the board knew only by id opens on /m from the fragment
+    const q = await ctx.newPage();
+    await q.goto(st.url + "/m/#term=r-1", { waitUntil: "domcontentloaded" });
+    await q.waitForSelector("#m-card.on", { timeout: slow(8000) }).catch(() => fail("phoneRedirect: /m/#term=<id> did not open the card"));
+    await ctx.close();
+  } finally { await st.close(); }
+  if (!bad) console.log("phoneRedirect ok");
+}
+
+// ── the cards a /m home does not show, and why ───────────────────────────
+// A room the page is scoped to is said on the page and can be left. Filters that hide rows say how many, and a tap shows
+// them. Hide subagents keeps a running card that has an alias.
+async function mHiddenSection(browser) {
+  const st = mServer({});
+  st.tasks = [
+    mCard("orch-1", { alias: "orchestrator", display_title: "orchestrator", status: "running", room: "sg4-control", tags: ["atrium:hold-notices", "atrium:subagent", "orchestrators", "origin:agent"] }),
+    mCard("help-1", { display_title: "helper", status: "running", room: "sg4-control", tags: ["origin:agent"] }),
+    mCard("done-1", { display_title: "finished", status: "done", room: "sg4-control" }),
+    mCard("far-1", { alias: "far", display_title: "far", status: "running", room: "other" }),
+  ];
+  await st.open();
+  try {
+    for (const vp of M_VIEWS) {
+      const tag = "mHidden " + vp.width + ": ";
+      const names = p => p.$$eval("#m-list .row .name b", e => e.map(x => x.textContent).sort());
+      const vis = (p, sel) => p.evaluate(s => { const e = document.querySelector(s); return !!e && !e.hidden && e.getClientRects().length > 0; }, sel);
+      // (1) scoped to a room
+      let ctx = await browser.newContext({ viewport: vp, hasTouch: true, isMobile: true });
+      await ctx.addInitScript(() => { if (!sessionStorage.getItem("seeded")) { sessionStorage.setItem("seeded", "1"); localStorage.setItem("atrium.room", "other"); } });
+      let p = await ctx.newPage();
+      const errors = [];
+      p.on("pageerror", e => errors.push(String(e)));
+      await p.goto(st.url + "/m/", { waitUntil: "domcontentloaded" });
+      await p.tap("#m-seg-all");
+      await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
+      if ((await names(p)).join() !== "far") fail(tag + "a scoped page lists " + (await names(p)).join());
+      if (!(await vis(p, "#m-room-chip")) || !/room: other/.test(await p.textContent("#m-room-chip"))) fail(tag + "the scope is not said on the page");
+      await p.tap("#m-room-all");
+      await p.waitForFunction(() => document.querySelectorAll("#m-list .row").length === 4, null, { timeout: slow(8000) })
+        .catch(async () => fail(tag + "all rooms did not list every card: " + (await names(p)).join()));
+      if (await vis(p, "#m-room-chip")) fail(tag + "the room chip stayed after all rooms");
+      if (await p.evaluate(() => localStorage.getItem("atrium.room"))) fail(tag + "all rooms did not clear the stored room");
+      await ctx.close();
+      // (2) and (3) filters
+      ctx = await browser.newContext({ viewport: vp, hasTouch: true, isMobile: true });
+      await ctx.addInitScript(() => localStorage.setItem("atrium.m.homeopts", JSON.stringify({ order: "newest", group: "none", needsMe: false, hideDone: true, hideSubs: true })));
+      p = await ctx.newPage();
+      p.on("pageerror", e => errors.push(String(e)));
+      await p.goto(st.url + "/m/", { waitUntil: "domcontentloaded" });
+      await p.tap("#m-seg-all");
+      await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
+      const n = await names(p);
+      if (n.indexOf("orchestrator") < 0) fail(tag + "hide subagents hid a running card that has an alias: " + n.join());
+      if (n.indexOf("helper") >= 0 || n.indexOf("finished") >= 0) fail(tag + "the filters did not hide what they name: " + n.join());
+      if (!/^2 hidden by filters/.test(await p.textContent("#m-hidden"))) fail(tag + "the hidden line says " + await p.textContent("#m-hidden"));
+      await p.tap("#m-hidden");
+      await p.waitForFunction(() => document.querySelectorAll("#m-list .row").length === 4, null, { timeout: slow(5000) })
+        .catch(async () => fail(tag + "the tap did not show the hidden rows: " + (await names(p)).join()));
+      await p.tap("#m-hidden");
+      await p.waitForFunction(() => document.querySelectorAll("#m-list .row").length === 2, null, { timeout: slow(5000) })
+        .catch(() => fail(tag + "the second tap did not hide them again"));
+      if (await mNoSideways(p)) fail(tag + "the home scrolls sideways");
+      if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+      await ctx.close();
+    }
+  } finally { await st.close(); }
+  if (!bad) console.log("mHidden ok");
+}
+
+// ── the file viewer on /m ────────────────────────────────────────────────
+async function mViewerSection(browser) {
+  const st = mServer({});
+  const c = mCard("vw-1", { alias: "viewer", display_title: "viewer", worktree: "/w/card", status: "needs-input", waiting_since: mIso(2 * M_MIN), seen: { turn_ended_at: mIso(20 * M_MIN) } });
+  st.tasks = [c];
+  const big = Buffer.from("line of text that repeats\n".repeat(100000));
+  // a multibyte character straddles the megabyte the range read stops at
+  const cutme = Buffer.concat([Buffer.from("a"), Buffer.from("\u00e9".repeat(1300000))]);
+  st.files = {
+    "/w/card/notes/plan.md": Buffer.from("# The plan\n\n## Steps\n\n- one\n- see [other](/w/card/a.txt)\n\n<script>window.__pwn = 1</script>\n"),
+    "/w/card/a.txt": Buffer.from("plain text\n  indented <b>not bold</b>\n"),
+    "/w/card/data.json": Buffer.from('{"a":1,"b":[1,2]}'),
+    "notes/shot.png": M_PNG,
+    "/w/card/big.log": big,
+    "/w/card/mid.log": Buffer.from("line of text that repeats\n".repeat(60000)),
+    "/w/card/accent.txt": cutme,
+    "/w/card/ignores.log": Buffer.from("line of text that repeats\n".repeat(480000)),
+    "notes/huge.png": Buffer.concat([M_PNG, Buffer.alloc(25 * 1048576)]),
+    "/w/card/latin.txt": Buffer.from([0x63, 0x61, 0x66, 0xe9, 0x0a]),
+    "/w/card/pack.zip": Buffer.concat([Buffer.from([80, 75, 3, 4, 0, 0]), Buffer.alloc(3000, 7)]),
+    "/w/card/bin.log": Buffer.concat([Buffer.from("text then "), Buffer.from([0, 1, 2]), Buffer.from(" binary")]),
+    "/w/card/code.html": Buffer.from("<script>window.__pwn = 2</script><p>hi</p>"),
+  };
+  st.missing = ["notes/missing.md"];
+  st.noRange = ["/w/card/ignores.log"];
+  st.noSize = ["notes/huge.png"];
+  const filler = Array.from({ length: 40 }, (_, i) => "Filler paragraph " + i + " so that the thread scrolls.").join("\n\n");
+  const text = filler + "\n\nFiles: /w/card/notes/plan.md and /w/card/a.txt and /w/card/data.json and [a shot](notes/shot.png) and /w/card/big.log and /w/card/mid.log and /w/card/accent.txt and /w/card/latin.txt and /w/card/ignores.log and [huge](notes/huge.png) and " +
+    "/w/card/pack.zip and /w/card/bin.log and /w/card/code.html and [gone](notes/gone.md) and [missing](notes/missing.md).";
+  st.replies["vw-1"] = { source: "transcript", replies: [{ at: mIso(10 * M_MIN), text }] };
+  await st.open();
+  try {
+    for (const vp of M_VIEWS) {
+      const tag = "mViewer " + vp.width + ": ";
+      const { ctx, p, errors } = await mReplyPage(browser, st, vp, "vw-1");
+      await p.waitForSelector("#m-replies .md-file", { timeout: slow(8000) });
+      const file = name => '#m-replies .md-file[data-path$="' + name + '"]';
+      const viewer = () => p.evaluate(() => { const v = document.getElementById("m-viewer"); return { open: !v.hidden, title: document.getElementById("m-viewer-title").textContent,
+        text: document.getElementById("m-viewer-body").textContent, state: history.state && history.state.mview || "" }; });
+      const openFile = async sel => { await p.evaluate(s => document.querySelector(s).scrollIntoView({ block: "center" }), sel); await p.tap(sel); await p.waitForFunction(() => !document.getElementById("m-viewer").hidden, null, { timeout: slow(5000) }); };
+      const settle = () => p.waitForFunction(() => !/^loading$/.test(document.getElementById("m-viewer-body").textContent), null, { timeout: slow(8000) });
+      const back = async () => { await p.goBack(); await p.waitForFunction(() => document.getElementById("m-viewer").hidden, null, { timeout: slow(5000) }); };
+      // markdown, through the safe renderer, and Back restores the thread's scroll
+      await p.evaluate(() => { const sc = document.getElementById("m-card-scroll"); sc.dispatchEvent(new Event("wheel")); sc.scrollTop = 300; });
+      await p.waitForTimeout(150);
+      const before = await p.evaluate(() => document.getElementById("m-card-scroll").scrollTop);
+      await p.evaluate(s => document.querySelector(s).click(), file("plan.md"));
+      await settle();
+      let v = await viewer();
+      if (!v.open || v.title !== "plan.md" || v.state !== "/w/card/notes/plan.md") fail(tag + "the markdown file did not open as an entry: " + JSON.stringify(v));
+      if (!(await p.$("#m-viewer-body .md h3"))) fail(tag + "markdown was not rendered: " + await p.evaluate(() => document.getElementById("m-viewer-body").innerHTML.slice(0, 300)));
+      if ((await p.evaluate(() => window.__pwn)) !== undefined || await p.$("#m-viewer-body script")) fail(tag + "script in a file ran");
+      if (!/<script>window.__pwn = 1<\/script>/.test(v.text)) fail(tag + "script in markdown is not shown as text");
+      // a file named in a file opens in turn, and Back steps through them
+      await p.evaluate(() => document.querySelector("#m-viewer-body .md-file").click());
+      await p.waitForFunction(() => document.getElementById("m-viewer-title").textContent === "a.txt", null, { timeout: slow(5000) }).catch(() => fail(tag + "a file named in a file did not open"));
+      await settle();
+      if (!/indented <b>not bold<\/b>/.test((await viewer()).text)) fail(tag + "text is not shown as text");
+      await p.goBack();
+      await p.waitForFunction(() => document.getElementById("m-viewer-title").textContent === "plan.md", null, { timeout: slow(5000) }).catch(() => fail(tag + "Back did not return to the file before"));
+      await back();
+      const after = await p.evaluate(() => document.getElementById("m-card-scroll").scrollTop);
+      if (Math.abs(after - before) > 2) fail(tag + "Back did not restore the thread's scroll: " + before + " then " + after);
+      // json, pretty
+      await p.evaluate(s => document.querySelector(s).click(), file("data.json"));
+      await settle();
+      if (!/\{\n  "a": 1/.test((await viewer()).text)) fail(tag + "json is not pretty printed");
+      // text size follows the thread's variable
+      await p.evaluate(() => document.getElementById("m-card").style.setProperty("--m-fs", "20px"));
+      const fs = await p.evaluate(() => parseFloat(getComputedStyle(document.querySelector("#m-viewer-body pre")).fontSize));
+      if (Math.abs(fs - 20) > 1) fail(tag + "the text size does not follow --m-fs: " + fs);
+      if (await mNoSideways(p)) fail(tag + "the viewer scrolls the page sideways");
+      await back();
+      // an image, and its object URL is let go when the sheet closes
+      await p.evaluate(() => { window.__revoked = 0; const r = URL.revokeObjectURL; URL.revokeObjectURL = u => { window.__revoked++; return r.call(URL, u); }; });
+      await p.evaluate(s => document.querySelector(s).click(), file("notes/shot.png"));
+      await p.waitForSelector("#m-viewer-body img.v-img", { timeout: slow(5000) }).catch(() => fail(tag + "the image did not show"));
+      if (!(await p.evaluate(() => document.querySelector("#m-viewer-body img.v-img").naturalWidth > 0))) fail(tag + "the image is broken");
+      await back();
+      if ((await p.evaluate(() => window.__revoked)) < 1) fail(tag + "closing the viewer did not revoke the image");
+      // up to 2 MiB the daemon's text route reads it whole
+      st.fileReqs = [];
+      await p.evaluate(s => document.querySelector(s).click(), file("mid.log"));
+      await settle();
+      v = await viewer();
+      if (/download the rest/.test(v.text) || v.text.length < 1400000) fail(tag + "a 1.5 MB log was cut: " + v.text.length);
+      if (!st.fileReqs.some(r => r.method === "GET text" && r.path.endsWith("mid.log")) || st.fileReqs.some(r => r.method === "GET")) fail(tag + "a text file under 2 MiB was not read through the text route");
+      await back();
+      // a file not in UTF-8 is an unknown type, not garbage
+      await p.evaluate(s => document.querySelector(s).click(), file("latin.txt"));
+      await settle();
+      if (!/Can't preview latin\.txt/.test((await viewer()).text)) fail(tag + "a Latin-1 file was shown as text");
+      await back();
+      // past 2 MiB it stops at the cap, with a range tied to the file the size came from
+      st.fileReqs = [];
+      st.ifRanges = [];
+      await p.evaluate(s => document.querySelector(s).click(), file("big.log"));
+      await settle();
+      v = await viewer();
+      if (!/showing the first 1(\.0)? MB of 2\.5 MB/.test(v.text) || !/download the rest/.test(v.text)) fail(tag + "the cap line says: " + v.text.slice(-80));
+      if (v.text.length > 1048576 + 200) fail(tag + "more than the cap was shown: " + v.text.length);
+      if (!(st.fileReqs || []).some(r => r.path.endsWith("big.log") && /^bytes=0-1048575$/.test(r.range))) fail(tag + "the long file was not read with a range");
+      if (!st.ifRanges.length) fail(tag + "the range was not tied to the file with If-Range");
+      await back();
+      // a server that ignores Range answers the whole file, and the read stops at the cap
+      st.streamed = {};
+      await p.evaluate(s => document.querySelector(s).click(), file("ignores.log"));
+      await settle();
+      v = await viewer();
+      if (!/showing the first 1(\.0)? MB of 12 MB/.test(v.text) || v.text.length > 1048576 + 200) fail(tag + "a 200 to a range read is shown as " + v.text.slice(-60));
+      await p.waitForTimeout(300);
+      const ig = st.streamed["/w/card/ignores.log"] || {};
+      if (!ig.aborted) fail(tag + "a 200 that ignores Range was read to the end: " + JSON.stringify(ig));
+      await back();
+      // an image with no size is capped too, and asked about
+      await p.evaluate(s => document.querySelector(s).click(), file("notes/huge.png"));
+      await settle();
+      if (!/Can't preview huge\.png/.test((await viewer()).text)) fail(tag + "an over-cap image of unknown size said " + (await viewer()).text);
+      await p.waitForTimeout(300);
+      const hg = st.streamed["notes/huge.png"] || {};
+      if (!hg.aborted) fail(tag + "an image of unknown size was read to the end: " + JSON.stringify(hg));
+      await back();
+      // a cut inside a character leaves no replacement mark
+      await p.evaluate(s => document.querySelector(s).click(), file("accent.txt"));
+      await settle();
+      v = await viewer();
+      if (/\uFFFD/.test(v.text.slice(-4)) || !/download the rest/.test(v.text)) fail(tag + "the cut left a broken character: " + JSON.stringify(v.text.slice(-12)));
+      await back();
+      // an unknown type is asked about and not downloaded
+      st.fileReqs = [];
+      await p.evaluate(s => document.querySelector(s).click(), file("pack.zip"));
+      await settle();
+      v = await viewer();
+      if (!/Can't preview pack\.zip \(2\.9 KB\)\. Download\?/.test(v.text)) fail(tag + "the question says: " + v.text);
+      await p.waitForTimeout(200);
+      if (st.fileReqs.some(r => r.method === "GET")) fail(tag + "the file was read before the question was answered");
+      const dl = p.waitForEvent("download", { timeout: slow(5000) });
+      await p.tap("#m-viewer-body .v-btn");
+      const d = await dl.catch(() => null);
+      if (!d || d.suggestedFilename() !== "pack.zip") fail(tag + "yes did not download the file");
+      await back();
+      // a binary named as text is asked about too
+      await p.evaluate(s => document.querySelector(s).click(), file("bin.log"));
+      await settle();
+      if (!/Can't preview bin\.log/.test((await viewer()).text)) fail(tag + "a binary named .log was shown as text");
+      await back();
+      // html is shown as text, never run
+      await p.evaluate(s => document.querySelector(s).click(), file("code.html"));
+      await settle();
+      if ((await p.evaluate(() => window.__pwn)) !== undefined || !/<script>window.__pwn = 2<\/script>/.test((await viewer()).text)) fail(tag + "html was not shown as text");
+      await back();
+      // the two refusals
+      await p.evaluate(() => [...document.querySelectorAll("#m-replies .md-file")].find(b => /gone/.test(b.textContent)).click());
+      await settle();
+      if (!/not in this card's folder, or not readable/.test((await viewer()).text)) fail(tag + "outside the card says " + (await viewer()).text);
+      await back();
+      await p.evaluate(() => [...document.querySelectorAll("#m-replies .md-file")].find(b => /missing/.test(b.textContent)).click());
+      await settle();
+      if (!/no such file/.test((await viewer()).text)) fail(tag + "a missing file says " + (await viewer()).text);
+      // the chevron leaves the same way
+      await p.tap("#m-viewer-back");
+      await p.waitForFunction(() => document.getElementById("m-viewer").hidden, null, { timeout: slow(5000) }).catch(() => fail(tag + "the chevron did not close the viewer"));
+      if (!(await p.evaluate(() => !document.getElementById("m-card").hidden))) fail(tag + "closing the viewer closed the card");
+      if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+      await ctx.close();
+    }
+  } finally { await st.close(); }
+  if (!bad) console.log("mViewer ok");
+}
+
 async function main() {
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = "http://127.0.0.1:" + server.address().port;
@@ -14266,10 +15205,15 @@ async function main() {
       pasteStart: pasteStartSection, pasteDone: pasteDoneSection, pasteOldRoom: pasteOldRoomSection, pasteClose: pasteCloseSection,
       growlQuestionShots: growlQuestionShotsSection, growlQuestionBody: growlQuestionBodySection, growlReplyGrow: growlReplyGrowSection, growlChoices: growlChoicesSection, growlStable: growlStableSection, mGrowlQuestion: mGrowlQuestionSection,
       bootClean: bootCleanSection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mRecapSheet: mRecapSheetSection,
-      mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection,
+      mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
+      mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, phoneRedirect: phoneRedirectSection,
+      mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, mHidden: mHiddenSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
+      mViewer: mViewerSection,
       gearTermList: gearTermListSection, growlLinks: growlLinksSection, growlChoiceOnce: growlChoiceOnceSection,
-      mOutputAt: mOutputAtSection, mStickBottom: mStickBottomSection, mSendFree: mSendFreeSection, mCardUpload: mCardUploadSection,
-      cardUrlWinName: cardUrlWinNameSection };
+      mOutputAt: mOutputAtSection, mStickBottom: mStickBottomSection, mSendFree: mSendFreeSection, mCardUpload: mCardUploadSection, mCompact: mCompactSection, mPinch: mPinchSection, mPrompts: mPromptsSection,
+      cardUrlWinName: cardUrlWinNameSection,
+      gearHosts: gearHostsSection,
+      mTypeSteady: mTypeSteadySection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -14515,7 +15459,7 @@ async function main() {
     const hideState = () => page.evaluate(() => {
       const has = id => !!document.querySelector(`#term-list .card.tab[data-id="${id}"]`);
       const seg = which => {
-        const btns = [...document.querySelectorAll("#term-list .termhide button")];
+        const btns = [...document.querySelectorAll("#gear-term-hide .termhide button")];
         return btns.find(b => new RegExp("^" + which + "\\b").test(b.textContent.trim())) || null;
       };
       const a = seg("agents"), s = seg("subagents");
@@ -14540,8 +15484,8 @@ async function main() {
         agentLabel: a ? a.textContent.trim() : "",
         subLabel: s ? s.textContent.trim() : "",
         subTitle: s ? s.dataset.tip || "" : "",
-        onePill: document.querySelectorAll("#term-list .termhide").length === 1,
-        segCount: document.querySelectorAll("#term-list .termhide button").length
+        onePill: document.querySelectorAll("#gear-term-hide .termhide").length === 1,
+        segCount: document.querySelectorAll("#gear-term-hide .termhide button").length
       };
     });
 
@@ -16247,6 +17191,12 @@ async function main() {
     await mMarkdownSection(browser);
     await mHostileSection(browser);
     await mPicturesSection(browser);
+    await mHiddenSection(browser);
+    await mViewerSection(browser);
+    await soundPhoneSection(browser, base);
+    await phoneBellSection(browser, base);
+    await mBellSection(browser);
+    await phoneRedirectSection(browser, base);
     await gearTermListSection(browser, base);
     await growlLinksSection(browser, base);
     await growlChoiceOnceSection(browser, base);
@@ -16254,7 +17204,12 @@ async function main() {
     await mStickBottomSection(browser);
     await mSendFreeSection(browser);
     await mCardUploadSection(browser);
+    await mCompactSection(browser);
+    await mPinchSection(browser);
+    await mTypeSteadySection(browser);
+    await mPromptsSection(browser);
     await cardUrlWinNameSection(browser, base);
+    await gearHostsSection(browser, base);
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e));
     if (process.env.DEBUG_HEADLESS) {
@@ -16344,7 +17299,11 @@ function mServer(state) {
     const u = new URL(req.url, "http://x");
     const p = u.pathname;
     const json = (code, o) => { res.writeHead(code, { "Content-Type": "application/json" }); res.end(JSON.stringify(o)); };
-    if (p === "/v1/tasks") return json(200, { tasks: state.tasks });
+    if (p === "/v1/tasks") {
+      // A page scoped to a room asks with that room in a header, and the hub answers with that room's cards.
+      const rm = req.headers["x-atrium-room"];
+      return json(200, { tasks: rm ? state.tasks.filter(t => !t.room || t.room === rm) : state.tasks });
+    }
     if (p === "/v1/permissions") return json(200, { permissions: state.perms });
     if (p === "/v1/settings") return json(200, { board_skins: ["default", "daylight"], board_skin: state.skin || "default" });
     if (p === "/_hub/rooms") return json(404, { error: "not a hub" });
@@ -16355,13 +17314,54 @@ function mServer(state) {
       req.on("close", () => { state.streams = state.streams.filter(s => s !== res); });
       return;
     }
+    const tm = p.match(/^\/v1\/tasks\/([^/]+)\/files\/text$/);
+    if (tm && req.method === "GET") {
+      const want = u.searchParams.get("path");
+      (state.fileReqs = state.fileReqs || []).push({ method: "GET text", path: want, range: "" });
+      const body = (state.files || {})[want];
+      const send = (code, o) => { res.writeHead(code, { "Content-Type": "application/json" }); res.end(JSON.stringify(o)); };
+      if (!body) return send(403, { error: "that path is outside the card" });
+      if (body.length > 2 << 20) return send(400, { error: "that file is too large to edit here. download it instead" });
+      if (!Buffer.from(body.toString("utf8"), "utf8").equals(body) || body.indexOf(0) >= 0) return send(400, { error: "that file is not text. download it instead" });
+      return send(200, { path: want, text: body.toString("utf8").replace(/\r\n/g, "\n"), hash: "h", eol: "\n" });
+    }
     const fm = p.match(/^\/v1\/tasks\/([^/]+)\/files$/);
-    if (fm && req.method === "GET") {
+    if (fm && (req.method === "GET" || req.method === "HEAD")) {
       const want = u.searchParams.get("path");
       (state.fileHits = state.fileHits || []).push(want);
+      (state.fileReqs = state.fileReqs || []).push({ method: req.method, path: want, range: req.headers.range || "" });
+      if ((state.missing || []).indexOf(want) >= 0) { res.writeHead(404, { "Content-Type": "application/json" }); return res.end(JSON.stringify({ error: "no such file" })); }
       const body = (state.files || {})[want];
-      if (!body) return json(403, { error: "that path is outside the card" });
-      res.writeHead(200, { "Content-Type": "application/octet-stream", "X-Content-Type-Options": "nosniff" });
+      if (!body) { res.writeHead(403, { "Content-Type": "application/json" }); return res.end(req.method === "HEAD" ? "" : JSON.stringify({ error: "that path is outside the card" })); }
+      const head = { "Content-Type": "application/octet-stream", "X-Content-Type-Options": "nosniff", "Last-Modified": "Wed, 30 Sep 2026 12:00:00 GMT" };
+      if (req.method === "HEAD") { res.writeHead(200, (state.noSize || []).indexOf(want) >= 0 ? head : Object.assign(head, { "Content-Length": body.length })); return res.end(); }
+      const ifr = req.headers["if-range"];
+      state.ifRanges = (state.ifRanges || []).concat(ifr ? [ifr] : []);
+      if ((state.noRange || []).indexOf(want) >= 0 || (state.noSize || []).indexOf(want) >= 0) {
+        // The whole file, written as the client takes it, so how much was read can be told.
+        res.writeHead(200, head);
+        let at = 0;
+        const rec = (state.streamed = state.streamed || {});
+        rec[want] = { sent: 0, aborted: false };
+        res.on("close", () => { if (at < body.length) rec[want].aborted = true; });
+        const pump = () => {
+          while (at < body.length) {
+            const n = Math.min(65536, body.length - at);
+            const ok = res.write(body.subarray(at, at + n));
+            at += n; rec[want].sent = at;
+            if (!ok) { res.once("drain", pump); return; }
+          }
+          res.end();
+        };
+        return pump();
+      }
+      const rg = ifr && ifr !== "Wed, 30 Sep 2026 12:00:00 GMT" ? null : /^bytes=(\d+)-(\d+)$/.exec(req.headers.range || "");
+      if (rg && Number(rg[1]) < body.length) {
+        const to = Math.min(Number(rg[2]), body.length - 1), part = body.slice(Number(rg[1]), to + 1);
+        res.writeHead(206, Object.assign(head, { "Content-Range": "bytes " + rg[1] + "-" + to + "/" + body.length, "Content-Length": part.length }));
+        return res.end(part);
+      }
+      res.writeHead(200, head);
       return res.end(body);
     }
     const m = p.match(/^\/v1\/tasks\/([^/]+)\/replies$/);
@@ -16374,7 +17374,7 @@ function mServer(state) {
     let file = null;
     if (p === "/m/" || p === "/m") file = path.join(M_ROOT, "index.html");
     else if (p.startsWith("/m/")) file = path.join(M_ROOT, p.slice(3));
-    else if (p.startsWith("/css/") || p === "/js/cardrules.js") file = path.join(WEB_ROOT, p);
+    else if (p.startsWith("/css/") || /^\/js\/(cardrules|sounds)\.js$/.test(p)) file = path.join(WEB_ROOT, p);
     if (file && !path.relative(WEB_ROOT, file).startsWith("..") && fs.existsSync(file) && fs.statSync(file).isFile()) {
       res.writeHead(200, { "Content-Type": M_TYPES[path.extname(file)] || "application/octet-stream" });
       return res.end(fs.readFileSync(file));
@@ -16524,16 +17524,16 @@ async function mCardSection(browser) {
       if (await mNoSideways(p)) fail(tag + "the card scrolls sideways");
       if (!/which port/.test(await p.textContent("#m-card-extras"))) fail(tag + "the open questions are missing");
       if (await p.getAttribute("#m-card-term", "href") !== "/alias/builder") fail(tag + "open terminal does not point at the card's readable board path");
-      if (st.hits.filter(h => h === "card-a?3").length !== 1) fail(tag + "replies fetched " + st.hits.join(","));
+      if (st.hits.filter(h => h === "card-a?10").length !== 1) fail(tag + "replies fetched " + st.hits.join(","));
       await mShot(p, "card-dark-" + vp.width);
       // refetch only when the turn ends
       st.send("task", Object.assign({}, ta, { row: 1, last_activity_at: mIso(1000) }));
       await p.waitForTimeout(600);
-      if (st.hits.filter(h => h === "card-a?3").length !== 1) fail(tag + "replies refetched without a new turn: " + st.hits.join(","));
+      if (st.hits.filter(h => h === "card-a?10").length !== 1) fail(tag + "replies refetched without a new turn: " + st.hits.join(","));
       st.replies["card-a"] = { source: "transcript", replies: [{ at: mIso(1000), text: "A fresh reply." }] };
       st.send("task", Object.assign({}, ta, { row: 1, seen: Object.assign({}, ta.seen, { turn_ended_at: mIso(500) }) }));
       await p.waitForFunction(() => /A fresh reply/.test(document.getElementById("m-replies").textContent), null, { timeout: slow(5000) });
-      if (st.hits.filter(h => h === "card-a?3").length !== 2) fail(tag + "the turn end did not refetch once: " + st.hits.join(","));
+      if (st.hits.filter(h => h === "card-a?10").length !== 2) fail(tag + "the turn end did not refetch once: " + st.hits.join(","));
       // the browser back button closes the sheet
       await p.goBack();
       await p.waitForFunction(() => document.getElementById("m-card").hidden, null, { timeout: slow(5000) });

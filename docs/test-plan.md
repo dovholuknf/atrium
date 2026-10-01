@@ -7997,6 +7997,27 @@ Needs a hub with one room and two browsers on the board. `curl` stands in for th
 4. On a room: `atrium stop` still stops it. A `POST /v1/shutdown` carrying `X-Forwarded-For` answers 403 unless it
    carries the shutdown token.
 
+## HM. A live card's model switches with one call (r-card-model)
+
+HM needs a room built from this change and a room restart, with a supervised Claude card. Go tests in
+`internal/daemon/modelswitch_test.go` and `internal/link/modelroute_test.go` cover the endpoint, the wait, the refusals,
+the hub routing and the control tool.
+
+1. `curl -s -X POST http://127.0.0.1:7778/v1/tasks/<card>/model -d '{"model":"opus"}'` on an idle card. The answer says
+   `typed: true` and the card's terminal runs `/model opus`. The card's model reads `opus` on the board and in
+   `GET /v1/tasks/<card>`, and its timeline has a `model-switch` entry naming who asked, from what and to what.
+2. Start typing a line in the card's terminal and repeat the call. The answer says `delivered: waiting`. Nothing lands
+   in the line. Finish the line and go quiet: `/model opus` is typed, and the timeline gains "typed after waiting".
+3. Switch twice while the line is busy. Only the newer model is typed.
+4. A card that is not Claude, a card with no atrium terminal, and a parked card answer 409 with the reason. A model of
+   `gpt-5`, `opus 4` or an empty string answers 400. An unknown card answers 404.
+5. Through the hub: `POST /v1/tasks/<name>@<room>/model` and `<room>~<id>` reach that room's card.
+6. As the orchestrator, call `atrium_model` with a card and a model. A worker session does not list the tool, and the
+   room's audit log shows a `ctl-model` line.
+7. Switch a card, then park and resume it. It comes back on the new model.
+8. **Not verified by tests:** whether Claude Code accepts `/model` while a turn is running. Try it on a busy card and
+   note whether the switch lands now or after the turn.
+
 ## HN. Older replies, a page at a time (r-replies-paging)
 
 1. On a Claude card with more than 50 replies, `curl -s 'http://127.0.0.1:7778/v1/tasks/<id>/replies?n=50' | jq
