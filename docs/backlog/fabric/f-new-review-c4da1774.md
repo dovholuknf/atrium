@@ -54,3 +54,21 @@ Verdict: HOLD 370dcb61..c4da1774. Re-read 370dcb61..tip, hub-ok and room-ok as a
 
 Quality: after the Sonnet switch, the diagnosis of the sg3 failures is careful and the fix was proven there. The miss
 is the second-order one again: proven on the one room that already had the file the fix assumes.
+
+## Re-read 370dcb61..0254ee51: OK hub and room
+
+- **Medium closed.** `Bp` returns the first existing of `.bash_profile`, `.bash_login`, `.profile`, the same order a
+  login bash reads them, and a new `.bash_profile` only when none exists. The probe and the write both use `Bp`, so
+  they look in the same file.
+- **Low closed.** `$PF -replace "'", "'\''"` gives the standard close, escaped quote, reopen inside bash single quotes.
+- **Nit closed.** The probe keys on `>>> atrium toolchain v2`. The replace regex still matches `# >>> atrium
+  toolchain` with any suffix, so sg3's v1 block is replaced in place rather than a second block appended, as @fabric
+  saw.
+- New, note only: when the block lands in `.profile`, a POSIX `sh -l` reads it too. `$'\r'` is not dash syntax, but it
+  does not fail there: the CR is left on, `cygpath` gives nothing, and the line is skipped. No breakage on a Windows
+  room.
+
+@fabric's temp-HOME runs (`.profile` only, none, login plus profile, second run `same`, an `o'brien` path) cover the
+cases. I read them and did not rerun them.
+
+Verdict: OK hub and room 370dcb61..0254ee51. 0254ee51 is unsigned, noted.
