@@ -13526,6 +13526,30 @@ async function mTypeSteadySection(browser) {
       await p.evaluate(() => document.querySelector("#m-compose textarea").dispatchEvent(new Event("input", { bubbles: true })));
       await p.evaluate(() => document.activeElement && document.activeElement.blur());
     }
+    // typing a word and deleting it frees the thread to follow again, with the box still focused
+    await p.evaluate(() => { const e = document.getElementById("m-card-scroll"); e.scrollTop = e.scrollHeight; });
+    await p.waitForFunction(() => document.getElementById("m-jump").hidden, null, { timeout: slow(3000) });
+    await p.tap("#m-compose textarea");
+    await p.keyboard.type("word");
+    for (let i = 0; i < 4; i++) await p.keyboard.press("Backspace");
+    if (await p.$eval("#m-compose textarea", t => t.value)) fail(tag + "the box did not empty");
+    await p.waitForFunction(() => document.getElementById("m-live").classList.contains("on"), null, { timeout: slow(10000) });
+    const t1 = Date.now();
+    while (!st.streams.length && Date.now() - t1 < slow(10000)) await p.waitForTimeout(100);
+    const at2 = mIso(1 * M_MIN);
+    st.replies["ty-1"] = { source: "transcript", replies: st.replies["ty-1"].replies.concat([{ at: at2, text: "A new reply that must be followed. " + "more ".repeat(60) }]) };
+    st.send("task", Object.assign({}, c, { row: 1, output_at: at2 }));
+    await p.waitForFunction(() => /must be followed/.test(document.getElementById("m-replies").textContent), null, { timeout: slow(5000) });
+    await p.waitForTimeout(300);
+    const gap = await p.evaluate(() => { const e = document.getElementById("m-card-scroll"); return e.scrollHeight - e.scrollTop - e.clientHeight; });
+    if (gap > 4) fail(tag + "an emptied but focused box still holds the thread, gap " + gap);
+    // and the next input pins again
+    await p.keyboard.type("x");
+    const pin = await look();
+    await p.keyboard.type("yz");
+    await p.keyboard.press("Shift+Enter");
+    const pin2 = await look();
+    if (pin2.top !== pin.top) fail(tag + "typing again did not pin the thread: " + JSON.stringify([pin, pin2]));
     if (await mNoSideways(p)) fail(tag + "the card scrolls sideways");
     if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
     await ctx.close();
