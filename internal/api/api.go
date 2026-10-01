@@ -538,6 +538,7 @@ func (s *Server) Handler() http.Handler {
 		mux.HandleFunc("POST /v1/shutdown", s.Shutdown)
 	}
 	mux.HandleFunc("GET /v1/tasks/{id}/events", s.taskEvents)
+	mux.HandleFunc("POST /v1/tasks/{id}/notices-read", s.noticesRead)
 	mux.HandleFunc("GET /v1/tasks/{id}/review", s.reviewTask)
 	mux.HandleFunc("GET /v1/waiting", s.waiting)
 	mux.HandleFunc("GET /v1/permissions", s.listPermissions)
@@ -819,6 +820,12 @@ type view struct {
 	// moves. Absent when not known: not Claude, no transcript, or not read since
 	// the daemon started. Never stored. See internal/daemon/outputat.go.
 	OutputAt string `json:"output_at,omitempty"`
+	// HeldNotices is how many notices held on this card it has not read, and
+	// OldestHeldAt is when the oldest was held, RFC3339. Only a card that holds its
+	// notices carries them, and only while there are some. A read is an
+	// `atrium_task` with `notices` by the card itself. See internal/daemon/a2a.go.
+	HeldNotices  int    `json:"held_notices,omitempty"`
+	OldestHeldAt string `json:"oldest_held_at,omitempty"`
 	// AsksOpen is how many questions this card has outstanding.
 	//
 	// `Task.Ask` is the OLDEST of them and is what the row draws. That was the
@@ -903,6 +910,10 @@ var KeepaliveOf func(taskID string) any
 // "". Supplied by the daemon, which holds it in memory.
 var OutputAtOf func(taskID string) string
 
+// HeldNoticesOf returns how many held notices a card has not read and when the oldest was
+// held, RFC3339. Supplied by the daemon, which knows which cards hold their notices.
+var HeldNoticesOf func(t *store.Task) (int, string)
+
 func toView(t *store.Task) view {
 	v := view{
 		Task:         t,
@@ -944,6 +955,9 @@ func toView(t *store.Task) view {
 	}
 	if OutputAtOf != nil {
 		v.OutputAt = OutputAtOf(t.ID)
+	}
+	if HeldNoticesOf != nil {
+		v.HeldNotices, v.OldestHeldAt = HeldNoticesOf(t)
 	}
 	if t.WaitingSince != nil {
 		v.WaitSeconds = int64(time.Since(*t.WaitingSince).Seconds())
@@ -1673,6 +1687,31 @@ func (s *Server) taskEvents(w http.ResponseWriter, r *http.Request) {
 	// the db, so the board can say those rows are missing rather than hide it.
 	writeJSON(w, http.StatusOK, map[string]any{"events": events, "rolled_off": rolledOff,
 		"cold_only_kinds": s.st.ColdOnlyKinds()})
+}
+
+// noticesRead is a card saying it read the notices held on it, which is what an
+// `atrium_task` with `notices` by that card is. The count on its row drops and the
+// board hears it. The body carries `through`, the `at` of the newest notice it was handed,
+// and nothing newer than that is marked read.
+func (s *Server) noticesRead(w http.ResponseWriter, r *http.Request) {
+	t, err := s.st.Get(r.PathValue("id"))
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
+		return
+	}
+	var body struct {
+		Through string `json:"through"`
+	}
+	_ = json.NewDecoder(io.LimitReader(r.Body, 1<<10)).Decode(&body)
+	changed, err := s.st.MarkNoticesRead(t.ID, body.Through)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	if changed {
+		s.PublishTask(t)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "changed": changed})
 }
 
 // reviewTask answers "what did this session actually do".

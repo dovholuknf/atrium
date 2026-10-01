@@ -78,7 +78,11 @@ func addPeerTools(s *mcp.Server) {
 			"recipient sees you as `you@thisroom` and answers to that. `held` means the hub or " +
 			"that room is not answering: it is kept here and sent when they are, for up to a " +
 			"day. `unconfirmed` means it may or may not have arrived, so ask before sending it " +
-			"again.",
+			"again.\n\n" +
+			"`kind` is `fyi` for news the receiver need not act on, or `needs` (the default) for " +
+			"anything that wants an answer or an action. A receiver that holds its notices keeps an " +
+			"`fyi` on its card and is not interrupted, so say `needs` for anything you want read now. " +
+			"On the same room only.",
 	}, sayHandler)
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -94,7 +98,10 @@ func addPeerTools(s *mcp.Server) {
 			"- `question`: you need an answer to go on. Give `ask`.\n" +
 			"- `progress`: you are stopping on purpose while something runs.\n\n" +
 			"`summary` is what happened, in your words. It reaches your launcher verbatim. An " +
-			"incomplete report is refused with what is missing, so fix it and call again.",
+			"incomplete report is refused with what is missing, so fix it and call again.\n\n" +
+			"`kind` is `fyi` for news your launcher need not act on, or `needs` (the default) for " +
+			"anything that wants an answer or an action. A launcher that holds its notices keeps " +
+			"an `fyi` on its card and is not interrupted. Only `progress` with no `ask` can be an `fyi`: `done`, `blocked`, `question` and anything with an `ask` are always `needs`.",
 	}, reportHandler)
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -381,6 +388,8 @@ type SayInput struct {
 	Reply bool `json:"reply,omitempty" jsonschema:"true when you need an answer, not just a delivery. it shows as owed on that session until it says something back"`
 	// Wake resumes a parked card so this reaches it. Without it a say to a parked card is refused.
 	Wake bool `json:"wake,omitempty" jsonschema:"true to resume a PARKED session (idle, no process) and deliver this. it costs a cold start, so leave it off unless the message is worth it. without it a say to a parked session is refused and nothing is queued. local only: a card on another room, named as name@room or reached by a bare name on every room, is never woken"`
+	// Kind is `fyi` or `needs`. See internal/daemon/fyi.go.
+	Kind string `json:"kind,omitempty" jsonschema:"needs (the default): wants an answer or an action. fyi: news the receiver need not act on, which a receiver that holds its notices keeps on its card instead of being interrupted"`
 }
 
 type SayOutput struct {
@@ -418,6 +427,9 @@ func sayHandler(ctx context.Context, _ *mcp.CallToolRequest, in SayInput) (
 	}
 	if in.Wake {
 		body["wake"] = true
+	}
+	if k := strings.TrimSpace(in.Kind); k != "" {
+		body["kind"] = k
 	}
 
 	// BY ADDRESS, so `name@room` reaches another room through this room's link

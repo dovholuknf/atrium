@@ -353,6 +353,8 @@ func (d *Daemon) handleTell(w http.ResponseWriter, r *http.Request) {
 		Reply bool `json:"reply"`
 		// Wake resumes a parked target so this can be delivered. See park.go.
 		Wake bool `json:"wake"`
+		// Kind is `fyi` or `needs`. See fyi.go.
+		Kind string `json:"kind"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&in); err != nil {
 		writeJSONErr(w, http.StatusBadRequest, err)
@@ -403,6 +405,25 @@ func (d *Daemon) handleTell(w http.ResponseWriter, r *http.Request) {
 		if note != "" {
 			d.writeMissNote(w, from, to, "tell", text, in.When, in.Reply, note)
 			return
+		}
+	}
+	// AN FYI TO A CARD THAT HOLDS ITS NOTICES waits on that card. See fyi.go.
+	if parseKind(in.Kind) == KindFYI && !in.Reply {
+		if t, err := d.st.GetByWireName(to); err == nil {
+			if sender := d.fyiSender(in.From, t); sender != nil {
+				if !d.peerLimit.allow(from) {
+					writeJSONErr(w, http.StatusTooManyRequests, fmt.Errorf(
+						"%s has sent %d messages in the last minute, which is the limit",
+						from, peerSendsPerMinute))
+					return
+				}
+				d.holdFyi(sender, t, "tell", text)
+				writeJSONCode(w, http.StatusOK, map[string]any{
+					"ok": true, "held": true, "typed": false, "queued": false,
+					"note": "held on the card as an fyi. it reads it with atrium_task notices.",
+				})
+				return
+			}
 		}
 	}
 	target := d.resolvePeerSayWake(w, from, to, "tell", text, in.When, in.Reply, in.Wake)
