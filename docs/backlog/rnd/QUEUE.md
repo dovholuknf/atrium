@@ -10,6 +10,8 @@ orchestrator with `atrium_say` (kind fyi) to `orchestrator-sg4-control@sg4-contr
 to `atrium-87300`. Workers you launch stay on m1mini (sg3 fallback), never claude-sg4. Every commit goes to @review
 (alias `review`) before landing, even doc-only, except this queue file.
 
+**PAUSE (clint via the orchestrator, 2026-10-01):** start no new item and launch no worker. Finish in-flight work through @review and land it, then sit idle. Only r-pr-run (P1c, tip dbb76109 so far) is ours in flight. Do not send P3 or start the E2E.
+
 **HOLD (orchestrator, 2026-10-01):** m1mini has no git route to sg4 or sg3. @rnd cannot fetch or land a worker's tip. Send each tip SHA (r-pr-run's P1c, @ui's P2 follow-up) to orchestrator-sg4-control@sg4-control, who lands it. The old claude-sg4 @rnd card has exited. @ui is now local on m1mini (alias `ui`, card 01a0f8bd) and was told to report its landing to @rnd here.
 
 **In flight: the pulls view.** clint: "pull request review flow sucks ... not token efficient nor fast." Design
