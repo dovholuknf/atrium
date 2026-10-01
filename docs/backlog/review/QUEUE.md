@@ -37,9 +37,14 @@ the meantime.
 
 - Board landings from @ui come FIRST (clint, via the orchestrator, 2026-09-30 19:25), read only and fast, ahead of
   everything below.
-- Lows owed with fixes to follow: r-fyi-kind 1 and 3 (`r-new-review-e9aa0ee5.md`).
-- When @ui lands its combined /m batch plus 3d9b5f67: check the landed `onScroll` in `m/js/card.js` keeps load older's
-  `nearTop()`, pull's gates, and 3d9b5f67's reader gate (`u-new-review-3d9b5f67.md`).
+- r-deploy-ready f82abf78 is on HOLD (`r-new-review-f82abf78.md`): re-read the link room-side fix and the click's
+  build-equals-tip and `ATRIUM_NEW_BUILD` fix. When it lands, re-stamp with `room-ok` every board landing since the
+  installed build. Two rules from now on: a board review carries `hub-ok` AND `room-ok`, and an `internal/link`
+  review carries `room-ok` too, since the room runs it. A re-read's OK range starts at the ORIGINAL base, so it covers
+  the held patch.
+- u-m-changes 7e496aa8 is on HOLD (`u-new-review-7e496aa8.md`): re-read the `quoteOne` control-character fix when
+  @ui sends it. Owed lows, no hold: u-m-typefix pen `pointercancel` (`u-new-review-7b70705e.md`), and @runtime's
+  defense in depth, dropping `\x1b[201~` inside any wrapped paste.
 - From cc3bd954 on, @ui, @runtime and @fabric run Sonnet (orchestrator, 6h test): every review of theirs carries a
   "Quality:" line.
 - M3 of `docs/rnd/machine-health-design.md` (the profiler agent's rules) before it ships, when it is built.
