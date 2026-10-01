@@ -30,6 +30,7 @@ type everyCard struct {
 	ID      string
 	Wire    string
 	Alias   string
+	Title   string
 	Status  string
 	Payload json.RawMessage
 }
@@ -65,9 +66,19 @@ func newEverywhere() *everywhere {
 	return &everywhere{byRoom: map[string][]everyCard{}, names: map[string]string{}}
 }
 
+// humanLauncher is the `spawned_by` the board's launch dialog records, the same
+// string as store.HumanLauncher.
+const humanLauncher = "@human"
+
 // indexed reads the cards of one announcement that belong in the index: the
-// tag, and not `done` or `dead`. The status rule is the one alias resolution
-// uses, an ended card keeps its tag as a record and no longer answers to it.
+// tag, not `done` or `dead`, and launched by a human. The status rule is the
+// one alias resolution uses, an ended card keeps its tag as a record and no
+// longer answers to it.
+//
+// A HUMAN LAUNCHED IT: started by hand (no `spawned_by`) or from the board's
+// dialog (`@human`), and not tagged origin:agent. A worker inherits its
+// launcher's tags, and `atrium_launch` takes tags, so without this an agent
+// could put a card on every room that answers a mistyped bare name.
 func indexed(room string, cards []CardState) []everyCard {
 	var out []everyCard
 	for _, c := range cards {
@@ -77,24 +88,33 @@ func indexed(room string, cards []CardState) []everyCard {
 		var row struct {
 			Wire  string   `json:"wire_name"`
 			Alias string   `json:"alias"`
+			Title string   `json:"title"`
 			Tags  []string `json:"tags"`
+			By    string   `json:"spawned_by"`
 		}
 		if err := json.Unmarshal(c.Payload, &row); err != nil {
 			continue
 		}
+		if by := strings.TrimSpace(row.By); by != "" && by != humanLauncher {
+			continue
+		}
 		tagged := false
 		for _, t := range row.Tags {
-			if equalFold(strings.TrimSpace(t), EverywhereTag) {
-				tagged = true
+			t = strings.TrimSpace(t)
+			if equalFold(t, OriginTag) {
+				tagged = false
 				break
+			}
+			if equalFold(t, EverywhereTag) {
+				tagged = true
 			}
 		}
 		if !tagged {
 			continue
 		}
 		out = append(out, everyCard{Room: room, ID: c.ID, Wire: row.Wire,
-			Alias:  lowerASCII(strings.TrimPrefix(strings.TrimSpace(row.Alias), "@")),
-			Status: c.Status, Payload: c.Payload})
+			Alias: lowerASCII(strings.TrimPrefix(strings.TrimSpace(row.Alias), "@")),
+			Title: row.Title, Status: c.Status, Payload: c.Payload})
 	}
 	return out
 }
@@ -322,10 +342,11 @@ func (c *controlMCP) everywhereFallthrough(room, who string, miss error) (everyC
 	return everyCard{}, fmt.Errorf("%s. on other rooms: %s", miss.Error(), strings.Join(list, ", "))
 }
 
-// asPeer is the card as a row of atrium_peers.
+// asPeer is the card as a row of atrium_peers. The alias is bare, unlike a row
+// from another room's list, because a bare name is what reaches this card.
 func (c everyCard) asPeer() peer {
-	return peer{Handle: c.sendName() + "@" + c.Room, Card: tagFor(c.Room, c.ID), Room: c.Room,
-		Status: c.Status, Everywhere: true}
+	return peer{Handle: c.sendName() + "@" + c.Room, Alias: c.Alias, Card: tagFor(c.Room, c.ID), Room: c.Room,
+		Title: c.Title, Status: c.Status, Everywhere: true}
 }
 
 // setHolding ties the index to the store: a room counts only while the store
