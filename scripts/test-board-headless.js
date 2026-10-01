@@ -13301,6 +13301,26 @@ async function mCompactSection(browser) {
     if (row.border !== "0px" || !/^rgba\(0, 0, 0, 0\)|transparent/.test(row.bg)) fail(tag + "the activity row is still a box: " + JSON.stringify(row));
     if (row.h > 24) fail(tag + "the activity row is not one line: " + row.h);
     await mCompactButtons(p, tag + "390: ");
+    // the composer text follows the thread's size, with no 16px floor, and the send circle sits inside the border evenly
+    const sz = await p.evaluate(() => {
+      const ta = document.querySelector("#m-compose textarea"), md = document.querySelector("#m-replies .md");
+      const f = () => [parseFloat(getComputedStyle(ta).fontSize), parseFloat(getComputedStyle(md).fontSize)];
+      const a = f();
+      document.getElementById("m-card").style.setProperty("--m-fs", "19px");
+      const b = f();
+      document.getElementById("m-card").style.removeProperty("--m-fs");
+      const row = document.querySelector("#m-compose .mc-row").getBoundingClientRect(), sd = document.querySelector("#m-compose .mc-send"), sb = sd.getBoundingClientRect();
+      const pad = parseFloat(getComputedStyle(sd).paddingLeft);
+      const bg = getComputedStyle(sd).backgroundClip;
+      const svg = sd.querySelector("svg").getBoundingClientRect();
+      return { a, b, right: Math.round(row.right - (sb.right - pad)), top: Math.round((sb.top + pad) - row.top), bottom: Math.round(row.bottom - (sb.bottom - pad)), bg,
+        dx: Math.abs((svg.left + svg.width / 2) - (sb.left + sb.width / 2)), dy: Math.abs((svg.top + svg.height / 2) - (sb.top + sb.height / 2)),
+        edge: getComputedStyle(document.querySelector("#m-replies .reply")).boxShadow };
+    });
+    if (sz.a[0] !== sz.a[1] || sz.b[0] !== 19 || sz.b[1] !== 19) fail(tag + "the composer and thread text sizes differ: " + JSON.stringify(sz));
+    if (Math.abs(sz.right - sz.top) > 1 || Math.abs(sz.top - sz.bottom) > 1 || sz.top < 4) fail(tag + "the send circle inset is uneven: " + JSON.stringify(sz));
+    if (sz.dx > 0.6 || sz.dy > 0.6) fail(tag + "the send arrow is off centre: " + JSON.stringify(sz));
+    if (!/rgb/.test(sz.edge) || /none/.test(sz.edge)) fail(tag + "a bubble has no edge: " + sz.edge);
     if (await mNoSideways(p)) fail(tag + "the card scrolls sideways");
     if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
     await ctx.close();
@@ -13450,6 +13470,65 @@ async function mPromptsSection(browser) {
     }
   } finally { await st.close(); }
   if (!bad) console.log("mPrompts ok");
+}
+
+// Typing a long message must not move the thread: not on a keystroke, not when the composer grows a line, not when the
+// keyboard comes and goes.
+async function mTypeSteadySection(browser) {
+  const st = mServer({});
+  const c = mCard("ty-1", { alias: "typist", display_title: "typist", status: "needs-input", waiting_since: mIso(2 * M_MIN), seen: { turn_ended_at: mIso(20 * M_MIN) } });
+  st.tasks = [c];
+  st.replies["ty-1"] = { source: "transcript", replies: Array.from({ length: 10 }, (_, i) => ({ at: mIso((60 - i * 4) * M_MIN), text: "Reply " + i + ". " + "words go here and wrap onto more lines. ".repeat(8) })) };
+  await st.open();
+  try {
+    const { ctx, p, errors } = await mPage(browser, st, M_VIEWS[0], "");
+    const tag = "mTypeSteady: ";
+    await p.waitForSelector("#m-seg-all", { timeout: slow(10000) });
+    await p.tap("#m-seg-all");
+    await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
+    await p.tap('#m-list .row[data-id="ty-1"]');
+    await p.waitForSelector("#m-replies .reply", { timeout: slow(5000) });
+    await p.waitForSelector("#m-compose textarea", { timeout: slow(5000) });
+    await p.waitForTimeout(600);
+    const look = () => p.evaluate(() => {
+      const sc = document.getElementById("m-card-scroll"), r = sc.getBoundingClientRect();
+      const first = [...document.querySelectorAll("#m-replies .reply")].find(e => e.getBoundingClientRect().bottom > r.top + 1);
+      return { top: sc.scrollTop, first: first ? first.textContent.slice(0, 14) : "", firstY: first ? Math.round(first.getBoundingClientRect().top - r.top) : 0,
+        boxH: Math.round(document.querySelector("#m-compose textarea").getBoundingClientRect().height) };
+    });
+    for (const where of ["bottom", "middle"]) {
+      if (where === "middle") await p.evaluate(() => { const e = document.getElementById("m-card-scroll"); e.dispatchEvent(new WheelEvent("wheel", { deltaY: -100 })); e.scrollTop = Math.round(e.scrollHeight / 3); });
+      await p.waitForTimeout(300);
+      await p.tap("#m-compose textarea");
+      await p.waitForTimeout(200);
+      const base = await look();
+      const steps = [];
+      for (let line = 0; line < 10; line++) {
+        for (const ch of "line " + line + " of a long message") {
+          await p.keyboard.type(ch);
+          const now = await look();
+          if (now.top !== base.top || now.first !== base.first || now.firstY !== base.firstY) { steps.push({ line, ch, now }); break; }
+        }
+        if (steps.length) break;
+        await p.keyboard.press("Shift+Enter");
+        if (line === 3) await p.setViewportSize({ width: 390, height: 844 - 320 });
+        if (line === 7) await p.setViewportSize({ width: 390, height: 844 });
+        await p.waitForTimeout(60);
+      }
+      if (steps.length) fail(tag + where + ": the thread moved " + JSON.stringify({ base, step: steps[0] }));
+      const end = await look();
+      if (end.boxH > 6 * 20 + 24) fail(tag + where + ": the composer grew past its cap: " + end.boxH);
+      const sc = await p.$eval("#m-compose textarea", t => t.scrollHeight > t.clientHeight && getComputedStyle(t).overflowY === "auto");
+      if (!sc) fail(tag + where + ": a ten line message does not scroll inside the composer");
+      await p.fill("#m-compose textarea", "");
+      await p.evaluate(() => document.querySelector("#m-compose textarea").dispatchEvent(new Event("input", { bubbles: true })));
+      await p.evaluate(() => document.activeElement && document.activeElement.blur());
+    }
+    if (await mNoSideways(p)) fail(tag + "the card scrolls sideways");
+    if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+    await ctx.close();
+  } finally { await st.close(); }
+  if (!bad) console.log("mTypeSteady ok");
 }
 
 async function mRecapSheetSection(browser) {
@@ -14673,7 +14752,7 @@ async function main() {
       bootClean: bootCleanSection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mRecapSheet: mRecapSheetSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
       gearTermList: gearTermListSection, growlLinks: growlLinksSection, growlChoiceOnce: growlChoiceOnceSection,
-      mOutputAt: mOutputAtSection, mStickBottom: mStickBottomSection, mSendFree: mSendFreeSection, mCardUpload: mCardUploadSection, mCompact: mCompactSection, mPinch: mPinchSection, mPrompts: mPromptsSection,
+      mOutputAt: mOutputAtSection, mStickBottom: mStickBottomSection, mSendFree: mSendFreeSection, mCardUpload: mCardUploadSection, mCompact: mCompactSection, mPinch: mPinchSection, mTypeSteady: mTypeSteadySection, mPrompts: mPromptsSection,
       cardUrlWinName: cardUrlWinNameSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
@@ -16664,6 +16743,7 @@ async function main() {
     await mCardUploadSection(browser);
     await mCompactSection(browser);
     await mPinchSection(browser);
+    await mTypeSteadySection(browser);
     await mPromptsSection(browser);
     await cardUrlWinNameSection(browser, base);
   } catch (e) {

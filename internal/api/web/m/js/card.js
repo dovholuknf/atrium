@@ -309,7 +309,16 @@
     els.scroll.scrollTop = els.scroll.scrollHeight;
     els.jump.hidden = true;
   }
+  // While a message is being typed the thread holds still. The composer growing a line, the keyboard coming or going
+  // and every keystroke change the room around the thread, and none of them is a reason to move it. The place it had
+  // when typing began (or where the operator last scrolled it to) is put back after each of those, and stick-to-bottom
+  // is not run. Sending, the jump control and leaving the box end it.
+  let typing = false, pinTop = 0;
+  function pinned() { if (typing && els && els.scroll.scrollTop !== pinTop) els.scroll.scrollTop = pinTop; return typing; }
+  function typingOn() { if (!typing && els) { typing = true; pinTop = els.scroll.scrollTop; } }
+  function typingOff() { typing = false; }
   function settle() {
+    if (pinned()) return;
     if (!stick || !els) return;
     toEnd();
     requestAnimationFrame(() => { if (stick && els) toEnd(); });
@@ -357,6 +366,7 @@
   function byHand() { userAt = Date.now(); }
   function onScroll() {
     if (!els || !openId) return;
+    if (typing) { if (Date.now() - userAt < 1500) pinTop = els.scroll.scrollTop; else pinned(); }
     const gap = els.scroll.scrollHeight - els.scroll.scrollTop - els.scroll.clientHeight;
     if (gap < NEAR) { stick = true; els.jump.hidden = true; return; }
     if (Date.now() - userAt < 1500) { stick = false; els.jump.hidden = false; }
@@ -657,13 +667,16 @@
     // The first open lays out late: the Recap button, the permission rows, fonts and any image in a reply move the end
     // after the first scroll. While following, every size change of the thread and the box around it goes to the end again.
     if (window.ResizeObserver) {
-      const ro = new ResizeObserver(() => { if (stick && openId) toEnd(); });
+      const ro = new ResizeObserver(() => { if (pinned()) return; if (stick && openId) toEnd(); });
       [els.scroll, els.head, els.notices, els.replies, els.extras, els.perms].forEach(e => ro.observe(e));
     }
     pinchInit();
     els.scroll.addEventListener("load", () => { if (stick && openId) toEnd(); }, true);
-    els.jump.addEventListener("click", () => { stick = true; toEnd(); });
+    els.jump.addEventListener("click", () => { typingOff(); stick = true; toEnd(); });
     if (window.visualViewport) window.visualViewport.addEventListener("resize", () => { if (openId) settle(); });
+    els.sheet.addEventListener("input", e => { if (e.target && e.target.classList && e.target.classList.contains("mc-box")) typingOn(); }, true);
+    els.sheet.addEventListener("focusout", e => { if (e.target && e.target.classList && e.target.classList.contains("mc-box")) typingOff(); });
+    window.addEventListener("m-send", e => { if (e.detail && e.detail.state === "pending") typingOff(); });
     els.head.addEventListener("click", e => { if (e.target.closest && e.target.closest("#m-recap-open")) openRecap(); });
     els.recap.addEventListener("click", e => {
       if (e.target.id === "m-recap-back" || (e.target.closest && e.target.closest("#m-recap-close"))) closeRecap();
