@@ -58,3 +58,21 @@ real caller sends. This is the second-order edge both directors miss first time 
 
 HOLD e9aa0ee5..29ee2414. One medium, a fix of about two lines in `MarkNoticesRead`. Send the fix and its test, and
 I re-read it for hub and room.
+
+## Re-read of 7f4732e6 at dcc8304c (2026-10-01)
+
+The fix is what was asked. `MarkNoticesRead` parses `through` as RFC3339Nano and stores `ts(parsed)`, so the
+marker stays fixed-width UTC and the text comparisons hold. `Format` truncates, so a stamp with more than
+millisecond precision cannot round up past a later notice. The tip is a clean merge of claude/main bd71d5be (the
+recomputed tree is the tip's, 79a2c338).
+
+- `TestMarkNoticesReadTakesAnAtFromAJSONRoundTrip` takes `through` from a JSON round trip at `.120` and `.000`.
+  The worker did not run it against the unfixed code, so I did. With 29ee2414's `heldnotices.go` it fails
+  (`stamping "2026-01-01T00:00:01.12Z": false, want the count to fall`). With the fix it passes.
+- `go vet` on store, daemon, api and link: clean. The targeted store, daemon, api, link and cli tests: ok.
+
+Medium 1 is closed. Low 2 stands as an operations note: deploy the hub before the room.
+
+Quality: the fix is minimal and the test reproduces the real caller's input. No drop.
+
+HUB DEPLOY OK and ROOM DEPLOY OK e9aa0ee5..dcc8304c.
