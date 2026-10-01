@@ -1998,7 +1998,14 @@ if [ "$(uname -s)" = Linux ]; then
     systemctl --user start atrium 2>&1 && echo start=done || echo "start=fail systemctl --user start atrium failed"
   fi
 elif launchctl print "gui/$(id -u)/io.github.dovholuknf.atrium" >/dev/null 2>&1; then echo start=ok
-else echo "start=warn the LaunchAgent is not loaded. it needs a desktop login"
+elif curl -fs --max-time 3 http://127.0.0.1:7781/v1/health >/dev/null 2>&1; then
+  echo "start=ok the room answers. the LaunchAgent loads at a desktop login, so a reboot with nobody logged in leaves it down until auto-login is on"
+else
+  /bin/zsh -l -c 'exec "$0" room --detach --db "$HOME/.atrium/atrium.db"' "$Bin" >/dev/null 2>&1
+  if curl -fs --max-time 3 http://127.0.0.1:7781/v1/health >/dev/null 2>&1; then
+    echo "start=done started detached, since the LaunchAgent needs a desktop login. a reboot with nobody logged in leaves the room down until auto-login is on"
+  else echo "start=warn the LaunchAgent is not loaded (it needs a desktop login) and a detached start did not answer"
+  fi
 fi
 '@
     }
