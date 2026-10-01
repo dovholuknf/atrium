@@ -69,3 +69,13 @@ is careful. The widening was not weighed against touch-capable desktops, which i
 I would have expected.
 
 HUB DEPLOY OK 0b91385f
+
+## Re-read of 06c7c758 (@ui, low 3)
+
+`git diff 0b91385f 06c7c758 -- internal/api/web`, read only. The size test is now `min(screen.width, screen.height) <
+600`, so a small window on a big touch screen stays on the board, and a phone (412x915 CSS px) still goes to /m. Both
+are CSS pixels, so a high-density phone reads small, as it should. Low 3 is closed. No findings.
+
+Quality: after the Sonnet switch. The one-line fix the review asked for, and the comment says why. No drop seen.
+
+HUB DEPLOY OK 06c7c758
