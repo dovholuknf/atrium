@@ -214,6 +214,18 @@ types nothing else until the turn is over. So the only gates dropped are mid-tur
 which is about a card between turns). Pending permission, an open dialog, subagents, background work, held messages,
 the same-directory check and the minimum gap all stay. The orchestrator tags directors. Workers never tag themselves.
 
+Two more holds, because a ceiling card is not a human card and starts mid-turn. A person using it holds the start,
+the typing of the stop line and the capture, so a director somebody is talking to is not cleared under them. Using it
+means a terminal attached, or the phone card page open (the page holds no connection, so it is read off the card's
+replies being fetched in the last `ceilingCardRead`, two minutes), and that wait is bounded: `ceilingMaxWait` (30
+minutes) past the crossing, a watcher alone stops holding, so a tab left open does not turn the ceiling off for good.
+TYPING NEVER TIMES OUT. A keystroke in the last `ceilingTypedQuiet` (two minutes) holds for as long as it keeps coming,
+because a watcher who is only reading may be cleared at the bound and a person mid-sentence may not. The wait is
+said once per crossing, as an event on the card and a launcher notice: "waiting for you to leave before cycling its
+context". And a card with no directory the room can
+read is refused before anything is typed: the handoff file is the only proof the capture worked, and mid-turn the
+turn ending is too weak a signal to clear on without it.
+
 ## 5. When the card cannot write a handoff, or capture times out
 
 Nothing is cleared without a verified handoff. That rule is the cycle's and stays.

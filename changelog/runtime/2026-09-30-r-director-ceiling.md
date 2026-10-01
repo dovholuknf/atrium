@@ -4,5 +4,7 @@
   and end its turn (once at a minute, once at half the limit) before the capture is typed. Pending permission, an open
   dialog, subagents, background work, held messages, the same-directory check and the minimum gap still hold it back,
   and `atrium:no-auto-new-context` still excludes. The wake says the context was cycled at the ceiling and the
-  launcher's notice says the card passed it. The ceiling never sits below `context_threshold_k`. Room side.
+  launcher's notice says the card passed it. The ceiling never sits below `context_threshold_k`. A terminal attached or the
+  phone card page open holds it for up to 30 minutes past the crossing and says it is waiting for you to leave, typing
+  holds it for as long as it goes on, and a card with no readable directory is refused, not cleared. Room side.
   (r-director-ceiling)

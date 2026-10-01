@@ -8049,3 +8049,12 @@ on the board port. The body replaces the set, so read the card's tags first.
    `auto_new_context` on `agents` and `auto_new_context_k` at 180, it is cycled at 180k, the lower line.
 5. Setting `context_ceiling_k` below `context_threshold_k` is refused. A card without the tag, mid-turn past the global
    line, is left alone as before.
+6. Attach a browser terminal to a tagged director past the ceiling, or open its `/m` card page. Nothing is started and
+   no stop line is typed while you are there. The card's event log and its launcher get one line, `waiting for you to
+   leave before cycling its context`. Detach, or leave the card page for two minutes (`ceilingCardRead`), and it goes.
+   The card page is detected by its replies being fetched, since the page holds no connection.
+7. Stay attached past 30 minutes after the crossing (`ceilingMaxWait`). Watching alone stops holding it. Keep typing
+   (a keystroke in the last two minutes, `ceilingTypedQuiet`) and it holds for as long as you do.
+8. A tagged director whose directory the room cannot read (a removed worktree, or none) is not cleared. The chip fails
+   with `not cycled: this card has no directory the room can read ...`, nothing is typed, and the launcher is not
+   told a cycle began.

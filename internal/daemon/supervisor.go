@@ -897,6 +897,13 @@ func (r *runner) watching() bool {
 	return len(r.watchers) > 0
 }
 
+// typedWithin says whether a keystroke landed in the last d.
+func (r *runner) typedWithin(d time.Duration) bool {
+	r.typeMu.Lock()
+	defer r.typeMu.Unlock()
+	return !r.lastTyped.IsZero() && time.Since(r.lastTyped) < d
+}
+
 // Say types text into the runner and then presses Enter, as two separate
 // writes.
 //

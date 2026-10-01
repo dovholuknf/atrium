@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -167,6 +168,121 @@ func TestCeilingCardStillWaitsOutTheProtectingGates(t *testing.T) {
 			g.clear(r)
 			r.wantStart("once " + g.name + " cleared")
 		})
+	}
+}
+
+// A terminal attached holds the cycle until the person leaves, and says so once.
+func TestCeilingCardWaitsForAWatcherToLeave(t *testing.T) {
+	r := newAutoRig(t, "", directorTags...)
+	ceilingBusy(r)
+	r.size(200)
+	autoQuiet()
+
+	detach := r.viewer()
+	r.wantNone("with a terminal attached")
+	r.wantNone("on the next tick")
+	if n := len(r.notified(autoContextBy)); n != 1 || r.notified(autoContextBy)[0]["waiting"] != ceilingWaitingText {
+		t.Fatalf("want one waiting event, got %v", r.notified(autoContextBy))
+	}
+	waits := 0
+	for _, m := range pendingFrom(t, r.d, r.launcher.ID) {
+		if strings.Contains(m.Text, "waiting for you to leave") {
+			waits++
+		}
+	}
+	if waits != 1 {
+		t.Fatalf("the launcher was told %d times", waits)
+	}
+	detach()
+	r.wantStart("once the person left")
+}
+
+// An open phone card page, which is only a recent read of the replies, holds it too.
+func TestCeilingCardWaitsForAnOpenCardPage(t *testing.T) {
+	r := newAutoRig(t, "", directorTags...)
+	ceilingBusy(r)
+	r.size(200)
+	autoQuiet()
+	r.d.auto.noteRead(r.id())
+	r.wantNone("with the card page just read")
+	autoTiming.ceilingCardRead = time.Millisecond
+	autoQuiet()
+	r.wantStart("once the card page has not been read for a while")
+}
+
+// Past the maximum wait a watcher alone no longer holds it, and typing still does.
+func TestCeilingCardWaitIsBoundedAndTypingNeverTimesOut(t *testing.T) {
+	r := newAutoRig(t, "", directorTags...)
+	ceilingBusy(r)
+	r.size(200)
+	autoTiming.ceilingMaxWait = 40 * time.Millisecond
+	autoQuiet()
+
+	r.viewer()
+	r.run.noteOperatorTyped([]byte("\r"))
+	r.wantNone("inside the wait")
+	time.Sleep(60 * time.Millisecond)
+	r.wantNone("past the wait with a person still typing")
+
+	r.run.typeMu.Lock()
+	r.run.lastTyped = time.Now().Add(-peerGateIdle - time.Second)
+	r.run.typeMu.Unlock()
+	autoTiming.ceilingTypedQuiet = time.Millisecond
+	r.wantStart("past the wait with a watcher who has stopped typing")
+}
+
+// Dropping under the line ends the wait, so the next crossing waits afresh.
+func TestCeilingCardWaitStartsAtEachCrossing(t *testing.T) {
+	r := newAutoRig(t, "", directorTags...)
+	ceilingBusy(r)
+	r.size(200)
+	autoTiming.ceilingMaxWait = 40 * time.Millisecond
+	autoQuiet()
+	r.viewer()
+	r.wantNone("inside the wait")
+	time.Sleep(60 * time.Millisecond)
+	r.size(100)
+	r.tick()
+	r.size(200)
+	r.wantNone("on a new crossing, inside its own wait")
+}
+
+// A person who starts typing after the cycle began is not sent the stop line.
+func TestCeilingCardNoStopLineAtAPersonWhoIsTyping(t *testing.T) {
+	r := newAutoRig(t, "", directorTags...)
+	ncTiming.nudgeAfter = 30 * time.Millisecond
+	ceilingBusy(r)
+	r.size(200)
+	autoQuiet()
+	r.wantStart("with nobody attached")
+	r.viewer()
+	r.run.noteOperatorTyped([]byte("\r"))
+	time.Sleep(150 * time.Millisecond)
+	if strings.Contains(r.f.written(), newContextStop) {
+		t.Fatalf("the stop line was typed at a person who is typing: %q", r.f.written())
+	}
+}
+
+// With no directory the room can read, a handoff cannot be checked, so nothing is cleared.
+func TestCeilingCardWithNoReadableDirectoryIsNotCleared(t *testing.T) {
+	r := newAutoRig(t, "", directorTags...)
+	if err := os.RemoveAll(r.dir); err != nil {
+		t.Fatal(err)
+	}
+	ceilingBusy(r)
+	r.size(200)
+	autoQuiet()
+	r.wantStart("past the ceiling")
+	until(t, "the chip to fail", func() bool { return failedWith(r.d, r.id()) != "" })
+	if reason := failedWith(r.d, r.id()); !strings.Contains(reason, "no directory the room can read") {
+		t.Fatalf("the chip does not say why: %q", reason)
+	}
+	got := r.f.written()
+	if strings.Contains(got, "/clear") || strings.Contains(got, "HANDOFF.") || strings.Contains(got, newContextStop) {
+		t.Fatalf("something was typed into a card with nothing to check: %q", got)
+	}
+	if n := len(r.autoNotices()); n != 0 {
+		t.Fatalf("the launcher was told a cycle was under way: %d notices", n)
 	}
 }
 
