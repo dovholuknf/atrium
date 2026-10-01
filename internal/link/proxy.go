@@ -1360,6 +1360,8 @@ func (p *Proxy) serveHubAPI(w http.ResponseWriter, r *http.Request) {
 		p.serveGit(w, r, sub)
 	case "launch-caps":
 		p.serveLaunchCaps(w, r)
+	case "hosts":
+		p.serveHosts(w, r)
 	case "deploy-owner":
 		p.serveDeployOwner(w, r)
 	case "deps", "deps/clear", "deps/rename", "deps/ready":

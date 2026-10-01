@@ -95,8 +95,9 @@ The menu item is not greyed for these. It is left out, and "open in atrium" and 
 Both conditions, as the item says:
 
 1. The room is on the same machine as the hub, and
-2. the page was loaded over the hub's loopback listener, not a share or an overlay. Every request over a share
-   presents as loopback, so it is the listener that answers, not the address (`internal/api/CLAUDE.md`).
+2. the request is the operator's own, by `edge.LocalOperator` (`docs/rnd/local-proxy-trust-design.md`): loopback,
+   a loopback `Host`, no forwarding header, and not an overlay listener. The listener alone is not enough: a share
+   started by hand at the loopback listener presents as loopback too.
 
 Plus a third: the helper is installed on this computer. A browser cannot ask whether a URL scheme has a handler, so
 the gear has a checkbox, `the open-with helper is installed on this computer`, stored in the browser's own storage,

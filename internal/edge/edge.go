@@ -32,11 +32,17 @@ package edge
 
 import (
 	"context"
+	"encoding/json"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"strings"
+	"sync"
+	"sync/atomic"
+
+	"golang.org/x/net/publicsuffix"
 )
 
 // EnvHosts is the variable naming extra hosts every listener answers, comma
@@ -47,28 +53,98 @@ const EnvHosts = "ATRIUM_HOSTS"
 func Loopback(h http.Handler) http.Handler { return Named(h) }
 
 // Named wraps a handler that answers loopback names and `names`, plus
-// $ATRIUM_HOSTS. A name may be a host, a host and port, or a URL.
+// $ATRIUM_HOSTS and the hub's hosts setting (SetExtra). A name may be a host, a
+// host and port, or a URL.
 //
 // `*.example.com` answers every name under that domain, and not the domain
 // itself. For a share frontend that hands out a random name per share, like
-// `*.shares.zrok.io`. Still no rebinding: a page can only rebind a name whose
-// DNS it controls, and nobody but the frontend's operator controls names under
-// its domain.
+// `*.shares.zrok.io`.
+//
+// A WILDCARD IS SAFE ONLY FOR A DOMAIN WHOSE DNS ONE OPERATOR ALONE SETS. A page
+// can rebind only a name whose DNS it controls, and nobody but zrok's operator
+// sets records under shares.zrok.io. Under a dynamic DNS domain anybody sets an A
+// record, so `*.duckdns.org` would hand rebinding back to every page on the
+// internet, on every listener, loopback included. So a wildcard over a public
+// suffix (`*.com`, `*.co.uk`, `*.duckdns.org`, `*.github.io`) is ignored and
+// logged. A name under one still works when it is listed exactly.
 func Named(h http.Handler, names ...string) http.Handler {
-	allow := hostSet{exact: map[string]bool{}}
-	for _, n := range append(names, EnvNames()...) {
-		host := hostOf(n)
-		if suffix, ok := strings.CutPrefix(host, "*."); ok {
-			if strings.Contains(suffix, ".") {
-				allow.under = append(allow.under, "."+suffix)
-			}
-			continue
-		}
-		if host != "" {
-			allow.exact[host] = true
-		}
+	allow, ignored := parseNames(append(names, EnvNames()...))
+	for _, ig := range ignored {
+		logIgnoredOnce(ig)
 	}
 	return hostCheck(checks(h), allow)
+}
+
+// Ignored is a name a listener will not answer to, and why.
+type Ignored struct {
+	Name string `json:"name"`
+	Why  string `json:"why"`
+}
+
+// parseNames turns names into a hostSet, with the entries it would not take.
+func parseNames(names []string) (hostSet, []Ignored) {
+	allow := hostSet{exact: map[string]bool{}}
+	var ignored []Ignored
+	for _, n := range names {
+		host := hostOf(n)
+		if suffix, ok := strings.CutPrefix(host, "*."); ok {
+			if why := wildcardRefusal(suffix); why != "" {
+				ignored = append(ignored, Ignored{Name: n, Why: why})
+				continue
+			}
+			allow.under = append(allow.under, "."+suffix)
+			continue
+		}
+		if host == "" || strings.Contains(host, "*") {
+			ignored = append(ignored, Ignored{Name: n, Why: "not a host name"})
+			continue
+		}
+		allow.exact[host] = true
+	}
+	return allow, ignored
+}
+
+// wildcardRefusal says why `*.suffix` is not taken, or "".
+func wildcardRefusal(suffix string) string {
+	if !strings.Contains(suffix, ".") || strings.Contains(suffix, "*") {
+		return "a wildcard needs a domain under a public suffix, like *.shares.zrok.io"
+	}
+	if ps, _ := publicsuffix.PublicSuffix(suffix); ps == suffix {
+		return "anybody can own a name under " + suffix + ", so a page could rebind one. list the name exactly"
+	}
+	return ""
+}
+
+var loggedIgnored sync.Map
+
+func logIgnoredOnce(ig Ignored) {
+	if _, seen := loggedIgnored.LoadOrStore(ig.Name, true); !seen {
+		log.Printf("[atrium] hosts: ignoring %q: %s", ig.Name, ig.Why)
+	}
+}
+
+// extra is the hub's hosts setting, answered by every Named listener in this
+// process. A pointer swapped whole, so a change takes effect on the next request
+// with no restart and no lock on the request path.
+var extra atomic.Pointer[hostSet]
+
+// SetExtra replaces the hosts setting's names and returns the entries it would
+// not take. Every Named listener answers the new names from the next request.
+func SetExtra(names []string) []Ignored {
+	allow, ignored := parseNames(names)
+	extra.Store(&allow)
+	return ignored
+}
+
+// CheckNames is what SetExtra would ignore in names, without setting anything.
+func CheckNames(names []string) []Ignored {
+	_, ignored := parseNames(names)
+	return ignored
+}
+
+func extraHas(host string) bool {
+	s := extra.Load()
+	return s != nil && s.has(host)
 }
 
 // hostSet is the names a listener answers besides loopback: exact names, and
@@ -173,7 +249,7 @@ func LoopbackHost(hostport string) bool {
 func refuse(w http.ResponseWriter, msg string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusForbidden)
-	_, _ = w.Write([]byte(`{"error":"` + msg + `"}` + "\n"))
+	_ = json.NewEncoder(w).Encode(map[string]string{"error": msg})
 }
 
 func checks(h http.Handler) http.Handler {
@@ -183,8 +259,10 @@ func checks(h http.Handler) http.Handler {
 
 func hostCheck(h http.Handler, allow hostSet) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !LoopbackHost(r.Host) && !allow.has(hostOf(r.Host)) {
-			refuse(w, "this listener does not answer to that name. $"+EnvHosts+" adds one")
+		host := hostOf(r.Host)
+		if !LoopbackHost(r.Host) && !allow.has(host) && !extraHas(host) {
+			refuse(w, "this listener does not answer to "+host+". add it under hosts in the board's gear, "+
+				"on the machine atrium runs on, or in $"+EnvHosts)
 			return
 		}
 		h.ServeHTTP(w, r)

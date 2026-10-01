@@ -7270,14 +7270,18 @@ async function cacheLineSection(browser, base) {
       null, { timeout: slow(8000) }).catch(() => fail("cacheLine: the line did not tick to cold by itself"));
     if (reqs.length) fail("cacheLine: the tick made requests " + reqs.join(" "));
 
-    // The terminals list carries the same line, and a tap opens the gear on the keep-alive setting.
+    // The gear's terminal list section carries the same line, and the list itself has none.
     landList = ids.map(i => LAND[i]);
     await p.evaluate(() => switchView("terms"));
-    await p.waitForFunction(() => { const e = document.getElementById("cache-line-terms"); return e && !e.hidden && /^cache: \d+ warm/.test(e.innerText.trim()); },
-      null, { timeout: slow(10000) }).catch(async () => fail("cacheLine terms: " + await read("cache-line-terms")));
-    await p.evaluate(() => document.getElementById("cache-line-terms").click());
-    await p.waitForFunction(() => { const f = document.getElementById("s-keepalive"); return f && f.getBoundingClientRect().width > 0; },
-      null, { timeout: slow(5000) }).catch(() => fail("cacheLine: a tap did not open the keep-alive setting"));
+    await p.waitForFunction(() => { const e = document.getElementById("cache-line-gear"); return e && !e.hidden && /^cache: \d+ warm/.test(e.textContent.trim()); },
+      null, { timeout: slow(10000) }).catch(async () => fail("cacheLine gear: " + await read("cache-line-gear")));
+    if (await p.evaluate(() => !!document.querySelector("#term-list .cacheline"))) fail("cacheLine: the terminal list still carries the cache line");
+    // and it follows an event with no request, like the stack's
+    kaFix("cl-tick", { why: "not idle", warm_until: new Date(Date.now() + 60000).toISOString() });
+    landList = [LAND["cl-tick"]];
+    await p.evaluate(() => tasksSoon());
+    await p.waitForFunction(() => /^cache: 1 warm/.test(document.getElementById("cache-line-gear").textContent.trim()), null, { timeout: slow(10000) })
+      .catch(async () => fail("cacheLine gear did not follow the list: " + await read("cache-line-gear")));
   } finally {
     tasksMode = was;
     kaSettings = wasSettings;
@@ -8742,7 +8746,7 @@ async function eventDrivenSection(browser, base) {
       fail("a task event with the whole row did not repaint the card from the event: " + JSON.stringify(title.slice(0, 120)));
     }
 
-    // (b) The tray and the sort paint in the frame they were clicked in, and
+    // (b) The sort paints in the frame they were clicked in, and
     // ask for nothing.
     counts.clear();
     const clicks = await p.evaluate(() => {
@@ -8755,14 +8759,11 @@ async function eventDrivenSection(browser, base) {
       return (async () => ({
         sort: await oneFrame(() => toggleTermSort(), strip),
         sortBack: await oneFrame(() => toggleTermSort(), strip),
-        tray: await oneFrame(() => toggleTermTray(), strip),
-        trayBack: await oneFrame(() => toggleTermTray(), strip),
       }))();
     });
     await p.waitForTimeout(500);
     if (!clicks.sort || !clicks.sortBack) fail("the terminal sort did not repaint within one frame: " + JSON.stringify(clicks));
-    if (!clicks.tray || !clicks.trayBack) fail("the tray toggle did not repaint within one frame: " + JSON.stringify(clicks));
-    if (sumCounts(counts)) fail("a tray or sort click made requests: " + topCounts(counts));
+    if (sumCounts(counts)) fail("a sort click made requests: " + topCounts(counts));
 
     // (c) Waiting is worked out, never asked for. Counted over the whole
     // section, boot included.
@@ -13756,6 +13757,104 @@ async function mPicturesSection(browser) {
   if (!bad) console.log("mPictures ok");
 }
 
+// The phone and the desktop draw a question's body the same way: text only, no links, no inline markup.
+async function growlLinksSection(browser, base) {
+  for (const phone of [false, true]) {
+    const tag = "growlLinks " + (phone ? "phone" : "desktop") + ": ";
+    const body = "See [the docs](https://example.com/x) and https://example.com/y and **bold** here.";
+    const h = await growlQuestionFace(browser, base, phone, [GR("l", "question", 1, { body })]);
+    const { p, root } = h;
+    try {
+      const f = await p.evaluate(root => {
+        const b = document.querySelector(root + " .gr-body, " + root + " .gm-body");
+        return { links: b.querySelectorAll("a").length, strong: b.querySelectorAll("strong, b, em").length, text: b.textContent };
+      }, root);
+      if (f.links || f.strong) fail(tag + "the body drew markup: " + JSON.stringify(f));
+      if (!f.text.includes("https://example.com/y") || !f.text.includes("[the docs](https://example.com/x)")) fail(tag + "the body lost its text: " + JSON.stringify(f.text));
+      if (h.errors.length) fail(tag + "page errors: " + h.errors.join(" | "));
+    } finally { await h.close(); }
+  }
+  if (!bad) console.log("growlLinks ok");
+}
+
+// A choice sends once: a double press is one message, every button is disabled until the send answers, and a failed
+// send lights them again.
+async function growlChoiceOnceSection(browser, base) {
+  for (const phone of [false, true]) {
+    const tag = "growlChoiceOnce " + (phone ? "phone" : "desktop") + ": ";
+    const body = "Which?\n\n{choices}\n1. Run it now\n2. Do not run it\n{/choices}";
+    const h = await growlQuestionFace(browser, base, phone, [GR("c", "blocked", 1, { body })]);
+    const { p, root } = h;
+    const off = () => p.$$eval(root + " [data-choice]", b => b.map(x => x.disabled));
+    try {
+      h.msgDelay = 600; h.msgFail = true;
+      const first = root + " [data-choice]";
+      await p.evaluate(sel => { const b = document.querySelector(sel); b.click(); b.click(); }, first);
+      await p.waitForTimeout(150);
+      if ((await off()).join() !== "true,true") fail(tag + "the buttons were not disabled in flight: " + (await off()));
+      await p.waitForTimeout(900);
+      if (h.messages.length !== 1) fail(tag + "a double press sent " + h.messages.length + " messages.");
+      if ((await off()).join() !== "false,false") fail(tag + "a failed send did not light the buttons again: " + (await off()));
+      h.msgDelay = 0; h.msgFail = false;
+      await p.evaluate(sel => { const b = document.querySelector(sel); b.click(); b.click(); }, first);
+      await p.waitForTimeout(400);
+      if (h.messages.length !== 2) fail(tag + "the retry sent " + (h.messages.length - 1) + " messages.");
+      if ((await off()).join() !== "true,true") fail(tag + "an answered choice left its buttons lit: " + (await off()));
+      await h.say([GR("c", "blocked", 1, { body })]);
+      await p.waitForTimeout(200);
+      if ((await off()).join() !== "true,true") fail(tag + "a redraw lit an answered choice again.");
+      if (h.errors.length) fail(tag + "page errors: " + h.errors.join(" | "));
+    } finally { await h.close(); }
+  }
+  if (!bad) console.log("growlChoiceOnce ok");
+}
+
+// The gear's terminal list section: the list's controls, and the cache summary that follows the list on an event.
+async function gearTermListSection(browser, base) {
+  for (const w of [1280, 390]) {
+    const tag = "gearTermList " + w + ": ";
+    const ctx = await browser.newContext({ viewport: { width: w, height: 800 } });
+    const p = await ctx.newPage();
+    const errors = [];
+    p.on("pageerror", e => errors.push(e.message));
+    try {
+      await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+      await p.waitForFunction(() => typeof paintTermGear === "function" && typeof renderTermList === "function", null, { timeout: slow(15000) });
+      await p.evaluate(() => switchView("terms"));
+      await p.evaluate(() => document.getElementById("gear").click());
+      await p.evaluate(() => showSettingsPane("terminal list"));
+      const f = await p.evaluate(() => ({
+        shown: [...document.querySelectorAll("#settings .pane")].some(x => x.dataset.name === "terminal list" && !x.hidden),
+        sort: document.querySelectorAll("#gear-term-sort button").length,
+        hide: document.querySelectorAll("#gear-term-hide button").length,
+        group: document.querySelectorAll("#term-group button").length,
+        cache: !!document.getElementById("cache-line-gear"),
+        inList: document.querySelectorAll("#term-list .traysum, #term-list .cacheline, #term-list .trayseg").length
+      }));
+      if (!f.shown || f.sort !== 2 || f.hide !== 2 || f.group < 6 || !f.cache) fail(tag + "the section is wrong: " + JSON.stringify(f));
+      if (f.inList) fail(tag + "the list still has the old row or line.");
+      const a = await p.evaluate(() => {
+        const was = sortByActivity;
+        [...document.querySelectorAll("#gear-term-sort button")].find(b => !b.classList.contains("on")).click();
+        const out = { flipped: sortByActivity !== was, lit: document.querySelectorAll("#gear-term-sort button.on").length };
+        toggleTermSort();
+        return out;
+      });
+      if (!a.flipped || a.lit !== 1) fail(tag + "the sort control did not change the list: " + JSON.stringify(a));
+      const hd = await p.evaluate(() => {
+        const was = hideSubagentsMode();
+        [...document.querySelectorAll("#gear-term-hide button")][1].click();
+        const now = hideSubagentsMode();
+        [...document.querySelectorAll("#gear-term-hide button")][1].click();
+        return { was, now, back: hideSubagentsMode() };
+      });
+      if (hd.now === hd.was || hd.back !== hd.was) fail(tag + "the hide control did not toggle: " + JSON.stringify(hd));
+      if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+    } finally { await ctx.close(); }
+  }
+  if (!bad) console.log("gearTermList ok");
+}
+
 async function main() {
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = "http://127.0.0.1:" + server.address().port;
@@ -13792,7 +13891,8 @@ async function main() {
       pasteStart: pasteStartSection, pasteDone: pasteDoneSection, pasteOldRoom: pasteOldRoomSection, pasteClose: pasteCloseSection,
       growlQuestionShots: growlQuestionShotsSection, growlQuestionBody: growlQuestionBodySection, growlReplyGrow: growlReplyGrowSection, growlChoices: growlChoicesSection, growlStable: growlStableSection, mGrowlQuestion: mGrowlQuestionSection,
       bootClean: bootCleanSection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mRecapSheet: mRecapSheetSection,
-      mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection };
+      mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection,
+      gearTermList: gearTermListSection, growlLinks: growlLinksSection, growlChoiceOnce: growlChoiceOnceSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -14288,115 +14388,73 @@ async function main() {
     const trayShut = await page.evaluate(() => {
       const tray = document.querySelector("#term-list .termtray");
       const scroll = document.querySelector("#term-list .termscroll");
-      const body = tray && tray.querySelector(".traybody");
+      const list = document.getElementById("term-list");
       return {
         tray: !!tray, scroll: !!scroll,
         trayInScroll: !!(tray && scroll && scroll.contains(tray)),
         trayFirst: !!(tray && scroll && (tray.compareDocumentPosition(scroll) &
           Node.DOCUMENT_POSITION_FOLLOWING)),
         trayPos: tray ? getComputedStyle(tray).position : "",
-        listOverflow: getComputedStyle(document.getElementById("term-list")).overflowY,
+        listOverflow: getComputedStyle(list).overflowY,
         scrollOverflow: scroll ? getComputedStyle(scroll).overflowY : "",
-        open: !!(tray && tray.classList.contains("open")),
-        inert: !!(body && body.inert),
-        bodyH: body ? body.getBoundingClientRect().height : -1,
-        summary: ((tray && tray.querySelector(".traysum")) || {}).textContent || "",
-        widthBtns: tray ? tray.querySelectorAll(".traybar .tlcycle").length : 0
+        widthBtns: tray ? tray.querySelectorAll(".traybar .tlcycle").length : 0,
+        leftovers: list.querySelectorAll(".traysum, .traytoggle, .traybody, .cacheline, .trayseg, #term-group, .trayrow").length
       };
     });
     if (!trayShut.tray || !trayShut.scroll || trayShut.trayInScroll || !trayShut.trayFirst) {
-      fail("the controls are not a tray above a separate scrolling box of rows: " +
-        JSON.stringify(trayShut));
+      fail("the width bar is not above a separate scrolling box of rows: " + JSON.stringify(trayShut));
     }
     if (trayShut.trayPos === "sticky" || trayShut.listOverflow !== "hidden" ||
         trayShut.scrollOverflow !== "auto") {
-      fail("the list still scrolls under its controls (sticky, or the list itself " +
-        "scrolls): " + JSON.stringify(trayShut));
+      fail("the list still scrolls under its bar: " + JSON.stringify(trayShut));
     }
-    if (trayShut.open || !trayShut.inert || trayShut.bodyH > 1) {
-      fail("the tray is not folded by default (open, not inert, or its body has " +
-        "height): " + JSON.stringify(trayShut));
-    }
-    // The subagents toggle defaults on and hides the idle and the dead subagent.
-    if (!/^sorted by (name|activity) · (by \w+|ungrouped) · hiding inactive subagents \(2\)$/
-        .test(trayShut.summary)) {
-      fail("the folded tray does not summarise sort, grouping and hiding in one " +
-        "line: " + JSON.stringify(trayShut.summary));
+    if (trayShut.leftovers) {
+      fail("the list still carries the sort, hide, group or cache controls: " + JSON.stringify(trayShut));
     }
     if (trayShut.widthBtns < 1) {
-      fail("the list's width buttons are not on the folded tray's bar: " +
-        JSON.stringify(trayShut));
+      fail("the list's width buttons are not on its bar: " + JSON.stringify(trayShut));
     }
 
-    // Open it: the key is written for this device, the body is live and has
-    // height once the roll has run, and the three rows are there, labelled.
-    await page.evaluate(() => toggleTermTray());
-    await page.waitForTimeout(450);
-    const trayOpen = await page.evaluate(() => {
-      const tray = document.querySelector("#term-list .termtray");
-      const body = tray.querySelector(".traybody");
-      const pills = [...tray.querySelectorAll(".trayseg button")];
+    // The same controls are in the gear, in a `terminal list` section.
+    await page.evaluate(() => document.getElementById("gear").click());
+    await page.evaluate(() => showSettingsPane("terminal list"));
+    const gearSec = await page.evaluate(() => {
+      const pane = [...document.querySelectorAll("#settings .pane")].find(p => p.dataset.name === "terminal list");
+      const f = id => document.getElementById(id);
       return {
-        key: localStorage.getItem(termDeviceKey("atrium.termtray")),
-        open: tray.classList.contains("open"), inert: body.inert,
-        bodyH: body.getBoundingClientRect().height,
-        labels: [...tray.querySelectorAll(".trayrow > .barlabel")].map(l => l.textContent.trim()),
-        sortOn: [...tray.querySelectorAll(".trayrow:first-child .trayseg button.on")]
-          .map(b => b.textContent.trim()),
-        heights: [...new Set(pills.map(b => Math.round(b.getBoundingClientRect().height)))],
-        groupPills: tray.querySelectorAll("#term-group button").length
+        pane: !!pane, shown: !!pane && !pane.hidden,
+        labels: pane ? [...pane.querySelectorAll(".eyebrow")].map(l => l.textContent.trim()) : [],
+        sortOn: [...f("gear-term-sort").querySelectorAll("button.on")].map(b => b.textContent.trim()),
+        hide: [...f("gear-term-hide").querySelectorAll("button")].map(b => b.textContent.trim() + (b.classList.contains("on") ? "*" : "")),
+        groupPills: f("term-group").querySelectorAll("button").length
       };
     });
-    if (trayOpen.key !== "open" || !trayOpen.open || trayOpen.inert || trayOpen.bodyH < 60) {
-      fail("opening the tray did not roll it down and remember it: " + JSON.stringify(trayOpen));
+    if (!gearSec.pane || !gearSec.shown || gearSec.labels.join("|") !== "sort|hide inactive|group|cache") {
+      fail("the gear has no terminal list section with sort, hide inactive, group and cache: " + JSON.stringify(gearSec));
     }
-    if (trayOpen.labels.join("|") !== "sort|hide inactive|group") {
-      fail("the open tray's rows are not sort, hide inactive and group: " +
-        JSON.stringify(trayOpen.labels));
+    if (gearSec.sortOn.length !== 1 || gearSec.groupPills < 6 || gearSec.hide.join("|") !== "agents|subagents (2)*") {
+      fail("the gear's terminal list controls do not show the defaults: " + JSON.stringify(gearSec));
     }
-    if (trayOpen.sortOn.length !== 1) {
-      fail("the sort row does not light exactly one of name|activity: " +
-        JSON.stringify(trayOpen));
-    }
-    if (trayOpen.heights.length !== 1 || trayOpen.groupPills < 6) {
-      fail("the tray's pills are not one consistent size, or the six group modes " +
-        "are missing: " + JSON.stringify(trayOpen));
-    }
-
-    // Remembered: a fresh paint of the list (what a reload does) reads the key
-    // and comes up open.
-    const trayKept = await page.evaluate(async () => {
-      const host = document.getElementById("term-list");
-      host.innerHTML = ""; host.__paintedFrom = null;
-      await loadCards().catch(() => {}).then(renderTermList);
-      return document.querySelector("#term-list .termtray").classList.contains("open");
+    // Changing them there changes the list the way the old row did, and the gear follows.
+    const gearActs = await page.evaluate(async () => {
+      const click = (id, text) => [...document.getElementById(id).querySelectorAll("button")]
+        .find(b => b.textContent.trim().startsWith(text)).click();
+      const was = sortByActivity;
+      click("gear-term-sort", was ? "name" : "activity");
+      const sortKey = localStorage.getItem("atrium.termSort");
+      const sortLit = [...document.getElementById("gear-term-sort").querySelectorAll("button.on")].map(b => b.textContent.trim())[0];
+      click("gear-term-sort", was ? "activity" : "name");
+      click("gear-term-hide", "subagents");
+      const off = hideSubagentsMode();
+      const hideLit = document.getElementById("gear-term-hide").querySelectorAll("button.on").length;
+      click("gear-term-hide", "subagents");
+      return { was, sortKey, sortLit, off, hideLit, back: hideSubagentsMode(), sortBack: sortByActivity === was };
     });
-    if (!trayKept) fail("the tray did not come back open from its stored state.");
-
-    // `+ new group` is not an orphan: in `by group` mode it spans the whole row
-    // under the six modes rather than wrapping in as a seventh pill.
-    const plus = await page.evaluate(async () => {
-      const prev = localStorage.getItem(GROUPING_KEY);
-      localStorage.setItem(GROUPING_KEY, JSON.stringify({ on: true, mode: "custom", by: "" }));
-      await loadCards().catch(() => {}).then(renderTermList);
-      const seg = document.getElementById("term-group");
-      const btn = seg && seg.querySelector(".groupplus");
-      const out = btn ? {
-        found: true,
-        full: Math.abs(btn.getBoundingClientRect().width - seg.getBoundingClientRect().width) <= 2,
-        summary: document.querySelector("#term-list .traysum").textContent
-      } : { found: false };
-      if (prev === null) localStorage.removeItem(GROUPING_KEY);
-      else localStorage.setItem(GROUPING_KEY, prev);
-      await loadCards().catch(() => {}).then(renderTermList);
-      return out;
-    });
-    if (!plus.found || !plus.full) {
-      fail("`+ new group` is missing or does not span the group row: " + JSON.stringify(plus));
+    if (gearActs.sortLit !== (gearActs.was ? "name" : "activity") || gearActs.off !== "none" || gearActs.hideLit !== 0 ||
+        gearActs.back !== "on" || !gearActs.sortBack) {
+      fail("the gear's sort or hide control did not act on the list: " + JSON.stringify(gearActs));
     }
-    if (plus.found && !/ · by group · /.test(plus.summary)) {
-      fail("the tray summary does not name `by group` grouping: " + JSON.stringify(plus));
-    }
+    await page.evaluate(() => document.getElementById("settings").close());
 
     // NOTHING PASSES UNDER IT. Squeeze the list so the rows overflow, scroll the
     // row box to the bottom, and every row's visible part is below the tray: the
@@ -14426,8 +14484,6 @@ async function main() {
       const tray = document.querySelector("#term-list .termtray");
       const vis = el => !!el && getComputedStyle(el).display !== "none";
       const out = {
-        toggle: vis(tray.querySelector(".traytoggle")),
-        body: vis(tray.querySelector(".traybody")),
         widen: [...tray.querySelectorAll(".tlcycle")].some(vis)
       };
       setTermListMode("full");
@@ -14435,8 +14491,8 @@ async function main() {
       await loadCards().catch(() => {}).then(renderTermList);
       return out;
     });
-    if (mini.toggle || mini.body || !mini.widen) {
-      fail("in mini the tray is not reduced to the width buttons: " + JSON.stringify(mini));
+    if (!mini.widen) {
+      fail("in mini the bar has lost the width buttons: " + JSON.stringify(mini));
     }
 
     await page.evaluate(() => {
@@ -14532,10 +14588,6 @@ async function main() {
         const b = document.querySelector("#term-list .termbody");
         return b ? getComputedStyle(b).position : "missing";
       };
-      const trayBodyH = () => {
-        const b = document.querySelector("#term-list .termbody .termtray .traybody");
-        return b ? b.getBoundingClientRect().height : -1;
-      };
       // Collapsed to begin with: the body hidden, the terminal at full height.
       setTermListOpen(false);
       const collapsedBody = bodyDisp();
@@ -14553,17 +14605,10 @@ async function main() {
       const scroll = document.querySelector("#term-list .termbody .termscroll");
       const scrollBelow = !!(tray && scroll &&
         scroll.getBoundingClientRect().top >= tray.getBoundingClientRect().bottom - 0.5);
-      const headBefore = trayBodyH();
-      toggleTermTray();
-      await new Promise(r => setTimeout(r, 450));
-      const headAfter = trayBodyH();
-      toggleTermTray();
       return {
         dropShown, collapsedBody, openBody, openPos,
         paneStable: Math.abs(paneOpen - paneCollapsed) <= 2,
         trayShown, scrollBelow,
-        headHiddenByDefault: headBefore >= 0 && headBefore <= 1,
-        headShownAfterToggle: headAfter > 60,
         gripHidden: getComputedStyle(document.getElementById("term-grip")).display === "none"
       };
     });
@@ -14586,17 +14631,11 @@ async function main() {
       fail("the width grip is shown on a phone: there is no tied split to drag there.");
     }
     if (!decoupled.trayShown || !decoupled.scrollBelow) {
-      fail("the phone flyout does not show the tray above its own scrolling rows: " +
+      fail("the phone flyout does not show the bar above its own scrolling rows: " +
         JSON.stringify(decoupled));
-    }
-    if (!decoupled.headHiddenByDefault || !decoupled.headShownAfterToggle) {
-      fail("the tray does not fold the controls on a phone " +
-        "(hidden-by-default " + decoupled.headHiddenByDefault + ", shown-after-toggle " +
-        decoupled.headShownAfterToggle + ").");
     }
     await page.evaluate(() => {
       setTermListOpen(false); paintPaneBg(null);
-      localStorage.removeItem(termDeviceKey("atrium.termtray"));
     });
 
     // Put the width, the view and the data back for the sections below.
@@ -15831,6 +15870,9 @@ async function main() {
     await mMarkdownSection(browser);
     await mHostileSection(browser);
     await mPicturesSection(browser);
+    await gearTermListSection(browser, base);
+    await growlLinksSection(browser, base);
+    await growlChoiceOnceSection(browser, base);
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e));
     if (process.env.DEBUG_HEADLESS) {
@@ -16261,8 +16303,10 @@ async function growlBoard(browser, base, hub, init, phone) {
     h.holds.push({ body: JSON.parse(route.request().postData() || "{}"), room: route.request().headers()["x-atrium-room"] || "" });
     return route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
   });
-  await ctx.route("**/v1/tasks/*/message", route => {
+  await ctx.route("**/v1/tasks/*/message", async route => {
     h.messages.push({ url: new URL(route.request().url()).pathname, body: JSON.parse(route.request().postData() || "{}") });
+    if (h.msgDelay) await new Promise(r => setTimeout(r, h.msgDelay));
+    if (h.msgFail) return route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: "no" }) });
     return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ delivered: "queued", when: "done" }) });
   });
   h.rows = [];
