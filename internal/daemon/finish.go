@@ -311,7 +311,7 @@ func (d *Daemon) finish(task *store.Task, in FinishRequest) (map[string]any, int
 	}
 	d.publishTask(task.ID)
 	told := res.Notice != nil || res.Relayed
-	if d.exitsOnReport(task, in.Status) {
+	if d.exitsOnReport(task, in) {
 		go d.exitAfterReport(task.ID)
 	}
 

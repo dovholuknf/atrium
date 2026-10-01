@@ -66,6 +66,7 @@ func TestAQuestionProgressOrBlockedReportLeavesTheCardRunning(t *testing.T) {
 		{Agent: "worker", Status: ReportQuestion, Ask: "which one?"},
 		{Agent: "worker", Status: ReportProgress, Recap: "half"},
 		{Agent: "worker", Status: ReportBlocked, Ask: "need a key"},
+		{Agent: "worker", Status: ReportDone, NoCommit: "x", Ask: "ok to merge?"},
 	} {
 		if rec, _ := finishWith(t, d, in); rec.Code != 200 {
 			t.Fatalf("%s answered %d: %s", in.Status, rec.Code, rec.Body)
@@ -92,6 +93,29 @@ func TestADirectorOrAnUnlaunchedCardIsNeverExitedByItsReport(t *testing.T) {
 	if rec, _ := finishWith(t, d, FinishRequest{Agent: "orchestrator", Status: ReportDone}); rec.Code != 200 {
 		t.Fatalf("launcher report answered %d: %s", rec.Code, rec.Body)
 	}
+	expectNoExit(t, got)
+}
+
+// An operator who typed into the terminal lately is not exited from under their hands.
+func TestATypedInCardIsNotExitedAfterItsReport(t *testing.T) {
+	d := testDaemon(t)
+	launcher, worker := launchedPair(t, d)
+	got := watchExits(t, d, launcher.ID, nil)
+	d.sup.add(&runner{taskID: worker.ID, done: make(chan struct{}), lastTyped: time.Now()})
+
+	finishWith(t, d, FinishRequest{Agent: "worker", Status: ReportDone, NoCommit: "x"})
+	expectNoExit(t, got)
+}
+
+// A resident that opted in to holding notices is exempt like a director.
+func TestAResidentTagExemptsACardFromExitOnReport(t *testing.T) {
+	d := testDaemon(t)
+	launcher, worker := launchedPair(t, d)
+	got := watchExits(t, d, launcher.ID, nil)
+	if err := d.st.SetTags(worker.ID, []string{OriginAgentTag, HoldNoticesTag}); err != nil {
+		t.Fatal(err)
+	}
+	finishWith(t, d, FinishRequest{Agent: "worker", Status: ReportDone, NoCommit: "x"})
 	expectNoExit(t, got)
 }
 

@@ -29,21 +29,36 @@ var exitOnReportDelay = 5 * time.Second
 // stopAfterReport is the exit itself. A variable so a test can watch it without owning a terminal.
 var stopAfterReport = func(d *Daemon, taskID string) error { return d.StopRunner(taskID) }
 
-// exitsOnReport says whether this report ends the card's runner. status is the report's status as sent.
-func (d *Daemon) exitsOnReport(task *store.Task, status string) bool {
-	if task == nil || (status != "" && status != ReportDone) {
+// exitsOnReport says whether this report ends the card's runner. A done report that carries an ask is a question
+// in a done report's clothes: the launcher's answer has to reach a running card, so it stays.
+//
+// Residents are exempt by the tags they already wear: a director, the orchestrator, and a card that opted in to
+// parking when idle or to holding notices. A resident an agent launched with none of those tags is exited on its
+// first done report, and the launcher puts one of them on it to prevent that.
+func (d *Daemon) exitsOnReport(task *store.Task, in FinishRequest) bool {
+	if task == nil || (in.Status != "" && in.Status != ReportDone) || strings.TrimSpace(in.Ask) != "" {
 		return false
 	}
 	if strings.TrimSpace(task.SpawnedByID) == "" {
 		return false
 	}
-	return !hasTag(task.Tags, DirectorTag) && !hasTag(task.Tags, OrchestratorTag)
+	for _, tag := range []string{DirectorTag, OrchestratorTag, ParkIdleTag, HoldNoticesTag} {
+		if hasTag(task.Tags, tag) {
+			return false
+		}
+	}
+	return true
 }
 
 // exitAfterReport waits out the delay, then asks the runner to leave. Best effort like every hook: a failure is
-// logged and the report has already landed.
+// logged and the report has already landed. An operator who typed into the terminal lately is left alone, by the
+// same quiet period a ceiling card waits for.
 func (d *Daemon) exitAfterReport(taskID string) {
 	time.Sleep(exitOnReportDelay)
+	if run := d.sup.get(taskID); run != nil && run.typedWithin(autoTiming.ceilingTypedQuiet) {
+		log.Printf("[atrium] %s reported done and was typed in lately, so it keeps running", taskID)
+		return
+	}
 	if err := stopAfterReport(d, taskID); err != nil {
 		log.Printf("[atrium] could not exit %s after its done report: %v", taskID, err)
 	}

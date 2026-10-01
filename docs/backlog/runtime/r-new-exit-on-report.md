@@ -18,7 +18,13 @@ A card with a launcher (`spawned_by_id` set) whose `atrium_report` is a final "d
 branch are not touched: whether the work is landed is the launcher's call. A report that is not final (a question,
 progress, "blocked") changes nothing.
 
-Directors and cards with no launcher are never exited by this.
+Directors and cards with no launcher are never exited by this. Neither is the orchestrator, nor a card tagged
+`atrium:park-idle` or `atrium:hold-notices`, which residents opt in to. A done report carrying an `ask` is a question
+and exits nothing. An operator who typed into the terminal within the ceiling quiet period (two minutes) keeps the
+card running.
+
+Accepted: a resident an agent launched with none of those tags (a merger, an interviewer, a persona) is exited on its
+first done report. No existing tag marks "resident" on its own, so the launcher tags it.
 
 ## Acceptance
 
