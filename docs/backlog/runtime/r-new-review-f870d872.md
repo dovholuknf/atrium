@@ -99,3 +99,26 @@ ROOM OK 66694076..7fafc6a8, 1 low. The package is not wired to anything, so no d
 Quality: after the Sonnet switch, no drop seen. Each fix has its own test, and the nits were taken without being
 asked twice. The new low is a second-order one again: fixing the quoted name made a space reach a parser that
 splits on whitespace.
+
+## Re-read 58461561..3a908c38 (r-pr-render-2)
+
+Landing check first: r-pr-render landed on claude/main as the squash 58461561. Its tree equals 7fafc6a8 for
+internal/prreview, changelog/runtime and docs/test-plan.md, so it is the reviewed patch.
+
+3a908c38 fixes the low. `started` reads the name up to the first `.txt` followed by whitespace, then the next token
+as the state. The last field would be wrong, since a `done` line ends in a time and a URL. Its test covers an
+untouched and a done line with a spaced name.
+
+Tests: `go vet` clean, the package's 20 tests pass, and `TestScratchSpaceName` now passes. A new scratch test
+(`TestScratchStartedLines`, same proof file) passes for a done line with a time and URL and for CRLF lines.
+
+NIT (proven): a base name that itself holds `.txt ` (`x.txt y.c`) ends the name early, so `y.c-L5.txt` is read as
+the state and the walk is refused. That is the safe direction and the name is contrived. If touched again, anchor on
+the `-L<line>.txt` every file name ends in: `^(.*?-L\d+\.txt)\s+(\S+)`.
+
+### Verdict
+
+ROOM OK 58461561..3a908c38, 1 nit. The package is not wired to anything, so no deploy follows.
+
+Quality: after the Sonnet switch, no drop seen. It rejected the fix I suggested for a reason that holds (the time
+and URL on a done line) and tested both line shapes.
