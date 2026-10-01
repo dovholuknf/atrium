@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func countExits(t *testing.T, s *Store, id string) int {
@@ -168,5 +169,41 @@ func TestPtyHostIsOffUnlessSetOn(t *testing.T) {
 	_ = s.SetSetting(SettingPtyHost, "on")
 	if !s.PtyHostOn() {
 		t.Fatal("not on after being set")
+	}
+}
+
+func TestPruningRunRowsKeepsUnfiledAndRecentOnes(t *testing.T) {
+	s := open(t)
+	card, _, err := s.Register(Observed{WireName: "prune-card", Worktree: "/w"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := now().Add(-30 * 24 * time.Hour)
+	oldFiled, oldLive, newFiled := NewRunID(), NewRunID(), NewRunID()
+	for _, r := range []PtyRun{
+		{RunID: oldFiled, TaskID: card.ID, Kind: RunKindRunner, Started: old},
+		{RunID: oldLive, TaskID: card.ID, Kind: RunKindRunner, Started: old},
+		{RunID: newFiled, TaskID: card.ID, Kind: RunKindRunner},
+	} {
+		if err := s.RecordRun(r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, id := range []string{oldFiled, newFiled} {
+		if _, err := s.FileExit(ExitFiling{TaskID: card.ID, RunID: id}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	n, err := s.PrunePtyRuns(PtyRunKeep)
+	if err != nil || n != 1 {
+		t.Fatalf("pruned %d rows (%v), want the one old filed row", n, err)
+	}
+	if _, err := s.Run(oldFiled); err == nil {
+		t.Fatal("the old filed row is still there")
+	}
+	for _, id := range []string{oldLive, newFiled} {
+		if _, err := s.Run(id); err != nil {
+			t.Fatalf("row %s was pruned: %v", id, err)
+		}
 	}
 }

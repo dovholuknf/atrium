@@ -444,3 +444,67 @@ func TestAnOldExitedRunDoesNotKillACardWithANewerLiveOne(t *testing.T) {
 	}
 	_ = r.tm().Kill()
 }
+
+// Off is the rollback: a host started while the setting was on keeps its runners after it is turned off, and the
+// next start must pick them up rather than leave them to be started a second time.
+func TestAHostStillHoldingRunnersIsReattachedWithTheSettingOff(t *testing.T) {
+	dir, _ := hostFixture(t)
+	d1 := daemonAt(t, dir)
+	task := cardAt(t, d1, "setting-off", t.TempDir())
+	run := spawnDirect(t, d1, task.ID, store.RunKindRunner, "sleep 120")
+
+	d2 := restarted(t, d1, dir)
+	if err := d2.st.SetSetting(store.SettingPtyHost, "off"); err != nil {
+		t.Fatal(err)
+	}
+	d2.reattachRuns()
+	r := d2.sup.get(task.ID)
+	if r == nil || r.runID != run || hostOf(r) == nil {
+		t.Fatalf("the host's run is not the card's runner with the setting off: %+v", r)
+	}
+	live := 0
+	for _, i := range listOf(t, d2) {
+		if i.ID == task.ID && !i.Exited {
+			live++
+		}
+	}
+	if live != 1 {
+		t.Fatalf("%d live runs for the card, want the host's one", live)
+	}
+	_ = r.tm().Kill()
+}
+
+// A Spawn whose reply never came leaves a run nobody knows the id of. The fallback must not be a second copy.
+func TestAStartThatDidNotAnswerLeavesNoRunBehindTheFallback(t *testing.T) {
+	dir, _ := hostFixture(t)
+	d := daemonAt(t, dir)
+	task := cardAt(t, d, "stray", t.TempDir())
+	stray := spawnDirect(t, d, task.ID, store.RunKindRunner, "sleep 120")
+	other := spawnDirect(t, d, task.ID, store.RunKindShell, "sleep 120")
+
+	d.killStrays(task.ID, store.RunKindRunner)
+	hostWait(t, 20*time.Second, "the stray runner to end", func() bool { return listOf(t, d)[stray].Exited })
+	if listOf(t, d)[other].Exited {
+		t.Fatal("the card's shell was ended with its runner")
+	}
+	d.killStrays(task.ID, store.RunKindShell)
+	hostWait(t, 20*time.Second, "the stray shell to end", func() bool { return listOf(t, d)[other].Exited })
+}
+
+// The run this daemon already holds is not a stray.
+func TestStrayCleanupSparesTheRunThisDaemonHolds(t *testing.T) {
+	dir, _ := hostFixture(t)
+	d := daemonAt(t, dir)
+	task := cardAt(t, d, "spared", t.TempDir())
+	sh, args := someShell(t)
+	if _, err := d.spawnPTY(task.ID, sh, append(args, "sleep 120"), t.TempDir(), os.Environ()); err != nil {
+		t.Fatal(err)
+	}
+	r := d.sup.get(task.ID)
+	d.killStrays(task.ID, store.RunKindRunner)
+	time.Sleep(500 * time.Millisecond)
+	if listOf(t, d)[r.runID].Exited {
+		t.Fatal("the daemon's own runner was ended as a stray")
+	}
+	_ = r.tm().Kill()
+}

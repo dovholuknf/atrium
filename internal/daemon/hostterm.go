@@ -152,6 +152,7 @@ func (d *Daemon) startHostTerm(taskID, kind, name, resolved string, args []strin
 			return nil, true, fmt.Errorf("could not start %s: %w", name, err)
 		}
 		log.Printf("[atrium] the pty host went away starting %s (%v), starting it in this process", name, err)
+		d.killStrays(taskID, kind)
 		return nil, false, nil
 	}
 	att, err := cl.Attach(sp.RunID, 0)
@@ -162,6 +163,33 @@ func (d *Daemon) startHostTerm(taskID, kind, name, resolved string, args []strin
 		return nil, false, nil
 	}
 	return newHostTerm(cl, addr, sp.RunID, sp.Pid, att, true), true, nil
+}
+
+// killStrays ends a run the host may have started for this card whose Spawn reply never arrived, so the fallback is
+// not a second copy. No run id is known, so it goes by card and kind and spares the run this daemon already holds.
+// Best effort: with no host to ask there is nothing to end.
+func (d *Daemon) killStrays(taskID, kind string) {
+	cl, _, err := d.hostClient(false, false)
+	if err != nil {
+		return
+	}
+	list, err := cl.List()
+	if err != nil {
+		return
+	}
+	var cur *runner
+	if kind == store.RunKindShell {
+		cur = d.sup.getShell(taskID)
+	} else {
+		cur = d.sup.get(taskID)
+	}
+	for _, info := range list {
+		if info.ID != taskID || info.Kind != kind || info.Exited || (cur != nil && cur.runID == info.RunID) {
+			continue
+		}
+		log.Printf("[atrium] ending run %s in the pty host, left by a start that did not answer", info.RunID)
+		_ = cl.Signal(info.RunID, ptyhost.SigKill)
+	}
 }
 
 // hostTerm is `term` over one run in the host.
@@ -324,10 +352,15 @@ func same(cur, r *runner) bool {
 // The order is the design's (3.2). Every live run is registered first and the exited ones are filed after, so a
 // card that has an old exited run and a newer live one is not marked dead for the old one. A run with no row, or
 // whose card is gone, is logged and left alone: guessing whose it is would file an exit against the wrong card.
+//
+// It runs with the setting off too, since a host started while it was on keeps its runners after it is turned off.
+// With no host that costs one failed dial and a log line only when the setting is on.
 func (d *Daemon) reattachRuns() {
 	cl, addr, err := d.hostClient(true, false)
 	if err != nil {
-		log.Printf("[atrium] pty_host is on and no host answered (%v), nothing to reattach", err)
+		if d.st.PtyHostOn() {
+			log.Printf("[atrium] pty_host is on and no host answered (%v), nothing to reattach", err)
+		}
 		return
 	}
 	list, err := cl.List()

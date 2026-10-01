@@ -85,6 +85,26 @@ func (s *Store) Run(runID string) (*PtyRun, error) {
 	return &r, nil
 }
 
+// PtyRunKeep is how long a filed run row stays. An exit is filed once and a row only exists to say so, so a
+// filed row older than any host still holding that run is dead weight.
+const PtyRunKeep = 7 * 24 * time.Hour
+
+// PrunePtyRuns deletes filed rows that started more than keep ago and returns how many. An unfiled row is never
+// deleted: it is a run a host may still hold, and the row is what lets a daemon file its exit.
+func (s *Store) PrunePtyRuns(keep time.Duration) (int, error) {
+	n := 0
+	err := s.guard(func() error {
+		res, err := s.db.Exec(`DELETE FROM pty_run WHERE filed_at != '' AND started_at < ?`, ts(now().Add(-keep)))
+		if err != nil {
+			return err
+		}
+		got, _ := res.RowsAffected()
+		n = int(got)
+		return nil
+	})
+	return n, err
+}
+
 // ExitFiling is everything one exit writes together.
 type ExitFiling struct {
 	TaskID string

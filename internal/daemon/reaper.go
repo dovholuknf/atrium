@@ -270,5 +270,10 @@ func (d *Daemon) reap(ctx context.Context, every time.Duration) {
 		} else if n > 0 {
 			log.Printf("[atrium] cleared %d old say record(s)", n)
 		}
+		if n, err := d.st.PrunePtyRuns(store.PtyRunKeep); err != nil {
+			log.Printf("[atrium] pruning the pty run record: %v", err)
+		} else if n > 0 {
+			log.Printf("[atrium] cleared %d filed pty run row(s)", n)
+		}
 	}
 }

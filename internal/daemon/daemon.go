@@ -1199,10 +1199,9 @@ func (d *Daemon) Run(ctx context.Context) error {
 			// arrivals it was supposed to swallow actually land.
 			defer d.settle.arrived(settleBoot)
 			// Terminals a pty host kept while no daemon was here, BEFORE fixtures so a card that already has
-			// a live runner is not started a second time.
-			if d.st.PtyHostOn() {
-				d.reattachRuns()
-			}
+			// a live runner is not started a second time. Whatever the setting says: off is the rollback, and a
+			// host still holding runners must be picked up or the next start would run a second copy of each.
+			d.reattachRuns()
 			d.startFixtures()
 			d.reopenSaved()
 			// Throwaways whose session ended when the last daemon did, so
