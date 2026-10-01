@@ -80,8 +80,8 @@
      anything is drawn.
      Only when a switch is in flight. An ordinary reload is not covered up,
      because an ordinary reload is not going anywhere. -->
-<!-- A PHONE LANDS ON THE PHONE PAGE. A touch screen (a coarse pointer, or any touch points) whose shortest side, window or
-     screen, is under 600px, which a tablet and a desktop are not, sends the board root and a card's address to the matching
+<!-- A PHONE LANDS ON THE PHONE PAGE. A touch screen (a coarse pointer, or any touch points) whose screen is under 600px on its shorter
+     side (the screen, not the window, so a small window on a big touch screen stays on the board), which a tablet and a desktop are not, sends the board root and a card's address to the matching
      /m page, with `replace` so Back does not loop. A pop-out window (it has a name made for its card, or an opener) is never
      sent, and neither is a tab that chose the desktop board: `atrium.m.desktop` lives in sessionStorage, so it is that tab's
      choice and a new tab or a restart goes to /m again. It is set by the "desktop board" link on /m and cleared by "phone
@@ -108,7 +108,7 @@
       if (window.opener) return why("not redirected, this window has an opener");
       if (/^atrium-term-/.test(window.name)) return why("not redirected, a pop-out window (" + window.name + ")");
       var coarse = matchMedia("(pointer: coarse)").matches, anyCoarse = matchMedia("(any-pointer: coarse)").matches;
-      var touch = navigator.maxTouchPoints || 0, shortest = Math.min(innerWidth, innerHeight, screen.width);
+      var touch = navigator.maxTouchPoints || 0, shortest = Math.min(screen.width, screen.height);
       var seen = "coarse=" + coarse + " any-coarse=" + anyCoarse + " touch-points=" + touch + " shortest-side=" + shortest;
       if (!(coarse || anyCoarse || touch > 0) || shortest >= 600) return why("not redirected, not a phone (" + seen + ")");
       if (sessionStorage.getItem("atrium.m.desktop") === "1") {
