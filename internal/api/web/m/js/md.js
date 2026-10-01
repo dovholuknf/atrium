@@ -43,6 +43,8 @@
   // A Windows worktree is `D:/...` and compares without regard to case. A single letter and a colon then a slash is a
   // drive, anything else before a colon is a scheme and is refused.
   function inside(path, ctx) {
+    // A text that is not a card's (a hub document) has no folder: nothing in it is a file of the card.
+    if (ctx && ctx.noFiles) return false;
     const wt = ctx && ctx.worktree ? slashed(ctx.worktree).replace(/\/+$/, "") : "";
     const p = slashed(path);
     if (!p || /[\u0000-\u001f]/.test(p)) return false;
@@ -94,7 +96,7 @@
     // A bare absolute path in the text. Only one under the card is a control, the rest stays text.
     s = s.replace(/(^|[\s(])((?:\/|[A-Za-z]:[\\/])[\w.@+~\/\\-]+)/g, (m, lead, path) => {
       const raw = unesc(path), tail = /[.,;:)]+$/.exec(raw), p = tail ? raw.slice(0, -tail[0].length) : raw;
-      if (DOC.test(p)) return lead + stash('<a href="' + esc(p) + '" class="md-doc">' + esc(p) + "</a>") + esc(tail ? tail[0] : "");
+      if (DOC.test(p) && window.mDocs && window.mDocs.available()) return lead + stash('<a href="' + esc(p) + '" class="md-doc">' + esc(p) + "</a>") + esc(tail ? tail[0] : "");
       if (!inside(p, ctx)) return m;
       return lead + stash(fileNode(p, ctx, p, true)) + esc(tail ? tail[0] : "");
     });

@@ -42,9 +42,8 @@ the meantime.
   installed build. Two rules from now on: a board review carries `hub-ok` AND `room-ok`, and an `internal/link`
   review carries `room-ok` too, since the room runs it. A re-read's OK range starts at the ORIGINAL base, so it covers
   the held patch.
-- u-m-changes 7e496aa8 is on HOLD (`u-new-review-7e496aa8.md`): re-read the `quoteOne` control-character fix when
-  @ui sends it. Owed lows, no hold: u-m-typefix pen `pointercancel` (`u-new-review-7b70705e.md`), and @runtime's
-  defense in depth, dropping `\x1b[201~` inside any wrapped paste.
+- Closed since the last queue update: u-m-changes re-read OK at 7ab1eacb (68bdac49), r-paste-strip landed at
+  28ea8037, u-m-typefix2 10aae191 closed the pen `pointercancel` low (52408c30, landed eff2fb8e).
 - From cc3bd954 on, @ui, @runtime and @fabric run Sonnet (orchestrator, 6h test): every review of theirs carries a
   "Quality:" line.
 - M3 of `docs/rnd/machine-health-design.md` (the profiler agent's rules) before it ships, when it is built.

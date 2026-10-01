@@ -27,6 +27,7 @@
 <link rel="stylesheet" href="/css/themes.css">
 <link rel="stylesheet" href="/m/m.css">
 <link rel="stylesheet" href="/m/compose.css">
+<link rel="stylesheet" href="/m/changes.css">
 <link rel="stylesheet" href="/m/cardurl.css">
 <link rel="stylesheet" href="/m/working.css">
 <link rel="stylesheet" href="/m/docs.css">
@@ -89,6 +90,7 @@
       <button type="button" id="m-card-back" class="back" aria-label="back"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg><span class="lbl">all cards</span></button>
       <span class="grow"></span>
       <button type="button" id="m-card-pick" class="pick" aria-expanded="false" aria-controls="m-card-menu">cards <span aria-hidden="true">&#9662;</span></button>
+      <button type="button" id="m-card-changes" class="pick">changes</button>
       <a id="m-card-term" class="term" href="/">open terminal</a>
     </div>
     <div class="pickback" id="m-card-menu-back" hidden></div>
@@ -106,6 +108,13 @@
     <div id="m-working" class="working" hidden role="status" aria-live="polite"></div>
     <div id="m-compose"></div>
     <div id="m-recap" class="recap" hidden></div>
+    <section class="changes" id="m-changes" hidden aria-label="changes">
+      <div class="v-top">
+        <button type="button" id="m-changes-back" class="back" aria-label="back"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></button>
+        <span class="v-title" id="m-changes-title"></span>
+      </div>
+      <div class="v-scroll" id="m-changes-scroll"><div id="m-changes-body"></div></div>
+    </section>
     <section class="viewer" id="m-viewer" hidden aria-label="file">
       <div class="v-top">
         <button type="button" id="m-viewer-back" class="back" aria-label="back to the thread"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></button>
@@ -125,6 +134,7 @@
 <script src="/m/js/growl.js"></script>
 <script src="/m/js/card.js"></script>
 <script src="/m/js/viewer.js"></script>
+<script src="/m/js/changes.js"></script>
 <script src="/m/js/docs.js"></script>
 <script src="/m/js/compose.js" onerror="void 0"></script>
 <script src="/m/js/perms.js" onerror="void 0"></script>
@@ -139,6 +149,7 @@
   window.mGrowl.init();
   window.mCard.init();
   window.mViewer.init();
+  window.mChanges.init();
   window.mBell.init();
   var live = document.getElementById("m-live"), room = document.getElementById("m-room");
   window.mNet.on("live", function () {

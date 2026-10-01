@@ -1,0 +1,2 @@
+On /m a reply that edited files has a chip "N files edited" that opens what that turn changed, as a file list and then a unified diff with line numbers, in the thread's text size. A card's own changes (uncommitted, or since base) open from the "changes" button.
+Tapping a diff line quotes it into the composer as a chip, and the message that goes carries the repo-relative path, the line, the turn and head, and the quoted line (u-m-changes).
