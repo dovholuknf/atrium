@@ -219,6 +219,21 @@
     return items.concat(own).sort((a, b) => a.at - b.at);
   }
 
+  // What was typed into the session, from the replies endpoint. The operator's own are "you", a peer's are quieter and
+  // carry the sender's name, a command is one small line. Absent `prompts` leaves the thread as it was.
+  function promptHTML(p) {
+    const cut = p.truncated ? '<p class="cut">cut</p>' : "";
+    const text = String(p.text || "");
+    const body = t => '<div class="own">' + U.esc(t) + "</div>" + cut + "</article>";
+    if (p.kind === "command") return '<article class="reply prompt command">' + headerHTML("command", p.at, "") + body(text);
+    if (p.kind === "peer") {
+      const m = /^\[atrium\] (.+?) says:\s*/.exec(text);
+      return '<article class="reply prompt peer">' + headerHTML(m ? m[1] : "a peer", p.at, "") + body(m ? text.slice(m[0].length) : text);
+    }
+    return '<article class="reply mine prompt">' + headerHTML("you", p.at, "") + body(text);
+  }
+  const sameText = (a, b) => String(a).trim().slice(0, 200) === String(b).trim().slice(0, 200);
+
   function repliesHTML(t, got) {
     const who = whoOf(t);
     if (!got) return '<div class="replies loading" aria-busy="true"><div class="sk"></div><div class="sk s2"></div></div>';
@@ -230,9 +245,16 @@
     }
     const screen = got.source === "screen";
     const list = got.replies || [];
-    const items = mergeOwn(t, list.map(r => ({ r, at: U.ts(r.at) })), list.length ? U.ts(list[0].at) : 0);
+    const prompts = Array.isArray(got.prompts) ? got.prompts.filter(p => p && p.at) : [];
+    const since = list.length ? U.ts(list[0].at) : 0;
+    const ops = prompts.filter(p => p.kind !== "peer" && p.kind !== "command");
+    // A local own row goes once the matching operator prompt has arrived, so nothing shows twice.
+    const items = mergeOwn(t, list.map(r => ({ r, at: U.ts(r.at) })), since)
+      .filter(i => !i.mine || !ops.some(p => sameText(p.text, i.mine.text) && Math.abs(U.ts(p.at) - U.ts(i.mine.at)) <= 60000))
+      .concat(prompts.filter(p => U.ts(p.at) >= since).map(p => ({ p, at: U.ts(p.at) })))
+      .sort((a, b) => a.at - b.at);
     if (!items.length) return '<div class="replies">' + fallbackHTML(t) + "</div>";
-    return '<div class="replies">' + items.map(i => i.mine ? ownHTML(i.mine) : replyHTML(i.r, screen, who)).join("") + "</div>";
+    return '<div class="replies">' + items.map(i => i.p ? promptHTML(i.p) : i.mine ? ownHTML(i.mine) : replyHTML(i.r, screen, who)).join("") + "</div>";
   }
 
   // ── painting ─────────────────────────────────────────────────────────────
