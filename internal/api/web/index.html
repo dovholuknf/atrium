@@ -58,6 +58,7 @@
 <link rel="stylesheet" href="/css/rows.css">
 <link rel="stylesheet" href="/css/terminal.css">
 <link rel="stylesheet" href="/css/walk.css">
+<link rel="stylesheet" href="/css/pulls.css">
 <link rel="stylesheet" href="/css/dialogs.css">
 <link rel="stylesheet" href="/css/phone.css">
 <link rel="stylesheet" href="/css/themes.css">
@@ -159,6 +160,8 @@
       <div class="tab" data-view="board">board</div>
       <div class="tab" data-view="terms">terminals<span class="count zero" id="c-term"
            data-tip="terminals atrium is supervising"></span></div>
+      <div class="tab" data-view="pulls" hidden>pulls<span class="count zero" id="c-pulls"
+           data-tip="reviews that are ready to walk or failed"></span></div>
       <div class="tab" data-view="history">history</div>
       <div class="tab" data-view="usage">usage</div>
       <div class="tab" data-view="docs" hidden>documents</div>
@@ -771,6 +774,20 @@ Tokens only: no dollar figure is worked out.">?</span>
        refused by the cap, the board put on a share. Read-only, newest first,
        filterable by room and by kind. Hub only, drawn by js/audit.js. See
        docs/fabric/audit-design.md. -->
+  <!-- The PRs atrium is reviewing, newest first, drawn by js/pulls.js. See docs/rnd/pulls-view-design.md. -->
+  <div id="pulls" hidden>
+    <div class="col-head" style="margin:0 0 10px"><span>pull requests under review</span></div>
+    <div class="filters">
+      <select id="pulls-state"><option value="open">open (not archived)</option><option value="all">all</option></select>
+      <select id="pulls-repo"></select>
+      <input id="pulls-url" type="text" placeholder="https://github.com/org/repo/pull/123" aria-label="pull request URL">
+      <input id="pulls-why" type="text" placeholder="why (optional)" aria-label="why">
+      <button id="pulls-paste" type="button" class="go">+ paste a PR</button>
+    </div>
+    <div id="pulls-note" class="pulls-note" role="status" hidden></div>
+    <div id="pulls-list"></div>
+  </div>
+
   <div id="audit" hidden>
     <div class="col-head" style="margin:0 0 10px">
       <span>what has happened here</span>
@@ -3410,6 +3427,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/rooms.js"></script>
 <script src="/js/rooms-dash.js"></script>
 <script src="/js/audit.js"></script>
+<script src="/js/pulls.js"></script>
 <script src="/js/board.js"></script>
 <script src="/js/cards.js"></script>
 <script src="/js/card-menu.js"></script>

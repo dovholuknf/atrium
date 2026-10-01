@@ -16152,6 +16152,245 @@ async function childFoldSection(browser, base) {
   if (!bad) console.log("childFold ok");
 }
 
+// ── the pulls view ───────────────────────────────────────
+// /v1/prs is mocked in the page (nothing real behind it), the event stream is the harness's real one.
+async function pullsSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const errors = [];
+  const row = (id, extra) => Object.assign({
+    id, url: "https://github.com/openziti/" + id, host: "github.com", org: "openziti", repo: "r", org_repo: "openziti/r",
+    number: 1, title: "title of " + id, why: "", head: "", head7: "abc1234", state: "queued", run_state: "", run_error: "",
+    cost_usd: 0, started_at: "", ready_at: "", created_at: "2026-10-01T10:00:00Z", archived_at: "", run_dir: "",
+    second: { state: "none", summary: "", error: "" }, author: "ekoby",
+    findings: { high: 0, med: 0, low: 0, nit: 0, leak: 0 }, walk: { done: 0, skipped: 0, deferred: 0, open: 0 }, walker_task: ""
+  }, extra);
+  const st = {
+    halted: false,
+    rows: [
+      row("pr_a", { number: 11, org_repo: "openziti/zrok", state: "ready", created_at: "2026-10-01T09:00:00Z", ready_at: "2026-10-01T09:20:00Z",
+        findings: { high: 0, med: 6, low: 7, nit: 4, leak: 1 }, walk: { done: 0, skipped: 0, deferred: 0, open: 17 },
+        second: { state: "done", summary: "codex: 2 disputed, settled", error: "" } }),
+      row("pr_b", { number: 12, state: "running", run_state: "verify", cost_usd: 0.71, created_at: "2026-10-01T10:00:00Z", title: "running one" }),
+      row("pr_c", { number: 13, state: "failed", run_error: "fetch: gh said no", created_at: "2026-10-01T08:00:00Z" }),
+      row("pr_d", { number: 14, state: "queued", created_at: "2026-10-01T07:00:00Z" }),
+      row("pr_e", { number: 15, state: "aborted", created_at: "2026-10-01T06:00:00Z" }),
+      row("pr_f", { number: 16, state: "fetching", created_at: "2026-10-01T05:00:00Z" })
+    ],
+    posts: [], gets: 0
+  };
+  const FINDINGS = [
+    { key: "f-1", position: 1, sev: "med", path: "a/b.go", line: 7, code: "x = 1", leak: "", walk: { state: "open", at: "", url: "" } },
+    { key: "f-2", position: 2, sev: "low", path: "c.go", line: 0, code: "y", leak: "secret", walk: { state: "open", at: "", url: "" } }
+  ];
+  const navOf = () => st.rows.filter(r => !r.archived_at && (r.state === "ready" || r.state === "failed")).length;
+  const json = (route, status, body) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
+  const emit = (r) => put(r) || openStreams.forEach(s => { try { s.write("event: pr\ndata: " + JSON.stringify({ pr: r }) + "\n\n"); } catch (e) {} });
+  const put = (r) => { const i = st.rows.findIndex(x => x.id === r.id); if (i >= 0) st.rows[i] = r; else st.rows.push(r); };
+  await ctx.route(/\/v1\/prs(\/|\?|$)/, async route => {
+    const req = route.request();
+    const u = new URL(req.url());
+    const m = req.method();
+    const p = u.pathname;
+    if (m === "GET" && p === "/v1/prs") {
+      st.gets++;
+      if (st.halted) return json(route, 503, { error: "atrium is halted and will not recover without a restart", halted: true });
+      const rows = st.rows.slice().sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+      return json(route, 200, { prs: rows, counts: {}, nav_count: navOf() });
+    }
+    st.posts.push(m + " " + p + " " + (req.postData() || ""));
+    if (m === "POST" && p === "/v1/prs") {
+      const b = JSON.parse(req.postData() || "{}");
+      if (st.halted) return json(route, 503, { error: "atrium is halted and will not recover without a restart", halted: true });
+      if (b.url.indexOf("nowhere") >= 0) return json(route, 422, { error: "no recogniser matches this", code: "no_recogniser" });
+      if (b.url.indexOf("dup") >= 0) return json(route, 200, { pr: st.rows[0], created: false });
+      const r = row("pr_new", { number: 99, title: "", state: "queued", created_at: "2026-10-01T12:00:00Z", why: b.why, url: b.url });
+      put(r);
+      return json(route, 201, { pr: r, created: true });
+    }
+    const mm = p.match(/^\/v1\/prs\/([^/]+)(\/.*)?$/);
+    const id = mm && mm[1], rest = (mm && mm[2]) || "";
+    const cur = st.rows.find(r => r.id === id);
+    if (!cur) return json(route, 404, { error: "no such pr", code: "not_found" });
+    if (m === "POST" && rest === "/abort") {
+      if (cur.state === "ready") return json(route, 409, { error: "only a queued, fetching or running row can be aborted", code: "not_abortable", state: cur.state });
+      const r = Object.assign({}, cur, { state: "aborted", run_state: "" }); put(r); return json(route, 200, { pr: r });
+    }
+    if (m === "POST" && rest === "/retry") { const r = Object.assign({}, cur, { state: "queued", run_error: "" }); put(r); return json(route, 202, { pr: r }); }
+    if (m === "POST" && rest === "/start") { const r = Object.assign({}, cur, { state: "fetching", run_state: "fetch" }); put(r); return json(route, 202, { pr: r }); }
+    if (m === "GET" && rest === "/findings") return json(route, 200, { pr: cur, findings: FINDINGS });
+    if (m === "GET" && rest === "") return json(route, 200, { pr: cur, run_log: "14:02:11 fetch start\n14:02:12 fetch FAILED\n" });
+    if (m === "POST" && /^\/findings\/[^/]+\/walk$/.test(rest)) {
+      const b = JSON.parse(req.postData());
+      return json(route, 200, { ok: true, walk: { state: b.state, at: "2026-10-01T14:20:00Z", url: "" }, counts: { done: 1, skipped: 0, deferred: 0, open: 16 } });
+    }
+    if (m === "POST" && rest === "/walker") { const r = Object.assign({}, cur, { walker_task: "t-walker" }); put(r); return json(route, 201, { pr: r, task: "t-walker", launched: true }); }
+    return json(route, 404, { error: "no route", code: "not_found" });
+  });
+  const open = async () => {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(e.message));
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof pullsPaint === "function" && typeof switchView === "function", null, { timeout: slow(15000) });
+    await p.waitForFunction(() => !document.querySelector('.tab[data-view="pulls"]').hidden, null, { timeout: slow(10000) })
+      .catch(() => fail("pulls: the tab did not appear once /v1/prs answered"));
+    await p.evaluate(() => switchView("pulls"));
+    await p.waitForFunction(() => document.querySelectorAll("#pulls-list .pull").length > 0, null, { timeout: slow(10000) });
+    return p;
+  };
+  const ids = p => p.evaluate(() => [...document.querySelectorAll("#pulls-list .pull")].map(e => e.dataset.id).join());
+  const text = (p, id, sel) => p.evaluate(([id, sel]) => { const e = document.querySelector('#pulls-list .pull[data-id="' + id + '"] ' + sel); return e ? e.textContent : null; }, [id, sel]);
+  const nav = p => p.evaluate(() => document.getElementById("c-pulls").textContent);
+  const waitNav = (p, n, what) => p.waitForFunction(n => document.getElementById("c-pulls").textContent === n, n, { timeout: slow(5000) })
+    .catch(async () => fail("pulls: nav count is " + JSON.stringify(await nav(p)) + " not " + n + " " + what));
+  try {
+    const p = await open();
+    // newest first
+    let v = await ids(p);
+    if (v !== "pr_b,pr_a,pr_c,pr_d,pr_e,pr_f") fail("pulls: not newest first: " + v);
+    // every state draws its words
+    const words = { pr_a: "ready to walk", pr_b: "reviewing verify", pr_c: "failed: fetch: gh said no", pr_d: "queued", pr_e: "aborted", pr_f: "fetching" };
+    for (const k of Object.keys(words)) {
+      const w = await text(p, k, ".pull-state");
+      if (w !== words[k]) fail("pulls: " + k + " says " + JSON.stringify(w) + " not " + JSON.stringify(words[k]));
+    }
+    // running: the step and the cost, never N of M
+    const meta = await text(p, "pr_b", ".pull-meta");
+    if (!/\$0\.71 so far/.test(meta || "")) fail("pulls: a running row has no cost so far: " + meta);
+    if (/\d+ of \d+/.test((await text(p, "pr_b", ".pull-state")) || "")) fail("pulls: a running row says N of M");
+    // a ready row: counts and the second opinion
+    if ((await text(p, "pr_a", ".pull-counts")) !== "6 med · 7 low · 4 nit · 1 leak") fail("pulls: counts: " + await text(p, "pr_a", ".pull-counts"));
+    if ((await text(p, "pr_a", ".pull-second")) !== "2nd: codex: 2 disputed, settled") fail("pulls: second: " + await text(p, "pr_a", ".pull-second"));
+    // buttons per state
+    const btns = id => p.evaluate(id => [...document.querySelectorAll('#pulls-list .pull[data-id="' + id + '"] .pull-acts button')].map(b => b.dataset.act).join(), id);
+    const want = { pr_a: "open,walker", pr_b: "abort", pr_c: "retry,log", pr_d: "start,abort", pr_e: "retry", pr_f: "abort" };
+    for (const k of Object.keys(want)) { const b = await btns(k); if (b !== want[k]) fail("pulls: buttons of " + k + ": " + b); }
+    // nav count from the load: one ready, one failed
+    if (await nav(p) !== "2") fail("pulls: nav count at load: " + await nav(p));
+    // an SSE event updates a row without a refetch
+    const gets = st.gets;
+    await p.evaluate(() => {
+      window.__pullAlerts = [];
+      const o = alerting.check;
+      alerting.check = (k, items, d) => { if (k === "pulls") window.__pullAlerts.push(items.map(i => i.id)); return o.call(alerting, k, items, d); };
+    });
+    const b2 = st.rows.find(r => r.id === "pr_b");
+    emit(Object.assign({}, b2, { run_state: "critics", cost_usd: 1.2 }));
+    await p.waitForFunction(() => /critics/.test(document.querySelector('#pulls-list .pull[data-id="pr_b"] .pull-state').textContent), null, { timeout: slow(5000) })
+      .catch(() => fail("pulls: an event did not move the step"));
+    if (!/\$1\.20/.test((await text(p, "pr_b", ".pull-meta")) || "")) fail("pulls: an event did not move the cost");
+    if (st.gets !== gets) fail("pulls: an event caused a refetch");
+    // the running row turns ready, then a new failed row arrives: the count follows each
+    emit(Object.assign({}, b2, { state: "ready", run_state: "", ready_at: "2026-10-01T10:09:00Z", findings: { high: 0, med: 1, low: 0, nit: 0, leak: 0 }, walk: { done: 0, skipped: 0, deferred: 0, open: 1 } }));
+    await waitNav(p, "3", "after a row turned ready");
+    emit(row("pr_g", { number: 21, state: "failed", run_error: "panel: budget", created_at: "2026-10-01T11:00:00Z" }));
+    await waitNav(p, "4", "after a new row arrived failed");
+    v = await ids(p);
+    if (v.split(",")[0] !== "pr_g") fail("pulls: a new row from an event is not on top: " + v);
+    const alerts = await p.evaluate(() => window.__pullAlerts);
+    if (!alerts.length || !alerts[alerts.length - 1].some(i => i.indexOf("pr_g#failed") === 0)) fail("pulls: the failed row did not reach the alerting path: " + JSON.stringify(alerts));
+    if (!(await p.title()).startsWith("(")) fail("pulls: the window title does not carry the count: " + await p.title());
+    // retry lowers the count and updates the row
+    await p.click('#pulls-list .pull[data-id="pr_g"] button[data-act="retry"]');
+    await waitNav(p, "3", "after retry");
+    if ((await text(p, "pr_g", ".pull-state")) !== "queued") fail("pulls: retry did not update the row");
+    if (!st.posts.some(x => x.startsWith("POST /v1/prs/pr_g/retry"))) fail("pulls: retry did not post");
+    // abort posts and updates
+    await p.click('#pulls-list .pull[data-id="pr_f"] button[data-act="abort"]');
+    await p.waitForFunction(() => document.querySelector('#pulls-list .pull[data-id="pr_f"] .pull-state').textContent === "aborted", null, { timeout: slow(5000) })
+      .catch(() => fail("pulls: abort did not update the row"));
+    // a refused abort says why
+    await p.evaluate(() => { pulls.rows.find(r => r.id === "pr_a").state = "running"; pullsPaint(); });
+    st.rows.find(r => r.id === "pr_a").state = "ready";
+    await p.click('#pulls-list .pull[data-id="pr_a"] button[data-act="abort"]');
+    await p.waitForFunction(() => /only a queued/.test(document.getElementById("pulls-note").textContent), null, { timeout: slow(5000) })
+      .catch(() => fail("pulls: a 409 on abort was not shown"));
+    // review on a queued row
+    await p.click('#pulls-list .pull[data-id="pr_d"] button[data-act="start"]');
+    await p.waitForFunction(() => document.querySelector('#pulls-list .pull[data-id="pr_d"] .pull-state').textContent === "fetching", null, { timeout: slow(5000) })
+      .catch(() => fail("pulls: review did not start the row"));
+    // paste a PR: created, existing, and the 422 word
+    await p.fill("#pulls-url", "https://github.com/openziti/r/pull/99");
+    await p.fill("#pulls-why", "security look");
+    await p.click("#pulls-paste");
+    await p.waitForFunction(() => !!document.querySelector('#pulls-list .pull[data-id="pr_new"]'), null, { timeout: slow(5000) })
+      .catch(() => fail("pulls: a pasted PR did not appear"));
+    if (!st.posts.some(x => x.startsWith("POST /v1/prs ") && x.indexOf("security look") >= 0)) fail("pulls: the paste did not post url and why");
+    if (await p.inputValue("#pulls-url") !== "") fail("pulls: the box was not cleared");
+    await p.fill("#pulls-url", "https://github.com/dup/r/pull/1");
+    await p.click("#pulls-paste");
+    await p.waitForFunction(() => /already/.test(document.getElementById("pulls-note").textContent), null, { timeout: slow(5000) })
+      .catch(() => fail("pulls: a 200 existing answer was not said"));
+    await p.fill("#pulls-url", "https://nowhere.example/x");
+    await p.click("#pulls-paste");
+    await p.waitForFunction(() => /no recogniser matches this/.test(document.getElementById("pulls-note").textContent), null, { timeout: slow(5000) })
+      .catch(() => fail("pulls: the 422 word was not shown"));
+    // halted
+    st.halted = true;
+    await p.fill("#pulls-url", "https://github.com/openziti/r/pull/5");
+    await p.click("#pulls-paste");
+    await p.waitForFunction(() => /halted/.test(document.getElementById("pulls-note").textContent), null, { timeout: slow(5000) })
+      .catch(() => fail("pulls: a halted 503 did not show the halted word"));
+    st.halted = false;
+    // findings and walk marks, the walker (pr_b is ready now)
+    await p.click('#pulls-list .pull[data-id="pr_b"] button[data-act="open"]');
+    await p.waitForFunction(() => document.querySelectorAll('#pulls-list .pull[data-id="pr_b"] .pull-finding').length === 2, null, { timeout: slow(5000) })
+      .catch(() => fail("pulls: the findings did not draw"));
+    await p.click('#pulls-list .pull[data-id="pr_b"] .pull-finding[data-key="f-1"] button[data-state="done"]');
+    await p.waitForFunction(() => document.querySelector('#pulls-list .pull[data-id="pr_b"] .pull-finding[data-key="f-1"]').dataset.walk === "done", null, { timeout: slow(5000) })
+      .catch(() => fail("pulls: a walk mark did not land"));
+    if (!st.posts.some(x => x.indexOf("/findings/f-1/walk") >= 0 && x.indexOf('"state":"done"') >= 0)) fail("pulls: the walk mark did not post");
+    await p.click('#pulls-list .pull[data-id="pr_b"] button[data-act="walker"]');
+    await p.waitForFunction(() => document.querySelector('#pulls-list .pull[data-id="pr_b"] button[data-act="walker"]').textContent === "walker", null, { timeout: slow(5000) })
+      .catch(() => fail("pulls: the walker launch did not land"));
+    // the log of a failed row
+    await p.click('#pulls-list .pull[data-id="pr_c"] button[data-act="log"]');
+    await p.waitForFunction(() => /fetch FAILED/.test((document.querySelector('#pulls-list .pull[data-id="pr_c"] .pull-log') || {}).textContent || ""), null, { timeout: slow(5000) })
+      .catch(() => fail("pulls: the log did not open"));
+    // a client that reconnects refetches
+    st.rows.push(row("pr_h", { number: 31, created_at: "2026-10-01T13:00:00Z" }));
+    openStreams.forEach(s => { try { s.destroy(); } catch (e) {} });
+    await p.waitForFunction(() => !!document.querySelector('#pulls-list .pull[data-id="pr_h"]'), null, { timeout: slow(20000) })
+      .catch(() => fail("pulls: a reconnect did not refetch the index"));
+    // the repo filter
+    await p.selectOption("#pulls-repo", "openziti/zrok");
+    if (await ids(p) !== "pr_a") fail("pulls: the repo filter shows " + await ids(p));
+    if (errors.length) fail("pulls: page errors: " + errors.join(" | "));
+    await p.close();
+    // an empty index draws an empty state
+    st.rows = [];
+    const q = await ctx.newPage();
+    q.on("pageerror", e => errors.push(e.message));
+    await q.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await q.waitForFunction(() => typeof pullsPaint === "function", null, { timeout: slow(15000) });
+    await q.evaluate(() => switchView("pulls"));
+    await q.waitForFunction(() => /No reviews yet/.test(document.getElementById("pulls-list").textContent), null, { timeout: slow(10000) })
+      .catch(() => fail("pulls: an empty index drew no empty state"));
+    if (await nav(q) !== "") fail("pulls: nav count shows on an empty index: " + await nav(q));
+    if (errors.length) fail("pulls: page errors: " + errors.join(" | "));
+  } finally { await ctx.close(); }
+  if (!bad) console.log("pulls ok");
+}
+
+// The daemon answers /v1/prs with a plain-text 404 (nothing serves it yet): the tab stays hidden and nothing throws.
+async function pullsAbsentSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const errors = [];
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(e.message));
+    let asked = 0;
+    p.on("request", r => { if (new URL(r.url()).pathname === "/v1/prs") asked++; });
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof pullsPaint === "function", null, { timeout: slow(15000) });
+    await p.waitForFunction(() => !pulls.loading, null, { timeout: slow(10000) });
+    await p.waitForTimeout(500);
+    if (!asked) fail("pullsAbsent: the board never asked for /v1/prs");
+    if (await p.evaluate(() => !document.querySelector('.tab[data-view="pulls"]').hidden)) fail("pullsAbsent: the pulls tab shows with no /v1/prs");
+    if (errors.length) fail("pullsAbsent: page errors: " + errors.join(" | "));
+  } finally { await ctx.close(); }
+  if (!bad) console.log("pullsAbsent ok");
+}
+
 async function termBoxSection(browser, base) {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
   const p = await ctx.newPage();
@@ -17848,7 +18087,8 @@ async function main() {
       coverPoll: coverPollSection, coverSteps: coverStepsSection, termBox: termBoxSection,
       termDebug: termDebugSection, termSortStarted: termSortStartedSection,
       noReadyChildren: noReadyChildrenSection, childUnderParent: childUnderParentSection, topNav: topNavSection,
-      childFold: childFoldSection, liveHome: liveHomeSection };
+      childFold: childFoldSection, liveHome: liveHomeSection,
+      pulls: pullsSection, pullsAbsent: pullsAbsentSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -19882,6 +20122,8 @@ async function main() {
     await unit("termDebug", () => termDebugSection(browser, base));
     await unit("termSortStarted", () => termSortStartedSection(browser, base));
     await unit("topNav", () => topNavSection(browser, base));
+    await unit("pulls", () => pullsSection(browser, base));
+    await unit("pullsAbsent", () => pullsAbsentSection(browser, base));
     await pasteStartSection(browser, base);
     await pasteDoneSection(browser, base);
     await pasteOldRoomSection(browser, base);
@@ -19945,6 +20187,8 @@ async function main() {
     await topNavSection(browser, base);
     await childFoldSection(browser, base);
     await liveHomeSection(browser, base);
+    await pullsSection(browser, base);
+    await pullsAbsentSection(browser, base);
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e));
     if (process.env.DEBUG_HEADLESS && page) {

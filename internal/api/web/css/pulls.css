@@ -1,0 +1,61 @@
+/* The pulls view (js/pulls.js, docs/rnd/pulls-view-design.md section 4). Every colour is an existing token or a
+   variable with a default, so every skin wears it with no edit. */
+  :root {
+    --pull-ready: var(--teal);
+    --pull-failed: var(--danger);
+    --pull-live: var(--blue);
+  }
+  main > #pulls { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+  #pulls[hidden] { display: none; }
+  #pulls > * { flex: 0 0 auto; }
+  #pulls > #pulls-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; padding-right: 12px; }
+  #pulls-url { flex: 1 1 260px; min-width: 160px; }
+  #pulls-why { flex: 1 1 200px; min-width: 120px; }
+  .pulls-note {
+    margin: 0 0 10px; padding: var(--vs-2) var(--sp-3); border: 1px solid var(--stroke-dim); border-radius: var(--r-sm);
+    background: var(--warn-bg); color: var(--head); font-size: var(--fs-xs);
+  }
+  .pulls-note[hidden] { display: none; }
+
+  .pull {
+    display: flex; flex-wrap: wrap; gap: var(--sp-3); padding: var(--vs-2) var(--sp-3);
+    border-bottom: 1px solid var(--stroke-dim);
+  }
+  .pull-main { flex: 1 1 320px; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .pull-who { display: flex; gap: var(--sp-3); align-items: baseline; flex-wrap: wrap; }
+  .pull-repo { color: var(--head); font-weight: 600; }
+  .pull-head7, .pull-author { color: var(--dim); font-size: var(--fs-xs); }
+  .pull-title { color: var(--body); overflow-wrap: anywhere; }
+  .pull-why, .pull-second { color: var(--dim); font-size: var(--fs-xs); overflow-wrap: anywhere; }
+  .pull-counts { color: var(--label); font-size: var(--fs-xs); }
+  .pull-side { flex: 0 1 280px; min-width: 0; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; text-align: right; }
+  .pull-state { color: var(--head); overflow-wrap: anywhere; }
+  .pull[data-state="ready"] .pull-state { color: var(--pull-ready); }
+  .pull[data-state="failed"] .pull-state { color: var(--pull-failed); }
+  .pull[data-state="running"] .pull-state, .pull[data-state="fetching"] .pull-state { color: var(--pull-live); }
+  .pull[data-state="aborted"] .pull-state, .pull[data-state="queued"] .pull-state { color: var(--dim); }
+  .pull-meta { color: var(--dim); font-size: var(--fs-xs); }
+  .pull-acts { display: flex; gap: var(--sp-3); flex-wrap: wrap; justify-content: flex-end; }
+  .pull-btn {
+    background: var(--chip); color: var(--head); border: 1px solid var(--stroke-dim); border-radius: var(--r-sm);
+    padding: 2px var(--sp-3); font: inherit; font-size: var(--fs-xs); cursor: pointer;
+  }
+  .pull-btn:hover { background: var(--btn-hover); }
+  .pull-btn.on { border-color: var(--teal); color: var(--teal); }
+  .pull-log {
+    flex: 1 1 100%; margin: 0; padding: var(--vs-2) var(--sp-3); max-height: 220px; overflow: auto;
+    background: var(--bg-2); color: var(--body); font-size: var(--fs-xs); white-space: pre-wrap;
+  }
+  .pull-findings { flex: 1 1 100%; display: flex; flex-direction: column; gap: 2px; }
+  .pull-empty { color: var(--dim); font-size: var(--fs-xs); }
+  .pull-finding { display: flex; gap: var(--sp-3); align-items: baseline; flex-wrap: wrap; font-size: var(--fs-xs); }
+  .pull-finding[data-walk="done"], .pull-finding[data-walk="skipped"] { opacity: .6; }
+  .pull-sev { min-width: 3em; font-weight: 600; }
+  .pull-sev.sev-high { color: var(--sev-high); }
+  .pull-sev.sev-med { color: var(--sev-med); }
+  .pull-sev.sev-low { color: var(--sev-low); }
+  .pull-sev.sev-nit { color: var(--sev-nit); }
+  .pull-loc { color: var(--path); }
+  .pull-leak { color: var(--danger-text); }
+  .pull-code { flex: 1 1 200px; min-width: 0; color: var(--body); overflow-wrap: anywhere; }
+  .pull-marks { display: flex; gap: var(--sp-3); }

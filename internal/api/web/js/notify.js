@@ -1143,7 +1143,7 @@ const alerting = (() => {
     fresh = fresh.filter(i => {
       if (!quietDoer(kind, i)) return true;
       const q = describe(i);
-      recordToLog(q.title, q.body, kind === "permission" ? "perms" : "stack", "", i.task_id || i.id);
+      recordToLog(q.title, q.body, kind === "permission" ? "perms" : kind === "pulls" ? "pulls" : "stack", "", i.task_id || i.id);
       return false;
     });
     if (!fresh.length) return;
@@ -1160,6 +1160,7 @@ const alerting = (() => {
         arrived: "new agents on the board",
         stuck: "launched agents are stuck",
         looksidle: "agents look idle (no turn-end received)",
+        pulls: "reviews are waiting on you",
       }[kind] || "agents are ready"}`
       : d.title;
     // A pile names who, since the count alone does not, and the names are the
@@ -1179,7 +1180,7 @@ const alerting = (() => {
     //
     // Pending only for the two kinds that are answered. An arrival or a stuck
     // step is news, and it stays for its full life.
-    notify(title, body, kind === "permission" ? "perms" : "stack", actionable, subject,
+    notify(title, body, kind === "permission" ? "perms" : kind === "pulls" ? "pulls" : "stack", actionable, subject,
       fresh.length === 1 ? (fresh[0].task_id || fresh[0].id) : "",
       fresh.length === 1 ? iconForAlert(fresh[0]) : "", "",
       { pending: kind === "permission" || kind === "waiting",
