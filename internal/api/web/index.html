@@ -68,6 +68,7 @@
 <link rel="stylesheet" href="/css/growl.css">
 <link rel="stylesheet" href="/css/cardurl.css">
 <link rel="stylesheet" href="/m/compose.css">
+<link rel="stylesheet" href="/m/docs.css">
 <!-- SWITCHING ROOMS IS A RELOAD, AND A RELOAD IS TWO VIEWS.
      The board comes up on the stack, because that is what the markup says, and
      then the script puts you back on the view you were reading. Between those
@@ -158,6 +159,7 @@
            data-tip="terminals atrium is supervising"></span></div>
       <div class="tab" data-view="history">history</div>
       <div class="tab" data-view="usage">usage</div>
+      <div class="tab" data-view="docs" hidden>documents</div>
       <!-- Put machine configuration and the permissions audit after the daily work views.
            Called `rooms` because a room is the machine, and everything under this tab is a
            fact about one: its runners, its fixtures, its sources, its recognisers, its
@@ -3430,6 +3432,9 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/newcard.js"></script>
 <script src="/js/terminal-links.js"></script>
 <script src="/m/js/compose.js"></script>
+<script src="/m/js/util.js"></script>
+<script src="/m/js/md.js"></script>
+<script src="/m/js/docs.js"></script>
 <script src="/js/tcompose.js"></script>
 <script src="/js/walk.js"></script>
 <script src="/js/terminal-debug.js"></script>
