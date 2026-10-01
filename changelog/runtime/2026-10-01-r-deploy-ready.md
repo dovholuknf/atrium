@@ -18,4 +18,5 @@ deploys automatically and no timer deploys.
 - SSE: a `deploy-ready` event, a delta, on every board. Re-fetch the GET. Sent when the answer changes (checked on the
   hub's minute tick, only while a board watches) and when a deploy starts or ends.
 - Settings: `deploy_binary` (default: the hub's own executable) and `deploy_script`.
-- Not built here: the green package gate on the tip, the 15 minute floor, the automatic step two.
+- Not built here: the green package gate on the tip, the 15 minute floor between deploys, the deploy hold check, the
+  hosts-setting check, and the automatic step two.
