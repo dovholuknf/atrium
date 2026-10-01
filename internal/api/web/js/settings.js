@@ -212,7 +212,7 @@ function paintGroupSegs() {
     : "";
   // The strip is the third. It is rebuilt wholesale on every render, so it
   // calls this afterwards rather than relying on having been painted once.
-  ["stack-group", "board-group", "term-group"].forEach(id => {
+  ["stack-group", "board-group", "term-group", "term-group-tray"].forEach(id => {
     const el = document.getElementById(id);
     if (el) setHTML(el, html + plus);
   });

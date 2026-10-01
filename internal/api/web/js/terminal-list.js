@@ -202,9 +202,9 @@ function sessionHiddenBy(t, keep) {
 // connection), a subagent is inactive when it is NOT WORKING right now (idle,
 // waiting, or exited). The attached one always stays, whatever is pressed.
 //
-// ALWAYS DRAWN. It lives in the gear's `terminal list` section (see
-// `paintTermGear`). Its caption is the field's label.
-function termHideControlsHTML(c, cls) {
+// ALWAYS DRAWN. It lives in the controls tray (see `termTrayHTML`) and in the gear's
+// `terminal list` section (see `paintTermGear`). Its caption is the row's label.
+function termHideControlsHTML(c) {
   const aOn = hideAgentsMode() !== "none";
   const sOn = hideSubagentsMode() !== "none";
   const seg = (name, on, hidden, fn, title) => {
@@ -232,55 +232,102 @@ function termHideControlsHTML(c, cls) {
     : "hide the inactive subagents (idle, waiting, or exited - not working right " +
       "now). only actively-working subagents and the attached one stay") +
     ". " + subNote;
-  return `<div class="${cls || "seg trayseg termhide"}">${
+  return `<div class="seg trayseg termhide">${
       seg("agents", aOn, c.agentHidden, "toggleHideAgents()", agentTitle)
     }${
       seg("subagents", sOn, c.subHidden, "toggleHideSubagents()", subTitle)
     }</div>`;
 }
 
-// ── the list's bar, and its controls in the gear ────────────────────────────
+// ── the controls tray, and the gear's copy of it ────────────────────────────
 //
-// THE SORT, HIDE AND GROUP CONTROLS AND THE CACHE SUMMARY LIVE IN THE GEAR, in
-// its `terminal list` section (index.html), not above the rows. They used to be
-// a rolled-up tray here, and its summary line and cache line spent the top of
-// the list on settings that are read once and changed rarely. What stays is the
-// bar with the list's width buttons, which are about the list itself.
+// THE SORT, HIDE AND GROUP CONTROLS LIVE IN TWO PLACES, ONE STATE. The tray above
+// the rows and the gear's `terminal list` section (index.html) draw the same
+// markup (`termSortHTML`, `termHideControlsHTML`, `paintGroupSegs`) bound to the
+// same handlers, so a change made in either place is what the other shows. The
+// settings keys are `atrium.termSort`, the two hide keys and the grouping prefs.
 //
-// The settings keys are the same as the tray had (`atrium.termSort`, the two
-// hide keys, the grouping prefs), so nothing stored moves. `paintTermGear` fills
-// the section from the same state on every list render, and once more when the
-// gear opens, so a change made in either place is what the other shows.
+// THE TRAY IS A PANEL ABOVE THE LIST, NOT A HEADER OVER IT: its own box in normal
+// flow, with the cards scrolling in `.termscroll` beneath it.
+//
+// IT ROLLS UP. Folded, it is one line saying what the controls are set to, so
+// the state is readable without spending three rows on it. Open, it shows the
+// controls. Which of the two is remembered per device, like the strip's other
+// view prefs (see `termDeviceKey`), and defaults to folded.
+const TERM_TRAY_KEY = "atrium.termtray";
+function termTrayOpen() {
+  try { return localStorage.getItem(termDeviceKey(TERM_TRAY_KEY)) === "open"; }
+  catch (e) { return false; }
+}
+function toggleTermTray() {
+  try {
+    localStorage.setItem(termDeviceKey(TERM_TRAY_KEY), termTrayOpen() ? "closed" : "open");
+  } catch (e) {}
+  renderTermList();
+}
 
 // The sort as a pair rather than a chip that names its own state.
 function setTermSort(byActivity) {
   if (sortByActivity !== !!byActivity) toggleTermSort();
 }
 
+function termSortHTML() {
+  return `<button class="${sortByActivity ? "" : "on"}" onclick="setTermSort(false)"
+        data-tip="alphabetical by name">name</button>
+      <button class="${sortByActivity ? "on" : ""}" onclick="setTermSort(true)"
+        data-tip="working sessions first, then anything waiting on you, then newest activity"
+        >activity</button>`;
+}
+
+// What the folded tray says: the sort, the grouping, and what is being hidden,
+// in the words the controls use.
+const TRAY_GROUP_WORDS = { project: "project", window: "pile", tag: "tag", custom: "group", recency: "age" };
+function termTraySummary(c) {
+  const p = typeof groupingPrefs === "function" ? groupingPrefs() : { on: false };
+  const mode = p.on ? (p.mode || "project") : "off";
+  const hid = [];
+  if (hideAgentsMode() !== "none") hid.push("agents");
+  if (hideSubagentsMode() !== "none") hid.push("subagents");
+  const n = c.agentHidden + c.subHidden;
+  return [
+    sortByActivity ? "sorted by activity" : "sorted by name",
+    mode === "off" ? "ungrouped" : "by " + (TRAY_GROUP_WORDS[mode] || mode),
+    hid.length ? `hiding inactive ${hid.join(", ")}${n ? ` (${n})` : ""}` : "hiding nothing"
+  ].join(" · ");
+}
+
 let termGearCounts = { agentHidden: 0, subHidden: 0 };
 function paintTermGear(c) {
   if (c) termGearCounts = c;
   const sort = document.getElementById("gear-term-sort");
-  if (sort) {
-    setHTML(sort, `<button class="${sortByActivity ? "" : "on"}" onclick="setTermSort(false)"
-        data-tip="alphabetical by name">name</button>
-      <button class="${sortByActivity ? "on" : ""}" onclick="setTermSort(true)"
-        data-tip="working sessions first, then anything waiting on you, then newest activity"
-        >activity</button>`);
-  }
+  if (sort) setHTML(sort, termSortHTML());
   const hide = document.getElementById("gear-term-hide");
   if (hide) setHTML(hide, termHideControlsHTML(termGearCounts));
   if (typeof paintGroupSegs === "function") paintGroupSegs();
 }
 
-// The bar: the list's width buttons, drawn in every state since they are about
-// the list and not about the controls.
-//
-// THE HIDE PAIR IS HERE TOO, so the box is never an empty frame with one arrow in it
-// at full width. It is the same control the gear draws, with the same counts.
-function termTrayHTML(counts) {
-  return `<div class="termtray"><div class="traybar">${
-    termHideControlsHTML(counts || termGearCounts, "seg termhide tbarhide")}${termListButtons()}</div></div>`;
+// The tray. The bar is the summary, which is the fold toggle, and the list's
+// width buttons at its end, drawn in both states since they are about the list
+// and not about the controls. The body is `inert` while folded so its buttons
+// are out of the tab order as well as out of sight.
+function termTrayHTML(c) {
+  c = c || termGearCounts;
+  const open = termTrayOpen();
+  return `<div class="termtray${open ? " open" : ""}">
+      <div class="traybar">
+        <button class="traytoggle" onclick="toggleTermTray()" aria-expanded="${open}"
+          data-tip="${open ? "fold the controls away" : "show the sort, hide inactive and group controls"}"
+          ><span class="traychev">&#9656;</span
+          ><span class="traysum">${esc(termTraySummary(c))}</span></button>
+        ${termListButtons()}
+      </div>
+      <div class="traybody"${open ? "" : " inert"}><div class="trayinner"><div class="trayrows">
+        <div class="trayrow"><span class="barlabel">sort</span><div class="seg trayseg">${termSortHTML()}</div></div>
+        <div class="trayrow"><span class="barlabel">hide inactive</span>${termHideControlsHTML(c)}</div>
+        <div class="trayrow termgroups"><span class="barlabel">group</span
+          ><div class="seg trayseg groupseg" id="term-group-tray"></div></div>
+      </div></div></div>
+    </div>`;
 }
 
 // ── the phone dropdown ───────────────────────────────────────────────────────
