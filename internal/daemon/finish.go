@@ -311,6 +311,9 @@ func (d *Daemon) finish(task *store.Task, in FinishRequest) (map[string]any, int
 	}
 	d.publishTask(task.ID)
 	told := res.Notice != nil || res.Relayed
+	if d.exitsOnReport(task, in.Status) {
+		go d.exitAfterReport(task.ID)
+	}
 
 	// The room announces the session handing its work over, which the hub reads
 	// as a card changing column without knowing the session declared it done. See

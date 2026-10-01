@@ -8236,3 +8236,13 @@ build before `atrium_publish path` works, since an older room cannot say what a 
    leaves changed.
 6. The sharded result should match the serial one: the same units pass and fail, apart from the flaky ones. Check a
    change to the harness with both.
+
+## HW. A launched worker that reports done exits by itself (r-exit-on-report)
+
+1. Launch a worker from a session and have it call `atrium_report` with `done`. The launcher receives the report, then
+   within a minute the worker's runner exits. Its card stays `done` with the report kept, and its worktree and branch
+   are untouched.
+2. Have a worker report `question`, `progress` and `blocked`. The runner keeps running after each.
+3. Have a card tagged `atrium:director` report `done`. It keeps running. So does a card nobody launched.
+4. Covered by `exitonreport_test.go`, which also checks that the launcher's copy is queued before the exit is asked
+   for and that a failed exit leaves the report landed.
