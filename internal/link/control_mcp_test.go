@@ -801,6 +801,7 @@ func TestControlEndpointIsLoopbackOnly(t *testing.T) {
 	rec = httptest.NewRecorder()
 	r = httptest.NewRequest(http.MethodPost, "/_hub/mcp", nil)
 	r.RemoteAddr = "127.0.0.1:5555"
+	r.Host = "127.0.0.1:7778"
 	p.ServeHTTP(rec, r)
 	if rec.Code == http.StatusForbidden {
 		t.Fatalf("loopback control call was refused by the gate")
