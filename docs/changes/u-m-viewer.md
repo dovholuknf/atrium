@@ -12,7 +12,7 @@
 
 ### @LETTER@2. Limits and refusals
 
-1. A text file over 1 MB shows its first megabyte and "showing the first 1 MB of N MB" with "download the rest".
+1. A text file over 2 MiB shows its first megabyte and "showing the first 1 MB of N MB" with "download the rest". Under 2 MiB it shows whole.
 2. A type it cannot show (a zip, or a `.log` that is binary) asks "Can't preview X.zip (1.2 MB). Download?" and downloads only on Download.
 3. A path outside the card's folder says "not in this card's folder". A missing file says "no such file".
 4. Markdown naming another file of the card opens it in turn, and Back steps back through them.
