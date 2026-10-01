@@ -6,11 +6,11 @@ delay. All of it is off by default and costs one boolean test per keystroke when
 
 ## Turning it on
 
-**One checkbox for all of it.** Open settings and tick **log terminal input lag**. It takes effect at once, with no
+**One checkbox for all of it.** Open a terminal's **details** drawer and tick **log terminal input lag** under **debug**. It takes effect at once, with no
 restart, in the browser, the hub and the room. In the all-rooms view the hub passes it to every attached room, and a
 room that attaches later is told when it arrives. Scoped to one room, it switches that room and the hub. The hub and
-the room keep it across a restart. Opening settings in another browser shows the box ticked and starts timing
-there too.
+the room keep it across a restart. Opening a terminal's details drawer (or the settings) in another browser shows the
+box ticked and starts timing there too.
 
 **Browser only.** Without the settings dialog, run this in the console:
 

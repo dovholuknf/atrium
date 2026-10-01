@@ -4248,7 +4248,8 @@ async function pasteSpinnerSection(browser, base) {
 async function typingSection(browser, base) {
   const was = tasksMode;
   tasksMode = "land";
-  landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z",
+    activity: { what: "idle", held_peer: "runtime", held_count: 1, held_for: "line" } });
   landList = [LAND["land-live"]];
   landPerms = [];
   typingPolls = [];
@@ -4285,20 +4286,20 @@ async function typingSection(browser, base) {
     if (!off.hidden) fail("the typing readout shows when nobody switched it on.");
     if (typingPolls.length) fail("the typing endpoint was polled with the readout off: " + typingPolls.length + "x");
 
-    // Switched on through the settings checkbox, the way the operator does it.
+    // Switched on through the details drawer's debug checkbox, the way the operator does it.
     const box = await p.evaluate(() => {
       const el = document.getElementById("s-typing");
       if (!el) return { missing: true };
       el.checked = true;
       el.dispatchEvent(new Event("change"));
-      return { dialog: el.closest("dialog") ? el.closest("dialog").id : "" };
+      return { drawer: el.closest("#t-drawer") ? "t-drawer" : "" };
     });
-    if (box.missing) fail("the typing readout switch is not in the settings.");
-    else if (box.dialog !== "settings") fail("the typing readout switch is not in the gear's settings: " + box.dialog);
+    if (box.missing) fail("the typing readout switch is not on the page.");
+    else if (box.drawer !== "t-drawer") fail("the typing readout switch is not in the details drawer.");
 
     typingAnswer = { line: "git st\nsecond", count: 13, since_ms: 400, open: false,
       reason: "13 unsent character(s) on the line" };
-    await p.waitForFunction(() => /git st/.test((document.getElementById("t-typing") || {}).textContent || ""),
+    await p.waitForFunction(() => /waits/.test((document.getElementById("t-typing") || {}).textContent || ""),
       null, { timeout: slow(5000) }).catch(() => {});
     const on = await p.evaluate(() => {
       const el = document.getElementById("t-typing");
@@ -4310,9 +4311,10 @@ async function typingSection(browser, base) {
     if (on.hidden) fail("the typing readout stayed hidden after it was switched on.");
     if (!on.aboveHelp) fail("the typing readout is not the line directly above the shortcut strip.");
     if (on.stored !== "1") fail("switching the readout on was not remembered in this browser.");
-    for (const want of [/gate closed/, /13 unsent character/, /git st⏎second/, /13 chars/, /last key 0\.4s ago/]) {
-      if (!want.test(on.text)) fail("the typing readout does not show " + want + ": " + JSON.stringify(on.text));
+    if (!/^1 message from @runtime waits: 13 chars on your line$/.test(on.text)) {
+      fail("the blocking line does not say who waits and how many chars: " + JSON.stringify(on.text));
     }
+    if (/git st/.test(on.text)) fail("the readout repeats the text of the line: " + JSON.stringify(on.text));
     if (!on.shut) fail("a closed gate is not marked closed on the readout.");
     if (!typingPolls.some(u => u.startsWith("/v1/tasks/land-live/typing"))) {
       fail("the readout did not ask about the attached card: " + JSON.stringify(typingPolls));
@@ -4320,15 +4322,10 @@ async function typingSection(browser, base) {
 
     // It follows the endpoint: the gate opening shows on the next poll.
     typingAnswer = { line: "", count: 0, since_ms: 5000, open: true, reason: "line empty and quiet" };
-    await p.waitForFunction(() => /gate open/.test((document.getElementById("t-typing") || {}).textContent || ""),
-      null, { timeout: slow(5000) }).catch(() => {});
-    const opened = await p.evaluate(() => {
-      const el = document.getElementById("t-typing");
-      return { text: el.textContent, open: el.classList.contains("open") };
-    });
-    if (!/gate open: line empty and quiet/.test(opened.text) || !opened.open) {
-      fail("the readout did not follow the gate opening: " + JSON.stringify(opened));
-    }
+    await p.waitForFunction(() => document.getElementById("t-typing").hidden, null, { timeout: slow(5000) })
+      .catch(() => {});
+    const opened = await p.evaluate(() => document.getElementById("t-typing").hidden);
+    if (!opened) fail("the readout stayed up after the gate opened: it speaks only when blocking.");
 
     // Off again: hidden, and the polling stops.
     await p.evaluate(() => toggleTypingReadout(false));
@@ -4344,6 +4341,178 @@ async function typingSection(browser, base) {
   if (errors.length) fail("the typing readout page threw: " + errors.join(" | "));
   landList = []; landPerms = [];
   tasksMode = was;
+}
+
+// ── the terminal details drawer's debug section ──────────────────────────
+// The drawer on the shortcut strip carries a debug section with the live gate and the two debug switches. A click
+// outside it or Escape closes it. A switch changed in one window reaches the others. See js/peek-debug.js.
+async function termDebugSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z",
+    activity: { what: "idle", held_peer: "runtime", held_count: 2, held_for: "line" } });
+  landList = [LAND["land-live"]];
+  landPerms = [];
+  typingPolls = [];
+  typingAnswer = { line: "", count: 0, since_ms: 500, open: false, reason: "line empty, waiting for 2s of quiet" };
+  const errors = [];
+  const ctx = await landContext(browser);
+  await ctx.addInitScript(() => {
+    const Real = window.WebSocket;
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const s = { url, readyState: 0, binaryType: "arraybuffer", bufferedAmount: 0,
+        onopen: null, onclose: null, onmessage: null, onerror: null,
+        send(d) { (window.__sent = window.__sent || []).push(typeof d === "string" ? d : new TextDecoder().decode(d)); },
+        close() { this.readyState = 3; } };
+      setTimeout(() => { s.readyState = 1; if (s.onopen) s.onopen({}); }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  });
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await p.evaluate(() => { localStorage.removeItem("atrium.debug.typing"); localStorage.removeItem("atrium.debug.inputlag"); });
+    await p.evaluate(() => attachTask("land-live"));
+    await p.waitForFunction(() => termSock && termSock.readyState === 1 && termTask && termTask.id === "land-live",
+      { timeout: slow(10000) });
+
+    // The section: shut until the drawer opens, then the gate, the rows, and both switches. The settings dialog no
+    // longer carries the switches.
+    const shut = await p.evaluate(() => ({ box: document.getElementById("t-drawer-debug").hidden }));
+    await p.evaluate(() => toggleTermDrawer(true));
+    await p.waitForFunction(() => /opens in 2s/.test((document.getElementById("t-dbg-gate") || {}).textContent || ""),
+      null, { timeout: slow(5000) }).catch(() => {});
+    const sec = await p.evaluate(() => {
+      const box = document.getElementById("t-drawer-debug");
+      return { hidden: box.hidden, gate: document.getElementById("t-dbg-gate").textContent,
+        rows: document.getElementById("t-dbg-rows").textContent,
+        switches: ["s-typing", "s-inputlag"].map(id => {
+          const el = document.getElementById(id);
+          return !!el && !!el.closest("#t-drawer-debug") && !el.closest("#settings");
+        }) };
+    });
+    if (!shut.box) fail("the debug section shows before the drawer opens.");
+    if (sec.hidden) fail("the debug section is hidden with the drawer open.");
+    if (!/gate closed, opens in 2s/.test(sec.gate)) fail("the gate does not count down to open: " + JSON.stringify(sec.gate));
+    for (const want of [/chars on the line0/, /last key0\.5s ago/, /held for this card2 from @runtime/]) {
+      if (!want.test(sec.rows)) fail("the debug rows do not show " + want + ": " + JSON.stringify(sec.rows));
+    }
+    if (sec.switches.join() !== "true,true") fail("the two debug switches are not in the debug section: " + sec.switches);
+
+    // Closing the drawer stops the asking.
+    await p.evaluate(() => toggleTermDrawer(false));
+    await p.waitForTimeout(200);
+    const n = typingPolls.length;
+    await p.waitForTimeout(1300);
+    if (typingPolls.length !== n) fail("the gate was still polled after the drawer closed.");
+
+    // The gate line under the terminal speaks only when blocking, and never repeats the line.
+    const line = await p.evaluate(() => {
+      typingOn = true;
+      const el = document.getElementById("t-typing");
+      const said = (s, held) => {
+        peekCard = () => ({ activity: held ? { held_peer: "runtime", held_count: held, held_for: "line" } : {} });
+        paintTyping(s, "");
+        return el.hidden ? "" : el.textContent;
+      };
+      const out = {
+        closedNothingHeld: said({ open: false, count: 0, line: "", reason: "line empty, waiting for 2s of quiet" }, 0),
+        openHeld: said({ open: true, count: 0, line: "", reason: "line empty and quiet" }, 1),
+        typed: said({ open: false, count: 203, line: "so it sounds to me like", reason: "x" }, 1),
+        lookEmpty: said({ open: false, count: 0, line: " \\x1b", reason: "x" }, 2)
+      };
+      typingOn = false;
+      return out;
+    });
+    if (line.closedNothingHeld || line.openHeld) fail("the gate line speaks with nothing blocked: " + JSON.stringify(line));
+    if (line.typed !== "1 message from @runtime waits: 203 chars on your line") {
+      fail("the blocking line is wrong: " + JSON.stringify(line.typed));
+    }
+    if (!/^2 messages from @runtime wait: line looks empty, atrium thinks “/.test(line.lookEmpty)) {
+      fail("a held say on a looks-empty line does not quote what atrium thinks: " + JSON.stringify(line.lookEmpty));
+    }
+
+    // Outside click and Escape close the drawer. A click inside it keeps it.
+    await p.evaluate(() => toggleTermDrawer(true));
+    await p.click("#t-drawer-debug .peek-debug-head");
+    const inside = await p.evaluate(() => termDrawerOpen);
+    if (!inside) fail("a click inside the drawer closed it.");
+    await p.mouse.click(300, 300);
+    const outside = await p.evaluate(() => termDrawerOpen);
+    if (outside) fail("a click outside the drawer left it open.");
+    // Escape aimed at the terminal closes the drawer and the program never sees it.
+    await p.evaluate(() => { toggleTermDrawer(true); window.__sent = []; document.querySelector("#t-screen textarea").focus(); });
+    await p.keyboard.press("Escape");
+    const esc = await p.evaluate(() => ({ open: termDrawerOpen, sent: (window.__sent || []).join("") }));
+    if (esc.open) fail("Escape left the drawer open.");
+    if (esc.sent.includes("\u001b")) fail("the program saw the Escape the drawer took: " + JSON.stringify(esc.sent));
+    // Escape aimed elsewhere is not the drawer's.
+    await p.evaluate(() => { toggleTermDrawer(true); document.activeElement && document.activeElement.blur(); });
+    await p.keyboard.press("Escape");
+    if (!(await p.evaluate(() => termDrawerOpen))) fail("Escape aimed outside the terminal and the drawer closed it.");
+    await p.evaluate(() => toggleTermDrawer(false));
+
+    // The input lag box takes the machine's answer on every open, and the pinned note shows.
+    const lagState = () => p.evaluate(() => ({ box: document.getElementById("s-inputlag").checked, lag: lagOn,
+      pinned: !document.getElementById("s-inputlag-pinned").hidden }));
+    kaSettings = { input_lag_log: true, input_lag_pinned: false };
+    await p.evaluate(() => toggleTermDrawer(true));
+    await p.waitForFunction(() => document.getElementById("s-inputlag").checked && lagOn, null, { timeout: slow(5000) })
+      .catch(() => {});
+    const lagOnState = await lagState();
+    await p.evaluate(() => { toggleTermDrawer(false); toggleInputLag(false); });
+    if (!lagOnState.box || !lagOnState.lag || lagOnState.pinned) {
+      fail("the drawer did not take the machine's input lag answer: " + JSON.stringify(lagOnState));
+    }
+    // Pinned by ATRIUM_DEBUG_INPUTLAG: the note shows and this browser is left as it was.
+    kaSettings = { input_lag_log: true, input_lag_pinned: true };
+    await p.evaluate(() => toggleTermDrawer(true));
+    await p.waitForFunction(() => !document.getElementById("s-inputlag-pinned").hidden, null, { timeout: slow(5000) })
+      .catch(() => {});
+    const lagPinned = await lagState();
+    kaSettings = {};
+    await p.evaluate(() => toggleTermDrawer(false));
+    if (!lagPinned.pinned || lagPinned.lag) {
+      fail("the drawer did not show the pinned note, or changed this browser under a pinned machine: " + JSON.stringify(lagPinned));
+    }
+    // A hidden tab asks nothing.
+    await p.evaluate(() => {
+      Object.defineProperty(document, "hidden", { configurable: true, get: () => true });
+      toggleTermDrawer(true);
+    });
+    await p.waitForTimeout(300);
+    const hiddenN = typingPolls.length;
+    await p.waitForTimeout(1300);
+    const asked = typingPolls.length - hiddenN;
+    await p.evaluate(() => { toggleTermDrawer(false); delete document.hidden; });
+    if (asked) fail("a hidden tab still asked for the gate " + asked + "x.");
+
+    // A second window of the same browser follows a switch with no reload.
+    const q = await ctx.newPage();
+    q.on("pageerror", e => errors.push(String(e)));
+    await q.goto(base, { waitUntil: "domcontentloaded" });
+    await q.waitForFunction(() => typeof toggleInputLag === "function" && typeof toggleTypingReadout === "function",
+      null, { timeout: slow(15000) });
+    await p.evaluate(() => { toggleInputLag(true); toggleTypingReadout(true); });
+    await q.waitForFunction(() => lagOn && typingOn, null, { timeout: slow(5000) }).catch(() => {});
+    const on = await q.evaluate(() => ({ lag: lagOn, typing: typingOn,
+      lagBox: document.getElementById("s-inputlag").checked, typingBox: document.getElementById("s-typing").checked }));
+    if (!on.lag || !on.typing || !on.lagBox || !on.typingBox) fail("a second window did not follow the switches on: " + JSON.stringify(on));
+    await p.evaluate(() => { toggleInputLag(false); toggleTypingReadout(false); });
+    await q.waitForFunction(() => !lagOn && !typingOn, null, { timeout: slow(5000) }).catch(() => {});
+    const off = await q.evaluate(() => ({ lag: lagOn, typing: typingOn }));
+    if (off.lag || off.typing) fail("a second window did not follow the switches off: " + JSON.stringify(off));
+  } finally {
+    await ctx.close();
+  }
+  if (errors.length) fail("the debug section page threw: " + errors.join(" | "));
+  landList = []; landPerms = [];
+  tasksMode = was;
+  if (!bad) console.log("termDebug ok");
 }
 
 // ── a card's alias ────────────────────────────────────────────────────────
@@ -17147,7 +17316,7 @@ async function main() {
       mTypeSteady: mTypeSteadySection, mOlder: mOlderSection, mFollow: mFollowSection, mDocs: mDocsSection,
       mSwitcher: mSwitcherSection,
       mPull: mPullSection, joinedLive: joinedLiveSection,
-      coverPoll: coverPollSection, coverSteps: coverStepsSection };
+      coverPoll: coverPollSection, coverSteps: coverStepsSection, termDebug: termDebugSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -19158,6 +19327,7 @@ async function main() {
     await joinedLiveSection(browser, base);
     await coverPollSection(browser, base);
     await coverStepsSection(browser, base);
+    await termDebugSection(browser, base);
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e));
     if (process.env.DEBUG_HEADLESS) {

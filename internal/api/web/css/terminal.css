@@ -675,6 +675,16 @@
   @media (prefers-reduced-motion: reduce) {
     .term-drawer, .term-drawer.open, .term-expando svg { transition: none; }
   }
+  /* The drawer's debug section, under the details. See js/peek-debug.js. */
+  .peek-debug { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+  .peek-debug[hidden] { display: none; }
+  .peek-debug-head { font: var(--fs-xxs)/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--dim); }
+  .peek-debug-gate { font: 600 var(--fs-sm)/1.3 var(--mono); color: var(--head); padding-left: 8px; border-left: 3px solid var(--stroke-dim); }
+  .peek-debug-gate.open { border-left-color: var(--teal); }
+  .peek-debug-gate.shut { border-left-color: var(--warn); }
+  .peek-debug-row { display: flex; justify-content: space-between; gap: 10px; font: var(--fs-xs)/1.4 var(--mono); color: var(--dim); }
+  .peek-debug-row b { color: var(--body); font-weight: 400; text-align: right; overflow-wrap: anywhere; }
+  .peek-debug .hintline { font-size: var(--fs-xxs); }
   /* The typing gate readout, a debug line directly above the shortcut strip. Same surface and type as the strip,
      full strength rather than faded, since somebody who switched it on is reading it. See js/typing.js. */
   .term-typing {
