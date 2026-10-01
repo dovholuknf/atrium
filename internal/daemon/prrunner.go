@@ -249,6 +249,8 @@ type prRun struct {
 	cap     float64
 
 	commonMu sync.Mutex
+	workDir  string
+	srcAbs   string
 	common   []string
 	env      []string
 	files    []prFile
@@ -615,10 +617,21 @@ func (pr *prRun) rename(head string) error {
 	if err := os.Rename(pr.dir, to); err != nil {
 		return err
 	}
+	old := pr.dir
 	pr.dir = to
 	// The row names the folder at once, so an abort deletes the one that exists.
-	if row, err := pr.r.st.SetPRFetched(pr.id, head, pr.row.Title, pr.row.Author, filepath.ToSlash(to)); err == nil {
-		pr.row = row
+	row, err := pr.r.st.SetPRFetched(pr.id, head, pr.row.Title, pr.row.Author, filepath.ToSlash(to))
+	if err != nil {
+		os.Rename(to, old)
+		pr.dir = old
+		return err
+	}
+	pr.row = row
+	// An abort between the rename and the row update deleted the old name, which
+	// was already gone. The folder it meant is this one.
+	if pr.ctx.Err() != nil {
+		os.RemoveAll(to)
+		return errStopped
 	}
 	return nil
 }
@@ -750,7 +763,26 @@ func (pr *prRun) forkCommon() error {
 	if err != nil {
 		return err
 	}
-	pr.common = append(lean, "--tools", "Read,Grep,Glob")
+	// THE PR'S CHECKOUT IS NEVER A CLAUDE PROJECT. A PR can carry a .claude/settings.json
+	// whose hooks would run as the daemon's user with its credentials, so the calls run
+	// in a folder atrium wrote, with no project or local setting source, and reach src/
+	// read-only through --add-dir. leanArgs asks for project,local: that is replaced.
+	for i := 0; i+1 < len(lean); i++ {
+		if lean[i] == "--setting-sources" {
+			lean[i+1] = "user"
+		}
+	}
+	work := filepath.Join(pr.dir, "work")
+	if err := os.MkdirAll(work, 0o755); err != nil {
+		return err
+	}
+	src, err := filepath.Abs(filepath.Join(pr.dir, "src"))
+	if err != nil {
+		return err
+	}
+	pr.workDir, pr.srcAbs = work, src
+	// --add-dir takes several values, so a flag follows it.
+	pr.common = append(lean, "--add-dir", src, "--tools", "Read,Grep,Glob")
 	// The permission gate is off: a fork never waits on an answer. The PreToolUse
 	// hook still reports, for an agent atrium has never heard of, as keep-alive
 	// forks do, and permission_denials in the receipt is how a run shows it never
@@ -791,7 +823,7 @@ func (pr *prRun) call(step, label, dir string, args []string, prompt string) (*f
 	if err := pr.write(rel+"/prompt.md", []byte(prompt)); err != nil {
 		return nil, err
 	}
-	spec := forkSpec{Exe: pr.harness.Exe(), Dir: filepath.Join(pr.dir, "src"), Env: pr.env,
+	spec := forkSpec{Exe: pr.harness.Exe(), Dir: pr.workDir, Env: pr.env,
 		Args: append(append([]string{"-p"}, args...), pr.common...), Stdin: []byte(prompt), Timeout: prForkTimeout}
 	out, runErr := pr.r.fork(pr.ctx, spec)
 	if pr.ctx.Err() != nil {
@@ -921,9 +953,12 @@ func (pr *prRun) prime() error {
 	if err != nil {
 		return err
 	}
+	if err := pr.forkCommon(); err != nil {
+		return err
+	}
 	prompt := "You are about to review a pull request with others. The bundle below is the whole pull request: " +
-		"a summary, the diff, and each changed file in full at the head. The repository at the head is your " +
-		"working directory. Read the bundle, do not use any tool, and answer with the single word ok.\n\n" +
+		"a summary, the diff, and each changed file in full at the head. The repository at the head is at " +
+		pr.srcAbs + ", read only: name files by paths under it. Read the bundle, do not use any tool, and answer with the single word ok.\n\n" +
 		string(bundle)
 	rec, err := pr.call("prime", "prime", "prime", []string{"--max-turns", "1", "--output-format", "json"}, prompt)
 	if err != nil {
@@ -983,6 +1018,7 @@ func (pr *prRun) panel() error {
 		return errors.New("no reviewer in the panel applies, or none of their agent files was found")
 	}
 	pr.mu.Lock()
+	pr.review.Panel = nil
 	for _, j := range jobs {
 		pr.review.Panel = append(pr.review.Panel, j.agent)
 	}
@@ -1254,7 +1290,7 @@ const prMergeAsk = "You are the merge step. Below are every reviewer's and criti
 func (pr *prRun) merge() error {
 	if pr.review.Steps["merge"] != nil && pr.review.Steps["merge"].Done {
 		var got prFindings
-		if err := pr.readStep("merge/out.json", &got); err == nil {
+		if err := pr.readStep("merge/findings.json", &got); err == nil {
 			pr.final = got.Findings
 			return nil
 		}
@@ -1333,6 +1369,10 @@ func (pr *prRun) render() error {
 			return &stepErr{"merge", fmt.Errorf("the resend answer: %w", jerr)}
 		}
 		pr.final = pr.enforceProven(out.Findings)
+		// A retry replays the list the renderer accepted, not the one it refused.
+		if werr := pr.writeJSON("steps/merge/findings.json", prFindings{Findings: pr.final}); werr != nil {
+			return werr
+		}
 		in.Findings, in.Resent = pr.final, true
 		res, resends, err = prrender.Render(in)
 		if err == nil && len(resends) > 0 {

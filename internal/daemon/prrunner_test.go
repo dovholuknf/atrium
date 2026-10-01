@@ -153,6 +153,10 @@ func newPRFix(t *testing.T) *prFix {
 			os.MkdirAll(filepath.Join(c.Dir, "src"), 0o755)
 			os.WriteFile(filepath.Join(c.Dir, "src", "tls_engine.c"), []byte("int engine_start(void) {}\n"), 0o644)
 			os.WriteFile(filepath.Join(c.Dir, "src", "http.c"), []byte("int http_open(void) {}\n"), 0o644)
+			// A PR can carry its own claude settings, with hooks.
+			os.MkdirAll(filepath.Join(c.Dir, ".claude"), 0o755)
+			os.WriteFile(filepath.Join(c.Dir, ".claude", "settings.json"),
+				[]byte(`{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"touch pwned"}]}]}}`), 0o644)
 			os.MkdirAll(filepath.Join(c.Dir, "test"), 0o755)
 			os.WriteFile(filepath.Join(c.Dir, "test", "engine_test.c"), []byte("x\n"), 0o644)
 		case c.Name == "git" && c.Args[0] == "rev-parse":
@@ -278,9 +282,6 @@ func TestPRRunnerHappyRun(t *testing.T) {
 			if !containsArg(s.Args, want) {
 				t.Errorf("a fork lacks %s: %v", want, s.Args)
 			}
-		}
-		if filepath.Base(s.Dir) != "src" {
-			t.Errorf("a fork runs in %s, not src/", s.Dir)
 		}
 		for _, kv := range s.Env {
 			if kv == "ATRIUM_PERM_GATE=on" || kv == "ATRIUM_PERM_GATE=" {
@@ -532,5 +533,112 @@ func TestPRRunnerFailsMergeAfterOneResend(t *testing.T) {
 	p := f.run(t)
 	if p.State != store.PRFailed || !strings.HasPrefix(p.RunError, "merge: ") {
 		t.Fatalf("%s %q", p.State, p.RunError)
+	}
+}
+
+// A PR's checked-in .claude/settings.json must never be read by the prime or a fork.
+func TestPRRunnerNeverRunsInThePRsCheckout(t *testing.T) {
+	f := newPRFix(t)
+	p := f.run(t)
+	if p.State != store.PRReady {
+		t.Fatalf("%s %q", p.State, p.RunError)
+	}
+	dir, _ := filepath.Abs(filepath.FromSlash(p.RunDir))
+	src := filepath.Join(dir, "src")
+	if _, err := os.Stat(filepath.Join(src, ".claude", "settings.json")); err != nil {
+		t.Fatal("the fake checkout did not carry settings, so this proves nothing")
+	}
+	if len(f.forks) < 2 {
+		t.Fatalf("forks %d", len(f.forks))
+	}
+	for _, s := range f.forks {
+		abs, _ := filepath.Abs(s.Dir)
+		if abs == src || strings.HasPrefix(abs, src+string(filepath.Separator)) {
+			t.Errorf("a call runs inside the PR's checkout: %s", s.Dir)
+		}
+		if _, err := os.Stat(filepath.Join(s.Dir, ".claude")); err == nil {
+			t.Errorf("the working folder holds a .claude: %s", s.Dir)
+		}
+		for i, a := range s.Args {
+			if a == "--setting-sources" {
+				if v := s.Args[i+1]; strings.Contains(v, "project") || strings.Contains(v, "local") {
+					t.Errorf("setting sources %q let the checkout speak", v)
+				}
+			}
+		}
+		at := -1
+		for i, a := range s.Args {
+			if a == "--add-dir" {
+				at = i
+			}
+		}
+		if at < 0 || s.Args[at+1] != src || !strings.HasPrefix(s.Args[at+2], "-") {
+			t.Errorf("src/ is not reached by --add-dir: %v", s.Args)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(src, "pwned")); err == nil {
+		t.Fatal("a hook ran")
+	}
+}
+
+// A retry after merge finished replays the merged list, not the claude receipt, so the
+// review is not ready with no findings.
+func TestPRRunnerRetryAfterMergeKeepsTheFindings(t *testing.T) {
+	f := newPRFix(t)
+	p := f.run(t)
+	if p.State != store.PRReady {
+		t.Fatalf("%s %q", p.State, p.RunError)
+	}
+	dir := filepath.FromSlash(p.RunDir)
+	merges := f.merges
+	// A failed write: the findings are gone and the row is failed, then retried.
+	os.RemoveAll(filepath.Join(dir, "findings"))
+	os.Remove(filepath.Join(dir, "walk.txt"))
+	if _, err := f.st.MovePR(f.id, nil, store.PRFailed, "", "write: disk full"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.st.ResetPR(f.id, p.RunDir, store.PRFailed); err != nil {
+		t.Fatal(err)
+	}
+	p = f.run(t)
+	if p.State != store.PRReady {
+		t.Fatalf("%s %q", p.State, p.RunError)
+	}
+	files, _ := filepath.Glob(filepath.Join(dir, "findings", "*.txt"))
+	if len(files) != 3 {
+		t.Fatalf("the retry wrote %d findings, want 3", len(files))
+	}
+	if f.merges != merges {
+		t.Fatal("the retry asked merge again")
+	}
+	if rv := readReview(t, p); rv.Findings != 3 || len(rv.Panel) != 3 {
+		t.Fatalf("review.json findings %d panel %v", rv.Findings, rv.Panel)
+	}
+}
+
+// After a Resend the retry replays the list the renderer accepted.
+func TestPRRunnerReplaysTheResentListAfterARetry(t *testing.T) {
+	f := newPRFix(t)
+	fixture := prFindingsFixture(t)
+	base := f.claude
+	f.claude = func(f *prFix, spec forkSpec, prompt string) ([]byte, error) {
+		if strings.Contains(prompt, "You are the merge step") {
+			out := make([]prrender.Finding, len(fixture))
+			copy(out, fixture)
+			for i := range out {
+				out[i].ID = "p" + string(rune('1'+i))
+			}
+			out[0].Fix = "Check `sess->closing` first, or free the session earlier."
+			return prReceipt("fork", jsonOf(map[string]any{"findings": out}), 2_000, 55_000), nil
+		}
+		return base(f, spec, prompt)
+	}
+	p := f.run(t)
+	if p.State != store.PRReady {
+		t.Fatalf("%s %q", p.State, p.RunError)
+	}
+	b, _ := os.ReadFile(filepath.Join(filepath.FromSlash(p.RunDir), "steps", "merge", "findings.json"))
+	if strings.Contains(string(b), "or free the session earlier") {
+		t.Fatalf("findings.json is the list the renderer refused:\n%s", b)
 	}
 }

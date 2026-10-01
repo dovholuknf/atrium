@@ -8324,5 +8324,10 @@ build before `atrium_publish path` works, since an older room cannot say what a 
    `TestPRRunnerFailsMergeAfterOneResend`.
 9. `Suggested fix:` appears only on a finding whose `proven` is `code` and that a verifier confirmed. Covered by
    `TestPRRunnerProvenOnlyWhenVerified`.
-10. Live acceptance, by @runtime: `POST /v1/prs` with openziti/tlsuv 378 at ad5ddf4 in a throwaway room: under 10
+10. A PR that carries `.claude/settings.json` with hooks: no call runs in `src/`, none has a project or local setting
+    source, and `src/` is reached by `--add-dir`. No hook runs. Covered by `TestPRRunnerNeverRunsInThePRsCheckout`.
+11. A retry after merge finished replays `steps/merge/findings.json` (the list the renderer accepted, not the claude
+    receipt) and writes the same findings with no new merge call, and `review.json` lists the panel once. Covered by
+    `TestPRRunnerRetryAfterMergeKeepsTheFindings` and `TestPRRunnerReplaysTheResentListAfterARetry`.
+12. Live acceptance, by @runtime: `POST /v1/prs` with openziti/tlsuv 378 at ad5ddf4 in a throwaway room: under 10
     minutes, under $2 in review.json, no card, the 6 med of 378's run covered, no `Suggested fix:` on `proven: no`.
