@@ -97,6 +97,13 @@
     <div id="m-working" class="working" hidden role="status" aria-live="polite"></div>
     <div id="m-compose"></div>
     <div id="m-recap" class="recap" hidden></div>
+    <section class="viewer" id="m-viewer" hidden aria-label="file">
+      <div class="v-top">
+        <button type="button" id="m-viewer-back" class="back" aria-label="back to the thread"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></button>
+        <span class="v-title" id="m-viewer-title"></span>
+      </div>
+      <div class="v-scroll" id="m-viewer-scroll"><div id="m-viewer-body"></div></div>
+    </section>
   </section>
 </div>
 <script src="/js/cardrules.js"></script>
@@ -108,6 +115,7 @@
 <script src="/m/js/bell.js"></script>
 <script src="/m/js/growl.js"></script>
 <script src="/m/js/card.js"></script>
+<script src="/m/js/viewer.js"></script>
 <script src="/m/js/compose.js" onerror="void 0"></script>
 <script src="/m/js/perms.js" onerror="void 0"></script>
 <script>
@@ -120,6 +128,7 @@
   window.mHome.init();
   window.mGrowl.init();
   window.mCard.init();
+  window.mViewer.init();
   window.mBell.init();
   var live = document.getElementById("m-live"), room = document.getElementById("m-room");
   window.mNet.on("live", function () {
