@@ -360,7 +360,7 @@
   // thread while a touch is down, for about 300 ms after it lifts (a finger's momentum), or while a scroll is running.
   let stick = true;
   const LEAVE = 24, AT_END = 2, MOMENTUM = 300;
-  let touching = false, touchEndAt = 0, lastScrollAt = 0, progUntil = 0, progAt = 0, lastTop = 0;
+  let touching = false, touchEndAt = 0, lastScrollAt = 0, progUntil = 0, progAt = 0, lastTop = 0, progTop = -1;
   function active() { const n = Date.now(); return touching || n - touchEndAt < MOMENTUM || n - lastScrollAt < 120; }
   // Scroll anchoring is the browser's own way of holding a reader still when something above them grows (an image
   // loading, a bubble reflowing). It is on while not following and off while following, where toEnd does the job.
@@ -368,7 +368,7 @@
   function gapOf() { return els.scroll.scrollHeight - els.scroll.scrollTop - els.scroll.clientHeight; }
   // `force` is for what the reader asked for: the jump arrow, their own message going out.
   // Every move the page makes itself goes through here, so its scroll event is not mistaken for the reader's.
-  function setTop(v) { progAt = Date.now(); progUntil = progAt + 80; els.scroll.scrollTop = v; lastTop = els.scroll.scrollTop; }
+  function setTop(v) { progAt = Date.now(); progUntil = progAt + 80; els.scroll.scrollTop = v; lastTop = progTop = els.scroll.scrollTop; }
   function toEnd(force) {
     if (!els) return;
     if (!force && (!stick || active())) return;
@@ -494,21 +494,28 @@
     els.scroll.addEventListener("touchcancel", reset);
   }
 
+  // `touching` follows touch events and a mouse or pen button, never a touch's pointer events: the browser cancels a touch's
+  // pointer when it takes the drag over for scrolling (pointercancel), which is exactly when the finger is still down.
   function byHand(e) {
     userAt = Date.now();
     if (!els) return;
-    if (e && (e.type === "touchstart" || e.type === "pointerdown")) touching = true;
-    if (e && e.type === "touchstart" && e.touches && e.touches.length) touching = true;
+    if (e && (e.type === "touchstart" || (e.type === "pointerdown" && e.pointerType !== "touch"))) touching = true;
     stick = false;
     syncAnchor();
     if (gapOf() > AT_END) els.jump.hidden = false;
   }
-  function byHandEnd() { touching = false; touchEndAt = Date.now(); setTimeout(onScroll, MOMENTUM + 20); }
+  function byHandEnd(e) {
+    if (e && e.pointerType === "touch") return;
+    if (e && e.type === "touchcancel" && e.touches && e.touches.length) return;
+    touching = false; touchEndAt = Date.now(); setTimeout(onScroll, MOMENTUM + 20);
+  }
   function onScroll() {
     if (!els || !openId) return;
     // A scroll event the page made itself is not the reader's. It does not make the thread look busy and does not
     // let go of the end. A reader's scroll up does: past LEAVE px from the bottom.
-    const mine = Date.now() < progUntil && userAt <= progAt;
+    // On a slow machine the event of our own scroll can arrive after the short window, so it is also known by the place
+    // it left the thread at: an event that finds the thread exactly where the page put it is the page's, not the reader's.
+    const mine = userAt <= progAt && (Date.now() < progUntil || Math.abs(els.scroll.scrollTop - progTop) < 1);
     const moved = els.scroll.scrollTop - lastTop;
     lastTop = els.scroll.scrollTop;
     if (mine) return;
@@ -516,7 +523,10 @@
     if (els.scroll.scrollTop < 40) nearTop();
     if (typing) { if (active() || Date.now() - userAt < 1500) pinTop = els.scroll.scrollTop; else pinned(); }
     const gap = gapOf();
-    if (gap > LEAVE && moved < 0) { stick = false; els.jump.hidden = false; }
+    // Only a reader lets go of the end by scrolling. The browser nudges scrollTop by a pixel or so as layout settles,
+    // and when a reply has just landed that nudge sees a big gap: it is not a reader scrolling up.
+    const reader = touching || Date.now() - userAt < 1500;
+    if (gap > LEAVE && moved < -1 && reader) { stick = false; els.jump.hidden = false; }
     else if (gap > LEAVE && !stick) els.jump.hidden = false;
     else if (gap <= AT_END && !touching) { stick = true; els.jump.hidden = true; }
     syncAnchor();
@@ -929,14 +939,14 @@
     // The first open lays out late: the Recap button, the permission rows, fonts and any image in a reply move the end
     // after the first scroll. While following, every size change of the thread and the box around it goes to the end again.
     if (window.ResizeObserver) {
-      const ro = new ResizeObserver(() => { if (pinned()) return; if (openId) toEnd(); });
+      const ro = new ResizeObserver(() => { if (pinned()) return; if (openId) settle(); });
       [els.scroll, els.head, els.notices, els.replies, els.extras, els.perms].forEach(e => ro.observe(e));
     }
     pinchInit();
     pullInit();
-    els.scroll.addEventListener("load", () => { if (openId) toEnd(); }, true);
+    els.scroll.addEventListener("load", () => { if (openId) settle(); }, true);
     els.jump.addEventListener("click", () => { typingOff(); stick = true; syncAnchor(); toEnd(true); });
-    ["touchend", "touchcancel", "pointerup", "pointercancel"].forEach(n => els.scroll.addEventListener(n, byHandEnd, { passive: true }));
+    ["touchend", "touchcancel", "pointerup"].forEach(n => els.scroll.addEventListener(n, byHandEnd, { passive: true }));
     if (window.visualViewport) window.visualViewport.addEventListener("resize", () => { if (openId) settle(); });
     els.sheet.addEventListener("input", e => { if (e.target && e.target.classList && e.target.classList.contains("mc-box")) { if (e.target.value) typingOn(); else { typingOff(); settle(); } } }, true);
     els.sheet.addEventListener("focusout", e => { if (e.target && e.target.classList && e.target.classList.contains("mc-box")) typingOff(); });
