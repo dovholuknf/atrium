@@ -14592,20 +14592,25 @@ async function mViewerSection(browser) {
   const st = mServer({});
   const c = mCard("vw-1", { alias: "viewer", display_title: "viewer", worktree: "/w/card", status: "needs-input", waiting_since: mIso(2 * M_MIN), seen: { turn_ended_at: mIso(20 * M_MIN) } });
   st.tasks = [c];
-  const big = Buffer.from("line of text that repeats\n".repeat(60000));
+  const big = Buffer.from("line of text that repeats\n".repeat(100000));
+  // a multibyte character straddles the megabyte the range read stops at
+  const cutme = Buffer.concat([Buffer.from("a"), Buffer.from("\u00e9".repeat(1300000))]);
   st.files = {
     "/w/card/notes/plan.md": Buffer.from("# The plan\n\n## Steps\n\n- one\n- see [other](/w/card/a.txt)\n\n<script>window.__pwn = 1</script>\n"),
     "/w/card/a.txt": Buffer.from("plain text\n  indented <b>not bold</b>\n"),
     "/w/card/data.json": Buffer.from('{"a":1,"b":[1,2]}'),
     "notes/shot.png": M_PNG,
     "/w/card/big.log": big,
+    "/w/card/mid.log": Buffer.from("line of text that repeats\n".repeat(60000)),
+    "/w/card/accent.txt": cutme,
+    "/w/card/latin.txt": Buffer.from([0x63, 0x61, 0x66, 0xe9, 0x0a]),
     "/w/card/pack.zip": Buffer.concat([Buffer.from([80, 75, 3, 4, 0, 0]), Buffer.alloc(3000, 7)]),
     "/w/card/bin.log": Buffer.concat([Buffer.from("text then "), Buffer.from([0, 1, 2]), Buffer.from(" binary")]),
     "/w/card/code.html": Buffer.from("<script>window.__pwn = 2</script><p>hi</p>"),
   };
   st.missing = ["notes/missing.md"];
   const filler = Array.from({ length: 40 }, (_, i) => "Filler paragraph " + i + " so that the thread scrolls.").join("\n\n");
-  const text = filler + "\n\nFiles: /w/card/notes/plan.md and /w/card/a.txt and /w/card/data.json and [a shot](notes/shot.png) and /w/card/big.log and " +
+  const text = filler + "\n\nFiles: /w/card/notes/plan.md and /w/card/a.txt and /w/card/data.json and [a shot](notes/shot.png) and /w/card/big.log and /w/card/mid.log and /w/card/accent.txt and /w/card/latin.txt and " +
     "/w/card/pack.zip and /w/card/bin.log and /w/card/code.html and [gone](notes/gone.md) and [missing](notes/missing.md).";
   st.replies["vw-1"] = { source: "transcript", replies: [{ at: mIso(10 * M_MIN), text }] };
   await st.open();
@@ -14651,19 +14656,42 @@ async function mViewerSection(browser) {
       if (Math.abs(fs - 20) > 1) fail(tag + "the text size does not follow --m-fs: " + fs);
       if (await mNoSideways(p)) fail(tag + "the viewer scrolls the page sideways");
       await back();
-      // an image
+      // an image, and its object URL is let go when the sheet closes
+      await p.evaluate(() => { window.__revoked = 0; const r = URL.revokeObjectURL; URL.revokeObjectURL = u => { window.__revoked++; return r.call(URL, u); }; });
       await p.evaluate(s => document.querySelector(s).click(), file("notes/shot.png"));
       await p.waitForSelector("#m-viewer-body img.v-img", { timeout: slow(5000) }).catch(() => fail(tag + "the image did not show"));
       if (!(await p.evaluate(() => document.querySelector("#m-viewer-body img.v-img").naturalWidth > 0))) fail(tag + "the image is broken");
       await back();
-      // a long log stops at the cap and offers the rest
+      if ((await p.evaluate(() => window.__revoked)) < 1) fail(tag + "closing the viewer did not revoke the image");
+      // up to 2 MiB the daemon's text route reads it whole
+      st.fileReqs = [];
+      await p.evaluate(s => document.querySelector(s).click(), file("mid.log"));
+      await settle();
+      v = await viewer();
+      if (/download the rest/.test(v.text) || v.text.length < 1400000) fail(tag + "a 1.5 MB log was cut: " + v.text.length);
+      if (!st.fileReqs.some(r => r.method === "GET text" && r.path.endsWith("mid.log")) || st.fileReqs.some(r => r.method === "GET")) fail(tag + "a text file under 2 MiB was not read through the text route");
+      await back();
+      // a file not in UTF-8 is an unknown type, not garbage
+      await p.evaluate(s => document.querySelector(s).click(), file("latin.txt"));
+      await settle();
+      if (!/Can't preview latin\.txt/.test((await viewer()).text)) fail(tag + "a Latin-1 file was shown as text");
+      await back();
+      // past 2 MiB it stops at the cap, with a range tied to the file the size came from
+      st.fileReqs = [];
+      st.ifRanges = [];
       await p.evaluate(s => document.querySelector(s).click(), file("big.log"));
       await settle();
       v = await viewer();
-      if (!/showing the first 1(\.0)? MB of 1\.5 MB/.test(v.text) || !/download the rest/.test(v.text)) fail(tag + "the cap line says: " + v.text.slice(-80));
+      if (!/showing the first 1(\.0)? MB of 2\.5 MB/.test(v.text) || !/download the rest/.test(v.text)) fail(tag + "the cap line says: " + v.text.slice(-80));
       if (v.text.length > 1048576 + 200) fail(tag + "more than the cap was shown: " + v.text.length);
-      const ranged = (st.fileReqs || []).some(r => r.path.endsWith("big.log") && /^bytes=0-1048575$/.test(r.range));
-      if (!ranged) fail(tag + "the long file was not read with a range");
+      if (!(st.fileReqs || []).some(r => r.path.endsWith("big.log") && /^bytes=0-1048575$/.test(r.range))) fail(tag + "the long file was not read with a range");
+      if (!st.ifRanges.length) fail(tag + "the range was not tied to the file with If-Range");
+      await back();
+      // a cut inside a character leaves no replacement mark
+      await p.evaluate(s => document.querySelector(s).click(), file("accent.txt"));
+      await settle();
+      v = await viewer();
+      if (/\uFFFD/.test(v.text.slice(-4)) || !/download the rest/.test(v.text)) fail(tag + "the cut left a broken character: " + JSON.stringify(v.text.slice(-12)));
       await back();
       // an unknown type is asked about and not downloaded
       st.fileReqs = [];
@@ -14691,7 +14719,7 @@ async function mViewerSection(browser) {
       // the two refusals
       await p.evaluate(() => [...document.querySelectorAll("#m-replies .md-file")].find(b => /gone/.test(b.textContent)).click());
       await settle();
-      if (!/not in this card's folder/.test((await viewer()).text)) fail(tag + "outside the card says " + (await viewer()).text);
+      if (!/not in this card's folder, or not readable/.test((await viewer()).text)) fail(tag + "outside the card says " + (await viewer()).text);
       await back();
       await p.evaluate(() => [...document.querySelectorAll("#m-replies .md-file")].find(b => /missing/.test(b.textContent)).click());
       await settle();
@@ -16839,6 +16867,17 @@ function mServer(state) {
       req.on("close", () => { state.streams = state.streams.filter(s => s !== res); });
       return;
     }
+    const tm = p.match(/^\/v1\/tasks\/([^/]+)\/files\/text$/);
+    if (tm && req.method === "GET") {
+      const want = u.searchParams.get("path");
+      (state.fileReqs = state.fileReqs || []).push({ method: "GET text", path: want, range: "" });
+      const body = (state.files || {})[want];
+      const send = (code, o) => { res.writeHead(code, { "Content-Type": "application/json" }); res.end(JSON.stringify(o)); };
+      if (!body) return send(403, { error: "that path is outside the card" });
+      if (body.length > 2 << 20) return send(400, { error: "that file is too large to edit here. download it instead" });
+      if (!Buffer.from(body.toString("utf8"), "utf8").equals(body) || body.indexOf(0) >= 0) return send(400, { error: "that file is not text. download it instead" });
+      return send(200, { path: want, text: body.toString("utf8").replace(/\r\n/g, "\n"), hash: "h", eol: "\n" });
+    }
     const fm = p.match(/^\/v1\/tasks\/([^/]+)\/files$/);
     if (fm && (req.method === "GET" || req.method === "HEAD")) {
       const want = u.searchParams.get("path");
@@ -16847,9 +16886,11 @@ function mServer(state) {
       if ((state.missing || []).indexOf(want) >= 0) { res.writeHead(404, { "Content-Type": "application/json" }); return res.end(JSON.stringify({ error: "no such file" })); }
       const body = (state.files || {})[want];
       if (!body) { res.writeHead(403, { "Content-Type": "application/json" }); return res.end(req.method === "HEAD" ? "" : JSON.stringify({ error: "that path is outside the card" })); }
-      const head = { "Content-Type": "application/octet-stream", "X-Content-Type-Options": "nosniff" };
+      const head = { "Content-Type": "application/octet-stream", "X-Content-Type-Options": "nosniff", "Last-Modified": "Wed, 30 Sep 2026 12:00:00 GMT" };
       if (req.method === "HEAD") { res.writeHead(200, Object.assign(head, { "Content-Length": body.length })); return res.end(); }
-      const rg = /^bytes=(\d+)-(\d+)$/.exec(req.headers.range || "");
+      const ifr = req.headers["if-range"];
+      state.ifRanges = (state.ifRanges || []).concat(ifr ? [ifr] : []);
+      const rg = ifr && ifr !== "Wed, 30 Sep 2026 12:00:00 GMT" ? null : /^bytes=(\d+)-(\d+)$/.exec(req.headers.range || "");
       if (rg && Number(rg[1]) < body.length) {
         const to = Math.min(Number(rg[2]), body.length - 1), part = body.slice(Number(rg[1]), to + 1);
         res.writeHead(206, Object.assign(head, { "Content-Range": "bytes " + rg[1] + "-" + to + "/" + body.length, "Content-Length": part.length }));

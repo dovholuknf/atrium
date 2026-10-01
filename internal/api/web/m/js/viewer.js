@@ -9,9 +9,9 @@
 (function () {
   "use strict";
 
-  const CAP = 1048576;          // a text preview stops here
+  const CAP = 1048576;          // a text read past TEXT_MAX stops here
+  const TEXT_MAX = 2097152;     // what the daemon's text route (internal/api/filetext.go) reads whole
   const IMG_CAP = 20971520;     // an image is read whole up to here
-  const SNIFF = 4096;           // a text type with a NUL byte in this much is not text
 
   const EXT = {
     md: "markdown", markdown: "markdown",
@@ -26,6 +26,8 @@
   let els = null;
   let cur = null;      // { card, path }
   let seq = 0;
+  let urls = [];       // object URLs of what the sheet shows, revoked when it moves on or closes
+  function dropUrls() { urls.forEach(u => URL.revokeObjectURL(u)); urls = []; }
 
   const base = p => String(p).replace(/\/+$/, "").split(/[\\/]/).pop();
   const extOf = p => { const m = /\.([A-Za-z0-9]+)$/.exec(base(p)); return m ? m[1].toLowerCase() : ""; };
@@ -57,7 +59,7 @@
       if (r.status === 403 || r.status === 404) return { status: r.status };
       if (!r.ok) return { status: 0, size: null };
       const n = Number(r.headers.get("Content-Length"));
-      return { status: 200, size: isFinite(n) && r.headers.has("Content-Length") ? n : null };
+      return { status: 200, size: isFinite(n) && r.headers.has("Content-Length") ? n : null, modified: r.headers.get("Last-Modified") || "" };
     } catch (e) { return { status: 0, size: null }; }
   }
 
@@ -103,11 +105,12 @@
   }
 
   function refusal(status) {
-    say(status === 403 ? "not in this card's folder" : status === 404 ? "no such file" : "could not read that file", "v-err");
+    say(status === 403 ? "not in this card's folder, or not readable" : status === 404 ? "no such file" : "could not read that file", "v-err");
   }
 
   async function render(card, path) {
     const mine = ++seq;
+    dropUrls();
     cur = { card, path };
     els.title.textContent = base(path);
     els.scroll.scrollTop = 0;
@@ -129,29 +132,51 @@
         img.className = "v-img";
         img.alt = base(path);
         img.onerror = () => say("not available", "v-err");
-        img.src = URL.createObjectURL(blob);
+        const obj = URL.createObjectURL(blob);
+        urls.push(obj);
+        img.src = obj;
         show(img);
       } catch (e) { say("could not read that file", "v-err"); }
       return;
     }
-    // text of some kind: the first megabyte
-    let buf, total = st.size;
+    // Text: up to 2 MiB the daemon's own text route, which refuses a file that is not UTF-8, so Latin-1 or UTF-16 reads as
+    // an unknown type and not as garbage. Past that a range read of the first megabyte, tied to the file the size came
+    // from by If-Range, so a file rewritten in between is not stitched together.
+    let buf, total = st.size, text = "";
     try {
-      const over = st.size == null || st.size > CAP;
-      const r = await fetch(url(card, path), { headers: headers(over ? { Range: "bytes=0-" + (CAP - 1) } : {}) });
-      if (mine !== seq) return;
-      if (!r.ok) { refusal(r.status); return; }
-      buf = new Uint8Array(await r.arrayBuffer());
-      if (r.status === 206) {
-        const m = /\/(\d+)$/.exec(r.headers.get("Content-Range") || "");
-        if (m) total = Number(m[1]);
+      if (st.size == null || st.size <= TEXT_MAX) {
+        const r = await fetch("/v1/tasks/" + encodeURIComponent(card) + "/files/text?path=" + encodeURIComponent(path), { headers: headers() });
+        if (mine !== seq) return;
+        if (r.status === 400) {
+          let msg = "";
+          try { msg = (await r.json()).error || ""; } catch (e) {}
+          if (/not text/.test(msg)) { ask(card, path, st.size); return; }
+          if (!/too large/.test(msg)) { say(msg || "could not read that file", "v-err"); return; }
+        } else if (!r.ok) { refusal(r.status); return; }
+        else {
+          text = String((await r.json()).text || "");
+          total = text.length;
+        }
       }
-      if (buf.length > CAP) { total = total == null ? buf.length : total; buf = buf.slice(0, CAP); }
+      if (!text) {
+        const h = { Range: "bytes=0-" + (CAP - 1) };
+        if (st.modified) h["If-Range"] = st.modified;
+        const r = await fetch(url(card, path), { headers: headers(h) });
+        if (mine !== seq) return;
+        if (!r.ok) { refusal(r.status); return; }
+        buf = new Uint8Array(await r.arrayBuffer());
+        if (r.status === 206) {
+          const m = /\/(\d+)$/.exec(r.headers.get("Content-Range") || "");
+          if (m) total = Number(m[1]);
+        }
+        if (buf.length > CAP) { total = total == null ? buf.length : total; buf = buf.slice(0, CAP); }
+        if (buf.indexOf(0) >= 0) { ask(card, path, total); return; }
+        // A cut can fall inside a character. It decodes to U+FFFD at the end, which is dropped.
+        text = new TextDecoder("utf-8", { fatal: false }).decode(buf).replace(/\uFFFD+$/, "");
+      }
     } catch (e) { say("could not read that file", "v-err"); return; }
     if (mine !== seq) return;
-    if (buf.slice(0, SNIFF).indexOf(0) >= 0) { ask(card, path, total); return; }
-    let text = new TextDecoder("utf-8").decode(buf);
-    const cut = total != null && total > buf.length;
+    const cut = !!buf && total != null && total > buf.length;
     const wrap = el("div", "v-doc");
     if (kind === "markdown") {
       const holder = el("div", "md");
@@ -189,6 +214,7 @@
   function hide() {
     seq++;
     cur = null;
+    dropUrls();
     els.sheet.hidden = true;
     els.body.textContent = "";
     document.body.classList.remove("viewer-open");
