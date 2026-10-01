@@ -1,5 +1,42 @@
 # @rnd queue
 
+## Handoff, 2026-10-01 18:40: @rnd moved from claude-sg4 to m1mini
+
+clint, via the orchestrator: every director moves to m1mini. You are the successor on m1mini, worktree
+`/Users/claude/git/github/dovholuknf/atrium-worktrees/rnd`, branch `claude/rnd`.
+
+**Reporting from m1mini.** `notes/director-reports.md` lives on sg4 and is not reachable here. Report to the
+orchestrator with `atrium_say` (kind fyi) to `orchestrator-sg4-control@sg4-control` (card 01a0f2da). Never `atrium_say`
+to `atrium-87300`. Workers you launch stay on m1mini (sg3 fallback), never claude-sg4. Every commit goes to @review
+(alias `review`) before landing, even doc-only, except this queue file.
+
+**In flight: the pulls view.** clint: "pull request review flow sucks ... not token efficient nor fast." Design
+`docs/rnd/pulls-view-design.md`, API contract `docs/rnd/pulls-api.md`. clint ordered all of it built and tested, and
+@rnd OWNS DELIVERY: send each stage to its owner in order, track it, one fyi line to the orchestrator per stage
+landed. Done only when the E2E in design section 9 passes: a real PR (not a 378 replay) comes in through a door,
+runs the recipe, and is walked in the pulls view on the LIVE board. Record in `review.json` and the row: open to
+walk-ready wall time, cost, fork cache reads, finding count, and whether a human or director was waited on (must be
+none). Pass: under 10 minutes and under $2, and clint's read of the walk order. Reopen the stage that misses.
+
+| stage | owner | state |
+| --- | --- | --- |
+| P1a r-pr-render | @runtime | LANDED 58461561 |
+| P1b r-pr-store | @runtime | LANDED 59d21773 (@review c5c759f5). Needs a room deploy, the orchestrator's |
+| P1c r-pr-run | worker on m1mini, card `01a0f89b`, alias `r-pr-run` | RUNNING. Writing `internal/daemon/prrunner.go`. @runtime's card ended without tracking it, so it now reports to @rnd. It reports a tip SHA and does NOT land: send that SHA to @review, then land it. Brief `/Users/claude/r-pr-run-brief.md`. P1 acceptance replays 378 in a throwaway room off sg4: check the numbers in its `review.json` |
+| P2 pulls view | @ui | LANDED b6edcfd6 (@review c9284027) |
+| P2 follow-up | @ui | IN FLIGHT: PUT findings/{key}, walk.js re-point, unmock drawer findings, walk marks, walker, start. @ui tells @rnd at landing |
+| Hub | @fabric | LANDED d77d21d0, lows 370dcb61. Needs a hub deploy |
+| Rules 6/10 | @review | DONE a3fc844f |
+| P3 doors + 2nd opinion | @runtime, @ui, @review (gwt) | NOT SENT. Send when P1c lands. Design section 9 P3 |
+| E2E | @rnd | last. Needs P3, hub and room deploys. Run off sg4 |
+
+On each landing: `git merge-base --is-ancestor <sha> claude/main` before calling it landed.
+
+**Done today, nothing to build:** Telegram notify design 5abf6282, $2,500 room machine research 404f6def (three open
+questions for clint in that doc). The 378 measurements are in section 1 of the pulls design. Do not redo them.
+
+**Open nits:** none of ours.
+
 **Design reviews: every director design before it is built.**
 
 This file is the queue. Take the next item from the top of "Waiting". After a restart or a new context, read this
