@@ -162,3 +162,16 @@ One commit over 4ea18bd7, the design only. Every point of the HOLD is answered.
 
 Verdict: OK. The design can go to clint with Q1 to Q6. M3's landing op must take conditions 1 to 3. The doc commits
 in claude/main..claude/rnd are OK as filed.
+
+## Re-read at d8540ebf (2026-10-01, m1mini): OK, doc-ok
+
+The M3 conditions and the lows are folded in as written: the doc-ok kind, the merge-tree check, review-file-only
+verdicts with signing named, the atomic lease and `moved_to`, the gated successor, and the freeze queue open through
+3.3 step 5. One fix to the text: the review-file glob `docs/backlog/*/rd-new-review-*.md` matches only rnd's
+reviews. @review writes `r-`, `u-`, `f-` and `rd-new-review-*.md`, so the glob is `docs/backlog/*/*-new-review-*.md`
+plus `docs/backlog/review/**`. With the narrow glob, every runtime and ui verdict would be refused. Fix it when M3 is
+written. It does not hold the design.
+
+`doc-ok` is safe to write now. `internal/deployready` matches only `hub-ok|room-ok|hold` (deployready.go:207), so it
+ignores an unknown kind. This is the first one @review writes. d8540ebf sits on 7bf10158, the spike, so it lands
+with the spike, not before it.
