@@ -101,7 +101,7 @@ func addPeerTools(s *mcp.Server) {
 			"incomplete report is refused with what is missing, so fix it and call again.\n\n" +
 			"`kind` is `fyi` for news your launcher need not act on, or `needs` (the default) for " +
 			"anything that wants an answer or an action. A launcher that holds its notices keeps " +
-			"an `fyi` on its card and is not interrupted. `blocked` and `question` are always `needs`.",
+			"an `fyi` on its card and is not interrupted. Only `progress` with no `ask` can be an `fyi`: `done`, `blocked`, `question` and anything with an `ask` are always `needs`.",
 	}, reportHandler)
 
 	mcp.AddTool(s, &mcp.Tool{

@@ -47,8 +47,8 @@ func TestAnFYIReportIsHeldNotTypedForBothTags(t *testing.T) {
 		d := testDaemon(t)
 		launcher, worker := holdingPair(t, d, tag)
 
-		rec, out := finishWith(t, d, FinishRequest{Agent: "worker", Status: ReportDone, Kind: "fyi",
-			NoCommit: "research only", Recap: "the matrix is written up"})
+			rec, out := finishWith(t, d, FinishRequest{Agent: "worker", Status: ReportProgress, Kind: "fyi",
+				Recap: "the matrix is written up"})
 		if rec.Code != http.StatusOK || out["launcher_told"] != true {
 			t.Fatalf("%s: report answered %d: %s", tag, rec.Code, rec.Body)
 		}
@@ -98,6 +98,39 @@ func TestABlockedFYIReportIsStillNeeds(t *testing.T) {
 	}
 }
 
+// A done report waits on acceptance and a merge, and one carrying an ask wants an answer.
+// Neither may sit unseen as a held notice, whatever it was labelled.
+func TestADoneOrAskingFYIReportIsForcedToNeeds(t *testing.T) {
+	for name, in := range map[string]FinishRequest{
+		"done": {Agent: "worker", Status: ReportDone, Kind: "fyi", NoCommit: "research only",
+			Recap: "the matrix is written up"},
+		"progress with an ask": {Agent: "worker", Status: ReportProgress, Kind: "fyi",
+			Recap: "the matrix is written up", Ask: "which table, from clint"},
+	} {
+		for _, tag := range []string{HoldNoticesTag, OrchestratorTag} {
+			d := testDaemon(t)
+			launcher, _ := holdingPair(t, d, tag)
+			rec, _ := finishWith(t, d, in)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("%s %s: report answered %d: %s", name, tag, rec.Code, rec.Body)
+			}
+			for _, h := range heldOn(t, d, launcher.ID) {
+				if h["source"] == NoticeFYI {
+					t.Fatalf("%s %s: held as an fyi: %v", name, tag, h)
+				}
+			}
+			// Typed as today. A hold-notices launcher already keeps every report, as a report.
+			want := 1
+			if tag == HoldNoticesTag {
+				want = 0
+			}
+			if n := len(pendingFrom(t, d, launcher.ID)); n != want {
+				t.Fatalf("%s %s: %d queued, want %d", name, tag, n, want)
+			}
+		}
+	}
+}
+
 func TestAnFYIReportToALauncherThatDoesNotHoldIsTypedAsToday(t *testing.T) {
 	d := testDaemon(t)
 	launcher, _ := holdingPair(t, d, "orchestrators")
@@ -114,15 +147,11 @@ func TestAnFYIReportToALauncherThatDoesNotHoldIsTypedAsToday(t *testing.T) {
 func TestAnFYIReportStillCountsAsTheWorkersReport(t *testing.T) {
 	d := testDaemon(t)
 	launcher, worker := holdingPair(t, d, OrchestratorTag)
-	finishWith(t, d, FinishRequest{Agent: "worker", Status: ReportDone, Kind: "fyi",
-		NoCommit: "research only", Recap: "the matrix is written up"})
+	finishWith(t, d, FinishRequest{Agent: "worker", Status: ReportProgress, Kind: "fyi",
+		Recap: "the matrix is written up"})
 	got, err := d.st.Get(worker.ID)
 	if err != nil || got.ReportedAt == nil {
 		t.Fatalf("the worker's report was not recorded: %v %+v", err, got)
-	}
-	item, err := d.st.WorkItem(worker.ID)
-	if err != nil || item == nil || item.State != store.WorkReported {
-		t.Fatalf("work item = %+v %v, want reported", item, err)
 	}
 	// And a turn that ends after it is not a silent stop.
 	stopTurn(t, d, "worker")
@@ -230,20 +259,59 @@ func TestTheHeldCountAndOldestRiseWithHeldAndFallWithRead(t *testing.T) {
 	}
 
 	time.Sleep(5 * time.Millisecond)
-	changed, err := d.st.MarkNoticesRead(launcher.ID)
+	through := time.Now().UTC().Format(store.TimeFormat)
+	changed, err := d.st.MarkNoticesRead(launcher.ID, through)
 	if err != nil || !changed {
 		t.Fatalf("read: %v %v", changed, err)
 	}
 	if n, at := d.heldNoticesFor(launcher); n != 0 || at != "" {
 		t.Fatalf("after read: %d at %q", n, at)
 	}
-	if changed, _ := d.st.MarkNoticesRead(launcher.ID); changed {
+	if changed, _ := d.st.MarkNoticesRead(launcher.ID, through); changed {
 		t.Fatal("a second read with nothing new reported a change")
 	}
 	time.Sleep(5 * time.Millisecond)
 	sayKind(t, d, launcher, worker.WireName, "fyi")
 	if n, _ := d.heldNoticesFor(launcher); n != 1 {
 		t.Fatalf("after a new fyi: %d, want 1", n)
+	}
+}
+
+// A notice held between the read and the stamp is newer than what was handed back, so it
+// still counts. The marker never moves back either.
+func TestANoticeHeldBetweenTheReadAndTheStampStillCountsUnread(t *testing.T) {
+	d := testDaemon(t)
+	launcher, worker := holdingPair(t, d, OrchestratorTag)
+	launcher, _ = d.st.Get(launcher.ID)
+
+	sayKind(t, d, launcher, worker.WireName, "fyi")
+	// What the read handed back: the newest notice's own `at`.
+	events, err := d.st.Events(launcher.ID, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var newest time.Time
+	for _, e := range events {
+		if e.Kind == store.EventNotified && e.At.After(newest) {
+			newest = e.At
+		}
+	}
+	through := newest.UTC().Format(store.TimeFormat)
+	time.Sleep(5 * time.Millisecond)
+	sayKind(t, d, launcher, worker.WireName, "fyi") // held after the read, before the stamp
+
+	if changed, err := d.st.MarkNoticesRead(launcher.ID, through); err != nil || !changed {
+		t.Fatalf("stamp: %v %v", changed, err)
+	}
+	if n, _ := d.heldNoticesFor(launcher); n != 1 {
+		t.Fatalf("%d unread after the stamp, want the one held after the read", n)
+	}
+	// An older stamp arriving late unreads nothing and moves nothing.
+	if changed, _ := d.st.MarkNoticesRead(launcher.ID, "2000-01-01T00:00:00.000Z"); changed {
+		t.Fatal("an older stamp reported a change")
+	}
+	if n, _ := d.heldNoticesFor(launcher); n != 1 {
+		t.Fatalf("%d unread after an older stamp, want still 1", n)
 	}
 }
 
@@ -254,19 +322,19 @@ func TestAStuckCardWakesAnOrchestratorOnlyPastTheSecondStep(t *testing.T) {
 	got, _ := d.st.Get(worker.ID)
 	stopped := got.WaitingSinceOr(time.Now())
 
-	// Under two steps: nothing typed or queued, and the escalation has not reached the wake.
-	if err := d.watchWorkers(stopped.Add(90 * time.Second)); err != nil {
-		t.Fatal(err)
-	}
-	if n := len(pendingFrom(t, d, launcher.ID)); n != 0 {
-		t.Fatalf("%d queued under two steps, want none", n)
-	}
-	if x := d.esc.get(worker.ID); x == nil || x.Count >= wakeStep {
-		t.Fatalf("escalation %+v, want one under the wake step", x)
+	// A silent stop is told to the launcher at two minutes. That is not a wake: the
+	// notice is held, and nothing is typed or queued until ten.
+	for _, after := range []time.Duration{90 * time.Second, 3 * time.Minute, 9 * time.Minute} {
+		if err := d.watchWorkers(stopped.Add(after)); err != nil {
+			t.Fatal(err)
+		}
+		if n := len(pendingFrom(t, d, launcher.ID)); n != 0 {
+			t.Fatalf("%d queued at %v, want none", n, after)
+		}
 	}
 
-	// Past the second step: one wake, once.
-	for _, after := range []time.Duration{3 * time.Minute, 4 * time.Minute} {
+	// Past the fourth step, ten minutes: one wake, once.
+	for _, after := range []time.Duration{10 * time.Minute, 11 * time.Minute} {
 		if err := d.watchWorkers(stopped.Add(after)); err != nil {
 			t.Fatal(err)
 		}
@@ -286,7 +354,7 @@ func TestAStuckCardDoesNotWakeALauncherThatDoesNotHold(t *testing.T) {
 	d.turnEnded(worker.ID)
 	got, _ := d.st.Get(worker.ID)
 	stopped := got.WaitingSinceOr(time.Now())
-	if err := d.watchWorkers(stopped.Add(3 * time.Minute)); err != nil {
+	if err := d.watchWorkers(stopped.Add(11 * time.Minute)); err != nil {
 		t.Fatal(err)
 	}
 	// Today's one silent-stop notice, and no second one for a wake.

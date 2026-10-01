@@ -1691,14 +1691,19 @@ func (s *Server) taskEvents(w http.ResponseWriter, r *http.Request) {
 
 // noticesRead is a card saying it read the notices held on it, which is what an
 // `atrium_task` with `notices` by that card is. The count on its row drops and the
-// board hears it.
+// board hears it. The body carries `through`, the `at` of the newest notice it was handed,
+// and nothing newer than that is marked read.
 func (s *Server) noticesRead(w http.ResponseWriter, r *http.Request) {
 	t, err := s.st.Get(r.PathValue("id"))
 	if err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
 		return
 	}
-	changed, err := s.st.MarkNoticesRead(t.ID)
+	var body struct {
+		Through string `json:"through"`
+	}
+	_ = json.NewDecoder(io.LimitReader(r.Body, 1<<10)).Decode(&body)
+	changed, err := s.st.MarkNoticesRead(t.ID, body.Through)
 	if err != nil {
 		s.fail(w, err)
 		return

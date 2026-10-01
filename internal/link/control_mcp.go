@@ -228,7 +228,7 @@ func (c *controlMCP) server(class ctlClass) *mcp.Server {
 			"incomplete report is refused with what is missing, so fix it and call again.\n\n" +
 			"`kind` is `fyi` for news your launcher need not act on, or `needs` (the default) for " +
 			"anything that wants an answer or an action. A launcher that holds its notices keeps " +
-			"an `fyi` on its card and is not interrupted. `blocked` and `question` are always `needs`.",
+			"an `fyi` on its card and is not interrupted. Only `progress` with no `ask` can be an `fyi`: `done`, `blocked`, `question` and anything with an `ask` are always `needs`.",
 	}, c.reportHandler)
 
 	addTool(s, class, &mcp.Tool{
@@ -1045,10 +1045,13 @@ func (c *controlMCP) taskHandler(ctx context.Context, req *mcp.CallToolRequest, 
 		return nil, out, err
 	}
 	out.Notices = notices
-	if in.Notices && strings.TrimSpace(in.Card) == "" {
-		// A READ, so the held count on this card's row drops. Best effort: a notice
-		// that stays counted is a nag, and a failed read must not fail the answer.
-		_ = c.ask(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(id)+"/notices-read", scope, nil, nil)
+	if in.Notices && strings.TrimSpace(in.Card) == "" && len(notices) > 0 {
+		// A READ, so the held count on this card's row drops. Stamped with the newest
+		// notice handed back and never with now, so one held after the read stays
+		// unread. Best effort: a notice that stays counted is a nag, and a failed read
+		// must not fail the answer.
+		_ = c.ask(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(id)+"/notices-read", scope,
+			map[string]string{"through": notices[len(notices)-1].At}, nil)
 	}
 	out.Card, out.Handle = namedFrom(room, scope, t.ID, t.Wire)
 	out.Title = t.Title
