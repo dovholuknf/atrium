@@ -331,6 +331,7 @@ func New(opts Options) (*Daemon, error) {
 	d.holds = newHoldState()
 	d.build = buildIdentity()
 	d.nctx = newNewContexts()
+	d.nctx.persist = d.saveNewContextJournal
 	// Input-lag logging as the gear last left it, so a room that restarts keeps
 	// timing if it was timing. The variable still wins. See internal/inputlag.
 	api.ApplyInputLag(st)
@@ -1181,6 +1182,8 @@ func (d *Daemon) Run(ctx context.Context) error {
 		// starts, so every wake it queues is newer than the runner that takes it.
 		// See roomhold.go.
 		d.liftAtStartup()
+		// Before any runner is reopened: a clear the last process left half done.
+		d.endAbandonedNewContexts()
 		go func() {
 			// Cleared at the end of this function and nowhere else.
 			//

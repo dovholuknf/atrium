@@ -242,6 +242,7 @@ func (d *Daemon) startIdleHandoff(t *store.Task, idle time.Duration) {
 	if !ok {
 		return
 	}
+	d.nctx.captureOnly(t.ID, gen)
 	mark := &handoffMark{base: d.rawIdleSince(t), capturing: true, file: file}
 	d.idle.put(t.ID, mark)
 	log.Printf("[atrium] %s has been idle %s, taking its handoff before it is parked",

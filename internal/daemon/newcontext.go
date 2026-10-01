@@ -42,9 +42,12 @@ import (
 //
 // ONLY WHERE ATRIUM OWNS THE TERMINAL. There is nothing to type into otherwise.
 //
-// IN MEMORY. Like the activity it watches, a step describes a process that is
-// running now, and a restart ends the terminal it was typing into. A failed
-// chip does not survive one either: it described a sequence nobody is running.
+// THE STEP IS IN MEMORY, THE FACT OF A RUN IS NOT. Like the activity it watches, a
+// step describes a process that is running now, and a restart ends the terminal it
+// was typing into. A failed chip does not survive one either: it described a
+// sequence nobody is running. But a run the restart cut off must not vanish without
+// a word, so the runs in flight are journalled (newcontext_journal.go) and the next
+// start ends each with a failed chip saying where it was cut off.
 //
 // A FAILED STEP STAYS ON THE CARD with its reason until the clear is PROVEN (a
 // SessionStart naming a conversation other than the run's), the action is run
@@ -210,6 +213,9 @@ type newContext struct {
 	tokens, threshold int64
 	// ceiling marks a run on a card wearing ContextCeilingTag, which the wake says.
 	ceiling bool
+	// capOnly marks the idle parking's capture, which clears nothing and is not
+	// journalled: a restart that cuts it off has nothing to report.
+	capOnly bool
 }
 
 type newContexts struct {
@@ -219,6 +225,11 @@ type newContexts struct {
 	// stop ends every run in flight, at shutdown.
 	stop     chan struct{}
 	stopOnce sync.Once
+	// persist writes the runs in flight somewhere a restart can find them. See
+	// newcontext_journal.go. Nil in a test that does not care.
+	persist func(map[string]ncJournalRow)
+	// saveMu keeps two snapshots from reaching persist out of order.
+	saveMu sync.Mutex
 }
 
 func newNewContexts() *newContexts {
@@ -245,14 +256,17 @@ func (n *newContexts) beginAuto(taskID, file, conv string, tokens, threshold int
 
 func (n *newContexts) claim(taskID string, c *newContext) (uint64, bool) {
 	n.mu.Lock()
-	defer n.mu.Unlock()
 	if cur := n.by[taskID]; cur != nil && cur.step != NewContextFailed {
+		n.mu.Unlock()
 		return 0, false
 	}
 	n.gens++
 	c.since, c.gen = time.Now(), n.gens
 	n.by[taskID] = c
-	return n.gens, true
+	gen := n.gens
+	n.mu.Unlock()
+	n.save()
+	return gen, true
 }
 
 // conversationOf is the conversation a card's session is in now: the id its last
@@ -300,12 +314,14 @@ func (n *newContexts) mine(taskID string, gen uint64) bool {
 // advance moves a run to its next step.
 func (n *newContexts) advance(taskID string, gen uint64, step string) bool {
 	n.mu.Lock()
-	defer n.mu.Unlock()
 	cur := n.by[taskID]
 	if cur == nil || cur.gen != gen {
+		n.mu.Unlock()
 		return false
 	}
 	cur.step, cur.since, cur.asked = step, time.Now(), nil
+	n.mu.Unlock()
+	n.save()
 	return true
 }
 
@@ -339,32 +355,37 @@ func askedAt(asked []time.Time) string {
 // fail leaves the chip on the step that stopped, saying why.
 func (n *newContexts) fail(taskID string, gen uint64, reason string) bool {
 	n.mu.Lock()
-	defer n.mu.Unlock()
 	cur := n.by[taskID]
 	if cur == nil || cur.gen != gen {
+		n.mu.Unlock()
 		return false
 	}
 	cur.step, cur.reason, cur.since = NewContextFailed, reason, time.Now()
+	n.mu.Unlock()
+	n.save()
 	return true
 }
 
 // finish takes the chip off: the wake prompt landed.
 func (n *newContexts) finish(taskID string, gen uint64) bool {
 	n.mu.Lock()
-	defer n.mu.Unlock()
 	if cur := n.by[taskID]; cur == nil || cur.gen != gen {
+		n.mu.Unlock()
 		return false
 	}
 	delete(n.by, taskID)
+	n.mu.Unlock()
+	n.save()
 	return true
 }
 
 // clear removes a card's chip whatever it says and stops its run.
 func (n *newContexts) clear(taskID string) bool {
 	n.mu.Lock()
-	defer n.mu.Unlock()
 	_, had := n.by[taskID]
 	delete(n.by, taskID)
+	n.mu.Unlock()
+	n.save()
 	return had
 }
 
