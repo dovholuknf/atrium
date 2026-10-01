@@ -300,3 +300,7 @@
   .foldy { cursor: pointer; user-select: none; }
   .foldy::before { content: "\25B8 "; display: inline-block; transition: transform .12s; }
   .foldy.open::before { transform: rotate(90deg); }
+
+  /* The way back to the phone page, for a phone that chose the desktop board. See the head script of index.html. */
+  #toastlog-phone { display: none; }
+  html[data-opted-out] #toastlog-phone { display: inline-flex; }

@@ -1360,6 +1360,8 @@ let sortByActivity = localStorage.getItem("atrium.termSort") !== "0";
 function toggleTermSort() {
   sortByActivity = !sortByActivity;
   localStorage.setItem("atrium.termSort", sortByActivity ? "1" : "0");
+  // The gear's pills in this frame, since the list repaints after its cards load.
+  if (typeof paintTermGear === "function") paintTermGear();
   renderTermList();
 }
 
