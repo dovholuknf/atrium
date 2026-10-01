@@ -56,6 +56,7 @@ function drFailed(why) {
     pill.hidden = false;
     pill.textContent = "no report";
     pill.dataset.state = "unknown";
+    delete pill.dataset.short;
     pill.dataset.tip = "no report: " + drErr;
     pill.setAttribute("aria-label", "deploy: no report: " + drErr);
   }
@@ -65,6 +66,14 @@ function drFailed(why) {
 
 function drLine(v) { return String((v && v.line) || (v && v.state) || ""); }
 
+// The pill's short form for a narrow header (css/topnav.css), a whole phrase and never a cut one.
+function drShort(v, run) {
+  if (run && run.state === "running") return "deploying";
+  const m = /(\d+) of (\d+)/.exec(drLine(v));
+  const word = String(v.state || "unknown") === "blocked" ? "not ready" : String(v.state || "unknown");
+  return m ? word + " " + m[1] + "/" + m[2] : word;
+}
+
 function paintDeployReady() {
   const pill = document.getElementById("deploy-pill");
   if (!pill || !drReport) return;
@@ -72,6 +81,7 @@ function paintDeployReady() {
   pill.hidden = false;
   pill.textContent = run.state === "running" ? "deploying " + String(run.tip || "").slice(0, 8) : drLine(v);
   pill.dataset.state = run.state === "running" ? "running" : String(v.state || "unknown");
+  pill.dataset.short = drShort(v, run);
   // `data-tip` is the board's tooltip (js/tooltips.js), and here it is the line in full, which the pill cuts short. It is not the
   // report's git `tip`.
   pill.dataset.tip = drLine(v);

@@ -172,6 +172,7 @@ function paintRooms() {
       : `scoped to ${room}, which is not attached right now.`;
   } else {
     label.textContent = `${here}/${known} room${known === 1 ? "" : "s"}`;
+    label.dataset.n = `${here}/${known}`;
     el.dataset.tip = "you are on an atrium hub, looking at every room at once. " +
       "click to focus on one.";
   }

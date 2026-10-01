@@ -65,6 +65,7 @@
 <link rel="stylesheet" href="/css/expose3.css">
 <link rel="stylesheet" href="/css/hubnotify.css">
 <link rel="stylesheet" href="/css/deployready.css">
+<link rel="stylesheet" href="/css/topnav.css">
 <link rel="stylesheet" href="/css/hubhosts.css">
 <link rel="stylesheet" href="/css/growl.css">
 <link rel="stylesheet" href="/css/cardurl.css">
@@ -173,6 +174,9 @@
            See js/audit.js and js/rooms.js. -->
       <div class="tab" data-view="audit" hidden>audit</div>
     </nav>
+    <!-- Desktop only (css/topnav.css, js/topnav.js): the tabs that have no room, whole, in a menu. -->
+    <button type="button" id="tabmore" class="tabmore" hidden aria-haspopup="true" aria-expanded="false"
+      aria-label="more tabs" data-tip="more tabs">&#8943;</button>
     <div class="grow"></div>
     <!-- In the header, not the gear. Nothing on this machine is asking you
          while it is on, and a switch that broad has to be visible from every
@@ -230,6 +234,7 @@
   </div>
   <div class="rule"></div>
 </header>
+<div id="tabs-menu" class="tabs-menu" hidden></div>
 <div id="halted"><strong>halted</strong><span id="halt-t"></span></div>
 <!-- The growler on a phone: a flex item of the body, so it takes its height out of `main` and never lies over the
      key bar. See js/growl.js. -->
@@ -3465,6 +3470,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/switcher.js"></script>
 <script src="/js/hubrestart.js"></script>
 <script src="/js/deployready.js"></script>
+<script src="/js/topnav.js"></script>
 <script src="/js/down.js"></script>
 <script src="/js/boot.js"></script>
 </body>

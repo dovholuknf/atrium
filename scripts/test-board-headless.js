@@ -5850,6 +5850,111 @@ async function phoneHeaderSection(browser, base) {
   if (errors.length) fail("phoneHeader: the page threw: " + errors.join(" | "));
 }
 
+// ── the desktop top nav: every tab whole or in the overflow menu, the chips give way first ───────
+// Every chip is forced on with long text, and the row is measured at four widths. A tab is fine when its label fits its own box
+// and its right edge is inside the nav, or when it sits in the `more` menu. The phone width keeps its scrolling nav.
+async function topNavSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landList = [];
+  landPerms = [];
+  const errors = [];
+  const shots = path.join(__dirname, "..", "docs", "backlog", "ui", "img", "top-nav");
+  const fill = (p) => p.evaluate(() => {
+    // The board repaints these on its own events, which would put the chips back the way a quiet board has them.
+    window.paintWorking = () => {};
+    const paintAuto = window.paintGlobalAuto;
+    window.paintGlobalAuto = () => {};
+    const show = (id, text) => { const e = document.getElementById(id); e.hidden = false; if (text != null) e.textContent = text; return e; };
+    show("working", "5 working").dataset.n = "5";
+    show("sharing", "sharing");
+    globalAuto = true; globalAutoLeft = 3 * 3600; globalAutoStale = false; globalAutoRead = true; paintAuto();
+    const rt = show("rooms-t", "3/5 rooms"); rt.dataset.n = "3/5";
+    document.getElementById("rooms").hidden = false;
+    const dp = show("deploy-pill", "not ready: 4 of 11 commits are reviewed and the installed build is behind the branch");
+    dp.dataset.state = "blocked"; dp.dataset.short = "not ready 4/11";
+    const bell = document.querySelector("#toastlog-open .count"); bell.textContent = "99+";
+    document.querySelectorAll('.tab[data-view="docs"], .tab[data-view="audit"]').forEach(t => t.hidden = false);
+    const ct = document.getElementById("c-term"); ct.textContent = "14"; ct.classList.remove("zero");
+    const cp = document.getElementById("c-perm"); cp.textContent = "3"; cp.classList.remove("zero");
+  });
+  const measure = (p) => p.evaluate(() => {
+    const nav = document.querySelector("header nav"), nr = nav.getBoundingClientRect();
+    const more = document.getElementById("tabmore"), menu = document.getElementById("tabs-menu");
+    const moreOn = !more.hidden && more.getClientRects().length > 0;
+    const out = [], inMenu = [];
+    for (const t of nav.querySelectorAll(".tab")) {
+      if (t.hidden) continue;
+      const r = t.getBoundingClientRect();
+      if (t.classList.contains("ovf")) { out.push(t.dataset.view); continue; }
+      if (t.scrollWidth > t.clientWidth + 1 || r.right > nr.right + 1 || r.left < nr.left - 1) inMenu.push("clipped:" + t.dataset.view);
+    }
+    if (out.length) { more.click(); for (const b of menu.querySelectorAll("button")) inMenu.push("menu:" + b.dataset.view); more.click(); }
+    const bar = document.querySelector("header .bar");
+    const chips = [...bar.children].filter(c => c.getClientRects().length > 0 && !c.classList.contains("grow"));
+    return { out, inMenu, moreOn, clippedChip: chips.filter(c => c.getBoundingClientRect().right > innerWidth + 1).map(c => c.id || c.className),
+      sideways: document.documentElement.scrollWidth > innerWidth, barRight: bar.scrollWidth - bar.clientWidth,
+      pill: document.getElementById("deploy-pill").textContent };
+  });
+  try {
+    fs.mkdirSync(shots, { recursive: true });
+    for (const w of [1760, 1440, 1280, 1024]) {
+      const ctx = await browser.newContext({ viewport: { width: w, height: 700 } });
+      await ctx.addInitScript(() => localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true })));
+      const p = await ctx.newPage();
+      p.on("pageerror", e => errors.push(String(e)));
+      await p.goto(base, { waitUntil: "domcontentloaded" });
+      await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+      await fill(p);
+      await p.waitForTimeout(250);
+      const m = await measure(p);
+      const tag = "topNav " + w + ": ";
+      if (process.env.TOPNAV_DEBUG) console.log(tag + JSON.stringify(await p.evaluate(() => {
+        const r = e => { const b = e.getBoundingClientRect(); return [Math.round(b.left), Math.round(b.right)]; };
+        return { nav: r(document.querySelector("header nav")), more: r(document.getElementById("tabmore")), grow: r(document.querySelector("header .grow")),
+          tabs: [...document.querySelectorAll("header .tab")].map(t => t.dataset.view + (t.classList.contains("ovf") ? "!" : "") + (t.hidden ? "-" : "") + ":" + t.offsetWidth) };
+      })));
+      const clipped = m.inMenu.filter(x => x.startsWith("clipped:"));
+      if (clipped.length) fail(tag + "tabs clip: " + clipped.join(","));
+      const listed = m.inMenu.filter(x => x.startsWith("menu:")).map(x => x.slice(5)).sort().join(",");
+      if (listed !== m.out.slice().sort().join(",")) fail(tag + "the overflow menu lists [" + listed + "] but [" + m.out + "] are hidden");
+      if (m.out.length && !m.moreOn) fail(tag + "tabs are hidden and there is no more button");
+      if (m.clippedChip.length) fail(tag + "a header item runs past the window: " + m.clippedChip.join(","));
+      if (m.sideways) fail(tag + "the page scrolls sideways");
+      if (/…|\.\.\.$/.test(m.pill)) fail(tag + "the deploy pill is cut with an ellipsis");
+      const ell = await p.evaluate(() => { const e = document.getElementById("deploy-pill"); return getComputedStyle(e).textOverflow; });
+      if (ell !== "clip") fail(tag + "the deploy pill has text-overflow " + ell);
+      await p.screenshot({ path: path.join(shots, "w" + w + ".png"), clip: { x: 0, y: 0, width: w, height: 90 } });
+      if (w === 1024) {
+        await p.click("#tabmore");
+        await p.click('#tabs-menu button[data-view="usage"]');
+        if (await p.evaluate(() => (document.querySelector(".tab.on") || {}).dataset.view) !== "usage") fail(tag + "a menu entry did not open its view");
+        if (await p.evaluate(() => !document.getElementById("tabs-menu").hidden)) fail(tag + "the menu stays open after a pick");
+      }
+      await ctx.close();
+    }
+    // the phone header is not touched: no more button, no hidden tab, the nav still scrolls
+    const pctx = await browser.newContext({ viewport: { width: 412, height: 915 }, hasTouch: true, isMobile: true });
+    await pctx.addInitScript(() => localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true })));
+    const pp = await pctx.newPage();
+    pp.on("pageerror", e => errors.push(String(e)));
+    await pp.goto(base, { waitUntil: "domcontentloaded" });
+    await pp.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    const ph = await pp.evaluate(() => ({
+      more: getComputedStyle(document.getElementById("tabmore")).display,
+      ovf: document.querySelectorAll(".tab.ovf").length,
+      scroll: getComputedStyle(document.querySelector("header nav")).overflowX,
+      h: document.querySelector("header").getBoundingClientRect().height,
+    }));
+    if (ph.more !== "none" || ph.ovf || ph.h > 60) fail("topNav phone: the phone header changed: " + JSON.stringify(ph));
+    await pctx.close();
+  } finally {
+    tasksMode = was;
+  }
+  if (errors.length) fail("topNav: the page threw: " + errors.join(" | "));
+  if (!bad) console.log("topNav ok");
+}
+
 // ── focusing a phone terminal does not bounce or hide it (u-017) ──────────
 // On a phone, tapping the terminal focused xterm's helper textarea, which sat at the grid's top-left; the
 // browser scrolled the pane there, the cursor keep scrolled back, every frame. Headless Chromium does not
@@ -17670,7 +17775,7 @@ async function main() {
       mPull: mPullSection, joinedLive: joinedLiveSection,
       coverPoll: coverPollSection, coverSteps: coverStepsSection, termBox: termBoxSection,
       termDebug: termDebugSection, termSortStarted: termSortStartedSection,
-      noReadyChildren: noReadyChildrenSection, childUnderParent: childUnderParentSection };
+      noReadyChildren: noReadyChildrenSection, childUnderParent: childUnderParentSection, topNav: topNavSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -19703,6 +19808,7 @@ async function main() {
     await unit("termBox", () => termBoxSection(browser, base));
     await unit("termDebug", () => termDebugSection(browser, base));
     await unit("termSortStarted", () => termSortStartedSection(browser, base));
+    await unit("topNav", () => topNavSection(browser, base));
     await pasteStartSection(browser, base);
     await pasteDoneSection(browser, base);
     await pasteOldRoomSection(browser, base);
@@ -19763,6 +19869,7 @@ async function main() {
     await termSortStartedSection(browser, base);
     await noReadyChildrenSection(browser, base);
     await childUnderParentSection(browser, base);
+    await topNavSection(browser, base);
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e));
     if (process.env.DEBUG_HEADLESS && page) {

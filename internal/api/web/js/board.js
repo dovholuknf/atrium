@@ -1633,6 +1633,7 @@ function paintWorking(tasks) {
   if (cn) { cn.hidden = n === 0; cn.textContent = String(n); }
   if (!n) return;
   el.textContent = n === 1 ? "1 working" : n + " working";
+  el.dataset.n = String(n);
   el.dataset.tip = n === 1
     ? "one session is mid-turn. click to go to the terminals"
     : n + " sessions are mid-turn. click to go to the terminals";
