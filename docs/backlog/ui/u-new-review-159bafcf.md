@@ -41,3 +41,22 @@ Quality: after the Sonnet switch, the same pattern as before: the case the order
 that is not supervised and has a live status, the parked one, was missed.
 
 **HOLD 727ebe27..159bafcf** on finding 1.
+
+## Re-read: d93076a2
+
+Range `727ebe27..d93076a2`, 159bafcf plus d93076a2.
+
+- **Finding 1 is closed.** `termCold` returns true for `parked_at` after the supervised check. A parked card is cold,
+  `termJoined` is false for it, its row calls `resumePinned`, and hide agents takes it out. A supervised card that
+  still carries a stale `parked_at` stays live, because the supervised check comes first. `joinedLive` now asserts all
+  of this on a parked `needs-input` card, and it fails on 159bafcf.
+- **Low 2 is withdrawn.** `terminal-list.js:698` says the pid is a reconnect hint that is never cleared, so `pid > 0`
+  would not separate live from gone. @ui is right to skip it.
+- **The nit is fixed.** The gear terminal list's comment is back above its own function.
+
+No new findings. Not run: the headless suite, which is @ui's.
+
+Quality: after the Sonnet switch, the fix is exact and the test covers the case I named. Skipping the low with a
+reason from the code was right.
+
+**HUB DEPLOY OK and ROOM DEPLOY OK 727ebe27..d93076a2.**
