@@ -800,3 +800,41 @@ func checkReplies(t *testing.T, base, path, wantQuery string) {
 		}
 	}
 }
+
+// r-changes: GET /v1/tasks/{id}/changes reaches the owning room with its query intact, for a tagged
+// id and a bare one, `against` and `turn` alike.
+func TestChangesReachTheOwningRoomWithTheQueryIntact(t *testing.T) {
+	room := func(name string, id string) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			if r.URL.Path == "/v1/tasks/"+id {
+				fmt.Fprint(w, `{"id":"`+id+`"}`)
+				return
+			}
+			if r.URL.Path != "/v1/tasks/"+id+"/changes" {
+				w.WriteHeader(http.StatusNotFound)
+				fmt.Fprint(w, `{"error":"no"}`)
+				return
+			}
+			fmt.Fprintf(w, `{"served_by":%q,"path":%q,"query":%q}`, name, r.URL.Path, r.URL.RawQuery)
+		})
+	}
+	front, _, done := two(t, room("alpha", "acard"), room("beta", "bcard"))
+	defer done()
+	for _, q := range []string{"against=base", "turn=2026-09-30T08:00:00.5Z"} {
+		for _, path := range []string{"/v1/tasks/beta~bcard/changes?" + q, "/v1/tasks/bcard/changes?" + q} {
+			res, err := http.Get(front.URL + path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			raw, _ := io.ReadAll(res.Body)
+			res.Body.Close()
+			var plain map[string]string
+			_ = json.Unmarshal(raw, &plain)
+			if res.StatusCode != http.StatusOK || plain["served_by"] != "beta" ||
+				plain["path"] != "/v1/tasks/bcard/changes" || plain["query"] != q {
+				t.Fatalf("%s answered %d %s", path, res.StatusCode, raw)
+			}
+		}
+	}
+}

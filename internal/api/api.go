@@ -7,6 +7,7 @@
 package api
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -220,6 +221,10 @@ type Server struct {
 	// page (r-024), or the n older than before when it is not zero. Owned by the
 	// daemon, which reads the transcript. See internal/daemon/replies.go.
 	Replies func(taskID string, n int, before time.Time) (any, error)
+	// Changes is what a card's worktree has changed, or what one turn's edit calls
+	// changed when turn is not zero. Owned by the daemon, which runs git. A refusal
+	// is a *ChangesError. See internal/daemon/changes.go.
+	Changes func(ctx context.Context, taskID, against string, turn time.Time) (any, error)
 	// RoomStats is the last `room-stats` snapshot the sampler pushed, as JSON,
 	// or nil before the first. Does no work of its own. Owned by the daemon.
 	// See internal/roomstats.
@@ -664,6 +669,9 @@ func (s *Server) Handler() http.Handler {
 	}
 	if s.Replies != nil {
 		mux.HandleFunc("GET /v1/tasks/{id}/replies", s.cardReplies)
+	}
+	if s.Changes != nil {
+		mux.HandleFunc("GET /v1/tasks/{id}/changes", s.cardChanges)
 	}
 	mux.HandleFunc("GET /v1/usage", s.roomUsage)
 	mux.HandleFunc("GET /v1/usage/limits", s.roomLimits)

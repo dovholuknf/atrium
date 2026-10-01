@@ -8058,3 +8058,23 @@ on the board port. The body replaces the set, so read the card's tags first.
 8. A tagged director whose directory the room cannot read (a removed worktree, or none) is not cleared. The chip fails
    with `not cycled: this card has no directory the room can read ...`, nothing is typed, and the launcher is not
    told a cycle began.
+
+## HP. A card's changes, and one reply's (r-changes)
+
+1. On a card whose worktree has uncommitted edits and an untracked file, `curl -s
+   'http://127.0.0.1:7778/v1/tasks/<id>/changes' | jq '{against,head,dirty,total,files:[.files[]|{path,status,added,removed}]}'`.
+   The edits and the untracked file are listed, the untracked one as `added`, and an ignored file is not.
+2. `?against=base` lists everything since the merge base with `claude/main`. In a worktree with neither `claude/main` nor
+   `main`, it answers `against: head` and a `note`.
+3. `?path=x`, or any parameter but `against` and `turn`, answers 400. `?against=head&turn=<at>` answers 400. A `turn`
+   that is not RFC3339 answers 400. A `turn` no reply was written at answers 404 with a sentence.
+4. On a card whose directory is not a git worktree the answer is 404, `this card's directory is not a git worktree`.
+5. Through the hub, `GET /v1/tasks/<room>~<id>/changes?against=base` answers the same as on the room.
+6. `curl -s 'http://127.0.0.1:7778/v1/tasks/<id>/replies?n=3' | jq '.replies[].edited'` gives, per reply, how many
+   files its turn's Edit, Write, MultiEdit and NotebookEdit calls named inside the worktree. It runs no git.
+7. Take a reply's `at` from that answer and call `/changes?turn=<at>`. `partial` is true and `why` says a shell command's
+   changes are not included. Only the files the turn's edit calls named are listed, each with `via: edits` (still
+   uncommitted) or `via: commits` (the turn committed them, found by commit date in the turn's window). `outside` counts
+   edit paths that resolved outside the worktree and never names one. A file also edited in another turn since the last
+   commit has `cumulative: true`.
+8. A turn whose commits were rebased (author date outside the turn's window) says so in `why`.
