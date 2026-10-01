@@ -8279,3 +8279,23 @@ build before `atrium_publish path` works, since an older room cannot say what a 
 5. `Suggested fix:` appears only on a finding whose `proven` is `code`.
 6. Open a folder written by `render.Write` in the walk drawer: the rail shows every finding in walk order, each opens
    with the label line, the code and link, the bullets, and a folded Evidence. Not automated yet, it needs the runner.
+
+## HZ. The pulls index and its API (r-pr-store)
+
+1. Open a fresh database. `default` is the only recipe. Delete it, restart, and it stays deleted. Covered by
+   `internal/store/prs_test.go`.
+2. `POST /v1/prs` with a PR URL a recogniser knows: 201, a row, and a run folder under the reviews root with `steps/`
+   and `findings/`. The same body again: 200, `created` false, nothing started. With no runner built, the row is
+   `failed` with `runner: runner not built`. Covered by `internal/api/prs_test.go`.
+3. A URL no recogniser matches answers 422 `no_recogniser`. A URL one matched that is not a PR answers 422
+   `not_a_pr`. A bad head or an over-long why answers 400.
+4. `GET /v1/prs` has all six counts, `nav_count` equal to ready plus failed, and `"prs": []` when empty. A running row
+   shows `findings` and `walk` as zeros, and a ready row shows counts read from its folder.
+5. `abort` on a running row deletes its run folder and the row says `aborted`. A ready row answers 409. A folder
+   outside the reviews root is left alone. `retry` of an aborted row makes a new folder.
+6. Drawer: `GET findings` parses the files in walk order and answers 304 on a matching ETag, which a walk mark
+   changes. `PUT` with a stale hash answers 409 with the current text. A walk mark rewrites only that finding's line
+   of `walk.txt`. A run folder outside the reviews root answers 403 `outside`. Covered by
+   `internal/api/prsdrawer_test.go`.
+7. `POST walker` launches once with the tags `atrium:subagent dept:review review pr pr:<org>/<repo>#<n>`, a second call
+   returns the live one, and `set` and `clear` change `walker_task`.
