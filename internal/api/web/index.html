@@ -1018,6 +1018,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
     <div class="grow"><div class="dlg-eyebrow">the tray</div><h2>notifications</h2></div>
     <span id="toastlog-scope" class="hintline" hidden></span>
     <button id="toastlog-toggle" onclick="notifyToggle()">turn off</button>
+    <button id="toastlog-sound" onclick="document.getElementById('sound').click()">sound on</button>
     <button onclick="clearToastLog()">clear</button>
     <button onclick="document.getElementById('toastlog').close()">close</button>
   </div>
@@ -3303,6 +3304,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 </dialog>
 
 <script src="/js/cardrules.js"></script>
+<script src="/js/sounds.js"></script>
 <script src="/js/core.js"></script>
 <!-- cardurl.js second: it defines termOnly and cardUrlIsCard, which a dozen later files ask, some from a network
      callback that can run between two script tags. It runs nothing at load. -->
