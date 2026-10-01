@@ -119,6 +119,12 @@ func (r *Runner) Git(ctx context.Context, dir string, args ...string) (string, e
 	return r.git(ctx, dir, nil, args...)
 }
 
+// GitEnv is Git with extra environment, applied after every GIT_* variable is stripped. For a
+// setting that has to hold for one command, such as GIT_LITERAL_PATHSPECS=1.
+func (r *Runner) GitEnv(ctx context.Context, dir string, extraEnv []string, args ...string) (string, error) {
+	return r.git(ctx, dir, extraEnv, args...)
+}
+
 // GitInput is Git with `stdin` fed to the command, for a batch read such as
 // `cat-file --batch` that takes its list on standard input.
 func (r *Runner) GitInput(ctx context.Context, dir string, stdin []byte, args ...string) (string, error) {

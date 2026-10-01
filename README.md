@@ -256,6 +256,13 @@ switches a live Claude card's model. Atrium types `/model <id>` into the termina
 relaunch, and records the model on the card so a resume keeps it. A card with no atrium terminal, or that is not Claude,
 answers 409. The control tool `atrium_model` makes the same call.
 
+`GET /v1/tasks/{id}/changes` answers what a card's worktree has changed: `?against=head` (default, uncommitted and
+untracked files) or `?against=base` (everything since the merge base with `claude/main`, else `main`). Each file has its
+status, counts and unified hunks, bounded at 400 files, 256 KB a file and 2 MB in all, and the answer says what it cut.
+`?turn=<at>`, with `at` from `/replies`, answers the same shape for the files one reply's turn edited, marked `partial`
+because a shell command's changes are not seen. It takes no path, and a card whose directory is not a git worktree
+answers 404. `/replies` carries `edited: N` per reply for the chip, from the transcript with no git.
+
 ## Scope, and what is not built
 
 This is a personal tool. The parts that are missing are missing on purpose, or are simply next.
