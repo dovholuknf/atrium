@@ -394,6 +394,20 @@ func (p *Proxy) startDeploy(w http.ResponseWriter, r *http.Request, st *deployRe
 	_ = json.NewEncoder(w).Encode(map[string]any{"started": true, "pid": proc.Pid, "deploy": run, "script": script})
 }
 
+// deployEnv drops every ATRIUM_* variable from env. The hub runs inside a session's environment more often than not, and
+// ATRIUM_NEW_BUILD or ATRIUM_LOCATION there would point the deploy at a binary or a hub nobody checked. The script reads
+// what it needs (ATRIUM_HOSTS) from the User environment itself.
+func deployEnv(env []string) []string {
+	out := make([]string, 0, len(env))
+	for _, kv := range env {
+		if len(kv) >= 7 && strings.EqualFold(kv[:7], "ATRIUM_") {
+			continue
+		}
+		out = append(out, kv)
+	}
+	return out
+}
+
 // spawnDeployScript starts the script detached from this process, which the script is about to stop.
 func spawnDeployScript(script, tip string) (*deployProc, error) {
 	shell, err := exec.LookPath("pwsh")
@@ -403,7 +417,7 @@ func spawnDeployScript(script, tip string) (*deployProc, error) {
 		}
 	}
 	cmd := exec.Command(shell, "-NoProfile", "-NonInteractive", "-File", script, "-Tip", tip)
-	cmd.Env = gitsync.CleanEnv()
+	cmd.Env = deployEnv(gitsync.CleanEnv())
 	detach(cmd)
 	if err := cmd.Start(); err != nil {
 		return nil, err
