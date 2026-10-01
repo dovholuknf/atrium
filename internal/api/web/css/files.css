@@ -273,6 +273,27 @@
   .ulproj.uldanger { color: rgb(var(--danger-rgb)); }
   .ulflame { margin-left: var(--sp-3); }
   .ucchart { position: relative; }
+  /* The cumulative chart's axes: percent of the limit on the left, the time under it. See ucCumulative in js/usage-charts.js. */
+  .ucchart.uclim { padding-left: 74px; }
+  .ucplot { position: relative; margin-bottom: 1.5em; }
+  .ucplot .ucy { position: absolute; left: -74px; width: 68px; text-align: right; transform: translateY(-50%); font: var(--fs-xs) var(--mono); color: var(--dim); pointer-events: none; }
+  .ucplot .ucy small { color: var(--dimmest); }
+  .ucplot .ucy100 { color: rgb(var(--danger-rgb)); }
+  .ulcap { stroke: rgb(var(--danger-rgb)); stroke-width: 1; stroke-dasharray: 2 3; vector-effect: non-scaling-stroke; }
+  .ulgrid { stroke: var(--stroke-dim); stroke-width: 1; vector-effect: non-scaling-stroke; }
+  .ulresetln { stroke: rgba(var(--teal-rgb), .55); stroke-width: 1; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; }
+  .ulresetln[data-reset=weekly] { stroke: rgba(var(--warn-rgb), .6); }
+  .ucnowln { stroke: var(--dim); stroke-width: 1; vector-effect: non-scaling-stroke; }
+  .ulcross { stroke: rgb(var(--danger-rgb)); stroke-width: 1; vector-effect: non-scaling-stroke; }
+  .ucplot .ulresetlab, .ucplot .ulcrosslab, .ucplot .ucnowlab { position: absolute; top: 2px; font: var(--fs-xs) var(--mono); pointer-events: none; white-space: nowrap; }
+  .ucplot .ulresetlab { transform: translateX(4px); color: var(--teal); }
+  .ucplot .ulresetlab[data-reset=weekly] { color: rgb(var(--warn-rgb)); }
+  .ucplot .ulcrosslab { top: auto; bottom: 2px; transform: translateX(-100%); color: rgb(var(--danger-rgb)); }
+  .ucplot .ucnowlab { transform: translateX(calc(-100% - 4px)); color: var(--dim); }
+  .ucplot .uchov { position: absolute; top: 0; bottom: 0; width: 0; border-left: 1px solid var(--dim); pointer-events: none; }
+  .uctimes { position: absolute; top: 100%; left: 0; right: 0; height: 1.4em; font: var(--fs-xs) var(--mono); color: var(--dimmest); }
+  .uctimes span { position: absolute; top: 2px; transform: translateX(-50%); white-space: nowrap; }
+  .ucaxis .ucwarn { color: rgb(var(--danger-rgb)); }
   .ulband { fill: var(--teal-bg); }
   .ulbandedge { stroke: rgba(var(--teal-rgb), .45); stroke-width: 1; vector-effect: non-scaling-stroke; }
   .ulbandlab { position: absolute; top: 2px; transform: translateX(4px); font: var(--fs-xs) var(--mono); color: var(--teal); pointer-events: none; }

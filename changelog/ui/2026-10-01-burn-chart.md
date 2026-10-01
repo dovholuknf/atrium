@@ -1,0 +1,1 @@
+The usage tab's cumulative tokens chart now has a time axis with a marked now, a y axis in percent of the 5h or weekly limit with the 100% line, the time the pace hits the limit (or the percent at reset), reset marks, and a hover with time, tokens and percent.
