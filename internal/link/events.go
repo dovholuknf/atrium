@@ -88,6 +88,9 @@ var taggedFields = map[string][]string{
 	// A usage row just written. Tagged like the rest, so two rooms' cards that
 	// share an id are never one card. See internal/daemon/usage.go.
 	"usage": {"task_id"},
+	// A pull review's row. `id` is the row's own (`pr_...`), and `walker_task` is a CARD id, so it is tagged
+	// the way a card's is. The row rides in a `pr` object, see tagEvent. See pulls.go.
+	"pr": {"id", "walker_task"},
 }
 
 // feeds is one upstream stream per room, and the clients watching them.
@@ -666,9 +669,16 @@ func tagEvent(e Event) []byte {
 		return e.Data
 	}
 	obj["room"] = e.Room
+	// A `pr` EVENT CARRIES ITS ROW IN A `pr` OBJECT (`{"pr": <row>}`, the same body a POST answers with), so
+	// the fields are tagged there, and the row says its room too. A bare row is tagged at the top, like the rest.
+	target := obj
+	if row, ok := obj["pr"].(map[string]any); ok && e.Kind == "pr" {
+		row["room"] = e.Room
+		target = row
+	}
 	for _, field := range taggedFields[e.Kind] {
-		if id, ok := obj[field].(string); ok && id != "" {
-			obj[field] = tagFor(e.Room, id)
+		if id, ok := target[field].(string); ok && id != "" {
+			target[field] = tagFor(e.Room, id)
 		}
 	}
 	out, err := json.Marshal(obj)

@@ -304,3 +304,111 @@ func TestAPullsWriteIsNotCappedByTheHub(t *testing.T) {
 		t.Fatal("the room did not get the whole body")
 	}
 }
+
+// pump says a line to a room's stream until the test is done, because the hub's pump takes a moment to attach and
+// nothing is replayed.
+func pump(say chan<- string, lines ...string) (stop func()) {
+	quit := make(chan struct{})
+	go func() {
+		for i := 0; i < 60; i++ {
+			for _, l := range lines {
+				select {
+				case say <- l:
+				case <-quit:
+					return
+				}
+			}
+			select {
+			case <-quit:
+				return
+			case <-time.After(100 * time.Millisecond):
+			}
+		}
+	}()
+	return func() { close(quit) }
+}
+
+// THE `pr` EVENT REACHES THE BOARD with one room attached, on the merged stream and on the room's own, with the
+// room's name and the room's bytes.
+func TestAPrEventArrivesUntouchedFromASingleRoom(t *testing.T) {
+	say := make(chan string, 4)
+	front, _, done := pair(t, streamer(say))
+	defer done()
+	const row = `{"pr":{"id":"pr_01k8x2m4q7","state":"running","walker_task":"0f3a-card","cost_usd":0.71}}`
+	for _, path := range []string{"/v1/events/hub", "/v1/events/room/testroom", "/v1/events"} {
+		ch, shut := listen(t, front.URL+path)
+		stop := pump(say, sse("pr", row))
+		e := waitEvent(t, ch, "pr")
+		stop()
+		shut()
+		if string(e.Data) != row {
+			t.Fatalf("%s: the pr event came out %s, want it untouched", path, e.Data)
+		}
+	}
+}
+
+// IN THE ALL VIEW a `pr` event is tagged like a card event: its row's id as `room~pr_...`, its walker's card id as
+// `room~card`, an empty walker left empty, and the room on it. The scoped stream of the same room stays bare.
+func TestAPrEventIsTaggedInTheAllView(t *testing.T) {
+	a, b := make(chan string, 4), make(chan string, 4)
+	front, _, done := two(t, streamer(a), streamer(b))
+	defer done()
+	all, shutAll := listen(t, front.URL+"/v1/events/hub")
+	defer shutAll()
+	one, shutOne := listen(t, front.URL+"/v1/events/room/beta")
+	defer shutOne()
+	stopA := pump(a, sse("pr", `{"pr":{"id":"pr_a1","walker_task":"card-a"}}`))
+	defer stopA()
+	stopB := pump(b, sse("pr", `{"pr":{"id":"pr_b1","walker_task":""}}`))
+	defer stopB()
+
+	seen := map[string]map[string]any{}
+	deadline := time.After(8 * time.Second)
+	for len(seen) < 2 {
+		select {
+		case e := <-all:
+			if e.Kind != "pr" {
+				continue
+			}
+			obj := fields(t, e.Data)
+			row, _ := obj["pr"].(map[string]any)
+			if row == nil {
+				t.Fatalf("the row went missing: %s", e.Data)
+			}
+			seen[row["room"].(string)] = row
+		case <-deadline:
+			t.Fatalf("only saw %v", seen)
+		}
+	}
+	if seen["alpha"]["id"] != "alpha~pr_a1" || seen["alpha"]["walker_task"] != "alpha~card-a" {
+		t.Errorf("alpha's row came through as %v", seen["alpha"])
+	}
+	if seen["beta"]["id"] != "beta~pr_b1" || seen["beta"]["walker_task"] != "" {
+		t.Errorf("beta's row came through as %v", seen["beta"])
+	}
+	// The room's own stream is that room's, bare.
+	e := waitEvent(t, one, "pr")
+	if string(e.Data) != `{"pr":{"id":"pr_b1","walker_task":""}}` {
+		t.Errorf("the scoped stream was rewritten: %s", e.Data)
+	}
+}
+
+// THE FAN-IN DROPS NO KIND IT HAS NOT HEARD OF, and a row sent bare, with no `pr` wrapper, is tagged at the top.
+func TestTheFanInCarriesAnEventKindItDoesNotKnow(t *testing.T) {
+	a, b := make(chan string, 4), make(chan string, 4)
+	front, _, done := two(t, streamer(a), streamer(b))
+	defer done()
+	ch, shut := listen(t, front.URL+"/v1/events/hub")
+	defer shut()
+	stop := pump(a, sse("zebra-crossing", `{"id":"z1","n":3}`), sse("pr", `{"id":"pr_bare","walker_task":"c9"}`))
+	defer stop()
+
+	z := waitEvent(t, ch, "zebra-crossing")
+	if o := fields(t, z.Data); o["id"] != "z1" || o["room"] != "alpha" || o["n"] != float64(3) {
+		t.Errorf("an unknown kind came out %s", z.Data)
+	}
+	p := waitEvent(t, ch, "pr")
+	if o := fields(t, p.Data); o["id"] != "alpha~pr_bare" || o["walker_task"] != "alpha~c9" {
+		t.Errorf("a bare row came out %s", p.Data)
+	}
+}
