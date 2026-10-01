@@ -1,31 +1,39 @@
 # Room handoff: `atrium move`, a card and its work from one room to another
 
-Status: design by @rnd, 2026-10-01, for @review and then clint. Nothing built. Backlog:
+Status: design by @rnd, 2026-10-01. Revised for @review's HOLD (dc12038d, docs/backlog/rnd/rd-new-review-4ea18bd7.md), for a re-read. Nothing built. Backlog:
 `docs/backlog/rnd/rnd-new-room-handoff.md` (HIGH, from the 2026-10-01 director move), with
 `docs/backlog/runtime/r-new-move-card-between-rooms.md` (same machine, 2026-09-30) folded in.
 
 ## 0. The answer
 
 One verb, `atrium move <card>... <room>`, and one hub MCP tool, `atrium_move`. **The hub drives it, because it is the
-only thing that sees both rooms.** It runs in two halves:
+only thing that sees both rooms, and it keeps a move record so a restart resumes or undoes it.** It runs in three
+phases:
 
 1. **Check everything, move nothing.** Every card on the list is checked against the destination: idle, a clean tree,
    the repo and a git route, the toolchain, the harness and its login, env key names, lean agents, room cap, and,
-   for a card that lands work, a landing route. One failure refuses the whole list, and nothing has changed.
-2. **Move each card**, in order: carry the branch, wait for idle, capture a handoff, carry the conversation and the
-   card's untracked atrium files, launch the successor with `resume` and every carried field, check that it answers,
-   then cut over: alias, a two-way link between old and new, forwarding, children re-pointed, the old card exits.
-   Until the cut-over, a failure undoes itself: the successor is ended and the old card never knew.
+   for any card with a worktree, a landing route unless `--no-land` is given. One failure refuses the whole list,
+   and nothing has changed. The check is a forecast: every row that can change is checked again where it is used.
+2. **Prepare every card, reversibly.** For each card: wait for idle, **freeze** it (input refused, everything sent to
+   it into one queue), check it is clean again, capture a handoff, carry the branch, the conversation, the project
+   memory and the card's atrium files, park the old runner, launch the successor with `resume` and every carried
+   field, and check that it answers. A failure on any card undoes every card: the successors are ended, the old
+   cards are unparked and unfrozen, and their queues are replayed on A.
+3. **Cut every card over**, only when every card is prepared: the successor takes the alias, the old card gets a
+   `moved_to` link and forwards its queue by id with an ack, children are re-pointed, and the old card is marked
+   done. Each step is idempotent and retried from the record.
 
-**The conversation is carried by default.** The successor resumes a copy of the old transcript, and a handoff is
-written first in any case, so `--fresh` (start cold from that handoff) is always available and is the fallback when
-the transcript cannot be resumed. **Anything sent to the old card follows it**: says, reports and `report_to` go
-through a `moved_to` link, and the old card's children are re-pointed.
+At no point are two live sessions on one conversation: the old runner is parked before the successor resumes.
+
+**The conversation is carried by default.** The successor resumes a copy of the old transcript. A handoff is
+written first in any case, so `--fresh` (start cold from it) is always there, and it is the fallback when the
+transcript cannot be resumed. **Anything sent to the old card follows it**: says, reports and `report_to` go
+through one lookup that follows `moved_to`, and the old card's children are re-pointed.
 
 **A director move is only useful with a landing route.** Code reaches the destination through the hub (git-sync
-stage 1, built). Landing does not. Until git-sync stage 3 (the hub merge queue) exists, the check refuses to move a
-card that lands work unless the destination has the interim landing route of section 6. That is the half the
-2026-10-01 move was missing.
+stage 1, built). Landing does not. Until git-sync stage 3 (the hub merge queue), the check refuses a card with a
+worktree unless the destination has the interim landing route of section 6, a hub op with four rules written in.
+That is the half the 2026-10-01 move was missing.
 
 The same-machine case of r-new-move-card is this flow with the git and transcript steps skipped, because the cwd and
 the home folder are the same.
@@ -68,100 +76,142 @@ the home folder are the same.
 ## 2. The check: refuse before anything moves
 
 `atrium move` and `atrium_move` run every check for every card first, and answer with the full list of failures.
-Nothing is exited, launched or written until the whole list passes. `--check` runs the check alone.
+Nothing is frozen, exited, launched or written until the whole list passes. `--check` runs the check alone.
 
-| # | Check | How | Refusal says |
-| --- | --- | --- | --- |
-| 1 | Idle | status not running, not mid new-context (`newcontext.go` state) | `busy: <card> is mid-turn` (or `--wait <dur>`, section 3) |
-| 2 | Clean tree | `git status --porcelain` on A, through A's daemon | `dirty: <n> files`. `--wip` commits them as `WIP: move to <room>` |
-| 3 | Destination up | B attached, not retiring (`startsNothing`, `link/proxy.go:1153`) | `room <B> is not attached` or `retiring` |
-| 4 | Harness | B has the card's runner row, and `POST /v1/preflight` `runner_auth` passes | `<B> has no runner <r>` or `not logged in` |
-| 5 | Repo and git route | B's hello says it takes git syncs, the hub's `git_repos` holds the card's repo, and B's clone is at `claude/main` | `<B> cannot get <repo>` |
-| 6 | Toolchain | B's preflight against the repo's `atrium.requirements.yaml` | each failing check by name |
-| 7 | Env | every key in the card's `LaunchEnvKeys` is present on B (`env_present`, names only, values never leave A) | `<B> lacks env <KEY>` |
-| 8 | Lean kit | every `atrium:agent:<n>` and `atrium:skill:<n>` tag exists on B | `<B> has no agent <n>` |
-| 9 | Room cap | B's running count plus the list fits its cap (5) | `<B> is full` |
-| 10 | Conversation | the transcript of the last SessionStart is readable on A and under the hub's transfer cap | `transcript too large`. `--fresh` skips it |
-| 11 | Landing route | only for a card that lands work (tag `role:director` or `lands`): B has section 6's route | `<B> cannot land: no landing route` |
-| 12 | Who asks | the operator, the orchestrator, or the card's own launcher | `not yours to move` |
+| # | Check | How | Refusal says | Checked again |
+| --- | --- | --- | --- | --- |
+| 1 | Idle | status not running, not mid new-context (`newcontext.go` state) | `busy: <card> is mid-turn` | after the freeze (3.2) |
+| 2 | Clean tree | `git status --porcelain` on A, through A's daemon | `dirty: <n> files`. `--wip` commits them as `WIP: move to <room>` | after the freeze (3.2) |
+| 3 | Destination up | B attached, not retiring (`startsNothing`, `link/proxy.go:1153`) | `room <B> is not attached` or `retiring` | before each launch |
+| 4 | Harness | B has the card's runner row, and `POST /v1/preflight` `runner_auth` passes | `<B> has no runner <r>` or `not logged in` | before each launch |
+| 5 | Repo and git route | B's hello says it takes git syncs, the hub's `git_repos` holds the card's repo, and B's clone is at `claude/main` | `<B> cannot get <repo>` | at the branch carry |
+| 6 | Toolchain | B's preflight against the repo's `atrium.requirements.yaml` | each failing check by name | |
+| 7 | Env | every key in the card's `LaunchEnvKeys` is present in B's room env (`env_present`, names only) | `<B> lacks env <KEY>` | |
+| 8 | Lean kit | every `atrium:agent:<n>` and `atrium:skill:<n>` tag exists on B | `<B> has no agent <n>` | |
+| 9 | Room cap | B's running count plus the whole list fits its cap (5) | `<B> is full` | before each launch |
+| 10 | Conversation | the transcript of the last SessionStart is readable on A and under the hub's transfer cap | `transcript too large`. `--fresh` skips it | at the carry |
+| 11 | Landing route | every card with a git worktree, unless `--no-land`: B has section 6's route | `<B> cannot land: no landing route` | |
+| 12 | Who asks | the operator, the orchestrator, or the card's own launcher | `not yours to move` | |
 
-A list of cards is checked as a whole: the cap counts all of them, and one failure refuses the whole list. That is
-the "move the directors to m1mini, or a refusal before anything moved" of the backlog item.
+Row 11 fails closed. It is not keyed on a tag, which an untagged director would slip past. A worker that never lands
+is moved with `--no-land`, and the mover says so.
 
-## 3. The move, one card at a time
+Row 7 checks names in B's room env only. A card launched with a per-card env value (`LaunchEnv`, whose values never
+leave A) gets B's room value for that name, or none. The move does not reproduce per-card values.
 
-The hub runs these steps for each card in order. Steps 1 to 6 change nothing a reader of the old card can see. Step 7
-is the cut-over.
+## 3. The move
 
-1. **Hold.** A marks the card `moving` (a state, not a status). New says to it are queued, not typed in. The card
-   keeps working, because a hold is not an exit.
-2. **Carry the branch.** A commits nothing on its own. If `--wip` was given it makes the WIP commit. The hub collects
-   A's `claude/<branch>` (stage 1, built) and a narrow op pushes it to B's clone, allowed only for a card being
-   moved (f-004 step 2). B makes the worktree at the same name. On one machine the cwd stays and this step is skipped.
-3. **Wait for idle.** If the card went busy after the check, the move waits up to `--wait` (default 10 minutes) for
-   the turn to end, then gives up and releases the hold. `--force` exits mid-turn, which leaves mid-task, as an exit
-   always does.
+### 3.1 The move record
+
+The hub writes one record per card before it touches anything: `{move id, list id, card, from, to, step, new id,
+queue acks, started, updated}`, in the hub store. Every step below writes its result before the next starts. At hub
+start, each unfinished record is resumed from its step if it was in the cut-over (phase 3), and undone if it was
+not. Every step is idempotent by move id: the successor's launch uses a `task_id` derived from the move id, so a
+repeat returns the same card; writes on B overwrite; a re-sent say carries its id and B drops a duplicate.
+
+A frozen card also carries a lease (default 30 minutes, renewed by the hub while the move runs). If the hub is gone
+past the lease and no cut-over began, A undoes the card on its own: unparks it, unfreezes it and replays its queue.
+A hub that comes back to such a record ends the successor on B.
+
+### 3.2 Phase 2: prepare every card
+
+For each card in the list, in order:
+
+1. **Wait for idle.** If the card is mid-turn, wait up to `--wait` (default 10 minutes) for the turn to end, then
+   refuse the whole list and undo any card already prepared. `--force` stops the turn, which leaves mid-task, as an
+   exit always does.
+2. **Freeze.** From here to the cut-over the old card takes no turn. Its terminal input is refused, as a new-context
+   cycle already refuses it (`terminal-links.js:1859`). Says, reports, stop and context notices, nags and restart
+   wakes all go to one freeze queue, each with its id, through `launcherOf`, `notifyLauncher` and the say path alike.
+   Nothing is typed in.
+3. **Check again.** Idle (the freeze landed on an idle card) and clean (row 2, or `--wip` commits now). A failure
+   undoes the list.
 4. **Capture.** The context capture writes `HANDOFF.<alias>.md` in the cwd, as a new-context cycle does. It is the
    cold-start fallback and the successor's read-me either way.
-5. **Carry the conversation and the files.** A reads the jsonl of the card's last SessionStart and the untracked
-   atrium files in its cwd (`BRIEF.md`, `HANDOFF.*.md`). The hub streams them to B, which writes the jsonl under its
-   own encoded cwd (`~/.claude/projects/<B's cwd, encoded>/<id>.jsonl`) and the files into the new worktree. No ssh
-   and no keys. On one machine, with the same home folder, this step is skipped.
-6. **Launch and check.** B launches the successor through `/v1/launch` with `resume` (or none with `--fresh`), `cwd`,
-   `repo` (the fix for the label), harness, model, effort, args, title, why, tags (the lean tags among them), theme,
-   sound, icon, overrides, `peer_typing`, gated and auto-approve, `report_to`, the old card's lineage, and
-   `moved_from = A~<old id>`. Its first prompt is one paragraph: you moved from A to B, your worktree is now
-   `<path>`, and paths in your history under `<old path>` are now under it. Read `HANDOFF.<alias>.md`. Answer this
-   with `atrium_say`. The hub waits for that say (default 3 minutes). No answer means the move failed: B ends the
-   successor, A releases the hold, and the queued says are typed in on A as if nothing happened.
-7. **Cut over**, once the successor has answered:
-   - A sets `moved_to = B~<new id>` on the old card, releases its alias with `alias_note` "moved to B~<id>", and exits
-     it. The old card is left `done`, not archived. Its history, recap and events stay on A, readable through the
-     link.
-   - B sets the alias on the successor, and `pin`, `pin_order` and the pin group through the pin-order endpoint.
-   - The hub re-points every child whose `spawned_by_id` is `A~<old id>`, on any room, with `SetLauncher`, so its
-     next report goes straight to the new card.
-   - A does not type the says it queued during the hold. It forwards them to the new card through the hub relay,
-     exactly once, and drops them from its own queue.
-8. **Tell.** The hub posts one line to the old card's launcher and to the mover: `<alias> moved A~<old> to B~<new>`.
+5. **Carry the branch.** The tree is now final. The hub collects A's `claude/<branch>` (stage 1, built), and a narrow
+   op pushes it to B's clone, allowed only for a card with a live move record (f-004 step 2). B makes the worktree at
+   the same name. On one machine the cwd stays and this step is skipped.
+6. **Carry the conversation and the files.** A reads the jsonl of the card's last SessionStart, the project memory
+   folder (`~/.claude/projects/<encoded cwd>/memory/`), and the untracked atrium files in the cwd (`BRIEF.md`,
+   `HANDOFF.*.md`). The hub streams them to B. B writes them only through `internal/safepath` and an allowlist of
+   names: the jsonl under its own encoded cwd, the memory folder beside it, and the two file patterns into the new
+   worktree. No ssh and no keys. On one machine, with the same home folder, this step is skipped.
+7. **Park the old runner.** A parks the card as an idle park does: the process exits, and the card stays, frozen,
+   resumable. From here only the successor can run the conversation, so the `ResumeBusy` fork cannot happen across
+   machines.
+8. **Launch and check.** B launches the successor through `/v1/launch` with `task_id` from the move id, `resume` (or
+   none with `--fresh`), `cwd`, `repo` (the fix for the label), harness, model, effort, args, title, why, tags (the
+   lean tags among them), theme, sound, icon, overrides, `peer_typing`, gated and auto-approve, `report_to`, the old
+   card's lineage, and `moved_from = A~<old id>`. Its first prompt is one paragraph: you moved from A to B, your
+   worktree is now `<path>`, paths in your history under `<old path>` are now under it, read `HANDOFF.<alias>.md`,
+   and answer this with `atrium_say`. The hub waits for that say (default 3 minutes). The successor holds no alias
+   yet and is told not to act on anything until the cut-over note.
+
+If any card fails at any step, the hub undoes every card in the list, newest first: it ends the successor on B,
+unparks the old card on A (the ordinary resume of its own transcript), unfreezes it, and replays its freeze queue
+there in order.
+
+### 3.3 Phase 3: cut every card over
+
+Only when every card in the list is prepared. For each card, in this order, each step retried from the record:
+
+1. **A sets `moved_to = B~<new id>`** on the old card. From now on its freeze queue forwards, it does not replay.
+2. **B takes the alias.** The hub sets it on the successor while the old card still holds it on A. `resolvePeer`
+   (`control_mcp.go:702`) is changed to prefer, when two rooms hold one alias, the card that another's `moved_to`
+   names. So a say by alias reaches the successor from this moment, with no gap. Then pins, `pin_order` and the pin
+   group, through B's pin-order endpoint.
+3. **Forward the queue.** A sends its freeze queue to B through the hub relay, each say with its id. B delivers in
+   order, dedups by id, and acks each one. A drops a say only on its ack.
+4. **Re-point children.** The hub calls `SetLauncher` for every child whose `spawned_by_id` is `A~<old id>`, on any
+   room.
+5. **Close the old card.** A releases its alias with `alias_note` "moved to B~<id>", marks the card done, and keeps
+   its handle reserved while `moved_to` is set, so no later card on A takes it.
+6. **Tell.** The successor is told it is live. The hub posts one line to the old card's launcher and to the mover:
+   `<alias> moved A~<old> to B~<new>`.
+
+If the successor dies after it answered and before step 1, the record undoes the card as in 3.2, and the list's other
+cards are undone with it. After step 1 the cut-over only goes forward: a dead successor is a card on B with a resume
+id, and the hub resumes it by the ordinary reopen path, then finishes the steps.
 
 ## 4. What carries, and what does not
 
 | Part | Carries | How |
 | --- | --- | --- |
-| Alias | yes | released on A at the cut-over, set on B |
+| Alias | yes | taken on B first, released on A at the end (3.3) |
 | Pin, pin order, pin group | yes | B's pin-order endpoint, the group as its tag |
 | Tags, theme, sound, icon, overrides, peer typing | yes | the launch body |
 | Harness, model, effort, args, lean agents and skills, gate settings | yes | the launch body. Lean is rebuilt from the tags, as a resume does |
-| Env values | no | names are checked (row 7). B uses its own values. Values never leave a room |
+| Env | names only | row 7. A per-card value is not reproduced. B's room value is used, or none |
 | `report_to`, lineage | yes | the launch body. `SetLineage` stays write-once and is set once, at launch |
-| The conversation | yes, by default | the transcript, section 3 step 5. `--fresh` starts from the handoff |
-| `BRIEF.md`, `HANDOFF.*.md` | yes | with the transcript |
-| Committed work | yes | the branch, step 2 |
-| Uncommitted work | no | refused, or `--wip` commits it |
+| The conversation | yes, by default | the transcript, 3.2 step 6. `--fresh` starts from the handoff |
+| Project memory | yes | `~/.claude/projects/<encoded cwd>/memory/`, with the transcript |
+| `BRIEF.md`, `HANDOFF.*.md` | yes | with the transcript, through safepath and a name allowlist |
+| Committed work | yes | the branch, 3.2 step 5, after the freeze |
+| Uncommitted work | no | refused, or `--wip` commits it after the freeze |
 | History, events, recap | linked, not copied | the old card stays `done` on A with `moved_to`. The new card's `moved_from` opens it through the hub |
-| The process and the pty | no | a new runner resumes on B, so the move waits for idle |
+| The process and the pty | no | the old runner is parked, a new one resumes on B |
 
 **The link.** The new card has `moved_from`, and the old card has `moved_to`. The board shows "came from A~<id>" on
 the new card and "moved to B~<id>" on the old one. Each opens the other through the hub. A card moved twice is a
-chain, and every lookup follows the chain to its end.
+chain.
 
 ## 5. Anything addressed to the old card follows it
 
-One rule covers all of it: **a lookup that lands on a card with `moved_to` follows it.**
+One rule covers all of it: **every card lookup goes through one function that follows `moved_to`.** It follows at
+most 8 hops, keeps the ids it has seen, and answers `move chain loops at <id>` rather than spin. A to B and back to A
+is a normal chain, ending at the live card.
 
-- **Says.** `sayGate` on A, for a done card with `moved_to`, forwards through the hub relay to the new card and
+- **Says.** `sayGate` on A, for a card with `moved_to`, forwards through the hub relay to the end of the chain and
   answers `forwarded: moved to B~<id>`, so the sender learns the new address. A `name@A` or `A~<id>` that a script
-  holds keeps working until it is fixed. A new say queued during the hold is carried as in step 7.
-- **Reports.** `launcherOf` follows `moved_to` when the launcher it finds is a moved card. The re-pointing in step 7
-  makes that one hop for every known child, and the rule catches a child the hub could not reach then.
-- **`report_to`** names a card. It resolves through the same lookup, so it follows too.
+  holds keeps working.
+- **Reports.** `launcherOf` resolves `report_to` first (`currentLauncher`, `daemon/a2a.go:250`), then
+  `spawned_by_id`. Both answers go through the lookup, so a child whose `report_to` names the old card by handle or
+  id follows the chain too. The re-point of 3.3 step 4 only fixes the `spawned_by` fallback, which `SetLauncher`
+  writes. It makes the common case one hop, and the lookup catches the rest.
+- **`report_to` by handle.** It resolves by stored id where one exists. The old handle stays reserved on A while
+  `moved_to` is set (3.3 step 5), so a later stranger cannot take it.
 - **Scripts and notes.** The orchestrator's `send-directors.sh` held card ids, which went dead. The fix is outside
-  atrium: address directors by alias through the hub, which follows the move. The design says so for the
-  orchestrator to change.
-
-**A two-room alias clash cannot happen.** The old card releases its alias before the new one takes it, so
-`resolvePeer` never sees two.
+  atrium: address directors by alias through the hub, which follows the move.
 
 ## 6. Landing from the destination, and git-sync stage 3
 
@@ -172,18 +222,31 @@ halfway.
 - **With git-sync stage 3**, the hub merge queue: a director on any room requests a landing, and the hub lands it in
   order with checks. A moved director can land from anywhere. That is the full answer, and it needs clint's word
   (git-sync section 11).
-- **Until then, the interim route**, which is what was improvised on 2026-10-01, made into a hub op: a room may push
-  one branch, `claude/landing`, cut from `claude/main`. The hub collects it like any `claude/*`. The orchestrator, or
-  later the hub, fast-forwards `claude/main` to it when it is a fast-forward and @review has cleared it. A room
-  "has a landing route" (check row 11) when that op is enabled for it.
+- **Until then, the interim route**: the `claude/landing` improvised on 2026-10-01, made into a hub op enabled per
+  room, with four rules written into it:
+  1. **One writer per repo.** The op takes a hub lock per repo for the whole landing, so two directors, on one room
+     or two, cannot land at once. Every m1mini worktree shares one clone and one `claude/landing`, and the lock is
+     what stops them racing on it.
+  2. **Fast-forward only, then reset.** The hub moves `claude/main` only by fast-forward to the landing tip. After
+     each landing, the room's `claude/landing` is reset to the new `claude/main`, so a refused or stale commit never
+     rides into the next landing.
+  3. **A mechanical verdict check.** Before the fast-forward, every non-merge commit in `claude/main..landing` must
+     be covered by an `Atrium-Verdict` OK range (the trailer `internal/deployready` already reads), or be a verdict
+     commit itself, or touch only `docs/backlog/*/QUEUE.md` (the queue exemption). Anything uncovered refuses the
+     landing and names the commits. It is not the orchestrator's eye.
+  4. **One room at a time.** Under the lock, a room's landing is cut from the current `claude/main`. A branch that
+     is no longer a fast-forward is refused, not rebased by the op. Its director rebases, which changes the SHAs, so
+     @review re-stamps the verdict for the new range before it lands.
+
+  A room "has a landing route" (check row 11) when that op is enabled for it.
 
 **The move does not need stage 3. A director move needs one of the two.** Without either, the check refuses, which is
 better than the halfway state of 2026-10-01.
 
 ## 7. Same machine, and the rolling restart
 
-r-new-move-card's case, two rooms on one machine, is steps 1, 3, 4, 6, 7 and 8. The branch and the transcript are
-already where B can read them. f-011's rolling restart (`docs/rnd/rolling-restart-design.md`) is this case done at
+r-new-move-card's case, two rooms on one machine, is section 3 without 3.2 steps 5 and 6. The branch, the transcript
+and the memory are already where B can read them. f-011's rolling restart (`docs/rnd/rolling-restart-design.md`) is this case done at
 each card's quiet moment, so it calls the same move, and its hazard of a second room taking the hooks is answered
 there, not here. The two items stay one design with one primitive. f-004 section 3's script is replaced by the hub
 op.
@@ -192,33 +255,45 @@ op.
 
 ### M1. The room side. @runtime. About 2 days.
 
-- `moved_to` and `moved_from` columns, and the `moving` hold.
-- `sayGate` forwards for a moved card, `launcherOf` follows `moved_to`, and the old alias is released at the mark.
-- Launch accepts `moved_from`, `repo`, `pin_order`, and the old card's lineage.
+- `moved_to` and `moved_from` columns, and the freeze: terminal input refused, and says, reports, notices, nags
+  and wakes into one queue with ids, with a lease.
+- One card lookup that follows `moved_to` (8 hops, cycle check), used by `sayGate`, `currentLauncher` and the
+  `spawned_by` fallback alike. The old handle stays reserved while `moved_to` is set.
+- Forwarding the freeze queue by id, with dedup and ack on the receiving side.
+- Launch accepts `moved_from`, `repo`, `pin_order`, the old card's lineage, and a `task_id` that makes a repeat
+  launch return the same card.
 - `InferRepo` reads a `<repo>-worktrees/<name>` folder as `<repo>`, so the label is right even without `repo`.
-- The pieces of section 3 that A and B each run (hold, capture, read the transcript and files, write them, launch,
-  mark), as room routes the hub calls.
+- The pieces of section 3 that A and B each run (freeze, check again, capture, read the transcript, memory and
+  files, write them through safepath and the allowlist, park, launch, mark, undo), as idempotent room routes the hub
+  calls.
 - **Acceptance:** two rooms on one machine. A throwaway worker with a child moves A to B through the room routes,
-  driven by hand. A say to `A~<old>` arrives on the new card with `forwarded`. The child's next report reaches the
-  new card. The pin order is the same, and the label shows `dovholuknf/atrium`.
+  driven by hand. A say sent during the freeze arrives once on the new card. A say to `A~<old>` after the move
+  arrives with `forwarded`. A child whose `report_to` is the old card's handle reports to the new card. Typing into
+  the old card during the freeze is refused. An undo after the launch leaves A as it was, queue replayed. The pin
+  order is the same, and the label shows `dovholuknf/atrium`.
 
 Useful alone: it replaces `move.sh` for the same-machine case, and fixes the label.
 
 ### M2. The hub verb. @fabric. About 3 days. After M1.
 
 - `atrium_move` on the hub and `atrium move` in the CLI: the check of section 2, then section 3 driven end to end.
+- The move record in the hub store, resumed or undone at hub start, and the lease renewal.
+- `resolvePeer` prefers the card a `moved_to` names when two rooms hold one alias.
 - The narrow branch-carry op (f-004 step 2) and the transcript and file stream through the hub.
 - **Acceptance:** a throwaway worker on sg3 commits, moves to m1mini, resumes its conversation, commits again, and
-  reports to its launcher on a third room. A move with one failing check moves nothing and names the check.
+  reports to its launcher on a third room. A move with one failing check moves nothing and names the check. The hub
+  is restarted once mid-prepare (the move is undone) and once mid-cut-over (the move finishes).
 
 Useful alone: any card moves between machines with no ssh.
 
 ### M3. A list, and the landing route. @fabric, with the orchestrator. About 1 day. After M2.
 
-- `atrium move` takes a list, and `--tag role:director`, checked as a whole (section 2).
-- The interim landing route of section 6, as a hub op that is enabled per room, until stage 3.
+- `atrium move` takes a list, or `--tag role:director`: checked as a whole, every card prepared, then every card cut
+  over (section 3).
+- The interim landing route of section 6, as a hub op enabled per room, with its four rules, until stage 3.
 - **Acceptance:** "move the directors to m1mini". Either all five move, answer, and one lands a doc commit through
-  the route, or one check is made to fail and nothing moves.
+  the route, or one check is made to fail and nothing moves. A third run makes card 3's launch fail, and cards 1
+  and 2 are undone. A landing with an uncovered commit is refused and names it.
 
 Useful alone: the 2026-10-01 move, in one call.
 
@@ -236,3 +311,7 @@ Useful alone: the 2026-10-01 move, in one call.
    **Default: wait 10 minutes.**
 5. **Who may move a card.** The operator, the orchestrator, and the card's own launcher (so a director can move its
    workers). Or the operator and the orchestrator only? **Default: all three.**
+6. **A list is all or nothing.** Every card in a list stays frozen until the whole list is prepared, so five
+   directors are frozen together for a few minutes, and one failure undoes all five. Or move card by card, where a
+   failure stops the list and reports which cards moved? **Default: all or nothing,** which is what "move the
+   directors, or refuse before anything moved" asks for.
