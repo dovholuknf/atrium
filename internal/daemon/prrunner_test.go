@@ -561,8 +561,8 @@ func TestPRRunnerNeverRunsInThePRsCheckout(t *testing.T) {
 		}
 		for i, a := range s.Args {
 			if a == "--setting-sources" {
-				if v := s.Args[i+1]; strings.Contains(v, "project") || strings.Contains(v, "local") {
-					t.Errorf("setting sources %q let the checkout speak", v)
+				if v := s.Args[i+1]; v != "" {
+					t.Errorf("setting sources %q: the checkout or the operator's settings.json would load", v)
 				}
 			}
 		}

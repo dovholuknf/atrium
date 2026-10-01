@@ -622,7 +622,11 @@ func (pr *prRun) rename(head string) error {
 	// The row names the folder at once, so an abort deletes the one that exists.
 	row, err := pr.r.st.SetPRFetched(pr.id, head, pr.row.Title, pr.row.Author, filepath.ToSlash(to))
 	if err != nil {
-		os.Rename(to, old)
+		if rerr := os.Rename(to, old); rerr != nil {
+			// The folder stays where it is, and the row has not moved to it.
+			pr.dir = to
+			return fmt.Errorf("%w, and the folder could not be moved back: %v", err, rerr)
+		}
 		pr.dir = old
 		return err
 	}
@@ -765,11 +769,12 @@ func (pr *prRun) forkCommon() error {
 	}
 	// THE PR'S CHECKOUT IS NEVER A CLAUDE PROJECT. A PR can carry a .claude/settings.json
 	// whose hooks would run as the daemon's user with its credentials, so the calls run
-	// in a folder atrium wrote, with no project or local setting source, and reach src/
+	// in a folder atrium wrote, with no setting source at all (the empty value: atrium's own hooks come in on --settings, and the operator's
+	// settings.json would load a second time and run its other hooks), and reach src/
 	// read-only through --add-dir. leanArgs asks for project,local: that is replaced.
 	for i := 0; i+1 < len(lean); i++ {
 		if lean[i] == "--setting-sources" {
-			lean[i+1] = "user"
+			lean[i+1] = ""
 		}
 	}
 	work := filepath.Join(pr.dir, "work")
