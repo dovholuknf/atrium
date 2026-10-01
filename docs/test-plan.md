@@ -7985,7 +7985,7 @@ Needs a hub with one room and two browsers on the board. `curl` stands in for th
 3. The same PUT from another machine answers 403. A GET from anywhere lists the hosts, `ignored` and `env`.
 4. `{"hosts":["*.duckdns.org"]}` is saved, listed under `ignored` with why, and answers nothing under it.
 
-## HL. A live card's model switches with one call (r-card-model)
+## HM. A live card's model switches with one call (r-card-model)
 
 HL needs a room built from this change and a room restart, with a supervised Claude card. Go tests in
 `internal/daemon/modelswitch_test.go` and `internal/link/modelroute_test.go` cover the endpoint, the wait, the refusals,
