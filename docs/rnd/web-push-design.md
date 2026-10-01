@@ -100,8 +100,11 @@ ntfy.sh, a Telegram bot or Slack learn all of that and also the text itself.
   name lands on a dead page until the phone subscribes again from the new one. The gear shows the origin each
   subscription came from.
 - **Unsubscribing:**
-  - The switch in `/m` calls `subscription.unsubscribe()` and `DELETE /_hub/push/subscriptions/<id>`.
-  - The desktop gear lists every subscription with a remove button.
+  - The switch in `/m` calls `subscription.unsubscribe()` and `DELETE /_hub/push/subscriptions` with the endpoint
+    in the body. **The endpoint is the proof of ownership.** Only the browser that subscribed knows it, so a request
+    from the share removes its own subscription and no other. The id alone is refused from the share, because the
+    id is not a secret.
+  - The desktop gear lists every subscription with a remove button. Listing and removal by id are operator-only.
   - A 404 or 410 from the push service deletes that subscription by itself. That is how a phone that uninstalled
     the web app goes away.
 
@@ -127,6 +130,10 @@ These sit next to the notify command's PUT and test, which are loopback-only tod
 - At most 8 subscriptions.
 - Every new one puts a line in the desktop growler: "a new device subscribed to alerts: <label>, from <origin>".
   A stranger who has the share's password and subscribes is then seen.
+- **The cap must not lock clint out.** A stranger could fill all 8 slots. The desktop gear can remove any
+  subscription, and a ninth subscribe is refused with words that name the cap: "8 devices already get alerts.
+  Remove one in the desktop gear first." It never silently evicts the oldest, because that would let a stranger
+  push clint's own phone out.
 
 **The overlay rule holds:** atrium holds no one else's credential.
 
@@ -168,8 +175,15 @@ names the setting. clint uses Brave, so this is the first thing to check on his 
 - **Failure is per subscription.** Three failures in a row switch off that one subscription, with the reason shown
   in the gear, and not the whole feature. The command sink keeps its own count of three.
 - **The allowlist.** An endpoint must be HTTPS on `fcm.googleapis.com`, `*.push.apple.com`,
-  `updates.push.services.mozilla.com` or `*.notify.windows.com`. Redirects are not followed, and the response is
-  read bounded. Without the allowlist, a subscription would make the hub POST to any URL somebody typed.
+  `updates.push.services.mozilla.com` or `*.notify.windows.com`. Without the allowlist, a subscription would make
+  the hub POST to any URL somebody typed. It matches the host as `net/url` parses it, and never the raw string:
+  - an exact host, or a suffix that includes its leading dot, so `evilpush.apple.com.example` and `xpush.apple.com`
+    both fail
+  - the port is absent or 443
+  - no userinfo (`user@`)
+  - no IP literal, v4 or v6
+  - the check runs again on every send, not only at subscribe, so an allowlist change applies to stored rows
+  - redirects are not followed, and the response is read bounded
 - **It never delays anything.** It runs on the same queue as the command sink, with the drop-oldest bound and a
   10-second timeout per send.
 
