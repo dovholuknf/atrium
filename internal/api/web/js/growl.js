@@ -628,9 +628,10 @@ function growlAttend(raised, remind) {
 
 function growlSay(g, kind) {
   // The pop-out rings for its own card and for no other. The board does not ring for a card that is popped out,
-  // so the pop-out's switch and mute are what hold it back. Closing the pop-out hands it back to the board.
+  // so the pop-out's switch and mute are what hold it back, and it rings even while the board has the focus, since
+  // nobody else will. Closing the pop-out hands it back to the board.
   if (inPopout() ? !growlMine(g) : poppedOut(growlCard(g))) return;
-  if (focusIsElsewhere()) return;
+  if (!inPopout() && focusIsElsewhere()) return;
   const extra = kind === "remind" ? "r" + (g.reminders || 0) : "";
   if (!growlOnce("say|" + kind + "|" + g.id + "|" + g.raised_at + "|" + extra)) return;
   if (kind === "remind") growlLog("growler reminder", g, extra);

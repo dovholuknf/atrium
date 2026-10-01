@@ -35,19 +35,11 @@ is live.
    - Low 3, fixed: `TestOldPathCannotTakeAnAttachedProvenName` covers `upgradeKind` and `gitKind` too.
    - Low 4, fixed: `TestAKeylessAttachCannotReplaceAKeyedRoom` tests the `Hub.control` keyless-over-keyed refusal by
      itself.
-2. **49: the hub half of atrium:everywhere.** `docs/rnd/everywhere-card-design.md`, `docs/backlog/fabric/49.md`.
-   **PASSED by @review at 7725078d (HUB and ROOM DEPLOY OK, 803bce3c), waiting on the orchestrator to land it** (the
-   UI-only hold). 7725078d sits on 7f523835 in branch claude/49 and closes all four review points. One nit is parked:
-   a test pinning link's `humanLauncher` to `store.HumanLauncher`. The history below is kept for reference.
-   Large, no migration (the design needs none). PAUSED 2026-09-30 19:30 (clint: UI only). All five stages are built,
-   `m1mini/claude/49` 451b48ef..7f523835, collected into the main checkout and read by @fabric. The worker card has
-   exited. Its worktree on m1mini stays until the branch lands. With @review. link and cli pass, and 49's daemon
-   tests pass, and so does the full daemon suite (587.7s with `-timeout 40m`, run in `D:/worktrees/claude/atrium/49`,
-   which is reset to the branch. It runs close to Go's 10-minute default). To finish: @review's pass,
-   merge onto claude/main, `atrium_cull card=49@m1mini tip=7f523835`, and a hub deploy plus a room deploy, since
-   both sides changed. Before it lands, from @review's name-capture question: index only cards with an empty
-   `spawned_by`, so a worker that inherited atrium:everywhere from its launcher's tags does not answer bare names on
-   every room. One condition in `indexed()`, plus a test.
+2. **Small, after the UI-only order lifts.** (a) @review's nit on 7725078d: a test pinning link's `humanLauncher` to
+   `store.HumanLauncher`. (b) `TestAPatientAskMadeWhilePausedWaitsForResume` (internal/link/restartgate_test.go:316,
+   "after the resume the ask said busy") fails about 1 run in 10 with `-count=10`, at e18b3c04, before 49 landed. A
+   flake in the hub's restart gate. (c) The full daemon suite failed once at 345s on the 49 gate and passed on the
+   rerun. The failing test was not captured.
 3. **f-003 stage 1.** The `atrium_resources` tool (ctlclass.go, the worker set goes 6 to 7), `resources.md` by the
    state dir, `atrium resources init`, and one framing line on every card.
 4. **The Linux autostart proof on cdzrok.** Check that the machine is up first.
@@ -59,6 +51,9 @@ is live.
 
 ## Done
 
+- 2026-09-30, 49, atrium:everywhere (a card that answers its bare name from every room): landed as e4136207,
+  passed by @review at 7725078d and again at dc2226de after the rebase. Live in the hub and room deploy at 3d7857d.
+  The m1mini worker is culled.
 - 2026-09-30, the launch job, three steps, all landed at ffa8b319:
   1. sg3 and m1mini updated to a claude/main build (b8edf0e2), both attached with `git:true`.
   2. f-019 stage 1 live on both rooms: the hub syncs claude/main into each clone, and a room's branches are collected

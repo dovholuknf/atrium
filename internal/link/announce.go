@@ -440,5 +440,7 @@ func (h *Hub) serveAnnouncement(name string, conn net.Conn, br *bufio.Reader) {
 		_ = writeJSON(conn, welcome{OK: false, Error: err.Error()})
 		return
 	}
+	// AFTER THE CACHE, so the index never holds a card the cache does not.
+	h.IndexEverywhere(name, body.Cards)
 	_ = writeJSON(conn, welcome{OK: true})
 }

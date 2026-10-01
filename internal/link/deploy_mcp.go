@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/dovholuknf/atrium/internal/edge"
 )
 
 // atrium_deploy: one call asks for a room deploy, the deploy owner holds the
@@ -428,8 +430,8 @@ func (p *Proxy) serveDeployOwner(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 	case http.MethodPut:
-		if !loopbackRemote(r.RemoteAddr) {
-			fail(http.StatusForbidden, "the deploy owner is set only from the machine the hub runs on")
+		if !edge.LocalOperator(r) {
+			fail(http.StatusForbidden, "the deploy owner is set only from the machine the hub runs on"+edge.ProxyNote(r))
 			return
 		}
 		var in struct {

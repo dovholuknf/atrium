@@ -125,7 +125,11 @@ const roomsSettle = 50 * time.Millisecond
 type sub struct {
 	// room is which room this client wants, empty meaning all of them.
 	room string
-	ch   chan Event
+	// everywhere is a board scoped to one room that also asked for the cards
+	// tagged atrium:everywhere on the others (`?everywhere=1`). False for every
+	// board that did not, which is what keeps their stream as it always was.
+	everywhere bool
+	ch         chan Event
 	// closed guards against a double close when a slow client is dropped at
 	// the same moment it disconnects.
 	once sync.Once
@@ -151,10 +155,13 @@ func (f *feeds) roomsChanged() {
 }
 
 // add registers a client and makes sure the upstream streams are running.
-func (f *feeds) add(room string) *sub {
+func (f *feeds) add(room string) *sub { return f.addWith(room, false) }
+
+// addWith is add for a client that may also want the everywhere cards.
+func (f *feeds) addWith(room string, everywhere bool) *sub {
 	// Deep enough for a burst of activity events, which arrive one per tool
 	// call across every session on a machine.
-	s := &sub{room: room, ch: make(chan Event, 128)}
+	s := &sub{room: room, everywhere: everywhere, ch: make(chan Event, 128)}
 	f.mu.Lock()
 	f.subs[s] = struct{}{}
 	// NOBODY WATCHING MEANS NOTHING STREAMING. The upstreams exist to serve
@@ -292,8 +299,63 @@ func (f *feeds) wanted(room string) bool {
 		if s.room == "" || s.room == room {
 			return true
 		}
+		// A BOARD THAT ASKED FOR THE EVERYWHERE CARDS WANTS EVERY ROOM HOLDING
+		// ONE. Usually one room, and none while nobody has asked.
+		if s.everywhere && f.index().holds(room) {
+			return true
+		}
 	}
 	return false
+}
+
+// index is the everywhere index, nil in a test that built feeds with no hub.
+func (f *feeds) index() *everywhere {
+	if f.p == nil || f.p.hub == nil {
+		return nil
+	}
+	return f.p.hub.every
+}
+
+// everywhereChanged is the index changing: the reconciler looks again at which
+// rooms to stream, and the boards that asked are told to fetch the list.
+func (f *feeds) everywhereChanged() {
+	select {
+	case f.wake <- struct{}{}:
+	default:
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for s := range f.subs {
+		if !s.everywhere {
+			continue
+		}
+		select {
+		case s.ch <- Event{Kind: "everywhere", Data: []byte("{}")}:
+		default:
+			delete(f.subs, s)
+			s.shut()
+		}
+	}
+}
+
+// everywhereKinds are the events of another room's card that a board scoped to
+// one room is handed, when it asked. Each names its card in the field given.
+var everywhereKinds = map[string]string{
+	"task": "id", "task-removed": "id", "activity": "task_id", "keepalive": "task_id",
+}
+
+// cardOf is the id an event names, for the kinds a foreign card sends.
+func cardOf(e Event) string {
+	field, ok := everywhereKinds[e.Kind]
+	if !ok {
+		return ""
+	}
+	var obj map[string]any
+	if err := json.Unmarshal(e.Data, &obj); err != nil || obj == nil {
+		return ""
+	}
+	id, _ := obj[field].(string)
+	return id
 }
 
 // count is how many upstream streams are running. For tests, which is the only
@@ -430,10 +492,26 @@ func readLine(br *bufio.Reader, max int) ([]byte, error) {
 
 // emit hands an event to everybody who asked for that room.
 func (f *feeds) emit(e Event) {
+	// THE FOREIGN CARD, WHEN A BOARD ASKED FOR ONE. Built once, and only for an
+	// event of one of the four kinds from a room that holds an indexed card.
+	var foreign *Event
+	if e.Room != "" && f.index().holds(e.Room) {
+		if id := cardOf(e); id != "" && f.index().has(e.Room, id) {
+			foreign = &Event{Room: e.Room, Kind: e.Kind, Data: tagEvent(e)}
+		}
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	for s := range f.subs {
 		if s.room != "" && s.room != e.Room {
+			if foreign != nil && s.everywhere {
+				select {
+				case s.ch <- *foreign:
+				default:
+					delete(f.subs, s)
+					s.shut()
+				}
+			}
 			continue
 		}
 		// A ROOM'S `going-down` IS THAT ROOM'S NEWS, NOT THE BOARD'S. One room
@@ -505,7 +583,7 @@ func (f *feeds) watchers() int {
 // `room` empty means every room. `tag` asks for the merged view's identities,
 // and it is a request rather than a decision: the answer is checked again for
 // every event, because a room attaching changes it.
-func (p *Proxy) serveEvents(w http.ResponseWriter, r *http.Request, room string, tag bool) {
+func (p *Proxy) serveEvents(w http.ResponseWriter, r *http.Request, room string, tag, everywhere bool) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
@@ -520,7 +598,7 @@ func (p *Proxy) serveEvents(w http.ResponseWriter, r *http.Request, room string,
 	w.WriteHeader(http.StatusOK)
 	flusher.Flush()
 
-	s := p.feeds.add(room)
+	s := p.feeds.addWith(room, everywhere)
 	defer p.feeds.drop(s)
 	// The growlers as they stand, first, so a fresh tab has them. See growl.go.
 	p.openGrowls(s)
@@ -610,7 +688,7 @@ func (p *Proxy) eventsFor(w http.ResponseWriter, r *http.Request) bool {
 		// attached means the lists come through the pipe untagged, so the
 		// stream must be untagged too. Asked again for every event, since
 		// which it is can change while the stream is open.
-		p.serveEvents(w, r, "", true)
+		p.serveEvents(w, r, "", true, false)
 		return true
 	case strings.HasPrefix(r.URL.Path, "/v1/events/room/"):
 		room := strings.TrimPrefix(r.URL.Path, "/v1/events/room/")
@@ -626,16 +704,16 @@ func (p *Proxy) eventsFor(w http.ResponseWriter, r *http.Request) bool {
 		}
 		// UNTAGGED, because a board scoped to one room asked that room's
 		// questions and got that room's ids back.
-		p.serveEvents(w, r, room, false)
+		p.serveEvents(w, r, room, false, r.URL.Query().Get("everywhere") == "1")
 		return true
 	case r.URL.Path == "/v1/events":
 		// The address a board that has never heard of rooms asks for. Answered
 		// as whichever of the two above it meant.
 		if room, _ := p.roomFor(r); room != "" {
-			p.serveEvents(w, r, room, false)
+			p.serveEvents(w, r, room, false, false)
 			return true
 		}
-		p.serveEvents(w, r, "", true)
+		p.serveEvents(w, r, "", true, false)
 		return true
 	}
 	return false

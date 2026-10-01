@@ -168,6 +168,12 @@ func missSentence(name string, cands []string) string {
 
 // writeMiss answers a name that resolved to nothing, and records the attempt.
 func (d *Daemon) writeMiss(w http.ResponseWriter, from, name, door, text, when string, reply bool) {
+	d.writeMissNote(w, from, name, door, text, when, reply, "")
+}
+
+// writeMissNote is writeMiss with a sentence added to the error: what the hub
+// said about cards on other rooms, or why it could not be asked.
+func (d *Daemon) writeMissNote(w http.ResponseWriter, from, name, door, text, when string, reply bool, note string) {
 	cands := d.candidatesFor(name, d.st.Qualify(from))
 	list, _ := d.peers(d.st.Qualify(from))
 	if from != "" && text != "" {
@@ -181,7 +187,7 @@ func (d *Daemon) writeMiss(w http.ResponseWriter, from, name, door, text, when s
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusNotFound)
 	_ = json.NewEncoder(w).Encode(map[string]any{
-		"error": missSentence(name, cands), "candidates": cands, "peers": list,
+		"error": strings.TrimSpace(missSentence(name, cands) + " " + note), "candidates": cands, "peers": list,
 	})
 }
 

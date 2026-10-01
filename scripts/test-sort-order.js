@@ -27,6 +27,8 @@ function lift(start, end) {
 }
 
 const tieBreak = lift("function cardTieBreak(", "\n}");
+// The activity rule is shared with the phone page, so it lives in js/cardrules.js.
+const activity = lift("function cardIdleSeconds(", "\n}") + "\n" + lift("function cardActivityCmp(", "\n");
 
 // Tie every sort field and vary creation time against input order, so the
 // expected result requires the tiebreak.
@@ -47,7 +49,7 @@ const arrived = ["c", "a", "d", "b"];
 // Stub askRank: permission state is tested elsewhere; this tests sorting ties.
 const askRank = (t) => (t.asking ? 0 : 2);
 const { STACK_SORTS, cardTieBreak } = new Function("askRank",
-  tieBreak + "\n" + lift("const STACK_SORTS = {", "\n};") +
+  tieBreak + "\n" + activity + "\n" + lift("const STACK_SORTS = {", "\n};") +
   "\nreturn { STACK_SORTS, cardTieBreak };")(askRank);
 
 // The board sorts through one call, and this is it. Kept in one place so the

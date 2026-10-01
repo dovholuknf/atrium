@@ -42,3 +42,66 @@
 
 .reply.mine { align-self: flex-end; max-width: 92%; border-radius: 18px 18px 6px 18px; background: var(--mine-bg, var(--chip)); }
 .reply .own { color: var(--head); font-size: 15.5px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.reply.mine.pending { opacity: .7; }
+.reply.mine.failed { outline: 1px solid var(--warn); }
+.reply .tag { font-weight: 600; color: var(--label); }
+.reply.mine.failed .tag { color: var(--warn); }
+
+.jump-wrap { flex: none; position: relative; height: 0; z-index: 4; }
+.jump {
+  position: absolute; right: max(16px, env(safe-area-inset-right, 0px)); bottom: 10px; min-height: 40px; padding: 0 16px; border-radius: 99px;
+  border: 1px solid var(--working-line, var(--teal)); background: var(--card-0); color: var(--working-fg, var(--teal));
+  font: inherit; font-size: 14px; font-weight: 650; box-shadow: 0 6px 18px rgba(var(--shadow-rgb), .45); cursor: pointer;
+}
+.jump[hidden] { display: none; }
+
+/* Compact card view: one header line per message, near-full-width bubbles, a thin working strip, a slim composer.
+   Message text follows --m-fs, which a two-finger pinch changes (see js/card.js). Nothing else scales. */
+#m-card { --m-fs: 14px; touch-action: pan-y; }
+#m-card .sheet-scroll { touch-action: pan-y; padding: 2px max(6px, env(safe-area-inset-right, 0px)) 10px max(6px, env(safe-area-inset-left, 0px)); }
+#m-card .sheet-top { min-height: calc(40px + env(safe-area-inset-top, 0px)); padding-top: calc(env(safe-area-inset-top, 0px) + 2px); padding-bottom: 2px; }
+#m-card .back { width: 40px; height: 40px; }
+#m-card .term { min-height: 40px; }
+#m-card .chead { padding-bottom: 0; }
+#m-card .c-name { margin: 0; font-size: 19px; }
+#m-card .c-sub { margin: 0 0 4px; font-size: 12.5px; }
+#m-card .c-state { margin: 2px 0 0; gap: 6px; }
+#m-card .pill { padding: 1px 8px; font-size: 11.5px; }
+#m-card .recap-btn { min-height: 28px; margin: 4px 0 0; padding: 0 10px; border-radius: 9px; font-size: 12.5px; }
+#m-card .notice { margin: 6px 0 0; padding: 6px 10px; border-radius: 10px; font-size: 12.5px; }
+#m-card .notice b { font-size: 13px; }
+#m-card .conv { margin-top: 6px; }
+#m-card .replies { gap: 4px; }
+#m-card .reply { padding: 4px 8px 5px; border-radius: 10px; box-shadow: none; }
+#m-card .reply.mine { align-self: stretch; max-width: none; border-radius: 10px; }
+#m-card .rh { display: flex; align-items: baseline; gap: 6px; min-width: 0; margin: 0 0 1px; font-size: 11px; line-height: 1.3; color: var(--dim); white-space: nowrap; }
+#m-card .rh .src { display: block; flex: 0 1 auto; min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; font-size: 11px; font-weight: 650; letter-spacing: 0; text-transform: none; color: var(--label); }
+#m-card .reply.mine .rh .src { color: var(--teal); }
+#m-card .rh .note { opacity: .75; }
+#m-card .rh time { display: inline; margin: 0; font-size: 11px; }
+#m-card .rh .tag { margin-left: auto; font-size: 11px; font-weight: 600; }
+#m-card .reply .cut { margin: 2px 0 0; font-size: 11.5px; }
+#m-card .md, #m-card .reply .own { font-size: var(--m-fs); line-height: 1.4; }
+#m-card .md p { margin: 0 0 6px; }
+#m-card .md ul, #m-card .md ol { margin: 0 0 6px; }
+#m-card .md pre code { font-size: calc(var(--m-fs) * .85); }
+#m-card pre.screen { font-size: calc(var(--m-fs) * .85); }
+#m-card .reply.prompt.peer, #m-card .reply.prompt.command { padding-top: 2px; padding-bottom: 2px; }
+#m-card .working { gap: 8px; margin: 0 max(6px, env(safe-area-inset-right, 0px)) 2px max(6px, env(safe-area-inset-left, 0px)); padding: 2px 10px; border-radius: 8px; font-size: 12.5px; font-weight: 600; }
+#m-card .wk-spin { width: 11px; height: 11px; border-width: 2px; }
+#m-card #m-compose .mc { padding: 3px 6px calc(4px + env(safe-area-inset-bottom, 0px)); }
+#m-card #m-compose .mc-row { padding: 3px 3px 3px 12px; border-radius: 20px; gap: 6px; }
+#m-card #m-compose .mc-box { padding: 6px 0; }
+#m-card #m-compose .mc-send { width: 36px; height: 36px; }
+#m-card #m-compose .mc-note[data-kind="sent"] { display: none; }
+.reply.prompt.peer { opacity: .75; }
+.reply.prompt.peer .own { font-size: 14px; }
+.reply.prompt.command { align-self: flex-end; background: none; padding: 0 4px; opacity: .7; }
+.reply.prompt.command .own { font-size: 12.5px; font-family: var(--mono, ui-monospace, monospace); }
+
+/* The activity is not a box of its own: it shares the small row above the composer with how the last message went. */
+#m-card .working { background: none; border: 0; border-radius: 0; padding: 1px 12px; color: var(--dim); gap: 6px; font-size: 11.5px; font-weight: 500; }
+#m-card .working .wk-sent { flex: none; color: var(--teal); font-weight: 650; }
+#m-card .working .wk-dot { flex: none; }
+#m-card .working .wk-what { color: var(--working-fg, var(--teal)); }
