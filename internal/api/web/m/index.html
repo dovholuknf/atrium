@@ -38,7 +38,7 @@
     <span class="grow"></span>
     <span class="live" id="m-live" role="status" aria-label="connecting"></span>
     <button type="button" id="m-bell" class="bell" aria-label="notifications"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 16V11a6 6 0 0112 0v5l1.5 2h-15z"/><path d="M10 21h4"/><path class="slash" d="M4 4l16 16"/></svg><span class="n" id="m-bell-n"></span></button>
-    <a class="board" href="/" aria-label="open the full board">board</a>
+    <a class="board" id="m-desktop" href="/" aria-label="open the desktop board">desktop board</a>
   </header>
 
   <main class="home" id="m-home">
@@ -132,6 +132,8 @@
     room.hidden = !many;
     if (many) room.textContent = window.mNet.room() || "";
   });
+  // Remembered, so the board root does not send this phone straight back. The board's "phone view" button clears it.
+  document.getElementById("m-desktop").addEventListener("click", function () { try { localStorage.setItem("atrium.m.desktop", "1"); } catch (e) {} });
   window.addEventListener("m-skin", themeColor);
   window.mNet.start();
   themeColor();
