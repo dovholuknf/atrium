@@ -114,6 +114,9 @@ type Proxy struct {
 	// ctl is the control tools' state, kept so the gate ticker can tell a waiter through
 	// the same path atrium_say takes. Nil until SetControl.
 	ctl *controlMCP
+	// ready is the "deploy ready" state. Nil until SetDeployReady, and a hub without one answers
+	// /_hub/deploy-ready 404. See deployready.go.
+	ready *deployReadyState
 }
 
 // NewProxy wires a hub, its board and a room chooser into one handler.
@@ -1372,6 +1375,8 @@ func (p *Proxy) serveHubAPI(w http.ResponseWriter, r *http.Request) {
 		p.serveHosts(w, r)
 	case "deploy-owner":
 		p.serveDeployOwner(w, r)
+	case "deploy-ready", "deploy-ready/deploy":
+		p.serveDeployReady(w, r, sub)
 	case "deps", "deps/clear", "deps/rename", "deps/ready":
 		p.serveDeps(w, r, sub)
 	case "presence":
