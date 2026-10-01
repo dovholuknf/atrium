@@ -628,6 +628,12 @@
     }, 350);
   }
 
+  // The documents this card published, as one line. js/docs.js asks the hub at most once in 30 seconds.
+  function paintDocs() {
+    const n = q("m-card-docs");
+    if (n && window.mDocs && openId) window.mDocs.paintCard(n, openId);
+  }
+
   function onCards() {
     if (!openId) return;
     const t = window.mStore.card(openId);
@@ -636,7 +642,7 @@
     const out = (t && t.output_at) || "";
     const moved = !!out && out !== outAt;
     if (out) outAt = out;
-    if (key !== turnKey || moved) { turnKey = key; loadReplies(); }
+    if (key !== turnKey || moved) { turnKey = key; loadReplies(); paintDocs(); }
   }
 
   function mountFor(id) {
@@ -681,6 +687,7 @@
     }
     offs = [window.mStore.on("cards", onCards), window.mStore.on("perms", () => paint(false))];
     loadReplies();
+    paintDocs();
   }
 
   function finishClose() {
@@ -691,6 +698,7 @@
     els.head.innerHTML = els.notices.innerHTML = els.replies.innerHTML = els.extras.innerHTML = els.recap.innerHTML = "";
     els.working.hidden = true;
     els.recap.hidden = true;
+    if (q("m-card-docs")) q("m-card-docs").hidden = true;
     olderOf.delete(window.mNet.bareId(openId));
     openId = "";
   }
@@ -998,5 +1006,5 @@
     openFromPath();
   }
 
-  window.mCard = { init, open, close, bindPinch, isOpen: () => !!openId, current: () => openId };
+  window.mCard = { init, open, close, bindPinch, pathOf: id => pathFor(window.mStore.card(id), "/m"), isOpen: () => !!openId, current: () => openId };
 })();

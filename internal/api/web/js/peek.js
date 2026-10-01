@@ -116,11 +116,23 @@ function peekFoot(t) {
   return cache + `<div class="peek-foot"><span>${esc(parts.join(" · "))}</span><span>${esc(leaf)}</span></div>`;
 }
 
+// The documents this card published, as one line under the details. Nothing at all on a board with no hub documents.
+function peekDocs(box, id) {
+  if (!window.mDocs) return;
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = "c-docs peek-docs";
+  b.hidden = true;
+  box.appendChild(b);
+  window.mDocs.paintCard(b, id);
+}
+
 // Fills `box` with card `id`'s details: the card at once, the numbers when
 // the read answers. `still` says whether the answer is still wanted.
 async function peekFill(box, id, still) {
   const t = peekCard(id);
   box.innerHTML = peekBody(t, null);
+  peekDocs(box, id);
   box.classList.toggle("loading", peekReadable(t));
   if (!peekReadable(t)) return;
   let v;
@@ -132,6 +144,7 @@ async function peekFill(box, id, still) {
   if (!still()) return;
   box.classList.remove("loading");
   box.innerHTML = peekBody(peekCard(id) || t, v);
+  peekDocs(box, id);
 }
 
 // ── the popover ─────────────────────────────────────────────────────────────

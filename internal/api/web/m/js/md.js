@@ -26,6 +26,10 @@
     return u.protocol === "http:" || u.protocol === "https:" ? v : "";
   }
 
+  // A link to a hub document, `/d/<slug>` or `/d/<slug>@<n>`, and nothing looser. It is a same-origin link the page opens in
+  // its own documents view (js/docs.js), so it carries no target and no scheme.
+  const DOC = /^\/d\/[a-z0-9-]{1,60}(@[1-9][0-9]*)?$/;
+
   // Inline markup on one run of text. Code spans and links are lifted out first, as placeholders, so emphasis never
   // reaches into them.
   const IMG = /\.(png|jpe?g|gif|webp)$/i;
@@ -39,6 +43,8 @@
   // A Windows worktree is `D:/...` and compares without regard to case. A single letter and a colon then a slash is a
   // drive, anything else before a colon is a scheme and is refused.
   function inside(path, ctx) {
+    // A text that is not a card's (a hub document) has no folder: nothing in it is a file of the card.
+    if (ctx && ctx.noFiles) return false;
     const wt = ctx && ctx.worktree ? slashed(ctx.worktree).replace(/\/+$/, "") : "";
     const p = slashed(path);
     if (!p || /[\u0000-\u001f]/.test(p)) return false;
@@ -81,6 +87,7 @@
     });
     s = s.replace(/\[([^\]\n]+)\]\(([^)\s]+)\)/g, (m, label, url) => {
       const u = unesc(url);
+      if (DOC.test(u)) return stash('<a href="' + esc(u) + '" class="md-doc">' + label + "</a>");
       if (inside(u, ctx)) return stash(fileNode(u, ctx, unesc(label), false));
       const ok = safeURL(u);
       if (!ok) return label;
@@ -89,6 +96,7 @@
     // A bare absolute path in the text. Only one under the card is a control, the rest stays text.
     s = s.replace(/(^|[\s(])((?:\/|[A-Za-z]:[\\/])[\w.@+~\/\\-]+)/g, (m, lead, path) => {
       const raw = unesc(path), tail = /[.,;:)]+$/.exec(raw), p = tail ? raw.slice(0, -tail[0].length) : raw;
+      if (DOC.test(p) && window.mDocs && window.mDocs.available()) return lead + stash('<a href="' + esc(p) + '" class="md-doc">' + esc(p) + "</a>") + esc(tail ? tail[0] : "");
       if (!inside(p, ctx)) return m;
       return lead + stash(fileNode(p, ctx, p, true)) + esc(tail ? tail[0] : "");
     });
