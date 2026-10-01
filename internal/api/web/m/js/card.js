@@ -10,7 +10,7 @@
 
   const U = window.mUtil;
   const MD = window.mMd;
-  const REPLIES_N = 3;
+  const REPLIES_N = 10;
 
   let openId = "";
   let els = null;

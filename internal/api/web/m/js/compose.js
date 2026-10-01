@@ -195,7 +195,7 @@
       };
       const ico = d => '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="' + d + '" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
       const file = pick("attach a file or image", ico("M21 12.5l-8.5 8.5a5.5 5.5 0 0 1-8-8L13 4.5a3.7 3.7 0 0 1 5.2 5.2l-8.6 8.6a1.8 1.8 0 0 1-2.6-2.6l8-8"),
-        "image/*,application/pdf,text/*,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.md,.json,.csv,.log", "");
+        "image/*,application/pdf,text/*,.md,.json,.csv,.log", "");
       const cam = pick("take a photo", ico("M4 8h3l2-3h6l2 3h3v11H4zM12 17a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z"), "image/*", "environment");
       row.append(file[0], cam[0], file[1], cam[1]);
       row.classList.add("with-attach");
