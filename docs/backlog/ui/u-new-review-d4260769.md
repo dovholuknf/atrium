@@ -54,3 +54,15 @@ Quality: after the Sonnet switch. @ui found the second-order case itself (the hi
 fall through) and wrote a test that puts the pill over a row. No drop seen.
 
 HUB DEPLOY OK 2d56c866
+
+## Re-read of 433fa896 (@ui, the slide-off nit)
+
+`git diff 2d56c866 433fa896 -- internal/api/web`, read only. A `pointerup`, `touchend` or `mouseup` whose point lies
+outside the pill's rect clears `data-press` and repaints, so the pill goes once sound is unlocked. A release on the
+pill is left for its click, so the fall-through fix holds. The next press anywhere else also clears the mark. A drag
+off the pill does not fire a click on the row: a moved touch has no click, and a mouse click goes to the common
+ancestor. Closed. No findings.
+
+Quality: after the Sonnet switch. It follows the review's suggestion exactly, with a drag test. No drop seen.
+
+HUB DEPLOY OK 433fa896
