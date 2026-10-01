@@ -37,13 +37,12 @@ the meantime.
 
 - Board landings from @ui come FIRST (clint, via the orchestrator, 2026-09-30 19:25), read only and fast, ahead of
   everything below.
-- r-deploy-ready f82abf78 is on HOLD (`r-new-review-f82abf78.md`): re-read the link room-side fix and the click's
-  build-equals-tip and `ATRIUM_NEW_BUILD` fix. When it lands, re-stamp with `room-ok` every board landing since the
-  installed build. Two rules from now on: a board review carries `hub-ok` AND `room-ok`, and an `internal/link`
+- Nothing sent is unreviewed. Two rules hold: a board review carries `hub-ok` AND `room-ok`, and an `internal/link`
   review carries `room-ok` too, since the room runs it. A re-read's OK range starts at the ORIGINAL base, so it covers
   the held patch.
-- Closed since the last queue update: u-m-changes re-read OK at 7ab1eacb (68bdac49), r-paste-strip landed at
-  28ea8037, u-m-typefix2 10aae191 closed the pen `pointercancel` low (52408c30, landed eff2fb8e).
+- Closed since the last queue update: r-deploy-ready re-read OK at d8be085e (d642d7e6, landed 8598f2a8). No re-stamp
+  was needed: the installed build already held every earlier board landing. u-m-docs re-read OK at d5b3e5e4
+  (2082a7a8, landed cfdfdf48), 1 nit open. u-m-changes-real 50a0127d OK (72fb8c4d, landed c5be337f).
 - From cc3bd954 on, @ui, @runtime and @fabric run Sonnet (orchestrator, 6h test): every review of theirs carries a
   "Quality:" line.
 - M3 of `docs/rnd/machine-health-design.md` (the profiler agent's rules) before it ships, when it is built.
