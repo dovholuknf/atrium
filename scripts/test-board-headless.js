@@ -14230,6 +14230,160 @@ async function gearTermListSection(browser, base) {
   if (!bad) console.log("gearTermList ok");
 }
 
+// ── sound on a phone ─────────────────────────────────────────────────────
+// A mobile browser starts audio only from a touch that ENDS or a click, never from one that begins, and it stays locked
+// until then. The fake context follows that rule: resume() works inside touchend, pointerup, click or keydown, and
+// and NOT afterwards and not inside pointerdown or touchstart, which is how iOS behaves (Chrome also lets a later call
+// through once the page has been touched). `__osc` counts the notes that reached it.
+const SOUND_POLICY = () => {
+  window.__osc = 0;
+  let active = 0;
+  ["touchend", "pointerup", "click", "keydown"].forEach(t => addEventListener(t, () => { active++; setTimeout(() => active--, 0); }, true));
+  window.AudioContext = class {
+    constructor() { this.state = "suspended"; this.currentTime = 0; this.destination = {}; this.l = []; }
+    addEventListener(t, f) { this.l.push(f); }
+    resume() { if (active) { this.state = "running"; this.l.forEach(f => f()); return Promise.resolve(); } return Promise.reject(new Error("blocked")); }
+    createGain() { const f = { setValueAtTime() {}, linearRampToValueAtTime() {}, exponentialRampToValueAtTime() {} }; return { gain: f, connect(x) { return x; } }; }
+    createOscillator() { window.__osc++; return { frequency: { setValueAtTime() {} }, connect(x) { return x; }, start() {}, stop() {} }; }
+  };
+};
+
+async function soundPhoneSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landList = [];
+  landPerms = [];
+  try {
+    const tag = "soundPhone: ";
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+    await ctx.addInitScript(SOUND_POLICY);
+    await ctx.addInitScript(() => localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true })));
+    const p = await ctx.newPage();
+    const errors = [];
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base + "/raw", { waitUntil: "load" });
+    await p.waitForFunction(() => typeof alerting !== "undefined", null, { timeout: slow(15000) });
+    await p.waitForTimeout(500);
+    const shown = sel => p.evaluate(s => { const e = document.querySelector(s); return !!e && !e.hidden && e.getClientRects().length > 0; }, sel);
+    if (!(await shown("#sound-hint"))) fail(tag + "no tap-to-enable hint while sound is locked");
+    // one touch is enough
+    await p.tap("body", { position: { x: 195, y: 400 } });
+    await p.waitForTimeout(200);
+    if (await shown("#sound-hint")) fail(tag + "the hint is still up after a touch");
+    await p.evaluate(() => alerting.play("waiting"));
+    if ((await p.evaluate(() => window.__osc)) < 1) fail(tag + "the sound did not play after one touch");
+    // a page the operator cannot see is not one they are reading, whatever hasFocus says
+    const hidden = await p.evaluate(() => {
+      const f = Object.getOwnPropertyDescriptor(Document.prototype, "visibilityState");
+      Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "hidden" });
+      const was = document.hasFocus; document.hasFocus = () => true;
+      const out = focusIsHere();
+      delete document.visibilityState; document.hasFocus = was;
+      return out;
+    });
+    if (hidden) fail(tag + "a hidden page counted as the window being looked at");
+    if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+    await ctx.close();
+  } finally { tasksMode = was; }
+  if (!bad) console.log("soundPhone ok");
+}
+
+// ── the bell on the phone board, in every view ───────────────────────────
+async function phoneBellSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landList = [];
+  landPerms = [];
+  landCard("land-a", { alias: "rnd", room: "claude-sg4", wire_name: "sparta/rnd-director", supervised: true });
+  const raw = fs.readFileSync(path.join(WEB_ROOT, "index.html"));
+  try {
+    for (const at of ["/raw", "/raw#term=land-a", "/alias/rnd"]) {
+      const tag = "phoneBell " + at + ": ";
+      const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+      await ctx.addInitScript(SOUND_POLICY);
+      await ctx.addInitScript(() => localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true })));
+      const p = await ctx.newPage();
+      const errors = [];
+      p.on("pageerror", e => errors.push(String(e)));
+      await p.route("**/*", route => {
+        const rq = route.request();
+        const u = new URL(rq.url());
+        if (u.pathname === "/alias/rnd" && rq.resourceType() === "document") return route.fulfill({ status: 200, contentType: "text/html", body: raw });
+        if (u.pathname === "/v1/tasks/rnd") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(LAND["land-a"]) });
+        return route.continue();
+      });
+      try {
+        await p.goto(base + at, { waitUntil: "load" });
+        await p.waitForTimeout(1200);
+        await p.evaluate(() => recordToLog("a thing", "it happened", "", "", ""));
+        const bell = await p.evaluate(() => [...document.querySelectorAll("#toastlog-open, #phone-bell")].find(e => e.getClientRects().length > 0 && !e.hidden) ? true : false);
+        if (!bell) { fail(tag + "no bell is on screen"); continue; }
+        const count = await p.evaluate(() => [...document.querySelectorAll("#toastlog-open .count, #phone-bell .pb-n")].map(e => e.textContent).join("|"));
+        if (!/1/.test(count)) fail(tag + "the bell shows no unread count: " + count);
+        await p.evaluate(() => openToastLog());
+        await p.waitForSelector("#toastlog[open]", { timeout: slow(3000) });
+        const t = () => p.evaluate(() => ({ label: document.getElementById("toastlog-sound").textContent, muted: JSON.parse(localStorage.getItem(/^#term=|^\/alias\//.test(location.hash) || location.pathname.startsWith("/alias/") ? "atrium.sound.card:land-a" : "atrium.sound") || "{}").muted === true }));
+        const a = await t();
+        await p.tap("#toastlog-sound");
+        const b = await t();
+        if (a.muted || !b.muted || b.label !== "sound off") fail(tag + "the mute toggle did not flip the sound state: " + JSON.stringify([a, b]));
+        await p.tap("#toastlog-sound");
+        if ((await t()).muted) fail(tag + "the mute toggle did not flip back");
+      } finally { await ctx.close(); }
+      if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+    }
+  } finally { tasksMode = was; }
+  if (!bad) console.log("phoneBell ok");
+}
+
+// ── the bell and the sound on /m ─────────────────────────────────────────
+async function mBellSection(browser) {
+  const st = mServer({});
+  st.tasks = [mCard("b-1", { alias: "alpha", display_title: "alpha", status: "running" })];
+  await st.open();
+  try {
+    for (const vp of M_VIEWS) {
+      const tag = "mBell " + vp.width + ": ";
+      const ctx = await browser.newContext({ viewport: vp, hasTouch: true, isMobile: true });
+      await ctx.addInitScript(SOUND_POLICY);
+      const p = await ctx.newPage();
+      const errors = [];
+      p.on("pageerror", e => errors.push(String(e)));
+      await p.goto(st.url + "/m/", { waitUntil: "domcontentloaded" });
+      await p.waitForSelector("#m-list .row, #m-seg-all", { timeout: slow(10000) });
+      await p.waitForFunction(() => window.mNet.loaded(), null, { timeout: slow(8000) });
+      const vis = sel => p.evaluate(s => { const e = document.querySelector(s); return !!e && !e.hidden && e.getClientRects().length > 0; }, sel);
+      if (!(await vis("#m-bell"))) fail(tag + "no bell in the header");
+      if (!(await vis("#m-sound-hint"))) fail(tag + "no tap-to-enable hint while sound is locked");
+      await p.tap("#m-seg-all");
+      await p.waitForTimeout(150);
+      if (await vis("#m-sound-hint")) fail(tag + "the hint is still up after a touch");
+      // a request arrives: the sound plays and the bell counts it
+      st.perms = [{ id: "px" + vp.width, task_id: "b-1", tool: "Bash", command: "ls", requested_at: mIso(0) }];
+      st.send("permission", {});
+      await p.waitForFunction(() => window.__osc > 0, null, { timeout: slow(8000) }).catch(() => fail(tag + "no sound for a new request"));
+      await p.waitForFunction(() => document.getElementById("m-bell-n").textContent === "1", null, { timeout: slow(3000) })
+        .catch(() => fail(tag + "the bell count is " + "not 1"));
+      await p.tap("#m-bell");
+      await p.waitForSelector("#m-log:not([hidden]) .bl-row", { timeout: slow(3000) });
+      if (!/permission needed/.test(await p.textContent("#m-log-list"))) fail(tag + "the log does not list the request");
+      if ((await p.textContent("#m-bell-n")) !== "") fail(tag + "the count did not clear on open");
+      // the mute is the board's own switch, and a muted page stays quiet
+      await p.tap("#m-log-mute");
+      if (!(await p.evaluate(() => JSON.parse(localStorage.getItem("atrium.sound") || "{}").muted === true))) fail(tag + "the mute did not write the shared sound state");
+      const before = await p.evaluate(() => window.__osc);
+      st.perms = [{ id: "py" + vp.width, task_id: "b-1", tool: "Bash", command: "pwd", requested_at: mIso(0) }];
+      st.send("permission", {});
+      await p.waitForFunction(() => document.getElementById("m-log-list") && true, null, { timeout: slow(1000) });
+      await p.waitForTimeout(500);
+      if ((await p.evaluate(() => window.__osc)) !== before) fail(tag + "a muted page made a sound");
+      if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+      await ctx.close();
+    }
+  } finally { await st.close(); }
+  if (!bad) console.log("mBell ok");
+}
+
 async function main() {
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = "http://127.0.0.1:" + server.address().port;
@@ -14266,7 +14420,7 @@ async function main() {
       pasteStart: pasteStartSection, pasteDone: pasteDoneSection, pasteOldRoom: pasteOldRoomSection, pasteClose: pasteCloseSection,
       growlQuestionShots: growlQuestionShotsSection, growlQuestionBody: growlQuestionBodySection, growlReplyGrow: growlReplyGrowSection, growlChoices: growlChoicesSection, growlStable: growlStableSection, mGrowlQuestion: mGrowlQuestionSection,
       bootClean: bootCleanSection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mRecapSheet: mRecapSheetSection,
-      mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection,
+      mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
       gearTermList: gearTermListSection, growlLinks: growlLinksSection, growlChoiceOnce: growlChoiceOnceSection,
       mOutputAt: mOutputAtSection, mStickBottom: mStickBottomSection, mSendFree: mSendFreeSection, mCardUpload: mCardUploadSection,
       cardUrlWinName: cardUrlWinNameSection };
@@ -16247,6 +16401,9 @@ async function main() {
     await mMarkdownSection(browser);
     await mHostileSection(browser);
     await mPicturesSection(browser);
+    await soundPhoneSection(browser, base);
+    await phoneBellSection(browser, base);
+    await mBellSection(browser);
     await gearTermListSection(browser, base);
     await growlLinksSection(browser, base);
     await growlChoiceOnceSection(browser, base);
@@ -16374,7 +16531,7 @@ function mServer(state) {
     let file = null;
     if (p === "/m/" || p === "/m") file = path.join(M_ROOT, "index.html");
     else if (p.startsWith("/m/")) file = path.join(M_ROOT, p.slice(3));
-    else if (p.startsWith("/css/") || p === "/js/cardrules.js") file = path.join(WEB_ROOT, p);
+    else if (p.startsWith("/css/") || /^\/js\/(cardrules|sounds)\.js$/.test(p)) file = path.join(WEB_ROOT, p);
     if (file && !path.relative(WEB_ROOT, file).startsWith("..") && fs.existsSync(file) && fs.statSync(file).isFile()) {
       res.writeHead(200, { "Content-Type": M_TYPES[path.extname(file)] || "application/octet-stream" });
       return res.end(fs.readFileSync(file));
