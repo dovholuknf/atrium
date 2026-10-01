@@ -48,6 +48,25 @@ function growlAsks(g) { return g.reason === "question" || g.reason === "blocked"
 // card, or another focused window that said it is. A pop-out focused on its own card covers the board.
 function growlOnIt(g) { return growlAsks(g) && readySilenced(growlCard(g)); }
 
+// A HIDDEN GROWLER IS RE-CHECKED, since "you are on it" ends without any event of the hub's: the window blurs, the tab
+// hides, another card is attached, the terminals view is left, a pop-out blurs or closes, a focus claim expires. A
+// quiet id whose rule no longer holds is let out and drawn, and nothing rings: it was announced when it was raised,
+// to the window you were reading. Asked on the events a window has and on a one second tick for the rest, which
+// costs nothing while no growler is hidden.
+function growlRecheck() {
+  if (!growlQuiet.size) return;
+  let back = false;
+  growlQuiet.forEach(id => {
+    const g = growlSet.find(x => x.id === id);
+    if (!g || g.state !== "open" || !growlOnIt(g)) { growlQuiet.delete(id); back = true; }
+  });
+  if (back) { growlDraw(); growlAttention(); }
+}
+["focus", "blur"].forEach(t => addEventListener(t, () => setTimeout(growlRecheck, 0)));
+document.addEventListener("visibilitychange", () => setTimeout(growlRecheck, 0));
+if ("BroadcastChannel" in window) new BroadcastChannel("atrium-solo").addEventListener("message", () => setTimeout(growlRecheck, 0));
+setInterval(growlRecheck, 1000);
+
 // Whether this window has an open growler drawn for a subject. The nag and keyed toasts ask.
 function growlHas(subject) {
   return !!subject && growlDrawn().some(g => g.subject && sameCard(g.subject, subject));
