@@ -15629,6 +15629,55 @@ async function joinedLiveSection(browser, base) {
 }
 
 // The gear's terminal list section: the list's controls, and the cache summary that follows the list on an event.
+async function termBoxSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const p = await ctx.newPage();
+  const errors = [];
+  p.on("pageerror", e => errors.push(e.message));
+  try {
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof termTrayHTML === "function" && typeof renderTermList === "function",
+      null, { timeout: slow(15000) });
+    const out = await p.evaluate(async () => {
+      const card = (id, status, extra) => ({ id, status, supervised: false, pinned: false, title: id,
+        display_title: id, tags: [], ...extra });
+      const sets = {
+        none: [],
+        supervisedOnly: [card("sv", "running", { supervised: true })],
+        joinedUnpinned: [card("jn", "needs-input")],
+        someHidden: [card("sv", "running", { supervised: true }), card("xp", "done", { pinned: true }),
+          card("jn", "needs-input")],
+        allHidden: [card("x1", "done", { pinned: true }), card("x2", "dead", { pinned: true })]
+      };
+      const res = {};
+      for (const hide of ["none", "on"]) {
+        for (const [name, cards] of Object.entries(sets)) {
+          boardCards = async () => cards;
+          setHideAgents(hide);
+          await renderTermList();
+          const bar = document.querySelector("#term-list .traybar");
+          res[hide + "/" + name] = bar ? {
+            pills: [...bar.querySelectorAll(".tbarhide button")].map(b => b.textContent.trim()),
+            lit: bar.querySelectorAll(".tbarhide button.on").length
+          } : null;
+        }
+      }
+      setHideAgents("none");
+      return res;
+    });
+    for (const [k, v] of Object.entries(out)) {
+      if (k.endsWith("/none")) continue;
+      if (!v || v.pills.length !== 2) fail("termBox: the list's box has no hide controls with " + k + ": " + JSON.stringify(v));
+    }
+    if (out["on/allHidden"] && out["on/allHidden"].pills[0] !== "agents (2)") {
+      fail("termBox: the box does not count the hidden agents: " + JSON.stringify(out["on/allHidden"]));
+    }
+    if (out["on/someHidden"] && out["on/someHidden"].lit < 1) fail("termBox: a lit pill is not lit in the box.");
+    if (errors.length) fail("termBox: page errors: " + errors.join(" | "));
+  } finally { await ctx.close(); }
+  if (!bad) console.log("termBox ok");
+}
+
 async function gearTermListSection(browser, base) {
   for (const w of [1280, 390]) {
     const tag = "gearTermList " + w + ": ";
@@ -17147,7 +17196,7 @@ async function main() {
       mTypeSteady: mTypeSteadySection, mOlder: mOlderSection, mFollow: mFollowSection, mDocs: mDocsSection,
       mSwitcher: mSwitcherSection,
       mPull: mPullSection, joinedLive: joinedLiveSection,
-      coverPoll: coverPollSection, coverSteps: coverStepsSection };
+      coverPoll: coverPollSection, coverSteps: coverStepsSection, termBox: termBoxSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -19158,6 +19207,7 @@ async function main() {
     await joinedLiveSection(browser, base);
     await coverPollSection(browser, base);
     await coverStepsSection(browser, base);
+    await termBoxSection(browser, base);
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e));
     if (process.env.DEBUG_HEADLESS) {

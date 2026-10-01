@@ -54,6 +54,10 @@
     min-height: var(--barh); box-sizing: border-box; padding-right: 4px;
     justify-content: flex-end;
   }
+  /* The hide pair in the bar, at the left, one line of two small pills. Gone when the list is shrunk to names. */
+  .tbarhide { display: flex; gap: 4px; margin-right: auto; padding-left: 6px; min-width: 0; }
+  .tbarhide button { padding: 3px 8px; font-size: var(--fs-xs); white-space: nowrap; }
+  .tl-mini .tbarhide { display: none; }
   /* Every pill in the gear's terminal list section the same size: a grid of equal cells rather than pills as wide as their words. The
      sort and hide pairs are two cells, the grouping three, so its six modes are two even rows. */
   .seg.trayseg { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
