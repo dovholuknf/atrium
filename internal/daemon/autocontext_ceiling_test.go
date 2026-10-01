@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -167,6 +168,80 @@ func TestCeilingCardStillWaitsOutTheProtectingGates(t *testing.T) {
 			g.clear(r)
 			r.wantStart("once " + g.name + " cleared")
 		})
+	}
+}
+
+// A director a person is attached to and has typed in recently is not nudged or cleared.
+func TestCeilingCardHoldsWhileAPersonAttachedIsTyping(t *testing.T) {
+	r := newAutoRig(t, "", directorTags...)
+	ceilingBusy(r)
+	r.size(200)
+	autoQuiet()
+
+	detach := r.viewer()
+	r.run.noteOperatorTyped([]byte("\r"))
+	r.wantNone("with a person attached who just typed")
+	r.wantNone("on the next tick")
+
+	// Attached, and quiet for longer than the window.
+	detach()
+	r.run.typeMu.Lock()
+	r.run.lastTyped = time.Now().Add(-peerGateIdle - time.Second)
+	r.run.typeMu.Unlock()
+	autoTiming.ceilingTypedQuiet = time.Millisecond
+	r.viewer()
+	r.wantStart("with a person attached who has stopped typing")
+}
+
+// Typed but nobody attached: the keystroke alone does not hold it.
+func TestCeilingCardNotHeldByTypingWithNobodyAttached(t *testing.T) {
+	r := newAutoRig(t, "", directorTags...)
+	ceilingBusy(r)
+	r.size(200)
+	autoQuiet()
+	r.run.noteOperatorTyped([]byte("\r"))
+	r.run.typeMu.Lock()
+	r.run.lastTyped = time.Now().Add(-peerGateIdle - time.Second)
+	r.run.typeMu.Unlock()
+	r.wantStart("with nobody attached")
+}
+
+// A person who starts typing after the cycle began is not sent the stop line.
+func TestCeilingCardNoStopLineAtAPersonWhoIsTyping(t *testing.T) {
+	r := newAutoRig(t, "", directorTags...)
+	ncTiming.nudgeAfter = 30 * time.Millisecond
+	ceilingBusy(r)
+	r.size(200)
+	autoQuiet()
+	r.wantStart("with nobody attached")
+	r.viewer()
+	r.run.noteOperatorTyped([]byte("\r"))
+	time.Sleep(150 * time.Millisecond)
+	if strings.Contains(r.f.written(), newContextStop) {
+		t.Fatalf("the stop line was typed at a person who is typing: %q", r.f.written())
+	}
+}
+
+// With no directory the room can read, a handoff cannot be checked, so nothing is cleared.
+func TestCeilingCardWithNoReadableDirectoryIsNotCleared(t *testing.T) {
+	r := newAutoRig(t, "", directorTags...)
+	if err := os.RemoveAll(r.dir); err != nil {
+		t.Fatal(err)
+	}
+	ceilingBusy(r)
+	r.size(200)
+	autoQuiet()
+	r.wantStart("past the ceiling")
+	until(t, "the chip to fail", func() bool { return failedWith(r.d, r.id()) != "" })
+	if reason := failedWith(r.d, r.id()); !strings.Contains(reason, "no directory the room can read") {
+		t.Fatalf("the chip does not say why: %q", reason)
+	}
+	got := r.f.written()
+	if strings.Contains(got, "/clear") || strings.Contains(got, "HANDOFF.") || strings.Contains(got, newContextStop) {
+		t.Fatalf("something was typed into a card with nothing to check: %q", got)
+	}
+	if n := len(r.autoNotices()); n != 0 {
+		t.Fatalf("the launcher was told a cycle was under way: %d notices", n)
 	}
 }
 

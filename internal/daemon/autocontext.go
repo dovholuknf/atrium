@@ -58,6 +58,10 @@ var autoTiming = struct {
 	humanQuiet time.Duration
 	// idleUnit is what `auto_new_context_idle_s` is counted in.
 	idleUnit time.Duration
+	// ceilingTypedQuiet is how long a person attached to a ceiling card must have stopped
+	// typing. The card is not a human card, so the human rule's attach check does not
+	// reach it, and a ceiling cycle starts mid-turn, where a person may be typing.
+	ceilingTypedQuiet time.Duration
 }{
 	startGrace: 5 * time.Minute,
 	minGap:     30 * time.Minute,
@@ -65,6 +69,8 @@ var autoTiming = struct {
 	typeWait:   2 * time.Minute,
 	humanQuiet: 10 * time.Minute,
 	idleUnit:   time.Second,
+
+	ceilingTypedQuiet: 2 * time.Minute,
 }
 
 // The arm states.
@@ -219,6 +225,9 @@ func (d *Daemon) autoReady(t *store.Task, human bool, now time.Time) bool {
 	if n, _ := d.act.backgroundWork(id); n > 0 {
 		return false
 	}
+	if ceiling && ceilingPersonTyping(run) {
+		return false
+	}
 	if human {
 		if run.watching() || now.Sub(d.rawIdleSince(t)) < autoTiming.humanQuiet {
 			return false
@@ -237,6 +246,12 @@ func (d *Daemon) autoReady(t *store.Task, human bool, now time.Time) bool {
 		return false
 	}
 	return d.nctx.sameDirBusy(d, t) == ""
+}
+
+// ceilingPersonTyping is a person attached to the card who has typed recently. A
+// director somebody is talking to is not nudged or cleared mid-conversation.
+func ceilingPersonTyping(run *runner) bool {
+	return run.watching() && run.typedWithin(autoTiming.ceilingTypedQuiet)
 }
 
 // watchAutoContext is called by watchContext for each live Claude card with the size
@@ -438,6 +453,10 @@ func (d *Daemon) autoStillOK(taskID string) bool {
 	if autoHuman(t) {
 		run := d.sup.get(taskID)
 		return run != nil && !run.watching()
+	}
+	if hasTag(t.Tags, ContextCeilingTag) {
+		run := d.sup.get(taskID)
+		return run != nil && !ceilingPersonTyping(run)
 	}
 	return true
 }

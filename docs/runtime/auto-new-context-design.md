@@ -214,6 +214,12 @@ types nothing else until the turn is over. So the only gates dropped are mid-tur
 which is about a card between turns). Pending permission, an open dialog, subagents, background work, held messages,
 the same-directory check and the minimum gap all stay. The orchestrator tags directors. Workers never tag themselves.
 
+Two more holds, because a ceiling card is not a human card and starts mid-turn. A person attached to it who has typed
+in the last `autoTiming.ceilingTypedQuiet` (two minutes) holds the start, the typing of the stop line, and the
+capture, so a director somebody is talking to is not cleared under them. And a card with no directory the room can
+read is refused before anything is typed: the handoff file is the only proof the capture worked, and mid-turn the
+turn ending is too weak a signal to clear on without it.
+
 ## 5. When the card cannot write a handoff, or capture times out
 
 Nothing is cleared without a verified handoff. That rule is the cycle's and stays.
