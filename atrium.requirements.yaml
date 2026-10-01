@@ -20,6 +20,7 @@ runners:
   claude:
     hooks: atrium            # the ten atrium hooks, everything but Stop
     gate: required           # the permission gate, first in PreToolUse
+    statusline: required     # the account's settings.json carries a statusLine. provision-room.ps1 installs it
     mcp: [atrium-control]    # on the runner row's --mcp-config
     smoke: true
   codex:

@@ -662,6 +662,48 @@ true
             Unmet 'human'
         }
     }
+    # the status line is an account fact too: the room's runner settings.json has a statusLine key, or it shows none
+    if ($spec.statusline -eq 'required' -and -not $script:statuslineDone) {
+        $script:statuslineDone = $true
+        $rd = if ($script:remoteOS -eq 'windows') {
+            "`$f = Join-Path `$HOME '.claude\settings.json'`nif (Test-Path -LiteralPath `$f) { 'file=' + [Convert]::ToBase64String([IO.File]::ReadAllBytes(`$f)) }"
+        } else { "f=`"`$HOME/.claude/settings.json`"; [ -f `"`$f`" ] && echo `"file=`$(base64 < `"`$f`" | tr -d '\n')`"; true" }
+        $slf = (ConvertFrom-KeyValue (Invoke-Remote $rd).Out).file
+        $slCmd = $null
+        if ($slf) {
+            try { $slCmd = ([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($slf)) | ConvertFrom-Json).statusLine.command } catch { $slCmd = $null }
+        }
+        $fixHint = "run: pwsh -File scripts\provision-room.ps1 $Target -Name $Room, whose statusline step installs it (the operator)"
+        if (-not $slCmd) {
+            Row 'statusline' 'human' "the account's .claude/settings.json has no statusLine command, so every agent on $Room shows none. $fixHint"
+            Unmet 'human'
+        } else {
+            # RUN IT ONCE with `{}` on stdin: a key naming a missing script or an unusable bash reads the same as a good one.
+            # No session_id in the payload, so the script does not append to the usage log. jq is probed with the same bash.
+            if ($script:remoteOS -eq 'windows') {
+                $m = [regex]::Match($slCmd, '^\s*(?:"([^"]+)"|(\S+))\s+(?:"([^"]+)"|(\S+))\s*$')
+                if (-not $m.Success) { $run = $null }
+                else {
+                    $exe = if ($m.Groups[1].Success) { $m.Groups[1].Value } else { $m.Groups[2].Value }
+                    $scr = if ($m.Groups[3].Success) { $m.Groups[3].Value } else { $m.Groups[4].Value }
+                    $run = "`$ErrorActionPreference = 'Continue'`n`$o = '{}' | & $(Quote-Ps $exe) $(Quote-Ps $scr) 2>&1`n`"rc=`$LASTEXITCODE`"`nif (`$o) { 'out=1' }`n" +
+                        "& $(Quote-Ps $exe) -c 'command -v jq' 2>&1 | Out-Null`n`"jq=`$(if (`$LASTEXITCODE -eq 0) { 1 } else { 0 })`""
+                }
+            } else {
+                $run = "o=`$(echo '{}' | sh -c $(Quote-Sh $slCmd) 2>&1); echo rc=`$?; [ -n `"`$o`" ] && echo out=1`n" +
+                    "if sh -c 'command -v jq' >/dev/null 2>&1; then echo jq=1; else echo jq=0; fi"
+            }
+            $rk = if ($run) { ConvertFrom-KeyValue (Invoke-Remote $run).Out } else { @{} }
+            if (-not $run) { Row 'statusline' 'human' "the statusLine command on $Room is $slCmd, which this cannot split into a bash and a script to try. $fixHint"; Unmet 'human' }
+            elseif ($rk.rc -ne '0' -or -not $rk.out) {
+                Row 'statusline' 'human' "the statusLine command on $Room did not run (exit $($rk.rc), output $(if ($rk.out) { 'yes' } else { 'none' })): $slCmd. $fixHint"
+                Unmet 'human'
+            } elseif ($rk.jq -ne '1') {
+                Row 'statusline' 'human' "the statusLine runs on $Room but jq is missing for its bash, so it shows only folder, branch and clock. install jq there (git-bash has none: jq.exe in Git/usr/bin)"
+                Unmet 'human'
+            } else { Row 'statusline' 'ok' "the statusLine command runs on $Room and jq is there: $slCmd" }
+        }
+    }
 }
 
 # ── 7. rows waiting on what is not built ────────────────────────────────────

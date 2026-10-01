@@ -68,11 +68,13 @@ type Tool struct {
 }
 
 type Runner struct {
-	Hooks   string   `json:"hooks,omitempty"`
-	Gate    string   `json:"gate,omitempty"`
-	MCP     []string `json:"mcp,omitempty"`
-	Helpers []string `json:"helpers,omitempty"`
-	Smoke   bool     `json:"smoke"`
+	Hooks string `json:"hooks,omitempty"`
+	Gate  string `json:"gate,omitempty"`
+	// Statusline is "required" when the account's settings.json must carry a statusLine.
+	Statusline string   `json:"statusline,omitempty"`
+	MCP        []string `json:"mcp,omitempty"`
+	Helpers    []string `json:"helpers,omitempty"`
+	Smoke      bool     `json:"smoke"`
 }
 
 type Room struct {
@@ -492,7 +494,7 @@ func (p *parser) tool(n *yaml.Node, at string) Tool {
 
 func (p *parser) runner(n *yaml.Node, at string) Runner {
 	var r Runner
-	m := p.mapping(n, at, "hooks", "gate", "mcp", "helpers", "smoke")
+	m := p.mapping(n, at, "hooks", "gate", "statusline", "mcp", "helpers", "smoke")
 	// `hooks` takes one value and never names a command, so a project cannot
 	// bring a hook of its own onto a room.
 	if h, ok := m["hooks"]; ok {
@@ -500,6 +502,9 @@ func (p *parser) runner(n *yaml.Node, at string) Runner {
 	}
 	if g, ok := m["gate"]; ok {
 		r.Gate = p.enum(g, at+".gate", "required")
+	}
+	if s, ok := m["statusline"]; ok {
+		r.Statusline = p.enum(s, at+".statusline", "required")
 	}
 	if mc, ok := m["mcp"]; ok {
 		r.MCP = p.names(mc, at+".mcp", nameRE)
