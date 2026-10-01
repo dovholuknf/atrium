@@ -168,15 +168,17 @@ func (d *Daemon) handleModel(w http.ResponseWriter, r *http.Request) {
 // A SWITCH MADE BY HAND IS THE SAME SWITCH. Left unrecorded, the next resume,
 // including the room restart's, launches on whatever the card was started on and
 // the model goes back without anybody asking. Only a line that is exactly
-// `/model` and one alias or id is taken. A bare `/model` opens Claude's picker and
+// `/model` and one alias (sonnet, opus, haiku, fable) is taken. A bare `/model` opens Claude's picker and
 // names nothing, so it records nothing.
 func (d *Daemon) noteTypedModel(taskID, line string) {
 	f := strings.Fields(line)
 	if len(f) != 2 || !strings.EqualFold(f[0], "/model") {
 		return
 	}
+	// ALIASES ONLY. A typed id is unchecked, and a mistyped one stored on the card
+	// fails every later resume. A caller of the endpoint chose its id on purpose.
 	model, ok := validModel(f[1])
-	if !ok {
+	if !ok || !modelAliases[model] {
 		return
 	}
 	t, err := d.st.Get(taskID)
