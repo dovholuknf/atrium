@@ -196,8 +196,13 @@ func Checks(in Input) []Check {
 			out = append(out, newCheck(RuleShape, f, i, fmt.Sprintf("sev %q, path %q, line %d", f.Sev, f.Path, f.Line)))
 			continue
 		}
-		if !d.adds(f.Path, f.Line) {
+		if ok, amb := d.adds(f.Path, f.Line); amb {
+			out = append(out, newCheck(RuleLine, f, i, "the path matches more than one file in the diff, give the full path"))
+		} else if !ok {
 			out = append(out, newCheck(RuleLine, f, i, "the PR does not add or change this line at the head"))
+		}
+		if f.Rank <= 0 {
+			out = append(out, newCheck(RuleShape, f, i, "rank is unset, the merge step ranks every finding from 1"))
 		}
 		if sev == "high" || sev == "med" {
 			var gone []string
@@ -236,7 +241,7 @@ func Checks(in Input) []Check {
 	}
 
 	for _, r := range in.Raw {
-		if strings.TrimSpace(r.Leak) == "" || leakKept(r, in.Findings) {
+		if strings.TrimSpace(r.Leak) == "" || leakKept(r, in.Findings, d) {
 			continue
 		}
 		out = append(out, newCheck(RuleLeak, r, -1, fmt.Sprintf("a leak raised by %s is not in the final list: %s", r.RaisedBy, r.Leak)))
@@ -244,9 +249,20 @@ func Checks(in Input) []Check {
 	return out
 }
 
-func leakKept(raw Finding, final []Finding) bool {
+// resolve is the diff's name for a path when it names exactly one file, else the path as written.
+func resolve(d diffInfo, p string) string {
+	if f, n := d.file(p); n == 1 {
+		return f
+	}
+	return filepath.ToSlash(p)
+}
+
+// leakKept matches by path and line, or path and code. A leak that merge re-anchored onto a different PR line (rule 15)
+// is refused and goes back to merge. That is the safe direction: do not loosen it, a dropped leak is the failure rule
+// 5 exists for. Both paths are resolved through the diff first, so `a.c` and `src/a.c` are one file.
+func leakKept(raw Finding, final []Finding, d diffInfo) bool {
 	for _, f := range final {
-		if strings.TrimSpace(f.Leak) == "" || filepath.ToSlash(f.Path) != filepath.ToSlash(raw.Path) {
+		if strings.TrimSpace(f.Leak) == "" || resolve(d, f.Path) != resolve(d, raw.Path) {
 			continue
 		}
 		if f.Line == raw.Line || (strings.TrimSpace(raw.Code) != "" && strings.TrimSpace(f.Code) == strings.TrimSpace(raw.Code)) {

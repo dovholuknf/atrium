@@ -57,11 +57,18 @@ func Render(in Input) (Result, []Resend, error) {
 
 	d := parseDiff(in.Diff)
 	tr := newTree(in.RunDir)
-	order := make([]int, len(in.Findings))
+	// The diff's name for a file is the only one GitHub's anchor hashes, so the finding is rewritten to it here.
+	// Checks has already refused a path that names no file or more than one.
+	fs := make([]Finding, len(in.Findings))
+	copy(fs, in.Findings)
+	for i := range fs {
+		fs[i].Path = resolve(d, fs[i].Path)
+	}
+	order := make([]int, len(fs))
 	for i := range order {
 		order[i] = i
 	}
-	sort.SliceStable(order, func(a, b int) bool { return before(in.Findings[order[a]], in.Findings[order[b]], d) })
+	sort.SliceStable(order, func(a, b int) bool { return before(fs[order[a]], fs[order[b]], d) })
 
 	width := len(fmt.Sprint(len(order)))
 	if width < 2 {
@@ -69,8 +76,8 @@ func Render(in Input) (Result, []Resend, error) {
 	}
 	var res Result
 	for n, i := range order {
-		f := in.Findings[i]
-		sev, _ := severity(f.Sev)
+		f := fs[i]
+		sev := word(f.Sev)
 		name := fmt.Sprintf("%0*d-%s-%s-L%d.txt", width, n+1, sev, path.Base(filepath.ToSlash(f.Path)), f.Line)
 		var gone []string
 		if failed[i][RulePaths] {
@@ -116,14 +123,32 @@ func before(a, b Finding, d diffInfo) bool {
 	if sa != sb {
 		return sa < sb
 	}
-	if a.Rank != b.Rank {
-		return a.Rank < b.Rank
+	if ra, rb := rankKey(a.Rank), rankKey(b.Rank); ra != rb {
+		return ra < rb
 	}
 	pa, pb := d.position(a.Path), d.position(b.Path)
 	if pa != pb {
 		return pa < pb
 	}
 	return a.Line < b.Line
+}
+
+// rankKey puts an unset rank last in its band. Checks refuses one, so this only holds for a caller that sorts alone.
+func rankKey(r int) int {
+	if r <= 0 {
+		return int(^uint(0) >> 1)
+	}
+	return r
+}
+
+// word is the severity as the label and the file name spell it. `blocking` keeps its own word (rule 10 lists it
+// beside HIGH), and sorts with HIGH.
+func word(s string) string {
+	if strings.EqualFold(strings.TrimSpace(s), "blocking") {
+		return "blocking"
+	}
+	sev, _ := severity(s)
+	return sev
 }
 
 func band(s string) int {
@@ -230,11 +255,53 @@ func walk(files []File) string {
 	return b.String()
 }
 
-// Write puts a result under runDir: findings/*.txt and walk.txt. It touches nothing else.
+// WalkStartedError is Write refusing to render over a walk already begun. A rerun of step 6 and 7 would reset every
+// state to open and lose what clint did.
+type WalkStartedError struct {
+	Lines []string
+}
+
+func (e *WalkStartedError) Error() string {
+	return "walk started, a rewrite would lose it: " + strings.Join(e.Lines, ", ")
+}
+
+// started lists the walk.txt lines whose state is not open.
+func started(walkTxt string) []string {
+	var out []string
+	for _, l := range strings.Split(walkTxt, "\n") {
+		f := strings.Fields(l)
+		if len(f) >= 2 && f[1] != "open" {
+			out = append(out, f[0]+" "+f[1])
+		}
+	}
+	return out
+}
+
+// Write puts a result under runDir: findings/*.txt and walk.txt. It refuses with a *WalkStartedError when walk.txt
+// already holds a line that is not open. Otherwise it removes the findings/*.txt this render did not make, so that
+// `ls findings/` is the walk. It touches nothing else.
 func Write(runDir string, r Result) error {
 	dir := filepath.Join(runDir, "findings")
+	if old, err := os.ReadFile(filepath.Join(runDir, "walk.txt")); err == nil {
+		if s := started(string(old)); len(s) > 0 {
+			return &WalkStartedError{Lines: s}
+		}
+	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
+	}
+	keep := map[string]bool{}
+	for _, f := range r.Files {
+		keep[f.Name] = true
+	}
+	if ents, err := os.ReadDir(dir); err == nil {
+		for _, e := range ents {
+			if !e.IsDir() && strings.HasSuffix(e.Name(), ".txt") && !keep[e.Name()] {
+				if err := os.Remove(filepath.Join(dir, e.Name())); err != nil {
+					return err
+				}
+			}
+		}
 	}
 	for _, f := range r.Files {
 		if err := os.WriteFile(filepath.Join(dir, f.Name), []byte(f.Text), 0o644); err != nil {

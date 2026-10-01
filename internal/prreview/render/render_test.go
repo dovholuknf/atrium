@@ -161,7 +161,7 @@ func TestRule5ALeakAnyReviewerRaisedStaysInTheList(t *testing.T) {
 		t.Fatalf("err %v", err)
 	}
 	// Kept: the same leak survives into the final list, even moved to a neighbouring code text.
-	in.Findings = append(in.Findings, Finding{Sev: "low", Path: "src/http.c", Line: 20, Leak: "an fd per call", Proven: "no"})
+	in.Findings = append(in.Findings, Finding{Sev: "low", Path: "src/http.c", Line: 20, Leak: "an fd per call", Proven: "no", Rank: 1})
 	in.Findings[len(in.Findings)-1].Says = "x"
 	if _, resend, err := Render(in); err != nil || resend != nil {
 		t.Fatalf("resend %v, err %v", resend, err)
@@ -301,6 +301,104 @@ func TestResendQuotesTheRule(t *testing.T) {
 	if err != nil || len(resend) != 1 || resend[0].Finding != "src/tls_engine.c:412" ||
 		!strings.Contains(resend[0].Prompt, "rule 26") || !strings.Contains(resend[0].Prompt, "who actually hits it") {
 		t.Fatalf("resend %+v err %v", resend, err)
+	}
+}
+
+// Review f870d872, finding 1: a partial path passes rule 8, and the link must hash the diff's name for the file.
+func TestAPartialPathIsRewrittenToTheDiffsName(t *testing.T) {
+	in := clean(t)
+	in.Findings[1].Path = "tls_engine.c"
+	res, resend, err := Render(in)
+	if err != nil || resend != nil {
+		t.Fatalf("resend %v, err %v", resend, err)
+	}
+	f := fileOf(res, "L412")
+	want := link(prURL, Finding{Path: "src/tls_engine.c", Line: 412})
+	if !strings.Contains(f.Text, "\n"+want+"\n") || !strings.Contains(f.Text, "MED src/tls_engine.c line 412:") {
+		t.Fatalf("link or label kept the short path:\n%s", f.Text)
+	}
+}
+
+func TestAPathThatNamesTwoFilesGoesBackToMerge(t *testing.T) {
+	in := clean(t)
+	in.Diff += "diff --git a/lib/http.c b/lib/http.c\n--- a/lib/http.c\n+++ b/lib/http.c\n@@ -1,1 +1,2 @@\n a\n+b\n"
+	in.Findings[2].Path = "http.c"
+	cs := Checks(in)
+	if len(cs) != 1 || cs[0].Rule != RuleLine || !strings.Contains(cs[0].Detail, "more than one file") {
+		t.Fatalf("checks %v", cs)
+	}
+	in.Findings[2].Path = "src/http.c"
+	if len(Checks(in)) != 0 {
+		t.Fatal("the full path was refused")
+	}
+}
+
+func TestAQuotedDiffNameIsRead(t *testing.T) {
+	d := parseDiff("diff --git \"a/a b.c\" \"b/a b.c\"\n--- \"a/a b.c\"\n+++ \"b/a b.c\"\n@@ -1,1 +1,2 @@\n x\n+y\n")
+	if ok, _ := d.adds("a b.c", 2); !ok {
+		t.Fatalf("diff names %v", d.order)
+	}
+}
+
+// Review f870d872, finding 2: a second render over the same folder.
+func TestASecondWriteRemovesStaleFilesAndRefusesAStartedWalk(t *testing.T) {
+	dir := t.TempDir()
+	first, _, _ := Render(clean(t))
+	if err := Write(dir, first); err != nil {
+		t.Fatal(err)
+	}
+	one := clean(t)
+	one.Findings = one.Findings[:1]
+	second, _, _ := Render(one)
+	if err := Write(dir, second); err != nil {
+		t.Fatal(err)
+	}
+	ents, _ := os.ReadDir(filepath.Join(dir, "findings"))
+	if len(ents) != 1 || ents[0].Name() != second.Files[0].Name {
+		t.Fatalf("findings/ holds %d files after a rewrite to one", len(ents))
+	}
+
+	walkTxt := filepath.Join(dir, "walk.txt")
+	if err := os.WriteFile(walkTxt, []byte(second.Files[0].Name+"  done  2026-10-01T10:00Z\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err := Write(dir, first)
+	var ws *WalkStartedError
+	if !errors.As(err, &ws) {
+		t.Fatalf("err %v", err)
+	}
+	got, _ := os.ReadFile(walkTxt)
+	ents, _ = os.ReadDir(filepath.Join(dir, "findings"))
+	if !strings.Contains(string(got), "done") || len(ents) != 1 {
+		t.Fatalf("a refused write changed the folder: %q, %d files", got, len(ents))
+	}
+}
+
+// Review f870d872, finding 3.
+func TestAnUnsetRankIsRefusedAndSortsLast(t *testing.T) {
+	in := clean(t)
+	in.Findings[0].Rank = 0
+	if cs := Checks(in); len(cs) != 1 || cs[0].Rule != RuleShape || !strings.Contains(cs[0].Detail, "rank") {
+		t.Fatalf("checks %v", cs)
+	}
+	d := parseDiff(in.Diff)
+	unset, ranked := Finding{Sev: "med", Path: "src/http.c", Line: 20}, Finding{Sev: "med", Path: "src/http.c", Line: 21, Rank: 5}
+	if before(unset, ranked, d) || !before(ranked, unset, d) {
+		t.Fatal("an unset rank walked ahead of a ranked finding")
+	}
+}
+
+// Review f870d872, nit: rule 10 lists BLOCKING as a label of its own.
+func TestBlockingKeepsItsOwnLabel(t *testing.T) {
+	in := clean(t)
+	in.Findings[1].Sev = "blocking"
+	res, _, err := Render(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := fileOf(res, "L412")
+	if f.Name != "02-blocking-tls_engine.c-L412.txt" || !strings.Contains(f.Text, "\nBLOCKING src/tls_engine.c line 412:") {
+		t.Fatalf("%s\n%s", f.Name, f.Text)
 	}
 }
 

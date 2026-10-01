@@ -25,6 +25,14 @@ func parseDiff(text string) diffInfo {
 			cur, inHunk = "", false
 		case !inHunk && strings.HasPrefix(l, "+++ "):
 			p := strings.TrimPrefix(l, "+++ ")
+			if i := strings.Index(p, "\t"); i >= 0 {
+				p = p[:i] // git ends an unquoted name holding a space with a tab
+			}
+			if strings.HasPrefix(p, `"`) {
+				if u, err := strconv.Unquote(p); err == nil {
+					p = u // git quotes a name holding a space or a non-ASCII byte
+				}
+			}
 			if p == "/dev/null" {
 				cur = ""
 				continue
@@ -47,30 +55,32 @@ func parseDiff(text string) diffInfo {
 	return d
 }
 
-// file finds the diff's name for a finding's path: exact, else one that ends at a path boundary.
-func (d diffInfo) file(p string) (string, bool) {
+// file finds the diff's name for a finding's path: exact, else the ones that end at a path boundary. n is how many
+// matched. Only n == 1 names a file, and the renderer then uses the diff's name, never the finding's.
+func (d diffInfo) file(p string) (name string, n int) {
 	p = strings.TrimPrefix(strings.ReplaceAll(p, "\\", "/"), "./")
 	if _, ok := d.added[p]; ok {
-		return p, true
+		return p, 1
 	}
 	for _, f := range d.order {
 		if strings.HasSuffix(f, "/"+p) || strings.HasSuffix(p, "/"+f) {
-			return f, true
+			name = f
+			n++
 		}
 	}
-	return "", false
+	return name, n
 }
 
-// adds says whether the PR adds or changes this line at the head.
-func (d diffInfo) adds(p string, line int) bool {
-	f, ok := d.file(p)
-	return ok && d.added[f][line]
+// adds says whether the PR adds or changes this line at the head, and whether the path named more than one file.
+func (d diffInfo) adds(p string, line int) (ok, ambiguous bool) {
+	f, n := d.file(p)
+	return n == 1 && d.added[f][line], n > 1
 }
 
 // position is where a finding's file sits in the diff, for ties. Files the diff does not name sort last.
 func (d diffInfo) position(p string) int {
-	f, ok := d.file(p)
-	if !ok {
+	f, n := d.file(p)
+	if n != 1 {
 		return len(d.order)
 	}
 	for i, o := range d.order {
