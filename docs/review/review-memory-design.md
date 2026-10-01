@@ -304,7 +304,12 @@ rule stands: a panel reads, and CI builds.
 
 **The report.**
 
-6. The whole result is one table (the `tabular` skill), sorted by severity, then file, then line.
+6. The whole result is one table (the `tabular` skill), in walk order, which the merge step fixes and nothing changes
+   after (rule 14). Disputes left for clint come first. Then each severity band, and within a band the merge step's
+   `rank`: what breaks for a user of this code, and how likely, worst first. A leak ranks as its impact says, never
+   last by default. Only ties fall back to diff order: the order files appear in `pr.diff`, then line. File name is
+   never a sort key. (Amended by docs/rnd/pulls-view-design.md 5.6, which replaced severity, then file, then line,
+   after one verify pass flattened 378 into one band sorted by file name.)
 7. Every row has a **Cause** column (PR-introduced, pre-existing, or third-party) and a **Test status** column (which
    existing test covers it, or none, and where a test could be added).
 8. Line numbers come from the PR head, the right-hand side of the diff. A comment must sit on a line the PR adds or
@@ -318,10 +323,11 @@ director", during a walk it means the walker.
    not done.
 10. Every finding, leaks, pre-existing and third-party ones included, has its own plain text file, written by the
     review itself (review-panel step 7), never by hand afterwards: `<run>/findings/NN-<sev>-<file>-L<line>.txt`,
-    where `NN` is the report table's order, so sorting by name gives the walk. The comment is at the top, then an
+    where `NN` is the walk position of rule 6, so `ls findings/` is the walk. The comment is at the top, then an
     `Evidence` part (cause, test status, traced or run). The report's table names each row's file. During a walk the
-    director shows the comment as raw markdown with its file path, and edits the file in place when the comment
-    changes. Nothing is written to `c:\temp`, which clint's own sessions use. The comment's shape, as clint writes it:
+    director shows the comment as raw markdown, rule 33's header, the code line with its link and the bullets, and
+    nothing else: no "item N of M" and no file name, which are the drawer's progress and its menu (pulls-view design
+    5.6). It edits the file in place when the comment changes. Nothing is written to `c:\temp`, which clint's own sessions use. The comment's shape, as clint writes it:
 
     ```
     MED src/applesec/context.c line 149: load_ca(ctx, ca, ca_len);
