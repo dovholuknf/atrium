@@ -10,7 +10,7 @@ orchestrator with `atrium_say` (kind fyi) to `orchestrator-sg4-control@sg4-contr
 to `atrium-87300`. Workers you launch stay on m1mini (sg3 fallback), never claude-sg4. Every commit goes to @review
 (alias `review`) before landing, even doc-only, except this queue file.
 
-**PAUSE (clint via the orchestrator, 2026-10-01):** start no new item and launch no worker. Finish in-flight work through @review and land it, then sit idle. Only r-pr-run (P1c, tip dbb76109, done and sent to @review) is ours in flight. Do not send P3 or start the E2E.
+**PAUSE (clint via the orchestrator, 2026-10-01):** start no new item and launch no worker. Finish in-flight work through @review and land it, then sit idle. Nothing of ours is in flight: @runtime took r-pr-run back. @rnd is idle. Do not send P3 or start the E2E.
 
 **Landing from m1mini (orchestrator, 2026-10-01, HOLD lifted):** all m1mini worktrees share one clone, so worker branches read locally. To land, merge onto `claude/landing` in the m1mini clone, branched from `claude/main` and NEVER onto `claude/main` there. The hub collects it into sg4, and the orchestrator fast-forwards sg4's claude/main. Tell the orchestrator the claude/landing tip and the @review verdict. @rnd is card 01a0f8bd-af15 on m1mini, and @ui is local too (alias `ui`). pulls-p3 (sg3) is PARKED on HOLD c0bccc01 until the pause ends.
 
@@ -26,7 +26,7 @@ none). Pass: under 10 minutes and under $2, and clint's read of the walk order. 
 | --- | --- | --- |
 | P1a r-pr-render | @runtime | LANDED 58461561 |
 | P1b r-pr-store | @runtime | LANDED 59d21773 (@review c5c759f5). Needs a room deploy, the orchestrator's |
-| P1c r-pr-run | worker on m1mini, card `01a0f89b`, alias `r-pr-run` | RUNNING. Writing `internal/daemon/prrunner.go`. @runtime's card ended without tracking it, so it now reports to @rnd. It reports a tip SHA and does NOT land: send that SHA to @review, then land it. Brief `/Users/claude/r-pr-run-brief.md`. P1 acceptance replays 378 in a throwaway room off sg4: check the numbers in its `review.json` |
+| P1c r-pr-run | @runtime (m1mini card 01a0f8cc) drives it again: fix, @review, claude/landing, 378 acceptance | @review HOLD on dbb76109 (HIGH: forks load the PR's .claude settings and hooks; MEDIUM: a retry after merge renders an empty review as ready). r-pr-run is fixing it and reports to @runtime, which copies @rnd |
 | P2 pulls view | @ui | LANDED b6edcfd6 (@review c9284027) |
 | P2 follow-up | @ui | IN FLIGHT: PUT findings/{key}, walk.js re-point, unmock drawer findings, walk marks, walker, start. @ui tells @rnd at landing |
 | Hub | @fabric | LANDED d77d21d0, lows 370dcb61. Needs a hub deploy |
