@@ -8336,3 +8336,22 @@ build before `atrium_publish path` works, since an older room cannot say what a 
     `TestPRRunnerRetryAfterMergeKeepsTheFindings` and `TestPRRunnerReplaysTheResentListAfterARetry`.
 12. Live acceptance, by @runtime: `POST /v1/prs` with openziti/tlsuv 378 at ad5ddf4 in a throwaway room: under 10
     minutes, under $2 in review.json, no card, the 6 med of 378's run covered, no `Suggested fix:` on `proven: no`.
+
+## IB. No growler for the terminal you are on (u-new-no-toast-on-focused-terminal)
+
+Needs a hub with one room and a board. Design note: only a `question` or `blocked` growler goes quiet. A `permission`
+growler always shows, since it blocks the card. The ready and done alert was already quiet for a focused, attached
+card, and still is.
+
+1. Attach card A on the terminals view, with the board tab visible and the window focused. Make A ask a question. No
+   growler is drawn, no tone plays, no desktop notification shows, and the bell's log has "growler: question A".
+2. Repeat 1 with one thing false each time: another card attached, the terminals view not showing, the window blurred,
+   the tab hidden. Each time the growler draws and rings as before.
+3. With A attached and focused, make A ask for permission. The growler still draws and rings.
+4. Do 1 but look away (blur the window) and wait for the growler's reminder. The question draws then, and rings.
+5. Pop A out. Focus the pop-out and make A ask a question. Neither the pop-out nor the board draws a growler or rings,
+   and the log has the entry. Click the board instead and ask again: the board draws it as before.
+6. Raise a growler, press "open" on it. The card attaches, and the growler is dismissed with the same undo as
+   "dismiss this".
+
+Covered by headless units `growlOnIt` (1 to 5) and `growlActions` (6).

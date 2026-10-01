@@ -26,3 +26,13 @@ clint: "I don't think that popup needs to happen if I am ON that terminal and it
 
 The same thing happened again on the orchestrator's focused terminal. clint also clicked "open" on the toast and the
 toast stayed. Wanted: "open" dismisses the toast, the same as "dismiss this", after it attaches the card.
+
+## Design note
+
+The toast clint saw is the growler (`js/growl.js`), so that is where the rule lives. It reuses `readySilenced` from
+`js/notify.js`, the rule the ready alert already follows: this window focused and showing the card, or another focused
+window (a pop-out on that card) that said it is. A `question` or `blocked` growler raised under that rule goes in a
+`growlQuiet` set and is not drawn, rung or notified, but `growlLog` still writes its line. A reminder that finds you
+elsewhere takes it out of the set and draws it. A `permission` growler is never quiet: it blocks the card. Halts and
+deploy holds are not about one terminal, so they are never quiet either. A plain `toast()` already dismissed on "open"
+(`js/toasts.js`); the growler's "open" did not, and now does through the same `growlPost` as "dismiss this".
