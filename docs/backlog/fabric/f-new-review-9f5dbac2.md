@@ -67,3 +67,24 @@ Quality: after the Sonnet switch, no drop seen. The cherry-pick resolution is ri
 `ClearResumeID` kept), the default path is unchanged line for line, and the filing order (register live runs,
 then file the exited ones, collect only after commit) is careful. The miss is the setting's off state, which is the
 second-order case again.
+
+## Re-read: 55eb5ec3..d682a7c4 (rebased, the first 12 unchanged by range-diff, fixes in 5422d397)
+
+- Finding 1 closed. `Run` calls `reattachRuns` at every start, whatever the setting says. With no host that costs
+  one failed dial, and the log line only appears when the setting is on. The test calls `reattachRuns` with the
+  setting off, not `Run`. The change in `Run` is the removed `if`, so reading it is enough.
+- Finding 2 closed. On a transport error from `Spawn`, `killStrays` ends the host's live runs for that card and kind,
+  sparing the one this daemon holds. A transport error from `call` only comes after `c.done` is closed, so
+  `hostClient` redials rather than handing back the dead client. A host that is still up then gets asked, and one
+  that is gone has no stray to end. Tests cover the stray, the other kind spared, and the held run spared.
+- Finding 3 closed. `PrunePtyRuns` deletes filed rows older than 7 days on the reaper tick and never an unfiled one,
+  with a test for all three cases.
+- Tests at d682a7c4: `go vet` clean. store and ptyhost pass. The daemon's focused run (`-count=3 -run
+  'Host|Reattach|Stray|SettingOff|RunExit|Exit|Supervis|Shell'`) passes.
+
+### Verdict
+
+OK, room-ok 55eb5ec3..d682a7c4. No new findings.
+
+Quality: after the Sonnet switch, no drop seen. Each fix goes at the cause, and the stray cleanup also handles the
+held run, which is the second-order case that usually gets missed.
