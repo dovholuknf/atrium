@@ -59,6 +59,10 @@ type Reply struct {
 	At        time.Time `json:"at"`
 	Text      string    `json:"text"`
 	Truncated bool      `json:"truncated"`
+	// Edited is how many files the edit tool calls of this reply's turn named inside the
+	// card's worktree. From the transcript alone, no git: the numbers behind it come from
+	// one `?turn=<at>` call on /changes. Absent when there were none.
+	Edited int `json:"edited,omitempty"`
 }
 
 // RepliesView is the answer: where the text came from, and the replies oldest first.
@@ -139,6 +143,7 @@ func (d *Daemon) repliesPage(taskID string, n int, before time.Time) (*RepliesVi
 					pg, err = readTranscriptBefore(path, n, before)
 				}
 				if err == nil {
+					fillEdited(t, path, pg.replies)
 					v := &RepliesView{Source: "transcript", Replies: pg.replies, Prompts: pg.prompts, More: pg.more}
 					if pg.more {
 						v.NextBefore = pg.next.UTC().Format(time.RFC3339Nano)
@@ -190,8 +195,8 @@ var repliesCache = struct {
 type repliesCached struct {
 	size    int64
 	mtime   time.Time
-	replies []Reply  // the last repliesMax, oldest first
-	prompts []Prompt // the same, for what was said to the card
+	replies []Reply   // the last repliesMax, oldest first
+	prompts []Prompt  // the same, for what was said to the card
 	floor   time.Time // zero when everything older is held, else complete down to here. See finishPage
 }
 

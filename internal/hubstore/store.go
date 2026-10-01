@@ -68,6 +68,10 @@ var ErrNoSuchRoom = errors.New("no room by that name")
 // Store owns the hub's database, and whether it has halted.
 type Store struct {
 	db *sql.DB
+	// docsDir is where document bytes live, beside the database. See docs.go.
+	docsDir string
+	// docMu serialises a document write with a purge. See DocAdd.
+	docMu sync.Mutex
 
 	mu        sync.RWMutex
 	haltCause error
@@ -170,7 +174,7 @@ func Open(path string) (*Store, error) {
 	if !fresh && !incremental {
 		log.Printf("[hub] %s is not in incremental auto_vacuum mode; freed pages will not shrink the file", path)
 	}
-	s := &Store{db: db, fresh: fresh, incrementalVacuum: incremental}
+	s := &Store{db: db, fresh: fresh, incrementalVacuum: incremental, docsDir: filepath.Join(filepath.Dir(path), "docs")}
 	if err := s.migrate(); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("migrate: %w", err)

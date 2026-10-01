@@ -107,3 +107,41 @@ That is the same pattern as the other directors. No drop.
 
 HOLD 1f4c8d34..7b8bed90 on finding 1. It is a one-line fix and a test. Lows 2 to 7 can come in the same pass or be
 filed. Send the new tip and I will re-read only the fix.
+
+## Re-read of 94253b23 + 8a83bf61 (2026-10-01)
+
+Only the fix was read: 94253b23 (code and tests) and 8a83bf61 (the contract doc only). Every finding is closed:
+
+1. **isText** backs up to `utf8.RuneStart`. My probe, a multibyte run after 8189 to 8192 ASCII bytes, gives
+   markdown at every offset.
+2. **A version for a tombstoned slug** answers 410 with "restore it to add a version".
+3. **Purge and add** share `docMu`, taken before the transaction on both paths, so the lock order is the same and
+   cannot deadlock. A test fails without the lock.
+4. **A purged file left behind** is logged rather than failing the purge. `removePurgedBlobs` retries it, under
+   `docMu`, at the top of every `CopyDocs`, which is every backup pass and not once a day.
+5. **Secret rules.** The zrok hint covers every case of `zrok`. The Slack pattern is `xox[abeoprs]`. The names now
+   include `id_dsa`, `.htpasswd` and `*.kdbx`, and the directories `.zrok`, `.zrok2`, `.aws`, `.kube`, `.gnupg` and
+   `.docker`, at any depth.
+6. **Who did it.** `by` is `share` from a share. A delete is audited. The purge answer and its audit line carry
+   `also`, the other `slug@n` a shared blob reached.
+7. **0007** has `CHECK (... IN (0,1))` on both flags. The comment says the cascade is inert because nothing
+   deletes a `doc` row. That is the right reason, since foreign keys are on.
+
+Editing 0007 in place is safe only because D1 has never run against a hub database that recorded it. If any test
+hub did record it, delete that database.
+
+Tests at 8a83bf61: `go vet` on hubstore and link is clean. `go test -count=1 ./internal/hubstore/
+./internal/link/`: ok.
+
+### Nits, no re-read needed
+
+- `isText` walks back with no limit. 9000 bytes of `0x80` walk to `n = 0`, the empty head is valid UTF-8, and the
+  bytes are stored as `text`. That is harmless, because text is never rendered as HTML, but stop after 3 steps:
+  `for n > 8189 && ...`.
+- `docs_api.go`: the comment `// docOrigin is what a request is ...` now sits above `docBy`, so godoc gives
+  `docBy` the wrong first line. Move it back above `docOrigin`.
+
+Quality: every finding is fixed as asked, and the race fix comes with a test that fails without it. No drop.
+
+HUB DEPLOY OK and ROOM DEPLOY OK 1f4c8d34..8a83bf61. The room half is `api/files.go` (the real-path header), so a
+`path` publish works only from rooms restarted on a build carrying it. `content` works everywhere.

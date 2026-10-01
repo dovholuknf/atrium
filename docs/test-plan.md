@@ -8032,6 +8032,7 @@ the hub routing and the control tool.
 6. On a transcript over 16MB with replies spread through it, a deep page still answers: the 16MB bound counts from
    the `before` position, not from the end of the file.
 
+
 ## HO. A director held to a context ceiling (r-director-ceiling)
 
 Tagging is the orchestrator's job, never a worker's. There is no `atrium tag` command. Use the board's tag editor, or
@@ -8058,3 +8059,116 @@ on the board port. The body replaces the set, so read the card's tags first.
 8. A tagged director whose directory the room cannot read (a removed worktree, or none) is not cleared. The chip fails
    with `not cycled: this card has no directory the room can read ...`, nothing is typed, and the launcher is not
    told a cycle began.
+
+## HR. A card's changes, and one reply's (r-changes)
+
+1. On a card whose worktree has uncommitted edits and an untracked file, `curl -s
+   'http://127.0.0.1:7778/v1/tasks/<id>/changes' | jq '{against,head,dirty,total,files:[.files[]|{path,status,added,removed}]}'`.
+   The edits and the untracked file are listed, the untracked one as `added`, and an ignored file is not.
+2. `?against=base` lists everything since the merge base with `claude/main`. In a worktree with neither `claude/main` nor
+   `main`, it answers `against: head` and a `note`.
+3. `?path=x`, or any parameter but `against` and `turn`, answers 400. `?against=head&turn=<at>` answers 400. A `turn`
+   that is not RFC3339 answers 400. A `turn` no reply was written at answers 404 with a sentence.
+4. On a card whose directory is not a git worktree the answer is 404, `this card's directory is not a git worktree`.
+5. Through the hub, `GET /v1/tasks/<room>~<id>/changes?against=base` answers the same as on the room.
+6. `curl -s 'http://127.0.0.1:7778/v1/tasks/<id>/replies?n=3' | jq '.replies[].edited'` gives, per reply, how many
+   files its turn's Edit, Write, MultiEdit and NotebookEdit calls named inside the worktree. It runs no git.
+7. Take a reply's `at` from that answer and call `/changes?turn=<at>`. `partial` is true and `why` says a shell command's
+   changes are not included. Only the files the turn's edit calls named are listed, each with `via: edits` (still
+   uncommitted) or `via: commits` (the turn committed them, found by commit date in the turn's window). `outside` counts
+   edit paths that resolved outside the worktree and never names one. A file also edited in another turn since the last
+   commit has `cumulative: true`.
+8. A turn whose commits were rebased (author date outside the turn's window) says so in `why`.
+
+## HP. fyi and needs, and held notices as board state (r-fyi-kind)
+
+1. From a worker launched by a card tagged `atrium:orchestrator` (and again with `atrium:hold-notices`), call
+   `atrium_report` with `status: progress`, `kind: fyi`. Nothing is typed into the launcher's terminal and nothing is
+   queued for it. `atrium_task` `notices: true` on the launcher shows one line with `kind: fyi`, the worker's handle in `about`
+   and `fyi from <worker>: ...` as the text. The worker's card is `reported`, and its next turn end does not raise a
+   silent-stop notice.
+2. Repeat with `kind: needs`, with no kind and with `kind: urgent`. Each is delivered as before: typed or queued for a
+   plain orchestrator, held for `atrium:hold-notices`. None is an error.
+3. `kind: fyi` with `status: done`, `blocked` or `question`, or with any `ask`, is delivered as `needs`. A done report
+   waits on acceptance and a merge, and an ask wants an answer. Only a progress report with no ask is news.
+4. `atrium_say` and `atrium_tell` with `kind: fyi` to the orchestrator: held, not typed, not queued, and the answer says
+   `held`. The same with `reply: true` is queued as today. A `needs` say, or one with no kind, queues as today. An fyi
+   to a card that does not hold its notices queues as today. An fyi to a card on another room is delivered as `needs`.
+5. `curl -s http://127.0.0.1:7778/v1/tasks/<launcher> | jq '.held_notices, .oldest_held_at'` rises with each held
+   notice and `oldest_held_at` stays on the first. `atrium_task` `notices: true` called by that card sets both back to
+   zero and the event stream carries the changed row. Reading another card's notices does not clear them. The read
+   is stamped with the `at` of the newest notice it returned, never the clock. A notice held after the read and before
+   the stamp still counts as unread, and a `POST /v1/tasks/<id>/notices-read` with no `through` clears nothing.
+6. Let a worker stop without reporting. The silent stop is held at two minutes and nothing is queued for the
+   orchestrator before ten. At ten minutes one plain line, `<worker> has been stuck for N minutes`, is queued for it,
+   once. A launcher that does not hold its notices gets only today's silent-stop notice. A tool call stuck past the
+   long-tool threshold still wakes it two minutes after that, as before.
+7. **Not verified by tests:** that a model told `fyi` in the tool text uses it sensibly, and the board's drawing of
+   `held_notices`, which is @ui's.
+
+## HQ. Hub documents, the hub half (hub-documents-d1)
+
+HQ needs a hub built from this change. The views are D2's, so everything here is `curl` and the control tool. Go tests
+cover every step in `internal/hubstore/docs_test.go`, `internal/link/docs_api_test.go` and
+`internal/link/docs_mcp_test.go`. Run the `curl` lines on the hub's machine, port 7778. Rooms need a restart on this
+build before `atrium_publish path` works, since an older room cannot say what a path resolves to.
+
+1. `curl -s -F file=@notes.md -F title='Usage 2026-09-29' http://127.0.0.1:7778/_hub/docs` answers 201 with `slug`,
+   `version` 1, `url` `/d/usage-2026-09-29` and `version_url`. Post the same title again and the slug is
+   `usage-2026-09-29-2`. `Ab Ab` twice gives `ab-ab` then `ab-ab-2`. The bytes are one file named for their SHA-256
+   under `docs/` beside `hub.db`.
+2. `curl -s http://127.0.0.1:7778/_hub/docs/usage-2026-09-29` lists the version with `origin` `local`, `by` `operator`,
+   a `kind`, a `mime`, the `name` and the `sha`. Post `-F file=@v2.md` to `/_hub/docs/usage-2026-09-29/versions`
+   and it adds version 2 and keeps the title. `raw?v=1` still returns the first bytes.
+3. The same upload with `-H 'X-Forwarded-For: 1.2.3.4'` records origin `share` and `by` `share`, where a plain
+   loopback one records `local` and `operator`. Through the zrok share it records `share` too. A form field named
+   `origin`, `by` or `card` changes nothing.
+4. `raw` always answers `Content-Type: application/octet-stream`, `X-Content-Type-Options: nosniff` and
+   `Content-Disposition: attachment`, for an `.html` or `.svg` document as well. Upload a title with a line break in it,
+   such as `$'a\r\nX-Injected: 1'`. The raw answer has one `Content-Disposition` header, an ASCII `filename=` and a
+   `filename*=UTF-8''...`, and no `X-Injected` header.
+5. Upload a file holding `-----BEGIN PRIVATE KEY-----`, then one with `ghp_` and 36 letters, `AKIA` and 16 capitals,
+   `xoxb-1234567890-abcdefghij`, a three-part `eyJ...` token and `zrok enable <12 characters>`. Each answers 422 with
+   `rule` naming it, and nothing is stored. The same text sent as a new version, or as `content` to `atrium_publish`,
+   is refused the same way.
+6. `-F override=1` from the machine stores the file and the version shows `override: true`. The same call through a
+   proxy header answers 403, and so does `override=1` on a file with no secret in it.
+7. A file of 5 MiB of text is stored. 5 MiB and one byte answers 413. A 21 MiB image answers 413. A body over 22 MiB
+   is cut off with 413. An empty file, no `file` field, a title of only line breaks and a `slug` field on the new
+   document route answer 400.
+8. Foreign origins are refused on every write: for each of upload, `versions`, `title`, `delete`, `restore`, `purge`
+   and `PUT settings`, add `-H 'Origin: https://evil.example'`, then `-H 'Sec-Fetch-Site: cross-site'`. Each answers
+   403 and nothing changes. A read with the same headers still works. `-H 'Sec-Fetch-Site: same-origin'` from the
+   board's own page is let through.
+9. `POST .../delete` from the share tombstones the document. It leaves `GET /_hub/docs` and appears under `?deleted=1`.
+   `GET /_hub/docs/<slug>` answers 200 with `deleted` set, `raw` answers 410, and `/d/<slug>` still answers with the
+   `/m` page. `deleted.by` is `operator` from the machine and `share` from the share, and the audit log has a
+   `doc-deleted` line. A new version posted to the tombstoned slug answers 410 until it is restored.
+   `POST .../restore` brings it back.
+10. `POST .../purge?v=1` on the machine answers 200, the version shows `purged: true`, its file is gone from `docs/`,
+    and `raw?v=1` answers 410 `the bytes are missing`. The same call with `X-Forwarded-For` set answers 403 and says
+    to run it on the machine. Two documents with the same bytes share one file: purging one answers `also` with the
+    other's `slug@n`, and the `doc-purged` audit line names it. After a purge, a restore through the share answers 403
+    and one on the machine works.
+    Delete a file from `docs/` by hand: the version shows `missing: true`, the list still loads, and `raw` answers
+    410.
+11. `GET /_hub/docs/settings` answers `operator`, `enabled`, `caps`, `usage` and `largest`, and `operator` is false over
+    the share. `PUT` with `{"caps":{"per_card_hour":2}}` on the machine changes only that cap. From the share it
+    answers 403. `{"enabled":false}` makes every upload and publish answer 503 with a sentence. A cap of 0 answers 400.
+    Set `total` to 1000, fill it, and the next new file answers 507 with the reason and nothing is evicted.
+12. Open `http://127.0.0.1:7778/d/usage-2026-09-29` and `/d/usage-2026-09-29@1`. Both answer with the phone page. So
+    does `/d/no-such-doc`. `/d/Bad_Slug`, `/d/x@0` and `/d/x@abc` answer 404.
+13. From a worker card, call `atrium_publish` with `title` and `content`. The answer is `{url, slug, version}`, the
+    document's version shows `origin` `card`, `card` `<room>~<id>` and `by` `<handle>@<room>`, and
+    `GET /_hub/docs?card=<room>~<id>` lists it. The worker's tool list includes `atrium_publish`.
+14. `atrium_publish` with `path` set to a file in the card's directory stores it with the file's name. A path outside
+    the directory, `../` out of it and a link to a file outside all answer 403. A link `notes.md -> .env`, `.ENV`,
+    `deploy/server.PEM`, `id_rsa`, `.htpasswd`, `*.kdbx` and anything under `.git/`, `.ssh/`, `.aws/`, `.kube/`,
+    `.gnupg/`, `.docker/` or `.zrok/` answer 422 `secret-file-name`, including through a directory link. A harmless
+    name holding a private key block answers 422 `pem-private-key`.
+15. Call `atrium_publish` 31 times in an hour from one card. The 31st answers 429 and another card is not held up. Board
+    uploads are not counted. A call with `slug` of an existing document adds a version, and an unknown `slug` is 404.
+16. Wait for the daily copy or call `CopyDocs`. `backups/docs/` holds the blob files and `backups/docs.copied` stamps
+    it. A purged blob leaves the copy and a blob lost from the live folder does not.
+17. **Not verified by tests:** the board's gear and the `/d/` page, which are D2's. Old rooms (no `X-Atrium-Real-Path`)
+    refuse `path` and say why. Check that the message is clear on a room that has not been restarted.
