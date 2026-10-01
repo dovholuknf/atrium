@@ -9,7 +9,7 @@
 // the operator and an agent debugging the gate together.
 //
 // OFF UNLESS ASKED FOR, and when off it costs nothing: no poll, no element.
-// Switched on from settings ("show the typing gate readout") or in the console:
+// Switched on from the terminal's details, under "debug" (see js/peek-debug.js), or in the console:
 //
 //     localStorage.setItem("atrium.debug.typing", "1")
 //
@@ -39,19 +39,26 @@ function toggleTypingReadout(on) {
   if (typingOn) pollTyping();
 }
 
+// One read of the gate for the attached card. The gate line and the details drawer's debug section both ask, so a
+// read in flight or answered in the last 300ms is shared and the daemon is asked once.
+let typingRead_ = null;
+function typingRead(t) {
+  const kind = termKind === "shell" ? "?kind=shell" : "";
+  const key = t.id + kind;
+  if (typingRead_ && typingRead_.key === key && Date.now() - typingRead_.at < 300) return typingRead_.p;
+  const p = api("/v1/tasks/" + encodeURIComponent(t.id) + "/typing" + kind)
+    .then(s => ({ s, err: "" }), e => ({ s: null, err: (e && e.message) || String(e) }));
+  typingRead_ = { key, at: Date.now(), p };
+  return p;
+}
+
 async function pollTyping() {
   clearTimeout(typingTimer);
   typingTimer = 0;
   if (!typingOn) return;
   const t = termTask;
   if (t && !document.hidden) {
-    const kind = termKind === "shell" ? "?kind=shell" : "";
-    let s = null, err = "";
-    try {
-      s = await api("/v1/tasks/" + encodeURIComponent(t.id) + "/typing" + kind);
-    } catch (e) {
-      err = (e && e.message) || String(e);
-    }
+    const { s, err } = await typingRead(t);
     // The pane may have moved to another card while this was in flight.
     if (typingOn && termTask === t) paintTyping(s, err);
   } else {
@@ -73,27 +80,50 @@ function typingAgo(ms) {
   return Math.round(ms / 60000) + "m ago";
 }
 
+// The messages held behind the operator's line, from the card's live activity, and who sent them.
+function typingHeld(id) {
+  const t = typeof peekCard === "function" ? peekCard(id) : null;
+  const a = t && t.activity;
+  if (!a || !a.held_peer || a.held_for !== "line") return null;
+  return { n: Math.max(1, Number(a.held_count) || 1), from: String(a.held_peer).replace(/^@/, "") };
+}
+
+// The line under the terminal speaks only when a message is held behind the gate. It never copies the line
+// being typed. A held message on a line that looks empty is the case the readout was built for, and only then
+// does it quote what atrium thinks is there, cut short.
+function typingBlockText(s, held) {
+  let why;
+  if (s.count > 0) why = s.count + " char" + (s.count === 1 ? "" : "s") + " on your line";
+  else {
+    const line = typingLineText(s.line).trim();
+    why = line ? "line looks empty, atrium thinks “" + (line.length > 40 ? line.slice(0, 40) + "…" : line) + "”"
+      : (s.reason || "line looks empty");
+  }
+  return held.n + (held.n === 1 ? " message" : " messages") + " from @" + held.from +
+    (held.n === 1 ? " waits: " : " wait: ") + why;
+}
+
 function paintTyping(s, err) {
   const el = document.getElementById("t-typing");
   if (!el) return;
-  el.hidden = !typingOn;
-  if (!typingOn) return;
   el.classList.remove("open", "shut");
+  const held = s && !err && termTask ? typingHeld(termTask.id) : null;
+  if (!typingOn || (!err && !(held && !s.open))) { el.hidden = true; return; }
+  el.hidden = false;
   if (err) {
     el.textContent = "typing gate: " + err;
     return;
   }
-  if (!s) {
-    el.textContent = "typing gate: no terminal attached";
-    return;
-  }
-  el.classList.add(s.open ? "open" : "shut");
-  el.textContent =
-    "gate " + (s.open ? "open" : "closed") + ": " + (s.reason || "") +
-    " · line “" + typingLineText(s.line) + "”" +
-    " · " + (s.count || 0) + " char" + (s.count === 1 ? "" : "s") +
-    (s.in_paste ? " · inside a paste" : "") +
-    " · last key " + typingAgo(s.since_ms);
+  el.classList.add("shut");
+  el.textContent = typingBlockText(s, held);
 }
+
+// Another window of this browser switched it. The storage event reaches every other open window at once.
+addEventListener("storage", e => {
+  if (e.key !== null && e.key !== TYPING_KEY) return;
+  let on = false;
+  try { on = localStorage.getItem(TYPING_KEY) === "1"; } catch (err) {}
+  if (on !== typingOn) toggleTypingReadout(on);
+});
 
 if (typingOn) pollTyping();
