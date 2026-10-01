@@ -49,6 +49,26 @@ type Reply struct {
 type RepliesView struct {
 	Source  string  `json:"source"`
 	Replies []Reply `json:"replies"`
+	// Prompts is what was said TO the card, from every source: typed at its
+	// terminal, sent from the desktop board or the phone, or typed by atrium for
+	// a peer. Oldest first, bounded like replies. Absent when atrium reads the
+	// screen, which cannot tell a prompt from output.
+	Prompts []Prompt `json:"prompts,omitempty"`
+}
+
+// Prompt kinds. See promptOf.
+const (
+	PromptOperator = "operator"
+	PromptPeer     = "peer"
+	PromptCommand  = "command"
+)
+
+// Prompt is one user turn as the page draws it.
+type Prompt struct {
+	At        time.Time `json:"at"`
+	Text      string    `json:"text"`
+	Truncated bool      `json:"truncated"`
+	Kind      string    `json:"kind"`
 }
 
 // errNoSuchCard is a card this room does not hold, which the API answers 404.
@@ -81,9 +101,9 @@ func (d *Daemon) repliesFor(taskID string, n int) (*RepliesView, error) {
 		}
 		if session != "" {
 			if path := d.usage.transcript(t.Worktree, session); path != "" {
-				replies, err := readReplies(path, n)
+				replies, prompts, err := readTranscriptText(path, n)
 				if err == nil {
-					return &RepliesView{Source: "transcript", Replies: replies}, nil
+					return &RepliesView{Source: "transcript", Replies: replies, Prompts: prompts}, nil
 				}
 				logRepliesFallback(path, err)
 			}
@@ -130,15 +150,23 @@ var repliesCache = struct {
 type repliesCached struct {
 	size    int64
 	mtime   time.Time
-	replies []Reply // the last repliesMax, oldest first
+	replies []Reply  // the last repliesMax, oldest first
+	prompts []Prompt // the same, for what was said to the card
 }
 
 // readReplies is the last n main-chain assistant replies with text in a
 // transcript, oldest first.
 func readReplies(path string, n int) ([]Reply, error) {
+	replies, _, err := readTranscriptText(path, n)
+	return replies, err
+}
+
+// readTranscriptText is the last n replies and the last n prompts in a
+// transcript, each oldest first.
+func readTranscriptText(path string, n int) ([]Reply, []Prompt, error) {
 	info, err := os.Stat(path)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	repliesCache.mu.Lock()
 	c, ok := repliesCache.m[path]
@@ -146,22 +174,25 @@ func readReplies(path string, n int) ([]Reply, error) {
 	if !ok || c.size != info.Size() || !c.mtime.Equal(info.ModTime()) {
 		f, err := os.Open(path)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		defer f.Close()
 		if info.Size() > transcriptTail {
 			if _, err := f.Seek(info.Size()-transcriptTail, io.SeekStart); err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 		}
-		all, err := scanReplyText(f)
+		replies, prompts, err := scanTranscriptText(f)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		if len(all) > repliesMax {
-			all = all[len(all)-repliesMax:]
+		if len(replies) > repliesMax {
+			replies = replies[len(replies)-repliesMax:]
 		}
-		c = repliesCached{size: info.Size(), mtime: info.ModTime(), replies: all}
+		if len(prompts) > repliesMax {
+			prompts = prompts[len(prompts)-repliesMax:]
+		}
+		c = repliesCached{size: info.Size(), mtime: info.ModTime(), replies: replies, prompts: prompts}
 		repliesCache.mu.Lock()
 		if len(repliesCache.m) > 400 {
 			repliesCache.m = map[string]repliesCached{}
@@ -169,44 +200,75 @@ func readReplies(path string, n int) ([]Reply, error) {
 		repliesCache.m[path] = c
 		repliesCache.mu.Unlock()
 	}
-	out := c.replies
-	if len(out) > n {
-		out = out[len(out)-n:]
+	replies, prompts := c.replies, c.prompts
+	if len(replies) > n {
+		replies = replies[len(replies)-n:]
 	}
-	return append([]Reply{}, out...), nil
+	if len(prompts) > n {
+		prompts = prompts[len(prompts)-n:]
+	}
+	return append([]Reply{}, replies...), append([]Prompt{}, prompts...), nil
 }
 
 // scanReplyText reads transcript lines and returns every main-chain assistant
 // reply that has text, in file order, one per message id.
 func scanReplyText(r io.Reader) ([]Reply, error) {
+	replies, _, err := scanTranscriptText(r)
+	return replies, err
+}
+
+// scanTranscriptText reads transcript lines and returns every main-chain
+// assistant reply that has text, one per message id, and every prompt, both in
+// file order.
+func scanTranscriptText(r io.Reader) ([]Reply, []Prompt, error) {
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 0, 64<<10), 8<<20)
 	var (
-		out   []Reply
-		index = map[string]int{} // message id to its place in out
+		out     []Reply
+		prompts []Prompt
+		index   = map[string]int{} // message id to its place in out
 	)
 	for sc.Scan() {
 		line := sc.Bytes()
-		if !bytes.Contains(line, []byte(`"assistant"`)) {
+		isUser := bytes.Contains(line, []byte(`"user"`))
+		if !isUser && !bytes.Contains(line, []byte(`"assistant"`)) {
 			continue
 		}
 		var rec struct {
 			Type      string `json:"type"`
 			Sidechain bool   `json:"isSidechain"`
+			Meta      bool   `json:"isMeta"`
 			Timestamp string `json:"timestamp"`
-			Message   struct {
+			Origin    *struct {
+				Kind string `json:"kind"`
+			} `json:"origin"`
+			Message struct {
 				ID      string `json:"id"`
 				Content any    `json:"content"`
 			} `json:"message"`
 		}
-		if json.Unmarshal(line, &rec) != nil || rec.Type != "assistant" || rec.Sidechain {
+		if json.Unmarshal(line, &rec) != nil || rec.Sidechain {
+			continue
+		}
+		at, _ := time.Parse(time.RFC3339Nano, rec.Timestamp)
+		if rec.Type == "user" {
+			if rec.Meta || (rec.Origin != nil && rec.Origin.Kind != "" && rec.Origin.Kind != "human") {
+				continue
+			}
+			if p, ok := promptOf(rec.Message.Content); ok {
+				p.At = at.UTC()
+				p.Text, p.Truncated = keepHead(p.Text, replyTextMax)
+				prompts = append(prompts, p)
+			}
+			continue
+		}
+		if rec.Type != "assistant" {
 			continue
 		}
 		text := replyText(rec.Message.Content)
 		if text == "" {
 			continue
 		}
-		at, _ := time.Parse(time.RFC3339Nano, rec.Timestamp)
 		if i, seen := index[rec.Message.ID]; seen && rec.Message.ID != "" {
 			out[i].Text = out[i].Text + "\n\n" + text
 			continue
@@ -215,12 +277,80 @@ func scanReplyText(r io.Reader) ([]Reply, error) {
 		out = append(out, Reply{At: at.UTC(), Text: text})
 	}
 	if err := sc.Err(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	for i := range out {
 		out[i].Text, out[i].Truncated = keepHead(out[i].Text, replyTextMax)
 	}
-	return out, nil
+	return out, prompts, nil
+}
+
+// promptOf is a user line's text and kind, or false for a line that is not
+// somebody talking to the card: a tool result, a hook's or a task's
+// notification, a command's output.
+//
+//   - `<command-name>/x</command-name>` and its args is a command, as typed.
+//   - text that starts `[atrium] ` is atrium speaking: a peer's message, typed
+//     with its banner, or atrium's own wake.
+//   - any other text is the operator, wherever it was typed.
+func promptOf(content any) (Prompt, bool) {
+	var text string
+	switch c := content.(type) {
+	case string:
+		text = c
+	case []any:
+		var parts []string
+		for _, b := range c {
+			m, ok := b.(map[string]any)
+			if !ok {
+				continue
+			}
+			if m["type"] == "tool_result" {
+				return Prompt{}, false
+			}
+			if s, ok := m["text"].(string); ok && m["type"] == "text" && strings.TrimSpace(s) != "" {
+				parts = append(parts, strings.TrimSpace(s))
+			}
+		}
+		text = strings.Join(parts, "\n\n")
+	}
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return Prompt{}, false
+	}
+	if strings.HasPrefix(text, "<command-name>") {
+		cmd := strings.TrimSpace(between(text, "<command-name>", "</command-name>"))
+		if args := strings.TrimSpace(between(text, "<command-args>", "</command-args>")); args != "" {
+			cmd += " " + args
+		}
+		if cmd == "" {
+			return Prompt{}, false
+		}
+		return Prompt{Text: cmd, Kind: PromptCommand}, true
+	}
+	if strings.HasPrefix(text, "<") {
+		// <local-command-stdout>, <task-notification>, <system-reminder> and the
+		// rest: written by Claude Code, not said by anyone.
+		return Prompt{}, false
+	}
+	if strings.HasPrefix(text, "[atrium] ") {
+		return Prompt{Text: text, Kind: PromptPeer}, true
+	}
+	return Prompt{Text: text, Kind: PromptOperator}, true
+}
+
+// between is the text after the first open and before the next close, or "".
+func between(s, open, close string) string {
+	i := strings.Index(s, open)
+	if i < 0 {
+		return ""
+	}
+	s = s[i+len(open):]
+	j := strings.Index(s, close)
+	if j < 0 {
+		return ""
+	}
+	return s[:j]
 }
 
 // replyText keeps an assistant message's text blocks, skipping tool calls and
