@@ -776,6 +776,7 @@ func (d *Daemon) ncWait(taskID string, gen uint64, limit time.Duration, what str
 // both, so the chip says the card was asked and did not stop.
 func (d *Daemon) ncType(taskID string, gen uint64, label, text string, limit time.Duration) error {
 	began, asked := time.Now(), 0
+	ceiling := d.ceilingRun(taskID)
 	err := d.ncWait(taskID, gen, limit, "an empty line and no turn in progress", func() (bool, error) {
 		run := d.sup.get(taskID)
 		if run == nil || d.act.dialogOpen(taskID) {
@@ -801,6 +802,13 @@ func (d *Daemon) ncType(taskID string, gen uint64, label, text string, limit tim
 			// write must not be typed after.
 			if !d.nctx.mine(taskID, gen) {
 				gone = true
+				return false
+			}
+			// A ceiling cycle also yields to a person who typed in the last
+			// ceilingTypedQuiet, for every step it types: the gate's own quiet is
+			// seconds, and someone who sent a prompt and is reading the answer
+			// has not stopped using the card.
+			if ceiling && run.typedWithin(autoTiming.ceilingTypedQuiet) {
 				return false
 			}
 			return !d.act.dialogOpen(taskID) && !d.act.midTurn(taskID) && !d.cardRunning(taskID) &&
