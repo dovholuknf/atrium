@@ -1023,11 +1023,13 @@ function termTree(list) {
 function termRunnerMark(t) {
   const mark = runnerMark(t.runner);
   const a = t.activity;
-  if (!workingNow(t)) return mark;
+  // The row carries the one tooltip, so the mark says nothing of its own.
+  const bare = mark.replace(/ data-tip="[^"]*"/, "");
+  if (!workingNow(t)) return bare;
   // Inserted into the class list the shared builder produced, rather than the
   // builder growing a parameter. `runnerMark` is the board's and is called
   // from three places that do not want this.
-  return mark.replace('class="rmark"', `class="rmark working ${esc(a.what)}"`);
+  return bare.replace('class="rmark"', `class="rmark working ${esc(a.what)}"`);
 }
 
 // One entry in the switcher.
@@ -1076,8 +1078,8 @@ function termRow(t, deep, kid) {
            // the session again where it was.
            termCold(t) ? " cold" : ""}${wear.cls}${newCardClass(t)}"
          data-id="${t.id}"
-         data-tip="${termCold(t) ? "this one has exited. click to start it again here"
-           : termJoined(t) ? "joined from your own terminal. atrium cannot attach to it" : ""}"
+         data-tip="${esc(hover + (termCold(t) ? "\nthis one has exited. click to start it again here"
+           : termJoined(t) ? "\njoined from your own terminal. atrium cannot attach to it" : ""))}"
          style="${style}"
          onclick="${termCold(t)
            ? `resumePinned('${t.id}')`
@@ -1091,13 +1093,13 @@ function termRow(t, deep, kid) {
             onclick="event.stopPropagation();togglePin('${t.id}', ${!t.pinned})"
             >${t.pinned ? "&#9733;" : "&#9734;"}</span>${termRunnerMark(t)}<span
             class="tstack"><span
-            class="tname${secondary ? "" : " aspath"}" data-tip="${esc(hover)}"
+            class="tname${secondary ? "" : " aspath"}"
             >${esc(primary)}</span>${
               // Where it lives, under the name and dimmed. Only when the name is
               // its own: an unnamed card already shows the address as its name,
               // so a second copy of it under itself says nothing.
               secondary
-                ? `<span class="tpath" data-tip="${esc(hover)}">${esc(secondary)}</span>`
+                ? `<span class="tpath">${esc(secondary)}</span>`
                 : ""
             }</span>
         </div>
@@ -1190,7 +1192,7 @@ function termRowChips(t) {
   const ncx = typeof newContextChip === "function" ? newContextChip(t) : "";
   const cache = typeof keepaliveChip === "function" ? keepaliveChip(t) : "";
   const joined = termJoined(t)
-    ? `<span class="chip" data-tip="joined from your own terminal. atrium cannot attach to it">joined</span>` : "";
+    ? `<span class="chip">joined</span>` : "";
   const inner = stuck + newCardChip(t) + ncx + seenChips(t) + cache + held + room + popped + joined;
   return inner ? `<div class="chips">${inner}</div>` : "";
 }

@@ -16391,6 +16391,49 @@ async function pullsAbsentSection(browser, base) {
   if (!bad) console.log("pullsAbsent ok");
 }
 
+// One hover per row: a row carries the tooltip and no descendant repeats it.
+async function oneTooltipSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const errors = [];
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(e.message));
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof termRow === "function" && typeof stackRow === "function" && typeof historyRow === "function", null, { timeout: slow(15000) });
+    const res = await p.evaluate(() => {
+      const mk = (id, extra) => Object.assign({ id, title: "f-" + id, display_title: "f-" + id, runner: "claude", status: "working",
+        worktree: "atrium/" + id, pinned: id === "a", recap: "did the thing", why: "", tags: [], created_at: "2026-10-01T00:00:00Z" }, extra || {});
+      const tasks = [mk("a"), mk("b", { pinned: false, activity: { what: "tool", since: new Date().toISOString() } }), mk("c", { status: "done" })];
+      const out = [];
+      const check = (list, html, rowSel) => {
+        const host = document.createElement("div");
+        host.innerHTML = html;
+        host.querySelectorAll(rowSel).forEach(row => {
+          const rowTip = row.getAttribute("data-tip") || "";
+          const seen = new Map();
+          row.querySelectorAll("[data-tip],[title]").forEach(d => {
+            const tip = d.getAttribute("data-tip") || d.getAttribute("title") || "";
+            if (d.hasAttribute("title")) out.push(list + " " + row.dataset.id + ": a native title");
+            if (rowTip && tip && (tip === rowTip || tip.includes(rowTip) || rowTip.includes(tip))) out.push(list + " " + row.dataset.id + ": a child repeats the row tip: " + tip);
+            if (tip && seen.has(tip)) out.push(list + " " + row.dataset.id + ": two children carry " + tip);
+            seen.set(tip, 1);
+          });
+          if (list === "terminals" && !rowTip) out.push(list + " " + row.dataset.id + ": the row has no tooltip");
+          if (list === "terminals" && !rowTip.includes(row.querySelector(".tname").textContent)) out.push(list + " " + row.dataset.id + ": the row tip lacks the name");
+        });
+      };
+      check("terminals", tasks.map(t => termRow(t, false, false)).join(""), ".card[data-id]");
+      check("stack", tasks.map(t => stackRow(t)).join(""), ".stackrow");
+      check("board", tasks.map(t => cardHTML(t)).join(""), ".card[data-id]");
+      check("history", tasks.map(t => historyRow(t)).join(""), ".row.line");
+      return out;
+    });
+    res.forEach(m => fail("oneTooltip: " + m));
+    if (errors.length) fail("oneTooltip: page errors: " + errors.join(" | "));
+  } finally { await ctx.close(); }
+  if (!bad) console.log("oneTooltip ok");
+}
+
 async function termBoxSection(browser, base) {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
   const p = await ctx.newPage();
@@ -18088,7 +18131,7 @@ async function main() {
       termDebug: termDebugSection, termSortStarted: termSortStartedSection,
       noReadyChildren: noReadyChildrenSection, childUnderParent: childUnderParentSection, topNav: topNavSection,
       childFold: childFoldSection, liveHome: liveHomeSection,
-      pulls: pullsSection, pullsAbsent: pullsAbsentSection };
+      pulls: pullsSection, pullsAbsent: pullsAbsentSection, oneTooltip: oneTooltipSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -20124,6 +20167,7 @@ async function main() {
     await unit("topNav", () => topNavSection(browser, base));
     await unit("pulls", () => pullsSection(browser, base));
     await unit("pullsAbsent", () => pullsAbsentSection(browser, base));
+    await unit("oneTooltip", () => oneTooltipSection(browser, base));
     await pasteStartSection(browser, base);
     await pasteDoneSection(browser, base);
     await pasteOldRoomSection(browser, base);
@@ -20189,6 +20233,7 @@ async function main() {
     await liveHomeSection(browser, base);
     await pullsSection(browser, base);
     await pullsAbsentSection(browser, base);
+    await oneTooltipSection(browser, base);
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e));
     if (process.env.DEBUG_HEADLESS && page) {
