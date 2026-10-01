@@ -14603,14 +14603,18 @@ async function mViewerSection(browser) {
     "/w/card/big.log": big,
     "/w/card/mid.log": Buffer.from("line of text that repeats\n".repeat(60000)),
     "/w/card/accent.txt": cutme,
+    "/w/card/ignores.log": Buffer.from("line of text that repeats\n".repeat(480000)),
+    "notes/huge.png": Buffer.concat([M_PNG, Buffer.alloc(25 * 1048576)]),
     "/w/card/latin.txt": Buffer.from([0x63, 0x61, 0x66, 0xe9, 0x0a]),
     "/w/card/pack.zip": Buffer.concat([Buffer.from([80, 75, 3, 4, 0, 0]), Buffer.alloc(3000, 7)]),
     "/w/card/bin.log": Buffer.concat([Buffer.from("text then "), Buffer.from([0, 1, 2]), Buffer.from(" binary")]),
     "/w/card/code.html": Buffer.from("<script>window.__pwn = 2</script><p>hi</p>"),
   };
   st.missing = ["notes/missing.md"];
+  st.noRange = ["/w/card/ignores.log"];
+  st.noSize = ["notes/huge.png"];
   const filler = Array.from({ length: 40 }, (_, i) => "Filler paragraph " + i + " so that the thread scrolls.").join("\n\n");
-  const text = filler + "\n\nFiles: /w/card/notes/plan.md and /w/card/a.txt and /w/card/data.json and [a shot](notes/shot.png) and /w/card/big.log and /w/card/mid.log and /w/card/accent.txt and /w/card/latin.txt and " +
+  const text = filler + "\n\nFiles: /w/card/notes/plan.md and /w/card/a.txt and /w/card/data.json and [a shot](notes/shot.png) and /w/card/big.log and /w/card/mid.log and /w/card/accent.txt and /w/card/latin.txt and /w/card/ignores.log and [huge](notes/huge.png) and " +
     "/w/card/pack.zip and /w/card/bin.log and /w/card/code.html and [gone](notes/gone.md) and [missing](notes/missing.md).";
   st.replies["vw-1"] = { source: "transcript", replies: [{ at: mIso(10 * M_MIN), text }] };
   await st.open();
@@ -14686,6 +14690,24 @@ async function mViewerSection(browser) {
       if (v.text.length > 1048576 + 200) fail(tag + "more than the cap was shown: " + v.text.length);
       if (!(st.fileReqs || []).some(r => r.path.endsWith("big.log") && /^bytes=0-1048575$/.test(r.range))) fail(tag + "the long file was not read with a range");
       if (!st.ifRanges.length) fail(tag + "the range was not tied to the file with If-Range");
+      await back();
+      // a server that ignores Range answers the whole file, and the read stops at the cap
+      st.streamed = {};
+      await p.evaluate(s => document.querySelector(s).click(), file("ignores.log"));
+      await settle();
+      v = await viewer();
+      if (!/showing the first 1(\.0)? MB of 12 MB/.test(v.text) || v.text.length > 1048576 + 200) fail(tag + "a 200 to a range read is shown as " + v.text.slice(-60));
+      await p.waitForTimeout(300);
+      const ig = st.streamed["/w/card/ignores.log"] || {};
+      if (!ig.aborted) fail(tag + "a 200 that ignores Range was read to the end: " + JSON.stringify(ig));
+      await back();
+      // an image with no size is capped too, and asked about
+      await p.evaluate(s => document.querySelector(s).click(), file("notes/huge.png"));
+      await settle();
+      if (!/Can't preview huge\.png/.test((await viewer()).text)) fail(tag + "an over-cap image of unknown size said " + (await viewer()).text);
+      await p.waitForTimeout(300);
+      const hg = st.streamed["notes/huge.png"] || {};
+      if (!hg.aborted) fail(tag + "an image of unknown size was read to the end: " + JSON.stringify(hg));
       await back();
       // a cut inside a character leaves no replacement mark
       await p.evaluate(s => document.querySelector(s).click(), file("accent.txt"));
@@ -16887,9 +16909,27 @@ function mServer(state) {
       const body = (state.files || {})[want];
       if (!body) { res.writeHead(403, { "Content-Type": "application/json" }); return res.end(req.method === "HEAD" ? "" : JSON.stringify({ error: "that path is outside the card" })); }
       const head = { "Content-Type": "application/octet-stream", "X-Content-Type-Options": "nosniff", "Last-Modified": "Wed, 30 Sep 2026 12:00:00 GMT" };
-      if (req.method === "HEAD") { res.writeHead(200, Object.assign(head, { "Content-Length": body.length })); return res.end(); }
+      if (req.method === "HEAD") { res.writeHead(200, (state.noSize || []).indexOf(want) >= 0 ? head : Object.assign(head, { "Content-Length": body.length })); return res.end(); }
       const ifr = req.headers["if-range"];
       state.ifRanges = (state.ifRanges || []).concat(ifr ? [ifr] : []);
+      if ((state.noRange || []).indexOf(want) >= 0 || (state.noSize || []).indexOf(want) >= 0) {
+        // The whole file, written as the client takes it, so how much was read can be told.
+        res.writeHead(200, head);
+        let at = 0;
+        const rec = (state.streamed = state.streamed || {});
+        rec[want] = { sent: 0, aborted: false };
+        res.on("close", () => { if (at < body.length) rec[want].aborted = true; });
+        const pump = () => {
+          while (at < body.length) {
+            const n = Math.min(65536, body.length - at);
+            const ok = res.write(body.subarray(at, at + n));
+            at += n; rec[want].sent = at;
+            if (!ok) { res.once("drain", pump); return; }
+          }
+          res.end();
+        };
+        return pump();
+      }
       const rg = ifr && ifr !== "Wed, 30 Sep 2026 12:00:00 GMT" ? null : /^bytes=(\d+)-(\d+)$/.exec(req.headers.range || "");
       if (rg && Number(rg[1]) < body.length) {
         const to = Math.min(Number(rg[2]), body.length - 1), part = body.slice(Number(rg[1]), to + 1);

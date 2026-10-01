@@ -44,6 +44,34 @@
   }
   const url = (card, path) => "/v1/tasks/" + encodeURIComponent(card) + "/files?path=" + encodeURIComponent(path);
 
+  // The body up to `cap` bytes and no further: a server that ignores a range, or a file with no known size, would otherwise be
+  // read whole before being cut. The read is cancelled at the cap. `over` says there was more.
+  async function readCapped(r, cap) {
+    if (!r.body || !r.body.getReader) {
+      const all = new Uint8Array(await r.arrayBuffer());
+      return { bytes: all.length > cap ? all.slice(0, cap) : all, over: all.length > cap };
+    }
+    const reader = r.body.getReader();
+    const parts = [];
+    let n = 0, over = false;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      parts.push(value);
+      n += value.length;
+      if (n > cap) { over = true; try { await reader.cancel(); } catch (e) {} break; }
+    }
+    const out = new Uint8Array(Math.min(n, cap));
+    let at = 0;
+    for (const c of parts) {
+      if (at >= out.length) break;
+      const part = at + c.length > out.length ? c.subarray(0, out.length - at) : c;
+      out.set(part, at);
+      at += part.length;
+    }
+    return { bytes: out, over };
+  }
+
   function size(n) {
     if (n == null) return "";
     if (n < 1024) return n + " B";
@@ -126,8 +154,11 @@
         const r = await fetch(url(card, path), { headers: headers() });
         if (mine !== seq) return;
         if (!r.ok) { refusal(r.status); return; }
-        const blob = new Blob([await r.blob()], { type: IMG_TYPE[extOf(path)] });
+        // The cap holds when the size was not known too, and a bigger one is asked about.
+        const got = await readCapped(r, IMG_CAP);
         if (mine !== seq) return;
+        if (got.over) { ask(card, path, null); return; }
+        const blob = new Blob([got.bytes], { type: IMG_TYPE[extOf(path)] });
         const img = document.createElement("img");
         img.className = "v-img";
         img.alt = base(path);
@@ -142,7 +173,7 @@
     // Text: up to 2 MiB the daemon's own text route, which refuses a file that is not UTF-8, so Latin-1 or UTF-16 reads as
     // an unknown type and not as garbage. Past that a range read of the first megabyte, tied to the file the size came
     // from by If-Range, so a file rewritten in between is not stitched together.
-    let buf, total = st.size, text = "";
+    let buf, total = st.size, text = "", over = false;
     try {
       if (st.size == null || st.size <= TEXT_MAX) {
         const r = await fetch("/v1/tasks/" + encodeURIComponent(card) + "/files/text?path=" + encodeURIComponent(path), { headers: headers() });
@@ -164,19 +195,22 @@
         const r = await fetch(url(card, path), { headers: headers(h) });
         if (mine !== seq) return;
         if (!r.ok) { refusal(r.status); return; }
-        buf = new Uint8Array(await r.arrayBuffer());
+        // A 200 is the whole file (a server that ignores Range, or a file that changed since the size was taken), and
+        // is read only as far as the cap.
+        const got = await readCapped(r, CAP);
+        buf = got.bytes;
         if (r.status === 206) {
           const m = /\/(\d+)$/.exec(r.headers.get("Content-Range") || "");
           if (m) total = Number(m[1]);
         }
-        if (buf.length > CAP) { total = total == null ? buf.length : total; buf = buf.slice(0, CAP); }
+        over = got.over;
         if (buf.indexOf(0) >= 0) { ask(card, path, total); return; }
         // A cut can fall inside a character. It decodes to U+FFFD at the end, which is dropped.
         text = new TextDecoder("utf-8", { fatal: false }).decode(buf).replace(/\uFFFD+$/, "");
       }
     } catch (e) { say("could not read that file", "v-err"); return; }
     if (mine !== seq) return;
-    const cut = !!buf && total != null && total > buf.length;
+    const cut = !!buf && (total != null ? total > buf.length : over);
     const wrap = el("div", "v-doc");
     if (kind === "markdown") {
       const holder = el("div", "md");
@@ -191,7 +225,7 @@
     }
     if (cut) {
       const note = el("div", "v-cut");
-      note.appendChild(el("span", "", "showing the first " + size(buf.length) + " of " + size(total)));
+      note.appendChild(el("span", "", "showing the first " + size(buf.length) + (total != null ? " of " + size(total) : "")));
       const more = button("download the rest", () => download(card, path, more));
       note.appendChild(more);
       wrap.appendChild(note);
