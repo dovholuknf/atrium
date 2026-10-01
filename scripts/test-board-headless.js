@@ -15377,6 +15377,41 @@ async function growlChoiceOnceSection(browser, base) {
 }
 
 // The gear's terminal list section: the list's controls, and the cache summary that follows the list on an event.
+async function joinedLiveSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const p = await ctx.newPage();
+  const errors = [];
+  p.on("pageerror", e => errors.push(e.message));
+  try {
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof termCold === "function" && typeof sessionHiddenBy === "function",
+      null, { timeout: slow(15000) });
+    const r = await p.evaluate(() => {
+      setHideAgents("on");
+      const keep = () => false;
+      const card = (id, status, supervised) => ({ id, status, supervised, title: id, display_title: id, tags: [] });
+      const joined = card("jn", "needs-input", false), exited = card("ex", "done", false);
+      const dead = card("dd", "dead", false), running = card("rn", "running", true);
+      const out = {
+        joinedHidden: sessionHiddenBy(joined, keep), exitedHidden: sessionHiddenBy(exited, keep),
+        deadHidden: sessionHiddenBy(dead, keep), runningHidden: sessionHiddenBy(running, keep),
+        joinedCold: termCold(joined), exitedCold: termCold(exited),
+        joinedRow: termRow(joined, false), exitedRow: termRow(exited, false)
+      };
+      setHideAgents("none");
+      return out;
+    });
+    if (r.joinedHidden || r.joinedCold) fail("joinedLive: a joined live card is hidden or grey: " + JSON.stringify(r));
+    if (!r.exitedHidden || !r.deadHidden || !r.exitedCold) fail("joinedLive: an exited card is not hidden: " + JSON.stringify(r));
+    if (r.runningHidden) fail("joinedLive: a supervised running card is hidden.");
+    if (/ cold/.test(r.joinedRow) || !/cannot attach/.test(r.joinedRow) || /attachTask\(/.test(r.joinedRow)) {
+      fail("joinedLive: the joined row is grey, or offers an attach it cannot do.");
+    }
+    if (errors.length) fail("joinedLive: page errors: " + errors.join(" | "));
+  } finally { await ctx.close(); }
+  if (!bad) console.log("joinedLive ok");
+}
+
 async function gearTermListSection(browser, base) {
   for (const w of [1280, 390]) {
     const tag = "gearTermList " + w + ": ";
@@ -16894,7 +16929,7 @@ async function main() {
       gearHosts: gearHostsSection,
       mTypeSteady: mTypeSteadySection, mOlder: mOlderSection, mFollow: mFollowSection, mDocs: mDocsSection,
       mSwitcher: mSwitcherSection,
-      mPull: mPullSection };
+      mPull: mPullSection, joinedLive: joinedLiveSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -18902,6 +18937,7 @@ async function main() {
     await mPromptsSection(browser);
     await cardUrlWinNameSection(browser, base);
     await gearHostsSection(browser, base);
+    await joinedLiveSection(browser, base);
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e));
     if (process.env.DEBUG_HEADLESS) {
