@@ -573,6 +573,15 @@ func (d *Daemon) runNewContext(taskID string, gen uint64) {
 		}
 	}
 
+	// Before anything is typed or the launcher told: a ceiling card with no readable
+	// directory is refused here, and the chip says why.
+	if ceiling && !wakeOnly {
+		if dir, err := d.handoffDir(taskID); err == nil && dir == "" {
+			fail("not cycled", errNoHandoffDir)
+			return
+		}
+	}
+
 	// An automatic run types nothing until the line is empty and the launcher has been
 	// told. A card that never opens is left alone, with no chip.
 	if auto && !wakeOnly {
@@ -832,7 +841,13 @@ func (d *Daemon) ncNudge(run *runner, taskID string, gen uint64) (bool, error) {
 			gone = true
 			return false
 		}
-		return !d.act.dialogOpen(taskID)
+		if d.act.dialogOpen(taskID) {
+			return false
+		}
+		if t, err := d.st.Get(taskID); d.ceilingRun(taskID) && err == nil && d.ceilingHeld(t, run, time.Now()) {
+			return false
+		}
+		return true
 	}
 	wrote, err := d.typeLabelledGuarded(run, taskID, newContextLabel, newContextStop, ok)
 	if gone {
@@ -871,6 +886,18 @@ func (d *Daemon) handoffDir(taskID string) (string, error) {
 	return dir, nil
 }
 
+// errNoHandoffDir refuses a ceiling cycle on a card whose directory cannot be looked at.
+// A ceiling cycle also starts mid-turn, where the turn ending is a weak signal, so the
+// file is the only proof the capture worked and the clear is not taken without it.
+var errNoHandoffDir = errors.New("this card has no directory the room can read, so a handoff cannot be checked " +
+	"and the context is not cleared")
+
+// ceilingRun is whether the card's run in flight is a ceiling cycle.
+func (d *Daemon) ceilingRun(taskID string) bool {
+	cur := d.nctx.get(taskID)
+	return cur != nil && cur.ceiling
+}
+
 // handoffExists checks the card's own file is there for the wake to read. A plain
 // HANDOFF.md is never accepted in its place: it is some other card's.
 func (d *Daemon) handoffExists(taskID, file string) error {
@@ -891,6 +918,9 @@ func (d *Daemon) handoffExists(taskID, file string) error {
 // card should have done, in one sentence, because the chip shows it.
 func (d *Daemon) handoffWritten(taskID, file string, since time.Time, token string) error {
 	dir, err := d.handoffDir(taskID)
+	if err == nil && dir == "" && d.ceilingRun(taskID) {
+		return errNoHandoffDir
+	}
 	if err != nil || dir == "" {
 		return err
 	}
