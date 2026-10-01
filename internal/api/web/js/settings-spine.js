@@ -123,6 +123,7 @@ function showSettingsPane(name) { showPane(settingsBody(), name, SETTINGS_PANE);
 
 function paintSettings() {
   buildSettingsNav();
+  if (typeof paintTermGear === "function") paintTermGear();
   // Not awaited. The gear opens on what the browser already knows and the
   // login section fills itself in a moment later, the same way the overlays do.
   loadAuth();

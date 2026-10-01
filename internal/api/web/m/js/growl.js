@@ -57,7 +57,7 @@
       : asks ? '<div class="gm-body">' + bodyHTML(split.text) + "</div>"
         : '<div class="gm-line">' + U.esc(first(g.body)) + "</div>";
     const choices = split.choices.length
-      ? '<div class="gm-choices">' + split.choices.map(c => '<button data-choice="' + U.esc(c) + '">' + U.esc(c) + "</button>").join("") + "</div>" : "";
+      ? '<div class="gm-choices">' + split.choices.map(c => '<button data-choice="' + U.esc(c) + '"' + (choiceSent.get(g.id) === g.body ? " disabled" : "") + ">" + U.esc(c) + "</button>").join("") + "</div>" : "";
     const big = compose === g.id;
     let reply = "";
     if (asks) {
@@ -93,10 +93,40 @@
     return { text: (String(body).slice(0, m.index) + String(body).slice(m.index + m[0].length)).trim(), choices };
   }
 
-  // The same safe renderer the replies use: everything escaped, code scrolling sideways inside itself.
+  // The body as paragraphs, lists and code blocks, every character escaped first. No inline markup and no links,
+  // the same rule as the desktop growler: a question is model output and some of it echoes what a tool read.
   function bodyHTML(text) {
-    return window.mMd ? window.mMd.render(String(text || "")) : "<p>" + U.esc(text) + "</p>";
+    const lines = String(text || "").replace(/\r/g, "").split("\n");
+    const out = [];
+    const num = /^\s*(\d+)[.)]\s+(.*)$/, dot = /^\s*[-*]\s+(.*)$/, fence = /^\s*```/;
+    for (let i = 0; i < lines.length;) {
+      const l = lines[i];
+      if (fence.test(l)) {
+        const code = [];
+        for (i++; i < lines.length && !fence.test(lines[i]); i++) code.push(lines[i]);
+        i++;
+        out.push("<pre><code>" + U.esc(code.join("\n")) + "</code></pre>");
+      } else if (!l.trim()) {
+        i++;
+      } else if (num.test(l) || dot.test(l)) {
+        const ordered = num.test(l), re = ordered ? num : dot, items = [];
+        const start = ordered ? Number(num.exec(l)[1]) : 0;
+        for (; i < lines.length && re.test(lines[i]); i++) items.push("<li>" + U.esc(re.exec(lines[i])[ordered ? 2 : 1]) + "</li>");
+        out.push(ordered ? '<ol start="' + start + '">' + items.join("") + "</ol>" : "<ul>" + items.join("") + "</ul>");
+      } else {
+        const para = [];
+        for (; i < lines.length && lines[i].trim() && !fence.test(lines[i]) && !num.test(lines[i]) && !dot.test(lines[i]); i++) {
+          para.push(U.esc(lines[i]));
+        }
+        out.push("<p>" + para.join("<br>") + "</p>");
+      }
+    }
+    return out.join("");
   }
+
+  // The growlers whose choice is in flight or answered, by the body they answered, so a redraw keeps the buttons
+  // disabled and a new question on the same growler gets live ones.
+  const choiceSent = new Map();
 
   // Which growler's reply box is opened to full size. The text is the draft either way.
   let compose = "";
@@ -204,9 +234,22 @@
   }
 
   // A reply typed, or a choice pressed. Both are the same message, through the operator message path.
+  // A choice is one answer: every button of the question is disabled until the send answers, and lit again only if
+  // it failed, so a double press cannot send twice.
+  async function sendChoice(g, row, text) {
+    if (choiceSent.get(g.id) === g.body) return;
+    choiceSent.set(g.id, g.body);
+    const btns = [...row.querySelectorAll(".gm-choices button")];
+    btns.forEach(b => { b.disabled = true; });
+    if (!await sendReply(g, text, null)) {
+      choiceSent.delete(g.id);
+      btns.forEach(b => { b.disabled = false; });
+    }
+  }
+
   async function sendReply(g, text, box) {
     const id = cardId(g);
-    if (!text || !id) return;
+    if (!text || !id) return false;
     try {
       await window.mNet.api("/v1/tasks/" + encodeURIComponent(id) + "/message", {
         method: "POST", body: JSON.stringify({ text, when: "done" }),
@@ -214,7 +257,8 @@
       drafts.delete(g.id);
       if (box) { box.value = ""; grow(box); }
       say("sent");
-    } catch (e) { say("not sent: " + (e.message || e)); }
+      return true;
+    } catch (e) { say("not sent: " + (e.message || e)); return false; }
   }
 
   async function act(g, what, row) {
@@ -276,7 +320,7 @@
     const row = btn.closest(".gm-full");
     if (btn.dataset.choice !== undefined && row) {
       const g = window.mStore.growls().find(x => x.id === row.dataset.id);
-      if (g) sendReply(g, btn.dataset.choice, null);
+      if (g) sendChoice(g, row, btn.dataset.choice);
       return;
     }
     if (btn.dataset.snooze !== undefined && row) {

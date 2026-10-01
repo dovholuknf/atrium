@@ -43,8 +43,7 @@
     overflow-y: auto; overflow-x: hidden; padding: 0 3px 6px;
   }
 
-  /* The controls tray. A panel of its own above the rows. The bar is always drawn: the summary, which folds
-     the tray, and the list's width buttons at its end. Same height as the terminal's bar, so the two read as
+  /* The list's bar above the rows: the width buttons. The sort, hide and group controls are in the gear. Same height as the terminal's bar, so the two read as
      one line across the view. */
   .termtray {
     flex: none; margin: 0 3px 6px;
@@ -53,37 +52,9 @@
   .traybar {
     display: flex; align-items: center; gap: var(--sp-1);
     min-height: var(--barh); box-sizing: border-box; padding-right: 4px;
+    justify-content: flex-end;
   }
-  button.traytoggle {
-    flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 6px;
-    background: transparent; border: 0; padding: 6px 4px 6px 8px; text-align: left;
-    color: var(--dim); font-size: var(--fs-xs);
-  }
-  @media (hover: hover) { button.traytoggle:hover { color: var(--head); transform: none; background: transparent; } }
-  .traychev { flex: none; color: var(--dimmest); transition: transform .2s ease; }
-  .termtray.open .traychev { transform: rotate(90deg); }
-  /* Wraps rather than truncates. At the default 260px the whole summary is a line and a half, and cut short
-     it drops the part that says what is hidden, which is the part worth reading. */
-  .traysum { min-width: 0; line-height: 1.35; overflow-wrap: anywhere; }
-  .traychev { align-self: flex-start; line-height: 1.35; }
-  /* The roll. A grid row animating from `0fr` to `1fr` is a height transition to the content's own height,
-     which `height: auto` cannot be. The track's one item has no padding or border of its own, since a
-     grid track cannot shrink below those; they are on `.trayrows` inside it, which the item clips. */
-  .traybody {
-    display: grid; grid-template-rows: 0fr;
-    transition: grid-template-rows .2s ease;
-  }
-  .termtray.open .traybody { grid-template-rows: 1fr; }
-  .trayinner { min-height: 0; overflow: hidden; }
-  .trayrows {
-    display: flex; flex-direction: column; gap: var(--sp-3);
-    padding: 10px 8px; border-top: 1px solid var(--stroke-dim);
-  }
-  /* A label over its control, every row the same. The strip is too narrow to put them side by side and
-     leave the pills room. */
-  .trayrow { display: flex; flex-direction: column; gap: 5px; }
-  .trayrow .barlabel { font-size: var(--fs-xxs); min-width: 0; }
-  /* Every pill in the tray the same size: a grid of equal cells rather than pills as wide as their words. The
+  /* Every pill in the gear's terminal list section the same size: a grid of equal cells rather than pills as wide as their words. The
      sort and hide pairs are two cells, the grouping three, so its six modes are two even rows. */
   .seg.trayseg { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
   .seg.trayseg.groupseg { grid-template-columns: repeat(3, 1fr); }
@@ -94,10 +65,6 @@
   /* `+ new group` is an action, not a mode, so it takes a row of its own under the modes, full width and
      dashed, rather than wrapping in after them as a seventh pill. */
   .seg.trayseg .groupplus { grid-column: 1 / -1; border-style: dashed; }
-  /* Motion is decoration here. */
-  @media (prefers-reduced-motion: reduce) {
-    .traybody, .traychev { transition: none; }
-  }
 
   /* The phone switcher and its wrapper. On a desktop neither exists as far as
      the layout is concerned: the trigger is hidden, and `.termbody` is
@@ -175,7 +142,6 @@
      full list: `off` has the rail to hover and `mini` had nothing, so shrinking the list was a one-way trip
      until you found the localStorage key. Nothing else of the tray survives `mini`, which is eight
      characters and a mark. */
-  .tl-mini .traytoggle, .tl-mini .traybody { display: none; }
   .tl-mini .termtray { background: none; border-color: transparent; }
   .tl-mini .traybar { justify-content: center; padding-right: 0; }
   /* Which of the two names shows is a CSS question, so both are rendered and neither has to be recomputed
