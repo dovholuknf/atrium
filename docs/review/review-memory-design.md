@@ -454,8 +454,10 @@ showing it. From clint through @orchestrator, 2026-09-29.
     and the release notes: ...?". Refines 38 and 42 (clint, through @orchestrator).
 44. An aborted review deletes everything it produced: the run folder, the report, walk.txt and BRIEF.md, the
     reviewer-file branch with its seeded notes and any worktree on it, and any `src` worktree @review made. The card
-    is @orchestrator's to delete and a gwt PR worktree is @dotfiles' to remove. Abort is not done: a finished walk
-    keeps everything (clint, through @orchestrator, after ziti-tunnel-sdk-c #1441).
+    is @orchestrator's to delete, and so is every worktree and branch @review did not make, a gwt PR worktree
+    included. Never ask @dotfiles to remove one: it maintains gwt, owns no other session's worktree, and the request
+    stalls there (@orchestrator, 2026-10-01). Abort is not done: a finished walk keeps everything (clint, through
+    @orchestrator, after ziti-tunnel-sdk-c #1441).
 
 The first second opinions, run by the director on the two reviews already filed (Mercurius, codex gpt-5.5):
 zrok #1277 went from 14 rows to 15. Its new row 04 was the critic's possible gap 1, the ambiguous commit, and one
