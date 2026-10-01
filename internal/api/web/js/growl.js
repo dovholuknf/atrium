@@ -35,7 +35,37 @@ function growlUrgency(g) { return g.urgency || GROWL_URGENCY[g.reason] || 9; }
 // THE BOARD DRAWS EVERY GROWLER, including a popped-out card's, because a growler is state like the card's badges.
 // A pop-out draws only its own card's. Neither switch hides one. See the design, section 7.
 function growlMine(g) { return !inPopout() || sameCard(growlCard(g), popoutCard()); }
-function growlDrawn() { return growlSet.filter(g => g.state === "open" && growlMine(g)); }
+function growlDrawn() { return growlSet.filter(g => g.state === "open" && growlMine(g) && !growlQuiet.has(g.id)); }
+
+// NOT DRAWN, BECAUSE YOU ARE ALREADY ON IT. A question or a blocked card raised while its own terminal is attached,
+// the tab visible and the window focused repeats what is on screen, so it is not drawn, not rung and not notified.
+// It is still logged, once, as a raise always is. The ids are the growlers hidden that way, kept until the growler
+// leaves the set or a reminder finds you looking elsewhere, when it draws like any other. Permissions, halts and
+// deploy holds are never quiet: a permission blocks the card, and the other two are not about one terminal.
+const growlQuiet = new Set();
+function growlAsks(g) { return g.reason === "question" || g.reason === "blocked"; }
+// `readySilenced` is the same rule the ready alert follows, across windows: this window focused and showing the
+// card, or another focused window that said it is. A pop-out focused on its own card covers the board.
+function growlOnIt(g) { return growlAsks(g) && readySilenced(growlCard(g)); }
+
+// A HIDDEN GROWLER IS RE-CHECKED, since "you are on it" ends without any event of the hub's: the window blurs, the tab
+// hides, another card is attached, the terminals view is left, a pop-out blurs or closes, a focus claim expires. A
+// quiet id whose rule no longer holds is let out and drawn, and nothing rings: it was announced when it was raised,
+// to the window you were reading. Asked on the events a window has and on a one second tick for the rest, which
+// costs nothing while no growler is hidden.
+function growlRecheck() {
+  if (!growlQuiet.size) return;
+  let back = false;
+  growlQuiet.forEach(id => {
+    const g = growlSet.find(x => x.id === id);
+    if (!g || g.state !== "open" || !growlOnIt(g)) { growlQuiet.delete(id); back = true; }
+  });
+  if (back) { growlDraw(); growlAttention(); }
+}
+["focus", "blur"].forEach(t => addEventListener(t, () => setTimeout(growlRecheck, 0)));
+document.addEventListener("visibilitychange", () => setTimeout(growlRecheck, 0));
+if ("BroadcastChannel" in window) new BroadcastChannel("atrium-solo").addEventListener("message", () => setTimeout(growlRecheck, 0));
+setInterval(growlRecheck, 1000);
 
 // Whether this window has an open growler drawn for a subject. The nag and keyed toasts ask.
 function growlHas(subject) {
@@ -77,7 +107,10 @@ function growlApply(next, seed, remind) {
   if (!seed) {
     next.forEach(g => {
       const w = was.get(g.id);
-      if (g.state === "open" && (!w || w.state !== "open")) { growlLog("growler", g); raised.push(g); }
+      if (g.state === "open" && (!w || w.state !== "open")) {
+        growlLog("growler", g);
+        if (growlOnIt(g)) growlQuiet.add(g.id); else { growlQuiet.delete(g.id); raised.push(g); }
+      }
       if (g.state === "snoozed" && w && w.state === "open") growlLog("growler snoozed", g);
     });
     growlSet.forEach(g => {
@@ -85,6 +118,7 @@ function growlApply(next, seed, remind) {
     });
   }
   growlSet = next;
+  growlQuiet.forEach(id => { const g = now.get(id); if (!g || g.state !== "open") growlQuiet.delete(id); });
   growlUndo.forEach((el, id) => {
     const g = now.get(id);
     if (g && g.state === "open" && el.dismiss) { el.dismiss(); growlUndo.delete(id); }
@@ -461,7 +495,9 @@ async function growlDecide(g, decision, reason) {
 async function growlOpenIt(g) {
   if (!await closeOpenDialogs()) return;
   const perm = g.reason === "permission";
-  landOnAlert(growlCard(g), perm ? "perms" : "", perm ? growlPermID(g) : "");
+  await landOnAlert(growlCard(g), perm ? "perms" : "", perm ? growlPermID(g) : "");
+  // Open is an answer to the alert, so it goes the way "dismiss this" does, with the same undo.
+  return growlPost(g, { do: "dismiss" }, true);
 }
 
 async function growlLift(g) {
@@ -623,6 +659,10 @@ function growlAttend(raised, remind) {
     if (g) said.set(id, [g, "remind"]);
   });
   raised.forEach(g => { if (!said.has(g.id)) said.set(g.id, [g, "raise"]); });
+  // A reminder that finds you elsewhere brings a hidden growler back, so it is there to be answered.
+  said.forEach(([g]) => {
+    if (growlQuiet.has(g.id) && !growlOnIt(g)) { growlQuiet.delete(g.id); growlDraw(); growlAttention(); }
+  });
   said.forEach(([g, kind]) => growlSay(g, kind));
 }
 
@@ -632,6 +672,7 @@ function growlSay(g, kind) {
   // nobody else will. Closing the pop-out hands it back to the board.
   if (inPopout() ? !growlMine(g) : poppedOut(growlCard(g))) return;
   if (!inPopout() && focusIsElsewhere()) return;
+  if (growlOnIt(g)) return;
   const extra = kind === "remind" ? "r" + (g.reminders || 0) : "";
   if (!growlOnce("say|" + kind + "|" + g.id + "|" + g.raised_at + "|" + extra)) return;
   if (kind === "remind") growlLog("growler reminder", g, extra);

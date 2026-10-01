@@ -18271,7 +18271,7 @@ async function main() {
       cacheChip: cacheChipSection, cacheLine: cacheLineSection, roomsMachine: roomsMachineSection,
       u001Audit: u001AuditSection,
       pasteStart: pasteStartSection, pasteDone: pasteDoneSection, pasteOldRoom: pasteOldRoomSection, pasteClose: pasteCloseSection,
-      growlQuestionShots: growlQuestionShotsSection, growlQuestionBody: growlQuestionBodySection, growlReplyGrow: growlReplyGrowSection, growlChoices: growlChoicesSection, growlStable: growlStableSection, mGrowlQuestion: mGrowlQuestionSection,
+      growlQuestionShots: growlQuestionShotsSection, growlQuestionBody: growlQuestionBodySection, growlReplyGrow: growlReplyGrowSection, growlChoices: growlChoicesSection, growlStable: growlStableSection, growlOnIt: growlOnItSection, mGrowlQuestion: mGrowlQuestionSection,
       bootClean: bootCleanSection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mRecapSheet: mRecapSheetSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, phoneRedirect: phoneRedirectSection,
@@ -20271,6 +20271,7 @@ async function main() {
     await unit("growlReplyGrow", () => growlReplyGrowSection(browser, base));
     await unit("growlChoices", () => growlChoicesSection(browser, base));
     await unit("growlStable", () => growlStableSection(browser, base));
+    await unit("growlOnIt", () => growlOnItSection(browser, base));
     await unit("mGrowlQuestion", () => mGrowlQuestionSection(browser));
     await unit("bootClean", () => bootCleanSection(browser, base));
     await unit("mWorking", () => mWorkingSection(browser));
@@ -21049,6 +21050,15 @@ async function growlActionsSection(browser, base) {
     await p.waitForTimeout(200);
     let lands = await p.evaluate(() => window.__lands);
     if (lands.length !== 1 || lands[0][1] !== "perms" || lands[0][2] !== "perm-a" || !/c$|a$/.test(String(lands[0][0]))) fail("growlActions: open landed " + JSON.stringify(lands));
+    // and then dismisses the growler the way "dismiss this" does: one post, the board's own, with the undo offered
+    await p.waitForSelector(".toast .gr-undo", { timeout: slow(3000) })
+      .catch(() => fail("growlActions: open offered no undo, so it did not dismiss the way dismiss this does."));
+    if (h.posts.length !== 1 || h.posts[0].id !== perm.id || h.posts[0].body.do !== "dismiss" || h.posts[0].body.via !== "board") {
+      fail("growlActions: open posted " + JSON.stringify(h.posts));
+    }
+    if ((await p.textContent("#growl .gr-full b")) !== "question c") fail("growlActions: open left the opened row on top.");
+    h.posts.length = 0;
+    await p.evaluate(() => { document.getElementById("toasts").querySelectorAll(".toast").forEach(t => t.remove()); });
     // reply goes through the message path
     await h.say([q]);
     await p.fill("#growl .gr-reply", "yes, do it");
@@ -21539,6 +21549,139 @@ async function growlPopoutSection(browser, base) {
     await ctx.close();
   }
   if (!bad) console.log("growlPopout ok");
+}
+
+// ── no growler for the terminal you are typing in ───────────────────────────────────────────────────────────────────
+// u-new-no-toast-on-focused-terminal. A question or blocked growler raised while its own card is the attached terminal,
+// the tab is visible and the window has focus is not drawn, rung or notified, and is still logged. Any one false and it
+// alerts as before. A pop-out focused on its own card covers the board too. A permission still shows: it blocks the card.
+async function growlOnItSection(browser, base) {
+  const h = await growlBoard(browser, base, true, GROWL_STUBS + `
+    window.__focus = true; window.__vis = "visible";
+    Document.prototype.hasFocus = () => window.__focus;
+    Object.defineProperty(document, "visibilityState", { get: () => window.__vis });
+  `);
+  const { p } = h;
+  const heard = () => p.evaluate(() => ({ osc: window.__osc, notes: window.__notes.length }));
+  const drawn = () => p.evaluate(() => !!document.querySelector("#growl .gr-full, #growl .gr-row, #growl") && /\S/.test((document.getElementById("growl") || {}).textContent || ""));
+  const logged = t => p.evaluate(t0 => toastLog().some(e => e.title === t0), t);
+  // The card attached on the terminals view, and the window state, set the way the page itself would hold them.
+  const stage = (card, focus, vis) => p.evaluate(([c, f, v]) => {
+    term = new Proxy({}, { get: () => () => {} }); termTask = { id: c };
+    document.getElementById("terms").hidden = false;
+    window.__focus = f; window.__vis = v;
+    window.dispatchEvent(new Event(f ? "focus" : "blur"));
+  }, [card, focus, vis || "visible"]);
+  let n = 0;
+  // Raises one growler for card "c" from an empty set, and says what it did.
+  const raise = async (reason, extra) => {
+    await h.say([]);
+    const before = await heard();
+    const g = GR("c", reason, ++n, extra);
+    await h.say([g]);
+    await p.waitForTimeout(200);
+    const after = await heard();
+    return { g, drawn: await drawn(), rang: after.osc > before.osc, noted: after.notes > before.notes };
+  };
+  try {
+    await h.say([]);
+    await p.mouse.click(700, 450);
+    // focused, visible, and the card is the attached terminal: nothing, and the log has it
+    await stage("c", true);
+    let r = await raise("question");
+    if (r.drawn || r.rang || r.noted) fail("growlOnIt: a question for the attached, focused card was " + JSON.stringify(r));
+    if (!(await logged("growler: question c"))) fail("growlOnIt: the quiet question left no log line.");
+    r = await raise("blocked");
+    if (r.drawn || r.rang || r.noted) fail("growlOnIt: a blocked card for the attached, focused card was " + JSON.stringify(r));
+    // the one false each time: it alerts as today
+    await stage("c", true, "hidden");
+    r = await raise("question");
+    if (!r.drawn || !r.rang) fail("growlOnIt: a hidden tab did not alert: " + JSON.stringify(r));
+    await stage("c", false);
+    r = await raise("question");
+    if (!r.drawn || !r.rang) fail("growlOnIt: a blurred window did not alert: " + JSON.stringify(r));
+    await stage("other", true);
+    r = await raise("question");
+    if (!r.drawn || !r.rang) fail("growlOnIt: another card attached did not alert: " + JSON.stringify(r));
+    await p.evaluate(() => { document.getElementById("terms").hidden = true; window.__focus = true; window.__vis = "visible"; });
+    r = await raise("question");
+    if (!r.drawn || !r.rang) fail("growlOnIt: the terminals view not showing did not alert: " + JSON.stringify(r));
+    // a permission blocks the card, so it shows even here
+    await stage("c", true);
+    r = await raise("permission");
+    if (!r.drawn || !r.rang) fail("growlOnIt: a permission for the focused card was held back: " + JSON.stringify(r));
+    // a reminder that finds you elsewhere brings a hidden question back
+    await stage("c", true);
+    r = await raise("question");
+    if (r.drawn) fail("growlOnIt: the question was drawn before the reminder.");
+    await stage("c", false);
+    await h.say([Object.assign({}, r.g, { reminders: 1 })], { remind: [r.g.id] });
+    await p.waitForTimeout(200);
+    if (!(await drawn())) fail("growlOnIt: a reminder with you elsewhere did not bring the question back.");
+    // with no reminder involved, "you are on it" ending draws the hidden growler, and rings nothing
+    const comesBack = async (what, change) => {
+      await stage("c", true);
+      r = await raise("question");
+      if (r.drawn) fail("growlOnIt: " + what + ": the question was drawn while you were on it.");
+      const b0 = await heard();
+      await change();
+      await p.waitForFunction(() => /\S/.test((document.getElementById("growl") || {}).textContent || ""), null, { timeout: slow(4000) })
+        .catch(() => fail("growlOnIt: " + what + ": the hidden question did not come back."));
+      const b1 = await heard();
+      if (b1.osc !== b0.osc || b1.notes !== b0.notes) fail("growlOnIt: " + what + ": coming back rang: " + JSON.stringify([b0, b1]));
+    };
+    await comesBack("a window blur", () => stage("c", false));
+    await comesBack("a hidden tab", () => stage("c", true, "hidden"));
+    await comesBack("attaching another card", () => stage("other", true));
+    await comesBack("leaving the terminals view", () => p.evaluate(() => { document.getElementById("terms").hidden = true; }));
+    // a popped-out window focused on the card's own terminal: no growler in it and none on the board
+    await h.say([]);
+    await stage("other", false);
+    const pop = await h.ctx.newPage();
+    pop.on("pageerror", e => h.errors.push(String(e)));
+    await pop.addInitScript(() => { window.__focus = true; Document.prototype.hasFocus = () => window.__focus; });
+    await pop.goto(base + "/#term=c", { waitUntil: "domcontentloaded" });
+    await pop.waitForFunction(() => typeof alerting !== "undefined" && typeof growlDraw === "function" &&
+      document.getElementById("conn").classList.contains("live"), null, { timeout: slow(15000) });
+    await pop.evaluate(() => { term = new Proxy({}, { get: () => () => {} }); termTask = { id: "c" }; window.dispatchEvent(new Event("focus")); });
+    await p.waitForFunction(() => focusedElsewhere.watch === "c", null, { timeout: slow(5000) })
+      .catch(() => fail("growlOnIt: the board never heard the pop-out's focus on card c."));
+    // an empty set first, since a window's first event only seeds
+    await h.say([]);
+    await pop.waitForTimeout(300);
+    const bh0 = await p.evaluate(() => window.__notes.length);
+    const osc0 = await p.evaluate(() => window.__osc);
+    const q = GR("c", "question", ++n);
+    await h.say([q]);
+    await p.waitForTimeout(600);
+    if (await drawn()) fail("growlOnIt: the board drew a question for a card whose pop-out is focused.");
+    const inPop = await pop.evaluate(() => /\S/.test((document.getElementById("growl") || {}).textContent || ""));
+    if (inPop) fail("growlOnIt: the focused pop-out drew a question for its own card.");
+    if (!(await logged("growler: question c"))) fail("growlOnIt: the pop-out case left no log line.");
+    const bh = await heard();
+    if (bh.osc !== osc0 || bh.notes !== bh0) fail("growlOnIt: the board rang for the pop-out's card: " + JSON.stringify(bh));
+    // the pop-out blurs: the hidden growler is drawn on the board, with no reminder and no ring
+    await pop.evaluate(() => { window.__focus = false; window.dispatchEvent(new Event("blur")); });
+    await p.waitForFunction(() => /\S/.test((document.getElementById("growl") || {}).textContent || ""), null, { timeout: slow(15000) })
+      .catch(() => fail("growlOnIt: a pop-out blur did not bring the hidden question back on the board."));
+    const bh2 = await heard();
+    if (bh2.osc !== osc0 || bh2.notes !== bh0) fail("growlOnIt: the pop-out blur rang on the board: " + JSON.stringify(bh2));
+    if (await p.evaluate(() => !!focusedElsewhere.win)) fail("growlOnIt: the board kept the pop-out's focus claim after it blurred.");
+    // the pop-out closes while focused: the same
+    await pop.evaluate(() => { window.__focus = true; window.dispatchEvent(new Event("focus")); });
+    await p.waitForFunction(() => focusedElsewhere.watch === "c", null, { timeout: slow(5000) })
+      .catch(() => fail("growlOnIt: the board never heard the pop-out's focus again."));
+    const q2 = GR("c", "question", ++n);
+    await h.say([]);
+    await h.say([q2]);
+    await p.waitForTimeout(400);
+    if (await drawn()) fail("growlOnIt: the board drew a question for a card whose pop-out is focused, the second time.");
+    await pop.close();
+    await p.waitForFunction(() => /\S/.test((document.getElementById("growl") || {}).textContent || ""), null, { timeout: slow(15000) })
+      .catch(() => fail("growlOnIt: closing the focused pop-out did not bring the hidden question back."));
+    if (h.errors.length) fail("growlOnIt: page errors: " + h.errors.join(" | "));
+  } finally { await h.close(); }
+  if (!bad) console.log("growlOnIt ok");
 }
 
 // The worst question an agent asks: paragraphs, a numbered list, a fenced block, a long Windows path and a 200
