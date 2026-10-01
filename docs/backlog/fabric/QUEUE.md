@@ -36,6 +36,9 @@ is live.
    - Low 4, fixed: `TestAKeylessAttachCannotReplaceAKeyedRoom` tests the `Hub.control` keyless-over-keyed refusal by
      itself.
 2. **49: the hub half of atrium:everywhere.** `docs/rnd/everywhere-card-design.md`, `docs/backlog/fabric/49.md`.
+   **PASSED by @review at 7725078d (HUB and ROOM DEPLOY OK, 803bce3c), waiting on the orchestrator to land it** (the
+   UI-only hold). 7725078d sits on 7f523835 in branch claude/49 and closes all four review points. One nit is parked:
+   a test pinning link's `humanLauncher` to `store.HumanLauncher`. The history below is kept for reference.
    Large, no migration (the design needs none). PAUSED 2026-09-30 19:30 (clint: UI only). All five stages are built,
    `m1mini/claude/49` 451b48ef..7f523835, collected into the main checkout and read by @fabric. The worker card has
    exited. Its worktree on m1mini stays until the branch lands. With @review. link and cli pass, and 49's daemon
