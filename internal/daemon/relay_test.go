@@ -26,6 +26,9 @@ type fakeRelay struct {
 	// reaches is every Card and Exit asked, and reach answers them.
 	reaches []RelaySay
 	reach   func(RelaySay) (RelayResult, error)
+	// found is every name Find was asked, and find answers it.
+	found []string
+	find  func(string) (RelayResult, error)
 }
 
 func (f *fakeRelay) Say(_ context.Context, s RelaySay) (RelayResult, error) {
@@ -40,8 +43,19 @@ func (f *fakeRelay) Say(_ context.Context, s RelaySay) (RelayResult, error) {
 	return answer(s)
 }
 
-func (f *fakeRelay) Peers(_ context.Context, _ bool) ([]RemotePeer, string, error) {
+func (f *fakeRelay) Peers(_ context.Context, _, _ bool) ([]RemotePeer, string, error) {
 	return f.peers, "", nil
+}
+
+func (f *fakeRelay) Find(_ context.Context, name string) (RelayResult, error) {
+	f.mu.Lock()
+	f.found = append(f.found, name)
+	find := f.find
+	f.mu.Unlock()
+	if find != nil {
+		return find(name)
+	}
+	return RelayResult{Code: 404, Error: "no card called " + name + " on another room"}, nil
 }
 
 // Card and Exit record the request as a RelaySay with Text "card" or "exit",

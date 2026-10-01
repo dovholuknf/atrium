@@ -37,3 +37,12 @@ the thread, and reaching the end always sticks again. A ResizeObserver on the th
 `load` (images), go to the end while following. There is no markup and no data path, so nothing to escape.
 
 HUB DEPLOY OK 872b8e7c
+
+## Re-read of 1b32263e + d3a16dd3 (@ui)
+
+`git diff 1b32263e~1 d3a16dd3 -- internal/api/web`, read only. 1b32263e drops `.doc .docx .xls .xlsx .ppt .pptx` from
+the composer's accept list, which closes the nit above. d3a16dd3 raises `REPLIES_N` from 3 to 10. The room clamps
+`n` to `repliesMax` (10, `internal/daemon/replies.go`), so the request asks for nothing the room does not already
+bound. No findings.
+
+HUB DEPLOY OK 1b32263e d3a16dd3

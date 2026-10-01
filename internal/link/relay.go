@@ -48,6 +48,9 @@ const (
 	// docs/backlog-2.md.
 	RelayCard = "card"
 	RelayExit = "exit"
+	// RelayFind looks a bare name up among the cards tagged atrium:everywhere
+	// on the other rooms. A read, with no delivery in it. See everywhere.go.
+	RelayFind = "find"
 )
 
 // RelayRequest is what a room asks its hub to carry.
@@ -64,6 +67,9 @@ type RelayRequest struct {
 	When string `json:"when,omitempty"`
 	// All includes cards with no session, for `peers`.
 	All bool `json:"all,omitempty"`
+	// Everywhere asks `peers` for the cards tagged atrium:everywhere on other
+	// rooms and nothing else. An older hub ignores it.
+	Everywhere bool `json:"everywhere,omitempty"`
 	// Events includes the card's recent events, for `card`.
 	Events bool `json:"events,omitempty"`
 }
@@ -126,6 +132,8 @@ type RelayPeer struct {
 	Where   string `json:"where,omitempty"`
 	Waiting int    `json:"waiting_seconds,omitempty"`
 	Owned   bool   `json:"atrium_owns_terminal"`
+	// Everywhere marks a card that is here because it carries atrium:everywhere.
+	Everywhere bool `json:"everywhere,omitempty"`
 }
 
 // ErrRelayOld is a hub older than the relay. Nothing held for it would ever go.
