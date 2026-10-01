@@ -16199,6 +16199,93 @@ async function mChangesSection(browser) {
   if (!bad) console.log("mChanges ok");
 }
 
+// ── the changes sheet on a real answer ───────────────────────────────────
+// A /changes answer taken from the live room (docs/backlog/ui/img/u-m-code-review/real-changes.json), with its real `hunks` text:
+// diff --git, new file mode, --- and +++ headers, an empty added file named NUL, a modified file. Served as the card-level answer
+// and, with via, cumulative and partial set, as a turn's. REAL_SHOTS=<dir> writes the 412px PNGs of the states.
+async function mChangesRealSection(browser) {
+  const real = JSON.parse(fs.readFileSync(path.join(WEB_ROOT, "..", "..", "..", "docs", "backlog", "ui", "img", "u-m-code-review", "real-changes.json"), "utf8"));
+  const st = mServer({});
+  const c1 = mCard("cr-1", { alias: "real", display_title: "real", runner: "claude", worktree: "/w/card", status: "needs-input", waiting_since: mIso(2 * M_MIN), seen: { turn_ended_at: mIso(20 * M_MIN) } });
+  st.tasks = [c1];
+  const at = new Date(Date.now() - 15 * 60000).toISOString();
+  st.replies["cr-1"] = { source: "transcript", replies: [{ at, text: Array.from({ length: 12 }, (_, i) => "Paragraph " + i + " of the reply.").join("\n\n"), edited: real.files.length }] };
+  const turn = Object.assign({}, real, { against: "turn", partial: true, why: "edit calls only", outside: 0,
+    files: real.files.map(f => Object.assign({}, f, { via: f.path === "NUL" ? "commits" : "edits", cumulative: f.path.endsWith("QUEUE.md") })) });
+  st.changesFor = (card, q) => ({ status: 200, body: q.get("turn") ? turn : real });
+  await st.open();
+  // what the gutter should say for a file, worked out here from the hunk text and not from the page
+  const gutter = text => {
+    const out = [];
+    let o = 0, n = 0, inH = false;
+    for (const line of text.replace(/\r/g, "").split("\n")) {
+      const m = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(line);
+      if (m) { o = +m[1]; n = +m[2]; inH = true; continue; }
+      if (!inH || line === "" || line[0] === "\\") continue;
+      if (line[0] === "+") out.push(n++ + "+"); else if (line[0] === "-") out.push(o++ + "-"); else { out.push(n + " "); n++; o++; }
+    }
+    return out;
+  };
+  const shots = process.env.REAL_SHOTS;
+  if (shots) fs.mkdirSync(shots, { recursive: true });
+  try {
+    const vp = { width: 412, height: 915 };
+    const tag = "mChangesReal: ";
+    const { ctx, p, errors } = await mReplyPage(browser, st, vp, "cr-1");
+    await p.waitForSelector(".chg-chip", { timeout: slow(8000) });
+    const wait = fn => p.waitForFunction(fn, null, { timeout: slow(6000) });
+    const body = () => p.evaluate(() => document.getElementById("m-changes-body").textContent);
+    const shot = async name => { if (shots) { await p.evaluate(() => { document.getElementById("m-changes-scroll").scrollTop = 0; }); await p.screenshot({ path: path.join(shots, "real-" + name + ".png"), type: "png" }); } };
+    const openFile = async name => { await p.evaluate(n => document.querySelector('#m-changes-body .cg-file[data-path="' + n + '"]').click(), name); await wait(() => document.querySelector("#m-changes-body .cg-all")); };
+    const rowsOf = () => p.$$eval("#m-changes-body .cg-row", e => e.map(r => r.querySelector(".cg-ln").textContent + (r.querySelector(".cg-sg").textContent || " ")));
+    // the card's own changes
+    await p.tap("#m-card-changes");
+    await wait(() => document.querySelectorAll("#m-changes-body .cg-file").length === 4);
+    if (!/^4 files changed \+109 -0/.test(await body())) fail(tag + "the totals say " + (await body()).slice(0, 40));
+    const names = await p.$$eval("#m-changes-body .cg-file .cg-path", e => e.map(x => x.textContent));
+    if (names.join("|") !== "BRIEF.md|DIRECTOR.md|NUL|docs/backlog/runtime/QUEUE.md") fail(tag + "the files are " + names.join("|"));
+    await shot("list");
+    for (const f of real.files) {
+      if (!f.hunks) continue;
+      await openFile(f.path);
+      if (f.path === "BRIEF.md") { await shot("hunks"); }
+      // a long hunk is folded at 40 lines, so the whole of it is asked for before the gutter is read
+      while (await p.$("#m-changes-body .cg-more")) await p.evaluate(() => document.querySelector("#m-changes-body .cg-more").click());
+      const got = await rowsOf();
+      const want = gutter(f.hunks);
+      { const at = want.findIndex((w, i) => got[i] !== w); if (got.length !== want.length || at >= 0) fail(tag + f.path + " gutter has " + got.length + " rows, wanted " + want.length + ", first difference at " + at + ": " + JSON.stringify(got[at]) + " against " + JSON.stringify(want[at])); }
+      if (/diff --git|new file mode|^---|\+\+\+ b\//m.test(await p.evaluate(() => [...document.querySelectorAll("#m-changes-body .cg-row")].map(r => r.textContent).join("\n")))) fail(tag + f.path + ": a header line is drawn as code");
+      if (f.path.endsWith("QUEUE.md")) await shot("modified");
+      await p.evaluate(() => document.querySelector(".cg-all").click());
+      await wait(() => document.querySelectorAll("#m-changes-body .cg-file").length === 4);
+    }
+    // the empty file named NUL
+    await openFile("NUL");
+    const nul = await body();
+    if (!/empty file, added/.test(nul) || /nothing to show/.test(nul)) fail(tag + "the empty NUL file says " + JSON.stringify(nul));
+    if (await p.$("#m-changes-body .cg-row")) fail(tag + "the empty file draws rows");
+    await shot("empty-nul");
+    await p.evaluate(() => document.querySelector(".cg-all").click());
+    await wait(() => document.querySelectorAll("#m-changes-body .cg-file").length === 4);
+    if (await mNoSideways(p)) fail(tag + "the sheet scrolls sideways");
+    // the turn's answer from the same files: partial once, cumulative on that file only
+    await p.goBack();
+    await wait(() => document.getElementById("m-changes").hidden);
+    await p.evaluate(a => document.querySelector('.chg-chip[data-at="' + a + '"]').click(), at);
+    await wait(() => document.querySelectorAll("#m-changes-body .cg-file").length === 4);
+    const tl = await body();
+    if (!/^4 files edited/.test(tl) || (tl.match(/may miss changes made by commands/g) || []).length !== 1 || !/edit calls only/.test(tl)) fail(tag + "the turn list says " + tl.slice(0, 160));
+    await openFile("BRIEF.md");
+    if (/all uncommitted edits/.test(await body())) fail(tag + "cumulative shows on a file that is not cumulative");
+    await p.evaluate(() => document.querySelector(".cg-all").click());
+    await openFile("docs/backlog/runtime/QUEUE.md");
+    if (!/all uncommitted edits to this file, not only this turn/.test(await body())) fail(tag + "cumulative is missing on its file");
+    if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+    await ctx.close();
+  } finally { await st.close(); }
+  if (!bad) console.log("mChangesReal ok");
+}
+
 async function main() {
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = "http://127.0.0.1:" + server.address().port;
@@ -16238,7 +16325,7 @@ async function main() {
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, phoneRedirect: phoneRedirectSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, mHidden: mHiddenSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
-      mViewer: mViewerSection, mHomeLive: mHomeLiveSection, mChanges: mChangesSection,
+      mViewer: mViewerSection, mHomeLive: mHomeLiveSection, mChanges: mChangesSection, mChangesReal: mChangesRealSection,
       gearTermList: gearTermListSection, growlLinks: growlLinksSection, growlChoiceOnce: growlChoiceOnceSection,
       mOutputAt: mOutputAtSection, mStickBottom: mStickBottomSection, mSendFree: mSendFreeSection, mCardUpload: mCardUploadSection, mCompact: mCompactSection, mPinch: mPinchSection, mPrompts: mPromptsSection,
       cardUrlWinName: cardUrlWinNameSection,
@@ -18226,6 +18313,7 @@ async function main() {
     await mHiddenSection(browser);
     await mViewerSection(browser);
     await mChangesSection(browser);
+    await mChangesRealSection(browser);
     await mHomeLiveSection(browser);
     await soundPhoneSection(browser, base);
     await phoneBoardCompactSection(browser, base);
