@@ -635,7 +635,7 @@ func (d *Daemon) tellByTyping(target *store.Task, from, text string, waitTurn bo
 	// literal paste text.
 	body := text
 	if d.bracketedPasteFor(target.ID, false) {
-		body = "\x1b[200~" + text + "\x1b[201~"
+		body = bracketedPaste(text)
 	}
 	// injectPeer types and submits ONLY when the gate is open right now: an empty
 	// line and peerGateIdle of quiet. It never leaves unsent text in the prompt
