@@ -64,3 +64,38 @@ HOLD 66694076..f870d872 for findings 1 and 2. Both are small and both have a pro
 Quality: after the Sonnet switch, no drop seen in what it set out to do. Every rule has its test and the golden file
 is exact. The misses are the second-order ones: the suffix match was written for the check and not followed into the
 link, and `Write` was written for the first render only.
+
+## Re-read 66694076..7fafc6a8
+
+Two commits. 9aae9ba7 is f870d872 rebased (same patch-id). 7fafc6a8 is the fix.
+
+Tests: `go vet` clean. The package's 19 tests pass, 6 of them new. My scratch tests, rewritten for the fixed API in
+D:/worktrees/claude/reviews/github-dovholuknf-atrium/proof-7fafc6a8/zz_scratch_review_test.go (recipe
+test-7fafc6a8.ps1 beside it), pass for every earlier finding. One new test fails, as stated below.
+
+### Closed
+
+- Finding 1: `Render` rewrites each path to the diff's name through `resolve` before the label, link and file name.
+  `file` now counts matches, and a suffix that matches more than one file is a rule 8 failure. The leak match
+  resolves both sides too, so `a.c` and `src/a.c` count as one file.
+- Finding 2: `Write` returns `*WalkStartedError` when `walk.txt` has a line that is not `open`. Otherwise it removes
+  the `findings/*.txt` this render did not make.
+- Finding 3: an unset rank fails under the shape rule, and `rankKey` sorts it last for any caller that sorts on its
+  own.
+- Nits: `blocking` keeps its own word in the label and the file name, and sorts with HIGH. The leak-match comment
+  says not to loosen it. A quoted `+++` name is unquoted, and a tab-ended one is cut at the tab.
+
+### New
+
+LOW (proven): `started` reads the state as `strings.Fields(l)[1]`. A file name with a space (now possible, since the
+quoted `+++` fix reads `a b.c`) splits, so `b.c-L3.txt` is read as the state, and `Write` refuses a walk nobody has
+touched. Refusing is the safe direction, and a path with a space is rare in a PR, so this is not a hold. Fix: read the
+state from the last field. Proof: `TestScratchSpaceName`.
+
+### Verdict
+
+ROOM OK 66694076..7fafc6a8, 1 low. The package is not wired to anything, so no deploy follows.
+
+Quality: after the Sonnet switch, no drop seen. Each fix has its own test, and the nits were taken without being
+asked twice. The new low is a second-order one again: fixing the quoted name made a space reach a parser that
+splits on whitespace.
