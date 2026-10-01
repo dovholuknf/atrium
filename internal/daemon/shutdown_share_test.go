@@ -12,6 +12,7 @@ func probeShutdown(t *testing.T, d *Daemon, from, token string) *httptest.Respon
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("POST", "/v1/shutdown", nil)
 	req.RemoteAddr = from
+	req.Host = "127.0.0.1:7778"
 	if token != "" {
 		req.Header.Set("X-Atrium-Token", token)
 	}

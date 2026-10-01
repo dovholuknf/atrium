@@ -161,6 +161,10 @@ type Server struct {
 	// SendNote turns a card's note into one message and clears it. Owned by
 	// the daemon, which owns delivery.
 	SendNote http.HandlerFunc
+	// SwitchModel types `/model <id>` into a live claude card and records the
+	// choice, `POST /v1/tasks/{id}/model`. Owned by the daemon, which owns the
+	// terminal. See daemon/modelswitch.go.
+	SwitchModel http.HandlerFunc
 	// DrainAuto approves everything already waiting, when auto mode is turned
 	// on with a full queue. Supplied by the daemon for the same reason Decide
 	// is: each waiting agent is parked on an in-memory reply channel, and a
@@ -213,9 +217,9 @@ type Server struct {
 	// daemon. See internal/daemon/usage.go.
 	UsageOf func(taskID string, limit int) (any, error)
 	// Replies is a card's last n replies as text, for the phone's conversation
-	// page (r-024). Owned by the daemon, which reads the transcript. See
-	// internal/daemon/replies.go.
-	Replies func(taskID string, n int) (any, error)
+	// page (r-024), or the n older than before when it is not zero. Owned by the
+	// daemon, which reads the transcript. See internal/daemon/replies.go.
+	Replies func(taskID string, n int, before time.Time) (any, error)
 	// RoomStats is the last `room-stats` snapshot the sampler pushed, as JSON,
 	// or nil before the first. Does no work of its own. Owned by the daemon.
 	// See internal/roomstats.
@@ -613,6 +617,9 @@ func (s *Server) Handler() http.Handler {
 	}
 	if s.Message != nil {
 		mux.HandleFunc("POST /v1/tasks/{id}/message", s.Message)
+	}
+	if s.SwitchModel != nil {
+		mux.HandleFunc("POST /v1/tasks/{id}/model", s.SwitchModel)
 	}
 	if s.Say != nil {
 		mux.HandleFunc("POST /v1/say", s.Say)

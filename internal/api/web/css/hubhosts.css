@@ -1,0 +1,7 @@
+/* The hub's host names row in the settings gear. See js/hubhosts.js. */
+  #s-hh-row[hidden], #s-hh-row [hidden] { display: none; }
+  #s-hh-row .hh-item { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 4px 0; }
+  #s-hh-row .hh-item code { font: var(--fs-sm)/1.5 var(--mono); }
+  #s-hh-row .hh-why { color: var(--warn); font-size: var(--fs-sm); }
+  #s-hh-row .hh-env { font: var(--fs-sm)/1.5 var(--mono); color: var(--dim); }
+  #s-hh-row #s-hh-name { width: 100%; max-width: 40ch; box-sizing: border-box; }

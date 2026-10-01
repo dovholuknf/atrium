@@ -7985,6 +7985,53 @@ Needs a hub with one room and two browsers on the board. `curl` stands in for th
 3. The same PUT from another machine answers 403. A GET from anywhere lists the hosts, `ignored` and `env`.
 4. `{"hosts":["*.duckdns.org"]}` is saved, listed under `ignored` with why, and answers nothing under it.
 
+## HL. A local proxy is not the operator (r-local-operator)
+
+1. On the hub's machine: `curl -s -X PUT http://127.0.0.1:7778/_hub/notify -d '{}'` gets past the gate (anything
+   but 403). The same call with `-H 'X-Forwarded-For: 1.2.3.4'` answers 403, and the body says the request came
+   through a proxy and to run it on the machine itself.
+2. From the zrok share, the gear's notify row (set and test) answers 403 with the same line. Pause, resume, input,
+   launch and every other board action still work over the share.
+3. The step 1 call with `-H 'Host: example.com'` answers 403: a loopback source with a foreign `Host` is not the
+   operator.
+4. On a room: `atrium stop` still stops it. A `POST /v1/shutdown` carrying `X-Forwarded-For` answers 403 unless it
+   carries the shutdown token.
+
+## HM. A live card's model switches with one call (r-card-model)
+
+HM needs a room built from this change and a room restart, with a supervised Claude card. Go tests in
+`internal/daemon/modelswitch_test.go` and `internal/link/modelroute_test.go` cover the endpoint, the wait, the refusals,
+the hub routing and the control tool.
+
+1. `curl -s -X POST http://127.0.0.1:7778/v1/tasks/<card>/model -d '{"model":"opus"}'` on an idle card. The answer says
+   `typed: true` and the card's terminal runs `/model opus`. The card's model reads `opus` on the board and in
+   `GET /v1/tasks/<card>`, and its timeline has a `model-switch` entry naming who asked, from what and to what.
+2. Start typing a line in the card's terminal and repeat the call. The answer says `delivered: waiting`. Nothing lands
+   in the line. Finish the line and go quiet: `/model opus` is typed, and the timeline gains "typed after waiting".
+3. Switch twice while the line is busy. Only the newer model is typed.
+4. A card that is not Claude, a card with no atrium terminal, and a parked card answer 409 with the reason. A model of
+   `gpt-5`, `opus 4` or an empty string answers 400. An unknown card answers 404.
+5. Through the hub: `POST /v1/tasks/<name>@<room>/model` and `<room>~<id>` reach that room's card.
+6. As the orchestrator, call `atrium_model` with a card and a model. A worker session does not list the tool, and the
+   room's audit log shows a `ctl-model` line.
+7. Switch a card, then park and resume it. It comes back on the new model.
+8. Type `/model sonnet` (or opus, haiku, fable) by hand in the card's terminal. The board shows the new model and the timeline has a `typed by hand` entry. Restart the room: the card resumes on that model (`--model` is in its launched command). A typed full id such as `/model claude-sonnet-5-5` and a bare `/model` that opens the picker record nothing, so a mistyped id cannot fail the next resume.
+9. **Not verified by tests:** whether Claude Code accepts `/model` while a turn is running. Try it on a busy card and
+   note whether the switch lands now or after the turn.
+
+## HN. Older replies, a page at a time (r-replies-paging)
+
+1. On a Claude card with more than 50 replies, `curl -s 'http://127.0.0.1:7778/v1/tasks/<id>/replies?n=50' | jq
+   '.replies|length, .more, .next_before'` answers 50, `true` and a time. `n=80` answers 50 too.
+2. Ask again with `&before=<next_before>` (URL-encoded), passed back as it came. The page is the replies and prompts
+   strictly older, oldest first. Both lists are complete down to `next_before`, so one may hold fewer than n.
+3. Keep going on `next_before` alone. The last page answers `more: false` with no `next_before`, and no reply or
+   prompt shows twice or goes missing, including on a card where prompts are dense early and replies dense late.
+4. `&before=yesterday` answers 400. A codex card (source `screen`) answers `more: false`.
+5. Through the hub, `GET /v1/tasks/<room>~<id>/replies?n=50&before=<at>` answers the same as on the room.
+6. On a transcript over 16MB with replies spread through it, a deep page still answers: the 16MB bound counts from
+   the `before` position, not from the end of the file.
+
 ## HO. A director held to a context ceiling (r-director-ceiling)
 
 Tagging is the orchestrator's job, never a worker's. There is no `atrium tag` command. Use the board's tag editor, or

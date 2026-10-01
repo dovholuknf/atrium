@@ -110,6 +110,88 @@
     return rows;
   }
 
+  // The device's view of the list: order, grouping and filters, remembered in localStorage. Sorting, grouping and the
+  // subagent test are the board's own rules from js/cardrules.js.
+  const OPTS_KEY = "atrium.m.homeopts";
+  const OPT_DEFAULTS = { order: "newest", orderNeeds: "oldest", group: "none", needsMe: false, hideDone: false, hideSubs: false };
+  function loadOpts() {
+    try {
+      const o = JSON.parse(localStorage.getItem(OPTS_KEY) || "{}");
+      return {
+        order: o.order === "oldest" ? "oldest" : "newest",
+        orderNeeds: o.orderNeeds === "newest" ? "newest" : "oldest",
+        group: o.group === "room" || o.group === "project" ? o.group : "none",
+        needsMe: o.needsMe === true, hideDone: o.hideDone === true, hideSubs: o.hideSubs === true,
+      };
+    } catch (e) { return Object.assign({}, OPT_DEFAULTS); }
+  }
+  let opts = loadOpts();
+  function saveOpts() { try { localStorage.setItem(OPTS_KEY, JSON.stringify(opts)); } catch (e) {} }
+
+  // When a card last did something, in ms. `last_activity_at` is a fact about the card, where `idle_seconds` is a count taken
+  // when the row was read, so rows read at different times (a list a minute old and a row an event just replaced) cannot be
+  // compared by it. It is the fallback for a card that has no stamp.
+  function activityMs(t) {
+    const at = Date.parse(t.last_activity_at);
+    return isNaN(at) ? Date.now() - (Number(t.idle_seconds) || 0) * 1000 : at;
+  }
+
+  // Newest or oldest by last activity, with the board's tie break. Oldest is the whole newest order reversed.
+  function sortRows(rows) {
+    rows.sort((a, b) => activityMs(b.card) - activityMs(a.card) || cardTieBreak(a.card, b.card));
+    if (opts.order === "oldest") rows.reverse();
+    return rows;
+  }
+
+  // Each list has its own order and the control shows the one on screen. The all list goes by last activity, newest first
+  // unless asked. The needs list is a queue of answers owed and goes by when each wait began, oldest first unless asked.
+  const orderKey = () => mode === "needs" ? "orderNeeds" : "order";
+
+  function isFinished(t) { return t.status === "done" || t.status === "dead"; }
+
+  // The filters that apply to a row. Needs-me only is how the needs list is already made, so it changes the all list.
+  // Hide subagents never hides a running card that has an alias: somebody named it, so it is not an anonymous helper.
+  // The board's isDoer stays the board's. Here a director and the orchestrator are not subagents either, whatever they are
+  // tagged, since they are who the operator talks to.
+  const NOT_SUB = ["atrium:director", "atrium:orchestrator", "orchestrators", "atrium:hold-notices"];
+  function isSub(t) {
+    if (!isDoer(t)) return false;
+    if (t.status === "running" && t.alias) return false;
+    return !(t.tags || []).some(x => NOT_SUB.indexOf(String(x).trim().toLowerCase()) >= 0);
+  }
+
+  // Whether the filters keep a row. `revealed` is the tap on "hidden by filters", which shows what they hide until the
+  // filters change.
+  let revealed = false;
+  function keepRow(r, forAll) {
+    const t = r.card;
+    if (forAll && opts.needsMe && !r.reasons.length) return false;
+    if (opts.hideDone && isFinished(t)) return false;
+    if (opts.hideSubs && isSub(t)) return false;
+    return true;
+  }
+
+  function groupName(t) {
+    if (opts.group === "room") return window.mNet.roomOf(t.id) || t.room || "";
+    return cardProjectOf(t);
+  }
+
+  // The rows as [{key, label, rows}] sections. No label means no heading.
+  function sections(rows, forAll) {
+    if (opts.group !== "none") {
+      const by = new Map();
+      rows.forEach(r => {
+        const g = groupName(r.card);
+        if (!by.has(g)) by.set(g, []);
+        by.get(g).push(r);
+      });
+      return [...by.keys()].sort(cardGroupCmp).map(g => ({ key: (opts.group === "room" ? "r:" : "p:") + g,
+        label: g || (opts.group === "room" ? "no room" : "no project"), rows: by.get(g) }));
+    }
+    if (!forAll) return [{ key: "", label: "", rows }];
+    return GROUPS.map(([g, label]) => ({ key: g, label, rows: rows.filter(r => groupOf(r.card) === g) })).filter(s => s.rows.length);
+  }
+
   // All mode: working, waiting, idle.
   function groupOf(t) {
     if (t.status === "running") return "working";
@@ -121,13 +203,7 @@
   function allList(cards, perms, now) {
     const rows = [];
     cards.forEach(t => { if (!t.archived_at) rows.push({ card: t, reasons: reasons(t, perms, now) }); });
-    const by = { working: [], waiting: [], idle: [] };
-    rows.forEach(r => by[groupOf(r.card)].push(r));
-    const last = r => U.ts(r.card.last_activity_at);
-    by.working.sort((a, b) => last(b) - last(a));
-    by.waiting.sort((a, b) => (U.ts(a.card.waiting_since) || Infinity) - (U.ts(b.card.waiting_since) || Infinity));
-    by.idle.sort((a, b) => last(b) - last(a));
-    return by;
+    return rows;
   }
 
   // ── the view ─────────────────────────────────────────────────────────────
@@ -214,40 +290,77 @@
     els.segNeeds.setAttribute("aria-selected", String(mode === "needs"));
     els.segAll.setAttribute("aria-selected", String(mode === "all"));
     els.seg.dataset.mode = mode;
+    paintOpts();
 
     const loaded = net.loaded();
     els.skel.hidden = loaded;
     const entries = [];
+    let hidden = 0;
     if (loaded) {
-      if (mode === "needs") {
-        needs.forEach(n => {
-          const html = rowHTML(n, false, many);
+      const forAll = mode === "all";
+      const listed = forAll ? allList(cards, perms, now) : needs;
+      const passing = listed.filter(r => keepRow(r, forAll));
+      hidden = listed.length - passing.length;
+      const kept = revealed ? listed : passing;
+      const rows = forAll ? sortRows(kept) : (opts.orderNeeds === "newest" ? kept.slice().reverse() : kept);
+      sections(rows, forAll).forEach(s => {
+        if (s.label) {
+          const html = '<h2 class="grp">' + U.esc(s.label) + " <em>" + s.rows.length + "</em></h2>";
+          entries.push({ key: "h:" + s.key, html, sig: html, head: true });
+        }
+        s.rows.forEach(n => {
+          const html = rowHTML(n, forAll, many);
           entries.push({ key: "c:" + n.card.id, html, sig: html });
         });
-      } else {
-        const by = allList(cards, perms, now);
-        GROUPS.forEach(([g, label]) => {
-          if (!by[g].length) return;
-          const html = '<h2 class="grp">' + label + " <em>" + by[g].length + "</em></h2>";
-          entries.push({ key: "h:" + g, html, sig: html, head: true });
-          by[g].forEach(n => {
-            const html = rowHTML(n, true, many);
-            entries.push({ key: "c:" + n.card.id, html, sig: html });
-          });
-        });
-      }
+      });
     }
     reconcile(entries);
 
     // The designed empty states.
     const none = loaded && entries.length === 0;
     els.empty.hidden = !(none && mode === "needs");
-    els.none.hidden = !(none && mode === "all");
+    els.none.hidden = !(none && mode === "all" && all === 0);
+    paintChips(hidden);
     if (none && mode === "needs") {
       els.emptyAll.hidden = all === 0;
       els.emptyAll.textContent = all === 1 ? "1 session is working or resting" : all + " sessions are working or resting";
     }
     document.title = (needs.length ? "(" + needs.length + ") " : "") + "atrium";
+  }
+
+  // The view control: one button that opens a panel of order, grouping and filters.
+  function paintOpts() {
+    if (!els.opts) return;
+    els.optsBtn.setAttribute("aria-expanded", String(!els.opts.hidden));
+    const on = (opts.order !== "newest" ? 1 : 0) + (opts.orderNeeds !== "oldest" ? 1 : 0) + (opts.group !== "none" ? 1 : 0) + (opts.needsMe ? 1 : 0) + (opts.hideDone ? 1 : 0) + (opts.hideSubs ? 1 : 0);
+    els.optsBtn.dataset.on = String(on);
+    els.opts.querySelectorAll("[data-opt]").forEach(b => {
+      const v = b.dataset.val;
+      const key = b.dataset.opt === "order" ? orderKey() : b.dataset.opt;
+      const cur = v === undefined ? opts[key] : opts[key] === v;
+      b.setAttribute("aria-pressed", String(cur));
+    });
+  }
+
+  // The two things that can make the list look short: the room this page is scoped to, and the filters.
+  function paintChips(hidden) {
+    const room = window.mNet.room();
+    els.room.hidden = !room;
+    if (room) els.roomName.textContent = "room: " + room;
+    els.hidden.hidden = !hidden;
+    if (hidden) {
+      els.hidden.textContent = revealed ? "showing " + hidden + " hidden by filters. hide them again" : hidden + " hidden by filters. show";
+    }
+  }
+
+  function setOpt(k, v) {
+    revealed = false;
+    opts[k === "order" ? orderKey() : k] = v;
+    saveOpts();
+    // A different order or grouping is a different arrangement, not a move, so rows are not animated across it.
+    nodes.forEach(el => el.remove());
+    nodes.clear();
+    render();
   }
 
   function setMode(m) {
@@ -271,6 +384,20 @@
     els.empty = q("m-empty");
     els.emptyAll = q("m-empty-all");
     els.none = q("m-none");
+    els.room = q("m-room-chip");
+    els.roomName = q("m-room-name");
+    els.hidden = q("m-hidden");
+    q("m-room-all").addEventListener("click", () => window.mNet.clearRoom());
+    els.hidden.addEventListener("click", () => { revealed = !revealed; render(); });
+    els.opts = q("m-opts");
+    els.optsBtn = q("m-opts-btn");
+    els.optsBtn.addEventListener("click", () => { els.opts.hidden = !els.opts.hidden; paintOpts(); });
+    els.opts.addEventListener("click", e => {
+      const b = e.target.closest("[data-opt]");
+      if (!b) return;
+      const k = b.dataset.opt;
+      setOpt(k, b.dataset.val === undefined ? !opts[k] : b.dataset.val);
+    });
     els.segNeeds.addEventListener("click", () => setMode("needs"));
     els.segAll.addEventListener("click", () => setMode("all"));
     els.list.addEventListener("click", e => {
@@ -285,5 +412,5 @@
     render();
   }
 
-  window.mHome = { init, render, reasons, needsList, allList, mode: () => mode, setMode };
+  window.mHome = { init, render, reasons, needsList, allList, mode: () => mode, setMode, opts: () => Object.assign({}, opts) };
 })();

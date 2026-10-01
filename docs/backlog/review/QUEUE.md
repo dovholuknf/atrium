@@ -37,6 +37,11 @@ the meantime.
 
 - Board landings from @ui come FIRST (clint, via the orchestrator, 2026-09-30 19:25), read only and fast, ahead of
   everything below.
+- @runtime r-director-ceiling.
+- @ui: the four desktop sorts still on `idle_seconds` (low 3 of `docs/backlog/ui/u-new-review-1094ba62.md`), and the
+  desktop suite result for 03cca53f.
+- From cc3bd954 on, @ui, @runtime and @fabric run Sonnet (orchestrator, 6h test): every review of theirs carries a
+  "Quality:" line.
 - M3 of `docs/rnd/machine-health-design.md` (the profiler agent's rules) before it ships, when it is built.
 
 ## Open lows, for when a fix names them
@@ -50,6 +55,8 @@ the meantime.
 - `u-new-review-8333259b.md` L1 L2, parked in @ui's QUEUE.
 - `u-new-review-eb94e016.md` 1.
 - `r-new-review-e25a2c2f.md` 1-2: a wildcard over a public suffix or a dynamic DNS domain, an ignored entry is silent.
+- `r-new-review-7065bd6f.md` 1: a hand-passed non-loopback `--board-addr` for `atrium rooms` is refused (on @runtime's
+  queue).
 - `u-new-review-8b316172.md` 1-2: phone question links against none on the desktop, a choice press can send twice.
 
 ## Done

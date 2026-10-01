@@ -97,6 +97,11 @@ type Daemon struct {
 	// bootResumes is resume id to the card on the reopen list that takes it,
 	// for the length of one reopen pass. See reopenSaved.
 	bootResumes sync.Map
+	// modelWaits is card id to a /model switch the input gate has not let through
+	// yet. See modelswitch.go.
+	modelWaits sync.Map
+	// modelLocks is card id to the mutex one switch holds. See modelLock.
+	modelLocks sync.Map
 
 	opts Options
 	st   *store.Store
@@ -387,6 +392,7 @@ func New(opts Options) (*Daemon, error) {
 	d.ap.NewContext = d.handleNewContext
 	d.ap.Resume = d.handleResume
 	d.ap.SendNote = d.handleSendNote
+	d.ap.SwitchModel = d.handleModel
 	d.ap.Shutdown = d.handleShutdown
 	d.ap.Preflight = d.handlePreflight
 	d.ap.Shelve = d.Shelve
@@ -574,7 +580,7 @@ func New(opts Options) (*Daemon, error) {
 		return err
 	}
 	d.ap.UsageOf = d.usageFor
-	d.ap.Replies = func(id string, n int) (any, error) { return d.repliesFor(id, n) }
+	d.ap.Replies = func(id string, n int, before time.Time) (any, error) { return d.repliesPage(id, n, before) }
 	// Starting a fixture is spawning a process, which the daemon owns.
 	api.StartFixture = d.StartFixtureNow
 	// Which turns are unread, carried across the restart. See seen.go.

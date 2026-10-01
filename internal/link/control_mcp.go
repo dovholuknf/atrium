@@ -302,6 +302,20 @@ func (c *controlMCP) server(class ctlClass) *mcp.Server {
 	}, audited(c, "ctl-exit", describeExit, c.exitHandler))
 
 	addTool(s, class, &mcp.Tool{
+		Name: "atrium_model",
+		Description: "Switch a live session's model, now.\n\n" +
+			"Atrium types `/model <model>` into the card's terminal when its input line is clear, the way " +
+			"an immediate `atrium_say` is typed. No new context and no relaunch: the session keeps its " +
+			"conversation. The choice is also recorded on the card, so a later resume or relaunch starts " +
+			"on it.\n\n" +
+			"`model` is `sonnet`, `opus`, `haiku`, `fable`, or a full id starting `claude-`. Only a claude " +
+			"session whose terminal atrium owns takes it, and anything else is refused with the reason. " +
+			"`typed` says whether it went in now. When it did not, `delivered` is `waiting` and atrium " +
+			"keeps trying until the line clears.\n\n" +
+			"A card on ANOTHER ROOM is `name@room`, `alias@room` or `room~id`, as `atrium_say` takes it.",
+	}, audited(c, "ctl-model", describeModel, c.modelHandler))
+
+	addTool(s, class, &mcp.Tool{
 		Name: "atrium_cull",
 		Description: "Retire a finished worker whose work you have ACCEPTED: ask it to leave, then " +
 			"remove its worktree and delete its branch.\n\n" +
@@ -594,6 +608,8 @@ type peer struct {
 	// not answered. `atrium_task` has the questions themselves.
 	Unseen        bool `json:"unseen,omitempty"`
 	OpenQuestions int  `json:"open_questions,omitempty"`
+	// Everywhere marks a card that is listed because it carries atrium:everywhere.
+	Everywhere bool `json:"everywhere,omitempty"`
 }
 
 type peersOutput struct {
@@ -648,6 +664,12 @@ func (c *controlMCP) peersHandler(ctx context.Context, req *mcp.CallToolRequest,
 		}
 		if len(quiet) > 0 {
 			out.Note = "not answering, so not listed: " + strings.Join(quiet, ", ")
+		}
+	} else if room != "" && c.hub != nil {
+		// WITHOUT `rooms`, the cards tagged atrium:everywhere on other rooms,
+		// after the local ones, so they can be told to by name.
+		for _, e := range c.hub.every.all(room) {
+			out.Peers = append(out.Peers, e.asPeer())
 		}
 	}
 	if out.Me == "" {
@@ -769,7 +791,7 @@ type sayInput struct {
 	// When is `immediate` (the default) or `done`. See internal/daemon/saywhen.go.
 	When string `json:"when,omitempty" jsonschema:"immediate (the default): typed as soon as the line is empty, even mid-turn. done: wait for that session's turn to end"`
 	// Wake resumes a parked card so this reaches it.
-	Wake bool `json:"wake,omitempty" jsonschema:"true to resume a PARKED session (idle, no process) and deliver this. it costs a cold start, so leave it off unless the message is worth it. without it a say to a parked session is refused and nothing is queued"`
+	Wake bool `json:"wake,omitempty" jsonschema:"true to resume a PARKED session (idle, no process) and deliver this. it costs a cold start, so leave it off unless the message is worth it. without it a say to a parked session is refused and nothing is queued. local only: a card on another room, named as name@room or reached by a bare name on every room, is never woken"`
 }
 
 type sayOutput struct {
@@ -808,7 +830,14 @@ func (c *controlMCP) sayHandler(ctx context.Context, req *mcp.CallToolRequest, i
 	}
 	id, handle, err := c.resolvePeer(ctx, room, in.To)
 	if err != nil {
-		return nil, out, err
+		// A BARE NAME THAT MISSED ON THE CALLER'S OWN ROOM, looked for among the
+		// cards tagged atrium:everywhere on the others. One match goes on as if
+		// `handle@room` had been typed. See everywhere.go.
+		card, ferr := c.everywhereFallthrough(room, in.To, err)
+		if ferr != nil {
+			return nil, out, ferr
+		}
+		return c.sayAcross(ctx, req, room, card.sendName(), card.Room, in)
 	}
 	out.To, out.Card = handle, id
 
@@ -979,6 +1008,16 @@ func (c *controlMCP) taskHandler(ctx context.Context, req *mcp.CallToolRequest, 
 		id, _, err = c.resolvePeer(ctx, room, who)
 	} else {
 		scope, id, _, err = c.resolveCard(ctx, room, who)
+		if err != nil && !strings.Contains(who, "@") && !strings.Contains(who, idJoin) {
+			// A READ, SO IT FALLS THROUGH like a say does, to the one card on
+			// another room that answers to this bare name. Continues as the
+			// read of that card, named across, exactly as `room~id` would.
+			card, ferr := c.everywhereFallthrough(room, who, err)
+			if ferr != nil {
+				return nil, out, ferr
+			}
+			scope, id, err = card.Room, card.ID, nil
+		}
 	}
 	if err != nil {
 		return nil, out, err
@@ -1496,6 +1535,57 @@ func (c *controlMCP) exitHandler(ctx context.Context, req *mcp.CallToolRequest, 
 	return nil, out, nil
 }
 
+// ── model ───────────────────────────────────────────────────────────────────────
+
+type modelInput struct {
+	Card  string `json:"card" jsonschema:"a card id, handle or alias. name@room or room~id for a card on another room"`
+	Model string `json:"model" jsonschema:"sonnet, opus, haiku, fable, or a full id such as claude-opus-4-7"`
+}
+
+type modelOutput struct {
+	Card      string `json:"card"`
+	Handle    string `json:"handle,omitempty"`
+	Model     string `json:"model"`
+	Was       string `json:"was,omitempty"`
+	Typed     bool   `json:"typed"`
+	Delivered string `json:"delivered,omitempty"`
+	When      string `json:"when,omitempty"`
+	Note      string `json:"note,omitempty"`
+}
+
+// modelHandler forwards a model switch to the room holding the card, which
+// checks everything: that atrium owns a claude terminal for it, and the shape of
+// the model. See internal/daemon/modelswitch.go.
+func (c *controlMCP) modelHandler(ctx context.Context, req *mcp.CallToolRequest, in modelInput) (
+	*mcp.CallToolResult, modelOutput, error) {
+
+	out := modelOutput{}
+	room := roomOf(req)
+	scope, id, handle, err := c.resolveCard(ctx, room, in.Card)
+	if err != nil {
+		return nil, out, err
+	}
+	out.Card, out.Handle = namedFrom(room, scope, id, handle)
+	body := map[string]string{"model": strings.TrimSpace(in.Model)}
+	if me := agentOf(req); me != "" {
+		body["from"] = me
+	}
+	var res struct {
+		Model     string `json:"model"`
+		From      string `json:"from"`
+		Typed     bool   `json:"typed"`
+		Delivered string `json:"delivered"`
+		When      string `json:"when"`
+		Note      string `json:"note"`
+	}
+	if err := c.ask(ctx, http.MethodPost, "/v1/tasks/"+url.PathEscape(id)+"/model", scope, body, &res); err != nil {
+		return nil, out, err
+	}
+	out.Model, out.Was, out.Typed, out.Delivered, out.When, out.Note =
+		res.Model, res.From, res.Typed, res.Delivered, res.When, res.Note
+	return nil, out, nil
+}
+
 // aliasBeats says whether a card of status `s` created at `c` is the better
 // answer for an alias than the one already chosen (`bs`, `bc`): a live card
 // before a done one, then the newest.
@@ -1724,14 +1814,4 @@ func loopbackBase(addr string) string {
 		host = "127.0.0.1"
 	}
 	return "http://" + net.JoinHostPort(host, port)
-}
-
-// loopbackRemote reports whether a request came from this machine.
-func loopbackRemote(remote string) bool {
-	host, _, err := net.SplitHostPort(remote)
-	if err != nil {
-		host = remote
-	}
-	ip := net.ParseIP(host)
-	return ip != nil && ip.IsLoopback()
 }

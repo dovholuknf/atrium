@@ -30,12 +30,28 @@ import (
 // as the keep-alive's read is, and each reply is cut at `replyTextMax` with
 // `truncated` set. A card atrium cannot read a transcript for (codex, or no file)
 // answers with its screen's rows as one reply, `source: "screen"`.
+//
+// PAGING (r-replies-paging). `?before=<at>` asks for the n replies and n prompts
+// strictly older than `at`, read backwards from the end in `repliesWindow` steps
+// and never past `repliesReach` bytes. `more` says whether anything older is left.
 
 const (
 	repliesDefault = 3
-	repliesMax     = 10
+	repliesMax     = 50
 	// replyTextMax cuts one reply, so a long answer cannot make the page heavy.
 	replyTextMax = 16 << 10
+)
+
+// Variables so a test can use small windows, as autoTiming does.
+var (
+	// repliesWindow is the first page's read, from the end, and the step of a
+	// `before` page's backward read.
+	repliesWindow int64 = transcriptTail
+	// repliesReach is the most a `before` page reads.
+	repliesReach int64 = 16 << 20
+	// repliesCap is the most a `before` page reads when the reach found no record
+	// older than before to stand on. Past it the page answers more=false.
+	repliesCap int64 = 64 << 20
 )
 
 // Reply is one reply as the page draws it.
@@ -54,6 +70,13 @@ type RepliesView struct {
 	// a peer. Oldest first, bounded like replies. Absent when atrium reads the
 	// screen, which cannot tell a prompt from output.
 	Prompts []Prompt `json:"prompts,omitempty"`
+	// More is true when replies or prompts older than the oldest in this page
+	// may exist. Never set for the screen.
+	More bool `json:"more"`
+	// NextBefore is the `before` of the next page, RFC3339Nano, set when More is
+	// true. Both lists are complete down to it, so a client passes it back as it
+	// is and never works out a cursor from the entries.
+	NextBefore string `json:"next_before,omitempty"`
 }
 
 // Prompt kinds. See promptOf.
@@ -74,8 +97,13 @@ type Prompt struct {
 // errNoSuchCard is a card this room does not hold, which the API answers 404.
 var errNoSuchCard = sql.ErrNoRows
 
-// repliesFor answers the endpoint for one card.
+// repliesFor answers the endpoint for one card, first page.
 func (d *Daemon) repliesFor(taskID string, n int) (*RepliesView, error) {
+	return d.repliesPage(taskID, n, time.Time{})
+}
+
+// repliesPage answers the endpoint for one card. A zero before is the first page.
+func (d *Daemon) repliesPage(taskID string, n int, before time.Time) (*RepliesView, error) {
 	t, err := d.st.Get(taskID)
 	if err != nil {
 		// Only a missing row is "no such card". Any other store error is the
@@ -101,9 +129,21 @@ func (d *Daemon) repliesFor(taskID string, n int) (*RepliesView, error) {
 		}
 		if session != "" {
 			if path := d.usage.transcript(t.Worktree, session); path != "" {
-				replies, prompts, err := readTranscriptText(path, n)
+				var (
+					pg  replyPage
+					err error
+				)
+				if before.IsZero() {
+					pg, err = readTranscriptPage(path, n)
+				} else {
+					pg, err = readTranscriptBefore(path, n, before)
+				}
 				if err == nil {
-					return &RepliesView{Source: "transcript", Replies: replies, Prompts: prompts}, nil
+					v := &RepliesView{Source: "transcript", Replies: pg.replies, Prompts: pg.prompts, More: pg.more}
+					if pg.more {
+						v.NextBefore = pg.next.UTC().Format(time.RFC3339Nano)
+					}
+					return v, nil
 				}
 				logRepliesFallback(path, err)
 			}
@@ -152,6 +192,97 @@ type repliesCached struct {
 	mtime   time.Time
 	replies []Reply  // the last repliesMax, oldest first
 	prompts []Prompt // the same, for what was said to the card
+	floor   time.Time // zero when everything older is held, else complete down to here. See finishPage
+}
+
+// replyPage is one answer: the replies and prompts, and where the next page starts.
+type replyPage struct {
+	replies []Reply
+	prompts []Prompt
+	more    bool
+	next    time.Time // the `before` of the next page, set when more is true
+}
+
+// finishPage cuts a page from rs and ps, every entry older than the request's
+// before, oldest first. floor is the oldest time the read is complete down to
+// (zero when it reached the start of the file with nothing cut).
+//
+// Each list keeps its n newest. A list that had more than n puts its oldest kept
+// `at` in as a floor too, and the page is cut at the NEWEST floor, in both lists:
+// the page is complete down to there, so the next page asks strictly older than
+// it and nothing is lost or shown twice. Entries sharing the cut's time stay
+// together on this page.
+func finishPage(rs []Reply, ps []Prompt, n int, floor time.Time) replyPage {
+	cut := floor
+	rs, rcut := trimReplies(rs, n)
+	ps, pcut := trimPrompts(ps, n)
+	for _, c := range []time.Time{rcut, pcut} {
+		if c.After(cut) {
+			cut = c
+		}
+	}
+	if cut.IsZero() {
+		return replyPage{replies: rs, prompts: ps}
+	}
+	for len(rs) > 0 && rs[0].At.Before(cut) {
+		rs = rs[1:]
+	}
+	for len(ps) > 0 && ps[0].At.Before(cut) {
+		ps = ps[1:]
+	}
+	return replyPage{replies: rs, prompts: ps, more: true, next: cut}
+}
+
+// trimReplies keeps the n newest, plus any older ones at the same time as the
+// oldest kept. The second result is that oldest time when something was cut.
+func trimReplies(x []Reply, n int) ([]Reply, time.Time) {
+	i := len(x) - n
+	if i <= 0 {
+		return x, time.Time{}
+	}
+	for i > 0 && x[i-1].At.Equal(x[i].At) {
+		i--
+	}
+	if i == 0 {
+		return x, time.Time{}
+	}
+	return x[i:], x[i].At
+}
+
+func trimPrompts(x []Prompt, n int) ([]Prompt, time.Time) {
+	i := len(x) - n
+	if i <= 0 {
+		return x, time.Time{}
+	}
+	for i > 0 && x[i-1].At.Equal(x[i].At) {
+		i--
+	}
+	if i == 0 {
+		return x, time.Time{}
+	}
+	return x[i:], x[i].At
+}
+
+// dropOldestGroup drops the oldest reply and every reply tied with it, which may
+// lack blocks further back. False when nothing newer is left to set the cut, and
+// then nothing is dropped: dropped alone, it would lie between the cut and the
+// page and no page would carry it.
+func dropOldestGroup(x []Reply) ([]Reply, bool) {
+	i := 1
+	for i < len(x) && x[i].At.Equal(x[0].At) {
+		i++
+	}
+	if i >= len(x) {
+		return x, false
+	}
+	return x[i:], true
+}
+
+func laterOf(a, b time.Time) time.Time {
+	if b.After(a) {
+		return b
+	}
+	return a
 }
 
 // readReplies is the last n main-chain assistant replies with text in a
@@ -164,9 +295,16 @@ func readReplies(path string, n int) ([]Reply, error) {
 // readTranscriptText is the last n replies and the last n prompts in a
 // transcript, each oldest first.
 func readTranscriptText(path string, n int) ([]Reply, []Prompt, error) {
+	pg, err := readTranscriptPage(path, n)
+	return pg.replies, pg.prompts, err
+}
+
+// readTranscriptPage is the first page: the newest n of each, from the cached
+// read of the file's last repliesWindow bytes.
+func readTranscriptPage(path string, n int) (replyPage, error) {
 	info, err := os.Stat(path)
 	if err != nil {
-		return nil, nil, err
+		return replyPage{}, err
 	}
 	repliesCache.mu.Lock()
 	c, ok := repliesCache.m[path]
@@ -174,25 +312,38 @@ func readTranscriptText(path string, n int) ([]Reply, []Prompt, error) {
 	if !ok || c.size != info.Size() || !c.mtime.Equal(info.ModTime()) {
 		f, err := os.Open(path)
 		if err != nil {
-			return nil, nil, err
+			return replyPage{}, err
 		}
 		defer f.Close()
-		if info.Size() > transcriptTail {
-			if _, err := f.Seek(info.Size()-transcriptTail, io.SeekStart); err != nil {
-				return nil, nil, err
+		mid := info.Size() > repliesWindow
+		if mid {
+			if _, err := f.Seek(info.Size()-repliesWindow, io.SeekStart); err != nil {
+				return replyPage{}, err
 			}
 		}
-		replies, prompts, err := scanTranscriptText(f)
+		replies, prompts, firstAt, err := scanTranscriptWindow(f)
 		if err != nil {
-			return nil, nil, err
+			return replyPage{}, err
 		}
-		if len(replies) > repliesMax {
-			replies = replies[len(replies)-repliesMax:]
+		var floor time.Time
+		if mid {
+			floor = boundaryAt(f, info.Size()-repliesWindow, firstAt)
 		}
-		if len(prompts) > repliesMax {
-			prompts = prompts[len(prompts)-repliesMax:]
+		// The cap keeps ties together, as a page's own cut does: an entry cut off
+		// at the floor's time would be on neither page.
+		var capped time.Time
+		if replies, capped = trimReplies(replies, repliesMax); !capped.IsZero() {
+			floor = laterOf(floor, capped)
+		} else if rest, ok := dropOldestGroup(replies); mid && ok {
+			// The oldest may have lost its earlier blocks to the cut, and a `before`
+			// page would then return it again whole. It is the next page's first.
+			replies = rest
+			floor = laterOf(floor, replies[0].At)
 		}
-		c = repliesCached{size: info.Size(), mtime: info.ModTime(), replies: replies, prompts: prompts}
+		if prompts, capped = trimPrompts(prompts, repliesMax); !capped.IsZero() {
+			floor = laterOf(floor, capped)
+		}
+		c = repliesCached{size: info.Size(), mtime: info.ModTime(), replies: replies, prompts: prompts, floor: floor}
 		repliesCache.mu.Lock()
 		if len(repliesCache.m) > 400 {
 			repliesCache.m = map[string]repliesCached{}
@@ -200,14 +351,240 @@ func readTranscriptText(path string, n int) ([]Reply, []Prompt, error) {
 		repliesCache.m[path] = c
 		repliesCache.mu.Unlock()
 	}
-	replies, prompts := c.replies, c.prompts
-	if len(replies) > n {
-		replies = replies[len(replies)-n:]
+	pg := finishPage(c.replies, c.prompts, n, c.floor)
+	pg.replies, pg.prompts = append([]Reply{}, pg.replies...), append([]Prompt{}, pg.prompts...)
+	return pg, nil
+}
+
+// boundaryAt is the time a read starting at offset start is complete down to:
+// the first record in it, else the first timestamped line, else now, which makes
+// the next page ask for everything and read back from the end.
+func boundaryAt(f *os.File, start int64, firstAt time.Time) time.Time {
+	if !firstAt.IsZero() {
+		return firstAt
 	}
-	if len(prompts) > n {
-		prompts = prompts[len(prompts)-n:]
+	if _, at, ok := probeLine(f, start-1); ok {
+		return at
 	}
-	return append([]Reply{}, replies...), append([]Prompt{}, prompts...), nil
+	return time.Now().UTC()
+}
+
+// readTranscriptBefore is the n replies and n prompts strictly older than
+// before, each oldest first, read backwards from the end of the file in
+// repliesWindow steps until both lists are full, repliesReach bytes are read, or
+// the start is reached. more is true unless the start was reached with nothing
+// older left.
+//
+// A step starts mid-line, so its first partial line is carried and put back on
+// the end of the next step, which makes a line read whole once. A reply whose
+// message id spans steps is joined as the forward scan joins it.
+func readTranscriptBefore(path string, n int, before time.Time) (replyPage, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return replyPage{}, err
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return replyPage{}, err
+	}
+	var (
+		firstAt time.Time // the oldest record read
+		replies []Reply
+		ids     []string
+		byID    = map[string]int{}
+		prompts []Prompt
+		carry   []byte
+		pos     = lineBefore(f, info.Size(), before)
+		read    int64
+	)
+	// older counts what is strictly older than before. The oldest reply may still
+	// gain earlier blocks from the next step, so it is not counted until the start.
+	older := func() (int, int) {
+		r := 0
+		for _, x := range replies {
+			if x.At.Before(before) {
+				r++
+			}
+		}
+		if r > 0 {
+			r--
+		}
+		p := 0
+		for _, x := range prompts {
+			if x.At.Before(before) {
+				p++
+			}
+		}
+		return r, p
+	}
+	for pos > 0 {
+		step := repliesWindow
+		if step > pos {
+			step = pos
+		}
+		start := pos - step
+		buf := make([]byte, int(step)+len(carry))
+		if _, err := f.ReadAt(buf[:step], start); err != nil && !errors.Is(err, io.EOF) {
+			return replyPage{}, err
+		}
+		copy(buf[step:], carry)
+		carry = nil
+		read += step
+		pos = start
+		if start > 0 {
+			if i := bytes.IndexByte(buf, '\n'); i < 0 {
+				carry, buf = buf, nil
+			} else {
+				carry, buf = buf[:i+1], buf[i+1:]
+			}
+		}
+		s := newTextScan()
+		for len(buf) > 0 {
+			line := buf
+			if i := bytes.IndexByte(buf, '\n'); i >= 0 {
+				line, buf = buf[:i], buf[i+1:]
+			} else {
+				buf = nil
+			}
+			s.feed(line)
+		}
+		if !s.firstAt.IsZero() {
+			firstAt = s.firstAt
+		}
+		// This step is older than everything held. A reply already held under the
+		// same id takes this step's blocks in front of its own.
+		var front []Reply
+		var frontIDs []string
+		for i, r := range s.out {
+			id := s.ids[i]
+			if j, ok := byID[id]; ok && id != "" {
+				replies[j].Text = r.Text + "\n\n" + replies[j].Text
+				replies[j].At = r.At
+				continue
+			}
+			front = append(front, r)
+			frontIDs = append(frontIDs, id)
+		}
+		replies = append(front, replies...)
+		ids = append(frontIDs, ids...)
+		prompts = append(s.prompts, prompts...)
+		byID = map[string]int{}
+		for i, id := range ids {
+			if id != "" {
+				byID[id] = i
+			}
+		}
+		if pos > 0 {
+			// The cursor is the oldest record read, so it must be older than before.
+			// Until one is, read on past the reach, up to repliesCap.
+			if standing := firstAt.Before(before) && !firstAt.IsZero(); !standing {
+				if read >= repliesCap {
+					break
+				}
+				continue
+			}
+			if read >= repliesReach {
+				break
+			}
+			if r, p := older(); r >= n && p >= n {
+				break
+			}
+		}
+	}
+	if pos > 0 && (firstAt.IsZero() || !firstAt.Before(before)) {
+		// Nothing older than before within the cap. There is no cursor that
+		// advances, so the answer is that there is no more.
+		return replyPage{}, nil
+	}
+	// Short of the start the read is complete only down to its oldest record, and
+	// the oldest reply may lack blocks that lie further back. Leave it for the
+	// next page, which finds it whole.
+	var floor time.Time
+	if pos > 0 {
+		floor = firstAt
+	}
+	var rs []Reply
+	for _, r := range replies {
+		if r.At.Before(before) {
+			rs = append(rs, r)
+		}
+	}
+	var ps []Prompt
+	for _, p := range prompts {
+		if p.At.Before(before) {
+			ps = append(ps, p)
+		}
+	}
+	if rest, ok := dropOldestGroup(rs); pos > 0 && ok {
+		rs = rest
+		floor = laterOf(floor, rs[0].At)
+	}
+	pg := finishPage(rs, ps, n, floor)
+	pg.replies = append([]Reply{}, pg.replies...)
+	for i := range pg.replies {
+		pg.replies[i].Text, pg.replies[i].Truncated = keepHead(pg.replies[i].Text, replyTextMax)
+	}
+	pg.prompts = append([]Prompt{}, pg.prompts...)
+	return pg, nil
+}
+
+// lineBefore is an offset at the start of a line, past which every line is at or
+// after before, so a `before` page reads back from there and the reach is counted
+// from the page's own place in the file, not from the end. Without it a page deeper
+// than the reach could never be answered. Transcript lines are written in time
+// order, so it bisects on their timestamps. Anything it cannot read answers the
+// file's end, which is always correct and only costs the reach.
+//
+// It RELIES ON TIME-ORDERED LINES. Claude Code writes them in order today. If that
+// ever stopped being true, the bisection would skip a region without saying so.
+func lineBefore(f *os.File, size int64, before time.Time) int64 {
+	lo, hi := int64(0), size
+	for hi-lo > repliesWindow {
+		mid := lo + (hi-lo)/2
+		off, at, ok := probeLine(f, mid)
+		if !ok || off >= hi {
+			return size
+		}
+		if at.Before(before) {
+			lo = off
+		} else {
+			hi = off
+		}
+	}
+	return hi
+}
+
+// probeLine is the start and the timestamp of the first line that starts at or
+// after off and carries one.
+func probeLine(f *os.File, off int64) (int64, time.Time, bool) {
+	buf := make([]byte, 256<<10)
+	n, _ := f.ReadAt(buf, off)
+	buf = buf[:n]
+	i := bytes.IndexByte(buf, '\n')
+	if i < 0 {
+		return 0, time.Time{}, false
+	}
+	start := off + int64(i) + 1
+	buf = buf[i+1:]
+	key := []byte(`"timestamp":"`)
+	for {
+		j := bytes.IndexByte(buf, '\n')
+		if j < 0 {
+			return 0, time.Time{}, false
+		}
+		line := buf[:j]
+		if k := bytes.Index(line, key); k >= 0 {
+			rest := line[k+len(key):]
+			if e := bytes.IndexByte(rest, '"'); e >= 0 {
+				if at, err := time.Parse(time.RFC3339Nano, string(rest[:e])); err == nil {
+					return start, at, true
+				}
+			}
+		}
+		start += int64(j) + 1
+		buf = buf[j+1:]
+	}
 }
 
 // scanReplyText reads transcript lines and returns every main-chain assistant
@@ -223,16 +600,46 @@ func scanReplyText(r io.Reader) ([]Reply, error) {
 func scanTranscriptText(r io.Reader) ([]Reply, []Prompt, error) {
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 0, 64<<10), 8<<20)
-	var (
-		out     []Reply
-		prompts []Prompt
-		index   = map[string]int{} // message id to its place in out
-	)
+	replies, prompts, _, err := scanTranscriptWindow(r)
+	return replies, prompts, err
+}
+
+// scanTranscriptWindow is scanTranscriptText and the time of the first record
+// it read.
+func scanTranscriptWindow(r io.Reader) ([]Reply, []Prompt, time.Time, error) {
+	sc := bufio.NewScanner(r)
+	sc.Buffer(make([]byte, 0, 64<<10), 8<<20)
+	s := newTextScan()
 	for sc.Scan() {
-		line := sc.Bytes()
+		s.feed(sc.Bytes())
+	}
+	if err := sc.Err(); err != nil {
+		return nil, nil, time.Time{}, err
+	}
+	for i := range s.out {
+		s.out[i].Text, s.out[i].Truncated = keepHead(s.out[i].Text, replyTextMax)
+	}
+	return s.out, s.prompts, s.firstAt, nil
+}
+
+// textScan accumulates replies and prompts from transcript lines in file order.
+// ids holds each reply's message id, parallel to out, for joining across reads.
+type textScan struct {
+	out     []Reply
+	ids     []string
+	prompts []Prompt
+	index   map[string]int // message id to its place in out
+	firstAt time.Time      // the first record with a time, which a read starting mid-file is complete down to
+}
+
+func newTextScan() *textScan { return &textScan{index: map[string]int{}} }
+
+// feed takes one line. Reply text is not cut here, the caller cuts it once joined.
+func (s *textScan) feed(line []byte) {
+	{
 		isUser := bytes.Contains(line, []byte(`"user"`))
 		if !isUser && !bytes.Contains(line, []byte(`"assistant"`)) {
-			continue
+			return
 		}
 		var rec struct {
 			Type      string `json:"type"`
@@ -247,42 +654,42 @@ func scanTranscriptText(r io.Reader) ([]Reply, []Prompt, error) {
 				Content any    `json:"content"`
 			} `json:"message"`
 		}
-		if json.Unmarshal(line, &rec) != nil || rec.Sidechain {
-			continue
+		if json.Unmarshal(line, &rec) != nil {
+			return
 		}
 		at, _ := time.Parse(time.RFC3339Nano, rec.Timestamp)
+		if s.firstAt.IsZero() && !at.IsZero() {
+			s.firstAt = at.UTC()
+		}
+		if rec.Sidechain {
+			return
+		}
 		if rec.Type == "user" {
 			if rec.Meta || (rec.Origin != nil && rec.Origin.Kind != "" && rec.Origin.Kind != "human") {
-				continue
+				return
 			}
 			if p, ok := promptOf(rec.Message.Content); ok {
 				p.At = at.UTC()
 				p.Text, p.Truncated = keepHead(p.Text, replyTextMax)
-				prompts = append(prompts, p)
+				s.prompts = append(s.prompts, p)
 			}
-			continue
+			return
 		}
 		if rec.Type != "assistant" {
-			continue
+			return
 		}
 		text := replyText(rec.Message.Content)
 		if text == "" {
-			continue
+			return
 		}
-		if i, seen := index[rec.Message.ID]; seen && rec.Message.ID != "" {
-			out[i].Text = out[i].Text + "\n\n" + text
-			continue
+		if i, seen := s.index[rec.Message.ID]; seen && rec.Message.ID != "" {
+			s.out[i].Text = s.out[i].Text + "\n\n" + text
+			return
 		}
-		index[rec.Message.ID] = len(out)
-		out = append(out, Reply{At: at.UTC(), Text: text})
+		s.index[rec.Message.ID] = len(s.out)
+		s.out = append(s.out, Reply{At: at.UTC(), Text: text})
+		s.ids = append(s.ids, rec.Message.ID)
 	}
-	if err := sc.Err(); err != nil {
-		return nil, nil, err
-	}
-	for i := range out {
-		out[i].Text, out[i].Truncated = keepHead(out[i].Text, replyTextMax)
-	}
-	return out, prompts, nil
 }
 
 // promptOf is a user line's text and kind, or false for a line that is not
