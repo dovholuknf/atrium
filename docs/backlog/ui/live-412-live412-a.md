@@ -83,7 +83,7 @@ PASS 2d needs me only (all list): 49 rows, chip `146 hidden by filters`, 195 min
 
 FAIL 2d hide subagents hides the directors. Repro: `/m/`, view, all tab, tap `hide subagents`. 82 of 195 rows go.
 Among them are the live directors `fabric`, `ui`, `rnd`, `runtime`, `review` and `u-paste-spinner`, `u-ready-spam`
-(status needs-input, 17 of the 49 needs rows are hidden aliased cards). Measured with `/v1/tasks`: `fabric` has tags
+(status needs-input). Measured with `/v1/tasks`: `fabric` has tags
 `atrium:context-ceiling, atrium:subagent, origin:agent`, `ui` the same, the orchestrator has
 `atrium:hold-notices, atrium:subagent, orchestrators, origin:agent`. The orchestrator stays visible (`orchestrators` is
 in the exempt list). The live directors do not, because the exempt list matches the tag `atrium:director`, and only the
