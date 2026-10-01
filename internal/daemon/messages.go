@@ -890,7 +890,7 @@ func (d *Daemon) typeLabelledThroughGate(run *runner, taskID, banner, text strin
 func (d *Daemon) typeLabelledGuarded(run *runner, taskID, banner, text string, ok func() bool) (bool, error) {
 	payload := text
 	if d.bracketedPasteFor(taskID, false) {
-		payload = "\x1b[200~" + text + "\x1b[201~"
+		payload = bracketedPaste(text)
 	}
 	return run.injectPeerIf(banner, payload, ok)
 }
