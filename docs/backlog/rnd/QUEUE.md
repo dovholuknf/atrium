@@ -76,7 +76,12 @@ director as `docs/backlog/<dept>/<d>-new-<name>.md`, or fold them into the desig
 
 ## Waiting
 
-Nothing. From 2026-09-30 evening, UI work only (clint): design what feeds @ui, then stop and wait.
+HELD by the PAUSE: do not start until the orchestrator ends it. Both are HIGH, take them in this order:
+
+1. `docs/backlog/rnd/rnd-new-room-handoff.md`: move a card and its work between rooms (`atrium move`), from the 2026-10-01 director move.
+2. `docs/backlog/rnd/rnd-new-backlog-in-atrium.md`: the hub holds backlog items, queues and reports as rows, not markdown files.
+
+Both were filed by the orchestrator from clint on 2026-10-01.
 
 ## Done
 
