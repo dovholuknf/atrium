@@ -1,8 +1,8 @@
 /* The hub's deploy-ready pill in the header and its dialog. See js/deployready.js. Colours are skin variables with defaults. */
   .deploypill {
-    max-width: 30ch; min-height: 24px; padding: 0 10px; border: 1px solid var(--deploy-line, var(--stroke-dim)); border-radius: 12px;
+    min-height: 24px; padding: 0 10px; border: 1px solid var(--deploy-line, var(--stroke-dim)); border-radius: 12px;
     background: none; color: var(--deploy-fg, var(--dim)); font: var(--fs-sm)/1 var(--mono); cursor: pointer;
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    white-space: nowrap;
   }
   .deploypill[hidden] { display: none; }
   .deploypill[data-state="ready"] { color: var(--deploy-ready, var(--teal)); border-color: var(--deploy-ready, var(--teal)); }

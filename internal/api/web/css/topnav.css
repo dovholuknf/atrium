@@ -1,0 +1,76 @@
+/* The desktop header row: the chips give way before the tabs do, and a tab that still has no room goes whole into the
+   overflow menu. See js/topnav.js. Phone and tablet widths keep the scrolling nav in phone.css. */
+
+  /* Compact chips. Each keeps its words in the DOM (the tests and the screen readers read them) and draws a short form
+     in their place, the way `.gauto` already does under 1150px. */
+  .tabmore { display: none; }
+  @media (min-width: 901px) {
+    nav { overflow: hidden; }
+    .tab.ovf { visibility: hidden; }
+    .tabmore {
+      display: inline-flex; align-items: center;
+      font: 600 var(--fs-xl)/1 var(--mono); padding: calc(6px * var(--uiscale) * var(--density)) 11px;
+      color: var(--label); background: transparent; border: 1px solid var(--stroke-dim); border-radius: var(--r-md);
+    }
+    .tabmore[hidden] { display: inline-flex; visibility: hidden; position: absolute; }
+    .tabmore:hover { color: var(--head); }
+    .tabmore.on { color: var(--head); background: var(--chip); border-color: var(--stroke); }
+    .tabmore .count { margin-left: 6px; }
+  }
+  .tabs-menu {
+    position: fixed; z-index: 90; min-width: 11rem; max-height: calc(100vh - 80px); overflow-y: auto;
+    display: flex; flex-direction: column; gap: var(--sp-1); padding: var(--sp-2);
+    border: 1px solid var(--stroke); border-radius: var(--r-md);
+    background: var(--shell-0); box-shadow: 0 14px 40px rgba(var(--shadow-rgb),.55);
+  }
+  .tabs-menu[hidden] { display: none; }
+  .tabs-menu button {
+    display: flex; align-items: center; text-align: left; padding: var(--sp-3) var(--sp-4);
+    border: 0; border-radius: var(--r-sm); background: none; color: var(--label); cursor: pointer;
+    font-size: var(--fs-xl); white-space: nowrap;
+  }
+  .tabs-menu .count {
+    margin-left: 8px; padding: 1px 9px; border-radius: var(--r-pill);
+    font: 600 var(--fs-lg)/1.6 var(--mono); background: rgba(var(--warn-rgb),.15); color: var(--warn);
+  }
+  .tabs-menu button:hover { background: var(--chip); color: var(--head); }
+  .tabs-menu button.on { color: var(--teal); background: var(--teal-bg); }
+
+  /* The row is short of room under 1900px: the number alone for the working count and the share chip as its sign, the
+     short word for auto mode, the connection as its dot, and a tighter gap. */
+  @media (min-width: 901px) and (max-width: 1900px) {
+    .bar { gap: var(--sp-3); }
+    button.working { font-size: 0; gap: 6px; }
+    button.working::after { content: attr(data-n); font: 600 var(--fs-xs)/1 var(--sans); letter-spacing: .1em; }
+    .sharing { font-size: 0; padding: 7px 10px; }
+    .sharing::before { font-size: var(--fs-md); }
+    button.working::before { font-size: var(--fs-xs); }
+    .conn:not(.down) #conn-t { display: none; }
+    .gauto { font-size: 0; padding: 7px 10px; }
+    .gauto::before { margin-right: 6px; font-size: var(--fs-md); }
+    .gauto::after {
+      content: "ASK"; vertical-align: middle; font: 600 var(--fs-xs)/1 var(--sans); letter-spacing: .1em;
+    }
+    .gauto.on::after { content: "AUTO"; }
+    .gauto.unknown::after { content: "?"; }
+  }
+  /* The pill's line is as long as the commits it counts, so on a desktop it is always the short form. The line is the
+     tooltip and the first thing in the dialog. */
+  @media (min-width: 901px) {
+    .deploypill[data-short] { font-size: 0; }
+    .deploypill[data-short]::after { content: attr(data-short); font: var(--fs-sm)/1 var(--mono); }
+  }
+  /* Under 1900px the new agent button is a plus, and under 1500px the room chip drops its word. */
+  @media (min-width: 901px) and (max-width: 1900px) {
+    button.newagent { font-size: 0; padding: 10px 14px; }
+    button.newagent::before { content: "+"; font-size: var(--fs-2xl); }
+  }
+  @media (min-width: 901px) and (max-width: 1500px) {
+    .rooms:not(.scoped) #rooms-t { font-size: 0; }
+    .rooms:not(.scoped) #rooms-t::after { content: attr(data-n); font: 500 var(--fs-xl)/1 var(--mono); }
+  }
+  /* Under 1300px the wordmark is tighter too. */
+  @media (min-width: 901px) and (max-width: 1300px) {
+    .bar { gap: var(--sp-2); }
+    .wordmark { letter-spacing: .12em; font-size: var(--fs-2xl); }
+  }
