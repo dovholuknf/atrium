@@ -74,6 +74,13 @@ function waitingRow(t) {
   return (t.status === "needs-input" || t.status === "needs-permission") &&
     !!t.wire_name && !t.archived_at && !t.offline;
 }
+// A card that launched another still running is not waiting on the human, whatever its own status says. The ready
+// alert reads this to hold back until the last child ends. Matched on the bare id, as the board does everywhere.
+function hasRunningChild(t, all) {
+  const me = bareId(t.task_id || t.id);
+  return (all || []).some(c => c.spawned_by_id && c.status === "running" && !c.archived_at &&
+    bareId(c.spawned_by_id) === me);
+}
 function cardsWaiting() {
   return cardList().filter(waitingRow)
     .sort((a, b) => String(a.waiting_since || "").localeCompare(String(b.waiting_since || "")));

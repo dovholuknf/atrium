@@ -15871,6 +15871,110 @@ async function termSortStartedSection(browser, base) {
   if (!bad) console.log("termSortStarted ok");
 }
 
+// A card that spawned a running card is not waiting on the human: no ready alert until the last child ends.
+// Driven through the real pass with /v1/tasks mocked, so the call site's filter is what is under test.
+async function noReadyChildrenSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const page = await ctx.newPage();
+  const errors = [];
+  page.on("pageerror", e => errors.push(String(e)));
+  await page.addInitScript(() => {
+    window.__atriumReadyQuietMs = 300;
+    Document.prototype.hasFocus = () => true;
+  });
+  let rows = [];
+  await page.route(u => new URL(u).pathname === "/v1/tasks", route =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ tasks: rows }) }));
+  const card = (id, status, extra) => ({ id, wire_name: id, status, supervised: true, tags: [], title: id,
+    display_title: id, created_at: "2026-09-01T10:00:00Z", ...extra });
+  try {
+    await page.goto(base, { waitUntil: "domcontentloaded" });
+    await page.waitForFunction(() => typeof alerting !== "undefined" && typeof refresh === "function", null,
+      { timeout: slow(15000) });
+    await page.waitForTimeout(1500);
+    await page.evaluate(() => { localStorage.removeItem("atrium.toastlog"); alerting.set({ debounce: 0, muted: true }); });
+    const step = async list => {
+      rows = list;
+      await page.evaluate(() => refresh());
+      await page.waitForTimeout(700);
+    };
+    const rings = who => page.evaluate(w => toastLog().filter(e => e.title.startsWith(w + " ")).length, who);
+    const kid = (id, status) => card(id, status, { tags: ["atrium:subagent"], spawned_by_id: "par" });
+    await step([card("par", "running"), kid("k1", "running"), kid("k2", "running"), card("solo", "running")]);
+    // The parent ends its turn with two running children, and a card with no children does the same.
+    await step([card("par", "needs-input", { waiting_since: "W1" }), kid("k1", "running"), kid("k2", "running"),
+      card("solo", "needs-input", { waiting_since: "W1" })]);
+    if (await rings("par")) fail("noReadyChildren: a ready alert fired for a card with running children");
+    if (await rings("solo") !== 1) fail("noReadyChildren: a card with no children did not ring once");
+    // One child ends and one still runs.
+    await step([card("par", "needs-input", { waiting_since: "W1" }), kid("k1", "done"), kid("k2", "running"),
+      card("solo", "needs-input", { waiting_since: "W1" })]);
+    if (await rings("par")) fail("noReadyChildren: a ready alert fired while one child still ran");
+    // The last child ends and the parent is still idle.
+    await step([card("par", "needs-input", { waiting_since: "W1" }), kid("k1", "done"), kid("k2", "done"),
+      card("solo", "needs-input", { waiting_since: "W1" })]);
+    if (await rings("par") !== 1) fail("noReadyChildren: no ready alert after the last child ended: " + await rings("par"));
+    if (await rings("solo") !== 1) fail("noReadyChildren: the childless card rang again: " + await rings("solo"));
+    // The state stays visible on the card: it is still in the waiting set.
+    const waiting = await page.evaluate(() => cardsWaiting().map(t => t.id).sort().join());
+    if (waiting !== "par,solo") fail("noReadyChildren: the ready state is not kept on the card: " + waiting);
+    if (errors.length) fail("noReadyChildren: page errors: " + errors.join(" | "));
+  } finally { await ctx.close(); }
+  if (!bad) console.log("noReadyChildren ok");
+}
+
+// A spawned card is drawn under its parent's row, under every sort and group mode. An orphan stays a row.
+async function childUnderParentSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const p = await ctx.newPage();
+  const errors = [];
+  p.on("pageerror", e => errors.push(e.message));
+  try {
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof setTermSortMode === "function" && typeof renderTermList === "function",
+      null, { timeout: slow(15000) });
+    await p.evaluate(() => switchView("terms"));
+    const out = await p.evaluate(async () => {
+      const card = (id, at, extra) => ({ id, status: "running", supervised: true, pinned: false, title: "same",
+        display_title: "same", tags: [], created_at: at, worktree: "/r/p", ...extra });
+      const sub = (id, at, by) => card(id, at, { tags: ["atrium:subagent"], spawned_by_id: by });
+      const cards = [card("par", "2026-09-01T10:00:00Z"), sub("kid-a", "2026-09-30T10:00:00Z", "par"),
+        sub("kid-b", "2026-09-29T10:00:00Z", "par"), sub("orph", "2026-09-28T10:00:00Z", "gone"),
+        card("zed", "2026-09-27T10:00:00Z", { display_title: "zed" })];
+      boardCards = async () => cards;
+      const res = {};
+      for (const sort of ["name", "activity", "started"]) {
+        for (const grp of ["off", "project", "recency", "tag"]) {
+          setGroupMode(grp);
+          setTermSortMode(sort);
+          await renderTermList();
+          const at = id => document.querySelector(`#term-list .card.tab[data-id="${id}"]`);
+          const par = at("par");
+          const box = par && par.nextElementSibling;
+          res[sort + "/" + grp] = {
+            rows: document.querySelectorAll("#term-list .card.tab").length,
+            kids: box && box.classList.contains("tkids")
+              ? [...box.querySelectorAll(".card.tab")].map(c => c.dataset.id).join() : "none",
+            orphanNested: !!(at("orph") && at("orph").closest(".tkids")),
+            parNested: !!(par && par.closest(".tkids"))
+          };
+        }
+      }
+      setGroupMode("project");
+      setTermSortMode("activity");
+      return res;
+    });
+    for (const [k, v] of Object.entries(out)) {
+      if (v.rows !== 5) fail("childUnderParent " + k + ": expected 5 rows drawn, got " + v.rows);
+      if (v.kids !== "kid-a,kid-b" && v.kids !== "kid-b,kid-a") fail("childUnderParent " + k + ": kids not under the parent: " + v.kids);
+      if (v.orphanNested) fail("childUnderParent " + k + ": an orphan child was nested");
+      if (v.parNested) fail("childUnderParent " + k + ": the parent was nested");
+    }
+    if (errors.length) fail("childUnderParent: page errors: " + errors.join(" | "));
+  } finally { await ctx.close(); }
+  if (!bad) console.log("childUnderParent ok");
+}
+
 async function termBoxSection(browser, base) {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
   const p = await ctx.newPage();
@@ -17565,7 +17669,8 @@ async function main() {
       mSwitcher: mSwitcherSection,
       mPull: mPullSection, joinedLive: joinedLiveSection,
       coverPoll: coverPollSection, coverSteps: coverStepsSection, termBox: termBoxSection,
-      termDebug: termDebugSection, termSortStarted: termSortStartedSection };
+      termDebug: termDebugSection, termSortStarted: termSortStartedSection,
+      noReadyChildren: noReadyChildrenSection, childUnderParent: childUnderParentSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -19598,6 +19703,66 @@ async function main() {
     await unit("termBox", () => termBoxSection(browser, base));
     await unit("termDebug", () => termDebugSection(browser, base));
     await unit("termSortStarted", () => termSortStartedSection(browser, base));
+    await pasteStartSection(browser, base);
+    await pasteDoneSection(browser, base);
+    await pasteOldRoomSection(browser, base);
+    await pasteCloseSection(browser, base);
+    await growlQuestionBodySection(browser, base);
+    await growlReplyGrowSection(browser, base);
+    await growlChoicesSection(browser, base);
+    await growlStableSection(browser, base);
+    await mGrowlQuestionSection(browser);
+    await bootCleanSection(browser, base);
+    await mWorkingSection(browser);
+    await mOwnMessagesSection(browser);
+    await mRecapSheetSection(browser);
+    await mHomeOrderSection(browser);
+    await cardUrlWayOutSection(browser, base);
+    await phoneBootSection(browser, base);
+    await sayEnterSection(browser);
+    await sendArrowSection(browser);
+    await mTablesSection(browser);
+    await mMarkdownSection(browser);
+    await mHostileSection(browser);
+    await mPicturesSection(browser);
+    await mHiddenSection(browser);
+    await mViewerSection(browser);
+    await mChangesSection(browser);
+    await mChangesRealSection(browser);
+    await deployReadySection(browser, base);
+    await mHomeLiveSection(browser);
+    await soundPhoneSection(browser, base);
+    await boardDocsSection(browser, base);
+    await phoneBoardCompactSection(browser, base);
+    await phoneBellSection(browser, base);
+    await mBellSection(browser);
+    await phoneRedirectSection(browser, base);
+    await gearTermListSection(browser, base);
+    await growlLinksSection(browser, base);
+    await growlChoiceOnceSection(browser, base);
+    await mOutputAtSection(browser);
+    await mStickBottomSection(browser);
+    await mSendFreeSection(browser);
+    await mCardUploadSection(browser);
+    await mCompactSection(browser);
+    await mPinchSection(browser);
+    await mTypeSteadySection(browser);
+    await mOlderSection(browser);
+    await mFollowSection(browser);
+    await mDocsSection(browser);
+    await mSwitcherSection(browser);
+    await mPullSection(browser);
+    await mPromptsSection(browser);
+    await cardUrlWinNameSection(browser, base);
+    await gearHostsSection(browser, base);
+    await joinedLiveSection(browser, base);
+    await coverPollSection(browser, base);
+    await coverStepsSection(browser, base);
+    await termBoxSection(browser, base);
+    await termDebugSection(browser, base);
+    await termSortStartedSection(browser, base);
+    await noReadyChildrenSection(browser, base);
+    await childUnderParentSection(browser, base);
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e));
     if (process.env.DEBUG_HEADLESS && page) {

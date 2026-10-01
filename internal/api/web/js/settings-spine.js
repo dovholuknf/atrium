@@ -1521,8 +1521,10 @@ async function pass(signal) {
       // for titles and alerts, but let the permission handler notify about blocked
       // tools so each event produces one alert. Newly started sessions stay visible
       // without ringing; fixtures-started reports startup failures separately.
+      // A card waiting on its own running children is not waiting on you, so it is left out until the last one ends.
+      const every = cardList();
       alerting.check("waiting", waiting.filter(t =>
-        t.status !== "needs-permission" && !justStarted(t)), t => ({
+        t.status !== "needs-permission" && !justStarted(t) && !hasRunningChild(t, every)), t => ({
         title: wasAsked(t)
           ? `${t.display_title} asked you something`
           // Named for what it is. A card stopped on another session still
@@ -1561,7 +1563,7 @@ async function pass(signal) {
       // on when it was flagged, so a card that wakes and stalls again rings
       // again. The room takes the flag down itself. See looksidle.go.
       alerting.check("looksidle", lastTasks
-        .filter(t => t.activity && t.activity.looks_idle && !over(t) && !isWaiting(t))
+        .filter(t => t.activity && t.activity.looks_idle && !over(t) && !isWaiting(t) && !hasRunningChild(t, lastTasks))
         .map(t => Object.assign({}, t, {
           id: `${t.id}#idle#${t.activity.idle_at}`, task_id: t.id
         })), t => ({
