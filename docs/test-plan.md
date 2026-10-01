@@ -8172,3 +8172,9 @@ build before `atrium_publish path` works, since an older room cannot say what a 
     it. A purged blob leaves the copy and a blob lost from the live folder does not.
 17. **Not verified by tests:** the board's gear and the `/d/` page, which are D2's. Old rooms (no `X-Atrium-Real-Path`)
     refuse `path` and say why. Check that the message is clear on a room that has not been restarted.
+
+## HT. No typed text ends its own bracketed paste (r-paste-strip)
+
+1. Type or send a message holding `ESC[201~` then `ESC[Z`, through the board message box, `atrium tell` and a held peer
+   message. The terminal receives one opener and one closer, at the ends, and the permission mode does not cycle.
+   Covered by `pastewrap_test.go`, one test per path.
