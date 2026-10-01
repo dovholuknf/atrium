@@ -471,6 +471,11 @@
     margin-left: 9px; padding-left: 9px; padding-bottom: 5px;
     border-left: 1px solid var(--hairline);
   }
+  /* Spawned cards, drawn under the parent row they were launched from. */
+  .tkids {
+    margin-left: 14px; padding-left: 6px;
+    border-left: 1px solid var(--hairline);
+  }
   /* A heading is a button, and only as wide as the thing you press. On the board's group headings the whole
      width toggles, so clicking what looks like empty space beside a name folds what you were reading. Here the
      caret and the name are the control, and the rule filling the rest of the row is decoration outside it. */

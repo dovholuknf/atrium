@@ -1040,7 +1040,7 @@ function termRunnerMark(t) {
 // row draws its LEAF alone, which is the whole point of the headings: the
 // shared prefix moves up and stops being drawn once per row.
 //
-function termRow(t, deep) {
+function termRow(t, deep, kid) {
   // THE ENTRY WEARS ITS OWN TERMINAL'S COLOURS, so the list reads as a row of
   // tabs onto the panes behind it rather than as a list of names. Amber for
   // waiting said something the board already says better and cost the one
@@ -1063,8 +1063,9 @@ function termRow(t, deep) {
   const secondary = named ? path : "";
   // The hover keeps the whole address and the name whatever the row had room to draw.
   const hover = named ? named + " · " + full + tail : full + tail;
+  const kids = (termKids.get(t.id) || []).map(k => termRow(k, false, true)).join("");
   return `
-    <div class="card tab ${on ? "on" : ""}${
+    <div class="card tab ${on ? "on" : ""}${kid ? " kid" : ""}${
            // COLD, NOT GONE. Only ever a pinned row, since an unpinned one
            // without a runner is not drawn at all. Greyed rather than removed
            // so the bucket keeps the shape you gave it, and it still answers
@@ -1099,7 +1100,38 @@ function termRow(t, deep) {
         </div>
         ${termRowChips(t)}
       </div>
-    </div>`;
+    </div>${kids ? `<div class="tkids">${kids}</div>` : ""}`;
+}
+
+// The spawned cards drawn under each parent row, by parent id. Rebuilt on every render by `termNest`.
+let termKids = new Map();
+
+// SPAWNED CARDS FILE UNDER THEIR PARENT, whatever the sort or the grouping. A card tagged atrium:subagent with a
+// spawned_by_id whose parent is in the list is drawn inside the parent's row, so it cannot sit beside it under the
+// same name. Done on the sorted list before grouping, so every group mode sees only the top rows and the kids keep
+// the sort's order. A pinned card stays a row of its own because pinning is a deliberate placement. A child whose
+// parent is not in the list, or whose lineage loops, stays a normal row.
+function termNest(list) {
+  const byBare = new Map(list.map(t => [bareId(t.id), t]));
+  const parentOf = t => {
+    if (!(t.tags || []).includes("atrium:subagent") || !t.spawned_by_id || t.pinned) return null;
+    const p = byBare.get(bareId(t.spawned_by_id));
+    return p && p !== t ? p : null;
+  };
+  const kids = new Map();
+  const nested = new Set();
+  for (const t of list) {
+    const p = parentOf(t);
+    if (!p) continue;
+    const seen = new Set([t]);
+    let up = p;
+    while (up && !seen.has(up)) { seen.add(up); up = parentOf(up); }
+    if (up) continue;
+    if (!kids.has(p.id)) kids.set(p.id, []);
+    kids.get(p.id).push(t);
+    nested.add(t.id);
+  }
+  return { kids, nested };
 }
 
 // The chips on the right of a terminal row: a held peer message, and the
@@ -1763,12 +1795,16 @@ async function renderTermList() {
   reconcileAttached(tasks);
 
   termOrder(shown);
+  // Spawned cards move under their parent row, so the lists below hold top rows only. See `termNest`.
+  const nest = termNest(shown);
+  termKids = nest.kids;
+  const top = shown.filter(t => !nest.nested.has(t.id));
   // What each heading would hold with nothing hidden, so it can say `7/15`.
-  termTotals = termCountTotals(tasks.filter(t => !t.pinned || termFiled(t)));
+  termTotals = termCountTotals(tasks.filter(t => !nest.nested.has(t.id) && (!t.pinned || termFiled(t))));
   // Before anything is drawn, and over the rows that will BE drawn: a card
   // filtered out above cannot be confused with one on screen.
   termNoteDuplicates(shown);
-  const pinnedTasks = shown.filter(t => t.pinned);
+  const pinnedTasks = top.filter(t => t.pinned);
   pinnedNow = pinnedTasks.map(t => t.id);
 
   const host = document.getElementById("term-list");
@@ -1791,7 +1827,7 @@ async function renderTermList() {
       `<div class="termscroll">` +
       termBucketHTML(pinnedTasks, tasks.filter(t => t.pinned).length,
         termFolded().has(PINNED_FOLD)) +
-      termGroupsHTML(shown.filter(t => !t.pinned || termFiled(t))) + `</div></div>`
+      termGroupsHTML(top.filter(t => !t.pinned || termFiled(t))) + `</div></div>`
     : `<div class="panel"><div class="empty">
          no terminals. start one from the board, or attach to a running session.
        </div></div>`);
@@ -1911,7 +1947,7 @@ let termDragEl = null;
 // replaces the whole strip and an unguarded listener per render is the leak
 // the terminal's paste handler already taught this file about.
 function wireTermDrag(host) {
-  host.querySelectorAll(".card.tab").forEach(el => {
+  host.querySelectorAll(".card.tab:not(.kid)").forEach(el => {
     el.draggable = true;
     el.ondragstart = e => {
       termDragID = el.dataset.id;
@@ -1951,7 +1987,7 @@ function wireTermDrag(host) {
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
     bucket.classList.add("dropover");
-    const over = e.target.closest(".card.tab");
+    const over = e.target.closest(".card.tab:not(.kid)");
     const moving = host.querySelector(`.card.tab[data-id="${termDragID}"]`);
     if (!moving || !over || over === moving) return;
     // Above or below the row under the pointer, decided by which half of it
@@ -1981,7 +2017,7 @@ function wireTermDrag(host) {
     // stands and the dropped card goes on the end.
     const ids = bucket.classList.contains("folded")
       ? pinnedNow.filter(x => x !== id).concat(id)
-      : [...bucket.querySelectorAll(".card.tab")].map(x => x.dataset.id);
+      : [...bucket.querySelectorAll(".card.tab:not(.kid)")].map(x => x.dataset.id);
     // Bare, because the ids go in the BODY and the hub only untags the path.
     // A tagged id matches no row in the room's store and the order is lost.
     const bare = ids.map(bareId);
@@ -2020,7 +2056,7 @@ function wireGroupDrop(nest) {
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
     nest.classList.add("dropover");
-    const over = e.target.closest(".card.tab");
+    const over = e.target.closest(".card.tab:not(.kid)");
     if (!over || over === termDragEl || !nest.contains(over)) return;
     const box = over.getBoundingClientRect();
     const after = e.clientY > (box.top + box.height / 2);
@@ -2042,7 +2078,7 @@ function wireGroupDrop(nest) {
     if (!nest.contains(el)) nest.appendChild(el);
     const id = el.dataset.id;
     const t = lastTasks.find(x => x.id === id);
-    const rows = [...nest.querySelectorAll(".card.tab")];
+    const rows = [...nest.querySelectorAll(".card.tab:not(.kid)")];
     const at = rows.indexOf(el);
     const rankOf = row => {
       const x = lastTasks.find(y => y.id === row.dataset.id);

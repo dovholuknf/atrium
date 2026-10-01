@@ -1,0 +1,1 @@
+A card that ends a turn while a card it spawned is still running raises no ready alert until the last child ends, and spawned cards now sit under their parent's row in the terminal list under every sort and group mode (no-ready-children).
