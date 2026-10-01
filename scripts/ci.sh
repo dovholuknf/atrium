@@ -77,6 +77,16 @@ else
   echo "skipped: no node on PATH, so the palette's contrast was not checked."
 fi
 
+step "the opencode plugin"
+# The plugin is the opencode runner's permission gate, and it runs inside
+# opencode where no Go test reaches. Its child_process is mocked, so this needs
+# no atrium and no opencode.
+if command -v node >/dev/null 2>&1; then
+  check "opencode plugin" node --test --experimental-test-module-mocks scripts/opencode/atrium.test.mjs
+else
+  echo "skipped: no node on PATH, so the opencode plugin was not tested."
+fi
+
 step "what the release refuses"
 # The refusals, not the release. This runs `cut-release.sh --preflight` against
 # a throwaway repository, so it needs no network, builds nothing, and takes a

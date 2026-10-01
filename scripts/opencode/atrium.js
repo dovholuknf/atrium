@@ -28,6 +28,13 @@
 // OPEN: anything other than an explicit deny from atrium lets the tool run and
 // leaves opencode's own permission rules in charge.
 //
+// Those rules are opencode's defaults, which allow bash and edits, and the
+// runner row deliberately does not tighten them to `ask`. opencode asks AFTER
+// this hook returns, so `ask` would put a second prompt in the opencode
+// terminal behind every call atrium had already approved, and nobody is
+// sitting at that terminal. 1.18.34 has no plugin trigger for its own ask, so
+// there is no way to answer it from here.
+//
 // Only a session atrium launched is reported. atrium sets ATRIUM_RUNNER on
 // every launch, and without it this plugin does nothing, so an opencode started
 // by hand in some other terminal is left alone.
@@ -80,18 +87,46 @@ const ARG_NAMES = {
   replaceAll: "replace_all",
 }
 
+// The same map backwards, for an edited approval coming home.
+const OPENCODE_ARGS = Object.fromEntries(Object.entries(ARG_NAMES).map(([k, v]) => [v, k]))
+
 function claudeTool(tool) {
   return TOOL_NAMES[String(tool || "").toLowerCase()] || String(tool || "")
 }
 
+// claudeArgs renames and adds nothing else. Every key here is sent to the board,
+// so an alias would put the same text in front of a human twice.
 function claudeArgs(args) {
   if (!args || typeof args !== "object") return {}
   const out = {}
   for (const [k, v] of Object.entries(args)) out[ARG_NAMES[k] || k] = v
-  // A patch carries its whole change as text. Shown as the content so the
-  // board has something better than raw JSON to put in front of a human.
-  if (typeof args.patchText === "string" && out.content === undefined) out.content = args.patchText
   return out
+}
+
+function isObject(v) {
+  return v !== null && typeof v === "object" && !Array.isArray(v)
+}
+
+// applyEdit makes `args` say what the human approved, IN PLACE: opencode runs
+// the tool on the very object it handed this hook, so a new object would be
+// ignored and the original would run.
+//
+// The whole edited input, not a list of fields. atrium shows a tool it has no
+// summary for as raw JSON, and an edit to that comes back as the whole input.
+// Returns false when it cannot be applied, and the caller refuses the call
+// rather than running something the human did not approve.
+function applyEdit(upd, args) {
+  if (!isObject(upd) || !isObject(args)) return false
+  try {
+    const want = {}
+    for (const [k, v] of Object.entries(upd)) want[OPENCODE_ARGS[k] || k] = v
+    for (const k of Object.keys(args)) if (!(k in want)) delete args[k]
+    Object.assign(args, want)
+    for (const [k, v] of Object.entries(want)) if (args[k] !== v) return false
+    return true
+  } catch {
+    return false
+  }
 }
 
 function locationFile() {
@@ -284,17 +319,14 @@ export const AtriumPlugin = async ({ client, directory }) => {
         // is refused, and the reason is what the model reads.
         throw new Error("atrium denied this tool call: " + (ans.permissionDecisionReason || "blocked via atrium"))
       }
-      // An approval with an edited command. Only the fields atrium edits are
-      // mapped back, under opencode's own names.
-      try {
-        const upd = ans.permissionDecision === "allow" ? ans.updatedInput : undefined
-        if (upd && output?.args && typeof output.args === "object") {
-          if (typeof upd.command === "string" && "command" in output.args) output.args.command = upd.command
-          if (typeof upd.file_path === "string" && "filePath" in output.args) output.args.filePath = upd.file_path
-          if (typeof upd.url === "string" && "url" in output.args) output.args.url = upd.url
-          if (typeof upd.pattern === "string" && "pattern" in output.args) output.args.pattern = upd.pattern
+      // An approval of an edited call. What runs is the edit or nothing: the
+      // original is exactly what the human changed their mind about.
+      if (ans.permissionDecision === "allow" && ans.updatedInput !== undefined) {
+        if (!applyEdit(ans.updatedInput, output?.args)) {
+          throw new Error("atrium approved an edited version of this tool call that could not be " +
+            "applied, so nothing was run")
         }
-      } catch {}
+      }
     },
 
     "tool.execute.after": async (input) => {
