@@ -243,7 +243,8 @@ halfway.
      - A merge commit is accepted only if its tree equals `git merge-tree` of its parents, so an evil merge cannot
        carry unreviewed content.
      - A trailer is text, and anyone on an unsigned room can write one. A verdict counts only from a commit that
-       touches only review files (`docs/backlog/*/rd-new-review-*.md`, `docs/backlog/review/**`). That makes a
+       touches only review files (`docs/backlog/*/*-new-review-*.md`, `docs/backlog/review/**`), so every department's
+       verdicts count, not only rnd's. That makes a
        forged verdict visible in the diff, not impossible. Signing @review's commits is what makes it a guarantee.
   4. **One room at a time.** Under the lock, a room's landing is cut from the current `claude/main`. A branch that
      is no longer a fast-forward is refused, not rebased by the op. Its director rebases, which changes the SHAs, so
