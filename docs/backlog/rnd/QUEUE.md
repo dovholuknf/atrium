@@ -83,7 +83,7 @@ HELD by the PAUSE: do not start until the orchestrator ends it. Take them in thi
 3. `docs/backlog/rnd/rnd-new-factory-landscape.md`: a SPIKE on other software factories, open source first. Its output is a landscape doc and a ranked list of what to borrow.
 4. `docs/backlog/rnd/rnd-new-backlog-in-atrium.md`: a SPIKE on a pluggable backlog (files, atrium's store, GitHub, GitLab or Bitbucket issues). The output is a short spike doc with a recommendation, and nothing gets built. Do NOT start it until clint says so, even after the pause ends.
 
-Both were filed by the orchestrator from clint on 2026-10-01.
+All four were filed by the orchestrator from clint on 2026-10-01.
 
 ## Done
 
