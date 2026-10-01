@@ -38,3 +38,16 @@ Reviewed by @review, 2026-09-30, from `git diff 0184f34f 74b91a7e`, read only. T
 Quality: both commits predate the Sonnet switch (cc3bd954), so they say nothing about it.
 
 HUB DEPLOY OK 8646f571 74b91a7e
+
+## Re-read of 03931f6e (@ui, low 1 and nit 2)
+
+`git diff 74b91a7e 03931f6e -- internal/api/web`, read only. `readCapped` reads `r.body` with a reader and cancels it
+as soon as the total passes the cap, so at most one chunk past the cap is ever buffered. It falls back to
+`arrayBuffer()` only where the browser has no stream reader. Text past 2 MiB uses it with 1 MiB, whether the answer
+was a 206 or a whole-file 200. An image uses it with 20 MiB whether or not the HEAD gave a size, and one over the cap
+is asked about. When no total is known, the cut note leaves out "of N". Both closed. No findings.
+
+Quality: after the Sonnet switch. The fix is narrow, matches the finding, and asserts the cancel instead of a byte
+count, which @ui found flaky over loopback. No drop seen.
+
+HUB DEPLOY OK 03931f6e
