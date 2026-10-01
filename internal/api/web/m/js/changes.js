@@ -227,7 +227,13 @@
       if (exists) body.appendChild(openBtn("open the file"));
       return;
     }
-    if (!hunks.length) { body.appendChild(note("nothing to show for this file")); return; }
+    if (!hunks.length) {
+      // No lines to show is a fact about the file and says which: a new or removed file with no content, a rename, or a change
+      // of mode only.
+      body.appendChild(note(f.status === "added" ? "empty file, added" : f.status === "deleted" ? "empty file, deleted"
+        : f.status === "renamed" ? "renamed, no change to the content" : "no change to the content, only to its mode or name"));
+      return;
+    }
     body.appendChild(note("tap a line to quote it", "cg-grey"));
     hunks.forEach(h => body.appendChild(hunkEl(v, f, h)));
   }
