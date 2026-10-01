@@ -13558,12 +13558,13 @@ async function mTypeSteadySection(browser) {
 }
 
 // "load older": paging back through a long thread on the room's cursor, one request per click or scroll to the top.
-async function mOlderSection(browser) {
+async function mOlderRun(browser, cfg) {
   const st = mServer({});
   const c = mCard("ol-1", { alias: "elder", display_title: "elder", status: "needs-input", waiting_since: mIso(2 * M_MIN), seen: { turn_ended_at: mIso(20 * M_MIN) } });
   st.tasks = [c];
-  const rep = (i, min) => ({ at: mIso(min * M_MIN), text: "Reply " + i + ". " + "words that wrap onto a second line on the phone. ".repeat(3) });
-  const latest = [1, 2, 3, 4, 5, 6].map(i => rep(i, 60 - (6 - i) * 4));
+  const rep = (i, min) => ({ at: mIso(min * M_MIN), text: "Reply " + i + ". " + "words that wrap onto a second line on the phone. ".repeat(10) });
+  // enough tall bubbles that the thread overflows its box on any machine, whatever its font metrics
+  const latest = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(i => rep(i, 60 - (10 - i) * 4));
   st.replies["ol-1"] = { source: "transcript", replies: latest, prompts: [], more: true, next_before: "cur-A" };
   const pageB = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(i => rep(100 + i, 200 - (12 - i) * 5)).concat([latest[0]]);
   let cFails = 1;
@@ -13576,8 +13577,8 @@ async function mOlderSection(browser) {
   } };
   await st.open();
   try {
-    const { ctx, p, errors } = await mPage(browser, st, M_VIEWS[0], "");
-    const tag = "mOlder: ";
+    const { ctx, p, errors } = await mPage(browser, st, { width: 412, height: cfg.h }, "");
+    const tag = "mOlder " + cfg.h + (cfg.fs ? " fs" + cfg.fs : "") + ": ";
     const olderHits = b => st.hits.filter(h => h === "ol-1?50&before=" + b).length;
     await p.waitForSelector("#m-seg-all", { timeout: slow(10000) });
     await p.tap("#m-seg-all");
@@ -13585,6 +13586,10 @@ async function mOlderSection(browser) {
     await p.tap('#m-list .row[data-id="ol-1"]');
     await p.waitForSelector("#m-replies .reply", { timeout: slow(5000) });
     await p.waitForSelector("#m-older", { timeout: slow(5000) });
+    if (cfg.fs) await p.evaluate(f => document.getElementById("m-card").style.setProperty("--m-fs", f + "px"), cfg.fs);
+    await p.waitForTimeout(300);
+    const ov = await p.evaluate(() => { const e = document.getElementById("m-card-scroll"); return [e.scrollHeight, e.clientHeight]; });
+    if (ov[0] <= ov[1] + 40) fail(tag + "the thread does not overflow its box, so the top cannot be reached: " + ov.join(" in "));
     if (!st.hits.includes("ol-1?50")) fail(tag + "the first page was not asked for with n=50: " + st.hits.join(","));
     if (!/load older/.test(await p.textContent("#m-older"))) fail(tag + "no load older row while more is true");
     const top = () => p.evaluate(() => {
@@ -13662,6 +13667,39 @@ async function mOlderSection(browser) {
     if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
     await ctx.close();
   } finally { await st.close(); }
+}
+
+// A thread that does not overflow its box still shows the load older row, and a click on it works.
+async function mOlderShort(browser) {
+  const st = mServer({});
+  const c = mCard("ol-2", { alias: "brief", display_title: "brief", status: "needs-input", waiting_since: mIso(2 * M_MIN), seen: { turn_ended_at: mIso(20 * M_MIN) } });
+  st.tasks = [c];
+  st.replies["ol-2"] = { source: "transcript", replies: [{ at: mIso(5 * M_MIN), text: "Only reply." }], prompts: [], more: true, next_before: "s-A" };
+  st.pages = { "ol-2": before => before === "s-A" ? { body: { source: "transcript", replies: [{ at: mIso(50 * M_MIN), text: "An older reply." }, { at: mIso(40 * M_MIN), text: "Another older reply." }], prompts: [], more: false } } : { status: 404, body: {} } };
+  await st.open();
+  try {
+    const { ctx, p, errors } = await mPage(browser, st, { width: 412, height: 915 }, "");
+    const tag = "mOlder short: ";
+    await p.waitForSelector("#m-seg-all", { timeout: slow(10000) });
+    await p.tap("#m-seg-all");
+    await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
+    await p.tap('#m-list .row[data-id="ol-2"]');
+    await p.waitForSelector("#m-older", { timeout: slow(5000) });
+    const ov = await p.evaluate(() => { const e = document.getElementById("m-card-scroll"); return [e.scrollHeight, e.clientHeight]; });
+    if (ov[0] > ov[1] + 1) fail(tag + "this thread was meant not to overflow: " + ov.join(" in "));
+    await p.tap("#m-older");
+    await p.waitForFunction(() => /Another older reply/.test(document.getElementById("m-replies").textContent), null, { timeout: slow(5000) });
+    if (!st.hits.includes("ol-2?50&before=s-A")) fail(tag + "the click did not ask with the cursor: " + st.hits.join(","));
+    await p.waitForFunction(() => !document.getElementById("m-older"), null, { timeout: slow(3000) });
+    if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+    await ctx.close();
+  } finally { await st.close(); }
+}
+
+// "load older" at two viewport heights and at the smallest and largest pinch sizes, so it does not rest on one machine's layout.
+async function mOlderSection(browser) {
+  for (const cfg of [{ h: 915, fs: 0 }, { h: 700, fs: 0 }, { h: 915, fs: 11 }, { h: 700, fs: 24 }]) await mOlderRun(browser, cfg);
+  await mOlderShort(browser);
   if (!bad) console.log("mOlder ok");
 }
 

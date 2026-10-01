@@ -16,6 +16,7 @@
   let openId = "";
   let els = null;
   let seq = 0;
+  let closeTok = 0;
   let turnKey = "";
   // The room's `output_at`: the last reply with text, mid-turn too. Absent keeps the last one seen.
   let outAt = "";
@@ -600,6 +601,7 @@
   function open(id, fromHistory) {
     if (!els || !id) return;
     if (openId) return;
+    closeTok++;
     openId = id;
     turnKey = id + "@" + turnOf(window.mStore.card(id));
     outAt = (window.mStore.card(id) || {}).output_at || "";
@@ -645,9 +647,10 @@
     seq++;
     document.body.classList.remove("sheet-open");
     els.sheet.classList.remove("on");
-    const id = openId;
+    const id = openId, tok = ++closeTok;
     if (reduced()) { finishClose(); return; }
-    const done = () => { if (openId === id && !els.sheet.classList.contains("on")) finishClose(); };
+    // A close that was overtaken by a reopen of the same card (a quick tap on a slow machine) must not close the new one.
+    const done = () => { if (tok === closeTok && openId === id && !els.sheet.classList.contains("on")) finishClose(); };
     els.sheet.addEventListener("transitionend", done, { once: true });
     setTimeout(done, 400);
   }
