@@ -101,6 +101,12 @@
   }
 
   function grow(ta, maxLines) {
+    // Measuring the box takes it to its natural height for a moment, which lets the thread above it grow and clamp its
+    // scroll position. The thread's place is put back, so typing never moves it.
+    const sc = document.getElementById("m-card-scroll"), top = sc ? sc.scrollTop : 0;
+    try { growNow(ta, maxLines); } finally { if (sc && sc.scrollTop !== top) sc.scrollTop = top; }
+  }
+  function growNow(ta, maxLines) {
     ta.style.height = "auto";
     const cs = getComputedStyle(ta);
     const line = parseFloat(cs.lineHeight) || 22;
@@ -175,16 +181,16 @@
     send.innerHTML = '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">' +
       '<path d="M12 19V5M6 11l6-6 6 6" fill="none" stroke="currentColor" stroke-width="2.4" ' +
       'stroke-linecap="round" stroke-linejoin="round"/></svg>';
-    // The file picker and the camera, on the phone page only. The terminal's compact bar takes pastes and drops.
-    // Two inputs, because `capture` asks for the camera and leaves the library out.
+    // The file picker, on the phone page only. The terminal's compact bar takes pastes and drops. It takes images too,
+    // and a phone offers its camera from the same picker, so there is no camera button of its own.
     if (!opts.compact && !(opts.canUpload && !opts.canUpload())) {
-      const pick = (label, svg, accept, capture) => {
+      const pick = (label, svg, accept) => {
         const input = el("input", "mc-input");
         input.type = "file";
         input.hidden = true;
         input.accept = accept;
-        if (capture) input.setAttribute("capture", capture); else input.multiple = true;
-        const btn = el("button", "mc-attach " + (capture ? "mc-cam" : "mc-pick"));
+        input.multiple = true;
+        const btn = el("button", "mc-attach mc-pick");
         btn.type = "button";
         btn.setAttribute("aria-label", label);
         btn.innerHTML = svg;
@@ -195,9 +201,8 @@
       };
       const ico = d => '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="' + d + '" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
       const file = pick("attach a file or image", ico("M21 12.5l-8.5 8.5a5.5 5.5 0 0 1-8-8L13 4.5a3.7 3.7 0 0 1 5.2 5.2l-8.6 8.6a1.8 1.8 0 0 1-2.6-2.6l8-8"),
-        "image/*,application/pdf,text/*,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.md,.json,.csv,.log", "");
-      const cam = pick("take a photo", ico("M4 8h3l2-3h6l2 3h3v11H4zM12 17a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z"), "image/*", "environment");
-      row.append(file[0], cam[0], file[1], cam[1]);
+        "image/*,application/pdf,text/*,.md,.json,.csv,.log");
+      row.append(file[0], file[1]);
       row.classList.add("with-attach");
     }
     row.append(ta, send);

@@ -126,6 +126,9 @@ func NewProxy(hub *Hub, board fs.FS, boardID string, room func() string) *Proxy 
 		p.assets = webasset.New(board)
 	}
 	p.feeds = newFeeds(p)
+	hub.every.mu.Lock()
+	hub.every.onChange = p.feeds.everywhereChanged
+	hub.every.mu.Unlock()
 	// A ROOM'S STREAM COMING UP is when the board-wide approver sweeps that room.
 	// See autoapprove.go.
 	p.feeds.connected = func(room string) {
@@ -1057,6 +1060,7 @@ type ShareAuth struct {
 // permission chain is then whatever each room's own gate does, exactly as
 // before. See autoapprove.go.
 func (p *Proxy) SetInventory(s Inventory) {
+	p.hub.every.setHolding(s)
 	p.mu.Lock()
 	p.stock = s
 	if p.approver == nil {
@@ -1241,6 +1245,7 @@ func (p *Proxy) forgetInventory(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, `{"error":%q}`, err.Error())
 		return
 	}
+	p.hub.every.drop(body.Name)
 	p.feeds.roomsChanged()
 	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
 }
@@ -1349,6 +1354,8 @@ func (p *Proxy) serveHubAPI(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"rooms": p.attachedView()})
 	case "nudge":
 		p.serveNudge(w, r)
+	case "everywhere":
+		p.serveEverywhere(w, r)
 	case "inventory":
 		p.serveInventory(w, r)
 	case "inventory/mark":

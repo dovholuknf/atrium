@@ -10,7 +10,7 @@
 
   const U = window.mUtil;
   const MD = window.mMd;
-  const REPLIES_N = 3;
+  const REPLIES_N = 10;
 
   let openId = "";
   let els = null;
@@ -55,14 +55,24 @@
     return { id: openId, worktree: t && t.worktree || "" };
   }
 
-  function replyHTML(r, screen) {
-    const when = r.at ? U.ago(Date.now() - U.ts(r.at)) : "";
+  // One header line per message: who, how long ago, and the delivery state when there is one.
+  function agoOf(at) {
+    const a = U.ago(Date.now() - U.ts(at));
+    return a === "now" ? "now" : a;
+  }
+  function headerHTML(who, at, tag, note) {
+    return '<header class="rh"><span class="src">' + U.esc(who) + "</span>" + (note ? '<span class="note">' + U.esc(note) + "</span>" : "") +
+      (at ? '<time datetime="' + U.esc(at) + '">' + U.esc(agoOf(at)) + "</time>" : "") + (tag ? '<b class="tag">' + U.esc(tag) + "</b>" : "") + "</header>";
+  }
+  function whoOf(t) {
+    const nm = U.cardName(t);
+    const room = window.mNet.roomOf(t.id) || t.room || "";
+    return nm.main + (room ? "@" + room : "");
+  }
+  function replyHTML(r, screen, who) {
     const body = screen ? '<pre class="screen">' + U.esc(r.text) + "</pre>" : '<div class="md">' + MD.render(r.text, mdCtx()) + "</div>";
-    return '<article class="reply' + (screen ? " from-screen" : "") + '">' +
-      (screen ? '<span class="src">from the screen</span>' : "") + body +
-      (r.truncated ? '<p class="cut">cut short here. the rest is in the terminal</p>' : "") +
-      (when ? '<time datetime="' + U.esc(r.at) + '">' + U.esc(when === "now" ? "just now" : when + " ago") + "</time>" : "") +
-      "</article>";
+    return '<article class="reply' + (screen ? " from-screen" : "") + '">' + headerHTML(who, r.at, "", screen ? "from the screen" : "") + body +
+      (r.truncated ? '<p class="cut">cut short here. the rest is in the terminal</p>' : "") + "</article>";
   }
 
   function fallbackHTML(t) {
@@ -116,14 +126,27 @@
     return a.what && a.what !== "thinking" ? String(a.what) : "thinking";
   }
 
+  // The one small row above the composer: how the last message went, and what the card is doing, on one line.
+  function sentOf(t) {
+    const bare = window.mNet.bareId(t.id);
+    const mine = readSent(t.id).concat(flight.get(bare) || []).sort((x, y) => U.ts(x.at) - U.ts(y.at)).pop();
+    if (!mine) return "";
+    const got = cache.get(openId);
+    const reps = got && got.replies || [];
+    if (reps.length && U.ts(reps[reps.length - 1].at) > U.ts(mine.at)) return "";
+    const st = mine.state || mine.kind;
+    return st === "pending" ? "sending" : st === "failed" ? "not sent" : st === "queued" ? "queued" : "sent";
+  }
+
   function paintWorking(t) {
-    const w = workingOf(t);
-    const sig = w ? (t.activity && t.activity.what === "tool" ? "tool:" : "") + w : "";
+    const w = workingOf(t), sent = sentOf(t);
+    const tool = t.activity && t.activity.what === "tool";
+    const sig = sent + "|" + (w ? (tool ? "tool:" : "") + w : "");
     if (els.working.dataset.sig === sig) return;
     els.working.dataset.sig = sig;
-    els.working.hidden = !w;
-    els.working.innerHTML = w ? '<span class="wk-spin" aria-hidden="true"></span><span class="wk-what">' +
-      (t.activity && t.activity.what === "tool" ? '<span class="wk-verb">running</span> ' : "") + U.esc(w) + "</span>" : "";
+    els.working.hidden = !w && !sent;
+    els.working.innerHTML = (sent ? '<span class="wk-sent">' + U.esc(sent) + "</span>" : "") + (sent && w ? '<span class="wk-dot">&middot;</span>' : "") +
+      (w ? '<span class="wk-spin" aria-hidden="true"></span><span class="wk-what">' + (tool ? '<span class="wk-verb">running</span> ' : "") + U.esc(w) + "</span>" : "");
   }
 
   // ── what the operator sent ───────────────────────────────────────────────
@@ -168,7 +191,7 @@
     a.push({ at: new Date().toISOString(), text: t, kind: kind === "queued" ? "queued" : "sent" });
     try { localStorage.setItem(sentKey(id), JSON.stringify(a.slice(-SENT_KEEP))); } catch (e) {}
     pruneSent();
-    if (isOpen(id)) { stick = true; paintReplies(); }
+    if (isOpen(id)) { stick = true; paintReplies(); paintWorkingNow(); }
   }
   function isOpen(id) { return !!openId && window.mNet.bareId(id) === window.mNet.bareId(openId); }
   window.addEventListener("m-sent", e => { const d = e.detail || {}; noteSent(d.id, d.text, d.kind); });
@@ -176,6 +199,7 @@
   // A message on its way, in memory only: pending while the room has not answered, and not sent when it failed, with
   // its text back in the composer. An answered one becomes the kept row above, carrying delivered or queued.
   const flight = new Map();
+  function paintWorkingNow() { const t = openId && window.mStore.card(openId); if (t && els) paintWorking(t); }
   window.addEventListener("m-send", e => {
     const d = e.detail || {};
     if (!d.id || !d.key) return;
@@ -183,16 +207,14 @@
     const list = (flight.get(bare) || []).filter(x => x.key !== d.key && !(x.state === "failed" && x.text === d.text));
     if (d.state === "pending" || d.state === "failed") list.push({ key: d.key, text: d.text, state: d.state, at: new Date().toISOString() });
     flight.set(bare, list);
-    if (isOpen(d.id)) { if (d.state === "pending") stick = true; paintReplies(); }
+    if (isOpen(d.id)) { if (d.state === "pending") stick = true; paintReplies(); paintWorkingNow(); }
   });
 
   const OWN_TAG = { pending: "sending", failed: "not sent, back in the box", sent: "delivered", queued: "queued" };
   function ownHTML(m) {
-    const when = U.ago(Date.now() - U.ts(m.at));
     const st = m.state || m.kind || "";
-    return '<article class="reply mine' + (st === "pending" || st === "failed" ? " " + st : "") + '"><span class="src">you</span><div class="own">' + U.esc(m.text) + "</div>" +
-      '<time datetime="' + U.esc(m.at) + '">' + U.esc(when === "now" ? "just now" : when + " ago") +
-      (OWN_TAG[st] ? ' <b class="tag">' + OWN_TAG[st] + "</b>" : "") + "</time></article>";
+    return '<article class="reply mine' + (st === "pending" || st === "failed" ? " " + st : "") + '">' + headerHTML("you", m.at, OWN_TAG[st] || "") +
+      '<div class="own">' + U.esc(m.text) + "</div></article>";
   }
 
   function questionsHTML(t) {
@@ -211,7 +233,23 @@
     return items.concat(own).sort((a, b) => a.at - b.at);
   }
 
+  // What was typed into the session, from the replies endpoint. The operator's own are "you", a peer's are quieter and
+  // carry the sender's name, a command is one small line. Absent `prompts` leaves the thread as it was.
+  function promptHTML(p) {
+    const cut = p.truncated ? '<p class="cut">cut</p>' : "";
+    const text = String(p.text || "");
+    const body = t => '<div class="own">' + U.esc(t) + "</div>" + cut + "</article>";
+    if (p.kind === "command") return '<article class="reply prompt command">' + headerHTML("command", p.at, "") + body(text);
+    if (p.kind === "peer") {
+      const m = /^\[atrium\] (.+?) says:\s*/.exec(text);
+      return '<article class="reply prompt peer">' + headerHTML(m ? m[1] : "a peer", p.at, "") + body(m ? text.slice(m[0].length) : text);
+    }
+    return '<article class="reply mine prompt">' + headerHTML("you", p.at, "") + body(text);
+  }
+  const sameText = (a, b) => String(a).trim().slice(0, 200) === String(b).trim().slice(0, 200);
+
   function repliesHTML(t, got) {
+    const who = whoOf(t);
     if (!got) return '<div class="replies loading" aria-busy="true"><div class="sk"></div><div class="sk s2"></div></div>';
     if (got.failed) {
       // The endpoint is not on this room yet, or it failed. The recap and the last report stand in for it.
@@ -221,9 +259,16 @@
     }
     const screen = got.source === "screen";
     const list = got.replies || [];
-    const items = mergeOwn(t, list.map(r => ({ r, at: U.ts(r.at) })), list.length ? U.ts(list[0].at) : 0);
+    const prompts = Array.isArray(got.prompts) ? got.prompts.filter(p => p && p.at) : [];
+    const since = list.length ? U.ts(list[0].at) : 0;
+    const ops = prompts.filter(p => p.kind !== "peer" && p.kind !== "command");
+    // A local own row goes once the matching operator prompt has arrived, so nothing shows twice.
+    const items = mergeOwn(t, list.map(r => ({ r, at: U.ts(r.at) })), since)
+      .filter(i => !i.mine || !ops.some(p => sameText(p.text, i.mine.text) && Math.abs(U.ts(p.at) - U.ts(i.mine.at)) <= 60000))
+      .concat(prompts.filter(p => U.ts(p.at) >= since).map(p => ({ p, at: U.ts(p.at) })))
+      .sort((a, b) => a.at - b.at);
     if (!items.length) return '<div class="replies">' + fallbackHTML(t) + "</div>";
-    return '<div class="replies">' + items.map(i => i.mine ? ownHTML(i.mine) : replyHTML(i.r, screen)).join("") + "</div>";
+    return '<div class="replies">' + items.map(i => i.p ? promptHTML(i.p) : i.mine ? ownHTML(i.mine) : replyHTML(i.r, screen, who)).join("") + "</div>";
   }
 
   // ── painting ─────────────────────────────────────────────────────────────
@@ -264,7 +309,16 @@
     els.scroll.scrollTop = els.scroll.scrollHeight;
     els.jump.hidden = true;
   }
+  // While a message is being typed the thread holds still. The composer growing a line, the keyboard coming or going
+  // and every keystroke change the room around the thread, and none of them is a reason to move it. The place it had
+  // when typing began (or where the operator last scrolled it to) is put back after each of those, and stick-to-bottom
+  // is not run. Sending, the jump control, leaving the box and emptying it end it, and the next input pins again.
+  let typing = false, pinTop = 0;
+  function pinned() { if (typing && els && els.scroll.scrollTop !== pinTop) els.scroll.scrollTop = pinTop; return typing; }
+  function typingOn() { if (!typing && els) { typing = true; pinTop = els.scroll.scrollTop; } }
+  function typingOff() { typing = false; }
   function settle() {
+    if (pinned()) return;
     if (!stick || !els) return;
     toEnd();
     requestAnimationFrame(() => { if (stick && els) toEnd(); });
@@ -273,9 +327,65 @@
   // fire scroll events, and none of them is a decision to stop following. A touch, wheel, key or drag marks the
   // scrolls that follow it as the operator's, and a finger's momentum is covered by the window after it.
   let userAt = 0;
+  // ── pinch is text size ───────────────────────────────────────────────────
+  // The browser's own pinch is off (viewport and touch-action). Two fingers on the thread change --m-fs, the message
+  // font size, within 11 to 24 px, kept on this device. The text reflows, the header, composer and buttons keep their
+  // size, and the message under the fingers stays where it is.
+  const FS_KEY = "atrium.mfs", FS_MIN = 11, FS_MAX = 24, FS_DEF = 14;
+  function setFs(px) {
+    const v = Math.max(FS_MIN, Math.min(FS_MAX, Math.round(px * 10) / 10));
+    q("m-card").style.setProperty("--m-fs", v + "px");
+    return v;
+  }
+  function pinchInit() {
+    try { const v = parseFloat(localStorage.getItem(FS_KEY)); if (v) setFs(v); } catch (e) {}
+    const dist = t => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+    let g = null;
+    els.scroll.addEventListener("touchstart", e => {
+      if (e.touches.length !== 2) { g = null; return; }
+      const t = e.touches, my = (t[0].clientY + t[1].clientY) / 2;
+      const at = document.elementFromPoint((t[0].clientX + t[1].clientX) / 2, my);
+      const anchor = at && at.closest && at.closest(".reply");
+      g = { d: dist(t), fs: parseFloat(getComputedStyle(q("m-card")).getPropertyValue("--m-fs")) || FS_DEF, anchor, y: my };
+      stick = false;
+    }, { passive: true });
+    els.scroll.addEventListener("touchmove", e => {
+      if (!g || e.touches.length !== 2) return;
+      e.preventDefault();
+      const was = g.anchor ? g.anchor.getBoundingClientRect().top : 0;
+      const v = setFs(g.fs * dist(e.touches) / (g.d || 1));
+      if (g.anchor) els.scroll.scrollTop += g.anchor.getBoundingClientRect().top - was;
+      g.last = v;
+    }, { passive: false });
+    const end = () => { if (g && g.last) { try { localStorage.setItem(FS_KEY, String(g.last)); } catch (e) {} } g = null; };
+    els.scroll.addEventListener("touchend", end);
+    els.scroll.addEventListener("touchcancel", end);
+    ["gesturestart", "gesturechange"].forEach(n => els.scroll.addEventListener(n, e => e.preventDefault()));
+  }
+
+  // The same pinch on another scroller that sits inside the card, the file viewer's, with no message to hold in place.
+  function bindPinch(el) {
+    const dist = t => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+    let g = null;
+    el.addEventListener("touchstart", e => {
+      if (e.touches.length !== 2) { g = null; return; }
+      g = { d: dist(e.touches), fs: parseFloat(getComputedStyle(q("m-card")).getPropertyValue("--m-fs")) || FS_DEF };
+    }, { passive: true });
+    el.addEventListener("touchmove", e => {
+      if (!g || e.touches.length !== 2) return;
+      e.preventDefault();
+      g.last = setFs(g.fs * dist(e.touches) / (g.d || 1));
+    }, { passive: false });
+    const end = () => { if (g && g.last) { try { localStorage.setItem(FS_KEY, String(g.last)); } catch (e) {} } g = null; };
+    el.addEventListener("touchend", end);
+    el.addEventListener("touchcancel", end);
+    ["gesturestart", "gesturechange"].forEach(n => el.addEventListener(n, e => e.preventDefault()));
+  }
+
   function byHand() { userAt = Date.now(); }
   function onScroll() {
     if (!els || !openId) return;
+    if (typing) { if (Date.now() - userAt < 1500) pinTop = els.scroll.scrollTop; else pinned(); }
     const gap = els.scroll.scrollHeight - els.scroll.scrollTop - els.scroll.clientHeight;
     if (gap < NEAR) { stick = true; els.jump.hidden = true; return; }
     if (Date.now() - userAt < 1500) { stick = false; els.jump.hidden = false; }
@@ -367,6 +477,7 @@
   }
 
   function finishClose() {
+    if (window.mViewer) window.mViewer.reset();
     if (MD.release) MD.release();
     els.sheet.hidden = true;
     els.head.innerHTML = els.notices.innerHTML = els.replies.innerHTML = els.extras.innerHTML = els.recap.innerHTML = "";
@@ -501,6 +612,14 @@
   }
 
   async function openFromPath() {
+    // `/m/#term=<id>` is where the board sends a card it only knows by id.
+    const hm = /^#term=(.+)$/.exec(location.hash);
+    if (hm && !shapeOf(location.pathname)) {
+      const id = dec(hm[1]);
+      try { history.replaceState({ mcard: id, direct: true }, "", "/m/"); } catch (e) {}
+      whenHeld(id, () => open(id, true));
+      return;
+    }
     const s = shapeOf(location.pathname);
     if (!s) return;
     const who = s.kind === "alias" ? s.alias : s.name;
@@ -576,12 +695,16 @@
     // The first open lays out late: the Recap button, the permission rows, fonts and any image in a reply move the end
     // after the first scroll. While following, every size change of the thread and the box around it goes to the end again.
     if (window.ResizeObserver) {
-      const ro = new ResizeObserver(() => { if (stick && openId) toEnd(); });
+      const ro = new ResizeObserver(() => { if (pinned()) return; if (stick && openId) toEnd(); });
       [els.scroll, els.head, els.notices, els.replies, els.extras, els.perms].forEach(e => ro.observe(e));
     }
+    pinchInit();
     els.scroll.addEventListener("load", () => { if (stick && openId) toEnd(); }, true);
-    els.jump.addEventListener("click", () => { stick = true; toEnd(); });
+    els.jump.addEventListener("click", () => { typingOff(); stick = true; toEnd(); });
     if (window.visualViewport) window.visualViewport.addEventListener("resize", () => { if (openId) settle(); });
+    els.sheet.addEventListener("input", e => { if (e.target && e.target.classList && e.target.classList.contains("mc-box")) { if (e.target.value) typingOn(); else { typingOff(); settle(); } } }, true);
+    els.sheet.addEventListener("focusout", e => { if (e.target && e.target.classList && e.target.classList.contains("mc-box")) typingOff(); });
+    window.addEventListener("m-send", e => { if (e.detail && e.detail.state === "pending") typingOff(); });
     els.head.addEventListener("click", e => { if (e.target.closest && e.target.closest("#m-recap-open")) openRecap(); });
     els.recap.addEventListener("click", e => {
       if (e.target.id === "m-recap-back" || (e.target.closest && e.target.closest("#m-recap-close"))) closeRecap();
@@ -606,5 +729,5 @@
     openFromPath();
   }
 
-  window.mCard = { init, open, close, isOpen: () => !!openId, current: () => openId };
+  window.mCard = { init, open, close, bindPinch, isOpen: () => !!openId, current: () => openId };
 })();

@@ -134,6 +134,16 @@ func describeExit(req *mcp.CallToolRequest, in exitInput, out exitOutput) (strin
 	return cardRoom(req, in.Card), "exit " + namedOr(out.Card, in.Card), true
 }
 
+// describeModel records the card and the model asked for. The model is a short
+// identifier, never free text.
+func describeModel(req *mcp.CallToolRequest, in modelInput, out modelOutput) (string, string, bool) {
+	model := []rune(strings.TrimSpace(in.Model))
+	if len(model) > 80 {
+		model = model[:80]
+	}
+	return cardRoom(req, in.Card), "model " + namedOr(out.Card, in.Card) + " to " + string(model), true
+}
+
 func describeCull(req *mcp.CallToolRequest, in cullInput, out cullOutput) (string, string, bool) {
 	verb := "cull "
 	if in.Hold {

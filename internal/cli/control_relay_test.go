@@ -27,6 +27,9 @@ type stdioBoard struct {
 	noAcross bool
 	across   []string
 	exited   []string
+	// peersAsked is the queries /v1/peers/rooms got, and rooms what it answers.
+	peersAsked []string
+	rooms      []map[string]any
 }
 
 // acrossAnswer is what the fake room says to an address: local when it names
@@ -56,6 +59,9 @@ func (b *stdioBoard) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewDecoder(r.Body).Decode(&body)
 		b.said = append(b.said, body)
 		_ = json.NewEncoder(w).Encode(map[string]any{"delivered": "held", "to": body["to"]})
+	case r.URL.Path == "/v1/peers/rooms" && b.rooms != nil:
+		b.peersAsked = append(b.peersAsked, r.URL.RawQuery)
+		_ = json.NewEncoder(w).Encode(map[string]any{"peers": b.rooms})
 	case r.URL.Path == "/v1/tasks":
 		_ = json.NewEncoder(w).Encode(map[string]any{"tasks": []map[string]any{
 			{"id": "c1", "wire_name": "sa1", "status": "working"},
@@ -222,5 +228,32 @@ func TestStdioTaskAndExitAgainstAnOlderRoom(t *testing.T) {
 	_, _, err := taskHandler(context.Background(), nil, TaskInput{Card: "orch@claude-sg4"})
 	if err == nil || !strings.Contains(err.Error(), "older") {
 		t.Fatalf("err = %v, want the room called older", err)
+	}
+}
+
+// atrium_peers without `rooms` appends the everywhere cards its room lists, and
+// a room that predates them leaves the list as it is.
+func TestStdioPeersAppendTheEverywhereCards(t *testing.T) {
+	b := &stdioBoard{rooms: []map[string]any{{"handle": "atrium-87300@claude-sg4", "card": "claude-sg4~s1",
+		"room": "claude-sg4", "status": "running", "everywhere": true}}}
+	stdioAgainst(t, b, "m1mini")
+
+	_, out, err := peersHandler(context.Background(), nil, PeersInput{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	last := out.Peers[len(out.Peers)-1]
+	if last.Handle != "atrium-87300@claude-sg4" || !last.Everywhere || len(out.Peers) != 2 {
+		t.Fatalf("peers = %+v", out.Peers)
+	}
+	if len(b.peersAsked) != 1 || b.peersAsked[0] != "everywhere=1" {
+		t.Fatalf("the room was asked %v", b.peersAsked)
+	}
+
+	old := &stdioBoard{}
+	stdioAgainst(t, old, "m1mini")
+	_, out, err = peersHandler(context.Background(), nil, PeersInput{})
+	if err != nil || len(out.Peers) != 1 {
+		t.Fatalf("an older room's list = %+v, %v", out.Peers, err)
 	}
 }
