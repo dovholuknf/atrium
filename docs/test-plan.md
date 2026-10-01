@@ -7976,3 +7976,11 @@ Needs a hub with one room and two browsers on the board. `curl` stands in for th
    `curl -s 'http://127.0.0.1:7778/v1/tasks/<id>/replies?n=5' | jq .prompts`: the first two are `operator`, the
    third `peer`, oldest first. A `/clear` shows as one `command` line.
 2. No tool result, `<task-notification>` or subagent prompt appears in `prompts`. `replies` is as before.
+
+## HK. The hub's hosts are a setting (r-new-hosts-setting)
+
+1. Share the board over zrok with a random name. It answers 403 and the error says to add the name in the gear.
+2. On the hub's machine: `curl -s -X PUT http://127.0.0.1:7778/_hub/hosts -d '{"hosts":["*.shares.zrok.io"]}'`. The
+   share answers at once, with no restart. A restart keeps it.
+3. The same PUT from another machine answers 403. A GET from anywhere lists the hosts, `ignored` and `env`.
+4. `{"hosts":["*.duckdns.org"]}` is saved, listed under `ignored` with why, and answers nothing under it.
