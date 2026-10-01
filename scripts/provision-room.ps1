@@ -2186,6 +2186,9 @@ echo "bin=$Bin"
 # and nothing is touched when the key already holds the wanted value. The merge is done here, in PowerShell, because
 # the remote may have no jq. Never a failure: the room works without it, and room-check.ps1 flags the gap.
 #
+# settings.json is round-tripped through ConvertFrom-Json and ConvertTo-Json, so the whole file may be reformatted
+# (indent, spacing) and an ISO date string may change form. The backup holds the original.
+#
 # THE BASH. Windows: `bash.exe` when one is on PATH that is not the WSL launcher in System32, else the first of the
 # usual git-bash and cygwin installs, named in full. macOS and Linux: /bin/bash.
 if (@($Runners + $Install) -contains 'claude') {
@@ -2197,12 +2200,19 @@ if (@($Runners + $Install) -contains 'claude') {
 @'
 "home=$($HOME -replace '\\', '/')"
 New-Item -ItemType Directory -Force (Join-Path $HOME '.claude') | Out-Null
-$b = Get-Command bash.exe -All -ErrorAction SilentlyContinue | Where-Object { $_.Source -notmatch '\\Windows\\System32\\' } | Select-Object -First 1
-if ($b) { 'bash=bash.exe' }
+$b = Get-Command bash.exe -All -ErrorAction SilentlyContinue | Where-Object { $_.Source -notmatch '\\(Windows\\System32|WindowsApps)\\' } | Select-Object -First 1
+$bp = $null
+if ($b) { 'bash=bash.exe'; $bp = $b.Source }
 else {
     foreach ($c in 'C:/Program Files/Git/bin/bash.exe', 'C:/work/tools/cygwin/bin/bash.exe', 'C:/cygwin64/bin/bash.exe', 'C:/msys64/usr/bin/bash.exe') {
-        if (Test-Path -LiteralPath $c) { "bash=$c"; break }
+        if (Test-Path -LiteralPath $c) { "bash=$c"; $bp = $c; break }
     }
+}
+if ($bp) {
+    $ErrorActionPreference = 'Continue'
+    & $bp -c 'command -v jq' 2>&1 | Out-Null
+    "jq=$(if ($LASTEXITCODE -eq 0) { 1 } else { 0 })"
+    $ErrorActionPreference = 'Stop'
 }
 $f = Join-Path $HOME '.claude\settings.json'
 if (Test-Path -LiteralPath $f) { 'file=' + [Convert]::ToBase64String([IO.File]::ReadAllBytes($f)) }
@@ -2213,6 +2223,7 @@ if (Test-Path -LiteralPath $s) { 'sha=' + (Get-FileHash -LiteralPath $s -Algorit
 @'
 echo "home=$HOME"
 echo "bash=/bin/bash"
+if /bin/bash -c 'command -v jq' >/dev/null 2>&1; then echo jq=1; else echo jq=0; fi
 mkdir -p "$HOME/.claude"
 [ -f "$HOME/.claude/settings.json" ] && echo "file=$(base64 < "$HOME/.claude/settings.json" | tr -d '\n')"
 s="$HOME/.claude/statusline-command.sh"
@@ -2227,7 +2238,9 @@ fi
             Step 'statusline' 'warn' "no bash found on $Name to run the status line. install git-bash or cygwin, then rerun"
         } else {
             $slPath = "$($slk.home.TrimEnd('/'))/.claude/statusline-command.sh"
-            $slCmd = "$($slk.bash) $slPath"
+            # BOTH PARTS QUOTED: Claude Code runs the command through a shell, and C:/Program Files/Git/bin/bash.exe or a
+            # home with a space would split at the space. The quoted form is also what the idempotent check compares.
+            $slCmd = "`"$($slk.bash)`" `"$slPath`""
 
             # LF ONLY: a checkout with autocrlf holds CRLF, and bash reads `\r` as part of the command.
             $slBytes = [IO.File]::ReadAllBytes($slSrc)
@@ -2263,20 +2276,30 @@ fi
                     } else {
                         "f=`"`$HOME/.claude/settings.json`"; if [ -f `"`$f`" ]; then cp `"`$f`" `"`$f.statusline-$stamp.bak`" && echo bak=1; fi"
                     }
-                    $null = Invoke-Remote $bak
-                    $slDoc | Add-Member -NotePropertyName statusLine -NotePropertyValue $slWant -Force
-                    $slTmpJ = Join-Path $work 'settings.json'
-                    [IO.File]::WriteAllText($slTmpJ, ($slDoc | ConvertTo-Json -Depth 20), [Text.UTF8Encoding]::new($false))
-                    $c = Copy-ToRemote $slTmpJ '.claude/settings.json'
-                    $slSettings = if ($c.Code -eq 0) { 'done' } else { 'fail' }
+                    $bk = ConvertFrom-KeyValue (Invoke-Remote $bak).Out
+                    if ($slk.file -and -not $bk.bak) {
+                        # An existing file with no backup is not rewritten.
+                        $slSettings = 'nobak'
+                    } else {
+                        $slDoc | Add-Member -NotePropertyName statusLine -NotePropertyValue $slWant -Force
+                        $slTmpJ = Join-Path $work 'settings.json'
+                        [IO.File]::WriteAllText($slTmpJ, ($slDoc | ConvertTo-Json -Depth 20), [Text.UTF8Encoding]::new($false))
+                        $c = Copy-ToRemote $slTmpJ '.claude/settings.json'
+                        $slSettings = if ($c.Code -eq 0) { 'done' } else { 'fail' }
+                    }
                 }
             }
 
             switch ("$slScript/$slSettings") {
                 'ok/ok' { Step 'statusline' 'ok' "$slCmd is the status line" }
                 { $_ -in 'done/done', 'done/ok', 'ok/done' } { Step 'statusline' 'done' "status line set to $slCmd, settings.json backed up first" }
+                { $_ -like '*/nobak' } { Step 'statusline' 'warn' "could not back up settings.json on $Name, so it was not changed and has no status line. rerun" }
                 { $_ -like '*/bad' }  { Step 'statusline' 'warn' "$($slk.home)/.claude/settings.json is not JSON. left as it is, so no status line" }
                 default { Step 'statusline' 'warn' "could not copy the status line to $Name ($slScript/$slSettings). rerun" }
+            }
+            # The script reads every percentage from one jq pass. Without jq it prints the folder, branch and clock only.
+            if ($slk.jq -ne '1') {
+                Step 'statusline' 'warn' "jq is not on $Name's PATH for $($slk.bash), so the status line shows only folder, branch and clock. install jq there (git-bash has none: put jq.exe in Git/usr/bin)"
             }
         }
     }

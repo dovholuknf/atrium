@@ -8204,3 +8204,6 @@ build before `atrium_publish path` works, since an older room cannot say what a 
    `settings.json.statusline-<stamp>.bak` beside it. Rerun: `provision statusline ok`, no new backup.
 2. Remove the `statusLine` key on a room and run `room-check.ps1 <room>`. The `statusline` row is `human` and names
    provision. Restore it and the row is `ok`. The requirement parses in `requirements_test.go`.
+3. Provision a Windows room whose only bash is `C:/Program Files/Git/bin/bash.exe`. The command in settings.json is
+   quoted in both parts, room-check runs it with `{}` on stdin and says `ok`. With no jq for that bash both the
+   provision step and the room-check row name jq. A `bash.exe` under `System32` or `WindowsApps` is never chosen.
