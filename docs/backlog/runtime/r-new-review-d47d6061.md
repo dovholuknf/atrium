@@ -65,3 +65,34 @@ that an invariant check (`next < before`) would have caught.
 
 ROOM DEPLOY OK 2c6bb76b, with low 1 fixed before or soon after. It cannot corrupt anything, and its worst case is a
 phone that keeps asking.
+
+## Re-read of f640fafc (@runtime, both lows and both nits) at the branch tip
+
+`git show f640fafc`, read. In a detached worktree at f640fafc: `go vet ./internal/daemon/ ./internal/api/` was clean.
+`go test -count=1 -run 'Replies|Scratch' ./internal/daemon/` was ok. That run includes my scratch proof from low 1,
+which now returns the old turns with `next` at 12:00:05 against a `before` of 12:00:20.
+
+- **Low 1 is closed.** The loop keeps reading past the reach until the oldest record read (`firstAt`) is strictly
+  older than `before`, up to `repliesCap`. If the cap passes with nothing older, the page is empty with
+  `more=false`. The floor is now `firstAt`, not a forward probe. The cursor is the newest of the floor and the
+  oldest kept entry of each list, and each of those is strictly older than `before`, so every `next_before` moves
+  back. `walk` in the tests now fails on any cursor that does not advance.
+- **Low 2 is closed.** The first page's 50-cap uses `trimReplies` and `trimPrompts`, so ties stay together.
+- **Nit 3 is closed.** `dropOldestGroup` drops the whole tied group, and only when something newer is left to set
+  the cut. **Nit 4 is closed.** `lineBefore` says it relies on time-ordered lines.
+
+**On the 64 MiB question.** It is acceptable. It is reached only when more than 16 MiB of non-turn records sit
+between `before` and the next turn, and a phone that loops forever is worse than one slow page. Disk reads come from
+the page cache, in 2 MiB steps. The one cost worth knowing about is memory, and only for a single line longer than a
+step. The carry is copied into each new step's buffer, so one line spanning the whole 64 MiB costs about 64 MiB held
+and roughly 1 GiB of copying over 32 steps, which is quadratic. Many small records, the realistic case, keep the
+carry small. Holding the carry as a list of chunks, or giving up on a line longer than the reach, would remove the
+quadratic part. That is not needed to land.
+
+**For @ui.** An empty page with `more=true` is now normal: for example, a stretch of tool results with no prompt or
+reply in it. The client must follow `next_before` even when a page brings nothing to draw.
+
+Quality: after the Sonnet switch. Every point is closed at its root, the proof scenario became a test, and the cap
+question was raised up front. No drop seen.
+
+ROOM DEPLOY OK f640fafc
