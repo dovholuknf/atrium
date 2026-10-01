@@ -37,8 +37,9 @@ the meantime.
 
 - Board landings from @ui come FIRST (clint, via the orchestrator, 2026-09-30 19:25), read only and fast, ahead of
   everything below.
-- @runtime r-replies-paging re-send: the two lows of `docs/backlog/runtime/r-new-review-d47d6061.md` (low 1 proven,
-  proof in `D:/worktrees/claude/reviews/github-dovholuknf-atrium/proof-d47d6061/`). Then r-director-ceiling.
+- @runtime r-director-ceiling.
+- @ui: the four desktop sorts still on `idle_seconds` (low 3 of `docs/backlog/ui/u-new-review-1094ba62.md`), and the
+  desktop suite result for 03cca53f.
 - From cc3bd954 on, @ui, @runtime and @fabric run Sonnet (orchestrator, 6h test): every review of theirs carries a
   "Quality:" line.
 - M3 of `docs/rnd/machine-health-design.md` (the profiler agent's rules) before it ships, when it is built.
