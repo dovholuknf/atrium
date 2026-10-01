@@ -14604,6 +14604,136 @@ const SOUND_POLICY = () => {
   };
 };
 
+// The phone layout of the full board: filters folded away, the sound hint out of the way, readable chips, short cards.
+async function phoneBoardCompactSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  const mk = (n, over) => landCard(n + "~land-" + n, Object.assign({ supervised: true, created_at: "2026-09-19T12:00:00Z", worktree: "/home/clint/git/github/openziti/ziti-sdk-c-" + n,
+    tags: ["gwt", "orchestrators", "ziti-sdk-c", "needs-review", "backlog-grooming"] }, over || {}));
+  landList = [mk("aa"), mk("bb"), mk("cc"), mk("dd")];
+  landPerms = [];
+  const shots = process.env.PHONE_BOARD_SHOTS || "";
+  try {
+    const tag = "phoneBoardCompact: ";
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+    await ctx.addInitScript(SOUND_POLICY);
+    await ctx.addInitScript(() => localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true })));
+    const p = await ctx.newPage();
+    const errors = [];
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await p.waitForTimeout(600);
+    const shot = async n => { if (shots) { fs.mkdirSync(shots, { recursive: true }); await p.screenshot({ path: path.join(shots, n + "-390.png") }); } };
+    await shot("stack");
+    // the filter rows are folded behind one button, collapsed, with nothing but the search box and the button above the first card
+    const f = await p.evaluate(() => {
+      const vis = e => !!e && getComputedStyle(e).display !== "none" && e.getBoundingClientRect().height > 0;
+      const first = document.querySelector("#stack .stackrow, #stack .card").getBoundingClientRect();
+      const btn = document.querySelector("#stack .filtersbtn");
+      return { btn: vis(btn), expanded: btn && btn.getAttribute("aria-expanded"), btnH: btn ? Math.round(btn.getBoundingClientRect().height) : 0,
+        rows: ["stack-seg", "stack-sort", "stack-group"].filter(id => vis(document.getElementById(id))), q: vis(document.getElementById("stack-q")),
+        firstTop: Math.round(first.top), count: btn && btn.querySelector(".fcount") ? btn.querySelector(".fcount").textContent : "" };
+    });
+    if (!f.btn || f.expanded !== "false") fail(tag + "the filters button is missing or open: " + JSON.stringify(f));
+    if (f.rows.length) fail(tag + "the pill rows are not folded: " + f.rows.join(","));
+    if (!f.q || f.btnH < 40) fail(tag + "the search box is gone or the button is under 40px: " + JSON.stringify(f));
+    if (f.firstTop > 200) fail(tag + "the first card starts at " + f.firstTop + "px, the filters still take the screen");
+    if (f.count !== "") fail(tag + "defaults count as active: " + f.count);
+    // the sound hint covers no input and no tray handle, in every view
+    const hint = async where => {
+      // a switch of view is a click, which unlocks the sound and takes the hint down, so it is put back to measure it
+      const r = await p.evaluate(() => {
+        const h = document.getElementById("sound-hint");
+        if (h) h.hidden = false;
+        if (!h || h.hidden || !h.getClientRects().length) return { shown: false };
+        const hb = h.getBoundingClientRect();
+        const hit = [...document.querySelectorAll("input, textarea, select, button, a, .term-handle, #t-handle, [class*=handle]")].filter(e => {
+          const b = e.getBoundingClientRect(), cs = getComputedStyle(e);
+          return cs.display !== "none" && cs.visibility !== "hidden" && b.width > 0 && b.height > 0 && b.left < hb.right && b.right > hb.left && b.top < hb.bottom && b.bottom > hb.top
+            && /^(INPUT|TEXTAREA|SELECT)$/.test(e.tagName) || (/handle/.test(e.className + e.id) && b.width > 0 && b.left < hb.right && b.right > hb.left && b.top < hb.bottom && b.bottom > hb.top);
+        }).map(e => e.tagName + "#" + e.id);
+        return { shown: true, hit, pe: getComputedStyle(h).pointerEvents, bottom: Math.round(innerHeight - hb.bottom) };
+      });
+      if (!r.shown) fail(tag + "the sound hint is not up in " + where);
+      else if (r.hit.length) fail(tag + "the sound hint covers " + JSON.stringify(r) + " in " + where);
+    };
+    await hint("stack");
+    // the pill is a real target: a tap on it enables sound and opens nothing, even over a card row
+    const under = await p.evaluate(() => {
+      const h = document.getElementById("sound-hint"), b = h.getBoundingClientRect();
+      h.style.pointerEvents = "none";
+      const e = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
+      h.style.pointerEvents = "";
+      window.__under = 0;
+      document.addEventListener("click", ev => { if (ev.target !== h) window.__under++; }, true);
+      return { tag: e ? e.tagName + "." + e.className : "", inList: !!(e && e.closest("#stack-list")) };
+    });
+    if (!under.inList) fail(tag + "the pill is not over a card row in this setup: " + JSON.stringify(under));
+    await p.tap("#sound-hint");
+    await p.waitForTimeout(250);
+    const after = await p.evaluate(() => ({ n: window.__under, hidden: document.getElementById("sound-hint").hidden, url: location.pathname + location.hash }));
+    if (after.n) fail(tag + "a tap on the sound pill reached what is under it: " + JSON.stringify(after));
+    if (!after.hidden) fail(tag + "a tap on the sound pill did not enable sound");
+    await p.evaluate(() => alerting.play("waiting"));
+    if ((await p.evaluate(() => window.__osc || 0)) < 1) fail(tag + "the sound did not play after tapping the pill");
+    // tag chips read in every skin: 4.5:1 for the text over what is behind it
+    const skins = await p.evaluate(async () => {
+      const css = await (await fetch("/css/themes.css")).text();
+      return [...new Set([...css.matchAll(/data-skin="([^"]+)"/g)].map(m => m[1]))];
+    });
+    const lum = c => { const a = [c[0], c[1], c[2]].map(v => { v /= 255; return v <= .03928 ? v / 12.92 : Math.pow((v + .055) / 1.055, 2.4); }); return .2126 * a[0] + .7152 * a[1] + .0722 * a[2]; };
+    const low = [];
+    for (const sk of skins) {
+      await p.evaluate(x => document.documentElement.setAttribute("data-skin", x), sk);
+      await p.waitForTimeout(80);
+      const box = await p.evaluate(() => { const e = document.querySelector("#stack .chip.tag"); e.scrollIntoView({ block: "center" }); const b = e.getBoundingClientRect(); return { x: b.left, y: b.top, w: b.width, h: b.height }; });
+      const png = await p.screenshot({ clip: { x: box.x, y: box.y, width: box.w, height: box.h } });
+      const got = await p.evaluate(async b64 => {
+        const img = new Image(); img.src = "data:image/png;base64," + b64; await img.decode();
+        const cv = document.createElement("canvas"); cv.width = img.width; cv.height = img.height;
+        const cx = cv.getContext("2d"); cx.drawImage(img, 0, 0);
+        const px = cx.getImageData(3, Math.floor(img.height / 2), 1, 1).data;
+        const t = document.createElement("canvas").getContext("2d"); t.fillStyle = "#000"; t.fillStyle = getComputedStyle(document.querySelector("#stack .chip.tag")).color;
+        t.fillRect(0, 0, 1, 1); const fg = t.getImageData(0, 0, 1, 1).data;
+        return { bg: [px[0], px[1], px[2]], fg: [fg[0], fg[1], fg[2]] };
+      }, png.toString("base64"));
+      const l1 = lum(got.fg), l2 = lum(got.bg), ratio = (Math.max(l1, l2) + .05) / (Math.min(l1, l2) + .05);
+      if (ratio < 4.5) low.push(sk + " " + ratio.toFixed(2));
+    }
+    await p.evaluate(() => document.documentElement.removeAttribute("data-skin"));
+    if (low.length) fail(tag + "tag chip text under 4.5:1 in " + low.join(", "));
+    // a card is short: two or three to a screen
+    const ch = await p.evaluate(() => [...document.querySelectorAll("#stack .stackrow, #stack .card")].map(e => Math.round(e.getBoundingClientRect().height)));
+    if (!ch.length || Math.max(...ch) >= 170) fail(tag + "cards are too tall: " + ch.join(","));
+    console.log("phoneBoardCompact: first card " + ch[0] + "px, " + skins.length + " skins");
+    for (const v of ["board", "terms"]) {
+      await p.evaluate(x => { const t = document.querySelector('header nav .tab[data-view="' + x + '"]'); if (t) t.click(); }, v);
+      await p.waitForTimeout(500);
+      await shot(v);
+      await hint(v);
+    }
+    // opening the button brings the rows back, with a count of the ones that are not the defaults
+    await p.evaluate(() => document.querySelector('header nav .tab[data-view="stack"]').click());
+    await p.waitForTimeout(300);
+    await p.tap("#stack .filtersbtn");
+    await p.waitForTimeout(200);
+    const open = await p.evaluate(() => ["stack-seg", "stack-sort", "stack-group"].every(id => document.getElementById(id).getBoundingClientRect().height > 0) && document.querySelector("#stack .filtersbtn").getAttribute("aria-expanded") === "true");
+    if (!open) fail(tag + "the button did not open the rows");
+    await p.tap('#stack-seg button[data-v=""]');
+    await p.waitForTimeout(200);
+    await shot("stack-open");
+    await p.tap("#stack .filtersbtn");
+    await p.waitForTimeout(200);
+    const cnt = await p.evaluate(() => document.querySelector("#stack .filtersbtn .fcount").textContent);
+    if (cnt !== "1") fail(tag + "one changed filter should count 1: " + JSON.stringify(cnt));
+    if (await p.evaluate(() => document.documentElement.scrollWidth > innerWidth)) fail(tag + "the page scrolls sideways");
+    if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+    await ctx.close();
+  } finally { tasksMode = was; }
+  if (!bad) console.log("phoneBoardCompact ok");
+}
+
 async function soundPhoneSection(browser, base) {
   const was = tasksMode;
   tasksMode = "land";
@@ -15247,7 +15377,7 @@ async function main() {
   const browser = withClock(await chromium.launch());
   // HEADLESS_ONLY=termWear,bridge runs just those sections, for working on one.
   if (process.env.HEADLESS_ONLY) {
-    const only = { termWear: termWearSection, bridge: bridgeSection, settingsOnce: settingsOnceSection,
+    const only = { phoneBoardCompact: phoneBoardCompactSection, termWear: termWearSection, bridge: bridgeSection, settingsOnce: settingsOnceSection,
       groupRemove: groupRemoveSection, worn: wornSection, restartGate: restartGateSection, restartStays: restartStaysSection, atriumDown: atriumDownSection,
       toastStays: toastStaysSection, groupColor: groupColorSection,
       groupDrag: groupDragSection, tooltip: tooltipSection, linkTip: linkTipSection,popoutTagFlip: popoutTagFlipSection, idleRate: idleRateSection, foldStill: foldStillSection,
@@ -17265,6 +17395,7 @@ async function main() {
     await mHiddenSection(browser);
     await mViewerSection(browser);
     await soundPhoneSection(browser, base);
+    await phoneBoardCompactSection(browser, base);
     await phoneBellSection(browser, base);
     await mBellSection(browser);
     await phoneRedirectSection(browser, base);

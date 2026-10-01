@@ -454,9 +454,11 @@
   #phone-bell[hidden] { display: none; }
   /* Shown while the browser keeps sound locked, until the first touch lets it start. See js/notify.js. */
   #sound-hint {
-    position: fixed; z-index: 40; left: 50%; transform: translateX(-50%); top: calc(env(safe-area-inset-top, 0px) + 56px);
-    min-height: 36px; padding: 0 14px; border: 1px solid var(--sound-hint-line, var(--stroke-dim)); border-radius: 18px;
-    background: var(--sound-hint-bg, var(--shell-0)); color: var(--sound-hint-fg, var(--warn)); font: var(--fs-sm)/1 var(--mono);
+    position: fixed; z-index: 40; left: 50%; transform: translateX(-50%); bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
+    /* At the bottom edge so it is never over the search box at the top or the terminal tray handle. A tap on it
+       enables sound and goes no further (js/notify.js), so it never opens the row under it. */
+    min-height: 40px; display: flex; align-items: center; padding: 0 12px; opacity: .92; border: 1px solid var(--sound-hint-line, var(--stroke-dim)); border-radius: 18px;
+    background: var(--sound-hint-bg, var(--shell-0)); color: var(--sound-hint-fg, var(--warn)); font: var(--fs-xs)/1 var(--mono);
   }
   #sound-hint[hidden] { display: none; }
   /* Not over an attached terminal: the hint sat on its tray handle and key bar. The first touch unlocks sound anyway. */
@@ -512,4 +514,33 @@
     .stackrow > .chips:not(:has(*)) { display: none; }
     .stackrow .who b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .stackrow .who .why { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+  }
+
+  /* ── the board on a phone: filters folded, the sound hint out of the way ──────────────────────────────── */
+  .filtersbtn { display: none; }
+  @media (max-width: 520px) and (pointer: coarse) {
+    .filtersbtn {
+      display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 14px; border-radius: var(--r-sm);
+      border: 1px solid var(--stroke-dim); background: var(--chip); color: var(--label); font: 600 var(--fs-sm)/1 var(--sans);
+    }
+    .filtersbtn[aria-expanded="true"] { border-color: var(--teal); color: var(--head); }
+    .filtersbtn .fcount { min-width: 18px; padding: 1px 5px; box-sizing: border-box; border-radius: 9px; background: var(--teal); color: var(--bg-2); font: 700 11px/16px var(--sans); text-align: center; }
+    .filtersbtn .fcount[hidden] { display: none; }
+    /* Closed, the pill rows are gone: the search box and the button are all that is left above the first card. */
+    body:not(.filters-open) :is(#stack, #board-bar) .barlabel,
+    body:not(.filters-open) :is(#stack, #board-bar) .seg { display: none; }
+    body:not(.filters-open) #stack .filters:has(#stack-sort) { display: none; }
+    body:not(.filters-open) #stack .filters:first-of-type { flex-wrap: nowrap; }
+    #stack-q { flex: 1 1 0; min-width: 0; }
+    #stack .matchcount:empty { display: none; }
+  }
+
+  /* Cards on a phone: tighter padding and chip rows, so two or three fit a screen. */
+  @media (max-width: 520px) and (pointer: coarse) {
+    .stackrow { padding: 5px 8px; row-gap: 2px; }
+    .stackrow > .chips { gap: 3px 4px; }
+    .stackrow .chip, .term-list .card .chip, .card .chip { line-height: 1.35; padding-top: 0; padding-bottom: 0; }
+    .stackrow .chip.tag { padding: 0 7px; }
+    .cardgroup > summary, .stackgroup > summary { padding-top: 4px; padding-bottom: 4px; }
+    #stack-list > * + * { margin-top: 4px; }
   }

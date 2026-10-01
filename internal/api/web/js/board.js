@@ -1896,7 +1896,7 @@ function paintBoardSort() {
   if (!el) return;
   const mode = boardSortMode();
   setHTML(el, Object.entries(BOARD_SORTS).map(([v, s]) =>
-    `<button class="${v === mode ? "on" : ""}" onclick="setBoardSort('${v}')"
+    `<button class="${v === mode ? "on" : ""}" data-sort="${v}" onclick="setBoardSort('${v}')"
        data-tip="${esc(s.title)}">${esc(s.label)}</button>`).join(""));
 }
 

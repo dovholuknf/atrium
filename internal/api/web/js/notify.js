@@ -608,12 +608,22 @@ const alerting = (() => {
   function paintSoundHint(blocked) {
     let h = document.getElementById("sound-hint");
     const want = blocked && typeof phoneToasts === "function" && phoneToasts();
-    if (!want) { if (h) h.hidden = true; return; }
+    if (!want) { if (h && !h.dataset.press) h.hidden = true; return; }
     if (!h) {
       h = document.createElement("button");
       h.type = "button";
       h.id = "sound-hint";
       h.textContent = "tap to enable sound";
+      // A tap on the pill enables sound and does nothing else. It is a real target, so a tap does not fall through to
+      // the card row, key bar or composer under it. The capture listeners above have already unlocked by now.
+      // The press is marked from the window's capture phase, ahead of the unlock listeners, because unlocking takes
+      // the pill down on pointerup and the click would then land on the row that was under it.
+      const press = e => { if (e.target === h) h.dataset.press = "1"; };
+      ["pointerdown", "touchstart", "mousedown"].forEach(t => window.addEventListener(t, press, true));
+      const release = () => { delete h.dataset.press; };
+      h.addEventListener("pointercancel", release);
+      h.addEventListener("touchcancel", release);
+      h.addEventListener("click", e => { e.preventDefault(); e.stopPropagation(); release(); unlock(); h.hidden = true; });
       document.body.appendChild(h);
     }
     h.hidden = false;
