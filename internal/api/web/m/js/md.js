@@ -30,13 +30,22 @@
   // reaches into them.
   const IMG = /\.(png|jpe?g|gif|webp)$/i;
 
+  // A path as the page compares it: forward slashes only.
+  const slashed = p => String(p || "").replace(/\\/g, "/");
+  const DRIVE = /^[A-Za-z]:\//;
+  const isAbs = p => p[0] === "/" || DRIVE.test(p);
+
   // Whether a path names something inside the card's directory. Absolute and under it, or relative with no way out.
+  // A Windows worktree is `D:/...` and compares without regard to case. A single letter and a colon then a slash is a
+  // drive, anything else before a colon is a scheme and is refused.
   function inside(path, ctx) {
-    const wt = ctx && ctx.worktree ? String(ctx.worktree).replace(/\\/g, "/").replace(/\/+$/, "") : "";
-    const p = String(path || "").replace(/\\/g, "/");
+    const wt = ctx && ctx.worktree ? slashed(ctx.worktree).replace(/\/+$/, "") : "";
+    const p = slashed(path);
     if (!p || /[\u0000-\u001f]/.test(p)) return false;
-    if (p[0] === "/") {
-      if (!wt || p.indexOf(wt + "/") !== 0 || p.length === wt.length + 1) return false;
+    if (isAbs(p)) {
+      if (!wt || p.length <= wt.length + 1) return false;
+      const fold = DRIVE.test(wt) ? x => x.toLowerCase() : x => x;
+      if (DRIVE.test(wt) !== DRIVE.test(p) || fold(p).indexOf(fold(wt) + "/") !== 0) return false;
     } else if (/^[a-z][a-z0-9+.-]*:/i.test(p)) return false;
     return !p.split("/").some(seg => seg === ".." || seg === ".");
   }
@@ -45,6 +54,7 @@
 
   // The node that stands for a card file. Hydrated by `hydrate`, which fetches an image and leaves a file for a tap.
   function fileNode(path, ctx, label, asImage) {
+    path = slashed(path);
     const a = esc(path), id = esc(ctx.id || "");
     if (asImage && IMG.test(path)) {
       return '<button type="button" class="md-img" data-card="' + id + '" data-path="' + a + '" aria-label="' + esc(label || base(path)) +
@@ -59,7 +69,7 @@
     const stash = html => { hold.push(html); return "\u0000" + (hold.length - 1) + "\u0000"; };
     let s = String(text).replace(/\u0000/g, "");
     s = s.replace(/`([^`\n]+)`/g, (m, c) =>
-      stash(inside(c, ctx) && c[0] === "/" ? fileNode(c, ctx, c, true) : "<code>" + esc(c) + "</code>"));
+      stash(inside(c, ctx) && isAbs(slashed(c)) ? fileNode(c, ctx, c, true) : "<code>" + esc(c) + "</code>"));
     s = esc(s);
     // An image: a file of the card is a thumbnail, a remote one is a link and is not loaded, anything else is its alt text.
     s = s.replace(/!\[([^\]\n]*)\]\(([^)\s]+)\)/g, (m, alt, url) => {
@@ -77,7 +87,7 @@
       return stash('<a href="' + esc(ok) + '" target="_blank" rel="noopener noreferrer">' + label + "</a>");
     });
     // A bare absolute path in the text. Only one under the card is a control, the rest stays text.
-    s = s.replace(/(^|[\s(])(\/[\w.@+~\/-]+)/g, (m, lead, path) => {
+    s = s.replace(/(^|[\s(])((?:\/|[A-Za-z]:[\\/])[\w.@+~\/\\-]+)/g, (m, lead, path) => {
       const raw = unesc(path), tail = /[.,;:)]+$/.exec(raw), p = tail ? raw.slice(0, -tail[0].length) : raw;
       if (!inside(p, ctx)) return m;
       return lead + stash(fileNode(p, ctx, p, true)) + esc(tail ? tail[0] : "");
@@ -218,22 +228,47 @@
     el.textContent = "not available";
   }
 
-  // Fills every thumbnail not yet fetched. The bytes are typed by the file's extension and not by the server, so a
-  // file that is not the picture it says it is shows nothing.
+  // Object URLs by card and path, so a redraw does not fetch again, and revoked when the card closes or the cache is full.
+  const cache = new Map();
+  const CACHE_MAX = 40;
+  function cacheDrop(key) {
+    const v = cache.get(key);
+    cache.delete(key);
+    if (v && v.url) URL.revokeObjectURL(v.url);
+  }
+  function release() { [...cache.keys()].forEach(cacheDrop); }
+
+  // The picture of a card file, once. Resolves { url } or { url: "" } when it is not available.
+  function picture(card, path) {
+    const key = card + "\u0000" + path;
+    let v = cache.get(key);
+    if (v) { cache.delete(key); cache.set(key, v); return v.ready; }
+    const ext = (/\.(\w+)$/.exec(path) || [])[1] || "";
+    v = { url: "", ready: null };
+    v.ready = getFile(card, path).then(blob => {
+      v.url = URL.createObjectURL(new Blob([blob], { type: TYPE[ext.toLowerCase()] || "application/octet-stream" }));
+      return v;
+    }).catch(() => v);
+    cache.set(key, v);
+    while (cache.size > CACHE_MAX) cacheDrop(cache.keys().next().value);
+    return v.ready;
+  }
+
+  // Fills every thumbnail not yet drawn. The bytes are typed by the file's extension and not by the server, so a file
+  // that is not the picture it says it is shows nothing.
   function hydrate(root) {
     (root || document).querySelectorAll(".md-img:not([data-state])").forEach(el => {
       el.dataset.state = "loading";
-      const ext = (/\.(\w+)$/.exec(el.dataset.path) || [])[1] || "";
-      getFile(el.dataset.card, el.dataset.path).then(blob => {
-        const url = URL.createObjectURL(new Blob([blob], { type: TYPE[ext.toLowerCase()] || "application/octet-stream" }));
+      picture(el.dataset.card, el.dataset.path).then(v => {
+        if (!v.url || !el.isConnected) { if (!v.url) unavailable(el); return; }
         const img = document.createElement("img");
         img.alt = el.getAttribute("aria-label") || "";
         img.onerror = () => unavailable(el);
         img.onload = () => { el.dataset.state = "ready"; };
-        img.src = url;
+        img.src = v.url;
         el.textContent = "";
         el.appendChild(img);
-      }).catch(() => unavailable(el));
+      });
     });
   }
 
@@ -257,15 +292,32 @@
       document.body.appendChild(a);
       a.click();
       a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 10000);
     } catch (e) { unavailable(el); }
   }
 
+  // The clipboard API needs a secure page, so on plain http the code is copied through a selected textarea. When that
+  // is refused as well the code is left selected and the button says so.
   function copy(btn) {
-    const code = btn.parentNode.querySelector("pre");
-    const text = code ? code.textContent : "";
-    const done = ok => { btn.textContent = ok ? "copied" : "not copied"; setTimeout(() => { btn.textContent = "copy"; }, 1500); };
-    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(() => done(true), () => done(false));
-    else done(false);
+    const pre = btn.parentNode.querySelector("pre");
+    const text = pre ? pre.textContent : "";
+    const say = t => { btn.textContent = t; setTimeout(() => { btn.textContent = "copy"; }, 1800); };
+    const fallback = () => {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.setAttribute("readonly", "");
+      ta.style.cssText = "position:fixed;top:0;left:0;opacity:0";
+      document.body.appendChild(ta);
+      ta.select();
+      let ok = false;
+      try { ok = document.execCommand("copy"); } catch (e) {}
+      ta.remove();
+      if (ok) { say("copied"); return; }
+      if (pre) { const r = document.createRange(); r.selectNodeContents(pre); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); }
+      say("select and copy");
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(() => say("copied"), fallback);
+    else fallback();
   }
 
   document.addEventListener("click", e => {
@@ -275,10 +327,13 @@
     else if (t.classList.contains("md-file")) saveFile(t);
     else if (t.dataset.state === "ready") { const i = t.querySelector("img"); if (i) enlarge(i.src, i.alt); }
   });
-  // A reply is drawn by innerHTML, so a thumbnail is filled when it arrives.
+  // A reply is drawn by innerHTML, so a thumbnail is filled when it arrives. Only where replies are drawn.
   if (window.MutationObserver) {
-    new MutationObserver(() => hydrate(document)).observe(document.documentElement, { childList: true, subtree: true });
+    ["m-replies", "m-recap"].forEach(id => {
+      const host = document.getElementById(id);
+      if (host) new MutationObserver(() => hydrate(host)).observe(host, { childList: true, subtree: true });
+    });
   }
 
-  window.mMd = { render, safeURL, inline, hydrate };
+  window.mMd = { render, safeURL, inline, hydrate, release };
 })();
