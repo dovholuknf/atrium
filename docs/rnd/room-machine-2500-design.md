@@ -8,8 +8,10 @@ ordered or signed up for.
 - Buy one Linux desktop: Ryzen 9 9950X, 64 GB DDR5, 2 TB NVMe, about $2,150 (est, parts below), plus a $150 UPS.
   Total about $2,300, which leaves about $200 of headroom.
 - Make it a new atrium room on Linux. It is the only OS where "room starts at boot, no desktop login" already works
-  (systemd user unit plus `enable-linger`). Linux provisioning code exists but has never run on real Linux, so the
-  first week is spent proving it. That is the real cost of this pick.
+  (systemd user unit plus `enable-linger`). Provisioning is proven on WSL Ubuntu over ssh, and the deb's postinstall
+  turns on linger. What is still unproven: a box that is not WSL, provision WITH `-Linger`, a reboot with nobody
+  logged in, the Chromium libraries for the suite, and the Go tests on Linux. Proving those is the first week, and
+  the real cost of this pick.
 - Keep m1mini as the macOS room. Move heavy work (the board suite, `go test ./internal/daemon`, most claude sessions)
   to the new box. sg4 can stop hosting work and go back to being a laptop. sg3 can retire or stay as a spare.
 - If clint will not take the Linux provisioning risk, the fallback is a Mac mini M5 Pro 64 GB at $2,599. It is $99 over
@@ -78,8 +80,9 @@ Throughput figures in the table are estimates scaled from the three measured mac
 
 - For several: failure isolation, a power cut or a hung room takes out a fraction, each room has its own session cap,
   and the hub already links rooms.
-- Against several: one machine can hold more than one room (sg4 runs claude-sg4 and sg4-control), but each extra
-  box is another provision, another claude login
+- Against several: provision refuses a second room on one machine (`docs/release/packaging.md`, exit 6), so sg4's
+  two rooms (claude-sg4 and sg4-control) are hand work, and more rooms mostly means more boxes. Each extra box is
+  another provision, another claude login
   (`claude auth login` over ssh, once each), another set of worktrees to sync by git, more plugs and more fans.
 - The suite is one job that wants one big pool of cores. Splitting it across small rooms makes each shard slower and
   gains nothing, because the board suite is not spread across rooms. Three small boxes would each take about 3 minutes
@@ -91,10 +94,12 @@ Throughput figures in the table are estimates scaled from the three measured mac
 
 - Linux: best fit for an always-on room. `scripts/atrium-service.sh` installs a systemd user unit and
   `provision-room.ps1` handles Linux over ssh, with `-Linger` so the room starts at boot with nobody logged in.
-  `docs/release/packaging.md` says the Linux paths have never executed on a real machine. To finish: run
-  `provision-room.ps1 user@host -Linger` once, install claude and codex, `claude auth login` over `ssh -t`, check the
-  Chromium dependencies for the suite, check `board-suite-run.ps1` (it is PowerShell, so install pwsh or port it) and
-  run the Go tests there.
+  `docs/release/packaging.md` records provision (install, rerun, `-Autostart`, `-Remove`) proven on WSL Ubuntu over
+  ssh localhost, and the deb postinstall turning on linger with the unit active. To finish on a real box: run
+  `provision-room.ps1 user@host -Linger` once, reboot with nobody logged in, install claude and codex, run
+  `claude auth login` over `ssh -t`, check the Chromium dependencies, and run the Go tests there.
+- The suite already dispatches to sg3 by default (`scripts/test-board-sharded.js`) and needs pwsh on the target.
+  Moving it to the new box means setting `ATRIUM_SUITE_ROOM` and installing pwsh there.
 - Windows: sg4 and sg3 are rooms today, but the logon task fires only at an interactive logon, and
   `docs/rnd/room-autostart-design.md` says the boot task is designed, not shipped. Defender also costs build time
   (the repo ships `room-defender.ps1` for exclusions).
@@ -108,8 +113,8 @@ Throughput figures in the table are estimates scaled from the three measured mac
   (3) The network may not be up yet when the room starts. (4) Anything started from a terminal is gone.
   I did not check FileVault or auto-login on m1mini, since that needs `fdesetup` and admin. It is the first thing to
   look at. Currently `sleep 0` is held by `caffeinate`, and `womp 1` is set.
-- On the Linux box: set "restore on AC power loss" in the BIOS to Power On, enable linger, make the unit
-  `Restart=on-failure`, keep sshd enabled, and add a second remote path (the hub link already gives one).
+- On the Linux box: set "restore on AC power loss" in the BIOS to Power On, enable linger (the unit already ships
+  `Restart=on-failure`), keep sshd enabled, and add a second remote path (the hub link already gives one).
   A board with BMC or Intel AMT costs more, so a smart plug is the cheap way to power cycle.
 - UPS: a 1000-1500 VA line-interactive unit is about $150 (est). Add `apcupsd` or NUT so the box shuts down cleanly
   before the battery ends. This protects sqlite and worktrees more than it protects uptime.
@@ -126,6 +131,6 @@ Throughput figures in the table are estimates scaled from the three measured mac
 
 ## Open questions for clint
 
-- Is a Linux room acceptable, given the first-run risk? If not, take option B and accept $99 over.
+- Is a Linux room acceptable, given the steps still unproven off WSL? If not, take option B and accept $99 over.
 - Is a 32 GB first, 64 GB later purchase fine, given DDR5 prices?
 - Is FileVault on m1mini? That decides whether it survives the next power cut.
