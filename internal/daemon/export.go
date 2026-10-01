@@ -141,6 +141,7 @@ var exportedSettings = []string{
 	store.SettingAutoNewContext,
 	store.SettingAutoNewContextK,
 	store.SettingAutoNewContextIdleS,
+	store.SettingContextCeilingK,
 	api.SettingEditor,
 	api.SettingTerminal,
 	api.SettingPasteKeep,

@@ -316,6 +316,7 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		AutoNewContext      *string `json:"auto_new_context"`
 		AutoNewContextK     *string `json:"auto_new_context_k"`
 		AutoNewContextIdleS *string `json:"auto_new_context_idle_s"`
+		ContextCeilingK     *string `json:"context_ceiling_k"`
 	}
 	// Read once and decoded twice: into the struct, which is what the handler
 	// works from, and into a map, which is the only way to notice a field that
@@ -717,6 +718,18 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := s.st.SetSetting(store.SettingAutoNewContextK, v); err != nil {
+			s.fail(w, err)
+			return
+		}
+	}
+
+	if body.ContextCeilingK != nil {
+		v, err := checkContextCeilingK(s.st, *body.ContextCeilingK, body.ContextThresholdK)
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, err)
+			return
+		}
+		if err := s.st.SetSetting(store.SettingContextCeilingK, v); err != nil {
 			s.fail(w, err)
 			return
 		}
