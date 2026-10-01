@@ -51,3 +51,52 @@ the medium, which is why both pass.
 
 Quality: after the Sonnet switch, the shape of this work is sound: bounded commands, state-guarded moves, abort
 handled before writes. The high is a trust boundary the design did not name, which is where a review should catch it.
+
+## Re-read at 8c9b17d7 (2026-10-01, m1mini): ROOM DEPLOY OK d33bd3b5..8c9b17d7
+
+One commit over dbb76109, `internal/daemon/prrunner.go` and its tests. Unsigned (no key on the m1mini worker).
+
+**High, closed and proven.** `forkCommon` (prrunner.go:754) now builds `<run>/work`, rewrites `--setting-sources` to
+`user`, and passes `--add-dir <run>/src`. `call` runs every fork with `Dir: pr.workDir`, and `prime` builds the
+common args before naming `pr.srcAbs` in its prompt. Proof on m1mini, claude 2.1.287, with a `src/.claude/settings.json`
+and a `src/.claude/settings.local.json` that each touch a marker on SessionStart and UserPromptSubmit, a
+`src/CLAUDE.md` canary and a `src/.claude/skills/canary` skill:
+
+- Control, the old shape (cwd `src/`, `--setting-sources project,local`): all 4 markers appear.
+- Fixed shape (cwd `work/`, `--setting-sources user --add-dir src --tools Read,Grep,Glob`): no marker. The fork
+  reports no canary instruction and no skill from src/. `--add-dir` loads no settings, hooks, CLAUDE.md or skills
+  from src/.
+
+**Medium closed.** Replay reads `steps/merge/findings.json` (prrunner.go:1293), a missing file reruns merge, and the
+resend writes the accepted list back (prrunner.go:1373). `TestPRRunnerRetryAfterMergeKeepsTheFindings` and
+`TestPRRunnerReplaysTheResentListAfterARetry` cover both.
+
+**Lows closed.** Panel reset per panel step (prrunner.go:1021). `rename` reverts on a `SetPRFetched` error and removes
+the new folder if the ctx was cancelled across the rename. That window has no test, as @runtime said; it reads right.
+
+### New medium: `user` loads the operator's whole settings.json into every fork
+
+`leanSettings` exists to pass a curated copy of the user settings through `--settings`: unknown keys dropped, and
+SessionStart and UserPromptSubmit cut to atrium's own hooks. `--setting-sources user` loads `~/.claude/settings.json`
+as well, unfiltered, so the lean filter is bypassed and atrium's hooks register from both places. Proven with a
+throwaway `CLAUDE_CONFIG_DIR` whose settings.json has a SessionStart hook: with `user` the hook fires, with `""` it
+does not. A `--settings` hook fires under both. On m1mini every user hook is atrium's, so nothing foreign runs today,
+and the PR cannot reach this. That is why it holds nothing. The user CLAUDE.md and skills likely ride along too (not
+proven: a throwaway config dir has no login). Fix: `lean[i+1] = ""`. claude takes an empty source list, and
+`TestPRRunnerNeverRunsInThePRsCheckout` already allows it.
+
+### Low
+
+- `rename` ignores the error from the reverting `os.Rename(to, old)`. If that fails, `pr.dir` names a path that is gone.
+- `TestKeepaliveForkCarriesALeanCardsPromptToolsAndMCP` fails on macOS, on claude/main too, so it is not this change.
+  Its must-not `"/x"` matches the temp path `/var/folders/xd/...`. That is @runtime's.
+
+### Tests
+
+m1mini, detached worktree at 8c9b17d7: `go test ./internal/daemon/ -run 'TestPRRunner'`, 10 of 10 pass, the 3 new ones
+included. The wider `-run 'PR|Pr|Lean'` fails only on the keep-alive case above.
+
+Quality: after the Sonnet switch, the fix is tight and targeted, and its test pins the property, not the flag
+spelling. `user` was picked without checking what that source brings in: the one gap.
+
+Verdict: ROOM DEPLOY OK d33bd3b5..8c9b17d7. The setting-sources medium is to be fixed in the next r-pr-run patch.
