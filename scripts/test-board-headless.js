@@ -13520,6 +13520,63 @@ async function sendArrowSection(browser) {
   if (!bad) console.log("sendArrow ok");
 }
 
+// ── markdown tables in a reply ───────────────────────────────────────────
+// A table of long cells scrolls inside its own box and keeps its first column in view. The page does not scroll sideways.
+async function mTablesSection(browser) {
+  const st = mServer({});
+  const c = mCard("tbl-1", { alias: "tabler", display_title: "tabler", status: "needs-input", waiting_since: mIso(2 * M_MIN), seen: { turn_ended_at: mIso(20 * M_MIN) } });
+  st.tasks = [c];
+  const long = "a long cell that keeps going well past what fits in a column on a phone screen";
+  const md = "Here is the table:\n\n| Name | Details | Owner | Notes |\n|:--|---|--:|:-:|\n" +
+    "| first " + long + " | `code|with pipe` " + long + " | right " + long + " | centre " + long + " |\n" +
+    "| second | <script>window.__pwn = 1</script> | x |\n" +
+    "| third " + long + " | " + long + " | " + long + " | " + long + " |\n\nAfter it.";
+  st.replies["tbl-1"] = { source: "transcript", replies: [{ at: mIso(10 * M_MIN), text: md }] };
+  await st.open();
+  try {
+    for (const vp of M_VIEWS) {
+      const tag = "mTables " + vp.width + ": ";
+      const { ctx, p, errors } = await mPage(browser, st, vp, "");
+      await p.waitForSelector("#m-seg-all", { timeout: slow(10000) });
+      await p.tap("#m-seg-all");
+      await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
+      await p.tap('#m-list .row[data-id="tbl-1"]');
+      await p.waitForSelector("#m-replies .tbl table", { timeout: slow(5000) });
+      const d = await p.evaluate(() => {
+        const box = document.querySelector("#m-replies .tbl");
+        const rows = [...box.querySelectorAll("tr")].map(r => r.children.length);
+        const code = box.querySelector("td code");
+        const out = {
+          page: document.documentElement.scrollWidth - window.innerWidth,
+          inner: box.scrollWidth - box.clientWidth,
+          rows, code: code ? code.textContent : "",
+          script: !!document.querySelector("#m-replies script"), pwn: window.__pwn === 1,
+          text: box.textContent.includes("<script>window.__pwn = 1</script>"),
+          align: box.querySelector("tbody tr td:nth-child(3)").style.textAlign + "," + box.querySelector("tbody tr td:nth-child(4)").style.textAlign,
+          after: /After it/.test(document.getElementById("m-replies").textContent),
+        };
+        box.scrollLeft = 200;
+        const f = box.querySelector("tbody td:first-child").getBoundingClientRect();
+        out.firstLeft = f.left - box.getBoundingClientRect().left;
+        out.scrolled = box.scrollLeft;
+        return out;
+      });
+      if (d.page > 1) fail(tag + "the page scrolls sideways by " + d.page);
+      if (d.inner <= 0) fail(tag + "the table does not scroll inside itself");
+      if (d.rows.join() !== "4,4,4,4") fail(tag + "a short row was not padded: " + d.rows.join());
+      if (d.code !== "code|with pipe") fail(tag + "code in a cell is " + JSON.stringify(d.code));
+      if (d.script || d.pwn || !d.text) fail(tag + "a cell holding script is not plain text");
+      if (d.align !== "right,center") fail(tag + "alignment is " + d.align);
+      if (!d.after) fail(tag + "the text after the table is gone");
+      if (d.scrolled <= 0 || Math.abs(d.firstLeft) > 2) fail(tag + "the first column moved to " + d.firstLeft + " after scrolling " + d.scrolled);
+      await mShot(p, "table-" + vp.width);
+      if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+      await ctx.close();
+    }
+  } finally { await st.close(); }
+  if (!bad) console.log("mTables ok");
+}
+
 async function main() {
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = "http://127.0.0.1:" + server.address().port;
@@ -13556,7 +13613,7 @@ async function main() {
       pasteStart: pasteStartSection, pasteDone: pasteDoneSection, pasteOldRoom: pasteOldRoomSection, pasteClose: pasteCloseSection,
       growlQuestionShots: growlQuestionShotsSection, growlQuestionBody: growlQuestionBodySection, growlReplyGrow: growlReplyGrowSection, growlChoices: growlChoicesSection, growlStable: growlStableSection, mGrowlQuestion: mGrowlQuestionSection,
       bootClean: bootCleanSection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mRecapSheet: mRecapSheetSection,
-      mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection };
+      mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -15591,6 +15648,7 @@ async function main() {
     await phoneBootSection(browser, base);
     await sayEnterSection(browser);
     await sendArrowSection(browser);
+    await mTablesSection(browser);
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e));
     if (process.env.DEBUG_HEADLESS) {
