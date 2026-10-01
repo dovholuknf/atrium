@@ -8032,6 +8032,7 @@ the hub routing and the control tool.
 6. On a transcript over 16MB with replies spread through it, a deep page still answers: the 16MB bound counts from
    the `before` position, not from the end of the file.
 
+
 ## HO. A director held to a context ceiling (r-director-ceiling)
 
 Tagging is the orchestrator's job, never a worker's. There is no `atrium tag` command. Use the board's tag editor, or
@@ -8059,7 +8060,7 @@ on the board port. The body replaces the set, so read the card's tags first.
    with `not cycled: this card has no directory the room can read ...`, nothing is typed, and the launcher is not
    told a cycle began.
 
-## HP. A card's changes, and one reply's (r-changes)
+## HQ. A card's changes, and one reply's (r-changes)
 
 1. On a card whose worktree has uncommitted edits and an untracked file, `curl -s
    'http://127.0.0.1:7778/v1/tasks/<id>/changes' | jq '{against,head,dirty,total,files:[.files[]|{path,status,added,removed}]}'`.
@@ -8078,3 +8079,29 @@ on the board port. The body replaces the set, so read the card's tags first.
    edit paths that resolved outside the worktree and never names one. A file also edited in another turn since the last
    commit has `cumulative: true`.
 8. A turn whose commits were rebased (author date outside the turn's window) says so in `why`.
+
+## HP. fyi and needs, and held notices as board state (r-fyi-kind)
+
+1. From a worker launched by a card tagged `atrium:orchestrator` (and again with `atrium:hold-notices`), call
+   `atrium_report` with `status: progress`, `kind: fyi`. Nothing is typed into the launcher's terminal and nothing is
+   queued for it. `atrium_task` `notices: true` on the launcher shows one line with `kind: fyi`, the worker's handle in `about`
+   and `fyi from <worker>: ...` as the text. The worker's card is `reported`, and its next turn end does not raise a
+   silent-stop notice.
+2. Repeat with `kind: needs`, with no kind and with `kind: urgent`. Each is delivered as before: typed or queued for a
+   plain orchestrator, held for `atrium:hold-notices`. None is an error.
+3. `kind: fyi` with `status: done`, `blocked` or `question`, or with any `ask`, is delivered as `needs`. A done report
+   waits on acceptance and a merge, and an ask wants an answer. Only a progress report with no ask is news.
+4. `atrium_say` and `atrium_tell` with `kind: fyi` to the orchestrator: held, not typed, not queued, and the answer says
+   `held`. The same with `reply: true` is queued as today. A `needs` say, or one with no kind, queues as today. An fyi
+   to a card that does not hold its notices queues as today. An fyi to a card on another room is delivered as `needs`.
+5. `curl -s http://127.0.0.1:7778/v1/tasks/<launcher> | jq '.held_notices, .oldest_held_at'` rises with each held
+   notice and `oldest_held_at` stays on the first. `atrium_task` `notices: true` called by that card sets both back to
+   zero and the event stream carries the changed row. Reading another card's notices does not clear them. The read
+   is stamped with the `at` of the newest notice it returned, never the clock. A notice held after the read and before
+   the stamp still counts as unread, and a `POST /v1/tasks/<id>/notices-read` with no `through` clears nothing.
+6. Let a worker stop without reporting. The silent stop is held at two minutes and nothing is queued for the
+   orchestrator before ten. At ten minutes one plain line, `<worker> has been stuck for N minutes`, is queued for it,
+   once. A launcher that does not hold its notices gets only today's silent-stop notice. A tool call stuck past the
+   long-tool threshold still wakes it two minutes after that, as before.
+7. **Not verified by tests:** that a model told `fyi` in the tool text uses it sensibly, and the board's drawing of
+   `held_notices`, which is @ui's.

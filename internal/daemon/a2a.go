@@ -50,6 +50,9 @@ const (
 	// NoticeLongTurn is one turn running past the long-turn setting. See
 	// longTurn.
 	NoticeLongTurn = "long-turn"
+	// NoticeStuckWake is the one notice typed to a launcher that holds its notices, when a
+	// card it launched has been stuck past the second step of the backoff. See wakeLauncher.
+	NoticeStuckWake = "stuck-wake"
 )
 
 // The thresholds. Each has an environment override that takes a Go duration,
@@ -649,6 +652,7 @@ func (d *Daemon) watchWorkers(now time.Time) error {
 		var x *Escalation
 		if d.reportsToLauncher(t) {
 			x = d.stuckNow(t, now)
+			d.wakeLauncher(t, x)
 		} else {
 			// A LONG TURN IS SHOWN ON EVERY CARD, clint's own included. Only a
 			// card with a launcher has somebody to tell.
@@ -663,6 +667,49 @@ func (d *Daemon) watchWorkers(now time.Time) error {
 		d.publishTask(id)
 	}
 	return nil
+}
+
+// The escalation step after which a stuck card wakes a launcher that holds its notices. A
+// long tool call is already LongToolAfter old when it escalates, so its second step is
+// the wake. A silent stop is told to the launcher at SilentStopNotifyAfter, the second
+// step, so waking there would wake on every one: it waits for the fourth, ten minutes.
+const (
+	wakeStep       = 2
+	wakeStepSilent = 4
+)
+
+// wakeLauncher types one notice to a launcher that holds them, once a card it launched has
+// been stuck past its wake step. Every earlier stuck notice stays held.
+// Only a silent stop or a long tool call is stuck: a long turn is a report, not an alarm.
+// Once per stuck episode, keyed on when it began.
+func (d *Daemon) wakeLauncher(t *store.Task, x *Escalation) {
+	if x == nil {
+		return
+	}
+	step := wakeStep
+	switch x.Source {
+	case NoticeSilentStop:
+		step = wakeStepSilent
+	case NoticeLongTool:
+	default:
+		return
+	}
+	if x.Count < step {
+		return
+	}
+	launcher := d.launcherOf(t)
+	if !holdsNotices(launcher) {
+		return
+	}
+	fresh, err := d.st.RecordNotice(t.ID, NoticeStuckWake, x.Source+x.Since.UTC().Format(time.RFC3339Nano))
+	if err != nil || !fresh {
+		return
+	}
+	text := truncatePeer(fmt.Sprintf("%s has been stuck for %d minutes (%s). card %s", t.WireName, x.Minutes,
+		x.Source, t.ID))
+	if _, err := d.deliverPeer(launcher, t.WireName, text); err != nil {
+		log.Printf("[atrium] could not wake %s for stuck %s: %v", launcher.DisplayTitle(), t.DisplayTitle(), err)
+	}
 }
 
 // stuckNow works out one card's escalation, telling its launcher on the way
