@@ -42,6 +42,15 @@ func pagingPromptLine(at time.Time, text string) string {
 	return string(b) + "\n"
 }
 
+func writePaging(t *testing.T, content string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "t.jsonl")
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
 // lockstepTranscript is count turns: prompt i at base+2i, then reply i at base+2i+1,
 // the reply written in blocks lines under one message id, pad bytes of noise after each turn.
 func lockstepTranscript(t *testing.T, count, blocks, pad int) string {
@@ -60,11 +69,7 @@ func lockstepTranscript(t *testing.T, count, blocks, pad int) string {
 		}
 		sb.WriteString(noise)
 	}
-	path := filepath.Join(t.TempDir(), "t.jsonl")
-	if err := os.WriteFile(path, []byte(sb.String()), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	return path
+	return writePaging(t, sb.String())
 }
 
 func wantReplyText(i, blocks int) string {
@@ -75,47 +80,55 @@ func wantReplyText(i, blocks int) string {
 	return strings.Join(parts, "\n\n")
 }
 
-// walk pages a transcript from the first page back to more=false. Each list is
-// walked from its own oldest at, since the two lists thin out at different depths.
-func walk(t *testing.T, path string, n int, prompted bool) ([]Reply, []Prompt, int) {
+// walk pages a transcript by next_before alone, from the first page to more=false,
+// and returns the pages' union oldest first. A reply or prompt seen twice fails.
+func walk(t *testing.T, path string, n int) ([]Reply, []Prompt, int) {
 	t.Helper()
 	var (
 		replies []Reply
 		prompts []Prompt
+		seenR   = map[string]bool{}
+		seenP   = map[string]bool{}
 		pages   int
 	)
-	r, p, more, err := readTranscriptPage(path, n)
+	pg, err := readTranscriptPage(path, n)
 	for ; ; pages++ {
 		if err != nil {
 			t.Fatal(err)
 		}
-		replies = append(append([]Reply{}, r...), replies...)
-		prompts = append(append([]Prompt{}, p...), prompts...)
-		if !more {
+		if len(pg.replies) > n+3 || len(pg.prompts) > n+3 {
+			t.Fatalf("page %d holds %d replies and %d prompts for n=%d", pages, len(pg.replies), len(pg.prompts), n)
+		}
+		for _, r := range pg.replies {
+			if seenR[r.Text] {
+				t.Fatalf("reply %q came twice", r.Text)
+			}
+			seenR[r.Text] = true
+		}
+		for _, p := range pg.prompts {
+			if seenP[p.Text] {
+				t.Fatalf("prompt %q came twice", p.Text)
+			}
+			seenP[p.Text] = true
+		}
+		replies = append(append([]Reply{}, pg.replies...), replies...)
+		prompts = append(append([]Prompt{}, pg.prompts...), prompts...)
+		if !pg.more {
 			return replies, prompts, pages + 1
 		}
-		var before time.Time
-		switch {
-		case prompted && len(p) > 0:
-			before = p[0].At
-		case !prompted && len(r) > 0:
-			before = r[0].At
-		default:
-			t.Fatalf("the walk cannot continue: page %d, %d replies, %d prompts", pages, len(r), len(p))
+		if pg.next.IsZero() {
+			t.Fatalf("page %d says more with no next_before", pages)
 		}
-		if pages > 500 {
+		if pages > 2000 {
 			t.Fatal("the walk does not end")
 		}
-		r, p, more, err = readTranscriptBefore(path, n, before)
+		pg, err = readTranscriptBefore(path, n, pg.next)
 	}
 }
 
-// checkWalk takes both walks of one transcript: replies from the reply walk,
-// prompts from the prompt walk.
 func checkWalk(t *testing.T, path string, n, count, blocks int) int {
 	t.Helper()
-	replies, _, pages := walk(t, path, n, false)
-	_, prompts, _ := walk(t, path, n, true)
+	replies, prompts, pages := walk(t, path, n)
 	if len(replies) != count || len(prompts) != count {
 		t.Fatalf("got %d replies and %d prompts, want %d each", len(replies), len(prompts), count)
 	}
@@ -142,11 +155,14 @@ func TestRepliesPageCapIs50(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(v.Replies) != 50 || !v.More {
-			t.Fatalf("n=%d gave %d replies, more=%v", ask, len(v.Replies), v.More)
+		if len(v.Replies) != 50 || !v.More || v.NextBefore == "" {
+			t.Fatalf("n=%d gave %d replies, more=%v next=%q", ask, len(v.Replies), v.More, v.NextBefore)
 		}
 		if v.Replies[0].Text != "answer 10" || v.Replies[49].Text != "answer 59" {
 			t.Fatalf("oldest first, got %q to %q", v.Replies[0].Text, v.Replies[49].Text)
+		}
+		if next, err := time.Parse(time.RFC3339Nano, v.NextBefore); err != nil || !next.Equal(v.Replies[0].At) {
+			t.Fatalf("next_before %q should be the oldest kept reply %v", v.NextBefore, v.Replies[0].At)
 		}
 	}
 	v, _ := d.repliesFor(f.task.ID, 3)
@@ -158,14 +174,14 @@ func TestRepliesPageCapIs50(t *testing.T) {
 func TestRepliesFirstPageMoreWhenWindowStartsMidFile(t *testing.T) {
 	withWindows(t, 2048, 1<<20)
 	path := lockstepTranscript(t, 40, 1, 0)
-	_, _, more, err := readTranscriptPage(path, 50)
-	if err != nil || !more {
-		t.Fatalf("a window that did not reach byte 0 must say more: %v %v", more, err)
+	pg, err := readTranscriptPage(path, 50)
+	if err != nil || !pg.more || pg.next.IsZero() {
+		t.Fatalf("a window that did not reach byte 0 must say more: %+v %v", pg, err)
 	}
 	withWindows(t, 1<<20, 1<<20)
 	path = lockstepTranscript(t, 4, 1, 0)
-	if r, _, more, _ := readTranscriptPage(path, 50); more || len(r) != 4 {
-		t.Fatalf("the whole file, got %d replies, more=%v", len(r), more)
+	if pg, _ := readTranscriptPage(path, 50); pg.more || len(pg.replies) != 4 || !pg.next.IsZero() {
+		t.Fatalf("the whole file, got %+v", pg)
 	}
 }
 
@@ -185,23 +201,23 @@ func TestRepliesBeforeLastPageSaysNoMore(t *testing.T) {
 	withWindows(t, 1024, 1<<30)
 	path := lockstepTranscript(t, 30, 1, 0)
 	before := pagingBase.Add(100 * time.Second)
-	r, p, more, err := readTranscriptBefore(path, 50, before)
-	if err != nil || more || len(r) != 30 || len(p) != 30 {
-		t.Fatalf("got %d replies %d prompts more=%v %v", len(r), len(p), more, err)
+	pg, err := readTranscriptBefore(path, 50, before)
+	if err != nil || pg.more || len(pg.replies) != 30 || len(pg.prompts) != 30 || !pg.next.IsZero() {
+		t.Fatalf("got %d replies %d prompts more=%v %v", len(pg.replies), len(pg.prompts), pg.more, err)
 	}
-	r, p, more, _ = readTranscriptBefore(path, 10, before)
-	if !more || len(r) != 10 || r[9].Text != "r29-a" {
-		t.Fatalf("a short page of a longer file: %d more=%v", len(r), more)
+	pg, _ = readTranscriptBefore(path, 10, before)
+	if !pg.more || len(pg.replies) != 10 || pg.replies[9].Text != "r29-a" {
+		t.Fatalf("a short page of a longer file: %d more=%v", len(pg.replies), pg.more)
 	}
 	// strictly older: a before that is a reply's own time excludes it.
-	r, _, _, _ = readTranscriptBefore(path, 50, pagingBase.Add(time.Second))
-	if len(r) != 0 {
-		t.Fatalf("before the first reply there is nothing, got %d", len(r))
+	pg, _ = readTranscriptBefore(path, 50, pagingBase.Add(time.Second))
+	if len(pg.replies) != 0 {
+		t.Fatalf("before the first reply there is nothing, got %d", len(pg.replies))
 	}
 }
 
 // 40 turns spread over a file many times the reach: the bound stops a page, says
-// more, and the next page continues from the oldest at.
+// more, and the next page continues from next_before.
 func TestRepliesBeforeStopsAtTheReach(t *testing.T) {
 	withWindows(t, 2048, 4096)
 	path := lockstepTranscript(t, 40, 1, 900)
@@ -209,16 +225,81 @@ func TestRepliesBeforeStopsAtTheReach(t *testing.T) {
 	if info.Size() < 8*4096 {
 		t.Fatalf("the fixture is %d bytes", info.Size())
 	}
-	before := pagingBase.Add(time.Hour)
-	r, _, more, err := readTranscriptBefore(path, 50, before)
-	if err != nil || !more {
-		t.Fatalf("a page stopped by the reach must say more: %v %v", more, err)
+	pg, err := readTranscriptBefore(path, 50, pagingBase.Add(time.Hour))
+	if err != nil || !pg.more || pg.next.IsZero() {
+		t.Fatalf("a page stopped by the reach must say more with a next_before: %+v %v", pg, err)
 	}
-	if len(r) == 0 || len(r) >= 40 {
-		t.Fatalf("the reach should cut the page short, got %d", len(r))
+	if len(pg.replies) == 0 || len(pg.replies) >= 40 {
+		t.Fatalf("the reach should cut the page short, got %d", len(pg.replies))
 	}
 	if pages := checkWalk(t, path, 50, 40, 1); pages < 5 {
 		t.Fatalf("expected several bounded pages, got %d", pages)
+	}
+}
+
+// Prompts dense in one stretch, replies dense in another: the lists thin out at
+// different depths, and walking by next_before alone still loses and repeats nothing.
+func TestRepliesBeforeWalksUnevenLists(t *testing.T) {
+	var sb strings.Builder
+	at := func(i int) time.Time { return pagingBase.Add(time.Duration(i) * time.Second) }
+	i := 0
+	// oldest: 70 prompts and 3 replies
+	for k := 0; k < 70; k++ {
+		sb.WriteString(pagingPromptLine(at(i), fmt.Sprintf("early-p%d", k)))
+		i++
+		if k%25 == 0 {
+			sb.WriteString(pagingReplyLine(fmt.Sprintf("e%d", k), at(i), fmt.Sprintf("early-r%d", k)))
+			i++
+		}
+	}
+	// then 70 replies and 3 prompts
+	for k := 0; k < 70; k++ {
+		sb.WriteString(pagingReplyLine(fmt.Sprintf("l%d", k), at(i), fmt.Sprintf("late-r%d", k)))
+		i++
+		if k%25 == 0 {
+			sb.WriteString(pagingPromptLine(at(i), fmt.Sprintf("late-p%d", k)))
+			i++
+		}
+	}
+	path := writePaging(t, sb.String())
+	for _, window := range []int64{600, 1500, 4000, 1 << 20} {
+		withWindows(t, window, 1<<30)
+		for _, n := range []int{1, 5, 20, 50} {
+			replies, prompts, _ := walk(t, path, n)
+			if len(replies) != 73 || len(prompts) != 73 {
+				t.Fatalf("window %d n=%d: %d replies and %d prompts, want 73 each", window, n, len(replies), len(prompts))
+			}
+		}
+	}
+	// and under a reach that stops pages short
+	withWindows(t, 600, 1500)
+	for _, n := range []int{3, 50} {
+		replies, prompts, _ := walk(t, path, n)
+		if len(replies) != 73 || len(prompts) != 73 {
+			t.Fatalf("reach: n=%d: %d replies and %d prompts, want 73 each", n, len(replies), len(prompts))
+		}
+	}
+}
+
+// Entries sharing the cut's time stay on one page.
+func TestRepliesCutKeepsTiesTogether(t *testing.T) {
+	var sb strings.Builder
+	for k := 0; k < 12; k++ {
+		sb.WriteString(pagingReplyLine(fmt.Sprintf("m%d", k), pagingBase.Add(time.Duration(k/4)*time.Second),
+			fmt.Sprintf("r%d", k)))
+	}
+	path := writePaging(t, sb.String())
+	pg, err := readTranscriptPage(path, 6)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// the 6 newest are r6..r11, and r4..r7 share a time, so r4 and r5 come too.
+	if len(pg.replies) != 8 || pg.replies[0].Text != "r4" || !pg.more {
+		t.Fatalf("got %d replies from %q, more=%v", len(pg.replies), pg.replies[0].Text, pg.more)
+	}
+	older, _ := readTranscriptBefore(path, 6, pg.next)
+	if len(older.replies) != 4 || older.more {
+		t.Fatalf("the rest: %d replies, more=%v", len(older.replies), older.more)
 	}
 }
 
@@ -229,7 +310,7 @@ func TestRepliesFirstPageHasNoMoreForTheScreen(t *testing.T) {
 		t.Fatal(err)
 	}
 	v, err := d.repliesPage(task.ID, 3, pagingBase)
-	if err != nil || v.Source != "screen" || v.More {
+	if err != nil || v.Source != "screen" || v.More || v.NextBefore != "" {
 		t.Fatalf("%+v %v", v, err)
 	}
 	raw, _ := json.Marshal(v)
