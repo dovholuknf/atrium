@@ -45,3 +45,20 @@ Quality: after the Sonnet switch. The flake was traced to its root cause, the br
 mid-scroll, and not papered over with a wait. The miss is the pen, which goes down the same cancel path. No drop.
 
 HUB DEPLOY OK 3d9b5f67~1..24b43091. Low 1 can follow as a one-line change.
+
+## Re-read: m1mini/claude/u-m-typefix2 10aae191 (off e5a75826)
+
+One commit, card.js and the headless suite only.
+
+- Low 1 is closed. `pointercancel` is a `byHandEnd` listener again. A touch pointer's cancel still returns early on
+  `pointerType === "touch"`, so the touch events keep owning finger gestures, and only pen and mouse cancels clear
+  `touching`. Those are the two kinds `byHand` sets it for on `pointerdown`, so set and clear now match.
+- Nit 2 is closed. `touchend` and `touchcancel` both keep `touching` while `e.touches.length` is non-zero.
+- The two new mFollow cases (two-finger touchend keeps the thread held, pen pointerdown then pointercancel releases
+  it and sticks to the bottom) test exactly these paths. Read, not run: board tests are @ui's.
+
+No new findings.
+
+Quality: after the Sonnet switch. Both items fixed as specified, each with a test that fails on the old code. No drop.
+
+HUB DEPLOY OK and ROOM DEPLOY OK 10aae191~1..10aae191.

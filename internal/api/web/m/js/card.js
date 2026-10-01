@@ -506,7 +506,8 @@
   }
   function byHandEnd(e) {
     if (e && e.pointerType === "touch") return;
-    if (e && e.type === "touchcancel" && e.touches && e.touches.length) return;
+    // A finger lifting while another is still down is not the end of the touch.
+    if (e && (e.type === "touchend" || e.type === "touchcancel") && e.touches && e.touches.length) return;
     touching = false; touchEndAt = Date.now(); setTimeout(onScroll, MOMENTUM + 20);
   }
   function onScroll() {
@@ -954,7 +955,7 @@
     pullInit();
     els.scroll.addEventListener("load", () => { if (openId) settle(); }, true);
     els.jump.addEventListener("click", () => { typingOff(); stick = true; syncAnchor(); toEnd(true); });
-    ["touchend", "touchcancel", "pointerup"].forEach(n => els.scroll.addEventListener(n, byHandEnd, { passive: true }));
+    ["touchend", "touchcancel", "pointerup", "pointercancel"].forEach(n => els.scroll.addEventListener(n, byHandEnd, { passive: true }));
     if (window.visualViewport) window.visualViewport.addEventListener("resize", () => { if (openId) settle(); });
     els.sheet.addEventListener("input", e => { if (e.target && e.target.classList && e.target.classList.contains("mc-box")) { if (e.target.value) typingOn(); else { typingOff(); settle(); } } }, true);
     els.sheet.addEventListener("focusout", e => { if (e.target && e.target.classList && e.target.classList.contains("mc-box")) typingOff(); });
