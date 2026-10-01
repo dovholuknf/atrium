@@ -69,3 +69,34 @@ walk order of design 5.6.
 Quality: after the Sonnet switch, no drop seen in what was built: the spec is followed field by field, and the test
 covers every route it mocks. The miss is the second-order one: it was built against mocks, and what a deployed board
 does with no route behind it was not asked.
+
+## Re-read dafd4a5c..bfa9d0b3
+
+One new commit, bfa9d0b3, on top of 7c73b821. Also unsigned, from sg3.
+
+### Closed
+
+- Finding 1: the tab ships `hidden` and is shown only when `GET /v1/prs` answers with a `prs` array. A plain-text
+  404 throws in `api()` or fails the array check, so the tab stays hidden and the note is written to a pane nobody can
+  open. The new `pullsAbsent` section loads the board against the harness, which has no `/v1/prs`. It checks that the
+  read was made, that the tab stays hidden and that no page error is raised. `pulls` now also waits for the tab to show.
+- Finding 2: `#pulls-repo` is rebuilt only when the repo set changes, keyed in `dataset.repos`. Otherwise only its
+  value is set.
+- Nit 1: a read asked for during one in flight sets `again`, and runs when the first one ends.
+- Nit 2: the label reads `open (not archived)`.
+- A race not in my list: a refused action's note used to be cleared by the read it asked for. Now a successful read
+  clears only a note that a failed read wrote (`loadFailed`).
+
+### New
+
+NIT: `restoreWhereYouWere` (solo.js) reopens a remembered `pulls` view without looking at the tab. A browser that
+used `pulls` on one daemon and then loads a board whose daemon has no route (a hub that does not proxy it, or an
+older build) opens a view with its tab hidden, showing the 404 note. It can only happen after the tab was once
+shown. Fall back to the board when the tab is hidden.
+
+### Verdict
+
+OK hub and room, dafd4a5c..bfa9d0b3, 1 nit.
+
+Quality: after the Sonnet switch, no drop seen. Every point was taken, with a test for the medium, and it found and
+fixed a race nobody had asked about.
