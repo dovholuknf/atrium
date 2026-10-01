@@ -64,3 +64,33 @@ names, the context, and missing the other branch of the same `if`. The question 
 
 **HUB DEPLOY OK e7bc8868..1b263964.** The hang is live and worse than finding 1, which needs a real git failure and
 was already on claude/main. Finding 1 should be the next fix to deploy-ready.
+
+## Re-read: 4a72a046, tip 3f3c5519
+
+Range `e7bc8868..3f3c5519`, first-parent 1b263964, 4a72a046, and 3f3c5519, a merge of claude/main whose
+remerge-diff is empty.
+
+- **Finding 1 is closed.** `fillMerges` returns an error, and `candidates` and `coverRead` both pass it up. Only
+  `gitTooOld` caches `{}`. That check needs `remerge-diff` and an unknown-option phrase in the error text. The
+  gitsync `*Error` returns git's first stderr line, so a real old git matches it. `MinGit` is 2.31 and
+  `--remerge-diff` came in 2.36, so the path can still happen. A failure on the `-p` call also returns before
+  anything is cached. A cover that fails is "verdict ignored", so its commits stay uncovered and nothing fails open.
+  My proof `proof-1b263964/zz_scratch_review_test.go` now passes: the first pass is unknown ("could not read the
+  merges"), and the second is blocked on `Merge side`. @runtime's port,
+  `TestFailedMergeReadFailsThePassAndIsNotCachedAsEmpty`, asserts the same thing.
+- **Low 2 is closed.** `readyReport` compares signatures and calls `deployReadyChanged` after it releases the lock,
+  whoever started the pass. The tick no longer duplicates it. A timed-out pass announces unknown, which is correct.
+- **Low 3 is closed.** `coverRead` adds a note when a range reaches the cap, and the note is cached with the ids.
+- `go vet` passes for `./internal/deployready/` and `./internal/link/`. `go test -count=1` passes for
+  `./internal/deployready/` (111s) and `./internal/link/` (201s, no hang in `TestTheHubStreamCarriesEveryRoomTagged`
+  on this run). These ran in a scratch worktree at 3f3c5519, which is now removed.
+
+New, low: `fillMerges` caches only the merges that git listed. That part is correct. But in `candidates`, a merge
+from `rev-list --merges` that `log --merges` did not list stays uncached, `info` returns `{}`, and the merge is
+skipped as carrying nothing. Both calls use the same spec and filter, so I found no way to reach this. If it ever
+happens, it fails open for that pass. Returning an error for an unlisted merge in `todo` would close it for good.
+
+Quality: after the Sonnet switch, every branch of the `if` is handled this time, including the `-p` call and the
+cover cache. The only gap is the unlisted-merge low above, and I could not reach it.
+
+**HUB DEPLOY OK e7bc8868..3f3c5519.**
