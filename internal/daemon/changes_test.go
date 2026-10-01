@@ -453,3 +453,122 @@ func TestChangesATranscriptPathIsALiteralPathspec(t *testing.T) {
 		t.Fatalf("a glob in a transcript path matched files: %+v", v.Files)
 	}
 }
+
+func TestTurnsOfReadsOnlyWhatTheTranscriptGained(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "s.jsonl")
+	edit := func(id string, at time.Time, p string) {
+		transcriptReply(t, path, id, at, false, toolUse("Edit", p))
+	}
+	for i := 0; i < 200; i++ {
+		edit(fmt.Sprintf("m%d", i), changesBase.Add(time.Duration(i)*time.Second), "/work/old.txt")
+	}
+	x, err := turnsOf(path)
+	if err != nil || len(x.edits) != 200 {
+		t.Fatalf("first read: %v %d", err, len(x.edits))
+	}
+	info, _ := os.Stat(path)
+	before := turnScanned.Load()
+	edit("new", changesBase.Add(time.Hour), "/work/new.txt")
+	x, err = turnsOf(path)
+	if err != nil || len(x.edits) != 201 || x.edits[200].path != "/work/new.txt" {
+		t.Fatalf("after growth: %v %d", err, len(x.edits))
+	}
+	if read := turnScanned.Load() - before; read <= 0 || read > info.Size()/10 {
+		t.Fatalf("a grown file was read for %d bytes of %d: it should start from where it stopped", read, info.Size())
+	}
+
+	// A file that got shorter is read again from the start.
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	edit("only", changesBase, "/work/only.txt")
+	if x, err = turnsOf(path); err != nil || len(x.edits) != 1 || x.edits[0].path != "/work/only.txt" {
+		t.Fatalf("after truncation: %v %+v", err, x.edits)
+	}
+
+	// A replacement that is longer than what was read is told by its bytes.
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 50; i++ {
+		edit(fmt.Sprintf("r%d", i), changesBase.Add(time.Duration(i)*time.Second), fmt.Sprintf("/work/replaced%d.txt", i))
+	}
+	if x, err = turnsOf(path); err != nil || len(x.edits) != 50 || x.edits[0].path != "/work/replaced0.txt" {
+		t.Fatalf("after replacement: %v %d", err, len(x.edits))
+	}
+
+	// A line still being written is read once it has its newline.
+	fh, _ := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
+	b, _ := json.Marshal(map[string]any{"type": "assistant", "timestamp": changesBase.Add(time.Hour).Format(time.RFC3339Nano),
+		"message": map[string]any{"id": "half", "content": []map[string]any{toolUse("Edit", "/work/half.txt")}}})
+	fh.Write(b[:len(b)/2])
+	if x, _ = turnsOf(path); len(x.edits) != 50 {
+		t.Fatalf("a half line was read: %d", len(x.edits))
+	}
+	fh.Write(b[len(b)/2:])
+	fh.WriteString("\n")
+	fh.Close()
+	if x, _ = turnsOf(path); len(x.edits) != 51 {
+		t.Fatalf("the finished line was not read: %d", len(x.edits))
+	}
+}
+
+func TestChangesTurnWithNoPromptBeforeItFindsNoCommits(t *testing.T) {
+	f := newChangesFix(t)
+	c := filepath.Join(f.repo, "c.txt")
+	writeF(t, c, "one\ntwo\nthree\n")
+	gitT(t, f.repo, changesBase.Add(-30*time.Minute), "commit", "-am", "long ago, nothing to do with the turn")
+	// A reply with no prompt recorded before it: the transcript starts mid-conversation.
+	transcriptReply(t, f.tr, "tools", changesBase.Add(time.Second), false, toolUse("Edit", c))
+	at := changesBase.Add(2 * time.Second)
+	transcriptReply(t, f.tr, "text", at, false, textBlock("done"))
+	v := f.ok("?turn=" + url.QueryEscape(at.Format(time.RFC3339Nano)))
+	if len(v.Files) != 0 || v.Partial == nil || !*v.Partial {
+		t.Fatalf("a turn with no start counted history as its own: %+v", v.Files)
+	}
+}
+
+func TestChangesTurnWithHundredsOfPathsFitsTheCommandLine(t *testing.T) {
+	f := newChangesFix(t)
+	dir := "a/rather/deeply/nested/directory/structure/for/the/command/line/overflow/test"
+	const n = 600
+	var edits []map[string]any
+	for i := 0; i < n; i++ {
+		name := fmt.Sprintf("%s/file-with-a-long-name-%04d.txt", dir, i)
+		writeF(t, filepath.Join(f.repo, filepath.FromSlash(name)), "one\n")
+		edits = append(edits, toolUse("Edit", filepath.Join(f.repo, filepath.FromSlash(name))))
+	}
+	gitT(t, f.repo, changesBase.Add(-time.Minute), "add", ".")
+	gitT(t, f.repo, changesBase.Add(-time.Minute), "commit", "-m", "many")
+	for i := 0; i < n; i++ {
+		name := fmt.Sprintf("%s/file-with-a-long-name-%04d.txt", dir, i)
+		writeF(t, filepath.Join(f.repo, filepath.FromSlash(name)), "one\ntwo\n")
+	}
+	if total := n * (len(dir) + 36); total < 32767 {
+		t.Fatalf("the paths total %d characters and would not overflow Windows", total)
+	}
+	at := f.turn(changesBase, "t1", edits...)
+	v := f.ok("?turn=" + url.QueryEscape(at.Format(time.RFC3339Nano)))
+	if v.Total != n || len(v.Files) != changesFilesMax || v.Cut == nil || v.Cut.Files != n-changesFilesMax {
+		t.Fatalf("total %d listed %d cut %+v", v.Total, len(v.Files), v.Cut)
+	}
+}
+
+func TestChangesAHugeTrackedDiffIsStoppedWhileRead(t *testing.T) {
+	f := newChangesFix(t)
+	line := strings.Repeat("0123456789abcdef", 64) + "\n"
+	big := strings.Repeat(line, (patchMax*2)/len(line))
+	writeF(t, filepath.Join(f.repo, "big.txt"), "x\n")
+	gitT(t, f.repo, changesBase.Add(-time.Minute), "add", ".")
+	gitT(t, f.repo, changesBase.Add(-time.Minute), "commit", "-m", "big")
+	writeF(t, filepath.Join(f.repo, "big.txt"), big)
+	writeF(t, filepath.Join(f.repo, "z-after.txt"), "z\n")
+	v := f.ok("")
+	b := fileOf(v, "big.txt")
+	if b == nil || b.Hunks != "" || !b.HunksCut || b.Added < 1000 || v.Cut == nil {
+		t.Fatalf("big.txt: %+v cut %+v", b, v.Cut)
+	}
+	if z := fileOf(v, "z-after.txt"); z == nil || z.Hunks == "" {
+		t.Fatalf("a small file after it lost its hunks: %+v", z)
+	}
+}

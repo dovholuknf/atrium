@@ -144,7 +144,7 @@ func (d *Daemon) repliesPage(taskID string, n int, before time.Time) (*RepliesVi
 				}
 				if err == nil {
 					fillEdited(t, path, pg.replies)
-						v := &RepliesView{Source: "transcript",Replies: pg.replies, Prompts: pg.prompts, More: pg.more}
+					v := &RepliesView{Source: "transcript", Replies: pg.replies, Prompts: pg.prompts, More: pg.more}
 					if pg.more {
 						v.NextBefore = pg.next.UTC().Format(time.RFC3339Nano)
 					}
@@ -195,8 +195,8 @@ var repliesCache = struct {
 type repliesCached struct {
 	size    int64
 	mtime   time.Time
-	replies []Reply  // the last repliesMax, oldest first
-	prompts []Prompt // the same, for what was said to the card
+	replies []Reply   // the last repliesMax, oldest first
+	prompts []Prompt  // the same, for what was said to the card
 	floor   time.Time // zero when everything older is held, else complete down to here. See finishPage
 }
 

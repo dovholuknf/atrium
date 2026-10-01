@@ -4,12 +4,15 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/safepath"
@@ -73,108 +76,172 @@ func (x *turnIndex) editsIn(start, end time.Time) []editCall {
 	return out
 }
 
-// scanTurns reads a whole transcript once. Sidechain (subagent) lines are skipped: a
-// subagent's edits are not this turn's reply.
-func scanTurns(path string) (*turnIndex, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
+// turnScanned counts the transcript bytes scanTurns has read, for a test that checks a growing file
+// is read from where it left off and not from the start.
+var turnScanned atomic.Int64
+
+// fingerprintLen is how many bytes before the cached offset are compared to tell the file it was
+// read from from one that replaced it.
+const fingerprintLen = 256
+
+// clone is a copy the caller may append to without touching the one a reader holds.
+func (x *turnIndex) clone() *turnIndex {
+	if x == nil {
+		return &turnIndex{}
 	}
-	defer f.Close()
-	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 0, 64<<10), 8<<20)
-	x := &turnIndex{}
-	for sc.Scan() {
-		line := sc.Bytes()
-		user := bytes.Contains(line, []byte(`"user"`))
-		if !user && !bytes.Contains(line, []byte(`"assistant"`)) {
-			continue
-		}
-		if user && bytes.Contains(line, []byte(`"tool_result"`)) {
-			continue
-		}
-		var rec struct {
-			Type      string `json:"type"`
-			Sidechain bool   `json:"isSidechain"`
-			Meta      bool   `json:"isMeta"`
-			Timestamp string `json:"timestamp"`
-			Origin    *struct {
-				Kind string `json:"kind"`
-			} `json:"origin"`
-			Message struct {
-				Content json.RawMessage `json:"content"`
-			} `json:"message"`
-		}
-		if json.Unmarshal(line, &rec) != nil || rec.Sidechain {
-			continue
-		}
-		at, err := time.Parse(time.RFC3339Nano, rec.Timestamp)
-		if err != nil {
-			continue
-		}
-		at = at.UTC()
-		switch rec.Type {
-		case "user":
-			if rec.Meta || (rec.Origin != nil && rec.Origin.Kind != "" && rec.Origin.Kind != "human") {
-				continue
-			}
-			var content any
-			if json.Unmarshal(rec.Message.Content, &content) != nil {
-				continue
-			}
-			if _, ok := promptOf(content); ok {
-				x.prompts = append(x.prompts, at)
-			}
-		case "assistant":
-			var blocks []struct {
-				Type  string `json:"type"`
-				Text  string `json:"text"`
-				Name  string `json:"name"`
-				Input struct {
-					FilePath     string `json:"file_path"`
-					NotebookPath string `json:"notebook_path"`
-				} `json:"input"`
-			}
-			if json.Unmarshal(rec.Message.Content, &blocks) != nil {
-				continue
-			}
-			text := false
-			for _, b := range blocks {
-				switch {
-				case b.Type == "text" && strings.TrimSpace(b.Text) != "":
-					text = true
-				case b.Type == "tool_use" && editTools[b.Name]:
-					p := b.Input.FilePath
-					if p == "" {
-						p = b.Input.NotebookPath
-					}
-					if p != "" {
-						x.edits = append(x.edits, editCall{at: at, path: p})
-					}
-				}
-			}
-			if text {
-				x.texts = append(x.texts, at)
-			}
-		}
+	return &turnIndex{
+		prompts: append([]time.Time(nil), x.prompts...),
+		texts:   append([]time.Time(nil), x.texts...),
+		edits:   append([]editCall(nil), x.edits...),
 	}
-	if err := sc.Err(); err != nil {
-		return nil, err
-	}
-	return x, nil
 }
 
-// turnCache holds the last scan per transcript on its size and modification time, since
-// the page asks at every turn end and a transcript only grows. Its own lock.
+// scanTurnsFrom reads transcript lines from `offset` into a copy of base, and returns it with the
+// offset of the first byte not read. A line with no newline yet is left for the next read, since
+// the file is being written. Sidechain (subagent) lines are skipped: a subagent's edits are not this
+// turn's reply.
+func scanTurnsFrom(path string, base *turnIndex, offset int64) (*turnIndex, int64, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer f.Close()
+	if _, err := f.Seek(offset, io.SeekStart); err != nil {
+		return nil, 0, err
+	}
+	x := base.clone()
+	br := bufio.NewReaderSize(f, 256<<10)
+	for {
+		line, err := br.ReadBytes('\n')
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				// Whatever is after the last newline is a line still being written.
+				turnScanned.Add(int64(len(line)))
+				return x, offset, nil
+			}
+			return nil, 0, err
+		}
+		offset += int64(len(line))
+		turnScanned.Add(int64(len(line)))
+		x.feed(line)
+	}
+}
+
+func scanTurns(path string) (*turnIndex, error) {
+	x, _, err := scanTurnsFrom(path, nil, 0)
+	return x, err
+}
+
+// feed takes one transcript line.
+func (x *turnIndex) feed(line []byte) {
+	if len(line) > 8<<20 {
+		return
+	}
+	user := bytes.Contains(line, []byte(`"user"`))
+	if !user && !bytes.Contains(line, []byte(`"assistant"`)) {
+		return
+	}
+	if user && bytes.Contains(line, []byte(`"tool_result"`)) {
+		return
+	}
+	var rec struct {
+		Type      string `json:"type"`
+		Sidechain bool   `json:"isSidechain"`
+		Meta      bool   `json:"isMeta"`
+		Timestamp string `json:"timestamp"`
+		Origin    *struct {
+			Kind string `json:"kind"`
+		} `json:"origin"`
+		Message struct {
+			Content json.RawMessage `json:"content"`
+		} `json:"message"`
+	}
+	if json.Unmarshal(line, &rec) != nil || rec.Sidechain {
+		return
+	}
+	at, err := time.Parse(time.RFC3339Nano, rec.Timestamp)
+	if err != nil {
+		return
+	}
+	at = at.UTC()
+	switch rec.Type {
+	case "user":
+		if rec.Meta || (rec.Origin != nil && rec.Origin.Kind != "" && rec.Origin.Kind != "human") {
+			return
+		}
+		var content any
+		if json.Unmarshal(rec.Message.Content, &content) != nil {
+			return
+		}
+		if _, ok := promptOf(content); ok {
+			x.prompts = append(x.prompts, at)
+		}
+	case "assistant":
+		var blocks []struct {
+			Type  string `json:"type"`
+			Text  string `json:"text"`
+			Name  string `json:"name"`
+			Input struct {
+				FilePath     string `json:"file_path"`
+				NotebookPath string `json:"notebook_path"`
+			} `json:"input"`
+		}
+		if json.Unmarshal(rec.Message.Content, &blocks) != nil {
+			return
+		}
+		text := false
+		for _, b := range blocks {
+			switch {
+			case b.Type == "text" && strings.TrimSpace(b.Text) != "":
+				text = true
+			case b.Type == "tool_use" && editTools[b.Name]:
+				p := b.Input.FilePath
+				if p == "" {
+					p = b.Input.NotebookPath
+				}
+				if p != "" {
+					x.edits = append(x.edits, editCall{at: at, path: p})
+				}
+			}
+		}
+		if text {
+			x.texts = append(x.texts, at)
+		}
+	}
+}
+
+// turnCache holds the last scan per transcript, and how far into the file it got. A transcript
+// only grows, so the next read starts at that offset. A file that got shorter, or whose bytes before
+// the offset are not the ones read, was replaced and is read again from the start. Its own lock.
 var turnCache = struct {
 	mu sync.Mutex
 	m  map[string]turnCached
 }{m: map[string]turnCached{}}
 
 type turnCached struct {
-	size  int64
-	mtime time.Time
-	x     *turnIndex
+	size   int64
+	mtime  time.Time
+	offset int64  // the first byte not yet read
+	print  []byte // the fingerprintLen bytes before offset
+	x      *turnIndex
+}
+
+// fingerprint is the bytes just before offset.
+func fingerprint(path string, offset int64) []byte {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil
+	}
+	defer f.Close()
+	n := int64(fingerprintLen)
+	if offset < n {
+		n = offset
+	}
+	buf := make([]byte, n)
+	if _, err := f.ReadAt(buf, offset-n); err != nil {
+		return nil
+	}
+	return buf
 }
 
 func turnsOf(path string) (*turnIndex, error) {
@@ -188,7 +255,12 @@ func turnsOf(path string) (*turnIndex, error) {
 	if ok && c.size == info.Size() && c.mtime.Equal(info.ModTime()) {
 		return c.x, nil
 	}
-	x, err := scanTurns(path)
+	var base *turnIndex
+	var from int64
+	if ok && info.Size() >= c.offset && bytes.Equal(fingerprint(path, c.offset), c.print) {
+		base, from = c.x, c.offset
+	}
+	x, offset, err := scanTurnsFrom(path, base, from)
 	if err != nil {
 		return nil, err
 	}
@@ -196,7 +268,8 @@ func turnsOf(path string) (*turnIndex, error) {
 	if len(turnCache.m) > 50 {
 		turnCache.m = map[string]turnCached{}
 	}
-	turnCache.m[path] = turnCached{size: info.Size(), mtime: info.ModTime(), x: x}
+	turnCache.m[path] = turnCached{size: info.Size(), mtime: info.ModTime(), offset: offset,
+		print: fingerprint(path, offset), x: x}
 	turnCache.mu.Unlock()
 	return x, nil
 }
