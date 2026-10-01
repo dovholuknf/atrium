@@ -96,3 +96,19 @@ f5a0045e = 8a408fe2. The new reading is cf30cb51.
 OK hub and room adcd5d1a..cf30cb51.
 
 Quality: after the Sonnet switch, every finding was taken and each fix was proven live. Good.
+
+## Landing check and nit follow-up 54a19bd2 (2026-10-01)
+
+Landed as 65a0b60c, 2dd365ba and 1d6a48f4, which match b0dc2af9, 8a408fe2 and cf30cb51 (`git range-diff`, all `=`).
+The f-pulls-hub follow-up landed as 0963c4c6, `=` 7f063740.
+
+54a19bd2, one commit on 1d6a48f4, folds the nits from this review and from f-new-review-0d81572b.md:
+
+- `Step` sends git's stderr to a file and reads the hash from stdout only. I ran the tip's board-suite-remote.ps1
+  in a worktree with an untracked `NUL`. It still exits 3 with git's error, and nothing is pushed.
+- `-Clone` is double-quoted, which works under cmd.exe and PowerShell as the ssh shell.
+- pullsList says "no attached room answered the pulls request" when no room is `without`, and the test pins it.
+
+gofmt and vet clean on internal/link, its pull tests ok. The space-in-an-argument nit is left, as no flag needs one.
+
+OK hub and room 1d6a48f4..54a19bd2.
