@@ -43,3 +43,29 @@ by `URLSearchParams` after `/m/`. The target still starts with `/m/` on the same
 goes to `/m/`. Low 1 is closed. Nit 2 stays, as @ui chose.
 
 HUB DEPLOY OK 45dba246
+
+## Review of 0b91385f (@ui u-m-redirect2: the redirect that did not fire on clint's phone)
+
+`git diff 98e5ae9f 0b91385f -- internal/api/web`, read only.
+
+- The opt-out moves to `sessionStorage`, so it belongs to one tab, and the old `localStorage` value is removed on
+  every board load. The "desktop board" link and "phone view" both use the new store.
+- `?why=1` writes its line through `textContent`, so a hostile `window.name` stays text. `why` is removed from the
+  query that is carried to /m, and the 4-second delay applies only with `?why=1`.
+- The targets are unchanged: still fixed `/m` paths on the same origin.
+
+### Low
+
+3. **A touchscreen laptop with a small window now counts as a phone.** The test is now `(coarse || any-coarse ||
+   maxTouchPoints > 0)` and `min(innerWidth, innerHeight, screen.width) < 600`. A Windows touch laptop or a Surface
+   passes the first half, and any board window under 600 px on either side passes the second. That covers a window
+   snapped to a corner, a short window with devtools docked, or a narrow side-by-side. The desktop board then goes to
+   /m, and because the opt-out is now per tab, it happens again in every new tab. Checking the screen rather than the
+   window, `min(screen.width, screen.height) < 600`, would still catch every phone and leave a small window on a big
+   screen alone.
+
+Quality: after the Sonnet switch. The diagnosis tooling (`?why=1`, a reason for every outcome, a test case for each)
+is careful. The widening was not weighed against touch-capable desktops, which is the kind of second-order check
+I would have expected.
+
+HUB DEPLOY OK 0b91385f
