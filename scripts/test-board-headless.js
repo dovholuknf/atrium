@@ -15370,6 +15370,134 @@ async function mViewerSection(browser) {
   if (!bad) console.log("mViewer ok");
 }
 
+// ── the /m home on the live card list ────────────────────────────────────
+// A sanitized snapshot of the real list (scripts/fixtures/live-tasks-0930.json, 183 cards) served through the mock, at 412px,
+// with every control used and the rows checked against an independent sort written here from the rules in the brief and
+// not from the page's own comparator. HOMEFIX_SHOTS=<dir> writes a JPEG of each state.
+async function mHomeLiveSection(browser) {
+  const live = JSON.parse(fs.readFileSync(path.join(__dirname, "fixtures", "live-tasks-0930.json"), "utf8"));
+  const st = mServer({});
+  st.tasks = live;
+  await st.open();
+  // ── the expectations ──
+  const ms = x => Date.parse(x);
+  const needSince = t => {
+    const s = t.seen || {};
+    const out = [];
+    if (s.answered === false && ((s.open_questions || []).length || s.questions_unparsed)) out.push(ms(s.questions_at) || ms(s.turn_ended_at) || 0);
+    if (s.unseen && s.turn_ended_at) out.push(ms(s.turn_ended_at));
+    if (t.status === "needs-input" && !out.length) out.push(ms(t.waiting_since) || 0);
+    return out.length ? Math.min(...out.filter(Boolean).concat(out.some(Boolean) ? [] : [Infinity])) : null;
+  };
+  const NOT_SUB = ["atrium:director", "atrium:orchestrator", "orchestrators", "atrium:hold-notices"];
+  const isSub = t => t.tags.includes("origin:agent") && !(t.status === "running" && t.alias) && !t.tags.some(x => NOT_SUB.includes(x));
+  const project = t => {
+    const w = (t.worktree || "").replace(/\\/g, "/");
+    if (!w) return "";
+    const m = /\/(?:github|gitlab|bitbucket)[^/]*\/([^/]+)\/([^/]+)/i.exec(w);
+    if (m) return m[1] + "/" + m[2];
+    const parts = w.split("/").filter(Boolean);
+    return parts.length >= 2 ? parts.slice(-2).join("/") : parts[0] || "";
+  };
+  // newest first by when the card last did anything, ties by creation then id, and oldest is that whole order reversed
+  const newest = (a, b) => ms(b.last_activity_at) - ms(a.last_activity_at) || (a.created_at || "").localeCompare(b.created_at || "") || a.id.localeCompare(b.id);
+  const needSet = live.filter(t => needSince(t) !== null);
+  const needIds = new Set(needSet.map(t => t.id));
+  const cls = t => t.status === "running" ? 0 : (t.status === "needs-input" || t.status === "needs-permission") ? 1 : 2;
+  const expected = state => {
+    const all = state.mode === "all";
+    const listed = all ? live.slice() : needSet.slice();
+    const kept = listed.filter(t => !(all && state.needsMe && !needIds.has(t.id)) && !(state.hideDone && (t.status === "done" || t.status === "dead")) && !(state.hideSubs && isSub(t)));
+    let rows;
+    if (all) { rows = kept.sort(newest); if (state.order === "oldest") rows.reverse(); }
+    else { rows = kept.sort((a, b) => needSince(a) - needSince(b) || a.id.localeCompare(b.id)); if (state.order === "newest") rows.reverse(); }
+    let secs;
+    if (state.group === "none") secs = all ? [0, 1, 2].map(c => ({ label: ["Working", "Waiting", "Idle"][c], rows: rows.filter(t => cls(t) === c) })).filter(x => x.rows.length) : [{ label: "", rows }];
+    else {
+      const key = state.group === "room" ? t => t.room : project;
+      const by = new Map();
+      rows.forEach(t => { const k = key(t); if (!by.has(k)) by.set(k, []); by.get(k).push(t); });
+      const names = [...by.keys()].sort((a, b) => !a ? 1 : !b ? -1 : a.localeCompare(b));
+      secs = names.map(k => ({ label: k || (state.group === "room" ? "no room" : "no project"), rows: by.get(k) }));
+    }
+    return { rows, secs, hidden: listed.length - kept.length, listed: listed.length };
+  };
+  try {
+    const vp = { width: 412, height: 915 };
+    const ctx = await browser.newContext({ viewport: vp, hasTouch: true, isMobile: true, deviceScaleFactor: 1 });
+    const p = await ctx.newPage();
+    const errors = [];
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(st.url + "/m/", { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#m-list .row", { timeout: slow(15000) });
+    await p.waitForFunction(n => /\d/.test(document.getElementById("m-seg-all").textContent) && document.getElementById("m-seg-all").textContent.includes(n), String(live.length), { timeout: slow(10000) });
+    const shots = process.env.HOMEFIX_SHOTS;
+    if (shots) fs.mkdirSync(shots, { recursive: true });
+    const cur = () => p.evaluate(() => ({ mode: window.mHome.mode(), o: window.mHome.opts() }));
+    // each control by tapping it, only the ones that are not already as wanted
+    const apply = async state => {
+      let c = await cur();
+      if (c.mode !== state.mode) { await p.tap(state.mode === "all" ? "#m-seg-all" : "#m-seg-needs"); c = await cur(); }
+      if (await p.$eval("#m-opts", e => e.hidden)) await p.tap("#m-opts-btn");
+      const key = state.mode === "all" ? "order" : "orderNeeds";
+      if (c.o[key] !== state.order) await p.tap('[data-opt="order"][data-val="' + state.order + '"]');
+      if (c.o.group !== state.group) await p.tap('[data-opt="group"][data-val="' + state.group + '"]');
+      for (const f of ["needsMe", "hideDone", "hideSubs"]) { c = await cur(); if (!!c.o[f] !== !!state[f]) await p.tap('[data-opt="' + f + '"]'); }
+      await p.waitForTimeout(120);
+    };
+    const check = async (name, state) => {
+      const tag = "mHomeLive " + name + ": ";
+      await apply(state);
+      const exp = expected(state);
+      const got = await p.evaluate(() => [...document.querySelectorAll("#m-list > .rw:not(.leaving)")].map(w => w.classList.contains("head")
+        ? { head: w.textContent.replace(/\s+/g, " ").trim() } : { id: w.querySelector(".row").dataset.id }));
+      const gotIds = got.filter(x => x.id).map(x => x.id);
+      const wantIds = exp.secs.flatMap(sx => sx.rows.map(t => t.id));
+      if (gotIds.length !== wantIds.length) fail(tag + "the page lists " + gotIds.length + " rows, the independent sort " + wantIds.length);
+      const first = wantIds.findIndex((id, i) => gotIds[i] !== id);
+      if (first >= 0) fail(tag + "row " + first + " is " + gotIds[first] + ", the independent sort says " + wantIds[first]);
+      const wantHeads = exp.secs.filter(sx => sx.label).map(sx => sx.label + " " + sx.rows.length);
+      const gotHeads = got.filter(x => x.head).map(x => x.head);
+      if (wantHeads.join("|") !== gotHeads.join("|")) fail(tag + "headings are " + gotHeads.slice(0, 4).join("|") + ", wanted " + wantHeads.slice(0, 4).join("|"));
+      const counts = await p.evaluate(() => [document.getElementById("m-seg-needs").textContent, document.getElementById("m-seg-all").textContent, (document.getElementById("m-hidden").hidden ? "" : document.getElementById("m-hidden").textContent)]);
+      if (!counts[0].includes(String(needSet.length)) || !counts[1].includes(String(live.length))) fail(tag + "the counts say " + counts.slice(0, 2).join(" / ") + ", wanted " + needSet.length + " / " + live.length);
+      if (exp.hidden && !new RegExp("^" + exp.hidden + " hidden by filters").test(counts[2])) fail(tag + "the hidden line says '" + counts[2] + "', wanted " + exp.hidden);
+      if (!exp.hidden && counts[2]) fail(tag + "a hidden line shows with nothing hidden: " + counts[2]);
+      if (state.mode === "all" && state.hideSubs && !state.needsMe && !gotIds.includes("sg4-control~01a0f2da-2455-7345-a4f5-629b06f7c109")) fail(tag + "the orchestrator is hidden by hide subagents");
+      if (state.mode === "all" && state.hideSubs && gotIds.some(id => isSub(live.find(t => t.id === id)))) fail(tag + "a subagent is listed with hide subagents on");
+      if (await mNoSideways(p)) fail(tag + "the home scrolls sideways");
+      if (shots) {
+        await p.evaluate(() => { document.getElementById("m-opts").hidden = false; window.scrollTo(0, 0); });
+        await p.screenshot({ path: path.join(shots, name + ".jpg"), type: "jpeg", quality: 55 });
+      }
+    };
+    const F = { needsMe: false, hideDone: false, hideSubs: false };
+    const states = [];
+    for (const mode of ["needs", "all"]) {
+      const dflt = mode === "needs" ? "oldest" : "newest", other = mode === "needs" ? "newest" : "oldest";
+      states.push([mode + "-default", Object.assign({ mode, order: dflt, group: "none" }, F)]);
+      states.push([mode + "-" + other, Object.assign({ mode, order: other, group: "none" }, F)]);
+      for (const g of ["room", "project"]) {
+        states.push([mode + "-" + dflt + "-by-" + g, Object.assign({ mode, order: dflt, group: g }, F)]);
+        states.push([mode + "-" + other + "-by-" + g, Object.assign({ mode, order: other, group: g }, F)]);
+      }
+      states.push([mode + "-hide-done", Object.assign({ mode, order: dflt, group: "none" }, F, { hideDone: true })]);
+      states.push([mode + "-hide-subagents", Object.assign({ mode, order: dflt, group: "none" }, F, { hideSubs: true })]);
+      states.push([mode + "-hide-done-and-subagents-" + other, Object.assign({ mode, order: other, group: "none" }, F, { hideDone: true, hideSubs: true })]);
+      states.push([mode + "-room-hide-subagents-" + other, Object.assign({ mode, order: other, group: "room" }, F, { hideSubs: true })]);
+    }
+    states.push(["all-needs-me-only", Object.assign({ mode: "all", order: "newest", group: "none" }, F, { needsMe: true })]);
+    states.push(["all-needs-me-and-hide-subagents", Object.assign({ mode: "all", order: "oldest", group: "project" }, F, { needsMe: true, hideSubs: true })]);
+    states.push(["all-everything-on", { mode: "all", order: "oldest", group: "room", needsMe: false, hideDone: true, hideSubs: true }]);
+    for (const [name, state] of states) await check(name, state);
+    // the fixture's own truth, so a changed fixture is noticed here and not as a puzzling row
+    if (live.length !== 183 || needSet.length < 20) fail("mHomeLive: the fixture is not the 183-card snapshot: " + live.length + " cards, " + needSet.length + " needing");
+    if (errors.length) fail("mHomeLive: page errors: " + errors.join(" | "));
+    await ctx.close();
+  } finally { await st.close(); }
+  if (!bad) console.log("mHomeLive ok");
+}
+
 async function main() {
   await new Promise(r => server.listen(0, "127.0.0.1", r));
   const base = "http://127.0.0.1:" + server.address().port;
@@ -15409,7 +15537,7 @@ async function main() {
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, phoneRedirect: phoneRedirectSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, mHidden: mHiddenSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
-      mViewer: mViewerSection,
+      mViewer: mViewerSection, mHomeLive: mHomeLiveSection,
       gearTermList: gearTermListSection, growlLinks: growlLinksSection, growlChoiceOnce: growlChoiceOnceSection,
       mOutputAt: mOutputAtSection, mStickBottom: mStickBottomSection, mSendFree: mSendFreeSection, mCardUpload: mCardUploadSection, mCompact: mCompactSection, mPinch: mPinchSection, mPrompts: mPromptsSection,
       cardUrlWinName: cardUrlWinNameSection,
@@ -17394,6 +17522,7 @@ async function main() {
     await mPicturesSection(browser);
     await mHiddenSection(browser);
     await mViewerSection(browser);
+    await mHomeLiveSection(browser);
     await soundPhoneSection(browser, base);
     await phoneBoardCompactSection(browser, base);
     await phoneBellSection(browser, base);
