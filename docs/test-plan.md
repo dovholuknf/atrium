@@ -7996,3 +7996,15 @@ Needs a hub with one room and two browsers on the board. `curl` stands in for th
    operator.
 4. On a room: `atrium stop` still stops it. A `POST /v1/shutdown` carrying `X-Forwarded-For` answers 403 unless it
    carries the shutdown token.
+
+## HM. Older replies, a page at a time (r-replies-paging)
+
+1. On a Claude card with more than 50 replies, `curl -s 'http://127.0.0.1:7778/v1/tasks/<id>/replies?n=50' | jq
+   '.replies|length, .more'` answers 50 and `true`. `n=80` answers 50 too.
+2. Take the first `at` in `.replies` and ask again with `&before=<at>` (RFC3339, URL-encoded). The page is the n
+   replies and n prompts strictly older, oldest first. A client walks each list from that list's own oldest `at`.
+3. Keep going. The last page answers `more: false`, and no reply shows twice or goes missing.
+4. `&before=yesterday` answers 400. A codex card (source `screen`) answers `more: false`.
+5. Through the hub, `GET /v1/tasks/<room>~<id>/replies?n=50&before=<at>` answers the same as on the room.
+6. On a transcript over 16MB with replies spread through it, a deep page still answers: the 16MB bound counts from
+   the `before` position, not from the end of the file.
