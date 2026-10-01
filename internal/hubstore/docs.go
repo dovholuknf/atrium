@@ -407,6 +407,9 @@ func isText(b []byte) bool {
 
 // ── blobs ───────────────────────────────────────────────
 
+// DocsDir is the folder the document bytes are in.
+func (s *Store) DocsDir() string { return s.docsDir }
+
 func (s *Store) blobPath(sha string) string { return filepath.Join(s.docsDir, sha) }
 
 // writeBlob puts the bytes where their hash says, through a temp file and a
@@ -517,6 +520,9 @@ func (s *Store) DocAdd(in DocInput) (DocResult, error) {
 	sha := hexSHA(in.Data)
 	title := cleanTitle(in.Title)
 	if in.Slug == "" {
+		if title == "" && in.Title != "" {
+			return res, &DocError{Kind: DocBad, Msg: "that title leaves no text"}
+		}
 		if title == "" {
 			title = DocTitleFromName(name)
 		}
