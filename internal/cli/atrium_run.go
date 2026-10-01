@@ -416,6 +416,8 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	// WORK THAT WAITS ON OTHER WORK, checked against the integration branch and this
 	// hub's own build commit. See internal/link/deps.go.
 	proxy.SetDeps(store, Commit)
+	// WHETHER THE INSTALLED BUILD CAN BE REPLACED, and the one click that does it. Nothing deploys on its own.
+	proxy.SetDeployReady()
 	go proxy.RunDeps(ctx)
 
 	go func() {

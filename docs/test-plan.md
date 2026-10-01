@@ -8085,3 +8085,21 @@ on the board port. The body replaces the set, so read the card's tags first.
    long-tool threshold still wakes it two minutes after that, as before.
 7. **Not verified by tests:** that a model told `fyi` in the tool text uses it sensibly, and the board's drawing of
    `held_notices`, which is @ui's.
+
+## HQ. Deploy ready, and the one-click hub deploy (r-deploy-ready)
+
+Automated: `go test ./internal/deployready` and `go test ./internal/link -run 'DeployReady|DeployClick'`, on real
+temporary git repositories. Manual, before tagging:
+
+- **HQ1.** `GET /_hub/deploy-ready` on the live hub. With an unreviewed code commit on claude/main since the installed
+  build, `state` is `blocked` and `blocking` names it by short SHA and subject.
+- **HQ2.** Land a review commit carrying `Atrium-Verdict: hub-ok <base>..<tip>` (add `room-ok` for room-side code).
+  Within a minute a board on the stream hears `deploy-ready` and the GET says `ready`.
+- **HQ3.** Rebase a reviewed branch onto claude/main and land it. The state stays `ready`. Edit one line during the
+  rebase and it goes back to `blocked` for that commit.
+- **HQ4.** A docs-only commit does not block. A commit touching `internal/**`, `cmd/**` or `scripts/**` does, except
+  `scripts/test-board-headless.js`.
+- **HQ5.** `POST /_hub/deploy-ready/deploy` with a stale tip answers 409. From a non-loopback address it answers 403.
+  Nothing deploys on its own at any point.
+- **HQ6.** `pwsh scripts\live\deploy-ready.ps1 -Tip <sha> -WhatIf` prints the build and deploy steps and changes
+  nothing.
