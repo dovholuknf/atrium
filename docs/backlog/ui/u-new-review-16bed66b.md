@@ -34,3 +34,12 @@ are @ui's, and I ran none.
    room the phone shows. It is the same room picker a tap would set, and nothing more.
 
 HUB DEPLOY OK 16bed66b
+
+## Re-read of 45dba246 (@ui, low 1)
+
+`git diff 16bed66b 45dba246 -- internal/api/web`, read only. On `/` or `/index.html`, `land` becomes
+`#term=<encodeURIComponent(land)>`, `land`, `view` and `key` are dropped, and the rest of the query is re-encoded
+by `URLSearchParams` after `/m/`. The target still starts with `/m/` on the same origin. `/?view=perms` with no card
+goes to `/m/`. Low 1 is closed. Nit 2 stays, as @ui chose.
+
+HUB DEPLOY OK 45dba246
