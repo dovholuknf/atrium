@@ -128,17 +128,9 @@
   let opts = loadOpts();
   function saveOpts() { try { localStorage.setItem(OPTS_KEY, JSON.stringify(opts)); } catch (e) {} }
 
-  // When a card last did something, in ms. `last_activity_at` is a fact about the card, where `idle_seconds` is a count taken
-  // when the row was read, so rows read at different times (a list a minute old and a row an event just replaced) cannot be
-  // compared by it. It is the fallback for a card that has no stamp.
-  function activityMs(t) {
-    const at = Date.parse(t.last_activity_at);
-    return isNaN(at) ? Date.now() - (Number(t.idle_seconds) || 0) * 1000 : at;
-  }
-
   // Newest or oldest by last activity, with the board's tie break. Oldest is the whole newest order reversed.
   function sortRows(rows) {
-    rows.sort((a, b) => activityMs(b.card) - activityMs(a.card) || cardTieBreak(a.card, b.card));
+    rows.sort((a, b) => cardActivityCmp(a.card, b.card) || cardTieBreak(a.card, b.card));
     if (opts.order === "oldest") rows.reverse();
     return rows;
   }

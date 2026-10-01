@@ -5,11 +5,15 @@ body.m {
   display: block; height: auto; min-height: 100%; overflow: visible; margin: 0;
   font: 16px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, system-ui, sans-serif;
   background: linear-gradient(170deg, var(--bg-0) 0%, var(--bg-1) 60%, var(--bg-2) 100%) fixed;
-  color: var(--body); overscroll-behavior-y: none;
+  color: var(--body);
   -webkit-tap-highlight-color: transparent;
 }
 body.m::before { display: none; }
 body.m.sheet-open { overflow: hidden; }
+/* The browser's own pull-to-refresh is allowed on the home list, where the document scrolls. Behind an open sheet the document
+   does not scroll and a card has its own pull (js/card.js), which a native one would fight. */
+body.m { overscroll-behavior-y: auto; }
+body.m.sheet-open { overscroll-behavior-y: none; }
 .m button { font: inherit; color: inherit; }
 .m .grow { flex: 1; }
 .m .quiet { color: var(--dim); font-size: 13px; }

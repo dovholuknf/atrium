@@ -65,3 +65,21 @@ Medium 1 is closed. Nit 2 stands.
 Quality: after the Sonnet switch. The fix is exactly the seam named, with a test for each path. No drop seen.
 
 HUB DEPLOY OK 5786991e~1..22157cc3
+
+## Re-read of 818917aa (@ui: mOlder made machine independent, and a close race)
+
+`git diff 22157cc3 818917aa -- internal/api/web`, read only.
+
+**The race is real, and the token fixes it.** `transitionend` can finish a close (`openId` cleared) before the
+400 ms timer fires. If the same card is reopened in that gap, `open` sets `openId` again before the two-frame `on`
+class lands. The stale timer then saw `openId === id` and no `on`, and closed the new card. `open` now bumps
+`closeTok`, and a close's `done` acts only on its own token. The same check also makes harmless a `transitionend`
+listener left registered when the timer won, which would otherwise fire on the next open's slide.
+
+The test change (ten tall replies, overflow asserted first, two heights, two pinch sizes, and a short-card case) is
+@ui's own.
+
+Quality: after the Sonnet switch. A product race found by making the test honest, and fixed with a token rather
+than another timeout. No drop seen.
+
+HUB DEPLOY OK 818917aa

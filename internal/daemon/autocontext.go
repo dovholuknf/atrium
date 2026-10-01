@@ -173,6 +173,11 @@ func (a *autoContexts) forgetExcept(open map[string]bool) {
 			delete(a.by, id)
 		}
 	}
+	for id := range a.read {
+		if !open[id] {
+			delete(a.read, id)
+		}
+	}
 }
 
 // autoContextSubject is whether the setting reaches a card at all. Never a fixture, a

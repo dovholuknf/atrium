@@ -24,3 +24,10 @@ headless checks are @ui's, and I ran none.
 Quality: after the Sonnet switch. Small and careful. No drop seen.
 
 HUB DEPLOY OK b8c4e552~1..8c0c90ee
+
+## Re-read of 00bc2e83 (@ui, nit 1)
+
+`git diff 8c0c90ee 00bc2e83 -- internal/api/web`, read only. `pickSet` filters unknown keys first, then falls back to
+running and needs you when none are left. Closed. No findings.
+
+HUB DEPLOY OK 00bc2e83
