@@ -231,6 +231,55 @@ func TestCeilingCardWaitIsBoundedAndTypingNeverTimesOut(t *testing.T) {
 	r.wantStart("past the wait with a watcher who has stopped typing")
 }
 
+// Every typing step of a ceiling cycle yields to a person who typed in the last two minutes, even when the
+// gate's own quiet (seconds) has passed. A cycle that is not a ceiling one does not.
+func TestCeilingCycleTypingStepHoldsForARecentTypist(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		ceiling bool
+	}{{"ceiling", true}, {"plain", false}} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := newAutoRig(t, "", directorTags...)
+			gen, ok := r.d.nctx.beginAuto(r.id(), HandoffName(r.task), "c", 200_000, 150_000, false, false, tc.ceiling)
+			if !ok {
+				t.Fatal("no claim")
+			}
+			// Typed a minute ago: past the gate's quiet, inside the two minutes.
+			r.run.typeMu.Lock()
+			r.run.lastTyped = time.Now().Add(-time.Minute)
+			r.run.typeMu.Unlock()
+
+			done := make(chan error, 1)
+			go func() { done <- r.d.ncType(r.id(), gen, newContextLabel, "step one", 5*time.Second) }()
+			if tc.ceiling {
+				time.Sleep(150 * time.Millisecond)
+				if strings.Contains(r.f.written(), "step one") {
+					t.Fatalf("typed at a person who typed a minute ago: %q", r.f.written())
+				}
+				r.run.typeMu.Lock()
+				r.run.lastTyped = time.Now().Add(-3 * time.Minute)
+				r.run.typeMu.Unlock()
+			}
+			if err := <-done; err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(r.f.written(), "step one") {
+				t.Fatalf("the step was never typed: %q", r.f.written())
+			}
+		})
+	}
+}
+
+func TestCardReadsArePrunedWithTheirCards(t *testing.T) {
+	a := newAutoContexts()
+	a.noteRead("gone")
+	a.noteRead("open")
+	a.forgetExcept(map[string]bool{"open": true})
+	if a.readWithin("gone", time.Hour) || !a.readWithin("open", time.Hour) || len(a.read) != 1 {
+		t.Fatalf("reads after pruning: %v", a.read)
+	}
+}
+
 // Attached and idle holds inside the wait and proceeds past it.
 func TestCeilingCardAttachedAndIdleProceedsPastTheMaxWait(t *testing.T) {
 	r := newAutoRig(t, "", directorTags...)
