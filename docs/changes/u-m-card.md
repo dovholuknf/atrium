@@ -15,3 +15,11 @@ Type in the /m box and send.
 ### @LETTER@3. The recap sheet
 Open a card that has a recap.
 **Expected:** a `Recap` control with its time is at the top. Tapping it opens a sheet with `from HH:MM`. The close button, the backdrop and Escape close it. A recap older than the card's last turn shows dimmed with `before the last turn`.
+
+### @LETTER@4. Stay at the newest message
+Open a card with a long thread on /m, at 390 and 412.
+**Expected:** it opens on the newest message. A new reply, your own message, closing the Recap sheet and the keyboard opening all land on the newest. Scroll up on purpose and it stops following and shows `Jump to latest`, which brings you back.
+
+### @LETTER@5. Sending never blocks
+Send on /m over a slow link.
+**Expected:** the box clears at once and takes the next message while the first is in flight. The thread shows your message as `sending`, then `delivered` or `queued`. If the send fails the text goes back in the box ahead of anything typed since, and the row says `not sent`.

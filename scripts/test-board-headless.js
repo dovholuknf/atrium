@@ -13254,6 +13254,148 @@ async function mOutputAtSection(browser) {
   if (!bad) console.log("mOutputAt ok");
 }
 
+async function mStickBottomSection(browser) {
+  const st = mServer({});
+  const c = mCard("sb-1", { alias: "long", display_title: "long", status: "needs-input", waiting_since: mIso(M_MIN),
+    seen: { turn_ended_at: mIso(20 * M_MIN) }, recap: "A recap.", recap_at: mIso(30 * M_MIN) });
+  st.tasks = [c];
+  const long = n => Array.from({ length: n }, (_, i) => ({ at: mIso((n - i + 5) * M_MIN), text: "Reply " + i + ". " + "words ".repeat(120) }));
+  st.replies["sb-1"] = { source: "transcript", replies: long(8) };
+  await st.open();
+  try {
+    for (const vp of M_VIEWS) {
+      const { ctx, p, errors } = await mPage(browser, st, vp, "");
+      const tag = "mStickBottom " + vp.width + ": ";
+      await p.route("**/v1/tasks/sb-1/message", r => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ delivered: "terminal" }) }));
+      const gap = () => p.evaluate(() => { const e = document.getElementById("m-card-scroll"); return Math.round(e.scrollHeight - e.scrollTop - e.clientHeight); });
+      const jump = () => p.evaluate(() => !document.getElementById("m-jump").hidden);
+      const settled = async (what) => {
+        try { await p.waitForFunction(() => { const e = document.getElementById("m-card-scroll"); return e.scrollHeight - e.scrollTop - e.clientHeight < 3; }, null, { timeout: slow(4000) }); }
+        catch (e) { fail(tag + what + ": not at the newest message, gap " + await gap()); }
+      };
+      await p.waitForSelector("#m-seg-all", { timeout: slow(10000) });
+      await p.tap("#m-seg-all");
+      await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
+      await p.tap('#m-list .row[data-id="sb-1"]');
+      await p.waitForSelector("#m-replies .reply", { timeout: slow(5000) });
+      if (await p.evaluate(() => document.getElementById("m-card-scroll").scrollHeight <= document.getElementById("m-card-scroll").clientHeight + 50)) fail(tag + "the thread is not long enough to test");
+      await settled("on open");
+      await p.waitForFunction(() => document.getElementById("m-live").classList.contains("on"), null, { timeout: slow(10000) });
+      const t1 = Date.now();
+      while (!st.streams.length && Date.now() - t1 < slow(10000)) await p.waitForTimeout(100);
+      // a new reply while following lands on it
+      st.replies["sb-1"] = { source: "transcript", replies: long(8).concat([{ at: mIso(M_MIN), text: "NEWEST " + "tail ".repeat(100) }]) };
+      st.send("task", Object.assign({}, c, { row: 1, seen: { turn_ended_at: mIso(30000) } }));
+      await p.waitForFunction(() => /NEWEST/.test(document.getElementById("m-replies").textContent), null, { timeout: slow(5000) });
+      await settled("new reply");
+      // the keyboard: the viewport shrinks and the newest message stays in view
+      await p.evaluate(() => { document.documentElement.style.setProperty("--vvh", "460px"); window.visualViewport.dispatchEvent(new Event("resize")); });
+      await settled("keyboard open");
+      // scrolled up on purpose: no following, and a jump control
+      await p.evaluate(() => { document.getElementById("m-card-scroll").scrollTop = 0; });
+      await p.waitForFunction(() => !document.getElementById("m-jump").hidden, null, { timeout: slow(3000) });
+      st.replies["sb-1"] = { source: "transcript", replies: long(8).concat([{ at: mIso(M_MIN), text: "NEWEST " + "tail ".repeat(100) }, { at: mIso(1000), text: "LATER one " + "x ".repeat(100) }]) };
+      st.send("task", Object.assign({}, c, { row: 1, seen: { turn_ended_at: mIso(500) } }));
+      await p.waitForFunction(() => /LATER one/.test(document.getElementById("m-replies").textContent), null, { timeout: slow(5000) });
+      await p.waitForTimeout(300);
+      if ((await p.evaluate(() => document.getElementById("m-card-scroll").scrollTop)) > 5) fail(tag + "the view was pulled down while scrolled up on purpose");
+      if (!(await jump())) fail(tag + "no jump control while scrolled up");
+      await p.evaluate(() => window.visualViewport.dispatchEvent(new Event("resize")));
+      await p.waitForTimeout(200);
+      if ((await p.evaluate(() => document.getElementById("m-card-scroll").scrollTop)) > 5) fail(tag + "the keyboard pulled a scrolled-up view down");
+      await mShot(p, "stick-jump-" + vp.width);
+      await p.tap("#m-jump");
+      await settled("jump to latest");
+      if (await jump()) fail(tag + "the jump control stayed after jumping");
+      // your own message lands you on it, even from far up
+      await p.evaluate(() => { document.getElementById("m-card-scroll").scrollTop = 0; });
+      await p.waitForFunction(() => !document.getElementById("m-jump").hidden, null, { timeout: slow(3000) });
+      await p.waitForSelector("#m-compose textarea", { timeout: slow(5000) });
+      await p.fill("#m-compose textarea", "my line");
+      await p.evaluate(() => document.querySelector("#m-compose textarea").dispatchEvent(new Event("input", { bubbles: true })));
+      await p.tap("#m-compose .mc-send");
+      await p.waitForSelector("#m-replies .reply.mine", { timeout: slow(5000) });
+      await settled("own message");
+      // closing the recap sheet lands on the newest
+      await p.evaluate(() => { document.getElementById("m-card-scroll").scrollTop = 0; });
+      await p.tap("#m-recap-open");
+      await p.waitForSelector("#m-recap:not([hidden])", { timeout: slow(3000) });
+      await p.tap("#m-recap-close");
+      await settled("recap closed");
+      if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+      await ctx.close();
+    }
+  } finally { await st.close(); }
+  if (!bad) console.log("mStickBottom ok");
+}
+
+async function mSendFreeSection(browser) {
+  const st = mServer({});
+  const c = mCard("sf-1", { alias: "slow", display_title: "slow", status: "needs-input", waiting_since: mIso(M_MIN), seen: { turn_ended_at: mIso(20 * M_MIN) } });
+  st.tasks = [c];
+  st.replies["sf-1"] = { source: "transcript", replies: [{ at: mIso(10 * M_MIN), text: "A reply." }] };
+  await st.open();
+  try {
+    for (const vp of M_VIEWS) {
+      const { ctx, p, errors } = await mPage(browser, st, vp, "");
+      const tag = "mSendFree " + vp.width + ": ";
+      let release = null, mode = "ok", posts = [];
+      await p.route("**/v1/tasks/sf-1/message", async r => {
+        posts.push(JSON.parse(r.request().postData() || "{}").text);
+        await new Promise(res => { release = res; });
+        if (mode === "fail") return r.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: "the room is slow" }) });
+        return r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ delivered: mode === "queued" ? "queued" : "terminal" }) });
+      });
+      await p.waitForSelector("#m-seg-all", { timeout: slow(10000) });
+      await p.tap("#m-seg-all");
+      await p.waitForSelector("#m-list .row", { timeout: slow(10000) });
+      await p.tap('#m-list .row[data-id="sf-1"]');
+      await p.waitForSelector("#m-compose textarea", { timeout: slow(5000) });
+      const type = async (txt) => {
+        await p.fill("#m-compose textarea", txt);
+        await p.evaluate(() => document.querySelector("#m-compose textarea").dispatchEvent(new Event("input", { bubbles: true })));
+      };
+      const box = () => p.evaluate(() => ({ v: document.querySelector("#m-compose textarea").value, off: document.querySelector("#m-compose .mc-send").disabled }));
+      const answered = async () => { const t0 = Date.now(); while (!release && Date.now() - t0 < slow(5000)) await p.waitForTimeout(50); const f = release; release = null; f(); };
+      // a slow send: the box is clear and usable at once, the row is pending
+      await type("first message");
+      await p.tap("#m-compose .mc-send");
+      await p.waitForSelector("#m-replies .reply.mine.pending", { timeout: slow(2000) });
+      let b = await box();
+      if (b.v !== "") fail(tag + "the box was not cleared at once: " + b.v);
+      if (!/sending/.test(await p.textContent("#m-replies .reply.mine.pending"))) fail(tag + "the row does not say it is sending");
+      await type("second, typed while the first is in flight");
+      b = await box();
+      if (b.off) fail(tag + "the send button is held while a send is in flight");
+      await answered();
+      await p.waitForFunction(() => !document.querySelector("#m-replies .reply.mine.pending") && /delivered/.test(document.getElementById("m-replies").textContent), null, { timeout: slow(5000) });
+      if ((await box()).v !== "second, typed while the first is in flight") fail(tag + "what was typed during the send was lost");
+      // a queued answer is marked queued
+      mode = "queued";
+      await p.tap("#m-compose .mc-send");
+      await p.waitForSelector("#m-replies .reply.mine.pending", { timeout: slow(2000) });
+      await answered();
+      await p.waitForFunction(() => /queued/.test(document.getElementById("m-replies").textContent), null, { timeout: slow(5000) });
+      // a failure keeps the text: back in the box, the row marked
+      mode = "fail";
+      await type("this one fails");
+      await p.tap("#m-compose .mc-send");
+      await p.waitForSelector("#m-replies .reply.mine.pending", { timeout: slow(2000) });
+      await type("typed during the failing send");
+      await answered();
+      await p.waitForSelector("#m-replies .reply.mine.failed", { timeout: slow(5000) });
+      b = await box();
+      if (b.v.indexOf("this one fails") !== 0 || b.v.indexOf("typed during the failing send") < 0) fail(tag + "a failed send lost its text: " + JSON.stringify(b.v));
+      if (b.off) fail(tag + "the retry is not possible after a failure");
+      if (!/not sent/.test(await p.textContent("#m-replies .reply.mine.failed"))) fail(tag + "the failed row does not say so");
+      await mShot(p, "send-failed-" + vp.width);
+      if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
+      await ctx.close();
+    }
+  } finally { await st.close(); }
+  if (!bad) console.log("mSendFree ok");
+}
+
 async function bootCleanSection(browser, base) {
   const raw = fs.readFileSync(path.join(WEB_ROOT, "index.html"));
   const views = [{ w: 1400, h: 900 }, { w: 390, h: 844, phone: true }, { w: 412, h: 915, phone: true }];
@@ -13317,7 +13459,7 @@ async function main() {
       u001Audit: u001AuditSection,
       pasteStart: pasteStartSection, pasteDone: pasteDoneSection, pasteOldRoom: pasteOldRoomSection, pasteClose: pasteCloseSection,
       growlQuestionShots: growlQuestionShotsSection, growlQuestionBody: growlQuestionBodySection, growlReplyGrow: growlReplyGrowSection, growlChoices: growlChoicesSection, growlStable: growlStableSection, mGrowlQuestion: mGrowlQuestionSection,
-      bootClean: bootCleanSection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mRecapSheet: mRecapSheetSection, mOutputAt: mOutputAtSection };
+      bootClean: bootCleanSection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mRecapSheet: mRecapSheetSection, mOutputAt: mOutputAtSection, mStickBottom: mStickBottomSection, mSendFree: mSendFreeSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -15348,6 +15490,8 @@ async function main() {
     await mOwnMessagesSection(browser);
     await mRecapSheetSection(browser);
     await mOutputAtSection(browser);
+    await mStickBottomSection(browser);
+    await mSendFreeSection(browser);
   } catch (e) {
     fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e));
     if (process.env.DEBUG_HEADLESS) {
