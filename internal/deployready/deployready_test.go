@@ -2,6 +2,7 @@ package deployready
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -539,6 +540,92 @@ func TestSecondPassReadsAlmostNothingAndAgrees(t *testing.T) {
 	}
 	if warm >= cold {
 		t.Fatalf("warm pass made %d git calls, cold made %d", warm, cold)
+	}
+}
+
+// failMergeGit fails the `--remerge-diff` read once with the given error.
+type failMergeGit struct {
+	inner Git
+	err   error
+	fired bool
+}
+
+func (g *failMergeGit) Git(ctx context.Context, dir string, args ...string) (string, error) {
+	if !g.fired && strings.Contains(strings.Join(args, " "), "--remerge-diff") {
+		g.fired = true
+		return "", g.err
+	}
+	return g.inner.Git(ctx, dir, args...)
+}
+
+func (g *failMergeGit) GitInput(ctx context.Context, dir string, in []byte, args ...string) (string, error) {
+	return g.inner.GitInput(ctx, dir, in, args...)
+}
+
+// resolvedMergeRepo is a repo whose newest commit is a merge that resolved a conflict. Returns the base.
+func resolvedMergeRepo(t *testing.T) (*repo, string) {
+	t.Helper()
+	r := newRepo(t)
+	base := r.commit("base", map[string]string{"internal/hubstore/c.go": "base\n"})
+	r.git("checkout", "-q", "-b", "side")
+	side := r.commit("side", map[string]string{"internal/hubstore/c.go": "side\n"})
+	r.git("checkout", "-q", "claude/main")
+	mainSide := r.commit("main", map[string]string{"internal/hubstore/c.go": "main\n"})
+	r.review("both", "Atrium-Verdict: hub-ok "+base+".."+mainSide, "Atrium-Verdict: hub-ok "+base+".."+side)
+	cmd := exec.Command("git", "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false",
+		"merge", "--no-ff", "-m", "Merge side", "side")
+	cmd.Dir = r.dir
+	cmd.Env = gitsync.CleanEnv()
+	_, _ = cmd.CombinedOutput()
+	r.write("internal/hubstore/c.go", "resolved\n")
+	r.git("add", "-A")
+	r.git("commit", "-q", "-m", "Merge side")
+	return r, base
+}
+
+// A merge read that fails for any reason but an old git must fail the pass and cache nothing. Cached as "carries
+// nothing", a conflict resolution would need no verdict and the answer would be ready for the life of the process.
+func TestFailedMergeReadFailsThePassAndIsNotCachedAsEmpty(t *testing.T) {
+	r, base := resolvedMergeRepo(t)
+	g := &failMergeGit{inner: gitsync.NewRunner(), err: errors.New("transient: unable to read tree")}
+	c := &Checker{Git: g, Dir: r.dir, Branch: "claude/main"}
+	first := c.Check(context.Background(), base)
+	wantState(t, first, StateUnknown)
+	second := c.Check(context.Background(), base)
+	wantState(t, second, StateBlocked)
+	if len(second.Blocking) != 1 || second.Blocking[0].Subject != "Merge side" {
+		t.Fatalf("blocking = %+v", second.Blocking)
+	}
+}
+
+func TestGitTooOldForRemergeDiffCountsMergesAsCarryingNothing(t *testing.T) {
+	r, base := resolvedMergeRepo(t)
+	err := errors.New("git log --remerge-diff: error: unknown option `remerge-diff'")
+	c := &Checker{Git: &failMergeGit{inner: gitsync.NewRunner(), err: err}, Dir: r.dir, Branch: "claude/main"}
+	rep := c.Check(context.Background(), base)
+	wantState(t, rep, StateReady)
+}
+
+func TestVerdictRangeCutAtTheLimitIsReportedInTheNotes(t *testing.T) {
+	r := newRepo(t)
+	base := r.commit("base", map[string]string{"internal/a.go": "a"})
+	var shas []string
+	for i := 0; i < 4; i++ {
+		shas = append(shas, r.commit(fmt.Sprintf("code %d", i), map[string]string{fmt.Sprintf("internal/hubstore/%d.go", i): "x"}))
+	}
+	r.review("rt", "Atrium-Verdict: hub-ok "+base+".."+shas[3])
+	c := r.checker()
+	c.MaxCommits = 3
+	// Two commits since the installed build fit the limit, the four the verdict names do not.
+	rep := c.Check(context.Background(), shas[1])
+	found := false
+	for _, n := range rep.Notes {
+		if strings.Contains(n, "only the newest 3") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("notes = %q", rep.Notes)
 	}
 }
 

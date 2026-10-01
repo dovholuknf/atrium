@@ -17,5 +17,14 @@ What changed:
   none once the range itself is cached (ranges named only by commits are immutable).
 - A range is limited to 2000 commits. Longer than that answers `unknown` and says so.
 
+Review follow-up:
+
+- A merge read that fails for any reason but an old git now fails the pass and caches nothing. Before, it cached every
+  merge in the batch as "carries nothing", so a conflict resolution needed no verdict and the answer was ready for the
+  life of the process. Only a merge git listed is cached, and only an unknown `--remerge-diff` option counts as old git.
+- A pass started by a GET now tells watching boards when the answer moves, so a pill does not sit on unknown until the
+  minute tick.
+- A verdict range cut at the commit limit says so in the answer's notes.
+
 On this repo, 150 commits behind with 31 verdict ranges: the third ask answers in about 0.6 s, the second in about
 2.6 s, and the first in 5 s with `unknown`.

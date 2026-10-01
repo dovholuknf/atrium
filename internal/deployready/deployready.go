@@ -108,7 +108,7 @@ type Checker struct {
 
 	mu     sync.Mutex
 	cache  map[string]commitInfo
-	covers map[string][]string
+	covers map[string]coverResult
 }
 
 // DefaultMaxCommits is well past what lands between two deploys. A range longer than this answers unknown.
@@ -402,7 +402,9 @@ func (c *Checker) candidates(ctx context.Context, base, tip string) ([]candidate
 	if err != nil {
 		return nil, err
 	}
-	c.fillMerges(ctx, merges, spec)
+	if err := c.fillMerges(ctx, merges, spec); err != nil {
+		return nil, err
+	}
 	var res []candidate
 	for _, line := range strings.Split(out, "\n") {
 		sha, subj, ok := strings.Cut(strings.TrimSpace(line), "\x1f")
@@ -543,11 +545,13 @@ func (c *Checker) patchIDs(ctx context.Context, patchText string) (map[string]st
 }
 
 // fillMerges caches a merge by its remerge-diff, which is empty for a merge that resolved nothing. A git too old to
-// know --remerge-diff leaves the merge with no paths, so it counts as carrying no change of its own.
+// know --remerge-diff leaves the merge with no paths, so it counts as carrying no change of its own. That is the ONLY
+// failure read as "carries nothing". Any other, a cut-off included, fails the pass and caches nothing, because a
+// conflict resolution cached as empty would need no verdict for the life of the process.
 //
 // The merges of a range are read together, two git calls however many there are. One process per merge was most of
 // the time a cold pass took.
-func (c *Checker) fillMerges(ctx context.Context, merges map[string]bool, spec string, extra ...string) {
+func (c *Checker) fillMerges(ctx context.Context, merges map[string]bool, spec string, extra ...string) error {
 	var todo []string
 	for sha := range merges {
 		if !c.known(sha) {
@@ -555,18 +559,18 @@ func (c *Checker) fillMerges(ctx context.Context, merges map[string]bool, spec s
 		}
 	}
 	if len(todo) == 0 {
-		return
+		return nil
 	}
-	// A cut-off read says nothing about a merge, so it is left out of the cache and asked again next pass.
 	base := append(append([]string{"log", "--merges", "--remerge-diff", "--no-renames"}, extra...), spec)
 	names, err := c.Git.Git(ctx, c.Dir, append([]string{base[0], "--name-only", "--format=%x1e%H"}, base[1:]...)...)
 	if err != nil {
-		if ctx.Err() == nil {
+		if ctx.Err() == nil && gitTooOld(err) {
 			for _, sha := range todo {
 				c.put(sha, commitInfo{})
 			}
+			return nil
 		}
-		return
+		return fmt.Errorf("could not read the merges: %w", err)
 	}
 	paths := parseNamed(names)
 	var patches map[string]string
@@ -576,15 +580,26 @@ func (c *Checker) fillMerges(ctx context.Context, merges map[string]bool, spec s
 			if err == nil {
 				patches, err = c.patchIDs(ctx, text)
 			}
-			if err != nil && ctx.Err() != nil {
-				return
+			if err != nil {
+				return fmt.Errorf("could not read the merges: %w", err)
 			}
 			break
 		}
 	}
 	for _, sha := range todo {
-		c.put(sha, commitInfo{patch: patches[sha], paths: paths[sha]})
+		if p, ok := paths[sha]; ok { // only a merge git actually listed
+			c.put(sha, commitInfo{patch: patches[sha], paths: p})
+		}
 	}
+	return nil
+}
+
+// gitTooOld recognises git refusing --remerge-diff as an option it does not know, which is not a read that failed.
+func gitTooOld(err error) bool {
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "remerge-diff") &&
+		(strings.Contains(msg, "unknown option") || strings.Contains(msg, "unrecognized argument") ||
+			strings.Contains(msg, "invalid option") || strings.Contains(msg, "bad argument"))
 }
 
 // parseNamed reads `git log --name-only --format=%x1e%H` into the paths of each commit.
@@ -661,13 +676,17 @@ func (c *Checker) verdicts(ctx context.Context) (map[string]dims, []string, erro
 			ids, ok := covers[t.spec]
 			if !ok {
 				var err error
-				ids, err = c.cover(ctx, t.spec)
+				var note string
+				ids, note, err = c.cover(ctx, t.spec)
 				if ctx.Err() != nil {
 					return nil, nil, ctx.Err()
 				}
 				if err != nil {
 					notes = append(notes, fmt.Sprintf("verdict %s %s on %s ignored: %v", t.kind, t.spec, short(v.sha), err))
 					continue
+				}
+				if note != "" {
+					notes = append(notes, note)
 				}
 				covers[t.spec] = ids
 			}
@@ -691,41 +710,47 @@ func allReview(files []string) bool {
 }
 
 // cover is the patch-ids a verdict spec covers: `<base>..<tip>` as a first-parent range, or one commit.
-func (c *Checker) cover(ctx context.Context, spec string) ([]string, error) {
-	if ids, ok := c.coverCached(spec); ok {
-		return ids, nil
+// The note is set when the range was cut at the commit limit, so the commits past it are not covered.
+func (c *Checker) cover(ctx context.Context, spec string) (ids []string, note string, err error) {
+	if r, ok := c.coverCached(spec); ok {
+		return r.ids, r.note, nil
 	}
-	ids, err := c.coverRead(ctx, spec)
+	ids, note, err = c.coverRead(ctx, spec)
 	if err == nil && ctx.Err() == nil {
-		c.coverPut(spec, ids)
+		c.coverPut(spec, coverResult{ids, note})
 	}
-	return ids, err
+	return ids, note, err
+}
+
+type coverResult struct {
+	ids  []string
+	note string
 }
 
 // pinnedSpec is a spec made only of commit names, which mean the same thing every time they are read. A branch name
 // or a tag can move, so a spec that has one is read again.
 var pinnedSpec = regexp.MustCompile(`^[0-9a-f]{7,40}(?:[~^][0-9]*)*(?:\.\.[0-9a-f]{7,40}(?:[~^][0-9]*)*)?$`)
 
-func (c *Checker) coverCached(spec string) ([]string, bool) {
+func (c *Checker) coverCached(spec string) (coverResult, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	ids, ok := c.covers[spec]
-	return ids, ok
+	r, ok := c.covers[spec]
+	return r, ok
 }
 
-func (c *Checker) coverPut(spec string, ids []string) {
+func (c *Checker) coverPut(spec string, r coverResult) {
 	if !pinnedSpec.MatchString(spec) {
 		return
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.covers == nil {
-		c.covers = map[string][]string{}
+		c.covers = map[string]coverResult{}
 	}
-	c.covers[spec] = ids
+	c.covers[spec] = r
 }
 
-func (c *Checker) coverRead(ctx context.Context, spec string) ([]string, error) {
+func (c *Checker) coverRead(ctx context.Context, spec string) ([]string, string, error) {
 	rng := spec
 	if !strings.Contains(spec, "..") {
 		rng = spec + "^!"
@@ -735,9 +760,9 @@ func (c *Checker) coverRead(ctx context.Context, spec string) ([]string, error) 
 	listed, err := c.Git.Git(ctx, c.Dir, "rev-list", "--first-parent", "--parents", limit, rng)
 	if err != nil {
 		if ctx.Err() != nil {
-			return nil, ctx.Err()
+			return nil, "", ctx.Err()
 		}
-		return nil, errors.New("that range is not in this checkout")
+		return nil, "", errors.New("that range is not in this checkout")
 	}
 	var shas, nonMerge []string
 	merges := map[string]bool{}
@@ -754,14 +779,21 @@ func (c *Checker) coverRead(ctx context.Context, spec string) ([]string, error) 
 		}
 	}
 	if err := c.fillRangeOf(ctx, rng, nonMerge, "--first-parent"); err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	c.fillMerges(ctx, merges, rng, "--first-parent", limit)
+	if err := c.fillMerges(ctx, merges, rng, "--first-parent", limit); err != nil {
+		return nil, "", err
+	}
 	var ids []string
 	for _, sha := range shas {
 		if p := c.info(sha).patch; p != "" {
 			ids = append(ids, p)
 		}
 	}
-	return ids, nil
+	var note string
+	if len(shas) >= c.maxCommits() {
+		note = fmt.Sprintf("verdict range %s has at least %d commits, and only the newest %d are covered", spec, len(shas),
+			c.maxCommits())
+	}
+	return ids, note, nil
 }
