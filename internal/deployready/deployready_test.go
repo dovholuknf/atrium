@@ -2,11 +2,14 @@ package deployready
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/dovholuknf/atrium/internal/gitsync"
 )
@@ -464,5 +467,92 @@ func TestSignatureMovesWithTheAnswer(t *testing.T) {
 	after := c.Check(context.Background(), base)
 	if before.Signature() == after.Signature() {
 		t.Fatal("signature did not move when the verdict landed")
+	}
+}
+
+// countGit counts the calls that reach git, and can be told to hang until its context ends.
+type countGit struct {
+	inner Git
+	mu    sync.Mutex
+	calls int
+	hang  bool
+}
+
+func (g *countGit) Git(ctx context.Context, dir string, args ...string) (string, error) {
+	g.mu.Lock()
+	g.calls++
+	hang := g.hang
+	g.mu.Unlock()
+	if hang {
+		<-ctx.Done()
+		return "", ctx.Err()
+	}
+	return g.inner.Git(ctx, dir, args...)
+}
+
+func (g *countGit) GitInput(ctx context.Context, dir string, in []byte, args ...string) (string, error) {
+	g.mu.Lock()
+	g.calls++
+	g.mu.Unlock()
+	return g.inner.GitInput(ctx, dir, in, args...)
+}
+
+func (g *countGit) count() int {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.calls
+}
+
+func TestSlowGitEndsAtTheContextBoundAsUnknown(t *testing.T) {
+	r := newRepo(t)
+	base := r.commit("base", map[string]string{"internal/a.go": "a"})
+	g := &countGit{inner: gitsync.NewRunner(), hang: true}
+	c := &Checker{Git: g, Dir: r.dir, Branch: "claude/main"}
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	rep := c.Check(ctx, base)
+	if d := time.Since(start); d > 2*time.Second {
+		t.Fatalf("took %s", d)
+	}
+	wantState(t, rep, StateUnknown)
+}
+
+func TestSecondPassReadsAlmostNothingAndAgrees(t *testing.T) {
+	r := newRepo(t)
+	base := r.commit("base", map[string]string{"internal/a.go": "a"})
+	var tips []string
+	for i := 0; i < 6; i++ {
+		file := fmt.Sprintf("internal/hubstore/%d.go", i)
+		tips = append(tips, r.commit(fmt.Sprintf("code %d", i), map[string]string{file: "x"}))
+	}
+	r.review("rt", "Atrium-Verdict: hub-ok "+base+".."+tips[2], "Atrium-Verdict: hub-ok "+tips[3]+"^.."+tips[5])
+	g := &countGit{inner: gitsync.NewRunner()}
+	c := &Checker{Git: g, Dir: r.dir, Branch: "claude/main"}
+	first := c.Check(context.Background(), base)
+	cold := g.count()
+	second := c.Check(context.Background(), base)
+	warm := g.count() - cold
+	wantState(t, first, StateReady)
+	if first.Signature() != second.Signature() {
+		t.Fatalf("answers differ: %q vs %q", first.Signature(), second.Signature())
+	}
+	if warm >= cold {
+		t.Fatalf("warm pass made %d git calls, cold made %d", warm, cold)
+	}
+}
+
+func TestTooManyCommitsSinceInstalledIsUnknownNotAWalk(t *testing.T) {
+	r := newRepo(t)
+	base := r.commit("base", map[string]string{"internal/a.go": "a"})
+	for i := 0; i < 4; i++ {
+		r.commit(fmt.Sprintf("code %d", i), map[string]string{fmt.Sprintf("internal/hubstore/%d.go", i): "x"})
+	}
+	c := r.checker()
+	c.MaxCommits = 3
+	rep := c.Check(context.Background(), base)
+	wantState(t, rep, StateUnknown)
+	if !strings.Contains(rep.Error, "more than the 3") {
+		t.Fatalf("error = %q", rep.Error)
 	}
 }

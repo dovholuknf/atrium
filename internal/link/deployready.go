@@ -50,10 +50,12 @@ const (
 	deployReadyEvent = "deploy-ready"
 	// deployReadyFresh is how long one answer is reused, so a burst of boards costs one pass over git.
 	deployReadyFresh = 10 * time.Second
-	// deployReadyBound is how long one pass may spend on git and on asking the binary its version.
-	deployReadyBound = 60 * time.Second
 	deployVersionRun = 10 * time.Second
 )
+
+// deployReadyBound is how long one pass may spend on git and on asking the binary its version. A board is waiting on
+// it, and git is killed at the bound. A variable so a test need not wait five seconds.
+var deployReadyBound = 5 * time.Second
 
 var fullSHA = regexp.MustCompile(`^[0-9a-f]{40}$`)
 
@@ -79,8 +81,10 @@ type deployReadyState struct {
 	last    deployready.Report
 	lastAt  time.Time
 	haveRep bool
-	sig     string
-	run     deployRun
+	// inflight is true while one pass reads git. The lock is not held for it.
+	inflight bool
+	sig      string
+	run      deployRun
 
 	// version is the installed binary's answer, kept while the file is the same file.
 	vPath string
@@ -179,26 +183,59 @@ type deployReadyView struct {
 }
 
 // readyReport is the current answer. `fresh` skips the reuse window, for the pass a click makes.
+//
+// ONE PASS IN FLIGHT, AND NO LOCK HELD ACROSS IT. The caller that starts a pass waits for it, up to the bound. Any
+// caller that arrives meanwhile gets the last answer marked stale, or unknown if there is none, at once. A pass that
+// hits the bound answers unknown and keeps what git gave it, so the next pass starts further along.
 func (p *Proxy) readyReport(ctx context.Context, fresh bool) deployready.Report {
 	st := p.deployReady()
 	st.mu.Lock()
-	defer st.mu.Unlock()
 	if !fresh && st.haveRep && time.Since(st.lastAt) < deployReadyFresh {
-		return st.last
+		rep := st.last
+		st.mu.Unlock()
+		return rep
 	}
-	ctx, cancel := context.WithTimeout(ctx, deployReadyBound)
-	defer cancel()
-	rep := p.computeReady(ctx, st)
-	st.last, st.lastAt, st.haveRep = rep, time.Now(), true
+	if st.inflight {
+		rep, have := st.last, st.haveRep
+		st.mu.Unlock()
+		if !have {
+			return readyUnknown("still reading git for the first time, ask again in a moment")
+		}
+		rep.Stale = true
+		rep.Ready = false
+		rep.Notes = append(append([]string{}, rep.Notes...), "a newer read is still running, so this is the last answer")
+		return rep
+	}
+	st.inflight = true
+	st.mu.Unlock()
+
+	bctx, cancel := context.WithTimeout(ctx, deployReadyBound)
+	rep := p.computeReady(bctx, st)
+	timedOut := bctx.Err() != nil
+	cancel()
+	if timedOut {
+		rep = readyUnknown("timed out after %s reading git, the next ask continues from what was read", deployReadyBound)
+	}
+
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	st.inflight = false
+	st.last, st.haveRep = rep, true
+	st.lastAt = time.Now()
+	if timedOut {
+		st.lastAt = time.Time{} // the next ask reads again at once rather than reusing a give-up
+	}
 	return rep
 }
 
+func readyUnknown(format string, a ...any) deployready.Report {
+	msg := fmt.Sprintf(format, a...)
+	return deployready.Report{State: deployready.StateUnknown, Error: msg, CheckedAt: time.Now().UTC(),
+		Line: "deploy readiness unknown: " + msg}
+}
+
 func (p *Proxy) computeReady(ctx context.Context, st *deployReadyState) deployready.Report {
-	unknown := func(format string, a ...any) deployready.Report {
-		msg := fmt.Sprintf(format, a...)
-		return deployready.Report{State: deployready.StateUnknown, Error: msg, CheckedAt: time.Now().UTC(),
-			Line: "deploy readiness unknown: " + msg}
-	}
+	unknown := readyUnknown
 	repo, err := p.repoFor("")
 	if err != nil {
 		return unknown("%v", err)
@@ -209,7 +246,9 @@ func (p *Proxy) computeReady(ctx context.Context, st *deployReadyState) deployre
 		rep.Branch = repo.Branch
 		return rep
 	}
+	st.mu.Lock()
 	c := p.checkerFor(st, repo)
+	st.mu.Unlock()
 	return c.Check(ctx, installed)
 }
 
@@ -342,6 +381,10 @@ func (p *Proxy) startDeploy(w http.ResponseWriter, r *http.Request, st *deployRe
 	st.mu.Unlock()
 
 	rep := p.readyReport(r.Context(), true)
+	if rep.Stale {
+		fail(http.StatusConflict, "a read of git is still running, try again in a moment", map[string]any{"report": rep})
+		return
+	}
 	if !rep.Ready {
 		fail(http.StatusConflict, "not ready to deploy: "+rep.Line, map[string]any{"report": rep})
 		return
