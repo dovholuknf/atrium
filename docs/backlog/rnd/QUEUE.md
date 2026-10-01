@@ -26,7 +26,7 @@ none). Pass: under 10 minutes and under $2, and clint's read of the walk order. 
 | --- | --- | --- |
 | P1a r-pr-render | @runtime | LANDED 58461561 |
 | P1b r-pr-store | @runtime | LANDED 59d21773 (@review c5c759f5). Needs a room deploy, the orchestrator's |
-| P1c r-pr-run | @runtime (m1mini card 01a0f8cc) drives it again: fix, @review, claude/landing, 378 acceptance | @review HOLD on dbb76109 (HIGH: forks load the PR's .claude settings and hooks; MEDIUM: a retry after merge renders an empty review as ready). r-pr-run is fixing it and reports to @runtime, which copies @rnd |
+| P1c r-pr-run | @runtime | ON claude/landing: fix 8c9b17d7 (@review ROOM DEPLOY OK ebc2b5f5, landing tip b07cbfb2). Open: medium `--setting-sources user` should be "" (with @runtime), and the 378 acceptance replay (@runtime). Then P3 can go, once the pause ends |
 | P2 pulls view | @ui | LANDED b6edcfd6 (@review c9284027) |
 | P2 follow-up | @ui | IN FLIGHT: PUT findings/{key}, walk.js re-point, unmock drawer findings, walk marks, walker, start. @ui tells @rnd at landing |
 | Hub | @fabric | LANDED d77d21d0, lows 370dcb61. Needs a hub deploy |
