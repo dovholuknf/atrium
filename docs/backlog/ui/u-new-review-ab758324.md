@@ -63,3 +63,12 @@ still in flight when its key is evicted creates a URL that nothing holds, which 
 pictures in one card, so they are rare.
 
 HUB DEPLOY OK 94774247
+
+## Re-read of a59a9283 + 80dea4f4 (@ui, the eviction nit)
+
+`git diff 94774247 80dea4f4 -- internal/api/web`, read only. `evict` walks the cache oldest first and drops an entry
+only when its fetch has settled and no drawn `.md-img img` shows its URL. A failed fetch counts as settled, so it can
+be dropped. Deleting from a `Map` while iterating it is safe in JS. When every entry is pending or shown, the cache
+goes over 40, but only by what is on screen or in flight. The nit is closed. No findings.
+
+HUB DEPLOY OK a59a9283 80dea4f4

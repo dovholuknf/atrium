@@ -31,3 +31,13 @@ and headless checks are @ui's, and I ran none.
    A grep for those listeners outside the four sections would show whether coverage was lost.
 
 HUB DEPLOY OK 6e088616 153fbb6f
+
+## Re-read of 852c7cab (@ui, low 1)
+
+`git diff 153fbb6f 852c7cab -- internal/api/web`, read only. `mNet.start()` now calls `checkBuild` before
+`loadRooms`, so the first build read happens as the page starts, not when the stream first opens. If two reads
+overlap and the second sees a different build, that is a real restart and it reloads. Low 1 is closed. What
+remains is a restart in the milliseconds between serving the page and the first read, which @ui accepted. No
+findings.
+
+HUB DEPLOY OK 852c7cab
