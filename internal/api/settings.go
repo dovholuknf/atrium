@@ -86,6 +86,9 @@ func globalAutoView(s *Server) map[string]any {
 		// Empty means only the per-user one, which is right when the daemon
 		// and its callers are the same person.
 		SettingSharedLocation: "shared_location",
+		// Where pull request review run folders are made. Empty means the default
+		// under the daemon's data directory.
+		store.SettingReviewsRoot: "reviews_root",
 		// WHICH SHELL A PANE OPENS. Empty means the one `shellpick` found.
 		//
 		// It was documented, exported by the config export, and settable
@@ -270,6 +273,9 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		// Where to publish the address for other accounts, and clearing it
 		// back to nowhere is a request like the rest of these.
 		SharedLocation *string `json:"shared_location"`
+		// Where review run folders are made. Clearing it back to the default is a
+		// request.
+		ReviewsRoot *string `json:"reviews_root"`
 		// WHICH SHELL A PANE OPENS, or `off` for none at all.
 		//
 		// This field was missing while the board posted it and the settings
@@ -572,6 +578,13 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		// anyway and the board says so beside the box.
 		if err := s.st.SetSetting(SettingSharedLocation,
 			strings.TrimSpace(*body.SharedLocation)); err != nil {
+			s.fail(w, err)
+			return
+		}
+	}
+
+	if body.ReviewsRoot != nil {
+		if err := s.st.SetSetting(store.SettingReviewsRoot, strings.TrimSpace(*body.ReviewsRoot)); err != nil {
 			s.fail(w, err)
 			return
 		}
