@@ -73,7 +73,8 @@ The fix: in `refreshAttachedCard`, update the fields, but repaint nothing when `
 
   Only memory is affected, but `id` is what a reconnect dials. Assign `REFRESH_FIELDS` only, or skip `id`, `theme`,
   `alias` and `alias_note`.
-- **L2: the stale moment is as described.** The pid and status chips show the list's values until the read answers,
+- **L2: the `termCold` test does nothing.** See the gate, under Points. Drop it, or say why it stays.
+- **L3: the stale moment is as described.** The pid and status chips show the list's values until the read answers,
   which is at most one list refresh old. The socket is the truth meanwhile, so that is acceptable. Say it in the
   comment.
 
