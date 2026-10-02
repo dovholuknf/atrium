@@ -19457,6 +19457,72 @@ async function switchBackCostSection(browser, base) {
   } finally { tasksMode = was; }
 }
 
+// NOT IN THE DEFAULT RUN: `REPLAY=/path/replay.json HEADLESS_ONLY=keepMemory node scripts/test-board-headless.js`.
+// The JS heap with 1, then 9 terminals each given the room's real replay, kept (atrium.termKeep=8, hidden history cut
+// to atrium.termKeepLines) and not kept, after a garbage collection. Prints the cost per kept terminal.
+async function keepMemorySection(browser, base) {
+  const frames = JSON.parse(fs.readFileSync(process.env.REPLAY, "utf8"));
+  const kb = Math.round(frames.reduce((n, f) => n + f.b64.length * 0.75, 0) / 1024);
+  const was = tasksMode;
+  const live = id => Object.assign({}, T1, { id, display_title: "row " + id, supervised: true, pinned: false, worktree: "/tmp/km/" + id });
+  const ids = Array.from({ length: 9 }, (_, i) => "km-" + i);
+  try {
+    wornTasks = ids.map(live);
+    tasksMode = "worn";
+    const out = [];
+    for (const [keep, lines] of [["0", "5000"], ["8", "5000"], ["8", "20000"]]) {
+      const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+      const wp = await ctx.newPage();
+      const cdp = await ctx.newCDPSession(wp);
+      await wp.addInitScript(([frames, keep, lines]) => {
+        localStorage.setItem("atrium.termKeep", keep);
+        localStorage.setItem("atrium.termKeepLines", lines);
+        const Real = window.WebSocket;
+        window.WebSocket = function (url, protocols) {
+          if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+          const s = { url, readyState: 0, binaryType: "arraybuffer", onopen: null, onclose: null, onmessage: null, onerror: null, send() {}, close() { this.readyState = 3; } };
+          setTimeout(() => {
+            s.readyState = 1; if (s.onopen) s.onopen({});
+            for (const f of frames) {
+              const bytes = Uint8Array.from(atob(f.b64), c => c.charCodeAt(0));
+              if (s.onmessage) s.onmessage({ data: f.bin ? bytes.buffer : new TextDecoder().decode(bytes) });
+            }
+          }, 0);
+          return s;
+        };
+        Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+      }, [frames, keep, lines]);
+      await wp.goto(base, { waitUntil: "domcontentloaded" });
+      await wp.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+      await wp.click('.tab[data-view="terms"]');
+      await wp.evaluate(async () => { await loadCards().catch(() => {}).then(renderTermList); });
+      // The renderer's resident memory as well as the JS heap: xterm keeps its cells in typed arrays, which the heap
+      // number undercounts.
+      const bs = await browser.newBrowserCDPSession();
+      const heap = async () => {
+        await cdp.send("HeapProfiler.collectGarbage"); await cdp.send("HeapProfiler.collectGarbage");
+        await wp.waitForTimeout(500);
+        const procs = (await bs.send("SystemInfo.getProcessInfo")).processInfo.filter(p => p.type === "renderer");
+        const rss = Math.max(...procs.map(p => +require("child_process").execSync("ps -o rss= -p " + p.id).toString().trim() / 1024));
+        return { heap: (await cdp.send("Runtime.getHeapUsage")).usedSize / 1048576, rss };
+      };
+      await wp.evaluate(id => attachTask(id), ids[0]);
+      await wp.waitForTimeout(1500);
+      const one = await heap();
+      for (const id of ids.slice(1)) { await wp.evaluate(i => attachTask(i), id); await wp.waitForTimeout(1200); }
+      const nine = await heap();
+      const kept = await wp.evaluate(() => keptTerms.size);
+      const histLines = await wp.evaluate(() => Array.from(keptTerms.values()).map(s => s.term.buffer.active.length));
+      out.push({ keep, lines, one, nine, kept, histLines });
+      await ctx.close();
+    }
+    console.log("heap after GC, replay " + kb + " KB per terminal:");
+    for (const r of out) console.log("  kept=" + r.keep + " hidden-lines=" + r.lines + ": 1 terminal heap " + r.one.heap.toFixed(0) + " rss " + r.one.rss.toFixed(0) +
+      " MB; 9 visited heap " + r.nine.heap.toFixed(0) + " rss " + r.nine.rss.toFixed(0) + " MB (" + r.kept + " kept hidden, lines each " + (r.histLines[0] || "-") +
+      ")  per kept terminal heap " + (r.kept ? ((r.nine.heap - r.one.heap) / r.kept).toFixed(1) : "-") + " rss " + (r.kept ? ((r.nine.rss - r.one.rss) / r.kept).toFixed(1) : "-") + " MB");
+  } finally { tasksMode = was; }
+}
+
 // u-new-burn-chart-axes: the cumulative chart has a time axis, a percent-of-limit axis with the 100% line, the time
 // the projection crosses it, the resets, and a hover. Every fixture is built from one fixed `now` (UC.now), and the
 // limit readings are placed relative to it, so nothing reads the real clock. BURN_SHOT=<dir> writes the pictures.
@@ -19648,7 +19714,7 @@ async function main() {
       termDebug: termDebugSection, termSortStarted: termSortStartedSection,
       noReadyChildren: noReadyChildrenSection, childUnderParent: childUnderParentSection, topNav: topNavSection,
       childFold: childFoldSection, liveHome: liveHomeSection,
-      pulls: pullsSection, hubRepos: hubReposSection, hubReposShelf: hubReposShelfSection, hubReposLedger: hubReposLedgerSection, hubReposFeed: hubReposFeedSection, trayHead: trayHeadSection, pullsAbsent: pullsAbsentSection, oneTooltip: oneTooltipSection, burnChart: burnChartSection, switchPrewarm: switchPrewarmSection, attachAtOnce: attachAtOnceSection, keepAlive: keepAliveSection, switchBackCost: switchBackCostSection };
+      pulls: pullsSection, hubRepos: hubReposSection, hubReposShelf: hubReposShelfSection, hubReposLedger: hubReposLedgerSection, hubReposFeed: hubReposFeedSection, trayHead: trayHeadSection, pullsAbsent: pullsAbsentSection, oneTooltip: oneTooltipSection, burnChart: burnChartSection, switchPrewarm: switchPrewarmSection, attachAtOnce: attachAtOnceSection, keepAlive: keepAliveSection, switchBackCost: switchBackCostSection, keepMemory: keepMemorySection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
