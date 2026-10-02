@@ -67,10 +67,11 @@ The first setup is the expensive one. After that the administrator is needed whe
 room will run as. They write nothing, and `-Check` is unchanged. Each says what it found in one line.
 
 Atrium warns when the account is an administrator. On Windows that is an elevated token, or membership in
-Administrators, Domain Admins, Enterprise Admins, Backup Operators or Hyper-V Administrators. The groups are read from
-`whoami /groups` and matched by SID, so a localized machine reads the same. An administrator in an ordinary,
-non-elevated session holds a UAC filtered token, which carries Administrators as a deny-only group. `whoami` lists it
-and .NET's own group list leaves it out, so that case warns too, and says `with a filtered token`.
+Administrators, Domain Admins, Enterprise Admins, Backup Operators or Hyper-V Administrators, or the group
+`docker-users` (Docker Desktop's, which reaches host files, matched by name because its RID differs on every machine).
+The groups are read from `whoami /groups` and matched by SID, so a localized machine reads the same. An administrator in
+an ordinary, non-elevated session holds a UAC filtered token, which carries Administrators as a deny-only group.
+`whoami` lists it and .NET's own group list leaves it out, so that case warns too, and says `with a filtered token`.
 
 On macOS and Linux it warns for uid 0 and for the groups `admin`, `sudo` or `wheel` as the platform has them. On Linux
 it also warns for `docker`, `lxd`, `incus-admin` and `libvirt`, each of which is root on the host. And it warns when
@@ -78,9 +79,19 @@ it also warns for `docker`, `lxd`, `incus-admin` and `libvirt`, each of which is
 `systemctl` is usually a way to a root shell. That command only lists, never prompts and never runs anything, but sudo
 logs it like any use.
 
-A probe that cannot answer is a warn that goes on, never a wait. `sudo -n -l` is cut off after 5 seconds (a directory
-server that does not reply will do it), which reads `may have sudo`. The whole probe is cut off after 45 seconds, which
-reads `could not tell who the room runs as`.
+A probe that cannot answer is a warn that goes on, never a wait. `sudo -n -l` is usually cut off after 5 seconds (a
+directory server that does not reply will do it), which reads `may have sudo`. A sudo that has made itself root cannot
+be signalled by the user, so that cut-off can fail, and then the whole probe is cut off after 45 seconds, never more,
+which reads `could not tell who the room runs as`.
+
+The answer is not taken on trust either. ssh runs the account's login shell, so its rc files can print before the probe
+and an exit trap can print after it, and either could say `uid=1000` to make an admin read as clean. Atrium makes up a
+marker for each run, the probe prints it around its facts, and only the lines between the pair are read. A fact said
+twice with two values, a missing marker or a repeated one is a warn, `could not tell ... tampered with or noisy`, never
+an `ok`. This guards against noise and a naive profile, and not against a hostile account. On Windows the marker travels
+in the command line, which a process of the same account can read. On Unix it arrives on stdin, and the login shell
+starts before `sh -s` does, so `~/.bashrc` runs first and can read stdin, which means a determined account can learn the
+marker too.
 
 It also warns when the account looks like yours, and that part is a heuristic. It catches two cases. The login is one
 you listed with `-OperatorAccount name` or the environment variable `ATRIUM_OPERATOR_ACCOUNT`, as `name`, `DOMAIN\name`

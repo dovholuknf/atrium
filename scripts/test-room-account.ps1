@@ -8,9 +8,12 @@
 # run under pwsh where it must report an error and not throw), and room-toolchain.ps1 and provision-room.ps1 end to end against
 # a fake ssh that answers the account probe with a fixture.
 # What it cannot run: Windows PowerShell 5.1, a real token or UAC, a real Windows or Linux target, or `sudo -n -l` on a machine
-# that has passwordless sudo. Those answers are fixtures taken from what those systems print. The whoami lists are written in the
-# documented format of `whoami /groups /fo csv /nh` (name, type, SID, attributes) and were NOT captured from a Windows machine,
-# and the German attribute text is from memory. The probe reads only the SID column, which is the same on every language.
+# that has passwordless sudo. Those answers are fixtures taken from what those systems print. ONE whoami list is real:
+# scripts/fixtures/whoami-groups-sg4-claude-nonadmin.csv, captured on sg4 from a non-admin shell of SG4\claude (an ordinary
+# account, NOT a filtered admin token, and real apart from sg4's machine SID, which is a placeholder). The others (a filtered admin, an elevated one, a German one, a domain admin) are written
+# in the documented format of `whoami /groups /fo csv /nh` (name, type, SID, attributes), with the integrity label's empty
+# attribute column as the capture has it, and were NOT captured. The German attribute text is from memory. The probe reads
+# only the SID column, which is the same on every language.
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'room-toolchain-c.ps1')
 . (Join-Path $PSScriptRoot 'room-account.ps1')
@@ -35,7 +38,7 @@ try {
 
 $me = [pscustomobject]@{ User = 'clint'; Host = 'SG4' }
 $std = 'S-1-1-0;S-1-5-32-545;S-1-5-14;S-1-5-4;S-1-2-1;S-1-5-11;S-1-5-15;S-1-5-113;S-1-2-0;S-1-5-64-10;S-1-16-8192'
-function Win { param([string] $user = 'SG3\claude', [string] $elev = 'False', [string] $sids = $std, [string] $h = 'SG3') KV "user=$user`nhost=$h`nelevated=$elev`nsids=$sids" }
+function Win { param([string] $user = 'SG3\claude', [string] $elev = 'False', [string] $sids = $std, [string] $h = 'SG3', [string] $docker = '0') KV "user=$user`nhost=$h`nelevated=$elev`nsids=$sids`ndocker=$docker" }
 function Why { param($kv, [string] $kind, [string[]] $ops = @(), [bool] $same = $false) (Get-AccountVerdict $kv $kind $me $ops $same).Reasons }
 
 # ── Windows: the token and the groups, by SID ───────────────────────────────
@@ -75,21 +78,21 @@ $whoamiFiltered = @(
     '"NT AUTHORITY\Local account","Well-known group","S-1-5-113","Mandatory group, Enabled by default, Enabled group"',
     '"LOCAL","Well-known group","S-1-2-0","Mandatory group, Enabled by default, Enabled group"',
     '"NT AUTHORITY\NTLM Authentication","Well-known group","S-1-5-64-10","Mandatory group, Enabled by default, Enabled group"',
-    '"Mandatory Label\Medium Mandatory Level","Label","S-1-16-8192","Mandatory group, Enabled by default, Enabled group"')
+    '"Mandatory Label\Medium Mandatory Level","Label","S-1-16-8192",""')
 $whoamiElevated = @(
     '"Everyone","Well-known group","S-1-1-0","Mandatory group, Enabled by default, Enabled group"',
     '"NT AUTHORITY\Local account and member of Administrators group","Well-known group","S-1-5-114","Mandatory group, Enabled by default, Enabled group"',
     '"BUILTIN\Administrators","Alias","S-1-5-32-544","Mandatory group, Enabled by default, Enabled group, Group owner"',
     '"BUILTIN\Users","Alias","S-1-5-32-545","Mandatory group, Enabled by default, Enabled group"',
     '"NT AUTHORITY\Authenticated Users","Well-known group","S-1-5-11","Mandatory group, Enabled by default, Enabled group"',
-    '"Mandatory Label\High Mandatory Level","Label","S-1-16-12288","Mandatory group, Enabled by default, Enabled group"')
+    '"Mandatory Label\High Mandatory Level","Label","S-1-16-12288",""')
 # A German machine: names and attribute text are German, the SIDs are not. The attribute text here is not what makes it work.
 $whoamiGerman = @(
     '"Jeder","Bekannte Gruppe","S-1-1-0","Obligatorische Gruppe, Standardmäßig aktiviert, Aktivierte Gruppe"',
     '"VORDEFINIERT\Administratoren","Alias","S-1-5-32-544","Gruppe wird nur für Verweigerung verwendet"',
     '"VORDEFINIERT\Benutzer","Alias","S-1-5-32-545","Obligatorische Gruppe, Standardmäßig aktiviert, Aktivierte Gruppe"',
     '"NT-AUTORITÄT\INTERAKTIV","Bekannte Gruppe","S-1-5-4","Obligatorische Gruppe, Standardmäßig aktiviert, Aktivierte Gruppe"',
-    '"Mandatory Label\Medium Mandatory Level","Bezeichnung","S-1-16-8192","Obligatorische Gruppe, Standardmäßig aktiviert, Aktivierte Gruppe"')
+    '"Mandatory Label\Medium Mandatory Level","Bezeichnung","S-1-16-8192",""')
 # A domain admin's filtered token, with a group name that holds a comma.
 $whoamiDomain = @(
     '"Everyone","Well-known group","S-1-1-0","Mandatory group, Enabled by default, Enabled group"',
@@ -99,14 +102,16 @@ $whoamiDomain = @(
     '"CORP\Sales, EMEA","Group","S-1-5-21-111-222-333-1105","Mandatory group, Enabled by default, Enabled group"')
 # The probe's own line, run here over a fixture. `whoami` is shadowed by a function. $id is what WindowsIdentity gives:
 # Groups WITHOUT the deny-only ones (that is the .NET behaviour this probe must not rely on).
-function Read-ProbeSids {
+function Read-ProbeFacts {
     param([string[]] $csv)
-    $line = @($script:AccountWinProbe -split "`n" | Where-Object { $_.Trim() -like '$sids = *' })[0].Trim()
+    $mine = @($script:AccountWinProbe -split "`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ -like '$rows = *' -or $_ -like '$sids = *' })
+    $dline = @($script:AccountWinProbe -split "`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ -like '"docker=*' })[0]
     function whoami { $csv }
     $id = [pscustomobject]@{ Groups = @($csv | Where-Object { $_ -notmatch 'deny only|Verweigerung' } | ForEach-Object { [pscustomobject]@{ Value = ($_ -split '","')[2] } }) }
-    Invoke-Expression $line
-    $sids
+    foreach ($l in $mine) { Invoke-Expression $l }
+    [pscustomobject]@{ Sids = $sids; Docker = ((Invoke-Expression $dline) -replace '^docker=', '') }
 }
+function Read-ProbeSids { param([string[]] $csv) (Read-ProbeFacts $csv).Sids }
 $fs = Read-ProbeSids $whoamiFiltered
 Check 'whoami: the probe reads every SID, deny-only ones too' ($fs -contains 'S-1-5-32-544') $true
 Check 'whoami: it reads the third column and nothing else (12 groups, no name)' @($fs.Count, @($fs | Where-Object { $_ -notlike 'S-1-*' }).Count) @(12, 0)
@@ -118,6 +123,21 @@ Check 'whoami: a German filtered token is matched by SID, not by VORDEFINIERT\Ad
 $ds = Read-ProbeSids $whoamiDomain
 Check 'whoami: a group name with a comma does not break the columns' ($ds -contains 'S-1-5-21-111-222-333-1105') $true
 Check 'whoami: a domain admin filtered token says Administrators, Domain Admins and Enterprise Admins' (Why (Win -user 'CORP\clint' -elev 'False' -sids ($ds -join ';')) 'windows') @('is in Administrators (S-1-5-32-544) with a filtered token', 'is in Domain Admins (RID 512)', 'is in Enterprise Admins (RID 519)')
+# The real capture, from sg4: an ordinary account in a non-admin shell.
+$real = @(Get-Content -LiteralPath (Join-Path $PSScriptRoot 'fixtures/whoami-groups-sg4-claude-nonadmin.csv'))
+$rf = Read-ProbeFacts $real
+$rl = $rf.Sids
+Check 'real capture (sg4, SG4\claude, non-admin): 13 rows, 13 SIDs read, docker-users found by name' @($real.Count, $rl.Count, $rf.Docker) @(13, 13, '1')
+Check 'real capture: the label row with an empty attribute column and the machine SID groups are read' @(($rl -contains 'S-1-16-8192'), ($rl -contains 'S-1-5-21-1111111111-2222222222-3333333333-1002')) @($true, $true)
+Check 'real capture: it is in docker-users, so it WARNS by name, and nothing else (RIDs 1002 and 1007 are not 512 or 519)' (Why (Win -user 'SG4\claude' -h 'SG4' -elev 'False' -sids ($rl -join ';') -docker $rf.Docker) 'windows') @('is in the group docker-users (Docker Desktop reaches host files)')
+Check 'real capture: and the step is a warn naming docker-users' ((Get-AccountResult @('user=SG4\claude', 'host=SG4', 'elevated=False', "sids=$($rl -join ';')", "docker=$($rf.Docker)") 0 'windows' 'sg4' $me @() $false $false $false).Detail -like 'SG4\claude is in the group docker-users (Docker Desktop reaches host files). an agent in this room*' ) $true
+# The ordinary non-admin account: the real capture WITHOUT its docker-users row (derived here, the file is untouched).
+$pf = Read-ProbeFacts @($real | Where-Object { $_ -notmatch 'docker-users' })
+Check 'plain non-admin (the capture minus its docker-users row): 12 SIDs, no docker-users' @($pf.Sids.Count, $pf.Docker) @(12, '0')
+Check 'plain non-admin: no admin group, so it reads ok' (Why (Win -user 'SG4\claude' -h 'SG4' -elev 'False' -sids ($pf.Sids -join ';') -docker $pf.Docker) 'windows').Count 0
+Check 'plain non-admin: and the step says the clean ok' (Get-AccountResult @('user=SG4\claude', 'host=SG4', 'elevated=False', "sids=$($pf.Sids -join ';')", "docker=$($pf.Docker)") 0 'windows' 'sg4' $me @() $false $false $false).Detail 'SG4\claude: not elevated, not in an admin group, not the operator''s account'
+Check 'docker-users: any machine prefix and any case, never a longer or shorter name' @((Read-ProbeFacts @('"PC\Docker-Users","Alias","S-1-5-21-1-2-3-1002","x"', '"Everyone","Well-known group","S-1-1-0","x"')).Docker, (Read-ProbeFacts @('"PC\docker-users2","Alias","S-1-5-21-1-2-3-1002","x"', '"Everyone","Well-known group","S-1-1-0","x"')).Docker, (Read-ProbeFacts @('"PC\mydocker-users","Alias","S-1-5-21-1-2-3-1002","x"', '"Everyone","Well-known group","S-1-1-0","x"')).Docker) @('1', '0', '0')
+Check 'docker-users: the verdict says it once, beside other reasons' (Why (Win -elev 'True' -sids "$std;S-1-5-32-544" -docker '1') 'windows') @('is in Administrators (S-1-5-32-544)', 'the token is elevated', 'is in the group docker-users (Docker Desktop reaches host files)')
 Check 'whoami: the standard user list has no admin group in it' (Why (Win -sids ((Read-ProbeSids ($whoamiFiltered | Where-Object { $_ -notmatch 'S-1-5-114|S-1-5-32-544' })) -join ';')) 'windows').Count 0
 
 # ── macOS and Linux: uid, groups, sudo ──────────────────────────────────────
@@ -205,6 +225,21 @@ Check 'step: required and the probe cannot tell refuses' @($r.Status, $r.Refuse)
 Check 'step: no group is dumped, only the matched reason' ((Res (Win -elev 'True' -sids "$std;S-1-5-32-544;S-1-5-21-1-2-3-1105") 'windows').Detail -notmatch 'S-1-5-21-1-2-3-1105|S-1-5-14') $true
 Check 'step: a clean account prints no group either' ((Res (Unx -groups 'staff,everyone,localaccounts,com.apple.access_ssh')).Detail -notmatch 'com.apple|localaccounts') $true
 
+$m = 'ATRIUM-ACCT-0123'
+$sp = Select-ProbeLines @('motd line', "$m-begin", 'user=a', 'uid=5', "$m-end", 'logout') $m 0
+Check 'markers: only the lines between the pair are taken' ($sp.Out -join '|') 'user=a|uid=5'
+Check 'markers: CR and spaces around a marker are fine (Windows)' ((Select-ProbeLines @("  $m-begin`r", 'user=a', "$m-end`r") $m 0).Out -join '|') 'user=a'
+Check 'markers: an empty answer between them is empty' @((Select-ProbeLines @("$m-begin", "$m-end") $m 0).Out).Count 0
+Check 'markers: the marker only counts as a whole line' ((Select-ProbeLines @("echo $m-begin", 'user=a', "x $m-end") $m 0).Out -join '|') 'err=the probe output had no begin and end marker, so it was noisy or cut off'
+Check 'markers: none at all with a nonzero exit is the plain exit code (ssh failed)' @((Select-ProbeLines @('Permission denied') $m 255).Out).Count 0
+Check 'markers: end before begin is tampered' (((Select-ProbeLines @("$m-end", 'user=a', "$m-begin") $m 0).Out -join '|') -like 'err=the probe output was tampered with or noisy*') $true
+Check 'markers: two ends is tampered' (((Select-ProbeLines @("$m-begin", 'user=a', "$m-end", "$m-end") $m 0).Out -join '|') -like 'err=the probe output was tampered*') $true
+$tr = Get-AccountResult @('user=svc', 'uid=1', 'groups=svc,sudo', 'host=h', 'sudo.rc=1', 'groups=svc') 0 'linux' 'x' $me @() $false $false $false
+Check 'dup: a probe fact said twice with two values is a warn that could not tell' @($tr.Status, ($tr.Detail -like 'could not tell who the room runs as on x (the probe output was tampered with or noisy*')) @('warn', $true)
+Check 'dup: the same value said twice is not a conflict' (Get-AccountResult @('user=svc', 'uid=1', 'groups=svc', 'host=h', 'sudo.rc=1', 'groups=svc') 0 'linux' 'x' $me @() $false $false $false).Status 'ok'
+Check 'dup: a key the probe does not use may repeat' (Get-AccountResult @('user=svc', 'uid=1', 'groups=svc', 'host=h', 'sudo.rc=1', 'x=1', 'x=2') 0 'linux' 'x' $me @() $false $false $false).Status 'ok'
+Check 'dup: required, it refuses' (Get-AccountResult @('user=svc', 'user=root') 0 'linux' 'x' $me @() $false $false $true).Refuse $true
+
 # ── the probes ──────────────────────────────────────────────────────────────
 
 $errs = $null
@@ -290,7 +325,21 @@ for last; do :; done
 case "$last" in
   'uname -sm') echo "${FAKE_UNAME:-Linux x86_64}"; exit 0;;
   'uname -m') echo "${FAKE_UNAME:-Linux x86_64}" | cut -d' ' -f2; exit 0;;
-  'sh -s') in=$(cat); case "$in" in *'echo "user=$(id -un)"'*) cat "$FAKE_ACCOUNT"; exit 0;; esac; printf '%s\n' "$in" | sh -s; exit $?;;
+  'sh -s') in=$(cat); case "$in" in *'echo "user=$(id -un)"'*)
+    b=$(printf '%s\n' "$in" | sed -n 's/^echo \(ATRIUM-ACCT-[0-9a-f]*-begin\)$/\1/p')
+    e=$(printf '%s\n' "$in" | sed -n 's/^echo \(ATRIUM-ACCT-[0-9a-f]*-end\)$/\1/p')
+    [ -n "$FAKE_BEFORE" ] && cat "$FAKE_BEFORE"
+    [ -z "$FAKE_NOMARK" ] && echo "$b"
+    cat "$FAKE_ACCOUNT"
+    [ -n "$FAKE_DOUBLE" ] && echo "$b"
+    [ -z "$FAKE_NOMARK" ] && [ -z "$FAKE_NOEND" ] && echo "$e"
+    [ -n "$FAKE_AFTER" ] && cat "$FAKE_AFTER"
+    exit 0;; esac; printf '%s\n' "$in" | sh -s; exit $?;;
+  powershell*) enc=${last##* }; txt=$(printf '%s' "$enc" | base64 -d | iconv -f UTF-16LE -t UTF-8)
+    [ -n "$FAKE_BEFORE" ] && cat "$FAKE_BEFORE"
+    pwsh -NoProfile -Command "$txt" 2>&1
+    [ -n "$FAKE_AFTER" ] && cat "$FAKE_AFTER"
+    exit 0;;
 esac
 echo "fake ssh: not expected: $*" >&2; exit 9
 '@
@@ -298,6 +347,8 @@ echo "fake ssh: not expected: $*" >&2; exit 9
     $acct = Join-Path $tmp 'account.txt'
     function Say { param([string] $text) Set-Content -LiteralPath $acct -Value $text }
     $env:FAKE_ACCOUNT = $acct
+    $noise = Join-Path $tmp 'noise.txt'
+    function Noise { param([string] $text) Set-Content -LiteralPath $noise -Value $text }
     $tc = Join-Path $PSScriptRoot 'room-toolchain.ps1'
     $pr = Join-Path $PSScriptRoot 'provision-room.ps1'
     function Tc { param([string[]] $a) $o = & $pwsh -NoProfile -File $tc 'svc@lab1' -Ssh $fake -Check -Tools go -StateDir (Join-Path $tmp 'st') @a 2>&1; [pscustomobject]@{ Out = @($o | ForEach-Object { "$_" }); Code = $LASTEXITCODE } }
@@ -341,6 +392,44 @@ echo "fake ssh: not expected: $*" >&2; exit 9
     Say "user=svc`nuid=1001`ngroups=svc`nhost=lab1`nsudo.rc=none"
     $o = & $pwsh -NoProfile -File $tc 'svc@lab1' -Ssh $fake -Check -Tools git 2>&1
     Check 'toolchain: when no tool applies the account line still comes before the skip' (($o | Where-Object { $_ -match '^room-toolchain (account|tools) ' } | ForEach-Object { ($_ -split ' ')[1] }) -join '|') 'account|tools'
+
+    # Output that is not the probe's. An rc file on the account prints before the probe, and an EXIT trap prints after it. What
+    # it says is never taken, so noise saying "clean" cannot hide an admin and noise saying "root" cannot make a clean one warn.
+    Say "user=svc`nuid=1001`ngroups=svc,sudo`nhost=lab1`nsudo.rc=1"
+    Noise "user=svc`nuid=1001`ngroups=svc`nhost=lab1`nsudo.rc=1`nWelcome to lab1"
+    $env:FAKE_BEFORE = $noise; $env:FAKE_AFTER = $noise
+    $r = Tc @()
+    Check 'noise: a profile and an exit trap saying "clean" do not hide the sudo group (toolchain)' @(Line $r '^room-toolchain account warn svc is in the group sudo\. ').Count 1
+    Check 'noise: the same for provision' @(Line (Pr @()) '^provision account-rights warn svc is in the group sudo\. ').Count 1
+    Say "user=svc`nuid=1001`ngroups=svc`nhost=lab1`nsudo.rc=1"
+    Noise "uid=0`ngroups=root,wheel,sudo`nsudo.rc=0`nsudo.nopasswd=1"
+    $r = Tc @()
+    Check 'noise: noise saying "root" does not make a clean account warn' @(Line $r '^room-toolchain account ok svc: ').Count 1
+    Remove-Item Env:FAKE_BEFORE, Env:FAKE_AFTER
+    Say "user=svc`nuid=1001`ngroups=svc,sudo`nhost=lab1`nsudo.rc=1`ngroups=svc"
+    $r = Tc @()
+    Check 'noise: a fact said twice with two values is could not tell, never ok' @(Line $r '^room-toolchain account warn could not tell who the room runs as on svc@lab1 \(the probe output was tampered with or noisy').Count 1
+    $r = Tc @('-RequireDedicatedAccount')
+    Check 'noise: and under -RequireDedicatedAccount it refuses' @($r.Code, @(Line $r '^room-toolchain account fail could not tell').Count) @(1, 1)
+    Say "user=svc`nuid=1001`ngroups=svc`nhost=lab1`nsudo.rc=1`ngroups=svc"
+    Check 'noise: the same value said twice is not a conflict' @(Line (Tc @()) '^room-toolchain account ok svc: ').Count 1
+    Say "user=svc`nuid=1001`ngroups=svc`nhost=lab1`nsudo.rc=1"
+    $env:FAKE_NOMARK = '1'
+    Check 'noise: an answer with no markers is could not tell' @(Line (Tc @()) '^room-toolchain account warn could not tell .*no begin and end marker').Count 1
+    Remove-Item Env:FAKE_NOMARK
+    $env:FAKE_NOEND = '1'
+    Check 'noise: an answer cut off before the end marker is could not tell' @(Line (Tc @()) '^room-toolchain account warn could not tell .*tampered with or noisy').Count 1
+    Remove-Item Env:FAKE_NOEND
+    $env:FAKE_DOUBLE = '1'
+    Check 'noise: a begin marker said twice is could not tell' @(Line (Tc @()) '^room-toolchain account warn could not tell .*tampered with or noisy').Count 1
+    Remove-Item Env:FAKE_DOUBLE
+    # The Windows probe: the fake runs the decoded text under pwsh, where it reports err= (no token on a Mac). The markers must have
+    # been in it, or the answer would be a marker complaint and not the probe's own err=.
+    Noise "uid=0`nsids=S-1-1-0"
+    $env:FAKE_BEFORE = $noise; $env:FAKE_AFTER = $noise
+    $wr = Invoke-AccountProbe 'windows' $fake @() 'svc@lab1' $false 60
+    Remove-Item Env:FAKE_BEFORE, Env:FAKE_AFTER
+    Check 'noise: the Windows probe is delimited too, and noise around it is dropped' @((@($wr.Out | Where-Object { $_ -like 'err=*' }).Count -ge 1), @($wr.Out | Where-Object { $_ -match 'marker|uid=0|sids=' }).Count) @($true, 0)
 
     # provision-room: the account-rights step comes after os (and after the -User check) and before the hub is looked for.
     Say "user=svc`nuid=1001`ngroups=svc,wheel`nhost=lab1`nsudo.rc=1"

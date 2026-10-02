@@ -33,23 +33,34 @@
 
 # Windows PowerShell 5.1. No variables go in, so there is nothing to quote. A failure is an err= line and never a throw.
 # The SID column of whoami's csv is the third, and it is the same on every language. An empty list is a failure, since
-# every token holds Everyone (S-1-1-0), and it must never read as "no admin group".
+# every token holds Everyone (S-1-1-0), and it must never read as "no admin group". The one group matched by NAME is
+# docker-users (Docker Desktop's, which reaches host files), because its RID differs on every machine. The name is the
+# installer's own and is not localized. Only a count is printed.
 $script:AccountWinProbe = @'
 try {
     $id = [Security.Principal.WindowsIdentity]::GetCurrent()
-    $sids = @(whoami /groups /fo csv /nh | ConvertFrom-Csv -Header n, t, s, a | ForEach-Object { $_.s } | Where-Object { $_ -like 'S-1-*' })
+    $rows = @(whoami /groups /fo csv /nh | ConvertFrom-Csv -Header n, t, s, a)
+    $sids = @($rows | ForEach-Object { $_.s } | Where-Object { $_ -like 'S-1-*' })
     if (-not $sids) { throw 'whoami /groups listed no groups' }
     "user=$($id.Name)"
     "host=$env:COMPUTERNAME"
     "elevated=$((New-Object Security.Principal.WindowsPrincipal($id)).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator))"
     "sids=$($sids -join ';')"
+    "docker=$(@($rows | Where-Object { $_.n -like '*\docker-users' }).Count)"
 } catch { "err=$($_.Exception.Message)" }
 '@
 
 # sh. `sudo -n -l` only lists, never asks (-n) and never runs anything. The group list is comma separated. sudo can wait on
 # the network (LDAP, SSSD, a host name that does not resolve), so it runs in the background with a watcher that kills it
 # after 5 seconds, which reads as sudo.rc=timeout. (macOS has no timeout(1), and a sleep and a kill need nothing.) The
-# watcher's output goes nowhere so the capture does not wait for its sleep, and nothing is written to disk.
+# watcher's output goes nowhere so the capture does not wait for its sleep, and nothing is written to disk. THE 5 SECONDS
+# IS USUAL, NOT A GUARANTEE: a sudo that has made itself root (real uid 0) cannot be signalled by the user, so the kill
+# does nothing and the capture waits for it. A process group kill would be refused the same way. What bounds the probe
+# then is the 45 second cap on the whole call in Invoke-AccountProbe, which reads `could not tell`.
+#
+# The probe's output is delimited by Invoke-AccountProbe with a marker pair made up on THIS side for each run (see there).
+# On Unix the marker arrives on stdin, and the account's login shell starts before `sh -s` does, so ~/.bashrc runs first
+# and can read stdin, and a determined account can learn the marker too.
 $script:AccountUnixProbe = @'
 echo "user=$(id -un)"; echo "uid=$(id -u)"; echo "groups=$(id -Gn | tr ' ' ',')"; echo "host=$(uname -n)"
 if command -v sudo >/dev/null 2>&1; then
@@ -71,11 +82,13 @@ function Invoke-AccountProbe {
     param([string] $Kind, [string] $Ssh, [string[]] $SshBase = @(), [string] $Target, [bool] $IsLocal = $false, [int] $Seconds = 45)
     $win = $Kind -eq 'windows'
     $stdin = $null
+    $mark = 'ATRIUM-ACCT-' + [guid]::NewGuid().ToString('N')
     if ($win) {
-        $psArgs = @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($script:AccountWinProbe)))
+        $text = "'$mark-begin'`n" + $script:AccountWinProbe + "`n'$mark-end'"
+        $psArgs = @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($text)))
         if ($IsLocal) { $file = 'powershell.exe'; $argv = $psArgs } else { $file = $Ssh; $argv = @($SshBase) + @($Target, "powershell $($psArgs -join ' ')") }
     } else {
-        $stdin = ($script:AccountUnixProbe -replace "`r", '') + "`n#"
+        $stdin = "echo $mark-begin`n" + ($script:AccountUnixProbe -replace "`r", '') + "`necho $mark-end`n#"
         if ($IsLocal) { $file = 'sh'; $argv = @('-s') } else { $file = $Ssh; $argv = @($SshBase) + @($Target, 'sh -s') }
     }
     $psi = New-Object Diagnostics.ProcessStartInfo $file
@@ -91,7 +104,30 @@ function Invoke-AccountProbe {
     }
     $p.WaitForExit()
     $lines = @(("$($so.Result)`n$($se.Result)" -split "`r?`n") | Where-Object { $_ -and $_ -notmatch '^#< CLIXML|^<Objs |^</Objs>' })
-    [pscustomobject]@{ Out = $lines; Code = $p.ExitCode }
+    Select-ProbeLines $lines $mark $p.ExitCode
+}
+
+# Only the text between the marker pair is the probe's. The login shell on the target runs the account's rc files (and an
+# EXIT trap in one prints AFTER the probe), and any of that can print `uid=1000` or `groups=staff` to make an admin read
+# as clean. The marker is random for each run and sent to the target inside the probe. IT DEFENDS AGAINST NOISE AND A
+# NAIVE PROFILE, NOT AGAINST A HOSTILE ACCOUNT: on Windows it is in the command line, which a process of the same account
+# can read, and on Unix it is on stdin, which the login shell's rc files (~/.bashrc runs before `sh -s`) can read. Exactly
+# one begin and one end, in that order, or the answer is an err= line. No marker at all and a nonzero exit is the plain
+# "the probe exited N" (ssh failed).
+function Select-ProbeLines {
+    param([string[]] $Lines, [string] $Mark, [int] $Code = 0)
+    $t = @($Lines | ForEach-Object { "$_".Trim() })
+    $b = @(for ($i = 0; $i -lt $t.Count; $i++) { if ($t[$i] -eq "$Mark-begin") { $i } })
+    $e = @(for ($i = 0; $i -lt $t.Count; $i++) { if ($t[$i] -eq "$Mark-end") { $i } })
+    if (-not $b.Count -and -not $e.Count) {
+        if ($Code -ne 0) { return [pscustomobject]@{ Out = @(); Code = $Code } }
+        return [pscustomobject]@{ Out = @('err=the probe output had no begin and end marker, so it was noisy or cut off'); Code = 0 }
+    }
+    if ($b.Count -ne 1 -or $e.Count -ne 1 -or $b[0] -gt $e[0]) {
+        return [pscustomobject]@{ Out = @('err=the probe output was tampered with or noisy (the begin and end markers are not there once each, in order)'); Code = 0 }
+    }
+    $inner = if ($e[0] - $b[0] -gt 1) { @($Lines[($b[0] + 1)..($e[0] - 1)]) } else { @() }
+    [pscustomobject]@{ Out = $inner; Code = $Code }
 }
 
 # ── the operator's list ─────────────────────────────────────────────────────
@@ -145,6 +181,7 @@ function Get-AccountVerdict {
         if ($sids | Where-Object { $_ -match '^S-1-5-21-\d+-\d+-\d+-519$' }) { $why += 'is in Enterprise Admins (RID 519)' }
         if ($sids -contains 'S-1-5-32-551') { $why += 'is in Backup Operators (S-1-5-32-551, can read every file)' }
         if ($sids -contains 'S-1-5-32-578') { $why += 'is in Hyper-V Administrators (S-1-5-32-578, can mount any disk)' }
+        if ([int]"0$($Kv['docker'])" -gt 0) { $why += 'is in the group docker-users (Docker Desktop reaches host files)' }
     } else {
         if ("$($Kv['uid'])" -eq '0') { $why += 'is root (uid 0)' }
         $adminGroups = if ($Kind -eq 'mac') { @('admin', 'wheel') } else { @('sudo', 'wheel', 'admin') }
@@ -183,8 +220,17 @@ function Get-AccountVerdict {
 function Get-AccountResult {
     param($Out, [int] $Code, [string] $Kind, [string] $Where, $Local, [string[]] $Operators = @(), [bool] $SameMachine = $false,
         [bool] $Accept = $false, [bool] $Require = $false)
-    $kv = @{}
-    foreach ($l in @($Out)) { $s = "$l"; $i = $s.IndexOf('='); if ($i -gt 0) { $kv[$s.Substring(0, $i).Trim()] = $s.Substring($i + 1).TrimEnd() } }
+    # The FIRST value of a key is the one taken, and the same key said again with ANOTHER value is not an answer: it is
+    # `could not tell`, never an ok. (Output that came after the probe, or an echo of its own, must not decide the verdict.)
+    $kv = @{}; $dup = $false
+    $probeKeys = 'user', 'uid', 'groups', 'host', 'elevated', 'sids', 'sudo.rc', 'sudo.nopasswd', 'sudo.all', 'err'
+    foreach ($l in @($Out)) {
+        $s = "$l"; $i = $s.IndexOf('=')
+        if ($i -le 0) { continue }
+        $k = $s.Substring(0, $i).Trim(); $val = $s.Substring($i + 1).TrimEnd()
+        if ($kv.ContainsKey($k)) { if ($k -in $probeKeys -and $kv[$k] -cne $val) { $dup = $true } } else { $kv[$k] = $val }
+    }
+    if ($dup) { $kv = @{ err = 'the probe output was tampered with or noisy (a fact was said twice with two values)' } }
     $v = Get-AccountVerdict $kv $Kind $Local $Operators $SameMachine
     if (-not $v.Known) {
         $what = if ($kv['err']) { $kv['err'] } elseif ($Code -ne 0) { "the probe exited $Code" } elseif ($kv['user']) { 'the probe listed no groups' } else { 'the probe said nothing' }
