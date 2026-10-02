@@ -70,3 +70,33 @@ Atrium-Verdict: hub-ok 0f35c7cb..33c2347d
 Atrium-Verdict: room-ok 0f35c7cb..33c2347d
 Quality: a well-measured fix. It goes after the 75-325 ms that was actually measured, opens no socket, and leaves
 phones alone.
+
+## Re-read: c88f9671
+
+Range `b4184dd6..c88f9671`, one commit, in `js/terminal-list.js` and `scripts/test-board-headless.js`.
+
+Closed:
+- **L1.** The reject handler deletes the entry only when it is still its own (`prewarmed.get(id).p === p`), so a newer
+  prewarm survives.
+- **L2.** The section now goes through `attachTask`:
+  - A rest followed by a call within 3 s makes one GET.
+  - A rest followed by a call after 3.1 s makes two.
+  - `HEADLESS_ONLY=switchPrewarm` passes at the tip in a scratch worktree, and `node --check` is clean.
+
+Open, from before this range, so it does not hold it:
+- **N1: on the desktop board, the peek popover throws.** The `mNet` stub this commit adds hides it.
+  - `index.html` loads `/m/js/docs.js` but not the phone page's network module. So `window.mDocs` exists and
+    `window.mNet` does not.
+  - `peekDocs` (`peek.js:128`) calls `mDocs.paintCard`, and its `filedId` (`m/js/docs.js:672`) reads
+    `window.mNet.rooms()`.
+  - So a peek on the desktop board rejects with `TypeError: Cannot read properties of undefined (reading 'rooms')`,
+    and "published N documents" never shows in the peek. It has done this since `d36f7524` (D2).
+  - Shown here: with the stub removed, the section fails with that error.
+  - The fix: `filedId` should treat a missing `mNet` as no rooms, or the desktop should give it a room answer. After
+    that, drop the stub so the section guards the desktop path.
+
+Verdict: hub-ok, room-ok (re-read, 0f35c7cb..c88f9671)
+Quality: both Lows are fixed in a small, exact change.
+
+Atrium-Verdict: hub-ok 0f35c7cb..c88f9671
+Atrium-Verdict: room-ok 0f35c7cb..c88f9671
