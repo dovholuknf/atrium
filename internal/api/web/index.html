@@ -445,27 +445,6 @@ Exports honor whatever filter is applied.">?</span>
           <button type="button" id="t-bar-toggle" class="icon" onclick="phoneTraySet(false)"
             aria-label="hide the terminal's tray">&#9652;</button>
           <span class="chips" id="t-chips"></span>
-          <!-- Hidden until the cog asks for it. On the bar rather than in a
-               dialog because the terminal underneath IS the preview: a theme
-               is judged against real output, not against its name. -->
-          <!-- Stays up until it is answered. Committing on blur meant the
-               control vanished the moment you clicked the terminal to look at
-               what you had just chosen, which is the one thing you want to do
-               while choosing a theme. -->
-          <span class="themepicker" id="t-theme-wrap" hidden>
-            <select id="t-theme" class="themepick"
-              onchange="previewTheme(this.value)"
-              onkeydown="if (event.key === 'Escape') { event.preventDefault(); cancelTheme(); }
-                         else if (event.key === 'Enter') { event.preventDefault(); keepTheme(); }"></select>
-            <button class="go" onclick="busyWhile(this, keepTheme, 'saving…')" data-tip="keep this one">use it</button>
-            <!-- The colours of whatever is selected, opened where you are
-                 already looking at them. Nothing about the terminal changes
-                 until the editor is saved, so this is not a second way to set
-                 a card's theme. -->
-            <button onclick="openThemeEditor(document.getElementById('t-theme').value)"
-              data-tip="change these colours, or bring a scheme of your own">edit &#9998;</button>
-            <button onclick="cancelTheme()" data-tip="put back what was there">cancel</button>
-          </span>
           <!-- WHICH OF THIS CARD'S TWO TERMINALS. Hidden until there is a
                choice, which means until the card has a runner atrium owns.
 
@@ -1199,7 +1178,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <!-- Moved into whichever modal is on top while one is open. See raiseToasts:
      a popover renders above a modal but cannot be clicked, because a modal
      makes everything outside itself inert. -->
-<!-- TRYING THE BOARD'S COLOURS, WITHOUT A DIALOG IN THE WAY.
+<!-- TRYING A LOOK, WITHOUT A DIALOG IN THE WAY: the board's colours, or a terminal's theme.
      Deliberately not a `<dialog>`. A modal darkens and blocks the board, and
      the board is the thing being judged: you have to be able to walk the tabs,
      open a card and look at a terminal while it is up. So it floats, it is
@@ -1207,25 +1186,29 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 
      It also cannot live in the settings dialog for the same reason. The gear
      covers most of the screen, which is why the button in there closes it. -->
-<div id="skinlab" hidden>
+<div id="skinlab" hidden onkeydown="labKey(event)">
   <!-- The title is the only thing on this strip. What is selected is already
        on the control below it, and putting the current name up here made the
        row wrap for a long one and not for a short one, so stepping through the
-       list changed the panel's height and it bounced under the pointer. -->
+       list changed the panel's height and it bounced under the pointer. It is
+       set by whoever opens the panel: the board's skin, or a terminal's theme. -->
   <div class="lab-grip" id="skinlab-grip" onpointerdown="startLabDrag(event)"
     data-tip="drag me anywhere">
-    <span class="lab-title">how the board looks</span>
+    <span class="lab-title" id="skinlab-title"></span>
   </div>
   <div class="lab-body">
     <div class="lab-row">
-      <button class="lab-step" onclick="stepSkin(-1)" aria-label="the one before" data-tip="the one before">&#8249;</button>
-      <select id="skinlab-pick" onchange="previewSkin(this.value)"></select>
-      <button class="lab-step" onclick="stepSkin(1)" aria-label="the next one" data-tip="the next one">&#8250;</button>
+      <button class="lab-step" onclick="stepLab(-1)" aria-label="the one before" data-tip="the one before">&#8249;</button>
+      <select id="skinlab-pick" onchange="previewLab(this.value)"></select>
+      <button class="lab-step" onclick="stepLab(1)" aria-label="the next one" data-tip="the next one">&#8250;</button>
     </div>
     <div class="lab-row lab-answers">
-      <button class="go" onclick="busyWhile(this, keepSkin, 'saving…')" data-tip="keep this one">use it</button>
-      <button onclick="busyWhile(this, useDefaultSkin, 'saving…')" data-tip="back to the one it came with">use the default</button>
-      <button onclick="cancelSkin()" data-tip="put back what was there">cancel</button>
+      <button class="go" onclick="busyWhile(this, keepLab, 'saving…')" data-tip="keep this one">use it</button>
+      <button id="skinlab-default" onclick="busyWhile(this, defaultLab, 'saving…')"></button>
+      <button onclick="cancelLab()" data-tip="put back what was there">cancel</button>
+    </div>
+    <div class="lab-row lab-answers" id="skinlab-more" hidden>
+      <button id="skinlab-extra" onclick="extraLab()"></button>
     </div>
     <span class="lab-hint">Arrow keys walk the list. Nothing is saved until you press
       <b>use it</b>.</span>

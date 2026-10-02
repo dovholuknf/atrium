@@ -156,11 +156,7 @@
   .copybit:hover { opacity: 1; color: var(--teal); }
   /* A picture does not want the padding a word does. */
   #t-cog, #t-files { font-size: var(--fs-lg); padding: 5px 9px; line-height: 1; }
-  /* The theme picker, while it is up. Sized to the longest name so the bar does not change width as you arrow
-     through, which would move every button beside it and change the terminal's box under a fitted grid. */
-  .themepicker { display: flex; align-items: center; gap: var(--sp-2); flex: none; }
-  .themepicker[hidden] { display: none; }
-  /* The floating panel for trying skins. Above the dialogs, since it is opened from one and that dialog
+  /* The floating panel for trying a look: the board's skin or a terminal's theme. Above the dialogs, since it is opened from one and that dialog
      closes behind it, and a panel that landed underneath would look like the button did nothing. */
   #skinlab {
     position: fixed; z-index: 400; width: 288px;
@@ -192,6 +188,7 @@
   }
   .lab-step { flex: none; padding: 5px 10px; font-size: var(--fs-lg); line-height: 1; }
   .lab-answers button { flex: 1 1 auto; padding: 7px 6px; font-size: var(--fs-xs); }
+  #skinlab-more[hidden] { display: none; }
   .lab-hint { font: var(--fs-xxs)/1.45 var(--sans); color: var(--dim); }
   /* Which of a card's two terminals. A segmented pair, because they are one choice and spacing them apart
      would read as two unrelated things to press. */
@@ -208,11 +205,6 @@
      buttons reads as focus rather than as state. */
   .termkind button.on {
     background: var(--chip); color: var(--head); border-color: var(--stroke);
-  }
-  .themepick {
-    flex: none; width: 20ch; font: var(--fs-sm) var(--mono);
-    background: var(--shell-0); color: var(--head);
-    border: 1px solid var(--teal); border-radius: var(--r-sm); padding: 4px 6px;
   }
   /* The directory sits over the terminal. In a popped-out window there is no width to split, and two halves
      too narrow to use is worse than one pane that swaps. The terminal keeps running underneath. */
