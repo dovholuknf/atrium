@@ -78,6 +78,10 @@ Next, after u-m-card and u-m-home land (clint, 2026-09-30 evening, by the orches
 
 ## Filed, not queued
 
+- Bell repaint lows from the u-remind-me review (fe64f70d, landed b93f2846), 2026-10-02: (1) `openToastLog` marks the
+  log seen, so each growl event with the bell open resets the "new" highlight under the reader; split repaint from
+  open so the repaint skips the seen mark. (2) The rebuild can jump the scroll; keep `scrollTop`.
+
 - Grouping work, spiked 2026-10-02, nothing built, all pending clint's answers (pause): (1) per-view grouping keys
   `atrium.grouping.stack|board|terminals`, read-through from the old key, hues and hand-made groups shared, ~120-180
   lines; (2) board collapse per column: `board.js:1508` fold key lacks the column (introduced by 2017744d on purpose),
