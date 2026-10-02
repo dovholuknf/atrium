@@ -85,3 +85,24 @@ in your list holds.
 Quality: careful and well tested. The URL parser refuses without echoing, the seed's environment is clean, there
 is no migration, and the shape matches the board. The adopt path is right on the first call and wrong on the
 second, and the coexist test stops one call short of showing it.
+
+## Re-read 607bb026 (cd07b86e..607bb026)
+
+- **M1, closed.** The marker says `made` or `adopted`, and an adopted repository returns early with no seed and no
+  fetch. A marker written before kinds existed reads as made, which is safe because 06ea9026 never landed. The
+  coexist test now runs a second and a third init and finds the mirror's refs unchanged. I mutated the adopted
+  case away and the coexist test fails.
+- **M2, closed.** mirrorLock takes `mirror:<name>` when the directory is a configured mirror, matching paths with
+  EqualFold. The lock order is store:<name>, then mirror:<name>, then store:*. mirrorOne takes only its own, so
+  there is no inversion.
+- **L1, closed.** EvalSymlinks on both roots, both slash forms, and a case fold on Windows. Tested.
+- **L2, closed.** The store-wide lock covers collision, the stat and MkdirAll. A failed create removes owner and
+  host directories it left empty, also under the lock. There is a deterministic race test.
+- **L3, closed.** `-c transfer.fsckObjects=true` on the seed, and a named sentence when fsck fails.
+- **L4, closed.** A leading `-` is refused in ParseName and ParseURL. ValidName is untouched, which is right, since
+  git_repos and the room side use it.
+- go vet and gofmt are clean, and gitsync, hubstore, cli and link (Git) pass.
+
+Closed: M1, M2, L1, L2, L3, L4 / Open: none
+
+Verdict: HUB DEPLOY OK cd07b86e..607bb026. @fabric lands it with claude/review.
