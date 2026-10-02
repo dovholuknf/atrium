@@ -289,10 +289,16 @@ function Test-AclReadable {
     }
     $false
 }
-# The arguments to icacls.exe for one change. Never Everyone or Users: that is refused here, not left to the caller.
+# What icacls prints for one ACE after the account, flags then rights: (OI)(CI)(RX), (CI)(IO)(W), (F). The one grammar for it, used
+# on what New-IcaclsArgs is given and on what is read back from the room's grant record. Anything else is not an ACE.
+function Test-AceRaw { param([string] $s) $s -cmatch '^(\((OI|CI|IO|NP|I)\))*\((?!(OI|CI|IO|NP|I)\))[A-Z]{1,4}(,[A-Z]{1,4})*\)\z' }
+# The arguments to icacls.exe for one change. Never Everyone or Users: that is refused here, not left to the caller. A right that is
+# not an ACE is refused too.
 function New-IcaclsArgs {
     param([string] $Dir, [string] $Account, [ValidateSet('grant', 'remove', 'restore')] [string] $Mode, [string[]] $Rights = @('RX'))
     if ($Account -match '^(Everyone|BUILTIN\\Users|Users|Authenticated Users|NT AUTHORITY\\Authenticated Users)$') { throw "a grant to '$Account' is not allowed" }
+    if ($Mode -eq 'grant' -and "$($Rights[0])" -cnotmatch '^(F|M|RX|R|W|D)\z') { throw "'$($Rights[0])' is not a right to grant" }
+    if ($Mode -eq 'restore') { foreach ($r in @($Rights)) { if (-not (Test-AceRaw $r)) { throw "'$r' is not an ACE" } } }
     switch ($Mode) {
         'grant'   { [string[]]@($Dir, '/grant', "${Account}:(OI)(CI)$($Rights[0])") }
         # /grant:r replaces what the account has, so the FIRST of the ACEs it had is put back with it and the rest are added
@@ -301,10 +307,14 @@ function New-IcaclsArgs {
         'remove'  { [string[]]@($Dir, '/remove:g', $Account) }
     }
 }
-# The same, as the command to paste, for an admin.
-function Format-IcaclsCommand {
-    param([string[]] $IcaclsArgs)
-    'icacls ' + (($IcaclsArgs | ForEach-Object { if ($_ -match '[\s''"]') { '"' + $_ + '"' } else { $_ } }) -join ' ')
+# THE one place a command for a person to paste is made (git config, icacls, pacman, the login, every needs-human line). Each word
+# outside [A-Za-z0-9_.:\/-] is a PowerShell single-quoted literal (Quote-Ps), so a $( ), a ;, a & or a backtick in a value is text and
+# runs nothing. A program that had to be quoted is called with &. Need (room-toolchain.ps1) takes words and calls this.
+function Format-AdminCommand {
+    param([string[]] $Words)
+    $q = @($Words | ForEach-Object { if ("$_" -cmatch '^[A-Za-z0-9_.:\\/-]+\z') { "$_" } else { Quote-Ps "$_" } })
+    if ($q.Count -and $q[0].StartsWith("'")) { $q[0] = '& ' + $q[0] }
+    $q -join ' '
 }
 # The ops that take a Modify grant back: remove what was granted, then put back what the account had of its own ($Before, the
 # Raw text of each explicit ACE, may be empty).
@@ -316,15 +326,29 @@ function New-RevertOps {
     $ops
 }
 # The grants this script made and has not taken back, as the room remembers them: one `dir|account|before` line each, `before`
-# being the Raw text of the ACEs the account had, joined by a space. Only the lines for $Dir.
+# being the Raw text of the ACEs the account had, joined by a space. Each line is `n:text` as cacls prints it, n being its line
+# number in the file. The file is writable by anything that runs as the room user, so a line is only believed when it is what this
+# script writes: Dir the MSYS2 directory in question, Account exactly $User (only the user's own Modify is ever recorded), every
+# `before` token an ACE (Test-AceRaw). A line for another directory is not ours to touch and is skipped. Any other line is Bad:
+# never acted on, never printed as a command, and named by its number with a short, control-character-free excerpt only.
+# Returns @{ Grants = <Dir, Account, Before, Line>; Bad = <line numbers and excerpts as text> }.
 function ConvertFrom-GrantRecord {
-    param([string[]] $Lines, [string] $Dir)
+    param([string[]] $Lines, [string] $Dir, [string] $User)
+    $grants = @(); $bad = @()
     foreach ($l in @($Lines)) {
-        $f = "$l" -split '\|', 3
-        if ($f.Count -lt 2 -or -not $f[0].Trim() -or -not $f[1].Trim()) { continue }
-        if ($Dir -and $f[0].TrimEnd('\', '/') -ine $Dir.TrimEnd('\', '/')) { continue }
-        [pscustomobject]@{ Dir = $f[0]; Account = $f[1]; Before = @(@("$($f[2])" -split ' ') | Where-Object { $_ }) }
+        if (-not "$l".Trim()) { continue }
+        $n = '?'; $t = "$l"
+        if ($t -match '^(\d{1,6}):(.*)$') { $n = $Matches[1]; $t = $Matches[2] }
+        $f = $t -split '\|', 3
+        $ok = $f.Count -eq 3 -and $f[0].Trim() -and $f[1].Trim()
+        if ($ok -and $Dir -and $f[0].TrimEnd('\', '/') -ine $Dir.TrimEnd('\', '/')) { continue }
+        if ($ok) { $ok = $f[0] -ieq $f[0].Trim() -and $f[1] -ieq $User }
+        $before = @()
+        if ($ok) { $before = @(@($f[2] -split ' ') | Where-Object { $_ }); foreach ($b in $before) { if (-not (Test-AceRaw $b)) { $ok = $false } } }
+        if ($ok) { $grants += [pscustomobject]@{ Dir = $(if ($Dir) { $Dir } else { $f[0] }); Account = $f[1]; Before = $before; Line = $n } }
+        else { $bad += "line $n ($((($t -replace '[\x00-\x1f\x7f-\x9f\u2028\u2029]', ' ')).Substring(0, [Math]::Min(24, $t.Length))))" }
     }
+    [pscustomobject]@{ Grants = $grants; Bad = $bad }
 }
 # What to do to the ACL of an MSYS2 directory. $Aces from ConvertFrom-Icacls, $User the account running this, $Writable what the
 # probe measured, $Others the runner accounts that exist and are not $User, $NeedWrite whether pacman is going to run.
@@ -410,7 +434,7 @@ $script:CActs['cacls'] = @{ Vars = @('Msys2Dir', 'Accts', 'StateDir'); Uses = @(
 $M = $Msys2Dir
 foreach ($a in @($Accts -split ',' | Where-Object { $_ })) { $k = 'False'; try { $null = ([Security.Principal.NTAccount]$a).Translate([Security.Principal.SecurityIdentifier]); $k = 'True' } catch {}; "acct.$a=$k" }
 $sf = J $(if ($StateDir) { $StateDir } else { J $HOME '.atrium' 'toolchain' }) 'acl-grants.txt'
-if (Test-Path -LiteralPath $sf) { Get-Content -LiteralPath $sf | Where-Object { $_.Trim() } | ForEach-Object { "grant=$_" } }
+if (Test-Path -LiteralPath $sf) { $n = 0; Get-Content -LiteralPath $sf | ForEach-Object { $n++; if ($_.Trim()) { "grant=${n}:$_" } } }
 if (Test-Path -LiteralPath (J $M 'usr' 'bin' 'pacman.exe')) {
     $w = J $M 'var' 'lib' 'pacman' 'local' 'ALPM_DB_VERSION'; if (-not (Test-Path -LiteralPath $w)) { $w = J $M 'etc' 'fstab' }
     $ok = $false; try { $s = [IO.File]::Open($w, 'Open', 'Write', 'ReadWrite'); $s.Close(); $ok = $true } catch {}; "writable=$ok"

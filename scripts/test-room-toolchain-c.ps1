@@ -266,8 +266,8 @@ foreach ($bad in 'Everyone', 'BUILTIN\Users', 'Users', 'Authenticated Users', 'N
     $threw = $false; try { New-IcaclsArgs $dirW $bad 'grant' 'RX' | Out-Null } catch { $threw = $true }
     Check "icacls args: a grant to $bad is refused" $threw $true
 }
-Check 'icacls command: quotes what has a space' (Format-IcaclsCommand @('V:\my tools\msys64', '/grant', 'SG3\localai:(OI)(CI)RX')) 'icacls "V:\my tools\msys64" /grant SG3\localai:(OI)(CI)RX'
-Check 'icacls command: and an apostrophe' (Format-IcaclsCommand @("V:\it's\m", '/remove:g', 'a')) 'icacls "V:\it''s\m" /remove:g a'
+Check 'admin command: quotes what has a space, and an ACE' (Format-AdminCommand @('icacls', 'V:\my tools\msys64', '/grant', 'SG3\localai:(OI)(CI)RX')) "icacls 'V:\my tools\msys64' /grant 'SG3\localai:(OI)(CI)RX'"
+Check 'admin command: and an apostrophe' (Format-AdminCommand @('icacls', "V:\it's\m", '/remove:g', 'a')) "icacls 'V:\it''s\m' /remove:g a"
 # plans
 $p1 = New-AclPlan $dirW $aces 'SG3\claude' $true @('SG3\localai') $true
 Check 'plan: Users can read already, so no RX for localai and nothing to take back' @($p1.Grant.Count, $p1.Revert.Count, $p1.Modify) @(0, 0, $false)
@@ -557,6 +557,7 @@ exit 0
         [pscustomobject]@{ Out = @($out | ForEach-Object { "$_" }); Code = $code }
     }
     function Get-Step { param($r, [string] $step) @($r.Out | Where-Object { $_ -match "^room-toolchain $step " })[0] }
+    function Get-Steps { param($r, [string] $step) @($r.Out | Where-Object { $_ -match "^room-toolchain $step " }) }
 
     # A. -Check on a room that has everything but the identity, the helper and the preset
     $sim = New-Sim
@@ -714,7 +715,7 @@ Check 'flow acl: then Modify for the user who runs pacman' (Call 'cacl' 1).Vars.
 Check 'flow acl: pacman gets the package set, no first start on an MSYS2 that was there' @((Call 'cpacman').Vars.Init, (Call 'cpacman').Vars.Pkgs) @('', ($script:CPackages -join ' '))
 Check 'flow acl: Modify is taken back, to what the user had (RX)' (Call 'cacl' 2).Vars.Ops "$mdir|/remove:g|SG3\claude`n$mdir|/grant:r|SG3\claude:(OI)(CI)(RX)"
 Check 'flow acl: the step lines' ($script:steps | ForEach-Object { ($_ -split ' ')[0..1] -join ' ' }) @('msys2 ok', 'msys2-acl done', 'msys2-acl done', 'pacman done', 'msys2-acl done', 'gcc ok', 'cmake ok', 'ninja ok', 'pkgconf ok', 'openssl ok', 'runner-path needs-human')
-Check 'flow acl: no failure, and the only human item is to run it as localai too' @($script:rc, $script:needs.Count, [bool]($script:needs[0] -like 'pwsh -File scripts\room-toolchain.ps1 localai@sg3 -Profile c -Msys2Dir*')) @(0, 1, $true)
+Check 'flow acl: no failure, and the only human item is to run it as localai too' @($script:rc, $script:needs.Count, [bool]($script:needs[0] -like "pwsh -File scripts\room-toolchain.ps1 'localai@sg3' -Profile c -Msys2Dir*")) @(0, 1, $true)
 Check 'flow acl: mingw64\bin goes to the PATH record' ($script:newDirs -join ';') "$mdir\mingw64\bin"
 
 # 2. icacls refuses the Modify grant: pacman is not run, a human item names the command, nothing is taken back
@@ -726,8 +727,8 @@ $script:mock = { param($act, $vars)
     } }
 Invoke-CMsys2 6>$null | Out-Null
 Check 'flow refused: pacman was not run and nothing was reverted (one cacl, the refused grant)' (Seq) 'cmsys,cstate,cacl,cstate,cmsys'
-Check 'flow refused: the icacls command for an admin is printed' (@($script:needs | Where-Object { $_ -eq "icacls $mdir /grant SG3\claude:(OI)(CI)M" }).Count) 1
-Check 'flow refused: and the pacman command for whoever can' (@($script:needs | Where-Object { $_ -like "$mdir\usr\bin\bash.exe -lc `"pacman -S --needed --noconfirm *" }).Count) 1
+Check 'flow refused: the icacls command for an admin is printed' (@($script:needs | Where-Object { $_ -eq "icacls $mdir /grant 'SG3\claude:(OI)(CI)M'" }).Count) 1
+Check 'flow refused: and the pacman command for whoever can' (@($script:needs | Where-Object { $_ -like "$mdir\usr\bin\bash.exe -lc 'pacman -S --needed --noconfirm *" }).Count) 1
 Check 'flow refused: those steps are needs-human, and the tools are still reported' (($script:steps | Where-Object { $_ -match '^(msys2-acl|pacman) needs-human ' }).Count) 2
 Check 'flow refused: it is not a failure code, a human is' $script:rc 0
 # 3. only the RX for the other account is refused: pacman still runs
@@ -740,7 +741,7 @@ $script:mock = { param($act, $vars)
     } }
 Invoke-CMsys2 6>$null | Out-Null
 Check 'flow rx refused: pacman still ran' (Seq) 'cmsys,cacl,cpacman,cmsys'
-Check 'flow rx refused: the command for localai is printed' (@($script:needs | Where-Object { $_ -eq "icacls $mdir /grant localai:(OI)(CI)RX" }).Count) 1
+Check 'flow rx refused: the command for localai is printed' (@($script:needs | Where-Object { $_ -eq "icacls $mdir /grant 'localai:(OI)(CI)RX'" }).Count) 1
 # 4. pacman fails: a failure (3), and Modify is still taken back
 Reset-Flow
 $script:mock = { param($act, $vars)
@@ -804,11 +805,13 @@ Check 'L3: three ACEs, three grants' ((New-IcaclsArgs $dirW 'a' 'restore' @('(F)
 Check 'L3: the ops text is one line per op' ((ConvertTo-AclOps $p.Revert) -split "`n").Count 2
 
 # L2: the grant is recorded on the room
-$g = @(ConvertFrom-GrantRecord @("V:\m|SG3\claude|(OI)(CI)(RX) (CI)(IO)(W)", 'V:\other|SG3\x|', 'garbage', '|x', 'a|', '', 'v:\M\|SG3\claude2|') 'V:\m')
-Check 'L2 record: only this directory, case and a trailing slash do not matter' ($g | ForEach-Object { "$($_.Account)" }) @('SG3\claude', 'SG3\claude2')
+$gr = ConvertFrom-GrantRecord @("1:V:\m|SG3\claude|(OI)(CI)(RX) (CI)(IO)(W)", '2:V:\other|SG3\claude|(F)', '3:v:\M\|sg3\CLAUDE|') 'V:\m' 'SG3\claude'
+$g = @($gr.Grants)
+Check 'L2 record: only this directory and this account, case and a trailing slash do not matter' @($g.Count, $gr.Bad.Count, (($g | ForEach-Object { "$($_.Line)" }) -join ' ')) @(2, 0, '1 3')
 Check 'L2 record: what the account had comes back as a list' $g[0].Before @('(OI)(CI)(RX)', '(CI)(IO)(W)')
 Check 'L2 record: an empty before is an empty list' @($g[1].Before).Count 0
-Check 'L2 record: junk lines read as nothing' @(ConvertFrom-GrantRecord @('garbage', '|x', 'a|', '   ', '||') '').Count 0
+Check 'L2 record: the directory is the one asked about, as given' $g[1].Dir 'V:\m'
+Check 'L2 record: junk lines are Bad, not acted on' @((ConvertFrom-GrantRecord @('garbage', '|x', 'a|', '||') '' 'SG3\claude').Grants.Count, (ConvertFrom-GrantRecord @('garbage', '|x', 'a|', '||') '' 'SG3\claude').Bad.Count) @(0, 4)
 $stdir = Join-Path $tmp 'state'
 $kA = "$fm1|SG3\claude"; $kB = "$fm2|SG3\claude"
 function Get-Rec { if (Test-Path (Join-Path $stdir 'acl-grants.txt')) { @(Get-Content -LiteralPath (Join-Path $stdir 'acl-grants.txt')) } else { @() } }
@@ -820,8 +823,9 @@ $null = Invoke-Act 'cstate' @{ StateDir = $stdir; Mode = 'add'; Key = $kA; Befor
 Check 'L2 act: the same grant again replaces its line' @((Get-Rec).Count, ((Get-Rec) -contains "$kA|(F)")) @(2, $true)
 $r = Invoke-Act 'cacls' @{ Msys2Dir = $fm1; Accts = ''; StateDir = $stdir }
 Check 'L2 act: the probe lists what the room remembers' @($r.Out | Where-Object { $_ -like 'grant=*' }).Count 2
-$gg = @(ConvertFrom-GrantRecord (@($r.Out | Where-Object { $_ -like 'grant=*' }) | ForEach-Object { $_.Substring(6) }) $fm1)
+$gg = @((ConvertFrom-GrantRecord (@($r.Out | Where-Object { $_ -like 'grant=*' }) | ForEach-Object { $_.Substring(6) }) $fm1 'SG3\claude').Grants)
 Check 'L2 act: and it reads back as this directory, this account, what it had' @($gg.Count, $gg[0].Account, ($gg[0].Before -join ' ')) @(1, 'SG3\claude', '(F)')
+Check 'L2 act: each line is numbered by its place in the file' @($r.Out | Where-Object { $_ -like 'grant=*' } | ForEach-Object { ($_ -split ':')[0] }) @('grant=1', 'grant=2')
 $null = Invoke-Act 'cstate' @{ StateDir = $stdir; Mode = 'remove'; Key = $kA; Before = '' }
 Check 'L2 act: remove takes only its line' (Get-Rec) @("$kB|")
 $null = Invoke-Act 'cstate' @{ StateDir = $stdir; Mode = 'remove'; Key = $kB; Before = '' }
@@ -836,7 +840,7 @@ function New-StateMock {
     $script:store = @(); $script:atGrant = @()
     $script:mock = { param($act, $vars)
         switch ($act) {
-            'cacls' { New-Res @{} @($script:store | ForEach-Object { "grant=$_" }) }
+            'cacls' { $i = 0; New-Res @{} @($script:store | ForEach-Object { $i++; "grant=${i}:$_" }) }
             'cstate' {
                 $script:store = @($script:store | Where-Object { -not $_.StartsWith("$($vars.Key)|") })
                 if ($vars.Mode -eq 'add') { $script:store += "$($vars.Key)|$($vars.Before)" }
@@ -890,11 +894,11 @@ if ($unix) {
     $rec = Join-Path $sim.Root 'st/acl-grants.txt'
     Set-Content -LiteralPath $rec -Value @("$($sim.Msys)|SIMHOST\sim|(OI)(CI)(RX)", 'garbage', '|x')
     $r = Invoke-Sim $sim @('-Check', '-GitUserName', 'T', '-GitUserEmail', 't@example.com')
-    Check 'L2 sim -Check: it warns, exits 0 and leaves the record and the ACL alone' @($r.Code, [bool](Get-Step $r 'msys2-acl' | Where-Object { $_ -like '*SIMHOST\sim still has the Modify grant on *' }), (@(Get-Content -LiteralPath $rec).Count), (-not (Test-Path (Join-Path $sim.Cfg 'icacls.log') -PathType Leaf) -or -not (@(Get-Content -LiteralPath (Join-Path $sim.Cfg 'icacls.log')) -match '/remove:g'))) @(0, $true, 3, $true)
+    Check 'L2 sim -Check: it warns, exits 0 and leaves the record and the ACL alone' @($r.Code, [bool](Get-Steps $r 'msys2-acl' | Where-Object { $_ -like '*SIMHOST\sim still has the Modify grant on *' }), (@(Get-Content -LiteralPath $rec).Count), (-not (Test-Path (Join-Path $sim.Cfg 'icacls.log') -PathType Leaf) -or -not (@(Get-Content -LiteralPath (Join-Path $sim.Cfg 'icacls.log')) -match '/remove:g'))) @(0, $true, 3, $true)
     $r = Invoke-Sim $sim @('-GitUserName', 'T', '-GitUserEmail', 't@example.com')
     $log = @(Get-Content -LiteralPath (Join-Path $sim.Cfg 'icacls.log'))
     Check 'L2 sim run: the take-back ran (remove, then restore) and the record line is gone, junk is left' @(($log -match '/remove:g SIMHOST\\sim').Count, ($log -match '/grant:r SIMHOST\\sim:\(OI\)\(CI\)\(RX\)').Count, @(Get-Content -LiteralPath $rec).Count, (@(Get-Content -LiteralPath $rec) -contains 'garbage')) @(1, 1, 2, $true)
-    Check 'L2 sim run: the step says so and the run is ok' @([bool](Get-Step $r 'msys2-acl' | Where-Object { $_ -like '*took back the Modify grant for SIMHOST\sim*' }), $r.Code) @($true, 0)
+    Check 'L2 sim run: the step says so and the run is ok' @([bool](Get-Steps $r 'msys2-acl' | Where-Object { $_ -like '*took back the Modify grant for SIMHOST\sim*' }), $r.Code) @($true, 0)
     $r = Invoke-Sim $sim @('-GitUserName', 'T', '-GitUserEmail', 't@example.com')
     Check 'L2 sim rerun: nothing more to take back' @((@(Get-Content -LiteralPath (Join-Path $sim.Cfg 'icacls.log')) -match '/remove:g').Count, $r.Code) @(1, 0)
 }
@@ -904,6 +908,137 @@ $doc = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../docs/changes/f-c-to
 Check 'L4: the docs say 5.1 reformats a merged CMakeUserPresets.json' ($doc -match '(?s)reformat.{0,200}CMakeUserPresets\.json|CMakeUserPresets\.json.{0,200}reformat') $true
 Check 'L4: and say the content is the same' ($doc -match 'same content') $true
 Check 'L4: the merge itself keeps the content whatever the layout' ((ConvertFrom-Json (Merge-Presets '{"version":4,"configurePresets":[{"name":"mine","cacheVariables":{"A":"b"}}]}' $json).Text).configurePresets[0].cacheVariables.A) 'b'
+
+
+# ── M1: the grant record is not believed, and every printed command is quoted in one place ──────────────────────────
+
+# A printed line, parsed by the PowerShell parser the way a person pasting it would run it. $null unless it is exactly one command with no
+# subexpression, no variable, no script block and no second statement. Words are the program and each argument as the shell sees it.
+function Get-Cmd {
+    param([string] $Line)
+    $ns = 'System.Management.Automation.Language'
+    $errs = $null; $toks = $null
+    $ast = [System.Management.Automation.Language.Parser]::ParseInput($Line, [ref]$toks, [ref]$errs)
+    if ($errs.Count) { return $null }
+    $st = @($ast.EndBlock.Statements)
+    if ($st.Count -ne 1 -or $st[0] -isnot [System.Management.Automation.Language.PipelineAst] -or $st[0].PipelineElements.Count -ne 1) { return $null }
+    $c = $st[0].PipelineElements[0]
+    if ($c -isnot [System.Management.Automation.Language.CommandAst]) { return $null }
+    $bad = $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.SubExpressionAst] -or $n -is [System.Management.Automation.Language.ExpandableStringExpressionAst] -or
+        $n -is [System.Management.Automation.Language.VariableExpressionAst] -or $n -is [System.Management.Automation.Language.ScriptBlockExpressionAst] -or
+        $n -is [System.Management.Automation.Language.ParenExpressionAst] -or $n -is [System.Management.Automation.Language.ArrayExpressionAst] }, $true)
+    if ($bad.Count) { return $null }
+    $words = @()
+    foreach ($e in $c.CommandElements) {
+        if ($e -is [System.Management.Automation.Language.StringConstantExpressionAst]) { $words += $e.Value }
+        elseif ($e -is [System.Management.Automation.Language.CommandParameterAst]) { $words += $e.Extent.Text }
+        else { return $null }
+    }
+    [pscustomobject]@{ Words = $words; Amp = ($c.InvocationOperator -eq 'Ampersand') }
+}
+function Show-Cmd { param([string] $Line) $c = Get-Cmd $Line; if ($c) { ($(if ($c.Amp) { '&' }) + ' ' + ($c.Words -join '<>')).Trim() } else { 'NOT ONE COMMAND' } }
+
+# the quoting function: an honest line, then every kind of value that must stay text
+Check 'M1 pasted: an honest icacls line is one command with the ACE whole' (Show-Cmd (Format-AdminCommand @('icacls', 'V:\work\tools\msys64', '/grant', 'SG3\claude:(OI)(CI)M'))) 'icacls<>V:\work\tools\msys64<>/grant<>SG3\claude:(OI)(CI)M'
+Check 'M1 pasted: the old unquoted form does not parse as one command (the bug this closes)' (Show-Cmd 'icacls V:\m /grant SG3\claude:(OI)(CI)M') 'NOT ONE COMMAND'
+$nasty = @('V:\m', 'a b', "it's", "it$([char]0x2019)s", "it$([char]0x2018)s", 'x$(Write-Output-INJECTED);calc.exe', 'a;calc.exe', 'a&calc.exe', 'a|calc.exe', '`calc', '$env:USERNAME', '(OI)(CI)(F) x', '@(1)', '{ calc }', "a`tb", "a`nb", '', 'SG3\at:(OI)(CI)RX', '--global', '-File', '#c', "a$([char]0x201C)b")
+foreach ($w in $nasty) {
+    $line = Format-AdminCommand @('icacls', $w, '/remove:g', 'x')
+    Check "M1 pasted: '$($w -replace "[`r`n`t]", ' ')' stays one literal argument" (Show-Cmd $line) ('icacls<>' + $w + '<>/remove:g<>x')
+}
+Check 'M1 pasted: a program that needs quoting is called with &, as one literal' (Show-Cmd (Format-AdminCommand @('V:\my tools\bash.exe', '-lc', 'pacman -S a b'))) '& V:\my tools\bash.exe<>-lc<>pacman -S a b'
+Check 'M1 pasted: the git identity and login lines' @((Show-Cmd (Format-AdminCommand @('git', 'config', '--global', 'user.name', 'Your Name'))), (Show-Cmd (Format-AdminCommand @('git', 'credential-manager', 'github', 'login')))) @('git<>config<>--global<>user.name<>Your Name', 'git<>credential-manager<>github<>login')
+Check 'M1 pasted: a trailing newline does not pass as a safe word' (Format-AdminCommand @('a', "b`n")) "a 'b`n'"
+
+# the ACE grammar, the one validator for what is given and what is read back
+foreach ($ok in '(OI)(CI)(RX)', '(F)', '(CI)(IO)(W)', '(I)(OI)(CI)(RX)', '(OI)(CI)(M)', '(NP)(F)', '(S,RD,AD)') { Check "M1 ace: '$ok' is an ACE" (Test-AceRaw $ok) $true }
+foreach ($no in '', '(OI)', '(OI)(CI)(F) x', "(F)`n", '(f)', '(OI)(CI)(F);calc', '$(x)', '(F)(M)', 'F', '(OI)(CI)(F)(F)', "(F)$([char]0x00A0)", '(OI) (F)', '(OI)(CI)(F) (RX)') { Check "M1 ace: '$($no -replace "`n", '\n')' is not" ([bool](Test-AceRaw $no)) $false }
+$threw = { param($b) try { & $b | Out-Null; $false } catch { $true } }
+Check 'M1 args: a restore with something that is not an ACE is refused' (& $threw { New-IcaclsArgs 'V:\m' 'a' 'restore' @('(F) x$(calc);calc.exe') }) $true
+Check 'M1 args: a grant of something that is not a right is refused' (& $threw { New-IcaclsArgs 'V:\m' 'a' 'grant' @('F;calc') }) $true
+Check 'M1 args: the rights the script itself grants are allowed' @((& $threw { New-IcaclsArgs 'V:\m' 'a' 'grant' @('RX') }), (& $threw { New-IcaclsArgs 'V:\m' 'a' 'grant' @('M') })) @($false, $false)
+
+# the record, forged
+$U = 'SG3\claude'; $D = 'V:\work\tools\msys64'
+$forged = @(
+    @('account', "1:$D|SG3\attacker|(OI)(CI)(F)"),
+    @('account that is only the name', "1:$D|claude|(OI)(CI)(F)"),
+    @('account of another domain', "1:$D|OTHER\claude|(OI)(CI)(F)"),
+    @('before', "1:$D|$U|(OI)(CI)(F) x"),
+    @('injection in before', "1:$D|$U|(OI)(CI)(F) x`$(Write-Output-INJECTED);calc.exe"),
+    @('the reviewer line', "1:$D|SG3\attacker|(OI)(CI)(F) x`$(Write-Output-INJECTED);calc.exe"),
+    @('injection in the account', "1:$D|SG3\claude;calc.exe|(F)"),
+    @('semicolon after an ACE', "1:$D|$U|(F);calc"),
+    @('lower case ACE', "1:$D|$U|(f)"),
+    @('too few fields', "1:$D|$U"),
+    @('a tab in before', "1:$D|$U|(F)`t(M)"),
+    @('no number', "$D|SG3\attacker|(OI)(CI)(F)")
+)
+foreach ($f in $forged) {
+    $r = ConvertFrom-GrantRecord @($f[1]) $D $U
+    Check "M1 record: a forged $($f[0]) is Bad and never a grant" @($r.Grants.Count, $r.Bad.Count) @(0, 1)
+}
+$r = ConvertFrom-GrantRecord @("1:C:\other|$U|(F)", "2:${D}\sub|$U|(F)", "3:C:\x|SG3\attacker|(OI)(CI)(F) x`$(calc);calc.exe", "4:${D}2|$U|(F)") $D $U
+Check 'M1 record: a forged directory is never acted on and never printed' @($r.Grants.Count, $r.Bad.Count) @(0, 0)
+$r = ConvertFrom-GrantRecord @("1:$D|SG3\attacker|(OI)(CI)(F) x`$(Write-Output-INJECTED);calc.exe", "2:$D|$U|(F)", "3:$D|$U|(F) `$(calc);calc.exe") $D $U
+Check 'M1 record: honest and forged lines together, only the honest one is a grant' @(($r.Grants | ForEach-Object { $_.Line }), ($r.Bad -join '|' -replace '\(.*?\)', '()')) @('2', 'line 1 ()|line 3 ()')
+Check 'M1 record: what is said about a bad line has no command text in it, only a number and a short excerpt' @((($r.Bad -join ' ') -match 'calc|INJECTED'), (($r.Bad | ForEach-Object { $_.Length } | Measure-Object -Maximum).Maximum -le 40)) @($false, $true)
+$e = (ConvertFrom-GrantRecord @("9:ab$([char]27)[31m`r$([char]7)$([char]0x2028)cd|x") $D $U).Bad[0]
+Check 'M1 record: control characters are stripped from the excerpt' ($e -match '[\x00-\x1f\x7f-\x9f\u2028\u2029]') $false
+Check 'M1 record: and a very long line is cut' ((ConvertFrom-GrantRecord @("5:" + ('x' * 5000)) $D $U).Bad[0].Length -le 40) $true
+Check 'M1 record: the line number is the file line' (ConvertFrom-GrantRecord @("17:junk") $D $U).Bad[0] 'line 17 (junk)'
+
+# the flow: a forged record is never acted on, an honest one beside it still is
+$evil1 = "$mdir|SG3\attacker|(OI)(CI)(F) x`$(Write-Output-INJECTED);calc.exe"; $evil2 = "$mdir|SG3\claude|(OI)(CI)(F);calc"
+foreach ($chk in $false, $true) {
+    Reset-Flow $chk; New-StateMock; $script:store = @($evil1, $evil2); $script:cfail = $false; $script:drop = $false
+    $script:probe = { New-Probe -missing @() -writable $true -localai $false }
+    Invoke-CMsys2 6>$null | Out-Null
+    $w = @($script:steps | Where-Object { $_ -like 'msys2-acl warn *' })
+    Check "M1 flow$(if ($chk) { ' -Check' }): forged lines are never acted on, no icacls, no record change, no human item" @((Seq), $script:needs.Count, $script:store.Count, @($script:calls | Where-Object { $_.Act -in 'cacl', 'cstate' }).Count) @('cmsys', 0, 2, 0)
+    Check "M1 flow$(if ($chk) { ' -Check' }): one warn names both lines by number and echoes no command text" @($w.Count, [bool]($w[0] -like 'msys2-acl warn acl-grants.txt has 2 line(s) this script did not write*line 1 (*line 2 (*'), [bool]($w[0] -match 'calc|INJECTED')) @(1, $true, $false)
+}
+Reset-Flow; New-StateMock; $script:store = @($evil1, "$mdir|SG3\claude|(OI)(CI)(RX)"); $script:cfail = $false; $script:drop = $false
+$script:probe = { New-Probe -missing @() -writable $true -localai $false }
+Invoke-CMsys2 6>$null | Out-Null
+Check 'M1 flow: the honest line is taken back and the forged one touches nothing' @((Seq), [bool](@($script:calls | Where-Object { $_.Act -eq 'cacl' }).Vars.Ops -match 'attacker|calc'), $script:store.Count) @('cmsys,cacl,cstate,cmsys', $false, 1)
+
+# every printed command, from the flows that print them, is one command with the literal words, even for a directory with the nasty text in it
+$evilDir = 'V:\a b\$(Write-Output-INJECTED);calc.exe\it''s\msys64'
+Reset-Flow; New-StateMock; $script:cfail = $true; $script:drop = $false; $script:pacmanDone = $false
+$script:probe = { $pr = New-Probe -missing $allMissing -writable $false -localai $false; $pr.Kv['msys2.dir'] = $evilDir; $pr }
+Invoke-CMsys2 6>$null | Out-Null
+Check 'M1 printed: the refused Modify grant gives the icacls line and the pacman line, each one command' @(($script:needs | ForEach-Object { Show-Cmd $_ })) @("icacls<>$evilDir<>/grant<>SG3\claude:(OI)(CI)M", "& $evilDir\usr\bin\bash.exe<>-lc<>pacman -S --needed --noconfirm $($script:CPackages -join ' ')")
+Reset-Flow; New-StateMock; $script:store = @("$mdir|SG3\claude|(OI)(CI)(RX) (CI)(IO)(W)"); $script:cfail = $true; $script:probe = { New-Probe -missing @() -writable $true -localai $false }
+Invoke-CMsys2 6>$null | Out-Null
+Check 'M1 printed: a refused take-back gives the two icacls lines, each one command with the ACEs whole' @(($script:needs | ForEach-Object { Show-Cmd $_ })) @("icacls<>$mdir<>/remove:g<>SG3\claude", "icacls<>$mdir<>/grant:r<>SG3\claude:(OI)(CI)(RX)<>/grant<>SG3\claude:(CI)(IO)(W)")
+Reset-Flow; New-StateMock; $script:cfail = $false; $script:drop = $false; $script:pacmanDone = $false; $script:Target = 'u@sg3'; $script:Msys2Dir = ''
+$script:probe = { $pr = New-Probe -missing @() -writable $true; $pr.Kv['msys2.dir'] = $evilDir; $pr }
+Invoke-CMsys2 6>$null | Out-Null
+Check 'M1 printed: the line for another runner account is one command, the directory a literal' @(($script:needs | ForEach-Object { Show-Cmd $_ })) @("pwsh<>-File<>scripts\room-toolchain.ps1<>localai@sg3<>-Profile<>c<>-Msys2Dir<>$evilDir")
+
+# one place: nothing prints a command by itself
+Check 'M1 static: the old icacls formatter is gone' ([bool](Get-Command Format-IcaclsCommand -ErrorAction SilentlyContinue)) $false
+$needCalls = @($mainAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] -and $n.GetCommandName() -eq 'Need' }, $true))
+Check 'M1 static: Need is called from the places that need a person' ($needCalls.Count -ge 8) $true
+Check 'M1 static: no caller gives its commands as a string' @($needCalls | Where-Object { $a = $_.CommandElements[-1]; $a -is [System.Management.Automation.Language.StringConstantExpressionAst] -or $a -is [System.Management.Automation.Language.ExpandableStringExpressionAst] }).Count 0
+Reset-Flow
+Check 'M1 static: Need refuses a command that is a string' (& $threw { Need 'x' 'y' @('git config --global user.name "a"') }) $true
+Reset-Flow; Need 'x' 'y' @(, @('git', 'config', '--global', 'user.name', 'A B'))
+Check 'M1 static: and Need prints and keeps what Format-AdminCommand made' @($script:needs) @("git config --global user.name 'A B'")
+
+# the simulated room: a forged record on the room is not acted on and not printed
+if ($unix) {
+    $sim = New-Sim
+    $rec = Join-Path $sim.Root 'st/acl-grants.txt'
+    Set-Content -LiteralPath $rec -Value @("$($sim.Msys)|SIMHOST\attacker|(OI)(CI)(F) x`$(Write-Output-INJECTED);calc.exe", "$($sim.Msys)|SIMHOST\sim|(OI)(CI)(F) y;calc.exe")
+    foreach ($chk in $true, $false) {
+        $r = Invoke-Sim $sim @(if ($chk) { '-Check' }; '-GitUserName', 'T', '-GitUserEmail', 't@example.com')
+        $icl = if (Test-Path (Join-Path $sim.Cfg 'icacls.log')) { @(Get-Content -LiteralPath (Join-Path $sim.Cfg 'icacls.log') | Where-Object { $_ -match '/grant|/remove|attacker|calc' }) } else { @() }
+        Check "sim M1 $(if ($chk) { '-Check' } else { 'run' }): no icacls ran for the forged lines, the record is untouched, nothing with calc.exe in the output" @($icl.Count, @(Get-Content -LiteralPath $rec).Count, [bool](($r.Out -join "`n") -match 'calc|INJECTED'), $r.Code) @(0, 2, $false, 0)
+        Check "sim M1 $(if ($chk) { '-Check' } else { 'run' }): it warns about the two lines by number" ([bool](Get-Steps $r 'msys2-acl' | Where-Object { $_ -like '*acl-grants.txt has 2 line(s) this script did not write*line 1 (*line 2 (*' })) $true
+    }
+}
 
 
 } finally {
