@@ -34,3 +34,19 @@ Verdict: OK e4b7653c..239be6ba, hub-ok and room-ok.
 
 Quality: after the Sonnet switch, a tidy change that fits the growler-off world, where the bell is the surface. The
 lows are a test assertion and a repaint.
+
+## Re-read at 2b7eaa5d (2026-10-02): OK e4b7653c..2b7eaa5d
+
+Both lows are closed.
+- `growlApply` repaints an open bell (`#toastlog.open`, not on the seed). `openToastLog` already guards
+  `showModal` on an open dialog.
+- `growlRemind` now feeds a snoozed row with an `until` and asserts "reminding in 3 h" and no menu. When the growler
+  comes back open, it asserts that the control returns without a reopen.
+
+Two side effects of the repaint, low, for a later touch:
+- `openToastLog` marks the log seen, so every growl event while the bell is open resets the "new" highlight under
+  the reader, against its own comment ("does not clear under you while you read it"). Split a repaint from an open,
+  so the repaint skips the seen mark.
+- The list is rebuilt, so a reader's scroll position can jump. Keep `scrollTop` across the repaint.
+
+Verdict: OK e4b7653c..2b7eaa5d, hub-ok and room-ok.
