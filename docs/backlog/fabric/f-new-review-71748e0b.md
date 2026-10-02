@@ -1,0 +1,162 @@
+# Review: f-room-accounts 71748e0b
+
+Range `47820430..71748e0b`, one commit. It adds `scripts/room-account.ps1`, which the three scripts below call, and
+`docs/room-accounts.md`. The callers are `provision-room.ps1` (`account-rights`), `room-toolchain.ps1` (`account`) and
+`room-check.ps1` (an `account` row).
+
+Verdict: **HOLD** on M1. On Windows a non-elevated admin reads as `ok`, which is the wrong `ok` the brief ranks worst.
+The other points pass, or have a Medium or Low below.
+
+## How it was checked
+
+- I read `room-account.ps1`, the three call-site diffs, `test-room-account.ps1` and the doc at the tip.
+- I ran `pwsh -File scripts/test-room-account.ps1` from a detached worktree at 71748e0b: 94 of 126 ok.
+  - All 32 failures are in the fake-ssh toolchain and provision runs, plus the real-probe `sudo.rc` check.
+  - That is the sandbox class in REVIEWER-NOTES: no exec from `$TMPDIR`. For those parts I rely on @fabric's counts.
+- On this Mac, `sudo -n -l </dev/null` returns rc 1 with "a password is required" and no prompt, as designed.
+
+## Findings
+
+### M1 (HOLD): a filtered Windows token hides Administrators, so a non-elevated admin is `ok`
+
+`WindowsIdentity.Groups` returns only the groups whose attributes, masked with ENABLED, LOGON_ID and USE_FOR_DENY_ONLY,
+equal ENABLED. Deny-only groups are skipped.
+
+Under UAC, the filtered token of an admin carries Administrators (S-1-5-32-544) as deny-only. Domain Admins and
+Enterprise Admins are deny-only as well. `IsInRole(Administrator)` is False for the same reason. So for an admin
+account in a non-elevated session, the probe returns:
+
+- `elevated=False`
+- a `sids=` list with no 544, 512 or 519
+
+`Get-AccountVerdict` then finds no reason, and the line says
+`ok ...: not elevated, not in an admin group, not the operator's account`.
+
+Where this happens:
+
+- `room-toolchain.ps1 local` run from an ordinary desktop shell;
+- `room-check.ps1` run the same way;
+- a room started by its logon task without "run with highest privileges".
+
+These are the cases where the operator is most likely the admin. Over Windows OpenSSH an admin usually gets the full
+token (elevated=True), so the remote path mostly warns correctly. That is how the tests and the doc came out right
+for sg3.
+
+Three things say otherwise and are wrong:
+
+- the script comment, which says a filtered token still lists Administrators;
+- the check `win: a filtered token is still a member`, whose fixture has 544 in the list together with
+  `elevated=False`, a pair .NET never produces;
+- the doc, which says membership is matched by SID.
+
+The `with a filtered token` reason branch is unreachable in practice.
+
+Fix: read the groups including deny-only ones. Any of these works, and each is read-only:
+
+- `whoami /groups /fo csv /nh`, taking column 3, the SID;
+- a P/Invoke of `GetTokenInformation(TokenGroups)` without the filter;
+- `GetTokenInformation(TokenLinkedToken)`, to look at the elevated half.
+
+`whoami` is the smallest. It is present on every supported Windows and is locale-proof once read by SID. Also:
+
+- change the fixture to what a filtered token really yields;
+- add a check that a deny-only 544 from the new source warns;
+- mutation-check that dropping the deny-only source turns the check red.
+
+### M2: Unix false negatives, the cheap ones
+
+The doc says "`sudo -n -l` working without a password" warns. The code warns only when that output also matches
+`NOPASSWD: ALL` or `(…) ALL`.
+
+`sudo -n -l` with rc 0 and no cached credential means some rule is NOPASSWD. A narrow-looking NOPASSWD rule is still
+root when the command takes a shell escape: `vim`, `less`, `find`, `tar`, `systemctl`, `docker`, `pip`, any script the
+user can write. Test 70 (`sudo that works for one named command is fine`) asserts the wrong `ok`.
+
+Fix: warn on any `sudo.rc=0`, and keep the ALL and NOPASSWD wording as the more specific reason. The cost is a warn
+for an account that has, for example, `NOPASSWD: /usr/bin/systemctl restart x`. That trade fits the brief: a wrong
+`ok` is worse than a wrong warn.
+
+On Linux, `docker`, `lxd` (and `incus-admin`) and `libvirt` are root-equivalent: `docker run -v /:/h` takes the host.
+Test 66 (`docker alone is not on the list`) is a deliberate choice, and it lands on the wrong side of the same trade.
+Add them, with a reason that says why, for example `is in the group docker (root on this host)`.
+
+### L1: `sudo -n -l` has no time cap
+
+`-n` stops a prompt, but sudo can still wait on the network to resolve the host or reach LDAP or SSSD. That is a known
+slow path on a machine with a dead directory server. The ssh call itself has no timeout in `Invoke-AccountStep`
+either.
+
+Fix: put `timeout 10` in front where it exists (Linux coreutils; macOS has none), or cap the ssh call. If the probe is
+cut off, the result should read as the unknown warn, which is already handled.
+
+### L2: the `sudo.all` reason overstates
+
+`can run sudo with no password prompt (sudo -n -l lists ALL)` fires on rc 0 with `(ALL) ALL`. That case is either a
+cached credential or a rule with a password. Say what was seen instead, for example
+`can run any command with sudo (sudo -n -l lists ALL)`.
+
+### L3: other root-equivalent Windows groups are not checked
+
+Backup Operators (S-1-5-32-551) can read every file. Hyper-V Administrators (S-1-5-32-578) can mount any disk. Server
+Operators (549) and Account Operators (548) are more on a domain controller. This is optional, but 551 is worth a
+reason line.
+
+### L4: the doc's Linux shared-folder line sets setgid on files
+
+`chmod -R g+rwXs /srv/work` puts `s` on every regular file as well, and an executable file that is setgid `work` runs
+as that group. The intent is setgid directories, so new files inherit the group:
+
+```sh
+sudo chgrp -R work /srv/work && sudo chmod -R g+rwX /srv/work && sudo find /srv/work -type d -exec chmod g+s {} +
+```
+
+### L5: small doc points
+
+- **Windows:** if a folder called `C:\Users\claude` already exists, the first logon via `runas` creates
+  `C:\Users\claude.SG3`. One clause in the doc would cover it: "if the profile landed elsewhere, use that path".
+- **Windows:** `Add-LocalGroupMember -SID S-1-5-32-545` errors when the account is already in Users. The error is
+  harmless, but it is red ink in a "paste this" block.
+- **macOS:** `systemsetup -setremotelogin on` needs Full Disk Access for the terminal on current macOS, or it errors.
+  The doc should say so, or point to System Settings > General > Sharing > Remote Login.
+- **Linux:** `sudo -n -l` leaves a line in the auth log on Linux as well. The doc says "sudo logs it like any use",
+  which is right. Keep it.
+
+## The five points
+
+1. **Read-only probes.** Pass, apart from L1.
+   - Neither probe takes an interpolated value. The tests prove there is no `$Target`, `$User` or `$Prefix`, so no
+     quoting is needed.
+   - The only sudo is `sudo -n -l </dev/null`, and nothing in either probe writes.
+   - Output is only the matched reason. The checks that no group is dumped hold.
+2. **Detection.**
+   - SIDs: pass. 544 is matched exactly, and 512 and 519 are matched by their whole RID: `5120` and `1512` do not
+     match. A domain group named Administrators (`-1105`) does not match.
+   - uid 0 and the group lists: pass.
+   - Filtered token: fail, M1.
+   - False negatives on Unix: M2.
+3. **Operator heuristic.** Pass. The doc says what it catches, and it says it cannot see your own account on another
+   machine. Nothing under the home is read, and the probe reads only `id`, `uname -n`, the token and `sudo -l`.
+4. **Exit codes and paths.** Pass.
+   - Only `Refuse` exits: `provision-room.ps1` with 6, `room-toolchain.ps1` with 1.
+   - `account-rights` is skipped on `-Remove`, `-Restart` and `-SmokeOnly`.
+   - The `room-check.ps1` row is never unmet and never takes Require.
+   - Giving both flags is an argument error.
+   - A clean account adds one `ok` line. That is per @fabric's fake-ssh runs; here those runs stop at the sandbox.
+5. **The doc.** M1 makes its Windows membership claim untrue until fixed, and M2 does the same for its `sudo -n -l`
+   claim. Otherwise:
+   - Commands: no password reaches history (`Read-Host -AsSecureString`, `sysadminctl -password -`), and no secrets.
+     The `com.apple.access_ssh` block adds the operator before it can lock them out, and says why.
+   - Lock-out: Deny log on applies to `claude` only, and the doc says to settle the restart first.
+   - The admin-keys trap is right: for an Administrators member, `sshd`'s default `Match Group administrators` reads
+     `administrators_authorized_keys`, which must be owned only by SYSTEM and Administrators.
+   - The `authorized_keys` ACL by SID is right.
+   - Voice: fine. The real-names scenario uses the room and account names already in the repo, and no private paths.
+
+## To close the hold
+
+- M1 with its fixture and the mutation check.
+- M2, or a reply giving the reason to keep test 70 and test 66 as they are, which I would then note as accepted.
+- The Lows can ride along or follow.
+
+Atrium-Verdict: hold 47820430..71748e0b
+Quality: careful work and honest testing. The hold is one .NET fact that the fixture assumed the wrong way.
