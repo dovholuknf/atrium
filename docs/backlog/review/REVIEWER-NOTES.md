@@ -10,7 +10,8 @@ on. They are kept short: one line of what, one of where. Add to it when a review
   is the check.
 - **A tool run in a PR's checkout loads the PR's own config or code:** claude `.claude/settings.json` hooks
   (r-pr-run), and opencode `.opencode/plugins/` (token routing). Run in `<run>/work`, with no project sources, and
-  prove it with a marker.
+  prove it with a marker. Persona and agent files too: Claude loads project `.claude/agents/`, so a persona is read
+  only from the room's `~/.claude/agents`.
 - **A timeout on a parent is not a timeout on its output pipe.** Pipe plus ReadAll blocks while any child holds
   stdout, and a Windows `.cmd` shim makes the child the default case (r-opencode-bubbles). Use a capped writer,
   `WaitDelay` and a tree kill.
@@ -30,6 +31,8 @@ on. They are kept short: one line of what, one of where. Add to it when a review
   `restart_atrium` respawns `atrium daemon --db` (r-new-sec-daemon-wide-bind).
 - dovholuknf/atrium is **public**. Verbatim quotes of clint, third parties' messages, credential states and private
   paths do not go in it. Factory log entries are held until clint decides where the log lives.
+- The permission skip lists (Go `permSkipTools`, the dotfiles `atrium-perm-hook.ps1`) still say `Task`; Claude Code
+  now calls it `Agent`.
 - deployready matches only `hub-ok|room-ok|hold`, so `doc-ok` on design reviews is ignored by it.
 - claude's `--autocompact` is a hard startup error outside 100k-1M, and an unknown option is fatal on an older
   claude.
