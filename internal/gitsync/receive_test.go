@@ -1058,7 +1058,8 @@ func TestAMirrorIsNotServedOrPushedThroughTheStoreRoute(t *testing.T) {
 	}
 }
 
-func TestAnAdoptedMirrorTakesPushesFromTheOperatorOnly(t *testing.T) {
+// NOBODY PUSHES INTO AN ADOPTED MIRROR, the operator included: the mirror pass force-fetches the checkout over it.
+func TestNobodyPushesIntoAnAdoptedMirrorAndEveryoneCanFetchIt(t *testing.T) {
 	x := newRecv(t)
 	ref, _ := ParseName("github/m/mirror")
 	dir := x.h.Store().dir(ref)
@@ -1070,20 +1071,38 @@ func TestAnAdoptedMirrorTakesPushesFromTheOperatorOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 	x.branch("fix/x", "x.txt")
-	out, err := x.push(roomCard("sg4", "C1"), "github/m/mirror", "fix/x:refs/heads/fix/x")
-	if err == nil || !strings.Contains(out, "only the operator pushes") {
-		t.Fatalf("a card pushed into an adopted mirror: %v\n%s", err, out)
+	for name, w := range map[string]who{"a card": roomCard("sg4", "C1"), "the operator": operator} {
+		out, err := x.push(w, "github/m/mirror", "fix/x:refs/heads/fix/x")
+		if err == nil || !strings.Contains(out, "a push cannot land there") {
+			t.Fatalf("%s pushed into an adopted mirror: %v\n%s", name, err, out)
+		}
+		if refs, _ := Default.Git(bg, dir, "for-each-ref"); strings.TrimSpace(refs) != "" {
+			t.Fatalf("an adopted mirror got refs from %s: %s", name, refs)
+		}
+		if n := len(x.rows()); n != 0 {
+			t.Fatalf("%s left rows in the log: %+v", name, x.rows())
+		}
 	}
-	if refs, _ := Default.Git(bg, dir, "for-each-ref"); strings.TrimSpace(refs) != "" {
-		t.Fatalf("an adopted mirror got refs from a card: %s", refs)
+	// The advertisement for a push says so up front, to the operator as to a card.
+	for name, w := range map[string]who{"a card": roomCard("sg4", "C1"), "the operator": operator} {
+		if code, adv := x.getRefs(w, "github/m/mirror", "git-receive-pack"); code != 200 || !strings.Contains(adv, "ERR atrium: ") {
+			t.Fatalf("the advertisement for %s: %d %q", name, code, adv)
+		}
 	}
-	x.must(x.push(operator, "github/m/mirror", "fix/x:refs/heads/fix/x"))
-	if x.refOn("github/m/mirror", "refs/heads/fix/x") == "" {
-		t.Fatal("the operator's push did not land")
+	// And a push that never asked for the advertisement is refused at the push itself.
+	zero := strings.Repeat("0", 40)
+	for name, w := range map[string]who{"a card": roomCard("sg4", "C1"), "the operator": operator} {
+		code, out := x.post(w, "github/m/mirror", "git-receive-pack", "application/x-git-receive-pack-request",
+			pushBody(zero+" "+sha1a+" refs/heads/fix/a\x00report-status side-band-64k"))
+		if code != 200 || !strings.Contains(out, "a push cannot land there") {
+			t.Fatalf("a hand-built push by %s: %d %q", name, code, out)
+		}
 	}
-	// Fetching it works for a room.
-	if code, _ := x.getRefs(roomCard("sg4", "C1"), "github/m/mirror", "git-upload-pack"); code != 200 {
-		t.Fatalf("fetching an adopted mirror: %d", code)
+	// Fetching it works for a room and for the operator.
+	for _, w := range []who{roomCard("sg4", "C1"), operator} {
+		if code, _ := x.getRefs(w, "github/m/mirror", "git-upload-pack"); code != 200 {
+			t.Fatalf("fetching an adopted mirror: %d", code)
+		}
 	}
 }
 
@@ -1211,24 +1230,184 @@ func TestARepositorysOwnHookAndConfigAreNotUsed(t *testing.T) {
 
 // ── the log ─────────────────────────────────────────────
 
-func TestAPushThatCannotBeLoggedIsUndone(t *testing.T) {
+// A PUSH THE LOG CANNOT BEGIN IS NOT TAKEN: the row is written before git runs.
+func TestAPushTheLogCannotBeginMovesNothing(t *testing.T) {
 	x := newRecv(t)
 	x.seedMain(hubRepo)
 	x.branch("fix/x", "x.txt")
-	x.log.FailAppend = errors.New("disk full")
+	x.log.FailBegin = errors.New("disk full")
 	out, err := x.push(roomCard("sg4", "C1"), hubRepo, "fix/x:refs/heads/fix/x")
-	if err == nil {
-		t.Fatalf("a push the hub could not record landed:\n%s", out)
+	if err == nil || !strings.Contains(out, "so it was not taken") {
+		t.Fatalf("a push the hub could not record landed: %v\n%s", err, out)
 	}
 	if got := x.refOn(hubRepo, "refs/heads/fix/x"); got != "" {
-		t.Fatalf("the ref stayed after the log failed: %s", got)
+		t.Fatalf("the ref moved though the log failed: %s", got)
 	}
-	x.log.FailAppend = nil
+	// A repository the push would have made is not left behind either.
+	x.create.Store(true)
+	if out, err := x.push(roomCard("sg4", "C1"), "github/o/new", "fix/x:refs/heads/fix/x"); err == nil {
+		t.Fatalf("a push to a new repository landed with no log:\n%s", out)
+	}
+	if _, err := os.Stat(x.h.Store().dir(Ref{Host: "github", Owner: "o", Repo: "new"})); err == nil {
+		t.Fatal("a repository was left by a push the log refused")
+	}
+	x.log.FailBegin = nil
 	x.must(x.push(roomCard("sg4", "C1"), hubRepo, "fix/x:refs/heads/fix/x"))
 	// With no log at all, nothing is taken.
 	x.h.PushLog = nil
 	if out, err := x.push(roomCard("sg4", "C1"), hubRepo, "fix/x:refs/heads/fix/y"); err == nil {
 		t.Fatalf("a hub with no log took a push:\n%s", out)
+	}
+}
+
+// A push git took and the log could not settle STAYS OWNED by its pusher, because the row is pending and counts, and
+// the next push to the repository settles it from the refs.
+func TestAPushTheLogCannotSettleStaysOwnedAndIsSettledByTheNextPush(t *testing.T) {
+	x := newRecv(t)
+	x.seedMain(hubRepo)
+	sha := x.branch("fix/x", "x.txt")
+	x.log.FailSettle = errors.New("disk full")
+	x.must(x.push(roomCard("sg4", "C1"), hubRepo, "fix/x:refs/heads/fix/x"))
+	if got := x.refOn(hubRepo, "refs/heads/fix/x"); got != sha {
+		t.Fatalf("the push did not land: %s", got)
+	}
+	if pend, _ := x.log.Pending(bg, hubRepo); len(pend) != 1 {
+		t.Fatalf("pending = %+v", pend)
+	}
+	// The pending row is the owner, and while the log still cannot settle, no other push to the repository goes in.
+	if room, card, ok, _ := x.log.Owner(bg, hubRepo, "refs/heads/fix/x"); !ok || room != "sg4" || card != "C1" {
+		t.Fatalf("a pending push is not the owner: %q %q %v", room, card, ok)
+	}
+	other := filepath.Join(t.TempDir(), "other")
+	x.must(x.run(t.TempDir(), operator, "clone", "-q", x.url(hubRepo), other))
+	git(t, other, "switch", "-q", "fix/x")
+	commit(t, other, "o.txt", "o")
+	if out, err := x.run(other, roomCard("m1mini", "D2"), "push", x.url(hubRepo), "fix/x:refs/heads/fix/x"); err == nil {
+		t.Fatalf("a push went in while the log could not settle:\n%s", out)
+	}
+	if got := x.refOn(hubRepo, "refs/heads/fix/x"); got != sha {
+		t.Fatalf("the branch moved: %s", got)
+	}
+	// The owner's next push settles the leftovers first.
+	x.log.FailSettle = nil
+	x.grow("fix/x", "x2.txt")
+	x.must(x.push(roomCard("sg4", "C1"), hubRepo, "fix/x:refs/heads/fix/x"))
+	if pend, _ := x.log.Pending(bg, ""); len(pend) != 0 {
+		t.Fatalf("still pending: %+v", pend)
+	}
+	if room, card, ok, _ := x.log.Owner(bg, hubRepo, "refs/heads/fix/x"); !ok || room != "sg4" || card != "C1" {
+		t.Fatalf("owner %q %q %v", room, card, ok)
+	}
+}
+
+// A HUB THAT DIED BETWEEN GIT MOVING A REF AND THE LOG KNOWING leaves a pending row. Until it is settled the branch is
+// owned (any card could otherwise take it), and settling it from the refs makes it done if the ref moved and drops it
+// if it did not, at startup or on the next push.
+func TestACrashBetweenGitAndTheLogLeavesTheBranchOwnedUntilStartupSettlesIt(t *testing.T) {
+	x := newRecv(t)
+	x.seedMain(hubRepo)
+	sha := x.branch("fix/x", "x.txt")
+	x.must(x.push(operator, hubRepo, "fix/x:refs/heads/tmp"))
+	dir, _ := x.h.Store().Path(hubRepo)
+	zero := strings.Repeat("0", 40)
+
+	// The pushed branch moved and the log was left pending, a second branch's row was pending and git never moved it.
+	git(t, dir, "update-ref", "refs/heads/fix/x", sha)
+	git(t, dir, "update-ref", "-d", "refs/heads/tmp")
+	_, err := x.log.Begin(bg, PushRow{Repo: hubRepo, Ref: "refs/heads/fix/x", Old: zero, New: sha, Room: "sg4", Card: "C1"},
+		PushRow{Repo: hubRepo, Ref: "refs/heads/fix/never", Old: zero, New: sha, Room: "sg4", Card: "C1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The branch is owned though no row is done, so another card cannot take it.
+	other := filepath.Join(t.TempDir(), "other")
+	x.must(x.run(t.TempDir(), operator, "clone", "-q", x.url(hubRepo), other))
+	git(t, other, "switch", "-q", "fix/x")
+	commit(t, other, "o.txt", "o")
+	out, err2 := x.run(other, roomCard("m1mini", "D2"), "push", x.url(hubRepo), "fix/x:refs/heads/fix/x")
+	if err2 == nil || !strings.Contains(out, "is owned by sg4's C1") {
+		t.Fatalf("a branch with a pending row was taken: %v\n%s", err2, out)
+	}
+
+	// Startup settles it from the refs.
+	if err := x.h.Reconcile(bg); err != nil {
+		t.Fatal(err)
+	}
+	if pend, _ := x.log.Pending(bg, ""); len(pend) != 0 {
+		t.Fatalf("still pending: %+v", pend)
+	}
+	if room, card, ok, _ := x.log.Owner(bg, hubRepo, "refs/heads/fix/x"); !ok || room != "sg4" || card != "C1" {
+		t.Fatalf("the moved branch: owner %q %q %v", room, card, ok)
+	}
+	if _, _, ok, _ := x.log.Owner(bg, hubRepo, "refs/heads/fix/never"); ok {
+		t.Fatal("a branch git never moved has an owner")
+	}
+	// Reconciling again does nothing. A repository that is gone drops what it had pending.
+	if err := x.h.Reconcile(bg); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := x.log.Begin(bg, PushRow{Repo: "github/o/gone", Ref: "refs/heads/x", New: sha, Room: "sg4", Card: "C1"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := x.h.Reconcile(bg); err != nil {
+		t.Fatal(err)
+	}
+	if pend, _ := x.log.Pending(bg, ""); len(pend) != 0 {
+		t.Fatalf("a missing repository's row is still pending: %+v", pend)
+	}
+}
+
+// THE FIRST PUSH TO A REPOSITORY settles what was left pending in it, with no startup in between.
+func TestTheNextPushToARepositorySettlesWhatACrashLeftPending(t *testing.T) {
+	x := newRecv(t)
+	x.seedMain(hubRepo)
+	sha := x.branch("fix/x", "x.txt")
+	x.must(x.push(operator, hubRepo, "fix/x:refs/heads/tmp"))
+	dir, _ := x.h.Store().Path(hubRepo)
+	git(t, dir, "update-ref", "refs/heads/fix/x", sha)
+	git(t, dir, "update-ref", "-d", "refs/heads/tmp")
+	if _, err := x.log.Begin(bg, PushRow{Repo: hubRepo, Ref: "refs/heads/fix/x", Old: strings.Repeat("0", 40), New: sha, Room: "sg4", Card: "C1"}); err != nil {
+		t.Fatal(err)
+	}
+	x.branch("fix/y", "y.txt")
+	x.must(x.push(roomCard("m1mini", "D2"), hubRepo, "fix/y:refs/heads/fix/y"))
+	if pend, _ := x.log.Pending(bg, ""); len(pend) != 0 {
+		t.Fatalf("still pending after a push to the repository: %+v", pend)
+	}
+	if room, card, ok, _ := x.log.Owner(bg, hubRepo, "refs/heads/fix/x"); !ok || room != "sg4" || card != "C1" {
+		t.Fatalf("owner of the branch the crash left: %q %q %v", room, card, ok)
+	}
+}
+
+// A TAKEOVER THAT GIT REFUSES RELEASES NOTHING: the release is written with the push row when it lands.
+func TestATakeoverGitRefusesReleasesNothing(t *testing.T) {
+	x := newRecv(t)
+	x.seedMain(hubRepo)
+	x.branch("fix/x", "x.txt")
+	x.must(x.push(roomCard("sg4", "C1"), hubRepo, "fix/x:refs/heads/fix/x"))
+	x.setCard("sg4", "C1", CardState{}, ErrCardGone)
+
+	// m1mini's card pushes a branch that is NOT a descendant of fix/x: the hub's rules let the takeover through (the
+	// owner is gone) and the hook refuses the non-fast-forward.
+	diverged := filepath.Join(t.TempDir(), "d")
+	x.must(x.run(t.TempDir(), operator, "clone", "-q", x.url(hubRepo), diverged))
+	git(t, diverged, "switch", "-q", "-c", "fix/x2", "main")
+	commit(t, diverged, "d.txt", "d")
+	git(t, diverged, "branch", "-f", "fix/x", "fix/x2")
+	out, err := x.run(diverged, roomCard("m1mini", "D2"), "push", "--force", x.url(hubRepo), "fix/x:refs/heads/fix/x")
+	if err == nil {
+		t.Fatalf("a non-fast-forward takeover landed:\n%s", out)
+	}
+	if room, card, ok, _ := x.log.Owner(bg, hubRepo, "refs/heads/fix/x"); !ok || room != "sg4" || card != "C1" {
+		t.Fatalf("a refused takeover released the branch: owner %q %q %v", room, card, ok)
+	}
+	for _, r := range x.rows() {
+		if r.Release {
+			t.Fatalf("a refused push wrote a release: %+v", r)
+		}
+	}
+	if pend, _ := x.log.Pending(bg, ""); len(pend) != 0 {
+		t.Fatalf("pending: %+v", pend)
 	}
 }
 
@@ -1404,7 +1583,7 @@ func TestHandBuiltPushesAreRefusedBeforeGit(t *testing.T) {
 		t.Errorf("the advertisement for an adopted mirror: %d %q", code, adv)
 	}
 	out = post(card, "github/m/mirror", zero+" "+sha1a+" refs/heads/fix/a"+caps)
-	if !strings.Contains(out, "only the operator pushes") {
+	if !strings.Contains(out, "a push cannot land there") {
 		t.Errorf("a card posting into an adopted mirror: %q", out)
 	}
 }
@@ -1499,5 +1678,221 @@ func TestTwoCaseTwinRepositoriesMadeAtOnceLeaveOne(t *testing.T) {
 		if n != 1 {
 			t.Fatalf("round %d: %d owner directories", i, n)
 		}
+	}
+}
+
+// ── what the second review found ────────────────────────
+
+// A FEATURE LIST RIDES ON ANY COMMAND LINE, as git reads it, so a push-options or a sha256 on the second line is as
+// refused as on the first.
+func TestACapabilityOnAnyCommandLineIsHeldToTheSameChecks(t *testing.T) {
+	x := newRecv(t)
+	x.seedMain(hubRepo)
+	zero := strings.Repeat("0", 40)
+	card := roomCard("sg4", "C1")
+	for name, c := range map[string]struct{ second, want string }{
+		"push-options on the second line": {"\x00push-options", "push options are not taken"},
+		"sha256 on the second line":       {"\x00object-format=sha256", "sha1"},
+	} {
+		code, out := x.post(card, hubRepo, "git-receive-pack", "application/x-git-receive-pack-request",
+			pushBody(zero+" "+sha1a+" refs/heads/fix/a\x00report-status side-band-64k", zero+" "+sha1b+" refs/heads/fix/b"+c.second))
+		if code != 200 || !strings.Contains(out, c.want) {
+			t.Errorf("%s: %d %q", name, code, out)
+		}
+	}
+	// Both lines with a list, the refusal still reaches git as a sideband message.
+	code, out := x.post(card, hubRepo, "git-receive-pack", "application/x-git-receive-pack-request",
+		pushBody(zero+" "+sha1a+" refs/heads/fix/a\x00report-status side-band-64k", zero+" "+sha1b+" refs/heads/fix/b\x00ofs-delta push-options"))
+	if code != 200 || !strings.Contains(out, "atrium: ") {
+		t.Errorf("both lines: %d %q", code, out)
+	}
+	if x.refOn(hubRepo, "refs/heads/fix/a") != "" || x.refOn(hubRepo, "refs/heads/fix/b") != "" {
+		t.Fatal("a refused push moved a ref")
+	}
+}
+
+// ONE VALUE EACH. A forwarder that Adds to the card headers instead of setting them has a client's own value first,
+// and the hub refuses the request instead of letting the first win.
+func TestARepeatedCardHeaderIsRefused(t *testing.T) {
+	x := newRecv(t)
+	x.seedMain(hubRepo)
+	for name, hdr := range map[string][][2]string{
+		"card twice":        {{HeaderCard, "C1"}, {HeaderCard, "C2"}, {HeaderChain, "C1"}},
+		"chain twice":       {{HeaderCard, "C1"}, {HeaderChain, "C1"}, {HeaderChain, "C1,C0"}},
+		"card, as a casing": {{HeaderCard, "C1"}, {"x-atrium-card", "C2"}, {HeaderChain, "C1"}},
+	} {
+		req, _ := http.NewRequest(http.MethodGet, x.url(hubRepo)+"/info/refs?service=git-receive-pack", nil)
+		req.Header.Set("X-Test-Caller", "room:sg4")
+		for _, h := range hdr {
+			req.Header.Add(h[0], h[1])
+		}
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, _ := io.ReadAll(res.Body)
+		res.Body.Close()
+		if !strings.Contains(string(b), "ERR atrium: ") || !strings.Contains(string(b), "more than once") {
+			t.Errorf("%s, advertisement: %q", name, b)
+		}
+		// And the push itself, which is what counts.
+		zero := strings.Repeat("0", 40)
+		preq, _ := http.NewRequest(http.MethodPost, x.url(hubRepo)+"/git-receive-pack",
+			bytes.NewReader(pushBody(zero+" "+sha1a+" refs/heads/fix/a\x00report-status side-band-64k")))
+		preq.Header.Set("Content-Type", "application/x-git-receive-pack-request")
+		preq.Header.Set("X-Test-Caller", "room:sg4")
+		for _, h := range hdr {
+			preq.Header.Add(h[0], h[1])
+		}
+		pres, err := http.DefaultClient.Do(preq)
+		if err != nil {
+			t.Fatal(err)
+		}
+		pb, _ := io.ReadAll(pres.Body)
+		pres.Body.Close()
+		if !strings.Contains(string(pb), "more than once") {
+			t.Errorf("%s, push: %q", name, pb)
+		}
+	}
+	// One of each is fine.
+	x.branch("fix/x", "x.txt")
+	x.must(x.push(roomCard("sg4", "C1", "C1", "C0"), hubRepo, "fix/x:refs/heads/fix/x"))
+}
+
+// A PUSH ASKS AT MOST maxOwnerAsks ROOMS, and the owners it did not ask are treated as unreachable: the branch stays
+// owned, and the refusal says why.
+func TestAPushAsksOnlyAFewOwnersAndTheRestStayOwned(t *testing.T) {
+	x := newRecv(t)
+	x.seedMain(hubRepo)
+	var refs, specs []string
+	for i := 0; i < 12; i++ {
+		ref := fmt.Sprintf("refs/heads/fix/o%d", i)
+		refs = append(refs, ref)
+		specs = append(specs, "main:"+ref)
+		if err := x.log.Append(bg, PushRow{Repo: hubRepo, Ref: ref, Room: "sg4", Card: fmt.Sprintf("O%d", i)}); err != nil {
+			t.Fatal(err)
+		}
+		x.setCard("sg4", fmt.Sprintf("O%d", i), CardState{}, ErrCardGone)
+	}
+	out, err := x.push(roomCard("m1mini", "D2"), hubRepo, specs...)
+	if err == nil {
+		t.Fatalf("a push over owners nobody asked about landed:\n%s", out)
+	}
+	if got := x.asked.Load(); got != int32(maxOwnerAsks) {
+		t.Fatalf("%d owners were asked, at most %d are", got, maxOwnerAsks)
+	}
+	if !strings.Contains(out, "cannot reach sg4") {
+		t.Fatalf("the refusal does not say why:\n%s", out)
+	}
+	for _, ref := range refs {
+		if x.refOn(hubRepo, ref) != "" {
+			t.Fatalf("%s landed", ref)
+		}
+	}
+}
+
+// AND FOR AT MOST ownerAskTotal IN ALL, a room that does not answer taking the rest of it.
+func TestAPushAsksOwnersForABoundedTimeInAll(t *testing.T) {
+	x := newRecv(t)
+	x.seedMain(hubRepo)
+	old := ownerAskTotal
+	ownerAskTotal = 300 * time.Millisecond
+	t.Cleanup(func() { ownerAskTotal = old })
+	var asks atomic.Int32
+	x.h.Cards = func(ctx context.Context, room, card string) (CardState, error) {
+		asks.Add(1)
+		<-ctx.Done()
+		return CardState{}, ctx.Err()
+	}
+	var specs []string
+	for i := 0; i < 5; i++ {
+		ref := fmt.Sprintf("refs/heads/fix/o%d", i)
+		specs = append(specs, "main:"+ref)
+		if err := x.log.Append(bg, PushRow{Repo: hubRepo, Ref: ref, Room: "sg4", Card: fmt.Sprintf("O%d", i)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	start := time.Now()
+	out, err := x.push(roomCard("m1mini", "D2"), hubRepo, specs...)
+	if err == nil {
+		t.Fatalf("a push landed over owners who never answered:\n%s", out)
+	}
+	if took := time.Since(start); took > 4*time.Second {
+		t.Fatalf("the push took %s to be refused", took)
+	}
+	if got := asks.Load(); got != 1 {
+		t.Fatalf("%d owners were asked after the time was used up", got)
+	}
+	if !strings.Contains(out, "cannot reach sg4") {
+		t.Fatalf("the refusal does not say why:\n%s", out)
+	}
+}
+
+// THE NAME OF A REF IS CHECKED BEFORE THE REPOSITORY'S LOCK, one process per ref.
+func TestRefNamesAreCheckedBeforeTheRepositoryLockIsTaken(t *testing.T) {
+	x := newRecv(t)
+	x.seedMain(hubRepo)
+	x.branch("fix/x", "x.txt")
+	l := x.h.lock("store:" + strings.ToLower(hubRepo))
+	var calls, held atomic.Int32
+	inNameCheck = func() {
+		calls.Add(1)
+		if !l.TryLock() {
+			held.Add(1)
+			return
+		}
+		l.Unlock()
+	}
+	t.Cleanup(func() { inNameCheck = nil })
+	x.must(x.push(roomCard("sg4", "C1"), hubRepo, "fix/x:refs/heads/fix/x"))
+	if calls.Load() == 0 {
+		t.Fatal("no ref name was checked")
+	}
+	if held.Load() != 0 {
+		t.Fatal("a ref name was checked with the repository's lock held")
+	}
+}
+
+type lockProbe struct {
+	http.ResponseWriter
+	l    *sync.Mutex
+	held bool
+	n    int
+}
+
+func (p *lockProbe) note() {
+	p.n++
+	if !p.l.TryLock() {
+		p.held = true
+		return
+	}
+	p.l.Unlock()
+}
+func (p *lockProbe) WriteHeader(c int)           { p.note(); p.ResponseWriter.WriteHeader(c) }
+func (p *lockProbe) Write(b []byte) (int, error) { p.note(); return p.ResponseWriter.Write(b) }
+
+// THE ANSWER IS WRITTEN TO THE CLIENT AFTER THE LOCK IS LET GO, so a client that stops reading holds nothing.
+func TestTheAnswerIsWrittenAfterTheRepositoryLockIsReleased(t *testing.T) {
+	x := newRecv(t)
+	x.seedMain(hubRepo)
+	l := x.h.lock("store:" + strings.ToLower(hubRepo))
+	zero := strings.Repeat("0", 40)
+	// A push the hub's rules refuse under the lock (a card moving main), and one that lands.
+	body := pushBody(zero + " " + sha1a + " refs/heads/main\x00report-status side-band-64k")
+	req := httptest.NewRequest(http.MethodPost, StorePrefix+hubRepo+".git/git-receive-pack", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/x-git-receive-pack-request")
+	req.Header.Set(HeaderCard, "C1")
+	req.Header.Set(HeaderChain, "C1")
+	req = req.WithContext(WithCaller(req.Context(), Caller{Kind: CallerRoom, Room: "sg4"}))
+	probe := &lockProbe{ResponseWriter: httptest.NewRecorder(), l: l}
+	x.h.StoreHandler().ServeHTTP(probe, req)
+	if probe.n == 0 {
+		t.Fatal("nothing was written")
+	}
+	if probe.held {
+		t.Fatal("the answer was written with the repository's lock held")
+	}
+	if rec := probe.ResponseWriter.(*httptest.ResponseRecorder); !strings.Contains(rec.Body.String(), "only the operator moves main") {
+		t.Fatalf("the answer: %q", rec.Body.String())
 	}
 }

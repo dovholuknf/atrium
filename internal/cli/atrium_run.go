@@ -236,6 +236,11 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 		return on
 	}
 	h.GitStore = gitHub.StoreHandler()
+	// A push the hub died in the middle of is settled from the refs before anything is served: the log says
+	// pending, and git says whether the ref moved.
+	if err := gitHub.Reconcile(context.Background()); err != nil {
+		log.Printf("[hub] could not settle the pushes the last run left pending: %v", err)
+	}
 	if _, err := store.GitRepos(); err != nil {
 		// SAID AT STARTUP, and the hub then mirrors nothing rather than mirror a branch it
 		// should not.

@@ -343,7 +343,7 @@ func (rc *Receiver) advertisePush(w http.ResponseWriter, r *http.Request, ref Re
 		return
 	}
 	dir, ok := rc.dir(ref)
-	if ok && markerKind(dir) == KindAdopted && c.Kind != CallerOperator {
+	if ok && markerKind(dir) == KindAdopted {
 		adv(adoptedSentence(ref.Name()))
 		return
 	}
@@ -437,6 +437,12 @@ func (b *bufWriter) Write(p []byte) (int, error) {
 	return b.buf.Write(p)
 }
 
+// reset forgets what was written, for an answer that replaces what git said.
+func (b *bufWriter) reset() {
+	b.h, b.code = http.Header{}, 0
+	b.buf.Reset()
+}
+
 func (b *bufWriter) copyTo(w http.ResponseWriter) {
 	for k, v := range b.h {
 		w.Header()[k] = v
@@ -473,15 +479,25 @@ func (rc *Receiver) push(w http.ResponseWriter, r *http.Request, ref Ref, exe st
 		http.Error(w, "that is not a git push", http.StatusBadRequest)
 		return
 	}
+
+	// FROM HERE EVERYTHING IS ANSWERED INTO resp, AND WRITTEN TO THE CLIENT AFTER THE LOCK IS LET GO: a client that
+	// stops reading must not hold the repository. (Deferred first, so it runs after the unlock.)
+	resp := &bufWriter{h: http.Header{}}
+	defer resp.copyTo(w)
 	refuseAll := func(why string) {
 		bad := map[string]string{}
 		for _, u := range req.Updates {
 			bad[u.Ref] = why
 		}
 		rc.h.audit(c.Room, "git-hub-push-refused", fmt.Sprintf("%s refs=%d", ref.Name(), len(req.Updates)))
-		w.Header().Set("Content-Type", "application/x-git-receive-pack-result")
-		w.Header().Set("Cache-Control", "no-cache")
-		_, _ = w.Write(refusedPush(req, bad, why))
+		resp.reset()
+		resp.Header().Set("Content-Type", "application/x-git-receive-pack-result")
+		resp.Header().Set("Cache-Control", "no-cache")
+		_, _ = resp.Write(refusedPush(req, bad, why))
+	}
+	fail := func(code int, msg string) {
+		resp.reset()
+		http.Error(resp, msg, code)
 	}
 	if req.Why != "" {
 		refuseAll(req.Why)
@@ -494,12 +510,14 @@ func (rc *Receiver) push(w http.ResponseWriter, r *http.Request, ref Ref, exe st
 	}
 	hooks, err := rc.ensureHooks()
 	if err != nil {
-		http.Error(w, "the hub could not prepare to take that", http.StatusInternalServerError)
+		fail(http.StatusInternalServerError, "the hub could not prepare to take that")
 		return
 	}
 
-	// ASKED BEFORE THE LOCK: what the owners' rooms say about the cards that own the branches this push
-	// names. Re-read under the lock, and the answer is used only for the owner it was asked about.
+	// DONE BEFORE THE LOCK, none of it depends on what the lock holds: the verdict on each ref's name (a process
+	// per ref), and what the owners' rooms say about the cards that own the branches this push names. The owner
+	// is re-read under the lock, and an answer is used only for the owner it was asked about.
+	names := rc.checkNames(ctx, req)
 	asked := rc.askOwners(ctx, ref.Name(), who, req)
 
 	name := ref.Name()
@@ -515,25 +533,39 @@ func (rc *Receiver) push(w http.ResponseWriter, r *http.Request, ref Ref, exe st
 			ml.Lock()
 			defer ml.Unlock()
 		}
-		if markerKind(dir) == KindAdopted && !who.Operator {
+		// NOBODY PUSHES INTO AN ADOPTED MIRROR, the operator included: the mirror pass force-fetches over it.
+		if markerKind(dir) == KindAdopted {
 			refuseAll(adoptedSentence(name))
-			return
-		}
-		if cur, err = rc.readRefs(ctx, dir); err != nil {
-			http.Error(w, "the hub could not read that repository", http.StatusInternalServerError)
 			return
 		}
 	} else if why := rc.cannotCreate(ref, who.Operator); why != "" {
 		refuseAll(why)
 		return
 	}
+	// What a crash, or a Settle that failed, left pending in this repository is settled now, before this push
+	// reads who owns what.
+	leftDir := ""
+	if exists {
+		leftDir = dir
+	}
+	if err := rc.settleLeftovers(ctx, name, leftDir); err != nil {
+		fail(http.StatusInternalServerError, "the hub could not read its record of this repository")
+		return
+	}
+	if exists {
+		if cur, err = rc.readRefs(ctx, dir); err != nil {
+			fail(http.StatusInternalServerError, "the hub could not read that repository")
+			return
+		}
+	}
 
-	dec := rc.decide(ctx, name, who, req, cur, asked)
+	dec := rc.decide(ctx, name, who, req, cur, names, asked)
 	if len(dec.bad) > 0 {
 		rc.h.audit(who.Room, "git-hub-push-refused", fmt.Sprintf("%s refs=%d card=%s", name, len(req.Updates), who.Card))
-		w.Header().Set("Content-Type", "application/x-git-receive-pack-result")
-		w.Header().Set("Cache-Control", "no-cache")
-		_, _ = w.Write(refusedPush(req, dec.bad, dec.sentence()))
+		resp.reset()
+		resp.Header().Set("Content-Type", "application/x-git-receive-pack-result")
+		resp.Header().Set("Cache-Control", "no-cache")
+		_, _ = resp.Write(refusedPush(req, dec.bad, dec.sentence()))
 		return
 	}
 
@@ -562,11 +594,11 @@ func (rc *Receiver) push(w http.ResponseWriter, r *http.Request, ref Ref, exe st
 			refuseAll(ref.Name() + " cannot be made, because something is already at that name that the store did not make")
 			return
 		case mkErr != nil:
-			http.Error(w, "the hub could not make that repository", http.StatusInternalServerError)
+			fail(http.StatusInternalServerError, "the hub could not make that repository")
 			return
 		}
 		if err := rc.h.Store().create(ctx, dir); err != nil {
-			http.Error(w, "the hub could not make that repository", http.StatusInternalServerError)
+			fail(http.StatusInternalServerError, "the hub could not make that repository")
 			return
 		}
 		created = true
@@ -580,41 +612,14 @@ func (rc *Receiver) push(w http.ResponseWriter, r *http.Request, ref Ref, exe st
 		}
 	}()
 
-	// Releases first: a branch the pusher takes over has no owner from here, and the push row names the new one.
-	for _, rel := range dec.releases {
-		if err := rc.h.PushLog.Release(ctx, name, rel.ref, rel.by); err != nil {
-			http.Error(w, "the hub could not record that", http.StatusInternalServerError)
-			return
-		}
-		rc.h.audit(who.Room, "git-hub-branch-released", fmt.Sprintf("%s %s by=%s", name, rel.ref, rel.by))
-	}
-
-	if _, err := f.Seek(0, io.SeekStart); err != nil {
-		http.Error(w, "that push could not be read", http.StatusInternalServerError)
-		return
-	}
-	out := forGit(r, dir, "/git-receive-pack")
-	out.Body = f
-	out.ContentLength = size
-	out.TransferEncoding = nil
-	out.Header.Del("Transfer-Encoding")
-	out.Header.Del("Content-Encoding")
-	out.Header.Set("Content-Length", strconv.FormatInt(size, 10))
-
-	rec := &bufWriter{h: http.Header{}}
-	gitCGI(exe, dir, pushConfig(hooks), cgiEnv()).ServeHTTP(rec, out)
-
-	// THE REFS ARE THE RESULT. Whatever git said, a push is logged for exactly the refs that now hold the
-	// sha it asked for, and it is logged under the lock the check was made under.
-	after, err := rc.readRefs(ctx, dir)
-	if err != nil {
-		http.Error(w, "the hub could not read that repository", http.StatusInternalServerError)
-		return
-	}
-	var rows []PushRow
+	// THE PUSH IS WRITTEN PENDING BEFORE GIT RUNS. A pending row counts as the owner of its branch, so a hub that
+	// dies between git moving a ref and the row being settled leaves the branch owned, and startup settles it. A
+	// branch the pusher takes over carries what released it, and the release is written when the push lands, with
+	// the same transaction, so a push that git refuses releases nothing.
 	now := time.Now().UTC()
+	var rows []PushRow
 	for _, u := range req.Updates {
-		if after[u.Ref] != u.New || cur[u.Ref] == u.New {
+		if cur[u.Ref] == u.New {
 			continue
 		}
 		row := PushRow{Repo: name, Ref: u.Ref, Old: u.Old, New: u.New, Room: who.Room, Card: who.Card, At: now}
@@ -625,35 +630,136 @@ func (rc *Receiver) push(w http.ResponseWriter, r *http.Request, ref Ref, exe st
 		}
 		rows = append(rows, row)
 	}
+	batch := ""
 	if len(rows) > 0 {
-		moved = true
-		if err := rc.h.PushLog.Append(ctx, rows...); err != nil {
-			// NOT LOGGED MEANS NOT PUSHED. A ref that moved with no row would have no owner on record, so the
-			// refs go back to where they were.
-			rc.undo(ctx, dir, rows, cur)
+		if batch, err = rc.h.PushLog.Begin(ctx, rows...); err != nil {
 			rc.h.audit(who.Room, "git-hub-push-failed", fmt.Sprintf("%s the push log could not be written", name))
-			http.Error(w, "the hub could not record that push, so it was undone", http.StatusInternalServerError)
+			refuseAll("the hub could not record that push, so it was not taken. try again")
 			return
 		}
-		for _, row := range rows {
-			rc.h.audit(who.Room, "git-hub-push", fmt.Sprintf("%s %s %s..%s card=%s", name, row.Ref, short(row.Old), short(row.New), who.Card))
+	}
+
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		fail(http.StatusInternalServerError, "that push could not be read")
+		return
+	}
+	out := forGit(r, dir, "/git-receive-pack")
+	out.Body = f
+	out.ContentLength = size
+	out.TransferEncoding = nil
+	out.Header.Del("Transfer-Encoding")
+	out.Header.Del("Content-Encoding")
+	out.Header.Set("Content-Length", strconv.FormatInt(size, 10))
+
+	gitCGI(exe, dir, pushConfig(hooks), cgiEnv()).ServeHTTP(resp, out)
+
+	// THE REFS ARE THE RESULT. Whatever git said, a push is settled for exactly the refs that now hold the
+	// sha it asked for.
+	after, err := rc.readRefs(ctx, dir)
+	if err != nil {
+		// Left pending, counted as the owner, and settled by the next push to this repository or at startup.
+		moved = true
+		fail(http.StatusInternalServerError, "the hub could not read that repository")
+		return
+	}
+	var landed []string
+	for _, row := range rows {
+		if after[row.Ref] == row.New {
+			landed = append(landed, row.Ref)
 		}
-	} else {
+	}
+	moved = len(landed) > 0
+	if batch != "" {
+		if err := rc.h.PushLog.Settle(ctx, batch, landed...); err != nil {
+			// The rows stay pending. They count as owners, so nothing is lost, and the next push to this
+			// repository or a restart settles them from the refs.
+			rc.h.audit(who.Room, "git-hub-push-unsettled", fmt.Sprintf("%s refs=%d the push log could not settle it", name, len(landed)))
+			return
+		}
+	}
+	for _, row := range rows {
+		if after[row.Ref] != row.New {
+			continue
+		}
+		if row.ReleasedBy != "" {
+			rc.h.audit(who.Room, "git-hub-branch-released", fmt.Sprintf("%s %s by=%s", name, row.Ref, row.ReleasedBy))
+		}
+		rc.h.audit(who.Room, "git-hub-push", fmt.Sprintf("%s %s %s..%s card=%s", name, row.Ref, short(row.Old), short(row.New), who.Card))
+	}
+	if len(landed) == 0 && len(rows) > 0 {
 		rc.h.audit(who.Room, "git-hub-push-failed", fmt.Sprintf("%s refs=%d card=%s", name, len(req.Updates), who.Card))
 	}
-	rec.copyTo(w)
 }
 
-// undo puts refs back after a push that could not be logged.
-func (rc *Receiver) undo(ctx context.Context, dir string, rows []PushRow, before map[string]string) {
-	s := rc.h.Store()
-	for _, row := range rows {
-		if old := before[row.Ref]; old != "" {
-			_, _ = s.git(ctx, dir, "update-ref", row.Ref, old, row.New)
-		} else {
-			_, _ = s.git(ctx, dir, "update-ref", "-d", row.Ref, row.New)
+// settleLeftovers settles what a crash, or a Settle that failed, left pending in a repository. A pending row whose
+// ref now holds the sha it was to take is done, and anything else (the ref is where it was, or is not there, or the
+// repository is gone) is dropped. The repository's lock is held. dir is "" for a repository that is not on disk.
+func (rc *Receiver) settleLeftovers(ctx context.Context, repo, dir string) error {
+	pend, err := rc.h.PushLog.Pending(ctx, repo)
+	if err != nil || len(pend) == 0 {
+		return err
+	}
+	var cur map[string]string
+	if dir != "" {
+		if cur, err = rc.readRefs(ctx, dir); err != nil {
+			return err
 		}
 	}
+	landed := map[string][]string{}
+	var order []string
+	for _, r := range pend {
+		if _, seen := landed[r.Batch]; !seen {
+			order = append(order, r.Batch)
+			landed[r.Batch] = nil
+		}
+		if r.New != "" && cur[r.Ref] == r.New {
+			landed[r.Batch] = append(landed[r.Batch], r.Ref)
+		}
+	}
+	for _, b := range order {
+		if err := rc.h.PushLog.Settle(ctx, b, landed[b]...); err != nil {
+			return err
+		}
+		rc.h.audit("", "git-hub-push-reconciled", fmt.Sprintf("%s batch=%s taken=%d", repo, b, len(landed[b])))
+	}
+	return nil
+}
+
+// Reconcile settles every push the log still has pending, at startup: the hub may have died between git moving a
+// ref and the push being settled. Each repository is settled under its own lock.
+func (h *Hub) Reconcile(ctx context.Context) error {
+	if h.PushLog == nil {
+		return nil
+	}
+	pend, err := h.PushLog.Pending(ctx, "")
+	if err != nil || len(pend) == 0 {
+		return err
+	}
+	rc := &Receiver{h: h}
+	done := map[string]bool{}
+	for _, r := range pend {
+		if done[r.Repo] {
+			continue
+		}
+		done[r.Repo] = true
+		ref, err := ParseName(r.Repo)
+		if err != nil {
+			continue
+		}
+		func() {
+			l := h.lock("store:" + strings.ToLower(ref.Name()))
+			l.Lock()
+			defer l.Unlock()
+			dir, ok := rc.dir(ref)
+			if !ok {
+				dir = ""
+			}
+			if e := rc.settleLeftovers(ctx, r.Repo, dir); e != nil && err == nil {
+				err = e
+			}
+		}()
+	}
+	return err
 }
 
 // readRefs is every branch and tag in a repository, by full name.

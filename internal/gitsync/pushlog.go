@@ -3,6 +3,7 @@ package gitsync
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sort"
 	"sync"
 	"time"
@@ -22,11 +23,17 @@ type PushRow struct {
 	// owner that was released.
 	Room, Card string
 	At         time.Time
-	// ReleasedBy is, on a push, what released the branch this push then took over ("operator",
-	// "card gone", "card dead", "card done 8 days"), and on a marker the same. Empty otherwise.
+	// ReleasedBy is, on a push, what released the branch this push takes over ("operator", "card gone",
+	// "card dead", "card done 8 days", "moved to <card>"), and on a marker the same. Empty otherwise. On a pending
+	// row it is what Settle writes the marker for, once the push has landed.
 	ReleasedBy string
 	// Release marks a row that is no push: from here the branch has no owner until the next push.
 	Release bool
+	// Pending marks a push that was written before git ran and is not yet settled. It counts as the owner of its
+	// branch, so a hub that died between git moving the ref and the push being settled leaves a branch that is
+	// still owned. Batch groups the rows of one push. Both are set by the log.
+	Pending bool
+	Batch   string
 }
 
 // Operator says whether a row is the operator's.
@@ -46,28 +53,41 @@ type BranchRecord struct {
 
 // PushLog is the hub's record of what was pushed. Every method is safe for concurrent use. The hub
 // holds the repository's lock around a push, so within one repository the calls are in order.
+//
+// ROWS ARE ORDERED BY WHEN THEY WERE WRITTEN, never by a clock that can be behind: the owner of a ref is the first
+// push row after its latest release row, and a restart or a machine whose clock is behind must not reorder them.
 type PushLog interface {
-	// Append records rows, all or none.
-	Append(ctx context.Context, rows ...PushRow) error
-	// Owner is the first pusher of a ref since it was last released. ok is false for a ref with no
-	// owner: never pushed, or released.
+	// Begin writes a push as pending, before git runs, and answers the batch it is in. All rows or none.
+	Begin(ctx context.Context, rows ...PushRow) (batch string, err error)
+	// Settle ends a batch once git has answered. The pending row of each ref in landed becomes a push row, and
+	// when it names a ReleasedBy the owner it took the branch from is released first, in the same transaction.
+	// The pending rows of every other ref are dropped.
+	Settle(ctx context.Context, batch string, landed ...string) error
+	// Pending is the rows still pending in a repository, or in every repository when repo is empty. A batch is
+	// pending after a crash, or after Settle failed.
+	Pending(ctx context.Context, repo string) ([]PushRow, error)
+	// Owner is the first pusher of a ref since it was last released, a pending push counted. ok is false for
+	// a ref with no owner: never pushed, or released.
 	Owner(ctx context.Context, repo, ref string) (room, card string, ok bool, err error)
 	// Release ends the ownership of a ref. By says why: "operator", or what the card's room said.
 	Release(ctx context.Context, repo, ref, by string) error
 	// Branches is each ref of refs/heads the repository has rows for.
 	Branches(ctx context.Context, repo string) ([]BranchRecord, error)
-	// LastOperatorPush is the time of the operator's latest push to ref, and false when there was none.
+	// LastOperatorPush is the time of the operator's latest settled push to ref, and false when there was none.
 	LastOperatorPush(ctx context.Context, repo, ref string) (time.Time, bool, error)
 }
 
-// MemPushLog is a PushLog in memory.
+// MemPushLog is a PushLog in memory. Its rows are in the order they were written, which is the order the
+// hub's store keeps them in whatever its clock says.
 type MemPushLog struct {
-	mu   sync.Mutex
-	rows []PushRow
-	// Now is the clock. Nil is time.Now.
+	mu      sync.Mutex
+	rows    []PushRow
+	batches int
+	// Now is the clock for the time on a row. Nil is time.Now. It has no say in the order.
 	Now func() time.Time
-	// FailAppend, when set, is what Append answers. For tests of a log that cannot write.
-	FailAppend error
+	// FailAppend, FailBegin and FailSettle, when set, are what Append, Begin and Settle answer. For tests of a
+	// log that cannot write.
+	FailAppend, FailBegin, FailSettle error
 }
 
 func (m *MemPushLog) now() time.Time {
@@ -77,13 +97,14 @@ func (m *MemPushLog) now() time.Time {
 	return time.Now().UTC()
 }
 
-// Rows is a copy of every row, oldest first.
+// Rows is a copy of every row, oldest first, pending ones too.
 func (m *MemPushLog) Rows() []PushRow {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return append([]PushRow(nil), m.rows...)
 }
 
+// Append writes settled rows directly. The hub does not use it: it is for seeding a log in a test.
 func (m *MemPushLog) Append(_ context.Context, rows ...PushRow) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -99,7 +120,72 @@ func (m *MemPushLog) Append(_ context.Context, rows ...PushRow) error {
 	return nil
 }
 
-// ownerLocked is the first push after the latest release marker.
+func (m *MemPushLog) Begin(_ context.Context, rows ...PushRow) (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.FailBegin != nil {
+		return "", m.FailBegin
+	}
+	m.batches++
+	batch := fmt.Sprintf("b%d", m.batches)
+	for _, r := range rows {
+		if r.At.IsZero() {
+			r.At = m.now()
+		}
+		r.Pending, r.Batch, r.Release = true, batch, false
+		m.rows = append(m.rows, r)
+	}
+	return batch, nil
+}
+
+func (m *MemPushLog) Settle(_ context.Context, batch string, landed ...string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.FailSettle != nil {
+		return m.FailSettle
+	}
+	var mine, rest []PushRow
+	for _, r := range m.rows {
+		if r.Pending && r.Batch == batch {
+			mine = append(mine, r)
+		} else {
+			rest = append(rest, r)
+		}
+	}
+	m.rows = rest
+	did := map[string]bool{}
+	for _, ref := range landed {
+		did[ref] = true
+	}
+	for _, r := range mine {
+		if !did[r.Ref] {
+			continue
+		}
+		if r.ReleasedBy != "" {
+			if o, ok := m.ownerLocked(r.Repo, r.Ref); ok {
+				m.rows = append(m.rows, PushRow{Repo: r.Repo, Ref: r.Ref, Room: o.Room, Card: o.Card, At: m.now(),
+					ReleasedBy: r.ReleasedBy, Release: true})
+			}
+		}
+		r.Pending = false
+		m.rows = append(m.rows, r)
+	}
+	return nil
+}
+
+func (m *MemPushLog) Pending(_ context.Context, repo string) ([]PushRow, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []PushRow
+	for _, r := range m.rows {
+		if r.Pending && (repo == "" || r.Repo == repo) {
+			out = append(out, r)
+		}
+	}
+	return out, nil
+}
+
+// ownerLocked is the first push after the latest release marker, a pending one counted.
 func (m *MemPushLog) ownerLocked(repo, ref string) (PushRow, bool) {
 	var first PushRow
 	have := false
@@ -177,7 +263,7 @@ func (m *MemPushLog) LastOperatorPush(_ context.Context, repo, ref string) (time
 	var at time.Time
 	found := false
 	for _, r := range m.rows {
-		if r.Repo == repo && r.Ref == ref && r.Operator() && (!found || r.At.After(at)) {
+		if r.Repo == repo && r.Ref == ref && r.Operator() && !r.Pending && (!found || r.At.After(at)) {
 			at, found = r.At, true
 		}
 	}

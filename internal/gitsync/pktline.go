@@ -92,10 +92,10 @@ func parsePush(body []byte) (pushRequest, error) {
 			break
 		}
 		line := strings.TrimSuffix(string(data), "\n")
-		// The capabilities ride on the first line that has a NUL: shallow lines come ahead of the first
-		// command, and a push-cert line carries them itself.
-		if i := strings.IndexByte(line, 0); i >= 0 && req.Caps == nil {
-			req.Caps = strings.Fields(line[i+1:])
+		// A feature list rides after a NUL on ANY command line, as git's read_head_info reads it, and the checks
+		// below are made on all of them: the hub's view of a push has to be git's.
+		if i := strings.IndexByte(line, 0); i >= 0 {
+			req.Caps = append(req.Caps, strings.Fields(line[i+1:])...)
 			line = line[:i]
 		}
 		switch {

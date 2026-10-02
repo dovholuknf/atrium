@@ -7,12 +7,15 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // The rules of a push, design 3.2. A push is refused whole when any updated ref breaks one.
 
+// adoptedSentence is the refusal of a push to a git_repos mirror the operator took into the store. NOBODY PUSHES
+// THERE, the operator included: the mirror pass force-fetches the checkout over it.
 func adoptedSentence(name string) string {
-	return name + " is a mirror the hub serves to rooms, so only the operator pushes to it"
+	return name + " is a mirror the hub keeps in step with a checkout, so a push cannot land there. fetch it, or push under another repository name"
 }
 
 func trimHead(ref string) string { return strings.TrimPrefix(ref, headsPrefix) }
@@ -75,13 +78,24 @@ func inherits(p Pusher, room, card string) bool {
 	return false
 }
 
+// What one push may ask of the link, in all: how many owners' rooms, and for how long. Past either, the owners
+// not asked are treated as unreachable, which keeps their branches owned and says so. Variables for the tests.
+var (
+	maxOwnerAsks  = 8
+	ownerAskTotal = 10 * time.Second
+)
+
 // askOwners puts the one question a push may need answered, BEFORE the lock: for each branch the push
-// updates that is owned by another card, is that card finished?
+// updates that is owned by another card, is that card finished? One push asks at most maxOwnerAsks rooms
+// and for ownerAskTotal, so it cannot hold a link connection for long.
 func (rc *Receiver) askOwners(ctx context.Context, repo string, p Pusher, req pushRequest) map[string]ownerVerdict {
 	asked := map[string]ownerVerdict{}
 	if p.Operator {
 		return asked
 	}
+	ctx, cancel := context.WithTimeout(ctx, ownerAskTotal)
+	defer cancel()
+	count := 0
 	for _, u := range req.Updates {
 		if !strings.HasPrefix(u.Ref, headsPrefix) || isMainRef(u.Ref) || checkRefName(u.Ref) != "" {
 			continue
@@ -94,9 +108,46 @@ func (rc *Receiver) askOwners(ctx context.Context, repo string, p Pusher, req pu
 		if _, done := asked[key]; done {
 			continue
 		}
+		if count >= maxOwnerAsks || ctx.Err() != nil {
+			asked[key] = ownerVerdict{err: ErrRoomUnreachable}
+			continue
+		}
+		count++
 		asked[key] = rc.askCard(ctx, room, card)
 	}
 	return asked
+}
+
+// inNameCheck, when set, runs before each `git check-ref-format`. Tests use it to see whether the repository's
+// lock is held at that moment.
+var inNameCheck func()
+
+// checkNames is the verdict on each ref's NAME, made before the lock: the name does not depend on anything the lock
+// holds, and `git check-ref-format` is a process per ref. A ref that is fine has no entry.
+func (rc *Receiver) checkNames(ctx context.Context, req pushRequest) map[string]string {
+	bad := map[string]string{}
+	seen := map[string]bool{}
+	for _, u := range req.Updates {
+		if seen[u.Ref] {
+			continue
+		}
+		seen[u.Ref] = true
+		label := u.Ref
+		if strings.HasPrefix(u.Ref, headsPrefix) {
+			label = trimHead(u.Ref)
+		}
+		if why := checkRefName(u.Ref); why != "" {
+			bad[u.Ref] = why
+			continue
+		}
+		if inNameCheck != nil {
+			inNameCheck()
+		}
+		if _, err := rc.h.Store().git(ctx, "", "check-ref-format", u.Ref); err != nil {
+			bad[u.Ref] = "git does not take " + label + " as a ref name"
+		}
+	}
+	return bad
 }
 
 func (rc *Receiver) askCard(ctx context.Context, room, card string) ownerVerdict {
@@ -118,7 +169,7 @@ func (rc *Receiver) askCard(ctx context.Context, room, card string) ownerVerdict
 // decide applies the rules to every update of a push, with the repository's lock held. `cur` is the
 // repository's branches and tags as they are now, and nothing in it is trusted from the client.
 func (rc *Receiver) decide(ctx context.Context, repo string, p Pusher, req pushRequest, cur map[string]string,
-	asked map[string]ownerVerdict) decision {
+	names map[string]string, asked map[string]ownerVerdict) decision {
 
 	d := decision{bad: map[string]string{}}
 	inPush := map[string]string{}
@@ -128,12 +179,8 @@ func (rc *Receiver) decide(ctx context.Context, repo string, p Pusher, req pushR
 		if strings.HasPrefix(ref, headsPrefix) {
 			label = trimHead(ref)
 		}
-		if why := checkRefName(ref); why != "" {
+		if why := names[ref]; why != "" {
 			d.fail(ref, why)
-			continue
-		}
-		if _, err := rc.h.Store().git(ctx, "", "check-ref-format", ref); err != nil {
-			d.fail(ref, "git does not take "+label+" as a ref name")
 			continue
 		}
 		if _, dup := inPush[foldedRef(ref)]; dup {

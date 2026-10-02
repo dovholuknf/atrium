@@ -4,34 +4,16 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"sync"
+	"strconv"
 	"time"
 
 	"github.com/dovholuknf/atrium/internal/gitsync"
 )
 
-// The hub store's push log, behind gitsync.PushLog. Rows are only ever added: the owner of a branch is the
-// first push row after the latest release marker, and a release is a marker row. See migration 0008.
+// The hub store's push log, behind gitsync.PushLog. See migration 0008 for the rules of the table, and
+// internal/gitsync/pushlog.go for the interface.
 
 var _ gitsync.PushLog = (*Store)(nil)
-
-// pushIDs hands out ids that sort in write order. An id is the time in nanoseconds, zero padded, and a clock
-// that steps back or a second row in the same nanosecond still gets a larger one than the last.
-var pushIDs struct {
-	sync.Mutex
-	last int64
-}
-
-func nextPushID(at time.Time) string {
-	pushIDs.Lock()
-	defer pushIDs.Unlock()
-	n := at.UnixNano()
-	if n <= pushIDs.last {
-		n = pushIDs.last + 1
-	}
-	pushIDs.last = n
-	return fmt.Sprintf("%020d", n)
-}
 
 func pushTime(t time.Time) string { return t.UTC().Format(time.RFC3339Nano) }
 
@@ -40,7 +22,67 @@ func parsePushTime(s string) time.Time {
 	return t
 }
 
-// Append writes the rows in one transaction: all of them or none.
+type pushTx interface {
+	ExecContext(ctx context.Context, q string, args ...any) (sql.Result, error)
+	QueryContext(ctx context.Context, q string, args ...any) (*sql.Rows, error)
+	QueryRowContext(ctx context.Context, q string, args ...any) *sql.Row
+}
+
+// idSource hands out the ids of one transaction, in order. EACH ID IS LARGER THAN EVERY ID IN THE TABLE: the
+// clock is a way to make them look like times, and has no say when it is behind.
+type idSource struct{ last int64 }
+
+func (s *Store) ids(ctx context.Context, x pushTx) (*idSource, error) {
+	var top string
+	if err := x.QueryRowContext(ctx, `SELECT COALESCE(MAX(id), '') FROM git_push`).Scan(&top); err != nil {
+		return nil, err
+	}
+	var last int64
+	if top != "" {
+		n, err := strconv.ParseInt(top, 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("git_push has an id that is not a number: %q", top)
+		}
+		last = n
+	}
+	return &idSource{last: last}, nil
+}
+
+func (s *Store) pushNow() time.Time {
+	if s.gitPushClock != nil {
+		return s.gitPushClock()
+	}
+	return time.Now()
+}
+
+func (s *Store) nextID(src *idSource) string {
+	n := s.pushNow().UnixNano()
+	if n <= src.last {
+		n = src.last + 1
+	}
+	src.last = n
+	return fmt.Sprintf("%020d", n)
+}
+
+func (s *Store) insertPush(ctx context.Context, x pushTx, src *idSource, r gitsync.PushRow, state, batch string) (string, error) {
+	at := r.At
+	if at.IsZero() {
+		at = time.Now()
+	}
+	kind := "push"
+	if r.Release {
+		kind = "release"
+	}
+	id := s.nextID(src)
+	_, err := x.ExecContext(ctx,
+		`INSERT INTO git_push (id, kind, state, batch, repo, ref, old_sha, new_sha, room, card, at, released_by)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		id, kind, state, batch, r.Repo, r.Ref, r.Old, r.New, r.Room, r.Card, pushTime(at), r.ReleasedBy)
+	return id, err
+}
+
+// Append writes settled rows in one transaction: all of them or none. The hub does not use it, it begins and
+// settles. It is for putting a log in a known state in a test.
 func (s *Store) Append(ctx context.Context, rows ...gitsync.PushRow) error {
 	if len(rows) == 0 {
 		return nil
@@ -51,8 +93,12 @@ func (s *Store) Append(ctx context.Context, rows ...gitsync.PushRow) error {
 			return err
 		}
 		defer tx.Rollback()
+		src, err := s.ids(ctx, tx)
+		if err != nil {
+			return err
+		}
 		for _, r := range rows {
-			if err := insertPush(ctx, tx, r); err != nil {
+			if _, err := s.insertPush(ctx, tx, src, r, "done", ""); err != nil {
 				return err
 			}
 		}
@@ -60,27 +106,136 @@ func (s *Store) Append(ctx context.Context, rows ...gitsync.PushRow) error {
 	})
 }
 
-type pushExec interface {
-	ExecContext(ctx context.Context, q string, args ...any) (sql.Result, error)
+// Begin writes a push as pending, before git runs. All rows or none.
+func (s *Store) Begin(ctx context.Context, rows ...gitsync.PushRow) (string, error) {
+	if len(rows) == 0 {
+		return "", nil
+	}
+	var batch string
+	err := s.guard(func() error {
+		tx, err := s.db.BeginTx(ctx, nil)
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback()
+		src, err := s.ids(ctx, tx)
+		if err != nil {
+			return err
+		}
+		// The batch is named by the first id, which no other batch has.
+		batch = "b" + fmt.Sprintf("%020d", src.last+1)
+		for _, r := range rows {
+			if _, err := s.insertPush(ctx, tx, src, r, "pending", batch); err != nil {
+				return err
+			}
+		}
+		return tx.Commit()
+	})
+	if err != nil {
+		return "", err
+	}
+	return batch, nil
 }
 
-func insertPush(ctx context.Context, x pushExec, r gitsync.PushRow) error {
-	at := r.At
-	if at.IsZero() {
-		at = time.Now()
+// Settle ends a batch: the pending row of each landed ref becomes a push, after the release marker of the owner
+// it took the branch from, and the other pending rows of the batch are dropped. One transaction.
+func (s *Store) Settle(ctx context.Context, batch string, landed ...string) error {
+	did := map[string]bool{}
+	for _, ref := range landed {
+		did[ref] = true
 	}
-	kind := "push"
-	if r.Release {
-		kind = "release"
-	}
-	_, err := x.ExecContext(ctx,
-		`INSERT INTO git_push (id, kind, repo, ref, old_sha, new_sha, room, card, at, released_by)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		nextPushID(at), kind, r.Repo, r.Ref, r.Old, r.New, r.Room, r.Card, pushTime(at), r.ReleasedBy)
-	return err
+	return s.guard(func() error {
+		tx, err := s.db.BeginTx(ctx, nil)
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback()
+		type pend struct {
+			id, repo, ref, by string
+		}
+		rows, err := tx.QueryContext(ctx,
+			`SELECT id, repo, ref, released_by FROM git_push WHERE batch = ? AND state = 'pending' ORDER BY id`, batch)
+		if err != nil {
+			return err
+		}
+		var mine []pend
+		for rows.Next() {
+			var p pend
+			if err := rows.Scan(&p.id, &p.repo, &p.ref, &p.by); err != nil {
+				rows.Close()
+				return err
+			}
+			mine = append(mine, p)
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return err
+		}
+		src, err := s.ids(ctx, tx)
+		if err != nil {
+			return err
+		}
+		for _, p := range mine {
+			if !did[p.ref] {
+				if _, err := tx.ExecContext(ctx, `DELETE FROM git_push WHERE id = ?`, p.id); err != nil {
+					return err
+				}
+				continue
+			}
+			if p.by != "" {
+				room, card, ok, err := ownerOf(ctx, tx, p.repo, p.ref)
+				if err != nil {
+					return err
+				}
+				if ok {
+					if _, err := s.insertPush(ctx, tx, src, gitsync.PushRow{Repo: p.repo, Ref: p.ref, Room: room, Card: card,
+						ReleasedBy: p.by, Release: true}, "done", ""); err != nil {
+						return err
+					}
+				}
+			}
+			// The push row takes a new id, after the marker, which is what puts it first after the release.
+			if _, err := tx.ExecContext(ctx, `UPDATE git_push SET id = ?, state = 'done', batch = '' WHERE id = ?`,
+				s.nextID(src), p.id); err != nil {
+				return err
+			}
+		}
+		return tx.Commit()
+	})
 }
 
-// Owner is the first pusher of ref since it was last released.
+// Pending is the rows still pending, in one repository or all of them.
+func (s *Store) Pending(ctx context.Context, repo string) ([]gitsync.PushRow, error) {
+	var out []gitsync.PushRow
+	err := s.guard(func() error {
+		out = nil
+		q := `SELECT batch, repo, ref, old_sha, new_sha, room, card, at, released_by FROM git_push
+		      WHERE state = 'pending'`
+		var args []any
+		if repo != "" {
+			q += ` AND repo = ?`
+			args = append(args, repo)
+		}
+		rows, err := s.db.QueryContext(ctx, q+` ORDER BY id`, args...)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var r gitsync.PushRow
+			var at string
+			if err := rows.Scan(&r.Batch, &r.Repo, &r.Ref, &r.Old, &r.New, &r.Room, &r.Card, &at, &r.ReleasedBy); err != nil {
+				return err
+			}
+			r.At, r.Pending = parsePushTime(at), true
+			out = append(out, r)
+		}
+		return rows.Err()
+	})
+	return out, err
+}
+
+// Owner is the first pusher of ref since it was last released, a pending push counted.
 func (s *Store) Owner(ctx context.Context, repo, ref string) (room, card string, ok bool, err error) {
 	err = s.guard(func() error {
 		var e error
@@ -90,12 +245,8 @@ func (s *Store) Owner(ctx context.Context, repo, ref string) (room, card string,
 	return room, card, ok, err
 }
 
-type pushQuery interface {
-	QueryRowContext(ctx context.Context, q string, args ...any) *sql.Row
-}
-
-func ownerOf(ctx context.Context, q pushQuery, repo, ref string) (room, card string, ok bool, err error) {
-	// The first push row with no release marker after it.
+// ownerOf is the first push row, a pending one counted, with no release marker after it.
+func ownerOf(ctx context.Context, q pushTx, repo, ref string) (room, card string, ok bool, err error) {
 	err = q.QueryRowContext(ctx,
 		`SELECT p.room, p.card FROM git_push p
 		 WHERE p.repo = ? AND p.ref = ? AND p.kind = 'push'
@@ -124,8 +275,12 @@ func (s *Store) Release(ctx context.Context, repo, ref, by string) error {
 		if err != nil || !ok {
 			return err
 		}
-		if err := insertPush(ctx, tx, gitsync.PushRow{Repo: repo, Ref: ref, Room: room, Card: card,
-			ReleasedBy: by, Release: true}); err != nil {
+		src, err := s.ids(ctx, tx)
+		if err != nil {
+			return err
+		}
+		if _, err := s.insertPush(ctx, tx, src, gitsync.PushRow{Repo: repo, Ref: ref, Room: room, Card: card,
+			ReleasedBy: by, Release: true}, "done", ""); err != nil {
 			return err
 		}
 		return tx.Commit()
@@ -170,14 +325,15 @@ func (s *Store) Branches(ctx context.Context, repo string) ([]gitsync.BranchReco
 	return out, err
 }
 
-// LastOperatorPush is the time of the operator's latest push to ref.
+// LastOperatorPush is the time of the operator's latest settled push to ref.
 func (s *Store) LastOperatorPush(ctx context.Context, repo, ref string) (time.Time, bool, error) {
 	var at time.Time
 	found := false
 	err := s.guard(func() error {
 		var text string
 		err := s.db.QueryRowContext(ctx,
-			`SELECT at FROM git_push WHERE repo = ? AND ref = ? AND kind = 'push' AND room = '' AND card = ''
+			`SELECT at FROM git_push WHERE repo = ? AND ref = ? AND kind = 'push' AND state = 'done'
+			   AND room = '' AND card = ''
 			 ORDER BY id DESC LIMIT 1`, repo, ref).Scan(&text)
 		if err == sql.ErrNoRows {
 			return nil

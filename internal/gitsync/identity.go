@@ -101,6 +101,11 @@ func pusherFrom(r *http.Request, c Caller) (Pusher, string) {
 		if c.Room == "" {
 			return Pusher{}, "the hub does not know which room this is"
 		}
+		// ONE VALUE EACH. The forwarder sets these, and a client that sent its own and had them added to rather than
+		// replaced must fail loudly, not have the first value win.
+		if len(r.Header.Values(HeaderCard)) > 1 || len(r.Header.Values(HeaderChain)) > 1 {
+			return Pusher{}, "the request names its card more than once, which only a forwarder that adds to the card headers does. it has to set them"
+		}
 		card := strings.TrimSpace(r.Header.Get(HeaderCard))
 		if card == "" {
 			return Pusher{}, "a push has to come from a card, and this one named none. push from a card with a token"
