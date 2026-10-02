@@ -51,9 +51,9 @@ on. They are kept short: one line of what, one of where. Add to it when a review
 
 ## How I work
 
-- Code on another room's disk: launch a quiet reviewer child there (atrium_launch room=...), don't ask for a paste.
-  m1mini's control tool has no `room` field yet. @fabric adds it, shipping on a room deploy (orchestrator,
-  2026-10-02). Until then, a paste-based pass is the accepted fallback.
+- Code on another room's disk: the real path is the hub serving every repo and branch, plus a lookup tool that
+  answers the clone URL (with @rnd). Interim only: launch a quiet reviewer there (atrium_launch room=, coming from
+  @fabric), or until then a paste-based pass.
 - To the orchestrator: landing tips and blockers only. Never clint's questions: they stay in the docs until he asks.
 
 - Board changes: read the headless units, don't run the suite. Do `node --check` on what lands.
