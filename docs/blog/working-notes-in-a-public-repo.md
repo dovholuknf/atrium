@@ -12,7 +12,7 @@ Series: The software company: directors and workers. Status: idea. Audience: peo
 
 1. HANDOFF and PLAN files merged into main.
 2. They were removed from the tree.
-3. The guard: ignore working notes in git, and the proposal for a merge check that refuses them.
+3. The guard: git now ignores HANDOFF files. Ignoring PLAN files, and a merge check that refuses working notes, are still proposals.
 4. The later rule: held material gets its own commits, never mixed with a doc meant to land.
 5. Quoting the operator: paraphrase in public, keep his words off-repo.
 
