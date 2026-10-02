@@ -484,8 +484,7 @@ if ($PayloadSizes) {
 # ── the account the room runs as, see THE ACCOUNT ───────────────────────────
 
 function Invoke-AccountStep {
-    $probe = if ($script:remoteOS -eq 'windows') { $script:AccountWinProbe } else { $script:AccountUnixProbe }
-    $r = Invoke-Remote $probe
+    $r = Invoke-AccountProbe $script:remoteOS $Ssh $sshBase $Target $isLocal
     $a = Get-AccountResult $r.Out $r.Code $script:kind $where (Get-LocalIdentity) $operators $isLocal ([bool]$IAcceptRunningAsMe) ([bool]$RequireDedicatedAccount)
     Step 'account' $a.Status $a.Detail
     if ($a.Refuse) { Finish 1 }

@@ -66,10 +66,21 @@ The first setup is the expensive one. After that the administrator is needed whe
 `provision-room.ps1`, `room-toolchain.ps1` and `room-check.ps1` all read, over the ssh login they already use, who the
 room will run as. They write nothing, and `-Check` is unchanged. Each says what it found in one line.
 
-Atrium warns when the account is an administrator: on Windows an elevated token, or membership in Administrators, Domain
-Admins or Enterprise Admins, matched by SID so a localized machine reads the same. On macOS and Linux it warns for uid
-0, the groups `admin`, `sudo` or `wheel` as the platform has them, or `sudo -n -l` working without a password. That
-command only lists, never prompts and never runs anything, but sudo logs it like any use.
+Atrium warns when the account is an administrator. On Windows that is an elevated token, or membership in
+Administrators, Domain Admins, Enterprise Admins, Backup Operators or Hyper-V Administrators. The groups are read from
+`whoami /groups` and matched by SID, so a localized machine reads the same. An administrator in an ordinary,
+non-elevated session holds a UAC filtered token, which carries Administrators as a deny-only group. `whoami` lists it
+and .NET's own group list leaves it out, so that case warns too, and says `with a filtered token`.
+
+On macOS and Linux it warns for uid 0 and for the groups `admin`, `sudo` or `wheel` as the platform has them. On Linux
+it also warns for `docker`, `lxd`, `incus-admin` and `libvirt`, each of which is root on the host. And it warns when
+`sudo -n -l` works at all without a password, even for one named command, because a rule for `vim`, `find` or
+`systemctl` is usually a way to a root shell. That command only lists, never prompts and never runs anything, but sudo
+logs it like any use.
+
+A probe that cannot answer is a warn that goes on, never a wait. `sudo -n -l` is cut off after 5 seconds (a directory
+server that does not reply will do it), which reads `may have sudo`. The whole probe is cut off after 45 seconds, which
+reads `could not tell who the room runs as`.
 
 It also warns when the account looks like yours, and that part is a heuristic. It catches two cases. The login is one
 you listed with `-OperatorAccount name` or the environment variable `ATRIUM_OPERATOR_ACCOUNT`, as `name`, `DOMAIN\name`
@@ -81,6 +92,7 @@ A warn looks like this, and a clean account says `ok`:
 
 ```
 room-toolchain account warn SG3\clint is in Administrators (S-1-5-32-544) and the token is elevated. an agent in this room does whatever it is talked into with that account's rights. see docs/room-accounts.md, and -IAcceptRunningAsMe says you accept it
+room-toolchain account warn SG3\clint is in Administrators (S-1-5-32-544) with a filtered token. an agent in this room does whatever it is talked into with that account's rights. see docs/room-accounts.md, and -IAcceptRunningAsMe says you accept it
 room-toolchain account ok SG3\claude: not elevated, not in an admin group, not the operator's account
 provision account-rights ok claude: not elevated, not in an admin group, no passwordless sudo, not the operator's account
 ```
@@ -109,7 +121,7 @@ folders. Run it in an elevated PowerShell on the room.
 ```powershell
 $pw = Read-Host -AsSecureString 'password for the new account'
 New-LocalUser -Name claude -Password $pw -FullName 'atrium room' -Description 'runs the atrium room, not an admin' -PasswordNeverExpires
-Add-LocalGroupMember -SID S-1-5-32-545 -Member claude
+if (-not (Get-LocalGroupMember -SID S-1-5-32-545 | Where-Object Name -like '*\claude')) { Add-LocalGroupMember -SID S-1-5-32-545 -Member claude }
 icacls D:\worktrees /grant 'SG3\claude:(OI)(CI)M'
 icacls V:\work /grant 'SG3\claude:(OI)(CI)M'
 ```
@@ -128,12 +140,16 @@ Set-Content C:\Users\claude\.ssh\authorized_keys 'ssh-ed25519 AAAA...the-hubs-pu
 icacls C:\Users\claude\.ssh\authorized_keys /inheritance:r /grant 'SG3\claude:F' /grant '*S-1-5-18:F' /grant '*S-1-5-32-544:F'
 ```
 
+If a folder called `C:\Users\claude` already existed, Windows made the profile as `C:\Users\claude.SG3` instead. Use
+whatever path the profile landed at in the two lines that name it.
+
 This is where being a standard user saves trouble. For a member of Administrators, `sshd` ignores that file
 and reads `C:\ProgramData\ssh\administrators_authorized_keys` instead, which must belong only to SYSTEM and
 Administrators. People paste a key where it looks right and get a password prompt. A standard account never meets it.
 
 To keep the account off the console, deny it Deny log on locally and Deny log on through Remote Desktop Services in
-`secpol.msc`, under Local Policies and User Rights Assignment. The autostart task fires at that account's logon, as the costs section says, so settle how the room restarts first.
+`secpol.msc`, under Local Policies and User Rights Assignment. The autostart task fires at that account's logon, as the
+costs section says, so settle how the room restarts first.
 
 Then the Defender line from `room-defender.ps1`, pasted by the administrator, and from the hub:
 
@@ -157,7 +173,9 @@ sudo -u claude sh -c 'umask 077 && mkdir -p /Users/claude/.ssh && echo "ssh-ed25
 ```
 
 The third `dseditgroup` line adds you. Once `com.apple.access_ssh` exists only its members can log in over ssh, you
-included. A folder shared with your own account gets a group:
+included. On current macOS `systemsetup -setremotelogin on` needs Full Disk Access for the terminal you run it in and
+errors without it. Turn Remote Login on in System Settings, General, Sharing instead if that happens. A folder shared
+with your own account gets a group:
 
 ```sh
 sudo dseditgroup -o create work
@@ -195,8 +213,12 @@ group:
 ```sh
 sudo groupadd work
 sudo usermod -aG work claude
-sudo chgrp -R work /srv/work && sudo chmod -R g+rwXs /srv/work
+sudo chgrp -R work /srv/work && sudo chmod -R g+rwX /srv/work
+sudo find /srv/work -type d -exec chmod g+s {} +
 ```
+
+The setgid bit goes on the directories only, so new files inherit the group. `chmod -R g+s` would put it on every file,
+and an executable that is setgid `work` runs as that group.
 
 Then `pwsh -File scripts/provision-room.ps1 claude@lab1 -Name lab1` from the hub installs the room as a systemd user
 unit for `claude`. `-Linger` on that command does the `enable-linger` step if you skipped it.
@@ -214,10 +236,12 @@ nowhere else. Then say so with `-IAcceptRunningAsMe`, so the warn stops and the 
 ## What was and was not run
 
 The detection and its verdicts are tested offline in `scripts/test-room-account.ps1`, including a fake ssh against
-`room-toolchain.ps1` and `provision-room.ps1`. Nothing here was run on a real Windows or Linux machine, so the Windows
-and Linux blocks were parsed for syntax and not executed. On the Mac, the key and group-folder commands ran against a
-temporary folder, and `sysadminctl` and `dseditgroup` were run for their usage text only. Account creation, the
-`com.apple.access_ssh` group, `systemsetup`, `New-LocalUser`, the OpenSSH capability, `runas` and `secpol.msc` were not
-run, and neither was `sysadminctl` taking its password from a prompt.
+`room-toolchain.ps1` and `provision-room.ps1`. The Windows group list is tested over `whoami /groups /fo csv /nh` output
+written in its documented format, a filtered token and a German one among it, and none of it was captured on a Windows
+machine. `sudo -n -l` is real on the Mac (it needs a password there) and a fixture elsewhere. Nothing here was run on a
+real Windows or Linux machine, so the Windows and Linux blocks were parsed for syntax and not executed. On the Mac, the
+key and group-folder commands ran against a temporary folder, and `sysadminctl` and `dseditgroup` were run for their
+usage text only. Account creation, the `com.apple.access_ssh` group, `systemsetup`, `New-LocalUser`, the OpenSSH
+capability, `runas` and `secpol.msc` were not run, and neither was `sysadminctl` taking its password from a prompt.
 
 See also: `docs/release/packaging.md` (provisioning a room over ssh) and `docs/user-guide.md` (Windows Defender).

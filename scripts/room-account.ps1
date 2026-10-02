@@ -9,11 +9,17 @@
 # WHAT IS LOOKED FOR, on the target and read only, as the account the script's ssh login is (which is the account the
 # room runs as, since provisioning and the toolchain run as that login, see "THE ACCOUNT" in provision-room.ps1):
 #   Windows  the token is elevated, or the token's groups hold Administrators (S-1-5-32-544), Domain Admins
-#            (S-1-5-21-*-512) or Enterprise Admins (S-1-5-21-*-519). Groups are matched by SID, never by name, because
-#            the names are localized, and a filtered token (UAC) still lists Administrators, so membership is judged
-#            apart from elevation.
-#   macOS    uid 0, the group admin or wheel, or `sudo -n -l` working with no password.
-#   Linux    uid 0, the group sudo, wheel or admin, or `sudo -n -l` working with no password.
+#            (S-1-5-21-*-512), Enterprise Admins (S-1-5-21-*-519), Backup Operators (S-1-5-32-551) or Hyper-V
+#            Administrators (S-1-5-32-578). Groups are matched by SID, never by name, because the names are localized.
+#            THE GROUPS ARE READ FROM `whoami /groups /fo csv /nh`, NOT FROM WindowsIdentity.Groups, because under UAC
+#            an admin's filtered token carries Administrators as a "deny only" group, and .NET's Groups leaves those
+#            out (and IsInRole is false for them), so a filtered admin would read as a clean account. whoami lists them.
+#            The attribute column that says "deny only" is localized, so it is not read: a SID in the list is a member,
+#            and a member whose token is not elevated is reported as having a filtered token.
+#   macOS    uid 0, the group admin or wheel, or `sudo -n -l` working at all without a password.
+#   Linux    uid 0, the group sudo, wheel or admin, the groups docker, lxd, incus-admin or libvirt (each is root on the
+#            host), or `sudo -n -l` working at all without a password. A rule for one named command is still root when
+#            that command takes a shell escape (vim, less, find, tar, systemctl, docker, pip), so it warns as well.
 #   all      THE OPERATOR'S OWN ACCOUNT is a HEURISTIC and covers two cases only. (1) The login name is one the
 #            operator listed, with -OperatorAccount or the environment variable ATRIUM_OPERATOR_ACCOUNT (a comma
 #            separated list of `name`, `DOMAIN\name` or `name@host`). (2) The login name is the account running this
@@ -26,25 +32,67 @@
 # ── what the target is asked ────────────────────────────────────────────────
 
 # Windows PowerShell 5.1. No variables go in, so there is nothing to quote. A failure is an err= line and never a throw.
+# The SID column of whoami's csv is the third, and it is the same on every language. An empty list is a failure, since
+# every token holds Everyone (S-1-1-0), and it must never read as "no admin group".
 $script:AccountWinProbe = @'
 try {
     $id = [Security.Principal.WindowsIdentity]::GetCurrent()
+    $sids = @(whoami /groups /fo csv /nh | ConvertFrom-Csv -Header n, t, s, a | ForEach-Object { $_.s } | Where-Object { $_ -like 'S-1-*' })
+    if (-not $sids) { throw 'whoami /groups listed no groups' }
     "user=$($id.Name)"
     "host=$env:COMPUTERNAME"
     "elevated=$((New-Object Security.Principal.WindowsPrincipal($id)).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator))"
-    "sids=$(($id.Groups | ForEach-Object { $_.Value }) -join ';')"
+    "sids=$($sids -join ';')"
 } catch { "err=$($_.Exception.Message)" }
 '@
 
-# sh. `sudo -n -l` only lists, never asks (-n) and never runs anything. The group list is comma separated.
+# sh. `sudo -n -l` only lists, never asks (-n) and never runs anything. The group list is comma separated. sudo can wait on
+# the network (LDAP, SSSD, a host name that does not resolve), so it runs in the background with a watcher that kills it
+# after 5 seconds, which reads as sudo.rc=timeout. (macOS has no timeout(1), and a sleep and a kill need nothing.) The
+# watcher's output goes nowhere so the capture does not wait for its sleep, and nothing is written to disk.
 $script:AccountUnixProbe = @'
 echo "user=$(id -un)"; echo "uid=$(id -u)"; echo "groups=$(id -Gn | tr ' ' ',')"; echo "host=$(uname -n)"
 if command -v sudo >/dev/null 2>&1; then
-  o=$(sudo -n -l </dev/null 2>&1); echo "sudo.rc=$?"
+  o=$( (sudo -n -l </dev/null 2>&1 & p=$!; (sleep 5; kill -9 $p) >/dev/null 2>&1 & w=$!; wait $p; r=$?; kill $w 2>/dev/null; [ $r -eq 137 ] && r=timeout; echo "sudo.rc=$r") )
+  printf '%s\n' "$o" | grep '^sudo.rc='
   echo "sudo.nopasswd=$(printf '%s\n' "$o" | grep -Ec 'NOPASSWD:[[:space:]]*ALL')"
   echo "sudo.all=$(printf '%s\n' "$o" | grep -Ec '\)[[:space:]]+(NOPASSWD:[[:space:]]*)?ALL[[:space:]]*$')"
 else echo "sudo.rc=none"; fi
 '@
+
+# ── running a probe with a time cap ────────────────────────────────────────
+
+# Runs the probe for $Kind (windows or unix) on the target, or here for $IsLocal, and returns Out and Code like each script's
+# own Invoke-Remote. It does not use that, because it needs a time cap: an ssh that never answers, or a directory server that
+# never replies to `id`, must become the "could not tell" warn and not a hang. The cap is for the whole call, so it must be
+# longer than the ConnectTimeout in $SshBase (25). A timeout comes back as an err= line. The probes need no PATH wrapper
+# and no remote file, and the Windows one is small enough to go as plain -EncodedCommand, which the test measures.
+function Invoke-AccountProbe {
+    param([string] $Kind, [string] $Ssh, [string[]] $SshBase = @(), [string] $Target, [bool] $IsLocal = $false, [int] $Seconds = 45)
+    $win = $Kind -eq 'windows'
+    $stdin = $null
+    if ($win) {
+        $psArgs = @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($script:AccountWinProbe)))
+        if ($IsLocal) { $file = 'powershell.exe'; $argv = $psArgs } else { $file = $Ssh; $argv = @($SshBase) + @($Target, "powershell $($psArgs -join ' ')") }
+    } else {
+        $stdin = ($script:AccountUnixProbe -replace "`r", '') + "`n#"
+        if ($IsLocal) { $file = 'sh'; $argv = @('-s') } else { $file = $Ssh; $argv = @($SshBase) + @($Target, 'sh -s') }
+    }
+    $psi = New-Object Diagnostics.ProcessStartInfo $file
+    foreach ($a in $argv) { $psi.ArgumentList.Add([string]$a) }
+    $psi.UseShellExecute = $false
+    $psi.RedirectStandardInput = $true; $psi.RedirectStandardOutput = $true; $psi.RedirectStandardError = $true
+    try { $p = [Diagnostics.Process]::Start($psi) } catch { return [pscustomobject]@{ Out = @("err=could not run $file ($($_.Exception.Message))"); Code = 0 } }
+    $so = $p.StandardOutput.ReadToEndAsync(); $se = $p.StandardError.ReadToEndAsync()
+    try { if ($stdin) { $p.StandardInput.Write($stdin) }; $p.StandardInput.Close() } catch { }
+    if (-not $p.WaitForExit($Seconds * 1000)) {
+        try { $p.Kill($true) } catch { }
+        return [pscustomobject]@{ Out = @("err=the probe did not answer in $Seconds seconds"); Code = 0 }
+    }
+    $p.WaitForExit()
+    $lines = @(("$($so.Result)`n$($se.Result)" -split "`r?`n") | Where-Object { $_ -and $_ -notmatch '^#< CLIXML|^<Objs |^</Objs>' })
+    [pscustomobject]@{ Out = $lines; Code = $p.ExitCode }
+}
 
 # ── the operator's list ─────────────────────────────────────────────────────
 
@@ -88,19 +136,32 @@ function Get-AccountVerdict {
     if ($Kind -eq 'windows') {
         $sids = @("$($Kv['sids'])" -split ';' | Where-Object { $_ })
         $elev = "$($Kv['elevated'])" -eq 'True'
+        # No list is no answer. Every token holds Everyone, so an empty one is a probe that failed, not a clean account.
+        if (-not $sids.Count) { return [pscustomobject]@{ User = $user; Reasons = @(); Operator = $false; Known = $false } }
         $member = $sids -contains 'S-1-5-32-544'
         if ($member) { $why += "is in Administrators (S-1-5-32-544)$(if (-not $elev) { ' with a filtered token' })" }
         if ($elev) { $why += 'the token is elevated' }
         if ($sids | Where-Object { $_ -match '^S-1-5-21-\d+-\d+-\d+-512$' }) { $why += 'is in Domain Admins (RID 512)' }
         if ($sids | Where-Object { $_ -match '^S-1-5-21-\d+-\d+-\d+-519$' }) { $why += 'is in Enterprise Admins (RID 519)' }
+        if ($sids -contains 'S-1-5-32-551') { $why += 'is in Backup Operators (S-1-5-32-551, can read every file)' }
+        if ($sids -contains 'S-1-5-32-578') { $why += 'is in Hyper-V Administrators (S-1-5-32-578, can mount any disk)' }
     } else {
         if ("$($Kv['uid'])" -eq '0') { $why += 'is root (uid 0)' }
         $adminGroups = if ($Kind -eq 'mac') { @('admin', 'wheel') } else { @('sudo', 'wheel', 'admin') }
-        foreach ($g in @("$($Kv['groups'])" -split ',' | Where-Object { $_ })) { if ($g -in $adminGroups) { $why += "is in the group $g" } }
-        if ("$($Kv['sudo.rc'])" -eq '0') {
-            if ([int]"0$($Kv['sudo.nopasswd'])" -gt 0) { $why += 'can run sudo with no password (sudo -n -l says NOPASSWD: ALL)' }
-            elseif ([int]"0$($Kv['sudo.all'])" -gt 0) { $why += 'can run sudo with no password prompt (sudo -n -l lists ALL)' }
+        # Each of these is root on the host: docker run -v /:/h, an lxd or incus container with the host disk, a libvirt guest.
+        $rootGroups = if ($Kind -eq 'linux') { @('docker', 'lxd', 'incus-admin', 'libvirt') } else { @() }
+        foreach ($g in @("$($Kv['groups'])" -split ',' | Where-Object { $_ })) {
+            if ($g -in $adminGroups) { $why += "is in the group $g" }
+            elseif ($g -in $rootGroups) { $why += "is in the group $g (root on this host)" }
         }
+        # Any sudo -n -l that works is a warn: it means some rule needs no password, and a rule for one command is still root
+        # when the command takes a shell escape. A timeout is a warn too, since it is not known to be clean.
+        $src = "$($Kv['sudo.rc'])"
+        if ($src -eq '0') {
+            if ([int]"0$($Kv['sudo.nopasswd'])" -gt 0) { $why += 'can run any command with sudo and no password (sudo -n -l says NOPASSWD: ALL)' }
+            elseif ([int]"0$($Kv['sudo.all'])" -gt 0) { $why += 'can run any command with sudo (sudo -n -l lists ALL)' }
+            else { $why += 'can use sudo with no password for some command (sudo -n -l works), and one command is usually a way to root' }
+        } elseif ($src -eq 'timeout') { $why += 'may have sudo, since sudo -n -l did not answer in 5 seconds' }
     }
     $bare = Get-ShortName $user
     $hostShort = Get-ShortName "$($Kv['host'])"
@@ -126,7 +187,7 @@ function Get-AccountResult {
     foreach ($l in @($Out)) { $s = "$l"; $i = $s.IndexOf('='); if ($i -gt 0) { $kv[$s.Substring(0, $i).Trim()] = $s.Substring($i + 1).TrimEnd() } }
     $v = Get-AccountVerdict $kv $Kind $Local $Operators $SameMachine
     if (-not $v.Known) {
-        $what = if ($kv['err']) { $kv['err'] } elseif ($Code -ne 0) { "the probe exited $Code" } else { 'the probe said nothing' }
+        $what = if ($kv['err']) { $kv['err'] } elseif ($Code -ne 0) { "the probe exited $Code" } elseif ($kv['user']) { 'the probe listed no groups' } else { 'the probe said nothing' }
         if ($Require) { return [pscustomobject]@{ Status = 'fail'; Refuse = $true; Detail = "could not tell who the room runs as on $Where ($what), and -RequireDedicatedAccount will not go on without knowing. see docs/room-accounts.md" } }
         return [pscustomobject]@{ Status = 'warn'; Refuse = $false; Detail = "could not tell who the room runs as on $Where ($what). see docs/room-accounts.md" }
     }

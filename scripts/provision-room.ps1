@@ -561,7 +561,7 @@ if ($User) {
 # The rights of the account the room runs as, see "the account's rights". Read only.
 if (-not ($Remove -or $Restart -or $SmokeOnly)) {
     $acctKind = switch ($os) { 'windows' { 'windows' } 'darwin' { 'mac' } default { 'linux' } }
-    $ar = Invoke-Remote $(if ($os -eq 'windows') { $script:AccountWinProbe } else { $script:AccountUnixProbe })
+    $ar = Invoke-AccountProbe $os $Ssh $sshBase $Target
     $av = Get-AccountResult $ar.Out $ar.Code $acctKind $remoteHost (Get-LocalIdentity) $operators $false ([bool]$IAcceptRunningAsMe) ([bool]$RequireDedicatedAccount)
     Step 'account-rights' $av.Status $av.Detail
     if ($av.Refuse) { Finish 6 }

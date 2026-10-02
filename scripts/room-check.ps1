@@ -275,7 +275,7 @@ $kind = if ($probeText -match '^Darwin') { 'darwin' } elseif ($probeText -match 
 Row 'ssh' 'ok' "$Target ($kind)"
 
 # who the room runs as: advice, so ok or warn and never counted as unmet
-$ar = Invoke-Remote $(if ($script:remoteOS -eq 'windows') { $script:AccountWinProbe } else { $script:AccountUnixProbe })
+$ar = Invoke-AccountProbe $script:remoteOS $Ssh $sshBase $Target
 $av = Get-AccountResult $ar.Out $ar.Code $(if ($kind -eq 'darwin') { 'mac' } else { $kind }) $Target (Get-LocalIdentity) $operators $false ([bool]$IAcceptRunningAsMe) $false
 Row 'account' $av.Status $av.Detail
 

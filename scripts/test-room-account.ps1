@@ -8,7 +8,9 @@
 # run under pwsh where it must report an error and not throw), and room-toolchain.ps1 and provision-room.ps1 end to end against
 # a fake ssh that answers the account probe with a fixture.
 # What it cannot run: Windows PowerShell 5.1, a real token or UAC, a real Windows or Linux target, or `sudo -n -l` on a machine
-# that has passwordless sudo. Those answers are fixtures taken from what those systems print.
+# that has passwordless sudo. Those answers are fixtures taken from what those systems print. The whoami lists are written in the
+# documented format of `whoami /groups /fo csv /nh` (name, type, SID, attributes) and were NOT captured from a Windows machine,
+# and the German attribute text is from memory. The probe reads only the SID column, which is the same on every language.
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'room-toolchain-c.ps1')
 . (Join-Path $PSScriptRoot 'room-account.ps1')
@@ -40,7 +42,9 @@ function Why { param($kv, [string] $kind, [string[]] $ops = @(), [bool] $same = 
 
 Check 'win: a standard user is clean' (Why (Win) 'windows').Count 0
 Check 'win: Administrators and an elevated token' (Why (Win -elev 'True' -sids "$std;S-1-5-32-544") 'windows') @('is in Administrators (S-1-5-32-544)', 'the token is elevated')
-Check 'win: a filtered token is still a member' (Why (Win -elev 'False' -sids "$std;S-1-5-32-544") 'windows') @('is in Administrators (S-1-5-32-544) with a filtered token')
+# A filtered token (UAC) lists Administrators as "Group used for deny only" in whoami, and elevated is False. This pair is what
+# whoami gives. WindowsIdentity.Groups would leave the 544 out (see the whoami section below), which is why it is not the source.
+Check 'win: deny-only Administrators in a filtered token is a member, said with the filtered token' (Why (Win -elev 'False' -sids "$std;S-1-5-32-544") 'windows') @('is in Administrators (S-1-5-32-544) with a filtered token')
 Check 'win: an elevated token alone is named' (Why (Win -elev 'True') 'windows') @('the token is elevated')
 Check 'win: Domain Admins by RID' (Why (Win -user 'CORP\clint' -sids "$std;S-1-5-21-111-222-333-512") 'windows') @('is in Domain Admins (RID 512)')
 Check 'win: Enterprise Admins by RID' (Why (Win -user 'CORP\clint' -sids "$std;S-1-5-21-111-222-333-519") 'windows') @('is in Enterprise Admins (RID 519)')
@@ -51,6 +55,70 @@ Check 'win: localized machine, matched by SID not by name' (Why (Win -user 'PC1\
 Check 'win: the same SID and a plain sid list order' (Why (Win -sids 'S-1-5-32-544') 'windows') @('is in Administrators (S-1-5-32-544) with a filtered token')
 Check 'win: Users S-1-5-32-545 is not Administrators' (Why (Win -sids 'S-1-5-32-545') 'windows').Count 0
 Check 'win: no user in the answer is unknown' (Get-AccountVerdict @{} 'windows' $me).Known $false
+Check 'win: Backup Operators by SID' (Why (Win -sids "$std;S-1-5-32-551") 'windows') @('is in Backup Operators (S-1-5-32-551, can read every file)')
+Check 'win: Hyper-V Administrators by SID' (Why (Win -sids "$std;S-1-5-32-578") 'windows') @('is in Hyper-V Administrators (S-1-5-32-578, can mount any disk)')
+Check 'win: 5510 and 1578 are not those groups' (Why (Win -sids "$std;S-1-5-32-5510;S-1-5-21-1-2-3-578") 'windows').Count 0
+Check 'win: a user and no group list is unknown, never a clean ok' (Get-AccountVerdict (KV "user=SG3\claude`nhost=SG3`nelevated=False`nsids=") 'windows' $me).Known $false
+Check 'win: ... and the step says so' (Get-AccountResult @('user=SG3\claude', 'elevated=False', 'sids=') 0 'windows' 'sg3' $me @() $false $false $false).Detail 'could not tell who the room runs as on sg3 (the probe listed no groups). see docs/room-accounts.md'
+
+# ── the groups as whoami /groups /fo csv /nh prints them (documented format, see the note at the end of the file) ──
+# Column 3 is the SID. Column 4 is the attributes and is LOCALIZED, which is why it is never read.
+$whoamiFiltered = @(
+    '"Everyone","Well-known group","S-1-1-0","Mandatory group, Enabled by default, Enabled group"',
+    '"NT AUTHORITY\Local account and member of Administrators group","Well-known group","S-1-5-114","Group used for deny only"',
+    '"BUILTIN\Administrators","Alias","S-1-5-32-544","Group used for deny only"',
+    '"BUILTIN\Users","Alias","S-1-5-32-545","Mandatory group, Enabled by default, Enabled group"',
+    '"NT AUTHORITY\INTERACTIVE","Well-known group","S-1-5-4","Mandatory group, Enabled by default, Enabled group"',
+    '"CONSOLE LOGON","Well-known group","S-1-2-1","Mandatory group, Enabled by default, Enabled group"',
+    '"NT AUTHORITY\Authenticated Users","Well-known group","S-1-5-11","Mandatory group, Enabled by default, Enabled group"',
+    '"NT AUTHORITY\This Organization","Well-known group","S-1-5-15","Mandatory group, Enabled by default, Enabled group"',
+    '"NT AUTHORITY\Local account","Well-known group","S-1-5-113","Mandatory group, Enabled by default, Enabled group"',
+    '"LOCAL","Well-known group","S-1-2-0","Mandatory group, Enabled by default, Enabled group"',
+    '"NT AUTHORITY\NTLM Authentication","Well-known group","S-1-5-64-10","Mandatory group, Enabled by default, Enabled group"',
+    '"Mandatory Label\Medium Mandatory Level","Label","S-1-16-8192","Mandatory group, Enabled by default, Enabled group"')
+$whoamiElevated = @(
+    '"Everyone","Well-known group","S-1-1-0","Mandatory group, Enabled by default, Enabled group"',
+    '"NT AUTHORITY\Local account and member of Administrators group","Well-known group","S-1-5-114","Mandatory group, Enabled by default, Enabled group"',
+    '"BUILTIN\Administrators","Alias","S-1-5-32-544","Mandatory group, Enabled by default, Enabled group, Group owner"',
+    '"BUILTIN\Users","Alias","S-1-5-32-545","Mandatory group, Enabled by default, Enabled group"',
+    '"NT AUTHORITY\Authenticated Users","Well-known group","S-1-5-11","Mandatory group, Enabled by default, Enabled group"',
+    '"Mandatory Label\High Mandatory Level","Label","S-1-16-12288","Mandatory group, Enabled by default, Enabled group"')
+# A German machine: names and attribute text are German, the SIDs are not. The attribute text here is not what makes it work.
+$whoamiGerman = @(
+    '"Jeder","Bekannte Gruppe","S-1-1-0","Obligatorische Gruppe, Standardmäßig aktiviert, Aktivierte Gruppe"',
+    '"VORDEFINIERT\Administratoren","Alias","S-1-5-32-544","Gruppe wird nur für Verweigerung verwendet"',
+    '"VORDEFINIERT\Benutzer","Alias","S-1-5-32-545","Obligatorische Gruppe, Standardmäßig aktiviert, Aktivierte Gruppe"',
+    '"NT-AUTORITÄT\INTERAKTIV","Bekannte Gruppe","S-1-5-4","Obligatorische Gruppe, Standardmäßig aktiviert, Aktivierte Gruppe"',
+    '"Mandatory Label\Medium Mandatory Level","Bezeichnung","S-1-16-8192","Obligatorische Gruppe, Standardmäßig aktiviert, Aktivierte Gruppe"')
+# A domain admin's filtered token, with a group name that holds a comma.
+$whoamiDomain = @(
+    '"Everyone","Well-known group","S-1-1-0","Mandatory group, Enabled by default, Enabled group"',
+    '"BUILTIN\Administrators","Alias","S-1-5-32-544","Group used for deny only"',
+    '"CORP\Domain Admins","Group","S-1-5-21-111-222-333-512","Group used for deny only"',
+    '"CORP\Enterprise Admins","Group","S-1-5-21-111-222-333-519","Group used for deny only"',
+    '"CORP\Sales, EMEA","Group","S-1-5-21-111-222-333-1105","Mandatory group, Enabled by default, Enabled group"')
+# The probe's own line, run here over a fixture. `whoami` is shadowed by a function. $id is what WindowsIdentity gives:
+# Groups WITHOUT the deny-only ones (that is the .NET behaviour this probe must not rely on).
+function Read-ProbeSids {
+    param([string[]] $csv)
+    $line = @($script:AccountWinProbe -split "`n" | Where-Object { $_.Trim() -like '$sids = *' })[0].Trim()
+    function whoami { $csv }
+    $id = [pscustomobject]@{ Groups = @($csv | Where-Object { $_ -notmatch 'deny only|Verweigerung' } | ForEach-Object { [pscustomobject]@{ Value = ($_ -split '","')[2] } }) }
+    Invoke-Expression $line
+    $sids
+}
+$fs = Read-ProbeSids $whoamiFiltered
+Check 'whoami: the probe reads every SID, deny-only ones too' ($fs -contains 'S-1-5-32-544') $true
+Check 'whoami: it reads the third column and nothing else (12 groups, no name)' @($fs.Count, @($fs | Where-Object { $_ -notlike 'S-1-*' }).Count) @(12, 0)
+Check 'whoami: a filtered admin token (elevated False) from the real line is a warn with the filtered token' (Why (Win -elev 'False' -sids ($fs -join ';')) 'windows') @('is in Administrators (S-1-5-32-544) with a filtered token')
+$es = Read-ProbeSids $whoamiElevated
+Check 'whoami: an elevated token (elevated True) is Administrators and elevated' (Why (Win -elev 'True' -sids ($es -join ';')) 'windows') @('is in Administrators (S-1-5-32-544)', 'the token is elevated')
+$gs = Read-ProbeSids $whoamiGerman
+Check 'whoami: a German filtered token is matched by SID, not by VORDEFINIERT\Administratoren' (Why (Win -user 'PC1\Hans' -h 'PC1' -elev 'False' -sids ($gs -join ';')) 'windows') @('is in Administrators (S-1-5-32-544) with a filtered token')
+$ds = Read-ProbeSids $whoamiDomain
+Check 'whoami: a group name with a comma does not break the columns' ($ds -contains 'S-1-5-21-111-222-333-1105') $true
+Check 'whoami: a domain admin filtered token says Administrators, Domain Admins and Enterprise Admins' (Why (Win -user 'CORP\clint' -elev 'False' -sids ($ds -join ';')) 'windows') @('is in Administrators (S-1-5-32-544) with a filtered token', 'is in Domain Admins (RID 512)', 'is in Enterprise Admins (RID 519)')
+Check 'whoami: the standard user list has no admin group in it' (Why (Win -sids ((Read-ProbeSids ($whoamiFiltered | Where-Object { $_ -notmatch 'S-1-5-114|S-1-5-32-544' })) -join ';')) 'windows').Count 0
 
 # ── macOS and Linux: uid, groups, sudo ──────────────────────────────────────
 
@@ -60,14 +128,20 @@ Check 'mac: the claude user on m1mini is clean (id -Gn: staff everyone localacco
 Check 'mac: uid 0' (Why (Unx -user 'root' -uid '0' -groups 'wheel,daemon,kmem,sys,tty,operator,procview,procmod,everyone,staff,certusers,localaccounts,admin') 'mac') @('is root (uid 0)', 'is in the group wheel', 'is in the group admin')
 Check 'mac: the admin group (a real owner account)' (Why (Unx -user 'owner' -groups 'staff,admin,everyone,_appstore,_lpadmin,localaccounts') 'mac') @('is in the group admin')
 Check 'mac: sudo needing a password is not passwordless' (Why (Unx -rc '1') 'mac').Count 0
-Check 'linux: the sudo group' (Why (Unx -user 'dev' -uid '1000' -groups 'dev,sudo,docker') 'linux') @('is in the group sudo')
+Check 'linux: the sudo group, and docker beside it is said too' (Why (Unx -user 'dev' -uid '1000' -groups 'dev,sudo,docker') 'linux') @('is in the group sudo', 'is in the group docker (root on this host)')
 Check 'linux: the wheel group' (Why (Unx -user 'dev' -uid '1000' -groups 'dev,wheel') 'linux') @('is in the group wheel')
 Check 'linux: the admin group' (Why (Unx -user 'dev' -uid '1000' -groups 'dev,admin') 'linux') @('is in the group admin')
-Check 'linux: docker alone is not on the list' (Why (Unx -user 'dev' -uid '1000' -groups 'dev,docker') 'linux').Count 0
+Check 'linux: docker is root on the host' (Why (Unx -user 'dev' -uid '1000' -groups 'dev,docker') 'linux') @('is in the group docker (root on this host)')
+Check 'linux: lxd, incus-admin and libvirt are too' (Why (Unx -user 'dev' -uid '1000' -groups 'dev,lxd,incus-admin,libvirt') 'linux') @('is in the group lxd (root on this host)', 'is in the group incus-admin (root on this host)', 'is in the group libvirt (root on this host)')
+Check 'mac: docker and libvirt are not on the macOS list' (Why (Unx -groups 'staff,docker,libvirt,lxd') 'mac').Count 0
+Check 'linux: root groups are whole names too' (Why (Unx -user 'dev' -uid '1000' -groups 'dev,dockers,libvirt-qemu,lxd2') 'linux').Count 0
 Check 'linux: group names are whole words (sudoers, administrators)' (Why (Unx -user 'dev' -uid '1000' -groups 'dev,sudoers,administrators,wheel2') 'linux').Count 0
-Check 'linux: passwordless sudo (sudo -n -l prints (ALL) NOPASSWD: ALL)' (Why (Unx -user 'dev' -uid '1000' -groups 'dev' -rc '0' -nopw '1' -all '1') 'linux') @('can run sudo with no password (sudo -n -l says NOPASSWD: ALL)')
-Check 'linux: sudo that lists ALL with no prompt (a cached credential)' (Why (Unx -user 'dev' -uid '1000' -groups 'dev' -rc '0' -nopw '0' -all '1') 'linux') @('can run sudo with no password prompt (sudo -n -l lists ALL)')
-Check 'linux: sudo -n -l that works for one named command is fine' (Why (Unx -user 'dev' -uid '1000' -groups 'dev' -rc '0' -nopw '0' -all '0') 'linux').Count 0
+Check 'linux: passwordless sudo (sudo -n -l prints (ALL) NOPASSWD: ALL)' (Why (Unx -user 'dev' -uid '1000' -groups 'dev' -rc '0' -nopw '1' -all '1') 'linux') @('can run any command with sudo and no password (sudo -n -l says NOPASSWD: ALL)')
+Check 'linux: sudo that lists ALL (a cached credential or a rule with a password) says only what was seen' (Why (Unx -user 'dev' -uid '1000' -groups 'dev' -rc '0' -nopw '0' -all '1') 'linux') @('can run any command with sudo (sudo -n -l lists ALL)')
+Check 'linux: sudo -n -l that works for one named command is a warn too (a narrow rule is a shell escape)' (Why (Unx -user 'dev' -uid '1000' -groups 'dev' -rc '0' -nopw '0' -all '0') 'linux') @('can use sudo with no password for some command (sudo -n -l works), and one command is usually a way to root')
+Check 'mac: the same narrow rule is a warn' (Why (Unx -rc '0' -nopw '0' -all '0') 'mac').Count 1
+Check 'linux: sudo -n -l that needed a password (rc 1) is clean' (Why (Unx -user 'dev' -uid '1000' -groups 'dev' -rc '1') 'linux').Count 0
+Check 'linux: sudo -n -l that did not answer in time is a warn, never a clean ok' (Why (Unx -user 'dev' -uid '1000' -groups 'dev' -rc 'timeout') 'linux') @('may have sudo, since sudo -n -l did not answer in 5 seconds')
 Check 'linux: no sudo installed' (Why (KV "user=dev`nuid=1000`ngroups=dev`nhost=h`nsudo.rc=none") 'linux').Count 0
 Check 'linux: the sudo group and passwordless sudo are both said' (Why (Unx -user 'dev' -uid '1000' -groups 'dev,sudo' -rc '0' -nopw '1' -all '1') 'linux').Count 2
 Check 'mac: the sudo group is not a macOS admin group' (Why (Unx -groups 'staff,sudo') 'mac').Count 0
@@ -107,9 +181,9 @@ Check 'step: a clean Windows account is ok, with no sudo in it' @($r.Status, $r.
 $r = Res (Unx) 'mac'
 Check 'step: a clean Unix account is ok with the exact text' @($r.Status, $r.Detail) @('ok', 'claude: not elevated, not in an admin group, no passwordless sudo, not the operator''s account')
 $r = Res (Unx -user 'dev' -uid '1000' -groups 'dev,sudo,wheel' -rc '0' -nopw '1' -all '1') 'linux'
-Check 'step: three reasons read with a comma and an and' ($r.Detail -like 'dev is in the group sudo, is in the group wheel and can run sudo with no password (sudo -n -l says NOPASSWD: ALL). *') $true
+Check 'step: three reasons read with a comma and an and' ($r.Detail -like 'dev is in the group sudo, is in the group wheel and can run any command with sudo and no password (sudo -n -l says NOPASSWD: ALL). *') $true
 $r = Res (Unx -user 'root' -uid '0' -groups 'root' -rc '0' -nopw '1' -all '1') 'linux'
-Check 'step: two reasons read with an and' ($r.Detail -like 'root is root (uid 0) and can run sudo with no password (sudo -n -l says NOPASSWD: ALL). *') $true
+Check 'step: two reasons read with an and' ($r.Detail -like 'root is root (uid 0) and can run any command with sudo and no password (sudo -n -l says NOPASSWD: ALL). *') $true
 $r = Res $wAdmin 'windows' $true
 Check 'step: accepted is ok, still names the reason and the flag' @($r.Status, $r.Refuse, ($r.Detail -like 'accepted by the operator (-IAcceptRunningAsMe): SG3\claude is in Administrators (S-1-5-32-544) and the token is elevated. see docs/room-accounts.md')) @('ok', $false, $true)
 $r = Res (Win) 'windows' $true
@@ -141,6 +215,7 @@ $len = (New-EncodedCommand $script:AccountWinProbe).Length
 Check "win probe: encoded size $len is far under 7800" ($len -le 3000) $true
 $wide = 'S-1-5-21-' + ('1' * 30)
 Check 'win probe: with the longest remote preamble provision-room adds it is still under 7800' ((New-EncodedCommand ("`$ErrorActionPreference='Stop'; `$ProgressPreference='SilentlyContinue'`n" + ('# ' + ('x' * 900) + "`n") + $script:AccountWinProbe)).Length -le 7800) $true
+Check 'win probe: the groups come from whoami, not from WindowsIdentity.Groups (which drops deny-only groups)' (($script:AccountWinProbe -match 'whoami /groups /fo csv /nh') -and ($script:AccountWinProbe -notmatch '\.Groups\b')) $true
 Check 'win probe: reads only, no write verb in it' ($script:AccountWinProbe -notmatch '\b(Set|New-Item|Remove|Out-File|Add-Content|Set-Content|Start-Process|Stop|Invoke-Expression|iex)\b') $true
 Check 'win probe: no variable is injected, so nothing needs quoting' ($script:AccountWinProbe -notmatch '\$Target|\$User|\$Prefix') $true
 Check 'unix probe: the only sudo is `sudo -n -l`' (@([regex]::Matches($script:AccountUnixProbe, 'sudo[^\n]*') | Where-Object { $_.Value -match 'sudo -n' } | ForEach-Object { ($_.Value -split ' ')[0..2] -join ' ' }) | Select-Object -Unique) @('sudo -n -l')
@@ -155,6 +230,47 @@ if ($unix) {
     Check 'unix probe: sudo.rc is a number or none' ($k['sudo.rc'] -match '^(\d+|none)$') $true
     $v = Get-AccountVerdict $k $(if ((& uname -s) -eq 'Darwin') { 'mac' } else { 'linux' }) (Get-LocalIdentity) @() $false
     Check 'unix probe: and the verdict for this machine knows the account' $v.Known $true
+}
+if ($unix) {
+    # A sudo that never answers. It is first in PATH, so the probe meets it, and the watcher must cut it off at 5 seconds with
+    # sudo.rc=timeout. (macOS has no timeout(1), so this is the path that every Mac takes.) The same probe with a sudo that
+    # answers must pass its output through.
+    $bin = Join-Path $tmp 'slowbin'
+    New-Item -ItemType Directory -Force $bin | Out-Null
+    Set-Content -LiteralPath (Join-Path $bin 'sudo') -NoNewline -Value "#!/bin/sh`nexec sleep 60`n"
+    & chmod +x (Join-Path $bin 'sudo')
+    $t0 = Get-Date
+    $o = $script:AccountUnixProbe | & sh -c "PATH='$bin':`$PATH; export PATH; sh -s" 2>&1
+    $secs = ((Get-Date) - $t0).TotalSeconds
+    Check 'unix probe: a sudo that hangs is cut off, sudo.rc=timeout' (KV ($o -join "`n"))['sudo.rc'] 'timeout'
+    Check "unix probe: and that took about 5 seconds ($([int]$secs)), not 60" (($secs -ge 4) -and ($secs -lt 20)) $true
+    Check 'unix probe: the rest of the facts were still read' (KV ($o -join "`n"))['user'] (& id -un)
+    Set-Content -LiteralPath (Join-Path $bin 'sudo') -NoNewline -Value "#!/bin/sh`necho 'User dev may run the following commands on h:'; echo '    (ALL) NOPASSWD: /usr/bin/vim'; exit 0`n"
+    $o = $script:AccountUnixProbe | & sh -c "PATH='$bin':`$PATH; export PATH; sh -s" 2>&1
+    $k2 = KV ($o -join "`n")
+    Check 'unix probe: a sudo that answers 0 passes its rc through, with no ALL line' @($k2['sudo.rc'], $k2['sudo.nopasswd'], $k2['sudo.all']) @('0', '0', '0')
+    Set-Content -LiteralPath (Join-Path $bin 'sudo') -NoNewline -Value "#!/bin/sh`necho 'a password is required'; exit 1`n"
+    $o = $script:AccountUnixProbe | & sh -c "PATH='$bin':`$PATH; export PATH; sh -s" 2>&1
+    Check 'unix probe: a sudo that needs a password is rc 1' (KV ($o -join "`n"))['sudo.rc'] '1'
+    Check 'unix probe: the probe leaves no process or file of its own in the temp folder' @(Get-ChildItem -LiteralPath $bin).Count 1
+
+    # The whole call, capped. A fake ssh that never answers must come back as the could-not-tell text, in seconds.
+    $hang = Join-Path $tmp 'hangssh'
+    Set-Content -LiteralPath $hang -NoNewline -Value "#!/bin/sh`nsleep 60`n"
+    & chmod +x $hang
+    $t0 = Get-Date
+    $hr = Invoke-AccountProbe 'unix' $hang @('-o', 'BatchMode=yes') 'svc@lab1' $false 2
+    $secs = ((Get-Date) - $t0).TotalSeconds
+    Check 'probe cap: an ssh that never answers returns in seconds' (($secs -ge 1.5) -and ($secs -lt 15)) $true
+    Check 'probe cap: and reads as an err= line' ($hr.Out -join '|') 'err=the probe did not answer in 2 seconds'
+    Check 'probe cap: which the step turns into a warn that goes on' (Get-AccountResult $hr.Out $hr.Code 'linux' 'svc@lab1' $me @() $false $false $false).Status 'warn'
+    Check 'probe cap: and a refusal under -RequireDedicatedAccount' (Get-AccountResult $hr.Out $hr.Code 'linux' 'svc@lab1' $me @() $false $false $true).Refuse $true
+    $hr = Invoke-AccountProbe 'windows' $hang @() 'svc@lab1' $false 2
+    Check 'probe cap: the Windows call is capped the same way' ($hr.Out -join '|') 'err=the probe did not answer in 2 seconds'
+    $hr = Invoke-AccountProbe 'unix' (Join-Path $tmp 'no-such-ssh') @() 'svc@lab1' $false 2
+    Check 'probe cap: an ssh that cannot start is an err= line too' (($hr.Out -join '|') -like 'err=could not run *') $true
+    $hr = Invoke-AccountProbe 'unix' 'sh' @() '' $true 20
+    Check 'probe cap: a local target runs the probe here (sh -s)' (KV ($hr.Out -join "`n"))['user'] (& id -un)
 }
 $wo = (& $pwsh -NoProfile -Command ($script:AccountWinProbe) 2>&1)
 if ($unix) {
@@ -198,7 +314,7 @@ echo "fake ssh: not expected: $*" >&2; exit 9
 
     Say "user=svc`nuid=1001`ngroups=svc,sudo`nhost=lab1`nsudo.rc=0`nsudo.nopasswd=1`nsudo.all=1"
     $r = Tc @()
-    Check 'toolchain: an admin account is a warn and the run goes on, exit 0' @($r.Code, @(Line $r '^room-toolchain account warn svc is in the group sudo and can run sudo with no password').Count, $r.Out[-1]) @(0, 1, 'room-toolchain done ok')
+    Check 'toolchain: an admin account is a warn and the run goes on, exit 0' @($r.Code, @(Line $r '^room-toolchain account warn svc is in the group sudo and can run any command with sudo and no password').Count, $r.Out[-1]) @(0, 1, 'room-toolchain done ok')
     Check 'toolchain: the warn points to the doc' ((@(Line $r '^room-toolchain account warn')[0]) -match 'see docs/room-accounts.md') $true
     Check 'toolchain: the run still did its work after the warn' @(Line $r '^room-toolchain (prefix|go) ').Count 2
     $r = Tc @('-IAcceptRunningAsMe')
