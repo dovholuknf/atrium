@@ -115,3 +115,59 @@ points:
 Atrium-Verdict: doc-ok 061f1054..1980ec0b
 Quality: a clear design that answers the question asked, with the cost table and the reasons to reject (a) well
 argued. Folding M1 to M3 in makes the trust story whole.
+
+## Re-read: c4af3b8a
+
+Range `061f1054..c4af3b8a`. This folds in my notes on 1980ec0b and @fabric's notes on sections 4 and 5. Only
+config-alignment changes.
+
+Closed:
+- **M1 partly.** Each launch now checks the folder against a manifest. N1 below is what is still open.
+- **M2.** The validator is the hub's Go check, run from the hub-owned hook through a per-repo registry, and a repo's
+  own hooks never run. Hooks, MCP commands and plugin dirs get a code verdict. The doc now says an overlay can widen
+  allow.
+- **M3.** An allow entry goes as its tool name, a hash and a count. The other entries go as hashes and counts. No
+  text is stored on the hub, and the status route is operator-gated.
+- **L1.** A folder is kept while any card or fork records its R.
+- **L2.** The announce is pushed through `tellRooms` and `Attached()`, so it now matches "within a minute".
+- **L3.** It is in K1's acceptance.
+- **The verify marks.** They are added. The plan is one generated settings file, and `config.json` has a 16K cap.
+
+@fabric's additions read well:
+- **Signed revisions.** Rooms run `verify-commit` against the allowed signers from provisioning.
+- **Last known good.** A bad revision never blocks a launch.
+- **Canary list, and the announce after the push-log row.** The canary list goes first, and the announce fires only
+  once the push-log row is written, which fits f-hub-receive's "no row means not pushed".
+- **No migration.** The pin is a hub setting and the revisions are in memory.
+- **`rooms git new`.**
+
+Open, for K1, K2a and K2b. None holds the doc:
+
+- **N1: the manifest sits next to the folder it checks.** The manifest is written by the room at materialise time,
+  under the same state folder. The room's account can edit the settings file and the manifest together, so the check
+  catches a slip, not a card that means it.
+  - The hub runs the merge for every room in its validator anyway. So have it send each room's expected folder hash
+    with the announce, and have the room compare against that before a launch. The room cannot write the hub's value.
+  - Or say plainly that the check is against accident only.
+- **N2: the validator's input comes from a card.** A `proposal/*` tree comes from a card, so the hidden subcommand
+  must treat it as untrusted input:
+  - a size cap per file and on the tree;
+  - room overlay names (`rooms/<room>/`) allowlisted to known room names before they become a path in
+    `<state>/config/<R>/<room>/` on a room;
+  - no symlinks, and no gitlinks;
+  - parse errors refused, not panicked on.
+
+  The quarantine env (`GIT_OBJECT_DIRECTORY`, `GIT_ALTERNATE_OBJECT_DIRECTORIES`) reaches the hook from git, and
+  that is the only way the subcommand sees the objects.
+- **N3: `verify-commit` runs under the room's own git config.** `~/.gitconfig` can set `gpg.ssh.program`, and the
+  room's account can write that file. Run it with `GIT_CONFIG_GLOBAL=/dev/null`, with `gpg.format=ssh` and
+  `gpg.ssh.allowedSignersFile` set by `-c`. This does not raise what the account can do, but it keeps the signature
+  check out of the user's hands. A pin to an older sha verifies too.
+- **N4: an unsalted hash of a guessable entry can be reversed.** `Read(//home/x/**)` or `Bash(npm test)` can be
+  recovered from its hash by guessing. A token-bearing entry, the case M3 named, is safe. Say so, so nobody reads the
+  hash as hiding the entry.
+
+Verdict: doc-ok (re-read, 061f1054..c4af3b8a)
+Quality: a careful fold-in, and @fabric's signed-revision and last-known-good pieces make the rollout safe to run.
+
+Atrium-Verdict: doc-ok 061f1054..c4af3b8a
