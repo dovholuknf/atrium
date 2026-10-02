@@ -28,8 +28,10 @@ type relayRoom struct {
 	msgCode int
 	// sayAnswer, when set, is what POST /v1/say answers.
 	sayAnswer map[string]any
-	// launched is the body of the last POST /v1/launch.
-	launched map[string]any
+	// launched is the body of the last POST /v1/launch, and launchCode a status the
+	// room answers it with instead of starting anything.
+	launched   map[string]any
+	launchCode int
 	// exited is the card ids asked to exit.
 	exited []string
 	// posts is every POST body a cull route received, keyed by path, verbatim.
@@ -81,6 +83,9 @@ func (f *relayRoom) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case r.URL.Path == "/v1/preflight":
 		f.preflights++
 		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
+	case r.URL.Path == "/v1/launch" && r.Method == http.MethodPost && f.launchCode != 0:
+		w.WriteHeader(f.launchCode)
+		_, _ = w.Write([]byte(`{"error":"the room fell over"}`))
 	case r.URL.Path == "/v1/launch" && r.Method == http.MethodPost:
 		_ = json.NewDecoder(r.Body).Decode(&f.launched)
 		_ = json.NewEncoder(w).Encode(map[string]any{"id": "kid", "wire_name": "kid", "status": "running"})

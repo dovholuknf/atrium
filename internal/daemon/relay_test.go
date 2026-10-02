@@ -29,6 +29,9 @@ type fakeRelay struct {
 	// found is every name Find was asked, and find answers it.
 	found []string
 	find  func(string) (RelayResult, error)
+	// launches is every Launch asked, and launch answers them. See relay_launch_test.go.
+	launches []RelayLaunch
+	launch   func(RelayLaunch) (RelayResult, error)
 }
 
 func (f *fakeRelay) Say(_ context.Context, s RelaySay) (RelayResult, error) {

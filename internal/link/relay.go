@@ -51,6 +51,9 @@ const (
 	// RelayFind looks a bare name up among the cards tagged atrium:everywhere
 	// on the other rooms. A read, with no delivery in it. See everywhere.go.
 	RelayFind = "find"
+	// RelayLaunch starts a session on another room, for a room's atrium_launch with
+	// `room`. Not idempotent, so nothing is ever held for it. See control_relay_launch.go.
+	RelayLaunch = "launch"
 )
 
 // RelayRequest is what a room asks its hub to carry.
@@ -72,6 +75,28 @@ type RelayRequest struct {
 	Everywhere bool `json:"everywhere,omitempty"`
 	// Events includes the card's recent events, for `card`.
 	Events bool `json:"events,omitempty"`
+	// Launch is the session to start, for `launch`. An older hub ignores it and
+	// refuses the op by name.
+	Launch *RelayLaunchSpec `json:"launch,omitempty"`
+}
+
+// RelayLaunchSpec is one launch for another room, field for field what the hub's own
+// atrium_launch takes beside `room`. Room is the target, From (on the request) the
+// launcher on the asking room.
+type RelayLaunchSpec struct {
+	Cwd        string            `json:"cwd"`
+	Title      string            `json:"title,omitempty"`
+	Why        string            `json:"why,omitempty"`
+	Prompt     string            `json:"prompt,omitempty"`
+	Brief      string            `json:"brief,omitempty"`
+	Runner     string            `json:"runner,omitempty"`
+	Tags       []string          `json:"tags,omitempty"`
+	Model      string            `json:"model,omitempty"`
+	Effort     string            `json:"effort,omitempty"`
+	Args       []string          `json:"args,omitempty"`
+	Env        map[string]string `json:"env,omitempty"`
+	LeanAgents []string          `json:"lean_agents,omitempty"`
+	LeanSkills []string          `json:"lean_skills,omitempty"`
 }
 
 // RelayAnswer is the hub's answer.
@@ -94,8 +119,14 @@ type RelayAnswer struct {
 	To    string      `json:"to,omitempty"`
 	Card  string      `json:"card,omitempty"`
 	Peers []RelayPeer `json:"peers,omitempty"`
-	// Task is the card `card` read, named across.
+	// Task is the card `card` read, named across, or the one `launch` started.
 	Task *RelayTask `json:"task,omitempty"`
+	// What `launch` started: where to watch it, where its briefing was written on the
+	// target's disk, and the model and effort the room says it ran with.
+	Watch  string `json:"watch,omitempty"`
+	Brief  string `json:"brief,omitempty"`
+	Model  string `json:"model,omitempty"`
+	Effort string `json:"effort,omitempty"`
 }
 
 // RelayTask is one card on another room, as atrium_task reports it. Card is

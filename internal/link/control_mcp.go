@@ -299,6 +299,11 @@ func (c *controlMCP) server(class ctlClass) *mcp.Server {
 			"named `atrium`, so they are NAMESPACED: start `atrium:go-security-reviewer`, not " +
 			"`go-security-reviewer`. Either implies lean. Claude only, and a name with no file refuses " +
 			"the launch. The card keeps the lists.\n\n" +
+			"`room` launches on ANOTHER ROOM: `cwd` is then a path on that room's machine, `brief` is " +
+			"written there, the cap is that room's, and the worker's reports and notices still reach you. " +
+			"An unknown room is refused with the rooms the hub knows. A session on a room says `room` " +
+			"to its own hub the same way, and a launch that may have started is `unconfirmed` and never " +
+			"retried: look at `atrium_peers` with `rooms` before launching again.\n\n" +
 			"Returns the card id. Use it with `atrium_task`, `atrium_say` and `atrium_exit`, on another room too.",
 	}, audited(c, "ctl-launch", describeLaunch, c.launchHandler))
 
@@ -1363,6 +1368,7 @@ func (c *controlMCP) launchHandler(ctx context.Context, req *mcp.CallToolRequest
 		harness = "claude"
 	}
 	room := roomOf(req)
+	callerRoom := room
 	// ANOTHER ROOM. The lineage then names the launcher as `me@myroom`, and its
 	// card as `myroom~id`, so the worker's reports and notices come back across
 	// to exactly this card. See docs/fabric/cross-room-say-design.md.
@@ -1376,13 +1382,26 @@ func (c *controlMCP) launchHandler(ctx context.Context, req *mcp.CallToolRequest
 		}
 		room = r
 	}
+	out, err := c.launchOnRoom(ctx, in, harness, room, callerRoom, spawnedBy, spawnedByID)
+	return nil, out, err
+}
+
+// launchOnRoom is the part of a launch that does not care who asked: the gate, the
+// cap on `room`, the tags, the lineage and the post to that room's /v1/launch. Shared by
+// the hub's own atrium_launch and by a room's launch relayed here (launchAcross), so
+// the two cannot drift. `callerRoom` is the room the caller's cards are named from, and
+// `spawnedBy` and `spawnedByID` are the lineage already worked out.
+func (c *controlMCP) launchOnRoom(ctx context.Context, in launchInput, harness, room, callerRoom,
+	spawnedBy, spawnedByID string) (launchOutput, error) {
+
+	out := launchOutput{}
 
 	// AN ITEM THAT WAITS ON OTHER WORK does not start, before any slot is reserved. A
 	// worker's title starts with its item id, so a director cannot start blocked work by
 	// accident. There is no override: a human clears the gate on the board first.
 	if c.gate != nil {
 		if msg, blocked := c.gate(ctx, in.Title); blocked {
-			return nil, out, &refusedError{msg}
+			return out, &refusedError{msg}
 		}
 	}
 
@@ -1404,7 +1423,7 @@ func (c *controlMCP) launchHandler(ctx context.Context, req *mcp.CallToolRequest
 				where = "every room together"
 			}
 			// A refusal, so `audited` writes it as `refused: ...` on ctl-launch.
-			return nil, out, &refusedError{fmt.Sprintf("at the launch cap of %d running workers on %s. "+
+			return out, &refusedError{fmt.Sprintf("at the launch cap of %d running workers on %s. "+
 				"wait for one to finish, exit one, or launch on another room", limit, where)}
 		}
 	}
@@ -1449,11 +1468,11 @@ func (c *controlMCP) launchHandler(ctx context.Context, req *mcp.CallToolRequest
 	}
 	var t ctlCard
 	if err := c.ask(ctx, http.MethodPost, "/v1/launch", room, reqBody, &t); err != nil {
-		return nil, out, err
+		return out, err
 	}
 	out.Model, out.Effort = t.Model, t.Effort
 	out.Card, out.Handle, out.Title, out.Status = t.ID, t.Wire, t.Title, t.Status
-	if room != roomOf(req) && room != "" {
+	if room != callerRoom && room != "" {
 		// Named the way atrium_say takes it from here.
 		out.Card, out.Handle = tagFor(room, t.ID), t.Wire+"@"+room
 	}
@@ -1465,15 +1484,18 @@ func (c *controlMCP) launchHandler(ctx context.Context, req *mcp.CallToolRequest
 	// Where the human looks. Worth returning rather than leaving them to assemble
 	// it, because the fragment form is not guessable.
 	out.Watch = c.board + "/#term=" + url.PathEscape(t.ID)
-	out.Note = "started. its permission requests go to the human on their board, so it will " +
-		"stop at the first gated command unless somebody is watching."
+	out.Note = LaunchStartedNote
 	// A room older than launch options drops the fields without a word.
 	missed := LaunchOptionsDropped(in.Model, in.Effort, in.Args, in.Env,
 		t.Model, t.Effort, t.LaunchArgs, t.LaunchEnvKeys)
 	missed = append(missed, LeanAgentsDropped(in.LeanAgents, in.LeanSkills, t.Tags)...)
 	out.Note = LaunchDroppedWarning(missed) + out.Note
-	return nil, out, nil
+	return out, nil
 }
+
+// LaunchStartedNote is what a launch that took says, after any warning.
+const LaunchStartedNote = "started. its permission requests go to the human on their board, so it will " +
+	"stop at the first gated command unless somebody is watching."
 
 // LeanAgentsDropped names "lean_agents" and "lean_skills" when they were asked
 // for and the card the room handed back carries no `atrium:agent:` or

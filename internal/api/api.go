@@ -145,6 +145,8 @@ type Server struct {
 	// `name@room` or `room~id`, through the same relay.
 	RoomCard http.HandlerFunc
 	RoomExit http.HandlerFunc
+	// RoomLaunch starts a session on another room, through the hub.
+	RoomLaunch http.HandlerFunc
 	// Report is a session on a card reporting to whoever launched it: the
 	// hub's `atrium_report`. Owned by the daemon, which owns the launcher's
 	// queue. See internal/daemon/finish.go.
@@ -656,6 +658,9 @@ func (s *Server) Handler() http.Handler {
 	}
 	if s.RoomExit != nil {
 		mux.HandleFunc("POST /v1/peers/exit", s.RoomExit)
+	}
+	if s.RoomLaunch != nil {
+		mux.HandleFunc("POST /v1/peers/launch", s.RoomLaunch)
 	}
 	if s.Report != nil {
 		mux.HandleFunc("POST /v1/tasks/{id}/report", s.Report)
