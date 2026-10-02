@@ -16,29 +16,29 @@ Check the hub roomHolding fan-out has not come back to gate the ws upgrade (fixe
 Land through @review; report before and after numbers to the orchestrator.
 
 ## Measurements
-2026-10-02, live hub http://127.0.0.1:7781 on m1mini, headless Chromium on the same box (so no network in it),
-`node scripts/measure-term-switch.js` (`IDS=a,b` to pick cards). Times in ms from `attachTask(id)`; "drain" is when xterm
-has parsed everything written (a `term.write("", cb)` after the last frame). Renderer in this run: the default (not WebGL).
 
-| card (m1mini) | click to ws ctor | ctor to open | first byte | last frame | replay bytes | xterm drained | buffer lines |
-|---|---|---|---|---|---|---|---|
-| fabric | 22 | 6 | 28 | 141 | 884 KB | 416 | 8076 |
-| runtime | 22 | 11 | 33 | 84 | 551 KB | 392 | 3914 |
-| ui-director | 25 | 11 | 37 | 86 | 449 KB | 330 | 4339 |
-| rnd | 22 | 6 | 28 | 75 | 0.3 KB | 230 | 34 |
+### Local, m1mini room daemon (:7781, NOT the hub), 2026-10-02
+Headless Chromium on m1mini, `node scripts/measure-term-switch.js` (standalone; takes the board URL). Times in ms from
+`attachTask(id)`. Renderer: xterm's WebGL addon on software GL (headless), so paint cost here is NOT what clint's GPU sees.
 
-(first column pair is the same cold-ish case each time: the first switch of a page load was 76/16/91/204 for fabric.)
+| card | click to ws ctor | ctor to open | first byte | last replay frame | xterm parsed it | replay |
+|---|---|---|---|---|---|---|
+| fabric | 18 | 6 | 24 | 169 | 359 | 892 KB, 8154 lines |
+| runtime | 19 | 5 | 24 | 70 | 395 | 551 KB |
+| ui-director | 21 | 13 | 34 | 90 | 346 | 460 KB |
+| rnd | 18 | 6 | 24 | 68 | 227 | 0.3 KB |
 
-Rapid sequences, 12 live cards, 3 rounds, 0 ms and 200 ms apart (32 and 36 sockets): ws ctor to open stayed 5-15 ms on
-every socket, no jump, no drift. The ws URL is `/v1/tasks/<bare uuid>/attach?link=<nonce>`: a uuid, no name, and no
-`room~id` tag (this hub has no tagged rooms: `/v1/rooms` is empty).
+Rapid switching (12 cards x3, 0 ms and 200 ms apart): ctor to open 5-15 ms every time, no drift. The ws path is
+`/v1/tasks/<bare uuid>/attach?link=<nonce>`: a uuid, no name, no `room~id`.
 
-Not measured: **a claude-sg4 (remote) card.** `/v1/tasks` on this hub lists only m1mini cards, so there is no remote
-card to click; the pool draw-down and card-lookup costs @fabric lists only exist for a remote room. Needs the sg4 room
-attached, or @fabric's opt-in hub timing log.
+What it says (an earlier note here blamed xterm parsing; that came from a 150 ms quiet-wait inside the timer and is wrong):
+- A bare xterm in the same page parses the 893 KB replay in 28-39 ms.
+- A CPU profile of one switch to fabric shows about 40 ms of JavaScript in total. The rest of the ~350 ms is the
+  browser's own work (layout, paint, GL), "(program)" in the profile, and it will be smaller on a real GPU.
+- So locally the switch is: ~20 ms fetch, ~25 ms to the first byte, the replay in 50-170 ms, then native render.
+  Nothing in the page's own JS is slow. What a REMOTE card adds is the link carrying that replay (up to ~0.9 MB) and
+  whatever the hub does first.
 
-What the local numbers say: the socket is not the cost (ctor to open under 15 ms, replay arrives in 50-140 ms). Of the
-330-420 ms a switch takes on a big scrollback, 20 ms is the fetch before the socket, and the remaining ~250-300 ms is
-xterm parsing the replay (about 2 MB/s into a fresh `Terminal` per switch, which `openTerm` builds every time). Time to
-the first paint of a partial screen is earlier (first rAF at ~20 ms is the empty pane). So the lever is not the
-transport: it is keeping the parsed terminal (hidden) so a switch back replays nothing, or sending the tail first.
+### Through the hub (sg4), remote cards
+Not measured from m1mini: the hub's board is loopback-only on sg4 (http://127.0.0.1:7778 there). Run on sg4:
+`node measure-term-switch.js http://127.0.0.1:7778 --per-host 2 --rounds 3`. Results to go here.
