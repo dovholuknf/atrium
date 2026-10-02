@@ -889,8 +889,45 @@ async function attachTask(id) {
   // destination is written where it is actually reached. See `rememberPlace`:
   // resume reads this instead of asking where to open.
   rememberPlace(id, "here");
+  // THE CARD IS ALREADY HERE. The board's own list holds it, and it has the same fields the single read answers with,
+  // so a terminal it can attach opens at once and the read (a prewarm if one is under way) only refreshes it. Waiting
+  // on the read first cost a full round trip to the owner room on a hub, which is what the click paid before the
+  // socket could even be asked for. Anything not in the list, or not attachable, takes the read first as it always did.
+  const listed = typeof lastTasks !== "undefined" && lastTasks.find(t => t.id === id);
+  // `supervised` is the whole test: atrium holds the runner, so there is something to attach to. (A card with no
+  // runner is never supervised, so `termCold` would add nothing here.)
+  if (listed && listed.supervised) {
+    const shown = Object.assign({}, listed);
+    const read = takePrewarmed(id) || api(`/v1/tasks/${id}`);
+    openTerm(shown);
+    refreshAttachedCard(shown, read);
+    return;
+  }
   try { openTerm(await (takePrewarmed(id) || api(`/v1/tasks/${id}`))); }
   catch (e) { toast("could not attach", e.message); }
+}
+
+// The answer to the read that `attachTask` left running after it opened the pane from the list. Applied to the card
+// the pane is showing if it differs in what the pane draws, and thrown away if the pane has moved on (another card,
+// or none): `shown` is the very object `openTerm` set as `termTask`, so identity is the whole test. The terminal, its
+// scroll and its fit are not touched, only the name and chips. A failed read does nothing: the socket is the truth,
+// and it says so itself if the session is not there.
+const REFRESH_FIELDS = ["display_title", "title", "pid", "status", "runner", "worktree", "parked_at"];
+async function refreshAttachedCard(shown, read) {
+  let fresh;
+  try { fresh = await read; } catch (e) { rlog("late card read failed for", shown.id, "-", e && e.message); return; }
+  if (!fresh || termTask !== shown) return;
+  if (!REFRESH_FIELDS.some(k => shown[k] !== fresh[k])) return;
+  // Only the fields the pane draws: an older read must not undo an id retag, a theme save or an alias set while it
+  // was out.
+  for (const k of REFRESH_FIELDS) if (k in fresh) shown[k] = fresh[k];
+  // A pane that already says it exited stays as it is. The socket closes first, and the read that answers after
+  // would put the live name, pid and path back over a dead pane.
+  const pane = document.getElementById("term-pane");
+  if (pane && pane.classList.contains("dead")) return;
+  paintTermTitle(shown);
+  paintTermChips(shown);
+  renderTermList();
 }
 
 // Whether this card is showing in a window of its own.

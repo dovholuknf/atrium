@@ -19129,6 +19129,98 @@ async function switchPrewarmSection(browser, base) {
   } finally { tasksMode = was; await ctx.close(); }
 }
 
+// A CLICK OPENS THE PANE AT ONCE from the card the board's list already holds, and the read of the card that follows
+// only refreshes it. With the read held: the pane is up (termTask, a Terminal) before it answers. A late answer that
+// differs updates the name without a new Terminal. A late answer after a switch is ignored. A failed read leaves the
+// pane open. A card the list does not hold waits for the read, as before.
+async function attachAtOnceSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const wp = await ctx.newPage();
+  const errors = [];
+  wp.on("pageerror", e => errors.push(String(e)));
+  const was = tasksMode;
+  const live = (id, extra) => Object.assign({}, T1, { id, display_title: "row " + id, supervised: true, pinned: true,
+    worktree: "/tmp/ao/" + id }, extra || {});
+  const held = {};
+  try {
+    wornTasks = [live("ao-a"), live("ao-b"), live("ao-c")];
+    tasksMode = "worn";
+    await wp.route("**/v1/tasks/ao-*", route => {
+      const id = new URL(route.request().url()).pathname.split("/").pop();
+      if (route.request().method() !== "GET" || id === "ao-zz-nolist" && false) return route.fallback();
+      (held[id] = held[id] || []).push(route);
+    });
+    const answer = (id, how) => {
+      const r = (held[id] || []).shift();
+      if (!r) throw new Error("no held read for " + id);
+      return how === "fail" ? r.fulfill({ status: 500, body: "boom" })
+        : r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(live(id, how || {})) });
+    };
+    await wp.goto(base, { waitUntil: "domcontentloaded" });
+    await wp.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await wp.click('.tab[data-view="terms"]');
+    await wp.evaluate(async () => { await loadCards().catch(() => {}).then(renderTermList); });
+    const state = () => wp.evaluate(() => ({ task: termTask && termTask.id, hasTerm: !!term, title: document.getElementById("t-title").textContent,
+      termId: term ? (window.__termSeen = window.__termSeen || new WeakMap(), 1) : 0 }));
+    const idle = ms => wp.waitForTimeout(ms);
+
+    // At once, with the read held.
+    await wp.evaluate(() => { window.__t0 = term; attachTask("ao-a"); });
+    await idle(150);
+    let st = await state();
+    if (st.task !== "ao-a" || !st.hasTerm) fail("attachAtOnce: with the read held the pane was not open (" + JSON.stringify(st) + ").");
+    const before = st.title;
+    // A late answer that differs: the name moves, the terminal object is the same one.
+    await wp.evaluate(() => { window.__termThen = term; });
+    await answer("ao-a", { display_title: "renamed late", worktree: "/tmp/ao/renamed-late" });
+    await idle(150);
+    st = await state();
+    const same = await wp.evaluate(() => window.__termThen === term);
+    if (!same) fail("attachAtOnce: the late answer rebuilt the terminal.");
+    if (st.title === before || !/renamed/.test(st.title + (await wp.evaluate(() => termTask.display_title)))) {
+      fail("attachAtOnce: the late answer did not update the name (" + before + " -> " + st.title + ").");
+    }
+
+    // A late answer after a switch is ignored.
+    await wp.evaluate(() => attachTask("ao-b"));
+    await idle(100);
+    await wp.evaluate(() => attachTask("ao-c"));
+    await idle(100);
+    await answer("ao-b", { display_title: "STALE", worktree: "/tmp/ao/STALE" });
+    await idle(150);
+    const afterSwitch = await wp.evaluate(() => ({ task: termTask && termTask.id, title: document.getElementById("t-title").textContent,
+      stale: termTask && /STALE/.test(termTask.display_title + termTask.worktree) }));
+    if (afterSwitch.task !== "ao-c" || afterSwitch.stale || /STALE/.test(afterSwitch.title)) {
+      fail("attachAtOnce: a late answer for a card that was switched away from was applied (" + JSON.stringify(afterSwitch) + ").");
+    }
+
+    // A failed read leaves the pane open.
+    await answer("ao-c", "fail");
+    await idle(200);
+    st = await state();
+    if (st.task !== "ao-c" || !st.hasTerm) fail("attachAtOnce: a failed read closed the pane (" + JSON.stringify(st) + ").");
+
+    // A card the list does not hold waits for the read.
+    await wp.evaluate(() => { window.__nolist = attachTask("ao-nolist"); });
+    await idle(200);
+    st = await state();
+    if (st.task === "ao-nolist") fail("attachAtOnce: a card not in the list opened before its read answered.");
+    // A late read does not repaint a pane that already says it exited.
+    await wp.evaluate(() => attachTask("ao-b"));
+    await idle(150);
+    await wp.evaluate(() => markTermDead());
+    await answer("ao-b", { status: "dead", pid: 0, display_title: "row ao-b" });
+    await idle(150);
+    const dead = await wp.evaluate(() => ({ title: document.getElementById("t-title").textContent,
+      chips: document.getElementById("t-chips").textContent, cls: document.getElementById("term-pane").className }));
+    if (!/\(exited\)/.test(dead.title) || !/exited/.test(dead.chips) || !/dead/.test(dead.cls)) {
+      fail("attachAtOnce: a late read repainted a dead pane (" + JSON.stringify(dead) + ").");
+    }
+    if (errors.length) fail("attachAtOnce: page errors " + errors.join("; "));
+    if (!bad) console.log("attachAtOnce ok");
+  } finally { tasksMode = was; await ctx.close(); }
+}
+
 // u-new-burn-chart-axes: the cumulative chart has a time axis, a percent-of-limit axis with the 100% line, the time
 // the projection crosses it, the resets, and a hover. Every fixture is built from one fixed `now` (UC.now), and the
 // limit readings are placed relative to it, so nothing reads the real clock. BURN_SHOT=<dir> writes the pictures.
@@ -19320,7 +19412,7 @@ async function main() {
       termDebug: termDebugSection, termSortStarted: termSortStartedSection,
       noReadyChildren: noReadyChildrenSection, childUnderParent: childUnderParentSection, topNav: topNavSection,
       childFold: childFoldSection, liveHome: liveHomeSection,
-      pulls: pullsSection, hubRepos: hubReposSection, hubReposShelf: hubReposShelfSection, hubReposLedger: hubReposLedgerSection, hubReposFeed: hubReposFeedSection, trayHead: trayHeadSection, pullsAbsent: pullsAbsentSection, oneTooltip: oneTooltipSection, burnChart: burnChartSection, switchPrewarm: switchPrewarmSection };
+      pulls: pullsSection, hubRepos: hubReposSection, hubReposShelf: hubReposShelfSection, hubReposLedger: hubReposLedgerSection, hubReposFeed: hubReposFeedSection, trayHead: trayHeadSection, pullsAbsent: pullsAbsentSection, oneTooltip: oneTooltipSection, burnChart: burnChartSection, switchPrewarm: switchPrewarmSection, attachAtOnce: attachAtOnceSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -21377,6 +21469,7 @@ async function main() {
     await unit("liveHome", () => liveHomeSection(browser, base));
     await unit("burnChart", () => burnChartSection(browser, base));
     await unit("switchPrewarm", () => switchPrewarmSection(browser, base));
+    await unit("attachAtOnce", () => attachAtOnceSection(browser, base));
   } catch (e) {
     // a listing has no browser, so a bare section call throws here, and the guard below names it
     if (!LIST_MODE) fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e));

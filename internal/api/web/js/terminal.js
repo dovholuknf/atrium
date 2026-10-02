@@ -553,6 +553,35 @@ function paintTermTitle(task) {
   if (typeof paintTermAlias === "function") paintTermAlias(task, titleEl, label);
 }
 
+// The runner's mark and the chips under the name. Its own function so a card that arrives a moment after the pane
+// opened (see `refreshAttachedCard`) can repaint them without rebuilding the terminal.
+function paintTermChips(task) {
+  document.getElementById("t-mark").innerHTML = runnerMark(task.runner);  // What is left is what changes: the process, and where it is. The theme
+  // moved into the cog, with the rest of how this terminal behaves.
+  // The path copies itself. It is the thing most often wanted somewhere else,
+  // and reading it off a screen to retype it is the worst way to spend a
+  // minute.
+  document.getElementById("t-chips").innerHTML =
+    // WHICH ROOM, first, when there is more than one. `roomOf` reads the room off
+    // the id's tag and answers "" with a single room attached, so this draws
+    // nothing until a second room makes the question real, the same as the room
+    // chip on the strip row (see `termRoomChip`). The name is the tag itself.
+    (roomOf(task.id) ? `<span class="chip room" style="--rhue:${roomHue(roomOf(task.id))}"
+       data-tip="this card runs in room ${esc(roomOf(task.id))}"
+       >${esc(roomOf(task.id))}</span>` : "") +
+    (typeof keepaliveChip === "function" ? keepaliveChip(task) : "") +
+    (task.pid ? `<span class="chip">pid ${task.pid}</span>` : "") +
+    // THE GLYPH COPIES, THE PATH DOES NOT. The whole chip used to be the
+    // button, so a row-width target sat over the bar saying `click to copy`
+    // and swallowed clicks meant for what was behind it. A path is also a
+    // thing you select with the mouse, which a click handler over all of it
+    // makes awkward.
+    `<span class="chip path" data-path="${esc(task.worktree || "")}"
+       ><button class="copybit" data-tip="copy this path"
+         onclick="event.stopPropagation();copyPath(this.parentNode)"
+         >${copyIcon()}</button>${esc(task.worktree || "")}</span>`;
+}
+
 function openTerm(task) {
   if (typeof Terminal === "undefined") {
     tellUser("atrium", "the terminal library did not load");
@@ -655,30 +684,7 @@ function openTerm(task) {
   // The runner as its mark, in front of the name, the way a card carries it.
   // A `claude` pill among the chips said the same thing in the place the eye
   // goes last, and read as one more fact rather than as whose terminal this is.
-  document.getElementById("t-mark").innerHTML = runnerMark(task.runner);  // What is left is what changes: the process, and where it is. The theme
-  // moved into the cog, with the rest of how this terminal behaves.
-  // The path copies itself. It is the thing most often wanted somewhere else,
-  // and reading it off a screen to retype it is the worst way to spend a
-  // minute.
-  document.getElementById("t-chips").innerHTML =
-    // WHICH ROOM, first, when there is more than one. `roomOf` reads the room off
-    // the id's tag and answers "" with a single room attached, so this draws
-    // nothing until a second room makes the question real, the same as the room
-    // chip on the strip row (see `termRoomChip`). The name is the tag itself.
-    (roomOf(task.id) ? `<span class="chip room" style="--rhue:${roomHue(roomOf(task.id))}"
-       data-tip="this card runs in room ${esc(roomOf(task.id))}"
-       >${esc(roomOf(task.id))}</span>` : "") +
-    (typeof keepaliveChip === "function" ? keepaliveChip(task) : "") +
-    (task.pid ? `<span class="chip">pid ${task.pid}</span>` : "") +
-    // THE GLYPH COPIES, THE PATH DOES NOT. The whole chip used to be the
-    // button, so a row-width target sat over the bar saying `click to copy`
-    // and swallowed clicks meant for what was behind it. A path is also a
-    // thing you select with the mouse, which a click handler over all of it
-    // makes awkward.
-    `<span class="chip path" data-path="${esc(task.worktree || "")}"
-       ><button class="copybit" data-tip="copy this path"
-         onclick="event.stopPropagation();copyPath(this.parentNode)"
-         >${copyIcon()}</button>${esc(task.worktree || "")}</span>`;
+  paintTermChips(task);
   paintCopyMode();
   paintTermKind();
   // Whether this card holds findings to walk. See js/walk.js.
