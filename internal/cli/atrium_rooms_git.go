@@ -32,7 +32,8 @@ func roomGitCmd(prefix string) *cobra.Command {
 			"clone on claude/main by itself. These verbs do what the hub would do on its timers, now.\n\n" +
 			"EVERY TRANSFER IS A FETCH. Nothing is pushed to a room or to the hub.",
 	}
-	c.AddCommand(gitSyncCmd(prefix), gitCollectCmd(prefix), gitStatusCmd(prefix), gitReposCmd(prefix))
+	c.AddCommand(gitSyncCmd(prefix), gitCollectCmd(prefix), gitStatusCmd(prefix), gitReposCmd(prefix),
+		gitInitCmd(prefix), gitStoreCmd(prefix), gitSettingsCmd(prefix))
 	return c
 }
 

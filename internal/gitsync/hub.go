@@ -51,8 +51,12 @@ type Hub struct {
 	MirrorEvery, CollectEvery time.Duration
 	// SelfHost is this hub machine's hostname. The room whose hello Host equals it is skipped.
 	SelfHost string
+	// StoreRoot is where the hub's own store is: the `git.store` setting. Nil, or empty, is
+	// `<Dir>/git`. Read on every use. See store.go.
+	StoreRoot func() string
 
 	mu     sync.Mutex
+	store  *Store
 	locks  map[string]*sync.Mutex
 	mirror map[string]MirrorState
 	rooms  map[string]*RoomState

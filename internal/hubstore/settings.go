@@ -4,6 +4,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -306,4 +308,65 @@ func (s *Store) SetBoardAuto(on bool, until *time.Time) error {
 		return s.SetHubSetting(SettingBoardAuto, "on")
 	}
 	return s.SetHubSetting(SettingBoardAuto, boardAutoUntil+ts(*until))
+}
+
+// The hub's own git store (docs/rnd/hub-forge-design.md 3.1). Two settings in the same key-value
+// table as every other, so there is NO MIGRATION: a name never written reads as its default.
+const (
+	// SettingGitStore is where the hub keeps its bare repositories, `<store>/<host>/<owner>/<repo>.git`.
+	// Empty is `<hub atrium-dir>/git`.
+	SettingGitStore = "git.store"
+	// SettingGitCreateOnPush is whether a room's first push of a repository the hub does not have may
+	// create it. Off until the operator turns it on. This item only stores it: f-new-hub-receive reads it.
+	SettingGitCreateOnPush = "git.create_on_push"
+)
+
+// GitStorePath is where the hub's git store is: the setting, or `<hubDir>/git`.
+func (s *Store) GitStorePath(hubDir string) (string, error) {
+	v, err := s.HubSetting(SettingGitStore)
+	if err != nil {
+		return "", err
+	}
+	if v = strings.TrimSpace(v); v != "" {
+		return v, nil
+	}
+	return filepath.Join(hubDir, "git"), nil
+}
+
+// SetGitStore sets the store's directory, which has to be an absolute path on the hub's machine.
+// Empty puts it back to the default. Nothing already in the old directory is moved.
+func (s *Store) SetGitStore(dir string) error {
+	dir = strings.TrimSpace(dir)
+	if dir == "" {
+		return s.SetHubSetting(SettingGitStore, "")
+	}
+	if strings.ContainsAny(dir, "\x00\r\n") || !filepath.IsAbs(filepath.FromSlash(dir)) {
+		return errors.New("git.store has to be an absolute path on the hub's machine")
+	}
+	clean := filepath.Clean(filepath.FromSlash(dir))
+	if clean == filepath.Dir(clean) {
+		return errors.New("git.store cannot be the root of a disk")
+	}
+	if st, err := os.Stat(clean); err == nil && !st.IsDir() {
+		return errors.New("git.store is a file, and it has to be a directory")
+	}
+	return s.SetHubSetting(SettingGitStore, filepath.ToSlash(clean))
+}
+
+// GitCreateOnPush reads whether a first push may create a repository. A value that is not on reads
+// as off, and so does a store that cannot answer: creating a repository is the thing to withhold.
+func (s *Store) GitCreateOnPush() (bool, error) {
+	v, err := s.HubSetting(SettingGitCreateOnPush)
+	if err != nil {
+		return false, err
+	}
+	return strings.EqualFold(strings.TrimSpace(v), "on"), nil
+}
+
+// SetGitCreateOnPush turns it on or off.
+func (s *Store) SetGitCreateOnPush(on bool) error {
+	if on {
+		return s.SetHubSetting(SettingGitCreateOnPush, "on")
+	}
+	return s.SetHubSetting(SettingGitCreateOnPush, "off")
 }
