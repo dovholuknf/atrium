@@ -160,3 +160,58 @@ sudo chgrp -R work /srv/work && sudo chmod -R g+rwX /srv/work && sudo find /srv/
 
 Atrium-Verdict: hold 47820430..71748e0b
 Quality: careful work and honest testing. The hold is one .NET fact that the fixture assumed the wrong way.
+
+## Re-read: 4699c740
+
+Range `47820430..4699c740`, adding one commit to 71748e0b.
+
+Closed:
+- **M1.** The groups now come from `whoami /groups /fo csv /nh`. Only the SID column is read, through `ConvertFrom-Csv`
+  with named headers, so a comma in a quoted group name is safe. The localized attribute column is never read.
+  - A filtered token is a member with the filtered note.
+  - An empty list, or no `S-1-*` at all, is a throw and then `Known = $false`. That is a warn, or a fail under
+    Require, and never ok.
+  - `.Groups` is gone from the probe.
+  - The fixtures are in the documented format: filtered, elevated and German. The doc and the test header both say
+    they were not captured on a real machine. Getting one capture from sg4 after landing is the right follow-up.
+- **M2.**
+  - Any `sudo.rc=0` warns, with three wordings.
+  - `docker`, `lxd`, `incus-admin` and `libvirt` warn as root on Linux, and the test that called docker clean is gone.
+  - A timeout reads as "may have sudo".
+- **L1.** It is closed in effect, with one remark, N1 below. `Invoke-AccountProbe` caps the whole call at 45 seconds,
+  kills the process tree, and turns a cap into the could-not-tell warn, or a refusal under Require.
+- **L2.** The wording is fixed.
+- **L3.** 551 and 578 are matched by SID.
+- **L4.** The doc now uses `g+rwX` and sets `g+s` on directories only, with the reason given.
+- **L5.**
+  - the `claude.SG3` note;
+  - `Add-LocalGroupMember` guarded by a membership check;
+  - Full Disk Access for `systemsetup`.
+
+How it was checked:
+- I read the diff of room-account.ps1, the doc and the fixtures.
+- `test-room-account.ps1` at the tip gives 123 of 159 ok here. All 36 failures use a fake ssh or a fake sudo from
+  `$TMPDIR`, which is the sandbox class, so for those I rely on @fabric's 159/159.
+- I ran the Unix probe by hand twice: once against the real sudo, which gives `sudo.rc=1` at once, and once against a
+  fake sudo that hangs. That second run gave N1.
+
+Open, Low, none of which holds:
+- **N1: the 5 second sudo cut-off is not always 5 seconds.** I used a fake `sudo`, a shell script that runs
+  `sleep 60`. The watcher kills it at 5 seconds and the probe prints `sudo.rc=timeout`, but the probe took 60 seconds.
+  That is because the killed process's child still holds the `$( )` pipe.
+
+  A real sudo has no such child. But a sudo that has set its real uid to root cannot be signalled by the user, so
+  `kill` fails quietly. In both cases the 45 second cap is what actually bounds the probe.
+
+  The doc's "cut off after 5 seconds" should say "usually, and the whole probe never waits more than 45 seconds", or
+  the watcher should kill the process group. The comment in room-account.ps1 should say the same.
+- **N2: an agent can change the probe's answer.** The probe's output is parsed with the last line winning. An
+  account's `~/.bashrc` (bash reads it for an ssh command) or an EXIT trap set there can print `uid=` or `groups=`
+  lines after the probe. So an agent on that account can make it read clean. Nothing new: 71748e0b had the same parse.
+  Taking the first value of each key, and refusing a key seen twice, would close it cheaply.
+
+Verdict: room-ok and hub-ok (re-read, 47820430..4699c740)
+Quality: a thorough fix with real-format fixtures and a 45-second cap that holds. N1 is wording.
+
+Atrium-Verdict: room-ok 47820430..4699c740
+Atrium-Verdict: hub-ok 47820430..4699c740
