@@ -262,3 +262,30 @@ Open, Low:
 
 Atrium-Verdict: hold 47820430..0ac1ff3e
 Quality: the marker and the first-value parse are right and well tested. The hold is a real SID left in one commit.
+
+## Re-read: 14422eb9 (the follow-up, rewritten)
+
+Range `47820430..14422eb9`. One commit on 4699c740, replacing 2c4ddfb8 and 0ac1ff3e.
+
+Closed:
+- **The history hold.** `git log -p 4699c740..14422eb9` holds none of the three parts of sg4's machine SID, and the
+  fixture has the placeholder from its first commit.
+  - The tip's tree still holds the SID in `internal/daemon/testdata/frame-settled-statusline.bin`. That is because
+    the branch is based on 4699c740, before r-scrub-sid. The branch does not touch that file, so a merge onto landing,
+    which has the scrub, keeps the scrubbed copy. Rebase onto landing to be sure.
+- **N3.** The Unix caveat sits beside the Windows one, in the doc and in both comments: the marker guards against noise
+  and a naive profile, not a hostile account.
+- **N4.** `docker-users` is matched by name, and only a `docker=<count>` line is printed.
+  - Called directly, `docker=1` gives the warn "is in the group docker-users (Docker Desktop reaches host files)", and
+    `docker=0` gives ok.
+  - The real capture now warns, and the ok test takes that row out of a copy of the capture.
+
+The marker and first-value work is unchanged from 0ac1ff3e, which I had already passed as code.
+
+One Low: `docker` is not in `$probeKeys`, so a second `docker=` with another value is not flagged as a conflict. The
+first value still wins, so nothing reads clean because of it. Add it when the file is next touched.
+
+Verdict: room-ok and hub-ok (re-read, 47820430..14422eb9)
+
+Atrium-Verdict: room-ok 47820430..14422eb9
+Atrium-Verdict: hub-ok 47820430..14422eb9
