@@ -215,3 +215,50 @@ Quality: a thorough fix with real-format fixtures and a 45-second cap that holds
 
 Atrium-Verdict: room-ok 47820430..4699c740
 Atrium-Verdict: hub-ok 47820430..4699c740
+
+## Re-read: 0ac1ff3e (follow-up)
+
+Range `47820430..0ac1ff3e`. Two commits on 4699c740, which is already on landing: 2c4ddfb8 and 0ac1ff3e. @fabric
+counted three, but `4699c740..0ac1ff3e` holds these two.
+
+Verdict: **HOLD, on the history only.** The code and docs are OK.
+
+**What holds it.** 2c4ddfb8 adds `scripts/fixtures/whoami-groups-sg4-claude-nonadmin.csv` with sg4's real machine SID
+in four rows. 0ac1ff3e only replaces it on top, so the real SID stays in 2c4ddfb8 for anyone who reads the history.
+
+The repo is public, and the orchestrator is scrubbing that same SID out of the daemon testdata as a pause exception
+(r-scrub-sid). So landing it here in a new commit would undo that work. The fix is to squash 2c4ddfb8 and 0ac1ff3e into
+one commit, or to rebuild the branch without the real value, and send the new sha. It is on no shared branch yet:
+`git branch -a --contains 2c4ddfb8` lists only `claude/f-room-accounts`.
+
+Closed:
+- **N2.**
+  - `Select-ProbeLines` takes only what sits between exactly one begin and one end of a per-run marker. No marker, a
+    repeated marker, or markers out of order is `err=`, so could-not-tell.
+  - `Get-AccountResult` keeps the first value of each key. The same key said again with a different value is
+    could-not-tell, which refuses under Require.
+- **N1.** The comment and the doc say "usually 5 seconds, bounded by the 45 second cap".
+
+How it was checked:
+- I dot-sourced room-account.ps1 at the tip and called the functions directly.
+  - Noise before and after the markers saying `uid=1000` did not hide `groups=...,sudo`. The answer was still the
+    sudo warn.
+  - `uid=0` then `uid=1000` inside the markers gave could-not-tell.
+  - A doubled begin gave the tampered `err=`.
+  - Lines with no markers gave the noisy `err=`.
+- `test-room-account.ps1` gives 139 of 184 here. All 45 failures are the fake-ssh or fake-sudo `$TMPDIR` class,
+  including the new noise checks, so for those I rely on @fabric's 184/184.
+- The fixture after 0ac1ff3e has a placeholder machine SID. The only host name in it is the `SG4\` group prefix, which
+  is already all over the repo.
+
+Open, Low:
+- **N3: a determined account can learn the Unix marker too.** The marker reaches the target on stdin, but the
+  account's own `~/.bashrc` runs before `sh -s` and can read stdin. It can then take the marker and print a full fake
+  answer between real markers. That is the same limit the doc already states for Windows' command line. Say it for
+  Unix as well: the marker defeats noise and a careless profile, not the account itself.
+- **N4: `docker-users` on Windows.** The real capture shows `SG4\docker-users`. Docker Desktop's group can drive the
+  engine, and through its host mounts that can reach the host's files. It is not a fixed SID, since the RID varies, but
+  the name is not localized. Consider a warn on that name. It is optional.
+
+Atrium-Verdict: hold 47820430..0ac1ff3e
+Quality: the marker and the first-value parse are right and well tested. The hold is a real SID left in one commit.
