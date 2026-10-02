@@ -326,6 +326,32 @@ var migrations = []struct {
 			`CREATE INDEX IF NOT EXISTS doc_version_card ON doc_version (card, at)`,
 		},
 	},
+	{
+		// THE HUB STORE'S PUSH LOG: one row per ref a push to the hub's own git store updated, and a marker
+		// row when a branch is let go. Written by internal/gitsync after git accepted the push, never before.
+		// The owner of a branch is the first push row after the latest release marker, so nothing here is
+		// edited or deleted: a release is a new row.
+		//
+		// id is a text key that sorts in the order rows were written (see gitpush.go), because the owner
+		// is read by order and a Postgres move would have no rowid to lean on. Room and card are both empty
+		// for the operator. On a release row they are the owner that was let go, and released_by says why.
+		name: "0008_git_push",
+		stmts: []string{
+			`CREATE TABLE IF NOT EXISTS git_push (
+				id          TEXT PRIMARY KEY,
+				kind        TEXT NOT NULL CHECK (kind IN ('push','release')),
+				repo        TEXT NOT NULL,
+				ref         TEXT NOT NULL,
+				old_sha     TEXT NOT NULL DEFAULT '',
+				new_sha     TEXT NOT NULL DEFAULT '',
+				room        TEXT NOT NULL DEFAULT '',
+				card        TEXT NOT NULL DEFAULT '',
+				at          TEXT NOT NULL,
+				released_by TEXT NOT NULL DEFAULT ''
+			)`,
+			`CREATE INDEX IF NOT EXISTS git_push_ref ON git_push (repo, ref, id)`,
+		},
+	},
 }
 
 func (s *Store) migrate() error {

@@ -228,7 +228,9 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	}
 	h.Git = gitHub.Backend()
 	// THE HUB'S OWN STORE, taken from rooms on the same kind (as that room) and from the operator on the board.
-	// gitHub.Cards is set when the proxy exists. A push is refused until a push log is set.
+	// The push log is the hub database's git_push table (migration 0008). gitHub.Cards is set when the proxy
+	// exists. A push is refused when there is no log, so the log is set before the handler is.
+	gitHub.PushLog = store
 	gitHub.CreateOnPush = func() bool {
 		on, _ := store.GitCreateOnPush()
 		return on
