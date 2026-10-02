@@ -80,3 +80,31 @@ Open: M1, M2, M3, L1, L2
 
 Quality: a clean rewrite that takes clint's answers at their word and keeps revision 1's safety ideas where they still
 apply. The gaps are in how git config and filesystems behave, not in the design's logic.
+
+## Re-read at ce385645 (2026-10-02): OK, doc-ok
+
+One commit: the forge doc, `f-new-hub-receive` and `r-new-hub-remote`.
+- **M1, closed.** The token rides only as `http.http://127.0.0.1:<port>/git/.extraHeader`, never bare.
+  `r-new-hub-remote`'s acceptance has a header-recording server that must get no atrium header.
+- **M2, closed.** Pre-receive refuses a new ref whose lowercased name matches an existing one, and new repos use
+  `--ref-format=reftable` where git has it. The acceptance tests `Fix/x` against `fix/x` on sg4.
+- **M3, closed.** The hook and `atrium_git_push` check that the remote's url and pushurl start with the forwarder's
+  URL. Where the operator's `hub` is taken, atrium adds `atrium-hub`. A `hub` pointing at another server is refused,
+  in acceptance.
+- **L1, closed.** Ownership is per card, follows `moved_to`, and is released on cull, after 7 days done, or by
+  `atrium hub git release`. **L2** is stated by the table.
+- **The 3.4 note, closed.** Cards that run outside code (prove, PR tests, an outside cwd) get `git.push=none` and no
+  token.
+- **The 3.3 build notes, in.** hideRefs is built per request (hide `refs/`, `!refs/heads/claude/`, and each live
+  branch), `allowFilter` is off, and the hub refuses `shallow`, `deepen` and `filter`. Tests cover stash, notes and an
+  unserved branch.
+
+One low for the build, not a hold:
+- **L3:** git applies `url.<x>.insteadOf` and `pushInsteadOf` at push time, so `remote.hub.url` can match the
+  forwarder while the push goes somewhere else, under a global or system rewrite. Check the effective URL, with `git
+  remote get-url --push <remote>` (which applies the rewrites), not the raw config value.
+
+Closed: M1, M2, M3, L1, L2
+Open: L3
+
+Verdict: OK, doc-ok 6f52997d^..ce385645. It lands alone by cherry-pick of the two, and ce0d80c2 stays held.
