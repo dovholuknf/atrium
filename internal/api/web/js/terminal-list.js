@@ -29,6 +29,66 @@ function termNarrow() {
 }
 function termDeviceKey(base) { return termNarrow() ? base + ".mobile" : base; }
 
+// ── warming a card on hover ──────────────────────────────────────────────────
+//
+// A SWITCH STARTS WITH A FETCH of the card (`attachTask`), and for a card in a
+// remote room the hub answers it with a lookup that crosses the link the first
+// time and is cached for two minutes after. Resting the pointer on a row for a
+// moment fetches it ahead of the click, so the click finds the answer ready and
+// the hub's cache warm.
+//
+// ONLY THE FETCH. Opening the socket on hover would take one of the hub's few
+// warm connections to that room for as long as the socket lived, and hovering
+// down a list would drain them. So the socket still opens on the click.
+//
+// SHORT DWELL, CANCELLED ON LEAVE: sweeping the pointer down the list warms
+// nothing. At most `PREWARM_MAX` fetches are in flight. What came back is
+// kept for `PREWARM_FRESH_MS` and handed to `attachTask` once, so the card it
+// opens on is no older than a click would have fetched. A mouse only: touch has
+// no hover, and a phone gets nothing from this.
+const PREWARM_DWELL_MS = 100;
+const PREWARM_MAX = 2;
+const PREWARM_FRESH_MS = 3000;
+const prewarmed = new Map();
+let prewarmTimer = 0, prewarmFlying = 0;
+
+function prewarmCard(id) {
+  if (!id || prewarmFlying >= PREWARM_MAX) return;
+  const had = prewarmed.get(id);
+  if (had && Date.now() - had.at < PREWARM_FRESH_MS) return;
+  prewarmFlying++;
+  const p = api(`/v1/tasks/${id}`);
+  prewarmed.set(id, { at: Date.now(), p });
+  const done = () => { prewarmFlying--; };
+  p.then(done, () => { done(); prewarmed.delete(id); });
+}
+
+// The card a click is about to fetch, from the prewarm if it is fresh. Taken
+// once: a second click fetches again.
+function takePrewarmed(id) {
+  const had = prewarmed.get(id);
+  prewarmed.delete(id);
+  return had && Date.now() - had.at < PREWARM_FRESH_MS ? had.p : null;
+}
+
+function prewarmRowOf(e) {
+  if (e.pointerType !== "mouse" || !e.target || !e.target.closest) return null;
+  const row = e.target.closest("#term-list .card.tab[data-id]");
+  return row && !row.classList.contains("cold") ? row : null;
+}
+document.addEventListener("pointerover", e => {
+  const row = prewarmRowOf(e);
+  if (!row) return;
+  clearTimeout(prewarmTimer);
+  const id = row.dataset.id;
+  if (typeof termTask !== "undefined" && termTask && termTask.id === id) return;
+  prewarmTimer = setTimeout(() => prewarmCard(id), PREWARM_DWELL_MS);
+});
+document.addEventListener("pointerout", e => {
+  const row = prewarmRowOf(e);
+  if (row && !row.contains(e.relatedTarget)) clearTimeout(prewarmTimer);
+});
+
 // ── hiding the agent-launched doers ──────────────────────────────────────────
 //
 // A DOER IS AN AGENT-LAUNCHED SESSION, and the mark that says so is the
