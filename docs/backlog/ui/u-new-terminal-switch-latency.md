@@ -79,3 +79,6 @@ a kept card, a pinned card never cycles at all, and a kept shell is never idle-c
 Keep eight terminals on ONE remote room (switch through eight of its cards), then time an attach to a ninth card of that
 room with `scripts/measure-term-switch.js` (the path/phase table shows whether it waited on the hub for a fresh conn).
 Compare with the same attach on a cold page. That decides whether to cap kept sockets per remote room.
+
+### Note: kept sockets per remote room
+Each kept terminal holds one of a hub's 4 warm idle conns per room. No per-room cap yet; add one only if the post-deploy sg4 run shows a slow first attach after a burst to one remote room. Hard ceiling of kept terminals is 12 (default N is 8).

@@ -613,7 +613,7 @@ function swMark(name, detail) {
 // least recently shown out first. A kept terminal's history is cut to `termKeepLines()` lines (a terminal at the
 // default 50000 lines is over 100MB), and only the `KEEP_GL` most recent keep a WebGL context (a page gets about
 // sixteen). The terminal showing keeps the full `scrollbackLines()`.
-const KEEP_CEIL = 16;
+const KEEP_CEIL = 12;
 // Narrowing to a phone layout stops keeping, so what is kept is let go at once.
 try { if (window.matchMedia) window.matchMedia("(max-width: 900px)").addEventListener("change", () => keepEnforce()); } catch (e) {}
 const KEEP_GL = 4;

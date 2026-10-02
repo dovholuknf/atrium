@@ -19296,6 +19296,7 @@ async function keepAliveSection(browser, base) {
       a.onmessage({ data: new TextEncoder().encode("A-live\r\n").buffer });
       a.onmessage({ data: JSON.stringify({ t: "size", cols: 150, rows: 40 }) });
       a.onmessage({ data: JSON.stringify({ t: "in-refused", why: "x" }) });
+      a.onmessage({ data: "A-plain-text\r\n" });
     });
     await idle(200);
     const after = await wp.evaluate(() => {
@@ -19310,6 +19311,7 @@ async function keepAliveSection(browser, base) {
     if (await text("term") !== textBBefore) fail("keepAlive: a frame for the hidden terminal was written into the showing terminal.");
     const keptText = await text("keptTerms.get('ka-a').term");
     if (!/A-live/.test(keptText)) fail("keepAlive: the hidden terminal did not take its own output.");
+    if (!/A-plain-text/.test(keptText)) fail("keepAlive: a non-JSON text frame for the hidden terminal was lost.");
     if (after.keptCols < 150) fail("keepAlive: the hidden terminal did not follow the pty's size (" + after.keptCols + " cols).");
 
     // A hidden terminal's answers to xterm's queries go back on its OWN socket, never into the showing session.
@@ -19364,6 +19366,8 @@ async function keepAliveSection(browser, base) {
     if (scrolled.vy !== vy || scrolled.px <= 0) fail("keepAlive: the scroll position was not kept across the hide and show " + JSON.stringify({ vy, scrolled }));
 
     // Bounds: N=2 keeps the two most recent unpinned, and a pinned one stays whatever the count.
+    const capped = await wp.evaluate(() => { setTermKeep("atrium.termKeep", 16); return termKeepN(); });
+    if (capped !== 12) fail("keepAlive: the setting was not held to the hard ceiling of 12 (" + capped + ").");
     await wp.evaluate(() => setTermKeep("atrium.termKeep", 2));
     await attach("ka-p");
     for (const id of ["ka-b", "ka-c", "ka-d", "ka-e"]) await attach(id);

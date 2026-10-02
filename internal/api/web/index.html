@@ -1430,11 +1430,11 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
     <!-- Terminals kept alive when you switch away. -->
     <div class="field">
       <label for="s-termkeep">terminals kept alive</label>
-      <input type="number" id="s-termkeep" min="0" max="16" step="1" style="width: 5em"
-        onchange="setTermKeep('atrium.termKeep', Math.max(0, Math.min(16, Math.round(Number(this.value) || 0))))">
+      <input type="number" id="s-termkeep" min="0" max="12" step="1" style="width: 5em"
+        onchange="setTermKeep('atrium.termKeep', Math.max(0, Math.min(12, Math.round(Number(this.value) || 0))))">
       <span class="hintline">Switching away hides a terminal instead of closing it, so coming back is instant and
         nothing is replayed. This many recently used terminals stay attached, plus every pinned one, and never more
-        than 16 in all. 0 closes a terminal when you leave it, as before. Phones and popped out windows are not
+        than 12 in all. 0 closes a terminal when you leave it, as before. Phones and popped out windows are not
         affected. A kept terminal still counts as watched, so a session you left is not given a fresh context
         automatically, and a kept shell is not closed for being idle, while this tab is open.</span>
     </div>
