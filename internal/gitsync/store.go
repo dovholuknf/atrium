@@ -24,8 +24,9 @@ import (
 // file. A mirror is never listed unless the operator inited it, and a mirror is never changed by
 // being inited: its HEAD stays on claude/main and the mirror keeps working.
 //
-// NO RECEIVE-PACK, NO HOOK AND NO SERVING ROUTE HERE. A repository is made ready for them and
-// nothing more: http.receivepack is not written into any config, and no hook is installed.
+// NO RECEIVE-PACK, NO HOOK AND NO SERVING ROUTE IN THIS FILE. A repository is made ready for them and
+// nothing more: http.receivepack is not written into any config, and no hook is installed. Serving it and
+// taking pushes is receive.go, and the settings it needs ride the CGI environment.
 
 // Marker is the file inside a bare repository that says the store made, or was told to take, it.
 const Marker = "atrium-store"
@@ -60,8 +61,8 @@ type Store struct {
 	GitVersion func(ctx context.Context) (string, error)
 	// Probe says whether this git can make a reftable repository. Nil tries one in a temp directory.
 	Probe func(ctx context.Context) bool
-	// MainAt is the time shown for main. It is the commit time of main's tip here. The next item
-	// replaces it with the time of the last operator push, from the push log, and nothing else changes.
+	// MainAt overrides the time shown for main. Nil is the time of the last operator push from the push
+	// log, and the commit time of main's tip when there was none.
 	MainAt func(ctx context.Context, name string, tip Tip) *time.Time
 	// SeedTimeout bounds the whole seed. Zero is two minutes.
 	SeedTimeout time.Duration
@@ -594,8 +595,8 @@ type MainView struct {
 	At  *string `json:"at"`
 }
 
-// BranchView is one pushed branch. Room, Card and Released are filled by the push log in the next
-// item, and are "", "" and false until then.
+// BranchView is one pushed branch. Room and Card are its owner from the push log, both empty for the
+// operator's and for a branch with no row, and Released is whether it has no owner right now.
 type BranchView struct {
 	Name     string `json:"name"`
 	SHA      string `json:"sha"`
@@ -638,6 +639,17 @@ func (s *Store) View(ctx context.Context) ([]RepoView, error) {
 			Path: "/git/hub/" + e.Ref.Name() + ".git", Branches: []BranchView{},
 		}
 		heads, _ := s.heads(ctx, e.Dir)
+		// THE PUSH LOG says who owns each branch and when it was last pushed. A row whose ref is gone is
+		// ignored, because only the refs git has are listed, and a branch with no row (made on the hub's disk)
+		// shows its commit time and no owner.
+		recs := map[string]BranchRecord{}
+		if s.h.PushLog != nil {
+			if rs, err := s.h.PushLog.Branches(ctx, e.Ref.Name()); err == nil {
+				for _, r := range rs {
+					recs[r.Ref] = r
+				}
+			}
+		}
 		for _, h := range heads {
 			switch h.name {
 			case "main":
@@ -648,7 +660,14 @@ func (s *Store) View(ctx context.Context) ([]RepoView, error) {
 				}
 			case "claude/main":
 			default:
-				v.Branches = append(v.Branches, BranchView{Name: h.name, SHA: h.SHA, At: h.at.UTC().Format(time.RFC3339)})
+				b := BranchView{Name: h.name, SHA: h.SHA, At: h.at.UTC().Format(time.RFC3339)}
+				if r, ok := recs[headsPrefix+h.name]; ok {
+					b.Room, b.Card, b.Released = r.Room, r.Card, r.Released
+					if !r.At.IsZero() {
+						b.At = r.At.UTC().Format(time.RFC3339)
+					}
+				}
+				v.Branches = append(v.Branches, b)
 			}
 		}
 		out = append(out, v)
@@ -656,9 +675,16 @@ func (s *Store) View(ctx context.Context) ([]RepoView, error) {
 	return out, nil
 }
 
+// mainAt is the time shown for main: the hook if a test set one, else the last push of main by the operator,
+// else the commit time of main's tip (a main seeded from the forge has had no push).
 func (s *Store) mainAt(ctx context.Context, name string, tip Tip) *time.Time {
 	if s.MainAt != nil {
 		return s.MainAt(ctx, name, tip)
+	}
+	if s.h.PushLog != nil {
+		if at, ok, err := s.h.PushLog.LastOperatorPush(ctx, name, MainRef); err == nil && ok {
+			return &at
+		}
 	}
 	return &tip.At
 }

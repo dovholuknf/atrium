@@ -54,6 +54,15 @@ type Hub struct {
 	// StoreRoot is where the hub's own store is: the `git.store` setting. Nil, or empty, is
 	// `<Dir>/git`. Read on every use. See store.go.
 	StoreRoot func() string
+	// PushLog is the record of what was pushed to the store, and who owns each branch. Nil, and the store
+	// takes no pushes. See pushlog.go.
+	PushLog PushLog
+	// Cards asks a room about one card, for letting go of a branch whose owner is finished. Nil, and an owner is
+	// never let go by a push, only by the operator.
+	Cards CardLookup
+	// CreateOnPush says whether a card's first push of a repository the hub lacks may make it: the
+	// `git.create_on_push` setting. Nil is off. Read on every push.
+	CreateOnPush func() bool
 
 	mu     sync.Mutex
 	store  *Store

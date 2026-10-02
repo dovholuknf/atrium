@@ -146,10 +146,6 @@ func (b *Backend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	dir = filepath.Clean(dir)
-	env := []string{
-		"GIT_PROJECT_ROOT=" + filepath.Dir(dir),
-		"GIT_HTTP_EXPORT_ALL=1",
-	}
 	cfg := [][2]string{
 		{"http.receivepack", "false"},
 		{"http.getanyfile", "false"},
@@ -157,10 +153,6 @@ func (b *Backend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, h := range b.Hide {
 		cfg = append(cfg, [2]string{"uploadpack.hideRefs", h})
-	}
-	env = append(env, "GIT_CONFIG_COUNT="+strconv.Itoa(len(cfg)))
-	for i, kv := range cfg {
-		env = append(env, "GIT_CONFIG_KEY_"+strconv.Itoa(i)+"="+kv[0], "GIT_CONFIG_VALUE_"+strconv.Itoa(i)+"="+kv[1])
 	}
 
 	// PROTOCOL v0: the header never reaches the CGI, so HTTP_GIT_PROTOCOL is never set.
@@ -186,11 +178,27 @@ func (b *Backend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		out.Header.Set("Content-Length", strconv.Itoa(len(raw)))
 	}
 
-	(&cgi.Handler{
+	gitCGI(exe, dir, cfg, nil).ServeHTTP(w, out)
+}
+
+// gitCGI is `git http-backend` for one repository directory. The request it is given has its path
+// rewritten to `/<dir name>/<service>`. Every config value rides the environment, and nothing is written to
+// a repository. `more` is further environment, such as GIT_CONFIG_GLOBAL.
+func gitCGI(exe, dir string, cfg [][2]string, more []string) *cgi.Handler {
+	env := []string{
+		"GIT_PROJECT_ROOT=" + filepath.Dir(dir),
+		"GIT_HTTP_EXPORT_ALL=1",
+	}
+	env = append(env, more...)
+	env = append(env, "GIT_CONFIG_COUNT="+strconv.Itoa(len(cfg)))
+	for i, kv := range cfg {
+		env = append(env, "GIT_CONFIG_KEY_"+strconv.Itoa(i)+"="+kv[0], "GIT_CONFIG_VALUE_"+strconv.Itoa(i)+"="+kv[1])
+	}
+	return &cgi.Handler{
 		Path:       exe,
 		Args:       []string{"http-backend"},
 		Root:       "",
 		Env:        env,
 		InheritEnv: inherited,
-	}).ServeHTTP(w, out)
+	}
 }
