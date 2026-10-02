@@ -71,8 +71,23 @@
 # one line an administrator pastes into an elevated shell, and writes nothing for them to run.
 # `-NoDefender` skips it. -Remove does not undo it.
 #
+# ALLOWED FOLDERS. A room has a list of folders atrium may launch in (its `browse_roots` setting), and claude's folder
+# trust is written for each, so no launch sits at "do you trust this folder" with nobody to answer. The `folders` step
+# runs `atrium room folders allow <dir>...` on the remote (sh on macOS and Linux, PowerShell on Windows), after the
+# clone and before `auth`. A NEW provision allows the room's clone, its `<clone>-worktrees` folder and WORKTREE_ROOT
+# when the room has one. `-AllowedFolders /srv/work,C:/work` allows those instead, absolute paths only, `~/` accepted.
+# A RERUN CHANGES NOTHING unless -AllowedFolders is given (as for autostart), and then adds to the list. The list is
+# recorded as `allowed_folders` in the manifest. An atrium without the verb is a `warn` carrying the command to run
+# later, and a folder the room skips (home, a filesystem root, missing) is a `warn` naming it. -Remove leaves the
+# setting alone: it lives in the room's database and the trust in the account's ~/.claude.json, both of which the
+# operator may have added to, and `atrium room folders` has no verb to take a folder out. After the smoke card,
+# `smoke-outside` launches one outside the list and expects the room to refuse it, when `folders list --json` says the
+# list is enforced, and says `skip` when it is not or the verb is missing.
+#
 # THE SMOKE FOLDER is the room's clone, else the path from this repository's git
-# remote for the room, else `~/.atrium/smoke`, made when missing. Never the home.
+# remote for the room, else `~/.atrium/smoke`, made when missing. Never the home. When the room enforces a list and
+# that folder is outside it, the smoke runs in the first allowed folder and says so. A -SmokeCwd outside the list
+# is a `warn` and no smoke card, since the room would only refuse it.
 #
 # ONE LINE PER STEP, for a person and for the board dialog that will call this
 # later (backlog-2 item 46, stage 2). Every step line is
@@ -195,6 +210,9 @@ param(
     [string] $Repo = 'atrium',
     # Skip the Defender step on a Windows room: no exclusions, and GOTMPDIR left alone. See room-defender.ps1.
     [switch] $NoDefender,
+    # The folders atrium may launch in on the room, absolute paths on the remote. Default for a new provision: the clone,
+    # its -worktrees folder and WORKTREE_ROOT. A rerun changes nothing unless this is given. See "allowed folders".
+    [string[]] $AllowedFolders = @(),
 
     # How long to wait for the room to show as attached on the hub, in seconds. 60 was too short on sg3 and sg4-wsl
     # (2026-09-29), even apart from the attach race the hub now fixes.
@@ -227,6 +245,9 @@ if ($Restart -and ($Remove -or $SmokeOnly -or $Autostart -or $NoAutostart -or $I
     Write-Host 'provision args fail -Restart changes nothing but the running room, so it goes with none of -Remove, -SmokeOnly, -Autostart, -NoAutostart, -Install, -Binary, -FromCheckout, -Version'; exit 1
 }
 if (($Yes -or $Force) -and -not $Restart) { Write-Host 'provision args fail -Yes and -Force belong to -Restart'; exit 1 }
+if ($AllowedFolders.Count -and ($Remove -or $Restart -or $SmokeOnly)) {
+    Write-Host 'provision args fail -AllowedFolders changes the room, so it goes with none of -Remove, -Restart, -SmokeOnly'; exit 1
+}
 $checkout = Split-Path -Parent $PSScriptRoot
 $inCheckout = Test-Path (Join-Path $checkout 'go.mod')
 $work = if ($inCheckout) { Join-Path $checkout 'build.claude/provision' } else { Join-Path ([IO.Path]::GetTempPath()) 'atrium-provision' }
@@ -235,6 +256,12 @@ $work = if ($inCheckout) { Join-Path $checkout 'build.claude/provision' } else {
 function Split-List { param($v) @($v | ForEach-Object { "$_" -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ }) }
 $Runners = Split-List $Runners
 $Install = Split-List $Install
+$AllowedFolders = Split-List $AllowedFolders
+. (Join-Path $PSScriptRoot 'room-folders.ps1')
+foreach ($f in $AllowedFolders) {
+    $why = Test-FolderArg $f
+    if ($why) { Write-Host "provision args fail -AllowedFolders '$f' $why"; exit 1 }
+}
 
 # ── output ──────────────────────────────────────────────────────────────────
 
@@ -373,7 +400,7 @@ function Copy-ToRemote {
 }
 
 # Quote-Ps and Quote-Sh put a value inside a remote script as a literal.
-function Quote-Ps { param([string] $s) "'" + ($s -replace "'", "''") + "'" }
+function Quote-Ps { param([string] $s) "'" + ($s -replace "['\u2018\u2019\u201A\u201B]", '$0$0') + "'" }
 function Quote-Sh { param([string] $s) "'" + ($s -replace "'", "'\''") + "'" }
 
 # ── the hub, which is this machine ──────────────────────────────────────────
@@ -833,6 +860,13 @@ if [ "$pre_bindir" = False ]; then rmdir "$(dirname "$Bin")" 2>/dev/null || true
     if ($gone) { Step 'runners' 'done' "removed $($gone -join ', ')" }
     if ($kv.path) { Step 'path' 'done' ($kv.path -replace '^removed', 'removed') }
     Step 'files' 'done' $kv.files
+    # THE FOLDER LIST IS NOT UNDONE. It is a setting in the room's database, which goes with the database when this script
+    # made it and is the operator's own when it did not, and the trust is claude's, in the account's ~/.claude.json.
+    # `atrium room folders` has no verb to take a folder out, and removing a folder's trust could hide a dialog the
+    # operator had answered themselves.
+    if (@($manifest.allowed_folders | Where-Object { $_ }).Count) {
+        Step 'folders' 'skip' "left alone: $(@($manifest.allowed_folders) -join ', ') stay in the room's list if its database stays, and claude's trust for them stays in ~/.claude.json"
+    }
 
     # WHAT room-git.ps1 init MADE, undone by room-git.ps1 rather than by knowing its layout: the clone on the remote,
     # ~\.room-git, and the git remote here. It keeps the clone, and says why, when it holds work this machine lacks.
@@ -867,6 +901,142 @@ if [ "$pre_bindir" = False ]; then rmdir "$(dirname "$Bin")" 2>/dev/null || true
 # DEFINED HERE, AHEAD OF STEP 4, so -SmokeOnly can run them against a room that
 # is already provisioned without reaching the steps between, any of which can
 # restart it. They are called at the end of the file in a full run.
+
+# ALLOWED FOLDERS, the helpers. The step itself (Invoke-AllowedFolders) runs in a full run only, and the smoke below
+# reads the room's list too, so these are defined here for -SmokeOnly.
+#
+# Get-FolderScript (room-folders.ps1) builds the text and Invoke-Remote runs it, so the verb goes through the same path
+# as every other remote step, with sh on macOS and Linux.
+function Invoke-RoomFolders {
+    param([string[]] $verbArgs)
+    Invoke-Remote (Get-FolderScript $os $verbArgs)
+}
+
+# What the room says its list is, read once and cached. Missing is an atrium without the verb, which is a thing to say
+# and never a failure. Ok is false for any other trouble reading it, with the first line it said in Text.
+function Get-RoomFolderList {
+    if ($script:roomFolders) { return $script:roomFolders }
+    $r = Invoke-RoomFolders @('list', '--json')
+    $p = ConvertFrom-FolderList $r.Out
+    $script:roomFolders = [pscustomobject]@{
+        Missing  = [bool] (Test-FolderVerbMissing $r.Code $r.Out)
+        Ok       = ($r.Code -eq 0 -and $p.Ok)
+        Roots    = $p.Roots
+        Enforced = $p.Enforced
+        Text     = (@($r.Out | Where-Object { "$_".Trim() }) | Select-Object -First 1) -join ''
+    }
+    $script:roomFolders
+}
+
+# The command that sets the list later, from this side, for a warn line. The binary is named by its path, since the
+# ssh login's PATH may not hold it.
+function Get-FoldersCommand {
+    param([string[]] $dirs)
+    $sshCmd = (@($Ssh) + $SshOption + @($Target)) -join ' '
+    $exe = if ($os -eq 'windows') { '.\.atrium\bin\atrium.exe' } else { '~/.local/bin/atrium' }
+    $list = if ($dirs.Count) { ($dirs | ForEach-Object { if ($_ -match '\s') { "`"$_`"" } else { $_ } }) -join ' ' } else { '<dir>...' }
+    "$sshCmd $exe room folders allow $list"
+}
+
+# Remote home as an absolute path with forward slashes, for expanding a leading ~ in -AllowedFolders.
+function Get-FolderRemoteHome {
+    $s = if ($os -eq 'windows') { '"home=$($HOME -replace ''\\'', ''/'')"' } else { 'echo "home=$HOME"' }
+    $h = (ConvertFrom-KeyValue (Invoke-Remote $s).Out).home
+    if ($h) { $h.TrimEnd('/') } else { $null }
+}
+
+# 11c. folders: the folders atrium may launch in
+#
+# THE ROOM'S LIST AND CLAUDE'S TRUST FOR EACH, set by `atrium room folders allow`, so a launch never meets the "do you
+# trust this folder" dialog nobody answers. A card on sg3 sat at one. See docs/backlog/fabric/f-new-allowed-folders.md.
+#
+# NEVER A FAILURE. A room with no list works as it did, it just does not bound its launches, so every way this goes
+# wrong is a `warn` that carries the command to run by hand: an atrium without the verb, a folder the room skips (home,
+# a filesystem root, missing), a room that did not answer.
+#
+# A RERUN CHANGES NOTHING unless -AllowedFolders is given, the way a rerun keeps the autostart mode. The default list is
+# for a new provision only, and an explicit one adds to what the manifest records.
+function Invoke-AllowedFolders {
+    $explicit = $AllowedFolders.Count -gt 0
+    if (-not $explicit -and -not $freshManifest) {
+        $had = @($script:manifest.allowed_folders | Where-Object { $_ })
+        $says = if ($had.Count) { "the manifest records $($had -join ', ')" } else { 'the manifest records none, so the room is not bounded' }
+        Step 'folders' 'skip' "a rerun keeps the list as it is ($says). -AllowedFolders <dir,...> adds to it"
+        return
+    }
+    $remoteHome = Get-FolderRemoteHome
+    $dirs = @()
+    if ($explicit) {
+        $dirs = @($AllowedFolders | ForEach-Object { Expand-FolderArg $_ $remoteHome })
+    } else {
+        $wtr = $null
+        try { $wtr = (Get-StateDirs).wtr } catch { }
+        if ($wtr -and $os -eq 'windows') { $wtr = $wtr -replace '\\', '/' }
+        $dirs = @(Get-DefaultFolders $clonePath $wtr)
+        # THE WORKTREES FOLDER IS MADE HERE, since nothing has made a worktree yet and the room skips a folder that is
+        # not there.
+        if ($clonePath) {
+            $wt = (Get-DefaultFolders $clonePath $null)[1]
+            $mk = if ($os -eq 'windows') { "New-Item -ItemType Directory -Force -Path $(Quote-Ps ($wt -replace '/', '\')) | Out-Null" } else { "mkdir -p $(Quote-Sh $wt)" }
+            $null = Invoke-Remote $mk
+        }
+    }
+    if (-not $dirs.Count) {
+        Step 'folders' 'warn' "no clone and no WORKTREE_ROOT on $Name, so there is no default list and the room is not bounded. set one: $(Get-FoldersCommand @())"
+        return
+    }
+
+    $pre = Get-RoomFolderList
+    if ($pre.Missing) {
+        Step 'folders' 'warn' "this atrium has no room folders verb yet, so $Name has no allowed folders and launches are not bounded. when it has one, run: $(Get-FoldersCommand $dirs)"
+        return
+    }
+    if (-not $pre.Ok) {
+        Step 'folders' 'warn' "could not read $Name's folder list ($($pre.Text)). is the room answering on loopback? then run: $(Get-FoldersCommand $dirs)"
+        return
+    }
+
+    $r = Invoke-RoomFolders (@('allow') + $dirs)
+    $script:roomFolders = $null
+    foreach ($l in $r.Out) { if ("$l".Trim()) { Write-Host "    $l" } }
+    if (Test-FolderVerbMissing $r.Code $r.Out) {
+        Step 'folders' 'warn' "this atrium has no room folders allow verb yet. when it has one, run: $(Get-FoldersCommand $dirs)"
+        return
+    }
+    $res = @(ConvertFrom-FolderAllow $r.Out)
+    $ended = @($res | Where-Object { $_.Kind -in 'allowed', 'trusted' } | ForEach-Object { $_.Dir } | Select-Object -Unique)
+    $skipped = @($res | Where-Object { $_.Kind -eq 'skipped' })
+    if (-not $res.Count) {
+        Step 'folders' 'warn' "folders allow exited $($r.Code) and said nothing a dir line could be read from. run: $(Get-FoldersCommand $dirs)"
+        return
+    }
+    if ($ended.Count) {
+        $have = @($script:manifest.allowed_folders | Where-Object { $_ })
+        # Compared as Format-FolderPath spells a folder, so /srv/a/ and /srv/a are one entry, and the first spelling stays.
+        $seen = @{}
+        $now = @(foreach ($d in @($have + $ended)) {
+            $k = Format-FolderPath "$d"
+            if ($k -and -not $seen.ContainsKey($k)) { $seen[$k] = $true; $d }
+        })
+        if (($now -join "`n") -ne ($have -join "`n")) {
+            $script:manifest | Add-Member -NotePropertyName allowed_folders -NotePropertyValue $now -Force
+            Save-Manifest
+        }
+    }
+    foreach ($s in $skipped) {
+        Step 'folders' 'warn' "$($s.Dir) was skipped: $($s.Reason). the room does not launch there until it is allowed: $(Get-FoldersCommand @($s.Dir))"
+    }
+    if ($r.Code -ne 0 -and -not $skipped.Count) {
+        Step 'folders' 'warn' "folders allow exited $($r.Code), and only $($ended.Count) of $($dirs.Count) folders ended allowed. the lines above say why"
+    }
+    if ($ended.Count) {
+        $was = @($pre.Roots | ForEach-Object { Format-FolderPath $_ })
+        $new = @($ended | Where-Object { $was -notcontains (Format-FolderPath $_) })
+        $word = if ($new.Count) { 'done' } else { 'ok' }
+        $trusted = @($res | Where-Object { $_.Kind -eq 'trusted' } | ForEach-Object { $_.Dir } | Select-Object -Unique).Count
+        Step 'folders' $word "$($ended -join ', ') allowed on $Name, claude's folder trust written for $trusted of $($ended.Count)$(if (-not $new.Count) { ' (all were already in the list)' })"
+    }
+}
 
 # 12. is claude signed in
 #
@@ -1007,6 +1177,21 @@ function Invoke-SmokeCase {
     $cwd = Get-SmokeCwd
     if (-not $cwd) { Step $step 'fail' "could not resolve a folder on $Name to run in. pass -SmokeCwd"; return $false }
 
+    # INSIDE THE ROOM'S LIST, or the room refuses the card and the smoke fails for a reason that is not a fault. The
+    # default folder is the clone, which the list holds. A folder that is not (a room whose list was set by hand) moves
+    # to the first allowed folder, and a -SmokeCwd that is not is the operator's to fix: say so rather than hit a refusal.
+    # Only an enforced list counts, and the check is on the text of the paths, so a symlink can make it wrong.
+    $fl = Get-RoomFolderList
+    if ($fl.Ok -and $fl.Enforced -and $fl.Roots.Count -and -not (Test-UnderFolders $cwd $fl.Roots ($os -ne 'linux'))) {
+        $roots = $fl.Roots -join ', '
+        if ($SmokeCwd) {
+            Step $step 'warn' "-SmokeCwd $cwd is outside $Name's allowed folders ($roots), so the room would refuse the smoke card and none was launched. pass a folder inside them, or allow it: $(Get-FoldersCommand @($cwd))"
+            return $true
+        }
+        Step $step 'warn' "the smoke folder $cwd is outside $Name's allowed folders ($roots), so the card runs in $($fl.Roots[0])"
+        $cwd = $fl.Roots[0]
+    }
+
     $said = "smoke ok $Name $nonce"
     # THE TITLE CARRIES THE NONCE: a card's wire name comes from its title, and a
     # launch onto a name that already exists re-prompts THAT card. A fixed title
@@ -1096,11 +1281,72 @@ function Invoke-SmokeCase {
         if ($reported) {
             Step $step 'ok' "a $runner worker on $Name reported $nonce in ${took}s, $leftWord$(if ($to -and $runner -eq 'claude') { ", and said it to $to" })"
             if (-not $left) { Step $step 'warn' "card $id is still running on $Name" }
+            if (-not (Invoke-SmokeOutside $runner $body $hdr $nonce)) { return $false }
         } else {
             $smokeErr = "the smoke card $id did not report $nonce in ${SmokeTimeout}s ($leftWord). look at it on the board, it is on $Name"
         }
     }
     if ($smokeErr) { Step $step 'fail' $smokeErr; return $false }
+    $true
+}
+
+# The gate, from outside: a card whose cwd is OUTSIDE the room's list must be refused, with an error that names the
+# allowed folders. It runs once per run, after a smoke card has reported, and only when `folders list --json` says the
+# list is enforced, so a room without the verb or without a list prints `smoke-outside skip <reason>`.
+#
+# THE OUTSIDE FOLDER is the remote home, else the filesystem root when the home is inside the list. A card that is
+# launched all the same is exited, whatever else happens, so this never leaves one running, and that is the one result
+# here that fails: the gate did not hold. Anything else unexpected is a `warn`.
+function Invoke-SmokeOutside {
+    param([string] $runner, $body, $hdr, [string] $nonce)
+    if ($script:smokeOutsideDone) { return $true }
+    $script:smokeOutsideDone = $true
+    $fl = Get-RoomFolderList
+    if ($fl.Missing) { Step 'smoke-outside' 'skip' "this atrium has no room folders verb yet, so $Name has no list to launch outside of"; return $true }
+    if (-not $fl.Ok) { Step 'smoke-outside' 'skip' "$Name's folder list could not be read ($($fl.Text))"; return $true }
+    if (-not $fl.Enforced) { Step 'smoke-outside' 'skip' "$Name has no allowed folders set, so a launch anywhere is allowed. set them: $(Get-FoldersCommand @())"; return $true }
+
+    $ic = $os -ne 'linux'
+    $outside = Get-FolderRemoteHome
+    if (-not $outside -or (Test-UnderFolders $outside $fl.Roots $ic)) { $outside = if ($os -eq 'windows') { 'C:/' } else { '/' } }
+    $roots = $fl.Roots -join ', '
+
+    $b = [ordered]@{}
+    foreach ($k in $body.Keys) { $b[$k] = $body[$k] }
+    $b.cwd = $outside
+    $b.title = "smoke-outside: $Name $runner $nonce"
+    $card = $null
+    $status = 0
+    $msg = ''
+    try {
+        $card = Invoke-RestMethod -Method Post -Uri "http://$HubAddr/v1/launch" -Headers $hdr `
+            -ContentType 'application/json' -Body ($b | ConvertTo-Json -Depth 5) -TimeoutSec 60
+    } catch {
+        if ($_.Exception.Response) { $status = [int] $_.Exception.Response.StatusCode }
+        $msg = "$($_.ErrorDetails.Message)".Trim()
+        if (-not $msg) { $msg = $_.Exception.Message }
+    }
+    if ($card -and $card.id) {
+        try { Invoke-RestMethod -Method Post -Uri "http://$HubAddr/v1/tasks/$($card.id)/exit" -Headers $hdr -TimeoutSec 15 | Out-Null } catch { }
+        $left = $false
+        $t1 = Get-Date
+        while (((Get-Date) - $t1).TotalSeconds -lt 30) {
+            try {
+                $t = Invoke-RestMethod -Uri "http://$HubAddr/v1/tasks/$($card.id)" -Headers $hdr -TimeoutSec 10
+                if (-not $t.supervised) { $left = $true; break }
+            } catch { }
+            Start-Sleep -Seconds 2
+        }
+        $leftWord = if ($left) { 'and it exited' } else { 'but it did not leave within 30s, so exit it yourself' }
+        Step 'smoke-outside' 'fail' "$Name launched a card in $outside, which is outside its allowed folders ($roots), so the launch bound is not holding. card $($card.id) was asked to exit ($leftWord)"
+        return $false
+    }
+    if ($status -ge 400 -and $status -lt 500) {
+        if (Test-FolderRefusal $msg $fl.Roots) { Step 'smoke-outside' 'ok' "$Name refused a launch in $outside (HTTP $status): $msg" }
+        else { Step 'smoke-outside' 'warn' "$Name refused a launch in $outside (HTTP $status), but the error does not name its allowed folders ($roots): $msg" }
+    } else {
+        Step 'smoke-outside' 'warn' "a launch in $outside got no clear answer from the hub, so whether $Name's launch bound holds is not known: $msg"
+    }
     $true
 }
 
@@ -2332,6 +2578,9 @@ if ($os -eq 'windows') {
         if ($LASTEXITCODE -ne 0) { Step 'defender' 'warn' "room-defender exited $LASTEXITCODE. rerun: room-defender.ps1 $Name -Target $Target" }
     }
 }
+
+# THE FOLDERS THE ROOM MAY LAUNCH IN, once the room is up and the clone is there, and before the smoke launches a card.
+Invoke-AllowedFolders
 
 $authState = Test-ClaudeAuth
 

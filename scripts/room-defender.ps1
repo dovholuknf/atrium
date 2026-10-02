@@ -98,7 +98,7 @@ function Fail {
     if ($output) { $output | ForEach-Object { Write-Host "    $_" } }
     Finish $code
 }
-function Quote-Ps { param([string] $s) "'" + ($s -replace "'", "''") + "'" }
+function Quote-Ps { param([string] $s) "'" + ($s -replace "['\u2018\u2019\u201A\u201B]", '$0$0') + "'" }
 
 if (-not $Room) { Write-Host 'usage: room-defender.ps1 <room|local> [-Target user@host] [-Check] [-Runner account]'; exit 1 }
 if ($Room -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]*$') { Fail 'args' 1 "bad room name '$Room'" }

@@ -23,6 +23,10 @@
 #                                                             -NoSmoke leaves it out)
 #   the room's runners  GET /v1/harnesses through the hub, X-Atrium-Room: <room>
 #   atrium hooks        that row's setup check, and with -Fix -Yes POST /v1/hooks/install
+#   allowed-folders     `atrium room folders list --json` on the room (room-folders.ps1). ok with the roots when the list is
+#                       enforced, warn "no allowed folders set" when it is empty, skip when that atrium has no such verb.
+#                       With -Fix -Yes, `folders allow <clone> <clone>-worktrees`: a room's own setting, but it turns the
+#                       launch bound on, so it needs -Yes like the hooks do
 #
 # WITHOUT -Fix IT WRITES NOTHING, on the room or here. (The smoke card is the one thing that runs.) With -Fix it does
 # every `apply` fix whose scope is machine or room. A fix at ACCOUNT scope (the hooks, which change every project and
@@ -104,6 +108,7 @@ if (-not $Room) {
 if ($Room -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]*$') { Fail-Now 'args' 1 "bad room name '$Room'" }
 if ($Yes -and -not $Fix) { Fail-Now 'args' 1 '-Yes goes with -Fix' }
 
+. (Join-Path $PSScriptRoot 'room-folders.ps1')
 $checkout = Split-Path -Parent $PSScriptRoot
 if (-not $Project) { $Project = $checkout }
 if (-not (Test-Path -LiteralPath (Join-Path $Project '.git'))) { Fail-Now 'project' 1 "$Project is not a git checkout" }
@@ -207,7 +212,7 @@ if ($info) {
 
 # ── talking to the remote ───────────────────────────────────────────────────
 
-function Quote-Ps { param([string] $s) "'" + ($s -replace "'", "''") + "'" }
+function Quote-Ps { param([string] $s) "'" + ($s -replace "['\u2018\u2019\u201A\u201B]", '$0$0') + "'" }
 function Quote-Sh { param([string] $s) "'" + ($s -replace "'", "'\''") + "'" }
 function ConvertFrom-KeyValue {
     param($lines)
@@ -706,6 +711,46 @@ true
     }
 }
 
+# ── 6b. the folders the room may launch in ──────────────────────────────────
+
+# `atrium room folders list --json` on the room, through room-folders.ps1 (the verb is the room's, this only asks). A
+# room with a list is bounded to it and claude's folder trust is written for each, so no launch meets the trust dialog.
+# A room with NO list launches anywhere, as before, which is a warn: it works, and it can sit at a dialog nobody answers.
+#
+# -FIX NEEDS -YES HERE, though the setting belongs to one room. Setting a list turns the launch bound on, and a room
+# that launches in folders outside the clone and its worktrees (sg4 launches into D:\git) would start refusing them. So
+# like the hooks row it prints what it will do first, and only -Fix -Yes does it. It allows the clone and its
+# <clone>-worktrees folder, the default a new provision uses.
+if (-not $info) {
+    Row 'allowed-folders' 'skip' 'the room is not attached'
+} else {
+    $fr = Invoke-Remote (Get-FolderScript $kind @('list', '--json'))
+    $fl = ConvertFrom-FolderList $fr.Out
+    $sshCmd = (@($Ssh) + $SshOption + @($Target)) -join ' '
+    $feExe = if ($kind -eq 'windows') { '.\.atrium\bin\atrium.exe' } else { '~/.local/bin/atrium' }
+    $want = if ($clonePath) { @(Get-DefaultFolders $clonePath $null) } else { @() }
+    $wantArgs = ($want | ForEach-Object { if ($_ -match '\s') { "`"$_`"" } else { $_ } }) -join ' '
+    $fixCmd = "$sshCmd $feExe room folders allow $(if ($wantArgs) { $wantArgs } else { '<dir>...' })"
+    if (Test-FolderVerbMissing $fr.Code $fr.Out) {
+        Row 'allowed-folders' 'skip' "this atrium has no room folders verb yet, so there is no list to read. it waits for the atrium that has `atrium room folders` (runtime). then run: $fixCmd"
+    } elseif ($fr.Code -ne 0 -or -not $fl.Ok) {
+        Row 'allowed-folders' 'warn' "could not read $Room's folder list: $(($fr.Out | Where-Object { $_.Trim() } | Select-Object -First 1))"
+    } elseif ($fl.Enforced) {
+        Row 'allowed-folders' 'ok' "$Room launches only in $($fl.Roots -join ', ')"
+    } elseif (-not $want.Count) {
+        Row 'allowed-folders' 'warn' "no allowed folders set, so $Room launches anywhere and a card can sit at a trust dialog. no clone path is known to default to: $fixCmd"
+    } elseif ($Fix -and $Yes) {
+        Note "setting $Room's allowed folders to $($want -join ', '): the room will then launch only there, and claude's folder trust is written for each"
+        $ar = Invoke-Remote (Get-FolderScript $kind (@('allow') + $want))
+        foreach ($l in $ar.Out) { if ($l.Trim()) { Note $l } }
+        $got = @(ConvertFrom-FolderAllow $ar.Out | Where-Object { $_.Kind -in 'allowed', 'trusted' })
+        if ($ar.Code -eq 0 -and $got.Count) { Row 'allowed-folders' 'done' "$Room launches only in $(($got | ForEach-Object { $_.Dir } | Select-Object -Unique) -join ', ')" }
+        else { Row 'allowed-folders' 'fail' "folders allow exited $($ar.Code). the lines above say why. by hand: $fixCmd"; Unmet 'human' }
+    } else {
+        Row 'allowed-folders' 'warn' "no allowed folders set, so $Room launches anywhere and a card can sit at a trust dialog. -Fix -Yes runs: $fixCmd"
+    }
+}
+
 # ── 7. rows waiting on what is not built ────────────────────────────────────
 
 Row 'state-dir' 'skip' 'needs the manifest to record the state dir (design section 4). not built'
@@ -741,14 +786,14 @@ foreach ($rn in ($req.runners.Keys | Sort-Object)) {
         '-SmokeTimeout', "$SmokeTimeout", '-HubAddr', $HubAddr) + $childSsh
     if ($clonePath) { $sa += @('-SmokeCwd', $clonePath) }
     $r = Invoke-Script 'provision-room.ps1' $sa
-    $pat = "^provision smoke(:$([regex]::Escape($rn)))? "
+    $pat = "^provision smoke(:$([regex]::Escape($rn))|-outside)? "
     $sm = @($r.Out | Where-Object { $_ -match $pat })
     if ($r.Code -eq 2) { Fail-Now "smoke.$rn" 2 "provision could not reach $Target" }
     if (-not $sm.Count) { Row "smoke.$rn" 'fail' "provision -SmokeOnly said nothing about smoke (exit $($r.Code)): $(($r.Out | Select-Object -Last 2) -join ' | ')"; Unmet 'human'; continue }
     foreach ($l in $sm) {
-        if ($l -match "^provision smoke(?::\S+)? (\S+)\s*(.*)$") {
-            $st = $Matches[1]; $d = $Matches[2]
-            Row "smoke.$rn" $st $d
+        if ($l -match "^provision smoke(?<o>-outside|:\S+)? (?<s>\S+)\s*(?<d>.*)$") {
+            $st = $Matches['s']; $d = $Matches['d']
+            Row $(if ($Matches['o'] -eq '-outside') { "smoke-outside.$rn" } else { "smoke.$rn" }) $st $d
             if ($st -eq 'fail') { Unmet 'human' }
         }
     }
