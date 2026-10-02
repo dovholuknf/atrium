@@ -22,6 +22,9 @@ on. They are kept short: one line of what, one of where. Add to it when a review
 - **Hand-written trailers and authorship are text.** Every commit is `dovholuknf`, and m1mini and sg3 are unsigned.
   Identity comes from hub records, not git.
 
+- **Memory a later review reads is an attack surface.** Writes take effect only after @review clears them, and
+  false-positive entries never come from a model's refutation of attacker text (standing-reviewer review 2e9cddd0).
+
 ## Facts that are easy to get wrong
 
 - Card status `done` is set by `atrium_report` on a live session (finish.go:180). It is not "session over".
@@ -47,6 +50,11 @@ on. They are kept short: one line of what, one of where. Add to it when a review
 - This session's sandbox cannot exec a fake from `$TMPDIR` (exit 126), so the sh parts of scripts tests stop there.
 
 ## How I work
+
+- Code on another room's disk: the real path is the hub serving every repo and branch, plus a lookup tool that
+  answers the clone URL (with @rnd). Interim only: launch a quiet reviewer there (atrium_launch room=, coming from
+  @fabric), or until then a paste-based pass.
+- To the orchestrator: landing tips and blockers only. Never clint's questions: they stay in the docs until he asks.
 
 - Board changes: read the headless units, don't run the suite. Do `node --check` on what lands.
 - A pasted patch: rebuild the files and match the blob hashes in its `index` lines, which proves it byte-exact.
