@@ -671,8 +671,11 @@ const alerting = (() => {
   // fact you cannot get any other way while your back is turned.
   function play(kind, sound) {
     if (muted()) return;
-    if (notifyHeld(kind === "permission" ? "perms" : "")) return;
-    preview(sound || (kind === "permission" ? prefs.perm : prefs.input));
+    // A blocker holds an agent at the door like a permission, so it rings the
+    // permission tone.
+    const perm = kind === "permission" || kind === "blocker";
+    if (notifyHeld(perm ? "perms" : "")) return;
+    preview(sound || (perm ? prefs.perm : prefs.input));
   }
 
   // `taskFor` is the card to SUPPRESS for: a popped-out window speaks for its
@@ -962,6 +965,16 @@ const alerting = (() => {
           first.length === 1 ? (first[0].task_id || first[0].id) : "",
           first.length === 1 ? iconForAlert(first[0]) : "", "", { pending: true });
       }
+      // The same for a blocker: a card still held at a prompt after a reload is
+      // still held.
+      if (kind === "blocker" && first.length) {
+        play(kind);
+        const d = describe(first[0]);
+        notify(first.length > 1 ? `${first.length} launched agents are BLOCKED` : d.title,
+          d.body, "stack", "", first.length === 1 ? first[0].id : "",
+          first.length === 1 ? (first[0].task_id || first[0].id) : "",
+          first.length === 1 ? iconForAlert(first[0]) : "", "", { pending: true });
+      }
       return;
     }
     let fresh = items.filter(i => !prev.has(bareId(i.id)));
@@ -1159,6 +1172,7 @@ const alerting = (() => {
         permission: "agents need permission",
         arrived: "new agents on the board",
         stuck: "launched agents are stuck",
+        blocker: "launched agents are BLOCKED",
         looksidle: "agents look idle (no turn-end received)",
         pulls: "reviews are waiting on you",
       }[kind] || "agents are ready"}`
@@ -1183,7 +1197,7 @@ const alerting = (() => {
     notify(title, body, kind === "permission" ? "perms" : kind === "pulls" ? "pulls" : "stack", actionable, subject,
       fresh.length === 1 ? (fresh[0].task_id || fresh[0].id) : "",
       fresh.length === 1 ? iconForAlert(fresh[0]) : "", "",
-      { pending: kind === "permission" || kind === "waiting",
+      { pending: kind === "permission" || kind === "waiting" || kind === "blocker",
         ready: kind === "waiting" || kind === "looksidle" });
   }
 })();

@@ -43,6 +43,12 @@
   .tlrow.clickable:hover { background: var(--lift); }
   /* Arrived since this was last opened. A left edge rather than a background, so a run of new ones reads as one
      block and the text stays on the surface every other row is on. */
+  /* A blocker: red edge and tint, and the pinned ones stay above everything the log holds. */
+  .tlrow.blocker, .tlrow.blocker.fresh { background: rgba(var(--danger-rgb),.10); box-shadow: inset 3px 0 0 var(--danger); }
+  .tlrow.blocker .tlwhen, .tlrow.blocker .tlwhat b { color: var(--danger); }
+  .tlrow.pinned { position: sticky; top: 0; z-index: 1; background: var(--lift); }
+  .tlrow.pinned.blocker { background-image: linear-gradient(rgba(var(--danger-rgb),.14), rgba(var(--danger-rgb),.14)); }
+  #toastlog-open.blocked-now { color: var(--danger); }
   .tlrow.fresh { box-shadow: inset 2px 0 0 var(--teal); }
   .tlwhen {
     flex: 0 0 auto; min-width: 46px; color: var(--dim);
