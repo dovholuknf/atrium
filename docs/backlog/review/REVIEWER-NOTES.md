@@ -22,6 +22,9 @@ on. They are kept short: one line of what, one of where. Add to it when a review
 - **Hand-written trailers and authorship are text.** Every commit is `dovholuknf`, and m1mini and sg3 are unsigned.
   Identity comes from hub records, not git.
 
+- **Memory a later review reads is an attack surface.** Writes take effect only after @review clears them, and
+  false-positive entries never come from a model's refutation of attacker text (standing-reviewer review 2e9cddd0).
+
 ## Facts that are easy to get wrong
 
 - Card status `done` is set by `atrium_report` on a live session (finish.go:180). It is not "session over".
@@ -49,7 +52,8 @@ on. They are kept short: one line of what, one of where. Add to it when a review
 ## How I work
 
 - Code on another room's disk: launch a quiet reviewer child there (atrium_launch room=...), don't ask for a paste.
-  m1mini's control tool has no `room` field yet (asked the orchestrator, 2026-10-02).
+  m1mini's control tool has no `room` field yet. @fabric adds it, shipping on a room deploy (orchestrator,
+  2026-10-02). Until then, a paste-based pass is the accepted fallback.
 - To the orchestrator: landing tips and blockers only. Never clint's questions: they stay in the docs until he asks.
 
 - Board changes: read the headless units, don't run the suite. Do `node --check` on what lands.
