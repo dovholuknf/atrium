@@ -1,6 +1,7 @@
 # LangChain and OpenWiki: does either fit atrium today? (SPIKE)
 
-Status: spike by @rnd, 2026-10-02. Design only: no code, no upstream PR, nothing posted anywhere. Asked by clint after
+Status: spike by @rnd, 2026-10-02, revised for @review's HOLD (854c4ba1, `docs/backlog/rnd/rd-new-review-131bf5b1.md`).
+Design only: no code, no upstream PR, nothing posted anywhere. Asked by clint after
 geowa4 sent "You should fix this https://github.com/langchain-ai/openwiki/blob/main/src/cli/commands.ts#L181" and
 "openwiki needs to be zitified". clint: "it points to ngrok but adding zrok would be easy."
 
@@ -43,19 +44,27 @@ codebase". License **MIT** (LICENSE, package.json, the GitHub API). Status as re
 - It is built on LangChain's **deepagents** JS (pinned at 1.13.2), on LangGraph. Provider packages cover Anthropic,
   OpenAI, Google, AWS and OpenRouter. It also uses `langsmith`, the MCP SDK, `ink` for its terminal UI, and
   `posthog-node`.
-- **Two ways to run.** *Inside a coding agent:* `openwiki integrations install claude` (or codex, opencode, cursor and
-  others) uses the host agent's own model session, so no provider key is configured. It adds four read-only, model-free
-  MCP tools: `openwiki_search`, `openwiki_read`, `openwiki_list_workspaces` and `openwiki_list_wikis`. *Standalone:*
-  `openwiki --init` or `--update`, with 13 providers, OpenAI by default, and keys in `~/.openwiki/.env`.
+- **Two ways to run, and they are not the same path.**
+  - *Inside a coding agent:* `openwiki integrations install claude` (or codex, opencode, cursor and others) installs a
+    skill and an MCP server. The host agent is then prompted ("Initialize this repository's OpenWiki...") and drives
+    the write lifecycle through MCP tools: `openwiki_begin`, `submit_plan`, `next_page`, `submit_page` and `finish`
+    (README:102-108). That runs on the host's own authenticated model session, so no provider key is configured
+    (README:460). The install also adds four read-only, model-free tools: `openwiki_search`, `openwiki_read`,
+    `openwiki_list_workspaces` and `openwiki_list_wikis`. **It installs at user level by default** (README:86), and
+    `--project <dir>` scopes it to one directory.
+  - *Standalone:* `openwiki --init` or `--update` is the native CLI. It has 13 providers, OpenAI by default, with keys
+    in `~/.openwiki/.env`. Provider settings "apply when running OpenWiki directly" (README:460), so this path
+    needs a key.
 - **Code mode** reads the repo through `.openwikiignore`, plus a hand-written `openwiki/INSTRUCTIONS.md`, and optional
   LangSmith traces.
 - **It writes:**
   - pages under `openwiki/`;
   - evidence for each fact under `openwiki/.claims/*.json`;
   - a manifest and a resume checkpoint (`.run.json`);
-  - **a root `AGENTS.md`, which it maintains, and a refresh of `CLAUDE.md` when the repo already has one.**
+  - **a root `AGENTS.md`, which it maintains, and, when the repo already has a `CLAUDE.md`, a rewrite of its own
+    `OPENWIKI:START`/`OPENWIKI:END` block in that file only** (README:317).
 - *Personal mode* reads Slack, Gmail, X, Notion, Tavily and Hacker News into `~/.openwiki/wiki`.
-- **Keeping docs current:** `openwiki --update` works from the git changes since the last run plus the claims that
+- **Keeping docs current:** the native `openwiki --update` works from the git changes since the last run plus the claims that
   went stale, and a clean run makes no model calls. It ships example CI workflows (GitHub Actions, including an
   auto-merge variant with an `OPENWIKI_PR_TOKEN`, GitLab and Bitbucket) and `openwiki cron` commands. There is no
   watch mode.
@@ -99,15 +108,18 @@ spirit to the reviewer files' "each entry carries the commit it was true at", bu
 - **A source row: no.** A source (`internal/store/sources.go`) runs a command on an interval and turns its output
   into intake items. `openwiki --update` changes files in a checkout, and that is work, which belongs on a card with a
   worktree and a review, not in an intake poll.
-- **A card a director launches: yes.** It runs in a worktree on `claude/openwiki-<repo>`, runs `openwiki --update`,
-  commits, and goes to @review like any doc change. It could be scheduled later, once there is a scheduled launch.
-  Run it in the integration mode, inside a claude card, so it rides on that card's own login and no provider key is
-  added to the room. That keeps atrium's rule: atrium holds no third-party account credential it acts through. The
-  standalone mode puts a provider key in `~/.openwiki/.env` on the room, which atrium would not hold but would be
-  near.
+- **A card a director launches: yes, in integration mode.** It runs in a worktree on `claude/openwiki-<repo>`, with
+  the integration installed for that worktree only (`openwiki integrations install claude --project <worktree>`). The
+  card is prompted to initialize or update the repo's OpenWiki, and it drives `openwiki_begin` through `finish` on its
+  own login. It commits, and the result goes to @review like any doc change. It could be scheduled later, once there
+  is a scheduled launch. **The card must not run `openwiki --update`.** That is the native CLI, which needs a provider
+  key (OpenAI by default) in `~/.openwiki/.env` on the room. Atrium would not hold that key, but it would be on the
+  room. The integration mode keeps atrium's rule: atrium holds no third-party account credential it acts through,
+  and no new key lands on the room.
 - **A runner row: not needed.** OpenWiki is a batch CLI and a set of MCP tools, not an interactive agent.
-- **The MCP tools for any card**: `openwiki_search` and `openwiki_read` are read-only and use no model, so a worker
-  or a PR reviewer could look up repo context without reading the tree again.
+- **The read-only MCP tools for any card**: `openwiki_search` and `openwiki_read` use no model, so a worker or a PR
+  reviewer could look up repo context without reading the tree again. That needs the MCP server scoped to that
+  card's directory, not the user-level install.
 
 **What atrium would gain.** Repo context that keeps itself current, for the cards that start cold. The PR runner's
 prime reads no reviewer file today, so each PR starts from zero (gap G7 of the PR review story, `docs/rnd/pr-review-story.md` on the orchestrator's branch `claude/pr-review-story`,
@@ -115,18 +127,24 @@ not landed). An
 `openwiki/` page set for the touched area could be part of `bundle.md`.
 
 **Risks for atrium's use.**
-- **It rewrites an existing `CLAUDE.md`.** atrium's own is curated and holds the rules. Whether that can be turned
-  off is **unverified**, so a trial runs where that is safe, or reverts that file.
-- **Telemetry is on by default**, so every atrium run sets `OPENWIKI_TELEMETRY_DISABLED=1`.
-- **The integration installer changes the host agent's config.** Install it on a scratch setup first.
-- **Cost.** The first `--init` on a large repo (openziti/ziti) is a full model run. Updates are cheap.
+- **A generated block lands in `CLAUDE.md`.** OpenWiki rewrites only its own marked block (README:317), but that
+  block lands in a file agents load as rules. A trial reverts that block, or runs in a tree with no `CLAUDE.md`.
+- **Telemetry is on by default.** `OPENWIKI_TELEMETRY_DISABLED=1` goes in the card's launch env, and the first run
+  checks it once with `--telemetry-file` to see that nothing is sent.
+- **The default install is user level** (README:86): a skill and an MCP server in m1mini's `~/.claude`, which every
+  non-lean card there loads, the directors included. Every atrium use installs with `--project <worktree>`.
+- **For the PR runner, generate from the base branch only, never the PR head.** Otherwise the PR's author writes the
+  reviewers' context.
+- **Cost.** The first initialization of a large repo (openziti/ziti) is a full model run on the card's login. Updates are cheap.
 
 **Concrete uses for clint's repos.**
-1. **tlsuv first.** It is small, it is where 378 was reviewed, and it has reviewer files to compare against. Run
-   `--init` in a scratch worktree on m1mini, then compare `openwiki/` with @review's tlsuv reviewer files: what does
-   each know that the other misses?
+1. **tlsuv first.** It is small, it is where 378 was reviewed, and it has reviewer files to compare against. In a
+   scratch worktree on m1mini, install with `--project <worktree>`, and have a claude card initialize the OpenWiki
+   through the integration, with telemetry off. Then compare `openwiki/` with @review's tlsuv reviewer files: what
+   does each know that the other misses?
 2. **openziti/ziti, ziti-sdk-c and ziti-tunnel-sdk-c**, for the PR runner. Keep a local `openwiki/` in each review
-   room's clone, never committed upstream, refreshed by `--update` before a PR run, with pages fed to the prime.
+   room's clone, never committed upstream. A claude card refreshes it from the base branch, never the PR head,
+   through the integration before a PR run, and the pages are fed to the prime.
 3. **atrium itself, `openwiki/` only**, as an index for new directors, leaving `CLAUDE.md` hand-written.
 
 ## 3. The zrok angle, for an upstream PR clint decides on
@@ -136,10 +154,12 @@ not landed). An
 callback server, the `.env` keys and the Slack instructions stay as they are.
 
 **The zrok path.**
-- **Sharing mode: public.** Slack redirects the user's browser to an HTTPS URL, and a private share is reached through
-  a local `zrok access` that gives plain http on localhost, which Slack refuses as a redirect. A public share with
+- **Sharing mode: public.** The redirect is followed by the user's own browser, and the tunnel exists only because
+  Slack demands an HTTPS redirect URI. A private share is reached through a local `zrok access`, which gives plain
+  http on localhost, and that fails Slack's rule, so a private share cannot work here. A public share with
   OAuth or basic auth in front would break the redirect, so the guard stays the OAuth `state` check, as it is with
-  ngrok today.
+  ngrok today. **The share runs only for the auth window**: started for `openwiki auth slack`, stopped when the
+  callback arrives or the command exits, so the callback server is not left on the internet.
 - **A stable URL.** Slack wants the redirect registered once, so the share uses a reserved name (zrok2
   `--name-selection`/`-n`, the same reservation atrium makes in `internal/daemon/overlay_reserve.go`). The exact name
   syntax in v2 is **unverified**. A run without a name gets a random URL, as ngrok's does, and the user registers it
@@ -192,8 +212,10 @@ or hand to someone.
 
 ## 5. Recommendation
 
-1. **OpenWiki: one trial, then decide.** tlsuv, in a scratch worktree on m1mini, inside a claude card with the
-   integration mode (no new key), telemetry off, nothing committed upstream. Compare it with @review's tlsuv reviewer
+1. **OpenWiki: one trial, then decide.** tlsuv, in a scratch worktree on m1mini. Install with `--project`, never at
+   user level. A claude card drives the integration's write tools on its own login, never `openwiki --update`, so no
+   new key is needed. Telemetry is off in the launch env and checked once with `--telemetry-file`. The `CLAUDE.md`
+   block is reverted, and nothing is committed upstream. Compare it with @review's tlsuv reviewer
    files. If it adds context they lack, the next step is a PR-runner item: feed `openwiki/` pages to the prime.
 2. **The zrok PR: worth it, small, and clint's.** Section 3 is the sketch. A public share with a reserved name, the CLI
    with `--subordinate`, no token in OpenWiki, and ngrok kept as the default.
@@ -204,7 +226,8 @@ or hand to someone.
 1. **The upstream zrok PR.** Do you open it yourself from section 3, or hand it to geowa4? It would add
    `--provider zrok` beside ngrok, using a public share with a reserved name. **Default: you open it, ngrok stays the
    default provider.**
-2. **The OpenWiki trial.** One run on tlsuv as in section 5 item 1, spending one `--init` of model time? **Default:
+2. **The OpenWiki trial.** One run on tlsuv as in section 5 item 1, spending one initialization of model time on
+   the card's own login? **Default:
    yes, after the pause, as a worker on m1mini.**
 3. **`dcode` as a runner row.** File it now, or not? **Default: not now. File it low.**
 4. **OpenTelemetry export** from atrium to a collector you run, with LangSmith as one possible sink and the key held
