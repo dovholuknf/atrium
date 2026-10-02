@@ -39,3 +39,12 @@ Verdict: OK 06c45ed2..0d88af99, hub-ok and room-ok.
 
 Quality: after the Sonnet switch, a small, well-placed change. One predicate at the sinks, the fallback inherited
 rather than rebuilt, and a test that walks every state. The low is a missing assertion, not a missing behaviour.
+
+## Re-read at 59aefd05 (2026-10-02): OK 06c45ed2..59aefd05
+
+One commit, and both lows are closed. `growlOff` now pushes a real pending permission through the ordinary path
+(`alerting.check("permission", …)` with a fresh item). It asserts that the keyed toast is drawn, that the permission
+tone rings, and that no growler appears. The changelog opens with "Default off changes every browser on the next
+board deploy". I read it and did not run it, per the board rule.
+
+Verdict: OK 06c45ed2..59aefd05, hub-ok and room-ok.
