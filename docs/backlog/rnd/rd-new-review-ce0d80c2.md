@@ -43,3 +43,17 @@ Open: Q1 (three fragments), S1 (directory 0700), S2 (queued questions withdrawn 
 
 Quality: good. The brief turns one rough interview into rules that will save the next one, and the screen is the
 decision list's sibling rather than a second system.
+
+## Re-read at e1f2ab3a (2026-10-02): OK, doc-ok
+
+- **Q1, closed.** Section 1's three fragments are paraphrased, and a grep finds none of "inverted", "origin and hub" or
+  "a repeat" left.
+- **S1, closed.** The interviews directory is 0700 and its files 0600.
+- **S2, closed.** A changed answer withdraws the dependent queued questions at once, before the interviewer's turn,
+  and the screen shows "rewriting" in their place.
+- **S3, closed.** Item 7 says the interviewer's cwd is never a public repo's worktree.
+
+Closed: Q1, S1, S2, S3
+Open: none
+
+Verdict: OK, doc-ok ce0d80c2^..e1f2ab3a. It lands alone by cherry-pick of the two.
