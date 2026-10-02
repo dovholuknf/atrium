@@ -939,14 +939,16 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 	opts := launchOptions{Model: model, Effort: effort, Args: extraArgs}
 	// The compaction window, from the limit this card will be held to. The tags are the
 	// request's and the card's, and the agent mark is put on as the launch will.
-	probe := &store.Task{Tags: append([]string{}, req.Tags...)}
+	probe := &store.Task{Tags: append([]string{}, req.Tags...), Model: model}
 	if task != nil {
 		probe.Tags = append(probe.Tags, task.Tags...)
 	}
 	if hasTag(req.Tags, OriginAgentTag) || agentLaunched(task) || reportTo != "" {
 		probe.Tags = append(probe.Tags, OriginAgentTag)
 	}
-	opts.Autocompact = fmt.Sprintf("%dk", d.autocompactK(probe))
+	if d.autocompactArgsFor(h) != nil {
+		opts.Autocompact = fmt.Sprintf("%dk", d.autocompactK(probe))
+	}
 	args, logged, err := runnerArgsWith(h, req.Resume, wanted, opts)
 	if err != nil {
 		return nil, err

@@ -1,6 +1,8 @@
 package daemon
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -124,4 +126,73 @@ func TestTheSeededClaudeRowTakesAutocompact(t *testing.T) {
 		}
 	}
 	t.Fatal("no claude row")
+}
+
+// A fake claude, a script that prints its --help. The probe asks it once.
+func fakeClaude(t *testing.T, help string) string {
+	t.Helper()
+	p := filepath.Join(t.TempDir(), "claude")
+	if err := os.WriteFile(p, []byte("#!/bin/sh\ncat <<'EOF'\n"+help+"\nEOF\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+func TestARunnerThatListsTheFlagTakesIt(t *testing.T) {
+	d := testDaemon(t)
+	h := claudeWithAutocompact()
+	h.BinPath = fakeClaude(t, "Options:\n  --autocompact <auto|tokens>  Auto-compact window size")
+	if d.autocompactArgsFor(h) == nil {
+		t.Fatal("a claude that lists --autocompact was not given the flag")
+	}
+}
+
+// An older claude would hard-fail on the unknown option, so the flag is left off and the card says why.
+func TestAnOlderClaudeIsStartedWithoutTheFlagAndTheDetailsSayWhy(t *testing.T) {
+	d := testDaemon(t)
+	h := claudeWithAutocompact()
+	h.BinPath = fakeClaude(t, "Options:\n  --model <model>  Model")
+	if d.autocompactArgsFor(h) != nil {
+		t.Fatal("a claude without --autocompact was given it")
+	}
+	probes := 0
+	d.acProbe.help = func(string) (string, error) { probes++; return "Options:\n  --model", nil }
+	d.acProbe.seen = map[string]bool{}
+	d.autocompactArgsFor(h)
+	d.autocompactArgsFor(h)
+	if probes != 1 {
+		t.Fatalf("probed %d times, want once and cached", probes)
+	}
+	if _, err := d.st.SaveHarness(store.Harness{ID: "claude", Label: "c", Enabled: true, Cmd: "claude",
+		BinPath: h.BinPath, LaunchMode: store.LaunchPTY, AutocompactArgs: h.AutocompactArgs}); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := d.autocompactFor(&store.Task{Runner: "claude"}).(*Autocompact)
+	if got == nil || got.Note != NoAutocompactNote || got.WindowK != 0 {
+		t.Fatalf("details = %+v", got)
+	}
+}
+
+func TestAClaudeThatCannotBeAskedIsAssumedToTakeIt(t *testing.T) {
+	d := testDaemon(t)
+	d.acProbe.help = func(string) (string, error) { return "", os.ErrNotExist }
+	if d.autocompactArgsFor(claudeWithAutocompact()) == nil {
+		t.Fatal("an unprobeable claude lost the flag")
+	}
+}
+
+// A window past the model's is clamped to it, and an unnamed model is left to the 100k-1M range.
+func TestTheWindowNeverPassesTheModels(t *testing.T) {
+	d := testDaemon(t)
+	setK(t, d, store.SettingAutoNewContextK, "300")
+	for model, want := range map[string]int{
+		"":                      330,
+		"claude-opus-5-5":       200,
+		"claude-sonnet-5-5[1m]": 330,
+		"CLAUDE-OPUS-5-5[1M]":   330,
+	} {
+		if got := d.autocompactK(&store.Task{Model: model}); got != want {
+			t.Errorf("model %q: %dk, want %dk", model, got, want)
+		}
+	}
 }
