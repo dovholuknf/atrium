@@ -11,8 +11,8 @@ Series: The software company: directors and workers. Status: idea. Audience: peo
 ## Story beats
 
 1. HANDOFF and PLAN files merged into main.
-2. Out of the tree, still in history.
-3. The guard: ignore working notes, and a merge check that refuses them.
+2. They were removed from the tree.
+3. The guard: ignore working notes in git, and the proposal for a merge check that refuses them.
 4. The later rule: held material gets its own commits, never mixed with a doc meant to land.
 5. Quoting the operator: paraphrase in public, keep his words off-repo.
 
@@ -23,9 +23,10 @@ Series: The software company: directors and workers. Status: idea. Audience: peo
 ## Sources
 
 - the orchestrator's factory evaluations of 2026-09-29 and 2026-09-30 (off-repo, on the hub machine; paraphrase only)
-- docs/backlog/release/76.md
+- .gitignore (HANDOFF.md, HANDOFF.*.md), commit 870d533e
 
 ## Notes for the writer
 
 - The repo is public: paraphrase clint, never quote him. Name no outside person. Keep security findings out of the post.
 - Screenshots come from a test room, or are drawn mockups, as the website does. Never use the live board with real cards.
+- Do not name the commits that carried the files, and do not say what the files held. Whether to rewrite that history is clint's call (INDEX question 4).

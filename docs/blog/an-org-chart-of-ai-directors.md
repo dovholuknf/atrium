@@ -32,3 +32,4 @@ Series: The software company: directors and workers. Status: idea. Audience: peo
 
 - The repo is public: paraphrase clint, never quote him. Name no outside person. Keep security findings out of the post.
 - Screenshots come from a test room, or are drawn mockups, as the website does. Never use the live board with real cards.
+- **Check before drafting.** These figures come only from off-repo sources (the factory status, evaluations or log). Confirm each against those files first: about twelve batches a night, none bad; the race caught across directors.

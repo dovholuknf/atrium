@@ -32,3 +32,4 @@ Series: Rooms, the hub and federation. Status: outline. Audience: people scaling
 
 - The repo is public: paraphrase clint, never quote him. Name no outside person. Keep security findings out of the post.
 - Screenshots come from a test room, or are drawn mockups, as the website does. Never use the live board with real cards.
+- **Check before drafting.** These figures come only from off-repo sources (the factory status, evaluations or log). Confirm each against those files first: the trust dialog answering 'exit' for two workers; one remote worker's output; the local cap peak.

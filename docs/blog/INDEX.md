@@ -8,7 +8,8 @@ angle, story beats, the screenshots or demos it needs, and its sources. The feat
 
 ## Start with these five
 
-Chosen because each is a story only atrium has, is true and checkable from the repo, and reaches beyond atrium's own users:
+Chosen because each is a story only atrium has, and reaches beyond atrium's own users. Posts 2, 4 and 5 lean on
+off-repo figures, so their stubs list what to check before drafting:
 
 1. [The interview that deleted a design](the-interview-that-deleted-a-design.md): A reviewed, approved design was thrown out at question 4 of an interview, when it turned out the human pictured something else.
 2. [What a factory of agents costs: $1,202 in 41 hours](what-a-factory-of-agents-costs.md): Directors against flat workers against a human driving one model, and how much of the money went on relaying messages.
@@ -158,3 +159,7 @@ Git between rooms, verdicts as trailers, and the stages a change passes before c
    keep them? **Suggested: yes, because they make the stories concrete.**
 3. **Real costs.** Several posts quote real dollar and token figures. Should they stay in? **Suggested: yes, as
    measured, with the date.**
+4. **The working notes still in history.** A director's handoff and plan files were merged into the public branch
+   and later removed from the tree, but the commits are still in history. Should history be rewritten to drop them,
+   or left as it is? Until then, no post names those commits or says what the files held. **Suggested: your call.
+   A rewrite changes every later sha on claude/main.**
