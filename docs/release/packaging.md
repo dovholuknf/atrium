@@ -780,6 +780,19 @@ the path for `atrium_launch room=<room>`, and `fetch <room>` brings the room's `
 `<room>/claude/*` for the Release department to merge. The atrium binary does no git. See `docs/fabric/remote-launch.md`
 section 6.
 
+**Allowed folders.** A room has a list of folders atrium may launch in (its `browse_roots` setting), and claude's folder
+trust is written for each, so a launch never sits at "do you trust this folder" with nobody to answer. The `folders`
+step runs `atrium room folders allow <dir>...` on the remote (sh on macOS and Linux, PowerShell on Windows) after the
+clone and before `auth`. A new provision allows the clone, its `<clone>-worktrees` folder and `WORKTREE_ROOT` when the
+room has one, and `-AllowedFolders /srv/work,C:/work` allows those instead (absolute paths, `~/` accepted). **A rerun
+changes nothing** unless `-AllowedFolders` is given, and then adds to the list the manifest records as
+`allowed_folders`. An atrium without the verb, or a folder the room skips (home, a filesystem root, missing), is a
+`warn` carrying the command to run later, never a failure. `-Remove` leaves the list and the trust alone. When
+`atrium room folders list --json` says the list is enforced, the smoke runs inside it and `smoke-outside` then launches
+a card outside it and expects the room to refuse. `room-check.ps1` has an `allowed-folders` row: `ok` with the roots,
+`warn` "no allowed folders set" for a room with none, and with `-Fix -Yes` it allows the clone and its worktrees.
+`scripts/test-room-folders.ps1` tests the argument handling and the step with a fake `atrium`, with no ssh.
+
 **The permission gate.** The gate that puts a worker's tool calls on the board as permission prompts is not one of
 atrium's hooks. It is the operator's dotfiles script `~/.claude/hooks/atrium-perm-hook.ps1`, so a room has the badge and
 the session open and close and no prompts until it is there. After the hooks step provision runs

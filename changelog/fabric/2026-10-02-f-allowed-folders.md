@@ -1,0 +1,4 @@
+- Provisioning a room now sets the folders atrium may launch in and pre-accepts claude's folder trust for them, so a launch never sits at a trust dialog. `provision-room.ps1 -AllowedFolders /srv/work,C:/work` picks them, and a new room defaults to its clone, its worktrees folder and WORKTREE_ROOT.
+- A rerun of provision changes nothing unless `-AllowedFolders` is given, and `-Remove` leaves the list alone. An atrium too old to take a list is a warning with the command to run later.
+- The provision smoke runs inside the list, then launches a card outside it and expects the room to refuse (`smoke-outside`), when the room enforces a list.
+- `room-check.ps1` has an `allowed-folders` row: ok with the roots, a warning for a room with none, and `-Fix -Yes` sets the clone and its worktrees. It needs the `atrium room folders` verb on the room.
