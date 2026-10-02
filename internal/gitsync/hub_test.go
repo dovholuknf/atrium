@@ -390,7 +390,13 @@ func TestTheRoomOnTheHubsOwnMachineIsSkipped(t *testing.T) {
 	if st := x.h.Status().Rooms["sg3"]; st == nil || st.Repos[0].Detail != SameMachine {
 		t.Fatalf("status = %+v", st)
 	}
-	// Another machine is not skipped.
+}
+
+// Another machine is not skipped. (A hub of its own: the attach above left a goroutine that read SelfHost, and
+// changing it under that goroutine is a race.)
+func TestTheRoomOnAnotherMachineIsNotSkipped(t *testing.T) {
+	x := newHubFixture(t, true)
+	x.rooms.host = "Sg4"
 	x.h.SelfHost = "elsewhere"
 	x.answer.Store("ok")
 	if _, err := x.h.Sync(bg, "sg3", "", false); err != nil || x.syncs.Load() != 1 {

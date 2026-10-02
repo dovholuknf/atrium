@@ -58,11 +58,17 @@ type recvFix struct {
 	create atomic.Bool
 }
 
-func newRecv(t *testing.T) *recvFix {
+// newRecv is a hub with a store and a server in front of it. `set` changes the hub BEFORE the server starts: a field
+// written once requests are being served is a race the detector sees, because the client is a git process and gives the
+// test goroutine no ordering with the handlers.
+func newRecv(t *testing.T, set ...func(*Hub)) *recvFix {
 	t.Helper()
 	root := t.TempDir()
 	x := &recvFix{t: t, log: &MemPushLog{}, cards: map[string]cardAns{}}
 	x.h = &Hub{Dir: filepath.Join(root, "hub"), Runner: NewRunner(), PushLog: x.log}
+	for _, f := range set {
+		f(x.h)
+	}
 	x.h.Cards = func(_ context.Context, room, card string) (CardState, error) {
 		x.asked.Add(1)
 		x.mu.Lock()
@@ -1253,10 +1259,18 @@ func TestAPushTheLogCannotBeginMovesNothing(t *testing.T) {
 	}
 	x.log.FailBegin = nil
 	x.must(x.push(roomCard("sg4", "C1"), hubRepo, "fix/x:refs/heads/fix/x"))
-	// With no log at all, nothing is taken.
-	x.h.PushLog = nil
-	if out, err := x.push(roomCard("sg4", "C1"), hubRepo, "fix/x:refs/heads/fix/y"); err == nil {
+}
+
+// With no log at all, nothing is taken.
+func TestAHubWithNoPushLogTakesNoPush(t *testing.T) {
+	x := newRecv(t, func(h *Hub) { h.PushLog = nil })
+	x.makeRepo(hubRepo)
+	x.branch("fix/x", "x.txt")
+	if out, err := x.push(roomCard("sg4", "C1"), hubRepo, "fix/x:refs/heads/fix/x"); err == nil {
 		t.Fatalf("a hub with no log took a push:\n%s", out)
+	}
+	if out, err := x.push(operator, hubRepo, "fix/x:refs/heads/fix/x"); err == nil {
+		t.Fatalf("a hub with no log took the operator's push:\n%s", out)
 	}
 }
 
