@@ -192,6 +192,22 @@ if ($Verb -eq 'room') {
     if ($LocationFile) { $daemonArgs += " --location-file `"$LocationFile`"" }
 }
 
+# ConvertTo-PsLiteral puts a value inside PowerShell text as a single-quoted literal. PowerShell ends such a string at
+# U+2018 to U+201B as well as at the ASCII quote (macOS autocorrects ' to them), so all four are doubled, and a folder or
+# exe path holding one cannot end the string early and run what follows.
+function ConvertTo-PsLiteral { param([string] $s) "'" + ($s -replace "['\u2018\u2019\u201A\u201B]", '$0$0') + "'" }
+
+# Get-RoomTaskCommand is the command Windows PowerShell 5.1 runs for a room's logon task: the toolchain's room-env.ps1
+# when it exists, then the detached room. Every value is a quoted literal. The text stays readable, because
+# provision-room.ps1 reads the task back to see whether it is already right. scripts/test-autostart-quote.ps1 runs it.
+function Get-RoomTaskCommand {
+    param([string] $Exe, [string] $Db, [string] $Addr, [string] $Http)
+    $roomArgs = "room --detach --db $(ConvertTo-PsLiteral $Db)"
+    if ($Addr) { $roomArgs += " --agent $(ConvertTo-PsLiteral $Addr)" }
+    if ($Http) { $roomArgs += " --http $(ConvertTo-PsLiteral $Http)" }
+    "`$e = Join-Path `$HOME '.atrium\toolchain\room-env.ps1'; if (Test-Path `$e) { . `$e }; & $(ConvertTo-PsLiteral $Exe) $roomArgs"
+}
+
 $conhost = Join-Path $env:SystemRoot 'System32\conhost.exe'
 if ($Verb -eq 'room') {
     # A ROOM'S TASK STARTS THE DETACHED ROOM, so a room started by hand, by provision and by a logon is one path:
@@ -199,8 +215,7 @@ if ($Verb -eq 'room') {
     # room-toolchain.ps1 wrote one, for the PATH its runners need. The command stays readable text, because
     # provision-room.ps1 reads the task back to see whether it is already right.
     # Windows PowerShell 5.1 runs this over ssh, so no -replace with a scriptblock.
-    $detached = ($daemonArgs -replace '^room ', 'room --detach ') -replace '"', "'"
-    $ps = "`$e = Join-Path `$HOME '.atrium\toolchain\room-env.ps1'; if (Test-Path `$e) { . `$e }; & '$($Exe -replace "'", "''")' $detached"
+    $ps = Get-RoomTaskCommand -Exe $Exe -Db $Db -Addr $Addr -Http $Http
     $shell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
     $shellArgs = "-NoProfile -ExecutionPolicy Bypass -Command `"$($ps -replace '"', '\"')`""
     if (Test-Path $conhost) { $command = $conhost; $argument = "--headless `"$shell`" $shellArgs" }
