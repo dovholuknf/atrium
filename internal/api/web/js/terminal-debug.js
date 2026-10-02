@@ -380,7 +380,7 @@ function clearTermPane(switching) {
   paintPaneBg(null);
   document.getElementById("t-title").textContent = "nothing attached";
   document.getElementById("t-title").classList.remove("as-alias", "can-alias");
-  document.getElementById("t-chips").innerHTML = "";  document.getElementById("t-screen").innerHTML = "";
+  document.getElementById("t-chips").innerHTML = "";  clearTermScreen(document.getElementById("t-screen"));
   document.getElementById("term-perm").hidden = true;
 
   // AND THEN GO BACK AND WAIT FOR IT.

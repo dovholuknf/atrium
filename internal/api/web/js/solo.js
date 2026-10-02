@@ -200,6 +200,8 @@ function forgetPlace(id) {
 
 async function popOutTask(id) {
   rememberPlace(id, "window");
+  // A window of its own owns the terminal: a copy kept hidden here would be a second viewer taking input.
+  keepDropId(id);
   const held = popOuts.get(id);
   if (held && !held.closed) { held.focus(); return "raised"; }
 

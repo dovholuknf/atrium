@@ -70,8 +70,10 @@ function writeRunnerOutput(t, data, done) {
   t.write(data);
   t.write("\x1b[?25l", done);
   clearTimeout(cursorTimer);
-  cursorTimer = setTimeout(() => {
-    cursorTimer = 0;
+  // Its own id only: a hidden terminal's timer fires with the showing terminal's globals, and must not lose its id.
+  const mine = setTimeout(() => {
+    if (cursorTimer === mine) cursorTimer = 0;
     if (cursorWanted && t === term) t.write("\x1b[?25h");
   }, settle);
+  cursorTimer = mine;
 }

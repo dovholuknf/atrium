@@ -930,6 +930,7 @@ function connectTerm(taskID) {
   // The width floor is the daemon's number. Asked once per window, and a pane
   // built on the default is re-sized when it arrives.
   if (!pastePrefs) pasteSettings().then(() => fitTerm());
+  swMark("ws-new");
   termSock = new WebSocket(`${proto}//${location.host}/v1/tasks/${taskID}/attach${kind}`);
   termSock.binaryType = "arraybuffer";
   // Per socket, not per pane: a reconnect that succeeds must not leave the
@@ -939,6 +940,14 @@ function connectTerm(taskID) {
 
   termSock.onopen = () => {
     opened = true;
+    // Opened while another terminal is showing (it was hidden before it connected): this terminal's own business,
+    // none of the pane's. Its size goes out when it is shown. See `keepPark`.
+    if (termSock !== sock) {
+      const slot = keptSlotOf(sock);
+      if (slot) { termSlotRun(slot, () => { termReplayed = true; }); slot.sizeUnsent = true; }
+      clearAttachInFlight(taskID);
+      return;
+    }
     attachSince = 0;
     // Back. The announcement has been spent, so the next close is judged on
     // its own: leaving it armed would make a session ended half an hour from
@@ -968,7 +977,7 @@ function connectTerm(taskID) {
       // the seam. On the first open below there is nothing to reset, so the
       // line still earns its place after a wait.
       term.reset();
-      termPushed = "";
+      term._atriumPushed = "";
     } else if (attachSaidGone && term) {
       term.write("\r\n\x1b[38;5;79m[atrium] reconnected\x1b[0m\r\n");
     }
@@ -1002,7 +1011,13 @@ function connectTerm(taskID) {
   // afterwards. Writing it would put a runner's output into a terminal that is
   // now showing something else, or into the same one twice.
   termSock.onmessage = e => {
-    if (termSock !== sock || !term) return;
+    // A kept terminal's socket while another one is showing: into its own terminal and nothing else.
+    if (termSock !== sock) {
+      const slot = keptSlotOf(sock);
+      if (slot) keepFrame(slot, e.data);
+      return;
+    }
+    if (!term) return;
     // The scroll goes in the WRITE CALLBACK, not after the call. `term.write`
     // is asynchronous: it queues the bytes and parses them later, so scrolling
     // on the next line scrolls a buffer that has not grown yet, which is the
@@ -1022,6 +1037,14 @@ function connectTerm(taskID) {
     writeRunnerOutput(term, bytes, carryLoadDone(bytes, lagOnOutput(followScroll)));
   };
   termSock.onclose = async ev => {
+    // A kept terminal's socket closing in the background (the runner exited, the room or hub restarted, the link
+    // dropped): nothing to wait on or retry behind the operator's back. It is let go, and showing that card later is
+    // an ordinary attach with its replay.
+    if (termSock !== sock) {
+      const slot = keptSlotOf(sock);
+      if (slot) keepDispose(slot);
+      return;
+    }
     if (!term) return;
     // A close belonging to a socket that is no longer the one attached.
     //
@@ -1282,6 +1305,15 @@ function connectTerm(taskID) {
   //   `noteTyped` abandons its buffer on anything that is not a printable
   //   character, so every focus change silently switched off path completion.
   termData = term.onData(d => {
+    // xterm raises this while it parses, which is outside `termSlotRun`, so a hidden terminal's answers (to a device
+    // attributes or cursor position query) arrive here with the globals of whichever terminal is showing. They go
+    // back on the hidden terminal's own socket, and are nothing to the pane: no lag, typed or scroll bookkeeping.
+    if (termSock !== sock) {
+      if (keptSlotOf(sock) && sock.readyState === WebSocket.OPEN) {
+        try { sock.send(JSON.stringify({ t: "in", d })); } catch (e) {}
+      }
+      return;
+    }
     const report = isAutoReport(d);
     const lagT = lagKeyDown(report);
     if (!report) noteTyped(d);
@@ -2058,6 +2090,13 @@ function ptyRowsFor(fit) {
 // applyPtySize re-sizes the grid after the daemon said the pty's size moved.
 function applyPtySize() {
   if (!term) return;
+  // A kept terminal follows the pty's grid so what it parses lines up, and touches nothing on the page.
+  if (termBgRun) {
+    const cols = Math.max(termFitCols || term.cols, termPtyCols, termMinCols());
+    const rows = ptyRowsFor(termFitRows || term.rows);
+    if (cols !== term.cols || rows !== term.rows) term.resize(cols, rows);
+    return;
+  }
   if (termPhone() && termPtyCols > 0 && termPtyRows > 0) {
     if (termPtyCols !== term.cols || termPtyRows !== term.rows) term.resize(termPtyCols, termPtyRows);
     markWide();
@@ -2082,8 +2121,9 @@ function applyPtySize() {
 // the pane can show and this is not a feedback loop.
 function markWide() {
   const host = document.getElementById("t-screen");
-  const el = host && host.querySelector(".xterm");
-  if (!el || !term) return;
+  // This terminal's own element, not the first `.xterm` in the pane: others may be kept hidden beside it.
+  const el = term && term.element;
+  if (!host || !el) return;
   const phone = termPhone();
   const wide = phone || (termFitCols > 0 && term.cols > termFitCols);
   host.classList.toggle("wide", wide);
@@ -2303,8 +2343,8 @@ function setTermFont(px) {
 function sizeTermHost() {
   if (!term) return;
   const host = document.getElementById("t-screen");
-  const el = host && host.querySelector(".xterm");
-  if (!el) return;
+  const el = term.element;
+  if (!host || !el) return;
   let cell = 0;
   try { cell = term._core._renderService.dimensions.css.cell.height; } catch (e) {}
   // Nothing measured yet: leave the 100% fallback in place rather than collapse
@@ -3046,6 +3086,7 @@ function syncPhoneView() {
   if (typeof tcomposeSync === "function") tcomposeSync();
   phoneInputMode();
   syncTermViewButton();
+  keepEnforce();
   if (window.visualViewport && !window._phoneVV) {
     window._phoneVV = true;
     phoneVVSoon();
