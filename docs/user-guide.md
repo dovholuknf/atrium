@@ -182,6 +182,9 @@ pwsh -File scripts\room-defender.ps1 local        # this machine
 pwsh -File scripts\room-defender.ps1 sg3          # a room, over ssh
 ```
 
+That account should be a standard user of its own, not an administrator and not your everyday login. Atrium warns when
+it is not, and `docs/room-accounts.md` says why and how to set one up.
+
 It reads that account's Go caches, the clone's `build.claude` and the worktree root, and sets `GOTMPDIR` to
 `<GOCACHE>\tmp` with `go env -w`, so `go test` links its binaries inside an excluded path instead of `%TEMP%`. The
 exclusions need elevation, so it prints one `Add-MpPreference` line, with the paths spelled out, for an administrator

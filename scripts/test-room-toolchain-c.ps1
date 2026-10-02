@@ -448,7 +448,7 @@ if ($unix) {
     Check 'unix -Check -Profile c: nothing was created' @((Test-Path (Join-Path $tmp 'sdk-none')), (Test-Path (Join-Path $tmp 'vcpkg-none')), (Test-Path (Join-Path $tmp 'state'))) @($false, $false, $false)
     $plain = & $pwsh -NoProfile -File $script local -Check -Tools go -StateDir (Join-Path $tmp 'state') 2>&1
     Check 'no profile: not one C step is printed' @($plain | Where-Object { $_ -match '^room-toolchain (cc|gcc|cmake|ninja|vcpkg|sdk-checkout|msys2|pacman|git-identity|git-credential|cmake-preset) ' }).Count 0
-    Check 'no profile: the old steps are the same' (($plain | ForEach-Object { "$_" -replace '^(room-toolchain \S+ \S+).*', '$1' }) -join '|') ((@('room-toolchain ssh ok', 'room-toolchain prefix ok', 'room-toolchain go ok', 'room-toolchain path skip', 'room-toolchain done ok')) -join '|')
+    Check 'no profile: the old steps are the same (not counting the account step, see test-room-account.ps1)' ((($plain | Where-Object { $_ -notmatch '^room-toolchain account ' }) | ForEach-Object { "$_" -replace '^(room-toolchain \S+ \S+).*', '$1' }) -join '|') ((@('room-toolchain ssh ok', 'room-toolchain prefix ok', 'room-toolchain go ok', 'room-toolchain path skip', 'room-toolchain done ok')) -join '|')
 
     # the arguments, refused before anything runs: a fake ssh that answers like a Windows host
     $fakeSsh = Join-Path $tmp 'ssh'
@@ -605,7 +605,7 @@ exit 0
     $calls0 = @(Get-Content -LiteralPath (Join-Path $sim.Cfg 'calls')).Count
     $r = Invoke-Sim $sim @('-GitUserName', 'Test User', '-GitUserEmail', 't@example.com', '-CheckRepo', 'dovholuknf/private-repo')
     Check 'sim rerun: exit 0' $r.Code 0
-    Check 'sim rerun: nothing says done, nothing needs a human' (@($r.Out | Where-Object { $_ -match '^room-toolchain \S+ (done|needs-human|warn|fail) ' -and $_ -notmatch '^room-toolchain done ' }).Count) 0
+    Check 'sim rerun: nothing says done, nothing needs a human' (@($r.Out | Where-Object { $_ -match '^room-toolchain \S+ (done|needs-human|warn|fail) ' -and $_ -notmatch '^room-toolchain (done|account) ' }).Count) 0
     Check 'sim rerun: the identity is left alone' ((Get-Step $r 'git-identity') -like 'room-toolchain git-identity ok Test User <t@example.com> (already in the global config, left alone)') $true
     Check 'sim rerun: the credential check passes for both' ((Get-Step $r 'git-credential') -like '*public access works, and so does https://github.com/dovholuknf/private-repo.git*') $true
     Check 'sim rerun: the preset is ok and the file is the same' ((Get-Step $r 'cmake-preset') -like 'room-toolchain cmake-preset ok * already has mingw-vcpkg-base,cwdming,cwdming-with-tests, left alone' -and (Get-Content -LiteralPath $pf -Raw) -eq $presetBefore) $true

@@ -65,6 +65,17 @@
 # `sudo useradd -m localai`) and stops with exit 11. An account that exists but is
 # not the ssh login is exit 1: target `localai@host`.
 #
+# THE ACCOUNT'S RIGHTS. The ssh login IS the account the room runs as, since everything here runs as that login. Right
+# after the account check, `account-rights` (a provision run only, not -Remove, -Restart or -SmokeOnly) reads who that
+# login is, read only, and says so loudly when it is an administrator (Windows: an elevated token, Administrators,
+# Domain Admins. macOS and Linux: root, admin, sudo or wheel, or passwordless sudo) or the operator's own everyday
+# account (best effort, see scripts/room-account.ps1: -OperatorAccount, or the login that runs this script when the
+# target is this same machine). It is a `warn` naming the reason and docs/room-accounts.md, and the run goes on.
+# -IAcceptRunningAsMe makes it `ok accepted by the operator`, still naming the reason. -RequireDedicatedAccount makes it
+# a `fail` and exit 6, and so does a probe that cannot tell. This script never creates an account (see above), so it
+# never makes an administrator one: the account is whatever the operator made, and the page says how to make it a
+# standard one. The step is not called `account` because that is the -User check's.
+#
 # DEFENDER. On a Windows room, scripts/room-defender.ps1 runs after the clone: it reads the Go caches, the clone's
 # build.claude and the worktree root as the ssh login, sets GOTMPDIR inside the Go cache, and excludes those paths
 # from real-time protection when the login is elevated. Provisioning runs without admin, so usually it prints the
@@ -105,7 +116,8 @@
 #   3  a remote install step failed: binary, autostart or start
 #   4  the join failed, or the room did not attach to the hub
 #   5  installed and attached, but a runner is missing, does not start, or would not install
-#   6  refused: the remote is already a room, or runs an atrium this script did not install
+#   6  refused: the remote is already a room, or runs an atrium this script did not install, or -RequireDedicatedAccount
+#      and the room's account is an administrator or the operator's own
 #   7  the overlay needs a credential only the operator can give: see the fail line
 #   8  installed and attached, but the smoke card did not report
 #   9  -Restart refused: a card is mid-turn or waiting on a permission, or the
@@ -171,6 +183,10 @@ param(
     [switch] $Force,
     # The account the room must run as, for example localai. Checked, never created: see "the account".
     [string] $User,
+    # The account's rights, see "the account's rights". The operator's own accounts: name, DOMAIN\name or name@host.
+    [string[]] $OperatorAccount = @(),
+    [switch] $IAcceptRunningAsMe,
+    [switch] $RequireDedicatedAccount,
 
     # Build the binary from this checkout instead of fetching a release.
     [switch] $FromCheckout,
@@ -245,6 +261,7 @@ if ($Restart -and ($Remove -or $SmokeOnly -or $Autostart -or $NoAutostart -or $I
     Write-Host 'provision args fail -Restart changes nothing but the running room, so it goes with none of -Remove, -SmokeOnly, -Autostart, -NoAutostart, -Install, -Binary, -FromCheckout, -Version'; exit 1
 }
 if (($Yes -or $Force) -and -not $Restart) { Write-Host 'provision args fail -Yes and -Force belong to -Restart'; exit 1 }
+if ($IAcceptRunningAsMe -and $RequireDedicatedAccount) { Write-Host 'provision args fail -IAcceptRunningAsMe and -RequireDedicatedAccount say opposite things'; exit 1 }
 if ($AllowedFolders.Count -and ($Remove -or $Restart -or $SmokeOnly)) {
     Write-Host 'provision args fail -AllowedFolders changes the room, so it goes with none of -Remove, -Restart, -SmokeOnly'; exit 1
 }
@@ -258,6 +275,9 @@ $Runners = Split-List $Runners
 $Install = Split-List $Install
 $AllowedFolders = Split-List $AllowedFolders
 . (Join-Path $PSScriptRoot 'room-folders.ps1')
+. (Join-Path $PSScriptRoot 'room-account.ps1')
+$operators = @(Get-OperatorList (Split-List $OperatorAccount))
+foreach ($o in $operators) { $why = Test-OperatorArg $o; if ($why) { Write-Host "provision args fail $why"; exit 1 } }
 foreach ($f in $AllowedFolders) {
     $why = Test-FolderArg $f
     if ($why) { Write-Host "provision args fail -AllowedFolders '$f' $why"; exit 1 }
@@ -536,6 +556,15 @@ if ($User) {
         Fail 'account' 1 "$User exists, and $Target logs in as $($acct.login). target $User@<host> so the room runs as $User"
     }
     Step 'account' 'ok' "$User, the account this room runs as"
+}
+
+# The rights of the account the room runs as, see "the account's rights". Read only.
+if (-not ($Remove -or $Restart -or $SmokeOnly)) {
+    $acctKind = switch ($os) { 'windows' { 'windows' } 'darwin' { 'mac' } default { 'linux' } }
+    $ar = Invoke-AccountProbe $os $Ssh $sshBase $Target
+    $av = Get-AccountResult $ar.Out $ar.Code $acctKind $remoteHost (Get-LocalIdentity) $operators $false ([bool]$IAcceptRunningAsMe) ([bool]$RequireDedicatedAccount)
+    Step 'account-rights' $av.Status $av.Detail
+    if ($av.Refuse) { Finish 6 }
 }
 
 # ── 2. the hub ──────────────────────────────────────────────────────────────

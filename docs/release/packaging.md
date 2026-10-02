@@ -758,6 +758,13 @@ created, because making one needs admin. A missing account prints the command (`
 `sysadminctl -addUser localai` on macOS, `sudo useradd -m localai` on Linux) and stops with exit 11 before anything is
 changed. An account that exists but is not the ssh login is exit 1: target `localai@host`.
 
+**Who the room runs as.** Provisioning does not create the account, so it is whatever the operator made, and atrium does
+not recommend that it be an administrator or the operator's own everyday login. `provision-room.ps1` (as
+`account-rights`), `room-toolchain.ps1` and `room-check.ps1` read the ssh login, read only, and say so when it is
+elevated, in an admin group, able to use sudo with no password, or the operator's own. It is a warn,
+`-IAcceptRunningAsMe` accepts it, and `-RequireDedicatedAccount` refuses it (exit 6 for provision).
+`docs/room-accounts.md` has the reasoning and the commands for a standard account on Windows, macOS and Linux.
+
 **Checking it.** It waits for the hub's live `/_hub/rooms` list to show a connection made after the start, and still
 there five seconds later, then runs each runner's `--version` on the remote.
 
