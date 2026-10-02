@@ -85,6 +85,13 @@ through the orchestrator:
    @review as a design.
 4. HELD for clint by name: `docs/backlog/rnd/rnd-new-backlog-in-atrium.md`, the pluggable backlog spike.
 
+5. IN PROGRESS `docs/rnd/otel-export-design.md`: OpenTelemetry export to an operator-run collector (clint, Q4 of the
+   OpenWiki spike: "rnd task"). Design only. @review doc-ok, then land through claude/landing.
+6. HELD until the pause ends: the OpenWiki trial on tlsuv (clint: yes). A non-lean claude card on m1mini, per
+   `docs/rnd/langchain-openwiki-spike.md` section 5 item 1: `--project` install, integration write tools only, never
+   `openwiki --update`, telemetry off, the CLAUDE.md block reverted, nothing upstream.
+7. HELD, low: `dcode` (Deep Agents Code) as a runner row (clint: not now, file low).
+
 Also held for clint: rnd-new-scm-forge, on sg4. Only designs are allowed: nothing built, nothing deployed.
 
 ## Done
