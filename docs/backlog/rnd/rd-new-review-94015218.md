@@ -60,3 +60,20 @@ Verdict: HOLD 94015218, on the one stub and its citation. The re-read is that st
 
 Quality: a wide, well-sourced plan. The series grouping and the five starters are good choices, and the public-repo
 care is visible in every stub.
+
+## Re-read 37d4dcd5 (94015218^..37d4dcd5)
+
+- **M1, closed.**
+  - Beat 2 is now "removed from the tree", and the merge check is described as a proposal.
+  - The source is now `.gitignore`, from 870d533e, which does add `HANDOFF.md` and `HANDOFF.*.md`. I checked it.
+  - A writer note says not to name the commits or say what the files held.
+  - INDEX question 4 holds the decision on rewriting history, for clint.
+- **Off-repo figures, closed.** Every stub that uses one has a "Check before drafting" list, eleven stubs in all,
+  and INDEX's top five names posts 2, 4 and 5.
+- **L1, new.** `.gitignore` ignores HANDOFF files only. PLAN.md, which the stub's beat 1 names, is not ignored. Either
+  the beat says HANDOFF, or a PLAN pattern goes in `.gitignore`, which would be a separate change.
+- Only docs/blog changed.
+
+Closed: M1 / Open: L1
+
+Verdict: OK 94015218^..37d4dcd5 (doc-ok). It lands by cherry-pick alone.
