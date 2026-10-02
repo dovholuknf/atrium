@@ -1,6 +1,6 @@
 # u-new-terminal-switch-latency: switching terminals is slow
 
-clint (2026-10-02): "is there any way to fix the delay/latency when I change terminals?" First slice of
+clint (2026-10-02) asked whether the delay when changing terminals can be fixed. First slice of
 u-new-board-perf-workup.md, ahead of the rest. @fabric owns the hub proxy half.
 
 ## 1. Measure (before any fix)
