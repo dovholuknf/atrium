@@ -12,7 +12,7 @@ shared code is `scripts/room-account.ps1` (functions and two payload texts, dot-
 
 ### @LETTER@1. Offline, on any machine with pwsh 7
 
-1. `pwsh -NoProfile -File scripts/test-room-account.ps1` prints `all N checks pass` (159 at the time of writing). It
+1. `pwsh -NoProfile -File scripts/test-room-account.ps1` prints `all N checks pass` (189 at the time of writing). It
    needs no ssh. It runs a fake ssh against `room-toolchain.ps1` and `provision-room.ps1`, and `room-check.ps1` too when
    python3 and an atrium with the `requirements` subcommand are there (it says `skip room-check end to end` otherwise).
 2. `pwsh -NoProfile -File scripts/check-powershell.ps1` ends `all powershell parses.`
@@ -86,8 +86,17 @@ nothing here could run. See "Not proven" below.
   SID list. The `whoami /groups /fo csv /nh` outputs the probe's own parse line is run over (a filtered token, an
   elevated one, a German one, a domain admin with a comma in a group name) are written in the documented format and were
   NOT captured on a Windows machine, and the German attribute text is from memory. The probe never reads that column.
-  That `whoami` lists a deny-only Administrators on a filtered token, and `WindowsIdentity.Groups` does not, is the
-  review's finding and documented behaviour, and was not observed here.
+  WHAT IS REAL: `scripts/fixtures/whoami-groups-sg4-claude-nonadmin.csv`, a capture from sg4 of `SG4\claude` in a
+  non-admin shell, 13 rows (a plain account, NOT a filtered admin token, which is still to come from clint, and neither
+  is an elevated one). It is in the group docker-users, so its verdict is a WARN by name, and the "ordinary non-admin
+  account reads ok" test uses the capture with that one row dropped (derived in the test, the file is untouched). It
+  holds well-known SIDs and two local groups under a machine SID, and the capture is REAL APART
+  FROM ONE SUBSTITUTION: sg4's machine SID was replaced by the placeholder S-1-5-21-1111111111-2222222222-3333333333,
+  since a real machine SID is an identifier that is not published. The test does not depend on the value. It confirmed
+  the format and showed the integrity label row has an EMPTY attribute column, which the other fixtures now copy. It is
+  the "ordinary non-admin account reads ok" case of the parse test. That `whoami` lists a deny-only Administrators on a
+  filtered token, and `WindowsIdentity.Groups` does not, is the review's finding and documented behaviour, and was not
+  observed here.
 - `sudo -n -l` on a machine with passwordless sudo. The outputs it is judged on are fixtures from the sudo manual's
   format. The 5 second cut-off is run for real on this Mac, with a fake `sudo` that never answers, and the whole-call
   cap with a fake ssh that never answers.
@@ -142,6 +151,24 @@ nothing here could run. See "Not proven" below.
 - decided: `sudo -n -l` is cut off after 5 seconds by a background watcher (macOS has no `timeout(1)`, so one code path
   for both) and reads `sudo.rc=timeout`, which is a warn `may have sudo, since sudo -n -l did not answer in 5 seconds`
   and not a clean ok / review L1, the cut-off leaves the other facts standing.
+- decided: the 5 second watcher is "usually", not a bound / review N1, a sudo that made itself root (real uid 0) cannot
+  be signalled by the user, and a process group kill is refused the same way, so the capture waits. What bounds it is
+  the 45 second cap on the whole call (`could not tell`), and the comment and the doc say so.
+- decided: the probe output is delimited by a marker pair made up on THIS side for each run (`ATRIUM-ACCT-<guid>`), the
+  probe prints it around its facts and only the text between is read / review N2, ssh runs the login shell, whose rc
+  files print before the probe and whose EXIT trap prints after it, which could print `uid=`/`groups=` and read an admin
+  as clean. Exactly one begin and one end in order, else `could not tell`. A fact said twice with two values (inside the
+  pair, or in the fake) is `could not tell ... tampered with or noisy`, never ok, and `fail` under
+  `-RequireDedicatedAccount`. The first value is what is taken when a repeat agrees. Only the probe's own keys are
+  compared. The shell is not made to skip its rc files, since ssh chooses it. On Windows the marker is in the command
+  line, where a process of the same account could read it, so there it guards against a profile and noise only.
+- decided: on Windows `docker-users` (Docker Desktop's group, which reaches host files) is matched by NAME as well as
+  the SID list, with the reason `is in the group docker-users (Docker Desktop reaches host files)` / review N4, its RID
+  is different on every machine, and the installer names it itself so the name is not localized. The probe prints only
+  a count (`docker=N`), from the same whoami rows.
+- decided: the marker caveat is said for Unix as well as Windows / review N3, the login shell runs `~/.bashrc` before
+  `sh -s` and can read stdin, which holds the marker, so the marker defends against noise and a naive profile and not
+  against a hostile account. The comments and the doc say so.
 - decided: the whole probe call is capped at 45 seconds by `Invoke-AccountProbe` in `room-account.ps1`, which runs the
   ssh (or `sh -s`, or `powershell.exe` for `local`) as a process and kills it, and a cap, a failed start or a missing
   group list is `warn could not tell`, `fail` under `-RequireDedicatedAccount` / review L1, an unresponsive SSSD or ssh
@@ -184,3 +211,13 @@ group list read as clean (2), Backup Operators dropped (1), Hyper-V Administrato
 token` note dropped (6), the Linux root groups emptied (3) and applied to macOS (1), a narrow sudo rule clean again (2),
 `sudo.rc=timeout` not a reason (1), the `ALL` wording put back (1), exit 137 not mapped to `timeout` (1), the watcher's
 kill removed (2), the cap's err text changed (2), the no-groups text removed (1).
+
+Follow-up for N2, same way (net of the 7 room-check ones). The Unix begin marker not sent (23), the Unix end marker not
+sent (22), the Windows begin marker not sent (1), the markers ignored so every line is taken (7), a repeated fact with
+another value ignored (4), the marker count not checked as once each (3), end before begin allowed (1), no marker with
+exit 0 read as an empty answer (2). "Last value wins instead of first" is an equivalent mutant (0), since any two
+different values are already `could not tell`.
+
+N4, same way (net of the 7 room-check ones). The docker-users name match loosened to a substring (1), the docker-users
+reason removed (3), the name read from the SID column (4), and the probe's `docker=` line not printed (the test run
+aborts, since the helper finds no line).
