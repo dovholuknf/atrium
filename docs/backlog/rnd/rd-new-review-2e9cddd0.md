@@ -82,3 +82,29 @@ Open: M1 (7.4), M2 (queue bound), S1 (prefix on every name), S2 (persona file ha
 
 Quality: a strong amendment that answers the review-b failure directly. The miss is that a knowledge base read by
 every later review is the highest-value target in the design, and its writes were treated as low-risk.
+
+## Re-read at ceca58d8 (2026-10-02): OK, doc-ok
+
+One commit, only the design doc.
+- **M1, closed.** Jobs read `knowledge/cleared`, pinned at the job's start, which the hub fast-forwards only after
+  @review's batch commit carrying `Atrium-Verdict: knowledge-ok <sha>`. The hub still writes `claude/knowledge` with
+  the mechanical checks. False positives come only from clint's walk rejection or @review's re-read "not a bug",
+  never from a verifier. They are pinned to repo, file, kind and commit, and expire (90 days, or a substantial
+  change to the file).
+- **M2, closed.** 3 open jobs per caller per persona and 10 in all, a queue cap of 20 ("queue full"), and
+  `peerLimit`. clint is outside the per-caller cap and inside the queue cap.
+- **S1 to S3, closed.** `atrium:` is reserved on derived wire handles too, with a renaming migration, and is
+  separate from the `lean_agents` namespace. Agent-file hashes route only to matching rooms. PR heads stay in
+  `refs/pull/*`, which landing and collect never take.
+
+Two lows, to fold in when convenient:
+- **L1:** P2's "what" column still reads "false positives from walks, verifiers and re-reads", against its own
+  acceptance ("a verifier's refutation adds no false-positive entry"). Drop "verifiers".
+- **L2:** a `knowledge-ok` trailer is text like any other. The hub should accept it only on a review-files-only commit
+  it collected from `claude/review`, using its own collection record, so another card's commit cannot move
+  `knowledge/cleared`.
+
+Closed: M1, M2, S1, S2, S3
+Open: L1, L2
+
+Verdict: OK, doc-ok 2e9cddd0^..ceca58d8. It lands alone by cherry-pick of the two.
