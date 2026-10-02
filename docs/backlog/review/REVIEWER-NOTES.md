@@ -32,6 +32,10 @@ on. They are kept short: one line of what, one of where. Add to it when a review
 - **git config set by env applies to every remote unless URL-scoped.** Use `http.<url>.extraHeader`, never a bare
   `http.extraHeader`, or tokens go to the forge (hub forge rev 2). Windows hubs: refs differing only in case collide.
 
+- **A state file read back on a rerun is input.** Anything under the room user's home can be written by an agent.
+  Re-validate each field as a fresh argument would be, and quote printed admin commands as PS literals:
+  `$( )` and `;` run on paste (f-c-toolchain cb861888, acl-grants.txt).
+
 ## Facts that are easy to get wrong
 
 - Card status `done` is set by `atrium_report` on a live session (finish.go:180). It is not "session over".
