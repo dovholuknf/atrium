@@ -1678,6 +1678,15 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         notification, and it beats a card's own tone. Everything held back is still listed in the tray. A permission
         request still notifies. Kept in this browser.</span>
     </div>
+    <div class="field">
+      <label class="check">
+        <input type="checkbox" id="s-growler" onchange="setGrowler(this.checked)">
+        <span>show the floating growler</span>
+      </label>
+      <span class="hintline">Off by default. With it off, questions and ready alerts only go to the bell: no floating box,
+        no undo bar and no growler sound, and desktop notifications follow the setting above. A permission request
+        shows as its usual toast, on the permissions tab, and in the bell. Kept in this browser.</span>
+    </div>
     <!-- u-030: the hub's notify command. Hidden until the hub answers, so a board with no hub never draws it.
          See js/hubnotify.js. -->
     <div class="field" id="s-hn-row" hidden>
