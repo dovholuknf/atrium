@@ -18260,7 +18260,7 @@ async function main() {
       usageCacheReads: usageCacheReadsSection, roomsDash: roomsDashSection, phoneView: phoneViewSection, heldLine: heldLineSection, u016: u016Section, phoneHeader: phoneHeaderSection, phoneFocus: phoneFocusSection, phoneTermBar: phoneTermBarSection, phoneShare: phoneShareSection, phonePan: phonePanSection, phoneFollow: phoneFollowSection, phoneTap: phoneTapSection, phoneKeyboard: phoneKeyboardSection, phoneCompose: phoneComposeSection, mCompose: mComposeSection, mPerms: mPermsSection, usagePolish: usagePolishSection, usageLimits: usageLimitsSection, usageGroups: usageGroupsSection,
       eventDriven: eventDrivenSection, idleBudget: idleBudgetSection, pollsGone: pollsGoneSection,
       phoneListFit: phoneListFitSection, phoneNudge: phoneNudgeSection,
-      growlStack: growlStackSection, growlActions: growlActionsSection, growlModal: growlModalSection, growlQuiet: growlQuietSection, growlAttention: growlAttentionSection, growlPhone: growlPhoneSection, mGrowl: mGrowlSection, growlPopout: growlPopoutSection, growlOff: growlOffSection,
+      growlStack: growlStackSection, growlActions: growlActionsSection, growlModal: growlModalSection, growlQuiet: growlQuietSection, growlAttention: growlAttentionSection, growlPhone: growlPhoneSection, mGrowl: mGrowlSection, growlPopout: growlPopoutSection, growlOff: growlOffSection, growlRemind: growlRemindSection,
       cacheChip: cacheChipSection, cacheLine: cacheLineSection, mHome: mHomeSection, mCard: mCardSection, mServe: mServeSection, phoneKeyLabel: phoneKeyLabelSection, phoneKeyLit: phoneKeyLitSection, shiftMenu: shiftMenuSection, notifyCommand: notifyCommandSection, presence: presenceSection, tallPty: tallPtySection, roomsMachine: roomsMachineSection, readyOnce: readyOnceSection, readyPopout: readyPopoutSection, popoutNotify: popoutNotifySection, readyTwoWindows: readyTwoWindowsSection,
       cardUrlTable: cardUrlTableSection, cardUrlClash: cardUrlClashSection, cardUrlLinks: cardUrlLinksSection, cardUrlRoom: cardUrlRoomSection, mCardUrl: (b) => mCardUrlSection(b), cardUrlNotify: cardUrlNotifySection,
       clock: clockSection,
@@ -20252,6 +20252,7 @@ async function main() {
     await unit("mGrowl", () => mGrowlSection(browser));
     await unit("growlPopout", () => growlPopoutSection(browser, base));
     await unit("growlOff", () => growlOffSection(browser, base));
+    await unit("growlRemind", () => growlRemindSection(browser, base));
     // ── card urls: a card has an address made of names ──
     await unit("cardUrlTable", () => cardUrlTableSection(browser, base));
     await unit("cardUrlClash", () => cardUrlClashSection(browser, base));
@@ -21277,6 +21278,56 @@ async function growlOffSection(browser, base) {
     if (h.errors.length) fail("growlOff: page errors: " + h.errors.join(" | "));
   } finally { await h.close(); }
   if (!bad) console.log("growlOff ok");
+}
+
+async function growlRemindSection(browser, base) {
+  // The growler is off, so the bell is where the control has to be.
+  growlBoard.off = true;
+  let h;
+  try { h = await growlBoard(browser, base, true, GROWL_STUBS); } finally { growlBoard.off = false; }
+  const { p } = h;
+  try {
+    await p.evaluate(() => { localStorage.removeItem("atrium.toastlog"); paintToastLogBadge(); });
+    const q = GR("c", "question", 1);
+    const e = GR("e", "question", 2);
+    await h.say([]);
+    await h.say([q, e]);
+    await h.say([q]);
+    await p.waitForTimeout(300);
+    await p.evaluate(() => openToastLog());
+    if (await p.$("#growl")) fail("growlRemind: the growler was drawn while off.");
+    const rows = () => p.evaluate(() => [...document.querySelectorAll("#toastlog-list .tlrow")].map(r => ({
+      t: r.querySelector("b").textContent, btns: [...r.querySelectorAll(".tlremind")].map(b => b.textContent) })));
+    let r = await rows();
+    const mine = r.find(x => x.t.startsWith("growler: question c"));
+    if (!mine || mine.btns.join() !== "remind me") fail("growlRemind: the open growler's bell row was " + JSON.stringify(mine));
+    const ended = r.find(x => x.t.startsWith("growler: question e"));
+    if (!ended || ended.btns.length) fail("growlRemind: an ended growler's bell row offered a control: " + JSON.stringify(ended));
+    await p.click('#toastlog-list .tlremind[data-remind="menu"]');
+    r = await rows();
+    if (r.find(x => x.t.startsWith("growler: question c")).btns.join() !== "15 min,1 h,tomorrow 9am") fail("growlRemind: the options were " + JSON.stringify(r));
+    await p.click('#toastlog-list .tlremind[data-remind="60"]');
+    await p.waitForTimeout(300);
+    const post = h.posts.find(x => x.id === q.id);
+    if (!post || post.body.do !== "snooze" || post.body.minutes !== 60) fail("growlRemind: the post was " + JSON.stringify(h.posts));
+    if (await p.$("#growl")) fail("growlRemind: a reminded row drew a growler.");
+    r = await rows();
+    if (r.find(x => x.t.startsWith("growler: question c")).btns.join() !== "") {
+      if (!/^reminding/.test(r.find(x => x.t.startsWith("growler: question c")).btns.join())) fail("growlRemind: the reminded row said " + JSON.stringify(r));
+    }
+    // tomorrow 9am is a literal tomorrow, clamped to the hub's week
+    const mins = await p.evaluate(async () => {
+      let sent;
+      const was = growlPost;
+      growlPost = (g, b) => { sent = b.minutes; return null; };
+      growlRemind({ id: "x" }, 0);
+      growlPost = was;
+      return sent;
+    });
+    if (!(mins > 0 && mins <= 2880)) fail("growlRemind: tomorrow 9am was " + mins + " minutes.");
+    if (h.errors.length) fail("growlRemind: page errors: " + h.errors.join(" | "));
+  } finally { await h.close(); }
+  if (!bad) console.log("growlRemind ok");
 }
 
 async function growlQuietSection(browser, base) {

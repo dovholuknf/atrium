@@ -44,11 +44,12 @@ function saveToastLog(list) {
 // A REPEAT BUMPS THE LAST ENTRY rather than adding one, matching what the toast
 // itself does: four identical messages are one thing that happened four times,
 // and a list that says it four times is a list nobody scrolls.
-function recordToLog(title, body, goTo, key, taskFor) {
+function recordToLog(title, body, goTo, key, taskFor, growl) {
   const list = toastLog();
   const last = list[list.length - 1];
   const sig = title + " " + (body || "");
   if (last && last.sig === sig) {
+    if (growl) last.growl = growl;
     last.n = (last.n || 1) + 1;
     last.at = Date.now();
   } else {
@@ -56,7 +57,7 @@ function recordToLog(title, body, goTo, key, taskFor) {
     // toast points at, and without it a permission opened from here lands on
     // the right tab and leaves you to find the request.
     list.push({ sig, title, body: body || "", goTo: goTo || "", taskFor: taskFor || "",
-      key: key || "", at: Date.now(), n: 1 });
+      key: key || "", growl: growl || "", at: Date.now(), n: 1 });
   }
   saveToastLog(list);
   paintToastLogBadge();
@@ -126,11 +127,27 @@ async function copyLogRow(btn, text) {
   }, 1400);
 }
 
+// The growler whose remind-me options are open in the bell.
+let tlRemindOpen = "";
+
 function openToastLog() {
   const list = toastLog().slice().reverse();
   const host = document.getElementById("toastlog-list");
   if (!host) return;
   const seen = toastLogSeen();
+  // A growler that is still open or reminded gets its control on its newest row only; an ended one gets none.
+  const lined = new Set();
+  const remind = t => {
+    if (!t.growl || lined.has(t.growl) || typeof growlSet === "undefined") return "";
+    const g = growlSet.find(x => x.id === t.growl);
+    if (!g) return "";
+    lined.add(t.growl);
+    if (g.state === "snoozed") return `<span class="tlremind">${esc(growlRemindIn(g))}</span>`;
+    if (g.state !== "open") return "";
+    return tlRemindOpen === g.id
+      ? GROWL_SNOOZES.map(s => `<button class="tlremind" data-remind="${s[1]}">${s[0]}</button>`).join("")
+      : `<button class="tlremind" data-remind="menu">remind me</button>`;
+  };
   setHTML(host, list.length
     ? list.map(t => {
         // What the copy button hands to the clipboard: the title, then the body
@@ -147,6 +164,7 @@ function openToastLog() {
           <div class="tlwhat">
             <b>${esc(t.title)}${t.n > 1 ? ` <span class="tltimes">×${t.n}</span>` : ""}</b>
             ${t.body ? `<span>${esc(t.body)}</span>` : ""}
+            ${(r => r ? `<span class="tlremits" data-growl="${esc(t.growl)}">${r}</span>` : "")(remind(t))}
           </div>
           <button class="tlcopy copybit" data-tip="copy this entry" aria-label="copy this entry"
             onclick='event.stopPropagation();copyLogRow(this, ${arg})'>${copyIcon()}</button>
@@ -163,6 +181,17 @@ function openToastLog() {
   // Through `data-` attributes rather than inline handlers. A card id is safe
   // and a permission key is not necessarily, and HTML escaping is not
   // JavaScript escaping.
+  host.querySelectorAll(".tlremind[data-remind]").forEach(b => {
+    b.onclick = async e => {
+      e.stopPropagation();
+      const id = b.closest(".tlremits").dataset.growl;
+      if (b.dataset.remind === "menu") { tlRemindOpen = tlRemindOpen === id ? "" : id; openToastLog(); return; }
+      const g = growlSet.find(x => x.id === id);
+      tlRemindOpen = "";
+      if (g) await growlRemind(g, Number(b.dataset.remind));
+      openToastLog();
+    };
+  });
   host.querySelectorAll(".tlrow").forEach(r => {
     const task = r.dataset.task, go = r.dataset.goto, key = r.dataset.key;
     if (!task && !go && !key) return;

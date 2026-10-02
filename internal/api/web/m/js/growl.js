@@ -14,7 +14,7 @@
     permission: ["permission", "permissions"], halt: ["halt", "halts"], blocked: ["blocked", "blocked"],
     question: ["question", "questions"], "deploy-hold": ["deploy-hold", "deploy-holds"],
   };
-  const SNOOZES = [["15 min", 15], ["1 h", 60], ["until tomorrow 09:00", 0]];
+  const SNOOZES = [["15 min", 15], ["1 h", 60], ["tomorrow 9am", 0]];
   const UNDO_MS = 10000;
 
   let el = null;
@@ -72,7 +72,7 @@
     else if (g.reason === "deploy-hold") {
       acts += '<button data-do="lift">' + (liftArm === g.id ? "tap again to lift" : "lift") + "</button>";
     }
-    acts += '<button data-do="open">open</button><button data-do="snooze">snooze</button>' +
+    acts += '<button data-do="open">open</button><button data-do="snooze">remind me</button>' +
       '<button data-do="dismiss">dismiss this</button>';
     const snooze = snoozing === g.id
       ? '<div class="gm-opts">' + SNOOZES.map(s => '<button data-snooze="' + s[1] + '">' + s[0] + "</button>").join("") + "</div>" : "";
