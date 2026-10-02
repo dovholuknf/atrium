@@ -72,6 +72,9 @@ type Store struct {
 	docsDir string
 	// docMu serialises a document write with a purge. See DocAdd.
 	docMu sync.Mutex
+	// gitPushClock is the clock the push log takes its row ids from. Nil is time.Now. A test sets it to model
+	// a machine whose clock is behind.
+	gitPushClock func() time.Time
 
 	mu        sync.RWMutex
 	haltCause error

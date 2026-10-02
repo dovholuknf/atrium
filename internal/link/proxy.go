@@ -500,6 +500,12 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		p.serveHubAPI(w, r)
 		return
 	}
+	// THE HUB'S GIT STORE, for the operator. Its own file, because who may reach it depends on which
+	// listener the request came in on. See git_store.go.
+	if strings.HasPrefix(r.URL.Path, "/git/") {
+		p.serveGitStore(w, r)
+		return
+	}
 	// STOPPING A ROOM IS NOT SOMETHING THE HUB MAY DO, and refusing it here is
 	// closing a hole rather than withholding a feature.
 	//
@@ -1438,7 +1444,7 @@ func (p *Proxy) serveHubAPI(w http.ResponseWriter, r *http.Request) {
 		p.forgetInventory(w, r)
 	case "notify", "notify/test":
 		p.serveNotify(w, r, sub)
-	case "git/sync", "git/collect", "git/status", "git/init", "git/repos", "git/settings":
+	case "git/sync", "git/collect", "git/status", "git/init", "git/repos", "git/settings", "git/release":
 		p.serveGit(w, r, sub)
 	case "launch-caps":
 		p.serveLaunchCaps(w, r)

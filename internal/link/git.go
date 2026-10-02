@@ -8,8 +8,11 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/gitsync"
 )
 
 // The git kind: a room fetching a repository from its hub. See docs/rnd/git-sync-design.md.
@@ -121,6 +124,13 @@ func (h *Hub) serveGit(name, session string, conn net.Conn, br *bufio.Reader) {
 	one := newOneConn(&buffered{Conn: conn, br: br})
 	srv := &http.Server{
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// THE HUB'S OWN STORE is served to a room as that room, named by the certificate the hello was
+			// checked against. The card headers the room's forwarder adds are read there, and only there.
+			if h.GitStore != nil && strings.HasPrefix(r.URL.Path, gitsync.StorePrefix) {
+				ctx := gitsync.WithCaller(r.Context(), gitsync.Caller{Kind: gitsync.CallerRoom, Room: name})
+				h.GitStore.ServeHTTP(w, r.WithContext(ctx))
+				return
+			}
 			h.Git.ServeHTTP(w, r)
 		}),
 		// BOTH BOUNDED, so a git client that opened a connection and went quiet does not

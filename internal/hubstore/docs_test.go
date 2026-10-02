@@ -50,11 +50,18 @@ func TestDocsMigrationToleratesBeingThere(t *testing.T) {
 	t.Fatal("no 0007_docs migration")
 }
 
-// THE DOCS MIGRATION IS LAST, so an existing database applies it.
-func TestDocsMigrationIsAtTheEnd(t *testing.T) {
-	if got := migrations[len(migrations)-1].name; got != "0007_docs" {
-		t.Fatalf("the last migration is %q", got)
+// THE DOCS MIGRATION STAYS WHERE IT WAS, after the six before it, and a later one goes after it: an existing
+// database applies what it has not recorded, so nothing is ever put in front of 0007.
+func TestDocsMigrationStaysInPlace(t *testing.T) {
+	for i, m := range migrations {
+		if m.name == "0007_docs" {
+			if i != 6 {
+				t.Fatalf("0007_docs is migration %d, it was the seventh", i+1)
+			}
+			return
+		}
 	}
+	t.Fatal("no 0007_docs migration")
 }
 
 // `Ab Ab` TWICE GIVES `ab-ab` THEN `ab-ab-2`.

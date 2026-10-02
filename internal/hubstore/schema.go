@@ -326,6 +326,43 @@ var migrations = []struct {
 			`CREATE INDEX IF NOT EXISTS doc_version_card ON doc_version (card, at)`,
 		},
 	},
+	{
+		// THE HUB STORE'S PUSH LOG: one row per ref a push to the hub's own git store updated, and a marker
+		// row when a branch is let go. The owner of a branch is the first push row after the latest release
+		// marker, so nothing here is edited or deleted by hand: a release is a new row.
+		//
+		// A push is written as `pending` BEFORE git runs and settled after, so a hub that dies between git
+		// moving a ref and the row being settled still has the branch owned. A pending row counts as a push for
+		// ownership. Settling turns it into `done` (and writes the release marker of the branch it took over,
+		// in the same transaction) or deletes it when git took nothing; internal/gitsync reconciles what a
+		// crash left.
+		//
+		// id is a text key that sorts in the order rows were WRITTEN, and the order is the whole design: it is
+		// taken inside the transaction as the larger of the clock and the table's highest id plus one, so a
+		// restart, or a machine whose clock is behind, cannot put a release ahead of the owner it releases.
+		// (Text, and not a rowid, so that a Postgres move has nothing to lean on.) Room and card are both empty
+		// for the operator. On a release row they are the owner that was let go, and released_by says why.
+		name: "0008_git_push",
+		stmts: []string{
+			`CREATE TABLE IF NOT EXISTS git_push (
+				id          TEXT PRIMARY KEY,
+				kind        TEXT NOT NULL CHECK (kind IN ('push','release')),
+				state       TEXT NOT NULL DEFAULT 'done' CHECK (state IN ('done','pending')),
+				-- The rows of one push, while it is pending. Empty on a done row.
+				batch       TEXT NOT NULL DEFAULT '',
+				repo        TEXT NOT NULL,
+				ref         TEXT NOT NULL,
+				old_sha     TEXT NOT NULL DEFAULT '',
+				new_sha     TEXT NOT NULL DEFAULT '',
+				room        TEXT NOT NULL DEFAULT '',
+				card        TEXT NOT NULL DEFAULT '',
+				at          TEXT NOT NULL,
+				released_by TEXT NOT NULL DEFAULT ''
+			)`,
+			`CREATE INDEX IF NOT EXISTS git_push_ref ON git_push (repo, ref, id)`,
+			`CREATE INDEX IF NOT EXISTS git_push_pending ON git_push (state, repo)`,
+		},
+	},
 }
 
 func (s *Store) migrate() error {

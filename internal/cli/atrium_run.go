@@ -227,6 +227,20 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 		return p
 	}
 	h.Git = gitHub.Backend()
+	// THE HUB'S OWN STORE, taken from rooms on the same kind (as that room) and from the operator on the board.
+	// The push log is the hub database's git_push table (migration 0008). gitHub.Cards is set when the proxy
+	// exists. A push is refused when there is no log, so the log is set before the handler is.
+	gitHub.PushLog = store
+	gitHub.CreateOnPush = func() bool {
+		on, _ := store.GitCreateOnPush()
+		return on
+	}
+	h.GitStore = gitHub.StoreHandler()
+	// A push the hub died in the middle of is settled from the refs before anything is served: the log says
+	// pending, and git says whether the ref moved.
+	if err := gitHub.Reconcile(context.Background()); err != nil {
+		log.Printf("[hub] could not settle the pushes the last run left pending: %v", err)
+	}
 	if _, err := store.GitRepos(); err != nil {
 		// SAID AT STARTUP, and the hub then mirrors nothing rather than mirror a branch it
 		// should not.
@@ -344,6 +358,8 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	proxy.SetGit(gitHub)
 	proxy.SetGitSettings(store, keys.Dir)
 	gitHub.Audit = proxy.RecordAudit
+	// A branch's owner is asked about through the hub's own relay when another card pushes to it.
+	gitHub.Cards = proxy.GitCards
 	// THE LAUNCH CAP PER ROOM, kept in the hub's settings. See launchcaps.go.
 	proxy.SetLaunchCaps(store)
 	// THE HUB'S DOCUMENTS, rows in the store and bytes beside it. See link/docs_api.go.
@@ -507,7 +523,12 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 			proxy.RecordAudit("", "board-share-opened",
 				"the board is on a "+bs.Mode+" zrok share: "+bs.Address)
 			// The share's address is the one name it answers besides loopback.
-			serveBoardOn(ctx, shareLn, edge.Named(proxy, bs.Address), "zrok share")
+			// MARKED, so the git store can refuse a public share and take a private one as the operator's.
+			reach := edge.ReachZrokPrivate
+			if bs.Mode == "public" {
+				reach = edge.ReachZrokPublic
+			}
+			serveBoardOn(ctx, shareLn, edge.Named(edge.MarkReach(proxy, reach), bs.Address), "zrok share")
 
 		case "ziti":
 			// The headless equivalent of the panel's OpenZiti toggle. The
@@ -530,7 +551,7 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 			log.Printf("[hub] serving the board on the ziti service %q", boardService)
 			proxy.RecordAudit("", "board-share-opened",
 				"the board is on the ziti service "+boardService)
-			serveBoardOn(ctx, shareLn, zitiBoardEdge(proxy, boardService), "ziti service")
+			serveBoardOn(ctx, shareLn, zitiBoardEdge(edge.MarkReach(proxy, edge.ReachOverlay), boardService), "ziti service")
 
 		default:
 			return fmt.Errorf("no board transport called %q. one of: zrok, ziti", bt)

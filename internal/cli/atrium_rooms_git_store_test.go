@@ -54,6 +54,40 @@ func TestHubGitInitSaysWhatTheHubRefused(t *testing.T) {
 	}
 }
 
+func TestHubGitReleaseAsksTheHubAndPrintsTheNote(t *testing.T) {
+	var got map[string]string
+	var path, method string
+	hub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path, method = r.URL.Path, r.Method
+		_ = json.NewDecoder(r.Body).Decode(&got)
+		_ = json.NewEncoder(w).Encode(map[string]string{"note": "fix/x was owned by sg4's C1 and is released"})
+	}))
+	defer hub.Close()
+	addr := strings.TrimPrefix(hub.URL, "http://")
+	out, err := runHub(t, "git", "release", "o/r", "fix/x", "--atrium-board-addr", addr)
+	if err != nil || !strings.Contains(out, "is released") {
+		t.Fatalf("out = %q err = %v", out, err)
+	}
+	if method != "POST" || path != "/_hub/git/release" || got["repo"] != "o/r" || got["branch"] != "fix/x" {
+		t.Fatalf("hub was sent %s %s %v", method, path, got)
+	}
+	for _, args := range [][]string{{"git", "release"}, {"git", "release", "o/r"}, {"git", "release", "o/r", "a", "b"}} {
+		if _, err := runHub(t, args...); err == nil {
+			t.Errorf("%v was taken", args)
+		}
+	}
+	// What the hub refuses is what the operator reads.
+	bad := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "that is not a branch that can be released"})
+	}))
+	defer bad.Close()
+	if _, err := runHub(t, "git", "release", "o/r", "main", "--atrium-board-addr", strings.TrimPrefix(bad.URL, "http://")); err == nil ||
+		!strings.Contains(err.Error(), "not a branch that can be released") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
 func TestHubGitLsPrintsTheStore(t *testing.T) {
 	hub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/_hub/git/repos" || r.Method != "GET" {
@@ -101,7 +135,7 @@ func TestHubGitSettingsRoundTrip(t *testing.T) {
 
 // The verb takes a URL as its one argument, and has no flag for a path, a branch or a refspec.
 func TestHubGitVerbsHaveNoPathBranchOrRefspecFlag(t *testing.T) {
-	for _, sub := range []*cobra.Command{gitInitCmd("atrium-"), gitStoreCmd("atrium-"), gitSettingsCmd("atrium-")} {
+	for _, sub := range []*cobra.Command{gitInitCmd("atrium-"), gitStoreCmd("atrium-"), gitSettingsCmd("atrium-"), gitReleaseCmd("atrium-")} {
 		for _, banned := range []string{"branch", "url", "ref", "path", "remote", "checkout"} {
 			if f := sub.Flags().Lookup(banned); f != nil {
 				t.Errorf("rooms git %s has --%s", sub.Name(), banned)

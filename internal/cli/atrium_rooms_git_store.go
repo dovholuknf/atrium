@@ -91,6 +91,33 @@ func gitStoreCmd(prefix string) *cobra.Command {
 	return c
 }
 
+func gitReleaseCmd(prefix string) *cobra.Command {
+	var f hubStoreFlags
+	c := &cobra.Command{
+		Use:   "release <repo> <branch>",
+		Short: "Let go of a branch on the hub, so the next card to push a fast-forward owns it",
+		Long: "A branch belongs to the card that first pushed it. The hub lets it go on its own when that card is\n" +
+			"gone, dead, or has been done for 7 days, and asks the card's room when another card pushes. This lets\n" +
+			"it go now. The branch itself and its history are not touched.\n\n" +
+			"<repo> is <owner>/<repo> or <host>/<owner>/<repo>, and <branch> is the name without refs/heads/.",
+		Args: cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			var out struct {
+				Note string `json:"note"`
+			}
+			if err := hubCall(&f, http.MethodPost, "/_hub/git/release",
+				map[string]string{"repo": args[0], "branch": args[1]}, &out); err != nil {
+				return err
+			}
+			fmt.Fprintln(cmd.OutOrStdout(), out.Note)
+			return nil
+		},
+	}
+	f.bind(c, prefix)
+	f.bindBoard(c, prefix)
+	return c
+}
+
 func gitSettingsCmd(prefix string) *cobra.Command {
 	var f hubStoreFlags
 	var storeDir, createOnPush string
@@ -100,7 +127,8 @@ func gitSettingsCmd(prefix string) *cobra.Command {
 		Long: "git.store is where the hub's bare repositories are. It defaults to <the hub's directory>/git, and\n" +
 			"changing it moves nothing already in the old one. `--store ''` puts it back to the default.\n\n" +
 			"git.create_on_push is whether a room's first push of a repository the hub does not have may create\n" +
-			"it. It is off by default, and nothing reads it until the hub takes pushes.",
+			"it, under the same case check as init. It is off by default. The operator never makes a repository by a\n" +
+			"push, only with init.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			st, err := f.open()
