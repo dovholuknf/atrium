@@ -39,6 +39,33 @@ What it says (an earlier note here blamed xterm parsing; that came from a 150 ms
   Nothing in the page's own JS is slow. What a REMOTE card adds is the link carrying that replay (up to ~0.9 MB) and
   whatever the hub does first.
 
-### Through the hub (sg4), remote cards
-Not measured from m1mini: the hub's board is loopback-only on sg4 (http://127.0.0.1:7778 there). Run on sg4:
-`node measure-term-switch.js http://127.0.0.1:7778 --per-host 2 --rounds 3`. Results to go here.
+### Through the hub (sg4), run on sg4 by the orchestrator, live hub 127.0.0.1:7778
+Cards: card-audit (sg4-control), discourse-6101 (claude-sg4), r-opencode-bubbles and r-restart-loopback (m1mini, through
+the link). Medians, ms:
+
+| | ctor (click to ws created) | c>o (ws created to open) | parsed |
+|---|---|---|---|
+| first switch | 99 | 32 | 201 |
+| repeat switch | 94 | 52 | 200 |
+| rapid | 91 | 33 | 188 |
+| card-audit first (436 KB replay) | 325 | 44 | 619 (last frame 620) |
+
+discourse-6101 returned 0 KB every time and no parse: not looked at yet (not an attachable terminal, or no replay).
+Reading: the hub proxy and its pool are NOT the gap (c>o 30-55 ms for remote and local alike, rapid did not worsen,
+repeat no faster so the card-lookup cache is not it either). The big chunk is `ctor`, 75-325 ms from click to the
+socket being created, all board-side and over the hub: the GET /v1/tasks/<id> that `attachTask` awaits before
+`openTerm`, which on a hub crosses to the owner room. Locally that fetch is ~3 ms, so locally ctor is ~20 ms.
+
+### Fix 1: hover prewarm of that fetch (`prewarmCard`, `takePrewarmed` in terminal-list.js)
+A mouse resting ~100 ms on a terminal row fetches its card (at most 2 in flight, cancelled if the pointer leaves
+first, never on touch, NEVER a socket); `attachTask` takes the result if it is under 3 s old, in flight or done, once.
+Measured with `scripts/measure-term-prewarm.js` on the live m1mini room, five cards, click to ws created, medians:
+
+| | before | after (hover, then click) |
+|---|---|---|
+| card fetch as is (~3 ms) | 25 ms | 19 ms |
+| card fetch +100 ms (stands in for a hub) | 127 ms | 19 ms |
+
+So on a hub the fetch is taken off the click: ctor falls to the ~19 ms floor (one frame plus `openTerm`'s own work).
+What is left before the ws is `openTerm` and a `requestAnimationFrame` so the pane can be fitted before the socket
+dials; the size goes in the attach, so that wait is kept.

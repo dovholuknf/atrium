@@ -889,7 +889,7 @@ async function attachTask(id) {
   // destination is written where it is actually reached. See `rememberPlace`:
   // resume reads this instead of asking where to open.
   rememberPlace(id, "here");
-  try { openTerm(await api(`/v1/tasks/${id}`)); }
+  try { openTerm(await (takePrewarmed(id) || api(`/v1/tasks/${id}`))); }
   catch (e) { toast("could not attach", e.message); }
 }
 

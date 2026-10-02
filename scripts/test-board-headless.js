@@ -19013,6 +19013,95 @@ function writeUnitResults() {
   catch (e) { console.error("could not write HEADLESS_RESULTS: " + e.message); }
 }
 
+// HOVERING A TERMINAL ROW WARMS ITS CARD, and only that. Resting the mouse on a row for ~100ms fetches
+// GET /v1/tasks/<id> once, a pointer that leaves first fetches nothing, a sweep down the list warms nothing, a touch
+// pointer never does, and no websocket is opened by any of it (a ws takes one of the hub's warm connections to a room
+// for its life). The click then uses what was fetched rather than asking again.
+async function switchPrewarmSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const wp = await ctx.newPage();
+  const errors = [];
+  wp.on("pageerror", e => errors.push(String(e)));
+  await wp.addInitScript(() => {
+    window.__socks = 0;
+    const W = window.WebSocket;
+    window.WebSocket = new Proxy(W, { construct(T, a) { window.__socks++; return new T(...a); } });
+  });
+  const gets = [];
+  wp.on("request", r => {
+    const m = /\/v1\/tasks\/(sp-[a-z]+)$/.exec(new URL(r.url()).pathname);
+    if (m && r.method() === "GET") gets.push(m[1]);
+  });
+  const was = tasksMode;
+  const live = id => Object.assign({}, T1, { id, display_title: "row " + id, supervised: true, pinned: true, worktree: "/tmp/sp/" + id });
+  try {
+    wornTasks = [live("sp-a"), live("sp-b"), live("sp-c"), live("sp-d")];
+    tasksMode = "worn";
+    await wp.goto(base, { waitUntil: "domcontentloaded" });
+    await wp.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await wp.click('.tab[data-view="terms"]');
+    await wp.evaluate(async () => { await loadCards().catch(() => {}).then(renderTermList); });
+    const row = id => wp.locator('#term-list .card.tab[data-id="' + id + '"]');
+    await row("sp-a").waitFor({ timeout: slow(10000) });
+    const idle = ms => wp.waitForTimeout(ms);
+
+    // Rest on a row: fetched once, after the dwell.
+    await row("sp-a").hover();
+    await idle(40);
+    if (gets.length) fail("switchPrewarm: the card was fetched before the dwell was up (" + gets.join(",") + ").");
+    await idle(250);
+    if (gets.join(",") !== "sp-a") fail("switchPrewarm: resting on a row did not fetch its card once (" + gets.join(",") + ").");
+
+    // Resting on the same row again inside the fresh window does not fetch again.
+    await wp.mouse.move(5, 5);
+    await row("sp-a").hover();
+    await idle(250);
+    if (gets.length !== 1) fail("switchPrewarm: a second rest on a fresh row fetched again (" + gets.join(",") + ").");
+
+    // A pointer that leaves before the dwell fetches nothing; a sweep warms nothing.
+    await wp.mouse.move(5, 5);
+    await row("sp-b").hover();
+    await idle(30);
+    await row("sp-c").hover();
+    await idle(30);
+    await wp.mouse.move(5, 5);
+    await idle(300);
+    if (gets.length !== 1) fail("switchPrewarm: leaving before the dwell still fetched (" + gets.join(",") + ").");
+
+    // No socket from any of it.
+    const socks = await wp.evaluate(() => window.__socks);
+    if (socks) fail("switchPrewarm: hovering opened " + socks + " websocket(s); the socket must wait for the click.");
+
+    // A touch pointer never prewarms.
+    await wp.evaluate(() => {
+      const el = document.querySelector('#term-list .card.tab[data-id="sp-d"]');
+      el.dispatchEvent(new PointerEvent("pointerover", { bubbles: true, pointerType: "touch" }));
+    });
+    await idle(250);
+    if (gets.includes("sp-d")) fail("switchPrewarm: a touch pointer prewarmed a card.");
+
+    // The click takes the prewarmed answer: no second GET for sp-a, and it is handed over once.
+    const before = gets.length;
+    const used = await wp.evaluate(async () => {
+      const p = takePrewarmed("sp-a");
+      const again = takePrewarmed("sp-a");
+      return { had: !!p, again: !!again };
+    });
+    if (!used.had || used.again) fail("switchPrewarm: the prewarmed card was not handed over exactly once " + JSON.stringify(used));
+    if (gets.length !== before) fail("switchPrewarm: taking the prewarm fetched again.");
+
+    // The cap: more than PREWARM_MAX in flight are not started (the answers are held, so none finishes).
+    await wp.route("**/v1/tasks/sp-*", () => {});
+    const capFrom = gets.length;
+    await wp.evaluate(() => { prewarmFlying = 0; prewarmed.clear(); for (const id of ["sp-a", "sp-b", "sp-c", "sp-d"]) prewarmCard(id); });
+    await idle(300);
+    const flying = gets.length - capFrom;
+    if (flying !== 2) fail("switchPrewarm: " + flying + " prewarms started at once, the cap is 2.");
+    if (errors.length) fail("switchPrewarm: page errors " + errors.join("; "));
+    if (!bad) console.log("switchPrewarm ok");
+  } finally { tasksMode = was; await ctx.close(); }
+}
+
 // u-new-burn-chart-axes: the cumulative chart has a time axis, a percent-of-limit axis with the 100% line, the time
 // the projection crosses it, the resets, and a hover. Every fixture is built from one fixed `now` (UC.now), and the
 // limit readings are placed relative to it, so nothing reads the real clock. BURN_SHOT=<dir> writes the pictures.
@@ -19204,7 +19293,7 @@ async function main() {
       termDebug: termDebugSection, termSortStarted: termSortStartedSection,
       noReadyChildren: noReadyChildrenSection, childUnderParent: childUnderParentSection, topNav: topNavSection,
       childFold: childFoldSection, liveHome: liveHomeSection,
-      pulls: pullsSection, hubRepos: hubReposSection, hubReposShelf: hubReposShelfSection, hubReposLedger: hubReposLedgerSection, hubReposFeed: hubReposFeedSection, trayHead: trayHeadSection, pullsAbsent: pullsAbsentSection, oneTooltip: oneTooltipSection, burnChart: burnChartSection };
+      pulls: pullsSection, hubRepos: hubReposSection, hubReposShelf: hubReposShelfSection, hubReposLedger: hubReposLedgerSection, hubReposFeed: hubReposFeedSection, trayHead: trayHeadSection, pullsAbsent: pullsAbsentSection, oneTooltip: oneTooltipSection, burnChart: burnChartSection, switchPrewarm: switchPrewarmSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -21260,6 +21349,7 @@ async function main() {
     await unit("childFold", () => childFoldSection(browser, base));
     await unit("liveHome", () => liveHomeSection(browser, base));
     await unit("burnChart", () => burnChartSection(browser, base));
+    await unit("switchPrewarm", () => switchPrewarmSection(browser, base));
   } catch (e) {
     // a listing has no browser, so a bare section call throws here, and the guard below names it
     if (!LIST_MODE) fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e));
