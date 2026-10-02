@@ -48,12 +48,22 @@ Read for this design, 2026-10-02:
   Open      1: the 378 replay (@runtime) . 1 question held for clint
   ```
 
+  For a code change, the review line uses the deploy verdicts:
+
+  ```
+  Tested    yes at 9c41d07 (go test ./internal/..., sg3, pass, log) . 0 commits since
+  Reviewed  hub-ok by @review, covers 3 of 3 commits . room-ok: none yet . 1 low open
+  Pushed    yes . origin/claude/runtime at 9c41d07
+  Open      0
+  ```
+
 - **The inventory is handed over at the start.** Two cases:
   - **A card launched on a branch or PR that has a record** gets the four lines and the folder's path at the top of
     its brief.
   - **A new PR** gets the records of the most related changes: the 3 records with the most files in common in the
     last 90 days. It gets their open items and their findings on those files, so a known issue is not found again
-    from scratch.
+    from scratch. That part of the brief is marked as data from other changes, not instructions. Findings can
+    quote an outside PR's text.
 - **It travels with a move.** The record belongs to the change, not the card, so `atrium move` carries the folder,
   and the new card's brief reads it like any other.
 
@@ -94,7 +104,15 @@ Each fact is one row in `change_fact`, append-only:
 | `open` | an open item: a stage, a question held for clint, or a blocker | reported. Closing one is reported too |
 | `note` | a handoff, a repro or a decision, as a file | reported |
 
-**Every fact carries `at_sha`.** The read compares `at_sha` with head. A fact at an older sha is shown with the count
+**Every fact carries `at_sha`, and atrium stamps it, never the card.** For a reported fact:
+- the room runs `git rev-parse HEAD` in the card's own worktree when `atrium_record` is called;
+- it adds a dirty flag from `git status --porcelain`, and shows that fact as "at abc1234 plus uncommitted changes";
+- it checks that the worktree's branch is the change's branch, and refuses the call otherwise.
+
+A card cannot pass an old test off as current, because it never names the sha. For a seen fact, the sha is the one
+the source carries (the trailer's range, the run's head, the remote ref, the check's sha).
+
+The read compares `at_sha` with head. A fact at an older sha is shown with the count
 of commits since. For a review, it is shown with how many of the commits since are covered by patch-id.
 
 **Who may write.**
@@ -103,22 +121,33 @@ of commits since. For a review, it is shown with how many of the commits since a
 - No card can write a seen fact.
 - A trailer counts only under deployready's rules, and only from a branch atrium collects. Every session shares one
   git author, so a trailer written into an outside PR's commits never counts.
+- **The caveat.** A "seen" trailer is only as good as deployready's rule that a verdict commit touches review files
+  alone. Any card can write such a commit while rooms do not sign their commits. So "seen" means atrium read it from
+  its own branches, not that @review is proven to have written it. Signed room commits would close that gap, and
+  are not part of this design.
 
 **The folder.** It is `~/.atrium/changes/<id>/`, with mode `0700` for folders and `0600` for files:
 - `reviews/`: panel and PR-run reports, linked or copied;
-- `tests/`: logs;
+- `tests/`: logs, at `0600`, because a test log can hold env values and tokens;
 - `notes/`: handoffs, repros, decisions;
 - `record.md`: the four lines, rewritten on each change, for a session or a person to open.
 
-Each file is written through `internal/safepath`.
+Each file is written through `internal/safepath`. A link in the folder points only into atrium's own run folders,
+never into a worktree.
 
 ## 3. How it is filled, with no extra work for a session
 
 - **Reviews.** When a review commit lands with a trailer, the hub adds a `review` fact to every change whose commits
   the range covers. `atrium_review` writes its report into the folder of the change it reviewed, with one
   `finding` fact per finding. A PR run writes into its PR's record.
-- **Findings fixed.** When a fixing commit's message names a review (as "(review HOLD e40a3c27)" does today), the
-  hub marks that review's findings as "fix claimed at `<sha>`". The re-read's verdict confirms them as fixed.
+- **Findings fixed, one by one.** When a fixing commit's message names a review (as "(review HOLD e40a3c27)" does
+  today), the hub marks that review's findings as "fix claimed at `<sha>`".
+  - A verdict covers a range, but findings close one by one. A re-read often closes the blockers and leaves a low
+    open, so a doc-ok alone never marks a finding fixed.
+  - Instead, the re-read's review file carries one machine line: `Closed: M1, M2` and `Open: L1`. These are matched
+    to the findings' ids, and only the named ones become fixed. A finding the line does not name stays "fix
+    claimed".
+  - @review writes the line once C2 exists.
 - **Tests.** A session calls `atrium_record {kind: test, cmd, result, log}` after a test run. Atrium copies the log
   into the folder, so the log survives the session. The PR runner's `prove`, and CI through `pr-ci-state`, write seen
   test facts directly.
@@ -132,8 +161,8 @@ All held by the pause.
 
 | stage | what | owner | size | acceptance |
 | --- | --- | --- | --- | --- |
-| C1 | `change` and `change_fact`, the folder, `atrium_record`, the `atrium_change` read with the four lines, staleness by `at_sha`, and review facts from trailers through deployready's matcher | @runtime | 2 days | on a branch with a landed doc-ok and one later commit, the read says "covers 1 of 2 commits". A test reported at an older sha shows "N commits ago". A card cannot write a `review` fact |
-| C2 | Seen facts from `atrium_review`, PR runs, pushes and `pr-ci-state`, plus "fix claimed" from commit messages | @runtime, @fabric (pushes, through the hub's collect) | 2 days | a panel's 3 findings appear on the change. A fix commit naming the review marks them as claimed, and a re-read's doc-ok marks them fixed. A branch pushed by hand shows as pushed after the next collect |
+| C1 | `change` and `change_fact`, the folder, `atrium_record` with the room stamping `at_sha` and the dirty flag, the `atrium_change` read with the four lines (doc-ok and hub-ok/room-ok forms), staleness by `at_sha`, and review facts from trailers through deployready's matcher | @runtime | 2 days | on a branch with a landed doc-ok and one later commit, the read says "covers 1 of 2 commits". A test recorded before a later commit shows "1 commit ago", and one recorded with uncommitted changes shows "plus uncommitted changes". `atrium_record` from a worktree on another branch is refused. A card cannot write a `review` fact or name a sha |
+| C2 | Seen facts from `atrium_review`, PR runs, pushes and `pr-ci-state`, plus "fix claimed" from commit messages | @runtime, @fabric (pushes, through the hub's collect) | 2 days | a panel's 3 findings appear on the change. A fix commit naming the review marks them as claimed, and a re-read whose file says `Closed: M1, M2` and `Open: L1` marks exactly M1 and M2 fixed and leaves L1 open. A re-read with no such line marks nothing fixed. A branch pushed by hand shows as pushed after the next collect |
 | C3 | The inventory at start: the four lines and the folder path in the brief of a card launched on a recorded change, and the 3 related records for a new PR | @runtime | 1 day | a card launched on a recorded branch answers "where are we" from its brief, with no git or history reads, in one turn. A new PR touching a file with an open finding names that finding |
 | C4 | The board: the four lines on the card face and in the drawer, and a per-repo list of changes | @ui | 2 days | clint reads "tested, reviewed, pushed, open" for a card's branch on the phone |
 | C5 | `atrium move` carries the folder (a row in room-handoff section 4), and the hub keeps one record per change across rooms | @fabric, after M2 | 1 day | a card moved from sg3 to m1mini reads the same four lines after the move |
