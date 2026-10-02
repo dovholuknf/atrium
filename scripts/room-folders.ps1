@@ -16,7 +16,7 @@
 
 # ConvertTo-PsLiteral and ConvertTo-ShLiteral put a value inside a remote script as a literal, the way Quote-Ps and
 # Quote-Sh do in the scripts that dot-source this.
-function ConvertTo-PsLiteral { param([string] $s) "'" + ($s -replace "'", "''") + "'" }
+function ConvertTo-PsLiteral { param([string] $s) "'" + ($s -replace "['\u2018\u2019\u201A\u201B]", '$0$0') + "'" }
 function ConvertTo-ShLiteral { param([string] $s) "'" + ($s -replace "'", "'\''") + "'" }
 
 # Test-FolderArg is why a folder argument cannot be used, or $null when it can. It looks at the text alone: whether
@@ -59,6 +59,11 @@ function Get-DefaultFolders {
 # verb prints and exits with the verb's code, or with 127 and a line saying atrium is not there.
 function Get-FolderScript {
     param([ValidateSet('windows', 'linux', 'darwin', 'unix')] [string] $os, [string[]] $verbArgs, [string] $bin)
+    # A TRAILING SLASH IS TRIMMED, because Windows PowerShell 5.1 passes a native argument that ends in a backslash
+    # and holds a space (`C:\a b\`) with the quote eaten. A drive root keeps its slash, and those are refused anyway.
+    $verbArgs = @($verbArgs | ForEach-Object {
+        if ("$_" -match '^(/|[A-Za-z]:[\\/]|~)') { $t = "$_".TrimEnd('/', '\'); if ($t -and $t -notmatch '^[A-Za-z]:$') { $t } else { "$_" } } else { "$_" }
+    })
     if ($os -eq 'windows') {
         $b = if ($bin) { "`$Bin = $(ConvertTo-PsLiteral $bin)" } else { "`$Bin = Join-Path `$HOME '.atrium\bin\atrium.exe'" }
         $q = ($verbArgs | ForEach-Object { ConvertTo-PsLiteral $_ }) -join ' '

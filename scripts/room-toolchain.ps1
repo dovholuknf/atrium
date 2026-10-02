@@ -162,7 +162,7 @@ if (-not $goMin) { $goMin = $GoVersion }
 # ── talking to the remote ───────────────────────────────────────────────────
 
 $sshBase = @('-o', 'BatchMode=yes', '-o', 'ConnectTimeout=25') + $SshOption
-function Quote-Ps { param([string] $s) "'" + ($s -replace "'", "''") + "'" }
+function Quote-Ps { param([string] $s) "'" + ($s -replace "['\u2018\u2019\u201A\u201B]", '$0$0') + "'" }
 function Quote-Sh { param([string] $s) "'" + ($s -replace "'", "'\''") + "'" }
 
 function ConvertFrom-KeyValue {

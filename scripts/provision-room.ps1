@@ -400,7 +400,7 @@ function Copy-ToRemote {
 }
 
 # Quote-Ps and Quote-Sh put a value inside a remote script as a literal.
-function Quote-Ps { param([string] $s) "'" + ($s -replace "'", "''") + "'" }
+function Quote-Ps { param([string] $s) "'" + ($s -replace "['\u2018\u2019\u201A\u201B]", '$0$0') + "'" }
 function Quote-Sh { param([string] $s) "'" + ($s -replace "'", "'\''") + "'" }
 
 # ── the hub, which is this machine ──────────────────────────────────────────
@@ -1012,7 +1012,12 @@ function Invoke-AllowedFolders {
     }
     if ($ended.Count) {
         $have = @($script:manifest.allowed_folders | Where-Object { $_ })
-        $now = @($have + $ended | Select-Object -Unique)
+        # Compared as Format-FolderPath spells a folder, so /srv/a/ and /srv/a are one entry, and the first spelling stays.
+        $seen = @{}
+        $now = @(foreach ($d in @($have + $ended)) {
+            $k = Format-FolderPath "$d"
+            if ($k -and -not $seen.ContainsKey($k)) { $seen[$k] = $true; $d }
+        })
         if (($now -join "`n") -ne ($have -join "`n")) {
             $script:manifest | Add-Member -NotePropertyName allowed_folders -NotePropertyValue $now -Force
             Save-Manifest

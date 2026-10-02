@@ -155,7 +155,7 @@ function Invoke-Git {
 
 # ── the remote ──────────────────────────────────────────────────────────────
 
-function Quote-Ps { param([string] $s) "'" + ($s -replace "'", "''") + "'" }
+function Quote-Ps { param([string] $s) "'" + ($s -replace "['\u2018\u2019\u201A\u201B]", '$0$0') + "'" }
 function Quote-Sh { param([string] $s) "'" + ($s -replace "'", "'\''") + "'" }
 
 $script:remoteOS = $null

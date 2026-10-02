@@ -99,7 +99,11 @@ Check 'under: no roots' (Test-UnderFolders '/srv/a' @()) $false
 $tmp = Join-Path ([IO.Path]::GetTempPath()) ("room-folders-test-" + [guid]::NewGuid().ToString('N').Substring(0, 8))
 New-Item -ItemType Directory -Force $tmp | Out-Null
 try {
-    $weird = @("/srv/plain", "/srv/my work", "/srv/it's", 'C:\Users\me\a b')
+    # The curly quotes are U+2018 and U+2019: PowerShell ends a single-quoted string at them too, and macOS autocorrects
+    # ' to them, so a folder called "Clint's work" must arrive whole and run nothing.
+    $q1 = [string][char]0x2018; $q2 = [string][char]0x2019
+    $weird = @("/srv/plain", "/srv/my work", "/srv/it's", 'C:\Users\me\a b',
+        "/srv/a$q2; Write-Output INJECTED; $q2", "/srv/${q1}x${q2}", '/srv/$x', '/srv/`tick', '/srv/a|b&c')
 
     # THE FAKE VERB. `list --json` prints the contract's JSON, and `allow` prints one `allowed` and one `trusted` line per
     # dir, or `skipped <dir>: is the home directory` for a dir named home, and exits 1 then. The args it got are echoed
@@ -133,7 +137,7 @@ exit `$rc
 
         $r = Invoke-AsSh (Get-FolderScript 'linux' (@('allow') + $weird) $fakeSh)
         Check 'sh: exit code is the verb''s' $r.Code 0
-        Check 'sh: prints the verb''s lines' ($r.Out | Where-Object { $_ -like 'allowed *' }) @('allowed /srv/plain', 'allowed /srv/my work', "allowed /srv/it's", 'allowed C:\Users\me\a b')
+        Check 'sh: prints the verb''s lines' ($r.Out | Where-Object { $_ -like 'allowed *' }) @($weird | ForEach-Object { "allowed $_" })
         Check 'sh: every dir arrives whole' (Get-Content -LiteralPath $argsFile) (@('room', 'folders', 'allow') + $weird)
 
         $r = Invoke-AsSh (Get-FolderScript 'darwin' @('allow', '/srv/a', '/home/home') $fakeSh)
@@ -181,8 +185,12 @@ exit 0
     }
     $r = Invoke-AsPs (Get-FolderScript 'windows' (@('allow') + $weird) $fakePs)
     Check 'ps: exit code is the verb''s' $r.Code 0
-    Check 'ps: prints the verb''s lines' ($r.Out | Where-Object { $_ -like 'allowed *' }) @('allowed /srv/plain', 'allowed /srv/my work', "allowed /srv/it's", 'allowed C:\Users\me\a b')
+    Check 'ps: prints the verb''s lines' ($r.Out | Where-Object { $_ -like 'allowed *' }) @($weird | ForEach-Object { "allowed $_" })
     Check 'ps: every dir arrives whole' (Get-Content -LiteralPath $argsFile) (@('room', 'folders', 'allow') + $weird)
+    # A trailing slash is trimmed before the argument reaches a native command (Windows PowerShell 5.1 eats the closing
+    # quote of `C:\a b\`), and a path without one is left as it was.
+    $r = Invoke-AsPs (Get-FolderScript 'windows' @('allow', 'C:\Users\me\c d\', '/srv/e f/') $fakePs)
+    Check 'ps: a trailing slash is trimmed' (Get-Content -LiteralPath $argsFile) @('room', 'folders', 'allow', 'C:\Users\me\c d', '/srv/e f')
     $r = Invoke-AsPs (Get-FolderScript 'windows' @('list', '--json') $fakePs)
     Check 'ps: list reads as not enforced' (ConvertFrom-FolderList $r.Out).Enforced $false
     $r = Invoke-AsPs (Get-FolderScript 'windows' @('list', '--json') (Join-Path $tmp 'nothing-here.exe'))
