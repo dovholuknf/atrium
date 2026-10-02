@@ -1446,6 +1446,8 @@ func (p *Proxy) serveHubAPI(w http.ResponseWriter, r *http.Request) {
 		p.servePresence(w, r)
 	case "growls":
 		p.serveGrowls(w, r, sub)
+	case "growl-ladder":
+		p.serveGrowlLadder(w, r)
 	case "audit":
 		// THE OPERATIONAL FEED, newest first, filterable. Read-only: the board
 		// shows what happened and never writes here. See audit.go.

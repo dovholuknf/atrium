@@ -324,7 +324,7 @@ func TestGrowlPermissionIsFilledFromTheRoom(t *testing.T) {
 // REMINDERS FOLLOW THE BACKOFF, reach the phone, and stop after two hours.
 func TestGrowlReminders(t *testing.T) {
 	rig := newGrowlRig(t)
-	rig.announce(t, growlQuestionCard("q"))
+	rig.announce(t, growlPermCard("q", rig.g.now().Add(-3*time.Minute)))
 	rig.advance(70 * time.Second)
 	rig.g.tick(context.Background())
 	ev := rig.lastEvent(t)
@@ -332,7 +332,7 @@ func TestGrowlReminders(t *testing.T) {
 	if len(remind) != 1 {
 		t.Fatalf("a minute on, the event was %v, want one reminder", ev)
 	}
-	if len(rig.phoned) != 1 || rig.phoned[0].Reason != ReasonQuestion || rig.phoned[0].Name != "worker q" {
+	if len(rig.phoned) != 1 || rig.phoned[0].Reason != ReasonPermission || rig.phoned[0].Name != "worker q" {
 		t.Fatalf("the phone was told %+v", rig.phoned)
 	}
 	// Nothing new due: no event.
