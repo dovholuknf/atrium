@@ -69,3 +69,29 @@ no icacls from the record.
 Quality: the record-first ordering and the stale take-back are the right design, and the act split keeps the
 payload size. The read-back trusts a file that every agent can write, though, and the printed command repeats the
 PowerShell quoting class (REVIEWER-NOTES).
+
+## Re-read 709c9ef8 (e809db3e..709c9ef8)
+
+Probed by dot-sourcing 709c9ef8's room-toolchain-c.ps1 in pwsh.
+
+- **M1, closed.** ConvertFrom-GrantRecord took four lines: my injection line, a line for the user with a `;calc.exe`
+  token, an honest line, and a dir with a trailing space.
+  - Only the honest line became a grant.
+  - The first two came back Bad, as `line 1 (C:\msys64|SG3\attacker|()` and `line 2 (...)`, with the excerpt cut
+    and control characters stripped. They are warned about and never acted on.
+  - The other directory was skipped silently, as not ours.
+  - Test-AceRaw allows letters only inside the parentheses, and grant uses a whitelist of `F|M|RX|R|W|D`.
+- **Quoting, closed.** Format-AdminCommand is the one place. I fed it the word
+  `SG3\claude:x$(calc);calc.exe & calc ‘q` and it printed one single-quoted literal with the U+2018 doubled.
+  Run through Invoke-Expression with stub `icacls` and `calc`, icacls got exactly 3 arguments and nothing else ran.
+  A quoted program gets `& '...'`. Need refuses a string, and all 8 call sites pass word lists.
+- **Low L5, new.** A forged `before` for the user's own account that passes the grammar, e.g. `(OI)(CI)(F)`, is
+  still believed. When the take-back is refused and an admin runs the printed restore, the user ends with Full on
+  the MSYS2 directory, which is more than the Modify it is ever given. Cap a restored ACE at what Modify implies,
+  or label a restore read from the record as "from the room's record, check it".
+- Tests: @fabric reports 506 of 506 with 16 mutations red. Here the suite stops at the known sandbox exec point
+  (REVIEWER-NOTES).
+
+Closed: M1, the quoting of printed admin commands (L1, L3, L4 already closed) / Open: L5
+
+Verdict: ROOM DEPLOY OK e809db3e..709c9ef8. This clears the first FULL run on sg3. @fabric lands it.
