@@ -16887,6 +16887,7 @@ async function hubReposSection(browser, base) {
         n: rows.length,
         copies: [...document.querySelectorAll(".hr-copy")].map(b => b.dataset.copy),
         first: rows[0] && rows[0].textContent,
+        count: rows[0] && rows[0].querySelector(".hr-count-big").textContent,
         second: rows[1] && rows[1].textContent,
         branches: [...document.querySelectorAll(".hr-branch")].map(b => b.textContent),
         released: document.querySelectorAll(".hr-branch.released").length,
@@ -16898,19 +16899,57 @@ async function hubReposSection(browser, base) {
     if (got.n !== 2) fail("hubRepos: expected two repos, got " + got.n);
     if (!got.copies.includes("git@hub.atrium:openziti/ziti.git") || !got.copies.includes("git@hub.atrium:gitlab.com/acme/thing.git"))
       fail("hubRepos: the ssh copy values are wrong: " + JSON.stringify(got.copies));
-    if (!got.copies.includes(got.origin + "/git/hub/github/openziti/ziti.git")) fail("hubRepos: the http copy value is wrong: " + JSON.stringify(got.copies));
+    await p.click('.hr-repo[data-repo="openziti/ziti"] [data-act="mode"][data-mode="http"]');
+    const httpCopy = await p.evaluate(() => document.querySelector('.hr-repo[data-repo="openziti/ziti"] .hr-clone .hr-copy').dataset.copy);
+    if (httpCopy !== got.origin + "/git/hub/github/openziti/ziti.git") fail("hubRepos: the http copy value is wrong: " + httpCopy);
+    await p.click('.hr-repo[data-repo="openziti/ziti"] [data-act="mode"][data-mode="ssh"]');
     if (!/main\s*abcdef0/.test(got.first) || /abcdef012/.test(got.first)) fail("hubRepos: main is not shown short: " + got.first);
-    if (!/2 branches/.test(got.first)) fail("hubRepos: the pill does not count branches: " + got.first);
-    if (!/empty/.test(got.second) || !/Nothing pushed yet/.test(got.second) || !/git remote add hub git@hub\.atrium:gitlab\.com\/acme\/thing\.git/.test(got.second) || !/git push hub/.test(got.second))
+    if (!/^2\s*branches/.test(got.count)) fail("hubRepos: the card does not count branches: " + got.count);
+    if (!/empty/i.test(got.second) || !/Nothing pushed yet/.test(got.second) || !/git remote add hub git@hub\.atrium:gitlab\.com\/acme\/thing\.git/.test(got.second) || !/git push hub/.test(got.second))
       fail("hubRepos: the empty repo has no how-to: " + got.second);
     if (!got.copies.includes("git remote add hub git@hub.atrium:gitlab.com/acme/thing.git\ngit push hub <branch>")) fail("hubRepos: the how-to copy value is wrong: " + JSON.stringify(got.copies));
     if (!got.tip) fail("hubRepos: a branch age has no exact-time tooltip");
     if (got.unlabeled) fail("hubRepos: " + got.unlabeled + " copy buttons have no aria-label");
-    if (!/fix\/x/.test(got.branches[0]) || !/sg4 c-known/.test(got.branches[0]) || !/fix the x/.test(got.branches[0]) || !/1234567/.test(got.branches[0]) || /1234567890/.test(got.branches[0]))
+    if (!/fix\/x/.test(got.branches[0]) || !/sg4 c-known/.test(got.branches[0]) || !/fix the x/.test(got.branches[0]))
       fail("hubRepos: the known-card branch is wrong: " + got.branches[0]);
     if (!/sg4 c-gone/.test(got.branches[1]) || /undefined|null/.test(got.branches[1]) || !/released/.test(got.branches[1]))
       fail("hubRepos: the gone-card released branch is wrong: " + got.branches[1]);
     if (got.released !== 1) fail("hubRepos: released should be marked once, got " + got.released);
+    // THE SWITCHER: Shelf with nothing stored, a click moves it, the arrow keys move it as one radio group, an unknown
+    // stored value is Shelf, and another window's choice is followed through the storage event.
+    const viewNow = () => p.evaluate(() => ({ view: document.getElementById("hubrepos-list").dataset.view, stored: localStorage.getItem("atrium.reposView"),
+      checked: [...document.querySelectorAll("#hubrepos-views [role=radio]")].filter(b => b.getAttribute("aria-checked") === "true").map(b => b.dataset.hrview),
+      tabbable: [...document.querySelectorAll("#hubrepos-views [role=radio]")].filter(b => b.tabIndex === 0).map(b => b.dataset.hrview) }));
+    await p.evaluate(() => { localStorage.removeItem("atrium.reposView"); hubReposPaint(); });
+    let v = await viewNow();
+    if (v.view !== "shelf" || v.checked.join() !== "shelf" || v.tabbable.join() !== "shelf") fail("hubRepos: nothing stored is not Shelf: " + JSON.stringify(v));
+    if ((await p.locator("#hubrepos-views [role=radio]").count()) !== 3 || (await p.getAttribute("#hubrepos-views", "role")) !== "radiogroup") fail("hubRepos: the switcher is not a three-way radio group");
+    await p.click('#hubrepos-views [data-hrview="ledger"]');
+    v = await viewNow();
+    if (v.view !== "ledger" || v.stored !== "ledger" || v.checked.join() !== "ledger") fail("hubRepos: clicking Ledger did not stick: " + JSON.stringify(v));
+    await p.focus('#hubrepos-views [data-hrview="ledger"]');
+    await p.keyboard.press("ArrowRight");
+    v = await viewNow();
+    if (v.view !== "feed" || v.stored !== "feed" || v.tabbable.join() !== "feed") fail("hubRepos: ArrowRight did not move to Feed: " + JSON.stringify(v));
+    if ((await p.evaluate(() => document.activeElement.dataset.hrview)) !== "feed") fail("hubRepos: the arrow key did not carry focus along");
+    await p.keyboard.press("ArrowRight");
+    if ((await viewNow()).view !== "shelf") fail("hubRepos: the arrows do not wrap round to Shelf");
+    await p.keyboard.press("End");
+    if ((await viewNow()).view !== "feed") fail("hubRepos: End is not the last view");
+    await p.keyboard.press("Home");
+    if ((await viewNow()).view !== "shelf") fail("hubRepos: Home is not the first view");
+    await p.evaluate(() => { localStorage.setItem("atrium.reposView", "bogus"); window.dispatchEvent(new StorageEvent("storage", { key: "atrium.reposView" })); });
+    v = await viewNow();
+    if (v.view !== "shelf" || v.checked.join() !== "shelf") fail("hubRepos: an unknown stored value is not Shelf: " + JSON.stringify(v));
+    // A real second window of the same browser: its write reaches this one as a storage event.
+    const other = await ctx.newPage();
+    await other.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await other.evaluate(() => localStorage.setItem("atrium.reposView", "feed"));
+    await p.waitForFunction(() => document.getElementById("hubrepos-list").dataset.view === "feed", null, { timeout: slow(5000) })
+      .catch(() => fail("hubRepos: another window's choice was not followed"));
+    await other.close();
+    await p.evaluate(() => localStorage.removeItem("atrium.reposView"));
+    await p.evaluate(() => { hubReposPaint(); });
     // Copy feedback: "copied", then back to "copy".
     await ctx.grantPermissions(["clipboard-read", "clipboard-write"]).catch(() => {});
     await p.evaluate(() => { window.__clip = []; navigator.clipboard.writeText = async t => { window.__clip.push(t); }; });
@@ -16938,9 +16977,306 @@ async function hubReposSection(browser, base) {
     mode = "fail";
     await p.click("#hubrepos-refresh");
     await p.waitForFunction(() => /not answering/.test(document.getElementById("hubrepos-list").textContent), null, { timeout: slow(10000) });
+    // The choice survives a reload.
+    mode = "repos";
+    await p.click('#hubrepos-views [data-hrview="ledger"]');
+    await p.reload({ waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => { const t = document.querySelector('.tab[data-view="hubrepos"]'); return t && !t.hidden; }, null, { timeout: slow(15000) });
+    await open();
+    if ((await p.evaluate(() => document.getElementById("hubrepos-list").dataset.view)) !== "ledger") fail("hubRepos: the view did not survive a reload");
+    if (!(await p.locator("#hubrepos-list .hr-ledger").count())) fail("hubRepos: the ledger was not drawn after a reload");
+    await p.evaluate(() => localStorage.removeItem("atrium.reposView"));
     if (errors.length) fail("hubRepos: page errors: " + errors.join(" | "));
   } finally { hubMode = wasHub; await ctx.close(); }
   if (!bad) console.log("hubRepos ok");
+}
+
+// ---- the repos tab's three views on the fixture hub (scripts/hubrepos-fixture.js) -------------------------------------
+// Five repos under three owners: one empty, one main-only, one with a dozen branches (one very long name), one stale pile
+// with released branches, one fresh. One section per view; each draws the tab on the fixture, and with HR_SHOTS=<dir> also
+// saves the full and empty states at 2000 and 390, paper and dark, for looking at.
+
+async function hubReposFixturePage(browser, base, o) {
+  const fx = require("./hubrepos-fixture.js")(Date.now());
+  const repos = o.repos || (o.empty ? [fx.repos[4]] : fx.repos);
+  const ctx = await browser.newContext({ viewport: { width: o.w || 1600, height: o.h || 1000 } });
+  const errors = [];
+  const p = await ctx.newPage();
+  p.on("pageerror", e => errors.push(e.message));
+  await p.route(/\/_hub\/git\/repos$/, r => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ repos }) }));
+  await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+  await p.waitForFunction(() => { const t = document.querySelector('.tab[data-view="hubrepos"]'); return t && !t.hidden; }, null, { timeout: slow(15000) });
+  await p.evaluate(({ tasks, view }) => {
+    lastTasks = tasks;
+    if (view) localStorage.setItem("atrium.reposView", view); else localStorage.removeItem("atrium.reposView");
+    return switchView("hubrepos");
+  }, { tasks: fx.tasks, view: o.view === undefined ? null : o.view });
+  await p.waitForFunction(() => hubRepos.loaded && document.querySelector("#hubrepos-list .hr-root"), null, { timeout: slow(10000) });
+  await p.waitForTimeout(150);
+  return { ctx, p, errors, fx, repos };
+}
+
+async function hubReposShots(browser, base, view) {
+  const dir = process.env.HR_SHOTS;
+  if (!dir) return;
+  require("fs").mkdirSync(dir, { recursive: true });
+  for (const state of ["full", "empty"]) for (const w of [2000, 390]) for (const skin of ["paper", "dark"]) {
+    const { ctx, p } = await hubReposFixturePage(browser, base, { w, h: 900, view, empty: state === "empty" });
+    try {
+      await p.evaluate(s => { if (s === "paper") document.documentElement.setAttribute("data-skin", "paper"); else document.documentElement.removeAttribute("data-skin"); }, skin);
+      await p.waitForTimeout(150);
+      const h = await p.evaluate(() => { const l = document.getElementById("hubrepos-list"); return Math.ceil(l.scrollHeight + l.getBoundingClientRect().top + 24); });
+      await p.setViewportSize({ width: w, height: Math.min(6000, Math.max(600, h)) });
+      await p.waitForTimeout(200);
+      await p.screenshot({ path: require("path").join(dir, view + "-" + state + "-" + w + "-" + skin + ".png") });
+    } finally { await ctx.close(); }
+  }
+}
+
+// What every view owes: one copy button per URL, inside its own row and level with it, every copy labelled.
+async function hubReposCopyRows(p, tag) {
+  const r = await p.evaluate(() => {
+    const rows = [...document.querySelectorAll("#hubrepos-list .hr-clone, #hubrepos-list .hr-termbar, #hubrepos-list .hr-cr, #hubrepos-list .hr-howto, #hubrepos-list .hr-herorow")];
+    return {
+      rows: rows.length,
+      multi: rows.filter(x => x.querySelectorAll(".hr-copy").length !== 1).length,
+      outside: rows.filter(x => { const b = x.querySelector(".hr-copy"), a = x.getBoundingClientRect(), c = b.getBoundingClientRect();
+        return c.right > a.right + 1 || c.left < a.left - 1 || c.top < a.top - 1 || c.bottom > a.bottom + 1 || Math.abs((c.top + c.bottom) / 2 - (a.top + a.bottom) / 2) > 6; }).length,
+      unlabeled: [...document.querySelectorAll("#hubrepos-list .hr-copy")].filter(b => !b.getAttribute("aria-label")).length
+    };
+  });
+  if (!r.rows) fail(tag + ": no URL rows to check");
+  if (r.multi) fail(tag + ": " + r.multi + " URL rows do not have exactly one copy button");
+  if (r.outside) fail(tag + ": " + r.outside + " copy buttons sit outside or off-centre of their row");
+  if (r.unlabeled) fail(tag + ": " + r.unlabeled + " copy buttons have no aria-label");
+}
+
+// Nothing a repo, branch, room or card is called may become markup.
+async function hubReposEscaped(p, tag) {
+  await p.evaluate(() => {
+    const at = new Date(Date.now() - 600e3).toISOString();
+    window.__x = 0;
+    hubRepos.repos = [{ host: "gitlab.com", owner: "<b>o</b>", repo: '"><img src=x onerror=window.__x=1>', url: "git@hub:<i>x</i>.git", path: "/g/<u>.git",
+      main: { sha: "<s>abc1234", at }, branches: [{ name: "<img src=x onerror=window.__x=1>", sha: "1234567", room: "<r>", card: "<c>", at, released: false }] }];
+    hubRepos.sel = null; hubRepos.filter = ""; hubRepos.mode = {};
+    hubReposPaint();
+  });
+  await p.waitForTimeout(100);
+  const r = await p.evaluate(() => { const l = document.getElementById("hubrepos-list");
+    return { x: window.__x, img: l.querySelectorAll("img").length, raw: /<img/.test(l.innerHTML), text: l.textContent }; });
+  if (r.x || r.img || r.raw) fail(tag + ": a name became markup: " + JSON.stringify({ x: r.x, img: r.img, raw: r.raw }));
+  if (!r.text.includes("<img src=x onerror=window.__x=1>")) fail(tag + ": the hostile name is not shown as text");
+}
+
+async function hubReposNoOverflow(p, tag) {
+  const r = await p.evaluate(() => { const l = document.getElementById("hubrepos-list");
+    return { page: document.documentElement.scrollWidth - innerWidth, list: l.scrollWidth - l.clientWidth,
+      wide: [...l.querySelectorAll(".hr-root *")].filter(e => { const b = e.getBoundingClientRect(); const lr = l.getBoundingClientRect();
+        if (!b.width) return false; for (let n = e.parentElement; n && n !== l; n = n.parentElement) { const o = getComputedStyle(n).overflowX; if (o === "auto" || o === "scroll" || o === "hidden" || o === "clip") return false; }
+        return b.right > lr.right + 1; }).length }; });
+  if (r.page > 1 || r.list > 1 || r.wide) fail(tag + ": scrolls sideways " + JSON.stringify(r));
+}
+
+async function hubReposCopyWorks(ctx, p, sel, want, tag) {
+  await ctx.grantPermissions(["clipboard-read", "clipboard-write"]).catch(() => {});
+  await p.evaluate(() => { window.__clip = []; navigator.clipboard.writeText = async t => { window.__clip.push(t); }; });
+  const first = (await p.locator(sel).first().locator(".hr-copylabel").textContent()).trim();
+  await p.locator(sel).first().click();
+  await p.waitForFunction(s => /copied/.test(document.querySelector(s).textContent), sel, { timeout: slow(5000) }).catch(() => fail(tag + ": the copy button never said copied"));
+  const got = (await p.evaluate(() => window.__clip))[0];
+  if (got !== want) fail(tag + ": copy wrote " + JSON.stringify(got) + ", wanted " + JSON.stringify(want));
+  await p.waitForFunction(({ s, t }) => document.querySelector(s).textContent.trim() === t, { s: sel, t: first }, { timeout: slow(5000) }).catch(() => fail(tag + ": the copy button never went back to " + first));
+}
+
+// The empty state every view shares: a hero that can carry the page.
+async function hubReposEmptyCheck(browser, base, view, tag) {
+  const { ctx, p, errors } = await hubReposFixturePage(browser, base, { w: 2000, h: 1100, view, empty: true });
+  try {
+    const r = await p.evaluate(() => { const g = document.querySelector("#hubrepos-list .hr-go"), a = document.querySelector("#hubrepos-list .hr-art");
+      return { hero: !!document.querySelector("#hubrepos-list .hr-hero"), copy: g && g.dataset.copy, h: g && g.getBoundingClientRect().height, label: g && g.textContent.trim(),
+        art: a && a.getBoundingClientRect().width, steps: document.querySelectorAll("#hubrepos-list .hr-steps li").length, cards: document.querySelectorAll("#hubrepos-list .hr-repo").length,
+        h2: (document.querySelector("#hubrepos-list .hr-hero h2") || {}).textContent, size: parseFloat(getComputedStyle(document.querySelector("#hubrepos-list .hr-hero h2")).fontSize) }; });
+    if (!r.hero) fail(tag + " empty: no hero");
+    if (r.copy !== "git remote add hub git@hub.atrium:dovholuknf/atrium.git\ngit push hub <branch>") fail(tag + " empty: the primary action copies " + JSON.stringify(r.copy));
+    if (!/Copy the clone command/.test(r.label) || r.h < 56) fail(tag + " empty: the primary action is not big and clear: " + r.label + " " + r.h);
+    if (r.art < 400 || r.steps !== 3 || r.cards || r.size < 40) fail(tag + " empty: the hero has no presence: " + JSON.stringify(r));
+    await hubReposCopyRows(p, tag + " empty");
+    await hubReposCopyWorks(ctx, p, "#hubrepos-list .hr-go", "git remote add hub git@hub.atrium:dovholuknf/atrium.git\ngit push hub <branch>", tag + " empty");
+    await p.click('#hubrepos-list [data-act="mode"][data-mode="http"]');
+    const http = await p.evaluate(() => document.querySelector("#hubrepos-list .hr-go").dataset.copy);
+    if (!http.includes(await p.evaluate(() => location.origin) + "/git/hub/github/dovholuknf/atrium.git")) fail(tag + " empty: http is not what the action copies: " + http);
+    if (!/^HTTP/i.test((await p.evaluate(() => document.activeElement.textContent)).trim()) && (await p.evaluate(() => document.activeElement.dataset.mode)) !== "http") fail(tag + " empty: focus was dropped by the toggle");
+    // No repos at all: the same hero, pointed at `atrium git setup`.
+    await p.evaluate(() => { hubRepos.repos = []; hubReposPaint(); });
+    const none = await p.evaluate(() => { const g = document.querySelector("#hubrepos-list .hr-go"); return { copy: g && g.dataset.copy, text: document.getElementById("hubrepos-list").textContent }; });
+    if (none.copy !== "atrium git setup" || !/atrium git setup/.test(none.text)) fail(tag + " no repos: " + JSON.stringify(none));
+    if (errors.length) fail(tag + " empty: page errors: " + errors.join(" | "));
+  } finally { await ctx.close(); }
+  const ph = await hubReposFixturePage(browser, base, { w: 390, h: 844, view, empty: true });
+  try { await hubReposNoOverflow(ph.p, tag + " empty at 390"); } finally { await ph.ctx.close(); }
+}
+
+const HR_LONG = "feat/oidc-device-flow-with-a-very-long-descriptive-branch-name-that-keeps-going-and-going";
+
+async function hubReposShelfSection(browser, base) {
+  const wasHub = hubMode; hubMode = true;
+  const tag = "hubReposShelf";
+  try {
+    // Nothing stored is Shelf, drawn as a grid.
+    const { ctx, p, errors } = await hubReposFixturePage(browser, base, { w: 2000, h: 1200 });
+    try {
+      const r = await p.evaluate(() => { const cards = [...document.querySelectorAll("#hubrepos-list .hr-repo")];
+        const z = document.querySelector('.hr-repo[data-repo="openziti/ziti"]'), zk = document.querySelector('.hr-repo[data-repo="openziti/zrok"]');
+        return { view: document.getElementById("hubrepos-list").dataset.view, n: cards.length, lefts: new Set(cards.map(c => Math.round(c.getBoundingClientRect().left))).size,
+          big: document.querySelectorAll("#hubrepos-list .hr-summary .hr-big").length, empty: document.querySelectorAll(".hr-repo.is-empty").length, mainOnly: document.querySelectorAll(".hr-repo.main").length,
+          count: z.querySelector(".hr-count-big b").textContent, sha: z.querySelector(".hr-mainsha").textContent, bars: z.querySelectorAll(".hr-spark i.on").length,
+          zstate: z.querySelector(".hr-state").textContent.trim(), stale: zk.querySelector(".hr-state").textContent.trim(), tiles: document.querySelectorAll(".hr-repo .hr-tile svg").length,
+          more: z.querySelector(".hr-more").textContent.trim(), rows: z.querySelectorAll(".hr-branch").length, name: getComputedStyle(z.querySelector(".hr-repoName")).fontSize }; });
+      if (r.view !== "shelf") fail(tag + ": nothing stored is not Shelf: " + r.view);
+      if (r.n !== 5 || r.empty !== 1 || r.mainOnly !== 1 || r.big !== 4 || r.tiles !== 5) fail(tag + ": the shelf is wrong " + JSON.stringify(r));
+      if (r.lefts < 3) fail(tag + ": at 2000px the cards do not use the width (" + r.lefts + " across)");
+      if (r.count !== "12" || r.sha.length !== 7 || r.bars < 4 || r.zstate !== "Active" || r.stale !== "Stale") fail(tag + ": a card's headline is wrong " + JSON.stringify(r));
+      if (!/^9 more branches/.test(r.more) || r.rows !== 3 || parseFloat(r.name) < 28) fail(tag + ": the branch list or the name type is wrong " + JSON.stringify(r));
+      await hubReposCopyRows(p, tag);
+      // Expanding shows the rest, and the very long name stays inside its card.
+      await p.click('.hr-repo[data-repo="openziti/ziti"] .hr-more');
+      const x = await p.evaluate((long) => { const z = document.querySelector('.hr-repo[data-repo="openziti/ziti"]'), n = z.querySelector('.hr-name[title^="' + long.slice(0, 30) + '"]');
+        return { rows: z.querySelectorAll(".hr-branch").length, expanded: z.querySelector(".hr-more").getAttribute("aria-expanded"), cut: n && n.scrollWidth > n.clientWidth, inside: n && n.getBoundingClientRect().right <= z.getBoundingClientRect().right,
+          full: n && n.getAttribute("title") }; }, HR_LONG);
+      if (x.rows !== 12 || x.expanded !== "true") fail(tag + ": show more did not show all twelve " + JSON.stringify(x));
+      if (!x.cut || !x.inside || x.full !== HR_LONG) fail(tag + ": the long branch name is not cut inside its card with the whole name in the tooltip " + JSON.stringify(x));
+      // A released branch is struck through and marked.
+      const rel = await p.evaluate(() => { const b = document.querySelector('.hr-repo[data-repo="openziti/zrok"] .hr-branch.released');
+        return b && { deco: getComputedStyle(b.querySelector(".hr-name")).textDecorationLine, mark: /released/.test(b.textContent) }; });
+      if (!rel || !/line-through/.test(rel.deco) || !rel.mark) fail(tag + ": a released branch is not marked " + JSON.stringify(rel));
+      // Copy: feedback and the value, then http.
+      await hubReposCopyWorks(ctx, p, '.hr-repo[data-repo="openziti/zrok"] .hr-clone .hr-copy', "git@hub.atrium:openziti/zrok.git", tag);
+      await p.click('.hr-repo[data-repo="openziti/zrok"] [data-act="mode"][data-mode="http"]');
+      const origin = await p.evaluate(() => location.origin);
+      await hubReposCopyWorks(ctx, p, '.hr-repo[data-repo="openziti/zrok"] .hr-clone .hr-copy', origin + "/git/hub/github/openziti/zrok.git", tag + " http");
+      await hubReposCopyRows(p, tag + " after toggle");
+      await hubReposEscaped(p, tag);
+      if (errors.length) fail(tag + ": page errors: " + errors.join(" | "));
+    } finally { await ctx.close(); }
+    // On a phone: one column, nothing sideways.
+    const ph = await hubReposFixturePage(browser, base, { w: 390, h: 844 });
+    try {
+      const col = await ph.p.evaluate(() => new Set([...document.querySelectorAll(".hr-repo")].map(c => Math.round(c.getBoundingClientRect().left))).size);
+      if (col !== 1) fail(tag + ": at 390px the shelf is not one column (" + col + ")");
+      await hubReposNoOverflow(ph.p, tag + " at 390");
+      await ph.p.click('.hr-repo[data-repo="openziti/ziti"] .hr-more');
+      await hubReposNoOverflow(ph.p, tag + " at 390, expanded");
+    } finally { await ph.ctx.close(); }
+    await hubReposEmptyCheck(browser, base, "shelf", tag);
+    await hubReposShots(browser, base, "shelf");
+  } finally { hubMode = wasHub; }
+  if (!bad) console.log("hubReposShelf ok");
+}
+
+async function hubReposLedgerSection(browser, base) {
+  const wasHub = hubMode; hubMode = true;
+  const tag = "hubReposLedger";
+  try {
+    const { ctx, p, errors } = await hubReposFixturePage(browser, base, { w: 2000, h: 1200, view: "ledger" });
+    try {
+      const r = await p.evaluate(() => { const li = [...document.querySelectorAll("#hubrepos-list .hr-li")], d = document.querySelector(".hr-detail");
+        return { n: li.length, tags: [...new Set(li.map(b => b.tagName))].join(), cur: li.filter(b => b.getAttribute("aria-current") === "true").map(b => b.dataset.repo),
+          name: d.querySelector(".hr-dname").textContent, count: d.querySelector(".hr-fact.ac b").textContent, sha: d.querySelector(".hr-fact b.mono").textContent,
+          ev: d.querySelectorAll(".hr-ev").length, rel: d.querySelectorAll(".hr-ev.released").length, days: [...d.querySelectorAll(".hr-day")].map(x => x.textContent.replace(/\d+$/, "").trim()),
+          nsz: parseFloat(getComputedStyle(d.querySelector(".hr-dname")).fontSize), cols: d.querySelector(".hr-cols").getBoundingClientRect().width, listW: document.querySelector(".hr-list").getBoundingClientRect().width,
+          who: d.querySelectorAll(".hr-side .hr-whorow").length, avatars: d.querySelectorAll(".hr-ev .hr-av").length, term: d.querySelector(".hr-termcmd").textContent,
+          chip: d.querySelector(".hr-ev .hr-chip").textContent, title: !![...d.querySelectorAll(".hr-ev .hr-title")].find(t => /link flap/.test(t.textContent)),
+          cut: (() => { const n = d.querySelector('.hr-name[title^="feat/oidc-device"]'); return n && n.scrollWidth > n.clientWidth && n.getAttribute("title"); })() }; });
+      if (r.n !== 6 || r.tags !== "BUTTON" || r.cur.join() !== "openziti/ziti") fail(tag + ": the list is wrong " + JSON.stringify(r));
+      if (r.name !== "ziti" || r.count !== "12" || r.sha.length !== 7 || r.nsz < 44) fail(tag + ": the repo hero is wrong " + JSON.stringify(r));
+      if (r.ev !== 12 || r.rel !== 2 || r.days.join() !== "Today,Yesterday,This week,Earlier" || r.who !== 3 || r.avatars !== 12) fail(tag + ": the timeline is wrong " + JSON.stringify(r));
+      if (r.term !== "$ git clone git@hub.atrium:openziti/ziti.git" || !/^sg4 c-101$/.test(r.chip) || !r.title) fail(tag + ": the terminal or the who/when is wrong " + JSON.stringify(r));
+      if (r.cut !== HR_LONG) fail(tag + ": the long branch name is not cut with its tooltip: " + r.cut);
+      if (r.cols < 900 || r.listW > 420) fail(tag + ": at 2000px the panes do not use the width " + JSON.stringify({ cols: r.cols, listW: r.listW }));
+      await hubReposCopyRows(p, tag);
+      await hubReposCopyWorks(ctx, p, "#hubrepos-list .hr-termbar .hr-copy", "git clone git@hub.atrium:openziti/ziti.git", tag);
+      await p.click('#hubrepos-list .hr-termbar [data-act="mode"][data-mode="http"]');
+      const origin = await p.evaluate(() => location.origin);
+      await hubReposCopyWorks(ctx, p, "#hubrepos-list .hr-termbar .hr-copy", "git clone " + origin + "/git/hub/github/openziti/ziti.git", tag + " http");
+      // Open another repo: the pane follows, the pressed row moves and keyboard focus stays on the row.
+      await p.focus('.hr-li[data-repo="openziti/zrok"]');
+      await p.keyboard.press("Enter");
+      const z = await p.evaluate(() => ({ name: document.querySelector(".hr-dname").textContent, ev: document.querySelectorAll(".hr-detail .hr-ev").length, rel: document.querySelectorAll(".hr-detail .hr-ev.released").length,
+        cur: document.querySelector('.hr-li[aria-current="true"]').dataset.repo, focus: document.activeElement.dataset.repo, state: document.querySelector(".hr-detail .hr-state").textContent.trim() }));
+      if (z.name !== "zrok" || z.ev !== 7 || z.rel !== 4 || z.cur !== "openziti/zrok" || z.focus !== "openziti/zrok" || z.state !== "Stale") fail(tag + ": opening zrok with the keyboard went wrong " + JSON.stringify(z));
+      // Main only, then the empty repo (a hero in the pane), then all repos (a feed in the pane).
+      await p.click('.hr-li[data-repo="netfoundry/docs"]');
+      if (!/Only main so far/.test(await p.textContent(".hr-detail"))) fail(tag + ": a main-only repo does not say so");
+      await p.click('.hr-li[data-repo="dovholuknf/atrium"]');
+      const e = await p.evaluate(() => ({ hero: !!document.querySelector(".hr-detail .hr-hero"), term: !!document.querySelector(".hr-detail .hr-term"), go: document.querySelector(".hr-detail .hr-go").dataset.copy }));
+      if (!e.hero || e.term || e.go !== "git remote add hub git@hub.atrium:dovholuknf/atrium.git\ngit push hub <branch>") fail(tag + ": the empty repo is not a hero in the pane " + JSON.stringify(e));
+      await p.click('.hr-li[data-repo=""]');
+      const a = await p.evaluate(() => ({ items: document.querySelectorAll(".hr-detail .hr-it").length, sum: !!document.querySelector(".hr-detail .hr-summary"), cur: document.querySelector('.hr-li[aria-current="true"]').dataset.repo }));
+      if (a.items !== 27 || !a.sum || a.cur !== "") fail(tag + ": all repos is not the whole feed " + JSON.stringify(a));
+      await hubReposEscaped(p, tag);
+      if (errors.length) fail(tag + ": page errors: " + errors.join(" | "));
+    } finally { await ctx.close(); }
+    const ph = await hubReposFixturePage(browser, base, { w: 390, h: 844, view: "ledger" });
+    try {
+      const row = await ph.p.evaluate(() => getComputedStyle(document.querySelector(".hr-list")).flexDirection);
+      if (row !== "row") fail(tag + ": at 390px the list is not a strip");
+      await hubReposNoOverflow(ph.p, tag + " at 390");
+      await ph.p.click('.hr-li[data-repo=""]');
+      await hubReposNoOverflow(ph.p, tag + " at 390, all repos");
+    } finally { await ph.ctx.close(); }
+    await hubReposEmptyCheck(browser, base, "ledger", tag);
+    await hubReposShots(browser, base, "ledger");
+  } finally { hubMode = wasHub; }
+  if (!bad) console.log("hubReposLedger ok");
+}
+
+async function hubReposFeedSection(browser, base) {
+  const wasHub = hubMode; hubMode = true;
+  const tag = "hubReposFeed";
+  try {
+    const { ctx, p, errors } = await hubReposFixturePage(browser, base, { w: 2000, h: 1200, view: "feed" });
+    try {
+      const r = await p.evaluate((long) => { const items = [...document.querySelectorAll("#hubrepos-list .hr-it")], chips = [...document.querySelectorAll(".hr-chipbtn")];
+        const n = document.querySelector('.hr-bn[title^="feat/oidc-device"]');
+        return { chips: chips.length, pressed: chips.filter(c => c.getAttribute("aria-pressed") === "true").length, items: items.length, mains: document.querySelectorAll(".hr-it.main").length,
+          rel: document.querySelectorAll(".hr-it.released").length, days: [...document.querySelectorAll(".hr-day")].map(x => x.textContent.replace(/\d+$/, "").trim()),
+          cols: new Set(items.map(i => Math.round(i.getBoundingClientRect().left))).size, clones: [...document.querySelectorAll(".hr-cr")].map(c => c.querySelector(".hr-copy").dataset.copy),
+          rooms: document.querySelectorAll(".hr-side .hr-panel:not(.hr-clones) .hr-whorow").length, big: document.querySelectorAll(".hr-summary .hr-big").length,
+          cut: n && n.scrollWidth > n.clientWidth && n.getAttribute("title") === long, pills: document.querySelectorAll(".hr-it .hr-pill .hr-tile").length,
+          first: items[0].textContent, known: !![...document.querySelectorAll(".hr-it .hr-title")].find(t => /chase the link flap/.test(t.textContent)), hot: document.querySelectorAll(".hr-it.hot").length }; }, HR_LONG);
+      if (r.chips !== 6 || r.pressed !== 1) fail(tag + ": the repo rail is wrong " + JSON.stringify(r));
+      if (r.items !== 27 || r.mains !== 4 || r.rel !== 7 || r.days.join() !== "Today,Yesterday,This week,Earlier") fail(tag + ": the feed is wrong " + JSON.stringify(r));
+      if (!/^sg4pushed to openziti\/ziti/.test(r.first.replace(/\s+/g, "")) && !/sg4/.test(r.first)) fail(tag + ": the newest push is not first: " + r.first);
+      if (r.cols < 2 || r.pills !== 27 || !r.cut || !r.known || r.big !== 4 || r.rooms !== 3) fail(tag + ": at 2000px the feed is not laid out " + JSON.stringify(r));
+      if (r.clones.length !== 5 || !r.clones.includes("git@hub.atrium:openziti/ziti.git")) fail(tag + ": the clone panel is wrong " + JSON.stringify(r.clones));
+      await hubReposCopyRows(p, tag);
+      await hubReposCopyWorks(ctx, p, '.hr-cr:nth-of-type(2) .hr-copy', "git@hub.atrium:openziti/zrok.git", tag);
+      // Click a repo: its header, its own clone bar, only its pushes.
+      await p.click('.hr-chipbtn[data-repo="openziti/zrok"]');
+      const f = await p.evaluate(() => ({ head: !!document.querySelector(".hr-rhead .hr-clone"), copies: document.querySelectorAll(".hr-rhead .hr-copy").length, items: document.querySelectorAll(".hr-it").length,
+        panel: !!document.querySelector(".hr-clones"), pressed: document.querySelector('.hr-chipbtn[aria-pressed="true"]').dataset.repo, name: document.querySelector(".hr-rhead .hr-repoName").textContent,
+        focus: document.activeElement.dataset.repo, others: [...document.querySelectorAll(".hr-it .hr-pill")].filter(x => !/openziti\/zrok/.test(x.textContent)).length }));
+      if (!f.head || f.copies !== 1 || f.items !== 8 || f.panel || f.pressed !== "openziti/zrok" || f.name !== "zrok" || f.focus !== "openziti/zrok" || f.others) fail(tag + ": filtering to zrok went wrong " + JSON.stringify(f));
+      await hubReposCopyWorks(ctx, p, ".hr-rhead .hr-copy", "git@hub.atrium:openziti/zrok.git", tag + " header");
+      await p.click('.hr-rhead [data-act="mode"][data-mode="http"]');
+      const origin = await p.evaluate(() => location.origin);
+      await hubReposCopyWorks(ctx, p, ".hr-rhead .hr-copy", origin + "/git/hub/github/openziti/zrok.git", tag + " header http");
+      await hubReposCopyRows(p, tag + " filtered");
+      await p.click('.hr-chipbtn[data-repo=""]');
+      if ((await p.locator(".hr-it").count()) !== 27) fail(tag + ": All repos did not bring the whole feed back");
+      await hubReposEscaped(p, tag);
+      if (errors.length) fail(tag + ": page errors: " + errors.join(" | "));
+    } finally { await ctx.close(); }
+    const ph = await hubReposFixturePage(browser, base, { w: 390, h: 844, view: "feed" });
+    try {
+      await hubReposNoOverflow(ph.p, tag + " at 390");
+      await ph.p.click('.hr-chipbtn[data-repo="openziti/ziti"]');
+      await hubReposNoOverflow(ph.p, tag + " at 390, one repo");
+    } finally { await ph.ctx.close(); }
+    await hubReposEmptyCheck(browser, base, "feed", tag);
+    await hubReposShots(browser, base, "feed");
+  } finally { hubMode = wasHub; }
+  if (!bad) console.log("hubReposFeed ok");
 }
 
 // The notification tray's head is one row at the tray's width and on a phone: every visible button shares one top, and
@@ -18868,7 +19204,7 @@ async function main() {
       termDebug: termDebugSection, termSortStarted: termSortStartedSection,
       noReadyChildren: noReadyChildrenSection, childUnderParent: childUnderParentSection, topNav: topNavSection,
       childFold: childFoldSection, liveHome: liveHomeSection,
-      pulls: pullsSection, hubRepos: hubReposSection, trayHead: trayHeadSection, pullsAbsent: pullsAbsentSection, oneTooltip: oneTooltipSection, burnChart: burnChartSection };
+      pulls: pullsSection, hubRepos: hubReposSection, hubReposShelf: hubReposShelfSection, hubReposLedger: hubReposLedgerSection, hubReposFeed: hubReposFeedSection, trayHead: trayHeadSection, pullsAbsent: pullsAbsentSection, oneTooltip: oneTooltipSection, burnChart: burnChartSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -20861,6 +21197,9 @@ async function main() {
     await unit("growlOnIt", () => growlOnItSection(browser, base));
     await unit("mGrowlQuestion", () => mGrowlQuestionSection(browser));
     await unit("hubRepos", () => hubReposSection(browser, base));
+    await unit("hubReposShelf", () => hubReposShelfSection(browser, base));
+    await unit("hubReposLedger", () => hubReposLedgerSection(browser, base));
+    await unit("hubReposFeed", () => hubReposFeedSection(browser, base));
     await unit("trayHead", () => trayHeadSection(browser, base));
     await unit("bootClean", () => bootCleanSection(browser, base));
     await unit("mWorking", () => mWorkingSection(browser));

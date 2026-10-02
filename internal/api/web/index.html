@@ -773,6 +773,11 @@ Tokens only: no dollar figure is worked out.">?</span>
   <!-- The hub's repos and the branches rooms pushed to it, drawn by js/hubrepos.js. Hub only. -->
   <div id="hubrepos" hidden>
     <div class="hr-top"><span class="hr-heading">repos on the hub</span><span class="hr-count" id="hubrepos-count" aria-live="polite"></span>
+      <div class="hr-views" id="hubrepos-views" role="radiogroup" aria-label="how to show the repos">
+        <button type="button" role="radio" data-hrview="shelf" aria-checked="true" aria-label="Shelf: a grid of repo cards" title="Shelf"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><rect x="2" y="2" width="5" height="5" rx="1.2"/><rect x="9" y="2" width="5" height="5" rx="1.2"/><rect x="2" y="9" width="5" height="5" rx="1.2"/><rect x="9" y="9" width="5" height="5" rx="1.2"/></svg><span>Shelf</span></button>
+        <button type="button" role="radio" data-hrview="ledger" aria-checked="false" aria-label="Ledger: a repo list and the open repo's branches" title="Ledger"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><rect x="2" y="2" width="4" height="12" rx="1.2"/><rect x="8" y="2" width="6" height="12" rx="1.2"/></svg><span>Ledger</span></button>
+        <button type="button" role="radio" data-hrview="feed" aria-checked="false" aria-label="Feed: every push, newest first" title="Feed"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="3.5" cy="4" r="1" fill="currentColor"/><circle cx="3.5" cy="8" r="1" fill="currentColor"/><circle cx="3.5" cy="12" r="1" fill="currentColor"/><path d="M7 4h7M7 8h7M7 12h5"/></svg><span>Feed</span></button>
+      </div>
       <button id="hubrepos-refresh" type="button" aria-label="refresh the repos list">refresh</button></div>
     <div id="hubrepos-list"></div>
   </div>
