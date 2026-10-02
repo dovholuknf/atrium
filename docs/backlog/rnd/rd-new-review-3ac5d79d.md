@@ -65,3 +65,20 @@ by id, not by range). A re-read covers sections 2 and 3 and C1 and C2. doc-ok on
 Quality: a clear, well-grounded design. It builds on what already observes (the pulls index, deployready) rather
 than on what sessions say, and the four lines answer the question clint actually asked. The gaps are two places
 where a claim could pass as a fact.
+
+## Re-read at 733c982b (2026-10-02): OK, doc-ok
+
+One commit, only the design doc.
+- **M1, closed.** The room stamps `at_sha` with `git rev-parse HEAD` in the card's own worktree, plus a dirty flag
+  from `git status --porcelain` ("plus uncommitted changes"). It refuses a worktree on another branch, and a card
+  never names a sha. C1's acceptance tests all three.
+- **M2, closed.** Findings close only through the re-read file's `Closed:` and `Open:` line, matched to ids, and a
+  doc-ok alone marks nothing. C2's acceptance tests both, and notes that @review writes the line.
+- **The rest, closed.** The trailer caveat is stated: "seen" means read from atrium's own branches, not proven
+  written by @review. Logs are 0600, with links only into run folders, and related findings are marked as data. The
+  hub-ok and room-ok form of the four lines is shown.
+
+Closed: M1, M2, S1, S2
+Open: none
+
+Verdict: OK, doc-ok 3ac5d79d^..733c982b. It lands alone by cherry-pick of the two, and there is nothing to forward.
