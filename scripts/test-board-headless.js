@@ -21311,10 +21311,16 @@ async function growlRemindSection(browser, base) {
     const post = h.posts.find(x => x.id === q.id);
     if (!post || post.body.do !== "snooze" || post.body.minutes !== 60) fail("growlRemind: the post was " + JSON.stringify(h.posts));
     if (await p.$("#growl")) fail("growlRemind: a reminded row drew a growler.");
-    r = await rows();
-    if (r.find(x => x.t.startsWith("growler: question c")).btns.join() !== "") {
-      if (!/^reminding/.test(r.find(x => x.t.startsWith("growler: question c")).btns.join())) fail("growlRemind: the reminded row said " + JSON.stringify(r));
-    }
+    // the stub answers with the row snoozed and no `until`; the hub's own event carries one, and the open bell follows it
+    await h.say([Object.assign({}, q, { state: "snoozed", until: new Date(Date.now() + 3 * 3600000 + 60000).toISOString() })]);
+    await p.waitForTimeout(300);
+    const said = await p.evaluate(() => (document.querySelector("#toastlog-list .tlremits .tlremind:not([data-remind])") || {}).textContent || "");
+    if (said !== "reminding in 3 h") fail("growlRemind: the open bell said " + JSON.stringify(said) + " after a growls event.");
+    if (await p.$("#toastlog-list .tlremind[data-remind]")) fail("growlRemind: a reminded row still offered the menu.");
+    // and an open one coming back (the reminder is due) gets its control again without reopening the bell
+    await h.say([q]);
+    await p.waitForTimeout(300);
+    if (!(await p.$('#toastlog-list .tlremind[data-remind="menu"]'))) fail("growlRemind: the open bell did not repaint when the growler came back.");
     // tomorrow 9am is a literal tomorrow, clamped to the hub's week
     const mins = await p.evaluate(async () => {
       let sent;
