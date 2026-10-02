@@ -152,3 +152,48 @@ Still open: **H1**, which is not addressed in this range. M1 also needs one of i
 written, and L1 is now explained above.
 
 Atrium-Verdict: hold 46cccadd..cc4889c3
+
+## Re-read: 3328490f
+
+Range `46cccadd..3328490f`, 6 commits, on `e74dff63`.
+- `bc28d8df` is unchanged.
+- `a2353559` replaces `f54e3a5b`.
+- `662be13e` replaces `542c3f9d`. Only the context of its swMark line moved.
+- `b1232322` and `9d214b48` are unchanged.
+- `3328490f` replaces `cc4889c3`.
+
+Closed:
+- **H1.** In `connectTerm`, the `onData` closure now sends on its own `sock` when `termSock !== sock` and the socket
+  is a kept slot's and open. It does no lag, typed or scroll bookkeeping, and returns.
+  - A focus-in on show goes through the normal path, because the swap has already made it the showing socket.
+  - A replaced socket's old closure is disposed at `:1283` before a new one registers.
+  - `keepPark` sends `ESC [ O` when `term.modes.sendFocusMode` is on.
+  - Both are asserted. Your worker's mutants turned each assert red with its fix removed.
+- **M1.** The gear hint and the item now say a kept terminal counts as watched.
+- **M2.** The post-deploy sg4 run is named in the item.
+- **L1.** The timer clears only its own id.
+- **L2.** `slot.sizeUnsent` is set by the background `onopen`, and `keepShow` sends the size once.
+- **L3.** The hint now says the trimmed lines do not come back.
+- **L4.** `keepEnforce` runs from `syncPhoneView` and on the `(max-width: 900px)` change, which is the same query
+  `termNarrow` uses.
+- **The 16s.** The clamp and the hint now say 12.
+
+Tests at the tip: `HEADLESS_ONLY=keepAlive,attachAtOnce,switchPrewarm,bootClean,termWear,gearTermList,growlOnIt,
+clearKeepsPage` passes, and `node --check` is clean. L1, L2 and L4 have no test, and the reading above is mine.
+
+Open, a follow-up and not a hold:
+- **N1: a kept terminal still has a vote in the pty's size.** `agreedViewport` (`supervisor.go:1571`) runs the pty at
+  the widest viewer's width and the shortest viewer's height. A terminal kept hidden on this board keeps the vote it
+  last sent.
+  - So the same card open in another window or browser is held to this board's old size, until the slot is evicted
+    or the tab closes. Before this change, switching away removed the vote. (A phone never votes, and a popout drops
+    the slot.)
+  - This is the same class as M1. Say it in the same hint for now. The real fix is a room frame that lets a hidden
+    viewer stop voting, and it can share that frame with M1's "hidden, not watching".
+
+Verdict: hub-ok, room-ok (re-read, 46cccadd..3328490f)
+Quality: every point is fixed at its source, and the H1 and focus asserts are proved by mutants. A strong change for
+switch-back speed.
+
+Atrium-Verdict: hub-ok 46cccadd..3328490f
+Atrium-Verdict: room-ok 46cccadd..3328490f
