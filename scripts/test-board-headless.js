@@ -21236,6 +21236,20 @@ async function growlOffSection(browser, base) {
     if ((await heard()).osc !== b0.osc) fail("growlOff: a permission rang the growler's tone.");
     if (!(await logged("growler: permission a"))) fail("growlOff: a permission left no log line.");
     if (await p.evaluate(g => growlHas(g.subject), pr)) fail("growlOff: growlHas still held the permission's nag back.");
+    // and a real pending permission, through the ordinary path: its keyed toast stays and its tone rings
+    await p.evaluate(() => { alerting.set({ debounce: 0, muted: false }); Document.prototype.hasFocus = () => true; window.dispatchEvent(new Event("focus")); });
+    const t0 = await heard();
+    await p.evaluate(() => {
+      const say = x => ({ title: "needs permission " + x.id, body: "Bash: rm -rf build" });
+      alerting.check("permission", [], say);
+      alerting.check("permission", [{ id: "perm-a", task_id: "a", requested_at: new Date().toISOString() }], say);
+    });
+    await p.waitForTimeout(500);
+    if (!(await p.evaluate(() => [...document.querySelectorAll("#toasts .toast")].some(t => t.textContent.includes("needs permission perm-a")))))
+      fail("growlOff: a pending permission with the growler off drew no keyed toast.");
+    if ((await heard()).osc <= t0.osc) fail("growlOff: a pending permission with the growler off rang no permission tone.");
+    if (await p.$("#growl")) fail("growlOff: a pending permission drew a growler.");
+    await p.evaluate(() => { Document.prototype.hasFocus = () => false; window.dispatchEvent(new Event("blur")); });
     // on restores the old behaviour, at once, in the same window
     await p.evaluate(() => setGrowler(true));
     await p.waitForSelector("#growl .gr-full", { timeout: slow(3000) }).catch(() => fail("growlOff: turning it on drew no growler for the open permission."));
