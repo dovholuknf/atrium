@@ -39,14 +39,54 @@ function peekThresholdK(t) {
   return 150;
 }
 
-// THE ONE DRAWING OF THE CONTEXT METER, for the details popover and for the thin line on a
-// row, so the two cannot drift. The bar runs to half as far again as the limit, so the
-// tick sits at two thirds and a card past the limit still has somewhere to go. `cls` and
-// `tip` are the row's; the popover passes neither.
+// THE LAND-THE-PLANE LINE, a per-browser preference like the growler switch (js/growl.js): `atrium.landThePlaneK`, in
+// thousands of tokens, every read and write inside try/catch, and a `storage` listener so another window follows.
+// It matches the status line's LAND THE PLANE zone (150k sweet, 150-200k getting full, past 200k land the plane),
+// which the board cannot read from a shell script, so it is typed once in the gear. Default 200, kept here and
+// nowhere else. Junk reads as the default; the line is never below the warn line (threshold_k), since land is the
+// second line and warn the first. Moving it into the daemon store beside `warn` is a possible later runtime step.
+const LAND_K_KEY = "atrium.landThePlaneK";
+const LAND_K_DEFAULT = 200;
+const LAND_K_MIN = 10;
+const LAND_K_MAX = 2000;
+function landThePlaneRawK() {
+  let v = "";
+  try { v = localStorage.getItem(LAND_K_KEY) || ""; } catch (e) {}
+  const n = /^\s*\d+\s*$/.test(v) ? Number(v) : NaN;
+  return n >= LAND_K_MIN && n <= LAND_K_MAX ? n : LAND_K_DEFAULT;
+}
+function landThePlaneK(t) {
+  return Math.max(landThePlaneRawK(), Number(peekThresholdK(t)) || 0);
+}
+function setLandThePlaneK(v) {
+  const n = String(v == null ? "" : v).trim();
+  try {
+    if (n === "") localStorage.removeItem(LAND_K_KEY);
+    else localStorage.setItem(LAND_K_KEY, n);
+  } catch (e) {}
+}
+// Whether a card's context is at or past the land-the-plane line.
+function landOver(t) {
+  const c = t && t.context_size;
+  return !!c && Number(c.tokens) >= landThePlaneK(t) * 1000;
+}
+// "201k of 200k (land the plane), window 1M": the bar's tooltip, and the badge's.
+function landTip(t) {
+  const c = t.context_size || {};
+  const over = landOver(t);
+  const win = t.telemetry && t.telemetry.window ? `, window ${usageTokens(t.telemetry.window).replace(/\.0M$/, "M")}` : "";
+  return `${usageTokens(c.tokens)} of ${usageTokens(landThePlaneK(t) * 1000)}${over ? " (land the plane)" : ""}${win}`;
+}
+
+// THE ONE DRAWING OF THE CONTEXT METER, for the details popover and for the flood on a row, so the two cannot
+// drift. `limit` is the land-the-plane line. The bar runs to the line plus ten percent, which is the runner's
+// compaction window, so a card at the line looks nearly full, and the tick sits at the line. `cls` and `tip` are
+// the row's; the popover passes neither.
+const METER_SPAN = 1.1;
 function ctxMeter(tokens, limit, cls, tip) {
-  const fill = Math.min(100, (Number(tokens) / (limit * 1.5)) * 100) || 0;
+  const fill = Math.min(100, (Number(tokens) / (limit * METER_SPAN)) * 100) || 0;
   return `<div class="peek-bar${cls ? " " + cls : ""}"${tip ? ` data-tip="${esc(tip)}"` : ""}>` +
-    `<i style="width:${fill.toFixed(1)}%"></i><s style="left:${(100 / 1.5).toFixed(1)}%"></s></div>`;
+    `<i style="width:${fill.toFixed(1)}%"></i><s style="left:${(100 / METER_SPAN).toFixed(1)}%"></s></div>`;
 }
 
 // Whether there is anything to read: a Claude conversation behind the card,
@@ -82,19 +122,21 @@ function peekBody(t, v) {
   const loading = !v;
   const ctx = loading ? 0 : Number(v.context_now) || 0;
   const k = peekThresholdK(t);
-  const limit = k * 1000;
-  const warn = !loading && ctx >= limit;
+  const landK = landThePlaneK(t);
+  const limit = landK * 1000;
+  const warn = !loading && ctx >= k * 1000;
+  const land = !loading && ctx >= limit;
   const tot = (v && v.totals) || {};
   const own = usageOwn(v && v.by_cause);
   const cell = (label, value, tip) =>
     `<div class="peek-cell"${tip ? ` data-tip="${esc(tip)}"` : ""}><b>${loading ? "&nbsp;" : esc(value)}</b>` +
     `<span>${esc(label)}</span></div>`;
   return head +
-    `<div class="peek-ctx${warn ? " warn" : ""}">
+    `<div class="peek-ctx${warn ? " warn" : ""}${land ? " hot" : ""}">
       <div class="peek-num"><b>${loading ? "&nbsp;" : usageTokens(ctx)}</b><span>context</span></div>
-      ${ctxMeter(ctx, limit)}
-      <div class="peek-scale"><span>${warn ? "past the line" : ""}</span>` +
-        `<span>warns at ${k}k</span></div>
+      ${ctxMeter(ctx, limit, "", loading ? "" : landTip({ context_size: { tokens: ctx, threshold_k: k }, telemetry: t && t.telemetry }))}
+      <div class="peek-scale"><span>${land ? "land the plane" : warn ? "past the line" : ""}</span>` +
+        `<span>warns at ${k}k, lands at ${landK}k</span></div>
     </div>
     <div class="peek-grid">
       ${cell("prompts", String(own.prompts), USAGE_TIPS.prompts + ". " + USAGE_TIPS.scope)}

@@ -8601,9 +8601,10 @@ async function ctxLineSection(browser, base) {
     context_size: tokens == null ? undefined : { tokens, warn: tokens >= 150000, threshold_k: 150 }
   }, extra || {});
   try {
-    wornTasks = [row("cl-40", 60000), row("cl-70", 105000), row("cl-90", 135000), row("cl-over", 157000),
-      row("cl-none", null), row("cl-shelf", 157000, { status: "shelved" }),
-      row("cl-cycle", 157000, { new_context: { step: "clear", n: 2, of: 4, label: "clearing" } })];
+    wornTasks = [row("cl-40", 60000), row("cl-70", 105000), row("cl-90", 135000), row("cl-warm", 170000),
+      row("cl-over", 201000, { telemetry: { window: 1000000 } }),
+      row("cl-none", null), row("cl-shelf", 201000, { status: "shelved" }),
+      row("cl-cycle", 201000, { new_context: { step: "clear", n: 2, of: 4, label: "clearing" } })];
     tasksMode = "worn";
     await wp.goto(base, { waitUntil: "domcontentloaded" });
     await wp.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
@@ -8618,7 +8619,10 @@ async function ctxLineSection(browser, base) {
         const i = b && b.querySelector("i"), s = b && b.querySelector("s");
         out[el.dataset.id] = !b ? null : {
           cls: b.className, width: i.style.width, tick: s.style.left, tip: b.getAttribute("data-tip"),
-          bottom: Math.abs(br.bottom - r.bottom) < 2, wide: br.width > r.width - 4,
+          bottom: Math.abs(br.bottom - r.bottom) < 2, wide: br.width > r.width - 4, tall: br.height > r.height - 4,
+          pe: getComputedStyle(b).pointerEvents, z: getComputedStyle(b).zIndex,
+          floorPe: getComputedStyle(b, "::after").pointerEvents,
+          landchip: !!el.querySelector(".chip.ctxland"), chiptext: (el.querySelector(".chip.ctxland") || {}).textContent,
           anim: getComputedStyle(i).animationIterationCount, name: getComputedStyle(i).animationName,
           fill: getComputedStyle(i).backgroundImage,
           chip: !!el.querySelector(".chip.ctxwarn"), cycle: !!el.querySelector(".chip") && /context 2\/4/.test(el.textContent)
@@ -8626,37 +8630,40 @@ async function ctxLineSection(browser, base) {
       }
       // The popover's own body, drawn by the same function.
       const body = document.createElement("div");
-      body.innerHTML = peekBody({ id: "x", resume_id: "r", context_size: { tokens: 157000, warn: true, threshold_k: 150 } },
-        { context_now: 157000, totals: {} });
+      body.innerHTML = peekBody({ id: "x", resume_id: "r", context_size: { tokens: 201000, warn: true, threshold_k: 150 } },
+        { context_now: 201000, totals: {} });
       const pb = body.querySelector(".peek-ctx .peek-bar");
       const shared = document.createElement("div");
-      shared.innerHTML = ctxMeter(157000, 150000);
+      shared.innerHTML = ctxMeter(201000, 200000, "", "201k of 200k (land the plane)");
       return { rows: out, popover: pb ? pb.outerHTML : null, meter: shared.firstElementChild.outerHTML };
     });
     const r = got.rows;
-    for (const [id, w, cls] of [["cl-40", "26.7%", "peek-bar ctxline"], ["cl-70", "46.7%", "peek-bar ctxline warm"],
-      ["cl-90", "60%", "peek-bar ctxline hot"], ["cl-over", "69.8%", "peek-bar ctxline hot over"]]) {
+    for (const [id, w, cls] of [["cl-40", "27.3%", "peek-bar ctxline"], ["cl-70", "47.7%", "peek-bar ctxline"],
+      ["cl-90", "61.4%", "peek-bar ctxline"], ["cl-warm", "77.3%", "peek-bar ctxline warm"],
+      ["cl-over", "91.4%", "peek-bar ctxline hot over"]]) {
       const b = r[id];
       if (!b) { fail(id + " has no context line."); continue; }
       if (b.cls !== cls) fail(id + " line class is " + b.cls + ", want " + cls);
       if (b.width !== w) fail(id + " fill is " + b.width + ", want " + w);
-      if (b.tick !== "66.7%") fail(id + " tick is at " + b.tick);
-      if (!b.bottom || !b.wide) fail(id + " line is not along the row's bottom edge: " + JSON.stringify(b));
+      if (b.tick !== "90.9%") fail(id + " tick is at " + b.tick);
+      if (!b.wide || !b.tall) fail(id + " flood does not cover the row: " + JSON.stringify(b));
+      if (b.pe !== "none" || b.floorPe !== "auto" || b.z !== "-1") fail(id + " flood layering/pointer: " + JSON.stringify(b));
     }
     if (r["cl-over"] && (r["cl-over"].anim !== "1" || r["cl-over"].name !== "ctxline-pulse")) {
       fail("past the limit the line does not pulse exactly once: " + r["cl-over"].anim + " " + r["cl-over"].name);
     }
-    if (r["cl-90"] && r["cl-90"].name !== "none") fail("a line under the limit animates.");
-    if (r["cl-over"] && !/157k used, limit 150k/.test(r["cl-over"].tip)) fail("the line's tooltip: " + (r["cl-over"] || {}).tip);
-    if (r["cl-over"] && !r["cl-over"].chip) fail("past the limit the row has no limit chip.");
-    if (r["cl-70"] && r["cl-70"].chip) fail("a card under the limit has the limit chip.");
+    if (r["cl-warm"] && r["cl-warm"].name !== "none") fail("a line under the land line animates.");
+    if (r["cl-over"] && r["cl-over"].tip !== "201k of 200k (land the plane), window 1M") fail("the line's tooltip: " + (r["cl-over"] || {}).tip);
+    if (r["cl-over"] && (!r["cl-over"].landchip || r["cl-over"].chiptext !== "LAND 201k")) fail("past the land line the row has no LAND badge: " + JSON.stringify(r["cl-over"]));
+    if (r["cl-warm"] && (!r["cl-warm"].chip || r["cl-warm"].landchip)) fail("between warn and land the row must have the amber mark and no badge.");
+    if (r["cl-70"] && (r["cl-70"].chip || r["cl-70"].landchip)) fail("a card under the warn line has a mark.");
     if (r["cl-none"]) fail("a row with no context_size has a line.");
     if (r["cl-shelf"]) fail("a shelved card has a line.");
     const c = r["cl-cycle"];
     if (!c) fail("a cycling card has no line.");
     else {
       if (/ over\b/.test(c.cls)) fail("a cycling card pulses.");
-      if (c.chip) fail("a cycling card draws the limit chip instead of the cycle.");
+      if (c.chip || c.landchip) fail("a cycling card draws the limit chip or badge instead of the cycle.");
       if (!c.cycle) fail("a cycling card does not show the new-context chip.");
     }
     if (!got.popover) fail("the details popover lost its .peek-bar.");
@@ -8675,6 +8682,155 @@ async function ctxLineSection(browser, base) {
     tasksMode = was;
   }
   if (errors.length) fail("the terminals list threw: " + errors.join(" | "));
+}
+
+// The land-the-plane line: a per-browser pref (atrium.landThePlaneK, js/peek.js), the red LAND badge, the amber
+// zone below it, the gear field, the popover meter and a phone-width row.
+async function landThePlaneSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const wp = await ctx.newPage();
+  const errors = [];
+  wp.on("pageerror", e => errors.push(String(e)));
+  await wp.addInitScript(() => {
+    let all = {};
+    try { all = JSON.parse(localStorage.getItem("atrium.skipconfirm") || "{}"); } catch (e) {}
+    all["width-floor"] = true;
+    localStorage.setItem("atrium.skipconfirm", JSON.stringify(all));
+  });
+  const was = tasksMode;
+  const row = (id, tokens) => Object.assign({}, T1, {
+    id, display_title: "row " + id, supervised: true, pinned: true, worktree: "/tmp/cl/" + id,
+    context_size: { tokens, warn: tokens >= 150000, threshold_k: 150 }
+  });
+  try {
+    wornTasks = [row("lp-100", 100000), row("lp-170", 170000), row("lp-201", 201000)];
+    tasksMode = "worn";
+    await wp.goto(base, { waitUntil: "domcontentloaded" });
+    await wp.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await wp.click('.tab[data-view="terms"]');
+    const read = () => wp.evaluate(async () => {
+      await renderTermList();
+      const o = {};
+      for (const el of document.querySelectorAll('#term-list .card.tab[data-id^="lp-"]')) {
+        const b = el.querySelector(".peek-bar.ctxline");
+        o[el.dataset.id] = { cls: b ? b.className : null, badge: (el.querySelector(".chip.ctxland") || {}).textContent || "",
+          mark: !!el.querySelector(".chip.ctxwarn:not(.ctxland)"), tip: b ? b.getAttribute("data-tip") : null,
+          border: getComputedStyle(el).borderTopColor };
+      }
+      return o;
+    });
+    let r = await read();
+    // Default 200k: only 201k is past it. 170k is amber with the small mark, 100k is neutral.
+    if (!/ hot over/.test(r["lp-201"].cls) || r["lp-201"].badge !== "LAND 201k") fail("201k with the default line has no red badge: " + JSON.stringify(r["lp-201"]));
+    if (!/ warm$/.test(r["lp-170"].cls) || r["lp-170"].badge || !r["lp-170"].mark) fail("170k is not amber with the small mark: " + JSON.stringify(r["lp-170"]));
+    if (/ (warm|hot)/.test(r["lp-100"].cls) || r["lp-100"].badge) fail("100k is not neutral: " + JSON.stringify(r["lp-100"]));
+    if (r["lp-201"].border === r["lp-100"].border) fail("a card past the line does not have a red border.");
+    // The pref moves the line. 160k: 170k and 201k are past it, 100k still not.
+    await wp.evaluate(() => localStorage.setItem("atrium.landThePlaneK", "160"));
+    r = await read();
+    if (r["lp-170"].badge !== "LAND 170k" || !/ hot over/.test(r["lp-170"].cls)) fail("a 160k line does not mark 170k: " + JSON.stringify(r["lp-170"]));
+    if (!/^170k of 160k \(land the plane\)/.test(r["lp-170"].tip)) fail("the tooltip does not follow the pref: " + r["lp-170"].tip);
+    if (r["lp-100"].badge) fail("a 160k line marks 100k.");
+    // Junk reads as 200. A line under the warn line is held at the warn line (150k), so 160k is past it, 100k is not.
+    for (const junk of ["abc", "-5", "0", "5", "9", "99999", "1e3", ""]) {
+      await wp.evaluate(v => localStorage.setItem("atrium.landThePlaneK", v), junk);
+      const got = await wp.evaluate(() => [landThePlaneRawK(), landThePlaneK({ context_size: { threshold_k: 150 } })]);
+      if (got[0] !== 200 || got[1] !== 200) fail("junk " + JSON.stringify(junk) + " reads as " + got);
+    }
+    await wp.evaluate(() => localStorage.setItem("atrium.landThePlaneK", "50"));
+    const clamp = await wp.evaluate(() => landThePlaneK({ context_size: { threshold_k: 150 } }));
+    if (clamp !== 150) fail("a line typed under the warn line is " + clamp + "k, want 150k.");
+    // A broken localStorage never throws.
+    const safe = await wp.evaluate(() => {
+      const g = Storage.prototype.getItem, st = Storage.prototype.setItem;
+      Storage.prototype.getItem = () => { throw new Error("no"); };
+      Storage.prototype.setItem = () => { throw new Error("no"); };
+      try { setLandThePlaneK("180"); return landThePlaneRawK(); } catch (e) { return "threw " + e; }
+      finally { Storage.prototype.getItem = g; Storage.prototype.setItem = st; }
+    });
+    if (safe !== 200) fail("a broken localStorage: " + safe);
+    // The gear field: refuses junk, saves a number, empties to the default, and moves the rows.
+    await wp.evaluate(() => localStorage.removeItem("atrium.landThePlaneK"));
+    const gear = await wp.evaluate(async () => {
+      await renderTermList();
+      fillLandK();
+      const box = document.getElementById("s-landk");
+      if (!box) return { missing: true };
+      const out = { placeholder: box.placeholder, hint: (document.querySelector("#s-landk-field .hintline") || {}).textContent || "" };
+      box.value = "5"; saveLandK(); out.junk = localStorage.getItem("atrium.landThePlaneK");
+      const before = document.querySelector('#term-list [data-id="lp-170"] .ctxland') ? "badge" : "none";
+      box.value = "160"; saveLandK(); out.saved = localStorage.getItem("atrium.landThePlaneK");
+      await new Promise(r => setTimeout(r, 400));
+      out.rowBefore = before;
+      out.rowAfter = document.querySelector('#term-list [data-id="lp-170"] .ctxland') ? "badge" : "none";
+      box.value = ""; saveLandK(); out.cleared = localStorage.getItem("atrium.landThePlaneK");
+      return out;
+    });
+    if (gear.missing) fail("no land-the-plane field in the gear.");
+    else {
+      if (gear.placeholder !== "200") fail("the gear field's default is " + gear.placeholder);
+      if (!/this browser/i.test(gear.hint) || !/LAND THE PLANE/.test(gear.hint)) fail("the gear hint does not say it is this browser's and matches the status line: " + gear.hint);
+      if (gear.junk !== null) fail("the gear saved a junk value: " + gear.junk);
+      if (gear.saved !== "160") fail("the gear did not save 160: " + gear.saved);
+      if (gear.rowBefore !== "none" || gear.rowAfter !== "badge") fail("a saved line did not redraw the rows: " + gear.rowBefore + " -> " + gear.rowAfter);
+      if (gear.cleared !== null) fail("an emptied gear field did not return to the default: " + gear.cleared);
+    }
+    // The popover, over the line: the same drawing, red, with the tooltip.
+    const pop = await wp.evaluate(() => {
+      const d = document.createElement("div");
+      d.innerHTML = peekBody({ id: "x", resume_id: "r", context_size: { tokens: 201000, warn: true, threshold_k: 150 },
+        telemetry: { window: 1000000 } }, { context_now: 201000, totals: {} });
+      document.body.appendChild(d);
+      const c = d.querySelector(".peek-ctx"), i = d.querySelector(".peek-bar i");
+      const o = { cls: c.className, tip: d.querySelector(".peek-bar").getAttribute("data-tip"), scale: d.querySelector(".peek-scale").textContent,
+        h: d.querySelector(".peek-bar").getBoundingClientRect().height, bg: getComputedStyle(i).backgroundImage };
+      d.remove();
+      return o;
+    });
+    if (!/peek-ctx warn hot/.test(pop.cls)) fail("the popover is not hot past the line: " + pop.cls);
+    if (pop.tip !== "201k of 200k (land the plane), window 1M") fail("the popover tooltip: " + pop.tip);
+    if (!/lands at 200k/.test(pop.scale)) fail("the popover scale does not name the line: " + pop.scale);
+    if (pop.h < 8) fail("the popover bar is a thin line: " + pop.h + "px.");
+    if (!/rgb\(255, 107, 107\)|rgb\(\d+, \d+, \d+\)/.test(pop.bg)) fail("the popover fill has no colour: " + pop.bg);
+    // The badge reads on every skin: its text against its fill is at least 4.5:1 (small bold text), light and dark.
+    const skins = (await (await fetch(base + "/css/themes.css")).text()).match(/:root\[data-skin="[a-z]+"\]/g)
+      .map(x => x.replace(/.*="|"\]/g, ""));
+    const contrast = await wp.evaluate(async list => {
+      await renderTermList();
+      const lum = c => { const [r, g, b] = c.match(/[\d.]+/g).slice(0, 3).map(Number).map(v => { v /= 255; return v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; }); return .2126 * r + .7152 * g + .0722 * b; };
+      const out = {};
+      for (const sk of list) {
+        document.documentElement.setAttribute("data-skin", sk);
+        const b = document.querySelector('#term-list [data-id="lp-201"] .chip.ctxland');
+        if (!b) { out[sk] = "nochip"; continue; }
+        const cs = getComputedStyle(b), a = lum(cs.backgroundColor), f = lum(cs.color);
+        out[sk] = (Math.max(a, f) + .05) / (Math.min(a, f) + .05);
+      }
+      return out;
+    }, skins);
+    if (skins.length < 20) fail("read only " + skins.length + " skins from themes.css.");
+    for (const [sk, v] of Object.entries(contrast)) if (!(v >= 4.5)) fail("the LAND badge on skin " + sk + " has contrast " + (typeof v === "number" ? v.toFixed(2) : v) + ", want 4.5.");
+    // Phone width: the badge is on the row, inside it, and the row does not scroll sideways.
+    await wp.setViewportSize({ width: 340, height: 800 });
+    const ph = await wp.evaluate(async () => {
+      await renderTermList();
+      const el = document.querySelector('#term-list [data-id="lp-201"]');
+      if (!el) return { none: true };
+      const b = el.querySelector(".chip.ctxland"), rr = el.getBoundingClientRect();
+      const br = b && b.getBoundingClientRect();
+      return { has: !!b, inside: !!br && br.left >= rr.left - 1 && br.right <= rr.right + 1 && br.width > 0,
+        text: b && b.textContent, page: document.documentElement.scrollWidth <= window.innerWidth + 1 };
+    });
+    if (ph.none || !ph.has) fail("no badge on a phone-width row: " + JSON.stringify(ph));
+    else {
+      if (!ph.inside) fail("the badge is clipped at 340px: " + JSON.stringify(ph));
+      if (ph.text !== "LAND 201k") fail("the phone badge text: " + ph.text);
+    }
+  } finally {
+    await ctx.close();
+    tasksMode = was;
+  }
+  if (errors.length) fail("the land-the-plane section threw: " + errors.join(" | "));
 }
 
 // Three Claude cards: one under the context threshold, one past it, and one
@@ -8771,8 +8927,9 @@ async function contextSizeSection(browser, base) {
       const read = root => {
         const m = root && root.querySelector(".chip.ctxwarn");
         return { mark: m ? { warnColour: getComputedStyle(m).color === warnColour, text: m.textContent.trim(),
-          tip: m.getAttribute("data-tip") || "", svg: !!m.querySelector("svg") } : null,
-          number: /\b(90|212)k\b/.test(root ? root.textContent : "") };
+          tip: m.getAttribute("data-tip") || "", svg: !!m.querySelector("svg"), land: m.classList.contains("ctxland") } : null,
+          // The LAND badge is the one place the number is drawn, past the land-the-plane line.
+          number: /\b(90|212)k\b/.test(root ? Array.from(root.querySelectorAll(".chip.ctxland")).reduce((t, n) => t.replace(n.textContent, ""), root.textContent) : "") };
       };
       const row = id => read(document.querySelector(`#stack-list .stackrow[data-id="${id}"]`));
       const board = card => {
@@ -8790,9 +8947,9 @@ async function contextSizeSection(browser, base) {
     }, CTX_CARDS);
     if (!got.big.mark) fail("a card past the context threshold has no mark on its stack row.");
     else {
-      if (!got.big.mark.warnColour || !got.big.mark.svg) fail("the context mark is not a warn-coloured icon: " + JSON.stringify(got.big.mark));
-      if (got.big.mark.text) fail("the context mark carries text: " + got.big.mark.text);
-      if (!/150k/.test(got.big.mark.tip)) fail("the context mark's tooltip does not name the threshold: " + got.big.mark.tip);
+      // 212k is past the land-the-plane line (200k), so it wears the red badge; the amber icon below it is in landThePlane.
+      if (!got.big.mark.land || got.big.mark.text !== "LAND 212k") fail("a card past the land-the-plane line has no LAND badge: " + JSON.stringify(got.big.mark));
+      if (!/212k of 200k \(land the plane\)/.test(got.big.mark.tip)) fail("the badge's tooltip does not say tokens of the line: " + got.big.mark.tip);
     }
     if (got.small.mark || got.none.mark) fail("a card under the threshold, or with no size, wears the context mark.");
     if (!got.boardBig.mark) fail("a board card past the threshold has no context mark.");
@@ -19683,7 +19840,7 @@ async function main() {
       pasteBig: pasteBigSection, pasteBusy: pasteBusySection, typing: typingSection, alias: aliasSection, askAgain: askAgainSection, copySelect: copySelectSection, busyGuard: busyGuardSection, keepalive: keepaliveSection,
       stuck: stuckSection, blockerMark: blockerMarkSection, carryLink: carryLinkSection,
       skinScope: skinScopeSection, skinHeal: skinHealSection, toastLives: toastLivesSection,
-      history: historySection, contextSize: contextSizeSection, ctxLine: ctxLineSection, peekEverywhere: peekEverywhereSection, cardRoute: cardRouteSection,
+      history: historySection, contextSize: contextSizeSection, ctxLine: ctxLineSection, landThePlane: landThePlaneSection, peekEverywhere: peekEverywhereSection, cardRoute: cardRouteSection,
       quietDoer: quietDoerSection, looksIdle: looksIdleSection, notifyOff: notifyOffSection,
       questionsClick: questionsClickSection, walk: walkSection, linkReuse: linkReuseSection,
       usageCacheReads: usageCacheReadsSection, roomsDash: roomsDashSection, phoneView: phoneViewSection, heldLine: heldLineSection, u016: u016Section, phoneHeader: phoneHeaderSection, phoneFocus: phoneFocusSection, phoneTermBar: phoneTermBarSection, phoneShare: phoneShareSection, phonePan: phonePanSection, phoneFollow: phoneFollowSection, phoneTap: phoneTapSection, phoneKeyboard: phoneKeyboardSection, phoneCompose: phoneComposeSection, mCompose: mComposeSection, mPerms: mPermsSection, usagePolish: usagePolishSection, usageLimits: usageLimitsSection, usageGroups: usageGroupsSection,
@@ -21666,6 +21823,7 @@ async function main() {
     // ── every card shows its context size, warned past the gear's line ────
     await unit("contextSize", () => contextSizeSection(browser, base));
     await unit("ctxLine", () => ctxLineSection(browser, base));
+    await unit("landThePlane", () => landThePlaneSection(browser, base));
     await unit("peekEverywhere", () => peekEverywhereSection(browser, base));
     await unit("phoneListFit", () => phoneListFitSection(browser, base));
     await unit("phoneNudge", () => phoneNudgeSection(browser, base));

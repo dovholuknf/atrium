@@ -33,6 +33,8 @@
     --teal: rgb(var(--teal-rgb));
     --warn: rgb(var(--warn-rgb));
     --danger: rgb(var(--danger-rgb));
+    /* Text on a solid danger fill: the page's darkest colour on a dark skin, white on a light one (set in its block). */
+    --on-danger: var(--bg-0);
     /* The blue-tinted accent a folder rule wears, so a scope reads differently from a command pattern. It has
        a name because it carries a meaning, and confusing the two is how a rule ends up wider than anyone
        agreed to. */

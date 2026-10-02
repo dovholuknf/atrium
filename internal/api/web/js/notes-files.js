@@ -865,6 +865,7 @@ async function loadHousekeeping() {
   syncInputLag(s);
   fillMinCols(s);
   fillContextK(s);
+  if (typeof fillLandK === "function") fillLandK();
   if (typeof paintKeepaliveSettings === "function") paintKeepaliveSettings(s);
 }
 
@@ -1673,6 +1674,46 @@ async function saveContextK(value) {
 }
 
 function resetContextK() { saveContextK(""); }
+
+// The land-the-plane line's box. A per-browser pref (landThePlaneK, js/peek.js), so no daemon call: write it,
+// redraw, say what is in force. A box left empty is the default.
+function fillLandK() {
+  const box = document.getElementById("s-landk");
+  const reset = document.getElementById("s-landk-reset");
+  if (!box) return;
+  let raw = "";
+  try { raw = localStorage.getItem(LAND_K_KEY) || ""; } catch (e) {}
+  box.value = raw === "" ? "" : String(landThePlaneRawK());
+  box.placeholder = LAND_K_DEFAULT;
+  if (reset) reset.hidden = landThePlaneRawK() === LAND_K_DEFAULT;
+}
+
+function saveLandK(value) {
+  const box = document.getElementById("s-landk");
+  const want = value !== undefined ? value : String(box && box.value || "").trim();
+  const n = Number(want);
+  if (want !== "" && !(Number.isInteger(n) && n >= LAND_K_MIN && n <= LAND_K_MAX)) {
+    toast("that did not save", `the land-the-plane line takes a whole number of thousands of tokens from ${LAND_K_MIN} to ${LAND_K_MAX}`);
+    fillLandK();
+    return;
+  }
+  setLandThePlaneK(want);
+  fillLandK();
+  if (box) flashSaved(box);
+  landRedraw();
+  toast("land-the-plane line saved",
+    `a card is marked LAND from ${landThePlaneRawK()}k tokens of context, never below its warn size`);
+}
+
+function resetLandK() { saveLandK(""); }
+
+// A change here or in another window: redraw every row and field that carries the line.
+function landRedraw() {
+  if (typeof renderTermList === "function") { try { renderTermList(); } catch (e) {} }
+  if (typeof refresh === "function") { try { refresh(); } catch (e) {} }
+}
+addEventListener("storage", e => { if (e.key === LAND_K_KEY || e.key === null) { fillLandK(); landRedraw(); } });
+addEventListener("DOMContentLoaded", fillLandK);
 
 // pastePrefs is the last answer from the daemon, kept so that a paste does not
 // have to ask first. Null until something has looked, which pasteSettings does

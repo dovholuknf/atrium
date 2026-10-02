@@ -1336,6 +1336,21 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         card an agent launched tells its launcher once, so the launcher can have it report and stop. Every turn
         re-reads the whole context, so a big one costs on every turn. From 10 to 2000.</span>
     </div>
+    <!-- The land-the-plane line. This browser's own setting (atrium.landThePlaneK), not the room's: the status
+         line's zone is typed once here, and the board cannot read a shell script. -->
+    <div class="field" id="s-landk-field">
+      <label class="eyebrow" for="s-landk">context size to land the plane at, in thousands of tokens</label>
+      <div class="picker">
+        <input id="s-landk" type="number" min="10" max="2000" placeholder="200"
+          onchange="saveLandK()" style="max-width:110px">
+        <span class="unit">k tokens</span>
+        <a href="#" id="s-landk-reset" hidden onclick="resetLandK(); return false"
+          >reset to default (200)</a>
+      </div>
+      <span class="hintline">This browser's setting, kept here and not in the room. Match it to the status
+        line's LAND THE PLANE. Past it a card's row floods red with a LAND badge and its bar is full. Between
+        the warn size above and this it stays amber. Never below the warn size. From 10 to 2000.</span>
+    </div>
     <!-- Separate from text size on purpose. Shrinking the type to fit more
          rows on screen makes the rows harder to read, which is the wrong
          trade: the names should stay legible and the room between them should
