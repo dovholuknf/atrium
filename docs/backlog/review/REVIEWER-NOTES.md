@@ -29,6 +29,9 @@ on. They are kept short: one line of what, one of where. Add to it when a review
   room ref, and a PR branch called `claude/x` must never become landable. Keep each source in its own ref namespace
   (hub forge review e34e461a).
 
+- **git config set by env applies to every remote unless URL-scoped.** Use `http.<url>.extraHeader`, never a bare
+  `http.extraHeader`, or tokens go to the forge (hub forge rev 2). Windows hubs: refs differing only in case collide.
+
 ## Facts that are easy to get wrong
 
 - Card status `done` is set by `atrium_report` on a live session (finish.go:180). It is not "session over".
