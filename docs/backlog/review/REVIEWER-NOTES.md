@@ -48,6 +48,10 @@ on. They are kept short: one line of what, one of where. Add to it when a review
 
 ## How I work
 
+- Code on another room's disk: launch a quiet reviewer child there (atrium_launch room=...), don't ask for a paste.
+  m1mini's control tool has no `room` field yet (asked the orchestrator, 2026-10-02).
+- To the orchestrator: landing tips and blockers only. Never clint's questions: they stay in the docs until he asks.
+
 - Board changes: read the headless units, don't run the suite. Do `node --check` on what lands.
 - A pasted patch: rebuild the files and match the blob hashes in its `index` lines, which proves it byte-exact.
 - Mutation-check tests that guard a security property: break the guard and see the test fail.
