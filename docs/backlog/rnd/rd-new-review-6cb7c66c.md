@@ -75,3 +75,17 @@ doc-ok and a cherry-pick of the doc alone.
 
 Quality: a strong, honest doc. It measures before it proposes, keeps clint's words out of a public repo while
 still using what they say, and is plain about what L0 asks of each director, @review included.
+
+## Re-read at 988900cd (2026-10-02): OK, doc-ok
+
+One commit, only operator-focus.md. Every point is closed.
+- **M1.** A typed `effect` from a closed list (`design-choice`, `stage-order`, `setting-default`, `wording`,
+  `other`). `default_ok` is accepted only with the first four and refused at filing otherwise, and L4's acceptance
+  matches.
+- **M2.** Only the list's box parses. In a card's input, only `#12 y` or `/idea …` count, each confirmed on the board.
+  Everything else, "idea: x" included, goes to the card. L2 and L5 cover the "3 files are wrong" case.
+- **Small.** Records are 0700 and 0600. A second urgent row the same day goes to the top of the next batch, marked
+  "urgent, held: daily limit". Lever 1 reads "cycle when idle or after a batch, with REVIEWER-NOTES.md", and the
+  saving is somewhat under $25, less the cold starts.
+
+Verdict: OK, doc-ok 6cb7c66c^..988900cd. It lands alone by cherry-pick of the two.
