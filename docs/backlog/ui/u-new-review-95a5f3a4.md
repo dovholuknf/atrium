@@ -30,3 +30,11 @@ Verdict: OK 64a7e436..95a5f3a4, hub-ok and room-ok.
 
 Quality: after the Sonnet switch, right-sized. It offers what exists, shows what does not and why, and files the
 room work rather than faking it.
+
+## Re-read at c7f37de8 (2026-10-02): OK 64a7e436..c7f37de8
+
+The text only changes, and the low is closed: the message dialog now says that an idle session makes no tool calls,
+so the message waits until someone types into that other terminal. The body is still a fixed string, so it is safe
+under askUser's innerHTML.
+
+Verdict: OK 64a7e436..c7f37de8, hub-ok and room-ok.
