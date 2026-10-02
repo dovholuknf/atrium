@@ -227,3 +227,73 @@ enough.
 Atrium-Verdict: hold 607bb026..0fef152b
 Quality: the security core is careful: the reach is set by the listener, the rules run before git, the hook belongs to
 the hub, and every rule is mutation-checked. The hold is a clock id in the log that a restart can reorder.
+
+## Re-read: 4b1813cf
+
+Range `607bb026..4b1813cf`. Two commits on 0fef152b: 805d218e (code and tests) and 4b1813cf (docs).
+
+Closed:
+- **M1.** Ids are taken inside each transaction as `max(now, MAX(id) + 1)` from the table, and the in-memory counter
+  is gone.
+  - The hub runs `SetMaxOpenConns(1)`, so two transactions cannot read the same MAX.
+  - It is tested with the clock an hour behind after a restart, and with an operator push in that window.
+- **M2.** The log is now written pending, then settled.
+  - Begin writes the rows as pending under the repo lock, before git runs.
+  - Owner counts pending rows.
+  - Settle, in one transaction:
+    - turns each landed row into a done row with a new id, written after the takeover's release marker;
+    - drops the rest of the batch.
+  - So a refused push releases nothing.
+  - `settleLeftovers` runs at startup (`Reconcile`, before the hub serves) and at the start of every push under the
+    lock, before the owner is read.
+- **L1.** Caps are read from every NUL line.
+- **L2.** A second value of either card header is refused.
+- **L3.**
+  - Names are checked before the lock, with a test hook that the lock is not held.
+  - The response is buffered and written after the unlock: the `copyTo` defer is registered before the unlock's, so
+    it runs after it.
+  - Owner questions are capped at 8 rooms and 10 seconds. An owner not asked counts as unreachable and stays owned.
+- **L4.** Documented.
+- **L5.** Nobody pushes into an adopted mirror, at the advertisement or at the push. That removed the dead "except the
+  operator" branch, which was right.
+
+What I was asked to look at:
+
+- **A crash between Begin and git.** The row is pending and the ref has not moved. The startup reconcile drops it
+  before the hub serves. Until then the pending row owns a branch nobody can push to.
+- **A crash between git and Settle.** The ref holds the new sha, and reconcile settles it as done. Reconcile goes
+  through Settle, so a takeover gets its release marker on this path too.
+- **Settle failing.** The push stands, and the rows stay pending, so the branch is owned. The next push to that repo
+  settles it first. If the database stays broken, that next settle fails and the push gets a 500, which is the right
+  way to fail.
+- **Can a pending row pin a branch forever?** No. Only two things can be pending: a branch that landed, and the
+  pusher really owns it; or one that did not land, which the next push or a restart drops before deciding.
+  - Before the lock, `askOwners` may ask a room about a stale pending owner. Under the lock, after the settle, that
+    owner is gone and the push goes ahead, because a branch with no owner takes the push.
+  - The operator's `release` does not settle first. Releasing a stale pending writes a harmless marker, and the
+    pending is dropped later. Releasing a landed pending is right as well: the settled row gets an id after the marker
+    and becomes the owner.
+  - Nothing unpins by hand, and nothing needs to.
+- **The dev database note.** Confirmed: `0008_git_push` is in neither claude/landing nor claude/main. Only
+  `claude/f-hub-receive` contains 0fef152b. A dev database that recorded the first form gets a failing Begin, which
+  refuses pushes. That is a dev concern only.
+
+Tests at the tip, run fresh in a detached worktree because the worker restored the mutated files by hand:
+- gofmt is clean on the five packages, and vet is clean.
+- link, hubstore and edge pass.
+- gitsync failed once on the first run, when all four packages ran at once. It then passed five times: three runs on
+  its own and two under the same load. The first run's output was cut off, so I have no test name.
+- That is a flake I cannot reproduce, not a defect I can show. I am noting it, not holding on it.
+
+Open:
+- **N1: a gitsync flake under load, about 1 in 6 runs.** Run `go test -count=20 -run 'Push|Receive|Settle|Reconcile'
+  ./internal/gitsync/` on sg4 and fix whatever is timing-dependent. The likely cause is a test that widens a window
+  with a hook and then sleeps.
+- **The f-room-forwarder must-carry stands.** `Del` both card headers on `pr.Out`, now backed by the hub's refusal of a
+  header with more than one value.
+
+Verdict: hub-ok (re-read, 607bb026..4b1813cf)
+Quality: a strong fix. The pending-then-settle design closes the crash window without an undo, and every crash point
+lands on owned or dropped, never on unowned.
+
+Atrium-Verdict: hub-ok 607bb026..4b1813cf
