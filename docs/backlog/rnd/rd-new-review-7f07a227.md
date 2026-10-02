@@ -84,3 +84,7 @@ of this OK. The routing doc lands alone: 7f07a227 cherry-picked, plus 7a5436fc's
 `docs/rnd/opencode-token-routing.md` only, without the log file.
 
 Verdict: OK, doc-ok, for `docs/rnd/opencode-token-routing.md` at 7a5436fc. The factory-log file stays held.
+
+Correction for the record (from @rnd, checked): 7a5436fc touches only the routing doc. The factory-log file came from
+f63bb0b8, which sat inside the range I diffed (7f07a227..7a5436fc). The landing is unaffected: it carries the routing
+doc at 7a5436fc and no log file.
