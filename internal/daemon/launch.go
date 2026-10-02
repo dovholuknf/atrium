@@ -243,6 +243,9 @@ func runnerArgs(h *store.Harness, resume, rawPrompt, rawModel string) (args []st
 type launchOptions struct {
 	Model, Effort string
 	Args          []string
+	// Autocompact is the compaction window in k tokens, as text, for a harness row that
+	// declares AutocompactArgs. Empty passes nothing. Computed by autocompactK.
+	Autocompact string
 }
 
 // runnerArgsWith is runnerArgs with the effort and the extra argv as well.
@@ -297,6 +300,13 @@ func runnerArgsWith(h *store.Harness, resume, rawPrompt string, o launchOptions)
 	}
 	if args, err = withMapped(h, args, "effort", "level", h.EffortArgs, h.EffortEnv, o.Effort); err != nil {
 		return nil, "", err
+	}
+	// Autocompact is skipped, not refused, on a row that has no way to take it: nobody
+	// asked for it, atrium adds it where it can.
+	if len(h.AutocompactArgs) > 0 {
+		if args, err = withMapped(h, args, "autocompact", "size", h.AutocompactArgs, "", o.Autocompact); err != nil {
+			return nil, "", err
+		}
 	}
 	if len(o.Args) > 0 {
 		args = append(append([]string{}, args...), o.Args...)
@@ -927,6 +937,16 @@ func (d *Daemon) launchLocked(req LaunchRequest) (*store.Task, error) {
 		}
 	}
 	opts := launchOptions{Model: model, Effort: effort, Args: extraArgs}
+	// The compaction window, from the limit this card will be held to. The tags are the
+	// request's and the card's, and the agent mark is put on as the launch will.
+	probe := &store.Task{Tags: append([]string{}, req.Tags...)}
+	if task != nil {
+		probe.Tags = append(probe.Tags, task.Tags...)
+	}
+	if hasTag(req.Tags, OriginAgentTag) || agentLaunched(task) || reportTo != "" {
+		probe.Tags = append(probe.Tags, OriginAgentTag)
+	}
+	opts.Autocompact = fmt.Sprintf("%dk", d.autocompactK(probe))
 	args, logged, err := runnerArgsWith(h, req.Resume, wanted, opts)
 	if err != nil {
 		return nil, err

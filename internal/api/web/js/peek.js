@@ -105,6 +105,8 @@ function peekFoot(t) {
   if (!t) return "";
   const parts = [];
   if (t.runner) parts.push(t.runner);
+  // The line atrium holds the card to, and the size its runner compacts itself at.
+  if (t.autocompact) parts.push(`limit ${t.autocompact.limit_k}k · compacts at ${t.autocompact.window_k}k`);
   // Only for a card that says when it last did anything, by either field. The same number the sorts place it by.
   if (isFinite(cardIdleSeconds(t))) {
     const idle = cardIdleAge(t);

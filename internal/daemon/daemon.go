@@ -581,6 +581,7 @@ func New(opts Options) (*Daemon, error) {
 	d.ka.session = d.ctx.sessionOf
 	d.auto = newAutoContexts()
 	api.ContextSizeOf = d.contextSizeFor
+	api.AutocompactOf = d.autocompactFor
 	api.OutputAtOf = d.outputAtFor
 	// Token use on record, read only by a card's details. See usage.go.
 	d.usage = newUsageTracker(st)

@@ -837,6 +837,10 @@ type view struct {
 	// and never stored, and whether it is past the threshold. Absent on a card
 	// that is not Claude or has no transcript yet. See docs/runtime/activity-design.md.
 	ContextSize any `json:"context_size,omitempty"`
+	// Autocompact is the limit atrium holds the card to and the compaction window its
+	// runner is started with, both in thousands of tokens. Absent for a runner that
+	// takes no such flag. Worked out by the daemon, never stored.
+	Autocompact any `json:"autocompact,omitempty"`
 	// OutputAt is when the card's transcript last gained an assistant reply with
 	// text, mid-turn too, RFC3339. The phone re-reads the card's replies when it
 	// moves. Absent when not known: not Claude, no transcript, or not read since
@@ -974,6 +978,9 @@ func toView(t *store.Task) view {
 	}
 	if ContextSizeOf != nil {
 		v.ContextSize = ContextSizeOf(t.ID)
+	}
+	if AutocompactOf != nil {
+		v.Autocompact = AutocompactOf(t)
 	}
 	if OutputAtOf != nil {
 		v.OutputAt = OutputAtOf(t.ID)

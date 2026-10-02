@@ -206,14 +206,14 @@ func autoModeSubject(t *store.Task, mode string) bool {
 	return mode == store.AutoNewContextAgents && hasTag(t.Tags, OriginAgentTag) && !hasTag(t.Tags, SubagentTag)
 }
 
-// autoThreshold is the size at which a card is cycled, in tokens: the setting, or 70
-// percent of the window its statusline last reported, whichever is lower. The
-// statusline is used for the window and nothing else. The 30 percent left is room for
-// the capture turn, which costs context and must not be the turn that compacts.
+// cardLimit is the size atrium holds a card to, in tokens, from the settings and the
+// card's tags alone: auto_new_context_k, or context_ceiling_k for a ceiling card, the
+// lower of the two when the mode reaches that card too. It is what a launch can know, with
+// no statusline yet, and the part of autoThreshold that does not move with the window.
 //
-// A ceiling card is held to the ceiling, and to the global line as well when the mode
-// reaches it too: the lower of the two.
-func (d *Daemon) autoThreshold(t *store.Task) int64 {
+// It answers whatever the mode: with the mode off nothing cycles, and the number is still
+// the line the settings name, so the runner's own compaction can follow it.
+func (d *Daemon) cardLimit(t *store.Task) int64 {
 	limit := int64(api.EffectiveAutoNewContextK(d.st)) * 1000
 	if hasTag(t.Tags, ContextCeilingTag) {
 		ceiling := int64(api.EffectiveContextCeilingK(d.st)) * 1000
@@ -221,6 +221,56 @@ func (d *Daemon) autoThreshold(t *store.Task) int64 {
 			limit = ceiling
 		}
 	}
+	return limit
+}
+
+// The range the runner takes for its compaction window, in thousands of tokens.
+const (
+	minAutocompactK = 100
+	maxAutocompactK = 1000
+)
+
+// autocompactK is the compaction window a card's runner is started with, in thousands of
+// tokens: the card's limit plus 10 percent, clamped to what claude accepts. Atrium cycles
+// the context at the limit and the runner compacts ten percent later, as the backstop, so
+// no card runs past its window. A limit under 91k is raised to the floor, which is late
+// rather than early. One function, for the launch and for the card details.
+func (d *Daemon) autocompactK(t *store.Task) int {
+	k := int(d.cardLimit(t) * 11 / 10 / 1000)
+	if k < minAutocompactK {
+		return minAutocompactK
+	}
+	if k > maxAutocompactK {
+		return maxAutocompactK
+	}
+	return k
+}
+
+// Autocompact is the card details' two numbers: the limit and the runner's window.
+type Autocompact struct {
+	LimitK  int `json:"limit_k"`
+	WindowK int `json:"window_k"`
+}
+
+// autocompactFor is what the board shows for a card, nil when its runner takes no
+// compaction flag.
+func (d *Daemon) autocompactFor(t *store.Task) any {
+	h, err := d.st.Harness(t.Runner)
+	if err != nil || h == nil || len(h.AutocompactArgs) == 0 {
+		return nil
+	}
+	return &Autocompact{LimitK: int(d.cardLimit(t) / 1000), WindowK: d.autocompactK(t)}
+}
+
+// autoThreshold is the size at which a card is cycled, in tokens: the card's limit, or 70
+// percent of the window its statusline last reported, whichever is lower. The
+// statusline is used for the window and nothing else. The 30 percent left is room for
+// the capture turn, which costs context and must not be the turn that compacts.
+//
+// A ceiling card is held to the ceiling, and to the global line as well when the mode
+// reaches it too: the lower of the two.
+func (d *Daemon) autoThreshold(t *store.Task) int64 {
+	limit := d.cardLimit(t)
 	if tel := d.act.telemetry(t.ID); tel != nil && tel.Window > 0 {
 		if w := int64(tel.Window) * 70 / 100; w < limit {
 			limit = w

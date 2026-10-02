@@ -151,3 +151,7 @@ func EffectiveAutoNewContextK(st *store.Store) int {
 // Supplied by the daemon, which reads it from the card's transcript and holds
 // it in memory. Never stored. See docs/runtime/activity-design.md.
 var ContextSizeOf func(taskID string) any
+
+// AutocompactOf returns a card's context limit and runner compaction window, or nil.
+// Supplied by the daemon.
+var AutocompactOf func(t *store.Task) any
