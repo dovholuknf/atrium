@@ -85,3 +85,29 @@ span state (M3). A re-read covers sections 2.1, 2.2, 3 and 4 and O1's acceptance
 
 Quality: careful. The fields are traced to their sources, and keeping the hooks untouched is the right instinct.
 The gaps are in what the allowlist checks (the name, not the value) and in what the SDK does on its own.
+
+## Re-read at 844d5a2b (2026-10-02, m1mini): OK, doc-ok
+
+- **M1, closed.** Every field has a class (enum, count, id, operator-side name), and the exporter enforces it. dept
+  is an enum of the room's departments. The subagent type is a name only from the room's agent files, and always
+  `other` under opencode. The tool name is the built-in set or `mcp:<server>` from the room's config. There is an
+  `atrium.otel.redacted` counter, and the sentinel run covers the dept tag, the opencode title, the user name and the
+  hostname.
+- **M2, closed.** Explicit exporter options with a test for `OTEL_EXPORTER_OTLP_HEADERS`, a hand-built resource with
+  no detectors, no `RecordError`, no log Body from payloads, and no auto-instrumentation or global propagator.
+- **M3, closed.** The `otel` sink does one non-blocking enqueue, because its Append runs inline. Pairing state is
+  capped at 4,096 with TTLs and `unfinished`. A bus drop leads to a resubscribe and `gap`. O1 also tests a collector
+  that accepts and never answers, and checks the goroutine count stays flat.
+
+### Lows for O1
+
+- **Do not clear `OTEL_*` from the daemon's process env.** Runners inherit the daemon's env (`baseEnv`), and an
+  operator may configure Claude Code's own telemetry with the same variables. Clearing them in-process silently
+  turns that off for every card. Build the exporters with explicit options that override env (an explicit empty
+  `WithHeaders` replaces the env headers), or read the env into a scrubbed config. Never `os.Unsetenv`. The header
+  test stays as written.
+- **TTLs for permission and subagent pairs.** Section 4 gives TTLs for a turn and a tool call only. A permission can
+  wait hours on a human, so end it at its decision or at the card's next turn. A subagent ends at the parent turn's
+  end.
+
+Verdict: OK, doc-ok ac4b15a9..844d5a2b. It goes to clint with Q1 to Q4.
