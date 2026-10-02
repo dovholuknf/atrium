@@ -62,3 +62,19 @@ brief. A re-read covers sections 2, 3.1, 5 and 7 and S1's acceptance. doc-ok on 
 
 Quality: careful. It reuses the move and holds to the routing doc's findings, and it sees the exhausted-account
 problem that a naive design would miss. The gap is that a gate's presence was taken as its effect.
+
+## Re-read at 32516973 (2026-10-02): OK, doc-ok
+
+One commit, only the runner-switch doc, and every point is closed.
+- **R3 is split three ways.** R3a is a codex preflight that passes only if atrium's own hook reported a harmless
+  call, kept per room and codex version and re-run after an update. R3b refuses bypass, whether `bypassPermissions`
+  or the dangerous-bypass flag. R3c checks opencode's merged permission in effect, and refuses an outside repo
+  carrying `opencode.json` or `.opencode/`.
+- **The brief.** It is `HANDOFF.<alias>.switch.md`, which `.gitignore`'s `HANDOFF.*.md` covers, with a
+  `.git/info/exclude` line for other repos, at 0600. Keeping it inside the worktree is right, because the factory
+  opencode config denies `external_directory`. S1's acceptance checks that `git status` never shows it.
+- **The rest.** R5 and Q2 cover codex on private repos, memory included. A review card's brief carries
+  REVIEWER-NOTES.md and QUEUE.md. Every verdict and design carries a "written by <runner>, <model>" line. The early
+  capture runs once per reset window per reading kind.
+
+Verdict: OK, doc-ok aa8291a7^..32516973. It lands alone by cherry-pick of the two.
