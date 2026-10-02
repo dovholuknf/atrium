@@ -44,10 +44,15 @@ function saveToastLog(list) {
 // A REPEAT BUMPS THE LAST ENTRY rather than adding one, matching what the toast
 // itself does: four identical messages are one thing that happened four times,
 // and a list that says it four times is a list nobody scrolls.
+// The kind of alert being raised, set by `notify` for the length of its call so
+// every path that records (a toast, the OS notification, a sibling window)
+// stamps the entry with it. Never read from the title, which an agent can set.
+let logKind = "";
 function recordToLog(title, body, goTo, key, taskFor, growl) {
   const list = toastLog();
   const last = list[list.length - 1];
-  const sig = title + " " + (body || "");
+  const kind = logKind;
+  const sig = kind + " " + title + " " + (body || "");
   if (last && last.sig === sig) {
     if (growl) last.growl = growl;
     last.n = (last.n || 1) + 1;
@@ -57,7 +62,7 @@ function recordToLog(title, body, goTo, key, taskFor, growl) {
     // toast points at, and without it a permission opened from here lands on
     // the right tab and leaves you to find the request.
     list.push({ sig, title, body: body || "", goTo: goTo || "", taskFor: taskFor || "",
-      key: key || "", growl: growl || "", at: Date.now(), n: 1 });
+      key: key || "", growl: growl || "", kind, at: Date.now(), n: 1 });
   }
   saveToastLog(list);
   paintToastLogBadge();
@@ -170,7 +175,7 @@ function openToastLog() {
         // alert did rather than as two disconnected strings.
         const clip = t.title + (t.body ? "\n" + t.body : "");
         const arg = JSON.stringify(clip).replace(/'/g, "&#39;");
-        return `<div class="tlrow${t.at > seen ? " fresh" : ""}${/ is BLOCKED/.test(t.title) ? " blocker" : ""}"${
+        return `<div class="tlrow${t.at > seen ? " fresh" : ""}${t.kind === "blocker" ? " blocker" : ""}"${
           t.taskFor ? ` data-task="${esc(t.taskFor)}"` : ""}${
           t.goTo ? ` data-goto="${esc(t.goTo)}"` : ""}${
           t.key ? ` data-key="${esc(t.key)}"` : ""}>

@@ -201,10 +201,12 @@ if (soloBus) {
       // A ready alert for the card this window is reading is not said here,
       // whoever raised it. Logged.
       if (m.ready && termWatching(m.taskFor)) {
-        recordToLog(m.title || "", m.body || "", "stack", "", m.taskFor);
+        logKind = m.kind || "";
+        try { recordToLog(m.title || "", m.body || "", "stack", "", m.taskFor); } finally { logKind = ""; }
         return;
       }
-      toast(m.title || "", m.body || "", m.goTo || "", m.key || null, m.taskFor || null);
+      logKind = m.kind || "";
+      try { toast(m.title || "", m.body || "", m.goTo || "", m.key || null, m.taskFor || null); } finally { logKind = ""; }
       return;
     }
     // A POPPED-OUT WINDOW WAS ASKED TO GO SOMEWHERE ONLY THE BOARD CAN: an
@@ -698,6 +700,11 @@ const alerting = (() => {
   // `opts.pending` says the subject is a pending item, a card waiting on you or
   // a request, so the toast and the notification go once it is answered.
   function notify(title, body, goTo, permId, subject, taskFor, mark, artFor, opts) {
+    const was = logKind;
+    logKind = (opts && opts.kind) || "";
+    try { notifyOne(title, body, goTo, permId, subject, taskFor, mark, artFor, opts); } finally { logKind = was; }
+  }
+  function notifyOne(title, body, goTo, permId, subject, taskFor, mark, artFor, opts) {
     opts = opts || {};
     // A card whose terminal is popped out is spoken for by that window, which
     // is the only document that can be looked at instead of this one. Decides
@@ -752,7 +759,7 @@ const alerting = (() => {
     if (elsewhere && soloBus) {
       soloBus.postMessage({
         type: "win-toast", win: elsewhere, title, body: body || "",
-        goTo: goTo || "", key: key || "", taskFor: landOn || "", ready: !!opts.ready
+        goTo: goTo || "", key: key || "", taskFor: landOn || "", ready: !!opts.ready, kind: opts.kind || ""
       });
       return;
     }
@@ -973,7 +980,7 @@ const alerting = (() => {
         notify(first.length > 1 ? `${first.length} launched agents are BLOCKED` : d.title,
           d.body, "stack", "", first.length === 1 ? first[0].id : "",
           first.length === 1 ? (first[0].task_id || first[0].id) : "",
-          first.length === 1 ? iconForAlert(first[0]) : "", "", { pending: true });
+          first.length === 1 ? iconForAlert(first[0]) : "", "", { pending: true, kind: "blocker" });
       }
       return;
     }
@@ -1198,6 +1205,7 @@ const alerting = (() => {
       fresh.length === 1 ? (fresh[0].task_id || fresh[0].id) : "",
       fresh.length === 1 ? iconForAlert(fresh[0]) : "", "",
       { pending: kind === "permission" || kind === "waiting" || kind === "blocker",
+        kind: kind === "blocker" ? "blocker" : "",
         ready: kind === "waiting" || kind === "looksidle" });
   }
 })();
@@ -1217,7 +1225,7 @@ function whoseNames(items) {
 // own is the per-card override. The board has no per-card on/off for alerts, and
 // choosing a tone for one card is the one way a card says it wants to be heard.
 function quietDoer(kind, item) {
-  if (kind === "permission" || kind === "perm") return false;
+  if (kind === "permission" || kind === "perm" || kind === "blocker") return false;
   if (alerting.get().quietDoers === false) return false;
   return isDoer(item) && !(item.sound && item.sound !== "none");
 }
