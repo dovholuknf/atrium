@@ -93,6 +93,7 @@ The hub inbox row of `rnd-new-clint-inbox`, with these fields added:
 | `options` | `yes`/`no`, or lettered choices `a`, `b`, `c` |
 | `suggested` | one option, with one line of why |
 | `blocks` | what waits on it: a card, a stage, or nothing |
+| `effect` | what the suggested answer changes, from a closed list: `design-choice`, `stage-order`, `setting-default`, `wording`, or `other` (section 2.3) |
 | `default_at`, `default_ok` | an optional deadline, allowed only under section 2.3 |
 | `state` | open, answered, defaulted, withdrawn, later |
 | `answer`, `answered_at`, `via` | what clint said, when, and from where (board, phone, card) |
@@ -108,8 +109,10 @@ may withdraw its own row. Only clint answers one.
 - Each part becomes that row's answer and is handed to the asking card, through the relay as today.
 - Anything the parser cannot read (no number, an unknown number, a letter the row does not offer) is shown back on the
   spot as one line, and nothing is sent.
-- Typing a number into any card's input does the same, so an answer given in the wrong place still lands on the right
-  row.
+- **Only the list's box parses.** Text typed into a card's input goes to that card, unparsed, whatever it starts
+  with. Otherwise "3 files are wrong, fix them" would answer #3. The one exception is the explicit form `#12 y` at
+  the start of a card's input. The board then shows "answer #12: yes?" and sends it only on a confirm, and an
+  unconfirmed one goes to the card as typed.
 - Free text goes to the asker as information, never as an instruction to act.
 
 **An answer is information, not authorization**, exactly as in the inbox design. A yes on a row that would publish,
@@ -117,16 +120,19 @@ delete, deploy or spend does not count as approval. That action still meets its 
 
 ### 2.3 A default on a deadline, only where it is safe
 
-A row may say "if clint has not answered by Friday, take the suggested answer". The hub allows this only when the
-asker marks the row `default_ok`, and the hub refuses that mark unless all of these hold:
-- the suggested answer changes only atrium's own internal work: a design choice, an order of stages, a setting's
-  default value;
+A row may say "if clint has not answered by Friday, take the suggested answer". The rules for when that is safe:
+- the suggested answer changes only atrium's own internal work;
 - it can be undone;
 - it publishes nothing, deletes nothing, deploys nothing, spends nothing, and contacts no one outside;
 - it is not about another person, another organization's repo, an account, or a term of service.
 
-The asker declares these, so a declaration can be wrong. Two checks back it up:
-1. @review checks the mark when it reads the design that filed the row.
+The hub cannot read free text, so it cannot check these rules itself. What it enforces is the typed `effect` field.
+`default_ok` is accepted only on a row whose `effect` is one of `design-choice`, `stage-order`, `setting-default` or
+`wording`. A row with `effect: other`, or with no effect, is refused a default at filing. No effect on the list
+publishes, deletes, deploys, spends or contacts anyone.
+
+The asker picks the effect, so the label can be wrong. Two checks back it up:
+1. @review checks the effect when it reads the design that filed the row.
 2. A defaulted answer is still only information. A gated action still meets its own gate.
 
 The deadline is at least two days, and the row shows "defaults to *b* on Fri" from the moment it is filed. A
@@ -145,8 +151,9 @@ replaces the default, and the asker is told.
 
 ### 2.5 Capturing ideas
 
-- clint types `idea: ...` in the list's box, or at the start of any card's input. It becomes a row of kind `idea`,
-  with no question.
+- clint types `idea: ...` in the list's box, or `/idea ...` at the start of a card's input, which the board confirms
+  before it leaves the card, as for `#12 y` in 2.2. A plain "idea: ..." typed to a card goes to the card. It becomes a
+  row of kind `idea`, with no question.
 - The hub suggests an owner from the departments' keywords and the paths named, as in refactor section 2.3. The owner
   then files it as a backlog item (and the idea row closes, with a link) or answers "dropped, because ...".
 - A message with several asks is the same problem as several ideas. The director that receives it files one row per
@@ -157,7 +164,9 @@ replaces the default, and the asker is told.
 - **One batch a day.** At a fixed time clint picks, the bell gets one item: "8 decisions open, 3 new, 1 defaults
   tomorrow", which opens the list.
 - **Urgent.** A director may mark a row urgent only when it blocks a running stage. Urgent rows go to the bell at once,
-  at most one per director a day. More than that waits for the batch.
+  at most one per director a day. A second urgent row from the same director that day is filed as an ordinary "Now"
+  row at the top of the list, and it goes in the next batch. The board shows it as "urgent, held: daily limit", and
+  the director is told once that the limit was reached, so it does not re-send.
 - This replaces the pop-out notifier for decisions. The bell already exists, so this fits clint's ask to move that
   function into it.
 
@@ -206,7 +215,8 @@ reasoning and alternatives.
 
 The repo is public, and records quote people and name customers' repos. So:
 - **Now:** the record goes in a file on the director's own room, outside any repo, as
-  `~/.atrium/records/<dept>/<yyyy-mm-dd>.md`. The "for clint" part names the file.
+  `~/.atrium/records/<dept>/<yyyy-mm-dd>.md`. The directory is created `0700` and each file `0600`. The "for clint"
+  part names the file.
 - **Later:** once `docs/rnd/hub-documents-design.md` stage 1 is built, records are hub documents, readable from any
   room and from the board.
 - **The factory log** gets whichever answer clint gives for it. Reports and log entries should live in the same
@@ -301,13 +311,13 @@ cost.
 
 | # | Lever | Saved in this window, estimated | Build |
 | --- | --- | --- | --- |
-| 1 | **@review clears its context after each verdict.** A verdict is written to a file, so nothing is lost. At about 100k instead of 336k, its turns cost about a third | about $25 of $41 | none: one line in @review's queue, under `docs/rnd/lean-context-cycle-design.md` |
+| 1 | **@review cycles its context when idle or after a batch**, not after every verdict. A cold start re-reads 40k to 80k, and a cycle loses what one review teaches the next. So each cycle starts by reading the standing `docs/backlog/review/REVIEWER-NOTES.md` (started by @review, 86b95a63). At about 100k instead of 336k, a turn costs well under half | somewhat under $25 of $41, less the cold starts | none: one line in @review's queue, under `docs/rnd/lean-context-cycle-design.md` |
 | 2 | **Batch what goes to @review.** One message per ready range, not one per commit plus a nudge. 39 wakes to about 15 | about $18, before lever 1 | none: a habit for every director |
 | 3 | **Workers end or cycle at 150k context** | about $15 on u-m-card alone | the lean cycle's existing stage |
 | 4 | **News is sent as `fyi`, which a receiver that holds its notices keeps instead of waking** | a few dollars here, more on sg4 | none: a habit, already in the `atrium_say` description |
 | 5 | **The hub list replaces relays through the orchestrator** | sg4 side, about 4M context tokens a day (refactor 2.2), not measured here | stages L1 to L3 |
 
-Levers 1 and 2 overlap, so together they save about $30, not $43. They need no build, so they are allowed under the
+Levers 1 and 2 overlap, so together they save somewhat under $30, not $43. They need no build, so they are allowed under the
 pause.
 
 ### 4.5 What the full re-evaluation still needs
@@ -327,12 +337,12 @@ Each stage is useful on its own. Only L0 is allowed during the pause.
 
 | stage | what | owner | size | acceptance |
 | --- | --- | --- | --- | --- |
-| L0 | **No build.** `notes/DECISIONS-OPEN.md` on sg4 is the list. Directors cite its numbers and add new rows there, through the orchestrator, instead of re-asking. Reports take the two-part form of section 3, with the record in `~/.atrium/records/`. @review cycles after each verdict, and directors batch what they send it | the orchestrator, every director | today | clint's next batch of answers cites numbers. Over one day, the "for clint" parts average under 400 characters. @review's message turns average under $0.30 |
+| L0 | **No build.** `notes/DECISIONS-OPEN.md` on sg4 is the list. Directors cite its numbers and add new rows there, through the orchestrator, instead of re-asking. Reports take the two-part form of section 3, with the record in `~/.atrium/records/`. @review cycles when idle or after a batch, reading its standing notes file, and directors batch what they send it | the orchestrator, every director | today | clint's next batch of answers cites numbers. Over one day, the "for clint" parts average under 400 characters. @review's message turns average under $0.30 |
 | L1 | Hub rows with the fields of 2.1, stable numbers, the batch parser of 2.2, and delivery to the asking card. Imports `DECISIONS-OPEN.md` once, keeping its numbers | @fabric | 2 days | a batch `12 y, 14 n, 15 b` sets three rows and reaches three cards. An unknown number sends nothing and says why |
-| L2 | The list on the board and the phone: "Now" and "Later", the one box, and the focus limits of 2.4 | @ui | 2 days | 14 open rows from 4 directors show at most 10 in "Now" and at most 3 per director |
+| L2 | The list on the board and the phone: "Now" and "Later", the one box, and the focus limits of 2.4 | @ui | 2 days | 14 open rows from 4 directors show at most 10 in "Now" and at most 3 per director. `#12 y` typed into a card asks "answer #12: yes?" and sends only on the confirm. `12 y` typed into a card goes to the card |
 | L3 | A tool a director files a row with (`atrium_ask`), replacing a say to the orchestrator for a question | @runtime | 1 day | a director files a row, clint answers on the phone, and the director's next tool call shows the answer, with no orchestrator turn |
-| L4 | Defaults on a deadline (2.3), and the daily bell batch and urgent limit (2.6) | @fabric, @ui | 2 days | a `default_ok` row whose answer publishes is refused at filing. A safe row defaults at its time, shows as defaulted, and is replaced by a later answer |
-| L5 | The daily page (2.7) and idea capture (2.5) | @fabric, @ui | 2 days | the page renders on a phone with today's landings and spend matching `session_usage`. `idea: x` from a card's input becomes an idea row with a suggested owner |
+| L4 | Defaults on a deadline (2.3), and the daily bell batch and urgent limit (2.6) | @fabric, @ui | 2 days | a `default_ok` row with `effect: other` or no effect is refused at filing. A safe row defaults at its time, shows as defaulted, and is replaced by a later answer |
+| L5 | The daily page (2.7) and idea capture (2.5) | @fabric, @ui | 2 days | the page renders on a phone with today's landings and spend matching `session_usage`. `/idea x` from a card's input becomes an idea row with a suggested owner after the confirm, and `idea: x` typed to a card reaches the card unparsed. `3 files are wrong` typed to a card answers nothing |
 | T1 | The sg4 re-evaluation of 4.5 | a short worker on sg4 | half a day | the table of 4.2 with the orchestrator's rows added, then the card exits |
 
 L1 to L3 are the build of `rnd-new-clint-inbox`, and that backlog file points here.
