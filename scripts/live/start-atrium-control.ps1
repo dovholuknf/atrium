@@ -29,6 +29,8 @@ if (-not (Test-Path $CtlExe)) {
 
 $common = @('--dir', $CtlDir, '--db', (Join-Path $CtlDir 'atrium.db'), '--http', '127.0.0.1:7791',
   '--agent', '127.0.0.1:7787', '--isolated')
+# `room join` takes the join string only as an argument (no env var, file or stdin), so it sits in this process's own
+# command line for the run. That is fine: the string is spent after one use and no credential survives the run.
 $argv = if ($Join) { @('room', 'join', $Join) + $common } else { @('room') + $common }
 $shown = if ($Join) { ($argv -replace [regex]::Escape($Join), '<join>') -join ' ' } else { $argv -join ' ' }
 

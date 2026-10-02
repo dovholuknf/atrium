@@ -20,7 +20,7 @@ The board you open is the hub's, http://127.0.0.1:7778. It shows every room, inc
 which run on their own machines and are not started or stopped by anything here.
 
 sg4-control has its own binary so that a claude-sg4 deploy, which matches processes by the `.atrium\bin` directory,
-never stops it.
+never stops it. That binary, `.atrium\ctl-bin`, is pinned on purpose and updated by hand, so deploys do not refresh it.
 
 ## Rebooting Windows
 
@@ -75,4 +75,4 @@ Both scripts take `-WhatIf`, which says what they would do and does nothing.
 ## Known leftovers
 
 - The scheduled task `atrium2-watchdog` points at `C:\Users\claude\.atrium2\start-atrium2.ps1`, which no longer
-  exists. It starts nothing. Boot autostart is shelved, see `docs/packaging.md` before adding one.
+  exists. It starts nothing. Boot autostart is shelved, see `docs/release/packaging.md` before adding one.
