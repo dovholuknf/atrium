@@ -23,7 +23,7 @@ function ConvertTo-ShLiteral { param([string] $s) "'" + ($s -replace "'", "'\''"
 # the folder exists, and whether it is home, are the verb's to say on the room.
 #
 # ABSOLUTE ONLY, because the remote's working directory is whatever ssh gave it. A leading ~ is accepted and is
-# expanded by Expand-FolderArg. `;` and a newline are how the setting separates its entries, so a folder holding one
+# expanded by Expand-FolderArg. A semicolon and a newline are how the setting separates its entries, so a folder holding one
 # would become two.
 function Test-FolderArg {
     param([string] $dir)
