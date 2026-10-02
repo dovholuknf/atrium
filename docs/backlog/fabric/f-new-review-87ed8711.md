@@ -62,3 +62,27 @@ hub-ok and room-ok (scripts that change rooms).
 Quality: careful scripts that degrade to a warn everywhere the verb is missing. The smoke-outside design is right:
 it fails only on a held-open gate and never leaves a card. The miss is PowerShell's lesser-known quote characters,
 which the repo's existing quoting helper had already got wrong.
+
+## Re-read at 33478057 (2026-10-02): ROOM DEPLOY OK e0624583..33478057
+
+One commit over 87ed8711.
+- **The High is closed, in all six helpers.** `Quote-Ps` in provision-room, room-check, room-git, room-toolchain and
+  room-defender, and `ConvertTo-PsLiteral`, all use `-replace "['‘’‚‛]", '$0$0'`. That is a .NET
+  regex, so the `\u` escapes work under Windows PowerShell 5.1 as well. My proof rerun on m1mini: the same
+  `/srv/a’; Write-Output INJECTED; ’` now arrives as one argument (`room folders allow /srv/a’; Write-Output
+  INJECTED; ’`), and nothing runs. `$weird` gains `’`, `‘x’`, `$x`, a backtick and `a|b&c`, compared against the
+  argv the fake recorded under both sh and pwsh. The worker's mutation check (the old helper fails 3 checks, the fix
+  passes 101/101) matches.
+- **(1) A trailing `/` or `\` is trimmed** on path-like args before a native command, and a drive root keeps its
+  slash (it is refused anyway).
+- **(3) The manifest merge dedupes on `Format-FolderPath`**, and the first spelling stays.
+- `check-powershell.ps1` passes here. In this session's sandbox `test-room-folders.ps1` still stops at its first sh
+  fake (exit 126, a `$TMPDIR` that will not execute), so the PowerShell form was confirmed by the proof above, not
+  by the file here.
+
+**Sweep, a follow-up (you asked).** One more copy of the ASCII-only pattern is outside this range:
+`scripts/atrium-autostart.ps1:203`, `& '$($Exe -replace "'", "''")'`. The executable path goes into a PowerShell
+literal there. `scripts/live` and board-suite-remote have no such helper by name, but a `git grep "-replace \"'\""`
+over `scripts/` is the check. File it as a small follow-up for the same one-liner.
+
+Verdict: ROOM DEPLOY OK e0624583..33478057, hub-ok and room-ok.
