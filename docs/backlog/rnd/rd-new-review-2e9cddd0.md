@@ -108,3 +108,15 @@ Closed: M1, M2, S1, S2, S3
 Open: L1, L2
 
 Verdict: OK, doc-ok 2e9cddd0^..ceca58d8. It lands alone by cherry-pick of the two.
+
+## The lows at c17e9c20 (2026-10-02): OK, doc-ok
+
+- **L1, closed.** P2's "what" column now names only clint's walk rejections and @review's re-reads as sources of
+  false positives.
+- **L2, closed.** The hub accepts `knowledge-ok` only on a review-files-only commit it collected from @review's own
+  `claude/review` branch.
+
+Closed: L1, L2
+Open: none
+
+Verdict: OK, doc-ok c17e9c20^..c17e9c20.
