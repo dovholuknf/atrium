@@ -1587,7 +1587,7 @@ async function pass(signal) {
       // own mark (see `stuckMark`) as the whole signal.
       if (alerting.get().stuck === "alert") {
         alerting.check("stuck", lastTasks
-          .filter(t => isStuck(t))
+          .filter(t => isStuck(t) && !isBlocker(t))
           .map(t => Object.assign({}, t, {
             id: `${t.id}#${t.escalation.source}#${t.escalation.count}`, task_id: t.id
           })), t => ({
@@ -1595,6 +1595,18 @@ async function pass(signal) {
           body: t.spawned_by ? `launched by ${t.spawned_by}` : (t.why || t.worktree || "")
         }));
       }
+      // A BLOCKER RINGS WHATEVER THE SETTING SAYS, on the same rhythm: it is a
+      // card that never got going, held at a prompt like a permission. Keyed on
+      // the count, so each step of the backoff rings once.
+      alerting.check("blocker", lastTasks
+        .filter(t => isBlocker(t))
+        .map(t => Object.assign({}, t, {
+          id: `${t.id}#${t.escalation.source}#${t.escalation.count}`, task_id: t.id
+        })), t => ({
+        title: `${t.display_title} is BLOCKED: ${blockerReason(t)}`,
+        body: t.spawned_by ? `launched by ${t.spawned_by}` : (t.why || t.worktree || "")
+      }));
+      paintToastLogBadge();
     }
     if (perms) {
       badge("c-perm", perms.length);
@@ -1609,7 +1621,8 @@ async function pass(signal) {
     }
     // Retire any toast whose request or task has since been answered.
     if (waiting && perms) {
-      reapToasts(new Set([...waiting.map(t => t.id), ...perms.map(p => p.id)]));
+      reapToasts(new Set([...waiting.map(t => t.id), ...perms.map(p => p.id),
+        ...lastTasks.filter(isBlocker).map(t => `${t.id}#${t.escalation.source}#${t.escalation.count}`)]));
     }
     // Cards that are ready, plus requests waiting to be answered. The waiting
     // list holds both kinds, so counting it whole alongside the requests

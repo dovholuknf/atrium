@@ -103,6 +103,8 @@ function paintToastLogBadge() {
   const btn = document.getElementById("toastlog-open");
   if (!btn) return;
   btn.classList.toggle("has", unseen > 0);
+  // Red for as long as a card is blocked, whether or not the log was opened.
+  btn.classList.toggle("blocked-now", (typeof lastTasks === "undefined" ? [] : lastTasks).some(isBlocker));
   const n = btn.querySelector(".count");
   if (n) n.textContent = unseen > 99 ? "99+" : (unseen || "");
   if (typeof phoneBellPaint === "function") phoneBellPaint();
@@ -148,7 +150,19 @@ function openToastLog() {
       ? GROWL_SNOOZES.map(s => `<button class="tlremind" data-remind="${s[1]}">${s[0]}</button>`).join("")
       : `<button class="tlremind" data-remind="menu">remind me</button>`;
   };
-  setHTML(host, list.length
+  // BLOCKERS ARE PINNED ABOVE THE LOG, red, one row per card still blocked, and
+  // gone when the room clears it. Built from the live cards rather than the log,
+  // so a handled blocker leaves nothing pinned. The log keeps its own lines.
+  const pinned = (typeof lastTasks === "undefined" ? [] : lastTasks).filter(isBlocker).map(t =>
+    `<div class="tlrow blocker pinned clickable" data-task="${esc(t.id)}">
+      <div class="tlwhen">BLOCKED</div>
+      <div class="tlwhat">
+        <b>${esc(t.display_title || t.id)}</b>
+        <span>${esc(blockerReason(t))}</span>
+        ${t.supervised && !t.offline ? `<span class="tlremits"><button class="tlremind tlattach" data-attach="${esc(t.id)}">attach</button></span>` : ""}
+      </div>
+    </div>`).join("");
+  setHTML(host, pinned + (list.length
     ? list.map(t => {
         // What the copy button hands to the clipboard: the title, then the body
         // on a second line when there is one. The same shape that arrived as a
@@ -156,7 +170,7 @@ function openToastLog() {
         // alert did rather than as two disconnected strings.
         const clip = t.title + (t.body ? "\n" + t.body : "");
         const arg = JSON.stringify(clip).replace(/'/g, "&#39;");
-        return `<div class="tlrow${t.at > seen ? " fresh" : ""}"${
+        return `<div class="tlrow${t.at > seen ? " fresh" : ""}${/ is BLOCKED/.test(t.title) ? " blocker" : ""}"${
           t.taskFor ? ` data-task="${esc(t.taskFor)}"` : ""}${
           t.goTo ? ` data-goto="${esc(t.goTo)}"` : ""}${
           t.key ? ` data-key="${esc(t.key)}"` : ""}>
@@ -170,7 +184,7 @@ function openToastLog() {
             onclick='event.stopPropagation();copyLogRow(this, ${arg})'>${copyIcon()}</button>
         </div>`;
       }).join("")
-    : "");
+    : ""));
 
   // A ROW GOES WHERE THE TOAST WOULD HAVE GONE, and that is the whole
   // requirement: this list exists because a toast went past before it could be
@@ -190,6 +204,13 @@ function openToastLog() {
       tlRemindOpen = "";
       if (g) await growlRemind(g, Number(b.dataset.remind));
       openToastLog();
+    };
+  });
+  host.querySelectorAll(".tlattach").forEach(b => {
+    b.onclick = async e => {
+      e.stopPropagation();
+      if (!await closeOpenDialogs()) return;
+      attachTask(b.dataset.attach);
     };
   });
   host.querySelectorAll(".tlrow").forEach(r => {

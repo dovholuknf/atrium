@@ -577,6 +577,7 @@ function isStuck(t) {
 // words and the moment it got stuck on hover. The gear's "stuck agents"
 // setting at off takes it down with the alert.
 function stuckMark(t) {
+  if (isBlocker(t)) return blockerMark(t);
   if (!isStuck(t) || (typeof alerting !== "undefined" && alerting.get().stuck === "off")) return "";
   const since = new Date(t.escalation.since);
   const when = isNaN(since) ? "" : ". stuck since " + (since.toDateString() === new Date().toDateString()
@@ -585,6 +586,42 @@ function stuckMark(t) {
   const tip = t.escalation.text + when;
   return `<span class="chip warn icon stuck" aria-label="${esc(tip)}" data-tip="${esc(tip)}"
     >${stuckIcon()}</span>`;
+}
+
+// A BLOCKER: a launched card that never got going. The room says so with the
+// two launch sources, "launch-idle" (no hook activity since launch) and
+// "launch-prompt" (the terminal sits on a known prompt: folder trust, a login,
+// an update). It clears `escalation` on the first hook activity.
+function isBlocker(t) {
+  return !!(t && t.escalation && /^launch-(idle|prompt)$/.test(t.escalation.source) && !over(t));
+}
+
+// What it is waiting for, in words. Never the silent-stop wording.
+function blockerReason(t) {
+  const e = t.escalation;
+  if (e.source === "launch-prompt") {
+    if (e.prompt === "folder-trust") return "waiting at the folder-trust prompt";
+    if (e.prompt === "login") return "waiting at a login";
+    if (e.prompt === "update") return "waiting at an update prompt";
+  }
+  return e.text;
+}
+
+// THE BLOCKER MARK, in red with an exclamation, where the stuck mark is a warn
+// clock. Not silenced by the gear's "stuck agents" setting: like a permission,
+// it holds the agent at the door.
+function blockerMark(t) {
+  const tip = "BLOCKED: " + blockerReason(t);
+  return `<span class="chip bad icon blocker" aria-label="${esc(tip)}" data-tip="${esc(tip)}"
+    >${blockerIcon()}</span>`;
+}
+
+function blockerIcon() {
+  return `<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"
+    fill="none" stroke="currentColor" stroke-width="2"
+    stroke-linecap="round" stroke-linejoin="round">
+    <path d="M8 2.5v7"/><path d="M8 13h.01"/>
+  </svg>`;
 }
 
 function stuckIcon() {

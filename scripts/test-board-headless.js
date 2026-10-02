@@ -562,6 +562,7 @@ function mockTasks(reading) {
   if (tasksMode === "worn") { return wornTasks; }
   if (tasksMode === "keepalive") { return KA_CARDS; }
   if (tasksMode === "stuck") { return stuckCards(); }
+  if (tasksMode === "blocker") { return blockerCards(); }
   if (tasksMode === "ctxsize") { return CTX_CARDS; }
   if (tasksMode === "peek") {
     // Idle a second longer on every read, so a refresh redraws the entries.
@@ -8254,6 +8255,98 @@ async function stuckSection(browser, base) {
     stuckStep = 0;
   }
   if (errors.length) fail("the stuck page threw: " + errors.join(" | "));
+}
+
+// A BLOCKER IS A STUCK CARD THAT NEVER GOT GOING: red with an exclamation, the
+// reason in words, rung whatever the "stuck agents" setting says, pinned in the
+// bell with an attach, and gone when the room clears `escalation`. The room half
+// does not exist yet, so the card is a fixture of the agreed contract.
+let blockerEsc = null;
+function blockerCards() {
+  const launched = { supervised: true, tags: ["origin:agent"], spawned_by: "orchestrator" };
+  const c = Object.assign({}, T1, launched, { id: "bl-card", display_title: "never started" });
+  if (blockerEsc) c.escalation = Object.assign({ since: new Date(Date.now() - 2 * 60000).toISOString(), count: 1, minutes: 2 }, blockerEsc);
+  return [c];
+}
+async function blockerMarkSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const sp = await ctx.newPage();
+  const errors = [];
+  sp.on("pageerror", e => errors.push(String(e)));
+  const was = tasksMode;
+  tasksMode = "blocker";
+  blockerEsc = null;
+  const settle = async () => { await sp.evaluate(() => runRefresh()); await new Promise(r => setTimeout(r, 400)); };
+  const mark = () => sp.evaluate(() => {
+    const m = document.querySelector('#stack-list .stackrow[data-id="bl-card"] .chip.blocker');
+    return m ? { tip: m.getAttribute("data-tip") || "", bad: m.classList.contains("bad"), svg: !!m.querySelector("svg"),
+      clock: !!document.querySelector('#stack-list .stackrow[data-id="bl-card"] .chip.stuck') } : null;
+  });
+  const rung = () => sp.evaluate(() => JSON.parse(localStorage.getItem("atrium.toastlog") || "[]")
+    .filter(t => /is BLOCKED/.test(t.title || "")).length);
+  try {
+    await sp.goto(base, { waitUntil: "domcontentloaded" });
+    await sp.waitForSelector('#stack-list .stackrow[data-id="bl-card"]', { state: "attached", timeout: slow(15000) });
+    await sp.evaluate(() => localStorage.removeItem("atrium.toastlog"));
+    await settle();
+    if (await mark()) fail("a card with no escalation wears the blocker mark.");
+
+    // The stuck setting at off: a blocker is still marked and still rings.
+    await sp.evaluate(() => {
+      const el = document.getElementById("s-stuck");
+      el.value = "off";
+      el.dispatchEvent(new Event("change"));
+    });
+    blockerEsc = { source: "launch-prompt", prompt: "folder-trust", text: "stuck at the folder-trust prompt" };
+    await settle();
+    const m = await mark();
+    if (!m) fail("a launch-prompt card on the stack has no blocker mark.");
+    else {
+      if (!m.bad || !m.svg || m.clock) fail("the blocker mark is not a red exclamation, or the clock is drawn too: " + JSON.stringify(m));
+      if (!/waiting at the folder-trust prompt/.test(m.tip) || /stopped without reporting/.test(m.tip)) fail("the blocker mark does not say what it waits at: " + m.tip);
+    }
+    const there = await sp.evaluate(cards => {
+      const on = html => { const b = document.createElement("div"); b.innerHTML = html; return !!b.querySelector(".chip.blocker"); };
+      return { board: on(cardHTML(cards[0])), strip: on(termRowChips(cards[0])) };
+    }, blockerCards());
+    if (!there.board || !there.strip) fail("a blocker lacks its mark on the board or the strip: " + JSON.stringify(there));
+    if (await rung() < 1) fail("a blocker raised no alert with the stuck setting at off.");
+
+    // The count rising rings again, and the wording follows the prompt.
+    const before = await rung();
+    blockerEsc = { source: "launch-prompt", prompt: "login", text: "stuck at a login", count: 2 };
+    await settle();
+    if (await rung() <= before) fail("the next step of the backoff did not ring a blocker.");
+    const reasons = await sp.evaluate(() => ["login", "update", "other"].map(p => blockerReason(
+      { status: "running", escalation: { source: "launch-prompt", prompt: p, text: "T" } })).concat(
+      blockerReason({ status: "running", escalation: { source: "launch-idle", text: "no activity since launch, 2 min" } })));
+    if (reasons.join("|") !== "waiting at a login|waiting at an update prompt|T|no activity since launch, 2 min") fail("blocker reasons: " + reasons.join("|"));
+
+    // Pinned in the bell, red, with attach.
+    await sp.evaluate(() => openToastLog());
+    const pin = await sp.evaluate(() => {
+      const first = document.querySelector("#toastlog-list .tlrow");
+      return { pinned: !!first && first.classList.contains("pinned") && first.classList.contains("blocker"),
+        attach: !!(first && first.querySelector("[data-attach]")), text: first ? first.textContent : "",
+        bell: document.getElementById("toastlog-open").classList.contains("blocked-now") };
+    });
+    if (!pin.pinned) fail("the blocker is not the pinned first row of the bell.");
+    if (!pin.attach) fail("the pinned blocker offers no attach.");
+    if (!/waiting at a login/.test(pin.text)) fail("the pinned blocker does not say why: " + pin.text);
+    if (!pin.bell) fail("the bell is not red while a card is blocked.");
+
+    // Cleared by the room: gone from the card and from the bell's pin.
+    blockerEsc = null;
+    await settle();
+    await sp.evaluate(() => openToastLog());
+    if (await mark()) fail("a cleared blocker still wears the mark.");
+    if (await sp.evaluate(() => !!document.querySelector("#toastlog-list .tlrow.pinned"))) fail("a cleared blocker is still pinned.");
+  } finally {
+    await ctx.close();
+    tasksMode = was;
+    blockerEsc = null;
+  }
+  if (errors.length) fail("the blocker page threw: " + errors.join(" | "));
 }
 
 // Three Claude cards: one under the context threshold, one past it, and one
@@ -18252,7 +18345,7 @@ async function main() {
       untaggedSort: untaggedSortSection, newCard: newCardSection, themePreview: themePreviewSection, land: landSection, reselect: reselectSection,
       toastsTop: toastsTopSection, sayWhen: sayWhenSection, pasteSpinner: pasteSpinnerSection,
       pasteBig: pasteBigSection, pasteBusy: pasteBusySection, typing: typingSection, alias: aliasSection, askAgain: askAgainSection, copySelect: copySelectSection, busyGuard: busyGuardSection, keepalive: keepaliveSection,
-      stuck: stuckSection, carryLink: carryLinkSection,
+      stuck: stuckSection, blockerMark: blockerMarkSection, carryLink: carryLinkSection,
       skinScope: skinScopeSection, skinHeal: skinHealSection, toastLives: toastLivesSection,
       history: historySection, contextSize: contextSizeSection, peekEverywhere: peekEverywhereSection, cardRoute: cardRouteSection,
       quietDoer: quietDoerSection, looksIdle: looksIdleSection, notifyOff: notifyOffSection,
@@ -20230,6 +20323,7 @@ async function main() {
     await unit("keepalive", () => keepaliveSection(browser, base));
     // ── a stuck card wears a mark, and the gear decides whether it rings ───
     await unit("stuck", () => stuckSection(browser, base));
+    await unit("blockerMark", () => blockerMarkSection(browser, base));
     // ── every card shows its context size, warned past the gear's line ────
     await unit("contextSize", () => contextSizeSection(browser, base));
     await unit("peekEverywhere", () => peekEverywhereSection(browser, base));
