@@ -1,21 +1,26 @@
 # OpenTelemetry export: atrium sends traces, metrics and logs to a collector the operator runs
 
-Status: design by @rnd, 2026-10-02. Nothing built. Asked by clint, from question 4 of
+Status: design by @rnd, 2026-10-02, revised for @review's HOLD (0d5d2db5, `docs/backlog/rnd/rd-new-review-b1ca8e47.md`).
+Nothing built. Asked by clint, from question 4 of
 `docs/rnd/langchain-openwiki-spike.md` ("rnd task").
 
 ## 0. The answer
 
 - **Each atrium process exports what it already knows**, by OTLP over HTTP, to one endpoint: a collector the
   operator runs. The collector holds any vendor key (LangSmith, Grafana Tempo, Honeycomb, Jaeger) and forwards to
-  them. Atrium holds no key. There is no headers setting, so there is nowhere to put one.
+  them. Atrium holds no key. There is no headers setting, and the SDK's own `OTEL_*` env inputs are
+  cleared and unused (section 3), so there is nowhere to put one.
 - **Off by default, one setting.** `otel_endpoint`, empty by default. Empty means no exporter, no goroutine and no
   connection.
 - **Never on the hot path.** Hooks do not change: they still post to the room daemon with a 1 s budget, and the
   daemon still answers before it decodes. The exporter is a subscriber to things the daemon already publishes after
-  the fact: the in-memory event bus, the event sink after commit, and the usage rows. It has a bounded queue and
-  drops when full, counting what it drops. A dead collector costs a counter, never a wait.
-- **An allowlist decides what leaves.** Every attribute is named in one table in code and marked exported, under the
-  per-field rule of `docs/runtime/scm-design.md`. Anything not in the table is dropped. Prompt text, reply text, tool
+  the fact: the in-memory event bus, the event sink after commit, and the usage rows. The event sink runs on the
+  writer's goroutine, so it only does a non-blocking enqueue. Every queue and every map of open spans is bounded, and
+  a full one drops and counts. A dead collector, or one that never answers, costs a counter, never a wait.
+- **An allowlist decides what leaves, by field and by value.** Every attribute is named in one table in code and
+  marked exported, under the per-field rule of `docs/runtime/scm-design.md`, with a value class (enum, count, id or
+  operator-side name) enforced at the exporter. Anything not in the table is dropped, and a value outside its class
+  becomes `other`. Prompt text, reply text, tool
   input, permission commands and details, paths, titles, recaps, and anything a source or card holds never leave the
   machine.
 - **What is emitted:**
@@ -61,16 +66,18 @@ Status: design by @rnd, 2026-10-02. Nothing built. Asked by clint, from question
 ### 2.1 Resource, on everything
 
 `service.name` (`atrium-room` or `atrium-hub`), `service.version`, `atrium.room` (the room's name), `os.type` and
-`host.arch`. **Not `host.name`**: the room's name already says which machine, and a hostname is a local fact.
+`host.arch`. **Not `host.name`**: the room's name already says which machine, and a hostname is a local fact. The
+resource is built by hand. No SDK resource detector runs, because the default detectors add `host.name`,
+`process.command_args`, the executable's path and the process owner.
 
 ### 2.2 Traces, from the room daemon
 
 | Trace or span | Starts and ends at | Attributes |
 | --- | --- | --- |
-| **turn** (root, one trace per turn) | `prompted` to the Stop hook (`/stop`) | `atrium.card.id`, `atrium.dept`, `atrium.harness`, `gen_ai.request.model`, `atrium.turn.cause` (operator, say, restart-wake, resume, subagent, keepalive, unknown), `atrium.turn.end` (needs-input, done, ...) |
-| tool call (child) | `tool-start` to `tool-end` | `atrium.tool.name` (Bash, Read, Edit, or `mcp__<server>__<tool>`), `atrium.tool.failed` |
+| **turn** (root, one trace per turn) | `prompted` to the Stop hook (`/stop`) | `atrium.card.id`, `atrium.dept` (enum, section 3), `atrium.harness`, `gen_ai.request.model`, `atrium.turn.cause` (operator, say, restart-wake, resume, subagent, keepalive, unknown), `atrium.turn.end` (needs-input, done, ...) |
+| tool call (child) | `tool-start` to `tool-end` | `atrium.tool.name` (a closed set of built-in tools, or `mcp:<server>` for a server in the room's own MCP config, else `other`), `atrium.tool.failed` |
 | permission (child) | `perm-requested` to `perm-decided` | `atrium.tool.name`, `atrium.perm.decision` (allow, deny), `atrium.perm.by` as a kind only (rule, auto, human, replay, message, shelved, deploy-hold, hub-auto) |
-| subagent (child) | `subagent-start` to `subagent-end` | `atrium.subagent.type` (the agent type name) |
+| subagent (child) | `subagent-start` to `subagent-end` | `atrium.subagent.type`: the agent's name only when it is a file in the room's `~/.claude/agents`, else `other`. Under opencode it is the generated session title, made from the prompt, so it is always `other` |
 | compaction (event on the turn) | `compacted` | none |
 | **PR run** (root, one trace per run) | the run's start to ready or failed | `atrium.pr.id` (the row id, not the repo or number), `atrium.pr.state`, `atrium.pr.findings` (a count) |
 | step (child) | each of fetch, prime, panel, verify, critics, merge, write | `atrium.pr.step`, `atrium.cost.usd` (from receipts), `atrium.pr.step.error` as a class only |
@@ -120,9 +127,33 @@ endpoint. Everything a hook knows reaches the daemon already.
 
 ## 3. What never leaves the machine
 
-**The allowlist is the rule.** One table in code (`internal/otelx/fields.go`) names every attribute that may be
-exported, as in `scm-design.md`'s per-field rule. An attribute not in the table is dropped at the exporter, and a test
-fails when a new field reaches the exporter unmarked. Never in the table:
+**The allowlist is the rule, for fields and for values.** One table in code (`internal/otelx/fields.go`) names every
+attribute that may be exported, as in `scm-design.md`'s per-field rule. An attribute not in the table is dropped at
+the exporter, and a test fails when a new field reaches the exporter unmarked.
+
+**Naming the field is not enough**, because the collector forwards to third parties, and any free-text value is a
+way out. So every field in the table also has a value class, enforced at the exporter and tested:
+
+| Class | Rule | Fields |
+| --- | --- | --- |
+| enum | one of a fixed list in code, else `other` | dept (the departments configured on the room, since a `dept:` tag is free text set by agents and intake, `usage.go:173-180`), cause, status, decision, `perm.by`, token kind, step, state, error class, built-in tool names, harness ids |
+| count | a non-negative number | tokens, turns, findings, denials, durations, gauges, cost |
+| id | a ULID or UUID shape, else dropped | `atrium.card.id`, `atrium.pr.id` |
+| name | `[A-Za-z0-9_.:-]{1,64}`, from operator-side sources only (the room's agent files, MCP config, harness rows, recipe panel), else `other` | subagent type, `mcp:<server>`, fork label, model |
+
+A value that fails its class becomes `other`, or is dropped for an id, and `atrium.otel.redacted` counts it.
+
+**The SDK has inputs of its own, and none of them are used:**
+- The OTLP exporters read `OTEL_EXPORTER_OTLP_HEADERS`, `OTEL_EXPORTER_OTLP_ENDPOINT` and the rest of `OTEL_*` from
+  the environment by default. Atrium builds them with explicit options only, clears every `OTEL_*` variable before
+  it builds them, and a test sets `OTEL_EXPORTER_OTLP_HEADERS` and checks that no header is sent.
+- No resource detectors (2.1).
+- No `RecordError`, which would attach a raw message and a stack. A span's status is set from the error class only.
+- No log `Body` taken from an event payload. A log record carries only allowlisted attributes.
+- No auto-instrumentation: no `otelhttp`, no `otelsql`, no global propagator. Every attribute is set by the exporter
+  from the table.
+
+Never in the table:
 
 | Never exported | Why |
 | --- | --- |
@@ -135,9 +166,10 @@ fails when a new field reaches the exporter unmarked. Never in the table:
 | env names and values, launch args | can hold secrets |
 | raw error messages | they carry paths and arguments. Exported as a class (`timeout`, `exit`, `budget`) |
 
-**Tested with sentinels.** O1's acceptance seeds a sentinel string into a prompt, a Bash command, a path, a title
-and an alias. It runs a day of normal work against a collector with a file exporter, and greps the output for each
-sentinel, and for `/Users/` and `C:\`. Any hit fails the stage.
+**Tested with sentinels.** O1's acceptance seeds a sentinel string into a prompt, a Bash command, a path, a title,
+an alias, a `dept:` tag and an opencode session title. It runs a day of normal work against a collector with a file
+exporter, and greps the output for each sentinel, for `/Users/` and `C:\`, and for the machine's user name and
+hostname. Any hit fails the stage.
 
 ## 4. Export, and the hot path
 
@@ -149,15 +181,25 @@ sentinel, and for `/Users/` and `C:\`. Any hit fails the stage.
 - **Off the hot path, by construction:**
   - Hooks and their routes do not change. Nothing new runs between a hook's POST and the daemon's `{"ok":true}`.
   - The exporter reads from two places that are already after the fact:
-    - a subscriber on the in-memory bus, which never blocks a publisher and drops a slow subscriber;
-    - the `otel` cold sink, fed after the store commits and best-effort by contract.
+    - a subscriber on the in-memory bus, which never blocks a publisher and drops a slow subscriber. When the bus
+      drops the exporter, it resubscribes, closes its open spans with status `gap`, and counts the gap in
+      `atrium.otel.gaps`;
+    - the `otel` cold sink. **This one is not off the path by itself**: a cold sink's `Append` runs inline on the
+      writer's goroutine after commit (`internal/store/tasks.go:1614-1625`), inside `/permission` among others. So the
+      `otel` sink does one non-blocking enqueue onto a bounded channel and returns. A full channel is a
+      `dropped++`, never a wait.
+  - Pairing state is bounded. A start waiting for its end (a turn, a tool call, a permission, a subagent) is held in a
+    map capped at 4,096 entries. An entry older than its TTL (1 hour for a turn, 10 minutes for a tool call) is ended
+    with status `unfinished` and counted. At the cap the oldest is ended the same way.
   - Spans are built from the events' own timestamps, so a late event still gives a right duration.
   - Each signal has one bounded queue (the SDK's batch processor, 2048 items, never blocking when full) and one
     goroutine that batches every 5 s or 512 items. A send has a 5 s timeout and one retry, then the batch is dropped
     and `atrium.otel.dropped` counts it. Memory is bounded by the queues.
 - **Acceptance for the hot path** (O1): the `/activity`, `/permission` decide and `/stop` latencies are measured
-  over 1,000 posts each, with the exporter off and on, and the p99s agree within noise. Then the collector is
-  killed: posts keep their latency, and `atrium.otel.dropped` rises.
+  over 1,000 posts each, with the exporter off and on, and the p99s agree within noise. Then two failures:
+  - **the collector is killed**: posts keep their latency, and `atrium.otel.dropped` rises;
+  - **a collector that accepts and never answers**: posts keep their latency, the sink's channel fills and drops,
+    and the daemon's goroutine count stays flat.
 
 **The setting.** `otel_endpoint` is a room setting (`setting` table, `store/settings.go`, one field in
 `/v1/settings`) and a hub setting (`hub_setting`). It is read per batch, not at open, so a change applies without a
@@ -177,12 +219,16 @@ block takes its key from the collector's env, never atrium's:
 
 ### O1. The room exporter and the metrics. @runtime. About 2 days.
 
-- The `otel_endpoint` setting, the bus subscriber, and the allowlist table with its test.
-- The metrics of 2.3, and the exporter's own counters.
+- The `otel_endpoint` setting, the bus subscriber, the allowlist table with its value classes, and their tests.
+- The SDK built by hand: explicit exporter options, `OTEL_*` cleared, a hand-built resource, no detectors and no
+  auto-instrumentation.
+- The metrics of 2.3, and the exporter's own counters (exported, dropped, redacted, gaps, unfinished).
 - **Acceptance**:
   - Empty means no goroutine and no connection, checked by a test.
   - A local collector with a debug exporter receives every metric.
-  - The hot-path measurements of section 4.
+  - `OTEL_EXPORTER_OTLP_HEADERS` set in the daemon's env sends no header.
+  - A `dept:` tag and a subagent name outside their classes are exported as `other`.
+  - The hot-path measurements of section 4, both failure cases included.
   - The sentinel grep of section 3 passes.
 
 Useful alone: dashboards for tokens, gate wait and queue depth.
