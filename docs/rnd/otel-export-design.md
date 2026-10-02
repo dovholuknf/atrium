@@ -9,7 +9,7 @@ Nothing built. Asked by clint, from question 4 of
 - **Each atrium process exports what it already knows**, by OTLP over HTTP, to one endpoint: a collector the
   operator runs. The collector holds any vendor key (LangSmith, Grafana Tempo, Honeycomb, Jaeger) and forwards to
   them. Atrium holds no key. There is no headers setting, and the SDK's own `OTEL_*` env inputs are
-  cleared and unused (section 3), so there is nowhere to put one.
+  overridden by explicit options (section 3), so there is nowhere to put one.
 - **Off by default, one setting.** `otel_endpoint`, empty by default. Empty means no exporter, no goroutine and no
   connection.
 - **Never on the hot path.** Hooks do not change: they still post to the room daemon with a 1 s budget, and the
@@ -145,8 +145,10 @@ A value that fails its class becomes `other`, or is dropped for an id, and `atri
 
 **The SDK has inputs of its own, and none of them are used:**
 - The OTLP exporters read `OTEL_EXPORTER_OTLP_HEADERS`, `OTEL_EXPORTER_OTLP_ENDPOINT` and the rest of `OTEL_*` from
-  the environment by default. Atrium builds them with explicit options only, clears every `OTEL_*` variable before
-  it builds them, and a test sets `OTEL_EXPORTER_OTLP_HEADERS` and checks that no header is sent.
+  the environment by default. Atrium builds them with explicit options that override the env (an empty
+  `WithHeaders` replaces the env's headers), and never unsets anything in its own process env: runners inherit that
+  env and may use `OTEL_*` for their own telemetry. A test sets `OTEL_EXPORTER_OTLP_HEADERS` and checks that no
+  header is sent.
 - No resource detectors (2.1).
 - No `RecordError`, which would attach a raw message and a stack. A span's status is set from the error class only.
 - No log `Body` taken from an event payload. A log record carries only allowlisted attributes.
@@ -190,7 +192,8 @@ hostname. Any hit fails the stage.
       `dropped++`, never a wait.
   - Pairing state is bounded. A start waiting for its end (a turn, a tool call, a permission, a subagent) is held in a
     map capped at 4,096 entries. An entry older than its TTL (1 hour for a turn, 10 minutes for a tool call) is ended
-    with status `unfinished` and counted. At the cap the oldest is ended the same way.
+    with status `unfinished` and counted. A permission has no time TTL, because a human can take hours: it ends at its
+    decision, or as `unfinished` at the card's next turn. A subagent ends with its parent turn. At the cap the oldest is ended the same way.
   - Spans are built from the events' own timestamps, so a late event still gives a right duration.
   - Each signal has one bounded queue (the SDK's batch processor, 2048 items, never blocking when full) and one
     goroutine that batches every 5 s or 512 items. A send has a 5 s timeout and one retry, then the batch is dropped
@@ -220,7 +223,7 @@ block takes its key from the collector's env, never atrium's:
 ### O1. The room exporter and the metrics. @runtime. About 2 days.
 
 - The `otel_endpoint` setting, the bus subscriber, the allowlist table with its value classes, and their tests.
-- The SDK built by hand: explicit exporter options, `OTEL_*` cleared, a hand-built resource, no detectors and no
+- The SDK built by hand: explicit exporter options that override `OTEL_*` (never unset), a hand-built resource, no detectors and no
   auto-instrumentation.
 - The metrics of 2.3, and the exporter's own counters (exported, dropped, redacted, gaps, unfinished).
 - **Acceptance**:
