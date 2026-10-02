@@ -16943,6 +16943,34 @@ async function hubReposSection(browser, base) {
   if (!bad) console.log("hubRepos ok");
 }
 
+// The notification tray's head is one row at the tray's width and on a phone: every visible button shares one top, and
+// no button is clipped. A wrapped button reads as broken (css/notify.css).
+async function trayHeadSection(browser, base) {
+  for (const w of [1280, 390]) {
+    const ctx = await browser.newContext({ viewport: { width: w, height: 800 } });
+    const errors = [];
+    try {
+      const p = await ctx.newPage();
+      p.on("pageerror", e => errors.push(e.message));
+      await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+      await p.waitForFunction(() => typeof clearToastLog === "function", null, { timeout: slow(15000) });
+      await p.evaluate(() => { document.getElementById("toastlog-phone").hidden = false; document.getElementById("toastlog").showModal(); });
+      await p.waitForTimeout(300);
+      const r = await p.evaluate(() => {
+        const head = document.querySelector("#toastlog .dlg-head"), hr = head.getBoundingClientRect();
+        const bs = [...head.querySelectorAll(":scope > button")].filter(b => b.offsetParent);
+        return { n: bs.length, tops: [...new Set(bs.map(b => Math.round(b.getBoundingClientRect().top)))],
+          clipped: bs.filter(b => b.getBoundingClientRect().right > hr.right + 1 || b.getBoundingClientRect().left < hr.left).length };
+      });
+      if (r.n < 4) fail("trayHead " + w + ": expected the buttons, got " + r.n);
+      if (r.tops.length !== 1) fail("trayHead " + w + ": the buttons wrap onto " + r.tops.length + " lines " + JSON.stringify(r.tops));
+      if (r.clipped) fail("trayHead " + w + ": " + r.clipped + " buttons run out of the head");
+      if (errors.length) fail("trayHead " + w + ": page errors: " + errors.join(" | "));
+    } finally { await ctx.close(); }
+  }
+  if (!bad) console.log("trayHead ok");
+}
+
 // One hover per row: a row carries the tooltip and no descendant repeats it.
 async function oneTooltipSection(browser, base) {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
@@ -18840,7 +18868,7 @@ async function main() {
       termDebug: termDebugSection, termSortStarted: termSortStartedSection,
       noReadyChildren: noReadyChildrenSection, childUnderParent: childUnderParentSection, topNav: topNavSection,
       childFold: childFoldSection, liveHome: liveHomeSection,
-      pulls: pullsSection, hubRepos: hubReposSection, pullsAbsent: pullsAbsentSection, oneTooltip: oneTooltipSection, burnChart: burnChartSection };
+      pulls: pullsSection, hubRepos: hubReposSection, trayHead: trayHeadSection, pullsAbsent: pullsAbsentSection, oneTooltip: oneTooltipSection, burnChart: burnChartSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -20833,6 +20861,7 @@ async function main() {
     await unit("growlOnIt", () => growlOnItSection(browser, base));
     await unit("mGrowlQuestion", () => mGrowlQuestionSection(browser));
     await unit("hubRepos", () => hubReposSection(browser, base));
+    await unit("trayHead", () => trayHeadSection(browser, base));
     await unit("bootClean", () => bootCleanSection(browser, base));
     await unit("mWorking", () => mWorkingSection(browser));
     await unit("mOwnMessages", () => mOwnMessagesSection(browser));

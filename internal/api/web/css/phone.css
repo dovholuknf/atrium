@@ -547,3 +547,15 @@
     .cardgroup > summary, .stackgroup > summary { padding-top: 4px; padding-bottom: 4px; }
     #stack-list > * + * { margin-top: 4px; }
   }
+
+  /* NO BUTTON DROPS TO A SECOND LINE. A wrapped row of pills or actions reads as broken, so on a phone a row of
+     many (the filter pills, the pane tabs) stays one line and scrolls sideways, and a row of two or three
+     actions keeps one line and ellipsizes the label instead. The tray head does the same in css/notify.css. */
+  @media (max-width: 640px) {
+    .seg:not(.trayseg), .pane-nav { flex-wrap: nowrap; overflow-x: auto; max-width: 100%; scrollbar-width: none; }
+    .seg:not(.trayseg)::-webkit-scrollbar, .pane-nav::-webkit-scrollbar { display: none; }
+    .seg:not(.trayseg) > button, .pane-nav > button { flex: none; }
+    .seg#h-mode > button { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .toolbar { flex-wrap: nowrap; }
+    .toolbar > button { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  }
