@@ -67,3 +67,20 @@ cherry-pick.
 Quality: careful and honest about what is measured and what is not. It is grounded in the one graded run, and the
 terms question is the right blocker to raise. The miss is that opencode's plugins load from the project, the same
 trust boundary the r-pr-run review found for claude's settings.
+
+## Re-read at 7a5436fc (2026-10-02): OK for the routing doc, doc-ok
+
+- **The High is closed.** Step 6 runs with its cwd in `<run>/work`, never in or under the checkout, with no project
+  config or `.opencode` from the PR. The parent-dir `opencode.json` question is marked unverified and put on K3,
+  whose acceptance now includes the `src/.opencode/plugins/marker.js` proof.
+- **The rest is closed.** `permission.asked` and `replied` are now described as observed events, with the SDK reply
+  marked unverified and put on K2, which also checks the `plugin/` vs `plugins/` directory. The $60 mix is shown. The
+  verifier counts the $0.24 cache write (about $0.88 for 20). The citations are "mostly accurate", the edit path
+  patterns are marked unverified, and Q2 separates public PRs from private repos.
+
+**But 7a5436fc also adds `docs/rnd/factory-log/2026-10-02-am.md`**, a new factory log entry that quotes clint
+verbatim. That is the class held in rd-new-review-6cf2c9a2.md until clint says where the log lives. It is not part
+of this OK. The routing doc lands alone: 7f07a227 cherry-picked, plus 7a5436fc's change to
+`docs/rnd/opencode-token-routing.md` only, without the log file.
+
+Verdict: OK, doc-ok, for `docs/rnd/opencode-token-routing.md` at 7a5436fc. The factory-log file stays held.
