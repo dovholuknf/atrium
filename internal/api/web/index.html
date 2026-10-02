@@ -1436,7 +1436,9 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         nothing is replayed. This many recently used terminals stay attached, plus every pinned one, and never more
         than 12 in all. 0 closes a terminal when you leave it, as before. Phones and popped out windows are not
         affected. A kept terminal still counts as watched, so a session you left is not given a fresh context
-        automatically, and a kept shell is not closed for being idle, while this tab is open.</span>
+        automatically, and a kept shell is not closed for being idle, while this tab is open. It also keeps its vote
+        on the terminal's size: the same session open in another window stays held to this board's last size until it
+        is let go or the tab closes.</span>
     </div>
     <div class="field">
       <label for="s-termkeeplines">history kept for a hidden terminal</label>

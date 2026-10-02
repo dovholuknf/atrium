@@ -75,6 +75,12 @@ A kept attach is a watcher on its room, so while the tab is open the auto new-co
 a kept card, a pinned card never cycles at all, and a kept shell is never idle-closed. Stated in the gear hint. Setting
 "terminals kept alive" to 0 gives the old behaviour.
 
+### Note: a kept terminal keeps its vote on the pty size (review N1)
+`agreedViewport` (supervisor.go:1571) runs the pty at the widest viewer's width and the shortest viewer's height, and a
+kept attach is still a viewer. So the same card open in another window stays held to this board's last-sent size until
+the slot is evicted or the tab closes; before keep-alive, switching away removed the vote. Stated in the gear hint.
+The real fix is one room frame, "hidden: not watching, not voting" (@runtime), which would close M1 and N1 together.
+
 ### Post-deploy run on sg4 (review M2)
 Keep eight terminals on ONE remote room (switch through eight of its cards), then time an attach to a ninth card of that
 room with `scripts/measure-term-switch.js` (the path/phase table shows whether it waited on the hub for a fresh conn).
