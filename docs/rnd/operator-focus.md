@@ -197,6 +197,47 @@ Same rows, same route, same guard. The inbox design holds unchanged. This design
 
 The two should be built as one item. The inbox backlog file gets a pointer to this doc.
 
+### 2.9 Interview mode: the decision list's sibling
+
+Added 2026-10-02 evening. clint, after the hub-forge interview, said the process worked well and asked for a better
+screen for it. An interview is a run of questions about one design, asked one at a time, where each answer can change
+the next question. The decision list holds separate questions, each answered on its own. Both share the hub rows,
+the board and the phone.
+
+**The screen.** On the board and the phone, an interview shows **one question at a time, as a card**:
+- **the scenario as bullets**, phrased as "this happens, then this happens, then what?" (`docs/rnd/interviewer-brief.md`
+  section 3);
+- **the options as buttons**, each with one line on what it would do, and **the default highlighted** with its why;
+- **a free-text box**, always there, sent with a button choice or alone;
+- **progress**, as "3 of about 8". The count can grow, because a later question can depend on an answer;
+- **back**: any earlier answer can be opened and changed. A changed answer is sent to the interviewer as "Q2
+  changed". The interviewer may then withdraw or rewrite the questions after it, and the screen marks those;
+- **"I don't understand"** and **"I already said this"**: two small buttons that send the interviewer a rephrase
+  request, or the point where he said it. Each is counted in the answers file, so a bad brief shows up;
+- **the answers file building beside it**: his exact words, and the interviewer's "taken as" lines marked as the
+  interviewer's. On the phone, this is a second tab.
+
+**The interviewer drives it through a tool, not terminal text.**
+- `atrium_interview {start}`: the topic, the doc it feeds, and the planned count.
+- `atrium_interview {ask}`: the scenario bullets, the question, the options, the default and its why, and which
+  earlier answers it depends on.
+- `atrium_interview {taken_as}`: the interviewer's reading of an answer, recorded beside his words.
+- `atrium_interview {done}`: the "open, for the designer to default" list.
+
+Each answer reaches the interviewer card as one message, which is its one turn. The interviewer may queue up to two
+questions ahead, marked "may change". The screen shows the next one at once, so clint is not waiting on a model
+turn between easy questions.
+
+**Where it lives.** An interview is a hub row with its questions and answers. The answers file is written from the
+row at each answer, outside every repo (`~/.atrium/interviews/<id>.md` on the hub, `0600`), because it quotes clint.
+It follows the factory log's home once he decides it. A design doc cites the answers file by path, and paraphrases
+it.
+
+**It ties into the decision list.** Starting an interview from held questions ("interview me on #63 to #67") turns
+those rows into the interview's first questions. Each answer marks its row answered, `via: interview <id>`, so the
+list stays the one list. An interview is started only when clint asks for one, by his rule that no questions are
+sent until he asks.
+
 ## 3. (b) Shorter director reports
 
 ### 3.1 The two parts
@@ -343,6 +384,7 @@ Each stage is useful on its own. Only L0 is allowed during the pause.
 | L3 | A tool a director files a row with (`atrium_ask`), replacing a say to the orchestrator for a question | @runtime | 1 day | a director files a row, clint answers on the phone, and the director's next tool call shows the answer, with no orchestrator turn |
 | L4 | Defaults on a deadline (2.3), and the daily bell batch and urgent limit (2.6) | @fabric, @ui | 2 days | a `default_ok` row with `effect: other` or no effect is refused at filing. A safe row defaults at its time, shows as defaulted, and is replaced by a later answer |
 | L5 | The daily page (2.7) and idea capture (2.5) | @fabric, @ui | 2 days | the page renders on a phone with today's landings and spend matching `session_usage`. `/idea x` from a card's input becomes an idea row with a suggested owner after the confirm, and `idea: x` typed to a card reaches the card unparsed. `3 files are wrong` typed to a card answers nothing |
+| L6 | Interview mode (2.9): the hub's interview rows, `atrium_interview` (start, ask, taken_as, done), the one-question card on the board and the phone with buttons, the default, free text, progress, back, the two small buttons and the answers file beside it, and decision-list rows turned into an interview | @fabric (rows), @runtime (the tool), @ui (the card) | 3 days | an interviewer card asks 3 questions through the tool. clint answers 2 on the phone and changes the first one on the board. The interviewer gets "Q1 changed" and rewrites Q3, and the screen marks it rewritten. The answers file on the hub holds his words and the "taken as" lines, and nothing is written into a repo |
 | T1 | The sg4 re-evaluation of 4.5 | a short worker on sg4 | half a day | the table of 4.2 with the orchestrator's rows added, then the card exits |
 
 L1 to L3 are the build of `rnd-new-clint-inbox`, and that backlog file points here.
@@ -362,3 +404,8 @@ L1 to L3 are the build of `rnd-new-clint-inbox`, and that backlog file points he
    blocked), and keep the details in a file you can open? **Suggested: yes.**
 5. **The rest of the cost check.** After the pause, a short helper on sg4 measures what the relays through the
    orchestrator cost, which this machine cannot see. **Suggested: yes, after the pause.**
+6. **The interview screen.** When you ask to be interviewed on a design, the board and the phone show one question at
+   a time, with the choices as buttons, the suggested one highlighted, a box for your own words, and your answers
+   collecting beside it. You can go back and change one. **Suggested: yes.**
+7. **Where interview answers are kept.** Your answers are quoted word for word, so they are kept on the hub machine,
+   outside the public repo, wherever you decide the factory log lives. **Suggested: yes, the same place.**
