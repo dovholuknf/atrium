@@ -819,12 +819,12 @@ $null = Invoke-Act 'cstate' @{ StateDir = $stdir; Mode = 'add'; Key = $kA; Befor
 Check 'L2 act: add writes dir|account|before' (Get-Rec) @("$kA|(OI)(CI)(RX)")
 $null = Invoke-Act 'cstate' @{ StateDir = $stdir; Mode = 'add'; Key = $kB; Before = '' }
 Check 'L2 act: a second grant is a second line' (Get-Rec).Count 2
-$null = Invoke-Act 'cstate' @{ StateDir = $stdir; Mode = 'add'; Key = $kA; Before = '(F)' }
-Check 'L2 act: the same grant again replaces its line' @((Get-Rec).Count, ((Get-Rec) -contains "$kA|(F)")) @(2, $true)
+$null = Invoke-Act 'cstate' @{ StateDir = $stdir; Mode = 'add'; Key = $kA; Before = '(M)' }
+Check 'L2 act: the same grant again replaces its line' @((Get-Rec).Count, ((Get-Rec) -contains "$kA|(M)")) @(2, $true)
 $r = Invoke-Act 'cacls' @{ Msys2Dir = $fm1; Accts = ''; StateDir = $stdir }
 Check 'L2 act: the probe lists what the room remembers' @($r.Out | Where-Object { $_ -like 'grant=*' }).Count 2
 $gg = @((ConvertFrom-GrantRecord (@($r.Out | Where-Object { $_ -like 'grant=*' }) | ForEach-Object { $_.Substring(6) }) $fm1 'SG3\claude').Grants)
-Check 'L2 act: and it reads back as this directory, this account, what it had' @($gg.Count, $gg[0].Account, ($gg[0].Before -join ' ')) @(1, 'SG3\claude', '(F)')
+Check 'L2 act: and it reads back as this directory, this account, what it had' @($gg.Count, $gg[0].Account, ($gg[0].Before -join ' ')) @(1, 'SG3\claude', '(M)')
 Check 'L2 act: each line is numbered by its place in the file' @($r.Out | Where-Object { $_ -like 'grant=*' } | ForEach-Object { ($_ -split ':')[0] }) @('grant=1', 'grant=2')
 $null = Invoke-Act 'cstate' @{ StateDir = $stdir; Mode = 'remove'; Key = $kA; Before = '' }
 Check 'L2 act: remove takes only its line' (Get-Rec) @("$kB|")
@@ -980,7 +980,7 @@ foreach ($f in $forged) {
 }
 $r = ConvertFrom-GrantRecord @("1:C:\other|$U|(F)", "2:${D}\sub|$U|(F)", "3:C:\x|SG3\attacker|(OI)(CI)(F) x`$(calc);calc.exe", "4:${D}2|$U|(F)") $D $U
 Check 'M1 record: a forged directory is never acted on and never printed' @($r.Grants.Count, $r.Bad.Count) @(0, 0)
-$r = ConvertFrom-GrantRecord @("1:$D|SG3\attacker|(OI)(CI)(F) x`$(Write-Output-INJECTED);calc.exe", "2:$D|$U|(F)", "3:$D|$U|(F) `$(calc);calc.exe") $D $U
+$r = ConvertFrom-GrantRecord @("1:$D|SG3\attacker|(OI)(CI)(F) x`$(Write-Output-INJECTED);calc.exe", "2:$D|$U|(RX)", "3:$D|$U|(F) `$(calc);calc.exe") $D $U
 Check 'M1 record: honest and forged lines together, only the honest one is a grant' @(($r.Grants | ForEach-Object { $_.Line }), ($r.Bad -join '|' -replace '\(.*?\)', '()')) @('2', 'line 1 ()|line 3 ()')
 Check 'M1 record: what is said about a bad line has no command text in it, only a number and a short excerpt' @((($r.Bad -join ' ') -match 'calc|INJECTED'), (($r.Bad | ForEach-Object { $_.Length } | Measure-Object -Maximum).Maximum -le 40)) @($false, $true)
 $e = (ConvertFrom-GrantRecord @("9:ab$([char]27)[31m`r$([char]7)$([char]0x2028)cd|x") $D $U).Bad[0]
@@ -1039,6 +1039,45 @@ if ($unix) {
         Check "sim M1 $(if ($chk) { '-Check' } else { 'run' }): it warns about the two lines by number" ([bool](Get-Steps $r 'msys2-acl' | Where-Object { $_ -like '*acl-grants.txt has 2 line(s) this script did not write*line 1 (*line 2 (*' })) $true
     }
 }
+
+
+# ── L5: a record that says the user HAD more than Modify is not believed, and a restore from the record says so ─────────
+
+foreach ($ok in '(OI)(CI)(RX)', '(CI)(IO)(W)', '(OI)(CI)(M)', '(R)', '(N)', '(OI)(CI)(RD,WD,AD)', '(I)(OI)(CI)(RX)', '(RX)') { Check "L5 cap: '$ok' is no higher than Modify" (Test-AceBelowModify $ok) $true }
+foreach ($no in '(F)', '(OI)(CI)(F)', '(WDAC)', '(OI)(CI)(WDAC)', '(WO)', '(GA)', '(OI)(CI)(RX,WDAC)', '(M,WO)', '(RX,F)', '(OI)(CI)(XYZ)', '(OI)', '(f)', '(OI)(CI)(M);calc') { Check "L5 cap: '$no' is refused" ([bool](Test-AceBelowModify $no)) $false }
+foreach ($f in '(OI)(CI)(F)', '(F)', '(WDAC)', '(OI)(CI)(RX,WDAC)', '(WO)', '(GA)', '(OI)(CI)(RX) (OI)(CI)(F)') {
+    $r = ConvertFrom-GrantRecord @("1:$D|$U|$f") $D $U
+    Check "L5 record: the user's own account with '$f' is Bad and never a grant" @($r.Grants.Count, $r.Bad.Count) @(0, 1)
+}
+$r = ConvertFrom-GrantRecord @("1:$D|$U|(OI)(CI)(RX)", "2:$D|$U|(OI)(CI)(M) (CI)(IO)(W)") $D $U
+Check 'L5 record: what is no higher than Modify is still a grant' @($r.Grants.Count, $r.Bad.Count) @(2, 0)
+
+# the flow: a forged Full for the user's own account is never restored, and the room is not touched
+Reset-Flow; New-StateMock; $script:store = @("$mdir|SG3\claude|(OI)(CI)(F)"); $script:cfail = $false; $script:drop = $false
+$script:probe = { New-Probe -missing @() -writable $true -localai $false }
+Invoke-CMsys2 6>$null | Out-Null
+Check 'L5 flow: a forged (F) for the user is never acted on, nothing printed, one warn' @((Seq), $script:needs.Count, $script:store.Count, @($script:steps | Where-Object { $_ -like 'msys2-acl warn acl-grants.txt has 1 line(s)*' }).Count) @('cmsys', 0, 1, 1)
+
+# a restore that came from the record is labelled, in the line and in the step, and is still one command
+Reset-Flow; New-StateMock; $script:store = @("$mdir|SG3\claude|(OI)(CI)(RX) (CI)(IO)(W)"); $script:cfail = $true; $script:probe = { New-Probe -missing @() -writable $true -localai $false }
+Invoke-CMsys2 6>$null | Out-Null
+$restore = @($script:needs | Where-Object { $_ -like '*/grant:r*' })
+$remove = @($script:needs | Where-Object { $_ -like '*/remove:g*' })
+Check 'L5 label: the restore line from the record says so' @($restore.Count, [bool]($restore[0] -like "* # from the record, check it")) @(1, $true)
+Check 'L5 label: the remove line is not labelled' @($remove.Count, [bool]($remove[0] -like '*# *')) @(1, $false)
+Check 'L5 label: the step says the restore comes from the record' ([bool]($script:steps -like 'msys2-acl needs-human could not take back the Modify grant*the restore line comes from the record on the room, check it')) $true
+Check 'L5 label: the labelled line is still exactly one command with the same words' (Show-Cmd $restore[0]) "icacls<>$mdir<>/grant:r<>SG3\claude:(OI)(CI)(RX)<>/grant<>SG3\claude:(CI)(IO)(W)"
+Check 'L5 label: and so is the summary the run ends with' @((Format-NeedsHuman $script:needs) | ForEach-Object { [bool]($_ -like 'room-toolchain needs-human icacls *') }) @($true, $true)
+
+# a restore the script worked out itself (after pacman, from the live ACL) is not labelled
+Reset-Flow; New-StateMock; $script:cfail = $false; $script:drop = $false; $script:pacmanDone = $false
+$script:baseMock = $script:mock
+$script:mock = { param($act, $vars) if ($act -eq 'cacl' -and $script:pacmanDone) { New-Res @{ rc = '1' } @() 1 'Access is denied.' } else { & $script:baseMock $act $vars } }
+$script:probe = { if ($script:pacmanDone) { New-Probe -localai $false } else { New-Probe -missing $allMissing -writable $false -localai $false } }
+Invoke-CMsys2 6>$null | Out-Null
+Check 'L5 label: a take-back the run planned itself has the two lines and no label' @(@($script:needs | Where-Object { $_ -like 'icacls *' }).Count, @($script:needs | Where-Object { $_ -like '*from the record*' }).Count) @(2, 0)
+Check 'L5 label: Format-AdminCommand puts the note after the command and keeps it a comment' @((Format-AdminCommand @('icacls', 'a b') 'from the record, check it'), (Show-Cmd (Format-AdminCommand @('icacls', 'a b') 'from the record, check it'))) @("icacls 'a b' # from the record, check it", 'icacls<>a b')
+Check 'L5 label: a note cannot carry a command' (Format-AdminCommand @('icacls', 'a') "x`n; calc.exe `$(1)") 'icacls a # x calc.exe 1'
 
 
 } finally {
