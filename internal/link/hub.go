@@ -103,6 +103,9 @@ type Hub struct {
 	// kind. Nil means this hub does not say Git in its welcome and refuses the kind. It is
 	// served on that kind and nowhere else, never on the board listener. See git.go.
 	Git http.Handler
+	// GitStore serves the hub's own store (`/git/hub/...`) to a room on the same `git` kind, as that room.
+	// Nil serves rooms the mirrors alone. The board serves the same store to the operator. See git_store.go.
+	GitStore http.Handler
 
 	mu    sync.Mutex
 	rooms map[string]*attached

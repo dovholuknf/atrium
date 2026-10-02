@@ -33,7 +33,7 @@ func roomGitCmd(prefix string) *cobra.Command {
 			"EVERY TRANSFER IS A FETCH. Nothing is pushed to a room or to the hub.",
 	}
 	c.AddCommand(gitSyncCmd(prefix), gitCollectCmd(prefix), gitStatusCmd(prefix), gitReposCmd(prefix),
-		gitInitCmd(prefix), gitStoreCmd(prefix), gitSettingsCmd(prefix))
+		gitInitCmd(prefix), gitStoreCmd(prefix), gitReleaseCmd(prefix), gitSettingsCmd(prefix))
 	return c
 }
 

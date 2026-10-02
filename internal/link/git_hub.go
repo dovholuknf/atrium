@@ -68,7 +68,7 @@ func (p *Proxy) SetGitSettings(s GitSettings, hubDir string) {
 	p.gitSettings, p.gitDir = s, hubDir
 }
 
-// serveGit answers /_hub/git/{sync,collect,status,init,settings,repos}. Loopback only, like the
+// serveGit answers /_hub/git/{sync,collect,status,init,release,settings,repos}. Loopback only, like the
 // control server, for everything but the list of repos: these start work on a room or on the
 // hub's disk, and an overlay is not an auth layer.
 func (p *Proxy) serveGit(w http.ResponseWriter, r *http.Request, sub string) {
@@ -106,6 +106,9 @@ func (p *Proxy) serveGit(w http.ResponseWriter, r *http.Request, sub string) {
 		return
 	case "git/settings":
 		p.serveGitSettings(w, r, fail)
+		return
+	case "git/release":
+		p.serveGitRelease(w, r, g, fail)
 		return
 	}
 	if sub == "git/status" {
@@ -179,6 +182,32 @@ func (p *Proxy) serveGitInit(w http.ResponseWriter, r *http.Request, g *gitsync.
 		fail(http.StatusInternalServerError, err.Error())
 	default:
 		_ = json.NewEncoder(w).Encode(res)
+	}
+}
+
+// serveGitRelease answers POST /_hub/git/release {"repo": ..., "branch": ...} with {"note": ...}: the operator lets
+// go of a branch's owner. The caller is already known to be the operator on this machine.
+func (p *Proxy) serveGitRelease(w http.ResponseWriter, r *http.Request, g *gitsync.Hub, fail func(int, string)) {
+	if r.Method != http.MethodPost {
+		fail(http.StatusMethodNotAllowed, "that has to be a POST")
+		return
+	}
+	var in struct {
+		Repo   string `json:"repo"`
+		Branch string `json:"branch"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 4<<10)).Decode(&in); err != nil {
+		fail(http.StatusBadRequest, "could not read that: "+err.Error())
+		return
+	}
+	note, err := g.ReleaseBranch(r.Context(), in.Repo, in.Branch)
+	switch {
+	case errors.Is(err, gitsync.ErrRefused):
+		fail(http.StatusBadRequest, err.Error())
+	case err != nil:
+		fail(http.StatusInternalServerError, err.Error())
+	default:
+		_ = json.NewEncoder(w).Encode(map[string]string{"note": note})
 	}
 }
 
