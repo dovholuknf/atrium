@@ -215,7 +215,9 @@ or hand to someone.
 1. **OpenWiki: one trial, then decide.** tlsuv, in a scratch worktree on m1mini. Install with `--project`, never at
    user level. A claude card drives the integration's write tools on its own login, never `openwiki --update`, so no
    new key is needed. Telemetry is off in the launch env and checked once with `--telemetry-file`. The `CLAUDE.md`
-   block is reverted, and nothing is committed upstream. Compare it with @review's tlsuv reviewer
+   block is reverted, and nothing is committed upstream. The card is a non-lean claude card. A lean worker runs
+   `--strict-mcp-config` and keeps skills only by name, so it would not load the `--project` install's MCP server or
+   skill, unless OpenWiki's MCP server is passed in its MCP list. Compare it with @review's tlsuv reviewer
    files. If it adds context they lack, the next step is a PR-runner item: feed `openwiki/` pages to the prime.
 2. **The zrok PR: worth it, small, and clint's.** Section 3 is the sketch. A public share with a reserved name, the CLI
    with `--subordinate`, no token in OpenWiki, and ngrok kept as the default.
