@@ -3974,10 +3974,13 @@ async function clearKeepsPageSection(browser, base) {
     if (got.base < rows - 2) fail("a clear grew the scrollback by " + got.base + ", not the " + (rows - 2) + " lines the page held.");
     const live = got.hist.join("|");
 
-    got = await run(page("old", rows - 2) + "\x1b[3J\x1b[Hnew banner", true);
-    have(got, "old", rows - 2, "erase-display 3");
+    got = await run(page("old", rows - 2) + "\x1b[2J\x1b[3J\x1b[Hnew banner", true);
+    have(got, "old", rows - 2, "erase-display 2 then 3");
     got = await run("\r\n" + page("more", 3) + "\x1b[3J", false);
-    have(got, "old", rows - 2, "a second erase-display 3, which also wipes the history it should not");
+    have(got, "old", rows - 2, "a later erase-display 3, which also wipes the history it should not");
+    got = await run(page("lone", 3) + "\x1b[3J", true);
+    const lone = await p.evaluate(() => term.buffer.normal.getLine(term.buffer.normal.baseY).translateToString(true));
+    if (got.base !== 0 || lone !== "lone1") fail("a lone erase-display 3 moved the page: history " + got.base + ", top row " + JSON.stringify(lone));
 
     got = await run(page("alt", 5) + "\x1b[?1049h\x1b[2Jpager\x1b[?1049l", true);
     if (got.base !== 0) fail("a full-screen app clearing the alternate screen pushed " + got.base + " lines into history.");

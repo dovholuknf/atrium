@@ -7,7 +7,7 @@ A clear (Claude Code's clear and compact, and new-context on Ctrl+Alt+N) sends e
 `keepPage` in `internal/api/web/js/terminal.js`, called from a CSI `J` handler for params 2 and 3 and from the new-context key.
 
 - It scrolls the rows up to the last one with text off the top, so no blank lines go into history. xterm 5.5 has no public call for it and a handler cannot `write`, so it uses `_core._inputHandler`; if that is missing the clear behaves as before.
-- 3 is taken by the handler after the push, so history survives. 2 proceeds to xterm's own erase over rows that are already blank.
+- 3 is swallowed without a push, so a lone 3 leaves the rows and history alone; the usual 2 then 3 has already kept the page. 2 proceeds to xterm's own erase over rows that are already blank.
 - Not on the alternate buffer, not with a scroll region set, not for J 0/1, and not when the page is the one pushed last.
 - Ctrl+Alt+N pushes a copy and puts the rows back, so the screen is not blanked while the session writes its handoff.
 
