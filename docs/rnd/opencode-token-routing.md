@@ -22,7 +22,7 @@ Secondary sources are marked **unverified**.
 ## 0. The answer
 
 - **Use the cheap models where a Claude step already checks the result, and nowhere else.** The one measurement
-  we have says it plainly. Kimi K2.7 Code's audit had accurate file and line citations, but it got 0 of 27 severities
+  we have says it plainly. Kimi K2.7 Code's audit had mostly accurate file and line citations, but it got 0 of 27 severities
   right, tested nothing, and missed every finding that needed two files read together. So it finds and cites
   well, and judges badly.
 - **Three fits are worth having now, each with Claude checking:**
@@ -73,7 +73,8 @@ Zen is pay-per-token on the same prices, hosted in the US, with auto-reload of $
   (Max 20x, $200: about 240 to 480 Sonnet hours and 24 to 40 Opus hours a week) are **unverified**.
 
 **What that means.** Go's limit is a monthly dollar value per model, not a token rate. K2.7 Code's $60 of Zen value
-is about 15 million cached-read-heavy input tokens plus output a month, on a $10 plan. That headroom is real. But the
+a month, on a $10 plan, is about 63 million uncached input tokens, or 315 million cached reads, or 15 million output
+tokens, or a mix of those. That headroom is real. But the
 value of a cheap token depends on how often its output has to be redone, which is section 2's question.
 
 ## 2. Which work fits, by evidence
@@ -85,7 +86,7 @@ audit of atrium, 27 Critical and High findings.
 - 1 was confirmed, and it was already documented.
 - 0 held their stated severity.
 - 6 pointed at real defects.
-- The citations were accurate.
+- The citations were mostly accurate (C9 named the wrong table, H9 the wrong HTTP verb).
 - It ran no tests, and it missed every finding that needed two files read together.
 
 On published benchmarks:
@@ -95,7 +96,7 @@ On published benchmarks:
 
 | Task kind | Fit | Why, from the evidence |
 | --- | --- | --- |
-| First-pass search ("where does X happen") | **yes, Claude reads the hits** | citations were accurate. Finding is what it did well |
+| First-pass search ("where does X happen") | **yes, Claude reads the hits** | citations were mostly accurate. Finding is what it did well |
 | Bulk reading and summarising (logs, long files, transcripts) | **yes, as input to a Claude step** | a summary is checked by the step that uses it |
 | Log triage | **yes, first pass** | a ranking of suspects, not a verdict |
 | Test scaffolding | **trial in the bake-off** | it "tested nothing" on its own. A scaffold is checked by running it |
@@ -145,13 +146,19 @@ Three additions, each small:
    - The recipe's `second` field names the opencode runner and model.
    - Step 6 runs `opencode run --format json -m <model>` on the bundle and the merged findings, read-only (permission
      config `edit: deny, bash: deny`).
+   - **A PR can ship code that opencode runs.** opencode loads project plugins from `.opencode/plugins/` automatically
+     at startup, and a plugin is code, so `edit: deny` and `bash: deny` do not stop it. This is the PR-hooks class
+     @review closed in r-pr-run. So step 6 runs with its cwd in `<run>/work`, never in or under the PR checkout, and
+     with no project config or `.opencode` from the PR. Whether opencode reads `opencode.json` from parent
+     directories is **unverified**, and K3 checks it.
    - Step 7 settles on Claude, as designed.
    - Cost on Kimi: one read of the bundle (60k tokens at $0.95 per Mtok is about $0.06) plus output, on the flat plan.
 3. **A verifier pass for anything a cheap model produces that a person will rely on.** This is landscape borrow 3.
    - A Claude fork of the task's cached context reads the cheap output and answers per item: holds, wrong, or
      overstated.
    - At Sonnet rates on a cached 60k context, each item costs about 60k cache read ($0.012) plus 2k output ($0.02),
-     so **about $0.03 an item**. A 20-item result costs about $0.65 to verify.
+     so **about $0.03 an item**, plus a one-time cache write of the 60k context ($0.24 at $4 per Mtok). A 20-item
+     result costs about $0.88 to verify.
    - The bake-off's "Claude fix cost" is this number. Where the cheap model is often wrong, the verifier costs more
      than it saved, and that kind stays on Claude.
 
@@ -165,11 +172,14 @@ From the plugin (`scripts/opencode/atrium.js`) and @runtime's transcript work:
 - **The gate fails open, and opencode's own ask cannot be answered.** The plugin waits on atrium's gate, and anything
   but an explicit deny lets the tool run under opencode's defaults, which allow bash and edits. The plugin's header
   says 1.18.34 has no trigger for opencode's own ask. The plugin docs read today list `permission.asked` and
-  `permission.replied` hooks, so a newer opencode may have closed that gap. @runtime should check it against the
-  installed binary.
+  `permission.replied`, but as events a plugin observes, not a hook that returns a decision. The gap closes only if a
+  plugin can answer an ask through the SDK's permission-reply call, which is **unverified**. K2 checks it.
+- **The plugin directory's name.** The docs name `plugins/` (plural), and the plugin's header installs to
+  `~/.config/opencode/plugin/`. K2 confirms the singular still loads.
 - **"No gate when atrium is off"**, as the row's own label says. With the daemon down, nothing gates an opencode card.
   **For factory work the row should carry an opencode permission config instead of the defaults.** That means
-  `bash: ask` for anything not on an allow list, `edit` limited to the worktree, `external_directory: deny` and
+  `bash: ask` for anything not on an allow list, `edit` limited to the worktree (path patterns for `edit` are
+  **unverified**), `external_directory: deny` and
   `webfetch: deny`, with opencode's `doom_loop` left at ask. Then a dead daemon fails closed. That turns the
   second-prompt problem the header describes into a stop, which is the right failure for an unattended worker.
 - **Subagents** are reported (a child session's created and idle), but a subagent's tool calls go through the same
@@ -195,14 +205,18 @@ From the plugin (`scripts/opencode/atrium.js`) and @runtime's transcript work:
 
 - The permission config of section 4, so a dead daemon fails closed.
 - Usage rows for opencode cards, from `opencode export`.
-- A check of `permission.asked` against the installed binary.
+- A check of whether a plugin can answer `permission.asked` through the SDK, and that `plugin/` (singular) still
+  loads, against the installed binary.
 - **Acceptance:** with the daemon stopped, an opencode card's `rm` and an edit outside its worktree are refused. A
   card's tokens show in its usage.
 
 ### K3. The second opinion on opencode. @runtime. About 1 day. After K2.
 
-- The recipe's `second` names opencode and a model. Step 6 runs read-only on it, and step 7 settles on Claude.
-- **Acceptance:** a PR run shows a Kimi second opinion with disputes settled, on the flat plan.
+- The recipe's `second` names opencode and a model. Step 6 runs read-only on it, with its cwd in `<run>/work` and
+  no project config or `.opencode` from the PR. Step 7 settles on Claude.
+- **Acceptance:** a PR run shows a Kimi second opinion with disputes settled, on the flat plan. A marker plugin at
+  `src/.opencode/plugins/marker.js` in the PR checkout never fires, and a parent-directory `opencode.json` is shown to
+  be ignored.
 
 ### K4. The cheap tier and the verifier. @runtime and @review. About 2 days. After K1.
 
@@ -219,7 +233,8 @@ From the plugin (`scripts/opencode/atrium.js`) and @runtime's transcript work:
    only in cards you are watching.**
 2. **Which code they may see.** Go's models mostly keep nothing, but they are run by other companies, some outside
    the US. Should cheap models only see public repos, such as atrium and openziti, until you say otherwise for a
-   private one? **Suggested: yes, public repos only.**
+   private one? A PR from outside to a public repo is public too. A PR on a private repo is not. **Suggested: yes,
+   public repos and public PRs only.**
 3. **The bake-off.** Run the one-week comparison on real tasks from this week (Claude against Kimi K2.7 Code, Kimi K3
    and DeepSeek Flash, graded by @review) before routing any work to them? **Suggested: yes, after the pause.**
 4. **Go or Go Plus.** The $10 plan's monthly limit per model is enough for the bake-off and the PR second opinion.
