@@ -4,6 +4,7 @@
 #   pwsh -File scripts\room-toolchain.ps1 user@host
 #   pwsh -File scripts\room-toolchain.ps1 user@host -Tools go,node -Prefix ~/tools
 #   pwsh -File scripts\room-toolchain.ps1 local -Check          # this machine, no ssh
+#   pwsh -File scripts\room-toolchain.ps1 user@host -Profile c -Check   # also the C toolchain, see C PROFILE below
 #
 # A worker on a room needs go and node to build atrium and run go test, and on Windows a real Git for Windows and pwsh
 # 7 (the daemon tests run git and pwsh). This installs them into the REMOTE USER'S HOME. No admin, no sudo, no package
@@ -82,6 +83,55 @@
 #   3  an install step failed on the remote: download, unpack, or the result does not answer
 #   4  the sha256 of a download did not match the publisher's. Nothing was unpacked
 #   5  installed, but the PATH record could not be written, or the tool is still not reachable the way the room sees it
+#   6  the run finished and nothing failed, but a person has to do something (-Profile c only, see C PROFILE)
+#
+# C PROFILE. `-Profile c` (default none: with none every call behaves as it did before) adds what a room needs to build
+# openziti/ziti-sdk-c with MSYS2 mingw, vcpkg and CMake, all in the install and nothing by hand. The code is in
+# scripts/room-toolchain-c.ps1. It is opt-in per room, and the tools above are still installed as they were (git and pwsh
+# stay: git is Git for Windows, which the C steps need, so -Tools is widened to hold it). A room that only builds C
+# can say `-Tools git,pwsh` to leave go and node out. Steps, in the order they run (Windows):
+#   msys2          MSYS2 is looked for at -Msys2Dir (when given, that is the only place), then C:\msys64, <Prefix>\msys64 and
+#                  the directory above any mingw64\bin on the PATH record. One that is there is used as is and only its gaps
+#                  are filled. Otherwise the official base archive msys2-base-x86_64-<newest>.sfx.exe is fetched from
+#                  repo.msys2.org, checked against the sha256 the msys2/msys2-installer release of that date publishes (a
+#                  mismatch is exit 4 and nothing is unpacked) and unpacked to -Msys2Dir, default <Prefix>\msys64. A fresh
+#                  one gets the first start and `pacman -Syuu` twice. -Msys2Version 20260927 pins the date.
+#   gcc cmake ninja pkgconf openssl   mingw-w64-x86_64-toolchain, -cmake, -ninja, -openssl and -pkgconf, added with
+#                  `pacman -S --needed` when any of the five is missing. pkgconf is the package with mingw64\bin\pkg-config.exe
+#                  and openssl the one with libssl.a and include/openssl/ssl.h, which the preset below points at.
+#   msys2-acl      -RunnerAccounts (default claude, plus localai when that local user exists) get RX on the MSYS2 directory
+#                  when they cannot read it already. The user running pacman gets Modify ONLY while pacman runs and only when
+#                  it cannot write, and it is taken back after, to what it was. Never Everyone or Users. When icacls is
+#                  refused the step is NEEDS-HUMAN and prints the command for an admin.
+#   path           mingw64\bin is added to the PATH record, after Git for Windows. NOT usr\bin: MSYS2's own git and bash must
+#                  not shadow Git for Windows. The record is per user, so for another runner account run this as that user
+#                  too (the step says so). The user and machine Path are not touched.
+#   git-identity   user.name and user.email come only from -GitUserName and -GitUserEmail, never invented and never copied.
+#                  Ones already in the global config are left alone. Missing and not given is NEEDS-HUMAN with the commands.
+#   git-credential Git Credential Manager (it ships in the PortableGit this installs) is the helper NAME, set with
+#                  `credential.helper manager` when no config has it. This script never takes, stores or prints a token. It
+#                  checks access with `git ls-remote` (no prompt, 45 s) on https://github.com/openziti/ziti-sdk-c.git and, when
+#                  -CheckRepo owner/repo or an https URL is given, on that too. When access is missing it is NEEDS-HUMAN with
+#                  the one command a person runs once, in an interactive session as the room's user (not ssh).
+#                  -GitHubOwners (default dovholuknf,openziti) are the accounts -CheckRepo may name.
+#   vcpkg          `git clone https://github.com/microsoft/vcpkg` to -VcpkgDir (default <home>\vcpkg), then
+#                  `bootstrap-vcpkg.bat -disableMetrics`, then `vcpkg version` and the x64-mingw-static triplet file are checked.
+#   triplet        triplets\community\x64-mingw-static.cmake is there
+#   sdk-checkout   -SdkDir (default <home>\git\github\openziti\ziti-sdk-c) is cloned from github.com/openziti/ziti-sdk-c when
+#                  absent. A git checkout there is left alone (branch and clean or dirty are reported). A directory that is
+#                  not a git checkout is never replaced: the step fails with the path. Submodules are initialised if it has any.
+#   cmake-preset   CMakeUserPresets.json in the checkout root with the hidden `mingw-vcpkg-base` (inherits ci-windows-x64-mingw,
+#                  host and target triplet x64-mingw-static, VCPKG_ROOT, the MSYS2 openssl and pkg-config, mingw64\bin first on
+#                  PATH, Debug), `cwdming` (binaryDir build/cwdming) and `cwdming-with-tests`. Presets already in the file are
+#                  never changed, missing ones are added and the rest of the file is kept. A file that is not valid JSON is left
+#                  alone and is NEEDS-HUMAN. -VcpkgBinaryCache dir (default none) sets VCPKG_BINARY_SOURCES.
+# -Check with the profile prints one line per step above with the path and version, or MISSING and what a run would do, and
+# writes nothing (the git credential check still asks github.com). On macOS and Linux the profile only reports cc, gcc, clang,
+# cmake, ninja, git, the vcpkg directory and the checkout, and a run installs nothing for it.
+# A step that needs a person is `needs-human`, and the run ends with a block, one command per line:
+#   room-toolchain needs-human <command>
+# EXIT CODE 6 is that: the run finished and nothing failed, but an admin, an interactive login or a git identity is needed. It
+# is used only when none of 1..5 applies. -Check never ends with 6.
 #
 # SCOPE. Windows x64 and arm64, macOS arm64 and x86_64, Linux x86_64 and aarch64.
 
@@ -105,17 +155,35 @@ param(
     # A test hook: corrupt the expected hash, to prove a mismatch fails cleanly.
     [switch] $TestBadHash,
     # A test hook: where the PATH record and room-env.ps1 go. Default ~/.atrium/toolchain.
-    [string] $StateDir
+    [string] $StateDir,
+    # none (default) changes nothing. c adds the C build toolchain, see C PROFILE.
+    [ValidateSet('none', 'c')] [string] $Profile = 'none',
+    [string] $Msys2Dir,
+    [string] $Msys2Version,
+    [string[]] $RunnerAccounts = @('claude', 'localai'),
+    [string] $GitUserName,
+    [string] $GitUserEmail,
+    [string[]] $GitHubOwners = @('dovholuknf', 'openziti'),
+    # owner/repo or an https URL, checked for access when given. Default none: only the public repo is checked.
+    [string] $CheckRepo,
+    [string] $VcpkgDir,
+    [string] $SdkDir,
+    [string] $VcpkgBinaryCache,
+    # A test hook: print the encoded size of every Windows payload and exit.
+    [switch] $PayloadSizes
 )
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
+. (Join-Path $PSScriptRoot 'room-toolchain-c.ps1')
 # UTF-8 without a BOM for what is piped to ssh. See provision-room.ps1.
 $OutputEncoding = [Text.UTF8Encoding]::new($false)
 # `pwsh -File` hands `-Tools go,node` and `-SshOption -o,Port=2222` over as one string, so commas split.
 function Split-List { param($v) @($v | ForEach-Object { "$_" -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ }) }
 $Tools = Split-List $Tools
 $SshOption = Split-List $SshOption
+$RunnerAccounts = Split-List $RunnerAccounts
+$GitHubOwners = Split-List $GitHubOwners
 $NodeVersion = if ($NodeVersion.StartsWith('v')) { $NodeVersion } else { "v$NodeVersion" }
 
 function Step {
@@ -124,9 +192,11 @@ function Step {
     if ($detail) { $line += " $detail" }
     Write-Host $line
 }
+$script:needs = @()   # what a person has to do, one command per item (-Profile c)
 function Finish {
     param([int] $code)
-    if ($code -eq 0) { Step 'done' 'ok' } else { Step 'done' 'fail' "$code" }
+    foreach ($l in (Format-NeedsHuman $script:needs)) { Write-Host $l }
+    if ($code -eq 0) { Step 'done' 'ok' } elseif ($code -eq 6) { Step 'done' 'needs-human' '6' } else { Step 'done' 'fail' "$code" }
     exit $code
 }
 function Fail {
@@ -139,6 +209,7 @@ function Fail {
 if (-not $Target) {
     Write-Host 'usage: room-toolchain.ps1 <user@host|local> [-Check] [-Tools go,node,git,pwsh] [-Prefix dir] [-Force]'
     Write-Host '                          [-GoVersion 1.26.2] [-NodeVersion v24.21.0] [-GitVersion 2.56.0] [-PwshVersion 7.6.6]'
+    Write-Host '                          [-Profile c [-Msys2Dir dir] [-GitUserName n -GitUserEmail e] [-VcpkgDir dir] [-SdkDir dir] [-CheckRepo owner/repo]]'
     exit 1
 }
 $allTools = 'git', 'pwsh', 'go', 'node'
@@ -161,9 +232,7 @@ if (-not $goMin) { $goMin = $GoVersion }
 
 # ── talking to the remote ───────────────────────────────────────────────────
 
-$sshBase = @('-o', 'BatchMode=yes', '-o', 'ConnectTimeout=25') + $SshOption
-function Quote-Ps { param([string] $s) "'" + ($s -replace "['\u2018\u2019\u201A\u201B]", '$0$0') + "'" }
-function Quote-Sh { param([string] $s) "'" + ($s -replace "'", "'\''") + "'" }
+$sshBase = @('-o', 'BatchMode=yes', '-o', 'ConnectTimeout=25') + $(if ($Profile -eq 'c') { @('-o', 'ServerAliveInterval=30') } else { @() }) + $SshOption
 
 function ConvertFrom-KeyValue {
     param($lines)
@@ -179,26 +248,14 @@ function ConvertFrom-KeyValue {
 $script:remoteOS = $null   # windows | unix
 $script:kind = $null       # windows | mac | linux
 
-function Compress-Text {
-    param([string] $s)
-    $ms = [IO.MemoryStream]::new()
-    $gz = [IO.Compression.GZipStream]::new($ms, [IO.Compression.CompressionMode]::Compress)
-    $b = [Text.Encoding]::UTF8.GetBytes($s)
-    $gz.Write($b, 0, $b.Length); $gz.Close()
-    [Convert]::ToBase64String($ms.ToArray())
-}
-
 # Invoke-Remote runs one script on the remote, or here for `local`. Windows gets -EncodedCommand, whose payload is the
 # script gzipped, so cmd.exe's command line limit is not the script's limit. Unix gets the script on stdin to `sh -s`,
 # so nothing in it meets the login shell's quoting.
 function Invoke-Remote {
     param([string] $script)
     if ($script:remoteOS -eq 'windows') {
-        $boot = "`$ErrorActionPreference='Continue';`$ProgressPreference='SilentlyContinue';" +
-            "iex (([IO.StreamReader]::new([IO.Compression.GZipStream]::new([IO.MemoryStream]::new(" +
-            "[Convert]::FromBase64String('$(Compress-Text $script)')),[IO.Compression.CompressionMode]::Decompress))).ReadToEnd())"
-        $enc = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($boot))
-        if ($enc.Length -gt 7800) { throw "remote script too long for cmd.exe ($($enc.Length))" }
+        $enc = New-EncodedCommand $script
+        if ($enc.Length -gt $script:EncodedLimit) { throw "remote script too long for cmd.exe ($($enc.Length))" }
         if ($isLocal) {
             $out = & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand $enc 2>&1
         } else {
@@ -371,8 +428,9 @@ record)
     echo hook=changed; fi
   echo "profile=$f";;
 verify) tell "$NAMES";;
-esac
+__CUNIX__esac
 '@
+$unixPayload = $unixPayload.Replace('__CUNIX__', $script:CUnixAct)
 
 # Get-Payload injects this call's variables in front of the payload.
 function Get-Payload {
@@ -391,6 +449,17 @@ function Get-Payload {
         $head = ($vars.Keys | Sort-Object | ForEach-Object { $n = $_.ToUpper(); "$n=$(Quote-Sh "$($vars[$_])")" }) -join "`n"
         $head + "`n" + $unixPayload
     }
+}
+
+# A test hook: the encoded size of every Windows payload with values as long as a real call makes them, then exit.
+if ($PayloadSizes) {
+    $script:remoteOS = 'windows'
+    $longDir = 'C:\Users\a-long-user-name\' + ('abcdef0123' * 12)
+    $gv = @{ Tool = 'git'; Url = 'https://github.com/git-for-windows/git/releases/download/v2.56.0.windows.1/PortableGit-2.56.0-64-bit.7z.exe'
+        File = 'PortableGit-2.56.0-64-bit.7z.exe'; Sha = ('0123456789abcdef' * 4); Kind = 'sfx'; Strip = '0'; NewDirs = ((1..4 | ForEach-Object { "$longDir$_" }) -join ';') }
+    foreach ($a in 'probe', 'install', 'record', 'verify') { Write-Host "payload $a $((New-EncodedCommand (Get-Payload $a $gv.Clone())).Length)" }
+    foreach ($a in ($script:CActs.Keys | Sort-Object)) { Write-Host "payload $a $((New-EncodedCommand (Get-CPayload $a (Get-CWorstVars $a))).Length)" }
+    exit 0
 }
 
 # ── 1. reach the target and learn what it is ────────────────────────────────
@@ -418,9 +487,29 @@ if ($script:remoteOS -eq 'unix') {
     $osArch = ("$r" -split "`n")[0].Trim()
 }
 
+# -Profile c: what the caller typed is checked before anything runs. The C steps need Git for Windows, so git is added to -Tools.
+$cProfile = $Profile -eq 'c'
+if ($cProfile -and $script:remoteOS -eq 'windows') {
+    foreach ($pa in @(@('-Msys2Dir', $Msys2Dir), @('-VcpkgDir', $VcpkgDir), @('-SdkDir', $SdkDir), @('-VcpkgBinaryCache', $VcpkgBinaryCache))) {
+        if ($pa[1]) { $why = Test-WinPathArg $pa[1] $pa[0]; if ($why) { Fail 'args' 1 $why } }
+    }
+    # a trailing separator would end a quoted argument with \" so it is dropped (a drive root is refused above)
+    foreach ($n in 'Msys2Dir', 'VcpkgDir', 'SdkDir', 'VcpkgBinaryCache') { $cur = (Get-Variable $n).Value; if ($cur) { Set-Variable $n $cur.TrimEnd('\', '/') } }
+    foreach ($a in $RunnerAccounts) { $why = Test-AccountArg $a; if ($why) { Fail 'args' 1 "-RunnerAccounts: $why" } }
+    if ($GitUserName) { $why = Test-GitIdentityArg $GitUserName '-GitUserName'; if ($why) { Fail 'args' 1 $why } }
+    if ($GitUserEmail) { $why = Test-GitIdentityArg $GitUserEmail '-GitUserEmail'; if ($why) { Fail 'args' 1 $why } }
+    if ($Msys2Version -and $Msys2Version -notmatch '^\d{8}$') { Fail 'args' 1 "bad -Msys2Version '$Msys2Version', it is the archive's date like 20260927" }
+    if ($CheckRepo) {
+        $u = ConvertTo-RepoUrl $CheckRepo
+        if (-not $u) { Fail 'args' 1 "bad -CheckRepo '$CheckRepo', it is owner/repo or an https URL with no user name or token in it" }
+        if ($u -match '^https://github\.com/([^/]+)/' -and $Matches[1] -notin $GitHubOwners) { Fail 'args' 1 "-CheckRepo '$CheckRepo' is not under -GitHubOwners ($($GitHubOwners -join ', '))" }
+    }
+    if ('git' -notin $Tools) { $Tools = @('git') + $Tools; Step 'tools' 'ok' '-Profile c needs Git for Windows, so git is added to -Tools' }
+}
+
 # The first probe: for Windows it also says the arch.
 $Tools = @($Tools | Where-Object { $script:remoteOS -eq 'windows' -or $_ -in 'go', 'node' })
-if ($script:remoteOS -eq 'unix' -and -not $Tools) { Step 'tools' 'skip' 'git and pwsh are installed on Windows only, and nothing else was asked for'; Finish 0 }
+if ($script:remoteOS -eq 'unix' -and -not $Tools -and -not $cProfile) { Step 'tools' 'skip' 'git and pwsh are installed on Windows only, and nothing else was asked for'; Finish 0 }
 $r = Invoke-Remote (Get-Payload 'probe')
 if ($r.Code -ne 0) { Fail 'ssh' 2 "$where is not Linux, macOS or Windows PowerShell, or the probe failed" $r.Out }
 $kv = ConvertFrom-KeyValue $r.Out
@@ -484,6 +573,17 @@ function Get-Asset {
                    elseif ("$($rel.body)" -match "$([regex]::Escape($file))\s*\|?\s*([0-9a-f]{64})") { $Matches[1] }
             if (-not $sha) { throw "release $tag publishes no sha256 for $file" }
             [pscustomobject]@{ Url = $a.browser_download_url; File = $file; Sha = $sha; Kind = 'sfx'; Strip = '0'; Version = $bare }
+        }
+        'msys2' {
+            $rels = Invoke-RestMethod -Uri 'https://api.github.com/repos/msys2/msys2-installer/releases?per_page=12' -Headers $ghHeaders -TimeoutSec 30
+            $sel = Select-Msys2Release $rels $Msys2Version
+            if (-not $sel) { throw "the msys2/msys2-installer releases have no msys2-base-x86_64 .sfx.exe with a .sha256$(if ($Msys2Version) { " for $Msys2Version" })" }
+            $r = Invoke-WebRequest -Uri $sel.ShaUrl -UseBasicParsing -Headers $ghHeaders -TimeoutSec 30
+            $txt = if ($r.Content -is [byte[]]) { [Text.Encoding]::UTF8.GetString($r.Content) } else { "$($r.Content)" }
+            $sha = Read-Sha256File $txt $sel.File
+            if (-not $sha) { throw "$($sel.ShaUrl) holds no sha256 for $($sel.File)" }
+            if ($sel.Digest -match '^sha256:([0-9a-f]{64})$' -and $Matches[1] -ne $sha) { throw "the .sha256 file and the release's own digest for $($sel.File) disagree" }
+            [pscustomobject]@{ Url = $sel.Url; File = $sel.File; Sha = $sha; Kind = 'sfx'; Strip = '0'; Version = $sel.Date }
         }
         'pwsh' {
             $rel = Get-Release 'PowerShell/PowerShell' "v$PwshVersion"
@@ -553,6 +653,263 @@ foreach ($t in $Tools | Where-Object { $found[$_].Good }) {
     Step $t 'ok' "$($found[$t].Ver) at $($found[$t].Path)"
 }
 
+# ── the C profile ───────────────────────────────────────────────────────────
+
+$script:cMsysDir = $null; $script:cHome = $null; $script:cUser = $null; $script:pathPre = ''
+
+function Get-PathPre {
+    $d = @($newDirs) + @("$($kv.rec)" -split ';')
+    if ($found.ContainsKey('git') -and $found['git'].Good) { $d += (Split-Path -Parent $found['git'].Path) }
+    ($d | Where-Object { $_ } | Select-Object -Unique) -join ';'
+}
+# One C act on the remote. rc is the act's own `rc=` line when it has one, because the exit code over ssh is not always the one
+# the script exited with.
+function CCall {
+    param([string] $act, [hashtable] $vars = @{})
+    $vars['PathPre'] = $script:pathPre
+    $r = Invoke-Remote (Get-CPayload $act $vars)
+    $k = ConvertFrom-KeyValue $r.Out
+    $rc = if ($k.rc) { [int]$k.rc } elseif ($r.Code -ne 0) { $r.Code } else { 0 }
+    [pscustomobject]@{ Kv = $k; Out = $r.Out; Rc = $rc; Err = "$($k.err)"; Tail = @(Get-Lines $r.Out 'tail') }
+}
+function Get-Lines { param($out, [string] $key) @($out | Where-Object { "$_" -like "$key=*" } | ForEach-Object { "$_".Substring($key.Length + 1) }) }
+function Show-Tail { param($c) $c.Tail | Where-Object { "$_".Trim() } | ForEach-Object { Write-Host "    $_" } }
+# A step that needs a person: the status is needs-human and the commands go in the summary at the end.
+function Need {
+    param([string] $step, [string] $detail, [string[]] $cmds)
+    Step $step 'needs-human' $detail
+    foreach ($c in $cmds) { Write-Host "    $c" }
+    $script:needs += $cmds
+}
+function Write-CTools {
+    param($k, [string] $dir, [string[]] $gaps, [bool] $check)
+    $would = if ($check) { "would run: pacman -S --needed --noconfirm $($script:CPackages -join ' ')" } else { 'it is still not there' }
+    $one = {
+        param([string] $step, $t, [string] $extra)
+        if (-not $t.Path) { Step $step 'warn' "MISSING. $would"; return }
+        Step $step 'ok' "$($t.Ver) at $($t.Path)$extra"
+    }
+    $gcc = Split-Tool $k 'bin.gcc'; $gxx = Split-Tool $k 'bin.g++'
+    if ($gcc.Path -and $gxx.Path) { Step 'gcc' 'ok' "$($gcc.Ver) at $($gcc.Path), g++ $($gxx.Ver)" } else { Step 'gcc' 'warn' "MISSING$(if ($gcc.Path) { ' g++' }). $would" }
+    $cm = Split-Tool $k 'bin.cmake'
+    if ($cm.Path -and -not (Test-VersionAtLeast $cm.Ver $script:CmakeMin)) { Step 'cmake' 'warn' "$($cm.Ver) at $($cm.Path) is older than $($script:CmakeMin), which CMakeUserPresets.json version 4 needs. run pacman -Syu in MSYS2 to update it" }
+    else { & $one 'cmake' $cm '' }
+    & $one 'ninja' (Split-Tool $k 'bin.ninja') ''
+    & $one 'pkgconf' (Split-Tool $k 'bin.pkg-config') ' (pkg-config.exe)'
+    if ($k['ssl'] -eq 'True') { Step 'openssl' 'ok' "libssl.a and include/openssl/ssl.h under $dir\mingw64" } else { Step 'openssl' 'warn' "MISSING (libssl.a or include/openssl/ssl.h under $dir\mingw64). $would" }
+}
+
+# Stage A: MSYS2, its packages, its ACL. Returns nothing, and adds mingw64\bin to the PATH record through $newDirs.
+function Invoke-CMsys2 {
+    $script:pathPre = Get-PathPre
+    $cv = @{ Prefix = $prefixR; Rec = "$($kv.rec)"; Msys2Dir = $Msys2Dir; Accts = ($RunnerAccounts -join ',') }
+    $p = CCall 'cmsys' $cv
+    if ($p.Rc -ne 0 -or -not $p.Kv.ContainsKey('msys2.dir')) {
+        Step 'msys2' 'fail' "could not look for MSYS2 on $where"; $p.Out | ForEach-Object { Write-Host "    $_" }; Note-Fail 3; return
+    }
+    $script:cHome = $p.Kv.home; $script:cUser = $p.Kv.user
+    $dir = $p.Kv['msys2.dir']; $script:cMsysDir = $dir
+    $fresh = $false
+    if ($p.Kv['msys2.found'] -eq 'True') {
+        Step 'msys2' 'ok' "$dir (found, used as it is)"
+    } else {
+        try { $asset = Get-Asset 'msys2' }
+        catch { Step 'msys2' 'fail' "MISSING at $dir. and the publisher's list could not be read: $($_.Exception.Message)"; Note-Fail 1; return }
+        if ($Check) {
+            Step 'msys2' 'warn' "MISSING (not at $dir). would install $($asset.Version) from $($asset.Url) (sha256 $($asset.Sha.Substring(0, 12))...) into $dir, run pacman -Syuu twice, then pacman -S --needed $($script:CPackages -join ' ')"
+        } else {
+            $sha = if ($TestBadHash) { ($(if ($asset.Sha[0] -eq '0') { '1' } else { '0' }) + $asset.Sha.Substring(1)) } else { $asset.Sha }
+            $ir = CCall 'cinstall' @{ Msys2Dir = $dir; Prefix = $prefixR; Url = $asset.Url; File = $asset.File; Sha = $sha; Force = $(if ($Force) { '1' } else { '' }) }
+            if ($ir.Rc -ne 0) {
+                Step 'msys2' 'fail' $(if ($ir.Err) { $ir.Err } else { "the install on $where exited $($ir.Rc)" })
+                if (-not $ir.Err) { $ir.Out | ForEach-Object { Write-Host "    $_" } }
+                Note-Fail $(if ($ir.Rc -eq 4) { 4 } else { 3 }); return
+            }
+            Step 'msys2' 'done' "$($asset.Version) from $($asset.Url), sha256 $($ir.Kv.sha) matches, unpacked to $($ir.Kv.installed)"
+            $fresh = $true
+            $p = CCall 'cmsys' $cv
+        }
+    }
+    $have = $p.Kv['msys2.found'] -eq 'True'
+    $k = $p.Kv
+    $gaps = if ($have) { @(Get-CGaps $k) } else { @('gcc', 'cmake', 'ninja', 'pkg-config', 'openssl') }
+    # the other runner accounts that exist here, and the ACL
+    $user = $p.Kv.user
+    $others = @($RunnerAccounts | Where-Object { $k["acct.$_"] -eq 'True' -and -not (Test-SameAccount $_ $user) })
+    $failedModify = $false; $plan = $null
+    if ($have) {
+        $aces = @(ConvertFrom-Icacls (Get-Lines $p.Out 'acl') $dir)
+        $plan = New-AclPlan $dir $aces $user ($k.writable -eq 'True') $others ($gaps.Count -gt 0 -or $fresh)
+        if ($Check) {
+            if ($plan.Grant.Count) {
+                Step 'msys2-acl' 'warn' ((@($plan.Grant | ForEach-Object { if ($_.Why -eq 'rx') { "would grant $($_.Account) read and execute" } else { "would grant $($_.Account) Modify while pacman runs and take it back after" } })) -join '. ')
+            } else { Step 'msys2-acl' 'ok' "$(if ($others) { "$($others -join ', ') can read it" } else { 'no other runner account to grant' }), and $user can write it" }
+        } else {
+            foreach ($op in $plan.Grant) {
+                $c = CCall 'cacl' @{ Ops = (ConvertTo-AclOps @($op)) }
+                if ($c.Rc -eq 0) { Step 'msys2-acl' 'done' $(if ($op.Why -eq 'rx') { "granted $($op.Account) read and execute on $dir" } else { "granted $user Modify on $dir while pacman runs" }) }
+                else {
+                    Need 'msys2-acl' "icacls was refused for $($op.Account) on $dir ($($c.Err)). an admin runs this" @(Format-IcaclsCommand $op.Args)
+                    if ($op.Why -eq 'modify') { $failedModify = $true }
+                }
+            }
+            if (-not $plan.Grant.Count) { Step 'msys2-acl' 'ok' "$(if ($others) { "$($others -join ', ') can read it" } else { 'no other runner account to grant' }), and $user can write it" }
+        }
+    }
+    if ($have -and $gaps.Count -and -not $Check) {
+        if ($failedModify) {
+            Need 'pacman' "$user cannot write $dir and the Modify grant was refused, so pacman was not run. an admin, or the owner of $dir, runs it" @("$dir\usr\bin\bash.exe -lc `"pacman -S --needed --noconfirm $($script:CPackages -join ' ')`"")
+        } else {
+            $pc = CCall 'cpacman' @{ Msys2Dir = $dir; Init = $(if ($fresh) { '1' } else { '' }); Pkgs = ($script:CPackages -join ' ') }
+            if ($pc.Rc -ne 0) { Step 'pacman' 'fail' $(if ($pc.Err) { $pc.Err } else { "pacman on $where exited $($pc.Rc)" }); Show-Tail $pc; Note-Fail 3 }
+            else { Step 'pacman' 'done' "$(if ($fresh) { 'first start and two core updates, then ' })pacman -S --needed $($script:CPackages -join ' ')" }
+        }
+        if ($plan.Modify -and -not $failedModify) {
+            $rv = CCall 'cacl' @{ Ops = (ConvertTo-AclOps $plan.Revert) }
+            if ($rv.Rc -eq 0) { Step 'msys2-acl' 'done' "took $user's Modify on $dir back" }
+            else { Need 'msys2-acl' "could not take $user's Modify back ($($rv.Err)). an admin runs this" @($plan.Revert | ForEach-Object { Format-IcaclsCommand $_.Args }) }
+        }
+        $p = CCall 'cmsys' $cv; $k = $p.Kv
+        $gaps = @(Get-CGaps $k)
+    }
+    if ($have -or -not $Check) {
+        Write-CTools $k $dir $gaps ([bool]$Check)
+        if ($gaps.Count -and -not $Check -and -not $failedModify -and $script:rc -eq 0) { Note-Fail 5 }
+    } else {
+        Write-CTools @{} $dir $gaps $true
+    }
+    if ($others) {
+        $cmds = @($others | ForEach-Object { "pwsh -File scripts\room-toolchain.ps1 $(if ($Target -match '@') { $Target -replace '^[^@]*@', "$_@" } else { "$_@$Target" }) -Profile c -Msys2Dir '$dir'" })
+        Need 'runner-path' "the PATH record is per user and this run wrote it for $user only. run this as each other runner account too" $cmds
+    }
+    $bin = "$dir\mingw64\bin"
+    if (@("$($kv.rec)" -split ';') -notcontains $bin) { $script:newDirs += $bin }
+}
+
+# Stage B: git, vcpkg, the checkout and the presets.
+function Invoke-CRest {
+    $script:pathPre = Get-PathPre
+    if (-not $script:cHome) { Step 'vcpkg' 'warn' 'skipped: the MSYS2 probe did not answer, so the home directory is not known'; return }
+    $home_ = $script:cHome
+    $vdir = if ($VcpkgDir) { $VcpkgDir } else { "$home_\vcpkg" }
+    $sdir = if ($SdkDir) { $SdkDir } else { "$home_\git\github\openziti\ziti-sdk-c" }
+    $dry = if ($Check) { '1' } else { '0' }
+
+    # git: identity and the credential helper
+    $g = CCall 'cgit' @{}
+    $gk = $g.Kv
+    if (-not $gk['git.path']) {
+        Step 'git-identity' 'warn' 'MISSING: git is not on the room yet, so no identity can be checked. the git step above installs it'
+        Step 'git-credential' 'warn' 'MISSING: git is not on the room yet'
+    } else {
+        $hasName = [bool]$gk['git.name']; $hasEmail = [bool]$gk['git.email']
+        $setName = if (-not $hasName -and $GitUserName) { $GitUserName } else { '' }
+        $setEmail = if (-not $hasEmail -and $GitUserEmail) { $GitUserEmail } else { '' }
+        $lackName = -not $hasName -and -not $GitUserName; $lackEmail = -not $hasEmail -and -not $GitUserEmail
+        $helpers = @("$($gk['git.helper'])|$($gk['git.syshelper'])" -split '\|' | Where-Object { $_ })
+        $hasHelper = [bool]($helpers | Where-Object { $_ -match '^(manager|manager-core)$' -or $_ -match 'git-credential-manager' })
+        $setHelper = if ($hasHelper) { '' } else { 'manager' }
+        if (($setName -or $setEmail -or $setHelper) -and -not $Check) {
+            $sc = CCall 'cgitset' @{ Name = $setName; Email = $setEmail; Helper = $setHelper }
+            if ($sc.Rc -ne 0) { Step 'git-identity' 'fail' "git config --global failed on $where"; $sc.Out | ForEach-Object { Write-Host "    $_" }; Note-Fail 3 }
+        }
+        # identity
+        if ($hasName -and $hasEmail) { Step 'git-identity' 'ok' "$($gk['git.name']) <$($gk['git.email'])> (already in the global config, left alone)" }
+        elseif ($lackName -or $lackEmail) {
+            $cmds = @(); if ($lackName) { $cmds += 'git config --global user.name "Your Name"' }; if ($lackEmail) { $cmds += 'git config --global user.email "you@example.com"' }
+            Need 'git-identity' "no $(if ($lackName) { 'user.name' })$(if ($lackName -and $lackEmail) { ' and ' })$(if ($lackEmail) { 'user.email' }) in the global config of $($script:cUser) and none was given (-GitUserName, -GitUserEmail). this script never invents one. as that user" $cmds
+        }
+        else { Step 'git-identity' $(if ($Check) { 'warn' } else { 'done' }) "$(if ($Check) { 'would set' } else { 'set' }) $(@(if ($setName) { "user.name '$setName'" }; if ($setEmail) { "user.email '$setEmail'" }) -join ' and ') in the global config" }
+        # the helper and the access
+        $gcmOk = [bool](Get-ToolVersion "$($gk.gcm)")
+        $repos = @('https://github.com/openziti/ziti-sdk-c.git'); $checkUrl = $null
+        if ($CheckRepo) { $checkUrl = ConvertTo-RepoUrl $CheckRepo; $repos += $checkUrl }
+        $au = CCall 'cauth' @{ Repos = ($repos -join "`n") }
+        $res = @($au.Out | Where-Object { "$_" -match '^auth\.\d+=' } | ForEach-Object { $_ -replace '^auth\.\d+=', '' } | ForEach-Object { $f = $_ -split '\|', 4; [pscustomobject]@{ Ok = ($f[0] -eq 'ok'); Url = $f[1]; Why = $f[3] } })
+        $pub = $res | Select-Object -First 1
+        $helperText = if ($hasHelper) { "credential.helper $(($helpers | Where-Object { $_ -match 'manager' } | Select-Object -First 1)) already set" } elseif ($Check) { 'would set credential.helper manager' } else { 'set credential.helper manager' }
+        $gcmText = if ($gcmOk) { "git credential-manager $($gk.gcm) answers" } else { 'git credential-manager does not answer, so this git is not Git for Windows with its Credential Manager' }
+        if (-not $pub -or -not $pub.Ok) {
+            Step 'git-credential' 'fail' "$helperText, but git ls-remote $($repos[0]) failed without a prompt ($($pub.Why)). the room cannot reach github.com, or git is broken"; Note-Fail 3
+        } elseif ($checkUrl -and $res.Count -gt 1 -and -not $res[1].Ok) {
+            Need 'git-credential' "$helperText. public access works, but $checkUrl needs a login ($($res[1].Why)). a person runs this once in an interactive session AS $($script:cUser) on the room (a console, not ssh). it opens a browser or a device code prompt and asks for the GitHub account, and nothing is typed into this script" @('git credential-manager github login')
+        } elseif (-not $gcmOk) {
+            Step 'git-credential' 'warn' "$helperText. public access works. $gcmText"
+        } else {
+            Step 'git-credential' $(if ($Check -and -not $hasHelper) { 'warn' } else { 'ok' }) "$helperText. public access works$(if ($checkUrl) { ", and so does $checkUrl" } else { ' (no -CheckRepo, so only the public repo was checked)' }). $gcmText"
+        }
+    }
+    $gitUsable = [bool]$gk['git.path']
+
+    # vcpkg
+    $vc = CCall 'cvcpkg' @{ VcpkgDir = $vdir; Url = 'https://github.com/microsoft/vcpkg'; Dry = $dry }
+    $vk = $vc.Kv
+    if ($vk['vcpkg.inway'] -eq 'True') { Step 'vcpkg' 'fail' "$vdir is there and is not a git checkout of vcpkg. nothing was replaced. look at it"; Note-Fail 3 }
+    elseif ($vc.Rc -ne 0) { Step 'vcpkg' 'fail' $(if ($vc.Err) { $vc.Err } else { "vcpkg on $where exited $($vc.Rc)" }); Show-Tail $vc; Note-Fail 3 }
+    else {
+        $vv = "$($vk['vcpkg.ver'])" -split '\|', 2
+        # vcpkg says `vcpkg package management program version 2026-08-27-<hash>`, a date and not a dotted number
+        $vver = if ("$($vv[1])" -match 'version (\S+)') { $Matches[1] } else { "$($vv[1])" }
+        if ($vv[0]) { Step 'vcpkg' $(if ($vk.cloned -or $vk.bootstrapped) { 'done' } else { 'ok' }) "$vver at $($vv[0])$(if ($vk.cloned) { ', cloned' })$(if ($vk.bootstrapped) { ', bootstrapped' })" }
+        elseif ($Check) { Step 'vcpkg' 'warn' "MISSING at $vdir. would $(if ($vk['vcpkg.git'] -ne 'True') { 'git clone https://github.com/microsoft/vcpkg there, then ' })run bootstrap-vcpkg.bat -disableMetrics$(if (-not $gitUsable) { ' (git is not on the room yet)' })" }
+        else { Step 'vcpkg' 'fail' "vcpkg.exe is not at $vdir after the bootstrap"; Note-Fail 5 }
+        if ($vk['vcpkg.triplet'] -eq 'True') { Step 'triplet' 'ok' "x64-mingw-static is in $vdir\triplets\community" }
+        else { Step 'triplet' $(if ($Check) { 'warn' } else { 'fail' }) "MISSING: $vdir\triplets\community\x64-mingw-static.cmake$(if ($Check) { '. it comes with the vcpkg clone' })"; if (-not $Check) { Note-Fail 5 } }
+    }
+
+    # the checkout
+    $sc2 = CCall 'csdk' @{ SdkDir = $sdir; Url = 'https://github.com/openziti/ziti-sdk-c'; Dry = $dry }
+    $sk = $sc2.Kv
+    if ($sk['sdk.inway'] -eq 'True') { Step 'sdk-checkout' 'fail' "$sdir is there and is not a git checkout. nothing was replaced. look at it"; Note-Fail 3 }
+    elseif ($sc2.Rc -ne 0) { Step 'sdk-checkout' 'fail' $(if ($sc2.Err) { $sc2.Err } else { "the checkout on $where exited $($sc2.Rc)" }); Show-Tail $sc2; Note-Fail 3 }
+    elseif ($sk['sdk.git'] -eq 'True' -or $sk.cloned) {
+        $ign = if ($sk['sdk.ignored'] -eq 'True') { '' } else { ". NOTE its .gitignore does not list CMakeUserPresets.json, so the generated file would show as untracked" }
+        Step 'sdk-checkout' $(if ($sk.cloned) { 'done' } else { 'ok' }) "$sdir, branch $($sk['sdk.branch']), $(if ($sk['sdk.dirty'] -eq 'True') { 'dirty' } else { 'clean' })$(if ($sk.cloned) { ', cloned now' } else { ', left alone' })$(if ($sk.submodules) { ', submodules initialised' })$ign"
+    } else {
+        Step 'sdk-checkout' $(if ($Check) { 'warn' } else { 'fail' }) "MISSING at $sdir.$(if ($Check) { " would git clone https://github.com/openziti/ziti-sdk-c there$(if (-not $gitUsable) { ' (git is not on the room yet)' })" })"
+        if (-not $Check) { Note-Fail 5 }
+    }
+
+    # the preset
+    $mdir = $script:cMsysDir
+    $json = ConvertTo-PresetsJson (Get-CwdmingPresets $vdir $mdir $VcpkgBinaryCache)
+    if ($Check) {
+        $rd = CCall 'cpread' @{ SdkDir = $sdir }
+        $cur = if ($rd.Kv.b64) { [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($rd.Kv.b64)) } else { '' }
+        Invoke-Expression $script:CPresetMerge
+        $m = if ($rd.Kv.dir -ne 'True') { $null } else { Merge-Presets $cur $json }
+        $pk = if ($m) { @{ preset = $m.Action; added = ($m.Added -join ','); kept = ($m.Kept -join ','); why = $m.Why } } else { @{ preset = 'nodir' } }
+    } else {
+        $sj = CCall 'cpjson' @{ Json = $json }
+        if ($sj.Rc -ne 0) { Step 'cmake-preset' 'fail' "could not stage the preset text on $where"; $sj.Out | ForEach-Object { Write-Host "    $_" }; Note-Fail 3; return }
+        $pc = CCall 'cpresets' @{ SdkDir = $sdir }
+        $pk = $pc.Kv
+    }
+    $file = "$sdir\CMakeUserPresets.json"
+    switch ($pk.preset) {
+        'nodir' { Step 'cmake-preset' 'warn' "would write $file with $(@((Get-CwdmingPresets $vdir $mdir $VcpkgBinaryCache) | ForEach-Object { $_.name }) -join ', ') once $sdir is cloned" }
+        'created' { Step 'cmake-preset' $(if ($Check) { 'warn' } else { 'done' }) "$(if ($Check) { 'would create' } else { 'created' }) $file with $($pk.added). cmake --preset cwdming" }
+        'merged' { Step 'cmake-preset' $(if ($Check) { 'warn' } else { 'done' }) "$(if ($Check) { 'would add' } else { 'added' }) $($pk.added) to the existing $file$(if ($pk.kept) { ", kept $($pk.kept) as they are" }). the rest of the file is kept$(if (-not $Check) { ', the old one is next to it as CMakeUserPresets.json.atrium-bak' })" }
+        'ok' { Step 'cmake-preset' 'ok' "$file already has $($pk.kept), left alone" }
+        'invalid' { Need 'cmake-preset' "$file was left alone because $($pk.why). move it aside or fix it, then run this again" @("move `"$file`" `"$file.old`"") }
+        default { Step 'cmake-preset' 'fail' "the preset step on $where answered '$($pk.preset)'"; Note-Fail 3 }
+    }
+}
+
+# macOS and Linux: report only.
+function Invoke-CUnix {
+    $r = Invoke-Remote (Get-Payload 'cprobe' @{ VcpkgDir = $VcpkgDir; SdkDir = $SdkDir })
+    $k = ConvertFrom-KeyValue $r.Out
+    if ($r.Code -ne 0) { Step 'c-profile' 'fail' "the probe on $where exited $($r.Code)"; $r.Out | ForEach-Object { Write-Host "    $_" }; Note-Fail 3; return }
+    foreach ($t in 'cc', 'gcc', 'cmake', 'ninja', 'git') {
+        $v = "$($k[$t])" -split '\|', 2
+        if ($v[0]) { Step $t 'ok' "$(Get-ToolVersion $v[1]) at $($v[0])" } else { Step $t 'warn' 'MISSING. install it with the system package manager' }
+    }
+    Step 'vcpkg' $(if ($k['vcpkg.here'] -eq 'True') { 'ok' } else { 'warn' }) "$($k['vcpkg.dir'])$(if ($k['vcpkg.here'] -ne 'True') { ' MISSING' })"
+    Step 'sdk-checkout' $(if ($k['sdk.here'] -eq 'True') { 'ok' } else { 'warn' }) "$($k['sdk.dir'])$(if ($k['sdk.here'] -ne 'True') { ' MISSING' })"
+    if (-not $Check) { Step 'c-profile' 'skip' 'install cmake, ninja and gcc with the system package manager. this script installs nothing for -Profile c here' }
+}
+
 # ── 4. install what is not ──────────────────────────────────────────────────
 
 $newDirs = @()
@@ -598,6 +955,7 @@ foreach ($t in $todo) {
 if ($script:rc -ne 0 -and -not $Check) {
     # What did install is still recorded below, so a rerun only has the rest to do.
 }
+if ($cProfile -and $script:remoteOS -eq 'windows') { Invoke-CMsys2 }
 
 # ── 5. the PATH record, and where the room's start reads it ─────────────────
 
@@ -651,6 +1009,10 @@ if (-not $Check -and $todo -and $script:rc -ne 3 -and $script:rc -ne 4 -and $scr
     }
 }
 
+# ── 6b. the rest of the C profile: git, vcpkg, the checkout, the presets ────
+
+if ($cProfile) { if ($script:remoteOS -eq 'windows') { Invoke-CRest } else { Invoke-CUnix } }
+
 # ── 7. a room that is running has the old PATH ──────────────────────────────
 
 if ($changed -and $kv.room -eq 'up') {
@@ -658,4 +1020,5 @@ if ($changed -and $kv.room -eq 'up') {
     Step 'restart' 'warn' "the room on $where answers on 7781 and read its PATH when it started, so it does not see this yet. this script does not restart it. $how"
 }
 
-Finish $script:rc
+# 6 is a finished run that needs a person. -Check never ends with it: nothing ran.
+Finish (Get-CExitCode $script:rc $(if ($Check) { 0 } else { $script:needs.Count }))
