@@ -8291,14 +8291,23 @@ async function blockerMarkSection(browser, base) {
     await settle();
     if (await mark()) fail("a card with no escalation wears the blocker mark.");
 
+    // The stuck alert ON (the default): a blocker rings exactly once, not once
+    // as a blocker and again as a stuck card.
+    blockerEsc = { source: "launch-prompt", prompt: "folder-trust", text: "stuck at the folder-trust prompt" };
+    await settle();
+    await settle();
+    if (await rung() !== 1) fail("a blocker with the stuck alert on rang " + await rung() + " times, not once.");
+    const all = await sp.evaluate(() => JSON.parse(localStorage.getItem("atrium.toastlog") || "[]").length);
+    if (all !== 1) fail("a blocker with the stuck alert on left " + all + " log lines, not one.");
+    const kind = await sp.evaluate(() => JSON.parse(localStorage.getItem("atrium.toastlog") || "[]")[0].kind);
+    if (kind !== "blocker") fail("the blocker's log line is not stamped with its kind: " + kind);
+
     // The stuck setting at off: a blocker is still marked and still rings.
     await sp.evaluate(() => {
       const el = document.getElementById("s-stuck");
       el.value = "off";
       el.dispatchEvent(new Event("change"));
     });
-    blockerEsc = { source: "launch-prompt", prompt: "folder-trust", text: "stuck at the folder-trust prompt" };
-    await settle();
     const m = await mark();
     if (!m) fail("a launch-prompt card on the stack has no blocker mark.");
     else {
@@ -8334,6 +8343,19 @@ async function blockerMarkSection(browser, base) {
     if (!pin.attach) fail("the pinned blocker offers no attach.");
     if (!/waiting at a login/.test(pin.text)) fail("the pinned blocker does not say why: " + pin.text);
     if (!pin.bell) fail("the bell is not red while a card is blocked.");
+
+    // A log line whose TITLE says it is blocked, from anything but a blocker,
+    // is not painted red: the tint follows the stored kind.
+    await sp.evaluate(() => { toast("x is BLOCKED", "an agent chose this title", "stack", null, null); openToastLog(); });
+    const fake = await sp.evaluate(() => {
+      const r = [...document.querySelectorAll("#toastlog-list .tlrow:not(.pinned)")].find(x => /x is BLOCKED/.test(x.textContent));
+      return r ? r.classList.contains("blocker") : null;
+    });
+    if (fake === null) fail("the look-alike titled log line is missing.");
+    else if (fake) fail("a log line is painted red from its title, not its kind.");
+    const real = await sp.evaluate(() => [...document.querySelectorAll("#toastlog-list .tlrow:not(.pinned)")]
+      .some(x => /BLOCKED: waiting at a login/.test(x.textContent) && x.classList.contains("blocker")));
+    if (!real) fail("a blocker's own log line is not red.");
 
     // Cleared by the room: gone from the card and from the bell's pin.
     blockerEsc = null;
