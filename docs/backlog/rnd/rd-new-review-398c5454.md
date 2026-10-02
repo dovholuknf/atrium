@@ -40,3 +40,15 @@ Verdict: OK 45687063^..398c5454 (doc-ok). It lands by cherry-pick alone.
 
 Quality: every point folded in where it belongs, each with an acceptance that would catch a regression. The
 evidence-writer table in 1.2 is the piece the design needed.
+
+## Follow-up e865491b (398c5454..e865491b)
+
+- **L4:** the L4 row now names the hub's open-change index (commits, patch-ids and head tree) as new work, fed from
+  the C5 records.
+- **L5:** wall 1 also refuses a pushed commit whose tree equals an open change's head tree, which catches the squash.
+  The residue, an edit after a squash, is stated, and wall 2 confines it to the hub. L4's acceptance includes the
+  squash.
+
+Closed: L4, L5 / Open: none
+
+Verdict: OK 45687063^..e865491b (doc-ok). It lands by cherry-pick alone.
