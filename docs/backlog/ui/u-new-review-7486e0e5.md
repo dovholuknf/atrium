@@ -34,3 +34,24 @@ Verdict: **OK.** Two Lows can follow.
 
 Atrium-Verdict: room-ok a51c45fe..7486e0e5
 Atrium-Verdict: hub-ok a51c45fe..7486e0e5
+
+## Re-read: ee02a749
+
+Range `a51c45fe..ee02a749`. ee02a749 is one commit on landing `1e442775`, in `scripts/measure-term-switch.js` only.
+
+Closed:
+- **L1.** `--pool` takes only cards with `supervised` set and no `parked_at`. `supervised` is on the task view
+  (`internal/api/api.go:799`), and `parked_at` is on the stored task. The header and the too-few message count those
+  cards.
+- **L2.** Attach K+1 is compared with the median of attaches 2 to 4. Failed attaches and `-1` values are left out, and
+  the comparison is skipped when no baseline is left.
+
+Open, a Low, not a hold:
+- **N1: when `--pool-k` is under 4, the baseline includes the timed attach.** `times.slice(1, 4)` reaches index K. At
+  K=1 the run compares attach 2 with itself. Use `slice(1, Math.min(4, poolK))`, or require `--pool-k` of at least
+  4. The default of 8 is not affected.
+
+`node --check` passes.
+
+Atrium-Verdict: room-ok a51c45fe..ee02a749
+Atrium-Verdict: hub-ok a51c45fe..ee02a749
