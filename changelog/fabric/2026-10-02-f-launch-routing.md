@@ -1,4 +1,4 @@
 - A launch that names no room (`gwt claude .`) now goes by itself to the room on your machine that has the directory, with no picker.
 - Where more than one room on your machine has it (claude-sg4 and sg4-control on sg4), the hub still asks, and the list holds only those rooms.
-- Where no room has the directory the hub answers 422 saying so, with no list to pick from. There is no default room: name one to choose it.
-- Rooms answer `GET /v1/launch/cwd?path=` with `{"exists":..,"dir":..}`, which the hub asks of each room. Hub and rooms need this build together.
+- Where every room answered and none has the directory the hub answers 422 saying so. If a room did not answer, or the directory is relative or a network path, the hub asks as it always did, over every room. There is no default room: name one to choose it.
+- Rooms answer `GET /v1/launch/cwd?path=` with `{"exists":..,"dir":..}`, and refuse network (UNC) paths with a 400. Rooms on an older build count as not answering, so deploy order does not matter.

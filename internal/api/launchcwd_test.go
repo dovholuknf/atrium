@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -59,6 +60,23 @@ func TestLaunchCwdIgnoresARelativePath(t *testing.T) {
 	for _, p := range []string{"", ".", "..", "internal"} {
 		if exists, dir := cwdAnswer(t, srv, p); exists || dir {
 			t.Fatalf("%q answered exists=%v dir=%v, want neither", p, exists, dir)
+		}
+	}
+}
+
+// A NETWORK PATH IS REFUSED BEFORE ANY STAT: on a Windows room that would open SMB
+// to the named host with the room user's credentials. Every spelling a direct call
+// could use answers 400, and says neither yes nor no about the host.
+func TestLaunchCwdRefusesANetworkPath(t *testing.T) {
+	srv, _, _ := fileServer(t)
+	for _, p := range []string{`\\evil\share`, `//evil/share`, `\\?\UNC\evil\share`, `\\.\pipe\x`, `/\evil/share`, `\\?\C:\x`} {
+		rec := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/launch/cwd?path="+url.QueryEscape(p), nil))
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("%q answered %d %s, want 400", p, rec.Code, rec.Body)
+		}
+		if !strings.Contains(rec.Body.String(), "error") || strings.Contains(rec.Body.String(), "exists") {
+			t.Fatalf("%q answered %s, want an error and no exists", p, rec.Body)
 		}
 	}
 }

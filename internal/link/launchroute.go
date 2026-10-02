@@ -69,7 +69,20 @@ func (p *Proxy) placeLaunch(w http.ResponseWriter, r *http.Request) (*http.Reque
 		return r, true
 	}
 
-	cands := launchCandidates(r, rooms)
+	// A DIRECTORY THE HUB CANNOT JUDGE IS NOT PROBED: a relative one ("." or
+	// "~/x" means nothing off the machine it was typed on) and a UNC one, which
+	// is worse. See `launchCwdKind`.
+	if launchCwdKind(cwd) != cwdAbsolute {
+		needsARoom(w, rooms)
+		return r, false
+	}
+
+	cands := launchCandidates(r, p.leavingOut(rooms))
+	// NOTHING TO ASK, as when every room is on its way out: the old question.
+	if len(cands) == 0 {
+		needsARoom(w, rooms)
+		return r, false
+	}
 	has, quiet := p.roomsWithDir(r.Context(), cands, cwd)
 	switch len(has) {
 	case 1:
@@ -77,16 +90,24 @@ func (p *Proxy) placeLaunch(w http.ResponseWriter, r *http.Request) (*http.Reque
 		r.Header.Set(RoomHeader, has[0])
 		return r, true
 	case 0:
-		msg := "no room has the directory " + cwd
-		if len(cands) > 0 {
-			msg += ". looked on " + strings.Join(attachedNames(cands), ", ")
-		}
+		// A ROOM THAT DID NOT ANSWER MAY HAVE THE DIRECTORY, so "none matched" is
+		// not known. It is a room on a build from before the check, one that is
+		// slow, or one that is restarting, and the picker worked for all of them
+		// before this existed: the human could pick it. Killing the picker would
+		// strand every launch whose directory is on a room not yet updated. So the
+		// OLD question comes back, over EVERY attached room and not only the
+		// candidates, which also makes the order hub and rooms are deployed in
+		// irrelevant. Only the 422 below is new.
 		if len(quiet) > 0 {
-			msg += ". did not answer: " + strings.Join(quiet, ", ")
+			needsARoom(w, rooms)
+			return r, false
 		}
-		// NOT A 409 WITH `rooms`. A caller shows its picker on exactly that, and a
-		// pick from a list where nothing has the directory can only fail.
-		cardAnswer(w, http.StatusUnprocessableEntity, map[string]any{"error": msg})
+		// EVERY CANDIDATE ANSWERED AND NONE HAS IT. NOT A 409 WITH `rooms`: a caller
+		// shows its picker on exactly that, and a pick from a list where nothing
+		// has the directory can only fail.
+		cardAnswer(w, http.StatusUnprocessableEntity, map[string]any{
+			"error": "no room has the directory " + cwd + ". looked on " + strings.Join(attachedNames(cands), ", "),
+		})
 	default:
 		// Only the rooms that have it. sg4 runs two rooms on one machine, so this is
 		// a real answer there, and the caller picks between two that will work.
@@ -96,6 +117,66 @@ func (p *Proxy) placeLaunch(w http.ResponseWriter, r *http.Request) (*http.Reque
 		})
 	}
 	return r, false
+}
+
+const (
+	cwdAbsolute = iota
+	cwdRelative
+	cwdUNC
+)
+
+// launchCwdKind says what a directory is as TEXT, without looking at any
+// filesystem: the hub may be Windows or not and the caller's path may be either
+// style, so `filepath.IsAbs` of the hub's own OS answers the wrong question.
+// Absolute is "/x", "C:\x" or "C:/x".
+//
+// A UNC PATH IS NEVER PROBED. `\\host\share`, `//host/share`, `\\?\UNC\...` and
+// `\\.\...` (any two leading slashes of either kind, which Windows reads as one)
+// make `os.Stat` on a Windows room open an SMB connection to that host with the
+// room user's credentials, so a probe fanned out to every candidate would send
+// the user's NTLM hash to whatever host the caller wrote. The room refuses them
+// too (internal/api/launchcwd.go) so a direct call cannot do it either.
+func launchCwdKind(cwd string) int {
+	slash := func(c byte) bool { return c == '/' || c == '\\' }
+	if len(cwd) >= 2 && slash(cwd[0]) && slash(cwd[1]) {
+		return cwdUNC
+	}
+	if len(cwd) >= 1 && cwd[0] == '/' {
+		return cwdAbsolute
+	}
+	if len(cwd) >= 3 && cwd[1] == ':' && slash(cwd[2]) &&
+		(cwd[0] >= 'a' && cwd[0] <= 'z' || cwd[0] >= 'A' && cwd[0] <= 'Z') {
+		return cwdAbsolute
+	}
+	return cwdRelative
+}
+
+// leavingOut drops the rooms on their way out. A room marked for deletion starts
+// nothing new (`startsNothing`, which reads the same inventory), so asking it
+// whether it has the directory would only find a room the launch is then refused
+// on. A hub with no inventory has no marks.
+func (p *Proxy) leavingOut(rooms []Attached) []Attached {
+	stock := p.inventory()
+	if stock == nil {
+		return rooms
+	}
+	known, err := stock.Known()
+	if err != nil {
+		return rooms
+	}
+	var out []Attached
+	for _, a := range rooms {
+		leaving := false
+		for _, k := range known {
+			if equalFold(k.Name, a.Name) && k.State == "marked-for-deletion" {
+				leaving = true
+			}
+		}
+		if !leaving {
+			out = append(out, a)
+		}
+	}
+	return out
 }
 
 // launchCandidates are the rooms worth asking: those on the caller's machine.

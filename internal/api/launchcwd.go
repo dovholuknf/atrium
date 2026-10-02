@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -22,6 +23,17 @@ import (
 // can launch. Read only, creates nothing.
 func (s *Server) launchCwd(w http.ResponseWriter, r *http.Request) {
 	raw := strings.TrimSpace(r.URL.Query().Get("path"))
+	// A UNC PATH IS REFUSED BEFORE ANYTHING TOUCHES IT. On a Windows room
+	// `os.Stat(\\host\share)` opens SMB to that host with this user's credentials,
+	// which hands the user's NTLM hash to whatever host the caller named, and the
+	// hub fans this call out to every candidate room. Any two leading slashes of
+	// either kind, since Windows reads `//host` and `\\?\` and `\\.\` the same way.
+	// The hub refuses them first (internal/link/launchroute.go), and this makes a
+	// direct call safe too.
+	if len(raw) >= 2 && (raw[0] == '/' || raw[0] == '\\') && (raw[1] == '/' || raw[1] == '\\') {
+		writeErr(w, http.StatusBadRequest, errors.New("a network path is not a place to run"))
+		return
+	}
 	// A relative path is relative to this daemon's own directory, which is not
 	// what the caller meant by it. Not a directory, rather than a guess.
 	path := filepath.FromSlash(raw)

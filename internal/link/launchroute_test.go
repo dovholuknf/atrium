@@ -221,17 +221,115 @@ func TestARoomThatDoesNotAnswerIsNotAMatch(t *testing.T) {
 	}
 }
 
-// When the only room with the directory is silent, the answer says who did not
-// answer, so "no room has it" is not mistaken for "it is nowhere".
-func TestTheNoDirectoryAnswerNamesTheRoomsThatDidNotAnswer(t *testing.T) {
+// A ROOM THAT DID NOT ANSWER MAY HAVE THE DIRECTORY. A room on a build from before
+// the check, a slow one, one that is restarting: the picker let the human choose
+// it before, so "none matched" is a 409 over EVERY attached room (the other
+// machine's too), never a 422 that strands the launch. This is also why the order
+// hub and rooms are deployed in does not matter.
+func TestARoomThatDidNotAnswerKeepsThePickerOverEveryRoom(t *testing.T) {
 	a := &fakeRoom{name: "claude-sg4", host: "sg4", noRoute: true}
+	b := &fakeRoom{name: "sg4-control", host: "sg4"}
+	c := &fakeRoom{name: "sg3", host: "sg3"}
+	front, done := rooms(t, "sg4", a, b, c)
+	defer done()
+
+	got := launch(t, front, inDir(dotagents))
+	if got.Code != http.StatusConflict || strings.Join(got.Rooms, ",") != "claude-sg4,sg3,sg4-control" {
+		t.Fatalf("answered %d rooms %v, want the old 409 over every room", got.Code, got.Rooms)
+	}
+}
+
+// Slow is the same as old: not an answer.
+func TestASlowRoomWithNoMatchKeepsThePicker(t *testing.T) {
+	a := &fakeRoom{name: "claude-sg4", host: "sg4", slow: 5 * time.Second}
 	b := &fakeRoom{name: "sg4-control", host: "sg4"}
 	front, done := rooms(t, "sg4", a, b)
 	defer done()
 
 	got := launch(t, front, inDir(dotagents))
-	if got.Code != http.StatusUnprocessableEntity || !strings.Contains(got.Error, "did not answer: claude-sg4") {
-		t.Fatalf("answered %d %q", got.Code, got.Error)
+	if got.Code != http.StatusConflict || len(got.Rooms) != 2 {
+		t.Fatalf("answered %d rooms %v, want the old 409", got.Code, got.Rooms)
+	}
+}
+
+// A directory that is not absolute means nothing off the machine it was typed
+// on, is "not a directory" on every room, and so was a 422 where the picker used
+// to be. It is not probed and is asked about as before.
+func TestARelativeDirectoryKeepsThePickerAndIsNotProbed(t *testing.T) {
+	a := &fakeRoom{name: "claude-sg4", host: "sg4", dirs: []string{".", "~/x", "src"}}
+	b := &fakeRoom{name: "sg3", host: "sg3"}
+	front, done := rooms(t, "sg4", a, b)
+	defer done()
+
+	for _, dir := range []string{".", "~/x", "src", `\work`, "C:", `C:x`} {
+		got := launch(t, front, inDir(dir))
+		if got.Code != http.StatusConflict || strings.Join(got.Rooms, ",") != "claude-sg4,sg3" {
+			t.Fatalf("%q answered %d rooms %v, want the old 409 over every room", dir, got.Code, got.Rooms)
+		}
+	}
+	if a.probes.Load()+b.probes.Load() != 0 {
+		t.Fatal("a directory that is not absolute was probed")
+	}
+}
+
+// The hub may be Windows or not and the caller's path either style, so a drive
+// path is absolute on a hub that is not, and is asked about.
+func TestAWindowsDriveDirectoryIsAbsoluteWhateverTheHub(t *testing.T) {
+	for _, dir := range []string{`D:\git\dotagents`, `d:/git/dotagents`} {
+		a := &fakeRoom{name: "claude-sg4", host: "sg4", dirs: []string{dir}}
+		b := &fakeRoom{name: "sg3", host: "sg3"}
+		front, done := rooms(t, "sg4", a, b)
+		got := launch(t, front, inDir(dir))
+		done()
+		if got.Code != http.StatusOK || got.By != "claude-sg4" {
+			t.Fatalf("%q landed on %q (%d %s), want claude-sg4", dir, got.By, got.Code, got.Error)
+		}
+	}
+}
+
+// A NETWORK PATH IS NEVER PROBED: stat on a Windows room would open SMB to the
+// host the caller wrote, with the room user's credentials. Every spelling, and the
+// answer is the old question.
+func TestANetworkPathIsNeverProbed(t *testing.T) {
+	dirs := []string{`\\evil\share\x`, `//evil/share/x`, `\\?\UNC\evil\share`, `\\.\pipe\x`, `/\evil/share`, `\\?\C:\x`}
+	a := &fakeRoom{name: "claude-sg4", host: "sg4", dirs: dirs}
+	b := &fakeRoom{name: "sg3", host: "sg3", dirs: dirs}
+	front, done := rooms(t, "sg4", a, b)
+	defer done()
+
+	for _, dir := range dirs {
+		got := launch(t, front, inDir(dir))
+		if got.Code != http.StatusConflict || strings.Join(got.Rooms, ",") != "claude-sg4,sg3" {
+			t.Fatalf("%q answered %d rooms %v, want the old 409 over every room", dir, got.Code, got.Rooms)
+		}
+	}
+	if a.probes.Load()+b.probes.Load() != 0 {
+		t.Fatal("a network path was probed")
+	}
+}
+
+// A room marked for deletion starts nothing, so it is not asked and is not a
+// match: the other room on the machine takes the launch with no picker.
+func TestARoomMarkedForDeletionIsNotACandidate(t *testing.T) {
+	a := &fakeRoom{name: "claude-sg4", host: "sg4", dirs: []string{dotagents}}
+	b := &fakeRoom{name: "sg4-control", host: "sg4", dirs: []string{dotagents}}
+	front, done := rooms(t, "sg4", a, b)
+	defer done()
+	seen := time.Now()
+	front.Config.Handler.(*Proxy).SetInventory(&remembering{
+		rooms: []Known{
+			{Name: "claude-sg4", Attached: true, State: "marked-for-deletion", FirstSeen: &seen, LastSeen: &seen},
+			{Name: "sg4-control", Attached: true, FirstSeen: &seen, LastSeen: &seen},
+		},
+		cards: map[string][]CardState{},
+	})
+
+	got := launch(t, front, inDir(dotagents))
+	if got.Code != http.StatusOK || got.By != "sg4-control" {
+		t.Fatalf("the launch landed on %q (%d %s), want sg4-control", got.By, got.Code, got.Error)
+	}
+	if a.probes.Load() != 0 {
+		t.Fatal("a room on its way out was asked")
 	}
 }
 
