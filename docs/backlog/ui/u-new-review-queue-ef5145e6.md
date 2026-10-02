@@ -35,3 +35,11 @@ Not landed, for @ui to fix:
   line text it quotes is program output, which is fine.
 
 Atrium-Verdict: doc-ok 29151781..7ceccb6f
+
+## Re-read: dc60bddc
+
+`a51c45fe..dc60bddc`, one commit. It replaces `f14b20ee` and `ef5145e6` with scrubbed copies, and `5710f2ec` is
+dropped. The ctx-bar item now says "the operator's status line script". The usage chart item paraphrases the ask and
+says "a screenshot on sg4", with no path. Neither has a verbatim quote or a private path. Landed as a fast-forward.
+
+Atrium-Verdict: doc-ok a51c45fe..dc60bddc
