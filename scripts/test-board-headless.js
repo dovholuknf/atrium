@@ -19023,6 +19023,9 @@ async function switchPrewarmSection(browser, base) {
   const errors = [];
   wp.on("pageerror", e => errors.push(String(e)));
   await wp.addInitScript(() => {
+    // Resting on a row also raises the peek popover, which asks the phone page's network module about rooms; the
+    // desktop page has none, so give it the one-room answer rather than let the popover throw in this fixture.
+    window.mNet = window.mNet || { rooms: () => [], room: () => "", loaded: () => false };
     window.__socks = 0;
     const W = window.WebSocket;
     window.WebSocket = new Proxy(W, { construct(T, a) { window.__socks++; return new T(...a); } });
@@ -19089,6 +19092,24 @@ async function switchPrewarmSection(browser, base) {
     });
     if (!used.had || used.again) fail("switchPrewarm: the prewarmed card was not handed over exactly once " + JSON.stringify(used));
     if (gets.length !== before) fail("switchPrewarm: taking the prewarm fetched again.");
+
+    // A real click through attachTask: a prewarm under 3s old is used, so the card is fetched exactly once; one older
+    // than that is not, so the click fetches again and the card has been fetched twice.
+    const getsOf = id => gets.filter(g => g === id).length;
+    await wp.mouse.move(5, 5);
+    await row("sp-b").hover();
+    await idle(250);
+    if (getsOf("sp-b") !== 1) fail("switchPrewarm: resting on sp-b did not fetch it once (" + getsOf("sp-b") + ").");
+    await wp.evaluate(() => attachTask("sp-b"));
+    await idle(200);
+    if (getsOf("sp-b") !== 1) fail("switchPrewarm: a click right after the rest fetched sp-b again (" + getsOf("sp-b") + " GETs, one expected).");
+    await wp.mouse.move(5, 5);
+    await row("sp-c").hover();
+    await idle(250);
+    await idle(3100);
+    await wp.evaluate(() => attachTask("sp-c"));
+    await idle(200);
+    if (getsOf("sp-c") !== 2) fail("switchPrewarm: a click after the prewarm went stale did not fetch again (" + getsOf("sp-c") + " GETs, two expected).");
 
     // The cap: more than PREWARM_MAX in flight are not started (the answers are held, so none finishes).
     await wp.route("**/v1/tasks/sp-*", () => {});

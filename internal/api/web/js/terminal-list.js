@@ -60,7 +60,9 @@ function prewarmCard(id) {
   const p = api(`/v1/tasks/${id}`);
   prewarmed.set(id, { at: Date.now(), p });
   const done = () => { prewarmFlying--; };
-  p.then(done, () => { done(); prewarmed.delete(id); });
+  // Only its own entry: a click can take this one and a second rest start another for the same id before this
+  // one fails, and that newer one must survive.
+  p.then(done, () => { done(); if ((prewarmed.get(id) || {}).p === p) prewarmed.delete(id); });
 }
 
 // The card a click is about to fetch, from the prewarm if it is fresh. Taken
