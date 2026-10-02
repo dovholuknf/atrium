@@ -6,7 +6,7 @@ item is what came out of it. Design work only. Nothing here is built.
 
 ## Why
 
-- Published studies of review bots agree on one point. Developers act on most human review comments, but on only a
+- The survey found that published studies of review bots agree on one point. Developers act on most human review comments, but on only a
   small share of bot comments. The bots that improved did it by raising fewer findings, not by finding more.
 - atrium's review direction is already ahead in several places: a walk that clint reads in person, nothing posted
   unasked, evidence pinned to a sha, gates before a push, and memory that @review approves. Those designs are
@@ -26,6 +26,7 @@ item is what came out of it. Design work only. Nothing here is built.
 
    "No findings" is a good result. The verifier drops anything that fails the bar.
 2. **An addressed rate for each reviewer** (change-record finding states, review-on-atrium 7.4).
+   - The survey found this is the measure other review tools have settled on.
    - A finding is addressed when a later commit changes its lines, or when clint marks it "fix it" in the walk.
      Rejected and skipped findings count against the rate.
    - Show each persona's rate over 30 days on the review tab. Flag a persona below a floor to @review.
@@ -36,9 +37,9 @@ item is what came out of it. Design work only. Nothing here is built.
      the lifecycle's tested gate runs tests.
 4. **A confidence score from the verifier, with a threshold** (the verify and merge steps in pulls-view).
    - Each finding gets a confidence from 0 to 100. Below 80, it leaves the walk but stays in the run folder, where
-     "deeper" can show what was dropped.
+     "deeper" can show what was dropped. 80 is a starting value; held question 2 settles it.
    - Severity stays a label the reviewer picks from a fixed rubric. Only confidence decides what leaves the walk:
-     a model asked to judge severity does little better than chance.
+     the survey found that a model asked to judge severity does little better than chance.
 5. **Incremental review from the last reviewed head** (pulls-view already stores "head reviewed"; the hunk hash is in
    change-lifecycle 2.1).
    - A second round reviews only the new commits.
@@ -56,9 +57,11 @@ item is what came out of it. Design work only. Nothing here is built.
 9. **Cheap triage, only where Claude checks.** A cheap model marks trivial files, and a Claude verifier still sees
    every finding (`docs/rnd/opencode-token-routing.md`).
 10. **Blast radius for the walk.** For each changed function, show its callers and the tests that reach it. This
-    gives the riskiest-first order a fact to stand on (the PR review story, sections 3 and 4, not landed).
+    gives the riskiest-first order a fact to stand on (sections 3 and 4 of the PR review story,
+    `docs/rnd/pr-review-story.md` on the orchestrator's branch `claude/pr-review-story`, not landed).
 11. **A replay set.** Rerun past PRs whose findings are known (PR 378 and the next few) against every recipe change.
-    The change lands only if recall holds on the set (pulls-view acceptance, `docs/backlog/release/m-001.md`).
+    The change lands only if recall holds on the set (the 378 acceptance replay in
+    `docs/backlog/rnd/rnd-new-pulls-view.md` and `docs/backlog/rnd/QUEUE.md` P1c).
 12. **A receipt for a lesson.**
     - When a walk comment becomes a lesson, show "lesson added: <file>, pending knowledge-ok".
     - Redact anything that looks like a secret before the lesson is written.
