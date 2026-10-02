@@ -39,3 +39,22 @@ Checked against claude/landing:
 
 Atrium-Verdict: hold c4af3b8a..f8320e5b
 Quality: a tight, useful item that names nobody. Two pointers need fixing.
+
+## Re-read: 74d44a19
+
+Range `c4af3b8a..74d44a19`. The fix is one commit on f8320e5b, and only the item changes.
+
+Closed:
+- **Item 11.** It now points at the 378 acceptance replay, in `rnd-new-pulls-view.md` and QUEUE.md P1c. m-001 is gone.
+- **Item 10.** It cites `docs/rnd/pr-review-story.md` on `claude/pr-review-story`, marked not landed.
+- **The Lows.**
+  - "The survey found" now comes before the severity claim and both addressed-rate claims.
+  - 80 is marked as the starting value, which question 2 settles.
+
+The item still names nobody and quotes nobody. One nit: the first bullet under "Why" now runs past the 120-column wrap.
+Fix it whenever the file is next touched.
+
+Verdict: doc-ok (re-read, c4af3b8a..74d44a19)
+Quality: the fix is clean and the pointers are now right.
+
+Atrium-Verdict: doc-ok c4af3b8a..74d44a19
