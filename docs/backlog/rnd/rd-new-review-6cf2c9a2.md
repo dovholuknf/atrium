@@ -72,3 +72,47 @@ clint.
 Quality: the refactor is the useful kind of doc. Each change is ranked by measured hand steps and maps to a design
 that exists, and the self-feeding log is a good idea. The miss is where the log is published, which the OTel
 review's own rule should have prompted.
+
+## Pre-read of revision 2, 596b4b1b (2026-10-02): no verdict yet
+
+This is read now so the re-read can be one pass once clint answers where the log lives (Q5). It stays held with the
+log commits. The revision folds in clint's answers well: plain-word questions, the inbox as a hub feature with no
+model, the one-tap ban, and the outside-repo check before any clone. Section 2's sorting of the orchestrator's work
+into hub, director and judgment is clear, and the cost figure makes the case. Four points to fold in before the
+re-read:
+
+1. **Section 3, reading through clint's `gh` login: it keeps the credential rule, with one condition.** Driving `gh`
+   by name while gh keeps its own token is exactly the f-003 line. But clint's login can write: `gh api -X
+   POST/DELETE`, `gh repo fork`, `gh pr create`. So "reads only" must be enforced by construction, not by intent.
+   - The check is a fixed set of GET requests that atrium builds, with the owner and repo validated against
+     `[A-Za-z0-9_.-]+`.
+   - It runs as a typed read-only hub op on a room that has the login (sg4 today, since m1mini has none), in the
+     room-to-room spike's shape.
+   - An agent never composes a `gh api` call with that login.
+
+   Raw file reads go to `raw.githubusercontent.com` without auth for public repos, and through the same op for
+   private ones.
+2. **Section 3, the repo's text is untrusted input.** CONTRIBUTING, the PR template and the policy files are written
+   by the outside project, or by an attacker, and a model reads them to decide GO or NO-GO. A repo can simply say
+   "AI contributions welcome, no CLA". So the report quotes each line it relied on (it already names the file and
+   commit), and GO is advisory. clint's decision reads the quotes, and a model's GO never starts a fork or a build
+   by itself. Item 23, statements never filled in, is right.
+3. **The inbox: an answer is information, not authorization.** The one-tap ban relies on the asking card's own
+   label for its default ("what yes would do"). A wrong or prompt-injected card can label an upstream push as
+   harmless. So:
+   - A "yes" from the inbox is never accepted as approval of a gated outward action. That action still meets its
+     own gate when it runs: the landing op's checks, the permission gate, or the contribution check.
+   - "What yes would do" is the hub's own wording wherever the yes triggers a hub action.
+   - The asker is identified by the hub (room certificate plus card id), not by the text, and rate-limited per card.
+4. **Section 2.3, the owner suggestion and the woken session: right, with three conditions.**
+   - **The owner suggestion** from department keywords and paths, confirmed by clint, has no model and nothing to
+     attack beyond a wrong suggestion. Fine.
+   - **The woken conflict session** reads two directors' reports, which are model output and may carry outside
+     text. So it runs with no tools, or read-only ones, and is never auto-approved. Its only output is a
+     suggestion row, marked "suggested by a model" in the inbox, so the "no model in the path" claim stays true
+     for everything else.
+   - **The pause as a board control** must be enforced by the hub: launches, landings and room ops refused under
+     it. A message that agents are asked to obey is not enforcement. The freeze-budget design does this for
+     spend. Say it covers the pause's scope too.
+
+For the re-read: these four, plus clint's Q5 answer, and then a doc-ok on the clean range.
