@@ -79,3 +79,32 @@ These can't all be true. Either read the diff for every running card on a slower
 Atrium-Verdict: doc-ok 74d44a19..d8176ba3
 Quality: a well-aimed design. It starts from the real case, keeps clint out of the loop, and its false-positive table
 covers most of what will go wrong. M1 to M3 make the reversal and the "never page" promise hold in the code.
+
+## Re-read: 1c9e1727
+
+Range `d8176ba3..1c9e1727`. One file changed: the design doc.
+
+Closed:
+- **M1.** The no-loop bound is stated: only the meter's timer starts a check-in, and every count is capped. The
+  `atrium` sender is stamped by the daemon. That checks out: `atrium_say` has no sender field. The mark is a column on
+  the message, not its text. The rewrite of the a2a.go rule comment is in W2.
+- **M2.** The meter is its own field, not an `Escalation`, so `isStuck` never sees it. R3 is not raised for a card
+  with a meter. W4 tests that a card at level 4 never rings the bell with the stuck setting at "alert".
+- **M3.** Diff reads start 5 minutes into a turn, and the acceptance test matches.
+- **L1.** The doc now says a daemon restart is not a new turn, and the saved start is tied to the session.
+- **L2.** The level-4 tooltip now says "the operator".
+- **L3.** The facts line is a separate notice, and the worker's message is not edited.
+
+Open. None of these holds the doc:
+- **N1: the W1 row still says "uncommitted lines for cards past half the threshold".** Section 2 now says the reads
+  start at 5 minutes, so fix the W1 row to match.
+- **N2: "at most 4 per card per turn" counts between answers.** An answer resets the level, so a turn with answers can
+  get more check-ins than 4. The bound is still right, because each reset needs the launcher to act. Write it as "at
+  most 4 between two answers".
+- **N3: the model sees a name, not the column.** The worker reads the banner's text, and the check-in mark is not in
+  it. Reserve `atrium` as a handle and an alias, so no card's message is shown to a model as "atrium".
+
+Verdict: doc-ok (re-read, 74d44a19..1c9e1727)
+Quality: a clean fold-in. Each fix lands in the right section, and the W4 test pins the never-page promise.
+
+Atrium-Verdict: doc-ok 74d44a19..1c9e1727
