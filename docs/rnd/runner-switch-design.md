@@ -84,9 +84,11 @@ changed.
 | --- | --- | --- |
 | R1 | **The runner is enabled on the destination room** | no row, or `enabled = 0` |
 | R2 | **Its login works** | the room's preflight for that runner fails (`POST /v1/preflight`) |
-| R3 | **Its gate is in place** | codex: the atrium hook is not in `$CODEX_HOME/hooks.json`, or has not been approved once there. opencode: the factory permission config of opencode doc section 4 is missing. Then a dead daemon would leave the card ungated |
+| R3a | **Codex: the gate is proven, not assumed** | atrium never reads codex's trust store, by design (other-runners "Trust"), so "approved once" cannot be checked directly. Instead the room's preflight runs codex once in a scratch folder on one harmless tool call, and passes only if atrium's own hook reported that call. A hook that is missing, unapproved, or broken by quoting all fail the same way. The proof is kept per room and codex version, and is re-run after a codex update |
+| R3b | **Codex: not in bypass** | the successor's launch, or the room's codex config, would run codex with `bypassPermissions` (or `--dangerously-bypass-approvals-and-sandbox`). The measured session ran in bypass. There, a dead daemon or a hook that does not fire leaves codex ungated, because unlike claude it has no prompt to fall back to. The switch launches codex in a mode that asks, and is refused if the room's config forces bypass |
+| R3c | **opencode: the permission in effect is the factory one** | the factory permission config of opencode doc section 4 is missing. It is also refused when the worktree carries a project `opencode.json` or `.opencode/` plugins, unless the repo is one of clint's own. An outside repo's project config loads, and could loosen permissions or run code. The check reads the permission opencode will actually use for that cwd (the merged config), not only that a file exists |
 | R4 | **The card may use it** | the card's allowed runners do not include it (section 5). By default a judgment card may use only claude and codex |
-| R5 | **The repo may go to it** | an OpenCode Go model on a private repo, while opencode doc question 2 says public only |
+| R5 | **The repo may go to it** | an OpenCode Go model on a private repo, while opencode doc question 2 says public only. Or codex on a private repo, unless clint has allowed private repos to go to OpenAI (question 2). The brief's memory text goes with it, so the rule covers the memory too |
 | R6 | **The model is named** | no `--model`, and the runner row has no default model |
 | R7 | **A brief can be built** | no capture newer than the last commit, and no recap. The hub-built brief of 3.2 then has too little to go on. `--force` takes it anyway |
 
@@ -94,8 +96,14 @@ changed.
 
 ### 3.1 The brief
 
-The successor's first prompt is one paragraph. It points at `BRIEF.switch.md`, which the hub writes into the
-worktree through `internal/safepath`, and which is never committed. It holds:
+The successor's first prompt is one paragraph. It points at `HANDOFF.<alias>.switch.md`, which the hub writes into
+the worktree through `internal/safepath`, mode `0600`. It holds say subjects and memory, and the atrium repo is
+public, so it must never be committed:
+- the name matches `HANDOFF.*.md`, which atrium's `.gitignore` already ignores;
+- for any other repo, the room adds the name to the clone's `.git/info/exclude`, which is never committed either.
+
+It cannot be written outside the worktree, because opencode's factory config denies reading outside directories. The
+file holds:
 
 1. **Where you are.** You took over `<alias>` from Claude on room `<room>`. The worktree is `<path>` on branch
    `<branch>`. Answer this with `atrium_say` and act on nothing until you are told you are live, as in a move.
@@ -130,7 +138,8 @@ early (3.3).
 
 When a card's weekly or five-hour reading crosses **90%**, and the card has a worktree with commits not yet landed,
 the room runs the capture prompt of `newContextCapture` without the clear that follows it in a new-context cycle.
-This happens once per card per reset window.
+This happens **once per card per reset window**: once per five-hour window for the five-hour reading, and once per
+week for the weekly one. A reading that drops below 90% and crosses again in the same window does not capture again.
 
 - It costs one turn per card, about $0.40 on an Opus director at today's contexts (operator-focus section 4.2).
 - It is skipped for a card that captured in the last hour.
@@ -163,10 +172,13 @@ A card carries `allowed_runners`, set by default from its role tag:
 
 | Card | Default allowed runners | Why |
 | --- | --- | --- |
-| @review, any card tagged `role:review` | claude, codex | verdicts are judgment. Codex is another frontier model, so a verdict from it is a different model's verdict, and the verdict file says which runner wrote it |
+| @review, any card tagged `role:review` | claude, codex | verdicts are judgment. Codex is another frontier model, so a verdict from it is a different model's verdict. A review card's brief also includes `docs/backlog/review/REVIEWER-NOTES.md` and its `QUEUE.md`, so the stand-in applies the same standing lessons |
 | @rnd, and design workers | claude, codex | designs land only after @review, but they are judgment too |
 | @runtime, @fabric, @ui, and build workers | claude, codex, opencode (public repos only) | their work is reviewed before it lands |
 | a throwaway search or draft worker | any enabled runner | the opencode routing fits 2 and 3: Claude reads the result |
+
+**Every verdict and every design carries a "written by `<runner>`, `<model>`" line**, on any runner, so a reader
+knows which model judged it. A stand-in's verdicts are not mistaken for Claude's.
 
 When a card is switched to a runner outside its default, the board shows the runner on the card face in the
 attention color. clint can widen the list per card, and that is a numbered decision, not a flag a director sets.
@@ -178,26 +190,29 @@ Each stage is useful alone. All are held by the pause.
 | stage | what | owner | size | acceptance |
 | --- | --- | --- | --- | --- |
 | S0 | **No build, now.** A director whose account runs out writes its handoff while it still can, and the orchestrator launches the stand-in by hand with the brief of 3.1 | every director | none | done when used once |
-| S1 | `--runner` and `--model` on the move: R1 to R7, a forced `--fresh`, `BRIEF.switch.md` through safepath, the todo read from the jsonl, and the memory as text. Same room only | @runtime, after M1 | 2 days | a throwaway claude worker with an open todo and two queued says switches to codex on one room. The codex card reads the brief, names the todo items, gets the two says after the cut-over, commits on the same branch, and reports to the launcher. A switch with codex hooks unapproved is refused at R3 and nothing changes |
+| S1 | `--runner` and `--model` on the move: R1 to R7, a forced `--fresh`, `HANDOFF.<alias>.switch.md` through safepath at `0600`, with the `.git/info/exclude` line, the todo read from the jsonl, and the memory as text. Same room only | @runtime, after M1 | 2 days | a throwaway claude worker with an open todo and two queued says switches to codex on one room. The codex card reads the brief, names the todo items, gets the two says after the cut-over, commits on the same branch, and reports to the launcher. A switch on a room whose codex hook does not report the preflight call is refused at R3a, and one whose codex config forces bypass is refused at R3b. Nothing changes in either case. `git status` in the worktree never shows the brief |
 | S2 | `--back`: resume the original card with the stand-in's handoff and commit range | @runtime | 1 day | the worker of S1 comes back to claude. Its first reply names a commit the codex card made, and the alias, pins and `report_to` are the same as before S1 |
 | S3 | The brief built from data (3.2), and the early capture at 90% (3.3) | @runtime | 1.5 days | with capture blocked (a test runner that refuses turns), a switch still builds a brief that has the recap, the todo, the commit list and the last says. A reading crossing 90% captures once, and a second crossing in the same window does not |
 | S4 | Across rooms: S1 and S2 through the hub verb | @fabric, after M2 | 1 day | a worker on sg3 switches to codex on m1mini and back |
 | S5 | The limit trigger: a reading at 95% with a reset more than 6 hours away files a numbered decision in clint's list naming the cards on that account and a suggested runner each. An answer runs the moves | @fabric, @ui, after operator-focus L1 | 1 day | a faked 95% reading files one decision. A `yes` moves the named cards, and `no` moves nothing |
 | S6 | Usage rows for codex and opencode, so a stand-in's spend shows on the usage tab | @runtime | 1 day | a codex card's turns appear in `session_usage` with its model and a price |
 
-Opencode as a target needs the opencode doc's stage for the factory permission config first. That is R3.
+Opencode as a target needs the opencode doc's stage for the factory permission config first. That is R3c.
 
 ## 7. Questions for clint, in plain words
 
 1. **What happens when your Claude limit runs out.** Atrium asks you, in your decision list, whether to move the
    affected cards to another AI tool, and does it only on your yes? Or should it switch on its own, by a rule you
    set once? **Suggested: ask each time, until you have seen it work twice.**
-2. **Which tool stands in.** For cards that review and design, only codex (OpenAI's tool, a model as capable as
-   Claude), and for the cards that build, codex or the cheaper OpenCode models on public repos? **Suggested: yes,
-   codex first everywhere, OpenCode only after the bake-off and the terms answer.**
+2. **Which tool stands in, and what it may see.** For cards that review and design, only codex (OpenAI's tool, a
+   model as capable as Claude). For the cards that build, codex or the cheaper OpenCode models on public repos.
+   Switching to codex sends the code, and the card's notes, to OpenAI. May private repos go to OpenAI, or public
+   repos only, as for OpenCode? **Suggested: codex first everywhere, on public repos only until you say otherwise for a
+   private one. OpenCode only after the bake-off and the terms answer.**
 3. **Codex's one-time approval.** Codex runs atrium's safety checks only after you have approved them once in a codex
-   session on each machine. Will you do that once on m1mini and sg3, so a switch is not refused? **Suggested: yes,
-   after the pause, 2 minutes per machine.**
+   session on each machine. Atrium then proves they work with one harmless test run before any switch. Will you
+   approve them once on m1mini and sg3, so a switch is not refused? **Suggested: yes, after the pause, 2 minutes per
+   machine.**
 4. **The early save.** When a card is at 90% of a Claude limit, it writes its notes for a successor, which costs about
    40 cents a card. Then a switch has good notes even when the account is out. **Suggested: yes, only for cards with
    work not yet landed.**
