@@ -3956,7 +3956,7 @@ async function clearKeepsPageSection(browser, base) {
     // What the scrollback holds, as text, and how many lines of it.
     const run = (seq, fresh) => p.evaluate(async ([seq, fresh]) => {
       const w = d => new Promise(r => term.write(d, r));
-      if (fresh) { term.reset(); termPushed = ""; }
+      if (fresh) { term.reset(); term._atriumPushed = ""; }
       await w(seq);
       const b = term.buffer.normal;
       const hist = [];
@@ -3996,7 +3996,7 @@ async function clearKeepsPageSection(browser, base) {
     // new-context pushes the page and leaves it on screen.
     const kept = await p.evaluate(async () => {
       const w = d => new Promise(r => term.write(d, r));
-      term.reset(); termPushed = "";
+      term.reset(); term._atriumPushed = "";
       await w("one\r\ntwo\r\nthree");
       keepPage(term, true);
       const b = term.buffer.normal;
@@ -19221,6 +19221,240 @@ async function attachAtOnceSection(browser, base) {
   } finally { tasksMode = was; await ctx.close(); }
 }
 
+// TERMINALS ARE KEPT ALIVE when you switch away. Switching back shows the same terminal with no new socket and no
+// replay; a hidden terminal takes frames into its own screen and touches nothing of the pane showing (title, focus,
+// size, the ready/seen/scroll helpers); a hidden terminal never sends a resize; the least recently used unpinned ones
+// are let go past the setting and pinned ones stay; one let go attaches normally; a close in the background drops it.
+async function keepAliveSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const wp = await ctx.newPage();
+  const errors = [];
+  wp.on("pageerror", e => errors.push(String(e)));
+  await wp.addInitScript(() => {
+    window.__ka = { socks: [] };
+    const Real = window.WebSocket;
+    window.WebSocket = function (url, protocols) {
+      if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+      const id = /\/tasks\/([^/]+)\/attach/.exec(url)[1];
+      const s = { url, id, readyState: 0, binaryType: "arraybuffer", onopen: null, onclose: null, onmessage: null,
+        onerror: null, sent: [], send(m) { this.sent.push(m); }, close() { this.readyState = 3; } };
+      window.__ka.socks.push(s);
+      setTimeout(() => {
+        s.readyState = 1;
+        if (s.onopen) s.onopen({});
+        if (s.onmessage) s.onmessage({ data: new TextEncoder().encode("hist-" + id + "\r\n").buffer });
+      }, 0);
+      return s;
+    };
+    Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+  });
+  const was = tasksMode;
+  const live = (id, extra) => Object.assign({}, T1, { id, display_title: "row " + id, supervised: true, pinned: false,
+    worktree: "/tmp/ka/" + id }, extra || {});
+  try {
+    wornTasks = [live("ka-a"), live("ka-b"), live("ka-c"), live("ka-d"), live("ka-e"), live("ka-p", { pinned: true })];
+    tasksMode = "worn";
+    await wp.goto(base, { waitUntil: "domcontentloaded" });
+    await wp.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await wp.click('.tab[data-view="terms"]');
+    await wp.evaluate(async () => { localStorage.setItem("atrium.termKeep", "8"); await loadCards().catch(() => {}).then(renderTermList); });
+    const idle = ms => wp.waitForTimeout(ms);
+    const text = (expr) => wp.evaluate(e => { const t = eval(e); if (!t) return null; const b = t.buffer.active; const o = [];
+      for (let i = 0; i < b.length; i++) { const l = b.getLine(i); if (l) o.push(l.translateToString(true)); } return o.join("\n"); }, expr);
+    const socksFor = id => wp.evaluate(i => window.__ka.socks.filter(s => s.id === i).length, id);
+    const attach = async id => { await wp.evaluate(i => attachTask(i), id); await idle(150); };
+    const resizes = id => wp.evaluate(i => window.__ka.socks.filter(s => s.id === i)
+      .reduce((n, s) => n + s.sent.filter(m => /"t":"resize"/.test(m)).length, 0), id);
+
+    // Open a, then b: a is kept, its socket still open, its element hidden.
+    await attach("ka-a");
+    if (!/hist-ka-a/.test(await text("term") || "")) fail("keepAlive: the first attach did not replay into the terminal.");
+    await wp.evaluate(async () => {
+      window.__termA = term;
+      await new Promise(r => term.write(Array.from({ length: 150 }, (_, i) => "scroll line " + i).join("\r\n") + "\r\n", r));
+    });
+    const resizesA = await resizes("ka-a");
+    await attach("ka-b");
+    const kept = await wp.evaluate(() => { const k = keptTerms.get("ka-a"); return k && { open: k.sock.readyState, hidden: k.el.style.display, live: !!term, task: termTask.id }; });
+    if (!kept || kept.open !== 1 || kept.hidden !== "none" || kept.task !== "ka-b") fail("keepAlive: switching away did not keep ka-a hidden and open (" + JSON.stringify(kept) + ").");
+
+    // A frame for the hidden terminal lands in it and touches nothing of the showing pane.
+    const before = await wp.evaluate(() => {
+      window.__calls = {};
+      for (const n of ["feedReadyQuiet", "noteScrollAct", "pasteSawOutput", "focusTerm", "sendResize", "termWait", "markTermDead", "toast", "paintTermTitle"]) {
+        const real = window[n]; window[n] = function () { window.__calls[n] = (window.__calls[n] || 0) + 1; return real.apply(this, arguments); };
+      }
+      const b = window.__ka.socks.find(s => s.id === "ka-b");
+      return { title: document.getElementById("t-title").textContent, active: document.activeElement && document.activeElement.className,
+        sentB: b.sent.length, textB: null };
+    });
+    const textBBefore = await text("term");
+    await wp.evaluate(() => {
+      const a = window.__ka.socks.find(s => s.id === "ka-a");
+      a.onmessage({ data: new TextEncoder().encode("A-live\r\n").buffer });
+      a.onmessage({ data: JSON.stringify({ t: "size", cols: 150, rows: 40 }) });
+      a.onmessage({ data: JSON.stringify({ t: "in-refused", why: "x" }) });
+    });
+    await idle(200);
+    const after = await wp.evaluate(() => {
+      const b = window.__ka.socks.find(s => s.id === "ka-b");
+      return { title: document.getElementById("t-title").textContent, active: document.activeElement && document.activeElement.className,
+        sentB: b.sent.length, calls: window.__calls, termTask: termTask.id, keptCols: keptTerms.get("ka-a").term.cols };
+    });
+    if (after.title !== before.title || after.active !== before.active || after.sentB !== before.sentB || after.termTask !== "ka-b") {
+      fail("keepAlive: a frame for the hidden terminal touched the showing pane " + JSON.stringify({ before, after }));
+    }
+    if (Object.keys(after.calls).length) fail("keepAlive: a hidden terminal's frame reached the pane's helpers " + JSON.stringify(after.calls));
+    if (await text("term") !== textBBefore) fail("keepAlive: a frame for the hidden terminal was written into the showing terminal.");
+    const keptText = await text("keptTerms.get('ka-a').term");
+    if (!/A-live/.test(keptText)) fail("keepAlive: the hidden terminal did not take its own output.");
+    if (after.keptCols < 150) fail("keepAlive: the hidden terminal did not follow the pty's size (" + after.keptCols + " cols).");
+
+    // A hidden terminal's answers to xterm's queries go back on its OWN socket, never into the showing session.
+    const sentOf = id => wp.evaluate(i => window.__ka.socks.filter(s => s.id === i).flatMap(s => s.sent.filter(m => /"t":"in"/.test(m))), id);
+    const aInBefore = (await sentOf("ka-a")).length, bInBefore = (await sentOf("ka-b")).length;
+    await wp.evaluate(() => new Promise(r => keptTerms.get("ka-a").term.write("\x1b[c\x1b[6n", r)));
+    await idle(200);
+    const aIn = (await sentOf("ka-a")).slice(aInBefore).join("");
+    if (!/1;2c/.test(aIn) || !/R/.test(aIn)) fail("keepAlive: a hidden terminal's query answers did not reach its own runner (" + aIn + ").");
+    if ((await sentOf("ka-b")).length !== bInBefore) fail("keepAlive: a hidden terminal's query answers were typed into the showing session.");
+
+    // A hidden terminal sends no resize, even when the window changes size.
+    await wp.setViewportSize({ width: 1100, height: 760 });
+    await idle(400);
+    if (await resizes("ka-a") !== resizesA) fail("keepAlive: a hidden terminal sent a resize.");
+
+    // Back: same terminal object, no new socket, no replay, shown in the same task as the click.
+    const back = await wp.evaluate(() => {
+      const t0 = window.__termA, n0 = window.__ka.socks.filter(s => s.id === "ka-a").length;
+      attachTask("ka-a");
+      return { same: term === t0, task: termTask && termTask.id, shown: term && term.element.style.display !== "none",
+        n0, n1: window.__ka.socks.filter(s => s.id === "ka-a").length, hid: !!document.querySelector("#t-screen > [data-kept]") };
+    });
+    if (!back.same || back.task !== "ka-a" || !back.shown || back.n1 !== back.n0) {
+      fail("keepAlive: switching back was not an instant show of the same terminal " + JSON.stringify(back));
+    }
+    await idle(300);
+    const t = await text("term");
+    if ((t.match(/hist-ka-a/g) || []).length !== 1 || !/A-live/.test(t)) fail("keepAlive: the terminal shown again was replayed or lost its output.");
+    if (await socksFor("ka-a") !== 1) fail("keepAlive: switching back dialled a new socket.");
+    // The window shrank while it was hidden: it fitted once on return and told the room.
+    if (await resizes("ka-a") <= resizesA) fail("keepAlive: a pane whose box changed while hidden did not refit and tell the room on return.");
+
+    // A runner that asked for focus reports is told it lost the focus when its terminal is hidden.
+    await wp.evaluate(() => new Promise(r => term.write("\x1b[?1004h", r)));
+    const focusBefore = (await sentOf("ka-a")).length;
+    await attach("ka-b");
+    if (!(await sentOf("ka-a")).slice(focusBefore).some(m => m.includes("\\u001b[O"))) fail("keepAlive: hiding a terminal with focus reports on did not send it the focus-out.");
+    await attach("ka-a");
+
+    // The scroll position is kept across a hide and show (the box did not move, so no refit).
+    await attach("ka-c");
+    const vy = await wp.evaluate(async () => {
+      await new Promise(r => term.write(Array.from({ length: 150 }, (_, i) => "scroll line " + i).join("\r\n") + "\r\n", r));
+      term.scrollToLine(20);
+      return term.buffer.active.viewportY;
+    });
+    await attach("ka-d");
+    await attach("ka-c");
+
+    const scrolled = await wp.evaluate(() => ({ vy: term.buffer.active.viewportY, px: term.element.querySelector(".xterm-viewport").scrollTop }));
+    if (scrolled.vy !== vy || scrolled.px <= 0) fail("keepAlive: the scroll position was not kept across the hide and show " + JSON.stringify({ vy, scrolled }));
+
+    // Bounds: N=2 keeps the two most recent unpinned, and a pinned one stays whatever the count.
+    await wp.evaluate(() => setTermKeep("atrium.termKeep", 2));
+    await attach("ka-p");
+    for (const id of ["ka-b", "ka-c", "ka-d", "ka-e"]) await attach(id);
+    const keys = await wp.evaluate(() => Array.from(keptTerms.keys()).sort().join(","));
+    if (keys !== "ka-d,ka-p,ka-c".split(",").sort().join(",")) fail("keepAlive: with N=2 and a pinned card the kept set was " + keys + ", not the two latest plus the pinned one.");
+    // One let go is closed, and attaching it again is an ordinary attach with a new socket.
+    const closedA = await wp.evaluate(() => window.__ka.socks.filter(s => s.id === "ka-a").every(s => s.readyState === 3));
+    if (!closedA) fail("keepAlive: an evicted terminal's socket was left open.");
+    const nBefore = await socksFor("ka-a");
+    await attach("ka-a");
+    if (await socksFor("ka-a") !== nBefore + 1) fail("keepAlive: an evicted card did not attach with a new socket.");
+    if (!/hist-ka-a/.test(await text("term"))) fail("keepAlive: an evicted card did not replay on re-attach.");
+
+    // A close in the background drops the slot and leaves the showing pane alone.
+    const titleNow = await wp.evaluate(() => document.getElementById("t-title").textContent);
+    await wp.evaluate(() => { const s = window.__ka.socks.filter(x => x.id === "ka-p" && x.readyState === 1).pop(); s.readyState = 3; s.onclose({ code: 1006, reason: "" }); });
+    await idle(200);
+    const afterClose = await wp.evaluate(() => ({ has: keptTerms.has("ka-p"), title: document.getElementById("t-title").textContent, task: termTask && termTask.id }));
+    if (afterClose.has || afterClose.title !== titleNow || afterClose.task !== "ka-a") fail("keepAlive: a background close was not contained " + JSON.stringify(afterClose));
+
+    // Off: nothing is kept.
+    await wp.evaluate(() => setTermKeep("atrium.termKeep", 0));
+    await attach("ka-b");
+    const none = await wp.evaluate(() => keptTerms.size);
+    if (none !== 0) fail("keepAlive: with the setting at 0 " + none + " terminals were kept.");
+    if (errors.length) fail("keepAlive: page errors " + errors.join("; "));
+    if (!bad) console.log("keepAlive ok");
+  } finally { tasksMode = was; await ctx.close(); }
+}
+
+// NOT IN THE DEFAULT RUN: `REPLAY=/path/replay.json HEADLESS_ONLY=switchBackCost node scripts/test-board-headless.js`.
+// What switching away and back costs with terminals kept (atrium.termKeep=8) and without (0), with the room's real
+// replay played into the socket (a JSON list of {t, bin, b64} frames, captured from a live attach). Prints a table.
+async function switchBackCostSection(browser, base) {
+  const frames = JSON.parse(fs.readFileSync(process.env.REPLAY, "utf8"));
+  const was = tasksMode;
+  const live = id => Object.assign({}, T1, { id, display_title: "row " + id, supervised: true, pinned: false, worktree: "/tmp/sb/" + id });
+  try {
+    wornTasks = [live("sb-a"), live("sb-b")];
+    tasksMode = "worn";
+    const rows = [];
+    for (const keep of ["0", "8"]) {
+      const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+      const wp = await ctx.newPage();
+      await wp.addInitScript(([frames, keep]) => {
+        localStorage.setItem("atrium.termKeep", keep);
+        const Real = window.WebSocket;
+        window.__socks = 0;
+        window.WebSocket = function (url, protocols) {
+          if (!/\/attach(\?|$)/.test(url)) return new Real(url, protocols);
+          window.__socks++;
+          const id = /\/tasks\/([^/]+)\/attach/.exec(url)[1];
+          const s = { url, id, readyState: 0, binaryType: "arraybuffer", onopen: null, onclose: null, onmessage: null, onerror: null,
+            send() {}, close() { this.readyState = 3; } };
+          setTimeout(() => {
+            s.readyState = 1; if (s.onopen) s.onopen({});
+            if (id !== "sb-a") return;
+            for (const f of frames) {
+              const bytes = Uint8Array.from(atob(f.b64), c => c.charCodeAt(0));
+              if (s.onmessage) s.onmessage({ data: f.bin ? bytes.buffer : new TextDecoder().decode(bytes) });
+            }
+          }, 0);
+          return s;
+        };
+        Object.assign(window.WebSocket, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 });
+      }, [frames, keep]);
+      await wp.goto(base, { waitUntil: "domcontentloaded" });
+      await wp.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+      await wp.click('.tab[data-view="terms"]');
+      await wp.evaluate(async () => { await loadCards().catch(() => {}).then(renderTermList); });
+      const sw = id => wp.evaluate(async id => {
+        const t0 = performance.now(); let parsed = 0, hooked = null; const n = window.__socks;
+        attachTask(id);
+        const sync = performance.now() - t0;
+        const hook = setInterval(() => { if (term && term !== hooked) { hooked = term; term.onWriteParsed(() => { parsed = performance.now(); }); } }, 1);
+        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+        const frames2 = performance.now() - t0;
+        await new Promise(r => setTimeout(r, 900));
+        clearInterval(hook);
+        return { sync, frames2, parsed: parsed ? parsed - t0 : 0, newSocks: window.__socks - n, lines: term.buffer.active.length,
+          marks: (window.__switchMarks || []).map(m => m[0] + "=" + m[1].toFixed(1)).join(" ") };
+      }, id);
+      await sw("sb-a"); await wp.waitForTimeout(500);
+      await sw("sb-b"); await wp.waitForTimeout(500);
+      rows.push({ keep, back: await sw("sb-a") });
+      await ctx.close();
+    }
+    console.log("switch back to a card with a " + Math.round(frames.reduce((n, f) => n + f.b64.length * 0.75, 0) / 1024) + " KB replay (ms from attachTask):");
+    for (const r of rows) console.log("  kept=" + r.keep + "  call returns " + r.back.sync.toFixed(1) + "  two frames " + r.back.frames2.toFixed(1) +
+      "  last parsed " + (r.back.parsed ? r.back.parsed.toFixed(0) : "-") + "  new sockets " + r.back.newSocks + "  lines " + r.back.lines + "\n    " + r.back.marks);
+  } finally { tasksMode = was; }
+}
+
 // u-new-burn-chart-axes: the cumulative chart has a time axis, a percent-of-limit axis with the 100% line, the time
 // the projection crosses it, the resets, and a hover. Every fixture is built from one fixed `now` (UC.now), and the
 // limit readings are placed relative to it, so nothing reads the real clock. BURN_SHOT=<dir> writes the pictures.
@@ -19412,7 +19646,7 @@ async function main() {
       termDebug: termDebugSection, termSortStarted: termSortStartedSection,
       noReadyChildren: noReadyChildrenSection, childUnderParent: childUnderParentSection, topNav: topNavSection,
       childFold: childFoldSection, liveHome: liveHomeSection,
-      pulls: pullsSection, hubRepos: hubReposSection, hubReposShelf: hubReposShelfSection, hubReposLedger: hubReposLedgerSection, hubReposFeed: hubReposFeedSection, trayHead: trayHeadSection, pullsAbsent: pullsAbsentSection, oneTooltip: oneTooltipSection, burnChart: burnChartSection, switchPrewarm: switchPrewarmSection, attachAtOnce: attachAtOnceSection };
+      pulls: pullsSection, hubRepos: hubReposSection, hubReposShelf: hubReposShelfSection, hubReposLedger: hubReposLedgerSection, hubReposFeed: hubReposFeedSection, trayHead: trayHeadSection, pullsAbsent: pullsAbsentSection, oneTooltip: oneTooltipSection, burnChart: burnChartSection, switchPrewarm: switchPrewarmSection, attachAtOnce: attachAtOnceSection, keepAlive: keepAliveSection, switchBackCost: switchBackCostSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -21470,6 +21704,7 @@ async function main() {
     await unit("burnChart", () => burnChartSection(browser, base));
     await unit("switchPrewarm", () => switchPrewarmSection(browser, base));
     await unit("attachAtOnce", () => attachAtOnceSection(browser, base));
+    await unit("keepAlive", () => keepAliveSection(browser, base));
   } catch (e) {
     // a listing has no browser, so a bare section call throws here, and the guard below names it
     if (!LIST_MODE) fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e));

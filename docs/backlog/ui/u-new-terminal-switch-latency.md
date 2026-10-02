@@ -69,3 +69,13 @@ Measured with `scripts/measure-term-prewarm.js` on the live m1mini room, five ca
 So on a hub the fetch is taken off the click: ctor falls to the ~19 ms floor (one frame plus `openTerm`'s own work).
 What is left before the ws is `openTerm` and a `requestAnimationFrame` so the pane can be fitted before the socket
 dials; the size goes in the attach, so that wait is kept.
+
+### Note: a kept terminal counts as watched (review M1)
+A kept attach is a watcher on its room, so while the tab is open the auto new-context check for human cards never cycles
+a kept card, a pinned card never cycles at all, and a kept shell is never idle-closed. Stated in the gear hint. Setting
+"terminals kept alive" to 0 gives the old behaviour.
+
+### Post-deploy run on sg4 (review M2)
+Keep eight terminals on ONE remote room (switch through eight of its cards), then time an attach to a ninth card of that
+room with `scripts/measure-term-switch.js` (the path/phase table shows whether it waited on the hub for a fresh conn).
+Compare with the same attach on a cold page. That decides whether to cap kept sockets per remote room.

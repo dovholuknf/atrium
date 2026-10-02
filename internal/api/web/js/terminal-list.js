@@ -2447,6 +2447,7 @@ function attachIsInFlight(card) {
 // out of `renderTermList` so the room-flip loop it closes can be tested against
 // the real code. Returns whether it tore the pane down.
 function reconcileAttached(tasks) {
+  keepReconcile(tasks);
   if (!termTask) return false;
   const live = tasks.find(t => t.supervised && bareId(t.id) === bareId(termTask.id));
   if (live && live.id !== termTask.id) {

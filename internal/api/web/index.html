@@ -1427,6 +1427,25 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
         while you are typing into a box. Leaving the pane leaves the focus in the session.</span>
     </div>
 
+    <!-- Terminals kept alive when you switch away. -->
+    <div class="field">
+      <label for="s-termkeep">terminals kept alive</label>
+      <input type="number" id="s-termkeep" min="0" max="16" step="1" style="width: 5em"
+        onchange="setTermKeep('atrium.termKeep', Math.max(0, Math.min(16, Math.round(Number(this.value) || 0))))">
+      <span class="hintline">Switching away hides a terminal instead of closing it, so coming back is instant and
+        nothing is replayed. This many recently used terminals stay attached, plus every pinned one, and never more
+        than 16 in all. 0 closes a terminal when you leave it, as before. Phones and popped out windows are not
+        affected. A kept terminal still counts as watched, so a session you left is not given a fresh context
+        automatically, and a kept shell is not closed for being idle, while this tab is open.</span>
+    </div>
+    <div class="field">
+      <label for="s-termkeeplines">history kept for a hidden terminal</label>
+      <input type="number" id="s-termkeeplines" min="100" max="50000" step="100" style="width: 6em"
+        onchange="setTermKeep('atrium.termKeepLines', Math.max(100, Math.min(50000, Math.round(Number(this.value) || 5000))))">
+      <span class="hintline">Lines of scrollback a hidden terminal holds (a full 50000 lines is over 100 MB). The
+        terminal you are looking at keeps its whole history; lines cut from a hidden terminal do not come back.</span>
+    </div>
+
     <!-- The two terminal debug switches (input lag, typing gate readout) live in the terminal's
          details drawer, under "debug". See js/peek-debug.js. -->
     <div class="field">

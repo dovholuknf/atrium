@@ -138,6 +138,8 @@ function paintSettings() {
   document.getElementById("s-cardsize").value = String(uiScale());
   document.getElementById("s-density").value = String(density());
   document.getElementById("s-hoverfocus").checked = hoverFocus;
+  document.getElementById("s-termkeep").value = String(termKeepN());
+  document.getElementById("s-termkeeplines").value = String(termKeepLines());
   document.getElementById("s-cardcolors").checked = cardColors;
   for (const k of ["selected", "idle", "exited"])
     document.getElementById("s-termwear-" + k).checked = termWearOn[k];

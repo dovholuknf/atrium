@@ -41,7 +41,6 @@ let termReplayed = false;
 // frame would otherwise stack copies of it. claude's own captures
 // (internal/daemon/testdata) send one erase-display per session, not one per
 // frame, so this is a guard and not the common case.
-let termPushed = "";
 function keepPage(t, restore) {
   const buf = t.buffer.active;
   if (buf.type !== "normal") return;
@@ -56,8 +55,8 @@ function keepPage(t, restore) {
   }
   if (last < 0) return;
   const sig = rows.slice(0, last + 1).join("\n");
-  if (sig === termPushed) return;
-  termPushed = sig;
+  if (sig === t._atriumPushed) return;
+  t._atriumPushed = sig;
   const saved = restore ? [] : null;
   if (saved) for (let i = 0; i < t.rows; i++) saved.push(b.lines.get(b.ybase + i).clone());
   const y = b.y;
@@ -582,6 +581,264 @@ function paintTermChips(task) {
          >${copyIcon()}</button>${esc(task.worktree || "")}</span>`;
 }
 
+
+// ── terminals kept alive ─────────────────────────────────────────────────────
+//
+// SWITCHING TO ANOTHER TERMINAL HIDES THIS ONE, it does not tear it down. The terminal you leave stays attached with
+// its xterm alive, still receiving, and coming back to it is a show: no replay, no refit unless the pane's box moved.
+//
+// HOW. `term`, `termTask`, `termSock` and the rest of the globals below mean "the terminal that is showing", which is
+// what the 400-odd places that read them want. A kept terminal is a SLOT: a copy of those globals taken when it was
+// hidden and put back when it is shown (`termSlotTake`, `termSlotPut`). Nothing else changes meaning, so a hidden
+// terminal cannot be resized, focused, painted into the title or marked seen by code that only knows `term`.
+//
+// A BACKGROUND SOCKET'S FRAMES are written into its own slot's terminal, through `termSlotRun`, which swaps the slot
+// in, runs one synchronous function and swaps back: no await inside, so nothing ever reads half-swapped globals. That
+// function does the daemon's size/caps frames and the output and nothing else: no focus, no resize, no title, no
+// sound, no seen mark. A background close drops the slot, so showing that card is an ordinary attach.
+//
+// BOUNDS. At most `termKeepN()` unpinned terminals, plus every pinned one, and never more than `KEEP_CEIL` in all,
+// least recently shown out first. A kept terminal's history is cut to `termKeepLines()` lines (a terminal at the
+// default 50000 lines is over 100MB), and only the `KEEP_GL` most recent keep a WebGL context (a page gets about
+// sixteen). The terminal showing keeps the full `scrollbackLines()`.
+const KEEP_CEIL = 16;
+// Narrowing to a phone layout stops keeping, so what is kept is let go at once.
+try { if (window.matchMedia) window.matchMedia("(max-width: 900px)").addEventListener("change", () => keepEnforce()); } catch (e) {}
+const KEEP_GL = 4;
+const KEEP_N_KEY = "atrium.termKeep";
+const KEEP_LINES_KEY = "atrium.termKeepLines";
+const KEEP_N_DEFAULT = 8;
+const KEEP_LINES_DEFAULT = 5000;
+
+function keepSetting(key, dflt, max) {
+  try {
+    const v = localStorage.getItem(key);
+    if (v !== null && v !== "") {
+      const n = Number(v);
+      if (Number.isFinite(n) && n >= 0) return Math.min(Math.round(n), max);
+    }
+  } catch (e) {}
+  return dflt;
+}
+// How many unpinned terminals are kept hidden. 0 turns keeping off.
+function termKeepN() { return keepSetting(KEEP_N_KEY, KEEP_N_DEFAULT, KEEP_CEIL); }
+// How much history a hidden terminal holds.
+function termKeepLines() { return Math.max(100, keepSetting(KEEP_LINES_KEY, KEEP_LINES_DEFAULT, 50000)); }
+function setTermKeep(key, n) {
+  try { localStorage.setItem(key, String(n)); } catch (e) {}
+  keepEnforce();
+}
+// Not in a window of its own (that one owns its terminal) and not on the phone layout.
+function keepOn() {
+  return !termOnly() && !termNarrow() && !termPhone() && termKeepN() > 0;
+}
+
+// What a terminal is, as the globals hold it: name, how to read, how to write, the value of a fresh one.
+const TERM_SLOT_FIELDS = [
+  ["term", () => term, v => { term = v; }, () => null],
+  ["fit", () => termFit, v => { termFit = v; }, () => null],
+  ["sock", () => termSock, v => { termSock = v; }, () => null],
+  ["task", () => termTask, v => { termTask = v; }, () => null],
+  ["data", () => termData, v => { termData = v; }, () => null],
+  ["replayed", () => termReplayed, v => { termReplayed = v; }, () => false],
+  ["caps", () => termCaps, v => { termCaps = v; }, () => ({})],
+  ["ptyCols", () => termPtyCols, v => { termPtyCols = v; }, () => 0],
+  ["ptyRows", () => termPtyRows, v => { termPtyRows = v; }, () => 0],
+  ["fitCols", () => termFitCols, v => { termFitCols = v; }, () => 0],
+  ["fitRows", () => termFitRows, v => { termFitRows = v; }, () => 0],
+  ["search", () => termSearch, v => { termSearch = v; }, () => null],
+  ["kind", () => termKind, v => { termKind = v; }, () => "runner"],
+  ["carryNonce", () => carryNonce, v => { carryNonce = v; }, () => ""],
+  ["typed", () => typed, v => { typed = v; }, () => ""],
+  ["typedSure", () => typedSure, v => { typedSure = v; }, () => true],
+  ["followUntil", () => followScrollUntil, v => { followScrollUntil = v; }, () => 0],
+  ["fontSize", () => termFontSize, v => { termFontSize = v; }, () => TERM_FONT_DEFAULT],
+  ["traceLog", () => traceLog, v => { traceLog = v; }, () => []],
+  ["traceSize", () => traceSize, v => { traceSize = v; }, () => 0],
+  ["traceT0", () => traceT0, v => { traceT0 = v; }, () => 0],
+  ["cursorWanted", () => cursorWanted, v => { cursorWanted = v; }, () => true],
+  ["cursorTimer", () => cursorTimer, v => { cursorTimer = v; }, () => 0]
+];
+function termSlotTake() {
+  const s = {};
+  for (const f of TERM_SLOT_FIELDS) s[f[0]] = f[1]();
+  return s;
+}
+// Puts `s` in the globals, or a fresh terminal's values when `s` is null.
+function termSlotPut(s) {
+  for (const f of TERM_SLOT_FIELDS) f[2](s ? s[f[0]] : f[3]());
+}
+
+// True while a background terminal's frame is being handled, so the few shared helpers it reaches (the pty size)
+// know to touch the terminal and nothing on the page.
+let termBgRun = false;
+// Runs `fn` with `slot` standing in for the showing terminal, then puts everything back. Synchronous on purpose: an
+// await inside would leave the globals half swapped for whatever ran in between.
+function termSlotRun(slot, fn) {
+  const showing = termSlotTake();
+  termSlotPut(slot);
+  termBgRun = true;
+  try {
+    return fn();
+  } finally {
+    termBgRun = false;
+    Object.assign(slot, termSlotTake());
+    termSlotPut(showing);
+  }
+}
+
+// Hidden, by bare id.
+const keptTerms = new Map();
+function keptSlotOf(sock) {
+  for (const s of keptTerms.values()) if (s.sock === sock) return s;
+  return null;
+}
+function keptCount() { return keptTerms.size; }
+
+// Takes the terminal that is showing out of the globals and keeps it hidden. True when it did; the caller then
+// finishes the pane's teardown as for any switch. Anything else (no socket, a socket on its way out, the phone, a
+// window of its own, keeping off) is false and the terminal is torn down as before.
+function keepPark() {
+  if (!keepOn() || !term || !termTask || !termSock || !term.element) return false;
+  if (termSock.readyState > WebSocket.OPEN) return false;
+  const id = bareId(termTask.id);
+  // The paste spinner, a pending size and the carry load belong to the pane the operator is looking at.
+  carryLoadEnd();
+  if (pasteFlight && pasteFlight.sock === termSock) pasteEnd("switching terminals");
+  clearTimeout(resizeSettleTimer);
+  resizeSettleTimer = 0;
+  const old = keptTerms.get(id);
+  if (old) keepDrop(old);
+  const slot = termSlotTake();
+  slot.id = id;
+  slot.at = Date.now();
+  slot.pinned = !!termTask.pinned;
+  slot.el = term.element;
+  slot.el.dataset.kept = "1";
+  slot.el.style.display = "none";
+  try { term.options.scrollback = termKeepLines(); } catch (e) {}
+  // A runner that asked for focus reports is told it lost the focus, as it would be on a blur.
+  try { if (term.modes.sendFocusMode && slot.sock.readyState === WebSocket.OPEN) slot.sock.send(JSON.stringify({ t: "in", d: "\x1b[O" })); } catch (e) {}
+  termSlotPut(null);
+  keptTerms.set(id, slot);
+  keepEnforce();
+  return true;
+}
+
+// The kept terminal for `task`, out of the table, or null. A dead socket, or one kept for the other kind (a shell
+// against the runner), is dropped here and the attach goes ahead as it always did.
+function keepTake(task) {
+  const id = bareId(task.id);
+  const slot = keptTerms.get(id);
+  if (!slot) return null;
+  keptTerms.delete(id);
+  if (!slot.sock || slot.sock.readyState !== WebSocket.OPEN || slot.kind !== termKind) {
+    keepDispose(slot);
+    return null;
+  }
+  return slot;
+}
+
+// Puts a kept terminal back on screen: the globals take its values, its element is shown, and the pane is fitted only
+// if its box is not the one it was last fitted at. Nothing is replayed.
+function keepShow(slot, task) {
+  termSlotPut(slot);
+  termTask = task;
+  const el = term.element;
+  delete el.dataset.kept;
+  el.style.display = "";
+  // Settings that moved while it was away.
+  try {
+    const th = themeFor(termTask);
+    term.options.theme = th;
+    paintPaneBg(th);
+    term.options.scrollback = scrollbackLines();
+    const size = readTermFont(task.id);
+    if (term.options.fontSize !== size) { termFontSize = size; term.options.fontSize = size; term._atriumBox = ""; }
+  } catch (e) {}
+  if (!term._atriumGl) useWebgl(term);
+  clearAttachInFlight(task.id);
+  attachTries = 0;
+  attachSince = 0;
+  resetReattach();
+  termWait("");
+  // Only a pane whose pixels changed fits (`paneBoxUnchanged`), and only a fit that moved the size tells the room.
+  onTermResize();
+  // A socket that opened while it was hidden never said how big it is.
+  if (slot.sizeUnsent) { slot.sizeUnsent = false; sendResize(); }
+  markWide();
+  sizeTermHost();
+  // A runner that holds the cursor hidden between frames was left with it hidden.
+  if (cursorSettleMs() && cursorWanted) term.write("\x1b[?25h");
+  focusTerm();
+  syncPhoneView();
+  renderTermList();
+  keepEnforce();
+}
+
+// Ends a kept terminal: the socket, the keystroke listener, the xterm and its element.
+function keepDispose(slot) {
+  keptTerms.delete(slot.id);
+  const sock = slot.sock;
+  if (sock) { try { sock.close(); } catch (e) {} }
+  if (slot.data) { try { slot.data.dispose(); } catch (e) {} }
+  if (slot.term) { try { slot.term.dispose(); } catch (e) {} }
+  if (slot.el && slot.el.remove) slot.el.remove();
+}
+function keepDrop(slot) { keepDispose(slot); }
+function keepDropId(id) {
+  const slot = keptTerms.get(bareId(id));
+  if (slot) keepDispose(slot);
+}
+function keepDropAll() { for (const s of Array.from(keptTerms.values())) keepDispose(s); }
+
+// Applies the bounds. Pinned cards stay, the most recent `termKeepN()` of the rest stay, and the whole set is held to
+// `KEEP_CEIL`, least recently shown going first.
+function keepEnforce() {
+  if (!keptTerms.size) return;
+  if (!keepOn()) { keepDropAll(); return; }
+  const live = typeof lastTasks !== "undefined" ? lastTasks : [];
+  const slots = Array.from(keptTerms.values()).sort((a, b) => b.at - a.at);
+  const n = termKeepN();
+  let recent = 0;
+  const stay = [];
+  for (const s of slots) {
+    const t = live.find(x => bareId(x.id) === s.id);
+    if (t) s.pinned = !!t.pinned;
+    if (s.pinned) stay.push(s);
+    else if (recent < n) { recent++; stay.push(s); }
+    else keepDispose(s);
+  }
+  while (stay.length > KEEP_CEIL) keepDispose(stay.pop());
+  const lines = termKeepLines();
+  stay.forEach((s, i) => {
+    if (i >= KEEP_GL) dropWebgl(s.term);
+    try { if (s.term.options.scrollback !== lines) s.term.options.scrollback = lines; } catch (e) {}
+  });
+}
+
+// Kept terminals whose card is gone, or is no longer one atrium holds, are not worth keeping.
+function keepReconcile(tasks) {
+  for (const s of Array.from(keptTerms.values())) {
+    if (!tasks.some(t => t.supervised && bareId(t.id) === s.id)) keepDispose(s);
+  }
+}
+
+// A frame from a kept terminal's socket. Written into its own terminal and nothing else.
+function keepFrame(slot, data) {
+  termSlotRun(slot, () => {
+    traceOut(data);
+    if (typeof data === "string") {
+      if (takeTermCaps(data) || takeTermSize(data)) return;
+      // Anything else the room says as a control frame is about the pane being looked at.
+      if (data[0] === "{") return;
+      term.write(data);
+      return;
+    }
+    writeRunnerOutput(term, new Uint8Array(data));
+  });
+}
+
 // Empties the pane of everything but a terminal that is being kept. Nothing is kept yet, so this is `innerHTML = ""`.
 function clearTermScreen(screen) {
   for (const c of Array.from(screen.children)) if (!c.dataset || !c.dataset.kept) c.remove();
@@ -620,7 +877,8 @@ function openTerm(task) {
   }
   // Switching sessions means tearing the old one down first, or two sockets
   // write into one screen.
-  if (termSock || term) closeTerm(true);
+  // The terminal being left is kept hidden when it can be (see `keepPark`), torn down otherwise.
+  if (termSock || term) { keepPark(); closeTerm(true); }
 
   // ONE ENTRY FOR THIS ARRIVAL, not two. This runs before the card is set, so
   // letting it record would leave `terms with nothing attached` in the history
@@ -696,6 +954,10 @@ function openTerm(task) {
   // Whether this card holds findings to walk. See js/walk.js.
   if (typeof walkProbe === "function") walkProbe(task);
 
+  // KEPT ALREADY: show it. Nothing is built, dialled or replayed.
+  const keptSlot = keepTake(task);
+  if (keptSlot) { keepShow(keptSlot, task); return; }
+
   const screen = document.getElementById("t-screen");
   clearTermScreen(screen);
   // WHATEVER THIS CARD WAS LAST READ AT. This line used to put it back to the
@@ -707,7 +969,6 @@ function openTerm(task) {
   // first attach fills an empty screen and only a later reconnect resets. See
   // `termReplayed`.
   termReplayed = false;
-  termPushed = "";
   // Another session's pty size must not size this one's first fit.
   termPtyCols = 0;
   termPtyRows = 0;
@@ -777,11 +1038,14 @@ function openTerm(task) {
   // is the history this is here to keep, so it is swallowed without touching
   // the rows: a lone 3 (`tput E3`, some tools on resize) must not blank the
   // screen. The usual clear is 2 then 3, and the 2 has already kept the page.
+  // The terminal this handler belongs to, not whichever one `term` is when it runs: a kept terminal parses its
+  // writes while another is showing.
+  const mine = term;
   term.parser.registerCsiHandler({ final: "J" }, params => {
     const n = params[0];
     if (n === 3) return true;
     if (n !== 2) return false;
-    keepPage(term, false);
+    keepPage(mine, false);
     return false;
   });
   term.open(screen);
