@@ -95,3 +95,15 @@ Probed by dot-sourcing 709c9ef8's room-toolchain-c.ps1 in pwsh.
 Closed: M1, the quoting of printed admin commands (L1, L3, L4 already closed) / Open: L5
 
 Verdict: ROOM DEPLOY OK e809db3e..709c9ef8. This clears the first FULL run on sg3. @fabric lands it.
+
+## Re-read ff13c481 (L5)
+
+- **L5, closed.** Test-AceBelowModify runs on every `before` token when the record is read. Probed: of `(F)`,
+  `(M) (RX)`, `(WDAC)` and `(RX,WO)`, only the Modify line is believed, and the other three are Bad. A restore read
+  from the record prints with `# from the record, check it`. The note is cut to `[A-Za-z0-9 ,.-]`, so a newline,
+  `;` or `#` in it is dropped. Fed `from the record<LF>; calc # x`, it printed one line whose comment is inert.
+- @fabric reports 544 of 544 with 9 mutations red. The change is scripts only.
+
+Closed: L5 / Open: none
+
+Verdict: ROOM DEPLOY OK e809db3e..ff13c481. @fabric lands it.
