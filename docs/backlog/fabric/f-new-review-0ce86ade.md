@@ -61,3 +61,23 @@ stops mattering.
 Quality: careful and well tested. The scope is tight (it touches only what was refused anyway) and the body handling
 is right. The miss is that "nobody answered" and "nobody has it" are different answers, and only the second earns
 the end of the picker.
+
+## Re-read at 962d9f77 (2026-10-02): ROOM DEPLOY OK 64a7e436..962d9f77
+
+One commit over 0ce86ade, and every point is closed.
+
+- **M1, closed.** The old `needsARoom` 409 over every attached room comes back in three cases: nothing matched and
+  a candidate was quiet, the cwd is not absolute, or no candidates are left. The 422 without `rooms` is kept only
+  for "every candidate answered and none has it". Absolute is judged on text (`launchCwdKind`: `/x`, `C:\x`,
+  `C:/x`), so the hub's own OS does not matter, and `C:x` and a lone `\x` count as relative. With the fallback over
+  every room, the order of the room and hub deploys stops mattering.
+- **M2, closed.** Any two leading slashes of either kind (`\\host`, `//host`, `\\?\UNC`, `\\.\pipe`, mixed) are
+  never probed, and get the old 409. The room route answers 400 before any `os.Stat`, so a direct call is safe too.
+  What remains is a symlink on the room that points at a share: it needs a local foothold, so it is out of scope.
+- **The low, closed.** Rooms marked for deletion (`marked-for-deletion` in `Known()`, the same predicate as
+  `startsNothing`) are left out of the candidates.
+- **Tests.** The 18 hub cases and the 5 room cases pass, and `go vet` is clean. The new ones cover a quiet room
+  keeping the picker, relative cwds with zero probes, Windows drive paths routed on a non-Windows hub, six UNC
+  spellings never probed, the room's UNC 400, and the marked room.
+
+Verdict: ROOM DEPLOY OK 64a7e436..962d9f77, hub-ok and room-ok. Rollout: the hub and the rooms, in either order.
