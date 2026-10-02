@@ -221,6 +221,11 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	// the hub's directory and served to rooms on the `git` link kind and nowhere else. Set
 	// here so the welcome says Git. See internal/gitsync and docs/rnd/git-sync-design.md.
 	gitHub := &gitsync.Hub{Dir: keys.Dir, Repos: store.GitRepos, Rooms: h.GitRooms(), SelfHost: hostname()}
+	// The hub's own store (git.store), read on every use, so a change needs no restart.
+	gitHub.StoreRoot = func() string {
+		p, _ := store.GitStorePath(keys.Dir)
+		return p
+	}
 	h.Git = gitHub.Backend()
 	if _, err := store.GitRepos(); err != nil {
 		// SAID AT STARTUP, and the hub then mirrors nothing rather than mirror a branch it
@@ -337,6 +342,7 @@ func serveAtrium(f atriumFlags, up atriumUp) error {
 	// reaches this hub's own board over loopback derived from `board`.
 	proxy.SetControl(board)
 	proxy.SetGit(gitHub)
+	proxy.SetGitSettings(store, keys.Dir)
 	gitHub.Audit = proxy.RecordAudit
 	// THE LAUNCH CAP PER ROOM, kept in the hub's settings. See launchcaps.go.
 	proxy.SetLaunchCaps(store)

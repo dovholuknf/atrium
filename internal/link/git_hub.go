@@ -3,6 +3,7 @@ package link
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -17,8 +18,11 @@ import (
 // The hub's git side, as the board API and the control tools see it. See git.go for the
 // transport and internal/gitsync for what actually runs.
 //
-// NO ROUTE AND NO TOOL HERE TAKES A PATH, A URL, A REFSPEC OR A BRANCH. A room, a repository
-// name from `git_repos`, and whether to init. Everything else is the operator's setting.
+// NO ROUTE AND NO TOOL HERE TAKES A PATH, A URL, A REFSPEC OR A BRANCH, WITH ONE EXCEPTION:
+// POST /_hub/git/init takes a forge URL, from the operator on the hub's machine only. The URL
+// is parsed into host, owner and repository and refused if it carries a credential, and only
+// those three parts are kept (internal/gitsync/store_name.go). Everything else is a room, a
+// repository name from `git_repos`, and whether to init, and the rest is the operator's setting.
 
 // GitRooms adapts this hub to what internal/gitsync needs of the link.
 func (h *Hub) GitRooms() gitsync.Rooms { return hubGitRooms{h} }
@@ -48,8 +52,25 @@ func (p *Proxy) git() *gitsync.Hub {
 	return p.gitHub
 }
 
-// serveGit answers /_hub/git/{sync,collect,status}. Loopback only, like the control server:
-// these start work on a room, and an overlay is not an auth layer.
+// GitSettings is what /_hub/git/settings needs of the hub's store. hubstore.Store has all four.
+type GitSettings interface {
+	GitStorePath(hubDir string) (string, error)
+	SetGitStore(dir string) error
+	GitCreateOnPush() (bool, error)
+	SetGitCreateOnPush(on bool) error
+}
+
+// SetGitSettings wires the git.store and git.create_on_push settings. Without it /_hub/git/settings
+// answers 404.
+func (p *Proxy) SetGitSettings(s GitSettings, hubDir string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.gitSettings, p.gitDir = s, hubDir
+}
+
+// serveGit answers /_hub/git/{sync,collect,status,init,settings,repos}. Loopback only, like the
+// control server, for everything but the list of repos: these start work on a room or on the
+// hub's disk, and an overlay is not an auth layer.
 func (p *Proxy) serveGit(w http.ResponseWriter, r *http.Request, sub string) {
 	g := p.git()
 	if g == nil {
@@ -60,8 +81,31 @@ func (p *Proxy) serveGit(w http.ResponseWriter, r *http.Request, sub string) {
 		w.WriteHeader(code)
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": msg})
 	}
+	// OPEN LIKE GET /_hub/growls: the board lists the hub's repositories, and the answer names no
+	// path on the hub's disk.
+	if sub == "git/repos" {
+		if r.Method != http.MethodGet {
+			fail(http.StatusMethodNotAllowed, "that has to be a GET")
+			return
+		}
+		repos, err := g.Store().View(r.Context())
+		if err != nil {
+			fail(http.StatusServiceUnavailable, "could not list the repositories")
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"repos": repos})
+		return
+	}
 	if !edge.LocalOperator(r) {
 		fail(http.StatusForbidden, "git sync is started only from the machine the hub runs on"+edge.ProxyNote(r))
+		return
+	}
+	switch sub {
+	case "git/init":
+		p.serveGitInit(w, r, g, fail)
+		return
+	case "git/settings":
+		p.serveGitSettings(w, r, fail)
 		return
 	}
 	if sub == "git/status" {
@@ -109,6 +153,89 @@ func (p *Proxy) serveGit(w http.ResponseWriter, r *http.Request, sub string) {
 	default:
 		http.NotFound(w, r)
 	}
+}
+
+// serveGitInit answers POST /_hub/git/init {"url": ...} with {repo, created, seeded, main, note}.
+// The caller is already known to be the operator on this machine.
+func (p *Proxy) serveGitInit(w http.ResponseWriter, r *http.Request, g *gitsync.Hub, fail func(int, string)) {
+	if r.Method != http.MethodPost {
+		fail(http.StatusMethodNotAllowed, "that has to be a POST")
+		return
+	}
+	var in struct {
+		URL string `json:"url"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 4<<10)).Decode(&in); err != nil {
+		fail(http.StatusBadRequest, "could not read that: "+err.Error())
+		return
+	}
+	res, err := g.Store().Init(r.Context(), in.URL)
+	switch {
+	case errors.Is(err, gitsync.ErrRefused):
+		fail(http.StatusBadRequest, err.Error())
+	case errors.Is(err, gitsync.ErrConflict):
+		fail(http.StatusConflict, err.Error())
+	case err != nil:
+		fail(http.StatusInternalServerError, err.Error())
+	default:
+		_ = json.NewEncoder(w).Encode(res)
+	}
+}
+
+// serveGitSettings answers GET and PUT /_hub/git/settings: {"store": "<dir>", "create_on_push": false}.
+// A PUT sets only what it names, and `store` empty puts the directory back to the default. BOTH
+// ARE FOR THE MACHINE THE HUB RUNS ON, the GET too, because `store` is a path on the hub's disk.
+func (p *Proxy) serveGitSettings(w http.ResponseWriter, r *http.Request, fail func(int, string)) {
+	p.mu.Lock()
+	st, dir := p.gitSettings, p.gitDir
+	p.mu.Unlock()
+	if st == nil {
+		http.NotFound(w, r)
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+	case http.MethodPut:
+		var in struct {
+			Store        *string `json:"store"`
+			CreateOnPush *bool   `json:"create_on_push"`
+		}
+		if err := json.NewDecoder(io.LimitReader(r.Body, 4<<10)).Decode(&in); err != nil {
+			fail(http.StatusBadRequest, "could not read that: "+err.Error())
+			return
+		}
+		if in.Store == nil && in.CreateOnPush == nil {
+			fail(http.StatusBadRequest, "say store, create_on_push, or both")
+			return
+		}
+		if in.Store != nil {
+			if err := st.SetGitStore(*in.Store); err != nil {
+				fail(http.StatusBadRequest, err.Error())
+				return
+			}
+		}
+		if in.CreateOnPush != nil {
+			if err := st.SetGitCreateOnPush(*in.CreateOnPush); err != nil {
+				fail(http.StatusInternalServerError, "could not save that: "+err.Error())
+				return
+			}
+		}
+		p.RecordAudit("", "git-settings-set", fmt.Sprintf("store=%v create_on_push=%v", in.Store != nil, in.CreateOnPush != nil))
+	default:
+		fail(http.StatusMethodNotAllowed, "that has to be a GET or a PUT")
+		return
+	}
+	path, err := st.GitStorePath(dir)
+	if err != nil {
+		fail(http.StatusInternalServerError, "could not read the settings: "+err.Error())
+		return
+	}
+	on, err := st.GitCreateOnPush()
+	if err != nil {
+		fail(http.StatusInternalServerError, "could not read the settings: "+err.Error())
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{"store": path, "create_on_push": on})
 }
 
 // ── control tools ───────────────────────────────────────

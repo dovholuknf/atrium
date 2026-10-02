@@ -106,6 +106,10 @@ type Proxy struct {
 	// gitHub is the hub's git side: mirror, sync, collect. Nil until SetGit wires it, and
 	// a hub without one answers /_hub/git 404. See git_hub.go.
 	gitHub *gitsync.Hub
+	// gitSettings and gitDir are the git.store and git.create_on_push settings and the hub's
+	// directory, for /_hub/git/settings. Nil until SetGitSettings.
+	gitSettings GitSettings
+	gitDir      string
 	// capStore holds the per-room launch caps. Nil until SetLaunchCaps wires
 	// it, and then every room gets the default cap. See launchcaps.go.
 	capStore HubSettings
@@ -1434,7 +1438,7 @@ func (p *Proxy) serveHubAPI(w http.ResponseWriter, r *http.Request) {
 		p.forgetInventory(w, r)
 	case "notify", "notify/test":
 		p.serveNotify(w, r, sub)
-	case "git/sync", "git/collect", "git/status":
+	case "git/sync", "git/collect", "git/status", "git/init", "git/repos", "git/settings":
 		p.serveGit(w, r, sub)
 	case "launch-caps":
 		p.serveLaunchCaps(w, r)
