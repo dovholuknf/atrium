@@ -6,9 +6,11 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -27,6 +29,14 @@ import (
 
 // Marker is the file inside a bare repository that says the store made, or was told to take, it.
 const Marker = "atrium-store"
+
+// What the marker says about how a repository came to be in the store. A repository the store MADE
+// is seeded. One it ADOPTED (a git_repos mirror the operator inited) is never seeded or otherwise
+// changed: the hub serves it to rooms, and its refs are the mirror's.
+const (
+	KindMade    = "made"
+	KindAdopted = "adopted"
+)
 
 // MainRef is the branch the hub holds, whatever the forge calls its own.
 const MainRef = "refs/heads/main"
@@ -55,6 +65,9 @@ type Store struct {
 	MainAt func(ctx context.Context, name string, tip Tip) *time.Time
 	// SeedTimeout bounds the whole seed. Zero is two minutes.
 	SeedTimeout time.Duration
+
+	// afterCollision is a test hook, called under the store-wide lock after the case check passed.
+	afterCollision func(name string)
 }
 
 // Tip is a ref's tip: the sha and the commit time.
@@ -105,6 +118,23 @@ func (s *Store) Exists(name string) bool {
 		return false
 	}
 	return isMarked(d)
+}
+
+// markerKind is KindMade or KindAdopted for a marked repository. A marker written before kinds
+// existed says "made by ...", and reads as made.
+func markerKind(dir string) string {
+	b, err := os.ReadFile(filepath.Join(dir, Marker))
+	if err == nil && strings.HasPrefix(string(b), KindAdopted) {
+		return KindAdopted
+	}
+	return KindMade
+}
+
+// Adopted says whether the store holds a repository by that name that it adopted, which is a
+// git_repos mirror, and never made or seeded.
+func (s *Store) Adopted(name string) bool {
+	d, err := s.Path(name)
+	return err == nil && isMarked(d) && markerKind(d) == KindAdopted
 }
 
 func isMarked(dir string) bool {
@@ -190,14 +220,33 @@ func (s *Store) collision(ref Ref) string {
 }
 
 // scrub takes the hub's own paths out of a sentence, so no answer names a directory on the
-// hub's disk.
+// hub's disk. The root and the hub's directory are removed as given and with symlinks resolved
+// (git prints the real path, `/private/var` for `/var`), in both slash forms, and without regard to
+// case on Windows, where git may print a drive or a folder in another case.
 func (s *Store) scrub(msg string) string {
-	for _, p := range []string{s.Root(), s.h.Dir} {
+	paths := []string{s.Root(), s.h.Dir}
+	for _, p := range paths[:] {
 		if p == "" || p == "." {
 			continue
 		}
-		for _, v := range []string{p, filepath.ToSlash(p)} {
-			msg = strings.ReplaceAll(msg, v, "<hub>")
+		if r, err := filepath.EvalSymlinks(p); err == nil {
+			paths = append(paths, r)
+		}
+	}
+	return scrubPaths(msg, paths, runtime.GOOS == "windows")
+}
+
+func scrubPaths(msg string, paths []string, fold bool) string {
+	for _, p := range paths {
+		if p == "" || p == "." {
+			continue
+		}
+		for _, v := range []string{p, filepath.ToSlash(p), strings.ReplaceAll(p, `\`, "/")} {
+			if fold {
+				msg = regexp.MustCompile(`(?i)`+regexp.QuoteMeta(v)).ReplaceAllString(msg, "<hub>")
+			} else {
+				msg = strings.ReplaceAll(msg, v, "<hub>")
+			}
 		}
 	}
 	return msg
@@ -309,22 +358,66 @@ func (s *Store) Init(ctx context.Context, rawURL string) (InitResult, error) {
 	return res, nil
 }
 
+// mirrorLock is the lock the mirror pass takes on a repository, when `dir` is a configured
+// git_repos mirror, so a store step and a mirror pass never run in one repository at once.
+func (s *Store) mirrorLock(dir string) *sync.Mutex {
+	if s.h.Repos == nil {
+		return nil
+	}
+	repos, err := s.h.Repos()
+	if err != nil {
+		return nil
+	}
+	for _, r := range repos {
+		if strings.EqualFold(filepath.Clean(s.h.Bare(r.Name)), filepath.Clean(dir)) {
+			return s.h.lock("mirror:" + r.Name)
+		}
+	}
+	return nil
+}
+
 func (s *Store) initRef(ctx context.Context, ref Ref) (InitResult, error) {
 	res := InitResult{Repo: ref.Name()}
-	// ONE LOCK PER REPOSITORY, by its lowercased name so the case variants share it.
+	dir := s.dir(ref)
+	// ONE LOCK PER REPOSITORY, by its lowercased name so the case variants share it. A git_repos mirror
+	// is also under the mirror pass's own lock, because cleanLocks there works in the same directory.
 	l := s.h.lock("store:" + strings.ToLower(ref.Name()))
 	l.Lock()
 	defer l.Unlock()
+	if ml := s.mirrorLock(dir); ml != nil {
+		ml.Lock()
+		defer ml.Unlock()
+	}
 
-	if hit := s.collision(ref); hit != "" {
+	// ONE STORE-WIDE LOCK around the case check and the directories that make the check true.
+	// `Foo/x` and `foo/y` have different repository locks, and without it both pass the check and both
+	// make their owner directory, which on NTFS is one directory under the second one's spelling.
+	gl := s.h.lock(storeWideLock)
+	gl.Lock()
+	hit := s.collision(ref)
+	_, statErr := os.Stat(dir)
+	existed := statErr == nil
+	if hit == "" && !existed {
+		if s.afterCollision != nil {
+			s.afterCollision(ref.Name())
+		}
+		if err := os.MkdirAll(filepath.Dir(dir), 0o755); err != nil {
+			gl.Unlock()
+			return res, fmt.Errorf("could not make the store's directory: %w", err)
+		}
+	}
+	gl.Unlock()
+	if hit != "" {
 		return res, conflict("%s cannot be made, because %s is already in the store and a disk that ignores case "+
 			"would make them one directory", ref.Name(), hit)
 	}
-	dir := s.dir(ref)
-	_, statErr := os.Stat(dir)
-	existed := statErr == nil
 
 	switch {
+	case existed && isMarked(dir) && markerKind(dir) == KindAdopted:
+		// A mirror the hub already serves to rooms: no seed, no fetch, no change.
+		res.Main = s.tip(ctx, dir)
+		res.Note = "this is a mirror the hub already serves, so it was left alone"
+		return res, nil
 	case existed && isMarked(dir):
 		res.Main = s.tip(ctx, dir)
 		if res.Main != "" {
@@ -333,11 +426,11 @@ func (s *Store) initRef(ctx context.Context, ref Ref) (InitResult, error) {
 		}
 	case existed:
 		// A bare repository the store did not make, such as a git_repos mirror. TAKEN, not changed:
-		// only the marker is written, so its HEAD and its refs stay as they are.
+		// only the marker is written, so its HEAD and its refs stay as they are, and it is never seeded.
 		if out, err := s.git(ctx, dir, "rev-parse", "--is-bare-repository"); err != nil || strings.TrimSpace(out) != "true" {
 			return res, conflict("something that is not a bare repository is already at %s", ref.Name())
 		}
-		if err := writeMarker(dir); err != nil {
+		if err := writeMarker(dir, KindAdopted); err != nil {
 			return res, err
 		}
 		res.Main = s.tip(ctx, dir)
@@ -353,7 +446,7 @@ func (s *Store) initRef(ctx context.Context, ref Ref) (InitResult, error) {
 		res.Created = true
 	}
 
-	// Seed: only a repository with no main gets here.
+	// Seed: only a repository the store made, with no main, gets here.
 	sha, why := s.seed(ctx, dir, ref)
 	switch {
 	case sha != "":
@@ -373,8 +466,12 @@ func (s *Store) initRef(ctx context.Context, ref Ref) (InitResult, error) {
 	return res, nil
 }
 
-func writeMarker(dir string) error {
-	return os.WriteFile(filepath.Join(dir, Marker), []byte("made by atrium rooms git init\n"), 0o644)
+// storeWideLock is the Hub lock key that serialises the case check with the directories it protects.
+// A repository name cannot hold a `*`, so it is never one of theirs.
+const storeWideLock = "store:*"
+
+func writeMarker(dir, kind string) error {
+	return os.WriteFile(filepath.Join(dir, Marker), []byte(kind+"\n"), 0o644)
 }
 
 // create makes the bare repository, with HEAD on main, no hook and no template, and removes what it
@@ -386,6 +483,13 @@ func (s *Store) create(ctx context.Context, dir string) (err error) {
 	defer func() {
 		if err != nil {
 			_ = os.RemoveAll(dir)
+			// An owner or host directory left empty would make a later differently cased name collide
+			// with it. os.Remove takes only an empty one.
+			gl := s.h.lock(storeWideLock)
+			gl.Lock()
+			_ = os.Remove(filepath.Dir(dir))
+			_ = os.Remove(filepath.Dir(filepath.Dir(dir)))
+			gl.Unlock()
 		}
 	}()
 	args := []string{"init", "-q", "--bare", "--template=", "--initial-branch=main"}
@@ -401,7 +505,7 @@ func (s *Store) create(ctx context.Context, dir string) (err error) {
 			return err
 		}
 	}
-	return writeMarker(dir)
+	return writeMarker(dir, KindMade)
 }
 
 func (s *Store) forgeURL(ref Ref) string {
@@ -444,8 +548,9 @@ func (s *Store) seed(ctx context.Context, dir string, ref Ref) (string, string) 
 	if _, err := s.git(ctx, "", "check-ref-format", def); err != nil {
 		return "", "the forge's default branch has a name atrium will not take, so " + PushMain
 	}
-	if _, err := s.git(ctx, dir, "fetch", "-q", "--no-tags", "--no-write-fetch-head", "--",
-		forge, "+"+def+":"+MainRef); err != nil {
+	// THE FORGE'S OBJECTS ARE UNTRUSTED and the hub serves them on to rooms, so git checks each one.
+	if _, err := s.git(ctx, dir, "-c", "transfer.fsckObjects=true", "fetch", "-q", "--no-tags",
+		"--no-write-fetch-head", "--", forge, "+"+def+":"+MainRef); err != nil {
 		return "", s.whyNot(ref, err)
 	}
 	sha := s.tip(ctx, dir)
@@ -461,6 +566,9 @@ func (s *Store) whyNot(ref Ref, err error) string {
 	text := strings.ToLower(err.Error())
 	if e, ok := err.(*Error); ok {
 		text = strings.ToLower(e.Stderr + " " + e.Error())
+	}
+	if strings.Contains(text, "fsck error") || strings.Contains(text, "fsck failed") {
+		return "the forge's history failed git's object checks, so it was not stored. " + PushMain
 	}
 	for _, w := range []string{
 		"repository not found", "not found", "could not read username", "could not read password",

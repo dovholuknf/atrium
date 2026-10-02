@@ -86,6 +86,10 @@ func TestParseURLRefusesTheHostileOnes(t *testing.T) {
 		"dot git":            "https://github.com/o/.git",
 		"owner dot git":      "https://github.com/x.git/r",
 		"dot repo":           "https://github.com/o/.",
+		"leading dash repo":  "https://github.com/o/-r",
+		"leading dash owner": "https://github.com/-o/r",
+		"option as owner":    "https://github.com/--upload-pack=x/r",
+		"dash scp":           "git@github.com:-o/r.git",
 	} {
 		ref, err := ParseURL(in)
 		if err == nil {
@@ -120,7 +124,7 @@ func TestParseNameAcceptsShortAndFull(t *testing.T) {
 		}
 	}
 	for _, in := range []string{"", "zrok", "a/b/c/d", "../x", "a/../b", "a\\b/c", "C:/a/b", "a//b", "/a/b", "a/b/",
-		"github/o/NUL", "a/b%2e/c", "a/b\x00/c", "github/o/.git", strings.Repeat("a/", 200) + "b"} {
+		"github/o/NUL", "-a/b", "a/-b", "github/-a/b", "github/a/--upload-pack=x", "a/b%2e/c", "a/b\x00/c", "github/o/.git", strings.Repeat("a/", 200) + "b"} {
 		if ref, err := ParseName(in); err == nil {
 			t.Errorf("%q was taken as %s", in, ref.Name())
 		}
@@ -645,6 +649,20 @@ func TestTheStoreAndTheGitReposMirrorsCoexist(t *testing.T) {
 	if got, _ := x.s.List(); len(got) != 2 {
 		t.Fatalf("after taking it: %v", got)
 	}
+	// A SECOND AND A THIRD INIT OF THE ADOPTED MIRROR change nothing either. The forge is reachable and has a
+	// default branch, so a seed would put refs/heads/main into the mirror the link serves to rooms.
+	for i := 0; i < 2; i++ {
+		res, err := x.s.Init(bg, "https://github.com/o/atrium")
+		if err != nil || res.Created || res.Seeded || res.Main != "" || !strings.Contains(res.Note, "mirror the hub already serves") {
+			t.Fatalf("init %d of an adopted mirror = %+v %v", i+2, res, err)
+		}
+		if after := git(t, mirror, "for-each-ref"); after != before {
+			t.Fatalf("init %d changed the mirror's refs:\n%s\n%s", i+2, before, after)
+		}
+	}
+	if !x.s.Adopted("o/atrium") || x.s.Adopted("o/other") || x.s.Adopted("o/none") {
+		t.Fatal("Adopted is wrong")
+	}
 	// And the mirror keeps working.
 	commit(t, ck, "m3.txt", "mirror three")
 	if moved, err := x.h.Mirror(bg); err != nil || len(moved) != 1 {
@@ -797,5 +815,195 @@ func TestInitRefusesAHostileURLBeforeTouchingTheDisk(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(x.root, "git")); err == nil {
 		t.Fatal("a refused URL made the store directory")
+	}
+}
+
+// A repository the store made is seeded on a rerun, and one it adopted never is: the kind is in the marker.
+func TestTheMarkerSaysMadeOrAdoptedAndAnOldMarkerReadsAsMade(t *testing.T) {
+	x := newStore(t, "master")
+	x.s.Forge = func(Ref) string { return filepath.Join(x.root, "none.git") }
+	if _, err := x.s.Init(bg, repoURL); err != nil {
+		t.Fatal(err)
+	}
+	dir, _ := x.s.Path("o/r")
+	if markerKind(dir) != KindMade || x.s.Adopted("o/r") {
+		t.Fatal("a made repository reads as adopted")
+	}
+	// A marker from before kinds existed.
+	if err := os.WriteFile(filepath.Join(dir, Marker), []byte("made by atrium rooms git init\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if markerKind(dir) != KindMade {
+		t.Fatal("an old marker does not read as made")
+	}
+	// An old-marker repository with no main still seeds on a rerun.
+	want := x.forge.push(t, "master", "a.txt", "one", 1000)
+	x.s.Forge = func(Ref) string { return x.forge.dir }
+	if res, err := x.s.Init(bg, repoURL); err != nil || !res.Seeded || res.Main != want {
+		t.Fatalf("rerun of a made repo = %+v %v", res, err)
+	}
+}
+
+// A store step and the mirror pass never run in one git_repos mirror at once: the store takes the
+// mirror's own lock whenever the directory is a configured mirror, and not for any other repository.
+func TestAnInitOfAMirrorTakesTheMirrorsLock(t *testing.T) {
+	x := newStore(t, "master")
+	x.forge.push(t, "master", "a.txt", "one", 1000)
+	ck := filepath.Join(t.TempDir(), "checkout")
+	if err := os.MkdirAll(ck, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	git(t, ck, "init", "-q", "-b", "claude/main")
+	commit(t, ck, "m.txt", "mirror")
+	x.h.Repos = func() ([]Repo, error) {
+		return []Repo{{Name: "github/o/atrium", Checkout: filepath.ToSlash(ck), Branch: "claude/main"}}, nil
+	}
+	if _, err := x.h.Mirror(bg); err != nil {
+		t.Fatal(err)
+	}
+	blocked := func(name, url string) bool {
+		l := x.h.lock("mirror:" + name)
+		l.Lock()
+		done := make(chan struct{})
+		go func() {
+			_, _ = x.s.Init(bg, url)
+			close(done)
+		}()
+		select {
+		case <-done:
+			l.Unlock()
+			return false
+		case <-time.After(300 * time.Millisecond):
+		}
+		l.Unlock()
+		<-done
+		return true
+	}
+	if !blocked("github/o/atrium", "https://github.com/o/atrium") {
+		t.Fatal("an init of a mirror ran while the mirror pass held its lock")
+	}
+	// Another repository is not held up by that mirror's lock name.
+	if blocked("github/o/atrium", "https://github.com/o/free") {
+		t.Fatal("an init of a repository that is not the mirror waited for the mirror's lock")
+	}
+}
+
+func TestTheScrubTakesOutResolvedAndDifferentlyCasedPaths(t *testing.T) {
+	x := newStore(t, "main")
+	// A symlinked hub directory: git prints the real path.
+	real := t.TempDir()
+	link := filepath.Join(t.TempDir(), "link")
+	if err := os.Symlink(real, link); err != nil {
+		t.Skip("no symlinks here: " + err.Error())
+	}
+	x.h.Dir = link
+	resolved, err := filepath.EvalSymlinks(real)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := x.s.scrub("fatal: " + filepath.Join(resolved, "git", "github", "o") + " is bad")
+	if strings.Contains(got, resolved) || !strings.Contains(got, "<hub>") {
+		t.Fatalf("a resolved path got through: %s", got)
+	}
+	// Windows: another case, and either slash.
+	for _, c := range []struct{ msg, want string }{
+		{`fatal: c:\Hub\Git\x failed`, `fatal: <hub>\x failed`},
+		{`fatal: C:/HUB/git/x failed`, `fatal: <hub>/x failed`},
+	} {
+		if got := scrubPaths(c.msg, []string{`C:\hub\git`}, true); got != c.want {
+			t.Errorf("scrub %q = %q, want %q", c.msg, got, c.want)
+		}
+	}
+	// Elsewhere case matters.
+	if got := scrubPaths("/Hub/git/x", []string{"/hub/git"}, false); got != "/Hub/git/x" {
+		t.Errorf("a different case was scrubbed off windows: %s", got)
+	}
+}
+
+// Foo/x and foo/y have different repository locks and must not both get past the case check.
+func TestDifferentlyCasedOwnersWithDifferentReposDoNotRace(t *testing.T) {
+	x := newStore(t, "main")
+	x.s.Forge = func(Ref) string { return filepath.Join(x.root, "none.git") }
+	paused := make(chan struct{})
+	release := make(chan struct{})
+	var once sync.Once
+	x.s.afterCollision = func(string) {
+		first := false
+		once.Do(func() { first = true })
+		if first {
+			close(paused)
+			<-release
+		}
+	}
+	errs := make(chan error, 2)
+	go func() { _, err := x.s.Init(bg, "https://github.com/Foo/x"); errs <- err }()
+	<-paused
+	go func() { _, err := x.s.Init(bg, "https://github.com/foo/y"); errs <- err }()
+	// The second has to wait for the first to make its directories, and then see them.
+	time.Sleep(300 * time.Millisecond)
+	close(release)
+	var ok, refused int
+	for i := 0; i < 2; i++ {
+		err := <-errs
+		switch {
+		case err == nil:
+			ok++
+		case errors.Is(err, ErrConflict):
+			refused++
+		default:
+			t.Fatal(err)
+		}
+	}
+	if ok != 1 || refused != 1 {
+		t.Fatalf("ok=%d refused=%d, want one of each", ok, refused)
+	}
+	ents, _ := os.ReadDir(filepath.Join(x.root, "git", "github"))
+	if len(ents) != 1 {
+		t.Fatalf("owners = %v", ents)
+	}
+}
+
+// A failed init leaves no empty owner directory to collide with a later spelling.
+func TestAFailedInitLeavesNoEmptyOwnerDirectory(t *testing.T) {
+	x := newStore(t, "main")
+	x.h.Runner = NewRunner()
+	x.h.Runner.Stop(time.Second)
+	if _, err := x.s.Init(bg, "https://github.com/Foo/x"); err == nil {
+		t.Fatal("init worked with a stopped runner")
+	}
+	if _, err := os.Stat(filepath.Join(x.root, "git", "github", "Foo")); err == nil {
+		t.Fatal("an empty owner directory was left")
+	}
+	x.h.Runner = NewRunner()
+	if _, err := x.s.Init(bg, "https://github.com/foo/y"); err != nil {
+		t.Fatalf("a later spelling collided with a failed init: %v", err)
+	}
+}
+
+// The forge's objects are checked: history that fails git's object checks is not stored.
+func TestTheSeedChecksTheForgesObjects(t *testing.T) {
+	x := newStore(t, "master")
+	x.forge.push(t, "master", "a.txt", "fine", 1000)
+	// A commit with no email in its author line, which git's object check refuses.
+	tree := git(t, x.forge.dir, "mktree")
+	_ = tree
+	out, err := Default.GitInput(bg, x.forge.dir, []byte("tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904\n"+
+		"author A 1000000000 +0000\ncommitter A 1000000000 +0000\n\nbroken\n"), "hash-object", "-t", "commit", "-w", "--stdin", "--literally")
+	if err != nil {
+		t.Fatal(err)
+	}
+	git(t, x.forge.dir, "update-ref", "refs/heads/master", strings.TrimSpace(out))
+
+	res, err := x.s.Init(bg, repoURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Seeded || res.Main != "" || !strings.Contains(res.Note, "object checks") || !strings.Contains(res.Note, PushMain) ||
+		strings.Contains(res.Note, "run init again") {
+		t.Fatalf("result = %+v", res)
+	}
+	dir, _ := x.s.Path("o/r")
+	if refs := git(t, dir, "for-each-ref"); refs != "" {
+		t.Fatalf("a failed seed left refs: %s", refs)
 	}
 }

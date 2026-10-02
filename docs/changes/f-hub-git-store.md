@@ -76,7 +76,7 @@ hub's disk.
 
 **Expected:** the mirror's HEAD stays on `claude/main`, rooms still sync it, and `atrium rooms git store` does not
 list it. `atrium rooms git init https://github.com/dovholuknf/atrium` takes it into the store and changes nothing in
-it.
+it. Run that init again: it says it is a mirror the hub already serves, and the mirror still has no `main`.
 
 ### @LETTER@11. Init is for the operator on the hub machine
 
@@ -116,6 +116,28 @@ it.
   ref. A directory that is not a bare repository is refused as a conflict and left alone. / The brief says a mirror is
   listed only if the operator inited it, and the mirror's HEAD has to stay on `claude/main` because the mirror resets
   it every pass.
+- decided: Is an adopted mirror ever seeded, and how is it told from one the store made? / Never. The marker file says
+  `made` or `adopted` (an older marker, `made by ...`, reads as made). Only a repository the store made, with no main,
+  is seeded, so a second init of an adopted mirror is a no-op that says it is a mirror the hub already serves. / A
+  mirror only has `claude/main`, its main is always empty, and a seed would put a forge main into the repo the link
+  serves to rooms (review M1).
+- decided: Which locks does init take on an adopted mirror? / The repository's store lock, and also the mirror pass's
+  `mirror:<name>` lock whenever the directory is a configured `git_repos` mirror. / `mirrorOne` runs `cleanLocks` in
+  the same directory (review M2).
+- decided: How are `Foo/x` and `foo/y` kept apart? / One store-wide lock (`store:*`) held across the case check and the
+  `MkdirAll` of the owner directory, taken after the repository's own lock. A failed init removes the empty owner and
+  host directories it made. / The repository locks differ and both checks could pass before either directory existed
+  (review L2).
+- decided: How does the scrub handle Windows and symlinks? / It removes the root and the hub directory as given, with
+  symlinks resolved, with `\` and `/`, and without regard to case on Windows. / git prints the real path, which can be
+  `/private/var` for `/var` or another case of a drive (review L1).
+- decided: Is the seed fetched with `transfer.fsckObjects`? / Yes, now. A forge whose history fails git's object
+  checks is not stored and the note says so, and says to push `main`, not to rerun. / The objects are untrusted and the
+  hub serves them on to rooms (review L3). This reverses my first choice, made because old history can fail fsck, and a
+  repo that fails is an empty repo the operator pushes `main` to.
+- decided: Where is a leading dash refused? / In `ParseName` and `ParseURL` for the owner and the repo (hosts already
+  start with a letter or digit), so `Path`, `Exists`, `Init` and anything the next items build on them refuse it. The
+  shared `ValidName` is not changed, since `git_repos` and the room side use it. / Review L4.
 - decided: What does a collision check compare? / Every level of the path, the host, the owner and the repo, folded to
   lower case, against what is on disk, and the same name again is the no-op. / `Foo/` and `foo/` are one directory on
   NTFS at any level.
@@ -161,6 +183,14 @@ and `--template=` (no hooks). Routes: init open to a non-loopback caller, `repos
 a GET, the init body bound, a conflict answered as 500, and the settings GET opened. Settings: `create_on_push` reading
 on by default, and a relative `git.store` accepted.
 
+Review fixes on 06ea9026 (M1, M2, L1 to L4) each have a test, and each was mutation-checked on its own with a test
+failing: an adopted mirror seeded on a second init, the marker kind always reading made, the mirror lock never taken,
+the mirror lock taken for every repository, symlinks not resolved by the scrub, the scrub's case folding branch never
+taken, the backslash form not scrubbed, no store-wide lock around the case check, an empty owner directory left after a
+failed init, no `transfer.fsckObjects` on the seed, an fsck failure told as a network error, and a leading dash
+allowed. One more, the `runtime.GOOS == "windows"` gate on the fold, is equivalent on this macOS machine and is
+covered by the `scrubPaths(..., true)` test instead.
+
 ## For the next item (f-new-hub-receive)
 
 - `Hub.Store()` is the one `*gitsync.Store`. `Path(name)` gives the bare directory for a short or full name, `Exists`
@@ -170,6 +200,11 @@ on by default, and a relative `git.store` accepted.
 - `Store.env()` is the environment a git step on a store repo runs under. `Store.collision(ref)` is the case check to
   call before a push makes a repo.
 - `git.create_on_push` is `hubstore.Store.GitCreateOnPush()`. Nothing reads it yet.
+- API added in the review fix, all additive: `KindMade` and `KindAdopted`, `Store.Adopted(name)` (true for a mirror
+  taken into the store, which must never be seeded or have its refs changed by the store), `writeMarker(dir, kind)` and
+  `markerKind(dir)` (unexported). A receive step on a repository should also take `mirror:<name>` when
+  `Store.mirrorLock(dir)` is not nil, as `Init` does. `Store.scrub` now resolves symlinks. Segments may not start with
+  `-`.
 - Repos are made with no hook, no `http.receivepack` and no config of ours. The marker file is `atrium-store`.
 - `Store.MainAt` and `BranchView.Room/Card/Released` are where the push log plugs in.
 - A hub deploy needs no migration: the two settings are rows in `hub_setting` and read as their defaults when absent.

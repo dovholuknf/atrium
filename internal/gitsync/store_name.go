@@ -79,6 +79,8 @@ func checkSegment(what, s string) error {
 	switch {
 	case !segmentRe.MatchString(s):
 		return refuse("the %s has to be letters, digits, dot, dash and underscore, up to 100 of them", what)
+	case strings.HasPrefix(s, "-"):
+		return refuse("the %s cannot start with a dash, which git would read as an option", what)
 	case s == "." || s == "..":
 		return refuse("the %s cannot be . or ..", what)
 	case strings.EqualFold(s, ".git") || strings.HasSuffix(strings.ToLower(s), ".git"):
