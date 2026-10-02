@@ -46,8 +46,10 @@ The dotfiles repo, the `review-panel` skill and the persona files are on sg4, no
   - the merge.
 
   Only the verifiers and the critic are model calls, and they are cards too.
-- **An outside PR keeps the PR runner's no-settings rule.** For a target whose code is not ours (a PR run, or any
-  repo outside clint's own), every panel card launches with:
+- **An outside PR keeps the PR runner's no-settings rule.** A target is **outside** unless it is proven ours, by a
+  mechanical rule: it is a `pr_run`, or its checkout's origin owner is not on the room's list of clint's owners
+  (`dovholuknf` and the orgs he names). A target that cannot be resolved counts as outside. Every panel card on an
+  outside target launches with:
   - empty setting sources;
   - `Read`, `Grep` and `Glob` only;
   - the source added as a directory, never as its cwd.
@@ -126,6 +128,12 @@ The room drives it, with a run record like the PR runner's, so a room restart re
    bundle the PR runner writes, from the same code.
 2. **Panel.** The recipe picks the reviewers by the paths touched (story 2.2). The room reads each persona file's
    frontmatter for its model, and its body for its mandate.
+   - **Where they are read from.** Personas come only from the room's own `~/.claude/agents/`, the source
+     `lean_agents` already uses. Recipes come only from the store (`pr_recipe`).
+   - **Nothing is read from the target.** Claude also loads a project's `.claude/agents/`, so an outside PR shipping
+     `.claude/agents/codebase-steward.md` would otherwise write the reviewer's mandate. The room refuses a persona
+     or recipe name whose path resolves inside the target's checkout. On an outside target, the empty setting
+     sources keep claude from loading the project's agents at all.
 3. **Launch, wave 1.** One card per reviewer:
    - `spawned_by` the caller;
    - tags `atrium:panel` and `panel:<run>`;
@@ -135,7 +143,8 @@ The room drives it, with a run record like the PR runner's, so a room restart re
      `<run>/findings/<reviewer>.json`, then `atrium_report` once, and exit";
    - tools `Read`, `Grep` and `Glob`.
 
-   For an outside target, it also gets empty setting sources and the source added as a directory (section 0). The
+   For an outside target, it also gets empty setting sources and the source added as a directory (section 0).
+   `add_dir` takes only two paths, the run folder and the target's source, and refuses any other. The
    steward's Bash, Write and Edit are not given to a panel card. A reviewer that needs a build asks for `prove`,
    which is the walker's (story question 3) and not the panel's.
 4. **Collect.** The room waits for every reviewer's report, up to a timeout (default 20 minutes). A reviewer that
@@ -156,13 +165,24 @@ The room drives it, with a run record like the PR runner's, so a room restart re
 
    It then sends the one `atrium_report` to the caller. The panel cards exit, and the run is marked done.
 
-**The room cap.** Panel cards count against the room's cap. The run launches as many as there are free slots and
-queues the rest, so a panel never refuses another director's launch. When no slot is free, the call says
-`queued: room at cap` and starts when one frees. Waves 2 and 3 reuse the slots wave 1 frees.
+**The room cap.** Panel cards count against the room's shared cap of 5. To leave room for other directors, a run
+never takes every free slot. It has its own **concurrency ceiling**, a recipe field `max_parallel` with a default
+of 2 and a maximum of 3, and it queues the rest of its cards inside the run. It launches a card only when the run is
+under its ceiling **and** at least one room slot stays free after the launch. So a panel never causes another
+director's launch to be refused. When neither holds, the run waits, and the call's status says
+`queued: room busy`. Waves 2 and 3 use the same ceiling.
+
+**A queued run times out.** A run that has not started its first card within 30 minutes (a recipe field) ends as
+`failed: no slot`. It sends one report to the caller saying so, and launches nothing later. Each reviewer still has
+its own 20-minute limit once it starts.
 
 **Quiet.** A card tagged `atrium:panel` raises no bell and no "waiting on you", and its reports do not reach clint.
 The board shows it under its caller, collapsed into one "panel: 3 of 4 done" row with a link to each card. A panel
-card's question (`ask`) goes to the caller, never to clint.
+card's question (`ask`) goes to the caller, never to clint. **When the caller has exited or is parked**, the
+question is not escalated to clint and does not wake the caller. The card is told "no one can answer; answer with
+what you have, and name the open question in your findings". The run's report lists that question under "asked,
+unanswered". The caller reads it when it next reads the report. A caller that is parked gets the report as an
+ordinary queued report, without a wake.
 
 **History.** Panel cards end as done cards, with their transcripts, and are culled with the run
 (`docs/rnd/merged-cull-design.md`). The run folder keeps `bundle.md`, `findings/`, `report.*` and a `cards.json`
@@ -186,9 +206,10 @@ Each is useful alone. All are held by the pause except D0.
 
 | stage | what | owner | size | acceptance |
 | --- | --- | --- | --- | --- |
-| D0 | **The redirect fix.** Match `Agent` as well as `Task` in the dotfiles redirect hook, and add `Agent` beside `Task` in m1mini's `atrium-perm-hook.ps1` skip list, so a subagent call is handled as it was before the rename | clint or the orchestrator, in dotfiles | an hour | a review-panel run on any card shows its reviewers as atrium launches again (the nudge fires), and on m1mini an `Agent` call raises no permission prompt |
-| V1 | `atrium_launch` gains `tools`, `setting_sources`, `add_dir` and `persona`. `persona` reads an agent file for the model and brief. The launch refuses `setting_sources` other than empty for a card whose cwd is outside clint's repos | @runtime | 1 day | a card launched with `tools: [Read,Grep,Glob]` and `setting_sources: ""` in a checkout with a `.claude/settings.json` hook does not run the hook, and a `Bash` call is refused |
-| V2 | `atrium_review` with the cards backend: the bundle (reusing the PR runner's code), the panel from the recipe, waves 1 to 3, the checks of step 5, the merge, the one report, the cap queue and quiet | @runtime | 3 days | a four-reviewer review of a real branch range ends with one report to the caller and **one** caller turn, as counted in `session_usage`. Its `report.json` parses in the review-panel shape, each panel card is done with its transcript, and the board showed one panel row. With 3 slots free, the fourth reviewer starts when the first ends |
+| D0 | **The redirect fix.** Match `Agent` as well as `Task` in the dotfiles redirect hook, and add `Agent` beside `Task` in m1mini's `atrium-perm-hook.ps1` skip list, so a subagent call is handled as it was before the rename. Skipping `Agent` is right for the same reason as `Task`: the subagent's own tool calls are still gated at `PreToolUse` | clint or the orchestrator, in dotfiles | an hour | a review-panel run on any card shows its reviewers as atrium launches again (the nudge fires). On m1mini an `Agent` call raises no permission prompt, **and a `Bash` call made inside that subagent still prompts**, on the claude version installed that day |
+| D1 | **The Go gate agrees.** `permSkipTools` in `internal/cli/hook_permission.go:33` lists `Task` and not `Agent`. Add `Agent`, with a test, so the binary and the dotfiles skip the same tools | @runtime | one line and a test | the hook test passes for `Agent` as for `Task`, and a test that a subagent's `Bash` is still gated passes |
+| V1 | `atrium_launch` gains `tools`, `setting_sources`, `add_dir` and `persona`. `persona` reads an agent file for the model and brief. On an outside target (section 0's rule) the launch refuses any `setting_sources` other than empty, refuses an `add_dir` other than the run folder and the source, and refuses a `persona` that does not resolve under the room's `~/.claude/agents/` | @runtime | 1 day | a card launched with `tools: [Read,Grep,Glob]` and `setting_sources: ""` in a checkout with a `.claude/settings.json` hook does not run the hook, and a `Bash` call is refused. A checkout carrying `.claude/agents/codebase-steward.md` gets the room's persona, not its own. A `persona` path inside the checkout is refused |
+| V2 | `atrium_review` with the cards backend: the bundle (reusing the PR runner's code), the panel from the recipe, waves 1 to 3, the checks of step 5, the merge, the one report, the run's ceiling and queue, the queued-run timeout, and quiet | @runtime | 3 days | a four-reviewer review of a real branch range ends with one report to the caller and **one** caller turn, as counted in `session_usage`. Its `report.json` parses in the review-panel shape, each panel card is done with its transcript, and the board showed one panel row. With 3 room slots free and `max_parallel` 2, at most 2 reviewers run at once and one room slot stays free throughout. A run started with no free slot ends `failed: no slot` after its timeout and launches nothing later. A panel ask after the caller has exited is listed under "asked, unanswered" and reaches no one else |
 | V3 | The board: the panel row under its caller, the "review this" action on a card's branch and on a path, and the run's report view (the pulls-view drawer's findings list, without the walk) | @ui | 2 days | clint starts a review from a card's branch, watches one reviewer live and types into it, and reads the merged report on the phone |
 | V4 | The forks backend behind the same call: `pr_run` targets call the PR runner. Verify and the critic come from story stage 4, with the merge shared with V2 | @runtime, with story stage 4 | 1 day on top of stage 4 | `atrium_review {pr_run}` gives the same `report.json` shape as a cards run, and the walker reads it unchanged |
 | V5 | The review-panel skill calls `atrium_review` instead of launching subagents, so `/review-panel` and a director's review both go through it | clint or the orchestrator, in dotfiles | an hour | `/review-panel` in a card runs the panel as child cards and returns the report in its usual form |
