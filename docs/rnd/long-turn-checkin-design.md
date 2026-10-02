@@ -29,6 +29,16 @@ R3, built) and the queued-message step of the permission chain (built).
   once per level. This is clint's ask, so the reversal is decided. The token argument behind the old rule still
   holds, and is met: the check-in rides a tool call the worker was making anyway, and fires at most once per 30
   minutes per card.
+- **The old rule's other reason, no loop of automatic messages, still holds.**
+  - Only the meter's timer starts a check-in. No message, reply or notice ever starts one, so nothing atrium sends
+    can cause another check-in.
+  - The bound per card per turn: at most 4 check-ins (levels 1 to 4), 4 facts notices, and 4 "no answer" notices
+    one step up the chain. An answer from the launcher resets the level, and needs a person or a model to act.
+  - A card cannot send as `atrium`. The sender of a queued message is stamped by the daemon from the calling card
+    (`atrium_say` has no sender field). The check-in mark is a column on the message, not its text. So a card that
+    writes "atrium check-in:" in a message is shown under its own name.
+  - W2 rewrites the comment at `a2a.go:30-36` to say this: atrium writes to a worker only for the timed check-in,
+    within this bound.
 
 ## 1. First, find out why R3 did not catch it
 
@@ -51,12 +61,17 @@ said on their row. Two corrections:
 - **Time waiting on clint does not count.** A turn blocked on a permission dialog or an operator question pauses the
   clock. The pause is from the permission request until its answer. (Verify: whether `waiting` currently ends the
   turn in `set`, activity.go:461.)
-- **The turn start survives a restart.** It is persisted with the card's activity. Today it lives in memory only, so
-  a restart quietly resets a two-hour turn to zero.
+- **The turn start survives a restart.** It is persisted with the card's activity, together with the session it
+  belongs to. Today it lives in memory, and the comment at activity.go:200 says "a restart is a new turn anyway".
+  That holds for the session, not the daemon. A deploy restarts the daemon while the card's session keeps running
+  mid-turn. The next hook then opens the clock from zero, so a runaway would get a fresh 30 minutes after every
+  deploy. On reload, the persisted start is kept only while the same session is still running. A resumed session
+  starts a new turn, as it should.
 
-**Two facts bring the meter forward.** Each is read only for cards already past half the threshold, through the same
-code as `GET /v1/tasks/{id}/changes` (`internal/daemon/changes.go`). This costs one `git status` and one
-`git diff --numstat` per card per minute, and only for those cards.
+**Two facts bring the meter forward.** Both are read through the same code as `GET /v1/tasks/{id}/changes`
+(`internal/daemon/changes.go`). Reads start once a card is 5 minutes into a turn, every 2 minutes until half the
+threshold, and every minute after that. Each read costs one `git status` and one `git diff --numstat`, and only for
+cards in a turn that has a worktree.
 - **Uncommitted lines.** Added plus removed lines, not yet committed in the card's worktree. Over 400 lines, the
   meter starts at level 1 at once, whatever the clock says.
 - **Time since the last commit.** If the worktree has commits this turn, the clock counts from the newest one, not
@@ -115,8 +130,9 @@ The text:
   as a thrown error (`scripts/opencode/atrium.js:317`), which still puts the text in front of the model. (Verify:
   that the model reads it as an instruction and not as a failed call to retry.)
 
-**Atrium adds the facts it knows.** When the worker's three lines reach the launcher, atrium appends one line of its
-own:
+**Atrium adds the facts it knows.** After a check-in is delivered, the first message from the worker to its launcher
+counts as its answer. Right after it, atrium sends the launcher a separate notice with one line of facts. It does not
+edit the worker's message:
 
 > facts: turn 34m, last commit 1h02m ago (a1b2c3d), 612 lines uncommitted in 9 files, 41 tool calls in the last 10m.
 
@@ -143,8 +159,10 @@ The launcher answers with a new tool, `atrium_checkin`:
   - The facts and the worker's lines go one step up the chain: the launcher's own launcher, else the orchestrator.
   - The orchestrator holds notices (`holdsNotices`, `a2a.go:320`), so it reads them when it asks.
 - **Never clint.** Nothing here rings the board's bell, sends a push, or types into the operator's terminal. The
-  escalation alert in `settings-spine.js:1583` ignores this source. clint sees the meter on a look at the board,
-  and that is the point.
+  meter is its own field on the card, not an `Escalation`. So `isStuck` (`stack.js:571`) and the bell in
+  `settings-spine.js:1583` never see it. For a card with a meter, R3's `long-turn` escalation is not raised. Today
+  that escalation does ring the bell when the stuck setting is "alert", and a climbing meter would ring at every
+  level. W4 tests this. clint sees the meter on a look at the board, and that is the point.
 
 ## 5. The board side
 
@@ -158,7 +176,7 @@ always on the face, never hover-only (u-032).
 | 1, answered "continue" | `👍 41m · rnd-director says go` | none | allowed until 1h11m |
 | 2 | `😬 1h04m · champ?` | amber | no answer for 30 minutes. Told the next one up |
 | 3 | `🚨 1h34m · off the rails?` | red | two check-ins unanswered |
-| 4 | `🚂💨 2h04m · gone` | red, and a slow pulse | three unanswered. Clint sees it here, and nowhere else |
+| 4 | `🚂💨 2h04m · gone` | red, and a slow pulse | three unanswered. The operator sees it here, and nowhere else |
 | sanctioned | `🏗 1h10m of 2h · mutation run` | blue | allowed by fabric-director for 2h: "mutation run" |
 | stopping | `🛑 stopping` | grey | told to stop 4 minutes ago |
 
@@ -200,16 +218,16 @@ R3's `escalate.turn_after` (45 minutes) stays for cards without a meter: gemini,
 | --- | --- | --- | --- | --- |
 | W0 | section 1's three checks on the room f-c-preflight ran on | @runtime | XS | none |
 | W1 | the meter in the daemon: the turn clock with waiting paused and persisted, the commit gap, uncommitted lines for cards past half the threshold, the levels, and a `meter` field on the card | @runtime | M | room |
-| W2 | the check-in: queued from `atrium`, delivered at step 2, a facts line on the worker's reply, a "no answer" notice | @runtime | S | room |
+| W2 | the check-in: queued from `atrium` (a sender only the daemon can stamp), delivered at step 2, a facts notice after the worker's reply, a "no answer" notice, and the rewritten rule comment at a2a.go:30-36 | @runtime | S | room |
 | W3 | `atrium_checkin` and `allow_minutes` on `atrium_launch`, with the chain-up on no answer | @runtime | S | room and hub (MCP tool list) |
-| W4 | the board chip, tooltip and filter, which replaces U1's `turn` chip | @ui | S | hub |
+| W4 | the board chip, tooltip and filter, which replaces U1's `turn` chip. Test: with the stuck setting at "alert", a card climbing to level 4 never rings the bell | @ui | S | hub |
 | W5 | after a week: the churn count, and tuning the defaults from the check-ins actually sent and answered | @rnd | S | none |
 
 **Acceptance for W1-W3**, on a test room with a fake clock:
 - A worker 30 minutes in with no commit gets one check-in at its next tool call, and the launcher gets its three
   lines with the facts line.
 - A worker that committed 10 minutes ago gets no check-in.
-- A worker with 500 uncommitted lines gets one at 5 minutes.
+- A worker with 500 uncommitted lines gets one at its first diff read, 5 minutes into the turn.
 - Continue for 60 resets the meter, and the next check-in comes at 60.
 - Cut is checked at 15 minutes. Stop delivers the stop text.
 - No launcher answer in 15 minutes sends a held notice to the orchestrator. Nothing calls a notification or push
