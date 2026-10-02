@@ -649,14 +649,19 @@ function contextChip(t) {
   return `<span class="chip ctx${heat}" data-tip="${esc(contextTitle(c))}">ctx ${c.pct}%</span>` + limits;
 }
 
-// PAST THE CONTEXT THRESHOLD, a mark and no number. Every turn re-reads the
-// whole context, so a card past the gear's line is costing on every turn. The
-// number itself is in the card's details (js/peek.js), asked for by opening
-// them. The daemon decides `warn`, so the mark and the launcher's notice
-// cannot disagree. Never stored.
+// TWO LINES, as the status line has them. Past the warn line (the daemon's `warn`, the gear's context threshold,
+// 150k) a card gets the small amber mark. Past the land-the-plane line (the browser's own pref, `landThePlaneK` in
+// js/peek.js, 200k) the mark becomes a solid red badge with the number, short enough to fit a phone row. Never
+// stored. The number is also in the card's details, asked for by opening them.
 function ctxWarnMark(t) {
   const c = t.context_size;
-  if (!c || !c.warn || over(t) || t.status === "shelved") return "";
+  if (!c || over(t) || t.status === "shelved") return "";
+  if (typeof landOver === "function" && landOver(t)) {
+    const tip = `${landTip(t)}. every turn re-reads all of it: land the plane. hover the card for its details`;
+    return `<span class="chip ctxwarn ctxland" aria-label="${esc(tip)}" data-tip="${esc(tip)}"
+      >LAND<em> ${esc(fmtTokens(c.tokens))}</em></span>`;
+  }
+  if (!c.warn) return "";
   const tip = `past ${c.threshold_k}k tokens of context, and every turn re-reads all of it. ` +
     `hover the card for its details`;
   return `<span class="chip warn icon ctxwarn" aria-label="${esc(tip)}" data-tip="${esc(tip)}"
@@ -665,21 +670,18 @@ function ctxWarnMark(t) {
       ><path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h6"/><path d="M12 10.5v3M12 15.2v.1"/></svg></span>`;
 }
 
-// THE THIN LINE ALONG A ROW'S BOTTOM EDGE: the context now against the limit, the same
-// drawing as the details' meter (ctxMeter in js/peek.js), no text. Teal below CTX_WARM,
-// warn from there, danger from CTX_HOT. At or over the limit (the daemon's `warn`) it is
-// danger and pulses once, unless the card is cycling its context, which says that itself.
-// Drawn from the row's own context_size, so no read of its own. Same guards as the mark.
+// THE FLOOD BEHIND A ROW: the context now against the land-the-plane line, the same drawing as the details' meter
+// (ctxMeter in js/peek.js), no text. Faint and neutral under the warn line so the list is not a rainbow, amber
+// from the warn line up to the land line, danger from there, with a one-off pulse as it crosses (never a loop),
+// unless the card is cycling its context, which says that itself. Full at the line plus ten percent. Drawn from
+// the row's own context_size, so no read of its own. Same guards as the mark.
 function ctxLine(t) {
   const c = t.context_size;
   if (!c || over(t) || t.status === "shelved" || typeof ctxMeter !== "function") return "";
-  const limit = peekThresholdK(t) * 1000;
-  const pct = (Number(c.tokens) / limit) * 100;
-  const heat = c.warn || pct >= CTX_HOT ? " hot" : pct >= CTX_WARM ? " warm" : "";
-  const once = c.warn && !t.new_context ? " over" : "";
-  const win = t.telemetry && t.telemetry.window ? `, window ${fmtTokens(t.telemetry.window)}` : "";
-  return ctxMeter(c.tokens, limit, "ctxline" + heat + once,
-    `${usageTokens(c.tokens)} used, limit ${usageTokens(limit)}${win}`);
+  const land = landOver(t);
+  const heat = land ? " hot" : c.warn ? " warm" : "";
+  const once = land && !t.new_context ? " over" : "";
+  return ctxMeter(c.tokens, landThePlaneK(t) * 1000, "ctxline" + heat + once, landTip(t));
 }
 
 // What is behind the percentage, for the tooltip. Tokens where the statusline
