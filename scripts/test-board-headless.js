@@ -3931,6 +3931,87 @@ async function reselectSection(browser, base) {
   tasksMode = was;
 }
 
+// ── a cleared screen goes into the scrollback ──────────────────────────────
+// A clear (claude's /clear, compact, the room's new-context) sends erase-display
+// and xterm blanked the rows in place, so the page that was showing never
+// reached history. Drives the real xterm the board built: a page of lines, then
+// ESC[2J, and the old page has to be above the new one. Erase-display 3 keeps
+// history too, the alternate screen and a partial erase push nothing, and the
+// same bytes written again as a replay behave as they did live.
+async function clearKeepsPageSection(browser, base) {
+  const was = tasksMode;
+  tasksMode = "land";
+  landCard("land-live", { supervised: true, created_at: "2026-09-19T12:00:00Z" });
+  landList = [LAND["land-live"]];
+  landPerms = [];
+  const errors = [];
+  const ctx = await landContext(browser);
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(String(e)));
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await p.evaluate(() => attachTask("land-live"));
+    await p.waitForFunction(() => termSock && termTask && termTask.id === "land-live", null, { timeout: slow(10000) });
+    // What the scrollback holds, as text, and how many lines of it.
+    const run = (seq, fresh) => p.evaluate(async ([seq, fresh]) => {
+      const w = d => new Promise(r => term.write(d, r));
+      if (fresh) { term.reset(); termPushed = ""; }
+      await w(seq);
+      const b = term.buffer.normal;
+      const hist = [];
+      for (let i = 0; i < b.baseY; i++) hist.push(b.getLine(i).translateToString(true));
+      return { hist, base: b.baseY };
+    }, [seq, fresh]);
+    const page = (tag, n) => Array.from({ length: n }, (_, i) => tag + (i + 1)).join("\r\n");
+    const rows = await p.evaluate(() => term.rows);
+    const have = (got, tag, n, what) => {
+      for (let i = 1; i <= n; i++) if (!got.hist.includes(tag + i)) { fail(what + ": " + tag + i + " never reached the scrollback."); return; }
+    };
+
+    let got = await run(page("old", rows - 2) + "\x1b[2J\x1b[Hnew banner", true);
+    have(got, "old", rows - 2, "a clear");
+    if (got.base < rows - 2) fail("a clear grew the scrollback by " + got.base + ", not the " + (rows - 2) + " lines the page held.");
+    const live = got.hist.join("|");
+
+    got = await run(page("old", rows - 2) + "\x1b[3J\x1b[Hnew banner", true);
+    have(got, "old", rows - 2, "erase-display 3");
+    got = await run("\r\n" + page("more", 3) + "\x1b[3J", false);
+    have(got, "old", rows - 2, "a second erase-display 3, which also wipes the history it should not");
+
+    got = await run(page("alt", 5) + "\x1b[?1049h\x1b[2Jpager\x1b[?1049l", true);
+    if (got.base !== 0) fail("a full-screen app clearing the alternate screen pushed " + got.base + " lines into history.");
+    got = await run(page("part", 5) + "\x1b[2;1H\x1b[J", true);
+    if (got.base !== 0) fail("a partial erase pushed " + got.base + " lines into history.");
+    got = await run(page("same", 4) + "\x1b[2J\x1b[H" + page("same", 4) + "\x1b[2J", true);
+    if (got.hist.filter(l => l === "same1").length !== 1) fail("a repaint of the same page stacked copies of it in history.");
+
+    // The replay is the same bytes through the same handler.
+    got = await run(page("old", rows - 2) + "\x1b[2J\x1b[Hnew banner", true);
+    if (got.hist.join("|") !== live) fail("the same stream written again as a replay left a different history.");
+
+    // new-context pushes the page and leaves it on screen.
+    const kept = await p.evaluate(async () => {
+      const w = d => new Promise(r => term.write(d, r));
+      term.reset(); termPushed = "";
+      await w("one\r\ntwo\r\nthree");
+      keepPage(term, true);
+      const b = term.buffer.normal;
+      const out = [];
+      for (let i = 0; i < b.length; i++) out.push(b.getLine(i).translateToString(true));
+      return { base: b.baseY, out: out.filter(Boolean) };
+    });
+    if (kept.out.join("|") !== "one|two|three|one|two|three") {
+      fail("new-context did not keep the page and leave it showing: " + JSON.stringify(kept));
+    }
+  } finally {
+    await ctx.close();
+  }
+  if (errors.length) fail("the clear page threw: " + errors.join(" | "));
+  landList = []; landPerms = [];
+  tasksMode = was;
+}
+
 // ── over a terminal the toasts hang from the top right ─────────────────────
 // Backlog-2 item 18. A toast in the bottom right sat on the terminal's input
 // line and status bar, where clint was typing. On the terminals view (and in a
@@ -18524,7 +18605,7 @@ async function main() {
       groupRemove: groupRemoveSection, worn: wornSection, restartGate: restartGateSection, restartStays: restartStaysSection, atriumDown: atriumDownSection,
       toastStays: toastStaysSection, groupColor: groupColorSection,
       groupDrag: groupDragSection, tooltip: tooltipSection, linkTip: linkTipSection,popoutTagFlip: popoutTagFlipSection, idleRate: idleRateSection, foldStill: foldStillSection,
-      untaggedSort: untaggedSortSection, newCard: newCardSection, themePreview: themePreviewSection, themeLab: themeLabSection, land: landSection, reselect: reselectSection,
+      untaggedSort: untaggedSortSection, newCard: newCardSection, themePreview: themePreviewSection, themeLab: themeLabSection, land: landSection, reselect: reselectSection, clearKeepsPage: clearKeepsPageSection,
       toastsTop: toastsTopSection, sayWhen: sayWhenSection, pasteSpinner: pasteSpinnerSection,
       pasteBig: pasteBigSection, pasteBusy: pasteBusySection, typing: typingSection, alias: aliasSection, askAgain: askAgainSection, copySelect: copySelectSection, busyGuard: busyGuardSection, keepalive: keepaliveSection,
       stuck: stuckSection, blockerMark: blockerMarkSection, carryLink: carryLinkSection,
@@ -20412,6 +20493,7 @@ async function main() {
     await unit("worn", () => wornSection(browser, base));
     // ── the terminals list's three theme switches ───────────────────────────
     await unit("termWear", () => termWearSection(browser, base));
+    await unit("clearKeepsPage", () => clearKeepsPageSection(browser, base));
     // ── the attached row's bridge into the terminal, and the terminal's frame ─
     await unit("bridge", () => bridgeSection(browser, base));
     // ── a load reads settings once ──────────────────────────────────────────

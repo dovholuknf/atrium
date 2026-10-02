@@ -17,6 +17,56 @@ let termData = null;
 // replay lands. See `connectTerm`.
 let termReplayed = false;
 
+// THE PAGE THAT WAS CLEARED IS KEPT. A clear (claude's /clear and compact, and
+// the room's new-context) sends erase-display, and xterm answers it by blanking
+// the rows in place, so the screen that was showing never reaches the
+// scrollback: scrolling up jumped from older output straight to the new
+// banner. A real terminal emulator keeps it, so this does.
+//
+// The page is pushed by scrolling it off the top, `n` line feeds from the last
+// row, where `n` is the rows up to the last one with text, so no blank lines
+// go into history. xterm has no public call for that and a handler cannot
+// `write` (the write would run after the rest of the chunk, behind whatever
+// the clear is followed by), so this reaches `_core._inputHandler`, which is
+// xterm 5.5 as vendored. If it is not there the push is skipped and a clear
+// behaves as it always did.
+//
+// `restore` puts the rows back afterwards, for a page that is still wanted on
+// screen (new-context pushes before the session has even been asked to clear).
+// A clear itself wants the rows gone, and they are: what is left is blank.
+//
+// NEVER ON THE ALTERNATE BUFFER, where a full-screen app clears legitimately
+// and has no scrollback to keep it in. And not when the page is the one pushed
+// last, because a TUI that repaints with erase-display and then draws the same
+// frame would otherwise stack copies of it. claude's own captures
+// (internal/daemon/testdata) send one erase-display per session, not one per
+// frame, so this is a guard and not the common case.
+let termPushed = "";
+function keepPage(t, restore) {
+  const buf = t.buffer.active;
+  if (buf.type !== "normal") return;
+  const core = t._core, ih = core && core._inputHandler, b = ih && ih._activeBuffer;
+  if (!b || !ih.lineFeed || b.scrollTop !== 0 || b.scrollBottom !== t.rows - 1) return;
+  let last = -1;
+  const rows = [];
+  for (let i = 0; i < t.rows; i++) {
+    const line = buf.getLine(buf.baseY + i);
+    rows.push(line ? line.translateToString(true) : "");
+    if (rows[i].trim()) last = i;
+  }
+  if (last < 0) return;
+  const sig = rows.slice(0, last + 1).join("\n");
+  if (sig === termPushed) return;
+  termPushed = sig;
+  const saved = restore ? [] : null;
+  if (saved) for (let i = 0; i < t.rows; i++) saved.push(b.lines.get(b.ybase + i).clone());
+  const y = b.y;
+  b.y = t.rows - 1;
+  for (let i = 0; i <= last; i++) ih.lineFeed();
+  b.y = y;
+  if (saved) for (let i = 0; i < t.rows; i++) b.lines.get(b.ybase + i).copyFrom(saved[i]);
+}
+
 // Runner capabilities arrive in the first attach message. Reset per socket
 // so reconnects cannot reuse another session's capabilities. See attachCaps.
 let termCaps = {};
@@ -645,6 +695,7 @@ function openTerm(task) {
   // first attach fills an empty screen and only a later reconnect resets. See
   // `termReplayed`.
   termReplayed = false;
+  termPushed = "";
   // Another session's pty size must not size this one's first fit.
   termPtyCols = 0;
   termPtyRows = 0;
@@ -710,6 +761,15 @@ function openTerm(task) {
   syncPhoneView();
   term.onWriteParsed(() => { phoneSyncTextarea(); phoneKeepSoon(); tallFollow(); });
   term.onScroll(() => tallFollow());
+  // Erase-display with 2 or 3 keeps the page first. 3 would also wipe the
+  // scrollback, which is the history this is here to keep, so it is taken here
+  // and the page it pushed leaves the rows blank, which is all it was for.
+  term.parser.registerCsiHandler({ final: "J" }, params => {
+    const n = params[0];
+    if (n !== 2 && n !== 3) return false;
+    keepPage(term, false);
+    return n === 3;
+  });
   term.open(screen);
   term.textarea.addEventListener("focus", () => { tallFollow(); requestAnimationFrame(tallFollow); });
   phoneInputMode();
@@ -836,6 +896,7 @@ function openTerm(task) {
     if (e.ctrlKey && e.altKey && !e.shiftKey && !e.metaKey && e.code === "KeyN" &&
         !(e.getModifierState && e.getModifierState("AltGraph"))) {
       e.preventDefault();
+      keepPage(term, true);
       newContext(task.id);
       return false;
     }
