@@ -55,3 +55,20 @@ Open, a Low, not a hold:
 
 Atrium-Verdict: room-ok a51c45fe..ee02a749
 Atrium-Verdict: hub-ok a51c45fe..ee02a749
+
+## Re-read: 06d74ada
+
+Range `a51c45fe..06d74ada`. 06d74ada is one commit on landing `8ec2ee80`, in `scripts/measure-term-switch.js` only.
+
+Closed:
+- **N1.** The baseline is `times.slice(1, min(4, K))`, so it ends before index K, the timed attach.
+  - At K=2 it is attach 2 alone, against attach 3.
+  - At K=1 it is empty, and the run prints the timed attach with a "no baseline" line instead of a comparison.
+
+A nit, not a hold: the "no baseline" line also prints when K is 2 or more but every baseline attach failed. Its text
+then blames K. At K=1 it reads "no attach 2 to 1".
+
+`node --check` passes.
+
+Atrium-Verdict: room-ok a51c45fe..06d74ada
+Atrium-Verdict: hub-ok a51c45fe..06d74ada
