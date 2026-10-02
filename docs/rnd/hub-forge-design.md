@@ -241,8 +241,10 @@ the room at launch, and is never written into `.git/config`.
 Three walls, so no single one has to hold:
 1. **The dotfiles hook** permits exactly `git push hub <branch>`, `git push -u hub <branch>` and `git fetch hub`,
    and the same with `atrium-hub`.
-   - It does so only after it checks, in the command's cwd, that `remote.<name>.url`, and `remote.<name>.pushurl` if
-     set, start with atrium's forwarder, `http://127.0.0.1:<agent port>/git/`. An operator's own `hub` pointing at
+   - It does so only after it checks, in the command's cwd, that `git remote get-url --push <name>` starts with
+     atrium's forwarder, `http://127.0.0.1:<agent port>/git/`. It checks the URL git will actually push to, after
+     every `url.*.insteadOf` and `pushInsteadOf` rewrite, not the raw `remote.<name>.url` config. A global rewrite
+     could otherwise send a push elsewhere while the config still matches. An operator's own `hub` pointing at
      another server is refused, so a card cannot push to the operator's other server.
    - It refuses any force flag (`-f`, `--force`, `--force-with-lease`), a `+` refspec, `--mirror`, `--all`, `--tags`,
      `--delete` or `:<ref>`, and any other remote.
