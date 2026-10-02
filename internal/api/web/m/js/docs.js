@@ -673,8 +673,11 @@
   function filedId(id) {
     if (String(id).indexOf("~") > 0) return id;
     const t = window.mStore && window.mStore.card(id);
-    const rooms = window.mNet.rooms();
-    const room = (t && t.room) || window.mNet.room() || (rooms.length === 1 ? rooms[0] : "");
+    // The desktop board loads this file without the phone page's network module, so no `mNet` there means no room
+    // to name: the id stays bare, which is what a one-room hub files it under.
+    const net = window.mNet;
+    const rooms = net ? net.rooms() : [];
+    const room = (t && t.room) || (net && net.room()) || (rooms.length === 1 ? rooms[0] : "");
     return room ? room + "~" + id : id;
   }
   async function paintCard(node, cardId) {

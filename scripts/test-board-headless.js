@@ -19023,9 +19023,6 @@ async function switchPrewarmSection(browser, base) {
   const errors = [];
   wp.on("pageerror", e => errors.push(String(e)));
   await wp.addInitScript(() => {
-    // Resting on a row also raises the peek popover, which asks the phone page's network module about rooms; the
-    // desktop page has none, so give it the one-room answer rather than let the popover throw in this fixture.
-    window.mNet = window.mNet || { rooms: () => [], room: () => "", loaded: () => false };
     window.__socks = 0;
     const W = window.WebSocket;
     window.WebSocket = new Proxy(W, { construct(T, a) { window.__socks++; return new T(...a); } });
@@ -19070,6 +19067,15 @@ async function switchPrewarmSection(browser, base) {
     await wp.mouse.move(5, 5);
     await idle(300);
     if (gets.length !== 1) fail("switchPrewarm: leaving before the dwell still fetched (" + gets.join(",") + ").");
+
+    // The peek popover that rests on a row reaches the documents line (mDocs.paintCard) on a desktop board, which
+    // has no phone network module, without throwing.
+    const painted = await wp.evaluate(async () => {
+      let threw = "";
+      try { await window.mDocs.paintCard(document.createElement("button"), "sp-a"); } catch (e) { threw = String(e); }
+      return { threw, net: typeof window.mNet };
+    });
+    if (painted.threw || painted.net !== "undefined") fail("switchPrewarm: a desktop peek's documents line threw or the desktop grew a mNet (" + JSON.stringify(painted) + ").");
 
     // No socket from any of it.
     const socks = await wp.evaluate(() => window.__socks);
