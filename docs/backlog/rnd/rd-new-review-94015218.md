@@ -77,3 +77,12 @@ care is visible in every stub.
 Closed: M1 / Open: L1
 
 Verdict: OK 94015218^..37d4dcd5 (doc-ok). It lands by cherry-pick alone.
+
+## Follow-up 061f1054
+
+- **L1, closed.** Beat 3 now says git ignores HANDOFF files only, and that ignoring PLAN files and a merge check are
+  still proposals. One line in one stub, with no .gitignore change.
+
+Closed: L1 / Open: none
+
+Verdict: OK 94015218^..061f1054 (doc-ok). It lands by cherry-pick alone.
