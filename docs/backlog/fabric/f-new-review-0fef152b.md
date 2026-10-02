@@ -297,3 +297,37 @@ Quality: a strong fix. The pending-then-settle design closes the crash window wi
 lands on owned or dropped, never on unowned.
 
 Atrium-Verdict: hub-ok 607bb026..4b1813cf
+
+## Re-read: 57333dab
+
+Range `4b1813cf..57333dab`, one commit, test files only: `internal/gitsync/hub_test.go` and `receive_test.go`. No
+code changes.
+
+Closed:
+- **N1, as far as these two races go.** Both fixes move the write out from under a running reader. They do not add a
+  sleep or a lock to the test.
+  - The other-machine case is now its own test on a fresh hub, so no Attached goroutine is left reading `SelfHost`. It
+    sets the same host and answer as before, so it still checks what the old tail checked.
+  - `newRecv(t, set...)` applies `set` before the handlers and the server exist, which is the right place. The old
+    test that set `PushLog=nil` while the server was running is split out.
+- **The refusal is real.** I checked it with mutants in a scratch worktree at the tip:
+  - With the setter emptied, so the hub has a log, the test fails at the card assert ("a hub with no log took a
+    push").
+  - With the setter emptied and the card push removed, the test fails at the operator assert.
+  - So each assert fails when it should. The refusal itself is the `PushLog == nil` 503 in `advertisePush`, which
+    comes before the pusher check, so the operator is refused too.
+
+Tests at the tip:
+- `go test -race -count=3` passes on the two split tests and `TestAPushTheLogCannotBeginMovesNothing`.
+- `go vet` and gofmt are clean on gitsync.
+- For the full `-race -count=5` and `-count=20` runs, I rely on the worker's counts.
+
+Open:
+- **Low: both asserts check only `err != nil`.** Matching "takes no pushes" in `out` would tie each one to this
+  refusal, not to any failure. It is not needed now, because the mutants show the error comes from the missing log.
+
+Verdict: hub-ok (re-read, 607bb026..57333dab)
+Quality: the right fix for a test race. Each write now happens before its reader starts, and the coverage is the same
+as before.
+
+Atrium-Verdict: hub-ok 607bb026..57333dab
