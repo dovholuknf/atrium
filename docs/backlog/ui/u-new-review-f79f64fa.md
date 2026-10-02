@@ -65,3 +65,24 @@ one line to the screenshot check.
 I read the units and did not run them, per the standing note. The mutants you list match what the asserts check.
 
 Atrium-Verdict: hold df35bbbb..f79f64fa
+
+## Re-read: 277fa3c9
+
+Range `df35bbbb..277fa3c9`. This is the same commit amended, still on `df35bbbb`.
+
+Closed:
+- **M1.**
+  - `--on-danger` is `var(--bg-0)` at `:root` and `#fff` in the four light skin blocks, and `.chip.ctxland` uses it.
+  - The skin blocks are `:root[data-skin=…]` on the same element, so `var(--bg-0)` resolves to each skin's own
+    background.
+  - The new assert reads every skin name from themes.css, sets it, and computes the badge's computed text/fill ratio,
+    which must be at least 4.5. A run that reads fewer than 20 skins fails. With the text back at `#fff`, the assert
+    fails on 17 skins.
+- **L1.** The findings doc's line is paraphrased.
+- **L2.** There is one `LAND_K_MIN` of 10, used by the reader, the gear check and its message. A stored "5" or "9" now
+  reads as 200.
+
+I read the units and did not run them, per the standing note.
+
+Atrium-Verdict: room-ok df35bbbb..277fa3c9
+Atrium-Verdict: hub-ok df35bbbb..277fa3c9
