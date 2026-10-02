@@ -28,7 +28,7 @@ const GROWL_NAME = {
   question: ["question", "questions"], "deploy-hold": ["deploy-hold", "deploy-holds"]
 };
 const GROWL_URGENCY = { permission: 1, halt: 2, blocked: 3, question: 4, "deploy-hold": 5 };
-const GROWL_SNOOZES = [["15 min", 15], ["1 h", 60], ["until tomorrow 09:00", 0]];
+const GROWL_SNOOZES = [["15 min", 15], ["1 h", 60], ["tomorrow 9am", 0]];
 
 function growlUrgency(g) { return g.urgency || GROWL_URGENCY[g.reason] || 9; }
 
@@ -186,7 +186,7 @@ function growlOnce(key) {
 
 function growlLog(what, g, extra) {
   if (!growlOnce(what + "|" + g.id + "|" + g.raised_at + "|" + (extra || ""))) return;
-  if (typeof recordToLog === "function") recordToLog(what + ": " + g.title, g.body || "", "", null, null);
+  if (typeof recordToLog === "function") recordToLog(what + ": " + g.title, g.body || "", "", null, null, g.id);
 }
 
 // The card in the form the board's own list uses: `room~id` once two rooms are attached, bare before.
@@ -246,7 +246,7 @@ function growlFull(g) {
       `<button data-do="compose" aria-label="${big ? "fold the reply box" : "open a bigger reply box"}" ` +
       `data-tip="${big ? "fold it. your text stays" : "a bigger box to write in"}">${big ? "&#10514;" : "&#10530;"}</button></div></div>`;
   }
-  acts += `<button data-do="open">open</button><button data-do="snooze">snooze</button>` +
+  acts += `<button data-do="open">open</button><button data-do="snooze">remind me</button>` +
     `<button data-do="dismiss" data-tip="stops this alert. the ? chip on the card stays">dismiss this</button>`;
   const snooze = growlSnoozing === g.id
     ? `<div class="gr-snooze">${GROWL_SNOOZES.map(s => `<button data-snooze="${s[1]}">${s[0]}</button>`).join("")}</div>` : "";
@@ -593,14 +593,26 @@ async function growlSendReply(g, text, box) {
 function growlSnoozeFor(row, minutes) {
   const g = row && growlByRow(row);
   if (!g) return;
+  growlSnoozing = "";
+  growlRemind(g, minutes);
+}
+
+// "Remind me" is the hub's snooze: the row stays in the log and raises once more when it is due. 0 is tomorrow 9am.
+function growlRemind(g, minutes) {
   if (!minutes) {
     const t = new Date();
     t.setDate(t.getDate() + 1);
     t.setHours(9, 0, 0, 0);
     minutes = Math.ceil((t - Date.now()) / 60000);
   }
-  growlSnoozing = "";
-  growlPost(g, { do: "snooze", minutes: Math.min(10080, Math.max(1, minutes)) }, false);
+  return growlPost(g, { do: "snooze", minutes: Math.min(10080, Math.max(1, minutes)) }, false);
+}
+
+// How long until a reminded row is due, for the bell.
+function growlRemindIn(g) {
+  const m = Math.max(1, Math.round((Date.parse(g.until) - Date.now()) / 60000));
+  if (!(m > 0)) return "reminding";
+  return "reminding in " + (m < 90 ? m + " min" : m < 2880 ? Math.round(m / 60) + " h" : Math.round(m / 1440) + " days");
 }
 
 // One call for dismiss, snooze and undismiss. A 409 means the reason ended first, and the row goes.

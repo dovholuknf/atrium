@@ -70,6 +70,12 @@
   .tlrow .tlcopy:hover, .tlrow .tlcopy:focus-visible { opacity: 1; color: var(--teal); }
   .tlrow .tlcopy.copied { opacity: 1; color: var(--teal); }
   .tlrow .tlcopy.failed { opacity: 1; color: var(--danger); }
+  .tlrow .tlremits { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+  .tlrow button.tlremind {
+    background: none; color: var(--body); border: 1px solid var(--stroke); border-radius: var(--r-sm, 6px);
+    padding: 1px 8px; cursor: pointer; font: inherit; font-size: var(--fs-xs, 11.5px);
+  }
+  .tlrow button.tlremind:hover { color: var(--teal); }
   /* A touch screen has no hover, so the icon would never show. There it stays
      visible at the resting strength. */
   @media (hover: none) { .tlrow .tlcopy { opacity: .65; } }
