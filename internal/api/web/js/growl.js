@@ -156,6 +156,9 @@ function growlApply(next, seed, remind) {
     });
   }
   growlSet = next;
+  // An open bell shows each growler's control, so it follows the set.
+  const bell = document.getElementById("toastlog");
+  if (!seed && bell && bell.open && typeof openToastLog === "function") openToastLog();
   growlQuiet.forEach(id => { const g = now.get(id); if (!g || g.state !== "open") growlQuiet.delete(id); });
   growlUndo.forEach((el, id) => {
     const g = now.get(id);
