@@ -7,9 +7,11 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/daemon"
 	"github.com/spf13/cobra"
 )
 
@@ -165,12 +167,28 @@ func newTaskCmd() *cobra.Command {
 
 func newExitCmd() *cobra.Command {
 	var boardURL string
+	var force bool
 	c := &cobra.Command{
 		Use:   "exit <who>",
 		Short: "Ask a card's runner to leave, the way atrium_exit does. The card stays down across a restart.",
-		Args:  cobra.ExactArgs(1),
+		Long: "Run by an agent (ATRIUM_AGENT_NAME set), it may exit itself or a card it launched. Any other card " +
+			"needs --force, which is recorded on that card, and a director cannot be exited by an agent at all. " +
+			"Run by the operator, with no ATRIUM_AGENT_NAME, there is no limit.",
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			got, err := callCard(boardURL, http.MethodPost, args[0], "exit", map[string]any{})
+			body := map[string]any{}
+			if me := strings.TrimSpace(os.Getenv("ATRIUM_AGENT_NAME")); me != "" {
+				body["from"], body["force"] = me, force
+				// A card named on another room is asked about by a name that is
+				// foreign there.
+				if isAcross(args[0]) {
+					if _, room, err := daemon.SplitAddress(args[0]); err == nil &&
+						!strings.EqualFold(room, strings.TrimSpace(os.Getenv("ATRIUM_ROOM"))) {
+						body["from"], body["foreign"] = me+"@"+os.Getenv("ATRIUM_ROOM"), true
+					}
+				}
+			}
+			got, err := callCard(boardURL, http.MethodPost, args[0], "exit", body)
 			if err != nil {
 				return err
 			}
@@ -179,6 +197,7 @@ func newExitCmd() *cobra.Command {
 		},
 	}
 	c.Flags().StringVar(&boardURL, "url", "", "atrium board address (default: $ATRIUM_BOARD_URL or the running daemon's)")
+	c.Flags().BoolVar(&force, "force", false, "exit a card that is neither you nor one you launched (recorded on it)")
 	return c
 }
 

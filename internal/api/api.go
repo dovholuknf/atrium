@@ -2231,6 +2231,25 @@ func (s *Server) kill(w http.ResponseWriter, r *http.Request) {
 // exitRunner asks a runner to quit the way its own harness says to, rather
 // than killing it. `kill` remains for when asking does not work.
 func (s *Server) exitRunner(w http.ResponseWriter, r *http.Request) {
+	// An agent's ask names itself in `from`. See guardExit.
+	var in exitAsk
+	_ = json.NewDecoder(io.LimitReader(r.Body, 1<<14)).Decode(&in)
+	if strings.TrimSpace(in.From) != "" {
+		t, err := s.st.Get(r.PathValue("id"))
+		if err != nil {
+			writeErr(w, http.StatusNotFound, err)
+			return
+		}
+		forced, err := s.guardExit(t, in)
+		if err != nil {
+			writeErr(w, http.StatusForbidden, err)
+			return
+		}
+		if forced {
+			_ = s.st.AppendEvent(t.ID, store.EventNotified, map[string]any{
+				"by": strings.TrimSpace(in.From), "forced_exit": true, "why": strings.TrimSpace(in.Why)})
+		}
+	}
 	if err := s.StopRunner(r.PathValue("id")); err != nil {
 		writeErr(w, http.StatusBadRequest, err)
 		return

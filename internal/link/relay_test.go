@@ -457,7 +457,7 @@ func TestAHubSideSayToOwnRoomIsLocal(t *testing.T) {
 
 	for _, to := range []string{"atrium-87300", "atrium-87300@sg4", "@orch@SG4"} {
 		_, out, err := x.control.sayHandler(relayCtx(t), ctlReq("other", "sg4"), sayInput{To: to, Text: "x"})
-		if err != nil || out.Card != "s1" {
+		if err != nil || out.ToCard != "s1" {
 			t.Fatalf("say %q = %+v, %v", to, out, err)
 		}
 	}
@@ -646,5 +646,28 @@ func TestACardLaunchedOnAnotherRoomCanBeReadAndExited(t *testing.T) {
 	}
 	if got := x.sg4.exits(); len(got) != 2 || got[0] != "kid" {
 		t.Fatalf("sg4 exits = %v", got)
+	}
+}
+
+// atrium_exit with no card exits the CALLER, and with no caller says so rather
+// than guessing. The id an atrium_say reply names is the recipient's: it is
+// `to_card`, and there is no `card` left to be mistaken for one's own.
+func TestAHubSideExitWithNoCardExitsTheCaller(t *testing.T) {
+	x := newRelayPair(t)
+	defer x.stop()
+
+	_, out, err := x.control.exitHandler(relayCtx(t), ctlReq("sa1", "m1mini"), exitInput{})
+	if err != nil || !out.Asked || out.Card != "m1" || out.Handle != "sa1" {
+		t.Fatalf("exit with no card = %+v, %v", out, err)
+	}
+	if got := x.mini.exits(); len(got) != 1 || got[0] != "m1" {
+		t.Fatalf("m1mini exits = %v, want only the caller's own m1", got)
+	}
+	if _, _, err := x.control.exitHandler(relayCtx(t), ctlReq("", "m1mini"), exitInput{}); err == nil {
+		t.Fatal("an exit with no card and no caller was accepted")
+	}
+	raw, _ := json.Marshal(sayOutput{To: "sa1", ToCard: "m1"})
+	if strings.Contains(string(raw), `"card"`) || !strings.Contains(string(raw), `"to_card"`) {
+		t.Fatalf("a say reply is %s: the recipient must be to_card and there must be no card", raw)
 	}
 }

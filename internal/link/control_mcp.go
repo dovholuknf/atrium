@@ -821,7 +821,10 @@ type sayOutput struct {
 	// and will not until that session next reaches a hook.
 	Delivered string `json:"delivered"`
 	To        string `json:"to"`
-	Card      string `json:"card"`
+	// ToCard is the RECIPIENT's card id, never yours. It was `card`, which a
+	// worker read as its own and exited its director with. Nothing in the repo
+	// read the old field: it is only ever shown to the model.
+	ToCard string `json:"to_card"`
 	// When is what it waits for: `immediate`, or `done` when it was asked for
 	// or the runner does not take input mid-turn.
 	When string `json:"when,omitempty"`
@@ -860,7 +863,7 @@ func (c *controlMCP) sayHandler(ctx context.Context, req *mcp.CallToolRequest, i
 		}
 		return c.sayAcross(ctx, req, room, card.sendName(), card.Room, in)
 	}
-	out.To, out.Card = handle, id
+	out.To, out.ToCard = handle, id
 
 	// The caller's own handle, read off the per-request header the same way
 	// atrium_peers reads `me`, so the attribution the recipient sees and the
@@ -1563,7 +1566,8 @@ func LaunchDroppedWarning(missed []string) string {
 // ── exit ────────────────────────────────────────────────────────────────────────
 
 type exitInput struct {
-	Card string `json:"card" jsonschema:"a card id, handle or alias. name@room or room~id for a card on another room"`
+	Card  string `json:"card,omitempty" jsonschema:"the card to exit: an id, handle or alias, name@room or room~id on another room. LEAVE IT OUT TO EXIT YOURSELF. never copy it from an atrium_say reply: that names who you spoke to"`
+	Force bool   `json:"force,omitempty" jsonschema:"exit a card that is neither you nor one you launched. recorded on that card. a director cannot be exited by an agent at all"`
 }
 
 type exitOutput struct {
@@ -1578,13 +1582,32 @@ func (c *controlMCP) exitHandler(ctx context.Context, req *mcp.CallToolRequest, 
 
 	out := exitOutput{}
 	room := roomOf(req)
-	scope, id, handle, err := c.resolveCard(ctx, room, in.Card)
+	me := agentOf(req)
+	// NO CARD IS YOU. The id an atrium_say reply gives is the recipient's, and a
+	// worker once took it for its own and exited the director that launched it.
+	who := strings.TrimSpace(in.Card)
+	if who == "" {
+		if me == "" {
+			return nil, out, fmt.Errorf("say which card to exit. there is no session calling this to exit")
+		}
+		who = me
+	}
+	scope, id, handle, err := c.resolveCard(ctx, room, who)
 	if err != nil {
 		return nil, out, err
 	}
 	out.Card, out.Handle = namedFrom(room, scope, id, handle)
+	// The room that owns the card decides. See api.guardExit. Another room's
+	// card is asked about by a name that is foreign there.
+	var body map[string]any
+	if me != "" {
+		body = map[string]any{"from": me, "force": in.Force}
+		if !equalFold(scope, room) {
+			body["from"], body["foreign"] = me+"@"+room, true
+		}
+	}
 	if err := c.ask(ctx, http.MethodPost,
-		"/v1/tasks/"+url.PathEscape(id)+"/exit", scope, nil, nil); err != nil {
+		"/v1/tasks/"+url.PathEscape(id)+"/exit", scope, body, nil); err != nil {
 		return nil, out, err
 	}
 	out.Asked = true

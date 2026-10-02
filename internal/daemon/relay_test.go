@@ -67,7 +67,7 @@ func (f *fakeRelay) Card(_ context.Context, room, to string, events bool) (Relay
 	return f.reached(RelaySay{Room: room, To: to, Text: "card", When: fmt.Sprint(events)})
 }
 
-func (f *fakeRelay) Exit(_ context.Context, room, to string) (RelayResult, error) {
+func (f *fakeRelay) Exit(_ context.Context, room, to, _ string, _ bool) (RelayResult, error) {
 	return f.reached(RelaySay{Room: room, To: to, Text: "exit"})
 }
 

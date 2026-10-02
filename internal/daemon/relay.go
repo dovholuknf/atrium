@@ -55,7 +55,10 @@ type Relay interface {
 	// Card reads `to` on `room`, and Exit asks it to leave. The result's Task
 	// is the card, and To and Card name it across.
 	Card(ctx context.Context, room, to string, events bool) (RelayResult, error)
-	Exit(ctx context.Context, room, to string) (RelayResult, error)
+	// Exit carries who is asking (from, a handle on THIS room) and whether they
+	// force it, because the room that owns the card makes the call. See
+	// api.guardExit.
+	Exit(ctx context.Context, room, to, from string, force bool) (RelayResult, error)
 	// Launch starts a session on another room. See relay_launch.go.
 	Launch(ctx context.Context, l RelayLaunch) (RelayResult, error)
 }
@@ -704,14 +707,16 @@ func (d *Daemon) handleRoomCard(w http.ResponseWriter, r *http.Request) {
 // this room answers `{"local": name}`, as handleRoomCard does.
 func (d *Daemon) handleRoomExit(w http.ResponseWriter, r *http.Request) {
 	var in struct {
-		To string `json:"to"`
+		To    string `json:"to"`
+		From  string `json:"from"`
+		Force bool   `json:"force"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&in); err != nil {
 		writeJSONErr(w, http.StatusBadRequest, err)
 		return
 	}
 	d.acrossRoom(w, r.Context(), in.To, func(ctx context.Context, rl Relay, name, room string) (RelayResult, error) {
-		return rl.Exit(ctx, room, name)
+		return rl.Exit(ctx, room, name, strings.TrimSpace(in.From), in.Force)
 	}, func(res RelayResult) map[string]any {
 		return map[string]any{"asked": true, "card": res.Card, "handle": res.To}
 	})
