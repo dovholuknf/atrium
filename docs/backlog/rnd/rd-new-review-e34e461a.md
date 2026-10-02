@@ -76,3 +76,23 @@ Open: M1, M2, L1, L2, L3, L4
 
 Quality: an ambitious design that still stays small at each stage, with stage 1's safety argument carried forward
 explicitly. The two gaps are namespace questions, which is where a forge's security usually lives.
+
+## Re-read at 1c965657 (2026-10-02): OK, doc-ok
+
+One commit, only the design doc.
+- **M1, closed.** Forge refs are stored under `refs/forge/heads` and `refs/forge/tags` and mapped only at serve time.
+  A served name two sources claim is refused. A forge branch starting `rooms/`, `claude/main` or `pull/` is withheld
+  and listed on the board. F1's acceptance covers a forge branch named `rooms/sg4/fix/x`.
+- **M2, closed, and better than asked.** Pass-through is replaced by fetch-through. The hub never forwards a reader's
+  wants. It does its own one-ref collect under the room's served set (`claude/*` and live card branches, no
+  tip-sha or reachable-sha wants), runs `index-pack` and `fsck` (`transfer.fsckObjects` on every mirror fetch), and
+  only then serves from the mirror. A reader gets 6 fetch-throughs a minute, with one per room at a time. F2b's
+  acceptance refuses stash, notes, unserved branches and bare shas with nothing asked of the room, and a corrupt
+  pack moves no ref.
+- **L1 to L4, closed.** The remote is `atrium-hub`, setup sets `http.followRedirects=initial`, persona jobs refuse a
+  dirty target while a plain lookup warns, and a PR's title and why are data in the owner's report.
+
+Closed: M1, M2, L1, L2, L3, L4
+Open: none
+
+Verdict: OK, doc-ok d32a34fd^..1c965657. It lands alone by cherry-pick of d32a34fd, e34e461a and 1c965657.
