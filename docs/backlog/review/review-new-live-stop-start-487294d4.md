@@ -46,3 +46,22 @@ Verdict: OK 5f2bcd58..5ab7d5b6 for 487294d4, hub-ok and room-ok (ops tooling).
 
 Quality: careful ops scripts that keep the house rules: match by directory, stop by request, swap by rename. The
 lows are inherited from Stop-Room or are documentation.
+
+## Follow-up f-live-lows 83ccfae1 (@fabric, 2026-10-02): OK e4b7653c..83ccfae1
+
+clint trimmed the lows to three, and all three are done:
+- The README's packaging link now points at `docs/release/packaging.md`.
+- One line says `.atrium\ctl-bin` is pinned on purpose and updated by hand.
+- start-atrium-control.ps1 comments why the join string on the command line is fine. It is right: `room join` is
+  `cobra.ExactArgs(1)` (internal/cli/roomrun.go:56) with no env, file or stdin path, the secret is single-use, and
+  the logged line already masks it.
+
+The share-refusal `-Force` item and a ctl-bin refresh were dropped by clint, and this verdict does not ask for them.
+
+Nit, not a hold: the comment says the string sits in "this process's own command line". It is the room process's,
+the one `Start-Process` starts, not the script's.
+
+`docs/changes/f-live-lows.md` uses the `@LETTER@` placeholder, the convention its neighbours use. Not run on sg4. The
+script was only parse-checked, and the change is a comment and docs.
+
+Verdict: OK e4b7653c..83ccfae1, hub-ok and room-ok (ops tooling).
