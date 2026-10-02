@@ -78,6 +78,13 @@ Next, after u-m-card and u-m-home land (clint, 2026-09-30 evening, by the orches
 
 ## Filed, not queued
 
+- Grouping work, spiked 2026-10-02, nothing built, all pending clint's answers (pause): (1) per-view grouping keys
+  `atrium.grouping.stack|board|terminals`, read-through from the old key, hues and hand-made groups shared, ~120-180
+  lines; (2) board collapse per column: `board.js:1508` fold key lacks the column (introduced by 2017744d on purpose),
+  ~4 lines plus tests; (3) child fold says "1 folded, 1 waiting" (`terminal-list.js:1126`), ~10 lines; (4) path tags
+  `atrium:<x>:<g1>:<g2>` as NESTED groups from the start (clint), built after (1) and (2), ~150-200 lines, tag text
+  only, agent-set tags untrusted. Hiding groups is dropped unless collapse falls short. CPU/GPU: the sound button
+  nudge pulse in the blurred header, then working.gif; clint picks.
 - `docs/backlog/ui/u-new-suite-flakes-0930.md`: cacheChip fails in the full run only. heldLine is fixed (fcf3b974).
   phonePan ("the follow chip went away without input") fails alone on claude/main too, about 1 run in 6, more under
   load. peekEverywhere's half-second timing and shiftMenu failed in the full run only, 17:50.
