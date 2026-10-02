@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/dovholuknf/atrium/internal/edge"
 )
 
 // The persistent growler: something waiting on a human, shown on every screen
@@ -66,7 +68,21 @@ const (
 	// settingGrowlSince is when growlers began on this hub. A question asked
 	// before it is history, not news, and raises nothing.
 	settingGrowlSince = "growl.since"
+	// settingGrowlLadder is which reasons re-raise on growlBackoff, a JSON
+	// object of reason to bool, e.g. {"permission":true,"question":false}. A
+	// reason it does not name takes growlLadderDefault. See ladder.
+	settingGrowlLadder = "growl_ladder"
 )
+
+// growlLadderDefault is the ladder when nothing is set: what blocks something
+// keeps reminding, a permission, a hub halt and a stalled deploy hold, and a
+// question or a block rings once (clint, 2026-10-02: no growler reminders for
+// questions). A reason ringing once is still raised, kept in the bell and
+// phoned once, and a human can snooze it for a reminder of their own.
+var growlLadderDefault = map[string]bool{ReasonPermission: true, "halt": true, "deploy-hold": true}
+
+// growlLadderReasons is every reason the setting may name.
+var growlLadderReasons = []string{ReasonPermission, ReasonQuestion, reasonBlocked, "halt", "deploy-hold"}
 
 const (
 	growlTick         = 30 * time.Second
@@ -226,6 +242,38 @@ func (g *Growler) after(name string, def time.Duration) time.Duration {
 	return def
 }
 
+// ladder is which reasons remind on the backoff right now. Read on each tick,
+// so a change takes effect on the next one. An unreadable value is the default.
+func (g *Growler) ladder() map[string]bool {
+	out := map[string]bool{}
+	for r, on := range growlLadderDefault {
+		out[r] = on
+	}
+	if v, err := g.st.Setting(settingGrowlLadder); err == nil && v != "" {
+		var set map[string]bool
+		if json.Unmarshal([]byte(v), &set) == nil {
+			for r, on := range set {
+				out[r] = on
+			}
+		}
+	}
+	return out
+}
+
+// growlEnded is a card whose session is over. It wants no growler whatever it
+// asked or was blocked on, because nobody is left to answer.
+func growlEnded(c CardState) bool {
+	status := c.Status
+	if status == "" {
+		var p struct {
+			Status string `json:"status"`
+		}
+		_ = json.Unmarshal(c.Payload, &p)
+		status = p.Status
+	}
+	return status == "done" || status == "dead"
+}
+
 // growlID is the notify identity with the room in front.
 func growlID(room, identity string) string { return room + "|" + identity }
 
@@ -276,6 +324,12 @@ func (g *Growler) derive(room string, cards []CardState) (want []GrowlRow, prese
 	}
 	for _, c := range cards {
 		present[c.ID] = true
+		// A CARD THAT ENDED OR EXITED TAKES ITS GROWLERS WITH IT. It is still
+		// announced, so sync ends what it had. A question asked before the
+		// session ended would otherwise stand for as long as the card is kept.
+		if growlEnded(c) {
+			continue
+		}
 		nc, ok := cardReason(c.ID, c.Payload)
 		if !ok {
 			continue
@@ -467,6 +521,12 @@ func (g *Growler) tick(ctx context.Context) {
 	if err != nil {
 		return
 	}
+	// woke is the snoozes that ended just now. They re-raise once whatever the
+	// ladder says, and the phone hears it once too.
+	woke := map[string]bool{}
+	for _, id := range remind {
+		woke[id] = true
+	}
 	if len(remind) > 0 {
 		changed = true
 	}
@@ -488,11 +548,32 @@ func (g *Growler) tick(ctx context.Context) {
 		}
 	}
 	g.mu.Unlock()
+	ladder := g.ladder()
+	phone := func(r GrowlRow) {
+		if g.phone == nil || (r.Reason != ReasonPermission && r.Reason != ReasonQuestion) {
+			return
+		}
+		name := names[r.Room+"|"+r.CardID]
+		if name == "" {
+			name = r.CardID
+		}
+		g.phone(Notice{Name: name, Reason: r.Reason, Card: tagFor(r.Room, r.CardID), Room: r.Room})
+	}
 	for _, r := range live {
 		if r.Reason == ReasonPermission && r.Subject == "" {
 			missing[r.Room] = true
 		}
 		if r.State != "open" {
+			continue
+		}
+		// A REMIND-ME THAT CAME DUE IS ONE REMINDER, asked for by a human. It
+		// goes to the phone even where the ladder is off.
+		if woke[r.ID] {
+			phone(r)
+		}
+		// A reason off the ladder rings once, when it is raised, and never
+		// again unless a snooze wakes it.
+		if !ladder[r.Reason] {
 			continue
 		}
 		due := 0
@@ -511,13 +592,7 @@ func (g *Growler) tick(ctx context.Context) {
 		// A REMINDER GOES TO THE PHONE TOO, on the same backoff (clint,
 		// 2026-09-30), through the notify sink, which holds it back while a
 		// desktop tab is visible and does nothing while notify is off.
-		if g.phone != nil && (r.Reason == ReasonPermission || r.Reason == ReasonQuestion) {
-			name := names[r.Room+"|"+r.CardID]
-			if name == "" {
-				name = r.CardID
-			}
-			g.phone(Notice{Name: name, Reason: r.Reason, Card: tagFor(r.Room, r.CardID), Room: r.Room})
-		}
+		phone(r)
 	}
 	for room := range missing {
 		go g.fill(ctx, room)
@@ -871,6 +946,57 @@ func (p *Proxy) serveGrowls(w http.ResponseWriter, r *http.Request, sub string) 
 	default:
 		fail(code, err.Error())
 	}
+}
+
+// serveGrowlLadder answers GET and PUT /_hub/growl-ladder: which reasons remind
+// on the backoff, every reason named, true or false. A PUT sets only the
+// reasons it names and is for the machine the hub runs on, like /_hub/hosts.
+func (p *Proxy) serveGrowlLadder(w http.ResponseWriter, r *http.Request) {
+	g := p.growler()
+	if g == nil {
+		http.NotFound(w, r)
+		return
+	}
+	fail := func(code int, msg string) {
+		w.WriteHeader(code)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": msg})
+	}
+	switch r.Method {
+	case http.MethodGet:
+	case http.MethodPut:
+		if !edge.LocalOperator(r) {
+			fail(http.StatusForbidden, "the reminders are set only from the machine the hub runs on"+edge.ProxyNote(r))
+			return
+		}
+		var set map[string]bool
+		if err := json.NewDecoder(io.LimitReader(r.Body, 4<<10)).Decode(&set); err != nil {
+			fail(http.StatusBadRequest, "could not read that: "+err.Error())
+			return
+		}
+		next := g.ladder()
+		for reason, on := range set {
+			if !contains(growlLadderReasons, reason) {
+				fail(http.StatusBadRequest, "a reason is one of "+strings.Join(growlLadderReasons, ", "))
+				return
+			}
+			next[reason] = on
+		}
+		b, _ := json.Marshal(next)
+		if err := g.st.SetSetting(settingGrowlLadder, string(b)); err != nil {
+			fail(http.StatusInternalServerError, "could not save that: "+err.Error())
+			return
+		}
+		p.RecordAudit("", "growl-ladder-set", string(b))
+	default:
+		fail(http.StatusMethodNotAllowed, "that has to be a GET or a PUT")
+		return
+	}
+	cur := g.ladder()
+	out := map[string]bool{}
+	for _, reason := range growlLadderReasons {
+		out[reason] = cur[reason]
+	}
+	_ = json.NewEncoder(w).Encode(out)
 }
 
 // openGrowls hands one stream the live set as it opens, so a fresh tab has it

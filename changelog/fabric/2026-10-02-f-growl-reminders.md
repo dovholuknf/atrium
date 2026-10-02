@@ -1,0 +1,4 @@
+- A question or a block now raises once and no longer re-raises on the 1, 2, 5 minute ladder. A permission, a halt and a deploy hold keep theirs.
+- The ladder is a hub setting per reason, `growl_ladder`, read and set at GET and PUT `/_hub/growl-ladder` (PUT from the hub machine only).
+- A snoozed growler that comes due now also pushes to the phone once, for a question or a permission.
+- A card whose session ended (done or dead) takes its open and snoozed growlers with it.
