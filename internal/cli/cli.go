@@ -166,8 +166,10 @@ func newDaemon() *cobra.Command {
 		},
 	}
 	startedByFlag(c, &startedBy)
-	c.Flags().StringVar(&agentAddr, "addr", ":7777", "agent-facing listen address")
-	c.Flags().StringVar(&humanAddr, "http", ":7778", "human-facing listen address (API and board)")
+	c.Flags().StringVar(&agentAddr, "addr", "127.0.0.1:7777",
+		"agent-facing listen address (loopback by default; a wider address is a choice you make here)")
+	c.Flags().StringVar(&humanAddr, "http", "127.0.0.1:7778",
+		"human-facing listen address, API and board (loopback by default; a wider address is a choice you make here)")
 	c.Flags().StringVar(&dbPath, "db", "", "sqlite path (default: alongside the rest of atrium's state)")
 	c.Flags().IntVar(&timeoutSec, "long-poll", 60, "longest shutdown waits on parked agent requests, in seconds (capped at 5)")
 	c.Flags().StringVar(&shutdownToken, "shutdown-token", "",

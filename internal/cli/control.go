@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -316,7 +317,8 @@ func runRestart(db, delay string) error {
 	time.Sleep(wait)
 
 	board := "http://localhost:7778"
-	if loc, err := readLocation(); err == nil && strings.TrimSpace(loc.Board) != "" {
+	loc, locErr := readLocation()
+	if locErr == nil && strings.TrimSpace(loc.Board) != "" {
 		board = loc.Board
 	}
 	// Best effort. A daemon that is already gone is not a failure: the point is
@@ -345,7 +347,43 @@ func runRestart(db, delay string) error {
 	// replaced. Anything staged beside it goes in here, the control server
 	// included.
 	swapAllStaged(exe)
-	return spawnDetached(exe, []string{"daemon", "--db", db})
+	return spawnDetached(exe, restartDaemonArgs(db, loc, locErr == nil))
+}
+
+// restartDaemonArgs is the command line the daemon comes back with.
+//
+// THE BIND IS CARRIED, NEVER REBUILT. The restart used to pass only --db, so a
+// daemon started on 127.0.0.1 came back on the flag default and listened on
+// every interface: the board open to the LAN with no login. What the old daemon
+// bound is in the location file, and that is what it gets back. A daemon that
+// was started wide keeps it, because the operator asked for that. Anything the
+// file cannot say (no file, or one written before it recorded the bind) falls
+// to loopback on the old port and never to a wider one.
+func restartDaemonArgs(db string, loc daemon.Location, haveLoc bool) []string {
+	args := []string{"daemon", "--db", db}
+	if !haveLoc {
+		return args
+	}
+	if a := keepBind(loc.AgentListen, loc.Agent); a != "" {
+		args = append(args, "--addr", a)
+	}
+	if h := keepBind(loc.BoardListen, loc.Board); h != "" {
+		args = append(args, "--http", h)
+	}
+	return args
+}
+
+// keepBind is the listen address to restart on: the recorded one as it was
+// given, or loopback on the port of the reachable URL when none was recorded.
+func keepBind(listen, reach string) string {
+	if l := strings.TrimSpace(listen); l != "" {
+		return l
+	}
+	u := strings.TrimPrefix(strings.TrimPrefix(strings.TrimSpace(reach), "http://"), "https://")
+	if _, port, err := net.SplitHostPort(strings.TrimSuffix(u, "/")); err == nil && port != "" {
+		return net.JoinHostPort("127.0.0.1", port)
+	}
+	return ""
 }
 
 // daemonExe is which binary to start as the daemon.

@@ -33,7 +33,14 @@ type Location struct {
 	Agent string `json:"agent"`
 	// Board is the human side, for anything printing a link.
 	Board string `json:"board"`
-	PID   int    `json:"pid"`
+	// AgentListen and BoardListen are the addresses this daemon BOUND, as it
+	// was given them (`127.0.0.1:7778`, `0.0.0.0:7778`). Agent and Board above
+	// are where to REACH it and lose the host (`:7778` becomes localhost), so
+	// a restart that rebuilt its bind from them could not tell a loopback
+	// daemon from one open to the LAN.
+	AgentListen string `json:"agent_listen,omitempty"`
+	BoardListen string `json:"board_listen,omitempty"`
+	PID         int    `json:"pid"`
 	// Since dates the file, so a stale one can be recognized by a human
 	// reading it even though nothing acts on it.
 	Since string `json:"since"`
@@ -240,12 +247,14 @@ func (d *Daemon) writeLocation() {
 		return
 	}
 	loc := Location{
-		Agent: addressOf(d.opts.AgentAddr),
-		Board: addressOf(d.opts.HumanAddr),
-		PID:   os.Getpid(),
-		Since: time.Now().Format(time.RFC3339),
-		DB:    d.opts.DBPath,
-		Exe:   daemonBinary(),
+		Agent:       addressOf(d.opts.AgentAddr),
+		Board:       addressOf(d.opts.HumanAddr),
+		AgentListen: strings.TrimSpace(d.opts.AgentAddr),
+		BoardListen: strings.TrimSpace(d.opts.HumanAddr),
+		PID:         os.Getpid(),
+		Since:       time.Now().Format(time.RFC3339),
+		DB:          d.opts.DBPath,
+		Exe:         daemonBinary(),
 	}
 	// Taking the file off another daemon is allowed and is said out loud. Two
 	// daemons on one machine is a mistake worth being able to see, and the

@@ -8373,3 +8373,16 @@ Needs a hub with one room and a board. The setting is per browser.
 6. With two board windows open, tick the box in one: the other draws and its checkbox follows. Untick: it goes.
 
 Covered by headless unit `growlOff`; the existing growler units seed the setting on.
+
+## ID. A restart keeps the daemon's bind (r-restart-loopback)
+
+Needs a daemon started by hand on a spare port, and a second machine (or `ipconfig getifaddr en0`) to reach it from.
+
+1. `atrium daemon --http 127.0.0.1:7788 --addr 127.0.0.1:7787 --location-file /tmp/loc.json --db /tmp/t.db`.
+   `loc.json` has `board_listen` and `agent_listen` as given.
+2. `curl http://<lan address>:7788/v1/health` is refused. `curl http://127.0.0.1:7788/v1/health` answers.
+3. With no `--http` or `--addr` at all, `lsof -iTCP -sTCP:LISTEN -P | grep atrium` shows 127.0.0.1, not `*`.
+4. Run `restart_atrium`. The daemon returns on the same two addresses: step 2 again, the same.
+5. Start another with `--http 0.0.0.0:7788` and restart it: it returns on `0.0.0.0:7788`, because the operator chose it.
+
+Covered by `TestRestartKeepsTheDaemonsBind` and `TestDaemonDefaultsAreLoopback`.
