@@ -6,10 +6,12 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/dovholuknf/atrium/internal/gitsync"
 	"github.com/dovholuknf/atrium/internal/shellpick"
 	"github.com/dovholuknf/atrium/internal/store"
 )
@@ -82,6 +84,11 @@ func globalAutoView(s *Server) map[string]any {
 		// Where the directory picker may look. Empty means the default set,
 		// which is the home directory plus every directory a card names.
 		SettingBrowseRoots: "browse_roots",
+		// Where atrium_git_clone makes clones, and the credential helper it may use for a
+		// private repository. Empty is a value: no scm folder means the tool refuses and
+		// says how to set it, and no helper means public repositories only.
+		gitsync.SettingSCMRoot:          "git_scm_root",
+		gitsync.SettingCredentialHelper: "git_credential_helper",
 		// A second address file, for callers running as another account.
 		// Empty means only the per-user one, which is right when the daemon
 		// and its callers are the same person.
@@ -271,6 +278,10 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 		// Where the picker may look. A pointer, because clearing it back to
 		// the default set is a request.
 		BrowseRoots *string `json:"browse_roots"`
+		// The scm folder, `<scm_root>/<host>/<owner>/<repo>`, and the credential helper
+		// for atrium's clones. Pointers, because clearing one is a request.
+		GitSCMRoot          *string `json:"git_scm_root"`
+		GitCredentialHelper *string `json:"git_credential_helper"`
 		// Where to publish the address for other accounts, and clearing it
 		// back to nowhere is a request like the rest of these.
 		SharedLocation *string `json:"shared_location"`
@@ -557,6 +568,34 @@ func (s *Server) setSettings(w http.ResponseWriter, r *http.Request) {
 				s.fail(w, err)
 				return
 			}
+		}
+	}
+
+	if body.GitSCMRoot != nil {
+		// An absolute path on this machine, or `~/...`, or empty to unset it.
+		v := strings.TrimSpace(*body.GitSCMRoot)
+		if v != "" && !filepath.IsAbs(filepath.FromSlash(v)) && v != "~" && !strings.HasPrefix(v, "~/") {
+			writeErr(w, http.StatusBadRequest, fmt.Errorf("git.scm_root is an absolute path on this machine, or ~/..., or empty to unset it"))
+			return
+		}
+		if strings.ContainsAny(v, "\x00\n\r") {
+			writeErr(w, http.StatusBadRequest, fmt.Errorf("git.scm_root is one path on one line"))
+			return
+		}
+		if err := s.st.SetSetting(gitsync.SettingSCMRoot, v); err != nil {
+			s.fail(w, err)
+			return
+		}
+	}
+	if body.GitCredentialHelper != nil {
+		v := strings.TrimSpace(*body.GitCredentialHelper)
+		if strings.ContainsAny(v, "\x00\n\r") {
+			writeErr(w, http.StatusBadRequest, fmt.Errorf("git.credential_helper is one line"))
+			return
+		}
+		if err := s.st.SetSetting(gitsync.SettingCredentialHelper, v); err != nil {
+			s.fail(w, err)
+			return
 		}
 	}
 

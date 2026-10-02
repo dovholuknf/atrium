@@ -155,6 +155,9 @@ type Server struct {
 	// runner is back after a restart. Owned by the daemon, which owns the
 	// terminal. See internal/daemon/restartwake.go.
 	RestartWake http.HandlerFunc
+	// GitClone is `atrium_git_clone`: a clone in the scm folder for a card. Owned by the daemon,
+	// which holds the settings and asks the one yes. See internal/daemon/gitclone.go.
+	GitClone http.HandlerFunc
 	// Hold reads, sets or lifts the room deploy hold. Owned by the daemon, which
 	// runs the permission chain it acts in. See internal/daemon/roomhold.go.
 	Hold http.HandlerFunc
@@ -643,6 +646,9 @@ func (s *Server) Handler() http.Handler {
 	}
 	if s.SwitchModel != nil {
 		mux.HandleFunc("POST /v1/tasks/{id}/model", s.SwitchModel)
+	}
+	if s.GitClone != nil {
+		mux.HandleFunc("POST /v1/tasks/{id}/git/clone", s.GitClone)
 	}
 	if s.Say != nil {
 		mux.HandleFunc("POST /v1/say", s.Say)
