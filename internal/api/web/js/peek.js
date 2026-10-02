@@ -39,6 +39,16 @@ function peekThresholdK(t) {
   return 150;
 }
 
+// THE ONE DRAWING OF THE CONTEXT METER, for the details popover and for the thin line on a
+// row, so the two cannot drift. The bar runs to half as far again as the limit, so the
+// tick sits at two thirds and a card past the limit still has somewhere to go. `cls` and
+// `tip` are the row's; the popover passes neither.
+function ctxMeter(tokens, limit, cls, tip) {
+  const fill = Math.min(100, (Number(tokens) / (limit * 1.5)) * 100) || 0;
+  return `<div class="peek-bar${cls ? " " + cls : ""}"${tip ? ` data-tip="${esc(tip)}"` : ""}>` +
+    `<i style="width:${fill.toFixed(1)}%"></i><s style="left:${(100 / 1.5).toFixed(1)}%"></s></div>`;
+}
+
 // Whether there is anything to read: a Claude conversation behind the card,
 // on a machine that is answering.
 function peekReadable(t) {
@@ -74,10 +84,6 @@ function peekBody(t, v) {
   const k = peekThresholdK(t);
   const limit = k * 1000;
   const warn = !loading && ctx >= limit;
-  // The bar runs to half as far again as the threshold, so the line sits at
-  // two thirds and a card past it still has somewhere to go.
-  const scale = limit * 1.5;
-  const fill = Math.min(100, (ctx / scale) * 100);
   const tot = (v && v.totals) || {};
   const own = usageOwn(v && v.by_cause);
   const cell = (label, value, tip) =>
@@ -86,8 +92,7 @@ function peekBody(t, v) {
   return head +
     `<div class="peek-ctx${warn ? " warn" : ""}">
       <div class="peek-num"><b>${loading ? "&nbsp;" : usageTokens(ctx)}</b><span>context</span></div>
-      <div class="peek-bar"><i style="width:${fill.toFixed(1)}%"></i><s style="left:${(100 / 1.5).toFixed(1)}%"
-        ></s></div>
+      ${ctxMeter(ctx, limit)}
       <div class="peek-scale"><span>${warn ? "past the line" : ""}</span>` +
         `<span>warns at ${k}k</span></div>
     </div>

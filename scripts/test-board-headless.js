@@ -8582,6 +8582,101 @@ async function blockerMarkSection(browser, base) {
   if (errors.length) fail("the blocker page threw: " + errors.join(" | "));
 }
 
+// The thin context line along the bottom edge of a terminals row (ctxLine in js/board.js), drawn with the
+// same meter as the details popover (ctxMeter in js/peek.js).
+async function ctxLineSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const wp = await ctx.newPage();
+  const errors = [];
+  wp.on("pageerror", e => errors.push(String(e)));
+  await wp.addInitScript(() => {
+    let all = {};
+    try { all = JSON.parse(localStorage.getItem("atrium.skipconfirm") || "{}"); } catch (e) {}
+    all["width-floor"] = true;
+    localStorage.setItem("atrium.skipconfirm", JSON.stringify(all));
+  });
+  const was = tasksMode;
+  const row = (id, tokens, extra) => Object.assign({}, T1, {
+    id, display_title: "row " + id, supervised: true, pinned: true, worktree: "/tmp/cl/" + id,
+    context_size: tokens == null ? undefined : { tokens, warn: tokens >= 150000, threshold_k: 150 }
+  }, extra || {});
+  try {
+    wornTasks = [row("cl-40", 60000), row("cl-70", 105000), row("cl-90", 135000), row("cl-over", 157000),
+      row("cl-none", null), row("cl-shelf", 157000, { status: "shelved" }),
+      row("cl-cycle", 157000, { new_context: { step: "clear", n: 2, of: 4, label: "clearing" } })];
+    tasksMode = "worn";
+    await wp.goto(base, { waitUntil: "domcontentloaded" });
+    await wp.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await wp.click('.tab[data-view="terms"]');
+    const got = await wp.evaluate(async () => {
+      await loadCards().catch(() => {}).then(renderTermList);
+      const out = {};
+      for (const el of document.querySelectorAll('#term-list .card.tab[data-id^="cl-"]')) {
+        const b = el.querySelector(".peek-bar.ctxline");
+        const r = el.getBoundingClientRect();
+        const br = b && b.getBoundingClientRect();
+        const i = b && b.querySelector("i"), s = b && b.querySelector("s");
+        out[el.dataset.id] = !b ? null : {
+          cls: b.className, width: i.style.width, tick: s.style.left, tip: b.getAttribute("data-tip"),
+          bottom: Math.abs(br.bottom - r.bottom) < 2, wide: br.width > r.width - 4,
+          anim: getComputedStyle(i).animationIterationCount, name: getComputedStyle(i).animationName,
+          fill: getComputedStyle(i).backgroundImage,
+          chip: !!el.querySelector(".chip.ctxwarn"), cycle: !!el.querySelector(".chip") && /context 2\/4/.test(el.textContent)
+        };
+      }
+      // The popover's own body, drawn by the same function.
+      const body = document.createElement("div");
+      body.innerHTML = peekBody({ id: "x", resume_id: "r", context_size: { tokens: 157000, warn: true, threshold_k: 150 } },
+        { context_now: 157000, totals: {} });
+      const pb = body.querySelector(".peek-ctx .peek-bar");
+      const shared = document.createElement("div");
+      shared.innerHTML = ctxMeter(157000, 150000);
+      return { rows: out, popover: pb ? pb.outerHTML : null, meter: shared.firstElementChild.outerHTML };
+    });
+    const r = got.rows;
+    for (const [id, w, cls] of [["cl-40", "26.7%", "peek-bar ctxline"], ["cl-70", "46.7%", "peek-bar ctxline warm"],
+      ["cl-90", "60%", "peek-bar ctxline hot"], ["cl-over", "69.8%", "peek-bar ctxline hot over"]]) {
+      const b = r[id];
+      if (!b) { fail(id + " has no context line."); continue; }
+      if (b.cls !== cls) fail(id + " line class is " + b.cls + ", want " + cls);
+      if (b.width !== w) fail(id + " fill is " + b.width + ", want " + w);
+      if (b.tick !== "66.7%") fail(id + " tick is at " + b.tick);
+      if (!b.bottom || !b.wide) fail(id + " line is not along the row's bottom edge: " + JSON.stringify(b));
+    }
+    if (r["cl-over"] && (r["cl-over"].anim !== "1" || r["cl-over"].name !== "ctxline-pulse")) {
+      fail("past the limit the line does not pulse exactly once: " + r["cl-over"].anim + " " + r["cl-over"].name);
+    }
+    if (r["cl-90"] && r["cl-90"].name !== "none") fail("a line under the limit animates.");
+    if (r["cl-over"] && !/157k used, limit 150k/.test(r["cl-over"].tip)) fail("the line's tooltip: " + (r["cl-over"] || {}).tip);
+    if (r["cl-over"] && !r["cl-over"].chip) fail("past the limit the row has no limit chip.");
+    if (r["cl-70"] && r["cl-70"].chip) fail("a card under the limit has the limit chip.");
+    if (r["cl-none"]) fail("a row with no context_size has a line.");
+    if (r["cl-shelf"]) fail("a shelved card has a line.");
+    const c = r["cl-cycle"];
+    if (!c) fail("a cycling card has no line.");
+    else {
+      if (/ over\b/.test(c.cls)) fail("a cycling card pulses.");
+      if (c.chip) fail("a cycling card draws the limit chip instead of the cycle.");
+      if (!c.cycle) fail("a cycling card does not show the new-context chip.");
+    }
+    if (!got.popover) fail("the details popover lost its .peek-bar.");
+    else if (got.popover !== got.meter) fail("the popover's meter is not ctxMeter's drawing:\n" + got.popover + "\n" + got.meter);
+    // Light and dark: the line's fill resolves to a colour in both.
+    for (const skin of ["graphite", "paper"]) {
+      const fillOk = await wp.evaluate(async sk => {
+        try { applySkin(sk); } catch (e) { return "noskin"; }
+        const i = document.querySelector('#term-list [data-id="cl-over"] .ctxline i');
+        return /rgb/.test(getComputedStyle(i).backgroundImage);
+      }, skin);
+      if (fillOk === false) fail("the line has no fill colour in skin " + skin);
+    }
+  } finally {
+    await ctx.close();
+    tasksMode = was;
+  }
+  if (errors.length) fail("the terminals list threw: " + errors.join(" | "));
+}
+
 // Three Claude cards: one under the context threshold, one past it, and one
 // the room has no size for.
 const CTX_CARDS = [
@@ -18613,7 +18708,7 @@ async function main() {
       pasteBig: pasteBigSection, pasteBusy: pasteBusySection, typing: typingSection, alias: aliasSection, askAgain: askAgainSection, copySelect: copySelectSection, busyGuard: busyGuardSection, keepalive: keepaliveSection,
       stuck: stuckSection, blockerMark: blockerMarkSection, carryLink: carryLinkSection,
       skinScope: skinScopeSection, skinHeal: skinHealSection, toastLives: toastLivesSection,
-      history: historySection, contextSize: contextSizeSection, peekEverywhere: peekEverywhereSection, cardRoute: cardRouteSection,
+      history: historySection, contextSize: contextSizeSection, ctxLine: ctxLineSection, peekEverywhere: peekEverywhereSection, cardRoute: cardRouteSection,
       quietDoer: quietDoerSection, looksIdle: looksIdleSection, notifyOff: notifyOffSection,
       questionsClick: questionsClickSection, walk: walkSection, linkReuse: linkReuseSection,
       usageCacheReads: usageCacheReadsSection, roomsDash: roomsDashSection, phoneView: phoneViewSection, heldLine: heldLineSection, u016: u016Section, phoneHeader: phoneHeaderSection, phoneFocus: phoneFocusSection, phoneTermBar: phoneTermBarSection, phoneShare: phoneShareSection, phonePan: phonePanSection, phoneFollow: phoneFollowSection, phoneTap: phoneTapSection, phoneKeyboard: phoneKeyboardSection, phoneCompose: phoneComposeSection, mCompose: mComposeSection, mPerms: mPermsSection, usagePolish: usagePolishSection, usageLimits: usageLimitsSection, usageGroups: usageGroupsSection,
@@ -20595,6 +20690,7 @@ async function main() {
     await unit("blockerMark", () => blockerMarkSection(browser, base));
     // ── every card shows its context size, warned past the gear's line ────
     await unit("contextSize", () => contextSizeSection(browser, base));
+    await unit("ctxLine", () => ctxLineSection(browser, base));
     await unit("peekEverywhere", () => peekEverywhereSection(browser, base));
     await unit("phoneListFit", () => phoneListFitSection(browser, base));
     await unit("phoneNudge", () => phoneNudgeSection(browser, base));

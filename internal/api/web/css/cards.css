@@ -747,6 +747,18 @@
     background: linear-gradient(90deg, rgba(var(--warn-rgb),.45), var(--warn));
     box-shadow: 0 0 10px rgba(var(--warn-rgb),.4);
   }
+  /* The same meter as a thin line along the bottom edge of a row (ctxLine, js/board.js). The row clips it to
+     its corners. The tooltip is the bar's own, so it takes the pointer, and a click on it reaches the row. */
+  .peek-bar.ctxline {
+    position: absolute; left: 0; right: 0; bottom: 0; height: 4px; margin: 0; border-radius: 0;
+  }
+  .peek-bar.ctxline i { border-radius: 0; box-shadow: none; }
+  .peek-bar.ctxline s { top: 0; bottom: 0; }
+  .peek-bar.ctxline.warm i { background: linear-gradient(90deg, rgba(var(--warn-rgb),.45), var(--warn)); }
+  .peek-bar.ctxline.hot i { background: linear-gradient(90deg, rgba(var(--danger-rgb),.45), var(--danger)); }
+  /* One pulse as it appears, never a loop: this is drawn on every row. */
+  .peek-bar.ctxline.over i { animation: ctxline-pulse 1.2s ease-out 1; }
+  @keyframes ctxline-pulse { 0% { box-shadow: 0 0 0 0 rgba(var(--danger-rgb),.9); } 100% { box-shadow: 0 0 10px 3px rgba(var(--danger-rgb),0); } }
   .peek-bar s { position: absolute; top: -3px; bottom: -3px; width: 1px; background: var(--dim); opacity: .7; }
   .peek-scale {
     display: flex; justify-content: space-between; gap: 8px;
@@ -782,4 +794,5 @@
   @media (prefers-reduced-motion: reduce) {
     .peek, .peek.on, .peek-bar i { transition: none; }
     .peek-body.loading .peek-num b, .peek-body.loading .peek-cell b { animation: none; }
+    .peek-bar.ctxline.over i { animation: none; }
   }
