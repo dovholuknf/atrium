@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
@@ -41,42 +41,84 @@ var (
 
 var opencodeSessionID = regexp.MustCompile(`^ses_[A-Za-z0-9]+$`)
 
-// opencodeExec runs a binary with an argv and returns its stdout, reading at most
-// max+1 bytes. A variable so a test needs no opencode.
+// opencodeWaitDelay is how long after the process exits (or is killed) its output
+// pipe may stay open. A grandchild that kept stdout, as cmd.exe's child does for an
+// npm .cmd shim, cannot hold a read longer than this.
+var opencodeWaitDelay = time.Second
+
+// cappedWriter keeps at most max bytes. The first byte past it marks over, calls
+// stop, and fails the write, so the copy ends and the process is killed.
+type cappedWriter struct {
+	mu   sync.Mutex
+	buf  bytes.Buffer
+	max  int64
+	over bool
+	stop func()
+}
+
+func (w *cappedWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if int64(w.buf.Len()+len(p)) > w.max {
+		w.over = true
+		w.stop()
+		return 0, errors.New("export is over the cap")
+	}
+	return w.buf.Write(p)
+}
+
+// opencodeEnv is the room's environment without atrium's own: opencode loads
+// plugins, and atrium's plugin would announce this session as a card's.
+func opencodeEnv() []string {
+	var env []string
+	for _, kv := range os.Environ() {
+		if !strings.HasPrefix(strings.ToUpper(kv), "ATRIUM_") {
+			env = append(env, kv)
+		}
+	}
+	return env
+}
+
+// opencodeExec runs a binary with an argv and returns its stdout, at most max
+// bytes. Bounded by ctx AND by opencodeWaitDelay: stdout is a writer, not a pipe
+// read to EOF, and the kill takes the whole process tree, so a child that holds
+// the pipe cannot hold the call. What was printed comes back with the error, so a
+// good answer printed before a timeout is kept; over the cap returns nothing.
+// A variable so a test needs no opencode.
 var opencodeExec = func(ctx context.Context, bin string, args []string, max int64) ([]byte, error) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	cmd := exec.CommandContext(ctx, bin, args...)
-	out, err := cmd.StdoutPipe()
-	if err != nil {
-		return nil, err
-	}
-	if err := cmd.Start(); err != nil {
-		return nil, err
-	}
-	b, rerr := io.ReadAll(io.LimitReader(out, max+1))
-	if int64(len(b)) > max {
-		_ = cmd.Process.Kill()
-	}
-	werr := cmd.Wait()
-	if int64(len(b)) > max {
+	cmd.Env = opencodeEnv()
+	w := &cappedWriter{max: max, stop: cancel}
+	cmd.Stdout = w
+	cmd.WaitDelay = opencodeWaitDelay
+	prepareTree(cmd)
+	err := cmd.Run()
+	reapTree(cmd)
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.over {
 		return nil, fmt.Errorf("export is over %d bytes", max)
 	}
-	if ctx.Err() != nil {
-		return nil, ctx.Err()
+	if err == nil && ctx.Err() != nil {
+		err = ctx.Err()
 	}
-	if rerr != nil {
-		return nil, rerr
-	}
-	return b, werr
+	return append([]byte(nil), w.buf.Bytes()...), err
 }
 
 // opencodeLookPath resolves the binary: a variable for tests.
 var opencodeLookPath = exec.LookPath
 
 type opencodeReader struct {
-	d  *Daemon
-	mu sync.Mutex
-	m  map[string]*opencodeCard // by card id
+	d   *Daemon
+	mu  sync.Mutex
+	m   map[string]*opencodeCard // by card id
+	sem chan struct{}            // exports in flight across cards
 }
+
+// opencodeSlots is how many cards may export at once.
+const opencodeSlots = 3
 
 type opencodeCard struct {
 	mu      sync.Mutex // held across an export: one in flight per card
@@ -86,14 +128,12 @@ type opencodeCard struct {
 	prompts []Prompt
 }
 
-var opencodeReaders sync.Map // *Daemon -> *opencodeReader
-
+// opencodeSource is the daemon's opencode reader, made on first use.
 func opencodeSource(d *Daemon) transcriptReader {
-	if v, ok := opencodeReaders.Load(d); ok {
-		return v.(*opencodeReader)
-	}
-	v, _ := opencodeReaders.LoadOrStore(d, &opencodeReader{d: d, m: map[string]*opencodeCard{}})
-	return v.(*opencodeReader)
+	d.opencodeOnce.Do(func() {
+		d.opencode = &opencodeReader{d: d, m: map[string]*opencodeCard{}, sem: make(chan struct{}, opencodeSlots)}
+	})
+	return d.opencode
 }
 
 // isOpenCode reports whether a runner row runs opencode.
@@ -173,16 +213,19 @@ func (r *opencodeReader) read(card string, h *store.Harness, session string) ([]
 	if err != nil {
 		return nil, nil, fmt.Errorf("opencode is not on PATH: %w", err)
 	}
+	r.sem <- struct{}{}
 	ctx, cancel := context.WithTimeout(context.Background(), opencodeTimeout)
-	defer cancel()
 	out, err := opencodeExec(ctx, bin, []string{"export", session}, opencodeMaxOut)
-	if err != nil {
-		return nil, nil, fmt.Errorf("opencode export: %w", err)
+	cancel()
+	<-r.sem
+	rs, ps, perr := parseOpencodeExport(out)
+	if perr != nil {
+		if err != nil {
+			return nil, nil, fmt.Errorf("opencode export: %w", err)
+		}
+		return nil, nil, perr
 	}
-	rs, ps, err := parseOpencodeExport(out)
-	if err != nil {
-		return nil, nil, err
-	}
+	// A complete answer printed before a timeout or a held pipe is kept.
 	c.session, c.at, c.replies, c.prompts = session, time.Now(), rs, ps
 	return rs, ps, nil
 }

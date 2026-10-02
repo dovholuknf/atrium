@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -183,5 +184,64 @@ func TestOpencodeSessionIDShape(t *testing.T) {
 		if opencodeSessionID.MatchString(id) != ok {
 			t.Errorf("%q: want %v", id, ok)
 		}
+	}
+}
+
+// The export is bounded by its timeout plus the wait delay even when a process it
+// started keeps stdout open, and the next call is not held up by it.
+func TestOpencodeExecIsBoundedAgainstAChildHoldingStdout(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell fakes")
+	}
+	oldDelay := opencodeWaitDelay
+	opencodeWaitDelay = 500 * time.Millisecond
+	t.Cleanup(func() { opencodeWaitDelay = oldDelay })
+	good := `{"messages":[{"info":{"role":"assistant","time":{"created":1000}},"parts":[{"type":"text","text":"hi"}]}]}`
+	cases := map[string]struct {
+		script string
+		keeps  bool
+	}{
+		"prints and leaves a background child": {"echo '" + good + "'; sleep 20 &", true},
+		"a child outlives the killed parent":   {"sleep 30 & sleep 30", false},
+	}
+	for name, c := range cases {
+		for i := 0; i < 2; i++ { // the second call is not blocked by the first
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			start := time.Now()
+			out, _ := opencodeExec(ctx, "/bin/sh", []string{"-c", c.script}, 1<<20)
+			cancel()
+			if took := time.Since(start); took > 3*time.Second {
+				t.Fatalf("%s: call %d took %v", name, i, took)
+			}
+			if _, _, err := parseOpencodeExport(out); c.keeps && err != nil {
+				t.Fatalf("%s: the answer printed before the stop was lost: %v", name, err)
+			}
+		}
+	}
+}
+
+func TestOpencodeExecStopsAtTheCapAndDropsAtriumEnv(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell fakes")
+	}
+	t.Setenv("ATRIUM_RUNNER", "opencode")
+	out, err := opencodeExec(context.Background(), "/bin/sh", []string{"-c", "echo ${ATRIUM_RUNNER:-none}"}, 1<<10)
+	if err != nil || strings.TrimSpace(string(out)) != "none" {
+		t.Fatalf("env reached the export: %q, %v", out, err)
+	}
+	start := time.Now()
+	out, err = opencodeExec(context.Background(), "/bin/sh", []string{"-c", "yes"}, 1<<10)
+	if err == nil || out != nil || time.Since(start) > 3*time.Second {
+		t.Fatalf("over the cap: %d bytes, %v, %v", len(out), err, time.Since(start))
+	}
+}
+
+// A good answer printed before a timeout is used.
+func TestOpencodeKeepsAnAnswerPrintedBeforeATimeout(t *testing.T) {
+	b, _ := ocRecorded(t)()
+	f := newOcFix(t, ocSession, func() ([]byte, error) { return b, context.DeadlineExceeded })
+	v, _ := f.d.repliesFor(f.card, 3)
+	if v.Source != "transcript" || len(v.Replies) != 2 {
+		t.Fatalf("got %+v", v)
 	}
 }
