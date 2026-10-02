@@ -16846,6 +16846,76 @@ async function pullsAbsentSection(browser, base) {
   if (!bad) console.log("pullsAbsent ok");
 }
 
+// The hub's repos list (js/hubrepos.js): a mocked /_hub/git/repos, two repos (one empty), branches with and without a known
+// card, a released one, both clone URLs, the empty state and a failing fetch.
+async function hubReposSection(browser, base) {
+  const wasHub = hubMode;
+  hubMode = true;
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const errors = [];
+  try {
+    const p = await ctx.newPage();
+    p.on("pageerror", e => errors.push(e.message));
+    let mode = "repos";
+    const ago1 = new Date(Date.now() - 3600 * 1000).toISOString();
+    const repos = [
+      { host: "github", owner: "openziti", repo: "ziti", url: "git@hub.atrium:openziti/ziti.git", path: "/git/hub/github/openziti/ziti.git",
+        main: { sha: "abcdef0123456789", at: ago1 },
+        branches: [
+          { name: "fix/x", sha: "1234567890abcdef", room: "sg4", card: "c-known", at: ago1, released: false },
+          { name: "old/y", sha: "fedcba9876543210", room: "sg4", card: "c-gone", at: ago1, released: true }] },
+      { host: "gitlab.com", owner: "acme", repo: "thing", url: "git@hub.atrium:gitlab.com/acme/thing.git", path: "/git/hub/gitlab.com/acme/thing.git",
+        main: { sha: "", at: null }, branches: [] }];
+    await p.route(/\/_hub\/git\/repos$/, r => {
+      if (mode === "fail") return r.fulfill({ status: 404, body: "no" });
+      r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ repos: mode === "empty" ? [] : repos }) });
+    });
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => { const t = document.querySelector('.tab[data-view="hubrepos"]'); return t && !t.hidden; }, null, { timeout: slow(15000) });
+    const open = async () => {
+      await p.evaluate(() => {
+        lastTasks = [{ id: "c-known", room: "sg4", title: "fix the x", display_title: "fix the x", status: "working" }];
+        return switchView("hubrepos");
+      });
+      await p.waitForFunction(() => hubRepos.loaded || hubRepos.note, null, { timeout: slow(10000) });
+      await p.waitForTimeout(200);
+    };
+    await open();
+    const got = await p.evaluate(() => {
+      const rows = [...document.querySelectorAll("#hubrepos-list .hr-repo")];
+      return {
+        n: rows.length,
+        copies: [...document.querySelectorAll(".hr-copy")].map(b => b.dataset.copy),
+        first: rows[0] && rows[0].textContent,
+        second: rows[1] && rows[1].textContent,
+        branches: [...document.querySelectorAll(".hr-branch")].map(b => b.textContent),
+        released: document.querySelectorAll(".hr-released").length,
+        origin: location.origin
+      };
+    });
+    if (got.n !== 2) fail("hubRepos: expected two repos, got " + got.n);
+    if (!got.copies.includes("git@hub.atrium:openziti/ziti.git") || !got.copies.includes("git@hub.atrium:gitlab.com/acme/thing.git"))
+      fail("hubRepos: the ssh copy values are wrong: " + JSON.stringify(got.copies));
+    if (!got.copies.includes(got.origin + "/git/hub/github/openziti/ziti.git")) fail("hubRepos: the http copy value is wrong: " + JSON.stringify(got.copies));
+    if (!/main abcdef0/.test(got.first)) fail("hubRepos: main is not shown short: " + got.first);
+    if (!/empty/.test(got.second)) fail("hubRepos: the empty repo does not say empty: " + got.second);
+    if (!/fix\/x/.test(got.branches[0]) || !/sg4 c-known/.test(got.branches[0]) || !/fix the x/.test(got.branches[0]) || !/1234567/.test(got.branches[0]) || /1234567890/.test(got.branches[0]))
+      fail("hubRepos: the known-card branch is wrong: " + got.branches[0]);
+    if (!/sg4 c-gone/.test(got.branches[1]) || /undefined|null/.test(got.branches[1]) || !/released/.test(got.branches[1]))
+      fail("hubRepos: the gone-card released branch is wrong: " + got.branches[1]);
+    if (got.released !== 1) fail("hubRepos: released should be marked once, got " + got.released);
+    mode = "empty";
+    await p.evaluate(() => { hubRepos.loaded = false; });
+    await p.click("#hubrepos-refresh");
+    await p.waitForFunction(() => /atrium git setup/.test(document.getElementById("hubrepos-list").textContent), null, { timeout: slow(10000) });
+    mode = "fail";
+    await p.click("#hubrepos-refresh");
+    await p.waitForFunction(() => /not answering/.test(document.getElementById("hubrepos-list").textContent), null, { timeout: slow(10000) });
+    if (errors.length) fail("hubRepos: page errors: " + errors.join(" | "));
+  } finally { hubMode = wasHub; await ctx.close(); }
+  if (!bad) console.log("hubRepos ok");
+}
+
 // One hover per row: a row carries the tooltip and no descendant repeats it.
 async function oneTooltipSection(browser, base) {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
@@ -18743,7 +18813,7 @@ async function main() {
       termDebug: termDebugSection, termSortStarted: termSortStartedSection,
       noReadyChildren: noReadyChildrenSection, childUnderParent: childUnderParentSection, topNav: topNavSection,
       childFold: childFoldSection, liveHome: liveHomeSection,
-      pulls: pullsSection, pullsAbsent: pullsAbsentSection, oneTooltip: oneTooltipSection, burnChart: burnChartSection };
+      pulls: pullsSection, hubRepos: hubReposSection, pullsAbsent: pullsAbsentSection, oneTooltip: oneTooltipSection, burnChart: burnChartSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -20735,6 +20805,7 @@ async function main() {
     await unit("growlStable", () => growlStableSection(browser, base));
     await unit("growlOnIt", () => growlOnItSection(browser, base));
     await unit("mGrowlQuestion", () => mGrowlQuestionSection(browser));
+    await unit("hubRepos", () => hubReposSection(browser, base));
     await unit("bootClean", () => bootCleanSection(browser, base));
     await unit("mWorking", () => mWorkingSection(browser));
     await unit("mOwnMessages", () => mOwnMessagesSection(browser));

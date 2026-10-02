@@ -59,6 +59,7 @@
 <link rel="stylesheet" href="/css/terminal.css">
 <link rel="stylesheet" href="/css/walk.css">
 <link rel="stylesheet" href="/css/pulls.css">
+<link rel="stylesheet" href="/css/hubrepos.css">
 <link rel="stylesheet" href="/css/dialogs.css">
 <link rel="stylesheet" href="/css/phone.css">
 <link rel="stylesheet" href="/css/themes.css">
@@ -176,6 +177,8 @@
            itself once the hub probe finds a hub, the same as the room counter.
            See js/audit.js and js/rooms.js. -->
       <div class="tab" data-view="audit" hidden>audit</div>
+      <!-- Hub only, revealed with the audit tab. See js/hubrepos.js. -->
+      <div class="tab" data-view="hubrepos" hidden>repos</div>
     </nav>
     <!-- Desktop only (css/topnav.css, js/topnav.js): the tabs that have no room, whole, in a menu. -->
     <button type="button" id="tabmore" class="tabmore" hidden aria-haspopup="true" aria-expanded="false"
@@ -765,6 +768,13 @@ Tokens only: no dollar figure is worked out.">?</span>
     </div>
     <div id="pulls-note" class="pulls-note" role="status" hidden></div>
     <div id="pulls-list"></div>
+  </div>
+
+  <!-- The hub's repos and the branches rooms pushed to it, drawn by js/hubrepos.js. Hub only. -->
+  <div id="hubrepos" hidden>
+    <div class="col-head" style="margin:0 0 10px"><span>repos on the hub</span></div>
+    <div class="filters" style="margin-bottom:12px"><button id="hubrepos-refresh" type="button">refresh</button></div>
+    <div id="hubrepos-list"></div>
   </div>
 
   <div id="audit" hidden>
@@ -3419,6 +3429,7 @@ Once a room has taken an item there is no withdrawing it from here. Stop it on t
 <script src="/js/rooms.js"></script>
 <script src="/js/rooms-dash.js"></script>
 <script src="/js/audit.js"></script>
+<script src="/js/hubrepos.js"></script>
 <script src="/js/pulls.js"></script>
 <script src="/js/board.js"></script>
 <script src="/js/cards.js"></script>

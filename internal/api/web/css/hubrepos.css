@@ -1,0 +1,15 @@
+/* The hub's repos (js/hubrepos.js). Existing tokens only, so every skin wears it. */
+  main > #hubrepos { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+  #hubrepos[hidden] { display: none; }
+  #hubrepos > * { flex: 0 0 auto; }
+  #hubrepos > #hubrepos-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; padding-right: 12px; }
+  .hr-repo { padding: var(--vs-2) var(--sp-3); border-bottom: 1px solid var(--stroke-dim); }
+  .hr-head { display: flex; gap: var(--sp-3); align-items: baseline; flex-wrap: wrap; }
+  .hr-repoName { color: var(--head); font-weight: 600; }
+  .hr-main, .hr-when, .hr-sha, .hr-title, .hr-urllabel { color: var(--dim); font-size: var(--fs-xs); }
+  .hr-url { display: flex; gap: var(--sp-3); align-items: baseline; flex-wrap: wrap; margin-top: 2px; }
+  .hr-urlval { font: var(--fs-xs)/1.4 var(--mono); color: var(--body); overflow-wrap: anywhere; }
+  .hr-branch { display: flex; gap: var(--sp-3); align-items: baseline; flex-wrap: wrap; padding: 2px 0 0 var(--sp-3); font-size: var(--fs-sm); }
+  .hr-name { font: var(--fs-xs)/1.4 var(--mono); color: var(--teal); }
+  .hr-who { color: var(--body); overflow-wrap: anywhere; }
+  .hr-released { color: var(--dim); font-size: var(--fs-xs); font-style: italic; }
