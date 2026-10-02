@@ -93,23 +93,43 @@ only, with no filter or depth`. A push from a shallow clone is refused too.
 **Expected:** 404 on the public share for reads and pushes. 403 on the main listener from anywhere but the hub machine,
 and 403 with a `Host` that is not loopback. Over the overlay or a private share it is the operator. A card header on
 the board is ignored and the push is logged as the operator's. A room cannot send `X-Atrium-Room`: the room is the one
-on the link certificate.
+on the link certificate. **A card running on the hub's own machine is the operator here**: it is loopback with a
+loopback `Host` and no forwarding header, which is what `LocalOperator` asks, so by the existing model it can push
+`main`, push tags and release branches through `http://127.0.0.1:<board>/git/hub/...`. Do not run a room on the hub
+machine as the hub's own account.
 
 ### @LETTER@12. The mirrors are not reachable here
 
-1. `git clone .../git/hub/github/dovholuknf/atrium.git` for a `git_repos` mirror that was never `init`ed, then after it was
-   inited, as a card push.
+1. `git clone .../git/hub/github/dovholuknf/atrium.git` for a `git_repos` mirror that was never `init`ed. Then run
+   `atrium rooms git init` on it, and try a push as a card and as the operator.
 
-**Expected:** 404 for the first. After init the room can fetch it, and a card's push is refused with `... is a mirror the
-hub serves to rooms, so only the operator pushes to it`. The operator's push to it lands.
+**Expected:** 404 for the first. After init the room and the operator can fetch it, and every push, the operator's
+included, is refused with `... is a mirror the hub keeps in step with a checkout, so a push cannot land there`, because
+the mirror pass force-fetches the checkout over it.
 
-### @LETTER@13. A push the log cannot take is undone
+### @LETTER@13. A hub that dies in the middle of a push
 
-1. Make the hub database read-only, push as a card.
+1. Push as a card, and kill the hub (`kill -9`) after git moved the branch and before the push is settled. Start it
+   again. Then, with the hub down, make the same state by writing a `pending` row by hand for a branch that is not there.
 
-**Expected:** the push is refused and the branch is not on the hub. (No row means not pushed.)
+**Expected:** on start `atrium rooms git store` shows the branch owned by the card that pushed it, and a push from
+another card to it is refused as owned. The pending row whose branch is not there is gone, and nothing is owned for it.
 
-### @LETTER@14. Size
+### @LETTER@14. A card asked about too many owners
+
+1. Push 12 new branch names in one push, each of which is owned by a different card of one room, from a card of
+   another room, while the first room is not answering.
+
+**Expected:** refused after at most 10 seconds, saying the hub cannot reach the room to ask. At most 8 cards were asked.
+
+### @LETTER@15. A forwarder that adds to the card headers
+
+1. `git -c http.extraHeader='X-Atrium-Card: s2' push ...` from a card, through a forwarder that adds its own
+   `X-Atrium-Card` and does not replace the client's.
+
+**Expected:** refused with `the request names its card more than once`, not pushed as either card.
+
+### @LETTER@16. Size
 
 1. Push more than 500 MB, once with a `Content-Length` and once chunked.
 
@@ -158,13 +178,21 @@ hub serves to rooms, so only the operator pushes to it`. The operator's push to 
   changed in between is refused with `try again`. / No network call under the lock.
 - decided: What frees a branch? / The owner's room says the card is gone (the room has no such card), `dead`, or `done` for
   more than 7 days. An unreachable room keeps the branch owned and says so. / Design 3.2.
-- decided: How is a taking-over written to the log? / A release row `moved to <card>` (or the room's reason) with the old
-  owner's room and card, then the push row of the new owner. / The owner is always the first push row after the latest
-  release row.
+- decided: How is a taking-over written to the log? / The new owner's push row is written pending with what released the
+  branch, and when the push lands one transaction writes the release row `moved to <card>` (or the room's reason) with the
+  old owner's room and card, then makes the push row done with a later id. A push that git refuses writes no release. /
+  The owner is always the first push row after the latest release row, and a refused push must release nothing (review M2).
 - decided: `LastOperatorPush` takes a ref, `(ctx, repo, ref)`. / The brief gave `(repo)`. A board shows the time of
   `main`, and the log holds the operator's pushes to other branches. / The list asks for `refs/heads/main`.
-- decided: Rows are appended only for refs that now equal what was pushed, after git ran, and when the log cannot take them
-  the refs are put back with `update-ref`. / No row means not pushed.
+- decided: When is a push written to the log, given that the hub can die between git moving a ref and the row? / BEFORE git
+  runs, as `pending` rows under the repository's lock, with `PushLog.Begin`. After git, `Settle` makes the rows of the
+  refs that now hold the pushed sha `done` and deletes the others. A pending row counts as a push, so it owns its branch.
+  What a crash (or a failed `Settle`) leaves is settled from the refs: a pending row whose ref holds the sha it was to
+  take is done, anything else is dropped. That runs when the hub starts (`Hub.Reconcile`, from `atrium_run`, before it
+  serves) and again under the lock at the start of every push to a repository. If `Begin` fails the push is refused and
+  nothing moved, which replaces the earlier `update-ref` undo. If `Settle` fails the push still stands, stays owned and
+  is settled by the next one. / Review M2: "no row means not pushed" was not true in the window, and a new branch with no
+  row could be taken by any card. A repository a push made and that a crash left empty stays, listed `(empty)`.
 - decided: A repository is made on a card's first push only. / When `git.create_on_push` is on, under the store-wide
   lock and the same case check as init, and removed again if the push took nothing (and the empty owner directories
   with it). The operator never creates a repository by a push. / Brief; init is the operator's way.
@@ -173,13 +201,35 @@ hub serves to rooms, so only the operator pushes to it`. The operator's push to 
 - decided: Which locks, in which order? / `store:<lower name>`, then `mirror:<name>` if the directory is a configured mirror,
   then `store:*` for the case check and the owner directory only, released before the repository is made. Held from the
   rules through receive-pack. / Part 1's review.
-- decided: An adopted mirror. / A room can fetch it, only the operator's push writes refs into it, and a card's push is
-  refused both at the advertisement and at the push. / Part 1's review (never write refs into an adopted repo except by
-  the operator).
+- decided: An adopted mirror. / A room and the operator can fetch it, and NO push is taken, the operator's included, refused
+  both at the advertisement and at the push. / The mirror pass force-fetches `+refs/heads/<branch>` from the checkout into
+  it, so a push would be overwritten while the log still said the operator pushed it (review L5; it reverses the earlier
+  rule that let the operator push).
 - decided: Hub deploy. / Needs migration 0008 (applies itself on start) and nothing new in settings beyond
-  `git.create_on_push` from part 1. A hub that cannot read the table takes no pushes. / No file to edit by hand.
+  `git.create_on_push` from part 1. A hub that cannot read the table takes no pushes. 0008 was edited in place after the
+  first review (it had not shipped, and it gained `state` and `batch`), so a database that applied the first form, which
+  only a hub run from the branch has, needs `DROP TABLE git_push` and `DELETE FROM schema_migration WHERE name =
+  '0008_git_push'` before it starts. / No file to edit by hand otherwise.
+- decided: What are the push log's ids? / Text that sorts in write order, each taken INSIDE the transaction as the larger of
+  the clock and the table's highest id plus one, so no restart and no clock that is behind can put a release row ahead of
+  the owner it releases. The in-memory counter is gone. `MemPushLog` orders by its slice, which is the same order, and the
+  shared tests run both with a clock an hour behind. / Review M1: after a restart with the clock behind, a release did not
+  release and an operator push took a card's branch.
+- decided: Where is a feature list read? / On every command line that has a NUL, as git's `read_head_info` does, and the
+  push-options and object-format checks are made on all of them. / The hub's view of a push must be git's (review L1).
+- decided: What if a request has the card headers more than once? / It is refused with a sentence, for the advertisement
+  and the push. / A forwarder that adds to a client's header instead of setting it must fail loudly, not have the client's
+  value win (review L2).
+- decided: What is held across the lock? / The verdict on every ref name (a `git check-ref-format` process each) is made
+  before it. The answer is built in a buffer and written to the client after it is released, so a client that stops reading
+  holds nothing. The owner questions are asked before it and capped: at most 8 rooms and 10 seconds in all, owners not
+  asked count as unreachable, which keeps their branches owned and says so. / Review L3.
 - decided: The release route. / `POST /_hub/git/release {repo, branch}` from the operator on the hub machine, the same gate as
   init. / It was missing from the proxy's route list until a link test failed (found by the test, not by a mutation).
+
+- decided: git's own words to the client. / Not filtered: hook, fsck and unpack failures reach the client on sideband 2 as git
+  wrote them, and git can name a quarantine or repository path there. The hub's own sentences name no path. / Review L5:
+  the brief's "no disk paths" holds for the hub's sentences only, and filtering git's stderr is not worth it for stage 1.
 
 ## Mutation checks
 
@@ -209,6 +259,21 @@ length had no test that the body was not read; the adopted mirror's advertisemen
 Not killable and left: none beyond the pairs above, where each half is held by the other (git's non-fast-forward rule
 and the hub's hook; the size cap's two places).
 
+### The second review (M1 to L5)
+
+Each change below was made on its own and a test of the new set failed (a hang counts, a build error does not).
+hubstore: the ids not read from the table (so a release with the clock behind did not release); a pending row not owning
+its branch; a refused batch left pending; a settled push keeping its old id (ahead of the release marker); a takeover
+that writes no release; `LastOperatorPush` counting a pending push; `Pending` ignoring the repository; the `state` check
+dropped. gitsync: leftovers not settled by the next push; `Reconcile` doing nothing; leftovers all taken as landed, and
+all dropped; a failed `Begin` ignored; every ref settled as landed after git took none; the operator allowed into an
+adopted mirror at the advertisement and, alone, at the push; the feature list read only from the first line; a repeated
+card header and a repeated chain header allowed; no cap on how many owners are asked, none on the time, and no total
+deadline; the ref names checked under the lock; the answer written under the lock.
+
+One parameter that no state could make matter, an owner query that skipped the settling batch's own rows, was found to
+be dead by a mutation that survived, and was removed rather than tested.
+
 ## For the next items
 
 - Item f-room-forwarder sends, on the link `git` kind, to `/git/hub/<host>/<owner>/<repo>.git/...` with the canonical host
@@ -216,5 +281,12 @@ and the hub's hook; the size cap's two places).
   `application/x-git-*-request`. A push must carry `X-Atrium-Card: <card id>` and `X-Atrium-Card-Chain: <card>,<previous>,
   <before that>` (the first entry the card, at most 8). The hub refuses a push with no card, so the forwarder should refuse
   first.
-- The push row is `PushRow{Repo, Ref, Old, New, Room, Card, At, ReleasedBy, Release}`. Room and card are empty for the
+- THE FORWARDER MUST NOT LET A CARD CHOOSE ITS OWN IDENTITY. A card's git can send any header with
+  `-c http.extraHeader=X-Atrium-Card: <another card of the room>`, and an `httputil.ReverseProxy` copies the incoming
+  headers. So it must `Del` both `X-Atrium-Card` and `X-Atrium-Card-Chain` on the outgoing request (`pr.Out`) and then
+  `Set` its own, one value each. The hub refuses a request that names either more than once, so an `Add` in place of a
+  `Set` fails loudly, but a `Set` that comes after the client's value still lets the client's through only if the `Del`
+  was forgotten. The ownership rule is exactly the difference between two cards of one room.
+- The push row is `PushRow{Repo, Ref, Old, New, Room, Card, At, ReleasedBy, Release, Pending, Batch}`. A push is written with
+  `Begin` (pending), and `Settle` makes it done. Room and card are empty for the
   operator, and on a release row they are the owner that was released.
