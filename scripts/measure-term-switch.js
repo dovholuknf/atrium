@@ -22,8 +22,8 @@
 // (default: the first host that is not the first host listed, so on a hub the first REMOTE room; with one host, that
 // one). --pool-k K (default 8) cards of it are attached one after another, the board's "terminals kept alive" setting
 // raised to hold them (the gear's own setting, at most the ceiling of 12), then a (K+1)th card of the room is timed.
-// Printed: ctor, c>o (where the hub's dial for a connection sits), first, for the first attach, the Kth and the
-// (K+1)th, the number of ws this tab holds open, and a verdict line. A room with fewer than K+1 live cards is said
+// Printed: ctor, c>o (where the hub's dial for a connection sits), first, for every attach; the (K+1)th is compared with
+// the median of attaches 2 to 4 (attach 1 pays the page's cold start), the number of ws this tab holds open, and a verdict line. Only supervised, not parked cards count (a joined or parked card opens no ws). A room with fewer than K+1 of them is said
 // so and nothing is timed. The hub's idle pool count is not exposed to the board, so it is not printed.
 //
 // Per card: FIRST switch to it, a switch to a different card, then REPEAT switch to the first (a hub caches the card
@@ -76,7 +76,7 @@ const perHost = +opt("--per-host", 2), rounds = +opt("--rounds", 3), idsArg = op
 
   const all = await page.evaluate(() => fetch("/v1/tasks").then(r => r.json()).then(j =>
     j.tasks.filter(t => t.status !== "done" && t.status !== "backlog")
-      .map(t => ({ id: t.id, title: t.title, host: t.hostname || "?" }))));
+      .map(t => ({ id: t.id, title: t.title, host: t.hostname || "?", attachable: !!t.supervised && !t.parked_at }))));
   let cards;
   if (idsArg) cards = idsArg.split(",").map(id => all.find(c => c.id === id) || { id, title: id, host: "?" });
   else {
@@ -86,11 +86,11 @@ const perHost = +opt("--per-host", 2), rounds = +opt("--rounds", 3), idsArg = op
   if (pool) {
     const hosts = [...new Set(all.map(c => c.host))];
     const room = poolRoom || hosts[hosts.length > 1 ? 1 : 0];
-    const live = all.filter(c => c.host === room);
+    const live = all.filter(c => c.host === room && c.attachable);
     const lab = c => `${c.host}:${(c.title || c.id).replace(/^.*\//, "").slice(0, 22)}`;
-    console.log(`board ${base}   rooms: ${hosts.join(", ")}   pool room: ${room} (${live.length} live cards)`);
+    console.log(`board ${base}   rooms: ${hosts.join(", ")}   pool room: ${room} (${live.length} attachable cards: supervised, not parked)`);
     if (live.length < poolK + 1) {
-      console.log(`room ${room} has only ${live.length} live cards; --pool needs ${poolK + 1} (K=${poolK} kept, plus one more to time). Nothing timed.`);
+      console.log(`room ${room} has only ${live.length} attachable cards; --pool needs ${poolK + 1} (K=${poolK} kept, plus one more to time). Nothing timed.`);
       await browser.close();
       return;
     }
@@ -115,11 +115,14 @@ const perHost = +opt("--per-host", 2), rounds = +opt("--rounds", 3), idsArg = op
       if (t.err) { console.log(pad(t.i, 4) + pad(t.card, 30) + t.err); continue; }
       console.log(pad(t.i, 4) + pad(t.card, 30) + [n(t.ctor), n(t.co), n(t.first), n(t.parsed), n(t.kb)].map((v, i) => pad(v, [6, 6, 6, 7, 6][i])).join(""));
     }
-    const a = times[0], z = times[poolK];
+    // Against the median of attaches 2 to 4 (inside the hub's 4 idle conns, warm page): attach 1 pays the page's cold start.
+    const base3 = times.slice(1, 4).filter(t => !t.err);
+    const med3 = k => { const v = base3.map(t => t[k]).filter(x => x >= 0).sort((x, y) => x - y); return v.length ? v[v.length >> 1] : -1; };
+    const a = { co: med3("co"), first: med3("first") }, z = times[poolK];
     console.log(`ws this tab holds open: ${held}`);
-    if (a && z && !a.err && !z.err) {
-      console.log(`attach 1 -> ${poolK + 1}: c>o ${n(a.co)} -> ${n(z.co)} ms, first ${n(a.first)} -> ${n(z.first)} ms (the hub's wait for a connection is in c>o)`);
-      console.log(z.co > a.co + 150 || z.first > a.first + 300 ? `SLOWER: attach ${poolK + 1} on ${room} took clearly longer than attach 1 (past the hub's 4 idle conns?)` : `no slowdown seen for attach ${poolK + 1}`);
+    if (z && !z.err && a.co >= 0) {
+      console.log(`median of attaches 2-4 -> attach ${poolK + 1}: c>o ${n(a.co)} -> ${n(z.co)} ms, first ${n(a.first)} -> ${n(z.first)} ms (the hub's wait for a connection is in c>o)`);
+      console.log(z.co > a.co + 150 || z.first > a.first + 300 ? `SLOWER: attach ${poolK + 1} on ${room} took clearly longer than attaches 2-4 (past the hub's 4 idle conns?)` : `no slowdown seen for attach ${poolK + 1}`);
     }
     await browser.close();
     return;
