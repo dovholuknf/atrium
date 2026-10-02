@@ -84,6 +84,7 @@
 #   4  the sha256 of a download did not match the publisher's. Nothing was unpacked
 #   5  installed, but the PATH record could not be written, or the tool is still not reachable the way the room sees it
 #   6  the run finished and nothing failed, but a person has to do something (-Profile c only, see C PROFILE)
+# (-RequireDedicatedAccount, below, refuses with exit 1: this script has no class of its own for a refusal)
 #
 # C PROFILE. `-Profile c` (default none: with none every call behaves as it did before) adds what a room needs to build
 # openziti/ziti-sdk-c with MSYS2 mingw, vcpkg and CMake, all in the install and nothing by hand. The code is in
@@ -133,6 +134,14 @@
 # EXIT CODE 6 is that: the run finished and nothing failed, but an admin, an interactive login or a git identity is needed. It
 # is used only when none of 1..5 applies. -Check never ends with 6.
 #
+# THE ACCOUNT. Right after the ssh step, `account` says who the room will run as (the ssh login) when that is an
+# administrator (Windows: an elevated token, Administrators, Domain Admins. macOS and Linux: root, admin, sudo or wheel,
+# or passwordless sudo) or the operator's own everyday account (best effort: -OperatorAccount, or the login that runs
+# this script on this same machine). It is a `warn` that names the reason and docs/room-accounts.md, and the run goes
+# on. -IAcceptRunningAsMe turns the warn into an `ok accepted by the operator` that still names the reason.
+# -RequireDedicatedAccount makes it a `fail` and exit 1, and so does a probe that cannot tell. Read only, so -Check is
+# the same. The code is in scripts/room-account.ps1.
+#
 # SCOPE. Windows x64 and arm64, macOS arm64 and x86_64, Linux x86_64 and aarch64.
 
 param(
@@ -170,12 +179,17 @@ param(
     [string] $SdkDir,
     [string] $VcpkgBinaryCache,
     # A test hook: print the encoded size of every Windows payload and exit.
-    [switch] $PayloadSizes
+    [switch] $PayloadSizes,
+    # THE ACCOUNT, see above. Accounts that are the operator's own, name or DOMAIN\name or name@host.
+    [string[]] $OperatorAccount = @(),
+    [switch] $IAcceptRunningAsMe,
+    [switch] $RequireDedicatedAccount
 )
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 . (Join-Path $PSScriptRoot 'room-toolchain-c.ps1')
+. (Join-Path $PSScriptRoot 'room-account.ps1')
 # UTF-8 without a BOM for what is piped to ssh. See provision-room.ps1.
 $OutputEncoding = [Text.UTF8Encoding]::new($false)
 # `pwsh -File` hands `-Tools go,node` and `-SshOption -o,Port=2222` over as one string, so commas split.
@@ -184,6 +198,7 @@ $Tools = Split-List $Tools
 $SshOption = Split-List $SshOption
 $RunnerAccounts = Split-List $RunnerAccounts
 $GitHubOwners = Split-List $GitHubOwners
+$OperatorAccount = Split-List $OperatorAccount
 $NodeVersion = if ($NodeVersion.StartsWith('v')) { $NodeVersion } else { "v$NodeVersion" }
 
 function Step {
@@ -210,6 +225,7 @@ if (-not $Target) {
     Write-Host 'usage: room-toolchain.ps1 <user@host|local> [-Check] [-Tools go,node,git,pwsh] [-Prefix dir] [-Force]'
     Write-Host '                          [-GoVersion 1.26.2] [-NodeVersion v24.21.0] [-GitVersion 2.56.0] [-PwshVersion 7.6.6]'
     Write-Host '                          [-Profile c [-Msys2Dir dir] [-GitUserName n -GitUserEmail e] [-VcpkgDir dir] [-SdkDir dir] [-CheckRepo owner/repo]]'
+    Write-Host '                          [-OperatorAccount name,...] [-IAcceptRunningAsMe | -RequireDedicatedAccount]'
     exit 1
 }
 $allTools = 'git', 'pwsh', 'go', 'node'
@@ -219,6 +235,9 @@ foreach ($v in @(@('-NodeVersion', $NodeVersion), @('-GitVersion', $GitVersion),
     if ($v[1] -and $v[1] -notmatch '^v?\d+\.\d+(\.\d+)?$') { Fail 'args' 1 "bad $($v[0]) '$($v[1])'" }
 }
 $isLocal = $Target -eq 'local'
+if ($IAcceptRunningAsMe -and $RequireDedicatedAccount) { Fail 'args' 1 '-IAcceptRunningAsMe and -RequireDedicatedAccount say opposite things' }
+$operators = @(Get-OperatorList $OperatorAccount)
+foreach ($o in $operators) { $why = Test-OperatorArg $o; if ($why) { Fail 'args' 1 $why } }
 
 # What go.mod asks for, from the checkout this script sits in. The room has no checkout to read it from yet.
 $goMin = $null
@@ -462,6 +481,16 @@ if ($PayloadSizes) {
     exit 0
 }
 
+# ── the account the room runs as, see THE ACCOUNT ───────────────────────────
+
+function Invoke-AccountStep {
+    $probe = if ($script:remoteOS -eq 'windows') { $script:AccountWinProbe } else { $script:AccountUnixProbe }
+    $r = Invoke-Remote $probe
+    $a = Get-AccountResult $r.Out $r.Code $script:kind $where (Get-LocalIdentity) $operators $isLocal ([bool]$IAcceptRunningAsMe) ([bool]$RequireDedicatedAccount)
+    Step 'account' $a.Status $a.Detail
+    if ($a.Refuse) { Finish 1 }
+}
+
 # ── 1. reach the target and learn what it is ────────────────────────────────
 
 if ($isLocal) {
@@ -509,7 +538,7 @@ if ($cProfile -and $script:remoteOS -eq 'windows') {
 
 # The first probe: for Windows it also says the arch.
 $Tools = @($Tools | Where-Object { $script:remoteOS -eq 'windows' -or $_ -in 'go', 'node' })
-if ($script:remoteOS -eq 'unix' -and -not $Tools -and -not $cProfile) { Step 'tools' 'skip' 'git and pwsh are installed on Windows only, and nothing else was asked for'; Finish 0 }
+if ($script:remoteOS -eq 'unix' -and -not $Tools -and -not $cProfile) { Invoke-AccountStep; Step 'tools' 'skip' 'git and pwsh are installed on Windows only, and nothing else was asked for'; Finish 0 }
 $r = Invoke-Remote (Get-Payload 'probe')
 if ($r.Code -ne 0) { Fail 'ssh' 2 "$where is not Linux, macOS or Windows PowerShell, or the probe failed" $r.Out }
 $kv = ConvertFrom-KeyValue $r.Out
@@ -517,6 +546,7 @@ if ($script:remoteOS -eq 'windows') { $osArch = $kv.arch }
 $arch = switch -Regex ($osArch) { '^(x86_64|amd64|AMD64)$' { 'x64' } '^(aarch64|arm64|ARM64)$' { 'arm64' } default { $null } }
 if (-not $arch) { Fail 'os' 2 "$($script:kind) on '$osArch', which this does not cover" }
 Step 'ssh' 'ok' "$where ($($script:kind) $arch)"
+Invoke-AccountStep
 $prefixR = $kv.prefix
 $sep = if ($script:remoteOS -eq 'windows') { '\' } else { '/' }
 Step 'prefix' 'ok' "$prefixR$(if ($Check) { ' (-Check, nothing is written)' })"

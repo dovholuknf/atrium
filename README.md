@@ -285,6 +285,8 @@ This is a personal tool. The parts that are missing are missing on purpose, or a
 
 - `docs/architecture-v2.md` -- the design, the decisions, what is built and what was abandoned.
 - `docs/user-guide.md` -- walkthroughs, including the hooks.
+- `docs/room-accounts.md`: why a room should not run as an administrator or as you, what atrium warns about, and how to
+  set up a standard account on each OS.
 - `docs/backlog.md` -- what is outstanding, why it matters, and what is out of scope.
 - `docs/runtime/activity-design.md` -- the live badge on a card, and why it is never written down.
 - `docs/runtime/statusline-telemetry.md` -- how much context a session has burned, posted by its statusline. The

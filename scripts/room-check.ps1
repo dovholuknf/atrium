@@ -23,6 +23,12 @@
 #                                                             -NoSmoke leaves it out)
 #   the room's runners  GET /v1/harnesses through the hub, X-Atrium-Room: <room>
 #   atrium hooks        that row's setup check, and with -Fix -Yes POST /v1/hooks/install
+#   account             who the room runs as (the ssh login), by the same read-only probe provision-room.ps1 and
+#                       room-toolchain.ps1 use (scripts/room-account.ps1). ok, or warn naming the reason: an
+#                       administrator (Windows token, Administrators, Domain Admins, root, admin, sudo, wheel,
+#                       passwordless sudo) or the operator's own everyday account. Never a failure, never fixed, and it
+#                       does not move the exit code. -IAcceptRunningAsMe makes the warn an ok that still names the
+#                       reason, -OperatorAccount lists accounts that are the operator's. See docs/room-accounts.md
 #   allowed-folders     `atrium room folders list --json` on the room (room-folders.ps1). ok with the roots when the list is
 #                       enforced, warn "no allowed folders set" when it is empty, skip when that atrium has no such verb.
 #                       With -Fix -Yes, `folders allow <clone> <clone>-worktrees`: a room's own setting, but it turns the
@@ -73,7 +79,10 @@ param(
     # An atrium that has the `requirements` subcommand.
     [string] $Binary,
     [string] $Ssh = 'ssh',
-    [string[]] $SshOption = @()
+    [string[]] $SshOption = @(),
+    # The account row, see above.
+    [string[]] $OperatorAccount = @(),
+    [switch] $IAcceptRunningAsMe
 )
 
 $ErrorActionPreference = 'Stop'
@@ -81,6 +90,9 @@ $ProgressPreference = 'SilentlyContinue'
 $OutputEncoding = [Text.UTF8Encoding]::new($false)
 function Split-List { param($v) @($v | ForEach-Object { "$_" -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ }) }
 $SshOption = Split-List $SshOption
+. (Join-Path $PSScriptRoot 'room-account.ps1')
+$operators = @(Get-OperatorList (Split-List $OperatorAccount))
+foreach ($o in $operators) { $why = Test-OperatorArg $o; if ($why) { Write-Host "room-check args fail $why"; exit 1 } }
 
 $script:unmet = @{ fixable = 0; human = 0; restart = 0 }
 
@@ -261,6 +273,11 @@ $script:remoteOS = if ($probeText -match '^(Linux|Darwin)\s') { 'unix' } else { 
 if (-not $roomOS) { $roomOS = $script:remoteOS }
 $kind = if ($probeText -match '^Darwin') { 'darwin' } elseif ($probeText -match '^Linux') { 'linux' } else { 'windows' }
 Row 'ssh' 'ok' "$Target ($kind)"
+
+# who the room runs as: advice, so ok or warn and never counted as unmet
+$ar = Invoke-Remote $(if ($script:remoteOS -eq 'windows') { $script:AccountWinProbe } else { $script:AccountUnixProbe })
+$av = Get-AccountResult $ar.Out $ar.Code $(if ($kind -eq 'darwin') { 'mac' } else { $kind }) $Target (Get-LocalIdentity) $operators $false ([bool]$IAcceptRunningAsMe) $false
+Row 'account' $av.Status $av.Detail
 
 $hs = if ($script:remoteOS -eq 'windows') { '"home=$($HOME -replace ''\\'', ''/'')"' } else { 'echo "home=$HOME"' }
 $remoteHome = ((ConvertFrom-KeyValue (Invoke-Remote $hs).Out).home)
