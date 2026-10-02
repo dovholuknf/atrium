@@ -675,11 +675,14 @@ function CCall {
 function Get-Lines { param($out, [string] $key) @($out | Where-Object { "$_" -like "$key=*" } | ForEach-Object { "$_".Substring($key.Length + 1) }) }
 function Show-Tail { param($c) $c.Tail | Where-Object { "$_".Trim() } | ForEach-Object { Write-Host "    $_" } }
 # A step that needs a person: the status is needs-human and the commands go in the summary at the end.
-# $cmds is a list of commands, each one a list of words. Format-AdminCommand makes the line, so a command is quoted in one place.
+# $cmds is a list of commands, each one a list of words (or @{ Words; Note } when a comment goes after it). Format-AdminCommand makes the line, so a command is quoted in one place.
 function Need {
     param([string] $step, [string] $detail, [object[]] $cmds)
     Step $step 'needs-human' $detail
-    $lines = @(foreach ($c in $cmds) { if ($c -is [string]) { throw "Need wants a command as a list of words, not '$c'" }; Format-AdminCommand ([string[]]@($c)) })
+    $lines = @(foreach ($c in $cmds) {
+        if ($c -is [string]) { throw "Need wants a command as a list of words, not '$c'" }
+        if ($c -is [hashtable]) { Format-AdminCommand ([string[]]@($c.Words)) $c.Note } else { Format-AdminCommand ([string[]]@($c)) }
+    })
     foreach ($l in $lines) { Write-Host "    $l" }
     $script:needs += $lines
 }
@@ -756,7 +759,7 @@ function Invoke-CMsys2 {
             $rops = @(New-RevertOps $g.Dir $g.Account $g.Before)
             $rv = CCall 'cacl' @{ Ops = (ConvertTo-AclOps $rops) }
             if ($rv.Rc -eq 0) { $null = CCall 'cstate' @{ StateDir = "$StateDir"; Mode = 'remove'; Key = "$($g.Dir)|$($g.Account)" }; Step 'msys2-acl' 'done' "took back the Modify grant for $($g.Account) on $($g.Dir) that an earlier run was cut off before taking back" }
-            else { Need 'msys2-acl' "could not take back the Modify grant for $($g.Account) that an earlier run left on $($g.Dir) ($($rv.Err)). an admin runs this" @($rops | ForEach-Object { , (@('icacls') + $_.Args) }) }
+            else { Need 'msys2-acl' "could not take back the Modify grant for $($g.Account) that an earlier run left on $($g.Dir) ($($rv.Err)). an admin runs this. the restore line comes from the record on the room, check it" @($rops | ForEach-Object { if ($_.Why -eq 'restore') { , @{ Words = (@('icacls') + $_.Args); Note = 'from the record, check it' } } else { , (@('icacls') + $_.Args) } }) }
         }
         $p = Get-CMsys $cv
     }

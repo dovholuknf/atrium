@@ -195,6 +195,13 @@ These were never run. Each is the first thing to look at if a real run misbehave
   A line for another directory is skipped. Any other line is never acted on and never printed as a command. The run
   says `msys2-acl warn acl-grants.txt has N line(s) this script did not write ...` with the line numbers and a 24
   character excerpt that has no control characters, and leaves the file as it is.
+- decided: a record that says the user HAD more than Modify is not believed either (L5, from the review of 709c9ef8) /
+  a forged `before` for the user's own account such as `(OI)(CI)(F)` passes the ACE grammar, and a printed restore
+  would give Full where the script only ever gave Modify. `Test-AceBelowModify` allows only the rights an account that
+  could not write can have (M, RX, R, W, D, N, RD, WD, AD, REA, WEA, X, DC, RC, S, DE, GR, GW, GE). F, WDAC, WO, GA and
+  any token not listed make the line Bad, with the same warn. A restore that comes from the record is printed with
+  ` # from the record, check it` after the command, which PowerShell reads as a comment, and the step says the same.
+  A take-back the run worked out itself from the live ACL has no label.
 - decided: one function makes every command a person is told to run, `Format-AdminCommand` (M1) / `Need` takes each
   command as a list of words and refuses a string, so the icacls, pacman, `git config`, login, runner-path and
   preset lines are all quoted in the same place, with `Quote-Ps` (the U+2018 to U+201B quotes doubled). The old
@@ -230,9 +237,12 @@ to the user, the account compared by its bare name, the `before` tokens not chec
 quoting off, a trailing newline passing as a safe word, `Need` printing its words joined, a caller giving `Need` a
 string, the bad lines not warned about, a restore or a grant right not checked, control characters kept in the
 excerpt, the excerpt not cut, a rights group of `(OI)` accepted, a blank line read as a bad line, and the lines not
-numbered. The printed lines are checked by the PowerShell parser: each one is exactly one command whose arguments
-are the expected literals, with no subexpression, no second statement and no `calc.exe`, for a directory that has
-`$(...)`, `;`, a quote and a space in it.
+numbered. The cap on what the record may say the user had (L5) was broken nine ways, each red: not applied on read, F
+allowed, WDAC, WO and GA allowed, the rights group not looked at, the restore line not labelled, `Need` dropping the
+note, the step not saying so, every revert line labelled, and the note not cleaned. The printed lines are checked by
+the PowerShell parser: each one is exactly one command whose arguments are the expected literals, with no
+subexpression, no second statement and no `calc.exe`, for a directory that has `$(...)`, `;`, a quote and a space in
+it.
 
 Bugs the tests found while being written: a null `configurePresets` merged as a list with a null first, `Run` always
 started in the home directory, the `git credential-manager --version` probe passed one argument for two, the

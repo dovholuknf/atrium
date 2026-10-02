@@ -292,6 +292,16 @@ function Test-AclReadable {
 # What icacls prints for one ACE after the account, flags then rights: (OI)(CI)(RX), (CI)(IO)(W), (F). The one grammar for it, used
 # on what New-IcaclsArgs is given and on what is read back from the room's grant record. Anything else is not an ACE.
 function Test-AceRaw { param([string] $s) $s -cmatch '^(\((OI|CI|IO|NP|I)\))*\((?!(OI|CI|IO|NP|I)\))[A-Z]{1,4}(,[A-Z]{1,4})*\)\z' }
+# What the room's grant record may say an account HAD before: an ACE (Test-AceRaw) whose rights are all of a kind this script could
+# have seen on an account that could not write, and none above Modify. Full control (F), write DAC (WDAC), write owner (WO) and
+# generic all (GA) are refused, and so is any token not listed. A record that says more than that was not written by this script.
+function Test-AceBelowModify {
+    param([string] $s)
+    if (-not (Test-AceRaw $s)) { return $false }
+    $rights = ($s -replace '^(\((OI|CI|IO|NP|I)\))*', '').Trim('(', ')')
+    foreach ($t in ($rights -split ',')) { if ($t -cnotin 'M', 'RX', 'R', 'W', 'D', 'N', 'RD', 'WD', 'AD', 'REA', 'WEA', 'X', 'DC', 'RC', 'S', 'DE', 'GR', 'GW', 'GE') { return $false } }
+    $true
+}
 # The arguments to icacls.exe for one change. Never Everyone or Users: that is refused here, not left to the caller. A right that is
 # not an ACE is refused too.
 function New-IcaclsArgs {
@@ -311,10 +321,12 @@ function New-IcaclsArgs {
 # outside [A-Za-z0-9_.:\/-] is a PowerShell single-quoted literal (Quote-Ps), so a $( ), a ;, a & or a backtick in a value is text and
 # runs nothing. A program that had to be quoted is called with &. Need (room-toolchain.ps1) takes words and calls this.
 function Format-AdminCommand {
-    param([string[]] $Words)
+    param([string[]] $Words, [string] $Note)
     $q = @($Words | ForEach-Object { if ("$_" -cmatch '^[A-Za-z0-9_.:\\/-]+\z') { "$_" } else { Quote-Ps "$_" } })
     if ($q.Count -and $q[0].StartsWith("'")) { $q[0] = '& ' + $q[0] }
-    $q -join ' '
+    $line = $q -join ' '
+    if ($Note) { $line += ' # ' + ($Note -replace '[^A-Za-z0-9 ,.-]', '') }
+    $line
 }
 # The ops that take a Modify grant back: remove what was granted, then put back what the account had of its own ($Before, the
 # Raw text of each explicit ACE, may be empty).
@@ -329,7 +341,7 @@ function New-RevertOps {
 # being the Raw text of the ACEs the account had, joined by a space. Each line is `n:text` as cacls prints it, n being its line
 # number in the file. The file is writable by anything that runs as the room user, so a line is only believed when it is what this
 # script writes: Dir the MSYS2 directory in question, Account exactly $User (only the user's own Modify is ever recorded), every
-# `before` token an ACE (Test-AceRaw). A line for another directory is not ours to touch and is skipped. Any other line is Bad:
+# `before` token an ACE no higher than Modify (Test-AceBelowModify). A line for another directory is not ours to touch and is skipped. Any other line is Bad:
 # never acted on, never printed as a command, and named by its number with a short, control-character-free excerpt only.
 # Returns @{ Grants = <Dir, Account, Before, Line>; Bad = <line numbers and excerpts as text> }.
 function ConvertFrom-GrantRecord {
@@ -344,7 +356,7 @@ function ConvertFrom-GrantRecord {
         if ($ok -and $Dir -and $f[0].TrimEnd('\', '/') -ine $Dir.TrimEnd('\', '/')) { continue }
         if ($ok) { $ok = $f[0] -ieq $f[0].Trim() -and $f[1] -ieq $User }
         $before = @()
-        if ($ok) { $before = @(@($f[2] -split ' ') | Where-Object { $_ }); foreach ($b in $before) { if (-not (Test-AceRaw $b)) { $ok = $false } } }
+        if ($ok) { $before = @(@($f[2] -split ' ') | Where-Object { $_ }); foreach ($b in $before) { if (-not (Test-AceBelowModify $b)) { $ok = $false } } }
         if ($ok) { $grants += [pscustomobject]@{ Dir = $(if ($Dir) { $Dir } else { $f[0] }); Account = $f[1]; Before = $before; Line = $n } }
         else { $bad += "line $n ($((($t -replace '[\x00-\x1f\x7f-\x9f\u2028\u2029]', ' ')).Substring(0, [Math]::Min(24, $t.Length))))" }
     }
