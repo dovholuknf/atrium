@@ -6,14 +6,13 @@ clint" section in a design doc.
 
 ## 1. What went wrong the first time, and what worked
 
-- **The questions were not understood.** clint's first answers were complaints: the wording was back to front
-  ("inverted"), and he did not understand the question at all. It worked once a question was rephrased as a
+- **The questions were not understood.** clint's first answers were complaints: the wording was back to front, and he did not understand the question at all. It worked once a question was rephrased as a
   sequence: this happens, then this happens, then what?
 - **The design's core picture was wrong, and the interview only found out at question 4.** The design had the hub
   mirroring every repo. clint's picture was a hub that owns `main`, takes pushes, and routes everything else to the
   room that has it. Three questions were spent on the details of a picture he did not hold.
-- **A question was asked that he had already answered.** He had said "origin and hub" in passing, and was asked
-  again, which he called a repeat.
+- **A question was asked that he had already answered.** He had already said, in passing, that a clone keeps both
+  remotes, and was asked again. He pointed out it had been asked before.
 - **The process itself worked.** One question at a time, a default each, and an answers file written as he went.
   He asked for a better screen for it (`docs/rnd/operator-focus.md` section 2.9).
 
@@ -39,7 +38,8 @@ clint" section in a design doc.
 >    rephrases in the answers file.
 > 7. **Write the answers as you go.** For each question, record his exact words, then "taken as: ..." for your
 >    reading of them, marked as yours. The file stays outside any public repo (on the hub machine, or wherever the
->    factory log is kept), because it quotes him.
+>    factory log is kept), because it quotes him. Your own cwd is never a public repo's worktree, so nothing you
+>    write can be committed there by accident.
 > 8. **Stop when the picture is settled.** List what was not asked under "Open, for the designer to default". Do not
 >    ask about them just to be complete.
 > 9. **When done,** report to whoever launched you with the path of the answers file and three headline lines, then

@@ -226,10 +226,11 @@ the board and the phone.
 
 Each answer reaches the interviewer card as one message, which is its one turn. The interviewer may queue up to two
 questions ahead, marked "may change". The screen shows the next one at once, so clint is not waiting on a model
-turn between easy questions.
+turn between easy questions. A changed answer withdraws the queued questions that depend on it, at once and before
+the interviewer's turn. The screen shows "rewriting" in their place, so a stale next question never shows.
 
 **Where it lives.** An interview is a hub row with its questions and answers. The answers file is written from the
-row at each answer, outside every repo (`~/.atrium/interviews/<id>.md` on the hub, `0600`), because it quotes clint.
+row at each answer, outside every repo (`~/.atrium/interviews/<id>.md` on the hub, the directory `0700` and each file `0600`), because it quotes clint.
 It follows the factory log's home once he decides it. A design doc cites the answers file by path, and paraphrases
 it.
 
