@@ -1,12 +1,19 @@
 // Times a terminal switch on a running board, end to end. One file, no repo needed: only playwright (and its
 // chromium) must resolve from where it runs.
 //
-//   node measure-term-switch.js [boardURL] [--per-host N] [--rounds N] [--ids a,b,c]
+//   node measure-term-switch.js [boardURL] [--per-host N] [--rounds N] [--ids a,b,c] [--hover]
 //
 // boardURL defaults to http://127.0.0.1:7781 (the m1mini room). On sg4 the hub's board is
 // http://127.0.0.1:7778. Cards are grouped by their hostname field (a hub lists every room's cards) and the first
 // --per-host (default 2) live cards of each group are used, so one run covers the hub-local room and the remote
 // rooms. --ids picks the cards by id instead.
+//
+// --hover switches the way a mouse does: the pointer rests 150 ms on the card's row in the terminals list, then the
+// row is clicked (the click goes through the row's own onclick, so what is timed is a real row click, not a call to
+// attachTask). The row is found by CARD ID: `#term-list .card.tab[data-id="<id>"]`, the id as the list shows it
+// (a hub's `room~uuid` when it has more than one room). A card with no such row (cold, hidden, filtered out) is
+// reported as "no row" and skipped. Without --hover, attachTask is called directly: no rest, so no prefetch, the way
+// the keyboard and the switcher switch. The table is labelled with the mode.
 //
 // Per card: FIRST switch to it, a switch to a different card, then REPEAT switch to the first (a hub caches the card
 // lookup for two minutes, so the repeat skips it). Then a RAPID run: every picked card, --rounds times (default 3),
@@ -25,6 +32,7 @@ try { pw = require("playwright"); } catch (e) { pw = require("playwright-core");
 const argv = process.argv.slice(2);
 const opt = (name, dflt) => { const i = argv.indexOf(name); return i >= 0 ? argv[i + 1] : dflt; };
 const base = argv.find((a, i) => /^https?:/.test(a) && !/^--/.test(argv[i - 1] || "")) || "http://127.0.0.1:7781";
+const hover = argv.includes("--hover");
 const perHost = +opt("--per-host", 2), rounds = +opt("--rounds", 3), idsArg = opt("--ids", "");
 
 (async () => {
@@ -47,6 +55,7 @@ const perHost = +opt("--per-host", 2), rounds = +opt("--rounds", 3), idsArg = op
   });
   await page.goto(base + "/", { waitUntil: "load" });
   await page.waitForTimeout(3000);
+  if (hover) { await page.click('.tab[data-view="terms"]'); await page.waitForTimeout(1500); }
 
   const all = await page.evaluate(() => fetch("/v1/tasks").then(r => r.json()).then(j =>
     j.tasks.filter(t => t.status !== "done" && t.status !== "backlog")
@@ -62,10 +71,16 @@ const perHost = +opt("--per-host", 2), rounds = +opt("--rounds", 3), idsArg = op
 
   // One switch. `term` and `attachTask` are the board's own globals.
   async function sw(id) {
-    return page.evaluate(async id => {
+    if (hover) {
+      const row = page.locator(`#term-list .card.tab[data-id="${id}"]`);
+      if (!(await row.count())) return { err: "no row" };
+      await row.hover();
+      await page.waitForTimeout(150);
+    }
+    const res = await page.evaluate(async ({ id, hover }) => {
       const before = window.__ws.length;
       const t0 = performance.now();
-      attachTask(id);
+      if (hover) document.querySelector(`#term-list .card.tab[data-id="${CSS.escape(id)}"]`).click(); else attachTask(id);
       let parsed = 0, hooked = null;
       const hook = setInterval(() => {
         if (typeof term !== "undefined" && term && term !== hooked) {
@@ -80,11 +95,13 @@ const perHost = +opt("--per-host", 2), rounds = +opt("--rounds", 3), idsArg = op
       }
       clearInterval(hook);
       const ws = window.__ws[before];
-      if (!ws) return { err: "no ws created" };
+      if (!ws) return { err: "no ws (already attached, or the click did nothing)" };
       return { ctor: ws.t0 - t0, co: ws.open ? ws.open - ws.t0 : -1, first: ws.first ? ws.first - t0 : -1,
         last: ws.last ? ws.last - t0 : -1, parsed: parsed ? parsed - t0 : -1, kb: ws.bytes / 1024,
         url: ws.url.replace(/^wss?:\/\/[^/]+/, "").replace(/\?.*/, "") };
-    }, id);
+    }, { id, hover });
+    if (hover) await page.mouse.move(2, 2);
+    return res;
   }
   const rows = [];
   const rec = async (kind, c) => { const r = await sw(c.id); rows.push({ kind, card: label(c), ...r }); await page.waitForTimeout(250); };
@@ -103,6 +120,7 @@ const perHost = +opt("--per-host", 2), rounds = +opt("--rounds", 3), idsArg = op
 
   const n = v => v == null || v < 0 ? "-" : String(Math.round(v));
   const pad = (s, w) => String(s).padEnd(w);
+  console.log(`mode ${hover ? "HOVER 150ms then row click" : "attachTask, no hover"}`);
   console.log(`board ${base}   ${cards.length} cards: ${cards.map(label).join(", ")}`);
   console.log(["kind", "card", "ctor", "c>o", "first", "last", "parsed", "KB"].map((h, i) => pad(h, [7, 30, 6, 6, 6, 6, 7, 6][i])).join(""));
   for (const r of rows) {
