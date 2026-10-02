@@ -1,0 +1,3 @@
+- A cleared terminal keeps the page that was showing: erase-display 2 and 3 scroll the visible rows into history first, so scrolling up no longer jumps from older output to the new banner. Not on the alternate screen, not for a partial erase, and not twice for the same page. Erase-display 3 no longer wipes history. (u-clear-keeps-page)
+- Ctrl+Alt+N pushes the page into history before the new context starts and leaves it showing. (u-clear-keeps-page)
+- `HEADLESS_ONLY=clearKeepsPage` drives a real xterm through a clear, erase-display 3, the alternate screen, a partial erase, a repaint and a replay. (u-clear-keeps-page)

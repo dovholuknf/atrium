@@ -968,6 +968,7 @@ function connectTerm(taskID) {
       // the seam. On the first open below there is nothing to reset, so the
       // line still earns its place after a wait.
       term.reset();
+      termPushed = "";
     } else if (attachSaidGone && term) {
       term.write("\r\n\x1b[38;5;79m[atrium] reconnected\x1b[0m\r\n");
     }
