@@ -126,6 +126,12 @@ func addPeerTools(s *mcp.Server) {
 			"in ~/.claude/agents (no .md) and directories in ~/.claude/skills on the room. They are " +
 			"namespaced, so start `atrium:<name>`. A name with no file, or a runner that is not " +
 			"claude, refuses the launch. The card keeps the lists.\n\n" +
+			"`room` launches on ANOTHER ROOM, through this room's hub: `cwd` is then a path on that " +
+			"room's machine, `brief` is written there and not here, and the worker's reports and " +
+			"notices still reach you. An unknown room is refused with the rooms the hub knows, and one " +
+			"that is not answering is refused and not held, so launch again when it is. A launch that " +
+			"may have started is `unconfirmed`: look at `atrium_peers` with `rooms` before launching " +
+			"again. Needs a hub that knows launching on another room.\n\n" +
 			"Returns the card id. Use it with `atrium_task`, `atrium_say` and `atrium_exit`.",
 	}, launchHandler)
 
@@ -176,6 +182,11 @@ func board() (string, error) {
 // this API is a sentence written to be read by whoever caused it, and
 // flattening those into "400 Bad Request" throws away the only useful part.
 func ask(ctx context.Context, method, path string, body any, out any) error {
+	return askFor(ctx, peerToolTimeout, method, path, body, out)
+}
+
+// askFor is ask with its own bound, for a call that waits on more than this room.
+func askFor(ctx context.Context, wait time.Duration, method, path string, body any, out any) error {
 	base, err := board()
 	if err != nil {
 		return err
@@ -196,7 +207,7 @@ func ask(ctx context.Context, method, path string, body any, out any) error {
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	res, err := (&http.Client{Timeout: peerToolTimeout}).Do(req)
+	res, err := (&http.Client{Timeout: wait}).Do(req)
 	if err != nil {
 		return fmt.Errorf("could not reach the board at %s: %w", base, err)
 	}
@@ -614,6 +625,8 @@ type LaunchInput struct {
 	// `lean` field, so this is the only way to a lean launch from here.
 	LeanAgents []string `json:"lean_agents,omitempty" jsonschema:"agents a lean claude worker can start, by name: the files in the operator's ~/.claude/agents on the room, without .md. it keeps the Agent tool and ONLY these, namespaced as atrium:<name>. a name with no file refuses the launch. implies lean. claude only. the card keeps the list"`
 	LeanSkills []string `json:"lean_skills,omitempty" jsonschema:"skills a lean claude worker can use, by name: the directories in the operator's ~/.claude/skills on the room. it keeps the Skill tool and ONLY these. a name with no directory refuses the launch. implies lean. claude only. the card keeps the list"`
+	// Room launches on another room, as the hub's atrium_launch does.
+	Room string `json:"room,omitempty" jsonschema:"launch on this room instead of your own. cwd is then a path on that room's machine and brief is written there. its reports and notices still reach you, as your-handle@your-room"`
 }
 
 type LaunchOutput struct {
@@ -693,6 +706,14 @@ func launchHandler(ctx context.Context, _ *mcp.CallToolRequest, in LaunchInput) 
 	harness := strings.TrimSpace(in.Runner)
 	if harness == "" {
 		harness = "claude"
+	}
+	// ANOTHER ROOM goes through this room's hub and touches nothing on this disk: no
+	// briefing written here and no directory looked at. This room's own name is the
+	// path below, untouched.
+	if r := strings.TrimSpace(in.Room); r != "" {
+		if done, o, err := launchAcrossRoom(ctx, in, harness, r); done {
+			return nil, o, err
+		}
 	}
 
 	// The briefing lands BEFORE the runner starts, or it is not a briefing.

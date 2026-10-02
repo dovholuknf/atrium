@@ -181,6 +181,39 @@ With m1mini's hub link down, the sender sees:
 - Room-side (stdio `atrium_peers`, `rooms: true`) asks the room's new `GET /v1/peers/rooms`, which asks the hub
   through the relay op `peers`. The hub answers from the same aggregate list, minus the asking room.
 
+## Launching on another room from a room (f-launch-room)
+
+A session on a room can name another room in its own `atrium_launch`, the way the hub's tool always could. The stdio
+tool takes `room` and, when it is not this room, posts `POST /v1/peers/launch` to its own room's daemon instead of
+`/v1/launch`. The daemon asks its hub with a fifth relay op, `launch`, and the hub launches on the target through
+`launchOnRoom`, the same function the hub's own `atrium_launch` with `room` ends in. There is one launch, not two:
+the gate, the cap on the TARGET room, the origin and subagent tags, the lean default, the report line and the lineage
+(`spawned_by` = `me@myroom`, `spawned_by_id` = `myroom~<id>`) are shared code, and the body the target receives is
+tested equal to the hub-side one.
+
+- `room` empty or this room's own name, in any case, is the local path and is untouched. The daemon answers
+  `{"local": true}` to its own name, so a tool that did not know its room from the environment still falls through.
+- For another room the brief travels in the request and the target room writes `BRIEF.md` on its own disk. Nothing is
+  written on the launching machine and its `cwd` is never looked at, since it is a path on the other machine.
+- The launching room comes from the connection's certificate, never from the request. The launcher's card is resolved
+  on that room by the hub, as it is for the hub-side tool.
+- An unknown room is a 404 that lists the rooms the hub knows. A known room that is not attached is `unreachable`.
+  Either way nothing was posted.
+- NEVER HELD. A say that cannot be sent is kept on the sender's room and sent later. A launch is not: sent late it
+  starts a session nobody waits for, and sent twice it starts two. So a refusal is a refusal now, and a failure that may
+  have come after the post (a 502, 503 or 504 from the target) is `unconfirmed`, never retried, with a message that says
+  to look at the peers on that room first.
+- `ATRIUM_` env names stay refused where they always were, on the target room's `/v1/launch` (`launchOptionEnv`), which
+  every path ends in. The cap is read per target room by `capOf(target)` and reserved per room.
+- Audit: one `ctl-launch` line on the TARGET room, `by sa1@m1mini (claimed): launch claude as sg4~kid, ok`, ids only.
+- Versions. An old hub answers `this hub does not know the relay op "launch"`, or refuses the connection kind, and the
+  room says the hub is older than launching on another room and to update it. A room older than the route answers a bare
+  404 to the tool, which says to update the room. A target room older than launch options gets the hub's existing
+  dropped-options warning in the note.
+- Deploy order: either works. Hub first is the tidy one, since a room that carries the tool then finds a hub that takes
+  it. A room that carries the tool with an old hub refuses clearly and starts nothing, and a hub with old rooms is
+  never asked for the op.
+
 ## Reading and exiting a card on another room (item 68)
 
 `atrium_task` and `atrium_exit` take the same addresses as `atrium_say`: `name@room`, `alias@room` and `room~id`.
@@ -232,9 +265,9 @@ launched card still had no `atrium_say`. This mirrors the hub machine's own row 
 
 | Part | Side |
 |---|---|
-| Grammar parse for `/_hub/mcp`, forward of a cross-room say to the sender's room, `serveRelay` (say, peers, card, exit), `atrium_peers rooms`, `atrium_launch room`, `atrium_task` and `atrium_exit` by address | HUB-SIDE |
-| Grammar parse, `POST /v1/say`, `/tell` grammar, `GET /v1/peers/rooms`, `GET /v1/peers/card`, `POST /v1/peers/exit`, outbox and drain, remote launcher notices, report into the outbox, cross-room `peerSaid` | ROOM-SIDE |
-| stdio `atrium control`: `from`, `atrium_report`, grammar, `rooms`, `atrium_task` and `atrium_exit` by address | ROOM-SIDE (runs on the room's machine) |
+| Grammar parse for `/_hub/mcp`, forward of a cross-room say to the sender's room, `serveRelay` (say, peers, card, exit, launch), `atrium_peers rooms`, `atrium_launch room`, `atrium_task` and `atrium_exit` by address | HUB-SIDE |
+| Grammar parse, `POST /v1/say`, `/tell` grammar, `GET /v1/peers/rooms`, `GET /v1/peers/card`, `POST /v1/peers/exit`, `POST /v1/peers/launch`, outbox and drain, remote launcher notices, report into the outbox, cross-room `peerSaid` | ROOM-SIDE |
+| stdio `atrium control`: `from`, `atrium_report`, grammar, `rooms`, `atrium_task`, `atrium_exit` by address, `atrium_launch` with `room` | ROOM-SIDE (runs on the room's machine) |
 | `relay` connection kind, `Room.Relay` client, `Room.OnAttach` | link, both |
 | provisioning registers atrium-control | script |
 

@@ -401,6 +401,7 @@ func New(opts Options) (*Daemon, error) {
 	d.ap.RoomPeers = d.handleRoomPeers
 	d.ap.RoomCard = d.handleRoomCard
 	d.ap.RoomExit = d.handleRoomExit
+	d.ap.RoomLaunch = d.handleRoomLaunch
 	d.ap.Report = d.handleReport
 	d.ap.RestartWake = d.handleRestartWake
 	d.ap.Hold = d.handleHold

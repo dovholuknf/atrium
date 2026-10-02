@@ -56,6 +56,8 @@ type Relay interface {
 	// is the card, and To and Card name it across.
 	Card(ctx context.Context, room, to string, events bool) (RelayResult, error)
 	Exit(ctx context.Context, room, to string) (RelayResult, error)
+	// Launch starts a session on another room. See relay_launch.go.
+	Launch(ctx context.Context, l RelayLaunch) (RelayResult, error)
 }
 
 // RelaySay is one message for another room. From is the sender's handle here,
@@ -78,6 +80,9 @@ type RelayResult struct {
 	To          string
 	Card        string
 	Task        *RemoteTask
+	// What a launch started: where to watch it, where its briefing was written on the
+	// target's disk, and the model and effort it ran with.
+	Watch, Brief, Model, Effort string
 }
 
 // RemoteTask is one card on another room, as atrium_task reports it.

@@ -56,6 +56,27 @@ func (l linkRelay) Exit(ctx context.Context, room, to string) (daemon.RelayResul
 	return l.reach(ctx, link.RelayRequest{Op: link.RelayExit, Room: room, To: to})
 }
 
+func (l linkRelay) Launch(ctx context.Context, r daemon.RelayLaunch) (daemon.RelayResult, error) {
+	ans, err := l.room.Relay(ctx, link.RelayRequest{Op: link.RelayLaunch, From: r.From, Room: r.Room,
+		Launch: &link.RelayLaunchSpec{
+			Cwd: r.Cwd, Title: r.Title, Why: r.Why, Prompt: r.Prompt, Brief: r.Brief, Runner: r.Runner, Tags: r.Tags,
+			Model: r.Model, Effort: r.Effort, Args: r.Args, Env: r.Env, LeanAgents: r.LeanAgents,
+			LeanSkills: r.LeanSkills,
+		}})
+	if err != nil {
+		return daemon.RelayResult{}, relayErr(err)
+	}
+	res := daemon.RelayResult{
+		OK: ans.OK, Code: ans.Code, Error: ans.Error, Unreachable: ans.Unreachable, Unconfirmed: ans.Unconfirmed,
+		To: ans.To, Card: ans.Card, Warning: ans.Warning, Watch: ans.Watch, Brief: ans.Brief, Model: ans.Model,
+		Effort: ans.Effort,
+	}
+	if t := ans.Task; t != nil {
+		res.Task = &daemon.RemoteTask{Card: t.Card, Handle: t.Handle, Title: t.Title, Status: t.Status}
+	}
+	return res, nil
+}
+
 // reach relays one card or exit request, and carries the card back.
 func (l linkRelay) reach(ctx context.Context, req link.RelayRequest) (daemon.RelayResult, error) {
 	ans, err := l.room.Relay(ctx, req)

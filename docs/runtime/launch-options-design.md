@@ -147,6 +147,9 @@ A duplicate column is already tolerated by `migrate`.
 - ROOM-SIDE: store, migration, `LaunchRequest`, `runnerArgs`, env assembly, reopen and restart, card JSON, the board
   dialog and harness editor, the CLI's `atrium launch` (it posts to the local room).
 - HUB-SIDE: `atrium_launch` in `internal/link/control_mcp.go`, the tool description, the skew check.
+- Both tools take `room`. A room's stdio `atrium_launch` with another room goes through its hub's `launch` relay op and
+  ends in the same `launchOnRoom` as the hub's own tool, so these options are sent, checked and warned about alike. See
+  `docs/fabric/cross-room-say-design.md`.
 
 Neither half needs the other to be safe: an old room with a new hub gets the skew note, a new room with an old hub
 simply never sees the fields.
