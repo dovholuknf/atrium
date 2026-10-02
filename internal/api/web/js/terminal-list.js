@@ -2625,6 +2625,7 @@ function resetReattach() {
 // None of them is worth a message to the operator. A terminal that renders is
 // the requirement; which path drew it is not.
 function useWebgl(t) {
+  t._atriumGl = null;
   if (typeof WebglAddon === "undefined") return;
   let addon;
   try {
@@ -2636,12 +2637,23 @@ function useWebgl(t) {
   addon.onContextLoss(() => {
     console.warn("webgl context lost, falling back to the DOM renderer");
     addon.dispose();
+    if (t._atriumGl === addon) t._atriumGl = null;
   });
   try {
     t.loadAddon(addon);
+    // Held so a terminal kept out of sight can give its context back and take another on return.
+    t._atriumGl = addon;
   } catch (e) {
     console.warn("webgl renderer would not load:", e);
     addon.dispose();
   }
+}
+
+// Gives the GPU context back. The renderer falls to xterm's own, which is paused while the terminal is hidden.
+function dropWebgl(t) {
+  const addon = t && t._atriumGl;
+  if (!addon) return;
+  t._atriumGl = null;
+  try { addon.dispose(); } catch (e) {}
 }
 

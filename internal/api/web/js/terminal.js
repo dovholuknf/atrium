@@ -582,6 +582,12 @@ function paintTermChips(task) {
          >${copyIcon()}</button>${esc(task.worktree || "")}</span>`;
 }
 
+// Empties the pane of everything but a terminal that is being kept. Nothing is kept yet, so this is `innerHTML = ""`.
+function clearTermScreen(screen) {
+  for (const c of Array.from(screen.children)) if (!c.dataset || !c.dataset.kept) c.remove();
+  if (!screen.children.length) screen.textContent = "";
+}
+
 function openTerm(task) {
   if (typeof Terminal === "undefined") {
     tellUser("atrium", "the terminal library did not load");
@@ -691,7 +697,7 @@ function openTerm(task) {
   if (typeof walkProbe === "function") walkProbe(task);
 
   const screen = document.getElementById("t-screen");
-  screen.innerHTML = "";
+  clearTermScreen(screen);
   // WHATEVER THIS CARD WAS LAST READ AT. This line used to put it back to the
   // default, which meant switching to another session and back cleared a size
   // somebody had just set: `openTerm` runs on every switch, not only on the

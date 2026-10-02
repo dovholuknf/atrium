@@ -2082,8 +2082,9 @@ function applyPtySize() {
 // the pane can show and this is not a feedback loop.
 function markWide() {
   const host = document.getElementById("t-screen");
-  const el = host && host.querySelector(".xterm");
-  if (!el || !term) return;
+  // This terminal's own element, not the first `.xterm` in the pane: others may be kept hidden beside it.
+  const el = term && term.element;
+  if (!host || !el) return;
   const phone = termPhone();
   const wide = phone || (termFitCols > 0 && term.cols > termFitCols);
   host.classList.toggle("wide", wide);
@@ -2303,8 +2304,8 @@ function setTermFont(px) {
 function sizeTermHost() {
   if (!term) return;
   const host = document.getElementById("t-screen");
-  const el = host && host.querySelector(".xterm");
-  if (!el) return;
+  const el = term.element;
+  if (!host || !el) return;
   let cell = 0;
   try { cell = term._core._renderService.dimensions.css.cell.height; } catch (e) {}
   // Nothing measured yet: leave the 100% fallback in place rather than collapse
