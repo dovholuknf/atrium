@@ -23181,7 +23181,7 @@ async function growlOnItSection(browser, base) {
   const logged = t => p.evaluate(t0 => toastLog().some(e => e.title === t0), t);
   // The card attached on the terminals view, and the window state, set the way the page itself would hold them.
   const stage = (card, focus, vis) => p.evaluate(([c, f, v]) => {
-    term = new Proxy({}, { get: () => () => {} }); termTask = { id: c };
+    term = new Proxy({}, { get: (_, k) => k === "element" ? null : () => {} }); termTask = { id: c };
     document.getElementById("terms").hidden = false;
     window.__focus = f; window.__vis = v;
     window.dispatchEvent(new Event(f ? "focus" : "blur"));
@@ -23257,7 +23257,7 @@ async function growlOnItSection(browser, base) {
     await pop.goto(base + "/#term=c", { waitUntil: "domcontentloaded" });
     await pop.waitForFunction(() => typeof alerting !== "undefined" && typeof growlDraw === "function" &&
       document.getElementById("conn").classList.contains("live"), null, { timeout: slow(15000) });
-    await pop.evaluate(() => { term = new Proxy({}, { get: () => () => {} }); termTask = { id: "c" }; window.dispatchEvent(new Event("focus")); });
+    await pop.evaluate(() => { term = new Proxy({}, { get: (_, k) => k === "element" ? null : () => {} }); termTask = { id: "c" }; window.dispatchEvent(new Event("focus")); });
     await p.waitForFunction(() => focusedElsewhere.watch === "c", null, { timeout: slow(5000) })
       .catch(() => fail("growlOnIt: the board never heard the pop-out's focus on card c."));
     // an empty set first, since a window's first event only seeds
