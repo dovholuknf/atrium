@@ -291,11 +291,13 @@ function Test-AclReadable {
 }
 # The arguments to icacls.exe for one change. Never Everyone or Users: that is refused here, not left to the caller.
 function New-IcaclsArgs {
-    param([string] $Dir, [string] $Account, [ValidateSet('grant', 'remove', 'restore')] [string] $Mode, [string] $Rights = 'RX')
+    param([string] $Dir, [string] $Account, [ValidateSet('grant', 'remove', 'restore')] [string] $Mode, [string[]] $Rights = @('RX'))
     if ($Account -match '^(Everyone|BUILTIN\\Users|Users|Authenticated Users|NT AUTHORITY\\Authenticated Users)$') { throw "a grant to '$Account' is not allowed" }
     switch ($Mode) {
-        'grant'   { [string[]]@($Dir, '/grant', "${Account}:(OI)(CI)$Rights") }
-        'restore' { [string[]]@($Dir, '/grant:r', "${Account}:$Rights") }
+        'grant'   { [string[]]@($Dir, '/grant', "${Account}:(OI)(CI)$($Rights[0])") }
+        # /grant:r replaces what the account has, so the FIRST of the ACEs it had is put back with it and the rest are added
+        # with /grant, all in one icacls call.
+        'restore' { $a = @($Dir); $i = 0; foreach ($r in @($Rights)) { $a += $(if ($i++ -eq 0) { '/grant:r' } else { '/grant' }); $a += "${Account}:$r" }; [string[]]$a }
         'remove'  { [string[]]@($Dir, '/remove:g', $Account) }
     }
 }
@@ -304,6 +306,26 @@ function Format-IcaclsCommand {
     param([string[]] $IcaclsArgs)
     'icacls ' + (($IcaclsArgs | ForEach-Object { if ($_ -match '[\s''"]') { '"' + $_ + '"' } else { $_ } }) -join ' ')
 }
+# The ops that take a Modify grant back: remove what was granted, then put back what the account had of its own ($Before, the
+# Raw text of each explicit ACE, may be empty).
+function New-RevertOps {
+    param([string] $Dir, [string] $Account, [string[]] $Before = @())
+    $ops = @(, @{ Args = (New-IcaclsArgs $Dir $Account 'remove'); Account = $Account; Why = 'unmodify' })
+    $b = @($Before | Where-Object { $_ })
+    if ($b.Count) { $ops += , @{ Args = (New-IcaclsArgs $Dir $Account 'restore' $b); Account = $Account; Why = 'restore' } }
+    $ops
+}
+# The grants this script made and has not taken back, as the room remembers them: one `dir|account|before` line each, `before`
+# being the Raw text of the ACEs the account had, joined by a space. Only the lines for $Dir.
+function ConvertFrom-GrantRecord {
+    param([string[]] $Lines, [string] $Dir)
+    foreach ($l in @($Lines)) {
+        $f = "$l" -split '\|', 3
+        if ($f.Count -lt 2 -or -not $f[0].Trim() -or -not $f[1].Trim()) { continue }
+        if ($Dir -and $f[0].TrimEnd('\', '/') -ine $Dir.TrimEnd('\', '/')) { continue }
+        [pscustomobject]@{ Dir = $f[0]; Account = $f[1]; Before = @(@("$($f[2])" -split ' ') | Where-Object { $_ }) }
+    }
+}
 # What to do to the ACL of an MSYS2 directory. $Aces from ConvertFrom-Icacls, $User the account running this, $Writable what the
 # probe measured, $Others the runner accounts that exist and are not $User, $NeedWrite whether pacman is going to run.
 #   Grant   the ops that go first: RX for each other account that cannot read, then Modify for $User when pacman must write
@@ -311,7 +333,7 @@ function Format-IcaclsCommand {
 #   Revert  the ops that take Modify back after pacman, to what $User had before (only when Grant gave it).
 function New-AclPlan {
     param([string] $Dir, $Aces, [string] $User, [bool] $Writable, [string[]] $Others, [bool] $NeedWrite)
-    $grant = @(); $revert = @(); $rx = @()
+    $grant = @(); $revert = @(); $rx = @(); $beforeText = ''
     foreach ($o in @($Others)) {
         if (Test-AclReadable $Aces $o) { continue }
         $rx += $o; $grant += , @{ Args = (New-IcaclsArgs $Dir $o 'grant' 'RX'); Account = $o; Why = 'rx' }
@@ -320,12 +342,13 @@ function New-AclPlan {
     if ($NeedWrite -and -not $Writable) {
         $modify = $true
         $grant += , @{ Args = (New-IcaclsArgs $Dir $User 'grant' 'M'); Account = $User; Why = 'modify' }
-        $revert += , @{ Args = (New-IcaclsArgs $Dir $User 'remove'); Account = $User; Why = 'unmodify' }
-        # What the user had of their own before is put back as it was: its flags and rights, not an inherited one.
-        $before = @($Aces | Where-Object { (Test-SameAccount $_.Account $User) -and -not $_.Inherited -and -not $_.Deny })
-        if ($before.Count) { $revert += , @{ Args = (New-IcaclsArgs $Dir $User 'restore' $before[0].Raw); Account = $User; Why = 'restore' } }
+        # What the user had of their own before is put back as it was: every explicit ACE with its flags and rights. An
+        # inherited one comes back by itself, a deny is not touched.
+        $before = @($Aces | Where-Object { (Test-SameAccount $_.Account $User) -and -not $_.Inherited -and -not $_.Deny } | ForEach-Object { $_.Raw })
+        $revert = @(New-RevertOps $Dir $User $before)
+        $beforeText = $before -join ' '
     }
-    [pscustomobject]@{ Grant = $grant; Revert = $revert; Rx = $rx; Modify = $modify }
+    [pscustomobject]@{ Grant = $grant; Revert = $revert; Rx = $rx; Modify = $modify; Before = $beforeText }
 }
 # The ops as the line format the cacl act reads: one op per line, its arguments joined with |.
 function ConvertTo-AclOps {
@@ -369,24 +392,37 @@ function Run($exe, $a, $ms, $wd = $HOME) {
 # failed, 4 a sha256 mismatch, 1 anything else), the way the install act of room-toolchain.ps1 does.
 $script:CActs = @{}
 
-# Probe MSYS2 and its tools, the accounts, and the ACL. Writes nothing.
-$script:CActs['cmsys'] = @{ Vars = @('PathPre', 'Rec', 'Msys2Dir', 'Prefix', 'Accts'); Uses = @('Find'); Body = @'
+# Probe MSYS2 and its tools. Writes nothing.
+$script:CActs['cmsys'] = @{ Vars = @('PathPre', 'Rec', 'Msys2Dir', 'Prefix'); Uses = @('Find'); Body = @'
 $R = @($Rec -split ';' | Where-Object { $_ }); $M = Msys2Find $Msys2Dir $Prefix $R
 $u = try { [Security.Principal.WindowsIdentity]::GetCurrent().Name } catch { "$env:USERDOMAIN\$env:USERNAME" }; "user=$u"; "home=$HOME"
 "msys2.dir=$(if ($M) { $M } elseif ($Msys2Dir) { $Msys2Dir } else { J $Prefix 'msys64' })"; "msys2.found=$([bool]$M)"
-foreach ($a in @($Accts -split ',' | Where-Object { $_ })) { $k = 'False'; try { $null = ([Security.Principal.NTAccount]$a).Translate([Security.Principal.SecurityIdentifier]); $k = 'True' } catch {}; "acct.$a=$k" }
 if ($M) {
     $B = J $M 'mingw64' 'bin'; $env:Path = "$B;$env:Path"
     foreach ($n in 'gcc', 'g++', 'cmake', 'ninja', 'pkg-config') { $x = J $B "$n.exe"; "bin.$n=$(if (Test-Path -LiteralPath $x) { "$x|$(Ver $x)" } else { '|' })" }
     "ssl=$((Test-Path -LiteralPath (J $M 'mingw64' 'lib' 'libssl.a')) -and (Test-Path -LiteralPath (J $M 'mingw64' 'include' 'openssl' 'ssl.h')))"
+}
+'@ }
+
+# The ACL side of the same probe, for a directory cmsys found or chose: the runner accounts that exist, whether this user can
+# write, the ACL, and the Modify grants an earlier run made and did not take back (see cstate). Writes nothing.
+$script:CActs['cacls'] = @{ Vars = @('Msys2Dir', 'Accts', 'StateDir'); Uses = @(); Body = @'
+$M = $Msys2Dir
+foreach ($a in @($Accts -split ',' | Where-Object { $_ })) { $k = 'False'; try { $null = ([Security.Principal.NTAccount]$a).Translate([Security.Principal.SecurityIdentifier]); $k = 'True' } catch {}; "acct.$a=$k" }
+$sf = J $(if ($StateDir) { $StateDir } else { J $HOME '.atrium' 'toolchain' }) 'acl-grants.txt'
+if (Test-Path -LiteralPath $sf) { Get-Content -LiteralPath $sf | Where-Object { $_.Trim() } | ForEach-Object { "grant=$_" } }
+if (Test-Path -LiteralPath (J $M 'usr' 'bin' 'pacman.exe')) {
     $w = J $M 'var' 'lib' 'pacman' 'local' 'ALPM_DB_VERSION'; if (-not (Test-Path -LiteralPath $w)) { $w = J $M 'etc' 'fstab' }
     $ok = $false; try { $s = [IO.File]::Open($w, 'Open', 'Write', 'ReadWrite'); $s.Close(); $ok = $true } catch {}; "writable=$ok"
     & icacls.exe $M 2>&1 | ForEach-Object { "acl=$_" }
 }
 '@ }
 
-# Unpack the verified MSYS2 base archive. The sha256 is computed here and a mismatch unpacks nothing (rc=4).
+# Unpack the verified MSYS2 base archive. Windows PowerShell 5.1 offers only TLS 1.0 and 1.1 unless told and repo.msys2.org wants
+# 1.2, so the first line asks for it, as the older payloads in room-toolchain.ps1 do. The other acts download nothing themselves.
+# The sha256 is computed here and a mismatch unpacks nothing (rc=4).
 $script:CActs['cinstall'] = @{ Vars = @('PathPre', 'Msys2Dir', 'Prefix', 'Url', 'File', 'Sha', 'Force'); Uses = @(); Body = @'
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $tmp = "$Msys2Dir.tmp"; $dl = J $Prefix '.downloads'; $f = J $dl $File
 if ((Test-Path -LiteralPath $Msys2Dir) -and @(Get-ChildItem -LiteralPath $Msys2Dir -Force).Count -and $Force -ne '1') { "err=$Msys2Dir is there and is not an MSYS2. look at it, or rerun with -Force to replace it"; 'rc=3'; exit 3 }
 New-Item -ItemType Directory -Force -Path $dl | Out-Null
@@ -405,6 +441,17 @@ try {
 } catch { "err=could not unpack $File`: $($_.Exception.Message)"; 'rc=3'; exit 3 }
 finally { if (Test-Path -LiteralPath $tmp) { Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue }; Remove-Item -LiteralPath $f -Force -ErrorAction SilentlyContinue }
 "installed=$Msys2Dir"
+'@ }
+
+# What this script has granted and not yet taken back, kept on the room so a dropped ssh or a killed run cannot leave a Modify grant
+# behind unseen. A line is `dir|account|before`. Mode add (replacing a line with the same key) or remove.
+$script:CActs['cstate'] = @{ Vars = @('StateDir', 'Mode', 'Key', 'Before'); Uses = @(); Body = @'
+$sf = J $(if ($StateDir) { $StateDir } else { J $HOME '.atrium' 'toolchain' }) 'acl-grants.txt'
+$cur = @(); if (Test-Path -LiteralPath $sf) { $cur = @(Get-Content -LiteralPath $sf | Where-Object { $_.Trim() -and -not $_.StartsWith("$Key|", 'OrdinalIgnoreCase') }) }
+if ($Mode -eq 'add') { $cur += "$Key|$Before" }
+New-Item -ItemType Directory -Force -Path (Split-Path -Parent $sf) | Out-Null
+if ($cur.Count) { [IO.File]::WriteAllText($sf, (($cur -join "`n") + "`n"), (New-Object Text.UTF8Encoding $false)) } elseif (Test-Path -LiteralPath $sf) { Remove-Item -LiteralPath $sf -Force }
+"state=$($cur.Count)"
 '@ }
 
 # The MSYS2 dance: a first start, two core updates (the first ends the shell), then the packages with --needed.
@@ -579,7 +626,8 @@ function Get-CWorstVars {
             'PathPre' { (1..4 | ForEach-Object { & $long "p$_" }) -join ';' }
             'Rec' { (1..4 | ForEach-Object { & $long "r$_" }) -join ';' }
             'Sha' { ('0123456789abcdef' * 4) }
-            'Force' { '1' } 'Init' { '1' } 'Dry' { '0' }
+            'Force' { '1' } 'Init' { '1' } 'Dry' { '0' } 'Mode' { 'remove' } 'Before' { '(OI)(CI)(RX) (CI)(IO)(W)' }
+            'Key' { (& $long 'k') + '|DOMAIN\someone-with-a-long-name' }
             'Pkgs' { $script:CPackages -join ' ' }
             'Accts' { 'claude,localai' }
             'Ops' { (1..3 | ForEach-Object { (& $long "o$_") + '|/grant|' + 'DOMAIN\someone-with-a-long-name:(OI)(CI)RX' }) -join "`n" }

@@ -699,11 +699,23 @@ function Write-CTools {
     if ($k['ssl'] -eq 'True') { Step 'openssl' 'ok' "libssl.a and include/openssl/ssl.h under $dir\mingw64" } else { Step 'openssl' 'warn' "MISSING (libssl.a or include/openssl/ssl.h under $dir\mingw64). $would" }
 }
 
+# The MSYS2 probe: where it is and its tools (cmsys), then the accounts, the ACL, writability and the grants that were left
+# behind (cacls), as one result.
+function Get-CMsys {
+    param([hashtable] $cv)
+    $p = CCall 'cmsys' $cv
+    if ($p.Rc -ne 0 -or -not $p.Kv.ContainsKey('msys2.dir')) { return $p }
+    $a = CCall 'cacls' @{ Msys2Dir = $p.Kv['msys2.dir']; Accts = $cv.Accts; StateDir = "$StateDir" }
+    foreach ($key in $a.Kv.Keys) { $p.Kv[$key] = $a.Kv[$key] }
+    $p.Out = @($p.Out) + @($a.Out)
+    $p
+}
+
 # Stage A: MSYS2, its packages, its ACL. Returns nothing, and adds mingw64\bin to the PATH record through $newDirs.
 function Invoke-CMsys2 {
     $script:pathPre = Get-PathPre
     $cv = @{ Prefix = $prefixR; Rec = "$($kv.rec)"; Msys2Dir = $Msys2Dir; Accts = ($RunnerAccounts -join ',') }
-    $p = CCall 'cmsys' $cv
+    $p = Get-CMsys $cv
     if ($p.Rc -ne 0 -or -not $p.Kv.ContainsKey('msys2.dir')) {
         Step 'msys2' 'fail' "could not look for MSYS2 on $where"; $p.Out | ForEach-Object { Write-Host "    $_" }; Note-Fail 3; return
     }
@@ -727,8 +739,22 @@ function Invoke-CMsys2 {
             }
             Step 'msys2' 'done' "$($asset.Version) from $($asset.Url), sha256 $($ir.Kv.sha) matches, unpacked to $($ir.Kv.installed)"
             $fresh = $true
-            $p = CCall 'cmsys' $cv
+            $p = Get-CMsys $cv
         }
+    }
+    # A Modify grant an earlier run made and was cut off before it took back (ssh dropped, process killed) is still on the
+    # directory, and the probe now says it is writable, so nothing would ever plan to take it back. The room remembers it.
+    $stale = if ($p.Kv['msys2.found'] -eq 'True') { @(ConvertFrom-GrantRecord (Get-Lines $p.Out 'grant') $dir) } else { @() }
+    if ($stale.Count -and $Check) {
+        Step 'msys2-acl' 'warn' "$(($stale | ForEach-Object { $_.Account }) -join ', ') still has the Modify grant on $dir that an earlier run was cut off before taking back (the room remembers it in acl-grants.txt next to its PATH record). a run takes it back"
+    } elseif ($stale.Count) {
+        foreach ($g in $stale) {
+            $rops = @(New-RevertOps $g.Dir $g.Account $g.Before)
+            $rv = CCall 'cacl' @{ Ops = (ConvertTo-AclOps $rops) }
+            if ($rv.Rc -eq 0) { $null = CCall 'cstate' @{ StateDir = "$StateDir"; Mode = 'remove'; Key = "$($g.Dir)|$($g.Account)" }; Step 'msys2-acl' 'done' "took back the Modify grant for $($g.Account) on $($g.Dir) that an earlier run was cut off before taking back" }
+            else { Need 'msys2-acl' "could not take back the Modify grant for $($g.Account) that an earlier run left on $($g.Dir) ($($rv.Err)). an admin runs this" @($rops | ForEach-Object { Format-IcaclsCommand $_.Args }) }
+        }
+        $p = Get-CMsys $cv
     }
     $have = $p.Kv['msys2.found'] -eq 'True'
     $k = $p.Kv
@@ -746,7 +772,10 @@ function Invoke-CMsys2 {
             } else { Step 'msys2-acl' 'ok' "$(if ($others) { "$($others -join ', ') can read it" } else { 'no other runner account to grant' }), and $user can write it" }
         } else {
             foreach ($op in $plan.Grant) {
+                # the room is told BEFORE the Modify grant, so a cut connection cannot leave one nobody knows about
+                if ($op.Why -eq 'modify') { $null = CCall 'cstate' @{ StateDir = "$StateDir"; Mode = 'add'; Key = "$dir|$($op.Account)"; Before = $plan.Before } }
                 $c = CCall 'cacl' @{ Ops = (ConvertTo-AclOps @($op)) }
+                if ($c.Rc -ne 0 -and $op.Why -eq 'modify') { $null = CCall 'cstate' @{ StateDir = "$StateDir"; Mode = 'remove'; Key = "$dir|$($op.Account)" } }
                 if ($c.Rc -eq 0) { Step 'msys2-acl' 'done' $(if ($op.Why -eq 'rx') { "granted $($op.Account) read and execute on $dir" } else { "granted $user Modify on $dir while pacman runs" }) }
                 else {
                     Need 'msys2-acl' "icacls was refused for $($op.Account) on $dir ($($c.Err)). an admin runs this" @(Format-IcaclsCommand $op.Args)
@@ -766,10 +795,10 @@ function Invoke-CMsys2 {
         }
         if ($plan.Modify -and -not $failedModify) {
             $rv = CCall 'cacl' @{ Ops = (ConvertTo-AclOps $plan.Revert) }
-            if ($rv.Rc -eq 0) { Step 'msys2-acl' 'done' "took $user's Modify on $dir back" }
+            if ($rv.Rc -eq 0) { $null = CCall 'cstate' @{ StateDir = "$StateDir"; Mode = 'remove'; Key = "$dir|$user" }; Step 'msys2-acl' 'done' "took $user's Modify on $dir back" }
             else { Need 'msys2-acl' "could not take $user's Modify back ($($rv.Err)). an admin runs this" @($plan.Revert | ForEach-Object { Format-IcaclsCommand $_.Args }) }
         }
-        $p = CCall 'cmsys' $cv; $k = $p.Kv
+        $p = Get-CMsys $cv; $k = $p.Kv
         $gaps = @(Get-CGaps $k)
     }
     if ($have -or -not $Check) {

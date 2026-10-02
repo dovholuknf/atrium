@@ -344,7 +344,7 @@ Check 'act cmsys: found' @($r.Kv['msys2.found'], $r.Kv['msys2.dir']) @('True', $
 Check 'act cmsys: a tool is its path and its version' $r.Kv['bin.gcc'] "$fm1/mingw64/bin/gcc.exe|gcc version 9.9.9"
 Check 'act cmsys: openssl is there' $r.Kv['ssl'] 'True'
 Check 'act cmsys: pkg-config is there' ($r.Kv['bin.pkg-config'] -like '*pkg-config.exe|pkg-config version 9.9.9') $true
-Check 'act cmsys: writable' $r.Kv['writable'] 'True'
+Check 'act cacls: writable' (Invoke-Act 'cacls' @{ Msys2Dir = $fm1; Accts = ''; StateDir = '' }).Kv['writable'] 'True'
 Check 'act cmsys: it wrote nothing' @(Get-ChildItem -LiteralPath $fm1 -Recurse -Force -File | Where-Object { $_.LastWriteTime -gt (Get-Date).AddSeconds(-600) -and $_.Name -notin 'pacman.exe', 'ALPM_DB_VERSION', 'libssl.a', 'ssl.h' -and $_.Extension -ne '.exe' }).Count 0
 # partly there: gcc only
 $fmp = Join-Path $tmp 'partial/msys64'; New-FakeMsys $fmp @('gcc') $false
@@ -512,6 +512,14 @@ exit 0
         foreach ($n in 'git', 'git.exe') { Set-Content -LiteralPath (Join-Path $root "bin/$n") -NoNewline -Value $git; & chmod +x (Join-Path $root "bin/$n") }
         Set-Content -LiteralPath (Join-Path $root 'ssh') -NoNewline -Value "#!/bin/sh`nfor last; do :; done`ncase `"`$last`" in uname*) echo 'not unix' >&2; exit 1;; esac`nenc=`${last##* }`nexec '$pwsh' -NoProfile -NonInteractive -EncodedCommand `"`$enc`"`n"
         & chmod +x (Join-Path $root 'ssh')
+        # a fake icacls: it logs what it was given, and with only a directory it prints an ACL like the real one
+        Set-Content -LiteralPath (Join-Path $root 'bin/icacls.exe') -NoNewline -Value @'
+#!/bin/sh
+echo "$*" >> "$FAKE_CFG/icacls.log"
+if [ $# -eq 1 ]; then printf '%s\n' "$1 SIMHOST\\sim:(OI)(CI)(F)" "" "Successfully processed 1 files; Failed processing 0 files"; fi
+exit 0
+'@
+        & chmod +x (Join-Path $root 'bin/icacls.exe')
         $ms = Join-Path $root 'msys64'
         $rec = @((Join-Path $root 'bin'))
         if ($msys) {
@@ -556,7 +564,7 @@ exit 0
     Set-Content -LiteralPath (Join-Path $sim.Vcpkg 'triplets/community/x64-mingw-static.cmake') -Value x
     Set-Content -LiteralPath (Join-Path $sim.Vcpkg 'vcpkg.exe') -NoNewline -Value "#!/bin/sh`necho 'vcpkg package management program version 2026-09-01'`n"; & chmod +x (Join-Path $sim.Vcpkg 'vcpkg.exe')
     New-Item -ItemType Directory -Force (Join-Path $sim.Sdk '.git') | Out-Null; Set-Content -LiteralPath (Join-Path $sim.Sdk '.gitignore') -Value '/CMakeUserPresets.json'
-    $before = @(Get-ChildItem -LiteralPath $sim.Root -Recurse -Force | Where-Object { $_.FullName -notmatch '/\.(cache|local)(/|$)' } | ForEach-Object { "$($_.FullName)|$($_.Length)|$($_.LastWriteTimeUtc.Ticks)" }) -join "`n"
+    $before = @(Get-ChildItem -LiteralPath $sim.Root -Recurse -Force | Where-Object { $_.FullName -notmatch '/\.(cache|local)(/|$)|/cfg(/icacls\.log)?$' } | ForEach-Object { "$($_.FullName)|$($_.Length)|$($_.LastWriteTimeUtc.Ticks)" }) -join "`n"
     $r = Invoke-Sim $sim @('-Check')
     Check 'sim -Check: exit 0 even with a human step' $r.Code 0
     Check 'sim -Check: msys2 is found and used as it is' ((Get-Step $r 'msys2') -like "room-toolchain msys2 ok $($sim.Msys) (found, used as it is)") $true
@@ -571,10 +579,10 @@ exit 0
     Check 'sim -Check: the preset would be created' ((Get-Step $r 'cmake-preset') -like 'room-toolchain cmake-preset warn would create * with mingw-vcpkg-base,cwdming,cwdming-with-tests*') $true
     Check 'sim -Check: the summary block has the git config commands' (@($r.Out | Where-Object { $_ -like 'room-toolchain needs-human git config --global user.*' }).Count) 2
     Check 'sim -Check: ends ok' $r.Out[-1] 'room-toolchain done ok'
-    $after = @(Get-ChildItem -LiteralPath $sim.Root -Recurse -Force | Where-Object { $_.FullName -notmatch '/\.(cache|local)(/|$)' } | ForEach-Object { "$($_.FullName)|$($_.Length)|$($_.LastWriteTimeUtc.Ticks)" }) -join "`n"
+    $after = @(Get-ChildItem -LiteralPath $sim.Root -Recurse -Force | Where-Object { $_.FullName -notmatch '/\.(cache|local)(/|$)|/cfg(/icacls\.log)?$' } | ForEach-Object { "$($_.FullName)|$($_.Length)|$($_.LastWriteTimeUtc.Ticks)" }) -join "`n"
     if ($after -ne $before) { Compare-Object ($before -split "`n") ($after -split "`n") | ForEach-Object { Write-Host "     changed: $($_.InputObject)" } }
     Check 'sim -Check: not one file on the room was created or changed' ($after -eq $before) $true
-    Check 'sim -Check: git was never configured' @(Get-ChildItem -LiteralPath $sim.Cfg -Force).Count 0
+    Check 'sim -Check: git was never configured' @(Get-ChildItem -LiteralPath $sim.Cfg -Force | Where-Object { $_.Name -ne 'icacls.log' }).Count 0
 
     # B. a real run: identity given, a private repo that wants a login
     $r = Invoke-Sim $sim @('-GitUserName', 'Test User', '-GitUserEmail', 't@example.com', '-CheckRepo', 'dovholuknf/private-repo')
@@ -663,7 +671,7 @@ exit 0
 # are all checked. What the room itself does with icacls and pacman is not.
 
 $mainAst = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot 'room-toolchain.ps1'), [ref]$null, [ref]$null)
-foreach ($fn in 'Invoke-CMsys2', 'Get-PathPre', 'Need', 'Show-Tail', 'Write-CTools', 'Get-Lines') {
+foreach ($fn in 'Invoke-CMsys2', 'Get-CMsys', 'Get-PathPre', 'Need', 'Show-Tail', 'Write-CTools', 'Get-Lines') {
     $def = $mainAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $fn }, $true) | Select-Object -First 1
     if (-not $def) { throw "room-toolchain.ps1 has no function $fn" }
     Invoke-Expression $def.Extent.Text
@@ -671,7 +679,7 @@ foreach ($fn in 'Invoke-CMsys2', 'Get-PathPre', 'Need', 'Show-Tail', 'Write-CToo
 $script:steps = @()
 function Step { param([string] $step, [string] $status, [string] $detail = '') $script:steps += "$step $status $detail".TrimEnd() }
 function Note-Fail { param([int] $code) if ($script:rc -eq 0) { $script:rc = $code } }
-function CCall { param([string] $act, [hashtable] $vars = @{}) $script:calls += [pscustomobject]@{ Act = $act; Vars = $vars }; & $script:mock $act $vars }
+function CCall { param([string] $act, [hashtable] $vars = @{}) $script:calls += [pscustomobject]@{ Act = $act; Vars = $vars }; $r = & $script:mock $act $vars; if ($r) { $r } else { New-Res } }
 function New-Res { param($kv = @{}, [string[]] $out = @(), [int] $rc = 0, [string] $err = '') [pscustomobject]@{ Kv = $kv; Out = $out; Rc = $rc; Err = $err; Tail = @() } }
 $mdir = 'V:\work\tools\msys64'
 function New-Probe {
@@ -686,6 +694,8 @@ function Reset-Flow { param([bool] $check = $false)
     $script:Check = $check; $script:Force = $false; $script:TestBadHash = $false; $script:RunnerAccounts = @('claude', 'localai')
     $script:prefixR = 'C:\p'; $script:kv = @{ rec = '' }; $script:where = 'u@h'; $script:Msys2Dir = ''; $script:Target = 'u@sg3'; $script:newDirs = @(); $script:found = @{}
 }
+function Seq { (@($script:calls | ForEach-Object { $_.Act } | Where-Object { $_ -ne 'cacls' }) -join ',') }
+function Call { param([string] $act, [int] $n = 0) @($script:calls | Where-Object { $_.Act -eq $act })[$n] }
 $allMissing = @('gcc', 'g++', 'cmake', 'ninja', 'pkg-config', 'openssl')
 
 # 1. everything works: RX for localai, Modify for claude while pacman runs, then taken back
@@ -698,11 +708,11 @@ $script:mock = { param($act, $vars)
         'cpacman' { $state.pacmanDone = $true; New-Res @{} @() }
     } }
 Invoke-CMsys2 6>$null | Out-Null
-Check 'flow acl: the remote calls, in order' (($script:calls | ForEach-Object { $_.Act }) -join ',') 'cmsys,cacl,cacl,cpacman,cacl,cmsys'
-Check 'flow acl: RX for localai first' $script:calls[1].Vars.Ops "$mdir|/grant|localai:(OI)(CI)RX"
-Check 'flow acl: then Modify for the user who runs pacman' $script:calls[2].Vars.Ops "$mdir|/grant|SG3\claude:(OI)(CI)M"
-Check 'flow acl: pacman gets the package set, no first start on an MSYS2 that was there' @($script:calls[3].Vars.Init, $script:calls[3].Vars.Pkgs) @('', ($script:CPackages -join ' '))
-Check 'flow acl: Modify is taken back, to what the user had (RX)' $script:calls[4].Vars.Ops "$mdir|/remove:g|SG3\claude`n$mdir|/grant:r|SG3\claude:(OI)(CI)(RX)"
+Check 'flow acl: the remote calls, in order' (Seq) 'cmsys,cacl,cstate,cacl,cpacman,cacl,cstate,cmsys'
+Check 'flow acl: RX for localai first' (Call 'cacl' 0).Vars.Ops "$mdir|/grant|localai:(OI)(CI)RX"
+Check 'flow acl: then Modify for the user who runs pacman' (Call 'cacl' 1).Vars.Ops "$mdir|/grant|SG3\claude:(OI)(CI)M"
+Check 'flow acl: pacman gets the package set, no first start on an MSYS2 that was there' @((Call 'cpacman').Vars.Init, (Call 'cpacman').Vars.Pkgs) @('', ($script:CPackages -join ' '))
+Check 'flow acl: Modify is taken back, to what the user had (RX)' (Call 'cacl' 2).Vars.Ops "$mdir|/remove:g|SG3\claude`n$mdir|/grant:r|SG3\claude:(OI)(CI)(RX)"
 Check 'flow acl: the step lines' ($script:steps | ForEach-Object { ($_ -split ' ')[0..1] -join ' ' }) @('msys2 ok', 'msys2-acl done', 'msys2-acl done', 'pacman done', 'msys2-acl done', 'gcc ok', 'cmake ok', 'ninja ok', 'pkgconf ok', 'openssl ok', 'runner-path needs-human')
 Check 'flow acl: no failure, and the only human item is to run it as localai too' @($script:rc, $script:needs.Count, [bool]($script:needs[0] -like 'pwsh -File scripts\room-toolchain.ps1 localai@sg3 -Profile c -Msys2Dir*')) @(0, 1, $true)
 Check 'flow acl: mingw64\bin goes to the PATH record' ($script:newDirs -join ';') "$mdir\mingw64\bin"
@@ -715,7 +725,7 @@ $script:mock = { param($act, $vars)
         'cacl' { New-Res @{ rc = '1' } @() 1 'Access is denied.' }
     } }
 Invoke-CMsys2 6>$null | Out-Null
-Check 'flow refused: pacman was not run and nothing was reverted (one cacl, the refused grant)' (($script:calls | ForEach-Object { $_.Act }) -join ',') 'cmsys,cacl,cmsys'
+Check 'flow refused: pacman was not run and nothing was reverted (one cacl, the refused grant)' (Seq) 'cmsys,cstate,cacl,cstate,cmsys'
 Check 'flow refused: the icacls command for an admin is printed' (@($script:needs | Where-Object { $_ -eq "icacls $mdir /grant SG3\claude:(OI)(CI)M" }).Count) 1
 Check 'flow refused: and the pacman command for whoever can' (@($script:needs | Where-Object { $_ -like "$mdir\usr\bin\bash.exe -lc `"pacman -S --needed --noconfirm *" }).Count) 1
 Check 'flow refused: those steps are needs-human, and the tools are still reported' (($script:steps | Where-Object { $_ -match '^(msys2-acl|pacman) needs-human ' }).Count) 2
@@ -729,7 +739,7 @@ $script:mock = { param($act, $vars)
         'cpacman' { $state.pacmanDone = $true; New-Res @{} @() }
     } }
 Invoke-CMsys2 6>$null | Out-Null
-Check 'flow rx refused: pacman still ran' (($script:calls | ForEach-Object { $_.Act }) -join ',') 'cmsys,cacl,cpacman,cmsys'
+Check 'flow rx refused: pacman still ran' (Seq) 'cmsys,cacl,cpacman,cmsys'
 Check 'flow rx refused: the command for localai is printed' (@($script:needs | Where-Object { $_ -eq "icacls $mdir /grant localai:(OI)(CI)RX" }).Count) 1
 # 4. pacman fails: a failure (3), and Modify is still taken back
 Reset-Flow
@@ -740,14 +750,14 @@ $script:mock = { param($act, $vars)
         'cpacman' { New-Res @{ rc = '3'; err = 'pacman exited 1' } @() 3 'pacman exited 1' }
     } }
 Invoke-CMsys2 6>$null | Out-Null
-Check 'flow pacman fails: Modify is taken back anyway' (($script:calls | ForEach-Object { $_.Act }) -join ',') 'cmsys,cacl,cpacman,cacl,cmsys'
+Check 'flow pacman fails: Modify is taken back anyway' (Seq) 'cmsys,cstate,cacl,cpacman,cacl,cstate,cmsys'
 Check 'flow pacman fails: exit code 3 and a pacman fail step' @($script:rc, [bool]($script:steps -like 'pacman fail pacman exited 1')) @(3, $true)
 Check 'flow pacman fails: and the tools are still MISSING after it, which is exit 5 only if nothing else failed' ($script:steps | Where-Object { $_ -like 'gcc warn MISSING*' }).Count 1
 # 5. -Check: nothing is called but the probe, and it says what it would do
 Reset-Flow $true
-$script:mock = { param($act, $vars) if ($act -eq 'cmsys') { New-Probe $allMissing $false } else { throw "-Check called $act" } }
+$script:mock = { param($act, $vars) if ($act -eq 'cmsys') { New-Probe $allMissing $false } elseif ($act -ne 'cacls') { throw "-Check called $act" } }
 Invoke-CMsys2 6>$null | Out-Null
-Check 'flow check: only the probe was called' (($script:calls | ForEach-Object { $_.Act }) -join ',') 'cmsys'
+Check 'flow check: only the probe was called' (Seq) 'cmsys'
 Check 'flow check: the acl step says what it would do' ([bool]($script:steps -like 'msys2-acl warn would grant localai read and execute. would grant SG3\claude Modify while pacman runs and take it back after')) $true
 Check 'flow check: each tool says MISSING and the command' (@($script:steps | Where-Object { $_ -match '^(gcc|cmake|ninja|pkgconf|openssl) warn MISSING.*would run: pacman -S --needed --noconfirm ' }).Count) 5
 # 6. a fresh install gets the first start and two core updates
@@ -760,8 +770,8 @@ $script:mock = { param($act, $vars)
     } }
 function Get-Asset { param($t) [pscustomobject]@{ Url = 'https://repo.msys2.org/distrib/x86_64/msys2-base-x86_64-20260927.sfx.exe'; File = 'msys2-base-x86_64-20260927.sfx.exe'; Sha = ('ab' * 32); Version = '20260927' } }
 Invoke-CMsys2 6>$null | Out-Null
-Check 'flow fresh: install, then pacman with the first start' (($script:calls | ForEach-Object { $_.Act }) -join ',') 'cmsys,cinstall,cmsys,cpacman,cmsys'
-Check 'flow fresh: the install is given the verified hash and the url' @($script:calls[1].Vars.Sha, $script:calls[1].Vars.Msys2Dir, $script:calls[3].Vars.Init) @(('ab' * 32), $mdir, '1')
+Check 'flow fresh: install, then pacman with the first start' (Seq) 'cmsys,cinstall,cmsys,cpacman,cmsys'
+Check 'flow fresh: the install is given the verified hash and the url' @((Call 'cinstall').Vars.Sha, (Call 'cinstall').Vars.Msys2Dir, (Call 'cpacman').Vars.Init) @(('ab' * 32), $mdir, '1')
 # 7. a bad hash fails with 4 and nothing else runs
 Reset-Flow
 $script:TestBadHash = $true
@@ -771,8 +781,130 @@ $script:mock = { param($act, $vars)
         'cinstall' { New-Res @{ rc = '4'; err = 'sha256 of x is a, the publisher says b. nothing was unpacked' } @() 4 'sha256 of x is a, the publisher says b. nothing was unpacked' }
     } }
 Invoke-CMsys2 6>$null | Out-Null
-Check 'flow bad hash: -TestBadHash corrupts the expected hash it sends' ($script:calls[1].Vars.Sha -ne ('ab' * 32)) $true
-Check 'flow bad hash: exit code 4, nothing after the install' @($script:rc, (($script:calls | ForEach-Object { $_.Act }) -join ',')) @(4, 'cmsys,cinstall')
+Check 'flow bad hash: -TestBadHash corrupts the expected hash it sends' ((Call 'cinstall').Vars.Sha -ne ('ab' * 32)) $true
+Check 'flow bad hash: exit code 4, nothing after the install' @($script:rc, (Seq)) @(4, 'cmsys,cinstall')
+
+
+# ── four lows: TLS 1.2 for the download, a grant that was cut off, every ACE put back, the 5.1 layout ──
+
+# L1: Windows PowerShell 5.1 offers TLS 1.0 and 1.1 unless told, and cinstall downloads
+Check 'L1: cinstall asks for TLS 1.2' ((Get-CPayload 'cinstall' (Get-CWorstVars 'cinstall')) -match 'SecurityProtocol = \[Net\.SecurityProtocolType\]::Tls12') $true
+$dl = @($script:CActs.Keys | Where-Object { $script:CActs[$_].Body -match 'Invoke-WebRequest|Invoke-RestMethod|DownloadFile|DownloadString|WebClient' })
+Check 'L1: cinstall is the only act that downloads by itself' $dl @('cinstall')
+foreach ($a in $dl) { Check "L1: $a asks for TLS 1.2 before it downloads" ($script:CActs[$a].Body.IndexOf('Tls12') -ge 0 -and $script:CActs[$a].Body.IndexOf('Tls12') -lt $script:CActs[$a].Body.IndexOf('Invoke-WebRequest')) $true }
+
+# L3: every explicit ACE the user had is put back
+function New-Ace { param($acct, $raw, [bool] $inh = $false, [bool] $deny = $false) [pscustomobject]@{ Account = $acct; Rights = @(); Inherited = $inh; InheritOnly = $false; Deny = $deny; Raw = $raw } }
+$two = @((New-Ace 'SG3\claude' '(OI)(CI)(RX)'), (New-Ace 'SG3\claude' '(CI)(IO)(W)'), (New-Ace 'SG3\claude' '(I)(R)' $true), (New-Ace 'SG3\claude' '(DENY)(D)' $false $true), (New-Ace 'SG3\other' '(OI)(CI)(F)'))
+$p = New-AclPlan $dirW $two 'SG3\claude' $false @() $true
+Check 'L3: both explicit ACEs go back, in one icacls call' @($p.Revert.Count, ($p.Revert[1].Args -join ' ')) @(2, "$dirW /grant:r SG3\claude:(OI)(CI)(RX) /grant SG3\claude:(CI)(IO)(W)")
+Check 'L3: the record carries both, not the inherited one, the deny or another account' $p.Before '(OI)(CI)(RX) (CI)(IO)(W)'
+Check 'L3: nothing of its own before means only the removal' @(New-RevertOps $dirW 'SG3\claude' @()).Count 1
+Check 'L3: three ACEs, three grants' ((New-IcaclsArgs $dirW 'a' 'restore' @('(F)', '(M)', '(R)')) -join ' ') "$dirW /grant:r a:(F) /grant a:(M) /grant a:(R)"
+Check 'L3: the ops text is one line per op' ((ConvertTo-AclOps $p.Revert) -split "`n").Count 2
+
+# L2: the grant is recorded on the room
+$g = @(ConvertFrom-GrantRecord @("V:\m|SG3\claude|(OI)(CI)(RX) (CI)(IO)(W)", 'V:\other|SG3\x|', 'garbage', '|x', 'a|', '', 'v:\M\|SG3\claude2|') 'V:\m')
+Check 'L2 record: only this directory, case and a trailing slash do not matter' ($g | ForEach-Object { "$($_.Account)" }) @('SG3\claude', 'SG3\claude2')
+Check 'L2 record: what the account had comes back as a list' $g[0].Before @('(OI)(CI)(RX)', '(CI)(IO)(W)')
+Check 'L2 record: an empty before is an empty list' @($g[1].Before).Count 0
+Check 'L2 record: junk lines read as nothing' @(ConvertFrom-GrantRecord @('garbage', '|x', 'a|', '   ', '||') '').Count 0
+$stdir = Join-Path $tmp 'state'
+$kA = "$fm1|SG3\claude"; $kB = "$fm2|SG3\claude"
+function Get-Rec { if (Test-Path (Join-Path $stdir 'acl-grants.txt')) { @(Get-Content -LiteralPath (Join-Path $stdir 'acl-grants.txt')) } else { @() } }
+$null = Invoke-Act 'cstate' @{ StateDir = $stdir; Mode = 'add'; Key = $kA; Before = '(OI)(CI)(RX)' }
+Check 'L2 act: add writes dir|account|before' (Get-Rec) @("$kA|(OI)(CI)(RX)")
+$null = Invoke-Act 'cstate' @{ StateDir = $stdir; Mode = 'add'; Key = $kB; Before = '' }
+Check 'L2 act: a second grant is a second line' (Get-Rec).Count 2
+$null = Invoke-Act 'cstate' @{ StateDir = $stdir; Mode = 'add'; Key = $kA; Before = '(F)' }
+Check 'L2 act: the same grant again replaces its line' @((Get-Rec).Count, ((Get-Rec) -contains "$kA|(F)")) @(2, $true)
+$r = Invoke-Act 'cacls' @{ Msys2Dir = $fm1; Accts = ''; StateDir = $stdir }
+Check 'L2 act: the probe lists what the room remembers' @($r.Out | Where-Object { $_ -like 'grant=*' }).Count 2
+$gg = @(ConvertFrom-GrantRecord (@($r.Out | Where-Object { $_ -like 'grant=*' }) | ForEach-Object { $_.Substring(6) }) $fm1)
+Check 'L2 act: and it reads back as this directory, this account, what it had' @($gg.Count, $gg[0].Account, ($gg[0].Before -join ' ')) @(1, 'SG3\claude', '(F)')
+$null = Invoke-Act 'cstate' @{ StateDir = $stdir; Mode = 'remove'; Key = $kA; Before = '' }
+Check 'L2 act: remove takes only its line' (Get-Rec) @("$kB|")
+$null = Invoke-Act 'cstate' @{ StateDir = $stdir; Mode = 'remove'; Key = $kB; Before = '' }
+Check 'L2 act: the last one removed deletes the file' (Test-Path (Join-Path $stdir 'acl-grants.txt')) $false
+$odd = Join-Path $tmp "it's here/msys64"
+$null = Invoke-Act 'cstate' @{ StateDir = $stdir; Mode = 'add'; Key = "$odd|SG3\o'neil"; Before = "(OI)(CI)(RX)" }
+Check 'L2 act: an apostrophe in the directory and the account arrives whole' (Get-Rec) @("$odd|SG3\o'neil|(OI)(CI)(RX)")
+$null = Invoke-Act 'cstate' @{ StateDir = $stdir; Mode = 'remove'; Key = "$odd|SG3\o'neil"; Before = '' }
+
+# L2: the flow, with a pretend remote that keeps the room's record
+function New-StateMock {
+    $script:store = @(); $script:atGrant = @()
+    $script:mock = { param($act, $vars)
+        switch ($act) {
+            'cacls' { New-Res @{} @($script:store | ForEach-Object { "grant=$_" }) }
+            'cstate' {
+                $script:store = @($script:store | Where-Object { -not $_.StartsWith("$($vars.Key)|") })
+                if ($vars.Mode -eq 'add') { $script:store += "$($vars.Key)|$($vars.Before)" }
+                New-Res
+            }
+            'cacl' { $script:atGrant += $script:store.Count; if ($script:cfail) { New-Res @{ rc = '1' } @() 1 'Access is denied.' } else { New-Res } }
+            'cpacman' { if ($script:drop) { throw 'ssh connection lost' }; $script:pacmanDone = $true; New-Res }
+            'cmsys' { & $script:probe }
+        } }
+}
+# a. the record is made BEFORE the grant and dropped after the take-back
+Reset-Flow; New-StateMock; $script:cfail = $false; $script:drop = $false; $script:pacmanDone = $false
+$script:probe = { if ($script:pacmanDone) { New-Probe -localai $false } else { New-Probe -missing $allMissing -writable $false -localai $false } }
+Invoke-CMsys2 6>$null | Out-Null
+Check 'L2 flow: the room is told before the Modify grant, and again after the take-back' (Seq) 'cmsys,cstate,cacl,cpacman,cacl,cstate,cmsys'
+Check 'L2 flow: when the grant ran the record was already there, when the take-back ran it still was' ($script:atGrant -join ',') '1,1'
+Check 'L2 flow: nothing is left on the room afterwards' $script:store.Count 0
+Check 'L2 flow: what was recorded is the account and what it had' ((@($script:calls | Where-Object { $_.Act -eq 'cstate' })[0]).Vars.Key + '|' + (@($script:calls | Where-Object { $_.Act -eq 'cstate' })[0]).Vars.Before) "$mdir|SG3\claude|(OI)(CI)(RX)"
+# b. icacls refuses the grant: the record is dropped again
+Reset-Flow; New-StateMock; $script:cfail = $true; $script:drop = $false; $script:pacmanDone = $false
+$script:probe = { New-Probe -missing $allMissing -writable $false -localai $false }
+Invoke-CMsys2 6>$null | Out-Null
+Check 'L2 flow: a refused grant leaves no record' @($script:store.Count, (Seq)) @(0, 'cmsys,cstate,cacl,cstate,cmsys')
+# c. ssh drops during pacman: the run dies, the record stays, the Modify grant is still on the directory
+Reset-Flow; New-StateMock; $script:cfail = $false; $script:drop = $true; $script:pacmanDone = $false
+$script:probe = { New-Probe -missing $allMissing -writable $false -localai $false }
+$died = $null; try { Invoke-CMsys2 6>$null | Out-Null } catch { $died = $_ }
+Check 'L2 dropped: the run died in pacman' @([bool]$died, (Seq)) @($true, 'cmsys,cstate,cacl,cpacman')
+Check 'L2 dropped: and the room still remembers the grant' $script:store @("$mdir|SG3\claude|(OI)(CI)(RX)")
+# d. a rerun: the directory now says writable, nothing would plan a take-back, the record does
+$left = @($script:store)
+Reset-Flow; New-StateMock; $script:store = $left; $script:cfail = $false; $script:drop = $false
+$script:probe = { New-Probe -missing @() -writable $true -localai $false }
+Invoke-CMsys2 6>$null | Out-Null
+Check 'L2 rerun: it takes the grant back first, then forgets it, then looks again' (Seq) 'cmsys,cacl,cstate,cmsys'
+Check 'L2 rerun: with the remove and the restore of what the user had' (@($script:calls | Where-Object { $_.Act -eq 'cacl' })[0]).Vars.Ops "$mdir|/remove:g|SG3\claude`n$mdir|/grant:r|SG3\claude:(OI)(CI)(RX)"
+Check 'L2 rerun: the record is gone and the step says so' @($script:store.Count, [bool]($script:steps -like 'msys2-acl done took back the Modify grant for SG3\claude on *')) @(0, $true)
+Check 'L2 rerun: pacman was not run, nothing was missing' ((Seq) -notmatch 'cpacman') $true
+# e. -Check says it as a warn and writes nothing
+Reset-Flow $true; New-StateMock; $script:store = $left; $script:probe = { New-Probe -missing @() -writable $true -localai $false }
+Invoke-CMsys2 6>$null | Out-Null
+Check 'L2 check: a warn names the account and the directory, no revert, no record change' @((Seq), [bool]($script:steps -like 'msys2-acl warn SG3\claude still has the Modify grant on *'), $script:store.Count) @('cmsys', $true, 1)
+# f. the take-back is refused: a human item with the exact commands, and the record stays
+Reset-Flow; New-StateMock; $script:store = $left; $script:cfail = $true; $script:probe = { New-Probe -missing @() -writable $true -localai $false }
+Invoke-CMsys2 6>$null | Out-Null
+Check 'L2 rerun refused: needs-human with the two icacls commands, the record kept' @([bool]($script:steps -like 'msys2-acl needs-human could not take back the Modify grant for SG3\claude*'), @($script:needs | Where-Object { $_ -like 'icacls *' }).Count, $script:store.Count) @($true, 2, 1)
+
+# L2 in the simulated room: a record left by a cut-off run, a fake icacls
+if ($unix) {
+    $sim = New-Sim
+    $rec = Join-Path $sim.Root 'st/acl-grants.txt'
+    Set-Content -LiteralPath $rec -Value @("$($sim.Msys)|SIMHOST\sim|(OI)(CI)(RX)", 'garbage', '|x')
+    $r = Invoke-Sim $sim @('-Check', '-GitUserName', 'T', '-GitUserEmail', 't@example.com')
+    Check 'L2 sim -Check: it warns, exits 0 and leaves the record and the ACL alone' @($r.Code, [bool](Get-Step $r 'msys2-acl' | Where-Object { $_ -like '*SIMHOST\sim still has the Modify grant on *' }), (@(Get-Content -LiteralPath $rec).Count), (-not (Test-Path (Join-Path $sim.Cfg 'icacls.log') -PathType Leaf) -or -not (@(Get-Content -LiteralPath (Join-Path $sim.Cfg 'icacls.log')) -match '/remove:g'))) @(0, $true, 3, $true)
+    $r = Invoke-Sim $sim @('-GitUserName', 'T', '-GitUserEmail', 't@example.com')
+    $log = @(Get-Content -LiteralPath (Join-Path $sim.Cfg 'icacls.log'))
+    Check 'L2 sim run: the take-back ran (remove, then restore) and the record line is gone, junk is left' @(($log -match '/remove:g SIMHOST\\sim').Count, ($log -match '/grant:r SIMHOST\\sim:\(OI\)\(CI\)\(RX\)').Count, @(Get-Content -LiteralPath $rec).Count, (@(Get-Content -LiteralPath $rec) -contains 'garbage')) @(1, 1, 2, $true)
+    Check 'L2 sim run: the step says so and the run is ok' @([bool](Get-Step $r 'msys2-acl' | Where-Object { $_ -like '*took back the Modify grant for SIMHOST\sim*' }), $r.Code) @($true, 0)
+    $r = Invoke-Sim $sim @('-GitUserName', 'T', '-GitUserEmail', 't@example.com')
+    Check 'L2 sim rerun: nothing more to take back' @((@(Get-Content -LiteralPath (Join-Path $sim.Cfg 'icacls.log')) -match '/remove:g').Count, $r.Code) @(1, 0)
+}
+
+# L4: Windows PowerShell 5.1 writes the merged file in its own layout, and the docs say so
+$doc = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../docs/changes/f-c-toolchain.md') -Raw
+Check 'L4: the docs say 5.1 reformats a merged CMakeUserPresets.json' ($doc -match '(?s)reformat.{0,200}CMakeUserPresets\.json|CMakeUserPresets\.json.{0,200}reformat') $true
+Check 'L4: and say the content is the same' ($doc -match 'same content') $true
+Check 'L4: the merge itself keeps the content whatever the layout' ((ConvertFrom-Json (Merge-Presets '{"version":4,"configurePresets":[{"name":"mine","cacheVariables":{"A":"b"}}]}' $json).Text).configurePresets[0].cacheVariables.A) 'b'
+
 
 } finally {
     Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue
