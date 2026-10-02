@@ -772,8 +772,8 @@ Tokens only: no dollar figure is worked out.">?</span>
 
   <!-- The hub's repos and the branches rooms pushed to it, drawn by js/hubrepos.js. Hub only. -->
   <div id="hubrepos" hidden>
-    <div class="col-head" style="margin:0 0 10px"><span>repos on the hub</span></div>
-    <div class="filters" style="margin-bottom:12px"><button id="hubrepos-refresh" type="button">refresh</button></div>
+    <div class="hr-top"><span class="hr-heading">repos on the hub</span><span class="hr-count" id="hubrepos-count" aria-live="polite"></span>
+      <button id="hubrepos-refresh" type="button" aria-label="refresh the repos list">refresh</button></div>
     <div id="hubrepos-list"></div>
   </div>
 
