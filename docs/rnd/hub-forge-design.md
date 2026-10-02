@@ -121,10 +121,20 @@ when any updated ref breaks these rules:
 | `refs/tags/*` | no | yes |
 | anything outside `refs/heads` and `refs/tags` | no | no |
 
-- **A branch's first pusher owns it.** The hub keeps a push log row per update: repo, ref, old and new sha, the
-  room, the card, and the time. A later push to that branch from another room is refused as `owned by sg4's
-  <card>, fetch it and push under another name`. A non-fast-forward is refused by git itself. Together these give
-  Q6's plain-git rule plus who pushed what.
+- **A branch's first pusher owns it, and the owner is a card.** The hub keeps a push log row per update: repo,
+  ref, old and new sha, the room, the card, and the time. The card that first pushed a branch owns it.
+  - A push to that branch from any other card is refused as `owned by sg4's <card>, fetch it and push under another
+    name`. That includes another card on the same room.
+  - **A moved card's successor inherits it.** Ownership follows the `moved_to` chain (room-handoff section 5), so
+    the card's own work survives a move or a runner switch.
+  - **A culled card releases it.** When its card is culled, or has been done for 7 days, the branch is released: the
+    next card to push a fast-forward owns it. The operator can release a branch at any time with
+    `atrium hub git release <repo> <branch>`.
+  - A non-fast-forward is refused by git itself. Together these give Q6's plain-git rule plus who pushed what.
+- **No two branches may differ only in case.** sg4's NTFS is case-insensitive, so loose refs `Fix/x` and `fix/x`
+  would be one file, giving an overwrite and the wrong owner. The pre-receive refuses a new ref whose lowercased
+  name matches an existing ref's. New hub repos are made with `--ref-format=reftable` where the hub's git has it
+  (2.45 and later), which stores no ref as a file. The pre-receive rule holds either way.
 - **Who the pusher is** comes from the reach, never from what the push says (3.4).
 - **Size:** a push over 500 MB is refused (`receive.maxInputSize`).
 
@@ -148,6 +158,12 @@ connections sg4 dialled. The hub forwards the reader's request and streams the a
 - **Offline fails.** When sg4 is not attached, the answer is `503 sg4 is not connected`. git shows it, and
   `atrium_git_url` says the same before anyone tries.
 - **Per reader:** 6 pass-throughs a minute, and at most 2 running at once per room.
+- **For the build.**
+  - The room writes hideRefs per request as `hide refs/`, then `!refs/heads/claude/`, then one `!refs/heads/<b>`
+    for each live card's branch.
+  - `uploadpack.allowFilter` is off. The hub refuses a request that carries `shallow`, `deepen` or `filter` lines
+    before it is passed on.
+  - Tests ask for `refs/stash`, a `refs/notes/*` ref and an unserved branch, and each must be refused.
 
 ### 3.4 Who is asking, and who is pushing (the defaults for the interview's open items)
 
@@ -157,6 +173,10 @@ connections sg4 dialled. The hub forwards the reader's request and streams the a
 | the operator on the hub machine | loopback | the board's own rule for loopback | everything in 3.2's operator column |
 | the operator on another machine | the OpenZiti intercept or a zrok private share | the overlay's policy, plus the board's operator token through `extraHeader` when that token is on | the same as loopback |
 | anyone on a zrok public share | refused | none | nothing |
+
+**A card that runs outside code runs with `git.push=none` and no atrium token in its git environment.** That covers
+the PR runner's `prove`, a PR's tests, and any card whose cwd is an outside target. Code it runs could otherwise read
+the token from the environment and push as that card.
 
 So no account and no new credential: rooms are their certificates, cards are their atrium tokens, and the operator
 is whoever can reach the board as the operator.
@@ -188,8 +208,13 @@ Both are forwarded to the hub over the link's `git` kind. The forwarder:
 - sends the card id with the request, so the hub's push log names the card;
 - refuses a request with no card token.
 
-A clone's `hub` remote is set to the first URL. The token reaches git through the card's own environment
-(`GIT_CONFIG_COUNT`, `http.extraHeader`), set by the room at launch, and is never written into `.git/config`.
+A clone's `hub` remote is set to the first URL. The token reaches git through the card's own environment, set by
+the room at launch, and is never written into `.git/config`.
+- **The header is scoped to atrium's own URL.** The key is `http.http://127.0.0.1:<agent port>/git/.extraHeader`,
+  never a bare `http.extraHeader`. A bare one goes to every http remote, so a fetch from `origin`, a dependency or a
+  submodule would send the atrium token to github.com.
+- **A test proves it.** A second, header-recording server is used as another remote, a fetch from it is made in a
+  card, and it must receive no atrium header.
 
 ### 5.2 Clones in the scm folder
 
@@ -208,15 +233,21 @@ A clone's `hub` remote is set to the first URL. The token reaches git through th
   repo doesn't exist, check it, and if it is private have the operator clone it. Atrium can't."
 - **An existing clone** the operator made gets `hub` added, after one yes on the board the first time for that clone.
   If it already has a `hub` remote pointing somewhere else, atrium leaves it alone and says so (@review's L1 on
-  revision 1, kept).
+  revision 1, kept). It adds atrium's remote under the name `atrium-hub` in that clone instead.
 - **`origin` stays the forge** (Q5).
 
 ### 5.3 Cards push to `hub` only
 
 Three walls, so no single one has to hold:
-1. **The dotfiles hook** permits exactly `git push hub <branch>`, `git push -u hub <branch>` and `git fetch hub`. It
-   refuses any force flag (`-f`, `--force`, `--force-with-lease`), a `+` refspec, `--mirror`, `--all`, `--tags`,
-   `--delete` or `:<ref>`, and any other remote. Everything else stays refused as today.
+1. **The dotfiles hook** permits exactly `git push hub <branch>`, `git push -u hub <branch>` and `git fetch hub`,
+   and the same with `atrium-hub`.
+   - It does so only after it checks, in the command's cwd, that `remote.<name>.url`, and `remote.<name>.pushurl` if
+     set, start with atrium's forwarder, `http://127.0.0.1:<agent port>/git/`. An operator's own `hub` pointing at
+     another server is refused, so a card cannot push to the operator's other server.
+   - It refuses any force flag (`-f`, `--force`, `--force-with-lease`), a `+` refspec, `--mirror`, `--all`, `--tags`,
+     `--delete` or `:<ref>`, and any other remote.
+   - Everything else stays refused as today.
+   - `atrium_git_push` makes the same URL check.
 2. **The room's forwarder** is the only place a card's push can go. `origin`'s URL is the forge, and a card has no
    forge credential unless the operator gave atrium one. On clones atrium makes, `remote.origin.pushurl` is set to
    `atrium-refused://origin-push`, so even a script that bypasses the hook cannot push to the forge. On an operator's
@@ -249,9 +280,9 @@ All held by the pause until the orchestrator releases them. Owners from section 
 | item | owner | what | size | acceptance |
 | --- | --- | --- | --- | --- |
 | `f-new-hub-git-store` | @fabric | the hub's store (3.1): `git.store`, `atrium hub git init <url>`, the one seed of `main`, and creation on first push when allowed | 1 day | `atrium hub git init https://github.com/netfoundry/omnigent` makes the bare repo with `main` at the forge's default head. A second init is a no-op. A private URL with no credential makes an empty repo and says to push `main` |
-| `f-new-hub-receive` | @fabric | receive-pack on the link and on the operator's reaches (3.2), the environment settings, the Go pre-receive with 3.2's table, the push log, first-pusher ownership and the size cap | 2 days | a card's push of a new `fix/x` lands and is logged with room and card. A non-fast-forward push is refused. A push of `main` from a card is refused, and from the operator on loopback lands. A second room's push to `fix/x` is refused as owned. A delete, a tag or a `refs/notes` push from a card is refused, and nothing moves |
-| `r-new-hub-remote` | @runtime | the room's stable forwarder on the agent listener (5.1) with card tokens, the card's git environment at launch, `git.push` (5.3), `atrium_git_push`, and `hub` added to the clones the room already syncs | 1.5 days | in a card on m1mini, `git push hub fix/x` lands on the hub with that card in the push log. The same push from a process with no card token is refused by the forwarder. With `git.push: none`, it is refused. `git push origin fix/x` from a script on an atrium-made clone fails on the pushurl |
-| `dotfiles: hook allows git push hub` | clint or the orchestrator, in dotfiles | 5.3 wall 1 | an hour | `git push hub fix/x` passes the hook. `git push -f hub fix/x`, `git push hub +fix/x`, `git push origin fix/x` and `git push hub :fix/x` are refused |
+| `f-new-hub-receive` | @fabric | receive-pack on the link and on the operator's reaches (3.2), the environment settings, the Go pre-receive with 3.2's table, the push log, per-card ownership with inheritance by `moved_to` and release on cull, case-only collisions refused, reftable where available, and the size cap | 2 days | a card's push of a new `fix/x` lands and is logged with room and card. A non-fast-forward push is refused. A push of `main` from a card is refused, and from the operator on loopback lands. Another card's push to `fix/x`, on any room, is refused as owned. The owner's successor after a move pushes to it, and after the owner is culled the next card's fast-forward takes it. A push of `Fix/x` while `fix/x` exists is refused on sg4. A delete, a tag or a `refs/notes` push from a card is refused, and nothing moves |
+| `r-new-hub-remote` | @runtime | the room's stable forwarder on the agent listener (5.1) with card tokens, the card's git environment at launch with the header scoped to the forwarder's URL, `git.push` (5.3) and `none` for cards running outside code, `atrium_git_push` with the URL check, and `hub` (or `atrium-hub` where `hub` is taken) added to the clones the room already syncs | 1.5 days | in a card on m1mini, `git push hub fix/x` lands on the hub with that card in the push log. The same push from a process with no card token is refused by the forwarder. With `git.push: none`, it is refused. `git push origin fix/x` from a script on an atrium-made clone fails on the pushurl. A fetch in that card from a header-recording server receives no atrium header. A PR-test card has no token in its environment. On a clone whose own `hub` points elsewhere, `atrium_git_push` refuses and the remote added is `atrium-hub` |
+| `dotfiles: hook allows git push hub` | clint or the orchestrator, in dotfiles | 5.3 wall 1, with the URL check | an hour | `git push hub fix/x` passes the hook when `hub` is atrium's forwarder, and is refused when `hub` points at another server. `git push -f hub fix/x`, `git push hub +fix/x`, `git push origin fix/x` and `git push hub :fix/x` are refused |
 | `u-new-hub-repos-list` | @ui | the board's list of hub repos: `main`, the pushed branches with pusher, room and time, and each one's clone URL | 1 day | clint sees `fix/x` pushed by sg4's card, and copies its `git@hub.atrium:` URL |
 
 Stage 1 needs none of the pass-through, the clone model or the lookup. It works for the repos the rooms already have.

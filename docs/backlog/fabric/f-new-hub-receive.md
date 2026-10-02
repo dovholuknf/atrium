@@ -11,8 +11,11 @@ Status: HELD (the pause). Filed by @rnd 2026-10-02 from `docs/rnd/hub-forge-desi
   - a card may create or fast-forward `refs/heads/<name>`, but never `main` or `claude/main`, and never a tag, a
     delete or a ref outside `refs/heads`;
   - the operator may also fast-forward `main` and push tags.
-- A push log (repo, ref, old, new, room, card, time). The first pusher owns a branch, and another room's push to it
-  is refused as owned.
+- A push log (repo, ref, old, new, room, card, time). The first pushing card owns a branch, and any other card's
+  push to it is refused as owned. Ownership follows `moved_to`, and is released on cull or after 7 days done.
+- Case-only collisions are refused (sg4's NTFS). New repos use `--ref-format=reftable` where the hub's git has it.
+- For stage 3's pass-through: hideRefs written per request, `allowFilter` off, and `shallow`, `deepen` and `filter`
+  requests refused (design 3.3).
 - The room comes from its link certificate, and the card from the id the room's forwarder sends after checking the
   card's token. Nothing is taken from the push itself.
 

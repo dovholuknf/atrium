@@ -8,8 +8,11 @@ Status: HELD (the pause). Filed by @rnd 2026-10-02 from `docs/rnd/hub-forge-desi
   - It requires the card's atrium token.
   - It sends the card id with the request.
   - A request with no token is refused.
-- At launch, the card's environment carries the token for git (`GIT_CONFIG_COUNT`, `http.extraHeader`). It is
-  never written into `.git/config`.
+- At launch, the card's environment carries the token for git as `http.http://127.0.0.1:<port>/git/.extraHeader`,
+  scoped to the forwarder and never bare, so no other remote ever receives it. It is never written into
+  `.git/config`. A card that runs outside code (PR tests, `prove`) gets no token and `git.push=none`.
+- `atrium_git_push` and the hook check that the remote's url and pushurl are the forwarder's. Where a clone's own
+  `hub` points elsewhere, atrium's remote is added as `atrium-hub`.
 - The room setting `git.push`: `none` or `hub` (default `hub`). With `none`, the forwarder refuses receive-pack.
 - `atrium_git_push {branch}`: the same push without a shell, under the same rules.
 - `hub` is added to the clones the room already syncs (git-sync stage 1). An existing `hub` remote that points
