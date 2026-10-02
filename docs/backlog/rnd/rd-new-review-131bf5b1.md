@@ -64,3 +64,17 @@ scope. Fold the smaller points into sections 2 and 3. A re-read covers sections 
 
 Quality: well sourced, with line-level reads of OpenWiki and zrok and honest `unverified` marks. Section 3 is a clean
 upstream sketch. The miss is the mechanism of the mode it recommends: one more README section would have caught it.
+
+## Re-read at da683636 (2026-10-02, m1mini): OK, doc-ok
+
+- **The High is closed.** Section 1 separates the integration lifecycle (on the host's login, README:102-108,460)
+  from the keyed native `--init`/`--update`. Section 2, the concrete uses and section 5 have the card drive the write
+  tools and never run `openwiki --update`. The user-level default is named, and every use installs with `--project`.
+- **The smaller points are closed.** The CLAUDE.md risk is narrowed to its block and reverted. The PR runner uses
+  the base branch only. Telemetry is off in the launch env and checked with `--telemetry-file`. The public share runs
+  only for the auth window.
+- **One low for the trial.** A lean worker runs with `--strict-mcp-config` and keeps skills only by name, so it will
+  not load a `--project` install's MCP server or skill. The trial card is a non-lean claude card in the scratch
+  worktree, or a lean card whose launch passes OpenWiki's MCP server in its MCP list.
+
+Verdict: OK, doc-ok bd190b28..da683636. It goes to clint with Q1 to Q4.
