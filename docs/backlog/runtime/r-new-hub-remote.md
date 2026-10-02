@@ -1,0 +1,19 @@
+# r-new-hub-remote: the room's stable `hub` remote, and cards pushing to it only
+
+Status: HELD (the pause). Filed by @rnd 2026-10-02 from `docs/rnd/hub-forge-design.md` revision 2, stage 1 (sections
+5.1 and 5.3). Owner @runtime. Size about 1.5 days. Needs @fabric's `f-new-hub-receive`.
+
+- A stable forwarder on the agent listener: `/git/hub/<host>/<owner>/<repo>.git` (and, in stage 3,
+  `/git/room/<room>/...`), forwarded to the hub over the link's `git` kind.
+  - It requires the card's atrium token.
+  - It sends the card id with the request.
+  - A request with no token is refused.
+- At launch, the card's environment carries the token for git (`GIT_CONFIG_COUNT`, `http.extraHeader`). It is
+  never written into `.git/config`.
+- The room setting `git.push`: `none` or `hub` (default `hub`). With `none`, the forwarder refuses receive-pack.
+- `atrium_git_push {branch}`: the same push without a shell, under the same rules.
+- `hub` is added to the clones the room already syncs (git-sync stage 1). An existing `hub` remote that points
+  elsewhere is left alone and reported.
+
+Acceptance: design section 7, row `r-new-hub-remote`. The dotfiles hook change in the same table, which allows
+exactly `git push hub <branch>`, is clint's or the orchestrator's.

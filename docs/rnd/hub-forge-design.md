@@ -1,333 +1,282 @@
-# The hub as a forge: clone any repo any card works in, from any room or any of clint's machines
+# The hub as a forge: rooms push finished work to the hub, and the hub routes everything else to the room that has it
 
 > "any room pull from any room, and any room can inform any room of where their repo is, to fork and
 > mediate/pr/push amongst the swarm" (clint, 2026-10-02)
 
-So it is **peer to peer with the hub as the go-between and the index**, not only a central mirror:
-- a room announces its repos and branches;
-- any room fetches from any other through the hub;
-- a change moves between rooms as a fork, a pull request (atrium's own, between rooms, carrying the change record
-  and its verdicts) and a push.
-
-Status: design by @rnd, 2026-10-02. Nothing built. This is git-sync stage 4, written as its own doc because it
-changes what the hub is. Asked by clint through the orchestrator: the hub should act like GitHub would, so he can
-clone a URL like `git@sg4.atrium:claude/ziti-tunnel-sdk-c.git` and have it work.
+Status: design by @rnd, 2026-10-02, **revision 2 after clint's interview** (his answers are on sg4,
+`docs/rnd/hub-forge-answers.md`, and the orchestrator relayed them in full). This is git-sync stage 4. Revision 1
+(d32a34fd to 1c965657, @review doc-ok 8eaa86b1) mirrored every repo on the hub automatically and kept a fallback
+copy. clint answered no to both, so this revision replaces it. Stage 1 is cut into build items in section 7.
 
 Read for this design, 2026-10-02:
-- `docs/rnd/git-sync-design.md` (stage 1 built: bare mirrors of the repos in `git_repos`, rooms fetching
-  `claude/main` over smart HTTP on the link's `git` connection kind, upload-pack only; the hub collecting rooms'
-  `claude/*` into `refs/rooms/<room>/`; stage 3, the merge queue, waiting on decision 46);
-- `internal/gitsync/` and `internal/link/git_hub.go`;
-- `docs/rnd/security-design.md` section 1 and the reach table (loopback, an OpenZiti intercept, a zrok share);
+- `docs/rnd/git-sync-design.md` (stage 1 built: bare repos for the repos in `git_repos`, rooms fetching
+  `claude/main` over smart HTTP on the link's `git` connection kind, upload-pack only, and the hub collecting rooms'
+  `claude/*`);
+- `internal/gitsync/`, `internal/link/git_hub.go`;
+- `docs/rnd/security-design.md` (the reach table, the agent listener, card tokens in stage 2c);
 - `docs/rnd/overlay-room-identity.md`;
-- `docs/rnd/review-on-atrium-design.md` section 7.7.
+- `docs/rnd/change-record-design.md` and `docs/rnd/review-on-atrium-design.md` section 7.7.
 
-## 0. The answer
+## 0. The answer, from clint's answers
 
-- **The hub is the index and the go-between (section 1a).** Rooms announce what they hold. A fetch of another
-  room's branch makes the hub fetch that one branch from the room at once, under the room's own served set, and
-  serve it from the hub's copy. That copy is also the fallback when the room is offline. A change moves between rooms as an atrium pull request with its change record attached.
+- **The hub is a router for work in progress, and a store only for finished work.**
+  - **In progress stays on the room that made it.** "Pull sg4's `fix/x`" is a fetch from the hub at sg4's name. The
+    hub sees it is for sg4 and passes it through to sg4, live (Q1).
+  - **No copy is kept.** If sg4 is off, asleep or disconnected, the fetch fails and says so (Q2).
+- **The hub holds its own `main`, and finished means pushed to the hub** (Q1 clarification, Q3).
+  - A feature that is only on a room is not finished.
+  - Rooms push their branches to the hub when the feature is done. The orchestrator or clint pulls from there, merges,
+    re-signs and pushes on to the real forge.
+  - **Push is stage 1**, not "later".
+- **Plain git rules** (Q6):
+  - branches under their normal names, with no per-room namespace;
+  - no force push;
+  - a non-fast-forward push is refused;
+  - two rooms pushing the same name: the first wins, and the second is refused, as on any git server.
+- **Cards push to the `hub` remote only, never to `origin`** (Q7, Q8).
+  - Pushing is a setting, and the hub is the one allowed target.
+  - The dotfiles hook keeps refusing every other remote git command.
+  - Atrium adds two more walls behind the hook, because a hook that matches command text is not a wall (git-sync
+    section 1).
+- **Clones go in the operator's scm folder** (Q4, Q5). The operator picks the folder at install, `<scm>/<host>/<owner>/<repo>`
+  (clint's is `D:/git`).
+  - "Go work on `<url>`" makes atrium clone the repo there, with two remotes, `origin` (the forge) and `hub`.
+  - A public repo just works.
+  - A private repo atrium has no credential for fails with the message clint gave: "that repo doesn't exist, check
+    it, and if it is private have the operator clone it. Atrium can't."
+- **The URLs clint asked for**:
+  - `git@hub.atrium:<owner>/<repo>.git` for the hub's own store;
+  - `git@sg4.atrium:<owner>/<repo>.git` for sg4's work in progress.
 
-- **Every repo any card works in is mirrored on the hub, with no hand-kept list.**
-  - A room reports each card's repo (its checkout's `origin`) and branch.
-  - The hub makes a bare mirror the first time it sees a repo.
-  - The hub collects every room's `claude/*` branches, and the branch each live card's worktree is on, whatever its
-    name.
-  - It also fetches the repo's own branches and tags from its forge.
-- **Any room and any of clint's machines clone by a plain URL**, `<hub>/git/<host>/<owner>/<repo>.git`, read-only.
-  - **Smart HTTP is enough. No ssh server.** The hub serves the URL on the paths that already reach the board:
-    loopback, the link for rooms, the OpenZiti intercept, and a zrok private share. Never on a public share.
-  - One line of git config makes clint's own spelling work:
-    `git config --global url."http://atrium.ziti/git/github/".insteadOf "git@sg4.atrium:"`.
-  - An ssh server would bring keys, and so the account layer this design does not invent. It is a later option
-    (question 2).
-- **The refs look like GitHub's, plus the work in progress:**
-  - `refs/heads/*` and `refs/tags/*` as the forge has them;
-  - `refs/heads/claude/main` from the hub;
-  - every room's branches under `refs/heads/rooms/<room>/<branch>`.
+  Each is a one-line `insteadOf` over smart HTTP on the board's reaches, with no ssh server.
+- **Three defaults the interview did not ask about**, each held as a question in section 8:
+  - how a room proves who it is on a push;
+  - how the pass-through is authenticated;
+  - the shape of the install settings.
 
-  So `git clone` gives clint what GitHub shows, and `git fetch origin rooms/sg4/claude/fabric` gives any reader a
-  branch that exists only in a sg4 worktree.
-- **An agent never guesses or asks where code lives.** `atrium_git_url` (control MCP, and
-  `GET /v1/git/where` on the API) takes a repo, a branch, a card or a worktree path. It answers:
-  - the hub URL to fetch from, on the caller's own reach;
-  - the ref to fetch;
-  - the sha;
-  - which room the code came from;
-  - when that room's copy was last collected.
+## 1. What changes from revision 1, and what stays
 
-  Every agent calls it first (section 3.1). Launching a reviewer where the code is was only a stopgap.
-- **This answers the reviewer case today.** A reviewer on m1mini reads a branch that lives only in a sg4 worktree
-  with one fetch from the hub, after sg4's next collect. There is no paste and no room-to-room route.
-- **Read-only first. Push comes later** (stage F4):
-  - a room pushes its own branches into its own namespace, instead of the hub collecting them;
-  - a fork is a new name sharing objects;
-  - landing is the hub-side merge of git-sync stage 3, so decision 46.
+| revision 1 | revision 2 |
+| --- | --- |
+| every repo mirrored on the hub, automatically | **no mirror.** The hub stores only `main` and branches rooms pushed |
+| forge branches fetched into `refs/forge/` | **none.** The hub never fetches a forge's branches. A new hub repo's `main` is seeded once (3.1) |
+| fetch-through into a hub copy, with the copy as fallback | **pass-through to the room, no copy.** Offline fails |
+| rooms' branches served under `rooms/<room>/` | **normal names.** In-progress branches are read at the room's own name (`sg4.atrium`), and pushed branches at the hub's |
+| push in a later stage | **push is stage 1** |
+| the agent's remote named `atrium-hub` | **`hub`**, clint's name. Atrium never overwrites an existing `hub` remote that points somewhere else (5.2) |
+| `atrium_git_url` lookup | **kept** (section 4) |
+| change requests between rooms | **kept**. "Pushed to the hub" is now what makes a change finished (section 6) |
 
-  F1 to F3 need no decision 46, because the hub holds copies, not the truth.
-- **No accounts and no new auth.** Who can clone is who can reach the board: loopback, the link (the room's
-  hub-signed certificate), and the overlay's own policy. If the board's operator token is turned on (security
-  design stage 2), git sends the same token through `http.extraHeader`, set once by `atrium git setup`.
+Revision 1's @review findings still apply where their parts remain:
+- M2's served set now governs the pass-through (3.3);
+- L2's `followRedirects=initial`, L3's dirty rule and L4's PR text as data are all kept;
+- M1 (forge refs shadowing rooms' work) no longer arises, because the hub fetches no forge branches.
 
-## 1. What is there today
+## 2. The URLs
 
-- **Mirrors:** only the repos in the hub's `git_repos` setting, each with one integration branch (`claude/main` or
-  `main`). Today that is atrium.
-- **Rooms get one branch.** They fetch only the integration branch, mapped to `claude/main` and `hub-main`. Section
-  4.1 there refuses anything else, after sg3's `hub-main` was set by hand to a `claude/ui` commit and workers started
-  on unmerged work.
-- **Collect:** rooms serve `claude/*` (not `claude/main`) on a link-only route. The hub fetches them into
-  `refs/rooms/<room>/claude/*` and hides that namespace from every reader (`uploadpack.hideRefs=refs/rooms`).
-- **Not served:**
-  - other repos, such as the openziti checkouts under `D:/worktrees/...` on sg4;
-  - branches not named `claude/*`;
-  - any reader other than a room on the link;
-  - clint's own machines. The bare repos are "served only on the `git` connection kind, never on the board listener"
-    (git-sync 4.4).
-
-## 1a. Peer to peer, with the hub as the go-between and the index
-
-**Announce.** A room's report of section 2 is its announcement. It covers each repo it holds, each branch a card
-works on, and each branch's sha. The hub keeps them as the **index**: which rooms hold which repo, and which branch
-at which sha. Any room can read the index, through `atrium_git_url` (3.1), or as a list with
-`atrium_git_where {repo}`. That is "any room can inform any room where their repo is", with no room needing another's
-address.
-
-**Pull from any room, live.** A fetch of `rooms/sg4/fix/x` from m1mini reaches the hub. Then:
-1. **Fetch-through when sg4 is attached.** The hub never forwards the reader's request to the room.
-   - It first does a one-ref collect of its own: `fetch <sg4> +refs/heads/fix/x:refs/rooms/sg4/fix/x`, over the data
-     connections sg4 dialled.
-   - The fetch is governed by **sg4's served set**: only `claude/*` and its live cards' branches, everything else
-     hidden, and no tip-sha or reachable-sha wants (git-sync 4.4's settings on the room side). So stash, notes and
-     any private branch cannot be asked for, by the hub or through it.
-   - The pack is checked with `index-pack` and `fsck` (`transfer.fsckObjects=true`) before any ref moves in the
-     mirror.
-   - The reader is then served from the mirror, as for any other ref.
-
-   So m1mini reads sg4's branch as sg4 has it now, not as of the last collect. Leaves still only dial out, and the
-   hub moves no ref on either room. Each reader is rate-limited to 6 fetch-throughs a minute, and the hub runs at
-   most one fetch-through per room at a time, since later requests wait for it and reuse it.
-2. **The hub's copy when sg4 is offline.** The answer comes from the mirror, and `atrium_git_url` says `from: hub
-   copy, collected <time>`.
-3. **Neither.** The answer is `sg4 is offline and the hub has no copy of fix/x`. There is no paste.
-
-The per-command token and loopback forwarder of git-sync section 5 stay as they are, on both legs.
-
-**Fork.** A room starts its own branch from another room's: `atrium git fork rooms/sg4/fix/x claude/fix-x` fetches
-through the hub and makes a local branch with `rooms/sg4/fix/x` as its upstream. The index records the fork, so the
-change record of each links to the other. There is no copy on a forge and no account.
-
-**Pull requests between rooms: atrium's own.** A change request is a hub row:
-- the source, `{room, repo, branch, sha}`;
-- the target, either a room's branch (`{room: m1mini, branch: claude/fabric}`) or the integration branch
-  `claude/main`;
-- the change record's id (`docs/rnd/change-record-design.md`): tested, reviewed, pushed and open, with its
-  artifacts;
-- the `Atrium-Verdict` coverage of the commits it carries;
-- a title and a one-line why. Both are shown in the owner's report as data from another card, not as instructions.
-
-`atrium pr open <source> <target>`, or `atrium_pr_open`, files it, and the hub tells the target's owner card (the
-card whose worktree is on that branch) once, as a report. The owner can:
-- read the change record;
-- fetch the source through the hub (pull);
-- ask a standing reviewer for a job (`atrium:qa-reviewer`, review-on-atrium section 7);
-- **merge it itself.** A room's branch is that room's own, so its owner card merges in its own worktree and
-  `atrium_record`s the result;
-- or **close it with a reason.**
-
-A request whose target is `claude/main` is a landing. It goes to git-sync stage 3's merge queue and its checks, so
-decision 46.
-
-**Push.** A room's push into its own namespace on the hub is stage F4 (section 4). It does the same job as
-fetch-through for a room that is about to go offline: its branch is on the hub before it leaves.
-
-**What the hub mediates, and what it never does.**
-- It mediates:
-  - the index;
-  - every transfer, since no room dials another;
-  - the change requests;
-  - and, from F4, pushes into a room's own namespace.
-- It never:
-  - moves a ref on a room;
-  - merges into a room's branch;
-  - lands without stage 3.
-
-A room's branches are changed only by that room's own cards.
-
-## 2. Mirroring every repo, automatically
-
-**What a room reports.** On each attach, and when a card's `repo`, `branch` or worktree changes, the room sends the
-hub `{name, origin, branch, card}` per live card. `name` is `<host>/<owner>/<repo>` read from `origin` the way
-git-sync 4.1 reads it. A worktree with no `origin`, or one whose `origin` is a local path, is reported with
-`origin: ""` and is mirrored from the room only.
-
-**What the hub keeps.** `<hub atrium-dir>/git/<host>/<owner>/<repo>.git`, bare, one per name, made on first report.
-The `git_repos` list stays only for repos whose integration branch the hub serves to `hub-main` (atrium). Every other
-repo is "seen".
-
-**Three fetches fill it. All three are fetches, so git-sync's one rule, that nobody receives a push, still holds:**
-1. **From the forge,** every 10 minutes and when a card reports a new repo:
-   `fetch --prune --no-tags <origin> +refs/heads/*:refs/forge/heads/* +refs/tags/*:refs/forge/tags/*`.
-   - **The forge's refs are stored under `refs/forge/`**, and are mapped to `refs/heads/*` and `refs/tags/*` only at
-     serve time. They never share a stored namespace with the rooms' refs (`refs/rooms/`), the hub's own
-     `claude/main` or PR heads (`refs/pull/`).
-   - **A served name two sources claim is refused.** The serve-time mapping never lets a forge branch shadow a room's
-     work. A forge branch whose name starts with `rooms/`, `claude/main` or `pull/` is not served at all, and the
-     board lists it as withheld. So an outside author's branch named `rooms/sg4/fix/x` can never be read as sg4's
-     `fix/x`.
-   - Public repos need no login.
-   - A private repo uses the hub's own forge login, if the operator gave it one.
-   - Without one, the forge fetch is skipped, and the mirror has only what rooms give it. The board says so.
-   - The forge's `claude/*` is never served over the hub's, so `claude/main` stays the hub's own.
-   - Every fetch into the mirror, from a forge or a room, runs with `transfer.fsckObjects=true`.
-2. **From each room,** at the collect of git-sync section 7, widened. The room serves, and the hub fetches into
-   `refs/rooms/<room>/`:
-   - every `claude/*` branch;
-   - the branch each live card's worktree is on, whatever its name (`fix/xyz` in an openziti worktree);
-   - nothing else.
-3. **Outside PR heads, on request:** `refs/pull/<n>/head` into `refs/pull/<n>/head`, when a PR run or a persona job
-   names one. It is pruned when the PR closes.
-
-**Serving the rooms' branches.** The hub keeps `refs/rooms/<room>/<branch>` as the store, and advertises each as
-`refs/heads/rooms/<room>/<branch>` through a namespace mapping at serve time. It does not copy them. So two rooms with
-a `claude/fabric` each are two names, `rooms/sg4/claude/fabric` and `rooms/m1mini/claude/fabric`, and never one name
-that hides the other. The hideRefs line of git-sync 4.4 changes from "hide `refs/rooms`" to "serve it under
-`rooms/`". This is the one stage 1 rule this design reverses, and section 5 says why it stays safe.
-
-**Untrusted content.** An outside repo's mirror is bytes in a bare repo:
-- nothing is checked out on the hub;
-- no hook in the fetched repo runs (a fetch runs none, and a bare mirror has no work tree);
-- upload-pack serves objects, never a build.
-
-A reader that checks it out does so under its own rules: section 3 step 3 of review-on-atrium, for a reviewer.
-
-**Size and pruning.** A repo no card has reported for 30 days is dropped from the hub (question 3). Its rooms' clones
-are untouched. Mirrors are capped per repo (default 5 GB) and in total (default 50 GB). A repo over its cap is not
-fetched further, and the board says so. LFS objects are not mirrored.
-
-## 3. Serving it
-
-**One handler, three reaches.** The same `git http-backend` setup as git-sync 4.4:
-- environment-only config;
-- `http.receivepack=false`, `http.uploadarch=false` and `http.getanyfile=false`;
-- protocol v0, with no tip-sha wants.
-
-The repo name from the URL is checked against the hub's mirrors before the CGI runs. It is mounted on three paths:
-
-| reach | URL | who |
+| what | URL on the board's reaches | with clint's `insteadOf` |
 | --- | --- | --- |
-| the link, `git` connection kind | `http://127.0.0.1:<P>/<T>/<name>.git` through the room's forwarder (git-sync 5) | any room. The room's certificate is the identity |
-| the hub's board listener, loopback | `http://127.0.0.1:<board port>/git/<name>.git` | anyone on the hub machine, as for the board |
-| the board's overlay reach | `http://atrium.ziti/git/<name>.git`, or the zrok private share's URL | clint's machines, by the overlay's own policy |
+| the hub's store: `main` and pushed branches | `http://atrium.ziti/git/hub/<host>/<owner>/<repo>.git` | `git@hub.atrium:<owner>/<repo>.git` |
+| a room's work in progress, passed through | `http://atrium.ziti/git/room/<room>/<host>/<owner>/<repo>.git` | `git@sg4.atrium:<owner>/<repo>.git` |
 
-**Never on a zrok public share.** The public share is how the phone gets HTTPS for Web Push, and anyone with its URL
-reaches it. `/git/` on a public share answers 404, checked by the listener that knows which share it is, with a test.
+- `<host>` defaults to `github`, so `git@sg4.atrium:openziti/ziti-tunnel-sdk-c.git` means
+  `github/openziti/ziti-tunnel-sdk-c`. A full `<host>/<owner>/<repo>` path is accepted too.
+- `atrium git setup` writes one `insteadOf` line for the hub and one per room it knows, plus `followRedirects=initial`
+  and, if the board's operator token is on, the `extraHeader`. It shows the lines and asks before applying them.
+- The reaches are the board's own: loopback, the OpenZiti intercept and a zrok private share. On a zrok public
+  share, `/git/` answers 404, with a test.
+- A room reaches both on the link, through the stable forwarder of 5.1. It never uses the board listener.
 
-**An agent reads through a tool, not raw git.** `atrium_git_fetch {repo, ref}` fetches one ref from the hub into the
-card's clone, under `refs/remotes/atrium-hub/<ref>`, a remote name chosen so it cannot collide with a person's own
-`hub` remote or its prune and refspecs. It never writes `refs/heads`, `hub-main` or `claude/main`. A card's
-own git commands to a remote are still refused by the dotfiles hook, and this tool is the sanctioned way. It is the
-same pattern as `atrium_git_sync`.
+## 3. The hub
 
-### 3.1 The lookup: `atrium_git_url`
+### 3.1 Its store
 
-The one way an agent, a persona job or a script finds code. Input, any one of:
-- `{repo, branch}`;
-- `{card}`, a handle or id on any room;
-- `{path}`, a worktree path on any room (`D:/worktrees/github/openziti/ziti-tunnel-sdk-c/pr-1441`).
+- `<hub atrium-dir>/git/<host>/<owner>/<repo>.git`, bare, one per repo, under the hub's install setting
+  `git.store`.
+- **A repo is made in one of two ways:**
+  - by the operator: `atrium hub git init <url>`;
+  - or on a room's first push of a repo the hub does not have, when the push setting allows it (question 3).
+- **Its `main` is seeded once.** At creation, the hub fetches the forge's default branch into `main`, for a public
+  repo. A private repo is created empty, and the operator pushes `main`. This is the one fetch from a forge the hub
+  ever makes, and it is not repeated: after it, `main` moves only by an operator push (3.2).
+- For atrium, the existing `git_repos` entry and its `claude/main` mirror stay as they are (git-sync stage 1).
 
-The hub resolves it from the rooms' reports (section 2) and answers:
+### 3.2 Receiving a push
 
-```json
-{"repo": "github/openziti/ziti-tunnel-sdk-c",
- "url": "http://127.0.0.1:<P>/<T>/github/openziti/ziti-tunnel-sdk-c.git",
- "ref": "refs/heads/rooms/sg4/fix/x", "sha": "3f2a91c...", "room": "sg4",
- "collected_at": "2026-10-02T21:04:11Z", "dirty": false}
-```
+`git receive-pack`, served through the same `http-backend` setup as git-sync 4.4 with `http.receivepack=true` for
+this route only. The settings are passed in the CGI environment, never written into the repo:
+- `receive.denyNonFastForwards=true`;
+- `receive.denyDeletes=true`;
+- `receive.fsckObjects=true`;
+- `receive.advertisePushOptions=false`.
 
-- **`url` is for the caller's own reach.** A card gets the link forwarder's URL, which `atrium_git_fetch` uses. The
-  CLI on clint's machine gets the overlay URL.
-- **`collected_at` and `dirty` say how current it is.** `dirty: true` means the room reported uncommitted changes in
-  that worktree, which are not in the hub's copy. A plain lookup warns and still answers. A persona job refuses a
-  dirty target with "commit it first" (review-on-atrium 7.7). `stale: true` means the room's branch moved after the last
-  collect. Then the call collects that one ref first, by asking the room, and answers with the new sha.
-- **A miss is an answer, not a question.** An unknown path or branch answers `not found`, with the closest repos and
-  branches the hub knows. An agent reports that miss. It does not ask a person to paste code.
-- **Every brief says so.** Every card brief, persona job brief and PR run brief carries one line: "to read code that
-  is not in your cwd, call `atrium_git_url`, then `atrium_git_fetch`. Never ask for a paste."
-- **Stopgap until F2.** Until F2 is built, `atrium_git_url` still answers the room and the path, with no URL, and
-  review-on-atrium 7.2 runs the reviewer on that room. That is the interim workaround, and it ends with F2.
+Then **one hook the hub owns**, a `pre-receive` handler in Go run before any ref moves. A push is refused whole
+when any updated ref breaks these rules:
 
-`atrium git url <repo|path>` is the same lookup in the CLI.
+| ref | a room's card may | the operator may |
+| --- | --- | --- |
+| `refs/heads/main`, `refs/heads/claude/main` | no | yes, fast-forward only |
+| `refs/heads/<any other name>` | create, or fast-forward | create, or fast-forward |
+| delete any ref | no | yes, by `atrium hub git delete`, not by a push |
+| `refs/tags/*` | no | yes |
+| anything outside `refs/heads` and `refs/tags` | no | no |
 
-**What clint types, once per machine:**
+- **A branch's first pusher owns it.** The hub keeps a push log row per update: repo, ref, old and new sha, the
+  room, the card, and the time. A later push to that branch from another room is refused as `owned by sg4's
+  <card>, fetch it and push under another name`. A non-fast-forward is refused by git itself. Together these give
+  Q6's plain-git rule plus who pushed what.
+- **Who the pusher is** comes from the reach, never from what the push says (3.4).
+- **Size:** a push over 500 MB is refused (`receive.maxInputSize`).
 
-```
-atrium git setup            # prints and applies, after a yes, the two lines below
-git config --global url."http://atrium.ziti/git/github/".insteadOf "git@sg4.atrium:"
-git config --global http."http://atrium.ziti/git/".extraHeader "Authorization: Bearer <token>"   # only if the board's token is on
-git config --global http."http://atrium.ziti/git/".followRedirects initial   # so the header never follows a redirect elsewhere
-```
+### 3.3 Passing a fetch through to a room
 
-Then `git clone git@sg4.atrium:openziti/ziti-tunnel-sdk-c.git` works. `atrium git url <repo>` prints a repo's URL on
-each reach.
+A fetch at `/git/room/sg4/<repo>.git` is passed to sg4's link-only git route (git-sync section 7), over the data
+connections sg4 dialled. The hub forwards the reader's request and streams the answer back, and stores nothing.
 
-**The board** gains a "repos" list: each mirrored repo, its forge, the rooms that report it, and its branches by
-room, with the last commit of each. Clicking one copies its clone URL, from the same lookup. It is a list, not a code browser.
+- **sg4's served set governs.** sg4's upload-pack runs with git-sync 4.4's settings:
+  - environment-only config;
+  - `http.getanyfile=false`, so no dumb-protocol file serving;
+  - protocol v0, with the hub dropping the `Git-Protocol` header on the way;
+  - no tip-sha or reachable-sha wants;
+  - hideRefs set so that only `claude/*` and the branches of sg4's live cards are advertised.
 
-## 4. Push, later (F4), and forks
+  A want outside that set is refused by sg4's own git, so a reader cannot ask for stash, notes or any private branch
+  through the hub. This was @review's M2 on revision 1 ("the room's served set must govern"), and it now holds by
+  the room's own configuration. The fsck-before-cache half of M2 falls away, because nothing is cached.
+- **The room serves normal names.** The served set is the room's branches as they are named there, so
+  `git@sg4.atrium:...` shows `fix/x`, not `rooms/sg4/fix/x`.
+- **Offline fails.** When sg4 is not attached, the answer is `503 sg4 is not connected`. git shows it, and
+  `atrium_git_url` says the same before anyone tries.
+- **Per reader:** 6 pass-throughs a minute, and at most 2 running at once per room.
 
-- **A room pushes its own branches** to `refs/rooms/<its room>/*` on the hub, instead of the hub collecting them. The
-  hub runs `receive-pack` on the link only, with one check before any ref moves: the pushing room's certificate
-  name must equal `<room>` in every updated ref. A room can never move another room's refs, the forge's refs or
-  `claude/main`. Collect stays as the fallback for rooms that do not push.
-- **Clint's machines push** only when he asks for it (question 4), into `refs/rooms/<machine>/*`, with the same
-  rule. The machine's name comes from its overlay identity or a joined room certificate, never from what it says
-  about itself (overlay-room-identity).
-- **A fork is a new name.** `atrium git fork <repo> <new-name>` makes `<hub>/git/<new-name>.git` with the original's
-  objects shared through `objects/info/alternates`, and no forge behind it.
-- **Landing** (`claude/main` moved by the hub after checks) is git-sync stage 3, the merge queue. It is not
-  designed again here, and it needs decision 46.
+### 3.4 Who is asking, and who is pushing (the defaults for the interview's open items)
 
-## 5. What stays safe from stage 1
-
-- **The sg3 failure cannot come back.** A room's `sync` still maps only the integration branch onto `claude/main`
-  and `hub-main`, by the same code and refspec as stage 1. The new branches reach a room only through
-  `atrium_git_fetch`, into `refs/remotes/atrium-hub/`, which no launch, worktree or sync ever bases work on. A test
-  launches a worker after a `rooms/sg3/claude/ui` fetch and checks that its worktree starts at `claude/main`.
-- **One room reading another's branches** was hidden in stage 1 "as tidiness, not a wall" (git-sync 4.4). They are
-  all the operator's rooms, so serving them under `rooms/` is the point, not a leak.
-- **Private repos** are served only on the three reaches above, which are the board's own, and never on a public
-  share. A private repo is readable by exactly whoever can already read the board.
-- **Uncommitted work is never served.** Only refs are. A reviewer asking about a dirty worktree gets "commit it
-  first", as review-on-atrium 7.7 says.
-
-## 6. Stages
-
-All held by the pause. Owner @fabric unless named.
-
-| stage | what | size | acceptance |
+| caller | reach | identity | may |
 | --- | --- | --- | --- |
-| F1 | Automatic mirrors (forge refs stored under `refs/forge/` and mapped at serve time): rooms report each card's repo and branch, the hub makes bare mirrors, the forge fetch (public, or with the hub's login), and the widened collect (all `claude/*` plus each live card's branch) | 3 days | a card started on sg4 in an openziti/ziti-tunnel-sdk-c worktree on branch `fix/x` makes a hub mirror of that repo within one report. After the next collect it holds `refs/rooms/sg4/fix/x` and the forge's `main`. A repo with a local-path origin is mirrored from the room only. A forge branch named `rooms/sg4/fix/x` is withheld, and a reader fetching `rooms/sg4/fix/x` gets sg4's commit, not the forge's |
-| F2 | Serving to rooms: the `rooms/` namespace mapping, `refs/pull/<n>/head` on request, `atrium_git_url` (3.1) and `atrium_git_fetch` into `refs/remotes/atrium-hub/`, and the line in every brief | 2 days | a reviewer card on m1mini fetches `rooms/sg4/fix/x` and reads a file from it, with no paste and no room-to-room route. A worker launched after that fetch starts at `claude/main`. A fetch of a hidden sha by id fails. `atrium_git_url {path: "D:/worktrees/.../pr-1441"}` from m1mini answers sg4, the ref and the sha. After a new commit on sg4, it answers the new sha, having collected that ref. An unknown path answers `not found` with the nearest matches |
-| F2b | Fetch-through: a fetch of `rooms/<room>/*` makes the hub collect that one ref from the room under the room's served set, check it with fsck, and serve it from the mirror. When the room is detached, the hub's copy is served. Also the per-reader rate, `atrium_git_where` and `atrium git fork` | 1.5 days | m1mini fetches a commit made on sg4 a minute ago, before any collect. With sg4 detached, the same fetch answers from the hub's copy and says when it was collected. A reader's want for `refs/stash`, a note, an unserved branch or a bare sha is refused, and nothing is asked of sg4. A corrupt pack from a room is refused by fsck and moves no ref |
-| F3 | Serving to clint's machines: `/git/` on the board's loopback and overlay reaches, 404 on a public share, `atrium git setup` and `atrium git url`, and the board's repos list | @fabric, @ui, 2 days | from clint's laptop on the ziti overlay, `git clone git@sg4.atrium:openziti/ziti-tunnel-sdk-c.git` (after setup) clones with the forge's branches and every `rooms/*` branch. The same URL through the zrok public share answers 404 |
-| F5 | Pull requests between rooms: the change-request row, `atrium pr open`, the one report to the target's owner, the change record and verdict coverage attached, close with a reason, and `claude/main` targets handed to stage 3 | @fabric, @ui (a list on the board), 2 days | a request from `rooms/sg4/fix/x` to m1mini's `claude/fabric` reaches m1mini's fabric card once, with the four lines of the change record. The card fetches, merges in its own worktree and records it. A request to `claude/main` is refused until stage 3 exists |
-| F4 | Push into a room's own namespace, forks as names, then git-sync stage 3 for landing | 2 days, plus stage 3 | a room's push to its own `refs/rooms/<room>/claude/x` lands. A push naming another room, a forge ref or `claude/main` is refused before any ref moves |
+| a card on a room | the room's stable forwarder (5.1) to the link's `git` kind | the room from its hub-signed link certificate (direct), or as decision 18 settles it on an overlay. The card from its own atrium token, checked by the room's forwarder | fetch the hub's store and any room's pass-through. Push per 3.2's card column, when the room's push setting allows it |
+| the operator on the hub machine | loopback | the board's own rule for loopback | everything in 3.2's operator column |
+| the operator on another machine | the OpenZiti intercept or a zrok private share | the overlay's policy, plus the board's operator token through `extraHeader` when that token is on | the same as loopback |
+| anyone on a zrok public share | refused | none | nothing |
 
-Review-on-atrium 7.7's default (a) is F1 and F2. Every persona job resolves its code with `atrium_git_url`.
+So no account and no new credential: rooms are their certificates, cards are their atrium tokens, and the operator
+is whoever can reach the board as the operator.
 
-## 7. Questions for clint, held until he asks
+## 4. The lookup: `atrium_git_url`
 
-1. **Mirror everything automatically.** Every repo any card works in gets a copy on the hub, including outside
-   projects, with their own branches and every machine's work in progress. **Suggested: yes.**
-2. **The address.** Your `git@sg4.atrium:...` spelling works through a one-line git setting that turns it into the
-   web address the board already uses, with no ssh server. Add a real ssh server later only if a tool you use needs
-   it? **Suggested: yes, web address now, ssh only if needed.**
-3. **Cleaning up.** Drop a repo's hub copy after 30 days with no card working in it, with 5 GB per repo and 50 GB in
-   all? **Suggested: yes.**
-4. **Pushing from your own machines.** Later, once rooms push to the hub, may your laptop push its branches to the
-   hub too, under its own name? **Suggested: yes, in the push stage, not before.**
-5. **Pull requests between machines.** One machine can ask another to take a change, with its test and review record
-   attached, and the receiving machine's director decides. Changes to the main branch still wait for the hub's
-   merge queue, which you have not approved yet. **Suggested: yes.**
+Revision 1's section 3.1, kept with three changes:
+- The answer names one of two sources, `hub` (finished, pushed) or `room` (in progress, passed through), and
+  `online` for a room.
+- A branch that is both pushed and still on its room answers both, with the shas. `ahead` says whether the room has
+  commits the hub does not.
+- There is no `collected_at`, because there is no copy.
+
+Every card brief keeps the line: "to read code that is not in your cwd, call `atrium_git_url`, then fetch it from the
+URL it gives. Never ask for a paste." A miss answers `not found`, with the closest repos and branches, and an offline
+room answers `offline`.
+
+## 5. A room
+
+### 5.1 The stable `hub` remote
+
+git needs one stable URL for a remote, and git-sync 5's forwarder lives for one command. So each room runs one
+**stable forwarder on its agent listener**:
+- `http://127.0.0.1:<agent port>/git/hub/<host>/<owner>/<repo>.git`;
+- `http://127.0.0.1:<agent port>/git/room/<room>/<host>/<owner>/<repo>.git`.
+
+Both are forwarded to the hub over the link's `git` kind. The forwarder:
+- takes the card from its atrium token, the same check every agent-listener route makes (security design 2c);
+- sends the card id with the request, so the hub's push log names the card;
+- refuses a request with no card token.
+
+A clone's `hub` remote is set to the first URL. The token reaches git through the card's own environment
+(`GIT_CONFIG_COUNT`, `http.extraHeader`), set by the room at launch, and is never written into `.git/config`.
+
+### 5.2 Clones in the scm folder
+
+- **The scm folder** is a room setting, `git.scm_root`, set at install (`D:/git` on sg4, `~/git` on m1mini). The
+  layout is `<scm_root>/<host>/<owner>/<repo>`. A card's worktree stays `<repo>-worktrees/<id>` beside it, as
+  git-sync stage 2 has it.
+- **"Go work on `<url>`"** is `atrium_git_clone {url}`. The room:
+  1. resolves the path;
+  2. if a clone is there, uses it;
+  3. else runs `git clone <url> <path>` with `GIT_TERMINAL_PROMPT=0` and only the credential helper the operator
+     configured for atrium;
+  4. adds `hub`, with `git remote add hub <stable URL>`.
+
+  It returns the path.
+- **A clone that fails** (a private repo with no credential, or a wrong name) answers clint's sentence exactly: "that
+  repo doesn't exist, check it, and if it is private have the operator clone it. Atrium can't."
+- **An existing clone** the operator made gets `hub` added, after one yes on the board the first time for that clone.
+  If it already has a `hub` remote pointing somewhere else, atrium leaves it alone and says so (@review's L1 on
+  revision 1, kept).
+- **`origin` stays the forge** (Q5).
+
+### 5.3 Cards push to `hub` only
+
+Three walls, so no single one has to hold:
+1. **The dotfiles hook** permits exactly `git push hub <branch>`, `git push -u hub <branch>` and `git fetch hub`. It
+   refuses any force flag (`-f`, `--force`, `--force-with-lease`), a `+` refspec, `--mirror`, `--all`, `--tags`,
+   `--delete` or `:<ref>`, and any other remote. Everything else stays refused as today.
+2. **The room's forwarder** is the only place a card's push can go. `origin`'s URL is the forge, and a card has no
+   forge credential unless the operator gave atrium one. On clones atrium makes, `remote.origin.pushurl` is set to
+   `atrium-refused://origin-push`, so even a script that bypasses the hook cannot push to the forge. On an operator's
+   existing clone, atrium adds that line only with the yes of 5.2.
+3. **The hub's pre-receive** (3.2): no force, no fast-forward to `main`, no deletes, no tags.
+
+The push permission is a room setting, `git.push`: `none`, or `hub`. Its default is `hub`, by clint's answer to Q7.
+With `none`, the forwarder refuses receive-pack.
+
+An MCP tool, `atrium_git_push {branch}`, does the same push for a card that would rather not shell out, and is
+refused by the same rules.
+
+## 6. Finished, and the change record
+
+- **A change is finished when its branch is on the hub at the head the room has.** The change record's "Pushed" line
+  (`docs/rnd/change-record-design.md`) reads the hub's push log, not a forge.
+- **Change requests between rooms** (revision 1's F5) stay. A request names a source (a room's branch, or a pushed
+  branch on the hub) and a target, with the change record attached. Its title and why reach the owner as data. A
+  request whose target is `main` goes to the orchestrator or clint, who merges on the hub's side, re-signs and pushes
+  on. The hub's merge queue (git-sync stage 3) automates that later, under decision 46.
+- **Review-on-atrium 7.7** follows this design: a persona job reads in-progress code by pass-through from the room
+  that has it, and fails with "the room is offline" otherwise. It never asks for a paste and never uses a copy.
+
+## 7. Stages, and stage 1 cut into build items
+
+All held by the pause until the orchestrator releases them. Owners from section 7's backlog files.
+
+### Stage 1: the hub holds `main`, rooms push finished work, cards push to `hub` only
+
+| item | owner | what | size | acceptance |
+| --- | --- | --- | --- | --- |
+| `f-new-hub-git-store` | @fabric | the hub's store (3.1): `git.store`, `atrium hub git init <url>`, the one seed of `main`, and creation on first push when allowed | 1 day | `atrium hub git init https://github.com/netfoundry/omnigent` makes the bare repo with `main` at the forge's default head. A second init is a no-op. A private URL with no credential makes an empty repo and says to push `main` |
+| `f-new-hub-receive` | @fabric | receive-pack on the link and on the operator's reaches (3.2), the environment settings, the Go pre-receive with 3.2's table, the push log, first-pusher ownership and the size cap | 2 days | a card's push of a new `fix/x` lands and is logged with room and card. A non-fast-forward push is refused. A push of `main` from a card is refused, and from the operator on loopback lands. A second room's push to `fix/x` is refused as owned. A delete, a tag or a `refs/notes` push from a card is refused, and nothing moves |
+| `r-new-hub-remote` | @runtime | the room's stable forwarder on the agent listener (5.1) with card tokens, the card's git environment at launch, `git.push` (5.3), `atrium_git_push`, and `hub` added to the clones the room already syncs | 1.5 days | in a card on m1mini, `git push hub fix/x` lands on the hub with that card in the push log. The same push from a process with no card token is refused by the forwarder. With `git.push: none`, it is refused. `git push origin fix/x` from a script on an atrium-made clone fails on the pushurl |
+| `dotfiles: hook allows git push hub` | clint or the orchestrator, in dotfiles | 5.3 wall 1 | an hour | `git push hub fix/x` passes the hook. `git push -f hub fix/x`, `git push hub +fix/x`, `git push origin fix/x` and `git push hub :fix/x` are refused |
+| `u-new-hub-repos-list` | @ui | the board's list of hub repos: `main`, the pushed branches with pusher, room and time, and each one's clone URL | 1 day | clint sees `fix/x` pushed by sg4's card, and copies its `git@hub.atrium:` URL |
+
+Stage 1 needs none of the pass-through, the clone model or the lookup. It works for the repos the rooms already have.
+
+### Later stages
+
+| stage | what | owner | size |
+| --- | --- | --- | --- |
+| 2 | Clones in the scm folder (5.2): `git.scm_root`, `atrium_git_clone`, clint's failure sentence, `hub` on existing clones after a yes, and the origin pushurl guard on atrium-made clones | @runtime | 1.5 days |
+| 3 | Pass-through to the owning room (3.3), under the room's served set, offline as 503, the per-reader rate, the `room/<room>` URLs and `atrium git setup` | @fabric, @runtime (the room's served set) | 2 days |
+| 4 | `atrium_git_url` (section 4) and the brief line | @fabric, @runtime | 1 day |
+| 5 | Change requests between rooms (section 6), and the change record's "Pushed" from the push log | @fabric, @ui | 2 days |
+
+## 8. Questions for clint, held until he asks
+
+From the interview's open items, each with the default this design takes:
+
+1. **How a machine proves who it is when it pushes.** By the certificate the hub signed for it when it joined, and
+   the card by its own atrium token, so the hub's log says which machine and which card pushed each branch.
+   **Suggested: yes.**
+2. **Who may read and push from outside the machines.** Your own machines reach it the way they reach the board, and
+   never through the public share. Pushing to `main` is only for you, or for the orchestrator on the hub machine.
+   **Suggested: yes.**
+3. **The install settings.** At install, the hub asks for its store folder and whether a room's first push may
+   create a new repo on the hub. Each room asks for its scm folder (yours: `D:/git`) and whether cards may push to
+   the hub (yours: yes). **Suggested: yes, with "first push may create a repo" off until you turn it on.**
+4. **A branch belongs to its first pusher.** If sg4 pushed `fix/x`, m1mini cannot push over it and must use another
+   name, as on any git server. **Suggested: yes.**
