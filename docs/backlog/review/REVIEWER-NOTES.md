@@ -25,6 +25,10 @@ on. They are kept short: one line of what, one of where. Add to it when a review
 - **Memory a later review reads is an attack surface.** Writes take effect only after @review clears them, and
   false-positive entries never come from a model's refutation of attacker text (standing-reviewer review 2e9cddd0).
 
+- **Namespaces collide when an outside party names things.** A forge branch called `rooms/sg4/x` can shadow a mapped
+  room ref, and a PR branch called `claude/x` must never become landable. Keep each source in its own ref namespace
+  (hub forge review e34e461a).
+
 ## Facts that are easy to get wrong
 
 - Card status `done` is set by `atrium_report` on a live session (finish.go:180). It is not "session over".
