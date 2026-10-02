@@ -124,7 +124,8 @@ const perHost = +opt("--per-host", 2), rounds = +opt("--rounds", 3), idsArg = op
       console.log(`median of attaches 2-4 -> attach ${poolK + 1}: c>o ${n(a.co)} -> ${n(z.co)} ms, first ${n(a.first)} -> ${n(z.first)} ms (the hub's wait for a connection is in c>o)`);
       console.log(z.co > a.co + 150 || z.first > a.first + 300 ? `SLOWER: attach ${poolK + 1} on ${room} took clearly longer than attaches 2-4 (past the hub's 4 idle conns?)` : `no slowdown seen for attach ${poolK + 1}`);
     } else if (z && !z.err) {
-      console.log(`no baseline: with K=${poolK} there is no attach 2 to ${Math.min(4, poolK)} before the timed one (use --pool-k 2 or more); attach ${poolK + 1}: c>o ${n(z.co)} ms, first ${n(z.first)} ms`);
+      const why = poolK < 2 ? `K=${poolK} leaves no attach before the timed one (use --pool-k 2 or more)` : "every attach from 2 to " + Math.min(4, poolK) + " failed";
+      console.log(`no baseline: ${why}; attach ${poolK + 1}: c>o ${n(z.co)} ms, first ${n(z.first)} ms`);
     }
     await browser.close();
     return;

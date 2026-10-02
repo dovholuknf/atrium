@@ -88,3 +88,14 @@ Compare with the same attach on a cold page. That decides whether to cap kept so
 
 ### Note: kept sockets per remote room
 Each kept terminal holds one of a hub's 4 warm idle conns per room. No per-room cap yet; add one only if the post-deploy sg4 run shows a slow first attach after a burst to one remote room. Hard ceiling of kept terminals is 12 (default N is 8).
+
+### Result: pool measured on sg4
+Pool measured on sg4, 8 kept on one remote room, the ninth attach no slower (c>o 30 -> 33 ms): no per-room cap needed.
+(The first-byte rise on that attach was a card with a 0 KB replay, not the pool.)
+
+### Two frames after a kept show: headless software-GL artifact, not pursued
+The orchestrator's sg4 run showed keep-end ~12-17 ms but "two frames" 180-300 ms. In a headless chromium here the same gap
+reproduces (keep-end 3-10 ms, two frames 60-240 ms with long tasks of 50-225 ms between the first and second frame) and it
+follows the renderer: with xterm's DOM renderer two frames is ~25 ms, with WebGL (software, SwiftShader) it is 60-240 ms, also
+for a terminal that kept its WebGL context. It is the browser's draw of the un-hidden WebGL canvas, not board code. clint
+reports switching is instant on a real GPU, so this is a headless software-GL artifact per clint, not pursued.
