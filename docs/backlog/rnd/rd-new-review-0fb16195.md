@@ -64,3 +64,20 @@ to `permSkipTools` too. A re-read covers sections 0, 3 and 5. doc-ok on OK.
 Quality: a clean design. It takes item 17's wake-up cost seriously, reuses the PR runner's engine instead of
 forking it, and carries the no-settings rule over to every outside card. The miss is the persona file, the same
 "the target speaks" boundary in a new place.
+
+## Re-read at f4a5470a (2026-10-02): OK, doc-ok
+
+One commit, only the design doc, and every point is closed.
+- **M1.** Personas are read only from the room's `~/.claude/agents/` (the `lean_agents` source), and recipes only
+  from the store. A name resolving inside the target is refused. "Outside" is mechanical: a `pr_run`, or an origin
+  owner not on the room's list, and anything unresolved is outside. V1's acceptance covers a checkout shipping
+  `.claude/agents/codebase-steward.md`. A note for the build: the project's agents stay unloaded mainly because the
+  panel card's cwd is the run folder and the source comes only as `--add-dir`, as in the PR runner. Keep both.
+- **M2.** `max_parallel` (default 2, max 3) is queued inside the run, and a launch happens only when a room slot stays
+  free after it. V2's acceptance measures it.
+- **D0 and D1.** D0 proves that a subagent's `Bash` still prompts on the day's claude, and D1 adds `Agent` to
+  `permSkipTools`, with a test.
+- **Small.** `add_dir` takes only the run folder and the source. A queued run fails after 30 minutes with one report.
+  A panel ask with no live caller goes under "asked, unanswered", with no wake and no escalation.
+
+Verdict: OK, doc-ok 0fb16195^..f4a5470a. It lands alone by cherry-pick of the two.
