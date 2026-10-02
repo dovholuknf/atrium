@@ -7,6 +7,6 @@ different id form than the one `/v1/tasks` returns (a hub's `room~uuid`), or the
 row. Either the script picks cards the list does not show (it should skip them up front and say why) or the board is
 missing a row it should have.
 
-Not blocking: the plain run covers the card, and clint says switching is instant for him. The 180-300 ms "two
+Not blocking: the plain run covers the card, and clint says switching is instant. The 180-300 ms "two
 frames" the same run showed after a kept switch was a headless software-GL artifact (clint's own switch is instant),
 so it is not pursued.
