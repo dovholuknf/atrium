@@ -40,3 +40,17 @@ Verdict: OK e0624583..10a19a37, hub-ok and room-ok. The room half (the two sourc
 
 Quality: after the Sonnet switch, a well-contained change. It is narrow on what it recognises, reuses the permission
 path rather than adding one, and the test walks the whole life of a blocker.
+
+## Re-read at 2adda4fb (2026-10-02): OK e0624583..2adda4fb
+
+- **Both lows are closed.** `blockerMark` asserts exactly one ring and one log line with the stuck alert on plus a
+  blocker. Log entries carry a `kind`: `notify` sets `logKind` for the length of its call and restores the previous
+  value (`was`), so re-entry is safe. `recordToLog` stamps it, and the cross-window `win-toast` carries it. The red
+  follows `kind === "blocker"`, never the title, and a toast titled "x is BLOCKED" stays plain (tested).
+- **The extra fix is real.** `quietDoer` ("don't notify me about cards an agent launched", on by default) would have
+  muted a blocker on an agent-launched card, which is most of them. It now exempts the blocker kind, as it does a
+  permission.
+- One note, no action: an entry recorded after an `await` inside a `notify` path would miss the kind. That only
+  costs the red tint, never the alert.
+
+Verdict: OK e0624583..2adda4fb, hub-ok and room-ok.
