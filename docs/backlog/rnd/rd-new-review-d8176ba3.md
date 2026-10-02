@@ -108,3 +108,20 @@ Verdict: doc-ok (re-read, 74d44a19..1c9e1727)
 Quality: a clean fold-in. Each fix lands in the right section, and the W4 test pins the never-page promise.
 
 Atrium-Verdict: doc-ok 74d44a19..1c9e1727
+
+## Re-read: e373918c
+
+Range `1c9e1727..e373918c`. One file changed: the design doc.
+
+Closed:
+- **N1.** The W1 row now reads the diff from 5 minutes into a turn, which matches section 2.
+- **N2.** The bound is stated per card, between two answers.
+- **N3.** `atrium` is reserved as a handle and an alias, and the reason is given.
+
+One note, not a hold: the reservation is code, so give it a stage. It belongs in W2, beside the daemon-stamped
+sender. Aliases may also be set on the hub, so check there too.
+
+Verdict: doc-ok (re-read, 74d44a19..e373918c)
+Quality: every note is closed, in the section where it belongs.
+
+Atrium-Verdict: doc-ok 74d44a19..e373918c
