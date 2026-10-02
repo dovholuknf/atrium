@@ -52,3 +52,5 @@ on. They are kept short: one line of what, one of where. Add to it when a review
 - A pasted patch: rebuild the files and match the blob hashes in its `index` lines, which proves it byte-exact.
 - Mutation-check tests that guard a security property: break the guard and see the test fail.
 - Cycle context when idle or after a batch of verdicts, not after each one.
+- On a re-read, name what is closed and what stays open by id (M1, L2), so a change record can close findings
+  one by one (change-record design, C2).
