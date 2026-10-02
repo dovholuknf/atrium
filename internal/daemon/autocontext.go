@@ -237,6 +237,11 @@ const (
 // rather than early. One function, for the launch and for the card details.
 func (d *Daemon) autocompactK(t *store.Task) int {
 	k := int(d.cardLimit(t) * 11 / 10 / 1000)
+	// Never past the model's own window, when it is known: a window above it is accepted
+	// but not known to compact in time. An unnamed model is left to the range alone.
+	if w := modelWindowK(t.Model); w > 0 && k > w {
+		k = w
+	}
 	if k < minAutocompactK {
 		return minAutocompactK
 	}
@@ -249,7 +254,9 @@ func (d *Daemon) autocompactK(t *store.Task) int {
 // Autocompact is the card details' two numbers: the limit and the runner's window.
 type Autocompact struct {
 	LimitK  int `json:"limit_k"`
-	WindowK int `json:"window_k"`
+	WindowK int `json:"window_k,omitempty"`
+	// Note is set when the runner does not take the flag.
+	Note string `json:"note,omitempty"`
 }
 
 // autocompactFor is what the board shows for a card, nil when its runner takes no
@@ -258,6 +265,9 @@ func (d *Daemon) autocompactFor(t *store.Task) any {
 	h, err := d.st.Harness(t.Runner)
 	if err != nil || h == nil || len(h.AutocompactArgs) == 0 {
 		return nil
+	}
+	if d.autocompactArgsFor(h) == nil {
+		return &Autocompact{LimitK: int(d.cardLimit(t) / 1000), Note: NoAutocompactNote}
 	}
 	return &Autocompact{LimitK: int(d.cardLimit(t) / 1000), WindowK: d.autocompactK(t)}
 }

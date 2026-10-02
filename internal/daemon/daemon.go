@@ -91,6 +91,8 @@ type Options struct {
 
 // Daemon owns the store and both listeners.
 type Daemon struct {
+	// acProbe knows which runners take --autocompact. See autocompact.go.
+	acProbe *autocompactProbe
 	// windingDown is set when shutdown begins. A session ending after it is the
 	// wind-down, never somebody deciding. See the session hook's `end`.
 	windingDown atomic.Bool
@@ -580,6 +582,7 @@ func New(opts Options) (*Daemon, error) {
 	d.ka.deployHeld = d.deployHeld
 	d.ka.session = d.ctx.sessionOf
 	d.auto = newAutoContexts()
+	d.acProbe = newAutocompactProbe()
 	api.ContextSizeOf = d.contextSizeFor
 	api.AutocompactOf = d.autocompactFor
 	api.OutputAtOf = d.outputAtFor
@@ -1055,6 +1058,7 @@ func (d *Daemon) publishTask(id string) {
 func (d *Daemon) BoardHandler() http.Handler { return d.ap.Handler() }
 
 func (d *Daemon) Run(ctx context.Context) error {
+	go d.probeAutocompact()
 	agentMux := http.NewServeMux()
 	agentMux.HandleFunc("/permission", d.handlePermission)
 	agentMux.HandleFunc("/session", d.handleSession)
