@@ -40,3 +40,15 @@ Verdict: OK e45b841e..d6e70c94 and OK e45b841e..b323bead, hub-ok and room-ok.
 
 Quality: after the Sonnet switch, careful work on a fiddly part. The private-API use is guarded and explained, and
 the repaint guard was thought of before it was needed.
+
+## Re-read of u-clear-keeps-page at 31b6a8b0 (2026-10-02): OK e45b841e..31b6a8b0
+
+- **L1, closed.** The J handler swallows 3 (`return true`) without calling `keepPage`, and 2 still pushes the page
+  and then lets xterm erase. `clearKeepsPage` gains a lone-3J case (the rows stay on screen and history is 0), and the
+  2J+3J pair still keeps the page.
+- **L2, closed.** The changelog says the board's history survives a clear.
+
+Closed: L1, L2
+Open: none
+
+Verdict: OK e45b841e..31b6a8b0, hub-ok and room-ok.
