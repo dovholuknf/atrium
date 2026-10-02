@@ -81,3 +81,27 @@ The fix: in `refreshAttachedCard`, update the fields, but repaint nothing when `
 Atrium-Verdict: hold 762537f9..46b7c087
 Quality: a good change aimed at the measured cost, and the discard on switch is tight. H1 is in the order of events a
 hub makes likely, so it has to be guarded.
+
+## Re-read: e74dff63
+
+Range `762537f9..e74dff63`. `b51e130d` and `e252ec51` are unchanged. `e74dff63` replaces `46b7c087`, with a range-diff
+of two files. `bc28d8df` and `e2a5609c` sit above it on the branch, and they are not in this range.
+
+Closed:
+- **H1.** `refreshAttachedCard` updates the fields, then returns before any repaint when `#term-pane` is `.dead`. The
+  probe is now an assert in `attachAtOnce`.
+  - A mutant here, with the guard removed, makes the section fail with "a late read repainted a dead pane". The title
+    goes to `ao/ao-b`, the chips to the path, and the pane is still `dead`.
+- **L1.** Only `REFRESH_FIELDS` are copied, so an id retag, a theme save or an alias set during the read is kept.
+- **L2.** The `termCold` test is dropped, with a comment that says why.
+- **L3.** It was optional, and it stays as it is.
+
+Tests at the tip:
+- `HEADLESS_ONLY=attachAtOnce,switchPrewarm,bootClean` passes.
+- `node --check` is clean on the four changed JS files.
+
+Verdict: hub-ok, room-ok (re-read, 762537f9..e74dff63)
+Quality: an exact fix, and the test proves it.
+
+Atrium-Verdict: hub-ok 762537f9..e74dff63
+Atrium-Verdict: room-ok 762537f9..e74dff63
