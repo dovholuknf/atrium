@@ -194,7 +194,8 @@ async function joinedClick(id) {
   if (pick === "details") { openTask(id); return; }
   if (pick !== "say") return;
   const text = await askUser({ title: "message " + t.display_title, input: true,
-    body: "It is queued and reaches the session on its next tool call or when its turn ends.",
+    body: "It is queued and reaches the session on its next tool call. " +
+      "A session sitting idle makes none, so it waits until someone types into that other terminal.",
     buttons: [{ label: "cancel", value: null }, { label: "send", value: true, style: "go" }] });
   if (!text || !String(text).trim()) return;
   try {
