@@ -577,6 +577,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/harnesses/{id}/setup/fix", s.fixRunnerSetup)
 	mux.HandleFunc("DELETE /v1/harnesses/{id}", s.deleteHarness)
 	mux.HandleFunc("POST /v1/launch", s.launch)
+	mux.HandleFunc("GET /v1/launch/cwd", s.launchCwd)
 	mux.HandleFunc("POST /v1/tasks/{id}/kill", s.kill)
 	if s.StopRunner != nil {
 		mux.HandleFunc("POST /v1/tasks/{id}/exit", s.exitRunner)

@@ -533,6 +533,12 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r, placed = p.placePR(w, r); !placed {
 		return
 	}
+	// AN UNSCOPED LAUNCH GOES TO THE ROOM ON THE CALLER'S MACHINE THAT HAS THE
+	// DIRECTORY. Ahead of startsNothing so that sees the room it lands on. See
+	// launchroute.go.
+	if r, placed = p.placeLaunch(w, r); !placed {
+		return
+	}
 	// A ROOM ON ITS WAY OUT STARTS NOTHING NEW.
 	//
 	// That is the whole difference between marking a room for deletion and
