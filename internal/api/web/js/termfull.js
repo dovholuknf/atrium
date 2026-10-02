@@ -210,11 +210,11 @@ window.addEventListener("storage", e => { if (!e.key || e.key === PHONE_TRAY_KEY
       y0 = null;
       if (dy < -30 && Math.abs(dy) > Math.abs(dx)) phoneTraySet(false);
     }, { passive: true });
-    // any action in it closes it, except the two that open more of it: the card picker and the theme cog
+    // any action in it closes it, except the two that open more of it: the card picker and the cog
     bar.addEventListener("click", e => {
       if (!phone() || !phoneTrayOpen()) return;
       const b = e.target.closest && e.target.closest("button, a");
-      if (!b || b.id === "t-pick" || b.id === "t-cog" || b.closest("#t-theme-wrap")) return;
+      if (!b || b.id === "t-pick" || b.id === "t-cog") return;
       phoneTraySet(false);
     });
   }

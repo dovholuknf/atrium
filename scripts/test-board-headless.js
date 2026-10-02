@@ -3333,6 +3333,133 @@ async function newCardSection(browser, base) {
   }
 }
 
+// TRYING A TERMINAL'S THEME OPENS THE BOARD'S OWN PANEL, the one trying a skin
+// opens, rather than a copy of it: titled for the terminal, the same arrows,
+// escape and enter, the project as its default answer and an edit button. A
+// preview repaints the terminal as you step; nothing is saved until "use it";
+// cancel and escape put back what was there; the skin lab still works through
+// the same component.
+async function themeLabSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
+  const p = await ctx.newPage();
+  const errors = [];
+  p.on("pageerror", e => errors.push(String(e)));
+  await p.addInitScript(() => {
+    localStorage.setItem("atrium.skipconfirm", JSON.stringify({ "width-floor": true }));
+  });
+  const patches = [];
+  p.on("request", r => {
+    if (r.method() === "PATCH" && /\/v1\/tasks\//.test(r.url())) patches.push(r.url() + " " + r.postData());
+  });
+  const was = tasksMode;
+  try {
+    wornTasks = [Object.assign({}, T1, { id: "tl-a", display_title: "row tl-a", theme: "nord", supervised: true, pinned: true, worktree: "/tmp/tl/a" })];
+    tasksMode = "worn";
+    await p.goto(base, { waitUntil: "domcontentloaded" });
+    await p.waitForSelector("#stack-list .stackrow", { timeout: slow(15000) });
+    await p.click('.tab[data-view="terms"]');
+    await p.waitForSelector('#term-list .card.tab[data-id="tl-a"]', { state: "attached", timeout: slow(15000) });
+    await p.waitForTimeout(1000);
+    await p.evaluate(async () => {
+      termTask = lastTasks.find(t => t.id === "tl-a");
+      term = { options: {}, dispose() {} };
+    });
+    const state = () => p.evaluate(() => {
+      const lab = document.getElementById("skinlab");
+      const vis = id => { const e = document.getElementById(id); return !!e && !e.hidden && !!e.offsetParent; };
+      return {
+        open: !lab.hidden, title: document.getElementById("skinlab-title").textContent,
+        value: document.getElementById("skinlab-pick").value,
+        fallback: document.getElementById("skinlab-default").textContent,
+        extra: vis("skinlab-extra") ? document.getElementById("skinlab-extra").textContent : null,
+        term: term.options.theme ? term.options.theme.background.toLowerCase() : null,
+        old: !!document.getElementById("t-theme-wrap")
+      };
+    });
+    const bgOf = n => p.evaluate(n => TERM_THEMES[n].background.toLowerCase(), n);
+
+    await p.evaluate(() => pickTheme());
+    let r = await state();
+    if (!r.open || r.title !== "how this terminal looks") fail("try a theme opened '" + r.title + "' (open " + r.open + ").");
+    if (r.value !== "nord") fail("the panel opened on '" + r.value + "', not the card's nord.");
+    if (r.fallback !== "use the project") fail("the default answer reads '" + r.fallback + "'.");
+    if (!r.extra || !/^edit/.test(r.extra)) fail("the panel has no edit button for a terminal: " + r.extra);
+    if (r.old) fail("the inline header picker is still in the page.");
+
+    // The arrows walk the list and repaint the terminal as they go.
+    await p.click(".lab-step >> nth=1");
+    r = await state();
+    if (r.value === "nord" || r.term !== await bgOf(r.value)) fail("stepping to '" + r.value + "' left the terminal on " + r.term + ".");
+    await p.click(".lab-step >> nth=0");
+    await p.click(".lab-step >> nth=0");
+    r = await state();
+    if (r.term !== await bgOf(r.value)) fail("stepping back, '" + r.value + "' left the terminal on " + r.term + ".");
+    if (patches.length) fail("stepping saved something: " + patches.join(" | "));
+
+    // Cancel and escape both put nord back, saving nothing.
+    await p.click("#skinlab .lab-answers button >> text=cancel");
+    r = await state();
+    if (r.open || r.term !== await bgOf("nord")) fail("cancel left the panel " + r.open + " and the terminal on " + r.term + ".");
+    await p.evaluate(() => pickTheme());
+    await p.focus("#skinlab-pick");
+    // A select's own change, which is what an arrow key fires (the key itself opens the list on some platforms).
+    await p.selectOption("#skinlab-pick", "dracula");
+    r = await state();
+    if (r.term !== await bgOf("dracula")) fail("a change on the select did not preview: " + r.value + " / " + r.term);
+    await p.keyboard.press("Escape");
+    r = await state();
+    if (r.open || r.term !== await bgOf("nord")) fail("escape left the panel " + r.open + " and the terminal on " + r.term + ".");
+    if (patches.length) fail("cancelling saved something: " + patches.join(" | "));
+
+    // The project answer saves an empty theme, once.
+    await p.evaluate(() => pickTheme());
+    await p.click("#skinlab-default");
+    await p.waitForFunction(() => !document.getElementById("skinlab") || document.getElementById("skinlab").hidden);
+    await p.waitForFunction(() => termTask.theme === "", null, { timeout: slow(5000) });
+    if (patches.length !== 1 || !/tl-a .*"theme":""/.test(patches[0])) fail("use the project did not save an empty theme once: " + patches.join(" | "));
+
+    // Use it saves what is chosen, once.
+    patches.length = 0;
+    await p.evaluate(() => pickTheme());
+    await p.selectOption("#skinlab-pick", "dracula");
+    await p.click("#skinlab .lab-answers button.go");
+    await p.waitForFunction(() => termTask.theme === "dracula", null, { timeout: slow(5000) });
+    r = await state();
+    if (r.open) fail("use it left the panel open.");
+    if (patches.length !== 1 || !/tl-a .*"theme":"dracula"/.test(patches[0])) fail("use it did not save dracula once: " + patches.join(" | "));
+
+    // Edit opens the theme editor on what is selected.
+    await p.evaluate(() => pickTheme());
+    await p.selectOption("#skinlab-pick", "nord");
+    await p.click("#skinlab-extra");
+    if (!await p.evaluate(() => document.getElementById("theme").open)) fail("edit did not open the theme editor.");
+    await p.evaluate(() => { document.getElementById("theme").close(); cancelLab(); });
+
+    // The same panel, for the board's skin.
+    await p.evaluate(() => { pastePrefs = pastePrefs || {}; if (!(pastePrefs.board_skins || []).length) pastePrefs.board_skins = ["dark", "light"]; });
+    await p.evaluate(() => openSkinLab());
+    r = await state();
+    if (!r.open || r.title !== "how the board looks") fail("the skin lab opened '" + r.title + "'.");
+    if (r.fallback !== "use the default") fail("the skin lab's default answer reads '" + r.fallback + "'.");
+    if (r.extra) fail("the skin lab grew an extra button: " + r.extra);
+    const skin0 = await p.evaluate(() => currentSkin());
+    await p.click(".lab-step >> nth=1");
+    const skin1 = await p.evaluate(() => currentSkin());
+    if (skin1 === skin0) fail("stepping did not preview a skin.");
+    await p.keyboard.press("Escape");
+    r = await state();
+    if (r.open || await p.evaluate(() => currentSkin()) !== skin0) fail("escape did not put the skin back.");
+    // Opening one while the other is up answers the first.
+    await p.evaluate(() => { pickTheme(); previewTheme("dracula"); openSkinLab(); });
+    r = await state();
+    if (r.title !== "how the board looks" || r.term !== await bgOf("dracula")) fail("opening the skin lab over the theme panel left " + r.title + " / " + r.term + ".");
+    if (errors.length) fail("the theme lab page threw: " + errors.join(" | "));
+  } finally {
+    tasksMode = was;
+    await ctx.close();
+  }
+}
+
 // A THEME PREVIEW RECOLOURS THE CARD, not only the terminal: the attached row,
 // its bridge, the pane's frame and the stack card follow the picker, for that
 // card alone. Cancelling, detaching and switching cards put the saved colours
@@ -3397,7 +3524,7 @@ async function themePreviewSection(browser, base) {
         frame: pane.style.getPropertyValue("--framec"),
         stack: stack ? stack.style.getPropertyValue("--card-0") : null,
         term: term && term.options.theme ? term.options.theme.background : null,
-        wrap: document.getElementById("t-theme-wrap").hidden
+        wrap: !labIs("theme")
       };
     });
     const themeHex = n => p.evaluate(n => TERM_THEMES[n].background.toLowerCase(), n);
@@ -3422,7 +3549,7 @@ async function themePreviewSection(browser, base) {
     if (r.a !== bg["gruvbox-dark"]) fail("a second pick did not move the row: " + r.a);
 
     // Cancel: the saved colours come back, and nothing was written.
-    await p.evaluate(() => cancelTheme());
+    await p.evaluate(() => cancelLab());
     r = await read();
     for (const k of ["a", "b", "bridge", "frame", "stack"]) {
       if (r[k] !== saved[k]) fail("after cancel, " + k + " is " + r[k] + ", saved was " + saved[k] + ".");
@@ -3458,9 +3585,9 @@ async function themePreviewSection(browser, base) {
     await attach("tp-a");
     await p.evaluate(async () => {
       pickTheme();
-      document.getElementById("t-theme").value = "dracula";
+      document.getElementById("skinlab-pick").value = "dracula";
       previewTheme("dracula");
-      await keepTheme();
+      await keepLab();
     });
     r = await read();
     if (r.a !== bg.dracula) fail("after use it the row is " + r.a + ", not dracula.");
@@ -7270,7 +7397,7 @@ async function busyGuardSection(browser, base) {
     });
     const distinct = [...new Set(wired)];
     if (distinct.length < 25) fail("only " + distinct.length + " buttons go through busyWhile: " + distinct.join(","));
-    for (const n of ["saveHarness", "saveSource", "saveTheme", "keepTheme", "keepSkin", "deleteHarness",
+    for (const n of ["saveHarness", "saveSource", "saveTheme", "keepLab", "defaultLab", "deleteHarness",
       "doDispatch", "saveProvider", "runSourceNow"]) {
       if (!distinct.includes(n)) fail(n + " does not go through busyWhile.");
     }
@@ -18397,7 +18524,7 @@ async function main() {
       groupRemove: groupRemoveSection, worn: wornSection, restartGate: restartGateSection, restartStays: restartStaysSection, atriumDown: atriumDownSection,
       toastStays: toastStaysSection, groupColor: groupColorSection,
       groupDrag: groupDragSection, tooltip: tooltipSection, linkTip: linkTipSection,popoutTagFlip: popoutTagFlipSection, idleRate: idleRateSection, foldStill: foldStillSection,
-      untaggedSort: untaggedSortSection, newCard: newCardSection, themePreview: themePreviewSection, land: landSection, reselect: reselectSection,
+      untaggedSort: untaggedSortSection, newCard: newCardSection, themePreview: themePreviewSection, themeLab: themeLabSection, land: landSection, reselect: reselectSection,
       toastsTop: toastsTopSection, sayWhen: sayWhenSection, pasteSpinner: pasteSpinnerSection,
       pasteBig: pasteBigSection, pasteBusy: pasteBusySection, typing: typingSection, alias: aliasSection, askAgain: askAgainSection, copySelect: copySelectSection, busyGuard: busyGuardSection, keepalive: keepaliveSection,
       stuck: stuckSection, blockerMark: blockerMarkSection, carryLink: carryLinkSection,
@@ -20315,6 +20442,8 @@ async function main() {
     await unit("newCard", () => newCardSection(browser, base));
     // ── a theme preview recolours the card everywhere it shows ─────────────
     await unit("themePreview", () => themePreviewSection(browser, base));
+    // ── trying a terminal's theme opens the board's own panel ──────────────
+    await unit("themeLab", () => themeLabSection(browser, base));
     // ── a click on an alert lands where the alert is about ─────────────────
     await unit("land", () => landSection(browser, base));
     await unit("quietDoer", () => quietDoerSection(browser, base));

@@ -381,9 +381,10 @@ async function termSettings(e) {
     shareItem(t),
     actionsFor(t).length ? { sep: true } : null,
     { label: "try a theme", note: t.theme || "from the project",
-      help: "Puts a picker on the bar. Arrow through them and the terminal " +
-        "you are looking at changes as you go, against the output already on " +
-        "screen. Escape puts back what was there.",
+      help: "Opens the same floating panel the board's colours use. Arrow " +
+        "through them and the terminal you are looking at changes as you go, " +
+        "against the output already on screen. Escape puts back what was " +
+        "there. Its edit button opens the theme editor.",
       act: () => pickTheme() },
     { label: "notification icon…", note: t.icon || "the atrium mark",
       tip: "The mark this card wears on a desktop notification.",

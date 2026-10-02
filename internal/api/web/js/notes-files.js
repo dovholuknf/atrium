@@ -1068,31 +1068,86 @@ function applySkin(name) {
   document.documentElement.setAttribute("data-skin", name);
 }
 
-// TRYING SKINS, in the header, with the same control as trying a terminal
-// theme.
+// THE LAB: one floating panel for trying a look against the real thing, with
+// whatever is on screen as the preview. The board's skin and a terminal's theme
+// both open it, so there is one title strip, one set of arrows, one set of keys
+// and one place that decides what escape means.
 //
-// The shape is copied from `pickTheme` deliberately, including what it refuses
-// to do. Nothing happens on blur: a skin is judged by looking at the BOARD, and
-// looking at the board means clicking it, so a picker that committed and closed
+// It is told what it is trying (`openLab`) and knows nothing else: the caller
+// owns what a preview paints, what keeping saves and what cancelling puts back.
+// Nothing happens on blur. A look is judged by looking at the board or the
+// terminal, and looking means clicking it, so a panel that committed and closed
 // on blur would close itself the first time you tried to use it. It is answered
 // with `use it` or `cancel` and by nothing else.
 //
-// The one difference from the terminal's: this previews for every window, not
-// just this one. A skin is board-wide, so a preview that only repainted the
-// window you are in would be judging it against half the evidence.
-let skinBefore = null;
+// What it is given:
+//   id        who has it open, so the right owner can close it (`labIs`)
+//   title     the strip
+//   options   the <option> markup, already built, with `value` selected
+//   value     what was there, which `use it` compares against
+//   preview   (value) paint it, unsaved
+//   keep      (value) async, save it
+//   cancel    () put back what was there
+//   fallback  {label, tip, value}: the third answer, the one you take without
+//             wanting to browse
+//   extra     {label, tip, act(value)}: one more button, when there is one
+let labNow = null;
 
 // Where the panel was left, so it comes back there. Per browser: it is about
 // this screen and where the operator does not mind something sitting.
 const SKINLAB_AT = "atrium.skinlab.at";
 
-function openSkinLab() {
+function openLab(spec) {
   const lab = document.getElementById("skinlab");
   const sel = document.getElementById("skinlab-pick");
   if (!lab || !sel) return;
+  // Whatever was being tried is answered first, so two owners never share it.
+  if (labNow) cancelLab();
+  labNow = spec;
+  document.getElementById("skinlab-title").textContent = spec.title;
+  sel.innerHTML = spec.options;
+  sel.value = spec.value;
+  const fb = document.getElementById("skinlab-default");
+  fb.textContent = spec.fallback.label;
+  fb.dataset.tip = spec.fallback.tip;
+  document.getElementById("skinlab-more").hidden = !spec.extra;
+  if (spec.extra) {
+    const more = document.getElementById("skinlab-extra");
+    more.textContent = spec.extra.label;
+    more.dataset.tip = spec.extra.tip;
+  }
+  // Shown before it is placed, because placing it measures it and a hidden
+  // element measures as nothing.
+  lab.hidden = false;
+  placeSkinLab();
+  sel.focus();
+}
+
+// Whether the panel is open for this owner.
+function labIs(id) { return !!labNow && labNow.id === id; }
+
+// Gone without an answer, for an owner whose subject went away under it.
+function closeLab(id) {
+  if (!labIs(id)) return;
+  document.getElementById("skinlab").hidden = true;
+  labNow = null;
+}
+
+// The select takes the arrow keys itself and fires `change` on each; escape and
+// enter are the panel's.
+function labKey(e) {
+  if (!labNow) return;
+  if (e.key === "Escape") { e.preventDefault(); cancelLab(); }
+  else if (e.key === "Enter" && e.target.id === "skinlab-pick") { e.preventDefault(); keepLab(); }
+}
+
+function previewLab(value) { if (labNow) labNow.preview(value); }
+
+// The board's: from the settings dialog and the header.
+function openSkinLab() {
   // A second press closes it, so the header button is a toggle rather than a
   // way to open something you then have to answer.
-  if (!lab.hidden) { cancelSkin(); return; }
+  if (labIs("skin")) { cancelLab(); return; }
 
   const names = (pastePrefs && pastePrefs.board_skins) || [];
   if (!names.length) {
@@ -1103,14 +1158,13 @@ function openSkinLab() {
   const gear = document.getElementById("settings");
   if (gear && gear.open) gear.close();
 
-  skinBefore = currentSkin();
-  sel.innerHTML = names.map(n =>
-    `<option value="${esc(n)}"${n === skinBefore ? " selected" : ""}>${esc(n)}</option>`).join("");
-  // Shown before it is placed, because placing it measures it and a hidden
-  // element measures as nothing.
-  lab.hidden = false;
-  placeSkinLab();
-  sel.focus();
+  const now = currentSkin();
+  openLab({
+    id: "skin", title: "how the board looks", value: now,
+    options: names.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join(""),
+    preview: previewSkin, keep: keepSkin, cancel: () => previewSkin(now),
+    fallback: { label: "use the default", tip: "back to the one it came with", value: defaultSkin }
+  });
 }
 
 // Wherever it was left, clamped back into view.
@@ -1194,11 +1248,11 @@ addEventListener("resize", () => {
 // Walk the list without opening the select. The whole point of the panel is
 // seeing each one against the real board, and that reads better as a step than
 // as a dropdown covering the thing you are looking at.
-function stepSkin(by) {
+function stepLab(by) {
   const sel = document.getElementById("skinlab-pick");
   if (!sel || !sel.options.length) return;
   sel.selectedIndex = (sel.selectedIndex + by + sel.options.length) % sel.options.length;
-  previewSkin(sel.value);
+  previewLab(sel.value);
 }
 
 // DRAGGING. The element is held in a local rather than read off the event,
@@ -1245,13 +1299,21 @@ function startLabDrag(e) {
 }
 
 // The third answer, and the reason there are three rather than two. Getting
-// back to the palette the board shipped with means finding it in a list of
-// twenty, and it is the one choice somebody makes without wanting to browse.
-async function useDefaultSkin() {
+// back to the one it shipped with means finding it in a list of twenty, and it
+// is the one choice somebody makes without wanting to browse.
+async function defaultLab() {
+  if (!labNow) return;
   const sel = document.getElementById("skinlab-pick");
-  if (sel) sel.value = defaultSkin;
-  previewSkin(defaultSkin);
-  await keepSkin();
+  sel.value = labNow.fallback.value;
+  previewLab(sel.value);
+  await keepLab();
+}
+
+// Another button beside the answers, for what an owner can do from here that is
+// not an answer.
+function extraLab() {
+  const sel = document.getElementById("skinlab-pick");
+  if (labNow && labNow.extra) labNow.extra.act(sel.value);
 }
 
 // What is on screen right now, which is the attribute rather than the setting.
@@ -1268,25 +1330,29 @@ function previewSkin(name) {
   try { soloBus && soloBus.postMessage({ type: "skin-preview", name }); } catch (e) {}
 }
 
-async function keepSkin() {
-  const lab = document.getElementById("skinlab");
-  const sel = document.getElementById("skinlab-pick");
-  if (!sel || !lab || lab.hidden) return;
-  lab.hidden = true;
-  const name = sel.value;
-  if (name === skinBefore) return;
-  // Through the same path the settings dialog uses, so there is one place that
-  // writes this and one place that handles the refusal.
+async function keepLab() {
+  const spec = labNow;
+  if (!spec) return;
+  const name = document.getElementById("skinlab-pick").value;
+  document.getElementById("skinlab").hidden = true;
+  labNow = null;
+  if (name !== spec.value) await spec.keep(name);
+}
+
+function cancelLab() {
+  const spec = labNow;
+  if (!spec) return;
+  document.getElementById("skinlab").hidden = true;
+  labNow = null;
+  spec.cancel();
+}
+
+// Through the same path the settings dialog uses, so there is one place that
+// writes this and one place that handles the refusal.
+async function keepSkin(name) {
   const picked = document.getElementById("s-skin");
   if (picked) picked.value = name;
   await saveSkin(name);
-}
-
-function cancelSkin() {
-  const lab = document.getElementById("skinlab");
-  if (!lab || lab.hidden) return;
-  lab.hidden = true;
-  previewSkin(skinBefore);
 }
 
 async function saveSkin(name) {
@@ -1389,8 +1455,7 @@ let skinSettled = false;
 function skinHasSettled() { return skinSettled; }
 function applyResolvedSkin(s) {
   if (!s) return;
-  const lab = document.getElementById("skinlab");
-  if (lab && !lab.hidden) return;
+  if (labIs("skin")) return;
   if (skinSaving) return;
   const names = s.board_skins || [];
   const now = s.board_skin || names[0] || "";

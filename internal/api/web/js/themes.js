@@ -501,26 +501,29 @@ async function pickIcon(id, current) {
 // and a background, and the only honest preview is a real session rendered in
 // it, with the output already on screen.
 //
-// So it is a `<select>` on the bar, not in a dialog. A closed select fires
-// `change` on every arrow key, which is exactly the asked-for behavior:
-// arrow down, see it, arrow again. Nothing is written until you leave the
-// control, and escape puts back what was there.
-
-// What the theme was before this started, so escape has something to restore.
-let themeBefore = null;
+// So it is the board's floating panel (`openLab`), not a dialog and not a
+// control on the bar: the same title strip, arrows and keys as trying a skin. A
+// closed select fires `change` on every arrow key, which is exactly the
+// asked-for behavior: arrow down, see it, arrow again. Nothing is written until
+// `use it`, and escape puts back what was there.
 
 function pickTheme() {
-  const sel = document.getElementById("t-theme");
-  if (!sel || !termTask) return;
-  themeBefore = termTask.theme || "";
-
-  // Rebuilt each time. Both tables are already in memory, so this costs
-  // nothing, and it keeps the list honest after a theme was brought, edited or
-  // deleted from somewhere else.
-  sel.innerHTML = themeOptionsHTML(themeBefore);
-  sel.value = themeBefore;
-  document.getElementById("t-theme-wrap").hidden = false;
-  sel.focus();
+  if (!termTask) return;
+  const before = termTask.theme || "";
+  openLab({
+    id: "theme", title: "how this terminal looks", value: before,
+    // Rebuilt each time. Both tables are already in memory, so this costs
+    // nothing, and it keeps the list honest after a theme was brought, edited or
+    // deleted from somewhere else.
+    options: themeOptionsHTML(before),
+    preview: previewTheme, keep: keepTheme, cancel: () => previewTheme(before),
+    fallback: { label: "use the project", tip: "no theme of its own: the project's", value: "" },
+    // The colours of whatever is selected, opened where you are already looking
+    // at them. Nothing about the terminal changes until the editor is saved, so
+    // this is not a second way to set a card's theme.
+    extra: { label: "edit \u270e", tip: "change these colours, or bring a scheme of your own",
+      act: openThemeEditor }
+  });
 }
 
 // Applied to the running terminal live. xterm takes a new theme on a live
@@ -556,8 +559,7 @@ async function repaintWearers() {
 // it was started on, so it ends with it and the saved colours come back. Called
 // from inside a refresh, so the repaint is queued rather than run here.
 function dropThemePreview() {
-  const wrap = document.getElementById("t-theme-wrap");
-  if (wrap) wrap.hidden = true;
+  closeLab("theme");
   if (!themePreview) return;
   themePreview = null;
   refreshSoon();
@@ -645,24 +647,16 @@ function paintPaneBg(theme) {
   }
 }
 
-// Answered, not abandoned.
-//
-// Nothing happens on blur. A theme is judged by looking at the terminal, and
-// looking at the terminal means clicking it, so a picker that committed and
-// closed on blur closed itself the first time you tried to use it.
-async function keepTheme() {
-  const wrap = document.getElementById("t-theme-wrap");
-  const sel = document.getElementById("t-theme");
-  if (!sel || !wrap || wrap.hidden) return;
-  wrap.hidden = true;
-  const name = sel.value;
-  if (!termTask || name === themeBefore) return;
-
+// Answered by `use it`, which is `keepLab` calling this with the name chosen.
+// Not by blur: see `openLab`.
+async function keepTheme(name) {
+  if (!termTask) return;
+  const was = termTask.theme || "";
   try {
     await patchTask(termTask.id, { theme: name });
   } catch (e) {
     toast("that did not stick", e.message);
-    previewTheme(themeBefore);
+    previewTheme(was);
     return;
   }
   termTask.theme = name;
@@ -674,14 +668,6 @@ async function keepTheme() {
   themePreview = null;
   repaintWearers();
   toast("theme set", name || "back to the project's own");
-}
-
-function cancelTheme() {
-  const wrap = document.getElementById("t-theme-wrap");
-  if (!wrap || wrap.hidden) return;
-  wrap.hidden = true;
-  previewTheme(themeBefore);
-  if (termTask) termTask.theme = themeBefore;
 }
 
 // ── bringing a theme, and editing one ───────────────────
