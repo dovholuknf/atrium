@@ -1119,6 +1119,7 @@ function termRow(t, deep, kid) {
            ? `resumePinned('${t.id}')`
            : termJoined(t) ? `joinedClick('${t.id}')` : `attachTask('${t.id}')`}"
          oncontextmenu="termMenu(event, '${t.id}')">
+      ${ctxLine(t)}
       <div class="card-line">
         <div class="title">
           <span class="pin ${t.pinned ? "on" : ""}"
@@ -1227,7 +1228,9 @@ function termRowChips(t) {
   const cache = typeof keepaliveChip === "function" ? keepaliveChip(t) : "";
   const joined = termJoined(t)
     ? `<span class="chip">joined</span>` : "";
-  const inner = stuck + newCardChip(t) + ncx + seenChips(t) + cache + held + room + popped + joined;
+  // The past-the-limit mark, which the strip did not draw. A card cycling its context shows that instead.
+  const lim = t.new_context ? "" : ctxWarnMark(t);
+  const inner = stuck + newCardChip(t) + lim + ncx + seenChips(t) + cache + held + room + popped + joined;
   return inner ? `<div class="chips">${inner}</div>` : "";
 }
 

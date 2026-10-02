@@ -663,6 +663,23 @@ function ctxWarnMark(t) {
       ><path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h6"/><path d="M12 10.5v3M12 15.2v.1"/></svg></span>`;
 }
 
+// THE THIN LINE ALONG A ROW'S BOTTOM EDGE: the context now against the limit, the same
+// drawing as the details' meter (ctxMeter in js/peek.js), no text. Teal below CTX_WARM,
+// warn from there, danger from CTX_HOT. At or over the limit (the daemon's `warn`) it is
+// danger and pulses once, unless the card is cycling its context, which says that itself.
+// Drawn from the row's own context_size, so no read of its own. Same guards as the mark.
+function ctxLine(t) {
+  const c = t.context_size;
+  if (!c || over(t) || t.status === "shelved" || typeof ctxMeter !== "function") return "";
+  const limit = peekThresholdK(t) * 1000;
+  const pct = (Number(c.tokens) / limit) * 100;
+  const heat = c.warn || pct >= CTX_HOT ? " hot" : pct >= CTX_WARM ? " warm" : "";
+  const once = c.warn && !t.new_context ? " over" : "";
+  const win = t.telemetry && t.telemetry.window ? `, window ${fmtTokens(t.telemetry.window)}` : "";
+  return ctxMeter(c.tokens, limit, "ctxline" + heat + once,
+    `${usageTokens(c.tokens)} used, limit ${usageTokens(limit)}${win}`);
+}
+
 // What is behind the percentage, for the tooltip. Tokens where the statusline
 // reported them, because the same percentage is a different amount of room on
 // a different window, and the model name is what says which window it is.
@@ -760,6 +777,7 @@ function cardHTML(t) {
     onclick="cardMenu(event, '${t.id}')"
     data-id="${t.id}" data-rank="${t.rank}"
     oncontextmenu="cardMenu(event, '${t.id}')">
+    ${ctxLine(t)}
     <div class="card-line">
       <div class="title">${w ? '<span class="pulse"></span>' : ""}${
         t.pinned ? '<span class="pin on" data-tip="pinned">&#9733;</span>' : ""}${
