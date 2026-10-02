@@ -47,7 +47,9 @@ github.com once, with `git ls-remote`, which writes nothing.
    pwsh -File scripts\room-toolchain.ps1 <user>@sg3 -Profile c -Msys2Dir V:\work\tools\msys64 -GitUserName "<name>" -GitUserEmail <email>
    ```
 2. If `msys2-acl` or `pacman` says `needs-human`, an admin runs the `icacls` command it printed (the exact text is
-   also in the summary block), then the run is repeated.
+   also in the summary block), then the run is repeated. Every printed command is meant to be pasted into PowerShell:
+   each word that is not plain letters, digits and `_.:\/-` is a single-quoted literal, so an ACE shows as
+   `'SG3\claude:(OI)(CI)M'` and a directory with a space or a `$` in it stays one argument.
 3. If `git-credential` says `needs-human`, a person logs in to the room's user once at a console on sg3, not over ssh:
    `git credential-manager github login`. It opens a browser or a device code prompt and asks which GitHub account.
    Nothing is typed into the script. This only applies to a private repo given with `-CheckRepo`, because the public
@@ -173,10 +175,33 @@ These were never run. Each is the first thing to look at if a real run misbehave
   had before is put back / so the ACL ends as it began.
 - decided: `-Check` reads `CMakeUserPresets.json` with a read only act and runs the merge on this side, because
   staging the preset text on the room would write a file. The merge text is the same text the room runs.
-- decided: a rewritten `CMakeUserPresets.json` is saved by `ConvertTo-Json` (its layout changes) with the old file
-  kept as `CMakeUserPresets.json.atrium-bak` / `include`, `buildPresets` and every other key are kept, a file that is
-  not valid JSON, has no version of 2 or more, or has a `configurePresets` that is not a list is left alone and is
-  needs-human.
+- decided: Windows PowerShell 5.1 reformats a merged `CMakeUserPresets.json`: the same content in a different layout.
+  The merge saves with `ConvertTo-Json`, so the indentation and spacing change, `<` and `'` come out as `\u003c` and
+  `\u0027`, and any comments in the file are lost. The old file is kept as `CMakeUserPresets.json.atrium-bak`.
+  `include`, `buildPresets` and every other key are kept. A file that is not valid JSON, has no version of 2 or more,
+  or has a `configurePresets` that is not a list is left alone and is needs-human. A file that needs no change is not
+  rewritten at all.
+- decided: TLS 1.2 is switched on at the top of `cinstall` only (L1) / it is the only act that downloads under 5.1, and
+  `CCommon` had no room left for the line under the 7800 limit. A test fails if another act ever downloads without it.
+- decided: the Modify grant is written to `~/.atrium/toolchain/acl-grants.txt` on the room before pacman runs and
+  forgotten after the take-back (L2) / an ssh drop or a kill during pacman skips the take-back, and a rerun saw
+  "writable" and planned nothing. Only what this script granted is recorded, as `dir|account|what the account had`. A
+  rerun reverts it and says so. `-Check` reports it as `warn` and changes nothing. A revert that icacls refuses is
+  needs-human with the commands, and the record stays so the next run tries again.
+- decided: `acl-grants.txt` is not believed when it is read back (M1, from the review of cb861888) / any process that
+  runs as the room user can write it, so a line is acted on only when it is what this script writes: the directory is
+  the MSYS2 directory in question, the account is exactly the account running this (only the user's own Modify is
+  ever recorded) and every `before` token is an ACE by the same grammar `New-IcaclsArgs` checks (`Test-AceRaw`).
+  A line for another directory is skipped. Any other line is never acted on and never printed as a command. The run
+  says `msys2-acl warn acl-grants.txt has N line(s) this script did not write ...` with the line numbers and a 24
+  character excerpt that has no control characters, and leaves the file as it is.
+- decided: one function makes every command a person is told to run, `Format-AdminCommand` (M1) / `Need` takes each
+  command as a list of words and refuses a string, so the icacls, pacman, `git config`, login, runner-path and
+  preset lines are all quoted in the same place, with `Quote-Ps` (the U+2018 to U+201B quotes doubled). The old
+  `Format-IcaclsCommand` quoted only on a space, so `;calc.exe` and `$( )` went out bare and an honest `user:(OI)(CI)RX`
+  did not paste into PowerShell.
+- decided: the ACL take-back restores every explicit entry the account had (L3) / it put back only the first one. All
+  of them go back in one icacls call, `/grant:r` for the first and `/grant` for the rest.
 - decided: a new file is `version` 4, as hot-loop's is / presets with `environment` and `inherits` need nothing newer.
 - decided: macOS and Linux get a report only (`cc`, `gcc`, `cmake`, `ninja`, `git`, the vcpkg directory, the checkout)
   and a run says `skip` for installing / the brief, and a system package manager is the right installer there.
@@ -195,12 +220,28 @@ exit 6 never being produced. Three of those first stayed green, so tests were ad
 `-Check` writing nothing on an empty room, and the deny that beats a Users allow. The mutation runner was a throwaway
 script and is not in the repo.
 
+The four follow-up lows each have a test and were each broken on purpose: the TLS line removed from `cinstall`, the
+grant record not written before the grant, the stale grant not seen on a rerun, `cacls` not reporting the record, the
+record kept after the take-back, the restore putting back only the first entry, and the docs sentence of the L4 note
+removed. Each went red.
+
+The review fix for the grant record (M1) was broken the same way, sixteen changes, each red: the account not pinned
+to the user, the account compared by its bare name, the `before` tokens not checked, the directory not pinned, the
+quoting off, a trailing newline passing as a safe word, `Need` printing its words joined, a caller giving `Need` a
+string, the bad lines not warned about, a restore or a grant right not checked, control characters kept in the
+excerpt, the excerpt not cut, a rights group of `(OI)` accepted, a blank line read as a bad line, and the lines not
+numbered. The printed lines are checked by the PowerShell parser: each one is exactly one command whose arguments
+are the expected literals, with no subexpression, no second statement and no `calc.exe`, for a directory that has
+`$(...)`, `;`, a quote and a space in it.
+
 Bugs the tests found while being written: a null `configurePresets` merged as a list with a null first, `Run` always
 started in the home directory, the `git credential-manager --version` probe passed one argument for two, the
 credential check read `auth=` instead of `auth.N=`, vcpkg's version is a date and not a dotted number, a deny ACE did
 not beat a Users allow, and `git status` in `-Check` could refresh the index (now `--no-optional-locks`).
 
-Largest encoded payloads, with every value as long as a real call can make it: `probe` 5480, `install` 7136 and
-`record` 7592 (all three existing, unchanged), `cpresets` 6888, `cmsys` 6880, `cinstall` 6836, `csdk` 6632.
+Largest encoded payloads, with every value as long as a real call can make it (the test limit is 7400, the hard one
+7800): `probe` 5480, `install` 7136 and `record` 7592 (all three existing, unchanged), `cpresets` 7316, `cinstall` 7220,
+`csdk` 6856, `cvcpkg` 6624, `cmsys` 6272, `cstate` 3816, `cacls` 4104. The probe was split in two (`cmsys` and `cacls`)
+and the TLS line sits in `cinstall` alone to stay under the limit.
 `scripts/test-room-folders.ps1` stops at its first `sh` step in this sandbox, as
 `docs/backlog/fabric/f-new-review-87ed8711.md` already says, and is not touched by this change.

@@ -675,11 +675,13 @@ function CCall {
 function Get-Lines { param($out, [string] $key) @($out | Where-Object { "$_" -like "$key=*" } | ForEach-Object { "$_".Substring($key.Length + 1) }) }
 function Show-Tail { param($c) $c.Tail | Where-Object { "$_".Trim() } | ForEach-Object { Write-Host "    $_" } }
 # A step that needs a person: the status is needs-human and the commands go in the summary at the end.
+# $cmds is a list of commands, each one a list of words. Format-AdminCommand makes the line, so a command is quoted in one place.
 function Need {
-    param([string] $step, [string] $detail, [string[]] $cmds)
+    param([string] $step, [string] $detail, [object[]] $cmds)
     Step $step 'needs-human' $detail
-    foreach ($c in $cmds) { Write-Host "    $c" }
-    $script:needs += $cmds
+    $lines = @(foreach ($c in $cmds) { if ($c -is [string]) { throw "Need wants a command as a list of words, not '$c'" }; Format-AdminCommand ([string[]]@($c)) })
+    foreach ($l in $lines) { Write-Host "    $l" }
+    $script:needs += $lines
 }
 function Write-CTools {
     param($k, [string] $dir, [string[]] $gaps, [bool] $check)
@@ -699,11 +701,23 @@ function Write-CTools {
     if ($k['ssl'] -eq 'True') { Step 'openssl' 'ok' "libssl.a and include/openssl/ssl.h under $dir\mingw64" } else { Step 'openssl' 'warn' "MISSING (libssl.a or include/openssl/ssl.h under $dir\mingw64). $would" }
 }
 
+# The MSYS2 probe: where it is and its tools (cmsys), then the accounts, the ACL, writability and the grants that were left
+# behind (cacls), as one result.
+function Get-CMsys {
+    param([hashtable] $cv)
+    $p = CCall 'cmsys' $cv
+    if ($p.Rc -ne 0 -or -not $p.Kv.ContainsKey('msys2.dir')) { return $p }
+    $a = CCall 'cacls' @{ Msys2Dir = $p.Kv['msys2.dir']; Accts = $cv.Accts; StateDir = "$StateDir" }
+    foreach ($key in $a.Kv.Keys) { $p.Kv[$key] = $a.Kv[$key] }
+    $p.Out = @($p.Out) + @($a.Out)
+    $p
+}
+
 # Stage A: MSYS2, its packages, its ACL. Returns nothing, and adds mingw64\bin to the PATH record through $newDirs.
 function Invoke-CMsys2 {
     $script:pathPre = Get-PathPre
     $cv = @{ Prefix = $prefixR; Rec = "$($kv.rec)"; Msys2Dir = $Msys2Dir; Accts = ($RunnerAccounts -join ',') }
-    $p = CCall 'cmsys' $cv
+    $p = Get-CMsys $cv
     if ($p.Rc -ne 0 -or -not $p.Kv.ContainsKey('msys2.dir')) {
         Step 'msys2' 'fail' "could not look for MSYS2 on $where"; $p.Out | ForEach-Object { Write-Host "    $_" }; Note-Fail 3; return
     }
@@ -727,8 +741,24 @@ function Invoke-CMsys2 {
             }
             Step 'msys2' 'done' "$($asset.Version) from $($asset.Url), sha256 $($ir.Kv.sha) matches, unpacked to $($ir.Kv.installed)"
             $fresh = $true
-            $p = CCall 'cmsys' $cv
+            $p = Get-CMsys $cv
         }
+    }
+    # A Modify grant an earlier run made and was cut off before it took back (ssh dropped, process killed) is still on the
+    # directory, and the probe now says it is writable, so nothing would ever plan to take it back. The room remembers it.
+    $rec = if ($p.Kv['msys2.found'] -eq 'True') { ConvertFrom-GrantRecord (Get-Lines $p.Out 'grant') $dir $p.Kv['user'] } else { [pscustomobject]@{ Grants = @(); Bad = @() } }
+    $stale = @($rec.Grants)
+    if ($rec.Bad.Count) { Step 'msys2-acl' 'warn' "acl-grants.txt has $($rec.Bad.Count) line(s) this script did not write and they were not acted on: $($rec.Bad -join ', '). look at the file in the toolchain folder next to the PATH record" }
+    if ($stale.Count -and $Check) {
+        Step 'msys2-acl' 'warn' "$(($stale | ForEach-Object { $_.Account }) -join ', ') still has the Modify grant on $dir that an earlier run was cut off before taking back (the room remembers it in acl-grants.txt next to its PATH record). a run takes it back"
+    } elseif ($stale.Count) {
+        foreach ($g in $stale) {
+            $rops = @(New-RevertOps $g.Dir $g.Account $g.Before)
+            $rv = CCall 'cacl' @{ Ops = (ConvertTo-AclOps $rops) }
+            if ($rv.Rc -eq 0) { $null = CCall 'cstate' @{ StateDir = "$StateDir"; Mode = 'remove'; Key = "$($g.Dir)|$($g.Account)" }; Step 'msys2-acl' 'done' "took back the Modify grant for $($g.Account) on $($g.Dir) that an earlier run was cut off before taking back" }
+            else { Need 'msys2-acl' "could not take back the Modify grant for $($g.Account) that an earlier run left on $($g.Dir) ($($rv.Err)). an admin runs this" @($rops | ForEach-Object { , (@('icacls') + $_.Args) }) }
+        }
+        $p = Get-CMsys $cv
     }
     $have = $p.Kv['msys2.found'] -eq 'True'
     $k = $p.Kv
@@ -746,10 +776,13 @@ function Invoke-CMsys2 {
             } else { Step 'msys2-acl' 'ok' "$(if ($others) { "$($others -join ', ') can read it" } else { 'no other runner account to grant' }), and $user can write it" }
         } else {
             foreach ($op in $plan.Grant) {
+                # the room is told BEFORE the Modify grant, so a cut connection cannot leave one nobody knows about
+                if ($op.Why -eq 'modify') { $null = CCall 'cstate' @{ StateDir = "$StateDir"; Mode = 'add'; Key = "$dir|$($op.Account)"; Before = $plan.Before } }
                 $c = CCall 'cacl' @{ Ops = (ConvertTo-AclOps @($op)) }
+                if ($c.Rc -ne 0 -and $op.Why -eq 'modify') { $null = CCall 'cstate' @{ StateDir = "$StateDir"; Mode = 'remove'; Key = "$dir|$($op.Account)" } }
                 if ($c.Rc -eq 0) { Step 'msys2-acl' 'done' $(if ($op.Why -eq 'rx') { "granted $($op.Account) read and execute on $dir" } else { "granted $user Modify on $dir while pacman runs" }) }
                 else {
-                    Need 'msys2-acl' "icacls was refused for $($op.Account) on $dir ($($c.Err)). an admin runs this" @(Format-IcaclsCommand $op.Args)
+                    Need 'msys2-acl' "icacls was refused for $($op.Account) on $dir ($($c.Err)). an admin runs this" @(, (@('icacls') + $op.Args))
                     if ($op.Why -eq 'modify') { $failedModify = $true }
                 }
             }
@@ -758,7 +791,7 @@ function Invoke-CMsys2 {
     }
     if ($have -and $gaps.Count -and -not $Check) {
         if ($failedModify) {
-            Need 'pacman' "$user cannot write $dir and the Modify grant was refused, so pacman was not run. an admin, or the owner of $dir, runs it" @("$dir\usr\bin\bash.exe -lc `"pacman -S --needed --noconfirm $($script:CPackages -join ' ')`"")
+            Need 'pacman' "$user cannot write $dir and the Modify grant was refused, so pacman was not run. an admin, or the owner of $dir, runs it" @(, @("$dir\usr\bin\bash.exe", '-lc', "pacman -S --needed --noconfirm $($script:CPackages -join ' ')"))
         } else {
             $pc = CCall 'cpacman' @{ Msys2Dir = $dir; Init = $(if ($fresh) { '1' } else { '' }); Pkgs = ($script:CPackages -join ' ') }
             if ($pc.Rc -ne 0) { Step 'pacman' 'fail' $(if ($pc.Err) { $pc.Err } else { "pacman on $where exited $($pc.Rc)" }); Show-Tail $pc; Note-Fail 3 }
@@ -766,10 +799,10 @@ function Invoke-CMsys2 {
         }
         if ($plan.Modify -and -not $failedModify) {
             $rv = CCall 'cacl' @{ Ops = (ConvertTo-AclOps $plan.Revert) }
-            if ($rv.Rc -eq 0) { Step 'msys2-acl' 'done' "took $user's Modify on $dir back" }
-            else { Need 'msys2-acl' "could not take $user's Modify back ($($rv.Err)). an admin runs this" @($plan.Revert | ForEach-Object { Format-IcaclsCommand $_.Args }) }
+            if ($rv.Rc -eq 0) { $null = CCall 'cstate' @{ StateDir = "$StateDir"; Mode = 'remove'; Key = "$dir|$user" }; Step 'msys2-acl' 'done' "took $user's Modify on $dir back" }
+            else { Need 'msys2-acl' "could not take $user's Modify back ($($rv.Err)). an admin runs this" @($plan.Revert | ForEach-Object { , (@('icacls') + $_.Args) }) }
         }
-        $p = CCall 'cmsys' $cv; $k = $p.Kv
+        $p = Get-CMsys $cv; $k = $p.Kv
         $gaps = @(Get-CGaps $k)
     }
     if ($have -or -not $Check) {
@@ -779,7 +812,7 @@ function Invoke-CMsys2 {
         Write-CTools @{} $dir $gaps $true
     }
     if ($others) {
-        $cmds = @($others | ForEach-Object { "pwsh -File scripts\room-toolchain.ps1 $(if ($Target -match '@') { $Target -replace '^[^@]*@', "$_@" } else { "$_@$Target" }) -Profile c -Msys2Dir '$dir'" })
+        $cmds = @($others | ForEach-Object { , @('pwsh', '-File', 'scripts\room-toolchain.ps1', $(if ($Target -match '@') { $Target -replace '^[^@]*@', "$_@" } else { "$_@$Target" }), '-Profile', 'c', '-Msys2Dir', $dir) })
         Need 'runner-path' "the PATH record is per user and this run wrote it for $user only. run this as each other runner account too" $cmds
     }
     $bin = "$dir\mingw64\bin"
@@ -816,7 +849,7 @@ function Invoke-CRest {
         # identity
         if ($hasName -and $hasEmail) { Step 'git-identity' 'ok' "$($gk['git.name']) <$($gk['git.email'])> (already in the global config, left alone)" }
         elseif ($lackName -or $lackEmail) {
-            $cmds = @(); if ($lackName) { $cmds += 'git config --global user.name "Your Name"' }; if ($lackEmail) { $cmds += 'git config --global user.email "you@example.com"' }
+            $cmds = @(); if ($lackName) { $cmds += , @('git', 'config', '--global', 'user.name', 'Your Name') }; if ($lackEmail) { $cmds += , @('git', 'config', '--global', 'user.email', 'you@example.com') }
             Need 'git-identity' "no $(if ($lackName) { 'user.name' })$(if ($lackName -and $lackEmail) { ' and ' })$(if ($lackEmail) { 'user.email' }) in the global config of $($script:cUser) and none was given (-GitUserName, -GitUserEmail). this script never invents one. as that user" $cmds
         }
         else { Step 'git-identity' $(if ($Check) { 'warn' } else { 'done' }) "$(if ($Check) { 'would set' } else { 'set' }) $(@(if ($setName) { "user.name '$setName'" }; if ($setEmail) { "user.email '$setEmail'" }) -join ' and ') in the global config" }
@@ -832,7 +865,7 @@ function Invoke-CRest {
         if (-not $pub -or -not $pub.Ok) {
             Step 'git-credential' 'fail' "$helperText, but git ls-remote $($repos[0]) failed without a prompt ($($pub.Why)). the room cannot reach github.com, or git is broken"; Note-Fail 3
         } elseif ($checkUrl -and $res.Count -gt 1 -and -not $res[1].Ok) {
-            Need 'git-credential' "$helperText. public access works, but $checkUrl needs a login ($($res[1].Why)). a person runs this once in an interactive session AS $($script:cUser) on the room (a console, not ssh). it opens a browser or a device code prompt and asks for the GitHub account, and nothing is typed into this script" @('git credential-manager github login')
+            Need 'git-credential' "$helperText. public access works, but $checkUrl needs a login ($($res[1].Why)). a person runs this once in an interactive session AS $($script:cUser) on the room (a console, not ssh). it opens a browser or a device code prompt and asks for the GitHub account, and nothing is typed into this script" @(, @('git', 'credential-manager', 'github', 'login'))
         } elseif (-not $gcmOk) {
             Step 'git-credential' 'warn' "$helperText. public access works. $gcmText"
         } else {
@@ -891,7 +924,7 @@ function Invoke-CRest {
         'created' { Step 'cmake-preset' $(if ($Check) { 'warn' } else { 'done' }) "$(if ($Check) { 'would create' } else { 'created' }) $file with $($pk.added). cmake --preset cwdming" }
         'merged' { Step 'cmake-preset' $(if ($Check) { 'warn' } else { 'done' }) "$(if ($Check) { 'would add' } else { 'added' }) $($pk.added) to the existing $file$(if ($pk.kept) { ", kept $($pk.kept) as they are" }). the rest of the file is kept$(if (-not $Check) { ', the old one is next to it as CMakeUserPresets.json.atrium-bak' })" }
         'ok' { Step 'cmake-preset' 'ok' "$file already has $($pk.kept), left alone" }
-        'invalid' { Need 'cmake-preset' "$file was left alone because $($pk.why). move it aside or fix it, then run this again" @("move `"$file`" `"$file.old`"") }
+        'invalid' { Need 'cmake-preset' "$file was left alone because $($pk.why). move it aside or fix it, then run this again" @(, @('move', $file, "$file.old")) }
         default { Step 'cmake-preset' 'fail' "the preset step on $where answered '$($pk.preset)'"; Note-Fail 3 }
     }
 }
