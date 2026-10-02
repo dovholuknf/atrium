@@ -32,11 +32,13 @@ R3, built) and the queued-message step of the permission chain (built).
 - **The old rule's other reason, no loop of automatic messages, still holds.**
   - Only the meter's timer starts a check-in. No message, reply or notice ever starts one, so nothing atrium sends
     can cause another check-in.
-  - The bound per card per turn: at most 4 check-ins (levels 1 to 4), 4 facts notices, and 4 "no answer" notices
-    one step up the chain. An answer from the launcher resets the level, and needs a person or a model to act.
+  - The bound per card, between two answers from the launcher: at most 4 check-ins (levels 1 to 4), 4 facts
+    notices, and 4 "no answer" notices one step up the chain. An answer resets the level, and it takes a person or a
+    model to give one.
   - A card cannot send as `atrium`. The sender of a queued message is stamped by the daemon from the calling card
     (`atrium_say` has no sender field). The check-in mark is a column on the message, not its text. So a card that
-    writes "atrium check-in:" in a message is shown under its own name.
+    writes "atrium check-in:" in a message is shown under its own name. The worker's model reads the name in the
+    banner, not the column, so `atrium` is also reserved: no card may take it as a handle or an alias.
   - W2 rewrites the comment at `a2a.go:30-36` to say this: atrium writes to a worker only for the timed check-in,
     within this bound.
 
@@ -217,7 +219,7 @@ R3's `escalate.turn_after` (45 minutes) stays for cards without a meter: gemini,
 | stage | what | owner | size | deploy |
 | --- | --- | --- | --- | --- |
 | W0 | section 1's three checks on the room f-c-preflight ran on | @runtime | XS | none |
-| W1 | the meter in the daemon: the turn clock with waiting paused and persisted, the commit gap, uncommitted lines for cards past half the threshold, the levels, and a `meter` field on the card | @runtime | M | room |
+| W1 | the meter in the daemon: the turn clock with waiting paused and persisted, the commit gap, uncommitted lines read from 5 minutes into a turn (section 2), the levels, and a `meter` field on the card | @runtime | M | room |
 | W2 | the check-in: queued from `atrium` (a sender only the daemon can stamp), delivered at step 2, a facts notice after the worker's reply, a "no answer" notice, and the rewritten rule comment at a2a.go:30-36 | @runtime | S | room |
 | W3 | `atrium_checkin` and `allow_minutes` on `atrium_launch`, with the chain-up on no answer | @runtime | S | room and hub (MCP tool list) |
 | W4 | the board chip, tooltip and filter, which replaces U1's `turn` chip. Test: with the stuck setting at "alert", a card climbing to level 4 never rings the bell | @ui | S | hub |
