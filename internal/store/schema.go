@@ -1990,6 +1990,20 @@ var migrations = []struct {
 				'` + DefaultWalkerBrief + `', 3.0, 12, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))`,
 		},
 	},
+	{
+		// AUTOCOMPACT: how a runner is told the size at which it compacts its own
+		// context. Atrium computes the value per card from its context limit plus 10
+		// percent, so the runner's compaction is the backstop behind the new-context
+		// cycle. Backfilled for the claude row only, while still empty: claude takes
+		// `--autocompact <size>`. Nothing else is guessed at.
+		name: "0080_harness_autocompact",
+		stmts: []string{
+			`ALTER TABLE harness ADD COLUMN autocompact_args TEXT NOT NULL DEFAULT '[]'`,
+			`UPDATE harness SET autocompact_args = '["--autocompact","{autocompact}"]'
+			   WHERE id = 'claude'
+			     AND (autocompact_args IS NULL OR autocompact_args = '' OR autocompact_args = '[]')`,
+		},
+	},
 }
 
 // migrate applies any migration not already recorded. This runs before the

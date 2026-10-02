@@ -8355,3 +8355,11 @@ card, and still is.
    "dismiss this".
 
 Covered by headless units `growlOnIt` (1 to 5) and `growlActions` (6).
+
+## IC. Every claude card starts with --autocompact (r-autocompact)
+
+1. Launch a claude card with the new-context mode off. `ps` shows `--autocompact 330k` in its argv, and the card details foot reads "limit 300k · compacts at 330k".
+2. Set `auto_new_context_k` to 400, close the card and resume it. The resumed process has `--autocompact 440k`.
+3. Launch a card tagged `atrium:context-ceiling` with `context_ceiling_k` at 200: `--autocompact 220k`.
+4. A runner row with empty `autocompact_args` (codex, ollama) launches with nothing added and no refusal. A row whose args lack `{autocompact}` is refused.
+Covered by `TestAutocompactK*`, `TestCardLimitIsWhatAutoThresholdStartsFrom`, `TestTheRunnerRowSaysHowItTakesTheWindow`, `TestAResumeAndAPromptCarryTheWindow`, `TestARunnerWithoutTheFlagIsLeftAlone`, `TestAutocompactArgsMustCarryThePlaceholder`. Items 1 to 3 live: a throwaway card started with `--autocompact 330k` on the live room ran.

@@ -69,6 +69,13 @@ type Harness struct {
 	// the argument, never a list of levels. Claude takes `--effort <level>`,
 	// codex takes it as a config override.
 	EffortArgs []string `json:"effort_args"`
+	// AutocompactArgs name the size at which the runner compacts its own context, with
+	// {autocompact} where the value goes, in the form the runner reads (claude takes
+	// `--autocompact 330k`). Atrium computes the value for every card from its own context
+	// limit, so the runner's compaction is the backstop behind atrium's new context. Empty
+	// means this runner has no such flag, and nothing is passed: unlike a model, this is
+	// never asked for by a person, so a runner without it is not refused.
+	AutocompactArgs []string `json:"autocompact_args"`
 	// ModelEnv and EffortEnv name an environment variable that carries the
 	// value, for a runner that takes it that way rather than as a flag. Empty
 	// on every seeded row. A runner may map a field by args, by env or both.
@@ -151,12 +158,13 @@ func DefaultHarnesses() []Harness {
 		{
 			ID: "claude", Label: "claude code", Enabled: true, Cmd: "claude",
 			LaunchMode: LaunchPTY, Args: []string{"--strict-mcp-config"},
-			ResumeArgs:  []string{"--resume", "{resume}", "--strict-mcp-config"},
-			ExitKeys:    []string{"ctrl-d", "ctrl-d"},
-			PromptArgs:  []string{"{prompt}"},
-			ModelArgs:   []string{"--model", "{model}"},
-			EffortArgs:  []string{"--effort", "{effort}"},
-			RulesSource: "claude", Sort: 10, BracketedPaste: true, MidTurnInput: true,
+			ResumeArgs:      []string{"--resume", "{resume}", "--strict-mcp-config"},
+			ExitKeys:        []string{"ctrl-d", "ctrl-d"},
+			PromptArgs:      []string{"{prompt}"},
+			ModelArgs:       []string{"--model", "{model}"},
+			EffortArgs:      []string{"--effort", "{effort}"},
+			AutocompactArgs: []string{"--autocompact", "{autocompact}"},
+			RulesSource:     "claude", Sort: 10, BracketedPaste: true, MidTurnInput: true,
 			Package: "@anthropic-ai/claude-code",
 			Notes:   "resume needs a session id, which only a runner that reports one can supply",
 		},
@@ -215,7 +223,7 @@ func (s *Store) scanHarness(sc interface{ Scan(...any) error }) (*Harness, error
 	var (
 		h                                      Harness
 		args, env, resume, exit, prompt, model string
-		effort                                 string
+		effort, autocompact                    string
 		created                                string
 		enabled                                int
 		bracketed, midTurn                     int
@@ -223,7 +231,7 @@ func (s *Store) scanHarness(sc interface{ Scan(...any) error }) (*Harness, error
 	if err := sc.Scan(&h.ID, &h.Label, &enabled, &h.Cmd, &args, &h.Cwd, &env,
 		&h.LaunchMode, &resume, &exit, &h.Prepare, &h.RulesSource, &h.Notes,
 		&h.Sort, &created, &prompt, &model, &bracketed, &h.Package, &h.BinPath, &midTurn,
-		&effort, &h.ModelEnv, &h.EffortEnv); err != nil {
+		&effort, &h.ModelEnv, &h.EffortEnv, &autocompact); err != nil {
 		return nil, err
 	}
 	h.Enabled = enabled != 0
@@ -242,6 +250,9 @@ func (s *Store) scanHarness(sc interface{ Scan(...any) error }) (*Harness, error
 		return nil, err
 	}
 	if err := json.Unmarshal([]byte(orDefault(effort, "[]")), &h.EffortArgs); err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal([]byte(orDefault(autocompact, "[]")), &h.AutocompactArgs); err != nil {
 		return nil, err
 	}
 	if err := json.Unmarshal([]byte(orDefault(exit, "[]")), &h.ExitKeys); err != nil {
@@ -267,7 +278,7 @@ func orDefault(s, def string) string {
 const harnessColumns = `id, label, enabled, cmd, args, cwd, env, launch_mode,
 	resume_args, exit_keys, prepare, rules_source, notes, sort, created_at, prompt_args,
 	model_args, bracketed_paste, package, bin_path, mid_turn_input,
-	effort_args, model_env, effort_env`
+	effort_args, model_env, effort_env, autocompact_args`
 
 // Harnesses lists every configured runner.
 func (s *Store) Harnesses() ([]*Harness, error) {
@@ -345,6 +356,10 @@ func (s *Store) SaveHarness(h Harness) (*Harness, error) {
 	if err != nil {
 		return nil, err
 	}
+	autocompact, err := json.Marshal(orEmptySlice(h.AutocompactArgs))
+	if err != nil {
+		return nil, err
+	}
 	if h.Env == nil {
 		h.Env = map[string]string{}
 	}
@@ -380,7 +395,7 @@ func (s *Store) SaveHarness(h Harness) (*Harness, error) {
 			midTurn = 1
 		}
 		_, err = s.db.Exec(`INSERT INTO harness (`+harnessColumns+`)
-			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 			ON CONFLICT(id) DO UPDATE SET
 				label = excluded.label, enabled = excluded.enabled, cmd = excluded.cmd,
 				args = excluded.args, cwd = excluded.cwd, env = excluded.env,
@@ -393,12 +408,13 @@ func (s *Store) SaveHarness(h Harness) (*Harness, error) {
 				package = excluded.package, bin_path = excluded.bin_path,
 				mid_turn_input = excluded.mid_turn_input,
 				effort_args = excluded.effort_args, model_env = excluded.model_env,
-				effort_env = excluded.effort_env`,
+				effort_env = excluded.effort_env,
+				autocompact_args = excluded.autocompact_args`,
 			h.ID, h.Label, enabled, h.Cmd, string(args), h.Cwd, string(env),
 			h.LaunchMode, string(resume), string(exit), h.Prepare,
 			h.RulesSource, h.Notes, h.Sort, created, string(prompt), string(model),
 			bracketed, strings.TrimSpace(h.Package), strings.TrimSpace(h.BinPath), midTurn,
-			string(effort), strings.TrimSpace(h.ModelEnv), strings.TrimSpace(h.EffortEnv))
+			string(effort), strings.TrimSpace(h.ModelEnv), strings.TrimSpace(h.EffortEnv), string(autocompact))
 		return err
 	})
 	if err != nil {
