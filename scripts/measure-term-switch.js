@@ -98,7 +98,8 @@ const perHost = +opt("--per-host", 2), rounds = +opt("--rounds", 3), idsArg = op
       if (!ws) return { err: "no ws (already attached, or the click did nothing)" };
       return { ctor: ws.t0 - t0, co: ws.open ? ws.open - ws.t0 : -1, first: ws.first ? ws.first - t0 : -1,
         last: ws.last ? ws.last - t0 : -1, parsed: parsed ? parsed - t0 : -1, kb: ws.bytes / 1024,
-        url: ws.url.replace(/^wss?:\/\/[^/]+/, "").replace(/\?.*/, "") };
+        url: ws.url.replace(/^wss?:\/\/[^/]+/, "").replace(/\?.*/, ""),
+        marks: window.__switchMarks || null };
     }, { id, hover });
     if (hover) await page.mouse.move(2, 2);
     return res;
@@ -128,6 +129,21 @@ const perHost = +opt("--per-host", 2), rounds = +opt("--rounds", 3), idsArg = op
     console.log(pad(r.kind, 7) + pad(r.card, 30) + [n(r.ctor), n(r.co), n(r.first), n(r.last), n(r.parsed), n(r.kb)]
       .map((v, i) => pad(v, [6, 6, 6, 6, 7, 6][i])).join(""));
   }
+  // WHERE THE ctor TIME GOES, from the board's own marks (`swMark`, null on a board that predates them): ms from the
+  // click to each point, and the PATH the switch took: list (the card was in the board's list), list+prewarm (and a
+  // hover's fetch was taken), prewarm / get (the card was not listed, so the read was waited for), kept (a hidden
+  // terminal was shown).
+  const ms = (m, name) => { const x = (m || []).find(e => e[0] === name || e[0].startsWith(name + ":")); return x ? x[1] : -1; };
+  const pathOf = m => { const c = (m || []).find(e => e[0].startsWith("card:")); return (m || []).some(e => e[0] === "keep-show") ? "kept" : c ? c[0].slice(5) : "-"; };
+  console.log("");
+  console.log(["kind", "card", "path", "openTerm", "xterm", "webgl", "raf", "fit", "ws-new", "kept-end"].map((h, i) => pad(h, [7, 30, 14, 9, 7, 7, 6, 6, 7, 8][i])).join(""));
+  for (const r of rows) {
+    if (r.err) continue;
+    const m = r.marks;
+    console.log(pad(r.kind, 7) + pad(r.card, 30) + pad(pathOf(m), 14) +
+      ["openTerm", "xterm", "webgl", "raf", "fit", "ws-new", "keep-end"].map((k, i) => pad(n(ms(m, k)), [9, 7, 7, 6, 6, 7, 8][i])).join(""));
+  }
+  console.log("");
   const ok = rows.filter(r => !r.err);
   const med = a => { a = a.filter(v => v >= 0).sort((x, y) => x - y); return a.length ? a[a.length >> 1] : -1; };
   for (const k of ["first", "repeat", "rapid"]) {

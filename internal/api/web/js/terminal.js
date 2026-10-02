@@ -582,6 +582,18 @@ function paintTermChips(task) {
 }
 
 
+// WHERE A SWITCH SPENDS ITS TIME. `swMark` stamps a named point (relative marks are read off `window.__switchMarks`,
+// `[name, ms since attachTask began]`, and `performance.mark("atrium:<name>")` shows the same in a trace). Reset when
+// `attachTask` starts. Costs a push and a mark; nothing reads it unless asked. See scripts/measure-term-switch.js.
+let swT0 = 0;
+function swMark(name, detail) {
+  const now = performance.now();
+  if (name === "click") { swT0 = now; window.__switchMarks = []; }
+  if (!window.__switchMarks) window.__switchMarks = [];
+  window.__switchMarks.push([detail ? name + ":" + detail : name, now - swT0]);
+  try { performance.mark("atrium:" + name); } catch (e) {}
+}
+
 // ── terminals kept alive ─────────────────────────────────────────────────────
 //
 // SWITCHING TO ANOTHER TERMINAL HIDES THIS ONE, it does not tear it down. The terminal you leave stays attached with
@@ -742,6 +754,7 @@ function keepTake(task) {
 // Puts a kept terminal back on screen: the globals take its values, its element is shown, and the pane is fitted only
 // if its box is not the one it was last fitted at. Nothing is replayed.
 function keepShow(slot, task) {
+  swMark("keep-show");
   termSlotPut(slot);
   termTask = task;
   const el = term.element;
@@ -756,7 +769,9 @@ function keepShow(slot, task) {
     const size = readTermFont(task.id);
     if (term.options.fontSize !== size) { termFontSize = size; term.options.fontSize = size; term._atriumBox = ""; }
   } catch (e) {}
+  swMark("keep-theme");
   if (!term._atriumGl) useWebgl(term);
+  swMark("keep-webgl", term._atriumGl ? "on" : "off");
   clearAttachInFlight(task.id);
   attachTries = 0;
   attachSince = 0;
@@ -768,12 +783,16 @@ function keepShow(slot, task) {
   if (slot.sizeUnsent) { slot.sizeUnsent = false; sendResize(); }
   markWide();
   sizeTermHost();
+  swMark("keep-fit");
   // A runner that holds the cursor hidden between frames was left with it hidden.
   if (cursorSettleMs() && cursorWanted) term.write("\x1b[?25h");
   focusTerm();
   syncPhoneView();
+  swMark("keep-focus");
   renderTermList();
+  swMark("keep-listed");
   keepEnforce();
+  swMark("keep-end");
 }
 
 // Ends a kept terminal: the socket, the keystroke listener, the xterm and its element.
@@ -846,6 +865,7 @@ function clearTermScreen(screen) {
 }
 
 function openTerm(task) {
+  swMark("openTerm");
   if (typeof Terminal === "undefined") {
     tellUser("atrium", "the terminal library did not load");
     return;
@@ -1027,6 +1047,7 @@ function openTerm(task) {
     theme: themeFor(termTask)
   });
   paintPaneBg(themeFor(termTask));
+  swMark("xterm");
   termFit = new FitAddon.FitAddon();
   term.loadAddon(termFit);
   // The phone view (t-003b): the key bar, the pinch, and the cursor kept in
@@ -1054,6 +1075,7 @@ function openTerm(task) {
   // Before anything can write to it, so the trace starts at the first byte.
   traceTerm(term);
   useWebgl(term);
+  swMark("webgl", term._atriumGl ? "on" : "off");
   useSearch(term);
   // THESE TWO ARE IN THIS ORDER ON PURPOSE. Both linkify the terminal, and
   // xterm gives a disputed run of text to whichever provider registered first,
@@ -1275,13 +1297,17 @@ function openTerm(task) {
   const opened = term;
   requestAnimationFrame(() => {
     if (!term || term !== opened) return;
+    swMark("raf");
     fitTerm();
     // Size the host to the fitted grid so the terminal sits on the footer with
     // no remainder band above it. See `sizeTermHost`.
     sizeTermHost();
+    swMark("fit");
     connectTerm(task.id);
     renderTermList();
+    swMark("listed");
   });
+  swMark("openTerm-end");
 }
 
 function copySelection(quiet) {

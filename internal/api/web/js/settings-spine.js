@@ -858,6 +858,7 @@ async function move(status) {
 }
 
 async function attachTask(id) {
+  swMark("click");
   // Attaching is looking at it, so a new card's mark goes. See js/newcard.js.
   newCardClear(id);
   // Already in a window of its own. Raise that rather than attaching here.
@@ -900,12 +901,19 @@ async function attachTask(id) {
   // runner is never supervised, so `termCold` would add nothing here.)
   if (listed && listed.supervised) {
     const shown = Object.assign({}, listed);
-    const read = takePrewarmed(id) || api(`/v1/tasks/${id}`);
+    const warm = takePrewarmed(id);
+    swMark("card", warm ? "list+prewarm" : "list");
+    const read = warm || api(`/v1/tasks/${id}`);
     openTerm(shown);
     refreshAttachedCard(shown, read);
     return;
   }
-  try { openTerm(await (takePrewarmed(id) || api(`/v1/tasks/${id}`))); }
+  try {
+    const warm = takePrewarmed(id);
+    const card = await (warm || api(`/v1/tasks/${id}`));
+    swMark("card", warm ? "prewarm" : "get");
+    openTerm(card);
+  }
   catch (e) { toast("could not attach", e.message); }
 }
 

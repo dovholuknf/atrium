@@ -930,6 +930,7 @@ function connectTerm(taskID) {
   // The width floor is the daemon's number. Asked once per window, and a pane
   // built on the default is re-sized when it arrives.
   if (!pastePrefs) pasteSettings().then(() => fitTerm());
+  swMark("ws-new");
   termSock = new WebSocket(`${proto}//${location.host}/v1/tasks/${taskID}/attach${kind}`);
   termSock.binaryType = "arraybuffer";
   // Per socket, not per pane: a reconnect that succeeds must not leave the

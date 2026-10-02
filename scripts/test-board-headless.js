@@ -19109,6 +19109,8 @@ async function switchPrewarmSection(browser, base) {
     await wp.evaluate(() => attachTask("sp-b"));
     await idle(200);
     if (getsOf("sp-b") !== 1) fail("switchPrewarm: a click right after the rest fetched sp-b again (" + getsOf("sp-b") + " GETs, one expected).");
+    const path = await wp.evaluate(() => (window.__switchMarks.find(m => m[0].startsWith("card:")) || [""])[0]);
+    if (path !== "card:list+prewarm") fail("switchPrewarm: the click after a rest took the path " + path + ", not the card from the list with the prewarmed read.");
     await wp.mouse.move(5, 5);
     await row("sp-c").hover();
     await idle(250);
