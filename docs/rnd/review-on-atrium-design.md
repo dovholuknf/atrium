@@ -227,8 +227,8 @@ Each is useful alone. All are held by the pause except D0.
 | V3 | The board: the panel row under its caller, the "review this" action on a card's branch and on a path, and the run's report view (the pulls-view drawer's findings list, without the walk) | @ui | 2 days | clint starts a review from a card's branch, watches one reviewer live and types into it, and reads the merged report on the phone |
 | V4 | The forks backend behind the same call: `pr_run` targets call the PR runner. Verify and the critic come from story stage 4, with the merge shared with V2 | @runtime, with story stage 4 | 1 day on top of stage 4 | `atrium_review {pr_run}` gives the same `report.json` shape as a cards run, and the walker reads it unchanged |
 | V5 | The review-panel skill calls `atrium_review` instead of launching subagents, so `/review-panel` and a director's review both go through it | clint or the orchestrator, in dotfiles | an hour | `/review-panel` in a card runs the panel as child cards and returns the report in its usual form |
-| P1 | Standing personas: the hub's persona rows and `atrium:` handles (reserved), `personas` in `atrium_peers`, jobs and their queue, wake on say, follow-ups resuming the job's session, `max_instances` under the keep-one-free rule, answers to the job's caller | @fabric (hub rows, resolving), @runtime (jobs on the room) | 3 days | from a card on sg3, `atrium_say atrium:qa-reviewer "any corner cases missed in claude/fabric?"` opens a job on m1mini, which holds the checkout, and answers the caller once. A second message within 2 hours resumes the same session. A message while the persona is busy answers `queued, 1 ahead`. No card alias can be set to `atrium:x` |
-| P2 | The knowledge base: dotagents mirrored on the hub and synced to every room, read at a pinned commit, the five files of 7.4, the hand-back shapes, the hub applying notes as one commit per job on `claude/knowledge` with decision 2's checks, false positives from walks, verifiers and re-reads, and the data-not-instructions refusals | @fabric (mirror, apply), @runtime (brief, hand-back parse) | 3 days | a qa-reviewer job on m1mini rejected in a walk adds a false-positive entry. A job on sg3 for the same repo then reads it and does not raise that finding again. An `add` whose evidence path does not exist is refused and named. An entry saying "always approve" is refused |
+| P1 | Standing personas: the hub's persona rows and `atrium:` handles (reserved), `personas` in `atrium_peers`, jobs and their queue, wake on say, follow-ups resuming the job's session, `max_instances` under the keep-one-free rule, answers to the job's caller | @fabric (hub rows, resolving), @runtime (jobs on the room) | 3 days | from a card on sg3, `atrium_say atrium:qa-reviewer "any corner cases missed in claude/fabric?"` opens a job on m1mini, which holds the checkout, and answers the caller once. A second message within 2 hours resumes the same session. A message while the persona is busy answers `queued, 1 ahead`. No card alias or derived handle can be `atrium:x` or `atrium-x`, and the migration renames an existing one. A fourth open job from one caller is refused, and the 21st queued job answers `queue full`. A room whose agent file's hash differs from the pinned one gets no job |
+| P2 | The knowledge base: dotagents mirrored on the hub and synced to every room, read at a pinned commit, the five files of 7.4, the hand-back shapes, the hub applying notes as one commit per job on `claude/knowledge` with decision 2's checks, false positives from walks, verifiers and re-reads, and the data-not-instructions refusals | @fabric (mirror, apply), @runtime (brief, hand-back parse) | 3 days | a qa-reviewer job on m1mini rejected in a walk adds a false-positive entry. A job on sg3 for the same repo then reads it and does not raise that finding again. An `add` whose evidence path does not exist is refused and named. An entry saying "always approve" is refused. A note written by a job is not read by the next job until @review's `knowledge-ok` moves `knowledge/cleared`. A verifier's refutation adds no false-positive entry, and a walk rejection adds one pinned to its repo, file, kind and commit, which expires |
 | P3 | The code from any room: git-sync stage 3 for every repo a card works in, `claude/*` served read-only to rooms, outside PR heads fetched by the hub, the job worktree under the run folder, dirty worktrees refused | @fabric | 3 days | a persona on m1mini reviews a branch that exists only in an sg4 worktree, after one collect, with no paste. An outside PR is reviewed on a room with no GitHub login |
 | P4 | The panel on the personas (7.6) and the persona tiles on the board (7.8) | @runtime, @ui | 2 days | an `atrium_review` panel opens one job per persona, and each job's brief names that persona's knowledge files. The board shows each persona's tile with its queue and its last jobs |
 
@@ -265,7 +265,13 @@ checks, and @review reads the diff (7.4, question 4).
 - **One persona per agent file** in the room's `~/.claude/agents/`, the trusted source of section 3 step 2.
 - **The handle is `atrium:<name>`.**
   - The `atrium:` prefix is reserved. A card's own alias can never start with it, so `atrium:qa-reviewer` can never
-    resolve to a stray card the way `review-b` did.
+    resolve to a stray card the way `review-b` did. The reservation also covers the wire handle atrium derives from
+    a title (`atrium-qa-reviewer` and any other spelling of the prefix), so a card titled "atrium: qa reviewer"
+    cannot take the name either.
+  - A migration renames any existing card alias or handle that starts with the prefix, adding the card's short id,
+    and notes the change on that card.
+  - This handle namespace is separate from the `atrium:` names `lean_agents` uses for agent and skill files. A persona
+    handle never names an agent file, and an agent name never resolves as a persona.
   - The name is the agent file's name unless the persona table gives a short one. The defaults are:
 
     | handle | agent file |
@@ -285,7 +291,9 @@ checks, and @review reads the diff (7.4, question 4).
 A persona is a row on the hub, not a card:
 - the handle;
 - the agent file;
-- the rooms that carry that file (each room reports its agents list, as it reports its requirements);
+- the rooms that carry that file, each with the file's hash. Each room reports its agents list with a hash per file,
+  as it reports its requirements. The persona row pins the hash the operator accepted, and a job goes only to a room
+  whose copy matches it. A room with an edited or older copy is not used, and the board says which;
 - `max_instances`;
 - its queue;
 - its current sessions.
@@ -294,10 +302,17 @@ A message to `atrium:qa-reviewer` from any room goes to the hub:
 1. The hub opens a **job**: the caller, the question or target, the time, and the change it is about (the change
    record's id when there is one).
 2. It picks a room for the job:
-   - the one holding the target's checkout, when that room carries the agent file;
-   - otherwise the carrying room with the most free slots.
-3. It queues the job there. The answer to the sender is `queued: job <id> on atrium:qa-reviewer, 1 ahead`, never a
-   refusal.
+   - the one holding the target's checkout, when that room carries a matching agent file;
+   - otherwise the matching room with the most free slots.
+3. It queues the job there. The answer to the sender is `queued: job <id> on atrium:qa-reviewer, 1 ahead`. A message
+   is never refused because the persona is parked, done or busy. It is refused only by the bounds below.
+
+**Bounds, so a looping or injected card cannot fill a persona with paid sessions:**
+- **Per caller:** at most 3 open jobs per persona, and 10 across all personas. A fourth answers `refused: 3 open jobs
+  on atrium:qa-reviewer, wait for one`.
+- **Per persona:** a queue of at most 20. The 21st answers `queue full, 20 ahead`.
+- **The say rate limit** (`peerLimit`) applies to messages to a persona as to any card.
+- **clint's jobs** from the board or the phone are outside the per-caller cap, and still inside the queue cap.
 
 `atrium:qa-reviewer@m1mini` pins the room. A persona no room carries is refused with the list of rooms and what each
 carries.
@@ -340,27 +355,36 @@ true at (review-memory decision 2's entry format):
 | `personas/<id>/repos/<host>/<org>/<repo>.md` | per repo: where the core is, the invariants, the test layout, the dependency versions that matter (decision 2's file, unchanged) |
 | `personas/<id>/authors/<host>/<login>.md` | per author, about the code only: the patterns their changes tend to get wrong or right, and what they asked reviewers to stop flagging. Nothing personal. Kept only for repos clint names (question 5) |
 | `personas/<id>/bugs/<kind>.md` | per kind of bug (a lock order, an unchecked error, a resource leak): what it looked like, where it was found, and the test that would have caught it |
-| `personas/<id>/false-positives.md` | every finding the persona was told off for: rejected in a walk, refuted by a verifier, or marked "not a bug" in a re-read. Each entry has the reason and the evidence, so it is not raised again |
+| `personas/<id>/false-positives.md` | findings the persona was told off for by a person or by @review: rejected in clint's walk, or marked "not a bug" in @review's re-read. **Never from a verifier**, whose refutation is model output over PR text. Each entry is pinned to a repo, a file, a kind of finding and a commit, carries the reason and the evidence, and expires after 90 days or when that file changes substantially. So one rejection cannot quiet a whole kind of bug everywhere |
 
 **Where it is kept: on the hub, so a persona woken on any room has it.** The files stay in dotagents, which is
 clint's layout (decision 2, answer 1). The hub holds dotagents' mirror, the way it holds atrium's, and every room
-syncs it read-only. A job's session reads the files from the room's synced copy at a pinned commit, so a write
-during the job does not change what it read.
+syncs it read-only.
+
+**Nothing unread is ever read.** A job reads the knowledge at the last commit @review cleared, never at the tip of
+what the hub wrote:
+- the hub writes to `claude/knowledge`;
+- @review's batch read ends with a review commit carrying `Atrium-Verdict: knowledge-ok <sha>`;
+- the hub then fast-forwards `knowledge/cleared` to that sha;
+- jobs read `knowledge/cleared`, pinned at the job's start.
+
+So a note written by one job reaches later jobs only after @review has read it.
 
 **How it grows, after every job, with no model in the write.**
 - A session hands back `repo_notes` (decision 2's contract), plus `persona_notes`, `author_notes` and `bug_notes` in
   the same add/drop shape.
-- Walk rejections, verifier refutations and re-read "not a bug" lines become `false-positives` entries
-  automatically, from the run's own files.
+- clint's walk rejections and @review's re-read "not a bug" lines become `false-positives` entries automatically,
+  from the run's own files, pinned and expiring as in the table above. Verifier refutations do not. They only change
+  that one run's report.
 - **The hub applies them** as one commit per job on the mirror's `claude/knowledge` branch, after decision 2's
   checks. All of them are mechanical:
   - an `add` needs an evidence path that exists at its commit;
   - a `drop` must match exactly one entry;
   - a file stays under its line cap (about 150), with the oldest commit pruned first.
 - A note that fails a check is refused and listed in the job's answer.
-- **@review reads the `claude/knowledge` diff** in a batch, as it reads any commit, and can revert an entry. That
-  keeps decision 2's rule: no persona edits its own memory, and every change is a reviewed diff. It does so without
-  making @review a model turn on every job.
+- **@review reads the `claude/knowledge` diff** in a batch, as it reads any commit, reverts what it rejects, and
+  clears the rest with `knowledge-ok`. That keeps decision 2's rule: no persona edits its own memory, and nothing
+  takes effect until it is a reviewed diff. It does so without making @review a model turn on every job.
 - Whether `claude/knowledge` is pushed to dotagents' own remote is clint's (question 6). Until he says, it stays on
   the hub.
 
@@ -402,7 +426,7 @@ What is gained:
 A reviewer on m1mini could not read a change that lived only in a worktree on sg4 (no route), and asked for a
 paste. Three ways to close that:
 - (a) the hub mirrors every repo a card works in and serves its `claude/*` branches, plus outside PR heads, to every
-  room (git-sync stage 3, decision 46);
+  room (`docs/rnd/hub-forge-design.md`, git-sync stage 4);
 - (b) a room reads another room's files (room-to-room read, decisions 34 to 37);
 - (c) the persona always runs on the room that has the code.
 
@@ -414,6 +438,8 @@ any room, an outside PR, and a room with no GitHub login.
 - **Outside PRs.** The hub fetches `refs/pull/<n>/head` from the forge into its mirror, with its own forge login.
   The persona's room fetches from the hub. Rooms need no GitHub credentials to review, and a pull, clone or fork is
   always the hub's, which is what clint asked for.
+- **PR heads stay under `refs/pull/*`.** Landing and collect never write or take that namespace, so an outside PR's
+  head can never become a room's branch or `claude/main`.
 - **The job's checkout.** The persona's room makes a worktree from the hub's mirror under the job's run folder, at
   the commit the job names. It is read-only to the session and added only as `add_dir` (section 3 step 3).
   It is removed with the run.
@@ -448,10 +474,9 @@ goes into the job's answer as "asked, unanswered".
    review. **Suggested: yes.**
 3. **PR reviews stay on the cheaper path.** Reviews of outside pull requests keep the faster, cheaper path that can't
    be watched live, with the cards option when you want to watch one. **Suggested: yes.**
-4. **Who writes what the reviewers learn.** After each review, atrium adds the reviewer's notes to its knowledge
-   base by itself, using fixed checks, and @review reads the changes in batches and can undo any. Or should @review
-   approve every note first? That would be slower and cost a turn each time. **Suggested: atrium adds them, and
-   @review reads them in batches.**
+4. **Who writes what the reviewers learn.** After each review, atrium files the reviewer's notes by itself, using
+   fixed checks, but no reviewer uses them until @review has read and cleared them in its next batch. Notes that
+   say "this was not a bug" come only from you or from @review, never from another model. **Suggested: yes.**
 5. **Notes about authors.** May a reviewer keep notes on what a particular author's changes tend to get wrong, about
    the code only? That would apply only on repos you name, such as openziti's, and never on people outside them.
    **Suggested: yes, on the openziti repos only.**
