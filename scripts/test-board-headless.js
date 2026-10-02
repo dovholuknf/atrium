@@ -15845,6 +15845,39 @@ async function growlChoiceOnceSection(browser, base) {
   if (!bad) console.log("growlChoiceOnce ok");
 }
 
+async function joinedClickSection(browser, base) {
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const p = await ctx.newPage();
+  const errors = [];
+  p.on("pageerror", e => errors.push(e.message));
+  const sent = [];
+  await p.route("**/v1/tasks/jn/message", r => { sent.push(JSON.parse(r.request().postData())); r.fulfill({ json: { ok: true } }); });
+  await p.route("**/v1/tasks/jn", r => r.fulfill({ json: { id: "jn", status: "needs-input", supervised: false, title: "jn",
+    display_title: "jn", tags: [] } }));
+  try {
+    await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+    await p.waitForFunction(() => typeof joinedClick === "function" && typeof askUser === "function", null, { timeout: slow(15000) });
+    const row = await p.evaluate(() => termRow({ id: "jn", status: "needs-input", supervised: false, title: "jn", display_title: "jn", tags: [] }, false));
+    if (!/joinedClick\('jn'\)/.test(row) || /attachTask\(/.test(row)) fail("joinedClick: the joined row does not open the dialog: " + row);
+    await p.evaluate(() => { window.__opened = []; openTask = id => window.__opened.push(id); joinedClick("jn"); });
+    await p.waitForSelector("#ask[open]", { timeout: slow(5000) });
+    const btns = await p.$$eval("#ask-actions button", bs => bs.map(b => b.textContent + (b.disabled ? ":off" : "")));
+    if (btns.join() !== "cancel,end it:off,take it over:off,details,message it") fail("joinedClick: buttons are " + btns.join());
+    await p.click("#ask-actions button:has-text('details')");
+    await p.waitForFunction(() => window.__opened.length === 1, null, { timeout: slow(5000) });
+    await p.evaluate(() => { joinedClick("jn"); });
+    await p.waitForSelector("#ask[open]");
+    await p.click("#ask-actions button:has-text('message it')");
+    await p.waitForSelector("#ask-actions button:has-text('send')");
+    await p.fill("#ask input", "hello there");
+    await p.click("#ask-actions button:has-text('send')");
+    await p.waitForTimeout(300);
+    if (sent.length !== 1 || sent[0].text !== "hello there") fail("joinedClick: message was " + JSON.stringify(sent));
+    if (errors.length) fail("joinedClick: page errors: " + errors.join(" | "));
+  } finally { await ctx.close(); }
+  if (!bad) console.log("joinedClick ok");
+}
+
 async function joinedLiveSection(browser, base) {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
   const p = await ctx.newPage();
@@ -15903,7 +15936,7 @@ async function joinedLiveSection(browser, base) {
     if (!s.off.includes("jl") || s.off.includes("xd") || s.off.includes("pk2") || !s.off.includes("sv")) {
       fail("joinedLive: the strip does not list exactly the joined and supervised cards: " + JSON.stringify(s));
     }
-    if (!s.chip || s.click) fail("joinedLive: the unpinned joined row lacks its chip or still has a click: " + JSON.stringify(s));
+    if (!s.chip || s.click !== "joinedClick('jl')") fail("joinedLive: the unpinned joined row lacks its chip or does not open the joined dialog: " + JSON.stringify(s));
     if (!s.on.includes("jl") || !s.on.includes("sv")) fail("joinedLive: hide agents dropped a live row: " + JSON.stringify(s));
     if (errors.length) fail("joinedLive: page errors: " + errors.join(" | "));
   } finally { await ctx.close(); }
@@ -18284,7 +18317,7 @@ async function main() {
       gearHosts: gearHostsSection,
       mTypeSteady: mTypeSteadySection, mOlder: mOlderSection, mFollow: mFollowSection, mDocs: mDocsSection,
       mSwitcher: mSwitcherSection,
-      mPull: mPullSection, joinedLive: joinedLiveSection,
+      mPull: mPullSection, joinedLive: joinedLiveSection, joinedClick: joinedClickSection,
       coverPoll: coverPollSection, coverSteps: coverStepsSection, termBox: termBoxSection,
       termDebug: termDebugSection, termSortStarted: termSortStartedSection,
       noReadyChildren: noReadyChildrenSection, childUnderParent: childUnderParentSection, topNav: topNavSection,
@@ -20320,6 +20353,7 @@ async function main() {
     await unit("cardUrlWinName", () => cardUrlWinNameSection(browser, base));
     await unit("gearHosts", () => gearHostsSection(browser, base));
     await unit("joinedLive", () => joinedLiveSection(browser, base));
+    await unit("joinedClick", () => joinedClickSection(browser, base));
     await unit("coverPoll", () => coverPollSection(browser, base));
     await unit("coverSteps", () => coverStepsSection(browser, base));
     await unit("termBox", () => termBoxSection(browser, base));
