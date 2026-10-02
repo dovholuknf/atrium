@@ -32,10 +32,48 @@ const GROWL_SNOOZES = [["15 min", 15], ["1 h", 60], ["until tomorrow 09:00", 0]]
 
 function growlUrgency(g) { return g.urgency || GROWL_URGENCY[g.reason] || 9; }
 
+// THE GROWLER IS A SETTING, AND IT IS OFF UNLESS SWITCHED ON. Per browser, in localStorage beside the other view
+// prefs, read on every ask so every window follows a change with no message between them (the `storage` listener below
+// redraws). OFF draws nothing: no floating growler, no stack, no undo bar, no favicon dot or title flash, and no
+// growler tone. The set is still tracked and every raise, snooze and end is still logged, so the bell keeps the
+// alert and its count. Desktop notifications still follow the notify setting, and a permission request is carried
+// by the ordinary permission path (its keyed toast, tone and nag, the perms tab badge and the bell).
+const GROWLER_KEY = "atrium.growler";
+function growlOn() {
+  try { return localStorage.getItem(GROWLER_KEY) === "1"; } catch (e) { return false; }
+}
+function setGrowler(on) {
+  try {
+    if (on) localStorage.setItem(GROWLER_KEY, "1");
+    else localStorage.removeItem(GROWLER_KEY);
+  } catch (e) {}
+  growlSwitched();
+}
+// The switch moved here or in another window: put the stack and its leftovers right, and repaint the checkbox.
+function growlSwitched() {
+  if (!growlOn()) {
+    growlUndo.forEach(el => { if (el && el.dismiss) el.dismiss(); });
+    growlUndo.clear();
+    growlPhoneUndo = null;
+  }
+  growlDraw();
+  growlAttention();
+  const c = document.getElementById("s-growler");
+  if (c) c.checked = growlOn();
+}
+addEventListener("storage", e => { if (e.key === GROWLER_KEY || e.key === null) growlSwitched(); });
+addEventListener("DOMContentLoaded", () => {
+  const c = document.getElementById("s-growler");
+  if (c) c.checked = growlOn();
+});
+
 // THE BOARD DRAWS EVERY GROWLER, including a popped-out card's, because a growler is state like the card's badges.
 // A pop-out draws only its own card's. Neither switch hides one. See the design, section 7.
 function growlMine(g) { return !inPopout() || sameCard(growlCard(g), popoutCard()); }
-function growlDrawn() { return growlSet.filter(g => g.state === "open" && growlMine(g) && !growlQuiet.has(g.id)); }
+function growlDrawn() {
+  if (!growlOn()) return [];
+  return growlSet.filter(g => g.state === "open" && growlMine(g) && !growlQuiet.has(g.id));
+}
 
 // NOT DRAWN, BECAUSE YOU ARE ALREADY ON IT. A question or a blocked card raised while its own terminal is attached,
 // the tab visible and the window focused repeats what is on screen, so it is not drawn, not rung and not notified.
@@ -389,7 +427,7 @@ function growlDraw() {
 // the stack in place, at most half the window.
 function growlDrawPhone(rows, el) {
   if (!el) return;
-  const undo = growlPhoneUndo && Date.now() < growlPhoneUndo.until ? growlPhoneUndo.g : null;
+  const undo = growlOn() && growlPhoneUndo && Date.now() < growlPhoneUndo.until ? growlPhoneUndo.g : null;
   if (!rows.length && !undo) { el.hidden = true; el.innerHTML = ""; growlOpen = false; return; }
   if (!el.dataset.wired) { growlWire(el); el.dataset.wired = "1"; }
   const focused = growlFocused(el);
@@ -606,6 +644,7 @@ async function growlUndismiss(g) {
 }
 
 function growlOfferUndo(g) {
+  if (!growlOn()) return;
   if (growlDrawn().some(x => x.id === g.id)) return;
   // A phone draws no toasts, so its undo is a line in the strip for as long as a toast would live.
   if (innerWidth <= PHONE) {
@@ -678,7 +717,8 @@ function growlSay(g, kind) {
   if (kind === "remind") growlLog("growler reminder", g, extra);
   const perm = g.reason === "permission";
   const card = typeof cardRows !== "undefined" ? cardRows.get(growlCard(g)) : null;
-  alerting.play(perm ? "permission" : "waiting", card ? soundForAlert(card) : "");
+  // The tone is the growler's own, so it goes with the growler. A permission still rings through the ordinary path.
+  if (growlOn()) alerting.play(perm ? "permission" : "waiting", card ? soundForAlert(card) : "");
   alerting.notify(g.title, growlFirstLine(g.body), perm ? "perms" : "", "", "growl:" + g.id,
     growlCard(g), card ? card.icon || "" : "", "", {
       growl: { id: g.id, key: perm ? growlPermID(g) : "", onShown: n => growlNotes.set(g.id, n) }

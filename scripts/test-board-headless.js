@@ -12463,6 +12463,7 @@ async function popoutNotifySection(browser, base) {
   const errors = [];
   const ctx = await landContext(browser, true);
   await ctx.addInitScript(() => {
+    try { localStorage.setItem("atrium.growler", "1"); } catch (e) {}
     window.__osc = 0;
     window.AudioContext = class {
       constructor() { this.state = "running"; this.currentTime = 0; this.destination = {}; }
@@ -18259,7 +18260,7 @@ async function main() {
       usageCacheReads: usageCacheReadsSection, roomsDash: roomsDashSection, phoneView: phoneViewSection, heldLine: heldLineSection, u016: u016Section, phoneHeader: phoneHeaderSection, phoneFocus: phoneFocusSection, phoneTermBar: phoneTermBarSection, phoneShare: phoneShareSection, phonePan: phonePanSection, phoneFollow: phoneFollowSection, phoneTap: phoneTapSection, phoneKeyboard: phoneKeyboardSection, phoneCompose: phoneComposeSection, mCompose: mComposeSection, mPerms: mPermsSection, usagePolish: usagePolishSection, usageLimits: usageLimitsSection, usageGroups: usageGroupsSection,
       eventDriven: eventDrivenSection, idleBudget: idleBudgetSection, pollsGone: pollsGoneSection,
       phoneListFit: phoneListFitSection, phoneNudge: phoneNudgeSection,
-      growlStack: growlStackSection, growlActions: growlActionsSection, growlModal: growlModalSection, growlQuiet: growlQuietSection, growlAttention: growlAttentionSection, growlPhone: growlPhoneSection, mGrowl: mGrowlSection, growlPopout: growlPopoutSection,
+      growlStack: growlStackSection, growlActions: growlActionsSection, growlModal: growlModalSection, growlQuiet: growlQuietSection, growlAttention: growlAttentionSection, growlPhone: growlPhoneSection, mGrowl: mGrowlSection, growlPopout: growlPopoutSection, growlOff: growlOffSection,
       cacheChip: cacheChipSection, cacheLine: cacheLineSection, mHome: mHomeSection, mCard: mCardSection, mServe: mServeSection, phoneKeyLabel: phoneKeyLabelSection, phoneKeyLit: phoneKeyLitSection, shiftMenu: shiftMenuSection, notifyCommand: notifyCommandSection, presence: presenceSection, tallPty: tallPtySection, roomsMachine: roomsMachineSection, readyOnce: readyOnceSection, readyPopout: readyPopoutSection, popoutNotify: popoutNotifySection, readyTwoWindows: readyTwoWindowsSection,
       cardUrlTable: cardUrlTableSection, cardUrlClash: cardUrlClashSection, cardUrlLinks: cardUrlLinksSection, cardUrlRoom: cardUrlRoomSection, mCardUrl: (b) => mCardUrlSection(b), cardUrlNotify: cardUrlNotifySection,
       clock: clockSection,
@@ -20250,6 +20251,7 @@ async function main() {
     await unit("growlPhone", () => growlPhoneSection(browser, base));
     await unit("mGrowl", () => mGrowlSection(browser));
     await unit("growlPopout", () => growlPopoutSection(browser, base));
+    await unit("growlOff", () => growlOffSection(browser, base));
     // ── card urls: a card has an address made of names ──
     await unit("cardUrlTable", () => cardUrlTableSection(browser, base));
     await unit("cardUrlClash", () => cardUrlClashSection(browser, base));
@@ -20898,6 +20900,8 @@ async function growlBoard(browser, base, hub, init, phone) {
   const ctx = await browser.newContext(phone
     ? { viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true }
     : { viewport: { width: 1400, height: 900 } });
+  // The growler is a setting and is off by default, so every case that draws one switches it on first.
+  if (!growlBoard.off) await ctx.addInitScript(() => { try { localStorage.setItem("atrium.growler", "1"); } catch (e) {} });
   if (init) await ctx.addInitScript(init);
   const p = await ctx.newPage();
   const h = { ctx, p, errors: [], posts: [], gets: 0, decides: [], messages: [], answer: null, wasHub: hubMode };
@@ -21159,6 +21163,106 @@ async function growlModalSection(browser, base) {
     if (h.errors.length) fail("growlModal: page errors: " + h.errors.join(" | "));
   } finally { await h.close(); }
   if (!bad) console.log("growlModal ok");
+}
+
+// The growler is a setting, off by default. Off draws no growler, stack or undo bar and rings no growler tone, and
+// every alert still reaches the bell. Desktop notifications follow the notify setting. A permission request is not
+// drawn as a growler either: it is carried by the ordinary permission path, its persistent keyed toast, tone and
+// nag, the perms tab and the bell. On is the old behaviour, and a second window of the browser follows the switch.
+async function growlOffSection(browser, base) {
+  growlBoard.off = true;
+  let h;
+  try { h = await growlBoard(browser, base, true, GROWL_STUBS); } finally { growlBoard.off = false; }
+  const { p } = h;
+  const drawn = () => p.evaluate(() => !!document.getElementById("growl") || !!document.querySelector("#growl .gr-full, .gr-undo, #toasts .toast.sticky"));
+  const heard = () => p.evaluate(() => ({ osc: window.__osc, notes: window.__notes.length }));
+  const logged = t => p.evaluate(t0 => toastLog().some(e => e.title === t0), t);
+  const count = () => p.evaluate(() => toastLog().filter(e => e.at > toastLogSeen()).length);
+  const bell = () => p.evaluate(() => (document.querySelector("#toastlog-open .count") || {}).textContent || "");
+  try {
+    await p.evaluate(() => { localStorage.removeItem("atrium.toastlog"); paintToastLogBadge(); });
+    // default: off, and the checkbox says so
+    if (await p.evaluate(() => growlOn())) fail("growlOff: the growler is on by default.");
+    if (await p.evaluate(() => document.getElementById("s-growler").checked)) fail("growlOff: the settings checkbox is ticked by default.");
+    await h.say([]);
+    await p.mouse.click(700, 450);
+    await p.evaluate(() => { document.dispatchEvent(new Event("pointerdown")); alerting.set({ muted: false, desktop: true }); });
+    // blur the window so the desktop notification path is open: nobody is looking
+    await p.evaluate(() => { Document.prototype.hasFocus = () => false; window.dispatchEvent(new Event("blur")); });
+    for (const reason of ["question", "blocked"]) {
+      const before = await heard();
+      const g = GR("c", reason, 1);
+      await h.say([]);
+      await h.say([g]);
+      await p.waitForTimeout(300);
+      if (await drawn()) fail("growlOff: a " + reason + " drew a growler.");
+      if (await p.$("#growl-phone:not([hidden]) *")) fail("growlOff: a " + reason + " drew the phone strip.");
+      const after = await heard();
+      if (after.osc !== before.osc) fail("growlOff: a " + reason + " rang a growler tone.");
+      if (!(await logged("growler: " + reason + " c"))) fail("growlOff: a " + reason + " left no line in the bell log.");
+      if (await p.evaluate(() => growlMark !== "")) fail("growlOff: a " + reason + " put the growler dot on the favicon.");
+      // the existing notify setting decides the desktop notification
+      if (after.notes !== before.notes + 1) fail("growlOff: a " + reason + " raised " + (after.notes - before.notes) + " desktop notifications with notify on.");
+    }
+    if (!(await count()) || !(await bell())) fail("growlOff: the bell count did not rise: " + (await count()) + " / " + (await bell()));
+    const n0 = (await heard()).notes;
+    await p.evaluate(() => setNotifyOff(true));
+    await h.say([]);
+    await h.say([GR("c", "question", 2)]);
+    await p.waitForTimeout(300);
+    if ((await heard()).notes !== n0) fail("growlOff: a desktop notification came through with notify switched off.");
+    if (!(await logged("growler: question c"))) fail("growlOff: the held question left no log line.");
+    await p.evaluate(() => setNotifyOff(false));
+    // a reminder from the hub rings nothing and draws nothing, but keeps the desktop notification
+    const q = GR("c", "question", 3);
+    await h.say([q]);
+    const r0 = await heard();
+    await h.say([Object.assign({}, q, { reminders: 1 })], { remind: [q.id] });
+    await p.waitForTimeout(300);
+    const r1 = await heard();
+    if (await drawn() || r1.osc !== r0.osc) fail("growlOff: a hub reminder drew or rang: " + JSON.stringify([r0, r1]));
+    if (!(await logged("growler reminder: question c"))) fail("growlOff: a hub reminder was not logged.");
+    // a dismissal draws no undo bar
+    await p.evaluate(g => growlPost(g, { do: "dismiss" }, true), q);
+    await p.waitForTimeout(300);
+    if (await p.$(".gr-undo") || await p.$("#toasts .toast")) fail("growlOff: dismissing drew an undo bar or toast.");
+    // a permission: no growler, no tone from the growler, still logged, and the nag is back
+    await h.say([]);
+    const pr = GR("a", "permission", 4);
+    const b0 = await heard();
+    await h.say([pr]);
+    await p.waitForTimeout(300);
+    if (await drawn()) fail("growlOff: a permission drew a growler.");
+    if ((await heard()).osc !== b0.osc) fail("growlOff: a permission rang the growler's tone.");
+    if (!(await logged("growler: permission a"))) fail("growlOff: a permission left no log line.");
+    if (await p.evaluate(g => growlHas(g.subject), pr)) fail("growlOff: growlHas still held the permission's nag back.");
+    // on restores the old behaviour, at once, in the same window
+    await p.evaluate(() => setGrowler(true));
+    await p.waitForSelector("#growl .gr-full", { timeout: slow(3000) }).catch(() => fail("growlOff: turning it on drew no growler for the open permission."));
+    await h.say([]);
+    await h.say([GR("c", "question", 5)]);
+    await p.waitForTimeout(300);
+    if (!(await p.$("#growl .gr-full"))) fail("growlOff: on did not draw a question.");
+    await p.evaluate(() => { Document.prototype.hasFocus = () => false; });
+    await p.evaluate(() => setGrowler(false));
+    if (await drawn()) fail("growlOff: turning it off left the growler up.");
+    // a second window of the same browser follows through the storage event
+    const p2 = await h.ctx.newPage();
+    await p2.goto(base, { waitUntil: "domcontentloaded" });
+    await p2.waitForFunction(() => typeof growlDraw === "function" && document.getElementById("conn").classList.contains("live"), null, { timeout: slow(15000) });
+    await p2.waitForTimeout(500);
+    await h.say([GR("c", "question", 6)]);
+    await p2.waitForTimeout(300);
+    if (await p2.$("#growl")) fail("growlOff: the second window drew a growler while off.");
+    await p.evaluate(() => setGrowler(true));
+    await p2.waitForSelector("#growl .gr-full", { timeout: slow(4000) }).catch(() => fail("growlOff: the second window did not follow the switch on."));
+    if (!(await p2.evaluate(() => document.getElementById("s-growler").checked))) fail("growlOff: the second window's checkbox did not follow.");
+    await p.evaluate(() => setGrowler(false));
+    await p2.waitForFunction(() => !document.getElementById("growl"), null, { timeout: slow(4000) })
+      .catch(() => fail("growlOff: the second window did not follow the switch off."));
+    if (h.errors.length) fail("growlOff: page errors: " + h.errors.join(" | "));
+  } finally { await h.close(); }
+  if (!bad) console.log("growlOff ok");
 }
 
 async function growlQuietSection(browser, base) {
@@ -21461,7 +21565,7 @@ async function growlPopoutSection(browser, base) {
     const other = await open("/#term=other-card");
     const board = await open("/");
     await board.waitForTimeout(800);
-    await board.evaluate(() => localStorage.clear());
+    await board.evaluate(() => { localStorage.clear(); localStorage.setItem("atrium.growler", "1"); });
     await say([]);
     const mine = GR("land-live", "permission", 1), theirs = GR("elsewhere", "question", 2);
     await say([mine, theirs]);
