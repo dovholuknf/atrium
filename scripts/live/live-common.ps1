@@ -35,6 +35,13 @@ $RoomHealth   = 'http://127.0.0.1:7781/v1/health'
 # frozen, which is how a deadlocked room was reported healthy on 2026-09-29.
 $RoomServes   = 'http://127.0.0.1:7781/v1/settings'
 
+# The sg4-control room: a second room on this machine, for the orchestrator. Its own binary directory on purpose, so
+# Find-Atrium never matches it and a deploy of claude-sg4 never stops it. start-atrium-control.ps1 starts it.
+$CtlBinDir    = 'C:\Users\claude\.atrium\ctl-bin'
+$CtlDir       = Join-Path $Base 'ctl'
+$CtlHealth    = 'http://127.0.0.1:7791/v1/health'
+$CtlShutdown  = 'http://127.0.0.1:7791/v1/shutdown'
+
 # The exact command lines. The hub's directory flag is --atrium-dir, because `run` also takes the room's --dir.
 $HubArgs = @('run', '--no-room', '--addr', '127.0.0.1:7778', '--link', '0.0.0.0:7779',
   '--link-advertise', '192.168.1.68:7779', '--atrium-dir', $HubDir)
@@ -90,6 +97,16 @@ function Find-Atrium([ValidateSet('run', 'room')][string]$Sub) {
       ((Split-Path $_.ExecutablePath) -eq $AtriumBinDir) -and
       ((Split-Path $_.ExecutablePath -Leaf) -like 'atrium*.exe') -and
       ($_.CommandLine -match " $Sub( |$)")
+    }
+}
+
+# Find-Control finds the sg4-control room by its own binary directory and the `room` subcommand.
+function Find-Control {
+  Get-CimInstance Win32_Process |
+    Where-Object {
+      $_.ExecutablePath -and
+      ((Split-Path $_.ExecutablePath) -eq $CtlBinDir) -and
+      ($_.CommandLine -match ' room( |$)')
     }
 }
 
@@ -280,6 +297,23 @@ function Stop-Room {
       try { Wait-Process -Id $p.ProcessId -Timeout 45 -ErrorAction Stop } catch {}
       if (Get-Process -Id $p.ProcessId -ErrorAction SilentlyContinue) {
         Say 'room still up after 45s, force stop'
+        Stop-Process -Id $p.ProcessId -Force
+      }
+    }
+  }
+}
+
+# Stop-Control winds the sg4-control room down the same way Stop-Room does claude-sg4.
+function Stop-Control {
+  $ctl = Find-Control
+  if (-not $ctl) { Say 'no running sg4-control room found'; return }
+  foreach ($p in $ctl) {
+    Invoke-Step "stop sg4-control pid $($p.ProcessId): POST $CtlShutdown, wait up to 45s, then force" {
+      try { Invoke-RestMethod $CtlShutdown -Method Post -TimeoutSec 8 | Out-Null }
+      catch { Say "sg4-control shutdown post: $($_.Exception.Message)" }
+      try { Wait-Process -Id $p.ProcessId -Timeout 45 -ErrorAction Stop } catch {}
+      if (Get-Process -Id $p.ProcessId -ErrorAction SilentlyContinue) {
+        Say 'sg4-control still up after 45s, force stop'
         Stop-Process -Id $p.ProcessId -Force
       }
     }
