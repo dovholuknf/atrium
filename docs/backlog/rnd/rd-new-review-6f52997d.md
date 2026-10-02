@@ -108,3 +108,14 @@ Closed: M1, M2, M3, L1, L2
 Open: L3
 
 Verdict: OK, doc-ok 6f52997d^..ce385645. It lands alone by cherry-pick of the two, and ce0d80c2 stays held.
+
+## L3 at 576e6985 (2026-10-02): OK, doc-ok
+
+The hook and `atrium_git_push` now check `git remote get-url --push <remote>`, the URL after every `insteadOf` and
+`pushInsteadOf` rewrite. `r-new-hub-remote`'s test sets a global `pushInsteadOf` pointing elsewhere and expects a
+refusal.
+
+Closed: L3
+Open: none
+
+Verdict: OK, doc-ok 576e6985^..576e6985.
