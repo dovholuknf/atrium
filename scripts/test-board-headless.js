@@ -16889,7 +16889,9 @@ async function hubReposSection(browser, base) {
         first: rows[0] && rows[0].textContent,
         second: rows[1] && rows[1].textContent,
         branches: [...document.querySelectorAll(".hr-branch")].map(b => b.textContent),
-        released: document.querySelectorAll(".hr-released").length,
+        released: document.querySelectorAll(".hr-branch.released").length,
+        tip: !!document.querySelector(".hr-branch .hr-when[title]"),
+        unlabeled: [...document.querySelectorAll(".hr-copy")].filter(b => !b.getAttribute("aria-label")).length,
         origin: location.origin
       };
     });
@@ -16897,13 +16899,38 @@ async function hubReposSection(browser, base) {
     if (!got.copies.includes("git@hub.atrium:openziti/ziti.git") || !got.copies.includes("git@hub.atrium:gitlab.com/acme/thing.git"))
       fail("hubRepos: the ssh copy values are wrong: " + JSON.stringify(got.copies));
     if (!got.copies.includes(got.origin + "/git/hub/github/openziti/ziti.git")) fail("hubRepos: the http copy value is wrong: " + JSON.stringify(got.copies));
-    if (!/main abcdef0/.test(got.first)) fail("hubRepos: main is not shown short: " + got.first);
-    if (!/empty/.test(got.second)) fail("hubRepos: the empty repo does not say empty: " + got.second);
+    if (!/main\s*abcdef0/.test(got.first) || /abcdef012/.test(got.first)) fail("hubRepos: main is not shown short: " + got.first);
+    if (!/2 branches/.test(got.first)) fail("hubRepos: the pill does not count branches: " + got.first);
+    if (!/empty/.test(got.second) || !/Nothing pushed yet/.test(got.second) || !/git remote add hub git@hub\.atrium:gitlab\.com\/acme\/thing\.git/.test(got.second) || !/git push hub/.test(got.second))
+      fail("hubRepos: the empty repo has no how-to: " + got.second);
+    if (!got.copies.includes("git remote add hub git@hub.atrium:gitlab.com/acme/thing.git\ngit push hub <branch>")) fail("hubRepos: the how-to copy value is wrong: " + JSON.stringify(got.copies));
+    if (!got.tip) fail("hubRepos: a branch age has no exact-time tooltip");
+    if (got.unlabeled) fail("hubRepos: " + got.unlabeled + " copy buttons have no aria-label");
     if (!/fix\/x/.test(got.branches[0]) || !/sg4 c-known/.test(got.branches[0]) || !/fix the x/.test(got.branches[0]) || !/1234567/.test(got.branches[0]) || /1234567890/.test(got.branches[0]))
       fail("hubRepos: the known-card branch is wrong: " + got.branches[0]);
     if (!/sg4 c-gone/.test(got.branches[1]) || /undefined|null/.test(got.branches[1]) || !/released/.test(got.branches[1]))
       fail("hubRepos: the gone-card released branch is wrong: " + got.branches[1]);
     if (got.released !== 1) fail("hubRepos: released should be marked once, got " + got.released);
+    // Copy feedback: "copied", then back to "copy".
+    await ctx.grantPermissions(["clipboard-read", "clipboard-write"]).catch(() => {});
+    await p.evaluate(() => { window.__clip = []; navigator.clipboard.writeText = async t => { window.__clip.push(t); }; });
+    await p.click('.hr-copy[data-id="openziti/ziti#ssh"]');
+    await p.waitForFunction(() => /copied/.test(document.querySelector('.hr-copy[data-id="openziti/ziti#ssh"]').textContent), null, { timeout: slow(5000) })
+      .catch(() => fail("hubRepos: the copy button never said copied"));
+    if ((await p.evaluate(() => window.__clip))[0] !== "git@hub.atrium:openziti/ziti.git") fail("hubRepos: copy wrote the wrong text");
+    await p.waitForFunction(() => document.querySelector('.hr-copy[data-id="openziti/ziti#ssh"]').textContent.trim() === "copy", null, { timeout: slow(5000) })
+      .catch(() => fail("hubRepos: the copy button never went back to copy"));
+    // Two quick refreshes make one request: the in-flight guard.
+    let asks = 0;
+    await p.route(/\/_hub\/git\/repos$/, async r => { asks++; await new Promise(x => setTimeout(x, 300)); r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ repos }) }); });
+    await p.evaluate(() => { loadHubRepos(); loadHubRepos(); });
+    await p.waitForFunction(() => !hubRepos.inflight, null, { timeout: slow(5000) });
+    if (asks !== 1) fail("hubRepos: two quick refreshes asked " + asks + " times");
+    await p.unroute(/\/_hub\/git\/repos$/);
+    await p.route(/\/_hub\/git\/repos$/, r => {
+      if (mode === "fail") return r.fulfill({ status: 404, body: "no" });
+      r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ repos: mode === "empty" ? [] : repos }) });
+    });
     mode = "empty";
     await p.evaluate(() => { hubRepos.loaded = false; });
     await p.click("#hubrepos-refresh");
@@ -16914,6 +16941,34 @@ async function hubReposSection(browser, base) {
     if (errors.length) fail("hubRepos: page errors: " + errors.join(" | "));
   } finally { hubMode = wasHub; await ctx.close(); }
   if (!bad) console.log("hubRepos ok");
+}
+
+// The notification tray's head is one row at the tray's width and on a phone: every visible button shares one top, and
+// no button is clipped. A wrapped button reads as broken (css/notify.css).
+async function trayHeadSection(browser, base) {
+  for (const w of [1280, 390]) {
+    const ctx = await browser.newContext({ viewport: { width: w, height: 800 } });
+    const errors = [];
+    try {
+      const p = await ctx.newPage();
+      p.on("pageerror", e => errors.push(e.message));
+      await p.goto(base + "/", { waitUntil: "domcontentloaded" });
+      await p.waitForFunction(() => typeof clearToastLog === "function", null, { timeout: slow(15000) });
+      await p.evaluate(() => { document.getElementById("toastlog-phone").hidden = false; document.getElementById("toastlog").showModal(); });
+      await p.waitForTimeout(300);
+      const r = await p.evaluate(() => {
+        const head = document.querySelector("#toastlog .dlg-head"), hr = head.getBoundingClientRect();
+        const bs = [...head.querySelectorAll(":scope > button")].filter(b => b.offsetParent);
+        return { n: bs.length, tops: [...new Set(bs.map(b => Math.round(b.getBoundingClientRect().top)))],
+          clipped: bs.filter(b => b.getBoundingClientRect().right > hr.right + 1 || b.getBoundingClientRect().left < hr.left).length };
+      });
+      if (r.n < 4) fail("trayHead " + w + ": expected the buttons, got " + r.n);
+      if (r.tops.length !== 1) fail("trayHead " + w + ": the buttons wrap onto " + r.tops.length + " lines " + JSON.stringify(r.tops));
+      if (r.clipped) fail("trayHead " + w + ": " + r.clipped + " buttons run out of the head");
+      if (errors.length) fail("trayHead " + w + ": page errors: " + errors.join(" | "));
+    } finally { await ctx.close(); }
+  }
+  if (!bad) console.log("trayHead ok");
 }
 
 // One hover per row: a row carries the tooltip and no descendant repeats it.
@@ -18813,7 +18868,7 @@ async function main() {
       termDebug: termDebugSection, termSortStarted: termSortStartedSection,
       noReadyChildren: noReadyChildrenSection, childUnderParent: childUnderParentSection, topNav: topNavSection,
       childFold: childFoldSection, liveHome: liveHomeSection,
-      pulls: pullsSection, hubRepos: hubReposSection, pullsAbsent: pullsAbsentSection, oneTooltip: oneTooltipSection, burnChart: burnChartSection };
+      pulls: pullsSection, hubRepos: hubReposSection, trayHead: trayHeadSection, pullsAbsent: pullsAbsentSection, oneTooltip: oneTooltipSection, burnChart: burnChartSection };
     try {
       for (const n of process.env.HEADLESS_ONLY.split(",")) await only[n](browser, base);
     } catch (e) { fail("the headless run threw: " + (e && e.message ? e.message : e) + threwAt(e)); }
@@ -20806,6 +20861,7 @@ async function main() {
     await unit("growlOnIt", () => growlOnItSection(browser, base));
     await unit("mGrowlQuestion", () => mGrowlQuestionSection(browser));
     await unit("hubRepos", () => hubReposSection(browser, base));
+    await unit("trayHead", () => trayHeadSection(browser, base));
     await unit("bootClean", () => bootCleanSection(browser, base));
     await unit("mWorking", () => mWorkingSection(browser));
     await unit("mOwnMessages", () => mOwnMessagesSection(browser));
