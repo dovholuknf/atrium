@@ -8355,3 +8355,21 @@ card, and still is.
    "dismiss this".
 
 Covered by headless units `growlOnIt` (1 to 5) and `growlActions` (6).
+
+## IC. The growler is off by default (u-new-growler-off-bell-instead)
+
+Needs a hub with one room and a board. The setting is per browser.
+
+1. Open a fresh browser profile and the settings dialog. "show the floating growler" is not ticked.
+2. Make a card ask a question and another go blocked. No growler, stack, undo bar or growler tone, no favicon dot. The
+   bell's count rises and its log has "growler: question X" and "growler: blocked Y". With notify on and the board
+   behind another window, a desktop notification shows. Turn notifications off: none shows, the log line stays.
+3. Wait for the hub's reminder: nothing is drawn or rung, the log gets "growler reminder: ...", and the desktop
+   notification follows the notify setting.
+4. Make a card ask for permission. No growler. The ordinary permission toast shows and stays, the permission tone
+   plays, the perms tab wears its badge, and the bell counts it. The nag toasts come back on their backoff.
+5. Tick the box. The open growlers draw at once, with their tone on the next raise, and "dismiss this" offers undo. Untick it: all of it goes, an
+   undo already up included.
+6. With two board windows open, tick the box in one: the other draws and its checkbox follows. Untick: it goes.
+
+Covered by headless unit `growlOff`; the existing growler units seed the setting on.
