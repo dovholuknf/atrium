@@ -32,6 +32,13 @@
      for a form with a sentence under it. */
   #toastlog .dlg-head { flex: 0 0 auto; padding: 12px 14px; align-items: center; }
   #toastlog .dlg-head h2 { margin: 0; font-size: var(--fs-md); }
+  /* THE TITLE AND THE BUTTONS WRAP RATHER THAN OVERLAP. The head is a flex row of the title and up to five
+     buttons, and in a narrow tray the title was squeezed (`min-width: 0`) until its last letter ran under
+     "turn off". The title now keeps room for its own word and the buttons drop to a second line when the row
+     is full, so no width can put one on top of another. */
+  #toastlog .dlg-head { flex-wrap: wrap; row-gap: var(--sp-2); }
+  #toastlog .dlg-head > .grow { flex: 1 1 8.5em; }
+  #toastlog .dlg-head > button { flex: none; padding: 5px 10px; font-size: var(--fs-sm); }
   #toastlog .dlg-body { flex: 1; min-height: 0; display: flex; padding: 0; }
   .toastlog { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: auto; }
   .tlrow {
