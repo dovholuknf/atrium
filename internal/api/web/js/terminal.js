@@ -761,14 +761,16 @@ function openTerm(task) {
   syncPhoneView();
   term.onWriteParsed(() => { phoneSyncTextarea(); phoneKeepSoon(); tallFollow(); });
   term.onScroll(() => tallFollow());
-  // Erase-display with 2 or 3 keeps the page first. 3 would also wipe the
-  // scrollback, which is the history this is here to keep, so it is taken here
-  // and the page it pushed leaves the rows blank, which is all it was for.
+  // Erase-display 2 keeps the page first. 3 only clears the scrollback, which
+  // is the history this is here to keep, so it is swallowed without touching
+  // the rows: a lone 3 (`tput E3`, some tools on resize) must not blank the
+  // screen. The usual clear is 2 then 3, and the 2 has already kept the page.
   term.parser.registerCsiHandler({ final: "J" }, params => {
     const n = params[0];
-    if (n !== 2 && n !== 3) return false;
+    if (n === 3) return true;
+    if (n !== 2) return false;
     keepPage(term, false);
-    return n === 3;
+    return false;
   });
   term.open(screen);
   term.textarea.addEventListener("focus", () => { tallFollow(); requestAnimationFrame(tallFollow); });
