@@ -171,6 +171,39 @@ function termCold(t) {
 // Live but not attachable: joined from a terminal atrium does not hold.
 function termJoined(t) { return !!t && !t.supervised && !termCold(t); }
 
+// A click on a joined row asks what you want, because attaching is the one thing it cannot do. Only what the room
+// already does is live: its card and a message to it. Ending it and taking it over both need the terminal atrium
+// does not hold (exit types into it, kill stops a runner atrium started), so they are drawn grey, with the reason.
+async function joinedClick(id) {
+  let t;
+  try { t = await api(`/v1/tasks/${id}`); }
+  catch (e) { toast("could not open it", e.message); return; }
+  const pick = await askUser({
+    title: t.display_title,
+    body: "This session runs in a terminal atrium does not hold, so it cannot be attached.<br><br>" +
+      "<b>end it</b> and <b>take it over</b> are off: ending needs that terminal, and resuming here while it is " +
+      "still running there would run the conversation twice.",
+    buttons: [
+      { label: "cancel", value: null },
+      { label: "end it", value: "end", disabled: "atrium holds no terminal to ask it to exit" },
+      { label: "take it over", value: "take", disabled: "it cannot be ended from here, so it cannot be resumed here yet" },
+      { label: "details", value: "details" },
+      { label: "message it", value: "say", style: "go" }
+    ]
+  });
+  if (pick === "details") { openTask(id); return; }
+  if (pick !== "say") return;
+  const text = await askUser({ title: "message " + t.display_title, input: true,
+    body: "It is queued and reaches the session on its next tool call or when its turn ends.",
+    buttons: [{ label: "cancel", value: null }, { label: "send", value: true, style: "go" }] });
+  if (!text || !String(text).trim()) return;
+  try {
+    await api(`/v1/tasks/${id}/message`, { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: String(text).trim(), when: "done" }) });
+  } catch (e) { toast("not sent", e.message); return; }
+  toast("sent", t.display_title);
+}
+
 // Whether this session is hidden by its kind's toggle, honouring what is never
 // hidden (see `renderTermList`): the attached one, and whatever its kind's rule
 // keeps. A subagent (`isDoer`) answers to the subagents toggle, everything else
@@ -1079,11 +1112,11 @@ function termRow(t, deep, kid) {
            termCold(t) ? " cold" : ""}${wear.cls}${newCardClass(t)}"
          data-id="${t.id}"
          data-tip="${esc(hover + (termCold(t) ? "\nthis one has exited. click to start it again here"
-           : termJoined(t) ? "\njoined from your own terminal. atrium cannot attach to it" : ""))}"
+           : termJoined(t) ? "\njoined from your own terminal. atrium cannot attach to it. click for what you can do" : ""))}"
          style="${style}"
          onclick="${termCold(t)
            ? `resumePinned('${t.id}')`
-           : termJoined(t) ? "" : `attachTask('${t.id}')`}"
+           : termJoined(t) ? `joinedClick('${t.id}')` : `attachTask('${t.id}')`}"
          oncontextmenu="termMenu(event, '${t.id}')">
       <div class="card-line">
         <div class="title">
