@@ -886,3 +886,12 @@ run `go test`. `scripts/room-toolchain.ps1 <user@host|local> [-Check]` installs 
 with no admin, checks each download against the publisher sha256, and records the folders to put in front of PATH.
 It changes nothing that is already good enough and never restarts a room. See `docs/changes/fabric-1-toolchain.md`
 for how a rooms start reads the record, including the one change `provision-room.ps1` needs on Windows.
+
+`-Profile c` (default none, so nothing above changes) adds the C build toolchain for openziti/ziti-sdk-c on Windows: MSYS2
+mingw with gcc, cmake, ninja, openssl and pkgconf, its `mingw64\bin` on the PATH record, git identity and Git Credential
+Manager access, vcpkg with the `x64-mingw-static` triplet, a ziti-sdk-c checkout and a `CMakeUserPresets.json` with the
+`cwdming` preset. A step that needs a person (admin icacls, an interactive GitHub login, a git identity) is `needs-human`
+and the run ends with exit code 6 and the commands to run. The code is `scripts/room-toolchain-c.ps1`, the usage is in the
+header of `room-toolchain.ps1`, and `scripts/test-room-toolchain-c.ps1` runs the pure functions, every payload and a
+simulated Windows room on any machine with pwsh 7. See `docs/changes/f-c-toolchain.md` for what was and was not proven
+off Windows.
