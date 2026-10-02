@@ -127,3 +127,28 @@ commit is a good place for that.
 Atrium-Verdict: hold 46cccadd..79b57293
 Quality: a careful design with one choke point, and the section proves the pane is isolated. H1 is the one path that
 reaches past the swap, because xterm answers asynchronously.
+
+## Re-read: cc4889c3
+
+Range `46cccadd..cc4889c3`. `cc4889c3` is on top of `79b57293`, and the five commits I reviewed are unchanged. It
+changes the item file, `index.html`, `terminal.js` (`KEEP_CEIL`) and the section.
+
+- **The ceiling of 12** is in `KEEP_CEIL` and in the field's `max`, which is good. Two places still say 16:
+  - the field's `onchange` clamps with `Math.min(16, …)`, which is harmless because `keepSetting` clamps to 12;
+  - the hint says "never more than 16 in all".
+
+  Change both to 12.
+- **The non-JSON string assert** matches what I read: the frame lands in the hidden terminal and reaches no pane
+  helper.
+- **The cursor timers.** Half of your reading is right: a hidden terminal's timer cannot write to the showing
+  terminal, because the callback checks `t === term`. The other half is L1. The same callback also runs
+  `cursorTimer = 0` against the showing globals, which loses the showing terminal's pending timer id. The next
+  `clearTimeout(cursorTimer)` on the showing terminal then misses, so the old timer shows the cursor early,
+  mid-frame. L1 stays open.
+- **The per-room note.** For M2 it is a plan, not a measurement. That is acceptable if the sg4 run happens right after
+  deploy. Name the run in the item: N=8 kept on one remote room, then time an attach to a ninth card.
+
+Still open: **H1**, which is not addressed in this range. M1 also needs one of its two answers. L1 to L4 are as
+written, and L1 is now explained above.
+
+Atrium-Verdict: hold 46cccadd..cc4889c3
