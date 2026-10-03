@@ -17,3 +17,20 @@ Both landed OK on 3350384e. Small items, done together with the mobile CSS pass 
 - L3: the rate bars before the window start show as stubs before the curve starts. Hide them.
 
 Each fix gets an assert and, for the shape ones, a mutant.
+
+## Done
+
+- Bubbles L1: release on composer focus (the browser moves the selection into the box and selectionchange draws the held
+  reply) plus a one-minute cap (`HOLD_MAX`), which clears the selection and draws. No cue was added: the minute is short
+  and the cap needs nothing the reader must see. Asserts: both releases, and nothing drawn at 30s. Mutant: no timer fails.
+  The focus path is the browser's own selection move, so no separate handler exists to mutate.
+- Bubbles L2: the quote cuts with `Array.from`. Assert on an emoji at the boundary; mutants on both cut forms fail.
+- Bubbles L3: new case with `navigator.clipboard` undefined: copied text, "copied" feedback, no stray textarea. Mutant
+  (textarea left in) fails.
+- Bubbles L4: the hit area is 40px grown upward (`inset: -21px 0 -4px`), 4px below the button instead of 13. Assert: 40px
+  reachable, at most 5px under the button. Mutants at -13 and -10 fail.
+- Chart L1: `.ucstat b`, `b small` and `i` are in the per-skin contrast loop. Mutant (dim colour on `i`) fails on every skin.
+- Chart L2: the end label stood 4px from the line in the 2000px headless draw (no overlap there); it now stands 8px clear,
+  asserted at 2000px. Mutant at 4px fails.
+- Chart L3: rate buckets that end before the limit window starts are not drawn, nor counted in the strip's scale.
+  Assert at 2000px; mutant fails.

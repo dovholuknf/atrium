@@ -142,13 +142,13 @@
 #m-card .pull.go .pull-spin { animation: wk-turn .7s linear infinite; }
 
 /* Bubble text selects and copies natively (long-press included): nothing here turns it off. Each bubble's header ends in
-   two small actions, copy and reply. They are 14px high on screen with a 40px hit area from the ::after, and they are not
+   two small actions, copy and reply. They are 15px high on screen with a 40px hit area from the ::after, grown above the button and only 4px below it, and they are not
    part of a selection. */
 #m-card .reply, #m-card .reply .md, #m-card .reply .own, #m-card .reply pre { -webkit-user-select: text; user-select: text; }
 #m-card .rh .acts { flex: none; display: flex; margin-left: auto; }
 #m-card .rh .tag + .acts { margin-left: 6px; }
 #m-card .bact { position: relative; flex: none; min-width: 40px; height: 15px; margin: 0; padding: 0 8px; border: 0; background: none; color: var(--label); font: inherit; font-size: 11px; font-weight: 650; line-height: 15px; cursor: pointer;
   -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
-#m-card .bact::after { content: ""; position: absolute; inset: -13px 0; }
+#m-card .bact::after { content: ""; position: absolute; inset: -21px 0 -4px; }   /* 40px tall, grown upward: the text under the header is a long-press target */
 #m-card .bact.done { color: var(--head); text-decoration: underline; }
 #m-card .bact:active { opacity: .6; }

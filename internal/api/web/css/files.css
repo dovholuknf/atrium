@@ -295,7 +295,7 @@
   .ucg-cool { stop-color: rgb(var(--teal-rgb)); stop-opacity: .12; }
   .ucplot .ulresetlab, .ucplot .ulcrosslab, .ucplot .ucnowlab, .ucplot .ucpacelab { position: absolute; top: 2px; font: var(--fs-xs) var(--mono); pointer-events: none; white-space: nowrap; }
   .ucplot .ulresetlab { transform: translateX(4px); color: color-mix(in srgb, var(--teal) 45%, var(--head)); }
-  .ucplot .ulresetlab.ucend { transform: translateX(calc(-100% - 4px)); }
+  .ucplot .ulresetlab.ucend { transform: translateX(calc(-100% - 8px)); }
   .ucplot .ulresetlab[data-reset=weekly] { color: color-mix(in srgb, var(--warn) 45%, var(--head)); }
   .ucplot .ulcrosslab { top: auto; bottom: 2px; transform: translateX(-100%); color: var(--danger-text); }
   .ucplot .ucnowlab { transform: translateX(calc(-100% - 4px)); color: var(--uct); }
