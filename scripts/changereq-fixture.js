@@ -4,7 +4,7 @@
 // branches and the repos Ledger can say so.
 //
 //   const hub = require("./changereq-fixture.js")(Date.now());      hub.rows, hub.calls (what the board POSTed)
-//   await hub.route(page, { mode: "ok" | "readonly" | "offline" | "old" | "empty" })
+//   await hub.route(page, { mode: "ok" | "readonly" | "forbid" | "offline" | "old" | "empty" })
 (function () {
   const REPO = "github/openziti/ziti";
   function make(now) {
@@ -43,7 +43,8 @@
         if (state.mode === "down") return json(r, 503, { error: "hub is restarting" });
         const body = m === "POST" ? JSON.parse(req.postData() || "{}") : null;
         if (m === "POST") state.calls.push({ path: u.pathname, body });
-        if (m === "POST" && state.mode === "readonly") return json(r, 403, { error: "forbidden" });
+        if (m === "POST" && state.mode === "readonly") return json(r, 403, { error: "this link is a read-only share" });
+        if (m === "POST" && state.mode === "forbid") return json(r, 403, { error: "only the owner may withdraw this request" });
         if (u.pathname === "/_hub/git/pushed") { const b = u.searchParams.get("branch"); const x = rows.find(q => q.source.branch === b); return json(r, 200, x ? x.pushed : { state: "not-pushed" }); }
         const id = (/change-requests\/([^/]+)$/.exec(u.pathname) || [])[1];
         if (m === "GET" && !id) {

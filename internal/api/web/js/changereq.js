@@ -15,7 +15,7 @@
 // THE BOARD NEVER MERGES. There is no merge button. The one action that touches a merge is "record that it was merged", a
 // sha field the operator fills after doing it, checked as 7 to 40 hex characters here and by the hub's 409 there.
 
-const cr = { reqs: [], loaded: false, offline: false, note: "", tab: "open", sel: "", detail: {}, form: null, act: "", draft: { sha: "", note: "" }, err: "", busy: false, inflight: false };
+const cr = { reqs: [], loaded: false, offline: false, note: "", tab: "open", sel: "", detail: {}, form: null, act: "", draft: { sha: "", note: "" }, err: "", busy: false, inflight: false, again: false, run: null };
 
 const crRepoKey = r => (r.host || "github") + "/" + r.owner + "/" + r.repo;
 const crOpen = () => cr.reqs.filter(r => r.state === "open");
@@ -30,22 +30,29 @@ const crPushedPill = p => p ? crPill(crCore.PUSHED_SHORT[p.state] || p.state, cr
 
 // ---- reading -------------------------------------------------------------------------------------------------------
 
-async function crLoad() {
-  if (cr.inflight) return;
+// One list read at a time. A load asked for while one runs is not dropped and not run beside it: it runs once more when the
+// first settles, so an answer that began before a write is never the last word.
+function crLoad() {
+  if (cr.run) { cr.again = true; return cr.run; }
   cr.inflight = true;
-  try {
-    const r = await crCore.api.list({ state: "all" });
-    if (r.ok && r.body && Array.isArray(r.body.requests)) {
-      cr.reqs = r.body.requests;
-      cr.note = ""; cr.offline = false; cr.loaded = true;
-    } else {
-      cr.loaded = false;
-      cr.offline = r.offline || r.status >= 500;
-      cr.note = r.offline ? "The hub is not answering, so there is nothing to show here until it is back."
-        : r.status === 404 ? "This hub does not have change requests yet. It may be too old."
-        : "The hub would not list change requests: " + crCore.errText(r);
-    }
-  } finally { cr.inflight = false; }
+  cr.run = (async () => {
+    try { do { cr.again = false; await crLoadOnce(); } while (cr.again); }
+    finally { cr.run = null; cr.inflight = false; }
+  })();
+  return cr.run;
+}
+async function crLoadOnce() {
+  const r = await crCore.api.list({ state: "all" });
+  if (r.ok && r.body && Array.isArray(r.body.requests)) {
+    cr.reqs = r.body.requests;
+    cr.note = ""; cr.offline = false; cr.loaded = true;
+  } else {
+    cr.loaded = false;
+    cr.offline = r.offline || r.status >= 500;
+    cr.note = r.offline ? "The hub is not answering, so there is nothing to show here until it is back."
+      : r.status === 404 ? "This hub does not have change requests yet. It may be too old."
+      : "The hub would not list change requests: " + crCore.errText(r);
+  }
   if (cr.loaded && !cr.reqs.some(x => x.id === cr.sel)) cr.sel = "";
   if (cr.loaded && !cr.sel) { const first = (cr.tab === "open" ? crOpen() : crClosed())[0] || cr.reqs[0]; cr.sel = first ? first.id : ""; }
   if (cr.sel) await crDetail(cr.sel, true);
@@ -82,8 +89,8 @@ function crOperator(r) {
   const sha = cr.draft.sha.trim(), okSha = crCore.isSha(sha), dis = cr.busy ? " disabled" : "";
   const err = cr.err ? '<p class="cr-err" role="alert">' + esc(cr.err) + "</p>" : "";
   const merge = '<div class="cr-field"><label for="cr-sha">Merged at (sha)</label><div class="cr-row"><input id="cr-sha" class="cr-in mono" data-crf="sha" value="' + esc(cr.draft.sha) +
-    '" placeholder="e40a3c2" spellcheck="false" autocomplete="off" maxlength="40" aria-describedby="cr-shahint"><button type="button" class="cr-btn go" data-cr="merge-do" ' + (okSha ? "" : "disabled ") + dis.trim() + '>Record that it was merged</button></div>' +
-    '<small id="cr-shahint" class="cr-hint' + (sha && !okSha ? " bad" : "") + '">' + (sha && !okSha ? "A sha is 7 to 40 hex characters." : "Only records it. The board does not merge anything.") + "</small></div>";
+    '" placeholder="full sha, 40 hex" spellcheck="false" autocomplete="off" maxlength="64" aria-describedby="cr-shahint"><button type="button" class="cr-btn go" data-cr="merge-do" ' + (okSha ? "" : "disabled ") + dis.trim() + '>Record that it was merged</button></div>' +
+    '<small id="cr-shahint" class="cr-hint' + (sha && !okSha ? " bad" : "") + '">' + (sha && !okSha ? crCore.SHA_HINT : "Only records it. The board does not merge anything.") + "</small></div>";
   const closing = cr.act === "close"
     ? '<div class="cr-field"><label for="cr-note">Why close it (optional)</label><div class="cr-row"><input id="cr-note" class="cr-in" data-crf="note" value="' + esc(cr.draft.note) + '" maxlength="300" autocomplete="off">' +
       '<button type="button" class="cr-btn" data-cr="close-do"' + dis + '>Close request</button><button type="button" class="cr-btn quiet" data-cr="close-cancel">Cancel</button></div></div>'
@@ -104,9 +111,9 @@ function crGate(r) {
 function crEnded(r) {
   if (crCore.isOpen(r)) return "";
   const ev = r.state === "merged" ? "Recorded as merged" + (r.merged_sha ? " at " + hubReposSha(r.merged_sha) : "")
-    : r.state === "withdrawn" ? "Withdrawn by its owner" : "Closed";
+    : r.state === "withdrawn" ? "Withdrawn" : "Closed";
   const by = crWho(r.closed_by);
-  return '<section class="cr-ended ' + r.state + '"><b>' + esc(ev) + "</b><span>" + (by ? "by " + esc(by) + " " : "") + hubReposAge(r.closed_at, "hr-when") +
+  return '<section class="cr-ended ' + esc(r.state) + '"><b>' + esc(ev) + "</b><span>" + (by ? "by " + esc(by) + " " : "") + hubReposAge(r.closed_at, "hr-when") +
     (r.note ? '</span><q class="cr-note">' + esc(r.note) + "</q>" : "</span>") + "</section>";
 }
 
@@ -259,7 +266,7 @@ async function crDoAct(id, body, done) {
     hubReposPaint();
   });
 }
-async function crLoadAfter(id) { cr.sel = id; cr.inflight = false; delete cr.detail[id]; await crLoad(); }
+async function crLoadAfter(id) { cr.sel = id; delete cr.detail[id]; await crLoad(); }
 
 async function crSubmitNew() {
   const f = cr.form;
@@ -313,7 +320,7 @@ function crInput(el) {
     cr.draft.sha = v;
     const ok = crCore.isSha(v.trim()), btn = document.querySelector('[data-cr="merge-do"]'), hint = document.getElementById("cr-shahint");
     if (btn) btn.disabled = !ok || cr.busy;
-    if (hint) { hint.classList.toggle("bad", !!v.trim() && !ok); hint.textContent = v.trim() && !ok ? "A sha is 7 to 40 hex characters." : "Only records it. The board does not merge anything."; }
+    if (hint) { hint.classList.toggle("bad", !!v.trim() && !ok); hint.textContent = v.trim() && !ok ? crCore.SHA_HINT : "Only records it. The board does not merge anything."; }
   } else if (k === "note") cr.draft.note = v;
   else if (cr.form && k.startsWith("f-")) cr.form[k.slice(2)] = v;
 }

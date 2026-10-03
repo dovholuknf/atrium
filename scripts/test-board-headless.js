@@ -20273,22 +20273,23 @@ async function changeReqSection(browser, base) {
       const dis = () => p.evaluate(() => ({ off: document.querySelector('[data-cr="merge-do"]').disabled, bad: document.getElementById("cr-shahint").classList.contains("bad"), hint: document.getElementById("cr-shahint").textContent }));
       let s = await dis();
       if (!s.off) fail(tag + ": record merged is enabled with no sha");
-      for (const [v, ok] of [["xyz", false], ["e40a3c", false], ["E40A3C2", true], ["e40a3c2d00112233445566778899aabbccddeeff", true], ["e40a3cg", false]]) {
+      for (const [v, ok] of CR_SHAS) {
         await p.fill("#cr-sha", v);
         s = await dis();
         if (s.off === ok) fail(tag + ": sha " + JSON.stringify(v) + " should be " + (ok ? "accepted" : "refused"));
         if (v && !ok && !s.bad) fail(tag + ": a bad sha has no hint " + v);
+        if (v && !ok && !/full 40 \(or 64\) hex/.test(s.hint)) fail(tag + ": the hint does not say the rule " + s.hint);
       }
-      await p.fill("#cr-sha", "0000000");
+      await p.fill("#cr-sha", CR_ZERO);
       await p.click('[data-cr="merge-do"]');
       await p.waitForSelector(".cr-err");
-      if ((await text(p, ".cr-err")) !== "0000000 is not reachable from main") fail(tag + ": the server's 409 text is not shown " + await text(p, ".cr-err"));
+      if ((await text(p, ".cr-err")) !== CR_ZERO + " is not reachable from main") fail(tag + ": the server's 409 text is not shown " + await text(p, ".cr-err"));
       if (!(await p.evaluate(() => /Needs the orchestrator/.test(document.querySelector(".cr-gate").textContent)))) fail(tag + ": a refused record changed the request");
-      await p.fill("#cr-sha", "e40a3c2");
+      await p.fill("#cr-sha", CR_FULL);
       await p.click('[data-cr="merge-do"]');
       await p.waitForFunction(() => /Recorded as merged at e40a3c2/.test((document.querySelector(".cr-ended") || {}).textContent || ""));
       const post = hub.calls.filter(c => c.body.do === "merged").map(c => JSON.stringify(c.body));
-      if (post.join() !== '{"do":"merged","sha":"0000000"},{"do":"merged","sha":"e40a3c2"}') fail(tag + ": the board posted " + post);
+      if (post.join() !== '{"do":"merged","sha":"' + CR_ZERO + '"},{"do":"merged","sha":"' + CR_FULL + '"}') fail(tag + ": the board posted " + post);
       if (await p.evaluate(() => !!document.querySelector(".cr-gate"))) fail(tag + ": a merged request still has the gate");
       if (await p.evaluate(() => document.querySelectorAll('.cr-li[data-id="cr_9"]').length)) fail(tag + ": a merged request is still in the open list");
       await p.click('.cr-seg [data-tab="closed"]');
@@ -20305,7 +20306,7 @@ async function changeReqSection(browser, base) {
       await p.click('.cr-li[data-id="cr_5"]');
       await p.waitForFunction(() => /Terminator race/.test(document.querySelector(".cr-title").textContent) && /not pushed/.test(document.querySelector(".cr-detail .hr-badges").textContent));
       const w = await p.evaluate(() => ({ ended: document.querySelector(".cr-ended").textContent, line: document.querySelector(".cr-line").textContent, how: [...document.querySelectorAll(".cr-detail .cr-quiet")].map(x => x.textContent).join("|"), pill: [...document.querySelectorAll(".cr-detail .hr-badges .hr-state")].map(x => x.textContent.trim()).join() }));
-      if (!/Withdrawn by its owner/.test(w.ended) || !/never seen test\/flaky-terminator-race/.test(w.line) || !/git push hub test\/flaky-terminator-race/.test(w.how) || w.pill !== "Withdrawn,not pushed") fail(tag + ": an unseen branch reads wrong " + JSON.stringify(w));
+      if (!/Withdrawn/.test(w.ended) || /by its owner/.test(w.ended) || !/never seen test\/flaky-terminator-race/.test(w.line) || !/git push hub test\/flaky-terminator-race/.test(w.how) || w.pill !== "Withdrawn,not pushed") fail(tag + ": an unseen branch reads wrong " + JSON.stringify(w));
       if (errors.length) fail(tag + ": page errors: " + errors.join(" | "));
     } finally { await ctx.close(); }
 
@@ -20313,7 +20314,7 @@ async function changeReqSection(browser, base) {
     ({ ctx, p, errors, hub } = await crFixturePage(browser, base, {}));
     try {
       await p.click('[data-cr="withdraw"]');
-      await p.waitForFunction(() => /Withdrawn by its owner/.test((document.querySelector(".cr-ended") || {}).textContent || ""));
+      await p.waitForFunction(() => /Withdrawn/.test((document.querySelector(".cr-ended") || {}).textContent || ""));
       await p.click('.cr-seg [data-tab="open"]'); await p.click('.cr-li[data-id="cr_8"]');
       await p.waitForFunction(() => /Edge router/.test(document.querySelector(".cr-title").textContent));
       await p.click('[data-cr="close-open"]');
@@ -20393,13 +20394,61 @@ async function changeReqSection(browser, base) {
     try {
       const mk = await p.evaluate(() => ({ on: crCore.mockOn(), n: document.querySelectorAll(".cr-li").length, t: document.querySelector(".cr-title").textContent }));
       if (!mk.on || mk.n !== 3 || !/Hub receives pushes/.test(mk.t)) fail(tag + ": the mock layer did not serve the view " + JSON.stringify(mk));
-      await p.fill("#cr-sha", "0000000"); await p.click('[data-cr="merge-do"]'); await p.waitForSelector(".cr-err");
+      await p.fill("#cr-sha", CR_ZERO); await p.click('[data-cr="merge-do"]'); await p.waitForSelector(".cr-err");
       if (!/not reachable from main/.test(await text(p, ".cr-err"))) fail(tag + ": the mock does not follow the draft's 409");
     } finally { await ctx.close(); }
     ({ ctx, p, errors } = await crFixturePage(browser, base, { noHub: true, mode: "ok" }));
     try {
       if (await p.evaluate(() => crCore.mockOn())) fail(tag + ": the mock is on without being asked");
       if (!/hub is not answering|does not have change requests|would not list/.test(await text(p, "#hubrepos-list"))) fail(tag + ": with the mock off and no hub the view shows rows: " + (await text(p, "#hubrepos-list")).slice(0, 120));
+    } finally { await ctx.close(); }
+
+    // a state word from the hub is not markup either (it lands in a class name)
+    ({ ctx, p, errors } = await crFixturePage(browser, base, { mutate: h => { h.rows.find(r => r.id === "cr_6").state = 'merged" data-x="1'; } }));
+    try {
+      await p.click('.cr-seg [data-tab="closed"]');
+      await p.click('.cr-li[data-id="cr_6"]');
+      await p.waitForFunction(() => document.querySelector(".cr-ended"));
+      if (await p.evaluate(() => !!document.querySelector(".cr-ended[data-x]"))) fail(tag + ": a state word became an attribute");
+    } finally { await ctx.close(); }
+
+    // ---- the mock says it is on, and only the URL turns it on --------------------------------------------------------------
+    ({ ctx, p, errors } = await crFixturePage(browser, base, { noHub: true, query: "?crmock=1" }));
+    try {
+      const bn = await p.evaluate(() => { const b = document.getElementById("cr-mockbar"); const r = b && b.getBoundingClientRect(); return b ? { t: b.textContent, pos: getComputedStyle(b).position, vis: r.width > 100 && r.height > 10, btn: !!b.querySelector("button") } : null; });
+      if (!bn || !/Mock data: nothing here reaches the hub/.test(bn.t) || bn.pos !== "fixed" || !bn.vis || !bn.btn) fail(tag + ": the mock is on without a banner " + JSON.stringify(bn));
+      await p.click("#cr-mockbar button");
+      await p.waitForFunction(() => !/crmock/.test(location.search) && !document.getElementById("cr-mockbar"), null, { timeout: slow(8000) });
+      if (await p.evaluate(() => crCore.mockOn())) fail(tag + ": turn off left the mock on");
+    } finally { await ctx.close(); }
+    ({ ctx, p, errors } = await crFixturePage(browser, base, { noHub: true }));
+    try {
+      if (await p.evaluate(() => !!document.getElementById("cr-mockbar"))) fail(tag + ": a banner with the mock off");
+      // the old localStorage switch is not honoured: a reload without the parameter is live
+      await p.evaluate(() => localStorage.setItem("atrium.crMock", "1"));
+      await p.reload({ waitUntil: "domcontentloaded" });
+      await p.waitForTimeout(300);
+      if (await p.evaluate(() => crCore.mockOn() || !!document.getElementById("cr-mockbar"))) fail(tag + ": localStorage still turns the mock on");
+    } finally { await ctx.close(); }
+
+    // ---- a 403 that is the action's own is an error, not a read-only board; one list read at a time -------------------------
+    ({ ctx, p, errors } = await crFixturePage(browser, base, { mode: "forbid" }));
+    try {
+      await p.click('[data-cr="withdraw"]');
+      await p.waitForSelector(".cr-err");
+      const fb = await p.evaluate(() => ({ err: document.querySelector(".cr-err").textContent, ro: !!document.querySelector(".cr-ro"), flag: crCore.state.readOnly, withdraw: !!document.querySelector('[data-cr="withdraw"]') }));
+      if (fb.err !== "only the owner may withdraw this request" || fb.ro || fb.flag || !fb.withdraw) fail(tag + ": an action's own 403 hid the page's actions " + JSON.stringify(fb));
+    } finally { await ctx.close(); }
+    ({ ctx, p, errors } = await crFixturePage(browser, base, {}));
+    try {
+      const lr = await p.evaluate(async () => {
+        const f = window.fetch; let now = 0, max = 0, n = 0;
+        window.fetch = function (u) { const lst = /change-requests\?/.test(String(u)); if (lst) { now++; n++; max = Math.max(max, now); } return f.apply(this, arguments).finally(() => { if (lst) now--; }); };
+        await Promise.all([crLoad(), crLoad(), crLoad()]);
+        window.fetch = f;
+        return { max, n, run: cr.run, inflight: cr.inflight };
+      });
+      if (lr.max !== 1 || lr.n !== 2 || lr.run || lr.inflight) fail(tag + ": list reads overlap or are not settled " + JSON.stringify(lr));
     } finally { await ctx.close(); }
 
     // ---- the phone's width ------------------------------------------------------------------------------------------------
@@ -20551,19 +20600,19 @@ async function mChangeReqSection(browser) {
         // the sha check, the server's 409, a record
         const dis = () => p.evaluate(() => ({ off: [...document.querySelectorAll(".crm-btn.go")].pop().disabled, bad: document.getElementById("crm-shahint").classList.contains("bad") }));
         if (!(await dis()).off) fail(tag + "record merged is enabled with no sha");
-        for (const [v, ok] of [["xyz", false], ["e40a3c", false], ["E40A3C2", true], ["e40a3cg", false]]) {
+        for (const [v, ok] of CR_SHAS) {
           await p.fill("#crm-sha", v);
           const d = await dis();
           if (d.off === ok || (v && !ok && !d.bad)) fail(tag + "sha " + v + " should be " + (ok ? "accepted" : "refused") + " with a hint " + JSON.stringify(d));
         }
-        await p.fill("#crm-sha", "0000000");
+        await p.fill("#crm-sha", CR_ZERO);
         await p.tap(".crm-gate .crm-btn.go");
         await p.waitForSelector(".crm-err");
-        if ((await text0(p, ".crm-err")) !== "0000000 is not reachable from main") fail(tag + "the 409 text is not shown: " + await text0(p, ".crm-err"));
-        await p.fill("#crm-sha", "e40a3c2");
+        if ((await text0(p, ".crm-err")) !== CR_ZERO + " is not reachable from main") fail(tag + "the 409 text is not shown: " + await text0(p, ".crm-err"));
+        await p.fill("#crm-sha", CR_FULL);
         await p.tap(".crm-gate .crm-btn.go");
         await p.waitForFunction(() => /Recorded as merged at e40a3c2/.test((document.querySelector(".crm-ended") || {}).textContent || ""));
-        if (hub.calls.filter(c => c.body.do === "merged").map(c => c.body.sha).join() !== "0000000,e40a3c2") fail(tag + "posted " + JSON.stringify(hub.calls.map(c => c.body)));
+        if (hub.calls.filter(c => c.body.do === "merged").map(c => c.body.sha).join() !== CR_ZERO + "," + CR_FULL) fail(tag + "posted " + JSON.stringify(hub.calls.map(c => c.body)));
         // back is history: the page goes to the list, the list closes the sheet
         await p.evaluate(() => history.back());
         await p.waitForSelector(".crm-list");
@@ -20578,7 +20627,7 @@ async function mChangeReqSection(browser) {
         await p.tap('.crm-li[data-id="cr_5"]');
         await p.waitForFunction(() => /not pushed/.test((document.querySelector(".crm-badges") || {}).textContent || ""));
         const w = await p.evaluate(() => ({ ended: document.querySelector(".crm-ended").textContent, line: document.querySelector(".crm-line").textContent, how: document.querySelector(".crm-panel .crm-note, .crm-panel .crm-quiet") && [...document.querySelectorAll(".crm-note")].map(x => x.textContent).join("|") }));
-        if (!/Withdrawn by its owner/.test(w.ended) || !/never seen test\/flaky-terminator-race/.test(w.line) || !/git push hub test\/flaky-terminator-race/.test(w.how)) fail(tag + "an unseen branch reads wrong " + JSON.stringify(w));
+        if (!/Withdrawn/.test(w.ended) || !/never seen test\/flaky-terminator-race/.test(w.line) || !/git push hub test\/flaky-terminator-race/.test(w.how)) fail(tag + "an unseen branch reads wrong " + JSON.stringify(w));
         if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
       } finally { await ctx.close(); }
 
@@ -20588,7 +20637,7 @@ async function mChangeReqSection(browser) {
         await p.tap("#m-req-btn"); await p.waitForSelector(".crm-list");
         await p.tap('.crm-li[data-id="cr_9"]'); await p.waitForSelector(".crm-gate");
         await p.tap(".crm-acts .crm-btn:nth-child(1)");
-        await p.waitForFunction(() => /Withdrawn by its owner/.test((document.querySelector(".crm-ended") || {}).textContent || ""));
+        await p.waitForFunction(() => /Withdrawn/.test((document.querySelector(".crm-ended") || {}).textContent || ""));
         await p.evaluate(() => history.back());
         await p.tap('.crm-li[data-id="cr_8"]'); await p.waitForSelector(".crm-gate");
         await p.tap(".crm-acts .crm-btn:nth-child(2)");
@@ -20611,6 +20660,31 @@ async function mChangeReqSection(browser) {
         await p.evaluate(() => history.back());
         await p.waitForSelector(".crm-list");
         if (await p.$(".crm-bar .crm-btn")) fail(tag + "a read-only board offers to open a request");
+      } finally { await ctx.close(); }
+
+      // the mock says it is on, and only the URL turns it on
+      ({ ctx, p } = await mChangeReqPage(browser, st, vp, { query: "?crmock=1" }));
+      try {
+        const bn = await p.evaluate(() => { const b = document.getElementById("cr-mockbar"); const r = b && b.getBoundingClientRect(); return b ? { t: b.textContent, pos: getComputedStyle(b).position, vis: r.width > 100 && r.height > 10 } : null; });
+        if (!bn || !/Mock data: nothing here reaches the hub/.test(bn.t) || bn.pos !== "fixed" || !bn.vis) fail(tag + "the mock is on without a banner " + JSON.stringify(bn));
+      } finally { await ctx.close(); }
+      ({ ctx, p } = await mChangeReqPage(browser, st, vp, {}));
+      try {
+        if (await p.evaluate(() => !!document.getElementById("cr-mockbar"))) fail(tag + "a banner with the mock off");
+        await p.evaluate(() => localStorage.setItem("atrium.crMock", "1"));
+        await p.reload({ waitUntil: "domcontentloaded" }); await p.waitForTimeout(400);
+        if (await p.evaluate(() => crCore.mockOn() || !!document.getElementById("cr-mockbar"))) fail(tag + "localStorage still turns the mock on");
+      } finally { await ctx.close(); }
+
+      // a 403 that is the action's own is shown as its error and the page stays writable
+      ({ ctx, p } = await mChangeReqPage(browser, st, vp, { mode: "forbid" }));
+      try {
+        await p.tap("#m-req-btn"); await p.waitForSelector(".crm-list");
+        await p.tap('.crm-li[data-id="cr_9"]'); await p.waitForSelector(".crm-gate");
+        await p.tap(".crm-acts .crm-btn:nth-child(1)");
+        await p.waitForSelector(".crm-err");
+        const fb = await p.evaluate(() => ({ err: document.querySelector(".crm-err").textContent, ro: !!document.querySelector(".crm-ro"), acts: !!document.querySelector(".crm-acts") }));
+        if (fb.err !== "only the owner may withdraw this request" || fb.ro || !fb.acts) fail(tag + "an action's own 403 hid the actions " + JSON.stringify(fb));
       } finally { await ctx.close(); }
 
       // empty, and the doors that stay shut
@@ -20683,7 +20757,7 @@ async function mChangeReqSection(browser) {
         bad = await crInkCheck(p, skins, list, 390);
         await p.tap('.crm-li[data-id="cr_9"]'); await p.waitForFunction(() => /hub head matches/.test(document.querySelector(".crm-badges").textContent));
         const page = [".crm-crumb", ".crm-ttl", ".crm-badges .crm-pill", ".crm-end small", ".crm-gate > b", ".crm-gate > span", ".crm-steps li", ".crm-field label", ".crm-hint", ".crm-gate .crm-btn.go", ".crm-panel h3", ".crm-why", ".crm-line", ".crm-kv dt", ".crm-kv dd", ".crm-tl li span", ".crm-lane .crm-br"];
-        bad = bad.concat(await crInkCheck(p, skins, page, 390, () => p.fill("#crm-sha", "e40a3c2")));
+        bad = bad.concat(await crInkCheck(p, skins, page, 390, () => p.fill("#crm-sha", CR_FULL)));
       } finally { await ctx.close(); }
       if (process.env.CR_CONTRAST) console.log(bad.join("\n"));
       if (bad.length) fail(tag0 + ": text under 4.5:1 on " + bad.length + " pairs: " + bad.slice(0, 14).join("; "));
@@ -20754,6 +20828,9 @@ async function mCrShots(browser, st) {
   }
 }
 
+// The sha forms: the hub's ValidSHA, a full 40 (sha-1) or 64 (sha-256) hex, either case; nothing shorter or longer.
+const CR_FULL = "e40a3c2d00112233445566778899aabbccddeeff", CR_ZERO = "0".repeat(40), CR_64 = "ab".repeat(32);
+const CR_SHAS = [["xyz", false], ["e40a3c2", false], [CR_FULL.slice(1), false], [CR_FULL + "0", false], [CR_FULL.replace("e", "g"), false], [CR_FULL.toUpperCase(), true], [CR_FULL, true], [CR_64, true], [CR_64.slice(1), false]];
 const text0 = (p, sel) => p.evaluate(s => (document.querySelector(s) || {}).textContent || "", sel);
 
 async function main() {

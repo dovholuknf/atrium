@@ -1,6 +1,6 @@
 // A stand-in for @fabric's stage 5 change-request routes, for building the board before the hub has them. ONE FILE, SWAPPABLE:
-// delete it, and the `crMock` lines in changereq-core.js, once the hub answers. It is used only when asked (`?crmock=1`, or
-// `localStorage["atrium.crMock"] = "1"`), never silently, so a real board never shows these rows as if they were real.
+// delete it, and the `crMock` lines in changereq-core.js, once the hub answers. It is used only when the URL asks (`?crmock=1`;
+// a fixed banner says so), for that load alone, never silently, so a real board never shows these rows as if they were real.
 //
 // It follows the draft and adds nothing to it: the object shape, the 201/400/404/409 on create, `merged` for the operator
 // with a 409 when the sha is not reachable from the target, and `pushed` on a single request. State lives in this page only.
@@ -96,7 +96,7 @@
       if (d === "close") stamp("closed", { note: (body.note || "").slice(0, 300) });
       else if (d === "withdraw") stamp("withdrawn");
       else if (d === "merged") {
-        if (!/^[0-9a-f]{7,40}$/i.test(body.sha || "")) return Promise.resolve(res(400, { error: "sha must be 7 to 40 hex characters" }));
+        if (!/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i.test(body.sha || "")) return Promise.resolve(res(400, { error: "sha must be 40 or 64 hex characters" }));
         if (/^0+$/.test(body.sha)) return Promise.resolve(res(409, { error: body.sha + " is not reachable from " + r.target.branch + " on the hub" }));
         stamp("merged", { merged_sha: body.sha });
       } else return Promise.resolve(res(400, { error: "unknown do " + d }));

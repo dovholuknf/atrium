@@ -71,3 +71,7 @@
 .crm-tl li.merged:before { background: var(--blue, #28c2ff); } .crm-tl li.closed:before, .crm-tl li.withdrawn:before { background: var(--dim, #5e819c); } .crm-tl b { color: var(--head, #f2f8ff); }
 .crm-empty { display: flex; flex-direction: column; gap: 8px; }
 .docsbtn em { font-style: normal; margin-left: 6px; padding: 1px 7px; border-radius: 999px; background: color-mix(in srgb, var(--warn, #ffc64d) 28%, transparent); color: var(--head, #f2f8ff); }
+
+/* Mock banner: fixed, in the warn tone, only while the URL has turned the mock on. */
+.cr-mockbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 9999; display: flex; align-items: center; justify-content: center; gap: 12px; padding: 8px 12px calc(8px + env(safe-area-inset-bottom, 0px)); background: var(--card-0, #0e1b2a); color: var(--head, #f2f8ff); border-top: 3px solid var(--warn, #ffc64d); font: 600 13px/1.3 var(--sans, system-ui, sans-serif); }
+.cr-mockbar button { font: inherit; color: var(--head, #f2f8ff); background: transparent; border: 1px solid var(--warn, #ffc64d); border-radius: 6px; padding: 4px 10px; cursor: pointer; }

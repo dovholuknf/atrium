@@ -190,7 +190,7 @@
     if (!C.isOpen(r)) {
       const e = el("section", "crm-ended " + r.state);
       const by = r.closed_by ? (r.closed_by.card === "operator" ? "the operator" : ((r.closed_by.room || "") + " " + (r.closed_by.card || "")).trim()) : "";
-      e.appendChild(el("b", "", r.state === "merged" ? "Recorded as merged" + (r.merged_sha ? " at " + C.sha7(r.merged_sha) : "") : r.state === "withdrawn" ? "Withdrawn by its owner" : "Closed"));
+      e.appendChild(el("b", "", r.state === "merged" ? "Recorded as merged" + (r.merged_sha ? " at " + C.sha7(r.merged_sha) : "") : r.state === "withdrawn" ? "Withdrawn" : "Closed"));
       e.appendChild(el("span", "", (by ? "by " + by + " " : "") + age(r.closed_at)));
       if (r.note) e.appendChild(el("q", "crm-quote", r.note));
       root.appendChild(e);
@@ -229,11 +229,11 @@
     const f = el("div", "crm-field");
     const lab = el("label", "", "Merged at (sha)"); lab.htmlFor = "crm-sha";
     const row = el("div", "crm-row");
-    const inp = el("input", "crm-in mono"); inp.id = "crm-sha"; inp.value = st.draft.sha; inp.placeholder = "e40a3c2"; inp.maxLength = 40; inp.autocomplete = "off"; inp.spellcheck = false; inp.setAttribute("aria-describedby", "crm-shahint");
+    const inp = el("input", "crm-in mono"); inp.id = "crm-sha"; inp.value = st.draft.sha; inp.placeholder = "full sha, 40 hex"; inp.maxLength = 64; inp.autocomplete = "off"; inp.spellcheck = false; inp.setAttribute("aria-describedby", "crm-shahint");
     inp.setAttribute("autocapitalize", "off");
     const go = btn("Record that it was merged", () => doAct(r.id, { do: "merged", sha: st.draft.sha.trim() }), "go");
     const hint = el("small", "crm-hint", "Only records it. The board does not merge anything."); hint.id = "crm-shahint";
-    const sync = () => { const v = inp.value.trim(), ok = C.isSha(v); go.disabled = !ok || st.busy; hint.classList.toggle("bad", !!v && !ok); hint.textContent = v && !ok ? "A sha is 7 to 40 hex characters." : "Only records it. The board does not merge anything."; };
+    const sync = () => { const v = inp.value.trim(), ok = C.isSha(v); go.disabled = !ok || st.busy; hint.classList.toggle("bad", !!v && !ok); hint.textContent = v && !ok ? C.SHA_HINT : "Only records it. The board does not merge anything."; };
     inp.addEventListener("input", () => { st.draft.sha = inp.value; sync(); });
     sync();
     row.append(inp, go); f.append(lab, row, hint); g.appendChild(f);

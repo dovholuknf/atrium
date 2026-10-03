@@ -3,8 +3,8 @@
 //
 // THE HUB'S SIDE IS A DRAFT (@fabric's stage 5 shape) and live data only exists after a hub deploy. Every call here goes
 // through `call`, which answers from `window.crMock` (js/changereq-mock.js) when the mock is on and from the hub when it is
-// not. The mock is ON only when asked: `?crmock=1` on the page, or `localStorage["atrium.crMock"] = "1"`. Swapping it out is
-// deleting that file and the `crMock` lines in `call`. Nothing here invents behaviour the draft does not name.
+// not. The mock is ON only when the URL asks (`?crmock=1`), for that load alone, and a fixed banner says so for as long as it
+// is on. Swapping it out is deleting that file and the `crMock` lines in `call`. Nothing here invents behaviour the draft does not name.
 //
 //   GET  /_hub/change-requests?state=open|closed|all&room=&target=&repo=   -> { requests: [...] }
 //   GET  /_hub/change-requests/<id>                                       -> the request plus `pushed`
@@ -17,15 +17,33 @@
 (function () {
   "use strict";
 
-  const MOCK_KEY = "atrium.crMock";
-  const SHA_RE = /^[0-9a-f]{7,40}$/i;
+  // The hub's ValidSHA: a full sha, 40 hex (sha-1) or 64 (sha-256). The board agrees with the hub, not a looser rule.
+  const SHA_RE = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i;
+  const SHA_HINT = "A sha is the full 40 (or 64) hex characters.";
 
+  // Only the URL turns the mock on, and only for that load: nothing is remembered, so a reload without the parameter is live.
   function mockOn() {
-    try {
-      if (/[?&]crmock=1(&|$)/.test(location.search)) return true;
-      return localStorage.getItem(MOCK_KEY) === "1";
-    } catch (e) { return false; }
+    try { return /[?&]crmock=1(&|$)/.test(location.search); } catch (e) { return false; }
   }
+  // Leaves the mock: the same page without the parameter.
+  function mockOff() {
+    try {
+      const u = new URL(location.href);
+      u.searchParams.delete("crmock");
+      location.assign(u.toString());
+    } catch (e) {}
+  }
+  // While the mock is on, a banner says nothing here reaches the hub. It sits on every page that loads this file.
+  function mockBanner() {
+    if (!mockOn() || document.getElementById("cr-mockbar")) return;
+    const bar = document.createElement("div");
+    bar.id = "cr-mockbar"; bar.className = "cr-mockbar"; bar.setAttribute("role", "status");
+    const t = document.createElement("span"); t.textContent = "Mock data: nothing here reaches the hub.";
+    const b = document.createElement("button"); b.type = "button"; b.textContent = "Turn off"; b.addEventListener("click", mockOff);
+    bar.appendChild(t); bar.appendChild(b);
+    document.body.appendChild(bar);
+  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", mockBanner); else mockBanner();
 
   // { ok, status, body, text, offline }. A thrown fetch is `offline`: the hub is not answering at all.
   async function call(method, path, body) {
@@ -48,12 +66,14 @@
     return s.slice(0, 300) || (r && r.status ? "the hub answered " + r.status : "the hub did not answer");
   }
 
-  // Writes are the operator's. A refused write (401 or 403) is how a read-only view is known, and it stays known for this
-  // page, so the buttons go and a line says why. See `readOnlyLine`.
+  // Writes are the operator's. A 401, or a 403 whose own words say the board is read-only, is how a read-only view is known,
+  // and it stays known for this page, so the buttons go and a line says why. Any other 403 belongs to that action (a withdraw
+  // by someone who is not the owner, say) and is shown as its error. See `readOnlyLine`.
   const state = { readOnly: false };
   const listeners = [];
+  const readOnlyWords = r => /read[- ]only|public share|share/i.test(errText(r));
   function noteWrite(r) {
-    if (r && (r.status === 401 || r.status === 403) && !state.readOnly) {
+    if (r && (r.status === 401 || (r.status === 403 && readOnlyWords(r))) && !state.readOnly) {
       state.readOnly = true;
       listeners.forEach(f => { try { f(); } catch (e) {} });
     }
@@ -128,7 +148,7 @@
   function recordLines(r) { return mockOn() && window.crMock ? window.crMock.record(r) : null; }
 
   window.crCore = {
-    mockOn, call, api, errText, state, readOnlyLine, onReadOnly: f => listeners.push(f),
+    mockOn, mockOff, mockBanner, SHA_HINT, call, api, errText, state, readOnlyLine, onReadOnly: f => listeners.push(f),
     STATE, STATE_TONE, PUSHED_TONE, PUSHED_SHORT, sha7, isSha, repoShort, needsOperator, isOpen, sourceLabel, sourceRoom,
     pushedLine, notPushedHow, timeline, byTarget, recordLines,
   };
