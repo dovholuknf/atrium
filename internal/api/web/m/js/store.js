@@ -86,6 +86,10 @@
   }
 
   // ── reads ────────────────────────────────────────────────────────────────
+  // A read that failed is tried again on a backoff while the page is in front. Right after a hub restart the stream can be
+  // up before the room answers, and the one read the stream opening asks for would otherwise stand for the 60s resync.
+  let readFails = 0;
+  const readRetryMs = () => Math.min(1000 * Math.pow(2, Math.max(0, readFails - 1)), 15000);
   let tasksTimer = 0, tasksBusy = false, tasksAgain = false;
   function tasksSoon(ms) {
     clearTimeout(tasksTimer);
@@ -101,8 +105,13 @@
       cards.clear();
       next.forEach((v, k) => cards.set(k, v));
       loaded = true;
+      readFails = 0;
       mark("cards");
-    } catch (e) { /* keep what is held. the next event or resync tries again */ }
+    } catch (e) {
+      // Keep what is held, and ask again soon.
+      readFails++;
+      if (document.visibilityState === "visible") tasksSoon(readRetryMs());
+    }
     tasksBusy = false;
     if (tasksAgain) { tasksAgain = false; tasksSoon(); }
   }
@@ -119,7 +128,10 @@
       const r = await api("/v1/permissions");
       perms = (r && r.permissions) || [];
       mark("perms");
-    } catch (e) {}
+    } catch (e) {
+      readFails++;
+      if (document.visibilityState === "visible") permsSoon(readRetryMs());
+    }
     permsBusy = false;
     if (permsAgain) { permsAgain = false; permsSoon(); }
   }

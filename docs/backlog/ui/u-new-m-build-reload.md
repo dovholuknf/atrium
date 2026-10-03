@@ -39,3 +39,28 @@ rules:
 - Mutants (no busy check, no 30s guard, no selection check, no "same id clears the wait") each fail the section; the
   last is caught by an assert that the cue goes away when the id returns to the one the page runs.
 - `mServe`, `mHome`, `phoneHeader`, `bootClean` pass alone.
+
+## Follow-up: refresh after a hub restart
+
+Checked on `/m` after back-to-back hub restarts:
+
+1. **Stream reconnect: works.** `store.js` closes a failed `EventSource` and reopens it on a 1s to 30s backoff, so a hub
+   that is down for a few seconds leaves no stuck state. A stream that dies without an error is not detected (the hub's
+   25s pings are comments the browser does not surface); a page coming to the front reconnects only if it has no stream.
+2. **Re-fetch on reconnect: two gaps, fixed.** The stream opening read the cards and permissions once, and a failed read
+   (the room is not up yet right after a restart) was only tried again by the 60s resync. Failed reads now retry on a
+   1s to 15s backoff while the page is in front. The open card's thread was read only on open or a turn change, so a reply
+   that landed while the stream was down stayed missing; `card.js` now reads it when the stream comes back.
+3. **Build check with two restarts close together: no bad interaction.** The 30s guard holds a second reload until it
+   expires, the wait follows the newest id, and a draft holds both. A reload that starts just as a second restart takes
+   the hub down would land on the browser's error page; the page cannot prevent that, since it only reloads after the hub
+   answered.
+
+The open card also reads its thread when the row's `last_activity_at` or `prompted_at` moves, for rooms whose rows carry
+no `output_at`. At most one read per 5s per card with the last change always read, and nothing when the row did not change.
+
+Tests: `mReconnect` (refused connects with backoff, a failed first read, state missed while down, the open card's thread)
+and `mActivityRead` (unchanged row reads nothing, a moved activity reads once, ten changes make one more, `prompted_at`
+alone reads); `mReload` also covers two builds arriving under a draft. Mutants that fail: no read retry, no card re-read
+on reconnect, no throttle, no change gate, no `prompted_at`, no trailing read. Two survive: the permissions retry (the mock
+never fails that read) and "the newest id wins under a draft" (not observable from a reload count).

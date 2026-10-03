@@ -20,6 +20,12 @@
   let turnKey = "";
   // The room's `output_at`: the last reply with text, mid-turn too. Absent keeps the last one seen.
   let outAt = "";
+  // `output_at` can stay empty on a row whose room does not report it, so the thread is also read when the card's
+  // `last_activity_at` or `prompted_at` moves. At most one read per ACT_GAP, the last change always read (trailing edge),
+  // and nothing on a timer when nothing moved.
+  const ACT_GAP = 5000;
+  let actKey = "", lastRead = 0, actTimer = 0;
+  const actOf = t => t ? (t.last_activity_at || "") + "|" + (t.prompted_at || "") : "";
   let offs = [];
   // Replies already read, so a card opened again paints at once and is refreshed behind it.
   const cache = new Map();
@@ -625,6 +631,7 @@
     const id = openId;
     if (!id) return;
     const mine = ++seq;
+    lastRead = Date.now();
     let got;
     try {
       const r = await window.mNet.api("/v1/tasks/" + encodeURIComponent(id) + "/replies?n=" + REPLIES_N);
@@ -697,6 +704,11 @@
     const moved = !!out && out !== outAt;
     if (out) outAt = out;
     if (key !== turnKey || moved) { turnKey = key; loadReplies(); paintDocs(); }
+    const act = actOf(t);
+    if (act !== actKey) {
+      actKey = act;
+      if (!actTimer) actTimer = setTimeout(() => { actTimer = 0; if (openId) loadReplies(); }, Math.max(0, lastRead + ACT_GAP - Date.now()));
+    }
   }
 
   function mountFor(id) {
@@ -721,6 +733,8 @@
     openId = id;
     turnKey = id + "@" + turnOf(window.mStore.card(id));
     outAt = (window.mStore.card(id) || {}).output_at || "";
+    actKey = actOf(window.mStore.card(id));
+    clearTimeout(actTimer); actTimer = 0;
     els.sheet.hidden = false;
     menuClose();
     els.sheet.classList.toggle("direct", !!(history.state && history.state.direct));
@@ -748,6 +762,7 @@
     if (window.mViewer) window.mViewer.reset();
     if (window.mChanges) window.mChanges.reset();
     if (MD.release) MD.release();
+    clearTimeout(actTimer); actTimer = 0;
     els.sheet.hidden = true;
     els.head.innerHTML = els.notices.innerHTML = els.replies.innerHTML = els.extras.innerHTML = els.recap.innerHTML = "";
     els.working.hidden = true;
@@ -1025,6 +1040,10 @@
     });
     document.addEventListener("keydown", e => { if (e.key === "Escape" && els && !els.recap.hidden) closeRecap(); });
     els.back.addEventListener("click", close);
+    // The thread is read on open and on a turn ending, both events. A reply that landed while the stream was down sent
+    // none, so coming back reads it again.
+    let wasLive = false;
+    window.mNet.on("live", () => { const on = !!window.mNet.live(); if (on && !wasLive && openId) loadReplies(); wasLive = on; });
     els.pick.addEventListener("click", menuToggle);
     // The card's changes, and the chip on a reply that edited files. Both open the changes sheet over the thread.
     q("m-card-changes").addEventListener("click", () => { if (openId && window.mChanges) window.mChanges.openCard(openId); });
