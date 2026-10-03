@@ -783,11 +783,10 @@ func myTags(ctx context.Context, me string) []string {
 	if err := ask(ctx, http.MethodGet, "/v1/tasks?name="+url.QueryEscape(me), nil, &body); err != nil {
 		return nil
 	}
-	if len(body.Tasks) == 1 {
-		return body.Tasks[0].Tags
-	}
+	// A room that predates ?name= answers the whole list, which can hold exactly one card that is
+	// not this one, so a single row is trusted only when it is named `me` by handle, bare name or alias.
 	for _, t := range body.Tasks {
-		if t.Wire == me {
+		if t.Wire == me || t.Alias == me || strings.HasSuffix(t.Wire, "/"+me) || t.ID == me {
 			return t.Tags
 		}
 	}

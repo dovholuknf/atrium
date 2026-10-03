@@ -332,15 +332,16 @@ func (s *Store) LocalCard(name string) *Task {
 
 // LauncherIDs is LauncherID for every card at once, as one SELECT resolved in memory, for the list
 // that decorates every row (a per-row LauncherID is up to five queries a card on the store's one
-// connection). Keyed by card id; a card with no launcher is absent. Same order and same checks as
+// connection). Keyed by card id; a card with no launcher is absent. NIL when the read fails, which
+// a caller takes as "ask LauncherID per card", never as "nobody has a launcher". Same order and same checks as
 // LauncherID, and a test holds the two equal over one table.
 func (s *Store) LauncherIDs() map[string]string {
 	type row struct{ id, wire, alias, status, archived, by, byID, reportTo string }
 	var rows []row
-	_ = s.guard(func() error {
+	if err := s.guard(func() error {
 		rows = nil
 		// newest first, so the first match of an alias is the one GetByAlias picks
-		q, err := s.db.Query(`SELECT id, wire_name, alias, status, archived_at, spawned_by, spawned_by_id, report_to
+		q, err := s.db.Query(`SELECT id, COALESCE(wire_name, ''), alias, status, archived_at, spawned_by, spawned_by_id, report_to
 			FROM task ORDER BY created_at DESC`)
 		if err != nil {
 			return err
@@ -354,7 +355,10 @@ func (s *Store) LauncherIDs() map[string]string {
 			rows = append(rows, r)
 		}
 		return q.Err()
-	})
+	}); err != nil {
+		// nil, so the caller falls back to the per-card resolve rather than serving a list with no launchers
+		return nil
+	}
 	ids := make(map[string]bool, len(rows))
 	wire := make(map[string]string, len(rows))
 	liveAlias := map[string]string{}

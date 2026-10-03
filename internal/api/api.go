@@ -1298,7 +1298,8 @@ func (s *Server) listTasks(w http.ResponseWriter, r *http.Request) {
 		statuses = strings.Split(raw, ",")
 	}
 	// ?name= is the one card a handle, alias or id means, as a list of one (or none), for a caller that
-	// wants a single card's tags and not the whole board. A room older than this ignores it and answers
+	// wants a single card's tags and not the whole board. The row is the thinner one a single GET
+	// gives (no per-list decorations beyond asks, seen and launcher_id), not the list's. A room older than this ignores it and answers
 	// the whole list, which a caller then matches itself.
 	if name := strings.TrimSpace(r.URL.Query().Get("name")); name != "" {
 		one := []*store.Task{}

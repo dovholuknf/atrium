@@ -57,7 +57,46 @@ func TestLauncherIDResolveAndTheBatchAgrees(t *testing.T) {
 		want string
 	}{"report_to and spawned_by_id are itself, spawned_by is boss", selfID, boss.ID})
 
+	// A NEWER card with a NULL wire name (an intake offer) must not blank the batch.
+	if _, _, err := s.Offer(IntakeItem{Source: "test", ExternalID: "n1", Title: "offered"}); err != nil {
+		t.Fatal(err)
+	}
+	// the alias rules: live beats done even when the done card is newer; an archived card holds none
+	older := mk("al-live")
+	doneNewer := mk("al-done")
+	if err := s.SetAlias(doneNewer.ID, "ax"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetStatus(doneNewer.ID, StatusDone); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetAlias(older.ID, "ax"); err != nil {
+		t.Fatal(err)
+	}
+	arch := mk("al-arch")
+	if err := s.SetAlias(arch.ID, "gone"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`UPDATE task SET archived_at = '2026-01-01T00:00:00Z' WHERE id = ?`, arch.ID); err != nil {
+		t.Fatal(err)
+	}
+	cases = append(cases,
+		struct {
+			name string
+			card *Task
+			want string
+		}{"alias: live beats a newer done", set(mk("c-live"), "boss", "", "ax"), older.ID},
+		struct {
+			name string
+			card *Task
+			want string
+		}{"alias: an archived card holds none", set(mk("c-arch"), "boss", boss.ID, "gone"), boss.ID},
+	)
+
 	batch := s.LauncherIDs()
+	if batch == nil || batch[cases[0].card.ID] != cases[0].want {
+		t.Fatalf("LauncherIDs = %v, want the launched cards resolved beside a NULL-wire card", batch)
+	}
 	all, err := s.List()
 	if err != nil {
 		t.Fatal(err)
