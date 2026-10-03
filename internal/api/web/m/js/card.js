@@ -703,11 +703,13 @@
     const out = (t && t.output_at) || "";
     const moved = !!out && out !== outAt;
     if (out) outAt = out;
-    if (key !== turnKey || moved) { turnKey = key; loadReplies(); paintDocs(); }
     const act = actOf(t);
+    // A turn end or an `output_at` move reads at once, and the activity that came with it is covered by that read.
+    if (key !== turnKey || moved) { turnKey = key; actKey = act; clearTimeout(actTimer); actTimer = 0; loadReplies(); paintDocs(); }
     if (act !== actKey) {
       actKey = act;
-      if (!actTimer) actTimer = setTimeout(() => { actTimer = 0; if (openId) loadReplies(); }, Math.max(0, lastRead + ACT_GAP - Date.now()));
+      // Only for a row with no `output_at`: where it is reported, its move is the signal.
+      if (!out && !actTimer) actTimer = setTimeout(() => { actTimer = 0; if (openId) loadReplies(); }, Math.max(0, lastRead + ACT_GAP - Date.now()));
     }
   }
 

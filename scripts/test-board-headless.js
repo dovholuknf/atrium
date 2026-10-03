@@ -18288,6 +18288,22 @@ async function mReloadSection(browser) {
     await p.evaluate(() => window.mBuild.check());
     await settle(2500);
     if (loads !== b5 + 1) fail(tag + "back to back restarts made " + (loads - b5) + " reloads, not 1");
+
+    // a review-comment chip with an empty box is something a reload loses and nothing saves: it holds the reload too
+    await p.waitForFunction(() => window.mNet.loaded() && window.mBuild, null, { timeout: slow(10000) });
+    await p.evaluate(() => { sessionStorage.removeItem("atrium.m.reloaded"); window.mCard.open("r-1"); });
+    await p.waitForSelector("#m-compose .mc-box", { timeout: slow(8000) });
+    const added = await p.evaluate(() => { const ok = window.mCompose.addComment({ path: "a/b.js", line: 3, kind: "+", text: "" }); document.activeElement && document.activeElement.blur && document.activeElement.blur(); return ok; });
+    if (!added) fail(tag + "the comment chip was not added");
+    if ((await p.$eval("#m-compose .mc-box", t => t.value)) !== "") fail(tag + "the box is not empty for the chip case");
+    const b6 = loads;
+    st.build = "build-20";
+    await p.evaluate(() => window.mBuild.check());
+    await settle(700);
+    if (loads !== b6) fail(tag + "a comment chip did not hold the reload");
+    if (!(await p.evaluate(() => !!document.querySelector(".m-update")))) fail(tag + "no cue while a chip holds it");
+    await p.click("#m-compose .mc-cmt .mc-fx");
+    await p.waitForEvent("load", { timeout: slow(6000) }).catch(() => fail(tag + "the reload did not come once the chip was removed"));
     if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
     await ctx.close();
   } finally { await st.close(); }
@@ -18383,10 +18399,48 @@ async function mActivityReadSection(browser) {
     push(row({ last_activity_at: T, prompted_at: mIso(M_MIN) }));
     await p.waitForTimeout(800);
     if (reads() !== r0 + 4) fail(tag + "a moved prompted_at alone did not read");
+    // a turn end on a row with no output_at moves the turn and the activity together: one read, not a second one 5s later
+    await p.waitForTimeout(5200);
+    push(row({ last_activity_at: mIso(M_MIN * 2), seen: { turn_ended_at: mIso(M_MIN * 2) } }));
+    await p.waitForTimeout(6500);
+    if (reads() !== r0 + 5) fail(tag + "a turn end made " + (reads() - r0 - 4) + " reads, not 1");
+    // the same with output_at reported
+    await p.waitForTimeout(200);
+    const OUT = mIso(M_MIN), PR = mIso(M_MIN);
+    push(row({ last_activity_at: mIso(M_MIN), prompted_at: PR, output_at: OUT }));
+    await p.waitForTimeout(6500);
+    if (reads() !== r0 + 6) fail(tag + "a turn end with output_at made " + (reads() - r0 - 5) + " reads, not 1");
+    // a room that reports output_at: activity alone is not a reason to read
+    push(row({ last_activity_at: mIso(30000), prompted_at: PR, output_at: OUT }));
+    await p.waitForTimeout(6500);
+    if (reads() !== r0 + 6) fail(tag + "activity alone read though the row reports output_at");
     if (errors.length) fail(tag + "page errors: " + errors.join(" | "));
     await ctx.close();
   } finally { await st.close(); }
   if (!bad) console.log("mActivityRead ok");
+}
+
+// ── Failed reads back off on their own and stop on a refusal ────────────
+async function mReadRetrySection(browser) {
+  const tag = "mReadRetry: ";
+  for (const status of [0, 401, 403]) {
+    const st = mServer({});
+    st.tasks = [mCard("q-1", { alias: "alpha", display_title: "alpha" })];
+    st.permsStatus = status || 503;
+    await st.open();
+    try {
+      const ctx = await browser.newContext({ viewport: M_VIEWS[0], hasTouch: true, isMobile: true });
+      const p = await ctx.newPage();
+      await p.goto(st.url + "/m/", { waitUntil: "domcontentloaded" });
+      await p.waitForFunction(() => window.mNet.loaded(), null, { timeout: slow(10000) });
+      await p.waitForTimeout(6500);
+      const n = st.permsHits;
+      if (!status && (n < 3 || n > 5)) fail(tag + "a 503 on permissions was read " + n + " times in 6.5s; backoff wants 3 to 5");
+      if (status && n > 2) fail(tag + "a " + status + " was retried: " + n + " reads");
+      await ctx.close();
+    } finally { await st.close(); }
+  }
+  if (!bad) console.log("mReadRetry ok");
 }
 
 async function mBellSection(browser) {
@@ -20521,7 +20575,7 @@ async function main() {
       u001Audit: u001AuditSection,
       pasteStart: pasteStartSection, pasteDone: pasteDoneSection, pasteOldRoom: pasteOldRoomSection, pasteClose: pasteCloseSection,
       growlQuestionShots: growlQuestionShotsSection, growlQuestionBody: growlQuestionBodySection, growlReplyGrow: growlReplyGrowSection, growlChoices: growlChoicesSection, growlStable: growlStableSection, growlOnIt: growlOnItSection, mGrowlQuestion: mGrowlQuestionSection,
-      bootClean: bootCleanSection, mReload: mReloadSection, mReconnect: mReconnectSection, mActivityRead: mActivityReadSection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mBubbles: mBubblesSection, mRecapSheet: mRecapSheetSection,
+      bootClean: bootCleanSection, mReload: mReloadSection, mReconnect: mReconnectSection, mActivityRead: mActivityReadSection, mReadRetry: mReadRetrySection, mWorking: mWorkingSection, mOwnMessages: mOwnMessagesSection, mBubbles: mBubblesSection, mRecapSheet: mRecapSheetSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, phoneRedirect: phoneRedirectSection,
       mHomeOrder: mHomeOrderSection, cardUrlWayOut: cardUrlWayOutSection, phoneBoot: phoneBootSection, sayEnter: sayEnterSection, sendArrow: sendArrowSection, mTables: mTablesSection, mMarkdown: mMarkdownSection, mHostile: mHostileSection, mPictures: mPicturesSection, mHidden: mHiddenSection, soundPhone: soundPhoneSection, phoneBell: phoneBellSection, mBell: mBellSection,
@@ -22796,7 +22850,11 @@ function mServer(state) {
       if (state.tasksFail > 0) { state.tasksFail--; return json(503, { error: "the room is not up yet" }); }
       return json(200, { tasks: rm ? state.tasks.filter(t => !t.room || t.room === rm) : state.tasks });
     }
-    if (p === "/v1/permissions") return json(200, { permissions: state.perms });
+    if (p === "/v1/permissions") {
+      state.permsHits = (state.permsHits || 0) + 1;
+      if (state.permsStatus) return json(state.permsStatus, { error: "no" });
+      return json(200, { permissions: state.perms });
+    }
     if (p === "/v1/health") { state.healthHits = (state.healthHits || 0) + 1; return json(200, { build: state.build || "build-1" }); }
     if (p === "/v1/settings") return json(200, { board_skins: ["default", "daylight"], board_skin: state.skin || "default" });
     if (p === "/_hub/rooms") return json(404, { error: "not a hub" });

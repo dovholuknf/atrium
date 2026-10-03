@@ -64,3 +64,16 @@ and `mActivityRead` (unchanged row reads nothing, a moved activity reads once, t
 alone reads); `mReload` also covers two builds arriving under a draft. Mutants that fail: no read retry, no card re-read
 on reconnect, no throttle, no change gate, no `prompted_at`, no trailing read. Two survive: the permissions retry (the mock
 never fails that read) and "the newest id wins under a draft" (not observable from a reload count).
+
+## Review follow-up
+
+- **Attached files and review-comment chips** are held in memory only, so a reload loses them even with an empty box.
+  `mCompose.holding()` (an attachment or a comment chip on the mounted box) now counts as busy in `build.js`. `mReload`
+  adds a chip with an empty, unfocused box: no reload, the cue shows, and it reloads once the chip is removed. The
+  attachment half of `holding()` has no headless line (the mock has no upload route); the chip half is mutant-checked.
+- **A turn end read the thread twice**, the second 5s later: the activity that came with it was still pending. The
+  immediate read now takes the activity key with it and cancels the pending one.
+- **The activity read is only for rows with no `output_at`.** Where a room reports it, its move is the signal.
+- **Retry backoff is per read** (cards and permissions each count their own failures), and a 401 or 403 is not retried.
+  `mReadRetry` covers a 503 backing off on permissions and a 401 and a 403 not retried. The cards read's own backoff is
+  not mutant-checked (a failing cards read needs a page that loaded once and then failed).

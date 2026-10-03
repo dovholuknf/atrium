@@ -728,5 +728,7 @@
 
   // Whether a send or an upload is in flight on the mounted card, which a page reload would lose.
   const busy = () => !!cur && (cur.sending > 0 || cur.uploading > 0);
-  window.mCompose = { mount, unmount, insert, quote, attach, busy, addComment, quoteAll };
+  // Whether the mounted box holds something a reload would lose and nothing saves: an attached file or a review comment.
+  const holding = () => !!cur && (cur.atts.length > 0 || cur.cmts.length > 0);
+  window.mCompose = { mount, unmount, insert, quote, attach, busy, holding, addComment, quoteAll };
 })();

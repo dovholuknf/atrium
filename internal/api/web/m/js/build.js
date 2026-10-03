@@ -29,6 +29,8 @@
 
   function busy() {
     if (window.mCompose && window.mCompose.busy && window.mCompose.busy()) return true;
+    // Attached files and review comments are held in memory only, so they count as much as typed text.
+    if (window.mCompose && window.mCompose.holding && window.mCompose.holding()) return true;
     const a = document.activeElement;
     if (a && (a.tagName === "TEXTAREA" || (a.tagName === "INPUT" && !/^(button|checkbox|radio|submit)$/.test(a.type)))) return true;
     for (const t of document.querySelectorAll("textarea")) if (t.value && t.value.trim()) return true;
